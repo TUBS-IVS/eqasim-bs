@@ -118,10 +118,10 @@ def explain_before_run(config_path):
     assessments = staleness.assess(stages, working_directory, metadata.read_meta(working_directory))
     for line in staleness.format_report(assessments).splitlines():
         # An unmigrated cache recomputes every stage (the costly case): the report marks that one line
-        # as an ERROR line so it cannot be missed. An entry the migration kept legacy because its stage
-        # code changed since the cache was built is genuinely stale, already listed STALE and needs no
-        # action: its report line is information, like every other line. Neither aborts; the abort gate
-        # stays synpp_expected_stale_stages.
+        # as an ERROR line so it cannot be missed. An entry the migration kept legacy is already listed
+        # STALE; its report line is information that names when a second migration helps (see
+        # staleness.format_report), like every other line. Neither aborts; the abort gate stays
+        # synpp_expected_stale_stages.
         if line.startswith(staleness.ERROR_LINE_PREFIX):
             log.error("[explain] %s", line)
         else:

@@ -171,8 +171,10 @@ into this record):
   the line starts with `staleness.ERROR_LINE_PREFIX` and names the migration script; the launcher
   (`scripts/run_synpp.py`) logs exactly that line at ERROR. Otherwise the migration (or a fork
   run) has been through the cache, and an entry that still carries the md5 hash is one the
-  migration kept legacy: genuinely stale, already listed STALE, and migrating again changes
-  nothing, so its line is information. Rejected: keeping ERROR for both (the 100 % production run
+  migration kept legacy, already listed STALE, so its line is information. Normally its code
+  changed (genuinely stale); for `not_in_dag` (the migration ran with a config whose DAG lacked
+  the stage) or `token_unverifiable` (the legacy replay failed there) the line says to run the
+  migration again with the launch's config and inputs, which can still migrate the entry. Rejected: keeping ERROR for both (the 100 % production run
   `prod100_20261031` logged its one kept-legacy entry at ERROR, so error counters fired on an
   expected state; `docs/runs/prod100-expected-message-levels-2026-11-04.yml`). Accepted limit: a
   cache whose first fork launch crashed midway holds output digests and is judged migrated, so

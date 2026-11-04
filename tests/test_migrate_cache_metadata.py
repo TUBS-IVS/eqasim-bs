@@ -723,7 +723,7 @@ def test_the_launcher_logs_the_unmigrated_cache_hint_at_error_level(project, cap
 
 def test_the_launcher_does_not_log_an_error_for_an_entry_the_migration_kept_legacy(project, caplog):
     """C5c: after a migration a legacy md5 hash marks a stage whose code changed since the cache was
-    built. It is genuinely stale (listed STALE), migrating again changes nothing, so it is information;
+    built. It is genuinely stale (listed STALE), so it is information;
     only a cache that was never migrated (the test above) is an error."""
     project.write("mig_parent.py", PLAIN_PARENT)
     project.write("mig_child.py", PLAIN_CHILD)

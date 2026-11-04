@@ -333,12 +333,15 @@ def format_report(assessments: dict) -> str:
     legacy = sum(a.legacy_module_hash for a in assessments.values())
     if legacy and any(a.cache_migrated for a in assessments.values()):
         # The migration has been through this cache, so an entry that still carries the md5 hash is
-        # one it left unchanged (``kept_legacy``): genuinely stale, already listed STALE above, and a
-        # second migration changes nothing. Information, not a call to act.
+        # one it left unchanged (``kept_legacy``), already listed STALE above. Normally its code changed
+        # (genuinely stale). Two reasons are environmental and a second migration can fix them: the
+        # stage was outside the DAG of the config the migration ran with (not_in_dag), or its legacy
+        # validate() replay failed there (token_unverifiable). Information, with that pointer.
         lines.append(f"# note: {legacy} entries kept a legacy md5 module hash: the migration left them "
-                     "unchanged because it could not prove them for the current code, normally because the "
-                     "code changed since the cache was built (its log names the reason per entry); they are "
-                     "STALE above for that reason and running the migration again changes nothing")
+                     "unchanged and they are STALE above; its log names the reason per entry. A changed code "
+                     "(module_hash_mismatch, token_mismatch) is genuinely stale; for not_in_dag or "
+                     "token_unverifiable run scripts/migrate_cache_metadata.py again with this launch's config "
+                     "and inputs before recomputing")
     elif legacy:
         # Never migrated: every stage with such an entry reads module_hash_changed and recomputes whether
         # or not its code changed. This is the costly case; the launcher logs it at ERROR.
