@@ -1,0 +1,133 @@
+id: prod100-sampled-ragged-array-2026-11-04
+date: '2026-11-04'
+repository:
+  commit: 7a41f0ba57bb9abdb862c59bcc14c73653e8510a
+  branch: origin/main (the detached worktree of the production run)
+  notes: >-
+    The code the 100 % production run prod100_20261031 ran (felix:~/prod100_20261031/eqasim-bs, a clean detached
+    worktree of origin/main), used READ ONLY. The module under test is ONE file of branch
+    fix/c5d-sampled-ragged-array, synthesis/population/sampled.py (the committed blob, LF line endings, sha256
+    8f0eea497358893cdcd4f22c799c8d163517ddfdb369ff60389de3210e8e9e56): loaded as a module for the replay and copied
+    into a scratch copy of that worktree for the explainer run, nothing else differs from the production code. The
+    production module has sha256 cc6d5cdbb2fd2fb6cbe12b0b6da2eec8f8c05c2ea4e92b085c7bdcf0caeb1ad5.
+configuration:
+  config: configs/base_bs.yml with the run overlay of prod100_20261031 (felix:~/prod100_20261031/run.yml)
+  notes: >-
+    Only random_seed (1234, configs/base_bs.yml) and sampling_rate (1.0, the run overlay) enter the stage; both are
+    arguments of the replay. The explainer ran with the run's overlay and the run's cache directory, from the scratch
+    copy of the worktree with the run's Java tree linked beside it (eqasim_source_path ../eqasim-java-bs).
+sampling:
+  rate: 1.0
+  scope: >-
+    the whole synthetic population of the run: every person of the parent stage braunschweig.popsim.stage, no subsample.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. The stage synthesis.population.sampled was replayed outside synpp from the cached output of
+    its parent, with the arguments synpp passes it. The stale-stage explainer (scripts/explain_stale_stages.py, read
+    only) ran twice against the run's cache: with the production code, and with the production code plus the one
+    changed file.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Completed on 2026-11-04. An equivalence check of a code change, NOT a validation: no observed data is involved. It
+    shows that the change leaves the stage output byte for byte as it was; it says nothing about whether that output
+    is right.
+source: >-
+  felix:~/c5d_replay_20261104 (scratch, deleted after the committed copies below were checked; the production run
+  directory was only read: its worktree shows 0 changes and pipeline.json and the two cache entries keep their time
+  stamps). Committed in docs/runs/artifacts/prod100-sampled-ragged-array-2026-11-04/: replay_sampled_stage.py (sha256
+  fb2d6daa5dcb3ef88b54f4a9d1edd1ae323f30e80570d97633dd3518ccc71810, the script the replay used), results.json and
+  replay_log.txt (log copy, because *.log is git-ignored), explain_baseline.txt and explain_after.txt, and, from the
+  laptop, random_equivalence.py (sha256 5c6a47349e3dc62d7e52cf145e2a5687edd620d351356a62d0c01fb24c28d92b) with its
+  random_equivalence_log.txt.
+environment: 'server (felix, hostname matsim, Linux 5.15.0-139-generic), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, numpy 1.23.5, pandas 1.5.3); the random comparison ran on the Windows laptop with the same Python, numpy and pandas versions'
+validation:
+- metric: the unmodified module replayed on the run's cached input, against the run's own cached output (is the replay a replay?)
+  reference: 'felix cache entry synthesis.population.sampled__451bf968c790012e5fcf2ace9efddefe of prod100_20261031; an equivalence reference, NOT observed data'
+  result: >-
+    IDENTICAL for all 1,130,422 rows in all 79 columns (0 mismatching cells; columns, dtypes and index equal). Written the
+    way the fork writes a stage result (pickle protocol 4), the replayed output has the pickle sha256
+    2560cfa0dae0685b5aad8d5793dee009c56ca818575aaeac3da3f510a518e0e4 (633,135,044 bytes) and the output digest
+    1e85d33e49333deaae9d1fe08c5b69ba2387f9e6f30e4d9bc14a1194d77125c2 that the run recorded in its pipeline.json, and the
+    cached file itself hashes to that pickle sha256. The harness therefore reproduces the production artifact byte for
+    byte.
+  artifact: docs/runs/artifacts/prod100-sampled-ragged-array-2026-11-04/results.json
+- metric: the changed module on the same input, numpy's VisibleDeprecationWarning turned into an error
+  reference: 'the cached output and the unmodified module of the previous entry; an equivalence reference, NOT observed data'
+  result: >-
+    IDENTICAL to both, in the frame (1,130,422 rows, 558,274 households, 79 columns, 0 mismatching cells) and in the
+    bytes: the same pickle sha256 and output digest as the run recorded. The unmodified module raises the numpy ragged
+    array warning (numpy/core/fromnumeric.py:43, called from np.repeat in execute); the changed module raises none.
+    The one warning left in both is the pandas DeprecationWarning of the assignment df_census.loc[:, "household_id"],
+    present before and unchanged.
+  artifact: docs/runs/artifacts/prod100-sampled-ragged-array-2026-11-04/results.json
+  notes: >-
+    The ValueError that numpy 1.24 raises for the old construction was not run here (only numpy 1.23.5 is installed);
+    it is what the numpy 1.24 release notes list under expired deprecations.
+- metric: what the real input does NOT exercise, and what covers it
+  reference: 'none; a limit of the check above'
+  result: >-
+    All 558,274 households carry the weight exactly 1.0, so the replication maps every row to itself: the replay on the
+    real input does not exercise a household replicated 0, 2 or more times. That part is covered by
+    tests/test_sampled_stage.py (a hand-computed case with households of different size replicated 2, 1, 0 and 3 times,
+    and a seeded sample pinned from the old code) and by the random comparison below.
+  artifact: docs/runs/artifacts/prod100-sampled-ragged-array-2026-11-04/results.json
+- metric: the old and the changed module on 500 random censuses (laptop)
+  reference: 'the unmodified production module as the reference; an equivalence reference, NOT observed data'
+  result: >-
+    Frames identical (values, index and dtypes) and protocol-4 pickle bytes identical in all 500 trials (370 with a
+    non-empty output, 29,612 output rows). The censuses mix households of equal and of unequal size (1 to 6 persons),
+    whole and fractional weights with zeros, unsorted household ids, mixed column dtypes and the sampling rates 1.0, 0.5,
+    0.1 and 0.0. The old module raised the numpy warning in 291 of the 500 trials (those with households of unequal
+    size), the changed module in none.
+  artifact: docs/runs/artifacts/prod100-sampled-ragged-array-2026-11-04/random_equivalence_log.txt
+- metric: household_size against the number of person rows of every household (the premise of the block construction)
+  reference: 'none; a measurement of the input'
+  result: >-
+    0 of 558,274 households have a household_size that differs from their number of person rows and 0 carry
+    inconsistent household_size values, so the strict zip in the changed code never fires on this input and the old
+    block alignment was correct on it.
+  artifact: docs/runs/artifacts/prod100-sampled-ragged-array-2026-11-04/results.json
+- metric: which stages the next launch from this code would recompute (read only explainer on the run's cache)
+  reference: 'scripts/explain_stale_stages.py with the run overlay on felix:~/prod100_20261031/cache; a prediction of the fork, NOT a pipeline run'
+  result: >-
+    With the production code the report reads 97 stages, 2 stale for own reasons (matsim.output, the run target, and
+    matsim.simulation.run: neither has a cache entry for this configuration), 95 HIT; synthesis.population.sampled is
+    a HIT, so the harness reproduces the run's stage hashes. With the one changed file it reads 3 stale for own reasons (those two and
+    synthesis.population.sampled [module_hash_changed]), 0 RECOMPUTE, 30 STALE-IF (valid stages whose own record carries
+    the digest of the stale stage, so the early cutoff decides at run time), 64 HIT. The 6 cache entries that list the
+    stage as a parent all record exactly its digest. Because the replayed digest equals the recorded one, the early
+    cutoff spares the 30 STALE-IF stages; only synthesis.population.sampled re-executes.
+  artifact: docs/runs/artifacts/prod100-sampled-ragged-array-2026-11-04/explain_after.txt
+  notes: >-
+    explain_baseline.txt is the same report for the unmodified code. That the 30 stages are spared is derived from the
+    equal digest and the fork's rule (ADR-0149); it was not observed in a pipeline run.
+artifacts:
+- docs/runs/artifacts/prod100-sampled-ragged-array-2026-11-04/
+issues: []
+notes: >-
+  Cost of landing the change on its own (production commit plus this one file; a real launch also carries whatever else
+  main has changed since). The module hash of synthesis.population.sampled changes (its AST digest, ADR-0149), so
+  that one stage re-executes once: 21 s in the production log (20:57:34 to 20:57:55: load of its input, execute, cache
+  write and the 5.0 s output hash), 5.5 s of it the execute call in the replay. If its output digest were ever to
+  differ from the recorded one, the 30 STALE-IF stages would recompute with everything behind them; the equality shown
+  above is what prevents that. The stage has no helper modules (audit category (a) of
+  docs/codebase/notes/synpp-helper-hash-audit.md), so no other token moves.
+
+  Why this construction. The blocks of row positions are repeated as a Python list. Kept out on purpose:
+  np.array(..., dtype=object), which keeps the ragged array and makes the shape depend on whether the household sizes
+  happen to be equal, and index arithmetic over the household sizes, which removes the intermediate structure but is
+  the cleverer code and a larger edit to a vendored stage. zip(strict=True) keeps the error np.repeat raised when the
+  numbers of blocks and multiplicators differ.
+
+  Seen in passing, NOT touched. (1) The stage sorts by household_id with numpy's default, unstable sort, and the input
+  is not sorted by household_id: 376,969 of 1,130,422 rows land at another place than a stable sort would put them, so
+  the order of the members inside a household is numpy's choice (which households and members are kept does not depend
+  on it). A numpy upgrade may order them differently; making the order explicit would change the output and is the
+  owner's decision. (2) The pandas DeprecationWarning at the household_id assignment (pandas 1.5.3) announces an
+  in-place write in a later pandas version. (3) Every household weight is 1.0, so at the production input the rounding
+  and the replication of this stage change nothing: the stage only sorts the rows by household_id and renumbers
+  households and persons.
