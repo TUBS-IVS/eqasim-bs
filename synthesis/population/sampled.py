@@ -37,7 +37,12 @@ def execute(context):
     # the order ([0, 1, 0, 1, 2, 2, ...]) is important here as they will be reassigned to new housholds later with that assumption
     expandor = np.split(np.arange(len(df_census)), np.cumsum(household_sizes))
     expandor = [x for x in expandor if x.size > 0]
-    expandor = np.repeat(expandor, household_multiplicators, axis=0)
+    # Repeat the block of row positions of every household once per replica. The blocks differ in length, so they
+    # are repeated as a Python list: np.repeat(expandor, ...) would first turn the list into a ragged array (a
+    # VisibleDeprecationWarning in numpy 1.23, a ValueError from numpy 1.24 on). strict=True keeps the error that
+    # np.repeat raised when the numbers of blocks and multiplicators differ (a household_size that disagrees with
+    # the number of person rows).
+    expandor = [block for block, count in zip(expandor, household_multiplicators, strict=True) for _ in range(count)]
     expandor = list(itertools.chain(*expandor))
 
     df_census = df_census.iloc[expandor]
