@@ -1,28 +1,19 @@
-"""Let every agent choose its modes once at the first replanning (eqasim-bs#465, mechanism 4).
+"""Initial mode choice before iteration 0 with eqasim's standalone mode choice (eqasim-bs#542, ADR-0177).
 
-eqasim configures the discrete mode choice "in the loop" (``DiscreteModeChoiceConfigurator.
-configureAsModeChoiceInTheLoop``, weight 0.05) next to ``KeepLastSelected`` (0.95): in every iteration each agent
-chooses again with probability 0.05. After the 86 replanning rounds of run ``i465-wpe-smoke-1pct-2026-10-23`` about
-0.95**86 = 1.2 % of the residents had never chosen and still used the synthesis mode, for example a 5-minute survey walk
-to an education location 22 km away (34 of the 49 in-region persons with a walk trip over 5 km in the final plans had
-an unchanged plan). The mode-share termination criterion cannot see that: the shares are stable long before every
-agent has chosen.
+At the end of the prepare stage every agent chooses its modes once with eqasim's ``RunStandaloneModeChoice`` under free
+flow travel times, so MATSim starts from a plan set in which each agent has chosen. This module holds the pure helpers
+of that step: the runner arguments, the retired-key check, the person count and the before/after trip summary.
 
-:func:`add_initial_mode_choice` adds, for every subpopulation that has the in-the-loop DiscreteModeChoice strategy
-(``disableAfterIteration`` -1), a second DiscreteModeChoice strategy with a very high weight and
-``disableAfterIteration`` 1: MATSim sets its weight to 0 from iteration 2 on, so it acts in the first replanning only.
-There the share of agents that choose is ``(weight + w_loop) / (weight + sum of the weights)`` (99.9999 % with the
-default weight 1e6 against 0.05 + 0.95); afterwards the loop runs unchanged. Subpopulations without the mode choice
-(freight) are untouched. The config is edited as text, like ``braunschweig.matsim.config_modules``, so the XML
-declaration, the DOCTYPE and the line endings survive; an identical strategy already present is left alone.
+The ADR-0155 mechanism (eqasim-bs#465) added a second DiscreteModeChoice replanning strategy with a very high weight to
+the MATSim config so that agents chose in iteration 1; it is gone, replaced by this upfront choice (ADR-0177 has the
+reasons).
 """
 from __future__ import annotations
 
+import gzip
 import logging
-import math
-import re
-import xml.etree.ElementTree as ET
-from pathlib import Path
+
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -30,80 +21,82 @@ _LOG_TAG = "[initial mode choice]"
 
 KEY_ENABLED = "braunschweig.initial_mode_choice.enabled"
 DEFAULT_ENABLED = True
-#: Weight of the first-replanning strategy relative to the strategies of the loop (whose weights sum to 1 in the
-#: eqasim config). Valid: a finite number > 0. Not a behavioural parameter: it only sets how close to 100 % of the
-#: agents choose in the first replanning.
-KEY_WEIGHT = "braunschweig.initial_mode_choice.weight"
-DEFAULT_WEIGHT = 1.0e6
+#: Key of the ADR-0155 strategy weight; the mechanism is gone, so a configured value is refused (no silent ignore).
+KEY_WEIGHT_RETIRED = "braunschweig.initial_mode_choice.weight"
 
-STRATEGY_NAME = "DiscreteModeChoice"
-REPLANNING_MODULE = "replanning"
-_MODULE_START = re.compile(r'<module\s+name="replanning"\s*>')
+RUNNER = "org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice"
+CONFIGURATOR = "org.eqasim.braunschweig.BraunschweigConfigurator"
+OUTPUT_DIRECTORY = "mode_choice"
+OUTPUT_PLANS = "output_plans.xml.gz"
+INPUT_TRIPS = "input_trips.csv.gz"
+OUTPUT_TRIPS = "output_trips.csv.gz"
+CSV_DELIMITER = ";"
+SUMMARY_FILE_NAME = "initial_mode_choice.json"
 
-
-def check_weight(weight) -> float:
-    """Return the weight as a float; raise ValueError unless it is a finite number > 0."""
-    if isinstance(weight, bool) or not isinstance(weight, (int, float)) or not math.isfinite(weight) or weight <= 0:
-        raise ValueError(f"{_LOG_TAG} {KEY_WEIGHT} must be a finite number > 0, got {weight!r}")
-    return float(weight)
+_PERSON_TOKEN = b"<person "
 
 
-def _strategy_settings(config_path) -> list[dict[str, str]]:
-    root = ET.parse(str(config_path)).getroot()
-    module = next((m for m in root.findall("module") if m.get("name") == REPLANNING_MODULE), None)
-    if module is None:
-        raise ValueError(f"{_LOG_TAG} {config_path} has no {REPLANNING_MODULE} module")
-    return [{p.get("name"): p.get("value") for p in s.findall("param")}
-            for s in module.findall("parameterset") if s.get("type") == "strategysettings"]
+def refuse_retired_weight(value) -> None:
+    """Raise ValueError if the retired ADR-0155 weight key is configured (``value`` is not None)."""
+    if value is not None:
+        raise ValueError(f"{_LOG_TAG} {KEY_WEIGHT_RETIRED} is retired (value {value!r}): the initial mode choice now "
+                         "runs eqasim's standalone mode choice before iteration 0 (ADR-0177); remove the key")
 
 
-def add_initial_mode_choice(config_path, weight: float = DEFAULT_WEIGHT) -> dict[str, float]:
-    """Add the first-replanning DiscreteModeChoice strategy to the config; return the share per subpopulation.
+def arguments(config_name: str, population_file: str, threads: int) -> list[str]:
+    """Return the command line arguments of the standalone mode choice (free flow: no travel time option)."""
+    return [
+        "--config-path", config_name,
+        "--config:plans.inputPlansFile", population_file,
+        "--config:standaloneModeChoice.outputDirectory", OUTPUT_DIRECTORY,
+        "--config:standaloneModeChoice.removePersonsWithNoValidAlternatives", "true",
+        "--config:global.numberOfThreads", str(threads),
+        "--write-input-csv-trips", "true",
+        "--write-output-csv-trips", "true",
+        "--compression", "gzip",
+        "--skip-scenario-check", "true",
+        "--eqasim-configurator", CONFIGURATOR,
+    ]
 
-    Raises ValueError for an invalid weight, a config without a replanning module or without any in-the-loop
-    DiscreteModeChoice strategy (nothing to complement: the run would not do mode choice at all). Rewrites the file
-    unless every strategy to add is already present.
+
+def count_persons(path, chunk_size: int = 1 << 20) -> int:
+    """Count the ``<person `` elements of a gzipped plans file, streaming in chunks of ``chunk_size`` bytes."""
+    overlap = len(_PERSON_TOKEN) - 1
+    count, tail = 0, b""
+    with gzip.open(path, "rb") as handle:
+        while True:
+            chunk = handle.read(chunk_size)
+            if not chunk:
+                break
+            data = tail + chunk
+            count += data.count(_PERSON_TOKEN)
+            # The kept tail is shorter than the token, so no token is counted twice.
+            tail = data[-overlap:]
+    return count
+
+
+def summarise(before: pd.DataFrame, after: pd.DataFrame) -> dict:
+    """Summarise the mode changes between the trips before and after the choice (JSON-serialisable).
+
+    Both frames need ``person_id``, ``person_trip_id`` and ``mode``. Raises ValueError if the trip sets differ.
     """
-    weight = check_weight(weight)
-    path = Path(config_path)
-    settings = _strategy_settings(path)
-    loop = [s for s in settings if s.get("strategyName") == STRATEGY_NAME and s.get("disableAfterIteration") == "-1"]
-    if not loop:
-        raise ValueError(f"{_LOG_TAG} {path} has no {STRATEGY_NAME} strategy with disableAfterIteration -1: the run "
-                         "does no mode choice in the loop, so there is nothing to start")
+    keys = ["person_id", "person_trip_id"]
+    joined = before.merge(after, on=keys, how="inner", suffixes=("_before", "_after"))
+    if not len(before) == len(after) == len(joined):
+        raise ValueError(f"{_LOG_TAG} the trips before ({len(before)}) and after ({len(after)}) the choice differ "
+                         f"({len(joined)} matched on {keys})")
+    n_trips = int(len(joined))
+    changed = int((joined["mode_before"] != joined["mode_after"]).sum())
+    modes = sorted(set(before["mode"]) | set(after["mode"]))
 
-    weight_text = repr(weight)
-    shares, blocks = {}, []
-    for strategy in loop:
-        subpopulation = strategy.get("subpopulation")
-        total = sum(float(s["weight"]) for s in settings if s.get("subpopulation") == subpopulation)
-        shares[subpopulation] = (weight + float(strategy["weight"])) / (weight + total)
-        present = any(s.get("strategyName") == STRATEGY_NAME and s.get("disableAfterIteration") == "1"
-                      and s.get("subpopulation") == subpopulation and s.get("weight") == weight_text for s in settings)
-        if not present:
-            blocks.append([
-                '\t\t<parameterset type="strategysettings" >',
-                '\t\t\t<param name="disableAfterIteration" value="1" />',
-                '\t\t\t<param name="executionPath" value="null" />',
-                f'\t\t\t<param name="strategyName" value="{STRATEGY_NAME}" />',
-                f'\t\t\t<param name="subpopulation" value="{subpopulation}" />',
-                f'\t\t\t<param name="weight" value="{weight_text}" />',
-                '\t\t</parameterset>'])
+    def shares(column: pd.Series) -> dict[str, float]:
+        values = column.value_counts(normalize=True).reindex(modes).fillna(0.0)
+        return {mode: float(values[mode]) for mode in modes}
 
-    if blocks:
-        text = path.read_bytes().decode("utf-8")
-        start = _MODULE_START.search(text)
-        if start is None:
-            raise ValueError(f"{_LOG_TAG} {path}: cannot locate the text of the {REPLANNING_MODULE} module")
-        end = text.index("</module>", start.end())
-        line_start = text.rfind("\n", 0, end) + 1                  # insert before the line of </module>
-        newline = "\r\n" if "\r\n" in text else "\n"
-        inserted = "".join(newline.join(block) + newline for block in blocks)
-        path.write_bytes((text[:line_start] + inserted + text[line_start:]).encode("utf-8"))
-
-    for subpopulation, share in shares.items():
-        logger.info("%s %s strategy with weight %s active in the first replanning only (disableAfterIteration 1), "
-                    "subpopulation %s: %.4f%% of its agents choose their modes in iteration 1, afterwards the loop "
-                    "(weight %s) as before", _LOG_TAG, STRATEGY_NAME, weight_text, subpopulation, 100.0 * share,
-                    next(s["weight"] for s in loop if s.get("subpopulation") == subpopulation))
-    return shares
+    return {
+        "n_trips": n_trips,
+        "n_trips_mode_changed": changed,
+        "share_mode_changed": changed / n_trips if n_trips else 0.0,
+        "mode_shares_before": shares(before["mode"]),
+        "mode_shares_after": shares(after["mode"]),
+    }

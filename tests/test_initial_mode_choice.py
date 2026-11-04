@@ -1,116 +1,92 @@
-"""Every agent chooses its modes once at the first replanning (eqasim-bs#465, mechanism 4).
-
-The discrete mode choice runs with weight 0.05 against KeepLastSelected 0.95 in every iteration, so after the 86
-replanning rounds of run i465-wpe-smoke-1pct-2026-10-23 about 0.95**86 = 1.2 % of the residents had never chosen
-again and kept the synthesis mode; 34 of the 49 in-region persons with a walk trip over 5 km in the final plans had
-an unchanged plan. ``braunschweig.matsim.initial_mode_choice`` adds a second DiscreteModeChoice strategy with a very
-high weight that MATSim disables after iteration 1 (``disableAfterIteration`` 1): in the first replanning almost
-every agent chooses, afterwards the 5 % of the loop apply again.
-"""
+"""The initial mode choice runs before iteration 0 (eqasim-bs#542, ADR-0177)."""
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+import gzip
 
+import pandas as pd
 import pytest
 
 from braunschweig.matsim import initial_mode_choice as I
-from braunschweig.matsim.simulation import plan_check as C
-from braunschweig.matsim.simulation import prepare
-
-_STRATEGY = """		<parameterset type="strategysettings" >
-			<param name="disableAfterIteration" value="-1" />
-			<param name="executionPath" value="null" />
-			<param name="strategyName" value="{name}" />
-			<param name="subpopulation" value="{subpopulation}" />
-			<param name="weight" value="{weight}" />
-		</parameterset>
-"""
-_CONFIG = ("""<?xml version="1.0" ?>
-<!DOCTYPE config SYSTEM "http://www.matsim.org/files/dtd/config_v2.dtd">
-<config>
-	<module name="replanning" >
-		<param name="maxAgentPlanMemorySize" value="1" />
-""" + _STRATEGY.format(name="DiscreteModeChoice", subpopulation="null", weight="0.05")
-           + _STRATEGY.format(name="KeepLastSelected", subpopulation="null", weight="0.95")
-           + _STRATEGY.format(name="KeepLastSelected", subpopulation="freight", weight="0.95")
-           + _STRATEGY.format(name="ReRoute", subpopulation="freight", weight="0.05")
-           + """	</module>
-	<module name="qsim" >
-		<param name="endTime" value="30:00:00" />
-	</module>
-</config>
-""")
 
 
-def _strategies(path):
-    module = next(m for m in ET.parse(path).getroot().findall("module") if m.get("name") == "replanning")
-    return [{p.get("name"): p.get("value") for p in s.findall("param")} for s in module.findall("parameterset")]
+def test_arguments_mirror_the_eqasim_france_call_on_the_final_scenario():
+    assert I.arguments("bs_config.xml", "C:/stage/bs_population.xml.gz", 8) == [
+        "--config-path", "bs_config.xml",
+        "--config:plans.inputPlansFile", "C:/stage/bs_population.xml.gz",
+        "--config:standaloneModeChoice.outputDirectory", "mode_choice",
+        "--config:standaloneModeChoice.removePersonsWithNoValidAlternatives", "true",
+        "--config:global.numberOfThreads", "8",
+        "--write-input-csv-trips", "true",
+        "--write-output-csv-trips", "true",
+        "--compression", "gzip",
+        "--skip-scenario-check", "true",
+        "--eqasim-configurator", "org.eqasim.braunschweig.BraunschweigConfigurator",
+    ]
 
 
-def test_the_first_replanning_strategy_is_added_for_the_mode_choice_subpopulation_only(tmp_path):
-    path = tmp_path / "config.xml"
-    path.write_text(_CONFIG, encoding="utf-8")
-
-    report = I.add_initial_mode_choice(path, weight=1.0e6)
-
-    strategies = _strategies(path)
-    added = [s for s in strategies if s["disableAfterIteration"] == "1"]
-    assert added == [{"disableAfterIteration": "1", "executionPath": "null", "strategyName": "DiscreteModeChoice",
-                      "subpopulation": "null", "weight": "1000000.0"}]
-    assert len(strategies) == 5                                # the four of the loop are kept as they were
-    # share of the agents of the subpopulation that choose in iteration 1: (1e6 + 0.05) / (1e6 + 1.0)
-    assert report["null"] == pytest.approx((1.0e6 + 0.05) / (1.0e6 + 1.0))
-    assert "freight" not in report
-    text = path.read_text(encoding="utf-8")
-    assert text.startswith('<?xml version="1.0" ?>\n<!DOCTYPE config')   # the DOCTYPE survives
-    assert '<module name="qsim" >' in text
+def test_arguments_carry_no_travel_time_option():
+    joined = " ".join(I.arguments("c.xml", "p.xml.gz", 1))
+    assert "travel-times" not in joined and "recorded" not in joined
 
 
-def test_adding_twice_changes_nothing(tmp_path):
-    path = tmp_path / "config.xml"
-    path.write_text(_CONFIG, encoding="utf-8")
-    I.add_initial_mode_choice(path, weight=1.0e6)
-    first = path.read_bytes()
-    I.add_initial_mode_choice(path, weight=1.0e6)
-    assert path.read_bytes() == first
+@pytest.mark.parametrize("value", [1.0e6, 0.05, "1e6"])
+def test_refuse_retired_weight_raises_with_the_adr(value):
+    with pytest.raises(ValueError, match="ADR-0177"):
+        I.refuse_retired_weight(value)
 
 
-def test_a_config_without_the_mode_choice_in_the_loop_is_refused(tmp_path):
-    path = tmp_path / "config.xml"
-    path.write_text(_CONFIG.replace('value="DiscreteModeChoice"', 'value="ChangeTripMode"'), encoding="utf-8")
-    with pytest.raises(ValueError, match="DiscreteModeChoice"):
-        I.add_initial_mode_choice(path, weight=1.0e6)
+def test_refuse_retired_weight_accepts_an_absent_key():
+    assert I.refuse_retired_weight(None) is None
 
 
-@pytest.mark.parametrize("weight", [0.0, -1.0, float("nan"), float("inf"), True, "1e6"])
-def test_an_invalid_weight_is_refused(tmp_path, weight):
-    path = tmp_path / "config.xml"
-    path.write_text(_CONFIG, encoding="utf-8")
-    with pytest.raises(ValueError, match="weight"):
-        I.add_initial_mode_choice(path, weight=weight)
+def _plans(persons):
+    body = "".join(f'\t<person id="{p}">\n\t\t<plan selected="yes"/>\n\t</person>\n' for p in persons)
+    return f'<?xml version="1.0" encoding="utf-8"?>\n<population>\n{body}</population>\n'.encode("utf-8")
 
 
-@pytest.mark.parametrize("enabled", [True, False])
-def test_prepare_adds_the_strategy_before_the_plan_check_only_when_enabled(monkeypatch, enabled):
-    seen = []
-    monkeypatch.setattr(prepare.delegate, "execute", lambda context: "config.xml")
-    monkeypatch.setattr(prepare, "_attach_vrb_tariff_zones", lambda context: None)
-    monkeypatch.setattr(prepare, "_summarise_final_schedule", lambda context: {})
-    monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result, summary: seen.append("fares"))
-    monkeypatch.setattr(I, "add_initial_mode_choice",
-                        lambda path, weight: seen.append(("initial", str(path).replace("\\", "/"), weight)) or {})
-    monkeypatch.setattr(C, "run", lambda context, result: seen.append("check"))
+def test_count_persons_counts_person_elements(tmp_path):
+    path = tmp_path / "population.xml.gz"
+    with gzip.open(path, "wb") as handle:
+        handle.write(_plans(["1", "freight_2", "3"]))
+    assert I.count_persons(path) == 3
 
-    class _Context:
-        _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
-                   prepare.PARKING_KEY: False, C.KEY_ENABLED: True, I.KEY_ENABLED: enabled, I.KEY_WEIGHT: 1.0e6}
 
-        def config(self, key):
-            return self._values[key]
+def test_count_persons_handles_a_token_across_the_chunk_boundary(tmp_path):
+    path = tmp_path / "population.xml.gz"
+    with gzip.open(path, "wb") as handle:
+        handle.write(_plans([str(i) for i in range(200)]))
+    assert I.count_persons(path, chunk_size=7) == 200
 
-        def path(self):
-            return "stage"
 
-    assert prepare.execute(_Context()) == "config.xml"
-    expected = ["fares", ("initial", "stage/config.xml", 1.0e6), "check"] if enabled else ["fares", "check"]
-    assert seen == expected
+def _trips(rows):
+    return pd.DataFrame(rows, columns=["person_id", "person_trip_id", "mode"]).astype(str)
+
+
+def test_summarise_reports_changed_share_and_shares_before_after():
+    before = _trips([("1", "0", "walk"), ("1", "1", "walk"), ("2", "0", "car"), ("2", "1", "car")])
+    after = _trips([("1", "0", "pt"), ("1", "1", "walk"), ("2", "0", "car"), ("2", "1", "bicycle")])
+    summary = I.summarise(before, after)
+    assert summary["n_trips"] == 4 and summary["n_trips_mode_changed"] == 2
+    assert summary["share_mode_changed"] == pytest.approx(0.5)
+    assert summary["mode_shares_before"] == {"bicycle": 0.0, "car": 0.5, "pt": 0.0, "walk": 0.5}
+    assert summary["mode_shares_after"] == {"bicycle": 0.25, "car": 0.25, "pt": 0.25, "walk": 0.25}
+
+
+def test_summarise_covers_the_union_of_modes():
+    before = _trips([("1", "0", "walk")])
+    after = _trips([("1", "0", "car_passenger")])
+    summary = I.summarise(before, after)
+    assert set(summary["mode_shares_before"]) == set(summary["mode_shares_after"]) == {"car_passenger", "walk"}
+
+
+def test_summarise_of_no_trips():
+    summary = I.summarise(_trips([]), _trips([]))
+    assert summary == {"n_trips": 0, "n_trips_mode_changed": 0, "share_mode_changed": 0.0,
+                       "mode_shares_before": {}, "mode_shares_after": {}}
+
+
+def test_summarise_refuses_differing_trip_sets():
+    before = _trips([("1", "0", "walk"), ("1", "1", "walk")])
+    after = _trips([("1", "0", "walk")])
+    with pytest.raises(ValueError, match="trips"):
+        I.summarise(before, after)
