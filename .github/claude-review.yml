@@ -113,19 +113,25 @@ rereview:
 # max_budget_usd is a hard per-run cap (claude -p --max-budget-usd): 10 / 50 / 50 USD, the
 # owner's choice (2026-10-30 for light and full, 2026-11-02 for deep); the turn limits are an
 # ASSUMPTION (the budget is the binding limit), re-tune them from the cost records.
+# effort: the reasoning level of each run (claude -p --effort: low, medium, high, xhigh, max;
+# without it the model's default applies, medium on Opus 5.5 and Sonnet 5.5, high on Fable 5.1).
+# Owner's choice (2026-11-04): xhigh on every tier.
 tiers:
   light:
     model: claude-sonnet-5-5
     max_turns: 25
     max_budget_usd: 10.0
+    effort: xhigh
   full:
     model: claude-opus-5-5
     max_turns: 250
     max_budget_usd: 50.0
+    effort: xhigh
   deep:
     model: claude-fable-5-1
     max_turns: 250
     max_budget_usd: 50.0
+    effort: xhigh
 
 # The review run (scripts/claude_review.py review). The model only reads; posting is done
 # by the script, which also writes the PR diff to a file the model reads (no shell tools).
