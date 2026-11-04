@@ -11,7 +11,8 @@ and therefore how much of the 11 % is structural and how much a real missing ref
 What it does (read-only on the run directory):
 
 1. Rebuild the ``df_cars`` frame the household stage handed to ``sample_fleet`` with the
-   unmodified helper of ``replay_composition_clip.py`` (same directory).
+   helper of ``replay_composition_clip.py`` in the artifact folder of the run
+   ``prod100-fleet-composition-clip-2026-11-04`` (next to this folder).
 2. Build the sampler of the run's own ``fleet_sampling_de`` module, or of a patched one
    (``--module-override``), exactly as ``sample_fleet`` does (``FleetSampler.from_data_path``).
 3. For every distinct ``(kreis_ags5, gemeinde)`` of the cars call
@@ -39,8 +40,10 @@ from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import replay_composition_clip as rcc  # noqa: E402  (the unmodified C5a replay helpers)
+# The replay helpers (module loading, rebuilding df_cars) are those of the run
+# prod100-fleet-composition-clip-2026-11-04, whose artifact folder lies next to this one.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "prod100-fleet-composition-clip-2026-11-04"))
+import replay_composition_clip as rcc  # noqa: E402
 
 logger = logging.getLogger("decompose_composition_accounting")
 

@@ -39,20 +39,25 @@ classification:
 status:
   execution: completed
   notes: >-
-    Both replays completed on 2026-11-04 (14:42:51 to 14:47:17 CET baseline, 14:42:51 to 14:47:26 CET after, run in
-    parallel). A check that an ACCOUNTING change alters no sampled vehicle, plus a measurement of the corrected rates; NOT a
+    The replays completed on 2026-11-04 (14:42:51 to 14:47:17 CET baseline, 14:42:51 to 14:47:26 CET after, run in
+    parallel; the replay of the merged module 15:54 to 15:58 CET). A check that an ACCOUNTING change alters no sampled
+    vehicle, plus a measurement of the corrected rates; NOT a
     validation: no observed data is involved, and the composition factors themselves stay unvalidated (feature record
     fleet_gemeinde_bev_composition_tilt).
 source: >-
-  felix:~/c5b_replay_20261104/{replay_baseline,replay_after,decomp_baseline,decomp_after} (run with PYTHONDONTWRITEBYTECODE=1,
-  OMP/OPENBLAS/MKL threads 1, nice 10), deleted after the committed copies below were checked. Committed in
-  docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/: replay_composition_clip.py (sha256
-  ac96c5860047f2d36c00ca05aaf7af82504b667c50d4285727c13465857e477d, an unmodified copy of the replay script of the run
-  prod100-fleet-composition-clip-2026-11-04), decompose_composition_accounting.py (sha256
-  99bab5eaa409e9711d59e5df5178f74b071f1dc449d0cbd048ab1d4ec7c36816, classifies the cars by the composition accounting with one
-  probe per distinct home Gemeinde), check_fz2717_table.py and check_fz27_workbook.py with their outputs table_key_check.txt
-  and fz27_workbook_check.txt (both ran on the laptop, not on felix), and the results baseline_* and
-  after_* (verification.json; the run log as replay_log.txt, because *.log is git-ignored; classification.csv,
+  felix:~/c5b_replay_20261104/ (run with PYTHONDONTWRITEBYTECODE=1, OMP/OPENBLAS/MKL threads 1, nice 10), deleted after the
+  committed copies below were checked. The replay script is that of the run prod100-fleet-composition-clip-2026-11-04
+  (docs/runs/artifacts/prod100-fleet-composition-clip-2026-11-04/replay_composition_clip.py). The first two replays (baseline,
+  after) and the first classifications ran an earlier revision of it (sha256
+  ac96c5860047f2d36c00ca05aaf7af82504b667c50d4285727c13465857e477d) whose code is identical to the revision now on main and
+  differs in docstring and comments only; the replay of the merged module ran the revision on main (sha256
+  eccd7fe4fe3942f2387be4872264af6c7bea95a3c84ff0ab958576a5572239fb). Committed in
+  docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/: decompose_composition_accounting.py (sha256
+  c89eadb5de2aa1af337695a8e9279d699823216ebaecf4186b583965fd7aa1d2; classifies the cars by the composition accounting with one
+  probe per distinct home Gemeinde; its first revision imported the replay helpers from its own folder, and the classification
+  results below were reproduced with this revision), check_fz2717_table.py and check_fz27_workbook.py with their outputs
+  table_key_check.txt and fz27_workbook_check.txt (both ran on the laptop, not on felix), and the results baseline_*, after_*
+  and merged_* (verification.json; the run log as replay_log.txt, because *.log is git-ignored; classification.csv,
   classification_by_kreis.csv and classification_summary.json).
 environment: 'server (felix, hostname matsim, Linux 5.15.0-139-generic), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, numpy 1.23.5, pandas 1.5.3), time zone Europe/Berlin'
 validation:
@@ -107,6 +112,18 @@ validation:
     gemeindefreie Gebiete are unmatched by design (normalize_gemeinde_name returns an empty key for them). The label "NAN" is
     a literal string in the cached household output; its origin was not examined here.
   artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/after_classification.csv
+- metric: the module as merged with PR #547 (this change plus the clip-check change), replayed against the cached production output
+  reference: 'felix cache entry braunschweig.synthesis.vehicles.cars.household__6b6784a39cfbf5cdf97abeb2ac00d4ce; an equivalence reference, NOT observed data'
+  result: >-
+    IDENTICAL for all 688,832 fleet cars in the same 8 columns (0 mismatches each), for the module of the branch after the merge
+    of origin/main with PR #547 (merge commit b0d99872, blob sha256
+    7e77558db7dc9f9ff3d378d0f2497854019f42f2950455beedc5261e177c124f). Its composition accounting lines equal those of the entry
+    above, and the clip line of PR #547 is logged as INFO without the former WARNING. git merged the two changes in the module
+    without a conflict.
+  artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/merged_verification.json
+  notes: >-
+    merged_replay_log.txt is the run log (15:54 to 15:58 CET, run with the revision of the replay script on main);
+    merged_classification_summary.json and merged_classification_by_kreis.csv classify the cars with the merged module.
 - metric: the eight empty FZ 27.17 cells read at their source, and the workbook against the committed tables
   reference: 'the KBA workbook fz27_202501.xlsx (FZ 27 series 2025-01, Stichtag 1 January 2025) and its own legend; the primary source of the table, NOT observed fleet data'
   result: >-
@@ -137,7 +154,8 @@ notes: >-
   braunschweig.synthesis.incommuters and braunschweig.synthesis.student_incommuters; the edit of fleet_tables.py changes those
   two and braunschweig.analysis.analysis_suite (static audit, scripts/audit_synpp_helper_hash.py, covered[] of each stage).
   The household stage hashes neither module, so it does not re-execute. The two incommuter stages are the ones the change of
-  prod100-fleet-composition-clip-2026-11-04 invalidates as well (its manifest holds their durations), so both changes landing
-  before the next run cost one re-execution; the duration of analysis_suite was not read from the run log. The new log
-  lines appear in a run log only when the household stage next re-executes for another reason; this replay is the way to get
-  the figures without that run.
+  PR #547 (run manifest prod100-fleet-composition-clip-2026-11-04, which holds their durations) already invalidates on main,
+  so this change adds no further re-execution of them if no run starts between the two landings; analysis_suite (through
+  fleet_tables.py) is the one addition, and its duration was not read from the run log. The new log lines appear in a run
+  log only when the household stage next re-executes for another reason; this replay is the way to get the figures without
+  that run.
