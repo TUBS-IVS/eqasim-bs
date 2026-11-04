@@ -741,3 +741,22 @@ def test_the_launcher_does_not_log_an_error_for_an_entry_the_migration_kept_lega
     hint = [r for r in caplog.records if "legacy md5 module hash" in r.getMessage()]
     assert hint and all(r.levelname == "INFO" for r in hint)             # still reported, as information
     assert not [r for r in caplog.records if r.levelname in ("ERROR", "CRITICAL")]
+
+
+def test_a_partial_fork_launch_on_an_unmigrated_cache_does_not_hide_the_error(project, caplog):
+    """#551 review: a fork launch that ran only part of the DAG writes output digests for those
+    stages. A legacy entry whose stored md5 still equals its current source was never migrated
+    (the migration would migrate it), so the next launch must still report it at ERROR."""
+    project.write("mig_parent.py", PLAIN_PARENT)
+    project.write("mig_child.py", PLAIN_CHILD)
+    project.commit()
+    project.legacy_run("mig_child")
+    project.fork_run("mig_parent")                                        # no migration; one stage re-executed
+    config_path = project.root / "launch.yml"
+    config_path.write_text(yaml.safe_dump({"working_directory": str(project.working), "run": ["mig_child"],
+                                           "config": project.config}), encoding="utf-8")
+    project.reload()
+    with caplog.at_level("INFO"):
+        _load_launcher().explain_before_run(str(config_path))
+    hint = [r for r in caplog.records if "legacy md5 module hash" in r.getMessage()]
+    assert hint and all(r.levelname == "ERROR" for r in hint)

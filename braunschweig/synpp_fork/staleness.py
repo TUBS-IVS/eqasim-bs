@@ -34,6 +34,8 @@ stale stage: a ``stale_if`` stage then reads as one that only the fork would spa
 """
 from __future__ import annotations
 
+import hashlib
+import inspect
 import os
 import re
 from dataclasses import dataclass, field
@@ -87,13 +89,30 @@ class StageAssessment:
     # True on every assessment of a cache whose pipeline.json holds at least one output digest: the
     # migration or a fork run has been through it (every entry either of them writes carries one), so
     # a legacy md5 hash that is still there was left by the migration (``kept_legacy``). With no digest
-    # at all the cache was never migrated. A cache whose first fork launch crashed midway is judged
-    # migrated, so its remaining md5 entries read as kept legacy; the STALE lines name them anyway.
+    # at all the cache was never migrated. A fork launch on an unmigrated cache also writes digests;
+    # the entries it left are caught by ``legacy_source_unchanged`` below.
     cache_migrated: bool = False
+    # True when a legacy md5 module hash still equals synpp 1.6.2's md5 of the CURRENT stage source:
+    # the code did not change, so the migration proves this entry from the current source alone and
+    # was never applied to it (a partial fork launch on an unmigrated cache leaves exactly such
+    # entries beside the digests it wrote). Recomputing it is avoidable: an ERROR, whatever
+    # ``cache_migrated`` says.
+    legacy_source_unchanged: bool = False
 
     @property
     def stale(self) -> bool:
         return bool(self.reasons)
+
+
+def _legacy_md5_of_source(instance):
+    """synpp 1.6.2's md5 module hash of ``instance``'s current source, or None for a non-module stage
+    (the migration proves only module stages, scripts/migrate_cache_metadata.py ``_prove_module_hash``)."""
+    if not inspect.ismodule(instance):
+        return None
+    try:
+        return hashlib.md5(inspect.getsource(instance).encode("utf-8")).hexdigest()
+    except (OSError, TypeError):
+        return None
 
 
 def artifacts_present(working_directory: str, stage_hash: str) -> bool:
@@ -244,6 +263,9 @@ def _assess_own_reasons(assessment, stage, stage_hash, name_of, working_director
     if entry.get("module_hash") != stage["wrapper"].module_hash:
         assessment.reasons.append("module_hash_changed")
         assessment.legacy_module_hash = is_legacy_module_hash(entry.get("module_hash"))
+        if assessment.legacy_module_hash:
+            assessment.legacy_source_unchanged = (
+                _legacy_md5_of_source(stage["wrapper"].instance) == entry.get("module_hash"))
     if set(entry.get("dependencies", {})) != set(stage.get("dependencies", [])):
         assessment.reasons.append("parents_changed")
     stored = entry.get("validation_token")
@@ -331,7 +353,17 @@ def format_report(assessments: dict) -> str:
         lines.append(f"# WARNING: {ephemeral} ephemeral stage(s) in the registry; "
                      "the fork disables early cutoff for such runs (spec 4.4)")
     legacy = sum(a.legacy_module_hash for a in assessments.values())
-    if legacy and any(a.cache_migrated for a in assessments.values()):
+    # Provably never migrated although the cache holds digests (a partial fork launch on an unmigrated
+    # cache): the stored md5 still equals the current source and no token changed, so the migration
+    # would migrate the entry and its recompute is avoidable.
+    migratable = sum(a.legacy_source_unchanged and not any(r.startswith("token_changed") for r in a.reasons)
+                     for a in assessments.values())
+    if legacy and migratable and any(a.cache_migrated for a in assessments.values()):
+        lines.append(f"{ERROR_LINE_PREFIX}{migratable} of {legacy} entries with a legacy md5 module hash "
+                     "still match their current source, so the migration was never applied to them (a fork "
+                     "launch wrote output hashes for other stages): they recompute although their code did "
+                     "not change; run scripts/migrate_cache_metadata.py first")
+    elif legacy and any(a.cache_migrated for a in assessments.values()):
         # The migration has been through this cache, so an entry that still carries the md5 hash is
         # one it left unchanged (``kept_legacy``), already listed STALE above. Normally its code changed
         # (genuinely stale). Two reasons are environmental and a second migration can fix them: the

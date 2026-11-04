@@ -176,9 +176,13 @@ into this record):
   the stage) or `token_unverifiable` (the legacy replay failed there) the line says to run the
   migration again with the launch's config and inputs, which can still migrate the entry. Rejected: keeping ERROR for both (the 100 % production run
   `prod100_20261031` logged its one kept-legacy entry at ERROR, so error counters fired on an
-  expected state; `docs/runs/prod100-expected-message-levels-2026-11-04.yml`). Accepted limit: a
-  cache whose first fork launch crashed midway holds output digests and is judged migrated, so
-  its remaining md5 entries read as kept legacy; the STALE lines still name them.
+  expected state; `docs/runs/prod100-expected-message-levels-2026-11-04.yml`). A fork launch on an
+  unmigrated cache (partial, or crashed) writes digests for the stages it ran; the md5 entries it
+  left beside them stay an ERROR when their stored md5 still equals synpp 1.6.2's md5 of the
+  current source and no token changed (`StageAssessment.legacy_source_unchanged`): the migration
+  would migrate them from the current source alone (#551 review). Accepted limit: such an entry
+  whose module was edited only by the semantic-token refactor needs the legacy revision to prove
+  and reads as kept legacy; any unchanged module beside it still raises the ERROR.
 
 Decisions made while implementing Phase 4 (controller rulings of the working ledger, folded
 into this record):
