@@ -1,0 +1,58 @@
+{
+  "label": "after",
+  "fleet_module": "/home/felix/c5b_replay_20261104/fleet_sampling_de.patched.py",
+  "cars": 688832,
+  "cars_by_accounting_class": {
+    "composition_fallback": 2715,
+    "composition_not_applicable": 279497,
+    "composition_primary": 396975,
+    "gemeinde_tilt_unmatched": 9645
+  },
+  "composition_primary": 396975,
+  "composition_fallback": 2715,
+  "composition_not_applicable": 279497,
+  "composition_counted_total": 399690,
+  "composition_fallback_rate_of_counted": 0.006792764392404113,
+  "fallback_cars_by_kreis": {
+    "03154": 1173,
+    "03158": 1542
+  },
+  "fallback_cars_top_gemeinden": [
+    {
+      "kreis_ags5": "03154",
+      "gemeinde": "JERXHEIM",
+      "cars": 619
+    },
+    {
+      "kreis_ags5": "03158",
+      "gemeinde": "UEHRDE",
+      "cars": 499
+    },
+    {
+      "kreis_ags5": "03158",
+      "gemeinde": "WINNIGSTEDT",
+      "cars": 387
+    },
+    {
+      "kreis_ags5": "03158",
+      "gemeinde": "DAHLUM",
+      "cars": 376
+    },
+    {
+      "kreis_ags5": "03154",
+      "gemeinde": "QUERENHORST",
+      "cars": 301
+    },
+    {
+      "kreis_ags5": "03158",
+      "gemeinde": "HEDEPER",
+      "cars": 280
+    },
+    {
+      "kreis_ags5": "03154",
+      "gemeinde": "BEIERSTEDT",
+      "cars": 253
+    }
+  ],
+  "distinct_gemeinde_keys": 118
+}

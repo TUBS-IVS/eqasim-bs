@@ -1,0 +1,18 @@
+INFO [fleet_de] gemeinde BEV/PHEV composition (FZ 27.17): primary 103/110 (93.6%), fallback 7 (6.4%) without a usable BEV:PHEV ratio (suppressed count or zero electric stock) -> composition factor 1.0 for them: 03154/BEIERSTEDT, 03154/JERXHEIM, 03154/QUERENHORST, 03158/DAHLUM, 03158/HEDEPER, 03158/UEHRDE, 03158/WINNIGSTEDT; not applicable 3 (sole Gemeinde of Kreis 03101, 03102, 03103: factor 1.0 by construction, in neither rate)
+file: eqasim-data/data/braunschweig/kba/derived/kba_gemeinde_private_bev.csv
+sha256 of the table with LF line endings (the committed blob): 0e06286d378dd15fc2908c13142a086fd1fb350645d635dcd253470bc25e6dc8
+data rows: 113
+distinct (kreis_ags5, gemeinde): 113
+distinct (kreis_ags5, normalised gemeinde): 113
+fully identical rows: 0
+rows per Kreis: {'03101': 1, '03102': 1, '03103': 1, '03151': 41, '03153': 7, '03154': 23, '03157': 7, '03158': 32}
+rows with an empty normalised name: 0
+
+empty private_total: 0 []
+empty private_bev: 2 [('03103', 'WOLFSBURG'), ('03158', 'HEDEPER')]
+empty private_phev: 6 [('03154', 'BEIERSTEDT'), ('03154', 'JERXHEIM'), ('03154', 'QUERENHORST'), ('03158', 'DAHLUM'), ('03158', 'UEHRDE'), ('03158', 'WINNIGSTEDT')]
+
+Gemeinden with a composition factor: 105 of 113
+sole-Gemeinde Kreis 03101: factor entry {'BRAUNSCHWEIG': {'bev': '1.0', 'phev': '1.0'}}
+sole-Gemeinde Kreis 03102: factor entry {'SALZGITTER': {'bev': '1.0', 'phev': '1.0'}}
+sole-Gemeinde Kreis 03103: factor entry none

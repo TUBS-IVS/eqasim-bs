@@ -569,8 +569,13 @@ def extract_gemeinde_private_bev() -> pd.DataFrame:
     Column indices (0-based, README): col2=Zulassungsbezirk ("AGS5 NAME",
     filled once per Bezirk), col3=Gemeinde, col7=private total, col8=private
     BEV, col9=private PHEV.  Filtered to Gemeinden whose Bezirk prefix is a ZGB
-    Kreis AGS-5.
+    Kreis AGS-5.  A ``(kreis_ags5, gemeinde)`` key that occurs on more than one
+    row is refused (``fleet_tables.require_unique_keys``), never written.
     """
+    # Local import (like extract_gemeinde_ev): the repo root is only put on sys.path
+    # above, and the loader is the one place that defines what a valid table is.
+    from braunschweig.data.kba.fleet_tables import require_unique_keys
+
     rows = _read_sheet(FZ27_PATH, "FZ 27.17")
     counter = CoercionCounter("FZ 27.17 gemeinde_private_bev")
     records = []
@@ -597,6 +602,9 @@ def extract_gemeinde_private_bev() -> pd.DataFrame:
         })
     counter.log()
     frame = pd.DataFrame(records)
+    require_unique_keys(frame, ["kreis_ags5", "gemeinde"], "FZ 27.17 gemeinde_private_bev")
+    logger.info("[FZ 27.17 gemeinde_private_bev] %d Gemeinde rows, each with a unique "
+                "(kreis_ags5, gemeinde) key", len(frame))
     frame = frame.sort_values(["kreis_ags5", "gemeinde"]).reset_index(drop=True)
     frame["private_bev_share"] = frame["private_bev"] / frame["private_total"]
     frame["private_phev_share"] = frame["private_phev"] / frame["private_total"]
