@@ -1,0 +1,119 @@
+kreis_ags5,gemeinde,cars,accounting_class
+03154,JERXHEIM,619,composition_fallback
+03158,UEHRDE,499,composition_fallback
+03158,WINNIGSTEDT,387,composition_fallback
+03158,DAHLUM,376,composition_fallback
+03154,QUERENHORST,301,composition_fallback
+03158,HEDEPER,280,composition_fallback
+03154,BEIERSTEDT,253,composition_fallback
+03101,"BRAUNSCHWEIG, STADT",145219,composition_not_applicable
+03103,"WOLFSBURG, STADT",71958,composition_not_applicable
+03102,"SALZGITTER, STADT",62320,composition_not_applicable
+03157,"PEINE, STADT",34349,composition_primary
+03158,"WOLFENBÜTTEL, STADT",32555,composition_primary
+03151,"GIFHORN, STADT",28072,composition_primary
+03153,"GOSLAR, STADT",25486,composition_primary
+03154,"HELMSTEDT, STADT",16003,composition_primary
+03157,ILSEDE,14359,composition_primary
+03153,"BAD HARZBURG, STADT",12645,composition_primary
+03157,VECHELDE,12235,composition_primary
+03153,"SEESEN, STADT",11481,composition_primary
+03154,"KÖNIGSLUTTER AM ELM, STADT",9410,composition_primary
+03157,LENGEDE,9300,composition_primary
+03153,"CLAUSTHAL-ZELLERFELD, BERG- UND UNIVERSITÄTSSTADT",8879,composition_primary
+03157,EDEMISSEN,8369,composition_primary
+03151,"WITTINGEN, STADT",7659,composition_primary
+03158,CREMLINGEN,7333,composition_primary
+03157,WENDEBURG,7296,composition_primary
+03151,SASSENBURG,7293,composition_primary
+03154,LEHRE,6991,composition_primary
+03154,"SCHÖNINGEN, STADT",6908,composition_primary
+03157,HOHENHAMELN,6313,composition_primary
+03151,MEINE,5541,composition_primary
+03158,SCHLADEN-WERLA,5353,composition_primary
+03151,MEINERSEN,5302,composition_primary
+03151,SCHWÜLPER,4568,composition_primary
+03153,LIEBENBURG,4479,composition_primary
+03151,ISENBÜTTEL,4060,composition_primary
+03151,RÜHEN,3705,composition_primary
+03151,MÜDEN (ALLER),3525,composition_primary
+03151,WESENDORF,3465,composition_primary
+03158,"SCHÖPPENSTEDT, STADT",3395,composition_primary
+03153,"BRAUNLAGE, STADT",3298,composition_primary
+03151,CALBERLAH,3297,composition_primary
+03158,SICKTE,3044,composition_primary
+03151,HANKENSBÜTTEL,2956,composition_primary
+03151,LEIFERDE,2867,composition_primary
+03154,VELPKE,2862,composition_primary
+03151,WAHRENHOLZ,2345,composition_primary
+03151,VORDORF,2121,composition_primary
+03151,"BROME, FLECKEN",2003,composition_primary
+03151,WEYHAUSEN,1837,composition_primary
+03158,BADDECKENSTEDT,1743,composition_primary
+03158,DENKTE,1695,composition_primary
+03158,BÖRSSUM,1650,composition_primary
+03151,HILLERSE,1631,composition_primary
+03154,GROSS TWÜLPSTEDT,1587,composition_primary
+03151,RÖTGESBÜTTEL,1559,composition_primary
+03158,REMLINGEN-SEMMENSTEDT,1367,composition_primary
+03154,DANNDORF,1356,composition_primary
+03158,BURGDORF,1338,composition_primary
+03154,GRASLEBEN,1333,composition_primary
+03151,JEMBKE,1311,composition_primary
+03151,RIBBESBÜTTEL,1295,composition_primary
+03151,OSLOSS,1285,composition_primary
+03151,GROSS OESINGEN,1249,composition_primary
+03151,PARSAU,1213,composition_primary
+03151,WASBÜTTEL,1125,composition_primary
+03151,ADENBÜTTEL,1101,composition_primary
+03151,EHRA-LESSIEN,1079,composition_primary
+03154,SÜPPLINGEN,1077,composition_primary
+03154,BAHRDORF,1052,composition_primary
+03151,TAPPENBECK,993,composition_primary
+03154,SÖLLINGEN,955,composition_primary
+03151,TÜLAU,945,composition_primary
+03158,KISSENBRÜCK,932,composition_primary
+03158,ELBE,911,composition_primary
+03151,DIDDERSE,910,composition_primary
+03151,UMMERN,890,composition_primary
+03151,STEINHORST,874,composition_primary
+03158,HAVERLAH,866,composition_primary
+03151,DEDELSTORF,856,composition_primary
+03151,BOKENSDORF,845,composition_primary
+03151,TIDDISCHE,841,composition_primary
+03158,DETTUM,804,composition_primary
+03151,SPRAKENSEHL,768,composition_primary
+03158,EVESSEN,759,composition_primary
+03151,WAGENHOFF,717,composition_primary
+03151,BARWEDEL,705,composition_primary
+03154,GRAFHORST,654,composition_primary
+03158,WITTMAR,648,composition_primary
+03158,FLÖTHE,638,composition_primary
+03158,VELTHEIM (OHE),597,composition_primary
+03158,HEERE,583,composition_primary
+03151,BERGFELD,581,composition_primary
+03151,SCHÖNEWÖRDE,560,composition_primary
+03158,ERKERODE,557,composition_primary
+03154,WOLSDORF,556,composition_primary
+03154,MARIENTAL,539,composition_primary
+03151,OBERNHOLZ,526,composition_primary
+03158,SEHLDE,520,composition_primary
+03154,RÄBKE,510,composition_primary
+03154,WARBERG,510,composition_primary
+03154,FRELLSTEDT,487,composition_primary
+03158,CRAMME,470,composition_primary
+03158,KNEITLINGEN,463,composition_primary
+03154,RENNAU,433,composition_primary
+03154,SÜPPLINGENBURG,417,composition_primary
+03158,VAHLBERG,404,composition_primary
+03158,HEININGEN,380,composition_primary
+03154,GEVENSLEBEN,365,composition_primary
+03158,DORSTADT,365,composition_primary
+03158,OHRUM,362,composition_primary
+03158,ROKLUM,274,composition_primary
+03153,NAN,9347,gemeinde_tilt_unmatched
+03153,"HARZ (LANDKREIS GOSLAR), GEMFR. GEBIET",158,gemeinde_tilt_unmatched
+03154,"HELMSTEDT, GEMFR. GEBIET",76,gemeinde_tilt_unmatched
+03154,"MARIENTAL, GEMFR. GEBIET",54,gemeinde_tilt_unmatched
+03151,"GIEBEL, GEMFR. GEBIET",5,gemeinde_tilt_unmatched
+03154,"KÖNIGSLUTTER, GEMFR. GEBIET",5,gemeinde_tilt_unmatched

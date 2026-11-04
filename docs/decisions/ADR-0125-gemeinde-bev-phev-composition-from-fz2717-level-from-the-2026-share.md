@@ -68,7 +68,18 @@
   7. **Gemeinden without a usable ratio keep factor 1.0**, are excluded from the
      Kreis reference (including them would skew the mean the others are
      normalised against), and are counted, rate-logged and named, per the
-     no-silent-fallback rule.
+     no-silent-fallback rule. **Exception, amended 2026-11-04:** the sole Gemeinde
+     of a Kreis (a kreisfreie Stadt) has factor 1.0 by construction whether or not
+     its counts exist, so it is reported as *not applicable* and stays out of both
+     rates ([`fallback-counter-states.md`](../codebase/notes/fallback-counter-states.md));
+     the entries and the draw are unchanged. Rejected: counting it as before, which
+     reports a data gap that cannot matter and lets one Stadt dominate the
+     vehicle-weighted fallback rate; and removing its entry from the factor map,
+     which would change what decision 8's correction sees for no accounting gain.
+     Measured rates:
+     [`prod100-fleet-composition-accounting-2026-11-04`](../runs/prod100-fleet-composition-accounting-2026-11-04.yml).
+     Wolfsburg's empty BEV cell is the KBA placeholder `.` ("unknown or secret"),
+     read at the source (dataset record `kba_fleet_derived`).
   8. **The aggregate is neutralised on the REALISED population, not on the FZ
      reference stock** — added after the PR review caught this. Decision 2
      normalises the factors against the FZ 27.17 electric stock, but the ADR-0085
