@@ -355,8 +355,10 @@ def format_report(assessments: dict) -> str:
     legacy = sum(a.legacy_module_hash for a in assessments.values())
     # Provably never migrated although the cache holds digests (a partial fork launch on an unmigrated
     # cache): the stored md5 still equals the current source and no token changed, so the migration
-    # would migrate the entry and its recompute is avoidable.
-    migratable = sum(a.legacy_source_unchanged and not any(r.startswith("token_changed") for r in a.reasons)
+    # would migrate the entry and its recompute is avoidable. An entry without its cache artifacts
+    # recomputes anyway and the migration keeps it legacy (output_missing), so it is not counted.
+    migratable = sum(a.legacy_source_unchanged and a.cache_present
+                     and not any(r.startswith("token_changed") for r in a.reasons)
                      for a in assessments.values())
     if legacy and migratable and any(a.cache_migrated for a in assessments.values()):
         lines.append(f"{ERROR_LINE_PREFIX}{migratable} of {legacy} entries with a legacy md5 module hash "

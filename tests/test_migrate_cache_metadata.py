@@ -743,6 +743,27 @@ def test_the_launcher_does_not_log_an_error_for_an_entry_the_migration_kept_lega
     assert not [r for r in caplog.records if r.levelname in ("ERROR", "CRITICAL")]
 
 
+def test_an_entry_kept_legacy_for_missing_artifacts_is_not_an_error(project, caplog):
+    """#551 review: the migration keeps an unchanged entry legacy when its .p / .cache are gone
+    (output_missing). It recomputes anyway and a second migration cannot help: information."""
+    project.write("mig_parent.py", PLAIN_PARENT)
+    project.write("mig_child.py", PLAIN_CHILD)
+    rev = project.commit()
+    project.legacy_run("mig_child")
+    child = next(entry for entry in project.meta() if entry.startswith("mig_child"))
+    shutil.rmtree(project.working / (child + ".cache"))
+    (project.working / (child + ".p")).unlink()
+    counts, _ = project.migrate("mig_child", rev)
+    assert (counts["migrated"], counts["output_missing"]) == (1, 1)       # premise: the child kept legacy, artifacts gone
+    config_path = project.root / "launch.yml"
+    config_path.write_text(yaml.safe_dump({"working_directory": str(project.working), "run": ["mig_child"],
+                                           "config": project.config}), encoding="utf-8")
+    project.reload()
+    with caplog.at_level("INFO"):
+        _load_launcher().explain_before_run(str(config_path))
+    assert not [r for r in caplog.records if r.levelname in ("ERROR", "CRITICAL")]
+
+
 def test_a_partial_fork_launch_on_an_unmigrated_cache_does_not_hide_the_error(project, caplog):
     """#551 review: a fork launch that ran only part of the DAG writes output digests for those
     stages. A legacy entry whose stored md5 still equals its current source was never migrated
