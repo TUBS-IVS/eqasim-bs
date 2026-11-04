@@ -148,8 +148,10 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.synthesis.vehicles.hbefa",
     "braunschweig.synthesis.vehicles.segment",
     "braunschweig.synthesis.vehicles.wohnmobile_age",
-    # Reached through braunschweig.synthesis.incommuters since its timetable check of the pt days (#488): this
-    # stage never runs that check, but its closure gate (ADR-0136) follows every import of the shared module.
+    # The timetable check of the pt days (#488 for the commuters, run here too since #528 through
+    # incommuters._pt_check / incommuter_pt_connections.check_pt_days): the batch pt router and its connection rule,
+    # the schedule reader, the walk limit and the end of the simulated day, plus the rest of the shared module's
+    # import closure (ADR-0136).
     "braunschweig.data.transit.connections",
     "braunschweig.data.transit.schedule",
     "braunschweig.matsim.scenario.day_end_margin",
@@ -200,6 +202,8 @@ def configure(context):
         context.config(incommuters.KEY_TIME_REDRAW_MAX_ATTEMPTS, incommuters.DEFAULT_TIME_REDRAW_MAX_ATTEMPTS))
     context.config(day_end_margin.KEY_ENABLED, day_end_margin.DEFAULT_ENABLED)
     context.config(day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S, day_end_margin.DEFAULT_LAST_ARRIVAL_MARGIN_S)
+    # Timetable check of the pt days (#528): the same switch, keys and batch pt router as the commuter stage (#488).
+    incommuters.configure_pt_check(context)
     context.config("data_path")
     # Mirror the keys declared by braunschweig.data.external_workplaces.configure()
     # (as braunschweig.synthesis.incommuters.configure() also does) so that
@@ -419,6 +423,8 @@ def _inject(context):
     from braunschweig.data.external_workplaces import _load_gemeinden
     from braunschweig.data.mikrozensus.reference import load_commute_mode_by_distance
     from braunschweig.matsim.scenario import day_end_margin
+    from braunschweig.synthesis import incommuter_pt_connections as pt_connections
+    from braunschweig.synthesis import incommuters
     from braunschweig.synthesis.incommuters import (
         KEY_TIME_REDRAW_MAX_ATTEMPTS, _build_incommuter_passenger_vehicles, _build_legacy_vehicles,
         _time_bound_s, assemble_incommuter_core_frames)
@@ -589,6 +595,20 @@ def _inject(context):
         d, detour_factor=ROUTED_DETOUR_FACTOR, edges=MID_DISTANCE_EDGES)
     modes = list(plans.assign_fixed_mode(dist_km, reference, band_fn, rng))
 
+    # 8a. Timetable check of the pt days (#528): the #488 chain of the commuter stage, day shift first, then car.
+    # Students board at no drawn entry station (their home is a real in-ring point or the nearest road gate), so the
+    # station re-draw has nothing to try, and a student switched to car drives from the home it already has.
+    pt_report = None
+    if context.config(pt_connections.KEY_ENABLED):
+        checked = pt_connections.check_pt_days(
+            incommuters._pt_check(context), person_ids=person_ids, modes=modes,
+            home_xy=np.column_stack([home_x, home_y]), mid_xy=np.column_stack([dest_x, dest_y]),
+            depart_home_s=depart_home, arrive_mid_s=arrive_mid, depart_mid_s=depart_mid, arrive_home_s=arrive_home,
+            car_allowed=True, subject="student in-commuter")
+        modes, pt_report = list(checked.modes), checked.report
+        depart_home, arrive_mid, depart_mid, arrive_home = (
+            checked.depart_home_s, checked.arrive_mid_s, checked.depart_mid_s, checked.arrive_home_s)
+
     # 9. Shared core frames (DRY: same helper the SvB stage uses).
     core = assemble_incommuter_core_frames(
         person_ids, home_x, home_y, dest_x, dest_y, edu_location_ids,
@@ -637,10 +657,13 @@ def _inject(context):
         "communes: %s", n, len(counts),
         dict(zip(counts["commune_ars5"], counts["in_commuters"])))
 
-    return {
+    frames = {
         "persons": persons, "households": households,
         "trips": core["trips"], "activities": core["activities"],
         "locations": core["locations"],
         "vehicles": vehicles, "vehicle_types": vehicle_types,
         "day_bound": day_bound,
     }
+    if pt_report is not None:
+        frames["pt_connection"] = pt_report   # the counts of the #528 check, as the commuter stage reports them
+    return frames

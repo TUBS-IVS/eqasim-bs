@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 111 | stages: 133 | datasets: 105 | ADRs: 166 | run manifests: 76
+- Features: 111 | stages: 133 | datasets: 105 | ADRs: 172 | run manifests: 79
 
 ## Population synthesis
 
@@ -216,7 +216,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [MATSim output archive (run-named durable copy)](../registry/features/matsim_output_archive.yml) | active | ON | A/A/A | unvalidated |  |
 | [Parallel chainsolvers](../registry/features/parallel_chainsolvers.yml) | active | ON | A/A/A | unvalidated |  |
 | [Result-preserving fleet, home, validation and donor kernels](../registry/features/performance_equivalence.yml) | active | ON | A/s/s | not_applicable (`performance-equivalence-2026-09-15`) |  |
-| [Resource-adaptive configuration (machine-derived budget, ceiling clamps, chainsolver shard/worker split)](../registry/features/resource_adaptive_config.yml) | active | ON | A/A/A | unvalidated (`chainsolver-worker-private-memory-2026-09-17`, `chainsolver-pool-memory-2026-09-28`) |  |
+| [Resource-adaptive configuration (machine-derived budget, ceiling clamps, chainsolver shard/worker split)](../registry/features/resource_adaptive_config.yml) | active | ON | A/A/A | unvalidated (`chainsolver-worker-private-memory-2026-09-17`, `chainsolver-pool-memory-2026-09-28`, `prod100-java-heap-driver-rss-2026-11-04`) |  |
 | [Run-config composition (base + per-scale overlay)](../registry/features/run_config_composition.yml) | active | ON | A/s/s | unvalidated |  |
 | [Per-run resource time series (tree CPU, peak per-process RSS, RAM/swap/disk/IO, stage-tagged)](../registry/features/run_resource_recorder.yml) | active | ON | A/A/A | unvalidated | [#350](https://github.com/TUBS-IVS/eqasim-bs/issues/350) |
 | [Shared stage-cache (prime-on-launch)](../registry/features/shared_stage_cache.yml) | active | ON | A/s/s | unvalidated (`cache-migration-100pct-2026-10-22`, `content-addressed-cache-acceptance-100pct-2026-10-22`) |  |

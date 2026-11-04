@@ -1,0 +1,9 @@
+machine: 98856780 kB = 94.2772 GiB, configured java_memory 100G
+--- launch1_matsim_start: driver RSS 15467292 kB = 14.7508 GiB
+[resources] java_memory 100G -> 71G (memory budget 86.28 GB (recorder memory_total_kb) - driver RSS 14.75 GB = 71.53 GB for the JVM; configured 100G exceeds it, clamped to 71G)
+[resources] java_memory 100G -> 86G (configured 100G exceeds the memory budget; clamped to 86G)
+    driver-aware -Xmx71G, machine-only -Xmx86G
+--- launch2_matsim_start: driver RSS 291352 kB = 0.2779 GiB
+[resources] java_memory 100G -> 85G (memory budget 86.28 GB (recorder memory_total_kb) - driver RSS 0.28 GB = 86.00 GB for the JVM; configured 100G exceeds it, clamped to 85G)
+[resources] java_memory 100G -> 86G (configured 100G exceeds the memory budget; clamped to 86G)
+    driver-aware -Xmx85G, machine-only -Xmx86G

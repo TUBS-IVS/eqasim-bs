@@ -1,0 +1,10 @@
+146:07:14:04 │ INFO    │ synpp            │ Found 108 stages
+49092:02:16:01 │ INFO    │ synpp            │ Executing stage braunschweig.analysis.simwrapper_export__3750536e0051b4193024a7aeaa814e06 ...
+49094:02:16:07 │ WARNING │ analysis.simwrapper_export │ [simwrapper_export] no MATSim output archive at ../output/matsim_output (matsim.output writes it when archive_matsim_output=true; run the simulation phase first) -- MATSim tabs will skip
+49163:02:17:38 │ INFO    │ synpp            │ Executing stage braunschweig.analysis.analysis_suite__bdb3012799ce394dd0ce68de85688457 ...
+49165:02:17:38 │ WARNING │ analysis.analysis_suite │ [analysis_suite] no MATSim output archive at ../output/matsim_output (matsim.output writes it when archive_matsim_output=true; run the simulation phase first)
+49252:02:22:56 │ INFO    │ analysis.mid_validation │ Computing all-trip modal split (sim-cache=None)
+49377:02:56:19 │ WARNING │ analysis.analysis_suite │ [analysis_suite] stuck_agents: SKIPPED (no MATSim output archive at ../output/matsim_output (matsim.output writes it when archive_matsim_output=true; run the simulation phase first))
+49378:02:56:19 │ WARNING │ analysis.analysis_suite │ [analysis_suite] dashboard: SKIPPED (no MATSim output archive at ../output/matsim_output (matsim.output writes it when archive_matsim_output=true; run the simulation phase first))
+49379:02:56:19 │ INFO    │ analysis.analysis_suite │ [analysis_suite] ran=['population_validation', 'mid_validation', 'household_composition', 'popsim_validation', 'integerizer_quality'] skipped=3 failed=0 -> ../output/analysis/analysis_suite_summary.json
+51261:04:53:17 │ INFO    │ synpp            │ Executing stage matsim.simulation.run__298777bcebc2795157f054f1ecd23238 ...

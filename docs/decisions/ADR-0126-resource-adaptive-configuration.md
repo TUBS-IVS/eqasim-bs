@@ -1,6 +1,6 @@
 # ADR-0126 · 2026-09-16 · Scale resource-sensitive configuration off the machine's total allocation, never its free capacity
 
-- **Status:** active; amended 2026-09-17 by point 5 (memory-bounded chainsolver worker pool)
+- **Status:** active; amended 2026-09-17 by point 5 (memory-bounded chainsolver worker pool); amended 2026-11-04 by point 6 (driver-aware JVM heap)
 
 ## Context
 
@@ -299,6 +299,36 @@ hand), so it is fixed as part of this decision rather than left for later.
    when the bound actually bites, never a permanent, unconditional tax. See
    ADR-0097's Status entry for its own acknowledgement of this supersession.
 
+6. **AMENDMENT (2026-11-04): the JVM heap ceiling subtracts the driver's live RSS
+   (finding C2 of the 2026-11-01 production run).** Decision 1 clamps `java_memory`
+   against the machine's total allocation less the 8 GB reserve; point 5 already
+   subtracts the driver's live RSS for the chainsolver pool, because the pool is
+   forked from it. The Java launch had no such term, and the reserve was never
+   measured to cover the driver. In the 100 % run `prod100_20261031` synthesis and
+   MATSim ran in one driver that held more than the whole reserve when
+   `matsim.simulation.run` started, next to a JVM heap capped at the whole budget:
+   the caps alone exceeded the machine, and even the fresh-driver relaunch left
+   little memory available. The measurements are owned by the run manifest
+   `docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml`.
+   `braunschweig.java_heap.effective_java_heap` now sizes every Java launch by
+   `room = max(1, memory_budget_gb - driver_rss_gb_live)`: `java_memory` is used when
+   it fits `room` and floored to whole gigabytes otherwise; `java_memory` itself is
+   still never rewritten; an unmeasurable RSS is a WARNING that falls back to the
+   machine budget alone. **Rejected: putting it into `braunschweig/resources.py`**,
+   the obvious home next to `effective_java_memory` and
+   `effective_chainsolver_workers`: many stage tokens hash that file (PopulationSim
+   and the chainsolver among them), so any code change there recomputes the 100 %
+   stages. The heap size never changes what a Java stage computes (Decision 3), so
+   the new module declares `_SYNPP_TOKEN_EXEMPTION` and no token hashes it.
+   **Rejected: adding the driver's child processes to the figure.** At the MATSim
+   launch they were two small helper processes (the manifest), and forked worker
+   children share most of their RSS with the driver (point 5). **Not done, and
+   recorded as limitations 3 and 4 of the contributor note:** the PopulationSim
+   worker clamp has the same omission, latent (the manifest measures the driver at
+   its start and the size above which the count would change), and
+   `data/osm/osmosis.py` still calls the machine-only function; fixing either
+   recomputes stages for no measured benefit.
+
 ## Rejected alternative
 
 Scaling off CURRENTLY FREE resources (contention-aware sizing: "how much of
@@ -458,6 +488,19 @@ this decision tries to prevent by watching load.
   `braunschweig.chainsolvers.processes` unset, `build_report` falls back to the
   global `processes`, and the message named the chainsolver key the operator
   had never set.
+- **AMENDMENT (2026-11-04): landing point 6 costs one bounded recompute, not the
+  permanent cost of `resources.py`.** `resources.py` is unchanged in code (its
+  semantic digest equals `origin/main`'s; only docstrings and comments changed), so the
+  stage tokens that hash it are untouched. The one hashed file the change edits is
+  `matsim/runtime/java.py`, whose digest enters its own stage hash and the tokens of the
+  stages that hash it: the first run on a cache built before it re-executes those stages
+  once and spares their descendants where the output digest is unchanged (early cutoff,
+  ADR-0149). Which stages, how long they take at 100 %, what a rebuilt eqasim jar saves
+  and what the launcher gate (`synpp_expected_stale_stages`) must list are in the
+  manifest ("what the fix costs"). The floor to whole gigabytes can take one gigabyte
+  off the machine-only value for a fresh driver (the contributor note). Whether the
+  smaller heap a heavy driver leaves carries the live set of the 100 % MATSim run is
+  unmeasured (the manifest): at that scale MATSim belongs in a fresh driver.
 - **Limitation, stated rather than buried.** The claim "secondary locations
   no longer depend on the machine" is verified for the shard partition, the
   per-shard seeds and the recombination order
@@ -542,3 +585,8 @@ this decision tries to prevent by watching load.
 - Measured chainsolver worker-pool memory (2026-09-17 amendment, point 5):
   `docs/runs/chainsolver-worker-private-memory-2026-09-17.yml` (seven
   deduplicated 100% ZGB-8 executions, felix, 2026-09-05 to 2026-09-09).
+- Driver RSS next to the JVM heap and the cache cost of the fix (2026-11-04
+  amendment, point 6): `docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml`
+  with its probe scripts and outputs under
+  `docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/`; test
+  `tests/test_java_heap_driver_aware.py`.

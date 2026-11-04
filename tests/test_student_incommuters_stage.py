@@ -12,7 +12,7 @@ class Ctx:
     def __init__(self, cfg):
         self._cfg = cfg
 
-    def config(self, key, default=si._SENTINEL):
+    def config(self, key, default=si._SENTINEL, **kwargs):
         if key in self._cfg:
             return self._cfg[key]
         if default is si._SENTINEL:
@@ -80,7 +80,7 @@ class _RecordingCtx(Ctx):
         super().__init__({})
         self.staged = []
 
-    def config(self, key, default=si._SENTINEL):
+    def config(self, key, default=si._SENTINEL, **kwargs):
         # configure() only needs SOME value per key; return the default when given,
         # else a harmless placeholder so no KeyError aborts the recording.
         if default is not si._SENTINEL:
@@ -120,7 +120,7 @@ def test_configure_declares_germany_population_keys():
         def __init__(self):
             super().__init__({})
 
-        def config(self, key, default=si._SENTINEL):
+        def config(self, key, default=si._SENTINEL, **kwargs):
             requested.append(key)
             if default is not si._SENTINEL:
                 return default
@@ -193,6 +193,9 @@ def _full_ctx():
            "braunschweig.day_end_margin.enabled": True,
            "braunschweig.day_end_margin.last_arrival_margin_s": 3600.0,
            "cordon_network_source_buffer_m": 45000.0,
+           # The timetable check of the pt days (#528) needs the batch pt router; the tests of it switch it on with
+           # a stub probe (test_student_pt_days_*), every other test runs without it.
+           "braunschweig.incommuters.pt_connection_check.enabled": False,
            "braunschweig.political_prefix": ["03101"],
            "data_path": "eqasim-data/data",
            # external_workplaces._vsi_path (via _inject -> _load_gemeinden) reads
@@ -403,28 +406,38 @@ def test_student_days_no_donor_fits_are_moved_as_a_whole(monkeypatch, caplog):
     assert frames["day_bound"]["n_days_moved"] == n_baseline and frames["day_bound"]["n_unfit"] == n_baseline
 
 
-def test_configure_declares_the_day_bound_keys():
+def test_configure_declares_the_day_bound_and_pt_check_keys():
+    # synpp raises for a key read in execute() that configure() did not declare: _pt_check reads the #488 keys and
+    # the batch pt router needs the supply stages (#528).
     requested: list[str] = []
 
     class _Rec(_RecordingCtx):
-        def config(self, key, default=si._SENTINEL):
+        def config(self, key, default=si._SENTINEL, **kwargs):
             requested.append(key)
-            return super().config(key, default)
+            return super().config(key, default, **kwargs)
 
-    si.configure(_Rec())
+    ctx = _Rec()
+    si.configure(ctx)
     for key in ("braunschweig.incommuters.time_redraw_max_attempts",
                 "braunschweig.day_end_margin.enabled",
-                "braunschweig.day_end_margin.last_arrival_margin_s"):
+                "braunschweig.day_end_margin.last_arrival_margin_s",
+                "braunschweig.incommuters.pt_connection_check.enabled",
+                "braunschweig.incommuters.pt_shift_window_s",
+                "braunschweig.incommuters.pt_shift_step_s",
+                "braunschweig.incommuters.pt_no_connection_warn_share",
+                "braunschweig.incommuters.pt_station_candidates"):
         assert key in requested, requested
+    staged = {descriptor for descriptor, _kwargs in ctx.staged}
+    assert {"matsim.scenario.supply.processed", "matsim.scenario.supply.gtfs"} <= staged
 
 
 @pytest.mark.parametrize("bad", [-1, 2.5])
 def test_configure_rejects_an_invalid_redraw_attempt_count(bad):
     class _Bad(_RecordingCtx):
-        def config(self, key, default=si._SENTINEL):
+        def config(self, key, default=si._SENTINEL, **kwargs):
             if key == "braunschweig.incommuters.time_redraw_max_attempts":
                 return bad
-            return super().config(key, default)
+            return super().config(key, default, **kwargs)
 
     with pytest.raises(ValueError, match="time_redraw_max_attempts"):
         si.configure(_Bad())
@@ -683,3 +696,118 @@ def test_empty_frames_carry_the_zero_day_bound_report():
     report = si._empty_frames()["day_bound"]
     assert report["n"] == 0 and report["n_redrawn"] == 0 and report["n_days_moved"] == 0
     assert report["bound_s"] is None
+
+
+# ---------------------------------------------------------------------------
+# Timetable check of the student in-commuters' pt days (#528): the #488 chain of the employee in-commuters
+# (braunschweig.synthesis.incommuter_pt_connections.resolve_pt_days), day shift first, then car. In the 25 %
+# run of docs/runs/student-incommuter-pt-walks-2026-10-30.yml 10 of 100 pt students had a walk over 5 km.
+# ---------------------------------------------------------------------------
+
+_H = 3600.0
+
+
+def _pt_student_ctx(monkeypatch, probe, seen=None):
+    """The mocked student stage with every student on pt and the check on, probing with ``probe``."""
+    from braunschweig.data.cordon import plans
+    from braunschweig.synthesis import incommuter_pt_connections as pt_connections
+    from braunschweig.synthesis import incommuters
+
+    ctx = _mocked_full_ctx()
+    _patch_mocked_geodata(monkeypatch, ctx)
+    ctx._cfg["braunschweig.incommuters.pt_connection_check.enabled"] = True
+    monkeypatch.setattr(plans, "assign_fixed_mode", lambda dist_km, *args: np.full(len(dist_km), "pt"))
+
+    def recording_probe(tasks):
+        if seen is not None:
+            seen.append(tasks.copy())
+        return probe(tasks)
+
+    monkeypatch.setattr(incommuters, "_pt_check", lambda context: pt_connections.PtCheck(
+        probe=recording_probe, shift_window_s=2 * _H, shift_step_s=0.5 * _H, bound_s=29 * _H))
+    return ctx
+
+
+def _served_between(first_s, last_s):
+    def probe(tasks):
+        served = tasks["departure_time"].between(first_s, last_s)
+        return pd.Series(served.to_numpy(), index=tasks["identifier"].astype(str).to_numpy())
+    return probe
+
+
+def _served_by_person_class(tasks):
+    """Every student's day is the same (one donor, one gate, one campus), so the outcome is set per person id:
+    id % 3 == 0 is always served, == 1 only at departures in [05:00, 15:00], == 2 never."""
+    person = tasks["identifier"].str.split(":").str[0].astype(int)
+    served = (person % 3 == 0) | ((person % 3 == 1) & tasks["departure_time"].between(5 * _H, 15 * _H))
+    return pd.Series(served.to_numpy(), index=tasks["identifier"].astype(str).to_numpy())
+
+
+def test_student_pt_days_are_kept_shifted_or_switched_to_car_per_student(monkeypatch, caplog):
+    # The donor arrives on campus at 32000 s and leaves at 55000 s (15:16:40). Class 1 has no return connection
+    # after 15:00, so its whole day moves 30 min earlier; class 2 has none at all and drives from its home.
+    import logging
+
+    seen = []
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="braunschweig"):
+        frames = si.execute(_pt_student_ctx(monkeypatch, _served_by_person_class, seen))
+
+    persons = frames["persons"].set_index("person_id")
+    person_class = persons.index.to_series() % 3
+    n_class = person_class.value_counts()
+    assert set(n_class.index) == {0, 1, 2}
+    trips = frames["trips"]
+    trips = trips.assign(person_class=trips["person_id"] % 3)
+    by_class = {c: trips[trips["person_class"] == c] for c in (0, 1, 2)}
+    out_0 = set(by_class[0].loc[by_class[0]["trip_index"] == 0, "departure_time"])
+    assert len(out_0) == 1                                              # one donor, one gate: one seeded departure
+
+    # connection_found (the primary path): pt, times untouched
+    assert (by_class[0]["mode"] == "pt").all()
+    assert set(by_class[0].loc[by_class[0]["trip_index"] == 1, "departure_time"]) == {55000.0}
+    # day_shifted: pt, the WHOLE day 1800 s earlier, the time on campus kept
+    assert (by_class[1]["mode"] == "pt").all()
+    assert set(by_class[1].loc[by_class[1]["trip_index"] == 0, "departure_time"]) == {min(out_0) - 1800.0}
+    assert set(by_class[1].loc[by_class[1]["trip_index"] == 1, "departure_time"]) == {55000.0 - 1800.0}
+    education = frames["activities"][frames["activities"]["purpose"] == "education"]
+    assert set(education["end_time"] - education["start_time"]) == {55000.0 - 32000.0}
+    # to_car: car, times untouched, a car and car availability
+    assert (by_class[2]["mode"] == "car").all()
+    assert set(by_class[2].loc[by_class[2]["trip_index"] == 1, "departure_time"]) == {55000.0}
+    assert (persons["car_availability"] == np.where(person_class == 2, "all", "none")).all()
+    car_owners = set(frames["vehicles"].loc[frames["vehicles"]["mode"] == "car", "owner_id"])
+    assert car_owners == set(person_class.index[person_class == 2])
+
+    # the probe routes home -> campus and back from the written locations
+    locations = frames["locations"]
+    home = locations[locations["activity_index"] == 0].set_index("person_id").geometry
+    campus = locations[locations["activity_index"] == 1].set_index("person_id").geometry
+    first_call = seen[0]
+    assert len(first_call) == 2 * len(persons)                          # both trips of every pt day, unshifted
+    person = first_call["identifier"].str.split(":").str[0].astype(int).to_numpy()
+    outbound = first_call["identifier"].str.endswith(":out").to_numpy()
+    origin = np.where(outbound[:, None], np.column_stack([home.x[person], home.y[person]]),
+                      np.column_stack([campus.x[person], campus.y[person]]))
+    np.testing.assert_allclose(first_call[["origin_x", "origin_y"]].to_numpy(), origin)
+
+    report = frames["pt_connection"]
+    assert report["n_pt_days"] == len(persons)
+    assert report["actions"]["connection_found"] == n_class[0]
+    assert report["actions"]["day_shifted"] == n_class[1] and report["actions"]["to_car"] == n_class[2]
+    # a third of the days drive: the fallback rate is logged as a WARNING of the student stage
+    warnings = [r.getMessage() for r in caplog.records
+                if r.levelno == logging.WARNING and r.name.endswith("incommuter_pt_connections")]
+    assert any("pt student in-commuter days" in message for message in warnings), warnings
+
+
+def test_student_pt_days_are_not_checked_when_the_check_is_off(monkeypatch):
+    from braunschweig.synthesis import incommuters
+
+    ctx = _pt_student_ctx(monkeypatch, _served_between(0.0, -1.0))
+    ctx._cfg["braunschweig.incommuters.pt_connection_check.enabled"] = False
+    monkeypatch.setattr(incommuters, "_pt_check", lambda context: pytest.fail("the router must not be built"))
+
+    frames = si.execute(ctx)
+
+    assert (frames["trips"]["mode"] == "pt").all() and "pt_connection" not in frames

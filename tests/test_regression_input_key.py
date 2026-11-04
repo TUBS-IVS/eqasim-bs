@@ -92,9 +92,9 @@ DOCS_WORKFLOW = REPO / ".github" / "workflows" / "docs.yml"
 #: Mentions that are not reads: test_no_german_pt_ticket_literals names docs/decisions/ only to explain why
 #: it does NOT scan it (it scans docs/features/), this file names the prefixes to test the key, and
 #: test_sync_main writes docs/generated/ only inside throw-away repositories and reads .gitattributes, and
-#: test_claude_review uses docs/generated/STAGES.md only as a path string in synthetic diff fixtures.
+#: test_claude_review_setup names docs/generated/ only as the expected paths-ignore glob of the review caller.
 NOT_A_READ = {"test_no_german_pt_ticket_literals.py", "test_regression_input_key.py", "test_sync_main.py",
-              "test_claude_review.py"}
+              "test_claude_review_setup.py"}
 
 
 def _docs_workflow_test_files() -> set:

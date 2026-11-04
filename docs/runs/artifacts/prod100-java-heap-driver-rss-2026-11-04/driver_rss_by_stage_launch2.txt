@@ -1,0 +1,3 @@
+stage                                                          first sample             n rss_first  rss_max rss_last avail_min n_proc
+-                                                              2026-11-01T05:01:22      1     0.26     0.26     0.26      92.3      1
+matsim.simulation.run                                          2026-11-01T05:01:54   3336     0.28     0.28     0.01       3.7      2

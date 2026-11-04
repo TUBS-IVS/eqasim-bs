@@ -139,6 +139,8 @@ to a config's `run:` list). It always depends on `synthesis.output`; when
 `<output_path>/matsim_output` archive written by `matsim.output`
 (config-derived, never a `matsim.simulation.run` stage edge — ADR-0101 /
 issue #354, so an analysis-only invocation never recomputes the simulation).
+When `matsim.output` is in the same invocation (the committed scale overlays), the
+stage executes after it (ordering only, ADR-0177), so it reads this run's archive.
 Thus: a **synthesis-only** run writes all synthesis tabs (fleet, socio,
 commuters-from-synthesis, ...) and the MATSim tabs skip with a log — as they
 do, loudly, when the flag is on but the archive is absent; a **full**

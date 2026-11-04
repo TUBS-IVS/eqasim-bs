@@ -44,6 +44,7 @@ decisions:
 - ADR-0117
 - ADR-0138
 - ADR-0146
+- ADR-0174
 notes: >-
   Three MiD-ONLY config keys are read by braunschweig.popsim.trips_stage (issues #366 / #367):
   braunschweig.population.popsim.exclude_rbw_legs drops MiD "regelmaessige berufliche Wege"
@@ -161,3 +162,12 @@ notes: >-
   the bound after the midnight-shift repair is resampled from a same-cell donor. The resample share is
   logged under [popsim.plan_validation] and WARNS above BOUND_RESAMPLE_WARN_RATE (0.01, an
   ASSUMPTION). This changes results by decision; the stage and everything downstream recompute.
+
+
+  PURPOSE CHAIN (issue #258, ADR-0174): the end of build_validated_trip_table runs
+  plan_validation.enforce_purpose_chain_consistency on the (person_id, trip_index) order -- eqasim's
+  hts.fix_activity_types once more after the repair, closure and resample, which re-sort and insert
+  trips after the diary build's own fix -- and logs the rewritten links as a rate under
+  [popsim.trips] (WARN above PURPOSE_CHAIN_REPAIR_WARN_RATE, 1 %, an ASSUMPTION), then raises if a
+  link is still inconsistent, as eqasim's hts.check asserts. The home-end closure takes each person's
+  last trip in the stable time sort, so a departure tie no longer anchors it on the wrong trip.
