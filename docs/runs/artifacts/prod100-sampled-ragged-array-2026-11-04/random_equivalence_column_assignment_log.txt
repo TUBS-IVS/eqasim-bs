@@ -1,0 +1,3 @@
+# random_equivalence.py, old = synthesis/population/sampled.py at 61437e66 (sha256 8f0eea497358893cdcd4f22c799c8d163517ddfdb369ff60389de3210e8e9e56), new = at 615f2f9d (sha256 b22db0f0cac07ee56f9ff99de461fb687ed08690f6a12708b67dac7027919b0e): the column assignment alone
+trials=500 frames identical=500 pickle bytes identical=500 non-empty outputs=370 output rows=29612
+trials in which the old module raised the numpy ragged-array warning=0, the new module=0

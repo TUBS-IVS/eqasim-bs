@@ -42,7 +42,7 @@ source: >-
   fb2d6daa5dcb3ef88b54f4a9d1edd1ae323f30e80570d97633dd3518ccc71810, the script the replay used), results.json and
   replay_log.txt (log copy, because *.log is git-ignored), explain_baseline.txt and explain_after.txt, and, from the
   laptop, random_equivalence.py (sha256 5c6a47349e3dc62d7e52cf145e2a5687edd620d351356a62d0c01fb24c28d92b) with its
-  random_equivalence_log.txt.
+  random_equivalence_log.txt and random_equivalence_column_assignment_log.txt.
 environment: 'server (felix, hostname matsim, Linux 5.15.0-139-generic), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, numpy 1.23.5, pandas 1.5.3); the random comparison ran on the Windows laptop with the same Python, numpy and pandas versions'
 validation:
 - metric: the unmodified module replayed on the run's cached input, against the run's own cached output (is the replay a replay?)
@@ -132,7 +132,9 @@ notes: >-
   STALE-IF stages above recompute once, with everything behind them, on the next launch. That figure of moved rows is
   the measurement in results.json, not a replay of the stable-sort code. (2) The pandas DeprecationWarning at the
   household_id assignment (pandas 1.5.3, an in-place write announced for a later pandas) is gone: the column is
-  assigned directly; output unchanged (random_equivalence.py against the previous commit: 500 of 500 trials identical
-  in frame and pickle bytes; that rerun's log was not kept). Still true and not touched: every household weight is
+  assigned directly; output unchanged on 500 random censuses (frames and pickle bytes identical in all 500), comparing
+  the module after the ragged-array change with that module plus only the column assignment
+  (random_equivalence_column_assignment_log.txt, which names both module hashes). The 100 % replay ran before this
+  change and does not cover it. Still true and not touched: every household weight is
   1.0, so at the production input the rounding and the replication of this stage change nothing; the stage only sorts
   the rows by household_id and renumbers households and persons.
