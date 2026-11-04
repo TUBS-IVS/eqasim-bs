@@ -37,6 +37,7 @@ evidence:
   - tests/test_fleet_ev_income_tilt.py
   - tests/test_fleet_euro6_substage.py
   - tests/test_fleet_gemeinde_ev_2026.py
+  - tests/test_fleet_gemeinde_tilt_not_applicable.py
   - tests/test_fleet_grid_tilt_wiring.py
   - tests/test_fleet_model_fuel_weight.py
   - tests/test_fleet_kreis_marginal_guard.py

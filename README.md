@@ -571,8 +571,8 @@ Since #468 (ADR-0149) the launcher computes stage hashes and `validate()` tokens
 syntax tree of the code instead of its raw text, so a cache built by an earlier version
 carries values the new version cannot match. **Migrate every existing cache once after
 updating to this version, before its first launch**; otherwise every stage reads
-`module_hash_changed` and recomputes (the explainer report and the launcher log then print a
-warning that names the migration script). The migration rewrites only `pipeline.json`
+`module_hash_changed` and recomputes (the explainer report and the launcher log then print an
+ERROR line that names the migration script). The migration rewrites only `pipeline.json`
 (backup: `pipeline.json.bk`); it never recomputes a stage and never changes a cached output.
 
 ```powershell
