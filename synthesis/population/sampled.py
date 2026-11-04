@@ -35,15 +35,25 @@ def execute(context):
     household_multiplicators = df_rounding["multiplicator"].values
     household_sizes = df_rounding["household_size"].values
 
+    # The declared household_size cuts the row blocks below, so it must equal the number of person rows of every
+    # household; otherwise a member would silently move to the neighbouring household. Both series follow the sorted
+    # household_id order of df_census.
+    person_rows = df_census.groupby("household_id", sort = True).size().to_numpy()
+    if not np.array_equal(person_rows, household_sizes):
+        mismatched = df_rounding["household_id"].to_numpy()[person_rows != household_sizes]
+        raise ValueError(
+            "synthesis.population.sampled: household_size differs from the number of person rows for %d of %d "
+            "households (first household_ids: %s); fix household_size in the source stage"
+            % (len(mismatched), len(household_sizes), ", ".join(str(value) for value in mismatched[:5])))
+
     # create index to replicate all households members by their household weight
     # the order ([0, 1, 0, 1, 2, 2, ...]) is important here as they will be reassigned to new housholds later with that assumption
     expandor = np.split(np.arange(len(df_census)), np.cumsum(household_sizes))
     expandor = [x for x in expandor if x.size > 0]
     # Repeat the block of row positions of every household once per replica. The blocks differ in length, so they
     # are repeated as a Python list: np.repeat(expandor, ...) would first turn the list into a ragged array (a
-    # VisibleDeprecationWarning in numpy 1.23, a ValueError from numpy 1.24 on). strict=True keeps the error that
-    # np.repeat raised when the numbers of blocks and multiplicators differ (a household_size that disagrees with
-    # the number of person rows).
+    # VisibleDeprecationWarning in numpy 1.23, a ValueError from numpy 1.24 on). After the check above the numbers of
+    # blocks and multiplicators agree; strict=True keeps that assumption explicit.
     expandor = [block for block, count in zip(expandor, household_multiplicators, strict=True) for _ in range(count)]
     expandor = list(itertools.chain(*expandor))
 

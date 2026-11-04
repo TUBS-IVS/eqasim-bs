@@ -19,6 +19,7 @@ except ImportError:
     from numpy import VisibleDeprecationWarning
 
 import pandas as pd
+import pytest
 
 from synthesis.population import sampled
 
@@ -108,6 +109,19 @@ def test_members_keep_their_input_order_when_the_input_is_not_sorted_by_househol
     members = _members_by_replica(result)
     assert len(members) == 40
     assert all(ids == sorted(ids) for ids in members)
+
+
+def test_a_household_size_that_disagrees_with_the_person_rows_fails_loudly():
+    """household_size cuts the row blocks, so a wrong value would hand one household's member to the next.
+
+    Household 10 declares 3 persons but has 2 rows, household 11 declares 2 but has 3: the totals agree, so only a
+    per-household check can see it.
+    """
+    census = pd.concat([_census([(10, 2, 1.0)]).assign(household_size=3),
+                        _census([(11, 3, 1.0)]).assign(household_size=2)], ignore_index=True)
+
+    with pytest.raises(ValueError, match="household_size"):
+        sampled.execute(_ExecuteContext(census, random_seed=0, sampling_rate=1.0))
 
 
 # Fractional weights, a sampling rate below 1 and the random seed of the production configuration.
