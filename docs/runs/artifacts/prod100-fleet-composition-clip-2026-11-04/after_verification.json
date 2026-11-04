@@ -1,0 +1,15 @@
+{
+  "rows": 688832,
+  "mismatches_by_column": {
+    "vehicle_id": 0,
+    "segment": 0,
+    "powertrain": 0,
+    "euro_class": 0,
+    "age_band": 0,
+    "brand": 0,
+    "model": 0,
+    "type_id": 0
+  },
+  "identical_to_production_output": true,
+  "fleet_module": "/home/felix/c5a_replay_20261104/patched/fleet_sampling_de.py"
+}

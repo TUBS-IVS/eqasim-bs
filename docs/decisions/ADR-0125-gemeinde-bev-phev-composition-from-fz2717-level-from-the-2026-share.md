@@ -83,8 +83,11 @@
      A constant additive shift in the fraction preserves each car's electric
      TOTAL exactly and preserves the within-Kreis ordering, so the structure
      survives while the aggregate becomes exact on the population that actually
-     exists. The shift is logged per Kreis; its `[0,1]` clip should never bind and
-     warns if it does. Decision 2's normalisation is retained — it keeps the
+     exists. The shift is logged per Kreis. Its `[0,1]` clip does bind, for every car
+     whose electric split is already pure, so the aggregate is neutral only up to the
+     residual the clip leaves (the original claim that the clip "should never bind
+     and warns if it does" was wrong: see Amendment 2026-11-04 below). Decision 2's
+     normalisation is retained — it keeps the
      factors centred near 1.0 so the clip band stays meaningful — but it is no
      longer what guarantees the aggregate.
 - **Rationale:** the alternative rejected up front in issue #317 — splitting the
@@ -95,9 +98,10 @@
   *measurement* of exactly the quantity in question, and entering as a relative
   factor on top of a relative level factor limits the vintage exposure to a
   ratio of ratios.
-- **What is guaranteed, and what is not:** two things are exact by construction —
-  each car's electric TOTAL (decision 5) and, since decision 8, the per-Kreis
-  BEV:PHEV aggregate on the drawn population. What stays approximate is the
+- **What is guaranteed, and what is not:** one thing is exact by construction —
+  each car's electric TOTAL (decision 5). Since decision 8 the per-Kreis BEV:PHEV
+  aggregate on the drawn population is neutral up to the residual its `[0,1]` clip
+  leaves (Amendment 2026-11-04), not exact. What stays approximate is the
   per-Gemeinde *magnitude* of the structure signal: the factors come from the FZ
   27.17 PRIVATE split but act on a pmf whose split comes from 46251-02 (ALL
   ownership). Measured on the committed tables that scope gap is **0.88 .. 5.04 pp**
@@ -177,3 +181,41 @@
   in [`docs/codebase/notes/fallback-counter-states.md`](../codebase/notes/fallback-counter-states.md)
   instead of being restated per feature.
 - **Issue / PR:** #317
+
+---
+
+## Amendment 2026-11-04 · the `[0,1]` clip binds by construction; the warning judges what it leaves unclosed
+
+**What was wrong.** Decision 8 said the shift's `[0,1]` clip "should never bind and warns if it does", and the
+code warned whenever any car clipped ("a non-zero count signals a broken input"). The 100 % production run
+`prod100_20261031` logged that warning for 44,331 resident cars (the September run for 44,357). A replay of that
+draw, identical to the run's output in all 688,832 fleet cars (run manifest
+`docs/runs/prod100-fleet-composition-clip-2026-11-04.yml`, the source of every figure here), shows that the count is
+structural, not a broken input:
+
+- The clipped cars are exactly the `minis` and `grossraum_vans` of the five Kreise that needed a shift, and all five
+  shifts are positive. `minis` have no plug-in hybrids in the FZ 27.10 seed, so their PHEV share is only the `1e-9` floor
+  `rake_2d` puts on the seed and their BEV fraction sits within 1e-6 of 1; `grossraum_vans` are 99.9 % BEV. A shift
+  towards 1 clips every such car, whatever the size of the shift, so the count is non-zero in every run that has a
+  positive shift, and it would be non-zero for pure-PHEV cars under a negative one.
+- What the clip costs is the electric mass those cars hold: about one tenth of each shifted Kreis's electric mass, hence
+  about one tenth of each Kreis's shift stays unclosed. In absolute terms the largest residual is about 0.07 pp of the
+  electric mass (Kreis 03154), about 0.003 pp of all cars.
+- Decision 8's "exact" was therefore wrong by that residual. It is not wrong in kind: the correction still removes
+  about nine tenths of the artefact it was written for.
+
+**Amended decision 8.** The aggregate is neutral up to the residual its clip leaves. `sample_fleet` reports, per
+Kreis, what the clip lost (the clipped cars, the electric mass they hold, the BEV mass left unclosed) and logs the
+clipped-car count as an INFO figure together with the worst residual. It warns, per Kreis, only when the clip leaves
+more than `COMPOSITION_CLIP_UNCLOSED_WARN_SHARE = 0.5` of that Kreis's shift unclosed. That bound is an
+**ASSUMPTION**, a plausibility bound chosen for this diagnostic and neither a measured reference nor a calibration
+target: above one half the clip leaves open more of the shift than the correction closes, so the clip decides the Kreis
+aggregate. The measured worst case sits about four times below it. The drawn fleet is unchanged: the replay of the
+100 % residents draw with the changed module reproduces the production output in every compared column of all 688,832
+cars.
+
+**Alternatives rejected.** (h) Keep warning on the count: the count is a property of the segment structure, so it
+warns in every run and hides the one quantity that matters. (i) Close the residual exactly by giving the cars that
+still have room a larger shift (water-filling): this changes the drawn fleet and is a modelling decision for the owner,
+and it would remove about a tenth of a shift that is itself a few hundredths of a percentage point of the all-car
+fleet. Not done; named so the option is not rediscovered.
