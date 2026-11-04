@@ -32,8 +32,10 @@ aggregate on the drawn population
 (:func:`~braunschweig.synthesis.vehicles.fleet_sampling_de._neutralise_composition_aggregate`,
 ADR-0125 decision 8), because these factors are centred on FZ 27.17 electric-stock
 weights while the ADR-0085 rake targets the unweighted mean of the cars that
-actually exist. This script deliberately reports the pre-correction number, so the
-size of what the correction removes stays visible instead of being hidden by it.
+actually exist. A real run therefore carries only the residual that the correction's
+``[0, 1]`` clip cannot close, which ``sample_fleet`` logs per Kreis (ADR-0125,
+amendment 2026-11-04). This script deliberately reports the pre-correction number, so
+the size of what the correction removes stays visible instead of being hidden by it.
 
 Usage (from the repository root):
 
@@ -235,9 +237,10 @@ def report(data_path: Path) -> None:
           "composition may not change the electric LEVEL)." % worst_electric_drift)
     print("")
     print("This is the UNCORRECTED baseline: production additionally neutralises the")
-    print("aggregate on the drawn population (ADR-0125 decision 8), so a real run does")
-    print("NOT carry this shift. It is reported to keep the size of what the correction")
-    print("removes visible. It is NOT a calibration target.")
+    print("aggregate on the drawn population (ADR-0125 decision 8), so a real run carries")
+    print("only the residual its [0,1] clip cannot close (logged per Kreis by sample_fleet).")
+    print("It is reported to keep the size of what the correction removes visible.")
+    print("It is NOT a calibration target.")
 
 
 def main(argv: list[str] | None = None) -> int:
