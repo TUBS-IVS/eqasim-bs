@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Iterable
+from typing import Iterable, Sequence
 
 import pandas as pd
 
@@ -199,6 +199,31 @@ def _require_zgb_kreise(values: Iterable[str], filename: str) -> None:
         )
 
 
+def require_unique_keys(df: pd.DataFrame, key_columns: Sequence[str], filename: str) -> None:
+    """Refuse a table in which one key appears on more than one row.
+
+    Shared by the loader of a keyed table and by ``scripts/extract_kba_fleet.py``, so
+    the extractor and the loader refuse the same thing. The consumers keep ONE value
+    per key (a repeated key is silently resolved to the last row), and the Gemeinde
+    composition's Kreis reference sums over ROWS, so it would count a repeated row
+    twice. The error names the file, the counts and the first keys.
+
+    Raises:
+        RuntimeError: if any key in ``key_columns`` occurs on more than one row.
+    """
+    columns = list(key_columns)
+    repeated = df[df.duplicated(columns, keep=False)]
+    if repeated.empty:
+        return
+    keys = repeated[columns].drop_duplicates()
+    raise RuntimeError(
+        f"{filename}: {len(repeated)} rows share {len(keys)} duplicate key(s) over "
+        f"{columns}, first: {keys.head(5).to_dict('records')}. Every key must appear "
+        f"once; remove the repeated row at its source (re-run "
+        f"scripts/extract_kba_fleet.py from the raw workbook)."
+    )
+
+
 def _require_zgb_subset(values: Iterable[str], filename: str) -> None:
     """All-Kreise check: the 8 ZGB Kreise MUST be present; extras are ALLOWED.
 
@@ -263,7 +288,9 @@ def load_gemeinde_private_bev(data_path: str) -> pd.DataFrame:
     """FZ 27.17: per-Gemeinde private car total + private BEV/PHEV (+ shares).
 
     Used as the within-Kreis Gemeinde tilt on the private electric share. Every
-    Gemeinde row's ``kreis_ags5`` must be one of the 8 ZGB Kreise.
+    Gemeinde row's ``kreis_ags5`` must be one of the 8 ZGB Kreise, and each
+    ``(kreis_ags5, gemeinde)`` key must appear on exactly one row
+    (:func:`require_unique_keys`).
     """
     filename = "kba_gemeinde_private_bev.csv"
     df = _read(data_path, filename)
@@ -274,6 +301,7 @@ def load_gemeinde_private_bev(data_path: str) -> pd.DataFrame:
         filename,
     )
     _require_zgb_kreise(df["kreis_ags5"], filename)
+    require_unique_keys(df, ["kreis_ags5", "gemeinde"], filename)
     return df
 
 

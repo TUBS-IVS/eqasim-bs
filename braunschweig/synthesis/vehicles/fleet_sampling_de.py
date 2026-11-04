@@ -305,6 +305,10 @@ class PowertrainModel:
     # composition factors are relative to. Diagnostic only (logging and
     # scripts/measure_gemeinde_bev_composition.py); the draw uses the factors.
     kreis_electric_composition: dict[str, float] = field(default_factory=dict)
+    # Kreise whose FZ 27.17 table lists a SINGLE Gemeinde (the kreisfreie Staedte): the
+    # composition has nothing to redistribute there, so a car of such a Kreis is counted
+    # as "not applicable" -- neither primary nor fallback (_single_gemeinde_kreise).
+    composition_not_applicable_kreise: frozenset[str] = field(default_factory=frozenset)
     # Issue #317 flag (``fleet_gemeinde_bev_composition_tilt``, default True).
     # False keeps the pre-#317 behaviour: both electric powertrains tilted by the
     # single combined factor.
@@ -327,6 +331,8 @@ class PowertrainModel:
     # combined factor (fallback).
     _gemeinde_composition_primary: int = field(default=0)
     _gemeinde_composition_fallback: int = field(default=0)
+    # Cars of a Kreis in ``composition_not_applicable_kreise``: counted apart from both.
+    _gemeinde_composition_not_applicable: int = field(default=0)
     _grid_primary: int = field(default=0)
     _grid_fallback: int = field(default=0)
 
@@ -456,6 +462,7 @@ class PowertrainModel:
         # denominator share both vintage and scope.
         gem_composition: dict[tuple[str, str], dict[str, float]] = {}
         kreis_composition: dict[str, float] = {}
+        composition_not_applicable: frozenset[str] = frozenset()
         try:
             df_gem_ev = ft.load_gemeinde_ev(data_path)
             gem_priv = _gemeinde_electric_share_2026(df_gem_ev)
@@ -479,6 +486,8 @@ class PowertrainModel:
             # the structure, so a composition map would never be applied.
             if df_gem_fz27_weights is not None:
                 gem_composition, kreis_composition = _gemeinde_electric_composition(
+                    df_gem_fz27_weights)
+                composition_not_applicable = _single_gemeinde_kreise(
                     df_gem_fz27_weights)
             else:
                 logger.warning(
@@ -513,6 +522,7 @@ class PowertrainModel:
             gemeinde_private_electric_share=gem_priv,
             gemeinde_electric_composition=gem_composition,
             kreis_electric_composition=kreis_composition,
+            composition_not_applicable_kreise=composition_not_applicable,
         )
 
     # -- construction helpers ------------------------------------------------
@@ -1018,11 +1028,18 @@ class PowertrainModel:
                     self._gemeinde_combined += 1
                     if not composition_counted:
                         composition_counted = True
-                        if composition is not None:
+                        if (composition_applicable
+                                and kreis_ags5 in self.composition_not_applicable_kreise):
+                            # The sole Gemeinde of its Kreis: there is nothing to
+                            # redistribute BETWEEN Gemeinden, so the car is neither a
+                            # primary hit nor a missing reference, whether or not an
+                            # entry exists for it (_single_gemeinde_kreise).
+                            self._gemeinde_composition_not_applicable += 1
+                        elif composition is not None:
                             self._gemeinde_composition_primary += 1
                         elif composition_applicable:
                             # Applicable but no reference for this Gemeinde: a real
-                            # fallback (one of the documented eight).
+                            # fallback.
                             self._gemeinde_composition_fallback += 1
                 continue
             # Clip the tilt to [0.2, 5] so a tiny denominator cannot explode a
@@ -1163,8 +1180,11 @@ class PowertrainModel:
         # Issue #317: the composition tilt has its OWN rate. It is a subset of the
         # combined-share tilts (it can only fire where the combined branch does),
         # so reporting it against that denominator is what makes "the structure
-        # signal reached N% of the tilted cars" readable.
+        # signal reached N% of the tilted cars" readable. The cars of a sole-Gemeinde
+        # Kreis are not in it: they are reported as "not applicable", in NEITHER rate
+        # (docs/codebase/notes/fallback-counter-states.md).
         ctot = self._gemeinde_composition_primary + self._gemeinde_composition_fallback
+        n_not_applicable = self._gemeinde_composition_not_applicable
         if not self.gemeinde_bev_composition_tilt:
             # Report the DISABLED state explicitly. Silence would be
             # indistinguishable from "the tilt ran and did nothing", and counting
@@ -1176,16 +1196,18 @@ class PowertrainModel:
                 "powertrains keep the single combined factor (ADR-0086 behaviour).",
                 tag,
             )
-        elif ctot:
-            crate = self._gemeinde_composition_fallback / ctot
+        elif ctot or n_not_applicable:
+            crate = (self._gemeinde_composition_fallback / ctot) if ctot else 0.0
             (logger.warning if crate > 0.50 else logger.info)(
                 "%s powertrain Gemeinde BEV/PHEV composition tilt: primary "
                 "%d/%d (%.1f%%), fallback %d (%.1f%%) tilted both electric "
                 "powertrains by the combined factor alone (no FZ 27.17 "
-                "BEV:PHEV ratio for that Gemeinde, ADR-0125)",
+                "BEV:PHEV ratio for that Gemeinde, ADR-0125); not applicable "
+                "%d (sole Gemeinde of its Kreis, in neither rate)",
                 tag, self._gemeinde_composition_primary, ctot,
-                100.0 * self._gemeinde_composition_primary / ctot,
+                100.0 * self._gemeinde_composition_primary / ctot if ctot else 0.0,
                 self._gemeinde_composition_fallback, 100.0 * crate,
+                n_not_applicable,
             )
         if self._gemeinde_crosswalked:
             logger.info(
@@ -1292,6 +1314,28 @@ def _gemeinde_electric_share_2026(
     return out
 
 
+def _single_gemeinde_kreise(df_gem_fz27: pd.DataFrame) -> frozenset[str]:
+    """Kreise whose FZ 27.17 table lists exactly ONE Gemeinde (the kreisfreie Staedte).
+
+    The composition factors redistribute BEV:PHEV BETWEEN the Gemeinden of a Kreis and
+    are centred on that Kreis's own reference, so the sole Gemeinde of a Kreis has the
+    unit factor by construction, whatever its counts: an intact row and a suppressed
+    one behave identically. The composition tilt is therefore NOT APPLICABLE there, in
+    the sense of ``docs/codebase/notes/fallback-counter-states.md`` -- neither a primary
+    hit nor a missing reference.
+
+    The test is structural, not data-dependent: it counts the distinct (normalised)
+    Gemeinde names the table lists per Kreis, usable counts or not, so a later KBA
+    refresh that fills or blanks a count cannot move a Kreis in or out of the set.
+    """
+    names_by_kreis: dict[str, set[str]] = {}
+    for kreis_ags5, gemeinde in zip(df_gem_fz27["kreis_ags5"], df_gem_fz27["gemeinde"]):
+        name = normalize_gemeinde_name(gemeinde)
+        if name:
+            names_by_kreis.setdefault(str(kreis_ags5), set()).add(name)
+    return frozenset(kreis for kreis, names in names_by_kreis.items() if len(names) == 1)
+
+
 def _gemeinde_electric_composition(
     df_gem_fz27: pd.DataFrame,
 ) -> tuple[dict[tuple[str, str], dict[str, float]], dict[str, float]]:
@@ -1349,7 +1393,10 @@ def _gemeinde_electric_composition(
     composition factor 1.0 at draw time (today's behaviour). Such Gemeinden are
     excluded from the Kreis reference as well -- including them would skew the
     mean that the Gemeinden which DO get a factor are normalised against. They
-    are counted, rate-logged and named.
+    are counted, rate-logged and named. The sole Gemeinde of a Kreis is the
+    exception: its factor is 1.0 by construction with or without an entry, so it
+    is reported as NOT APPLICABLE (:func:`_single_gemeinde_kreise`) and stays out
+    of both rates.
 
     Args:
         df_gem_fz27: The FZ 27.17 frame from
@@ -1368,7 +1415,7 @@ def _gemeinde_electric_composition(
     """
     # -- 1. usable rows: both counts present and a positive electric stock ----
     usable: list[tuple[str, str, float, float]] = []  # kreis, gemeinde, bev, phev
-    excluded: list[str] = []
+    excluded: list[tuple[str, str]] = []  # kreis, gemeinde label
     for _, row in df_gem_fz27.iterrows():
         kreis_ags5 = str(row["kreis_ags5"])
         gemeinde_norm = normalize_gemeinde_name(row["gemeinde"])
@@ -1377,22 +1424,33 @@ def _gemeinde_electric_composition(
         if (not gemeinde_norm
                 or pd.isna(bev) or pd.isna(phev)
                 or float(bev) + float(phev) <= 0.0):
-            excluded.append("%s/%s" % (kreis_ags5, gemeinde_norm or "<unnamed>"))
+            excluded.append((kreis_ags5, gemeinde_norm or "<unnamed>"))
             continue
         usable.append((kreis_ags5, gemeinde_norm, float(bev), float(phev)))
 
+    # Accounting (docs/codebase/notes/fallback-counter-states.md): the rows of a
+    # sole-Gemeinde Kreis are NOT APPLICABLE and count in neither rate. The factors
+    # and entries built below are unchanged by this classification.
+    sole_gemeinde_kreise = _single_gemeinde_kreise(df_gem_fz27)
     n_total = len(df_gem_fz27)
-    n_usable = len(usable)
-    fallback_rate = (len(excluded) / n_total) if n_total else 0.0
+    n_primary = sum(1 for kreis, *_ in usable if kreis not in sole_gemeinde_kreise)
+    fallback = sorted("%s/%s" % pair for pair in excluded
+                      if pair[0] not in sole_gemeinde_kreise)
+    n_applicable = n_primary + len(fallback)
+    n_not_applicable = n_total - n_applicable
+    fallback_rate = (len(fallback) / n_applicable) if n_applicable else 0.0
     if n_total:
         (logger.warning if fallback_rate > 0.5 else logger.info)(
             "[fleet_de] gemeinde BEV/PHEV composition (FZ 27.17): primary "
             "%d/%d (%.1f%%), fallback %d (%.1f%%) without a usable BEV:PHEV "
             "ratio (suppressed count or zero electric stock) -> composition "
-            "factor 1.0 for them%s",
-            n_usable, n_total, 100.0 * n_usable / n_total,
-            len(excluded), 100.0 * fallback_rate,
-            (": " + ", ".join(sorted(excluded))) if excluded else "",
+            "factor 1.0 for them%s; not applicable %d (sole Gemeinde of Kreis "
+            "%s: factor 1.0 by construction, in neither rate)",
+            n_primary, n_applicable,
+            100.0 * n_primary / n_applicable if n_applicable else 0.0,
+            len(fallback), 100.0 * fallback_rate,
+            (": " + ", ".join(fallback)) if fallback else "",
+            n_not_applicable, ", ".join(sorted(sole_gemeinde_kreise)) or "-",
         )
 
     # -- 2. per-Kreis reference: the electric-stock-weighted BEV fraction -----

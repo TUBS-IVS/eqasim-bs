@@ -185,6 +185,25 @@ def test_gemeinde_private_bev_covers_zgb_kreise():
     assert frame["private_bev"].isna().mean() < 0.2
 
 
+def test_gemeinde_private_bev_refuses_a_gemeinde_row_that_appears_twice(monkeypatch):
+    """A repeated ``(kreis_ags5, gemeinde)`` row must stop the extraction.
+
+    The downstream consumers keep one value per key, so a repeated row would be
+    resolved silently instead of showing up as the source defect it is.
+    """
+    def _row(bezirk, gemeinde):
+        row = [None] * 10
+        row[2], row[3] = bezirk, gemeinde      # col2 Zulassungsbezirk, col3 Gemeinde
+        row[7], row[8], row[9] = 1154, 64, 7   # private total, BEV, PHEV
+        return row
+
+    sheet = [_row("03151 GIFHORN", "ADENBUETTEL"), _row(None, "ADENBUETTEL")]
+    monkeypatch.setattr(ekf, "_read_sheet", lambda path, sheet_name: sheet)
+
+    with pytest.raises(RuntimeError, match="duplicate"):
+        ekf.extract_gemeinde_private_bev()
+
+
 # --------------------------------------------------------------------------- #
 # kba_fuel_euro_nds.csv (FZ 27.4)
 # --------------------------------------------------------------------------- #
