@@ -29,9 +29,8 @@ the rounds: [ADR-0171](../../decisions/ADR-0171-the-claude-pr-review-reviews-in-
 The gate config and the prompt are read from the PR itself, so a PR can change its own gate; both are critical
 paths, which makes such a PR reviewed (the script is not read from the PR any more). So are `CLAUDE.md` and `.claude/rules/` (since
 2026-10-28): they steer every agent session, the push rule and the verification gate included, so even a small edit
-there is reviewed. `structure_paths` names the backbone of this repository (agent rules, base config and overlays,
-pipeline machinery, simulation setup, shared eqasim code, documentation gate, test and run entry points, workflows,
-this gate); it is a short list on purpose, so that adding a stage file in a topic package stays a full-tier change.
+there is reviewed. `structure_paths` (what it covers: the comment above it in `.github/claude-review.yml`) is a short
+list on purpose, so that adding a stage file in a topic package stays a full-tier change.
 
 Prerequisite: the repository secret `ANTHROPIC_API_KEY`, a key of a **workspace** of the Console organization.
 PRs from forks and from Dependabot get no Actions secrets and are skipped with a note in the job summary.
