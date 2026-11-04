@@ -28,9 +28,9 @@ config:
   # the 100% run proved safe on every Kreis (~9 GB h5, smaller under int-seed). Kept
   # identical to test_1pct so the shared popsim.stage hash / cache_share still match.
   braunschweig.population.popsim.max_cells: 750
-  # Memory-bound, not core-bound: with the full donor pool each worker peaks at ~25-30 GB
-  # (2026-07-10 OOM post-mortem, as cited in test_100pct.yml), so 3 workers bound the peak to
-  # ~90 GB on the 128 GB box. The previous 16 rested on a ~5 GB/batch figure that predates
+  # Memory-bound, not core-bound: with the full donor pool each worker needs tens of GB. The
+  # measured per-worker peak, the run server's memory and the resource-gate clamp of this
+  # ceiling (ADR-0126) are stated once, in the header of test_100pct.yml. The previous 16 rested on a ~5 GB/batch figure that predates
   # that post-mortem; it wedged a VM on 2026-08-10 (issue #281). Changing this value changes
   # the popsim.stage hash, so this overlay's cached batches are recomputed once; parallelism
   # only, no scientific output changes.

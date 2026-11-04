@@ -247,8 +247,8 @@ DEFAULT_CORE_RESERVE = 2
 #: 2026-07-10 OOM post-mortem). It is also the SENSITIVE parameter that decides
 #: whether a pinned ``num_workers: 3`` clamps to 2 on the measured 94.28 GB
 #: server: at this 8 GB reserve, 3 x 30 GB = 90 GB > 86.28 GB budget clamps; at roughly a
-#: 4 GB reserve -- what ``configs/overlays/test_100pct.yml``'s own "~90 GB on
-#: the 128 GB box" budget implies for 3 workers on this machine -- it would not.
+#: 4 GB reserve -- what the former "~90 GB on the 128 GB box" sizing note of
+#: ``configs/overlays/test_100pct.yml`` implied for 3 workers on this machine -- it would not.
 #: Not yet measured (see ADR-0126, Consequences); do not treat it as settled
 #: infrastructure. A server measurement of the actual OS/driver/page-cache
 #: footprint next to a real run is the missing evidence that would let this be
@@ -633,9 +633,10 @@ def resolve_processes(configured, budget: ResourceBudget) -> Resolution:
 
 
 #: Default measured peak memory of one PopulationSim batch worker, in gigabytes.
-#: Traceable to the 2026-07-10 OOM post-mortem recorded in
-#: configs/overlays/test_100pct.yml ("the measured 25-30 GB per-worker peak");
-#: the upper bound is taken because under-estimating it is what OOMs the box.
+#: Traceable to the 2026-07-10 OOM post-mortem (25-30 GB per worker, formerly
+#: quoted in the header of configs/overlays/test_100pct.yml); the upper bound is
+#: taken because under-estimating it is what OOMs the box. The later per-worker
+#: peak measured on prod100_20261031 is stated in that header.
 #: SCALE CAVEAT: that post-mortem measured a 100%-SCALE run
 #: (``configs/overlays/test_100pct.yml``, ``sampling_rate: 1.0``). No per-worker
 #: footprint has ever been measured at a smaller sampling rate, and no

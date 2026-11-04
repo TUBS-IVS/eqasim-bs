@@ -59,9 +59,10 @@ config:
   braunschweig.population.popsim.max_cells: 750
   # Size the workers from AVAILABLE MEMORY (`free -g`), NEVER from the core count: with the
   # full donor pool (base_bs.yml sets stratify_regiostar: false) each PopulationSim worker
-  # peaks at ~25-30 GB (2026-07-10 OOM post-mortem, the same measurement test_100pct.yml
-  # cites), so memory -- not cores -- is the binding constraint. 4 workers bound the peak to
-  # ~100-120 GB on the 128 GB box. The previous value 8 carried NO justification in this
+  # needs tens of GB (measured peak and run-server memory: header of test_100pct.yml), so
+  # memory -- not cores -- is the binding constraint. 4 is a ceiling: the resource gate
+  # (ADR-0126) clamps it at run start to what the machine's memory budget allows at its
+  # 30 GB-per-worker default. The previous value 8 carried NO justification in this
   # file; it demands 200-240 GB and only ever survived because batch peaks rarely coincide.
   # Per issue #281 it OOM-killed a batch on 2026-08-10, 2026-08-20 and 2026-08-21 -- the last
   # one on an otherwise IDLE box, which is what proves 8 is over the line unconditionally.
