@@ -57,8 +57,12 @@
    The seed is the config's `global.randomSeed` (written by eqasim's `GenerateConfig` from `random_seed`).
 2. `mode_choice/output_plans.xml.gz` is moved over the population file under its own name, so
    `matsim.simulation.run`, `matsim.output` and the plan check read the chosen plans without any change; the plan
-   check therefore checks the chosen plans (it classifies pt-intended trips by the `walkFallbackFrom` stamp OR
-   `routingMode == pt`; the DMC's routing sets `routingMode` but not the stamp).
+   check therefore checks the chosen plans. The DMC's routing sets `routingMode` on every leg but never the
+   `walkFallbackFrom` stamp of eqasim's `PlanRouter`, and it re-routes the filtered (frozen) tours too (the DMC
+   estimates them with their initial modes: `TourBasedModel.createFallbackCandidate` calls `estimateTour`), so after
+   this step no trip carries the stamp. `plan_check.summarise` is therefore extended to count walk-only trips with
+   `routingMode` pt as pt-as-walk (rule and reasons in its docstring and in `docs/codebase/notes/plan-check.md`);
+   without it the pt-as-walk counters would have read 0 whatever the router did (found by the review of PR #545).
 3. Fail loudly instead of a silent fallback: the persons of the input and the output population are counted and
    the stage raises when they differ (eqasim removed persons with no feasible alternative; such a person would
    abort iteration 1 in the loop anyway, since the replanning rethrows the exception); it also raises when
@@ -96,8 +100,8 @@
   free-flow car travel times. The loop runs the same model; whether its stationary state differs from the one
   reached under ADR-0155 is unmeasured (with plan memory 1 and KeepLastSelected 0.95 it may depend on the start),
   and convergence is not validation either way.
-- The DMC's routing drops the `walkFallbackFrom` stamp of re-routed trips; the plan check keeps its pt-as-walk
-  figures through `routingMode`. The routed day-end shift (ADR-0160) has already happened in the routing the mode
+- The DMC's routing drops the `walkFallbackFrom` stamp of every trip, frozen tours included; the plan check keeps
+  its pt-as-walk figures through the walk-only rule of decision 2. The routed day-end shift (ADR-0160) has already happened in the routing the mode
   choice starts from; the choice itself does not repeat it, exactly as the loop's replanning does not.
 - The runtime of the step at 100 % is unknown until measured; the per-chunk model bounds the trip-cache defect
   to the trips of 1000 plans per chunk (ESTIMATE: a few thousand trips, at 3-4 trips per person; not measured)

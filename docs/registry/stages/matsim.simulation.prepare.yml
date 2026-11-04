@@ -132,7 +132,8 @@ notes: >-
   plans.inputPlansFile or with a population path that does not exist, and, only when fail_on_threshold is
   true, when the share of late or non-monotonic plans of the frozen residents exceeds
   max_frozen_defect_share (false: ERROR log, the stage continues). The check also counts the legs stamped
-  walkFallbackFrom (a pt leg the router replaced by walk): n_pt_as_walk, pt_as_walk_by_hour and share_pt_as_walk (over the pt-intended trips, routingMode pt) per class
+  walkFallbackFrom (a pt leg the router replaced by walk) and, since ADR-0178, the walk-only pt trips of the mode
+  choice's routing (rule in plan_check.summarise): n_pt_as_walk, pt_as_walk_by_hour and share_pt_as_walk (over the pt-intended trips, routingMode pt) per class
   (all counted per pt-intended trip, in the class of its first leg);
   key .max_frozen_pt_as_walk_share (0.02, ASSUMPTION, default declared in configure() and pinned in configs/base_bs.yml) fails the
   stage for the frozen residents only when fail_on_threshold is true. The attribute needs the eqasim-java-bs
