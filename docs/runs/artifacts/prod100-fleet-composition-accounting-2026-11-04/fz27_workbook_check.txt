@@ -1,0 +1,46 @@
+workbook: fz27_202501.xlsx, 1487610 bytes, sha256 c75b392bf0e2a73587870ebdcc7ddff746a822d12901fca0c051e91fe83d621e
+legend of the placeholder symbols (sheet Inhaltsverzeichnis):
+  0 = mehr als nichts, aber weniger als die Hälfte der kleinsten verwendeten Einheit
+  '-' = nichts vorhanden oder keine Veränderung
+  '.' = Zahlenwert unbekannt oder geheim zu halten
+  '/' = Wert ist nicht sicher genug
+  '( )' = Aussagewert eingeschränkt
+  'X' = Aussage nicht sinnvoll oder Werte nicht vergleichbar
+sheet FZ 27.17, raw cells (sheet row: col3 Gemeinde | col7 private total, col8 private BEV, col9 private PHEV):
+  BRAUNSCHWEIG  1 row(s) in the sheet with this Gemeinde name
+    row 4729: col2='03101 BRAUNSCHWEIG,STADT' col3='BRAUNSCHWEIG' | col7=110515 col8=2646 col9=991
+  SALZGITTER    1 row(s) in the sheet with this Gemeinde name
+    row 4730: col2='03102 SALZGITTER,STADT' col3='SALZGITTER' | col7=53347 col8=878 col9=392
+  WOLFSBURG     1 row(s) in the sheet with this Gemeinde name
+    row 4731: col2='03103 WOLFSBURG,STADT' col3='WOLFSBURG' | col7=57779 col8='.' col9=528
+  HEDEPER       1 row(s) in the sheet with this Gemeinde name
+    row 4835: col2=None col3='HEDEPER' | col7=308 col8='.' col9=4
+  BEIERSTEDT    1 row(s) in the sheet with this Gemeinde name
+    row 4781: col2=None col3='BEIERSTEDT' | col7=253 col8=7 col9='.'
+  JERXHEIM      1 row(s) in the sheet with this Gemeinde name
+    row 4789: col2=None col3='JERXHEIM' | col7=676 col8=16 col9='.'
+  QUERENHORST   1 row(s) in the sheet with this Gemeinde name
+    row 4793: col2=None col3='QUERENHORST' | col7=363 col8=9 col9='.'
+  DAHLUM        1 row(s) in the sheet with this Gemeinde name
+    row 4826: col2=None col3='DAHLUM' | col7=426 col8=11 col9='.'
+  UEHRDE        1 row(s) in the sheet with this Gemeinde name
+    row 4847: col2=None col3='UEHRDE' | col7=664 col8=13 col9='.'
+  WINNIGSTEDT   1 row(s) in the sheet with this Gemeinde name
+    row 4850: col2=None col3='WINNIGSTEDT' | col7=440 col8=8 col9='.'
+re-run of the FZ 27 extractors on this workbook against the committed tables:
+[FZ 27.10 segment_powertrain] numeric cells=98, coerced placeholders=18 (-> 0: 18, -> NaN: 0); symbols={'-': 18}
+COMPARE kba_segment_powertrain.csv         IDENTICAL (14 rows)
+[FZ 27.15 kreis_powertrain] numeric cells=48, coerced placeholders=0 (-> 0: 0, -> NaN: 0); symbols={}
+COMPARE kba_kreis_powertrain.csv           IDENTICAL (8 rows)
+[FZ 27.17 gemeinde_private_bev] numeric cells=339, coerced placeholders=10 (-> 0: 2, -> NaN: 8); symbols={'-': 2, '.': 8}
+[FZ 27.17 gemeinde_private_bev] 113 Gemeinde rows, each with a unique (kreis_ags5, gemeinde) key
+COMPARE kba_gemeinde_private_bev.csv       IDENTICAL (113 rows)
+[FZ 27.4 fuel_euro_nds] numeric cells=49, coerced placeholders=10 (-> 0: 10, -> NaN: 0); symbols={'-': 10}
+COMPARE kba_fuel_euro_nds.csv              IDENTICAL (49 rows)
+[FZ 27.4 fuel_euro6_substage_nds] numeric cells=28, coerced placeholders=5 (-> 0: 5, -> NaN: 0); symbols={'-': 5}
+[extract_fuel_euro6_substage_nds] 3 substage rows have a zero euro6 fuel total (fuel with no Euro-6 registrations) -> share set to 0.0.
+COMPARE kba_fuel_euro6_substage_nds.csv    IDENTICAL (21 rows)
+[FZ 27.7 age_fuel] numeric cells=49, coerced placeholders=0 (-> 0: 0, -> NaN: 0); symbols={}
+COMPARE kba_age_fuel.csv                   IDENTICAL (49 rows)
+[FZ 27.11 brand_powertrain] numeric cells=400, coerced placeholders=110 (-> 0: 110, -> NaN: 0); symbols={'-': 110}
+COMPARE kba_brand_powertrain.csv           IDENTICAL (80 rows)

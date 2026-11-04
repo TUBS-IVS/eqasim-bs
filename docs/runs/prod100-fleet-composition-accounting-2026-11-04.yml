@@ -50,7 +50,8 @@ source: >-
   ac96c5860047f2d36c00ca05aaf7af82504b667c50d4285727c13465857e477d, an unmodified copy of the replay script of the run
   prod100-fleet-composition-clip-2026-11-04), decompose_composition_accounting.py (sha256
   99bab5eaa409e9711d59e5df5178f74b071f1dc449d0cbd048ab1d4ec7c36816, classifies the cars by the composition accounting with one
-  probe per distinct home Gemeinde), check_fz2717_table.py with its output table_key_check.txt, and the results baseline_* and
+  probe per distinct home Gemeinde), check_fz2717_table.py and check_fz27_workbook.py with their outputs table_key_check.txt
+  and fz27_workbook_check.txt (both ran on the laptop, not on felix), and the results baseline_* and
   after_* (verification.json; the run log as replay_log.txt, because *.log is git-ignored; classification.csv,
   classification_by_kreis.csv and classification_summary.json).
 environment: 'server (felix, hostname matsim, Linux 5.15.0-139-generic), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, numpy 1.23.5, pandas 1.5.3), time zone Europe/Berlin'
@@ -63,7 +64,7 @@ validation:
     with 113 distinct (kreis_ags5, gemeinde) keys, also 113 distinct keys after normalize_gemeinde_name, no identical rows,
     and the Braunschweig row (03101) once. The 113 in the run log is the number of Gemeinde rows of the table (1 + 1 + 1 + 41 +
     7 + 23 + 7 + 32 in the eight Kreise), and the report that the Braunschweig row stands twice is not reproducible. The eight empty
-    cells are two BEV and six PHEV cells; their cause is unverified (dataset record kba_fleet_derived).
+    cells are two BEV and six PHEV cells; the last validation entry reads each of them at the source.
   artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/table_key_check.txt
 - metric: the replayed residents fleet against the cached production output (identity)
   reference: 'felix cache entry braunschweig.synthesis.vehicles.cars.household__6b6784a39cfbf5cdf97abeb2ac00d4ce; an equivalence reference, NOT observed data'
@@ -106,6 +107,24 @@ validation:
     gemeindefreie Gebiete are unmatched by design (normalize_gemeinde_name returns an empty key for them). The label "NAN" is
     a literal string in the cached household output; its origin was not examined here.
   artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/after_classification.csv
+- metric: the eight empty FZ 27.17 cells read at their source, and the workbook against the committed tables
+  reference: 'the KBA workbook fz27_202501.xlsx (FZ 27 series 2025-01, Stichtag 1 January 2025) and its own legend; the primary source of the table, NOT observed fleet data'
+  result: >-
+    Each of the eight cells holds the KBA symbol "." (sheet FZ 27.17, BEV: Wolfsburg row 4731, Hedeper row 4835; PHEV:
+    Beierstedt row 4781, Jerxheim 4789, Querenhorst 4793, Dahlum 4826, Uehrde 4847, Winnigstedt 4850). The workbook's legend
+    (sheet Inhaltsverzeichnis, Zeichenerklaerung) defines "." as "Zahlenwert unbekannt oder geheim zu halten", so a KBA marker
+    for an unknown or secret value; the symbol does not say which of the two. They are not extraction defects. Each of the
+    three kreisfreie Staedte has exactly one row with its Gemeinde name in the sheet (rows 4729 to 4731), so the Braunschweig
+    row is not repeated in the source either. Re-running the seven FZ 27 based extractors on this workbook reproduces the seven
+    committed tables byte for byte (segment_powertrain, kreis_powertrain, gemeinde_private_bev, fuel_euro_nds,
+    fuel_euro6_substage_nds, age_fuel, brand_powertrain), with eight "." turned into NaN and two "-" into 0 in FZ 27.17: it is
+    the workbook the committed tables came from.
+  artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/fz27_workbook_check.txt
+  notes: >-
+    Run on the laptop (Windows, conda eqasim: Python 3.10.10, numpy 1.23.5, pandas 1.5.3, openpyxl 3.1.0) with the workbook
+    from the owner's download folder (file dated 2026-06-07); its name, size and sha256 are in the dataset record
+    kba_fleet_derived and in the artifact. check_fz27_workbook.py reads the workbook read-only and writes nothing to the
+    repository.
 artifacts:
 - docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/
 issues: []

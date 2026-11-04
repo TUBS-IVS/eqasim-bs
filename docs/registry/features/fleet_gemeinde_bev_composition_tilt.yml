@@ -46,7 +46,7 @@ evidence:
     kind: committed
     path: eqasim-data/data/braunschweig/kba/derived/kba_gemeinde_private_bev.csv
     note: |
-      KBA FZ 27.17, Stichtag 2025-01-01, private cars. Measured: 105/113 ZGB Gemeinden carry a usable BEV:PHEV ratio; BEV fraction of the electric stock 0.598..1.000, IQR 0.722..0.804, median 0.748. The eight without one are Wolfsburg and Hedeper (suppressed BEV count) and Beierstedt, Jerxheim, Querenhorst, Dahlum, Uehrde, Winnigstedt (suppressed PHEV count); they keep composition factor 1.0. Whether these cells are KBA suppressions is unverified (dataset record kba_fleet_derived).
+      KBA FZ 27.17, Stichtag 2025-01-01, private cars. Measured: 105/113 ZGB Gemeinden carry a usable BEV:PHEV ratio; BEV fraction of the electric stock 0.598..1.000, IQR 0.722..0.804, median 0.748. The eight without one are Wolfsburg and Hedeper (suppressed BEV count) and Beierstedt, Jerxheim, Querenhorst, Dahlum, Uehrde, Winnigstedt (suppressed PHEV count); they keep composition factor 1.0. These cells are the KBA placeholder "." (unknown or secret), verified at the source (dataset record kba_fleet_derived).
 validation:
   state: unvalidated
   runs: []
