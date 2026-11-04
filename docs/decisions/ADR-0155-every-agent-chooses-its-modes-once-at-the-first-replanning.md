@@ -1,6 +1,9 @@
 # ADR-0155 · 2026-10-23 · Every agent chooses its modes once at the first replanning
 
-- **Status:** accepted (implemented; measured in the 1 % rerun of the #465 fixes, see the status line at the end)
+- **Status:** superseded by ADR-0178 (2026-11-04): decisions 1-3 (the first-replanning strategy with weight 1e6)
+  are replaced by eqasim's standalone mode choice before iteration 0 with free-flow travel times, at the end of the
+  prepare stage; the diagnosis and the rejected options of this ADR stand. Before that: accepted (implemented;
+  measured in the 1 % rerun of the #465 fixes, see the status line at the end).
 - **Numbering:** 0155 checked free across all local and remote branches on 2026-10-23 (0153/0154/0156/0157 are the
   sibling branches of #465).
 - **Issue:** #465 (mechanism 4 of the 68 stuck residents of run `i465-wpe-smoke-1pct-2026-10-23`).

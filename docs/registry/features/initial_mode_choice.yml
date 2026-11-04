@@ -1,0 +1,89 @@
+feature: initial_mode_choice
+title: Initial mode choice before iteration 0 with free-flow travel times
+area: matsim
+description: >-
+  Every agent of the final population chooses its modes once with the production discrete mode choice model
+  BEFORE MATSim iteration 0, with free-flow car travel times, the way eqasim intends its upfront mode choice
+  (ADR-0178, issue #542; supersedes the first-replanning strategy of ADR-0155). As the last step of
+  braunschweig.matsim.simulation.prepare before the plan check, after the routing, the cordon cut, the freight
+  injection and the VRB fare and parking inputs, braunschweig.matsim.initial_mode_choice.run calls eqasim's
+  org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice on the FINAL config and the population file
+  it names, with the arguments of eqasim-france's call (output directory mode_choice, input and output trips
+  CSVs, gzip, scenario check skipped, --eqasim-configurator org.eqasim.braunschweig.BraunschweigConfigurator,
+  removePersonsWithNoValidAlternatives true) and no travel-time option. The chosen, routed plans are moved over
+  the population file under its name, so the run, the output archive and the plan check read them unchanged.
+  Freight agents keep truck (BraunschweigModeAvailability) and tours touching an outside activity keep their
+  modes (OutsideFilter; the DMC re-estimates and re-routes them with their initial modes), exactly as in the
+  loop; the DMC's own routing sets routingMode but never the walkFallbackFrom stamp, so the plan check counts a
+  walk-only trip with routingMode pt as pt-as-walk (plan_check.summarise, extended with this feature). The stage
+  raises when the persons of the output differ from the input (eqasim removed persons with no
+  feasible alternative) or an output is missing, and logs under [initial mode choice] and writes to
+  initial_mode_choice.json the persons before/after, the trips, the share of trips whose mode changed, the mode
+  shares before and after (residents only, the analysis filter skips pt_ and freight_ ids) and the Java wall
+  time: observations, not reference values. The in-loop mechanism of ADR-0155 (DiscreteModeChoice with weight
+  1e6, disableAfterIteration 1) is gone and braunschweig.initial_mode_choice.weight is retired (a config that
+  still sets it is refused at configure time). The vendored upstream flag mode_choice (feature record
+  mode_choice) stays off. The feature changes results by design.
+stages:
+- matsim.simulation.prepare
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.initial_mode_choice.enabled
+introduced:
+  issue: 542
+  pr: null
+  adr: ADR-0178
+detail_doc: null
+code_paths:
+- braunschweig/matsim/initial_mode_choice.py
+- braunschweig/matsim/simulation/prepare.py
+- configs/base_bs.yml
+evidence:
+  tests:
+  - tests/test_initial_mode_choice.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: >-
+      braunschweig.initial_mode_choice.enabled false skips the step and leaves the routed population of the
+      prepare stage as written; with the flag on the population file is replaced by design. The tests exercise
+      the wiring (after the parking inputs, before the plan check, only when enabled) and the step with a fake
+      Java call; no byte-identity claim is made.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[initial mode choice]'
+    note: >-
+      The step has no fallback path: a person for whom eqasim finds no feasible alternative is removed by
+      eqasim (removePersonsWithNoValidAlternatives true, DMC fallbackBehaviour EXCEPTION) and the stage RAISES
+      naming the counts before and after; a missing output_plans.xml.gz or trips CSV raises naming the file;
+      trips CSVs whose keys differ, repeat or carry a missing mode raise in summarise. The share of trips whose
+      mode changed and the mode shares before/after are logged under the marker and written to
+      initial_mode_choice.json for the run manifest.
+  reference:
+    kind: none
+    note: >-
+      No observed modal split is compared: the mode shares before and after the choice are observations of
+      the model under free-flow travel times (CLAUDE.md "No invented reference values"); the calibration of
+      the mode choice against an observed modal split is #23.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: >-
+    No run has used the step yet. The first 1 % and 100 % runs after the merge record the wall time of the
+    step and of MATSim iteration 1 and the mode shares before/after. The 8 h 23 min of iteration 1 in
+    prod100_20261031 under ADR-0155 is REPORTED and UNVERIFIED (felix log, no run manifest); a comparison needs
+    a manifest of that run first. A smoke is not a validation.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >-
+    First measured in the next 1 % and 100 % runs (wall time of the step and of iteration 1, mode shares
+    before/after); the owner's verdict follows those manifests.
+  source: null

@@ -86,6 +86,7 @@ features:
 - large_facility_access_links
 - qsim_departures_yield
 - mode_choice
+- initial_mode_choice
 - vrb_zone_fare_model
 - parking_cost_zones
 - plan_feasibility_check
@@ -105,6 +106,7 @@ decisions:
 - ADR-0160
 - ADR-0167
 - ADR-0169
+- ADR-0178
 notes: >-
   Gate facility links (ADR-0167, issue #465, feature record gate_facility_links). With cordon_enabled,
   right after the delegated eqasim preparation and before the cut, _verify_gate_facility_links compares every
@@ -130,7 +132,8 @@ notes: >-
   plans.inputPlansFile or with a population path that does not exist, and, only when fail_on_threshold is
   true, when the share of late or non-monotonic plans of the frozen residents exceeds
   max_frozen_defect_share (false: ERROR log, the stage continues). The check also counts the legs stamped
-  walkFallbackFrom (a pt leg the router replaced by walk): n_pt_as_walk, pt_as_walk_by_hour and share_pt_as_walk (over the pt-intended trips, routingMode pt) per class
+  walkFallbackFrom (a pt leg the router replaced by walk) and, since ADR-0178, the walk-only pt trips of the mode
+  choice's routing (rule in plan_check.summarise): n_pt_as_walk, pt_as_walk_by_hour and share_pt_as_walk (over the pt-intended trips, routingMode pt) per class
   (all counted per pt-intended trip, in the class of its first leg);
   key .max_frozen_pt_as_walk_share (0.02, ASSUMPTION, default declared in configure() and pinned in configs/base_bs.yml) fails the
   stage for the frozen residents only when fail_on_threshold is true. The attribute needs the eqasim-java-bs
@@ -146,8 +149,17 @@ notes: >-
   [schedule] final schedule departures per hour {...}, max departure X h on the final, post-cordon-cut
   transit schedule on every run, independent of vrb_zone_fares_enabled; the VRB-fares path reuses that
   summary.
-  First-replanning mode choice (ADR-0155, issue 465): with braunschweig.initial_mode_choice.enabled the stage adds to
-  the final config, for every subpopulation with the in-the-loop DiscreteModeChoice strategy, a second
-  DiscreteModeChoice strategy with braunschweig.initial_mode_choice.weight (1e6) and disableAfterIteration 1
-  (braunschweig.matsim.initial_mode_choice), so almost every agent chooses its modes in iteration 1; the share is
-  logged as [initial mode choice].
+  Initial mode choice before iteration 0 (ADR-0178, issue 542, feature record initial_mode_choice; supersedes the
+  first-replanning strategy of ADR-0155): with braunschweig.initial_mode_choice.enabled (default true) the stage
+  calls, after the parking inputs and before the plan check, eqasim's
+  org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice (braunschweig.matsim.initial_mode_choice.run) on
+  the FINAL config and the population file it names in plans.inputPlansFile, with free-flow travel times (no
+  travel-time option), --eqasim-configurator org.eqasim.braunschweig.BraunschweigConfigurator,
+  standaloneModeChoice.outputDirectory mode_choice, removePersonsWithNoValidAlternatives true, the input and
+  output trips CSVs (gzip) and global.numberOfThreads from matsim_threads or processes. mode_choice/output_plans.xml.gz
+  is moved over the population file under its name, so the run, matsim.output and the plan check read the chosen,
+  routed plans. The stage raises when the persons of the output differ from the input or an output is missing, and
+  logs under [initial mode choice] and writes to initial_mode_choice.json the persons before/after, the trips, the
+  share of trips whose mode changed, the mode shares before and after (residents only) and the Java wall time
+  (observations, not reference values). braunschweig.initial_mode_choice.weight is retired: a config that still
+  sets it is refused in configure() with a pointer to ADR-0178.

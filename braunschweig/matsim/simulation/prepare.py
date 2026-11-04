@@ -49,10 +49,13 @@ GTFS_STAGE = "matsim.scenario.supply.gtfs"
 #: (#327 gate). The three ``braunschweig.data.vrb`` helpers write the VRB zone fare inputs
 #: (ADR-0133), ``tariff_export`` and ``config_modules`` the parking inputs (issue #249); all are
 #: hashed unconditionally, like the deferred cordon helpers below. ``plan_check`` runs the plan
-#: feasibility check as the last step of ``execute`` (#443). ``initial_mode_choice`` adds the first-replanning
-#: mode choice strategy to the final config (#465).
+#: feasibility check as the last step of ``execute`` (#443). ``initial_mode_choice`` runs eqasim's standalone
+#: mode choice on the final population before iteration 0 (#542).
 _HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes, tariff_export,
                    config_modules, plan_check, initial_mode_choice)
+
+#: ADR-0149: MATSim logs carry timestamps and the summary the Java wall time; a re-run must not change the digest.
+_OUTPUT_HASH_EXCLUDE = ("mode_choice/*.log", "initial_mode_choice.json")
 
 #: VRB zone fare model (ADR-0133). Flag-gated; absent/false keeps the legacy ring cost model.
 VRB_FARES_KEY = "vrb_zone_fares_enabled"
@@ -267,12 +270,10 @@ def configure(context):
     context.config(plan_check.KEY_MAX_FROZEN_PT_AS_WALK_SHARE, plan_check.DEFAULT_MAX_FROZEN_PT_AS_WALK_SHARE)
     context.config(plan_check.KEY_FAIL_ON_THRESHOLD, plan_check.DEFAULT_FAIL_ON_THRESHOLD)
 
-    # Every agent chooses its modes once at the first replanning (#465): a DiscreteModeChoice strategy that MATSim
-    # disables after iteration 1, added to the final config. The weight is checked here, before any stage runs.
-    context.config(initial_mode_choice.KEY_ENABLED, initial_mode_choice.DEFAULT_ENABLED)
-    if context.config(initial_mode_choice.KEY_ENABLED):
-        initial_mode_choice.check_weight(
-            context.config(initial_mode_choice.KEY_WEIGHT, initial_mode_choice.DEFAULT_WEIGHT))
+    # Every agent chooses its modes once before iteration 0 (#542, ADR-0178): the helper declares its switch and
+    # the Java options, and refuses the retired ADR-0155 weight key unconditionally, so a stale overlay fails even
+    # with the feature off.
+    initial_mode_choice.configure(context)
 
     # Zone-based parking costs (issue #249): the tariff model JSON and the braunschweigParking module the Java
     # car cost model reads. OFF declares nothing else and writes nothing.
@@ -395,11 +396,10 @@ def execute(context):
     if context.config(PARKING_KEY):
         _write_parking_inputs(context, result)
 
-    # The first-replanning mode choice goes into the FINAL config (after the cut and the freight injection, which
-    # rewrite it).
+    # The standalone mode choice runs on the FINAL population (after the cut, the freight injection and the
+    # fare/parking inputs), free flow, before the plan check reads the result.
     if context.config(initial_mode_choice.KEY_ENABLED):
-        initial_mode_choice.add_initial_mode_choice(Path(context.path()) / result,
-                                                    context.config(initial_mode_choice.KEY_WEIGHT))
+        initial_mode_choice.run(context, result)
 
     # The check reads the FINAL files (after the cut, the freight injection and the fare inputs).
     if context.config(plan_check.KEY_ENABLED):

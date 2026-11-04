@@ -2,7 +2,10 @@ feature: mode_choice
 title: Mode choice
 area: matsim
 description: eqasim discrete mode choice; OFF in every committed config because no calibrated
-  modal-split reference exists -- run mode shares are not behaviourally validated.
+  modal-split reference exists -- run mode shares are not behaviourally validated. This flag is the
+  upstream placement (before the cut, replacing the population routing); the production initial mode
+  choice before iteration 0 at the END of the prepare stage is the feature record initial_mode_choice
+  (ADR-0178) and does not use this flag.
 stages:
 - matsim.simulation.prepare
 pipelines:
