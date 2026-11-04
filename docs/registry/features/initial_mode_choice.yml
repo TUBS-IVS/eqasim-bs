@@ -12,9 +12,11 @@ description: >-
   CSVs, gzip, scenario check skipped, --eqasim-configurator org.eqasim.braunschweig.BraunschweigConfigurator,
   removePersonsWithNoValidAlternatives true) and no travel-time option. The chosen, routed plans are moved over
   the population file under its name, so the run, the output archive and the plan check read them unchanged.
-  Freight agents keep truck (BraunschweigModeAvailability) and tours touching an outside activity stay frozen
-  (OutsideFilter), exactly as in the loop; the DMC's own routing sets routingMode but not the walkFallbackFrom
-  stamp. The stage raises when the persons of the output differ from the input (eqasim removed persons with no
+  Freight agents keep truck (BraunschweigModeAvailability) and tours touching an outside activity keep their
+  modes (OutsideFilter; the DMC re-estimates and re-routes them with their initial modes), exactly as in the
+  loop; the DMC's own routing sets routingMode but never the walkFallbackFrom stamp, so the plan check counts a
+  walk-only trip with routingMode pt as pt-as-walk (plan_check.summarise, extended with this feature). The stage
+  raises when the persons of the output differ from the input (eqasim removed persons with no
   feasible alternative) or an output is missing, and logs under [initial mode choice] and writes to
   initial_mode_choice.json the persons before/after, the trips, the share of trips whose mode changed, the mode
   shares before and after (residents only, the analysis filter skips pt_ and freight_ ids) and the Java wall
@@ -42,7 +44,6 @@ code_paths:
 - braunschweig/matsim/initial_mode_choice.py
 - braunschweig/matsim/simulation/prepare.py
 - configs/base_bs.yml
-- tests/test_initial_mode_choice.py
 evidence:
   tests:
   - tests/test_initial_mode_choice.py

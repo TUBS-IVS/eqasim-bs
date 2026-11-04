@@ -270,10 +270,10 @@ def configure(context):
     context.config(plan_check.KEY_MAX_FROZEN_PT_AS_WALK_SHARE, plan_check.DEFAULT_MAX_FROZEN_PT_AS_WALK_SHARE)
     context.config(plan_check.KEY_FAIL_ON_THRESHOLD, plan_check.DEFAULT_FAIL_ON_THRESHOLD)
 
-    # Every agent chooses its modes once before iteration 0 (#542, ADR-0178). The retired ADR-0155 weight key is
-    # refused unconditionally, so a stale overlay fails even with the feature off.
-    context.config(initial_mode_choice.KEY_ENABLED, initial_mode_choice.DEFAULT_ENABLED)
-    initial_mode_choice.refuse_retired_weight(context.config(initial_mode_choice.KEY_WEIGHT_RETIRED, None))
+    # Every agent chooses its modes once before iteration 0 (#542, ADR-0178): the helper declares its switch and
+    # the Java options, and refuses the retired ADR-0155 weight key unconditionally, so a stale overlay fails even
+    # with the feature off.
+    initial_mode_choice.configure(context)
 
     # Zone-based parking costs (issue #249): the tariff model JSON and the braunschweigParking module the Java
     # car cost model reads. OFF declares nothing else and writes nothing.

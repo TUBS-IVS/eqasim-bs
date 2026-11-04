@@ -18,6 +18,7 @@ import os
 import time
 
 import matsim.runtime.eqasim as eqasim
+import matsim.runtime.java as java
 import pandas as pd
 
 from braunschweig.matsim.simulation.plan_check import resolve_population_path
@@ -41,6 +42,18 @@ CSV_DELIMITER = ";"
 SUMMARY_FILE_NAME = "initial_mode_choice.json"
 
 _PERSON_TOKEN = b"<person "
+
+
+def configure(context) -> None:
+    """Declare what ``run`` reads: the switch, the retired key (refused at once) and the Java runner options.
+
+    Called from the configure() of the stage that runs the step (``braunschweig.matsim.simulation.prepare``); the
+    Java options are delegated to ``matsim.runtime.java.configure`` because ``run`` calls ``eqasim.run`` ->
+    ``java.run`` (contract of tests/test_runtime_config_declares.py).
+    """
+    java.configure(context)
+    context.config(KEY_ENABLED, DEFAULT_ENABLED)
+    refuse_retired_weight(context.config(KEY_WEIGHT_RETIRED, None))
 
 
 def refuse_retired_weight(value) -> None:
