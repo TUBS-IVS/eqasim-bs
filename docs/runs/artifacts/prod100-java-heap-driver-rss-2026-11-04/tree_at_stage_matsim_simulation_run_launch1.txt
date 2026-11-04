@@ -1,0 +1,10 @@
+samples of matsim.simulation.run: 13
+-- first sample 2026-11-01T04:53:16, 3 processes, tree RSS 14.76 GiB, memory available 77.5 GiB
+   pid 1540161  ppid 1540147  state R rss   14.751 GiB  python scripts/run_synpp.py configs/base_bs.yml /home/felix/prod100_20261031/run.yml
+   pid 1565342  ppid 1540161  state S rss    0.005 GiB  /home/felix/miniforge3/envs/eqasim/bin/python -c from multiprocessing.resource_tracker import main;main(15)
+   pid 1565343  ppid 1540161  state S rss    0.005 GiB  /home/felix/miniforge3/envs/eqasim/bin/python -c from multiprocessing.forkserver import main; main(20, 21, ['_
+-- last sample 2026-11-01T04:59:19, 4 processes, tree RSS 33.12 GiB, memory available 59.1 GiB
+   pid 1540161  ppid 1540147  state S rss   14.751 GiB  python scripts/run_synpp.py configs/base_bs.yml /home/felix/prod100_20261031/run.yml
+   pid 1565342  ppid 1540161  state S rss    0.005 GiB  /home/felix/miniforge3/envs/eqasim/bin/python -c from multiprocessing.resource_tracker import main;main(15)
+   pid 1565343  ppid 1540161  state S rss    0.005 GiB  /home/felix/miniforge3/envs/eqasim/bin/python -c from multiprocessing.forkserver import main; main(20, 21, ['_
+   pid 1607732  ppid 1540161  state S rss   18.355 GiB  /home/felix/tools/jdk-25.0.3+9/bin/java -cp /home/felix/prod100_20261031/cache/matsim.runtime.eqasim__1c974c0f
