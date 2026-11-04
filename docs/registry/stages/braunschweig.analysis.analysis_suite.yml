@@ -3,7 +3,10 @@ title: Analysis suite
 layer: analysis
 description: 'Post-run analysis driver: dashboard, MiD validation, population validation; excludes
   the freight subpopulation from person KPIs. Reads MATSim outputs from the <output_path>/matsim_output
-  archive (config-derived, ADR-0101), never via a matsim.simulation.run stage edge. The sub-analysis
+  archive (config-derived, ADR-0101), never via a matsim.simulation.run stage edge. It declares
+  _ORDER_AFTER_STAGES = (matsim.output,): when matsim.output is part of the same synpp invocation the stage
+  executes after it, so it reads the archive of this run; ordering only, not a dependency (ADR-0177). Without an archive the
+  modal split of mid_validation is recorded as the named skip mid_validation.modal_split (WARNING). The sub-analysis
   stuck_agents (flag analysis_stuck_agents, default on, runs before the dashboard on the same MATSim
   readiness) writes <output_path>/analysis/stuck/stuck_agents.csv (one row per stuck event: person, time,
   leg_mode, link, subpopulation, frozen, at_end) and stuck_summary.json (the stuck agents of the final
@@ -38,3 +41,4 @@ decisions:
 - ADR-0101
 - ADR-0146
 - ADR-0147
+- ADR-0177

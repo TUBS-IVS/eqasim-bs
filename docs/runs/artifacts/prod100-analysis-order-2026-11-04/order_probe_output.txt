@@ -1,0 +1,15 @@
+registry built: 108 stages in 44.1 s
+position  26 / 108  generation  1  documentation.meta_output  (descriptor 'documentation.meta_output')
+position  96 / 108  generation 13  braunschweig.synthesis.locations.secondary_chainsolvers  (descriptor 'synthesis.population.spatial.secondary.locations')
+position  97 / 108  generation 14  braunschweig.synthesis.commute_day.spatial_locations_day  (descriptor 'synthesis.population.spatial.locations')
+position  98 / 108  generation 14  braunschweig.matsim.scenario.facilities  (descriptor 'matsim.scenario.facilities')
+position  99 / 108  generation 15  braunschweig.synthesis.outside_tour_modes.stage  (descriptor 'synthesis.population.trips.simulated')
+position 100 / 108  generation 16  braunschweig.synthesis.outside_tour_modes.activities_stage  (descriptor 'synthesis.population.activities.simulated')
+position 101 / 108  generation 17  braunschweig.synthesis.commute_day.output_day  (descriptor 'synthesis.output')
+position 102 / 108  generation 17  braunschweig.matsim.scenario.population  (descriptor 'matsim.scenario.population')
+position 103 / 108  generation 18  braunschweig.analysis.simwrapper_export  (descriptor 'braunschweig.analysis.simwrapper_export')
+position 104 / 108  generation 18  braunschweig.analysis.analysis_suite  (descriptor 'braunschweig.analysis.analysis_suite')
+position 105 / 108  generation 18  braunschweig.matsim.simulation.prepare  (descriptor 'matsim.simulation.prepare')
+position 106 / 108  generation 19  matsim.simulation.run  (descriptor 'matsim.simulation.run')
+position 107 / 108  generation 20  matsim.output  (descriptor 'matsim.output')
+descriptor example: 'matsim.output' | name: matsim.output

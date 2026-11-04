@@ -22,6 +22,11 @@ from pathlib import Path
 LOGGER = logging.getLogger("braunschweig.analysis.matsim_archive")
 
 ARCHIVE_DIR_NAME = "matsim_output"
+# The synpp stage that writes the archive. Every stage that reads the archive declares
+# ``_ORDER_AFTER_STAGES = (ARCHIVE_PRODUCER_STAGE,)``: when the simulation is part of the same
+# invocation it then executes after the archive is written, and an analysis-only invocation still
+# does not pull the simulation in (ADR-0177; tests/test_synpp_fork_order_after.py enforces it).
+ARCHIVE_PRODUCER_STAGE = "matsim.output"
 # matsim.output asserts this file exists after every archive write; a directory
 # without it is a half-written archive and must never be consumed.
 ARCHIVE_SENTINEL = "output_events.xml.gz"
