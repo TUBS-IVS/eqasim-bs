@@ -1,0 +1,5 @@
+Gemeinde EV table (kba_gemeinde_ev.csv) covers 8 Kreise: 03101, 03102, 03103, 03151, 03153, 03154, 03157, 03158
+Kreis fuel table (kba_kreis_fuel.csv) covers 403 Kreise
+vehicles drawn: 400
+INFO    [fleet_de][in-commuters (origin outside ZGB)] powertrain Kreis lookup: primary 400/400 (100.0%), fallback 0 (0.0%)
+INFO    [fleet_de][in-commuters (origin outside ZGB)] powertrain Gemeinde tilt: primary 0/0 (0.0%), fallback 0 (0.0%); not applicable 400 (no home-Gemeinde label and no Gemeinde table rows for the car's Kreis, in neither rate)

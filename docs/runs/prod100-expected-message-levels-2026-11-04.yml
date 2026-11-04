@@ -1,0 +1,116 @@
+id: prod100-expected-message-levels-2026-11-04
+date: '2026-11-04'
+repository:
+  commit: 7a41f0ba57bb9abdb862c59bcc14c73653e8510a
+  branch: origin/main (the detached worktree of the production run) for the felix measurements; fix/c5c-expected-messages-log-level for the laptop observation
+  notes: >-
+    The felix measurements read the 100 % production run prod100_20261031 and its inputs READ ONLY: its log
+    (felix:~/prod100_20261031/logs/run_20261031T071313.log), its working directory (felix:~/prod100_20261031/cache) and the raw MiD 2023 files its code
+    worktree resolves to (felix:/home/felix/eqasim-bs/eqasim-data/data/braunschweig/popsim/mid2023_raw, reached through a link from
+    the run's code worktree). The code worktree of the run is at commit 7a41f0ba57bb9abdb862c59bcc14c73653e8510a with an empty git status. The laptop
+    observation ran on the code of branch fix/c5c-expected-messages-log-level (base 0063aadf5eeb0305d48f488b1726a07f884865f8) with the committed KBA tables.
+configuration:
+  config: configs/base_bs.yml with the run overlay of prod100_20261031 (felix:~/prod100_20261031/run.yml.launch1_20261031T071313); no setting was changed
+  notes: >-
+    No run was started and no config was changed. The run's launcher config carried a non-empty synpp_expected_stale_stages list (the
+    first lines of the log show the config merge), so an unmigrated cache would have aborted the launch before any stage executed.
+sampling:
+  rate: 1.0
+  scope: >-
+    the log of the 100 % production run and the unsampled raw MiD 2023 person and household files. The in-commuter observation uses 400 illustrative
+    car agents, not a model population.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. The four messages of the log are read as they stand; the changed code is checked by tests
+    (tests/test_migrate_cache_metadata.py, tests/test_incommuter_donor_consistency.py, tests/test_popsim_mid.py,
+    tests/test_fleet_gemeinde_tilt_not_applicable.py) and by one observation on the committed tables.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Measurements and observation completed on 2026-11-04. They show which messages of the production log describe a state that is expected by
+    construction and what that state is. They validate nothing about model quality: no observed mobility data is involved, and the warn bound of the
+    sex imputation is an ASSUMPTION, not a published value.
+source: >-
+  felix measurements run with ~/miniforge3/envs/eqasim/bin/python reading the scripts from standard input (nothing was copied to felix, nothing written
+  there). Committed in docs/runs/artifacts/prod100-expected-message-levels-2026-11-04/: measure_mid_sex_and_invalid_households.py (sha256
+  822cf7dae031ae071a4fc1131f5e420be77405c5ac8751eace07747f82c18dc1, output mid_raw_measurement.txt), measure_pipeline_json_markers.py (sha256
+  6718ccd8f9abbe26b55df912e6bb8e24bb686b13d151cc97d56e05bb3a91a2b4, output pipeline_json_census.txt), production_log_lines.txt (the log lines of
+  the four messages with their line numbers, cut to 520 characters), and observe_incommuter_fleet_log.py (sha256
+  771400473adc0d9d401adbc38cb4a8d3762bde9372e65cf997c8f4a2918b16bd, run on the laptop, output incommuter_fleet_log_observation.txt).
+environment: 'server (felix, hostname matsim, Linux, conda eqasim, Python 3.10.10, pandas 1.5.3) for the measurements; laptop (Windows 11, conda eqasim: Python 3.10.10, numpy 1.23.5, pandas 1.5.3) for the observation; time zone Europe/Berlin'
+validation:
+- metric: the four messages of the production log at the level they were logged
+  reference: 'the run''s own log, felix:~/prod100_20261031/logs/run_20261031T071313.log (NOT observed data)'
+  result: >-
+    (1) line 143, ERROR: "[explain] # WARNING: 1 entries carry a legacy md5 module hash ..."; (2) line 282, WARNING: "[mid_donor] sex: primary
+    420238/420979 (99.8%), fallback 741/420979 (0.2%)"; (3) lines 344 and 49283, WARNING (two stages call the loader): "[mid.load_completed_donor]
+    dropped 0 invalid-household row(s) (H_ID=0 or null) and 312 associated person(s)"; (4) line 39236, WARNING: "[fleet_de][in-commuters (origin outside
+    ZGB)] powertrain Gemeinde tilt: primary 0/58302 (0.0%), fallback 58302 (100.0%)", next to "powertrain Kreis lookup: primary 58302/58302
+    (100.0%)" of the same block. The residents block of the same run logs its Gemeinde tilt at INFO (primary 679187/688832, 98.6 %).
+  artifact: docs/runs/artifacts/prod100-expected-message-levels-2026-11-04/production_log_lines.txt
+- metric: HP_SEX codes of the raw MiD 2023 person file (message 2)
+  reference: 'felix:/home/felix/eqasim-bs/eqasim-data/data/braunschweig/popsim/mid2023_raw/MiD2023_Personen.csv (349,281,354 bytes, dated 2026-06-16, sha256 fcb458bf720a0686aa63a5a00e36f489e23b42b6c4b02a7210636da58dc4a0cb); the file the run read, NOT observed reality'
+  result: >-
+    420,979 persons; HP_SEX 1: 209,094, 2: 211,144, 3: 614, 9: 127. 741 persons (0.1760 %) carry a code other than 1 and 2, exactly the 741/420979
+    of the production log. The sex imputation is therefore a property of the survey file, not a defect of the run. The warn bound
+    SEX_IMPUTED_WARN_SHARE of braunschweig/data/hts/mid_donor.py is an ASSUMPTION of 1 %, about 5.7 times the measured share, so that a
+    change of the file or of the coding reaches it and the file as delivered does not.
+  artifact: docs/runs/artifacts/prod100-expected-message-levels-2026-11-04/mid_raw_measurement.txt
+  notes: >-
+    The same imputation is logged at INFO by the resident path (braunschweig.popsim.expand.map_demographics); the donor stage was the only one that warned.
+- metric: the H_ID=0 bucket of the raw MiD 2023 files (message 3)
+  reference: 'felix:/home/felix/eqasim-bs/eqasim-data/data/braunschweig/popsim/mid2023_raw/MiD2023_Personen.csv and MiD2023_Haushalte.csv (the files the run read); NOT observed reality'
+  result: >-
+    312 of the 420,979 person rows have H_ID 0 (one distinct id, no null), and none of the 218,101 household rows has H_ID 0 or null: the
+    pair (0 household rows, 312 persons) of the production log. It is a fixed property of the delivery, recorded as
+    MID_2023_INVALID_HOUSEHOLD_ROWS and MID_2023_INVALID_HOUSEHOLD_PERSONS in braunschweig/popsim/mid/donor.py. load_completed_donor now logs exactly
+    that pair at INFO and any other pair (more, fewer or none) as a warning.
+  artifact: docs/runs/artifacts/prod100-expected-message-levels-2026-11-04/mid_raw_measurement.txt
+- metric: metadata census of the production cache against the two states of the legacy md5 hint (message 1)
+  reference: 'felix:~/prod100_20261031/cache/pipeline.json.before_token_patch (dated 2026-10-16) and pipeline.json (dated 2026-11-01 05:01); the files as they stand, NOT observed data'
+  result: >-
+    The backup of 2026-10-16 holds 348 entries, all with a 32-hex md5 module hash and none with an output digest or fork marker: a cache that was never migrated.
+    The file after the run holds 513 entries, 139 with an md5 hash and 374 with both an output digest and a fork marker; no entry has both. The
+    migration therefore leaves an entry either fully migrated or byte-for-byte unchanged, and a cache the migration or a fork run has been through holds
+    output digests, which is the marker the explainer now uses. At launch the explain report named exactly one stage of the graph with a legacy hash,
+    braunschweig.data.verbindungen.margins, STALE [module_hash_changed]; it re-executed at 22:03:51 in about one second (0 files, 2,798 bytes), so
+    its cost was nil. The ERROR was a state that is genuinely stale and needs no action.
+  artifact: docs/runs/artifacts/prod100-expected-message-levels-2026-11-04/pipeline_json_census.txt
+  notes: >-
+    The pipeline.json of the launch moment (2026-10-31 07:13) is not preserved; the file after the run is what the census reads. Which of its 139 md5
+    entries belong to the graph of that launch was not examined: the explainer counts only stages of the graph, and it counted one.
+- metric: the in-commuter Gemeinde-tilt accounting on the committed tables (message 4)
+  reference: 'eqasim-data/data/braunschweig/kba/derived/kba_gemeinde_ev.csv and kba_kreis_fuel.csv as committed (NOT observed fleet data); braunschweig.data.cordon.demand.select_inbound_flows (origins that are ZGB Kreise are excluded) and braunschweig.synthesis.incommuters.build_incommuter_fleet (the home Gemeinde of an in-commuter car is NaN)'
+  result: >-
+    The Gemeinde EV table covers 8 Kreise (03101, 03102, 03103, 03151, 03153, 03154, 03157, 03158, the ZGB), the Kreis fuel table 403. An in-commuter car has
+    no home-Gemeinde label and its origin Kreis is not a ZGB Kreis, so its Gemeinde tilt can never fire; counted as a fallback it read 100 % on every
+    run. Run through build_incommuter_fleet with 400 illustrative agents whose origin Kreise lie outside the table, the changed code logs at INFO
+    "primary 0/0 (0.0%), fallback 0 (0.0%); not applicable 400" with the Kreis lookup at 100 % primary, the same shape as the production block. A car
+    with a label that cannot be used, or in a Kreis the table covers, stays a fallback and warns above 50 % of the applicable cars (tests/test_fleet_gemeinde_tilt_not_applicable.py).
+  artifact: docs/runs/artifacts/prod100-expected-message-levels-2026-11-04/incommuter_fleet_log_observation.txt
+  notes: >-
+    The change only counts one car in one of two counters; no pmf, draw or random stream changes, so no sampled vehicle can change. The observation
+    is an illustration of the log line on the committed tables, not a replay of the production in-commuter population.
+artifacts:
+- docs/runs/artifacts/prod100-expected-message-levels-2026-11-04/
+issues: []
+decisions:
+- ADR-0149
+features:
+- incommuter_donor_demographics
+- fleet_realism_upgrade
+notes: >-
+  Cost of landing the changes (static audit, scripts/audit_synpp_helper_hash.py, covered[] of each stage; durations are single observations of the
+  production log of this run, 2026-10-31/11-01, not a benchmark). Whichever stage hashes an edited module re-executes once on the next run that starts
+  from a valid cache; early cutoff spares descendants whose input digest is unchanged, and no output changes here. (1) The staleness report and the
+  launcher are no stage input: no cost. (2) braunschweig/data/hts/mid_donor.py is itself a stage: 146 s. (4) braunschweig/synthesis/vehicles/fleet_sampling_de.py is hashed by
+  braunschweig.synthesis.incommuters (32 min 27 s) and braunschweig.synthesis.student_incommuters (8 min 6 s), the two stages the branches
+  fix/c5a-composition-clip-residual and fix/c5b-composition-sole-gemeinde-not-applicable invalidate as well, so landing any of them with the
+  others costs one re-execution. (3) braunschweig/popsim/mid/donor.py is hashed by seven stages: analysis_suite (38 min 43 s),
+  data.hts.mid_donor (146 s, the stage of (2)), popsim.completed_donor (42 min 44 s), popsim.distance_distributions (61 s), popsim.stage (12 h 55 min 55 s),
+  synthesis.commute_day.home_office_donors_stage (37 s) and synthesis.locations.secondary_chainsolvers (32 min 2 s), 14 h 53 min in total with
+  data.hts.mid_donor counted once, which is the price of changing the level of one log line there. The change is a separate commit so that it can be landed together with the next change that
+  re-executes the PopulationSim stage anyway, or left out.
