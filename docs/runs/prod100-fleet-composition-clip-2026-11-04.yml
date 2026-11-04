@@ -1,0 +1,120 @@
+id: prod100-fleet-composition-clip-2026-11-04
+date: '2026-11-04'
+repository:
+  commit: 7a41f0ba57bb9abdb862c59bcc14c73653e8510a
+  branch: origin/main (the detached worktree of the production run)
+  notes: >-
+    The code the 100 % production run prod100_20261031 ran (felix:~/prod100_20261031/eqasim-bs, a clean detached
+    worktree of origin/main), used READ ONLY and unmodified for the baseline replay. The "after" replay swapped in ONE
+    file, braunschweig/synthesis/vehicles/fleet_sampling_de.py of branch fix/c5a-composition-clip-residual (the
+    committed blob, LF line endings, sha256 c02fba7aac28abc867e6d92781b8586f616f66d02ce0a270e0e944d8b45f1442) and
+    nothing else.
+    The two fleet modules have no commit between 7a41f0ba and the base of that branch (6ef8f99c), so the swapped file
+    differs from the production one by the C5a change only.
+configuration:
+  config: configs/base_bs.yml with the run overlay of prod100_20261031 (felix:~/prod100_20261031/run.yml.launch1_20261031T071313)
+  notes: >-
+    Only the settings of the household stage enter the replay: random_seed 1234, data_path eqasim-data/data (the run's
+    symlink farm), fleet_electric_calibration kreis_mix_gemeinde_grid_bev_tilt, and every fleet_* flag at its default
+    (consistency_v2, age_income_coupling, ev_income_tilt, euro6_substage, wohnmobile_age_tilt,
+    gemeinde_bev_composition_tilt, model_brands all True). They are the arguments of the sample_fleet call in
+    braunschweig.synthesis.vehicles.cars.household.execute, copied into replay_composition_clip.py.
+sampling:
+  rate: 1.0
+  scope: >-
+    the RESIDENTS fleet only (688,832 household cars of 476,805 households). The in-commuter fleet was not replayed; its
+    production log line reads "no Kreis needed a shift".
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. sample_fleet of braunschweig.synthesis.vehicles.cars.household was replayed outside synpp from
+    three cached outputs of the run (the household stage's own output, the enriched persons and the home-cell locations),
+    which rebuilds the df_cars frame in 12 s instead of the stage's 35 min per-household loop. The replay is only a replay
+    if its fleet equals the cached one: the check is the first validation entry below.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Both replays completed on 2026-11-04 (baseline 14:54:38 to 14:59:08 CET, after 14:54:38 to 14:59:07 CET, run side by side). A diagnostic of one correction step of
+    the fleet draw (what the [0,1] clip of the BEV:PHEV aggregate-neutrality correction loses), NOT a validation: no
+    observed data is involved, and the composition factors themselves stay unvalidated (feature record
+    fleet_gemeinde_bev_composition_tilt).
+source: >-
+  felix:~/c5a_replay_final_20261104/{baseline,after} (run with PYTHONDONTWRITEBYTECODE=1, OMP/OPENBLAS/MKL threads 1,
+  nice 10), deleted after the committed copies below were checked. Committed in
+  docs/runs/artifacts/prod100-fleet-composition-clip-2026-11-04/: replay_composition_clip.py (sha256
+  eccd7fe4fe3942f2387be4872264af6c7bea95a3c84ff0ab958576a5572239fb, the script both runs used), baseline_* and after_*
+  (verification.json and the run log as replay_log.txt, because *.log is git-ignored; baseline also per_kreis.csv,
+  clipped_by_segment.csv, summary.json). The 4.7 MB capture.npz of the baseline run is not committed; rerunning the
+  script writes it again.
+environment: 'server (felix, hostname matsim, Linux 5.15.0-139-generic), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, numpy 1.23.5, pandas 1.5.3), time zone Europe/Berlin'
+validation:
+- metric: the replayed residents fleet against the cached production output (identity)
+  reference: 'felix cache entry braunschweig.synthesis.vehicles.cars.household__6b6784a39cfbf5cdf97abeb2ac00d4ce; an equivalence reference, NOT observed data'
+  result: >-
+    IDENTICAL for all 688,832 fleet cars in the 8 compared columns (vehicle_id, segment, powertrain, euro_class,
+    age_band, brand, model, type_id; 0 mismatches each), for the production code (baseline) AND for the patched module
+    (after). The C5a change therefore alters no sampled vehicle. The rebuilt vehicle ids also equal the cached ones, which
+    fixes the row order the seeded draw depends on.
+  artifact: docs/runs/artifacts/prod100-fleet-composition-clip-2026-11-04/after_verification.json
+  notes: baseline_verification.json is the same check for the unmodified production code.
+- metric: the replay's composition-correction log lines against the production log (22:50:42)
+  reference: 'felix:~/prod100_20261031/logs/run_20261031T071313.log lines 1535-1536; the run''s own log, NOT observed data'
+  result: >-
+    Reproduced verbatim by the baseline replay: "5 Kreis(e) shifted, largest +0.658318 pp of the electric mass (Kreis
+    03154)" and "44331 car(s) hit the [0,1] BEV-fraction clip". An independent recount of the clipped cars from the
+    captured pmf entries gives the same 44,331.
+  artifact: docs/runs/artifacts/prod100-fleet-composition-clip-2026-11-04/baseline_replay_log.txt
+- metric: which cars the clip touches
+  reference: 'none; a measurement of the model, NOT a comparison with observed data'
+  result: >-
+    The 44,331 clipped cars are exactly the minis (28,990 cars) and the grossraum_vans (15,341 cars) of the five Kreise
+    that needed a shift (03151, 03153, 03154, 03157, 03158), and no other segment. All five shifts are positive (+0.1088
+    to +0.6583 pp of the electric mass), so only the upper boundary of the BEV fraction clips. The minis are numerically
+    pure BEV: the FZ 27.10 seed has no plug-in-hybrid minis, so their PHEV share is only the 1e-9 floor of rake_2d and
+    their distance to the boundary is 1.8e-8 .. 2.5e-7. The grossraum_vans are 99.9 % BEV, 5.8e-5 .. 8.4e-4 from the
+    boundary, which every positive shift here exceeds. The Kreise 03101, 03102 and 03103 needed no shift (kreisfreie
+    Staedte, unit factors).
+  artifact: docs/runs/artifacts/prod100-fleet-composition-clip-2026-11-04/baseline_clipped_by_segment.csv
+- metric: what the clip loses, per shifted Kreis (clipped share of the electric mass; aggregate residual left by the clip)
+  reference: 'none; a measurement of the correction, NOT a comparison with observed data'
+  result: >-
+    03151: shift +0.1102 pp, 12,314 clipped cars hold 11.27 % of the Kreis's electric mass, residual 0.01232 pp of the
+    electric mass (0.000624 pp of all cars) = 11.2 % of the shift. 03153: +0.1208 pp, 8,350 cars, 10.32 %, 0.01231 pp
+    (0.000529 pp of all cars), 10.2 %. 03154: +0.6583 pp, 6,036 cars, 10.64 %, 0.06990 pp (0.003280 pp of all cars),
+    10.6 %. 03157: +0.1088 pp, 9,842 cars, 11.26 %, 0.01214 pp (0.000603 pp of all cars), 11.2 %. 03158: +0.1618 pp, 7,789
+    cars, 11.41 %, 0.01835 pp (0.000913 pp of all cars), 11.3 %. Pooled over the five Kreise: 44,331 of 409,335 cars
+    (10.8 %) hold 11.05 % of their electric mass; 4.14 expected BEVs of 19,789 electric cars (0.0209 pp of the electric
+    mass) stay unclosed. The correction therefore closes about nine tenths of each Kreis's shift and the count of clipped
+    cars is no sign of a broken input.
+  artifact: docs/runs/artifacts/prod100-fleet-composition-clip-2026-11-04/baseline_per_kreis.csv
+  notes: >-
+    The residual of one Kreis is the sum over its clipped cars of electric mass times the BEV share the car could not take,
+    divided by the Kreis's electric mass; the algebra check column (intended minus realised BEV mass against that sum on the
+    captured pmf entries) is below 1e-12 in every Kreis. The warning bound of the change (an ASSUMPTION, see ADR-0125 and
+    the constant COMPOSITION_CLIP_UNCLOSED_WARN_SHARE) lies far above the largest unclosed share measured here.
+- metric: the new instrumentation at production scale against the independent analysis
+  reference: 'baseline_per_kreis.csv, computed by the script from the captured pmf entries; an independent second implementation, NOT observed data'
+  result: >-
+    The patched module logs, for the residents draw, the same figures as the independent analysis: 44331 clipped cars
+    (10.8 % of the cars in the shifted Kreise) holding 11.1 % of their electric mass, and at most 11.3 % of a Kreis's shift
+    unclosed (Kreis 03158: +0.018345 pp of its electric mass, +0.000913 pp of all its cars), as an INFO line; no clip
+    WARNING (the 7 WARNING lines left are the unchanged EV-tilt source, Euro-6 substage and age_income pool messages of
+    the production log).
+  artifact: docs/runs/artifacts/prod100-fleet-composition-clip-2026-11-04/after_replay_log.txt
+artifacts:
+- docs/runs/artifacts/prod100-fleet-composition-clip-2026-11-04/
+issues: []
+decisions:
+- ADR-0125
+notes: >-
+  Cost of landing the change. The edit of fleet_sampling_de.py changes the structured token of exactly two stages,
+  braunschweig.synthesis.incommuters and braunschweig.synthesis.student_incommuters (static audit,
+  scripts/audit_synpp_helper_hash.py: their tokens cover that module). In the run prod100_20261031 they took about 32.5 and
+  8 min (read from the log of prod100_20261031); if their output digests stay equal the early cutoff spares their
+  descendants, which is NOT measured here. The household stage (braunschweig.synthesis.vehicles.cars.household) does not
+  hash its helpers, so it does NOT re-execute: the new residents log line appears only when that stage next runs for
+  another reason (49 min in that log); this replay is the way to get the figures without that run. Whether the next run
+  re-executes the household stage anyway is not predicted by this manifest. The September production run logged 44,357
+  clipped cars for a different population draw; it was not replayed.

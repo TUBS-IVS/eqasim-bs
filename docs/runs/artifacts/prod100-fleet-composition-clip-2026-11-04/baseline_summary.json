@@ -1,0 +1,10 @@
+{
+  "shifted_kreise": 5,
+  "clipped_cars_total": 44331,
+  "cars_in_shifted_kreise": 409335,
+  "clipped_electric_share_of_shifted_kreise": 0.11053338513630134,
+  "lost_bev_mass_total": 4.138513698818762,
+  "residual_pp_of_electric_mass_pooled": 0.020913092849518575,
+  "production_function_clipped_count": 44331,
+  "independent_clipped_count_matches": true
+}

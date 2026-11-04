@@ -209,8 +209,12 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
 
     The pt counters are per TRIP (``split_trips``) and all of one block: ``n_pt_trips`` are the trips requested as pt
     (leg attribute ``routingMode`` = pt, or a leg stamped ``walkFallbackFrom`` = pt), assigned to the class of the
-    trip's first leg; ``n_pt_as_walk`` the pt-intended trips with a stamped walk leg, in the same class (so numerator
-    and denominator share one block); ``share_pt_as_walk`` = ``n_pt_as_walk / n_pt_trips`` (the threshold's share; 0
+    trip's first leg; ``n_pt_as_walk`` the pt-intended trips realised as walk, in the same class (so numerator
+    and denominator share one block), by either rule: a walk leg carries the ``walkFallbackFrom`` stamp (eqasim's
+    ``PlanRouter``), or no leg carries the stamp, every leg is a walk mode and a leg has ``routingMode`` = pt (a pt
+    trip the discrete mode choice's ``TripRouter`` realised as walk only; it sets ``routingMode`` but never the
+    stamp, and the population read here is that re-routed one after eqasim-bs#542 / ADR-0178). The hour is that of
+    the stamped walk leg, else of the trip's first leg; ``share_pt_as_walk`` = ``n_pt_as_walk / n_pt_trips`` (the threshold's share; 0
     when the block has no pt-intended trip). A jar without the stamp makes ``n_pt_as_walk`` read 0 whatever the
     router did: ``require_walk_fallback_stamp`` guards that in ``run``. ``n_legs_with_routing_mode`` and
     ``n_pt_or_stamped_legs`` tell ``_log_summary`` when ``n_pt_trips`` is meaningless (no leg carries a
@@ -261,9 +265,14 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
             trip_block["n_pt_trips"] += 1
             stamped_walk = next((index for index in trip
                                  if person.legs[index][2] is not None and person.legs[index][0] == "walk"), None)
-            if stamped_walk is not None:
+            # The mode choice's own router (TripRouter) sets routingMode but never the stamp: a pt trip it realised
+            # as walk legs only is a pt-as-walk trip too (eqasim-bs#542, ADR-0178).
+            walk_only_pt = (not any(leg[2] is not None for leg in trip_legs)
+                            and all(leg[0] in WALK_MODES for leg in trip_legs)
+                            and any(leg[3] == PT_MODE for leg in trip_legs))
+            if stamped_walk is not None or walk_only_pt:
                 trip_block["n_pt_as_walk"] += 1
-                departure = person.activities[stamped_walk][1]
+                departure = person.activities[trip[0] if stamped_walk is None else stamped_walk][1]
                 hour = "unknown" if departure is None else str(int(departure // 3600.0))
                 by_hour = trip_block["pt_as_walk_by_hour"]
                 by_hour[hour] = by_hour.get(hour, 0) + 1
