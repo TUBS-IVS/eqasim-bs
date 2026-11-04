@@ -64,6 +64,10 @@ evidence:
       Kreis lookup, the Gemeinde tilt (incl. a separate count of Gebietsstand-crosswalked and
       combined-electric-share tilts), the 5 km grid tilt, the brand/model draw, the HBEFA size map,
       the Euro-6 substage draw (per-Kreis / national / no-data) and the model-feasibility mask.
+      A car that cannot take the Gemeinde tilt at all (no home-Gemeinde label and no table rows for
+      its Kreis: the in-commuters from outside the ZGB) is counted as not applicable, in neither
+      rate (docs/codebase/notes/fallback-counter-states.md); every other miss stays a fallback,
+      judged over the applicable cars only. Run manifest prod100-expected-message-levels-2026-11-04.
       Two instrumentation defects found and fixed during the merge: a Gemeinde whose key matched but
       whose factors were all skipped used to count as a PRIMARY hit (ADR-0086), and the segment-model
       coverage gap that emptied the gelaendewagen brand pool was only visible as a 5.6% brand/model
