@@ -6,7 +6,8 @@
   Phase 4): early cutoff in the fork's `run()` and `cache_share` coherence by output hash.
   The server acceptance on a copy of the 100 % cache ran on 2026-10-22 (see "Implementation
   status" and "Evidence"); it is a smoke, not a validation. Amended 2026-10-22 by decision 8
-  (byte-reproducible jar builds, #474).
+  (byte-reproducible jar builds, #474) and 2026-11-04 by Ruling H (the legacy md5 hint is an
+  error only for a cache that was never migrated, C5c).
 - **Numbering:** ADR-0149 is the next free id. Checked on 2026-10-21 across all local and
   remote branches: the highest record anywhere is ADR-0148.
 - **Issue:** #468; decision 8: #474. **Relates to:** ADR-0105 (deterministic stage hashes), ADR-0136 (token
@@ -163,8 +164,19 @@ into this record):
   string; on equality and refactor-equivalence of every module the replay hashed, the current
   token is stored. Entries built from any other revision are reported as mismatch (genuinely
   stale, spec-conform). The migration therefore needs git with the revision available.
-- **Ruling H, loud hint.** `staleness.format_report` prints a warning when stored module
-  hashes are 32-hex legacy md5 values and names the migration script.
+- **Ruling H, loud hint (amended 2026-11-04, C5c).** `staleness.format_report` reports stored
+  module hashes that are 32-hex legacy md5 values and tells two states apart by whether any entry
+  of the cache carries an output digest (`StageAssessment.cache_migrated`). None: the cache was
+  never migrated, every stage with such an entry recomputes whether or not its code changed, and
+  the line starts with `staleness.ERROR_LINE_PREFIX` and names the migration script; the launcher
+  (`scripts/run_synpp.py`) logs exactly that line at ERROR. Otherwise the migration (or a fork
+  run) has been through the cache, and an entry that still carries the md5 hash is one the
+  migration kept legacy: genuinely stale, already listed STALE, and migrating again changes
+  nothing, so its line is information. Rejected: keeping ERROR for both (the 100 % production run
+  `prod100_20261031` logged its one kept-legacy entry at ERROR, so error counters fired on an
+  expected state; `docs/runs/prod100-expected-message-levels-2026-11-04.yml`). Accepted limit: a
+  cache whose first fork launch crashed midway holds output digests and is judged migrated, so
+  its remaining md5 entries read as kept legacy; the STALE lines still name them.
 
 Decisions made while implementing Phase 4 (controller rulings of the working ledger, folded
 into this record):
@@ -394,8 +406,8 @@ built by older code are genuinely stale. Result: the two stale sets are identica
 migration counters are in the manifest). So "zero recompute after migration" holds in the form "the migration
 recomputes nothing the old code would not", not as "0 stale". Many entries stay legacy because their stored
 module hash matches neither the current source nor the legacy revision. Wording defect found on this run: the
-explainer's legacy md5 warning also fired after a migration; reworded in the same PR (the launcher keeps
-logging that line at ERROR, see `scripts/run_synpp.py` `explain_before_run`).
+explainer's legacy md5 warning also fired after a migration; reworded in the same PR (the launcher then logged
+that line at ERROR for both states, which Ruling H no longer does since 2026-11-04).
 
 Phase 4 tests committed on the branch (synthetic pipelines in `tmp_path`, no scientific claim;
 they pin the mechanics):

@@ -47,6 +47,12 @@ EARLY_CUTOFF_ACTIVE = True
 
 _LEGACY_MODULE_HASH = re.compile(r"[0-9a-f]{32}")
 
+# A report line starting with this prefix is the one state the operator must act on before a launch:
+# a cache that was never migrated (``format_report``). The launcher (scripts/run_synpp.py,
+# ``explain_before_run``) logs exactly such a line at ERROR and every other report line at INFO, so the
+# severity follows the state and not the wording of a line.
+ERROR_LINE_PREFIX = "# ERROR: "
+
 
 def is_legacy_module_hash(value) -> bool:
     """True for synpp 1.6.2's md5 module hash (32 hex digits); the fork's semantic digest has 64."""
@@ -75,8 +81,15 @@ class StageAssessment:
     # upstream's eager rule to the whole run (``eager_rule_applies``), early cutoff is off.
     eager_rule: bool = False
     # True when module_hash_changed fired on a stored 32-hex md5 module hash (synpp 1.6.2's raw-text
-    # hash): such an entry was never migrated, see scripts/migrate_cache_metadata.py (Ruling H).
+    # hash): such an entry was never migrated, or the migration kept it legacy because it could not
+    # prove it for the current code, see scripts/migrate_cache_metadata.py (Rulings G and H).
     legacy_module_hash: bool = False
+    # True on every assessment of a cache whose pipeline.json holds at least one output digest: the
+    # migration or a fork run has been through it (every entry either of them writes carries one), so
+    # a legacy md5 hash that is still there was left by the migration (``kept_legacy``). With no digest
+    # at all the cache was never migrated. A cache whose first fork launch crashed midway is judged
+    # migrated, so its remaining md5 entries read as kept legacy; the STALE lines name them anyway.
+    cache_migrated: bool = False
 
     @property
     def stale(self) -> bool:
@@ -159,11 +172,14 @@ def assess(registry: dict, working_directory: str, meta: dict, *, rerun_required
         for dependency in stage.get("dependencies", []):
             graph.add_edge(dependency, stage_hash)
     name_of = {h: s["wrapper"].name for h, s in registry.items()}
+    # Judged over the whole pipeline.json, like the migration, which rewrites every entry of it.
+    cache_migrated = any(has_output_hash(record) for record in meta.values())
     out = {}
     for stage_hash in nx.topological_sort(graph):
         stage = registry[stage_hash]
         assessment = StageAssessment(name_of[stage_hash], stage_hash,
-                                     artifacts_present(working_directory, stage_hash), stage_hash in meta)
+                                     artifacts_present(working_directory, stage_hash), stage_hash in meta,
+                                     cache_migrated=cache_migrated)
         assessment.ephemeral = stage.get("ephemeral") is True
         # synpp 1.6.2 (run(), ephemeral_counts / sorted_cached_hashes) leaves an ephemeral stage
         # that has dependents and no cache artifacts out of every own-reason check; only a stale
@@ -315,10 +331,21 @@ def format_report(assessments: dict) -> str:
         lines.append(f"# WARNING: {ephemeral} ephemeral stage(s) in the registry; "
                      "the fork disables early cutoff for such runs (spec 4.4)")
     legacy = sum(a.legacy_module_hash for a in assessments.values())
-    if legacy:
-        lines.append(f"# WARNING: {legacy} entries carry a legacy md5 module hash (never migrated, or kept "
-                     "legacy by the migration because the stage code changed since the cache was built): "
-                     "run scripts/migrate_cache_metadata.py if this cache was never migrated")
+    if legacy and any(a.cache_migrated for a in assessments.values()):
+        # The migration has been through this cache, so an entry that still carries the md5 hash is
+        # one it left unchanged (``kept_legacy``): genuinely stale, already listed STALE above, and a
+        # second migration changes nothing. Information, not a call to act.
+        lines.append(f"# note: {legacy} entries kept a legacy md5 module hash: the migration left them "
+                     "unchanged because it could not prove them for the current code, normally because the "
+                     "code changed since the cache was built (its log names the reason per entry); they are "
+                     "STALE above for that reason and running the migration again changes nothing")
+    elif legacy:
+        # Never migrated: every stage with such an entry reads module_hash_changed and recomputes whether
+        # or not its code changed. This is the costly case; the launcher logs it at ERROR.
+        lines.append(f"{ERROR_LINE_PREFIX}{legacy} entries carry a legacy md5 module hash and no entry of "
+                     "this cache carries an output hash, so the cache was never migrated: every stage with "
+                     "such an entry recomputes whether or not its code changed; run "
+                     "scripts/migrate_cache_metadata.py first")
     if EARLY_CUTOFF_ACTIVE:
         maybe_note = "stale ancestor, early cutoff decides"
     else:
