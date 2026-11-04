@@ -22,6 +22,7 @@ Covers:
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -33,6 +34,7 @@ REPO = Path(__file__).resolve().parents[1]
 DATA = REPO / "eqasim-data" / "data"
 sys.path.insert(0, str(REPO))
 
+from braunschweig.ipf import joint_age_size  # noqa: E402
 from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E402
 
 FZ2717_CSV = DATA / "braunschweig" / "kba" / "derived" / "kba_gemeinde_private_bev.csv"
@@ -662,11 +664,10 @@ class TestCompositionAggregateNeutrality:
             "fixture must actually be skewed, otherwise it proves nothing"
         )
 
-        deltas, clipped = fs._neutralise_composition_aggregate(
+        shifts = fs._neutralise_composition_aggregate(
             pmfs, kreise, factors, self.IDX)
 
-        assert clipped == 0
-        assert "03151" in deltas
+        assert shifts["03151"].clipped_cars == 0
         assert self._bev_share_of_electric(pmfs) == pytest.approx(untilted, abs=1e-12)
 
     def test_electric_total_per_car_is_untouched(self):
@@ -711,12 +712,12 @@ class TestCompositionAggregateNeutrality:
         kreise = ["03151"] * 4 + ["03158"] * 4
         factors = [skew] * 4 + [None] * 4
 
-        deltas, _ = fs._neutralise_composition_aggregate(pmfs, kreise, factors, self.IDX)
+        shifts = fs._neutralise_composition_aggregate(pmfs, kreise, factors, self.IDX)
 
         untilted = base_bev / (base_bev + base_phev)
         assert self._bev_share_of_electric(pmfs[:4]) == pytest.approx(untilted, abs=1e-12)
         assert self._bev_share_of_electric(pmfs[4:]) == pytest.approx(untilted, abs=1e-12)
-        assert "03158" not in deltas, "a Kreis with unit factors needs no shift"
+        assert "03158" not in shifts, "a Kreis with unit factors needs no shift"
 
     def test_matched_population_needs_no_shift(self):
         """When the population DOES match the factors' weighting, delta is zero."""
@@ -744,3 +745,84 @@ class TestCompositionAggregateNeutrality:
 
         assert float(pmfs[0][self.IDX["bev"]]) == 0.0
         assert float(pmfs[0][self.IDX["phev"]]) == 0.0
+
+    # ------------------------------------------------------------------
+    # The [0, 1] clip: what it LOSES, not how many cars it touches (C5a)
+    # ------------------------------------------------------------------
+    # Cars on the boundary the shift points at clip whatever their size, so the count is
+    # structural; what the clip costs is the electric MASS they hold (ADR-0125,
+    # amendment 2026-11-04). The fixture cars sit on the boundary the way ``minis`` do:
+    # their other electric powertrain carries only the seed floor of the rake.
+
+    SEED_FLOOR = joint_age_size._SEED_FLOOR
+    PHEV_HEAVY = {"bev": 0.8, "phev": 1.3}
+    BEV_HEAVY = {"bev": 1.2, "phev": 0.7}
+
+    def _skewed_kreis(self, kreis: str, boundary: str, n_boundary: int,
+                      boundary_electric: float):
+        """Mixed cars skewed so the shift points at ``boundary``, plus cars sitting on it.
+
+        ``boundary="bev"``: nine of the ten mixed cars live in the PHEV-heavy Gemeinde,
+        so the tilt LOWERS the Kreis BEV aggregate and the correction shifts every BEV
+        fraction UP, towards 1, where the numerically pure BEV cars already are.
+        ``boundary="phev"`` is the mirror image. Returns ``(pmfs, kreise, factors,
+        untilted)``; ``untilted`` is the BEV share of the electric mass before any tilt.
+        """
+        majority, minority = ((self.PHEV_HEAVY, self.BEV_HEAVY) if boundary == "bev"
+                              else (self.BEV_HEAVY, self.PHEV_HEAVY))
+        pure = ((boundary_electric, self.SEED_FLOOR) if boundary == "bev"
+                else (self.SEED_FLOOR, boundary_electric))
+        base = [(0.06, 0.04)] * 10 + [pure] * n_boundary
+        car_factors = [majority] * 9 + [minority] + [majority] * n_boundary
+        pmfs = [self._apply_composition(bev, phev, f)
+                for (bev, phev), f in zip(base, car_factors)]
+        untilted = sum(b for b, _ in base) / sum(b + p for b, p in base)
+        return pmfs, [kreis] * len(pmfs), car_factors, untilted
+
+    @pytest.mark.parametrize("boundary", ["bev", "phev"])
+    def test_cars_on_the_boundary_clip_without_breaking_the_aggregate(
+            self, boundary, caplog):
+        """Six boundary cars clip, they hold 5.7 % of the electric mass: no warning."""
+        pmfs, kreise, factors, untilted = self._skewed_kreis("03151", boundary, 6, 0.01)
+
+        shifts = fs._neutralise_composition_aggregate(pmfs, kreise, factors, self.IDX)
+
+        shift = shifts["03151"]
+        assert shift.clipped_cars == 6, "every car on the boundary clips, whatever its size"
+        assert shift.unclosed_share_of_shift == pytest.approx(0.06 / 1.06, rel=1e-3)
+        # The reported residual is the real gap between the intended and realised aggregate.
+        assert untilted - self._bev_share_of_electric(pmfs) == pytest.approx(
+            shift.residual_of_electric_mass, abs=1e-12)
+
+        with caplog.at_level(logging.INFO, logger=fs.logger.name):
+            fs._log_composition_correction(shifts, "[fleet_de][test]")
+        assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+        assert any(r.levelno == logging.INFO and re.search(r"\b6\b.*\bcar", r.getMessage())
+                   for r in caplog.records), "the clipped-car count stays an INFO figure"
+
+    def test_boundary_cars_holding_most_of_the_mass_defeat_the_correction(self, caplog):
+        """FEWER clipped cars (3), but they hold 54.5 % of the mass: the clip decides.
+
+        A healthy second Kreis (six clipped cars, 5.7 % of its mass) sits alongside, so a
+        figure pooled over the Kreise would hide the bad one.
+        """
+        bad = self._skewed_kreis("03151", "bev", 3, 0.4)
+        good = self._skewed_kreis("03158", "bev", 6, 0.01)
+        pmfs, kreise, factors = bad[0] + good[0], bad[1] + good[1], bad[2] + good[2]
+
+        shifts = fs._neutralise_composition_aggregate(pmfs, kreise, factors, self.IDX)
+
+        assert shifts["03151"].clipped_cars < shifts["03158"].clipped_cars
+        assert shifts["03151"].unclosed_share_of_shift == pytest.approx(1.2 / 2.2, rel=1e-3)
+        with caplog.at_level(logging.INFO, logger=fs.logger.name):
+            fs._log_composition_correction(shifts, "[fleet_de][test]")
+        warnings = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+        assert len(warnings) == 1
+        assert "03151" in warnings[0] and "03158" not in warnings[0]
+
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger=fs.logger.name):
+            fs._log_composition_correction(shifts, "[fleet_de][test]",
+                                           warn_unclosed_share=0.9)
+        assert [r for r in caplog.records if r.levelno >= logging.WARNING] == [], (
+            "the threshold is a parameter, not a constant buried in the log call")
