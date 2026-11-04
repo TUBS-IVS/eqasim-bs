@@ -17,20 +17,17 @@
   graph does not know it: both stages depend on `synthesis.output` only.
 - synpp executes the stages in `networkx.topological_sort` order (`braunschweig/synpp_fork/pipeline.py`, `run`). In
   networkx 3.4 (the version locally and on felix) that function yields `topological_generations`: layer by layer, a
-  stage as soon as its declared parents are done. In the production registry (`configs/base_bs.yml` +
-  `configs/overlays/test_100pct.yml`, 108 stages) the two analysis stages sit in the layer after `synthesis.output`,
-  before `matsim.simulation.run` and `matsim.output`. In a combined invocation they therefore ALWAYS execute before
-  the simulation, by construction, not by chance. ADR-0101 assumed that "all committed run lists order
+  stage as soon as its declared parents are done. In the production registry the two analysis stages sit in the
+  layer after `synthesis.output`, before `matsim.simulation.run` and `matsim.output` (layers measured in the run
+  manifest `docs/runs/prod100-analysis-order-2026-11-04.yml`). In a combined invocation they therefore ALWAYS execute
+  before the simulation, by construction, not by chance. ADR-0101 assumed that "all committed run lists order
   `matsim.output` first"; the order of the `run:` list does not set the execution order.
-- What happened (launch 1 of `prod100_20261031`, run list = the committed 100 % overlay: `synthesis.output`,
-  `matsim.output` and eight analysis stages, ONE `scripts/run_synpp.py` invocation): `simwrapper_export` executed at
-  02:16 and `analysis_suite` from 02:17 to 02:56, `matsim.simulation.run` started at 04:53. Both stages logged
-  `no MATSim output archive at ../output/matsim_output ... -- MATSim tabs will skip` / `stuck_agents: SKIPPED`,
-  `dashboard: SKIPPED` as WARNING lines, completed and were cached. `mid_validation` ran without its simulated
-  trips (`--sim-cache` is only passed when the archive exists): it logged `Computing all-trip modal split
-  (sim-cache=None)` at INFO and wrote no modal split, the comparison of the commute mode shares with MiD P12_1
-  included, with no WARNING or SKIPPED line. The run continued; the outputs lacked their MATSim parts without any
-  failure.
+- What happened in launch 1 of `prod100_20261031` (run list = the committed 100 % overlay, one
+  `scripts/run_synpp.py` invocation; times, log lines and log hash in the same run manifest): both stages executed
+  hours before `matsim.simulation.run`, skipped their MATSim parts with WARNING lines, completed and were cached.
+  `mid_validation` ran without its simulated trips (`--sim-cache` is only passed when the archive exists), so it wrote
+  no modal split, the comparison of the commute mode shares with MiD P12_1 included, and said so only at INFO; the
+  suite summary listed it as ran. The run continued without any failure.
 - The committed scale overlays `test_1pct.yml`, `test_25pct.yml` and `test_100pct.yml` all mix `matsim.output` with
   both stages in one run list, so every run launched from them has this order. The September production run avoided
   it by hand with a separate analysis phase.
@@ -56,8 +53,12 @@
    states that it reads an archive left by an earlier run.
 3. **The two archive readers declare `matsim.output`.** `analysis_suite` and `simwrapper_export` declare
    `_ORDER_AFTER_STAGES = ("matsim.output",)`, the producer name single-sourced in
-   `braunschweig.analysis.matsim_archive`. A contract test requires the declaration in every stage module that resolves
-   the archive.
+   `braunschweig.analysis.matsim_archive`. A contract test requires the declaration of every stage module of the
+   repository whose static import closure imports `braunschweig.analysis.matsim_archive` or holds the archive
+   directory name as a string constant (an archive read that builds the path from other strings is not detected).
+4. **The missing modal split is a named skip.** When `analysis_suite` has no archive, it records
+   `mid_validation.modal_split` under `skipped` in `analysis_suite_summary.json` with the archive reason and logs it
+   as a WARNING (fallback transparency; raised in the review of PR #543).
 
 ## Rationale
 
@@ -88,22 +89,19 @@
   before the simulation started). A relaunch with the same run list writes them.
 - A fourth patch in the vendored synpp `run()` (`braunschweig.synpp_fork.PATCHES`, `docs/codebase/notes/synpp-fork.md`),
   to be re-applied when synpp is upgraded.
-- A future stage that reads the archive must declare `_ORDER_AFTER_STAGES`; the contract test enforces it.
-- Not changed: an analysis-only invocation reads whatever archive the last `matsim.output` wrote, and skips its MATSim
-  parts with the named WARNING when there is none (ADR-0101).
+- A future stage that reads the archive must declare `_ORDER_AFTER_STAGES`; the contract test enforces it within
+  the detection limits of decision 3.
+- Not changed: an analysis-only invocation reads whatever archive the last `matsim.output` wrote. When there is none,
+  its MATSim parts skip with the named WARNING (ADR-0101), the modal split of `mid_validation` included (decision 4).
 - Possible side effect, NOT measured: `analysis_suite` (driver RSS peak 65.19 GiB in launch 1, finding C2) no longer
   runs before the MATSim JVM starts.
 
 ## Evidence
 
-- Launch-1 log `felix:~/prod100_20261031/logs/run_20261031T071313.log` (sha256
-  `f76a91545c06a063a7febf967c880c18fccc584302deb625a1a70c66f4b89b0a`), lines 49092-49382 (the two analysis stages, their
-  WARNING lines) and 51261 (`Executing stage matsim.simulation.run`). Run list: `run.yml.launch1_20261031T071313` in
-  the run directory, identical to the `run:` list of `configs/overlays/test_100pct.yml`.
-- The layer positions in the production registry (analysis stages in layer 18, `matsim.simulation.run` 19,
-  `matsim.output` 20 of 108 stages) are measured by the order probe in the run manifest
-  `docs/runs/prod100-analysis-order-2026-11-04.yml`.
+- Run manifest `docs/runs/prod100-analysis-order-2026-11-04.yml`: the launch-1 log excerpt (execution times, warning
+  lines, log hash) and the layer probe of the production registry.
 - Verification: `tests/test_synpp_fork_order_after.py`. It failed before the fix (synthetic production-shaped graph:
   the analysis executed second, before the simulation chain) and passes after it; it also checks the analysis-only
-  invocation (no producer pulled in), the fail-fast cases, and on the real 100 % registry that every stage resolving
-  the archive declares the producer and executes after it.
+  invocation (no producer pulled in), the fail-fast cases, the declaration of every archive-reading stage module
+  (decision 3), and on the real 100 % registry that the declaring stages execute after the producer.
+  `tests/test_analysis_suite.py` checks the named modal-split skip (decision 4).
