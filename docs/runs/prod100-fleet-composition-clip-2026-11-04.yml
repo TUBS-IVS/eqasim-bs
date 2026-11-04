@@ -7,7 +7,7 @@ repository:
     The code the 100 % production run prod100_20261031 ran (felix:~/prod100_20261031/eqasim-bs, a clean detached
     worktree of origin/main), used READ ONLY and unmodified for the baseline replay. The "after" replay swapped in ONE
     file, braunschweig/synthesis/vehicles/fleet_sampling_de.py of branch fix/c5a-composition-clip-residual (the
-    committed blob, LF line endings, sha256 b5b6d46b16751436b47c4b4e3295170970c125ccb72ecd0d24e25ccf314a0483) and
+    committed blob, LF line endings, sha256 c02fba7aac28abc867e6d92781b8586f616f66d02ce0a270e0e944d8b45f1442) and
     nothing else.
     The two fleet modules have no commit between 7a41f0ba and the base of that branch (6ef8f99c), so the swapped file
     differs from the production one by the C5a change only.
@@ -36,15 +36,15 @@ classification:
 status:
   execution: completed
   notes: >-
-    Both replays completed on 2026-11-04 (baseline 13:48:25 to 13:52:52 CET, after 14:08:02 to 14:12:43 CET). A diagnostic of one correction step of
+    Both replays completed on 2026-11-04 (baseline 14:54:38 to 14:59:08 CET, after 14:54:38 to 14:59:07 CET, run side by side). A diagnostic of one correction step of
     the fleet draw (what the [0,1] clip of the BEV:PHEV aggregate-neutrality correction loses), NOT a validation: no
     observed data is involved, and the composition factors themselves stay unvalidated (feature record
     fleet_gemeinde_bev_composition_tilt).
 source: >-
-  felix:~/c5a_replay_20261104/{final_baseline,final_after2} (run with PYTHONDONTWRITEBYTECODE=1, OMP/OPENBLAS/MKL threads 1,
+  felix:~/c5a_replay_final_20261104/{baseline,after} (run with PYTHONDONTWRITEBYTECODE=1, OMP/OPENBLAS/MKL threads 1,
   nice 10), deleted after the committed copies below were checked. Committed in
   docs/runs/artifacts/prod100-fleet-composition-clip-2026-11-04/: replay_composition_clip.py (sha256
-  ac96c5860047f2d36c00ca05aaf7af82504b667c50d4285727c13465857e477d, the script both runs used), baseline_* and after_*
+  eccd7fe4fe3942f2387be4872264af6c7bea95a3c84ff0ab958576a5572239fb, the script both runs used), baseline_* and after_*
   (verification.json and the run log as replay_log.txt, because *.log is git-ignored; baseline also per_kreis.csv,
   clipped_by_segment.csv, summary.json). The 4.7 MB capture.npz of the baseline run is not committed; rerunning the
   script writes it again.
