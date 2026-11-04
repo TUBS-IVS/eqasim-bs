@@ -26,7 +26,9 @@ Every key THIS MODULE resolves (`java_memory`,
 `braunschweig.population.popsim.num_workers`, the reporting-only `processes`,
 and -- since the 2026-09-17 amendment below -- `braunschweig.chainsolvers.processes`)
 is resolved against that one budget, so those keys cannot disagree with each
-other about how big the machine is. This was NOT always true: before the
+other about how big the machine is. (`java_memory` is resolved by
+`braunschweig/java_heap.py` against that budget MINUS the driver's live RSS, see
+"The JVM heap leaves room for the driver" below.) This was NOT always true: before the
 amendment, `braunschweig.chainsolvers.processes` -- the chainsolver pool, the
 largest process fan-out in the pipeline -- was resolved entirely outside this
 module, through the now-deleted `parallelism.resolve_workers()` ->
@@ -92,8 +94,85 @@ ADR-0126's point 5 amendment for
 the full decision and its Consequences for the permanent cache-dependency
 cost this adds to the chainsolver stage (`resources.py` is now a helper
 module of BOTH the PopulationSim stage and the chainsolver stage, so any
-future edit to this file, wording-only or not, invalidates both stages'
-full-scale caches).
+future CODE edit to this file invalidates both stages' full-scale caches --
+since the semantic stage digests of ADR-0149 a comment or docstring edit no
+longer does, and that is why the JVM-heap amendment below sits in its own
+module instead of in `resources.py`).
+
+### The JVM heap leaves room for the driver (2026-11-04 amendment, finding C2)
+
+`java_memory` used to be clamped against the machine budget alone
+(`effective_java_memory`), which knows nothing about the synpp driver. The
+driver is one long-lived Python process, and what it holds when a Java process
+starts depends on every stage that ran before it in the same invocation. In the
+100 % run `prod100_20261031` synthesis and MATSim shared one driver: it held
+**14.75 GiB** when `matsim.simulation.run` started (a fresh launch: 0.28 GiB)
+while the JVM got `-Xmx86G`, 100.75 GiB of caps on a 94.28 GiB machine. The
+measurements, and how close even the fresh-driver relaunch came to the limit
+(3.67 GiB of memory available at its worst), are in
+`docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml`.
+
+Every Java launch now sizes its heap with `braunschweig.java_heap.effective_java_heap`,
+called from `matsim/runtime/java.py` `run`:
+
+    room_gb = max(1, memory_budget_gb - driver_rss_gb_live)
+    -Xmx    = java_memory            if it fits into room_gb
+              floor(room_gb) G       otherwise, or when java_memory is auto
+
+It has the shape of the chainsolver bound above and reads the same figure
+(`current_process_rss_gb`: psutil first, then `/proc/self/status`), at the moment
+the Java process is started. `java_memory` itself is never rewritten (the stage
+hash rule below); the resolved value exists only as the `-Xmx` argument and in
+the log.
+
+- **Every number is logged, once per launch:**
+  `[resources] java_memory 100G -> 71G (memory budget 86.28 GB (psutil) - driver RSS
+  14.75 GB = 71.53 GB for the JVM; configured 100G exceeds it, clamped to 71G)`.
+  At WARNING when the value differs from the configuration, at INFO when the
+  configured value fits. The startup report's `java_memory = 86G [clamped]` line (and
+  the `"resources"` entry of the run provenance) stays the MACHINE-level preview from
+  `resolve_java_memory`; the per-launch line is the value a launch actually used, as
+  for the chainsolver pool.
+- **The fallback is loud.** If the RSS cannot be measured (no psutil and no
+  `/proc/self/status`), the same line is a WARNING that says "could not be measured"
+  and counts the driver as 0.00 GB, so the machine budget alone bounds the heap,
+  exactly as before C2. No silent fallback (CLAUDE.md).
+- **Live children are not counted.** At the MATSim launch of the run above the
+  driver's only children were two multiprocessing helper processes of 5 MiB each, and
+  adding the RSS of forked worker children would count the copy-on-write pages they
+  share with the driver once per child (the chainsolver measurement above: more than
+  95 %). If a Java launch ever happens next to a live worker pool, that pool is not
+  subtracted.
+- **A fresh driver loses at most 1 GiB.** The result is floored to whole gigabytes, so
+  on the 94.28 GiB server a driver of about 0.3 GiB gives `85G`, where the machine-only
+  clamp gave `86G`. The fresh-driver MATSim of launch 2 used at most 78.8 GiB of its
+  86 GiB heap.
+- **The clamp makes a heavy driver safe, it does not make a small heap sufficient.**
+  A 14.75 GiB driver leaves about 71 GiB. The 100 % MATSim "used" memory in a fresh
+  driver reached p99 71.7 GiB and 78.8 GiB at most (garbage included), so whether a
+  71 GiB heap carries its live set is UNMEASURED. At 100 % run MATSim in a fresh
+  driver, as launch 2 did: its JVM stayed within the machine for 28 h, but only just
+  (3.67 GiB of memory available at its worst, no OOM kill in its series). The log line
+  above tells which case a run is in.
+- **Where the code lives, and why not in `resources.py`.** A dozen stage tokens hash
+  `braunschweig/resources.py` (12 on 2026-11-04: PopulationSim, the chainsolver,
+  `trips_stage`, `completed_donor`, `mid_donor`, `prepare` among them; run
+  `docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/cache_impact.py` for
+  the current list), so a code change there recomputes the 100 % PopulationSim stage
+  (12 h 56 min in that run) and the rest. `braunschweig/java_heap.py` is a module of its
+  own that declares `_SYNPP_TOKEN_EXEMPTION` (the heap size never changes what a Java
+  stage computes), so no token hashes it, and its edits are free from now on. Landing
+  it still changes one hashed file, `matsim/runtime/java.py`, whose digest enters
+  three stage tokens (`braunschweig.matsim.simulation.prepare`,
+  `braunschweig.synthesis.student_incommuters`, `braunschweig.matsim.scenario.supply_gtfs`)
+  and its own stage hash: **the first run after landing recomputes those three stages
+  and `matsim.runtime.java`, about 2 h 6 min at 100 %**, and spares their descendants
+  where the output digest comes out unchanged (early cutoff, ADR-0149). The launcher
+  gate (`synpp_expected_stale_stages`) must list those four stages once, or it stops
+  the launch. `prepare` and `student_incommuters` both sit below `matsim.runtime.eqasim`
+  in the production DAG, so landing the change together with a rebuilt eqasim jar
+  recomputes them anyway and leaves only `supply_gtfs` (under 1 min) and the java
+  stage as extra cost.
 
 ## The rule that must never be broken: a resolved value never enters the config
 
@@ -107,7 +186,9 @@ every subsequent run -- would silently stop being shared. This is why
 the `effective_*` wrapper functions (`effective_java_memory`,
 `effective_popsim_workers`, and -- since the 2026-09-17 amendment --
 `effective_chainsolver_workers`: the three OPERATIONAL keys; there is no
-`effective_processes`, see the worked example below) are called at the point
+`effective_processes`, see the worked example below; the Java launcher calls
+`braunschweig.java_heap.effective_java_heap`, the driver-aware successor of
+`effective_java_memory`) are called at the point
 of use inside each consumer, never used to rewrite `context.config(...)`. If
 you are about to add a line that writes a detected or clamped value back into
 a config dict, stop -- that line is the bug this rule exists to prevent.
@@ -308,3 +389,23 @@ invalidating those stages' caches. Changing the declarations would invalidate
 two more full-scale caches and is out of scope; the warning text therefore
 states the whole caveat instead. Do not "simplify" that text back to "raise the
 pin if that is not intended".
+
+**3. The PopulationSim worker clamp has the omission the JVM heap had, latent.**
+`resolve_popsim_workers` divides the whole memory budget by `worker_memory_gb` and
+never subtracts the driver's RSS. In `prod100_20261031` the driver held 10.50 GiB at
+the start of `braunschweig.popsim.stage`, so floor((86.28 - 10.50) / 30) = 2, the
+same two workers the machine-only formula gives; the count would drop to 1 from a
+driver above 86.28 - 2 x 30 = 26.28 GiB at stage start (measurements:
+`docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml`). It was not fixed with the
+JVM heap because there is no free place for the fix: the formula lives in
+`braunschweig/resources.py` and its only call is in `braunschweig/popsim/stage/__init__.py`,
+and a code change in either recomputes the 100 % PopulationSim stage (12 h 56 min in
+that run). Fix it together with a change that recomputes that stage anyway.
+
+**4. `data/osm/osmosis.py` still clamps with the machine-only `effective_java_memory`.**
+Osmosis runs inside the OSM cleaning stage, usually early in a run when the driver is
+small (the recorder shows 0.3 to 10 GiB across the first five stages of launch 1); its
+own heap use was not measured here, so the omission has no measured effect either way.
+The stage is also a root of the production OSM chain: editing it makes that chain
+depend on early cutoff (ADR-0149) for no measured benefit. Move it to
+`braunschweig.java_heap.effective_java_heap` the next time that stage is touched.

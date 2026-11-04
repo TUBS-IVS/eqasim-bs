@@ -253,6 +253,11 @@ DEFAULT_CORE_RESERVE = 2
 #: infrastructure. A server measurement of the actual OS/driver/page-cache
 #: footprint next to a real run is the missing evidence that would let this be
 #: tightened or confirmed.
+#: In practice the synpp driver is NOT covered by this reserve: its live RSS is subtracted ON TOP
+#: of it wherever it is measured at the point of use -- the chainsolver pool
+#: (``effective_chainsolver_workers``) and the JVM heap
+#: (``braunschweig.java_heap.effective_java_heap``). The 100 % run prod100_20261031 had a driver
+#: of 14.75 GiB when MATSim started (docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml).
 DEFAULT_MEMORY_RESERVE_GB = 8.0
 
 ENV_CPU_BUDGET = "EQASIM_CPU_BUDGET"
@@ -1093,6 +1098,15 @@ def effective_java_memory(configured, machine: Optional[MachineResources] = None
     inherited by every Java-dependent stage: changing the configured value would
     invalidate the whole Java chain (network, routing, freight, MATSim), while
     clamping here changes nothing any stage hashes.
+
+    MACHINE-ONLY ceiling: this function knows the machine budget but not what the
+    already running driver process holds. Java launches therefore go through
+    ``braunschweig.java_heap.effective_java_heap`` (C2, 2026-11-04), which subtracts the
+    driver's live RSS from the same budget; only ``data/osm/osmosis.py`` still calls
+    this function. The new code lives in its own module on purpose: a code change to
+    THIS file recomputes every stage whose token hashes it (PopulationSim and the
+    chainsolver among them), a docstring or comment change does not
+    (``docs/codebase/notes/resource-budget.md``).
     """
     resolution = resolve_java_memory(configured, resolve_budget(machine=machine, env=env))
     _log_resolution_deviation(resolution)

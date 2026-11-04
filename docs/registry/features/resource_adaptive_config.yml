@@ -7,8 +7,11 @@ description: >
   /proc/meminfo fallback, raising ResourceDetectionError if neither source reports a
   value) and derives one ResourceBudget per run (cores - 2, memory_gb - 8, overridable
   by EQASIM_CPU_BUDGET / EQASIM_MEM_BUDGET). THREE OPERATIONAL config keys are resolved
-  against that budget at their point of use -- java_memory (matsim/runtime/java.py,
-  data/osm/osmosis.py), braunschweig.population.popsim.num_workers
+  against that budget at their point of use -- java_memory (matsim/runtime/java.py through
+  braunschweig/java_heap.py, which since the 2026-11-04 amendment (C2) subtracts THIS process's
+  live RSS from the budget, because the synpp driver and the JVM share the machine;
+  data/osm/osmosis.py still clamps against the machine budget alone, see
+  docs/codebase/notes/resource-budget.md), braunschweig.population.popsim.num_workers
   (braunschweig/popsim/stage/__init__.py, bounded by measured per-worker memory via
   braunschweig.population.popsim.worker_memory_gb, default 30 GB), and (2026-09-17
   amendment) braunschweig.chainsolvers.processes (braunschweig/synthesis/locations/
@@ -96,6 +99,7 @@ introduced:
 detail_doc: docs/codebase/notes/resource-budget.md
 code_paths:
 - braunschweig/resources.py
+- braunschweig/java_heap.py
 - braunschweig/provenance.py
 - scripts/run_synpp.py
 - matsim/runtime/java.py
@@ -114,6 +118,7 @@ evidence:
   - tests/test_resources_report.py
   - tests/test_resources_run_start.py
   - tests/test_resources_chainsolver_workers.py
+  - tests/test_java_heap_driver_aware.py
   - tests/test_run_synpp_arity.py::test_main_hands_the_resource_report_to_the_provenance_record
   - tests/test_run_provenance.py::test_collect_embeds_the_resource_report_under_resources
   - tests/test_run_provenance.py::test_log_and_write_persists_the_resource_report_to_disk
@@ -195,7 +200,12 @@ evidence:
       This is a fallback between DETECTION METHODS on a single machine, not a
       per-item rate over many records, so no percentage applies here; observability is
       the logged source string (and the run-provenance field) on every single run
-      instead of an aggregate rate.
+      instead of an aggregate rate. The 2026-11-04 JVM-heap amendment adds a third pair: the
+      driver RSS braunschweig/java_heap.py subtracts (psutil primary, /proc/self/status
+      fallback, logged at INFO by resources.current_process_rss_gb). If neither reports a value
+      the per-launch "[resources] java_memory ..." line is a WARNING that says "could not be
+      measured", counts the driver as 0.00 GB and falls back to the machine budget alone
+      (tests/test_java_heap_driver_aware.py asserts the primary path AND this fallback).
   reference:
     kind: none
     note: >
@@ -209,6 +219,7 @@ validation:
   runs:
   - chainsolver-worker-private-memory-2026-09-17
   - chainsolver-pool-memory-2026-09-28
+  - prod100-java-heap-driver-rss-2026-11-04
   metric: null
   note: >
     No real-machine smoke run has been recorded yet. The brief for this work names a
@@ -258,7 +269,16 @@ validation:
     tests/test_run_synpp_arity.py::test_main_hands_the_resource_report_to_the_provenance_record
     and tests/test_run_provenance.py, NOT by tests/test_resources_run_start.py, which
     despite its name exercises resources.enforce_report directly and never imports
-    the launcher. See evidence.tests.
+    the launcher. Since the 2026-11-04 JVM-heap amendment (C2) the per-launch java_memory
+    line is driver-aware: "[resources] java_memory 100G -> <n>G (memory budget 86.28 GB
+    (psutil) - driver RSS <measured> GB = <room> GB for the JVM; configured 100G exceeds it,
+    clamped to <n>G)", so a "java_memory 100G -> 86G" line is no longer the expected one
+    except with an unmeasurable driver RSS: a fresh driver of about 0.3 GB gives 85G, the
+    14.75 GiB driver of run prod100_20261031 gives 71G. The startup report's
+    "java_memory = 86G [clamped]" line stays the machine-level preview. That run's
+    measurements (the manifest in validation.runs) are the motivating evidence, NOT a
+    validation of the amendment: no run with the fixed launcher has been recorded yet.
+    See evidence.tests.
 assessment:
   status: pending
   by: null

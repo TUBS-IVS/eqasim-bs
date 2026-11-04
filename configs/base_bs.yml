@@ -500,8 +500,11 @@ config:
   synpp_expected_stale_stages: []
 
   # CEILING, not a fixed heap size (ADR-0126): one of the three CLAMPED keys, cut
-  # down to the detected memory budget at the point of use (matsim/runtime/java.py,
-  # data/osm/osmosis.py) when the machine is smaller than this; see the
+  # down to the detected memory budget at the point of use when the machine is
+  # smaller than this. matsim/runtime/java.py (through braunschweig/java_heap.py)
+  # also subtracts the live RSS of the driver process, so a driver that already
+  # holds memory leaves the JVM a smaller heap (C2, 2026-11-04); data/osm/osmosis.py
+  # clamps against the machine budget alone. See the
   # resource-adaptive configuration note at the top of this file. The config value
   # itself is left untouched on purpose, so this line stays the pin every machine
   # is measured against. Always give it a unit: a bare number is read as gigabytes
