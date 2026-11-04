@@ -1,0 +1,202 @@
+id: prod100-java-heap-driver-rss-2026-11-04
+date: '2026-11-04'
+repository:
+  commit: 7a41f0ba57bb9abdb862c59bcc14c73653e8510a
+  branch: main
+  notes: >-
+    The eqasim-bs commit the run's own launch record names (run.json, launches[0].commits on felix;
+    eqasim-java-bs 8eab197e744aa2c7e5ba16462bedce2e57edb4b1). This manifest is a post-hoc MEASUREMENT over the
+    recorded resource series and logs of launch 1 of production run prod100_20261031 (finding C2 of the
+    2026-11-01 findings list), not a run of its own.
+configuration:
+  base: configs/base_bs.yml
+  config:
+    java_memory: 100G
+    sampling_rate: 1.0
+    braunschweig.population.popsim.num_workers: 3
+    braunschweig.chainsolvers.processes: 16
+    matsim_last_iteration: 150
+  notes: >-
+    Base configs/base_bs.yml at the run's commit plus the run overlay written by scripts/isolated_run.py
+    (run.yml of launch 1, sha256 7806a274b3b2020af05fba84e100401280acc3db9e79bbf975d295e3792be9a9, local to
+    felix and not committed). java_memory 100G is the base value (the log's "configured 100G"); the overlay
+    sets the other four keys listed.
+sampling:
+  rate: 100 %
+  scope: the study area of configs/base_bs.yml at the commit above
+pipeline:
+  targets:
+  - synthesis.output
+  - matsim.output
+  - braunschweig.analysis.cordon_validation
+  - braunschweig.analysis.simwrapper_export
+  - braunschweig.analysis.analysis_suite
+  - braunschweig.analysis.synthesis.plan_structure_vs_srv
+  - braunschweig.analysis.synthesis.departure_time_vs_srv
+  - braunschweig.analysis.verbindungen_validation
+  - braunschweig.analysis.synthesis.commute_distance_by_kreis
+  - braunschweig.analysis.synthesis.work_participation_by_kreis
+  notes: >-
+    Synthesis and MATSim ran in ONE scripts/run_synpp.py invocation (launch 1, pid 1540147, started
+    2026-10-31 07:13:13). The stages measured here are braunschweig.popsim.stage,
+    braunschweig.matsim.simulation.prepare and matsim.simulation.run.
+classification:
+- production
+status:
+  execution: killed
+  notes: >-
+    Launch 1 ended on 2026-11-01 at about 05:00 (last recorder sample 04:59:19, last log line 04:59:29), six
+    minutes into matsim.simulation.run, when MATSim was relaunched in a fresh driver (launch 2, log
+    run_20261101T050111.log, started 05:01:11); the stop was the owner's (finding C2). This manifest records
+    the launch-1 resource observations ONLY. The MATSim phase and the convergence of the production run are
+    recorded separately once it has finished.
+environment: >-
+  felix (94.28 GiB total memory per the recorder's memory_total_kb of 98,856,780, 64 cores, i.e. a 86.28 GiB /
+  62-core budget after the ADR-0126 reserves; JDK 25.0.3+9; conda env eqasim). All memory figures are in GiB:
+  the recorder and ps both report kB (KiB), so 15,467,292 kB, the driver's RSS at the recorder's last sample of
+  launch 1, is 15.5 million kB and 14.751 GiB; braunschweig.resources calls GiB "GB" and the JVM calls it "G".
+  Inputs, all local to the server and not committed: <run dir>/cache/monitoring/resource_series_20261031T071347.jsonl
+  (launch 1, 2,487 samples, sha256 679a5bb30a3e7b3ccfeaddf1d090a5910fdf8a43e5afcbd83e2aa94c3d985cd8),
+  <run dir>/cache/monitoring/resource_series_20261101T050122.jsonl (launch 2, 3,337 samples, sha256
+  c83716bf396ba30fbd93d5bb298a2c4533be16462e7a74e5cf98121c1ab30e7c),
+  <run dir>/logs/run_20261031T071313.log (launch 1, sha256
+  f76a91545c06a063a7febf967c880c18fccc584302deb625a1a70c66f4b89b0a), <run dir>/logs/run_20261101T050111.log
+  (launch 2, the relaunched MATSim in a fresh driver, sha256
+  4019d5cbaab1f86edc4bc3e606ce8da6908a22faa0970b92bfef6dd69e4e8292) and
+  ~/prod100_20260925/logs/B_matsim.log (the previous production run's MATSim, sha256
+  97fa35a8c59a49beda982792b4bee7633e4f68c25b792bab4c8cf37ccc5a62c3).
+validation:
+- metric: driver RSS when matsim.simulation.run started, launch 1
+  reference: none (measurement)
+  result: >-
+    The root process (python scripts/run_synpp.py) held 14.751 GiB at the first sample of the stage
+    (2026-11-01 04:53:16) and still 14.751 GiB, 15,467,292 kB, at the last (04:59:19), over 13 samples. Its
+    children at the first sample were the two multiprocessing helper processes (resource_tracker and
+    forkserver, 0.005 GiB each); six minutes later the JVM was the fourth process, 18.355 GiB and growing.
+    Memory available fell from 77.5 to 59.1 GiB in those six minutes.
+  artifact: docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/tree_at_stage_matsim_simulation_run_launch1.txt
+- metric: the JVM heap cap next to that driver
+  reference: none (measurement and arithmetic)
+  result: >-
+    The log of launch 1 carries 77 warnings "[resources] java_memory 100G -> 86G" and 76 "Executing java:" lines
+    (66 of them show -Xmx86G in the same line, the rest are interleaved with other output). The MATSim JVM
+    reported "max: 88064 MB" (86 GiB) at 04:58:29 and 04:59:29. 86 GiB of heap next to the 14.751 GiB driver
+    is 100.75 GiB against 94.28 GiB of memory: the cap alone exceeds the machine by 6.47 GiB, with nothing
+    left for the JVM's own non-heap memory or the operating system. This is arithmetic on the caps, not an
+    observed out-of-memory kill: the launch was stopped before the heap filled.
+  artifact: docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/tree_at_stage_matsim_simulation_run_launch1.txt
+- metric: how the driver reached 14.75 GiB, and for how long it stayed there
+  reference: none (measurement)
+  result: >-
+    The driver's RSS peaked at 65.19 GiB in braunschweig.analysis.analysis_suite (first sample 6.27 GiB, last
+    14.76 GiB, minimum available memory 27.2 GiB) and then sat on a plateau of 14.75-14.76 GiB through all 232
+    samples of braunschweig.matsim.simulation.prepare (2026-11-01 02:56:20 to 04:53:16, 1 h 57 min) and the
+    13 samples of matsim.simulation.run. What the plateau consists of was not investigated here; the clamp
+    cannot know and has to read it.
+  artifact: docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/driver_rss_by_stage_launch1.txt
+- metric: how much heap MATSim used at 100 %, in a fresh driver
+  reference: none (measurement)
+  result: >-
+    Launch 2 (fresh driver, 0.28 GiB RSS at the first sample of matsim.simulation.run, -Xmx86G): 1,669
+    MemoryObserver samples, "used" p50 42.7 GiB, p90 57.3 GiB, p99 71.7 GiB, maximum 78.8 GiB. The previous
+    production run's MATSim (B_matsim.log): 2,947 samples, p50 41.8, p90 51.1, p99 65.2, maximum 81.6 GiB.
+    "Used" includes garbage the JVM has not collected yet, so these maxima are upper bounds of the live set.
+    WHETHER A 70-71 GiB HEAP CARRIES THE LIVE SET OF THE 100 % MATSIM RUN IS UNMEASURED: the p99 of launch 2
+    (71.7 GiB) sits at that cap. The driver-aware clamp turns the risk of an out-of-memory kill into a bounded
+    heap, but it cannot make a 70 GiB heap sufficient; at 100 % MATSim belongs in a fresh driver
+    (docs/codebase/notes/resource-budget.md).
+  artifact: docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/memory_observer_stats.txt
+- metric: how close the machine came to its limit with a FRESH driver (launch 2)
+  reference: none (measurement and arithmetic)
+  result: >-
+    At 2026-11-01 16:38:42, in matsim.simulation.run, the JVM's RSS was 88.680 GiB next to a driver of 0.068
+    GiB, 2.68 GiB beyond its 86 GiB heap; the machine had 3.67 GiB of memory available (of 94.28 GiB) and
+    0.41 GiB of its 2.00 GiB swap in use (the lowest three samples of the series are all within 0.01 GiB of
+    that). With the launch-1 driver of 14.751 GiB next to the same JVM the sum would have been 103.4 GiB, which
+    does not fit. The arithmetic of the clamp (budget - driver) lands at the total of the fresh-driver run: a
+    70-71G heap plus the same 2.68 GiB overhead plus 14.75 GiB is about 88 GiB, if the overhead stays the same
+    at a smaller heap (not measured). The launch-2 series ends at 2026-11-02 09:04:36, 28 h 03 min into the
+    stage, with the JVM alive (88.316 GiB RSS, 4.02 GiB of memory available, 1.07 GiB of swap in use, the
+    driver's own RSS down to 0.011 GiB, i.e. squeezed out of memory) and the kernel's OOM-kill counter
+    unchanged at 1 for the whole series: no kernel kill, and no recorded completion either. A later run
+    named matsim_continue_it30 exists in the run directory (log of 2026-11-02 14:11 to 14:18); it was not
+    examined here.
+  artifact: docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/lowest_available_memory_launch2.txt
+- metric: does the PopulationSim worker clamp have the same blind spot
+  reference: braunschweig.resources.resolve_popsim_workers
+  result: >-
+    Structurally yes: it divides the whole memory budget (86.28 GiB) by worker_memory_gb (30 GiB) and never
+    subtracts the driver. In this run the driver held 10.50 GiB at the first sample of braunschweig.popsim.stage
+    (2026-10-31 08:02:08; maximum 10.50 GiB over its 1,542 samples), so floor((86.28 - 10.50) / 30) = 2, the
+    same two workers the machine-only formula gives (the log: "num_workers 3 -> 2"). The omission would change
+    the count to 1 from a driver RSS above 86.28 - 2 x 30 = 26.28 GiB at stage start. No such driver was
+    measured; the blind spot is latent here and was left unchanged (it lives in braunschweig/resources.py, see
+    the next entry).
+  artifact: docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/driver_rss_by_stage_launch1.txt
+- metric: what the fix costs in recomputed stages at 100 %
+  reference: docs/runs/content-addressed-cache-acceptance-100pct-2026-10-22.yml
+  result: >-
+    cache_impact.py, run at the commit of the fix against origin/main (Python 3.10): the semantic digest of
+    braunschweig/resources.py is EQUAL (hashed by 12 source-hashing stage tokens, among them
+    braunschweig.popsim.stage, which took 12 h 56 min in launch 1, 08:02:08 to 20:58:02, and
+    braunschweig.synthesis.locations.secondary_chainsolvers); matsim/runtime/java.py CHANGED (hashed by 3
+    tokens: braunschweig.matsim.simulation.prepare 1 h 57 min in launch 1, braunschweig.synthesis.student_incommuters
+    8 min, braunschweig.matsim.scenario.supply_gtfs under 1 min, each from the first samples of consecutive
+    stages, +-35 s); braunschweig/java_heap.py is new and hashed by no token (it declares
+    _SYNPP_TOKEN_EXEMPTION); data/osm/osmosis.py is unchanged. The first run on a cache built before the fix
+    therefore re-executes matsim.runtime.java (module hash) and those 3 stages (token), about 2 h 6 min at 100 %,
+    and spares their descendants only where their output digest comes out unchanged (early cutoff). That cutoff
+    was measured for a java.py body edit on a copy of the 100 % cache in the 2026-10-22 acceptance run, for the
+    two jar stages below matsim.runtime.java; it is NOT measured for the descendants of the 3 token stages.
+    Placing the same code in braunschweig/resources.py would have recomputed all 12 stages. Two consequences for
+    landing it. (1) The launcher gate (synpp_expected_stale_stages, docs/codebase/notes/synpp-fork.md) stops a
+    launch on any stage that is stale for its own reasons and not in the list, so the four stages (the java stage
+    and the 3 token stages) must be listed once. (2) In the committed production DAG
+    (docs/registry/dag/production.json) braunschweig.matsim.simulation.prepare and
+    braunschweig.synthesis.student_incommuters are below matsim.runtime.eqasim and braunschweig.matsim.scenario.supply_gtfs
+    is not (dag_descendants.py), so landing the fix together with a rebuilt eqasim jar recomputes those two anyway
+    and leaves only supply_gtfs (under 1 min) and the java stage as extra cost.
+  artifact: docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/cache_impact.txt, docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/dag_descendants.txt
+- metric: what the driver-aware clamp returns for the two measured drivers
+  reference: braunschweig.resources.effective_java_memory (the machine-only clamp of launch 1 and 2)
+  result: >-
+    replay_clamp.py runs braunschweig.java_heap.effective_java_heap, the code of the fix, with the machine total
+    (98,856,780 kB = 94.2772 GiB) and the root RSS of the first sample of matsim.simulation.run of each launch.
+    Launch 1, driver 15,467,292 kB (14.7508 GiB): -Xmx71G (room 71.53 GiB), where the machine-only clamp that ran
+    returns -Xmx86G. Launch 2, driver 291,352 kB (0.2779 GiB): -Xmx85G, where the machine-only clamp returns
+    -Xmx86G; the floor to whole gigabytes takes one gigabyte off for a fresh driver, because the room is 85.999
+    GiB, which the log line prints as 86.00. The log lines in the artifact are the code's own output, not hand
+    arithmetic.
+  artifact: docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/replay_clamp.txt
+features:
+- resource_adaptive_config
+decisions:
+- ADR-0126
+artifacts:
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/driver_rss_by_stage.py
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/driver_rss_by_stage_launch1.txt
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/driver_rss_by_stage_launch2.txt
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/tree_at_stage.py
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/tree_at_stage_matsim_simulation_run_launch1.txt
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/memory_observer_stats.py
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/memory_observer_stats.txt
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/lowest_available_memory.py
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/lowest_available_memory_launch2.txt
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/series_end_state.py
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/series_end_state_launch1.txt
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/series_end_state_launch2.txt
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/cache_impact.py
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/cache_impact.txt
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/dag_descendants.py
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/dag_descendants.txt
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/replay_clamp.py
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/replay_clamp.txt
+source: >-
+  The five felix probes (driver_rss_by_stage.py, tree_at_stage.py, memory_observer_stats.py,
+  lowest_available_memory.py, series_end_state.py in the artifact folder) run read-only over the inputs named
+  under environment, the "[resources]" and "Executing java:" lines of the launch-1 log, and three probes run in
+  the repository: cache_impact.py (which wraps scripts/audit_synpp_helper_hash.py), dag_descendants.py (over
+  docs/registry/dag/production.json and the aliases of configs/base_bs.yml) and replay_clamp.py (which calls the
+  code of the fix with the recorder values of the first matsim.simulation.run sample of each launch). Stage wall
+  times are the differences of first-sample timestamps of consecutive stages in the recorder series. The _launch1
+  and _launch2 outputs differ only in the series they read.

@@ -1,0 +1,4 @@
+matsim.runtime.eqasim: 21 descendants in the production DAG (304 edges)
+below matsim.runtime.eqasim: braunschweig.matsim.simulation.prepare           DAG node matsim.simulation.prepare                True
+below matsim.runtime.eqasim: braunschweig.synthesis.student_incommuters       DAG node braunschweig.synthesis.student_incommuters True
+below matsim.runtime.eqasim: braunschweig.matsim.scenario.supply_gtfs         DAG node matsim.scenario.supply.gtfs              False
