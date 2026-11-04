@@ -21,6 +21,7 @@ Covers:
 
 from __future__ import annotations
 
+import copy
 import logging
 import sys
 from pathlib import Path
@@ -33,6 +34,7 @@ REPO = Path(__file__).resolve().parents[1]
 DATA = REPO / "eqasim-data" / "data"
 sys.path.insert(0, str(REPO))
 
+from braunschweig.data.kba import fleet_tables as ft  # noqa: E402
 from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E402
 
 FZ2717_CSV = DATA / "braunschweig" / "kba" / "derived" / "kba_gemeinde_private_bev.csv"
@@ -596,6 +598,91 @@ def test_committed_fz2717_factors_average_to_one_per_kreis():
             assert mean == pytest.approx(1.0, abs=1e-9), (
                 f"Kreis {kreis} {powertrain} factors average to {mean}, not 1.0"
             )
+
+
+@pytest.mark.skipif(not FZ2717_CSV.exists(),
+                    reason="kba_gemeinde_private_bev.csv absent (local-only data)")
+def test_loader_refuses_a_repeated_gemeinde_key(tmp_path):
+    """The loader must stop on a repeated ``(kreis_ags5, gemeinde)`` key.
+
+    The consumers keep one value per key, so a repeated row is silently resolved to
+    the last one, and the composition's Kreis reference sums over rows and would
+    count it twice.
+    """
+    table = pd.read_csv(FZ2717_CSV, dtype={"kreis_ags5": str})
+    derived = tmp_path / ft.KBA_SUBDIR
+    derived.mkdir(parents=True)
+    pd.concat([table, table.iloc[[5]]]).to_csv(derived / FZ2717_CSV.name, index=False)
+
+    with pytest.raises(RuntimeError, match="duplicate"):
+        ft.load_gemeinde_private_bev(str(tmp_path))
+
+
+# ---------------------------------------------------------------------------
+# Accounting: the sole Gemeinde of a Kreis is NOT APPLICABLE, not a fallback
+# ---------------------------------------------------------------------------
+# The composition redistributes BEV:PHEV BETWEEN the Gemeinden of a Kreis, so the only
+# Gemeinde of a Kreis (a kreisfreie Stadt) has nothing to shift against, whether or not
+# its counts are suppressed. Counting it as a missing reference reports a data gap that
+# does not exist; the rule is docs/codebase/notes/fallback-counter-states.md.
+
+def test_build_time_coverage_leaves_a_sole_gemeinde_out_of_the_rates(caplog):
+    df = pd.DataFrame([
+        _fz_row("03103", "SOLETOWN", 57779, np.nan, 528),   # sole Gemeinde, BEV suppressed
+        _fz_row("03154", "ALPHA", 1000, 80, 20),
+        _fz_row("03154", "BETA", 900, 50, 30),
+        _fz_row("03154", "BEIERSTEDT", 253, 7, np.nan),     # a real missing reference
+    ])
+    with caplog.at_level(logging.INFO, logger=fs.logger.name):
+        fs._gemeinde_electric_composition(df)
+
+    assert "primary 2/3" in caplog.text   # the sole Gemeinde is outside the denominator
+    assert "BEIERSTEDT" in caplog.text    # the real gap stays named
+
+
+@pytest.fixture(scope="module")
+def committed_powertrain_model():
+    """The real wiring: ``PowertrainModel.from_data_path`` on the committed tables.
+
+    The build reads about twenty CSVs (a few seconds), so it runs once per module and
+    every test works on a deep copy with zeroed counters.
+    """
+    if not FZ2717_CSV.exists():
+        pytest.skip("kba_gemeinde_private_bev.csv absent (local-only data)")
+    segments = list(ft.load_segment_powertrain(str(DATA))["segment"].unique())
+    model = fs.PowertrainModel.from_data_path(str(DATA), segments)
+    model.gemeinde_bev_composition_tilt = True
+    return model, segments[0]
+
+
+def test_kreisfreie_staedte_are_neither_primary_nor_fallback(committed_powertrain_model):
+    template, segment = committed_powertrain_model
+    model = copy.deepcopy(template)
+    for kreis, label in (("03101", "Braunschweig, Stadt"),
+                         ("03102", "Salzgitter, Stadt"),
+                         ("03103", "Wolfsburg, Stadt")):
+        model.powertrain_probabilities(segment, kreis, label)
+    # A Kreis of several Gemeinden is unaffected: it still counts as a primary hit.
+    model.powertrain_probabilities(segment, "03151", "Gifhorn, Stadt")
+
+    assert (model._gemeinde_composition_primary,
+            model._gemeinde_composition_fallback) == (1, 0)
+    assert model._gemeinde_composition_not_applicable == 3
+
+
+def test_a_population_in_one_kreisfreie_stadt_raises_no_warning(
+        committed_powertrain_model, caplog):
+    template, segment = committed_powertrain_model
+    model = copy.deepcopy(template)
+    for _ in range(10):
+        model.powertrain_probabilities(segment, "03103", "Wolfsburg, Stadt")
+    with caplog.at_level(logging.INFO, logger=fs.logger.name):
+        model.log_fallback_rate("residents")
+
+    warnings = [r.getMessage() for r in caplog.records
+                if r.levelno >= logging.WARNING
+                and "composition" in r.getMessage().lower()]
+    assert not warnings, warnings
 
 
 # ---------------------------------------------------------------------------
