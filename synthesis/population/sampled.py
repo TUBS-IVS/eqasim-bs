@@ -18,7 +18,9 @@ def configure(context):
     context.config("sampling_rate")
 
 def execute(context):
-    df_census = context.stage("source").sort_values(by = "household_id").copy()
+    # Stable sort: the members of a household keep their input order. numpy's default sort is not stable, so the
+    # member order would be whatever the sort algorithm of the installed numpy version makes of equal keys.
+    df_census = context.stage("source").sort_values(by = "household_id", kind = "stable").copy()
 
     sampling_rate = context.config("sampling_rate")
     random = np.random.RandomState(context.config("random_seed"))

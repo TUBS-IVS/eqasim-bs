@@ -90,6 +90,26 @@ def test_households_are_replicated_block_wise_without_a_ragged_array():
     assert "weight" not in result.columns
 
 
+def test_members_keep_their_input_order_when_the_input_is_not_sorted_by_household():
+    """The members of a household keep the order they have in the input, whatever numpy's sort algorithm.
+
+    The production input is not sorted by household_id, and numpy's default sort is not stable: it reorders persons
+    of the same household, differently in another numpy version. The input below interleaves 40 households (sizes
+    2 to 4, more than numpy's insertion-sort threshold of 16 rows) with members numbered in increasing order.
+    """
+    households = [(100 + (7 * index) % 40, 2 + index % 3, 1.0) for index in range(40)]
+    census = _census(households)
+    # Interleave the households: the first member of every household, then the second, ...
+    census = census.assign(_member=census.groupby("household_id").cumcount()).sort_values(
+        "_member", kind="stable").drop(columns="_member").reset_index(drop=True)
+
+    result = sampled.execute(_ExecuteContext(census, random_seed=0, sampling_rate=1.0))
+
+    members = _members_by_replica(result)
+    assert len(members) == 40
+    assert all(ids == sorted(ids) for ids in members)
+
+
 # Fractional weights, a sampling rate below 1 and the random seed of the production configuration.
 _SEEDED_HOUSEHOLDS = [
     (21, 1, 1.4), (22, 2, 0.6), (23, 3, 2.5), (24, 1, 1.0), (25, 2, 1.7),
