@@ -2,7 +2,8 @@
 
 At the end of the prepare stage every agent chooses its modes once with eqasim's ``RunStandaloneModeChoice`` under free
 flow travel times, so MATSim starts from a plan set in which each agent has chosen. This module holds the pure helpers
-of that step: the runner arguments, the retired-key check, the person count and the before/after trip summary.
+of that step: the runner arguments, the retired-key check, the person count and the before/after trip summary, and
+``run``, which calls the Java runner, checks that no person disappeared and replaces the population with the result.
 
 The ADR-0155 mechanism (eqasim-bs#465) added a second DiscreteModeChoice replanning strategy with a very high weight to
 the MATSim config so that agents chose in iteration 1; it is gone, replaced by this upfront choice (ADR-0177 has the
@@ -11,9 +12,15 @@ reasons).
 from __future__ import annotations
 
 import gzip
+import json
 import logging
+import os
+import time
 
+import matsim.runtime.eqasim as eqasim
 import pandas as pd
+
+from braunschweig.matsim.simulation.plan_check import resolve_population_path
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +85,15 @@ def count_persons(path, chunk_size: int = 1 << 20) -> int:
 def summarise(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     """Summarise the mode changes between the trips before and after the choice (JSON-serialisable).
 
-    Both frames need ``person_id``, ``person_trip_id`` and ``mode``. Raises ValueError if the trip sets differ.
+    Both frames need ``person_id``, ``person_trip_id`` and ``mode``. Raises ValueError if a frame has duplicate trip
+    keys or a missing mode, or if the trip sets differ.
     """
     keys = ["person_id", "person_trip_id"]
+    for name, frame in (("before", before), ("after", after)):
+        if frame.duplicated(subset=keys).any():
+            raise ValueError(f"{_LOG_TAG} the trips {name} the choice have duplicate {keys} keys")
+        if frame["mode"].isna().any():
+            raise ValueError(f"{_LOG_TAG} the trips {name} the choice have a missing mode")
     joined = before.merge(after, on=keys, how="inner", suffixes=("_before", "_after"))
     if not len(before) == len(after) == len(joined):
         raise ValueError(f"{_LOG_TAG} the trips before ({len(before)}) and after ({len(after)}) the choice differ "
@@ -100,3 +113,60 @@ def summarise(before: pd.DataFrame, after: pd.DataFrame) -> dict:
         "mode_shares_before": shares(before["mode"]),
         "mode_shares_after": shares(after["mode"]),
     }
+
+
+def run(context, config_name: str) -> dict:
+    """Run eqasim's standalone mode choice on the final population and replace the population with the result.
+
+    ``config_name`` is the MATSim config in the stage directory; the population is the file its
+    ``plans.inputPlansFile`` names. Travel times are free flow (no travel time option is passed). Raises RuntimeError
+    if the choice removed persons (no feasible alternative) and FileNotFoundError if the runner wrote no output; the
+    population is replaced only after all checks passed. Writes ``initial_mode_choice.json`` to the stage directory,
+    leaves the before/after trips CSVs in ``mode_choice/`` and returns the summary.
+    """
+    stage_path = context.path()
+    population_path = resolve_population_path(os.path.join(stage_path, config_name))
+    persons_before = count_persons(population_path)
+    threads = int(context.config("matsim_threads") or context.config("processes"))
+
+    started = time.monotonic()
+    eqasim.run(context, RUNNER, arguments(config_name, population_path, threads))
+    java_wall_time_s = time.monotonic() - started
+
+    output_directory = os.path.join(stage_path, OUTPUT_DIRECTORY)
+    paths = {name: os.path.join(output_directory, name) for name in (OUTPUT_PLANS, INPUT_TRIPS, OUTPUT_TRIPS)}
+    for path in paths.values():
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"{_LOG_TAG} the standalone mode choice did not write {path}; "
+                                    f"see the logs in {output_directory}")
+
+    persons_after = count_persons(paths[OUTPUT_PLANS])
+    if persons_after != persons_before:
+        raise RuntimeError(f"{_LOG_TAG} the population had {persons_before} persons before and {persons_after} after "
+                           f"the choice: eqasim removed {persons_before - persons_after} persons with no feasible "
+                           f"mode choice alternative; see {OUTPUT_DIRECTORY}/ logs")
+
+    summary = summarise(pd.read_csv(paths[INPUT_TRIPS], sep=CSV_DELIMITER, dtype=str),
+                        pd.read_csv(paths[OUTPUT_TRIPS], sep=CSV_DELIMITER, dtype=str))
+    summary.update({
+        "persons_before": persons_before,
+        "persons_after": persons_after,
+        "population_file": os.path.basename(population_path),
+        "java_wall_time_s": java_wall_time_s,
+        "travel_times": "free_flow",
+        "runner": RUNNER,
+        "configurator": CONFIGURATOR,
+    })
+
+    os.replace(paths[OUTPUT_PLANS], population_path)
+    with open(os.path.join(stage_path, SUMMARY_FILE_NAME), "w", encoding="utf-8") as handle:
+        json.dump(summary, handle, indent=2)
+
+    def percent(shares: dict[str, float]) -> str:
+        return ", ".join(f"{mode} {100.0 * share:.1f}%" for mode, share in shares.items())
+
+    logger.info("%s persons %d before, %d after; trips %d; share with changed mode %.1f%%; mode shares before: %s; "
+                "after: %s; free-flow travel times; Java wall time %.0f s", _LOG_TAG, persons_before, persons_after,
+                summary["n_trips"], 100.0 * summary["share_mode_changed"], percent(summary["mode_shares_before"]),
+                percent(summary["mode_shares_after"]), java_wall_time_s)
+    return summary
