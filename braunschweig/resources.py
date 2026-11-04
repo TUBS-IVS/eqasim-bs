@@ -256,8 +256,8 @@ DEFAULT_CORE_RESERVE = 2
 #: In practice the synpp driver is NOT covered by this reserve: its live RSS is subtracted ON TOP
 #: of it wherever it is measured at the point of use -- the chainsolver pool
 #: (``effective_chainsolver_workers``) and the JVM heap
-#: (``braunschweig.java_heap.effective_java_heap``). The 100 % run prod100_20261031 had a driver
-#: of 14.75 GiB when MATSim started (docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml).
+#: (``braunschweig.java_heap.effective_java_heap``). The driver of the 100 % run measured in
+#: docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml held more than the whole reserve.
 DEFAULT_MEMORY_RESERVE_GB = 8.0
 
 ENV_CPU_BUDGET = "EQASIM_CPU_BUDGET"

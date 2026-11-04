@@ -270,14 +270,13 @@ validation:
     and tests/test_run_provenance.py, NOT by tests/test_resources_run_start.py, which
     despite its name exercises resources.enforce_report directly and never imports
     the launcher. Since the 2026-11-04 JVM-heap amendment (C2) the per-launch java_memory
-    line is driver-aware: "[resources] java_memory 100G -> <n>G (memory budget 86.28 GB
-    (psutil) - driver RSS <measured> GB = <room> GB for the JVM; configured 100G exceeds it,
-    clamped to <n>G)", so a "java_memory 100G -> 86G" line is no longer the expected one
-    except with an unmeasurable driver RSS: a fresh driver of about 0.3 GB gives 85G, the
-    14.75 GiB driver of run prod100_20261031 gives 71G. The startup report's
-    "java_memory = 86G [clamped]" line stays the machine-level preview. That run's
-    measurements (the manifest in validation.runs) are the motivating evidence, NOT a
-    validation of the amendment: no run with the fixed launcher has been recorded yet.
+    line is driver-aware: "[resources] java_memory 100G -> <n>G (memory budget <b> GB
+    (<source>) - driver RSS <measured> GB = <room> GB for the JVM; configured 100G exceeds it,
+    clamped to <n>G)", so the value after the arrow now depends on the driver's RSS at the
+    launch. The startup report's "java_memory = ... [clamped]" line stays the machine-level
+    preview. The manifest listed in validation.runs (prod100-java-heap-driver-rss-2026-11-04)
+    holds the motivating measurements and the code's output for the measured drivers; it is
+    NOT a validation of the amendment: no run with the fixed launcher has been recorded yet.
     See evidence.tests.
 assessment:
   status: pending

@@ -41,7 +41,7 @@ def run(context, entry_point, arguments = [], class_path = None, vm_arguments = 
     # Prepare arguments
     # Clamp the configured heap to what this run can still give the JVM: the memory
     # budget of the machine it landed on MINUS the memory the driver process already
-    # holds (C2: a 14.75 GiB driver next to an 86G heap exceeded the machine). The
+    # holds (C2, measured in docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml). The
     # config value stays untouched on purpose: java_memory is part of this stage's
     # hash, so rewriting it would invalidate every Java-dependent stage.
     from braunschweig.java_heap import effective_java_heap

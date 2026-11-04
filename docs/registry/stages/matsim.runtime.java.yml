@@ -28,13 +28,13 @@ notes: >-
   (braunschweig/java_heap.py::effective_java_heap, driver-aware since 2026-11-04 / C2;
   the machine-only braunschweig/resources.py::effective_java_memory is still called by
   data/osm/osmosis.py) before it becomes the JVM's -Xmx argument -- e.g. the live
-  2026-09-16 defect, java_memory: 100G configured on a 94 GB machine, clamps to 86G,
-  and to 71G next to the 14.75 GiB driver of run prod100_20261031. Operational only
+  2026-09-16 defect, java_memory: 100G configured on a 94 GB machine, clamps to 86G
+  before the driver term. Operational only
   (the value only ever becomes -Xmx and cannot change any result), and the configured
   value is never rewritten, so this stage's cache hash -- inherited by every
   Java-dependent stage (network, routing, freight, MATSim) -- is unaffected by the
   clamping. The source of matsim/runtime/java.py is another matter: its semantic digest
-  enters the tokens of braunschweig.matsim.simulation.prepare,
-  braunschweig.synthesis.student_incommuters and braunschweig.matsim.scenario.supply_gtfs,
-  so a code edit here recomputes those three (docs/codebase/notes/resource-budget.md);
-  braunschweig/java_heap.py declares _SYNPP_TOKEN_EXEMPTION and enters no token.
+  enters the validate() tokens of the stages that hash it, so a code edit here recomputes
+  them (which stages and at what cost: docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml;
+  the rule: docs/codebase/notes/resource-budget.md); braunschweig/java_heap.py declares
+  _SYNPP_TOKEN_EXEMPTION and enters no token.

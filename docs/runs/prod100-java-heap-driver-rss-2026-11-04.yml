@@ -148,8 +148,26 @@ validation:
     and spares their descendants only where their output digest comes out unchanged (early cutoff). That cutoff
     was measured for a java.py body edit on a copy of the 100 % cache in the 2026-10-22 acceptance run, for the
     two jar stages below matsim.runtime.java; it is NOT measured for the descendants of the 3 token stages.
-    Placing the same code in braunschweig/resources.py would have recomputed all 12 stages.
-  artifact: docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/cache_impact.txt
+    Placing the same code in braunschweig/resources.py would have recomputed all 12 stages. Two consequences for
+    landing it. (1) The launcher gate (synpp_expected_stale_stages, docs/codebase/notes/synpp-fork.md) stops a
+    launch on any stage that is stale for its own reasons and not in the list, so the four stages (the java stage
+    and the 3 token stages) must be listed once. (2) In the committed production DAG
+    (docs/registry/dag/production.json) braunschweig.matsim.simulation.prepare and
+    braunschweig.synthesis.student_incommuters are below matsim.runtime.eqasim and braunschweig.matsim.scenario.supply_gtfs
+    is not (dag_descendants.py), so landing the fix together with a rebuilt eqasim jar recomputes those two anyway
+    and leaves only supply_gtfs (under 1 min) and the java stage as extra cost.
+  artifact: docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/cache_impact.txt, docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/dag_descendants.txt
+- metric: what the driver-aware clamp returns for the two measured drivers
+  reference: braunschweig.resources.effective_java_memory (the machine-only clamp of launch 1 and 2)
+  result: >-
+    replay_clamp.py runs braunschweig.java_heap.effective_java_heap, the code of the fix, with the machine total
+    (98,856,780 kB = 94.2772 GiB) and the root RSS of the first sample of matsim.simulation.run of each launch.
+    Launch 1, driver 15,467,292 kB (14.7508 GiB): -Xmx71G (room 71.53 GiB), where the machine-only clamp that ran
+    returns -Xmx86G. Launch 2, driver 291,352 kB (0.2779 GiB): -Xmx85G, where the machine-only clamp returns
+    -Xmx86G; the floor to whole gigabytes takes one gigabyte off for a fresh driver, because the room is 85.999
+    GiB, which the log line prints as 86.00. The log lines in the artifact are the code's own output, not hand
+    arithmetic.
+  artifact: docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/replay_clamp.txt
 features:
 - resource_adaptive_config
 decisions:
@@ -169,10 +187,16 @@ artifacts:
 - docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/series_end_state_launch2.txt
 - docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/cache_impact.py
 - docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/cache_impact.txt
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/dag_descendants.py
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/dag_descendants.txt
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/replay_clamp.py
+- docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/replay_clamp.txt
 source: >-
   The five felix probes (driver_rss_by_stage.py, tree_at_stage.py, memory_observer_stats.py,
   lowest_available_memory.py, series_end_state.py in the artifact folder) run read-only over the inputs named
-  under environment, the "[resources]" and "Executing java:" lines of the launch-1 log, and cache_impact.py
-  (which wraps scripts/audit_synpp_helper_hash.py) in the repository. Stage wall times are the differences of
-  first-sample timestamps of consecutive stages in the recorder series. The _launch1 and _launch2 outputs
-  differ only in the series they read.
+  under environment, the "[resources]" and "Executing java:" lines of the launch-1 log, and three probes run in
+  the repository: cache_impact.py (which wraps scripts/audit_synpp_helper_hash.py), dag_descendants.py (over
+  docs/registry/dag/production.json and the aliases of configs/base_bs.yml) and replay_clamp.py (which calls the
+  code of the fix with the recorder values of the first matsim.simulation.run sample of each launch). Stage wall
+  times are the differences of first-sample timestamps of consecutive stages in the recorder series. The _launch1
+  and _launch2 outputs differ only in the series they read.

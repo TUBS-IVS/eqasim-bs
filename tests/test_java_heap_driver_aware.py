@@ -1,10 +1,8 @@
-"""The JVM heap leaves room for the synpp driver process (production run prod100_20261031, C2).
+"""The JVM heap leaves room for the synpp driver process (finding C2 of production run prod100_20261031).
 
-Synthesis and MATSim ran in ONE ``scripts/run_synpp.py`` invocation. When ``matsim.simulation.run``
-started, the Python driver still held 15,467,292 kB of RSS (14.75 GiB, resource recorder sample of
-2026-11-01T04:59:19; ``docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml``), while the JVM was started
-with ``-Xmx86G``: the clamp compared ``java_memory`` with the machine budget (94.28 GiB - 8 GiB reserve)
-and never subtracted what the driver already held, so driver plus heap (100.75 GiB) exceeded the machine.
+Synthesis and MATSim ran in ONE ``scripts/run_synpp.py`` invocation, so the driver still held memory when the
+JVM was started, but the clamp compared ``java_memory`` with the machine budget alone and never subtracted it
+(measurements: ``docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml``).
 
 Every machine figure is injected (budget through ``EQASIM_MEM_BUDGET``, the driver RSS by replacing the
 reader), so no test reads the real machine. See ``docs/codebase/notes/resource-budget.md``.
@@ -103,7 +101,8 @@ def test_java_run_leaves_the_heap_room_for_the_driver_the_run_already_holds(monk
 @pytest.mark.parametrize("configured, driver_rss_gb, expected", [
     # A driver that holds nothing leaves the machine-only clamp of before C2 untouched.
     pytest.param("100G", 0.0, "86G", id="idle_driver_changes_nothing"),
-    # The production figure: 86.28 - 14.75 = 71.53 GiB are left, floored to whole gigabytes.
+    # The driver RSS recorded for prod100_20261031 (see the manifest): 86.28 - 14.75 = 71.53 GiB are left,
+    # floored to whole gigabytes.
     pytest.param("100G", 14.75, "71G", id="driver_of_prod100"),
     # 75G fits the 86.28 GiB machine budget, so the old clamp kept it; it does not fit what is left.
     pytest.param("75G", 14.75, "71G", id="pin_below_the_budget_is_cut_too"),

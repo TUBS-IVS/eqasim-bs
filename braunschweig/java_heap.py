@@ -1,12 +1,12 @@
 """Driver-aware JVM heap: the ``-Xmx`` of a Java process leaves room for the synpp driver.
 
-The defect (C2, production run ``prod100_20261031``, ``docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml``):
+The defect (C2, production run ``prod100_20261031``; measurements in
+``docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml``):
 ``braunschweig.resources.effective_java_memory`` clamps ``java_memory`` against the MACHINE budget (total
 memory minus ``DEFAULT_MEMORY_RESERVE_GB``) and has no term for the memory the already running driver
-process holds. Synthesis and MATSim shared one driver there. It held 14.75 GiB when ``matsim.simulation.run``
-started, and the JVM was still given ``-Xmx86G``: together 100.75 GiB on a 94.28 GiB machine. The
-chainsolver pool already subtracts the driver's live RSS (``resources.effective_chainsolver_workers``); the
-Java launch did not.
+process holds. Synthesis and MATSim shared one driver there, so the driver plus a heap capped at the whole
+budget exceeded the machine. The chainsolver pool already subtracts the driver's live RSS
+(``resources.effective_chainsolver_workers``); the Java launch did not.
 
 The rule, applied at the moment a Java process is started::
 
@@ -23,9 +23,10 @@ does not alter its results), which is why this module is exempt from every stage
 Where the figures come from, and what they do not cover:
 
 - ``driver_rss_gb`` is THIS process's current RSS (``resources.current_process_rss_gb``: psutil, then
-  ``/proc/self/status``). Live child processes are not added. At the MATSim launch of the run above the
-  driver's only children were the two multiprocessing helper processes (5 MiB each), and summing the RSS of
-  forked worker children would count the copy-on-write pages they share with the driver once per child.
+  ``/proc/self/status``). Live child processes are not added: at the MATSim launch of the run above the
+  driver's only children were two small multiprocessing helper processes (the manifest records them), and
+  summing the RSS of forked worker children would count the copy-on-write pages they share with the driver
+  once per child.
 - When the RSS cannot be measured, the log line says so at WARNING level and the heap is bounded by the
   machine budget alone, exactly as before this module existed. The fallback is never silent.
 - Units follow ``braunschweig.resources``: one gigabyte is 1024**3 bytes, the unit of the JVM's ``G``.

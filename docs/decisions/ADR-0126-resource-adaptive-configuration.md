@@ -305,27 +305,29 @@ hand), so it is fixed as part of this decision rather than left for later.
    subtracts the driver's live RSS for the chainsolver pool, because the pool is
    forked from it. The Java launch had no such term, and the reserve was never
    measured to cover the driver. In the 100 % run `prod100_20261031` synthesis and
-   MATSim ran in one driver, which held 14.75 GiB when `matsim.simulation.run`
-   started while the JVM was given `-Xmx86G`: 100.75 GiB of caps on a 94.28 GiB
-   machine (`docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml`; even the
-   fresh-driver relaunch had only 3.67 GiB of memory available at its worst).
+   MATSim ran in one driver that held more than the whole reserve when
+   `matsim.simulation.run` started, next to a JVM heap capped at the whole budget:
+   the caps alone exceeded the machine, and even the fresh-driver relaunch left
+   little memory available. The measurements are owned by the run manifest
+   `docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml`.
    `braunschweig.java_heap.effective_java_heap` now sizes every Java launch by
    `room = max(1, memory_budget_gb - driver_rss_gb_live)`: `java_memory` is used when
    it fits `room` and floored to whole gigabytes otherwise; `java_memory` itself is
    still never rewritten; an unmeasurable RSS is a WARNING that falls back to the
    machine budget alone. **Rejected: putting it into `braunschweig/resources.py`**,
    the obvious home next to `effective_java_memory` and
-   `effective_chainsolver_workers`: a dozen stage tokens hash that file, so any code
-   change there recomputes the 100 % PopulationSim stage (12 h 56 min in that run), the
-   chainsolver and ten more stages. The heap size never changes what a Java stage
-   computes (Decision 3), so the new module declares `_SYNPP_TOKEN_EXEMPTION` and no
-   token hashes it. **Rejected: adding the driver's child processes to the figure.**
-   At the MATSim launch they were two helper processes of 5 MiB each, and forked
-   worker children share most of their RSS with the driver (point 5). **Not done,
-   and recorded as limitations 3 and 4 of the contributor note:** the PopulationSim
-   worker clamp has the same omission, latent (driver 10.50 GiB at its start, the
-   count changes only above 26.28 GiB), and `data/osm/osmosis.py` still calls the
-   machine-only function; fixing either recomputes stages for no measured benefit.
+   `effective_chainsolver_workers`: many stage tokens hash that file (PopulationSim
+   and the chainsolver among them), so any code change there recomputes the 100 %
+   stages. The heap size never changes what a Java stage computes (Decision 3), so
+   the new module declares `_SYNPP_TOKEN_EXEMPTION` and no token hashes it.
+   **Rejected: adding the driver's child processes to the figure.** At the MATSim
+   launch they were two small helper processes (the manifest), and forked worker
+   children share most of their RSS with the driver (point 5). **Not done, and
+   recorded as limitations 3 and 4 of the contributor note:** the PopulationSim
+   worker clamp has the same omission, latent (the manifest measures the driver at
+   its start and the size above which the count would change), and
+   `data/osm/osmosis.py` still calls the machine-only function; fixing either
+   recomputes stages for no measured benefit.
 
 ## Rejected alternative
 
@@ -489,19 +491,16 @@ this decision tries to prevent by watching load.
 - **AMENDMENT (2026-11-04): landing point 6 costs one bounded recompute, not the
   permanent cost of `resources.py`.** `resources.py` is unchanged in code (its
   semantic digest equals `origin/main`'s; only docstrings and comments changed), so the
-  twelve tokens that hash it are untouched. The one hashed file the change edits is
-  `matsim/runtime/java.py`, whose digest enters its own stage hash and the tokens of
-  `braunschweig.matsim.simulation.prepare`, `braunschweig.synthesis.student_incommuters`
-  and `braunschweig.matsim.scenario.supply_gtfs`: the first run on a cache built before
-  it re-executes those four stages (about 2 h 6 min at 100 %, `prepare` alone 1 h 57 min)
-  and spares their descendants where the output digest is unchanged (early cutoff,
-  ADR-0149). `prepare` and `student_incommuters` sit below `matsim.runtime.eqasim`, so
-  landing it with a rebuilt eqasim jar leaves only `supply_gtfs` and the java stage as
-  extra cost. The launcher gate (`synpp_expected_stale_stages`) must list the four stages
-  once. A fresh driver (about 0.3 GiB) now gets `85G` on the 94.28 GiB server where the
-  machine-only clamp gave `86G`, because the result is floored to whole gigabytes.
-  Whether a 70-71 GiB heap carries the live set of the 100 % MATSim run is unmeasured
-  (the manifest above): at that scale MATSim belongs in a fresh driver.
+  stage tokens that hash it are untouched. The one hashed file the change edits is
+  `matsim/runtime/java.py`, whose digest enters its own stage hash and the tokens of the
+  stages that hash it: the first run on a cache built before it re-executes those stages
+  once and spares their descendants where the output digest is unchanged (early cutoff,
+  ADR-0149). Which stages, how long they take at 100 %, what a rebuilt eqasim jar saves
+  and what the launcher gate (`synpp_expected_stale_stages`) must list are in the
+  manifest ("what the fix costs"). The floor to whole gigabytes can take one gigabyte
+  off the machine-only value for a fresh driver (the contributor note). Whether the
+  smaller heap a heavy driver leaves carries the live set of the 100 % MATSim run is
+  unmeasured (the manifest): at that scale MATSim belongs in a fresh driver.
 - **Limitation, stated rather than buried.** The claim "secondary locations
   no longer depend on the machine" is verified for the shard partition, the
   per-shard seeds and the recombination order
