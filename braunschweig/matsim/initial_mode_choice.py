@@ -122,8 +122,9 @@ def run(context, config_name: str) -> dict:
     ``plans.inputPlansFile`` names. Travel times are free flow (no travel time option is passed). Raises ValueError if
     the population is outside the stage directory, RuntimeError if it is empty or the choice removed persons (no
     feasible alternative) and FileNotFoundError if the runner wrote no output; the population is replaced only after
-    all checks passed. Logs a warning if the choice changed no trip or the trips CSVs are empty. Writes ``initial_mode_choice.json`` to the stage directory,
-    leaves the before/after trips CSVs in ``mode_choice/`` and returns the summary.
+    all checks passed. Logs a warning if the choice changed no trip or the trips CSVs are empty. Writes
+    ``initial_mode_choice.json`` to the stage directory, leaves the before/after trips CSVs in ``mode_choice/`` and
+    returns the summary.
     """
     stage_path = context.path()
     population_path = resolve_population_path(os.path.join(stage_path, config_name))
