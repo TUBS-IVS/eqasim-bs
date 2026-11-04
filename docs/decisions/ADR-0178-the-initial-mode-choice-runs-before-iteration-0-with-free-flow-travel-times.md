@@ -15,8 +15,9 @@
 - ADR-0155 made every agent choose its modes once at the first replanning: a second `DiscreteModeChoice` strategy
   with weight 1e6 and `disableAfterIteration` 1 in the final config, so that in MATSim iteration 1 practically all
   ~1.15 M agents of the 100 % scenario replan inside the loop, with the travel times of iteration 0.
-- In the 100 % production run `prod100_20261031` on felix, iteration 1 took 8 h 23 min, 7 h 37 min of it replanning
-  (felix log, read by the sibling session that diagnosed it; no run manifest of that run exists yet). The cause is
+- In the 100 % production run `prod100_20261031` on felix, iteration 1 reportedly took 8 h 23 min, 7 h 37 min of
+  it replanning (REPORTED, UNVERIFIED: read from the felix log by the sibling session that diagnosed it; no run
+  manifest of that run exists, so the figure is context, not a measurement of this repository). The cause is
   a defect of the DMC contrib's `CachedTripEstimator` (constant `DiscreteModeChoiceTrip.hashCode`, so every cache
   lookup is a linear scan and the replanning time of a thread grows with the square of its persons); eqasim-java-bs
   fixes it on `fix/dmc-trip-cache-quadratic` (`PersonScopedCachedTripEstimator`), independently of this ADR.
@@ -92,12 +93,15 @@
 ## Consequences
 
 - Output change by design: the loop starts from a population whose modes follow the production model under
-  free-flow car travel times; the converged state is the same model's equilibrium (convergence is not validation).
+  free-flow car travel times. The loop runs the same model; whether its stationary state differs from the one
+  reached under ADR-0155 is unmeasured (with plan memory 1 and KeepLastSelected 0.95 it may depend on the start),
+  and convergence is not validation either way.
 - The DMC's routing drops the `walkFallbackFrom` stamp of re-routed trips; the plan check keeps its pt-as-walk
   figures through `routingMode`. The routed day-end shift (ADR-0160) has already happened in the routing the mode
   choice starts from; the choice itself does not repeat it, exactly as the loop's replanning does not.
 - The runtime of the step at 100 % is unknown until measured; the per-chunk model bounds the trip-cache defect
-  to about 3.5 k trips per chunk even without the C1 fix, which applies here too once merged.
+  to the trips of 1000 plans per chunk (ESTIMATE: a few thousand trips, at 3-4 trips per person; not measured)
+  even without the C1 fix, which applies here too once merged.
 - **Status:** implemented and unit-tested (fakes for the Java step); the first 1 % and 100 % runs after the merge
   record the wall time of the step and of iteration 1 and the mode shares before/after in run manifests. A smoke
   is not a validation.

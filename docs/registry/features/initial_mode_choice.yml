@@ -75,9 +75,9 @@ validation:
   metric: null
   note: >-
     No run has used the step yet. The first 1 % and 100 % runs after the merge record the wall time of the
-    step and of MATSim iteration 1 (the 8 h 23 min of prod100_20261031 under ADR-0155 is the figure to compare
-    with, from the felix log; no manifest of that run exists) and the mode shares before/after. A smoke is not a
-    validation.
+    step and of MATSim iteration 1 and the mode shares before/after. The 8 h 23 min of iteration 1 in
+    prod100_20261031 under ADR-0155 is REPORTED and UNVERIFIED (felix log, no run manifest); a comparison needs
+    a manifest of that run first. A smoke is not a validation.
 assessment:
   status: pending
   by: null
