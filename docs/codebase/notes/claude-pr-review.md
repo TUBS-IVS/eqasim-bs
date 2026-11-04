@@ -2,271 +2,62 @@
 
 ## What it is
 
-`.github/workflows/claude-review.yml` runs an advisory code review by Claude on pull
-requests to `main`. It posts one PR review with inline comments and keeps one summary
-comment per PR up to date. It is **not** a required check: it never blocks a merge and
-never replaces the [verification gate](../TESTING.md#required-agent-verification-gate).
-Nothing here touches model code or scientific output. `TUBS-IVS/eqasim-java-bs` and
-private repositories of the group run the same mechanism with their own config and prompt and a
-copy of the script (`.github/scripts/claude_review.py` there; change it here first, then copy it
-to each of them).
+This repository runs the advisory Claude PR review that TUBS-IVS shares in one public repository,
+[TUBS-IVS/claude-pr-review](https://github.com/TUBS-IVS/claude-pr-review) (why central:
+[ADR-0176](../../decisions/ADR-0176-the-claude-pr-review-lives-in-one-public-repository-called-at-a-version-tag.md)).
+It posts one PR review with inline comments and keeps one summary comment per PR up to date. It is **not** a
+required check: it never blocks a merge and never replaces the
+[verification gate](../TESTING.md#required-agent-verification-gate). Nothing here touches model code or scientific
+output.
 
-Prerequisite: the repository secret `ANTHROPIC_API_KEY`, a key of a **workspace** of the
-Console organization (an organization-level key fails with "not scoped to a workspace").
-Comments are posted with the workflow's `GITHUB_TOKEN` (as `github-actions[bot]`). PRs
-from forks and from Dependabot get no Actions secrets and are skipped with a note in the
-job summary. The gate config, prompt and script are read from the PR itself, so a PR can
-change its own gate; all three are critical paths, which makes such a PR reviewed. So are
-`CLAUDE.md` and `.claude/rules/` (since 2026-10-28): they steer every agent session, the
-push rule and the verification gate included, so even a small edit there is reviewed.
+The mechanism lives there, with its tests and the one description of how it works
+([docs/how-it-works.md](https://github.com/TUBS-IVS/claude-pr-review/blob/main/docs/how-it-works.md)): the
+model-free gate and its decision order, the three tiers, the rounds and their state block, the posting, the cost
+record, the findings record for the session retro, and why it runs `claude -p` instead of the Claude Code GitHub
+Action. The three tiers: [ADR-0175](../../decisions/ADR-0175-the-claude-pr-review-sends-structure-changes-and-large-changes-to-a-deep-tier.md);
+the rounds: [ADR-0171](../../decisions/ADR-0171-the-claude-pr-review-reviews-in-rounds-verifies-fixes-and-stops-after-three.md).
 
-## Why `claude -p` and not `anthropics/claude-code-action`
+## What this repository owns
 
-The organization's API balance consists of the monthly API credits of a Claude Team plan.
-Those credits cover the Claude API, the Agent SDK and `claude -p` run with an API key of
-the linked Console organization, but not Claude Code; runs started by the Claude Code
-GitHub Action count as Claude Code usage (Claude Help Center, "Monthly API credits for Max
-and Team plans", article 17154008; Claude Platform docs, "API credits for Max and Team
-plans"). The action identifies its traffic as such (`CLAUDE_CODE_ENTRYPOINT =
-"claude-code-github-action"` in its `base-action/src/parse-sdk-options.ts`). On PR #497
-every action run failed on its first API call with "Credit balance is too low" at 0 USD,
-although the organization held 420 USD of these credits. The workflow therefore runs
-`claude -p` itself. Should the balance ever be purchased credits instead, the action would
-work again; the reasons above then no longer apply.
+| File | Holds |
+|---|---|
+| `.github/workflows/claude-review.yml` | The thin caller: the triggers, the concurrency block, the token permissions, and the call of `TUBS-IVS/claude-pr-review/.github/workflows/review.yml@v1` with only the secret `ANTHROPIC_API_KEY`. `on.pull_request.paths-ignore: ["docs/generated/**"]`: the bot PRs of the generated views (ADR-0168) create no run. |
+| `.github/claude-review.yml` | The gate config: critical, structure and ignored paths, thresholds, rounds, tiers (model, turns, budget per run) and the two label names. |
+| `.github/claude-review-prompt.md` | The prompt: read `CLAUDE.md` and every file in `.claude/rules/`, then check the diff against the PR template's "What & why", "Behaviour change?" and "Validation evidence". |
+| `tests/test_claude_review_setup.py` | Checks the caller (a released major tag, the one secret, the permissions, `paths-ignore`, no label names) and the prompt's intent check. |
 
-## The gate: two jobs, the first without a model
+The gate config and the prompt are read from the PR itself, so a PR can change its own gate; both are critical
+paths, which makes such a PR reviewed (the script is not read from the PR any more). So are `CLAUDE.md` and `.claude/rules/` (since
+2026-10-28): they steer every agent session, the push rule and the verification gate included, so even a small edit
+there is reviewed. `structure_paths` (what it covers: the comment above it in `.github/claude-review.yml`) is a short
+list on purpose, so that adding a stage file in a topic package stays a full-tier change.
 
-| Job | Calls the API | Does |
-|---|---|---|
-| `classify` | no | `scripts/claude_review.py state` and `interdiff` (see "Rounds"), then `classify`: reads `git diff --numstat base...head` and `--name-status -M base...head`, the branch kind, labels, draft state, the state and the interdiff, and decides `none` / `light` / `full` / `deep` plus the outputs `mode`, `diff_source`, `round` |
-| `review` | yes, only if `classify` says so | installs the pinned Claude Code CLI, recomputes `state` and `interdiff` (no artifact travels between the jobs), `claude_review.py review` (runs `claude -p`), `cost`, `post` |
+Prerequisite: the repository secret `ANTHROPIC_API_KEY`, a key of a **workspace** of the Console organization.
+PRs from forks and from Dependabot get no Actions secrets and are skipped with a note in the job summary.
 
-The thresholds, paths, labels, models, turn and budget limits live in
-`.github/claude-review.yml`, not in code. Its values are starting assumptions
-(2026-10-23), not measured; re-tune them from the cost records below. Decision order
-(`classify` in `scripts/claude_review.py`; the first-round order, a PR without a complete
-round on record, is below, the further-round order is in "Rounds"):
+## Answer each finding
 
-1. Label `skip-claude-review` -> no review.
-2. Adding the label `claude-review` -> one deep-tier review of the whole PR, also on drafts
-   and whatever the round cap says (the force label, see "Rounds"). Later pushes
-   are gated normally, so a label left on the PR cannot bill every push.
-3. A `labeled` event for any other label -> no review (otherwise adding `automerge`
-   would start a paid review).
-4. Draft PR -> no review.
-5. Branch kind in `skip_kinds` (`docs/`) without a critical path -> no review.
-6. Deep tier: a file of `structure_paths` added, deleted, renamed or copied (either path of
-   a rename counts); or >= `deep_min_structure_files` structure files or
-   >= `deep_min_structure_lines` changed lines in them; or >= `deep_min_lines` changed lines
-   or >= `deep_min_files` changed files anywhere.
-7. Full tier: a critical path (every structure path is also critical), or
-   >= `full_min_lines` lines, or >= `full_min_files` files.
-8. Light tier: any other counted change.
-9. Nothing counted changed (only ignored files) -> no review.
+The maintainer's session retro (`~/.claude/retro`, outside this repository) learns from the findings an author
+confirmed, and reads the outcome from the replies in each finding's review thread:
 
-The three tiers and why the deep one exists:
-[ADR-0175](../../decisions/ADR-0175-the-claude-pr-review-sends-structure-changes-and-large-changes-to-a-deep-tier.md).
-`structure_paths` names the backbone of the repository (agent rules, base config, pipeline
-machinery, simulation setup, the workflows and this gate); it is a short list on purpose, so
-that adding a stage file in a topic package stays a full-tier change.
+- **`Fixed ...`** (e.g. `Fixed in <sha>: <what changed>`) when the finding was right and is fixed;
+- **`Rejected: <reason>`** (or `Not changed: ...`) when it is not a defect.
 
-Runs queue per PR and event kind, and a running review is never cancelled: its cost is
-already spent and is recorded only at the end. A newer push replaces a still-pending push
-run. Every label event runs in a concurrency group of its own label, so a triage label
-cannot displace a review, and a pending forced review is not displaced by a later push
-(a Claude review finding on PR #497: with one shared group, the push replaced the pending
-forced run and the push run was then gated normally).
-
-Changed lines are added + deleted lines of files outside `ignored_paths` (generated
-views, lock files, test baselines); binary files count as a file with 0 lines. Every
-decision, including a skip, is printed with its reason to the log and the job summary.
-
-## Rounds
-
-Why the review works in rounds: [ADR-0171](../../decisions/ADR-0171-the-claude-pr-review-reviews-in-rounds-verifies-fixes-and-stops-after-three.md).
-
-**State.** The bot's summary comment carries a second hidden block, `STATE_MARKER`
-(`<!-- claude-pr-review:state <json> -->`), written by `post` (`encode_state`, which escapes
-`>` as the JSON escape `\u003e` so the JSON never contains `-->`) and read by `decode_state`. Schema 1:
-`rounds` (`round`, `sha`, `tier`, `run_id`, `automatic`, `complete`, `cost_usd`, `findings`)
-and `findings` (`id` = `<sha12>-<run id>-<index>`, so two rounds on the same commit, e.g. a
-forced round after the cap, never share an id; `path`, `line`, `severity`, `scope`, `title`,
-`comment_id`, `status`, and for open ones `body` and `author_note`; caps `TITLE_CHARS`,
-`BODY_CHARS`, `NOTE_CHARS`). `status` is `open`, `resolved` (a later round verified the fix)
-or `dismissed` (`refresh_state`: a thread reply starting with `REJECTED_PREFIXES`, or a thread
-resolved by a human; the bot's own `Re-review at ...` reply never dismisses, and only `open`
-findings change status). Only `open` findings go to the model. `post` re-reads the comment
-and merges rounds and findings (`merge_state`) before writing, so a run for a commit that is no
-longer the head still records its findings but leaves the visible summary text alone; its
-round is marked `stale` and never becomes the last reviewed commit. Threads of resolved
-findings are closed only after the state is written.
-
-**Commands, both model-free.** `state --repo --pr --out` reads the comment and the threads of
-open findings and writes `state.json`. `interdiff --config --state --base-sha --head-sha
---out-dir` compares `git diff base...last` and `git diff base...head` per file section
-(`split_sections`; `index` lines and hunk numbers are normalised away, so a merge of `main`
-shifts nothing) and writes `interdiff.diff`, `.numstat` and `.json` (changed, unchanged and
-reverted paths; a renamed file is changed). `last` is the last round with `complete: true`
-(`last_complete_sha`). `classify` takes `--state`, `--interdiff-json`, `--interdiff-numstat`.
-
-**Decision order of a further round** (a state with a complete round, a push-like event):
-skip label, other label events and drafts as in the first round; then
-`rereview.max_rounds` automatic rounds that called the model (`automatic_rounds`: complete or
-not, cost above zero; `complete` only moves the reviewed commit) reached -> none (`round cap`);
-nothing changed -> none, unless findings are open and a file was reverted to `main` (a revert
-can fix a finding, a merge of `main` cannot) -> `rereview.verify_tier` with no diff (the model
-verifies at head); otherwise the tier of the interdiff numstat with
-the normal thresholds, critical and structure paths, raised to `rereview.verify_tier` when that
-is none (a `docs/` branch without a critical path) but findings are open; a push of ignored files
-alone gets no run, like a merge of `main`, since it cannot fix a finding. A structure change of a further
-round is a file added, deleted or renamed against `main` at head that was not so at the last
-complete round (`interdiff` writes these as `events` in `interdiff.json`), so a stage file added
-in round 1 does not make every later round deep. The `docs/` branch rule applies as in the first round.
-
-**The force label** reads the whole PR again: a deep-tier round over the complete PR diff
-(`mode` `forced`, `diff_source` `pr`), whatever the cap and the interdiff, recorded with
-`automatic: false` and not counted against the cap. It still gets the open findings.
-
-**Fallbacks, both logged with `[claude-review]`, in the job summary and the summary comment.**
-- Summary without a state block (or a corrupt one): `fallback: no state block in the existing
-  summary; first-round review, earlier findings unknown`; the state starts empty.
-- `last` not an ancestor of head (rebase, force-push): `fallback: reviewed commit <sha12> is
-  not an ancestor of head (rebase or force-push?); the whole PR is reviewed`; the round counter
-  and the open findings are kept, the cap still applies, and the prompt tells the model that
-  the line numbers of the open findings may have moved.
-- A PR with more than 100 review threads: `::warning::`; findings beyond the first page keep
-  their status (the same single page the session retro reads).
-- No model call (only ignored files changed, nothing open): the round is recorded with
-  `complete: false` and a cost of 0, so it neither uses up an automatic round nor moves the
-  reviewed commit.
-- A result without `coverage_complete` is counted as complete, with a `::warning::`; a result
-  with `coverage_complete: false` is recorded with `complete: false` and does not advance
-  the reviewed commit.
-- A run that cost money but returned no findings (turn or budget cap, API error): `post`
-  (which the workflow runs `if: always()`) records it as a round with `complete: false` and its
-  cost, so it counts against the cap; the summary says `**Review failed:**` with the reason, the
-  open findings stay open, and the step still fails. A failed run without cost records nothing
-  (Claude review finding on a copy of this script: such runs were never recorded, so a
-  review that failed every time ran, and billed, on every push).
-
-**The run.** `review` also gets `--state`, `--interdiff-dir`, `--diff-source`, `--mode`,
-`--round` and `GH_TOKEN`: it fetches the PR title and body (`gh api`) and `review_prompt`
-puts them in a fenced block headed "PR description" (data, not instructions; `fence_for`
-makes the fence longer than any backtick run in the body, so the body cannot close it, and `build_prompt` fills values in one pass, so a
-placeholder in the body stays text). The prompt asks for the intent check (does the diff do
-what "What & why" says, does "Behaviour change?" match, does "Validation evidence" name
-evidence the diff could have produced), the open findings (do not report them again; for each
-say resolved or not in `previous`), and the class of a bug. The schema `FINDINGS_SCHEMA`
-adds `scope` per finding (`introduced` / `pre-existing`), `previous` and `coverage_complete`.
-
-**Posting.** New findings are posted as before with the prefix `**HIGH: title**` or
-`**HIGH (pre-existing): title**`; a new finding is dropped as `duplicate of <id>` when an
-open finding has the same path and the same normalised title or the same line and severity.
-A previous finding reported resolved gets a reply `Re-review at <sha12>: no longer present.
-<note>` and its thread is resolved (GraphQL `resolveReviewThread`); one reported still open
-is only listed in the summary under "Still open from earlier rounds"; the summary shows a
-rounds table and, at the cap, names the force label. A bot reply never starts with
-"Fixed", "Rejected" or "Not changed": those are the retro's outcome words.
-
-**Retro compatibility.** The findings record has `schema: 2` and adds `round`, `scope` per
-finding and `previous: [{id, comment_id, resolved, note}]`; no field is renamed or removed.
-
-**Trigger hygiene.** `on.pull_request.paths-ignore: ["docs/generated/**"]` in the workflow:
-the bot PRs of the generated views (ADR-0168) create no run. Label events still run the free
-`classify` job; suppressing them in the workflow would copy the label names into it.
-
-## The review run and the posting
-
-- `review` fills the placeholders of `.github/claude-review-prompt.md` and runs `claude -p`
-  with the tier's `model`, `max_turns` and `max_budget_usd` (a hard cap per run), the JSON
-  schema `FINDINGS_SCHEMA`, `--bare` (authentication strictly by `ANTHROPIC_API_KEY`, never a
-  Claude plan login; no user hooks, plugins, memory or automatic CLAUDE.md loading; the
-  prompt names the rule files to read), `--permission-mode dontAsk` and only the read tools of
-  `review.allowed_tools` (Read, Grep, Glob). The model has no shell, cannot write files and
-  cannot post anything. The script builds the PR diff itself (`git diff base...head` in CI,
-  which has no API size limit; `gh pr diff` without `--base-sha`), drops the file sections
-  that match `ignored_paths` (logged by count and path; a PR with only ignored files makes no
-  model call), and writes it to `.claude/review-pr.diff` inside the checkout. The model pages
-  through a numbered copy (`.claude/review-pr.diff.numbered`, `number_diff`): every added
-  and context line carries its new-file line number, which is the `line` the model must
-  cite. A local test run (2026-10-23) showed that with `gh pr diff` as a tool the model piped
-  it into grep/awk, which the read-only tool list denied, and reviewed only part of the diff;
-  the first CI runs on the plain diff file cited line numbers of the diff file itself
-  (`claude_review.py:723` in a 650-line script), so every finding landed off the diff. Git
-  output is split on `\n` only (`git_lines`): `str.splitlines()` also splits on characters
-  such as ` ` that can occur inside a source line. The prompt goes in on stdin; the
-  JSON result goes to a file.
-- `post` turns the findings into one PR review (`event: COMMENT`) whose inline comments sit
-  on new-side lines of the diff (`commentable_lines`, which follows the line counts of each
-  hunk header, so an added line starting with `++ ` is content, not a file header), ordered
-  by severity. GitHub rejects inline comments outside the diff, so such findings go into the
-  summary under "Not on a changed line"; the inline/summary-only counts are logged, and a
-  warning fires when every finding lies outside the diff. The summary comment carries a
-  hidden marker; only a comment by `github-actions[bot]` with that marker is edited
-  (`upsert_summary`). A forced and a push review can post at the same time, so after writing,
-  the oldest summary keeps the current body and any duplicate is deleted. A run whose commit
-  is no longer the PR head leaves an existing summary alone, so a slower review of an older
-  commit cannot replace the newer one; its inline comments are still posted. A failed run
-  (`is_error`, or no structured output) posts no findings and fails the step with the error
-  text; when it cost money its round is still recorded (see the fallbacks above). The diff is read
-  with `errors="replace"`: a non-UTF-8 byte (e.g. in a Latin-1 data file) must not crash
-  the review.
-  On a further round the model reads the numbered interdiff (`diff_source` `interdiff`,
-  whole file sections at head line numbers) or no diff at all (`none`: only open findings
-  to verify); the posting then follows "Rounds".
-- `post --dry-run` prints both payloads and posts nothing, for local tests.
-
-## Learning from the findings (session retro)
-
-`post --record` writes `claude-review-findings.json`, uploaded per run as the artifact
-`claude-review-findings-pr<NN>-run<id>-<attempt>` (90 days): every finding with severity,
-path, line, title, body, placement and, for an inline comment, its GitHub comment id
-(`match_comment_ids`). The maintainer's personal session retro (`~/.claude/retro`,
-`retro_reviews.py`, outside this repository) downloads these records from both repositories,
-reads each inline finding's thread and feeds the findings to its judge, which matches them
-against the lessons it already knows (memory notes, ledger). Only a finding the author
-**confirmed** counts towards a lesson; two confirmed sightings on different PRs make the
-retro propose a rule (`.claude/rules/<topic>.md`) for a one-click yes. Since the prompt makes
-the review read every file in `.claude/rules/`, an accepted rule then guides both the next
-author and the next review.
-
-The outcome is read from the replies in the finding's review thread, so answer each one:
-
-- **`Fixed ...`** (e.g. `Fixed in <sha>: <what changed>`) when the finding was right and is
-  fixed: a confirmed defect, it counts;
-- **`Rejected: <reason>`** (or `Not changed: ...`) when it is not a defect: it never counts;
-- no such reply: `resolved` / `open`, recorded as tentative evidence only. A summary-only
-  finding has no thread and stays `unknown`.
-
-With the desktop app's Auto-fix on for a PR, the session fixes the reported findings and
-pushes the fix without a separate yes; the scope of that standing exception is in
-`CLAUDE.md` ("Git and version control").
-
-## Cost record
-
-After every review, `claude_review.py cost` reads the `claude -p` JSON result and reports
-`total_cost_usd`, input/output/cache tokens, turns and duration **as the CLI reported
-them**. It writes a table to the job summary and uploads `claude-review-cost.json` as an
-artifact (90 days). A missing record fails the step instead of reporting a zero. A run
-that ended early (`subtype` other than `success`, e.g. `error_max_turns`, or `is_error`) is
-marked as such with a workflow warning, and the error text of a failed run is printed:
-its cost is real, its review incomplete.
-
-To compare tiers, collect the artifacts of several runs, e.g.
-`gh run download <run-id> -n claude-review-cost-pr<NN>-run<run-id>-1`.
+What the retro does with the replies, and what a reply-less finding counts as: "Learning from the findings" in
+[docs/how-it-works.md](https://github.com/TUBS-IVS/claude-pr-review/blob/main/docs/how-it-works.md). With the desktop
+app's Auto-fix on for a PR, the session fixes the reported findings and pushes the fix without a separate yes; the
+scope of that standing exception is in `CLAUDE.md` ("Git and version control").
 
 ## Rules for maintainers
 
-- Change thresholds, paths, limits or tools in `.github/claude-review.yml` only; the
-  decision table and the bounded-run test in `tests/test_claude_review.py` run against that
-  committed file, so an edit that breaks the intended gate shows up as a failing case.
-- The new keys (`rereview.max_rounds`, `rereview.verify_tier`) and the label names live in
-  `.github/claude-review.yml` only; the workflow file must not contain the label names
-  (a test checks this) and the code reads them from the config.
-- A bot reply never starts with "Fixed", "Rejected" or "Not changed"; the verification
-  reply starts with `Re-review at <sha12>:`. The state block never contains `-->`.
-- Findings record fields are only ever added (`schema` 2), never renamed: the retro reads them.
-- Keep the review advisory until its findings have been checked against real PRs; making
-  it a required check is a separate decision.
-- Bump the pinned CLI version (`CLAUDE_CODE_VERSION` in the workflow) deliberately.
-- Keep the model read-only: posting belongs in `post`, not in the model's tools.
+- Change thresholds, paths, limits, tools and labels in `.github/claude-review.yml` only. Its values are starting
+  assumptions (each block names the date it was chosen); re-tune them from the cost records. The gate job checks the
+  config and the prompt on every PR (`check-config`) and fails, before anything is spent, with one error line per
+  problem.
+- The label names live in the config only, never in the workflow (`tests/test_claude_review_setup.py` checks this).
+- Change the mechanism (script, reusable workflow) in TUBS-IVS/claude-pr-review, never here; a release reaches this
+  repository through `@v1` without a change here. To try an unreleased change, point the caller at a branch of the
+  central repository on a test branch here ("Test a change before release" in its README); the setup test fails such
+  a caller, so it cannot be merged by accident.
+- Keep the review advisory until its findings have been checked against real PRs; making it a required check is a
+  separate decision.
