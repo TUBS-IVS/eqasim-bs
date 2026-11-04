@@ -19,8 +19,14 @@ from __future__ import annotations
 import logging
 
 from braunschweig import synpp_tokens
+from braunschweig.analysis.matsim_archive import ARCHIVE_PRODUCER_STAGE
 
 LOGGER = logging.getLogger("braunschweig.analysis.simwrapper_export")
+
+# Ordering only, read by the synpp fork's run() (ADR-0177): when matsim.output is part of the same
+# invocation, execute after it, because execute() reads the archive it writes. Not a dependency, so
+# an analysis-only invocation does not recompute the simulation (issue #354, ADR-0101).
+_ORDER_AFTER_STAGES = (ARCHIVE_PRODUCER_STAGE,)
 
 
 #: Hashed by dotted NAME (see :func:`validate`): first the modules ``execute()`` imports, then

@@ -16,7 +16,7 @@ smoke-checked on real stages there.
 | Module | Responsibility |
 |---|---|
 | `braunschweig/synpp_fork/__init__.py` (`install`, `PATCHES`, `UPSTREAM_PIPELINE_SHA256`) | Installs the project's synpp patches before a registry is built: first `braunschweig.synpp_deterministic.install()` (deterministic implicit-config propagation, ADR-0105, with its synpp version guard), then replaces `synpp.pipeline.get_stage_hash`, `synpp.pipeline.run` and the re-exported `synpp.run` by the copies in `pipeline.py`. Logs a warning when the installed `synpp/pipeline.py` differs from the pinned SHA. |
-| `braunschweig/synpp_fork/pipeline.py` (`get_stage_hash`, `run`) | The vendored copy of synpp 1.6.2's `run()` and `get_stage_hash()`. Three patches, each marked `# PATCH <name>` in the source and named in `PATCHES`: `deterministic-propagation` (`process_stages` from `braunschweig.synpp_deterministic`), `semantic-module-hash` (`get_stage_hash` digests the AST via `braunschweig.synpp_tokens.semantic_module_digest`) and `content-addressed-validity` (the `run()` loop, see "The `run()` loop under the fork"). |
+| `braunschweig/synpp_fork/pipeline.py` (`get_stage_hash`, `run`) | The vendored copy of synpp 1.6.2's `run()` and `get_stage_hash()`. Four patches, each marked `# PATCH <name>` in the source and named in `PATCHES`: `deterministic-propagation` (`process_stages` from `braunschweig.synpp_deterministic`), `semantic-module-hash` (`get_stage_hash` digests the AST via `braunschweig.synpp_tokens.semantic_module_digest`), `content-addressed-validity` (the `run()` loop, see "The `run()` loop under the fork") and `order-after` (`execution_order`, see "The `_ORDER_AFTER_STAGES` hook"). |
 | `braunschweig/synpp_fork/output_hash.py` (`hash_stage_output`, `OUTPUT_HASH_FORMAT`) | Content hash of a stage's output (pickle plus every file of its cache directory). Used by the migration and by the fork's `run()` after every executed stage. |
 | `braunschweig/synpp_tokens.py` (`semantic_module_digest`, `source_token`, `legacy_source_token`, `TOKEN_FORMAT`) | Semantic source digests and the structured `validate()` token of the 32 source-hashing stages. Lives outside the package because the stage modules import it. |
 | `braunschweig/synpp_fork/registry.py` (`load_settings`, `build_registry`) | Composes the base config (plus an optional overlay through `braunschweig.config_compose`), validates it (empty config or missing `run` list raise `ValueError` naming the file) and builds the synpp stage registry read-only, with the production stage hashes. |
@@ -197,6 +197,22 @@ absolute source paths of the build directory (ADR-0149 decision 8, #474). It is 
 everywhere else; add entries on evidence. A
 symlink inside a cache directory raises even when a glob would exclude it; the cache directory
 itself may be a symlink. An unreadable file or directory raises, never "no hash".
+
+## The `_ORDER_AFTER_STAGES` hook
+
+synpp executes stages in `networkx.topological_sort` order, which (networkx 3.4) runs the dependency
+graph layer by layer: a stage executes as soon as its declared parents are done. A stage that reads a
+FILE another stage writes, without depending on it, therefore runs too early when both are in one
+invocation (ADR-0177, production run `prod100_20261031`). Such a stage module declares
+`_ORDER_AFTER_STAGES = ("<stage name>",)`; `execution_order` (patch `order-after`) then orders it after
+every registry entry of that name (requested name or resolved module name, so an alias matches). It is
+ordering only: no dependency, no hash input, no result, and the dependency graph used for staleness,
+early cutoff and the DAG snapshot is unchanged; when the named stage is not in the invocation nothing is
+added (logged as `not part of this invocation`). A malformed value raises `TypeError` and a cyclic
+order `PipelineError`, both before any stage executes. Declared by `braunschweig.analysis.analysis_suite`
+and `braunschweig.analysis.simwrapper_export` on `matsim.output`
+(`braunschweig.analysis.matsim_archive.ARCHIVE_PRODUCER_STAGE`); `tests/test_synpp_fork_order_after.py`
+requires it of every stage that resolves the MATSim archive.
 
 ## Re-basing the copy when synpp is upgraded
 
