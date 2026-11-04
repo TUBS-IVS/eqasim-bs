@@ -1,4 +1,4 @@
-"""Initial mode choice before iteration 0 with eqasim's standalone mode choice (eqasim-bs#542, ADR-0177).
+"""Initial mode choice before iteration 0 with eqasim's standalone mode choice (eqasim-bs#542, ADR-0178).
 
 At the end of the prepare stage every agent chooses its modes once with eqasim's ``RunStandaloneModeChoice`` under free
 flow travel times, so MATSim starts from a plan set in which each agent has chosen. This module holds the pure helpers
@@ -6,7 +6,7 @@ of that step: the runner arguments, the retired-key check, the person count and 
 ``run``, which calls the Java runner, checks that no person disappeared and replaces the population with the result.
 
 The ADR-0155 mechanism (eqasim-bs#465) added a second DiscreteModeChoice replanning strategy with a very high weight to
-the MATSim config so that agents chose in iteration 1; it is gone, replaced by this upfront choice (ADR-0177 has the
+the MATSim config so that agents chose in iteration 1; it is gone, replaced by this upfront choice (ADR-0178 has the
 reasons).
 """
 from __future__ import annotations
@@ -47,7 +47,7 @@ def refuse_retired_weight(value) -> None:
     """Raise ValueError if the retired ADR-0155 weight key is configured (``value`` is not None)."""
     if value is not None:
         raise ValueError(f"{_LOG_TAG} {KEY_WEIGHT_RETIRED} is retired (value {value!r}): the initial mode choice now "
-                         "runs eqasim's standalone mode choice before iteration 0 (ADR-0177); remove the key")
+                         "runs eqasim's standalone mode choice before iteration 0 (ADR-0178); remove the key")
 
 
 def arguments(config_name: str, population_file: str, threads: int) -> list[str]:
@@ -119,14 +119,26 @@ def run(context, config_name: str) -> dict:
     """Run eqasim's standalone mode choice on the final population and replace the population with the result.
 
     ``config_name`` is the MATSim config in the stage directory; the population is the file its
-    ``plans.inputPlansFile`` names. Travel times are free flow (no travel time option is passed). Raises RuntimeError
-    if the choice removed persons (no feasible alternative) and FileNotFoundError if the runner wrote no output; the
+    ``plans.inputPlansFile`` names. Travel times are free flow (no travel time option is passed). Raises ValueError if the
+    population is outside the stage directory, RuntimeError if it is empty or the choice removed persons (no feasible alternative) and FileNotFoundError if the runner wrote no output; the
     population is replaced only after all checks passed. Writes ``initial_mode_choice.json`` to the stage directory,
     leaves the before/after trips CSVs in ``mode_choice/`` and returns the summary.
     """
     stage_path = context.path()
     population_path = resolve_population_path(os.path.join(stage_path, config_name))
+    # The population is replaced in place below, so it must live inside the stage directory.
+    absolute_stage, absolute_population = os.path.abspath(stage_path), os.path.abspath(population_path)
+    try:
+        inside = os.path.commonpath([absolute_stage, absolute_population]) == absolute_stage
+    except ValueError:  # different drives on Windows
+        inside = False
+    if not inside:
+        raise ValueError(f"{_LOG_TAG} the population {population_path} named by {config_name} is not inside the "
+                         f"stage directory {stage_path}; refusing to replace a file outside the stage")
     persons_before = count_persons(population_path)
+    if persons_before == 0:
+        raise RuntimeError(f"{_LOG_TAG} the population {population_path} has no persons; an empty population is "
+                           "never a valid input")
     threads = int(context.config("matsim_threads") or context.config("processes"))
 
     started = time.monotonic()
