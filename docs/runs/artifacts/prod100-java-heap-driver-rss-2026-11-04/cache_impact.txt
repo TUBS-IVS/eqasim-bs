@@ -1,0 +1,11 @@
+python 3.10, base ref origin/main
+braunschweig/resources.py            digest EQUAL    base=7922341dd223 now=7922341dd223
+    hashed by 12 source-hashing stage token(s): braunschweig.analysis.synthesis.departure_time_vs_srv, braunschweig.data.hts.mid_donor, braunschweig.matsim.scenario.supply_gtfs, braunschweig.matsim.simulation.prepare, braunschweig.popsim.completed_donor, braunschweig.popsim.distance_distributions, braunschweig.popsim.stage, braunschweig.popsim.trips_stage, braunschweig.synthesis.commute_day.home_office_donors_stage, braunschweig.synthesis.commute_day.trips_day_stage, braunschweig.synthesis.locations.secondary_chainsolvers, braunschweig.synthesis.student_incommuters
+matsim/runtime/java.py               digest CHANGED  base=67c21d5206ff now=b0420fc65678
+    hashed by 3 source-hashing stage token(s): braunschweig.matsim.scenario.supply_gtfs, braunschweig.matsim.simulation.prepare, braunschweig.synthesis.student_incommuters
+braunschweig/java_heap.py            NEW             base=(not in base now=c56d22b67761
+    hashed by 0 source-hashing stage token(s): -
+data/osm/osmosis.py                  digest EQUAL    base=61ea3024a6a0 now=61ea3024a6a0
+    hashed by 0 source-hashing stage token(s): -
+matsim/runtime/process_watchdog.py   digest EQUAL    base=2252a2f791fd now=2252a2f791fd
+    hashed by 3 source-hashing stage token(s): braunschweig.matsim.scenario.supply_gtfs, braunschweig.matsim.simulation.prepare, braunschweig.synthesis.student_incommuters

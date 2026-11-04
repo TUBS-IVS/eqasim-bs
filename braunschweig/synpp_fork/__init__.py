@@ -28,6 +28,8 @@ PATCHES = (
     "semantic-module-hash",        # get_stage_hash digests the AST, not the raw text
     "content-addressed-validity",  # run(): own-reason staleness from staleness.assess, output hashes,
                                    # per-child early cutoff instead of devalidating every descendant
+    "order-after",                 # run(): execution order honours the stages' _ORDER_AFTER_STAGES
+                                   # (ordering only, not a dependency; ADR-0177)
 )
 
 

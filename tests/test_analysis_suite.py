@@ -254,6 +254,8 @@ def test_dashboard_and_mid_validation_read_the_matsim_archive(tmp_path, monkeypa
     assert len(mid_calls) == 1 and len(dash_calls) == 1
     for argv in (mid_calls[0], dash_calls[0]):
         assert argv[argv.index("--sim-cache") + 1] == str(archive)
+    summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
+    assert "mid_validation.modal_split" not in {s["analysis"] for s in summary["skipped"]}
 
 
 def test_matsim_panels_skip_loudly_when_archive_missing(tmp_path, monkeypatch):
@@ -271,6 +273,9 @@ def test_matsim_panels_skip_loudly_when_archive_missing(tmp_path, monkeypatch):
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
     reasons = {s["analysis"]: s["reason"] for s in summary["skipped"]}
     assert "no MATSim output archive" in reasons["dashboard"]
+    # mid_validation itself runs without --sim-cache, but its modal-split block (MiD P12_1 commute
+    # comparison) cannot: that part is a named skip too, never only an INFO line (finding C4).
+    assert "no MATSim output archive" in reasons["mid_validation.modal_split"]
 
 
 def test_education_runs_when_working_dir_set(tmp_path, monkeypatch):

@@ -63,6 +63,61 @@ def _describe_output(previous, output):
     return "changed (%s differ)" % " and ".join(parts) if parts else "changed"
 
 
+# PATCH order-after (ADR-0177): ordering-only constraints declared by the stages themselves.
+ORDER_AFTER_ATTRIBUTE = "_ORDER_AFTER_STAGES"
+
+
+def _order_after_declaration(stage):
+    """The stage's ``_ORDER_AFTER_STAGES`` (default empty), validated before anything executes."""
+    declared = getattr(stage["wrapper"].instance, ORDER_AFTER_ATTRIBUTE, ())
+    if not isinstance(declared, tuple) or not all(isinstance(name, str) for name in declared):
+        raise TypeError("%s: %s must be a tuple of stage names, got %r" % (
+            stage["wrapper"].name, ORDER_AFTER_ATTRIBUTE, declared))
+    return declared
+
+
+def execution_order(registry, graph, logger=logging.getLogger("synpp")):
+    """Topological order of the dependency ``graph`` plus the ordering-only constraints.
+
+    A stage module may declare ``_ORDER_AFTER_STAGES``: names of stages it must execute after
+    whenever such a stage is part of the same invocation (in ``registry``). The typical case is a
+    stage that reads a FILE another stage writes without depending on it (the MATSim archive read
+    by the analysis stages, ADR-0177): a real dependency would pull the producer into every
+    invocation of the consumer (issue #354), and without any edge synpp's layer-by-layer order runs
+    the shallow consumer first. A name matches the requested name (``descriptor``, which may be a
+    synpp alias) and the resolved module name of every registry entry. The constraint adds no
+    dependency, no hash input and no result; ``graph`` itself is not modified, so staleness and
+    early cutoff keep deciding on dependencies only. Every applied and every absent constraint is
+    logged. Raises ``TypeError`` for a malformed declaration and ``PipelineError`` when a constraint
+    makes the order cyclic, both before any stage executes.
+    """
+    hashes_by_name = {}
+    for stage_hash, stage in registry.items():
+        for name in (stage["descriptor"], stage["wrapper"].name):
+            if isinstance(name, str):
+                hashes_by_name.setdefault(name, set()).add(stage_hash)
+
+    order_graph = graph.copy()
+    for stage_hash in graph.nodes:
+        stage = registry[stage_hash]
+        for name in _order_after_declaration(stage):
+            producers = sorted(hashes_by_name.get(name, set()) - {stage_hash})
+            if not producers:
+                logger.info("Ordering: %s declares %s in %s, which is not part of this invocation: no "
+                            "ordering constraint" % (stage_hash, name, ORDER_AFTER_ATTRIBUTE))
+            for producer in producers:
+                order_graph.add_edge(producer, stage_hash)
+                logger.info("Ordering: %s executes after %s (%s; ordering only, not a dependency)" % (
+                    stage_hash, producer, ORDER_AFTER_ATTRIBUTE))
+
+    if not nx.is_directed_acyclic_graph(order_graph):
+        cycle = [edge[0] for edge in nx.find_cycle(order_graph)]
+        raise PipelineError("%s makes the execution order cyclic: %s" % (
+            ORDER_AFTER_ATTRIBUTE, " -> ".join(cycle + cycle[:1])))
+    return list(nx.topological_sort(order_graph))
+# END PATCH order-after
+
+
 def run(definitions, config = {}, working_directory = None, flowchart_path = None, dryrun = False, verbose = False,
         logger = logging.getLogger("synpp"), rerun_required=True, ensure_working_directory=False,
         externals = {}, aliases = {}):
@@ -127,7 +182,8 @@ def run(definitions, config = {}, working_directory = None, flowchart_path = Non
         cycle = [registry[hash]["hash"] for hash in cycle] # TODO: Make more verbose
         raise PipelineError("Found cycle: %s" % " -> ".join(cycle))
 
-    sorted_hashes = list(nx.topological_sort(graph))
+    # PATCH order-after (ADR-0177): the dependency order plus the stages' ordering-only constraints.
+    sorted_hashes = execution_order(registry, graph, logger)
 
     # Check where cache is available
     cache_available = set()

@@ -1,0 +1,76 @@
+id: prod100-analysis-order-2026-11-04
+date: '2026-11-04'
+repository:
+  commit: 7a41f0ba57bb9abdb862c59bcc14c73653e8510a
+  branch: main
+  notes: >-
+    The eqasim-bs commit the run's launch record names (run.json on felix). This manifest is a post-hoc
+    MEASUREMENT over the log of launch 1 of production run prod100_20261031 (finding C4 of the findings list:
+    analysis outputs without their MATSim parts), not a run of its own. The order probe was run on
+    2026-11-04 against commit 6ef8f99c (origin/main then); the stage graph of the probed stages is the same as at
+    the run's commit for the purpose here (same run list, same layer order as the log shows).
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - configs/overlays/test_100pct.yml
+  notes: >-
+    The run overlay written by scripts/isolated_run.py (run.yml.launch1_20261031T071313 in the run directory,
+    local to felix, sha256 c5681a7cf26c14738f311deed7bb0108cd21a1a68edbbb0689d5c58a10b6e77e as read on
+    2026-11-04; its gate-list comments were rewritten on 2026-11-01) carries the run list of
+    configs/overlays/test_100pct.yml unchanged.
+sampling:
+  rate: 100 %
+  scope: the study area of configs/base_bs.yml at the commit above
+pipeline:
+  targets:
+  - synthesis.output
+  - matsim.output
+  - braunschweig.analysis.cordon_validation
+  - braunschweig.analysis.simwrapper_export
+  - braunschweig.analysis.analysis_suite
+  - braunschweig.analysis.synthesis.plan_structure_vs_srv
+  - braunschweig.analysis.synthesis.departure_time_vs_srv
+  - braunschweig.analysis.verbindungen_validation
+  - braunschweig.analysis.synthesis.commute_distance_by_kreis
+  - braunschweig.analysis.synthesis.work_participation_by_kreis
+  notes: Synthesis, simulation and analysis in ONE scripts/run_synpp.py invocation (launch 1, 2026-10-31 07:13:13).
+classification:
+- production
+status:
+  execution: killed
+  notes: >-
+    Launch 1 ended on 2026-11-01 at about 05:00, minutes into matsim.simulation.run (finding C2); the analysis
+    stages had already completed before the simulation started. This manifest records the stage order only.
+environment: >-
+  felix, networkx 3.4 (also in the local eqasim env where the probe ran). Input, local to the server and not
+  committed: <run dir>/logs/run_20261031T071313.log (sha256
+  f76a91545c06a063a7febf967c880c18fccc584302deb625a1a70c66f4b89b0a).
+validation:
+- metric: when the two archive-reading analysis stages executed relative to the simulation
+  reference: none (measurement)
+  result: >-
+    simwrapper_export executed at 02:16:01 and logged "no MATSim output archive at ../output/matsim_output ...
+    MATSim tabs will skip"; analysis_suite executed 02:17:38-02:56:21, skipped stuck_agents and dashboard with the
+    same reason and ran mid_validation with sim-cache=None (no modal split, INFO line only);
+    matsim.simulation.run started at 04:53:17. Both stages completed without a failure.
+  artifact: docs/runs/artifacts/prod100-analysis-order-2026-11-04/launch1_log_excerpt.txt
+- metric: why that order (layer of each stage in the production registry)
+  reference: none (measurement)
+  result: >-
+    108 stages, as in the log ("Found 108 stages"). networkx.topological_sort runs layer by layer:
+    simwrapper_export and analysis_suite are in layer 18 (the layer after synthesis.output), matsim.simulation.run
+    in 19, matsim.output in 20. Without an ordering constraint the two stages always execute before the
+    simulation in this run list.
+  artifact: docs/runs/artifacts/prod100-analysis-order-2026-11-04/order_probe_output.txt
+decisions:
+- ADR-0101
+- ADR-0177
+artifacts:
+- docs/runs/artifacts/prod100-analysis-order-2026-11-04/launch1_log_excerpt.txt
+- docs/runs/artifacts/prod100-analysis-order-2026-11-04/order_probe.py
+- docs/runs/artifacts/prod100-analysis-order-2026-11-04/order_probe_output.txt
+source: >-
+  launch1_log_excerpt.txt is a grep of the launch-1 log for the stage count, the executions of the two analysis
+  stages and matsim.simulation.run, their archive warnings, the suite summary and the modal-split line.
+  order_probe.py builds the production registry read-only (braunschweig.synpp_fork.registry) and prints position
+  and layer of the relevant stages under the dependency-only order synpp used before ADR-0177.
