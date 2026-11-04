@@ -34,6 +34,7 @@ REPO = Path(__file__).resolve().parents[1]
 DATA = REPO / "eqasim-data" / "data"
 sys.path.insert(0, str(REPO))
 
+from braunschweig.ipf import joint_age_size  # noqa: E402
 from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E402
 
 FZ2717_CSV = DATA / "braunschweig" / "kba" / "derived" / "kba_gemeinde_private_bev.csv"
@@ -748,15 +749,12 @@ class TestCompositionAggregateNeutrality:
     # ------------------------------------------------------------------
     # The [0, 1] clip: what it LOSES, not how many cars it touches (C5a)
     # ------------------------------------------------------------------
-    # A segment with a structural zero in the FZ 27.10 seed has a numerically pure
-    # electric split: ``minis`` have no plug-in hybrids, so their PHEV share is only
-    # the 1e-9 floor ``rake_2d`` puts on the seed. A shift of the BEV fraction towards
-    # that boundary clips every such car whatever its size, so the 44,331 clipped cars
-    # of the 100 % production run prod100_20261031 were the minis and grossraum vans of
-    # five Kreise -- a structural count, not a broken input. What the clip costs is the
-    # electric MASS those cars hold: the share of the Kreis's shift that stays unclosed.
+    # Cars on the boundary the shift points at clip whatever their size, so the count is
+    # structural; what the clip costs is the electric MASS they hold (ADR-0125,
+    # amendment 2026-11-04). The fixture cars sit on the boundary the way ``minis`` do:
+    # their other electric powertrain carries only the seed floor of the rake.
 
-    SEED_FLOOR = 1e-9  # braunschweig.ipf.joint_age_size._SEED_FLOOR
+    SEED_FLOOR = joint_age_size._SEED_FLOOR
     PHEV_HEAVY = {"bev": 0.8, "phev": 1.3}
     BEV_HEAVY = {"bev": 1.2, "phev": 0.7}
 

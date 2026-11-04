@@ -2,14 +2,11 @@
 """Replay the residents fleet draw of a production run and measure what the BEV:PHEV
 composition aggregate correction's ``[0, 1]`` clip loses (issue C5a, 2026-11-04).
 
-Background. The 100 % production run ``prod100_20261031`` logged, for the residents
-fleet, ``BEV/PHEV composition aggregate correction: 44331 car(s) hit the [0,1]
-BEV-fraction clip, so their Kreis aggregate is preserved only approximately ... a
-non-zero count signals a broken input``. The car COUNT cannot show that: a car whose
-unmasked electric split is already pure (BEV fraction exactly 1 or 0, because its
-segment has a structural zero in the FZ 27.10 seed) cannot absorb a shift towards the
-boundary, so every such car clips under ANY non-zero shift. What matters is how much
-BEV mass the clip loses, i.e. the Kreis aggregate residual left after the correction.
+Why. The number of clipped cars cannot show whether the correction works; the BEV mass
+its clip loses, i.e. the Kreis aggregate residual left after the correction, can. The
+reasoning and the decision are in ADR-0125 (amendment 2026-11-04); the figures this
+script produced for the 100 % production run are in the run manifest
+``docs/runs/prod100-fleet-composition-clip-2026-11-04.yml``.
 
 What this script does, in order (read-only on the run directory):
 
@@ -72,8 +69,8 @@ COMPARED_COLUMNS = ("vehicle_id", "segment", "powertrain", "euro_class", "age_ba
 
 #: A car counts as "numerically pure" when its distance to the boundary the shift points
 #: at is below this (BEV fraction within 1e-6 of 1 for a positive shift, of 0 for a
-#: negative one). ``rake_2d`` floors the seed at 1e-9, so a structural zero never stays an
-#: exact zero: ``minis`` end up 1e-8..3e-7 from the boundary, not on it.
+#: negative one). ``rake_2d`` floors the seed, so a structural zero never stays an exact
+#: zero: such cars end up near the boundary, not on it.
 PURE_HEADROOM = 1e-6
 
 

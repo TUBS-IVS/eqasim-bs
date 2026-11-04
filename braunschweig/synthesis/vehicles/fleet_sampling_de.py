@@ -86,18 +86,11 @@ COMBINED_ELECTRIC_KEY: str = "electric_combined"
 #: composition tilt so the three cannot drift apart.
 GEMEINDE_TILT_CLIP: tuple[float, float] = (0.2, 5.0)
 
-#: ASSUMPTION (a plausibility bound chosen for this diagnostic, NOT a measured
-#: reference or a calibration target): warn when the ``[0, 1]`` clip of the BEV:PHEV
-#: aggregate-neutrality correction leaves more than this FRACTION of a Kreis's
-#: intended shift unclosed. Above one half the clip leaves open more of the shift than
-#: the correction closes, so the clip rather than the correction determines that
-#: Kreis's BEV:PHEV aggregate and the correction has stopped doing its job. The figure
-#: the 100 % production run actually reached, and the margin to this bound, are
-#: recorded in
-#: ``docs/runs/prod100-fleet-composition-clip-2026-11-04.yml`` (ADR-0125 decision 8).
-#: The NUMBER of clipped cars is deliberately not a criterion: cars whose electric
-#: split is already (numerically) pure BEV or PHEV clip under ANY shift towards that
-#: boundary, so the count is non-zero by construction and says nothing about breakage.
+#: ASSUMPTION, not a measured reference or a calibration target: warn when the
+#: ``[0, 1]`` clip of the BEV:PHEV aggregate-neutrality correction leaves more than this
+#: FRACTION of a Kreis's intended shift unclosed (0 = closed exactly, 1 = not closed at
+#: all). Why this criterion and this bound, and the figure a production run reached:
+#: ADR-0125, amendment 2026-11-04, and the run manifest it names.
 COMPOSITION_CLIP_UNCLOSED_WARN_SHARE: float = 0.5
 
 
@@ -1481,12 +1474,10 @@ class CompositionShift:
 
     Built by :func:`_neutralise_composition_aggregate` for every Kreis that needed a
     shift. ``shift`` is the constant BEV-fraction shift applied to every car of the
-    Kreis (a fraction of the electric mass, signed). Cars whose electric split is
-    already (numerically) pure cannot follow a shift towards that boundary; they are
-    clipped, and the BEV mass they could not take stays unclosed on the Kreis
-    aggregate. ``unclosed_bev_mass`` is that mass, signed like ``shift`` (intended
-    minus realised BEV mass); all masses are sums of the cars' pmf entries, i.e.
-    expected vehicle counts.
+    Kreis (a fraction of the electric mass, signed). ``unclosed_bev_mass`` is the BEV
+    mass the clipped cars could not take, signed like ``shift`` (intended minus
+    realised BEV mass); all masses are sums of the cars' pmf entries, i.e. expected
+    vehicle counts.
     """
 
     shift: float
@@ -1559,15 +1550,12 @@ def _neutralise_composition_aggregate(
 
     **The ``[0, 1]`` clip binds by construction; what matters is what it loses.** A car
     whose electric split is already (numerically) pure BEV or PHEV cannot absorb a
-    shift towards that boundary, and a segment with a structural zero in the FZ 27.10
-    seed has exactly such a split: ``minis`` have no plug-in hybrids, so their PHEV
-    share is only the ``1e-9`` floor :func:`~braunschweig.ipf.joint_age_size.rake_2d`
-    puts on the seed. Every such car clips under ANY non-zero shift of that sign,
-    whatever the shift's size, so the NUMBER of clipped cars says nothing about a
-    broken input. The BEV mass a clipped car cannot take stays unclosed on the Kreis
-    aggregate; :class:`CompositionShift` reports it, as a share of the Kreis's shift
-    and of its electric mass, and :func:`_log_composition_correction` warns on that
-    share. This accounting never changes the fleet: the corrected pmfs are exactly
+    shift towards that boundary and clips under ANY shift of that sign, so the NUMBER
+    of clipped cars says nothing about a broken input. The BEV mass those cars cannot
+    take stays unclosed on the Kreis aggregate; :class:`CompositionShift` reports it
+    and :func:`_log_composition_correction` judges it. Why the clip binds in the real
+    fleet, what it costs and where the warning bound comes from: ADR-0125, amendment
+    2026-11-04. This accounting never changes the fleet: the corrected pmfs are exactly
     what the plain clip writes.
 
     Args:
@@ -1682,12 +1670,9 @@ def _log_composition_correction(
 
     INFO: the largest shift (as before), the clipped cars with the electric mass they
     hold, and the worst per-Kreis residual. WARNING, once per offending Kreis: the clip
-    leaves more than ``warn_unclosed_share`` of that Kreis's shift unclosed
-    (:data:`COMPOSITION_CLIP_UNCLOSED_WARN_SHARE`, an ASSUMPTION). The number of clipped
-    cars is never a criterion, see :func:`_neutralise_composition_aggregate`.
-
-    Each Kreis is judged on its own: a figure pooled over the Kreise would let one
-    healthy Kreis hide one whose aggregate the clip has taken over.
+    leaves more than ``warn_unclosed_share`` of that Kreis's shift unclosed (default
+    :data:`COMPOSITION_CLIP_UNCLOSED_WARN_SHARE`). The clipped-car count is never a
+    criterion. Each Kreis is judged on its own, so a healthy Kreis cannot hide another.
     """
     if not shifts:
         logger.info(
@@ -3489,9 +3474,8 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         # on the REALISED population rather than on the FZ 27.17 reference stock.
         # See :func:`_neutralise_composition_aggregate` for why this is required.
         if composition_active:
-            # The clip of this correction binds by construction (cars whose electric
-            # split is already pure cannot follow the shift), so the logger judges
-            # the Kreis aggregate it leaves unclosed, never the number of cars.
+            # The clip binds by construction, so the logger judges the aggregate it
+            # leaves unclosed, never the car count (see the function above).
             _log_composition_correction(
                 _neutralise_composition_aggregate(
                     car_unmasked_pmf, car_kreis, car_composition_factors,

@@ -92,8 +92,8 @@ validation:
   notes: >-
     The residual of one Kreis is the sum over its clipped cars of electric mass times the BEV share the car could not take,
     divided by the Kreis's electric mass; the algebra check column (intended minus realised BEV mass against that sum on the
-    captured pmf entries) is below 1e-12 in every Kreis. The warning threshold of the change (0.5 of the shift) is an
-    ASSUMPTION, labelled so in the code and in ADR-0125; the measured maximum (11.3 %) leaves a margin of about four.
+    captured pmf entries) is below 1e-12 in every Kreis. The warning bound of the change (an ASSUMPTION, see ADR-0125 and
+    the constant COMPOSITION_CLIP_UNCLOSED_WARN_SHARE) lies far above the largest unclosed share measured here.
 - metric: the new instrumentation at production scale against the independent analysis
   reference: 'baseline_per_kreis.csv, computed by the script from the captured pmf entries; an independent second implementation, NOT observed data'
   result: >-
