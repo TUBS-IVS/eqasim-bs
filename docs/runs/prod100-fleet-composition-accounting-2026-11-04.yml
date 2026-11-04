@@ -56,7 +56,8 @@ source: >-
   c89eadb5de2aa1af337695a8e9279d699823216ebaecf4186b583965fd7aa1d2; classifies the cars by the composition accounting with one
   probe per distinct home Gemeinde; its first revision imported the replay helpers from its own folder, and the classification
   results below were reproduced with this revision), check_fz2717_table.py and check_fz27_workbook.py with their outputs
-  table_key_check.txt and fz27_workbook_check.txt (both ran on the laptop, not on felix), and the results baseline_*, after_*
+  table_key_check.txt and fz27_workbook_check.txt (both ran on the laptop, not on felix), check_langelsheim_label.py with its
+  outputs langelsheim_label_check_felix.txt and langelsheim_label_check_laptop.txt, and the results baseline_*, after_*
   and merged_* (verification.json; the run log as replay_log.txt, because *.log is git-ignored; classification.csv,
   classification_by_kreis.csv and classification_summary.json).
 environment: 'server (felix, hostname matsim, Linux 5.15.0-139-generic), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, numpy 1.23.5, pandas 1.5.3), time zone Europe/Berlin'
@@ -109,9 +110,22 @@ validation:
   result: >-
     9,645 cars never reach the composition counters because the combined tilt itself finds no row for them: 9,347 cars carry
     the Gemeinde label "NAN" in Kreis 03153, and 298 cars lie in gemeindefreie Gebiete (03153: 158, 03154: 135, 03151: 5). The
-    gemeindefreie Gebiete are unmatched by design (normalize_gemeinde_name returns an empty key for them). The label "NAN" is
-    a literal string in the cached household output; its origin was not examined here.
-  artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/after_classification.csv
+    gemeindefreie Gebiete are unmatched by design (normalize_gemeinde_name returns an empty key for them). All 9,347 "NAN"
+    cars live in ONE municipality, Langelsheim (home commune 031530019019): the RegioStaR sheet the pipeline reads (Gebietsstand
+    2020) lists it only under its old code 03153007, while the current municipality list (VG250) has the new code 03153019 (the
+    change is documented at GEMEINDE_GEBIETSSTAND_CROSSWALK in fleet_sampling_de.py). The loader of the RegioStaR table
+    (braunschweig/data/bbsr/regiostar.py) fills a code missing from the sheet with the RegioStaR-7 of the nearest known
+    municipality, here 74 against 77 in every BBSR sheet that lists Langelsheim, and gives it no name; household.py then turns
+    the empty name into the text "NAN" with astype(str). Of the 123 rows of the loader's cached output exactly this one has an
+    empty name. Consequences: those cars get no Gemeinde-specific tilt and carry another region type than the reference.
+    Masking the NaN before the cast alone would not change either. The size of the effect on results was not measured. This PR
+    does not change it; it is a follow-up (an issue is proposed to the owner).
+  artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/langelsheim_label_check_felix.txt
+  notes: >-
+    after_classification.csv lists the cars per Gemeinde label and class. langelsheim_label_check_felix.txt (the cache and the
+    2020 sheet, on felix) and langelsheim_label_check_laptop.txt (the newer BBSR file, on the laptop) are the output of
+    check_langelsheim_label.py; the newer file lists Langelsheim under 03153019 from its Gebietsstand sheet 2021 on, with
+    RegioStaR-7 77 (its 2024 sheet has no type column).
 - metric: the module as merged with PR #547 (this change plus the clip-check change), replayed against the cached production output
   reference: 'felix cache entry braunschweig.synthesis.vehicles.cars.household__6b6784a39cfbf5cdf97abeb2ac00d4ce; an equivalence reference, NOT observed data'
   result: >-
@@ -119,7 +133,9 @@ validation:
     of origin/main with PR #547 (merge commit b0d99872, blob sha256
     7e77558db7dc9f9ff3d378d0f2497854019f42f2950455beedc5261e177c124f). Its composition accounting lines equal those of the entry
     above, and the clip line of PR #547 is logged as INFO without the former WARNING. git merged the two changes in the module
-    without a conflict.
+    without a conflict. The module was not replayed again after the review round that followed, which added
+    require_unique_gemeinde_keys: a refusal before the draw that changes no value; the table of the run passes it (113 distinct
+    normalised keys, table_key_check.txt) and the tests that build the model on the committed tables pass.
   artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/merged_verification.json
   notes: >-
     merged_replay_log.txt is the run log (15:54 to 15:58 CET, run with the revision of the replay script on main);

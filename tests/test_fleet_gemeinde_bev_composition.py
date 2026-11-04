@@ -24,6 +24,7 @@ from __future__ import annotations
 import copy
 import logging
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -618,6 +619,35 @@ def test_loader_refuses_a_repeated_gemeinde_key(tmp_path):
 
     with pytest.raises(RuntimeError, match="duplicate"):
         ft.load_gemeinde_private_bev(str(tmp_path))
+
+
+def _data_path_with_fz2717(tmp_path: Path, table: pd.DataFrame) -> str:
+    """A data root that mirrors the committed derived tables but carries ``table`` as FZ 27.17."""
+    derived = tmp_path / ft.KBA_SUBDIR
+    derived.mkdir(parents=True)
+    for csv_file in (DATA / ft.KBA_SUBDIR).glob("*.csv"):
+        if csv_file.name != FZ2717_CSV.name:
+            shutil.copy2(csv_file, derived / csv_file.name)
+    table.to_csv(derived / FZ2717_CSV.name, index=False)
+    return str(tmp_path)
+
+
+@pytest.mark.skipif(not FZ2717_CSV.exists(),
+                    reason="kba_gemeinde_private_bev.csv absent (local-only data)")
+def test_model_build_refuses_two_spellings_of_one_gemeinde(tmp_path):
+    """The consumers key a Gemeinde on ``(kreis_ags5, normalised name)``, not on the raw text.
+
+    Two spellings of one Gemeinde pass the loader's raw-key check, yet the Kreis reference of
+    the composition would count both rows while the factor map keeps the last one.
+    """
+    table = pd.read_csv(FZ2717_CSV, dtype={"kreis_ags5": str})
+    respelled = table[table["gemeinde"] == "GIFHORN,ST."].assign(gemeinde="GIFHORN")
+    assert len(respelled) == 1
+    data_path = _data_path_with_fz2717(tmp_path, pd.concat([table, respelled]))
+    segments = list(ft.load_segment_powertrain(data_path)["segment"].unique())
+
+    with pytest.raises(RuntimeError, match="duplicate"):
+        fs.PowertrainModel.from_data_path(data_path, segments)
 
 
 # ---------------------------------------------------------------------------

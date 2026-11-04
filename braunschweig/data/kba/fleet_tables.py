@@ -202,8 +202,9 @@ def _require_zgb_kreise(values: Iterable[str], filename: str) -> None:
 def require_unique_keys(df: pd.DataFrame, key_columns: Sequence[str], filename: str) -> None:
     """Refuse a table in which one key appears on more than one row.
 
-    Shared by the loader of a keyed table and by ``scripts/extract_kba_fleet.py``, so
-    the extractor and the loader refuse the same thing. The consumers keep ONE value
+    Used by the loader of a keyed table on the raw key and by
+    ``fleet_sampling_de.require_unique_gemeinde_keys`` on the normalised Gemeinde key
+    (the model build and ``scripts/extract_kba_fleet.py``). The consumers keep ONE value
     per key (a repeated key is silently resolved to the last row), and the Gemeinde
     composition's Kreis reference sums over ROWS, so it would count a repeated row
     twice. The error names the file, the counts and the first keys.

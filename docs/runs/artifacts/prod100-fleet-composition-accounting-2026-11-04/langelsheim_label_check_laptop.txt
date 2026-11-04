@@ -1,0 +1,11 @@
+D. newer BBSR file, Langelsheim per Gebietsstand sheet:
+   ReferenzGebietsstand2024: code 03153019, name 'Langelsheim, Stadt', RegioStaR-7 (no such column in this sheet)
+   ReferenzGebietsstand2023: code 3153019, name 'Langelsheim, Stadt', RegioStaR-7 77
+   ReferenzGebietsstand2022: code 3153019, name 'Langelsheim, Stadt', RegioStaR-7 77
+   ReferenzGebietsstand2021: code 3153019, name 'Langelsheim, Stadt', RegioStaR-7 77
+   ReferenzGebietsstand2020: code 3153007, name 'Langelsheim, Stadt', RegioStaR-7 77
+   ReferenzGebietsstand2019: code 3153007, name 'Langelsheim, Stadt', RegioStaR-7 77
+   ReferenzGebietsstand2018: code 3153007, name 'Langelsheim, Stadt', RegioStaR-7 77
+   ReferenzGebietsstand2017: code 3153007, name 'Langelsheim, Stadt', RegioStaR-7 77
+   ReferenzGebietsstand2016: code 3153007, name 'Langelsheim, Stadt', RegioStaR-7 77
+   ReferenzGebietsstand2015: code 3153007, name 'Langelsheim, Stadt', RegioStaR-7 77

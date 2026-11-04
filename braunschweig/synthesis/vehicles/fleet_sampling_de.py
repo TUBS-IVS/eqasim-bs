@@ -235,6 +235,32 @@ def apply_gebietsstand_crosswalk(kreis_ags5: str, gemeinde_norm: str) -> str:
         (str(kreis_ags5), gemeinde_norm), gemeinde_norm)
 
 
+def require_unique_gemeinde_keys(df_gem_fz27: pd.DataFrame,
+                                 filename: str = "kba_gemeinde_private_bev.csv") -> None:
+    """Refuse an FZ 27.17 frame in which two rows are the same Gemeinde for the consumers.
+
+    The consumers (:func:`_gemeinde_electric_composition`,
+    ``PowertrainModel._kreis_private_electric_share_2026`` and
+    ``PowertrainModel._gemeinde_private_electric_share``) resolve a row by
+    ``(kreis_ags5, normalize_gemeinde_name(gemeinde))`` and keep one value per key, so
+    ``"GIFHORN,ST."`` and ``"GIFHORN"`` in one Kreis are ONE Gemeinde to them although
+    the raw keys that ``fleet_tables.require_unique_keys`` checks in the loader differ:
+    the composition's Kreis reference would count both rows while its factor map keeps
+    the last. A row without a usable name (a gemeindefreies Gebiet) never takes part in a
+    join and is not checked. The normaliser lives here, so this check lives here too:
+    the data layer must not import the synthesis layer.
+
+    Raises:
+        RuntimeError: if two rows share ``(kreis_ags5, normalised name)``.
+    """
+    keyed = pd.DataFrame({
+        "kreis_ags5": df_gem_fz27["kreis_ags5"].astype(str),
+        "gemeinde_normalised": df_gem_fz27["gemeinde"].map(normalize_gemeinde_name),
+    })
+    ft.require_unique_keys(keyed[keyed["gemeinde_normalised"] != ""],
+                           ["kreis_ags5", "gemeinde_normalised"], filename)
+
+
 #: Vehicle-age band -> representative age in years (band midpoint; ``30_plus``
 #: uses a conservative 32). Used to attach a numeric ``age`` column alongside the
 #: categorical ``age_band`` so downstream consumers (and the legacy writer's
@@ -476,6 +502,8 @@ class PowertrainModel:
                     "same-vintage Kreis-mean denominator will be UNWEIGHTED "
                     "(every Gemeinde weight = 1)."
                 )
+            if df_gem_fz27_weights is not None:
+                require_unique_gemeinde_keys(df_gem_fz27_weights)
             kreis_priv = cls._kreis_private_electric_share_2026(
                 df_gem_ev, df_gem_fz27_weights)
             # Issue #317: the 2026 source publishes no BEV/PHEV split, so the tilt
@@ -504,6 +532,7 @@ class PowertrainModel:
             )
         except FileNotFoundError:
             df_gem_fz27 = ft.load_gemeinde_private_bev(data_path)
+            require_unique_gemeinde_keys(df_gem_fz27)
             gem_priv = cls._gemeinde_private_electric_share(df_gem_fz27)
             kreis_priv = kreis_priv_fz2715
             logger.info(

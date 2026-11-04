@@ -185,11 +185,14 @@ def test_gemeinde_private_bev_covers_zgb_kreise():
     assert frame["private_bev"].isna().mean() < 0.2
 
 
-def test_gemeinde_private_bev_refuses_a_gemeinde_row_that_appears_twice(monkeypatch):
-    """A repeated ``(kreis_ags5, gemeinde)`` row must stop the extraction.
+@pytest.mark.parametrize("repeat", ["ADENBUETTEL", "ADENBUETTEL,ST."],
+                         ids=["same_spelling", "other_spelling"])
+def test_gemeinde_private_bev_refuses_a_gemeinde_that_appears_twice(monkeypatch, repeat):
+    """A Gemeinde listed twice must stop the extraction, also under another spelling of its name.
 
-    The downstream consumers keep one value per key, so a repeated row would be
-    resolved silently instead of showing up as the source defect it is.
+    The downstream consumers key a Gemeinde on ``(kreis_ags5, normalised name)`` and keep one
+    value per key, so a repeat would be resolved silently instead of showing up as the source
+    defect it is.
     """
     def _row(bezirk, gemeinde):
         row = [None] * 10
@@ -197,7 +200,7 @@ def test_gemeinde_private_bev_refuses_a_gemeinde_row_that_appears_twice(monkeypa
         row[7], row[8], row[9] = 1154, 64, 7   # private total, BEV, PHEV
         return row
 
-    sheet = [_row("03151 GIFHORN", "ADENBUETTEL"), _row(None, "ADENBUETTEL")]
+    sheet = [_row("03151 GIFHORN", "ADENBUETTEL"), _row(None, repeat)]
     monkeypatch.setattr(ekf, "_read_sheet", lambda path, sheet_name: sheet)
 
     with pytest.raises(RuntimeError, match="duplicate"):
