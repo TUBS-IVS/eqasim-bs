@@ -56,6 +56,18 @@ limitations: |
     the motorhome sub-fleet (49% of them currently draw euro6), not for fleet aggregates. The
     holder-AGE gap is closed by kba_wohnmobile_holder_age.csv (#315, ADR-0093); this vehicle-AGE
     gap stays open.
+  * kba_gemeinde_private_bev.csv (FZ 27.17) has eight rows with an empty BEV or PHEV cell: BEV for Wolfsburg
+    (03103) and Hedeper (03158), PHEV for Beierstedt, Jerxheim, Querenhorst (03154) and Dahlum, Uehrde,
+    Winnigstedt (03158). The extractor turns a blank cell, a KBA placeholder or an unparseable token into NaN, so
+    the workbook cell did not hold a plain number; whether it is a KBA suppression or an extraction defect is
+    UNVERIFIED: the raw workbook fz27_202501.xlsx is not at its expected path (eqasim-data/data/braunschweig/kba/)
+    on the laptop or on the server (checked 2026-11-04), so the cell cannot be read at its source. The seven small
+    rows belong to Gemeinden of 253 to 676 private cars, Wolfsburg's to a stock of 57,779; a small-count
+    suppression is an unlikely reading for the last (a judgement, not a measurement), a secondary suppression or a
+    sheet-layout problem are the alternatives. To settle it, re-run scripts/extract_kba_fleet.py with the workbook
+    in place: the coercion log of "FZ 27.17 gemeinde_private_bev" names the token and its count. Wolfsburg is the
+    sole Gemeinde of its Kreis, so its cell has no modelling consequence (the composition factor of a sole Gemeinde
+    is 1.0 whatever its counts, ADR-0125 decision 7); the seven others carry no composition factor.
   KBA counts vehicles REGISTERED in a Kreis (company cars at the business seat), the synthesis
   produces HOUSEHOLD cars: spatial patterns are comparable, exact levels are not.
 notes: |
@@ -66,7 +78,9 @@ notes: |
   the FZ 27.17 private BEV/PHEV sheet (kba_gemeinde_private_bev.csv, the Kreis-mean denominator
   weight source AND, since issue #317 / ADR-0125, the per-Gemeinde BEV:PHEV composition source --
   the 2026 per-Gemeinde EV export publishes only the combined electric share, so FZ 27.17 supplies
-  the structure the level signal cannot; 105/113 ZGB Gemeinden carry a usable ratio),
+  the structure the level signal cannot; 105/113 ZGB Gemeinden carry a usable ratio, and each
+  (kreis_ags5, gemeinde) key occurs once, which fleet_tables.require_unique_keys enforces in the loader and
+  the extractor),
   the national age anchor (kba_age_national.csv), the RegioStaR-7 EV cross-check
   (kba_ev_regiostar7.csv, logging only) and four MiD cross tables including
   mid2023_antrieb_by_status.csv (P(powertrain | economic status), the EV-income tilt input).

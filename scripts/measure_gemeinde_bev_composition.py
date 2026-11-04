@@ -225,7 +225,8 @@ def report(data_path: Path) -> None:
           % (total_used, total_all,
              100.0 * total_used / total_all if total_all else 0.0))
     if excluded_names:
-        print("Without a usable ratio (composition factor 1.0, counted at run time):")
+        print("Without a usable ratio (composition factor 1.0; counted as a fallback at "
+              "run time, except the sole Gemeinde of a Kreis, which is not applicable):")
         for name in sorted(excluded_names):
             print("  %s" % name)
     print("")
