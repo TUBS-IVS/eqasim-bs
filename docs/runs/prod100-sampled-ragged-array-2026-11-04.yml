@@ -33,8 +33,9 @@ status:
   execution: completed
   notes: >-
     Completed on 2026-11-04. An equivalence check of a code change, NOT a validation: no observed data is involved. It
-    shows that the change leaves the stage output byte for byte as it was; it says nothing about whether that output
-    is right.
+    shows that the ragged-array change (the module with sha256 8f0eea49...) leaves the stage output byte for byte as
+    it was; it says nothing about whether that output is right. The stable sort added later on the same branch DOES
+    change the output (see notes).
 source: >-
   felix:~/c5d_replay_20261104 (scratch, deleted after the committed copies below were checked; the production run
   directory was only read: its worktree shows 0 changes and pipeline.json and the two cache entries keep their time
@@ -99,8 +100,9 @@ validation:
     a HIT, so the harness reproduces the run's stage hashes. With the one changed file it reads 3 stale for own reasons (those two and
     synthesis.population.sampled [module_hash_changed]), 0 RECOMPUTE, 30 STALE-IF (valid stages whose own record carries
     the digest of the stale stage, so the early cutoff decides at run time), 64 HIT. The 6 cache entries that list the
-    stage as a parent all record exactly its digest. Because the replayed digest equals the recorded one, the early
-    cutoff spares the 30 STALE-IF stages; only synthesis.population.sampled re-executes.
+    stage as a parent all record exactly its digest. For the ragged-array change alone the replayed digest equals the
+    recorded one, so the early cutoff would spare the 30 STALE-IF stages. The final code of the branch also sorts
+    stably, which changes the digest: with it, the 30 STALE-IF stages recompute (see notes).
   artifact: docs/runs/artifacts/prod100-sampled-ragged-array-2026-11-04/explain_after.txt
   notes: >-
     explain_baseline.txt is the same report for the unmodified code. That the 30 stages are spared is derived from the
@@ -109,12 +111,13 @@ artifacts:
 - docs/runs/artifacts/prod100-sampled-ragged-array-2026-11-04/
 issues: []
 notes: >-
-  Cost of landing the change on its own (production commit plus this one file; a real launch also carries whatever else
-  main has changed since). The module hash of synthesis.population.sampled changes (its AST digest, ADR-0149), so
-  that one stage re-executes once: 21 s in the production log (20:57:34 to 20:57:55: load of its input, execute, cache
-  write and the 5.0 s output hash), 5.5 s of it the execute call in the replay. If its output digest were ever to
-  differ from the recorded one, the 30 STALE-IF stages would recompute with everything behind them; the equality shown
-  above is what prevents that. The stage has no helper modules (audit category (a) of
+  Cost of landing. For the FINAL code of the branch: synthesis.population.sampled re-executes (its module hash
+  changes, ADR-0149) AND, because the stable sort changes its output digest, the 30 STALE-IF stages recompute once with
+  everything behind them (hours at 100 %); a real launch also carries whatever else main has changed since. For the
+  ragged-array change alone (production commit plus the module with sha256 8f0eea49..., what the replay measured)
+  only that one stage would re-execute: 21 s in the production log (20:57:34 to 20:57:55: load of its input,
+  execute, cache write and the 5.0 s output hash), 5.5 s of it the execute call in the replay, with the 30 STALE-IF
+  stages spared by the equal digest. The stage has no helper modules (audit category (a) of
   docs/codebase/notes/synpp-helper-hash-audit.md), so no other token moves.
 
   Why this construction. The blocks of row positions are repeated as a Python list. Kept out on purpose:
