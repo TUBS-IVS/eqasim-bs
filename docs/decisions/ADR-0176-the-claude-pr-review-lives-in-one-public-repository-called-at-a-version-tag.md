@@ -1,6 +1,7 @@
 # ADR-0176 · 2026-11-04 · The Claude PR review lives in one public repository that every repository calls at a version tag
 
-- **Status:** accepted (implemented in `TUBS-IVS/claude-pr-review` v1.0.0 and on `chore/claude-review-central-repo`)
+- **Status:** accepted (implemented in `TUBS-IVS/claude-pr-review` v1.0.0 and on `chore/claude-review-central-repo`);
+  amended by ADR-0181 (no cost in any output, the budgets from a second secret)
 - **Numbering:** 0176 checked free across all local and remote branches and all issues on 2026-11-04.
 - **Origin (2026-11-04):** after one bug fix of the review script had to be made six times, the owner asked whether
   one central, referenced project for the review makes sense; this record is the design. The owner chose to do it
@@ -42,7 +43,8 @@
    adopts deliberately.
 4. **Each repository keeps a thin caller** at the same path `.github/workflows/claude-review.yml`: its triggers (base
    branch, `paths-ignore`), the concurrency block unchanged, the token permissions, and one job that calls
-   `TUBS-IVS/claude-pr-review/.github/workflows/review.yml@v1` and passes only the secret `ANTHROPIC_API_KEY`. It
+   `TUBS-IVS/claude-pr-review/.github/workflows/review.yml@v1` and passes only the secret `ANTHROPIC_API_KEY` (since
+   ADR-0181 also `CLAUDE_REVIEW_BUDGETS`). It
    also keeps its own gate config `.github/claude-review.yml`, prompt `.github/claude-review-prompt.md` and
    `.claude/rules/`. The script path leaves the configs' critical and structure paths; the caller stays both through
    `.github/workflows/**`.
@@ -52,7 +54,8 @@
    changes.
 6. **The gate checks every caller's config.** A new model-free command, `check-config`, runs first in the gate job and
    fails it, before anything is spent, when the config or prompt would make a broken or unbounded run: a missing tier,
-   a budget above the owner's 50 USD per-run cap (ADR-0175), a tool beyond Read/Grep/Glob, an unknown prompt
+   a budget above the owner's per-run cap (ADR-0175; since ADR-0181 a tier without a budget), a tool beyond
+   Read/Grep/Glob, an unknown prompt
    placeholder. It replaces the test that checked only this repository's committed config, and covers all six.
 7. **Migration order:** eqasim-java-bs first, with a green review run on its migration pull request, then the four
    private repositories and this one. This repository keeps a small test of its own caller (pinned major tag, explicit
@@ -70,8 +73,9 @@
 
 - A pull request can no longer change the script that reviews it (before, the script was read from the pull request
   itself). Config and prompt are still read from the pull request and stay critical paths.
-- Only `ANTHROPIC_API_KEY` reaches the central code. `secrets: inherit` would also hand it every other secret of the
-  calling repository (one of the private repositories holds a token for its submodules).
+- Only `ANTHROPIC_API_KEY` reaches the central code (since ADR-0181 also the budgets secret `CLAUDE_REVIEW_BUDGETS`,
+  which is no credential). `secrets: inherit` would also hand it every other secret of the calling repository (one of
+  the private repositories holds a token for its submodules).
 - Whoever can move the `v1` tag changes the code that runs with the API key and with permission to comment in six
   repositories. A ruleset on the central repository lets only administrators create, move or delete `v*` tags
   ("Release tags: administrators only", set on 2026-11-04 with the owner's yes).

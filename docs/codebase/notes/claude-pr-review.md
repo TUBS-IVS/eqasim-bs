@@ -17,19 +17,19 @@ record, the findings record for the session retro, and why it runs `claude -p` i
 Action. The three tiers: [ADR-0175](../../decisions/ADR-0175-the-claude-pr-review-sends-structure-changes-and-large-changes-to-a-deep-tier.md);
 the rounds: [ADR-0171](../../decisions/ADR-0171-the-claude-pr-review-reviews-in-rounds-verifies-fixes-and-stops-after-three.md).
 
-No output of a review shows its API cost, here or in any other calling repository (since TUBS-IVS/claude-pr-review
-v1.3.0, the owner's decision of 2026-11-05; "Run record" in its docs/how-it-works.md): the comments, run logs, job
-summaries and artifacts of this public repository are public. The cost of the reviews is in the Anthropic Console,
-under the workspace of the repository's API key.
+No output of a review shows its API cost or its budget per run, here or in any other calling repository (since
+TUBS-IVS/claude-pr-review v1.3.0, the owner's decision of 2026-11-05: ADR-0181; "Run record" in its
+docs/how-it-works.md): the comments, run logs, job summaries and artifacts of this public repository are public. The
+cost of the reviews is in the Anthropic Console, under the workspace of the repository's API key.
 
 ## What this repository owns
 
 | File | Holds |
 |---|---|
-| `.github/workflows/claude-review.yml` | The thin caller: the triggers, the concurrency block, the token permissions, and the call of `TUBS-IVS/claude-pr-review/.github/workflows/review.yml@v1` with only the secret `ANTHROPIC_API_KEY`. `on.pull_request.paths-ignore: ["docs/generated/**"]`: the bot PRs of the generated views (ADR-0168) create no run. |
-| `.github/claude-review.yml` | The gate config: critical, structure and ignored paths, thresholds, rounds, tiers (model, turns, budget per run) and the two label names. |
+| `.github/workflows/claude-review.yml` | The thin caller: the triggers, the concurrency block, the token permissions, and the call of `TUBS-IVS/claude-pr-review/.github/workflows/review.yml@v1` with only the secrets `ANTHROPIC_API_KEY` and `CLAUDE_REVIEW_BUDGETS`. `on.pull_request.paths-ignore: ["docs/generated/**"]`: the bot PRs of the generated views (ADR-0168) create no run. |
+| `.github/claude-review.yml` | The gate config: critical, structure and ignored paths, thresholds, rounds, tiers (model, turns, effort) and the two label names. No budget: the budget per run of each tier comes from the organization secret `CLAUDE_REVIEW_BUDGETS` ([ADR-0181](../../decisions/ADR-0181-the-claude-pr-review-publishes-no-cost-and-takes-its-budgets-from-an-organization-secret.md)). |
 | `.github/claude-review-prompt.md` | The prompt: read `CLAUDE.md` and every file in `.claude/rules/`, then check the diff against the PR template's "What & why", "Behaviour change?" and "Validation evidence". |
-| `tests/test_claude_review_setup.py` | Checks the caller (a released major tag, the one secret, the permissions, `paths-ignore`, no label names) and the prompt's intent check. |
+| `tests/test_claude_review_setup.py` | Checks the caller (a released major tag, the two secrets, the permissions, `paths-ignore`, no label names), that the gate config holds no budget, and the prompt's intent check. |
 
 The gate config and the prompt are read from the PR itself, so a PR can change its own gate; both are critical
 paths, which makes such a PR reviewed (the script is not read from the PR any more). So are `CLAUDE.md` and `.claude/rules/` (since
@@ -37,7 +37,8 @@ paths, which makes such a PR reviewed (the script is not read from the PR any mo
 there is reviewed. `structure_paths` (what it covers: the comment above it in `.github/claude-review.yml`) is a short
 list on purpose, so that adding a stage file in a topic package stays a full-tier change.
 
-Prerequisite: the repository secret `ANTHROPIC_API_KEY`, a key of a **workspace** of the Console organization.
+Prerequisites: the repository secret `ANTHROPIC_API_KEY`, a key of a **workspace** of the Console organization, and
+access to the organization secret `CLAUDE_REVIEW_BUDGETS` (each tier's budget per run as JSON; ADR-0181).
 PRs from forks and from Dependabot get no Actions secrets and are skipped with a note in the job summary.
 
 ## Answer each finding

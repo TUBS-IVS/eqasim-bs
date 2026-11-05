@@ -111,9 +111,10 @@ rereview:
   max_rounds: 3
   verify_tier: light
 
-# max_budget_usd is a hard per-run cap (claude -p --max-budget-usd): 10 / 50 / 50 USD, the
-# owner's choice (2026-10-30 for light and full, 2026-11-02 for deep); the turn limits are an
-# ASSUMPTION (the budget is the binding limit), re-tune them from the run records and the cost in the Console.
+# Each tier's hard budget per run (claude -p --max-budget-usd) is the owner's and comes from the
+# organization secret CLAUDE_REVIEW_BUDGETS, which the caller passes: no budget is published
+# (ADR-0181). The turn limits are an ASSUMPTION (the budget is the binding limit), re-tune them
+# from the run records and the cost in the Console.
 # effort: the reasoning level of each run (claude -p --effort: low, medium, high, xhigh, max;
 # without it the model's default applies, medium on Opus 5.5 and Sonnet 5.5, high on Fable 5.1).
 # Owner's choice (2026-11-04): xhigh on every tier.
@@ -121,17 +122,14 @@ tiers:
   light:
     model: claude-sonnet-5-5
     max_turns: 25
-    max_budget_usd: 10.0
     effort: xhigh
   full:
     model: claude-opus-5-5
     max_turns: 250
-    max_budget_usd: 50.0
     effort: xhigh
   deep:
     model: claude-fable-5-1
     max_turns: 250
-    max_budget_usd: 50.0
     effort: xhigh
 
 # The review run (claude_review.py review in TUBS-IVS/claude-pr-review). The model only reads;
