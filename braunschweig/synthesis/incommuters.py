@@ -443,12 +443,12 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     With ``mode_balance`` AND ``pt_check`` the pt count is then pulled back towards the
     balancer's Mikrozensus target (#467, owner decision; global, not per Bundesland) by
     :func:`~braunschweig.data.cordon.mode_balancer.rebalance_with_timetable`: car
-    in-commuters with ``can_board_pt`` that the check did not switch to car are promoted by
-    pt propensity; a promoted far agent draws an entry station (``sample_pt_station_per_agent``),
+    in-commuters with ``can_board_pt`` that the check did not switch to car are drawn for a
+    promotion attempt by pt propensity; a far agent draws an entry station (``sample_pt_station_per_agent``),
     an in-ring one keeps its home; the home departure follows the new access distance, and the
     day must pass the same chain WITHOUT the switch to car (connection_found, day_shifted,
-    station_redrawn). A promoted agent without a connection stays car at its road gate and
-    leaves the pool. Up to ``rebalance_max_iterations`` rounds, until the pt count is at least
+    station_redrawn). Only a connected attempt becomes pt; an attempt without a connection stays car
+    at its road gate and leaves the pool. Up to ``rebalance_max_iterations`` rounds, until the pt count is at least
     ``(1 - pt_share_tolerance)`` times the target. The frames carry the stats and the actions
     of the promotion attempts under ``pt_rebalance`` (kept apart from ``pt_connection``, whose
     rates are over the original pt days only).
@@ -829,8 +829,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                              _pt_connections.ACTION_STATION_REDRAWN)
 
         def connect(indices):
-            """Place the promoted car agents at ``indices`` as pt and run the chain without the switch to car;
-            write the placement and times of the connected ones into the final arrays, leave the others as car."""
+            """Try the car agents at ``indices`` as pt (one promotion attempt each) and run the chain without the switch
+            to car; write the placement and times of the connected ones into the final arrays, leave the others as car."""
             nonlocal n_promotion_without_station
             calls_before, tasks_before = probe_calls["calls"], probe_calls["tasks"]
             indices = np.asarray(indices, dtype=int)
@@ -873,8 +873,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
             round_tasks = probe_calls["tasks"] - tasks_before
             probe_rounds.append({"n_promoted": int(len(indices)), "router_probe_calls": round_calls,
                                  "router_probe_tasks": round_tasks})
-            logger.info("[braunschweig.incommuters] pt re-balancing round %d: %d promoted, %d router probe calls "
-                        "(%d routed trips)", len(probe_rounds), len(indices), round_calls, round_tasks)
+            logger.info("[braunschweig.incommuters] pt re-balancing round %d: %d promotion attempts, %d router probe "
+                        "calls (%d routed trips)", len(probe_rounds), len(indices), round_calls, round_tasks)
             for i, ok in zip(indices, connected):
                 if not ok:
                     promotion_actions["unconnected"] += 1

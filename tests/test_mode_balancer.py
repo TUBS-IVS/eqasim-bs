@@ -254,7 +254,7 @@ def test_rebalance_with_always_connected_agents_equals_the_balancer():
     assert not (modes[_SWITCHED] == "pt").any()          # the chain's switches are final
 
 
-def test_an_unconnected_promoted_agent_goes_back_to_car_and_another_is_promoted():
+def test_an_unconnected_promoted_agent_goes_back_to_car_and_another_is_promoted(caplog):
     tried, refused = [], []
 
     def connect(idx):
@@ -271,6 +271,12 @@ def test_an_unconnected_promoted_agent_goes_back_to_car_and_another_is_promoted(
     assert modes[refused[0]] == "car"
     assert refused[0] not in tried[1]                    # out of the pool after its failed attempt
     assert all(_CAN[i] and not _SWITCHED[i] for batch in tried for i in batch)
+    # Regression: the 1 of 3 unconnected warning named these "promoted agents" without a connection, which reads as
+    # pt agents who cannot travel; it must count failed attempts that stay car. The meaning is the contract.
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING" and "re-balancing" in r.getMessage()]
+    assert len(warnings) == 1
+    assert "attempts" in warnings[0] and "stay car" in warnings[0]
+    assert "promoted agents" not in warnings[0]
 
 
 def test_rebalance_stops_at_the_iteration_cap_when_the_timetable_serves_nobody(caplog):
@@ -288,26 +294,6 @@ def test_rebalance_stops_when_the_pool_is_exhausted():
                               max_iterations=100)
     assert stats["n_promoted"] == 6                      # the six flexible car agents 4-9, each tried once
     assert stats["met"] is False and stats["residual"] == 2
-
-
-def test_the_unconnected_warning_names_failed_attempts_that_stay_car(caplog):
-    # Regression: an attempt without a connection is never promoted, the agent stays car; the warning called these
-    # "promoted agents" without a connection, which reads as pt agents who cannot travel. The meaning is the contract.
-    refused = []
-
-    def connect(idx):
-        ok = np.ones(len(idx), dtype=bool)
-        if not refused:                                  # the very first attempt has no connection
-            ok[0] = False
-            refused.append(int(idx[0]))
-        return ok
-
-    modes, stats = _rebalance(connect, np.random.default_rng(5))
-    assert modes[refused[0]] == "car" and stats["n_promoted_unconnected"] == 1
-    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING" and "re-balancing" in r.getMessage()]
-    assert len(warnings) == 1
-    assert "attempts" in warnings[0] and "stay car" in warnings[0]
-    assert "promoted agents" not in warnings[0]
 
 
 @pytest.mark.parametrize("modes, tolerance", [
