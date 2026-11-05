@@ -228,16 +228,16 @@ def find_outside_stays(trips: pd.DataFrame, is_portal: pd.Series) -> pd.DataFram
 def _closure_flags(trips: pd.DataFrame) -> np.ndarray:
     """The ``is_synthetic_closure`` flags of all trips as a bool array; ValueError on any missing value.
 
-    PLACEHOLDER (owner decision pending): spliced home-office donor days carry NaN in this column today and
-    are rejected here, loudly. How they are to be treated is decided in this one place. The missing-value
-    check runs BEFORE any bool coercion, which would turn NaN into True and hide the problem.
+    A missing value means the flag was lost upstream (the home-office donor splice carries it since #570) and
+    is rejected loudly. The missing-value check runs BEFORE any bool coercion, which would turn NaN into True
+    and hide the problem.
     """
     column = trips[CLOSURE_COLUMN]
     missing = column.isna().to_numpy()
     if missing.any():
         raise ValueError(f"[portal_trips] {int(missing.sum())} trips have a missing {CLOSURE_COLUMN} value (first "
                          f"person_id {trips['person_id'].to_numpy()[missing][0]}); the flag must be True or False "
-                         "for every trip")
+                         "for every trip, so it was lost upstream")
     return column.to_numpy(dtype=bool)
 
 

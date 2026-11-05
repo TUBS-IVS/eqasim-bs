@@ -27,7 +27,8 @@ Per person, by ``commute_day_state``:
   useful purely for tracing a replaced row back to its donor trip, never as a per-row identifier;
   no downstream code in this pipeline relies on it for anything but within-person ordering
   (``trip_index`` is authoritative for that). Any column the input
-  ``trips`` table carries beyond the CONTRACT plus ``euclidean_distance`` and ``trip_key`` (raw
+  ``trips`` table carries beyond the CONTRACT plus ``euclidean_distance``, ``trip_key`` and
+  ``is_synthetic_closure`` (the donor's own flag, #570; raw
   MiD extras the donor pool intentionally does not carry, see ``donor_pool.donor_trips``) is set
   to ``NaN`` on the replaced rows -- there is no donor-side value to copy, and inventing one would
   violate CLAUDE.md's ban on invented data -- EXCEPT the columns in :data:`_RECOMPUTED_COLUMNS`
@@ -76,7 +77,7 @@ _LOG_TAG = "[commute day plan replacement]"
 
 #: Extra columns a donor trips frame is documented to carry beyond the CONTRACT (see
 #: ``donor_pool.donor_trips``): copied verbatim onto replaced rows, never nulled.
-_DONOR_EXTRA_COLUMNS = ("euclidean_distance", "trip_key")
+_DONOR_EXTRA_COLUMNS = ("euclidean_distance", "trip_key", "is_synthetic_closure")
 
 #: Columns that ``apply_per_person_jitter`` (and, from Task 4 onward, ``apply_departure_time_model``)
 #: RECOMPUTES on the replaced rows from the RECEIVING person's own random draw, regardless of
@@ -281,7 +282,9 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     ``matches`` -- :func:`matching.match_home_office_donors` output: needs ``person_id``,
     ``donor_id`` (one row per REPLACEABLE ``home`` person; an unreplaceable one is simply
     absent). ``donor_trips`` -- :func:`donor_pool.donor_trips` output: needs ``donor_id`` plus
-    the CONTRACT columns (minus ``person_id``) and ``euclidean_distance`` / ``trip_key``.
+    the CONTRACT columns (minus ``person_id``) and ``euclidean_distance`` / ``trip_key`` /
+    ``is_synthetic_closure`` (the donor's own flag of the plan repair's invented closing trip, copied
+    verbatim so the portal stage can tell it from an observed return, #570).
     ``donor_attributes`` -- the donor pool's attributes frame (``donor_id``, ``is_immobile``);
     OPTIONAL only so the pure-helper tests can call this function without one, and always passed
     by ``trips_day_stage``. Without it every donor absent from ``donor_trips`` is counted as

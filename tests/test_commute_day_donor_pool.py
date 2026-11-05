@@ -148,6 +148,8 @@ def test_donor_trips_immobile_donor_yields_no_rows_but_others_get_contract_colum
         assert column in trips.columns
     assert "euclidean_distance" in trips.columns
     assert "trip_key" in trips.columns
+    assert "is_synthetic_closure" in trips.columns
+    assert trips["is_synthetic_closure"].dtype == bool
     # Raw MiD extras (e.g. W_ZWECK, hvm_imp, wegkm) must be dropped from the donor trips.
     assert "W_ZWECK" not in trips.columns
     assert "hvm_imp" not in trips.columns
@@ -797,6 +799,8 @@ def _golden_off_path_trips() -> pd.DataFrame:
         "euclidean_distance": (np.array([3.0, 3.0, 100.0, 100.0, 200.0, 5.0]) * 1000.0
                                / donor_pool.DETOUR_FACTOR),
         "trip_key": ["1_1_1", "1_1_2", "2_1_1", "2_1_2", "2_2_1", "2_2_2"],
+        # Added by #570: every fixture chain already ends at home, so the repair invents no closing trip.
+        "is_synthetic_closure": [False] * 6,
     })
 
 

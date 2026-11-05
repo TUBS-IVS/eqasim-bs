@@ -163,9 +163,9 @@ ATTRIBUTE_COLUMNS = ("donor_id", "H_ID", "P_ID", "sex", "age", "age_class", "emp
                      "distance_km", "distance_class", "distance_source",
                      "n_trips", "is_immobile", "has_education_leg", "has_work_leg")
 #: Columns of the ``trips`` frame (``donor_pool.donor_trips``): the ``synthesis.population.trips``
-#: CONTRACT with ``person_id`` renamed to ``donor_id``, plus the two documented extras.
+#: CONTRACT with ``person_id`` renamed to ``donor_id``, plus the documented extras.
 TRIP_COLUMNS = tuple("donor_id" if column == "person_id" else column for column in CONTRACT) \
-    + ("euclidean_distance", "trip_key")
+    + ("euclidean_distance", "trip_key", "is_synthetic_closure")
 
 #: Helper modules whose source is folded into :func:`validate`'s token. synpp hashes only THIS
 #: file's source, so without them an edit to the pure donor-pool builder (or to the trip-table
