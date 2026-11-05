@@ -26,7 +26,9 @@ description: >-
   raises when the persons of the output differ from the input (eqasim removed persons with no
   feasible alternative) or an output is missing, and logs under [initial mode choice] and writes to
   initial_mode_choice.json the persons before/after, the trips, the share of trips whose mode changed, the mode
-  shares before and after (residents only, the analysis filter skips pt_ and freight_ ids) and the Java wall
+  shares before and after (every person whose id does not start with pt_ or freight_, the in-commuters included:
+  their numeric ids from make_incommuter_ids pass the analysis filter, and with the cordon their trips are
+  unchanged by construction, so share_mode_changed counts them in the denominator) and the Java wall
   time: observations, not reference values. The in-loop mechanism of ADR-0155 (DiscreteModeChoice with weight
   1e6, disableAfterIteration 1) is gone and braunschweig.initial_mode_choice.weight is retired (a config that
   still sets it is refused at configure time). The vendored upstream flag mode_choice (feature record

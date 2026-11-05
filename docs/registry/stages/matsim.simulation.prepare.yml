@@ -168,6 +168,6 @@ notes: >-
   is moved over the population file under its name, so the run, matsim.output and the plan check read the chosen,
   routed plans. The stage raises when the persons of the output differ from the input or an output is missing, and
   logs under [initial mode choice] and writes to initial_mode_choice.json the persons before/after, the trips, the
-  share of trips whose mode changed, the mode shares before and after (residents only) and the Java wall time
+  share of trips whose mode changed, the mode shares before and after (in-commuters included; scope in the feature record initial_mode_choice) and the Java wall time
   (observations, not reference values). braunschweig.initial_mode_choice.weight is retired: a config that still
   sets it is refused in configure() with a pointer to ADR-0178.

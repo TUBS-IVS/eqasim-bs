@@ -70,8 +70,9 @@
    the stage raises when they differ (eqasim removed persons with no feasible alternative; such a person would
    abort iteration 1 in the loop anyway, since the replanning rethrows the exception); it also raises when
    `output_plans.xml.gz` or the trips CSVs are missing. No tolerance threshold and no key for one.
-4. Observability: from `input_trips.csv.gz` and `output_trips.csv.gz` (eqasim `TripWriter`, residents only: the
-   analysis filter skips `pt_` and `freight_` ids) the stage logs under `[initial mode choice]` and writes to
+4. Observability: from `input_trips.csv.gz` and `output_trips.csv.gz` (eqasim `TripWriter`; the analysis filter
+   skips `pt_` and `freight_` ids, so the in-commuters are included, corrected 2026-11-05 in #569: scope in the
+   feature record `initial_mode_choice`) the stage logs under `[initial mode choice]` and writes to
    `initial_mode_choice.json` the persons before/after, the trips, the share of trips whose mode changed, the mode
    shares before and after, and the Java wall time. These are observations of the model for the run manifest,
    never reference values and never a validation.
