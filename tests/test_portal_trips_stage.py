@@ -843,6 +843,39 @@ def test_a_portal_stay_whose_return_is_an_invented_closure_ends_the_day_outside(
     assert report["n_stays_without_return"] == 2
 
 
+@pytest.mark.parametrize("case", ["two_stays", "merged_stay"])
+def test_closure_return_rule_on_multi_stay_and_merged_stay_days(case):
+    """#570: only the stay whose return is the invented closure loses its return; earlier stays keep theirs."""
+    fixture = _fixture()
+    fixture["persons"] = pd.DataFrame([{"person_id": 1, "household_id": 10, "bicycle_availability": "all",
+                                        "car_availability": "all", "has_license": True,
+                                        "car_passenger_availability": "some"}])
+    fixture["df_home"] = gpd.GeoDataFrame({"household_id": [10]}, geometry=[Point(25000.0, 25000.0)], crs=CRS)
+    fixture["df_work"] = gpd.GeoDataFrame({"person_id": [], "location_id": []}, geometry=[], crs=CRS)
+    h = 3600.0
+    if case == "two_stays":
+        legs = [("home", "leisure", 120000.0, 7, 8, False), ("leisure", "home", 120000.0, 12, 13, False),
+                ("home", "leisure", 120000.0, 15, 16, False), ("leisure", "home", np.nan, 20, 21, True)]
+    else:
+        legs = [("home", "leisure", 120000.0, 7, 8, False), ("leisure", "shop", 100000.0, 12, 13, False),
+                ("shop", "home", np.nan, 20, 21, True)]
+    fixture["trips"] = pd.DataFrame([
+        dict(person_id=1, trip_index=i, preceding_purpose=p, following_purpose=f, euclidean_distance=d,
+             departure_time=t0 * h, arrival_time=t1 * h, is_synthetic_closure=c, mode="car")
+        for i, (p, f, d, t0, t1, c) in enumerate(legs)])
+
+    out = stage.build_portal_trips(**fixture)
+    trips, anchors, report = out["trips"], out["anchors"], out["report"]
+    trips = trips.sort_values("trip_index")
+    assert report["n_stays_closure_return_dropped"] == 1
+    if case == "two_stays":
+        assert trips["following_purpose"].tolist() == ["outside", "home", "outside"]
+        assert anchors["activity_index"].tolist() == [1, 3]
+    else:
+        assert trips["following_purpose"].tolist() == ["outside"]
+        assert report["n_removed_legs"] == 1
+
+
 @pytest.mark.parametrize("case, match", [
     ("flagged_return_not_last", r"not the person's last trip.*person_id 1"),
     ("missing_flag", r"1 trips have a missing is_synthetic_closure.*person_id 1")])
