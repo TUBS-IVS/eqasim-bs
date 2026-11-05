@@ -127,8 +127,10 @@ CLAUDE.md's rule still applies: every push needs the user's explicit yes.
   revived, filed or rejected, and repeats health warnings (an issue that cannot be filed,
   `MEMORY.md` over its load limit) until they are resolved. `retro.py metrics` shows the
   library's health.
-- **After a PR.** After `git pr`, the hook injects the CONTRIBUTING step 9 record
-  checklist.
+- **After a PR.** After `gh pr create`, the hook injects the CONTRIBUTING step 9 record
+  checklist and the merge-readiness duties; the merge-readiness hooks then give each open PR
+  the session created a merge verdict. For any other PR, run `retro.py readiness <PR url>`
+  first. The verdict rules live in "Merge readiness" of the retro tooling README.
 
 ## Install on a new machine
 
