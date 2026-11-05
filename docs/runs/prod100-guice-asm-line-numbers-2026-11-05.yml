@@ -1,12 +1,14 @@
 id: prod100-guice-asm-line-numbers-2026-11-05
 date: '2026-11-05'
 repository:
-  commit: f3f1e2dd7f7d92028abed16680e8296411deb76b
+  commit: 1fefa1fa1e19044ddaf53c9062ec21711ae80ab1
   branch: fix/guice-asm-java25-class-files (TUBS-IVS/eqasim-java-bs)
   notes: >-
-    The commit is in the eqasim-java-bs fork, not in this repository. Every measurement below ran from a local work
-    tree of that fork cut from its origin/main c4051c167 (the merge of the DMC trip cache fix, #59) with the change
-    uncommitted; it became the commit above. Two edits followed the full suite of core and braunschweig, the jars, the A/B
+    The commit is in the eqasim-java-bs fork, not in this repository. It is the head of a branch of two commits: f3f1e2dd7
+    (the dependency change and the tests) and 1fefa1fa1 (the enforcer rule that the Claude review of the pull request
+    asked for; only its own entry below ran on it). Every other measurement below ran from a local work tree of that fork
+    cut from its origin/main c4051c167 (the merge of the DMC trip cache fix, #59) with the change uncommitted; it became
+    the first commit. Two edits followed the full suite of core and braunschweig, the jars, the A/B
     runs and the test-compile of all modules, which therefore ran on the earlier text: the pom comments and the Javadocs
     were shortened (text only, no build input), and the two test classes were hardened after an independent review (a
     single copy of the ASM reader and a direct read of a class file with it, both in GuiceClasspathTest; the copy check of
@@ -48,7 +50,8 @@ source: >-
   classpath_diff_without_guava_exclusion.txt, ab.ps1, abrun.ps1, abcompare.py, abdetails.py and ab_melun.txt,
   C5fBindings.java, C5fProviders.java, C5fTiming.java and abtiming.ps1 with bindings_and_providers.txt and
   injector_timing.txt, bytecode_generation.ps1 and .txt, full_suite_after_fix.txt, corsica_test_windows_teardown.txt,
-  jarbuild.ps1, jarcheck.py, JarSmoke.java and jarreport.ps1 with standalone_jar.txt, dependency_trees_all_modules.txt, dependency_tree_before_braunschweig.txt.
+  jarbuild.ps1, jarcheck.py, JarSmoke.java and jarreport.ps1 with standalone_jar.txt, dependency_trees_all_modules.txt, dependency_tree_before_braunschweig.txt, enforcer_check.ps1
+  with enforcer_guice_versions.txt.
 environment: 'workstation (Windows 11 Pro 10.0.26200), Temurin JDK 25.0.4.1+1, Apache Maven 3.9.9; felix (Linux), JDK 25.0.3+9; MATSim 2026.0-2026w12, Guice 7.0.0'
 validation:
 - metric: Guice line-number warnings in the production logs on felix, per log and per entry point (count of the exact phrase, log lines of the traces)
@@ -219,6 +222,20 @@ validation:
   notes: >-
     The jar before the change is built here from the same source commit as the change, not the jar on felix (193,724,417
     bytes, built with another Maven); the felix jar is only read (felix_log_analysis.txt).
+- metric: the enforcer rule that keeps the Guice jars of one version (maven-enforcer-plugin 3.5.0, requireSameVersions over com.google.inject:* and com.google.inject.extensions:*), on the final pom and with guice-grapher pinned to another version
+  reference: 'none (a build rule); the rule must pass on the pom and stop the build on a skewed version'
+  result: >-
+    mvn validate over all nine projects (the parent and eight modules): "Rule 0: RequireSameVersions passed" in each,
+    BUILD SUCCESS. With guice-grapher pinned to 4.2.2 in dependencyManagement (a version that is in the local
+    repository), the build of core stops: "Found entries with different versions", "Entries with version 7.0.0",
+    "Entries with version 4.2.2". The standalone jar built like the stage (copy of the work tree, -Pstandalone) passes the
+    rule and has the same size as before (193,732,426 bytes); the focused tests (2 and 3) pass with the rule in the
+    lifecycle.
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/enforcer_guice_versions.txt
+  notes: >-
+    Why: guice.version is a second pin next to the Guice of MATSim, which also brings guice-grapher and
+    guice-assistedinject; no test sees a MATSim release on another Guice (finding of the Claude review of the pull
+    request). The plugin needs Maven 3.6.3, which is the Maven on felix (read from felix, mvn -v, 2026-11-05).
 - metric: whether a first build on felix needs the network for the two new artifacts
   reference: 'none (a listing and two HTTP HEAD requests)'
   result: >-

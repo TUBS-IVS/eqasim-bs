@@ -53,6 +53,10 @@
    reader, a Guice with an embedded ASM, or an ASM that cannot read the class files of this build. They fail on the old
    poms and with a deliberately too old ASM (manifest). They guard these two modules only: the other modules and the
    shaded jar are not tested.
+4. **One build rule keeps the Guice versions together.** The Guice core classes come from `guice.version`, the Guice
+   extensions (`guice-grapher`, `guice-assistedinject`) from MATSim's own pin. A `requireSameVersions` rule of the
+   maven-enforcer plugin in the parent pom stops the build of every module when they differ, so a MATSim release on
+   another Guice cannot slip through (raised by the Claude review of the Java pull request).
 
 ## Rationale
 
@@ -78,7 +82,8 @@
 - **Rejected: managing the exclusions in `dependencyManagement` for every MATSim coordinate, or banning the default
   jar with the enforcer plugin.** More machinery than tests that fail loudly and name the offender (the classpath
   test printed both jars when a contrib exclusion was removed on purpose; manifest). The price is the limit named in
-  decision 3: a contrib added to a module without a test is not caught.
+  decision 3: a contrib added to a module without a test is not caught. The enforcer plugin is used for the one rule of
+  decision 4, where no test can see the failure.
 - **Rejected: waiting for upstream.** No Guice release since 2023. The trigger in MATSim (`printInjector` builds its
   strings regardless of the level) is a proposal for matsim-libs: a draft is in the shared notes of the session group,
   not filed (it needs the owner's yes).
@@ -93,9 +98,10 @@
   felix reaches Central (manifest).
 - **Maintenance rule.** A MATSim contrib added to a pom needs the same Guice exclusion; `GuiceClasspathTest` names the
   second copy otherwise (in its module). The two version pins follow their owners: `asm.version` stays at 9.8 or newer,
-  and `guice.version` equals the Guice version of the MATSim release, because the Guice extensions come from MATSim's own
-  pin. A project that uses `org.eqasim:core` as a library excludes the default jar from its own MATSim dependencies in
-  the same way.
+  and `guice.version` equals the Guice version of the MATSim release (the enforcer rule of decision 4 stops the build
+  otherwise, and the MATSim bump has to move the pin). The enforcer plugin needs Maven 3.6.3, the version on felix. A
+  project that uses `org.eqasim:core` as a library excludes the default jar from its own MATSim dependencies in the same
+  way.
 - **One pull request pair.** The pom comments of eqasim-java-bs point to this record, so the two pull requests belong
   together: merge this one with, or before, the Java change.
 - **Revisit** when a Guice release embeds ASM 9.8 or newer, or MATSim stops building the binding texts eagerly: the
