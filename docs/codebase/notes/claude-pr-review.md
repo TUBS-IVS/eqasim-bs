@@ -12,10 +12,15 @@ output.
 
 The mechanism lives there, with its tests and the one description of how it works
 ([docs/how-it-works.md](https://github.com/TUBS-IVS/claude-pr-review/blob/main/docs/how-it-works.md)): the
-model-free gate and its decision order, the three tiers, the rounds and their state block, the posting, the cost
+model-free gate and its decision order, the three tiers, the rounds and their state block, the posting, the run
 record, the findings record for the session retro, and why it runs `claude -p` instead of the Claude Code GitHub
 Action. The three tiers: [ADR-0175](../../decisions/ADR-0175-the-claude-pr-review-sends-structure-changes-and-large-changes-to-a-deep-tier.md);
 the rounds: [ADR-0171](../../decisions/ADR-0171-the-claude-pr-review-reviews-in-rounds-verifies-fixes-and-stops-after-three.md).
+
+No output of a review shows its API cost, here or in any other calling repository (since TUBS-IVS/claude-pr-review
+v1.3.0, the owner's decision of 2026-11-05; "Run record" in its docs/how-it-works.md): the comments, run logs, job
+summaries and artifacts of this public repository are public. The cost of the reviews is in the Anthropic Console,
+under the workspace of the repository's API key.
 
 ## What this repository owns
 
@@ -51,7 +56,8 @@ scope of that standing exception is in `CLAUDE.md` ("Git and version control").
 ## Rules for maintainers
 
 - Change thresholds, paths, limits, tools and labels in `.github/claude-review.yml` only. Its values are starting
-  assumptions (each block names the date it was chosen); re-tune them from the cost records. The gate job checks the
+  assumptions (each block names the date it was chosen); re-tune them from the run records in the job summaries
+  and the cost in the Console. The gate job checks the
   config and the prompt on every PR (`check-config`) and fails, before anything is spent, with one error line per
   problem.
 - The label names live in the config only, never in the workflow (`tests/test_claude_review_setup.py` checks this).

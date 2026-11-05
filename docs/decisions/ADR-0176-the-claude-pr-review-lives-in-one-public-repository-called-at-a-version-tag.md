@@ -81,9 +81,9 @@
 - First run of the central workflow: the migration pull request of eqasim-java-bs (TUBS-IVS/eqasim-java-bs #56, run
   41803438108, 2026-11-04). The gate fetched `TUBS-IVS/claude-pr-review@40fe49cb08f0` (so `job.workflow_sha`
   resolves in a called workflow), `check-config` passed, the gate chose the deep tier (1,703 changed lines), and the
-  review cost 1.11 USD, posted one inline finding whose comment id was matched (1/1; before the fix no record carried
-  one) and uploaded both artifacts under their unchanged names; `gh run list --workflow claude-review.yml` lists the
-  run as the retro expects. That finding argued for pinning a commit instead of `v1`, the rejected option below; its
+  review (its cost is not published since 2026-11-05, the owner's decision) posted one inline finding whose comment id
+  was matched (1/1; before the fix no record carried one) and uploaded both artifacts under their unchanged names;
+  `gh run list --workflow claude-review.yml` lists the run as the retro expects. That finding argued for pinning a commit instead of `v1`, the rejected option below; its
   thread was answered with that reason.
 - `check-config` passed on the gate configs and prompts of all six repositories before their migration.
 

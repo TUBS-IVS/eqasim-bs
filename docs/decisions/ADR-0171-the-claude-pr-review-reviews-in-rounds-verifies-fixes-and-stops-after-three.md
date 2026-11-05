@@ -9,9 +9,10 @@
 
 - The automatic review (`docs/codebase/notes/claude-pr-review.md`) reviewed every push as if it were the first: the
   full PR diff against `main`, at the full tier (Opus) whenever the PR is large or critical.
-- Measured on 2026-10-23/24 from the cost artifacts `claude-review-cost-*` (20 records): PR #505 was reviewed 6 times
-  (6.3 USD), PR #504 5 times, PR #512 4 times, all at the full tier; one run cost 0.4 to 1.8 USD. The records say
-  what each run cost, not how many repeats found nothing new; that last part is not measured here.
+- Measured on 2026-10-23/24 from the cost artifacts `claude-review-cost-*` (20 records): PR #505 was reviewed 6 times,
+  PR #504 5 times, PR #512 4 times, all at the full tier. The amounts are not published since 2026-11-05 (the owner's
+  decision; `docs/codebase/notes/claude-pr-review.md`). The records say what each run cost, not how many repeats found
+  nothing new; that last part is not measured here.
 - Since 2026-10-28 Auto-fix is the standing choice for every PR, so the loop finding -> fix push -> review is the
   normal case. Nothing checked whether a fix closed a finding, and the PR description (what it claims to change and to
   have validated) never reached the model.
