@@ -1,0 +1,76 @@
+# mvn -T 1 -B -ntp dependency:tree -Dverbose=true -Dincludes=com.google.inject,org.ow2.asm -DoutputFile=target/tree-guice-asm.txt   (all modules, the final poms of the change, JDK 25.0.4.1, Maven 3.9.9)
+# Every path to a Guice or an ASM artifact in the compile and test dependency tree of each module. The default Guice jar would read 'com.google.inject:guice:jar:7.0.0'.
+# Result: no module has it; the Guice classes jar and asm 9.10.1 are in all; in the server module Jetty's asm-commons and asm-tree stay 9.9.1 while asm resolves to 9.10.1.
+
+== core   (lines naming the default Guice jar: 0)
+org.eqasim:core:jar:2.3.1
++- com.google.inject:guice:jar:classes:7.0.0:compile
+\- org.ow2.asm:asm:jar:9.10.1:compile
+
+== switzerland   (lines naming the default Guice jar: 0)
+org.eqasim:switzerland:jar:2.3.1
++- org.eqasim:core:jar:2.3.1:compile
+|  +- (com.google.inject:guice:jar:classes:7.0.0:compile - omitted for duplicate)
+|  \- (org.ow2.asm:asm:jar:9.10.1:compile - omitted for duplicate)
++- com.google.inject:guice:jar:classes:7.0.0:compile
+\- org.ow2.asm:asm:jar:9.10.1:compile
+
+== ile_de_france   (lines naming the default Guice jar: 0)
+org.eqasim:ile_de_france:jar:2.3.1
++- org.eqasim:core:jar:2.3.1:compile
+|  +- (com.google.inject:guice:jar:classes:7.0.0:compile - omitted for duplicate)
+|  \- (org.ow2.asm:asm:jar:9.10.1:compile - omitted for duplicate)
++- com.google.inject:guice:jar:classes:7.0.0:compile
+\- org.ow2.asm:asm:jar:9.10.1:compile
+
+== braunschweig   (lines naming the default Guice jar: 0)
+org.eqasim:braunschweig:jar:2.3.1
++- org.eqasim:core:jar:2.3.1:compile
+|  +- (com.google.inject:guice:jar:classes:7.0.0:compile - omitted for duplicate)
+|  \- (org.ow2.asm:asm:jar:9.10.1:compile - omitted for duplicate)
++- com.google.inject:guice:jar:classes:7.0.0:compile
+\- org.ow2.asm:asm:jar:9.10.1:compile
+
+== sao_paulo   (lines naming the default Guice jar: 0)
+org.eqasim:sao_paulo:jar:2.3.1
++- org.eqasim:core:jar:2.3.1:compile
+|  +- (com.google.inject:guice:jar:classes:7.0.0:compile - omitted for duplicate)
+|  \- (org.ow2.asm:asm:jar:9.10.1:compile - omitted for duplicate)
++- com.google.inject:guice:jar:classes:7.0.0:compile
+\- org.ow2.asm:asm:jar:9.10.1:compile
+
+== san_francisco   (lines naming the default Guice jar: 0)
+org.eqasim:san_francisco:jar:2.3.1
++- org.eqasim:core:jar:2.3.1:compile
+|  +- (com.google.inject:guice:jar:classes:7.0.0:compile - omitted for duplicate)
+|  \- (org.ow2.asm:asm:jar:9.10.1:compile - omitted for duplicate)
++- com.google.inject:guice:jar:classes:7.0.0:compile
+\- org.ow2.asm:asm:jar:9.10.1:compile
+
+== los_angeles   (lines naming the default Guice jar: 0)
+org.eqasim:los_angeles:jar:2.3.1
++- org.eqasim:core:jar:2.3.1:compile
+|  +- (com.google.inject:guice:jar:classes:7.0.0:compile - omitted for duplicate)
+|  \- (org.ow2.asm:asm:jar:9.10.1:compile - omitted for duplicate)
++- com.google.inject:guice:jar:classes:7.0.0:compile
+\- org.ow2.asm:asm:jar:9.10.1:compile
+
+== server   (lines naming the default Guice jar: 0)
+org.eqasim:server:jar:2.3.1
++- io.javalin:javalin:jar:7.2.2:compile
+|  \- org.eclipse.jetty.ee10.websocket:jetty-ee10-websocket-jetty-server:jar:12.1.8:compile
+|     \- org.eclipse.jetty.ee10:jetty-ee10-annotations:jar:12.1.8:compile
+|        +- org.eclipse.jetty:jetty-annotations:jar:12.1.8:compile
+|        |  +- (org.ow2.asm:asm:jar:9.9.1:compile - omitted for conflict with 9.10.1)
+|        |  \- (org.ow2.asm:asm-commons:jar:9.9.1:compile - omitted for duplicate)
+|        +- (org.ow2.asm:asm:jar:9.9.1:compile - omitted for conflict with 9.10.1)
+|        \- org.ow2.asm:asm-commons:jar:9.9.1:compile
+|           +- (org.ow2.asm:asm:jar:9.9.1:compile - omitted for conflict with 9.10.1)
+|           \- org.ow2.asm:asm-tree:jar:9.9.1:compile
+|              \- (org.ow2.asm:asm:jar:9.9.1:compile - omitted for conflict with 9.10.1)
++- org.eqasim:core:jar:2.3.1:compile
+|  +- (com.google.inject:guice:jar:classes:7.0.0:compile - omitted for duplicate)
+|  \- (org.ow2.asm:asm:jar:9.10.1:compile - omitted for duplicate)
++- com.google.inject:guice:jar:classes:7.0.0:compile
+\- org.ow2.asm:asm:jar:9.10.1:compile
+

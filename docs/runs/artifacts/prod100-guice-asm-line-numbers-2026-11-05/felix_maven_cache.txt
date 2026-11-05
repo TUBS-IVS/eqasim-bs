@@ -1,0 +1,25 @@
+== Guice in ~/.m2 on felix
+total 16
+drwxrwxr-x 4 felix felix 4096 Jun  4 18:57 .
+drwxrwxr-x 5 felix felix 4096 Jun  4 18:21 ..
+drwxrwxr-x 2 felix felix 4096 Jun  4 18:58 4.2.2
+drwxrwxr-x 2 felix felix 4096 Jun  4 18:23 7.0.0
+_remote.repositories
+guice-7.0.0.jar
+guice-7.0.0.jar.lastUpdated
+guice-7.0.0.jar.sha1
+guice-7.0.0.pom
+guice-7.0.0.pom.lastUpdated
+guice-7.0.0.pom.sha1
+== ASM versions in ~/.m2 on felix
+6.0_BETA
+6.2
+6.2.1
+9.6
+9.9.1
+== settings.xml and mirrors
+ls: cannot access '/home/felix/.m2/settings.xml': No such file or directory
+== HTTP status of HEAD requests from felix to Maven Central
+https://repo.maven.apache.org/maven2/org/ow2/asm/asm/9.10.1/asm-9.10.1.pom -> 200
+https://repo.maven.apache.org/maven2/com/google/inject/guice/7.0.0/guice-7.0.0-classes.jar -> 200
+
