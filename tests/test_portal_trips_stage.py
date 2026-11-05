@@ -160,6 +160,7 @@ def _fixture():
         "mode": ["car", "car", "car", "car"], "euclidean_distance": [np.nan, 175000.0, 120000.0, 120000.0],
         "departure_time": [7 * 3600.0, 16 * 3600.0, 9 * 3600.0, 18 * 3600.0],
         "arrival_time": [9 * 3600.0, 18 * 3600.0, 11 * 3600.0, 20 * 3600.0],
+        "is_synthetic_closure": [False] * 4,
     })
     gates = gpd.GeoDataFrame({"link_id": ["L1", "L2"], "capacity": [6000.0, 6000.0], "road_class": ["motorway", "motorway"],
                               "gate_id": ["gate_e", "gate_w"]},
@@ -238,7 +239,8 @@ def _bound_fixture():
         "following_purpose": ["leisure", "home", "leisure", "home", "shop", "home"], "mode": ["car"] * 6,
         "euclidean_distance": [60000.0, 5000.0, 60000.0, np.nan, np.nan, 3000.0],
         "departure_time": [9 * 3600.0, 18 * 3600.0, 9 * 3600.0, 18 * 3600.0, 9 * 3600.0, 12 * 3600.0],
-        "arrival_time": [10 * 3600.0, 19 * 3600.0, 10 * 3600.0, 19 * 3600.0, 10 * 3600.0, 13 * 3600.0]})
+        "arrival_time": [10 * 3600.0, 19 * 3600.0, 10 * 3600.0, 19 * 3600.0, 10 * 3600.0, 13 * 3600.0],
+        "is_synthetic_closure": [False] * 6})
     fixture["trips"] = pd.concat([fixture["trips"], extra], ignore_index=True)
     return fixture
 
@@ -275,7 +277,7 @@ def test_build_portal_trips_draws_the_external_point_at_the_bounded_distance():
         "person_id": [1, 1], "trip_index": [0, 1], "preceding_purpose": ["home", "leisure"],
         "following_purpose": ["leisure", "home"], "mode": ["car", "car"],
         "euclidean_distance": [120000.0, 80000.0], "departure_time": [9 * 3600.0, 18 * 3600.0],
-        "arrival_time": [11 * 3600.0, 20 * 3600.0]})
+        "arrival_time": [11 * 3600.0, 20 * 3600.0], "is_synthetic_closure": [False, False]})
     fixture["df_work"] = gpd.GeoDataFrame({"person_id": [], "location_id": []}, geometry=[], crs=CRS)
     fixture["external_points"] = gpd.GeoDataFrame({"commune_id": ["EXT3"], "ewz": [100.0]},
                                                   geometry=[Point(105000.0, 25000.0)], crs=CRS)
@@ -331,7 +333,8 @@ def test_build_portal_trips_counts_a_partial_fallback_and_keeps_the_drawn_point_
     extra = pd.DataFrame({
         "person_id": [3, 3], "trip_index": [0, 1], "preceding_purpose": ["home", "work"],
         "following_purpose": ["work", "home"], "mode": ["car", "car"], "euclidean_distance": [120000.0, 120000.0],
-        "departure_time": [7 * 3600.0, 16 * 3600.0], "arrival_time": [9 * 3600.0, 18 * 3600.0]})
+        "departure_time": [7 * 3600.0, 16 * 3600.0], "arrival_time": [9 * 3600.0, 18 * 3600.0],
+        "is_synthetic_closure": [False, False]})
     fixture["trips"] = pd.concat([fixture["trips"], extra], ignore_index=True)
     with caplog.at_level(logging.INFO):
         out = stage.build_portal_trips(**fixture)
@@ -442,7 +445,7 @@ def test_build_portal_trips_warns_when_the_origin_is_proxied_by_home_too_often(c
     extra = pd.DataFrame({
         "person_id": [2], "trip_index": [0], "preceding_purpose": ["home"], "following_purpose": ["shop"],
         "mode": ["car"], "euclidean_distance": [1000.0], "departure_time": [7 * 3600.0],
-        "arrival_time": [7.5 * 3600.0]})
+        "arrival_time": [7.5 * 3600.0], "is_synthetic_closure": [False]})
     trips = fixture["trips"].copy()
     trips.loc[trips["person_id"] == 2, "trip_index"] += 1
     trips.loc[(trips["person_id"] == 2) & (trips["trip_index"] == 1), "preceding_purpose"] = "shop"
@@ -838,3 +841,22 @@ def test_a_portal_stay_whose_return_is_an_invented_closure_ends_the_day_outside(
 
     assert report["n_stays_closure_return_dropped"] == 2
     assert report["n_stays_without_return"] == 2
+
+
+@pytest.mark.parametrize("case, match", [
+    ("flagged_return_not_last", r"not the person's last trip.*person_id 1"),
+    ("missing_flag", r"1 trips have a missing is_synthetic_closure.*person_id 1")])
+def test_inconsistent_closure_flags_fail_fast(case, match):
+    fixture = _fixture()
+    trips = fixture["trips"]
+    if case == "missing_flag":
+        trips["is_synthetic_closure"] = trips["is_synthetic_closure"].astype(object)
+        trips.loc[0, "is_synthetic_closure"] = None
+    else:
+        # Person 1: a trailing home -> home leg after the stay's return, which is flagged although not last.
+        extra = trips.iloc[[1]].assign(trip_index=2, departure_time=19 * 3600.0, arrival_time=19.5 * 3600.0,
+                                       preceding_purpose="home", euclidean_distance=100.0)
+        trips.loc[1, "is_synthetic_closure"] = True
+        fixture["trips"] = pd.concat([trips, extra], ignore_index=True)
+    with pytest.raises(ValueError, match=match):
+        stage.build_portal_trips(**fixture)

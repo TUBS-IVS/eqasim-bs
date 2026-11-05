@@ -6,6 +6,9 @@ With ``braunschweig.portal.enabled`` false the trips frame is the input frame it
 anchors frame is empty (byte-identical OFF path). The computation is ``build_portal_trips``, a
 pure function over frames, so it is testable without synpp.
 
+A stay whose return trip is the plan repair's invented home closure (``is_synthetic_closure``) ends the day
+outside: that trip is dropped and the stay has no return (eqasim-bs#570).
+
 Fallback transparency (CLAUDE.md): the stage counts and logs every substitution it makes -- the
 work/education legs classified by the donor's reported distance instead of the assigned location,
 the external points drawn outside the distance band, the origins proxied by home, the mode
@@ -53,7 +56,7 @@ REPORT_FILE_NAME = "portal_trips_report.json"
 TRIPS_STAGE = "braunschweig.synthesis.commute_day.trips_day_stage"
 PERSONS_STAGE = "synthesis.population.enriched"
 REQUIRED_TRIP_COLUMNS = ("person_id", "trip_index", "preceding_purpose", "following_purpose", "mode",
-                         "euclidean_distance", "departure_time", "arrival_time")
+                         "euclidean_distance", "departure_time", "arrival_time", "is_synthetic_closure")
 
 #: Own-package helpers whose source shapes this stage's output (hashed by validate()).
 _HELPER_MODULES = (_classification, _config_keys, _gates, _modes, _no_connection, rewrite, _timing,
@@ -69,7 +72,7 @@ ROUTER_CONFIG_NAME = "pt_router_config.xml"
 
 #: Report entries of a run without any outside stay (the stay-level counts are all zero).
 _EMPTY_STAY_REPORT = {
-    "n_persons_with_stay": 0, "n_stays_without_return": 0, "n_stays_by_kind": {}, "n_stays_by_mode": {},
+    "n_persons_with_stay": 0, "n_stays_without_return": 0, "n_stays_closure_return_dropped": 0, "n_stays_by_kind": {}, "n_stays_by_mode": {},
     "gate_usage": {}, "n_mode_substituted": 0, "mode_substitution_reasons": {}, "n_return_mode_differs": 0,
     "n_external_point_drawn": 0, "n_external_band_miss": 0, "n_origin_proxied_by_home": 0,
     "n_reentry_clamped": 0, "n_return_share_degenerate": 0, "n_outbound_share_degenerate": 0,
@@ -349,6 +352,11 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     A pt stay without an admissible gate is resolved by ``no_connection.resolve_no_connection`` (whole-tour
     mode switch, time shift, kept with its nearest directional exit stop); every outcome is counted in the
     report and WARNed above ``no_connection_warn_share``.
+
+    A stay whose return trip is the plan repair's invented home closure (``is_synthetic_closure`` True) ends the
+    day outside (#570): ``classification.drop_closure_returns`` drops that trip right after the stays are found,
+    for every mode, and the stay takes the "without return" path. ``n_stays_closure_return_dropped`` counts them
+    (``n_stays_without_return`` includes them) and the rate over all stays is logged.
     """
     if soft_mode_max_distance_m is None:
         soft_mode_max_distance_m = {"walk": DEFAULT_WALK_MAX_DISTANCE_M, "bicycle": DEFAULT_BICYCLE_MAX_DISTANCE_M}
@@ -371,9 +379,17 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     is_portal, distance_m, classification_counts = _classify(trips, home_xy, primary, threshold_m,
                                                              fallback_warn_share)
     stays = _classification.find_outside_stays(trips, is_portal)
+    # #570: before anything per stay. Everything aligned to the old trip rows is filtered with the same mask.
+    trips, stays, aligned, n_closure_dropped = _classification.drop_closure_returns(
+        trips, stays, {"is_portal": is_portal, "distance_m": distance_m})
+    is_portal, distance_m = aligned["is_portal"], aligned["distance_m"]
     report = {"n_persons": int(trips["person_id"].nunique()), "n_portal_legs": int(is_portal.sum()),
               "n_stays": int(len(stays)), "n_removed_legs": int(stays["n_removed_legs"].sum()) if len(stays) else 0,
-              **classification_counts, **copy.deepcopy(_EMPTY_STAY_REPORT)}
+              **classification_counts, **copy.deepcopy(_EMPTY_STAY_REPORT),
+              "n_stays_closure_return_dropped": n_closure_dropped}
+    logger.info("%s stays whose return was the plan repair's invented home trip (is_synthetic_closure), dropped so "
+                "the day ends outside: %d/%d (%.1f%%)", _LOG_TAG, n_closure_dropped, len(stays),
+                100.0 * n_closure_dropped / max(len(stays), 1))
     if len(stays) == 0:
         logger.info("%s no portal legs beyond %.0f m: the trips are unchanged", _LOG_TAG, threshold_m)
         out, anchors = rewrite.rewrite_trips(trips, stays, pd.DataFrame(columns=_gates.GATE_COLUMNS),
