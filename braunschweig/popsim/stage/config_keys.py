@@ -52,9 +52,10 @@ KEY_POPSIMPREP = "braunschweig.population.popsim.popsimprep_dir"
 KEY_UV = "braunschweig.population.popsim.uv_path"
 KEY_MAX_CELLS = "braunschweig.population.popsim.max_cells"
 KEY_WORKERS = "braunschweig.population.popsim.num_workers"
-# Measured peak memory of ONE PopulationSim batch worker, in gigabytes. Bounds
+# Assumed peak memory of ONE PopulationSim batch worker, in gigabytes. Bounds
 # num_workers against the machine's RAM rather than its core count -- the worker
-# count is memory-bound (2026-07-10 OOM post-mortem: 25-30 GB per worker), so a
+# count is memory-bound (25-30 GB per worker, attributed to the 2026-07-10 OOM
+# post-mortem; see braunschweig.resources.DEFAULT_POPSIM_WORKER_MEMORY_GB), so a
 # core-count-derived value would OOM the box. Owned by braunschweig.resources
 # (single definition); re-exported here so the popsim stage keeps its
 # established "all my config keys live in config_keys" import style. Declared
