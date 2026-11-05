@@ -133,6 +133,15 @@ validation:
     measured; the blind spot is latent here and was left unchanged (it lives in braunschweig/resources.py, see
     the next entry).
   artifact: docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/driver_rss_by_stage_launch1.txt
+- metric: per-worker memory peak of PopulationSim batch workers (sampled lower bound)
+  reference: braunschweig.resources.DEFAULT_POPSIM_WORKER_MEMORY_GB (30 GiB, the figure the gate sizes with)
+  result: >-
+    23.2 GB per worker, as reported by the owner (2026-11-04): two batches of this run sampled every 60 s;
+    the owner states the figure matches repeated earlier measurements. Unit as reported (GB); the sampler and
+    its unit were not recorded. A 60 s sample series can miss the true maximum, so this is a LOWER BOUND on the
+    peak, not a measured maximum. If it holds in GiB, 3 x 23.2 = 69.6 GiB would fit the 86.28 GiB budget, i.e.
+    the clamp to 2 workers follows from the 30 GiB default, not from this sample. No series or artifact is
+    committed for this figure; the default was left unchanged.
 - metric: what the fix costs in recomputed stages at 100 %
   reference: docs/runs/content-addressed-cache-acceptance-100pct-2026-10-22.yml
   result: >-

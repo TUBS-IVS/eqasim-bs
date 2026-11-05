@@ -546,8 +546,9 @@ def resolve_popsim_workers(configured, budget: ResourceBudget,
     """Resolve the PopulationSim batch worker count against the MEMORY budget.
 
     This key is memory-bound, not core-bound: each worker drives its own
-    PopulationSim subprocess whose measured peak is 25-30 GB (2026-07-10 OOM
-    post-mortem, recorded in ``configs/overlays/test_100pct.yml``). Deriving it
+    PopulationSim subprocess whose peak is 25-30 GB (2026-07-10 OOM post-mortem;
+    recorded in ADR-0069 and ADR-0100, the latter naming the 29.9 GB OOM-kill log
+    line as the only hard number). Deriving it
     from the core count is what would OOM the box.
 
     Worker count cannot change results: ``popsim.batch.run_batches`` submits one
@@ -633,10 +634,11 @@ def resolve_processes(configured, budget: ResourceBudget) -> Resolution:
 
 
 #: Default measured peak memory of one PopulationSim batch worker, in gigabytes.
-#: Traceable to the 2026-07-10 OOM post-mortem (25-30 GB per worker, formerly
-#: quoted in the header of configs/overlays/test_100pct.yml); the upper bound is
-#: taken because under-estimating it is what OOMs the box. The later per-worker
-#: peak measured on prod100_20261031 is stated in that header.
+#: Traceable to the 2026-07-10 OOM post-mortem (25-30 GB per worker, recorded in
+#: ADR-0069; ADR-0100 names the 29.9 GB OOM-kill log line as its only hard
+#: number); the upper bound is taken because under-estimating it is what OOMs the
+#: box. A later sampled lower bound of the per-worker peak on prod100_20261031 is
+#: recorded in docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml.
 #: SCALE CAVEAT: that post-mortem measured a 100%-SCALE run
 #: (``configs/overlays/test_100pct.yml``, ``sampling_rate: 1.0``). No per-worker
 #: footprint has ever been measured at a smaller sampling rate, and no
