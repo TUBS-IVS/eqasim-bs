@@ -45,7 +45,7 @@ source: >-
   classpath_diff_without_guava_exclusion.txt, ab.ps1, abrun.ps1, abcompare.py, abdetails.py and ab_melun.txt,
   C5fBindings.java, C5fProviders.java, C5fTiming.java and abtiming.ps1 with bindings_and_providers.txt and
   injector_timing.txt, bytecode_generation.ps1 and .txt, full_suite_after_fix.txt, corsica_test_windows_teardown.txt,
-  jarbuild.ps1, jarcheck.py, JarSmoke.java and jarreport.ps1 with standalone_jar.txt.
+  jarbuild.ps1, jarcheck.py, JarSmoke.java and jarreport.ps1 with standalone_jar.txt, dependency_trees_all_modules.txt, dependency_tree_before_braunschweig.txt.
 environment: 'workstation (Windows 11 Pro 10.0.26200), Temurin JDK 25.0.4.1+1, Apache Maven 3.9.9; felix (Linux), JDK 25.0.3+9; MATSim 2026.0-2026w12, Guice 7.0.0'
 validation:
 - metric: Guice line-number warnings in the production logs on felix, per log and per entry point (count of the exact phrase, log lines of the traces)
@@ -110,6 +110,18 @@ validation:
   notes: >-
     The two tests reach the lookup through the text of the bindings, because Guice logs only the first failure per JVM
     and a test that shares its JVM would pass without a warning.
+- metric: every path to a Guice or ASM artifact in the dependency tree of each of the eight modules (mvn dependency:tree -Dverbose), with the change
+  reference: 'none (a listing); the default Guice jar must not appear in any module'
+  result: >-
+    The default Guice jar appears in none of the eight modules (core, switzerland, ile_de_france, braunschweig,
+    sao_paulo, san_francisco, los_angeles, server). The Guice classes jar and asm 9.10.1 are in all of them. In the server
+    module, Jetty (through Javalin) asks for asm, asm-commons and asm-tree 9.9.1: asm resolves to 9.10.1, asm-commons and
+    asm-tree stay at 9.9.1. The server module is not built or used by this project.
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/dependency_trees_all_modules.txt
+  notes: >-
+    Before the change the verbose tree of braunschweig named the default jar along 18 dependency paths (every MATSim
+    contrib) and held no ASM artifact besides the one embedded in Guice, which is why the exclusions sit on the
+    dependency edges (dependency_tree_before_braunschweig.txt).
 - metric: the test class path of core and braunschweig (mvn dependency:build-classpath, test scope), before and after
   reference: 'none (a set comparison); the first draft of the change is the control'
   result: >-
