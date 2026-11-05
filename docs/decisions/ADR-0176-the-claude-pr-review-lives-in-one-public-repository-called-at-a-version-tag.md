@@ -54,8 +54,9 @@
    changes.
 6. **The gate checks every caller's config.** A new model-free command, `check-config`, runs first in the gate job and
    fails it, before anything is spent, when the config or prompt would make a broken or unbounded run: a missing tier,
-   a budget above the owner's per-run cap (ADR-0175; since ADR-0181 a tier without a budget), a tool beyond
-   Read/Grep/Glob, an unknown prompt
+   a budget above the owner's per-run cap (ADR-0175; ADR-0181 replaced this check: since then a tier without a
+   budget, or a budget left in the config while the secret is set, fails it, and the code holds no upper bound), a
+   tool beyond Read/Grep/Glob, an unknown prompt
    placeholder. It replaces the test that checked only this repository's committed config, and covers all six.
 7. **Migration order:** eqasim-java-bs first, with a green review run on its migration pull request, then the four
    private repositories and this one. This repository keeps a small test of its own caller (pinned major tag, explicit

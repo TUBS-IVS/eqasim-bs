@@ -73,7 +73,10 @@
 - **Drop the budget cap:** no secret needed, but a run would be bounded only by its turn limit and the job timeout; the
   owner chose to keep the cap.
 - **Configuration variables (`vars`) instead of a secret:** GitHub's documentation of reusable workflows does not say
-  whether a called workflow sees the caller's variables, and a variable is not masked in a log.
+  whether a called workflow sees the caller's variables. Log masking is no difference between the two: GitHub masks
+  only the exact full string of a secret, so a single tier's value taken from the JSON secret is not masked either.
+  What keeps the budgets out of the logs is that the central code never prints a value and redacts amounts in CLI
+  text (decision 3).
 - **A repository secret for every caller:** six copies to keep equal; the organization secret holds the budgets once
   wherever GitHub lets it (the public repositories), and a repository secret stands in only where GitHub Free
   leaves no other way (the private ones).

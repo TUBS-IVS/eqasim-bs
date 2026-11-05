@@ -58,8 +58,9 @@
   verification, so a fix claim is checked by the model instead of being taken at its word.
 - **Why bounded:** the cap exists to stop repeated full reviews (Context). A verify round reads only the open
   findings at the light tier, and the second limit keeps a PR that never closes its findings from buying
-  unlimited rounds. ASSUMPTION: that default is a starting value; to re-tune it for this repository from the cost
-  records, set the key in `.github/claude-review.yml` with its own dated ASSUMPTION.
+  unlimited rounds. ASSUMPTION: that default is a starting value; to re-tune it for this repository from the run
+  records and the cost in the Anthropic Console (ADR-0181), set the key in `.github/claude-review.yml` with its own
+  dated ASSUMPTION.
 - **This repository:** eqasim-bs calls the review via `@v1`, so the behaviour was live from the moment `v1` moved;
   `.github/claude-review.yml` keeps the default (no `verify_after_cap` key) and only its comment changed.
 

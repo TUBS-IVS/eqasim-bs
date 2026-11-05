@@ -34,7 +34,8 @@
 7. The review job may run 45 minutes instead of 30: deep runs of up to 19 minutes were seen, and a job cut off by the
    timeout loses its cost record.
 
-All thresholds are ASSUMPTIONS chosen on 2026-11-02, to be re-tuned from the cost records.
+All thresholds are ASSUMPTIONS chosen on 2026-11-02, to be re-tuned from the run records and the cost in the
+Anthropic Console (since 2026-11-05 no run record carries a cost, ADR-0181).
 
 ## Why this is not a silent fallback
 
