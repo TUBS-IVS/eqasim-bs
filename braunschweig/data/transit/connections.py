@@ -345,7 +345,7 @@ def connection_mask(trips: pd.DataFrame, legs: pd.DataFrame, *, inside_stop_ids:
         egress_time_s = pd.to_numeric(legs["egress_time"], errors="coerce").astype(float)
         last_pt_egress_s = egress_time_s.groupby(leg_ids.to_numpy()).max()
         nan_ids = set(leg_ids[egress_time_s.isna().to_numpy()])
-        arrival_s = (last_pt_egress_s.reindex(trips.index).to_numpy()
+        arrival_s = (last_pt_egress_s.reindex(trips.index.astype(str)).to_numpy()
                      + pd.to_numeric(trips["egress_travel_time_min"], errors="coerce").astype(float).to_numpy() * 60.0)
         arrival_s = np.where(trips.index.isin(nan_ids), np.nan, arrival_s)
         on_time = pd.Series(arrival_s <= latest_arrival_s, index=trips.index)  # NaN compares False

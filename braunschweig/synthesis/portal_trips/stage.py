@@ -463,6 +463,9 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
     pt_rows = np.flatnonzero((modes["mode"] == "pt").to_numpy())
     n_pt = len(pt_rows)
     walk_max_m = float(_plan_check.DEFAULT_WALK_MAX_DISTANCE_M)
+    # The shift chain keeps its own bound (end of the simulated day, unchanged by #573), while the connection rule
+    # uses connections.latest_arrival_s: the rule must judge as prepare's routed day-end check does (ADR-0160,
+    # ADR-0185). Aligning the chain bound would change portal results and is out of scope.
     bound_s = float(_plan_validation.MAX_PLAN_TIME_SECONDS)
     chain = dict(shift_window_s=gate_settings["shift_window_s"], shift_step_s=gate_settings["shift_step_s"],
                  min_stay_s=gate_settings["min_stay_s"], bound_s=bound_s,
@@ -500,7 +503,7 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
             pt_origin[positions], pt_point[positions], o_dep, o_arr, r_dep, r_arr, has_return[positions], exits,
             schedule, router, n_candidates=gate_settings["n_candidates"],
             service_window_s=gate_settings["service_window_s"], inside_stop_ids=inside_stop_ids,
-            walk_max_m=walk_max_m, latest_arrival_s=gate_settings.get("latest_arrival_s"))
+            walk_max_m=walk_max_m, latest_arrival_s=gate_settings["latest_arrival_s"])
 
     pt_gates = choose(np.arange(n_pt), out_dep, out_arr, ret_dep, ret_arr)
 

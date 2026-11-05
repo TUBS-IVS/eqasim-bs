@@ -443,6 +443,36 @@ def test_pt_check_passes_the_latest_arrival_bound_and_its_label_to_the_connectio
                                                                    (None, "outside tour pt check")]
 
 
+@pytest.mark.parametrize("margin_s", [3600.0, 1800.0])
+def test_the_day_end_bounds_of_the_pt_checks_and_the_connection_rule_do_not_drift(tmp_path, monkeypatch, margin_s):
+    # One day-end limit (ADR-0160, ADR-0185) is computed in three places: the in-commuter shift bound, the outside
+    # tour shift bound and the connection rule. They must stay equal for the default and a custom margin.
+    from braunschweig.data.transit import connections, schedule as schedule_module
+    from braunschweig.synthesis import incommuters
+
+    monkeypatch.setattr(schedule_module, "read_schedule", lambda path: type("Schedule", (), {"stops": {"a": None}})())
+    values = {"matsim_threads": 1, "processes": 1, "braunschweig.day_end_margin.enabled": True,
+              keys.KEY_PT_SHIFT_WINDOW_S: 0.0, keys.KEY_PT_SHIFT_STEP_S: 1800.0,
+              keys.KEY_PT_NO_CONNECTION_WARN_SHARE: 0.05,
+              "braunschweig.day_end_margin.last_arrival_margin_s": margin_s}
+
+    class _Context:
+        def config(self, key, default=None):
+            return values.get(key, default)
+
+        def stage(self, name):
+            return {"schedule_path": "s", "network_path": "n", "vehicles_path": "v"}
+
+        def path(self, name=None):
+            return str(tmp_path)
+
+    context = _Context()
+    bound_s = connections.latest_arrival_s(context)
+    assert bound_s is not None
+    assert incommuters._time_bound_s(context) == bound_s
+    assert stage._pt_check(context).bound_s == bound_s
+
+
 def test_portal_tour_at_a_road_gate_is_never_moved_to_pt_and_is_reported():
     for seed in range(25):
         fixture = _with_portal_person("car")
