@@ -50,7 +50,10 @@
    production tour finder splits at `home` and `outside`, so an in-commuter whose whole day lies inside the simulated
    area (home > work > home) has a tour without an `outside` activity, which the choice re-chose. A read-only probe
    on the prepared 100 % population of `prod100_20261031` found such tours; its counts are probe output and enter no
-   record before a run manifest cites them.
+   record before a run manifest cites them. Side effect: the runner draws each chooser's randomness by its position
+   in the list of chosen plans, so leaving the in-commuters out re-draws the residents too (same seed, different
+   draws). A before/after comparison of the residents' initial modes measures random variation, not an effect of
+   this decision (eqasim-java-bs `docs/standalone_mode_choice.md`).
 
 ## Rejected options
 

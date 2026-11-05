@@ -19,7 +19,8 @@ description: >-
   all (ADR-0182 decision 5, issue #566): run passes them to the eqasim-java-bs runner option
   standaloneModeChoice.excludedSubpopulations, which keeps those persons' plans as read, logs the persons kept
   per subpopulation in mode_choice/, warns for a listed subpopulation without persons and fails when the list
-  matches nobody; initial_mode_choice.json records the list. Without the cordon nothing is excluded and the option
+  matches nobody; initial_mode_choice.json records the list. The exclusion also re-draws the residents' random
+  choices (ADR-0182 decision 5). Without the cordon nothing is excluded and the option
   is not passed. The DMC's own routing sets routingMode but never the walkFallbackFrom stamp, so the plan check counts a
   walk-only trip with routingMode pt as pt-as-walk (plan_check.summarise, extended with this feature). The stage
   raises when the persons of the output differ from the input (eqasim removed persons with no
