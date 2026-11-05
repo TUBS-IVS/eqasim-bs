@@ -231,7 +231,7 @@ def _donor_trips():
                 "is_first_trip": trip_index == 0, "is_last_trip": trip_index == 1,
                 "trip_duration": float(arrival - departure), "activity_duration": 3600.0,
                 "mode": "walk", "euclidean_distance": 1000.0,
-                "trip_key": f"{donor_id}_{trip_index}",
+                "trip_key": f"{donor_id}_{trip_index}", "is_synthetic_closure": False,
             })
     return pd.DataFrame(rows)
 

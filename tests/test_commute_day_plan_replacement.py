@@ -88,6 +88,7 @@ def _donor_trips_fixture():
         "mode":              ["bike", "bike", "bike"],
         "euclidean_distance": [3000.0, 2000.0, 4000.0],
         "trip_key":          ["d1_1", "d1_2", "d1_3"],
+        "is_synthetic_closure": [False, False, False],
     })
 
 

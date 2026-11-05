@@ -16,7 +16,8 @@ Output: ``(attributes, trips, diagnostics)``.
   ``donor_pool.donor_attributes``).
 * ``trips`` -- one row per (donor, trip), columns :data:`TRIP_COLUMNS`: the
   ``synthesis.population.trips`` contract with ``person_id`` renamed to ``donor_id``, plus
-  ``euclidean_distance`` and ``trip_key`` (see ``donor_pool.donor_trips``).
+  the donor extras ``euclidean_distance``, ``trip_key`` and ``is_synthetic_closure`` (see
+  ``donor_pool.donor_trips``).
 * ``diagnostics`` -- the builder's diagnostics dict (see
   ``donor_pool.build_home_office_donor_pool``) plus the stage-level counts documented on
   :func:`execute`.

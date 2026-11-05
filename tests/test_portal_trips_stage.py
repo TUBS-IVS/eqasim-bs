@@ -842,6 +842,11 @@ def test_a_portal_stay_whose_return_is_an_invented_closure_ends_the_day_outside(
     assert report["n_stays_closure_return_dropped"] == 2
     assert report["n_stays_without_return"] == 2
 
+    # The issue's effect: A keeps pt with a gate (no tour switch to car); A and B both find a gate.
+    a = trips[trips["person_id"] == 1]
+    assert a["mode"].tolist() == ["pt"]
+    assert report["no_connection_actions"] == {"gate_found": 2}
+
 
 @pytest.mark.parametrize("case", ["two_stays", "merged_stay"])
 def test_closure_return_rule_on_multi_stay_and_merged_stay_days(case):

@@ -28,9 +28,9 @@ Per person, by ``commute_day_state``:
   no downstream code in this pipeline relies on it for anything but within-person ordering
   (``trip_index`` is authoritative for that). Any column the input
   ``trips`` table carries beyond the CONTRACT plus ``euclidean_distance``, ``trip_key`` and
-  ``is_synthetic_closure`` (the donor's own flag, #570; raw
-  MiD extras the donor pool intentionally does not carry, see ``donor_pool.donor_trips``) is set
-  to ``NaN`` on the replaced rows -- there is no donor-side value to copy, and inventing one would
+  ``is_synthetic_closure`` (the donor's own flag, #570) is set
+  to ``NaN`` on the replaced rows (this covers raw MiD extras the donor pool intentionally does
+  not carry, see ``donor_pool.donor_trips``) -- there is no donor-side value to copy, and inventing one would
   violate CLAUDE.md's ban on invented data -- EXCEPT the columns in :data:`_RECOMPUTED_COLUMNS`
   (currently only :data:`braunschweig.popsim.departure_time_model.OFFSET_COLUMN`), which the
   per-person jitter below RECOMPUTES for the receiving person a few lines later and which must
@@ -381,8 +381,8 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
                      "trips frame")
     _require_columns(states, ("person_id", "commute_day_state"), "states frame")
     _require_columns(matches, ("person_id", "donor_id"), "matches frame")
-    _require_columns(donor_trips, ("donor_id",) + tuple(c for c in CONTRACT if c != "person_id"),
-                     "donor_trips frame")
+    _require_columns(donor_trips, ("donor_id",) + tuple(c for c in CONTRACT if c != "person_id")
+                     + _DONOR_EXTRA_COLUMNS, "donor_trips frame (the splice copies the donor extras)")
     general_absent_persons = set()
     if general_absence is not None:
         _require_columns(general_absence, ("person_id", "day_absence_state"), "general_absence frame")
