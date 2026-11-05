@@ -222,6 +222,36 @@ def test_donor_trips_forwards_w_zweck_10_as_leisure(monkeypatch):
     assert captured["w_zweck_10_as_leisure"] is True
 
 
+def test_donor_closure_column_name_is_the_portal_stage_contract():
+    from braunschweig.synthesis.portal_trips import classification
+    assert donor_pool._CLOSURE_COLUMN == classification.CLOSURE_COLUMN
+
+
+@pytest.mark.parametrize("case", ["column_missing", "value_missing"])
+def test_donor_trips_raises_on_a_built_table_without_a_usable_closure_flag(monkeypatch, case):
+    """The closure flag is the portal stage's input (#570): a table lacking it must fail fast."""
+    real_builder = donor_pool.build_validated_trip_table
+
+    def breaking_builder(persons, wege, **kwargs):
+        table, report = real_builder(persons, wege, **kwargs)
+        if case == "column_missing":
+            return table.drop(columns=["is_synthetic_closure"]), report
+        table = table.copy()
+        table["is_synthetic_closure"] = table["is_synthetic_closure"].astype(object)
+        table.loc[table.index[0], "is_synthetic_closure"] = None
+        return table, report
+
+    monkeypatch.setattr(donor_pool, "build_validated_trip_table", breaking_builder)
+    persons = _persons_fixture()
+    donors = donor_pool.select_home_office_day_donors(persons)
+    attributes = donor_pool.donor_attributes(donors, persons, _households_fixture(), _wege_fixture())
+    with pytest.raises(ValueError, match="is_synthetic_closure"):
+        donor_pool.donor_trips(
+            donors, attributes, _wege_fixture(), random_seed=0,
+            escort_purpose=False, escort_passive_education=False,
+            explicit_round_trip_purposes=True, w_zweck_10_as_leisure=True)
+
+
 def test_donor_trips_forwards_the_passive_escort_pairing_keywords(monkeypatch):
     """escort_passive_from_adult, its gap and its candidate-adult age floor must reach
     build_validated_trip_table (issue #372 task 4; the floor by the issue #409 follow-up):

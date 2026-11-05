@@ -678,10 +678,10 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
     Returns one row per (donor, trip): the ``trips_stage.CONTRACT`` columns (``person_id``
     renamed to ``donor_id``) plus ``euclidean_distance`` (metres, from MiD ``wegkm_imp`` * 1000 /
     the ENTD detour factor -- the same convention as ``trips_stage.run``) and ``trip_key``
-    (traceability) and ``is_synthetic_closure`` (bool: the plan repair's invented closing home trip,
-    carried so the portal stage ends such a stay outside, #570). The raw MiD Wege extras (``W_ZWECK``, ``hvm_imp``, ``wegkm``, ...) are
-    dropped to keep the donor pool small; the docstring here is the single place documenting
-    that intentional narrowing.
+    (traceability) and ``is_synthetic_closure`` (bool: the plan repair's invented closing home
+    trip, carried so the portal stage ends such a stay outside, #570). The raw MiD Wege extras
+    (``W_ZWECK``, ``hvm_imp``, ``wegkm``, ...) are dropped to keep the donor pool small; the
+    docstring here is the single place documenting that intentional narrowing.
     """
     _require_columns(donors, ("HP_ID", "H_ID", "P_ID"), "donors frame")
     _require_columns(attributes, ("donor_id", "sex", "age", "employed"), "attributes frame")
