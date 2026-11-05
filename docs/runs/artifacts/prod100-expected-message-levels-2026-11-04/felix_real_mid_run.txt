@@ -1,0 +1,24 @@
+# felix:~/c5c_check_20261104 (scratch, deleted afterwards): the data-gated MiD tests and the new donor tests, on the archive of branch fix/c5c-expected-messages-log-level at commit 301269b4, Linux, conda eqasim (Python 3.10.10)
+INFO     braunschweig.data.hts.mid_donor:mid_donor.py:135 [mid_donor] sex: primary 420238/420979 (99.8%), fallback 741/420979 (0.2%); non-binary/missing codes use the observed MiD pool, seeded by random_seed; within the expected bound of 1.0% (MiD 2023 carries such codes by construction)
+PASSED                                                                   [ 10%]
+INFO     braunschweig.data.hts.mid_donor:mid_donor.py:135 [mid_donor] sex: primary 998/1000 (99.8%), fallback 2/1000 (0.2%); non-binary/missing codes use the observed MiD pool, seeded by random_seed; within the expected bound of 1.0% (MiD 2023 carries such codes by construction)
+PASSED                                                                   [ 20%]
+WARNING  braunschweig.data.hts.mid_donor:mid_donor.py:135 [mid_donor] sex: primary 950/1000 (95.0%), fallback 50/1000 (5.0%); non-binary/missing codes use the observed MiD pool, seeded by random_seed; ABOVE the expected bound of 1.0%: check the HP_SEX coding of the MiD person file
+PASSED                                                                   [ 30%]
+INFO     braunschweig.data.hts.mid_donor:mid_donor.py:135 [mid_donor] sex: primary 1969/1972 (99.8%), fallback 3/1972 (0.2%); non-binary/missing codes use the observed MiD pool, seeded by random_seed; within the expected bound of 1.0% (MiD 2023 carries such codes by construction)
+PASSED                                                                   [ 40%]
+tests/test_popsim_mid.py::test_drop_invalid_households_removes_sentinel_and_null PASSED [ 50%]
+INFO     braunschweig.popsim.mid.donor:donor.py:278 [mid.load_completed_donor] dropped 0 invalid-household row(s) (H_ID=0 or null) and 312 associated person(s) from the donor data: the invalid-household bucket of the MiD 2023 delivery, as expected; these are not real households and must not be population donors.
+PASSED                                                                   [ 60%]
+WARNING  braunschweig.popsim.mid.donor:donor.py:288 [mid.load_completed_donor] dropped 0 invalid-household row(s) (H_ID=0 or null) and 313 associated person(s) from the donor data, but the MiD 2023 delivery carries 0 row(s) and 312 person(s) of that bucket: not the delivery this model was checked on; these are not real households and must not be population donors.
+PASSED                                                                   [ 70%]
+WARNING  braunschweig.popsim.mid.donor:donor.py:288 [mid.load_completed_donor] dropped 1 invalid-household row(s) (H_ID=0 or null) and 312 associated person(s) from the donor data, but the MiD 2023 delivery carries 0 row(s) and 312 person(s) of that bucket: not the delivery this model was checked on; these are not real households and must not be population donors.
+PASSED                                                                   [ 80%]
+WARNING  braunschweig.popsim.mid.donor:donor.py:288 [mid.load_completed_donor] dropped 0 invalid-household row(s) (H_ID=0 or null) and 0 associated person(s) from the donor data, but the MiD 2023 delivery carries 0 row(s) and 312 person(s) of that bucket: not the delivery this model was checked on; these are not real households and must not be population donors.
+PASSED                                                                   [ 90%]
+tests/test_popsim_mid.py::test_drop_invalid_households_noop_when_all_valid PASSED [100%]
+================ 10 passed, 69 deselected in 109.25s (0:01:49) =================
+evidence: /home/felix/c5c_check_20261104/eqasim-bs/.claude/gate/tests-linux.json (scope=focused, exit=0, head=None, dirty=None)
+
+# git status of the shared production code worktree (must stay empty):
+(end)

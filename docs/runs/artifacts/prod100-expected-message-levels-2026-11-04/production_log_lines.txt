@@ -1,0 +1,23 @@
+18:07:13:15 │ INFO    │ braunschweig     │ [config-merge] config.synpp_expected_stale_stages: [] -> ['braunschweig.analysis.analysis_suite', 'braunschweig.analysis.cordon_validation', 'braunschweig.analysis.reference.srv.commute_distance', 'braunschweig.analysis.simwrapper_export', 'braunschweig.analysis.synthesis.commute_distance_by_kreis', 'braunschweig.analysis.synthesis.departure_time_vs_srv', 'braunschweig.analysis.synthesis.plan_structure_vs_srv', 'braunschweig.analysis.synthesis.work_participation_by_k
+67:07:13:47 │ INFO    │ braunschweig     │ [explain] STALE    braunschweig.data.verbindungen.margins  [module_hash_changed]
+143:07:13:47 │ ERROR   │ braunschweig     │ [explain] # WARNING: 1 entries carry a legacy md5 module hash (never migrated, or kept legacy by the migration because the stage code changed since the cache was built): run scripts/migrate_cache_metadata.py if this cache was never migrated
+144:07:13:47 │ INFO    │ braunschweig     │ [explain] # 108 stages: 54 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 4 may recompute (stale ancestor, early cutoff decides), 50 hits
+159:07:14:10 │ INFO    │ synpp            │ - braunschweig.data.verbindungen.margins__e42f2df171635ed8ce7a2a1b22dd54ac [module_hash_changed]
+282:07:16:05 │ WARNING │ data.hts.mid_donor │ [mid_donor] sex: primary 420238/420979 (99.8%), fallback 741/420979 (0.2%); non-binary/missing codes use the observed MiD pool, seeded by random_seed
+344:07:18:17 │ WARNING │ popsim.mid.donor │ [mid.load_completed_donor] dropped 0 invalid-household row(s) (H_ID=0 or null) and 312 associated person(s) from the donor data; these are not real households and must not be population donors.
+1130:22:03:51 │ INFO    │ synpp            │ Executing stage braunschweig.data.verbindungen.margins__e42f2df171635ed8ce7a2a1b22dd54ac ...
+1131:22:03:51 │ INFO    │ synpp            │ Reasons for braunschweig.data.verbindungen.margins__e42f2df171635ed8ce7a2a1b22dd54ac: module_hash_changed
+1133:22:03:51 │ INFO    │ synpp            │ Writing cache for braunschweig.data.verbindungen.margins__e42f2df171635ed8ce7a2a1b22dd54ac
+1134:22:03:51 │ INFO    │ synpp            │ Output hash for braunschweig.data.verbindungen.margins__e42f2df171635ed8ce7a2a1b22dd54ac: 0 files, 2798 bytes, 0.0 s; no previous output hash recorded
+1135:22:03:52 │ INFO    │ synpp            │ Finished running braunschweig.data.verbindungen.margins__e42f2df171635ed8ce7a2a1b22dd54ac.
+1542:22:53:36 │ INFO    │ synthesis.vehicles.fleet_sampling_de │ [fleet_de][residents] powertrain Kreis lookup: primary 688832/688832 (100.0%), fallback 0 (0.0%)
+1543:22:53:36 │ INFO    │ synthesis.vehicles.fleet_sampling_de │ [fleet_de][residents] powertrain Gemeinde tilt: primary 679187/688832 (98.6%), fallback 9645 (1.4%)
+1544:22:53:36 │ INFO    │ synthesis.vehicles.fleet_sampling_de │ [fleet_de][residents] powertrain Gemeinde tilt: 1358374 electric-powertrain tilt(s) used the COMBINED electric share (source publishes no BEV/PHEV split for that Gemeinde, ADR-0086)
+33338:[braunschweig.data.verbindungen.margins] SvBaGeB_Statisch_WO_Verkehrszellen.csv: 3159 rows, 0 suppressed ('*' Dominanz) (0.0%)
+33339:[braunschweig.data.verbindungen.margins] SvBaGeB_Statisch_AO_Verkehrszellen.csv: 3160 rows, 18 suppressed ('*' Dominanz) (0.6%)
+33340:[braunschweig.data.verbindungen.margins] 3/44 cells without workers_at_home (suppressed or absent from source)
+33341:[braunschweig.data.verbindungen.margins] 3/44 cells without workers_at_workplace (suppressed or absent from source)
+39235:23:42:04 │ INFO    │ synthesis.vehicles.fleet_sampling_de │ [fleet_de][in-commuters (origin outside ZGB)] powertrain Kreis lookup: primary 58302/58302 (100.0%), fallback 0 (0.0%)
+39236:23:42:04 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de][in-commuters (origin outside ZGB)] powertrain Gemeinde tilt: primary 0/58302 (0.0%), fallback 58302 (100.0%)
+39598:23:51:28 │ INFO    │ synpp            │ Loading cache for braunschweig.data.verbindungen.margins__e42f2df171635ed8ce7a2a1b22dd54ac ...
+49283:02:38:37 │ WARNING │ popsim.mid.donor │ [mid.load_completed_donor] dropped 0 invalid-household row(s) (H_ID=0 or null) and 312 associated person(s) from the donor data; these are not real households and must not be population donors.

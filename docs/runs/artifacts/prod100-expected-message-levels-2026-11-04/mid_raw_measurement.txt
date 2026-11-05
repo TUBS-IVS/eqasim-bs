@@ -1,0 +1,12 @@
+separator persons=',' households=','
+persons rows: 420979
+HP_SEX value counts (dropna=False):
+1    209094
+2    211144
+3       614
+9       127
+HP_SEX not in {1,2}: 741 of 420979 = 0.1760 %
+household rows: 218101
+persons with H_ID 0 or null: 312
+household rows with H_ID 0 or null: 0
+distinct H_ID among the bad persons: 1
