@@ -120,8 +120,8 @@ notes: >-
   Why this construction. The blocks of row positions are repeated as a Python list. Kept out on purpose:
   np.array(..., dtype=object), which keeps the ragged array and makes the shape depend on whether the household sizes
   happen to be equal, and index arithmetic over the household sizes, which removes the intermediate structure but is
-  the cleverer code and a larger edit to a vendored stage. zip(strict=True) keeps the error np.repeat raised when the
-  numbers of blocks and multiplicators differ.
+  the cleverer code and a larger edit to a vendored stage. zip(strict=True) only states that the numbers of blocks
+  and multiplicators agree; since change (3) below, the per-household check before it guarantees that.
 
   Found by this replay and fixed on the same branch, at the owner's request, AFTER it ran (so the replay above covers
   the ragged-array change only). (1) The stage sorted by household_id with numpy's default, unstable sort, and the input
@@ -135,6 +135,10 @@ notes: >-
   assigned directly; output unchanged on 500 random censuses (frames and pickle bytes identical in all 500), comparing
   the module after the ragged-array change with that module plus only the column assignment
   (random_equivalence_column_assignment_log.txt, which names both module hashes). The 100 % replay ran before this
-  change and does not cover it. Still true and not touched: every household weight is
+  change and does not cover it. (3) Added after the PR review: the stage raises a ValueError when household_size
+  differs from the person rows of any household. The old code (np.repeat, then zip) only failed when the TOTALS
+  differed; two households off in opposite directions silently exchanged a member. Valid input is unaffected (500
+  random censuses identical against the previous commit), and the production input has no such household (the
+  household_size measurement in results.json). Still true and not touched: every household weight is
   1.0, so at the production input the rounding and the replication of this stage change nothing; the stage only sorts
   the rows by household_id and renumbers households and persons.
