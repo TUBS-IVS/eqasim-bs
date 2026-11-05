@@ -198,7 +198,7 @@ setup-oriented summary; all target paths are **relative to `eqasim-data/data/`**
 
 | Dataset | Command | Destination |
 |---------|---------|-------------|
-| RegioStaR typology (BMV/BBSR) | `python scripts/download_regiostar.py` | `regiostar/regiostar_referenzdatei.xlsx` |
+| RegioStaR typology (BMV/BBSR) | `python scripts/download_regiostar.py` | `regiostar/regiostar_referenzdateien_2024.xlsx` |
 | Zensus 2022 open 100 m grid | `python scripts/download_zensus_grid.py` | `zensus_grid/population_100m.parquet` |
 | VerBindungen zones + commuter OD | `python scripts/download_verbindungen.py` | `verbindungen/` |
 | german-wide-freight v3 (plans + DE/EU network) | `python scripts/download_german_wide_freight.py` | `braunschweig/freight/german-wide-freight-v3/` |

@@ -3,9 +3,11 @@ Load the BMV/BBSR RegioStaR Gemeinde reference table (TASK-004).
 
 Source data
 -----------
-``eqasim-data/data/regiostar/regiostar_referenzdatei.xlsx`` (sheet
-``ReferenzGebietsstand2020``), fetched via
-``scripts/download_regiostar.py``.
+``eqasim-data/data/regiostar/regiostar_referenzdateien_2024.xlsx`` (BMV/BBSR
+reference workbook published on mobilithek.info; sheet
+``ReferenzGebietsstand2023``), fetched and SHA-pinned via
+``scripts/download_regiostar.py``. Why this sheet (and not 2020 or 2024):
+ADR-0180.
 
 Output
 ------
@@ -91,7 +93,12 @@ def urban_class_by_commune(commune_ids, rs7_by_ags8):
     return rs7.map(lambda code: pd.NA if pd.isna(code) else regiostar2_label(code))
 
 
-SHEET = "ReferenzGebietsstand2020"
+#: Gebietsstand sheet read from the reference workbook (ADR-0180). Its Gemeinde
+#: universe must match the VG250 universe the stage fills against; every code VG250
+#: has but the sheet lacks takes the nearest-neighbour fallback below.
+SHEET = "ReferenzGebietsstand2023"
+#: Column suffix of the Gebietsstand sheet (``gem_23``, ``name_23``).
+SHEET_YEAR_SUFFIX = "23"
 
 # Fallback-rate threshold for the nearest-neighbour RS7 fill (CLAUDE.md
 # "Fallback transparency"). The PRIMARY path is a direct match against the
@@ -177,7 +184,7 @@ def configure(context):
     context.config("data_path")
     context.config(
         "regiostar.path",
-        "regiostar/regiostar_referenzdatei.xlsx",
+        "regiostar/regiostar_referenzdateien_2024.xlsx",
     )
     context.config("braunschweig.political_prefix")
 
@@ -193,8 +200,10 @@ def execute(context) -> pd.DataFrame:
     path = _resolve_path(context)
     raw = pd.read_excel(path, sheet_name=SHEET, header=0)
 
+    code_col = f"gem_{SHEET_YEAR_SUFFIX}"
+    name_col = f"name_{SHEET_YEAR_SUFFIX}"
     expected_cols = {
-        "gem_20", "name_20", "RegioStaR7", "RegioStaR17", "RegioStaRGem7",
+        code_col, name_col, "RegioStaR7", "RegioStaR17", "RegioStaRGem7",
     }
     missing = expected_cols - set(raw.columns)
     if missing:
@@ -204,8 +213,10 @@ def execute(context) -> pd.DataFrame:
         )
 
     df = pd.DataFrame({
-        "commune_id": raw["gem_20"].astype("Int64").astype(str).str.zfill(8),
-        "name": raw["name_20"].astype(str),
+        "commune_id": raw[code_col].astype("Int64").astype(str).str.zfill(8),
+        # A blank name stays missing (never the text "nan"): household.py counts
+        # a missing name as a Gemeinde-tilt fallback (ADR-0180).
+        "name": raw[name_col].where(raw[name_col].notna()).astype(object),
         "regiostar7": pd.to_numeric(raw["RegioStaR7"], errors="coerce")
                        .astype("Int64"),
         "regiostar17": pd.to_numeric(raw["RegioStaR17"], errors="coerce")
@@ -242,9 +253,18 @@ def execute(context) -> pd.DataFrame:
 
     n_filled = int(filled["rs7_filled"].sum())
     if n_filled:
-        ids = filled[filled["rs7_filled"]]["commune_id"].tolist()
-        print(f"[braunschweig.data.bbsr.regiostar] filled RS7 for {n_filled} "
-              f"Gemeinde(n) via nearest-neighbour: {ids}")
+        # A filled Gemeinde is absent from the reference sheet: its RS7 is the
+        # neighbour's, and it has NO name, RegioStaR17 or RegioStaRGem7. With a
+        # sheet whose Gebietsstand matches VG250 this list is empty; a non-empty
+        # list means VG250 is newer than the sheet (a municipal merger), so it is
+        # named code by code (Langelsheim 03153019 under Gebietsstand 2020).
+        filled_ids = filled.loc[filled["rs7_filled"], "commune_id"]
+        names = gem.drop_duplicates("commune_id").set_index("commune_id")["GEN"]
+        listed = ", ".join(f"{cid} ({names.get(cid, '?')})" for cid in filled_ids)
+        print(f"[braunschweig.data.bbsr.regiostar] WARNING: {n_filled} "
+              f"Gemeinde(n) missing from {SHEET}, RS7 filled from the nearest "
+              f"neighbour, no name/RegioStaR17/RegioStaRGem7: {listed}. "
+              "Check the sheet's Gebietsstand against VG250 (ADR-0180).")
 
     meta = df[["commune_id", "ars5", "name", "regiostar17", "regiostar_gem7"]]
     df = filled.merge(meta, on="commune_id", how="left")

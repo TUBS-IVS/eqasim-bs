@@ -427,7 +427,7 @@ class TestZensusGridLoader:
 class TestRegioStarLoader:
     """``braunschweig.data.bbsr.regiostar``: schema + ZGB-8 coverage."""
 
-    XLSX = DATA_ROOT / "regiostar" / "regiostar_referenzdatei.xlsx"
+    XLSX = DATA_ROOT / "regiostar" / "regiostar_referenzdateien_2024.xlsx"
     # The pin lives once, in the download script that verifies it on download.
     from scripts.download_regiostar import EXPECTED_SHA256
 
@@ -435,10 +435,70 @@ class TestRegioStarLoader:
         return StubContext(
             config={
                 "data_path": str(DATA_ROOT),
-                "regiostar.path": "regiostar/regiostar_referenzdatei.xlsx",
+                "regiostar.path": "regiostar/regiostar_referenzdateien_2024.xlsx",
                 "braunschweig.political_prefix": ZGB_KREISE,
             }
         )
+
+    def _vg250_present(self):
+        return (DATA_ROOT / "germany" / "vg250-ew_12-31.utm32s.gpkg.ebenen.zip").exists()
+
+    def test_default_path_is_the_pinned_workbook(self):
+        """The stage default reads the file the download script fetches and pins."""
+        from braunschweig.data.bbsr import regiostar as rs
+        from scripts.download_regiostar import TARGET_NAME
+
+        defaults = {}
+
+        class _Recorder:
+            def config(self, key, default=None):
+                defaults[key] = default
+
+        rs.configure(_Recorder())
+        assert defaults["regiostar.path"] == f"regiostar/{TARGET_NAME}"
+
+    def test_langelsheim_takes_the_primary_path(self, capsys, committed_fleet_sampler):
+        """PRIMARY path on the real reference, from the stage to the fleet's Gemeinde tilt.
+
+        Langelsheim (03153019, merged 1 Nov 2021) is absent from Gebietsstand 2020
+        and was nearest-neighbour filled (RS7 74, no name), so its cars carried the
+        label "NAN" and missed the Gemeinde tilt (ADR-0180). The Gebietsstand-2023
+        sheet carries it with BBSR's own assignment: "Langelsheim, Stadt", RS7 77,
+        RS17 215, RegioStaRGem7 77.
+        """
+        if not self.XLSX.exists() or not self._vg250_present():
+            pytest.skip("Run scripts/download_regiostar.py and fetch VG250 first.")
+
+        from braunschweig.data.bbsr import regiostar as rs
+
+        df = rs.execute(self._ctx()).set_index("commune_id")
+        log = capsys.readouterr().out
+
+        row = df.loc["03153019"]
+        assert row["name"] == "Langelsheim, Stadt"
+        assert int(row["regiostar7"]) == 77
+        assert int(row["regiostar17"]) == 215
+        assert int(row["regiostar_gem7"]) == 77
+        # No Gemeinde is filled: no missing name or type anywhere.
+        assert df["name"].notna().all()
+        assert df[["regiostar7", "regiostar17", "regiostar_gem7"]].notna().all().all()
+        assert "fallback (nearest-neighbour) 0/123 (0.0%)" in log
+
+        # The fleet: a Langelsheim household's car carries the name and type 77 and
+        # its label finds the KBA Gemeinde row (a PRIMARY Gemeinde-tilt hit).
+        from braunschweig.synthesis.vehicles.cars import household as hh
+
+        persons = pd.DataFrame([{"household_id": 1, "person_id": 11, "age": 40,
+                                 "has_license": True, "number_of_cars": 1,
+                                 "economic_status": "medium"}])
+        homes = pd.DataFrame([{"household_id": 1, "commune_id": "031530019019"}])
+        car = hh.build_household_car_frame(persons, homes, df.reset_index()).iloc[0]
+        assert car["gemeinde"] == "LANGELSHEIM, STADT"
+        assert int(car["raumtyp"]) == 77
+        model = committed_fleet_sampler.powertrain_model
+        primary, fallback = model._gemeinde_primary, model._gemeinde_fallback
+        model.powertrain_probabilities(model.segments[0], car["kreis_ags5"], car["gemeinde"])
+        assert (model._gemeinde_primary - primary, model._gemeinde_fallback - fallback) == (1, 0)
 
     def test_pinned_sha256_matches(self):
         import hashlib
@@ -468,7 +528,7 @@ class TestRegioStarLoader:
         }
         # ZGB-8 has 123 Gemeinden according to the VG250 authoritative
         # geographic universe (which supersedes the XLSX row count of 126).
-        # Langelsheim (03153019) is present via nearest-neighbour RS7 fill.
+        # Langelsheim (03153019) is a direct match since ADR-0180.
         assert len(df) == 123
         assert set(df["ars5"].unique()) == set(ZGB_KREISE)
 

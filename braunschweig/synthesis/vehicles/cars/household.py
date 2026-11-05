@@ -157,7 +157,14 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
     rs["commune_id"] = rs["commune_id"].astype(str)
     rs = rs.rename(columns={"commune_id": "ags8", "name": "gemeinde",
                             "regiostar7": "raumtyp"})
-    rs["gemeinde"] = rs["gemeinde"].astype(str).str.strip().str.upper()
+    # A missing name stays missing (``None``): ``astype(str)`` would turn it into the
+    # fake label "NAN" (Langelsheim, prod100_20261031). The fleet's Gemeinde tilt
+    # counts a missing label as a Gemeinde fallback (``normalize_gemeinde_name``
+    # maps it to ""); the count of such cars is logged below.
+    has_name = rs["gemeinde"].notna()
+    rs["gemeinde"] = rs["gemeinde"].astype(object).where(has_name, None)
+    rs.loc[has_name, "gemeinde"] = (
+        rs.loc[has_name, "gemeinde"].astype(str).str.strip().str.upper())
     homes = homes.merge(rs[["ags8", "gemeinde", "raumtyp"]], on="ags8", how="left")
     home_rows_by_household = None
     if indexed_home_lookup:
@@ -231,6 +238,21 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
         columns=["household_id", "owner_id", "economic_status",
                  "kreis_ags5", "gemeinde", "raumtyp", "owner_age"],
     )
+    # Fallback transparency: cars whose home Gemeinde has no name (home code absent
+    # from the RegioStaR reference, or a reference row without a name) get no
+    # Gemeinde tilt. Named here because a merger missing from the reference sheet
+    # surfaced only as a fake label before (ADR-0180).
+    no_name = df_cars["gemeinde"].isna()
+    if no_name.any():
+        logger.warning(
+            "[vehicles.household] %d car(s) in %d household(s) have no Gemeinde "
+            "name (%.2f%% of %d cars; home AGS-8 codes: %s): Gemeinde tilt falls "
+            "back to the Kreis share.",
+            int(no_name.sum()), int(df_cars.loc[no_name, "household_id"].nunique()),
+            100.0 * float(no_name.mean()), len(df_cars),
+            sorted(homes.loc[homes["household_id"].isin(
+                df_cars.loc[no_name, "household_id"]), "ags8"].unique().tolist()),
+        )
     return df_cars
 
 

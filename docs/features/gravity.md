@@ -28,9 +28,10 @@ ZGB until every RS7 code present in ZGB has at least 5 anchors (225 km / 141
 Kreise at present). Pinned values live in `config_*braunschweig*.yml` under
 `gravity_slope_by_regiostar7` (do not hand-edit; re-run the script and paste its
 YAML). `braunschweig.data.bbsr.regiostar` assigns every in-scope Gemeinde an RS7
-code, filling Gemeinden absent from the RegioStaR-2020 reference (e.g.
-Langelsheim, 03153019) by geographic nearest neighbour, so all 123 gravity
-origins receive a typed slope.
+code. Since ADR-0180 its Gebietsstand-2023 sheet matches all 123 ZGB Gemeinden
+directly (Langelsheim 03153019 included); a Gemeinde absent from the sheet would
+be filled by geographic nearest neighbour (logged WARNING), so every gravity
+origin receives a typed slope.
 
 Tests: `tests/test_gravity_ring_calibration.py` (ring selection + panel
 recovery), `tests/test_regiostar_fill.py` (nearest-neighbour fill),

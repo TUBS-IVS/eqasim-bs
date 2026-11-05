@@ -45,6 +45,8 @@ from typing import Any
 import geopandas as gpd
 import pandas as pd
 
+from braunschweig.data.bbsr import regiostar as _regiostar_stage
+
 LOGGER = logging.getLogger("braunschweig.analysis.spatial")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -80,13 +82,16 @@ VG250_INNER = (
 # through this single location; see the module docstring for why.
 VG250_CACHE = REPO_ROOT / ".cache" / "vg250" / "DE_VG250.gpkg"
 
-# RegioStaR-7 reference for per-Raumtyp diagnostics. Filename pinned via
-# scripts/download_regiostar.py (TASK-004); not regenerated here.
+# RegioStaR-7 reference for per-Raumtyp diagnostics: the same file, sheet and
+# columns as the synthesis stage ``braunschweig.data.bbsr.regiostar`` (ADR-0180),
+# so a home's Raumtyp here equals the one the population was built with. Filename
+# pinned via scripts/download_regiostar.py; not regenerated here.
 REGIOSTAR_XLSX = (
     REPO_ROOT / "eqasim-data" / "data" / "regiostar"
-    / "regiostar_referenzdatei.xlsx"
+    / "regiostar_referenzdateien_2024.xlsx"
 )
-REGIOSTAR_SHEET = "ReferenzGebietsstand2020"
+REGIOSTAR_SHEET = _regiostar_stage.SHEET
+REGIOSTAR_CODE_COLUMN = f"gem_{_regiostar_stage.SHEET_YEAR_SUFFIX}"
 REGIOSTAR7_LABELS: dict[int, str] = {
     71: "Metropole",
     72: "Regiopole/Großstadt",
@@ -223,7 +228,7 @@ def load_regiostar() -> pd.DataFrame:
         return pd.DataFrame(columns=["commune_id", "regiostar7"])
     raw = pd.read_excel(REGIOSTAR_XLSX, sheet_name=REGIOSTAR_SHEET, header=0)
     df = pd.DataFrame({
-        "commune_id": raw["gem_20"].astype("Int64").astype(str).str.zfill(8),
+        "commune_id": raw[REGIOSTAR_CODE_COLUMN].astype("Int64").astype(str).str.zfill(8),
         "regiostar7": pd.to_numeric(raw["RegioStaR7"], errors="coerce")
                        .astype("Int64"),
     }).dropna(subset=["regiostar7"])

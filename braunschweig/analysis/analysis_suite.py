@@ -91,6 +91,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.analysis.population_validation.trip_coherence",
     "braunschweig.analysis.population_validation.validation_chart",
     "braunschweig.analysis.spatial",
+    "braunschweig.data.bbsr.regiostar",  # spatial reads its RegioStaR sheet (ADR-0180)
     "braunschweig.calibration.circuity",
     "braunschweig.calibration.metrics",
     "braunschweig.constants",

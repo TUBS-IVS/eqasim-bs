@@ -119,7 +119,8 @@ validation:
     the empty name into the text "NAN" with astype(str). Of the 123 rows of the loader's cached output exactly this one has an
     empty name. Consequences: those cars get no Gemeinde-specific tilt and carry another region type than the reference.
     Masking the NaN before the cast alone would not change either. The size of the effect on results was not measured. This PR
-    does not change it; it is a follow-up (an issue is proposed to the owner).
+    does not change it; it is a follow-up (an issue is proposed to the owner). Fixed since 2026-11-05 without an issue (owner
+    decision): ADR-0180 moves the stage to the Gebietsstand-2023 sheet, where Langelsheim is a direct match.
   artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/langelsheim_label_check_felix.txt
   notes: >-
     after_classification.csv lists the cars per Gemeinde label and class. langelsheim_label_check_felix.txt (the cache and the

@@ -59,6 +59,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.analysis.simwrapper.trip_demand",
     "braunschweig.analysis.simwrapper.writers",
     "braunschweig.analysis.spatial",
+    "braunschweig.data.bbsr.regiostar",  # spatial reads its RegioStaR sheet (ADR-0180)
     "braunschweig.data.cordon.plans",
     "braunschweig.synthesis.portal_trips.config_keys",
     "braunschweig.analysis.stuck_agents",

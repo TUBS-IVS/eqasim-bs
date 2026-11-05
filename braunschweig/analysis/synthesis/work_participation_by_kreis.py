@@ -1532,6 +1532,7 @@ _HELPER_MODULES = (_json_output, R, _srv_distance_targets, _srv_work_participati
                    _day_absence, _portal_config_keys)
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.analysis.spatial",
+    "braunschweig.data.bbsr.regiostar",  # spatial reads its RegioStaR sheet (ADR-0180)
     "braunschweig.provenance",
     # The rest of this stage's import closure: modules its helpers import, whose code this
     # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).

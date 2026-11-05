@@ -101,7 +101,7 @@ COMPOSITION_CLIP_UNCLOSED_WARN_SHARE: float = 0.5
 #: a comma in BOTH source vocabularies of the Gemeinde-tilt join -- the KBA
 #: FZ 27.17 sheet (:func:`braunschweig.data.kba.fleet_tables.load_gemeinde_private_bev`,
 #: already ASCII-transliterated and frequently ABBREVIATED, e.g.
-#: ``"GIFHORN,ST."``, ``"BROME,FLECKEN"``) and the BBSR RegioStaR ``name_20``
+#: ``"GIFHORN,ST."``, ``"BROME,FLECKEN"``) and the BBSR RegioStaR ``name_YY``
 #: reference the household home Gemeinde is derived from (proper unicode
 #: umlauts, spelled out in full, e.g. ``"Gifhorn, Stadt"``,
 #: ``"Brome, Flecken"``). Stripping the suffix on BOTH sides lets the two
@@ -116,7 +116,7 @@ _GEMEINDE_SUFFIX_TOKENS = ("STADT", "ST", "FLECKEN")
 _GEMEINDE_SUFFIX_PATTERN = re.compile(r",.*$")
 
 #: Marker of a *gemeindefreies Gebiet* -- an unpopulated forest / military
-#: training area that RegioStaR lists as its own ``name_20`` entry
+#: training area that RegioStaR lists as its own ``name_YY`` entry
 #: (``"HARZ (LANDKREIS GOSLAR), GEMFR. GEBIET"``,
 #: ``"SCHOENINGEN, GEMFR. GEBIET"``). No KBA Gemeinde table has a row for one
 #: (no vehicles are registered there), so such a label must NOT be folded onto
@@ -130,7 +130,7 @@ def normalize_gemeinde_name(name: Optional[str]) -> str:
     Fixes issue #161: :meth:`PowertrainModel.powertrain_probabilities` looks up
     ``(kreis_ags5, gemeinde)`` in a dict built from the KBA FZ 27.17 Gemeinde
     tilt table, while the household home Gemeinde comes from the BBSR RegioStaR
-    ``name_20`` reference. Without normalisation the two vocabularies almost
+    ``name_YY`` reference (``name_23`` since ADR-0180). Without normalisation the two vocabularies almost
     never agree: FZ 27.17 is ASCII-transliterated and often abbreviated
     (``"RUEHEN"``, ``"GIFHORN,ST."``), while RegioStaR carries proper unicode
     umlauts and the full suffix (``"Ruehen"`` written as "Rühen",
@@ -191,7 +191,10 @@ def normalize_gemeinde_name(name: Optional[str]) -> str:
 # --------------------------------------------------------------------------- #
 # Gebietsstand crosswalk: 2020 population labels -> current KBA Gemeinden
 # --------------------------------------------------------------------------- #
-#: Municipal mergers that took effect AFTER the population's Gebietsstand-2020
+#: Since ADR-0180 the population's Gemeinde names come from Gebietsstand 2023, which
+#: already carries the merged Langelsheim, so these entries no longer fire for residents;
+#: they are kept for labels of the older vocabulary. Originally: municipal mergers that
+#: took effect AFTER the population's Gebietsstand-2020
 #: Gemeinde vocabulary (BBSR RegioStaR ``name_20``) but BEFORE the KBA reference
 #: vintages (FZ 27.17 2025-01-01, kba_gemeinde_ev 2026-04-01). Without the
 #: crosswalk the household label has no counterpart in the reference table and
@@ -991,7 +994,7 @@ class PowertrainModel:
         RegioStaR Gemeinde label joins the KBA FZ 27.17 sheet's
         ASCII-transliterated, abbreviated spelling. The normalised name is then
         passed through :func:`apply_gebietsstand_crosswalk` so a household whose
-        Gebietsstand-2020 Gemeinde was merged into a successor Gemeinde before
+        Gebietsstand-2020 Gemeinde (the vocabulary before ADR-0180) was merged into a successor Gemeinde before
         the KBA vintage still finds its (successor's) reference row instead of
         degrading to the Kreis share.
 
