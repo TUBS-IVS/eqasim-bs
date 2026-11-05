@@ -36,7 +36,10 @@ evidence:
     instrumented: true
     log_marker: '[mid_donor] sex: primary'
     note: Observed/imputed sex rates and direct age coverage are logged; no observed
-      binary-sex pool raises instead of producing all-male donors.
+      binary-sex pool raises instead of producing all-male donors. The sex imputation is
+      information within SEX_IMPUTED_WARN_SHARE (MiD 2023 carries HP_SEX 3 / 9 by construction;
+      the measured share is in run manifest prod100-expected-message-levels-2026-11-04) and a
+      warning above it.
   reference:
     kind: none
     note: This restores source attributes; it is not a demographic calibration.

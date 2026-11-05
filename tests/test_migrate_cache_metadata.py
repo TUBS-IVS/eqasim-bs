@@ -517,11 +517,11 @@ def test_explainer_hints_at_the_migration_for_legacy_md5_module_hashes(project):
                                    metadata.read_meta(str(project.working)), rerun_required=False)
     (assessment,) = assessments.values()
     assert assessment.reasons == ["module_hash_changed"] and assessment.legacy_module_hash
-    report = staleness.format_report(assessments)
-    assert ("# WARNING: 1 entries carry a legacy md5 module hash (never migrated, or kept legacy by the migration "
-            "because the stage code changed since the cache was built): run scripts/migrate_cache_metadata.py "
-            "if this cache was never migrated" in report.splitlines())
-    assert report.splitlines()[-1].startswith("# 1 stages:")      # the summary stays the last line
+    report = staleness.format_report(assessments).splitlines()
+    (hint,) = [line for line in report if "legacy md5 module hash" in line]
+    assert hint.startswith(staleness.ERROR_LINE_PREFIX)           # never migrated: the one costly state
+    assert "1 entries" in hint and "scripts/migrate_cache_metadata.py" in hint
+    assert report[-1].startswith("# 1 stages:")                   # the summary stays the last line
     project.migrate("mig_stage", rev)
     assessments = staleness.assess(project.registry("mig_stage"), str(project.working),
                                    metadata.read_meta(str(project.working)), rerun_required=False)
@@ -699,6 +699,14 @@ def test_the_per_entry_line_and_the_summary_carry_the_output_hashing_seconds(pro
     assert re.search(r"output hashing took \d+\.\d+ s in total", caplog.text)
 
 
+def _load_launcher():
+    spec = importlib.util.spec_from_file_location(
+        "run_synpp_hint_mod", pathlib.Path(__file__).resolve().parents[1] / "scripts" / "run_synpp.py")
+    launcher = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(launcher)
+    return launcher
+
+
 def test_the_launcher_logs_the_unmigrated_cache_hint_at_error_level(project, caplog):
     project.write("mig_stage.py", PLAIN_STAGE)
     project.commit()
@@ -707,11 +715,69 @@ def test_the_launcher_logs_the_unmigrated_cache_hint_at_error_level(project, cap
     config_path.write_text(yaml.safe_dump({"working_directory": str(project.working), "run": ["mig_stage"],
                                            "config": project.config}), encoding="utf-8")
     project.reload()
-    spec = importlib.util.spec_from_file_location(
-        "run_synpp_hint_mod", pathlib.Path(__file__).resolve().parents[1] / "scripts" / "run_synpp.py")
-    launcher = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(launcher)
     with caplog.at_level("INFO"):
-        launcher.explain_before_run(str(config_path))        # no gate: the launch continues
+        _load_launcher().explain_before_run(str(config_path))        # no gate: the launch continues
+    hint = [r for r in caplog.records if "legacy md5 module hash" in r.getMessage()]
+    assert hint and all(r.levelname == "ERROR" for r in hint)
+
+
+def test_the_launcher_does_not_log_an_error_for_an_entry_the_migration_kept_legacy(project, caplog):
+    """C5c: after a migration a legacy md5 hash marks a stage whose code changed since the cache was
+    built. It is genuinely stale (listed STALE), so it is information;
+    only a cache that was never migrated (the test above) is an error."""
+    project.write("mig_parent.py", PLAIN_PARENT)
+    project.write("mig_child.py", PLAIN_CHILD)
+    rev = project.commit()
+    project.legacy_run("mig_child")
+    project.write("mig_child.py", PLAIN_CHILD.replace("* 3", "* 4"))     # the code changes after the cache was built
+    counts, _ = project.migrate("mig_child", rev)
+    assert (counts["migrated"], counts["kept_legacy"]) == (1, 1)         # premise: the parent migrated, the child did not
+    config_path = project.root / "launch.yml"
+    config_path.write_text(yaml.safe_dump({"working_directory": str(project.working), "run": ["mig_child"],
+                                           "config": project.config}), encoding="utf-8")
+    project.reload()
+    with caplog.at_level("INFO"):
+        _load_launcher().explain_before_run(str(config_path))
+    hint = [r for r in caplog.records if "legacy md5 module hash" in r.getMessage()]
+    assert hint and all(r.levelname == "INFO" for r in hint)             # still reported, as information
+    assert not [r for r in caplog.records if r.levelname in ("ERROR", "CRITICAL")]
+
+
+def test_an_entry_kept_legacy_for_missing_artifacts_is_not_an_error(project, caplog):
+    """#551 review: the migration keeps an unchanged entry legacy when its .p / .cache are gone
+    (output_missing). It recomputes anyway and a second migration cannot help: information."""
+    project.write("mig_parent.py", PLAIN_PARENT)
+    project.write("mig_child.py", PLAIN_CHILD)
+    rev = project.commit()
+    project.legacy_run("mig_child")
+    child = next(entry for entry in project.meta() if entry.startswith("mig_child"))
+    shutil.rmtree(project.working / (child + ".cache"))
+    (project.working / (child + ".p")).unlink()
+    counts, _ = project.migrate("mig_child", rev)
+    assert (counts["migrated"], counts["output_missing"]) == (1, 1)       # premise: the child kept legacy, artifacts gone
+    config_path = project.root / "launch.yml"
+    config_path.write_text(yaml.safe_dump({"working_directory": str(project.working), "run": ["mig_child"],
+                                           "config": project.config}), encoding="utf-8")
+    project.reload()
+    with caplog.at_level("INFO"):
+        _load_launcher().explain_before_run(str(config_path))
+    assert not [r for r in caplog.records if r.levelname in ("ERROR", "CRITICAL")]
+
+
+def test_a_partial_fork_launch_on_an_unmigrated_cache_does_not_hide_the_error(project, caplog):
+    """#551 review: a fork launch that ran only part of the DAG writes output digests for those
+    stages. A legacy entry whose stored md5 still equals its current source was never migrated
+    (the migration would migrate it), so the next launch must still report it at ERROR."""
+    project.write("mig_parent.py", PLAIN_PARENT)
+    project.write("mig_child.py", PLAIN_CHILD)
+    project.commit()
+    project.legacy_run("mig_child")
+    project.fork_run("mig_parent")                                        # no migration; one stage re-executed
+    config_path = project.root / "launch.yml"
+    config_path.write_text(yaml.safe_dump({"working_directory": str(project.working), "run": ["mig_child"],
+                                           "config": project.config}), encoding="utf-8")
+    project.reload()
+    with caplog.at_level("INFO"):
+        _load_launcher().explain_before_run(str(config_path))
     hint = [r for r in caplog.records if "legacy md5 module hash" in r.getMessage()]
     assert hint and all(r.levelname == "ERROR" for r in hint)

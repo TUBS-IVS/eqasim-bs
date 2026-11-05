@@ -184,11 +184,21 @@ def load_mid_attributes(
     return households, persons
 
 
+# The invalid-household bucket of the MiD 2023 delivery that ``drop_invalid_households`` removes: person
+# rows with H_ID 0 and no household row of that id. Both counts are properties of the survey file, not
+# model parameters; they were measured on the raw MiD 2023 files (run manifest
+# docs/runs/prod100-expected-message-levels-2026-11-04.yml). A load that drops anything else is not the
+# delivery this model was built and checked on, which ``load_completed_donor`` reports as a warning.
+MID_2023_INVALID_HOUSEHOLD_ROWS = 0
+MID_2023_INVALID_HOUSEHOLD_PERSONS = 312
+
+
 def drop_invalid_households(households, persons, *, household_id="H_ID"):
     """Drop the invalid-household sentinel: rows whose household id is 0 or null.
 
-    Real MiD 2023 has an H_ID=0 bucket of 312 unrelated persons with mixed
-    reporting days -- not a real household; it must not be a population donor.
+    Real MiD 2023 has an H_ID=0 bucket of unrelated persons with mixed reporting days
+    (``MID_2023_INVALID_HOUSEHOLD_PERSONS``) -- not a real household; it must not be a
+    population donor.
     Returns ``(households, persons, n_hh_dropped, n_persons_dropped)``.
     """
     bad_hh = households[household_id].isna() | (households[household_id] == 0)
@@ -261,12 +271,28 @@ def load_completed_donor(
     # Drop H_ID=0 / null sentinel before any downstream logic (donor validity).
     households, persons, _n_hh_bad, _n_p_bad = drop_invalid_households(
         households, persons, household_id=MID_SEED_COLUMNS.household_id)
-    if _n_hh_bad or _n_p_bad:
+    if (_n_hh_bad, _n_p_bad) == (MID_2023_INVALID_HOUSEHOLD_ROWS,
+                                 MID_2023_INVALID_HOUSEHOLD_PERSONS):
+        # Exactly the bucket the MiD 2023 delivery carries: a fixed property of the survey file,
+        # so the count is information (still logged), not a warning.
+        logger.info(
+            "[mid.load_completed_donor] dropped %d invalid-household row(s) "
+            "(H_ID=0 or null) and %d associated person(s) from the donor data: the "
+            "invalid-household bucket of the MiD 2023 delivery, as expected; these are "
+            "not real households and must not be population donors.",
+            _n_hh_bad, _n_p_bad,
+        )
+    else:
+        # Any other count (more, fewer or none) means the file is not the delivery this model
+        # was built and checked on: another release, an edited or a corrupted file.
         logger.warning(
             "[mid.load_completed_donor] dropped %d invalid-household row(s) "
-            "(H_ID=0 or null) and %d associated person(s) from the donor data; "
-            "these are not real households and must not be population donors.",
+            "(H_ID=0 or null) and %d associated person(s) from the donor data, but the "
+            "MiD 2023 delivery carries %d row(s) and %d person(s) of that bucket: not the "
+            "delivery this model was checked on; these are not real households and must "
+            "not be population donors.",
             _n_hh_bad, _n_p_bad,
+            MID_2023_INVALID_HOUSEHOLD_ROWS, MID_2023_INVALID_HOUSEHOLD_PERSONS,
         )
 
     # Same tri-state day-filter contract as load_mid_seed: `None` -> standard
