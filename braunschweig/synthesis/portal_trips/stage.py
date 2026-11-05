@@ -36,12 +36,14 @@ from braunschweig.synthesis.portal_trips import rewrite
 from braunschweig.synthesis.portal_trips import timing as _timing
 from braunschweig.synthesis.portal_trips.config_keys import (
     DEFAULT_ENABLED, DEFAULT_EXTERNAL_POINT_DISTANCE_TOLERANCE, DEFAULT_FALLBACK_WARN_SHARE,
-    DEFAULT_GATE_CANDIDATES, DEFAULT_GATE_MAX_EXTRA_DETOUR_M, DEFAULT_GATE_SERVICE_WINDOW_S, DEFAULT_MAX_ROUTABLE_DISTANCE_M,
+    DEFAULT_GATE_CANDIDATES, DEFAULT_GATE_MAX_EXTRA_DETOUR_M, DEFAULT_GATE_SERVICE_WINDOW_S,
+    DEFAULT_MAX_ROUTABLE_DISTANCE_M,
     DEFAULT_MIN_STAY_S, DEFAULT_MODE_SUBSTITUTION_WARN_SHARE, DEFAULT_NO_CONNECTION_WARN_SHARE,
     DEFAULT_NO_CONNECTION_LAST_RESORT, DEFAULT_PT_GATE_MODES, DEFAULT_SHIFT_RETURN_EARLIER, DEFAULT_SHIFT_STEP_S,
     DEFAULT_SHIFT_WINDOW_S, DEFAULT_BICYCLE_MAX_DISTANCE_M, DEFAULT_WALK_MAX_DISTANCE_M, KEY_BICYCLE_MAX_DISTANCE_M,
     KEY_ENABLED, KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE, KEY_FALLBACK_WARN_SHARE,
-    KEY_GATE_CANDIDATES, KEY_GATE_MAX_EXTRA_DETOUR_M, KEY_GATE_SERVICE_WINDOW_S, KEY_MAX_ROUTABLE_DISTANCE_M, KEY_MIN_STAY_S,
+    KEY_GATE_CANDIDATES, KEY_GATE_MAX_EXTRA_DETOUR_M, KEY_GATE_SERVICE_WINDOW_S, KEY_MAX_ROUTABLE_DISTANCE_M,
+    KEY_MIN_STAY_S,
     KEY_MODE_SUBSTITUTION_WARN_SHARE, KEY_NO_CONNECTION_LAST_RESORT, KEY_NO_CONNECTION_WARN_SHARE, KEY_PT_GATE_MODES,
     KEY_SHIFT_RETURN_EARLIER, KEY_SHIFT_STEP_S, KEY_SHIFT_WINDOW_S, KEY_WALK_MAX_DISTANCE_M, RNG_OFFSET,
     validate_settings)
@@ -346,8 +348,8 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     The pt stays take a timetable-aware gate (#465): ``schedule`` is the pre-cut transit schedule
     (``braunschweig.data.transit.schedule.Schedule``), ``router`` the batch pt router
     (``braunschweig.data.transit.connections.Router``: tasks frame -> (trips, legs)), ``pt_gate_modes``
-    ``"all"`` or the transit modes allowed as gates, and ``gate_settings`` the dict with ``n_candidates``, ``max_extra_detour_m``,
-    ``service_window_s``, ``shift_window_s``, ``shift_step_s``, ``min_stay_s`` and ``no_connection_warn_share``.
+    ``"all"`` or the transit modes allowed as gates, and ``gate_settings`` the dict with ``n_candidates``,
+    ``max_extra_detour_m``, ``service_window_s``, ``shift_window_s``, ``shift_step_s``, ``min_stay_s`` and ``no_connection_warn_share``.
     A pt stay without an admissible gate is resolved by ``no_connection.resolve_no_connection`` (whole-tour
     mode switch, time shift, kept with its nearest directional exit stop); every outcome is counted in the
     report and WARNed above ``no_connection_warn_share``.

@@ -886,12 +886,13 @@ config:
   braunschweig.portal.max_routable_distance_m: 45000
   braunschweig.portal.external_point_distance_tolerance: 0.2
   braunschweig.portal.mode_substitution_warn_share: 0.1
+  # ASSUMPTION (#572): extra pt gate detour (m) over the best directional exit stop;
+  # see braunschweig/synthesis/portal_trips/config_keys.py
+  braunschweig.portal.gate_max_extra_detour_m: 10000.0
   # Straight-line metres (stay origin -> destination) beyond which a walk / bicycle portal stay is implausible
   # (ADR-0163, #465): the lower edge of the first SrV 2023 band (group all) where the mode's share falls below the
   # outside_tour_modes.min_share of 0.01. Such a stay becomes pt when the person can use neither car nor
   # car_passenger, otherwise outside_tour_modes re-modes it within its road gate class.
-  # ASSUMPTION (#572): extra detour (m) over the best directional stop; see braunschweig/synthesis/portal_trips/config_keys.py
-  braunschweig.portal.gate_max_extra_detour_m: 10000.0
   braunschweig.portal.walk_max_distance_m: 5000
   braunschweig.portal.bicycle_max_distance_m: 30000
   # Outside-tour modes (ADR-0145, #453): a tour that touches an outside activity keeps its diary mode for

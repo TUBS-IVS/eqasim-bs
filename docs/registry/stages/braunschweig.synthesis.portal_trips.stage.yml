@@ -6,7 +6,8 @@ description: >-
   (braunschweig.portal.max_routable_distance_m) becomes one outside stay at a cordon gate
   (ADR-0141, issue #442). Per stay it classifies the legs, merges consecutive far destinations,
   chooses an external point and a gate (road gate, or a schedule-derived pt exit stop chosen
-  against the timetable and the eqasim batch router, ADR-0152; both inside the cut extent; a pt stay without a
+  against the timetable and the eqasim batch router, ADR-0152, candidates served-first within an extra-detour cap,
+  ADR-0184; both inside the cut extent; a pt stay without a
   connection is resolved by a counted chain), derives the re-entry time from the donor's diary, fixes the donor's
   outbound mode for both portal legs against the synthetic person, times the outbound arrival at
   the gate (the diary duration split by the synthetic geometry, no reported distance) and the re-entry, and rewrites
@@ -45,6 +46,7 @@ decisions:
 - ADR-0027
 - ADR-0104
 - ADR-0152
+- ADR-0184
 - ADR-0163
 notes: >-
   Reads braunschweig.synthesis.commute_day.trips_day_stage (the reporting-day trips),
