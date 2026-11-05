@@ -791,7 +791,8 @@ def _wrapper_stages(incommuter_work):
         "persons": pd.DataFrame([_person_values(
             person_id=INCOMMUTER_ID, household_id=INCOMMUTER_ID,
             census_household_id=INCOMMUTER_ID, census_person_id=INCOMMUTER_ID,
-            hts_id=INCOMMUTER_ID, hts_household_id=INCOMMUTER_ID)]),
+            hts_id=INCOMMUTER_ID, hts_household_id=INCOMMUTER_ID,
+            subpopulation="incommuter")]),  # set by braunschweig.synthesis.incommuters (eqasim-bs#566)
         "activities": pd.DataFrame({
             "person_id": [INCOMMUTER_ID] * 3, "activity_index": [0, 1, 2],
             "purpose": ["home", "work", "home"],

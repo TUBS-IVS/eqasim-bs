@@ -868,6 +868,9 @@ config:
   # Set either flag to false to reproduce its legacy output; see ADR-0120.
   cordon_incommuter_donor_demographics: true
   cordon_incommuter_time_chronology: true
+  # Share of the in-commuters re-routed per iteration; KeepLastSelected gets the rest, so their synthesised
+  # mode stays fixed (ADR-0182, issue #566).
+  cordon_incommuter_reroute_weight: 0.1
   # cordon_student_incommuters_enabled: default ON (unset) when education_gravity_enabled is on;
   # set to false to disable, do NOT set true unless education_gravity is on (else RuntimeError).
   # See docs/features/student-incommuters.md.
