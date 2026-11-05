@@ -111,6 +111,30 @@ def test_demographic_nonresponse_uses_observed_pool_and_is_deterministic(caplog)
     assert "fallback 1/2 (50.0%)" in caplog.text
 
 
+def _raw_mid_with_sex_codes(sex_codes):
+    """The two-person raw MiD fixture tiled to ``len(sex_codes)`` persons (two per household)."""
+    h, p, t = raw_mid()
+    n_tiles = len(sex_codes) // len(p)
+    persons = pd.concat([p.assign(H_ID=p["H_ID"] + 2 * k) for k in range(n_tiles)], ignore_index=True)
+    wege = pd.concat([t.assign(H_ID=t["H_ID"] + 2 * k) for k in range(n_tiles)], ignore_index=True)
+    persons["HP_SEX"] = sex_codes
+    return pd.DataFrame({"H_ID": sorted(persons["H_ID"].unique())}), persons, wege
+
+
+@pytest.mark.parametrize("n_nonbinary, level", [(2, "INFO"), (50, "WARNING")])
+def test_nonbinary_sex_share_warns_only_above_the_expected_bound(caplog, n_nonbinary, level):
+    """C5c: MiD 2023 carries HP_SEX 3 / 9 by construction, so a share near the observed one is
+    information; a share far above it is a coding problem and stays a warning. The rate is logged
+    either way."""
+    n_persons = 1000
+    codes = [9] * n_nonbinary + [1 + i % 2 for i in range(n_persons - n_nonbinary)]
+    with caplog.at_level(logging.INFO):
+        mid_donor.build_mid_donor_frames(*_raw_mid_with_sex_codes(codes), np.random.RandomState(1234))
+    (record,) = [r for r in caplog.records if "[mid_donor] sex:" in r.getMessage()]
+    assert record.levelname == level
+    assert f"fallback {n_nonbinary}/{n_persons}" in record.getMessage()
+
+
 def test_all_missing_sex_cannot_silently_become_all_male():
     h, p, t = raw_mid()
     p["HP_SEX"] = [9, 9]
