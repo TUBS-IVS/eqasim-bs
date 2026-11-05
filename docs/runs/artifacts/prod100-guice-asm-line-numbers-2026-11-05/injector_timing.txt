@@ -1,0 +1,4 @@
+=== 1. injector build time (InjectorBuilder.build in a fresh JVM, JDK 25.0.4.1), 5 runs per class path, interleaved
+before: runs (ms) = 3264, 3330, 4168, 5633, 3321; median = 3330 ms; 'Failed loading line numbers' lines over the 5 JVMs = 5
+after : runs (ms) = 3276, 3864, 4318, 3455, 3175; median = 3455 ms; 'Failed loading line numbers' lines over the 5 JVMs = 0
+

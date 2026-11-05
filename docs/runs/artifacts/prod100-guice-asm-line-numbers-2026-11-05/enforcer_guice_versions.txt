@@ -1,0 +1,45 @@
+# mvn -T 1 -B -ntp validate   (JDK 25.0.4.1, Maven 3.9.9, maven-enforcer-plugin 3.5.0, rule requireSameVersions over com.google.inject:* and com.google.inject.extensions:*)
+
+== 1. the final pom, all modules
+mvn exit=0
+[INFO] --- enforcer:3.5.0:enforce (guice-jars-of-one-version) @ eqasim ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.RequireSameVersions passed
+[INFO] --- enforcer:3.5.0:enforce (guice-jars-of-one-version) @ core ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.RequireSameVersions passed
+[INFO] --- enforcer:3.5.0:enforce (guice-jars-of-one-version) @ switzerland ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.RequireSameVersions passed
+[INFO] --- enforcer:3.5.0:enforce (guice-jars-of-one-version) @ ile_de_france ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.RequireSameVersions passed
+[INFO] --- enforcer:3.5.0:enforce (guice-jars-of-one-version) @ braunschweig ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.RequireSameVersions passed
+[INFO] --- enforcer:3.5.0:enforce (guice-jars-of-one-version) @ sao_paulo ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.RequireSameVersions passed
+[INFO] --- enforcer:3.5.0:enforce (guice-jars-of-one-version) @ san_francisco ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.RequireSameVersions passed
+[INFO] --- enforcer:3.5.0:enforce (guice-jars-of-one-version) @ los_angeles ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.RequireSameVersions passed
+[INFO] --- enforcer:3.5.0:enforce (guice-jars-of-one-version) @ server ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.RequireSameVersions passed
+[INFO] Reactor Summary for eqasim 2.3.1:
+[INFO] eqasim ............................................. SUCCESS [  2.107 s]
+[INFO] core ............................................... SUCCESS [  0.392 s]
+[INFO] switzerland ........................................ SUCCESS [  0.444 s]
+[INFO] ile_de_france ...................................... SUCCESS [  0.314 s]
+[INFO] braunschweig ....................................... SUCCESS [  2.105 s]
+[INFO] sao_paulo .......................................... SUCCESS [  0.286 s]
+[INFO] san_francisco ...................................... SUCCESS [  0.297 s]
+[INFO] los_angeles ........................................ SUCCESS [  0.288 s]
+[INFO] server ............................................. SUCCESS [  0.428 s]
+[INFO] BUILD SUCCESS
+
+== 2. mutation: guice-grapher pinned to 4.2.2 on purpose, module core
+mvn exit=1
+[INFO] --- enforcer:3.5.0:enforce (guice-jars-of-one-version) @ core ---
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-enforcer-plugin:3.5.0:enforce (guice-jars-of-one-version) on project core: 
+[ERROR] Rule 0: org.apache.maven.enforcer.rules.RequireSameVersions failed with message:
+[ERROR] Found entries with different versions
+[ERROR] Entries with version 7.0.0
+[ERROR] Entries with version 4.2.2
+
+pom restored: True

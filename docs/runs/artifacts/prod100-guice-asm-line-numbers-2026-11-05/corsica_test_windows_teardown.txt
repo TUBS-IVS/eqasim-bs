@@ -1,0 +1,27 @@
+# mvn -T 1 -B -ntp -pl ile_de_france -am test -Dtest=TestCorisica -DforkCount=1 -DargLine=-Xmx1536m -Dmatsim.preferLocalDtds=true (JDK 25.0.4.1, Windows)
+# The test fails in its tearDown on Windows (corsica_test\... scorestats.csv is still open when the test deletes its output directory), on the baseline AND on the changed tree.
+# The pipeline part of the test ran to the end both times. The warning appears on the baseline only. CI runs on Linux.
+
+== BASELINE (source copy of origin/main c4051c167)
+WARNUNG: Failed loading line numbers. ASM is probably out of date. Further failures won't be logged.
+[ERROR] Tests run: 1, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 87.88 s <<< FAILURE! -- in org.eqasim.ile_de_france.TestCorisica
+[ERROR] org.eqasim.ile_de_france.TestCorisica.testCorsicaPipeline -- Time elapsed: 87.80 s <<< ERROR!
+org.apache.commons.io.IOExceptionList: 2 exception(s): [org.apache.commons.io.IOIndexedException: IOException #13: Cannot delete file: corsica_test\cut_output_mode_choice, org.apache.commons.io.IOIndexedException: IOException #23: Cannot delete file: corsica_test\mode_choice_output]
+	at org.eqasim.ile_de_france.TestCorisica.tearDown(TestCorisica.java:42)
+Caused by: java.nio.file.FileSystemException: corsica_test\cut_output_mode_choice\scorestats.csv: Der Prozess kann nicht auf die Datei zugreifen, da sie von einem anderen Prozess verwendet wird
+[ERROR]   TestCorisica.tearDown:42 � IOExceptionList 2 exception(s): [org.apache.commons.io.IOIndexedException: IOException #13: Cannot delete file: corsica_test\cut_output_mode_choice, org.apache.commons.io.IOIndexedException: IOException #23: Cannot delete file: corsica_test\mode_choice_output]
+[ERROR] Tests run: 1, Failures: 0, Errors: 1, Skipped: 0
+[INFO] BUILD FAILURE
+lines with 'Failed loading line numbers': 1
+
+== CHANGED TREE (the work tree of the change)
+[ERROR] Tests run: 1, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 91.47 s <<< FAILURE! -- in org.eqasim.ile_de_france.TestCorisica
+[ERROR] org.eqasim.ile_de_france.TestCorisica.testCorsicaPipeline -- Time elapsed: 91.37 s <<< ERROR!
+org.apache.commons.io.IOExceptionList: 2 exception(s): [org.apache.commons.io.IOIndexedException: IOException #13: Cannot delete file: corsica_test\cut_output_mode_choice, org.apache.commons.io.IOIndexedException: IOException #23: Cannot delete file: corsica_test\mode_choice_output]
+	at org.eqasim.ile_de_france.TestCorisica.tearDown(TestCorisica.java:42)
+Caused by: java.nio.file.FileSystemException: corsica_test\cut_output_mode_choice\scorestats.csv: Der Prozess kann nicht auf die Datei zugreifen, da sie von einem anderen Prozess verwendet wird
+[ERROR]   TestCorisica.tearDown:42 � IOExceptionList 2 exception(s): [org.apache.commons.io.IOIndexedException: IOException #13: Cannot delete file: corsica_test\cut_output_mode_choice, org.apache.commons.io.IOIndexedException: IOException #23: Cannot delete file: corsica_test\mode_choice_output]
+[ERROR] Tests run: 1, Failures: 0, Errors: 1, Skipped: 0
+[INFO] BUILD FAILURE
+lines with 'Failed loading line numbers': 0
+

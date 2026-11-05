@@ -1,0 +1,100 @@
+== same OLD classpath, run 1 against run 2 (noise baseline)
+files: A=107 B=107; only in A: []; only in B: []
+files with different SHA-256: 15
+  ITERS\it.0\0.eqasim_activities_iteration.csv.gz: lines A=21249 B=21249; same multiset of lines: True; first differing line index: 6905
+  ITERS\it.0\0.eqasim_legs_iteration.csv.gz: lines A=20137 B=20137; same multiset of lines: True; first differing line index: 1840
+  ITERS\it.0\0.eqasim_trips_iteration.csv.gz: lines A=15545 B=15545; same multiset of lines: True; first differing line index: 1201
+  ITERS\it.0\0.events.xml.gz: lines A=483395 B=483395; same multiset of lines: True; first differing line index: 6060
+  ITERS\it.2\2.eqasim_activities_iteration.csv.gz: lines A=21249 B=21249; same multiset of lines: True; first differing line index: 8252
+  ITERS\it.2\2.eqasim_legs_iteration.csv.gz: lines A=21057 B=21057; same multiset of lines: True; first differing line index: 3819
+  ITERS\it.2\2.eqasim_trips_iteration.csv.gz: lines A=15545 B=15545; same multiset of lines: True; first differing line index: 2548
+  ITERS\it.2\2.events.xml.gz: lines A=464242 B=464242; same multiset of lines: True; first differing line index: 6745
+  eqasim_activities.csv.gz: lines A=21249 B=21249; same multiset of lines: True; first differing line index: 8252
+  eqasim_legs.csv.gz: lines A=21057 B=21057; same multiset of lines: True; first differing line index: 3819
+  eqasim_trips.csv.gz: lines A=15545 B=15545; same multiset of lines: True; first differing line index: 2548
+  modules.dot: lines A=1447 B=1447; same multiset of lines: False; first differing line index: 2
+      --- A
+      +++ B
+      @@ -3,104 +3,88 @@
+      -x182 [margin="0.02,0", shape=box, style=dashed, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#ffffff"><font color="#000000" point-size="10">@Named("outside")<
+      -x248 [margin="0.02,0", shape=box, style=dashed, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#ffffff"><font color="#000000" point-size="10">@Element(setName=,
+      -x428 [margin="0.02,0", shape=box, style=dashed, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#ffffff"><font color="#000000" point-size="10">@Element(setName=,
+      -x321 [margin="0.02,0", shape=box, style=dashed, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#ffffff"><font color="#000000" point-size="10">@Named("bike")<br 
+      -x595 [margin="0.02,0", shape=box, style=solid, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#aaaaaa"><font color="#ffffff" point-size="10">null:1<br align="le
+      -x332 [margin="0.02,0", shape=box, style=dashed, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#ffffff"><font color="#000000">Mobsim<br align="left"/></font></t
+      -x217 [margin="0.02,0", shape=box, style=solid, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#aaaaaa"><font color="#ffffff" point-size="10">Injector.java:138<b
+      -x518 [margin="0.02,0", shape=box, style=solid, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#aaaaaa"><font color="#ffffff" point-size="10">null:1<br align="le
+      -x362 [margin="0.02,0", shape=box, style=dashed, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#ffffff"><font color="#000000" point-size="10">@Element(setName=,
+  output_events.xml.gz: lines A=464242 B=464242; same multiset of lines: True; first differing line index: 6745
+  stopwatch.csv: timing/plot output (expected to differ between any two runs)
+  stopwatch.png: timing/plot output (expected to differ between any two runs)
+== same NEW classpath, run 1 against run 2 (noise baseline)
+files: A=107 B=107; only in A: []; only in B: []
+files with different SHA-256: 15
+  ITERS\it.0\0.eqasim_activities_iteration.csv.gz: lines A=21249 B=21249; same multiset of lines: True; first differing line index: 6243
+  ITERS\it.0\0.eqasim_legs_iteration.csv.gz: lines A=20137 B=20137; same multiset of lines: True; first differing line index: 840
+  ITERS\it.0\0.eqasim_trips_iteration.csv.gz: lines A=15545 B=15545; same multiset of lines: True; first differing line index: 539
+  ITERS\it.0\0.events.xml.gz: lines A=483395 B=483395; same multiset of lines: True; first differing line index: 6061
+  ITERS\it.2\2.eqasim_activities_iteration.csv.gz: lines A=21249 B=21249; same multiset of lines: True; first differing line index: 6233
+  ITERS\it.2\2.eqasim_legs_iteration.csv.gz: lines A=21057 B=21057; same multiset of lines: True; first differing line index: 859
+  ITERS\it.2\2.eqasim_trips_iteration.csv.gz: lines A=15545 B=15545; same multiset of lines: True; first differing line index: 529
+  ITERS\it.2\2.events.xml.gz: lines A=464242 B=464242; same multiset of lines: True; first differing line index: 6052
+  eqasim_activities.csv.gz: lines A=21249 B=21249; same multiset of lines: True; first differing line index: 6233
+  eqasim_legs.csv.gz: lines A=21057 B=21057; same multiset of lines: True; first differing line index: 859
+  eqasim_trips.csv.gz: lines A=15545 B=15545; same multiset of lines: True; first differing line index: 529
+  output_events.xml.gz: lines A=464242 B=464242; same multiset of lines: True; first differing line index: 6052
+  output_links.csv.gz: lines A=6418 B=6418; same multiset of lines: False; first differing line index: 0
+  stopwatch.csv: timing/plot output (expected to differ between any two runs)
+  stopwatch.png: timing/plot output (expected to differ between any two runs)
+== OLD against NEW classpath (the fix)
+files: A=107 B=107; only in A: []; only in B: []
+files with different SHA-256: 15
+  ITERS\it.0\0.eqasim_activities_iteration.csv.gz: lines A=21249 B=21249; same multiset of lines: True; first differing line index: 6905
+  ITERS\it.0\0.eqasim_legs_iteration.csv.gz: lines A=20137 B=20137; same multiset of lines: True; first differing line index: 1840
+  ITERS\it.0\0.eqasim_trips_iteration.csv.gz: lines A=15545 B=15545; same multiset of lines: True; first differing line index: 1201
+  ITERS\it.0\0.events.xml.gz: lines A=483395 B=483395; same multiset of lines: True; first differing line index: 6093
+  ITERS\it.2\2.eqasim_activities_iteration.csv.gz: lines A=21249 B=21249; same multiset of lines: True; first differing line index: 6407
+  ITERS\it.2\2.eqasim_legs_iteration.csv.gz: lines A=21057 B=21057; same multiset of lines: True; first differing line index: 1160
+  ITERS\it.2\2.eqasim_trips_iteration.csv.gz: lines A=15545 B=15545; same multiset of lines: True; first differing line index: 703
+  ITERS\it.2\2.events.xml.gz: lines A=464242 B=464242; same multiset of lines: True; first differing line index: 6052
+  eqasim_activities.csv.gz: lines A=21249 B=21249; same multiset of lines: True; first differing line index: 6407
+  eqasim_legs.csv.gz: lines A=21057 B=21057; same multiset of lines: True; first differing line index: 1160
+  eqasim_trips.csv.gz: lines A=15545 B=15545; same multiset of lines: True; first differing line index: 703
+  modules.dot: lines A=1447 B=1447; same multiset of lines: False; first differing line index: 2
+      --- A
+      +++ B
+      @@ -3,137 +3,506 @@
+      -x182 [margin="0.02,0", shape=box, style=dashed, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#ffffff"><font color="#000000" point-size="10">@Named("outside")<
+      -x248 [margin="0.02,0", shape=box, style=dashed, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#ffffff"><font color="#000000" point-size="10">@Element(setName=,
+      -x428 [margin="0.02,0", shape=box, style=dashed, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#ffffff"><font color="#000000" point-size="10">@Element(setName=,
+      -x321 [margin="0.02,0", shape=box, style=dashed, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#ffffff"><font color="#000000" point-size="10">@Named("bike")<br 
+      -x595 [margin="0.02,0", shape=box, style=solid, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#aaaaaa"><font color="#ffffff" point-size="10">null:1<br align="le
+      -x332 [margin="0.02,0", shape=box, style=dashed, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#ffffff"><font color="#000000">Mobsim<br align="left"/></font></t
+      -x217 [margin="0.02,0", shape=box, style=solid, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#aaaaaa"><font color="#ffffff" point-size="10">Injector.java:138<b
+      -x518 [margin="0.02,0", shape=box, style=solid, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#aaaaaa"><font color="#ffffff" point-size="10">null:1<br align="le
+      -x362 [margin="0.02,0", shape=box, style=dashed, label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0"><tr><td align="left" port="header" bgcolor="#ffffff"><font color="#000000" point-size="10">@Element(setName=,
+  output_events.xml.gz: lines A=464242 B=464242; same multiset of lines: True; first differing line index: 6052
+  stopwatch.csv: timing/plot output (expected to differ between any two runs)
+  stopwatch.png: timing/plot output (expected to differ between any two runs)
+== key results and the output files that carry a source line (abdetails.py)
+== byte-identical key results in all four runs?
+  output_plans.xml.gz          ['c48d71c75d50', 'c48d71c75d50', 'c48d71c75d50', 'c48d71c75d50']  all equal: True
+  scorestats.csv               ['41fac37d3c12', '41fac37d3c12', '41fac37d3c12', '41fac37d3c12']  all equal: True
+  modestats.csv                ['9102eb3d0c9a', '9102eb3d0c9a', '9102eb3d0c9a', '9102eb3d0c9a']  all equal: True
+  traveldistancestats.csv      ['7c4202c45e3a', '7c4202c45e3a', '7c4202c45e3a', '7c4202c45e3a']  all equal: True
+  output_network.xml.gz        ['37121e298306', '37121e298306', '37121e298306', '37121e298306']  all equal: True
+  output_config.xml            ['06dea02ca121', '06dea02ca121', '06dea02ca121', '06dea02ca121']  all equal: True
+  output_households.xml.gz     ['b9caadf88607', 'b9caadf88607', 'b9caadf88607', 'b9caadf88607']  all equal: True
+  output_facilities.xml.gz     ['63ae0c6a48f2', '63ae0c6a48f2', '63ae0c6a48f2', '63ae0c6a48f2']  all equal: True
+== output_links.csv.gz: after vs after2
+  header: ['link', 'from_node', 'to_node', 'length', 'freespeed', 'capacity', 'lanes', 'modes'] ... rows: 6418 6418
+  differing rows: 42
+   row 0 differing columns: [('osm:way:psv', 'osm:way:psv', 'osm:way:service'), ('osm:way:service', 'osm:way:service', 'osm:way:psv')]
+   row 627 differing columns: [('osm:way:psv', 'yes', ''), ('osm:way:service', '', 'yes')]
+   row 1064 differing columns: [('osm:way:psv', '', 'siding'), ('osm:way:service', 'siding', '')]
+  before == before2 == after for this file: 568fec453d46 568fec453d46 568fec453d46 342d89285c74
+== modules.dot (Guice grapher output): labels without a source file, 'null:1', and labels with a real file:line
+  melun-before   'null:1' labels =   62   'File.java:NN' labels =  135
+  melun-before2  'null:1' labels =   62   'File.java:NN' labels =  135
+  melun-after    'null:1' labels =    0   'File.java:NN' labels =  197
+  melun-after2   'null:1' labels =    0   'File.java:NN' labels =  197
