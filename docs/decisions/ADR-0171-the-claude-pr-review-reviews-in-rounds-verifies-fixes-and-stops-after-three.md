@@ -52,12 +52,13 @@
 - **Change (central review TUBS-IVS/claude-pr-review v1.2.0, PR TUBS-IVS/claude-pr-review#2; `v1` moved on
   2026-11-05 to merge commit `3af00e8`):** after `rereview.max_rounds` automatic rounds, the review no longer stops
   outright. A push while findings are still open gets a verify round on `rereview.verify_tier`, at most
-  `rereview.verify_after_cap` of them (optional key, default 2). A push with no open finding stays skipped as
+  `rereview.verify_after_cap` of them (optional key; its default, 2 in v1.2.0, is owned by the central review). A push with no open finding stays skipped as
   `round cap`. A `Fixed ...` reply in a thread that is already resolved keeps the finding open for that
   verification, so a fix claim is checked by the model instead of being taken at its word.
 - **Why bounded:** the cap exists to stop repeated full reviews (Context). A verify round reads only the open
   findings at the light tier, and the second limit keeps a PR that never closes its findings from buying
-  unlimited rounds. ASSUMPTION: the default of 2 is a starting value, re-tune it from the cost records.
+  unlimited rounds. ASSUMPTION: that default is a starting value; to re-tune it for this repository from the cost
+  records, set the key in `.github/claude-review.yml` with its own dated ASSUMPTION.
 - **This repository:** eqasim-bs calls the review via `@v1`, so the behaviour was live from the moment `v1` moved;
   `.github/claude-review.yml` keeps the default (no `verify_after_cap` key) and only its comment changed.
 
