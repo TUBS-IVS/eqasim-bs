@@ -155,6 +155,26 @@ def test_donor_trips_immobile_donor_yields_no_rows_but_others_get_contract_colum
     assert "hvm_imp" not in trips.columns
 
 
+def test_donor_trips_carry_the_invented_closure_flag_of_a_day_not_ending_at_home():
+    """#570 (ADR-0183): the splice copies this flag and the portal stage reads it, so a donor day that the plan
+    repair closes must reach the donor trips with True on the invented home trip only."""
+    persons = _persons_fixture()
+    donors = donor_pool.select_home_office_day_donors(persons)
+    wege = _wege_fixture()
+    wege.loc[5, "W_ZWECK"] = 4  # donor "2_2" ends its diary at a shop instead of at home
+    attributes = donor_pool.donor_attributes(donors, persons, _households_fixture(), wege)
+    trips = donor_pool.donor_trips(
+        donors, attributes, wege, random_seed=0,
+        escort_purpose=False, escort_passive_education=False,
+        explicit_round_trip_purposes=True,
+    )
+    closed = trips[trips["donor_id"] == "2_2"].sort_values("trip_index")
+    assert closed["following_purpose"].iloc[-1] == "home"
+    assert closed["is_synthetic_closure"].tolist() == [False, False, True]
+    assert closed["trip_key"].iloc[-1].endswith("_closure")
+    assert not trips.loc[trips["donor_id"] != "2_2", "is_synthetic_closure"].any()
+
+
 def test_donor_trips_hands_the_resample_a_sex_column_without_mixed_types(monkeypatch):
     """Regression: a `sex` column mixing NaN with "male"/"female" kills the whole donor build.
 
