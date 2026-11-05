@@ -131,7 +131,7 @@ validation:
     same two workers the machine-only formula gives (the log: "num_workers 3 -> 2"). The omission would change
     the count to 1 from a driver RSS above 86.28 - 2 x 30 = 26.28 GiB at stage start. No such driver was
     measured; the blind spot is latent here and was left unchanged (it lives in braunschweig/resources.py, see
-    the next entry).
+    the entry "what the fix costs in recomputed stages at 100 %").
   artifact: docs/runs/artifacts/prod100-java-heap-driver-rss-2026-11-04/driver_rss_by_stage_launch1.txt
 - metric: per-worker memory peak of PopulationSim batch workers (sampled lower bound)
   reference: braunschweig.resources.DEFAULT_POPSIM_WORKER_MEMORY_GB (30 GiB, the figure the gate sizes with)
