@@ -53,8 +53,8 @@
 
 - **Output change by decision.** These persons' days end at the gate; the inside part of their invented return
   disappears from the simulated trips; fewer tours switch to car or a lift for want of a return connection; fewer
-  days move earlier through the day-end margin (ADR-0154, ADR-0160), whose last arrival was often the invented
-  return. No observed reference exists for these shares; the before/after measurement is planned in #570.
+  days are expected to move earlier through the day-end margin (ADR-0154, ADR-0160), where the invented return
+  was the last arrival (expectation, see #570). No observed reference exists for these shares; the before/after measurement is planned in #570.
 - **Simulation.** MATSim does not reject a plan whose first and last activity types differ: it warns once and scores
   the first activity from midnight and the last one to midnight (`CharyparNagelActivityScoring`, checked at the
   matsim-libs tags `matsim-0.7.0` to `2026.0`). The written config turns activity scoring off for every type,
@@ -74,7 +74,10 @@
 ## Evidence
 
 - Issue #570; commits `2701f139` (failing test of the primary path), `773e03fe` (the rule in the portal stage),
-  `e8678cb4` (the flag survives the home-office splice).
+  `e8678cb4` (the flag survives the home-office splice), `90e11de3`, `d05efe42` and `5fc16b65` (tests below).
 - Tests: `tests/test_portal_trips_stage.py::test_a_portal_stay_whose_return_is_an_invented_closure_ends_the_day_outside`
   and `::test_inconsistent_closure_flags_fail_fast`;
-  `tests/test_commute_day_plan_replacement.py::test_spliced_rows_keep_the_donors_synthetic_closure_flag`.
+  `::test_closure_return_rule_on_multi_stay_and_merged_stay_days`;
+  `tests/test_commute_day_plan_replacement.py::test_spliced_rows_keep_the_donors_synthetic_closure_flag`;
+  the donor closure-flag contract tests in `tests/test_commute_day_donor_pool.py`;
+  `tests/test_population_writer_portal_gate.py::test_a_day_ending_at_a_portal_gate_passes_the_activities_transform_and_the_writer`.
