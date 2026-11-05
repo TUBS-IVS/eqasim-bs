@@ -1004,7 +1004,8 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
         elif severity == "warning":
             message += (
                 f" Not aborting: the {worker_memory_gb:g} GB per-worker figure is a "
-                f"100%-SCALE measurement (the 2026-07-10 OOM post-mortem) and this run "
+                f"100%-SCALE figure (attributed to the 2026-07-10 OOM post-mortem, of "
+                f"which no committed record exists) and this run "
                 f"is configured at {KEY_SAMPLING_RATE} = {sampling_rate!r}. The "
                 f"per-worker footprint at this sampling rate has NOT been measured and "
                 f"no scale-to-memory relationship is assumed, so the mismatch is "

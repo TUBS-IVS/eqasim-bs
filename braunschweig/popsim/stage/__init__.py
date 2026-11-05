@@ -727,10 +727,11 @@ def configure(context):
     context.config(KEY_UV)
     context.config(KEY_MAX_CELLS, 3000)
     context.config(KEY_WORKERS, 3)
-    # Measured peak memory of ONE PopulationSim batch worker (2026-07-10 OOM
-    # post-mortem: 25-30 GB per worker). Bounds num_workers against the machine's
-    # RAM at the point of use (_read_batching_and_scope_config), never against the
-    # core count. Declared volatile: an operational bound with no influence on
+    # Assumed peak memory of ONE PopulationSim batch worker (25-30 GB per worker,
+    # attributed to the 2026-07-10 OOM post-mortem, of which no committed record
+    # exists; see braunschweig.resources.DEFAULT_POPSIM_WORKER_MEMORY_GB). Bounds
+    # num_workers against the machine's RAM at the point of use
+    # (_read_batching_and_scope_config), never against the core count. Declared volatile: an operational bound with no influence on
     # any result, so changing it never invalidates the (expensive) popsim stage
     # cache. KEY_WORKERS above keeps its own declaration and default unchanged.
     from braunschweig import resources
