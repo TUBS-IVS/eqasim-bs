@@ -272,8 +272,8 @@ dropped share per mode (`trips beyond N m dropped`), and the candidate stage log
 
 ## Timetable-aware pt gates and the no-connection chain (ADR-0152, issue #465)
 
-- `gates.choose_pt_gates` picks the gate of a pt stay: directional exit stops, the `gate_candidates` smallest
-  detours, served within `gate_service_window_s`, connection checked by the eqasim batch router
+- `gates.choose_pt_gates` picks the gate of a pt stay: directional exit stops within `gate_max_extra_detour_m` of the best
+  detour, the served ones (`gate_service_window_s`), the `gate_candidates` smallest detours of those (issue #572), connection checked by the eqasim batch router
   (`braunschweig/data/transit/connections.py`). The stage depends on `matsim.runtime.eqasim`,
   `matsim.runtime.java`, `matsim.scenario.supply.gtfs` and `matsim.scenario.supply.processed`.
 - `no_connection.resolve_no_connection` handles stays without a gate in a counted order (tour to car, tour to car

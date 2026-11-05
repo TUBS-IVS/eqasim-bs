@@ -72,7 +72,7 @@ notes: >-
   stage also depends on matsim.runtime.eqasim, matsim.runtime.java and matsim.scenario.supply.gtfs (the eqasim
   batch router RunBatchPublicTransportRouter checks connections) and on the schedule of
   matsim.scenario.supply.processed. Config keys (portal_trips/config_keys.py, prefix braunschweig.portal.):
-  pt_gate_modes, gate_service_window_s, gate_candidates, shift_window_s, shift_step_s, min_stay_s,
+  pt_gate_modes, gate_service_window_s, gate_candidates, gate_max_extra_detour_m, shift_window_s, shift_step_s, min_stay_s,
   no_connection_warn_share. Fallback transparency: the no-connection chain (gate_found, tour_to_car,
   tour_to_car_passenger, departure_shifted, tour_to_car_passenger_lift, kept_no_connection) is counted and logged
   as rates over the pt stays under [portal_trips]; the share of kept_no_connection warns above

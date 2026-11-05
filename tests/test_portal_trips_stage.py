@@ -119,7 +119,7 @@ def test_execute_off_passes_the_trips_frame_through_unchanged():
 # Pure entry point
 # --------------------------------------------------------------------------------------------------
 
-GATE_SETTINGS = {"n_candidates": 5, "service_window_s": 3600.0, "shift_window_s": 7200.0, "shift_step_s": 1800.0,
+GATE_SETTINGS = {"n_candidates": 5, "max_extra_detour_m": 10000.0, "service_window_s": 3600.0, "shift_window_s": 7200.0, "shift_step_s": 1800.0,
                  "min_stay_s": 1800.0, "no_connection_warn_share": 0.05}
 
 
@@ -682,7 +682,7 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
 
 
 def _gate_values():
-    return {keys.KEY_ENABLED: True, keys.KEY_MAX_ROUTABLE_DISTANCE_M: 45000,
+    return {keys.KEY_ENABLED: True, keys.KEY_GATE_MAX_EXTRA_DETOUR_M: 10000.0, keys.KEY_MAX_ROUTABLE_DISTANCE_M: 45000,
             keys.KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE: 0.2, keys.KEY_MODE_SUBSTITUTION_WARN_SHARE: 0.1,
             keys.KEY_FALLBACK_WARN_SHARE: 0.1, "random_seed": 7, "cordon_network_buffer_fraction": 0.1,
             keys.KEY_PT_GATE_MODES: "all", keys.KEY_GATE_SERVICE_WINDOW_S: 3600.0, keys.KEY_GATE_CANDIDATES: 5,
