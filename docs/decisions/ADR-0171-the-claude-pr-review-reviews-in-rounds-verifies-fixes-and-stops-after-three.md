@@ -9,9 +9,10 @@
 
 - The automatic review (`docs/codebase/notes/claude-pr-review.md`) reviewed every push as if it were the first: the
   full PR diff against `main`, at the full tier (Opus) whenever the PR is large or critical.
-- Measured on 2026-10-23/24 from the cost artifacts `claude-review-cost-*` (20 records): PR #505 was reviewed 6 times
-  (6.3 USD), PR #504 5 times, PR #512 4 times, all at the full tier; one run cost 0.4 to 1.8 USD. The records say
-  what each run cost, not how many repeats found nothing new; that last part is not measured here.
+- Measured on 2026-10-23/24 from the cost artifacts `claude-review-cost-*` (20 records): PR #505 was reviewed 6 times,
+  PR #504 5 times, PR #512 4 times, all at the full tier. The amounts are not published since 2026-11-05 (the owner's
+  decision; `docs/codebase/notes/claude-pr-review.md`). The records say what each run cost, not how many repeats found
+  nothing new; that last part is not measured here.
 - Since 2026-10-28 Auto-fix is the standing choice for every PR, so the loop finding -> fix push -> review is the
   normal case. Nothing checked whether a fix closed a finding, and the PR description (what it claims to change and to
   have validated) never reached the model.
@@ -57,8 +58,9 @@
   verification, so a fix claim is checked by the model instead of being taken at its word.
 - **Why bounded:** the cap exists to stop repeated full reviews (Context). A verify round reads only the open
   findings at the light tier, and the second limit keeps a PR that never closes its findings from buying
-  unlimited rounds. ASSUMPTION: that default is a starting value; to re-tune it for this repository from the cost
-  records, set the key in `.github/claude-review.yml` with its own dated ASSUMPTION.
+  unlimited rounds. ASSUMPTION: that default is a starting value; to re-tune it for this repository from the run
+  records and the cost in the Anthropic Console (ADR-0181), set the key in `.github/claude-review.yml` with its own
+  dated ASSUMPTION.
 - **This repository:** eqasim-bs calls the review via `@v1`, so the behaviour was live from the moment `v1` moved;
   `.github/claude-review.yml` keeps the default (no `verify_after_cap` key) and only its comment changed.
 
