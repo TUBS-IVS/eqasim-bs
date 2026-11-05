@@ -37,7 +37,10 @@
 2. **Counted.** The stage report holds `n_stays_closure_return_dropped`; the rate over all stays is logged at INFO
    under `[portal_trips]` (log line in `docs/codebase/notes/portal-trips.md`).
 3. **Fail fast.** The portal stage requires the `is_synthetic_closure` column and raises on a missing value and on a
-   flagged return trip that is not the person's last trip.
+   flagged return trip that is not the person's last trip. Its configure step rejects the ENTD trip source
+   (`braunschweig.population.popsim.source: entd`), which runs no plan repair and so has no flag; carrying an
+   all-False flag there was rejected because that module is hashed by the PopulationSim stage, so the change would
+   recompute PopulationSim for a combination no configuration uses.
 4. **The flag survives the splice.** `donor_pool.donor_trips` carries `is_synthetic_closure` (and raises when the
    donor build lacks it); `plan_replacement` copies it onto the replaced rows like `trip_key`.
 

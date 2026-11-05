@@ -59,6 +59,13 @@ def test_configure_rejects_portal_on_without_the_cordon():
         stage.configure(_RecordingConfigureContext({"cordon_enabled": False}))
 
 
+def test_configure_rejects_portal_on_with_the_entd_trip_source():
+    """ADR-0183: the ENTD source runs no plan repair, so it has no is_synthetic_closure flag to read."""
+    with pytest.raises(ValueError, match="is_synthetic_closure"):
+        stage.configure(_RecordingConfigureContext({"cordon_enabled": True,
+                                                    "braunschweig.population.popsim.source": "entd"}))
+
+
 def test_configure_rejects_an_invalid_fallback_share():
     with pytest.raises(ValueError, match=keys.KEY_FALLBACK_WARN_SHARE.replace(".", r"\.")):
         stage.configure(_RecordingConfigureContext({"cordon_enabled": True, keys.KEY_FALLBACK_WARN_SHARE: 0.0}))

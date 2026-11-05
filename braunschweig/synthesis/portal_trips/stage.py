@@ -52,6 +52,9 @@ from braunschweig.synthesis.portal_trips.config_keys import (
 logger = logging.getLogger(__name__)
 
 _LOG_TAG = "[portal_trips]"
+#: The popsim trip source (declared with the same default by braunschweig.popsim.trips_stage).
+KEY_POPSIM_SOURCE = "braunschweig.population.popsim.source"
+DEFAULT_POPSIM_SOURCE = "mid"
 REPORT_FILE_NAME = "portal_trips_report.json"
 TRIPS_STAGE = "braunschweig.synthesis.commute_day.trips_day_stage"
 PERSONS_STAGE = "synthesis.population.enriched"
@@ -106,6 +109,13 @@ def configure(context):
     # The gates ARE the cordon: a portal layer without a cordon has nowhere to send a trip.
     if not context.config("cordon_enabled", False):
         raise ValueError(f"{KEY_ENABLED}=True requires cordon_enabled=True (the portal stays sit at the cordon gates)")
+    # The closure-return rule (ADR-0183) reads is_synthetic_closure, which only the plan repair of the MiD source
+    # writes; the ENTD source runs no plan repair, so the column never exists there. Fail at configure, not mid-run.
+    popsim_source = context.config(KEY_POPSIM_SOURCE, DEFAULT_POPSIM_SOURCE)
+    if popsim_source == "entd":
+        raise ValueError(f"{KEY_ENABLED}=True needs a trip source with the plan repair's is_synthetic_closure flag "
+                         f"(ADR-0183); {KEY_POPSIM_SOURCE}='entd' has none. Use the 'mid' source or turn the "
+                         "portal layer off.")
     context.config("cordon_network_buffer_fraction", 0.10)
     # Timetable-aware pt gates (#465): the settings, and the runtime of the batch pt router (the router is a
     # Java tool of the eqasim jar, run through eqasim.run -> java.run like in matsim.simulation.prepare).
