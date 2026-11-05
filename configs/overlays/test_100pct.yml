@@ -1,6 +1,17 @@
 ## 100% all-features overlay (full region, full pipeline, 0 MATSim iterations).
-## Memory-bound scale: max_cells 750 + num_workers 3 bound the measured 25-30 GB
-## per-worker peak (2026-07-10 OOM post-mortem) to ~90 GB on the 128 GB box.
+## matsim_last_iteration: 0 is deliberate (ADR-0070): this overlay is the full-scale
+## pipeline run without MATSim replanning. A production MATSim run overrides the value
+## per run (the eqasim mode-share termination may stop it earlier); the value used must be
+## recorded in a run manifest under docs/runs/, not here. For prod100_20261031 it is in
+## docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml; prod100_20260925 has no manifest
+## of its own (see docs/runs/freight-boundary-links-prod100-2026-10-15.yml).
+## Memory-bound scale. num_workers 3 is a ceiling: the resource gate (ADR-0126,
+## braunschweig/resources.py) clamps it at run start to what the machine's memory
+## budget allows (all figures in GiB, the gate's unit). The run server has 94.28 GiB total
+## memory (recorder value, see docs/runs/chainsolver-worker-private-memory-2026-09-17.yml).
+## The gate sizes each worker at its 30 GiB default (DEFAULT_POPSIM_WORKER_MEMORY_GB), so
+## run prod100_20261031 (2026-10-31) was clamped from 3 to 2 workers. The per-worker peak
+## sampled on that run is recorded in docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml.
 working_directory: eqasim-data/cache_bs_100pct_allfeat_popsim
 
 run:
