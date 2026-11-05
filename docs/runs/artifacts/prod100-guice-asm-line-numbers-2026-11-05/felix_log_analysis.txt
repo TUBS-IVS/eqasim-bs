@@ -1,0 +1,95 @@
+== 1. phrases per log (grep -acF, exact phrase)
+-- /home/felix/prod100_20261031/logs/run_20261031T071313.log
+   Unsupported class file major version 69: 67
+   Failed loading line numbers: 67
+   ASM is probably out of date: 67
+-- /home/felix/prod100_20261031/logs/run_20261101T050111.log
+   Unsupported class file major version 69: 1
+   Failed loading line numbers: 1
+   ASM is probably out of date: 1
+-- /home/felix/prod100_20260925/logs/B_matsim.log
+   Unsupported class file major version 69: 3
+   Failed loading line numbers: 3
+   ASM is probably out of date: 3
+== 2. shape of the traces by entry point (the last main() frame of each trace)
+-- /home/felix/prod100_20261031/logs/run_20261031T071313.log
+   traces=67, trace lines in total (2 header lines + exception + frames)=2733
+       1  	at org.eqasim.braunschweig.RunSimulation.main(RunSimulation.java:92)
+       1  	at org.eqasim.core.scenario.cutter.RunScenarioCutter.main(RunScenarioCutter.java:119)
+       1  	at org.eqasim.core.scenario.routing.RunPopulationRouting.main(RunPopulationRouting.java:79)
+      64  	at org.eqasim.core.tools.routing.RunBatchPublicTransportRouter.main(RunBatchPublicTransportRouter.java:267)
+   34 frames: 2 traces
+   38 frames: 64 traces
+   32 frames: 1 traces
+-- /home/felix/prod100_20260925/logs/B_matsim.log
+   traces=3, trace lines in total (2 header lines + exception + frames)=109
+       1  	at org.eqasim.braunschweig.RunSimulation.main(RunSimulation.java:88)
+       1  	at org.eqasim.core.scenario.cutter.RunScenarioCutter.main(RunScenarioCutter.java:118)
+       1  	at org.eqasim.core.scenario.routing.RunPopulationRouting.main(RunPopulationRouting.java:63)
+   34 frames: 2 traces
+   32 frames: 1 traces
+== 3. JVM launches in launch 1 that name the PT batch router (lines outside traces)
+   64
+== 4. the first trace of launch 1 in full
+   first hit at line 33619
+2026-10-31T23:15:04,310  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-10-31T23:15:04,310  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.Event
+2026-10-31T23:15:04,327  INFO AbstractController:57 Used Controler-Class: org.matsim.core.controler.NewControler
+2026-10-31T23:15:04,328  INFO Config:417 ConfigConsistencyChecker with runtime type=class org.matsim.core.config.consistency.ConfigConsistencyCheckerImpl was already added; not adding it a second time
+2026-10-31T23:15:04,329  INFO Injector:86 === printInjector output skipped ===
+2026-10-31T23:15:04,329  INFO Injector:87 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or set log.setLogLevel(Level.DEBUG) in your run class.
+Oct 31, 2026 11:15:04 PM com.google.inject.internal.util.LineNumbers <init>
+WARNING: Failed loading line numbers. ASM is probably out of date. Further failures won't be logged.
+java.lang.IllegalArgumentException: Unsupported class file major version 69
+	at com.google.inject.internal.asm.$ClassReader.<init>(ClassReader.java:199)
+	at com.google.inject.internal.asm.$ClassReader.<init>(ClassReader.java:180)
+	at com.google.inject.internal.asm.$ClassReader.<init>(ClassReader.java:166)
+	at com.google.inject.internal.asm.$ClassReader.<init>(ClassReader.java:287)
+	at com.google.inject.internal.util.LineNumbers.<init>(LineNumbers.java:74)
+	at com.google.inject.internal.util.StackTraceElements$1.load(StackTraceElements.java:48)
+	at com.google.inject.internal.util.StackTraceElements$1.load(StackTraceElements.java:44)
+	at com.google.common.cache.LocalCache$LoadingValueReference.loadFuture(LocalCache.java:3556)
+	at com.google.common.cache.LocalCache$Segment.loadSync(LocalCache.java:2307)
+	at com.google.common.cache.LocalCache$Segment.lockedGetOrLoad(LocalCache.java:2180)
+	at com.google.common.cache.LocalCache$Segment.get(LocalCache.java:2071)
+	at com.google.common.cache.LocalCache.get(LocalCache.java:3985)
+	at com.google.common.cache.LocalCache.getOrLoad(LocalCache.java:4006)
+	at com.google.common.cache.LocalCache$LocalLoadingCache.get(LocalCache.java:4946)
+	at com.google.common.cache.LocalCache$LocalLoadingCache.getUnchecked(LocalCache.java:4953)
+	at com.google.inject.internal.util.StackTraceElements.forMember(StackTraceElements.java:67)
+	at com.google.inject.internal.ProviderMethod.toString(ProviderMethod.java:213)
+	at com.google.inject.internal.ProviderToInternalFactoryAdapter.toString(ProviderToInternalFactoryAdapter.java:56)
+	at java.base/java.util.Formatter$FormatSpecifier.printString(Formatter.java:3292)
+	at java.base/java.util.Formatter$FormatSpecifier.print(Formatter.java:3170)
+	at java.base/java.util.Formatter.format(Formatter.java:2761)
+	at java.base/java.util.Formatter.format(Formatter.java:2698)
+	at java.base/java.lang.String.format(String.java:4455)
+	at com.google.inject.internal.SingletonScope$1.toString(SingletonScope.java:301)
+	at com.google.inject.internal.InternalFactoryToProviderAdapter.toString(InternalFactoryToProviderAdapter.java:57)
+	at java.base/java.lang.String.valueOf(String.java:4530)
+	at java.base/java.lang.StringBuilder.append(StringBuilder.java:173)
+	at com.google.common.base.MoreObjects$ToStringHelper.toString(MoreObjects.java:409)
+	at com.google.inject.internal.FactoryProxy.toString(FactoryProxy.java:71)
+	at com.google.inject.internal.InjectorImpl$1.toString(InjectorImpl.java:1159)
+	at java.base/java.lang.String.valueOf(String.java:4530)
+	at org.matsim.core.controler.Injector.printInjector(Injector.java:95)
+	at org.matsim.core.controler.Injector.createInjector(Injector.java:80)
+	at org.matsim.core.controler.Controler.createInjector(Controler.java:260)
+	at org.matsim.core.controler.Controler.getInjector(Controler.java:399)
+	at org.eqasim.core.misc.InjectorBuilder.build(InjectorBuilder.java:67)
+	at org.eqasim.core.misc.InjectorBuilder.build(InjectorBuilder.java:44)
+	at org.eqasim.core.tools.routing.RunBatchPublicTransportRouter.main(RunBatchPublicTransportRouter.java:267)
+
+2026-10-31T23:15:05,835  WARN EqasimRaptorUtils:49 Setting 'other' routing cost for following modes: funicular, ferry
+2026-10-31T23:15:05,839  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-10-31T23:15:05,839  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+== 5. the production jar: class file version of eqasim and MATSim classes (bytes 4-7 of the header: minor major)
+ ca fe ba be 00 00 00 45
+ ca fe ba be 00 00 00 45
+== 6. the production jar: ASM inside it
+   entries below com/google/inject/internal/asm/: 35
+   plain org/objectweb/asm classes: 0
+   highest Java version constant of the embedded ASM Opcodes: V21
+   LineNumbers carries the warning text: 1
+-rw-rw-r-- 1 felix felix 193724417 Oct 31 08:01 /home/felix/prod100_20261031/cache/matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f.cache/eqasim-java/braunschweig/target/braunschweig-2.3.1.jar
+

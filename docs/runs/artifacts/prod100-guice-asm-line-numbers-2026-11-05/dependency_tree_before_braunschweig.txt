@@ -1,0 +1,41 @@
+# mvn -T 1 -B -ntp -pl braunschweig -am dependency:tree -Dverbose=true -Dincludes=com.google.inject,com.google.inject.extensions,org.ow2.asm,asm   (the poms of origin/main c4051c167, before the change)
+# Every path to the default Guice jar (com.google.inject:guice:jar:7.0.0) in the braunschweig tree, and no ASM artifact at all: the only ASM is the one embedded in the Guice jar.
+# Lines naming the default jar: 18 (one kept, the others 'omitted for duplicate').
+
+org.eqasim:braunschweig:jar:2.3.1
++- org.matsim.contrib:application:jar:2026.0-2026w12:compile
+|  +- org.matsim.contrib:otfvis:jar:2026.0-2026w12:compile
+|  |  \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
+|  +- org.matsim.contrib:analysis:jar:2026.0-2026w12:compile
+|  |  +- org.matsim.contrib:roadpricing:jar:2026.0-2026w12:compile
+|  |  |  \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
+|  |  \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
+|  +- org.matsim.contrib:noise:jar:2026.0-2026w12:compile
+|  |  \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
+|  +- org.matsim.contrib:freight:jar:2026.0-2026w12:compile
+|  |  \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
+|  +- org.matsim.contrib:dvrp:jar:2026.0-2026w12:compile
+|  |  +- org.matsim.contrib:ev:jar:2026.0-2026w12:compile
+|  |  |  \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
+|  |  \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
+|  +- org.matsim.contrib:accessibility:jar:2026.0-2026w12:compile
+|  |  +- org.matsim.contrib:matrixbasedptrouter:jar:2026.0-2026w12:compile
+|  |  |  \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
+|  |  \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
+|  \- com.google.inject:guice:jar:7.0.0:compile
++- org.matsim.contrib:simwrapper:jar:2026.0-2026w12:compile
+|  \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
++- org.matsim:matsim:jar:2026.0-2026w12:compile
+|  +- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
+|  \- com.google.inject.extensions:guice-grapher:jar:7.0.0:compile
+|     +- com.google.inject.extensions:guice-assistedinject:jar:7.0.0:compile
+|     |  \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
+|     \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
++- org.matsim.contrib:discrete_mode_choice:jar:2026.0-2026w12:compile
+|  \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
++- org.matsim.contrib:emissions:jar:2026.0-2026w12:compile
+|  \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
+\- org.matsim.contrib:drt:jar:2026.0-2026w12:compile
+   +- org.matsim.contrib:common:jar:2026.0-2026w12:compile
+   |  \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)
+   \- (com.google.inject:guice:jar:7.0.0:compile - omitted for duplicate)

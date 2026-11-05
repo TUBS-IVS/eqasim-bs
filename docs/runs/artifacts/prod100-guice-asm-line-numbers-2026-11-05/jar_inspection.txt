@@ -1,0 +1,75 @@
+== class file versions and ASM level of the jars involved
+====================================================================================================
+~/.m2/repository/org/matsim/matsim/2026.0-2026w12/matsim-2026.0-2026w12.jar
+  class file major 69 (Java 25): 2235 classes, e.g. org/matsim/guice/GraphvizRenderer.class
+====================================================================================================
+~/.m2/repository/org/matsim/matsim/2026.0/matsim-2026.0.jar
+  class file major 69 (Java 25): 2245 classes, e.g. ch/sbb/matsim/routing/pt/raptor/DefaultRaptorInVehicleCostCalculator.class
+====================================================================================================
+~/.m2/repository/org/matsim/matsim/2027.0-2026w44/matsim-2027.0-2026w44.jar
+  class file major 69 (Java 25): 2288 classes, e.g. ch/sbb/matsim/RunSwissRailRaptorExample.class
+====================================================================================================
+~/.m2/repository/com/google/inject/guice/7.0.0/guice-7.0.0.jar
+  class file major 49 (Java ?): 34 classes, e.g. com/google/inject/internal/asm/$AnnotationVisitor.class
+  class file major 52 (Java 8): 471 classes, e.g. com/google/inject/AbstractModule.class
+  ASM Opcodes: com/google/inject/internal/asm/$Opcodes.class: highest V<n> constant = V21
+====================================================================================================
+~/.m2/repository/org/ow2/asm/asm/9.10.1/asm-9.10.1.jar
+  class file major 49 (Java ?): 38 classes, e.g. org/objectweb/asm/AnnotationVisitor.class
+  class file major 53 (Java 9): 1 classes, e.g. module-info.class
+  ASM Opcodes: org/objectweb/asm/Opcodes.class: highest V<n> constant = V27
+====================================================================================================
+~/.m2/repository/org/ow2/asm/asm/9.4/asm-9.4.jar
+  class file major 49 (Java ?): 37 classes, e.g. org/objectweb/asm/AnnotationVisitor.class
+  class file major 53 (Java 9): 1 classes, e.g. module-info.class
+  ASM Opcodes: org/objectweb/asm/Opcodes.class: highest V<n> constant = V20
+====================================================================================================
+~/.m2/repository/org/ow2/asm/asm/9.5/asm-9.5.jar
+  class file major 49 (Java ?): 37 classes, e.g. org/objectweb/asm/AnnotationVisitor.class
+  class file major 53 (Java 9): 1 classes, e.g. module-info.class
+  ASM Opcodes: org/objectweb/asm/Opcodes.class: highest V<n> constant = V21
+====================================================================================================
+~/.m2/repository/org/ow2/asm/asm/9.6/asm-9.6.jar
+  class file major 49 (Java ?): 38 classes, e.g. org/objectweb/asm/AnnotationVisitor.class
+  class file major 53 (Java 9): 1 classes, e.g. module-info.class
+  ASM Opcodes: org/objectweb/asm/Opcodes.class: highest V<n> constant = V22
+====================================================================================================
+~/.m2/repository/org/ow2/asm/asm/9.7.1/asm-9.7.1.jar
+  class file major 49 (Java ?): 38 classes, e.g. org/objectweb/asm/AnnotationVisitor.class
+  class file major 53 (Java 9): 1 classes, e.g. module-info.class
+  ASM Opcodes: org/objectweb/asm/Opcodes.class: highest V<n> constant = V24
+====================================================================================================
+~/.m2/repository/org/ow2/asm/asm/9.7/asm-9.7.jar
+  class file major 49 (Java ?): 38 classes, e.g. org/objectweb/asm/AnnotationVisitor.class
+  class file major 53 (Java 9): 1 classes, e.g. module-info.class
+  ASM Opcodes: org/objectweb/asm/Opcodes.class: highest V<n> constant = V23
+====================================================================================================
+~/.m2/repository/org/ow2/asm/asm/9.8/asm-9.8.jar
+  class file major 49 (Java ?): 38 classes, e.g. org/objectweb/asm/AnnotationVisitor.class
+  class file major 53 (Java 9): 1 classes, e.g. module-info.class
+  ASM Opcodes: org/objectweb/asm/Opcodes.class: highest V<n> constant = V25
+====================================================================================================
+~/.m2/repository/org/ow2/asm/asm/9.9.1/asm-9.9.1.jar
+  class file major 49 (Java ?): 38 classes, e.g. org/objectweb/asm/AnnotationVisitor.class
+  class file major 53 (Java 9): 1 classes, e.g. module-info.class
+  ASM Opcodes: org/objectweb/asm/Opcodes.class: highest V<n> constant = V26
+
+== default Guice jar against the unshaded classes jar (both 7.0.0)
+default jar : 505 classes, of which shaded ASM: 34
+classes jar : 471 classes, of which shaded ASM: 0
+classes only in the classes jar: []
+classes only in the default jar that are NOT shaded ASM: []
+default jar class file major versions: {49: 34, 52: 471}
+classes jar class file major versions: {52: 471}
+ASM packages referenced by the classes jar:
+  org/objectweb/asm: 9 classes, e.g. ['com/google/inject/internal/aop/AbstractGlueGenerator.class', 'com/google/inject/internal/aop/BytecodeTasks.class', 'com/google/inject/internal/aop/Enhancer.class', 'com/google/inject/internal/aop/FastClass.class']
+classes of the classes jar naming the shaded ASM package: 0 []
+default LineNumbers names shaded ASM: True
+classes LineNumbers names plain ASM : True
+classes jar META-INF entries: ['META-INF/MANIFEST.MF', 'META-INF/LICENSE', 'META-INF/NOTICE', 'META-INF/DEPENDENCIES']
+
+== callers of StackTraceElements.forMember / forType in guice-7.0.0-classes.jar (forMember_users.py)
+com/google/inject/internal/InternalProvisionException.class forMember 
+com/google/inject/internal/ProviderMethod.class forMember 
+com/google/inject/internal/SourceFormatter.class forMember forType
+com/google/inject/internal/util/StackTraceElements.class forMember forType

@@ -1,0 +1,260 @@
+id: prod100-guice-asm-line-numbers-2026-11-05
+date: '2026-11-05'
+repository:
+  commit: 1fefa1fa1e19044ddaf53c9062ec21711ae80ab1
+  branch: fix/guice-asm-java25-class-files (TUBS-IVS/eqasim-java-bs)
+  notes: >-
+    The commit is in the eqasim-java-bs fork, not in this repository. It is the head of a branch of two commits: f3f1e2dd7
+    (the dependency change and the tests) and 1fefa1fa1 (the enforcer rule that the Claude review of the pull request
+    asked for; only its own entry below ran on it). Every other measurement below ran from a local work tree of that fork
+    cut from its origin/main c4051c167 (the merge of the DMC trip cache fix, #59) with the change uncommitted; it became
+    the first commit. Two edits followed the full suite of core and braunschweig, the jars, the A/B
+    runs and the test-compile of all modules, which therefore ran on the earlier text: the pom comments and the Javadocs
+    were shortened (text only, no build input), and the two test classes were hardened after an independent review (a
+    single copy of the ASM reader and a direct read of a class file with it, both in GuiceClasspathTest; the copy check of
+    the Guice classes moved out of GuiceSourceLinesTest). The red and green runs of the tests and the runs with a
+    deliberate mutation ran on the final text, and the affected tests ran again on the clean commit. The baseline
+    ("before") runs read the two poms of origin/main c4051c167; the test classes stayed.
+configuration:
+  config: pom.xml and braunschweig/pom.xml of eqasim-java-bs
+  notes: >-
+    No pipeline configuration and no config key. The inputs of the change are the Guice 7.0.0 classes jar and the asm
+    jar (the pinned versions are in the parent pom). The A/B simulation is the Melun fixture of the eqasim-java-bs core
+    module (core/src/main/resources/melun) with the TestConfigurator of its tests, 2 iterations, run through
+    TestSimulationPipeline$TestRunSimulation.
+sampling:
+  rate: not applicable (no population of this project is involved)
+  scope: the Melun fixture of the eqasim-java-bs core module; the production logs on felix are read, not re-run
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run and no stage executed. Read-only look at three felix logs and at the Maven cache of felix
+    (ssh felix: nothing started, nothing written, only HTTP HEAD requests), local Maven builds and JUnit runs of
+    eqasim-java-bs, and scratch harnesses that run its test classes or its standalone jar on two class paths
+    (docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/).
+classification:
+- wiring_proof
+- ab_test
+status:
+  execution: completed
+  notes: >-
+    All steps completed. This is a proof that a Java dependency change makes Guice read the class files of the build
+    and leaves the simulation unchanged on one small fixture, NOT a validation of the model: no observed data is
+    involved. Not shown here: a production-scale run with the rebuilt jar (no run was started on felix).
+source: >-
+  Local runs on 2026-11-05 (workstation, Europe/Berlin) by the C5f session, and read-only commands on felix. Scripts and
+  their outputs are in docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/: felix_log_analysis.sh and .txt,
+  felix_maven_cache.sh and .txt, matsim_printInjector_javap.txt, jarinfo.py, jarcompare.py, forMember_users.py and
+  jar_inspection.txt,
+  evidence.ps1 and tests_before_after.txt, cpstate.ps1 with classpath_diff.txt and
+  classpath_diff_without_guava_exclusion.txt, ab.ps1, abrun.ps1, abcompare.py, abdetails.py and ab_melun.txt,
+  C5fBindings.java, C5fProviders.java, C5fTiming.java and abtiming.ps1 with bindings_and_providers.txt and
+  injector_timing.txt, bytecode_generation.ps1 and .txt, full_suite_after_fix.txt, corsica_test_windows_teardown.txt,
+  jarbuild.ps1, jarcheck.py, JarSmoke.java and jarreport.ps1 with standalone_jar.txt, dependency_trees_all_modules.txt, dependency_tree_before_braunschweig.txt, enforcer_check.ps1
+  with enforcer_guice_versions.txt.
+environment: 'workstation (Windows 11 Pro 10.0.26200), Temurin JDK 25.0.4.1+1, Apache Maven 3.9.9; felix (Linux), JDK 25.0.3+9; MATSim 2026.0-2026w12, Guice 7.0.0'
+validation:
+- metric: Guice line-number warnings in the production logs on felix, per log and per entry point (count of the exact phrase, log lines of the traces)
+  reference: 'none (a count of log lines); the brief of the task named 37 traces and about 7,400 log lines per run'
+  result: >-
+    prod100_20261031 launch 1 (run_20261031T071313.log): 67 traces, 2,733 trace lines; 64 of them from
+    RunBatchPublicTransportRouter.main (38 frames each; 64 JVM launches name that class in the log), one each from
+    RunScenarioCutter, RunPopulationRouting and RunSimulation. Launch 2 (run_20261101T050111.log, ends in NUL bytes
+    after the VM crash of 2026-11-02, read with grep -a): 1 trace. The September production log
+    (prod100_20260925/logs/B_matsim.log): 3 traces, one each from the cutter, the population routing and the
+    simulation. The brief's 37 and about 7,400 were not reproduced: 67 and 2,733 were measured, and the counts fit the
+    once-per-JVM rule below.
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/felix_log_analysis.txt
+  notes: >-
+    The phrase count equals the number of JVMs because Guice's LineNumbers logs only the first failure of a JVM (a
+    static flag, Guice 7.0.0 source of the tag). Measured the same way locally: 5 JVMs on the old class path gave 5
+    warning lines (injector_timing.txt), and a jar-only run gave 1 (standalone_jar.txt).
+- metric: class file versions of the jars involved and the Java level of every ASM that is embedded or available
+  reference: 'none (a measurement of jar contents); the Maven Central metadata was read from repo1.maven.org on 2026-11-05 (no committed file)'
+  result: >-
+    The production jar on felix: eqasim and MATSim classes are class file major version 69 (Java 25); the embedded ASM
+    of Guice reaches Java 21 (highest constant V21, 35 entries below com/google/inject/internal/asm/, no plain
+    org/objectweb/asm class). MATSim 2026.0-2026w12 (2,235 classes), 2026.0 (2,245) and 2027.0-2026w44 (2,288): every
+    class is major 69. Guice 7.0.0 default jar: 471 classes (major 52) and 34 shaded ASM classes. ASM Opcodes, highest
+    Java constant: 9.4 V20, 9.5 V21, 9.6 V22, 9.7 V23, 9.7.1 V24, 9.8 V25, 9.9.1 V26, 9.10.1 V27. Maven Central: Guice
+    versions end at 7.0.0 (metadata lastUpdated 2023-05-12); ASM 9.8 was published 2025-03-29, 9.9.1 on 2025-12-06,
+    9.10.1 on 2026-05-23, 9.11.1 on 2026-10-17.
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/jar_inspection.txt
+  notes: >-
+    The felix jar numbers are in felix_log_analysis.txt; the local ones in jar_inspection.txt. The unshaded jar
+    guice-7.0.0-classes.jar (680,378 bytes, as listed on Maven Central) holds exactly the 471 non-ASM classes of the
+    default jar, none of the shaded ASM; 9 of its classes (the AOP package and LineNumbers) reference the plain
+    org.objectweb.asm package and no other ASM package.
+- metric: the call path of the lookup (what builds the binding texts, what the lookup feeds, what happens on failure)
+  reference: 'none (code reading of the bytecode of MATSim 2026.0-2026w12 and of the Guice 7.0.0 source at its tag)'
+  result: >-
+    MATSim Injector.printInjector logs "output skipped" at INFO unconditionally and then concatenates the key,
+    annotation, provider, source, scope and linked key of every binding whose key contains type=org.matsim into the
+    messages of log(Level.DEBUG, ...): no isDebugEnabled check and no lazy supplier (javap of the jar; the source on
+    matsim-libs main reads the same). The strings call Binding.toString, getProvider().toString and getSource().toString,
+    which reach ProviderMethod.toString and StackTraceElements.forMember (no flag check) and the ASM ClassReader in
+    LineNumbers, which catches Exception and falls back to no file and line 1 ("Unknown Source"). The classes of the
+    Guice 7.0.0 jar that call forMember are ProviderMethod, InternalProvisionException (provisioning errors) and
+    SourceFormatter (the sources in error messages): the lookup feeds the text of provider-method bindings, which the
+    module graph prints as well, and error messages, nothing else of Guice (a scan of the classes jar, in
+    jar_inspection.txt).
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/matsim_printInjector_javap.txt
+  notes: >-
+    The same code is on matsim-libs main (read 2026-11-05). A draft upstream issue is in the shared notes of the
+    session group (c5f-matsim-printinjector-upstream-report-draft.md), not filed.
+- metric: GuiceSourceLinesTest (core, 2 tests) and GuiceClasspathTest (braunschweig, 3 tests), before and after the change, and with one exclusion removed or an ASM made too old on purpose
+  reference: 'none (JUnit assertions); each test must fail before the change'
+  result: >-
+    Before (the two poms of c4051c167, Java 25.0.4.1): GuiceSourceLinesTest 2 of 2 fail and GuiceClasspathTest 3 of 3
+    fail. The sample module's binding reads "(Unknown Source)"; none of the 74 @Provides methods of the real eqasim
+    injector (24 in org.eqasim, 50 in org.matsim) has a source line; the class path tests find the embedded ASM and no
+    ASM reader (NoClassDefFoundError). The surefire output carries the warning and the stack trace of the production
+    log. After (the final poms): 2 of 2 and 3 of 3 pass and the output has no warning; the same on the clean commit
+    together with TripEstimatorBindingTest and ParkingInjectorTest (17 tests of 4 classes). Two mutations of the final
+    poms: with the simwrapper exclusion removed, GuiceClasspathTest fails and lists both jars, the default one first in
+    the class path order (guice-7.0.0.jar before guice-7.0.0-classes.jar), so a default jar that returns would win
+    silently; with asm.version 9.7.1 (stops at Java 24) both core tests fail with "Unknown Source" and the reader test
+    of braunschweig fails with "Unsupported class file major version 69" naming the asm-9.7.1 jar.
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/tests_before_after.txt
+  notes: >-
+    The two core tests reach the lookup through the text of the bindings, because Guice logs only the first failure per
+    JVM and a test that shares its JVM would pass without a warning. The baseline run used the test class files that
+    Maven had compiled before ("Nothing to compile"); a clean build of the baseline stops at test-compile, because asm
+    is not on its class path.
+- metric: every path to a Guice or ASM artifact in the dependency tree of each of the eight modules (mvn dependency:tree -Dverbose), with the change
+  reference: 'none (a listing); the default Guice jar must not appear in any module'
+  result: >-
+    The default Guice jar appears in none of the eight modules (core, switzerland, ile_de_france, braunschweig,
+    sao_paulo, san_francisco, los_angeles, server). The Guice classes jar and asm 9.10.1 are in all of them. In the server
+    module, Jetty (through Javalin) asks for asm, asm-commons and asm-tree 9.9.1: asm resolves to 9.10.1, asm-commons and
+    asm-tree stay at 9.9.1. The server module is not built or used by this project.
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/dependency_trees_all_modules.txt
+  notes: >-
+    Before the change the verbose tree of braunschweig named the default jar along 18 dependency paths (every MATSim
+    contrib) and held no ASM artifact besides the one embedded in Guice, which is why the exclusions sit on the
+    dependency edges (dependency_tree_before_braunschweig.txt).
+- metric: the test class path of core and braunschweig (mvn dependency:build-classpath, test scope), before and after
+  reference: 'none (a set comparison); the first draft of the change is the control'
+  result: >-
+    Final: exactly one entry leaves (guice-7.0.0.jar) and two join (guice-7.0.0-classes.jar, asm-9.10.1.jar): core 213
+    to 214 entries, braunschweig 321 to 322. The first draft, without the exclusion of Guice's own Guava request,
+    changed Guava in core (33.5.0-jre to 31.0.1-jre, failureaccess 1.0.3 to 1.0.1, jspecify removed, checker-qual and
+    an older j2objc added): the new direct dependency won the version mediation. braunschweig was spared only because
+    its application contrib declares Guava itself. The exclusion in the parent pom removes that side effect.
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/classpath_diff.txt
+  notes: >-
+    The draft's difference is in classpath_diff_without_guava_exclusion.txt, produced afterwards with the same script
+    and the exclusion taken out again.
+- metric: A/B of the Melun simulation (2 iterations) on the old and the new class path, 2 runs each, SHA-256 of every output file
+  reference: 'run 1 against run 2 of the SAME class path (the noise baseline); an equivalence reference, NOT observed data'
+  result: >-
+    Warning lines: 1 on the old class path, 0 on the new one (both runs each). Byte-identical in all four runs:
+    output_plans.xml.gz, scorestats.csv, modestats.csv, traveldistancestats.csv, output_network.xml.gz,
+    output_config.xml, output_households.xml.gz, output_facilities.xml.gz. Old against new: 107 files each, 92 with
+    the same SHA-256 and 15 that differ: the event files and the eqasim csv files (same multiset of lines, only the
+    order of events within a time step differs), modules.dot and stopwatch.csv/png. The same 15 differ between two runs
+    of the SAME class path. output_links.csv.gz differed once between the two runs on the new class path, only in the
+    column order of two network attributes. modules.dot, the Guice graph, is the one output the change improves:
+    labels without a source ("null:1") 62 to 0, labels with a file and line 135 to 197, in both runs of each class path.
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/ab_melun.txt
+  notes: >-
+    The event order within a time step differs between any two runs of this fixture (multithreaded event handling), so
+    the event and csv files are compared as multisets of lines. The workstation was shared with other jobs of the
+    owner, so the wall times (39 to 58 s) are not a measurement.
+- metric: the binding set of the real eqasim injector and the number of @Provides methods without a source line, old and new class path
+  reference: 'none (a set comparison); an equivalence reference, NOT observed data'
+  result: >-
+    612 explicit bindings with the same SHA-256 of the sorted keys on both class paths (2 runs each): no binding is
+    missing or added. 74 @Provides methods (24 org.eqasim, 50 org.matsim): 74 without a source line on the old class path,
+    0 on the new one.
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/bindings_and_providers.txt
+  notes: >-
+    The keys are the Key.toString texts of Injector.getBindings(); the injector is the one of TripEstimatorBindingTest
+    (the module stack of the production tools). The injector of the production configurator is in standalone_jar.txt.
+- metric: the classes Guice generates with ASM while the real eqasim injector is built, and which ASM classes are loaded, old and new class path (-Xlog:class+load)
+  reference: 'none (a count of loaded classes); an equivalence reference, NOT observed data'
+  result: >-
+    Guice writes classes with ASM in every injector build, not only when it reads line numbers: 123 FastClassByGuice
+    classes (plus one DefineAccessByGuice) on both class paths. On the old one 26 classes of the embedded ASM
+    (com.google.inject.internal.asm) are loaded and no plain org.objectweb.asm class; on the new one 27 plain
+    org.objectweb.asm classes (ClassWriter, ClassReader and their parts) and none of the embedded ASM.
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/bytecode_generation.txt
+  notes: >-
+    The generated classes are not compared byte by byte (hidden classes, defined at run time). What is compared is their
+    number, and the outputs of the A/B simulation, which ran through the generated constructors.
+- metric: wall time of the injector build in a fresh JVM (InjectorBuilder.build, which includes MATSim printInjector), old and new class path
+  reference: 'none (a timing); 5 runs each, interleaved'
+  result: >-
+    Old: 3264, 3330, 4168, 5633, 3321 ms (median 3330 ms), 5 warning lines. New: 3276, 3864, 4318, 3455, 3175 ms (median
+    3455 ms), 0 warning lines. The medians differ by 125 ms, inside the spread of the runs (1 to 2 s): no measurable
+    cost of the working lookup at this resolution.
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/injector_timing.txt
+  notes: >-
+    The workstation was shared with other jobs; the runs are a plausibility check, not a benchmark.
+- metric: the eqasim-java-bs test suites of core and braunschweig on the changed tree (mvn test, as the Maven Test workflow runs it), and the compilation of all modules
+  reference: 'none (JUnit assertions, including the pinned numbers of TestSimulationPipeline)'
+  result: >-
+    core 132 tests and braunschweig 434 tests, no failure, no error, none skipped, 13.5 min, exit 0. They include the 11
+    tests of TestSimulationPipeline (pinned arrival counts and DRT drop-off times) and the two new test classes. The
+    suite log (59,895 lines) holds no line of the warning; the old poms print it once per JVM. mvn test-compile over all
+    eight modules and the parent: BUILD SUCCESS, so the parent pom change resolves for every module.
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/full_suite_after_fix.txt
+  notes: >-
+    The suite ran before the comment-only shortening of the pom comments and Javadocs and before the hardening of the
+    two test classes (see repository.notes); the totals are those of that tree (core 132 tests with 3 of the Guice
+    tests, braunschweig 434 with 1), not of the final one. The
+    other modules run their tests in the Maven Test workflow on the pull request; they inherit the parent pom and add
+    no MATSim dependency. One of them was run here as well: ile_de_france TestCorisica fails in its tearDown on
+    Windows (scorestats.csv is still open when the test deletes its output directory), identically on a source copy of
+    origin/main and on the changed tree; its pipeline part ran to the end both times (88 and 91 s), and the warning
+    appears on the origin/main copy only (corsica_test_windows_teardown.txt). The Maven Test workflow runs on Linux.
+- metric: the standalone jar of braunschweig built with and without the change (mvn -Pstandalone package as the stage runs it), and the injector of the production configurator run with only that jar
+  reference: 'none (jar contents and a run of the jar); before = origin/main c4051c167'
+  result: >-
+    Before: 193,728,420 bytes, 35 entries of the embedded ASM (V21), no plain ASM; a jar-only run builds the injector of
+    BraunschweigConfigurator: 591 bindings, 79 @Provides methods, 79 without a source line, 1 warning line. After:
+    193,732,426 bytes, 0 entries of the embedded ASM, 35 classes of the plain ASM package (V27), one copy of
+    com/google/inject/Guice.class, 539 Guice classes outside the embedded ASM in both jars; the same run: the same 591
+    bindings with the same SHA-256 of the sorted keys, 79 methods, 0 without a source line, 0 warning lines. The shade
+    plugin reports 23 overlap warnings in both builds; the ones that list a Guice or asm jar name only META-INF
+    resources, no class.
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/standalone_jar.txt
+  notes: >-
+    The jar before the change is built here from the same source commit as the change, not the jar on felix (193,724,417
+    bytes, built with another Maven); the felix jar is only read (felix_log_analysis.txt).
+- metric: the enforcer rule that keeps the Guice jars of one version (maven-enforcer-plugin 3.5.0, requireSameVersions over com.google.inject:* and com.google.inject.extensions:*), on the final pom and with guice-grapher pinned to another version
+  reference: 'none (a build rule); the rule must pass on the pom and stop the build on a skewed version'
+  result: >-
+    mvn validate over all nine projects (the parent and eight modules): "Rule 0: RequireSameVersions passed" in each,
+    BUILD SUCCESS. With guice-grapher pinned to 4.2.2 in dependencyManagement (a version that is in the local
+    repository), the build of core stops: "Found entries with different versions", "Entries with version 7.0.0",
+    "Entries with version 4.2.2". The standalone jar built like the stage (copy of the work tree, -Pstandalone) passes the
+    rule and has the same size as before (193,732,426 bytes); the focused tests (2 and 3) pass with the rule in the
+    lifecycle.
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/enforcer_guice_versions.txt
+  notes: >-
+    Why: guice.version is a second pin next to the Guice of MATSim, which also brings guice-grapher and
+    guice-assistedinject; no test sees a MATSim release on another Guice (finding of the Claude review of the pull
+    request). The plugin needs Maven 3.6.3, which is the Maven on felix (read from felix, mvn -v, 2026-11-05).
+- metric: whether a first build on felix needs the network for the two new artifacts
+  reference: 'none (a listing and two HTTP HEAD requests)'
+  result: >-
+    felix has Guice 7.0.0 (default jar only; no classes jar) and ASM 6.0_BETA, 6.2, 6.2.1, 9.6 and 9.9.1 (not 9.10.1) in
+    its ~/.m2 and no settings.xml; HTTP HEAD on the asm 9.10.1 pom and on guice-7.0.0-classes.jar from felix: 200. The first
+    build there downloads the classes jar and the asm jar.
+  artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/felix_maven_cache.txt
+  notes: >-
+    matsim/runtime/maven.py passes no offline flag, so the build resolves through Maven Central as usual.
+features:
+  note: >-
+    eqasim_java_fork: a wiring proof for the Guice and ASM dependency change of the fork only (ADR-0179); the feature
+    record stays unvalidated, as before.
+artifacts:
+- docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/
+issues: []
+decisions:
+- ADR-0179
+notes: >-
+  The change lives in the Java fork (eqasim-java-bs); this repository records the decision (ADR-0179) and the evidence.
+  Nothing in this repository's Python code changed, so no stage hash changes; the eqasim jar rebuilds on the next run
+  because the Java source tree changed (ADR-0148).

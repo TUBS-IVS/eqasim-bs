@@ -1,0 +1,99 @@
+# mvn -T 1 -B -ntp -pl core,braunschweig test -DforkCount=1 -DargLine=-Xmx1536m -Dmatsim.preferLocalDtds=true
+# JDK 25.0.4.1, Maven 3.9.9, Windows workstation, the changed work tree of eqasim-java-bs on origin/main c4051c167, wall time 13.5 min, exit 0.
+# Run on the tree BEFORE the comment-only shortening of the pom comments and Javadocs; the two new test classes ran again on the final tree
+# (tests_before_after.txt), and the jars of standalone_jar.txt were built from the final tree.
+# Lines of the Maven log: every 'Tests run' line of a test class, the module totals and the reactor summary.
+
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.050 s -- in org.eqasim.core.misc.GuiceSourceLinesTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in org.eqasim.core.scenario.preparation.FacilityPlacementPresetLinkTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.082 s -- in org.eqasim.core.scenario.routing.DayEndShiftTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.387 s -- in org.eqasim.core.scenario.routing.PlanRouterWalkFallbackTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.131 s -- in org.eqasim.core.scenario.routing.PopulationRouterDayEndShiftTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.048 s -- in org.eqasim.core.simulation.mode_choice.trip_cache.PersonScopedCachedTripEstimatorTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in org.eqasim.core.tools.routing.BatchPublicTransportRouterLegRoleTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.121 s -- in org.eqasim.mode_choice.TestSpecialModeChoiceCases
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.149 s -- in org.eqasim.mode_choice.TripEstimatorBindingTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in org.eqasim.scenario.cutter.population.TestPlanCutterWalkFallback
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in org.eqasim.scenario.cutter.population.trips.crossing.TestDefaultNetworkCrossingPointFinder
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in org.eqasim.scenario.cutter.population.trips.crossing.TestDefaultTeleportationCrossingPointFinder
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in org.eqasim.scenario.cutter.population.trips.crossing.TestDefaultTransitRouteCrossingPointFinder
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.283 s -- in org.eqasim.scenario.cutter.population.trips.TestNetworkTripProcessor
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in org.eqasim.scenario.cutter.population.trips.TestTeleportationTripProcessor
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in org.eqasim.scenario.cutter.population.trips.TestTransitTripProcessor
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.014 s -- in org.eqasim.scenario.cutter.transit.TestTransitScheduleCutter
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.428 s -- in org.eqasim.simulation.analysis.AnalysisOutputFileNamesTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.172 s -- in org.eqasim.simulation.analysis.AnalysisOutputListenerShutdownTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.126 s -- in org.eqasim.simulation.analysis.ModeAnalysisShutdownCopyTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in org.eqasim.simulation.transit.departure.TestDefaultDepartureFinder
+[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in org.eqasim.simulation.transit.departure.TestTransitBoardingFinder
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 75.17 s -- in org.eqasim.TestEmissions
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 34.48 s -- in org.eqasim.TestMotorcycles
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 546.8 s -- in org.eqasim.TestSimulationPipeline
+[INFO] Tests run: 18, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 102.7 s -- in org.eqasim.TestVolumeDelayFunction
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.602 s -- in org.eqasim.braunschweig.BraunschweigConfiguratorParkingTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in org.eqasim.braunschweig.BraunschweigConfiguratorVrbFareTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.208 s -- in org.eqasim.braunschweig.fares.zonal.DayTicketCapTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.486 s -- in org.eqasim.braunschweig.fares.zonal.DayTicketCapTourEstimatorTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in org.eqasim.braunschweig.fares.zonal.FareOutcomeCounterTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in org.eqasim.braunschweig.fares.zonal.FareOutcomeReportListenerTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.333 s -- in org.eqasim.braunschweig.fares.zonal.LongDistanceFareRaptorCostCalculatorTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in org.eqasim.braunschweig.fares.zonal.PtLineScopesTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.013 s -- in org.eqasim.braunschweig.fares.zonal.VrbFareConfigGroupTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.144 s -- in org.eqasim.braunschweig.fares.zonal.VrbFareModelTest
+[INFO] Tests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.088 s -- in org.eqasim.braunschweig.fares.zonal.VrbZoneFareCostModelTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in org.eqasim.braunschweig.GuiceClasspathTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.351 s -- in org.eqasim.braunschweig.mode_choice.BraunschweigModeAvailabilityTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in org.eqasim.braunschweig.mode_choice.ModeChoiceValueOfTimeTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.096 s -- in org.eqasim.braunschweig.mode_choice.utilities.estimators.BraunschweigCarUtilityEstimatorSearchTimeTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in org.eqasim.braunschweig.mode_choice.utilities.estimators.BraunschweigIncomeUtilityTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.085 s -- in org.eqasim.braunschweig.mode_choice.utilities.estimators.VrbZoneFarePtUtilityEstimatorTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.195 s -- in org.eqasim.braunschweig.parking.GarageOptionBenchmarkTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.108 s -- in org.eqasim.braunschweig.parking.GarageOptionModelTest
+[INFO] Tests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.283 s -- in org.eqasim.braunschweig.parking.GarageParkingCostCalculatorTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.032 s -- in org.eqasim.braunschweig.parking.ParkingAttributesTest
+[INFO] Tests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.016 s -- in org.eqasim.braunschweig.parking.ParkingConfigGroupTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.122 s -- in org.eqasim.braunschweig.parking.ParkingCostCalculatorTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.049 s -- in org.eqasim.braunschweig.parking.ParkingModuleTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.055 s -- in org.eqasim.braunschweig.parking.ParkingOptionPriceBetaCheckTest
+[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.268 s -- in org.eqasim.braunschweig.parking.ParkingOutcomeCounterTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.218 s -- in org.eqasim.braunschweig.parking.ParkingOutcomeReportListenerTest
+[INFO] Tests run: 21, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.115 s -- in org.eqasim.braunschweig.parking.ParkingPopulationCheckTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in org.eqasim.braunschweig.parking.ParkingSearchTimeCheckTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in org.eqasim.braunschweig.parking.ParkingSearchTimeTest
+[INFO] Tests run: 52, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.557 s -- in org.eqasim.braunschweig.parking.ParkingTariffsTest
+[INFO] Tests run: 38, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.304 s -- in org.eqasim.braunschweig.parking.ZoneParkingCarCostModelTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 11.15 s -- in org.eqasim.braunschweig.ParkingInjectorTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in org.eqasim.braunschweig.scenario.AccessGroupAllocationTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in org.eqasim.braunschweig.scenario.AddVrbTariffZoneInformationTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.023 s -- in org.eqasim.braunschweig.scenario.FreightBoundaryLinkSelectorTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.021 s -- in org.eqasim.braunschweig.scenario.LargeFacilityAccessLinkSelectorTest
+[INFO] Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.040 s -- in org.eqasim.braunschweig.scenario.LargeSiteAccessAssignmentTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.032 s -- in org.eqasim.braunschweig.scenario.ParkingLotReaderTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.415 s -- in org.eqasim.braunschweig.scenario.RunAdaptLargeFacilityAccessTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.115 s -- in org.eqasim.braunschweig.scenario.RunAdaptPassengerAvailabilityConfigTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.351 s -- in org.eqasim.braunschweig.scenario.RunInjectFreightBoundaryLinkTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in org.eqasim.braunschweig.scenario.TariffZoneAssignerTest
+[INFO] Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.525 s -- in org.eqasim.braunschweig.simwrapper.SimWrapperHouseholdsInputLinkerTest
+[INFO] Tests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.864 s -- in org.eqasim.braunschweig.simwrapper.SimWrapperNetworkAttributeSanitizerTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.068 s -- in org.eqasim.braunschweig.VrbFareInjectorTest
+
+[INFO] Tests run: 132, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 434, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Reactor Summary for core 2.3.1:
+[INFO] core ............................................... SUCCESS [12:57 min]
+[INFO] braunschweig ....................................... SUCCESS [ 30.522 s]
+[INFO] BUILD SUCCESS
+lines of the log that contain 'Failed loading line numbers': 0 (of 59895 log lines)
+
+# mvn -T 1 -B -ntp test-compile -Dmatsim.preferLocalDtds=true   (all modules: resolution and compilation of main and test code with the changed poms)
+[INFO] Reactor Summary for eqasim 2.3.1:
+[INFO] eqasim ............................................. SUCCESS [  0.042 s]
+[INFO] core ............................................... SUCCESS [  2.341 s]
+[INFO] switzerland ........................................ SUCCESS [  5.651 s]
+[INFO] ile_de_france ...................................... SUCCESS [  7.470 s]
+[INFO] braunschweig ....................................... SUCCESS [  3.193 s]
+[INFO] sao_paulo .......................................... SUCCESS [  3.608 s]
+[INFO] san_francisco ...................................... SUCCESS [  5.332 s]
+[INFO] los_angeles ........................................ SUCCESS [  4.134 s]
+[INFO] server ............................................. SUCCESS [  7.345 s]
+[INFO] BUILD SUCCESS

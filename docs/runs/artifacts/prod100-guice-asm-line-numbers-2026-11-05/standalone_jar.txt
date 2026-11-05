@@ -1,0 +1,38 @@
+# Standalone jar of braunschweig, built as the stage matsim.runtime.eqasim builds it: a copy of the source tree without target, .git and .claude,
+# mvn -Pstandalone --projects braunschweig --also-make package -DskipTests=true -Dproject.build.outputTimestamp=2026-01-01T00:00:00Z
+# (JDK 25.0.4.1, Maven 3.9.9, Windows). before = git archive of origin/main c4051c167; after = the changed work tree.
+# Smoke: JarSmoke.java (docs artifacts) builds the controller injector of the production configurator (BraunschweigConfigurator) with ONLY the jar
+# on the class path and counts the @Provides methods whose binding text has no source line and the warning lines of the JVM.
+
+==================================================================================================
+== before
+jar: braunschweig-2.3.1.jar, 193,728,420 bytes
+entries: 82,833 (classes: 72,057)
+copies of com/google/inject/Guice.class: 1
+entries below com/google/inject/internal/asm/ (the embedded ASM): 35
+classes below com/google/inject/ (without the embedded ASM): 539
+classes of the plain org/objectweb/asm package: 0
+other ASM packages (commons, tree, util, signature): []
+no plain org/objectweb/asm/Opcodes in the jar
+highest Java version constant of the embedded ASM Opcodes: V21
+class file major versions of the org.eqasim and org.matsim classes: {61: 9, 69: 5166}
+shade warnings in the build: 23; resources named under the warnings that list a Guice or asm jar: META-INF/DEPENDENCIES, META-INF/LICENSE, META-INF/MANIFEST.MF, META-INF/NOTICE (no class)
+2026-11-05T09:31:26,341  INFO Config:457 setting context to [file:/C:/Users/BIENZE~1/AppData/Local/Temp/c5f_jar_smoke15306211460883638804/config.xml]
+C5F_JAR_SMOKE bindings=591 keys_sha256=bc55976b759496de75537e8590406a71ac4cb4678eda3caf9a9a53bf9cd00276 provider_methods=79 without_source_line=79
+warning lines 'Failed loading line numbers' in that JVM: 1
+
+==================================================================================================
+== after
+jar: braunschweig-2.3.1.jar, 193,732,426 bytes
+entries: 82,839 (classes: 72,061)
+copies of com/google/inject/Guice.class: 1
+entries below com/google/inject/internal/asm/ (the embedded ASM): 0
+classes below com/google/inject/ (without the embedded ASM): 539
+classes of the plain org/objectweb/asm package: 35
+other ASM packages (commons, tree, util, signature): ['org/objectweb/asm/signature']
+highest Java version constant of org/objectweb/asm/Opcodes: V27
+class file major versions of the org.eqasim and org.matsim classes: {61: 9, 69: 5166}
+shade warnings in the build: 23; resources named under the warnings that list a Guice or asm jar: META-INF/DEPENDENCIES, META-INF/LICENSE, META-INF/MANIFEST.MF, META-INF/NOTICE (no class)
+2026-11-05T09:31:28,625  INFO Config:457 setting context to [file:/C:/Users/BIENZE~1/AppData/Local/Temp/c5f_jar_smoke9400616713362975025/config.xml]
+C5F_JAR_SMOKE bindings=591 keys_sha256=bc55976b759496de75537e8590406a71ac4cb4678eda3caf9a9a53bf9cd00276 provider_methods=79 without_source_line=0
+warning lines 'Failed loading line numbers' in that JVM: 0
