@@ -786,3 +786,55 @@ def test_a_far_soft_mode_stay_without_a_road_mode_becomes_pt_and_one_with_a_road
     assert report["mode_substitution_reasons"] == {"soft_mode_beyond_distance_no_road_mode": 1}
     assert report["n_soft_mode_stays_beyond_distance"] == 2 and report["n_soft_mode_stays_to_pt"] == 1
     assert report["n_soft_mode_stays_left_to_outside_tour_modes"] == 1
+
+
+def test_a_portal_stay_whose_return_is_an_invented_closure_ends_the_day_outside():
+    """#570: a closure trip invented by the plan validation is dropped; the day ends outside, no return gate."""
+    fixture = _fixture()
+    pt_only = {"car_availability": "none", "has_license": False, "car_passenger_availability": "none"}
+    fixture["persons"] = pd.DataFrame([
+        {"person_id": 1, "household_id": 10, "bicycle_availability": "all", **pt_only},        # A: closure return
+        {"person_id": 2, "household_id": 20, "bicycle_availability": "all", **pt_only},        # B: genuine return
+        {"person_id": 3, "household_id": 30, "bicycle_availability": "all", "car_availability": "all",
+         "has_license": True, "car_passenger_availability": "some"}])                          # C: car, closure
+    fixture["df_home"] = gpd.GeoDataFrame({"household_id": [10, 20, 30]}, geometry=[Point(25000.0, 25000.0)] * 3,
+                                          crs=CRS)
+    fixture["df_work"] = gpd.GeoDataFrame({"person_id": [], "location_id": []}, geometry=[], crs=CRS)
+    rows = []
+    for person_id, closure in [(1, True), (2, False), (3, True)]:
+        rows.append(dict(person_id=person_id, trip_index=0, preceding_purpose="home", following_purpose="leisure",
+                         euclidean_distance=120000.0, departure_time=9 * 3600.0, arrival_time=11 * 3600.0,
+                         is_synthetic_closure=False))
+        rows.append(dict(person_id=person_id, trip_index=1, preceding_purpose="leisure", following_purpose="home",
+                         euclidean_distance=np.nan if closure else 120000.0, departure_time=18 * 3600.0,
+                         arrival_time=20 * 3600.0, is_synthetic_closure=closure))
+    fixture["trips"] = pd.DataFrame(rows).assign(mode="car")
+    calls = []
+    fixture["router"] = _router(calls=calls)
+
+    out = stage.build_portal_trips(**fixture)
+    trips, anchors, report = out["trips"], out["anchors"], out["report"]
+
+    for person_id in (1, 3):  # A and C: the outbound leg is the whole day
+        own = trips[trips["person_id"] == person_id]
+        assert len(own) == 1
+        assert own["following_purpose"].tolist() == ["outside"]
+        assert own["is_last_trip"].tolist() == [True] and own[PORTAL_LEG_COLUMN].tolist() == [True]
+        assert "home" not in own["following_purpose"].tolist()
+    b = trips[trips["person_id"] == 2].sort_values("trip_index")
+    assert len(b) == 2
+    assert b["preceding_purpose"].iloc[1] == "outside" and b["following_purpose"].iloc[1] == "home"
+    assert bool(b[PORTAL_LEG_COLUMN].iloc[1])
+
+    # Router task index <i> = position among the pt stays in (person_id, trip_index) order: A -> 0, B -> 1
+    # (C drives, so it has no pt stay).
+    identifiers = pd.concat(calls)["identifier"].tolist() if calls else []
+    assert not [i for i in identifiers if i.startswith("0:") and i.endswith(":ret")]
+    assert [i for i in identifiers if i.startswith("1:") and i.endswith(":ret")]
+
+    # The outside activity is the last activity of A and C: activity_index == trip count == 1.
+    for person_id in (1, 3):
+        assert anchors.loc[anchors["person_id"] == person_id, "activity_index"].tolist() == [1]
+
+    assert report["n_stays_closure_return_dropped"] == 2
+    assert report["n_stays_without_return"] == 2
