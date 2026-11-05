@@ -2,7 +2,8 @@ feature: initial_mode_choice
 title: Initial mode choice before iteration 0 with free-flow travel times
 area: matsim
 description: >-
-  Every agent of the final population chooses its modes once with the production discrete mode choice model
+  Every agent of the final population except the in-commuters (excluded below) chooses its modes once with the
+  production discrete mode choice model
   BEFORE MATSim iteration 0, with free-flow car travel times, the way eqasim intends its upfront mode choice
   (ADR-0178, issue #542; supersedes the first-replanning strategy of ADR-0155). As the last step of
   braunschweig.matsim.simulation.prepare before the plan check, after the routing, the cordon cut, the freight
