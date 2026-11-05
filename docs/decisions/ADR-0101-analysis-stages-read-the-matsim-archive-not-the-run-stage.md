@@ -1,6 +1,10 @@
 # ADR-0101 · 2026-09-03 · Analysis stages read the MATSim output archive, never the run stage
 
-- **Status:** active
+- **Status:** active; amended by ADR-0177 (2026-11-04): the "Accepted trade-off: no ordering edge in a
+  combined invocation" below is withdrawn. Its premise did not hold: synpp's execution order follows the
+  dependency layers, not the `run:` list, so both stages always executed before the simulation in a
+  combined invocation (production run `prod100_20261031`). They now declare an ordering-only constraint
+  on `matsim.output`.
 - **Context:** `braunschweig.analysis.analysis_suite` and
   `braunschweig.analysis.simwrapper_export` declared
   `context.stage("matsim.simulation.run")` whenever

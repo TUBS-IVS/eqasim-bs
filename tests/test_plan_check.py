@@ -386,6 +386,37 @@ def test_summarise_files_a_pt_as_walk_leg_without_origin_end_time_under_unknown(
     assert frozen["pt_as_walk_by_hour"] == {"unknown": 1}
 
 
+def test_summarise_counts_a_walk_only_pt_trip_without_the_stamp_as_pt_as_walk():
+    # The mode choice's own router sets routingMode but never the walkFallbackFrom stamp (eqasim-bs#542).
+    h = 3600.0
+    plan = _plan("w", [("home", 8 * h, 0, 0), ("pt interaction", 8 * h + 300, 1, 0), ("work", None, 2, 0)],
+                 [("walk", 300.0, None, "pt"), ("walk", 120.0, None, "pt")])
+    residents = _summarise([plan])["subpopulations"][C.RESIDENTS]
+    block = residents[C.FROZEN if residents[C.FROZEN]["n_pt_trips"] else C.IN_REGION]
+    assert block["n_pt_trips"] == 1 and block["n_pt_as_walk"] == 1 and block["share_pt_as_walk"] == 1.0
+    assert block["pt_as_walk_by_hour"] == {"8": 1}
+
+
+def test_summarise_does_not_count_a_pt_trip_with_a_pt_leg_as_walk():
+    h = 3600.0
+    plan = _plan("p", [("home", 8 * h, 0, 0), ("pt interaction", 8 * h + 60, 1, 0),
+                       ("pt interaction", 8 * h + 700, 2, 0), ("work", None, 3, 0)],
+                 [("walk", 60.0, None, "pt"), ("pt", 600.0, None, "pt"), ("walk", 60.0, None, "pt")])
+    block = _summarise([plan])["subpopulations"][C.RESIDENTS][C.IN_REGION]
+    assert block["n_pt_trips"] == 1 and block["n_pt_as_walk"] == 0
+
+
+def test_summarise_counts_a_stamped_walk_and_a_walk_only_pt_trip_once_each():
+    h = 3600.0
+    both_rules = [("walk", 60.0, "pt", "pt")]
+    plan = _plan("b", [("home", 8 * h, 0, 0), ("work", 9 * h, 1, 0), ("home", 17 * h, 0, 0),
+                       ("leisure", None, 1, 0)],
+                 both_rules + [("car", 60.0, None, "car")] + [("walk", 60.0, None, "pt")])
+    block = _summarise([plan])["subpopulations"][C.RESIDENTS][C.IN_REGION]
+    assert block["n_pt_trips"] == 2 and block["n_pt_as_walk"] == 2
+    assert block["pt_as_walk_by_hour"] == {"8": 1, "17": 1}
+
+
 def test_walk_fallback_attribute_name_matches_the_java_constant():
     assert C.WALK_FALLBACK_ATTRIBUTE == "walkFallbackFrom"
 

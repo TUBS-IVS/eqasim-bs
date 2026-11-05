@@ -1,0 +1,161 @@
+id: prod100-fleet-composition-accounting-2026-11-04
+date: '2026-11-04'
+repository:
+  commit: 7a41f0ba57bb9abdb862c59bcc14c73653e8510a
+  branch: origin/main (the detached worktree of the production run)
+  notes: >-
+    The code the 100 % production run prod100_20261031 ran (felix:~/prod100_20261031/eqasim-bs, a clean detached
+    worktree, status checked empty after the replays), used READ ONLY and unmodified for the baseline replay. The "after"
+    replay swapped in ONE file, braunschweig/synthesis/vehicles/fleet_sampling_de.py of branch
+    fix/c5b-composition-sole-gemeinde-not-applicable (commit 50d19ff0, the committed blob, LF line endings, sha256
+    b41948023614cd48dbb344542f67af24739a8197c06c8c9a9f716469841db8c5) and nothing else. The loader guard of
+    braunschweig/data/kba/fleet_tables.py and the extractor guard are not exercised by a replay; their tests are
+    tests/test_fleet_gemeinde_bev_composition.py (loader) and tests/test_extract_kba_fleet.py (extractor).
+    Between 7a41f0ba and the base of that branch (6ef8f99c) there is no change in braunschweig/synthesis/vehicles/,
+    braunschweig/data/kba/, scripts/extract_kba_fleet.py or the FZ 27.17 table (git diff empty), so the swapped file
+    differs from the production one by this change only.
+configuration:
+  config: configs/base_bs.yml with the run overlay of prod100_20261031 (felix:~/prod100_20261031/run.yml.launch1_20261031T071313)
+  notes: >-
+    Only the settings of the household stage enter the replay, with the arguments of the sample_fleet call that
+    replay_composition_clip.py copies from braunschweig.synthesis.vehicles.cars.household.execute: random_seed 1234,
+    data_path eqasim-data/data of the run's code worktree, every fleet_* flag at its default (consistency_v2,
+    age_income_coupling, ev_income_tilt, euro6_substage, wohnmobile_age_tilt, gemeinde_bev_composition_tilt, model_brands
+    all True).
+sampling:
+  rate: 1.0
+  scope: >-
+    the RESIDENTS fleet only (688,832 household cars). The in-commuter fleet was not replayed.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. sample_fleet of braunschweig.synthesis.vehicles.cars.household was replayed outside synpp from
+    three cached outputs of the run (the household stage's own output, the enriched persons and the home-cell locations),
+    which rebuilds the df_cars frame in about 12 s instead of the stage's per-household loop. The replay is only a replay
+    if its fleet equals the cached one: the check is the second validation entry below. The method and the replay script
+    are those of the run prod100-fleet-composition-clip-2026-11-04.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    The replays completed on 2026-11-04 (14:42:51 to 14:47:17 CET baseline, 14:42:51 to 14:47:26 CET after, run in
+    parallel; the replay of the merged module 15:54 to 15:58 CET). A check that an ACCOUNTING change alters no sampled
+    vehicle, plus a measurement of the corrected rates; NOT a
+    validation: no observed data is involved, and the composition factors themselves stay unvalidated (feature record
+    fleet_gemeinde_bev_composition_tilt).
+source: >-
+  felix:~/c5b_replay_20261104/ (run with PYTHONDONTWRITEBYTECODE=1, OMP/OPENBLAS/MKL threads 1, nice 10), deleted after the
+  committed copies below were checked. The replay script is that of the run prod100-fleet-composition-clip-2026-11-04
+  (docs/runs/artifacts/prod100-fleet-composition-clip-2026-11-04/replay_composition_clip.py). The first two replays (baseline,
+  after) and the first classifications ran an earlier revision of it (sha256
+  ac96c5860047f2d36c00ca05aaf7af82504b667c50d4285727c13465857e477d) whose code is identical to the revision now on main and
+  differs in docstring and comments only; the replay of the merged module ran the revision on main (sha256
+  eccd7fe4fe3942f2387be4872264af6c7bea95a3c84ff0ab958576a5572239fb). Committed in
+  docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/: decompose_composition_accounting.py (sha256
+  c89eadb5de2aa1af337695a8e9279d699823216ebaecf4186b583965fd7aa1d2; classifies the cars by the composition accounting with one
+  probe per distinct home Gemeinde; its first revision imported the replay helpers from its own folder, and the classification
+  results below were reproduced with this revision), check_fz2717_table.py and check_fz27_workbook.py with their outputs
+  table_key_check.txt and fz27_workbook_check.txt (both ran on the laptop, not on felix), and the results baseline_*, after_*
+  and merged_* (verification.json; the run log as replay_log.txt, because *.log is git-ignored; classification.csv,
+  classification_by_kreis.csv and classification_summary.json).
+environment: 'server (felix, hostname matsim, Linux 5.15.0-139-generic), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, numpy 1.23.5, pandas 1.5.3), time zone Europe/Berlin'
+validation:
+- metric: key uniqueness of the FZ 27.17 table that the production run read
+  reference: 'the committed blob of eqasim-data/data/braunschweig/kba/derived/kba_gemeinde_private_bev.csv; an equivalence reference, NOT observed data'
+  result: >-
+    The table on felix (prod100_20261031/eqasim-bs/eqasim-data/data/braunschweig/kba/derived/) has sha256
+    0e06286d378dd15fc2908c13142a086fd1fb350645d635dcd253470bc25e6dc8, the same as the committed blob. It has 113 data rows
+    with 113 distinct (kreis_ags5, gemeinde) keys, also 113 distinct keys after normalize_gemeinde_name, no identical rows,
+    and the Braunschweig row (03101) once. The 113 in the run log is the number of Gemeinde rows of the table (1 + 1 + 1 + 41 +
+    7 + 23 + 7 + 32 in the eight Kreise), and the report that the Braunschweig row stands twice is not reproducible. The eight empty
+    cells are two BEV and six PHEV cells; the last validation entry reads each of them at the source.
+  artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/table_key_check.txt
+- metric: the replayed residents fleet against the cached production output (identity)
+  reference: 'felix cache entry braunschweig.synthesis.vehicles.cars.household__6b6784a39cfbf5cdf97abeb2ac00d4ce; an equivalence reference, NOT observed data'
+  result: >-
+    IDENTICAL for all 688,832 fleet cars in the 8 compared columns (vehicle_id, segment, powertrain, euro_class, age_band,
+    brand, model, type_id; 0 mismatches each), for the production code (baseline) AND for the patched module (after). The
+    change therefore alters no sampled vehicle; it only changes how cars are counted and logged.
+  artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/after_verification.json
+  notes: baseline_verification.json is the same check for the unmodified production code.
+- metric: the composition accounting of the production run, reproduced and split per Gemeinde
+  reference: 'felix:~/prod100_20261031/logs/run_20261031T071313.log line 1545 (the run''s own log, NOT observed data)'
+  result: >-
+    The baseline replay logs "primary 604514/679187 (89.0%), fallback 74673 (11.0%)" verbatim as the run did, and the
+    classification script reproduces the same two counts. Of the 74,673 fallback cars, 71,958 (96.4 %) live in Wolfsburg
+    (Kreis 03103, the sole Gemeinde of its Kreis); the other 2,715 live in seven Gemeinden of two Kreise (03154: Jerxheim 619,
+    Querenhorst 301, Beierstedt 253; 03158: Uehrde 499, Winnigstedt 387, Dahlum 376, Hedeper 280). Braunschweig (03101, 145,219
+    cars) and Salzgitter (03102, 62,320 cars) were counted as PRIMARY hits although their composition factor is 1.0 by
+    construction.
+  artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/baseline_classification_by_kreis.csv
+  notes: >-
+    The classification probes PowertrainModel.powertrain_probabilities once per distinct (kreis_ags5, gemeinde) because the
+    class of a car depends on that pair only; that its totals equal the run log's is the check of that shortcut.
+- metric: the corrected accounting at production scale against the prediction made from the baseline classification
+  reference: 'the baseline classification of the entry above, turned into a prediction before the patched module ran; an internal prediction, NOT observed data'
+  result: >-
+    The patched module logs, for the residents draw, "primary 396975/399690 (99.3%), fallback 2715 (0.7%) ...; not
+    applicable 279497": exactly the predicted figures (604,514 less the 145,219 and 62,320 cars of the two kreisfreie Staedte
+    that were primary; 74,673 less Wolfsburg's 71,958; the three Staedte's 279,497 cars not applicable). The build-time line
+    reads primary 103/110 (93.6%), fallback 7 (6.4%), not applicable 3 (Kreise 03101, 03102, 03103), against 105/113 and 8
+    before. The vehicle-weighted composition fallback rate therefore falls from 11.0 % to 0.7 %; the 2,715 cars are the
+    genuine missing references of the seven small Gemeinden.
+  artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/after_replay_log.txt
+  notes: >-
+    These are accounting rates, not a measure of model quality, and nothing here says the composition factors match reality.
+- metric: cars outside the composition accounting (home Gemeinde with no 2026 reference row; unchanged by this change)
+  reference: 'none; a count of the model population, NOT observed data'
+  result: >-
+    9,645 cars never reach the composition counters because the combined tilt itself finds no row for them: 9,347 cars carry
+    the Gemeinde label "NAN" in Kreis 03153, and 298 cars lie in gemeindefreie Gebiete (03153: 158, 03154: 135, 03151: 5). The
+    gemeindefreie Gebiete are unmatched by design (normalize_gemeinde_name returns an empty key for them). The label "NAN" is
+    a literal string in the cached household output; its origin was not examined here.
+  artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/after_classification.csv
+- metric: the module as merged with PR #547 (this change plus the clip-check change), replayed against the cached production output
+  reference: 'felix cache entry braunschweig.synthesis.vehicles.cars.household__6b6784a39cfbf5cdf97abeb2ac00d4ce; an equivalence reference, NOT observed data'
+  result: >-
+    IDENTICAL for all 688,832 fleet cars in the same 8 columns (0 mismatches each), for the module of the branch after the merge
+    of origin/main with PR #547 (merge commit b0d99872, blob sha256
+    7e77558db7dc9f9ff3d378d0f2497854019f42f2950455beedc5261e177c124f). Its composition accounting lines equal those of the entry
+    above, and the clip line of PR #547 is logged as INFO without the former WARNING. git merged the two changes in the module
+    without a conflict.
+  artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/merged_verification.json
+  notes: >-
+    merged_replay_log.txt is the run log (15:54 to 15:58 CET, run with the revision of the replay script on main);
+    merged_classification_summary.json and merged_classification_by_kreis.csv classify the cars with the merged module.
+- metric: the eight empty FZ 27.17 cells read at their source, and the workbook against the committed tables
+  reference: 'the KBA workbook fz27_202501.xlsx (FZ 27 series 2025-01, Stichtag 1 January 2025) and its own legend; the primary source of the table, NOT observed fleet data'
+  result: >-
+    Each of the eight cells holds the KBA symbol "." (sheet FZ 27.17, BEV: Wolfsburg row 4731, Hedeper row 4835; PHEV:
+    Beierstedt row 4781, Jerxheim 4789, Querenhorst 4793, Dahlum 4826, Uehrde 4847, Winnigstedt 4850). The workbook's legend
+    (sheet Inhaltsverzeichnis, Zeichenerklaerung) defines "." as "Zahlenwert unbekannt oder geheim zu halten", so a KBA marker
+    for an unknown or secret value; the symbol does not say which of the two. They are not extraction defects. Each of the
+    three kreisfreie Staedte has exactly one row with its Gemeinde name in the sheet (rows 4729 to 4731), so the Braunschweig
+    row is not repeated in the source either. Re-running the seven FZ 27 based extractors on this workbook reproduces the seven
+    committed tables byte for byte (segment_powertrain, kreis_powertrain, gemeinde_private_bev, fuel_euro_nds,
+    fuel_euro6_substage_nds, age_fuel, brand_powertrain), with eight "." turned into NaN and two "-" into 0 in FZ 27.17: it is
+    the workbook the committed tables came from.
+  artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/fz27_workbook_check.txt
+  notes: >-
+    Run on the laptop (Windows, conda eqasim: Python 3.10.10, numpy 1.23.5, pandas 1.5.3, openpyxl 3.1.0) with the workbook
+    from the owner's download folder (file dated 2026-06-07); its name, size and sha256 are in the dataset record
+    kba_fleet_derived and in the artifact. check_fz27_workbook.py reads the workbook read-only and writes nothing to the
+    repository.
+artifacts:
+- docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/
+issues: []
+decisions:
+- ADR-0125
+features:
+- fleet_gemeinde_bev_composition_tilt
+notes: >-
+  Cost of landing the change. The edit of fleet_sampling_de.py changes the structured token of the stages that hash it,
+  braunschweig.synthesis.incommuters and braunschweig.synthesis.student_incommuters; the edit of fleet_tables.py changes those
+  two and braunschweig.analysis.analysis_suite (static audit, scripts/audit_synpp_helper_hash.py, covered[] of each stage).
+  The household stage hashes neither module, so it does not re-execute. The two incommuter stages are the ones the change of
+  PR #547 (run manifest prod100-fleet-composition-clip-2026-11-04, which holds their durations) already invalidates on main,
+  so this change adds no further re-execution of them if no run starts between the two landings; analysis_suite (through
+  fleet_tables.py) is the one addition, and its duration was not read from the run log. The new log lines appear in a run
+  log only when the household stage next re-executes for another reason; this replay is the way to get the figures without
+  that run.

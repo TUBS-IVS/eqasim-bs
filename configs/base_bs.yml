@@ -500,8 +500,11 @@ config:
   synpp_expected_stale_stages: []
 
   # CEILING, not a fixed heap size (ADR-0126): one of the three CLAMPED keys, cut
-  # down to the detected memory budget at the point of use (matsim/runtime/java.py,
-  # data/osm/osmosis.py) when the machine is smaller than this; see the
+  # down to the detected memory budget at the point of use when the machine is
+  # smaller than this. matsim/runtime/java.py (through braunschweig/java_heap.py)
+  # also subtracts the live RSS of the driver process, so a driver that already
+  # holds memory leaves the JVM a smaller heap (C2, 2026-11-04); data/osm/osmosis.py
+  # clamps against the machine budget alone. See the
   # resource-adaptive configuration note at the top of this file. The config value
   # itself is left untouched on purpose, so this line stays the pin every machine
   # is measured against. Always give it a unit: a bare number is read as gigabytes
@@ -946,11 +949,10 @@ config:
   braunschweig.plan_check.max_frozen_defect_share: 0.005
   braunschweig.plan_check.max_frozen_pt_as_walk_share: 0.02
   braunschweig.plan_check.fail_on_threshold: false
-  # Every agent chooses its modes once at the first replanning (#465): a second DiscreteModeChoice strategy with
-  # this weight (against 0.05 + 0.95 of the loop) that MATSim disables after iteration 1. With 5 % per iteration
-  # alone, about 1.2 % of the residents never chose in the 86 replanning rounds of the WP-E smoke.
+  # eqasim's standalone mode choice runs at the end of the prepare stage on the final population with free-flow
+  # travel times, before iteration 0 (ADR-0178, #542). It replaces the first-replanning strategy of ADR-0155.
+  # The key braunschweig.initial_mode_choice.weight is retired and refused.
   braunschweig.initial_mode_choice.enabled: true
-  braunschweig.initial_mode_choice.weight: 1000000.0
   # WARN when more than this share of the external points miss the distance band, or of the
   # work/education legs fall back to the donor's reported distance (the primary method is then suspect).
   braunschweig.portal.fallback_warn_share: 0.1

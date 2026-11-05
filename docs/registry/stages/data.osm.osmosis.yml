@@ -20,6 +20,8 @@ notes: >-
   this stage's osmosis JAVACMD_OPTIONS clamps the configured java_memory against the
   machine's detected memory budget at the point of use
   (braunschweig/resources.py::effective_java_memory), the same mechanism and the same
-  key as matsim.runtime.java. Operational only (the value only ever becomes -Xmx and
-  cannot change any result), and the configured value is never rewritten, so this
-  stage's cache hash is unaffected.
+  key as matsim.runtime.java, but machine-only: unlike matsim.runtime.java's launcher
+  (braunschweig/java_heap.py, driver-aware since 2026-11-04) it does not subtract the
+  driver's live RSS (docs/codebase/notes/resource-budget.md, limitation 4). Operational
+  only (the value only ever becomes -Xmx and cannot change any result), and the
+  configured value is never rewritten, so this stage's cache hash is unaffected.

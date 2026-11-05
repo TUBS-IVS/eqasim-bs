@@ -1,0 +1,17 @@
+samples: 2487, first 2026-10-31T07:13:47, last 2026-11-01T04:59:19
+oom_kill_count 1 from sample 0 at 2026-10-31T07:13:47 (stage -)
+-- 2026-11-01T04:58:18 stage matsim.simulation.run available 62.51 GiB swap used 1.28 GiB oom_kill_count 1 processes 4
+   pid 1540161  rss   14.751 GiB python scripts/run_synpp.py configs/base_bs.yml /home/felix/prod100_20
+   pid 1565342  rss    0.005 GiB /home/felix/miniforge3/envs/eqasim/bin/python -c from multiprocessing.
+   pid 1565343  rss    0.005 GiB /home/felix/miniforge3/envs/eqasim/bin/python -c from multiprocessing.
+   pid 1607732  rss   14.963 GiB /home/felix/tools/jdk-25.0.3+9/bin/java -cp /home/felix/prod100_202610
+-- 2026-11-01T04:58:49 stage matsim.simulation.run available 60.32 GiB swap used 1.28 GiB oom_kill_count 1 processes 4
+   pid 1540161  rss   14.751 GiB python scripts/run_synpp.py configs/base_bs.yml /home/felix/prod100_20
+   pid 1565342  rss    0.005 GiB /home/felix/miniforge3/envs/eqasim/bin/python -c from multiprocessing.
+   pid 1565343  rss    0.005 GiB /home/felix/miniforge3/envs/eqasim/bin/python -c from multiprocessing.
+   pid 1607732  rss   17.152 GiB /home/felix/tools/jdk-25.0.3+9/bin/java -cp /home/felix/prod100_202610
+-- 2026-11-01T04:59:19 stage matsim.simulation.run available 59.11 GiB swap used 1.28 GiB oom_kill_count 1 processes 4
+   pid 1540161  rss   14.751 GiB python scripts/run_synpp.py configs/base_bs.yml /home/felix/prod100_20
+   pid 1565342  rss    0.005 GiB /home/felix/miniforge3/envs/eqasim/bin/python -c from multiprocessing.
+   pid 1565343  rss    0.005 GiB /home/felix/miniforge3/envs/eqasim/bin/python -c from multiprocessing.
+   pid 1607732  rss   18.355 GiB /home/felix/tools/jdk-25.0.3+9/bin/java -cp /home/felix/prod100_202610

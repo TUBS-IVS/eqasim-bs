@@ -50,6 +50,13 @@ BOUND_RESAMPLE_WARN_RATE = 0.01
 # is the one pre-registered in the design spec (section 2.3).
 CLOSURE_CAP_WARN_RATE = 0.05
 
+# Above this share of within-person chain links whose origin purpose had to be rewritten
+# by enforce_purpose_chain_consistency, the trips were reordered on a large scale after
+# the diary build and the chains no longer follow the diaries (WARN). ASSUMPTION (issue
+# #258): 1 % -- the probe on 60,000 MiD 2023 donors measured 0.07 % of links before the
+# departure-tie fix, nearly all of them on persons the resample replaces anyway.
+PURPOSE_CHAIN_REPAIR_WARN_RATE = 0.01
+
 # Performance switch shared by every stage that reaches PlanValidator.  Kept in
 # this leaf module so the public validator and its synpp callers cannot drift.
 KEY_VECTORIZED_PLAN_VALIDATION = "braunschweig.performance.plan_validation"
@@ -221,8 +228,13 @@ def _append_return_home(
     else:
         df["is_synthetic_closure"] = df["is_synthetic_closure"].fillna(False).astype(bool)
 
-    # Identify the index of each person's last trip.
-    last_idx = df.groupby("person_id", sort=False)["departure_time"].idxmax()
+    # Identify the index of each person's last trip: the LAST row of the person in the
+    # (person_id, departure_time) sort above. The multi-key sort is stable, so on a
+    # departure-time tie (MiD reports 0-minute legs) the diary order decides. idxmax would
+    # return the FIRST tied row instead and anchor the closure on a trip that is not the
+    # last one, breaking the purpose chain (issue #258).
+    last_rows = df.drop_duplicates("person_id", keep="last")
+    last_idx = pd.Series(last_rows.index, index=last_rows["person_id"].to_numpy())
 
     rows_to_append = []
     idx_to_flip = []  # old last-trip indices that need is_last_trip -> False
@@ -861,3 +873,93 @@ def resample_chains(
     if new_rows:
         return pd.concat([kept, *new_rows], ignore_index=True)
     return kept
+
+
+def _person_boundaries(df_trips: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """First/last-trip flags derived from ``person_id`` alone (the frame must be chain-sorted)."""
+    person = df_trips["person_id"]
+    is_first = person.ne(person.shift(1)).to_numpy()
+    is_last = person.ne(person.shift(-1)).to_numpy()
+    return is_first, is_last
+
+
+def count_inconsistent_purpose_links(df_trips: pd.DataFrame) -> int:
+    """Number of within-person links with ``following_purpose[i] != preceding_purpose[i+1]``.
+
+    The frame must already be sorted in chain order (``person_id`` then the trip order);
+    person boundaries are derived from ``person_id``, so a link never spans two persons.
+    Same rule as eqasim's ``hts.check_activity_types``.
+    """
+    _, is_last = _person_boundaries(df_trips)
+    following = df_trips["following_purpose"].to_numpy()
+    preceding_next = df_trips["preceding_purpose"].shift(-1).to_numpy()
+    return int(((following != preceding_next) & ~is_last).sum())
+
+
+def enforce_purpose_chain_consistency(
+    df_trips: pd.DataFrame,
+    *,
+    order_col: str = "trip_index",
+    log_tag: str = "[popsim.plan_validation]",
+    warn_rate: float = PURPOSE_CHAIN_REPAIR_WARN_RATE,
+) -> pd.DataFrame:
+    """Re-establish ``following_purpose[i] == preceding_purpose[i+1]`` the way eqasim does.
+
+    The diary build enforces the chain once (``hts.fix_activity_types``, step 8 of
+    ``trips.build_trip_table``), as every eqasim-france HTS cleaning stage does. Every step
+    that runs AFTER it and reorders, inserts or replaces trips can break it again: the
+    repair re-sorts by ``departure_time`` (MiD diaries whose ``W_ID`` order is not their
+    time order) and appends home closures. This runs the same eqasim repair once more on
+    the final chain order and then asserts the result like eqasim's ``hts.check``
+    (issue #258, ADR-0174).
+
+    Rule (eqasim): the LATER trip's origin is rewritten to the EARLIER trip's destination;
+    each person's first trip keeps its ``preceding_purpose`` (home-start convention).
+    The number of rewritten links is logged as a rate of all within-person links, and
+    WARNs above ``warn_rate`` (fallback-transparency rule).
+
+    Args:
+        df_trips: Trip table with ``person_id``, ``order_col``, ``preceding_purpose``,
+            ``following_purpose``, ``is_first_trip``, ``is_last_trip``.
+        order_col: Column giving each person's trip order (default ``trip_index``,
+            the order every downstream stage reads).
+        log_tag: Prefix of the log lines (the calling stage).
+        warn_rate: Share of rewritten links above which a WARNING is logged.
+
+    Returns:
+        A new frame sorted by ``(person_id, order_col)`` with a fresh RangeIndex.
+
+    Raises:
+        ValueError: if ``is_first_trip`` / ``is_last_trip`` disagree with the person
+            boundaries (the eqasim rewrite would then copy a purpose ACROSS persons), or
+            if any inconsistent link is left after the rewrite.
+    """
+    df = df_trips.sort_values(["person_id", order_col], kind="stable", ignore_index=True)
+
+    is_first, is_last = _person_boundaries(df)
+    n_stale = int((df["is_first_trip"].to_numpy(dtype=bool) != is_first).sum()
+                  + (df["is_last_trip"].to_numpy(dtype=bool) != is_last).sum())
+    if n_stale:
+        raise ValueError(
+            f"{log_tag} purpose chain: {n_stale} is_first_trip/is_last_trip flags disagree "
+            f"with the person boundaries of the ({order_col}-sorted) trip table; refusing "
+            f"to rewrite purposes, which would copy them across persons.")
+
+    n_links = int((~is_last).sum())
+    n_inconsistent = count_inconsistent_purpose_links(df)
+    if n_inconsistent:
+        # eqasim's own repair (data/hts/hts.py); it rewrites preceding_purpose in place.
+        hts.fix_activity_types(df)
+    rate = n_inconsistent / n_links if n_links else 0.0
+    log = logger.warning if rate > warn_rate else logger.info
+    log("%s purpose chain: rewrote the origin purpose of %d/%d within-person links "
+        "(%.3f%%) to the previous trip's destination (eqasim fix_activity_types after the "
+        "last reordering step; warn above %.1f%%)",
+        log_tag, n_inconsistent, n_links, 100.0 * rate, 100.0 * warn_rate)
+
+    n_remaining = count_inconsistent_purpose_links(df)
+    if n_remaining:
+        raise ValueError(
+            f"{log_tag} purpose chain: {n_remaining} inconsistent links remain after "
+            f"fix_activity_types; the chain cannot be lived as a sequence of activities.")
+    return df

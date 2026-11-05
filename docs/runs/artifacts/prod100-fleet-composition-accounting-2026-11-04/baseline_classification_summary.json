@@ -1,0 +1,63 @@
+{
+  "label": "baseline",
+  "fleet_module": "/home/felix/prod100_20261031/eqasim-bs/braunschweig/synthesis/vehicles/fleet_sampling_de.py",
+  "cars": 688832,
+  "cars_by_accounting_class": {
+    "composition_fallback": 74673,
+    "composition_primary": 604514,
+    "gemeinde_tilt_unmatched": 9645
+  },
+  "composition_primary": 604514,
+  "composition_fallback": 74673,
+  "composition_not_applicable": 0,
+  "composition_counted_total": 679187,
+  "composition_fallback_rate_of_counted": 0.10994468386467939,
+  "fallback_cars_by_kreis": {
+    "03103": 71958,
+    "03154": 1173,
+    "03158": 1542
+  },
+  "fallback_cars_top_gemeinden": [
+    {
+      "kreis_ags5": "03103",
+      "gemeinde": "WOLFSBURG, STADT",
+      "cars": 71958
+    },
+    {
+      "kreis_ags5": "03154",
+      "gemeinde": "JERXHEIM",
+      "cars": 619
+    },
+    {
+      "kreis_ags5": "03158",
+      "gemeinde": "UEHRDE",
+      "cars": 499
+    },
+    {
+      "kreis_ags5": "03158",
+      "gemeinde": "WINNIGSTEDT",
+      "cars": 387
+    },
+    {
+      "kreis_ags5": "03158",
+      "gemeinde": "DAHLUM",
+      "cars": 376
+    },
+    {
+      "kreis_ags5": "03154",
+      "gemeinde": "QUERENHORST",
+      "cars": 301
+    },
+    {
+      "kreis_ags5": "03158",
+      "gemeinde": "HEDEPER",
+      "cars": 280
+    },
+    {
+      "kreis_ags5": "03154",
+      "gemeinde": "BEIERSTEDT",
+      "cars": 253
+    }
+  ],
+  "distinct_gemeinde_keys": 118
+}

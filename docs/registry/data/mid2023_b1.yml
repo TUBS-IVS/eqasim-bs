@@ -60,6 +60,13 @@ notes: |
   THE popsim_mid donor: every synthetic person carries a real MiD donor's attributes and travel-day
   chain. Raw ids are pseudonymised before any output; the surrogate map stays in the local work dir.
 
+  Properties of this delivery that the loaders check and log as information (counts measured on the
+  raw files, run manifest prod100-expected-message-levels-2026-11-04): the H_ID=0 bucket of person
+  rows without a household row, which braunschweig.popsim.mid.donor.drop_invalid_households removes
+  (MID_2023_INVALID_HOUSEHOLD_ROWS / _PERSONS; load_completed_donor warns when it drops anything
+  else), and the HP_SEX codes 3 and 9 that braunschweig.data.hts.mid_donor imputes
+  (SEX_IMPUTED_WARN_SHARE).
+
   Personen P_VAUTO is additionally required when mid_passenger_availability is enabled
   (issue #398). Its definition, missing-code policy and separation from household
   H_ANZAUTO and driver access are recorded in ADR-0121. The same existing files

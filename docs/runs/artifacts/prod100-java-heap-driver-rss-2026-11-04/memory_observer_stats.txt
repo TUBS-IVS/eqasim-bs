@@ -1,0 +1,2 @@
+run_20261101T050111.log: n=1669, max heap [88064] MiB, used max 80736 MiB (78.8 GiB), total max 88064 MiB, used p50 43732 MiB (42.7 GiB), p90 58679 MiB (57.3 GiB), p99 73430 MiB (71.7 GiB)
+B_matsim.log: n=2947, max heap [88064] MiB, used max 83520 MiB (81.6 GiB), total max 88064 MiB, used p50 42809 MiB (41.8 GiB), p90 52359 MiB (51.1 GiB), p99 66745 MiB (65.2 GiB)

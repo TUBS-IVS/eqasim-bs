@@ -21,7 +21,9 @@ Covers:
 
 from __future__ import annotations
 
+import copy
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -33,6 +35,8 @@ REPO = Path(__file__).resolve().parents[1]
 DATA = REPO / "eqasim-data" / "data"
 sys.path.insert(0, str(REPO))
 
+from braunschweig.data.kba import fleet_tables as ft  # noqa: E402
+from braunschweig.ipf import joint_age_size  # noqa: E402
 from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E402
 
 FZ2717_CSV = DATA / "braunschweig" / "kba" / "derived" / "kba_gemeinde_private_bev.csv"
@@ -598,6 +602,91 @@ def test_committed_fz2717_factors_average_to_one_per_kreis():
             )
 
 
+@pytest.mark.skipif(not FZ2717_CSV.exists(),
+                    reason="kba_gemeinde_private_bev.csv absent (local-only data)")
+def test_loader_refuses_a_repeated_gemeinde_key(tmp_path):
+    """The loader must stop on a repeated ``(kreis_ags5, gemeinde)`` key.
+
+    The consumers keep one value per key, so a repeated row is silently resolved to
+    the last one, and the composition's Kreis reference sums over rows and would
+    count it twice.
+    """
+    table = pd.read_csv(FZ2717_CSV, dtype={"kreis_ags5": str})
+    derived = tmp_path / ft.KBA_SUBDIR
+    derived.mkdir(parents=True)
+    pd.concat([table, table.iloc[[5]]]).to_csv(derived / FZ2717_CSV.name, index=False)
+
+    with pytest.raises(RuntimeError, match="duplicate"):
+        ft.load_gemeinde_private_bev(str(tmp_path))
+
+
+# ---------------------------------------------------------------------------
+# Accounting: the sole Gemeinde of a Kreis is NOT APPLICABLE, not a fallback
+# ---------------------------------------------------------------------------
+# The composition redistributes BEV:PHEV BETWEEN the Gemeinden of a Kreis, so the only
+# Gemeinde of a Kreis (a kreisfreie Stadt) has nothing to shift against, whether or not
+# its counts are suppressed. Counting it as a missing reference reports a data gap that
+# does not exist; the rule is docs/codebase/notes/fallback-counter-states.md.
+
+def test_build_time_coverage_leaves_a_sole_gemeinde_out_of_the_rates(caplog):
+    df = pd.DataFrame([
+        _fz_row("03103", "SOLETOWN", 57779, np.nan, 528),   # sole Gemeinde, BEV suppressed
+        _fz_row("03154", "ALPHA", 1000, 80, 20),
+        _fz_row("03154", "BETA", 900, 50, 30),
+        _fz_row("03154", "BEIERSTEDT", 253, 7, np.nan),     # a real missing reference
+    ])
+    with caplog.at_level(logging.INFO, logger=fs.logger.name):
+        fs._gemeinde_electric_composition(df)
+
+    assert "primary 2/3" in caplog.text   # the sole Gemeinde is outside the denominator
+    assert "BEIERSTEDT" in caplog.text    # the real gap stays named
+
+
+@pytest.fixture(scope="module")
+def committed_powertrain_model():
+    """The real wiring: ``PowertrainModel.from_data_path`` on the committed tables.
+
+    The build reads about twenty CSVs (a few seconds), so it runs once per module and
+    every test works on a deep copy with zeroed counters.
+    """
+    if not FZ2717_CSV.exists():
+        pytest.skip("kba_gemeinde_private_bev.csv absent (local-only data)")
+    segments = list(ft.load_segment_powertrain(str(DATA))["segment"].unique())
+    model = fs.PowertrainModel.from_data_path(str(DATA), segments)
+    model.gemeinde_bev_composition_tilt = True
+    return model, segments[0]
+
+
+def test_kreisfreie_staedte_are_neither_primary_nor_fallback(committed_powertrain_model):
+    template, segment = committed_powertrain_model
+    model = copy.deepcopy(template)
+    for kreis, label in (("03101", "Braunschweig, Stadt"),
+                         ("03102", "Salzgitter, Stadt"),
+                         ("03103", "Wolfsburg, Stadt")):
+        model.powertrain_probabilities(segment, kreis, label)
+    # A Kreis of several Gemeinden is unaffected: it still counts as a primary hit.
+    model.powertrain_probabilities(segment, "03151", "Gifhorn, Stadt")
+
+    assert (model._gemeinde_composition_primary,
+            model._gemeinde_composition_fallback) == (1, 0)
+    assert model._gemeinde_composition_not_applicable == 3
+
+
+def test_a_population_in_one_kreisfreie_stadt_raises_no_warning(
+        committed_powertrain_model, caplog):
+    template, segment = committed_powertrain_model
+    model = copy.deepcopy(template)
+    for _ in range(10):
+        model.powertrain_probabilities(segment, "03103", "Wolfsburg, Stadt")
+    with caplog.at_level(logging.INFO, logger=fs.logger.name):
+        model.log_fallback_rate("residents")
+
+    warnings = [r.getMessage() for r in caplog.records
+                if r.levelno >= logging.WARNING
+                and "composition" in r.getMessage().lower()]
+    assert not warnings, warnings
+
+
 # ---------------------------------------------------------------------------
 # Aggregate neutrality on the REALISED population (issue #317 review finding)
 # ---------------------------------------------------------------------------
@@ -662,11 +751,10 @@ class TestCompositionAggregateNeutrality:
             "fixture must actually be skewed, otherwise it proves nothing"
         )
 
-        deltas, clipped = fs._neutralise_composition_aggregate(
+        shifts = fs._neutralise_composition_aggregate(
             pmfs, kreise, factors, self.IDX)
 
-        assert clipped == 0
-        assert "03151" in deltas
+        assert shifts["03151"].clipped_cars == 0
         assert self._bev_share_of_electric(pmfs) == pytest.approx(untilted, abs=1e-12)
 
     def test_electric_total_per_car_is_untouched(self):
@@ -711,12 +799,12 @@ class TestCompositionAggregateNeutrality:
         kreise = ["03151"] * 4 + ["03158"] * 4
         factors = [skew] * 4 + [None] * 4
 
-        deltas, _ = fs._neutralise_composition_aggregate(pmfs, kreise, factors, self.IDX)
+        shifts = fs._neutralise_composition_aggregate(pmfs, kreise, factors, self.IDX)
 
         untilted = base_bev / (base_bev + base_phev)
         assert self._bev_share_of_electric(pmfs[:4]) == pytest.approx(untilted, abs=1e-12)
         assert self._bev_share_of_electric(pmfs[4:]) == pytest.approx(untilted, abs=1e-12)
-        assert "03158" not in deltas, "a Kreis with unit factors needs no shift"
+        assert "03158" not in shifts, "a Kreis with unit factors needs no shift"
 
     def test_matched_population_needs_no_shift(self):
         """When the population DOES match the factors' weighting, delta is zero."""
@@ -744,3 +832,84 @@ class TestCompositionAggregateNeutrality:
 
         assert float(pmfs[0][self.IDX["bev"]]) == 0.0
         assert float(pmfs[0][self.IDX["phev"]]) == 0.0
+
+    # ------------------------------------------------------------------
+    # The [0, 1] clip: what it LOSES, not how many cars it touches (C5a)
+    # ------------------------------------------------------------------
+    # Cars on the boundary the shift points at clip whatever their size, so the count is
+    # structural; what the clip costs is the electric MASS they hold (ADR-0125,
+    # amendment 2026-11-04). The fixture cars sit on the boundary the way ``minis`` do:
+    # their other electric powertrain carries only the seed floor of the rake.
+
+    SEED_FLOOR = joint_age_size._SEED_FLOOR
+    PHEV_HEAVY = {"bev": 0.8, "phev": 1.3}
+    BEV_HEAVY = {"bev": 1.2, "phev": 0.7}
+
+    def _skewed_kreis(self, kreis: str, boundary: str, n_boundary: int,
+                      boundary_electric: float):
+        """Mixed cars skewed so the shift points at ``boundary``, plus cars sitting on it.
+
+        ``boundary="bev"``: nine of the ten mixed cars live in the PHEV-heavy Gemeinde,
+        so the tilt LOWERS the Kreis BEV aggregate and the correction shifts every BEV
+        fraction UP, towards 1, where the numerically pure BEV cars already are.
+        ``boundary="phev"`` is the mirror image. Returns ``(pmfs, kreise, factors,
+        untilted)``; ``untilted`` is the BEV share of the electric mass before any tilt.
+        """
+        majority, minority = ((self.PHEV_HEAVY, self.BEV_HEAVY) if boundary == "bev"
+                              else (self.BEV_HEAVY, self.PHEV_HEAVY))
+        pure = ((boundary_electric, self.SEED_FLOOR) if boundary == "bev"
+                else (self.SEED_FLOOR, boundary_electric))
+        base = [(0.06, 0.04)] * 10 + [pure] * n_boundary
+        car_factors = [majority] * 9 + [minority] + [majority] * n_boundary
+        pmfs = [self._apply_composition(bev, phev, f)
+                for (bev, phev), f in zip(base, car_factors)]
+        untilted = sum(b for b, _ in base) / sum(b + p for b, p in base)
+        return pmfs, [kreis] * len(pmfs), car_factors, untilted
+
+    @pytest.mark.parametrize("boundary", ["bev", "phev"])
+    def test_cars_on_the_boundary_clip_without_breaking_the_aggregate(
+            self, boundary, caplog):
+        """Six boundary cars clip, they hold 5.7 % of the electric mass: no warning."""
+        pmfs, kreise, factors, untilted = self._skewed_kreis("03151", boundary, 6, 0.01)
+
+        shifts = fs._neutralise_composition_aggregate(pmfs, kreise, factors, self.IDX)
+
+        shift = shifts["03151"]
+        assert shift.clipped_cars == 6, "every car on the boundary clips, whatever its size"
+        assert shift.unclosed_share_of_shift == pytest.approx(0.06 / 1.06, rel=1e-3)
+        # The reported residual is the real gap between the intended and realised aggregate.
+        assert untilted - self._bev_share_of_electric(pmfs) == pytest.approx(
+            shift.residual_of_electric_mass, abs=1e-12)
+
+        with caplog.at_level(logging.INFO, logger=fs.logger.name):
+            fs._log_composition_correction(shifts, "[fleet_de][test]")
+        assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+        assert any(r.levelno == logging.INFO and re.search(r"\b6\b.*\bcar", r.getMessage())
+                   for r in caplog.records), "the clipped-car count stays an INFO figure"
+
+    def test_boundary_cars_holding_most_of_the_mass_defeat_the_correction(self, caplog):
+        """FEWER clipped cars (3), but they hold 54.5 % of the mass: the clip decides.
+
+        A healthy second Kreis (six clipped cars, 5.7 % of its mass) sits alongside, so a
+        figure pooled over the Kreise would hide the bad one.
+        """
+        bad = self._skewed_kreis("03151", "bev", 3, 0.4)
+        good = self._skewed_kreis("03158", "bev", 6, 0.01)
+        pmfs, kreise, factors = bad[0] + good[0], bad[1] + good[1], bad[2] + good[2]
+
+        shifts = fs._neutralise_composition_aggregate(pmfs, kreise, factors, self.IDX)
+
+        assert shifts["03151"].clipped_cars < shifts["03158"].clipped_cars
+        assert shifts["03151"].unclosed_share_of_shift == pytest.approx(1.2 / 2.2, rel=1e-3)
+        with caplog.at_level(logging.INFO, logger=fs.logger.name):
+            fs._log_composition_correction(shifts, "[fleet_de][test]")
+        warnings = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+        assert len(warnings) == 1
+        assert "03151" in warnings[0] and "03158" not in warnings[0]
+
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger=fs.logger.name):
+            fs._log_composition_correction(shifts, "[fleet_de][test]",
+                                           warn_unclosed_share=0.9)
+        assert [r for r in caplog.records if r.levelno >= logging.WARNING] == [], (
+            "the threshold is a parameter, not a constant buried in the log call")

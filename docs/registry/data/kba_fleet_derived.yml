@@ -56,6 +56,14 @@ limitations: |
     the motorhome sub-fleet (49% of them currently draw euro6), not for fleet aggregates. The
     holder-AGE gap is closed by kba_wohnmobile_holder_age.csv (#315, ADR-0093); this vehicle-AGE
     gap stays open.
+  * kba_gemeinde_private_bev.csv (FZ 27.17) has eight rows with an empty BEV or PHEV cell: BEV for Wolfsburg
+    (03103) and Hedeper (03158), PHEV for Beierstedt, Jerxheim, Querenhorst (03154) and Dahlum, Uehrde,
+    Winnigstedt (03158). Verified at the source on 2026-11-04: each is the KBA placeholder ".", "unknown or secret" in
+    the workbook's own legend, and not an extraction defect. The workbook is fz27_202501.xlsx (1,487,610 bytes, sha256
+    c75b392bf0e2a73587870ebdcc7ddff746a822d12901fca0c051e91fe83d621e) and it is the one the committed FZ 27 tables came
+    from (evidence: docs/runs/prod100-fleet-composition-accounting-2026-11-04.yml). Wolfsburg is the sole Gemeinde of
+    its Kreis, so its cell has no modelling consequence (ADR-0125 decision 7); the seven others carry no composition
+    factor.
   KBA counts vehicles REGISTERED in a Kreis (company cars at the business seat), the synthesis
   produces HOUSEHOLD cars: spatial patterns are comparable, exact levels are not.
 notes: |
@@ -66,7 +74,9 @@ notes: |
   the FZ 27.17 private BEV/PHEV sheet (kba_gemeinde_private_bev.csv, the Kreis-mean denominator
   weight source AND, since issue #317 / ADR-0125, the per-Gemeinde BEV:PHEV composition source --
   the 2026 per-Gemeinde EV export publishes only the combined electric share, so FZ 27.17 supplies
-  the structure the level signal cannot; 105/113 ZGB Gemeinden carry a usable ratio),
+  the structure the level signal cannot; 105/113 ZGB Gemeinden carry a usable ratio, and each
+  (kreis_ags5, gemeinde) key occurs once, which fleet_tables.require_unique_keys enforces in the loader and
+  the extractor),
   the national age anchor (kba_age_national.csv), the RegioStaR-7 EV cross-check
   (kba_ev_regiostar7.csv, logging only) and four MiD cross tables including
   mid2023_antrieb_by_status.csv (P(powertrain | economic status), the EV-income tilt input).
