@@ -20,8 +20,9 @@
   after midnight.
 - The timetable-aware pt gate checks both directions of a stay (ADR-0152). An invented late return finds no
   service, and the no-connection chain then switches the whole home-based tour to car or a lift (ADR-0152,
-  ADR-0156), the daytime trip out included. The shares measured on run `prod100_20261031` are in #570 (read-only
-  replay of the portal stage, model output; no committed run manifest yet).
+  ADR-0156), the daytime trip out included. The defect's shares in run `prod100_20261031` are in #570 (read-only
+  probe of the old code, model output, not committed); the replay of this rule on the same inputs is the run manifest
+  `docs/runs/i570-portal-replay-prod100-2026-11-05.yml`.
 - The flag did not survive the home-office splice: `braunschweig.synthesis.commute_day.donor_pool.donor_trips`
   carried only the trip contract plus `euclidean_distance` and `trip_key`, and
   `braunschweig.synthesis.commute_day.plan_replacement.build_day_trips` nulls every other extra column on the
@@ -58,7 +59,8 @@
 - **Output change by decision.** These persons' days end at the gate; the inside part of their invented return
   disappears from the simulated trips; fewer tours switch to car or a lift for want of a return connection; fewer
   days are expected to move earlier through the day-end margin (ADR-0154, ADR-0160), where the invented return
-  was the last arrival (expectation, see #570). No observed reference exists for these shares; the before/after measurement is planned in #570.
+  was the last arrival (expectation, see #570). No observed reference exists for these shares; the
+  portal-stage replay is in the run manifest above, the full-run before/after measurement is planned in #570.
 - **Simulation.** MATSim does not reject a plan whose first and last activity types differ: it warns once and scores
   the first activity from midnight and the last one to midnight (`CharyparNagelActivityScoring`, checked at the
   matsim-libs tags `matsim-0.7.0` to `2026.0`). The written config turns activity scoring off for every type,
