@@ -72,7 +72,8 @@ ROUTER_CONFIG_NAME = "pt_router_config.xml"
 
 #: Report entries of a run without any outside stay (the stay-level counts are all zero).
 _EMPTY_STAY_REPORT = {
-    "n_persons_with_stay": 0, "n_stays_without_return": 0, "n_stays_closure_return_dropped": 0, "n_stays_by_kind": {}, "n_stays_by_mode": {},
+    "n_persons_with_stay": 0, "n_stays_without_return": 0, "n_stays_closure_return_dropped": 0,
+    "n_stays_by_kind": {}, "n_stays_by_mode": {},
     "gate_usage": {}, "n_mode_substituted": 0, "mode_substitution_reasons": {}, "n_return_mode_differs": 0,
     "n_external_point_drawn": 0, "n_external_band_miss": 0, "n_origin_proxied_by_home": 0,
     "n_reentry_clamped": 0, "n_return_share_degenerate": 0, "n_outbound_share_degenerate": 0,
