@@ -528,7 +528,7 @@ class TestRegioStarLoader:
         }
         # ZGB-8 has 123 Gemeinden according to the VG250 authoritative
         # geographic universe (which supersedes the XLSX row count of 126).
-        # Langelsheim (03153019) is present via nearest-neighbour RS7 fill.
+        # Langelsheim (03153019) is a direct match since ADR-0180.
         assert len(df) == 123
         assert set(df["ars5"].unique()) == set(ZGB_KREISE)
 

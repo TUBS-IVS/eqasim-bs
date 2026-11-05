@@ -214,7 +214,9 @@ def execute(context) -> pd.DataFrame:
 
     df = pd.DataFrame({
         "commune_id": raw[code_col].astype("Int64").astype(str).str.zfill(8),
-        "name": raw[name_col].astype(str),
+        # A blank name stays missing (never the text "nan"): household.py counts
+        # a missing name as a Gemeinde-tilt fallback (ADR-0180).
+        "name": raw[name_col].where(raw[name_col].notna()).astype(object),
         "regiostar7": pd.to_numeric(raw["RegioStaR7"], errors="coerce")
                        .astype("Int64"),
         "regiostar17": pd.to_numeric(raw["RegioStaR17"], errors="coerce")
