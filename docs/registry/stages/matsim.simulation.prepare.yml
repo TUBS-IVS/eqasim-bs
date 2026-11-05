@@ -162,7 +162,9 @@ notes: >-
   the FINAL config and the population file it names in plans.inputPlansFile, with free-flow travel times (no
   travel-time option), --eqasim-configurator org.eqasim.braunschweig.BraunschweigConfigurator,
   standaloneModeChoice.outputDirectory mode_choice, removePersonsWithNoValidAlternatives true, the input and
-  output trips CSVs (gzip) and global.numberOfThreads from matsim_threads or processes. mode_choice/output_plans.xml.gz
+  output trips CSVs (gzip) and global.numberOfThreads from matsim_threads or processes; with cordon_enabled also
+  standaloneModeChoice.excludedSubpopulations incommuter,student_incommuter (ADR-0182 decision 5, feature record
+  initial_mode_choice). mode_choice/output_plans.xml.gz
   is moved over the population file under its name, so the run, matsim.output and the plan check read the chosen,
   routed plans. The stage raises when the persons of the output differ from the input or an output is missing, and
   logs under [initial mode choice] and writes to initial_mode_choice.json the persons before/after, the trips, the

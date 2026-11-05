@@ -6,6 +6,9 @@
   branch `fix/analysis-after-matsim-output`).
 - **Issue:** #542. **Supersedes:** decisions 1-3 of ADR-0155 (#465, mechanism 4); its diagnosis and its rejected
   options stand.
+- **Refined by:** ADR-0182 decision 5 (#566): the in-commuter subpopulations are excluded from this choice; the
+  statement below that tours touching an `outside` activity keep their modes "exactly as in the loop" does not cover
+  in-commuter tours without one.
 - **Owner decisions (2026-11-04):** the step sits at the end of `matsim.simulation.prepare`, not in an own synpp
   stage; it uses free-flow travel times, "the way eqasim intends it"; eqasim's own mechanism is reused as far as
   possible.

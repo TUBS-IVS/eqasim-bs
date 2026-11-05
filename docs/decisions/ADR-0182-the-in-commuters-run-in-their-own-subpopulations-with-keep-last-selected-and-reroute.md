@@ -43,6 +43,14 @@
    `w` = `cordon_incommuter_reroute_weight` (default 0.1, validated in (0, 1) at configure time). The in-commuters
    keep their synthesised mode and adapt their routes; they no longer take part in the in-loop mode choice.
 4. The student in-commuters get the same pair (owner decision).
+5. Before iteration 0 the standalone initial mode choice (ADR-0178) leaves both subpopulations unchanged too: with
+   `cordon_enabled`, prepare passes them to the new runner option `standaloneModeChoice.excludedSubpopulations` of
+   eqasim-java-bs, which skips those persons and fails when the list matches nobody (owner decision 2026-11-05;
+   behaviour in the feature record `initial_mode_choice`). The `OutsideFilter` alone does not keep their modes: the
+   production tour finder splits at `home` and `outside`, so an in-commuter whose whole day lies inside the simulated
+   area (home > work > home) has a tour without an `outside` activity, which the choice re-chose. A read-only probe
+   on the prepared 100 % population of `prod100_20261031` found such tours; its counts are probe output and enter no
+   record before a run manifest cites them.
 
 ## Rejected options
 
@@ -53,6 +61,13 @@
 - **A strategy block for `incommuter` only.** A student in-commuter with a label but no block would have no strategy
   at all; without a label it would stay in the residents' mode choice, unlike the SvB in-commuters with the same kind
   of synthesised mode.
+- **A subpopulation-aware tour filter in the Braunschweig configurator** (for decision 5). It would freeze the
+  in-commuters' tours in every DMC use, also in the loop where they have no DMC strategy anyway; the plans would
+  still pass through the model, and the exclusion would be implicit in a filter list instead of an explicit, logged
+  runner option.
+- **Derive the excluded subpopulations from the replanning strategies** (skip every subpopulation without a
+  DiscreteModeChoice strategy). No second list, but it would also skip freight, a behaviour change for freight that
+  would need its own measurement.
 
 ## Consequences
 
@@ -62,12 +77,14 @@
   in-commuters' plans.
 - Cached stages: `matsim.scenario.population` and `matsim.simulation.prepare` recompute, and everything after them;
   the synthesis stages stay cached.
-- Not changed here: the standalone initial mode choice (ADR-0178) runs eqasim's `RunStandaloneModeChoice` on every
-  person, without a subpopulation filter, so it can still re-choose an in-commuter's tour that touches no `outside`
-  activity before iteration 0. Excluding the in-commuters there needs a change in eqasim-java-bs (follow-up).
+- Coupled versions: decision 5 needs the eqasim-java-bs build with `standaloneModeChoice.excludedSubpopulations`;
+  an older build rejects the unknown option at startup instead of re-choosing the in-commuters silently.
 
 ## Status
 
-Implemented on branch `fix/i566-incommuter-subpopulation`; tests in `tests/test_incommuter_subpopulation.py`. No run
-has used it yet; the run manifest that shows the plan check and the stuck-agent table with the in-commuter groups
-apart from the residents is the open item of issue #566.
+Implemented on branch `fix/i566-incommuter-subpopulation`; tests in `tests/test_incommuter_subpopulation.py`.
+Decision 5 on branch `fix/i566-standalone-excludes-incommuters` (tests in `tests/test_initial_mode_choice.py` and
+eqasim-java-bs `StandaloneModeChoiceExcludedSubpopulationsTest`). No run has used it yet; the run manifest that shows
+the plan check and the stuck-agent table with the in-commuter groups apart from the residents is the open item of
+issue #566, and the same run shows decision 5 in the mode-choice log (`mode_choice/`, line "Excluded
+subpopulations": the persons kept per subpopulation, equal to the in-commuters of the population).

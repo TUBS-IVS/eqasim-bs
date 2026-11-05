@@ -409,13 +409,22 @@ def execute(context):
     # The standalone mode choice runs on the FINAL population (after the cut, the freight injection and the
     # fare/parking inputs), free flow, before the plan check reads the result.
     if context.config(initial_mode_choice.KEY_ENABLED):
-        initial_mode_choice.run(context, result)
+        initial_mode_choice.run(context, result, _initial_mode_choice_excluded_subpopulations(context))
 
     # The check reads the FINAL files (after the cut, the freight injection and the fare inputs).
     if context.config(plan_check.KEY_ENABLED):
         plan_check.run(context, result)
 
     return result
+
+
+def _initial_mode_choice_excluded_subpopulations(context) -> tuple[str, ...]:
+    """The subpopulations the standalone mode choice leaves unchanged: the in-commuters whenever the cordon writes them.
+
+    They have the fixed-mode strategies in the MATSim loop (ADR-0182), so they keep their synthesised mode before
+    iteration 0 as well (eqasim-bs#566). Without the cordon there are no in-commuters to exclude.
+    """
+    return cordon_subpopulation.INCOMMUTER_SUBPOPULATIONS if context.config("cordon_enabled") else ()
 
 
 def _add_incommuter_strategies(context, config_name):
