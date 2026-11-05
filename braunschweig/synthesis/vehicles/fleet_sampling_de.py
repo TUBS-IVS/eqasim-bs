@@ -237,22 +237,31 @@ def apply_gebietsstand_crosswalk(kreis_ags5: str, gemeinde_norm: str) -> str:
 
 def require_unique_gemeinde_keys(df_gem_fz27: pd.DataFrame,
                                  filename: str = "kba_gemeinde_private_bev.csv") -> None:
-    """Refuse an FZ 27.17 frame in which two rows are the same Gemeinde for the consumers.
+    """Refuse an FZ 27.17 frame in which a Gemeinde key repeats, raw or as the consumers see it.
 
-    The consumers (:func:`_gemeinde_electric_composition`,
-    ``PowertrainModel._kreis_private_electric_share_2026`` and
-    ``PowertrainModel._gemeinde_private_electric_share``) resolve a row by
-    ``(kreis_ags5, normalize_gemeinde_name(gemeinde))`` and keep one value per key, so
-    ``"GIFHORN,ST."`` and ``"GIFHORN"`` in one Kreis are ONE Gemeinde to them although
-    the raw keys that ``fleet_tables.require_unique_keys`` checks in the loader differ:
-    the composition's Kreis reference would count both rows while its factor map keeps
-    the last. A row without a usable name (a gemeindefreies Gebiet) never takes part in a
-    join and is not checked. The normaliser lives here, so this check lives here too:
-    the data layer must not import the synthesis layer.
+    Two checks, in this order:
+
+    1. The raw ``(kreis_ags5, gemeinde)`` key over EVERY row, the rule of the loader
+       ``fleet_tables.load_gemeinde_private_bev``. The extractor runs only this function,
+       so it refuses every table the loader refuses, a repeated gemeindefreies Gebiet
+       included.
+    2. The consumers' key. The consumers (:func:`_gemeinde_electric_composition`,
+       ``PowertrainModel._kreis_private_electric_share_2026`` and
+       ``PowertrainModel._gemeinde_private_electric_share``) resolve a row by
+       ``(kreis_ags5, normalize_gemeinde_name(gemeinde))`` and keep one value per key, so
+       ``"GIFHORN,ST."`` and ``"GIFHORN"`` in one Kreis are ONE Gemeinde to them although
+       their raw keys differ: the composition's Kreis reference would count both rows
+       while its factor map keeps the last. A row whose name normalises to ``""`` (a
+       gemeindefreies Gebiet) never takes part in a join, so this check skips it.
+
+    The normaliser lives here, so this check lives here too: the data layer must not
+    import the synthesis layer.
 
     Raises:
-        RuntimeError: if two rows share ``(kreis_ags5, normalised name)``.
+        RuntimeError: if two rows share ``(kreis_ags5, gemeinde)`` or
+            ``(kreis_ags5, normalised name)``.
     """
+    ft.require_unique_keys(df_gem_fz27, ["kreis_ags5", "gemeinde"], filename)
     keyed = pd.DataFrame({
         "kreis_ags5": df_gem_fz27["kreis_ags5"].astype(str),
         "gemeinde_normalised": df_gem_fz27["gemeinde"].map(normalize_gemeinde_name),

@@ -135,7 +135,7 @@ validation:
     above, and the clip line of PR #547 is logged as INFO without the former WARNING. git merged the two changes in the module
     without a conflict. The module was not replayed again after the review round that followed, which added
     require_unique_gemeinde_keys: a refusal before the draw that changes no value; the table of the run passes it (113 distinct
-    normalised keys, table_key_check.txt) and the tests that build the model on the committed tables pass.
+    raw and 113 distinct normalised keys, table_key_check.txt) and the tests that build the model on the committed tables pass.
   artifact: docs/runs/artifacts/prod100-fleet-composition-accounting-2026-11-04/merged_verification.json
   notes: >-
     merged_replay_log.txt is the run log (15:54 to 15:58 CET, run with the revision of the replay script on main);

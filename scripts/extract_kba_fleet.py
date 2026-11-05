@@ -574,7 +574,7 @@ def extract_gemeinde_private_bev() -> pd.DataFrame:
     (``fleet_sampling_de.require_unique_gemeinde_keys``), never written.
     """
     # Local import (like extract_gemeinde_ev): the repo root is only put on sys.path
-    # above, and the consumers' own key (normalised name) is checked, not the raw text.
+    # above. The check covers the loader's raw key and the consumers' normalised key.
     from braunschweig.synthesis.vehicles.fleet_sampling_de import require_unique_gemeinde_keys
 
     rows = _read_sheet(FZ27_PATH, "FZ 27.17")
@@ -604,8 +604,8 @@ def extract_gemeinde_private_bev() -> pd.DataFrame:
     counter.log()
     frame = pd.DataFrame(records)
     require_unique_gemeinde_keys(frame, "FZ 27.17 gemeinde_private_bev")
-    logger.info("[FZ 27.17 gemeinde_private_bev] %d Gemeinde rows, each with a unique "
-                "(kreis_ags5, normalised Gemeinde name) key", len(frame))
+    logger.info("[FZ 27.17 gemeinde_private_bev] %d Gemeinde rows; no (kreis_ags5, Gemeinde) "
+                "key repeats, raw or normalised", len(frame))
     frame = frame.sort_values(["kreis_ags5", "gemeinde"]).reset_index(drop=True)
     frame["private_bev_share"] = frame["private_bev"] / frame["private_total"]
     frame["private_phev_share"] = frame["private_phev"] / frame["private_total"]

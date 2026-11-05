@@ -185,14 +185,21 @@ def test_gemeinde_private_bev_covers_zgb_kreise():
     assert frame["private_bev"].isna().mean() < 0.2
 
 
-@pytest.mark.parametrize("repeat", ["ADENBUETTEL", "ADENBUETTEL,ST."],
-                         ids=["same_spelling", "other_spelling"])
-def test_gemeinde_private_bev_refuses_a_gemeinde_that_appears_twice(monkeypatch, repeat):
+@pytest.mark.parametrize("bezirk, first, repeat", [
+    pytest.param("03151 GIFHORN", "ADENBUETTEL", "ADENBUETTEL", id="same_spelling"),
+    pytest.param("03151 GIFHORN", "ADENBUETTEL", "ADENBUETTEL,ST.", id="other_spelling"),
+    pytest.param("03153 GOSLAR", "HARZ (LANDKREIS GOSLAR),GEMFR.GEB.",
+                 "HARZ (LANDKREIS GOSLAR),GEMFR.GEB.", id="unnamed_area_same_spelling"),
+])
+def test_gemeinde_private_bev_refuses_a_gemeinde_that_appears_twice(monkeypatch, bezirk, first,
+                                                                    repeat):
     """A Gemeinde listed twice must stop the extraction, also under another spelling of its name.
 
     The downstream consumers key a Gemeinde on ``(kreis_ags5, normalised name)`` and keep one
     value per key, so a repeat would be resolved silently instead of showing up as the source
-    defect it is.
+    defect it is. A row whose name normalises to "" (a gemeindefreies Gebiet) takes part in no
+    join, yet the loader refuses its exact repeat, so the extractor must refuse it too: a table
+    the extractor writes must never be one the loader refuses.
     """
     def _row(bezirk, gemeinde):
         row = [None] * 10
@@ -200,7 +207,7 @@ def test_gemeinde_private_bev_refuses_a_gemeinde_that_appears_twice(monkeypatch,
         row[7], row[8], row[9] = 1154, 64, 7   # private total, BEV, PHEV
         return row
 
-    sheet = [_row("03151 GIFHORN", "ADENBUETTEL"), _row(None, repeat)]
+    sheet = [_row(bezirk, first), _row(None, repeat)]
     monkeypatch.setattr(ekf, "_read_sheet", lambda path, sheet_name: sheet)
 
     with pytest.raises(RuntimeError, match="duplicate"):

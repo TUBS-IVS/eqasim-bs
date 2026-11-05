@@ -203,11 +203,11 @@ def require_unique_keys(df: pd.DataFrame, key_columns: Sequence[str], filename: 
     """Refuse a table in which one key appears on more than one row.
 
     Used by the loader of a keyed table on the raw key and by
-    ``fleet_sampling_de.require_unique_gemeinde_keys`` on the normalised Gemeinde key
-    (the model build and ``scripts/extract_kba_fleet.py``). The consumers keep ONE value
-    per key (a repeated key is silently resolved to the last row), and the Gemeinde
-    composition's Kreis reference sums over ROWS, so it would count a repeated row
-    twice. The error names the file, the counts and the first keys.
+    ``fleet_sampling_de.require_unique_gemeinde_keys`` on the raw and the normalised
+    Gemeinde key (the model build and ``scripts/extract_kba_fleet.py``). The consumers
+    keep ONE value per key (a repeated key is silently resolved to the last row), and the
+    Gemeinde composition's Kreis reference sums over ROWS, so it would count a repeated
+    row twice. The error names the file, the counts and the first keys.
 
     Raises:
         RuntimeError: if any key in ``key_columns`` occurs on more than one row.

@@ -621,12 +621,20 @@ def test_loader_refuses_a_repeated_gemeinde_key(tmp_path):
         ft.load_gemeinde_private_bev(str(tmp_path))
 
 
-def _data_path_with_fz2717(tmp_path: Path, table: pd.DataFrame) -> str:
-    """A data root that mirrors the committed derived tables but carries ``table`` as FZ 27.17."""
+#: The 2026 Gemeinde source; its presence decides which branch ``from_data_path`` takes.
+GEMEINDE_EV_2026_CSV = "kba_gemeinde_ev.csv"
+
+
+def _data_path_with_fz2717(tmp_path: Path, table: pd.DataFrame,
+                           leave_out: tuple[str, ...] = ()) -> str:
+    """A data root that mirrors the committed derived tables but carries ``table`` as FZ 27.17.
+
+    The committed tables named in ``leave_out`` are not copied.
+    """
     derived = tmp_path / ft.KBA_SUBDIR
     derived.mkdir(parents=True)
     for csv_file in (DATA / ft.KBA_SUBDIR).glob("*.csv"):
-        if csv_file.name != FZ2717_CSV.name:
+        if csv_file.name != FZ2717_CSV.name and csv_file.name not in leave_out:
             shutil.copy2(csv_file, derived / csv_file.name)
     table.to_csv(derived / FZ2717_CSV.name, index=False)
     return str(tmp_path)
@@ -634,16 +642,26 @@ def _data_path_with_fz2717(tmp_path: Path, table: pd.DataFrame) -> str:
 
 @pytest.mark.skipif(not FZ2717_CSV.exists(),
                     reason="kba_gemeinde_private_bev.csv absent (local-only data)")
-def test_model_build_refuses_two_spellings_of_one_gemeinde(tmp_path):
+@pytest.mark.parametrize("with_2026_source", [True, False],
+                         ids=["2026_source", "fz2717_fallback"])
+def test_model_build_refuses_two_spellings_of_one_gemeinde(tmp_path, with_2026_source):
     """The consumers key a Gemeinde on ``(kreis_ags5, normalised name)``, not on the raw text.
 
     Two spellings of one Gemeinde pass the loader's raw-key check, yet the Kreis reference of
-    the composition would count both rows while the factor map keeps the last one.
+    the composition would count both rows while the factor map keeps the last one. Both
+    branches of the build load the table: with the 2026 source it weights the Kreis
+    denominator and feeds the composition; without it the FZ 27.17 shares are the tilt
+    itself, whose builder would only warn about the collision and keep the last row.
     """
     table = pd.read_csv(FZ2717_CSV, dtype={"kreis_ags5": str})
     respelled = table[table["gemeinde"] == "GIFHORN,ST."].assign(gemeinde="GIFHORN")
     assert len(respelled) == 1
-    data_path = _data_path_with_fz2717(tmp_path, pd.concat([table, respelled]))
+    data_path = _data_path_with_fz2717(
+        tmp_path, pd.concat([table, respelled]),
+        leave_out=() if with_2026_source else (GEMEINDE_EV_2026_CSV,))
+    # The branch follows from the file's presence: a copy that silently lacks it would make
+    # both cases test the fallback branch.
+    assert (Path(data_path) / ft.KBA_SUBDIR / GEMEINDE_EV_2026_CSV).exists() is with_2026_source
     segments = list(ft.load_segment_powertrain(data_path)["segment"].unique())
 
     with pytest.raises(RuntimeError, match="duplicate"):

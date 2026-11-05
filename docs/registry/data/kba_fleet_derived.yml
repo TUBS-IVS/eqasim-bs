@@ -76,8 +76,8 @@ notes: |
   the 2026 per-Gemeinde EV export publishes only the combined electric share, so FZ 27.17 supplies
   the structure the level signal cannot; 105/113 ZGB Gemeinden carry a usable ratio, and each Gemeinde occurs
   once, also under another spelling of its name: the loader refuses a repeated raw key
-  (fleet_tables.require_unique_keys), the model build and the extractor a repeated normalised key
-  (fleet_sampling_de.require_unique_gemeinde_keys)),
+  (fleet_tables.require_unique_keys), the model build and the extractor a repeated raw or normalised
+  key (fleet_sampling_de.require_unique_gemeinde_keys)),
   the national age anchor (kba_age_national.csv), the RegioStaR-7 EV cross-check
   (kba_ev_regiostar7.csv, logging only) and four MiD cross tables including
   mid2023_antrieb_by_status.csv (P(powertrain | economic status), the EV-income tilt input).
