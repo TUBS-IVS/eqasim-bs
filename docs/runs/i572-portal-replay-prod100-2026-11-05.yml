@@ -1,0 +1,63 @@
+id: i572-portal-replay-prod100-2026-11-05
+date: '2026-11-05'
+repository:
+  commit: 0a13801289ea334e907b940b7e1a321c9c96c6f7
+  branch: fix/i572-gate-candidates-served-first
+  notes: >-
+    The #572 branch (ADR-0184) at 0a138012, WITHOUT the #570 change (ADR-0183, PR #571, not on main then), exported
+    with git archive to felix:~/i572_replay/eqasim-bs (no .git). The archive wrote CRLF line ends (core.autocrlf on the
+    exporting machine), so the script that ran has sha256 7cb1b8a2483e7ad49753e728f3fe2c00f325e7eb3b40f30c97ca4c73ba464016,
+    the CRLF form of the committed blob; the content is the same.
+configuration:
+  config: configs/base_bs.yml of that commit with the run overlay of prod100_20261031 (felix:~/prod100_20261031/run.yml)
+  notes: >-
+    The portal stage settings are read from that composed configuration, as the stage reads them; the overlay does not
+    set braunschweig.portal.gate_max_extra_detour_m, so the new default 10000 m (an ASSUMPTION, ADR-0184) applies. The
+    settings used are in summary.json (gate_settings).
+sampling:
+  rate: 1.0
+  scope: >-
+    every trip of the reporting-day trips table of prod100_20261031 and every portal stay built from it (53,323 stays,
+    11,930 of them pt).
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. braunschweig.synthesis.portal_trips.stage.build_portal_trips of the branch ran end to end
+    outside synpp on the cached inputs the portal stage of prod100_20261031 loaded (cache stems in the replay script),
+    with the batch pt router of the run's own eqasim jar and the run's router config (18 router calls, 1157 s). The
+    stages after the portal stage did not run. No MATSim run.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Completed on 2026-11-05. A replay of one stage on production inputs, NOT a validation: no observed data is
+    involved, and the "before" side is the run's own report (portal_trips_report.json of prod100_20261031), not a
+    replay of the old code on the same harness (the #570 replay, docs/runs/i570-portal-replay-prod100-2026-11-05.yml on
+    its branch, used the same inputs). The effect measured is #572 alone; with #570 merged the two changes act on
+    partly the same stays, so their effects do not simply add.
+source: >-
+  felix:~/scratch_i572/out (scratch). Committed in docs/runs/artifacts/i572-portal-replay-prod100-2026-11-05/:
+  i572_portal_replay.py (the script the replay ran), summary.json (before/after report keys, the checks, every
+  gate-choice rate line and the gate settings), report_after.json (the full stage report of the replay) and
+  replay_log.txt (log copy, because *.log is git-ignored).
+environment: 'server (felix, hostname matsim), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, pandas 1.5.3), Java /home/felix/tools/jdk-25.0.3+9'
+validation:
+- metric: first gate choice of the 11,930 pt stays (choose_pt_gates over all pt stays)
+  reference: 'the run''s own report (prod100_20261031, old rule: five smallest detours before the service check); model output, NOT observed data'
+  result: >-
+    gate_found 3,842 -> 6,708 (32.2 % -> 56.2 %), no_gate_served 4,481 -> 2,014 (37.6 % -> 16.9 %), no_connection
+    3,607 -> 3,208. New rates of that call: 2,918 of 11,930 stays (24.5 %) took a gate beyond the old five smallest
+    detours; 1,620 (13.6 %) have no served stop within the 10 km cap although a directional stop beyond it is served.
+    The served share within the cap (83.1 %) equals the read-only probe figure for +10 km in issue #572 (a second
+    model computation, not an independent reference).
+  artifact: docs/runs/artifacts/i572-portal-replay-prod100-2026-11-05/summary.json
+- metric: pt stays after the no-connection chain, and stays by mode
+  reference: 'the run''s own report (prod100_20261031); model output, NOT observed data'
+  result: >-
+    gate_found 3,784 -> 6,672, tour_to_car 6,214 -> 4,142, tour_to_car_passenger 757 -> 445, lift 933 -> 364,
+    departure_shifted 242 -> 307. Stays by mode: pt 4,026 -> 6,979, car 37,517 -> 35,445, car_passenger 10,609 -> 9,728
+    (bicycle and walk unchanged); mode substitutions 9,624 -> 6,791. The stage still WARNs: 5,258 of 11,930 pt stays
+    (44.1 %) end without a timetable-aware gate (warn above 5 %); the other items of the findings behind #572
+    (issues #573 to #576) address further causes; this rule does not. No trip arrives after 30.0 h and no trip has a negative duration.
+  artifact: docs/runs/artifacts/i572-portal-replay-prod100-2026-11-05/summary.json

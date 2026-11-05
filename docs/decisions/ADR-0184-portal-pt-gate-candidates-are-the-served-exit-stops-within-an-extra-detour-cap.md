@@ -1,7 +1,6 @@
 # ADR-0184 · 2026-11-05 · Portal pt gate candidates are the served exit stops within an extra-detour cap
 
-- **Status:** accepted (implemented; replay on the 100 % cache of `prod100_20261031` pending, see the status line
-  at the end)
+- **Status:** accepted (implemented; replayed once, see the status line at the end)
 - **Issue:** #572. **Amends:** ADR-0152 decision 2 (the order of the pt gate filters). The rest of ADR-0152
   stands, including its rejection of rail-only gates: buses stay gate candidates.
 - **Numbering:** ADR-0184 because ADR-0183 is taken by PR #571 (issue #570); checked across local and remote
@@ -59,5 +58,6 @@
 - Code and tests: `gates.pt_gate_candidates`, `gates.choose_pt_gates`, `tests/test_portal_trips_gates.py`
   (primary path: a served station beyond six nearer unserved stops wins; a served stop beyond the cap is not
   taken), `tests/test_portal_trips_config_keys.py`.
-- **Status:** implemented; the replay of the portal stage on the 100 % cache of `prod100_20261031` is pending
-  and will be recorded as a run manifest under `docs/runs/`. No MATSim run is part of this change.
+- **Status:** implemented and replayed once on the 100 % cache of `prod100_20261031` (portal stage only, model
+  output, not a validation); figures in `docs/runs/i572-portal-replay-prod100-2026-11-05.yml`. No MATSim run is
+  part of this change.
