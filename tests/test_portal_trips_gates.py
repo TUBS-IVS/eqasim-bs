@@ -480,3 +480,26 @@ def test_choose_pt_gates_counts_a_task_without_a_trips_row_as_no_route(caplog):
             router, n_candidates=1, service_window_s=3600.0, inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
     assert frame.iloc[0]["reason"] == g.REASON_NO_CONNECTION
     assert any("no_route 1" in r.getMessage() for r in caplog.records)
+
+
+def test_choose_pt_gates_applies_the_latest_arrival_bound_to_the_router_result():
+    # ADR-0185, #573: a connection whose routed arrival is after the bound (an overnight wait) is no connection;
+    # without a bound (None) the same router output connects.
+    schedule = _gate_schedule({"r_hbf": [36500.0, 52000.0]})
+    exits = g.exit_stops(schedule, SQUARE, modes="rail")
+    inner = _fake_router({"0:hbf:out", "0:hbf:ret"}, [])
+
+    def router(tasks):
+        trips, legs = inner(tasks)
+        return trips.assign(egress_travel_time_min=0.0), legs.assign(egress_time=100000.0)
+
+    def run(latest_arrival_s):
+        return g.choose_pt_gates(
+            np.array([[5000.0, 5200.0]]), np.array([[50000.0, 5000.0]]), np.array([36000.0]),
+            np.array([37800.0]), np.array([50000.0]), np.array([51800.0]), np.array([True]), exits, schedule,
+            router, n_candidates=1, service_window_s=3600.0, inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0,
+            latest_arrival_s=latest_arrival_s).iloc[0]
+
+    assert run(None)["reason"] == g.REASON_GATE_FOUND
+    assert run(90000.0)["reason"] == g.REASON_NO_CONNECTION
+    assert run(110000.0)["reason"] == g.REASON_GATE_FOUND

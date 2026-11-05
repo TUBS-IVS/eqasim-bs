@@ -299,3 +299,37 @@ def test_an_in_ring_pt_in_commuter_is_never_station_redrawn():
     assert report["actions"][P.ACTION_TO_CAR] == len(frames["persons"])
     home = frames["locations"][frames["locations"]["activity_index"] == 0]
     assert home.geometry.x.between(606000.0, 608000.0).all() and home.geometry.y.between(5841000.0, 5843000.0).all()
+
+
+def test_pt_check_passes_the_latest_arrival_bound_and_its_label_to_the_connection_rule(tmp_path, monkeypatch):
+    # ADR-0185, #573: _pt_check (employees and students) hands the day-end limit and its label to connection_mask;
+    # with the switch off it passes no bound.
+    from braunschweig.data.transit import connections, schedule as schedule_module
+    from braunschweig.synthesis import incommuters
+
+    monkeypatch.setattr(schedule_module, "read_schedule", lambda path: type("Schedule", (), {"stops": {"a": None}})())
+    monkeypatch.setattr(connections, "route_batch", lambda *args, **kwargs: (None, None))
+    seen = []
+    monkeypatch.setattr(connections, "connection_mask", lambda trips, legs, **kwargs: seen.append(kwargs))
+    pc = incommuters._pt_connections
+
+    class _Context:
+        def __init__(self, **values):
+            self.values = {"matsim_threads": 1, "processes": 1, pc.KEY_SHIFT_WINDOW_S: 0.0,
+                           pc.KEY_SHIFT_STEP_S: 1800.0, pc.KEY_WARN_SHARE: 0.05,
+                           pc.KEY_STATION_CANDIDATES: 1, **values}
+
+        def config(self, key, default=None):
+            return self.values.get(key, default)
+
+        def stage(self, name):
+            return {"schedule_path": "s", "network_path": "n", "vehicles_path": "v"}
+
+        def path(self, name=None):
+            return str(tmp_path)
+
+    tasks = pd.DataFrame({"identifier": ["t0"]})
+    incommuters._pt_check(_Context()).probe(tasks)
+    incommuters._pt_check(_Context(**{connections.KEY_LATEST_ARRIVAL_CHECK: False})).probe(tasks)
+    assert [(k["latest_arrival_s"], k["label"]) for k in seen] == [(29 * H, "incommuter pt check"),
+                                                                   (None, "incommuter pt check")]

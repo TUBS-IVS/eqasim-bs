@@ -500,7 +500,7 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
             pt_origin[positions], pt_point[positions], o_dep, o_arr, r_dep, r_arr, has_return[positions], exits,
             schedule, router, n_candidates=gate_settings["n_candidates"],
             service_window_s=gate_settings["service_window_s"], inside_stop_ids=inside_stop_ids,
-            walk_max_m=walk_max_m)
+            walk_max_m=walk_max_m, latest_arrival_s=gate_settings.get("latest_arrival_s"))
 
     pt_gates = choose(np.arange(n_pt), out_dep, out_arr, ret_dep, ret_arr)
 
@@ -609,7 +609,7 @@ def execute(context):
     if not context.config(KEY_ENABLED):
         logger.info("%s disabled: trips.final passed through unchanged", _LOG_TAG)
         return {"trips": trips, "anchors": rewrite.empty_anchors(None), "report": {"enabled": False}}
-    from braunschweig.data.transit.connections import route_batch, write_router_config
+    from braunschweig.data.transit.connections import latest_arrival_s, route_batch, write_router_config
     from braunschweig.data.transit.schedule import read_schedule
     from braunschweig.data.spatial.cordon import build_cordon_polygon, buffer_m_from_fraction
 
@@ -650,7 +650,9 @@ def execute(context):
                        "min_stay_s": float(context.config(KEY_MIN_STAY_S)),
                        "no_connection_warn_share": float(context.config(KEY_NO_CONNECTION_WARN_SHARE)),
                        "shift_return_earlier": bool(context.config(KEY_SHIFT_RETURN_EARLIER)),
-                       "no_connection_last_resort": context.config(KEY_NO_CONNECTION_LAST_RESORT)},
+                       "no_connection_last_resort": context.config(KEY_NO_CONNECTION_LAST_RESORT),
+                       # ADR-0185, #573: latest routed arrival of a pt connection; None = check off
+                       "latest_arrival_s": latest_arrival_s(context)},
         soft_mode_max_distance_m={"walk": float(context.config(KEY_WALK_MAX_DISTANCE_M)),
                                   "bicycle": float(context.config(KEY_BICYCLE_MAX_DISTANCE_M))},
         cordon_polygon=cordon_polygon,

@@ -364,8 +364,10 @@ def test_execute_with_the_pt_check_on_wires_the_production_probe(tmp_path, monke
         ids = tasks["identifier"].astype(str).to_numpy()
         trips = pd.DataFrame({"identifier": ids, "is_only_walk": np.where(served, 0, 1),
                               "access_distance_km": np.where(served, 0.2, 25.0), "egress_distance_km": 0.2,
-                              "transfer_distance_km": 0.0, "total_walk_distance_km": np.where(served, 0.4, 25.0)})
-        legs = pd.DataFrame({"identifier": ids[served], "access_stop_id": "far_a", "egress_stop_id": "far_b"})
+                              "transfer_distance_km": 0.0, "total_walk_distance_km": np.where(served, 0.4, 25.0),
+                              "egress_travel_time_min": 5.0})
+        legs = pd.DataFrame({"identifier": ids[served], "access_stop_id": "far_a", "egress_stop_id": "far_b",
+                             "egress_time": tasks["departure_time"].to_numpy()[served] + 1800.0})
         return trips, legs
 
     monkeypatch.setattr(connections, "route_batch", fake_route_batch)
@@ -384,8 +386,9 @@ def test_execute_with_the_pt_check_on_wires_the_production_probe(tmp_path, monke
     paths = {None: str(tmp_path), stage.SUPPLY_STAGE: str(supply_dir), stage.GTFS_STAGE: str(gtfs_dir)}
 
     class _Context:
-        def config(self, key):
-            return values[key]
+        def config(self, key, default=None):
+            # connections.latest_arrival_s reads its keys with a default (ADR-0185); the others must be set
+            return values.get(key, default) if default is not None else values[key]
 
         def stage(self, name):
             return stages[name]
@@ -405,6 +408,39 @@ def test_execute_with_the_pt_check_on_wires_the_production_probe(tmp_path, monke
         report = json.load(handle)
     assert report["pt_connection"]["bound_s"] == 29 * 3600.0
     assert report["pt_connection"]["actions"]["tour_shifted"] == 1
+
+
+def test_pt_check_passes_the_latest_arrival_bound_and_its_label_to_the_connection_rule(tmp_path, monkeypatch):
+    # ADR-0185, #573: the production probe hands the day-end limit (default 30 h minus the default margin) and its
+    # label to connection_mask; with the switch off it passes no bound.
+    from braunschweig.data.transit import connections, schedule as schedule_module
+
+    monkeypatch.setattr(schedule_module, "read_schedule", lambda path: type("Schedule", (), {"stops": {"a": None}})())
+    monkeypatch.setattr(connections, "route_batch", lambda *args, **kwargs: (None, None))
+    seen = []
+    monkeypatch.setattr(connections, "connection_mask", lambda trips, legs, **kwargs: seen.append(kwargs))
+    tasks = pd.DataFrame({"identifier": ["t0"]})
+
+    class _Context:
+        def __init__(self, **values):
+            self.values = {"matsim_threads": 1, "processes": 1, "braunschweig.day_end_margin.enabled": True,
+                           "braunschweig.day_end_margin.last_arrival_margin_s": 3600.0,
+                           keys.KEY_PT_SHIFT_WINDOW_S: 0.0, keys.KEY_PT_SHIFT_STEP_S: 1800.0,
+                           keys.KEY_PT_NO_CONNECTION_WARN_SHARE: 0.05, **values}
+
+        def config(self, key, default=None):
+            return self.values.get(key, default)
+
+        def stage(self, name):
+            return {"schedule_path": "s", "network_path": "n", "vehicles_path": "v"}
+
+        def path(self, name=None):
+            return str(tmp_path)
+
+    stage._pt_check(_Context()).probe(tasks)
+    stage._pt_check(_Context(**{connections.KEY_LATEST_ARRIVAL_CHECK: False})).probe(tasks)
+    assert [(k["latest_arrival_s"], k["label"]) for k in seen] == [(29 * 3600.0, "outside tour pt check"),
+                                                                   (None, "outside tour pt check")]
 
 
 def test_portal_tour_at_a_road_gate_is_never_moved_to_pt_and_is_reported():

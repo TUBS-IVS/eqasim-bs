@@ -631,7 +631,9 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
 
     def fake_route_batch(context, tasks, **kwargs):
         seen["router_kwargs"] = kwargs
-        return fixture["router"](tasks)
+        trips, legs = fixture["router"](tasks)
+        # the latest-arrival bound (ADR-0185) is on by default and needs the routed times
+        return trips.assign(egress_travel_time_min=0.0), legs.assign(egress_time=40000.0)
 
     monkeypatch.setattr("braunschweig.data.transit.schedule.read_schedule", fake_read_schedule)
     monkeypatch.setattr("braunschweig.data.transit.connections.route_batch", fake_route_batch)
@@ -655,8 +657,8 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
     values.update({"matsim_threads": None, "processes": 3})
 
     class _Context:
-        def config(self, key):
-            return values[key]
+        def config(self, key, default=None):
+            return values.get(key, default) if default is not None else values[key]
 
         def stage(self, name):
             return stages[name]
