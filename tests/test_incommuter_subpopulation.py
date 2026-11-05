@@ -287,6 +287,15 @@ def test_the_transform_is_idempotent_per_subpopulation():
     assert CS.add_incommuter_fixed_mode_strategies(once, reroute_weight=0.1) == once
 
 
+def test_a_subpopulation_param_outside_the_replanning_strategies_does_not_suppress_the_blocks():
+    """A per-subpopulation scoring parameter set must not count as an existing strategy block."""
+    scoring = ('  <module name="scoring" >\n    <parameterset type="scoringParameters" >\n'
+               '      <param name="subpopulation" value="incommuter" />\n    </parameterset>\n  </module>\n')
+    config = _CONFIG.replace("</config>", scoring + "</config>")
+    blocks = _strategies(CS.add_incommuter_fixed_mode_strategies(config, reroute_weight=0.1))
+    assert ("KeepLastSelected", 0.9, CS.INCOMMUTER_SUBPOPULATION) in blocks
+
+
 def test_a_config_without_a_replanning_module_raises():
     with pytest.raises(ValueError, match="replanning"):
         CS.add_incommuter_fixed_mode_strategies("<config></config>")

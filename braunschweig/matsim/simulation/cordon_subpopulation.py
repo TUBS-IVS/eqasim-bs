@@ -64,9 +64,24 @@ def require_reroute_weight(value) -> float:
     return float(value)
 
 
+def _replanning_module(config_xml: str) -> re.Match:
+    """The ``replanning`` module of the config (groups: opening tag, content, closing tag); ValueError if absent."""
+    match = re.search(r'(<module name="replanning"[^>]*>)(.*?)(</module>)', config_xml, re.S)
+    if not match:
+        raise ValueError('no <module name="replanning"> found in config')
+    return match
+
+
 def _has_strategy_for(config_xml: str, subpopulation: str) -> bool:
-    return re.search(r'<param\s+name="subpopulation"\s+value="%s"\s*/>' % re.escape(subpopulation),
-                     config_xml) is not None
+    """Whether a ``strategysettings`` block of the ``replanning`` module names ``subpopulation``.
+
+    Only those blocks count: the same param name also selects per-subpopulation parameter sets of other modules
+    (e.g. ``scoringParameters``), which are no strategy and must not suppress the blocks.
+    """
+    subpopulation_param = re.compile(r'<param\s+name="subpopulation"\s+value="%s"\s*/>' % re.escape(subpopulation))
+    strategy_blocks = re.findall(r'<parameterset\s+type="strategysettings"\s*>.*?</parameterset>',
+                                 _replanning_module(config_xml).group(2), re.S)
+    return any(subpopulation_param.search(block) for block in strategy_blocks)
 
 
 def add_incommuter_fixed_mode_strategy(config_xml: str, subpopulation: str = INCOMMUTER_SUBPOPULATION,
@@ -74,15 +89,14 @@ def add_incommuter_fixed_mode_strategy(config_xml: str, subpopulation: str = INC
     """Insert the fixed-mode (KeepLastSelected + ReRoute) strategy settings for ``subpopulation`` into the
     ``replanning`` module of an eqasim MATSim config XML string.
 
-    Idempotent: if a strategy for that subpopulation already exists the input is returned unchanged. Raises
-    ValueError if there is no ``replanning`` module or the weight is invalid (:func:`require_reroute_weight`).
+    Idempotent: if a strategy block of the ``replanning`` module already names that subpopulation the input is
+    returned unchanged. Raises ValueError if there is no ``replanning`` module or the weight is invalid
+    (:func:`require_reroute_weight`).
     """
     reroute_weight = require_reroute_weight(reroute_weight)
     if _has_strategy_for(config_xml, subpopulation):
         return config_xml
-    match = re.search(r'(<module name="replanning"[^>]*>)(.*?)(</module>)', config_xml, re.S)
-    if not match:
-        raise ValueError('no <module name="replanning"> found in config')
+    match = _replanning_module(config_xml)
     blocks = _BLOCKS.format(sub=subpopulation, keep=repr(round(1.0 - reroute_weight, 12)), reroute=repr(reroute_weight))
     return config_xml[:match.start(3)] + blocks + config_xml[match.start(3):]
 
