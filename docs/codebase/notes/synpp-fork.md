@@ -235,9 +235,10 @@ path whose directory name is itself assembled from other strings.
 ## Migrating a cache
 
 Mandatory once per existing cache after updating to this version, before the first launch.
-Otherwise every stage reads `module_hash_changed`; `staleness.format_report` then prints a
-warning that N entries carry a legacy md5 module hash and names
-`scripts/migrate_cache_metadata.py`.
+Otherwise every stage reads `module_hash_changed`; `staleness.format_report` then prints an
+ERROR line that N entries carry a legacy md5 module hash and names
+`scripts/migrate_cache_metadata.py`, and the launcher logs it at ERROR. After a migration the
+same legacy hash on an entry the migration kept legacy is only information (ADR-0149, Ruling H).
 
 ```
 python scripts/migrate_cache_metadata.py configs/base_bs.yml configs/overlays/test_100pct.yml --working-directory <dir> --dry-run

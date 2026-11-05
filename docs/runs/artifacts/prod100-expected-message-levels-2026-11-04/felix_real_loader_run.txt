@@ -1,0 +1,3 @@
+# felix:~/c5c_check_20261104 (scratch, deleted afterwards): load_completed_donor of the archive of branch fix/c5c-expected-messages-log-level at commit 301269b4 on the raw MiD 2023 files, Linux, conda eqasim (Python 3.10.10)
+households 155525, persons 346932 after the day filter and the member completion
+INFO    [mid.load_completed_donor] dropped 0 invalid-household row(s) (H_ID=0 or null) and 312 associated person(s) from the donor data: the invalid-household bucket of the MiD 2023 delivery, as expected; these are not real households and must not be population donors.

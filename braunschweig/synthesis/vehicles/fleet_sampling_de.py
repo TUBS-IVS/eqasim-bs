@@ -318,6 +318,13 @@ class PowertrainModel:
     _kreis_fallback: int = field(default=0)
     _gemeinde_primary: int = field(default=0)
     _gemeinde_fallback: int = field(default=0)
+    # Cars whose Gemeinde tilt can never fire: no home-Gemeinde label AND no row of the Gemeinde
+    # reference table for their Kreis (the in-commuters from outside the ZGB). Counted apart from
+    # primary and fallback (docs/codebase/notes/fallback-counter-states.md), so a structural zero
+    # does not read as a broken reference.
+    _gemeinde_not_applicable: int = field(default=0)
+    # (size, Kreise) of ``gemeinde_private_electric_share``; rebuilt when the table's size changes.
+    _gemeinde_table_kreise_cache: Optional[tuple] = field(default=None, init=False, repr=False)
     # Cars whose Gebietsstand-2020 Gemeinde label was mapped onto a successor
     # Gemeinde (municipal merger, see GEMEINDE_GEBIETSSTAND_CROSSWALK). Counted
     # separately from primary/fallback so the crosswalk stays observable.
@@ -921,6 +928,15 @@ class PowertrainModel:
             return np.ones(len(self.powertrains)) / len(self.powertrains)
         return base / total
 
+    def _gemeinde_table_covers_kreis(self, kreis_ags5: str) -> bool:
+        """True when the Gemeinde reference table has at least one row for ``kreis_ags5``."""
+        table = self.gemeinde_private_electric_share
+        cache = self._gemeinde_table_kreise_cache
+        if cache is None or cache[0] != len(table):
+            cache = (len(table), frozenset(kreis for kreis, _ in table))
+            self._gemeinde_table_kreise_cache = cache
+        return kreis_ags5 in cache[1]
+
     def _apply_gemeinde_tilt(self, pmf: np.ndarray, kreis_ags5: str,
                              gemeinde: Optional[str]) -> np.ndarray:
         """Tilt the bev/phev mass to the home Gemeinde's private share.
@@ -940,9 +956,18 @@ class PowertrainModel:
         Gebietsstand-2020 Gemeinde was merged into a successor Gemeinde before
         the KBA vintage still finds its (successor's) reference row instead of
         degrading to the Kreis share.
+
+        A car with no Gemeinde label whose Kreis the Gemeinde table has no rows for (an in-commuter
+        from outside the ZGB) cannot take the tilt at all: it is counted as NOT APPLICABLE, in
+        neither the primary nor the fallback rate. Every other miss is a fallback, so a label that
+        cannot be used, a broken join inside a covered Kreis, or a table that grows to cover the
+        in-commuters' Kreise still shows as a fallback rate and warns.
         """
         if gemeinde is None:
-            self._gemeinde_fallback += 1
+            if self._gemeinde_table_covers_kreis(kreis_ags5):
+                self._gemeinde_fallback += 1
+            else:
+                self._gemeinde_not_applicable += 1
             return pmf
         gemeinde_norm = normalize_gemeinde_name(gemeinde)
         crosswalked = apply_gebietsstand_crosswalk(kreis_ags5, gemeinde_norm)
@@ -1165,11 +1190,16 @@ class PowertrainModel:
             100.0 * self._kreis_primary / ktot if ktot else 0.0,
             self._kreis_fallback, 100.0 * krate,
         )
+        # The rate is judged over the APPLICABLE cars only (primary + fallback): the cars that cannot
+        # take the tilt are reported apart and neither hide nor fake a fallback rate.
+        n_gemeinde_na = self._gemeinde_not_applicable
         (logger.warning if grate > 0.50 else logger.info)(
             "%s powertrain Gemeinde tilt: primary %d/%d (%.1f%%), "
-            "fallback %d (%.1f%%)", tag, self._gemeinde_primary, gtot,
+            "fallback %d (%.1f%%)%s", tag, self._gemeinde_primary, gtot,
             100.0 * self._gemeinde_primary / gtot if gtot else 0.0,
             self._gemeinde_fallback, 100.0 * grate,
+            ("; not applicable %d (no home-Gemeinde label and no Gemeinde table rows for the "
+             "car's Kreis, in neither rate)" % n_gemeinde_na) if n_gemeinde_na else "",
         )
         if self._gemeinde_combined:
             logger.info(

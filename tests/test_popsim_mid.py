@@ -8,13 +8,16 @@ targeted cell load. Pure logic on tiny synthetic data.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from braunschweig.popsim import folders
 from braunschweig.popsim import mid
+from braunschweig.popsim.mid import donor as mid_donor
 
 
 # ---------------------------------------------------------------------------
@@ -756,6 +759,43 @@ def test_drop_invalid_households_removes_sentinel_and_null():
     # Counts: 2 bad households (H_ID=0 and None), 4 bad persons (3 from H_ID=0, 1 from None)
     assert n_hh == 2, f"Expected 2 bad households, got {n_hh}"
     assert n_p == 4, f"Expected 4 bad persons, got {n_p}"
+
+
+def _write_mid_with_invalid_household_bucket(tmp_path, n_household_rows, n_person_rows):
+    """Two valid one-person households plus an H_ID=0 bucket of the given size."""
+    (tmp_path / "MiD2023_Haushalte.csv").write_text(
+        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,anzpedrad,H_ANZPED,RegioStaR7,hhgr_gr,H_GR,H_GEW,H_MIETE,haustyp\n"
+        + "".join(f"{h_id},3,4,1,2,2,0,72,1,1,1.0,1,1\n" for h_id in [1, 2] + [0] * n_household_rows),
+        encoding="utf-8",
+    )
+    (tmp_path / "MiD2023_Personen.csv").write_text(
+        "H_ID,P_ID,HP_ALTER,HP_SEX,P_TAET,P_FSCHEIN,P_FKARTE,P_BKAT,alter_gr1,anzwege1,P_GEW,kernwo\n"
+        + "".join(f"{h_id},{p_id},40,1,1,1,3,1,5,2,1.0,1\n"
+                  for h_id, p_id in [(1, 1), (2, 1)] + [(0, k) for k in range(1, n_person_rows + 1)]),
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize("n_household_rows, n_person_rows, level", [
+    pytest.param(mid_donor.MID_2023_INVALID_HOUSEHOLD_ROWS, mid_donor.MID_2023_INVALID_HOUSEHOLD_PERSONS,
+                 "INFO", id="the-delivery-as-expected"),
+    pytest.param(mid_donor.MID_2023_INVALID_HOUSEHOLD_ROWS, mid_donor.MID_2023_INVALID_HOUSEHOLD_PERSONS + 1,
+                 "WARNING", id="one-more-person"),
+    pytest.param(mid_donor.MID_2023_INVALID_HOUSEHOLD_ROWS + 1, mid_donor.MID_2023_INVALID_HOUSEHOLD_PERSONS,
+                 "WARNING", id="a-household-row-where-none-is-expected"),
+    pytest.param(0, 0, "WARNING", id="no-bucket-at-all"),
+])
+def test_invalid_household_drop_warns_only_when_it_differs_from_the_mid_2023_delivery(
+        tmp_path, caplog, n_household_rows, n_person_rows, level):
+    """C5c: the H_ID=0 bucket is a fixed property of MiD 2023, so dropping exactly it is information
+    (its counts are still logged); any other count means another delivery or a corrupted file."""
+    _write_mid_with_invalid_household_bucket(tmp_path, n_household_rows, n_person_rows)
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.mid"):
+        mid.load_completed_donor(tmp_path, completion_rng=np.random.RandomState(0))
+    (record,) = [r for r in caplog.records if "[mid.load_completed_donor]" in r.getMessage()]
+    assert record.levelname == level
+    assert f"dropped {n_household_rows} invalid-household row(s)" in record.getMessage()
+    assert f"and {n_person_rows} associated person(s)" in record.getMessage()
 
 
 def test_drop_invalid_households_noop_when_all_valid():
