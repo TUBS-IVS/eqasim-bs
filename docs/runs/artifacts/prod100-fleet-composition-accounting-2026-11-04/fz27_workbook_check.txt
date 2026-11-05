@@ -33,7 +33,7 @@ COMPARE kba_segment_powertrain.csv         IDENTICAL (14 rows)
 [FZ 27.15 kreis_powertrain] numeric cells=48, coerced placeholders=0 (-> 0: 0, -> NaN: 0); symbols={}
 COMPARE kba_kreis_powertrain.csv           IDENTICAL (8 rows)
 [FZ 27.17 gemeinde_private_bev] numeric cells=339, coerced placeholders=10 (-> 0: 2, -> NaN: 8); symbols={'-': 2, '.': 8}
-[FZ 27.17 gemeinde_private_bev] 113 Gemeinde rows, each with a unique (kreis_ags5, gemeinde) key
+[FZ 27.17 gemeinde_private_bev] 113 Gemeinde rows; no (kreis_ags5, Gemeinde) key repeats, raw or normalised
 COMPARE kba_gemeinde_private_bev.csv       IDENTICAL (113 rows)
 [FZ 27.4 fuel_euro_nds] numeric cells=49, coerced placeholders=10 (-> 0: 10, -> NaN: 0); symbols={'-': 10}
 COMPARE kba_fuel_euro_nds.csv              IDENTICAL (49 rows)

@@ -1,0 +1,2 @@
+trials=500 frames identical=500 pickle bytes identical=500 non-empty outputs=370 output rows=29612
+trials in which the old module raised the numpy ragged-array warning=291, the new module=0

@@ -68,9 +68,9 @@ notes: >-
   the popsim_mid/popsim_open producer (braunschweig.popsim.stage) now clamps
   braunschweig.population.popsim.num_workers against the MACHINE's memory budget at
   its point of use (_read_batching_and_scope_config,
-  braunschweig/resources.py::effective_popsim_workers), bounded by measured per-worker
-  memory via braunschweig.population.popsim.worker_memory_gb (default 30 GB,
-  traceable to the 2026-07-10 OOM post-mortem). The clamp is operational only
+  braunschweig/resources.py::effective_popsim_workers), bounded by an assumed per-worker
+  memory via braunschweig.population.popsim.worker_memory_gb (default 30 GB, attributed
+  to the 2026-07-10 OOM post-mortem; see DEFAULT_POPSIM_WORKER_MEMORY_GB). The clamp is operational only
   (PopulationSim submits one independent subprocess per batch folder with no
   worker-index-dependent seed) and never rewrites the configured value, so this
   stage's synpp cache hash is unaffected by the clamp itself. It IS affected,

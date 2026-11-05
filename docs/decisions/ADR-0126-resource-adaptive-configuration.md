@@ -388,9 +388,15 @@ this decision tries to prevent by watching load.
   "not 100 %". No scale-to-memory relationship is assumed or invented: the
   per-worker footprint below 100% is simply unmeasured, and the gate says so
   instead of extrapolating (CLAUDE.md: no invented reference values).
-- **The 30 GB/worker figure is traceable evidence (the 2026-07-10 OOM
-  post-mortem); the 8 GB memory reserve subtracted before that bound is
-  applied is NOT.** `DEFAULT_MEMORY_RESERVE_GB = 8.0` has no committed
+- **Neither the 30 GB/worker figure nor the 8 GB memory reserve subtracted
+  before that bound is applied has a committed measurement.** (Corrected in
+  #554: this bullet first called the 30 GB figure "traceable evidence". It is
+  attributed to the 2026-07-10 OOM post-mortem, of which no committed record
+  exists; ADR-0100 calls the 25-30 GB range folklore, with a 29.9 GB OOM-kill
+  log line as its only hard number. A 60 s-sampled lower bound of 23.2 GB per
+  worker on prod100_20261031 is in `docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml`;
+  the clamp to 2 workers there follows from the 30 GB default.)
+  `DEFAULT_MEMORY_RESERVE_GB = 8.0` has no committed
   source and is the number that decides whether the clamp above fires at
   all: at `reserve = 8`, `3 x 30 = 90 > 86.28` clamps to 2, but at
   `reserve = 4` -- roughly what `configs/overlays/test_100pct.yml`'s own

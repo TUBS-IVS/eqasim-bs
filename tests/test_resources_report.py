@@ -137,7 +137,7 @@ def test_report_only_warns_below_the_measured_sampling_rate():
                    if v.key == "braunschweig.population.popsim.num_workers")
     assert warning.severity == "warning"
     # The caveat has to be stated plainly, not merely implied by the severity.
-    assert "100%-SCALE measurement" in warning.message
+    assert "100%-SCALE figure" in warning.message
     assert "has NOT been measured" in warning.message
 
 

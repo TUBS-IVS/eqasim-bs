@@ -1,0 +1,18 @@
+A. fleet cars 688832, cars labelled NAN: 9347
+   home commune 031530019019 (ags8 03153019): 9347 cars | official name (VG250) 'Langelsheim' | ags8 in the RegioStaR 2020 sheet: False
+   NAN cars without a home commune in the home-cell output: 0
+B. cached RegioStaR stage output (1 file(s) in the cache): 123 rows, 1 with an empty name
+   ags8 03153019: official name (VG250) 'Langelsheim', RegioStaR-7 74
+C. RegioStaR 2020 sheet, Kreis 03153: 11 codes
+   03153002: 'Bad Harzburg, Stadt', RegioStaR-7 76
+   03153006: 'Hahausen', RegioStaR-7 74
+   03153007: 'Langelsheim, Stadt', RegioStaR-7 77
+   03153008: 'Liebenburg', RegioStaR-7 74
+   03153009: 'Lutter am Barenberge, Flecken', RegioStaR-7 74
+   03153012: 'Seesen, Stadt', RegioStaR-7 77
+   03153014: 'Wallmoden', RegioStaR-7 74
+   03153016: 'Braunlage, Stadt', RegioStaR-7 77
+   03153017: 'Goslar, Stadt', RegioStaR-7 75
+   03153018: 'Clausthal-Zellerfeld, Berg- und Universitätsstadt', RegioStaR-7 76
+   03153504: 'Harz (Landkreis Goslar), gemfr. Gebiet', RegioStaR-7 77
+   rows of the whole sheet with an empty name_20: 0 of 11001

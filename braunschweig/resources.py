@@ -242,13 +242,15 @@ def detect_machine(affinity_reader: Optional[Callable[[], Optional[int]]] = _aff
 DEFAULT_CORE_RESERVE = 2
 
 #: Memory left free for the OS, the page cache and the synpp driver, in gigabytes.
-#: ASSUMPTION: this figure has no measured source (unlike
-#: ``DEFAULT_POPSIM_WORKER_MEMORY_GB`` below, which is traceable to the
-#: 2026-07-10 OOM post-mortem). It is also the SENSITIVE parameter that decides
+#: ASSUMPTION: this figure has no measured source. Neither, strictly, has
+#: ``DEFAULT_POPSIM_WORKER_MEMORY_GB`` below (attributed to the 2026-07-10 OOM
+#: post-mortem, of which no committed record exists), and the clamp to 2 on
+#: prod100_20261031 follows from that 30 GB default, not from the 23.2 GB sampled
+#: there (docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml). It is also the SENSITIVE parameter that decides
 #: whether a pinned ``num_workers: 3`` clamps to 2 on the measured 94.28 GB
 #: server: at this 8 GB reserve, 3 x 30 GB = 90 GB > 86.28 GB budget clamps; at roughly a
-#: 4 GB reserve -- what ``configs/overlays/test_100pct.yml``'s own "~90 GB on
-#: the 128 GB box" budget implies for 3 workers on this machine -- it would not.
+#: 4 GB reserve -- what the former "~90 GB on the 128 GB box" sizing note of
+#: ``configs/overlays/test_100pct.yml`` implied for 3 workers on this machine -- it would not.
 #: Not yet measured (see ADR-0126, Consequences); do not treat it as settled
 #: infrastructure. A server measurement of the actual OS/driver/page-cache
 #: footprint next to a real run is the missing evidence that would let this be
@@ -546,8 +548,10 @@ def resolve_popsim_workers(configured, budget: ResourceBudget,
     """Resolve the PopulationSim batch worker count against the MEMORY budget.
 
     This key is memory-bound, not core-bound: each worker drives its own
-    PopulationSim subprocess whose measured peak is 25-30 GB (2026-07-10 OOM
-    post-mortem, recorded in ``configs/overlays/test_100pct.yml``). Deriving it
+    PopulationSim subprocess whose peak is taken as 25-30 GB (attributed to the
+    2026-07-10 OOM post-mortem, of which no committed record exists; ADR-0100
+    calls the range folklore and names a 29.9 GB OOM-kill log line as its only
+    hard number). Deriving it
     from the core count is what would OOM the box.
 
     Worker count cannot change results: ``popsim.batch.run_batches`` submits one
@@ -632,11 +636,13 @@ def resolve_processes(configured, budget: ResourceBudget) -> Resolution:
     )
 
 
-#: Default measured peak memory of one PopulationSim batch worker, in gigabytes.
-#: Traceable to the 2026-07-10 OOM post-mortem recorded in
-#: configs/overlays/test_100pct.yml ("the measured 25-30 GB per-worker peak");
-#: the upper bound is taken because under-estimating it is what OOMs the box.
-#: SCALE CAVEAT: that post-mortem measured a 100%-SCALE run
+#: Default assumed peak memory of one PopulationSim batch worker, in gigabytes.
+#: Attributed to the 2026-07-10 OOM post-mortem (25-30 GB per worker), of which
+#: no committed record exists; ADR-0100 calls the range folklore and names a
+#: 29.9 GB OOM-kill log line as its only hard number. The upper bound is taken because under-estimating it is what OOMs the
+#: box. A later sampled lower bound of the per-worker peak on prod100_20261031 is
+#: recorded in docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml.
+#: SCALE CAVEAT: the post-mortem it is attributed to concerned a 100%-SCALE run
 #: (``configs/overlays/test_100pct.yml``, ``sampling_rate: 1.0``). No per-worker
 #: footprint has ever been measured at a smaller sampling rate, and no
 #: scale->memory relationship is assumed here (inventing one is forbidden,
@@ -958,8 +964,8 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
         #    worker, so aborting it over this key would be a false-positive gate
         #    (a MATSim-only overlay on a <~38 GB developer machine was aborted before
         #    any stage ran, even though it never touches PopulationSim).
-        # 2. SCALE. DEFAULT_POPSIM_WORKER_MEMORY_GB is a 100%-SCALE measurement (the
-        #    2026-07-10 OOM post-mortem). Applying it at error severity to every
+        # 2. SCALE. DEFAULT_POPSIM_WORKER_MEMORY_GB is a 100%-SCALE figure (attributed
+        #    to the 2026-07-10 OOM post-mortem; no committed record). Applying it at error severity to every
         #    sampling rate aborted every small-scale popsim fixture run on a machine
         #    below ~38 GB -- runs that demonstrably worked before this gate existed.
         #    No scale->memory relationship is measured or assumed (CLAUDE.md forbids
@@ -998,7 +1004,8 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
         elif severity == "warning":
             message += (
                 f" Not aborting: the {worker_memory_gb:g} GB per-worker figure is a "
-                f"100%-SCALE measurement (the 2026-07-10 OOM post-mortem) and this run "
+                f"100%-SCALE figure (attributed to the 2026-07-10 OOM post-mortem, of "
+                f"which no committed record exists) and this run "
                 f"is configured at {KEY_SAMPLING_RATE} = {sampling_rate!r}. The "
                 f"per-worker footprint at this sampling rate has NOT been measured and "
                 f"no scale-to-memory relationship is assumed, so the mismatch is "
