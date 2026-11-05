@@ -903,8 +903,9 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                                 n_router_probe_tasks=probe_calls["tasks"] - probe_calls_before_rebalance[1],
                                 router_probe_rounds=probe_rounds,
                                 tolerance=float(pt_share_tolerance), max_iterations=int(rebalance_max_iterations))
-        # The actions of the promotion attempts as rates over the promoted agents (CLAUDE.md fallback transparency);
-        # WARN when more than 5 % found no station to board at (can_board_pt and the station weights disagree).
+        # The actions of the promotion attempts as rates over the attempts (CLAUDE.md fallback transparency; an attempt
+        # without a connection or a station stays car); WARN when more than 5 % found no station to board at
+        # (can_board_pt and the station weights disagree).
         n_attempts = rebalance_stats["n_promoted"]
         if n_attempts:
             no_station_share = n_promotion_without_station / n_attempts
@@ -916,8 +917,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
             promotion_message += "; router probe calls %d (%d routed trips)" % (
                 rebalance_report["n_router_probe_calls"], rebalance_report["n_router_probe_tasks"])
             if no_station_share > _mode_balancer.UNCONNECTED_WARN_SHARE:
-                logger.warning("%s -- promoted agents of a Kreis with can_board_pt drew no entry station: check "
-                               "the cordon_pt_gates station weights", promotion_message)
+                logger.warning("%s -- promotion attempts of a Kreis with can_board_pt drew no entry station (those "
+                               "agents stay car): check the cordon_pt_gates station weights", promotion_message)
             else:
                 logger.info(promotion_message)
 

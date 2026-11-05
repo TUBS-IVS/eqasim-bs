@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 
 _LOG_TAG = "[braunschweig.incommuters] pt re-balancing"
 
-#: WARN when more than this share of the promoted agents had no timetable connection (module convention: 5 %).
+#: WARN when more than this share of the promotion attempts found no timetable connection (those agents stay car;
+#: module convention: 5 %).
 UNCONNECTED_WARN_SHARE = 0.05
 
 
@@ -207,21 +208,26 @@ def rebalance_with_timetable(
 
 def log_rebalance(stats: dict, *, n_agents: int, tolerance: float) -> None:
     """One line with the rates of :func:`rebalance_with_timetable`; WARNING when the target is not met (the
-    timetable binds) or when more than ``UNCONNECTED_WARN_SHARE`` of the promoted agents had no connection."""
-    n_promoted = stats["n_promoted"]
-    unconnected_share = stats["n_promoted_unconnected"] / n_promoted if n_promoted else 0.0
+    timetable binds) or when more than ``UNCONNECTED_WARN_SHARE`` of the promotion attempts found no connection.
+
+    ``n_promoted`` counts promotion ATTEMPTS: an attempt without a connection is never promoted, its agent stays car
+    (``rebalance_with_timetable``), so the message names them attempts that stay car, not promoted agents."""
+    n_attempts = stats["n_promoted"]
+    unconnected_share = stats["n_promoted_unconnected"] / n_attempts if n_attempts else 0.0
     message = (f"{_LOG_TAG}: target {stats['n_pt_target']}/{n_agents} pt "
                f"({100.0 * stats['n_pt_target'] / max(n_agents, 1):.1f}%), after the timetable check "
                f"{stats['n_pt_start']}, final {stats['n_pt_final']} "
                f"({100.0 * stats['n_pt_final'] / max(n_agents, 1):.1f}%), residual {stats['residual']} "
                f"({100.0 * stats['residual'] / max(stats['n_pt_target'], 1):.1f}% of the target, tolerance "
-               f"{100.0 * tolerance:.1f}%); {stats['n_iterations']} iteration(s), promoted {n_promoted}, of them "
-               f"without a connection {stats['n_promoted_unconnected']} ({100.0 * unconnected_share:.1f}%)")
+               f"{100.0 * tolerance:.1f}%); {stats['n_iterations']} iteration(s), promotion attempts {n_attempts}, "
+               f"of them without a connection {stats['n_promoted_unconnected']} ({100.0 * unconnected_share:.1f}%), "
+               "which stay car")
     if not stats["met"]:
         logger.warning("%s -- target NOT met: the timetable serves too few of the promotable car in-commuters "
                        "(the timetable, not the reference, binds)", message)
     elif unconnected_share > UNCONNECTED_WARN_SHARE:
-        logger.warning("%s -- more than %.0f%% of the promoted agents had no timetable connection", message,
-                       100.0 * UNCONNECTED_WARN_SHARE)
+        logger.warning("%s -- more than %.0f%% of the promotion attempts found no timetable connection (those agents "
+                       "stay car; a high share means the timetable serves few of the promotable car in-commuters)",
+                       message, 100.0 * UNCONNECTED_WARN_SHARE)
     else:
         logger.info(message)

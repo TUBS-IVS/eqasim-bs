@@ -290,6 +290,26 @@ def test_rebalance_stops_when_the_pool_is_exhausted():
     assert stats["met"] is False and stats["residual"] == 2
 
 
+def test_the_unconnected_warning_names_failed_attempts_that_stay_car(caplog):
+    # Regression: an attempt without a connection is never promoted, the agent stays car; the warning called these
+    # "promoted agents" without a connection, which reads as pt agents who cannot travel. The meaning is the contract.
+    refused = []
+
+    def connect(idx):
+        ok = np.ones(len(idx), dtype=bool)
+        if not refused:                                  # the very first attempt has no connection
+            ok[0] = False
+            refused.append(int(idx[0]))
+        return ok
+
+    modes, stats = _rebalance(connect, np.random.default_rng(5))
+    assert modes[refused[0]] == "car" and stats["n_promoted_unconnected"] == 1
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING" and "re-balancing" in r.getMessage()]
+    assert len(warnings) == 1
+    assert "attempts" in warnings[0] and "stay car" in warnings[0]
+    assert "promoted agents" not in warnings[0]
+
+
 @pytest.mark.parametrize("modes, tolerance", [
     (np.array(["pt"] * 4 + ["car"] * 8), 0.01),          # no deficit
     (np.array(["pt"] * 3 + ["car"] * 9), 0.3),           # deficit 1 of 4 within a 30 % tolerance
