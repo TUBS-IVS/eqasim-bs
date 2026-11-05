@@ -44,6 +44,23 @@
 6. **Findings carry a scope** (`introduced` / `pre-existing`); the findings record becomes schema 2, additive only.
 7. **Trigger hygiene.** `paths-ignore: ["docs/generated/**"]` stops runs for the bot PRs of the generated views.
 
+## Amendment 2026-11-05: fixes after the round cap are verified
+
+- **Trigger:** on PR #554 the third automatic round posted findings; the fixes came in two later pushes, and the gate
+  skipped both as `round cap`. Nothing checked whether the last findings were closed, which the success criterion of
+  2026-10-28 ("they get fixed") requires. The owner asked for fixes after the cap still to be looked at.
+- **Change (central review TUBS-IVS/claude-pr-review v1.2.0, PR TUBS-IVS/claude-pr-review#2; `v1` moved on
+  2026-11-05 to merge commit `3af00e8`):** after `rereview.max_rounds` automatic rounds, the review no longer stops
+  outright. A push while findings are still open gets a verify round on `rereview.verify_tier`, at most
+  `rereview.verify_after_cap` of them (optional key, default 2). A push with no open finding stays skipped as
+  `round cap`. A `Fixed ...` reply in a thread that is already resolved keeps the finding open for that
+  verification, so a fix claim is checked by the model instead of being taken at its word.
+- **Why bounded:** the cap exists to stop repeated full reviews (Context). A verify round reads only the open
+  findings at the light tier, and the second limit keeps a PR that never closes its findings from buying
+  unlimited rounds. ASSUMPTION: the default of 2 is a starting value, re-tune it from the cost records.
+- **This repository:** eqasim-bs calls the review via `@v1`, so the behaviour was live from the moment `v1` moved;
+  `.github/claude-review.yml` keeps the default (no `verify_after_cap` key) and only its comment changed.
+
 ## Why this is not a silent fallback
 
 - The two fallbacks (summary without a state block; reviewed commit not an ancestor of head) print
