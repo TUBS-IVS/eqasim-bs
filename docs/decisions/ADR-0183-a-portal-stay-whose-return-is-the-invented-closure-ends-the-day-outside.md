@@ -1,6 +1,7 @@
 # ADR-0183 · 2026-11-05 · A portal stay whose return is the invented closure trip ends the day outside
 
-- **Status:** accepted (implemented; effect not yet measured, the 100 % before/after measurement is planned in #570)
+- **Status:** accepted (implemented; the portal stage alone replayed on the 100 % inputs of `prod100_20261031`,
+  run manifest `docs/runs/i570-portal-replay-prod100-2026-11-05.yml`; a full 100 % run is planned in #570)
 - **Numbering:** 0183 checked free across all local and remote branches and open PRs on 2026-11-05 (0182 is taken by
   PR #568).
 - **Issue:** #570 (B2 cause 1 of the demand-side findings of run `prod100_20261031`).
