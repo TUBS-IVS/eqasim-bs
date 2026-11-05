@@ -1,0 +1,12 @@
+== core (test scope classpath of the module, mvn dependency:build-classpath): before 213 entries, after 214 entries
+only BEFORE:
+  ~/.m2/repository/com/google/inject/guice/7.0.0/guice-7.0.0.jar
+only AFTER:
+  ~/.m2/repository/com/google/inject/guice/7.0.0/guice-7.0.0-classes.jar
+  ~/.m2/repository/org/ow2/asm/asm/9.10.1/asm-9.10.1.jar
+== braunschweig (test scope classpath of the module, mvn dependency:build-classpath): before 321 entries, after 322 entries
+only BEFORE:
+  ~/.m2/repository/com/google/inject/guice/7.0.0/guice-7.0.0.jar
+only AFTER:
+  ~/.m2/repository/com/google/inject/guice/7.0.0/guice-7.0.0-classes.jar
+  ~/.m2/repository/org/ow2/asm/asm/9.10.1/asm-9.10.1.jar

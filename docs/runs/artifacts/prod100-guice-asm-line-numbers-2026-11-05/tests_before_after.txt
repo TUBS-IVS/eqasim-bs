@@ -1,0 +1,36 @@
+==================================================================================================
+== final poms (the change), JDK 25.0.4.1, both test classes   (mvn -pl braunschweig -am test -Dtest=..., log lines that matter, cut at 420 characters)
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.470 s -- in org.eqasim.core.misc.GuiceSourceLinesTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.095 s -- in org.eqasim.braunschweig.GuiceClasspathTest
+[INFO] Reactor Summary for eqasim 2.3.1:
+[INFO] core ............................................... SUCCESS [ 23.034 s]
+[INFO] braunschweig ....................................... SUCCESS [ 11.236 s]
+[INFO] BUILD SUCCESS
+==================================================================================================
+== baseline poms (c4051c167), both test classes   (mvn -pl braunschweig -am test -Dtest=..., log lines that matter, cut at 420 characters)
+WARNUNG: Failed loading line numbers. ASM is probably out of date. Further failures won't be logged.
+java.lang.IllegalArgumentException: Unsupported class file major version 69
+[ERROR] Tests run: 3, Failures: 3, Errors: 0, Skipped: 0, Time elapsed: 3.812 s <<< FAILURE! -- in org.eqasim.core.misc.GuiceSourceLinesTest
+[ERROR] org.eqasim.core.misc.GuiceSourceLinesTest.theClasspathHasOneCopyOfGuiceWithoutAnEmbeddedAsm -- Time elapsed: 0.020 s <<< FAILURE!
+java.lang.AssertionError: the Guice on the classpath embeds its own ASM, which cannot read the class files of this build: [jar:file:/C:/Users/bienzeisler/.m2/repository/com/google/inject/guice/7.0.0/guice-7.0.0.jar!/com/google/inject/Guice.class] expected null, but was:<jar:file:/C:/Users/bienzeisler/.m2/repository/com/google/inject/guice/7.0.0/guice-7.0.0.jar!/com/google/inject/internal/asm/$ClassReader.class>
+[ERROR] org.eqasim.core.misc.GuiceSourceLinesTest.providerMethodsOfClassesCompiledForThisBuildHaveASourceLine -- Time elapsed: 0.295 s <<< FAILURE!
+java.lang.AssertionError: no source line for the provider method of 'unscoped': ProviderInstanceBinding{key=Key[type=java.lang.String, annotation=@com.google.inject.name.Named("unscoped")], source=java.lang.String org.eqasim.core.misc.GuiceSourceLinesTest$SampleModule.provideUnscoped(), scope=Scopes.NO_SCOPE, provider=@Provides org.eqasim.core.misc.GuiceSourceLinesTest$SampleModule.provideUnscoped(Unknown Source)}
+[ERROR] org.eqasim.core.misc.GuiceSourceLinesTest.providerMethodsOfTheEqasimInjectorHaveASourceLine -- Time elapsed: 3.425 s <<< FAILURE!
+java.lang.AssertionError: provider methods of the eqasim injector without a source line (74 of 74): {org.eqasim.TestConfigurator$1.provideTestModeAvailability=Unknown Source, org.eqasim.core.components.EqasimComponentsModule.providePolicyTravelDisutilityFactory=Unknown Source, org.eqasim.core.components.raptor.EqasimRaptorModule.provideRaptorParametersForPerson=Unknown Source, org.eqasim.core.components.traffic.Eqasi
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.143 s <<< FAILURE! -- in org.eqasim.braunschweig.GuiceClasspathTest
+[ERROR] org.eqasim.braunschweig.GuiceClasspathTest.theClasspathHasOneCopyOfGuiceWithoutAnEmbeddedAsm -- Time elapsed: 0.021 s <<< FAILURE!
+java.lang.AssertionError: the Guice on the classpath embeds its own ASM, which cannot read the class files of this build: [jar:file:/C:/Users/bienzeisler/.m2/repository/com/google/inject/guice/7.0.0/guice-7.0.0.jar!/com/google/inject/Guice.class] expected null, but was:<jar:file:/C:/Users/bienzeisler/.m2/repository/com/google/inject/guice/7.0.0/guice-7.0.0.jar!/com/google/inject/internal/asm/$ClassReader.class>
+[INFO] Reactor Summary for eqasim 2.3.1:
+[INFO] core ............................................... SUCCESS [  8.179 s]
+[INFO] braunschweig ....................................... SUCCESS [  8.306 s]
+[INFO] BUILD SUCCESS
+==================================================================================================
+== final poms with the simwrapper exclusion removed on purpose (the braunschweig test only)   (mvn -pl braunschweig -am test -Dtest=..., log lines that matter, cut at 420 characters)
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.102 s <<< FAILURE! -- in org.eqasim.braunschweig.GuiceClasspathTest
+[ERROR] org.eqasim.braunschweig.GuiceClasspathTest.theClasspathHasOneCopyOfGuiceWithoutAnEmbeddedAsm -- Time elapsed: 0.018 s <<< FAILURE!
+java.lang.AssertionError: copies of the Guice classes on the classpath: [jar:file:/C:/Users/bienzeisler/.m2/repository/com/google/inject/guice/7.0.0/guice-7.0.0.jar!/com/google/inject/Guice.class, jar:file:/C:/Users/bienzeisler/.m2/repository/com/google/inject/guice/7.0.0/guice-7.0.0-classes.jar!/com/google/inject/Guice.class] expected:<1> but was:<2>
+[ERROR]   GuiceClasspathTest.theClasspathHasOneCopyOfGuiceWithoutAnEmbeddedAsm:26 copies of the Guice classes on the classpath: [jar:file:/C:/Users/bienzeisler/.m2/repository/com/google/inject/guice/7.0.0/guice-7.0.0.jar!/com/google/inject/Guice.class, jar:file:/C:/Users/bienzeisler/.m2/repository/com/google/inject/guice/7.0.0/guice-7.0.0-classes.jar!/com/google/inject/Guice.class] expected:<1> but was:<2>
+[INFO] Reactor Summary for eqasim 2.3.1:
+[INFO] core ............................................... SUCCESS [  4.134 s]
+[INFO] braunschweig ....................................... SUCCESS [  4.515 s]
+[INFO] BUILD SUCCESS

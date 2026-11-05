@@ -1,0 +1,15 @@
+=== 2. binding set of the real eqasim injector (2 runs per class path): number of explicit bindings and SHA-256 of the sorted keys
+before run 1: C5F_BINDINGS=612 C5F_KEYS_SHA256=fc61b2f792e67fcb601bc55de260607c157bde0152029b74fa14f2b940c13ae4
+after  run 1: C5F_BINDINGS=612 C5F_KEYS_SHA256=fc61b2f792e67fcb601bc55de260607c157bde0152029b74fa14f2b940c13ae4
+before run 2: C5F_BINDINGS=612 C5F_KEYS_SHA256=fc61b2f792e67fcb601bc55de260607c157bde0152029b74fa14f2b940c13ae4
+after  run 2: C5F_BINDINGS=612 C5F_KEYS_SHA256=fc61b2f792e67fcb601bc55de260607c157bde0152029b74fa14f2b940c13ae4
+=== 3. @Provides methods of the real eqasim injector by package, and how many have no source line
+-- before
+   C5F_PROVIDER_METHODS_TOTAL=74
+   C5F_PREFIX org.eqasim methods=24 unresolved=24
+   C5F_PREFIX org.matsim methods=50 unresolved=50
+-- after
+   C5F_PROVIDER_METHODS_TOTAL=74
+   C5F_PREFIX org.eqasim methods=24 unresolved=0
+   C5F_PREFIX org.matsim methods=50 unresolved=0
+
