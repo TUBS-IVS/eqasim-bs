@@ -27,7 +27,7 @@ Usage (from the repository root):
 Inputs are the committed derived table
 ``eqasim-data/data/braunschweig/kba/derived/kba_gemeinde_private_bev.csv`` and the
 BBSR RegioStaR reference workbook
-``eqasim-data/data/regiostar/regiostar_referenzdatei.xlsx`` (local-only, not
+``eqasim-data/data/regiostar/regiostar_referenzdateien_2024.xlsx`` (sheet 2020) (local-only, not
 committed -- the script exits with a clear message when it is absent).
 
 This is a diagnostic, not a pipeline stage: it reads reference data only and
@@ -58,7 +58,9 @@ logger = logging.getLogger("measure_gemeinde_join_coverage")
 DEFAULT_FZ_TABLE = (REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "kba"
                     / "derived" / "kba_gemeinde_private_bev.csv")
 DEFAULT_REGIOSTAR = (REPO_ROOT / "eqasim-data" / "data" / "regiostar"
-                     / "regiostar_referenzdatei.xlsx")
+                     / "regiostar_referenzdateien_2024.xlsx")
+# Gebietsstand 2020 kept on purpose: the script reproduces the ADR-0083 coverage
+# figures; the sheet equals the earlier BMV bundle's (ADR-0180).
 REGIOSTAR_SHEET = "ReferenzGebietsstand2020"
 
 #: The 8 Kreise of the Zweckverband Grossraum Braunschweig (AGS-5).

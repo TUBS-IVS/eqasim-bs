@@ -14,7 +14,7 @@
 #   reset --hard, pull, merge) in such a worktree deletes the symlink and
 #   recreates a real eqasim-data/ containing ONLY the 91 tracked files -- silently
 #   severing every gitignored large input, so the next run crashes on the first
-#   missing file (e.g. regiostar_referenzdatei.xlsx, MiD2023_Haushalte.csv).
+#   missing file (e.g. regiostar_referenzdateien_2024.xlsx, MiD2023_Haushalte.csv).
 #
 # THE FIX (applied here): sparse-checkout with --no-cone, excluding /eqasim-data/,
 #   so git NEVER materialises anything under that path. The symlink then survives

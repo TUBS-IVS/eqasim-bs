@@ -186,8 +186,8 @@ INPUTS: List[Input] = [
     ),
     Input(
         name="B11 BMV RegioStaR-7 reference (auto-download)",
-        rel_path="regiostar/regiostar_referenzdatei.xlsx",
-        source="https://www.bmv.de/SharedDocs/DE/Anlage/G/regiostar-referenzdateien.xlsx (run python scripts/download_regiostar.py)",
+        rel_path="regiostar/regiostar_referenzdateien_2024.xlsx",
+        source="https://mobilithek.info/mdp-api/files/aux/689522949364838400/2024%20RegioStaR-Referenzdateien_Mobilthek.xlsx (run python scripts/download_regiostar.py)",
         notes="dl-de/by-2-0 (BMV).",
     ),
     Input(

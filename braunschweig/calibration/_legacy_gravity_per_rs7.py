@@ -56,7 +56,9 @@ from braunschweig.calibration._legacy_gravity_decay import (
 
 REPO = Path(__file__).resolve().parents[2]
 OUTPUT_PATH = REPO / "eqasim-data" / "cache_bs" / "calibration" / "gravity_beta_per_rs7.json"
-REGIOSTAR_XLSX = DATA_DIR / "regiostar" / "regiostar_referenzdatei.xlsx"
+REGIOSTAR_XLSX = DATA_DIR / "regiostar" / "regiostar_referenzdateien_2024.xlsx"
+# Gebietsstand 2020 kept on purpose: this legacy calibration reproduces its
+# historical result; the sheet equals the earlier BMV bundle's (ADR-0180).
 REGIOSTAR_SHEET = "ReferenzGebietsstand2020"
 
 # Kept in sync with braunschweig.data.bbsr.regiostar.REGIOSTAR7_LABELS.

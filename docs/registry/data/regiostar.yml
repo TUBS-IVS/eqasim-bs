@@ -2,7 +2,7 @@ dataset: regiostar
 title: RegioStaR regional-statistical typology reference file (BMV/BBSR)
 inventory_id: A2
 provider: BMV / BBSR
-vintage: Gebietsstand 2020
+vintage: Gebietsstand 2023 (sheet ReferenzGebietsstand2023 of the 2024 reference workbook)
 geography: Germany, Gemeinde (AGS)
 crs: null
 roles:
@@ -12,10 +12,10 @@ used_by:
 - braunschweig.data.bbsr.regiostar
 acquisition:
   method: auto_script
-  source: https://www.bmv.de/SharedDocs/DE/Anlage/G/regiostar-referenzdateien.xlsx
+  source: https://mobilithek.info/mdp-api/files/aux/689522949364838400/2024%20RegioStaR-Referenzdateien_Mobilthek.xlsx
   script: scripts/download_regiostar.py
 storage:
-  expected_path: eqasim-data/data/regiostar/regiostar_referenzdatei.xlsx
+  expected_path: eqasim-data/data/regiostar/regiostar_referenzdateien_2024.xlsx
   committed: false
   local_only: true
 verification:
@@ -28,5 +28,10 @@ licensing:
   license: dl-de/by-2-0
   restricted: false
   redistribution: allowed
-limitations: Gebietsstand 2020 -- check manually after municipal mergers.
-notes: null
+limitations: >-
+  The sheet's Gemeinde set must match VG250's; a code VG250 has and the sheet lacks (a later merger) is filled from the
+  nearest neighbour with a WARNING and has no name. The workbook's Gebietsstand-2024 sheet has damaged names and is not
+  used (ADR-0180).
+notes: >-
+  Until ADR-0180 the stage read Gebietsstand 2020 of the BMV bundle regiostar_referenzdatei.xlsx (Langelsheim 03153019
+  missing). Sheet comparison: run manifest regiostar-gebietsstand-comparison-2026-11-05.

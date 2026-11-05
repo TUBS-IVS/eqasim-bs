@@ -76,6 +76,6 @@ notes: 'WORKER UNIVERSE (ADR-0104 ruling R5, fix wave A after the 2026-09-05 pro
   Kreis and Gemeinde for the euclidean distance and intra/inter-Gemeinde split. By design, the
   stage ABORTS the production run (raises ValueError) when more than 5% of homes (workers or
   pupils/students, srv_distance_max_unmatched_home_share, default 0.05) cannot be matched to a
-  Kreis/Gemeinde -- e.g. a missing or stale VG250 archive or regiostar_referenzdatei.xlsx -- a
+  Kreis/Gemeinde -- e.g. a missing or stale VG250 archive or regiostar_referenzdateien_2024.xlsx -- a
   fail-early choice over silently degrading to an all-inter-Gemeinde split on a meaningless home
   assignment.'

@@ -1,0 +1,71 @@
+current bundle sheets: ['ReadMe', 'Karte RegioStar17', 'Karte RegioStar7', 'Codeplan', 'ReferenzGebietsstand2020', 'ReferenzGebietsstand2019', 'ReferenzGebietsstand2018', 'ReferenzGebietsstand2017', 'ReferenzGebietsstand2016', 'ReferenzGebietsstand2015']
+current bundle 2020 ZGB rows: 126 (Germany rows: 11001 )
+2024-workbook sheet 2020: Germany rows 11001, ZGB rows 126
+2024-workbook sheet 2021: Germany rows 10994, ZGB rows 123
+2024-workbook sheet 2022: Germany rows 10990, ZGB rows 123
+2024-workbook sheet 2023: Germany rows 10978, ZGB rows 123
+2024-workbook sheet 2024: Germany rows 10956, ZGB rows 123
+2020 sheet identical across files (5 key columns, Germany): True | ZGB identical: True
+VG250 ZGB rows: 123 distinct AGS: 123 GF values: [4]
+
+=== Gebietsstand 2020: ZGB codes 126; in VG250 but not sheet: ['03153019']; in sheet but not VG250: ['03153006', '03153007', '03153009', '03153014']
+    sheet-only 03153006 Hahausen 74
+    sheet-only 03153007 Langelsheim, Stadt 77
+    sheet-only 03153009 Lutter am Barenberge, Flecken 74
+    sheet-only 03153014 Wallmoden 74
+    vg250-only 03153019 Langelsheim Stadt EWZ 14599
+
+=== Gebietsstand 2021: ZGB codes 123; in VG250 but not sheet: []; in sheet but not VG250: []
+  rs7: 0 of 122 common codes differ from the 2020 bundle
+  rs17: 0 of 122 common codes differ from the 2020 bundle
+  gem7: 0 of 122 common codes differ from the 2020 bundle
+  name: 0 of 122 names differ
+  Langelsheim 03153019: {'name': 'Langelsheim, Stadt', 'rs7': 77, 'rs17': 215, 'gem7': 77}
+
+=== Gebietsstand 2022: ZGB codes 123; in VG250 but not sheet: []; in sheet but not VG250: []
+  rs7: 0 of 122 common codes differ from the 2020 bundle
+  rs17: 0 of 122 common codes differ from the 2020 bundle
+  gem7: 0 of 122 common codes differ from the 2020 bundle
+  name: 0 of 122 names differ
+  Langelsheim 03153019: {'name': 'Langelsheim, Stadt', 'rs7': 77, 'rs17': 215, 'gem7': 77}
+
+=== Gebietsstand 2023: ZGB codes 123; in VG250 but not sheet: []; in sheet but not VG250: []
+  rs7: 0 of 122 common codes differ from the 2020 bundle
+  rs17: 0 of 122 common codes differ from the 2020 bundle
+  gem7: 0 of 122 common codes differ from the 2020 bundle
+  name: 0 of 122 names differ
+  Langelsheim 03153019: {'name': 'Langelsheim, Stadt', 'rs7': 77, 'rs17': 215, 'gem7': 77}
+
+=== Gebietsstand 2024: ZGB codes 123; in VG250 but not sheet: []; in sheet but not VG250: []
+  rs7: 0 of 122 common codes differ from the 2020 bundle
+  rs17: 0 of 122 common codes differ from the 2020 bundle
+  gem7: 0 of 122 common codes differ from the 2020 bundle
+  name: 7 of 122 names differ
+    03151010 'Gro\xdf Oesingen' -> 'Gro\xdfOesingen'
+    03151020 'Oslo\xdf' -> 'Oslo\xc3\u0178'
+    03153018 'Clausthal-Zellerfeld, Berg- und Universit\xe4tsstadt' -> 'Clausthal-Zellerfeld, Berg- und Universit\xc3\xa4tsstadt'
+    03154009 'Gro\xdf Tw\xfclpstedt' -> 'Gro\xdfTw\xfclpstedt'
+    03154017 'R\xe4bke' -> 'R\xc3\xa4bke'
+    03158038 'B\xf6r\xdfum' -> 'B\xf6r\xc3\u0178um'
+    03158501 'Am Gro\xdfen Rhode, gemfr. Gebiet' -> 'Am Gro\xc3\u0178en Rhode, gemfr. Gebiet'
+  Langelsheim 03153019: {'name': 'Langelsheim, Stadt', 'rs7': 77, 'rs17': 215, 'gem7': 77}
+
+Old Goslar codes in the 2020 bundle:
+                                     name  rs7  rs17  gem7
+commune_id                                                
+03153006                         Hahausen   74   125    77
+03153007               Langelsheim, Stadt   77   215    77
+03153009    Lutter am Barenberge, Flecken   74   125    77
+03153014                        Wallmoden   74   125    77
+
+VG250 Goslar rows:
+                                GEN                    BEZ    EWZ
+commune_id                                                       
+03153002               Bad Harzburg                  Stadt  19489
+03153008                 Liebenburg               Gemeinde   7860
+03153012                     Seesen                  Stadt  18657
+03153016                  Braunlage                  Stadt   4839
+03153017                     Goslar                  Stadt  47419
+03153018       Clausthal-Zellerfeld                  Stadt  13912
+03153019                Langelsheim                  Stadt  14599
+03153504    Harz (Landkreis Goslar)  Gemeindefreies Gebiet      0

@@ -172,6 +172,35 @@ def test_kreis_gemeinde_raumtyp_derivation():
     assert int(hh1["raumtyp"]) == 72
 
 
+def test_missing_gemeinde_name_stays_missing_and_is_counted(caplog):
+    """A RegioStaR row without a name yields a MISSING label, never the text "NAN".
+
+    Regression (Langelsheim 03153019, prod100_20261031): the nearest-neighbour RS7
+    fill of ``braunschweig.data.bbsr.regiostar`` leaves ``name`` empty, and
+    ``astype(str).str.upper()`` turned it into the fake Gemeinde label "NAN" for
+    9,347 cars. The label must stay missing so the fleet's Gemeinde tilt counts the
+    car as a Gemeinde fallback (``normalize_gemeinde_name`` maps a missing name to
+    ""), and the stage must say how many cars carry no Gemeinde name.
+    """
+    import logging
+
+    from braunschweig.synthesis.vehicles.fleet_sampling_de import normalize_gemeinde_name
+
+    regiostar = _make_regiostar()
+    regiostar.loc[regiostar["commune_id"] == "03153000", "name"] = np.nan
+    with caplog.at_level(logging.WARNING, logger=hh.logger.name):
+        df_cars = hh.build_household_car_frame(_make_persons(), _make_homes(), regiostar)
+
+    goslar = df_cars[df_cars["household_id"] == 3]
+    assert len(goslar) == 3
+    assert goslar["gemeinde"].isna().all(), goslar["gemeinde"].tolist()
+    assert not (df_cars["gemeinde"].astype(str).str.upper() == "NAN").any()
+    assert all(normalize_gemeinde_name(g) == "" for g in goslar["gemeinde"])
+    # The other households keep their (upper-cased) names: the primary path.
+    assert df_cars.loc[df_cars["household_id"] == 1, "gemeinde"].eq("BRAUNSCHWEIG, STADT").all()
+    assert "3 car(s) in 1 household(s) have no Gemeinde name" in caplog.text
+
+
 def test_extra_cars_round_robin_to_licensed_adults():
     # hh 3: 3 cars, 1 licensed adult -> all 3 owned by that adult (round-robin).
     df_cars = hh.build_household_car_frame(

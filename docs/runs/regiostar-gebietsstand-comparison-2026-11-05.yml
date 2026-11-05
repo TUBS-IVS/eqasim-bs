@@ -1,0 +1,72 @@
+id: regiostar-gebietsstand-comparison-2026-11-05
+date: '2026-11-05'
+repository:
+  commit: f703ca5f88b45608d3f0ddd2a817e551056a39a4
+  branch: claude/langelsheim-regiostar-gebietsstand-978a55 (cut from origin/main at this commit)
+  notes: >-
+    A comparison of input files, not a pipeline run. The script reads the three inputs read-only and depends on no
+    repository code.
+configuration:
+  config: none
+  notes: >-
+    Scope = the eight ZGB Kreise of braunschweig.political_prefix in configs/base_bs.yml (the RegioStaR stage filters to
+    them, so no other Gemeinde reaches the model).
+sampling:
+  rate: 1.0
+  scope: >-
+    every Gemeinde row of the eight ZGB Kreise in each RegioStaR Gebietsstand sheet 2020 to 2024 and in the VG250 layer
+    vg250_gem (Gebietsstand 31.12.2024, from the archive's aktualitaet.txt).
+pipeline:
+  targets: []
+  notes: >-
+    No synpp run. The stage's own primary path on the chosen sheet is tested by
+    tests/test_braunschweig_data.py::TestRegioStarLoader::test_langelsheim_takes_the_primary_path.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Evidence for the sheet choice of ADR-0180. Compares published reference files with each other; NOT a validation of
+    the RegioStaR typology or of any model output.
+source: >-
+  Laptop, 2026-11-05. Inputs: (1) the BMV bundle regiostar_referenzdatei.xlsx the pipeline read until ADR-0180 (sha256
+  550da569e3cd97de11c87859f40a290f200567f63dee4d79c693c7a3393a04e6, copied from felix:~/eqasim-bs/eqasim-data/data/regiostar/);
+  (2) the mobilithek workbook regiostar_referenzdateien_2024.xlsx (URL, size and sha256 pinned in
+  scripts/download_regiostar.py; downloaded 2026-11-05, and re-downloaded on felix by that script with a matching hash);
+  (3) vg250-ew_12-31.utm32s.gpkg.ebenen.zip from felix:~/eqasim-bs/eqasim-data/data/germany/ (the file production runs
+  read). The owner's earlier download "2024 RegioStaR-Referenzdateien.xlsx" (sha256
+  54ba858b6574f2a103ba51756238abb9b7c7b7a26be101394f3a3263a0471daf) is an older revision of (2): its sheets 2020 to 2023 equal
+  those of (2); its sheet 2024 equals the sheet ReferenzGebietsstand2024_alt of (2) (a different column layout without
+  RegioStaRGem7). It is not used.
+environment: 'laptop (Windows 11), conda eqasim (Python 3.10.10, pandas 1.5.3, geopandas, openpyxl 3.1.0)'
+validation:
+- metric: Gemeinde universe of each RegioStaR sheet against VG250 31.12.2024, ZGB scope
+  reference: 'VG250 31.12.2024 (BKG); a published administrative boundary file, NOT a model output'
+  result: >-
+    Gebietsstand 2020: 126 codes; VG250 has 123. 03153019 Langelsheim (merged 1 Nov 2021) is missing from the sheet, and its
+    four predecessors 03153006, 03153007, 03153009, 03153014 are missing from VG250. Gebietsstand 2021, 2022, 2023 and 2024:
+    123 codes each, identical to the VG250 set in both directions.
+  artifact: docs/runs/artifacts/regiostar-gebietsstand-comparison-2026-11-05/compare_regiostar_gebietsstand.txt
+- metric: Values of the 122 codes shared with Gebietsstand 2020 (RegioStaR7, RegioStaR17, RegioStaRGem7, name)
+  reference: 'the Gebietsstand-2020 sheet of the BMV bundle; an equivalence reference, NOT observed data'
+  result: >-
+    Sheets 2021 to 2023: 0 differences in all four columns. Sheet 2024: 0 differences in the three type columns, but 7 of
+    122 names differ by encoding defects (UTF-8 bytes read as Latin-1, e.g. 03154017 'R\xc3\xa4bke') or a dropped space
+    (03151010 'Gro\xdfOesingen'); the exact strings are in the artifact. The 2020 sheet of the workbook equals the BMV
+    bundle's on all of Germany (five key columns).
+  artifact: docs/runs/artifacts/regiostar-gebietsstand-comparison-2026-11-05/compare_regiostar_gebietsstand.txt
+- metric: Langelsheim 03153019 in the newer sheets
+  reference: 'BBSR assignment in the published sheets; NOT observed data'
+  result: >-
+    Sheets 2021 to 2024: name 'Langelsheim, Stadt', RegioStaR7 77, RegioStaR17 215, RegioStaRGem7 77 (as the old
+    Langelsheim 03153007 in 2020). Under Gebietsstand 2020 the stage filled it with RegioStaR7 74 (the nearest known
+    Gemeinde's type) and no name, RegioStaR17 or RegioStaRGem7 (run manifest prod100-fleet-composition-accounting-2026-11-04).
+  artifact: docs/runs/artifacts/regiostar-gebietsstand-comparison-2026-11-05/compare_regiostar_gebietsstand.txt
+artifacts:
+- docs/runs/artifacts/regiostar-gebietsstand-comparison-2026-11-05/
+issues: []
+decisions:
+- ADR-0180
+notes: >-
+  compare_regiostar_gebietsstand.py (sha256 7a0f1e771a2738db30b44362a30b18c4bea5bfe1c005464201dcb8fc0728e5a3) wrote
+  compare_regiostar_gebietsstand.txt; usage in its docstring.

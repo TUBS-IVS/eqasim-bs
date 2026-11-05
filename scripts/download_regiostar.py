@@ -1,22 +1,27 @@
 """
 Download the BMV/BBSR RegioStaR (Regionalstatistische Raumtypologie)
-reference file at Gemeinde resolution.
+reference workbook at Gemeinde resolution.
 
 Source
 ------
-https://www.bmv.de/SharedDocs/DE/Anlage/G/regiostar-referenzdateien.xlsx
-(7.7 MB XLSX, public BMV download).
+mobilithek.info offer 689522949364838400 ("RegioStaR - Regionalstatistische
+Raumtypisierung", BMV), file ``2024 RegioStaR-Referenzdateien_Mobilthek.xlsx``
+(12.4 MB, resource dated 2026-05-22 in the govdata.de catalogue). The BMV
+RegioStaR page links to this offer.
 
-The file contains multiple sheets per Gebietsstand 2015–2020. We use
-sheet ``ReferenzGebietsstand2020`` (latest in the bundle) which carries
-8-digit AGS (`gem_20`), Gemeindename (`name_20`) and the full RegioStaR
-hierarchy: ``RegioStaR2 / 4 / 17 / 7 / 5`` plus ``RegioStaRGem7 / 5``.
+The workbook carries one sheet per Gebietsstand 2015-2024
+(``ReferenzGebietsstand20YY``: 8-digit AGS ``gem_YY``, Gemeindename
+``name_YY`` and the RegioStaR hierarchy ``RegioStaR2 / 4 / 17 / 7 / 5`` plus
+``RegioStaRGem7 / 5``). The pipeline reads ``ReferenzGebietsstand2023``
+(``braunschweig.data.bbsr.regiostar.SHEET``); why: ADR-0180. Its
+``ReferenzGebietsstand2020`` sheet equals the one of the earlier BMV bundle
+(``regiostar_referenzdatei.xlsx``), which the scripts that reproduce
+pre-ADR-0180 measurements still read.
 
 License
 -------
-The BMV publishes the file as public reference material under the
-"Datenlizenz Deutschland – Namensnennung – Version 2.0" terms. Cite as
-"BMV (2020): RegioStaR – Regionalstatistische Raumtypologie".
+"Datenlizenz Deutschland - Namensnennung - Version 2.0". Cite as
+"BMV: RegioStaR - Regionalstatistische Raumtypologie, Referenzdateien".
 
 Usage
 -----
@@ -32,14 +37,14 @@ import sys
 import urllib.request
 
 URL = (
-    "https://www.bmv.de/SharedDocs/DE/Anlage/G/"
-    "regiostar-referenzdateien.xlsx?__blob=publicationFile"
+    "https://mobilithek.info/mdp-api/files/aux/689522949364838400/"
+    "2024%20RegioStaR-Referenzdateien_Mobilthek.xlsx"
 )
-TARGET_NAME = "regiostar_referenzdatei.xlsx"
+TARGET_NAME = "regiostar_referenzdateien_2024.xlsx"
 EXPECTED_SHA256 = (
-    "550da569e3cd97de11c87859f40a290f200567f63dee4d79c693c7a3393a04e6"
+    "a55b217b3b5b8723bf970e4d89b7df6ea80b9c75846fc626de97320326b4990d"
 )
-MIN_SIZE = 7_000_000
+MIN_SIZE = 12_000_000
 
 
 def _sha256_of(path: str) -> str:
@@ -53,7 +58,9 @@ def _sha256_of(path: str) -> str:
 def _download(url: str, target: str) -> None:
     print(f"  GET  {url}")
     print(f"  ->   {target}")
-    with urllib.request.urlopen(url) as response, open(target, "wb") as out:
+    # mobilithek rejects requests without a browser-like User-Agent.
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(request) as response, open(target, "wb") as out:
         while True:
             chunk = response.read(1 << 20)
             if not chunk:
