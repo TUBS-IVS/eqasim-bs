@@ -1,15 +1,18 @@
 id: prod100-guice-asm-line-numbers-2026-11-05
 date: '2026-11-05'
 repository:
-  commit: 3661481bc0b779a92f25f0ffab04f86ee798ef06
+  commit: f3f1e2dd7f7d92028abed16680e8296411deb76b
   branch: fix/guice-asm-java25-class-files (TUBS-IVS/eqasim-java-bs)
   notes: >-
     The commit is in the eqasim-java-bs fork, not in this repository. Every measurement below ran from a local work
     tree of that fork cut from its origin/main c4051c167 (the merge of the DMC trip cache fix, #59) with the change
-    uncommitted; it became the commit above. The pom comments and the Javadocs of the two tests were shortened after
-    the full suite of core and braunschweig had run (text only, no build input); the red and green runs of the two
-    tests, the jars and the test-compile of all modules ran on the final text. The baseline ("before") runs reverted
-    the two poms to c4051c167; the two test classes stayed.
+    uncommitted; it became the commit above. Two edits followed the full suite of core and braunschweig, the jars, the A/B
+    runs and the test-compile of all modules, which therefore ran on the earlier text: the pom comments and the Javadocs
+    were shortened (text only, no build input), and the two test classes were hardened after an independent review (a
+    single copy of the ASM reader and a direct read of a class file with it, both in GuiceClasspathTest; the copy check of
+    the Guice classes moved out of GuiceSourceLinesTest). The red and green runs of the tests and the runs with a
+    deliberate mutation ran on the final text, and the affected tests ran again on the clean commit. The baseline
+    ("before") runs read the two poms of origin/main c4051c167; the test classes stayed.
 configuration:
   config: pom.xml and braunschweig/pom.xml of eqasim-java-bs
   notes: >-
@@ -96,20 +99,25 @@ validation:
   notes: >-
     The same code is on matsim-libs main (read 2026-11-05). A draft upstream issue is in the shared notes of the
     session group (c5f-matsim-printinjector-upstream-report-draft.md), not filed.
-- metric: GuiceSourceLinesTest (core) and GuiceClasspathTest (braunschweig), before and after the change, and with one exclusion removed on purpose
+- metric: GuiceSourceLinesTest (core, 2 tests) and GuiceClasspathTest (braunschweig, 3 tests), before and after the change, and with one exclusion removed or an ASM made too old on purpose
   reference: 'none (JUnit assertions); each test must fail before the change'
   result: >-
-    Before (the two poms of c4051c167, Java 25.0.4.1): GuiceSourceLinesTest 3 of 3 fail and GuiceClasspathTest 1 of 1
-    fails. The sample module's binding reads "(Unknown Source)"; none of the 74 @Provides methods of the real eqasim
-    injector (24 in org.eqasim, 50 in org.matsim) has a source line; the class path test finds the embedded ASM. The
-    surefire output carries the warning and the stack trace of the production log. After (the final poms): 3 of 3 and
-    1 of 1 pass, and the output has no warning. With the simwrapper exclusion removed on purpose, GuiceClasspathTest
-    fails and lists both jars, the default one first in the class path order (guice-7.0.0.jar before
-    guice-7.0.0-classes.jar), so a default jar that returns would win silently.
+    Before (the two poms of c4051c167, Java 25.0.4.1): GuiceSourceLinesTest 2 of 2 fail and GuiceClasspathTest 3 of 3
+    fail. The sample module's binding reads "(Unknown Source)"; none of the 74 @Provides methods of the real eqasim
+    injector (24 in org.eqasim, 50 in org.matsim) has a source line; the class path tests find the embedded ASM and no
+    ASM reader (NoClassDefFoundError). The surefire output carries the warning and the stack trace of the production
+    log. After (the final poms): 2 of 2 and 3 of 3 pass and the output has no warning; the same on the clean commit
+    together with TripEstimatorBindingTest and ParkingInjectorTest (17 tests of 4 classes). Two mutations of the final
+    poms: with the simwrapper exclusion removed, GuiceClasspathTest fails and lists both jars, the default one first in
+    the class path order (guice-7.0.0.jar before guice-7.0.0-classes.jar), so a default jar that returns would win
+    silently; with asm.version 9.7.1 (stops at Java 24) both core tests fail with "Unknown Source" and the reader test
+    of braunschweig fails with "Unsupported class file major version 69" naming the asm-9.7.1 jar.
   artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/tests_before_after.txt
   notes: >-
-    The two tests reach the lookup through the text of the bindings, because Guice logs only the first failure per JVM
-    and a test that shares its JVM would pass without a warning.
+    The two core tests reach the lookup through the text of the bindings, because Guice logs only the first failure per
+    JVM and a test that shares its JVM would pass without a warning. The baseline run used the test class files that
+    Maven had compiled before ("Nothing to compile"); a clean build of the baseline stops at test-compile, because asm
+    is not on its class path.
 - metric: every path to a Guice or ASM artifact in the dependency tree of each of the eight modules (mvn dependency:tree -Dverbose), with the change
   reference: 'none (a listing); the default Guice jar must not appear in any module'
   result: >-
@@ -189,7 +197,9 @@ validation:
     eight modules and the parent: BUILD SUCCESS, so the parent pom change resolves for every module.
   artifact: docs/runs/artifacts/prod100-guice-asm-line-numbers-2026-11-05/full_suite_after_fix.txt
   notes: >-
-    The suite ran before the comment-only shortening of the pom comments and Javadocs (see repository.notes). The
+    The suite ran before the comment-only shortening of the pom comments and Javadocs and before the hardening of the
+    two test classes (see repository.notes); the totals are those of that tree (core 132 tests with 3 of the Guice
+    tests, braunschweig 434 with 1), not of the final one. The
     other modules run their tests in the Maven Test workflow on the pull request; they inherit the parent pom and add
     no MATSim dependency. One of them was run here as well: ile_de_france TestCorisica fails in its tearDown on
     Windows (scorestats.csv is still open when the test deletes its output directory), identically on a source copy of

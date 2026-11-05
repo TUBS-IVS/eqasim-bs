@@ -47,10 +47,12 @@
    of the braunschweig pom. Guice's own request for an older Guava is excluded as well: as a direct dependency declared
    first, Guice would win the version mediation and silently downgrade the Guava of the build (found by diffing the
    classpath before and after; manifest).
-3. **Two tests keep it that way.** `GuiceSourceLinesTest` (core) fails when a `@Provides` method of the real eqasim
-   injector, or of a class compiled for this build, has no source line. `GuiceClasspathTest` (braunschweig, the module
-   whose standalone jar runs) fails when the classpath holds a second copy of the Guice classes or a Guice with an
-   embedded ASM. Both failed before the change.
+3. **Two test classes keep it that way.** `GuiceSourceLinesTest` (core) fails when a `@Provides` method of the real
+   eqasim injector, or of a class compiled for this build, has no source line. `GuiceClasspathTest` (braunschweig, the
+   module whose standalone jar runs) fails when the classpath holds a second copy of the Guice classes or of the ASM
+   reader, a Guice with an embedded ASM, or an ASM that cannot read the class files of this build. They fail on the old
+   poms and with a deliberately too old ASM (manifest). They guard these two modules only: the other modules and the
+   shaded jar are not tested.
 
 ## Rationale
 
@@ -74,8 +76,9 @@
   and are not a plain package relocation). Each is a private fork of a library class or depends on a naming trick; a
   published, supported artifact is simpler.
 - **Rejected: managing the exclusions in `dependencyManagement` for every MATSim coordinate, or banning the default
-  jar with the enforcer plugin.** More machinery than two tests that fail loudly and name the offender (the
-  classpath test printed both jars when a contrib exclusion was removed on purpose; manifest).
+  jar with the enforcer plugin.** More machinery than tests that fail loudly and name the offender (the classpath
+  test printed both jars when a contrib exclusion was removed on purpose; manifest). The price is the limit named in
+  decision 3: a contrib added to a module without a test is not caught.
 - **Rejected: waiting for upstream.** No Guice release since 2023. The trigger in MATSim (`printInjector` builds its
   strings regardless of the level) is a proposal for matsim-libs: a draft is in the shared notes of the session group,
   not filed (it needs the owner's yes).
@@ -89,8 +92,12 @@
 - **The first build on a machine downloads two artifacts** (the classes jar and the asm jar) from Maven Central.
   felix reaches Central (manifest).
 - **Maintenance rule.** A MATSim contrib added to a pom needs the same Guice exclusion; `GuiceClasspathTest` names the
-  second copy otherwise. A project that uses `org.eqasim:core` as a library excludes the default jar from its own
-  MATSim dependencies in the same way.
+  second copy otherwise (in its module). The two version pins follow their owners: `asm.version` stays at 9.8 or newer,
+  and `guice.version` equals the Guice version of the MATSim release, because the Guice extensions come from MATSim's own
+  pin. A project that uses `org.eqasim:core` as a library excludes the default jar from its own MATSim dependencies in
+  the same way.
+- **One pull request pair.** The pom comments of eqasim-java-bs point to this record, so the two pull requests belong
+  together: merge this one with, or before, the Java change.
 - **Revisit** when a Guice release embeds ASM 9.8 or newer, or MATSim stops building the binding texts eagerly: the
   replacement can then go.
 - **Guice also writes classes with this ASM.** Every injector build generates fast-constructor classes with it, and it is
