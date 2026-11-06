@@ -89,9 +89,8 @@ DEFAULT_MAX_FROZEN_PT_AS_WALK_SHARE = 0.02
 #: below it is a plausible walk.
 KEY_PT_AS_WALK_BOUND_MIN_DISTANCE_M = "braunschweig.plan_check.pt_as_walk_bound_min_distance_m"
 DEFAULT_PT_AS_WALK_BOUND_MIN_DISTANCE_M = 5000.0
-#: ASSUMPTION (ADR-0188, #576): one MATSim travel-time bin (``travelTimeCalculator.travelTimeBinSize``, reasoning
-#: and evidence in ADR-0188); a backward step of an activity end time within one bin lies inside the router's own
-#: time resolution.
+#: ASSUMPTION (ADR-0188, #576): the owner's choice of the lateness a backward step may cause before it counts as
+#: a defect (an activity whose planned end has passed ends at once, so the next departure is up to the step late).
 KEY_NON_MONOTONIC_BOUND_MIN_STEP_S = "braunschweig.plan_check.non_monotonic_bound_min_step_s"
 DEFAULT_NON_MONOTONIC_BOUND_MIN_STEP_S = 900.0
 #: Report-only bands (not config); half-open ``[lo, hi)``, labels ``0_1km`` ... ``10km_plus`` / ``0_1min`` ...
@@ -250,8 +249,8 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
     distance (origin of its first leg to destination of its last leg, as the walk-leg check measures): it is counted
     in ``pt_as_walk_by_distance_band`` (report only) and, when strictly above ``pt_as_walk_bound_min_distance_m``,
     in ``n_pt_as_walk_long``; ``share_pt_as_walk_long`` = ``n_pt_as_walk_long / n_pt_trips`` is the bounded share
-    (ADR-0188). Likewise a non-monotonic plan gets its backward step (the largest ``earlier - later`` over
-    consecutive activity end times) counted in ``non_monotonic_by_step_band`` (report only) and, when strictly above
+    (ADR-0188). Likewise a non-monotonic plan gets its backward step (the largest drop of an activity end time
+    below the latest end time before it, so chained small drops add up) counted in ``non_monotonic_by_step_band`` (report only) and, when strictly above
     ``non_monotonic_bound_min_step_s``, in ``n_plans_non_monotonic_large``; ``share_plans_non_monotonic_large`` =
     ``n_plans_non_monotonic_large / n_persons`` is the bounded share. The totals stay reported. A jar without the
     stamp makes ``n_pt_as_walk`` read 0 whatever the router did: ``require_walk_fallback_stamp`` guards that in
@@ -279,8 +278,13 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
             if last_departure is not None and last_travel is not None \
                     and last_departure + last_travel > simulation_end_s:
                 block["n_plans_arrival_late"] += 1
-        backward_step_s = max((earlier - later for earlier, later in zip(ends, ends[1:]) if later < earlier),
-                              default=None)
+        # The step is the largest drop of an end time below the latest end seen before it (ADR-0188), so chained
+        # small backward pairs add up; a plan with no drop has no step and is monotonic.
+        backward_step_s, latest_end_s = None, None
+        for end in ends:
+            if latest_end_s is not None and end < latest_end_s:
+                backward_step_s = max(backward_step_s or 0.0, latest_end_s - end)
+            latest_end_s = end if latest_end_s is None else max(latest_end_s, end)
         if backward_step_s is not None:
             block["n_plans_non_monotonic"] += 1
             block["non_monotonic_by_step_band"][_band_label(

@@ -962,8 +962,8 @@ config:
   # ASSUMPTION (ADR-0188, #576): only pt-as-walk trips longer than this (straight line) count against
   # max_frozen_pt_as_walk_share; same anchor as walk_max_distance_m.
   braunschweig.plan_check.pt_as_walk_bound_min_distance_m: 5000
-  # ASSUMPTION (ADR-0188, #576): one MATSim travel-time bin; only plans with a larger backward step of their
-  # activity end times count against max_frozen_defect_share as non-monotonic.
+  # ASSUMPTION (ADR-0188, #576): the tolerated lateness of a backward step (owner choice); only plans with a
+  # larger backward step of their activity end times count against max_frozen_defect_share as non-monotonic.
   braunschweig.plan_check.non_monotonic_bound_min_step_s: 900
   braunschweig.plan_check.fail_on_threshold: false
   # eqasim's standalone mode choice runs at the end of the prepare stage on the final population with free-flow

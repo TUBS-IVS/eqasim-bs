@@ -508,15 +508,18 @@ def test_non_monotonic_plans_are_banded_by_backward_step_and_only_those_above_th
     assert block["share_plans_non_monotonic_large"] == pytest.approx(2 / 5)
 
 
-def test_the_backward_step_of_a_plan_is_its_largest_backward_pair_and_exactly_the_threshold_is_not_large():
+def test_the_backward_step_of_a_plan_is_its_largest_drop_below_an_earlier_end_and_exactly_the_threshold_is_not_large():
     # Backward pairs of 100 s and 1000 s (and a forward pair): the plan counts once, with the 1000 s step.
     multi = _backward_step_plan("multi", 36000.0, 35900.0, 36500.0, 35500.0)
+    # Two chained 600 s pairs: the last end lies 1200 s before the first, so the step is 1200 s, not 600 s (#586).
+    chained = _backward_step_plan("chained", 36000.0, 35400.0, 34800.0)
     edge = _backward_step_plan("edge", 36900.0, 36000.0)   # exactly 900 s
-    block = _summarise([multi, edge])["subpopulations"][C.RESIDENTS][C.IN_REGION]
-    assert block["n_plans_non_monotonic"] == 2
-    assert block["non_monotonic_by_step_band"]["15_60min"] == 2   # 900 s is in [900, 3600)
+    block = _summarise([multi, chained, edge])["subpopulations"][C.RESIDENTS][C.IN_REGION]
+    assert block["n_plans_non_monotonic"] == 3
+    assert block["non_monotonic_by_step_band"]["15_60min"] == 3   # 900 s is in [900, 3600)
     assert block["non_monotonic_by_step_band"]["0_1min"] == 0     # not the 100 s step of the multi plan
-    assert block["n_plans_non_monotonic_large"] == 1               # only the 1000 s plan; 900 s is not above 900 s
+    assert block["non_monotonic_by_step_band"]["5_15min"] == 0    # not the 600 s pairs of the chained plan
+    assert block["n_plans_non_monotonic_large"] == 2               # 1000 s and 1200 s; 900 s is not above 900 s
 
 
 def test_summary_thresholds_carry_the_two_new_bound_thresholds():

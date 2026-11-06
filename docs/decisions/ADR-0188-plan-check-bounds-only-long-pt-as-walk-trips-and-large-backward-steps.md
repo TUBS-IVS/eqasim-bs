@@ -14,7 +14,7 @@
 
 ## Decision
 
-1. **Bands, report only.** Each block of `plan_check.json` carries `pt_as_walk_by_distance_band` (straight-line distance of the trip, origin of its first leg to destination of its last leg; bands `[0,1)`, `[1,2)`, `[2,5)`, `[5,10)`, `[10,inf)` km) and `non_monotonic_by_step_band` (the plan's largest backward step between consecutive activity end times; bands `[0,1)`, `[1,5)`, `[5,15)`, `[15,60)`, `[60,inf)` min). Every label is always present. The bands are module constants of `braunschweig.matsim.simulation.plan_check` (report layout, not a model parameter).
+1. **Bands, report only.** Each block of `plan_check.json` carries `pt_as_walk_by_distance_band` (straight-line distance of the trip, origin of its first leg to destination of its last leg; bands `[0,1)`, `[1,2)`, `[2,5)`, `[5,10)`, `[10,inf)` km) and `non_monotonic_by_step_band` (the plan's backward step: the largest drop of an activity end time below the latest end time before it, so chained small drops add up; bands `[0,1)`, `[1,5)`, `[5,15)`, `[15,60)`, `[60,inf)` min). Every label is always present. The bands are module constants of `braunschweig.matsim.simulation.plan_check` (report layout, not a model parameter).
 2. **The bounds judge only the long walks and the large steps.** New counters `n_pt_as_walk_long` (distance strictly above `braunschweig.plan_check.pt_as_walk_bound_min_distance_m`) and `n_plans_non_monotonic_large` (step strictly above `braunschweig.plan_check.non_monotonic_bound_min_step_s`) with their shares `share_pt_as_walk_long` (of `n_pt_trips`) and `share_plans_non_monotonic_large` (of `n_persons`). The failure rule compares `share_plans_late` and `share_plans_non_monotonic_large` with `max_frozen_defect_share`, and `share_pt_as_walk_long` with `max_frozen_pt_as_walk_share`; `threshold.exceeded` names these keys. The limits themselves and `fail_on_threshold` are unchanged.
 3. **The totals stay.** `n_pt_as_walk`, `share_pt_as_walk`, `n_plans_non_monotonic` and `share_plans_non_monotonic` are still counted, logged and written; they are no longer compared with a limit.
 4. **Nothing MATSim receives changes.** The check reads the written population; no plan, trip or config value is altered.
@@ -24,12 +24,13 @@
 - **Keep one number and raise the limits.** A higher limit would hide the same number of real defects as harmless ones; the mix, not the level, made the messages useless.
 - **Drop short walks and small steps from the report.** They are observations of the input, and their counts show where the cutter and the gates produce artefacts (ADR-0167); dropping them would make those artefacts invisible.
 - **2 km distance threshold.** The committed SrV table has no band boundary at 2 km (its first band is 0-5 km), so 2 km would have no anchor in a committed source.
-- **5 min step threshold.** Smaller than one travel-time bin of the router; it would still count steps that lie inside the router's own time resolution.
+- **5 min step threshold.** Offered to the owner; not chosen (it would still bound most of the small portal-stay steps of ADR-0167).
+- **Anchoring the step threshold in the travel-time bin** (`travelTimeCalculator.travelTimeBinSize`, 900 s; the reason first proposed to the owner). Rejected after review: the checked end times come from the diaries and from the scenario cutter, which `prepare._run_scenario_cutter` calls without an events file, so its routing is free flow and no travel-time bin enters the planned times. The bin size is no reason for the threshold.
 
 ### Assumptions (stated, not measured)
 
 - ASSUMPTION: `braunschweig.plan_check.pt_as_walk_bound_min_distance_m` 5,000 m. Same anchor as `walk_max_distance_m` (ADR-0146, Assumptions: the SrV table `srv2023_mode_by_distance_band.csv`, where walking is common up to 5 km straight-line and below 1 % in every group beyond, with the one exception named there). A pt trip realised as a walk below it is treated as a plausible walk, not as a defect. It is a threshold for counting trips, not a reference value.
-- ASSUMPTION: `braunschweig.plan_check.non_monotonic_bound_min_step_s` 900 s, one MATSim travel-time bin (`travelTimeCalculator.travelTimeBinSize`, MATSim default 900 s). No file under `configs/` sets the key, and no Java source of the eqasim-java-bs core or braunschweig modules sets it (searched 2026-11-06; only the unused switzerland module reads the config group); the bin size of the measured run is recorded in its manifest. A backward step within one bin lies inside the time resolution the router's travel times have, so it is not treated as a defect. It is a threshold for counting plans, not a reference value.
+- ASSUMPTION: `braunschweig.plan_check.non_monotonic_bound_min_step_s` 900 s, the owner's choice (2026-11-06) of the lateness a backward step may cause before it counts as a defect. When an activity's planned end time has already passed on arrival, MATSim ends the activity at once, so a backward step of s seconds makes the following departure up to s later than planned; steps up to 15 min are treated as a tolerable lateness. No observed source anchors the value (see Rejected alternatives for the travel-time-bin reason, which does not hold). It is a threshold for counting plans, not a reference value.
 
 ### Limitations
 
@@ -39,7 +40,7 @@
 
 ## Consequences
 
-- **No model output changes.** Only `plan_check.json`, the `[plan_check]` log line and the ERROR decision change; no stage downstream reads the changed keys (searched `braunschweig/`, `scripts/`, `configs/`). The prepare stage's token changes (the module is a helper of prepare), so a prepare stage recomputes once.
+- **No model output changes.** Only `plan_check.json`, the `[plan_check]` log line and the ERROR decision change; no stage downstream reads the changed keys (searched `braunschweig/`, `scripts/`, `configs/`). Cache: `plan_check` is a hashed helper module of `matsim.simulation.prepare`, `braunschweig.analysis.analysis_suite` and `braunschweig.analysis.simwrapper_export`, so those three tokens change, and synpp recomputes every stage downstream of prepare as well (the MATSim run included). The recomputed results equal the old ones apart from `plan_check.json` and the plan-check log.
 - **New config keys** `braunschweig.plan_check.pt_as_walk_bound_min_distance_m` and `.non_monotonic_bound_min_step_s`, declared in `braunschweig.matsim.simulation.prepare.configure` and set in `configs/base_bs.yml`.
 - **Documentation.** This ADR; ADR-0146 status line; Feature Registry record `plan_feasibility_check`; Stage Registry record `matsim.simulation.prepare`; contributor note `docs/codebase/notes/plan-check.md`.
 
