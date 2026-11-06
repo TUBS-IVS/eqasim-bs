@@ -1,0 +1,110 @@
+2026-11-05 22:21:14,199 INFO braunschweig [config-merge] working_directory: (added) ../cache
+2026-11-05 22:21:14,199 INFO braunschweig [config-merge] run: (added) ['matsim.output']
+2026-11-05 22:21:14,199 INFO braunschweig [config-merge] config.sampling_rate: (added) 1.0
+2026-11-05 22:21:14,199 INFO braunschweig [config-merge] config.output_path: (added) ../output
+2026-11-05 22:21:14,199 INFO braunschweig [config-merge] config.analysis_working_directory: (added) ../cache
+2026-11-05 22:21:14,199 INFO braunschweig [config-merge] config.output_prefix: (added) braunschweig_100pct_prod20261031_
+2026-11-05 22:21:14,199 INFO braunschweig [config-merge] config.matsim_last_iteration: (added) 150
+2026-11-05 22:21:14,199 INFO braunschweig [config-merge] config.braunschweig.population.popsim.work_dir: (added) ../popsim_work
+2026-11-05 22:21:14,199 INFO braunschweig [config-merge] config.braunschweig.population.popsim.max_cells: (added) 750
+2026-11-05 22:21:14,199 INFO braunschweig [config-merge] config.braunschweig.population.popsim.num_workers: (added) 3
+2026-11-05 22:21:14,199 INFO braunschweig [config-merge] config.braunschweig.population.popsim.importance_profile: (added) optimized_2026_06_30
+2026-11-05 22:21:14,199 INFO braunschweig [config-merge] config.cache_share_enabled: True -> False
+2026-11-05 22:21:14,199 INFO braunschweig [config-merge] config.cache_share_export: (added) False
+2026-11-05 22:21:14,199 INFO braunschweig [config-merge] config.cache_share_recompute: (added) []
+2026-11-05 22:21:14,200 INFO braunschweig [config-merge] config.braunschweig.chainsolvers.processes: 0 -> 16
+2026-11-05 22:21:14,200 INFO braunschweig [config-merge] config.synpp_expected_stale_stages: [] -> ['matsim.output', 'matsim.simulation.run']
+2026-11-05 22:21:14,200 INFO braunschweig [config-merge] composed /home/felix/i573_replay/eqasim-bs/configs/base_bs.yml + /home/felix/prod100_20261031/run.yml: 3 overridden, 13 added
+2026-11-05 22:21:14,200 INFO i573_check_replay aliases 29
+2026-11-05 22:21:14,200 INFO i573_check_replay cwd /home/felix/prod100_20261031/eqasim-bs, code /home/felix/i573_replay/eqasim-bs
+2026-11-05 22:21:14,200 INFO i573_check_replay config keys 275; latest_arrival_check=True
+2026-11-05 22:21:14,544 INFO numexpr.utils Note: NumExpr detected 64 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+2026-11-05 22:21:14,544 INFO numexpr.utils NumExpr defaulting to 16 threads.
+2026-11-05 22:21:15,007 INFO i573_check_replay === replay braunschweig.synthesis.student_incommuters (run stem braunschweig.synthesis.student_incommuters__741d29509ea1724583f3da017b2842d9) ===
+2026-11-05 22:21:15,166 INFO i573_check_replay loaded braunschweig.data.schools.university_facilities (braunschweig.data.schools.university_facilities__deeccc1639a27b53658fe5b092a38615) in 0 s
+2026-11-05 22:21:15,175 INFO i573_check_replay loaded data.spatial.municipalities (data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421) in 0 s
+2026-11-05 22:21:16,213 INFO i573_check_replay loaded braunschweig.locations.synthesis.replacement_education_gravity (braunschweig.locations.synthesis.replacement_education_gravity__73fbbf444ee75cf740778dff43e520ff) in 1 s
+2026-11-05 22:21:17,385 INFO i573_check_replay loaded braunschweig.popsim.enriched_adapter (braunschweig.popsim.enriched_adapter__451bf968c790012e5fcf2ace9efddefe) in 1 s
+2026-11-05 22:21:21,565 INFO i573_check_replay loaded braunschweig.data.hts.mid_donor (braunschweig.data.hts.mid_donor__8ae54c4fad3b63cf2d9f81c74777bc69) in 4 s
+2026-11-05 22:21:21,567 INFO i573_check_replay loaded braunschweig.synthesis.cordon_gates (braunschweig.synthesis.cordon_gates__11eceeb40f1c607cc7669833cb38e93c) in 0 s
+2026-11-05 22:21:21,663 WARNING braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03101: residents 16671 exceed scaled enrollment 15627 -> in_commuters floored to 0 (check university slope)
+2026-11-05 22:21:21,663 INFO braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03101: enrollment(scaled) 15627, residents 16671, in_commuters 0
+2026-11-05 22:21:21,663 INFO braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03102: enrollment(scaled) 3087, residents 1440, in_commuters 1647
+2026-11-05 22:21:21,663 WARNING braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03103: residents 562 exceed scaled enrollment 108 -> in_commuters floored to 0 (check university slope)
+2026-11-05 22:21:21,664 INFO braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03103: enrollment(scaled) 108, residents 562, in_commuters 0
+2026-11-05 22:21:21,664 INFO braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03153: enrollment(scaled) 2811, residents 1076, in_commuters 1735
+2026-11-05 22:21:21,664 INFO braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03158: enrollment(scaled) 6178, residents 3386, in_commuters 2792
+2026-11-05 22:21:35,751 INFO braunschweig.data.cordon.incommuter_origins [incommuter_origins] in-ring primary 6164/6174 (99.8%), far (caller fallback) 10 (0.2%)
+2026-11-05 22:21:35,753 INFO braunschweig.synthesis.student_incommuters [student_incommuters] home placement: in-ring primary 6164/6174 (99.8%), gate fallback 10/6174 (0.2%)
+2026-11-05 22:21:47,595 INFO braunschweig.data.cordon.plans [braunschweig.cordon.plans] in-commuter day bound 104400 s: primary 6164/6174 fit at the first draw, re-drawn 10 (0.2%, max attempts used 1/20), still unfit 0
+2026-11-05 22:21:47,596 WARNING braunschweig.data.cordon.plans [incommuters] middle arrival (education): primary 6157/6174 (99.7%), fallback 17/6174 (0.3%)
+2026-11-05 22:21:47,596 WARNING braunschweig.data.cordon.plans [incommuters] middle departure (education): primary 6113/6174 (99.0%), fallback 61/6174 (1.0%)
+2026-11-05 22:21:47,596 INFO braunschweig.data.cordon.plans [incommuters] middle activity duration imputation: duration pool 61/61 (100.0%), direct fixed assumption 0/61 (0.0%); pool may include repaired anchors; empty-pool assumption 21600 seconds
+2026-11-05 22:21:47,596 WARNING braunschweig.data.cordon.plans [incommuters] home departure (education): primary 6157/6174 (99.7%), fallback 17/6174 (0.3%)
+2026-11-05 22:21:47,597 INFO braunschweig.data.cordon.plans [incommuters] outbound duration imputation: duration pool 17/17 (100.0%), direct fixed assumption 0/17 (0.0%); pool may include repaired anchors; empty-pool assumption 3600 seconds
+2026-11-05 22:21:47,597 WARNING braunschweig.data.cordon.plans [incommuters] home arrival (education): primary 6110/6174 (99.0%), fallback 64/6174 (1.0%)
+2026-11-05 22:21:47,597 INFO braunschweig.data.cordon.plans [incommuters] return duration imputation: duration pool 64/64 (100.0%), direct fixed assumption 0/64 (0.0%); pool may include repaired anchors; empty-pool assumption 3600 seconds
+2026-11-05 22:21:47,598 INFO braunschweig.synthesis.student_incommuters [student_incommuters] day bound 104400 s: 3/6174 days moved earlier as a whole (0.0%), 0 still late
+2026-11-05 22:21:47,808 INFO i573_check_replay loaded matsim.scenario.supply.processed (matsim.scenario.supply.processed__4dce13c683a6cc2017996fd709fa2c6e) in 0 s
+2026-11-05 22:21:47,810 INFO i573_check_replay loaded braunschweig.matsim.scenario.supply_gtfs (braunschweig.matsim.scenario.supply_gtfs__95dd6322478383df6b92adfae14af15e) in 0 s
+2026-11-05 22:21:56,021 INFO braunschweig.data.transit.connections [pt-router] routing 1900 task(s) with 56 thread(s), config /home/felix/scratch_i573/out/braunschweig.synthesis.student_incommuters/incommuter_pt_router_config.xml
+2026-11-05 22:21:56,022 INFO i573_check_replay loaded matsim.runtime.eqasim (matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f) in 0 s
+2026-11-05 22:21:56,023 INFO i573_check_replay loaded matsim.runtime.java (matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1) in 0 s
+2026-11-05 22:21:56,054 WARNING braunschweig.java_heap [resources] java_memory 100G -> 83G (memory budget 86.28 GB (psutil) - driver RSS 3.10 GB = 83.18 GB for the JVM; configured 100G exceeds it, clamped to 83G)
+2026-11-05 22:22:41,459 INFO braunschweig.data.transit.connections [pt-router] 53/1900 task(s) (2.8%) have no trips row (the router found no route; examples ['11130618:196:ret', '11130720:298:ret', '11131478:1056:ret'])
+2026-11-05 22:22:41,568 INFO braunschweig.data.transit.connections [incommuter pt check] connections 1833/1900 (96.5%): pt 1833, plausible short walk 0; rejected: no_route 53, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 14
+2026-11-05 22:22:41,569 INFO braunschweig.data.transit.connections [incommuter pt check] latest-arrival bound 29:00:00: rejected 14/1847 pt trip(s) (0.8%)
+2026-11-05 22:22:41,592 INFO braunschweig.data.transit.connections [pt-router] routing 130 task(s) with 56 thread(s), config /home/felix/scratch_i573/out/braunschweig.synthesis.student_incommuters/incommuter_pt_router_config.xml
+2026-11-05 22:22:41,594 WARNING braunschweig.java_heap [resources] java_memory 100G -> 83G (memory budget 86.28 GB (psutil) - driver RSS 3.10 GB = 83.18 GB for the JVM; configured 100G exceeds it, clamped to 83G)
+2026-11-05 22:23:20,310 INFO braunschweig.data.transit.connections [pt-router] 39/130 task(s) (30.0%) have no trips row (the router found no route; examples ['11130618:196:ret', '11130720:298:ret', '11131478:1056:ret'])
+2026-11-05 22:23:20,372 INFO braunschweig.data.transit.connections [incommuter pt check] connections 81/130 (62.3%): pt 81, plausible short walk 0; rejected: no_route 39, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 10
+2026-11-05 22:23:20,372 INFO braunschweig.data.transit.connections [incommuter pt check] latest-arrival bound 29:00:00: rejected 10/91 pt trip(s) (11.0%)
+2026-11-05 22:23:20,383 INFO braunschweig.data.transit.connections [pt-router] routing 92 task(s) with 56 thread(s), config /home/felix/scratch_i573/out/braunschweig.synthesis.student_incommuters/incommuter_pt_router_config.xml
+2026-11-05 22:23:20,386 WARNING braunschweig.java_heap [resources] java_memory 100G -> 83G (memory budget 86.28 GB (psutil) - driver RSS 3.10 GB = 83.18 GB for the JVM; configured 100G exceeds it, clamped to 83G)
+2026-11-05 22:24:01,563 INFO braunschweig.data.transit.connections [pt-router] 34/92 task(s) (37.0%) have no trips row (the router found no route; examples ['11130618:196:ret', '11130720:298:ret', '11131478:1056:ret'])
+2026-11-05 22:24:01,607 INFO braunschweig.data.transit.connections [incommuter pt check] connections 46/92 (50.0%): pt 46, plausible short walk 0; rejected: no_route 34, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 12
+2026-11-05 22:24:01,608 INFO braunschweig.data.transit.connections [incommuter pt check] latest-arrival bound 29:00:00: rejected 12/58 pt trip(s) (20.7%)
+2026-11-05 22:24:01,614 INFO braunschweig.data.transit.connections [pt-router] routing 96 task(s) with 56 thread(s), config /home/felix/scratch_i573/out/braunschweig.synthesis.student_incommuters/incommuter_pt_router_config.xml
+2026-11-05 22:24:01,615 WARNING braunschweig.java_heap [resources] java_memory 100G -> 83G (memory budget 86.28 GB (psutil) - driver RSS 3.10 GB = 83.18 GB for the JVM; configured 100G exceeds it, clamped to 83G)
+2026-11-05 22:24:42,678 INFO braunschweig.data.transit.connections [pt-router] 32/96 task(s) (33.3%) have no trips row (the router found no route; examples ['11130618:196:ret', '11131478:1056:ret', '11131896:1474:ret'])
+2026-11-05 22:24:42,712 INFO braunschweig.data.transit.connections [incommuter pt check] connections 57/96 (59.4%): pt 57, plausible short walk 0; rejected: no_route 32, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 7
+2026-11-05 22:24:42,712 INFO braunschweig.data.transit.connections [incommuter pt check] latest-arrival bound 29:00:00: rejected 7/64 pt trip(s) (10.9%)
+2026-11-05 22:24:42,717 INFO braunschweig.data.transit.connections [pt-router] routing 72 task(s) with 56 thread(s), config /home/felix/scratch_i573/out/braunschweig.synthesis.student_incommuters/incommuter_pt_router_config.xml
+2026-11-05 22:24:42,718 WARNING braunschweig.java_heap [resources] java_memory 100G -> 83G (memory budget 86.28 GB (psutil) - driver RSS 3.10 GB = 83.18 GB for the JVM; configured 100G exceeds it, clamped to 83G)
+2026-11-05 22:25:21,646 INFO braunschweig.data.transit.connections [pt-router] 29/72 task(s) (40.3%) have no trips row (the router found no route; examples ['11130602:180:ret', '11130618:196:ret', '11131478:1056:ret'])
+2026-11-05 22:25:21,681 INFO braunschweig.data.transit.connections [incommuter pt check] connections 36/72 (50.0%): pt 36, plausible short walk 0; rejected: no_route 29, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 7
+2026-11-05 22:25:21,681 INFO braunschweig.data.transit.connections [incommuter pt check] latest-arrival bound 29:00:00: rejected 7/43 pt trip(s) (16.3%)
+2026-11-05 22:25:21,687 INFO braunschweig.data.transit.connections [pt-router] routing 76 task(s) with 56 thread(s), config /home/felix/scratch_i573/out/braunschweig.synthesis.student_incommuters/incommuter_pt_router_config.xml
+2026-11-05 22:25:21,688 WARNING braunschweig.java_heap [resources] java_memory 100G -> 83G (memory budget 86.28 GB (psutil) - driver RSS 3.10 GB = 83.18 GB for the JVM; configured 100G exceeds it, clamped to 83G)
+2026-11-05 22:25:59,652 INFO braunschweig.data.transit.connections [pt-router] 27/76 task(s) (35.5%) have no trips row (the router found no route; examples ['11130618:196:ret', '11131478:1056:ret', '11132393:1971:ret'])
+2026-11-05 22:25:59,685 INFO braunschweig.data.transit.connections [incommuter pt check] connections 44/76 (57.9%): pt 44, plausible short walk 0; rejected: no_route 27, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 5
+2026-11-05 22:25:59,686 INFO braunschweig.data.transit.connections [incommuter pt check] latest-arrival bound 29:00:00: rejected 5/49 pt trip(s) (10.2%)
+2026-11-05 22:25:59,691 INFO braunschweig.data.transit.connections [pt-router] routing 58 task(s) with 56 thread(s), config /home/felix/scratch_i573/out/braunschweig.synthesis.student_incommuters/incommuter_pt_router_config.xml
+2026-11-05 22:25:59,691 WARNING braunschweig.java_heap [resources] java_memory 100G -> 83G (memory budget 86.28 GB (psutil) - driver RSS 3.10 GB = 83.18 GB for the JVM; configured 100G exceeds it, clamped to 83G)
+2026-11-05 22:26:36,708 INFO braunschweig.data.transit.connections [pt-router] 26/58 task(s) (44.8%) have no trips row (the router found no route; examples ['11130602:180:ret', '11130618:196:ret', '11131478:1056:ret'])
+2026-11-05 22:26:36,772 INFO braunschweig.data.transit.connections [incommuter pt check] connections 27/58 (46.6%): pt 27, plausible short walk 0; rejected: no_route 26, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 5
+2026-11-05 22:26:36,773 INFO braunschweig.data.transit.connections [incommuter pt check] latest-arrival bound 29:00:00: rejected 5/32 pt trip(s) (15.6%)
+2026-11-05 22:26:36,779 INFO braunschweig.data.transit.connections [pt-router] routing 62 task(s) with 56 thread(s), config /home/felix/scratch_i573/out/braunschweig.synthesis.student_incommuters/incommuter_pt_router_config.xml
+2026-11-05 22:26:36,780 WARNING braunschweig.java_heap [resources] java_memory 100G -> 83G (memory budget 86.28 GB (psutil) - driver RSS 3.10 GB = 83.18 GB for the JVM; configured 100G exceeds it, clamped to 83G)
+2026-11-05 22:27:13,609 INFO braunschweig.data.transit.connections [pt-router] 23/62 task(s) (37.1%) have no trips row (the router found no route; examples ['11130618:196:ret', '11131478:1056:ret', '11132393:1971:ret'])
+2026-11-05 22:27:13,661 INFO braunschweig.data.transit.connections [incommuter pt check] connections 36/62 (58.1%): pt 36, plausible short walk 0; rejected: no_route 23, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 3
+2026-11-05 22:27:13,662 INFO braunschweig.data.transit.connections [incommuter pt check] latest-arrival bound 29:00:00: rejected 3/39 pt trip(s) (7.7%)
+2026-11-05 22:27:13,669 INFO braunschweig.data.transit.connections [pt-router] routing 46 task(s) with 56 thread(s), config /home/felix/scratch_i573/out/braunschweig.synthesis.student_incommuters/incommuter_pt_router_config.xml
+2026-11-05 22:27:13,670 WARNING braunschweig.java_heap [resources] java_memory 100G -> 83G (memory budget 86.28 GB (psutil) - driver RSS 3.10 GB = 83.18 GB for the JVM; configured 100G exceeds it, clamped to 83G)
+2026-11-05 22:27:50,942 INFO braunschweig.data.transit.connections [pt-router] 23/46 task(s) (50.0%) have no trips row (the router found no route; examples ['11130602:180:ret', '11130618:196:ret', '11131478:1056:ret'])
+2026-11-05 22:27:50,979 INFO braunschweig.data.transit.connections [incommuter pt check] connections 21/46 (45.7%): pt 21, plausible short walk 0; rejected: no_route 23, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 2
+2026-11-05 22:27:50,979 INFO braunschweig.data.transit.connections [incommuter pt check] latest-arrival bound 29:00:00: rejected 2/23 pt trip(s) (8.7%)
+2026-11-05 22:27:50,982 INFO braunschweig.synthesis.incommuter_pt_connections [incommuters.pt_connections] 950 pt student in-commuter days: connection_found 885 (93.2%), day_shifted 40 (4.2%), station_redrawn 0 (0.0%), to_car 25 (2.6%), kept_no_connection 0 (0.0%); median shift 3600 s; 0 days tried other stations
+2026-11-05 22:27:50,991 INFO braunschweig.data.cordon.plans [incommuters] middle arrival (education): primary 6174/6174 (100.0%), fallback 0/6174 (0.0%)
+2026-11-05 22:27:50,992 INFO braunschweig.data.cordon.plans [incommuters] middle departure (education): primary 6174/6174 (100.0%), fallback 0/6174 (0.0%)
+2026-11-05 22:27:50,992 INFO braunschweig.data.cordon.plans [incommuters] home departure (education): primary 6174/6174 (100.0%), fallback 0/6174 (0.0%)
+2026-11-05 22:27:50,992 INFO braunschweig.data.cordon.plans [incommuters] home arrival (education): primary 6174/6174 (100.0%), fallback 0/6174 (0.0%)
+2026-11-05 22:27:51,311 INFO braunschweig.synthesis.student_incommuters [student_incommuters] pt_subscription_type: 6174 in-commuter persons hard-coded to 'never_pt' (control-external source; the 14+ resident Kreis control does not see them -- see ADR-0099 for the rationale, issue #329)
+2026-11-05 22:27:51,342 INFO braunschweig.synthesis.student_incommuters [student_incommuters] injected 6174 students across 3 university communes: {'03102': 1647, '03153': 1735, '03158': 2792}
+2026-11-05 22:27:51,385 INFO i573_check_replay === braunschweig.synthesis.student_incommuters finished in 396 s ===
+2026-11-05 22:27:52,268 INFO i573_check_replay === replay braunschweig.synthesis.incommuters (run stem braunschweig.synthesis.incommuters__735abeff3315009a7538b415aca5cd37) ===
+2026-11-05 22:27:52,280 WARNING braunschweig.data.cordon.network [cordon] cannot verify the osm/cordon ring buffer: no .clip_signature in eqasim-data/data/osm/cordon -- regenerate via scripts/clip_osm_to_cordon_ring.py to enable the freshness check (proceeding; the pre-clip is ASSUMED to match the configured buffer).
+2026-11-05 22:27:52,285 INFO i573_check_replay loaded braunschweig.synthesis.cordon_gates (braunschweig.synthesis.cordon_gates__11eceeb40f1c607cc7669833cb38e93c) in 0 s
+2026-11-05 22:27:54,138 INFO i573_check_replay loaded braunschweig.popsim.enriched_adapter (braunschweig.popsim.enriched_adapter__451bf968c790012e5fcf2ace9efddefe) in 2 s
+2026-11-05 22:27:58,581 INFO i573_check_replay loaded braunschweig.data.hts.mid_donor (braunschweig.data.hts.mid_donor__8ae54c4fad3b63cf2d9f81c74777bc69) in 4 s
+2026-11-05 22:27:58,584 INFO i573_check_replay loaded data.spatial.municipalities (data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421) in 0 s
