@@ -527,7 +527,7 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
     # #574: a connection may only use the stops of the cut timetable (the timetable the router runs on)
     inside_stop_ids = set(cut_schedule.stops)
     is_hub = exits["is_hub"].to_numpy(dtype=bool)
-    logger.info("%s pt gates: exits %d at %d stops hub facilities served %d/%d (%.1f %%), check on the cut timetable "
+    logger.info("%s pt gates: exits %d at %d stops; hub facilities served %d/%d (%.1f %%), check on the cut timetable "
                 "with %d stops and %d routes", _LOG_TAG, int((~is_hub).sum()), exits.loc[~is_hub, "stop_id"].nunique(),
                 exits.loc[is_hub, "stop_id"].nunique(), len(hub_stop_ids),
                 100.0 * exits.loc[is_hub, "stop_id"].nunique() / max(len(hub_stop_ids), 1), len(cut_schedule.stops),
