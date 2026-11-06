@@ -125,6 +125,41 @@ def test_portal_gate_merges_with_is_paris_attributes_when_urban_parking_is_on(tm
     assert set(by_type["home"]) == {"isParis"}
 
 
+def test_a_day_ending_at_a_portal_gate_passes_the_activities_transform_and_the_writer(tmp_path):
+    """#570: a one-trip day home -> outside has no return; the last activity is the open-ended gate."""
+    import synthesis.population.activities as activities_transform
+    from braunschweig.synthesis.commute_day.activities_day_stage import _ActivitiesShimContext
+
+    day_trips = pd.DataFrame({
+        "person_id": [1], "trip_index": [0], "preceding_purpose": ["home"], "following_purpose": ["outside"],
+        "mode": ["car"], "departure_time": [9 * 3600.0], "arrival_time": [9 * 3600.0 + 2400.0],
+        "is_first_trip": [True], "is_last_trip": [True]})
+    persons = _persons([1])
+    activities = activities_transform.execute(_ActivitiesShimContext(day_trips, persons))
+
+    assert activities["purpose"].tolist() == ["home", "outside"]
+    assert activities["is_last"].tolist() == [False, True]
+    assert activities["start_time"].iloc[1] == 34800.0  # 09:40
+    assert pd.isna(activities["end_time"].iloc[1])
+
+    activities = activities.reset_index(drop=True)
+    activities["geometry"] = [geo.Point(i * 10.0, 0.0) for i in range(len(activities))]
+    activities["location_id"] = -1
+    trips = pd.DataFrame([{"person_id": 1, "mode": "car", "departure_time": 32400.0, "travel_time": 2400.0}],
+                         columns=pop.TRIP_FIELDS)
+    vehicles = pd.DataFrame([{"owner_id": 1, "vehicle_id": "1:car", "mode": "car"},
+                             {"owner_id": 1, "vehicle_id": "1:car_passenger", "mode": "car_passenger"}],
+                            columns=pop.VEHICLE_FIELDS)
+    xml = _write(tmp_path, (persons, activities, trips, vehicles))
+
+    written = _activities(xml)
+    assert [a.get("type") for _, a in written] == ["home", "outside"]
+    last = written[-1][1]
+    assert _attributes(last) == {"portalGate": ("java.lang.Boolean", "true")}
+    assert last.get("end_time") is None
+    assert len(ElementTree.fromstring(xml).findall("./person/plan/leg")) == 1
+
+
 def test_population_without_outside_activity_has_no_portal_gate_and_is_unchanged(tmp_path):
     frames = _frames({1: (["home", "work", "home"], ["car", "car"])}, owns_car={1})
     xml = _write(tmp_path, frames)
