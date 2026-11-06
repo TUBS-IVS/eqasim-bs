@@ -15,7 +15,7 @@ rule reads is described by the data record `srv2023_mode_by_distance_band`. Noth
 | `srv_table.py` | `ModeShareTable`: the cell lookup over the committed SrV table (band of a distance, the top band, the plausible modes of a cell, the fail-early check that neither pt nor walk is implausible in any cell). |
 | `tours.py` | Home-based tours, leg endpoints and straight-line leg distances from the realised locations, the outside classification. Vectorised; a missing location raises. |
 | `rule.py` | Purpose group and cell per leg, the implausibility test, the allowed modes per person, the seeded substitute draw per tour (plausible on every leg, portal gate class, counted relaxation) and its application to every leg of the tour. |
-| `pt_connections.py` | The timetable check of ADR-0159: `resolve_pt_tours` probes the pt legs of the outside tours without a portal leg and resolves a tour without a connection (tour shift, car, lift, lift without availability or keep), `PtCheck`, `log_report`. Pure apart from the probe. |
+| `pt_connections.py` | The timetable check of ADR-0159: `resolve_pt_tours` probes the pt legs of the outside tours and of the tours with a portal leg (ADR-0187) and resolves a tour without a connection (tour shift, car, lift, lift without availability or keep), `PtCheck`, `log_report`. Pure apart from the probe. |
 | `stage.py` | The synpp stage and its pure entry point `remode_outside_tours`, the probe of the timetable check (`_pt_check`, the batch pt router of `braunschweig.data.transit.connections`), the report and the log line. |
 | `activities_stage.py` | The stage behind `synthesis.population.activities.simulated` (ADR-0159): the vendored trips->activities transform on the simulated trips, through the shim of `commute_day.activities_day_stage`. |
 
@@ -36,8 +36,9 @@ qualifies, plausibility is judged in the cell of the longest leg only (counted).
 
 ## Invariants a change must keep
 
-- **The pt check runs after the re-moding and skips portal tours.** A drawn pt substitute is checked too; a
-  tour with a portal leg keeps the check of the portal stage (ADR-0152/0156), so one tour never has two owners.
+- **The pt check runs after the re-moding and never changes a gate.** A drawn pt substitute is checked too.
+  Since ADR-0187 it also checks tours with a portal leg: the portal stage owns the gate, this check only shifts
+  times or changes modes, and a rail-gate tour never switches as a whole (only its unconnected legs are lifted).
   A shift moves the WHOLE tour and never crosses the person's neighbouring trips or the day bound; the
   population writer reads the activities from `synthesis.population.activities.simulated`, so moved times
   reach the plan (reading `activities.final` there would desynchronise a moved tour's activities).
