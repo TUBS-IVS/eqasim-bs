@@ -582,8 +582,8 @@ def test_choose_pt_gates_applies_the_latest_arrival_bound_to_the_router_result()
         return g.choose_pt_gates(
             np.array([[5000.0, 5200.0]]), np.array([[50000.0, 5000.0]]), np.array([36000.0]),
             np.array([37800.0]), np.array([50000.0]), np.array([51800.0]), np.array([True]), exits, schedule,
-            router, n_candidates=1, service_window_s=3600.0, inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0,
-            latest_arrival_s=latest_arrival_s).iloc[0]
+            router, n_candidates=1, max_extra_detour_m=1e9, service_window_s=3600.0, inside_stop_ids=INSIDE_STOPS,
+            walk_max_m=5000.0, latest_arrival_s=latest_arrival_s).iloc[0]
 
     assert run(None)["reason"] == g.REASON_GATE_FOUND
     assert run(90000.0)["reason"] == g.REASON_NO_CONNECTION
