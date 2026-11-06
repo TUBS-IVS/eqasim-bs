@@ -35,8 +35,9 @@
    `frozen_pt_walk_lift.json` and one log line give the frozen pt-intended trips, the all-walk ones, the lifted ones (by
    stamp or routing mode only, by distance band) and their rate. The rate is the ratio the plan check bounds
    (ADR-0188), so it is judged against the same bound, `braunschweig.plan_check.max_frozen_pt_as_walk_share`, and
-   logged at ERROR above it, and with `braunschweig.plan_check.fail_on_threshold` true it stops prepare after writing
-   its report, as the plan check would have; no second threshold.
+   logged at ERROR above it; no second threshold. The lift hands its report to the plan check, which lists an exceeded
+   lifted share in `threshold.exceeded` of `plan_check.json` next to its own violations and, with
+   `braunschweig.plan_check.fail_on_threshold` true, raises once after writing that file, naming every exceeded share.
 
 ## Rejected options
 
