@@ -1,0 +1,91 @@
+id: i573-check-replay-prod100-2026-11-05
+date: '2026-11-06'
+repository:
+  commit: 6c4c98ca3ada719385e8308594632c4940bb59ab
+  branch: fix/i573-pt-check-wait-bound
+  notes: >-
+    The #573 branch (ADR-0185) at 6c4c98ca, a clean detached checkout on felix (~/i573_replay/eqasim-bs, 0 changes),
+    fetched from a git bundle, BEFORE origin/main was merged into the branch. The code at the branch head differs:
+    (a) the main merge brought the portal changes of #570 (ADR-0183, closure return dropped; portal_trips
+    classification and stage) and #572 (ADR-0184, served-first gate candidates within an extra-detour cap; portal_trips
+    gates, stage and config_keys); (b) later #573 commits read the latest-arrival keys without a default (same
+    values), reject a -inf arrival (no infinite time in the legs file of the last router call of each stage; earlier
+    calls overwrite theirs, so they are not checked) and hash day_end_margin with the portal stage; (c) the main merge
+    changed incommuters.py and mode_balancer.py in log and docstring wording only (#567), and the other changed
+    modules (commute_day, matsim.*) are not run by the four stages. So the in-commuter, student and outside-tour
+    numbers below hold for the head; the portal numbers measure the bound against the pre-#570/#572 gate rule (the
+    run's own code) and are not what the head produces. The combined effect of the bound with #570 and #572 on the
+    portal stage is not replayed.
+configuration:
+  config: configs/base_bs.yml of the branch with the run overlay of prod100_20261031 (felix:~/prod100_20261031/run.yml)
+  notes: >-
+    braunschweig.transit_connections.latest_arrival_check at its branch default (true); the limit the stages derived
+    from the day-end keys of that configuration is 29:00:00 (printed in every rate line of the logs).
+sampling:
+  rate: 1.0
+  scope: >-
+    the four timetable-check stages of prod100_20261031 (student in-commuters, in-commuters, portal trips, outside
+    tour modes), each on the cached inputs the run's own stage loaded, every task the run's stage checked.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. configure and execute of each stage of the branch ran outside synpp with a stand-in context
+    (i573_check_replay.py) that serves the composed configuration and loads the parents' cache stems named in the
+    run log (logs/run_20261031T071313.log), with the batch pt router of the run's own eqasim jar. Each stage read the
+    run's cached parents, not the replayed results of the earlier stages; stages after the four did not run.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Completed on 2026-11-06 in two parts: the student stage on 2026-11-05 (replay_log_students.txt); the first
+    attempt at the in-commuter stage stopped in configure on a defect of the stand-in context (a key declared earlier
+    with a default resolved to None in a later configure call), fixed in the script, and the remaining three stages
+    re-ran on 2026-11-06 (replay_log.txt). A replay of the stages on production inputs, NOT a validation: no observed
+    data is involved. The "before" side is the run's own log (code 7a41f0ba); the first router call of every stage
+    reproduces it exactly (otherwise accepted pt trips = the run's connections: students 1,847, in-commuters 18,639,
+    portal 8,121, outside tours 8,024), so the differences are the bound alone. Prepare did not run, so whether the
+    walks of many hours after the routed day-end shift (ADR-0160) disappear downstream is not measured here. The
+    stand-in context accepted a default in execute-time config reads, unlike synpp's ExecuteContext, so it did not
+    catch that connections.latest_arrival_s of 6c4c98ca read its keys with a default (a TypeError in a real synpp
+    run; fixed on the branch by single-key reads after the CI review). The three keys are set in
+    configs/base_bs.yml to their declared defaults, so they resolve to the same values either way and the replayed
+    numbers stand.
+source: >-
+  felix:~/scratch_i573/out and ~/scratch_i573/out2 (scratch). Committed in
+  docs/runs/artifacts/i573-check-replay-prod100-2026-11-05/: i573_check_replay.py (sha256
+  9bc4977ad9f3ae0adb40cd581088f2c78937d6ed13246b870571d36b7557b989, the fixed script of the second part),
+  replay_log_students.txt and replay_log.txt (log copies, because *.log is git-ignored), summary_students.json and
+  summary.json (stage, run stem, seconds), portal_trips_report_after.json and outside_tour_modes_report_after.json (the
+  stage reports of the replay).
+environment: 'server (felix, hostname matsim), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, pandas 1.5.3), Java /home/felix/tools/jdk-25.0.3+9'
+validation:
+- metric: pt trips the latest-arrival bound rejects in the first router call of each stage (all checked tasks)
+  reference: 'the run''s own first call (prod100_20261031), where the same trips counted as connections; model output, NOT observed data'
+  result: >-
+    student in-commuters 14/1,847 (0.8 %), in-commuters 860/18,639 (4.6 %), portal pt gates 1/8,121 (0.0 %), outside
+    tours 94/8,024 (1.2 %). The later calls of the shift chains reject more (in-commuters up to 22.8 %, portal up to
+    79.5 % on 29 to 316 tasks, WARNING above 50 %): those calls route shifted departures, whose overnight waits are
+    the cases the bound targets.
+  artifact: docs/runs/artifacts/i573-check-replay-prod100-2026-11-05/replay_log.txt
+- metric: outcome of the checked pt days, tours and stays after each stage's existing chain
+  reference: 'the run''s own stage summaries (prod100_20261031 log); model output, NOT observed data'
+  result: >-
+    Student in-commuters (950 pt days): connection_found 899 -> 885, day_shifted 29 -> 40, to_car 22 -> 25, median
+    shift 1,800 -> 3,600 s. In-commuters (10,345 pt days): connection_found 8,440 -> 7,583, day_shifted 726 -> 1,086,
+    to_car 1,179 -> 1,676. Portal (11,930 pt stays): first choice gate_found 3,842 -> 3,474, no_connection 3,607 ->
+    3,975; after the chain gate_found 3,784 -> 3,416, tour_to_car 6,214 -> 6,473, tour_to_car_passenger_lift 933 ->
+    998, tour_to_car_passenger 757 -> 789, departure_shifted 242 -> 254. Outside tours (4,330 tours with pt legs):
+    connection_found 3,380 -> 3,313, tour_shifted 261 -> 290, tour_to_car 325 -> 348, tour_to_car_passenger 226 ->
+    233, tour_to_car_passenger_lift 138 -> 146. kept_no_connection stays 0 everywhere. Each loss of connections is
+    taken up by the chain in full.
+  artifact: docs/runs/artifacts/i573-check-replay-prod100-2026-11-05/replay_log.txt
+- metric: final pt count of the in-commuters after the timetable re-balancing (#467), out of 68,630
+  reference: 'the run''s own re-balancing line (prod100_20261031 log); the target is the mode balancer''s, labelled Mikrozensus in the stage log (source not re-checked here); model output, NOT observed data'
+  result: >-
+    Target 10,345 (15.1 %). After the timetable check 9,166 -> 8,669; promoted 1,315 -> 1,952 (of them without a
+    connection 153 -> 321); final 10,328 -> 10,300 (15.0 % both, residual 17 -> 45, within the 1 % tolerance). The
+    bound therefore changes which in-commuters ride pt, not their share; the to_car counts above are an
+    intermediate step, not the final modal split. Students, portal stays and outside tours have no such
+    re-balancing in this replay's logs.
+  artifact: docs/runs/artifacts/i573-check-replay-prod100-2026-11-05/replay_log.txt

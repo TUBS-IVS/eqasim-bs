@@ -15,6 +15,10 @@ connection when
   ``plausible_walk_m`` (the origin is within plausible walking distance of the
   destination, so no timetable connection is needed).
 
+A pt trip counts only if it also arrives by ``latest_arrival_s`` (the day-end limit of the prepare stage's routed
+check, ADR-0160; the router may otherwise wait overnight for a next-day departure, ADR-0151); ASSUMPTION and
+decision record in ADR-0185 (#573), switch ``KEY_LATEST_ARRIVAL_CHECK``.
+
 Walk legs of a pt trip. The Java tool books the first walk leg as access, the last as egress and every
 other walk leg as transfer walking. Up to eqasim-java-bs 863c09a ``Worker.run`` found the last leg by comparing
 a leg counter with ``planElements.size()``, which would also count interaction activities; SwissRailRaptor
@@ -43,6 +47,7 @@ import pandas as pd
 
 import matsim.runtime.eqasim as eqasim
 import matsim.runtime.java as java
+from braunschweig.matsim.scenario import day_end_margin
 from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
 
 logger = logging.getLogger(__name__)
@@ -63,6 +68,15 @@ _JAR_HINT = ("the eqasim jar probably lacks the fork change (eqasim-java-bs bran
 
 #: Share of tasks without a trips row above which the rate is logged as a WARNING.
 NO_ROUTE_WARN_SHARE = 0.5
+
+#: Share of otherwise good pt trips rejected by the latest-arrival bound above which the rate is logged as a
+#: WARNING (a bound that rejects most good trips signals broken times, e.g. a unit mismatch).
+LATE_ARRIVAL_WARN_SHARE = 0.5
+
+#: ASSUMPTION (ADR-0185, #573): a timetable check counts a pt route only if it arrives by the latest last arrival
+#: the prepare stage's routed day-end check allows (``latest_arrival_s``); an overnight wait does not count.
+KEY_LATEST_ARRIVAL_CHECK = "braunschweig.transit_connections.latest_arrival_check"
+DEFAULT_LATEST_ARRIVAL_CHECK = True
 
 #: A router maps a task frame (``TASK_COLUMNS``) to ``(trips, legs)`` frames; the stage binds
 #: ``functools.partial(route_batch, context, config_path=..., threads=..., work_dir=...)``.
@@ -109,6 +123,25 @@ def configure(context) -> None:
     ``route_batch`` must call this from its own ``configure``.
     """
     java.configure(context)
+    context.config(KEY_LATEST_ARRIVAL_CHECK, DEFAULT_LATEST_ARRIVAL_CHECK)
+    context.config(day_end_margin.KEY_ENABLED, day_end_margin.DEFAULT_ENABLED)
+    context.config(day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S, day_end_margin.DEFAULT_LAST_ARRIVAL_MARGIN_S)
+
+
+def latest_arrival_s(context) -> float | None:
+    """The latest routed arrival (s since midnight) a pt connection may have, or None when the check is off.
+
+    Equal to the day-end limit of the prepare stage (ADR-0160): ``MAX_PLAN_TIME_SECONDS`` minus the last-arrival
+    margin while ``braunschweig.day_end_margin`` is enabled (ADR-0185, #573). Execute-time only: reads the keys
+    alone (synpp's ExecuteContext takes no default); :func:`configure` declares them with their defaults.
+    """
+    if not context.config(KEY_LATEST_ARRIVAL_CHECK):
+        return None
+    bound_s = float(MAX_PLAN_TIME_SECONDS)
+    if context.config(day_end_margin.KEY_ENABLED):
+        bound_s -= day_end_margin.check_margin(
+            context.config(day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S), bound_s)
+    return bound_s
 
 
 def _hhmmss(seconds: int) -> str:
@@ -230,7 +263,8 @@ def route_batch(context, tasks: pd.DataFrame, *, config_path: str, threads: int,
 
 def connection_mask(trips: pd.DataFrame, legs: pd.DataFrame, *, inside_stop_ids: set[str],
                     walk_max_m: float, plausible_walk_m: float = 600.0,
-                    task_ids=None) -> pd.Series:
+                    task_ids=None, latest_arrival_s: float | None = None,
+                    label: str = "pt-router") -> pd.Series:
     """Boolean Series indexed by ``identifier``: does the routed result count as a connection?
 
     See the module docstring for the rule. A pt trip (``is_only_walk == 0``) needs at least one
@@ -250,11 +284,21 @@ def connection_mask(trips: pd.DataFrame, legs: pd.DataFrame, *, inside_stop_ids:
     access + egress is not a stable reading; ``total_walk_distance_km`` (access + egress +
     transfer) is the walk distance used for the plausible-short-walk test.
 
-    The shares of connections, accepted short walks and each rejection reason are logged
-    (a share near 0 or 1 signals a broken router input).
+    ``latest_arrival_s`` (optional, ADR-0185): a pt trip counts only if its routed arrival (latest pt
+    ``legs.egress_time`` plus ``trips.egress_travel_time_min`` * 60, seconds since midnight) is at or before it;
+    a non-finite arrival is too late (reason ``late arrival``). ``None`` applies no bound and needs neither time
+    column; a number requires both and must be finite and non-negative (``ValueError``).
+
+    The shares of connections, accepted short walks and each rejection reason are logged under the tag
+    ``[label]`` (a share near 0 or 1 signals a broken router input), plus the bound's own rejection rate.
     """
+    if latest_arrival_s is not None and not (np.isfinite(latest_arrival_s) and latest_arrival_s >= 0):
+        raise ValueError(f"connection_mask: latest_arrival_s must be finite and >= 0, got {latest_arrival_s}")
     _require_columns(trips, TRIPS_REQUIRED_COLUMNS, "trips", "connection_mask")
     _require_columns(legs, LEGS_REQUIRED_COLUMNS, "legs", "connection_mask")
+    if latest_arrival_s is not None:
+        _require_columns(legs, ["egress_time"], "legs", "connection_mask")
+        _require_columns(trips, ["egress_travel_time_min"], "trips", "connection_mask")
     if trips["identifier"].duplicated().any():
         dups = trips.loc[trips["identifier"].duplicated(), "identifier"].head(5).tolist()
         raise ValueError(f"connection_mask: duplicate trip identifiers (first {dups}); "
@@ -295,6 +339,19 @@ def connection_mask(trips: pd.DataFrame, legs: pd.DataFrame, *, inside_stop_ids:
     outside_stop = pt_trip & has_legs & ~has_blank & has_outside
     far_walk = pt_trip & has_legs & ~has_blank & ~has_outside & ~walk_ok
     pt_ok = pt_trip & has_legs & ~has_blank & ~has_outside & walk_ok
+    late_arrival = pd.Series(False, index=trips.index)
+    if latest_arrival_s is not None:
+        # Routed arrival = latest pt egress_time of the trip + final walk; a non-finite value is "too late".
+        egress_time_s = pd.to_numeric(legs["egress_time"], errors="coerce").astype(float)
+        last_pt_egress_s = egress_time_s.groupby(leg_ids.to_numpy()).max()
+        # Any leg without a finite egress_time (NaN, or MATSim's undefined-time sentinel -inf) voids the arrival.
+        non_finite_ids = set(leg_ids[~np.isfinite(egress_time_s.to_numpy())])
+        arrival_s = (last_pt_egress_s.reindex(trips.index.astype(str)).to_numpy()
+                     + pd.to_numeric(trips["egress_travel_time_min"], errors="coerce").astype(float).to_numpy() * 60.0)
+        arrival_s = np.where(trips.index.isin(non_finite_ids), np.nan, arrival_s)
+        on_time = pd.Series(np.isfinite(arrival_s) & (arrival_s <= latest_arrival_s), index=trips.index)
+        late_arrival = pt_ok & ~on_time
+        pt_ok = pt_ok & on_time
     mask = (pt_ok | short_walk).astype(bool)
     mask.name = "is_connection"
     n_no_route = 0
@@ -305,10 +362,16 @@ def connection_mask(trips: pd.DataFrame, legs: pd.DataFrame, *, inside_stop_ids:
 
     n = len(mask)
     if n:
-        logger.info("[pt-router] connections %d/%d (%.1f%%): pt %d, plausible short walk %d; rejected: "
+        logger.info("[%s] connections %d/%d (%.1f%%): pt %d, plausible short walk %d; rejected: "
                     "no_route %d, is_only_walk_missing %d, only-walk too long %d, no_pt_legs %d, "
-                    "blank_stop_id %d, outside stop %d, walk distance %d",
-                    mask.sum(), n, 100.0 * mask.sum() / n, pt_ok.sum(), short_walk.sum(), n_no_route,
+                    "blank_stop_id %d, outside stop %d, walk distance %d, late arrival %d",
+                    label, mask.sum(), n, 100.0 * mask.sum() / n, pt_ok.sum(), short_walk.sum(), n_no_route,
                     flag_missing.sum(), (only_walk & ~short_walk).sum(), no_pt_legs.sum(),
-                    blank_stop.sum(), outside_stop.sum(), far_walk.sum())
+                    blank_stop.sum(), outside_stop.sum(), far_walk.sum(), late_arrival.sum())
+    if latest_arrival_s is not None:
+        n_late, n_candidates = int(late_arrival.sum()), int(late_arrival.sum() + pt_ok.sum())
+        share = n_late / n_candidates if n_candidates else 0.0
+        (logger.warning if share > LATE_ARRIVAL_WARN_SHARE else logger.info)(
+            "[%s] latest-arrival bound %s: rejected %d/%d pt trip(s) (%.1f%%)",
+            label, _hhmmss(int(latest_arrival_s)), n_late, n_candidates, 100.0 * share)
     return mask

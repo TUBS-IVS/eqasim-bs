@@ -76,6 +76,7 @@ production:
   - braunschweig.portal.fallback_warn_share
   - braunschweig.portal.walk_max_distance_m
   - braunschweig.portal.bicycle_max_distance_m
+  - braunschweig.transit_connections.latest_arrival_check
 introduced:
   issue: 442
   pr: null

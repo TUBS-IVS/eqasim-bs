@@ -3,6 +3,8 @@ import pandas as pd
 import pytest
 
 from braunschweig.data.transit import connections
+from braunschweig.matsim.scenario import day_end_margin
+from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
 
 INSIDE = {"s_in_a", "s_in_b"}
 WALK_MAX_M = 5000.0
@@ -19,7 +21,11 @@ def _trips(rows):
 
 
 def _legs(rows):
-    return pd.DataFrame(rows, columns=["identifier", "leg_index", "access_stop_id", "egress_stop_id"])
+    """Rows are (identifier, leg_index, access_stop, egress_stop) or, with the time, plus egress_time (s)."""
+    columns = ["identifier", "leg_index", "access_stop_id", "egress_stop_id"]
+    if rows and len(rows[0]) == 5:
+        columns.append("egress_time")
+    return pd.DataFrame(rows, columns=columns)
 
 
 def _mask(trips, legs):
@@ -267,3 +273,125 @@ def test_write_router_config_escapes_xml_attribute_values(tmp_path):
     values = {p.get("name"): p.get("value") for p in root.iter("param")}
     assert values["inputNetworkFile"] == 'a&b "net".xml'
     assert values["transitScheduleFile"] == "s<1>.xml"
+
+
+# --- latest-arrival bound (#573) ---------------------------------------------------------------------------------
+# The limit is the day-end limit of the prepare stage: MAX_PLAN_TIME_SECONDS minus the default last-arrival margin.
+LATEST_ARRIVAL_S = MAX_PLAN_TIME_SECONDS - day_end_margin.DEFAULT_LAST_ARRIVAL_MARGIN_S
+
+
+def _bounded_mask(trips, legs, latest_arrival_s=LATEST_ARRIVAL_S, label="test-caller"):
+    return connections.connection_mask(trips, legs, inside_stop_ids=INSIDE, walk_max_m=WALK_MAX_M,
+                                       latest_arrival_s=latest_arrival_s, label=label)
+
+
+def _timed(identifier, egress_time_s, final_walk_min=5.0):
+    """One pt trip with a single inside-stop leg that ends at egress_time_s, plus its final walk in minutes."""
+    return ({"identifier": identifier, "egress_travel_time_min": final_walk_min},
+            (identifier, 0, "s_in_a", "s_in_b", egress_time_s))
+
+
+def _timed_frames(*specs):
+    return _trips([t for t, _ in specs]), _legs([leg for _, leg in specs])
+
+
+def test_latest_arrival_bound_keeps_a_daytime_connection_and_rejects_an_overnight_wait():
+    # Primary path first: a normal daytime trip stays a connection with the bound active. The overnight wait
+    # (routed arrival after the day-end limit, #573) is rejected although every other test passes.
+    trips, legs = _timed_frames(_timed("day", 9 * 3600.0), _timed("overnight", LATEST_ARRIVAL_S + 3000.0))
+    assert _bounded_mask(trips, legs).to_dict() == {"day": True, "overnight": False}
+    # Without the bound the same overnight trip is a connection (today's behaviour).
+    unbounded = connections.connection_mask(trips, legs, inside_stop_ids=INSIDE, walk_max_m=WALK_MAX_M)
+    assert unbounded.to_dict() == {"day": True, "overnight": True}
+
+
+def test_latest_arrival_bound_is_inclusive_and_adds_the_final_walk():
+    # arrival = last pt egress_time + final walk; exactly the limit counts, one second later does not.
+    at_limit = _timed("at", LATEST_ARRIVAL_S - 300.0, final_walk_min=5.0)
+    one_late = _timed("late", LATEST_ARRIVAL_S - 299.0, final_walk_min=5.0)
+    trips, legs = _timed_frames(at_limit, one_late)
+    assert _bounded_mask(trips, legs).to_dict() == {"at": True, "late": False}
+
+
+def test_latest_arrival_uses_the_last_pt_leg_of_a_multi_leg_trip():
+    trips = _trips([{"identifier": "two", "egress_travel_time_min": 0.0}])
+    legs = _legs([("two", 0, "s_in_a", "s_in_b", 3600.0), ("two", 1, "s_in_b", "s_in_a", LATEST_ARRIVAL_S + 1.0)])
+    assert _bounded_mask(trips, legs).to_dict() == {"two": False}
+
+
+def test_latest_arrival_bound_does_not_touch_only_walk_trips():
+    trips = _trips([{"identifier": "walk", "is_only_walk": 1, "access_distance_km": 0.4,
+                     "egress_distance_km": 0.0, "egress_travel_time_min": 0.0}])
+    legs = pd.DataFrame(columns=["identifier", "leg_index", "access_stop_id", "egress_stop_id", "egress_time"])
+    assert _bounded_mask(trips, legs, latest_arrival_s=1.0).to_dict() == {"walk": True}
+
+
+def test_latest_arrival_bound_needs_the_time_columns_and_a_valid_limit():
+    trips = _trips([{"identifier": "a"}])
+    legs = _legs([("a", 0, "s_in_a", "s_in_b")])
+    with pytest.raises(ValueError, match="egress_time"):
+        _bounded_mask(trips, legs)
+    trips, legs = _timed_frames(_timed("a", 3600.0))
+    with pytest.raises(ValueError, match="egress_travel_time_min"):
+        _bounded_mask(trips.drop(columns=["egress_travel_time_min"]), legs)
+    for bad in (float("nan"), float("inf"), -1.0):
+        with pytest.raises(ValueError, match="latest_arrival_s"):
+            _bounded_mask(trips, legs, latest_arrival_s=bad)
+
+
+def test_latest_arrival_bound_non_finite_arrival_is_not_a_connection():
+    trips, legs = _timed_frames(_timed("nan_time", float("nan")), _timed("nan_walk", 3600.0, float("nan")),
+                                _timed("neg_inf_time", float("-inf")), _timed("neg_inf_walk", 3600.0, float("-inf")),
+                                _timed("ok", 3600.0))
+    assert _bounded_mask(trips, legs).to_dict() == {"nan_time": False, "nan_walk": False, "neg_inf_time": False,
+                                                    "neg_inf_walk": False, "ok": True}
+
+
+def test_latest_arrival_bound_logs_the_rejection_rate_per_caller(caplog):
+    trips, legs = _timed_frames(_timed("a", 3600.0), _timed("b", 7200.0), _timed("c", 9000.0),
+                                _timed("late", LATEST_ARRIVAL_S + 1.0))
+    with caplog.at_level("INFO"):
+        _bounded_mask(trips, legs, label="unit pt check")
+    bound = [r for r in caplog.records if "latest-arrival bound" in r.getMessage()]
+    assert len(bound) == 1 and bound[0].levelname == "INFO"
+    message = bound[0].getMessage()
+    assert "[unit pt check]" in message and "1/4" in message
+    summary = [r for r in caplog.records if "late arrival 1" in r.getMessage()]
+    assert summary and "[unit pt check]" in summary[0].getMessage()
+
+
+def test_latest_arrival_bound_warns_when_it_rejects_most_otherwise_good_trips(caplog):
+    trips, legs = _timed_frames(_timed("ok", 3600.0), _timed("l1", LATEST_ARRIVAL_S + 1.0),
+                                _timed("l2", LATEST_ARRIVAL_S + 2.0))
+    with caplog.at_level("INFO"):
+        _bounded_mask(trips, legs)
+    bound = [r for r in caplog.records if "latest-arrival bound" in r.getMessage()]
+    assert len(bound) == 1 and bound[0].levelname == "WARNING" and "2/3" in bound[0].getMessage()
+
+
+class _FakeContext:
+    """synpp in its two phases: ``connections.configure`` declares the keys with their defaults, and the
+    execute-time read takes the key alone, as ``ExecuteContext.config`` does (a default there is a TypeError)."""
+
+    def __init__(self, **values):
+        declared = {}
+
+        class _Configure:
+            def config(self, key, default=None, **_options):
+                declared[key] = default
+
+        connections.configure(_Configure())
+        self.values = {**declared, **values}
+
+    def config(self, key):
+        return self.values[key]
+
+
+def test_latest_arrival_s_follows_the_day_end_margin_and_the_switch():
+    switch = connections.KEY_LATEST_ARRIVAL_CHECK
+    assert connections.latest_arrival_s(_FakeContext()) == LATEST_ARRIVAL_S  # defaults: check on, margin on
+    custom = _FakeContext(**{day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S: 1800.0})
+    assert connections.latest_arrival_s(custom) == MAX_PLAN_TIME_SECONDS - 1800.0
+    margin_off = _FakeContext(**{day_end_margin.KEY_ENABLED: False})
+    assert connections.latest_arrival_s(margin_off) == MAX_PLAN_TIME_SECONDS
+    assert connections.latest_arrival_s(_FakeContext(**{switch: False})) is None

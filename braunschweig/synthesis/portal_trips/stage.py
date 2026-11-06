@@ -69,6 +69,7 @@ _HELPER_MODULES = (_classification, _config_keys, _gates, _modes, _no_connection
 #: Cross-package modules imported inside execute() (hashed by dotted name).
 _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon", "braunschweig.data.cordon.network",
                                  "braunschweig.data.transit.schedule", "braunschweig.data.transit.connections",
+                                 "braunschweig.matsim.scenario.day_end_margin",
                                  "braunschweig.popsim.closure_dwell", "data.hts.hts")
 
 #: Router work files live in a subdirectory of the stage directory.
@@ -363,7 +364,8 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     (``braunschweig.data.transit.schedule.Schedule``), ``router`` the batch pt router
     (``braunschweig.data.transit.connections.Router``: tasks frame -> (trips, legs)), ``pt_gate_modes``
     ``"all"`` or the transit modes allowed as gates, and ``gate_settings`` the dict with ``n_candidates``,
-    ``max_extra_detour_m``, ``service_window_s``, ``shift_window_s``, ``shift_step_s``, ``min_stay_s`` and ``no_connection_warn_share``.
+    ``max_extra_detour_m``, ``service_window_s``, ``shift_window_s``, ``shift_step_s``, ``min_stay_s``, ``no_connection_warn_share``
+    and ``latest_arrival_s`` (``connections.latest_arrival_s``; None leaves the arrival unbounded).
     A pt stay without an admissible gate is resolved by ``no_connection.resolve_no_connection`` (whole-tour
     mode switch, time shift, kept with its nearest directional exit stop); every outcome is counted in the
     report and WARNed above ``no_connection_warn_share``.
@@ -495,6 +497,9 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
     pt_rows = np.flatnonzero((modes["mode"] == "pt").to_numpy())
     n_pt = len(pt_rows)
     walk_max_m = float(_plan_check.DEFAULT_WALK_MAX_DISTANCE_M)
+    # The shift chain keeps its own bound (end of the simulated day, unchanged by #573), while the connection rule
+    # uses connections.latest_arrival_s: the rule must judge as prepare's routed day-end check does (ADR-0160,
+    # ADR-0185). Aligning the chain bound would change portal results and is out of scope.
     bound_s = float(_plan_validation.MAX_PLAN_TIME_SECONDS)
     chain = dict(shift_window_s=gate_settings["shift_window_s"], shift_step_s=gate_settings["shift_step_s"],
                  min_stay_s=gate_settings["min_stay_s"], bound_s=bound_s,
@@ -534,7 +539,7 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
             schedule, router, n_candidates=gate_settings["n_candidates"],
             max_extra_detour_m=gate_settings["max_extra_detour_m"],
             service_window_s=gate_settings["service_window_s"], inside_stop_ids=inside_stop_ids,
-            walk_max_m=walk_max_m)
+            walk_max_m=walk_max_m, latest_arrival_s=gate_settings["latest_arrival_s"])
 
     pt_gates = choose(np.arange(n_pt), out_dep, out_arr, ret_dep, ret_arr)
 
@@ -646,7 +651,7 @@ def execute(context):
     if not context.config(KEY_ENABLED):
         logger.info("%s disabled: trips.final passed through unchanged", _LOG_TAG)
         return {"trips": trips, "anchors": rewrite.empty_anchors(None), "report": {"enabled": False}}
-    from braunschweig.data.transit.connections import route_batch, write_router_config
+    from braunschweig.data.transit.connections import latest_arrival_s, route_batch, write_router_config
     from braunschweig.data.transit.schedule import read_schedule
     from braunschweig.data.spatial.cordon import build_cordon_polygon, buffer_m_from_fraction
 
@@ -688,7 +693,9 @@ def execute(context):
                        "min_stay_s": float(context.config(KEY_MIN_STAY_S)),
                        "no_connection_warn_share": float(context.config(KEY_NO_CONNECTION_WARN_SHARE)),
                        "shift_return_earlier": bool(context.config(KEY_SHIFT_RETURN_EARLIER)),
-                       "no_connection_last_resort": context.config(KEY_NO_CONNECTION_LAST_RESORT)},
+                       "no_connection_last_resort": context.config(KEY_NO_CONNECTION_LAST_RESORT),
+                       # ADR-0185, #573: latest routed arrival of a pt connection; None = check off
+                       "latest_arrival_s": latest_arrival_s(context)},
         soft_mode_max_distance_m={"walk": float(context.config(KEY_WALK_MAX_DISTANCE_M)),
                                   "bicycle": float(context.config(KEY_BICYCLE_MAX_DISTANCE_M))},
         cordon_polygon=cordon_polygon,

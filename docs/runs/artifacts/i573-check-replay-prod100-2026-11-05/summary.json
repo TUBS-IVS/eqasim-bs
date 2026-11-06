@@ -1,0 +1,17 @@
+[
+  {
+    "stage": "braunschweig.synthesis.incommuters",
+    "run_stem": "braunschweig.synthesis.incommuters__735abeff3315009a7538b415aca5cd37",
+    "seconds": 1237
+  },
+  {
+    "stage": "braunschweig.synthesis.portal_trips.stage",
+    "run_stem": "braunschweig.synthesis.portal_trips.stage__3bf655a528d6076561ce70276e1f8d1a",
+    "seconds": 1028
+  },
+  {
+    "stage": "braunschweig.synthesis.outside_tour_modes.stage",
+    "run_stem": "braunschweig.synthesis.outside_tour_modes.stage__e4615b7799e3661dd55de11d3ef273ff",
+    "seconds": 468
+  }
+]

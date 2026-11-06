@@ -47,6 +47,7 @@ production:
   - braunschweig.outside_tour_modes.pt_shift_step_s
   - braunschweig.outside_tour_modes.pt_no_connection_warn_share
   - braunschweig.outside_tour_modes.last_resort
+  - braunschweig.transit_connections.latest_arrival_check
 introduced:
   issue: 453
   pr: null

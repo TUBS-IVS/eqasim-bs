@@ -260,7 +260,7 @@ def _has_departure(table: dict, stop: str, keys, t_s: float, window_s: float) ->
     return False
 
 
-def _connected(router, tasks, *, inside_stop_ids, walk_max_m) -> set:
+def _connected(router, tasks, *, inside_stop_ids, walk_max_m, latest_arrival_s=None) -> set:
     """Identifiers of ``tasks`` that the router connects (one router call; empty tasks make no call).
 
     A task without a trips row (the router found no route) is not connected and is counted as ``no_route``.
@@ -272,14 +272,15 @@ def _connected(router, tasks, *, inside_stop_ids, walk_max_m) -> set:
     frame = pd.DataFrame(tasks, columns=TASK_COLUMNS)
     trips, legs = router(frame)
     mask = connection_mask(trips, legs, inside_stop_ids=inside_stop_ids, walk_max_m=walk_max_m,
-                           task_ids=frame["identifier"])
+                           task_ids=frame["identifier"], latest_arrival_s=latest_arrival_s,
+                           label="portal pt gates")
     return set(mask.index[mask.to_numpy()].astype(str))
 
 
 def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_s, return_departure_s,
                     return_arrival_s, has_return, exits: gpd.GeoDataFrame, schedule, router, *,
                     n_candidates: int, max_extra_detour_m: float, service_window_s: float, inside_stop_ids: set,
-                    walk_max_m: float) -> pd.DataFrame:
+                    walk_max_m: float, latest_arrival_s: float | None = None) -> pd.DataFrame:
     """The pt gate of each pt stay: direction -> extra-detour cap -> served -> n smallest detours -> router.
 
     All arguments are per pt stay (row ``i`` of the arrays is stay ``i``; coordinates metric, times in
@@ -397,7 +398,7 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
             return (f"{i}:{stop}:{_OUT}", ox, oy, gx, gy, float(out_dep[i]))
         return (f"{i}:{stop}:{_RET}", gx, gy, ox, oy, ret_time[i, stop])
 
-    kwargs = dict(inside_stop_ids=inside_stop_ids, walk_max_m=walk_max_m)
+    kwargs = dict(inside_stop_ids=inside_stop_ids, walk_max_m=walk_max_m, latest_arrival_s=latest_arrival_s)
     routed_keys = [(i, s) for i in range(n) for s in routed[i]]
     out_ok = _connected(router, [task(i, s, _OUT) for i, s in routed_keys], **kwargs)
     out_pass = [(i, s) for i, s in routed_keys if f"{i}:{s}:{_OUT}" in out_ok]

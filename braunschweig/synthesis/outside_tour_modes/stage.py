@@ -163,9 +163,12 @@ def _pt_check(context) -> _pt_connections.PtCheck:
     all_stop_ids = set(read_schedule(schedule_path).stops)
     walk_max_m = float(plan_check.DEFAULT_WALK_MAX_DISTANCE_M)
 
+    latest_arrival_s = connections.latest_arrival_s(context)  # ADR-0185, #573; None when the check is off
+
     def mask(trips, legs, tasks):
         return connections.connection_mask(trips, legs, inside_stop_ids=all_stop_ids, walk_max_m=walk_max_m,
-                                           task_ids=tasks["identifier"].astype(str))
+                                           task_ids=tasks["identifier"].astype(str),
+                                           latest_arrival_s=latest_arrival_s, label="outside tour pt check")
 
     probe = _probe_from(router, mask)
     bound_s = float(plan_validation.MAX_PLAN_TIME_SECONDS)

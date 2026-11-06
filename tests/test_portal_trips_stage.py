@@ -127,7 +127,7 @@ def test_execute_off_passes_the_trips_frame_through_unchanged():
 # --------------------------------------------------------------------------------------------------
 
 GATE_SETTINGS = {"n_candidates": 5, "max_extra_detour_m": 10000.0, "service_window_s": 3600.0, "shift_window_s": 7200.0, "shift_step_s": 1800.0,
-                 "min_stay_s": 1800.0, "no_connection_warn_share": 0.05}
+                 "min_stay_s": 1800.0, "no_connection_warn_share": 0.05, "latest_arrival_s": None}
 
 
 def _router(connects=lambda identifier: True, calls=None):
@@ -658,10 +658,22 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
 
     def fake_route_batch(context, tasks, **kwargs):
         seen["router_kwargs"] = kwargs
-        return fixture["router"](tasks)
+        trips, legs = fixture["router"](tasks)
+        # the latest-arrival bound (ADR-0185) is on by default and needs the routed times
+        return trips.assign(egress_travel_time_min=0.0), legs.assign(egress_time=40000.0)
+
+    from braunschweig.data.transit import connections
+
+    real_mask = connections.connection_mask
+    mask_calls = []
+
+    def spy_mask(trips, legs, **kwargs):
+        mask_calls.append(kwargs)
+        return real_mask(trips, legs, **kwargs)
 
     monkeypatch.setattr("braunschweig.data.transit.schedule.read_schedule", fake_read_schedule)
     monkeypatch.setattr("braunschweig.data.transit.connections.route_batch", fake_route_batch)
+    monkeypatch.setattr(connections, "connection_mask", spy_mask)
     monkeypatch.setattr("braunschweig.data.spatial.cordon.buffer_m_from_fraction", lambda df, fraction: 123.0)
     monkeypatch.setattr("braunschweig.data.spatial.cordon.build_cordon_polygon",
                         lambda df, buffer_m: fixture["cordon_polygon"])
@@ -679,7 +691,8 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
                                         "vehicles_path": "transit_vehicles.xml.gz"},
     }
     values = _gate_values()
-    values.update({"matsim_threads": None, "processes": 3})
+    values.update({"matsim_threads": None, "processes": 3, "braunschweig.transit_connections.latest_arrival_check": True,
+                   "braunschweig.day_end_margin.enabled": True, "braunschweig.day_end_margin.last_arrival_margin_s": 3600.0})
 
     class _Context:
         def config(self, key):
@@ -694,7 +707,12 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
             return str({"matsim.scenario.supply.processed": schedule_dir,
                         "matsim.scenario.supply.gtfs": tmp_path / "gtfs"}[name])
 
-    out = stage.execute(_Context())
+    context = _Context()
+    out = stage.execute(context)
+    # ADR-0185, #573: the portal gates hand the day-end limit of the connection rule and their label to it.
+    expected_bound_s = connections.latest_arrival_s(context)
+    assert expected_bound_s is not None and mask_calls
+    assert {(k["latest_arrival_s"], k["label"]) for k in mask_calls} == {(expected_bound_s, "portal pt gates")}
     assert seen["schedule_path"] == os.path.join(str(schedule_dir), "schedule.xml.gz")
     # The router runs on the pre-cut network/schedule and the gtfs vehicles with the volatile thread budget.
     assert seen["router_kwargs"]["threads"] == 3

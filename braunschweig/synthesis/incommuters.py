@@ -1780,10 +1780,13 @@ def _pt_check(context):
     all_stop_ids = set(read_schedule(schedule_path).stops)
     walk_max_m = float(plan_check.DEFAULT_WALK_MAX_DISTANCE_M)
 
+    latest_arrival_s = connections.latest_arrival_s(context)  # ADR-0185, #573; None when the check is off
+
     def probe(tasks):
         trips, legs = router(tasks)
         return connections.connection_mask(trips, legs, inside_stop_ids=all_stop_ids, walk_max_m=walk_max_m,
-                                           task_ids=tasks["identifier"].astype(str))
+                                           task_ids=tasks["identifier"].astype(str),
+                                           latest_arrival_s=latest_arrival_s, label="incommuter pt check")
 
     bound_s = _time_bound_s(context)
     return _pt_connections.PtCheck(
