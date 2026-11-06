@@ -36,7 +36,12 @@ status:
     data is involved. The "before" side is the run's own log (code 7a41f0ba); the first router call of every stage
     reproduces it exactly (otherwise accepted pt trips = the run's connections: students 1,847, in-commuters 18,639,
     portal 8,121, outside tours 8,024), so the differences are the bound alone. Prepare did not run, so whether the
-    walks of many hours after the routed day-end shift (ADR-0160) disappear downstream is not measured here.
+    walks of many hours after the routed day-end shift (ADR-0160) disappear downstream is not measured here. The
+    stand-in context accepted a default in execute-time config reads, unlike synpp's ExecuteContext, so it did not
+    catch that connections.latest_arrival_s of 6c4c98ca read its keys with a default (a TypeError in a real synpp
+    run; fixed on the branch by single-key reads after the CI review). The three keys are set in
+    configs/base_bs.yml to their declared defaults, so they resolve to the same values either way and the replayed
+    numbers stand.
 source: >-
   felix:~/scratch_i573/out and ~/scratch_i573/out2 (scratch). Committed in
   docs/runs/artifacts/i573-check-replay-prod100-2026-11-05/: i573_check_replay.py (sha256

@@ -378,7 +378,7 @@ def test_execute_with_the_pt_check_on_wires_the_production_probe(tmp_path, monke
               keys.KEY_PT_SHIFT_WINDOW_S: 7200.0, keys.KEY_PT_SHIFT_STEP_S: 1800.0,
               keys.KEY_PT_NO_CONNECTION_WARN_SHARE: 0.05, "matsim_threads": 3, "processes": 8,
               "braunschweig.day_end_margin.enabled": True,
-              "braunschweig.day_end_margin.last_arrival_margin_s": 3600.0}
+              "braunschweig.day_end_margin.last_arrival_margin_s": 3600.0, "braunschweig.transit_connections.latest_arrival_check": True}
     stages = {keys.FINAL_TRIPS_STAGE: fixture["trips"], keys.LOCATIONS_STAGE: fixture["locations"],
               keys.PERSONS_STAGE: fixture["persons"], keys.MUNICIPALITIES_STAGE: municipalities,
               stage.SUPPLY_STAGE: {"schedule_path": "schedule.xml.gz", "network_path": "network.xml.gz"},
@@ -386,9 +386,8 @@ def test_execute_with_the_pt_check_on_wires_the_production_probe(tmp_path, monke
     paths = {None: str(tmp_path), stage.SUPPLY_STAGE: str(supply_dir), stage.GTFS_STAGE: str(gtfs_dir)}
 
     class _Context:
-        def config(self, key, default=None):
-            # connections.latest_arrival_s reads its keys with a default (ADR-0185); the others must be set
-            return values.get(key, default) if default is not None else values[key]
+        def config(self, key):
+            return values[key]
 
         def stage(self, name):
             return stages[name]
@@ -426,10 +425,10 @@ def test_pt_check_passes_the_latest_arrival_bound_and_its_label_to_the_connectio
             self.values = {"matsim_threads": 1, "processes": 1, "braunschweig.day_end_margin.enabled": True,
                            "braunschweig.day_end_margin.last_arrival_margin_s": 3600.0,
                            keys.KEY_PT_SHIFT_WINDOW_S: 0.0, keys.KEY_PT_SHIFT_STEP_S: 1800.0,
-                           keys.KEY_PT_NO_CONNECTION_WARN_SHARE: 0.05, **values}
+                           keys.KEY_PT_NO_CONNECTION_WARN_SHARE: 0.05, "braunschweig.transit_connections.latest_arrival_check": True, **values}
 
-        def config(self, key, default=None):
-            return self.values.get(key, default)
+        def config(self, key):
+            return self.values[key]
 
         def stage(self, name):
             return {"schedule_path": "s", "network_path": "n", "vehicles_path": "v"}
@@ -454,11 +453,11 @@ def test_the_day_end_bounds_of_the_pt_checks_and_the_connection_rule_do_not_drif
     values = {"matsim_threads": 1, "processes": 1, "braunschweig.day_end_margin.enabled": True,
               keys.KEY_PT_SHIFT_WINDOW_S: 0.0, keys.KEY_PT_SHIFT_STEP_S: 1800.0,
               keys.KEY_PT_NO_CONNECTION_WARN_SHARE: 0.05,
-              "braunschweig.day_end_margin.last_arrival_margin_s": margin_s}
+              "braunschweig.day_end_margin.last_arrival_margin_s": margin_s, "braunschweig.transit_connections.latest_arrival_check": True}
 
     class _Context:
-        def config(self, key, default=None):
-            return values.get(key, default)
+        def config(self, key):
+            return values[key]
 
         def stage(self, name):
             return {"schedule_path": "s", "network_path": "n", "vehicles_path": "v"}

@@ -317,10 +317,11 @@ def test_pt_check_passes_the_latest_arrival_bound_and_its_label_to_the_connectio
         def __init__(self, **values):
             self.values = {"matsim_threads": 1, "processes": 1, pc.KEY_SHIFT_WINDOW_S: 0.0,
                            pc.KEY_SHIFT_STEP_S: 1800.0, pc.KEY_WARN_SHARE: 0.05,
-                           pc.KEY_STATION_CANDIDATES: 1, **values}
+                           pc.KEY_STATION_CANDIDATES: 1, "braunschweig.transit_connections.latest_arrival_check": True,
+                           "braunschweig.day_end_margin.enabled": True, "braunschweig.day_end_margin.last_arrival_margin_s": 3600.0, **values}
 
-        def config(self, key, default=None):
-            return self.values.get(key, default)
+        def config(self, key):
+            return self.values[key]
 
         def stage(self, name):
             return {"schedule_path": "s", "network_path": "n", "vehicles_path": "v"}

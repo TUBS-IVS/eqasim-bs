@@ -368,11 +368,21 @@ def test_latest_arrival_bound_warns_when_it_rejects_most_otherwise_good_trips(ca
 
 
 class _FakeContext:
-    def __init__(self, **values):
-        self.values = values
+    """synpp in its two phases: ``connections.configure`` declares the keys with their defaults, and the
+    execute-time read takes the key alone, as ``ExecuteContext.config`` does (a default there is a TypeError)."""
 
-    def config(self, key, default=None):
-        return self.values.get(key, default)
+    def __init__(self, **values):
+        declared = {}
+
+        class _Configure:
+            def config(self, key, default=None, **_options):
+                declared[key] = default
+
+        connections.configure(_Configure())
+        self.values = {**declared, **values}
+
+    def config(self, key):
+        return self.values[key]
 
 
 def test_latest_arrival_s_follows_the_day_end_margin_and_the_switch():

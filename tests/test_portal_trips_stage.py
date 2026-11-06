@@ -691,11 +691,12 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
                                         "vehicles_path": "transit_vehicles.xml.gz"},
     }
     values = _gate_values()
-    values.update({"matsim_threads": None, "processes": 3})
+    values.update({"matsim_threads": None, "processes": 3, "braunschweig.transit_connections.latest_arrival_check": True,
+                   "braunschweig.day_end_margin.enabled": True, "braunschweig.day_end_margin.last_arrival_margin_s": 3600.0})
 
     class _Context:
-        def config(self, key, default=None):
-            return values.get(key, default) if default is not None else values[key]
+        def config(self, key):
+            return values[key]
 
         def stage(self, name):
             return stages[name]

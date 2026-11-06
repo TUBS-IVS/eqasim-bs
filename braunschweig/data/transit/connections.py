@@ -132,15 +132,15 @@ def latest_arrival_s(context) -> float | None:
     """The latest routed arrival (s since midnight) a pt connection may have, or None when the check is off.
 
     Equal to the day-end limit of the prepare stage (ADR-0160): ``MAX_PLAN_TIME_SECONDS`` minus the last-arrival
-    margin while ``braunschweig.day_end_margin`` is enabled (ADR-0185, #573).
+    margin while ``braunschweig.day_end_margin`` is enabled (ADR-0185, #573). Execute-time only: reads the keys
+    alone (synpp's ExecuteContext takes no default); :func:`configure` declares them with their defaults.
     """
-    if not context.config(KEY_LATEST_ARRIVAL_CHECK, DEFAULT_LATEST_ARRIVAL_CHECK):
+    if not context.config(KEY_LATEST_ARRIVAL_CHECK):
         return None
     bound_s = float(MAX_PLAN_TIME_SECONDS)
-    if context.config(day_end_margin.KEY_ENABLED, day_end_margin.DEFAULT_ENABLED):
+    if context.config(day_end_margin.KEY_ENABLED):
         bound_s -= day_end_margin.check_margin(
-            context.config(day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S, day_end_margin.DEFAULT_LAST_ARRIVAL_MARGIN_S),
-            bound_s)
+            context.config(day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S), bound_s)
     return bound_s
 
 
