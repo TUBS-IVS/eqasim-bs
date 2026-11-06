@@ -56,7 +56,8 @@ GTFS_STAGE = "matsim.scenario.supply.gtfs"
 #: and the hub-name file that prepare passes to the cutter (#574). ``transit_schedule`` parses both cut timetables in
 #: ``_verify_cut_timetable_matches_stage``, so its reader decides whether the two cuts count as equal.
 _HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes, tariff_export,
-                   config_modules, plan_check, frozen_pt_walk_lift, initial_mode_choice, cordon_subpopulation, cut_schedule, transit_schedule)
+                   config_modules, plan_check, frozen_pt_walk_lift, initial_mode_choice, cordon_subpopulation,
+                   cut_schedule, transit_schedule)
 
 #: A collapsed pt trip (its pt leg shortened by the cut) is walked when the kept stop sequence cannot serve it (eqasim
 #: cutter, #574, ADR-0186). ASSUMPTION: a walked share above 5 % of one collapsed case is worth a warning; it is a

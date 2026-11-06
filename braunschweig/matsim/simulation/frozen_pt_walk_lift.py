@@ -6,8 +6,14 @@ connection) would stay a walk of many kilometres in every iteration. This step r
 plan check and replaces each such trip whose straight-line distance is STRICTLY above
 ``braunschweig.plan_check.pt_as_walk_bound_min_distance_m`` (the bound of the plan check; no second number) by ONE
 leg ``car_passenger`` (routingMode ``car_passenger``, the original ``dep_time``, no route, no ``trav_time``, leg
-attribute ``liftedFrom`` = ``pt``). MATSim's PrepareForSim routes a leg without a route at the start. ASSUMPTION
-(ADR-0156, ADR-0187): a trip that no timetable serves is made as a lift, not as a walk of many kilometres.
+attribute ``liftedFrom`` = ``pt``). The lifted leg has no ``trav_time`` and no route: MATSim's PrepareForSim routes
+it at the start (``car_passenger`` is a routing network mode in this config: ``routing.networkModes`` includes it,
+``accessEgressType`` is ``accessEgressModeToLink``). ``plan_check.planned_lateness_s`` counts a missing
+``trav_time`` as 0 s, so the planned lateness measured after this step is a lower bound. ASSUMPTION (ADR-0156,
+ADR-0187): a trip that no timetable serves is made as a lift, not as a walk of many kilometres.
+
+Selected plan only: prepare writes one plan per person, so the selected plan (the first plan when none is marked
+``selected="yes"``, as ``plan_check`` reads it) is the plan. Any further plan of a person is copied unchanged.
 
 Scope: residents only (no ``subpopulation`` attribute or ``plan_check.RESIDENTS``). In-commuters and freight keep
 their plans: they have their own strategies and scope. Activities and their end times stay unchanged; only the
@@ -52,7 +58,8 @@ KEY_WARN_SHARE = "braunschweig.frozen_pt_walk_lift.warn_share"
 DEFAULT_WARN_SHARE = 0.05
 LIFTED_MODE = "car_passenger"
 LIFTED_FROM_ATTRIBUTE = "liftedFrom"
-_POPULATION_START_TAG = re.compile(r"<population\b[^>]*>")
+_POPULATION_START_TAG = re.compile(rb"<population\b[^>]*>")
+_XML_ENCODING = re.compile(rb"^\s*<\?xml[^>]*\bencoding\s*=\s*[\"']([A-Za-z0-9._-]+)[\"']")
 
 
 def _string_attribute(name: str, value: str) -> ET.Element:
@@ -90,6 +97,11 @@ def _repair_person(person: ET.Element, min_distance_m: float, counts: dict) -> N
     for position, child in enumerate(children):
         if child.tag == "activity":
             end = child.get("end_time")
+            if child.get("x") is None or child.get("y") is None:
+                raise ValueError(f"{_LOG_TAG} person {person.get('id')}: activity {len(activities)} "
+                                 f"({child.get('type')}) has no x/y coordinates; the straight-line distance of a "
+                                 "trip cannot be measured (a population written with link or facility only is "
+                                 "not supported)")
             activities.append((child.get("type"), plan_check.parse_time_s(end) if end else None,
                                float(child.get("x")), float(child.get("y"))))
             activity_positions.append(position)
@@ -105,20 +117,21 @@ def _repair_person(person: ET.Element, min_distance_m: float, counts: dict) -> N
         if not frozen_legs[trip[0]]:
             continue
         legs = [children[leg_positions[index]] for index in trip]
-        if not any(plan_check._leg_attribute(leg, WALK_FALLBACK_ATTRIBUTE) == PT_MODE
-                   or plan_check._leg_attribute(leg, ROUTING_MODE_ATTRIBUTE) == PT_MODE for leg in legs):
+        stamped = any(plan_check.leg_attribute(leg, WALK_FALLBACK_ATTRIBUTE) == PT_MODE for leg in legs)
+        if not (stamped or any(plan_check.leg_attribute(leg, ROUTING_MODE_ATTRIBUTE) == PT_MODE for leg in legs)):
             continue
         counts["n_pt_trips_frozen"] += 1
         if not all(leg.get("mode") in WALK_MODES for leg in legs):
             continue
+        counts["n_pt_as_walk_frozen"] += 1
         _, _, ox, oy = activities[trip[0]]
         _, _, dx, dy = activities[trip[-1] + 1]
         distance_m = math.hypot(dx - ox, dy - oy)
         if distance_m <= min_distance_m:
             continue
-        counts["n_long_pt_as_walk_before"] += 1
         counts["n_lifted"] += 1
-        counts["lifted_by_distance_band"][plan_check._band_label(
+        counts["n_lifted_stamped" if stamped else "n_lifted_routing_mode_only"] += 1
+        counts["lifted_by_distance_band"][plan_check.band_label(
             distance_m, plan_check.PT_AS_WALK_DISTANCE_BAND_EDGES_M, plan_check.PT_AS_WALK_DISTANCE_BAND_LABELS)] += 1
         replacements.append((leg_positions[trip[0]], leg_positions[trip[-1]], _lifted_leg(legs[0].get("dep_time"))))
     for first, last, new_leg in reversed(replacements):
@@ -133,26 +146,33 @@ def lift_frozen_pt_walks(source_path, target_path, *, min_distance_m: float, war
     """Write ``target_path`` as ``source_path`` with the long pt-as-walk trips of frozen resident tours lifted.
 
     Returns the report: ``n_persons`` (residents examined), ``n_pt_trips_frozen`` (pt-intended trips of frozen
-    resident tours), ``n_long_pt_as_walk_before`` (of them all-walk trips over ``min_distance_m``), ``n_lifted``,
-    ``lifted_by_distance_band`` and the two parameters. ``source_path`` and ``target_path`` must differ.
+    resident tours), ``n_pt_as_walk_frozen`` (of them the all-walk trips, at any distance), ``n_lifted`` (of those
+    the trips over ``min_distance_m``), ``n_lifted_stamped`` / ``n_lifted_routing_mode_only`` (the lifted trips by
+    detection: a ``walkFallbackFrom`` = pt stamp, or ``routingMode`` = pt without the stamp),
+    ``lifted_by_distance_band`` and the two parameters. ``source_path`` and ``target_path`` must differ. The
+    output is written in the encoding of the source's XML declaration (UTF-8 without one).
     """
     if not os.path.exists(source_path):
         raise FileNotFoundError(f"{_LOG_TAG} population not found: {source_path}")
-    counts = {"n_persons": 0, "n_pt_trips_frozen": 0, "n_long_pt_as_walk_before": 0, "n_lifted": 0,
+    counts = {"n_persons": 0, "n_pt_trips_frozen": 0, "n_pt_as_walk_frozen": 0, "n_lifted": 0,
+              "n_lifted_stamped": 0, "n_lifted_routing_mode_only": 0,
               "lifted_by_distance_band": dict.fromkeys(plan_check.PT_AS_WALK_DISTANCE_BAND_LABELS, 0)}
+    header, encoding = _raw_header(source_path)
     gzipped = str(target_path).endswith(".gz")
-    out = gzip.open(target_path, "wt", encoding="utf-8") if gzipped else open(target_path, "w", encoding="utf-8")
+    out = (gzip.open(target_path, "wt", encoding=encoding) if gzipped
+           else open(target_path, "w", encoding=encoding))
     with out:
-        out.write(_raw_header(source_path) + "\n")
-        with plan_check._open(source_path) as handle:
+        out.write(header + "\n")
+        with plan_check.open_population(source_path) as handle:
             _stream_elements(handle, out, min_distance_m, counts)
         out.write("</population>\n")
     share = counts["n_lifted"] / counts["n_pt_trips_frozen"] if counts["n_pt_trips_frozen"] else 0.0
     report = dict(counts, share_lifted=share, min_distance_m=float(min_distance_m), warn_share=float(warn_share))
     message = (f"{_LOG_TAG} lifted {counts['n_lifted']} of {counts['n_pt_trips_frozen']} pt-intended trips in frozen "
-               f"resident tours ({100.0 * share:.2f}%), of {counts['n_persons']} persons; long pt-as-walk trips in "
-               f"frozen tours before {counts['n_long_pt_as_walk_before']}; by distance "
-               f"{counts['lifted_by_distance_band']}")
+               f"resident tours ({100.0 * share:.2f}%), of {counts['n_persons']} persons; pt-intended trips realised "
+               f"as walk in frozen tours at any distance {counts['n_pt_as_walk_frozen']}; lifted by detection: "
+               f"stamp {counts['n_lifted_stamped']}, routingMode only {counts['n_lifted_routing_mode_only']}; "
+               f"lifted by distance {counts['lifted_by_distance_band']}")
     if share > warn_share:
         logger.warning("%s exceeds the warn share %.2f%%: the router finds no pt connection for many trips of "
                        "tours the mode choice never re-chooses", message, 100.0 * warn_share)
@@ -161,19 +181,23 @@ def lift_frozen_pt_walks(source_path, target_path, *, min_distance_m: float, war
     return report
 
 
-def _raw_header(source_path) -> str:
-    """The raw text up to and including the ``<population ...>`` start tag."""
+def _raw_header(source_path) -> tuple:
+    """The raw text up to and including the ``<population ...>`` start tag, and its encoding.
+
+    The encoding is that of the XML declaration (UTF-8 without one); the decoding is strict.
+    """
     header = b""
-    with plan_check._open(source_path) as handle:
+    with plan_check.open_population(source_path) as handle:
         while True:
             chunk = handle.read(65536)
             if not chunk:
                 raise ValueError(f"{_LOG_TAG} {source_path} has no <population> start tag")
             header += chunk
-            text = header.decode("utf-8", errors="ignore")
-            match = _POPULATION_START_TAG.search(text)
+            match = _POPULATION_START_TAG.search(header)
             if match:
-                return text[:match.end()]
+                declared = _XML_ENCODING.search(header[:match.start()])
+                encoding = declared.group(1).decode("ascii") if declared else "utf-8"
+                return header[:match.end()].decode(encoding), encoding
 
 
 def _stream_elements(handle, out, min_distance_m: float, counts: dict) -> None:
@@ -209,11 +233,16 @@ def run(context, result: str) -> dict:
     population_path = plan_check.resolve_population_path(config_path)
     folder, name = os.path.split(population_path)
     temporary_path = os.path.join(folder, "lift_tmp_" + name)
-    report = lift_frozen_pt_walks(
-        population_path, temporary_path,
-        min_distance_m=float(context.config(plan_check.KEY_PT_AS_WALK_BOUND_MIN_DISTANCE_M)),
-        warn_share=float(context.config(KEY_WARN_SHARE)))
-    os.replace(temporary_path, population_path)
+    try:
+        report = lift_frozen_pt_walks(
+            population_path, temporary_path,
+            min_distance_m=float(context.config(plan_check.KEY_PT_AS_WALK_BOUND_MIN_DISTANCE_M)),
+            warn_share=float(context.config(KEY_WARN_SHARE)))
+        os.replace(temporary_path, population_path)
+    finally:
+        # After a successful replace the temporary file is gone; after a failure the original stays untouched.
+        if os.path.exists(temporary_path):
+            os.remove(temporary_path)
     with open(os.path.join(directory, REPORT_FILE_NAME), "w", encoding="utf-8") as handle:
         json.dump(report, handle, indent=2)
     return report

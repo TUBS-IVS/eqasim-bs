@@ -123,11 +123,11 @@ def parse_time_s(text: str) -> float:
     return float(hours) * 3600.0 + float(minutes) * 60.0 + float(seconds)
 
 
-def _open(path):
+def open_population(path):
     return gzip.open(path, "rb") if str(path).endswith(".gz") else open(path, "rb")
 
 
-def _leg_attribute(leg, name: str) -> str | None:
+def leg_attribute(leg, name: str) -> str | None:
     """The value of the leg attribute ``name`` (e.g. ``walkFallbackFrom``, ``routingMode``), or None when absent."""
     attributes = leg.find("attributes")
     if attributes is not None:
@@ -144,7 +144,7 @@ def iter_person_plans(population_path) -> Iterator[PersonPlan]:
     leaves one empty element per person attached to the root, which grows with the population.
     """
     root = None
-    with _open(population_path) as handle:
+    with open_population(population_path) as handle:
         for event, element in ET.iterparse(handle, events=("start", "end")):
             if event == "start":
                 if root is None:
@@ -169,8 +169,8 @@ def iter_person_plans(population_path) -> Iterator[PersonPlan]:
                     elif child.tag == "leg":
                         travel = child.get("trav_time")
                         person.legs.append((child.get("mode"), parse_time_s(travel) if travel else None,
-                                            _leg_attribute(child, WALK_FALLBACK_ATTRIBUTE),
-                                            _leg_attribute(child, ROUTING_MODE_ATTRIBUTE)))
+                                            leg_attribute(child, WALK_FALLBACK_ATTRIBUTE),
+                                            leg_attribute(child, ROUTING_MODE_ATTRIBUTE)))
             element.clear()
             root.clear()
             yield person
@@ -204,7 +204,7 @@ def _empty_block() -> dict:
             "n_plans_non_monotonic_large": 0}
 
 
-def _band_label(value: float, edges: tuple, labels: tuple) -> str:
+def band_label(value: float, edges: tuple, labels: tuple) -> str:
     """The label of the half-open band ``[lo, hi)`` that holds ``value`` (the last label is open-ended)."""
     for edge, label in zip(edges, labels):
         if value < edge:
@@ -326,7 +326,7 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
             block["n_plans_non_monotonic"] += 1
             lateness_s, without_trav_time = planned_lateness_s(person)
             block["n_plans_non_monotonic_without_trav_time"] += without_trav_time
-            block["non_monotonic_by_lateness_band"][_band_label(
+            block["non_monotonic_by_lateness_band"][band_label(
                 lateness_s, NON_MONOTONIC_LATENESS_BAND_EDGES_S, NON_MONOTONIC_LATENESS_BAND_LABELS)] += 1
             if lateness_s > non_monotonic_bound_min_lateness_s:
                 block["n_plans_non_monotonic_large"] += 1
@@ -362,7 +362,7 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
                 _, _, trip_ox, trip_oy = person.activities[trip[0]]
                 _, _, trip_dx, trip_dy = person.activities[trip[-1] + 1]
                 trip_distance_m = math.hypot(trip_dx - trip_ox, trip_dy - trip_oy)
-                trip_block["pt_as_walk_by_distance_band"][_band_label(
+                trip_block["pt_as_walk_by_distance_band"][band_label(
                     trip_distance_m, PT_AS_WALK_DISTANCE_BAND_EDGES_M, PT_AS_WALK_DISTANCE_BAND_LABELS)] += 1
                 if trip_distance_m > pt_as_walk_bound_min_distance_m:
                     trip_block["n_pt_as_walk_long"] += 1

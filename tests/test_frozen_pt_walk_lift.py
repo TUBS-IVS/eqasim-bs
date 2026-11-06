@@ -125,7 +125,7 @@ def test_a_long_pt_as_walk_trip_of_a_frozen_tour_becomes_one_car_passenger_leg(t
     assert activities_after == [a for a in activities_before if a[0] != "pt interaction"]
     assert "pt interaction" not in [a[0] for a in activities_after]
     assert report["n_lifted"] == 1
-    assert report["n_long_pt_as_walk_before"] == 1
+    assert (report["n_lifted_stamped"], report["n_lifted_routing_mode_only"]) == ((1, 0) if kind == "stamp" else (0, 1))
 
 
 @pytest.mark.parametrize("case", [
@@ -160,8 +160,9 @@ def _report_population():
 def test_report_counts_and_the_warn_share(tmp_path, caplog):
     with caplog.at_level(logging.INFO):
         _, _, report = _lift(tmp_path, *_report_population(), warn_share=0.6)
-    assert (report["n_persons"], report["n_pt_trips_frozen"], report["n_long_pt_as_walk_before"],
-            report["n_lifted"]) == (4, 4, 2, 2)
+    # 4 pt-intended trips; 3 realised as walk at any distance (the short one included); 2 of them over the bound.
+    assert (report["n_persons"], report["n_pt_trips_frozen"], report["n_pt_as_walk_frozen"],
+            report["n_lifted"]) == (4, 4, 3, 2)
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]   # 2 of 4 = 0.5 <= 0.6
     assert [r for r in caplog.records if r.levelno == logging.INFO and "frozen_pt_walk_lift" in r.getMessage()]
 
@@ -184,3 +185,73 @@ def test_the_output_stays_a_valid_matsim_population(tmp_path):
     assert _attribute(persons["res"], "age") == "42"
     assert _attribute(persons["freight_1"], "subpopulation") == "freight"
     assert _canon(persons["freight_1"]) == _canon(_persons(source)["freight_1"])
+
+
+def test_only_the_selected_plan_is_lifted(tmp_path):
+    person = _person("p", "stamp", 8000.0)
+    unselected = person[person.index("<plan "):person.index("</plan>") + len("</plan>")].replace(
+        'selected="yes"', 'selected="no"')
+    two_plans = person.replace("</person>", unselected + "</person>")
+    source, target, report = _lift(tmp_path, two_plans)
+    before, after = _persons(source)["p"].findall("plan"), _persons(target)["p"].findall("plan")
+    assert report["n_lifted"] == 1
+    assert [leg.get("mode") for leg in after[0].findall("leg")][1] == "car_passenger"
+    assert _canon(after[1]) == _canon(before[1])
+
+
+def test_an_activity_without_coordinates_fails_early_naming_person_and_activity(tmp_path):
+    broken = _person("p_no_xy", "stamp", 8000.0).replace('<activity type="work" x="9000.0" y="0"',
+                                                         '<activity type="work" link="l1"')
+    assert 'link="l1"' in broken
+    with pytest.raises(ValueError, match=r"person p_no_xy: activity \d+ \(work\) has no x/y"):
+        _lift(tmp_path, broken)
+
+
+class _RunContext:
+    def __init__(self, directory):
+        self._directory = directory
+
+    def path(self):
+        return str(self._directory)
+
+    def config(self, key):
+        return {"braunschweig.plan_check.pt_as_walk_bound_min_distance_m": MIN_DISTANCE_M,
+                "braunschweig.frozen_pt_walk_lift.warn_share": 1.0}[key]
+
+
+def _stage_directory(tmp_path, *persons):
+    _write(tmp_path / "pop.xml.gz", *persons)
+    (tmp_path / "config.xml").write_text(
+        '<config><module name="plans"><param name="inputPlansFile" value="pop.xml.gz"/></module></config>',
+        encoding="utf-8")
+    return tmp_path
+
+
+def test_run_replaces_the_population_and_a_failure_leaves_original_and_no_temporary_file(tmp_path):
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    _stage_directory(stage, _person("p", "stamp", 8000.0))
+    report = L.run(_RunContext(stage), "config.xml")
+    assert report["n_lifted"] == 1 and (stage / "frozen_pt_walk_lift.json").exists()
+    assert [leg.get("mode") for leg in _plan_elements(stage / "pop.xml.gz", "p") if leg.tag == "leg"][1] == "car_passenger"
+
+    bad = tmp_path / "bad"
+    bad.mkdir()
+    corrupt = _person("q", "stamp", 8000.0).replace('<activity type="work" x="9000.0" y="0"', '<activity type="work" link="l"')
+    _stage_directory(bad, corrupt)
+    original = (bad / "pop.xml.gz").read_bytes()
+    with pytest.raises(ValueError):
+        L.run(_RunContext(bad), "config.xml")
+    assert (bad / "pop.xml.gz").read_bytes() == original
+    assert sorted(p.name for p in bad.iterdir()) == ["config.xml", "pop.xml.gz"]
+
+
+def test_the_encoding_of_the_xml_declaration_is_kept(tmp_path):
+    source = tmp_path / "latin.xml"
+    source.write_bytes((HEADER.replace("utf-8", "iso-8859-1") + "<population>\n"
+                        + _person("p", "stamp", 8000.0, extra_attributes='<attribute name="n" class="java.lang.String">M\u00fcller</attribute>')
+                        + "\n</population>\n").encode("iso-8859-1"))
+    target = tmp_path / "out.xml"
+    L.lift_frozen_pt_walks(source, target, min_distance_m=MIN_DISTANCE_M, warn_share=1.0)
+    text = target.read_bytes().decode("iso-8859-1")
+    assert 'encoding="iso-8859-1"' in text and "M\u00fcller" in text
