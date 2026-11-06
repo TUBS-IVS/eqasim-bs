@@ -90,8 +90,8 @@ DEFAULT_MAX_FROZEN_PT_AS_WALK_SHARE = 0.02
 KEY_PT_AS_WALK_BOUND_MIN_DISTANCE_M = "braunschweig.plan_check.pt_as_walk_bound_min_distance_m"
 DEFAULT_PT_AS_WALK_BOUND_MIN_DISTANCE_M = 5000.0
 #: ASSUMPTION (ADR-0188, #576): the owner's tolerated planned lateness (2026-11-06): a non-monotonic plan whose
-#: planned arrival at some activity is at most this much after that activity's planned end time is reported, not
-#: bounded.
+#: planned arrival at each out-of-order activity is at most this much after that activity's planned end time is
+#: reported, not bounded.
 KEY_NON_MONOTONIC_BOUND_MIN_LATENESS_S = "braunschweig.plan_check.non_monotonic_bound_min_lateness_s"
 DEFAULT_NON_MONOTONIC_BOUND_MIN_LATENESS_S = 900.0
 #: Report-only bands (not config); half-open ``[lo, hi)``, labels ``0_1km`` ... ``10km_plus`` / ``0_1min`` ...
@@ -218,9 +218,12 @@ def planned_lateness_s(person: PersonPlan) -> tuple:
     The agent leaves activity 0 at its end time and reaches activity i at the departure from i-1 plus the leg's
     travel time. MATSim ends an activity whose end time has passed at once, so it leaves i at the later of arrival
     and end time (at arrival when i has no end time: zero dwell). The lateness is the largest ``arrival - end
-    time`` (at least 0) over the activities with an end time; the last activity only receives an arrival.
+    time`` (at least 0) over the OUT-OF-ORDER activities only: those whose end time lies below the latest earlier
+    end time. A tight but in-order leg elsewhere in the plan is not a defect of the order and is not measured
+    (ADR-0188); the delay an earlier out-of-order activity carries forward is. The last activity only receives an
+    arrival.
     """
-    lateness_s, without_trav_time, departure_s = 0.0, False, None
+    lateness_s, without_trav_time, departure_s, latest_end_s = 0.0, False, None, None
     for index, (_, end, _, _) in enumerate(person.activities):
         if index == 0:
             arrival_s = end
@@ -228,8 +231,11 @@ def planned_lateness_s(person: PersonPlan) -> tuple:
             travel = person.legs[index - 1][1] if index - 1 < len(person.legs) else None
             without_trav_time = without_trav_time or travel is None
             arrival_s = None if departure_s is None else departure_s + (travel or 0.0)
-            if end is not None and arrival_s is not None:
+            out_of_order = end is not None and latest_end_s is not None and end < latest_end_s
+            if out_of_order and arrival_s is not None:
                 lateness_s = max(lateness_s, arrival_s - end)
+        if end is not None:
+            latest_end_s = end if latest_end_s is None else max(latest_end_s, end)
         if end is None:
             departure_s = arrival_s
         else:
@@ -279,7 +285,8 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
     (ADR-0188). Likewise a non-monotonic plan gets its planned lateness: the plan is walked forward (leave activity
     0 at its end time; arrive at activity i at the departure from i-1 plus the leg's ``trav_time``; leave i at the
     later of arrival and end time, at arrival when i has no end), and the lateness is the largest ``max(0, arrival
-    - end time)`` over the activities with an end time. It is counted in ``non_monotonic_by_lateness_band`` (report
+    - end time)`` over the out-of-order activities (end time below the latest earlier end; ``planned_lateness_s``).
+    It is counted in ``non_monotonic_by_lateness_band`` (report
     only) and, when strictly above ``non_monotonic_bound_min_lateness_s``, in ``n_plans_non_monotonic_large``;
     ``share_plans_non_monotonic_large`` = ``n_plans_non_monotonic_large / n_persons`` is the bounded share. A leg
     without ``trav_time`` counts as 0 s (the lateness is a lower bound); such plans are counted in

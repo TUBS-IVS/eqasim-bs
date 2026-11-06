@@ -528,6 +528,16 @@ def test_planned_lateness_adds_the_travel_time_and_chained_drops_and_exactly_the
     assert block["n_plans_non_monotonic_large"] == 2                  # 2100 s and 1200 s; 900 s is not above 900 s
 
 
+def test_the_lateness_is_taken_only_at_activities_that_end_before_an_earlier_activity():
+    # Review round 3: a 1 s gate step, then a tight but in-order 3000 s leg to work (end 30000 s, reached 31800 s).
+    # Only the out-of-order activity (end 28799 s, reached 28800 s) is measured: 1 s, not the 1800 s of the work leg.
+    plan = _lateness_plan("gate", [28800.0, 28799.0, 30000.0], [0.0, 3000.0, 0.0])
+    block = _in_region_block([plan])
+    assert block["n_plans_non_monotonic"] == 1
+    assert block["non_monotonic_by_lateness_band"]["0_1min"] == 1
+    assert block["n_plans_non_monotonic_large"] == 0
+
+
 def test_a_monotonic_plan_is_not_counted_even_when_its_legs_make_it_arrive_late():
     late_but_monotonic = _lateness_plan("tight", [36000.0, 36100.0], [1200.0, 0.0])
     block = _in_region_block([late_but_monotonic])
