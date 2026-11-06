@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 112 | stages: 133 | datasets: 105 | ADRs: 180 | run manifests: 88
+- Features: 112 | stages: 134 | datasets: 105 | ADRs: 181 | run manifests: 89
 
 ## Population synthesis
 
@@ -139,7 +139,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Cordon / external demand
 
-11 stage(s), 11 in the production DAG. Datasets: `ba_pendleratlas`, `destatis_population_kreis`, `gtfs_feed`, `lsn_universities`, `mikrozensus_pendler_modes`, `osm_cordon_ring`, `srv2023_mode_by_distance_band`, `vg250_ew`
+12 stage(s), 12 in the production DAG. Datasets: `ba_pendleratlas`, `destatis_population_kreis`, `gtfs_feed`, `lsn_universities`, `mikrozensus_pendler_modes`, `osm_cordon_ring`, `srv2023_mode_by_distance_band`, `vg250_ew`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -151,7 +151,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Preserve MiD in-commuter donor demographics](../registry/features/incommuter_donor_demographics.yml) | active | ON | A/A/- | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | [#397](https://github.com/TUBS-IVS/eqasim-bs/issues/397) |
 | [Chronological in-commuter plan-time repair](../registry/features/incommuter_time_chronology.yml) | active | ON | A/A/- | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | [#397](https://github.com/TUBS-IVS/eqasim-bs/issues/397) |
 | [Outside-tour modes judged against the regional survey](../registry/features/outside_tour_modes.yml) | active | ON | A/-/- | unvalidated (`i453-i443-ab-1pct-2026-10-16`) | [#453](https://github.com/TUBS-IVS/eqasim-bs/issues/453) |
-| [Portal trips (long-distance legs through the cordon gates)](../registry/features/portal_trips.yml) | active | ON | A/-/- | unvalidated (`portal-trips-ab-1pct-2026-10-09`, `i465-wpe-smoke-1pct-2026-10-23`) | [#442](https://github.com/TUBS-IVS/eqasim-bs/issues/442) |
+| [Portal trips (long-distance legs through the cordon gates)](../registry/features/portal_trips.yml) | active | ON | A/-/- | unvalidated (`portal-trips-ab-1pct-2026-10-09`, `i465-wpe-smoke-1pct-2026-10-23`, `i574-portal-replay-prod100-2026-11-06`) | [#442](https://github.com/TUBS-IVS/eqasim-bs/issues/442) |
 | [Student in-commuters (#140)](../registry/features/student_incommuters.yml) | active | ON | A/A/- | unvalidated | [#140](https://github.com/TUBS-IVS/eqasim-bs/issues/140) |
 
 ## Freight

@@ -52,6 +52,7 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [braunschweig.data.schools.kita_facilities](../registry/stages/braunschweig.data.schools.kita_facilities.yml) | education | braunschweig_new | x | A/A/- | -- | building_potentials_education |
 | [braunschweig.data.schools.university_facilities](../registry/stages/braunschweig.data.schools.university_facilities.yml) | education | braunschweig_new | x | A/A/- | -- | building_potentials_education |
 | [braunschweig.data.spatial.taz](../registry/stages/braunschweig.data.spatial.taz.yml) | spatial | braunschweig_new | -- | -/-/- | -- | taz_work_location_choice |
+| [braunschweig.data.transit.cut_schedule](../registry/stages/braunschweig.data.transit.cut_schedule.yml) | cordon | braunschweig_new | x | A/A/- | -- | portal_trips |
 | [braunschweig.data.verbindungen.margins](../registry/stages/braunschweig.data.verbindungen.margins.yml) | validation | braunschweig_new | x | A/-/- | -- | -- |
 | [braunschweig.data.verbindungen.work_od](../registry/stages/braunschweig.data.verbindungen.work_od.yml) | work | braunschweig_new | x | A/A/A | -- | verbindungen_anchor, verbindungen_od_validation |
 | [braunschweig.data.verbindungen.zones](../registry/stages/braunschweig.data.verbindungen.zones.yml) | spatial | braunschweig_new | x | A/A/A | -- | -- |
