@@ -9,8 +9,8 @@ activity end times, walk and bicycle legs over a straight-line distance and legs
 ``frozen`` holds the plans (person level) and legs (tour level) whose tour touches an ``outside`` activity --
 the tours the discrete mode choice never re-chooses (``OutsideFilter``); ``in_region`` is informational,
 because the mode choice repairs it. The threshold bounds the frozen residents' late plans, plans with a
-backward step of the activity end times over ``non_monotonic_bound_min_step_s`` and pt-as-walk trips over
-``pt_as_walk_bound_min_distance_m`` (ADR-0188, #576: shorter walks and smaller steps are reported in bands, not
+planned lateness (non-monotonic plans) over ``non_monotonic_bound_min_lateness_s`` and pt-as-walk trips over
+``pt_as_walk_bound_min_distance_m`` (ADR-0188, #576: shorter walks and smaller lateness are reported in bands, not
 bounded; the totals stay reported). It is reported always and fails the stage only when
 ``braunschweig.plan_check.fail_on_threshold`` is true; freight is reported, never failed on (#444 owns its defects).
 
@@ -55,8 +55,8 @@ KEY_BICYCLE_MAX_DISTANCE_M = "braunschweig.plan_check.bicycle_max_distance_m"
 DEFAULT_BICYCLE_MAX_DISTANCE_M = 30000.0
 KEY_LEG_MAX_DURATION_S = "braunschweig.plan_check.leg_max_duration_s"
 DEFAULT_LEG_MAX_DURATION_S = 10800.0
-#: ASSUMPTION (ADR-0146, ADR-0188): the share of frozen resident plans that may be late or have a backward step
-#: over ``non_monotonic_bound_min_step_s``; the A/B calibrates it.
+#: ASSUMPTION (ADR-0146, ADR-0188): the share of frozen resident plans that may be late or have a planned lateness
+#: over ``non_monotonic_bound_min_lateness_s``; the A/B calibrates it.
 KEY_MAX_FROZEN_DEFECT_SHARE = "braunschweig.plan_check.max_frozen_defect_share"
 DEFAULT_MAX_FROZEN_DEFECT_SHARE = 0.005
 #: Leg attribute that eqasim stamps on a leg its router replaced by a walk (value: the mode that was requested,
@@ -89,16 +89,17 @@ DEFAULT_MAX_FROZEN_PT_AS_WALK_SHARE = 0.02
 #: below it is a plausible walk.
 KEY_PT_AS_WALK_BOUND_MIN_DISTANCE_M = "braunschweig.plan_check.pt_as_walk_bound_min_distance_m"
 DEFAULT_PT_AS_WALK_BOUND_MIN_DISTANCE_M = 5000.0
-#: ASSUMPTION (ADR-0188, #576): the owner's choice of the lateness a backward step may cause before it counts as
-#: a defect (an activity whose planned end has passed ends at once, so the next departure is up to the step late).
-KEY_NON_MONOTONIC_BOUND_MIN_STEP_S = "braunschweig.plan_check.non_monotonic_bound_min_step_s"
-DEFAULT_NON_MONOTONIC_BOUND_MIN_STEP_S = 900.0
+#: ASSUMPTION (ADR-0188, #576): the owner's tolerated planned lateness (2026-11-06): a non-monotonic plan whose
+#: planned arrival at some activity is at most this much after that activity's planned end time is reported, not
+#: bounded.
+KEY_NON_MONOTONIC_BOUND_MIN_LATENESS_S = "braunschweig.plan_check.non_monotonic_bound_min_lateness_s"
+DEFAULT_NON_MONOTONIC_BOUND_MIN_LATENESS_S = 900.0
 #: Report-only bands (not config); half-open ``[lo, hi)``, labels ``0_1km`` ... ``10km_plus`` / ``0_1min`` ...
 #: ``60min_plus``. A block always carries every label so the json shape is stable.
 PT_AS_WALK_DISTANCE_BAND_EDGES_M = (1000.0, 2000.0, 5000.0, 10000.0)
 PT_AS_WALK_DISTANCE_BAND_LABELS = ("0_1km", "1_2km", "2_5km", "5_10km", "10km_plus")
-NON_MONOTONIC_STEP_BAND_EDGES_S = (60.0, 300.0, 900.0, 3600.0)
-NON_MONOTONIC_STEP_BAND_LABELS = ("0_1min", "1_5min", "5_15min", "15_60min", "60min_plus")
+NON_MONOTONIC_LATENESS_BAND_EDGES_S = (60.0, 300.0, 900.0, 3600.0)
+NON_MONOTONIC_LATENESS_BAND_LABELS =("0_1min", "1_5min", "5_15min", "15_60min", "60min_plus")
 #: false -> above ``max_frozen_defect_share`` the check logs at ERROR and continues; true -> it raises. Default
 #: false: the threshold is an ASSUMPTION and becomes a failure only after the A/B of #443 calibrated it (ADR-0146).
 KEY_FAIL_ON_THRESHOLD = "braunschweig.plan_check.fail_on_threshold"
@@ -194,11 +195,12 @@ def leg_tour_frozen(activities: list) -> list:
 
 def _empty_block() -> dict:
     return {"n_persons": 0, "n_legs": 0, "n_plans_late": 0, "n_plans_arrival_late": 0, "n_plans_non_monotonic": 0,
+            "n_plans_non_monotonic_without_trav_time": 0,
             "n_walk_legs_over": 0, "n_bicycle_legs_over": 0, "n_legs_over_duration": 0,
             "n_pt_trips": 0, "n_pt_as_walk": 0, "n_pt_as_walk_attr_without_walk": 0,
             "pt_as_walk_by_hour": {},
             "pt_as_walk_by_distance_band": dict.fromkeys(PT_AS_WALK_DISTANCE_BAND_LABELS, 0), "n_pt_as_walk_long": 0,
-            "non_monotonic_by_step_band": dict.fromkeys(NON_MONOTONIC_STEP_BAND_LABELS, 0),
+            "non_monotonic_by_lateness_band": dict.fromkeys(NON_MONOTONIC_LATENESS_BAND_LABELS, 0),
             "n_plans_non_monotonic_large": 0}
 
 
@@ -208,6 +210,31 @@ def _band_label(value: float, edges: tuple, labels: tuple) -> str:
         if value < edge:
             return label
     return labels[-1]
+
+
+def planned_lateness_s(person: PersonPlan) -> tuple:
+    """The planned lateness of a plan and whether a leg lacked ``trav_time`` (counted as 0 s, a lower bound).
+
+    The agent leaves activity 0 at its end time and reaches activity i at the departure from i-1 plus the leg's
+    travel time. MATSim ends an activity whose end time has passed at once, so it leaves i at the later of arrival
+    and end time (at arrival when i has no end time: zero dwell). The lateness is the largest ``arrival - end
+    time`` (at least 0) over the activities with an end time; the last activity only receives an arrival.
+    """
+    lateness_s, without_trav_time, departure_s = 0.0, False, None
+    for index, (_, end, _, _) in enumerate(person.activities):
+        if index == 0:
+            arrival_s = end
+        else:
+            travel = person.legs[index - 1][1] if index - 1 < len(person.legs) else None
+            without_trav_time = without_trav_time or travel is None
+            arrival_s = None if departure_s is None else departure_s + (travel or 0.0)
+            if end is not None and arrival_s is not None:
+                lateness_s = max(lateness_s, arrival_s - end)
+        if end is None:
+            departure_s = arrival_s
+        else:
+            departure_s = end if arrival_s is None else max(arrival_s, end)
+    return lateness_s, without_trav_time
 
 
 def split_trips(activities: list, n_legs: int) -> list:
@@ -229,7 +256,7 @@ def split_trips(activities: list, n_legs: int) -> list:
 
 def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bicycle_max_distance_m: float,
               leg_max_duration_s: float, pt_as_walk_bound_min_distance_m: float,
-              non_monotonic_bound_min_step_s: float) -> dict:
+              non_monotonic_bound_min_lateness_s: float) -> dict:
     """Count plan and leg defects per subpopulation and per class (frozen / in_region).
 
     ``n_plans_late`` counts plans with an activity END time after the simulated day. ``n_plans_arrival_late``
@@ -249,10 +276,14 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
     distance (origin of its first leg to destination of its last leg, as the walk-leg check measures): it is counted
     in ``pt_as_walk_by_distance_band`` (report only) and, when strictly above ``pt_as_walk_bound_min_distance_m``,
     in ``n_pt_as_walk_long``; ``share_pt_as_walk_long`` = ``n_pt_as_walk_long / n_pt_trips`` is the bounded share
-    (ADR-0188). Likewise a non-monotonic plan gets its backward step (the largest drop of an activity end time
-    below the latest end time before it, so chained small drops add up) counted in ``non_monotonic_by_step_band`` (report only) and, when strictly above
-    ``non_monotonic_bound_min_step_s``, in ``n_plans_non_monotonic_large``; ``share_plans_non_monotonic_large`` =
-    ``n_plans_non_monotonic_large / n_persons`` is the bounded share. The totals stay reported. A jar without the
+    (ADR-0188). Likewise a non-monotonic plan gets its planned lateness: the plan is walked forward (leave activity
+    0 at its end time; arrive at activity i at the departure from i-1 plus the leg's ``trav_time``; leave i at the
+    later of arrival and end time, at arrival when i has no end), and the lateness is the largest ``max(0, arrival
+    - end time)`` over the activities with an end time. It is counted in ``non_monotonic_by_lateness_band`` (report
+    only) and, when strictly above ``non_monotonic_bound_min_lateness_s``, in ``n_plans_non_monotonic_large``;
+    ``share_plans_non_monotonic_large`` = ``n_plans_non_monotonic_large / n_persons`` is the bounded share. A leg
+    without ``trav_time`` counts as 0 s (the lateness is a lower bound); such plans are counted in
+    ``n_plans_non_monotonic_without_trav_time`` (report only). The totals stay reported. A jar without the
     stamp makes ``n_pt_as_walk`` read 0 whatever the router did: ``require_walk_fallback_stamp`` guards that in
     ``run``. ``n_legs_with_routing_mode`` and ``n_pt_or_stamped_legs`` tell ``_log_summary`` when ``n_pt_trips`` is meaningless (no leg carries a
     ``routingMode`` although pt or stamped legs exist).
@@ -278,18 +309,19 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
             if last_departure is not None and last_travel is not None \
                     and last_departure + last_travel > simulation_end_s:
                 block["n_plans_arrival_late"] += 1
-        # The step is the largest drop of an end time below the latest end seen before it (ADR-0188), so chained
-        # small backward pairs add up; a plan with no drop has no step and is monotonic.
-        backward_step_s, latest_end_s = None, None
+        # Non-monotonic: some end time is earlier than an earlier one (ADR-0188).
+        latest_end_s, non_monotonic = None, False
         for end in ends:
             if latest_end_s is not None and end < latest_end_s:
-                backward_step_s = max(backward_step_s or 0.0, latest_end_s - end)
+                non_monotonic = True
             latest_end_s = end if latest_end_s is None else max(latest_end_s, end)
-        if backward_step_s is not None:
+        if non_monotonic:
             block["n_plans_non_monotonic"] += 1
-            block["non_monotonic_by_step_band"][_band_label(
-                backward_step_s, NON_MONOTONIC_STEP_BAND_EDGES_S, NON_MONOTONIC_STEP_BAND_LABELS)] += 1
-            if backward_step_s > non_monotonic_bound_min_step_s:
+            lateness_s, without_trav_time = planned_lateness_s(person)
+            block["n_plans_non_monotonic_without_trav_time"] += without_trav_time
+            block["non_monotonic_by_lateness_band"][_band_label(
+                lateness_s, NON_MONOTONIC_LATENESS_BAND_EDGES_S, NON_MONOTONIC_LATENESS_BAND_LABELS)] += 1
+            if lateness_s > non_monotonic_bound_min_lateness_s:
                 block["n_plans_non_monotonic_large"] += 1
         for index, (mode, travel, walk_fallback_from, routing_mode) in enumerate(person.legs):
             leg_block = sub[FROZEN if frozen_legs[index] else IN_REGION]
@@ -350,7 +382,7 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
             "thresholds": {"walk_max_distance_m": walk_max_distance_m, "bicycle_max_distance_m": bicycle_max_distance_m,
                            "leg_max_duration_s": leg_max_duration_s,
                            "pt_as_walk_bound_min_distance_m": pt_as_walk_bound_min_distance_m,
-                           "non_monotonic_bound_min_step_s": non_monotonic_bound_min_step_s},
+                           "non_monotonic_bound_min_lateness_s": non_monotonic_bound_min_lateness_s},
             "subpopulations": blocks}
 
 
@@ -407,8 +439,8 @@ def find_threshold_violations(summary: dict, max_frozen_defect_share: float,
                               max_frozen_pt_as_walk_share: float) -> list:
     """Names of the failure-rule shares of the frozen resident block that exceed their allowed share.
 
-    ``share_plans_late`` and ``share_plans_non_monotonic_large`` (share of persons; only plans with a backward
-    step over ``non_monotonic_bound_min_step_s``) are compared with ``max_frozen_defect_share``;
+    ``share_plans_late`` and ``share_plans_non_monotonic_large`` (share of persons; only plans with a planned
+    lateness over ``non_monotonic_bound_min_lateness_s``) are compared with ``max_frozen_defect_share``;
     ``share_pt_as_walk_long`` (share of pt-intended trips; only pt-as-walk trips over
     ``pt_as_walk_bound_min_distance_m``) with ``max_frozen_pt_as_walk_share``. The all-trip / all-plan totals
     (``share_pt_as_walk``, ``share_plans_non_monotonic``) are reported but not bounded.
@@ -422,7 +454,8 @@ def check_thresholds(summary: dict, max_frozen_defect_share: float, max_frozen_p
                      fail_on_threshold: bool) -> list:
     """Apply the failure rule to the frozen resident plans and return the violated share names.
 
-    Above an allowed share (late plans, plans with a large backward step, long pt-as-walk trips; ADR-0188) the
+    Above an allowed share (late plans, plans with a planned lateness over the bound, long pt-as-walk trips;
+    ADR-0188) the
     check raises when ``fail_on_threshold`` is true, and logs at ERROR (naming the shares) and continues otherwise:
     the threshold is an ASSUMPTION until the A/B of #443 calibrated it, so an uncalibrated threshold must not abort a run (ADR-0146). The ERROR is never silent.
     """
@@ -450,22 +483,24 @@ def _format_by_hour(by_hour: dict) -> dict:
 def _log_summary(summary: dict) -> None:
     for subpopulation, classes in summary["subpopulations"].items():
         for name, block in classes.items():
+            # Only the frozen resident block is judged by the failure rule (check_thresholds).
+            bounded = ", bounded" if (subpopulation, name) == (RESIDENTS, FROZEN) else ""
             logger.info("%s %s/%s: persons %d, activity end after the day %d (%.2f%%), last arrival after the day "
-                        "%d (%.2f%%), non-monotonic %d (%.2f%%), step over %.0f s %d (%.2f%%, bounded), by step %s, "
+                        "%d (%.2f%%), non-monotonic %d (%.2f%%), planned lateness over %.0f s %d (%.2f%%%s), by lateness %s, "
                         "walk legs over %d, "
                         "bicycle legs over %d, legs over duration %d of %d, pt as walk %d of %d pt-intended trips "
-                        "(%.2f%%), over %.0f m %d (%.2f%%, bounded), by distance %s, walk-fallback attribute "
+                        "(%.2f%%), over %.0f m %d (%.2f%%%s), by distance %s, walk-fallback attribute "
                         "without walk %d, pt as walk by departure hour %s", _LOG_TAG, subpopulation, name,
                         block["n_persons"], block["n_plans_late"], 100.0 * block["share_plans_late"],
                         block["n_plans_arrival_late"], 100.0 * block["share_plans_arrival_late"],
                         block["n_plans_non_monotonic"], 100.0 * block["share_plans_non_monotonic"],
-                        summary["thresholds"]["non_monotonic_bound_min_step_s"],
+                        summary["thresholds"]["non_monotonic_bound_min_lateness_s"],
                         block["n_plans_non_monotonic_large"], 100.0 * block["share_plans_non_monotonic_large"],
-                        block["non_monotonic_by_step_band"],
+                        bounded, block["non_monotonic_by_lateness_band"],
                         block["n_walk_legs_over"], block["n_bicycle_legs_over"], block["n_legs_over_duration"],
                         block["n_legs"], block["n_pt_as_walk"], block["n_pt_trips"], 100.0 * block["share_pt_as_walk"],
                         summary["thresholds"]["pt_as_walk_bound_min_distance_m"],
-                        block["n_pt_as_walk_long"], 100.0 * block["share_pt_as_walk_long"],
+                        block["n_pt_as_walk_long"], 100.0 * block["share_pt_as_walk_long"], bounded,
                         block["pt_as_walk_by_distance_band"], block["n_pt_as_walk_attr_without_walk"],
                         _format_by_hour(block["pt_as_walk_by_hour"]))
     if summary["n_pt_or_stamped_legs"] and not summary["n_legs_with_routing_mode"]:
@@ -529,7 +564,7 @@ def run(context, config_name: str) -> dict:
                         bicycle_max_distance_m=float(context.config(KEY_BICYCLE_MAX_DISTANCE_M)),
                         leg_max_duration_s=float(context.config(KEY_LEG_MAX_DURATION_S)),
                         pt_as_walk_bound_min_distance_m=float(context.config(KEY_PT_AS_WALK_BOUND_MIN_DISTANCE_M)),
-                        non_monotonic_bound_min_step_s=float(context.config(KEY_NON_MONOTONIC_BOUND_MIN_STEP_S)))
+                        non_monotonic_bound_min_lateness_s=float(context.config(KEY_NON_MONOTONIC_BOUND_MIN_LATENESS_S)))
     _log_summary(summary)
     max_frozen_defect_share = float(context.config(KEY_MAX_FROZEN_DEFECT_SHARE))
     max_frozen_pt_as_walk_share = float(context.config(KEY_MAX_FROZEN_PT_AS_WALK_SHARE))
