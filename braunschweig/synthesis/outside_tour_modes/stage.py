@@ -251,13 +251,14 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
     unknown_donor = outside & ~donor_modes.isin(_srv_table_module.MODES).to_numpy()
     pt_report = None
     if pt_check is not None:
-        # After the re-moding, so a drawn pt substitute is checked too; portal tours keep their own check.
+        # After the re-moding, so a drawn pt substitute is checked too; tours with a portal leg are checked as well
+        # (ADR-0187), with the per-leg portal flag deciding how an unserved tour is resolved.
         portal_tour = pd.Series(portal_leg).groupby([ordered["person_id"].to_numpy(), tour_ids]).transform("any")
         resolution = _pt_connections.resolve_pt_tours(
             trips=remoded, tour_ids=tour_ids, outside=outside, portal_tour=portal_tour.to_numpy(dtype=bool),
             endpoints=endpoints, availability=_portal_modes.mode_availability(persons), probe=pt_check.probe,
             shift_window_s=pt_check.shift_window_s, shift_step_s=pt_check.shift_step_s, bound_s=pt_check.bound_s,
-            last_resort=last_resort, day_end_shift=pt_check.day_end_shift)
+            last_resort=last_resort, day_end_shift=pt_check.day_end_shift, portal_leg=portal_leg)
         remoded = resolution.trips
         pt_report = resolution.report
         _pt_connections.log_report(pt_report, warn_share=pt_check.warn_share)
