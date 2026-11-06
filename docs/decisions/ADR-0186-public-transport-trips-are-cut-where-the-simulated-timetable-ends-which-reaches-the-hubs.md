@@ -1,7 +1,8 @@
 # ADR-0186 · 2026-11-06 · Public-transport trips are cut where the simulated timetable ends, which reaches the configured hubs
 
-- **Status:** accepted (implemented; the portal replay and the 1 % prepare A/B are owed as the run manifests named
-  at the end; until they exist no effect size is claimed here)
+- **Status:** accepted (implemented; the portal check is replayed on the cache of `prod100_20261031` against main,
+  run manifest `docs/runs/i574-portal-replay-prod100-2026-11-06.yml`; the population cut is measured by the next
+  production run)
 - **Numbering:** ADR-0186 because 0183-0185 are taken on main and the sibling branches (checked across all local
   and remote refs and the shared session notes on 2026-11-06; claim in the notes of the #572-#576 sequence).
 - **Issue:** #574 (closes the "excursion" family behind B2 cause 2 and B3 mechanism A of the findings on
@@ -129,7 +130,8 @@
   the planned departure did not include; an agent whose planned wait is shorter boards the next service.
 - #487: fewer trips are split, so more `walkFallbackFrom` stamps survive; the 1 % A/B counts them, the defect of
   the marker on split trips is not addressed here.
-- Status: the portal replay on the cache of `prod100_20261031` and the 1 % prepare A/B are owed as the run
-  manifests `docs/runs/i574-portal-replay-prod100-<date>.yml` and `docs/runs/i574-prepare-ab-1pct-<date>.yml`
-  (model output, no validation claim; pending until the files exist); the 100 % effect is measured by the next
-  production run (#22).
+- Status: the portal check is replayed on the cache of `prod100_20261031` against main in
+  `docs/runs/i574-portal-replay-prod100-2026-11-06.yml` (model output, no validation claim; the numbers live there).
+  The population cut (decisions 2-4: the collapsed trips, the walks among them, the road spines to the hubs) is not
+  replayed: the owner decided on 2026-11-06 against a 1 % prepare A/B, so it is measured by the next production run
+  (#22) through `<prefix>transit_cut_summary.csv` and the plan check.

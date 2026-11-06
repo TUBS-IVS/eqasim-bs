@@ -1,0 +1,78 @@
+id: i574-portal-replay-prod100-2026-11-06
+date: '2026-11-06'
+repository:
+  commit: 09f69090
+  branch: fix/i574-portal-check-cut-supply
+  notes: >-
+    Two arms on felix, each a clean checkout fetched from a git bundle: the branch at 09f69090 (~/i574_replay/eqasim-bs)
+    with the fork jar built from eqasim-java-bs fix/i574-kept-stops-transit-cut at 92ca068
+    (~/i574_replay/eqasim-java-bs, braunschweig-2.3.1.jar, `mvn -Pstandalone -pl braunschweig --also-make package`),
+    and origin/main at 89225253 (the same code without #574, ~/i574_replay/eqasim-bs-main) with the run's own jar
+    (matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f). Both arms contain #570, #572 and #573 (ADR-0183 to
+    ADR-0185), so the difference between the arms is #574 alone.
+configuration:
+  config: configs/base_bs.yml of each arm with the run overlay of prod100_20261031 (felix:~/prod100_20261031/run.yml)
+  notes: >-
+    The branch arm uses the production values of braunschweig.cutter.transit_cut_mode and
+    braunschweig.cutter.transit_hub_stop_names pinned in its configs/base_bs.yml (ADR-0186); the main arm has no
+    such keys.
+sampling:
+  rate: 1.0
+  scope: >-
+    The portal stage of prod100_20261031 (53,323 stays, 11,930 of them pt) on the cached inputs the run's own stage
+    loaded; in the branch arm also the new stage braunschweig.data.transit.cut_schedule on the run's cached pre-cut
+    timetable (matsim.scenario.supply.processed__4dce13c683a6cc2017996fd709fa2c6e).
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. configure and execute of the stages ran outside synpp with the stand-in context of
+    i574_portal_replay.py (the pattern of the #573 replay): parents are the run's cached stems named in the run log
+    (logs/run_20261031T071313.log) before the portal stage finished; matsim.runtime.eqasim is overridden by the jar
+    of each arm; the cut-timetable stage (branch arm only) is replayed first and handed to the portal stage. Prepare
+    and the scenario cutter did not run, so the population cut of ADR-0186 decisions 2-4 is not measured here; the
+    owner decided on 2026-11-06 that no 1 % prepare A/B is needed (its effect is measured by the next production
+    run, #22).
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Completed on 2026-11-06 (branch arm 13:50-14:05, main arm 14:06-14:27). Replay-only stand-in in both arms: the
+    run's trips predate the home-office splice fix (e8678cb4), so 21,978 of 3,437,976 trips carried no
+    is_synthetic_closure flag; the script takes it from the donor trip_key suffix _closure (2,297 of them), as the
+    #570 replay did. A replay of one stage on production inputs, NOT a validation: no observed data is involved.
+    A first start of the branch arm used the tests jar of the build by mistake (the CLI class was not on its class
+    path) and stopped at the cut stage; a second start stopped at the missing closure flags; both outputs were
+    discarded.
+source: >-
+  felix:~/scratch_i574/out_m1 (branch arm) and ~/scratch_i574/out_base (main arm), scratch. Committed in
+  docs/runs/artifacts/i574-portal-replay-prod100-2026-11-06/: i574_portal_replay.py (sha256
+  73973da60aca9a4f3d64e4c8906dcf5c72090f2865f06715ff9fc25e89f3fd59), replay_log_i574.txt and replay_log_main.txt
+  (log copies, because *.log is git-ignored), portal_trips_report_i574.json and portal_trips_report_main.json (the
+  stage reports), summary_i574.json and summary_main.json, hub_stops.csv (the resolved hub facilities of the cut).
+environment: 'server (felix, hostname matsim), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, pandas 1.5.3), Java /home/felix/tools/jdk-25.0.3+9'
+validation:
+- metric: cut timetable of the branch arm (RunTransitScheduleCutter on the run's pre-cut timetable, seven hub names)
+  reference: 'the pre-cut timetable of the run; model output, NOT observed data'
+  result: >-
+    Stops 31,022 -> 10,436 (inside the extent 10,165, hub stops 31, other outside 240 between the extent and a hub);
+    routes kept 4,667 of 13,849 (33.7 %); the seven hub names resolve to 55 stop facilities, 31 of them on a kept
+    route (listed with inside_extent in hub_stops.csv).
+  artifact: docs/runs/artifacts/i574-portal-replay-prod100-2026-11-06/replay_log_i574.txt
+- metric: rejections of the first outbound router call of the pt gate check by reason
+  reference: 'the main arm (same inputs, same code apart from #574); model output, NOT observed data'
+  result: >-
+    main: 49,136 tasks, connected 24,028 (48.9 %), rejected outside stop 23,790, no route 1,071, late arrival 247.
+    branch: 51,678 tasks (the candidate set changed with the exits and hubs), connected 45,381 (87.8 %), rejected
+    outside stop 0, no route 5,210, walk distance 5, late arrival 1,082. The reason "outside stop" is 0 in every
+    router call of the branch arm.
+  artifact: docs/runs/artifacts/i574-portal-replay-prod100-2026-11-06/replay_log_main.txt
+- metric: first gate choice of the 11,930 pt stays, and the outcome after the resolution chain
+  reference: 'the main arm; model output, NOT observed data'
+  result: >-
+    First choice main -> branch: gate_found 8,905 -> 10,370 (74.6 % -> 86.9 %), no_connection 2,373 -> 1,109,
+    no_gate_served 652 -> 451; 2,966 stays choose a hub station as their gate. After the chain: gate_found 8,869 ->
+    10,353, tour_to_car 2,229 -> 1,125, tour_to_car_passenger 314 -> 173, tour_to_car_passenger_lift 229 -> 91,
+    departure_shifted 289 -> 188; stays by mode pt 9,158 -> 10,541, car 33,532 -> 32,428, car_passenger 9,462 ->
+    9,183 (all 53,323 stays). Substitutions for no_pt_connection 2,772 -> 1,389.
+  artifact: docs/runs/artifacts/i574-portal-replay-prod100-2026-11-06/portal_trips_report_i574.json
