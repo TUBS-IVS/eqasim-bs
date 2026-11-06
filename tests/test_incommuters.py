@@ -1232,9 +1232,10 @@ def test_promoted_agents_that_draw_no_station_are_counted_and_stay_car(caplog):
     assert report["n_promotion_without_station"] == report["n_promoted_unconnected"] == report["n_promoted"]
     assert report["promotion_actions"]["unconnected"] == report["n_promoted"]
     assert _promoted_ids(frames, pt_ids) == []
-    # M4: the promotion-action log line, with the 5 % no-station WARN
+    # M4: the promotion-action log line of the stage (not the balancer's rate line), with the 5 % no-station WARN
     lines = [r for r in caplog.records
-             if "pt re-balancing:" in r.getMessage() and "promotion attempts" in r.getMessage()]
+             if r.name == "braunschweig.synthesis.incommuters" and "pt re-balancing:" in r.getMessage()
+             and "promotion attempts" in r.getMessage()]
     assert len(lines) == 1 and lines[0].levelno == logging.WARNING
     assert "without a station" in lines[0].getMessage() and "router probe calls" in lines[0].getMessage()
 
