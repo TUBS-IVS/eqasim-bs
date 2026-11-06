@@ -7,7 +7,9 @@
 - **Numbering:** ADR-0152 because 0150 is taken by `chore/ci-is-the-test-gate` (PR #477) and 0151 by the
   sibling work-package-A branch; re-checked across local and remote branches on 2026-10-22.
 - **Issue:** #465. **Supersedes:** the rail-exit-station part of ADR-0141 (the gate of a pt stay).
-  The rest of ADR-0141 stands. **Relates to:** ADR-0145 (outside-tour modes), ADR-0146.
+  The rest of ADR-0141 stands. **Relates to:** ADR-0145 (outside-tour modes), ADR-0146. **Amended by:**
+  ADR-0184 (candidate order), ADR-0186 (the exits and the connection check come from the timetable cut to the
+  extent, which reaches the configured hubs).
 
 ## Context
 

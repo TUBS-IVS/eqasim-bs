@@ -181,6 +181,14 @@
    "braunschweig.synthesis.student_incommuters"
   ],
   [
+   "braunschweig.data.transit.cut_schedule",
+   "braunschweig.synthesis.portal_trips.stage"
+  ],
+  [
+   "braunschweig.data.transit.cut_schedule",
+   "matsim.simulation.prepare"
+  ],
+  [
    "braunschweig.data.verbindungen.margins",
    "braunschweig.analysis.verbindungen_validation"
   ],
@@ -506,6 +514,10 @@
   ],
   [
    "data.spatial.municipalities",
+   "braunschweig.data.transit.cut_schedule"
+  ],
+  [
+   "data.spatial.municipalities",
    "braunschweig.data.verbindungen.zones"
   ],
   [
@@ -618,6 +630,10 @@
   ],
   [
    "matsim.runtime.eqasim",
+   "braunschweig.data.transit.cut_schedule"
+  ],
+  [
+   "matsim.runtime.eqasim",
    "braunschweig.synthesis.incommuters"
   ],
   [
@@ -667,6 +683,10 @@
   [
    "matsim.runtime.git",
    "matsim.scenario.supply.processed"
+  ],
+  [
+   "matsim.runtime.java",
+   "braunschweig.data.transit.cut_schedule"
   ],
   [
    "matsim.runtime.java",
@@ -803,6 +823,10 @@
   [
    "matsim.scenario.supply.processed",
    "braunschweig.data.cordon_pt_gates"
+  ],
+  [
+   "matsim.scenario.supply.processed",
+   "braunschweig.data.transit.cut_schedule"
   ],
   [
    "matsim.scenario.supply.processed",
@@ -1254,6 +1278,7 @@
   "braunschweig.data.schools.facilities",
   "braunschweig.data.schools.kita_facilities",
   "braunschweig.data.schools.university_facilities",
+  "braunschweig.data.transit.cut_schedule",
   "braunschweig.data.verbindungen.margins",
   "braunschweig.data.verbindungen.work_od",
   "braunschweig.data.verbindungen.zones",

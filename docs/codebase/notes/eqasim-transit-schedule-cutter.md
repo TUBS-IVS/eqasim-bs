@@ -26,7 +26,25 @@ in its core tests:
    departure was moved earlier by the first kept stop's offset, so a route that enters the extent
    served all its kept stops early by its travel time outside. Departures now keep their times.
 
+## The anchor rule and the hubs (ADR-0186, eqasim-bs#574)
+
+Since ADR-0186 the cutter keeps a route from its first to its last ANCHOR, where an anchor is a stop inside the
+extent polygon or one of the configured hub stations (`TransitHubStops`, exact stop names from
+`braunschweig.cutter.transit_hub_stop_names`); a route without any stop inside the extent is dropped. With an
+empty hub list the result is the former `[first inside, last inside]` cut, pinned by `TestTransitScheduleCutter`.
+`keptStopRanges` is the dry pass of the same reduction (the kept index range per route, no mutation); the
+population cutter uses it to decide where a pt trip leaves the kept timetable
+([eqasim-transit-trip-cutter](eqasim-transit-trip-cutter.md)), and `RunTransitScheduleCutter` (the CLI the
+synthesis stage `braunschweig.data.transit.cut_schedule` calls) applies the same cutter to a schedule file and
+fails when its dry pass and its cut disagree. prepare verifies after `RunScenarioCutter` that both cuts hold the
+same routes and stop sequences.
+
 ## Rules for maintainers
+
+- The anchor rule and the dry pass share one private reduction in `TransitScheduleCutter`; never add a second
+  reduction (a Python mirror included): the synthesis, prepare and the population cutter must see one kept
+  timetable. A change to the rule needs `TestTransitScheduleCutter` (the dry-pass equality test included) and the
+  guard in `braunschweig.matsim.simulation.prepare` to stay green.
 
 - A cut route may start with a non-zero stop offset. That is intended: offsets and departure times
   stay as in the uncut schedule, so the time at every kept stop is unchanged. Do not "normalise"

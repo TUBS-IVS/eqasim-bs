@@ -5,6 +5,8 @@
   stands, including its rejection of rail-only gates: buses stay gate candidates.
 - **Numbering:** ADR-0184 because ADR-0183 is taken by PR #571 (issue #570); checked across local and remote
   branches on 2026-11-05.
+- **Amended by:** ADR-0186 (the exit stops are read from the timetable cut to the extent and the configured hub
+  stations are candidates that count as served; the cap and the order of the filters stand).
 
 ## Context
 

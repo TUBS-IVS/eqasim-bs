@@ -59,15 +59,20 @@ other keys: `external_point_distance_tolerance` (0, 1), `mode_substitution_warn_
   the cordon stages it requires, into a DAG that has none (the dag extraction of `simple_ipf_open` failed this
   way). All `configs/fixtures/*` configs set the flag to false; production
   (`configs/base_bs.yml`) is the only config with the flag on.
-- **The gate point must lie inside the cut extent.** The cutter runs unchanged after the portal stage; a stay
-  outside the extent would be cut again and the stay would be corrupted. Road gates use the inside end node of the
-  gate link (`gates.gate_inside_points`, which raises listing every gate with no endpoint inside); pt gates are
-  exit stops inside the extent from which a route of any transit mode continues to a stop outside it
-  (`gates.exit_stops`, chosen by `gates.choose_pt_gates` against the timetable and the router, ADR-0152, which
-  supersedes the rail-exit-station rule of ADR-0141),
-  derived from the supply timetable, not from `braunschweig.data.cordon_pt_gates`. Pinned by
-  `tests/test_portal_trips_gates.py::test_gate_inside_points_takes_the_link_endpoint_inside_the_polygon` and
-  `...::test_gate_inside_points_raises_when_no_endpoint_is_inside`.
+- **A road gate point must lie inside the cut extent; a pt gate is a stop of the cut timetable.** Road gates use
+  the inside end node of the gate link (`gates.gate_inside_points`, which raises listing every gate with no
+  endpoint inside), because the cutter would cut a car stay outside the extent again. pt gates (ADR-0186, which
+  amends ADR-0152 and supersedes the rail-exit-station rule of ADR-0141) are the last kept stops of the
+  timetable cut to the extent by eqasim's own cutter (stage `braunschweig.data.transit.cut_schedule`) plus the
+  configured hub stations (`is_hub` rows of `gates.exit_stops`, always directional and served); a hub lies
+  outside the extent on purpose: the cutter turns the stay into `outside` and the ride to the hub is simulated.
+  `gates.choose_pt_gates` checks the candidates against the pre-cut timetable (direction, departures of the
+  non-hub exits) and the batch router on the cut timetable (`inside_stop_ids` = its stops; a routed stop outside
+  it raises). Not derived from `braunschweig.data.cordon_pt_gates`. Pinned by
+  `tests/test_portal_trips_gates.py::test_gate_inside_points_takes_the_link_endpoint_inside_the_polygon`,
+  `...::test_gate_inside_points_raises_when_no_endpoint_is_inside`,
+  `...::test_exit_stops_reads_the_last_kept_stop_of_each_cut_route_and_its_pre_cut_successor` and
+  `...::test_choose_pt_gates_counts_a_hub_as_served_and_asks_the_router`.
 - **`outside` is a fixed, anchored purpose of the vendored problem splitter** (`FIXED_PURPOSES` and
   `ANCHORED_PURPOSES` in `synthesis/population/spatial/secondary/problems.py`). Any new producer of `outside`
   trips must also hand `(person_id, activity_index) -> geometry` anchors to the chain solver, otherwise the
