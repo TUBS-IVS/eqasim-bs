@@ -33,7 +33,8 @@ description: >-
   (4) Since ADR-0189 (#575), right before the check, braunschweig.matsim.simulation.frozen_pt_walk_lift turns the
   long pt-as-walk trips of frozen resident tours (the plan check's own definition) into car_passenger lifts
   (braunschweig.frozen_pt_walk_lift.enabled). The lifted share is judged against max_frozen_pt_as_walk_share and
-  logged at ERROR above it; the plan check's bounded share then measures only what the lift left (rule and
+  logged at ERROR above it (raising under fail_on_threshold, as the check does); the plan check's bounded share then
+  measures only what the lift left (rule and
   measured effect in the ADR and its run manifest).
 stages:
 - braunschweig.analysis.analysis_suite
