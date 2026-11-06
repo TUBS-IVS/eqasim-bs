@@ -295,6 +295,9 @@ def configure(context):
     context.config(plan_check.KEY_LEG_MAX_DURATION_S, plan_check.DEFAULT_LEG_MAX_DURATION_S)
     context.config(plan_check.KEY_MAX_FROZEN_DEFECT_SHARE, plan_check.DEFAULT_MAX_FROZEN_DEFECT_SHARE)
     context.config(plan_check.KEY_MAX_FROZEN_PT_AS_WALK_SHARE, plan_check.DEFAULT_MAX_FROZEN_PT_AS_WALK_SHARE)
+    context.config(plan_check.KEY_PT_AS_WALK_BOUND_MIN_DISTANCE_M, plan_check.DEFAULT_PT_AS_WALK_BOUND_MIN_DISTANCE_M)
+    context.config(plan_check.KEY_NON_MONOTONIC_BOUND_MIN_LATENESS_S,
+                   plan_check.DEFAULT_NON_MONOTONIC_BOUND_MIN_LATENESS_S)
     context.config(plan_check.KEY_FAIL_ON_THRESHOLD, plan_check.DEFAULT_FAIL_ON_THRESHOLD)
 
     # Every agent chooses its modes once before iteration 0 (#542, ADR-0178): the helper declares its switch and
