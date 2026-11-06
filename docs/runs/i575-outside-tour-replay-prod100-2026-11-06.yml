@@ -44,7 +44,9 @@ source: >-
   b9394d8dd67498b0d5f9bfec65b489f561f60a326e118ca58731d52764b52353) and its output group3_output.txt,
   i575_group3_frozen_cause.py (sha256 9573b09a655fd2d23e9ef2ea665440a7a94a7ddd05dbce2786a1a82d185f0a5f) with its per-leg
   table group3_frozen_cause.csv.gz, i575_group3_summary.py (sha256
-  089cb03842c1ec7deb8c74f314ad01e88446245d29b38372c1bdf4bc95f0b635), and both outputs in group3_frozen_cause_output.txt.
+  d8440f26ba64ee21394a032e67e38b7d2286b2de771448b4074a2cdc22799277; it reads the committed table by default; its first
+  version on felix, 089cb038..., read the scratch copy and printed the same lines), and both outputs in
+  group3_frozen_cause_output.txt.
 environment: 'server (felix, hostname matsim), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, pandas 1.5.3), Java /home/felix/tools/jdk-25.0.3+9'
 validation:
 - metric: home-based tours with pt legs that the outside-tour timetable check covers, and their outcome, by portal class

@@ -1,10 +1,20 @@
+"""#575 group-3 summary: freeze cause per frozen leg from the per-leg table of i575_group3_frozen_cause.py.
+
+Usage: python i575_group3_summary.py [path to group3_frozen_cause.csv.gz]
+(default: the committed table next to this script).
+"""
+import sys
+from pathlib import Path
+
 import pandas as pd
 
-f = pd.read_csv("/home/felix/scratch_i575/group3_cause/group3_frozen_cause.csv.gz")
+source = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).with_name("group3_frozen_cause.csv.gz")
+f = pd.read_csv(source)
 fr = f[f["frozen"].eq(True)].copy()
 
 
 def cause(s):
+    """The routing modes of the trips that exit the extent in the leg's tour, as one label."""
     parts = [p for p in str(s).split(";") if p]
     exits = {p.split(">")[0] for p in parts if p.endswith(">outside")}
     if not parts:

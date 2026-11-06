@@ -57,8 +57,9 @@ qualifies, plausibility is judged in the cell of the longest leg only (counted).
 - **Portal legs are judged in the group `all` at the top band.** A portal stay is a leg that touches an
   `outside` activity at a gate; its distance is not a trip length the table's bands describe, so the top band of
   `all` is the cell. A change to this is a decision and belongs in an ADR.
-- **One mode per tour.** The substitute goes to every leg of the tour, which keeps vehicle continuity for the
-  mode choice that follows.
+- **One mode per tour for the draw.** The substitute goes to every leg of the tour, which keeps vehicle continuity
+  for the mode choice that follows. The one exception is the pt check's rail-gate lift (ADR-0187): it turns single
+  unconnected pt legs into `car_passenger`, a mode without a vehicle of the person, so continuity still holds.
 - **A portal tour keeps the class of its gate.** The portal stage puts pt stays at rail exit stations and every
   other mode at road gates (ADR-0141), so a tour with a portal leg (column `portal_leg`, imported from
   `portal_trips/rewrite.py`) is restricted to pt when its portal legs are pt, and loses pt otherwise. The
