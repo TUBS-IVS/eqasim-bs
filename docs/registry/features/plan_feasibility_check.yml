@@ -17,7 +17,7 @@ description: >-
   touch an outside activity, the tours the discrete mode choice never re-chooses (OutsideFilter, ADR-0145);
   in_region is informational. The check writes plan_check.json into the stage directory, asserts that
   qsim.endTime of the written config equals the bound, and, when the share of late plans or of plans with a
-  backward step over non_monotonic_bound_min_step_s (ADR-0188; smaller steps and pt-as-walk trips up to
+  planned lateness over non_monotonic_bound_min_lateness_s (ADR-0188; smaller lateness and pt-as-walk trips up to
   pt_as_walk_bound_min_distance_m are reported in bands) of the FROZEN residents exceeds braunschweig.plan_check.max_frozen_defect_share, logs at ERROR and continues
   (braunschweig.plan_check.fail_on_threshold false, the production value until the A/B has calibrated the
   threshold) or raises (true). Freight is reported, never failed on. (3) The stuck-agent KPI of ADR-0146
@@ -48,7 +48,7 @@ production:
   - braunschweig.plan_check.max_frozen_defect_share
   - braunschweig.plan_check.max_frozen_pt_as_walk_share
   - braunschweig.plan_check.pt_as_walk_bound_min_distance_m
-  - braunschweig.plan_check.non_monotonic_bound_min_step_s
+  - braunschweig.plan_check.non_monotonic_bound_min_lateness_s
 introduced:
   issue: 443
   pr: null
@@ -100,7 +100,7 @@ evidence:
       (ADR-0146): walk 5,000 m anchored in the SrV table of ADR-0145 (below 1 % beyond 5 km except the group
       other at 5-10 km, 1.05 %), bicycle 30,000 m (thin SrV evidence: one unweighted work trip at 30-45 km),
       leg duration 10,800 s, max_frozen_defect_share 0.005, and the bound thresholds of ADR-0188
-      (pt_as_walk_bound_min_distance_m, non_monotonic_bound_min_step_s), BOUND_RESAMPLE_WARN_RATE 0.01, the resident stuck
+      (pt_as_walk_bound_min_distance_m, non_monotonic_bound_min_lateness_s), BOUND_RESAMPLE_WARN_RATE 0.01, the resident stuck
       warn share analysis_stuck_warn_share 0.01. The check counts defects in the simulation input and the
       stuck analysis counts stuck agents in its output; neither compares anything with observed behaviour.
 validation:

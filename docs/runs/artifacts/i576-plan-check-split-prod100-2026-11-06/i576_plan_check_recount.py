@@ -54,7 +54,7 @@ def main() -> int:
         bicycle_max_distance_m=float(thresholds["bicycle_max_distance_m"]),
         leg_max_duration_s=float(thresholds["leg_max_duration_s"]),
         pt_as_walk_bound_min_distance_m=check.DEFAULT_PT_AS_WALK_BOUND_MIN_DISTANCE_M,
-        non_monotonic_bound_min_step_s=check.DEFAULT_NON_MONOTONIC_BOUND_MIN_STEP_S)
+        non_monotonic_bound_min_lateness_s=check.DEFAULT_NON_MONOTONIC_BOUND_MIN_LATENESS_S)
     elapsed_s = time.time() - started
     max_defect = float(run_report["threshold"]["max_frozen_defect_share"])
     max_pt_as_walk = float(run_report["threshold"]["max_frozen_pt_as_walk_share"])
@@ -78,9 +78,9 @@ def main() -> int:
         for name, block in classes.items():
             lines.append(
                 f"{subpopulation}/{name}: persons {block['n_persons']}, non-monotonic {block['n_plans_non_monotonic']} "
-                f"({100 * block['share_plans_non_monotonic']:.2f}%), step > {check.DEFAULT_NON_MONOTONIC_BOUND_MIN_STEP_S:.0f} s "
+                f"({100 * block['share_plans_non_monotonic']:.2f}%), planned lateness > {check.DEFAULT_NON_MONOTONIC_BOUND_MIN_LATENESS_S:.0f} s "
                 f"{block['n_plans_non_monotonic_large']} ({100 * block['share_plans_non_monotonic_large']:.2f}%), "
-                f"by step {block['non_monotonic_by_step_band']}; pt-intended trips {block['n_pt_trips']}, pt as walk "
+                f"by lateness {block['non_monotonic_by_lateness_band']}, without trav_time {block['n_plans_non_monotonic_without_trav_time']}; pt-intended trips {block['n_pt_trips']}, pt as walk "
                 f"{block['n_pt_as_walk']} ({100 * block['share_pt_as_walk']:.2f}%), over "
                 f"{check.DEFAULT_PT_AS_WALK_BOUND_MIN_DISTANCE_M:.0f} m {block['n_pt_as_walk_long']} "
                 f"({100 * block['share_pt_as_walk_long']:.2f}%), by distance {block['pt_as_walk_by_distance_band']}")

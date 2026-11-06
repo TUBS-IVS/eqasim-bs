@@ -486,8 +486,8 @@ def _log_summary(summary: dict) -> None:
             # Only the frozen resident block is judged by the failure rule (check_thresholds).
             bounded = ", bounded" if (subpopulation, name) == (RESIDENTS, FROZEN) else ""
             logger.info("%s %s/%s: persons %d, activity end after the day %d (%.2f%%), last arrival after the day "
-                        "%d (%.2f%%), non-monotonic %d (%.2f%%), planned lateness over %.0f s %d (%.2f%%%s), by lateness %s, "
-                        "walk legs over %d, "
+                        "%d (%.2f%%), non-monotonic %d (%.2f%%), planned lateness over %.0f s %d (%.2f%%%s), "
+                        "by lateness %s, lateness with a leg without trav_time (lower bound) %d, walk legs over %d, "
                         "bicycle legs over %d, legs over duration %d of %d, pt as walk %d of %d pt-intended trips "
                         "(%.2f%%), over %.0f m %d (%.2f%%%s), by distance %s, walk-fallback attribute "
                         "without walk %d, pt as walk by departure hour %s", _LOG_TAG, subpopulation, name,
@@ -497,7 +497,7 @@ def _log_summary(summary: dict) -> None:
                         summary["thresholds"]["non_monotonic_bound_min_lateness_s"],
                         block["n_plans_non_monotonic_large"], 100.0 * block["share_plans_non_monotonic_large"],
                         bounded, block["non_monotonic_by_lateness_band"],
-                        block["n_walk_legs_over"], block["n_bicycle_legs_over"], block["n_legs_over_duration"],
+                        block["n_plans_non_monotonic_without_trav_time"], block["n_walk_legs_over"], block["n_bicycle_legs_over"], block["n_legs_over_duration"],
                         block["n_legs"], block["n_pt_as_walk"], block["n_pt_trips"], 100.0 * block["share_pt_as_walk"],
                         summary["thresholds"]["pt_as_walk_bound_min_distance_m"],
                         block["n_pt_as_walk_long"], 100.0 * block["share_pt_as_walk_long"], bounded,

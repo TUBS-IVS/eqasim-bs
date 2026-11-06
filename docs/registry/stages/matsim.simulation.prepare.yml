@@ -144,9 +144,9 @@ notes: >-
   qsim.endTime of the written config that differs from
   braunschweig.popsim.plan_validation.MAX_PLAN_TIME_SECONDS (30 h), on a config without
   plans.inputPlansFile or with a population path that does not exist, and, only when fail_on_threshold is
-  true, when the share of late plans, or of plans with a backward step over
-  .non_monotonic_bound_min_step_s (900 s, ASSUMPTION, ADR-0188), of the frozen residents exceeds
-  max_frozen_defect_share (false: ERROR log, the stage continues). Smaller steps and pt-as-walk trips up to
+  true, when the share of late plans, or of non-monotonic plans with a planned lateness over
+  .non_monotonic_bound_min_lateness_s (900 s, ASSUMPTION, ADR-0188), of the frozen residents exceeds
+  max_frozen_defect_share (false: ERROR log, the stage continues). Smaller lateness and pt-as-walk trips up to
   .pt_as_walk_bound_min_distance_m (5000 m, ASSUMPTION, ADR-0188) are reported in bands, not bounded. The check also counts the legs stamped
   walkFallbackFrom (a pt leg the router replaced by walk) and, since ADR-0178, the walk-only pt trips of the mode
   choice's routing (rule in plan_check.summarise): n_pt_as_walk, pt_as_walk_by_hour and share_pt_as_walk (over the pt-intended trips, routingMode pt) per class
