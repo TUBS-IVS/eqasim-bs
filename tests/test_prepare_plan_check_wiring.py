@@ -31,6 +31,30 @@ def test_configure_declares_the_plan_check_keys():
     assert "matsim.runtime.eqasim" in context.stages
 
 
+def test_configure_declares_the_transit_cut_keys_and_stage_only_under_cordon():
+    from braunschweig.data.transit import cut_schedule as CS
+    context = _RecordingContext({"cordon_enabled": True, "freight_enabled": False})
+    prepare.configure(context)
+    assert context.calls[CS.KEY_TRANSIT_CUT_MODE] == CS.DEFAULT_TRANSIT_CUT_MODE
+    assert context.calls[CS.KEY_HUB_STOP_NAMES] == CS.DEFAULT_HUB_STOP_NAMES
+    assert "braunschweig.data.transit.cut_schedule" in context.stages
+    off = _RecordingContext({"cordon_enabled": False, "freight_enabled": False})
+    prepare.configure(off)
+    assert CS.KEY_TRANSIT_CUT_MODE not in off.calls
+    assert "braunschweig.data.transit.cut_schedule" not in off.stages
+
+
+def test_configure_rejects_an_unknown_mode_and_hubs_with_extent_mode():
+    import pytest
+    from braunschweig.data.transit import cut_schedule as CS
+    base = {"cordon_enabled": True, "freight_enabled": False}
+    with pytest.raises(ValueError):
+        prepare.configure(_RecordingContext({**base, CS.KEY_TRANSIT_CUT_MODE: "bogus"}))
+    with pytest.raises(ValueError, match="hubs"):
+        prepare.configure(_RecordingContext({**base, CS.KEY_TRANSIT_CUT_MODE: "extent",
+                                             CS.KEY_HUB_STOP_NAMES: ["Hannover Hbf"]}))
+
+
 def test_plan_check_module_is_part_of_the_prepare_token():
     assert C in prepare._HELPER_MODULES
 
