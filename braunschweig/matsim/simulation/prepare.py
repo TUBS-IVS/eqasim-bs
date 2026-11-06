@@ -53,7 +53,8 @@ GTFS_STAGE = "matsim.scenario.supply.gtfs"
 #: feasibility check as the last step of ``execute`` (#443). ``initial_mode_choice`` runs eqasim's standalone
 #: mode choice on the final population before iteration 0 (#542). ``cordon_subpopulation`` writes the in-commuters'
 #: fixed-mode strategy blocks into the final config (eqasim-bs#566). ``cut_schedule`` owns the cut mode and hub keys
-#: and the hub-name file that prepare passes to the cutter (#574).
+#: and the hub-name file that prepare passes to the cutter (#574). ``transit_schedule`` parses both cut timetables in
+#: ``_verify_cut_timetable_matches_stage``, so its reader decides whether the two cuts count as equal.
 _HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes, tariff_export,
                    config_modules, plan_check, initial_mode_choice, cordon_subpopulation, cut_schedule, transit_schedule)
 
@@ -250,12 +251,10 @@ def configure(context):
         # The scenario cut and the portal check's cut timetable use ONE mode, hub list and extent (#574, ADR-0186);
         # the stage is declared here for the guard that compares the two cuts after the cutter.
         context.stage("braunschweig.data.transit.cut_schedule")
-        mode = cut_schedule.validate_mode(context.config(
-            cut_schedule.KEY_TRANSIT_CUT_MODE, cut_schedule.DEFAULT_TRANSIT_CUT_MODE))
-        hub_names = context.config(cut_schedule.KEY_HUB_STOP_NAMES, cut_schedule.DEFAULT_HUB_STOP_NAMES)
-        if hub_names and mode == "extent":
-            raise ValueError(f"{cut_schedule.KEY_HUB_STOP_NAMES} is set but {cut_schedule.KEY_TRANSIT_CUT_MODE} is "
-                             "'extent': hubs only apply in 'kept-stops' mode (the two would silently disagree)")
+        context.config(cut_schedule.KEY_HUB_STOP_NAMES, cut_schedule.DEFAULT_HUB_STOP_NAMES)
+        cut_schedule.validate_mode_and_hubs(
+            context.config(cut_schedule.KEY_TRANSIT_CUT_MODE, cut_schedule.DEFAULT_TRANSIT_CUT_MODE),
+            cut_schedule.hub_stop_names(context))
         # The in-commuters keep their synthesised mode: KeepLastSelected + ReRoute per in-commuter subpopulation
         # (eqasim-bs#566, ADR-0182); checked here so a bad weight fails before the synthesis runs.
         cordon_subpopulation.require_reroute_weight(context.config(
@@ -692,8 +691,8 @@ def _cut_to_cordon(context):
 
     prefix = context.config("output_prefix")
     threads = context.config("matsim_threads") or context.config("processes")
-    mode = cut_schedule.validate_mode(context.config(cut_schedule.KEY_TRANSIT_CUT_MODE))
-    hub_names = list(context.config(cut_schedule.KEY_HUB_STOP_NAMES) or [])
+    hub_names = cut_schedule.hub_stop_names(context)
+    mode = cut_schedule.validate_mode_and_hubs(context.config(cut_schedule.KEY_TRANSIT_CUT_MODE), hub_names)
 
     df_muni = context.stage("data.spatial.municipalities")
     fraction = float(context.config("cordon_network_buffer_fraction"))
@@ -751,24 +750,46 @@ def _verify_cut_timetable_matches_stage(context, cut_config_prefix):
 def _read_transit_cut_summary(path) -> dict:
     """Read ``<prefix>transit_cut_summary.csv`` of the cutter (``kept-stops`` mode) and log its rates (#574, R12).
 
-    Every collapsed pt case is logged as ``walked x/n``; a walked share above ``COLLAPSED_WALK_WARN_SHARE`` of one
-    case warns (the kept timetable then replaces many pt trips by walking). Raises ``ValueError`` for a missing metric.
+    The file is ``metric,value`` with exactly the metrics of ``TRANSIT_CUT_SUMMARY_METRICS`` and integer values;
+    a wrong header, a missing, unknown or duplicate metric or a non-integer value raises ``ValueError``. Every
+    count is logged as a rate; a walked share above ``COLLAPSED_WALK_WARN_SHARE`` of one collapsed case warns (the
+    kept timetable then replaces many pt trips by walking).
     """
+    lines = Path(path).read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "metric,value":
+        raise ValueError("%s: the header must be exactly 'metric,value', got %r" % (path, lines[0] if lines else ""))
     values = {}
-    with open(path, encoding="utf-8", newline="") as handle:
-        for line in handle.read().splitlines()[1:]:
-            if line.strip():
-                metric, _, value = line.partition(",")
-                values[metric.strip()] = int(value)
+    duplicates = []
+    for line in lines[1:]:
+        if not line.strip():
+            continue
+        metric, _, text = line.partition(",")
+        metric = metric.strip()
+        try:
+            value = int(text)
+        except ValueError:
+            raise ValueError("%s: the value of metric %r is not an integer: %r" % (path, metric, text)) from None
+        if metric in values:
+            duplicates.append(metric)
+        values[metric] = value
+    unknown = sorted(set(values) - set(TRANSIT_CUT_SUMMARY_METRICS))
+    if unknown or duplicates:
+        raise ValueError("%s: unknown metrics %s, duplicate metrics %s" % (path, unknown, sorted(set(duplicates))))
     missing = [metric for metric in TRANSIT_CUT_SUMMARY_METRICS if metric not in values]
     if missing:
         raise ValueError("%s lacks the metrics %s" % (path, missing))
-    stops = values["stops_kept_inside"] + values["stops_kept_hub"] + values["stops_kept_other_outside"]
+    kept = values["stops_kept_inside"] + values["stops_kept_hub"] + values["stops_kept_other_outside"]
     routes = values["routes_kept"] + values["routes_dropped"]
-    log.info("[cut-timetable] stops kept %d (inside %d, hub %d, other outside %d); routes kept %d/%d (%.1f %%); "
-             "pt trips with crossings %d", stops, values["stops_kept_inside"], values["stops_kept_hub"],
-             values["stops_kept_other_outside"], values["routes_kept"], routes,
-             100.0 * values["routes_kept"] / max(routes, 1), values["pt_trips_with_crossings"])
+    for label, metric in (("inside", "stops_kept_inside"), ("hub", "stops_kept_hub"),
+                          ("other outside", "stops_kept_other_outside")):
+        log.info("[cut-timetable] stops kept %s %d/%d (%.1f %%)", label, values[metric], kept,
+                 100.0 * values[metric] / max(kept, 1))
+    log.info("[cut-timetable] routes kept %d/%d (%.1f %%)", values["routes_kept"], routes,
+             100.0 * values["routes_kept"] / max(routes, 1))
+    crossings = values["pt_trips_with_crossings"]
+    collapsed = sum(values["collapsed_" + case] for case in TRANSIT_CUT_COLLAPSED_CASES)
+    log.info("[cut-timetable] collapsed trips %d/%d (%.1f %%) of the pt trips with crossings", collapsed, crossings,
+             100.0 * collapsed / max(crossings, 1))
     for case in TRANSIT_CUT_COLLAPSED_CASES:
         total, walked = values["collapsed_" + case], values["collapsed_%s_walked" % case]
         share = walked / total if total else 0.0

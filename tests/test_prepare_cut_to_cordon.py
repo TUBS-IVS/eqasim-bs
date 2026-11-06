@@ -1,6 +1,7 @@
 """prepare's cordon cut uses the cut-timetable mode, hubs and extent, verifies both cuts agree, reads the summary (#574)."""
 import gzip
 import logging
+from pathlib import Path
 
 import geopandas as gpd
 import pytest
@@ -72,14 +73,18 @@ def cutter_calls(monkeypatch):
             _write_summary(context.root / "prepare" / "bs_transit_cut_summary.csv", _summary_values())
 
     monkeypatch.setattr(prepare.eqasim, "run", fake_run)
-    monkeypatch.setattr(prepare, "_verify_cut_timetable_matches_stage", lambda context, prefix: None)
+    # Spies: the guard and the summary reader are called by _cut_to_cordon (their own behaviour is tested below).
+    monkeypatch.setattr(prepare, "_verify_cut_timetable_matches_stage",
+                        lambda context, prefix: calls.append(("guard", prefix)))
+    monkeypatch.setattr(prepare, "_read_transit_cut_summary", lambda path: calls.append(("summary", Path(path).name)))
     return calls
 
 
 def test_kept_stops_mode_writes_the_hub_file_and_passes_mode_hubs_and_the_shared_extent(tmp_path, cutter_calls):
     context = _Context(tmp_path, {})
     assert prepare._cut_to_cordon(context) == "bs_config.xml"
-    ((class_name, arguments),) = cutter_calls
+    (class_name, arguments), *after = cutter_calls
+    assert after == [("guard", "bs_"), ("summary", "bs_transit_cut_summary.csv")]  # guard first, then the summary
     assert class_name == "org.eqasim.core.scenario.cutter.RunScenarioCutter"
     option = lambda name: arguments[arguments.index(name) + 1]
     assert option("--transit-cut-mode") == "kept-stops"
@@ -93,7 +98,8 @@ def test_kept_stops_mode_writes_the_hub_file_and_passes_mode_hubs_and_the_shared
 def test_extent_mode_passes_no_hub_option_and_writes_no_file(tmp_path, cutter_calls):
     context = _Context(tmp_path, {CS.KEY_TRANSIT_CUT_MODE: "extent", CS.KEY_HUB_STOP_NAMES: []})
     prepare._cut_to_cordon(context)
-    ((_, arguments),) = cutter_calls
+    (_, arguments), *after = cutter_calls
+    assert after == [("guard", "bs_")]  # extent mode: the guard runs, no summary is required
     assert arguments[arguments.index("--transit-cut-mode") + 1] == "extent"
     assert "--transit-hub-stop-names-path" not in arguments
     assert not (tmp_path / "prepare" / CS.HUB_NAMES_FILE_NAME).exists()
@@ -114,16 +120,28 @@ def test_guard_passes_when_both_cuts_have_the_same_routes_and_stop_sequences(tmp
     prepare._verify_cut_timetable_matches_stage(_guard_context(tmp_path, routes, dict(routes)), "bs_")
 
 
-@pytest.mark.parametrize("cut_routes", [
-    {("L1", "R1"): ["a", "b", "x"], ("L2", "R2"): ["b", "c"]},   # one route ends on another stop
-    {("L1", "R1"): ["a", "b", "c"]},                              # one route missing
+@pytest.mark.parametrize("cut_routes, counts, differing, not_differing", [
+    # one route ends on another stop
+    ({("L1", "R1"): ["a", "b", "x"], ("L2", "R2"): ["b", "c"]}, "has 2 routes, the stage's 2", "('L1', 'R1')",
+     "('L2', 'R2')"),
+    # one route missing from prepare's cut
+    ({("L1", "R1"): ["a", "b", "c"]}, "has 1 routes, the stage's 2", "('L2', 'R2')", "('L1', 'R1')"),
 ])
-def test_guard_raises_naming_the_differing_route(tmp_path, cut_routes):
+def test_guard_raises_naming_the_differing_route(tmp_path, cut_routes, counts, differing, not_differing):
     stage_routes = {("L1", "R1"): ["a", "b", "c"], ("L2", "R2"): ["b", "c"]}
     context = _guard_context(tmp_path, stage_routes, cut_routes)
-    with pytest.raises(RuntimeError, match=r"1 route") as error:
+    with pytest.raises(RuntimeError) as error:
         prepare._verify_cut_timetable_matches_stage(context, "bs_")
-    assert "L1" in str(error.value) or "L2" in str(error.value)
+    message = str(error.value)
+    assert counts in message and "1 routes differ" in message
+    assert differing in message and not_differing not in message
+
+
+def test_guard_logs_the_route_and_stop_counts_on_equality(tmp_path, caplog):
+    routes = {("L1", "R1"): ["a", "b", "c"], ("L2", "R2"): ["b", "c"]}
+    with caplog.at_level(logging.INFO, logger=prepare.log.name):
+        prepare._verify_cut_timetable_matches_stage(_guard_context(tmp_path, routes, dict(routes)), "bs_")
+    assert "2 routes, 3 stops" in caplog.text
 
 
 def _write_summary(path, values):
@@ -157,6 +175,32 @@ def test_summary_reader_warns_when_the_walked_share_exceeds_the_threshold(tmp_pa
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1 and "through" in warnings[0]
     assert prepare.COLLAPSED_WALK_WARN_SHARE == 0.05
+
+
+def test_summary_reader_logs_the_stop_classes_and_collapsed_trips_as_rates(tmp_path, caplog):
+    path = tmp_path / "bs_transit_cut_summary.csv"
+    _write_summary(path, _summary_values(collapsed_through=50))
+    with caplog.at_level(logging.INFO, logger=prepare.log.name):
+        prepare._read_transit_cut_summary(path)
+    for text in ("stops kept inside 80/100 (80.0 %)", "stops kept hub 7/100 (7.0 %)",
+                 "stops kept other outside 13/100 (13.0 %)", "routes kept 50/100 (50.0 %)",
+                 "collapsed trips 150/1000 (15.0 %)"):
+        assert text in caplog.text
+
+
+@pytest.mark.parametrize("edit, message", [
+    (lambda text: text.replace("metric,value", "name,count", 1), "header"),
+    (lambda text: text + "invented_metric,1\n", "invented_metric"),
+    (lambda text: text + "routes_kept,3\n", "routes_kept"),
+    (lambda text: text.replace("routes_kept,50", "routes_kept,fifty"), "routes_kept"),
+])
+def test_summary_reader_rejects_a_malformed_file(tmp_path, edit, message):
+    path = tmp_path / "bs_transit_cut_summary.csv"
+    _write_summary(path, _summary_values())
+    path.write_text(edit(path.read_text(encoding="utf-8")), encoding="utf-8")
+    with pytest.raises(ValueError, match=message) as error:
+        prepare._read_transit_cut_summary(path)
+    assert path.name in str(error.value)
 
 
 def test_summary_reader_raises_naming_a_missing_metric(tmp_path):

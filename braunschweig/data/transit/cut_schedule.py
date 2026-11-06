@@ -60,6 +60,32 @@ def validate_mode(value) -> str:
     return value
 
 
+def hub_stop_names(context) -> list:
+    """The configured hub stop names as a list: ONE reader for this stage and for ``prepare`` (#574).
+
+    A YAML null reads as ``[]`` (no hubs); a bare string (a YAML scalar instead of a list, which ``list()`` would
+    split into characters) or an entry that is not a non-empty string raises ``ValueError``.
+    """
+    value = context.config(KEY_HUB_STOP_NAMES)  # declared with its default by the stage's configure()
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(f"{KEY_HUB_STOP_NAMES} must be a list of stop names, got {value!r}")
+    invalid = [name for name in value if not isinstance(name, str) or not name.strip()]
+    if invalid:
+        raise ValueError(f"{KEY_HUB_STOP_NAMES} entries must be non-empty strings, got {invalid!r}")
+    return list(value)
+
+
+def validate_mode_and_hubs(mode, hub_names) -> str:
+    """Validate the mode and its hubs together (one rule for this stage and ``prepare``); return the mode."""
+    validate_mode(mode)  # an explicit YAML null is rejected here, not later in execute
+    if hub_names and mode == "extent":
+        raise ValueError(f"{KEY_HUB_STOP_NAMES} is set but {KEY_TRANSIT_CUT_MODE} is 'extent': hubs only apply in "
+                         "'kept-stops' mode (the two would silently disagree)")
+    return mode
+
+
 def write_hub_names(path: str, names) -> str:
     """Write the hub stop names, one per line, UTF-8 (a file so umlauts survive the Windows code page)."""
     with open(path, "w", encoding="utf-8", newline="\n") as handle:
@@ -106,16 +132,13 @@ def configure(context):
     # eqasim.run -> java.run reads java_binary, java_memory and the hang-watchdog keys from this stage's context.
     java.configure(context)
     mode = context.config(KEY_TRANSIT_CUT_MODE, DEFAULT_TRANSIT_CUT_MODE)
-    hub_names = context.config(KEY_HUB_STOP_NAMES, DEFAULT_HUB_STOP_NAMES)
-    validate_mode(mode)  # an explicit YAML null is rejected here, not later in execute
-    if hub_names and mode == "extent":
-        raise ValueError(f"{KEY_HUB_STOP_NAMES} is set but {KEY_TRANSIT_CUT_MODE} is 'extent': hubs only apply in "
-                         "'kept-stops' mode (the two would silently disagree)")
+    context.config(KEY_HUB_STOP_NAMES, DEFAULT_HUB_STOP_NAMES)
+    validate_mode_and_hubs(mode, hub_stop_names(context))
 
 
 def execute(context):
     mode = validate_mode(context.config(KEY_TRANSIT_CUT_MODE))
-    hub_names = list(context.config(KEY_HUB_STOP_NAMES))
+    hub_names = hub_stop_names(context)
     df_muni = context.stage("data.spatial.municipalities")
     polygon = _cordon.cordon_polygon_from_fraction(df_muni, float(context.config("cordon_network_buffer_fraction")))
     stage_dir = context.path()

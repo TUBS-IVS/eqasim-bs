@@ -97,7 +97,7 @@ class _Recording:
         self.calls, self.stages, self._values = {}, [], values or {}
 
     def config(self, key, default=None, **kwargs):
-        self.calls[key] = default
+        self.calls.setdefault(key, default)  # the first call declares the key and its default
         return self._values.get(key, default)
 
     def stage(self, name, **kwargs):
@@ -120,6 +120,19 @@ def test_configure_declares_the_inputs_and_keys():
     with pytest.raises(ValueError, match="extent"):
         stage.configure(_Recording({stage.KEY_HUB_STOP_NAMES: HUBS}))
     stage.configure(_Recording({stage.KEY_TRANSIT_CUT_MODE: "kept-stops", stage.KEY_HUB_STOP_NAMES: HUBS}))
+
+
+def test_hub_stop_names_reads_null_as_empty_and_rejects_malformed_values():
+    read = lambda value: stage.hub_stop_names(_Recording({stage.KEY_HUB_STOP_NAMES: value}))
+    assert read(None) == [] and stage.hub_stop_names(_Recording()) == []   # an explicit YAML null, and absent
+    assert read(["Hannover Hbf", "Uelzen"]) == ["Hannover Hbf", "Uelzen"]
+    for bad in ("Hannover Hbf", ["Hannover Hbf", ""], ["Hannover Hbf", None], [3]):
+        with pytest.raises(ValueError, match="hub_stop_names"):
+            read(bad)
+    # the null list reaches execute as [] as well, instead of a TypeError there
+    with pytest.raises(ValueError, match="extent"):
+        stage.validate_mode_and_hubs("extent", ["Hannover Hbf"])
+    assert stage.validate_mode_and_hubs("kept-stops", []) == "kept-stops"
 
 
 def test_execute_cuts_with_the_cli_and_returns_the_kept_set(tmp_path, fake_java):

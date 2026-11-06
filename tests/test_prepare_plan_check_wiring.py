@@ -9,7 +9,7 @@ class _RecordingContext:
         self.calls, self.stages, self._values = {}, [], values or {}
 
     def config(self, key, default=None, **kwargs):
-        self.calls[key] = default
+        self.calls.setdefault(key, default)  # the first call declares the key and its default
         return self._values.get(key, default)
 
     def stage(self, name, **kwargs):
