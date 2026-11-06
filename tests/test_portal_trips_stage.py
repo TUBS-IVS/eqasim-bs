@@ -510,6 +510,8 @@ def test_a_connected_pt_stay_takes_the_primary_path_without_a_warning(caplog):
     assert report["no_connection_actions"] == {"gate_found": 1}
     assert report["pt_gate_reasons"] == {"gate_found": 1}
     assert report["n_departure_shifted_s_median"] is None and report["n_kept_fallback_all_stops"] == 0
+    # The #572 rates of the first gate choice reach the per-run report (the fixture's gate is a top-n stop).
+    assert report["n_pt_gate_beyond_top_n"] == 0 and report["n_pt_no_served_within_cap"] == 0
     assert calls, "the primary path must have asked the router"
     assert not [r for r in caplog.records if r.levelname == "WARNING" and "without a timetable-aware gate" in r.getMessage()]
     assert any("primary path: gate_found 1" in r.getMessage() for r in caplog.records)

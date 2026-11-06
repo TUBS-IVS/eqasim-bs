@@ -49,7 +49,11 @@
 - More pt portal stays keep a timetable-aware gate; fewer go through the no-connection chain, so the mode mix
   of portal stays and the gate distribution change by design. No committed observed reference exists for either.
 - The service check now runs over all directional stops within the cap instead of five per stay (more timetable
-  lookups, no extra router tasks).
+  lookups). The router bound per stay is unchanged (`gate_candidates`), but the total number of router tasks grows:
+  stays whose five nearest stops had fewer than five served ones now send more tasks, so the portal stage runs
+  longer (replay figures in the run manifest below).
+- The two new counts of the first gate choice are in the stage report (`portal_trips_report.json`,
+  `n_pt_gate_beyond_top_n`, `n_pt_no_served_within_cap`), not only in the log.
 - The columns `n_in_direction` and `n_served` of `PT_GATE_COLUMNS` now count stops within the cap before the
   `gate_candidates` cut (docstring of `choose_pt_gates`).
 

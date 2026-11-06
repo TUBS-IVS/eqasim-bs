@@ -78,7 +78,7 @@ _EMPTY_STAY_REPORT = {
     "return_share_out_median": None,
     "n_stay_persons_missing_license": 0, "n_unknown_donor_mode": 0, "unknown_donor_modes": {},
     "n_pt_stays": 0, "pt_gate_reasons": {}, "no_connection_actions": {}, "n_departure_shifted_s_median": None,
-    "n_kept_fallback_all_stops": 0,
+    "n_kept_fallback_all_stops": 0, "n_pt_gate_beyond_top_n": 0, "n_pt_no_served_within_cap": 0,
     "n_soft_mode_stays_beyond_distance": 0, "n_soft_mode_stays_to_pt": 0,
     "n_soft_mode_stays_left_to_outside_tour_modes": 0,
 }
@@ -480,7 +480,8 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
             fallback_gates=pd.DataFrame(columns=["gate_id", "x", "y"]), **chain)
         return out_modes, out_trips, out_gates, {
             "n_pt_stays": 0, "pt_gate_reasons": {}, "no_connection_actions": {},
-            "n_departure_shifted_s_median": None, "n_kept_fallback_all_stops": 0}
+            "n_departure_shifted_s_median": None, "n_kept_fallback_all_stops": 0,
+            "n_pt_gate_beyond_top_n": 0, "n_pt_no_served_within_cap": 0}
     if router is None:
         raise ValueError(f"{_LOG_TAG} {n_pt} pt stays need the batch pt router but none was given")
     exits = _gates.exit_stops(schedule, cordon_polygon, pt_gate_modes, crs=crs)
@@ -538,7 +539,10 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
         "n_pt_stays": int(n_pt), "pt_gate_reasons": _counts(pt_gates["reason"]),
         "no_connection_actions": _counts(actions),
         "n_departure_shifted_s_median": float(np.median(shift_s[shifted])) if shifted.any() else None,
-        "n_kept_fallback_all_stops": int(n_kept_all_stops)}
+        "n_kept_fallback_all_stops": int(n_kept_all_stops),
+        # The #572 rates of the FIRST gate choice (planned times); the no-connection probes are not counted here.
+        "n_pt_gate_beyond_top_n": int(pt_gates.attrs["n_gate_beyond_top_n"]),
+        "n_pt_no_served_within_cap": int(pt_gates.attrs["n_no_served_within_cap"])}
 
 
 def _counts(values) -> dict:

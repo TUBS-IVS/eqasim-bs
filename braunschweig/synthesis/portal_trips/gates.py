@@ -310,7 +310,9 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
     #572 effects, the stays whose gate lies beyond the ``n_candidates`` smallest-detour directional stops
     (rank among ALL directional stops, cap ignored) and the stays with no served stop within the cap although
     one is served beyond it (the service of the beyond-cap stops is only evaluated for stays without a served
-    stop within the cap). Neither has a warn threshold: no share bound is defined for them.
+    stop within the cap). Neither has a warn threshold: no share bound is defined for them. Both counts are
+    also returned in ``frame.attrs`` (``n_gate_beyond_top_n``, ``n_no_served_within_cap``) so that the stage
+    can put them in its per-run report.
     """
     from braunschweig.synthesis.portal_trips.timing import _split_share
 
@@ -429,6 +431,8 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
     logger.info("[portal_trips.gates] pt gates: gate beyond the %d smallest-detour directional stops %d/%d (%.1f%%), "
                 "no served stop within the extra-detour cap of %.0f m although one is served beyond it %d/%d (%.1f%%)",
                 n_candidates, beyond_top_n, n, beyond_top_n * share, max_extra_detour_m, capped, n, capped * share)
+    frame.attrs["n_gate_beyond_top_n"] = int(beyond_top_n)
+    frame.attrs["n_no_served_within_cap"] = int(capped)
     return frame
 
 

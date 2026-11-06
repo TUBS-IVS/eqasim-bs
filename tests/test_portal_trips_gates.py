@@ -322,7 +322,9 @@ def test_choose_pt_gates_logs_the_rates_of_the_gate_beyond_the_top_n_and_of_the_
         caplog, build, cap_m, expect_beyond_top, expect_capped):
     connected = _connected_both_ways("station", "far")
     with caplog.at_level("INFO", logger=g.logger.name):
-        _choose(None, connected, schedule=build(), n_candidates=5, max_extra_detour_m=cap_m)
+        frame, _ = _choose(None, connected, schedule=build(), n_candidates=5, max_extra_detour_m=cap_m)
+    # The counts also travel with the frame so that the stage can put them in its per-run report.
+    assert frame.attrs == {"n_gate_beyond_top_n": expect_beyond_top, "n_no_served_within_cap": expect_capped}
     text = " | ".join(r.getMessage() for r in caplog.records)
     assert f"gate beyond the 5 smallest-detour directional stops {expect_beyond_top}/1" in text
     assert (f"no served stop within the extra-detour cap of {cap_m:.0f} m although one is served beyond it "
