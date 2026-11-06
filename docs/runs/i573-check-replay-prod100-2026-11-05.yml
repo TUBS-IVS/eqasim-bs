@@ -66,3 +66,12 @@ validation:
     233, tour_to_car_passenger_lift 138 -> 146. kept_no_connection stays 0 everywhere. Each loss of connections is
     taken up by the chain in full.
   artifact: docs/runs/artifacts/i573-check-replay-prod100-2026-11-05/replay_log.txt
+- metric: final pt count of the in-commuters after the timetable re-balancing (#467), out of 68,630
+  reference: 'the run''s own re-balancing line (prod100_20261031 log); the target is the mode balancer''s, labelled Mikrozensus in the stage log (source not re-checked here); model output, NOT observed data'
+  result: >-
+    Target 10,345 (15.1 %). After the timetable check 9,166 -> 8,669; promoted 1,315 -> 1,952 (of them without a
+    connection 153 -> 321); final 10,328 -> 10,300 (15.0 % both, residual 17 -> 45, within the 1 % tolerance). The
+    bound therefore changes which in-commuters ride pt, not their share; the to_car counts above are an
+    intermediate step, not the final modal split. Students, portal stays and outside tours have no such
+    re-balancing in this replay's logs.
+  artifact: docs/runs/artifacts/i573-check-replay-prod100-2026-11-05/replay_log.txt
