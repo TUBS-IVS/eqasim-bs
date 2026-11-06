@@ -145,8 +145,8 @@ def test_execute_runs_the_frozen_pt_walk_lift_after_the_cut_and_before_the_plan_
     monkeypatch.setattr(prepare, "_add_incommuter_strategies", lambda context, result: None)
     monkeypatch.setattr(prepare, "_summarise_final_schedule", lambda context: {})
     monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result, summary: None)
-    monkeypatch.setattr(lift, "run", lambda context, result: seen.append(("lift", result)))
-    monkeypatch.setattr(C, "run", lambda context, result: seen.append(("check", result)))
+    monkeypatch.setattr(lift, "run", lambda context, result: seen.append(("lift", result)) or {"share_lifted": 0.5})
+    monkeypatch.setattr(C, "run", lambda context, result, lift_report=None: seen.append(("check", result, lift_report)))
 
     class _Context:
         def __init__(self, enabled):
@@ -158,7 +158,7 @@ def test_execute_runs_the_frozen_pt_walk_lift_after_the_cut_and_before_the_plan_
             return self._values[key]
 
     assert prepare.execute(_Context(True)) == "cut_config.xml"
-    assert seen == ["cut", ("lift", "cut_config.xml"), ("check", "cut_config.xml")]
+    assert seen == ["cut", ("lift", "cut_config.xml"), ("check", "cut_config.xml", {"share_lifted": 0.5})]
     seen.clear()
     assert prepare.execute(_Context(False)) == "cut_config.xml"
-    assert seen == ["cut", ("check", "cut_config.xml")]
+    assert seen == ["cut", ("check", "cut_config.xml", None)]

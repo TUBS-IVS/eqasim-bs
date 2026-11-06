@@ -240,17 +240,14 @@ def test_run_replaces_the_population_and_a_failure_leaves_original_and_no_tempor
     assert report["n_lifted"] == 1 and (stage / "frozen_pt_walk_lift.json").exists()
     assert [leg.get("mode") for leg in _plan_elements(stage / "pop.xml.gz", "p") if leg.tag == "leg"][1] == "car_passenger"
 
-    # Above the bound: no raise with fail_on_threshold false, ValueError (report still written) when true.
+    # Above the bound the lift never raises (plan_check.run fails on it, with the other shares), whatever
+    # fail_on_threshold says: it reports bound_exceeded and still writes its report.
     for fail, name in ((False, "soft"), (True, "hard")):
         over = tmp_path / name
         over.mkdir()
         _stage_directory(over, _person("p", "stamp", 8000.0))
-        context = _RunContext(over, max_share=0.0, fail_on_threshold=fail)
-        if fail:
-            with pytest.raises(ValueError, match="fail_on_threshold"):
-                L.run(context, "config.xml")
-        else:
-            assert L.run(context, "config.xml")["bound_exceeded"]
+        over_report = L.run(_RunContext(over, max_share=0.0, fail_on_threshold=fail), "config.xml")
+        assert over_report["bound_exceeded"] is True and over_report["share_lifted"] == 1.0
         assert (over / "frozen_pt_walk_lift.json").exists()
 
     bad = tmp_path / "bad"

@@ -440,12 +440,17 @@ def execute(context):
 
     # Long pt-as-walk trips of frozen resident tours become car_passenger legs (eqasim-bs#575, ADR-0189): on the
     # FINAL population, before the check measures it.
+    lift_report = None
     if context.config(frozen_pt_walk_lift.KEY_ENABLED):
-        frozen_pt_walk_lift.run(context, result)
+        lift_report = frozen_pt_walk_lift.run(context, result)
 
     # The check reads the FINAL files (after the cut, the freight injection and the fare inputs).
     if context.config(plan_check.KEY_ENABLED):
-        plan_check.run(context, result)
+        # The lift never raises on its bound; the check records its share and fails with every other exceeded share.
+        if lift_report is None:
+            plan_check.run(context, result)
+        else:
+            plan_check.run(context, result, lift_report=lift_report)
 
     return result
 

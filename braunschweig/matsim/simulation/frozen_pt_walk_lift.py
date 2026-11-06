@@ -175,8 +175,8 @@ def lift_frozen_pt_walks(source_path, target_path, *, min_distance_m: float, max
                f"stamp {counts['n_lifted_stamped']}, routingMode only {counts['n_lifted_routing_mode_only']}; "
                f"lifted by distance {counts['lifted_by_distance_band']}")
     if exceeded:
-        # Logs at ERROR; ``run`` raises on top when ``plan_check.KEY_FAIL_ON_THRESHOLD`` is true, because the lifted
-        # trips leave the plan check's bounded share and it could no longer stop prepare on them.
+        # Logs at ERROR and never raises: the lifted trips leave the plan check's bounded share, so prepare hands this
+        # report to ``plan_check.run``, which records the share in plan_check.json and fails together with the others.
         logger.error("%s exceeds the bound %.2f%% of %s (the plan check's frozen pt-as-walk share): the router finds "
                      "no pt connection for many trips of tours the mode choice never re-chooses; the lifted trips "
                      "no longer count in the plan check's bounded share", message, 100.0 * max_share,
@@ -250,11 +250,4 @@ def run(context, result: str) -> dict:
             os.remove(temporary_path)
     with open(os.path.join(directory, REPORT_FILE_NAME), "w", encoding="utf-8") as handle:
         json.dump(report, handle, indent=2)
-    # Raise only after the report exists, so the evidence survives the failure.
-    if report["bound_exceeded"] and bool(context.config(plan_check.KEY_FAIL_ON_THRESHOLD)):
-        raise ValueError(
-            f"{_LOG_TAG} lifted share {100.0 * report['share_lifted']:.2f}% exceeds the bound "
-            f"{100.0 * report['max_share']:.2f}% ({plan_check.KEY_MAX_FROZEN_PT_AS_WALK_SHARE}) and "
-            f"{plan_check.KEY_FAIL_ON_THRESHOLD} is true; the plan check no longer sees these trips. See "
-            f"{os.path.join(directory, REPORT_FILE_NAME)}")
     return report

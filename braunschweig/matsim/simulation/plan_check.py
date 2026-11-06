@@ -103,6 +103,8 @@ NON_MONOTONIC_LATENESS_BAND_LABELS =("0_1min", "1_5min", "5_15min", "15_60min", 
 #: false -> above ``max_frozen_defect_share`` the check logs at ERROR and continues; true -> it raises. Default
 #: false: the threshold is an ASSUMPTION and becomes a failure only after the A/B of #443 calibrated it (ADR-0146).
 KEY_FAIL_ON_THRESHOLD = "braunschweig.plan_check.fail_on_threshold"
+#: Name in ``threshold.exceeded`` when the share lifted by ``frozen_pt_walk_lift`` is above the pt-as-walk bound.
+KEY_SHARE_LIFTED_FROZEN_PT_WALK = "share_lifted_frozen_pt_walk"
 DEFAULT_FAIL_ON_THRESHOLD = False
 
 
@@ -443,7 +445,7 @@ def _allowed_shares(max_frozen_defect_share: float, max_frozen_pt_as_walk_share:
 
 
 def find_threshold_violations(summary: dict, max_frozen_defect_share: float,
-                              max_frozen_pt_as_walk_share: float) -> list:
+                              max_frozen_pt_as_walk_share: float, lift_report: dict | None = None) -> list:
     """Names of the failure-rule shares of the frozen resident block that exceed their allowed share.
 
     ``share_plans_late`` and ``share_plans_non_monotonic_large`` (share of persons; only plans with a planned
@@ -451,14 +453,21 @@ def find_threshold_violations(summary: dict, max_frozen_defect_share: float,
     ``share_pt_as_walk_long`` (share of pt-intended trips; only pt-as-walk trips over
     ``pt_as_walk_bound_min_distance_m``) with ``max_frozen_pt_as_walk_share``. The all-trip / all-plan totals
     (``share_pt_as_walk``, ``share_plans_non_monotonic``) are reported but not bounded.
+
+    ``lift_report`` is the report of ``frozen_pt_walk_lift`` (None when the lift is off): the trips it lifted leave the
+    measured ``share_pt_as_walk_long``, so its ``share_lifted`` is compared with the same
+    ``max_frozen_pt_as_walk_share`` and, above it, ``KEY_SHARE_LIFTED_FROZEN_PT_WALK`` is added to the names.
     """
     frozen = summary["subpopulations"].get(RESIDENTS, {}).get(FROZEN, _empty_block())
-    return [key for key, allowed in _allowed_shares(max_frozen_defect_share, max_frozen_pt_as_walk_share).items()
-            if frozen.get(key, 0.0) > allowed]
+    names = [key for key, allowed in _allowed_shares(max_frozen_defect_share, max_frozen_pt_as_walk_share).items()
+             if frozen.get(key, 0.0) > allowed]
+    if lift_report is not None and lift_report["share_lifted"] > max_frozen_pt_as_walk_share:
+        names.append(KEY_SHARE_LIFTED_FROZEN_PT_WALK)
+    return names
 
 
 def check_thresholds(summary: dict, max_frozen_defect_share: float, max_frozen_pt_as_walk_share: float, *,
-                     fail_on_threshold: bool) -> list:
+                     fail_on_threshold: bool, lift_report: dict | None = None) -> list:
     """Apply the failure rule to the frozen resident plans and return the violated share names.
 
     Above an allowed share (late plans, plans with a planned lateness over the bound, long pt-as-walk trips;
@@ -467,16 +476,25 @@ def check_thresholds(summary: dict, max_frozen_defect_share: float, max_frozen_p
     the threshold is an ASSUMPTION until the A/B of #443 calibrated it, so an uncalibrated threshold must not abort a run (ADR-0146). The ERROR is never silent.
     """
     frozen = summary["subpopulations"].get(RESIDENTS, {}).get(FROZEN, _empty_block())
-    violations = find_threshold_violations(summary, max_frozen_defect_share, max_frozen_pt_as_walk_share)
+    violations = find_threshold_violations(summary, max_frozen_defect_share, max_frozen_pt_as_walk_share, lift_report)
     allowed_shares = _allowed_shares(max_frozen_defect_share, max_frozen_pt_as_walk_share)
+    messages = []
     for key in violations:
+        if key == KEY_SHARE_LIFTED_FROZEN_PT_WALK:
+            messages.append(f"{_LOG_TAG} frozen resident plans: {key} = {100.0 * lift_report['share_lifted']:.2f}% of "
+                            f"{lift_report['n_pt_trips_frozen']} pt-intended trips (lifted to car_passenger by "
+                            f"frozen_pt_walk_lift, no longer in share_pt_as_walk_long) exceeds "
+                            f"{100.0 * max_frozen_pt_as_walk_share:.2f}%; the router finds no pt connection for them")
+            continue
         unit, count_key = (("pt-intended trips", "n_pt_trips") if key == "share_pt_as_walk_long"
                            else ("persons", "n_persons"))
-        message = (f"{_LOG_TAG} frozen resident plans: {key} = {100.0 * frozen[key]:.2f}% of "
-                   f"{frozen.get(count_key, 0)} {unit} exceeds {100.0 * allowed_shares[key]:.2f}%; the "
-                   "tours the mode choice never re-chooses cannot be lived in the simulated day")
-        if fail_on_threshold:
-            raise ValueError(message)
+        messages.append(f"{_LOG_TAG} frozen resident plans: {key} = {100.0 * frozen[key]:.2f}% of "
+                        f"{frozen.get(count_key, 0)} {unit} exceeds {100.0 * allowed_shares[key]:.2f}%; the "
+                        "tours the mode choice never re-chooses cannot be lived in the simulated day")
+    if messages and fail_on_threshold:
+        # One failure names every exceeded share.
+        raise ValueError("; ".join(messages))
+    for message in messages:
         logger.error("%s (%s=false: continuing)", message, KEY_FAIL_ON_THRESHOLD)
     return violations
 
@@ -551,8 +569,12 @@ def require_walk_fallback_stamp(jar_path) -> None:
                 WALK_FALLBACK_ATTRIBUTE, ", ".join(entry for entry, _ in STAMP_CLASS_ENTRIES))
 
 
-def run(context, config_name: str) -> dict:
+def run(context, config_name: str, lift_report: dict | None = None) -> dict:
     """Check the written population of the prepare stage and write plan_check.json.
+
+    ``lift_report`` (the return value of ``frozen_pt_walk_lift.run``, None when the lift is off) adds the lifted
+    share to ``threshold.exceeded`` as ``KEY_SHARE_LIFTED_FROZEN_PT_WALK`` when it is above the bound; with None the
+    written file is unchanged.
 
     The frozen-resident threshold raises only when ``braunschweig.plan_check.fail_on_threshold`` is true; the
     report is written first in either case, so it exists when the check raises.
@@ -580,9 +602,11 @@ def run(context, config_name: str) -> dict:
                             "max_frozen_pt_as_walk_share": max_frozen_pt_as_walk_share,
                             "fail_on_threshold": fail_on_threshold,
                             "exceeded": find_threshold_violations(summary, max_frozen_defect_share,
-                                                                  max_frozen_pt_as_walk_share)}
+                                                                  max_frozen_pt_as_walk_share, lift_report)}
+    if lift_report is not None:
+        summary["threshold"]["share_lifted_frozen_pt_walk"] = lift_report["share_lifted"]
     with open(os.path.join(directory, PLAN_CHECK_FILE_NAME), "w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
     check_thresholds(summary, max_frozen_defect_share, max_frozen_pt_as_walk_share,
-                     fail_on_threshold=fail_on_threshold)
+                     fail_on_threshold=fail_on_threshold, lift_report=lift_report)
     return summary

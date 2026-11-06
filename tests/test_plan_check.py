@@ -362,6 +362,35 @@ def test_run_does_not_raise_when_the_frozen_defect_is_inside_the_share(tmp_path)
     assert (tmp_path / C.PLAN_CHECK_FILE_NAME).exists()
 
 
+_LIFT_ABOVE_BOUND = {"share_lifted": 0.5, "n_pt_trips_frozen": 10}
+
+
+def test_run_records_a_lift_share_above_the_bound_and_raises_after_writing_the_json_naming_it(tmp_path):
+    import json
+    _write_run_inputs(tmp_path)
+    with pytest.raises(ValueError, match=C.KEY_SHARE_LIFTED_FROZEN_PT_WALK):
+        C.run(_RunContext(tmp_path, fail_on_threshold=True, max_share=1.0), "bs_config.xml",
+              lift_report=_LIFT_ABOVE_BOUND)
+    written = json.loads((tmp_path / C.PLAN_CHECK_FILE_NAME).read_text(encoding="utf-8"))
+    assert written["threshold"]["exceeded"] == [C.KEY_SHARE_LIFTED_FROZEN_PT_WALK]
+    assert written["threshold"]["share_lifted_frozen_pt_walk"] == 0.5
+
+
+def test_one_failure_names_the_lift_share_together_with_the_other_exceeded_shares(tmp_path):
+    _write_run_inputs(tmp_path)
+    with pytest.raises(ValueError) as error:
+        C.run(_RunContext(tmp_path, fail_on_threshold=True), "bs_config.xml", lift_report=_LIFT_ABOVE_BOUND)
+    assert "share_plans_late" in str(error.value) and C.KEY_SHARE_LIFTED_FROZEN_PT_WALK in str(error.value)
+
+
+def test_run_without_a_lift_report_writes_the_plan_check_json_unchanged(tmp_path):
+    import json
+    _write_run_inputs(tmp_path)
+    C.run(_RunContext(tmp_path, fail_on_threshold=False, max_share=1.0), "bs_config.xml")
+    threshold = json.loads((tmp_path / C.PLAN_CHECK_FILE_NAME).read_text(encoding="utf-8"))["threshold"]
+    assert threshold["exceeded"] == [] and "share_lifted_frozen_pt_walk" not in threshold
+
+
 # --- pt trips realised as walks (eqasim-bs#465): the leg attribute walkFallbackFrom, per class and hour ---
 
 def test_iter_person_plans_reads_the_walk_fallback_attribute_of_a_leg(population_path):
