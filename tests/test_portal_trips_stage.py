@@ -510,11 +510,26 @@ def test_a_connected_pt_stay_takes_the_primary_path_without_a_warning(caplog):
     assert report["no_connection_actions"] == {"gate_found": 1}
     assert report["pt_gate_reasons"] == {"gate_found": 1}
     assert report["n_departure_shifted_s_median"] is None and report["n_kept_fallback_all_stops"] == 0
-    # The #572 rates of the first gate choice reach the per-run report (the fixture's gate is a top-n stop).
-    assert report["n_pt_gate_beyond_top_n"] == 0 and report["n_pt_no_served_within_cap"] == 0
     assert calls, "the primary path must have asked the router"
     assert not [r for r in caplog.records if r.levelname == "WARNING" and "without a timetable-aware gate" in r.getMessage()]
     assert any("primary path: gate_found 1" in r.getMessage() for r in caplog.records)
+
+
+def test_the_572_counts_of_the_first_gate_choice_reach_the_report(monkeypatch):
+    # Distinct non-zero counts on the first gate choice: the report must carry exactly these, not its zero defaults,
+    # and must not swap them (the counts themselves are tested in test_portal_trips_gates).
+    original = stage._gates.choose_pt_gates
+
+    def with_counts(*args, **kwargs):
+        frame = original(*args, **kwargs)
+        frame.attrs.update({"n_gate_beyond_top_n": 2, "n_no_served_within_cap": 3})
+        return frame
+
+    monkeypatch.setattr(stage._gates, "choose_pt_gates", with_counts)
+    fixture = _fixture()
+    fixture["router"] = _router()
+    report = stage.build_portal_trips(**fixture)["report"]
+    assert (report["n_pt_gate_beyond_top_n"], report["n_pt_no_served_within_cap"]) == (2, 3)
 
 
 def test_a_pt_stay_without_any_connection_is_kept_counted_and_warned(caplog):
