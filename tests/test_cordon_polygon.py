@@ -65,3 +65,10 @@ def test_buffer_m_from_fraction_uses_extent_radius():
 
 def test_buffer_m_from_fraction_zero():
     assert buffer_m_from_fraction(_municipalities(), fraction=0.0) == 0.0
+
+
+def test_cordon_polygon_from_fraction_equals_the_two_step_build():
+    from braunschweig.data.spatial.cordon import cordon_polygon_from_fraction
+    muni = _municipalities()
+    expected = build_cordon_polygon(muni, buffer_m_from_fraction(muni, 0.10))
+    assert cordon_polygon_from_fraction(muni, 0.10).equals(expected)

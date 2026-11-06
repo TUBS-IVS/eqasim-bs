@@ -55,3 +55,12 @@ def buffer_m_from_fraction(municipalities: gpd.GeoDataFrame, fraction: float) ->
     minx, miny, maxx, maxy = municipalities.geometry.total_bounds
     half_diag = 0.5 * math.hypot(maxx - minx, maxy - miny)
     return fraction * half_diag
+
+
+def cordon_polygon_from_fraction(municipalities: gpd.GeoDataFrame, fraction: float) -> BaseGeometry:
+    """The cordon polygon for a fractional margin: the ONE build every cut consumer shares.
+
+    ``build_cordon_polygon(municipalities, buffer_m_from_fraction(municipalities, fraction))``; the cut-timetable
+    stage and ``prepare`` both call this so the two cuts use an identical extent.
+    """
+    return build_cordon_polygon(municipalities, buffer_m_from_fraction(municipalities, fraction))
