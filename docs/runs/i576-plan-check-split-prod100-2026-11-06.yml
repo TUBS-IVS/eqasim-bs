@@ -1,0 +1,74 @@
+id: i576-plan-check-split-prod100-2026-11-06
+date: '2026-11-06'
+repository:
+  commit: baa4a306
+  branch: fix/i576-plan-check-split
+  notes: >-
+    braunschweig/matsim/simulation/plan_check.py of the branch at baa4a306 (the blob of `git show
+    baa4a306:braunschweig/matsim/simulation/plan_check.py`, sha256
+    c746d19d193fea53a7ba6f5195233437cf616b304ed90a3f44cae834652d112f, copied to felix:~/scratch_i576/plan_check.py)
+    was loaded from that file; the run's own checkout felix:~/prod100_20261031/eqasim-bs (7a41f0ba) supplied only its
+    import braunschweig.popsim.plan_validation (MAX_PLAN_TIME_SECONDS).
+configuration:
+  config: >-
+    The metric thresholds as the run used them (the thresholds block of the run's plan_check.json) and the two
+    bound thresholds of ADR-0188 at their module defaults (pt_as_walk_bound_min_distance_m 5000,
+    non_monotonic_bound_min_step_s 900); max_frozen_defect_share 0.005 and max_frozen_pt_as_walk_share 0.02 from
+    the run's plan_check.json.
+  notes: >-
+    travelTimeCalculator.travelTimeBinSize of the run's written MATSim config
+    (braunschweig_100pct_prod20261031_config.xml in the prepare stage directory) is 900.0 s, the bin the
+    non_monotonic_bound_min_step_s assumption of ADR-0188 refers to.
+sampling:
+  rate: 1.0
+  scope: >-
+    The prepared population of the 100 % production run prod100_20261031 (the file its plan check read):
+    felix:~/prod100_20261031/cache/braunschweig.matsim.simulation.prepare__57fd011e45464705ad66d48134be0b63.cache/braunschweig_100pct_prod20261031_population.xml.gz.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run and no MATSim run. i576_plan_check_recount.py streams the population once with
+    plan_check.iter_person_plans and plan_check.summarise of the branch; nothing in the run or cache directory was
+    written.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Completed on 2026-11-06 (19:25-19:37, 684 s streaming, one core under nice). A first start stopped at the module
+    load (the dataclass of plan_check needs the module in sys.modules); the script was fixed and restarted, no
+    output of the first start existed. A recount of an existing population, NOT a validation: no observed data is
+    involved.
+source: >-
+  felix:~/scratch_i576/out (scratch). Committed in docs/runs/artifacts/i576-plan-check-split-prod100-2026-11-06/:
+  i576_plan_check_recount.py (sha256 9f95beba14e3599df2296ade86f042883184b01c198ac5e9b0d63e36d7eb89bb, identical on
+  felix), plan_check_i576.json (the recount's report with the identity block) and summary.txt.
+environment: 'server (felix, hostname matsim), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10)'
+validation:
+- metric: identity of the recount with the run's own plan check
+  reference: "the run's plan_check.json; model output, NOT observed data"
+  result: >-
+    Exact on n_persons, n_plans_late, n_plans_non_monotonic, n_pt_trips and n_pt_as_walk in every subpopulation and
+    class (identity_with_run.mismatches is empty).
+  artifact: docs/runs/artifacts/i576-plan-check-split-prod100-2026-11-06/plan_check_i576.json
+- metric: non-monotonic frozen resident plans by their largest backward step (ADR-0188)
+  reference: 'none; model output, NOT observed data'
+  result: >-
+    3,766 of 151,404 frozen residents (2.49 %): under 1 min 1,857, 1-5 min 434, 5-15 min 608, 15-60 min 486,
+    60 min and more 381. Over 900 s 867 (0.57 %), still above max_frozen_defect_share 0.005. The frozen residents
+    include the in-commuters (#566).
+  artifact: docs/runs/artifacts/i576-plan-check-split-prod100-2026-11-06/summary.txt
+- metric: frozen resident pt-intended trips realised as walks by straight-line distance (ADR-0188)
+  reference: 'none; model output, NOT observed data'
+  result: >-
+    4,865 of 45,469 (10.70 %): under 1 km 1,657, 1-2 km 722, 2-5 km 701, 5-10 km 733, 10 km and more 1,052. Over
+    5,000 m 1,785 (3.93 %), still above max_frozen_pt_as_walk_share 0.02. In-region residents (reported, not
+    bounded): 85,615 of 304,471 (28.12 %), over 5,000 m 10,077 (3.31 %).
+  artifact: docs/runs/artifacts/i576-plan-check-split-prod100-2026-11-06/summary.txt
+- metric: failure-rule decision
+  reference: "the run's plan_check.json"
+  result: >-
+    The run exceeded share_plans_non_monotonic and share_pt_as_walk; the recount exceeds
+    share_plans_non_monotonic_large and share_pt_as_walk_long. Both ERRORs remain for this population, now on the
+    large steps and the long walks only.
+  artifact: docs/runs/artifacts/i576-plan-check-split-prod100-2026-11-06/plan_check_i576.json
