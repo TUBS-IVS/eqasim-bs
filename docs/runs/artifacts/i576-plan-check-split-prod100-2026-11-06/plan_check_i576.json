@@ -98,7 +98,7 @@
         "n_plans_arrival_late": 75,
         "n_plans_late": 5,
         "n_plans_non_monotonic": 3766,
-        "n_plans_non_monotonic_large": 1802,
+        "n_plans_non_monotonic_large": 1726,
         "n_plans_non_monotonic_without_trav_time": 0,
         "n_pt_as_walk": 4865,
         "n_pt_as_walk_attr_without_walk": 0,
@@ -106,11 +106,11 @@
         "n_pt_trips": 45469,
         "n_walk_legs_over": 3317,
         "non_monotonic_by_lateness_band": {
-          "0_1min": 1608,
-          "15_60min": 891,
-          "1_5min": 122,
-          "5_15min": 233,
-          "60min_plus": 912
+          "0_1min": 1739,
+          "15_60min": 860,
+          "1_5min": 97,
+          "5_15min": 203,
+          "60min_plus": 867
         },
         "pt_as_walk_by_distance_band": {
           "0_1km": 1657,
@@ -155,7 +155,7 @@
         "share_plans_arrival_late": 0.000495363398589205,
         "share_plans_late": 3.302422657261367e-05,
         "share_plans_non_monotonic": 0.024873847454492615,
-        "share_plans_non_monotonic_large": 0.011901931256769966,
+        "share_plans_non_monotonic_large": 0.011399963012866238,
         "share_pt_as_walk": 0.106995975279861,
         "share_pt_as_walk_long": 0.03925751610987706
       },

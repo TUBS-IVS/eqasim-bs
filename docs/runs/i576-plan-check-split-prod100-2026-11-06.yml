@@ -1,12 +1,12 @@
 id: i576-plan-check-split-prod100-2026-11-06
 date: '2026-11-06'
 repository:
-  commit: abd431e4
+  commit: 64596e7d
   branch: fix/i576-plan-check-split
   notes: >-
-    braunschweig/matsim/simulation/plan_check.py of the branch at abd431e4 (the blob of `git show
-    abd431e4:braunschweig/matsim/simulation/plan_check.py`, sha256
-    5b33bd155d7491f9e854232ffc0baea05130fd21e91bb2b9fecfc767e007dcdf, copied to felix:~/scratch_i576/plan_check.py)
+    braunschweig/matsim/simulation/plan_check.py of the branch at 64596e7d (the blob of `git show
+    64596e7d:braunschweig/matsim/simulation/plan_check.py`, sha256
+    5f21e7c9a53bb32950eb7d72d116385e665d4a34b41b467e3a2235bf8bbeb919, copied to felix:~/scratch_i576/plan_check.py)
     was loaded from that file; the run's own checkout felix:~/prod100_20261031/eqasim-bs (7a41f0ba) supplied only its
     import braunschweig.popsim.plan_validation (MAX_PLAN_TIME_SECONDS).
 configuration:
@@ -34,10 +34,11 @@ classification:
 status:
   execution: completed
   notes: >-
-    Completed on 2026-11-06 (20:12-20:17, 277 s streaming, one core under nice) with the planned-lateness measure of
-    ADR-0188 (owner decision after review round 2 of PR #586). Earlier counts on this branch measured the backward
-    step instead (baa4a306 and 225a37cc, byte-identical to each other; 867 frozen residents with a step over 900 s);
-    they are superseded and their outputs were not kept in the repository. One start at 20:12 ran the old code by a
+    Completed on 2026-11-06 (20:24-20:29, 280 s streaming, one core under nice) with the planned-lateness measure of
+    ADR-0188, taken at the out-of-order activities only (owner decision after review round 2 of PR #586, scope fixed
+    in review round 3). Superseded counts on this branch, outputs not kept in the repository: the backward step
+    (baa4a306 and 225a37cc, byte-identical to each other; 867 frozen residents over 900 s) and the lateness over
+    every activity (abd431e4; 1,802 over 900 s). One start at 20:12 ran the old code by a
     copy mistake and was stopped within seconds, its output deleted. A first start at 19:25 stopped at the module
     load (the dataclass of plan_check needs the module in sys.modules) and wrote no output. A recount of an existing
     population, NOT a validation: no observed data is involved.
@@ -56,8 +57,8 @@ validation:
 - metric: non-monotonic frozen resident plans by planned lateness (ADR-0188)
   reference: 'none; model output, NOT observed data'
   result: >-
-    3,766 of 151,404 frozen residents (2.49 %): under 1 min 1,608, 1-5 min 122, 5-15 min 233, 15-60 min 891,
-    60 min and more 912; no plan has a leg without trav_time. Over 900 s 1,802 (1.19 %), above
+    3,766 of 151,404 frozen residents (2.49 %): under 1 min 1,739, 1-5 min 97, 5-15 min 203, 15-60 min 860,
+    60 min and more 867; no plan has a leg without trav_time. Over 900 s 1,726 (1.14 %), above
     max_frozen_defect_share 0.005. The frozen residents include the in-commuters (#566).
   artifact: docs/runs/artifacts/i576-plan-check-split-prod100-2026-11-06/summary.txt
 - metric: frozen resident pt-intended trips realised as walks by straight-line distance (ADR-0188)
