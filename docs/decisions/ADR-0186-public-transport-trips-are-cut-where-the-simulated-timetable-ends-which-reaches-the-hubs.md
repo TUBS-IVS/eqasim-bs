@@ -123,8 +123,9 @@
 
 - Every hub gets, like every in-commuter home in the ring today, an `outside` facility on the nearest road link
   and with it a car path to the reference link in the cut network (`OutsideActivityAdapter`,
-  `MinimumNetworkFinder`): road spines to the hubs that inside car trips could only use as a detour; measured in
-  the 1 % A/B. The kept vehicles carry simulated passengers outside the polygon (a hub to Lehrte, say).
+  `MinimumNetworkFinder`): road spines to the hubs that inside car trips could only use as a detour; not measured
+  yet, to be read from the cut network of the next production run (#22). The kept vehicles carry simulated
+  passengers outside the polygon (a hub to Lehrte, say).
 - Outputs change for every cordon run: the pt gates, the connection rate, the cut plans of every pt trip with an
   outside end and of every inside-to-inside trip whose route left the extent. The run manifests give the rates.
 - The in-commuter, student and outside-tour checks keep routing on the pre-cut timetable (one trip end lies
@@ -133,13 +134,14 @@
 - A pt trip whose routed result is a walk only (the walk fallback kept the routing mode pt) crosses the world at
   the inside activity's coordinate under decision 2 (an activity is the only world point of such a trip), where
   the former cut placed the crossing on the polygon boundary; its outside piece is a zero-length leg the final
-  routing walks. Counted with the other collapsed cases; the 1 % A/B checks its size.
+  routing walks. Counted with the other collapsed cases; its size is open until the next production run (#22)
+  reports it in `<prefix>transit_cut_summary.csv`.
 - The former cut placed the `outside` activity of a pt entry on the nearest road link's facility, so the re-routed
   piece started with an access walk the planned departure did not include and an agent whose planned wait was
   shorter boarded the next service; the stop anchor of decision 4 removes this for every pt crossing. Road
   crossings keep the link facility, which is the right anchor for a car leg.
-- #487: fewer trips are split, so more `walkFallbackFrom` stamps survive; the 1 % A/B counts them, the defect of
-  the marker on split trips is not addressed here.
+- #487: fewer trips are split, so more `walkFallbackFrom` stamps should survive; not measured here (the next
+  production run's plan check counts them), and the defect of the marker on split trips is not addressed.
 - Status: the portal check is replayed on the cache of `prod100_20261031` against main in
   `docs/runs/i574-portal-replay-prod100-2026-11-06.yml` (model output, no validation claim; the numbers live there).
   The population cut (decisions 2-4: the collapsed trips, the walks among them, the road spines to the hubs) is not
