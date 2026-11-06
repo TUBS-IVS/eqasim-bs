@@ -301,7 +301,6 @@ def configure(context):
                    plan_check.DEFAULT_NON_MONOTONIC_BOUND_MIN_LATENESS_S)
     context.config(plan_check.KEY_FAIL_ON_THRESHOLD, plan_check.DEFAULT_FAIL_ON_THRESHOLD)
     context.config(frozen_pt_walk_lift.KEY_ENABLED, frozen_pt_walk_lift.DEFAULT_ENABLED)
-    context.config(frozen_pt_walk_lift.KEY_WARN_SHARE, frozen_pt_walk_lift.DEFAULT_WARN_SHARE)
 
     # Every agent chooses its modes once before iteration 0 (#542, ADR-0178): the helper declares its switch and
     # the Java options, and refuses the retired ADR-0155 weight key unconditionally, so a stale overlay fails even

@@ -967,10 +967,9 @@ config:
   braunschweig.plan_check.non_monotonic_bound_min_lateness_s: 900
   braunschweig.plan_check.fail_on_threshold: false
   # Long pt-as-walk trips (over plan_check.pt_as_walk_bound_min_distance_m) of frozen resident tours become one
-  # car_passenger leg before the plan check (ADR-0189, #575). ASSUMPTION: warn_share is the lifted share of the
-  # pt-intended trips of frozen resident tours above which the step logs a WARNING; not a reference value.
+  # car_passenger leg before the plan check (ADR-0189, #575). The lifted share is judged against
+  # plan_check.max_frozen_pt_as_walk_share (ADR-0188/0189); the lift has no bound of its own.
   braunschweig.frozen_pt_walk_lift.enabled: true
-  braunschweig.frozen_pt_walk_lift.warn_share: 0.05
   # eqasim's standalone mode choice runs at the end of the prepare stage on the final population with free-flow
   # travel times, before iteration 0 (ADR-0178, #542). It replaces the first-replanning strategy of ADR-0155.
   # The key braunschweig.initial_mode_choice.weight is retired and refused.

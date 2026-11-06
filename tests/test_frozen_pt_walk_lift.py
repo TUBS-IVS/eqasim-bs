@@ -1,6 +1,6 @@
 """Lifting the long pt-as-walk trips of frozen resident tours to car_passenger in prepare (eqasim-bs#575, ADR-0189).
 
-API under test: ``lift_frozen_pt_walks(source_path, target_path, *, min_distance_m, warn_share) -> dict`` with the
+API under test: ``lift_frozen_pt_walks(source_path, target_path, *, min_distance_m, max_share) -> dict`` with the
 report keys ``n_persons`` (residents examined), ``n_pt_trips_frozen`` (pt-intended trips in frozen resident tours),
 ``n_long_pt_as_walk_before`` and ``n_lifted``.
 """
@@ -99,10 +99,10 @@ def _attribute(element, name):
     return next((a.text for a in attributes.findall("attribute") if a.get("name") == name), None)
 
 
-def _lift(tmp_path, *persons, warn_share=1.0, name="out.xml.gz"):
+def _lift(tmp_path, *persons, max_share=1.0, name="out.xml.gz"):
     source = _write(tmp_path / "in.xml.gz", *persons)
     target = tmp_path / name
-    report = L.lift_frozen_pt_walks(source, target, min_distance_m=MIN_DISTANCE_M, warn_share=warn_share)
+    report = L.lift_frozen_pt_walks(source, target, min_distance_m=MIN_DISTANCE_M, max_share=max_share)
     return source, target, report
 
 
@@ -147,7 +147,7 @@ def test_the_lift_is_idempotent(tmp_path):
     _, first, report = _lift(tmp_path, _person("p", "stamp", 8000.0), _person("q", "real_pt", 8000.0))
     assert report["n_lifted"] == 1
     second = tmp_path / "second.xml.gz"
-    again = L.lift_frozen_pt_walks(first, second, min_distance_m=MIN_DISTANCE_M, warn_share=1.0)
+    again = L.lift_frozen_pt_walks(first, second, min_distance_m=MIN_DISTANCE_M, max_share=1.0)
     assert again["n_lifted"] == 0
     assert _plan_signature(second) == _plan_signature(first)
 
@@ -157,19 +157,21 @@ def _report_population():
             _person("served", "real_pt", 8000.0, cut_mode="car"), _person("short", "stamp", 3000.0, cut_mode="car")]
 
 
-def test_report_counts_and_the_warn_share(tmp_path, caplog):
+def test_report_counts_and_the_plan_check_bound(tmp_path, caplog):
     with caplog.at_level(logging.INFO):
-        _, _, report = _lift(tmp_path, *_report_population(), warn_share=0.6)
+        _, _, report = _lift(tmp_path, *_report_population(), max_share=0.6)
     # 4 pt-intended trips; 3 realised as walk at any distance (the short one included); 2 of them over the bound.
     assert (report["n_persons"], report["n_pt_trips_frozen"], report["n_pt_as_walk_frozen"],
             report["n_lifted"]) == (4, 4, 3, 2)
+    assert (report["max_share"], report["bound_exceeded"]) == (0.6, False)
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]   # 2 of 4 = 0.5 <= 0.6
     assert [r for r in caplog.records if r.levelno == logging.INFO and "frozen_pt_walk_lift" in r.getMessage()]
 
     caplog.clear()
     with caplog.at_level(logging.INFO):
-        _lift(tmp_path, *_report_population(), warn_share=0.4, name="again.xml.gz")
-    assert [r for r in caplog.records if r.levelno == logging.WARNING]       # 0.5 > 0.4
+        _, _, exceeded = _lift(tmp_path, *_report_population(), max_share=0.4, name="again.xml.gz")
+    assert exceeded["bound_exceeded"] is True
+    assert [r for r in caplog.records if r.levelno == logging.ERROR]         # 0.5 > 0.4
 
 
 def test_the_output_stays_a_valid_matsim_population(tmp_path):
@@ -216,7 +218,7 @@ class _RunContext:
 
     def config(self, key):
         return {"braunschweig.plan_check.pt_as_walk_bound_min_distance_m": MIN_DISTANCE_M,
-                "braunschweig.frozen_pt_walk_lift.warn_share": 1.0}[key]
+                "braunschweig.plan_check.max_frozen_pt_as_walk_share": 1.0}[key]
 
 
 def _stage_directory(tmp_path, *persons):
@@ -252,6 +254,6 @@ def test_the_encoding_of_the_xml_declaration_is_kept(tmp_path):
                         + _person("p", "stamp", 8000.0, extra_attributes='<attribute name="n" class="java.lang.String">M\u00fcller</attribute>')
                         + "\n</population>\n").encode("iso-8859-1"))
     target = tmp_path / "out.xml"
-    L.lift_frozen_pt_walks(source, target, min_distance_m=MIN_DISTANCE_M, warn_share=1.0)
+    L.lift_frozen_pt_walks(source, target, min_distance_m=MIN_DISTANCE_M, max_share=1.0)
     text = target.read_bytes().decode("iso-8859-1")
     assert 'encoding="iso-8859-1"' in text and "M\u00fcller" in text

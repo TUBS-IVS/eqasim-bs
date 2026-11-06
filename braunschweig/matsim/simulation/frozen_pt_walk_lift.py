@@ -30,7 +30,8 @@ not repaired keeps all its elements, attributes and attribute order, but not its
 was chosen over a line-based text edit because the output of the MATSim writers is not guaranteed to be
 pretty-printed one element per line.
 
-Observability: one INFO line with the lift rate (WARNING above ``warn_share``) and ``frozen_pt_walk_lift.json``.
+Observability: one log line with the lift rate (ERROR above ``max_share``, which is the plan check's bound
+``plan_check.KEY_MAX_FROZEN_PT_AS_WALK_SHARE``, else INFO) and ``frozen_pt_walk_lift.json``.
 """
 from __future__ import annotations
 
@@ -52,10 +53,6 @@ _LOG_TAG = "[frozen_pt_walk_lift]"
 REPORT_FILE_NAME = "frozen_pt_walk_lift.json"
 KEY_ENABLED = "braunschweig.frozen_pt_walk_lift.enabled"
 DEFAULT_ENABLED = True
-#: ASSUMPTION (ADR-0189, #575): WARN when more than this share of the pt-intended trips of frozen resident tours is
-#: lifted; a high share means the router finds no connection for many trips (a symptom, not a reference value).
-KEY_WARN_SHARE = "braunschweig.frozen_pt_walk_lift.warn_share"
-DEFAULT_WARN_SHARE = 0.05
 LIFTED_MODE = "car_passenger"
 LIFTED_FROM_ATTRIBUTE = "liftedFrom"
 _POPULATION_START_TAG = re.compile(rb"<population\b[^>]*>")
@@ -142,14 +139,14 @@ def _repair_person(person: ET.Element, min_distance_m: float, counts: dict) -> N
         plan.extend(children)
 
 
-def lift_frozen_pt_walks(source_path, target_path, *, min_distance_m: float, warn_share: float) -> dict:
+def lift_frozen_pt_walks(source_path, target_path, *, min_distance_m: float, max_share: float) -> dict:
     """Write ``target_path`` as ``source_path`` with the long pt-as-walk trips of frozen resident tours lifted.
 
     Returns the report: ``n_persons`` (residents examined), ``n_pt_trips_frozen`` (pt-intended trips of frozen
     resident tours), ``n_pt_as_walk_frozen`` (of them the all-walk trips, at any distance), ``n_lifted`` (of those
     the trips over ``min_distance_m``), ``n_lifted_stamped`` / ``n_lifted_routing_mode_only`` (the lifted trips by
     detection: a ``walkFallbackFrom`` = pt stamp, or ``routingMode`` = pt without the stamp),
-    ``lifted_by_distance_band`` and the two parameters. ``source_path`` and ``target_path`` must differ. The
+    ``lifted_by_distance_band``, ``min_distance_m``, ``max_share`` (the bound used) and ``bound_exceeded``.``source_path`` and ``target_path`` must differ. The
     output is written in the encoding of the source's XML declaration (UTF-8 without one).
     """
     if not os.path.exists(source_path):
@@ -167,15 +164,20 @@ def lift_frozen_pt_walks(source_path, target_path, *, min_distance_m: float, war
             _stream_elements(handle, out, min_distance_m, counts)
         out.write("</population>\n")
     share = counts["n_lifted"] / counts["n_pt_trips_frozen"] if counts["n_pt_trips_frozen"] else 0.0
-    report = dict(counts, share_lifted=share, min_distance_m=float(min_distance_m), warn_share=float(warn_share))
+    exceeded = share > max_share
+    report = dict(counts, share_lifted=share, min_distance_m=float(min_distance_m), max_share=float(max_share),
+                  bound_exceeded=bool(exceeded))
     message = (f"{_LOG_TAG} lifted {counts['n_lifted']} of {counts['n_pt_trips_frozen']} pt-intended trips in frozen "
                f"resident tours ({100.0 * share:.2f}%), of {counts['n_persons']} persons; pt-intended trips realised "
                f"as walk in frozen tours at any distance {counts['n_pt_as_walk_frozen']}; lifted by detection: "
                f"stamp {counts['n_lifted_stamped']}, routingMode only {counts['n_lifted_routing_mode_only']}; "
                f"lifted by distance {counts['lifted_by_distance_band']}")
-    if share > warn_share:
-        logger.warning("%s exceeds the warn share %.2f%%: the router finds no pt connection for many trips of "
-                       "tours the mode choice never re-chooses", message, 100.0 * warn_share)
+    if exceeded:
+        # Same level as the plan check (logs at ERROR and continues): the lifted trips leave its bounded share.
+        logger.error("%s exceeds the bound %.2f%% of %s (the plan check's frozen pt-as-walk share): the router finds "
+                     "no pt connection for many trips of tours the mode choice never re-chooses; the lifted trips "
+                     "no longer count in the plan check's bounded share", message, 100.0 * max_share,
+                     plan_check.KEY_MAX_FROZEN_PT_AS_WALK_SHARE)
     else:
         logger.info("%s", message)
     return report
@@ -237,7 +239,7 @@ def run(context, result: str) -> dict:
         report = lift_frozen_pt_walks(
             population_path, temporary_path,
             min_distance_m=float(context.config(plan_check.KEY_PT_AS_WALK_BOUND_MIN_DISTANCE_M)),
-            warn_share=float(context.config(KEY_WARN_SHARE)))
+            max_share=float(context.config(plan_check.KEY_MAX_FROZEN_PT_AS_WALK_SHARE)))
         os.replace(temporary_path, population_path)
     finally:
         # After a successful replace the temporary file is gone; after a failure the original stays untouched.
