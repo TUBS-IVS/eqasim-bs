@@ -33,6 +33,7 @@ from pathlib import Path
 import matsim.runtime.eqasim as eqasim
 import matsim.simulation.prepare as delegate
 from braunschweig import synpp_tokens
+from braunschweig.data.transit import cut_schedule, schedule as transit_schedule
 from braunschweig.data.vrb import fare_config_xml, fare_model_export, line_scopes
 from braunschweig.matsim import config_modules, initial_mode_choice
 from braunschweig.matsim.simulation import cordon_subpopulation, plan_check
@@ -51,9 +52,23 @@ GTFS_STAGE = "matsim.scenario.supply.gtfs"
 #: hashed unconditionally, like the deferred cordon helpers below. ``plan_check`` runs the plan
 #: feasibility check as the last step of ``execute`` (#443). ``initial_mode_choice`` runs eqasim's standalone
 #: mode choice on the final population before iteration 0 (#542). ``cordon_subpopulation`` writes the in-commuters'
-#: fixed-mode strategy blocks into the final config (eqasim-bs#566).
+#: fixed-mode strategy blocks into the final config (eqasim-bs#566). ``cut_schedule`` owns the cut mode and hub keys
+#: and the hub-name file that prepare passes to the cutter (#574). ``transit_schedule`` parses both cut timetables in
+#: ``_verify_cut_timetable_matches_stage``, so its reader decides whether the two cuts count as equal.
 _HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes, tariff_export,
-                   config_modules, plan_check, initial_mode_choice, cordon_subpopulation)
+                   config_modules, plan_check, initial_mode_choice, cordon_subpopulation, cut_schedule, transit_schedule)
+
+#: A collapsed pt trip (its pt leg shortened by the cut) is walked when the kept stop sequence cannot serve it (eqasim
+#: cutter, #574, ADR-0186). ASSUMPTION: a walked share above 5 % of one collapsed case is worth a warning; it is a
+#: diagnostic threshold for the owner's review, not an accuracy target and not calibrated.
+COLLAPSED_WALK_WARN_SHARE = 0.05
+#: Metrics of ``<prefix>transit_cut_summary.csv`` the Java cutter writes in ``kept-stops`` mode, in file order.
+TRANSIT_CUT_SUMMARY_METRICS = (
+    "stops_kept_inside", "stops_kept_hub", "stops_kept_other_outside", "routes_kept", "routes_dropped",
+    "pt_trips_with_crossings", "collapsed_inside_inside", "collapsed_inside_inside_walked", "collapsed_outside_origin",
+    "collapsed_outside_origin_walked", "collapsed_outside_destination", "collapsed_outside_destination_walked",
+    "collapsed_through", "collapsed_through_walked")
+TRANSIT_CUT_COLLAPSED_CASES = ("inside_inside", "outside_origin", "outside_destination", "through")
 
 #: ADR-0149: MATSim logs carry timestamps and the summary the Java wall time; a re-run must not change the digest.
 _OUTPUT_HASH_EXCLUDE = ("mode_choice/*.log", "initial_mode_choice.json")
@@ -233,6 +248,13 @@ def configure(context):
     if context.config("cordon_enabled"):
         context.config("cordon_network_buffer_fraction", 0.10)
         context.stage("data.spatial.municipalities")
+        # The scenario cut and the portal check's cut timetable use ONE mode, hub list and extent (#574, ADR-0186);
+        # the stage is declared here for the guard that compares the two cuts after the cutter.
+        context.stage("braunschweig.data.transit.cut_schedule")
+        context.config(cut_schedule.KEY_HUB_STOP_NAMES, cut_schedule.DEFAULT_HUB_STOP_NAMES)
+        cut_schedule.validate_mode_and_hubs(
+            context.config(cut_schedule.KEY_TRANSIT_CUT_MODE, cut_schedule.DEFAULT_TRANSIT_CUT_MODE),
+            cut_schedule.hub_stop_names(context))
         # The in-commuters keep their synthesised mode: KeepLastSelected + ReRoute per in-commuter subpopulation
         # (eqasim-bs#566, ADR-0182); checked here so a bad weight fails before the synthesis runs.
         cordon_subpopulation.require_reroute_weight(context.config(
@@ -664,16 +686,18 @@ def _cut_to_cordon(context):
     whole scenario before writing) and we return the cut config filename so all
     downstream consumers see the cut scenario.
     """
-    from braunschweig.data.spatial.cordon import build_cordon_polygon, buffer_m_from_fraction
+    from braunschweig.data.spatial.cordon import cordon_polygon_from_fraction
     from braunschweig.data.cordon.extent import write_cordon_extent
 
     prefix = context.config("output_prefix")
     threads = context.config("matsim_threads") or context.config("processes")
+    hub_names = cut_schedule.hub_stop_names(context)
+    mode = cut_schedule.validate_mode_and_hubs(context.config(cut_schedule.KEY_TRANSIT_CUT_MODE), hub_names)
 
     df_muni = context.stage("data.spatial.municipalities")
     fraction = float(context.config("cordon_network_buffer_fraction"))
-    buffer_m = buffer_m_from_fraction(df_muni, fraction)
-    cordon = build_cordon_polygon(df_muni, buffer_m)
+    # The same helper the cut-timetable stage calls: both cuts get an identical extent (#574).
+    cordon = cordon_polygon_from_fraction(df_muni, fraction)
     write_cordon_extent("%s/cordon_extent.gpkg" % context.path(), cordon, crs=str(df_muni.crs))
 
     # The cutter loads the scenario relative to the config file's directory (the
@@ -681,17 +705,100 @@ def _cut_to_cordon(context):
     # No --eqasim-configurator is passed: like every other prepare/run java call,
     # the cutter falls back to the bavaria jar's default configurator (the cutter's
     # option is "eqasim-configurator", not "...-class", and is unnecessary here).
-    eqasim.run(context, "org.eqasim.core.scenario.cutter.RunScenarioCutter", [
+    arguments = [
         "--config-path", "%sconfig.xml" % prefix,
         "--output-path", context.path(),
         "--extent-path", "cordon_extent.gpkg",
         "--threads", threads,
         "--prefix", prefix,
-    ])
+        "--transit-cut-mode", mode,
+    ]
+    if mode == "kept-stops":
+        cut_schedule.write_hub_names("%s/%s" % (context.path(), cut_schedule.HUB_NAMES_FILE_NAME), hub_names)
+        arguments += ["--transit-hub-stop-names-path", cut_schedule.HUB_NAMES_FILE_NAME]
+    eqasim.run(context, "org.eqasim.core.scenario.cutter.RunScenarioCutter", arguments)
 
     cut_config = "%sconfig.xml" % prefix
     assert os.path.exists("%s/%s" % (context.path(), cut_config)), "cutter did not write the cut config"
+    _verify_cut_timetable_matches_stage(context, prefix)
+    if mode == "kept-stops":
+        _read_transit_cut_summary(Path(context.path()) / ("%stransit_cut_summary.csv" % prefix))
     return cut_config
+
+
+def _verify_cut_timetable_matches_stage(context, cut_config_prefix):
+    """Fail when the scenario's cut timetable differs from the cut timetable the portal check routed on (#574, R11).
+
+    Both come from the same Java cutter, mode, hubs and extent, so every ``(line_id, route_id)`` must keep the same
+    stop sequence. A difference means the synthesis (portal pt gates) saw another timetable than the simulation runs.
+    """
+    cut_path = Path(context.path()) / ("%stransit_schedule.xml.gz" % cut_config_prefix)
+    stage = "braunschweig.data.transit.cut_schedule"
+    stage_path = Path(context.path(stage)) / context.stage(stage)["schedule_path"]
+    prepared = {(r.line_id, r.route_id): tuple(r.stop_ids) for r in transit_schedule.read_schedule(str(cut_path)).routes}
+    expected = {(r.line_id, r.route_id): tuple(r.stop_ids) for r in transit_schedule.read_schedule(str(stage_path)).routes}
+    if prepared != expected:
+        differing = sorted(key for key in set(prepared) | set(expected) if prepared.get(key) != expected.get(key))
+        raise RuntimeError(
+            "[cut-timetable] the scenario cut and the cut timetable of the portal check disagree: prepare's cut has "
+            "%d routes, the stage's %d, %d routes differ (first: %s); the synthesis would route on another timetable "
+            "than the simulation (#574)" % (len(prepared), len(expected), len(differing), differing[:5]))
+    log.info("[cut-timetable] scenario cut and portal-check timetable agree: %d routes, %d stops", len(prepared),
+             len({stop for stops in prepared.values() for stop in stops}))
+
+
+def _read_transit_cut_summary(path) -> dict:
+    """Read ``<prefix>transit_cut_summary.csv`` of the cutter (``kept-stops`` mode) and log its rates (#574, R12).
+
+    The file is ``metric,value`` with exactly the metrics of ``TRANSIT_CUT_SUMMARY_METRICS`` and integer values;
+    a wrong header, a missing, unknown or duplicate metric or a non-integer value raises ``ValueError``. Every
+    count is logged as a rate; a walked share above ``COLLAPSED_WALK_WARN_SHARE`` of one collapsed case warns (the
+    kept timetable then replaces many pt trips by walking).
+    """
+    lines = Path(path).read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "metric,value":
+        raise ValueError("%s: the header must be exactly 'metric,value', got %r" % (path, lines[0] if lines else ""))
+    values = {}
+    duplicates = []
+    for line in lines[1:]:
+        if not line.strip():
+            continue
+        metric, _, text = line.partition(",")
+        metric = metric.strip()
+        try:
+            value = int(text)
+        except ValueError:
+            raise ValueError("%s: the value of metric %r is not an integer: %r" % (path, metric, text)) from None
+        if metric in values:
+            duplicates.append(metric)
+        values[metric] = value
+    unknown = sorted(set(values) - set(TRANSIT_CUT_SUMMARY_METRICS))
+    if unknown or duplicates:
+        raise ValueError("%s: unknown metrics %s, duplicate metrics %s" % (path, unknown, sorted(set(duplicates))))
+    missing = [metric for metric in TRANSIT_CUT_SUMMARY_METRICS if metric not in values]
+    if missing:
+        raise ValueError("%s lacks the metrics %s" % (path, missing))
+    kept = values["stops_kept_inside"] + values["stops_kept_hub"] + values["stops_kept_other_outside"]
+    routes = values["routes_kept"] + values["routes_dropped"]
+    for label, metric in (("inside", "stops_kept_inside"), ("hub", "stops_kept_hub"),
+                          ("other outside", "stops_kept_other_outside")):
+        log.info("[cut-timetable] stops kept %s %d/%d (%.1f %%)", label, values[metric], kept,
+                 100.0 * values[metric] / max(kept, 1))
+    log.info("[cut-timetable] routes kept %d/%d (%.1f %%)", values["routes_kept"], routes,
+             100.0 * values["routes_kept"] / max(routes, 1))
+    crossings = values["pt_trips_with_crossings"]
+    collapsed = sum(values["collapsed_" + case] for case in TRANSIT_CUT_COLLAPSED_CASES)
+    log.info("[cut-timetable] collapsed trips %d/%d (%.1f %%) of the pt trips with crossings", collapsed, crossings,
+             100.0 * collapsed / max(crossings, 1))
+    for case in TRANSIT_CUT_COLLAPSED_CASES:
+        total, walked = values["collapsed_" + case], values["collapsed_%s_walked" % case]
+        share = walked / total if total else 0.0
+        log.info("[cut-timetable] collapsed %s walked %d/%d (%.1f %%)", case, walked, total, 100.0 * share)
+        if share > COLLAPSED_WALK_WARN_SHARE:
+            log.warning("[cut-timetable] %.1f %% of the collapsed %s pt trips are walked (above %.1f %%, ASSUMPTION "
+                        "threshold): the kept timetable may not serve them", 100.0 * share, case,
+                        100.0 * COLLAPSED_WALK_WARN_SHARE)
+    return values
 
 
 def _inject_freight(context, config_name):

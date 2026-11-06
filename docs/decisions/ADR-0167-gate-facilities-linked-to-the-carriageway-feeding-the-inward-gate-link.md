@@ -4,6 +4,8 @@
   "outside the cordon" chosen over per-direction facilities and over keeping the portal stays inside).
 - **Numbering:** ADR-0167 is the next free id. Checked on 2026-10-23 across all local and remote branches, all
   worktrees and the shared session notes: the highest record or claim anywhere is ADR-0166.
+- **Amended by:** ADR-0186 (a pt gate facility at a hub station lies outside the extent too; the link rule of
+  this record stays for road gates only).
 - **Issue:** #465. **Relates to:** ADR-0141 (portal trips; supersedes the "gate inside the extent" part of its
   decision 3 for the road gates of car legs, see Consequences), ADR-0144 (the same defect class for freight).
 - **Code:** eqasim-bs `braunschweig/data/cordon/gate_facility_links.py` (`select_gate_facility_links`,

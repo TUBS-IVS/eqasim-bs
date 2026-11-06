@@ -40,17 +40,25 @@ def test_location_rows_of_an_empty_anchors_frame_keep_the_columns():
     assert len(rows) == 0
 
 
-def test_find_assignment_problems_splits_a_chain_at_the_outside_anchor():
+@pytest.mark.parametrize("gate_id, kind, mode, xy", [
+    ("gate_e", "road", "car", (40000.0, 0.0)),
+    # #574: a pt gate may be a hub station far outside the cut extent (Hannover Hbf); it anchors the chain the same way
+    ("hub_hannover", "pt", "pt", (-55000.0, 20000.0)),
+])
+def test_find_assignment_problems_splits_a_chain_at_the_outside_anchor(gate_id, kind, mode, xy):
+    anchors = gpd.GeoDataFrame({"person_id": [7], "activity_index": [2], "gate_id": [gate_id], "kind": [kind],
+                                "mode": [mode]}, geometry=[Point(*xy)], crs="EPSG:25832")
     trips = pd.DataFrame({
         "person_id": [7, 7, 7], "trip_index": [0, 1, 2],
         "preceding_purpose": ["home", "shop", "outside"], "following_purpose": ["shop", "outside", "home"],
-        "mode": ["walk", "car", "car"], "travel_time": [900.0, 3600.0, 3600.0]})
+        "mode": ["walk", mode, mode], "travel_time": [900.0, 3600.0, 3600.0]})
     locations = pd.DataFrame({"person_id": [7], "home": [Point(0.0, 0.0)], "work": [None], "education": [None]})
-    found = list(problems.find_assignment_problems(trips, locations, activity_anchors=portal_anchors.anchors_dict(_anchors())))
+    found = list(problems.find_assignment_problems(trips, locations, activity_anchors=portal_anchors.anchors_dict(anchors)))
     # home -> shop -> outside is one problem (shop variable, both ends fixed); outside -> home has no variable activity
     assert len(found) == 1
     assert found[0]["purposes"] == ["shop"]
-    assert found[0]["destination"].tolist() == [[40000.0, 0.0]]
+    assert found[0]["destination"].tolist() == [list(xy)]
+    assert portal_anchors.location_rows(anchors).loc[0, "location_id"] == f"portal_{gate_id}"
 
 
 class _FakeContext:

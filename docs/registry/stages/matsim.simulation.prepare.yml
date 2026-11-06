@@ -6,7 +6,14 @@ description: Prepares the MATSim run (config, freight injection, subpopulations)
   the official polygons and writes the VRB fare inputs and the vrbFare module (ADR-0133). With
   cordon_enabled it cuts the scenario to the cordon extent with eqasim's RunScenarioCutter; the fork's
   TransitScheduleCutter keeps the last inside stop and the scheduled times of every cut transit route
-  (docs/codebase/notes/eqasim-transit-schedule-cutter.md). With parking_zones_enabled (ADR-0139) it
+  (docs/codebase/notes/eqasim-transit-schedule-cutter.md). Since ADR-0186 (issue 574) the cutter runs with
+  braunschweig.cutter.transit_cut_mode (kept-stops in production) and the hub names of
+  braunschweig.cutter.transit_hub_stop_names written to hub_stop_names.txt, so that the timetable keeps every
+  route up to the hubs and pt trips are cut where they leave the kept timetable and never at an excursion; the stage
+  verifies after the cut that its transit schedule has the same routes and stop sequences as the cut timetable
+  of braunschweig.data.transit.cut_schedule (RuntimeError otherwise), then reads the cutter's
+  <prefix>transit_cut_summary.csv and logs its counts as rates (WARN above COLLAPSED_WALK_WARN_SHARE,
+  an assumption). With parking_zones_enabled (ADR-0139) it
   writes, as its last step and next to the final config, the parking tariff model
   <prefix>parking_tariffs_<parking_tariff_snapshot_date>.json (built by braunschweig.parking.tariff_export
   from the release of braunschweig.parking.zones_stage, carrying the release's source hashes, the permit flag
@@ -95,6 +102,7 @@ features:
 - gate_facility_links
 decisions:
 - ADR-0121
+- ADR-0186
 - ADR-0030
 - ADR-0039
 - ADR-0133

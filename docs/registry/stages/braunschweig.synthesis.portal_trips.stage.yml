@@ -7,7 +7,10 @@ description: >-
   (ADR-0141, issue #442). Per stay it classifies the legs, merges consecutive far destinations,
   chooses an external point and a gate (road gate, or a schedule-derived pt exit stop chosen
   against the timetable and the eqasim batch router, ADR-0152, candidates served-first within an extra-detour cap,
-  ADR-0184; both inside the cut extent; a pt stay without a
+  ADR-0184; since ADR-0186 the pt exits are read from the cut timetable of
+  braunschweig.data.transit.cut_schedule, the configured hub stations are gate candidates of their own and the
+  router checks the connection on that cut timetable, so a pt gate may lie outside the extent; road gates stay
+  inside it; a pt stay without a
   connection is resolved by a counted chain), derives the re-entry time from the donor's diary, fixes the donor's
   outbound mode for both portal legs against the synthetic person, times the outbound arrival at
   the gate (the diary duration split by the synthetic geometry, no reported distance) and the re-entry, and rewrites
@@ -50,12 +53,15 @@ decisions:
 - ADR-0163
 - ADR-0183
 - ADR-0185
+- ADR-0186
 notes: >-
   Reads braunschweig.synthesis.commute_day.trips_day_stage (the reporting-day trips),
   synthesis.population.enriched (persons with the availability columns the mode check needs),
   the home and primary locations, braunschweig.synthesis.cordon_gates, braunschweig.data.cordon_network,
   braunschweig.data.external_secondary_points, data.spatial.municipalities (cordon polygon) and
-  matsim.scenario.supply.processed (timetable for the pt exit stops); no dataset ids, the
+  matsim.scenario.supply.processed (the pre-cut timetable, for the direction and departure tables of the pt
+  exits) and braunschweig.data.transit.cut_schedule (the cut timetable the exits, the hub gates and the
+  connection check use, ADR-0186); no dataset ids, the
   gates and points are stages. Requires cordon_enabled (configure raises otherwise). Config keys,
   all in configs/base_bs.yml: braunschweig.portal.enabled, max_routable_distance_m,
   external_point_distance_tolerance, mode_substitution_warn_share and fallback_warn_share

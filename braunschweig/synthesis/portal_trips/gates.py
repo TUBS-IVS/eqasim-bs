@@ -3,8 +3,9 @@
 Road gates come from ``braunschweig.synthesis.cordon_gates`` as the POINT where a network link
 crosses the cordon boundary (= the cutter's extent). A portal stay must sit INSIDE that extent,
 or the cutter would cut it again, so the stay is placed at the gate link's inside endpoint
-(``gate_inside_points``). pt portals are the exit stops inside the extent (``exit_stops``) that a route leaves outward,
-chosen timetable-aware by ``choose_pt_gates``. The external point only fixes the direction and
+(``gate_inside_points``). pt portals are the stops of the CUT timetable where a kept route leaves it, plus the
+configured hub stations (``exit_stops``, #574), chosen timetable-aware by ``choose_pt_gates`` and checked by the
+router on the cut timetable. The external point only fixes the direction and
 the outside distance of a stay; it is drawn among the external Gemeinde points at the donor's
 reported distance (ADR-0027's distance proxy; direction has no survey source). The gate is the
 one with the smallest detour origin -> gate -> point (ASSUMPTION: no preference for motorways).
@@ -63,7 +64,7 @@ def gate_inside_points(gates, links, cordon_polygon) -> gpd.GeoDataFrame:
 
 
 ALL_MODES = "all"
-EXIT_COLUMNS = ["stop_id", "line_id", "route_id", "mode", "outside_x", "outside_y"]
+EXIT_COLUMNS = ["stop_id", "line_id", "route_id", "mode", "outside_x", "outside_y", "is_hub"]
 
 
 def _normalise_modes(modes):
@@ -80,45 +81,103 @@ def _normalise_modes(modes):
     return {item.strip().lower() for item in items}
 
 
-def exit_stops(schedule, cordon_polygon, modes="all", crs="EPSG:25832") -> gpd.GeoDataFrame:
-    """Exit stops of all (or the given) transit modes: one row per (inside stop, route).
+def _align_cut_route(cut_ids: tuple, pre_cut_ids: tuple) -> int:
+    """Start position of the cut stop sequence inside the pre-cut one, or -1 when it is not a contiguous part of it.
 
-    A route exits the extent at an inside stop whose NEXT stop in route order lies outside it;
-    ``outside_x/outside_y`` is that next stop (it fixes the direction the route leaves in). An inside
-    stop that is only preceded by an outside stop is an ENTRY and is not listed. ``modes`` is
-    ``ALL_MODES`` or a set of modes (compared lower-cased). ``crs`` is the CRS of the schedule
-    coordinates (EPSG:25832 in the Braunschweig pipeline); it is attached unchanged.
+    The WHOLE cut sequence is matched (not its last stop), so a stop that the route visits twice is placed right.
+    The match is unique for a real cut (design R2): the cut keeps the stops from the FIRST to the LAST anchor of the
+    route, and an anchor is a property of the stop, so a second match would start before the first anchor or end
+    after the last one. Two matches therefore mean the timetables do not belong together and return -2.
+    """
+    n = len(cut_ids)
+    starts = [k for k in range(len(pre_cut_ids) - n + 1) if tuple(pre_cut_ids[k:k + n]) == tuple(cut_ids)]
+    if not starts:
+        return -1
+    return starts[0] if len(starts) == 1 else -2
+
+
+def exit_stops(schedule, cut_schedule, hub_stop_ids, modes="all", crs="EPSG:25832") -> gpd.GeoDataFrame:
+    """Portal pt gate candidates of all (or the given) transit modes, read from the CUT timetable (#574, design R10).
+
+    ``schedule`` is the pre-cut transit schedule and ``cut_schedule`` the timetable MATSim runs on (eqasim's cutter
+    applied with the hubs, ``braunschweig.data.transit.cut_schedule``), both ``read_schedule`` results. Two kinds of
+    rows (``EXIT_COLUMNS``):
+
+    - an EXIT row (``is_hub`` False) per cut route whose last stop is not the last stop of the same route
+      ``(line_id, route_id)`` in the pre-cut timetable: the route continues beyond the kept timetable, and
+      ``outside_x/outside_y`` is the next pre-cut stop (it fixes the direction the route leaves in). The cut stop
+      sequence is aligned inside the pre-cut one (``_align_cut_route``). A cut route that ends where its pre-cut
+      route ends gives no exit row; a pre-cut route that the cut dropped gives none.
+    - a HUB row (``is_hub`` True, ``outside_x/outside_y`` NaN) per (hub stop of ``hub_stop_ids``, cut route serving
+      it). A hub that is also an exit stop has both kinds of rows. A configured hub that no cut route of the wanted
+      modes serves gives no row; the count is logged.
+
+    ``modes`` is ``ALL_MODES`` or a set of modes (compared lower-cased with the cut route's mode), for both kinds
+    of rows. ``crs`` is the CRS of the schedule coordinates (EPSG:25832 in the Braunschweig pipeline); it is
+    attached unchanged. A cut route missing from the pre-cut timetable, or whose stop sequence is not exactly one
+    contiguous part of its pre-cut route, raises ``ValueError``: the two timetables do not belong together. A stop
+    id missing from the stops of its timetable raises ``ValueError`` too.
     """
     wanted = _normalise_modes(modes)
-    inside_cache = {}
-
-    def is_inside(stop_id, route):
-        if stop_id not in inside_cache:
-            if stop_id not in schedule.stops:
-                raise ValueError(f"[portal_trips] exit stops: stop '{stop_id}' of route '{route.route_id}' "
-                                 f"(line '{route.line_id}', mode '{route.mode}') is not in the transit stops")
-            inside_cache[stop_id] = cordon_polygon.contains(Point(*schedule.stops[stop_id]))
-        return inside_cache[stop_id]
-
-    rows, scanned = [], 0
+    hub_stop_ids = {str(stop) for stop in hub_stop_ids}
+    pre_cut_routes = {}
     for route in schedule.routes:
+        key = (route.line_id, route.route_id)
+        if key in pre_cut_routes:
+            raise ValueError(f"[portal_trips] exit stops: route '{route.route_id}' (line '{route.line_id}') occurs more "
+                             "than once in the pre-cut timetable; a cut route cannot be matched to its pre-cut route")
+        pre_cut_routes[key] = route
+
+    def coordinates(stops, stop_id, route, label):
+        if stop_id not in stops:
+            raise ValueError(f"[portal_trips] exit stops: stop '{stop_id}' of route '{route.route_id}' "
+                             f"(line '{route.line_id}', mode '{route.mode}') is not in the {label} transit stops")
+        return stops[stop_id]
+
+    rows, scanned, n_exit_rows = [], 0, 0
+    for route in cut_schedule.routes:
         if wanted is not None and str(route.mode).strip().lower() not in wanted:
             continue
         scanned += 1
-        flags = [is_inside(stop_id, route) for stop_id in route.stop_ids]
-        for position in range(len(flags) - 1):
-            if flags[position] and not flags[position + 1]:
-                outside_x, outside_y = schedule.stops[route.stop_ids[position + 1]]
-                rows.append((route.stop_ids[position], route.line_id, route.route_id, route.mode,
-                             float(outside_x), float(outside_y)))
+        pre_cut = pre_cut_routes.get((route.line_id, route.route_id))
+        if pre_cut is None:
+            raise ValueError(f"[portal_trips] exit stops: route '{route.route_id}' (line '{route.line_id}') of the cut "
+                             "timetable is not in the pre-cut timetable; the two timetables do not belong together")
+        start = _align_cut_route(route.stop_ids, pre_cut.stop_ids)
+        if start < 0:
+            raise ValueError(f"[portal_trips] exit stops: the stops of route '{route.route_id}' (line "
+                             f"'{route.line_id}') in the cut timetable are {'not' if start == -1 else 'more than once'}"
+                             " a contiguous part of the same route in the pre-cut timetable; the two timetables do "
+                             "not belong together")
+        successor = start + len(route.stop_ids)
+        if successor < len(pre_cut.stop_ids):
+            coordinates(cut_schedule.stops, route.stop_ids[-1], route, "cut")
+            outside_x, outside_y = coordinates(schedule.stops, pre_cut.stop_ids[successor], pre_cut, "pre-cut")
+            rows.append((route.stop_ids[-1], route.line_id, route.route_id, route.mode, float(outside_x),
+                         float(outside_y), False))
+            n_exit_rows += 1
+        for stop_id in dict.fromkeys(route.stop_ids):  # one row per (hub, route), also for a hub visited twice
+            if stop_id in hub_stop_ids:
+                coordinates(cut_schedule.stops, stop_id, route, "cut")
+                rows.append((stop_id, route.line_id, route.route_id, route.mode, np.nan, np.nan, True))
     requested = "all" if wanted is None else sorted(wanted)
-    logger.info("[portal_trips.gates] exit stops: %d routes scanned (modes: %s), %d exits found at %d stops",
-                scanned, requested, len(rows), len({row[0] for row in rows}))
+    served_hubs = {row[0] for row in rows if row[6]}
+    logger.info("[portal_trips.gates] exit stops: %d cut routes scanned (modes: %s), %d exits found at %d stops; "
+                "hubs served by a cut route %d/%d, %d hub rows", scanned, requested, n_exit_rows,
+                len({row[0] for row in rows if not row[6]}), len(served_hubs), len(hub_stop_ids),
+                len(rows) - n_exit_rows)
+    if len(served_hubs) < len(hub_stop_ids):
+        # Some unserved hubs are expected (a hub facility that no kept route of these modes stops at); a TOTAL miss
+        # almost always means the hub ids do not match the timetable's stop ids, so it is a warning.
+        log = logger.warning if not served_hubs else logger.info
+        log("[portal_trips.gates] exit stops: %d/%d configured hubs are served by no cut route of the modes %s and "
+            "are no gate (first: %s)", len(hub_stop_ids) - len(served_hubs), len(hub_stop_ids), requested,
+            sorted(hub_stop_ids - served_hubs)[:5])
     if scanned == 0 or not rows:
-        logger.warning("[portal_trips.gates] exit stops: %d routes scanned and %d exits found for modes %s; "
+        logger.warning("[portal_trips.gates] exit stops: %d cut routes scanned and %d exits found for modes %s; "
                        "the timetable offers no exit for these modes", scanned, len(rows), requested)
-    frame = pd.DataFrame(rows, columns=EXIT_COLUMNS)
-    return gpd.GeoDataFrame(frame, geometry=[Point(*schedule.stops[s]) for s in frame["stop_id"]], crs=crs)
+    frame = pd.DataFrame(rows, columns=EXIT_COLUMNS).astype({"outside_x": float, "outside_y": float, "is_hub": bool})
+    return gpd.GeoDataFrame(frame, geometry=[Point(*cut_schedule.stops[s]) for s in frame["stop_id"]], crs=crs)
 
 
 def exit_stop_points(exits: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -188,10 +247,14 @@ def _stop_xy(exits: gpd.GeoDataFrame) -> dict:
 
 
 def _toward_mask(point, exits: gpd.GeoDataFrame) -> np.ndarray:
-    """Per exit row: does the outward route head toward ``point`` (outside stop closer than the exit stop)?"""
-    return (np.hypot(exits["outside_x"].to_numpy(dtype=float) - point[0],
-                     exits["outside_y"].to_numpy(dtype=float) - point[1])
-            < np.hypot(exits.geometry.x.to_numpy() - point[0], exits.geometry.y.to_numpy() - point[1]))
+    """Per exit row: does the outward route head toward ``point`` (outside stop closer than the exit stop)?
+
+    A hub row is always True (design R10): a hub has no outward direction, it is a station to travel to.
+    """
+    heading = (np.hypot(exits["outside_x"].to_numpy(dtype=float) - point[0],
+                        exits["outside_y"].to_numpy(dtype=float) - point[1])
+               < np.hypot(exits.geometry.x.to_numpy() - point[0], exits.geometry.y.to_numpy() - point[1]))
+    return heading | exits["is_hub"].to_numpy(dtype=bool)
 
 
 def pt_gate_candidates(origin_xy, point_xy, exits: gpd.GeoDataFrame, max_extra_detour_m: float,
@@ -199,7 +262,8 @@ def pt_gate_candidates(origin_xy, point_xy, exits: gpd.GeoDataFrame, max_extra_d
     """Per stay the directional exit stops within the extra-detour cap, as ``(stop_id, detour_m)`` by detour.
 
     A route heads toward the point when its outside stop is closer to the point than the exit stop
-    itself (``hypot(outside - point) < hypot(stop - point)``). A stop is listed once however many routes
+    itself (``hypot(outside - point) < hypot(stop - point)``); a hub row always counts as directional
+    (``_toward_mask``, #574), so a hub is a candidate for every stay. A stop is listed once however many routes
     qualify. Its detour is the straight line origin -> stop -> point. Only stops with a detour of at most the
     smallest directional detour of the stay plus ``max_extra_detour_m`` are kept (``math.inf`` keeps all),
     ordered by detour (ties keep the order of ``exits``). No ``n_candidates`` cut happens here: since #572
@@ -232,10 +296,14 @@ def pt_gate_candidates(origin_xy, point_xy, exits: gpd.GeoDataFrame, max_extra_d
 def _departure_table(schedule, exits: gpd.GeoDataFrame) -> dict:
     """``(stop_id, (line_id, route_id)) -> sorted departure times (s)`` for the exit routes of ``exits``.
 
-    One pass over the schedule routes (built once per call, not per stay). A stop visited twice by one
-    route contributes both times, as in ``schedule.departures_at_stop``.
+    One pass over the (pre-cut) schedule routes (built once per call, not per stay). A stop visited twice by one
+    route contributes both times, as in ``schedule.departures_at_stop``. Hub rows are skipped: a hub is served
+    without a departure check (design R10).
     """
-    pairs = {(str(s), (line, route)) for s, line, route in zip(exits["stop_id"], exits["line_id"], exits["route_id"])}
+    exit_rows = ~exits["is_hub"].to_numpy(dtype=bool)
+    pairs = {(str(s), (line, route)) for s, line, route in zip(exits["stop_id"].to_numpy()[exit_rows],
+                                                                 exits["line_id"].to_numpy()[exit_rows],
+                                                                 exits["route_id"].to_numpy()[exit_rows])}
     keys = {key for _, key in pairs}
     times: dict = {}
     for route in schedule.routes:
@@ -264,13 +332,31 @@ def _connected(router, tasks, *, inside_stop_ids, walk_max_m, latest_arrival_s=N
     """Identifiers of ``tasks`` that the router connects (one router call; empty tasks make no call).
 
     A task without a trips row (the router found no route) is not connected and is counted as ``no_route``.
+    ``inside_stop_ids`` are the stops of the cut timetable the router runs on (#574, design R10): a routed leg that
+    boards or alights at another stop means the router did NOT run on the cut timetable, a wiring defect that raises
+    ``RuntimeError`` before any connection is judged (it is never a rejection). Blank stop ids are left to
+    ``connection_mask``, which rejects them.
     """
-    from braunschweig.data.transit.connections import TASK_COLUMNS, connection_mask
+    from braunschweig.data.transit.connections import (LEGS_REQUIRED_COLUMNS, TASK_COLUMNS, require_columns,
+                                                       connection_mask)
 
     if not tasks:
         return set()
     frame = pd.DataFrame(tasks, columns=TASK_COLUMNS)
     trips, legs = router(frame)
+    # the same explicit error as connection_mask for router output without the stop columns, before the guard reads them
+    require_columns(legs, LEGS_REQUIRED_COLUMNS, "legs", "connection_mask")
+    access, egress = (legs[column].fillna("").astype(str) for column in ("access_stop_id", "egress_stop_id"))
+
+    def is_foreign(stops):
+        return (stops.str.strip() != "") & ~stops.isin(inside_stop_ids)
+
+    foreign_legs = is_foreign(access) | is_foreign(egress)
+    if foreign_legs.any():
+        foreign = sorted(set(access[is_foreign(access)]) | set(egress[is_foreign(egress)]))
+        raise RuntimeError(f"[portal_trips] pt gates: {int(foreign_legs.sum())} of {len(legs)} routed legs board or "
+                           f"alight at {len(foreign)} stops that are not in the cut timetable (first {foreign[:5]}); "
+                           "the router did not route on the cut timetable (check the schedule path of its config)")
     mask = connection_mask(trips, legs, inside_stop_ids=inside_stop_ids, walk_max_m=walk_max_m,
                            task_ids=frame["identifier"], latest_arrival_s=latest_arrival_s,
                            label="portal pt gates")
@@ -289,7 +375,8 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
     SERVED ones are kept, i.e. a route heading toward the stay's external point departs at the stop in
     ``[t, t + service_window_s]`` at the planned gate arrival (outbound) and, when the stay has a return leg, at
     the planned re-entry (the outward departures near the re-entry time are a PROXY for the return service: the
-    inbound service is not read from the timetable here, the router checks it); the ``n_candidates`` served
+    inbound service is not read from the timetable here, the router checks it); a hub stop (a hub row in ``exits``)
+    is always served (design R10); the ``n_candidates`` served
     stops with the smallest detour are routed exactly: the router must connect each from the in-region
     end to the gate at the planned trip departure (outbound) and from the gate to the in-region end at
     the re-entry (return; ``connection_mask`` rule with ``inside_stop_ids`` and ``walk_max_m``).
@@ -353,6 +440,9 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
     for r, stop in enumerate(exits["stop_id"].astype(str)):
         stop_rows.setdefault(stop, []).append(r)
     route_keys = list(zip(exits["line_id"], exits["route_id"]))
+    # A stop with a hub row is always served (design R10, ASSUMPTION: a hub station has onward service; the router
+    # decides whether it is reachable at the time); its exit rows are not consulted.
+    hub_stops = set(exits["stop_id"].astype(str).to_numpy()[exits["is_hub"].to_numpy(dtype=bool)])
 
     def service(candidates):
         """Service of all (stay, stop) pairs of ``candidates`` at once: one vectorised _split_share call.
@@ -372,9 +462,12 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
         t_out = out_dep[stay] + share_out * (out_arr[stay] - out_dep[stay])
         t_ret = ret_dep[stay] + share_ret * (ret_arr[stay] - ret_dep[stay])
         for k, (i, stop) in enumerate(pair_keys):
+            out_time[i, stop], ret_time[i, stop] = float(t_out[k]), float(t_ret[k])
+            if stop in hub_stops:
+                served[i, stop] = True
+                continue
             # the routes at this stop that head toward the stay's external point
             keys = {route_keys[r] for r in stop_rows[stop] if toward[i][r]}
-            out_time[i, stop], ret_time[i, stop] = float(t_out[k]), float(t_ret[k])
             ok = _has_departure(table, stop, keys, out_time[i, stop], service_window_s)
             if ok and has_return[i]:
                 ok = _has_departure(table, stop, keys, ret_time[i, stop], service_window_s)

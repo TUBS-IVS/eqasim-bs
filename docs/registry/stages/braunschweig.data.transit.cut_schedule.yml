@@ -1,0 +1,40 @@
+stage: braunschweig.data.transit.cut_schedule
+title: Cut public-transport timetable (the timetable MATSim runs)
+layer: cordon
+description: >-
+  Cuts the processed transit schedule of matsim.scenario.supply.processed to the cordon extent with eqasim's
+  own schedule cutter (RunTransitScheduleCutter of the fork, the same TransitScheduleCutter prepare's
+  RunScenarioCutter applies), keeping every route that serves the extent up to the configured hub stations
+  (ADR-0186, issue #574). Writes the extent GeoPackage through the shared cordon helper, the hub names
+  (UTF-8, one per line) and the hub table hub_stops.csv (name, stop_id, x, y, inside_extent), and returns the
+  cut schedule path, the kept and hub stop ids and the counts. The portal stage routes its pt gate check on
+  this timetable and derives the pt exits and hub gates from its routes; prepare verifies that its own cut
+  produces the same routes. Raises when a configured hub name matches no facility or the cut keeps no route;
+  logs the kept stops as a rate and the hubs that lie in the kept timetable.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: >-
+    No eqasim precedent: upstream cuts the timetable only inside RunScenarioCutter. The CLI exists so that the
+    synthesis and prepare share one cut rule.
+code:
+- braunschweig/data/transit/cut_schedule.py
+- braunschweig/data/spatial/cordon.py
+- braunschweig/data/cordon/extent.py
+- braunschweig/data/transit/schedule.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+production: true
+inputs: []
+features:
+- portal_trips
+decisions:
+- ADR-0186
+notes: >-
+  Reads data.spatial.municipalities (extent), matsim.scenario.supply.processed (pre-cut schedule),
+  matsim.runtime.eqasim and matsim.runtime.java (the fork jar and the Java runner). Config keys in
+  configs/base_bs.yml: braunschweig.cutter.transit_cut_mode (extent = the upstream cut, kept-stops = the cut of
+  ADR-0186; hub names only with kept-stops) and braunschweig.cutter.transit_hub_stop_names (exact stop names of
+  the pre-cut timetable). The same two keys drive prepare's RunScenarioCutter call.

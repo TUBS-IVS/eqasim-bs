@@ -1,0 +1,15 @@
+[
+  {
+    "stage": "braunschweig.data.transit.cut_schedule",
+    "seconds": 33,
+    "n_stops_pre_cut": 31022,
+    "n_stops_kept": 10436,
+    "n_hub_stops": 55,
+    "mode": "kept-stops"
+  },
+  {
+    "stage": "braunschweig.synthesis.portal_trips.stage",
+    "seconds": 865,
+    "run_stem": "braunschweig.synthesis.portal_trips.stage__3bf655a528d6076561ce70276e1f8d1a"
+  }
+]

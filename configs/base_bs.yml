@@ -966,6 +966,10 @@ config:
   # work/education legs fall back to the donor's reported distance (the primary method is then suspect).
   braunschweig.portal.fallback_warn_share: 0.1
   cordon_network_buffer_fraction: 0.10
+  # Cut timetable mode of the scenario cut and the portal check: ADR-0186, #574.
+  braunschweig.cutter.transit_cut_mode: kept-stops
+  # Hub stops (exact names) anchoring the kept route parts: ADR-0186, #574.
+  braunschweig.cutter.transit_hub_stop_names: [Hannover Hbf, Hildesheim Hbf, Magdeburg Hbf, "G\u00f6ttingen", Wernigerode Hbf, Halberstadt Hbf, Uelzen]
   # Gate facility links (#465, ADR-0167): the portal gate facilities and the in-commuter homes at a gate point get the
   # car link that feeds the inward gate link, outside the cut extent, instead of eqasim's nearest non-motorway link.
   # Eligible links carry >= the minimum capacity; the inward gate link lies within the maximum distance of the gate

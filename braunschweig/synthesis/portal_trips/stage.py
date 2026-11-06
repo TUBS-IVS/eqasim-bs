@@ -25,8 +25,6 @@ import os
 import numpy as np
 import pandas as pd
 
-from shapely.geometry import Point
-
 from braunschweig import synpp_tokens
 from braunschweig.matsim.simulation import plan_check as _plan_check
 from braunschweig.popsim import plan_validation as _plan_validation
@@ -60,6 +58,7 @@ DEFAULT_POPSIM_SOURCE = "mid"
 REPORT_FILE_NAME = "portal_trips_report.json"
 TRIPS_STAGE = "braunschweig.synthesis.commute_day.trips_day_stage"
 PERSONS_STAGE = "synthesis.population.enriched"
+CUT_SCHEDULE_STAGE = "braunschweig.data.transit.cut_schedule"
 REQUIRED_TRIP_COLUMNS = ("person_id", "trip_index", "preceding_purpose", "following_purpose", "mode",
                          "euclidean_distance", "departure_time", "arrival_time", "is_synthetic_closure")
 
@@ -88,7 +87,7 @@ _EMPTY_STAY_REPORT = {
     "n_pt_stays": 0, "pt_gate_reasons": {}, "no_connection_actions": {}, "n_departure_shifted_s_median": None,
     "n_kept_fallback_all_stops": 0, "n_pt_gate_beyond_top_n": 0, "n_pt_no_served_within_cap": 0,
     "n_soft_mode_stays_beyond_distance": 0, "n_soft_mode_stays_to_pt": 0,
-    "n_soft_mode_stays_left_to_outside_tour_modes": 0,
+    "n_soft_mode_stays_left_to_outside_tour_modes": 0, "n_hub_gates_chosen": 0,
 }
 
 
@@ -149,6 +148,8 @@ def configure(context):
     context.stage("braunschweig.data.external_secondary_points")
     context.stage("data.spatial.municipalities")
     context.stage("matsim.scenario.supply.processed")
+    # #574: the pt gate candidates and the router check come from the cut timetable MATSim runs on.
+    context.stage(CUT_SCHEDULE_STAGE)
 
 
 def _configure_gate_settings(context) -> dict:
@@ -311,7 +312,9 @@ def _stay_fallback_gates(origin_xy, point_xy, exits, needed):
     """The gate a KEPT pt stay without a connection takes, for the stays flagged in ``needed``.
 
     Per needed stay the nearest-by-detour exit stop among its DIRECTIONAL exit stops (outside stop closer to
-    the external point than the exit stop); when the stay has none, among all exit stops. Returns
+    the external point than the exit stop; a hub row always counts as directional, #574); when the stay has none,
+    among all exit stops. With at least one hub served by a cut route every stay has a directional stop, so the
+    all-stops fallback (``n_kept_fallback_all_stops``) practically no longer fires then. Returns
     ``(frame with gate_id, x, y, all_stops)``: one row per stay (rows of stays that are not ``needed`` stay
     None/NaN and are never read by ``resolve_no_connection``, which only reads the rows of the stays it
     keeps) and ``all_stops``, the bool flags of the needed stays that had no directional exit stop and
@@ -343,14 +346,9 @@ def _stay_fallback_gates(origin_xy, point_xy, exits, needed):
     return frame, all_stops
 
 
-def _inside_stop_ids(schedule, cordon_polygon) -> set:
-    """Ids of the schedule stops that lie inside the cut extent (a connection may only use these)."""
-    return {stop for stop, (x, y) in schedule.stops.items() if cordon_polygon.contains(Point(x, y))}
-
-
 def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates, links, external_points,
-                       schedule, router, pt_gate_modes, gate_settings, cordon_polygon, threshold_m, tolerance,
-                       warn_share, fallback_warn_share, seed,
+                       schedule, cut_schedule, hub_stop_ids, router, pt_gate_modes, gate_settings, cordon_polygon,
+                       threshold_m, tolerance, warn_share, fallback_warn_share, seed,
                        soft_mode_max_distance_m=None):
     """Pure entry point: classify, merge stays, draw points, choose gates, time, fix modes, rewrite.
 
@@ -361,7 +359,11 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     straight-line origin -> destination distance of a walk / bicycle stay (ADR-0163, see ``modes``).
 
     The pt stays take a timetable-aware gate (#465): ``schedule`` is the pre-cut transit schedule
-    (``braunschweig.data.transit.schedule.Schedule``), ``router`` the batch pt router
+    (``braunschweig.data.transit.schedule.Schedule``; the direction and departure tables of the exits),
+    ``cut_schedule`` the cut timetable MATSim runs on and ``hub_stop_ids`` its hub stops (#574, design R10: the gate
+    candidates are the stops where a kept route leaves the cut timetable plus the hubs, and the router's connection
+    may only use the stops of the cut timetable; ``gates.exit_stops``). ``cordon_polygon`` places the road gates.
+    ``router`` the batch pt router
     (``braunschweig.data.transit.connections.Router``: tasks frame -> (trips, legs)), ``pt_gate_modes``
     ``"all"`` or the transit modes allowed as gates, and ``gate_settings`` the dict with ``n_candidates``,
     ``max_extra_detour_m``, ``service_window_s``, ``shift_window_s``, ``shift_step_s``, ``min_stay_s``, ``no_connection_warn_share``
@@ -404,7 +406,10 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     report = {"n_persons": int(trips["person_id"].nunique()), "n_portal_legs": int(is_portal.sum()),
               "n_stays": int(len(stays)), "n_removed_legs": int(stays["n_removed_legs"].sum()) if len(stays) else 0,
               **classification_counts, **copy.deepcopy(_EMPTY_STAY_REPORT),
-              "n_stays_closure_return_dropped": n_closure_dropped}
+              "n_stays_closure_return_dropped": n_closure_dropped,
+              # #574: the timetable the pt gate check routes on
+              "n_stops_cut_timetable": len(cut_schedule.stops), "n_routes_cut_timetable": len(cut_schedule.routes),
+              "n_hub_stops": len(hub_stop_ids)}
     logger.info("%s stays whose return was the plan repair's invented home trip (is_synthetic_closure), dropped so "
                 "the day ends outside: %d/%d (%.1f%%)", _LOG_TAG, n_closure_dropped, len(stays),
                 100.0 * n_closure_dropped / max(len(stays), 1))
@@ -447,8 +452,8 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
         "n_soft_mode_stays_left_to_outside_tour_modes": int(modes["soft_mode_left_to_outside_tour_modes"].sum())}
     road_gates = _gates.gate_inside_points(gates, links, cordon_polygon)
     modes, trips, pt_gates, pt_report = _resolve_pt_stays(
-        stays, trips, modes, availability, origin_xy, point_xy, outbound_positions, schedule, router,
-        pt_gate_modes, gate_settings, cordon_polygon, df_home.crs)
+        stays, trips, modes, availability, origin_xy, point_xy, outbound_positions, schedule, cut_schedule,
+        hub_stop_ids, router, pt_gate_modes, gate_settings, df_home.crs)
     gate_rows = _gates.choose_gates(origin_xy, point_xy, modes["mode"].to_numpy(), road_gates, pt_gates)
     gate_xy = gate_rows[["x", "y"]].to_numpy(dtype=float)
     outbound = _timing.outbound_arrivals(stays, trips, origin_xy, gate_xy, point_xy)
@@ -466,6 +471,8 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
         "n_stays_by_kind": _counts(gate_rows["kind"]),
         "n_stays_by_mode": _counts(modes["mode"]),
         "gate_usage": _counts(gate_rows["gate_id"]),
+        "n_hub_gates_chosen": int(((gate_rows["kind"] == _gates.KIND_PT)
+                                   & gate_rows["gate_id"].astype(str).isin({str(s) for s in hub_stop_ids})).sum()),
         "n_mode_substituted": int(modes["substituted_from"].notna().sum()),
         "mode_substitution_reasons": _counts(modes["substitution_reason"].dropna()),
         "n_return_mode_differs": int(modes["return_mode_differs"].sum()),
@@ -486,8 +493,8 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     return {"trips": out, "anchors": anchors, "report": report}
 
 
-def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, outbound_positions, schedule, router,
-                      pt_gate_modes, gate_settings, cordon_polygon, crs):
+def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, outbound_positions, schedule,
+                      cut_schedule, hub_stop_ids, router, pt_gate_modes, gate_settings, crs):
     """Timetable-aware gates of the pt stays and the no-connection fallback chain (#465).
 
     Returns ``(modes, trips, pt_gates, report_entries)``: ``modes`` carries the added column
@@ -516,8 +523,15 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
             "n_pt_gate_beyond_top_n": 0, "n_pt_no_served_within_cap": 0}
     if router is None:
         raise ValueError(f"{_LOG_TAG} {n_pt} pt stays need the batch pt router but none was given")
-    exits = _gates.exit_stops(schedule, cordon_polygon, pt_gate_modes, crs=crs)
-    inside_stop_ids = _inside_stop_ids(schedule, cordon_polygon)
+    exits = _gates.exit_stops(schedule, cut_schedule, hub_stop_ids, pt_gate_modes, crs=crs)
+    # #574: a connection may only use the stops of the cut timetable (the timetable the router runs on)
+    inside_stop_ids = set(cut_schedule.stops)
+    is_hub = exits["is_hub"].to_numpy(dtype=bool)
+    logger.info("%s pt gates: exits %d at %d stops; hub facilities served %d/%d (%.1f %%), check on the cut timetable "
+                "with %d stops and %d routes", _LOG_TAG, int((~is_hub).sum()), exits.loc[~is_hub, "stop_id"].nunique(),
+                exits.loc[is_hub, "stop_id"].nunique(), len(hub_stop_ids),
+                100.0 * exits.loc[is_hub, "stop_id"].nunique() / max(len(hub_stop_ids), 1), len(cut_schedule.stops),
+                len(cut_schedule.routes))
 
     person_ids = stays["person_id"].to_numpy()[pt_rows]
     has_return = stays["return_trip_index"].notna().to_numpy()[pt_rows]
@@ -668,14 +682,19 @@ def execute(context):
     supply = context.stage("matsim.scenario.supply.processed")
     schedule_path = os.path.join(context.path("matsim.scenario.supply.processed"), supply["schedule_path"])
     schedule = read_schedule(schedule_path)
-    # The batch pt router runs on the pre-cut network and schedule (the stay's in-region end may lie in the
-    # buffer ring) with the vehicles of the gtfs stage; its work files live in the stage directory.
+    # #574: the timetable MATSim runs on (eqasim's cutter with the hubs); the gates and the router check use it.
+    cut = context.stage(CUT_SCHEDULE_STAGE)
+    cut_schedule_path = os.path.join(context.path(CUT_SCHEDULE_STAGE), cut["schedule_path"])
+    cut_schedule = read_schedule(cut_schedule_path)
+    # The batch pt router runs on the CUT schedule and the pre-cut network (the stay's in-region end may lie in the
+    # buffer ring, and the network keeps the links of every kept route) with the vehicles of the gtfs stage; its
+    # work files live in the stage directory.
     supply_dir = context.path("matsim.scenario.supply.processed")
     gtfs_dir = context.path("matsim.scenario.supply.gtfs")
     vehicles_path = os.path.join(gtfs_dir, context.stage("matsim.scenario.supply.gtfs")["vehicles_path"])
     config_path = write_router_config(
         os.path.join(context.path(), ROUTER_CONFIG_NAME), network_path=os.path.join(supply_dir, supply["network_path"]),
-        schedule_path=schedule_path, vehicles_path=vehicles_path)
+        schedule_path=cut_schedule_path, vehicles_path=vehicles_path)
     router = functools.partial(
         route_batch, context, config_path=config_path,
         threads=int(context.config("matsim_threads") or context.config("processes")),
@@ -684,6 +703,7 @@ def execute(context):
     out = build_portal_trips(
         trips=trips, persons=context.stage(PERSONS_STAGE), df_home=df_home, df_work=df_work,
         df_education=df_education, gates=gates, links=links, external_points=external_points, schedule=schedule,
+        cut_schedule=cut_schedule, hub_stop_ids=set(cut["hub_stop_ids"]),
         router=router, pt_gate_modes=context.config(KEY_PT_GATE_MODES),
         gate_settings={"n_candidates": int(context.config(KEY_GATE_CANDIDATES)),
                        "max_extra_detour_m": float(context.config(KEY_GATE_MAX_EXTRA_DETOUR_M)),

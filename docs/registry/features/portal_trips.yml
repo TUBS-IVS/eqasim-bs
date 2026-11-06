@@ -13,8 +13,10 @@ description: >-
   synthesis.population.trips.final: consecutive far destinations merge into one stay, the gate is the road gate
   or the schedule-derived pt exit stop with the smallest detour among those that the timetable and the eqasim
   batch router show to be served and connected at the stay's times (ADR-0152; candidates are the served
-  directional exit stops within an extra-detour cap, ADR-0184; always inside the cut extent, so
-  the scenario cutter cuts nothing; a pt stay without any connection becomes car, car passenger, a shifted
+  directional exit stops within an extra-detour cap, ADR-0184; since ADR-0186 the exits are the last kept stops
+  of the timetable cut to the extent plus the configured hub stations, and the router checks the connection on
+  that cut timetable, so a pt gate at a hub lies outside the extent and the ride to it is simulated, while road
+  gates stay inside the extent; a pt stay without any connection becomes car, car passenger, a shifted
   departure or a counted kept stay), the stay ends at a time derived from the donor's diary, and the donor's
   outbound mode is fixed for both legs after an availability check with a counted substitution order. The
   outbound leg arrives at the gate after the geometric inside share of its diary duration (ADR-0141).
@@ -49,6 +51,7 @@ description: >-
   number of work persons without a commute row.
 stages:
 - braunschweig.synthesis.portal_trips.stage
+- braunschweig.data.transit.cut_schedule
 - braunschweig.synthesis.portal_trips.anchors
 - synthesis.population.trips.final
 - synthesis.population.spatial.secondary.locations
@@ -111,6 +114,7 @@ code_paths:
 - braunschweig/synthesis/portal_trips/no_connection.py
 - braunschweig/data/transit/schedule.py
 - braunschweig/data/transit/connections.py
+- braunschweig/data/transit/cut_schedule.py
 - braunschweig/synthesis/portal_trips/rewrite.py
 - braunschweig/synthesis/portal_trips/stage.py
 - braunschweig/synthesis/portal_trips/timing.py
@@ -147,6 +151,8 @@ evidence:
   - tests/test_portal_trips_gates.py
   - tests/test_portal_trips_no_connection.py
   - tests/test_transit_connections.py
+  - tests/test_transit_cut_schedule.py
+  - tests/test_prepare_cut_to_cordon.py
   - tests/test_transit_schedule_reader.py
   - tests/test_portal_trips_rewrite.py
   - tests/test_portal_trips_stage.py
@@ -204,6 +210,7 @@ validation:
   runs:
   - portal-trips-ab-1pct-2026-10-09
   - i465-wpe-smoke-1pct-2026-10-23
+  - i574-portal-replay-prod100-2026-11-06
   metric: null
   note: >-
     Smoke and A/B direction only (run portal-trips-ab-1pct-2026-10-09: 1 % sample, 0 MATSim iterations, flag OFF
@@ -241,7 +248,12 @@ notes: >-
   under [portal_trips] and warned above braunschweig.portal.no_connection_warn_share. Since ADR-0156 (#465) a stay
   without a connection may also return earlier, and the last resort is a lift (car_passenger) instead of a kept pt
   stay that the router walks. Since ADR-0183 (#570) a stay whose return is the plan repair's invented home trip
-  ends the day outside and is checked outward only.
+  ends the day outside and is checked outward only. Since ADR-0186 (#574) the pt gate candidates come from the
+  cut timetable of braunschweig.data.transit.cut_schedule (its last kept stops and the hub stations of
+  braunschweig.cutter.transit_hub_stop_names), the router routes on that timetable, and eqasim's cutter cuts pt
+  trips where they leave it, never at an excursion; the portal check is replayed against main in run
+  i574-portal-replay-prod100-2026-11-06 (model output, a replay, not a validation); the population cut is measured
+  by the next production run.
   Config invariant: any config that aliases synthesis.population.trips.final to something other than the portal
   trips_final must set braunschweig.portal.enabled false (the fixtures do; docs/codebase/notes/portal-trips.md).
   The outside-tour-modes stage (ADR-0145) runs after the location choice and may re-mode a portal stay's
