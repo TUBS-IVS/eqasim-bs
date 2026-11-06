@@ -140,6 +140,9 @@ def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.n
     offsets = shift_offsets_s(shift_window_s, shift_step_s)
     n = len(trips)
     if portal_leg is None:
+        if np.asarray(portal_tour, dtype=bool).any():
+            raise ValueError(f"{_LOG_TAG} portal_tour flags portal tours but portal_leg is None: the gate class of "
+                             f"those tours is unknown")
         portal_leg = np.zeros(n, dtype=bool)
     for name, values in (("tour_ids", tour_ids), ("outside", outside), ("portal_tour", portal_tour),
                          ("portal_leg", portal_leg), ("endpoints", endpoints)):
@@ -303,9 +306,14 @@ def log_report(report: dict, warn_share: float) -> None:
             portal_class, n_class, part["n_legs_probed"], part["n_legs_lifted"],
             ", ".join("%s %d" % (a, c) for a, c in part["actions"].items() if c) or "no actions")
         message += " (unserved %.1f%%)" % (100.0 * class_unserved / n_class if n_class else 0.0)
-    if counts[ACTION_KEPT] or (n and unserved / n > warn_share):
+    high_classes = [portal_class for portal_class, part in report["by_portal_class"].items()
+                    if part["n_tours_checked"]
+                    and sum(part["actions"][a] for a in UNSERVED_ACTIONS) / part["n_tours_checked"] > warn_share]
+    if counts[ACTION_KEPT] or (n and unserved / n > warn_share) or high_classes:
         logger.warning("%s -- %.1f%% of the tours have no timetable connection within the shift window (warn share "
-                       "%.1f%%); %s %d are routed as walks", message, 100.0 * unserved / n if n else 0.0,
-                       100.0 * warn_share, ACTION_KEPT, counts[ACTION_KEPT])
+                       "%.1f%%; portal classes above it: %s); they are switched to car or car_passenger, lifted "
+                       "(legs or tour) or kept; only the %d %s tours are routed as walks", message,
+                       100.0 * unserved / n if n else 0.0, 100.0 * warn_share, high_classes or "none",
+                       counts[ACTION_KEPT], ACTION_KEPT)
     else:
         logger.info(message)

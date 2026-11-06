@@ -4,7 +4,7 @@ In the 1 % rerun of the #465 fixes, 15 pt legs of non-portal outside tours of re
 connection; the prepare routing replaced each by a direct walk of 8-30 km, and two of the seven residents stuck at the
 end of that run walked such legs (a pt leisure tour to an external destination). Nothing checked these legs: the
 portal stays and the in-commuters have their own checks. ``resolve_pt_tours`` probes every pt leg of an outside tour
-without a portal leg and resolves a tour without a connection by moving it as a whole (earlier first), then by car,
+and, since #575 (ADR-0187, tests at the end of the file), of a tour with a portal leg, and resolves a tour without a connection by moving it as a whole (earlier first), then by car,
 then by a lift (car_passenger), and as the last resort by a lift without the passenger availability, never a walk.
 """
 from __future__ import annotations
@@ -313,3 +313,50 @@ def test_a_portal_leg_flag_of_the_wrong_length_raises():
     trips = _trips([(1, 0, "home", "outside", "pt", 18.0, 18.5), (1, 1, "outside", "home", "pt", 22.0, 22.5)])
     with pytest.raises(ValueError, match="portal_leg"):
         _resolve(trips, _service_probe(0, 30 * H), portal=[True, True], portal_leg=[True])
+
+
+def test_portal_tours_without_the_per_leg_flag_raise():
+    trips = _trips([(1, 0, "home", "outside", "pt", 18.0, 18.5), (1, 1, "outside", "home", "pt", 22.0, 22.5)])
+    with pytest.raises(ValueError, match="portal_leg"):
+        _resolve(trips, _service_probe(0, 30 * H), portal=[True, True])
+
+
+def test_a_portal_tour_without_a_pt_leg_is_never_probed():
+    trips = _trips([(1, 0, "home", "outside", "car", 18.0, 18.5), (1, 1, "outside", "home", "car", 22.0, 22.5)])
+    seen = []
+    result = _resolve(trips, _service_probe(-1.0, -1.0, seen), portal=[True, True], portal_leg=[True, True])
+    assert seen == [] and result.report["n_tours_checked"] == 0
+    pd.testing.assert_frame_equal(result.trips, trips)
+
+
+def test_a_tour_with_a_road_and_a_rail_portal_leg_is_a_rail_tour():
+    trips = _trips([(1, 0, "home", "outside", "car", 18.0, 18.5), (1, 1, "outside", "other", "pt", 19.0, 19.5),
+                    (1, 2, "other", "home", "pt", 22.0, 22.5)])
+    result = _resolve(trips, _served_at(22), portal=[True] * 3, portal_leg=[True, False, True],
+                      availability=_availability([1], can_car=True))
+    assert list(result.tour_actions["portal_class"]) == ["rail"]
+    assert list(result.trips["mode"]) == ["car", "car_passenger", "pt"]
+
+
+def test_a_rail_tour_whose_only_unserved_leg_is_a_portal_leg_lifts_just_that_leg():
+    trips = _trips([(1, 0, "home", "outside", "pt", 18.0, 18.5), (1, 1, "outside", "other", "pt", 19.0, 19.5),
+                    (1, 2, "other", "home", "pt", 22.0, 22.5)])
+    result = _resolve(trips, _served_at(19, 22), portal=[True] * 3, portal_leg=[True, False, True])
+    assert list(result.trips["mode"]) == ["car_passenger", "pt", "pt"]
+    assert result.report["n_legs_lifted"] == 1 and result.report["actions"][LIFT_LEGS] == 1
+
+
+def test_a_portal_class_above_the_warn_share_warns_although_the_total_is_below_it(caplog):
+    def part(n, **counts):
+        actions = {a: 0 for a in P.ACTIONS}
+        actions.update(counts)
+        return {"n_tours_checked": n, "n_legs_probed": n, "n_legs_lifted": counts.get(LIFT_LEGS, 0),
+                "actions": actions}
+    none = part(98, connection_found=98)
+    rail = part(2, connection_found=1, pt_legs_to_car_passenger_lift=1)
+    actions = {a: none["actions"][a] + rail["actions"][a] for a in P.ACTIONS}
+    report = {"n_tours_checked": 100, "n_legs_probed": 100, "n_legs_lifted": 1, "actions": actions,
+              "by_portal_class": {"none": none, "road": part(0), "rail": rail}, "shift_abs_s_median": None}
+    with caplog.at_level(logging.INFO):
+        P.log_report(report, warn_share=0.05)
+    assert [r for r in caplog.records if r.levelno == logging.WARNING and "rail" in r.getMessage()]

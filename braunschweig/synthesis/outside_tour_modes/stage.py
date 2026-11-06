@@ -201,8 +201,9 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
     """The re-moded trips frame and the report (pure apart from the ``pt_check`` probe; see the module docstring).
 
     The returned frame keeps the input's row order, index and columns; only ``mode`` values of re-moded tours
-    change, and with ``pt_check`` the modes and times of the outside tours whose pt legs have no timetable
-    connection (``pt_connections.resolve_pt_tours``, ADR-0159). The computation runs on a ``person_id,
+    change, and with ``pt_check`` the modes and times of the outside tours and of the tours with a portal leg whose
+    pt legs have no timetable connection (``pt_connections.resolve_pt_tours``, ADR-0159; the portal-tour extension,
+    ADR-0187). The computation runs on a ``person_id,
     trip_index``-sorted view (stable sort) and writes back by index. ``municipalities_crs``, when given, must equal
     the CRS of ``locations`` (pyproj equality). ``last_resort`` (``keep`` in this function, the stage passes the
     configured value) decides what happens to a road-gate portal tour without an admissible mode and to a pt tour
