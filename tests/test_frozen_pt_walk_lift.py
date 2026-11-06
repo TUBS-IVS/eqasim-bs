@@ -210,15 +210,18 @@ def test_an_activity_without_coordinates_fails_early_naming_person_and_activity(
 
 
 class _RunContext:
-    def __init__(self, directory):
+    def __init__(self, directory, max_share=1.0, fail_on_threshold=False):
         self._directory = directory
+        self._max_share = max_share
+        self._fail = fail_on_threshold
 
     def path(self):
         return str(self._directory)
 
     def config(self, key):
         return {"braunschweig.plan_check.pt_as_walk_bound_min_distance_m": MIN_DISTANCE_M,
-                "braunschweig.plan_check.max_frozen_pt_as_walk_share": 1.0}[key]
+                "braunschweig.plan_check.max_frozen_pt_as_walk_share": self._max_share,
+                "braunschweig.plan_check.fail_on_threshold": self._fail}[key]
 
 
 def _stage_directory(tmp_path, *persons):
@@ -236,6 +239,19 @@ def test_run_replaces_the_population_and_a_failure_leaves_original_and_no_tempor
     report = L.run(_RunContext(stage), "config.xml")
     assert report["n_lifted"] == 1 and (stage / "frozen_pt_walk_lift.json").exists()
     assert [leg.get("mode") for leg in _plan_elements(stage / "pop.xml.gz", "p") if leg.tag == "leg"][1] == "car_passenger"
+
+    # Above the bound: no raise with fail_on_threshold false, ValueError (report still written) when true.
+    for fail, name in ((False, "soft"), (True, "hard")):
+        over = tmp_path / name
+        over.mkdir()
+        _stage_directory(over, _person("p", "stamp", 8000.0))
+        context = _RunContext(over, max_share=0.0, fail_on_threshold=fail)
+        if fail:
+            with pytest.raises(ValueError, match="fail_on_threshold"):
+                L.run(context, "config.xml")
+        else:
+            assert L.run(context, "config.xml")["bound_exceeded"]
+        assert (over / "frozen_pt_walk_lift.json").exists()
 
     bad = tmp_path / "bad"
     bad.mkdir()
