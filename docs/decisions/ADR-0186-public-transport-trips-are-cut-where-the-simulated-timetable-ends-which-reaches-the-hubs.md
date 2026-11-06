@@ -70,6 +70,15 @@
    activity that absorbs it (survivor wins), so `portalGate` and `typeBeforeCutting` of a stay at a hub survive.
    Consequence: after a merge the surviving crossing activity carries the attributes of the real activity it
    absorbed, not of its own location (a reader of `typeBeforeCutting` sees the stay, at the crossing's coordinate).
+   **Stop anchor (owner decision 2026-11-06):** every `outside` activity the transit trip processor creates at a
+   stop (an in-vehicle crossing's inside stop, a walk transition at a kept position) carries `cutTransitStopId`,
+   and `OutsideFacilityAdapter` gives such activities ONE facility per stop (`outside_stop_<stop id>`) at the
+   stop's coordinate, with the nearest road link as before so that a car leg stays routable; every other
+   `outside` activity (road and teleport crossings, the far synthesis activities) keeps eqasim's one facility per
+   road link at the link midpoint. The re-routed piece of a pt entry therefore starts at the stop, without an
+   access walk the planned departure did not include; in-commuters boarding at their station, outside tours,
+   portal stays at a hub and through trips are all covered. The share of stop-anchored outside activities is
+   logged by the cutter.
 5. **Portal pt gates and the check.** The exits of a pt portal stay are read from the cut timetable: the last
    kept stop of every kept route whose pre-cut route continues beyond it, plus the hubs as rows of their own
    (`is_hub`). A hub heads toward every external point and counts as served (ASSUMPTION: an Oberzentrum has
@@ -125,9 +134,10 @@
   the inside activity's coordinate under decision 2 (an activity is the only world point of such a trip), where
   the former cut placed the crossing on the polygon boundary; its outside piece is a zero-length leg the final
   routing walks. Counted with the other collapsed cases; the 1 % A/B checks its size.
-- Known limitation, shared with the former cut and not changed here: the `outside` activity of a pt entry sits
-  on the nearest road link's facility, not at the stop, so the re-routed inside piece starts with an access walk
-  the planned departure did not include; an agent whose planned wait is shorter boards the next service.
+- The former cut placed the `outside` activity of a pt entry on the nearest road link's facility, so the re-routed
+  piece started with an access walk the planned departure did not include and an agent whose planned wait was
+  shorter boarded the next service; the stop anchor of decision 4 removes this for every pt crossing. Road
+  crossings keep the link facility, which is the right anchor for a car leg.
 - #487: fewer trips are split, so more `walkFallbackFrom` stamps survive; the 1 % A/B counts them, the defect of
   the marker on split trips is not addressed here.
 - Status: the portal check is replayed on the cache of `prod100_20261031` against main in

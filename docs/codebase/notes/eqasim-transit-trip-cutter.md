@@ -24,6 +24,12 @@ what was rejected and the assumptions are in ADR-0186 (issue #574); this note ho
 - `PlanCutter` copies the attributes of an activity it replaces by `outside`, and
   `AttributeKeepingMergeOutsideActivities` passes the attributes of every merged-away `outside` activity to the
   survivor (`putIfAbsent`), so `portalGate` and `typeBeforeCutting` survive the cut of a stay at a hub.
+- Every `outside` activity the processor creates at a stop carries `cutTransitStopId`
+  (`Constants.CUT_TRANSIT_STOP_ATTRIBUTE`, set only in kept-stops mode); `OutsideFacilityAdapter` gives those
+  activities one facility per stop (`outside_stop_<stop id>`) at the stop's coordinate on the nearest road link,
+  and fails loudly when a stop-anchored activity's coordinate differs from that stop's facility (the merge never
+  moves a stop activity: it always has the routing-mode leg on one side). All other `outside` activities keep one
+  facility per road link at the link midpoint.
 - After its final routing `RunScenarioCutter` writes `<prefix>transit_cut_summary.csv` (`TransitCutSummary`:
   kept stops by class, routes kept and dropped, pt trips with crossings, collapsed trips per case and the ones
   routed as a walk); prepare reads it and logs every count as a rate.
@@ -36,9 +42,9 @@ what was rejected and the assumptions are in ADR-0186 (issue #574); this note ho
 - The finders need the PRE-cut schedule (they interpret the routed legs with `DepartureFinder`), so the
   population cut must run before `TransitScheduleCutter.run` mutates the schedule; the dry pass gives the ranges
   without mutation. Do not reorder `RunScenarioCutter` so that the schedule is cut first.
-- The `outside` activity of a pt entry is placed by `OutsideActivityAdapter` on the nearest ROAD link's facility,
-  not at the stop (as for every outside activity): the re-routed piece starts with an access walk the planned
-  departure did not include (ADR-0186, consequences). Changing that is a separate decision.
+- Only stop-anchored `outside` activities sit at their stop; road and teleport crossings and the far synthesis
+  activities stay on the nearest road link's facility, which a car leg needs. Do not anchor those at a point off
+  the road network.
 - The collapsed walks are counted in the cutter, not in the plan check: the initial mode choice (ADR-0178) runs
   after the cut and re-routes the non-frozen tours, which loses the marker.
 - The in-commuter, student and outside-tour checks of the synthesis keep routing on the pre-cut timetable
