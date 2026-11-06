@@ -122,7 +122,8 @@ def test_leg_tour_frozen_marks_the_legs_of_tours_touching_outside():
 
 def test_summarise_counts_late_non_monotonic_long_and_slow_legs_per_subpopulation_and_class(population_path):
     summary = C.summarise(C.iter_person_plans(population_path), simulation_end_s=30 * 3600.0,
-                          walk_max_distance_m=5000.0, bicycle_max_distance_m=30000.0, leg_max_duration_s=10800.0)
+                          walk_max_distance_m=5000.0, bicycle_max_distance_m=30000.0, leg_max_duration_s=10800.0,
+                          pt_as_walk_bound_min_distance_m=5000.0, non_monotonic_bound_min_step_s=900.0)
     residents = summary["subpopulations"][C.RESIDENTS]
     frozen, inside = residents["frozen"], residents["in_region"]
     assert frozen["n_persons"] == 2 and inside["n_persons"] == 1
