@@ -84,6 +84,7 @@ other keys: `external_point_distance_tolerance` (0, 1), `mode_substitution_warn_
   and a secondary candidate id that starts with `portal_` would be misread as a gate (no such candidate id
   exists today). The log line `N portal gate facilities registered` should equal the number of distinct gates
   in the stage's `gate_usage`.
+- **An invented closure return never reaches the gate choice** (ADR-0183). `drop_closure_returns` runs right after `find_outside_stays` and before any per-stay step; moving it later lets the gate check test a return the donor never made. A missing `is_synthetic_closure` value raises: the flag must survive every splice.
 - **Same gate and same mode out and back.** Do not give the return leg its own mode or gate; the discrete mode
   choice's `VehicleContinuity` relies on it.
 - **The stay's mode fixes its gate class, so check soft modes here** (ADR-0163). outside_tour_modes (ADR-0145)
@@ -252,6 +253,7 @@ primary method is broken" warns above `braunschweig.portal.fallback_warn_share`.
 |---|---|
 | `primary legs assigned a/b ..., reported-distance fallback c` | Work/education legs classified by the assigned location (primary) versus the donor's reported distance (fallback, legitimate for persons without an assigned location). Raises when EVERY work/education leg falls back: the join of the primary locations is broken. It can also fire on a tiny run without primary locations. |
 | `displacement bound (non-primary legs, n): bounded a/n, lose portal status through the bound b, without a usable bound c/n, without a reported distance d/n` | Non-primary legs (not work/education, not the way home) whose reported distance was cut by the diary's bound; of those, the legs that would have been portal by the reported distance alone but are not any more; legs whose bound is unknown (a leg in the sums without a reported distance such as the synthetic home closure, or a chain that does not start/end at home), which keep the reported distance; and legs whose OWN reported distance is missing (nothing to tighten, never portal; neither bounded nor unbounded). Information rates (INFO). A high unbounded rate means few diaries chain cleanly from and to home. The counts are in the report as `n_nonprimary_legs`, `n_nonprimary_legs_bounded`, `n_portal_legs_lost_through_bound`, `n_nonprimary_legs_without_bound`, `n_nonprimary_legs_without_reported_distance`. |
+| `stays whose return was the plan repair's invented home trip (is_synthetic_closure), dropped so the day ends outside: n/N` | Stays whose return trip was the invented closure (ADR-0183); they end the day at the gate and their pt gate is checked outward only. Information rate (INFO), in the report as `n_stays_closure_return_dropped` (also counted in `n_stays_without_return`). |
 | `N portal legs -> M outside stays for p/q persons` | Size of the effect; also removed inner legs, stays without return, stays by kind (road/pt) and mode. |
 | `gate usage (top 10 ...)` | A single gate taking most stays points to a wrong gate set or a degenerate detour rule. |
 | `external point drawn outside the distance band` | Band-miss rate of the external point draw (the nearest point is used). High = tolerance too tight or the external point set too sparse around the reported distances. |
@@ -272,8 +274,8 @@ dropped share per mode (`trips beyond N m dropped`), and the candidate stage log
 
 ## Timetable-aware pt gates and the no-connection chain (ADR-0152, issue #465)
 
-- `gates.choose_pt_gates` picks the gate of a pt stay: directional exit stops, the `gate_candidates` smallest
-  detours, served within `gate_service_window_s`, connection checked by the eqasim batch router
+- `gates.choose_pt_gates` picks the gate of a pt stay: directional exit stops within `gate_max_extra_detour_m` of the best
+  detour, the served ones (`gate_service_window_s`), the `gate_candidates` smallest detours of those (issue #572), connection checked by the eqasim batch router
   (`braunschweig/data/transit/connections.py`). The stage depends on `matsim.runtime.eqasim`,
   `matsim.runtime.java`, `matsim.scenario.supply.gtfs` and `matsim.scenario.supply.processed`.
 - `no_connection.resolve_no_connection` handles stays without a gate in a counted order (tour to car, tour to car

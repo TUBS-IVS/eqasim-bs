@@ -552,14 +552,17 @@ def test_parking_inputs_are_written_last_into_the_final_config(tmp_path, monkeyp
     monkeypatch.setattr(prepare, "_attach_vrb_tariff_zones", lambda ctx: events.append("vrb_zones"))
     monkeypatch.setattr(prepare, "_cut_to_cordon", cut_to_cordon)
     monkeypatch.setattr(prepare, "_inject_freight", lambda ctx, name: events.append(("freight", name)))
+    # The in-commuter strategy blocks (eqasim-bs#566) are tested in tests/test_incommuter_subpopulation.py.
+    monkeypatch.setattr(prepare, "_add_incommuter_strategies",
+                        lambda ctx, name: events.append(("incommuter_strategies", name)))
     monkeypatch.setattr(prepare, "_summarise_final_schedule", lambda ctx: {})
     monkeypatch.setattr(prepare, "_write_vrb_fare_inputs",
                         lambda ctx, name, summary: events.append(("vrb_inputs", name)))
     monkeypatch.setattr(prepare, "_write_parking_inputs",
                         lambda ctx, name: (events.append(("parking", name)), write_parking_inputs(ctx, name)))
     assert prepare.execute(context) == cut_config
-    assert events == ["delegate", "gate_links", "vrb_zones", "cordon_cut", ("freight", cut_config), ("vrb_inputs", cut_config),
-                      ("parking", cut_config)]
+    assert events == ["delegate", "gate_links", "vrb_zones", "cordon_cut", ("freight", cut_config),
+                      ("incommuter_strategies", cut_config), ("vrb_inputs", cut_config), ("parking", cut_config)]
     module = config_modules.read_module(Path(context.path()) / cut_config, prepare.PARKING_MODULE)
     assert module["tariffsPath"] == TARIFFS_NAME
 

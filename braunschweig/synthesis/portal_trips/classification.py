@@ -9,17 +9,21 @@ distance from home (``displacement_bound_m``, ADR-0141). A
 return home is never a portal leg, and a NaN distance (the synthetic home closure) is never
 one either. Consecutive portal destinations form ONE outside stay, the semantics of the eqasim
 cutter's ``MergeOutsideActivities``: the leg into the run is the outbound leg, the first leg
-after it the return leg, the legs inside the run are removed by ``rewrite.rewrite_trips``.
+after it the return leg, the legs inside the run are removed by ``rewrite.rewrite_trips``. A stay's return is
+also NaN when its return leg was the plan repair's invented home closure: ``drop_closure_returns`` drops
+that leg and the day ends outside (#570).
 """
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
+from braunschweig.synthesis.portal_trips import rewrite
 from braunschweig.synthesis.portal_trips.config_keys import OUTSIDE_PURPOSE  # noqa: F401 (vocabulary)
 
 HOME_PURPOSE = "home"
 PRIMARY_PURPOSES = ("work", "education")
+CLOSURE_COLUMN = "is_synthetic_closure"
 STAY_COLUMNS = ["person_id", "outbound_trip_index", "return_trip_index", "n_removed_legs"]
 
 
@@ -219,3 +223,80 @@ def find_outside_stays(trips: pd.DataFrame, is_portal: pd.Series) -> pd.DataFram
             "n_removed_legs": int(end - start),
         })
     return pd.DataFrame(rows, columns=STAY_COLUMNS)
+
+
+def _closure_flags(trips: pd.DataFrame) -> np.ndarray:
+    """The ``is_synthetic_closure`` flags of all trips as a bool array; ValueError on any missing value.
+
+    A missing value means the flag was lost upstream (the home-office donor splice carries it since #570) and
+    is rejected loudly. The missing-value check runs BEFORE any bool coercion, which would turn NaN into True
+    and hide the problem.
+    """
+    column = trips[CLOSURE_COLUMN]
+    missing = column.isna().to_numpy()
+    if missing.any():
+        raise ValueError(f"[portal_trips] {int(missing.sum())} trips have a missing {CLOSURE_COLUMN} value (first "
+                         f"person_id {trips['person_id'].to_numpy()[missing][0]}); the flag must be True or False "
+                         "for every trip, so it was lost upstream")
+    return column.to_numpy(dtype=bool)
+
+
+def drop_closure_returns(trips: pd.DataFrame, stays: pd.DataFrame, aligned: dict | None = None):
+    """Drop the invented closure trip that is the return of a stay, so the stay ends the day outside (#570).
+
+    The plan repair (``plan_validation._append_return_home``) appends an invented home trip
+    (``is_synthetic_closure`` True, no reported distance) to every person whose diary does not end at home. When
+    such a trip is the return of an outside stay it is not a donor observation: the donor never came back.
+    The stay therefore ends the day outside. The trip row is dropped and the stay's ``return_trip_index`` is set to
+    NaN, so all later steps take the existing "stay without return" path. Every mode; stays with a genuine
+    return trip are unchanged.
+
+    Preconditions: ``trips`` is sorted by ``person_id, trip_index`` with a fresh ``RangeIndex`` and carries the
+    chain columns (``rewrite.recompute_chain_columns``); ``stays`` comes from ``find_outside_stays`` on ``trips``.
+    ``aligned`` maps names to Series or arrays positionally aligned to the rows of ``trips`` (for example the
+    portal flags and the classification distance); each is filtered with the same row mask, so no caller keeps a
+    stale, misaligned copy.
+
+    Raises ``ValueError`` when the flag column is missing or has missing values (see ``_closure_flags``), or when
+    a flagged return trip is not the person's last trip (inconsistent tables).
+
+    Returns ``(trips, stays, aligned, n_dropped)``: the trips without the dropped rows (fresh ``RangeIndex``,
+    chain columns re-derived, so the new last trip has ``is_last_trip`` True and ``activity_duration`` NaN), the
+    updated stays (a copy), the filtered ``aligned`` dict (same keys) and the number of dropped stay returns.
+    """
+    aligned = {} if aligned is None else aligned
+    for name, values in aligned.items():
+        if len(values) != len(trips):
+            raise ValueError(f"[portal_trips] aligned input {name!r} has {len(values)} entries but trips has "
+                             f"{len(trips)} rows")
+    if CLOSURE_COLUMN not in trips.columns:
+        raise ValueError(f"[portal_trips] trips frame lacks {CLOSURE_COLUMN!r}")
+    flags = _closure_flags(trips)
+    has_return = stays["return_trip_index"].notna().to_numpy()
+    return_row = np.full(len(stays), -1, dtype=int)
+    if has_return.any():
+        key = pd.MultiIndex.from_frame(trips[["person_id", "trip_index"]])
+        wanted = pd.MultiIndex.from_arrays([stays["person_id"].to_numpy()[has_return],
+                                            stays["return_trip_index"].to_numpy()[has_return].astype(int)])
+        return_row[has_return] = key.get_indexer(wanted)
+        if (return_row[has_return] < 0).any():
+            raise ValueError(f"[portal_trips] a stay return trip is not in the trips table (first person_id "
+                             f"{stays['person_id'].to_numpy()[has_return][return_row[has_return] < 0][0]}); the stay "
+                             "table and the trips table are inconsistent")
+    is_closure_return = has_return & flags[np.maximum(return_row, 0)]
+    n_dropped = int(is_closure_return.sum())
+    if n_dropped == 0:
+        return trips, stays, dict(aligned), 0
+    not_last = is_closure_return & ~trips["is_last_trip"].to_numpy(dtype=bool)[np.maximum(return_row, 0)]
+    if not_last.any():
+        raise ValueError(f"[portal_trips] {int(not_last.sum())} stay returns flagged {CLOSURE_COLUMN} are not the "
+                         f"person's last trip (first person_id {stays['person_id'].to_numpy()[not_last][0]}); the "
+                         "invented closure is always the last trip, the tables are inconsistent")
+    keep = np.ones(len(trips), dtype=bool)
+    keep[return_row[is_closure_return]] = False
+    out_trips = trips.loc[keep].reset_index(drop=True)
+    out_stays = stays.copy()
+    out_stays.loc[is_closure_return, "return_trip_index"] = np.nan
+    out_aligned = {name: (values[keep] if isinstance(values, np.ndarray) else values.loc[keep].reset_index(drop=True))
+                   for name, values in aligned.items()}
+    return rewrite.recompute_chain_columns(out_trips), out_stays, out_aligned, n_dropped

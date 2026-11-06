@@ -3,7 +3,8 @@ title: Home-end closure with an observed dwell, counted in the seed (#367)
 area: behavior
 description: >-
   Makes the day-closing return-home trip realistic, visible and consistently counted, under the
-  user's decision that MATSim plans in this project always start and end at home. Three parts, one
+  user's decision that MATSim plans in this project always start and end at home (exception since ADR-0183:
+  a portal stay whose return is this closure ends the day outside). Three parts, one
   feature: (1) the dwell before the appended return-home trip is DRAWN (seeded, random_seed +
   CLOSURE_SEED_OFFSET 74517) from the observed activity-duration distribution of the same purpose
   x arrival-hour band (ARRIVAL_BANDS_H (0, 14, 18, 20, 22, 48), five bands) in the directly closed

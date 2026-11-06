@@ -165,6 +165,11 @@ OPTIONAL_PERSON_FIELDS = [
     # parkingEvExempt, java.lang.Boolean, only where True). Present only with parking_zones_enabled and
     # parking_ev_exemption_enabled.
     "parking_ev_exempt",
+    # Cross-cordon in-commuters (eqasim-bs#566): the MATSim subpopulation set by the synthesis
+    # (incommuter / student_incommuter), written as the person attribute "subpopulation" that MATSim's
+    # replanning and the plan check read. Present only when the in-commuter merge carries it; a missing
+    # value writes no attribute, i.e. the default subpopulation of the residents.
+    "subpopulation",
 ]
 
 
@@ -253,6 +258,21 @@ def _parking_id(column, value, expected, outside, plural):
             "Invalid %s %r: the text form of a missing value, which a broken upstream join (or an "
             "astype(str) over missing %s) leaves behind; %s the value must stay "
             "missing (NaN/None) so that no attribute is written." % (column, value, plural, outside))
+    return value
+
+
+def _subpopulation(value):
+    """Return a present MATSim subpopulation label, raising ValueError unless it is a non-empty string.
+
+    A number or the text form of a missing value (``_STRINGIFIED_MISSING_VALUES``) is no label: MATSim would
+    run the person in a subpopulation that no strategy block names. A resident's value stays missing, so that
+    no attribute is written and MATSim puts the person in the default subpopulation.
+    """
+    if not isinstance(value, str) or value == "" or value in _STRINGIFIED_MISSING_VALUES:
+        raise ValueError(
+            "Invalid subpopulation %r; expected a non-empty label such as 'incommuter', or a missing value "
+            "(NaN/None) for a person of the default subpopulation. A text form of a missing value comes from "
+            "an astype(str) over missing labels upstream." % (value,))
     return value
 
 
@@ -507,6 +527,14 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
         if _is_ev_exempt(person[person_fields.index("parking_ev_exempt")]):
             writer.add_attribute("parkingEvExempt", "java.lang.Boolean", "true")
 
+    # MATSim subpopulation of a cross-cordon in-commuter (eqasim-bs#566), carried through the in-commuter
+    # merge by braunschweig.matsim.scenario.population. ADDITIVE: read only when the column is present; a
+    # resident carries NaN and gets NO attribute (the default subpopulation). Byte-identical without the column.
+    if "subpopulation" in person_fields:
+        _subpopulation_value = person[person_fields.index("subpopulation")]
+        if not _is_missing_value(_subpopulation_value):
+            writer.add_attribute("subpopulation", "java.lang.String", _subpopulation(_subpopulation_value))
+
     writer.add_attribute("age", "java.lang.Integer", person[PERSON_FIELDS.index("age")])
     writer.add_attribute("employed", "java.lang.String", person[PERSON_FIELDS.index("employed")])
     writer.add_attribute("sex", "java.lang.String", person[PERSON_FIELDS.index("sex")][0])
@@ -759,6 +787,18 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
         logger.info("[population] passenger availability omitted for %d/%d persons (%.2f%%) -- "
                     "persons without MiD passenger availability",
                     n_omitted, n_persons, 100.0 * n_omitted / max(n_persons, 1))
+
+    if "subpopulation" in df_persons.columns:
+        # eqasim-bs#566: one line per subpopulation, so a label lost on the way (all persons in the default
+        # subpopulation) shows in the log instead of only in the replanning of the run.
+        n_persons = len(df_persons)
+        labels = df_persons["subpopulation"]
+        n_default = int(labels.isna().sum())
+        for label, n_label in sorted(labels.dropna().value_counts().items()):
+            logger.info("[population] subpopulation %s %d/%d persons (%.2f%%)",
+                        label, n_label, n_persons, 100.0 * n_label / max(n_persons, 1))
+        logger.info("[population] default subpopulation (residents) %d/%d persons (%.2f%%)",
+                    n_default, n_persons, 100.0 * n_default / max(n_persons, 1))
 
     if remode_carless_car_legs:
         # CLAUDE.md fallback transparency (eqasim-bs#442): the re-mode shim substitutes the

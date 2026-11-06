@@ -16,7 +16,8 @@ Output: ``(attributes, trips, diagnostics)``.
   ``donor_pool.donor_attributes``).
 * ``trips`` -- one row per (donor, trip), columns :data:`TRIP_COLUMNS`: the
   ``synthesis.population.trips`` contract with ``person_id`` renamed to ``donor_id``, plus
-  ``euclidean_distance`` and ``trip_key`` (see ``donor_pool.donor_trips``).
+  the donor extras ``euclidean_distance``, ``trip_key`` and ``is_synthetic_closure`` (see
+  ``donor_pool.donor_trips``).
 * ``diagnostics`` -- the builder's diagnostics dict (see
   ``donor_pool.build_home_office_donor_pool``) plus the stage-level counts documented on
   :func:`execute`.
@@ -163,9 +164,9 @@ ATTRIBUTE_COLUMNS = ("donor_id", "H_ID", "P_ID", "sex", "age", "age_class", "emp
                      "distance_km", "distance_class", "distance_source",
                      "n_trips", "is_immobile", "has_education_leg", "has_work_leg")
 #: Columns of the ``trips`` frame (``donor_pool.donor_trips``): the ``synthesis.population.trips``
-#: CONTRACT with ``person_id`` renamed to ``donor_id``, plus the two documented extras.
+#: CONTRACT with ``person_id`` renamed to ``donor_id``, plus the documented extras.
 TRIP_COLUMNS = tuple("donor_id" if column == "person_id" else column for column in CONTRACT) \
-    + ("euclidean_distance", "trip_key")
+    + ("euclidean_distance", "trip_key", "is_synthetic_closure")
 
 #: Helper modules whose source is folded into :func:`validate`'s token. synpp hashes only THIS
 #: file's source, so without them an edit to the pure donor-pool builder (or to the trip-table

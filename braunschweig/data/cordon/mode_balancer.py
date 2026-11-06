@@ -14,8 +14,9 @@ constraint (no invented value). Region-neutral; pure + deterministic given rng.
 
 :func:`rebalance_with_timetable` (#467) repeats the compensation AFTER the timetable check of the pt days
 (``braunschweig.synthesis.incommuter_pt_connections``) has switched pt in-commuters without a connection to car:
-it promotes car agents until the pt count is back within a relative tolerance of the same target, and keeps only
-the promoted agents the timetable serves (owner decision, 2026-10-22). When the timetable cannot serve enough
+it tries car agents as pt until the pt count is back within a relative tolerance of the same target, and promotes
+only the attempts the timetable serves (owner decision, 2026-10-22); an attempt without a connection stays car.
+When the timetable cannot serve enough
 agents, the timetable, not the reference, binds: the shortfall is reported and warned about, never forced.
 """
 from __future__ import annotations
@@ -29,7 +30,8 @@ logger = logging.getLogger(__name__)
 
 _LOG_TAG = "[braunschweig.incommuters] pt re-balancing"
 
-#: WARN when more than this share of the promoted agents had no timetable connection (module convention: 5 %).
+#: WARN when more than this share of the promotion attempts found no timetable connection (those agents stay car;
+#: module convention: 5 %).
 UNCONNECTED_WARN_SHARE = 0.05
 
 
@@ -148,9 +150,9 @@ def rebalance_with_timetable(
         n_pt_target: the balancer's ``n_pt_target`` (the pt count of the Mikrozensus draw).
         can_board_pt: per-agent bool, as for :func:`balance_incommuter_modes`.
         pt_propensity: per-agent weight of the promotion draw, as for :func:`balance_incommuter_modes`.
-        connect: called with the promoted agent indices of one round (int array); returns a bool mask of the
-            same length, True where the agent has a timetable connection (the caller records its station and
-            times). An unconnected agent stays car (the caller leaves its car placement untouched).
+        connect: called with the agent indices of one round's promotion attempts (int array); returns a bool mask
+            of the same length, True where the agent has a timetable connection (the caller records its station and
+            times). An unconnected attempt stays car (the caller leaves its car placement untouched).
         rng: numpy.random.Generator; consumed only when a promotion draw happens.
         excluded: per-agent bool (optional): agents never promoted (the agents the timetable check switched to
             car: their pt day was already found unserved).
@@ -164,8 +166,9 @@ def rebalance_with_timetable(
 
     Returns:
         (modes_final, stats): numpy str array, and dict(n_pt_target, n_pt_start, n_pt_final, n_iterations,
-        n_promoted, n_promoted_unconnected, residual, met). ``n_iterations`` counts the promotion rounds after
-        the check (the balancer's iteration 0 is not included); ``residual = n_pt_target - n_pt_final``.
+        n_promoted, n_promoted_unconnected, residual, met). ``n_promoted`` counts the promotion attempts and
+        ``n_promoted_unconnected`` those without a connection, which stay car. ``n_iterations`` counts the promotion
+        rounds after the check (the balancer's iteration 0 is not included); ``residual = n_pt_target - n_pt_final``.
         A WARNING is logged when ``met`` is False: the timetable binds.
     """
     if not 0.0 <= float(tolerance) < 1.0:
@@ -207,21 +210,26 @@ def rebalance_with_timetable(
 
 def log_rebalance(stats: dict, *, n_agents: int, tolerance: float) -> None:
     """One line with the rates of :func:`rebalance_with_timetable`; WARNING when the target is not met (the
-    timetable binds) or when more than ``UNCONNECTED_WARN_SHARE`` of the promoted agents had no connection."""
-    n_promoted = stats["n_promoted"]
-    unconnected_share = stats["n_promoted_unconnected"] / n_promoted if n_promoted else 0.0
+    timetable binds) or when more than ``UNCONNECTED_WARN_SHARE`` of the promotion attempts found no connection.
+
+    ``n_promoted`` counts promotion ATTEMPTS: an attempt without a connection is never promoted, its agent stays car
+    (``rebalance_with_timetable``), so the message names them attempts that stay car, not promoted agents."""
+    n_attempts = stats["n_promoted"]
+    unconnected_share = stats["n_promoted_unconnected"] / n_attempts if n_attempts else 0.0
     message = (f"{_LOG_TAG}: target {stats['n_pt_target']}/{n_agents} pt "
                f"({100.0 * stats['n_pt_target'] / max(n_agents, 1):.1f}%), after the timetable check "
                f"{stats['n_pt_start']}, final {stats['n_pt_final']} "
                f"({100.0 * stats['n_pt_final'] / max(n_agents, 1):.1f}%), residual {stats['residual']} "
                f"({100.0 * stats['residual'] / max(stats['n_pt_target'], 1):.1f}% of the target, tolerance "
-               f"{100.0 * tolerance:.1f}%); {stats['n_iterations']} iteration(s), promoted {n_promoted}, of them "
-               f"without a connection {stats['n_promoted_unconnected']} ({100.0 * unconnected_share:.1f}%)")
+               f"{100.0 * tolerance:.1f}%); {stats['n_iterations']} iteration(s), promotion attempts {n_attempts}, "
+               f"of them without a connection {stats['n_promoted_unconnected']} ({100.0 * unconnected_share:.1f}%), "
+               "which stay car")
     if not stats["met"]:
         logger.warning("%s -- target NOT met: the timetable serves too few of the promotable car in-commuters "
                        "(the timetable, not the reference, binds)", message)
     elif unconnected_share > UNCONNECTED_WARN_SHARE:
-        logger.warning("%s -- more than %.0f%% of the promoted agents had no timetable connection", message,
-                       100.0 * UNCONNECTED_WARN_SHARE)
+        logger.warning("%s -- more than %.0f%% of the promotion attempts found no timetable connection (those agents "
+                       "stay car; a high share means the timetable serves few of the promotable car in-commuters)",
+                       message, 100.0 * UNCONNECTED_WARN_SHARE)
     else:
         logger.info(message)

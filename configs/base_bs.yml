@@ -868,6 +868,9 @@ config:
   # Set either flag to false to reproduce its legacy output; see ADR-0120.
   cordon_incommuter_donor_demographics: true
   cordon_incommuter_time_chronology: true
+  # Share of the in-commuters re-routed per iteration; KeepLastSelected gets the rest, so their synthesised
+  # mode stays fixed (ADR-0182, issue #566).
+  cordon_incommuter_reroute_weight: 0.1
   # cordon_student_incommuters_enabled: default ON (unset) when education_gravity_enabled is on;
   # set to false to disable, do NOT set true unless education_gravity is on (else RuntimeError).
   # See docs/features/student-incommuters.md.
@@ -886,6 +889,9 @@ config:
   braunschweig.portal.max_routable_distance_m: 45000
   braunschweig.portal.external_point_distance_tolerance: 0.2
   braunschweig.portal.mode_substitution_warn_share: 0.1
+  # ASSUMPTION (#572): extra pt gate detour (m) over the best directional exit stop;
+  # see braunschweig/synthesis/portal_trips/config_keys.py
+  braunschweig.portal.gate_max_extra_detour_m: 10000.0
   # Straight-line metres (stay origin -> destination) beyond which a walk / bicycle portal stay is implausible
   # (ADR-0163, #465): the lower edge of the first SrV 2023 band (group all) where the mode's share falls below the
   # outside_tour_modes.min_share of 0.01. Such a stay becomes pt when the person can use neither car nor

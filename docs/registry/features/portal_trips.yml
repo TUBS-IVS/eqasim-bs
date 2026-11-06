@@ -12,7 +12,8 @@ description: >-
   portal stage rewrites the reporting-day trips behind the alias
   synthesis.population.trips.final: consecutive far destinations merge into one stay, the gate is the road gate
   or the schedule-derived pt exit stop with the smallest detour among those that the timetable and the eqasim
-  batch router show to be served and connected at the stay's times (ADR-0152; always inside the cut extent, so
+  batch router show to be served and connected at the stay's times (ADR-0152; candidates are the served
+  directional exit stops within an extra-detour cap, ADR-0184; always inside the cut extent, so
   the scenario cutter cuts nothing; a pt stay without any connection becomes car, car passenger, a shifted
   departure or a counted kept stay), the stay ends at a time derived from the donor's diary, and the donor's
   outbound mode is fixed for both legs after an availability check with a counted substitution order. The
@@ -239,7 +240,8 @@ notes: >-
   against the #453/#443 baseline. A smoke, no observed reference; the validation note above predates it. Fallback rate of the no-connection chain: logged as rates
   under [portal_trips] and warned above braunschweig.portal.no_connection_warn_share. Since ADR-0156 (#465) a stay
   without a connection may also return earlier, and the last resort is a lift (car_passenger) instead of a kept pt
-  stay that the router walks.
+  stay that the router walks. Since ADR-0183 (#570) a stay whose return is the plan repair's invented home trip
+  ends the day outside and is checked outward only.
   Config invariant: any config that aliases synthesis.population.trips.final to something other than the portal
   trips_final must set braunschweig.portal.enabled false (the fixtures do; docs/codebase/notes/portal-trips.md).
   The outside-tour-modes stage (ADR-0145) runs after the location choice and may re-mode a portal stay's

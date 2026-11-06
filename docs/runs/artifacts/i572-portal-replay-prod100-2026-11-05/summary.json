@@ -1,0 +1,106 @@
+{
+  "before_prod100_20261031": {
+    "n_stays": 53323,
+    "n_stays_without_return": 0,
+    "n_pt_stays": 11930,
+    "pt_gate_reasons": {
+      "no_gate_served": 4481,
+      "gate_found": 3842,
+      "no_connection": 3607
+    },
+    "no_connection_actions": {
+      "tour_to_car": 6214,
+      "gate_found": 3784,
+      "tour_to_car_passenger_lift": 933,
+      "tour_to_car_passenger": 757,
+      "departure_shifted": 242
+    },
+    "n_stays_by_mode": {
+      "car": 37517,
+      "car_passenger": 10609,
+      "pt": 4026,
+      "bicycle": 628,
+      "walk": 543
+    },
+    "n_stays_by_kind": {
+      "road": 49297,
+      "pt": 4026
+    },
+    "n_mode_substituted": 9624
+  },
+  "after_i572_replay": {
+    "n_stays": 53323,
+    "n_stays_without_return": 0,
+    "n_pt_stays": 11930,
+    "pt_gate_reasons": {
+      "gate_found": 6708,
+      "no_connection": 3208,
+      "no_gate_served": 2014
+    },
+    "no_connection_actions": {
+      "gate_found": 6672,
+      "tour_to_car": 4142,
+      "tour_to_car_passenger": 445,
+      "tour_to_car_passenger_lift": 364,
+      "departure_shifted": 307
+    },
+    "n_stays_by_mode": {
+      "car": 35445,
+      "car_passenger": 9728,
+      "pt": 6979,
+      "bicycle": 628,
+      "walk": 543
+    },
+    "n_stays_by_kind": {
+      "road": 46344,
+      "pt": 6979
+    },
+    "n_mode_substituted": 6791
+  },
+  "checks_after": {
+    "n_trips": 3428756,
+    "max_arrival_h": 30.000000000000004,
+    "negative_trip_duration": 0
+  },
+  "gate_choice_log_lines": [
+    "[portal_trips.gates] pt gates over 11930 pt stays: gate_found 6708/11930 (56.2%), no_gate_in_direction 0/11930 (0.0%), no_gate_served 2014/11930 (16.9%), no_connection 3208/11930 (26.9%)",
+    "[portal_trips.gates] pt gates: gate beyond the 5 smallest-detour directional stops 2918/11930 (24.5%), no served stop within the extra-detour cap of 10000 m although one is served beyond it 1620/11930 (13.6%)",
+    "[portal_trips.gates] pt gates over 1519 pt stays: gate_found 160/1519 (10.5%), no_gate_in_direction 0/1519 (0.0%), no_gate_served 359/1519 (23.6%), no_connection 1000/1519 (65.8%)",
+    "[portal_trips.gates] pt gates: gate beyond the 5 smallest-detour directional stops 115/1519 (7.6%), no served stop within the extra-detour cap of 10000 m although one is served beyond it 340/1519 (22.4%)",
+    "[portal_trips.gates] pt gates over 1215 pt stays: gate_found 83/1215 (6.8%), no_gate_in_direction 0/1215 (0.0%), no_gate_served 297/1215 (24.4%), no_connection 835/1215 (68.7%)",
+    "[portal_trips.gates] pt gates: gate beyond the 5 smallest-detour directional stops 67/1215 (5.5%), no served stop within the extra-detour cap of 10000 m although one is served beyond it 280/1215 (23.0%)",
+    "[portal_trips.gates] pt gates over 846 pt stays: gate_found 46/846 (5.4%), no_gate_in_direction 0/846 (0.0%), no_gate_served 251/846 (29.7%), no_connection 549/846 (64.9%)",
+    "[portal_trips.gates] pt gates: gate beyond the 5 smallest-detour directional stops 34/846 (4.0%), no served stop within the extra-detour cap of 10000 m although one is served beyond it 237/846 (28.0%)",
+    "[portal_trips.gates] pt gates over 642 pt stays: gate_found 20/642 (3.1%), no_gate_in_direction 0/642 (0.0%), no_gate_served 233/642 (36.3%), no_connection 389/642 (60.6%)",
+    "[portal_trips.gates] pt gates: gate beyond the 5 smallest-detour directional stops 17/642 (2.6%), no served stop within the extra-detour cap of 10000 m although one is served beyond it 216/642 (33.6%)",
+    "[portal_trips.gates] pt gates over 382 pt stays: gate_found 38/382 (9.9%), no_gate_in_direction 0/382 (0.0%), no_gate_served 90/382 (23.6%), no_connection 254/382 (66.5%)",
+    "[portal_trips.gates] pt gates: gate beyond the 5 smallest-detour directional stops 23/382 (6.0%), no served stop within the extra-detour cap of 10000 m although one is served beyond it 83/382 (21.7%)",
+    "[portal_trips.gates] pt gates over 333 pt stays: gate_found 25/333 (7.5%), no_gate_in_direction 0/333 (0.0%), no_gate_served 66/333 (19.8%), no_connection 242/333 (72.7%)",
+    "[portal_trips.gates] pt gates: gate beyond the 5 smallest-detour directional stops 19/333 (5.7%), no served stop within the extra-detour cap of 10000 m although one is served beyond it 63/333 (18.9%)",
+    "[portal_trips.gates] pt gates over 238 pt stays: gate_found 25/238 (10.5%), no_gate_in_direction 0/238 (0.0%), no_gate_served 62/238 (26.1%), no_connection 151/238 (63.4%)",
+    "[portal_trips.gates] pt gates: gate beyond the 5 smallest-detour directional stops 14/238 (5.9%), no served stop within the extra-detour cap of 10000 m although one is served beyond it 58/238 (24.4%)",
+    "[portal_trips.gates] pt gates over 194 pt stays: gate_found 20/194 (10.3%), no_gate_in_direction 0/194 (0.0%), no_gate_served 58/194 (29.9%), no_connection 116/194 (59.8%)",
+    "[portal_trips.gates] pt gates: gate beyond the 5 smallest-detour directional stops 13/194 (6.7%), no served stop within the extra-detour cap of 10000 m although one is served beyond it 53/194 (27.3%)"
+  ],
+  "first_call_new_rates": {
+    "gate_beyond_old_top_n": [
+      2918,
+      11930
+    ],
+    "no_served_within_cap_but_beyond": [
+      1620,
+      11930
+    ]
+  },
+  "gate_settings": {
+    "n_candidates": 5,
+    "max_extra_detour_m": 10000.0,
+    "service_window_s": 3600.0,
+    "shift_window_s": 7200.0,
+    "shift_step_s": 1800.0,
+    "min_stay_s": 1800.0,
+    "no_connection_warn_share": 0.05,
+    "shift_return_earlier": true,
+    "no_connection_last_resort": "car_passenger"
+  }
+}

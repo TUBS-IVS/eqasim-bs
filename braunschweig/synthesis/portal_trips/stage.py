@@ -6,6 +6,9 @@ With ``braunschweig.portal.enabled`` false the trips frame is the input frame it
 anchors frame is empty (byte-identical OFF path). The computation is ``build_portal_trips``, a
 pure function over frames, so it is testable without synpp.
 
+A stay whose return trip is the plan repair's invented home closure (``is_synthetic_closure``) ends the day
+outside: that trip is dropped and the stay has no return (eqasim-bs#570).
+
 Fallback transparency (CLAUDE.md): the stage counts and logs every substitution it makes -- the
 work/education legs classified by the donor's reported distance instead of the assigned location,
 the external points drawn outside the distance band, the origins proxied by home, the mode
@@ -36,12 +39,14 @@ from braunschweig.synthesis.portal_trips import rewrite
 from braunschweig.synthesis.portal_trips import timing as _timing
 from braunschweig.synthesis.portal_trips.config_keys import (
     DEFAULT_ENABLED, DEFAULT_EXTERNAL_POINT_DISTANCE_TOLERANCE, DEFAULT_FALLBACK_WARN_SHARE,
-    DEFAULT_GATE_CANDIDATES, DEFAULT_GATE_SERVICE_WINDOW_S, DEFAULT_MAX_ROUTABLE_DISTANCE_M,
+    DEFAULT_GATE_CANDIDATES, DEFAULT_GATE_MAX_EXTRA_DETOUR_M, DEFAULT_GATE_SERVICE_WINDOW_S,
+    DEFAULT_MAX_ROUTABLE_DISTANCE_M,
     DEFAULT_MIN_STAY_S, DEFAULT_MODE_SUBSTITUTION_WARN_SHARE, DEFAULT_NO_CONNECTION_WARN_SHARE,
     DEFAULT_NO_CONNECTION_LAST_RESORT, DEFAULT_PT_GATE_MODES, DEFAULT_SHIFT_RETURN_EARLIER, DEFAULT_SHIFT_STEP_S,
     DEFAULT_SHIFT_WINDOW_S, DEFAULT_BICYCLE_MAX_DISTANCE_M, DEFAULT_WALK_MAX_DISTANCE_M, KEY_BICYCLE_MAX_DISTANCE_M,
     KEY_ENABLED, KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE, KEY_FALLBACK_WARN_SHARE,
-    KEY_GATE_CANDIDATES, KEY_GATE_SERVICE_WINDOW_S, KEY_MAX_ROUTABLE_DISTANCE_M, KEY_MIN_STAY_S,
+    KEY_GATE_CANDIDATES, KEY_GATE_MAX_EXTRA_DETOUR_M, KEY_GATE_SERVICE_WINDOW_S, KEY_MAX_ROUTABLE_DISTANCE_M,
+    KEY_MIN_STAY_S,
     KEY_MODE_SUBSTITUTION_WARN_SHARE, KEY_NO_CONNECTION_LAST_RESORT, KEY_NO_CONNECTION_WARN_SHARE, KEY_PT_GATE_MODES,
     KEY_SHIFT_RETURN_EARLIER, KEY_SHIFT_STEP_S, KEY_SHIFT_WINDOW_S, KEY_WALK_MAX_DISTANCE_M, RNG_OFFSET,
     validate_settings)
@@ -49,11 +54,14 @@ from braunschweig.synthesis.portal_trips.config_keys import (
 logger = logging.getLogger(__name__)
 
 _LOG_TAG = "[portal_trips]"
+#: The popsim trip source (declared with the same default by braunschweig.popsim.trips_stage).
+KEY_POPSIM_SOURCE = "braunschweig.population.popsim.source"
+DEFAULT_POPSIM_SOURCE = "mid"
 REPORT_FILE_NAME = "portal_trips_report.json"
 TRIPS_STAGE = "braunschweig.synthesis.commute_day.trips_day_stage"
 PERSONS_STAGE = "synthesis.population.enriched"
 REQUIRED_TRIP_COLUMNS = ("person_id", "trip_index", "preceding_purpose", "following_purpose", "mode",
-                         "euclidean_distance", "departure_time", "arrival_time")
+                         "euclidean_distance", "departure_time", "arrival_time", "is_synthetic_closure")
 
 #: Own-package helpers whose source shapes this stage's output (hashed by validate()).
 _HELPER_MODULES = (_classification, _config_keys, _gates, _modes, _no_connection, rewrite, _timing,
@@ -69,14 +77,15 @@ ROUTER_CONFIG_NAME = "pt_router_config.xml"
 
 #: Report entries of a run without any outside stay (the stay-level counts are all zero).
 _EMPTY_STAY_REPORT = {
-    "n_persons_with_stay": 0, "n_stays_without_return": 0, "n_stays_by_kind": {}, "n_stays_by_mode": {},
+    "n_persons_with_stay": 0, "n_stays_without_return": 0, "n_stays_closure_return_dropped": 0,
+    "n_stays_by_kind": {}, "n_stays_by_mode": {},
     "gate_usage": {}, "n_mode_substituted": 0, "mode_substitution_reasons": {}, "n_return_mode_differs": 0,
     "n_external_point_drawn": 0, "n_external_band_miss": 0, "n_origin_proxied_by_home": 0,
     "n_reentry_clamped": 0, "n_return_share_degenerate": 0, "n_outbound_share_degenerate": 0,
     "return_share_out_median": None,
     "n_stay_persons_missing_license": 0, "n_unknown_donor_mode": 0, "unknown_donor_modes": {},
     "n_pt_stays": 0, "pt_gate_reasons": {}, "no_connection_actions": {}, "n_departure_shifted_s_median": None,
-    "n_kept_fallback_all_stops": 0,
+    "n_kept_fallback_all_stops": 0, "n_pt_gate_beyond_top_n": 0, "n_pt_no_served_within_cap": 0,
     "n_soft_mode_stays_beyond_distance": 0, "n_soft_mode_stays_to_pt": 0,
     "n_soft_mode_stays_left_to_outside_tour_modes": 0,
 }
@@ -102,6 +111,13 @@ def configure(context):
     # The gates ARE the cordon: a portal layer without a cordon has nowhere to send a trip.
     if not context.config("cordon_enabled", False):
         raise ValueError(f"{KEY_ENABLED}=True requires cordon_enabled=True (the portal stays sit at the cordon gates)")
+    # The closure-return rule (ADR-0183) reads is_synthetic_closure, which only the plan repair of the MiD source
+    # writes; the ENTD source runs no plan repair, so the column never exists there. Fail at configure, not mid-run.
+    popsim_source = context.config(KEY_POPSIM_SOURCE, DEFAULT_POPSIM_SOURCE)
+    if popsim_source == "entd":
+        raise ValueError(f"{KEY_ENABLED}=True needs a trip source with the plan repair's is_synthetic_closure flag "
+                         f"(ADR-0183); {KEY_POPSIM_SOURCE}='entd' has none. Use the 'mid' source or turn the "
+                         "portal layer off.")
     context.config("cordon_network_buffer_fraction", 0.10)
     # Timetable-aware pt gates (#465): the settings, and the runtime of the batch pt router (the router is a
     # Java tool of the eqasim jar, run through eqasim.run -> java.run like in matsim.simulation.prepare).
@@ -140,6 +156,8 @@ def _configure_gate_settings(context) -> dict:
     Called from ``configure`` only: the two-argument ``context.config(key, default)`` form is invalid at execute.
     """
     return {"gate_candidates": int(context.config(KEY_GATE_CANDIDATES, DEFAULT_GATE_CANDIDATES)),
+            "gate_max_extra_detour_m": float(context.config(KEY_GATE_MAX_EXTRA_DETOUR_M,
+                                                            DEFAULT_GATE_MAX_EXTRA_DETOUR_M)),
             "gate_service_window_s": float(context.config(KEY_GATE_SERVICE_WINDOW_S,
                                                           DEFAULT_GATE_SERVICE_WINDOW_S)),
             "shift_window_s": float(context.config(KEY_SHIFT_WINDOW_S, DEFAULT_SHIFT_WINDOW_S)),
@@ -345,16 +363,23 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     (``braunschweig.data.transit.schedule.Schedule``), ``router`` the batch pt router
     (``braunschweig.data.transit.connections.Router``: tasks frame -> (trips, legs)), ``pt_gate_modes``
     ``"all"`` or the transit modes allowed as gates, and ``gate_settings`` the dict with ``n_candidates``,
-    ``service_window_s``, ``shift_window_s``, ``shift_step_s``, ``min_stay_s`` and ``no_connection_warn_share``.
+    ``max_extra_detour_m``, ``service_window_s``, ``shift_window_s``, ``shift_step_s``, ``min_stay_s``, ``no_connection_warn_share``
+    and ``latest_arrival_s`` (``connections.latest_arrival_s``; None leaves the arrival unbounded).
     A pt stay without an admissible gate is resolved by ``no_connection.resolve_no_connection`` (whole-tour
     mode switch, time shift, kept with its nearest directional exit stop); every outcome is counted in the
     report and WARNed above ``no_connection_warn_share``.
+
+    A stay whose return trip is the plan repair's invented home closure (``is_synthetic_closure`` True) ends the
+    day outside (#570): ``classification.drop_closure_returns`` drops that trip right after the stays are found,
+    for every mode, and the stay takes the "without return" path. ``n_stays_closure_return_dropped`` counts them
+    (``n_stays_without_return`` includes them) and the rate over all stays is logged.
     """
     if soft_mode_max_distance_m is None:
         soft_mode_max_distance_m = {"walk": DEFAULT_WALK_MAX_DISTANCE_M, "bicycle": DEFAULT_BICYCLE_MAX_DISTANCE_M}
     # A direct caller gets the same range checks as configure() (a zero shift step would silently disable the shift path).
     validate_settings(threshold_m, tolerance, warn_share, fallback_warn_share,
                       gate_candidates=gate_settings["n_candidates"],
+                      gate_max_extra_detour_m=gate_settings["max_extra_detour_m"],
                       gate_service_window_s=gate_settings["service_window_s"],
                       shift_window_s=gate_settings["shift_window_s"], shift_step_s=gate_settings["shift_step_s"],
                       min_stay_s=gate_settings["min_stay_s"],
@@ -371,9 +396,17 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     is_portal, distance_m, classification_counts = _classify(trips, home_xy, primary, threshold_m,
                                                              fallback_warn_share)
     stays = _classification.find_outside_stays(trips, is_portal)
+    # #570: before anything per stay. Everything aligned to the old trip rows is filtered with the same mask.
+    trips, stays, aligned, n_closure_dropped = _classification.drop_closure_returns(
+        trips, stays, {"is_portal": is_portal, "distance_m": distance_m})
+    is_portal, distance_m = aligned["is_portal"], aligned["distance_m"]
     report = {"n_persons": int(trips["person_id"].nunique()), "n_portal_legs": int(is_portal.sum()),
               "n_stays": int(len(stays)), "n_removed_legs": int(stays["n_removed_legs"].sum()) if len(stays) else 0,
-              **classification_counts, **copy.deepcopy(_EMPTY_STAY_REPORT)}
+              **classification_counts, **copy.deepcopy(_EMPTY_STAY_REPORT),
+              "n_stays_closure_return_dropped": n_closure_dropped}
+    logger.info("%s stays whose return was the plan repair's invented home trip (is_synthetic_closure), dropped so "
+                "the day ends outside: %d/%d (%.1f%%)", _LOG_TAG, n_closure_dropped, len(stays),
+                100.0 * n_closure_dropped / max(len(stays), 1))
     if len(stays) == 0:
         logger.info("%s no portal legs beyond %.0f m: the trips are unchanged", _LOG_TAG, threshold_m)
         out, anchors = rewrite.rewrite_trips(trips, stays, pd.DataFrame(columns=_gates.GATE_COLUMNS),
@@ -478,7 +511,8 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
             fallback_gates=pd.DataFrame(columns=["gate_id", "x", "y"]), **chain)
         return out_modes, out_trips, out_gates, {
             "n_pt_stays": 0, "pt_gate_reasons": {}, "no_connection_actions": {},
-            "n_departure_shifted_s_median": None, "n_kept_fallback_all_stops": 0}
+            "n_departure_shifted_s_median": None, "n_kept_fallback_all_stops": 0,
+            "n_pt_gate_beyond_top_n": 0, "n_pt_no_served_within_cap": 0}
     if router is None:
         raise ValueError(f"{_LOG_TAG} {n_pt} pt stays need the batch pt router but none was given")
     exits = _gates.exit_stops(schedule, cordon_polygon, pt_gate_modes, crs=crs)
@@ -502,6 +536,7 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
         return _gates.choose_pt_gates(
             pt_origin[positions], pt_point[positions], o_dep, o_arr, r_dep, r_arr, has_return[positions], exits,
             schedule, router, n_candidates=gate_settings["n_candidates"],
+            max_extra_detour_m=gate_settings["max_extra_detour_m"],
             service_window_s=gate_settings["service_window_s"], inside_stop_ids=inside_stop_ids,
             walk_max_m=walk_max_m, latest_arrival_s=gate_settings["latest_arrival_s"])
 
@@ -535,7 +570,10 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
         "n_pt_stays": int(n_pt), "pt_gate_reasons": _counts(pt_gates["reason"]),
         "no_connection_actions": _counts(actions),
         "n_departure_shifted_s_median": float(np.median(shift_s[shifted])) if shifted.any() else None,
-        "n_kept_fallback_all_stops": int(n_kept_all_stops)}
+        "n_kept_fallback_all_stops": int(n_kept_all_stops),
+        # The #572 rates of the FIRST gate choice (planned times); the no-connection probes are not counted here.
+        "n_pt_gate_beyond_top_n": int(pt_gates.attrs["n_gate_beyond_top_n"]),
+        "n_pt_no_served_within_cap": int(pt_gates.attrs["n_no_served_within_cap"])}
 
 
 def _counts(values) -> dict:
@@ -647,6 +685,7 @@ def execute(context):
         df_education=df_education, gates=gates, links=links, external_points=external_points, schedule=schedule,
         router=router, pt_gate_modes=context.config(KEY_PT_GATE_MODES),
         gate_settings={"n_candidates": int(context.config(KEY_GATE_CANDIDATES)),
+                       "max_extra_detour_m": float(context.config(KEY_GATE_MAX_EXTRA_DETOUR_M)),
                        "service_window_s": float(context.config(KEY_GATE_SERVICE_WINDOW_S)),
                        "shift_window_s": float(context.config(KEY_SHIFT_WINDOW_S)),
                        "shift_step_s": float(context.config(KEY_SHIFT_STEP_S)),

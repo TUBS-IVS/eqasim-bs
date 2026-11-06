@@ -7,6 +7,8 @@ supply ring). Production values live in configs/base_bs.yml.
 """
 from __future__ import annotations
 
+import math
+
 #: Whole feature incl. both guard rails; False is byte-identical to the pre-feature pipeline.
 KEY_ENABLED = "braunschweig.portal.enabled"
 DEFAULT_ENABLED = True
@@ -85,6 +87,14 @@ DEFAULT_GATE_SERVICE_WINDOW_S = 3600.0
 KEY_GATE_CANDIDATES = "braunschweig.portal.gate_candidates"
 DEFAULT_GATE_CANDIDATES = 5
 
+#: Metres (straight line). Per pt stay only exit stops whose detour origin -> stop -> external point is at most the
+#: smallest directional detour plus this value are gate candidates; among them the served stops are taken first and
+#: only then cut to the ``gate_candidates`` smallest detours (ADR-0152 decision 2, amended for #572). Valid range:
+#: finite and >= 0 (0 admits only the stops tying the best detour).
+#: ASSUMPTION: 10 km chosen by the owner on 2026-11-05 (issue #572); not estimated from data.
+KEY_GATE_MAX_EXTRA_DETOUR_M = "braunschweig.portal.gate_max_extra_detour_m"
+DEFAULT_GATE_MAX_EXTRA_DETOUR_M = 10000.0
+
 #: Seconds. A pt stay without an admissible gate may shift its trip departures to the grid
 #: ``t + k * shift_step_s`` up to ``t + shift_window_s`` (#465).
 KEY_SHIFT_WINDOW_S = "braunschweig.portal.shift_window_s"
@@ -145,6 +155,7 @@ PORTAL_GATE_ACTIVITY_ATTRIBUTE = "portalGate"
 def validate_settings(max_routable_distance_m: float, external_point_distance_tolerance: float,
                       mode_substitution_warn_share: float, fallback_warn_share: float, *,
                       gate_candidates: int = DEFAULT_GATE_CANDIDATES,
+                      gate_max_extra_detour_m: float = DEFAULT_GATE_MAX_EXTRA_DETOUR_M,
                       gate_service_window_s: float = DEFAULT_GATE_SERVICE_WINDOW_S,
                       shift_window_s: float = DEFAULT_SHIFT_WINDOW_S, shift_step_s: float = DEFAULT_SHIFT_STEP_S,
                       min_stay_s: float = DEFAULT_MIN_STAY_S,
@@ -166,6 +177,8 @@ def validate_settings(max_routable_distance_m: float, external_point_distance_to
         raise ValueError(f"{KEY_FALLBACK_WARN_SHARE} must lie in (0, 1], got {fallback_warn_share!r}")
     if int(gate_candidates) != gate_candidates or gate_candidates < 1:
         raise ValueError(f"{KEY_GATE_CANDIDATES} must be an integer >= 1, got {gate_candidates!r}")
+    if not (math.isfinite(gate_max_extra_detour_m) and gate_max_extra_detour_m >= 0.0):
+        raise ValueError(f"{KEY_GATE_MAX_EXTRA_DETOUR_M} must be finite and >= 0 m, got {gate_max_extra_detour_m!r}")
     if not gate_service_window_s >= 0.0:
         raise ValueError(f"{KEY_GATE_SERVICE_WINDOW_S} must be >= 0 s, got {gate_service_window_s!r}")
     if not shift_window_s >= 0.0:
