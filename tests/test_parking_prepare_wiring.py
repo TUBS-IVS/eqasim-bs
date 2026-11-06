@@ -78,7 +78,10 @@ class _Context:
         # test_prepare_plan_check_wiring.py (which also pins that it runs after the parking inputs), so it is off here.
         # The same for the standalone mode choice before iteration 0 (#542, ADR-0178), which runs the Java
         # runner on the written population these fixtures do not carry; tested in test_initial_mode_choice.py.
-        self.values = {plan_check.KEY_ENABLED: False, prepare.initial_mode_choice.KEY_ENABLED: False, **values}
+        # The same for the frozen pt walk lift (ADR-0189), which rewrites that population; tested in
+        # test_frozen_pt_walk_lift.py and test_prepare_plan_check_wiring.py.
+        self.values = {plan_check.KEY_ENABLED: False, prepare.initial_mode_choice.KEY_ENABLED: False,
+                       prepare.frozen_pt_walk_lift.KEY_ENABLED: False, **values}
         self.declared_config = {}
         self.declared_stages = []
         self.stages = {}
