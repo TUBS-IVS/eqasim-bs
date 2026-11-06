@@ -74,7 +74,8 @@ def test_execute_runs_the_plan_check_last_and_only_when_enabled(monkeypatch):
         def __init__(self, enabled):
             self._values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": True,
                             prepare.PARKING_KEY: False, C.KEY_ENABLED: enabled,
-                            I.KEY_ENABLED: False}
+                            I.KEY_ENABLED: False,
+                   "braunschweig.frozen_pt_walk_lift.enabled": False}
 
         def config(self, key):
             return self._values[key]
@@ -98,7 +99,8 @@ def test_execute_writes_the_parking_inputs_before_the_plan_check(monkeypatch):
 
     class _Context:
         _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
-                   prepare.PARKING_KEY: True, C.KEY_ENABLED: True, I.KEY_ENABLED: False}
+                   prepare.PARKING_KEY: True, C.KEY_ENABLED: True, I.KEY_ENABLED: False,
+                   "braunschweig.frozen_pt_walk_lift.enabled": False}
 
         def config(self, key):
             return self._values[key]
@@ -119,7 +121,8 @@ def test_execute_skips_the_walk_fallback_stamp_guard_when_the_plan_check_is_disa
 
     class _Context:
         _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
-                   prepare.PARKING_KEY: False, C.KEY_ENABLED: False, I.KEY_ENABLED: False}
+                   prepare.PARKING_KEY: False, C.KEY_ENABLED: False, I.KEY_ENABLED: False,
+                   "braunschweig.frozen_pt_walk_lift.enabled": False}
 
         def config(self, key):
             return self._values[key]

@@ -347,7 +347,7 @@ def test_prepare_writes_the_incommuter_strategies_into_the_final_config(tmp_path
     class _Context:
         _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": True, "freight_enabled": True,
                    prepare.PARKING_KEY: False, C.KEY_ENABLED: False, I.KEY_ENABLED: True,
-                   CS.KEY_REROUTE_WEIGHT: 0.1}
+                   CS.KEY_REROUTE_WEIGHT: 0.1, "braunschweig.frozen_pt_walk_lift.enabled": False}
 
         def config(self, key):
             return self._values[key]
@@ -374,7 +374,8 @@ def test_prepare_leaves_the_config_alone_without_the_cordon(monkeypatch):
 
     class _Context:
         _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
-                   prepare.PARKING_KEY: False, C.KEY_ENABLED: False, I.KEY_ENABLED: False}
+                   prepare.PARKING_KEY: False, C.KEY_ENABLED: False, I.KEY_ENABLED: False,
+                   "braunschweig.frozen_pt_walk_lift.enabled": False}
 
         def config(self, key):
             return self._values[key]
