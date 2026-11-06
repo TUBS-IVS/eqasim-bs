@@ -39,8 +39,8 @@
 
 - **Weight candidates by frequency or prefer rail:** more parameters without a committed reference; rail-only
   gates were already rejected in ADR-0152.
-- **Route more than `gate_candidates` candidates:** the served-first filter removes the crowding-out without
-  raising the router load.
+- **Route more than `gate_candidates` candidates:** the served-first filter removes the crowding-out while
+  keeping the per-stay router bound.
 - **No cap:** a served stop far off the direct line would give implausible detours; the cap bounds them.
 - **Change the return-service proxy:** the measurement in issue #572 shows it is not the cause.
 
