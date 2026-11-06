@@ -50,5 +50,5 @@
 - The planned lateness of the plan check treats the missing travel time of a lifted leg as 0 s (a lower bound).
 - MATSim starts on lifted plans and simulates the lifted legs (start-up smoke in the run manifest); the effect on the
   simulated day of the whole population is not measured.
-- Not covered: frozen trips that prepare already turned into plain walk trips (routing mode `walk`); the run manifest
-  records them as a side finding.
+- Not covered: walk trips that the synthesis itself made long (mode `walk` from the start, not pt); the run manifest
+  records one such case as a side finding.

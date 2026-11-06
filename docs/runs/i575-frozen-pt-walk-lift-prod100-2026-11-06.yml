@@ -59,11 +59,11 @@ validation:
     found at their departure time in the output plans, routed as access walk, car_passenger leg and egress walk
     (the other two persons carry the routed car_passenger trip at a different departure time); stuckAndAbort 0.
   artifact: docs/runs/artifacts/i575-frozen-pt-walk-lift-prod100-2026-11-06/smoke_check.txt
-- metric: 'side finding: long walks of frozen tours that the lift does not touch'
-  reference: 'group 3 of #575 (docs/runs/i575-outside-tour-replay-prod100-2026-11-06.yml on its branch) and the prepared plan of person 415371'
+- metric: 'side finding: a synthesis walk of many kilometres in a frozen tour that the lift does not touch'
+  reference: 'the prepared plan of person 415371 (a group-3 person of #575)'
   result: >-
-    No lifted trip was detected by routing mode only. The 58 frozen group-3 trips that were plain walks without a stamp
-    carry routingMode walk in the prepared plan (person 415371: education -> leisure, 31 km, 6:55 h, routingMode
-    walk), although the uncut population had them as pt. Neither the plan check nor the lift counts them as
-    pt-intended; where prepare turns them into walk trips is not determined here.
+    No lifted trip was detected by routing mode only: every all-walk pt-intended trip carried the stamp. Person 415371
+    has a frozen education -> leisure trip of about 24 km straight-line as a plain walk (routingMode walk, routed
+    6:55 h); it was already a walk in the uncut population (the synthesis mode), never pt, so it is no pt-as-walk
+    case and the lift rightly leaves it. Where the synthesis gets such a walk is not determined here.
   artifact: docs/runs/artifacts/i575-frozen-pt-walk-lift-prod100-2026-11-06/person_415371_prepared_excerpt.txt
