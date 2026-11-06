@@ -120,7 +120,13 @@ def exit_stops(schedule, cut_schedule, hub_stop_ids, modes="all", crs="EPSG:2583
     """
     wanted = _normalise_modes(modes)
     hub_stop_ids = {str(stop) for stop in hub_stop_ids}
-    pre_cut_routes = {(route.line_id, route.route_id): route for route in schedule.routes}
+    pre_cut_routes = {}
+    for route in schedule.routes:
+        key = (route.line_id, route.route_id)
+        if key in pre_cut_routes:
+            raise ValueError(f"[portal_trips] exit stops: route '{route.route_id}' (line '{route.line_id}') occurs more "
+                             "than once in the pre-cut timetable; a cut route cannot be matched to its pre-cut route")
+        pre_cut_routes[key] = route
 
     def coordinates(stops, stop_id, route, label):
         if stop_id not in stops:
@@ -161,9 +167,12 @@ def exit_stops(schedule, cut_schedule, hub_stop_ids, modes="all", crs="EPSG:2583
                 len({row[0] for row in rows if not row[6]}), len(served_hubs), len(hub_stop_ids),
                 len(rows) - n_exit_rows)
     if len(served_hubs) < len(hub_stop_ids):
-        logger.info("[portal_trips.gates] exit stops: %d/%d configured hubs are served by no cut route of the modes "
-                    "%s and are no gate (first: %s)", len(hub_stop_ids) - len(served_hubs), len(hub_stop_ids),
-                    requested, sorted(hub_stop_ids - served_hubs)[:5])
+        # Some unserved hubs are expected (a hub facility that no kept route of these modes stops at); a TOTAL miss
+        # almost always means the hub ids do not match the timetable's stop ids, so it is a warning.
+        log = logger.warning if not served_hubs else logger.info
+        log("[portal_trips.gates] exit stops: %d/%d configured hubs are served by no cut route of the modes %s and "
+            "are no gate (first: %s)", len(hub_stop_ids) - len(served_hubs), len(hub_stop_ids), requested,
+            sorted(hub_stop_ids - served_hubs)[:5])
     if scanned == 0 or not rows:
         logger.warning("[portal_trips.gates] exit stops: %d cut routes scanned and %d exits found for modes %s; "
                        "the timetable offers no exit for these modes", scanned, len(rows), requested)
@@ -253,7 +262,8 @@ def pt_gate_candidates(origin_xy, point_xy, exits: gpd.GeoDataFrame, max_extra_d
     """Per stay the directional exit stops within the extra-detour cap, as ``(stop_id, detour_m)`` by detour.
 
     A route heads toward the point when its outside stop is closer to the point than the exit stop
-    itself (``hypot(outside - point) < hypot(stop - point)``). A stop is listed once however many routes
+    itself (``hypot(outside - point) < hypot(stop - point)``); a hub row always counts as directional
+    (``_toward_mask``, #574), so a hub is a candidate for every stay. A stop is listed once however many routes
     qualify. Its detour is the straight line origin -> stop -> point. Only stops with a detour of at most the
     smallest directional detour of the stay plus ``max_extra_detour_m`` are kept (``math.inf`` keeps all),
     ordered by detour (ties keep the order of ``exits``). No ``n_candidates`` cut happens here: since #572
@@ -327,12 +337,15 @@ def _connected(router, tasks, *, inside_stop_ids, walk_max_m, latest_arrival_s=N
     ``RuntimeError`` before any connection is judged (it is never a rejection). Blank stop ids are left to
     ``connection_mask``, which rejects them.
     """
-    from braunschweig.data.transit.connections import TASK_COLUMNS, connection_mask
+    from braunschweig.data.transit.connections import (LEGS_REQUIRED_COLUMNS, TASK_COLUMNS, _require_columns,
+                                                       connection_mask)
 
     if not tasks:
         return set()
     frame = pd.DataFrame(tasks, columns=TASK_COLUMNS)
     trips, legs = router(frame)
+    # the same explicit error as connection_mask for router output without the stop columns, before the guard reads them
+    _require_columns(legs, LEGS_REQUIRED_COLUMNS, "legs", "connection_mask")
     access, egress = (legs[column].fillna("").astype(str) for column in ("access_stop_id", "egress_stop_id"))
 
     def is_foreign(stops):

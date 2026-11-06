@@ -312,7 +312,9 @@ def _stay_fallback_gates(origin_xy, point_xy, exits, needed):
     """The gate a KEPT pt stay without a connection takes, for the stays flagged in ``needed``.
 
     Per needed stay the nearest-by-detour exit stop among its DIRECTIONAL exit stops (outside stop closer to
-    the external point than the exit stop); when the stay has none, among all exit stops. Returns
+    the external point than the exit stop; a hub row always counts as directional, #574); when the stay has none,
+    among all exit stops. With at least one hub served by a cut route every stay has a directional stop, so the
+    all-stops fallback (``n_kept_fallback_all_stops``) practically no longer fires then. Returns
     ``(frame with gate_id, x, y, all_stops)``: one row per stay (rows of stays that are not ``needed`` stay
     None/NaN and are never read by ``resolve_no_connection``, which only reads the rows of the stays it
     keeps) and ``all_stops``, the bool flags of the needed stays that had no directional exit stop and

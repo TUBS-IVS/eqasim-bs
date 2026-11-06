@@ -97,15 +97,23 @@ def test_exit_stops_aligns_a_cut_sequence_with_a_repeated_stop():
     assert exits[["stop_id", "outside_x"]].values.tolist() == [["a", 30000.0]]
 
 
-@pytest.mark.parametrize("cut_route, match", [
-    (_route("r9", "rail", ["a", "b"]), "r9"),            # the route is not in the pre-cut timetable
-    (_route("r1", "rail", ["b", "a"]), "r1"),            # the sequence is not a contiguous part of the pre-cut route
+@pytest.mark.parametrize("pre_cut_routes, cut_route, match", [
+    # the route is not in the pre-cut timetable
+    ([_route("r1", "rail", ["a", "b", "c"])], _route("r9", "rail", ["a", "b"]), "'r9'.*not in the pre-cut"),
+    # the sequence is not a contiguous part of the pre-cut route
+    ([_route("r1", "rail", ["a", "b", "c"])], _route("r1", "rail", ["b", "a"]), "'r1'.*are not a contiguous"),
+    # the sequence fits the pre-cut route twice: no real cut writes that
+    ([_route("r1", "rail", ["a", "b", "a", "b"])], _route("r1", "rail", ["a", "b"]), "more than once a contiguous"),
+    # the pre-cut timetable holds the route twice: the match would be arbitrary
+    ([_route("r1", "rail", ["a", "b", "c"]), _route("r1", "rail", ["a", "b"])], _route("r1", "rail", ["a", "b"]),
+     "'r1'.*more than once in the pre-cut"),
 ])
-def test_exit_stops_raises_when_the_cut_timetable_does_not_belong_to_the_pre_cut_one(cut_route, match):
-    pre_cut, _ = _exit_schedule()
-    cut = Schedule({k: pre_cut.stops[k] for k in ("a", "b")}, [cut_route])
+def test_exit_stops_raises_when_the_cut_timetable_does_not_belong_to_the_pre_cut_one(pre_cut_routes, cut_route,
+                                                                                      match):
+    stops = {"a": (2000.0, 5000.0), "b": (8000.0, 5000.0), "c": (14000.0, 5000.0)}
+    cut = Schedule({k: stops[k] for k in ("a", "b")}, [cut_route])
     with pytest.raises(ValueError, match=match):
-        g.exit_stops(pre_cut, cut, set())
+        g.exit_stops(Schedule(stops, pre_cut_routes), cut, set())
 
 
 def _hub_schedule():
@@ -130,10 +138,20 @@ def test_exit_stops_adds_one_row_per_hub_and_cut_route_serving_it(caplog):
         ("H", "r_hub", 60000.0), ("i2", "r_bus", 8000.0)]
     # G is configured but served by no kept route: no row, and the count is logged.
     assert "G" not in cut.stops and "G" not in set(exits["stop_id"])
-    assert any("hub" in r.getMessage() and "1/2" in r.getMessage() for r in caplog.records)
+    assert [r.levelname for r in caplog.records if "configured hubs are served by no cut route" in r.getMessage()
+            and "1/2" in r.getMessage()] == ["INFO"]
     # The modes filter applies to the hub rows too.
     bus_only, _ = _exits(_hub_schedule(), hubs={"H"}, modes="bus")
     assert bus_only["stop_id"].tolist() == ["i2"] and not bus_only["is_hub"].any()
+
+
+def test_exit_stops_warns_when_no_configured_hub_is_served(caplog):
+    # A total miss almost always means the hub ids do not match the timetable's stop ids.
+    with caplog.at_level("INFO", logger=g.logger.name):
+        exits, _ = _exits(_hub_schedule(), hubs={"hannover_typo", "G"})
+    assert not exits["is_hub"].any()
+    assert [r.levelname for r in caplog.records if "configured hubs are served by no cut route" in r.getMessage()
+            and "2/2" in r.getMessage()] == ["WARNING"]
 
 
 def test_toward_mask_is_true_for_hub_rows():
@@ -281,6 +299,17 @@ def test_connected_raises_when_the_router_returns_a_stop_outside_the_cut_timetab
              ("1:hbf:out", 5000.0, 5200.0, 5000.0, 5000.0, 36000.0)]
     with pytest.raises(RuntimeError, match=r"1 .*hannover_local.*cut timetable"):
         g._connected(router, tasks, inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
+
+
+def test_connected_names_missing_stop_columns_of_the_router_legs():
+    # The guard reads the stop columns; router output without them keeps connection_mask's explicit error.
+    def router(tasks):
+        trips, legs = _fake_router(set(tasks["identifier"]), [])(tasks)
+        return trips, legs.drop(columns="access_stop_id")
+
+    with pytest.raises(ValueError, match="access_stop_id"):
+        g._connected(router, [("0:hbf:out", 5000.0, 5200.0, 5000.0, 5000.0, 36000.0)], inside_stop_ids=INSIDE_STOPS,
+                     walk_max_m=5000.0)
 
 
 def test_connected_accepts_legs_on_kept_stops():
