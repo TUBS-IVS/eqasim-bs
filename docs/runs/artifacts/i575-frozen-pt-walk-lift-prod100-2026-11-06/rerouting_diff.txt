@@ -1,0 +1,5 @@
+{'trips_compared': 116, 'legs_mode_sequence_changed': 1, 'stamp_lost': 3, 'origin_end_time_changed': 0, 'travel_time_changed_over_60s': 4}
+changed: ('1001456', 'leisure', 'walk+pt+walk+pt+walk+pt+walk', 10827, 'walk', 13869)
+changed: ('1005417', 'leisure', 'walk+pt+walk', 3769, 'walk+pt+walk', 3164)
+changed: ('101941', 'leisure', 'walk+pt+walk+pt+walk', 5046, 'walk+pt+walk+pt+walk', 6318)
+changed: ('1021818', 'leisure', 'walk+pt+walk+pt+walk+pt+walk+pt+walk+pt+walk+pt+walk', 13758, 'walk+pt+walk+pt+walk+pt+walk+pt+walk+pt+walk+pt+walk', 12672)

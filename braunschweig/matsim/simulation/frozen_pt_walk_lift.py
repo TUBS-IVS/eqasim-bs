@@ -8,7 +8,9 @@ plan check and replaces each such trip whose straight-line distance is STRICTLY 
 leg ``car_passenger`` (routingMode ``car_passenger``, the original ``dep_time``, no route, no ``trav_time``, leg
 attribute ``liftedFrom`` = ``pt``). The lifted leg has no ``trav_time`` and no route: MATSim's PrepareForSim routes
 it at the start (``car_passenger`` is a routing network mode in this config: ``routing.networkModes`` includes it,
-``accessEgressType`` is ``accessEgressModeToLink``). ``plan_check.planned_lateness_s`` counts a missing
+``accessEgressType`` is ``accessEgressModeToLink``). PrepareForSim routes the WHOLE plan of a person with a route-less
+leg, so the person's other trips are routed again too (effect measured in the run manifest of ADR-0189).
+``plan_check.planned_lateness_s`` counts a missing
 ``trav_time`` as 0 s, so the planned lateness measured after this step is a lower bound. ASSUMPTION (ADR-0156,
 ADR-0187): a trip that no timetable serves is made as a lift, not as a walk of many kilometres.
 

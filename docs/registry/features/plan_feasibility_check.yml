@@ -30,6 +30,11 @@ description: >-
   <output_path>/analysis/stuck/; the dashboard's additive stuck block reuses that summary when it is newer
   than output_events.xml.gz and otherwise computes it, and a failing stuck analysis is logged and recorded as
   available false with its reason without losing the other run metrics. The bound changes results by decision.
+  (4) Since ADR-0189 (#575), right before the check, braunschweig.matsim.simulation.frozen_pt_walk_lift turns the
+  long pt-as-walk trips of frozen resident tours (the plan check's own definition) into car_passenger lifts
+  (braunschweig.frozen_pt_walk_lift.enabled). The lifted share is judged against max_frozen_pt_as_walk_share and
+  logged at ERROR above it; the plan check's bounded share then measures only what the lift left (rule and
+  measured effect in the ADR and its run manifest).
 stages:
 - braunschweig.analysis.analysis_suite
 - matsim.simulation.prepare
@@ -49,6 +54,7 @@ production:
   - braunschweig.plan_check.max_frozen_pt_as_walk_share
   - braunschweig.plan_check.pt_as_walk_bound_min_distance_m
   - braunschweig.plan_check.non_monotonic_bound_min_lateness_s
+  - braunschweig.frozen_pt_walk_lift.enabled
 introduced:
   issue: 443
   pr: null

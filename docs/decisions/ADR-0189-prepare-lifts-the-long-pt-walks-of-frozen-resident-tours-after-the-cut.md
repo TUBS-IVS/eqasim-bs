@@ -27,13 +27,15 @@
    length is above the plan check's long-walk bound becomes one `car_passenger` leg without route, travel time or
    passenger availability (ASSUMPTION as ADR-0156/0187: a trip no timetable serves is made as a lift, not as a walk).
    The leg keeps its departure time and carries `liftedFrom=pt`; activities and their end times are unchanged. MATSim
-   routes the leg at the start of the run (`car_passenger` is a routing network mode in the run's config).
+   routes the leg at the start of the run (`car_passenger` is a routing network mode in the run's config); its
+   PrepareForSim then routes the WHOLE plan of such a person again, as a ReRoute would (measured in Consequences).
 3. **Not here.** In-commuters and freight (their own strategies and scope); non-frozen tours (mode choice repairs them);
    a time shift (after the cut the times are tied to the cut `outside` legs; a shift needs a re-routing in Java).
 4. **Switch and observability.** `braunschweig.frozen_pt_walk_lift.enabled` (production on);
    `frozen_pt_walk_lift.json` and one log line give the frozen pt-intended trips, the all-walk ones, the lifted ones (by
-   stamp or routing mode only, by distance band) and their rate, WARNING above
-   `braunschweig.frozen_pt_walk_lift.warn_share` (ASSUMPTION).
+   stamp or routing mode only, by distance band) and their rate. The rate is the ratio the plan check bounds
+   (ADR-0188), so it is judged against the same bound, `braunschweig.plan_check.max_frozen_pt_as_walk_share`, and
+   logged at ERROR above it, as the plan check would have; no second threshold.
 
 ## Rejected options
 
@@ -41,12 +43,16 @@
   cannot know which tour the cut freezes.
 - **Do not freeze tours whose `outside` activities come only from a pass-through cut:** a change of eqasim's freeze rule
   with effects on every cut trip; out of scope.
-- **Re-route the lifted trip in Java inside prepare:** larger; MATSim's start-up routing does the same.
+- **Re-route the lifted trip in Java inside prepare:** larger; it would avoid the whole-plan re-routing at the start
+  (Consequences), whose measured effect is small.
 
 ## Consequences
 
-- The plan check counts fewer long pt-as-walk trips among the frozen residents; the lifted trips appear as
-  `car_passenger`.
+- The plan check's bounded share `share_pt_as_walk_long` now measures only what the lift leaves: the lifted trips
+  appear as `car_passenger`. The size of the defect is read from the lift's own rate, judged against the same bound.
+- A lifted person's whole plan is routed again at the start of the run: its other trips may get other routes and
+  travel times, and a short pt-as-walk trip loses its `walkFallbackFrom` stamp in the run's output (counted in the
+  run manifest's smoke); activity end times do not change.
 - The planned lateness of the plan check treats the missing travel time of a lifted leg as 0 s (a lower bound).
 - MATSim starts on lifted plans and simulates the lifted legs (start-up smoke in the run manifest); the effect on the
   simulated day of the whole population is not measured.
