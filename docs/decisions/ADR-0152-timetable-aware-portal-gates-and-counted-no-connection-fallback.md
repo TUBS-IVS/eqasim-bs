@@ -50,6 +50,8 @@
    router runs once per direction as a batch, the return batch only for candidates already connected outbound.
    The return-leg service check reads OUTWARD departures at the gate near the re-entry time as a proxy; the
    inbound service of the return is checked by the router, not by the timetable scan.
+   Amended 2026-11-05 by ADR-0184 (#572): the service check now comes before the `gate_candidates` cut, within
+   an extra-detour cap.
 3. **Connection rule** (`braunschweig/data/transit/connections.py`): `is_only_walk == 0`, every pt leg's
    access and egress stop inside the cut extent, access, egress and transfer walking each at most
    `plan_check.DEFAULT_WALK_MAX_DISTANCE_M / 1000` km (the constant is read, not copied); or an only-walk result

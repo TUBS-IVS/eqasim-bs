@@ -12,7 +12,8 @@ description: >-
   portal stage rewrites the reporting-day trips behind the alias
   synthesis.population.trips.final: consecutive far destinations merge into one stay, the gate is the road gate
   or the schedule-derived pt exit stop with the smallest detour among those that the timetable and the eqasim
-  batch router show to be served and connected at the stay's times (ADR-0152; always inside the cut extent, so
+  batch router show to be served and connected at the stay's times (ADR-0152; candidates are the served
+  directional exit stops within an extra-detour cap, ADR-0184; always inside the cut extent, so
   the scenario cutter cuts nothing; a pt stay without any connection becomes car, car passenger, a shifted
   departure or a counted kept stay), the stay ends at a time derived from the donor's diary, and the donor's
   outbound mode is fixed for both legs after an availability check with a counted substitution order. The

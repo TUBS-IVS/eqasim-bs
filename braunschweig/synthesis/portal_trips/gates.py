@@ -12,6 +12,7 @@ one with the smallest detour origin -> gate -> point (ASSUMPTION: no preference 
 from __future__ import annotations
 
 import logging
+import math
 
 import geopandas as gpd
 import numpy as np
@@ -193,18 +194,21 @@ def _toward_mask(point, exits: gpd.GeoDataFrame) -> np.ndarray:
             < np.hypot(exits.geometry.x.to_numpy() - point[0], exits.geometry.y.to_numpy() - point[1]))
 
 
-def pt_gate_candidates(origin_xy, point_xy, exits: gpd.GeoDataFrame, n_candidates: int,
-                       toward=None) -> list[list[str]]:
-    """Per stay the exit ``stop_id``s whose outward route heads toward the external point.
+def pt_gate_candidates(origin_xy, point_xy, exits: gpd.GeoDataFrame, max_extra_detour_m: float,
+                       toward=None) -> list[list[tuple[str, float]]]:
+    """Per stay the directional exit stops within the extra-detour cap, as ``(stop_id, detour_m)`` by detour.
 
     A route heads toward the point when its outside stop is closer to the point than the exit stop
     itself (``hypot(outside - point) < hypot(stop - point)``). A stop is listed once however many routes
-    qualify; the ``n_candidates`` stops with the smallest detour origin -> stop -> point are kept,
-    ordered by detour (ties keep the order of ``exits``). ``toward`` optionally gives the per-stay
-    ``_toward_mask`` (computed once by the caller when it needs the masks again).
+    qualify. Its detour is the straight line origin -> stop -> point. Only stops with a detour of at most the
+    smallest directional detour of the stay plus ``max_extra_detour_m`` are kept (``math.inf`` keeps all),
+    ordered by detour (ties keep the order of ``exits``). No ``n_candidates`` cut happens here: since #572
+    ``choose_pt_gates`` cuts to the ``n_candidates`` smallest detours AFTER the service check (ADR-0152
+    decision 2, amended for #572). ``toward`` optionally gives the per-stay ``_toward_mask`` (computed once by
+    the caller when it needs the masks again).
     """
-    if n_candidates < 1:
-        raise ValueError(f"[portal_trips] pt gates: n_candidates must be >= 1, got {n_candidates}")
+    if not max_extra_detour_m >= 0.0:  # also rejects NaN
+        raise ValueError(f"[portal_trips] pt gates: max_extra_detour_m must be >= 0, got {max_extra_detour_m!r}")
     origin_xy = np.asarray(origin_xy, dtype=float)
     point_xy = np.asarray(point_xy, dtype=float)
     stop_ids = exits["stop_id"].astype(str).to_numpy()
@@ -219,9 +223,9 @@ def pt_gate_candidates(origin_xy, point_xy, exits: gpd.GeoDataFrame, n_candidate
             seen.add(stop_ids[k])
             detour = np.hypot(origin[0] - stop_x[k], origin[1] - stop_y[k]) + \
                 np.hypot(point[0] - stop_x[k], point[1] - stop_y[k])
-            rows.append((detour, stop_ids[k]))
-        rows.sort(key=lambda row: row[0])  # stable: ties keep the order of ``exits``
-        result.append([stop for _, stop in rows[:n_candidates]])
+            rows.append((stop_ids[k], float(detour)))
+        rows.sort(key=lambda row: row[1])  # stable: ties keep the order of ``exits``
+        result.append([row for row in rows if row[1] <= rows[0][1] + max_extra_detour_m])
     return result
 
 
@@ -274,33 +278,49 @@ def _connected(router, tasks, *, inside_stop_ids, walk_max_m) -> set:
 
 def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_s, return_departure_s,
                     return_arrival_s, has_return, exits: gpd.GeoDataFrame, schedule, router, *,
-                    n_candidates: int, service_window_s: float, inside_stop_ids: set, walk_max_m: float
-                    ) -> pd.DataFrame:
-    """The pt gate of each pt stay: direction -> served window -> router connection -> smallest detour.
+                    n_candidates: int, max_extra_detour_m: float, service_window_s: float, inside_stop_ids: set,
+                    walk_max_m: float) -> pd.DataFrame:
+    """The pt gate of each pt stay: direction -> extra-detour cap -> served -> n smallest detours -> router.
 
     All arguments are per pt stay (row ``i`` of the arrays is stay ``i``; coordinates metric, times in
-    seconds). Per stay: the candidates are ``pt_gate_candidates``; a candidate must be served, i.e. a route
-    heading toward the stay's external point departs at the stop in ``[t, t + service_window_s]`` at the planned
-    gate arrival (outbound) and, when the stay has a return leg, at the planned re-entry (the outward
-    departures near the re-entry time are a PROXY for the return service: the inbound service is not read
-    from the timetable here, the router checks it); the router must connect it from the in-region
+    seconds). Per stay (ADR-0152 decision 2, amended for #572): the directional exit stops within
+    ``max_extra_detour_m`` of the smallest directional detour are taken (``pt_gate_candidates``); of those the
+    SERVED ones are kept, i.e. a route heading toward the stay's external point departs at the stop in
+    ``[t, t + service_window_s]`` at the planned gate arrival (outbound) and, when the stay has a return leg, at
+    the planned re-entry (the outward departures near the re-entry time are a PROXY for the return service: the
+    inbound service is not read from the timetable here, the router checks it); the ``n_candidates`` served
+    stops with the smallest detour are routed exactly: the router must connect each from the in-region
     end to the gate at the planned trip departure (outbound) and from the gate to the in-region end at
     the re-entry (return; ``connection_mask`` rule with ``inside_stop_ids`` and ``walk_max_m``).
     The gate arrival and the re-entry depend on the candidate and use the distance split of
-    ``timing._split_share``. The admissible candidate with the smallest detour wins.
+    ``timing._split_share``. The routed candidate with the smallest detour that connects wins.
 
     The router gets ONE batch per direction (identifiers ``"<stay>:<stop_id>:out"`` / ``":ret"``). The
-    return batch holds only the candidates already served and connected outbound, and is not sent for
+    return batch holds only the candidates already connected outbound, and is not sent for
     stays without a return leg. Result: ``PT_GATE_COLUMNS``, one row per stay, ``gate_id`` None with a
-    ``reason`` when no candidate is admissible. ``n_in_direction`` is the number of candidates kept (in
-    direction, AFTER the ``n_candidates`` cut); ``n_served`` the candidates served in EVERY checked direction
-    (outbound, plus return when ``has_return``) by a route heading toward the stay's point; ``n_connected``
-    those that also connect in every checked direction. Non-finite coordinates or times raise ``ValueError``
-    (return times are only checked for stays with a return leg). The reasons are logged as rates (the stage
-    surfaces a high ``no_connection`` share).
+    ``reason`` when no candidate is admissible (``no_gate_in_direction``: no directional stop;
+    ``no_gate_served``: none within the cap is served; ``no_connection``: the router connects none).
+    ``n_in_direction`` is the number of directional stops within the cap; ``n_served`` those among them served
+    in EVERY checked direction (outbound, plus return when ``has_return``), BEFORE the ``n_candidates`` cut;
+    ``n_connected`` the routed ones that also connect in every checked direction. Non-finite coordinates or
+    times raise ``ValueError`` (return times are only checked for stays with a return leg), as does a
+    ``max_extra_detour_m`` that is negative or not finite.
+
+    Logged as rates (info): the reasons (the stage surfaces a high ``no_connection`` share) and the two
+    #572 effects, the stays whose gate lies beyond the ``n_candidates`` smallest-detour directional stops
+    (rank among ALL directional stops, cap ignored) and the stays with no served stop within the cap although
+    one is served beyond it (the service of the beyond-cap stops is only evaluated for stays without a served
+    stop within the cap). Neither has a warn threshold: no share bound is defined for them. Both counts are
+    also returned in ``frame.attrs`` (``n_gate_beyond_top_n``, ``n_no_served_within_cap``) so that the stage
+    can put them in its per-run report.
     """
     from braunschweig.synthesis.portal_trips.timing import _split_share
 
+    if not (math.isfinite(max_extra_detour_m) and max_extra_detour_m >= 0.0):
+        raise ValueError(f"[portal_trips] pt gates: max_extra_detour_m must be finite and >= 0, "
+                         f"got {max_extra_detour_m!r}")
+    if n_candidates < 1:
+        raise ValueError(f"[portal_trips] pt gates: n_candidates must be >= 1, got {n_candidates}")
     origin_xy = np.asarray(origin_xy, dtype=float)
     point_xy = np.asarray(point_xy, dtype=float)
     out_dep, out_arr = (np.asarray(v, dtype=float) for v in (outbound_departure_s, outbound_arrival_s))
@@ -317,15 +337,31 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
                          "contain non-finite values")
     # The "route heads toward the point" mask is computed once per stay and used for the candidates and the service check.
     toward = [_toward_mask(point, exits) for point in point_xy] if len(exits) else []
-    candidates = (pt_gate_candidates(origin_xy, point_xy, exits, n_candidates, toward=toward)
-                  if len(exits) else [[] for _ in range(n)])
+    # ALL directional stops by detour (no cap): ``within`` is the capped prefix, ``beyond`` the rest.
+    directional = (pt_gate_candidates(origin_xy, point_xy, exits, math.inf, toward=toward)
+                   if len(exits) else [[] for _ in range(n)])
+    within, beyond = [], []
+    for stops in directional:
+        limit = stops[0][1] + max_extra_detour_m if stops else math.inf
+        cut = sum(1 for _, detour in stops if detour <= limit)  # sorted by detour: the cap keeps a prefix
+        within.append([stop for stop, _ in stops[:cut]])
+        beyond.append([stop for stop, _ in stops[cut:]])
     xy = _stop_xy(exits)
     table = _departure_table(schedule, exits)
+    stop_rows = {}
+    for r, stop in enumerate(exits["stop_id"].astype(str)):
+        stop_rows.setdefault(stop, []).append(r)
+    route_keys = list(zip(exits["line_id"], exits["route_id"]))
 
-    # All (stay, stop) pairs at once: the gate arrival / re-entry share is one vectorised _split_share call.
-    pair_keys = [(i, stop) for i in range(n) for stop in candidates[i]]
-    out_time, ret_time, served = {}, {}, {}
-    if pair_keys:
+    def service(candidates):
+        """Service of all (stay, stop) pairs of ``candidates`` at once: one vectorised _split_share call.
+
+        Returns ``(out_time, ret_time, served)`` dicts keyed ``(stay, stop)``.
+        """
+        pair_keys = [(i, stop) for i in range(n) for stop in candidates[i]]
+        out_time, ret_time, served = {}, {}, {}
+        if not pair_keys:
+            return out_time, ret_time, served
         stay = np.array([i for i, _ in pair_keys])
         gate = np.array([xy[stop] for _, stop in pair_keys])
         d_origin = np.hypot(origin_xy[stay, 0] - gate[:, 0], origin_xy[stay, 1] - gate[:, 1])
@@ -334,10 +370,6 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
         share_ret, _ = _split_share(d_point, d_origin)
         t_out = out_dep[stay] + share_out * (out_arr[stay] - out_dep[stay])
         t_ret = ret_dep[stay] + share_ret * (ret_arr[stay] - ret_dep[stay])
-        stop_rows = {}
-        for r, stop in enumerate(exits["stop_id"].astype(str)):
-            stop_rows.setdefault(stop, []).append(r)
-        route_keys = list(zip(exits["line_id"], exits["route_id"]))
         for k, (i, stop) in enumerate(pair_keys):
             # the routes at this stop that head toward the stay's external point
             keys = {route_keys[r] for r in stop_rows[stop] if toward[i][r]}
@@ -346,6 +378,17 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
             if ok and has_return[i]:
                 ok = _has_departure(table, stop, keys, ret_time[i, stop], service_window_s)
             served[i, stop] = ok
+        return out_time, ret_time, served
+
+    out_time, ret_time, served = service(within)
+    served_within = [[s for s in within[i] if served[i, s]] for i in range(n)]
+    routed = [served_within[i][:n_candidates] for i in range(n)]  # ordered by detour
+
+    # #572 diagnostic: stays without a served stop within the cap, checked against the stops beyond it (cheap:
+    # only these stays, and only their beyond-cap stops).
+    probe = [beyond[i] if directional[i] and not served_within[i] else [] for i in range(n)]
+    _, _, served_beyond = service(probe)
+    capped = sum(1 for i in range(n) if any(served_beyond[i, s] for s in probe[i]))
 
     def task(i, stop, direction):
         gx, gy = xy[stop]
@@ -355,34 +398,41 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
         return (f"{i}:{stop}:{_RET}", gx, gy, ox, oy, ret_time[i, stop])
 
     kwargs = dict(inside_stop_ids=inside_stop_ids, walk_max_m=walk_max_m)
-    served_keys = [(i, s) for i in range(n) for s in candidates[i] if served[i, s]]
-    out_ok = _connected(router, [task(i, s, _OUT) for i, s in served_keys], **kwargs)
-    out_pass = [(i, s) for i, s in served_keys if f"{i}:{s}:{_OUT}" in out_ok]
+    routed_keys = [(i, s) for i in range(n) for s in routed[i]]
+    out_ok = _connected(router, [task(i, s, _OUT) for i, s in routed_keys], **kwargs)
+    out_pass = [(i, s) for i, s in routed_keys if f"{i}:{s}:{_OUT}" in out_ok]
     ret_pairs = [(i, s) for i, s in out_pass if has_return[i]]
     ret_ok = _connected(router, [task(i, s, _RET) for i, s in ret_pairs], **kwargs)
     connected = {(i, s) for i, s in out_pass if not has_return[i] or f"{i}:{s}:{_RET}" in ret_ok}
 
-    rows = []
+    rows, beyond_top_n = [], 0
     for i in range(n):
-        served_n = sum(served[i, s] for s in candidates[i])
-        won = [s for s in candidates[i] if (i, s) in connected]  # candidates are ordered by detour
-        if not candidates[i]:
+        won = [s for s in routed[i] if (i, s) in connected]  # routed stops are ordered by detour
+        if not directional[i]:
             reason = REASON_NO_GATE_IN_DIRECTION
-        elif served_n == 0:
+        elif not served_within[i]:
             reason = REASON_NO_GATE_SERVED
         elif not won:
             reason = REASON_NO_CONNECTION
         else:
             reason = REASON_GATE_FOUND
         gate = won[0] if won else None
+        if gate is not None and [s for s, _ in directional[i]].index(gate) + 1 > n_candidates:
+            beyond_top_n += 1
         rows.append((gate, xy[gate][0] if gate else np.nan, xy[gate][1] if gate else np.nan, reason,
-                     len(candidates[i]), int(served_n), len(won)))
+                     len(within[i]), len(served_within[i]), len(won)))
     frame = pd.DataFrame(rows, columns=PT_GATE_COLUMNS)
     frame["gate_id"] = frame["gate_id"].astype(object).where(frame["gate_id"].notna(), None)
     counts = frame["reason"].value_counts()
     logger.info("[portal_trips.gates] pt gates over %d pt stays: %s", n,
                 ", ".join(f"{r} {int(counts.get(r, 0))}/{n} ({100.0 * counts.get(r, 0) / max(n, 1):.1f}%)"
                           for r in _REASONS))
+    share = 100.0 / max(n, 1)
+    logger.info("[portal_trips.gates] pt gates: gate beyond the %d smallest-detour directional stops %d/%d (%.1f%%), "
+                "no served stop within the extra-detour cap of %.0f m although one is served beyond it %d/%d (%.1f%%)",
+                n_candidates, beyond_top_n, n, beyond_top_n * share, max_extra_detour_m, capped, n, capped * share)
+    frame.attrs["n_gate_beyond_top_n"] = int(beyond_top_n)
+    frame.attrs["n_no_served_within_cap"] = int(capped)
     return frame
 
 

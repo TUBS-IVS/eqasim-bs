@@ -4,6 +4,9 @@ import pytest
 
 from braunschweig.synthesis.portal_trips import config_keys as keys
 
+# literal on purpose: the parametrisation below must be collectable before the constant exists
+GATE_MAX_EXTRA_DETOUR_KEY = "braunschweig.portal.gate_max_extra_detour_m"
+
 
 def test_keys_share_the_portal_prefix_and_the_declared_defaults():
     assert keys.KEY_ENABLED == "braunschweig.portal.enabled"
@@ -72,6 +75,9 @@ def test_timetable_gate_keys_are_declared_with_their_defaults():
     ({"min_stay_s": -1.0}, keys.KEY_MIN_STAY_S),
     ({"no_connection_warn_share": 0.0}, keys.KEY_NO_CONNECTION_WARN_SHARE),
     ({"no_connection_warn_share": 1.5}, keys.KEY_NO_CONNECTION_WARN_SHARE),
+    ({"gate_max_extra_detour_m": -1.0}, GATE_MAX_EXTRA_DETOUR_KEY),
+    ({"gate_max_extra_detour_m": float("nan")}, GATE_MAX_EXTRA_DETOUR_KEY),
+    ({"gate_max_extra_detour_m": float("inf")}, GATE_MAX_EXTRA_DETOUR_KEY),
 ])
 def test_validate_settings_rejects_invalid_timetable_gate_settings(override, key):
     with pytest.raises(ValueError, match=key.replace(".", r"\.")):
@@ -81,3 +87,9 @@ def test_validate_settings_rejects_invalid_timetable_gate_settings(override, key
 def test_validate_settings_accepts_a_no_connection_share_of_exactly_one_and_zero_windows():
     keys.validate_settings(45000.0, 0.2, 0.1, 0.1, no_connection_warn_share=1.0, shift_window_s=0.0,
                            gate_service_window_s=0.0, min_stay_s=0.0)
+
+
+def test_gate_max_extra_detour_key_is_declared_and_a_zero_cap_is_valid():
+    assert keys.KEY_GATE_MAX_EXTRA_DETOUR_M == "braunschweig.portal.gate_max_extra_detour_m"
+    assert keys.DEFAULT_GATE_MAX_EXTRA_DETOUR_M == 10000.0
+    keys.validate_settings(45000.0, 0.2, 0.1, 0.1, gate_max_extra_detour_m=0.0)

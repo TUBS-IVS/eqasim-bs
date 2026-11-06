@@ -126,7 +126,7 @@ def test_execute_off_passes_the_trips_frame_through_unchanged():
 # Pure entry point
 # --------------------------------------------------------------------------------------------------
 
-GATE_SETTINGS = {"n_candidates": 5, "service_window_s": 3600.0, "shift_window_s": 7200.0, "shift_step_s": 1800.0,
+GATE_SETTINGS = {"n_candidates": 5, "max_extra_detour_m": 10000.0, "service_window_s": 3600.0, "shift_window_s": 7200.0, "shift_step_s": 1800.0,
                  "min_stay_s": 1800.0, "no_connection_warn_share": 0.05}
 
 
@@ -525,6 +525,23 @@ def test_a_connected_pt_stay_takes_the_primary_path_without_a_warning(caplog):
     assert any("primary path: gate_found 1" in r.getMessage() for r in caplog.records)
 
 
+def test_the_572_counts_of_the_first_gate_choice_reach_the_report(monkeypatch):
+    # Distinct non-zero counts on the first gate choice: the report must carry exactly these, not its zero defaults,
+    # and must not swap them (the counts themselves are tested in test_portal_trips_gates).
+    original = stage._gates.choose_pt_gates
+
+    def with_counts(*args, **kwargs):
+        frame = original(*args, **kwargs)
+        frame.attrs.update({"n_gate_beyond_top_n": 2, "n_no_served_within_cap": 3})
+        return frame
+
+    monkeypatch.setattr(stage._gates, "choose_pt_gates", with_counts)
+    fixture = _fixture()
+    fixture["router"] = _router()
+    report = stage.build_portal_trips(**fixture)["report"]
+    assert (report["n_pt_gate_beyond_top_n"], report["n_pt_no_served_within_cap"]) == (2, 3)
+
+
 def test_a_pt_stay_without_any_connection_is_kept_counted_and_warned(caplog):
     fixture = _fixture()
     fixture["router"] = _router(connects=lambda identifier: False)
@@ -692,7 +709,7 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
 
 
 def _gate_values():
-    return {keys.KEY_ENABLED: True, keys.KEY_MAX_ROUTABLE_DISTANCE_M: 45000,
+    return {keys.KEY_ENABLED: True, keys.KEY_GATE_MAX_EXTRA_DETOUR_M: 10000.0, keys.KEY_MAX_ROUTABLE_DISTANCE_M: 45000,
             keys.KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE: 0.2, keys.KEY_MODE_SUBSTITUTION_WARN_SHARE: 0.1,
             keys.KEY_FALLBACK_WARN_SHARE: 0.1, "random_seed": 7, "cordon_network_buffer_fraction": 0.1,
             keys.KEY_PT_GATE_MODES: "all", keys.KEY_GATE_SERVICE_WINDOW_S: 3600.0, keys.KEY_GATE_CANDIDATES: 5,

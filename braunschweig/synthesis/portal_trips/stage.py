@@ -39,12 +39,14 @@ from braunschweig.synthesis.portal_trips import rewrite
 from braunschweig.synthesis.portal_trips import timing as _timing
 from braunschweig.synthesis.portal_trips.config_keys import (
     DEFAULT_ENABLED, DEFAULT_EXTERNAL_POINT_DISTANCE_TOLERANCE, DEFAULT_FALLBACK_WARN_SHARE,
-    DEFAULT_GATE_CANDIDATES, DEFAULT_GATE_SERVICE_WINDOW_S, DEFAULT_MAX_ROUTABLE_DISTANCE_M,
+    DEFAULT_GATE_CANDIDATES, DEFAULT_GATE_MAX_EXTRA_DETOUR_M, DEFAULT_GATE_SERVICE_WINDOW_S,
+    DEFAULT_MAX_ROUTABLE_DISTANCE_M,
     DEFAULT_MIN_STAY_S, DEFAULT_MODE_SUBSTITUTION_WARN_SHARE, DEFAULT_NO_CONNECTION_WARN_SHARE,
     DEFAULT_NO_CONNECTION_LAST_RESORT, DEFAULT_PT_GATE_MODES, DEFAULT_SHIFT_RETURN_EARLIER, DEFAULT_SHIFT_STEP_S,
     DEFAULT_SHIFT_WINDOW_S, DEFAULT_BICYCLE_MAX_DISTANCE_M, DEFAULT_WALK_MAX_DISTANCE_M, KEY_BICYCLE_MAX_DISTANCE_M,
     KEY_ENABLED, KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE, KEY_FALLBACK_WARN_SHARE,
-    KEY_GATE_CANDIDATES, KEY_GATE_SERVICE_WINDOW_S, KEY_MAX_ROUTABLE_DISTANCE_M, KEY_MIN_STAY_S,
+    KEY_GATE_CANDIDATES, KEY_GATE_MAX_EXTRA_DETOUR_M, KEY_GATE_SERVICE_WINDOW_S, KEY_MAX_ROUTABLE_DISTANCE_M,
+    KEY_MIN_STAY_S,
     KEY_MODE_SUBSTITUTION_WARN_SHARE, KEY_NO_CONNECTION_LAST_RESORT, KEY_NO_CONNECTION_WARN_SHARE, KEY_PT_GATE_MODES,
     KEY_SHIFT_RETURN_EARLIER, KEY_SHIFT_STEP_S, KEY_SHIFT_WINDOW_S, KEY_WALK_MAX_DISTANCE_M, RNG_OFFSET,
     validate_settings)
@@ -83,7 +85,7 @@ _EMPTY_STAY_REPORT = {
     "return_share_out_median": None,
     "n_stay_persons_missing_license": 0, "n_unknown_donor_mode": 0, "unknown_donor_modes": {},
     "n_pt_stays": 0, "pt_gate_reasons": {}, "no_connection_actions": {}, "n_departure_shifted_s_median": None,
-    "n_kept_fallback_all_stops": 0,
+    "n_kept_fallback_all_stops": 0, "n_pt_gate_beyond_top_n": 0, "n_pt_no_served_within_cap": 0,
     "n_soft_mode_stays_beyond_distance": 0, "n_soft_mode_stays_to_pt": 0,
     "n_soft_mode_stays_left_to_outside_tour_modes": 0,
 }
@@ -154,6 +156,8 @@ def _configure_gate_settings(context) -> dict:
     Called from ``configure`` only: the two-argument ``context.config(key, default)`` form is invalid at execute.
     """
     return {"gate_candidates": int(context.config(KEY_GATE_CANDIDATES, DEFAULT_GATE_CANDIDATES)),
+            "gate_max_extra_detour_m": float(context.config(KEY_GATE_MAX_EXTRA_DETOUR_M,
+                                                            DEFAULT_GATE_MAX_EXTRA_DETOUR_M)),
             "gate_service_window_s": float(context.config(KEY_GATE_SERVICE_WINDOW_S,
                                                           DEFAULT_GATE_SERVICE_WINDOW_S)),
             "shift_window_s": float(context.config(KEY_SHIFT_WINDOW_S, DEFAULT_SHIFT_WINDOW_S)),
@@ -359,7 +363,7 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     (``braunschweig.data.transit.schedule.Schedule``), ``router`` the batch pt router
     (``braunschweig.data.transit.connections.Router``: tasks frame -> (trips, legs)), ``pt_gate_modes``
     ``"all"`` or the transit modes allowed as gates, and ``gate_settings`` the dict with ``n_candidates``,
-    ``service_window_s``, ``shift_window_s``, ``shift_step_s``, ``min_stay_s`` and ``no_connection_warn_share``.
+    ``max_extra_detour_m``, ``service_window_s``, ``shift_window_s``, ``shift_step_s``, ``min_stay_s`` and ``no_connection_warn_share``.
     A pt stay without an admissible gate is resolved by ``no_connection.resolve_no_connection`` (whole-tour
     mode switch, time shift, kept with its nearest directional exit stop); every outcome is counted in the
     report and WARNed above ``no_connection_warn_share``.
@@ -374,6 +378,7 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     # A direct caller gets the same range checks as configure() (a zero shift step would silently disable the shift path).
     validate_settings(threshold_m, tolerance, warn_share, fallback_warn_share,
                       gate_candidates=gate_settings["n_candidates"],
+                      gate_max_extra_detour_m=gate_settings["max_extra_detour_m"],
                       gate_service_window_s=gate_settings["service_window_s"],
                       shift_window_s=gate_settings["shift_window_s"], shift_step_s=gate_settings["shift_step_s"],
                       min_stay_s=gate_settings["min_stay_s"],
@@ -502,7 +507,8 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
             fallback_gates=pd.DataFrame(columns=["gate_id", "x", "y"]), **chain)
         return out_modes, out_trips, out_gates, {
             "n_pt_stays": 0, "pt_gate_reasons": {}, "no_connection_actions": {},
-            "n_departure_shifted_s_median": None, "n_kept_fallback_all_stops": 0}
+            "n_departure_shifted_s_median": None, "n_kept_fallback_all_stops": 0,
+            "n_pt_gate_beyond_top_n": 0, "n_pt_no_served_within_cap": 0}
     if router is None:
         raise ValueError(f"{_LOG_TAG} {n_pt} pt stays need the batch pt router but none was given")
     exits = _gates.exit_stops(schedule, cordon_polygon, pt_gate_modes, crs=crs)
@@ -526,6 +532,7 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
         return _gates.choose_pt_gates(
             pt_origin[positions], pt_point[positions], o_dep, o_arr, r_dep, r_arr, has_return[positions], exits,
             schedule, router, n_candidates=gate_settings["n_candidates"],
+            max_extra_detour_m=gate_settings["max_extra_detour_m"],
             service_window_s=gate_settings["service_window_s"], inside_stop_ids=inside_stop_ids,
             walk_max_m=walk_max_m)
 
@@ -559,7 +566,10 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
         "n_pt_stays": int(n_pt), "pt_gate_reasons": _counts(pt_gates["reason"]),
         "no_connection_actions": _counts(actions),
         "n_departure_shifted_s_median": float(np.median(shift_s[shifted])) if shifted.any() else None,
-        "n_kept_fallback_all_stops": int(n_kept_all_stops)}
+        "n_kept_fallback_all_stops": int(n_kept_all_stops),
+        # The #572 rates of the FIRST gate choice (planned times); the no-connection probes are not counted here.
+        "n_pt_gate_beyond_top_n": int(pt_gates.attrs["n_gate_beyond_top_n"]),
+        "n_pt_no_served_within_cap": int(pt_gates.attrs["n_no_served_within_cap"])}
 
 
 def _counts(values) -> dict:
@@ -671,6 +681,7 @@ def execute(context):
         df_education=df_education, gates=gates, links=links, external_points=external_points, schedule=schedule,
         router=router, pt_gate_modes=context.config(KEY_PT_GATE_MODES),
         gate_settings={"n_candidates": int(context.config(KEY_GATE_CANDIDATES)),
+                       "max_extra_detour_m": float(context.config(KEY_GATE_MAX_EXTRA_DETOUR_M)),
                        "service_window_s": float(context.config(KEY_GATE_SERVICE_WINDOW_S)),
                        "shift_window_s": float(context.config(KEY_SHIFT_WINDOW_S)),
                        "shift_step_s": float(context.config(KEY_SHIFT_STEP_S)),

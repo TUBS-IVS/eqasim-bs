@@ -138,16 +138,18 @@ def _fake_router(connected, log):
 
 
 def _choose(departures, connected, *, point=(50000.0, 5000.0), has_return=True, n_stays=1, modes="all",
-            n_candidates=5, log=None):
+            n_candidates=5, log=None, schedule=None, max_extra_detour_m=1e9):
+    # The default cap is far larger than any detour here, so tests that do not target the cap keep their meaning.
     log = [] if log is None else log
-    schedule = _gate_schedule(departures)
+    schedule = _gate_schedule(departures) if schedule is None else schedule
     exits = g.exit_stops(schedule, SQUARE, modes=modes)
     n = n_stays
     frame = g.choose_pt_gates(
         np.tile([5000.0, 5200.0], (n, 1)), np.tile(point, (n, 1)),
         np.full(n, 36000.0), np.full(n, 37800.0), np.full(n, 50000.0), np.full(n, 51800.0),
         np.full(n, has_return), exits, schedule, _fake_router(connected, log),
-        n_candidates=n_candidates, service_window_s=3600.0, inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
+        n_candidates=n_candidates, max_extra_detour_m=max_extra_detour_m, service_window_s=3600.0,
+        inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
     return frame, log
 
 
@@ -236,7 +238,7 @@ def test_choose_pt_gates_parses_stop_ids_that_contain_colons():
 def test_choose_pt_gates_keeps_only_the_n_smallest_detour_candidates():
     frame, log = _choose({"r_hbf": [36500.0], "r_soph": [36500.0]}, {"0:soph:out"}, has_return=False,
                          modes="rail", n_candidates=1)
-    assert frame.iloc[0]["n_in_direction"] == 1 and frame.iloc[0]["reason"] == g.REASON_NO_CONNECTION
+    assert frame.iloc[0]["n_in_direction"] == 2 and frame.iloc[0]["reason"] == g.REASON_NO_CONNECTION
     assert log[0]["identifier"].tolist() == ["0:hbf:out"]
 
 
@@ -244,6 +246,89 @@ def test_choose_pt_gates_logs_the_reason_rates(caplog):
     with caplog.at_level("INFO", logger=g.logger.name):
         _choose({"r_hbf": [36500.0, 52000.0]}, {"0:hbf:out", "0:hbf:ret"}, modes="rail")
     assert any("gate_found 1/1" in r.getMessage() for r in caplog.records)
+
+
+# ---- #572: served stops first, then the n smallest detours; extra-detour cap over the best directional stop ----
+# Stay origin (5000, 5200), external point far east: the detour origin -> stop -> point falls strictly with the
+# stop's x inside the square, so a larger x is a smaller detour. A stop at x=2000 lies about 6 km behind x=9500.
+
+BOTH_WAYS = [36500.0, 52000.0]  # a departure in the outbound window and one at the re-entry
+
+
+def _east_schedule(stops):
+    """Inside stops ``{stop_id: (x, departures)}``, each on its own eastbound route to the outside stop 'ext'."""
+    coords = {name: (x, 5000.0) for name, (x, _) in stops.items()}
+    coords["ext"] = (20000.0, 5000.0)
+    routes = [RouteInfo("L_" + name, "r_" + name, "bus", (name, "ext"), (0.0, 0.0), tuple(times))
+              for name, (_, times) in stops.items()]
+    return Schedule(coords, routes)
+
+
+def _connected_both_ways(*names):
+    return {f"0:{name}:{way}" for name in names for way in ("out", "ret")}
+
+
+def _routed_stops(log):
+    return {i.split(":")[1] for task in log for i in task["identifier"]}
+
+
+def _six_unserved_then_a_served_station():
+    unserved = {f"u{k}": (9500.0 - 100.0 * k, []) for k in range(6)}
+    return _east_schedule({**unserved, "station": (2000.0, BOTH_WAYS)})
+
+
+def test_choose_pt_gates_takes_a_served_station_beyond_six_nearer_unserved_stops():
+    # Before #572 the 5 smallest detours (all unserved) were cut first and this stay was no_gate_served.
+    frame, _ = _choose(None, _connected_both_ways("station"), schedule=_six_unserved_then_a_served_station(),
+                       n_candidates=5)
+    assert (frame.iloc[0]["gate_id"], frame.iloc[0]["reason"]) == ("station", g.REASON_GATE_FOUND)
+
+
+def _cap_schedule():
+    # best directional stop u at x=9500 (unserved); the only served stop is 8 km further by detour
+    return _east_schedule({"u": (9500.0, []), "far": (1000.0, BOTH_WAYS)})
+
+
+def test_choose_pt_gates_the_extra_detour_cap_excludes_a_served_stop_beyond_it():
+    capped, log = _choose(None, _connected_both_ways("far"), schedule=_cap_schedule(), max_extra_detour_m=5000.0)
+    assert capped.iloc[0]["gate_id"] is None and capped.iloc[0]["reason"] == g.REASON_NO_GATE_SERVED
+    assert log == []
+    wide, _ = _choose(None, _connected_both_ways("far"), schedule=_cap_schedule(), max_extra_detour_m=20000.0)
+    assert (wide.iloc[0]["gate_id"], wide.iloc[0]["reason"]) == ("far", g.REASON_GATE_FOUND)
+
+
+def test_choose_pt_gates_routes_only_the_n_smallest_detours_among_the_served_stops():
+    stops = {"u": (9500.0, []), "s9000": (9000.0, BOTH_WAYS), "s8000": (8000.0, BOTH_WAYS),
+             "s7000": (7000.0, BOTH_WAYS)}
+    frame, log = _choose(None, _connected_both_ways("s8000", "s7000"), schedule=_east_schedule(stops),
+                         n_candidates=2)
+    assert (frame.iloc[0]["gate_id"], frame.iloc[0]["reason"]) == ("s8000", g.REASON_GATE_FOUND)
+    assert _routed_stops(log) == {"s9000", "s8000"}  # the unserved u is skipped, s7000 is cut by n_candidates
+
+
+def test_choose_pt_gates_a_stop_not_served_at_the_re_entry_is_no_candidate_for_a_stay_with_a_return():
+    stops = {"outbound_only": (9500.0, [36500.0]), "both": (8000.0, BOTH_WAYS)}
+    frame, log = _choose(None, _connected_both_ways("outbound_only", "both"), schedule=_east_schedule(stops),
+                         n_candidates=1)
+    assert (frame.iloc[0]["gate_id"], frame.iloc[0]["reason"]) == ("both", g.REASON_GATE_FOUND)
+    assert _routed_stops(log) == {"both"}
+
+
+@pytest.mark.parametrize("build, cap_m, expect_beyond_top, expect_capped", [
+    (_six_unserved_then_a_served_station, 1e9, 1, 0),  # gate beyond the 5 nearest, nothing lost to the cap
+    (_cap_schedule, 5000.0, 0, 1),  # a served stop exists but lies beyond the cap
+])
+def test_choose_pt_gates_logs_the_rates_of_the_gate_beyond_the_top_n_and_of_the_cap(
+        caplog, build, cap_m, expect_beyond_top, expect_capped):
+    connected = _connected_both_ways("station", "far")
+    with caplog.at_level("INFO", logger=g.logger.name):
+        frame, _ = _choose(None, connected, schedule=build(), n_candidates=5, max_extra_detour_m=cap_m)
+    # The counts also travel with the frame so that the stage can put them in its per-run report.
+    assert frame.attrs == {"n_gate_beyond_top_n": expect_beyond_top, "n_no_served_within_cap": expect_capped}
+    text = " | ".join(r.getMessage() for r in caplog.records)
+    assert f"gate beyond the 5 smallest-detour directional stops {expect_beyond_top}/1" in text
+    assert (f"no served stop within the extra-detour cap of {cap_m:.0f} m although one is served beyond it "
+            f"{expect_capped}/1") in text
 
 
 def test_choose_gates_takes_pt_stays_from_the_pt_gates_and_road_stays_by_detour():
@@ -409,7 +494,7 @@ def test_choose_pt_gates_serves_only_by_routes_heading_toward_the_point():
     schedule = Schedule(stops, [route("r_hbf", ["hbf", "ext"], [1000.0]),
                                 route("r_away", ["hbf", "extw"], [36500.0, 52000.0])])
     exits = g.exit_stops(schedule, SQUARE)
-    kwargs = dict(n_candidates=5, service_window_s=3600.0, inside_stop_ids={"hbf", "soph"}, walk_max_m=5000.0)
+    kwargs = dict(n_candidates=5, max_extra_detour_m=1e9, service_window_s=3600.0, inside_stop_ids={"hbf", "soph"}, walk_max_m=5000.0)
     args = (np.array([[5000.0, 5200.0]]), np.array([[50000.0, 5000.0]]), np.array([36000.0]),
             np.array([37800.0]), np.array([50000.0]), np.array([51800.0]), np.array([True]), exits, schedule)
     east = g.choose_pt_gates(*args, _fake_router({"0:hbf:out", "0:hbf:ret"}, []), **kwargs)
@@ -429,7 +514,7 @@ def test_choose_pt_gates_maps_identifiers_to_the_right_stay_when_stays_differ():
         np.array([36000.0, 43200.0]), np.array([37800.0, 45000.0]), np.array([50000.0, 57000.0]),
         np.array([51800.0, 58800.0]), np.array([True, True]), exits, schedule,
         _fake_router({"0:hbf:out", "0:hbf:ret", "1:hbf:out", "1:hbf:ret"}, log),
-        n_candidates=1, service_window_s=3600.0, inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
+        n_candidates=1, max_extra_detour_m=1e9, service_window_s=3600.0, inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
     assert frame["reason"].tolist() == [g.REASON_GATE_FOUND, g.REASON_NO_GATE_SERVED]
     assert log, "the router was never called, so the identifier check below would pass vacuously"
     assert all(i.startswith("0:") for task in log for i in task["identifier"])
@@ -438,7 +523,7 @@ def test_choose_pt_gates_maps_identifiers_to_the_right_stay_when_stays_differ():
         np.array([[5000.0, 5200.0]] * 2), np.array([[50000.0, 5000.0]] * 2),
         np.array([36000.0, 36000.0]), np.array([37800.0, 37800.0]), np.array([50000.0, 50000.0]),
         np.array([51800.0, 51800.0]), np.array([True, True]), exits, schedule,
-        _fake_router({"1:hbf:out", "1:hbf:ret"}, []), n_candidates=1, service_window_s=3600.0,
+        _fake_router({"1:hbf:out", "1:hbf:ret"}, []), n_candidates=1, max_extra_detour_m=1e9, service_window_s=3600.0,
         inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
     assert frame["reason"].tolist() == [g.REASON_NO_CONNECTION, g.REASON_GATE_FOUND]
 
@@ -451,7 +536,7 @@ def test_choose_pt_gates_rejects_non_finite_inputs_but_ignores_return_times_with
         return g.choose_pt_gates(
             np.array([[5000.0, origin_y]]), np.array([[50000.0, 5000.0]]), np.array([36000.0]),
             np.array([out_arr]), np.array([ret_dep]), np.array([51800.0]), np.array([has_return]), exits, schedule,
-            _fake_router({"0:hbf:out"}, []), n_candidates=1, service_window_s=3600.0,
+            _fake_router({"0:hbf:out"}, []), n_candidates=1, max_extra_detour_m=1e9, service_window_s=3600.0,
             inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
 
     with pytest.raises(ValueError, match="origin"):
@@ -477,6 +562,6 @@ def test_choose_pt_gates_counts_a_task_without_a_trips_row_as_no_route(caplog):
         frame = g.choose_pt_gates(
             np.array([[5000.0, 5200.0]]), np.array([[50000.0, 5000.0]]), np.array([36000.0]),
             np.array([37800.0]), np.array([50000.0]), np.array([51800.0]), np.array([True]), exits, schedule,
-            router, n_candidates=1, service_window_s=3600.0, inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
+            router, n_candidates=1, max_extra_detour_m=1e9, service_window_s=3600.0, inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
     assert frame.iloc[0]["reason"] == g.REASON_NO_CONNECTION
     assert any("no_route 1" in r.getMessage() for r in caplog.records)
