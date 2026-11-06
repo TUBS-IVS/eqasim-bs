@@ -5,8 +5,17 @@ repository:
   branch: fix/i573-pt-check-wait-bound
   notes: >-
     The #573 branch (ADR-0185) at 6c4c98ca, a clean detached checkout on felix (~/i573_replay/eqasim-bs, 0 changes),
-    fetched from a git bundle. The later commits of the branch change documentation only (ADR, registry, this
-    manifest), not the code the replay ran.
+    fetched from a git bundle, BEFORE origin/main was merged into the branch. The code at the branch head differs:
+    (a) the main merge brought the portal changes of #570 (ADR-0183, closure return dropped; portal_trips
+    classification and stage) and #572 (ADR-0184, served-first gate candidates within an extra-detour cap; portal_trips
+    gates, stage and config_keys); (b) later #573 commits read the latest-arrival keys without a default (same
+    values), reject a -inf arrival (no infinite time in the legs file of the last router call of each stage; earlier
+    calls overwrite theirs, so they are not checked) and hash day_end_margin with the portal stage; (c) the main merge
+    changed incommuters.py and mode_balancer.py in log and docstring wording only (#567), and the other changed
+    modules (commute_day, matsim.*) are not run by the four stages. So the in-commuter, student and outside-tour
+    numbers below hold for the head; the portal numbers measure the bound against the pre-#570/#572 gate rule (the
+    run's own code) and are not what the head produces. The combined effect of the bound with #570 and #572 on the
+    portal stage is not replayed.
 configuration:
   config: configs/base_bs.yml of the branch with the run overlay of prod100_20261031 (felix:~/prod100_20261031/run.yml)
   notes: >-
