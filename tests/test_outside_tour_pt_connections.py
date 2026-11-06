@@ -261,13 +261,14 @@ def test_a_rail_portal_tour_lifts_only_its_unserved_pt_legs_and_keeps_the_rail_g
     assert list(result.trips["mode"]) == ["pt", "car_passenger", "pt"]
     assert list(result.trips["departure_time"]) == list(trips["departure_time"])
     assert result.report["actions"][LIFT_LEGS] == 1 and result.report["n_legs_lifted"] == 1
+    assert result.report["n_portal_legs_lifted"] == 0  # the lifted leg is the non-portal middle one
     assert result.report["actions"][P.ACTION_TOUR_TO_CAR] == 0
     assert list(result.tour_actions["action"]) == [LIFT_LEGS]
     assert list(result.tour_actions["n_legs_lifted"]) == [1] and list(result.tour_actions["portal_class"]) == ["rail"]
     kept = _resolve(trips, _served_at(18, 22), last_resort=P.LAST_RESORT_KEEP, **flags)
     assert kept.report["actions"][P.ACTION_KEPT] == 1 and kept.report["actions"][LIFT_LEGS] == 0
     assert list(kept.trips["mode"]) == ["pt", "pt", "pt"]
-    assert kept.report["n_legs_lifted"] == 0
+    assert kept.report["n_legs_lifted"] == 0 and kept.report["n_portal_legs_lifted"] == 0
 
 
 def test_a_road_gate_portal_tour_follows_the_whole_tour_chain():
@@ -305,6 +306,8 @@ def test_the_report_gives_the_rates_per_portal_class():
     assert by_class["road"]["actions"][P.ACTION_TOUR_TO_CAR] == 1
     assert by_class["rail"]["actions"][LIFT_LEGS] == 1 and by_class["rail"]["n_legs_lifted"] == 1
     assert result.report["n_tours_checked"] == 3 and result.report["n_legs_lifted"] == 1
+    assert result.report["n_portal_legs_lifted"] == 0
+    assert all(part["n_portal_legs_lifted"] == 0 for part in by_class.values())
     assert list(result.tour_actions["portal_class"]) == ["none", "road", "rail"]
     assert list(result.tour_actions["n_legs_lifted"]) == [0, 0, 1]
 
@@ -344,6 +347,9 @@ def test_a_rail_tour_whose_only_unserved_leg_is_a_portal_leg_lifts_just_that_leg
     result = _resolve(trips, _served_at(19, 22), portal=[True] * 3, portal_leg=[True, False, True])
     assert list(result.trips["mode"]) == ["car_passenger", "pt", "pt"]
     assert result.report["n_legs_lifted"] == 1 and result.report["actions"][LIFT_LEGS] == 1
+    assert result.report["n_portal_legs_lifted"] == 1
+    assert result.report["by_portal_class"]["rail"]["n_portal_legs_lifted"] == 1
+    assert result.report["by_portal_class"]["none"]["n_portal_legs_lifted"] == 0
 
 
 def test_a_portal_class_above_the_warn_share_warns_although_the_total_is_below_it(caplog):
@@ -351,11 +357,12 @@ def test_a_portal_class_above_the_warn_share_warns_although_the_total_is_below_i
         actions = {a: 0 for a in P.ACTIONS}
         actions.update(counts)
         return {"n_tours_checked": n, "n_legs_probed": n, "n_legs_lifted": counts.get(LIFT_LEGS, 0),
-                "actions": actions}
+                "n_portal_legs_lifted": 0, "actions": actions}
     none = part(98, connection_found=98)
     rail = part(2, connection_found=1, pt_legs_to_car_passenger_lift=1)
     actions = {a: none["actions"][a] + rail["actions"][a] for a in P.ACTIONS}
-    report = {"n_tours_checked": 100, "n_legs_probed": 100, "n_legs_lifted": 1, "actions": actions,
+    report = {"n_tours_checked": 100, "n_legs_probed": 100, "n_legs_lifted": 1, "n_portal_legs_lifted": 0,
+              "actions": actions,
               "by_portal_class": {"none": none, "road": part(0), "rail": rail}, "shift_abs_s_median": None}
     with caplog.at_level(logging.INFO):
         P.log_report(report, warn_share=0.05)

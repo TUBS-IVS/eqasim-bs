@@ -195,6 +195,7 @@ def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.n
     actions = [None] * len(checked)
     applied = np.zeros(len(checked), dtype=float)
     lifted = np.zeros(len(checked), dtype=int)
+    portal_lifted = np.zeros(len(checked), dtype=int)  # lifted legs that are portal legs (teleported to/from the exit)
     n_legs_probed = 0
     served_unshifted = {}  # leg position -> is it a connection at its unshifted (written) time
     if checked:
@@ -244,6 +245,7 @@ def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.n
                 unserved_legs = [int(p) for p in checked[k]["pt_legs"] if not served_unshifted[int(p)]]
                 modes[unserved_legs] = "car_passenger"
                 actions[k], lifted[k] = ACTION_PT_LEGS_LIFT, len(unserved_legs)
+                portal_lifted[k] = int(portal_leg[unserved_legs].sum())
             else:
                 actions[k] = ACTION_KEPT
             continue
@@ -277,10 +279,11 @@ def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.n
         in_class = classes_array == portal_class
         by_portal_class[portal_class] = {
             "n_tours_checked": int(in_class.sum()), "n_legs_probed": int(n_pt_legs[in_class].sum()),
-            "n_legs_lifted": int(lifted[in_class].sum()),
+            "n_legs_lifted": int(lifted[in_class].sum()), "n_portal_legs_lifted": int(portal_lifted[in_class].sum()),
             "actions": {action: int((in_class & (actions_array == action)).sum()) for action in ACTIONS}}
     report = {"n_tours_checked": len(checked), "n_legs_probed": int(n_legs_probed),
               "n_persons_day_end_shifted": n_day_end_shifted, "n_legs_lifted": int(lifted.sum()),
+              "n_portal_legs_lifted": int(portal_lifted.sum()),
               "by_portal_class": by_portal_class,
               "actions": {action: int((actions_array == action).sum()) for action in ACTIONS},
               "shift_abs_s_median": float(np.median(np.abs(applied[shifted]))) if shifted.any() else None,
@@ -295,16 +298,17 @@ def log_report(report: dict, warn_share: float) -> None:
     n = report["n_tours_checked"]
     counts = report["actions"]
     unserved = sum(counts[action] for action in UNSERVED_ACTIONS)
-    message = "%s %d outside or portal tours with pt legs (%d legs probed, %d legs lifted): %s; median shift %s s" % (
+    message = "%s %d outside or portal tours with pt legs (%d legs probed, %d legs lifted, %d of them portal legs): %s; median shift %s s" % (
         _LOG_TAG, n, report["n_legs_probed"], report["n_legs_lifted"],
+        report["n_portal_legs_lifted"],
         ", ".join("%s %d (%.1f%%)" % (a, counts[a], 100.0 * counts[a] / n if n else 0.0) for a in ACTIONS),
         "n/a" if report["shift_abs_s_median"] is None else "%.0f" % report["shift_abs_s_median"])
     for portal_class, part in report["by_portal_class"].items():
         n_class = part["n_tours_checked"]
         class_unserved = sum(part["actions"][action] for action in UNSERVED_ACTIONS)
-        message += "; portal class %s: %d tours, %d legs probed, %d legs lifted, %s" % (
+        message += "; portal class %s: %d tours, %d legs probed, %d legs lifted (%d portal), %s" % (
             portal_class, n_class, part["n_legs_probed"], part["n_legs_lifted"],
-            ", ".join("%s %d" % (a, c) for a, c in part["actions"].items() if c) or "no actions")
+            part["n_portal_legs_lifted"], ", ".join("%s %d" % (a, c) for a, c in part["actions"].items() if c) or "no actions")
         message += " (unserved %.1f%%)" % (100.0 * class_unserved / n_class if n_class else 0.0)
     high_classes = [portal_class for portal_class, part in report["by_portal_class"].items()
                     if part["n_tours_checked"]
