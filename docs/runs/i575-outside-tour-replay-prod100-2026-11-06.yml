@@ -1,0 +1,72 @@
+id: i575-outside-tour-replay-prod100-2026-11-06
+date: '2026-11-06'
+repository:
+  commit: d24a23a22580ecb82cea93065bdc7a032cd60f7c
+  branch: fix/i575-check-unchecked-frozen-legs
+  notes: >-
+    The #575 branch (ADR-0187) at d24a23a2, a clean checkout on felix (~/i575_replay/eqasim-bs, 0 changes) cloned
+    from a git bundle; the branch was cut from origin/main 9c317f22, so it contains #570-#574 (ADR-0183 to ADR-0186).
+    Only the outside-tour stage ran with this code; its parents are the run's cached results (code 7a41f0ba), so the
+    portal gates and stays it checks are those of the run, chosen by the pre-#572/#574 gate rule, not what main
+    produces now.
+configuration:
+  config: configs/base_bs.yml of the branch with the run overlay of prod100_20261031 (felix:~/prod100_20261031/run.yml)
+  notes: >-
+    braunschweig.outside_tour_modes.last_resort car_passenger and the pt check on, as pinned in configs/base_bs.yml;
+    bound_s 104,400 s (29:00:00) in the report.
+sampling:
+  rate: 1.0
+  scope: >-
+    the outside-tour stage of prod100_20261031 (synthesis.population.trips.simulated) on the cached inputs the run's
+    own stage loaded; every tour the branch checks.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. configure and execute of the branch's stage ran outside synpp with the stand-in context of
+    the #573 replay (docs/runs/artifacts/i573-check-replay-prod100-2026-11-05/i573_check_replay.py, unchanged), started
+    in the run's checkout, with the batch pt router of the run's own eqasim jar. Stages after it did not run.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Completed on 2026-11-06 in 1,002 s (summary.json). A replay of one stage on production inputs, NOT a validation:
+    no observed data is involved. The "before" side is the run's own stage report (code 7a41f0ba, without ADR-0185 and
+    ADR-0187). The tours without a portal leg reproduce the #573 replay's outside-tour outcome exactly
+    (docs/runs/i573-check-replay-prod100-2026-11-05.yml), so their change against the run is ADR-0185's alone; the
+    tours with a portal leg are new to the check. Prepare and MATSim did not run, so how many of the long walks of
+    findings B3 disappear downstream is not measured here.
+source: >-
+  felix:~/scratch_i575/out and ~/scratch_i575/group3 (scratch). Committed in
+  docs/runs/artifacts/i575-outside-tour-replay-prod100-2026-11-06/: outside_tour_modes_report_before.json (the run's
+  stage report) and outside_tour_modes_report_after.json (the replay's), summary.json, replay_log.txt (the stage and
+  router lines of the replay log, because *.log is git-ignored), i575_group3_probe.py (sha256
+  b9394d8dd67498b0d5f9bfec65b489f561f60a326e118ca58731d52764b52353) and its output group3_output.txt.
+environment: 'server (felix, hostname matsim), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, pandas 1.5.3), Java /home/felix/tools/jdk-25.0.3+9'
+validation:
+- metric: home-based tours with pt legs that the outside-tour timetable check covers, and their outcome, by portal class
+  reference: 'the run''s own stage report (prod100_20261031); model output, NOT observed data'
+  result: >-
+    Before: 4,330 tours (9,487 pt legs), only tours without a portal leg. After: 8,609 tours (18,767 pt legs).
+    Without portal leg 4,330 (unchanged set): connection_found 3,313, tour_shifted 290, tour_to_car 348,
+    tour_to_car_passenger 233, tour_to_car_passenger_lift 146. Road-gate portal tours 299 (314 legs), new:
+    connection_found 117, tour_shifted 63, tour_to_car 116, tour_to_car_passenger 3. Rail-gate portal tours 3,980
+    (8,966 legs), new: connection_found 3,342, tour_shifted 308, pt_legs_to_car_passenger_lift 330 tours with 453
+    lifted legs. kept_no_connection 0 in every class; median shift 3,600 s. Persons whose late day moved earlier
+    (writer rule) 53 -> 178, because more persons are checked.
+  artifact: docs/runs/artifacts/i575-outside-tour-replay-prod100-2026-11-06/outside_tour_modes_report_after.json
+- metric: share of checked portal tours whose pt legs had no connection at their written times
+  reference: 'the same replay; before the change these tours were not checked at all (no before value exists)'
+  result: >-
+    Road gate 182/299 (60.9 %) not connected at first, 63 of them by a shift. Rail gate 638/3,980 (16.0 %), 308 of
+    them by a shift; the other 330 tours lift 453 legs. After the chain no checked portal tour keeps a pt leg
+    without a connection.
+  artifact: docs/runs/artifacts/i575-outside-tour-replay-prod100-2026-11-06/outside_tour_modes_report_after.json
+- metric: 'group 3 of #575: are the 489 unconnected legs labelled outside_tour by the B3 long-walk probe in tours the stage checks?'
+  reference: 'felix ~/scratch_b3/out_b2/legs_connection.csv.gz of the B3 probe (model output) joined with the stage''s own tour flags on its cached inputs'
+  result: >-
+    All 489 legs (mode pt in trips.final) are in tours with neither an outside destination, an outside activity nor a
+    portal leg, so neither the old nor the new check covers them. This confirms that they lie outside the stage's
+    scope; WHY the simulation freezes them (a routed path that leaves the extent, or a person-level freeze caused by
+    another tour of the same person) is not determined by this probe.
+  artifact: docs/runs/artifacts/i575-outside-tour-replay-prod100-2026-11-06/group3_output.txt

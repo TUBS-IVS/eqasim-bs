@@ -1,6 +1,7 @@
 # ADR-0187 · 2026-11-06 · The outside-tour timetable check also covers tours with a portal leg
 
-- **Status:** accepted (implemented; the replay on the cache of `prod100_20261031` is owed as a run manifest)
+- **Status:** accepted (implemented; replay on the cache of `prod100_20261031` in the run manifest
+  `docs/runs/i575-outside-tour-replay-prod100-2026-11-06.yml`)
 - **Numbering:** 0186 is the last on `origin/main`; no remote ref or open PR carried 0187 on 2026-11-06; claimed in the
   shared session notes of the #572-#576 sequence.
 - **Issue:** #575. **Amends:** ADR-0159 (the outside-tour check skipped tours with a portal leg). **Relates to:**
@@ -52,5 +53,5 @@
   whole tour at its realised places (pre-cut timetable, as ADR-0159). The second check can only shift times or change
   modes, never the gate.
 - Outputs change for every cordon run with portal tours that have pt legs; the replay manifest gives the rates.
-- Open: the third group of #575, outside-tour legs whose tour only the routed path makes border-crossing, is a
-  hypothesis; it is measured in the replay before any decision.
+- Open: the third group of #575 lies outside this stage's scope (the replay manifest shows that none of its legs is in
+  a tour the stage checks); why the simulation freezes those tours is not determined, and no change is made for it.
