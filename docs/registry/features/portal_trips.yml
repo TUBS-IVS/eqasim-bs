@@ -250,8 +250,8 @@ notes: >-
   ends the day outside and is checked outward only. Since ADR-0186 (#574) the pt gate candidates come from the
   cut timetable of braunschweig.data.transit.cut_schedule (its last kept stops and the hub stations of
   braunschweig.cutter.transit_hub_stop_names), the router routes on that timetable, and eqasim's cutter cuts pt
-  trips where they leave it, never at an excursion; the replay and the 1 % A/B are the run manifests named in
-  ADR-0186.
+  trips where they leave it, never at an excursion; the replay and the 1 % A/B are owed as the run manifests
+  named in ADR-0186 (pending until they exist; no effect size is claimed before).
   Config invariant: any config that aliases synthesis.population.trips.final to something other than the portal
   trips_final must set braunschweig.portal.enabled false (the fixtures do; docs/codebase/notes/portal-trips.md).
   The outside-tour-modes stage (ADR-0145) runs after the location choice and may re-mode a portal stay's

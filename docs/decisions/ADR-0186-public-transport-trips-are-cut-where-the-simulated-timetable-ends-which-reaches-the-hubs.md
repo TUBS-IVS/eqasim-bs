@@ -1,6 +1,7 @@
 # ADR-0186 · 2026-11-06 · Public-transport trips are cut where the simulated timetable ends, which reaches the configured hubs
 
-- **Status:** accepted (implemented; the replay and the 1 % prepare A/B are the run manifests named at the end)
+- **Status:** accepted (implemented; the portal replay and the 1 % prepare A/B are owed as the run manifests named
+  at the end; until they exist no effect size is claimed here)
 - **Numbering:** ADR-0186 because 0183-0185 are taken on main and the sibling branches (checked across all local
   and remote refs and the shared session notes on 2026-11-06; claim in the notes of the #572-#576 sequence).
 - **Issue:** #574 (closes the "excursion" family behind B2 cause 2 and B3 mechanism A of the findings on
@@ -43,10 +44,11 @@
    A transit route is kept iff at least one of its stops lies inside the extent polygon; its kept stops run from
    its first to its last anchor, where an anchor is a stop inside the polygon or a hub stop. Java resolves each
    name to every facility with that name (exact, case-sensitive) and fails on an unmatched name. An empty list
-   gives the former cut exactly (pinned by the cutter's tests). Production list (`configs/base_bs.yml`, owner
-   decision 2026-11-06, ASSUMPTION that these are the stations where the region's long-distance travellers change
-   trains): Hannover Hbf, Hildesheim Hbf, Magdeburg Hbf, Göttingen, Wernigerode Hbf, Halberstadt Hbf, Uelzen.
-   Stations between the extent and a hub on the same line (Lehrte, Haldensleben) are kept by the rule itself.
+   gives the former cut exactly (pinned by the cutter's tests). The production list is owned by
+   `configs/base_bs.yml` (`braunschweig.cutter.transit_hub_stop_names`; owner decision 2026-11-06: the
+   Oberzentren with rail routes from the extent plus the Harz stations and Uelzen, an ASSUMPTION that these are
+   the stations where the region's long-distance travellers change trains). Stations between the extent and a
+   hub on the same line (Lehrte, Haldensleben) are kept by the rule itself.
 2. **Kept-stop cut of pt trips (`--transit-cut-mode kept-stops`).** A pt trip is cut where its pre-cut route
    leaves the KEPT timetable, never where it crosses the polygon. Membership is per position on a route (a route
    kept with the range `first..last`): a ride on a dropped route is outside the simulated world even between two
@@ -65,6 +67,8 @@
 4. **Attributes survive the cut.** `PlanCutter` copies the attributes of an activity it replaces by an `outside`
    activity, and the merge of consecutive `outside` activities passes every removed activity's attributes to the
    activity that absorbs it (survivor wins), so `portalGate` and `typeBeforeCutting` of a stay at a hub survive.
+   Consequence: after a merge the surviving crossing activity carries the attributes of the real activity it
+   absorbed, not of its own location (a reader of `typeBeforeCutting` sees the stay, at the crossing's coordinate).
 5. **Portal pt gates and the check.** The exits of a pt portal stay are read from the cut timetable: the last
    kept stop of every kept route whose pre-cut route continues beyond it, plus the hubs as rows of their own
    (`is_hub`). A hub heads toward every external point and counts as served (ASSUMPTION: an Oberzentrum has
@@ -82,7 +86,8 @@
 7. **Observability.** The cutter logs the kept stops by class, the routes kept and dropped, the trips collapsed
    per case and, after its final routing, the collapsed trips that walk, and writes them to
    `<prefix>transit_cut_summary.csv`; prepare logs every count as a rate and WARNs above
-   `COLLAPSED_WALK_WARN_SHARE` (0.05, ASSUMPTION, not a calibrated bound). The portal stage reports the hub gates
+   `braunschweig.matsim.simulation.prepare.COLLAPSED_WALK_WARN_SHARE` (an ASSUMPTION, not a calibrated bound,
+   documented at the constant). The portal stage reports the hub gates
    chosen and the size of the cut timetable. The hub table (`hub_stops.csv`) records the resolved facilities.
 8. **Switch.** `braunschweig.cutter.transit_cut_mode` (`extent` = the upstream behaviour, the code default;
    `kept-stops` pinned in `configs/base_bs.yml`); hub names are refused with `extent`.
@@ -115,11 +120,16 @@
 - The in-commuter, student and outside-tour checks keep routing on the pre-cut timetable (one trip end lies
   outside the extent); decision 3 makes their simulated part feasible. #575 (the other pt legs of portal tours,
   the return to the real destination) is now a time-feasibility question only; those legs are never split.
+- A pt trip whose routed result is a walk only (the walk fallback kept the routing mode pt) crosses the world at
+  the inside activity's coordinate under decision 2 (an activity is the only world point of such a trip), where
+  the former cut placed the crossing on the polygon boundary; its outside piece is a zero-length leg the final
+  routing walks. Counted with the other collapsed cases; the 1 % A/B checks its size.
 - Known limitation, shared with the former cut and not changed here: the `outside` activity of a pt entry sits
   on the nearest road link's facility, not at the stop, so the re-routed inside piece starts with an access walk
   the planned departure did not include; an agent whose planned wait is shorter boards the next service.
 - #487: fewer trips are split, so more `walkFallbackFrom` stamps survive; the 1 % A/B counts them, the defect of
   the marker on split trips is not addressed here.
-- Status: the portal replay on the cache of `prod100_20261031` and the 1 % prepare A/B are recorded in
-  `docs/runs/i574-portal-replay-prod100-2026-11-06.yml` and `docs/runs/i574-prepare-ab-1pct-2026-11-06.yml`
-  (model output, no validation claim); the 100 % effect is measured by the next production run (#22).
+- Status: the portal replay on the cache of `prod100_20261031` and the 1 % prepare A/B are owed as the run
+  manifests `docs/runs/i574-portal-replay-prod100-<date>.yml` and `docs/runs/i574-prepare-ab-1pct-<date>.yml`
+  (model output, no validation claim; pending until the files exist); the 100 % effect is measured by the next
+  production run (#22).

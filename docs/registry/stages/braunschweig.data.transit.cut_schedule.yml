@@ -24,7 +24,7 @@ code:
 - braunschweig/data/transit/schedule.py
 pipelines:
   popsim_mid: active
-  popsim_open: not_used
+  popsim_open: active
   simple_ipf_open: not_used
 production: true
 inputs: []
