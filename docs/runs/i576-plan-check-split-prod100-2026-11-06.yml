@@ -1,12 +1,12 @@
 id: i576-plan-check-split-prod100-2026-11-06
 date: '2026-11-06'
 repository:
-  commit: baa4a306
+  commit: 225a37cc
   branch: fix/i576-plan-check-split
   notes: >-
-    braunschweig/matsim/simulation/plan_check.py of the branch at baa4a306 (the blob of `git show
-    baa4a306:braunschweig/matsim/simulation/plan_check.py`, sha256
-    c746d19d193fea53a7ba6f5195233437cf616b304ed90a3f44cae834652d112f, copied to felix:~/scratch_i576/plan_check.py)
+    braunschweig/matsim/simulation/plan_check.py of the branch at 225a37cc (the blob of `git show
+    225a37cc:braunschweig/matsim/simulation/plan_check.py`, sha256
+    bd7b60a517892b1fc31e6dfd0f1938e90d71655eae2b891779262591b568c97c, copied to felix:~/scratch_i576/plan_check.py)
     was loaded from that file; the run's own checkout felix:~/prod100_20261031/eqasim-bs (7a41f0ba) supplied only its
     import braunschweig.popsim.plan_validation (MAX_PLAN_TIME_SECONDS).
 configuration:
@@ -16,9 +16,8 @@ configuration:
     non_monotonic_bound_min_step_s 900); max_frozen_defect_share 0.005 and max_frozen_pt_as_walk_share 0.02 from
     the run's plan_check.json.
   notes: >-
-    travelTimeCalculator.travelTimeBinSize of the run's written MATSim config
-    (braunschweig_100pct_prod20261031_config.xml in the prepare stage directory) is 900.0 s, the bin the
-    non_monotonic_bound_min_step_s assumption of ADR-0188 refers to.
+    The run's written MATSim config sets travelTimeCalculator.travelTimeBinSize 900.0 s; ADR-0188 records why that
+    bin is NOT the reason for non_monotonic_bound_min_step_s (the checked plans are routed free flow).
 sampling:
   rate: 1.0
   scope: >-
@@ -35,9 +34,11 @@ classification:
 status:
   execution: completed
   notes: >-
-    Completed on 2026-11-06 (19:25-19:37, 684 s streaming, one core under nice). A first start stopped at the module
-    load (the dataclass of plan_check needs the module in sys.modules); the script was fixed and restarted, no
-    output of the first start existed. A recount of an existing population, NOT a validation: no observed data is
+    Completed on 2026-11-06 (19:50-19:57, 396 s streaming, one core under nice) with the step measured as the drop
+    below the latest earlier end time (review round 1 of PR #586). An earlier count at baa4a306 (19:25-19:37), whose
+    step was the largest consecutive backward pair, gave a byte-identical plan_check_i576.json: in this population no
+    plan changes its step band under the cumulative measure. Before that, a first start stopped at the module load
+    (the dataclass of plan_check needs the module in sys.modules) and wrote no output. A recount of an existing population, NOT a validation: no observed data is
     involved.
 source: >-
   felix:~/scratch_i576/out (scratch). Committed in docs/runs/artifacts/i576-plan-check-split-prod100-2026-11-06/:
