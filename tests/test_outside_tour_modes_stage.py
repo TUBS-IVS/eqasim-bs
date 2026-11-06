@@ -329,13 +329,13 @@ def test_the_pt_check_moves_an_unserved_non_portal_pt_tour_and_writes_its_times_
 
 def test_the_pt_check_lifts_only_the_unserved_leg_of_a_rail_gate_tour_and_counts_the_lift():
     # A rail-gate portal tour (portal legs by pt, #575): a whole-tour switch would break the gate, so the check
-    # lifts only the pt leg no timetable serves; the two portal legs stay pt.
+    # lifts only the pt leg no timetable serves, here the portal return leg gate -> destination.
     fixture = _fixture_with_an_unserved_pt_tour()
     hours = [(7.0, 7.5), (8.0, 8.5), (16.0, 16.5)]
     fixture["trips"] = pd.concat([fixture["trips"], pd.DataFrame({
         "person_id": [6, 6, 6], "trip_index": [0, 1, 2],
         "preceding_purpose": ["home", "outside", "other"], "following_purpose": ["outside", "other", "home"],
-        "mode": ["pt", "pt", "pt"], "portal_leg": [True, False, True],
+        "mode": ["pt", "pt", "pt"], "portal_leg": [True, True, False],
         "departure_time": [h[0] * 3600.0 for h in hours], "arrival_time": [h[1] * 3600.0 for h in hours]})],
         ignore_index=True)
     points = {(6, 0): (5000.0, 5000.0), (6, 1): (9900.0, 5000.0), (6, 2): (30000.0, 5000.0),
@@ -361,7 +361,7 @@ def test_the_pt_check_lifts_only_the_unserved_leg_of_a_rail_gate_tour_and_counts
     pt_connection = report["pt_connection"]
     assert pt_connection["by_portal_class"]["rail"]["actions"]["pt_legs_to_car_passenger_lift"] == 1
     assert pt_connection["by_portal_class"]["rail"]["n_legs_lifted"] == 1
-    assert pt_connection["by_portal_class"]["rail"]["n_portal_legs_lifted"] == 0
+    assert pt_connection["by_portal_class"]["rail"]["n_portal_legs_lifted"] == 1
     assert pt_connection["n_legs_lifted"] == 1
 
 

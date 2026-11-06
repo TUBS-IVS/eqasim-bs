@@ -49,6 +49,12 @@ def _service_probe(first_s, last_s, seen=None):
     return probe
 
 
+def _touches_outside(trips):
+    """Per-leg ``portal_leg`` flags by the production rule (rewrite.py): a leg is a portal leg when it ends at or
+    leaves the ``outside`` activity, so home -> outside -> other -> home gives [True, True, False]."""
+    return (trips["following_purpose"].eq("outside") | trips["preceding_purpose"].eq("outside")).to_numpy()
+
+
 def _resolve(trips, probe, *, outside=None, portal=None, portal_leg=None, availability=None,
              last_resort=P.LAST_RESORT_LIFT, bound_s=29 * H):
     """``portal_leg`` (per-leg flag, ADR-0187) is passed only when given, so tours without a portal leg stay as before."""
@@ -235,7 +241,7 @@ def test_a_rail_portal_tour_probes_its_portal_and_its_other_pt_legs():
                     (1, 2, "other", "home", "pt", 22.0, 22.5)])
     seen = []
     result = _resolve(trips, _service_probe(6 * H, 23 * H, seen), portal=[True] * 3,
-                      portal_leg=[True, False, True])
+                      portal_leg=_touches_outside(trips))
     assert sorted(seen[0]["departure_time"]) == [18 * H, 19 * H, 22 * H]
     assert result.report["n_tours_checked"] == 1 and result.report["n_legs_probed"] == 3
     assert result.report["actions"][P.ACTION_CONNECTION_FOUND] == 1
@@ -255,13 +261,13 @@ def test_a_portal_return_leg_not_served_at_its_time_shifts_the_whole_tour_includ
 def test_a_rail_portal_tour_lifts_only_its_unserved_pt_legs_and_keeps_the_rail_gate():
     trips = _trips([(1, 0, "home", "outside", "pt", 18.0, 18.5), (1, 1, "outside", "other", "pt", 19.0, 19.5),
                     (1, 2, "other", "home", "pt", 22.0, 22.5)])
-    flags = dict(portal=[True] * 3, portal_leg=[True, False, True])
+    flags = dict(portal=[True] * 3, portal_leg=_touches_outside(trips))
     # Car availability is no reason to switch the whole tour: that would break the rail gate.
     result = _resolve(trips, _served_at(18, 22), availability=_availability([1], can_car=True), **flags)
     assert list(result.trips["mode"]) == ["pt", "car_passenger", "pt"]
     assert list(result.trips["departure_time"]) == list(trips["departure_time"])
     assert result.report["actions"][LIFT_LEGS] == 1 and result.report["n_legs_lifted"] == 1
-    assert result.report["n_portal_legs_lifted"] == 0  # the lifted leg is the non-portal middle one
+    assert result.report["n_portal_legs_lifted"] == 1  # the lifted leg is the portal return leg gate -> other
     assert result.report["actions"][P.ACTION_TOUR_TO_CAR] == 0
     assert list(result.tour_actions["action"]) == [LIFT_LEGS]
     assert list(result.tour_actions["n_legs_lifted"]) == [1] and list(result.tour_actions["portal_class"]) == ["rail"]
@@ -273,13 +279,13 @@ def test_a_rail_portal_tour_lifts_only_its_unserved_pt_legs_and_keeps_the_rail_g
 
 def test_a_road_gate_portal_tour_follows_the_whole_tour_chain():
     rows = []
-    for person in (1, 2, 3):  # portal legs by car, the middle pt leg is never served
-        rows += [(person, 0, "home", "outside", "car", 18.0, 18.5), (person, 1, "outside", "other", "pt", 19.0, 19.5),
-                 (person, 2, "other", "home", "car", 22.0, 22.5)]
+    for person in (1, 2, 3):  # portal legs by car, the last pt leg is never served
+        rows += [(person, 0, "home", "outside", "car", 18.0, 18.5), (person, 1, "outside", "other", "car", 19.0, 19.5),
+                 (person, 2, "other", "home", "pt", 22.0, 22.5)]
     trips = _trips(rows)
     availability = pd.concat([_availability([1], can_car=True), _availability([2], can_car_passenger=True),
                               _availability([3])])
-    result = _resolve(trips, _service_probe(-1.0, -1.0), portal=[True] * 9, portal_leg=[True, False, True] * 3,
+    result = _resolve(trips, _service_probe(-1.0, -1.0), portal=[True] * 9, portal_leg=_touches_outside(trips),
                       availability=availability)
     assert list(result.trips["mode"]) == ["car"] * 3 + ["car_passenger"] * 6
     assert list(result.tour_actions["action"]) == [P.ACTION_TOUR_TO_CAR, P.ACTION_TOUR_TO_CAR_PASSENGER,
@@ -289,12 +295,12 @@ def test_a_road_gate_portal_tour_follows_the_whole_tour_chain():
 
 def test_the_report_gives_the_rates_per_portal_class():
     trips = _trips([(1, 0, "home", "leisure", "pt", 8.0, 8.5), (1, 1, "leisure", "home", "pt", 9.0, 9.5),
-                    (2, 0, "home", "outside", "car", 11.0, 11.5), (2, 1, "outside", "other", "pt", 12.0, 12.5),
-                    (2, 2, "other", "home", "car", 13.0, 13.5),
+                    (2, 0, "home", "outside", "car", 10.0, 10.5), (2, 1, "outside", "other", "car", 11.0, 11.5),
+                    (2, 2, "other", "home", "pt", 12.0, 12.5),
                     (3, 0, "home", "outside", "pt", 15.0, 15.5), (3, 1, "outside", "other", "pt", 16.0, 16.5),
                     (3, 2, "other", "home", "pt", 17.0, 17.5)])
     result = _resolve(trips, _served_at(8, 9, 15, 17), portal=[False] * 2 + [True] * 6,
-                      portal_leg=[False] * 2 + [True, False, True] + [True, False, True],
+                      portal_leg=_touches_outside(trips),
                       availability=pd.concat([_availability([1]), _availability([2], can_car=True),
                                               _availability([3])]))
     by_class = result.report["by_portal_class"]
@@ -306,8 +312,8 @@ def test_the_report_gives_the_rates_per_portal_class():
     assert by_class["road"]["actions"][P.ACTION_TOUR_TO_CAR] == 1
     assert by_class["rail"]["actions"][LIFT_LEGS] == 1 and by_class["rail"]["n_legs_lifted"] == 1
     assert result.report["n_tours_checked"] == 3 and result.report["n_legs_lifted"] == 1
-    assert result.report["n_portal_legs_lifted"] == 0
-    assert all(part["n_portal_legs_lifted"] == 0 for part in by_class.values())
+    assert result.report["n_portal_legs_lifted"] == 1
+    assert [by_class[c]["n_portal_legs_lifted"] for c in ("none", "road", "rail")] == [0, 0, 1]
     assert list(result.tour_actions["portal_class"]) == ["none", "road", "rail"]
     assert list(result.tour_actions["n_legs_lifted"]) == [0, 0, 1]
 
@@ -335,7 +341,7 @@ def test_a_portal_tour_without_a_pt_leg_is_never_probed():
 def test_a_tour_with_a_road_and_a_rail_portal_leg_is_a_rail_tour():
     trips = _trips([(1, 0, "home", "outside", "car", 18.0, 18.5), (1, 1, "outside", "other", "pt", 19.0, 19.5),
                     (1, 2, "other", "home", "pt", 22.0, 22.5)])
-    result = _resolve(trips, _served_at(22), portal=[True] * 3, portal_leg=[True, False, True],
+    result = _resolve(trips, _served_at(22), portal=[True] * 3, portal_leg=_touches_outside(trips),
                       availability=_availability([1], can_car=True))
     assert list(result.tour_actions["portal_class"]) == ["rail"]
     assert list(result.trips["mode"]) == ["car", "car_passenger", "pt"]
@@ -344,7 +350,7 @@ def test_a_tour_with_a_road_and_a_rail_portal_leg_is_a_rail_tour():
 def test_a_rail_tour_whose_only_unserved_leg_is_a_portal_leg_lifts_just_that_leg():
     trips = _trips([(1, 0, "home", "outside", "pt", 18.0, 18.5), (1, 1, "outside", "other", "pt", 19.0, 19.5),
                     (1, 2, "other", "home", "pt", 22.0, 22.5)])
-    result = _resolve(trips, _served_at(19, 22), portal=[True] * 3, portal_leg=[True, False, True])
+    result = _resolve(trips, _served_at(19, 22), portal=[True] * 3, portal_leg=_touches_outside(trips))
     assert list(result.trips["mode"]) == ["car_passenger", "pt", "pt"]
     assert result.report["n_legs_lifted"] == 1 and result.report["actions"][LIFT_LEGS] == 1
     assert result.report["n_portal_legs_lifted"] == 1
