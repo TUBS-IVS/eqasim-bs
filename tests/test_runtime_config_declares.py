@@ -36,6 +36,8 @@ class _RecordingContext:
 
     def config(self, name, *args, **kwargs):
         self.declared.add(name)
+        # Like synpp, hand back the declared default so a configure() that validates its settings sees real values.
+        return args[0] if args else kwargs.get("default")
 
 
 def test_pt2matsim_declares_all_helper_config_options():

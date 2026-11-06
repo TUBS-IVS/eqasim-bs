@@ -76,6 +76,10 @@ def read_hub_table(path: str) -> pd.DataFrame:
     for column in ("x", "y"):
         if column in table.columns:
             table[column] = pd.to_numeric(table[column], errors="raise")
+    for column in ("name", "stop_id"):
+        if column in table.columns and (table[column] == "").any():
+            row = int((table[column] == "").to_numpy().argmax()) + 2  # 1-based file line, header is line 1
+            raise ValueError(f"{path}: empty {column} in line {row} of the hub table")
     missing = [column for column in HUB_TABLE_COLUMNS if column not in table.columns]
     if missing:
         raise ValueError(f"{path}: hub table lacks the columns {missing}")
@@ -103,11 +107,7 @@ def configure(context):
     java.configure(context)
     mode = context.config(KEY_TRANSIT_CUT_MODE, DEFAULT_TRANSIT_CUT_MODE)
     hub_names = context.config(KEY_HUB_STOP_NAMES, DEFAULT_HUB_STOP_NAMES)
-    # synpp always returns the declared default; None only comes from a declaration-recording test double
-    # (tests/test_runtime_config_declares.py), which has nothing to validate.
-    if mode is None:
-        return
-    validate_mode(mode)
+    validate_mode(mode)  # an explicit YAML null is rejected here, not later in execute
     if hub_names and mode == "extent":
         raise ValueError(f"{KEY_HUB_STOP_NAMES} is set but {KEY_TRANSIT_CUT_MODE} is 'extent': hubs only apply in "
                          "'kept-stops' mode (the two would silently disagree)")
@@ -145,11 +145,9 @@ def execute(context):
     n_pre, n_kept = len(pre_cut.stops), len(kept_stop_ids)
     # A hub facility on no kept route is not in the cut timetable (R2); it is reported, not an error.
     n_hubs_kept = len(hub_stop_ids & kept_stop_ids)
-    logger.info("%s hubs kept %d/%d (%.1f %%): hub facilities that lie in the cut timetable", _LOG_TAG, n_hubs_kept,
-                len(hub_stop_ids), 100.0 * n_hubs_kept / max(len(hub_stop_ids), 1))
-    logger.info("%s kept %d/%d stops (%.1f %%), hubs %d facilities (%s), routes %d/%d (%.1f %%), mode %s", _LOG_TAG,
-                n_kept, n_pre, 100.0 * n_kept / max(n_pre, 1), len(hub_stop_ids), ", ".join(hub_names) or "none",
-                len(cut.routes), len(pre_cut.routes), 100.0 * len(cut.routes) / max(len(pre_cut.routes), 1), mode)
+    logger.info("%s kept %d/%d stops (%.1f %%), hubs kept %d/%d facilities (%.1f %%; %s), routes %d/%d (%.1f %%), "
+                "mode %s", _LOG_TAG, n_kept, n_pre, 100.0 * n_kept / max(n_pre, 1), n_hubs_kept, len(hub_stop_ids),
+                100.0 * n_hubs_kept / max(len(hub_stop_ids), 1), ", ".join(hub_names) or "none", len(cut.routes), len(pre_cut.routes), 100.0 * len(cut.routes) / max(len(pre_cut.routes), 1), mode)
     return {"schedule_path": SCHEDULE_FILE_NAME, "hub_stops_path": HUBS_FILE_NAME, "kept_stop_ids": kept_stop_ids,
             "hub_stop_ids": hub_stop_ids, "n_stops_pre_cut": n_pre, "n_stops_kept": n_kept,
             "n_hub_stops": len(hub_stop_ids), "mode": mode}

@@ -115,6 +115,8 @@ def test_configure_declares_the_inputs_and_keys():
     assert {"java_binary", "java_memory"} <= set(context.calls)
     with pytest.raises(ValueError, match="mode"):
         stage.configure(_Recording({stage.KEY_TRANSIT_CUT_MODE: "bogus"}))
+    with pytest.raises(ValueError, match="mode"):  # an explicit YAML null
+        stage.configure(_Recording({stage.KEY_TRANSIT_CUT_MODE: None}))
     with pytest.raises(ValueError, match="extent"):
         stage.configure(_Recording({stage.KEY_HUB_STOP_NAMES: HUBS}))
     stage.configure(_Recording({stage.KEY_TRANSIT_CUT_MODE: "kept-stops", stage.KEY_HUB_STOP_NAMES: HUBS}))
@@ -174,7 +176,9 @@ def test_validate_token_covers_the_helpers():
 @pytest.mark.parametrize("content, message", [
     ("name,stop_id,x,y\nA,a,1,2\n", "lacks the columns"),
     ("name,stop_id,x,y,inside_extent\nA,a,1,2,maybe\n", "true/false"),
-    ("name,stop_id,x,y,inside_extent\nA,a,1,2,\n", "true/false")])
+    ("name,stop_id,x,y,inside_extent\nA,a,1,2,\n", "true/false"),
+    ("name,stop_id,x,y,inside_extent\nA,a,1,2,true\n,b,1,2,true\n", "empty name in line 3"),
+    ("name,stop_id,x,y,inside_extent\nA,,1,2,true\n", "empty stop_id in line 2")])
 def test_read_hub_table_rejects_a_malformed_table(tmp_path, content, message):
     path = tmp_path / "hubs.csv"
     path.write_text(content, encoding="utf-8")
