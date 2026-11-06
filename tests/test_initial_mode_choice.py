@@ -314,7 +314,7 @@ def test_execute_runs_the_mode_choice_after_the_parking_inputs_and_before_the_pl
     monkeypatch.setattr(prepare, "_summarise_final_schedule", lambda context: {})
     monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result, summary: seen.append("fares"))
     monkeypatch.setattr(prepare, "_write_parking_inputs", lambda context, result: seen.append("parking"))
-    monkeypatch.setattr(I, "run", lambda context, result: seen.append(("initial", result)) or {})
+    monkeypatch.setattr(I, "run", lambda context, result, excluded: seen.append(("initial", result, excluded)) or {})
     monkeypatch.setattr(C, "run", lambda context, result: seen.append("check"))
 
     class _Context:
@@ -325,7 +325,9 @@ def test_execute_runs_the_mode_choice_after_the_parking_inputs_and_before_the_pl
             return self._values[key]
 
     assert prepare.execute(_Context()) == "config.xml"
-    expected = ["fares", "parking", ("initial", "config.xml"), "check"] if enabled else ["fares", "parking", "check"]
+    # without the cordon there are no in-commuters, so nothing is excluded (the runner would fail on an empty match)
+    expected = (["fares", "parking", ("initial", "config.xml", ()), "check"] if enabled
+                else ["fares", "parking", "check"])
     assert seen == expected
 
 
@@ -334,3 +336,29 @@ def test_base_config_pins_the_switch_and_no_retired_weight():
     config = yaml.safe_load(base.read_text(encoding="utf-8"))["config"]
     assert config[I.KEY_ENABLED] is True
     assert I.KEY_WEIGHT_RETIRED not in config
+
+
+# --- in-commuters keep their plans (eqasim-bs#566, ADR-0182) --------------------------------------------------------
+
+def test_arguments_pass_the_excluded_subpopulations_to_the_runner():
+    arguments = I.arguments("c.xml", "p.xml.gz", 1, excluded_subpopulations=("incommuter", "student_incommuter"))
+    key = "--config:" + I.EXCLUDED_SUBPOPULATIONS_OPTION
+    assert arguments[arguments.index(key) + 1] == "incommuter,student_incommuter"
+    # without an exclusion the call stays the one of ADR-0178 (no empty option the old runner would not know)
+    assert key not in I.arguments("c.xml", "p.xml.gz", 1)
+
+
+@pytest.mark.parametrize("bad", [("incommuter", ""), ("in,commuter",), (" incommuter",)])
+def test_arguments_refuse_a_subpopulation_the_comma_list_cannot_carry(bad):
+    with pytest.raises(ValueError, match="subpopulation"):
+        I.arguments("c.xml", "p.xml.gz", 1, excluded_subpopulations=bad)
+
+
+def test_run_passes_the_excluded_subpopulations_and_records_them(tmp_path, monkeypatch):
+    stage = _stage(tmp_path)
+    fake = _fake_java(stage, ["1", "2"])
+    monkeypatch.setattr(eqasim, "run", fake)
+    summary = I.run(_Context(stage, threads=8), "bs_config.xml", excluded_subpopulations=("incommuter",))
+    (_, arguments), = fake.calls
+    assert arguments == I.arguments("bs_config.xml", "bs_population.xml.gz", 8, excluded_subpopulations=("incommuter",))
+    assert summary["excluded_subpopulations"] == ["incommuter"]

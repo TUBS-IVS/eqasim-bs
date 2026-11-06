@@ -341,8 +341,8 @@ def test_prepare_writes_the_incommuter_strategies_into_the_final_config(tmp_path
     monkeypatch.setattr(prepare, "_inject_freight", lambda context, result: seen.append(("freight", result)))
     monkeypatch.setattr(prepare, "_summarise_final_schedule", lambda context: {})
     monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result, summary: None)
-    monkeypatch.setattr(I, "run", lambda context, result: seen.append(("initial", _strategies(
-        (tmp_path / result).read_text(encoding="utf-8")))))
+    monkeypatch.setattr(I, "run", lambda context, result, excluded: seen.append(("initial", _strategies(
+        (tmp_path / result).read_text(encoding="utf-8")), excluded)))
 
     class _Context:
         _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": True, "freight_enabled": True,
@@ -357,9 +357,11 @@ def test_prepare_writes_the_incommuter_strategies_into_the_final_config(tmp_path
 
     assert prepare.execute(_Context()) == "config.xml"
     assert seen[:2] == ["cut", ("freight", "config.xml")]
-    initial_blocks = seen[2][1]
+    _, initial_blocks, excluded = seen[2]
     for subpopulation in CS.INCOMMUTER_SUBPOPULATIONS:
         assert ("ReRoute", 0.1, subpopulation) in initial_blocks
+    # the standalone mode choice leaves the same subpopulations unchanged as the loop does
+    assert excluded == CS.INCOMMUTER_SUBPOPULATIONS == ("incommuter", "student_incommuter")
 
 
 def test_prepare_leaves_the_config_alone_without_the_cordon(monkeypatch):
