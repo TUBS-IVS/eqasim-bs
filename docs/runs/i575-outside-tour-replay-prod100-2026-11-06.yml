@@ -37,11 +37,14 @@ status:
     tours with a portal leg are new to the check. Prepare and MATSim did not run, so how many of the long walks of
     findings B3 disappear downstream is not measured here.
 source: >-
-  felix:~/scratch_i575/out and ~/scratch_i575/group3 (scratch). Committed in
+  felix:~/scratch_i575/out, ~/scratch_i575/group3 and ~/scratch_i575/group3_cause (scratch). Committed in
   docs/runs/artifacts/i575-outside-tour-replay-prod100-2026-11-06/: outside_tour_modes_report_before.json (the run's
   stage report) and outside_tour_modes_report_after.json (the replay's), summary.json, replay_log.txt (the stage and
   router lines of the replay log, because *.log is git-ignored), i575_group3_probe.py (sha256
-  b9394d8dd67498b0d5f9bfec65b489f561f60a326e118ca58731d52764b52353) and its output group3_output.txt.
+  b9394d8dd67498b0d5f9bfec65b489f561f60a326e118ca58731d52764b52353) and its output group3_output.txt,
+  i575_group3_frozen_cause.py (sha256 9573b09a655fd2d23e9ef2ea665440a7a94a7ddd05dbce2786a1a82d185f0a5f) with its per-leg
+  table group3_frozen_cause.csv.gz, i575_group3_summary.py (sha256
+  089cb03842c1ec7deb8c74f314ad01e88446245d29b38372c1bdf4bc95f0b635), and both outputs in group3_frozen_cause_output.txt.
 environment: 'server (felix, hostname matsim), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, pandas 1.5.3), Java /home/felix/tools/jdk-25.0.3+9'
 validation:
 - metric: home-based tours with pt legs that the outside-tour timetable check covers, and their outcome, by portal class
@@ -66,7 +69,17 @@ validation:
   reference: 'felix ~/scratch_b3/out_b2/legs_connection.csv.gz of the B3 probe (model output) joined with the stage''s own tour flags on its cached inputs'
   result: >-
     All 489 legs (mode pt in trips.final) are in tours with neither an outside destination, an outside activity nor a
-    portal leg, so neither the old nor the new check covers them. This confirms that they lie outside the stage's
-    scope; WHY the simulation freezes them (a routed path that leaves the extent, or a person-level freeze caused by
-    another tour of the same person) is not determined by this probe.
+    portal leg, so neither the old nor the new check covers them: they lie outside the stage's scope.
   artifact: docs/runs/artifacts/i575-outside-tour-replay-prod100-2026-11-06/group3_output.txt
+- metric: 'group 3 of #575: is each of the 489 legs frozen in the prepared population, and what puts an outside activity into its tour?'
+  reference: 'the run''s uncut (braunschweig.matsim.scenario.population) and prepared (prepare, routed and cut) populations; the plan check''s freeze rule (plan_check.leg_tour_frozen); model output, NOT observed data'
+  result: >-
+    The B3 probe labelled every pt leg of its persons, frozen or not. Matched in the prepared plan 471 (18 ambiguous).
+    Not frozen 89: mode choice can still change them. Frozen 382 (prepared mode: 324 walks stamped walkFallbackFrom=pt,
+    58 plain walks; straight-line p50 14.8 km, p90 23.7 km). In 379 of the 382 the uncut plan has no outside activity
+    at all: the outside activities of the tour come from the cutter, on ANOTHER trip of the same inside-only tour whose
+    routed path leaves the extent (by the routing mode of the trip that exits: pt 337, pt and walk 7, pt and car 2,
+    walk 18, car_passenger 10, car 7, car_passenger and walk 1). Example person 733417: home -walk-> leisure -pt->
+    work -pt-> home; the work -> home pt route runs outside the extent and is cut, the tour freezes, and the
+    unconnected leisure -> work pt leg stays a walk of 2:22 h in every iteration.
+  artifact: docs/runs/artifacts/i575-outside-tour-replay-prod100-2026-11-06/group3_frozen_cause_output.txt

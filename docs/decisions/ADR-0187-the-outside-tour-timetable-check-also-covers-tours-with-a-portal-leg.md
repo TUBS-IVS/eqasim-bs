@@ -54,4 +54,6 @@
   modes, never the gate.
 - Outputs change for every cordon run with portal tours that have pt legs; the replay manifest gives the rates.
 - Open: the third group of #575 lies outside this stage's scope (the replay manifest shows that none of its legs is in
-  a tour the stage checks); why the simulation freezes those tours is not determined, and no change is made for it.
+  a tour the stage checks). They freeze because the cutter cuts ANOTHER trip of the same inside-only tour whose
+  routed path leaves the extent (measured in the replay manifest); this decision makes no change for them, because
+  which trips the cutter cuts is only known after prepare's routing.
