@@ -69,6 +69,7 @@ code:
 - braunschweig/matsim/simulation/plan_check.py
 - braunschweig/matsim/initial_mode_choice.py
 - braunschweig/matsim/scenario/day_end_margin.py
+- braunschweig/matsim/simulation/cordon_subpopulation.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -107,6 +108,7 @@ decisions:
 - ADR-0167
 - ADR-0169
 - ADR-0178
+- ADR-0182
 notes: >-
   Gate facility links (ADR-0167, issue #465, feature record gate_facility_links). With cordon_enabled,
   right after the delegated eqasim preparation and before the cut, _verify_gate_facility_links compares every
@@ -114,6 +116,10 @@ notes: >-
   (braunschweig.data.cordon.gate_facility_links.verify_preset_links_kept) and raises on any difference: an
   eqasim-java-bs jar without the FacilityPlacement preset-link change would otherwise replace the pinned gate
   links silently.
+
+  In-commuter strategies (ADR-0182, issue #566). With cordon_enabled, after the cut and the freight injection,
+  _add_incommuter_strategies writes one KeepLastSelected + ReRoute pair per in-commuter subpopulation into the final
+  config (braunschweig.matsim.simulation.cordon_subpopulation; key cordon_incommuter_reroute_weight).
 
   Plan feasibility check (ADR-0146, issue #443, feature record plan_feasibility_check). The last step of
   braunschweig.matsim.simulation.prepare.execute, after the cut, the freight injection and the VRB fare
