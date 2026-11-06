@@ -191,7 +191,9 @@ def test_validate_token_covers_the_helpers():
     ("name,stop_id,x,y,inside_extent\nA,a,1,2,maybe\n", "true/false"),
     ("name,stop_id,x,y,inside_extent\nA,a,1,2,\n", "true/false"),
     ("name,stop_id,x,y,inside_extent\nA,a,1,2,true\n,b,1,2,true\n", "empty name in line 3"),
-    ("name,stop_id,x,y,inside_extent\nA,,1,2,true\n", "empty stop_id in line 2")])
+    ("name,stop_id,x,y,inside_extent\nA,,1,2,true\n", "empty stop_id in line 2"),
+    ("name,stop_id,x,y,inside_extent\nA,a,1,2,true\n  ,b,1,2,true\n", "empty name in line 3"),
+    ("name,stop_id,x,y,inside_extent\nA, ,1,2,true\n", "empty stop_id in line 2")])
 def test_read_hub_table_rejects_a_malformed_table(tmp_path, content, message):
     path = tmp_path / "hubs.csv"
     path.write_text(content, encoding="utf-8")

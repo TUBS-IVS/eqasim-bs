@@ -103,8 +103,9 @@ def read_hub_table(path: str) -> pd.DataFrame:
         if column in table.columns:
             table[column] = pd.to_numeric(table[column], errors="raise")
     for column in ("name", "stop_id"):
-        if column in table.columns and (table[column] == "").any():
-            row = int((table[column] == "").to_numpy().argmax()) + 2  # 1-based file line, header is line 1
+        blank = table[column].str.strip() == "" if column in table.columns else None
+        if blank is not None and blank.any():
+            row = int(blank.to_numpy().argmax()) + 2  # 1-based file line, header is line 1
             raise ValueError(f"{path}: empty {column} in line {row} of the hub table")
     missing = [column for column in HUB_TABLE_COLUMNS if column not in table.columns]
     if missing:
@@ -170,7 +171,8 @@ def execute(context):
     n_hubs_kept = len(hub_stop_ids & kept_stop_ids)
     logger.info("%s kept %d/%d stops (%.1f %%), hubs kept %d/%d facilities (%.1f %%; %s), routes %d/%d (%.1f %%), "
                 "mode %s", _LOG_TAG, n_kept, n_pre, 100.0 * n_kept / max(n_pre, 1), n_hubs_kept, len(hub_stop_ids),
-                100.0 * n_hubs_kept / max(len(hub_stop_ids), 1), ", ".join(hub_names) or "none", len(cut.routes), len(pre_cut.routes), 100.0 * len(cut.routes) / max(len(pre_cut.routes), 1), mode)
+                100.0 * n_hubs_kept / max(len(hub_stop_ids), 1), ", ".join(hub_names) or "none", len(cut.routes),
+                len(pre_cut.routes), 100.0 * len(cut.routes) / max(len(pre_cut.routes), 1), mode)
     return {"schedule_path": SCHEDULE_FILE_NAME, "hub_stops_path": HUBS_FILE_NAME, "kept_stop_ids": kept_stop_ids,
             "hub_stop_ids": hub_stop_ids, "n_stops_pre_cut": n_pre, "n_stops_kept": n_kept,
             "n_hub_stops": len(hub_stop_ids), "mode": mode}

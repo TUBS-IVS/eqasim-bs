@@ -175,7 +175,7 @@ def write_router_config(path: str, *, network_path: str, schedule_path: str, veh
     return path
 
 
-def _require_columns(frame: pd.DataFrame, required: list[str], label: str, caller: str) -> None:
+def require_columns(frame: pd.DataFrame, required: list[str], label: str, caller: str) -> None:
     """``ValueError`` naming the missing router-output columns (and the likely cause: a jar without the fork change)."""
     absent = [c for c in required if c not in frame.columns]
     if absent:
@@ -239,8 +239,8 @@ def route_batch(context, tasks: pd.DataFrame, *, config_path: str, threads: int,
     trips = pd.read_csv(trips_path, dtype={"identifier": str})
     legs = pd.read_csv(legs_path, dtype={"identifier": str, "access_stop_id": str, "egress_stop_id": str},
                        keep_default_na=False, na_values=[])
-    _require_columns(trips, TRIPS_REQUIRED_COLUMNS, "trips", "route_batch")
-    _require_columns(legs, LEGS_REQUIRED_COLUMNS, "legs", "route_batch")
+    require_columns(trips, TRIPS_REQUIRED_COLUMNS, "trips", "route_batch")
+    require_columns(legs, LEGS_REQUIRED_COLUMNS, "legs", "route_batch")
     if trips["identifier"].duplicated().any():
         raise ValueError(f"route_batch: duplicate trip identifiers in {trips_path} "
                          f"(first {trips.loc[trips['identifier'].duplicated(), 'identifier'].head(5).tolist()})")
@@ -294,11 +294,11 @@ def connection_mask(trips: pd.DataFrame, legs: pd.DataFrame, *, inside_stop_ids:
     """
     if latest_arrival_s is not None and not (np.isfinite(latest_arrival_s) and latest_arrival_s >= 0):
         raise ValueError(f"connection_mask: latest_arrival_s must be finite and >= 0, got {latest_arrival_s}")
-    _require_columns(trips, TRIPS_REQUIRED_COLUMNS, "trips", "connection_mask")
-    _require_columns(legs, LEGS_REQUIRED_COLUMNS, "legs", "connection_mask")
+    require_columns(trips, TRIPS_REQUIRED_COLUMNS, "trips", "connection_mask")
+    require_columns(legs, LEGS_REQUIRED_COLUMNS, "legs", "connection_mask")
     if latest_arrival_s is not None:
-        _require_columns(legs, ["egress_time"], "legs", "connection_mask")
-        _require_columns(trips, ["egress_travel_time_min"], "trips", "connection_mask")
+        require_columns(legs, ["egress_time"], "legs", "connection_mask")
+        require_columns(trips, ["egress_travel_time_min"], "trips", "connection_mask")
     if trips["identifier"].duplicated().any():
         dups = trips.loc[trips["identifier"].duplicated(), "identifier"].head(5).tolist()
         raise ValueError(f"connection_mask: duplicate trip identifiers (first {dups}); "

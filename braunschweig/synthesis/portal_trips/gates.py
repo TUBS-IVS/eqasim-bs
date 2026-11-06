@@ -337,7 +337,7 @@ def _connected(router, tasks, *, inside_stop_ids, walk_max_m, latest_arrival_s=N
     ``RuntimeError`` before any connection is judged (it is never a rejection). Blank stop ids are left to
     ``connection_mask``, which rejects them.
     """
-    from braunschweig.data.transit.connections import (LEGS_REQUIRED_COLUMNS, TASK_COLUMNS, _require_columns,
+    from braunschweig.data.transit.connections import (LEGS_REQUIRED_COLUMNS, TASK_COLUMNS, require_columns,
                                                        connection_mask)
 
     if not tasks:
@@ -345,7 +345,7 @@ def _connected(router, tasks, *, inside_stop_ids, walk_max_m, latest_arrival_s=N
     frame = pd.DataFrame(tasks, columns=TASK_COLUMNS)
     trips, legs = router(frame)
     # the same explicit error as connection_mask for router output without the stop columns, before the guard reads them
-    _require_columns(legs, LEGS_REQUIRED_COLUMNS, "legs", "connection_mask")
+    require_columns(legs, LEGS_REQUIRED_COLUMNS, "legs", "connection_mask")
     access, egress = (legs[column].fillna("").astype(str) for column in ("access_stop_id", "egress_stop_id"))
 
     def is_foreign(stops):

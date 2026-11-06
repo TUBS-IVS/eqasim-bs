@@ -42,12 +42,16 @@ def _route(route_id, mode, stop_ids, departures=(0.0,)):
     return RouteInfo("L_" + route_id, route_id, mode, tuple(stop_ids), (0.0,) * len(stop_ids), tuple(departures))
 
 
-def _cut_schedule(schedule, anchors):
-    """The cut timetable of ``schedule`` as eqasim's cutter writes it (design R2): every route reduced to its stops
-    from the first to the last anchor (inside stop or hub), routes with fewer than two kept stops dropped, and only
-    the stops that a kept route serves."""
+def _cut_schedule(schedule, anchors, inside=None):
+    """The cut timetable of ``schedule`` as eqasim's cutter writes it (design R2): a route is kept only if it has at
+    least one stop inside the polygon (``inside``; default: every anchor), then reduced to its stops from the first
+    to the last anchor (inside stop or hub); routes with fewer than two kept stops are dropped, and only the stops
+    that a kept route serves stay."""
+    inside = anchors if inside is None else inside
     routes = []
     for route in schedule.routes:
+        if not any(stop in inside for stop in route.stop_ids):
+            continue
         positions = [k for k, stop in enumerate(route.stop_ids) if stop in anchors]
         if len(positions) < 1 or positions[-1] == positions[0]:
             continue
@@ -60,7 +64,7 @@ def _cut_schedule(schedule, anchors):
 def _exits(schedule, hubs=frozenset(), modes="all", crs="EPSG:25832"):
     """The exits of ``schedule`` cut to SQUARE plus ``hubs``, and the cut timetable."""
     inside = {stop for stop, xy in schedule.stops.items() if SQUARE.contains(Point(*xy))}
-    cut = _cut_schedule(schedule, inside | set(hubs))
+    cut = _cut_schedule(schedule, inside | set(hubs), inside)
     return g.exit_stops(schedule, cut, set(hubs), modes=modes, crs=crs), cut
 
 
