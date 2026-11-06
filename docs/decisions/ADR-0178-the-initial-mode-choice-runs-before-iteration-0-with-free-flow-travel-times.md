@@ -6,6 +6,9 @@
   branch `fix/analysis-after-matsim-output`).
 - **Issue:** #542. **Supersedes:** decisions 1-3 of ADR-0155 (#465, mechanism 4); its diagnosis and its rejected
   options stand.
+- **Refined by:** ADR-0182 decision 5 (#566): the in-commuter subpopulations are excluded from this choice; the
+  statement below that tours touching an `outside` activity keep their modes "exactly as in the loop" does not cover
+  in-commuter tours without one.
 - **Owner decisions (2026-11-04):** the step sits at the end of `matsim.simulation.prepare`, not in an own synpp
   stage; it uses free-flow travel times, "the way eqasim intends it"; eqasim's own mechanism is reused as far as
   possible.
@@ -67,8 +70,9 @@
    the stage raises when they differ (eqasim removed persons with no feasible alternative; such a person would
    abort iteration 1 in the loop anyway, since the replanning rethrows the exception); it also raises when
    `output_plans.xml.gz` or the trips CSVs are missing. No tolerance threshold and no key for one.
-4. Observability: from `input_trips.csv.gz` and `output_trips.csv.gz` (eqasim `TripWriter`, residents only: the
-   analysis filter skips `pt_` and `freight_` ids) the stage logs under `[initial mode choice]` and writes to
+4. Observability: from `input_trips.csv.gz` and `output_trips.csv.gz` (eqasim `TripWriter`; the analysis filter
+   skips `pt_` and `freight_` ids, so the in-commuters are included, corrected 2026-11-05 in #569: scope in the
+   feature record `initial_mode_choice`) the stage logs under `[initial mode choice]` and writes to
    `initial_mode_choice.json` the persons before/after, the trips, the share of trips whose mode changed, the mode
    shares before and after, and the Java wall time. These are observations of the model for the run manifest,
    never reference values and never a validation.

@@ -35,7 +35,7 @@ import matsim.simulation.prepare as delegate
 from braunschweig import synpp_tokens
 from braunschweig.data.vrb import fare_config_xml, fare_model_export, line_scopes
 from braunschweig.matsim import config_modules, initial_mode_choice
-from braunschweig.matsim.simulation import plan_check
+from braunschweig.matsim.simulation import cordon_subpopulation, plan_check
 from braunschweig.parking import tariff_export
 
 log = logging.getLogger(__name__)
@@ -50,9 +50,10 @@ GTFS_STAGE = "matsim.scenario.supply.gtfs"
 #: (ADR-0133), ``tariff_export`` and ``config_modules`` the parking inputs (issue #249); all are
 #: hashed unconditionally, like the deferred cordon helpers below. ``plan_check`` runs the plan
 #: feasibility check as the last step of ``execute`` (#443). ``initial_mode_choice`` runs eqasim's standalone
-#: mode choice on the final population before iteration 0 (#542).
+#: mode choice on the final population before iteration 0 (#542). ``cordon_subpopulation`` writes the in-commuters'
+#: fixed-mode strategy blocks into the final config (eqasim-bs#566).
 _HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes, tariff_export,
-                   config_modules, plan_check, initial_mode_choice)
+                   config_modules, plan_check, initial_mode_choice, cordon_subpopulation)
 
 #: ADR-0149: MATSim logs carry timestamps and the summary the Java wall time; a re-run must not change the digest.
 _OUTPUT_HASH_EXCLUDE = ("mode_choice/*.log", "initial_mode_choice.json")
@@ -232,6 +233,10 @@ def configure(context):
     if context.config("cordon_enabled"):
         context.config("cordon_network_buffer_fraction", 0.10)
         context.stage("data.spatial.municipalities")
+        # The in-commuters keep their synthesised mode: KeepLastSelected + ReRoute per in-commuter subpopulation
+        # (eqasim-bs#566, ADR-0182); checked here so a bad weight fails before the synthesis runs.
+        cordon_subpopulation.require_reroute_weight(context.config(
+            cordon_subpopulation.KEY_REROUTE_WEIGHT, cordon_subpopulation.DEFAULT_REROUTE_WEIGHT))
 
     # Long-haul freight injection (german-wide-freight v3, Lu et al. 2022).
     # Default ON; requires the local-only v3 inputs (the data stage fails early
@@ -383,6 +388,11 @@ def execute(context):
     if context.config("freight_enabled"):
         _inject_freight(context, result)
 
+    # The in-commuters' fixed-mode strategy blocks (eqasim-bs#566) go into the FINAL config, after the cut and the
+    # freight injection rewrote it and before the standalone mode choice and the plan check read it.
+    if context.config("cordon_enabled"):
+        _add_incommuter_strategies(context, result)
+
     # Summarise the FINAL schedule (after the cut and the freight injection) once, independent of the fare
     # model: the departures per hour document how far the schedule reaches into the next day.
     summary = _summarise_final_schedule(context)
@@ -399,13 +409,29 @@ def execute(context):
     # The standalone mode choice runs on the FINAL population (after the cut, the freight injection and the
     # fare/parking inputs), free flow, before the plan check reads the result.
     if context.config(initial_mode_choice.KEY_ENABLED):
-        initial_mode_choice.run(context, result)
+        initial_mode_choice.run(context, result, _initial_mode_choice_excluded_subpopulations(context))
 
     # The check reads the FINAL files (after the cut, the freight injection and the fare inputs).
     if context.config(plan_check.KEY_ENABLED):
         plan_check.run(context, result)
 
     return result
+
+
+def _initial_mode_choice_excluded_subpopulations(context) -> tuple[str, ...]:
+    """The subpopulations the standalone mode choice leaves unchanged: the in-commuters whenever the cordon writes them.
+
+    They have the fixed-mode strategies in the MATSim loop (ADR-0182), so they keep their synthesised mode before
+    iteration 0 as well (eqasim-bs#566). Without the cordon there are no in-commuters to exclude.
+    """
+    return cordon_subpopulation.INCOMMUTER_SUBPOPULATIONS if context.config("cordon_enabled") else ()
+
+
+def _add_incommuter_strategies(context, config_name):
+    """Write the in-commuter subpopulations' fixed-mode strategy blocks into the prepared config (eqasim-bs#566)."""
+    cordon_subpopulation.apply_to_config_file(
+        Path(context.path()) / config_name,
+        cordon_subpopulation.require_reroute_weight(context.config(cordon_subpopulation.KEY_REROUTE_WEIGHT)))
 
 
 def _verify_gate_facility_links(context):

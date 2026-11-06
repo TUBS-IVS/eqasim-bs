@@ -1,0 +1,68 @@
+{
+  "before_prod100_20261031": {
+    "n_stays": 53323,
+    "n_stays_without_return": 0,
+    "n_stays_closure_return_dropped": null,
+    "n_pt_stays": 11930,
+    "pt_gate_reasons": {
+      "no_gate_served": 4481,
+      "gate_found": 3842,
+      "no_connection": 3607
+    },
+    "no_connection_actions": {
+      "tour_to_car": 6214,
+      "gate_found": 3784,
+      "tour_to_car_passenger_lift": 933,
+      "tour_to_car_passenger": 757,
+      "departure_shifted": 242
+    },
+    "n_stays_by_mode": {
+      "car": 37517,
+      "car_passenger": 10609,
+      "pt": 4026,
+      "bicycle": 628,
+      "walk": 543
+    },
+    "n_stays_by_kind": {
+      "road": 49297,
+      "pt": 4026
+    },
+    "n_mode_substituted": 9624
+  },
+  "after_i570_replay": {
+    "n_stays": 53323,
+    "n_stays_without_return": 11276,
+    "n_stays_closure_return_dropped": 11276,
+    "n_pt_stays": 11930,
+    "pt_gate_reasons": {
+      "gate_found": 5895,
+      "no_connection": 3847,
+      "no_gate_served": 2188
+    },
+    "no_connection_actions": {
+      "gate_found": 5837,
+      "tour_to_car": 4565,
+      "tour_to_car_passenger": 635,
+      "tour_to_car_passenger_lift": 627,
+      "departure_shifted": 266
+    },
+    "n_stays_by_mode": {
+      "car": 35868,
+      "car_passenger": 10181,
+      "pt": 6103,
+      "bicycle": 628,
+      "walk": 543
+    },
+    "n_stays_by_kind": {
+      "road": 47220,
+      "pt": 6103
+    },
+    "n_mode_substituted": 7672
+  },
+  "checks_after": {
+    "persons_ending_outside": 11276,
+    "max_arrival_h": 30.0,
+    "negative_trip_duration": 0,
+    "closure_rows_left_after_outside": 0
+  }
+}

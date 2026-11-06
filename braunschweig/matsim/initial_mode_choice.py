@@ -5,6 +5,12 @@ flow travel times, so MATSim starts from a plan set in which each agent has chos
 of that step: the runner arguments, the retired-key check, the person count and the before/after trip summary, and
 ``run``, which calls the Java runner, checks that no person disappeared and replaces the population with the result.
 
+Persons of the subpopulations passed as ``excluded_subpopulations`` keep their plans unchanged: the runner option
+``standaloneModeChoice.excludedSubpopulations`` (eqasim-java-bs) skips them. The prepare stage passes the in-commuter
+subpopulations whenever the cordon writes them, so their synthesised mode stays fixed before iteration 0 as in the
+MATSim loop (ADR-0182). The ``OutsideFilter`` alone does not do that: an in-commuter whose day lies inside the
+simulated area (home > work > home) has a tour without an ``outside`` activity.
+
 The ADR-0155 mechanism (eqasim-bs#465) added a second DiscreteModeChoice replanning strategy with a very high weight to
 the MATSim config so that agents chose in iteration 1; it is gone, replaced by this upfront choice (ADR-0178 has the
 reasons).
@@ -40,6 +46,8 @@ INPUT_TRIPS = "input_trips.csv.gz"
 OUTPUT_TRIPS = "output_trips.csv.gz"
 CSV_DELIMITER = ";"
 SUMMARY_FILE_NAME = "initial_mode_choice.json"
+#: Runner option (eqasim-java-bs ``StandaloneModeChoiceConfigGroup``) whose persons keep their plans unchanged.
+EXCLUDED_SUBPOPULATIONS_OPTION = "standaloneModeChoice.excludedSubpopulations"
 
 _PERSON_TOKEN = b"<person "
 
@@ -63,13 +71,26 @@ def refuse_retired_weight(value) -> None:
                          "runs eqasim's standalone mode choice before iteration 0 (ADR-0178); remove the key")
 
 
-def arguments(config_name: str, population_file: str, threads: int) -> list[str]:
-    """Return the command line arguments of the standalone mode choice (free flow: no travel time option)."""
+def arguments(config_name: str, population_file: str, threads: int,
+              excluded_subpopulations: tuple[str, ...] = ()) -> list[str]:
+    """Return the command line arguments of the standalone mode choice (free flow: no travel time option).
+
+    ``excluded_subpopulations`` adds the runner option that leaves those persons' plans unchanged; without it the
+    option is not passed at all. Raises ValueError for a subpopulation name the runner's comma list cannot carry
+    (empty, with a comma or with surrounding white space).
+    """
+    for name in excluded_subpopulations:
+        if not name or "," in name or name != name.strip():
+            raise ValueError(f"{_LOG_TAG} excluded subpopulation {name!r} cannot be passed in the comma-separated "
+                             f"{EXCLUDED_SUBPOPULATIONS_OPTION}")
+    exclusion = (["--config:" + EXCLUDED_SUBPOPULATIONS_OPTION, ",".join(excluded_subpopulations)]
+                 if excluded_subpopulations else [])
     return [
         "--config-path", config_name,
         "--config:plans.inputPlansFile", population_file,
         "--config:standaloneModeChoice.outputDirectory", OUTPUT_DIRECTORY,
         "--config:standaloneModeChoice.removePersonsWithNoValidAlternatives", "true",
+        *exclusion,
         "--config:global.numberOfThreads", str(threads),
         "--write-input-csv-trips", "true",
         "--write-output-csv-trips", "true",
@@ -128,8 +149,11 @@ def summarise(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     }
 
 
-def run(context, config_name: str) -> dict:
+def run(context, config_name: str, excluded_subpopulations: tuple[str, ...] = ()) -> dict:
     """Run eqasim's standalone mode choice on the final population and replace the population with the result.
+
+    Persons of ``excluded_subpopulations`` keep their plans (the runner fails if the list matches nobody and logs the
+    persons kept per subpopulation in ``mode_choice/``); the summary records the list.
 
     ``config_name`` is the MATSim config in the stage directory; the population is the file its
     ``plans.inputPlansFile`` names. Travel times are free flow (no travel time option is passed). Raises ValueError if
@@ -159,7 +183,7 @@ def run(context, config_name: str) -> dict:
     started = time.monotonic()
     # Like every other Java call of the repo, pass the plans file relative to the config (the stage directory).
     relative_population = os.path.relpath(population_path, stage_path).replace(os.sep, "/")
-    eqasim.run(context, RUNNER, arguments(config_name, relative_population, threads))
+    eqasim.run(context, RUNNER, arguments(config_name, relative_population, threads, excluded_subpopulations))
     java_wall_time_s = time.monotonic() - started
 
     output_directory = os.path.join(stage_path, OUTPUT_DIRECTORY)
@@ -191,6 +215,7 @@ def run(context, config_name: str) -> dict:
         "travel_times": "free_flow",
         "runner": RUNNER,
         "configurator": CONFIGURATOR,
+        "excluded_subpopulations": list(excluded_subpopulations),
     })
 
     os.replace(paths[OUTPUT_PLANS], population_path)

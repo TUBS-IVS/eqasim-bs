@@ -240,12 +240,13 @@ def _empty_donor_trips():
     """An empty ``donor_trips`` frame satisfying :func:`build_day_trips`'s column check.
 
     Columns: ``donor_id`` plus the CONTRACT columns (minus ``person_id``, which names the
-    RECEIVING person, not the donor) plus the two donor-trace extras ``euclidean_distance`` and
-    ``trip_key`` -- exactly what ``plan_replacement._require_columns`` checks for the
-    ``donor_trips`` argument. Used only on the commute-OFF path, where there are no donors to
-    splice in at all.
+    RECEIVING person, not the donor) plus the donor extras ``euclidean_distance``, ``trip_key`` and
+    ``is_synthetic_closure`` -- exactly what ``plan_replacement._require_columns`` checks for the
+    ``donor_trips`` argument (CONTRACT columns plus ``_DONOR_EXTRA_COLUMNS``). Used only on the
+    commute-OFF path, where there are no donors to splice in at all.
     """
-    columns = ("donor_id",) + tuple(c for c in CONTRACT if c != "person_id") + ("euclidean_distance", "trip_key")
+    columns = ("donor_id",) + tuple(c for c in CONTRACT if c != "person_id") + (
+        "euclidean_distance", "trip_key", "is_synthetic_closure")
     return pd.DataFrame({column: pd.Series(dtype=object) for column in columns})
 
 

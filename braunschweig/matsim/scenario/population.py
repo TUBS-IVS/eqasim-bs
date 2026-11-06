@@ -464,6 +464,38 @@ def _log_parking_coverage(activities, persons, resident_person_ids, trips):
         100.0 * n_own / max(n_non_home, 1), n_own_by_car)
 
 
+#: Person column of the MATSim subpopulation, set by the in-commuter synthesis stages and written by the vendored
+#: writer as the person attribute ``subpopulation`` (eqasim-bs#566).
+SUBPOPULATION_COLUMN = "subpopulation"
+
+
+def _with_subpopulation_column(persons):
+    """Return ``persons`` with a ``subpopulation`` column; one the frame lacks is added as all missing (residents)."""
+    if SUBPOPULATION_COLUMN in persons.columns:
+        return persons
+    return persons.assign(**{SUBPOPULATION_COLUMN: pd.Series(None, index=persons.index, dtype=object)})
+
+
+def _require_incommuter_subpopulations(merged_persons, incommuter_persons):
+    """Raise ValueError unless every merged in-commuter person carries a subpopulation label (eqasim-bs#566).
+
+    An in-commuter without a label would be written into the default subpopulation and run the residents'
+    mode choice instead of its fixed-mode strategy, which nothing downstream would report.
+    """
+    # A skipped in-commuter stage returns a zero-column frame, which contributes no id.
+    id_columns = [frame["person_id"] for frame in incommuter_persons if "person_id" in frame.columns]
+    incommuter_ids = pd.concat(id_columns, ignore_index=True) if id_columns else []
+    labels = merged_persons.loc[merged_persons["person_id"].isin(incommuter_ids), SUBPOPULATION_COLUMN]
+    n_unlabelled = int(labels.isna().sum())
+    if n_unlabelled:
+        raise ValueError(
+            "%s %d/%d injected in-commuters carry no subpopulation; braunschweig.synthesis.incommuters and "
+            "braunschweig.synthesis.student_incommuters set it for every person, so a missing label means the "
+            "in-commuter frames lost the column upstream (eqasim-bs#566)." % (_LOG_TAG, n_unlabelled, len(labels)))
+    logger.info("%s subpopulation labels of the injected in-commuters: %s", _LOG_TAG,
+                dict(sorted(labels.value_counts().items())))
+
+
 def execute(context):
     output_path = "%s/population.xml.gz" % context.path()
     enable_urban_parking = bool(context.config("enable_urban_parking"))
@@ -512,8 +544,13 @@ def execute(context):
         assert_unique_ids([inc["persons"], student_inc["persons"]], "household_id",
                          "braunschweig.matsim.scenario.population (SvB vs student "
                          "in-commuter households)")
+        # concat_frame aligns the in-commuter rows onto the RESIDENT columns, so the MATSim subpopulation that
+        # only the in-commuter frames carry would be dropped (eqasim-bs#566); the residents get the column
+        # first, as missing values, which the writer leaves out (default subpopulation).
+        raw["persons"] = _with_subpopulation_column(raw["persons"])
         raw["persons"] = concat_frame(raw["persons"], inc["persons"], "person_id")
         raw["persons"] = concat_frame(raw["persons"], student_inc["persons"], "person_id")
+        _require_incommuter_subpopulations(raw["persons"], [inc["persons"], student_inc["persons"]])
         # person_id must be globally unique across residents + both in-commuter
         # sources; unlike household_id this holds even for multi-member resident
         # households, so it is checked on the full merged frame directly.

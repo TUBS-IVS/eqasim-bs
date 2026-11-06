@@ -148,9 +148,31 @@ def test_donor_trips_immobile_donor_yields_no_rows_but_others_get_contract_colum
         assert column in trips.columns
     assert "euclidean_distance" in trips.columns
     assert "trip_key" in trips.columns
+    assert "is_synthetic_closure" in trips.columns
+    assert trips["is_synthetic_closure"].dtype == bool
     # Raw MiD extras (e.g. W_ZWECK, hvm_imp, wegkm) must be dropped from the donor trips.
     assert "W_ZWECK" not in trips.columns
     assert "hvm_imp" not in trips.columns
+
+
+def test_donor_trips_carry_the_invented_closure_flag_of_a_day_not_ending_at_home():
+    """#570 (ADR-0183): the splice copies this flag and the portal stage reads it, so a donor day that the plan
+    repair closes must reach the donor trips with True on the invented home trip only."""
+    persons = _persons_fixture()
+    donors = donor_pool.select_home_office_day_donors(persons)
+    wege = _wege_fixture()
+    wege.loc[5, "W_ZWECK"] = 4  # donor "2_2" ends its diary at a shop instead of at home
+    attributes = donor_pool.donor_attributes(donors, persons, _households_fixture(), wege)
+    trips = donor_pool.donor_trips(
+        donors, attributes, wege, random_seed=0,
+        escort_purpose=False, escort_passive_education=False,
+        explicit_round_trip_purposes=True,
+    )
+    closed = trips[trips["donor_id"] == "2_2"].sort_values("trip_index")
+    assert closed["following_purpose"].iloc[-1] == "home"
+    assert closed["is_synthetic_closure"].tolist() == [False, False, True]
+    assert closed["trip_key"].iloc[-1].endswith("_closure")
+    assert not trips.loc[trips["donor_id"] != "2_2", "is_synthetic_closure"].any()
 
 
 def test_donor_trips_hands_the_resample_a_sex_column_without_mixed_types(monkeypatch):
@@ -218,6 +240,36 @@ def test_donor_trips_forwards_w_zweck_10_as_leisure(monkeypatch):
         explicit_round_trip_purposes=True, w_zweck_10_as_leisure=True,
     )
     assert captured["w_zweck_10_as_leisure"] is True
+
+
+def test_donor_closure_column_name_is_the_portal_stage_contract():
+    from braunschweig.synthesis.portal_trips import classification
+    assert donor_pool._CLOSURE_COLUMN == classification.CLOSURE_COLUMN
+
+
+@pytest.mark.parametrize("case", ["column_missing", "value_missing"])
+def test_donor_trips_raises_on_a_built_table_without_a_usable_closure_flag(monkeypatch, case):
+    """The closure flag is the portal stage's input (#570): a table lacking it must fail fast."""
+    real_builder = donor_pool.build_validated_trip_table
+
+    def breaking_builder(persons, wege, **kwargs):
+        table, report = real_builder(persons, wege, **kwargs)
+        if case == "column_missing":
+            return table.drop(columns=["is_synthetic_closure"]), report
+        table = table.copy()
+        table["is_synthetic_closure"] = table["is_synthetic_closure"].astype(object)
+        table.loc[table.index[0], "is_synthetic_closure"] = None
+        return table, report
+
+    monkeypatch.setattr(donor_pool, "build_validated_trip_table", breaking_builder)
+    persons = _persons_fixture()
+    donors = donor_pool.select_home_office_day_donors(persons)
+    attributes = donor_pool.donor_attributes(donors, persons, _households_fixture(), _wege_fixture())
+    with pytest.raises(ValueError, match="is_synthetic_closure"):
+        donor_pool.donor_trips(
+            donors, attributes, _wege_fixture(), random_seed=0,
+            escort_purpose=False, escort_passive_education=False,
+            explicit_round_trip_purposes=True, w_zweck_10_as_leisure=True)
 
 
 def test_donor_trips_forwards_the_passive_escort_pairing_keywords(monkeypatch):
@@ -797,6 +849,8 @@ def _golden_off_path_trips() -> pd.DataFrame:
         "euclidean_distance": (np.array([3.0, 3.0, 100.0, 100.0, 200.0, 5.0]) * 1000.0
                                / donor_pool.DETOUR_FACTOR),
         "trip_key": ["1_1_1", "1_1_2", "2_1_1", "2_1_2", "2_2_1", "2_2_2"],
+        # Added by #570: every fixture chain already ends at home, so the repair invents no closing trip.
+        "is_synthetic_closure": [False] * 6,
     })
 
 

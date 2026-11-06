@@ -427,7 +427,7 @@ def test_donor_builder_and_stage_forward_off_switch(monkeypatch):
 
     observed = []
     empty_trips = pd.DataFrame(columns=list(trips_stage.CONTRACT) + [
-        "euclidean_distance", "trip_key",
+        "euclidean_distance", "trip_key", "is_synthetic_closure",
     ])
 
     def fake_validated_builder(*_args, **kwargs):

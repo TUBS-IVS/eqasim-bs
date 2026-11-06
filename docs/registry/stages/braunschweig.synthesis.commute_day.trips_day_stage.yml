@@ -44,6 +44,7 @@ decisions:
 - ADR-0128
 - ADR-0141
 - ADR-0174
+- ADR-0183
 notes: 'The replacement logic itself lives entirely in plan_replacement.build_day_trips (a pure
   module, no synpp/no I/O): per person, by commute_day_state -- absent gets NO rows at all; home
   WITH a donor match gets every original row dropped and replaced by the donor''s own trip chain
@@ -51,7 +52,7 @@ notes: 'The replacement logic itself lives entirely in plan_replacement.build_da
   order, is_first_trip/is_last_trip recomputed; trip_key is copied VERBATIM from the donor and
   therefore still names the donor and is not unique once a donor is reused -- useful only for
   tracing a row back to its donor trip, never as a per-row identifier; any input column beyond the
-  CONTRACT plus euclidean_distance/trip_key is set to NaN on replaced rows rather than inventing a
+  CONTRACT plus euclidean_distance/trip_key/is_synthetic_closure (ADR-0183) is set to NaN on replaced rows rather than inventing a
   donor-side value); home WITHOUT a donor match keeps the person''s ORIGINAL rows unchanged
   (state_stage is expected to have already downgraded these to at_workplace -- ADR-0104''s
   documented default -- so an unmatched home person reaching this stage is itself a signal, not

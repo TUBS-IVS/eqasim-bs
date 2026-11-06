@@ -48,6 +48,7 @@ decisions:
 - ADR-0152
 - ADR-0184
 - ADR-0163
+- ADR-0183
 notes: >-
   Reads braunschweig.synthesis.commute_day.trips_day_stage (the reporting-day trips),
   synthesis.population.enriched (persons with the availability columns the mode check needs),
@@ -88,5 +89,8 @@ notes: >-
   person can use neither car nor car_passenger (reason soft_mode_beyond_distance_no_road_mode); otherwise it keeps
   its road gate for outside_tour_modes. Report keys n_soft_mode_stays_beyond_distance, n_soft_mode_stays_to_pt and
   n_soft_mode_stays_left_to_outside_tour_modes, logged under [portal_trips].
+  Invented closure returns (ADR-0183, #570): a stay whose return trip is the plan repair's is_synthetic_closure
+  trip ends the day outside (classification.drop_closure_returns, before any per-stay step); report key
+  n_stays_closure_return_dropped; the stage requires the column and raises on a missing value.
   Reading guide and maintenance rules: docs/codebase/notes/portal-trips.md. The validate() token
   hashes the helper modules and the cordon helper modules the stage imports inside execute.

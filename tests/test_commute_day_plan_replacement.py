@@ -88,6 +88,7 @@ def _donor_trips_fixture():
         "mode":              ["bike", "bike", "bike"],
         "euclidean_distance": [3000.0, 2000.0, 4000.0],
         "trip_key":          ["d1_1", "d1_2", "d1_3"],
+        "is_synthetic_closure": [False, False, False],
     })
 
 
@@ -123,6 +124,16 @@ def test_home_person_with_match_gets_donor_chain_renumbered():
     assert diagnostics["n_trips_removed"] == 2 + 2  # p2's original 2 rows + p3's (absent) 2 rows
     assert diagnostics["n_trips_added"] == 3
     assert diagnostics["n_extra_columns_nulled"] == 1
+
+
+def test_spliced_rows_keep_the_donors_synthetic_closure_flag():
+    trips = _trips_fixture().assign(is_synthetic_closure=False)
+    donors = _donor_trips_fixture().assign(is_synthetic_closure=[False, False, True])
+    day_trips, diagnostics = plan_replacement.build_day_trips(
+        trips, _states_fixture(), _matches_fixture(), donors, random_seed=RANDOM_SEED)
+    p2 = day_trips[day_trips["person_id"] == "p2"].sort_values("trip_index")
+    assert p2["is_synthetic_closure"].tolist() == [False, False, True]   # not NaN (#570)
+    assert diagnostics["n_extra_columns_nulled"] == 1                    # raw_mid_extra only
 
 
 def test_recomputed_offset_column_is_not_nulled_or_counted_as_an_extra():

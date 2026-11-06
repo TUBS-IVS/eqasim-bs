@@ -2,7 +2,8 @@ feature: initial_mode_choice
 title: Initial mode choice before iteration 0 with free-flow travel times
 area: matsim
 description: >-
-  Every agent of the final population chooses its modes once with the production discrete mode choice model
+  Every agent of the final population except the in-commuters (excluded below) chooses its modes once with the
+  production discrete mode choice model
   BEFORE MATSim iteration 0, with free-flow car travel times, the way eqasim intends its upfront mode choice
   (ADR-0178, issue #542; supersedes the first-replanning strategy of ADR-0155). As the last step of
   braunschweig.matsim.simulation.prepare before the plan check, after the routing, the cordon cut, the freight
@@ -14,12 +15,20 @@ description: >-
   the population file under its name, so the run, the output archive and the plan check read them unchanged.
   Freight agents keep truck (BraunschweigModeAvailability) and tours touching an outside activity keep their
   modes (OutsideFilter; the DMC re-estimates and re-routes them with their initial modes), exactly as in the
-  loop; the DMC's own routing sets routingMode but never the walkFallbackFrom stamp, so the plan check counts a
+  loop. With cordon_enabled the in-commuter subpopulations incommuter and student_incommuter are not chosen at
+  all (ADR-0182 decision 5, issue #566): run passes them to the eqasim-java-bs runner option
+  standaloneModeChoice.excludedSubpopulations, which keeps those persons' plans as read, logs the persons kept
+  per subpopulation in mode_choice/, warns for a listed subpopulation without persons and fails when the list
+  matches nobody; initial_mode_choice.json records the list. The exclusion also re-draws the residents' random
+  choices (ADR-0182 decision 5). Without the cordon nothing is excluded and the option
+  is not passed. The DMC's own routing sets routingMode but never the walkFallbackFrom stamp, so the plan check counts a
   walk-only trip with routingMode pt as pt-as-walk (plan_check.summarise, extended with this feature). The stage
   raises when the persons of the output differ from the input (eqasim removed persons with no
   feasible alternative) or an output is missing, and logs under [initial mode choice] and writes to
   initial_mode_choice.json the persons before/after, the trips, the share of trips whose mode changed, the mode
-  shares before and after (residents only, the analysis filter skips pt_ and freight_ ids) and the Java wall
+  shares before and after (every person whose id does not start with pt_ or freight_, the in-commuters included:
+  their numeric ids from make_incommuter_ids pass the analysis filter, and with the cordon their trips are
+  unchanged by construction, so share_mode_changed counts them in the denominator) and the Java wall
   time: observations, not reference values. The in-loop mechanism of ADR-0155 (DiscreteModeChoice with weight
   1e6, disableAfterIteration 1) is gone and braunschweig.initial_mode_choice.weight is retired (a config that
   still sets it is refused at configure time). The vendored upstream flag mode_choice (feature record
@@ -47,6 +56,7 @@ code_paths:
 evidence:
   tests:
   - tests/test_initial_mode_choice.py
+  - tests/test_incommuter_subpopulation.py
   off_path_byte_identical:
     claimed: not_applicable
     note: >-
@@ -76,7 +86,8 @@ validation:
   metric: null
   note: >-
     No run has used the step yet. The first 1 % and 100 % runs after the merge record the wall time of the
-    step and of MATSim iteration 1 and the mode shares before/after. The 8 h 23 min of iteration 1 in
+    step and of MATSim iteration 1 and the mode shares before/after, and, for the in-commuter exclusion, the
+    persons kept per subpopulation from the mode_choice/ log against the in-commuters of the population. The 8 h 23 min of iteration 1 in
     prod100_20261031 under ADR-0155 is REPORTED and UNVERIFIED (felix log, no run manifest); a comparison needs
     a manifest of that run first. A smoke is not a validation.
 assessment:

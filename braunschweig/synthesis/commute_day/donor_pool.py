@@ -611,6 +611,12 @@ def donor_attributes(donors: pd.DataFrame, persons_all: pd.DataFrame, households
     ]].reset_index(drop=True)
 
 
+#: Name of the plan repair's flag for an invented closing home trip (``plan_validation._append_return_home``;
+#: read by ``portal_trips.classification.CLOSURE_COLUMN``). Spelled out here, not imported, so this module does
+#: not pull the portal package into the synpp hash closure of the donor stages.
+_CLOSURE_COLUMN = "is_synthetic_closure"
+
+
 def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFrame, *,
                 random_seed: int, escort_purpose: bool, escort_passive_education: bool,
                 explicit_round_trip_purposes: bool, exclude_rbw_legs: bool = False,
@@ -672,9 +678,10 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
     Returns one row per (donor, trip): the ``trips_stage.CONTRACT`` columns (``person_id``
     renamed to ``donor_id``) plus ``euclidean_distance`` (metres, from MiD ``wegkm_imp`` * 1000 /
     the ENTD detour factor -- the same convention as ``trips_stage.run``) and ``trip_key``
-    (traceability). The raw MiD Wege extras (``W_ZWECK``, ``hvm_imp``, ``wegkm``, ...) are
-    dropped to keep the donor pool small; the docstring here is the single place documenting
-    that intentional narrowing.
+    (traceability) and ``is_synthetic_closure`` (bool: the plan repair's invented closing home
+    trip, carried so the portal stage ends such a stay outside, #570). The raw MiD Wege extras
+    (``W_ZWECK``, ``hvm_imp``, ``wegkm``, ...) are dropped to keep the donor pool small; the
+    docstring here is the single place documenting that intentional narrowing.
     """
     _require_columns(donors, ("HP_ID", "H_ID", "P_ID"), "donors frame")
     _require_columns(attributes, ("donor_id", "sex", "age", "employed"), "attributes frame")
@@ -744,7 +751,18 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
     table = table.sort_values(["person_id", "trip_index"]).reset_index(drop=True)
     table = table.rename(columns={"person_id": "donor_id"})
 
+    if _CLOSURE_COLUMN not in table.columns:
+        raise ValueError(f"{_LOG_TAG} the donor trip table has no {_CLOSURE_COLUMN} column; the plan repair "
+                         "always adds it, so it was lost upstream (#570).")
+    # Checked BEFORE the bool coercion: bool(NaN) is True and would turn a lost flag into a closure.
+    n_missing_flags = int(table[_CLOSURE_COLUMN].isna().sum())
+    if n_missing_flags:
+        raise ValueError(f"{_LOG_TAG} {n_missing_flags} donor trips have a missing {_CLOSURE_COLUMN} value; "
+                         "the flag must be True or False for every trip (#570).")
+    table[_CLOSURE_COLUMN] = table[_CLOSURE_COLUMN].astype(bool)
+
     extra_columns = [column for column in ("euclidean_distance", "trip_key") if column in table.columns]
+    extra_columns.append(_CLOSURE_COLUMN)
     contract_columns = ["donor_id" if column == "person_id" else column for column in CONTRACT]
     return table[contract_columns + extra_columns]
 

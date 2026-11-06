@@ -1,0 +1,60 @@
+id: i570-portal-replay-prod100-2026-11-05
+date: '2026-11-05'
+repository:
+  commit: 9fa08b87105bdaaf2bb460e6614aceb4846ed885
+  branch: fix/i570-portal-day-ends-outside
+  notes: >-
+    The #570 branch (ADR-0183) at 9fa08b87, a clean detached worktree on felix (~/i570_smoke/eqasim-bs, 0 changes),
+    fetched from a git bundle by scripts/isolated_run.py. Later commits of the branch change docstrings, tests and the
+    splice guard only, not the portal stage's behaviour.
+configuration:
+  config: configs/base_bs.yml with the run overlay of prod100_20261031 (felix:~/prod100_20261031/run.yml)
+  notes: >-
+    The portal stage settings (gate candidates, service window, shift window and step, minimum stay, last resort,
+    soft-mode distances, thresholds, random_seed) are read from that composed configuration, as the stage reads them.
+sampling:
+  rate: 1.0
+  scope: >-
+    every trip of the reporting-day trips table of prod100_20261031 (3,437,976 trips) and every portal stay built from
+    it (53,323 stays, 11,930 of them pt).
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. braunschweig.synthesis.portal_trips.stage.build_portal_trips of the branch ran end to end
+    outside synpp on the cached inputs the portal stage of prod100_20261031 loaded (cache stems in the replay script),
+    with the batch pt router of the run's own eqasim jar and the run's router config (18 router calls, 892 s). The
+    stages after the portal stage did not run.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Completed on 2026-11-05. A replay of one stage on production inputs, NOT a validation: no observed data is
+    involved, and the "before" side is the run's own report (portal_trips_report.json of prod100_20261031, written by
+    code 7a41f0ba), not a replay of the old code on the same harness. The old code's first gate choice was reproduced
+    exactly by the read-only B2 probe of the findings behind #570 (not committed). Replay-only stand-in: the run's
+    trips predate the splice fix (e8678cb4), so 21,978 spliced home-office rows had no flag; the replay took it from
+    the donor trip_key suffix _closure (2,297 of them), the production code now carries the flag.
+source: >-
+  felix:~/scratch_i570/out (scratch). Committed in docs/runs/artifacts/i570-portal-replay-prod100-2026-11-05/:
+  i570_portal_replay.py (sha256 e5a5fe6f0ead414ef786cd856e1476be303acbbbd4d8b4704dc30b36b1870e71, the script the replay
+  ran), summary.json (before/after report keys and the checks), report_after.json (the full stage report of the
+  replay) and replay_log.txt (log copy, because *.log is git-ignored).
+environment: 'server (felix, hostname matsim), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, pandas 1.5.3), Java /home/felix/tools/jdk-25.0.3+9'
+validation:
+- metric: share of portal stays whose return was the plan repair's invented home trip (now ending the day outside)
+  reference: 'the run''s own report (prod100_20261031, no such stays without a return: n_stays_without_return 0); model output, NOT observed data'
+  result: >-
+    11,276 of 53,323 stays (21.1 %) end the day outside (n_stays_closure_return_dropped = n_stays_without_return =
+    11,276); 11,276 persons end their day at an outside activity; no trip arrives after 30.0 h, no negative trip
+    duration, no closure trip left after an outside activity.
+  artifact: docs/runs/artifacts/i570-portal-replay-prod100-2026-11-05/summary.json
+- metric: pt gate of the 11,930 pt stays, first gate choice and after the no-connection chain
+  reference: 'the run''s own report (prod100_20261031); model output, NOT observed data'
+  result: >-
+    First choice gate_found 3,842 -> 5,895 (32.2 % -> 49.4 %), no_gate_served 4,481 -> 2,188, no_connection 3,607 ->
+    3,847. After the chain: gate_found 3,784 -> 5,837, tour_to_car 6,214 -> 4,565, tour_to_car_passenger 757 -> 635,
+    lift 933 -> 627, departure_shifted 242 -> 266. Stays by mode: pt 4,026 -> 6,103, car 37,517 -> 35,868,
+    car_passenger 10,609 -> 10,181; mode substitutions 9,624 -> 7,672. The remaining 51.1 % of pt stays without a gate
+    are the other causes of #570's findings (candidates, cut-supply check), not this rule.
+  artifact: docs/runs/artifacts/i570-portal-replay-prod100-2026-11-05/summary.json
