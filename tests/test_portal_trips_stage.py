@@ -54,6 +54,13 @@ def test_configure_declares_the_portal_keys_and_the_inputs():
     assert "synthesis.population.sampled" not in context.stages
 
 
+def test_configure_declares_the_cut_timetable_stage():
+    # #574: the pt gate check routes on the cut timetable, so its stage is an input of the portal stage.
+    context = _RecordingConfigureContext({"cordon_enabled": True})
+    stage.configure(context)
+    assert "braunschweig.data.transit.cut_schedule" in context.stages
+
+
 def test_configure_rejects_portal_on_without_the_cordon():
     with pytest.raises(ValueError, match="cordon_enabled"):
         stage.configure(_RecordingConfigureContext({"cordon_enabled": False}))
@@ -133,21 +140,29 @@ GATE_SETTINGS = {"n_candidates": 5, "max_extra_detour_m": 10000.0, "service_wind
 def _router(connects=lambda identifier: True, calls=None):
     """A fake batch router with real-shape frames; a task connects when ``connects(identifier)``.
 
-    A non-connecting task gets a leg whose access stop lies outside the extent, so the real
-    ``connection_mask`` (not the fake) rejects it.
+    Every leg boards and alights at hbf, a stop of the cut timetable (as the real router on the cut timetable
+    does). A non-connecting task gets an access walk beyond the walk bound, so the real ``connection_mask`` (not
+    the fake) rejects it.
     """
     def router(tasks):
         if calls is not None:
             calls.append(tasks.copy())
         ids = tasks["identifier"].tolist()
-        trips = pd.DataFrame({"identifier": ids, "is_only_walk": 0, "access_distance_km": 0.3,
+        trips = pd.DataFrame({"identifier": ids, "is_only_walk": 0,
+                              "access_distance_km": [0.3 if connects(i) else 99.0 for i in ids],
                               "egress_distance_km": 0.3, "transfer_distance_km": 0.0,
                               "total_walk_distance_km": 0.6})
-        legs = pd.DataFrame({"identifier": ids, "leg_index": 0,
-                             "access_stop_id": ["hbf" if connects(i) else "far" for i in ids],
-                             "egress_stop_id": "hbf"})
+        legs = pd.DataFrame({"identifier": ids, "leg_index": 0, "access_stop_id": "hbf", "egress_stop_id": "hbf"})
         return trips, legs
     return router
+
+
+def _cut_of(schedule, routes=None):
+    """The cut timetable of the fixture's pre-cut ``schedule``: each route keeps its two inside stops."""
+    routes = schedule.routes if routes is None else routes
+    kept = [RouteInfo(r.line_id, r.route_id, r.mode, r.stop_ids[:2], r.departure_offsets_s[:2], r.departures_s)
+            for r in routes]
+    return Schedule({stop: schedule.stops[stop] for r in kept for stop in r.stop_ids}, kept)
 
 
 def _fixture():
@@ -177,14 +192,17 @@ def _fixture():
                                        LineString([(-1000.0, 25000.0), (1000.0, 25000.0)])], crs=CRS)
     external = gpd.GeoDataFrame({"commune_id": ["EXT1", "EXT2"], "ewz": [100.0, 100.0]},
                                 geometry=[Point(200000.0, 25000.0), Point(-100000.0, 25000.0)], crs=CRS)
-    # hbf (inside, at home) has one route east (towards EXT1) and one west (towards EXT2); both run every 15 min.
-    stops = {"hbf": (25000.0, 25000.0), "far": (80000.0, 25000.0), "west": (-30000.0, 25000.0)}
+    # hbf (inside, at home) has one route east (towards EXT1) and one west (towards EXT2), both from the inside
+    # stop 'centre'; both run every 15 min. The cut timetable keeps centre -> hbf of each, so hbf is their exit.
+    stops = {"centre": (20000.0, 25000.0), "hbf": (25000.0, 25000.0), "far": (80000.0, 25000.0),
+             "west": (-30000.0, 25000.0)}
     departures = tuple(float(t) for t in range(0, 86400, 900))
     schedule = Schedule(stops, [
-        RouteInfo("L_east", "r_east", "rail", ("hbf", "far"), (0.0, 600.0), departures),
-        RouteInfo("L_west", "r_west", "rail", ("hbf", "west"), (0.0, 600.0), departures)])
+        RouteInfo("L_east", "r_east", "rail", ("centre", "hbf", "far"), (0.0, 0.0, 600.0), departures),
+        RouteInfo("L_west", "r_west", "rail", ("centre", "hbf", "west"), (0.0, 0.0, 600.0), departures)])
     return dict(trips=trips, persons=persons, df_home=homes, df_work=work, df_education=education, gates=gates,
-                links=links, external_points=external, schedule=schedule, router=_router(), pt_gate_modes="all",
+                links=links, external_points=external, schedule=schedule, cut_schedule=_cut_of(schedule),
+                hub_stop_ids=set(), router=_router(), pt_gate_modes="all",
                 gate_settings=dict(GATE_SETTINGS), cordon_polygon=extent,
                 threshold_m=45000.0, tolerance=0.2, warn_share=0.1, fallback_warn_share=0.1, seed=7)
 
@@ -600,6 +618,7 @@ def test_a_kept_stay_without_a_directional_exit_stop_takes_the_all_stops_fallbac
     fixture = _fixture()
     # Only the east route exists: person 2's point lies west, so no exit stop heads toward it.
     fixture["schedule"] = Schedule(fixture["schedule"].stops, fixture["schedule"].routes[:1])
+    fixture["cut_schedule"] = _cut_of(fixture["schedule"])
     with caplog.at_level("INFO", logger=stage.logger.name):
         out = stage.build_portal_trips(**fixture)
     report = out["report"]
@@ -644,17 +663,29 @@ def test_build_portal_trips_validates_the_gate_settings_of_a_direct_caller(name,
 # execute() wiring
 # --------------------------------------------------------------------------------------------------
 
-def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeypatch):
+def test_execute_routes_on_the_cut_timetable_and_reads_both_schedules(tmp_path, monkeypatch):
     fixture = _fixture()
     schedule_dir = tmp_path / "supply"
     schedule_dir.mkdir()
+    cut_dir = tmp_path / "cut"
     report_dir = tmp_path / "stage_cache"
     report_dir.mkdir()
     seen = {}
+    pre_cut_path = os.path.join(str(schedule_dir), "schedule.xml.gz")
+    cut_path = os.path.join(str(cut_dir), "cut_schedule.xml.gz")
+    schedules = {pre_cut_path: fixture["schedule"], cut_path: fixture["cut_schedule"]}
+    built = {}
+    real_build = stage.build_portal_trips
+
+    def spy_build(**kwargs):
+        built.update(kwargs)
+        return real_build(**kwargs)
+
+    monkeypatch.setattr(stage, "build_portal_trips", spy_build)
 
     def fake_read_schedule(path):
-        seen["schedule_path"] = path
-        return fixture["schedule"]
+        seen.setdefault("schedule_paths", []).append(path)
+        return schedules[path]
 
     def fake_route_batch(context, tasks, **kwargs):
         seen["router_kwargs"] = kwargs
@@ -689,6 +720,11 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
         "matsim.scenario.supply.processed": {"schedule_path": "schedule.xml.gz", "network_path": "network.xml.gz"},
         "matsim.scenario.supply.gtfs": {"schedule_path": "transit_schedule.xml.gz",
                                         "vehicles_path": "transit_vehicles.xml.gz"},
+        # the Task 4 stage dict (#574); hbf is a configured hub here, so the chosen gate counts as a hub gate
+        "braunschweig.data.transit.cut_schedule": {
+            "schedule_path": "cut_schedule.xml.gz", "hub_stops_path": "hub_stops.csv",
+            "kept_stop_ids": frozenset(fixture["cut_schedule"].stops), "hub_stop_ids": frozenset({"hbf"}),
+            "n_stops_pre_cut": 4, "n_stops_kept": 2, "n_hub_stops": 1, "mode": "kept-stops"},
     }
     values = _gate_values()
     values.update({"matsim_threads": None, "processes": 3, "braunschweig.transit_connections.latest_arrival_check": True,
@@ -705,7 +741,8 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
             if name is None:
                 return str(report_dir)
             return str({"matsim.scenario.supply.processed": schedule_dir,
-                        "matsim.scenario.supply.gtfs": tmp_path / "gtfs"}[name])
+                        "matsim.scenario.supply.gtfs": tmp_path / "gtfs",
+                        "braunschweig.data.transit.cut_schedule": cut_dir}[name])
 
     context = _Context()
     out = stage.execute(context)
@@ -713,14 +750,22 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
     expected_bound_s = connections.latest_arrival_s(context)
     assert expected_bound_s is not None and mask_calls
     assert {(k["latest_arrival_s"], k["label"]) for k in mask_calls} == {(expected_bound_s, "portal pt gates")}
-    assert seen["schedule_path"] == os.path.join(str(schedule_dir), "schedule.xml.gz")
-    # The router runs on the pre-cut network/schedule and the gtfs vehicles with the volatile thread budget.
+    assert sorted(seen["schedule_paths"]) == sorted([pre_cut_path, cut_path])
+    # #574: the gates read both timetables, and the check accepts exactly the stops of the cut one.
+    assert built["schedule"] is fixture["schedule"] and built["cut_schedule"] is fixture["cut_schedule"]
+    assert built["hub_stop_ids"] == {"hbf"}
+    assert {k["inside_stop_ids"] == {"centre", "hbf"} for k in mask_calls} == {True}
+    # The router runs on the CUT schedule, the pre-cut network and the gtfs vehicles with the volatile thread budget.
     assert seen["router_kwargs"]["threads"] == 3
     router_config = (report_dir / stage.ROUTER_CONFIG_NAME).read_text(encoding="utf-8")
+    assert cut_path in router_config and pre_cut_path not in router_config
     assert os.path.join(str(schedule_dir), "network.xml.gz") in router_config
     assert os.path.join(str(tmp_path / "gtfs"), "transit_vehicles.xml.gz") in router_config
     assert out["report"]["enabled"] is True and out["report"]["n_stays"] == 2
     assert out["anchors"]["gate_id"].tolist() == ["gate_e", "hbf"]
+    assert {key: out["report"][key] for key in ("n_hub_gates_chosen", "n_stops_cut_timetable",
+                                                 "n_routes_cut_timetable", "n_hub_stops")} == {
+        "n_hub_gates_chosen": 1, "n_stops_cut_timetable": 2, "n_routes_cut_timetable": 2, "n_hub_stops": 1}
     # R34: the report is persisted in the stage directory for the A/B manifest.
     with open(report_dir / "portal_trips_report.json", encoding="utf-8") as handle:
         assert json.load(handle) == out["report"]

@@ -38,44 +38,117 @@ def test_gate_inside_points_raises_when_no_endpoint_is_inside():
         g.gate_inside_points(gates, links, SQUARE)
 
 
+def _route(route_id, mode, stop_ids, departures=(0.0,)):
+    return RouteInfo("L_" + route_id, route_id, mode, tuple(stop_ids), (0.0,) * len(stop_ids), tuple(departures))
+
+
+def _cut_schedule(schedule, anchors):
+    """The cut timetable of ``schedule`` as eqasim's cutter writes it (design R2): every route reduced to its stops
+    from the first to the last anchor (inside stop or hub), routes with fewer than two kept stops dropped, and only
+    the stops that a kept route serves."""
+    routes = []
+    for route in schedule.routes:
+        positions = [k for k, stop in enumerate(route.stop_ids) if stop in anchors]
+        if len(positions) < 1 or positions[-1] == positions[0]:
+            continue
+        first, last = positions[0], positions[-1] + 1
+        routes.append(RouteInfo(route.line_id, route.route_id, route.mode, route.stop_ids[first:last],
+                                route.departure_offsets_s[first:last], route.departures_s))
+    return Schedule({stop: schedule.stops[stop] for route in routes for stop in route.stop_ids}, routes)
+
+
+def _exits(schedule, hubs=frozenset(), modes="all", crs="EPSG:25832"):
+    """The exits of ``schedule`` cut to SQUARE plus ``hubs``, and the cut timetable."""
+    inside = {stop for stop, xy in schedule.stops.items() if SQUARE.contains(Point(*xy))}
+    cut = _cut_schedule(schedule, inside | set(hubs))
+    return g.exit_stops(schedule, cut, set(hubs), modes=modes, crs=crs), cut
+
+
 def _exit_schedule():
-    stops = {"a": (2000.0, 5000.0), "b": (8000.0, 5000.0), "c": (14000.0, 5000.0)}
+    """Pre-cut: r1 (rail) a b c d continues beyond the kept c; r2 (bus) a b ends at b; r3 (bus) e d never kept."""
+    stops = {"a": (2000.0, 5000.0), "b": (8000.0, 5000.0), "c": (14000.0, 5000.0), "d": (30000.0, 5000.0),
+             "e": (40000.0, 5000.0)}
+    pre_cut = Schedule(stops, [_route("r1", "rail", ["a", "b", "c", "d"]), _route("r2", "bus", ["a", "b"]),
+                               _route("r3", "bus", ["e", "d"])])
+    cut = Schedule({k: stops[k] for k in ("a", "b", "c")},
+                   [_route("r1", "rail", ["a", "b", "c"]), _route("r2", "bus", ["a", "b"])])
+    return pre_cut, cut
 
-    def route(route_id, mode, stop_ids):
-        return RouteInfo("L_" + route_id, route_id, mode, tuple(stop_ids), (0.0,) * len(stop_ids), (0.0,))
 
-    return Schedule(stops, [route("r1", "rail", ["a", "b", "c"]), route("r2", "bus", ["b", "c"]),
-                            route("r3", "bus", ["c", "b"])])
-
-
-def test_exit_stops_lists_one_row_per_inside_stop_and_route_with_an_outside_next_stop():
-    exits = g.exit_stops(_exit_schedule(), SQUARE)
-    assert list(exits.columns) == ["stop_id", "line_id", "route_id", "mode", "outside_x", "outside_y", "geometry"]
-    # r3 enters the extent at b (an ENTRY, not an exit), so only r1 and r2 qualify.
-    assert sorted(exits["route_id"]) == ["r1", "r2"]
-    assert exits["stop_id"].tolist() == ["b", "b"]
-    assert (exits["outside_x"] == 14000.0).all() and (exits["outside_y"] == 5000.0).all()
+def test_exit_stops_reads_the_last_kept_stop_of_each_cut_route_and_its_pre_cut_successor():
+    pre_cut, cut = _exit_schedule()
+    exits = g.exit_stops(pre_cut, cut, set())
+    assert list(exits.columns) == ["stop_id", "line_id", "route_id", "mode", "outside_x", "outside_y", "is_hub",
+                                   "geometry"]
+    # r1 continues beyond its last kept stop c (to d); r2 ends at its last kept stop; r3 is not in the cut timetable.
+    assert exits[["stop_id", "route_id", "mode", "outside_x", "outside_y"]].values.tolist() == [
+        ["c", "r1", "rail", 30000.0, 5000.0]]
+    assert exits["is_hub"].dtype == bool and not exits["is_hub"].any()
     assert exits.crs.to_epsg() == 25832
-    assert exits.geometry.iloc[0].coords[0] == (8000.0, 5000.0)
+    assert exits.geometry.iloc[0].coords[0] == (14000.0, 5000.0)
 
 
-def test_exit_stops_modes_filter_keeps_only_the_given_lower_cased_modes():
-    exits = g.exit_stops(_exit_schedule(), SQUARE, modes=frozenset({"rail"}))
-    assert exits["route_id"].tolist() == ["r1"]
-    assert g.ALL_MODES == "all"
+def test_exit_stops_aligns_a_cut_sequence_with_a_repeated_stop():
+    stops = {"a": (2000.0, 5000.0), "b": (8000.0, 5000.0), "c": (30000.0, 5000.0)}
+    pre_cut = Schedule(stops, [_route("loop", "rail", ["a", "b", "a", "c"])])
+    cut = Schedule({"a": stops["a"], "b": stops["b"]}, [_route("loop", "rail", ["b", "a"])])
+    exits = g.exit_stops(pre_cut, cut, set())
+    # The whole cut sequence b a sits at positions 1-2, so the successor is c (not b, after the FIRST a).
+    assert exits[["stop_id", "outside_x"]].values.tolist() == [["a", 30000.0]]
 
 
-def test_exit_stops_loop_route_lists_the_stop_before_the_outside_stop_only():
-    stops = {"a": (2000.0, 5000.0), "c": (14000.0, 5000.0), "b": (8000.0, 5000.0)}
-    loop = RouteInfo("L", "loop", "rail", ("a", "c", "b"), (0.0, 0.0, 0.0), (0.0,))
-    exits = g.exit_stops(Schedule(stops, [loop]), SQUARE)
-    assert exits["stop_id"].tolist() == ["a"]
+@pytest.mark.parametrize("cut_route, match", [
+    (_route("r9", "rail", ["a", "b"]), "r9"),            # the route is not in the pre-cut timetable
+    (_route("r1", "rail", ["b", "a"]), "r1"),            # the sequence is not a contiguous part of the pre-cut route
+])
+def test_exit_stops_raises_when_the_cut_timetable_does_not_belong_to_the_pre_cut_one(cut_route, match):
+    pre_cut, _ = _exit_schedule()
+    cut = Schedule({k: pre_cut.stops[k] for k in ("a", "b")}, [cut_route])
+    with pytest.raises(ValueError, match=match):
+        g.exit_stops(pre_cut, cut, set())
+
+
+def _hub_schedule():
+    """r_hub: inside i1 i2, outside m, hub H (outside), beyond z; r_end: inside i1 to the hub H (ends there);
+    r_bus: inside i2 to outside q. Hubs H and G (G is served by no kept route)."""
+    stops = {"i1": (2000.0, 5000.0), "i2": (8000.0, 5000.0), "m": (14000.0, 5000.0), "H": (30000.0, 5000.0),
+             "z": (60000.0, 5000.0), "q": (8000.0, 40000.0), "G": (-50000.0, 5000.0)}
+    return Schedule(stops, [_route("r_hub", "rail", ["i1", "i2", "m", "H", "z"]),
+                            _route("r_end", "rail", ["i1", "H"]), _route("r_bus", "bus", ["i1", "i2", "q"])])
+
+
+def test_exit_stops_adds_one_row_per_hub_and_cut_route_serving_it(caplog):
+    with caplog.at_level("INFO", logger=g.logger.name):
+        exits, cut = _exits(_hub_schedule(), hubs={"H", "G"})
+    hub_rows = exits[exits["is_hub"]]
+    assert sorted(hub_rows["route_id"]) == ["r_end", "r_hub"] and set(hub_rows["stop_id"]) == {"H"}
+    assert hub_rows["outside_x"].isna().all() and hub_rows["outside_y"].isna().all()
+    assert hub_rows.geometry.iloc[0].coords[0] == (30000.0, 5000.0)
+    # H is also the exit of r_hub (which continues to z); i2 is the exit of r_bus; r_end ends at H (no exit row).
+    exit_rows = exits[~exits["is_hub"]]
+    assert sorted(map(tuple, exit_rows[["stop_id", "route_id", "outside_x"]].values.tolist())) == [
+        ("H", "r_hub", 60000.0), ("i2", "r_bus", 8000.0)]
+    # G is configured but served by no kept route: no row, and the count is logged.
+    assert "G" not in cut.stops and "G" not in set(exits["stop_id"])
+    assert any("hub" in r.getMessage() and "1/2" in r.getMessage() for r in caplog.records)
+    # The modes filter applies to the hub rows too.
+    bus_only, _ = _exits(_hub_schedule(), hubs={"H"}, modes="bus")
+    assert bus_only["stop_id"].tolist() == ["i2"] and not bus_only["is_hub"].any()
+
+
+def test_toward_mask_is_true_for_hub_rows():
+    exits, _ = _exits(_hub_schedule(), hubs={"H"})
+    for point in ((0.0, 90000.0), (-90000.0, 5000.0), (60000.0, 5000.0)):
+        assert g._toward_mask(point, exits)[exits["is_hub"].to_numpy()].all()
+    # an exit row keeps the direction rule: r_bus leaves north, so it does not head toward a point in the west
+    west = g._toward_mask((-90000.0, 5000.0), exits)
+    assert not west[(exits["route_id"] == "r_bus").to_numpy()].any()
 
 
 def test_exit_stop_points_has_one_row_per_distinct_stop():
-    points = g.exit_stop_points(g.exit_stops(_exit_schedule(), SQUARE))
-    assert points["stop_id"].tolist() == ["b"]
-    assert points.geometry.iloc[0].coords[0] == (8000.0, 5000.0)
+    exits, _ = _exits(_hub_schedule(), hubs={"H"})
+    points = g.exit_stop_points(exits)
+    assert sorted(points["stop_id"]) == ["H", "i2"]
 
 
 def test_draw_external_points_prefers_the_reported_distance_band_weighted_by_population():
@@ -102,55 +175,119 @@ def test_draw_external_points_falls_back_to_the_nearest_distance_and_counts_the_
 
 from braunschweig.data.transit import connections  # noqa: E402
 
-INSIDE_STOPS = {"hbf", "soph", "bus1", "x:y:1"}
+INSIDE_STOPS = {"start", "hbf", "soph", "bus1", "x:y:1"}
+START = (5000.0, 5100.0)  # an inside stop where every test route starts, so that the cut keeps two stops of it
 
 
 def _gate_schedule(departures):
-    """Stops hbf/soph/bus1/x:y:1 inside, 'ext' east and 'extw' west outside; departures = {route_id: times}."""
-    stops = {"hbf": (5000.0, 5000.0), "soph": (3000.0, 5000.0), "bus1": (4000.0, 5000.0),
+    """Stops start/hbf/soph/bus1/x:y:1 inside, 'ext' east and 'extw' west outside; departures = {route_id: times}."""
+    stops = {"start": START, "hbf": (5000.0, 5000.0), "soph": (3000.0, 5000.0), "bus1": (4000.0, 5000.0),
              "x:y:1": (5000.0, 6000.0), "ext": (20000.0, 5000.0), "extw": (-9000.0, 5000.0)}
 
     def route(route_id, mode, stop_ids):
-        return RouteInfo("L_" + route_id, route_id, mode, tuple(stop_ids), (0.0,) * len(stop_ids),
-                         tuple(departures.get(route_id, ())))
+        return _route(route_id, mode, ["start"] + stop_ids, departures.get(route_id, ()))
 
     return Schedule(stops, [route("r_hbf", "rail", ["hbf", "ext"]), route("r_soph", "rail", ["soph", "ext"]),
                             route("r_bus", "bus", ["bus1", "extw"]), route("r_colon", "bus", ["x:y:1", "ext"])])
 
 
+def _gate_of(identifier):
+    """The stop id of a task identifier ``"<stay>:<stop_id>:<direction>"`` (the stop id may contain colons)."""
+    return identifier.split(":", 1)[1].rsplit(":", 1)[0]
+
+
 def _fake_router(connected, log):
     """Router returning real-shape trips/legs; a task connects exactly when its identifier is in ``connected``.
 
-    A non-connecting task gets a leg whose access stop lies outside the extent, so ``connection_mask``
+    Every leg boards and alights at the task's gate, a stop of the cut timetable, as the real router on the cut
+    timetable does. A non-connecting task gets an access walk beyond ``walk_max_m``, so ``connection_mask``
     itself (not the fake) rejects it.
     """
     def router(tasks):
         log.append(tasks.copy())
         ids = tasks["identifier"].tolist()
-        trips = pd.DataFrame({"identifier": ids, "is_only_walk": 0, "access_distance_km": 0.3,
+        trips = pd.DataFrame({"identifier": ids, "is_only_walk": 0,
+                              "access_distance_km": [0.3 if i in connected else 9.0 for i in ids],
                               "egress_distance_km": 0.3, "transfer_distance_km": 0.0,
                               "total_walk_distance_km": 0.6})
-        legs = pd.DataFrame({"identifier": ids, "leg_index": 0,
-                             "access_stop_id": ["hbf" if i in connected else "far_outside" for i in ids],
-                             "egress_stop_id": "soph"})
+        legs = pd.DataFrame({"identifier": ids, "leg_index": 0, "access_stop_id": [_gate_of(i) for i in ids],
+                             "egress_stop_id": [_gate_of(i) for i in ids]})
         return trips, legs
     return router
 
 
 def _choose(departures, connected, *, point=(50000.0, 5000.0), has_return=True, n_stays=1, modes="all",
-            n_candidates=5, log=None, schedule=None, max_extra_detour_m=1e9):
+            n_candidates=5, log=None, schedule=None, max_extra_detour_m=1e9, hubs=frozenset(), origin=(5000.0, 5200.0)):
     # The default cap is far larger than any detour here, so tests that do not target the cap keep their meaning.
     log = [] if log is None else log
     schedule = _gate_schedule(departures) if schedule is None else schedule
-    exits = g.exit_stops(schedule, SQUARE, modes=modes)
+    exits, cut = _exits(schedule, hubs=hubs, modes=modes)
     n = n_stays
     frame = g.choose_pt_gates(
-        np.tile([5000.0, 5200.0], (n, 1)), np.tile(point, (n, 1)),
+        np.tile(origin, (n, 1)), np.tile(point, (n, 1)),
         np.full(n, 36000.0), np.full(n, 37800.0), np.full(n, 50000.0), np.full(n, 51800.0),
         np.full(n, has_return), exits, schedule, _fake_router(connected, log),
         n_candidates=n_candidates, max_extra_detour_m=max_extra_detour_m, service_window_s=3600.0,
-        inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
+        inside_stop_ids=set(cut.stops), walk_max_m=5000.0)
     return frame, log
+
+
+# ---- R10 (#574): hubs are candidates, always served; the router must run on the cut timetable ----
+
+def _hub_or_exit_schedule(hub_departures=(), exit_departures=tuple(float(t) for t in range(0, 86400, 600))):
+    """Exit e (9000, 5000) of r_e heading east to (12000, 5000); hub H (5000, 30000) north of the extent on r_h,
+    which continues beyond H to (5000, 60000). Stays start at (5000, 5000)."""
+    stops = {"start": START, "e": (9000.0, 5000.0), "e_out": (12000.0, 5000.0), "H": (5000.0, 30000.0),
+             "h_beyond": (5000.0, 60000.0)}
+    return Schedule(stops, [_route("r_e", "bus", ["start", "e", "e_out"], exit_departures),
+                            _route("r_h", "rail", ["start", "H", "h_beyond"], hub_departures)])
+
+
+def test_choose_pt_gates_counts_a_hub_as_served_and_asks_the_router():
+    # Only r_h serves the stay's direction (north-east); its exit row at H has no departure in the window, its hub
+    # row is served all the same. r_e heads east and has no departure either.
+    schedule = _hub_or_exit_schedule(hub_departures=(), exit_departures=())
+    frame, log = _choose(None, _connected_both_ways("H"), schedule=schedule, hubs={"H"}, point=(20000.0, 70000.0),
+                         origin=(5000.0, 5000.0))
+    row = frame.iloc[0]
+    assert (row["gate_id"], row["reason"]) == ("H", g.REASON_GATE_FOUND)
+    assert row["n_served"] == 1 and row["n_connected"] == 1
+    assert [task["identifier"].tolist() for task in log] == [["0:H:out"], ["0:H:ret"]]
+
+
+@pytest.mark.parametrize("point, expected", [((60000.0, 5000.0), "e"),     # east: e's detour is the smaller one
+                                             ((20000.0, 70000.0), "H")])   # north: the hub's detour is smaller
+def test_choose_pt_gates_prefers_the_smaller_detour_between_a_hub_and_a_boundary_exit(point, expected):
+    frame, log = _choose(None, _connected_both_ways("e", "H"), schedule=_hub_or_exit_schedule(), hubs={"H"},
+                         point=point, origin=(5000.0, 5000.0))
+    assert (frame.iloc[0]["gate_id"], frame.iloc[0]["reason"]) == (expected, g.REASON_GATE_FOUND)
+    assert frame.iloc[0]["n_served"] == 2 and _routed_stops(log) == {"e", "H"}
+
+
+def test_pt_gate_candidates_applies_the_cap_to_hubs():
+    # East point: e (detour 55.0 km) is the best directional stop, the hub H lies about 30 km further by detour.
+    exits, _ = _exits(_hub_or_exit_schedule(), hubs={"H"})
+    origin, point = np.array([[5000.0, 5000.0]]), np.array([[60000.0, 5000.0]])
+    assert [stop for stop, _ in g.pt_gate_candidates(origin, point, exits, 20000.0)[0]] == ["e"]
+    assert [stop for stop, _ in g.pt_gate_candidates(origin, point, exits, 40000.0)[0]] == ["e", "H"]
+
+
+def test_connected_raises_when_the_router_returns_a_stop_outside_the_cut_timetable():
+    def router(tasks):
+        trips, legs = _fake_router(set(tasks["identifier"]), [])(tasks)
+        return trips, legs.assign(egress_stop_id=["hannover_local"] + legs["egress_stop_id"].tolist()[1:])
+
+    tasks = [("0:hbf:out", 5000.0, 5200.0, 5000.0, 5000.0, 36000.0),
+             ("1:hbf:out", 5000.0, 5200.0, 5000.0, 5000.0, 36000.0)]
+    with pytest.raises(RuntimeError, match=r"1 .*hannover_local.*cut timetable"):
+        g._connected(router, tasks, inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
+
+
+def test_connected_accepts_legs_on_kept_stops():
+    tasks = [("0:hbf:out", 5000.0, 5200.0, 5000.0, 5000.0, 36000.0),
+             ("1:soph:out", 5000.0, 5200.0, 3000.0, 5000.0, 36000.0)]
+    assert g._connected(_fake_router({"0:hbf:out"}, []), tasks, inside_stop_ids=INSIDE_STOPS,
+                        walk_max_m=5000.0) == {"0:hbf:out"}
 
 
 def test_choose_pt_gates_skips_the_unserved_nearest_gate_and_takes_the_next_served_one():
@@ -256,11 +393,10 @@ BOTH_WAYS = [36500.0, 52000.0]  # a departure in the outbound window and one at 
 
 
 def _east_schedule(stops):
-    """Inside stops ``{stop_id: (x, departures)}``, each on its own eastbound route to the outside stop 'ext'."""
+    """Inside stops ``{stop_id: (x, departures)}``, each on its own route from 'start' east to the outside stop 'ext'."""
     coords = {name: (x, 5000.0) for name, (x, _) in stops.items()}
-    coords["ext"] = (20000.0, 5000.0)
-    routes = [RouteInfo("L_" + name, "r_" + name, "bus", (name, "ext"), (0.0, 0.0), tuple(times))
-              for name, (_, times) in stops.items()]
+    coords.update({"start": START, "ext": (20000.0, 5000.0)})
+    routes = [_route(name, "bus", ["start", name, "ext"], times) for name, (_, times) in stops.items()]
     return Schedule(coords, routes)
 
 
@@ -457,28 +593,32 @@ def test_draw_external_points_band_miss_flags_are_per_stay_for_a_mixed_vector():
 
 
 def test_exit_stops_accepts_a_single_mode_string_and_all_case_insensitively():
-    assert g.exit_stops(_exit_schedule(), SQUARE, modes="rail")["route_id"].tolist() == ["r1"]
-    assert len(g.exit_stops(_exit_schedule(), SQUARE, modes="All")) == 2
+    assert _exits(_hub_schedule(), hubs={"H"}, modes="BUS")[0]["route_id"].tolist() == ["r_bus"]
+    assert len(_exits(_hub_schedule(), hubs={"H"}, modes="All")[0]) == 4  # 2 hub rows at H, exits at H and i2
 
 
 def test_exit_stops_rejects_modes_that_are_not_strings():
+    pre_cut, cut = _exit_schedule()
     with pytest.raises(ValueError, match="modes"):
-        g.exit_stops(_exit_schedule(), SQUARE, modes=5)
+        g.exit_stops(pre_cut, cut, set(), modes=5)
     with pytest.raises(ValueError, match="modes"):
-        g.exit_stops(_exit_schedule(), SQUARE, modes=[1, 2])
+        g.exit_stops(pre_cut, cut, set(), modes=[1, 2])
 
 
 def test_exit_stops_raises_for_a_route_stop_missing_from_the_stops():
-    schedule = Schedule({"a": (2000.0, 5000.0)}, [RouteInfo("L", "r", "rail", ("a", "ghost"), (0.0, 0.0), (0.0,))])
+    stops = {"a": (2000.0, 5000.0), "b": (8000.0, 5000.0)}
+    pre_cut = Schedule(stops, [_route("r", "rail", ["a", "b", "ghost"])])
     with pytest.raises(ValueError, match="'ghost'"):
-        g.exit_stops(schedule, SQUARE)
+        g.exit_stops(pre_cut, Schedule(stops, [_route("r", "rail", ["a", "b"])]), set())
 
 
 def test_exit_stops_empty_result_keeps_columns_and_crs_and_warns(caplog):
+    pre_cut, cut = _exit_schedule()
     with caplog.at_level("WARNING", logger=g.logger.name):
-        exits = g.exit_stops(_exit_schedule(), SQUARE, modes=frozenset({"tram"}), crs="EPSG:3035")
+        exits = g.exit_stops(pre_cut, cut, set(), modes=frozenset({"tram"}), crs="EPSG:3035")
     assert len(exits) == 0
-    assert list(exits.columns) == ["stop_id", "line_id", "route_id", "mode", "outside_x", "outside_y", "geometry"]
+    assert list(exits.columns) == ["stop_id", "line_id", "route_id", "mode", "outside_x", "outside_y", "is_hub",
+                                   "geometry"]
     assert exits.crs.to_epsg() == 3035
     assert any(r.levelname == "WARNING" and "tram" in r.getMessage() for r in caplog.records)
 
@@ -486,15 +626,12 @@ def test_exit_stops_empty_result_keeps_columns_and_crs_and_warns(caplog):
 def test_choose_pt_gates_serves_only_by_routes_heading_toward_the_point():
     # hbf has a directional route r_hbf (east, no departure in the window) and a route r_away that leaves
     # westward and runs in the window: the stop is NOT served for an eastern point.
-    stops = {"hbf": (5000.0, 5000.0), "ext": (20000.0, 5000.0), "extw": (-9000.0, 5000.0)}
-
-    def route(rid, stop_ids, deps):
-        return RouteInfo("L_" + rid, rid, "bus", tuple(stop_ids), (0.0, 0.0), tuple(deps))
-
-    schedule = Schedule(stops, [route("r_hbf", ["hbf", "ext"], [1000.0]),
-                                route("r_away", ["hbf", "extw"], [36500.0, 52000.0])])
-    exits = g.exit_stops(schedule, SQUARE)
-    kwargs = dict(n_candidates=5, max_extra_detour_m=1e9, service_window_s=3600.0, inside_stop_ids={"hbf", "soph"}, walk_max_m=5000.0)
+    stops = {"start": START, "hbf": (5000.0, 5000.0), "ext": (20000.0, 5000.0), "extw": (-9000.0, 5000.0)}
+    schedule = Schedule(stops, [_route("r_hbf", "bus", ["start", "hbf", "ext"], [1000.0]),
+                                _route("r_away", "bus", ["start", "hbf", "extw"], [36500.0, 52000.0])])
+    exits, cut = _exits(schedule)
+    kwargs = dict(n_candidates=5, max_extra_detour_m=1e9, service_window_s=3600.0, inside_stop_ids=set(cut.stops),
+                  walk_max_m=5000.0)
     args = (np.array([[5000.0, 5200.0]]), np.array([[50000.0, 5000.0]]), np.array([36000.0]),
             np.array([37800.0]), np.array([50000.0]), np.array([51800.0]), np.array([True]), exits, schedule)
     east = g.choose_pt_gates(*args, _fake_router({"0:hbf:out", "0:hbf:ret"}, []), **kwargs)
@@ -507,7 +644,7 @@ def test_choose_pt_gates_serves_only_by_routes_heading_toward_the_point():
 def test_choose_pt_gates_maps_identifiers_to_the_right_stay_when_stays_differ():
     # Stay 0 flies east in the outbound window of r_hbf; stay 1 leaves 2 h later (r_hbf not served for it).
     schedule = _gate_schedule({"r_hbf": [36500.0, 52000.0]})
-    exits = g.exit_stops(schedule, SQUARE, modes="rail")
+    exits, _ = _exits(schedule, modes="rail")
     log = []
     frame = g.choose_pt_gates(
         np.array([[5000.0, 5200.0]] * 2), np.array([[50000.0, 5000.0]] * 2),
@@ -530,7 +667,7 @@ def test_choose_pt_gates_maps_identifiers_to_the_right_stay_when_stays_differ():
 
 def test_choose_pt_gates_rejects_non_finite_inputs_but_ignores_return_times_without_a_return():
     schedule = _gate_schedule({"r_hbf": [36500.0]})
-    exits = g.exit_stops(schedule, SQUARE, modes="rail")
+    exits, _ = _exits(schedule, modes="rail")
 
     def run(origin_y=5200.0, out_arr=37800.0, ret_dep=50000.0, has_return=False):
         return g.choose_pt_gates(
@@ -551,7 +688,7 @@ def test_choose_pt_gates_rejects_non_finite_inputs_but_ignores_return_times_with
 def test_choose_pt_gates_counts_a_task_without_a_trips_row_as_no_route(caplog):
     # The Java router writes no trips row when it finds no route: not connected, counted as ``no_route``.
     schedule = _gate_schedule({"r_hbf": [36500.0, 52000.0]})
-    exits = g.exit_stops(schedule, SQUARE, modes="rail")
+    exits, _ = _exits(schedule, modes="rail")
     inner = _fake_router({"0:hbf:out", "0:hbf:ret", "0:soph:out", "0:soph:ret"}, [])
 
     def router(tasks):
@@ -571,7 +708,7 @@ def test_choose_pt_gates_applies_the_latest_arrival_bound_to_the_router_result()
     # ADR-0185, #573: a connection whose routed arrival is after the bound (an overnight wait) is no connection;
     # without a bound (None) the same router output connects.
     schedule = _gate_schedule({"r_hbf": [36500.0, 52000.0]})
-    exits = g.exit_stops(schedule, SQUARE, modes="rail")
+    exits, _ = _exits(schedule, modes="rail")
     inner = _fake_router({"0:hbf:out", "0:hbf:ret"}, [])
 
     def router(tasks):
