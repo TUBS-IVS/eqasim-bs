@@ -948,15 +948,23 @@ config:
   # Plan feasibility check on the written population (ADR-0146, #443): the last step of the prepare
   # stage counts plans with an activity end time after the simulated day (MAX_PLAN_TIME_SECONDS = qsim.endTime = 30 h),
   # non-monotonic plans and implausible walk/bicycle/long legs per subpopulation, split into frozen
-  # (tour touches outside) and in_region. Above max_frozen_defect_share (late or non-monotonic plans of the
-  # FROZEN residents) it logs at ERROR and continues; fail_on_threshold: true makes it raise instead. All
-  # thresholds are ASSUMPTIONS (ADR-0146); fail_on_threshold stays false until the A/B has calibrated them.
+  # (tour touches outside) and in_region. Above max_frozen_defect_share (late plans, or plans with a planned
+  # lateness over non_monotonic_bound_min_lateness_s, of the FROZEN residents) or max_frozen_pt_as_walk_share (pt trips
+  # realised as walks over pt_as_walk_bound_min_distance_m; ADR-0188) it logs at ERROR and continues;
+  # fail_on_threshold: true makes it raise instead. All thresholds are ASSUMPTIONS (ADR-0146, ADR-0188);
+  # fail_on_threshold stays false until the A/B has calibrated them.
   braunschweig.plan_check.enabled: true
   braunschweig.plan_check.walk_max_distance_m: 5000
   braunschweig.plan_check.bicycle_max_distance_m: 30000
   braunschweig.plan_check.leg_max_duration_s: 10800
   braunschweig.plan_check.max_frozen_defect_share: 0.005
   braunschweig.plan_check.max_frozen_pt_as_walk_share: 0.02
+  # ASSUMPTION (ADR-0188, #576): only pt-as-walk trips longer than this (straight line) count against
+  # max_frozen_pt_as_walk_share; same anchor as walk_max_distance_m.
+  braunschweig.plan_check.pt_as_walk_bound_min_distance_m: 5000
+  # ASSUMPTION (ADR-0188, #576): the tolerated planned lateness in s (owner choice); only non-monotonic plans
+  # later than this at some activity count against max_frozen_defect_share.
+  braunschweig.plan_check.non_monotonic_bound_min_lateness_s: 900
   braunschweig.plan_check.fail_on_threshold: false
   # eqasim's standalone mode choice runs at the end of the prepare stage on the final population with free-flow
   # travel times, before iteration 0 (ADR-0178, #542). It replaces the first-replanning strategy of ADR-0155.

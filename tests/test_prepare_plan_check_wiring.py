@@ -24,6 +24,8 @@ def test_configure_declares_the_plan_check_keys():
                          (C.KEY_LEG_MAX_DURATION_S, C.DEFAULT_LEG_MAX_DURATION_S),
                          (C.KEY_MAX_FROZEN_DEFECT_SHARE, C.DEFAULT_MAX_FROZEN_DEFECT_SHARE),
                          (C.KEY_MAX_FROZEN_PT_AS_WALK_SHARE, C.DEFAULT_MAX_FROZEN_PT_AS_WALK_SHARE),
+                         (C.KEY_PT_AS_WALK_BOUND_MIN_DISTANCE_M, C.DEFAULT_PT_AS_WALK_BOUND_MIN_DISTANCE_M),
+                         (C.KEY_NON_MONOTONIC_BOUND_MIN_LATENESS_S, C.DEFAULT_NON_MONOTONIC_BOUND_MIN_LATENESS_S),
                          (C.KEY_FAIL_ON_THRESHOLD, C.DEFAULT_FAIL_ON_THRESHOLD)):
         assert context.calls[key] == default
     assert C.DEFAULT_FAIL_ON_THRESHOLD is False   # an uncalibrated check must not abort a run (ADR-0146)
