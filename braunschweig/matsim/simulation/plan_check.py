@@ -10,9 +10,9 @@ activity end times, walk and bicycle legs over a straight-line distance and legs
 the tours the discrete mode choice never re-chooses (``OutsideFilter``); ``in_region`` is informational,
 because the mode choice repairs it. The threshold bounds the frozen residents' late plans, plans with a
 backward step of the activity end times over ``non_monotonic_bound_min_step_s`` and pt-as-walk trips over
-``pt_as_walk_bound_min_distance_m`` (#576: shorter walks and smaller steps are reported in bands, not bounded;
-the totals stay reported). It is reported always and fails the stage only when ``braunschweig.plan_check.fail_on_threshold`` is true; freight is
-reported, never failed on (#444 owns its defects).
+``pt_as_walk_bound_min_distance_m`` (ADR-0188, #576: shorter walks and smaller steps are reported in bands, not
+bounded; the totals stay reported). It is reported always and fails the stage only when
+``braunschweig.plan_check.fail_on_threshold`` is true; freight is reported, never failed on (#444 owns its defects).
 
 The simulated day is ``braunschweig.popsim.plan_validation.MAX_PLAN_TIME_SECONDS``; ``assert_qsim_end_time``
 fails early when the written config's ``qsim.endTime`` disagrees with it (one constant, no silent drift).
@@ -55,7 +55,8 @@ KEY_BICYCLE_MAX_DISTANCE_M = "braunschweig.plan_check.bicycle_max_distance_m"
 DEFAULT_BICYCLE_MAX_DISTANCE_M = 30000.0
 KEY_LEG_MAX_DURATION_S = "braunschweig.plan_check.leg_max_duration_s"
 DEFAULT_LEG_MAX_DURATION_S = 10800.0
-#: ASSUMPTION (ADR-0146): the share of frozen resident plans that may be late or have a large backward step; the A/B calibrates it.
+#: ASSUMPTION (ADR-0146, ADR-0188): the share of frozen resident plans that may be late or have a backward step
+#: over ``non_monotonic_bound_min_step_s``; the A/B calibrates it.
 KEY_MAX_FROZEN_DEFECT_SHARE = "braunschweig.plan_check.max_frozen_defect_share"
 DEFAULT_MAX_FROZEN_DEFECT_SHARE = 0.005
 #: Leg attribute that eqasim stamps on a leg its router replaced by a walk (value: the mode that was requested,
@@ -79,18 +80,18 @@ WALK_MODES = frozenset({"walk", "non_network_walk"})
 #: Activity types ending like this are router-made trip stops (``pt interaction``); they do not end a trip.
 INTERACTION_SUFFIX = "interaction"
 #: ASSUMPTION (#465): the share of the pt-intended TRIPS (routingMode ``pt``) of frozen resident tours that may be
-#: realised as walks over ``pt_as_walk_bound_min_distance_m`` (#576). It is a threshold for flagging a symptom (e.g. no timetable connection or a missing stop)
-#: for tours the mode choice never re-chooses, not a reference value and not proof of a broken router.
+#: realised as walks over ``pt_as_walk_bound_min_distance_m`` (ADR-0188, #576). It is a threshold for flagging a
+#: symptom (e.g. no timetable connection or a missing stop) for tours the mode choice never re-chooses, not a
+#: reference value and not proof of a broken router.
 KEY_MAX_FROZEN_PT_AS_WALK_SHARE = "braunschweig.plan_check.max_frozen_pt_as_walk_share"
 DEFAULT_MAX_FROZEN_PT_AS_WALK_SHARE = 0.02
-#: ASSUMPTION (ADR-0146 amendment, #576): same anchor as ``walk_max_distance_m`` (SrV
-#: srv2023_mode_by_distance_band.csv: walk share 34 % of all trips at 0-5 km straight-line, below 1 % in every
-#: group beyond 5 km except ``other`` 5-10 km 1.05 %); a pt trip realised as a walk below it is a plausible walk.
+#: ASSUMPTION (ADR-0188, #576): the anchor of ``walk_max_distance_m`` (ADR-0146): a pt trip realised as a walk
+#: below it is a plausible walk.
 KEY_PT_AS_WALK_BOUND_MIN_DISTANCE_M = "braunschweig.plan_check.pt_as_walk_bound_min_distance_m"
 DEFAULT_PT_AS_WALK_BOUND_MIN_DISTANCE_M = 5000.0
-#: ASSUMPTION (ADR-0146 amendment, #576): one MATSim travel-time bin (the default
-#: ``travelTimeCalculator.travelTimeBinSize`` 900 s; no override found in this repo's configs); a backward step of an
-#: activity end time within one bin lies inside the router's own time resolution.
+#: ASSUMPTION (ADR-0188, #576): one MATSim travel-time bin (``travelTimeCalculator.travelTimeBinSize``, reasoning
+#: and evidence in ADR-0188); a backward step of an activity end time within one bin lies inside the router's own
+#: time resolution.
 KEY_NON_MONOTONIC_BOUND_MIN_STEP_S = "braunschweig.plan_check.non_monotonic_bound_min_step_s"
 DEFAULT_NON_MONOTONIC_BOUND_MIN_STEP_S = 900.0
 #: Report-only bands (not config); half-open ``[lo, hi)``, labels ``0_1km`` ... ``10km_plus`` / ``0_1min`` ...
@@ -244,17 +245,17 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
     ``PlanRouter``), or no leg carries the stamp, every leg is a walk mode and a leg has ``routingMode`` = pt (a pt
     trip the discrete mode choice's ``TripRouter`` realised as walk only; it sets ``routingMode`` but never the
     stamp, and the population read here is that re-routed one after eqasim-bs#542 / ADR-0178). The hour is that of
-    the stamped walk leg, else of the trip's first leg; ``share_pt_as_walk`` = ``n_pt_as_walk / n_pt_trips`` (reported,
-    not bounded; 0 when the block has no pt-intended trip). Each pt-as-walk trip also gets a straight-line distance
-    (origin of its first leg to destination of its last leg, as the walk-leg check measures): it is counted in
-    ``pt_as_walk_by_distance_band`` (report only) and, when strictly above ``pt_as_walk_bound_min_distance_m``, in
-    ``n_pt_as_walk_long``; ``share_pt_as_walk_long`` = ``n_pt_as_walk_long / n_pt_trips`` is the bounded share (a
-    short pt-as-walk trip is a plausible walk). Likewise a non-monotonic plan gets its backward step (the largest
-    ``earlier - later`` over consecutive activity end times) counted in ``non_monotonic_by_step_band`` (report
-    only) and, when strictly above ``non_monotonic_bound_min_step_s``, in ``n_plans_non_monotonic_large``;
-    ``share_plans_non_monotonic_large`` = ``/ n_persons`` is the bounded share. The totals stay reported. A jar without the stamp makes ``n_pt_as_walk`` read 0 whatever the
-    router did: ``require_walk_fallback_stamp`` guards that in ``run``. ``n_legs_with_routing_mode`` and
-    ``n_pt_or_stamped_legs`` tell ``_log_summary`` when ``n_pt_trips`` is meaningless (no leg carries a
+    the stamped walk leg, else of the trip's first leg; ``share_pt_as_walk`` = ``n_pt_as_walk / n_pt_trips``
+    (reported, not bounded; 0 when the block has no pt-intended trip). Each pt-as-walk trip also gets a straight-line
+    distance (origin of its first leg to destination of its last leg, as the walk-leg check measures): it is counted
+    in ``pt_as_walk_by_distance_band`` (report only) and, when strictly above ``pt_as_walk_bound_min_distance_m``,
+    in ``n_pt_as_walk_long``; ``share_pt_as_walk_long`` = ``n_pt_as_walk_long / n_pt_trips`` is the bounded share
+    (ADR-0188). Likewise a non-monotonic plan gets its backward step (the largest ``earlier - later`` over
+    consecutive activity end times) counted in ``non_monotonic_by_step_band`` (report only) and, when strictly above
+    ``non_monotonic_bound_min_step_s``, in ``n_plans_non_monotonic_large``; ``share_plans_non_monotonic_large`` =
+    ``n_plans_non_monotonic_large / n_persons`` is the bounded share. The totals stay reported. A jar without the
+    stamp makes ``n_pt_as_walk`` read 0 whatever the router did: ``require_walk_fallback_stamp`` guards that in
+    ``run``. ``n_legs_with_routing_mode`` and ``n_pt_or_stamped_legs`` tell ``_log_summary`` when ``n_pt_trips`` is meaningless (no leg carries a
     ``routingMode`` although pt or stamped legs exist).
     """
     blocks: dict = {}
@@ -417,15 +418,16 @@ def check_thresholds(summary: dict, max_frozen_defect_share: float, max_frozen_p
                      fail_on_threshold: bool) -> list:
     """Apply the failure rule to the frozen resident plans and return the violated share names.
 
-    Above the allowed late / large-backward-step non-monotonic / long pt-as-walk share the check raises when ``fail_on_threshold`` is true, and logs
-    at ERROR (naming the shares) and continues otherwise: the threshold is an ASSUMPTION until the A/B of #443
-    calibrated it, so an uncalibrated threshold must not abort a run (ADR-0146). The ERROR is never silent.
+    Above an allowed share (late plans, plans with a large backward step, long pt-as-walk trips; ADR-0188) the
+    check raises when ``fail_on_threshold`` is true, and logs at ERROR (naming the shares) and continues otherwise:
+    the threshold is an ASSUMPTION until the A/B of #443 calibrated it, so an uncalibrated threshold must not abort a run (ADR-0146). The ERROR is never silent.
     """
     frozen = summary["subpopulations"].get(RESIDENTS, {}).get(FROZEN, _empty_block())
     violations = find_threshold_violations(summary, max_frozen_defect_share, max_frozen_pt_as_walk_share)
     allowed_shares = _allowed_shares(max_frozen_defect_share, max_frozen_pt_as_walk_share)
     for key in violations:
-        unit, count_key = ("pt-intended trips", "n_pt_trips") if key == "share_pt_as_walk_long" else ("persons", "n_persons")
+        unit, count_key = (("pt-intended trips", "n_pt_trips") if key == "share_pt_as_walk_long"
+                           else ("persons", "n_persons"))
         message = (f"{_LOG_TAG} frozen resident plans: {key} = {100.0 * frozen[key]:.2f}% of "
                    f"{frozen.get(count_key, 0)} {unit} exceeds {100.0 * allowed_shares[key]:.2f}%; the "
                    "tours the mode choice never re-chooses cannot be lived in the simulated day")
