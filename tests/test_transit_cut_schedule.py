@@ -85,7 +85,8 @@ def fake_java(monkeypatch):
         with open(out / args["--output-hubs-path"], "w", encoding="utf-8") as handle:
             handle.write("name,stop_id,x,y,inside_extent\n")
             for i, name in enumerate(names):
-                handle.write(f"{name},{'0' if i == 0 else 'd'},1.0,2.0,false\n")
+                # A consistent CLI output: every hub facility lies in the cut schedule (stops a, b, c).
+                handle.write(f"{name},{'abc'[i % 3]},1.0,2.0,false\n")
 
     monkeypatch.setattr(eqasim, "run", fake_run)
     return seen
@@ -110,6 +111,8 @@ def test_configure_declares_the_inputs_and_keys():
             "matsim.runtime.java"} <= set(context.stages)
     assert context.calls[stage.KEY_TRANSIT_CUT_MODE] == stage.DEFAULT_TRANSIT_CUT_MODE == "extent"
     assert context.calls[stage.KEY_HUB_STOP_NAMES] == [] and "cordon_network_buffer_fraction" in context.calls
+    # eqasim.run -> java.run reads these from the stage's context (see test_runtime_config_declares).
+    assert {"java_binary", "java_memory"} <= set(context.calls)
     with pytest.raises(ValueError, match="mode"):
         stage.configure(_Recording({stage.KEY_TRANSIT_CUT_MODE: "bogus"}))
     with pytest.raises(ValueError, match="extent"):
@@ -132,7 +135,8 @@ def test_execute_cuts_with_the_cli_and_returns_the_kept_set(tmp_path, fake_java)
     assert (Path(context.path()) / "hub_stop_names.txt").read_text(encoding="utf-8").splitlines() == HUBS
     assert result["kept_stop_ids"] == frozenset({"a", "b", "c"})
     assert result["n_stops_pre_cut"] == 5 and result["n_stops_kept"] == 3
-    assert result["hub_stop_ids"] == frozenset({"0", "d"}) and result["n_hub_stops"] == 2
+    assert result["hub_stop_ids"] == frozenset({"a", "b"}) and result["n_hub_stops"] == 2
+    assert result["hub_stop_ids"] <= result["kept_stop_ids"]
     assert result["mode"] == "kept-stops"
     assert result["schedule_path"] == "cut_schedule.xml.gz" and result["hub_stops_path"] == "hub_stops.csv"
 
@@ -159,4 +163,28 @@ def test_execute_in_extent_mode_passes_no_hub_names(tmp_path, fake_java):
 def test_validate_token_covers_the_helpers():
     token = stage.validate(None)
     assert token == stage.validate(None)
-    assert token["format"] == 2 and token["modules"]
+    assert token["format"] == 2
+    # A dropped helper (or an unhashed one) turns this red.
+    assert {module.__name__ for module in stage._HELPER_MODULES} == {
+        "braunschweig.data.transit.schedule", "braunschweig.data.spatial.cordon",
+        "braunschweig.data.cordon.extent", "matsim.runtime.eqasim"}
+    assert set(token["modules"]) >= {module.__name__ for module in stage._HELPER_MODULES}
+
+
+@pytest.mark.parametrize("content, message", [
+    ("name,stop_id,x,y\nA,a,1,2\n", "lacks the columns"),
+    ("name,stop_id,x,y,inside_extent\nA,a,1,2,maybe\n", "true/false"),
+    ("name,stop_id,x,y,inside_extent\nA,a,1,2,\n", "true/false")])
+def test_read_hub_table_rejects_a_malformed_table(tmp_path, content, message):
+    path = tmp_path / "hubs.csv"
+    path.write_text(content, encoding="utf-8")
+    with pytest.raises(ValueError, match=message):
+        stage.read_hub_table(str(path))
+
+
+def test_read_hub_table_keeps_na_like_names_as_strings(tmp_path):
+    path = tmp_path / "hubs.csv"
+    path.write_text("name,stop_id,x,y,inside_extent\nNA,None,1.5,2.5,TRUE\nnull,007,3,4,false\n", encoding="utf-8")
+    table = stage.read_hub_table(str(path))
+    assert table["name"].tolist() == ["NA", "null"] and table["stop_id"].tolist() == ["None", "007"]
+    assert table["inside_extent"].tolist() == [True, False] and table["x"].tolist() == [1.5, 3.0]

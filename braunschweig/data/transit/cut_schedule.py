@@ -25,7 +25,8 @@ from braunschweig import synpp_tokens
 from braunschweig.data.cordon import extent as _extent
 from braunschweig.data.spatial import cordon as _cordon
 from braunschweig.data.transit import schedule as _schedule
-from matsim.runtime import eqasim as _eqasim
+import matsim.runtime.eqasim as eqasim
+import matsim.runtime.java as java
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ EXTENT_FILE_NAME = "cordon_extent.gpkg"
 HUB_TABLE_COLUMNS = ("name", "stop_id", "x", "y", "inside_extent")
 
 #: Own-package helpers whose source shapes this stage's output (hashed by validate()).
-_HELPER_MODULES = (_schedule, _cordon, _extent, _eqasim)
+_HELPER_MODULES = (_schedule, _cordon, _extent, eqasim)
 #: The schedule reader imports ``plan_check.parse_time_s``; the audit requires its import closure to be hashed too.
 _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.matsim.simulation.plan_check", "braunschweig.popsim.closure_dwell",
                                  "braunschweig.popsim.plan_validation", "data.hts.hts")
@@ -69,14 +70,19 @@ def write_hub_names(path: str, names) -> str:
 
 def read_hub_table(path: str) -> pd.DataFrame:
     """Read the hub table of the Java CLI: ``name, stop_id, x, y, inside_extent`` (``stop_id`` str, flag bool)."""
-    table = pd.read_csv(path, dtype={"stop_id": str, "name": str, "inside_extent": str}, encoding="utf-8")
+    # keep_default_na=False: a stop named "NA" or "None" must stay a string, not become NaN; an empty
+    # inside_extent cell then reads as "" and is rejected below.
+    table = pd.read_csv(path, dtype=str, keep_default_na=False, encoding="utf-8")
+    for column in ("x", "y"):
+        if column in table.columns:
+            table[column] = pd.to_numeric(table[column], errors="raise")
     missing = [column for column in HUB_TABLE_COLUMNS if column not in table.columns]
     if missing:
         raise ValueError(f"{path}: hub table lacks the columns {missing}")
     flags = table["inside_extent"].str.lower()
-    unknown = sorted(set(flags.dropna()) - {"true", "false"})
-    if unknown or flags.isna().any():
-        raise ValueError(f"{path}: inside_extent must be true/false, found {unknown or 'empty values'}")
+    unknown = sorted(set(flags) - {"true", "false"})
+    if unknown:
+        raise ValueError(f"{path}: inside_extent must be true/false, found {unknown}")
     table["inside_extent"] = flags == "true"
     return table[list(HUB_TABLE_COLUMNS)]
 
@@ -93,14 +99,18 @@ def configure(context):
     context.stage("matsim.runtime.eqasim")
     context.stage("matsim.runtime.java")
     context.config("cordon_network_buffer_fraction", 0.10)
-    mode = validate_mode(context.config(KEY_TRANSIT_CUT_MODE, DEFAULT_TRANSIT_CUT_MODE))
+    # eqasim.run -> java.run reads java_binary, java_memory and the hang-watchdog keys from this stage's context.
+    java.configure(context)
+    mode = context.config(KEY_TRANSIT_CUT_MODE, DEFAULT_TRANSIT_CUT_MODE)
     hub_names = context.config(KEY_HUB_STOP_NAMES, DEFAULT_HUB_STOP_NAMES)
+    # synpp always returns the declared default; None only comes from a declaration-recording test double
+    # (tests/test_runtime_config_declares.py), which has nothing to validate.
+    if mode is None:
+        return
+    validate_mode(mode)
     if hub_names and mode == "extent":
         raise ValueError(f"{KEY_HUB_STOP_NAMES} is set but {KEY_TRANSIT_CUT_MODE} is 'extent': hubs only apply in "
                          "'kept-stops' mode (the two would silently disagree)")
-    # Execution details, not scientific config: the thread count must not devalidate cached stages.
-    context.config("processes", volatile=True)
-    context.config("matsim_threads", None, volatile=True)
 
 
 def execute(context):
@@ -119,7 +129,7 @@ def execute(context):
         write_hub_names(os.path.join(stage_dir, HUB_NAMES_FILE_NAME), hub_names)
         arguments += ["--hub-stop-names-path", HUB_NAMES_FILE_NAME]
     arguments += ["--output-schedule-path", SCHEDULE_FILE_NAME, "--output-hubs-path", HUBS_FILE_NAME]
-    _eqasim.run(context, CUTTER_CLASS, arguments)
+    eqasim.run(context, CUTTER_CLASS, arguments)
 
     hubs = read_hub_table(os.path.join(stage_dir, HUBS_FILE_NAME))
     unmatched = [name for name in hub_names if name not in set(hubs["name"])]
@@ -133,6 +143,10 @@ def execute(context):
     kept_stop_ids = frozenset(cut.stops)
     hub_stop_ids = frozenset(hubs["stop_id"].astype(str))
     n_pre, n_kept = len(pre_cut.stops), len(kept_stop_ids)
+    # A hub facility on no kept route is not in the cut timetable (R2); it is reported, not an error.
+    n_hubs_kept = len(hub_stop_ids & kept_stop_ids)
+    logger.info("%s hubs kept %d/%d (%.1f %%): hub facilities that lie in the cut timetable", _LOG_TAG, n_hubs_kept,
+                len(hub_stop_ids), 100.0 * n_hubs_kept / max(len(hub_stop_ids), 1))
     logger.info("%s kept %d/%d stops (%.1f %%), hubs %d facilities (%s), routes %d/%d (%.1f %%), mode %s", _LOG_TAG,
                 n_kept, n_pre, 100.0 * n_kept / max(n_pre, 1), len(hub_stop_ids), ", ".join(hub_names) or "none",
                 len(cut.routes), len(pre_cut.routes), 100.0 * len(cut.routes) / max(len(pre_cut.routes), 1), mode)

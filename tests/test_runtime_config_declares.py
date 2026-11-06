@@ -110,6 +110,23 @@ def test_pt2matsim_run_caller_declares_the_helper_options(module_name):
 _EQASIM_RUN_HELPER_MODULES = {"matsim.runtime.eqasim"}
 
 
+#: ``eqasim.run(`` and the underscore alias ``_eqasim.run(`` (a plain ``\b`` misses the alias: no word boundary
+#: between ``_`` and ``e``, so such a stage was never parametrized, #574). An alias under any other name
+#: (``from matsim.runtime import eqasim as e``) is still not found: import the module as ``eqasim``.
+_EQASIM_RUN_CALL = re.compile(r"(?<!\w)\w*eqasim\.run\(")
+
+
+@pytest.mark.parametrize("source, expected", [
+    ("eqasim.run(context, cls, args)", True),
+    ("    _eqasim.run(context, cls, args)", True),
+    ("matsim.runtime.eqasim.run(context, cls, args)", True),
+    ("x = eqasim.run_all(1)", False),
+    ("# see eqasim.runtime", False)])
+def test_eqasim_run_call_pattern_finds_the_aliased_call_too(source, expected):
+    """Positive control of the discovery pattern: it must fire on the alias that the old ``\\b`` pattern missed."""
+    assert bool(_EQASIM_RUN_CALL.search(source)) is expected
+
+
 def _eqasim_run_callers() -> list:
     """Dotted module names whose source calls ``eqasim.run(`` (excluding the helper)."""
     found = []
@@ -118,7 +135,7 @@ def _eqasim_run_callers() -> list:
             module_name = ".".join(path.relative_to(_REPO_ROOT).with_suffix("").parts)
             if module_name in _EQASIM_RUN_HELPER_MODULES:
                 continue
-            if re.search(r"\beqasim\.run\(", path.read_text(encoding="utf-8")):
+            if _EQASIM_RUN_CALL.search(path.read_text(encoding="utf-8")):
                 found.append(module_name)
     return found
 
@@ -128,6 +145,7 @@ def test_eqasim_run_callers_are_discovered():
     callers = _eqasim_run_callers()
     assert "matsim.simulation.run" in callers, callers
     assert "matsim.simulation.prepare" in callers, callers
+    assert "braunschweig.data.transit.cut_schedule" in callers, callers
 
 
 @pytest.mark.parametrize("module_name", _eqasim_run_callers())
