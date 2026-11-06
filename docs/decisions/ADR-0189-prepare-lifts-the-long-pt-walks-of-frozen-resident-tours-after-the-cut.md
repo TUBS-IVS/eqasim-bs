@@ -1,6 +1,7 @@
 # ADR-0189 · 2026-11-06 · Prepare lifts the long pt walks of frozen resident tours after the cut
 
-- **Status:** accepted (implemented; replay on the prepared population of `prod100_20261031` owed as a run manifest)
+- **Status:** accepted (implemented; replay and MATSim start-up smoke on the prepared population of `prod100_20261031`
+  in the run manifest `docs/runs/i575-frozen-pt-walk-lift-prod100-2026-11-06.yml`)
 - **Numbering:** 0187 (#575, PR #587) and 0188 (#576, PR #586) are taken; no ref carried 0189 on 2026-11-06; claimed in
   the shared session notes of the #572-#576 sequence.
 - **Issue:** #575 (group 3). **Builds on:** ADR-0188 (the plan-check definition of a long pt-as-walk trip, key
@@ -47,4 +48,7 @@
 - The plan check counts fewer long pt-as-walk trips among the frozen residents; the lifted trips appear as
   `car_passenger`.
 - The planned lateness of the plan check treats the missing travel time of a lifted leg as 0 s (a lower bound).
-- Not verified yet: a MATSim start-up on lifted plans (owed with the replay).
+- MATSim starts on lifted plans and simulates the lifted legs (start-up smoke in the run manifest); the effect on the
+  simulated day of the whole population is not measured.
+- Not covered: frozen trips that prepare already turned into plain walk trips (routing mode `walk`); the run manifest
+  records them as a side finding.

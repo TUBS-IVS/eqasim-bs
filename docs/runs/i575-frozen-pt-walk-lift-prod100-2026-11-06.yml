@@ -1,0 +1,69 @@
+id: i575-frozen-pt-walk-lift-prod100-2026-11-06
+date: '2026-11-06'
+repository:
+  commit: 1a97fe34eda2ed336478c0fed1cbc49356a23486
+  branch: fix/i575-prepare-frozen-pt-walks
+  notes: >-
+    The prepare branch of #575 (ADR-0189) at 1a97fe34, stacked on fix/i576-plan-check-split (PR #586, ADR-0188), a clean
+    checkout on felix (~/i575p_replay/eqasim-bs, 0 changes) cloned from a git bundle. Only the lift function of this
+    code ran; the population it read is the one the run's own prepare wrote (code 7a41f0ba).
+configuration:
+  config: configs/base_bs.yml of the branch (frozen_pt_walk_lift enabled, warn_share 0.05; plan_check.pt_as_walk_bound_min_distance_m 5000)
+  notes: >-
+    The two parameters were passed to the replay script with these values (min_distance_m 5000, warn_share 0.05).
+sampling:
+  rate: 1.0
+  scope: >-
+    the prepared population of prod100_20261031 (prepare stage cache, braunschweig_100pct_prod20261031_population.xml.gz);
+    the MATSim smoke ran on 30 persons with a lifted trip (sample_persons.txt).
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. i575_lift_replay.py applied frozen_pt_walk_lift.lift_frozen_pt_walks to the prepared
+    population and wrote a lifted copy plus a 30-person sample. run_smoke.sh started the run's own eqasim jar and MATSim
+    config (org.eqasim.braunschweig.RunSimulation, the command of the run with lastIteration 0, 8/4 threads and the
+    sample as plans file).
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Completed on 2026-11-06: replay 746 s, smoke about 1.5 min (EXIT=0). A replay and a start-up smoke on production
+    inputs, NOT a validation: no observed data is involved, and how the lifted trips change the simulated day of the
+    whole population is not measured (no full MATSim run). The run predates #566, so its in-commuters carry no
+    subpopulation attribute and the step's resident filter could not exclude them here; with #566 they are excluded.
+source: >-
+  felix:~/scratch_i575p/replay and ~/scratch_i575p/smoke (scratch). Committed in
+  docs/runs/artifacts/i575-frozen-pt-walk-lift-prod100-2026-11-06/: i575_lift_replay.py (sha256
+  ac779d37bfe7dd8ae3dbef4a087286d0d9b1b5eec3db86d08e0f2b03dd9c7256), replay_log.txt, frozen_pt_walk_lift.json,
+  sample_persons.txt, run_smoke.sh (sha256 9ef609818e782a069a868a53e7ef53e9a9cd34a41460e08eee7098908fdf68d9),
+  smoke_log_excerpt.txt, i575_smoke_check.py (sha256 91cb48412ac113a7bf51c3715876f54a8c5fa7058098078599c6d2e898afb7a5)
+  with its output smoke_check.txt, i575_lifted_by_kind.py (sha256
+  343d8fa77b67c0993e76f8a332c68090726ae4743024edf97ab3028a377ffba6) with its output lifted_by_kind.txt, and
+  person_415371_prepared_excerpt.txt (activity and leg lines of that person's prepared plan, read with zcat and awk).
+environment: 'server (felix, hostname matsim), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10), Java /home/felix/tools/jdk-25.0.3+9'
+validation:
+- metric: pt-intended trips of frozen tours that the lift turns into car_passenger
+  reference: 'the run''s plan check (prepare cache plan_check.json: pt trips 45,469, pt as walk 4,865 in the frozen block); model output, NOT observed data'
+  result: >-
+    The step's denominators reproduce the run's plan check exactly: 45,469 pt-intended trips in frozen tours, 4,865 of
+    them realised as walks. Lifted 1,785 (3.9 % of the 45,469; below the warn share 0.05): 5-10 km 733, 10 km and more
+    1,052, none at or below 5 km; all 1,785 carried the walkFallbackFrom=pt stamp. By person kind: residents 1,298 trips
+    of 1,131 persons, in-commuters (ic_ facilities, not excluded in this pre-#566 run) 487 trips of 445 persons.
+  artifact: docs/runs/artifacts/i575-frozen-pt-walk-lift-prod100-2026-11-06/frozen_pt_walk_lift.json
+- metric: does MATSim route and simulate the lifted legs (start-up smoke, lastIteration 0, 30 persons, 33 lifted legs)?
+  reference: 'the lifted input sample; the smoke''s output plans and events'
+  result: >-
+    The run finished (EXIT=0, the only exception line is the known ASM class-version warning of this jar). Every
+    sample person has as many car_passenger departure as arrival events, at least one; 31 of the 33 lifted legs are
+    found at their departure time in the output plans, routed as access walk, car_passenger leg and egress walk
+    (the other two persons carry the routed car_passenger trip at a different departure time); stuckAndAbort 0.
+  artifact: docs/runs/artifacts/i575-frozen-pt-walk-lift-prod100-2026-11-06/smoke_check.txt
+- metric: 'side finding: long walks of frozen tours that the lift does not touch'
+  reference: 'group 3 of #575 (docs/runs/i575-outside-tour-replay-prod100-2026-11-06.yml on its branch) and the prepared plan of person 415371'
+  result: >-
+    No lifted trip was detected by routing mode only. The 58 frozen group-3 trips that were plain walks without a stamp
+    carry routingMode walk in the prepared plan (person 415371: education -> leisure, 31 km, 6:55 h, routingMode
+    walk), although the uncut population had them as pt. Neither the plan check nor the lift counts them as
+    pt-intended; where prepare turns them into walk trips is not determined here.
+  artifact: docs/runs/artifacts/i575-frozen-pt-walk-lift-prod100-2026-11-06/person_415371_prepared_excerpt.txt
