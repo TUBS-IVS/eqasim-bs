@@ -1,0 +1,4 @@
+38 ('has_pt_leg', 'pt', 'outside')
+11 unmatched
+8 ('has_pt_leg', 'pt', 'home')
+1 ('has_pt_leg', 'pt', 'leisure')

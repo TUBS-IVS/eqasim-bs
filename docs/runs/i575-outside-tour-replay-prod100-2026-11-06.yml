@@ -46,7 +46,8 @@ source: >-
   table group3_frozen_cause.csv.gz, i575_group3_summary.py (sha256
   d8440f26ba64ee21394a032e67e38b7d2286b2de771448b4074a2cdc22799277; it reads the committed table by default; its first
   version on felix, 089cb038..., read the scratch copy and printed the same lines), and both outputs in
-  group3_frozen_cause_output.txt.
+  group3_frozen_cause_output.txt; i575_group3_plain_walk_trips.py (sha256
+  bd6470c2c95b9c5725e1a8448b68d6411eeb54d834e53e908bf83a6a7684dcee) with its output group3_plain_walk_trips_output.txt.
 environment: 'server (felix, hostname matsim), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, pandas 1.5.3), Java /home/felix/tools/jdk-25.0.3+9'
 validation:
 - metric: home-based tours with pt legs that the outside-tour timetable check covers, and their outcome, by portal class
@@ -77,11 +78,14 @@ validation:
   reference: 'the run''s uncut (braunschweig.matsim.scenario.population) and prepared (prepare, routed and cut) populations; the plan check''s freeze rule (plan_check.leg_tour_frozen); model output, NOT observed data'
   result: >-
     The B3 probe labelled every pt leg of its persons, frozen or not. Matched in the prepared plan 471 (18 ambiguous).
-    Not frozen 89: mode choice can still change them. Frozen 382 (prepared mode: 324 walks stamped walkFallbackFrom=pt,
-    58 plain walks; straight-line p50 14.8 km, p90 23.7 km). In 379 of the 382 the uncut plan has no outside activity
-    at all: the outside activities of the tour come from the cutter, on ANOTHER trip of the same inside-only tour whose
-    routed path leaves the extent (by the routing mode of the trip that exits: pt 337, pt and walk 7, pt and car 2,
-    walk 18, car_passenger 10, car 7, car_passenger and walk 1). Example person 733417: home -walk-> leisure -pt->
-    work -pt-> home; the work -> home pt route runs outside the extent and is cut, the tour freezes, and the
-    unconnected leisure -> work pt leg stays a walk of 2:22 h in every iteration.
+    Not frozen 89: mode choice can still change them. Frozen 382 (straight-line p50 14.8 km, p90 23.7 km). Of these,
+    324 are walks stamped walkFallbackFrom=pt. The other 58 are NOT walks: the cause probe recorded only the mode of
+    the trip's first leg (an access walk); read as whole trips (i575_group3_plain_walk_trips.py), the 47 that match
+    uniquely are routed pt trips with a pt leg, 38 of them the trip that is itself cut at the extent and 9 reaching an
+    inside place; 11 do not match uniquely. In 379 of the 382 the uncut plan has no outside activity at all: the
+    outside activities of the tour come from the cutter on a trip of the same inside-only tour whose routed path
+    leaves the extent (for the 324 walks another trip of the tour; by the routing mode of the trip that exits, over all
+    382: pt 337, pt and walk 7, pt and car 2, walk 18, car_passenger 10, car 7, car_passenger and walk 1). Example
+    person 733417: home -walk-> leisure -pt-> work -pt-> home; the work -> home pt route runs outside the extent and is
+    cut, the tour freezes, and the unconnected leisure -> work pt leg stays a walk of 2:22 h in every iteration.
   artifact: docs/runs/artifacts/i575-outside-tour-replay-prod100-2026-11-06/group3_frozen_cause_output.txt
