@@ -69,6 +69,7 @@ _HELPER_MODULES = (_classification, _config_keys, _gates, _modes, _no_connection
 #: Cross-package modules imported inside execute() (hashed by dotted name).
 _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon", "braunschweig.data.cordon.network",
                                  "braunschweig.data.transit.schedule", "braunschweig.data.transit.connections",
+                                 "braunschweig.matsim.scenario.day_end_margin",
                                  "braunschweig.popsim.closure_dwell", "data.hts.hts")
 
 #: Router work files live in a subdirectory of the stage directory.

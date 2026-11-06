@@ -341,8 +341,10 @@ def test_latest_arrival_bound_needs_the_time_columns_and_a_valid_limit():
 
 def test_latest_arrival_bound_non_finite_arrival_is_not_a_connection():
     trips, legs = _timed_frames(_timed("nan_time", float("nan")), _timed("nan_walk", 3600.0, float("nan")),
+                                _timed("neg_inf_time", float("-inf")), _timed("neg_inf_walk", 3600.0, float("-inf")),
                                 _timed("ok", 3600.0))
-    assert _bounded_mask(trips, legs).to_dict() == {"nan_time": False, "nan_walk": False, "ok": True}
+    assert _bounded_mask(trips, legs).to_dict() == {"nan_time": False, "nan_walk": False, "neg_inf_time": False,
+                                                    "neg_inf_walk": False, "ok": True}
 
 
 def test_latest_arrival_bound_logs_the_rejection_rate_per_caller(caplog):
