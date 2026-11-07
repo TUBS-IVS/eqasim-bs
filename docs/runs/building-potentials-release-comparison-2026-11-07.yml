@@ -1,0 +1,45 @@
+id: building-potentials-release-comparison-2026-11-07
+date: '2026-11-07'
+repository:
+  commit: unknown
+  branch: feature/building-potentials-redistribution
+  notes: Measured with scripts/compare_building_potential_releases.py as committed on this branch (the commit that adds this manifest).
+configuration:
+  base: offline script scripts/compare_building_potential_releases.py
+  overlays: []
+  notes: >-
+    No model run. Inputs: the superseded release eqasim-data/data/braunschweig/buildings/building_activity_potentials.parquet
+    (SHA-256 45eb1f9bda7027eb283f3f729c9c93330d6a0cfea4b9c24e1c0f7aa5eefcd002, data record building_activity_potentials)
+    and the redistribution release 08_redistribution.gpkg (hash in data record building_potentials_redistribution).
+sampling:
+  rate: all buildings of both releases
+  scope: Braunschweig model area (ZGB)
+pipeline:
+  targets: []
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: Read-only measurement on the owner's laptop.
+environment: local
+validation:
+- metric: scale of each potential, old vs new release (positive buildings, sum, quantiles)
+  reference: none (a comparison of two model inputs, no observed reference)
+  result: >-
+    Same zonal totals on far fewer buildings; per-building values larger for work, retail and leisure; the other
+    potential changes from the potential_generic base to value_errands (see report).
+  artifact: docs/runs/artifacts/building-potentials-release-comparison-2026-11-07/report.txt
+- metric: value_errands as the other destination potential (label agreement, classes, assumed share, zone coverage)
+  reference: none (plausibility of a model input)
+  result: >-
+    value_errands > 0 on exactly the buildings labelled errands; most value on service, retail, office, public and
+    hospital classes; most value rests on producer-assumed rates; most zones hold an errand building (see report).
+  artifact: docs/runs/artifacts/building-potentials-release-comparison-2026-11-07/report.txt
+features:
+  note: building_potentials_secondary, building_potentials_work (input replacement, ADR-0190)
+artifacts:
+- docs/runs/artifacts/building-potentials-release-comparison-2026-11-07/report.txt
+issues: []
+decisions:
+- ADR-0190
+source: session potentials-redistribution, 2026-11-07

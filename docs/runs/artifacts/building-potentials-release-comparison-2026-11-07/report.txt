@@ -1,0 +1,80 @@
+buildings: old 263512, new 39786
+
+== Scale per potential (old internal column -> new source column)
+potential_work: OLD n_positive=237926 sum=591700.2 q50/q90/q99/max=[0.15, 2.29, 33.95, 48211.72]
+assigned_Workers: NEW n_positive=36033 sum=591700.2 q50/q90/q99/max=[4.67, 29.24, 178.04, 23097.59]
+potential_school: OLD n_positive=1385 sum=149999.0 q50/q90/q99/max=[39.48, 271.87, 1082.15, 1898.82]
+assigned_School: NEW n_positive=1246 sum=149999.0 q50/q90/q99/max=[51.48, 300.85, 1076.86, 2128.93]
+potential_university: OLD n_positive=276 sum=38253.0 q50/q90/q99/max=[36.84, 366.57, 1588.48, 3283.78]
+assigned_University: NEW n_positive=285 sum=38253.0 q50/q90/q99/max=[51.36, 357.43, 1251.81, 2555.49]
+potential_kindergarten: OLD n_positive=897 sum=37323.0 q50/q90/q99/max=[27.44, 97.1, 202.41, 287.1]
+assigned_Kindergarten: NEW n_positive=811 sum=37323.0 q50/q90/q99/max=[38.45, 89.46, 145.26, 274.3]
+potential_retail_daily: OLD n_positive=15772 sum=908859.0 q50/q90/q99/max=[9.18, 121.37, 773.43, 12340.13]
+assigned_Retail_Daily: NEW n_positive=2937 sum=908859.0 q50/q90/q99/max=[68.62, 834.3, 3639.62, 18832.05]
+potential_retail_non_daily: OLD n_positive=7685 sum=777989.0 q50/q90/q99/max=[15.68, 226.56, 1505.37, 9520.91]
+assigned_Retail_Non_Daily: NEW n_positive=3867 sum=777989.0 q50/q90/q99/max=[60.66, 414.35, 2529.83, 18694.13]
+potential_leisure: OLD n_positive=12937 sum=222936.0 q50/q90/q99/max=[4.74, 42.2, 168.52, 3936.97]
+assigned_Leisure: NEW n_positive=4768 sum=222936.0 q50/q90/q99/max=[22.63, 107.47, 346.03, 1966.94]
+potential_generic (old base of the derived other potential): OLD n_positive=263512 sum=537739090.8 q50/q90/q99/max=[374.76, 3296.45, 24163.5, 26659425.4]
+value_errands: NEW n_positive=8412 sum=241927.6 q50/q90/q99/max=[9.72, 76.56, 269.0, 1022.59]
+value_business: NEW n_positive=3632 sum=39593.4 q50/q90/q99/max=[4.14, 23.53, 105.45, 612.15]
+value_sports: NEW n_positive=1863 sum=109186.8 q50/q90/q99/max=[23.72, 144.35, 546.78, 1265.12]
+value_meetup: NEW n_positive=2700 sum=35905.9 q50/q90/q99/max=[3.97, 36.9, 103.21, 369.64]
+value_lessons: NEW n_positive=594 sum=14264.0 q50/q90/q99/max=[13.75, 62.14, 151.46, 249.49]
+
+== Spatial overlap (old representative point inside a new building)
+old buildings inside a new building: 36275 of 263512
+potential_work: share of old value on matched buildings 0.795
+potential_school: share of old value on matched buildings 0.991
+potential_university: share of old value on matched buildings 0.997
+potential_kindergarten: share of old value on matched buildings 0.978
+potential_retail_daily: share of old value on matched buildings 0.891
+potential_retail_non_daily: share of old value on matched buildings 0.910
+potential_leisure: share of old value on matched buildings 0.920
+potential_generic: share of old value on matched buildings 0.681
+
+== value_errands as the other potential
+errands label 8412, value_errands > 0 8412, label without value 0, value without label 0
+                                                                      count       sum  share
+bosserhof_class                                                                             
+customer-oriented services                                             2555  110140.8  0.455
+retail (small-scale)                                                   1258   29518.2  0.122
+Services                                                               1779   27984.5  0.116
+normal office                                                           762   22938.9  0.095
+Public facilities                                                       377   11952.8  0.049
+hospitals                                                               156    9798.0  0.040
+shopping centers                                                         47    7177.3  0.030
+customer service                                                         54    3736.0  0.015
+vehicle / electrical repair                                             435    3312.6  0.014
+nursing homes                                                            32    2669.9  0.011
+hypermarkets / superstores                                               14    1769.0  0.007
+business-oriented services                                              101    1625.1  0.007
+entertainment, culture                                                   34    1105.3  0.005
+craft businesses                                                        250    1066.0  0.004
+car dealerships                                                          68     728.7  0.003
+discount stores                                                          13     632.2  0.003
+hotels                                                                   19     568.9  0.002
+restaurants / gastronomy                                                 36     555.9  0.002
+Industrial operations / Production                                       98     542.2  0.002
+theme parks                                                               4     469.6  0.002
+schools                                                                  16     429.8  0.002
+fitness / wellness                                                       13     393.5  0.002
+Retail                                                                   14     363.2  0.002
+Transport                                                                46     348.8  0.001
+Yards, depots, storage areas, construction yards                        132     330.0  0.001
+open-plan office                                                          3     322.0  0.001
+kindergartens                                                            11     301.2  0.001
+research institutes                                                       6     179.8  0.001
+department stores                                                         4     179.0  0.001
+universities                                                             20     174.7  0.001
+Crafts and trades                                                        22     139.5  0.001
+highly productive industries / machine / material or space intensive      4     136.9  0.001
+furniture stores                                                          2     120.7  0.000
+Facilities for culture, leisure and sports                               17     104.5  0.000
+wholesale                                                                 5      51.4  0.000
+craft courtyards                                                          2      31.5  0.000
+DIY stores                                                                1      16.8  0.000
+arenas, large events                                                      1       6.4  0.000
+large cinemas                                                             1       6.2  0.000
+share of value_errands on rates marked assumed by the producer: 0.688
+zones with at least one errand building: 785 of 880

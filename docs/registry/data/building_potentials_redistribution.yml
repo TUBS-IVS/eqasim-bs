@@ -59,7 +59,7 @@ limitations: >-
   426 buildings; "others", 4) have no row in the class-to-category tables. Replaces building_activity_potentials
   (ADR-0190).
 notes: >-
-  Supersedes building_activity_potentials (263,512 buildings, parquet) from ADR-0190 on. The new release puts the same
-  zonal totals on 39,786 activity buildings instead of 263,512 (the dropped ones are mostly residential and carried
-  20 % of the old work potential), so the per-building values are larger; the other potential changes source from the
-  derived potential_generic x class weight to value_errands.
+  Supersedes building_activity_potentials (parquet) from ADR-0190 on. The new release puts the same zonal totals on the
+  activity buildings only, so the per-building values are larger; the other potential changes source from the derived
+  potential_generic x class weight to value_errands. The measured comparison of the two releases is run manifest
+  building-potentials-release-comparison-2026-11-07.
