@@ -50,10 +50,6 @@ LOGGER = logging.getLogger("run_building_fit_secondary")
 
 STAGE_REALISED_SECONDARY = "braunschweig.synthesis.locations.secondary_chainsolvers"
 STAGE_ACTIVITIES = "synthesis.population.activities"
-# The legacy secondary candidate stage is aliased to braunschweig.locations.secondary
-# in the run configs, so synpp caches it under that name (not the alias target
-# "synthesis.locations.secondary"). Load the real cached name.
-STAGE_LEGACY_CANDIDATES = "braunschweig.locations.secondary"
 STAGE_BUILDING_POTENTIALS = "braunschweig.data.building_potentials"
 
 # eqasim secondary purpose -> the reconstructed-candidate potential column.
@@ -116,11 +112,10 @@ def _build(working_directory, sampling_rate, output_dir):
     sec_stage = _load_stage(working_directory, STAGE_REALISED_SECONDARY)
     realised = sec_stage[0] if isinstance(sec_stage, tuple) else sec_stage
     activities = _load_stage(working_directory, STAGE_ACTIVITIES)
-    legacy = _load_stage(working_directory, STAGE_LEGACY_CANDIDATES)
     buildings = _load_stage(working_directory, STAGE_BUILDING_POTENTIALS)
 
     # Reconstruct the exact candidate->potential table the chainsolver used.
-    candidates = build_secondary_candidates(legacy, buildings)
+    candidates = build_secondary_candidates(buildings)
 
     # Guard: a pre-feature cache has no sec_b_ realised ids -> the join would be
     # all-fallback. Surface it loudly rather than reporting a meaningless fit.

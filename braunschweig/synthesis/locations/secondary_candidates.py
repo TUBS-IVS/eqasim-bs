@@ -44,7 +44,6 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.synthesis.locations.secondary_chainsolvers.srv_candidates",
     # The rest of this stage's import closure: modules its helpers import, whose code this
     # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
-    "braunschweig.data.building_potential_attach",
     "braunschweig.synthesis.locations.secondary_chainsolvers.activity_types",
     "braunschweig.synthesis.locations.secondary_chainsolvers.candidate_columns",
     "braunschweig.synthesis.locations.secondary_chainsolvers.inverse_cdf",
@@ -219,7 +218,6 @@ def execute(context):
         print(warning, flush=True)
 
     df_secondary = build_secondary_candidates(
-        df_secondary,
         context.stage("braunschweig.data.building_potentials"),
         df_external=df_external,
     )

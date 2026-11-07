@@ -175,3 +175,19 @@ def test_load_rejects_duplicate_source_ids(tmp_path):
 def test_load_rejects_missing_file(tmp_path):
     with pytest.raises(ValueError, match="not found"):
         load_potentials(str(tmp_path / "absent.gpkg"))
+
+
+def test_load_rejects_missing_bosserhof_class(tmp_path):
+    gdf = _source_gdf()
+    gdf.loc[1, "bosserhof_class"] = None
+    _expect_failure(tmp_path, gdf, "bosserhof_class")
+
+
+@pytest.mark.parametrize("column, value, match", [
+    ("floor_area_m2", np.nan, "NaN.*floor_area_m2"),
+    ("storeys", -1.0, "negative.*storeys"),
+])
+def test_load_rejects_bad_floor_area_or_storeys(tmp_path, column, value, match):
+    gdf = _source_gdf()
+    gdf.loc[0, column] = value
+    _expect_failure(tmp_path, gdf, match)

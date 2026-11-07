@@ -206,10 +206,10 @@ def test_stage_assembles_all_id_families():
     out = secondary_candidates.execute(context)
     ids = set(out["location_id"].astype(str))
 
-    # gpkg building candidates (REPLACE) for shop/leisure
+    # gpkg building candidates (REPLACE) for shop/leisure/other
     assert "sec_b_11" in ids and "sec_b_22" in ids
-    # legacy rows survive as 'other'-only candidates
-    assert "sec_0" in ids and "sec_1" in ids
+    # legacy catalog points are no longer candidates on the ON path
+    assert "sec_0" not in ids and "sec_1" not in ids
     # external Gemeinde centroid keeps its bare commune id
     assert "03459999" in ids
     # residential visit candidate (issue #127)
@@ -447,6 +447,6 @@ def test_coverage_validation_passes_when_all_ids_written():
     fac = secondary_facility_frame(candidates)
     # Realised ids drawn from every family the chainsolvers can produce.
     df_realised = pd.DataFrame({
-        "location_id": ["sec_0", "sec_b_11", "sec_b_22", "03459999", "sec_res_77"]
+        "location_id": ["sec_b_11", "sec_b_22", "03459999", "sec_res_77"]
     })
     validate_secondary_coverage(df_realised, fac)  # must not raise

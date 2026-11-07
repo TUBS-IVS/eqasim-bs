@@ -36,13 +36,10 @@ from .srv_location_types import (
 # PLAN AMENDMENT (issue #262, post-Task-4 review): the leisure_* categories
 # genuinely MASK the pot_leisure aggregate a sec_b_* row already carries (see
 # ``build_secondary_candidates`` for how pot_leisure is derived) -- that part
-# is unchanged. The errand_* categories do NOT mask pot_other: every sec_b_*
-# row carries pot_other=0.0 by construction (build_secondary_candidates keeps
-# only buildings with retail>0 | leisure>0), and errand-class buildings
-# (hospitals, authorities, service businesses, ...) are therefore excluded
-# from the candidate set entirely. Masking pot_other would be a structural
-# zero-supply bug, not a thin-data limitation. ``append_location_category_columns``
-# now derives the two errand categories' potential directly from
+# is unchanged. The errand_* categories do NOT mask pot_other: pot_other is
+# the building's whole potential_errands, while a category covers only the
+# buildings of its Bosserhof classes. ``append_location_category_columns``
+# derives the two errand categories' potential directly from
 # ``df_potentials`` (``potential_errands`` of the buildings whose Bosserhof
 # class maps to the category) and
 # appends a NEW ``sec_b_<building_id>`` candidate row for every errand-class

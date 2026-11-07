@@ -101,7 +101,7 @@ def load_potentials(path: str) -> gpd.GeoDataFrame:
             "[braunschweig.data.building_potentials] layer '%s' of %s is missing "
             "columns %s" % (SOURCE_LAYER, path, missing))
 
-    for col in SOURCE_TO_POTENTIAL:
+    for col in list(SOURCE_TO_POTENTIAL) + ["floor_area_m2", "storeys"]:
         values = pd.to_numeric(gdf[col], errors="raise").astype(float)
         nan_count = int(values.isna().sum())
         if nan_count:
@@ -114,6 +114,15 @@ def load_potentials(path: str) -> gpd.GeoDataFrame:
                 "[braunschweig.data.building_potentials] %d negative values in %s"
                 % (negative_count, col))
         gdf[col] = values
+    # A missing class must not become the string "nan" (astype(str) in
+    # normalise_bosserhof_class): no class mapping resolves it, so the building
+    # would silently drop out of every location category. Fail fast instead.
+    bad_class = gdf["bosserhof_class"].isna() | gdf["bosserhof_class"].astype(str).str.strip().eq("")
+    if int(bad_class.sum()):
+        raise ValueError(
+            "[braunschweig.data.building_potentials] %d buildings have an empty or "
+            "NaN bosserhof_class in layer '%s' of %s"
+            % (int(bad_class.sum()), SOURCE_LAYER, path))
     if gdf.geometry.isna().any() or gdf.geometry.is_empty.any():
         raise ValueError(
             "[braunschweig.data.building_potentials] empty/missing geometry in "

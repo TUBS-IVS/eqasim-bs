@@ -364,7 +364,6 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # The rest of this stage's import closure: modules its helpers import, whose code this
     # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
     "braunschweig.calibration.targets",
-    "braunschweig.data.building_potential_attach",
     "braunschweig.data.mid.reference_tables",
     "braunschweig.data.mid.status_by_hhtype",
     "braunschweig.popsim.attributes",

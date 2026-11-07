@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Point, Polygon
@@ -59,50 +60,74 @@ def test_build_scorer_combined_when_enabled():
     assert list(out) == [19.5, -0.5]   # 2*pot - 0.5*ddev
 
 
+def _buildings(rows):
+    """rows: (building_id, retail_daily, retail_non_daily, leisure, errands) tuples."""
+    return gpd.GeoDataFrame(
+        {"building_id": [r[0] for r in rows],
+         "potential_retail_daily": [r[1] for r in rows],
+         "potential_retail_non_daily": [r[2] for r in rows],
+         "potential_leisure": [r[3] for r in rows],
+         "potential_errands": [r[4] for r in rows],
+         "commune_id": ["03101000"] * len(rows)},
+        geometry=[Polygon([(10 * r[0], 0), (10 * r[0], 10), (10 * r[0] + 10, 10), (10 * r[0] + 10, 0)])
+                  for r in rows],
+        crs="EPSG:25832",
+    )
+
+
 def test_build_secondary_candidates_replace_shop_leisure_from_gpkg():
-    legacy = gpd.GeoDataFrame(
-        {"location_id": ["sec_0"], "commune_id": ["03101000"], "iris_id": ["03101000"],
-         "offers_shop": [True], "offers_leisure": [True], "offers_other": [True]},
-        geometry=[Point(500, 500)], crs="EPSG:25832",   # far from the gpkg building
-    )
-    b = Polygon([(0, 0), (0, 10), (10, 10), (10, 0)])    # centroid (5,5)
-    buildings = gpd.GeoDataFrame(
-        {"building_id": [7],
-         "potential_retail_daily": [4.0], "potential_retail_non_daily": [3.0],
-         "potential_leisure": [9.0], "potential_errands": [100.0],
-         "commune_id": ["03101000"]},
-        geometry=[b], crs="EPSG:25832",
-    )
-    out = build_secondary_candidates(legacy, buildings)
-    # one gpkg row (shop+leisure) + one legacy 'other' row
+    out = build_secondary_candidates(_buildings([(7, 4.0, 3.0, 9.0, 2.0)]))
     gpkg = out[out["location_id"] == "sec_b_7"].iloc[0]
-    assert gpkg["offers_shop"] and gpkg["offers_leisure"] and not gpkg["offers_other"]
+    assert gpkg["offers_shop"] and gpkg["offers_leisure"] and gpkg["offers_other"]
     assert gpkg["pot_shop"] == 7.0 and gpkg["pot_leisure"] == 9.0
     assert gpkg.geometry.geom_type == "Point"
-    other = out[out["location_id"] == "sec_0"].iloc[0]
-    assert other["offers_other"] and not other["offers_shop"] and not other["offers_leisure"]
-    assert other["pot_other"] == 0.0     # legacy point far from the gpkg building -> errands fallback 0.0
-    assert len(out) == 2
+    assert len(out) == 1
 
 
 # ---------------------------------------------------------------------------
-# pot_other = potential_errands of the containing building (value_errands)
+# "other" candidates = buildings with potential_errands > 0 (owner decision
+# 2026-11-07); the legacy catalog points are no longer candidates.
 # ---------------------------------------------------------------------------
 
-def test_pot_other_is_potential_errands_of_containing_building():
-    legacy = gpd.GeoDataFrame({
-        "location_id": ["sec_in", "sec_out"],
-        "commune_id": ["031030000000"] * 2, "iris_id": ["031030000000"] * 2,
-        "offers_shop": [False] * 2, "offers_leisure": [False] * 2,
-        "offers_other": [True] * 2,
-        "geometry": [Point(1.0, 1.0), Point(500.0, 500.0)]}, crs="EPSG:25832")
-    bld = gpd.GeoDataFrame({
-        "building_id": [0, 1], "commune_id": ["031030000000"] * 2,
-        "potential_retail_daily": [0.0, 0.0], "potential_retail_non_daily": [0.0, 0.0],
-        "potential_leisure": [0.0, 0.0], "potential_errands": [42.0, 7.0],
-        "geometry": [Polygon([(0, 0), (2, 0), (2, 2), (0, 2)]),
-                     Polygon([(10, 10), (11, 10), (11, 11), (10, 11)])]},
-        crs="EPSG:25832")
-    out = build_secondary_candidates(legacy, bld).set_index("location_id")
-    assert out.loc["sec_in", "pot_other"] == 42.0      # primary: footprint join
-    assert out.loc["sec_out", "pot_other"] == 0.0      # logged zero fallback
+def test_other_candidates_are_buildings_with_errand_potential():
+    bld = _buildings([
+        (0, 0.0, 0.0, 0.0, 42.0),   # errand-only building -> new sec_b_ row
+        (1, 2.0, 1.0, 0.0, 7.0),    # retail + errand -> ONE row carrying both
+        (2, 0.0, 0.0, 0.0, 0.0),    # nothing -> no row
+        (3, 5.0, 0.0, 0.0, 0.0),    # retail only -> not an other candidate
+    ])
+    out = build_secondary_candidates(bld)
+    assert out["location_id"].is_unique
+    assert set(out["location_id"]) == {"sec_b_0", "sec_b_1", "sec_b_3"}
+    out = out.set_index("location_id")
+    assert out.loc["sec_b_0", "offers_other"] and out.loc["sec_b_0", "pot_other"] == 42.0
+    assert not out.loc["sec_b_0", "offers_shop"] and not out.loc["sec_b_0", "offers_leisure"]
+    assert out.loc["sec_b_1", "offers_other"] and out.loc["sec_b_1", "pot_other"] == 7.0
+    assert out.loc["sec_b_1", "offers_shop"] and out.loc["sec_b_1", "pot_shop"] == 3.0
+    assert not out.loc["sec_b_3", "offers_other"] and out.loc["sec_b_3", "pot_other"] == 0.0
+    # every row, errand-only ones included, stays an escort candidate
+    assert out["offers_escort"].all()
+
+
+def test_zero_other_supply_raises():
+    bld = _buildings([(0, 2.0, 1.0, 3.0, 0.0)])
+    with pytest.raises(ValueError, match="other"):
+        build_secondary_candidates(bld)
+
+
+def test_errand_candidates_not_duplicated_by_srv_category_append():
+    """The SrV errand-category append finds the errand buildings already present."""
+    from braunschweig.synthesis.locations.secondary_chainsolvers import (
+        append_location_category_columns,
+    )
+    bld = _buildings([(0, 0.0, 0.0, 0.0, 42.0), (1, 2.0, 1.0, 0.0, 7.0)])
+    bld["bosserhof_class_clean"] = ["service", "service"]
+    mapping = pd.DataFrame({"bosserhof_class": ["service"],
+                            "location_category": ["errand_service"]})
+    cand = build_secondary_candidates(bld)
+    out = append_location_category_columns(cand, bld, mapping)
+    assert out["location_id"].is_unique and len(out) == len(cand)
+    out = out.set_index("location_id")
+    assert out.loc["sec_b_0", "pot_errand_service"] == 42.0
+    assert out.loc["sec_b_1", "pot_errand_service"] == 7.0
+    assert out.loc["sec_b_1", "pot_other"] == 7.0
