@@ -909,6 +909,51 @@ def test_configure_rejects_non_positive_surrogate_parameters(key, value):
         sc.configure(ctx)
 
 
+@pytest.mark.parametrize("sec_enabled", [True, False])
+def test_shared_state_picks_the_fallback_frame_by_the_building_potentials_flag(monkeypatch, sec_enabled):
+    """Regression (PR #592 review): with building potentials ON the RDA/random fallback
+    must place on the REPLACE candidate set the facilities are written from; placing on
+    the legacy frame realises ``sec_<n>`` ids without a facility row and the facilities
+    stage raises after the whole chain solve. OFF keeps the legacy frame."""
+    legacy = pd.DataFrame({"location_id": ["sec_0"]})
+    replace = pd.DataFrame({"location_id": ["sec_b_1"]})
+    stages = {
+        "synthesis.population.spatial.secondary.distance_distributions": {},
+        "synthesis.locations.secondary": legacy,
+        "braunschweig.synthesis.locations.secondary_candidates": replace,
+    }
+    config = {
+        "random_seed": 0, "leisure_correction_factor": 1.0,
+        "secondary_shop_daily_split": False, "secondary_leisure_subtype_split": False,
+        "secondary_other_subtype_split": False, "escort_purpose": False,
+        "leisure_visit_building_potential": False, "secondary_srv_location_types": False,
+        "secondary_building_potentials": sec_enabled,
+        "braunschweig.chainsolvers.fallback": "rda", "braunschweig.chainsolvers.solver": None,
+        "braunschweig.chainsolvers.parallel": False, "braunschweig.chainsolvers.processes": 1,
+        "processes": 1, "braunschweig.chainsolvers.worker_memory_gb": 1.0,
+        "braunschweig.chainsolvers.shard_attempts": 3, "braunschweig.chainsolvers.shards": 1,
+    }
+    ctx = types.SimpleNamespace(stage=lambda name: stages[name], config=lambda key: config[key])
+    # The fallback-frame choice is under test; the deciders, distributions and the
+    # carla locations frame are not, so they are stubbed out.
+    for name in ("_build_shop_subtype_decider", "_build_leisure_subtype_decider",
+                 "_build_other_subtype_decider", "_build_escort_location_decider",
+                 "_build_srv_location_decider", "_build_escort_distance_factor_map",
+                 "_build_scorer_spec"):
+        monkeypatch.setattr(sc, name, lambda *a, **k: None)
+    for name in ("_validate_srv_location_type_prerequisites",
+                 "_validate_candidate_flag_prerequisites"):
+        monkeypatch.setattr(sc, name, lambda *a, **k: None)
+    monkeypatch.setattr(sc, "_resample_distributions", lambda d, _factors: d)
+    monkeypatch.setattr(sc, "_build_locations_df", lambda *a, **k: None)
+
+    shared = sc._build_shared_solve_state(ctx, "EPSG:25832")
+
+    expected = replace if sec_enabled else legacy
+    assert shared["df_fallback"] is expected
+    assert shared["df_secondary"] is expected
+
+
 # --- surrogate rescue wiring (#409) --------------------------------------------------
 from braunschweig.synthesis.locations.passive_joint_links import (  # noqa: E402
     LINK_COLUMNS, LINK_SOURCE_PLAN_SOURCE, LINK_SOURCE_SURROGATE, build_passive_joint_links,

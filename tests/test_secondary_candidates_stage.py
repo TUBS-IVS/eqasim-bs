@@ -301,10 +301,10 @@ def test_srv_location_types_assembles_category_and_landuse_candidates():
     ids = set(out["location_id"].astype(str))
 
     assert any(location_id.startswith("sec_lu_") for location_id in ids)
-    # Errand-class buildings (104/105) carry no retail/leisure potential, so
-    # build_secondary_candidates' keep-filter excludes them from the input
-    # candidates; append_location_category_columns must append them as NEW
-    # sec_b_* rows once their derived errand potential is positive.
+    # Errand-class buildings (104/105) carry no retail/leisure potential but a
+    # positive potential_errands, so build_secondary_candidates' keep-filter
+    # (retail | leisure | errands > 0, ADR-0190) keeps them as sec_b_* rows and
+    # append_location_category_columns sets their errand category in place.
     assert "sec_b_104" in ids and "sec_b_105" in ids
 
     for category in [
@@ -363,8 +363,8 @@ def test_srv_supply_guard_still_fires_with_external_candidates_enabled():
     building mapping would pass on external supply alone.
 
     Building 102 is the only leisure_gastronomy building; with no leisure
-    potential it fails build_secondary_candidates' keep-filter (retail>0 |
-    leisure>0) and never becomes a candidate, leaving ZERO in-area gastronomy
+    (and no errand) potential it fails build_secondary_candidates' keep-filter
+    (retail | leisure | errands > 0) and never becomes a candidate, leaving ZERO in-area gastronomy
     supply. The external centroid is present and would cover that category once
     the escapes run -- so this raise only happens if the check runs first."""
     context = _srv_stage_context()
@@ -481,9 +481,13 @@ def test_fallback_realised_ids_are_covered_by_the_facilities():
 
     # Every realised id offers the purpose of its leg (escort is any-type only
     # when the frame has no offers_escort column; here it is the column).
+    # fillna(False): a missing offer (e.g. offers_escort on the residential visit
+    # row when escort is off) means NOT offered; bool(NaN) would be True and hide
+    # a fallback that treats NaN as offered.
     offers = candidates.set_index(candidates["location_id"].astype(str))
+    offers = offers.filter(like="offers_").fillna(False).astype(bool)
     for (_, _, loc_id, _), purpose in zip(rows, purposes):
-        assert bool(offers.loc[loc_id, f"offers_{purpose}"])
+        assert offers.loc[loc_id, f"offers_{purpose}"]
 
     # The RDA candidate index draws from the same universe, per purpose.
     index = secondary_chainsolvers._build_rda_candidate_index(candidates)

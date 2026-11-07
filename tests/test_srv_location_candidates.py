@@ -43,11 +43,12 @@ def _mini_candidates():
     """Three candidate rows: one sec_b_* building (leisure) + one sec_b_*
     building (unmapped class) + one legacy 'sec_0' row.
 
-    Errand-class buildings (hospitals, ...) are deliberately ABSENT here --
-    they never make it into build_secondary_candidates' gpkg output (its
-    keep-filter is retail>0 | leisure>0), which is exactly the structural gap
-    append_location_category_columns's errand path has to compensate for by
-    appending new rows (see _mini_potentials below).
+    Errand-class buildings (hospitals, ...) are deliberately ABSENT here. Since
+    ADR-0190 build_secondary_candidates keeps them (keep-filter retail | leisure
+    | errands > 0), so this frame models an INCONSISTENT input on purpose: it
+    exercises append_location_category_columns's append path, which adds new
+    sec_b_* rows for errand buildings missing from the candidates (see
+    _mini_potentials below).
     """
     return gpd.GeoDataFrame({
         "location_id": ["sec_b_b1", "sec_b_b3", "sec_0"],

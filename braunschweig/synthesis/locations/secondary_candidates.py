@@ -3,8 +3,9 @@
 Materialises the EXACT candidate frame the secondary chainsolvers solve on
 when building potentials are ON:
 
-- ``sec_b_<building_id>``   gpkg shop/leisure buildings (REPLACE, PR #77),
-- ``sec_<n>``               legacy 'other' catalog rows,
+- ``sec_b_<building_id>``   gpkg shop/leisure/other buildings (REPLACE, PR #77; 'other' =
+  buildings with ``potential_errands > 0`` since ADR-0190, which replaced the legacy
+  ``sec_<n>`` 'other' catalog rows),
 - ``<commune_id>``          external Gemeinde centroids (``secondary_external_candidates``),
 - ``sec_res_<building_id>`` residential leisure_visit / escort_residential candidates
   (``leisure_visit_building_potential`` and/or ``escort_purpose``, issues #127/#201),
