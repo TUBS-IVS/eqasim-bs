@@ -1,0 +1,25 @@
+2026-11-06 21:55:18,562 INFO numexpr.utils Note: NumExpr detected 64 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+2026-11-06 21:55:18,562 INFO numexpr.utils NumExpr defaulting to 16 threads.
+2026-11-06 22:07:45,157 INFO braunschweig.matsim.simulation.frozen_pt_walk_lift [frozen_pt_walk_lift] lifted 1785 of 45469 pt-intended trips in frozen resident tours (3.93%), of 1205226 persons; pt-intended trips realised as walk in frozen tours at any distance 4865; lifted by detection: stamp 1785, routingMode only 0; lifted by distance {'0_1km': 0, '1_2km': 0, '2_5km': 0, '5_10km': 733, '10km_plus': 1052}
+{
+  "n_persons": 1205226,
+  "n_pt_trips_frozen": 45469,
+  "n_pt_as_walk_frozen": 4865,
+  "n_lifted": 1785,
+  "n_lifted_stamped": 1785,
+  "n_lifted_routing_mode_only": 0,
+  "lifted_by_distance_band": {
+    "0_1km": 0,
+    "1_2km": 0,
+    "2_5km": 0,
+    "5_10km": 733,
+    "10km_plus": 1052
+  },
+  "share_lifted": 0.03925751610987706,
+  "min_distance_m": 5000.0,
+  "warn_share": 0.05,
+  "seconds": 746
+}
+sample persons 30: lifted file 30, original file 30
+
+[exited with code 0]

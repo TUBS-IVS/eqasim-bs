@@ -201,8 +201,9 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
     """The re-moded trips frame and the report (pure apart from the ``pt_check`` probe; see the module docstring).
 
     The returned frame keeps the input's row order, index and columns; only ``mode`` values of re-moded tours
-    change, and with ``pt_check`` the modes and times of the outside tours whose pt legs have no timetable
-    connection (``pt_connections.resolve_pt_tours``, ADR-0159). The computation runs on a ``person_id,
+    change, and with ``pt_check`` the modes and times of the outside tours and of the tours with a portal leg whose
+    pt legs have no timetable connection (``pt_connections.resolve_pt_tours``, ADR-0159; the portal-tour extension,
+    ADR-0187). The computation runs on a ``person_id,
     trip_index``-sorted view (stable sort) and writes back by index. ``municipalities_crs``, when given, must equal
     the CRS of ``locations`` (pyproj equality). ``last_resort`` (``keep`` in this function, the stage passes the
     configured value) decides what happens to a road-gate portal tour without an admissible mode and to a pt tour
@@ -251,13 +252,14 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
     unknown_donor = outside & ~donor_modes.isin(_srv_table_module.MODES).to_numpy()
     pt_report = None
     if pt_check is not None:
-        # After the re-moding, so a drawn pt substitute is checked too; portal tours keep their own check.
+        # After the re-moding, so a drawn pt substitute is checked too; tours with a portal leg are checked as well
+        # (ADR-0187), with the per-leg portal flag deciding how an unserved tour is resolved.
         portal_tour = pd.Series(portal_leg).groupby([ordered["person_id"].to_numpy(), tour_ids]).transform("any")
         resolution = _pt_connections.resolve_pt_tours(
             trips=remoded, tour_ids=tour_ids, outside=outside, portal_tour=portal_tour.to_numpy(dtype=bool),
             endpoints=endpoints, availability=_portal_modes.mode_availability(persons), probe=pt_check.probe,
             shift_window_s=pt_check.shift_window_s, shift_step_s=pt_check.shift_step_s, bound_s=pt_check.bound_s,
-            last_resort=last_resort, day_end_shift=pt_check.day_end_shift)
+            last_resort=last_resort, day_end_shift=pt_check.day_end_shift, portal_leg=portal_leg)
         remoded = resolution.trips
         pt_report = resolution.report
         _pt_connections.log_report(pt_report, warn_share=pt_check.warn_share)

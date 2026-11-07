@@ -74,6 +74,7 @@ code:
 - matsim/simulation/prepare.py
 - braunschweig/matsim/simulation/prepare.py
 - braunschweig/matsim/simulation/plan_check.py
+- braunschweig/matsim/simulation/frozen_pt_walk_lift.py
 - braunschweig/matsim/initial_mode_choice.py
 - braunschweig/matsim/scenario/day_end_margin.py
 - braunschweig/matsim/simulation/cordon_subpopulation.py
@@ -117,7 +118,12 @@ decisions:
 - ADR-0169
 - ADR-0178
 - ADR-0182
+- ADR-0189
 notes: >-
+  Frozen pt walk lift (ADR-0189, issue #575). After the cut, the freight injection and the initial mode choice and
+  before the plan check, braunschweig.matsim.simulation.frozen_pt_walk_lift lifts the long pt-as-walk trips of frozen
+  resident tours to car_passenger (rule, switch and report in the ADR; frozen_pt_walk_lift.json in the stage
+  directory).
   Gate facility links (ADR-0167, issue #465, feature record gate_facility_links). With cordon_enabled,
   right after the delegated eqasim preparation and before the cut, _verify_gate_facility_links compares every
   facility that carries a linkId in the written facilities file with the prepared facilities file

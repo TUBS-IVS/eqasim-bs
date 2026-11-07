@@ -1,0 +1,15 @@
+== i575_group3_frozen_cause.py
+group-3 legs 489, persons 329
+uncut plans 329 in 163 s
+prepared plans 329 in 492 s
+match: {'time': 386, 'place': 85, 'ambiguous': 18}
+frozen: {True: 382, False: 89, nan: 18}
+frozen legs, outside activities in the tour by adjacent routing modes: [('pt>outside>outside', 362), ('outside>outside>pt', 218), ('outside>outside>walk', 171), ('walk>outside>outside', 27), ('car_passenger>outside>outside', 11), ('outside>outside>car_passenger', 11), ('car>outside>outside', 11), ('outside>outside>car', 11)]
+prepared mode of the legs: {'walk(walkFallbackFrom=pt)': 413, 'walk': 58, nan: 18}
+persons with an outside activity in the UNCUT plan: {False: 482, True: 7}
+== i575_group3_summary.py
+frozen legs by cause: {'pt_trip_cut': 337, 'walk_cut': 18, 'car_passenger_cut': 10, 'car_cut': 7, 'pt_and_walk_cut': 7, 'pt_and_car_cut': 2, 'car_passenger_walk_cut': 1}
+frozen legs, uncut plan has outside: {False: 379, True: 3}
+frozen legs, prepared mode: {'walk(walkFallbackFrom=pt)': 324, 'walk': 58}
+not frozen, prepared mode: {'walk(walkFallbackFrom=pt)': 89}
+distance km frozen p50/p90: [14.8, 23.7]

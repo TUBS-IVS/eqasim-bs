@@ -1,0 +1,1 @@
+{'resident_persons': 1131, 'resident_legs': 1298, 'incommuter_persons': 445, 'incommuter_legs': 487}

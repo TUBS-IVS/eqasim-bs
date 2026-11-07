@@ -1,0 +1,5 @@
+unconnected outside_tour legs 489; not found in trips.final 0
+outside_flag x portal_tour:
+outside_flag  portal_tour
+False         False          489
+mode in trips.final: {'pt': 489}

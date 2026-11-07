@@ -901,7 +901,8 @@ config:
   braunschweig.outside_tour_modes.enabled: true
   braunschweig.outside_tour_modes.min_share: 0.01
   braunschweig.outside_tour_modes.warn_share: 0.5
-  # Timetable check of the pt legs of outside tours without a portal leg (ADR-0159, #465): a tour whose pt legs
+  # Timetable check of the pt legs of outside tours, since ADR-0187 (#575) also of tours with a portal leg
+  # (a rail-gate tour lifts only its unconnected legs after the shift) (ADR-0159, #465): a tour whose pt legs
   # have no connection moves as a whole (earlier first, steps of pt_shift_step_s up to pt_shift_window_s; values
   # of ADR-0152/0153, ASSUMPTION, not calibrated), else drives, else rides along. last_resort car_passenger: a
   # tour nothing else resolves (and a road-gate portal tour without an admissible mode) becomes a lift without
@@ -961,6 +962,10 @@ config:
   # later than this at some activity count against max_frozen_defect_share.
   braunschweig.plan_check.non_monotonic_bound_min_lateness_s: 900
   braunschweig.plan_check.fail_on_threshold: false
+  # Long pt-as-walk trips (over plan_check.pt_as_walk_bound_min_distance_m) of frozen resident tours become one
+  # car_passenger leg before the plan check (ADR-0189, #575). The lifted share is judged against
+  # plan_check.max_frozen_pt_as_walk_share (ADR-0188/0189); the lift has no bound of its own.
+  braunschweig.frozen_pt_walk_lift.enabled: true
   # eqasim's standalone mode choice runs at the end of the prepare stage on the final population with free-flow
   # travel times, before iteration 0 (ADR-0178, #542). It replaces the first-replanning strategy of ADR-0155.
   # The key braunschweig.initial_mode_choice.weight is retired and refused.
