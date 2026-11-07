@@ -7,7 +7,7 @@
 Extracted from the ACTUAL synpp dependency graph (`docs/registry/dag/production.json`,
 `synpp.run(dryrun=True)` over `configs/base_bs.yml` + `configs/overlays/test_100pct.yml`).
 
-Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.departure_time_vs_srv`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 109 stages, 310 dependencies.
+Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.departure_time_vs_srv`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 108 stages, 309 dependencies.
 
 ## Model-area flow (condensed)
 
@@ -124,7 +124,6 @@ flowchart LR
 | `braunschweig.data.alkis` | spatial | x | x | x |
 | `braunschweig.data.bbsr.regiostar` | spatial | x | x | x |
 | `braunschweig.data.bosserhof_location_category` | secondary | x | -- | -- |
-| `braunschweig.data.bosserhof_purpose` | secondary | x | -- | -- |
 | `braunschweig.data.building_potentials` | work | x | -- | -- |
 | `braunschweig.data.buildings` | home | x | x | x |
 | `braunschweig.data.census.employees` | work | x | x | x |

@@ -17,7 +17,8 @@ Restricted datasets are never committed or redistributed.
 | [ba_pendleratlas](../registry/data/ba_pendleratlas.yml) | calibration_target, control | manual_download | `data/braunschweig/statistik_pendler_2026042493412.csv (+ ...93430.csv)` | r/-/r | no |
 | [blended_kreis_targets](../registry/data/blended_kreis_targets.yml) | control, calibration_target | derived | `data/braunschweig/targets/target2026_*.csv` | o/-/o | no |
 | [bosserhof_mappings](../registry/data/bosserhof_mappings.yml) | reference_table | committed | `data/braunschweig/buildings/bosserhof_class_to_{purpose,location_category}.csv` | o/-/r | no |
-| [building_activity_potentials](../registry/data/building_activity_potentials.yml) | derived_input | derived (`scripts/import_building_activity_potentials.py`) | `data/braunschweig/buildings/building_activity_potentials.parquet` | o/-/r | no |
+| [building_activity_potentials](../registry/data/building_activity_potentials.yml) | derived_input | derived | `data/braunschweig/buildings/building_activity_potentials.parquet` | o/-/- | no |
+| [building_potentials_redistribution](../registry/data/building_potentials_redistribution.yml) | derived_input, spatial_input | derived | `data/braunschweig/buildings/08_redistribution.gpkg` | o/-/r | no |
 | [buildings_with_households](../registry/data/buildings_with_households.yml) | derived_input | derived | `data/braunschweig/popsim/buildings/buildings_with_households_zgb.parquet` | o/-/r | no |
 | [clc_backbone](../registry/data/clc_backbone.yml) | spatial_input | manual_download | `data/ (user-provided)` | o/-/o | no |
 | [cleancensus_kreis_controls](../registry/data/cleancensus_kreis_controls.yml) | control | derived | `data/braunschweig/popsim/kreis_controls/` | o/-/r | no |

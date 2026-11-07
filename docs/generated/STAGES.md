@@ -21,7 +21,7 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [braunschweig.data.alkis](../registry/stages/braunschweig.data.alkis.yml) | spatial | braunschweig_new | x | A/A/A | -- | -- |
 | [braunschweig.data.bbsr.regiostar](../registry/stages/braunschweig.data.bbsr.regiostar.yml) | spatial | braunschweig_new | x | A/A/A | -- | -- |
 | [braunschweig.data.bosserhof_location_category](../registry/stages/braunschweig.data.bosserhof_location_category.yml) | secondary | braunschweig_new | x | A/-/- | -- | secondary_srv_location_types |
-| [braunschweig.data.bosserhof_purpose](../registry/stages/braunschweig.data.bosserhof_purpose.yml) | secondary | braunschweig_new | x | A/-/- | -- | -- |
+| [braunschweig.data.bosserhof_purpose](../registry/stages/braunschweig.data.bosserhof_purpose.yml) | secondary | braunschweig_new | -- | -/-/- | -- | -- |
 | [braunschweig.data.building_potentials](../registry/stages/braunschweig.data.building_potentials.yml) | work | braunschweig_new | x | A/-/- | -- | building_potentials_secondary, building_potentials_work |
 | [braunschweig.data.buildings](../registry/stages/braunschweig.data.buildings.yml) | home | braunschweig_new | x | A/A/A | -- | alkis_home_matching, lod2_height_volume_typing |
 | [braunschweig.data.census.employees](../registry/stages/braunschweig.data.census.employees.yml) | work | braunschweig_new | x | A/A/A | -- | -- |
