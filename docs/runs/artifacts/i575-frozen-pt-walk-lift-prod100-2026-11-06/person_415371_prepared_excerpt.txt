@@ -1,0 +1,14 @@
+			<activity type="home" link="226689" facility="home_207696" x="636218.452331" y="5788275.825024" end_time="06:29:57" >
+			<leg mode="walk" dep_time="06:29:57" trav_time="01:39:19">
+					<attribute name="routingMode" class="java.lang.String">walk</attribute>
+			<activity type="education" link="477757" facility="abs_26165" x="630493.332128" y="5788038.592237" start_time="06:39:57" end_time="11:39:57" >
+			<leg mode="walk" dep_time="11:39:57" trav_time="06:55:36">
+					<attribute name="routingMode" class="java.lang.String">walk</attribute>
+			<activity type="leisure" link="5308" facility="sec_res_96356" x="622635.314307" y="5810692.248683" start_time="14:09:57" end_time="15:09:57" >
+			<leg mode="walk" dep_time="15:09:57" trav_time="00:05:39">
+					<attribute name="routingMode" class="java.lang.String">pt</attribute>
+			<activity type="pt interaction" link="452590" x="622315.7774039218" y="5810755.343061184" max_dur="00:00:00" >
+			<leg mode="pt" dep_time="15:15:36" trav_time="00:11:24">
+					<attribute name="routingMode" class="java.lang.String">pt</attribute>
+			<activity type="pt interaction" link="381488" x="621586.3564476207" y="5810229.77456305" max_dur="00:00:00" >
+			<leg mode="walk" dep_time="15:27:00" trav_time="00:01:30">

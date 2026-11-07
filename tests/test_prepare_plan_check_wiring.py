@@ -74,7 +74,8 @@ def test_execute_runs_the_plan_check_last_and_only_when_enabled(monkeypatch):
         def __init__(self, enabled):
             self._values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": True,
                             prepare.PARKING_KEY: False, C.KEY_ENABLED: enabled,
-                            I.KEY_ENABLED: False}
+                            I.KEY_ENABLED: False,
+                   "braunschweig.frozen_pt_walk_lift.enabled": False}
 
         def config(self, key):
             return self._values[key]
@@ -98,7 +99,8 @@ def test_execute_writes_the_parking_inputs_before_the_plan_check(monkeypatch):
 
     class _Context:
         _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
-                   prepare.PARKING_KEY: True, C.KEY_ENABLED: True, I.KEY_ENABLED: False}
+                   prepare.PARKING_KEY: True, C.KEY_ENABLED: True, I.KEY_ENABLED: False,
+                   "braunschweig.frozen_pt_walk_lift.enabled": False}
 
         def config(self, key):
             return self._values[key]
@@ -119,7 +121,8 @@ def test_execute_skips_the_walk_fallback_stamp_guard_when_the_plan_check_is_disa
 
     class _Context:
         _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
-                   prepare.PARKING_KEY: False, C.KEY_ENABLED: False, I.KEY_ENABLED: False}
+                   prepare.PARKING_KEY: False, C.KEY_ENABLED: False, I.KEY_ENABLED: False,
+                   "braunschweig.frozen_pt_walk_lift.enabled": False}
 
         def config(self, key):
             return self._values[key]
@@ -129,3 +132,33 @@ def test_execute_skips_the_walk_fallback_stamp_guard_when_the_plan_check_is_disa
 
     assert prepare.execute(_Context()) == "config.xml"
     assert seen == []
+
+
+def test_execute_runs_the_frozen_pt_walk_lift_after_the_cut_and_before_the_plan_check(monkeypatch):
+    """The lift repairs the cut population (eqasim-bs#575, ADR-0189), so it runs after the cut and before the check."""
+    from braunschweig.matsim.simulation import frozen_pt_walk_lift as lift
+    seen = []
+    monkeypatch.setattr(prepare.delegate, "execute", lambda context: "config.xml")
+    monkeypatch.setattr(prepare, "_verify_gate_facility_links", lambda context: None)
+    monkeypatch.setattr(prepare, "_attach_vrb_tariff_zones", lambda context: None)
+    monkeypatch.setattr(prepare, "_cut_to_cordon", lambda context: seen.append("cut") or "cut_config.xml")
+    monkeypatch.setattr(prepare, "_add_incommuter_strategies", lambda context, result: None)
+    monkeypatch.setattr(prepare, "_summarise_final_schedule", lambda context: {})
+    monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result, summary: None)
+    monkeypatch.setattr(lift, "run", lambda context, result: seen.append(("lift", result)) or {"share_lifted": 0.5})
+    monkeypatch.setattr(C, "run", lambda context, result, lift_report=None: seen.append(("check", result, lift_report)))
+
+    class _Context:
+        def __init__(self, enabled):
+            self._values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": True, "freight_enabled": False,
+                            prepare.PARKING_KEY: False, C.KEY_ENABLED: True, I.KEY_ENABLED: False,
+                            "braunschweig.frozen_pt_walk_lift.enabled": enabled}
+
+        def config(self, key):
+            return self._values[key]
+
+    assert prepare.execute(_Context(True)) == "cut_config.xml"
+    assert seen == ["cut", ("lift", "cut_config.xml"), ("check", "cut_config.xml", {"share_lifted": 0.5})]
+    seen.clear()
+    assert prepare.execute(_Context(False)) == "cut_config.xml"
+    assert seen == ["cut", ("check", "cut_config.xml", None)]

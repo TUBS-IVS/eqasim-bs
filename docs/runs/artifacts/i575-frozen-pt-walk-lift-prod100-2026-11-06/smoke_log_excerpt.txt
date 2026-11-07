@@ -1,0 +1,13 @@
+java.lang.IllegalArgumentException: Unsupported class file major version 69
+2026-11-06T22:19:21,551  INFO ControllerListenerManagerImpl:121 calling notifyStartup on org.eqasim.core.simulation.analysis.stuck.StuckAnalysisListener with priority 0.0
+2026-11-06T22:19:36,459  INFO ControllerListenerManagerImpl:188 calling notifyIterationStarts on org.eqasim.core.simulation.analysis.stuck.StuckAnalysisListener with priority 0.0
+2026-11-06T22:19:36,568  INFO EventsManagerImpl:175   org.eqasim.core.simulation.analysis.stuck.StuckAnalysisHandler
+2026-11-06T22:19:52,816  INFO EqasimTransitEngine:230 [EqasimTransitEngine] pt departures 66: boarded within the tolerance of 1.0 s 0 (0.00 %), later departure than planned 0 (0.00 %), another route of the planned line 0 (0.00 %) (line fallback on), another line serving the stop pair 0 (0.00 %) (stop-pair fallback on; the events of other-route and other-line boardings carry the planned route's dis
+2026-11-06T22:19:54,773  INFO ControllerListenerManagerImpl:217 calling notifyIterationEnds on org.eqasim.core.simulation.analysis.stuck.StuckAnalysisListener with priority 0.0
+2026-11-06T22:19:54,774  INFO EventsManagerImpl:160 removing Event-Handler: org.eqasim.core.simulation.analysis.stuck.StuckAnalysisHandler
+2026-11-06T22:19:54,774  INFO EventsManagerImpl:160 removing Event-Handler: org.eqasim.core.simulation.analysis.stuck.StuckAnalysisHandler
+EXIT=0
+ac779d37bfe7dd8ae3dbef4a087286d0d9b1b5eec3db86d08e0f2b03dd9c7256  /home/felix/scratch_i575p_lift_replay.py
+91cb48412ac113a7bf51c3715876f54a8c5fa7058098078599c6d2e898afb7a5  /home/felix/scratch_i575p/smoke/i575_smoke_check.py
+9ef609818e782a069a868a53e7ef53e9a9cd34a41460e08eee7098908fdf68d9  /home/felix/scratch_i575p/smoke/run_smoke.sh
+-rw-rw-r-- 1 felix felix 50863 Nov  6 22:19 /home/felix/scratch_i575p/smoke/out_lifted/output_plans.xml.gz

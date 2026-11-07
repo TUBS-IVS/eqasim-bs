@@ -319,7 +319,8 @@ def test_execute_runs_the_mode_choice_after_the_parking_inputs_and_before_the_pl
 
     class _Context:
         _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
-                   prepare.PARKING_KEY: True, C.KEY_ENABLED: True, I.KEY_ENABLED: enabled}
+                   prepare.PARKING_KEY: True, C.KEY_ENABLED: True, I.KEY_ENABLED: enabled,
+                   "braunschweig.frozen_pt_walk_lift.enabled": False}
 
         def config(self, key):
             return self._values[key]

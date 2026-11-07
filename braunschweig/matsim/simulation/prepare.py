@@ -36,7 +36,7 @@ from braunschweig import synpp_tokens
 from braunschweig.data.transit import cut_schedule, schedule as transit_schedule
 from braunschweig.data.vrb import fare_config_xml, fare_model_export, line_scopes
 from braunschweig.matsim import config_modules, initial_mode_choice
-from braunschweig.matsim.simulation import cordon_subpopulation, plan_check
+from braunschweig.matsim.simulation import cordon_subpopulation, frozen_pt_walk_lift, plan_check
 from braunschweig.parking import tariff_export
 
 log = logging.getLogger(__name__)
@@ -56,7 +56,8 @@ GTFS_STAGE = "matsim.scenario.supply.gtfs"
 #: and the hub-name file that prepare passes to the cutter (#574). ``transit_schedule`` parses both cut timetables in
 #: ``_verify_cut_timetable_matches_stage``, so its reader decides whether the two cuts count as equal.
 _HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes, tariff_export,
-                   config_modules, plan_check, initial_mode_choice, cordon_subpopulation, cut_schedule, transit_schedule)
+                   config_modules, plan_check, frozen_pt_walk_lift, initial_mode_choice, cordon_subpopulation,
+                   cut_schedule, transit_schedule)
 
 #: A collapsed pt trip (its pt leg shortened by the cut) is walked when the kept stop sequence cannot serve it (eqasim
 #: cutter, #574, ADR-0186). ASSUMPTION: a walked share above 5 % of one collapsed case is worth a warning; it is a
@@ -299,6 +300,7 @@ def configure(context):
     context.config(plan_check.KEY_NON_MONOTONIC_BOUND_MIN_LATENESS_S,
                    plan_check.DEFAULT_NON_MONOTONIC_BOUND_MIN_LATENESS_S)
     context.config(plan_check.KEY_FAIL_ON_THRESHOLD, plan_check.DEFAULT_FAIL_ON_THRESHOLD)
+    context.config(frozen_pt_walk_lift.KEY_ENABLED, frozen_pt_walk_lift.DEFAULT_ENABLED)
 
     # Every agent chooses its modes once before iteration 0 (#542, ADR-0178): the helper declares its switch and
     # the Java options, and refuses the retired ADR-0155 weight key unconditionally, so a stale overlay fails even
@@ -436,9 +438,19 @@ def execute(context):
     if context.config(initial_mode_choice.KEY_ENABLED):
         initial_mode_choice.run(context, result, _initial_mode_choice_excluded_subpopulations(context))
 
+    # Long pt-as-walk trips of frozen resident tours become car_passenger legs (eqasim-bs#575, ADR-0189): on the
+    # FINAL population, before the check measures it.
+    lift_report = None
+    if context.config(frozen_pt_walk_lift.KEY_ENABLED):
+        lift_report = frozen_pt_walk_lift.run(context, result)
+
     # The check reads the FINAL files (after the cut, the freight injection and the fare inputs).
     if context.config(plan_check.KEY_ENABLED):
-        plan_check.run(context, result)
+        # The lift never raises on its bound; the check records its share and fails with every other exceeded share.
+        if lift_report is None:
+            plan_check.run(context, result)
+        else:
+            plan_check.run(context, result, lift_report=lift_report)
 
     return result
 
