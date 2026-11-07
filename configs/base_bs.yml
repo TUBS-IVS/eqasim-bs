@@ -64,16 +64,11 @@ config:
   # Building-level activity potentials (OSM/ALKIS redistribution, TUBS-IVS
   # Activities-and-Potentials-Calculation-Pipeline). Aggregate references
   # (Census SvB, NDS) stay authoritative; the gpkg supplies the within-zone
-  # building weight. Requires the local-only parquet (see
-  # scripts/import_building_activity_potentials.py).
-  building_potentials_path: braunschweig/buildings/building_activity_potentials.parquet
+  # building weight. Requires the local-only redistribution
+  # GeoPackage (layer `buildings`, read directly by the building_potentials stage).
+  building_potentials_path: braunschweig/buildings/08_redistribution.gpkg
   work_building_potentials: true
   secondary_building_potentials: true
-  secondary_other_smart_potential: true
-  secondary_other_broad_share: 0.54
-  secondary_other_errand_share: 0.46
-  secondary_other_min_volume_m3: 50.0
-  secondary_other_cap_percentile: 0.99
   # Part B scorer scale-alignment -- byte-identical defaults until calibrated:
   secondary_scorer_attr_transform: linear
   secondary_scorer_selection: top_n
