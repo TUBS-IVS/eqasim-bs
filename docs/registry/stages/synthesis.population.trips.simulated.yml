@@ -33,6 +33,8 @@ description: >-
   without the passenger availability; a road-gate portal tour without an admissible mode becomes such a lift
   too. So departure_time and arrival_time can change as well; synthesis.population.activities.simulated
   rebuilds the activities from this frame.
+  Since ADR-0187 (#575) tours with a portal leg are checked too, all their pt legs at the realised places; a
+  rail-gate tour that no shift serves lifts only its unconnected pt legs (rule and report keys in the ADR).
 lineage:
   type: braunschweig_new
   upstream: null
@@ -67,6 +69,7 @@ decisions:
 - ADR-0141
 - ADR-0159
 - ADR-0185
+- ADR-0187
 notes: >-
   Consumers: matsim.scenario.population (braunschweig/matsim/scenario/population.py, DAY_TRIPS_STAGE) and
   synthesis.output (braunschweig/synthesis/commute_day/output_day.py, DAY_TRIPS_STAGE, declared through the

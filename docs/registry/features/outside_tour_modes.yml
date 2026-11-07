@@ -26,6 +26,9 @@ description: >-
   availability; a road-gate portal tour without an admissible mode becomes such a lift too instead of keeping a
   walk or bicycle leg of tens of kilometres. The activities of the simulated day are rebuilt from the simulated
   trips (alias synthesis.population.activities.simulated) so a moved tour's times reach the plan.
+  Since ADR-0187 (#575) the check also covers tours with a portal leg (their other pt legs and the portal return
+  to the realised next place); a tour at a rail gate that no shift serves lifts only its unconnected pt legs,
+  so the rail gate stays valid (replay: docs/runs/i575-outside-tour-replay-prod100-2026-11-06.yml).
 stages:
 - synthesis.population.trips.simulated
 - synthesis.population.activities.simulated

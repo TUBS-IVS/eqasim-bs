@@ -23,7 +23,7 @@ DEFAULT_WARN_SHARE = 0.5
 KEY_LAST_RESORT = "braunschweig.outside_tour_modes.last_resort"
 DEFAULT_LAST_RESORT = "car_passenger"
 
-#: Timetable check of the pt legs of outside tours without a portal leg (#465, ADR-0159).
+#: Timetable check of the pt legs of outside tours (#465, ADR-0159) and of tours with a portal leg (#575, ADR-0187).
 KEY_PT_CHECK_ENABLED = "braunschweig.outside_tour_modes.pt_connection_check.enabled"
 DEFAULT_PT_CHECK_ENABLED = True
 #: ASSUMPTION (ADR-0159): how far (s) a tour may move to reach a connection, and in which steps; the values of the

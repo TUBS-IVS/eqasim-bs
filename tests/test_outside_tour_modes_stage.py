@@ -301,7 +301,8 @@ def _fixture_with_an_unserved_pt_tour():
 def test_the_pt_check_moves_an_unserved_non_portal_pt_tour_and_writes_its_times_back():
     # #465, ADR-0159 (persons 125291 / 905013 of the 1 % rerun): a pt leisure tour to a destination outside the
     # extent whose return (22:00) leaves after the last service (21:00). The check runs after the re-moding, probes
-    # only the pt legs of non-portal outside tours, and the whole tour moves one hour earlier in the returned frame.
+    # the pt legs of outside tours (the portal tour of person 3 is a car tour without a pt leg, so it has none to probe),
+    # and the whole tour moves one hour earlier in the returned frame.
     fixture = _fixture_with_an_unserved_pt_tour()
     probed = []
 
@@ -320,10 +321,48 @@ def test_the_pt_check_moves_an_unserved_non_portal_pt_tour_and_writes_its_times_
     assert person5["arrival_time"].tolist() == [17.5 * 3600.0, 21.5 * 3600.0]
     others = out["person_id"] != 5
     assert out.loc[others, "departure_time"].tolist() == fixture["trips"].loc[others, "departure_time"].tolist()
-    assert out.loc[out["person_id"] == 3, "mode"].tolist() == ["car", "car"]       # portal tour: never probed
+    assert out.loc[out["person_id"] == 3, "mode"].tolist() == ["car", "car"]       # portal tour: no pt leg, nothing to probe
     assert all(9900.0 not in set(tasks["origin_x"]) for tasks in probed)        # the gate end of person 3
     assert report["pt_connection"]["actions"]["tour_shifted"] == 1
     assert report["pt_connection"]["actions"]["kept_no_connection"] == 0
+
+
+def test_the_pt_check_lifts_only_the_unserved_leg_of_a_rail_gate_tour_and_counts_the_lift():
+    # A rail-gate portal tour (portal legs by pt, #575): a whole-tour switch would break the gate, so the check
+    # lifts only the pt leg no timetable serves, here the portal return leg gate -> destination.
+    fixture = _fixture_with_an_unserved_pt_tour()
+    hours = [(7.0, 7.5), (8.0, 8.5), (16.0, 16.5)]
+    fixture["trips"] = pd.concat([fixture["trips"], pd.DataFrame({
+        "person_id": [6, 6, 6], "trip_index": [0, 1, 2],
+        "preceding_purpose": ["home", "outside", "other"], "following_purpose": ["outside", "other", "home"],
+        "mode": ["pt", "pt", "pt"], "portal_leg": [True, True, False],
+        "departure_time": [h[0] * 3600.0 for h in hours], "arrival_time": [h[1] * 3600.0 for h in hours]})],
+        ignore_index=True)
+    points = {(6, 0): (5000.0, 5000.0), (6, 1): (9900.0, 5000.0), (6, 2): (30000.0, 5000.0),
+              (6, 3): (5000.0, 5000.0)}
+    fixture["locations"] = pd.concat([fixture["locations"], gpd.GeoDataFrame(
+        {"person_id": [k[0] for k in points], "activity_index": [k[1] for k in points]},
+        geometry=[Point(*xy) for xy in points.values()], crs=CRS)], ignore_index=True)
+    fixture["persons"] = pd.concat([fixture["persons"], pd.DataFrame({
+        "person_id": [6], "car_availability": ["none"], "has_license": [False], "bicycle_availability": ["none"],
+        "car_passenger_availability": ["none"]})], ignore_index=True)
+
+    def probe(tasks):
+        # Only the leg from the gate (x 9900) to the destination (x 30000) has no connection, at any offset.
+        unserved = tasks["origin_x"].eq(9900.0) & tasks["destination_x"].eq(30000.0)
+        return pd.Series((~unserved).to_numpy(), index=tasks["identifier"].astype(str).to_numpy())
+
+    from braunschweig.synthesis.outside_tour_modes import pt_connections
+
+    out, report = stage.remode_outside_tours(**fixture, last_resort="car_passenger",
+                                             pt_check=pt_connections.PtCheck(probe=probe))
+    assert out.loc[out["person_id"] == 6, "mode"].tolist() == ["pt", "car_passenger", "pt"]
+    assert out.loc[out["person_id"] == 6, "departure_time"].tolist() == [h[0] * 3600.0 for h in hours]
+    pt_connection = report["pt_connection"]
+    assert pt_connection["by_portal_class"]["rail"]["actions"]["pt_legs_to_car_passenger_lift"] == 1
+    assert pt_connection["by_portal_class"]["rail"]["n_legs_lifted"] == 1
+    assert pt_connection["by_portal_class"]["rail"]["n_portal_legs_lifted"] == 1
+    assert pt_connection["n_legs_lifted"] == 1
 
 
 def test_only_the_first_probe_of_the_pt_check_treats_a_batch_without_any_route_as_a_broken_run():

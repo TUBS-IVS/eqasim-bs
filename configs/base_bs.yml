@@ -906,7 +906,8 @@ config:
   braunschweig.outside_tour_modes.enabled: true
   braunschweig.outside_tour_modes.min_share: 0.01
   braunschweig.outside_tour_modes.warn_share: 0.5
-  # Timetable check of the pt legs of outside tours without a portal leg (ADR-0159, #465): a tour whose pt legs
+  # Timetable check of the pt legs of outside tours, since ADR-0187 (#575) also of tours with a portal leg
+  # (a rail-gate tour lifts only its unconnected legs after the shift) (ADR-0159, #465): a tour whose pt legs
   # have no connection moves as a whole (earlier first, steps of pt_shift_step_s up to pt_shift_window_s; values
   # of ADR-0152/0153, ASSUMPTION, not calibrated), else drives, else rides along. last_resort car_passenger: a
   # tour nothing else resolves (and a road-gate portal tour without an admissible mode) becomes a lift without

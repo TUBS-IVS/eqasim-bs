@@ -6,8 +6,11 @@ direct walk in the prepare routing (``PlanRouter.fixOnlyWalk``), and the cutter 
 1 % rerun of the #465 fixes 15 such legs of 14 residents walked 8-30 km, two of the residents stuck at the end of
 the run among them.
 
-:func:`resolve_pt_tours` probes every pt leg of an outside tour WITHOUT a portal leg (portal stays have their own
-check, ADR-0152/0156) at its departure time. A tour whose pt legs are not all connections is resolved by a counted
+:func:`resolve_pt_tours` probes every pt leg of an outside tour, and of a tour with a portal leg (ADR-0187), at its
+departure time, portal pt legs included: this check runs after the secondary location choice, so a portal return leg
+is probed to the realised destination, which the portal stage (ADR-0152/0156) could not know. A tour is classed
+``none`` (no portal leg), ``road`` (portal legs, none by pt) or ``rail`` (at least one portal leg by pt, a rail
+gate). A tour whose pt legs are not all connections is resolved by a counted
 chain, in this order (owner order of ADR-0153 and ADR-0156). First, as for the in-commuters (ADR-0153), the day
 of every person with a checked tour that ends after ``bound_s`` moves earlier as a whole by the population writer's
 rule (only while that rule is on, ``day_end_shift``) (``day_end_margin.late_day_shift_s``), so the timetable is asked at the times that are finally written and the
@@ -19,12 +22,17 @@ writer does not move a checked day again (counted as ``n_persons_day_end_shifted
    trip), its last arrival strictly before the departure of the person's next trip and at or before ``bound_s``,
    so a shift never leaves a zero-duration activity next to the tour. One probe call per offset.
 2. ``tour_to_car`` (needs ``can_car``), then ``tour_to_car_passenger`` (needs ``can_car_passenger``): every leg of
-   the tour switches.
+   the tour switches. Tours of class ``rail`` skip this step, because a whole-tour switch would break the rail gate;
+   they go to step 3 directly.
 3. ``tour_to_car_passenger_lift`` (``last_resort`` ``LAST_RESORT_LIFT``): the tour becomes ``car_passenger`` WITHOUT
    the passenger availability (ASSUMPTION, as ADR-0156: a trip no timetable serves is made as a lift or a taxi, not
    as a walk of tens of kilometres); ``kept_no_connection`` (``LAST_RESORT_KEEP``): kept, counted and warned about.
+   For a ``rail`` tour only its pt legs without a connection at their unshifted (written) times switch, as
+   ``pt_legs_to_car_passenger_lift`` (ASSUMPTION, ADR-0187: the person arrives by train and is picked up; a lift is
+   no chain mode, so vehicle continuity holds); the lifted legs are counted.
 
-``connection_found`` tours are untouched. All actions are counted and logged as rates over the checked tours.
+``connection_found`` tours are untouched. All actions are counted and logged as rates over the checked tours, in
+total and per portal class.
 """
 from __future__ import annotations
 
@@ -47,17 +55,21 @@ ACTION_TOUR_SHIFTED = "tour_shifted"
 ACTION_TOUR_TO_CAR = "tour_to_car"
 ACTION_TOUR_TO_CAR_PASSENGER = "tour_to_car_passenger"
 ACTION_TOUR_TO_CAR_PASSENGER_LIFT = "tour_to_car_passenger_lift"
+ACTION_PT_LEGS_LIFT = "pt_legs_to_car_passenger_lift"
 ACTION_KEPT = "kept_no_connection"
 ACTIONS = (ACTION_CONNECTION_FOUND, ACTION_TOUR_SHIFTED, ACTION_TOUR_TO_CAR, ACTION_TOUR_TO_CAR_PASSENGER,
-           ACTION_TOUR_TO_CAR_PASSENGER_LIFT, ACTION_KEPT)
+           ACTION_TOUR_TO_CAR_PASSENGER_LIFT, ACTION_PT_LEGS_LIFT, ACTION_KEPT)
 #: The actions that resolve a tour without a timetable connection by a mode switch or by keeping it.
-UNSERVED_ACTIONS = (ACTION_TOUR_TO_CAR, ACTION_TOUR_TO_CAR_PASSENGER, ACTION_TOUR_TO_CAR_PASSENGER_LIFT, ACTION_KEPT)
+UNSERVED_ACTIONS = (ACTION_TOUR_TO_CAR, ACTION_TOUR_TO_CAR_PASSENGER, ACTION_TOUR_TO_CAR_PASSENGER_LIFT,
+                    ACTION_PT_LEGS_LIFT, ACTION_KEPT)
+#: Portal class of a checked tour: no portal leg, portal legs without pt (road gate), a portal leg by pt (rail gate).
+PORTAL_CLASSES = ("none", "road", "rail")
 #: What happens to a tour that nothing else resolves (``last_resort``); the same values as the portal stage.
 LAST_RESORT_KEEP = "keep"
 LAST_RESORT_LIFT = "car_passenger"
 LAST_RESORTS = (LAST_RESORT_KEEP, LAST_RESORT_LIFT)
 PT_MODE = "pt"
-TOUR_ACTION_COLUMNS = ["person_id", "tour", "action", "offset_s", "n_pt_legs"]
+TOUR_ACTION_COLUMNS = ["person_id", "tour", "action", "offset_s", "n_pt_legs", "portal_class", "n_legs_lifted"]
 
 #: A probe maps a task frame (``braunschweig.data.transit.connections.TASK_COLUMNS``) to a boolean Series indexed by
 #: the task identifier: is the routed trip a connection?
@@ -111,13 +123,15 @@ def _connected(probe: Probe, tasks: pd.DataFrame) -> dict:
 def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.ndarray, portal_tour: np.ndarray,
                      endpoints: pd.DataFrame, availability: pd.DataFrame, probe: Probe, shift_window_s: float,
                      shift_step_s: float, bound_s: float, last_resort: str = LAST_RESORT_LIFT,
-                     day_end_shift: bool = True) -> Resolution:
-    """Check and resolve the pt legs of the outside tours; see the module docstring. Pure apart from the probe.
+                     day_end_shift: bool = True, portal_leg: np.ndarray | None = None) -> Resolution:
+    """Check and resolve the pt legs of outside tours and portal tours; see the module docstring. Pure apart from
+    the probe.
 
     ``trips`` must be sorted by ``person_id, trip_index`` (``tours.require_sorted``); ``tour_ids``, ``outside``
-    (leg belongs to an outside tour), ``portal_tour`` (leg belongs to a tour with a portal leg) and ``endpoints``
-    (``ox, oy, dx, dy`` in the metric pipeline CRS) are aligned with its rows. ``availability`` is indexed by
-    ``person_id`` with the bool columns ``can_car`` and ``can_car_passenger``. Times are seconds.
+    (leg belongs to an outside tour), ``portal_tour`` (leg belongs to a tour with a portal leg), ``portal_leg`` (the
+    leg is a portal leg; ``None`` = no portal legs) and ``endpoints`` (``ox, oy, dx, dy`` in the metric pipeline
+    CRS) are aligned with its rows. ``availability`` is indexed by ``person_id`` with the bool columns ``can_car``
+    and ``can_car_passenger``. Times are seconds.
     """
     if last_resort not in LAST_RESORTS:
         raise ValueError(f"{_LOG_TAG} invalid last_resort {last_resort!r}; allowed: {list(LAST_RESORTS)}")
@@ -125,10 +139,16 @@ def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.n
         raise ValueError(f"{_LOG_TAG} bound_s must be finite, got {bound_s!r}")
     offsets = shift_offsets_s(shift_window_s, shift_step_s)
     n = len(trips)
+    if portal_leg is None:
+        if np.asarray(portal_tour, dtype=bool).any():
+            raise ValueError(f"{_LOG_TAG} portal_tour flags portal tours but portal_leg is None: the gate class of "
+                             f"those tours is unknown")
+        portal_leg = np.zeros(n, dtype=bool)
     for name, values in (("tour_ids", tour_ids), ("outside", outside), ("portal_tour", portal_tour),
-                         ("endpoints", endpoints)):
+                         ("portal_leg", portal_leg), ("endpoints", endpoints)):
         if len(values) != n:
             raise ValueError(f"{_LOG_TAG} {name} has {len(values)} rows for {n} legs")
+    portal_leg = np.asarray(portal_leg, dtype=bool)
     persons = trips["person_id"].to_numpy()
     tours = np.asarray(tour_ids)
     modes = trips["mode"].astype(object).to_numpy().copy()
@@ -136,9 +156,10 @@ def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.n
     arrival = trips["arrival_time"].to_numpy(dtype=float).copy()
     xy = endpoints[["ox", "oy", "dx", "dy"]].to_numpy(dtype=float)
 
-    candidate = np.asarray(outside, dtype=bool) & ~np.asarray(portal_tour, dtype=bool)
+    candidate = np.asarray(outside, dtype=bool) | np.asarray(portal_tour, dtype=bool)
     is_pt = modes == PT_MODE
-    frame = pd.DataFrame({"person_id": persons, "tour": tours, "position": np.arange(n), "pt": is_pt})
+    frame = pd.DataFrame({"person_id": persons, "tour": tours, "position": np.arange(n), "pt": is_pt,
+                          "portal": portal_leg, "portal_pt": portal_leg & is_pt})
     frame = frame[candidate]
     has_pt = frame.groupby(["person_id", "tour"], sort=False)["pt"].transform("any").to_numpy(dtype=bool)
     frame = frame[has_pt]
@@ -146,7 +167,8 @@ def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.n
     checked = []
     for (person_id, tour), legs in frame.groupby(["person_id", "tour"], sort=True):
         positions = legs["position"].to_numpy()
-        checked.append({"person_id": person_id, "tour": int(tour), "legs": positions,
+        portal_class = ("rail" if legs["portal_pt"].any() else "road" if legs["portal"].any() else "none")
+        checked.append({"person_id": person_id, "tour": int(tour), "legs": positions, "portal_class": portal_class,
                         "pt_legs": positions[legs["pt"].to_numpy(dtype=bool)]})
     unknown = sorted({t["person_id"] for t in checked} - set(availability.index))
     if unknown:
@@ -172,13 +194,16 @@ def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.n
 
     actions = [None] * len(checked)
     applied = np.zeros(len(checked), dtype=float)
+    lifted = np.zeros(len(checked), dtype=int)
+    portal_lifted = np.zeros(len(checked), dtype=int)  # lifted legs that are portal legs (teleported to/from the exit)
     n_legs_probed = 0
+    served_unshifted = {}  # leg position -> is it a connection at its unshifted (written) time
     if checked:
         pt_positions = np.concatenate([t["pt_legs"] for t in checked])
         n_legs_probed = len(pt_positions)
-        served = _connected(probe, _tasks(pt_positions, xy, departure, 0.0))
+        served_unshifted = _connected(probe, _tasks(pt_positions, xy, departure, 0.0))
         for k, tour in enumerate(checked):
-            if all(served[int(p)] for p in tour["pt_legs"]):
+            if all(served_unshifted[int(p)] for p in tour["pt_legs"]):
                 actions[k] = ACTION_CONNECTION_FOUND
 
     def fits(tour, offset) -> bool:
@@ -214,6 +239,16 @@ def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.n
 
     for k in unresolved:
         person_id = checked[k]["person_id"]
+        if checked[k]["portal_class"] == "rail":
+            # A whole-tour switch would break the rail gate: only the legs no timetable serves are lifted.
+            if last_resort == LAST_RESORT_LIFT:
+                unserved_legs = [int(p) for p in checked[k]["pt_legs"] if not served_unshifted[int(p)]]
+                modes[unserved_legs] = "car_passenger"
+                actions[k], lifted[k] = ACTION_PT_LEGS_LIFT, len(unserved_legs)
+                portal_lifted[k] = int(portal_leg[unserved_legs].sum())
+            else:
+                actions[k] = ACTION_KEPT
+            continue
         if bool(availability.at[person_id, "can_car"]):
             actions[k], new_mode = ACTION_TOUR_TO_CAR, "car"
         elif bool(availability.at[person_id, "can_car_passenger"]):
@@ -232,11 +267,24 @@ def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.n
         out["arrival_time"] = arrival
     tour_actions = pd.DataFrame({"person_id": [t["person_id"] for t in checked],
                                  "tour": [t["tour"] for t in checked], "action": actions, "offset_s": applied,
-                                 "n_pt_legs": [len(t["pt_legs"]) for t in checked]}, columns=TOUR_ACTION_COLUMNS)
+                                 "n_pt_legs": [len(t["pt_legs"]) for t in checked],
+                                 "portal_class": [t["portal_class"] for t in checked],
+                                 "n_legs_lifted": lifted}, columns=TOUR_ACTION_COLUMNS)
     actions_array = np.array(actions, dtype=object)
+    classes_array = np.array([t["portal_class"] for t in checked], dtype=object)
+    n_pt_legs = np.array([len(t["pt_legs"]) for t in checked], dtype=int)
     shifted = actions_array == ACTION_TOUR_SHIFTED
+    by_portal_class = {}
+    for portal_class in PORTAL_CLASSES:
+        in_class = classes_array == portal_class
+        by_portal_class[portal_class] = {
+            "n_tours_checked": int(in_class.sum()), "n_legs_probed": int(n_pt_legs[in_class].sum()),
+            "n_legs_lifted": int(lifted[in_class].sum()), "n_portal_legs_lifted": int(portal_lifted[in_class].sum()),
+            "actions": {action: int((in_class & (actions_array == action)).sum()) for action in ACTIONS}}
     report = {"n_tours_checked": len(checked), "n_legs_probed": int(n_legs_probed),
-              "n_persons_day_end_shifted": n_day_end_shifted,
+              "n_persons_day_end_shifted": n_day_end_shifted, "n_legs_lifted": int(lifted.sum()),
+              "n_portal_legs_lifted": int(portal_lifted.sum()),
+              "by_portal_class": by_portal_class,
               "actions": {action: int((actions_array == action).sum()) for action in ACTIONS},
               "shift_abs_s_median": float(np.median(np.abs(applied[shifted]))) if shifted.any() else None,
               "shift_window_s": float(shift_window_s), "shift_step_s": float(shift_step_s),
@@ -250,13 +298,26 @@ def log_report(report: dict, warn_share: float) -> None:
     n = report["n_tours_checked"]
     counts = report["actions"]
     unserved = sum(counts[action] for action in UNSERVED_ACTIONS)
-    message = "%s %d outside tours with pt legs (%d legs probed): %s; median shift %s s" % (
-        _LOG_TAG, n, report["n_legs_probed"],
+    message = "%s %d outside or portal tours with pt legs (%d legs probed, %d legs lifted, %d of them portal legs): %s; median shift %s s" % (
+        _LOG_TAG, n, report["n_legs_probed"], report["n_legs_lifted"],
+        report["n_portal_legs_lifted"],
         ", ".join("%s %d (%.1f%%)" % (a, counts[a], 100.0 * counts[a] / n if n else 0.0) for a in ACTIONS),
         "n/a" if report["shift_abs_s_median"] is None else "%.0f" % report["shift_abs_s_median"])
-    if counts[ACTION_KEPT] or (n and unserved / n > warn_share):
+    for portal_class, part in report["by_portal_class"].items():
+        n_class = part["n_tours_checked"]
+        class_unserved = sum(part["actions"][action] for action in UNSERVED_ACTIONS)
+        message += "; portal class %s: %d tours, %d legs probed, %d legs lifted (%d portal), %s" % (
+            portal_class, n_class, part["n_legs_probed"], part["n_legs_lifted"],
+            part["n_portal_legs_lifted"], ", ".join("%s %d" % (a, c) for a, c in part["actions"].items() if c) or "no actions")
+        message += " (unserved %.1f%%)" % (100.0 * class_unserved / n_class if n_class else 0.0)
+    high_classes = [portal_class for portal_class, part in report["by_portal_class"].items()
+                    if part["n_tours_checked"]
+                    and sum(part["actions"][a] for a in UNSERVED_ACTIONS) / part["n_tours_checked"] > warn_share]
+    if counts[ACTION_KEPT] or (n and unserved / n > warn_share) or high_classes:
         logger.warning("%s -- %.1f%% of the tours have no timetable connection within the shift window (warn share "
-                       "%.1f%%); %s %d are routed as walks", message, 100.0 * unserved / n if n else 0.0,
-                       100.0 * warn_share, ACTION_KEPT, counts[ACTION_KEPT])
+                       "%.1f%%; portal classes above it: %s); they are switched to car or car_passenger, lifted "
+                       "(legs or tour) or kept; only the %d %s tours are routed as walks", message,
+                       100.0 * unserved / n if n else 0.0, 100.0 * warn_share, high_classes or "none",
+                       counts[ACTION_KEPT], ACTION_KEPT)
     else:
         logger.info(message)
