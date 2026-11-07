@@ -23,6 +23,8 @@ output paths `*_kreis5`, `settings_tier3_mef100_intseed_numba.yaml`, `num_worker
   config (created 2026-06-30, `3703292`, without the block) → runs with default **False**.
   Effect: `other` activities fall back to the generic (VW-plant-dominated) potential.
   Cheap fix: add the block; popsim caches stay valid, only secondary-location stages recompute.
+  RESOLVED differently: ADR-0190 removed the derived `other` potential and its five keys; `other` now
+  uses the delivered errand value of the redistribution release.
 
 **Built but never activated in ANY config, absent from PROJECT_STATUS/BACKLOG/DECISIONS (decide: wire or document as parked):**
 - `braunschweig.gravity.sector_aware_enabled` (default False; `a0ecee3` 2026-06-04) — establishment-density

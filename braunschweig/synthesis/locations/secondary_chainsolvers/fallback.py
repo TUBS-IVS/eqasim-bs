@@ -24,6 +24,25 @@ from .distance_sampling import _rda_sample_distances
 from .plans import SECONDARY_PURPOSES
 
 
+def _offer_mask(df_secondary: pd.DataFrame, offer_column: str) -> np.ndarray:
+    """Boolean offer mask of ``offer_column``; a missing value means "not offered".
+
+    The REPLACE candidate frame is a concat of row families, and a family that
+    does not define a flag (e.g. residential visit rows without ``offers_escort``
+    while ``escort_purpose`` is OFF) leaves NaN there, which cannot index. The
+    NaN count is logged, never silent.
+    """
+    column = df_secondary[offer_column]
+    n_missing = int(column.isna().sum())
+    if n_missing:
+        print(
+            f"[braunschweig.secondary_chainsolvers] fallback catalog: "
+            f"{n_missing:,}/{len(column):,} candidates have no value in "
+            f"{offer_column!r} -> treated as not offered."
+        )
+    return column.fillna(False).astype(bool).values
+
+
 def _build_rda_candidate_index(df_secondary: pd.DataFrame):
     """Build the eqasim ``CandidateIndex`` (3 KDTrees over the secondary
     candidate set) ONCE so it can be shared across both RDA fallback calls.
@@ -37,12 +56,10 @@ def _build_rda_candidate_index(df_secondary: pd.DataFrame):
     Returns the constructed ``CandidateIndex`` instance (its KDTrees are
     deterministic given the fixed candidate order).
 
-    ``df_secondary`` here is always the LEGACY candidate frame (see the
-    "Always the LEGACY frame" comment in ``execute()``), which predates issue
-    #201 and therefore never carries an ``offers_escort`` column (escort
-    candidates -- education facilities, residential buildings -- are appended
-    only onto the REPLACE frame built by ``build_secondary_candidates`` /
-    ``append_escort_candidates`` for the primary carla solve). Since "escort"
+    ``df_secondary`` is the fallback frame chosen in ``execute()``: the REPLACE
+    candidate set when ``secondary_building_potentials`` is ON (the id universe
+    the facilities writer holds), the LEGACY frame when OFF. The LEGACY frame
+    predates issue #201 and never carries an ``offers_escort`` column. Since "escort"
     is an unconditional member of ``SECONDARY_PURPOSES``, a purpose whose offer
     column is missing here gets an ANY-TYPE pool -- the FULL candidate set,
     via an all-True mask -- instead of being omitted from ``destinations``:
@@ -71,7 +88,7 @@ def _build_rda_candidate_index(df_secondary: pd.DataFrame):
     for purpose in SECONDARY_PURPOSES:
         offer_column = f"offers_{purpose}"
         if offer_column in df_secondary.columns:
-            mask = df_secondary[offer_column].values
+            mask = _offer_mask(df_secondary, offer_column)
         else:
             # #201 spec amendment: no dedicated fallback pool for this
             # purpose (currently only "escort") -> any-type pool, an
@@ -218,8 +235,9 @@ def _fallback_place(problems: List[Dict[str, Any]],
     crash on missing rows. The minority of unbounded problems makes this
     acceptable as a stop-gap.
 
-    ``df_secondary`` here is always the LEGACY candidate frame, which predates
-    issue #201 and never carries an ``offers_escort`` column (mirrors
+    ``df_secondary`` is the fallback frame chosen in ``execute()`` (REPLACE set
+    ON, legacy frame OFF); the legacy frame predates issue #201 and never
+    carries an ``offers_escort`` column (mirrors
     :func:`_build_rda_candidate_index`; see its docstring). A missing
     ``offers_<purpose>`` column gets an ANY-TYPE pool -- the full candidate
     set -- rather than an empty one, per the #201 design spec scope amendment
@@ -236,7 +254,8 @@ def _fallback_place(problems: List[Dict[str, Any]],
     for purpose in SECONDARY_PURPOSES:
         offer_column = f"offers_{purpose}"
         if offer_column in df_secondary.columns:
-            pool[purpose] = df_secondary[df_secondary[offer_column]].reset_index(drop=True)
+            pool[purpose] = df_secondary[
+                _offer_mask(df_secondary, offer_column)].reset_index(drop=True)
         else:
             # #201 spec amendment: any-type pool (the full candidate set)
             # instead of an empty one for a purpose with no offer column

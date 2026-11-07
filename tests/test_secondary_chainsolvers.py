@@ -1121,30 +1121,21 @@ def test_build_locations_df_split_requires_potentials():
 
 
 def test_build_secondary_candidates_carries_split_retail_columns():
-    legacy = gpd.GeoDataFrame(
-        {"location_id": ["sec_0"], "commune_id": ["03101000"],
-         "iris_id": ["03101000"], "offers_shop": [True],
-         "offers_leisure": [True], "offers_other": [True]},
-        geometry=[geo.Point(500, 500)], crs="EPSG:25832",
-    )
     from shapely.geometry import Polygon
     b = Polygon([(0, 0), (0, 10), (10, 10), (10, 0)])
     buildings = gpd.GeoDataFrame(
         {"building_id": [7],
          "potential_retail_daily": [4.0], "potential_retail_non_daily": [3.0],
-         "potential_leisure": [9.0], "potential_generic": [100.0],
+         "potential_leisure": [9.0], "potential_errands": [100.0],
          "commune_id": ["03101000"]},
         geometry=[b], crs="EPSG:25832",
     )
-    out = sc.build_secondary_candidates(legacy, buildings)
+    out = sc.build_secondary_candidates(buildings)
     gpkg = out[out["location_id"] == "sec_b_7"].iloc[0]
     # Summed pot_shop preserved (OFF path), components carried separately.
     assert gpkg["pot_shop"] == 7.0
     assert gpkg["pot_shop_daily"] == 4.0
     assert gpkg["pot_shop_non_daily"] == 3.0
-    # Legacy other row carries 0.0 for all three shop potentials.
-    other = out[out["location_id"] == "sec_0"].iloc[0]
-    assert other["pot_shop_daily"] == 0.0 and other["pot_shop_non_daily"] == 0.0
 
 
 def test_purpose_in_distributions_detects_layer_and_legacy():
@@ -1286,18 +1277,11 @@ def test_build_secondary_candidates_appends_external_centroids():
     from shapely.geometry import Point, Polygon
     import braunschweig.synthesis.locations.secondary_chainsolvers as sc
 
-    # Minimal legacy candidate (one 'other' catalog point) ...
-    legacy = gpd.GeoDataFrame({
-        "location_id": ["sec_0"], "commune_id": ["03101000"],
-        "iris_id": ["0310100000000000"],
-        "offers_leisure": [False], "offers_shop": [False], "offers_other": [True],
-        "geometry": [Point(600000, 5790000)],
-    }, crs="EPSG:25832")
-    # ... and one gpkg building with retail potential.
+    # One gpkg building with retail and errand potential.
     buildings = gpd.GeoDataFrame({
         "building_id": [1], "commune_id": ["03101000"],
         "potential_retail_daily": [2.0], "potential_retail_non_daily": [1.0],
-        "potential_leisure": [0.0], "potential_generic": [0.0],
+        "potential_leisure": [0.0], "potential_errands": [5.0],
         "geometry": [Polygon([(600000, 5790000), (600010, 5790000),
                               (600010, 5790010), (600000, 5790010)])],
     }, crs="EPSG:25832")
@@ -1306,7 +1290,7 @@ def test_build_secondary_candidates_appends_external_centroids():
         "ewz": [600000.0], "geometry": [Point(550000, 5800000)],
     }, crs="EPSG:25832")
 
-    out = sc.build_secondary_candidates(legacy, buildings, df_external=external)
+    out = sc.build_secondary_candidates(buildings, df_external=external)
 
     ext_rows = out[out["location_id"] == "EXT05111000"]
     assert len(ext_rows) == 1
@@ -1316,8 +1300,8 @@ def test_build_secondary_candidates_appends_external_centroids():
     assert r["pot_shop"] == 600000.0
 
     # df_external=None -> byte-identical to the no-external result.
-    out_none = sc.build_secondary_candidates(legacy, buildings, df_external=None)
-    out_default = sc.build_secondary_candidates(legacy, buildings)
+    out_none = sc.build_secondary_candidates(buildings, df_external=None)
+    out_default = sc.build_secondary_candidates(buildings)
     assert list(out_none["location_id"]) == list(out_default["location_id"])
     assert "EXT05111000" not in set(out_none["location_id"])
 

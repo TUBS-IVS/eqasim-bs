@@ -37,10 +37,6 @@
    "braunschweig.synthesis.locations.secondary_candidates"
   ],
   [
-   "braunschweig.data.bosserhof_purpose",
-   "braunschweig.synthesis.locations.secondary_candidates"
-  ],
-  [
    "braunschweig.data.building_potentials",
    "braunschweig.data.schools.kita_facilities"
   ],
@@ -1258,7 +1254,6 @@
   "braunschweig.data.alkis",
   "braunschweig.data.bbsr.regiostar",
   "braunschweig.data.bosserhof_location_category",
-  "braunschweig.data.bosserhof_purpose",
   "braunschweig.data.building_potentials",
   "braunschweig.data.buildings",
   "braunschweig.data.census.employees",

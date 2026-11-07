@@ -3,8 +3,9 @@
 Materialises the EXACT candidate frame the secondary chainsolvers solve on
 when building potentials are ON:
 
-- ``sec_b_<building_id>``   gpkg shop/leisure buildings (REPLACE, PR #77),
-- ``sec_<n>``               legacy 'other' catalog rows,
+- ``sec_b_<building_id>``   gpkg shop/leisure/other buildings (REPLACE, PR #77; 'other' =
+  buildings with ``potential_errands > 0`` since ADR-0190, which replaced the legacy
+  ``sec_<n>`` 'other' catalog rows),
 - ``<commune_id>``          external Gemeinde centroids (``secondary_external_candidates``),
 - ``sec_res_<building_id>`` residential leisure_visit / escort_residential candidates
   (``leisure_visit_building_potential`` and/or ``escort_purpose``, issues #127/#201),
@@ -44,12 +45,10 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.synthesis.locations.secondary_chainsolvers.srv_candidates",
     # The rest of this stage's import closure: modules its helpers import, whose code this
     # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
-    "braunschweig.data.building_potential_attach",
     "braunschweig.synthesis.locations.secondary_chainsolvers.activity_types",
     "braunschweig.synthesis.locations.secondary_chainsolvers.candidate_columns",
     "braunschweig.synthesis.locations.secondary_chainsolvers.inverse_cdf",
     "braunschweig.synthesis.locations.secondary_chainsolvers.srv_location_types",
-    "braunschweig.synthesis.locations.secondary_other_potential",
     # Guard rail 2 of the portal-trip feature (eqasim-bs#442): the flag key and the supply-ring
     # polygon builder this stage runs when the external centroids are bounded to the ring.
     "braunschweig.synthesis.portal_trips.config_keys",
@@ -96,14 +95,6 @@ def configure(context):
                 context.stage("data.spatial.municipalities")
         # Only for the external-candidates-without-cordon warning.
         context.config("cordon_enabled", False)
-
-        context.config("secondary_other_smart_potential", False)
-        context.config("secondary_other_broad_share", 0.54)
-        context.config("secondary_other_errand_share", 0.46)
-        context.config("secondary_other_min_volume_m3", 50.0)
-        context.config("secondary_other_cap_percentile", 0.99)
-        if context.config("secondary_other_smart_potential"):
-            context.stage("braunschweig.data.bosserhof_purpose")
 
         # Escort candidate universe (issue #201): the education facilities are
         # only needed as candidates once escort_purpose is ON, and only make
@@ -227,28 +218,10 @@ def execute(context):
     if warning:
         print(warning, flush=True)
 
-    smart_other = bool(context.config("secondary_other_smart_potential"))
-    if smart_other:
-        mapping = context.stage("braunschweig.data.bosserhof_purpose")
-        other_params = dict(
-            broad_share=float(context.config("secondary_other_broad_share")),
-            errand_share=float(context.config("secondary_other_errand_share")),
-            min_volume_m3=float(context.config("secondary_other_min_volume_m3")),
-            cap_percentile=float(context.config("secondary_other_cap_percentile")),
-        )
-        df_secondary = build_secondary_candidates(
-            df_secondary,
-            context.stage("braunschweig.data.building_potentials"),
-            df_external=df_external,
-            mapping=mapping,
-            other_potential_params=other_params,
-        )
-    else:
-        df_secondary = build_secondary_candidates(
-            df_secondary,
-            context.stage("braunschweig.data.building_potentials"),
-            df_external=df_external,
-        )
+    df_secondary = build_secondary_candidates(
+        context.stage("braunschweig.data.building_potentials"),
+        df_external=df_external,
+    )
 
     if leisure_visit or escort_on:
         # The residential rows are needed for "escort_residential" even when
@@ -288,20 +261,10 @@ def execute(context):
             check_visit_pool_supply,
         )
 
-        # min_volume_m3 / cap_percentile mirror secondary_other_min_volume_m3 /
-        # secondary_other_cap_percentile (the same cap-and-floor formula
-        # secondary_other_potential.derive_other_potential uses) -- both are
-        # declared unconditionally whenever secondary_building_potentials is ON
-        # (configure(), directly inside the `if sec_enabled:` block, not nested
-        # under secondary_other_smart_potential), which is guaranteed here
-        # because the guard above already requires secondary_building_potentials
-        # ON whenever secondary_srv_location_types is ON.
         df_secondary = append_location_category_columns(
             df_secondary,
             context.stage("braunschweig.data.building_potentials"),
             context.stage("braunschweig.data.bosserhof_location_category"),
-            min_volume_m3=float(context.config("secondary_other_min_volume_m3")),
-            cap_percentile=float(context.config("secondary_other_cap_percentile")),
         )
 
         df_landuse = context.stage("braunschweig.data.landuse")
@@ -319,9 +282,8 @@ def execute(context):
         # candidate, or the wiring (mapping / grid seeding / potential join)
         # is broken. All six categories are checked -- the three leisure_*
         # categories (masking pot_leisure on sec_b_* buildings), the two
-        # errand_* categories (derived from df_potentials by
-        # append_location_category_columns via the cap-and-floor formula
-        # above, including newly appended sec_b_* rows for errand-class
+        # errand_* categories (taken from potential_errands of df_potentials by
+        # append_location_category_columns, including newly appended sec_b_* rows for errand-class
         # buildings absent from the input candidates), and leisure_outdoor
         # (landuse-only, no building counterpart).
         #

@@ -16,6 +16,10 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 
+from braunschweig.data.building_potential_attach import (
+    log_unit_basis, pick_unit_weights,
+)
+
 CRS_METRIC = "EPSG:25832"
 
 # Ostfalia is one enrollment row but spans three ZGB campus communes; its students
@@ -23,7 +27,8 @@ CRS_METRIC = "EPSG:25832"
 OSTFALIA_COMMUNES = ["03158", "03102", "03103"]
 
 
-def build_university_facilities(df_hochschulen, df_osm_uni, weight_column="weight"):
+def build_university_facilities(df_hochschulen, df_osm_uni, weight_column="weight",
+                                area_weight_column=None):
     """Distribute local enrollment across OSM university buildings; add surrounding points.
 
     Parameters
@@ -38,6 +43,13 @@ def build_university_facilities(df_hochschulen, df_osm_uni, weight_column="weigh
         Default "weight" (footprint area) reproduces the legacy behaviour
         byte-identically. Pass "potential" to distribute by building potential.
         The surrounding-institution branch (curated single points) is not affected.
+    area_weight_column:
+        Only with a potential ``weight_column`` (NaN where a building matched no
+        footprint): same-unit rule, see ``pick_unit_weights``. A facility unit
+        (the commune, or the Ostfalia commune group) uses the potentials only if
+        every building has one > 0, else the area x floors weights of ALL its
+        buildings. The unit counts are logged. None (default): ``weight_column``
+        is used for every unit as is.
     """
     rows_id, rows_cap, rows_geom = [], [], []
 
@@ -57,15 +69,26 @@ def build_university_facilities(df_hochschulen, df_osm_uni, weight_column="weigh
     osm = df_osm_uni.to_crs(CRS_METRIC).copy()
     osm["ars5"] = osm["commune_id"].astype(str).str[:5]
 
+    unit_basis = []  # one bool per distributed unit: True = on potentials
+
     def _distribute(enrollment, communes):
         sub = osm[osm["ars5"].isin(communes)]
-        total_area = sub[weight_column].sum()
-        if total_area <= 0 or sub.empty:
+        if sub.empty:
             return
-        for _, b in sub.iterrows():
+        if area_weight_column is None:
+            weights = sub[weight_column].to_numpy(float)
+        else:
+            weights, used_potential = pick_unit_weights(
+                sub, weight_column, area_weight_column)
+        total_area = weights.sum()
+        if total_area <= 0:
+            return
+        if area_weight_column is not None:
+            unit_basis.append(used_potential)
+        for w, geom in zip(weights, sub["geometry"]):
             rows_id.append("uni_loc_%d" % len(rows_id))
-            rows_cap.append(float(enrollment) * float(b[weight_column]) / total_area)
-            rows_geom.append(b["geometry"])
+            rows_cap.append(float(enrollment) * float(w) / total_area)
+            rows_geom.append(geom)
 
     pooled = {}
     for _, r in local.iterrows():
@@ -78,6 +101,9 @@ def build_university_facilities(df_hochschulen, df_osm_uni, weight_column="weigh
     ost = local[local["institution"].astype(str).str.startswith("Ostfalia")]
     if len(ost):
         _distribute(float(ost["enrollment"].sum()), OSTFALIA_COMMUNES)
+
+    if area_weight_column is not None:
+        log_unit_basis("university", sum(unit_basis), len(unit_basis) - sum(unit_basis))
 
     gdf = gpd.GeoDataFrame(
         {"location_id": rows_id, "capacity": rows_cap},
@@ -103,17 +129,22 @@ def execute(context):
 
     enabled = context.config("education_building_distribution")
     weight_column = "weight"
+    area_weight_column = None
     if enabled:
         from braunschweig.data.building_potential_attach import attach_potential
         df_b = context.stage("braunschweig.data.building_potentials")
+        # Unmatched buildings stay NaN (not the m2 x floors weight): the builder
+        # applies the same-unit rule so a unit never mixes places and m2 x floors.
         vals, _p, _f = attach_potential(
             df_osm, df_b, "potential_university",
-            fallback=df_osm["weight"].to_numpy(float), label="university")
+            fallback=np.full(len(df_osm), np.nan), label="university")
         df_osm = df_osm.copy()
         df_osm["potential"] = vals
         weight_column = "potential"
+        area_weight_column = "weight"
 
-    gdf = build_university_facilities(df_h, df_osm, weight_column=weight_column)
+    gdf = build_university_facilities(df_h, df_osm, weight_column=weight_column,
+                                      area_weight_column=area_weight_column)
     # Guard against silent enrollment loss: a local institution whose commune has
     # no OSM university building is dropped by the area-distribution (its students
     # would be redistributed to the nearest surviving campus). Name any such

@@ -14,6 +14,7 @@ Synthetic frames only; no real data.
 from __future__ import annotations
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 import pytest
 from shapely.geometry import Point, Polygon, box
@@ -23,6 +24,7 @@ from braunschweig.matsim.scenario.facilities import (
     validate_secondary_coverage,
 )
 from braunschweig.synthesis.locations import secondary_candidates
+from braunschweig.synthesis.locations import secondary_chainsolvers
 
 
 class StubContext:
@@ -73,7 +75,7 @@ def _buildings_potentials_frame():
             "potential_retail_daily": [4.0, 0.0],
             "potential_retail_non_daily": [1.0, 0.0],
             "potential_leisure": [0.0, 3.0],
-            "potential_generic": [2.0, 2.0],
+            "potential_errands": [2.0, 2.0],
             "commune_id": ["03101000", "03101000"],
         },
         geometry=[square, square], crs=CRS,
@@ -103,7 +105,6 @@ def _stage_context(sec_enabled=True, external=True, visit=False):
         "secondary_building_potentials": sec_enabled,
         "secondary_external_candidates": external,
         "cordon_enabled": True,  # suppress the cordon warning in tests
-        "secondary_other_smart_potential": False,
         "secondary_leisure_subtype_split": visit,
         "leisure_visit_building_potential": visit,
     }
@@ -122,12 +123,11 @@ def _srv_building_potentials_frame():
 
     - 101/102/103 carry a positive pot_leisure and mask into the three
       leisure_* categories (unchanged leisure masking).
-    - 104/105 carry NO retail/leisure potential (so build_secondary_candidates'
-      keep-filter excludes them from the input candidates entirely) but carry
-      a positive potential_generic and volume_m3 above the floor, so
-      append_location_category_columns derives a positive errand_* potential
-      for them directly from df_potentials and appends them as NEW sec_b_*
-      candidate rows (the #262 plan amendment, commit 75c6021).
+    - 104/105 carry NO retail/leisure potential but a positive
+      potential_errands, so build_secondary_candidates' keep-filter
+      (retail | leisure | errands > 0) keeps them with pot_other =
+      potential_errands, and append_location_category_columns takes their
+      errand_* potential directly from df_potentials.
     """
     boxes = [
         box(0, 100, 5, 105), box(10, 100, 15, 105), box(20, 100, 25, 105),
@@ -139,8 +139,7 @@ def _srv_building_potentials_frame():
             "potential_retail_daily": [0.0, 0.0, 0.0, 0.0, 0.0],
             "potential_retail_non_daily": [0.0, 0.0, 0.0, 0.0, 0.0],
             "potential_leisure": [5.0, 6.0, 7.0, 0.0, 0.0],
-            "potential_generic": [0.0, 0.0, 0.0, 80.0, 60.0],
-            "volume_m3": [1000.0, 1000.0, 1000.0, 100.0, 100.0],
+            "potential_errands": [0.0, 0.0, 0.0, 80.0, 60.0],
             "commune_id": ["03101000"] * 5,
             "bosserhof_class_clean": [
                 "large cinemas", "restaurants gastronomy", "fitness wellness",
@@ -186,8 +185,6 @@ def _srv_stage_context():
     context._config["secondary_srv_location_types"] = True
     context._config["secondary_other_subtype_split"] = True
     context._config["secondary_landuse_grid_spacing_meters"] = 10.0
-    context._config["secondary_other_min_volume_m3"] = 50.0
-    context._config["secondary_other_cap_percentile"] = 0.99
     context._stages["braunschweig.data.building_potentials"] = _srv_building_potentials_frame()
     context._stages["braunschweig.data.landuse"] = _srv_landuse_frame()
     context._stages["braunschweig.data.bosserhof_location_category"] = _srv_location_category_mapping()
@@ -210,10 +207,10 @@ def test_stage_assembles_all_id_families():
     out = secondary_candidates.execute(context)
     ids = set(out["location_id"].astype(str))
 
-    # gpkg building candidates (REPLACE) for shop/leisure
+    # gpkg building candidates (REPLACE) for shop/leisure/other
     assert "sec_b_11" in ids and "sec_b_22" in ids
-    # legacy rows survive as 'other'-only candidates
-    assert "sec_0" in ids and "sec_1" in ids
+    # legacy catalog points are no longer candidates on the ON path
+    assert "sec_0" not in ids and "sec_1" not in ids
     # external Gemeinde centroid keeps its bare commune id
     assert "03459999" in ids
     # residential visit candidate (issue #127)
@@ -304,10 +301,10 @@ def test_srv_location_types_assembles_category_and_landuse_candidates():
     ids = set(out["location_id"].astype(str))
 
     assert any(location_id.startswith("sec_lu_") for location_id in ids)
-    # Errand-class buildings (104/105) carry no retail/leisure potential, so
-    # build_secondary_candidates' keep-filter excludes them from the input
-    # candidates; append_location_category_columns must append them as NEW
-    # sec_b_* rows once their derived errand potential is positive.
+    # Errand-class buildings (104/105) carry no retail/leisure potential but a
+    # positive potential_errands, so build_secondary_candidates' keep-filter
+    # (retail | leisure | errands > 0, ADR-0190) keeps them as sec_b_* rows and
+    # append_location_category_columns sets their errand category in place.
     assert "sec_b_104" in ids and "sec_b_105" in ids
 
     for category in [
@@ -366,8 +363,8 @@ def test_srv_supply_guard_still_fires_with_external_candidates_enabled():
     building mapping would pass on external supply alone.
 
     Building 102 is the only leisure_gastronomy building; with no leisure
-    potential it fails build_secondary_candidates' keep-filter (retail>0 |
-    leisure>0) and never becomes a candidate, leaving ZERO in-area gastronomy
+    (and no errand) potential it fails build_secondary_candidates' keep-filter
+    (retail | leisure | errands > 0) and never becomes a candidate, leaving ZERO in-area gastronomy
     supply. The external centroid is present and would cover that category once
     the escapes run -- so this raise only happens if the check runs first."""
     context = _srv_stage_context()
@@ -449,8 +446,53 @@ def test_coverage_validation_passes_when_all_ids_written():
     context = _stage_context(sec_enabled=True, external=True, visit=True)
     candidates = secondary_candidates.execute(context)
     fac = secondary_facility_frame(candidates)
-    # Realised ids drawn from every family the chainsolvers can produce.
+    # Realised ids drawn from every family the chainsolvers can produce on the
+    # ON path: gpkg buildings, external centroid, residential visit row (primary
+    # solve) and every candidate id the fallback may pick (it places on this same
+    # frame; see test_fallback_realised_ids_are_covered_by_the_facilities). Legacy
+    # sec_<n> ids are no longer realisable here.
     df_realised = pd.DataFrame({
-        "location_id": ["sec_0", "sec_b_11", "sec_b_22", "03459999", "sec_res_77"]
+        "location_id": ["sec_b_11", "sec_b_22", "03459999", "sec_res_77"]
+        + list(candidates["location_id"].astype(str))
     })
     validate_secondary_coverage(df_realised, fac)  # must not raise
+
+
+def test_fallback_realised_ids_are_covered_by_the_facilities():
+    """The fallback family (unbounded chains / carla-failed problems) placed on the
+    REPLACE candidate frame realises only ids the facilities writer holds, and
+    honours each candidate's offers_<purpose>. Placed on the legacy frame it
+    realised sec_<n> ids and validate_secondary_coverage raised."""
+    context = _stage_context(sec_enabled=True, external=True, visit=True)
+    candidates = secondary_candidates.execute(context)
+    fac = secondary_facility_frame(candidates)
+    purposes = ["shop", "leisure", "other", "escort"] * 25
+    problems = [
+        {"person_id": i, "activity_index": 1, "size": 1, "purposes": [p]}
+        for i, p in enumerate(purposes)
+    ]
+    rows, conv = secondary_chainsolvers._fallback_place(
+        problems, list(range(len(problems))), candidates,
+        np.random.RandomState(7), CRS,
+    )
+    assert len(rows) == len(problems) and all(ok for ok, _ in conv)
+    realised = pd.DataFrame({"location_id": [r[2] for r in rows]})
+    validate_secondary_coverage(realised, fac)  # must not raise
+
+    # Every realised id offers the purpose of its leg (escort is any-type only
+    # when the frame has no offers_escort column; here it is the column).
+    # fillna(False): a missing offer (e.g. offers_escort on the residential visit
+    # row when escort is off) means NOT offered; bool(NaN) would be True and hide
+    # a fallback that treats NaN as offered.
+    offers = candidates.set_index(candidates["location_id"].astype(str))
+    offers = offers.filter(like="offers_").fillna(False).astype(bool)
+    for (_, _, loc_id, _), purpose in zip(rows, purposes):
+        assert offers.loc[loc_id, f"offers_{purpose}"]
+
+    # The RDA candidate index draws from the same universe, per purpose.
+    index = secondary_chainsolvers._build_rda_candidate_index(candidates)
+    all_ids = set(fac["location_id"].astype(str))
+    for purpose, pool in index.data.items():
+        ids = set(map(str, pool["identifiers"]))
+        assert ids and ids <= all_ids
+        assert all(bool(offers.loc[i, f"offers_{purpose}"]) for i in ids)

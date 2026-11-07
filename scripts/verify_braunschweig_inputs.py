@@ -234,6 +234,17 @@ INPUTS: List[Input] = [
         notes="ODbL 1.0 (OSM contributors). Read by braunschweig/data/osm.py.",
     ),
 
+    # --- F: Derived TUBS-IVS deliveries -------------------------------------
+    Input(
+        name="F4  Building activity potentials, redistribution release 08",
+        restricted=True,
+        rel_path="braunschweig/buildings/08_redistribution.gpkg",
+        source="Delivered by the TUBS-IVS Activities-and-Potentials-Calculation-Pipeline; not distributed in the "
+               "repository, available on request (open an issue in TUBS-IVS/eqasim-bs). Copy the file unchanged to "
+               "this path and verify it against the SHA-256 in data record building_potentials_redistribution.",
+        notes="Read directly (layer buildings) by braunschweig.data.building_potentials (ADR-0190).",
+    ),
+
     # --- D: MATSim-only inputs --------------------------------------------
     Input(
         name="D1  OSM Niedersachsen PBF",

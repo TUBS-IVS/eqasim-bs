@@ -124,18 +124,18 @@ estimate-on-labelled / impute-onto-100% / log-the-rate pattern.
 
   | other group | definition | measured mean | placement |
   |---|---|---|---|
-  | `other_errand_short` | W_ZWECK=5 & W_ZWD in {601, 602} | ~5-9 km | smart-other potential (unchanged, PR #77) |
-  | `other_errand_long` | W_ZWECK=5 & W_ZWD in {603, 604, 605, 699} | ~11-16 km | smart-other potential (unchanged) |
-  | `other_escort` | W_ZWECK=6 (Bringen/Holen; no W_ZWD detail exists) | ~4.5-8.5 km | smart-other potential (unchanged) |
-  | `other_rest` | remaining `other` W_ZWECK values | not separately estimated | smart-other potential (unchanged) |
+  | `other_errand_short` | W_ZWECK=5 & W_ZWD in {601, 602} | ~5-9 km | errand potential (ADR-0190) |
+  | `other_errand_long` | W_ZWECK=5 & W_ZWD in {603, 604, 605, 699} | ~11-16 km | errand potential (ADR-0190) |
+  | `other_escort` | W_ZWECK=6 (Bringen/Holen; no W_ZWD detail exists) | ~4.5-8.5 km | errand potential (ADR-0190) |
+  | `other_rest` | remaining `other` W_ZWECK values | not separately estimated | errand potential (ADR-0190) |
 
   Sentinels (2202/4402 PAPI/child, 599/999, and cross-purpose stray codes) are
   excluded from estimation and imputed like the unlabelled leisure/other legs, mirroring
   the shop pattern. `other_escort` needs no W_ZWD label because `W_ZWECK` itself is
   always present; the errand short/long split is estimated only within `other_errand`
   legs. Placement of all four `other` groups is deliberately left on the existing
-  smart-other potential (PR #77, [docs/features/smart-other-potential](../features) is
-  covered by the general potentials doc) -- no placement change for `other` in this
+  other potential (since ADR-0190 the delivered `potential_errands`; see
+  docs/features/building-potentials.md) -- no placement change for `other` in this
   wave (avoids a double intervention).
 - **Generic estimator (`braunschweig/popsim/purpose_subtype.py`).** Generalises the
   shop pattern (previously `shop_subtype.py`-only) to multinomial groups:

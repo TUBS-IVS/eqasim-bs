@@ -364,7 +364,6 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # The rest of this stage's import closure: modules its helpers import, whose code this
     # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
     "braunschweig.calibration.targets",
-    "braunschweig.data.building_potential_attach",
     "braunschweig.data.mid.reference_tables",
     "braunschweig.data.mid.status_by_hhtype",
     "braunschweig.popsim.attributes",
@@ -384,7 +383,6 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.weekend_plan_match",
     "braunschweig.population.methods",
     "braunschweig.population.socioprofessional_class",
-    "braunschweig.synthesis.locations.secondary_other_potential",
     "data.hts.egt.cleaned",
     "data.hts.entd.cleaned",
     "data.hts.hts",
@@ -520,8 +518,9 @@ def configure(context):
     # temperature field, so this key is registered but NOT wired into cs.setup.
     context.config("secondary_scorer_mnl_temperature", 1.0)
     if sec_enabled:
-        # The assembled candidate set (gpkg sec_b_* + legacy other + external
-        # centroids + residential visit rows) is built by a dedicated stage that
+        # The assembled candidate set (gpkg sec_b_* buildings with retail,
+        # leisure or errand potential + external centroids + residential visit
+        # rows; no legacy sec_<n> rows) is built by a dedicated stage that
         # the facilities writer ALSO consumes, so a location the chainsolvers can
         # realise always exists as a MATSim facility (2026-07-11 LinkAssignment
         # fix: sec_b_* ids were realised but never written to facilities.xml).
@@ -1400,9 +1399,9 @@ def _build_shared_solve_state(context, crs):
     distance_distributions = context.stage(
         "synthesis.population.spatial.secondary.distance_distributions"
     )
-    # The LEGACY candidate frame stays a separate, named variable: the
-    # RDA/unbounded fallback intentionally places on it (stable sec_* ids),
-    # while the primary solve uses the assembled REPLACE candidate set below.
+    # The LEGACY candidate frame stays a separate, named variable: it is the
+    # solve and fallback frame on the OFF path only; with building potentials ON
+    # both use the assembled REPLACE candidate set below.
     df_secondary_legacy = context.stage("synthesis.locations.secondary")
     df_secondary = df_secondary_legacy
 
@@ -1482,16 +1481,27 @@ def _build_shared_solve_state(context, crs):
 
     sec_enabled = context.config("secondary_building_potentials")
     scorer_spec = _build_scorer_spec(context, sec_enabled)
-    # NOTE: the RDA/unbounded fallback intentionally uses the LEGACY frame
-    # (df_secondary_legacy); only the primary chainsolver solve uses the
-    # REPLACE candidates. The assembled set (gpkg sec_b_* + legacy other +
-    # external centroids + residential visit rows) comes from the dedicated
+    # NOTE: the primary solve AND (when the flag is ON) the RDA/unbounded
+    # fallback use the REPLACE candidates; only the OFF path falls back to the
+    # legacy frame. The assembled set (gpkg sec_b_* buildings with retail,
+    # leisure or errand potential + external centroids + residential visit rows) comes from the dedicated
     # secondary_candidates stage -- the SAME stage the facilities writer
     # consumes, so every realisable location id is guaranteed to exist as a
     # MATSim facility (2026-07-11 LinkAssignment fix).
     if sec_enabled:
         df_secondary = context.stage(
             "braunschweig.synthesis.locations.secondary_candidates")
+    # The fallback frame: ON -> the REPLACE candidate set itself, because the
+    # facilities writer only holds that id universe (legacy sec_<n> ids are no
+    # longer candidates there, so a fallback placed on them would dangle and
+    # fail validate_secondary_coverage); OFF -> the legacy frame, unchanged.
+    df_fallback = df_secondary if sec_enabled else df_secondary_legacy
+    print(
+        "[braunschweig.secondary_chainsolvers] fallback candidate frame: "
+        + ("REPLACE candidate set (secondary_building_potentials ON)"
+           if sec_enabled else "legacy secondary frame")
+        + f", {len(df_fallback):,} candidates"
+    )
     # The residential visit candidates themselves are appended by the
     # secondary_candidates stage (df_secondary above already carries them when
     # the flag is ON); _build_locations_df below still needs the flag for the
@@ -1584,6 +1594,7 @@ def _build_shared_solve_state(context, crs):
         "rda_index_cache": rda_index_cache,
         "df_secondary": df_secondary,
         "df_secondary_legacy": df_secondary_legacy,
+        "df_fallback": df_fallback,
         "scorer_spec": scorer_spec,
         "locations_df": locations_df,
         "solver_name": solver_name,
@@ -1625,7 +1636,7 @@ def _solve_problem_set(df_trips_pass, df_primary, activity_anchors, shared, *, p
     fallback_strategy = shared["fallback_strategy"]
     rda_index_cache = shared["rda_index_cache"]
     df_secondary = shared["df_secondary"]
-    df_secondary_legacy = shared["df_secondary_legacy"]
+    df_fallback = shared["df_fallback"]
     scorer_spec = shared["scorer_spec"]
     locations_df = shared["locations_df"]
     solver_name = shared["solver_name"]
@@ -1641,19 +1652,18 @@ def _solve_problem_set(df_trips_pass, df_primary, activity_anchors, shared, *, p
             return [], []
         if fallback_strategy == "rda":
             if "index" not in rda_index_cache:
-                # Always the LEGACY frame: previously the closure late-bound
-                # df_secondary, so a run with zero unbounded chains but some
-                # carla-failed problems would have built the index on the
-                # REPLACE set instead -- pinning to legacy makes the fallback
-                # candidate set deterministic regardless of call order.
-                rda_index_cache["index"] = _build_rda_candidate_index(df_secondary_legacy)
+                # Pinned to df_fallback (REPLACE set when building potentials
+                # are ON, legacy frame otherwise), so the candidate set is
+                # deterministic regardless of call order and every placed id
+                # exists in the facilities writer's id universe.
+                rda_index_cache["index"] = _build_rda_candidate_index(df_fallback)
             return _rda_fallback_place(
                 problems, problem_indices, rda_index_cache["index"],
                 distance_distributions, leisure_corr, random, crs,
                 pass_label=pass_label,
             )
         return _fallback_place(
-            problems, problem_indices, df_secondary_legacy, random, crs,
+            problems, problem_indices, df_fallback, random, crs,
             pass_label=pass_label,
         )
 

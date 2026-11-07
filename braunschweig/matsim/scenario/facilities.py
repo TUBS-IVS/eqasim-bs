@@ -4,8 +4,8 @@ Overrides matsim.scenario.facilities twice over the base behaviour:
 
 1. **Assembled secondary candidates.** When ``secondary_building_potentials``
    is ON, the secondary chainsolvers place activities on the ASSEMBLED
-   candidate set (gpkg ``sec_b_*`` buildings, legacy ``sec_*`` 'other' rows,
-   external Gemeinde-centroid ids, residential ``sec_res_*`` visit/escort
+   candidate set (gpkg ``sec_b_*`` buildings with retail, leisure or errand
+   potential -- no legacy ``sec_<n>`` rows --, external Gemeinde-centroid ids, residential ``sec_res_*`` visit/escort
    rows, education ``sec_edu_*`` escort rows) -- not on the legacy
    ``synthesis.locations.secondary`` frame the base writer uses. Facilities
    therefore consume the SAME

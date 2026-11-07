@@ -34,30 +34,29 @@ method is **not** a simple floor-area heuristic; it is a four-stage pipeline:
    concentrations**. This already concentrates worker potential around the real
    employment hubs (Volkswagen, Siemens, TU Braunschweig, municipal hospital).
 
-The output is a local-only parquet file:
+**Release in use (ADR-0190).** The model reads the delivered GeoPackage
+`eqasim-data/data/braunschweig/buildings/08_redistribution.gpkg` (layer
+`buildings`, one row per activity building) directly; no conversion step.
+Its layers, columns, counts, hash and open questions are in the data record
+`building_potentials_redistribution`. The stage maps the source columns to the
+internal names the consumers use: `potential_work`, `potential_school`,
+`potential_university`, `potential_kindergarten`, `potential_retail_daily`,
+`potential_retail_non_daily`, `potential_leisure` (from `assigned_*`) and
+`potential_errands` (from `value_errands`, the potential of the `other`
+purpose and of the errand location categories; with
+`secondary_building_potentials` on, the `other` destinations are the buildings
+with `potential_errands > 0`, not the legacy OSM/ALKIS catalog points). `value_business`,
+`value_sports`, `value_meetup` and `value_lessons` are carried but not read by
+any placement. Each `potential_*` is a modelled weight, NOT an observed
+per-building headcount. The file is not committed; copy a delivered release
+unchanged to the path above and check it against the record's SHA-256.
 
-```
-eqasim-data/data/braunschweig/buildings/building_activity_potentials.parquet
-```
+The superseded release (data record `building_activity_potentials`, a parquet
+with `potential_generic` and `volume_m3` on all buildings) is no longer read.
 
-Its columns (verified 2026-07-18, 263,512 buildings): `building_id`,
-`potential_work`, `potential_school`, `potential_university`,
-`potential_kindergarten`, `potential_leisure`, `potential_retail_daily`,
-`potential_retail_non_daily`, `potential_generic`, `gml_id`,
-`bosserhof_class_clean`, `volume_m3`, `target_taz`, `geometry`. Each
-`potential_*` is the disaggregated share of the zonal total for that activity
-type; it is a modelled, geometry-and-use-informed weight (NOT an observed
-per-building headcount).
-
-This file is **not committed** (large, derived, local-only). The pipeline that
-generates it is the canonical source of truth; hard-coding building coordinates
-or capacity values in Python is prohibited. Regenerate with the
-Activities-and-Potentials-Calculation-Pipeline and copy the output to the path
-above.
-
-**Stage.** `braunschweig.data.building_potentials` validates the parquet on load
-by calling `validate()`, which **raises** if the file is absent or malformed
-(fail-fast, no silent fallback). The stage is consumed by the three downstream
+**Stage.** `braunschweig.data.building_potentials` validates the GeoPackage on load and
+**raises** if the file, the layer or a column is absent, the CRS is not
+EPSG:25832, or a potential is NaN or negative (fail-fast, no silent fallback). The stage is consumed by the three downstream
 feature stages that redistribute locations.
 
 **Feature flags (all default true in code; OFF in non-real-data configs).**
@@ -83,7 +82,7 @@ single composed base.) The local-only
 (gitignored) `config_local_braunschweig_1pct_allfeat_full.yml` also enables
 the feature but is not committed. All other configs set the three boolean
 flags to `false` and omit the path, so the feature is off and no local-only
-parquet is required.
+GeoPackage is required.
 
 **Aggregate controls are unaffected.** Work-zone totals (GENESIS SvB), OD
 gravity flows, and NDS school enrollment totals remain the authoritative
@@ -93,11 +92,10 @@ spatial distribution of already-placed activities.
 **OFF path** (`work_building_potentials: false`, `secondary_building_potentials:
 false`, `education_building_distribution: false`) is byte-identical to the
 pre-feature pipeline: activity locations are placed by the existing zone-level
-or uniform-random-building logic, no building parquet is loaded, and the
+or uniform-random-building logic, no building potentials are loaded, and the
 `braunschweig.data.building_potentials` stage is never requested.
 
-Tests: `tests/test_building_activity_potentials_import.py`,
-`tests/test_building_activity_potentials_stage.py`,
+Tests: `tests/test_building_activity_potentials_stage.py`,
 `tests/test_building_potential_attach.py`,
 `tests/test_work_building_potentials.py`,
 `tests/test_secondary_building_potentials.py`,

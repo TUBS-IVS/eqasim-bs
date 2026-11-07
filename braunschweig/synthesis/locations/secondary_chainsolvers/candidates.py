@@ -1,7 +1,7 @@
 """Candidate-set assembly and the chainsolvers locations frame / scorer.
 
 Builds the REPLACE candidate set the carla solver searches over
-(``build_secondary_candidates``: gpkg building potentials + legacy other +
+(``build_secondary_candidates``: gpkg building potentials +
 external centroids), appends the residential visit and escort candidate
 rows, constructs the chainsolvers ``locations_df``
 (``_build_locations_df``) and the combined potential/distance ``Scorer``
@@ -299,48 +299,28 @@ def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: f
         )
 
 
-def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
-                               df_buildings: gpd.GeoDataFrame,
-                               df_external: gpd.GeoDataFrame = None,
-                               *, mapping=None,
-                               other_potential_params=None) -> gpd.GeoDataFrame:
+def build_secondary_candidates(df_buildings: gpd.GeoDataFrame,
+                               df_external: gpd.GeoDataFrame = None) -> gpd.GeoDataFrame:
     """REPLACE secondary candidates when building potentials are ON.
 
-    shop/leisure candidates = gpkg activity buildings (native potentials, no
-    fallback — the candidate set IS the buildings that carry a non-zero
-    retail or leisure potential); 'other' candidates = the legacy broad catalog
-    with the generic potential attached by footprint join (fallback 0.0, logged
-    by attach_potential so the rate stays observable).
+    shop/leisure/other candidates = gpkg activity buildings (native potentials,
+    no fallback -- the candidate set IS the buildings that carry a non-zero
+    retail, leisure or errand potential; ``pot_other`` = ``potential_errands``,
+    owner decision 2026-11-07). One building is one ``sec_b_<building_id>`` row
+    carrying all of its offers. The legacy OSM/ALKIS 'other' catalog is not
+    used on this path. Raises ``ValueError`` when no building offers 'other'
+    or a potential column holds NaN / negative values.
 
     Parameters
     ----------
-    df_secondary_legacy:
-        The legacy secondary candidate GeoDataFrame from
-        ``synthesis.locations.secondary`` (columns: location_id, commune_id,
-        iris_id, geometry(Point), offers_shop, offers_leisure, offers_other).
     df_buildings:
         Building-footprint GeoDataFrame from
         ``braunschweig.data.building_potentials`` (columns: building_id,
         potential_retail_daily, potential_retail_non_daily, potential_leisure,
-        potential_generic, commune_id, geometry(POLYGON), EPSG:25832).
-        When ``mapping`` is provided, the buildings frame must additionally
-        carry ``volume_m3`` and the Bosserhof class column (default
-        ``bosserhof_class_clean``).
+        potential_errands, commune_id, geometry(POLYGON), EPSG:25832).
     df_external:
         Optional GeoDataFrame of external Gemeinde centroids (long-distance
         secondary candidates).
-    mapping:
-        Optional DataFrame ``[bosserhof_class, eqasim_purpose, other_destination]``
-        from ``braunschweig.data.bosserhof_purpose``.  When provided (ON path)
-        the ``other`` potential is derived via
-        ``derive_other_potential`` (capped, whitelist-boosted) and the median of
-        the positive values is used as the spatial-join fallback (logged).
-        When ``None`` (default / OFF path) the raw ``potential_generic`` is used
-        with a zero fallback — byte-identical to the pre-feature behaviour.
-    other_potential_params:
-        Optional dict with keyword arguments forwarded to
-        ``derive_other_potential`` (``broad_share``, ``errand_share``,
-        ``min_volume_m3``, ``cap_percentile``). Ignored when ``mapping`` is None.
 
     Returns
     -------
@@ -348,14 +328,13 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
         location_id, commune_id, iris_id, geometry(Point),
         offers_shop, offers_leisure, offers_other, offers_escort,
         pot_shop, pot_shop_daily, pot_shop_non_daily, pot_leisure, pot_other
-    concat of gpkg shop/leisure rows and legacy other rows, reset index.
+    gpkg building rows (plus external centroids), reset index.
 
     ``pot_shop`` stays the SUM of the daily + non-daily retail potential (used
     on the OFF / non-split path, byte-identical to before); ``pot_shop_daily``
     and ``pot_shop_non_daily`` carry the two gpkg components separately so the
     Tier-2 daily/non-daily split (secondary_shop_daily_split) can route a leg's
-    placement to the matching retail subtype. The legacy 'other' rows carry 0.0
-    for all three shop potentials.
+    placement to the matching retail subtype.
 
     ``offers_escort`` (issue #201): True on every candidate row, regardless of
     the ``escort_purpose`` flag -- it is cheap to mark every candidate eligible
@@ -363,10 +342,8 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
     ``escort_purpose`` flag in the facilities writer (Task 8), not by this
     column.
     """
-    from braunschweig.data.building_potential_attach import attach_potential
-
     # --- gpkg shop/leisure candidates ---
-    # One row per building that carries a non-zero retail or leisure potential.
+    # One row per building that carries a non-zero retail, leisure or errand potential.
     # Potentials are native (read directly from the building table); no spatial
     # join needed, so there is no fallback path for this half of the candidates.
     b = df_buildings.copy()
@@ -374,76 +351,48 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
     retail_non_daily = b["potential_retail_non_daily"].astype(float)
     retail = retail_daily + retail_non_daily
     leisure = b["potential_leisure"].astype(float)
-    keep = (retail > 0) | (leisure > 0)
+    errands = b["potential_errands"].astype(float)
+    for name, series in (("potential_retail_daily", retail_daily),
+                         ("potential_retail_non_daily", retail_non_daily),
+                         ("potential_leisure", leisure), ("potential_errands", errands)):
+        if series.isna().any() or (series < 0).any():
+            raise ValueError(
+                "[braunschweig.secondary_chainsolvers] building column %s has NaN or "
+                "negative values; refusing to build candidates." % name)
+    # "other" = buildings with potential_errands > 0 (owner decision 2026-11-07),
+    # the same REPLACE rule as shop/leisure: one row per building carrying all of
+    # its offers. The legacy OSM/ALKIS catalog points are not candidates here.
+    keep = (retail > 0) | (leisure > 0) | (errands > 0)
     b = b[keep]
     retail = retail[keep]
     retail_daily = retail_daily[keep]
     retail_non_daily = retail_non_daily[keep]
     leisure = leisure[keep]
+    errands = errands[keep]
     gpkg = gpd.GeoDataFrame({
         "location_id": ("sec_b_" + b["building_id"].astype(str)).values,
         "commune_id": b["commune_id"].astype(str).values,
         "iris_id": b["commune_id"].astype(str).values,
         "offers_shop": (retail > 0).values,
         "offers_leisure": (leisure > 0).values,
-        "offers_other": False,
+        "offers_other": (errands > 0).values,
         "offers_escort": True,
         "pot_shop": retail.values,
         "pot_shop_daily": retail_daily.values,
         "pot_shop_non_daily": retail_non_daily.values,
         "pot_leisure": leisure.values,
-        "pot_other": 0.0,
+        "pot_other": errands.values,
         "geometry": b.geometry.centroid.values,
     }, crs=df_buildings.crs)
-
-    # --- legacy 'other' candidates (broad catalog) ---
-    # All legacy candidates become 'other'-only rows so the broad OSM/ALKIS/
-    # landuse catalog is preserved for the 'other' purpose.
-    legacy = df_secondary_legacy.copy()
-    if mapping is not None:
-        # ON path: derive a capped, whitelist-boosted potential_other via the
-        # Bosserhof function-class mapping. The footprint-join fallback is the
-        # median of the positive potential_other values (so candidates without a
-        # containing building still receive a reasonable non-zero potential rather
-        # than the 0.0 that the generic fallback would give). The rate is logged
-        # by attach_potential (no silent fallback).
-        from braunschweig.synthesis.locations.secondary_other_potential import (
-            derive_other_potential,
-        )
-        params = other_potential_params or {}
-        bld = df_buildings.copy()
-        pot_series, st = derive_other_potential(bld, mapping, **params)
-        bld["potential_other"] = pot_series.values
-        positive = pot_series[pot_series > 0.0]
-        median_prior = float(positive.median()) if len(positive) else 0.0
-        print("[braunschweig.secondary_chainsolvers] smart other potential: "
-              "cap=%.0f whitelist=%d non-whitelist=%d unknown_class=%d tiny=%d "
-              "median_prior=%.1f" % (st["cap_value"], st["n_whitelist"],
-              st["n_nonwhitelist"], st["n_unknown_class"], st["n_tiny"], median_prior))
-        pot_other, _p, _f = attach_potential(
-            legacy, bld, "potential_other",
-            fallback=np.full(len(legacy), median_prior, dtype=float), label="sec_other")
-    else:
-        # OFF path: byte-identical to the pre-feature behaviour (raw
-        # potential_generic, zero fallback). No new imports, no new logic.
-        pot_other, _p, _f = attach_potential(
-            legacy, df_buildings, "potential_generic",
-            fallback=np.zeros(len(legacy), dtype=float), label="sec_other")
-    legacy_other = gpd.GeoDataFrame({
-        "location_id": legacy["location_id"].astype(str).values,
-        "commune_id": legacy["commune_id"].astype(str).values,
-        "iris_id": legacy["iris_id"].astype(str).values,
-        "offers_shop": False,
-        "offers_leisure": False,
-        "offers_other": True,
-        "offers_escort": True,
-        "pot_shop": 0.0,
-        "pot_shop_daily": 0.0,
-        "pot_shop_non_daily": 0.0,
-        "pot_leisure": 0.0,
-        "pot_other": pot_other,
-        "geometry": legacy.geometry.values,
-    }, crs=legacy.crs)
+    n_other = int((errands > 0).sum())
+    print("[braunschweig.secondary_chainsolvers] other supply: %d buildings offer "
+          "other, sum pot_other (potential_errands) %.1f" % (n_other, float(errands.sum())))
+    if n_other == 0:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] no building has potential_errands > 0, "
+            "so the REPLACE candidate set has no 'other' destination; check "
+            "braunschweig.data.building_potentials (value_errands) -- the legacy catalog "
+            "is not used as a fallback.")
 
     # External Gemeinde centroids (outside ZGB): long-distance secondary candidates
     # so carla can match desired distances beyond the study area instead of
@@ -451,7 +400,7 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
     # population (ewz) -- a population proxy; external selection is distance-driven
     # (carla snaps the relaxed point to the nearest external centroid), so the exact
     # potential only ranks among near-equal-distance centroids.
-    frames = [gpkg, legacy_other]
+    frames = [gpkg]
     if df_external is not None and len(df_external) > 0:
         ext = (df_external.to_crs(df_buildings.crs)
                if df_external.crs != df_buildings.crs else df_external)
@@ -480,8 +429,7 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
     out = gpd.GeoDataFrame(
         pd.concat(frames, ignore_index=True), crs=df_buildings.crs)
     print("[braunschweig.secondary_chainsolvers] REPLACE candidates: "
-          "%d gpkg shop/leisure buildings + %d legacy 'other' candidates"
-          % (len(gpkg), len(legacy_other)))
+          "%d gpkg buildings (shop/leisure/other)" % len(gpkg))
     return out
 
 

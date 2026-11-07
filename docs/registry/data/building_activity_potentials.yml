@@ -1,18 +1,17 @@
 dataset: building_activity_potentials
-title: Building-level activity potentials (TUBS-IVS pipeline)
-inventory_id: F4
+title: Building-level activity potentials (TUBS-IVS pipeline), SUPERSEDED by building_potentials_redistribution
+inventory_id: null
 provider: TUBS-IVS Activities-and-Potentials-Calculation-Pipeline
 vintage: null
 geography: null
 crs: null
 roles:
 - derived_input
-used_by:
-- braunschweig.data.building_potentials
+used_by: []
 acquisition:
   method: derived
   source: separate TUBS-IVS pipeline (LLM/volume/Bosserhof classification)
-  script: scripts/import_building_activity_potentials.py
+  notes: The import script scripts/import_building_activity_potentials.py was removed with ADR-0190 (git history keeps it).
 storage:
   expected_path: eqasim-data/data/braunschweig/buildings/building_activity_potentials.parquet
   committed: false
@@ -22,11 +21,13 @@ verification:
 requirements:
   synthesis: optional
   matsim: not_needed
-  production: required
+  production: not_needed
 licensing:
   license: derived from dl-de/zero-2-0 + ODbL
   restricted: false
   redistribution: restricted
 limitations: Modelled weights, not observed headcounts; aggregate references (GENESIS SvB, LSN)
   stay authoritative (ADR-0025).
-notes: null
+notes: >-
+  SUPERSEDED (ADR-0190): no stage reads this parquet any more; the record stays as the history of the dataset.
+  Successor: building_potentials_redistribution.

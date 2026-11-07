@@ -758,9 +758,13 @@ def _order_guard_primary():
     })
 
 
-def _order_guard_shared(random_wrapper, df_secondary):
-    """The shared solve state ``_solve_problem_set`` reads, with every decider OFF."""
+def _order_guard_shared(random_wrapper, df_secondary, df_fallback=None):
+    """The shared solve state ``_solve_problem_set`` reads, with every decider OFF.
+
+    ``df_fallback`` defaults to ``df_secondary`` (the flag-OFF shape, where legacy ==
+    solve frame)."""
     return {
+        "df_fallback": df_secondary if df_fallback is None else df_fallback,
         "distance_distributions": {}, "leisure_corr": 2.0, "random": random_wrapper,
         "shop_subtype_decider": None, "leisure_subtype_decider": None,
         "other_subtype_decider": None, "escort_location_decider": None,
@@ -827,11 +831,47 @@ def test_the_rng_consuming_calls_of_one_pass_keep_their_order(monkeypatch):
     # freshly seeded RandomState could not reproduce by construction.
     assert solve_args[0][3] == np.random.RandomState(0).randint(0, 2**31 - 1)
     assert isinstance(solve_args[0][3], int)
-    # The RDA candidate index is built at most once per pass, and on the LEGACY frame.
+    # The RDA candidate index is built at most once per pass, and on the fallback frame.
     assert len(index_builds) == 1 and index_builds[0] is df_secondary
     assert report["n_unbounded"] == 1 and report["n_failed_bounded"] == 1
     assert report["n_problems"] == 2
     assert len(df_locations) == 0 and len(df_convergence) == 1
+
+
+def test_fallback_places_on_the_fallback_frame_not_the_legacy_frame(monkeypatch):
+    """With building potentials ON the fallback frame is the REPLACE candidate set;
+    a fallback placed on the legacy frame would realise sec_<n> ids the facilities
+    writer does not hold (validate_secondary_coverage failure)."""
+    calls, index_builds, random_frames = [], [], []
+    df_replace = _one_candidate_frame()
+    df_legacy = _one_candidate_frame()
+
+    def fake_build_plans_df(problems, distance_distributions, leisure_corr, random, **kwargs):
+        plans_df = pd.DataFrame({"unique_person_id": ["1", "2"], "to_act_type": ["shop", "shop"]})
+        problem_meta = [{"problem_idx": 0, "person_id": 1, "activity_index": 1,
+                         "n_secondary": 1}]
+        return plans_df, problem_meta, [1], {}, {}
+
+    monkeypatch.setattr(sc, "_build_plans_df", fake_build_plans_df)
+    monkeypatch.setattr(sc, "_rda_fallback_place", lambda *a, **k: ([], []))
+    monkeypatch.setattr(sc, "_fallback_place",
+                        lambda problems, idx, frame, *a, **k: random_frames.append(frame) or ([], []))
+    monkeypatch.setattr(sc, "_build_rda_candidate_index",
+                        lambda frame: index_builds.append(frame) or "rda-index")
+    monkeypatch.setattr(sc, "_init_chain_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sc, "_solve_person_shard",
+                        lambda args: (0, sc._empty_chain_result_df(), [0]))
+
+    shared = _order_guard_shared(np.random.RandomState(0), df_replace, df_fallback=df_replace)
+    shared["df_secondary_legacy"] = df_legacy
+    sc._solve_problem_set(_order_guard_trips(), _order_guard_primary(), None, shared)
+    assert len(index_builds) == 1 and index_builds[0] is df_replace
+
+    shared = _order_guard_shared(np.random.RandomState(0), df_replace, df_fallback=df_replace)
+    shared["df_secondary_legacy"] = df_legacy
+    shared["fallback_strategy"] = "random"
+    sc._solve_problem_set(_order_guard_trips(), _order_guard_primary(), None, shared)
+    assert random_frames and all(f is df_replace for f in random_frames)
 
 
 def test_configure_declares_the_surrogate_keys_with_their_defaults():
@@ -867,6 +907,51 @@ def test_configure_rejects_non_positive_surrogate_parameters(key, value):
     ctx = _configure_context(**_base_overrides(**{key: value}))
     with pytest.raises(ValueError, match=f"{key} must be > 0"):
         sc.configure(ctx)
+
+
+@pytest.mark.parametrize("sec_enabled", [True, False])
+def test_shared_state_picks_the_fallback_frame_by_the_building_potentials_flag(monkeypatch, sec_enabled):
+    """Regression (PR #592 review): with building potentials ON the RDA/random fallback
+    must place on the REPLACE candidate set the facilities are written from; placing on
+    the legacy frame realises ``sec_<n>`` ids without a facility row and the facilities
+    stage raises after the whole chain solve. OFF keeps the legacy frame."""
+    legacy = pd.DataFrame({"location_id": ["sec_0"]})
+    replace = pd.DataFrame({"location_id": ["sec_b_1"]})
+    stages = {
+        "synthesis.population.spatial.secondary.distance_distributions": {},
+        "synthesis.locations.secondary": legacy,
+        "braunschweig.synthesis.locations.secondary_candidates": replace,
+    }
+    config = {
+        "random_seed": 0, "leisure_correction_factor": 1.0,
+        "secondary_shop_daily_split": False, "secondary_leisure_subtype_split": False,
+        "secondary_other_subtype_split": False, "escort_purpose": False,
+        "leisure_visit_building_potential": False, "secondary_srv_location_types": False,
+        "secondary_building_potentials": sec_enabled,
+        "braunschweig.chainsolvers.fallback": "rda", "braunschweig.chainsolvers.solver": None,
+        "braunschweig.chainsolvers.parallel": False, "braunschweig.chainsolvers.processes": 1,
+        "processes": 1, "braunschweig.chainsolvers.worker_memory_gb": 1.0,
+        "braunschweig.chainsolvers.shard_attempts": 3, "braunschweig.chainsolvers.shards": 1,
+    }
+    ctx = types.SimpleNamespace(stage=lambda name: stages[name], config=lambda key: config[key])
+    # The fallback-frame choice is under test; the deciders, distributions and the
+    # carla locations frame are not, so they are stubbed out.
+    for name in ("_build_shop_subtype_decider", "_build_leisure_subtype_decider",
+                 "_build_other_subtype_decider", "_build_escort_location_decider",
+                 "_build_srv_location_decider", "_build_escort_distance_factor_map",
+                 "_build_scorer_spec"):
+        monkeypatch.setattr(sc, name, lambda *a, **k: None)
+    for name in ("_validate_srv_location_type_prerequisites",
+                 "_validate_candidate_flag_prerequisites"):
+        monkeypatch.setattr(sc, name, lambda *a, **k: None)
+    monkeypatch.setattr(sc, "_resample_distributions", lambda d, _factors: d)
+    monkeypatch.setattr(sc, "_build_locations_df", lambda *a, **k: None)
+
+    shared = sc._build_shared_solve_state(ctx, "EPSG:25832")
+
+    expected = replace if sec_enabled else legacy
+    assert shared["df_fallback"] is expected
+    assert shared["df_secondary"] is expected
 
 
 # --- surrogate rescue wiring (#409) --------------------------------------------------

@@ -12,7 +12,12 @@ from __future__ import annotations
 import os
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
+
+from braunschweig.data.building_potential_attach import (
+    log_unit_basis, pick_unit_weights,
+)
 
 CRS_METRIC = "EPSG:25832"
 
@@ -23,7 +28,8 @@ def lsn_unit(commune_id):
     return s[2:5] + s[6:9]
 
 
-def build_kita_facilities(df_kitas, df_osm_kg, weight_column="weight"):
+def build_kita_facilities(df_kitas, df_osm_kg, weight_column="weight",
+                         area_weight_column=None):
     """Distribute each LSN unit's Plaetze across its OSM kindergarten POIs.
 
     Parameters
@@ -37,6 +43,12 @@ def build_kita_facilities(df_kitas, df_osm_kg, weight_column="weight"):
         Column in df_osm_kg to use as the distribution weight. Default "weight"
         (footprint area) reproduces the legacy behaviour byte-identically.
         Pass "potential" to distribute by building potential instead.
+    area_weight_column:
+        Only with a potential ``weight_column`` (NaN where a POI matched no
+        building): same-unit rule, see ``pick_unit_weights``. A unit uses the
+        potentials only if every POI has one > 0, else the area x floors
+        weights of ALL its POIs. The per-builder unit counts are logged.
+        None (default): ``weight_column`` is used for every unit as is.
     """
     osm = df_osm_kg.to_crs(CRS_METRIC).copy()
     osm["lsn6"] = osm["commune_id"].map(lsn_unit)
@@ -49,16 +61,27 @@ def build_kita_facilities(df_kitas, df_osm_kg, weight_column="weight"):
     osm["unit"] = osm.apply(unit_key, axis=1)
 
     rows_id, rows_cap, rows_geom = [], [], []
+    n_potential_units = n_area_units = 0
     for unit, sub in osm.groupby("unit"):
         if unit not in plaetze:
             continue
-        total = sub[weight_column].sum()
+        if area_weight_column is None:
+            weights = sub[weight_column].to_numpy(float)
+        else:
+            weights, used_potential = pick_unit_weights(
+                sub, weight_column, area_weight_column)
+        total = weights.sum()
         if total <= 0:
             continue
-        for _, b in sub.iterrows():
+        if area_weight_column is not None:
+            n_potential_units += int(used_potential)
+            n_area_units += int(not used_potential)
+        for w, geom in zip(weights, sub["geometry"]):
             rows_id.append("kita_%d" % len(rows_id))
-            rows_cap.append(float(plaetze[unit]) * float(b[weight_column]) / total)
-            rows_geom.append(b["geometry"])
+            rows_cap.append(float(plaetze[unit]) * float(w) / total)
+            rows_geom.append(geom)
+    if area_weight_column is not None:
+        log_unit_basis("kita", n_potential_units, n_area_units)
 
     gdf = gpd.GeoDataFrame({"location_id": rows_id, "capacity": rows_cap},
                            geometry=rows_geom, crs=CRS_METRIC)
@@ -82,17 +105,22 @@ def execute(context):
 
     enabled = context.config("education_building_distribution")
     weight_column = "weight"
+    area_weight_column = None
     if enabled:
         from braunschweig.data.building_potential_attach import attach_potential
         df_b = context.stage("braunschweig.data.building_potentials")
+        # Unmatched POIs stay NaN (not the m2 x floors weight): the builder then
+        # applies the same-unit rule so a unit never mixes places and m2 x floors.
         vals, _p, _f = attach_potential(
             df_osm, df_b, "potential_kindergarten",
-            fallback=df_osm["weight"].to_numpy(float), label="kita")
+            fallback=np.full(len(df_osm), np.nan), label="kita")
         df_osm = df_osm.copy()
         df_osm["potential"] = vals
         weight_column = "potential"
+        area_weight_column = "weight"
 
-    gdf = build_kita_facilities(df_k, df_osm, weight_column=weight_column)
+    gdf = build_kita_facilities(df_k, df_osm, weight_column=weight_column,
+                                area_weight_column=area_weight_column)
     placed = float(gdf["capacity"].sum())
     expected = float(df_k["plaetze"].sum())
 
