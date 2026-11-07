@@ -43,7 +43,9 @@ internal names the consumers use: `potential_work`, `potential_school`,
 `potential_university`, `potential_kindergarten`, `potential_retail_daily`,
 `potential_retail_non_daily`, `potential_leisure` (from `assigned_*`) and
 `potential_errands` (from `value_errands`, the potential of the `other`
-purpose and of the errand location categories). `value_business`,
+purpose and of the errand location categories; with
+`secondary_building_potentials` on, the `other` destinations are the buildings
+with `potential_errands > 0`, not the legacy OSM/ALKIS catalog points). `value_business`,
 `value_sports`, `value_meetup` and `value_lessons` are carried but not read by
 any placement. Each `potential_*` is a modelled weight, NOT an observed
 per-building headcount. The file is not committed; copy a delivered release

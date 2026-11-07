@@ -39,7 +39,7 @@ evidence:
   reference:
     kind: none
     note: |
-      The GENESIS SvB aggregate (braunschweig/13111-01-03-5.xlsx) and the building-activity- potentials parquet itself (braunschweig/buildings/building_activity_potentials.parquet) are both NOT committed to this repository.
+      The GENESIS SvB aggregate (braunschweig/13111-01-03-5.xlsx) and the building potentials themselves (braunschweig/buildings/08_redistribution.gpkg, data record building_potentials_redistribution, ADR-0190) are both NOT committed to this repository.
 validation:
   state: unvalidated
   runs: []
