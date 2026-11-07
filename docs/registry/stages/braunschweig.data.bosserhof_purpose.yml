@@ -1,8 +1,9 @@
 stage: braunschweig.data.bosserhof_purpose
 title: Bosserhof class -> activity purpose map
 layer: secondary
-description: Committed mapping from building classes to secondary activity purposes for the smart
-  'other' potential (#27).
+description: Committed mapping from building classes to secondary activity purposes. Its only stage
+  consumer, the smart 'other' potential (#27), was removed by ADR-0190; the module stays as a library
+  that braunschweig.data.bosserhof_location_category imports (load_mapping) for its consistency check.
 lineage:
   type: braunschweig_new
   upstream: null
@@ -10,9 +11,9 @@ lineage:
 code:
 - braunschweig/data/bosserhof_purpose.py
 pipelines:
-  popsim_mid: active
+  popsim_mid: not_used
   popsim_open: not_used
   simple_ipf_open: not_used
-production: true
+production: false
 inputs:
 - bosserhof_mappings
