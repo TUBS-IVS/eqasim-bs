@@ -1,0 +1,65 @@
+dataset: building_potentials_redistribution
+title: Building-level activity potentials, redistribution release 08 (TUBS-IVS pipeline, October 2026)
+inventory_id: F4
+provider: >-
+  TUBS-IVS Activities-and-Potentials-Calculation-Pipeline (https://github.com/TUBS-IVS/Activities-and-Potentials-Calculation-Pipeline),
+  delivered by the owner on 2026-11-05 as the file 08_redistribution.gpkg (output step 08 "redistribution"; the producer
+  commit and version are unknown, the GeoPackage carries no metadata table)
+vintage: >-
+  Layers written 2026-10-20 (gpkg_contents.last_change). Reference year of the zonal totals: unknown; the totals equal the
+  superseded release exactly (workers 591,700.2; pupils 149,999; students 38,253; kindergarten places 37,323).
+geography: >-
+  The Braunschweig model area (ZGB), 880 traffic zones (layer zones); 39,786 buildings with at least one activity (layer
+  buildings: 38,186 ALKIS buildings, ids DENI..., and 1,600 OSM buildings without an ALKIS record, ids way/...);
+  7,864 POIs (layer pois, the per-POI split of the same columns, not read by the model).
+crs: EPSG:25832
+roles:
+- derived_input
+- spatial_input
+used_by:
+- braunschweig.data.building_potentials
+acquisition:
+  method: derived
+  source: >-
+    Separate TUBS-IVS pipeline (ALKIS/OSM geometry, LLM classification of a MiD activity label and a Bosserhof
+    building-use class, disaggregation of zonal totals to buildings). Copy the delivered file unchanged to
+    storage.expected_path; the stage braunschweig.data.building_potentials reads its layer buildings directly.
+  notes: >-
+    File SHA-256 84af5b19bb36646923c08d4fc98b92215cc189b920874c182e3cbcbfdbc0e67f, 26,906,624 bytes. Columns read:
+    building_id, zone_no, bosserhof_class, assigned_Workers, assigned_School, assigned_University,
+    assigned_Kindergarten, assigned_Retail_Daily, assigned_Retail_Non_Daily, assigned_Leisure, value_errands (the
+    other-purpose potential), value_business, value_sports, value_meetup, value_lessons (carried, not consumed),
+    value_assumed, geometry. The assigned_* columns are the restricted zonal totals (zones layer target_*, the same
+    totals as the superseded release) redistributed to buildings; units of the retail and leisure totals: unknown
+    here. The value_* columns are, per the producer (README "Outputs" and "Limitations", config.py block "The five
+    labels without a zone total: visitors per working day", main branch read 2026-11-07, commit 9332bbf), visitor
+    arrivals per average working day (persons, all modes, staff excluded) = occupied floor area x a visitor rate
+    (middle scenario), not scaled to any total; value_assumed names the labels whose rate is an assumption of the
+    producer (non-empty on 8,679 buildings). The model uses all columns as relative weights only.
+storage:
+  expected_path: eqasim-data/data/braunschweig/buildings/08_redistribution.gpkg
+  committed: false
+  local_only: true
+  notes: Verify a received copy against the SHA-256 in acquisition.notes.
+verification:
+  verifier_entry: F4
+licensing:
+  license: derived from dl-de/zero-2-0 (ALKIS, LGLN) + ODbL (OpenStreetMap)
+  restricted: false
+  redistribution: restricted
+  notes: Not distributed in the repository; available on request from TUBS-IVS.
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+limitations: >-
+  Modelled weights, not observed headcounts or visitor counts; the aggregate references (GENESIS SvB, LSN) stay
+  authoritative. The value_* columns rest partly on assumed visitor rates and are not scaled to any total; the
+  producer commit that wrote this file is unknown (layers dated 2026-10-20). Two Bosserhof classes ("crafts and trades",
+  426 buildings; "others", 4) have no row in the class-to-category tables. Replaces building_activity_potentials
+  (ADR-0190).
+notes: >-
+  Supersedes building_activity_potentials (263,512 buildings, parquet) from ADR-0190 on. The new release puts the same
+  zonal totals on 39,786 activity buildings instead of 263,512 (the dropped ones are mostly residential and carried
+  20 % of the old work potential), so the per-building values are larger; the other potential changes source from the
+  derived potential_generic x class weight to value_errands.

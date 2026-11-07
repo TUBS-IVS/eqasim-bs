@@ -261,7 +261,7 @@ tables keep all reference comparisons working.
 | cleancensus Kreis control tables | cleancensus pipeline | `braunschweig/popsim/kreis_controls/` |
 | Employed by age × sex per Kreis (employment-grid age shape, ADR-0137) | `python scripts/extract_zensus2022_employed_by_age.py --regionaltabelle <Regionaltabelle_Bildung_Erwerbstaetigkeit.xlsx> --out eqasim-data/data/braunschweig/popsim/zensus2022_employed_by_age_kreis.csv` | `braunschweig/popsim/zensus2022_employed_by_age_kreis.csv` |
 | Buildings-with-households (cell-linked) | popsimprep preprocessing step 5 | `braunschweig/popsim/buildings/buildings_with_households_zgb.parquet` |
-| Building activity potentials | TUBS-IVS potentials pipeline → `python scripts/import_building_activity_potentials.py` | `braunschweig/buildings/building_activity_potentials.parquet` |
+| Building activity potentials (redistribution release 08, ADR-0190) | TUBS-IVS potentials pipeline delivery, copied unchanged (read directly; SHA-256 in data record `building_potentials_redistribution`) | `braunschweig/buildings/08_redistribution.gpkg` |
 | HSN/TSN engine lookup | `python scripts/scrape_hsn_tsn.py` | `braunschweig/kba/hsn_tsn_lookup.csv` |
 | KBA derived fleet tables (committed) | `python scripts/extract_kba_fleet.py` | `braunschweig/kba/derived/*.csv` |
 | MiD fleet cross tables (committed) | `python scripts/build_mid_age_by_segment_status.py` and `python scripts/build_mid_antrieb_by_status.py` (both accept `--mid-path`) | `braunschweig/kba/derived/mid2023_{age_by_segment_status,antrieb_by_status}.csv` |

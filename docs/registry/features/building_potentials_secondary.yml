@@ -3,7 +3,7 @@ title: Building potentials — secondary
 area: secondary
 description: Secondary (shop/leisure/other) destinations draw on building-level activity potentials
   (TUBS-IVS potentials pipeline gpkg) as the candidate set instead of the raw OSM/ALKIS location
-  catalog (ADR-0025, REPLACE strategy).
+  catalog (ADR-0025, REPLACE strategy); the other potential is the delivered errand value (ADR-0190).
 stages:
 - braunschweig.data.building_potentials
 - braunschweig.synthesis.locations.secondary_candidates
@@ -31,7 +31,7 @@ evidence:
   off_path_byte_identical:
     claimed: not_applicable
     note: |
-      test_off_path_uses_raw_generic confirms the OFF path falls back to the pre-existing raw generic scorer, a functional-equivalence check rather than a literally named byte-identity test.
+      No byte-identity test; test_without_potentials_is_legacy_schema checks that the OFF path keeps the legacy candidate schema. The raw-generic OFF scorer was removed with ADR-0190.
   fallback_rate:
     instrumented: false
     note: |

@@ -1,5 +1,5 @@
 # ADR-0025 · 2026-06-25 · Building-level activity potentials (work/secondary/education) — REPLACE
-- **Status:** active
+- **Status:** active (its data source, the parquet of the old release, is superseded by ADR-0190; the REPLACE strategy is unchanged)
 - **Context:** Without building-level potentials, every activity is placed at a zone centroid or a
   uniform random building, so large offices/shops/schools do not attract proportionally more trips.
 - **Decision:** Redistribute work, secondary, and education locations to individual OSM/ALKIS

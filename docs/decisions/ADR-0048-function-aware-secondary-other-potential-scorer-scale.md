@@ -1,5 +1,5 @@
 # ADR-0048 · 2026-06-28 · Function-aware secondary `other` potential + scorer scale-alignment
-- **Status:** active on PR #77 (open, Closes #27) — Part A active; Part B scorer calibration server-deferred.
+- **Status:** active on PR #77 (open, Closes #27) — Part A active; Part B scorer calibration server-deferred. Part A (the derived `other` potential) is SUPERSEDED by ADR-0190: the other potential is the delivered `value_errands` of the redistribution release.
 - **Context:** The secondary `other` potential was the raw `potential_generic =
   volume_m3 × bosserhof_class_weight`, which is function-blind. The VW-Werk Wolfsburg (8.9M m³ →
   26.7M potential, a real building) and steel/wholesale giants dominated the chainsolvers `other`

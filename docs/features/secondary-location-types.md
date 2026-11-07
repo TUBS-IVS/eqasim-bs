@@ -102,12 +102,10 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
      `retail>0 | leisure>0` keep-filter, so masking alone left both
      categories with zero structural supply — confirmed against real data via
      the committed mapping CSV. Fix (approved plan amendment): potential is
-     derived directly from `building_potentials`, generalizing
-     `secondary_other_potential.derive_other_potential`'s cap-and-floor
-     formula (`min(potential_generic, cap) x class-membership`, using the
-     already-configured `secondary_other_min_volume_m3` /
-     `secondary_other_cap_percentile`) from one whitelist to each errand
-     category independently. A building with positive computed potential
+     taken directly from `building_potentials` -- since ADR-0190 the
+     delivered `potential_errands` of each building whose class maps to the
+     category (before ADR-0190: a cap-and-floor formula on
+     `potential_generic`). A building with positive computed potential
      that was excluded from the base candidate set is appended as a NEW
      `sec_b_<building_id>` row (`sec_b_` prefix; "sec_b_ rows" in the review
      history) carrying only that category's offer/potential — every other
@@ -308,11 +306,9 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
   this branch** — restored per drawn placement category via the `_distance_label`
   carry-through (Mechanics point 7); no follow-up issue needed. The pending A/B
   run is the first opportunity to read the per-category clip shares on real data.
-- **Option B** (possible later upgrade, non-blocking): request per-category
-  `potential_*` columns directly from the TUBS-IVS
-  Activities-and-Potentials-Calculation-Pipeline instead of deriving them
-  in-repo from `potential_generic` via the generalized
-  `derive_other_potential` formula.
+- **Option B** (partly done by ADR-0190): the errand categories now use the
+  delivered `potential_errands`; per-category leisure columns (e.g.
+  `value_sports`) are carried but not yet used.
 - **#242 remainder**: this feature's `shop` validation-only rows in
   `srv2023_secondary_type_shares.csv` substantially co-resolve #242's SrV
   subtype re-validation goal, but the re-estimation decision for cases where
