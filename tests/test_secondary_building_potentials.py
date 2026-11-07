@@ -69,7 +69,7 @@ def test_build_secondary_candidates_replace_shop_leisure_from_gpkg():
     buildings = gpd.GeoDataFrame(
         {"building_id": [7],
          "potential_retail_daily": [4.0], "potential_retail_non_daily": [3.0],
-         "potential_leisure": [9.0], "potential_generic": [100.0],
+         "potential_leisure": [9.0], "potential_errands": [100.0],
          "commune_id": ["03101000"]},
         geometry=[b], crs="EPSG:25832",
     )
@@ -81,52 +81,28 @@ def test_build_secondary_candidates_replace_shop_leisure_from_gpkg():
     assert gpkg.geometry.geom_type == "Point"
     other = out[out["location_id"] == "sec_0"].iloc[0]
     assert other["offers_other"] and not other["offers_shop"] and not other["offers_leisure"]
-    assert other["pot_other"] == 0.0     # legacy point far from the gpkg building -> generic fallback 0.0
+    assert other["pot_other"] == 0.0     # legacy point far from the gpkg building -> errands fallback 0.0
     assert len(out) == 2
 
 
 # ---------------------------------------------------------------------------
-# Task 4: smart other potential (ON/OFF paths)
+# pot_other = potential_errands of the containing building (value_errands)
 # ---------------------------------------------------------------------------
 
-def _legacy_and_buildings():
-    # one legacy 'other' point inside a VW-like giant footprint (b1) and one
-    # small whitelist building (b2). Two whitelist values are needed so that
-    # nanquantile(..., 0.99) produces a cap strictly below the giant value.
+def test_pot_other_is_potential_errands_of_containing_building():
     legacy = gpd.GeoDataFrame({
-        "location_id": ["sec_0"], "commune_id": ["031030000000"],
-        "iris_id": ["031030000000"], "offers_shop": [False],
-        "offers_leisure": [False], "offers_other": [True],
-        "geometry": [Point(1.0, 1.0)]}, crs="EPSG:25832")
+        "location_id": ["sec_in", "sec_out"],
+        "commune_id": ["031030000000"] * 2, "iris_id": ["031030000000"] * 2,
+        "offers_shop": [False] * 2, "offers_leisure": [False] * 2,
+        "offers_other": [True] * 2,
+        "geometry": [Point(1.0, 1.0), Point(500.0, 500.0)]}, crs="EPSG:25832")
     bld = gpd.GeoDataFrame({
-        "building_id": ["b1", "b2"], "commune_id": ["031030000000", "031030000000"],
+        "building_id": [0, 1], "commune_id": ["031030000000"] * 2,
         "potential_retail_daily": [0.0, 0.0], "potential_retail_non_daily": [0.0, 0.0],
-        "potential_leisure": [0.0, 0.0],
-        "potential_generic": [26_659_425.0, 1_000.0],
-        "volume_m3": [8_886_475.0, 500.0],
-        "bosserhof_class_clean": ["customer oriented services",
-                                   "customer oriented services"],
+        "potential_leisure": [0.0, 0.0], "potential_errands": [42.0, 7.0],
         "geometry": [Polygon([(0, 0), (2, 0), (2, 2), (0, 2)]),
                      Polygon([(10, 10), (11, 10), (11, 11), (10, 11)])]},
         crs="EPSG:25832")
-    return legacy, bld
-
-
-def test_smart_other_caps_legacy_point_on_giant():
-    legacy, bld = _legacy_and_buildings()
-    mapping = pd.DataFrame({
-        "bosserhof_class": ["customer oriented services"],
-        "eqasim_purpose": ["other"], "other_destination": [True]})
-    out = build_secondary_candidates(
-        legacy, bld, mapping=mapping,
-        other_potential_params=dict(broad_share=0.54, errand_share=0.46,
-                                    min_volume_m3=50.0, cap_percentile=0.99))
-    row = out[out["offers_other"]].iloc[0]
-    assert row["pot_other"] < 26_659_425.0          # capped, not the raw giant
-
-
-def test_off_path_uses_raw_generic():
-    legacy, bld = _legacy_and_buildings()
-    out = build_secondary_candidates(legacy, bld)   # mapping=None -> OFF
-    row = out[out["offers_other"]].iloc[0]
-    assert np.isclose(row["pot_other"], 26_659_425.0)
+    out = build_secondary_candidates(legacy, bld).set_index("location_id")
+    assert out.loc["sec_in", "pot_other"] == 42.0      # primary: footprint join
+    assert out.loc["sec_out", "pot_other"] == 0.0      # logged zero fallback

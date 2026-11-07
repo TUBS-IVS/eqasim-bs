@@ -23,7 +23,7 @@ SCALE_OVERLAYS = ["test_1pct.yml", "test_25pct.yml", "test_100pct.yml"]
 # Every feature flag the base must switch ON for every scale (drift guard).
 FEATURE_FLAGS_ON = [
     "freight_enabled", "work_building_potentials", "secondary_building_potentials",
-    "secondary_other_smart_potential", "secondary_distance_by_purpose",
+    "secondary_distance_by_purpose",
     "secondary_shop_daily_split", "secondary_leisure_subtype_split",
     "secondary_other_subtype_split", "leisure_visit_building_potential",
     "education_building_distribution", "education_gravity_enabled",

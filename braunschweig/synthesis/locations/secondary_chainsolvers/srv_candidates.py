@@ -43,8 +43,8 @@ from .srv_location_types import (
 # from the candidate set entirely. Masking pot_other would be a structural
 # zero-supply bug, not a thin-data limitation. ``append_location_category_columns``
 # now derives the two errand categories' potential directly from
-# ``df_potentials`` (the ``derive_other_potential`` cap-and-floor formula,
-# applied per category -- see that function for the shared numerics) and
+# ``df_potentials`` (``potential_errands`` of the buildings whose Bosserhof
+# class maps to the category) and
 # appends a NEW ``sec_b_<building_id>`` candidate row for every errand-class
 # building missing from ``candidates``. The dict below is kept as the
 # leisure/errand grouping key other callers (e.g.
@@ -61,9 +61,7 @@ SRV_BUILDING_CATEGORY_BASE_POTENTIAL = {
 
 def append_location_category_columns(candidates: gpd.GeoDataFrame,
                                       df_potentials: gpd.GeoDataFrame,
-                                      mapping: pd.DataFrame,
-                                      *, min_volume_m3: float = 50.0,
-                                      cap_percentile: float = 0.99) -> gpd.GeoDataFrame:
+                                      mapping: pd.DataFrame) -> gpd.GeoDataFrame:
     """Add per-category offer/potential columns to the candidates frame (issue #262).
 
     For each of the five ``SRV_BUILDING_CATEGORY_BASE_POTENTIAL`` categories,
@@ -80,15 +78,14 @@ def append_location_category_columns(candidates: gpd.GeoDataFrame,
     ``pot_other=0.0`` on every ``sec_b_*`` row and excludes errand-class
     buildings (hospitals, authorities, services, ...) from the candidate set
     entirely (its keep-filter is ``retail > 0 | leisure > 0``). Their
-    potential is instead computed directly from ``df_potentials`` with the
-    same cap-and-floor formula as ``secondary_other_potential.derive_other_potential``,
-    applied per category:
+    potential is instead taken directly from ``df_potentials``:
 
-        cap_<category>  = nanquantile(potential_generic over buildings whose
-                           class maps to <category>, cap_percentile)
-        pot_<category>  = min(potential_generic, cap_<category>) where the
-                           building's class maps to <category>, else 0.0
-        pot_<category>  = 0.0 where volume_m3 < min_volume_m3
+        pot_<category>  = potential_errands where the building's class maps
+                           to <category>, else 0.0
+
+    There is no cap and no volume floor (owner decision 2026-11-07: the
+    ``value_errands`` column of the redistribution GeoPackage replaces the old
+    volume-derived potential).
 
     A building with a positive computed potential is guaranteed a
     ``sec_b_<building_id>`` candidate row: if one already exists (e.g. the
@@ -98,8 +95,7 @@ def append_location_category_columns(candidates: gpd.GeoDataFrame,
     ``offers_shop``, ``offers_leisure``, ``offers_other``, ``offers_escort``,
     the other four SrV categories, etc. -- is ``False`` / ``0.0``). A
     class-member building that is NOT already a candidate and whose computed
-    potential is zero (``volume_m3 < min_volume_m3``, or a class with no
-    members forcing the all-building quantile cap onto a zero row) gets NO
+    potential is zero (``potential_errands == 0``) gets NO
     new row at all -- appending an inert all-False/0.0 row would only pollute
     the candidate set (and, downstream, ``facilities.xml``) without ever being
     selectable.
@@ -109,7 +105,9 @@ def append_location_category_columns(candidates: gpd.GeoDataFrame,
     ``sec_res_*``, ``sec_edu_*``, legacy ``sec_*`` catalog rows) and building
     rows whose class is unmapped in ``mapping`` -- gets ``False`` / ``0.0``
     for all five columns. An unmapped class is a VALID outcome (not every
-    Bosserhof class maps to one of the five categories), not an error.
+    Bosserhof class maps to one of the five categories), not an error; the
+    number of buildings with ``potential_errands > 0`` and no category is
+    logged so the loss stays observable.
 
     The external Gemeinde centroids are the one family that must not STAY at
     ``False`` / ``0.0``: they are category-agnostic long-distance escapes, and
@@ -127,20 +125,12 @@ def append_location_category_columns(candidates: gpd.GeoDataFrame,
         ``pot_leisure`` (added by ``build_secondary_candidates``).
     df_potentials:
         ``braunschweig.data.building_potentials`` frame: ``building_id``,
-        ``bosserhof_class_clean``, ``potential_generic``, ``volume_m3``,
+        ``bosserhof_class_clean``, ``potential_errands``,
         ``commune_id``, ``geometry`` (footprint polygon or point).
     mapping:
         ``braunschweig.data.bosserhof_location_category`` frame:
         ``bosserhof_class``, ``location_category`` (one of
         ``bosserhof_location_category.BUILDING_CATEGORIES``).
-    min_volume_m3:
-        Errand potential is zeroed for buildings with ``volume_m3`` below
-        this threshold (mirrors ``secondary_other_min_volume_m3``; the
-        ``secondary_candidates`` stage passes the configured value).
-    cap_percentile:
-        Quantile of ``potential_generic`` (over each errand category's own
-        class-member buildings) used as that category's potential cap
-        (mirrors ``secondary_other_cap_percentile``).
 
     Returns
     -------
@@ -161,8 +151,8 @@ def append_location_category_columns(candidates: gpd.GeoDataFrame,
             "requires candidates to already carry column 'pot_leisure' (produced by "
             "build_secondary_candidates); available: %s." % list(candidates.columns)
         )
-    missing_potentials = [c for c in ["building_id", "bosserhof_class_clean", "potential_generic",
-                                      "volume_m3", "commune_id", "geometry"]
+    missing_potentials = [c for c in ["building_id", "bosserhof_class_clean", "potential_errands",
+                                      "commune_id", "geometry"]
                           if c not in df_potentials.columns]
     if missing_potentials:
         raise ValueError(
@@ -240,12 +230,11 @@ def append_location_category_columns(candidates: gpd.GeoDataFrame,
         )
 
     # --- errand categories: derived independently from df_potentials, using
-    # the derive_other_potential cap-and-floor formula per category (plan
-    # amendment, issue #262). ---
+    # potential_errands of the class-member buildings (plan amendment, issue
+    # #262; value_errands replaces the capped volume formula). ---
     building_out_index = dict(zip(building_ids.values, building_ids.index))
 
-    generic = pd.to_numeric(df_potentials["potential_generic"], errors="coerce").astype(float).to_numpy()
-    volume = pd.to_numeric(df_potentials["volume_m3"], errors="coerce").astype(float).to_numpy()
+    errands = pd.to_numeric(df_potentials["potential_errands"], errors="raise").astype(float).to_numpy()
     potential_building_ids = df_potentials["building_id"].astype(str).to_numpy()
     potential_classes = df_potentials["bosserhof_class_clean"].astype(str).to_numpy()
     potential_commune = df_potentials["commune_id"].astype(str).to_numpy()
@@ -267,19 +256,7 @@ def append_location_category_columns(candidates: gpd.GeoDataFrame,
 
     for category in errand_categories:
         member_mask = (category_of_building == category).to_numpy()
-        n_members = int(member_mask.sum())
-        if n_members:
-            cap = float(np.nanquantile(generic[member_mask], cap_percentile))
-        else:
-            cap = float(np.nanquantile(generic, cap_percentile))
-            print(
-                "WARNING: [braunschweig.secondary_chainsolvers] no buildings map to "
-                "location category '%s' in the Bosserhof mapping; potential cap "
-                "derived from the all-building potential_generic quantile instead."
-                % category
-            )
-        pot = np.where(member_mask, np.minimum(generic, cap), 0.0)
-        pot = np.where(volume < float(min_volume_m3), 0.0, pot)
+        pot = np.where(member_mask, errands, 0.0)
         offers = pot > 0.0
         per_category_supply[category] = int(offers.sum())
 
@@ -292,9 +269,8 @@ def append_location_category_columns(candidates: gpd.GeoDataFrame,
         # Only append a NEW row for a building with a genuinely positive
         # computed potential (per the docstring's "positive computed
         # potential is guaranteed a row" contract). Without the `& offers`
-        # condition, every class-member building below min_volume_m3 (or with
-        # a NaN potential_generic) would still gain an inert all-False/0.0
-        # sec_b_* row -- dead weight in facilities.xml that never offers
+        # condition, every class-member building with zero errand potential
+        # would still gain an inert all-False/0.0 sec_b_* row -- dead weight in facilities.xml that never offers
         # anything and contradicts that contract.
         append_mask = member_mask & ~present_mask & offers
         n_appended = int(append_mask.sum())
@@ -318,12 +294,20 @@ def append_location_category_columns(candidates: gpd.GeoDataFrame,
         out = gpd.GeoDataFrame(
             pd.concat([out] + append_frames, ignore_index=True), crs=out.crs)
 
+    n_errand_positive = int((errands > 0.0).sum())
+    n_errand_unmapped = int(((errands > 0.0) & category_of_building.isna().to_numpy()).sum())
+    n_errand_other_category = int(((errands > 0.0)
+                                   & category_of_building.notna().to_numpy()
+                                   & ~category_of_building.isin(errand_categories).to_numpy()).sum())
     print(
         "[braunschweig.secondary_chainsolvers] errand location category columns: "
         "%d new sec_b_* candidates appended for errand-class buildings absent from "
-        "the candidate set; positive-potential rows per category: %s (min_volume_m3=%s, "
-        "cap_percentile=%s)"
-        % (n_appended_total, per_category_supply, min_volume_m3, cap_percentile)
+        "the candidate set; positive-potential rows per category: %s; buildings with "
+        "potential_errands>0: %d, of which Bosserhof class has no location category "
+        "%d (%.1f%%), maps to a non-errand category %d"
+        % (n_appended_total, per_category_supply, n_errand_positive, n_errand_unmapped,
+           100.0 * n_errand_unmapped / n_errand_positive if n_errand_positive else 0.0,
+           n_errand_other_category)
     )
     return out
 

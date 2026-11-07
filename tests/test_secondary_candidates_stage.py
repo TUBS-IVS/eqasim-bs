@@ -73,7 +73,7 @@ def _buildings_potentials_frame():
             "potential_retail_daily": [4.0, 0.0],
             "potential_retail_non_daily": [1.0, 0.0],
             "potential_leisure": [0.0, 3.0],
-            "potential_generic": [2.0, 2.0],
+            "potential_errands": [2.0, 2.0],
             "commune_id": ["03101000", "03101000"],
         },
         geometry=[square, square], crs=CRS,
@@ -103,7 +103,6 @@ def _stage_context(sec_enabled=True, external=True, visit=False):
         "secondary_building_potentials": sec_enabled,
         "secondary_external_candidates": external,
         "cordon_enabled": True,  # suppress the cordon warning in tests
-        "secondary_other_smart_potential": False,
         "secondary_leisure_subtype_split": visit,
         "leisure_visit_building_potential": visit,
     }
@@ -124,8 +123,8 @@ def _srv_building_potentials_frame():
       leisure_* categories (unchanged leisure masking).
     - 104/105 carry NO retail/leisure potential (so build_secondary_candidates'
       keep-filter excludes them from the input candidates entirely) but carry
-      a positive potential_generic and volume_m3 above the floor, so
-      append_location_category_columns derives a positive errand_* potential
+      a positive potential_errands, so
+      append_location_category_columns takes a positive errand_* potential
       for them directly from df_potentials and appends them as NEW sec_b_*
       candidate rows (the #262 plan amendment, commit 75c6021).
     """
@@ -139,8 +138,7 @@ def _srv_building_potentials_frame():
             "potential_retail_daily": [0.0, 0.0, 0.0, 0.0, 0.0],
             "potential_retail_non_daily": [0.0, 0.0, 0.0, 0.0, 0.0],
             "potential_leisure": [5.0, 6.0, 7.0, 0.0, 0.0],
-            "potential_generic": [0.0, 0.0, 0.0, 80.0, 60.0],
-            "volume_m3": [1000.0, 1000.0, 1000.0, 100.0, 100.0],
+            "potential_errands": [0.0, 0.0, 0.0, 80.0, 60.0],
             "commune_id": ["03101000"] * 5,
             "bosserhof_class_clean": [
                 "large cinemas", "restaurants gastronomy", "fitness wellness",
@@ -186,8 +184,6 @@ def _srv_stage_context():
     context._config["secondary_srv_location_types"] = True
     context._config["secondary_other_subtype_split"] = True
     context._config["secondary_landuse_grid_spacing_meters"] = 10.0
-    context._config["secondary_other_min_volume_m3"] = 50.0
-    context._config["secondary_other_cap_percentile"] = 0.99
     context._stages["braunschweig.data.building_potentials"] = _srv_building_potentials_frame()
     context._stages["braunschweig.data.landuse"] = _srv_landuse_frame()
     context._stages["braunschweig.data.bosserhof_location_category"] = _srv_location_category_mapping()

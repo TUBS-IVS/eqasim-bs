@@ -109,7 +109,7 @@ def _legacy_frame():
 def _potentials_frame():
     return gpd.GeoDataFrame(
         {"building_id": [11], "potential_retail_daily": [4.0], "potential_retail_non_daily": [1.0],
-         "potential_leisure": [0.0], "potential_generic": [2.0], "commune_id": ["03101000"]},
+         "potential_leisure": [0.0], "potential_errands": [2.0], "commune_id": ["03101000"]},
         geometry=[box(0, 0, 5, 5)], crs=CRS)
 
 
@@ -122,7 +122,7 @@ def _stage_context(portal_enabled=True, external=None, municipalities=None, buff
         [Point(1500.0, 0.0), Point(90000.0, 0.0), Point(0.0, 99000.0)], ["EXTin", "EXTout1", "EXTout2"])
     return _StubContext(
         {"secondary_building_potentials": True, "secondary_external_candidates": True,
-         "cordon_enabled": True, "secondary_other_smart_potential": False,
+         "cordon_enabled": True,
          "secondary_leisure_subtype_split": False, "leisure_visit_building_potential": False,
          keys.KEY_ENABLED: portal_enabled, "cordon_network_source_buffer_m": buffer_m},
         {"synthesis.locations.secondary": _legacy_frame(),

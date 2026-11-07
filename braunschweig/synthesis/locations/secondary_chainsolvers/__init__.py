@@ -384,7 +384,6 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.weekend_plan_match",
     "braunschweig.population.methods",
     "braunschweig.population.socioprofessional_class",
-    "braunschweig.synthesis.locations.secondary_other_potential",
     "data.hts.egt.cleaned",
     "data.hts.entd.cleaned",
     "data.hts.hts",

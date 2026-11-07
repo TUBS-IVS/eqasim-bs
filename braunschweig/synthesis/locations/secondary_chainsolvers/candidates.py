@@ -301,15 +301,13 @@ def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: f
 
 def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
                                df_buildings: gpd.GeoDataFrame,
-                               df_external: gpd.GeoDataFrame = None,
-                               *, mapping=None,
-                               other_potential_params=None) -> gpd.GeoDataFrame:
+                               df_external: gpd.GeoDataFrame = None) -> gpd.GeoDataFrame:
     """REPLACE secondary candidates when building potentials are ON.
 
     shop/leisure candidates = gpkg activity buildings (native potentials, no
     fallback — the candidate set IS the buildings that carry a non-zero
     retail or leisure potential); 'other' candidates = the legacy broad catalog
-    with the generic potential attached by footprint join (fallback 0.0, logged
+    with ``potential_errands`` attached by footprint join (fallback 0.0, logged
     by attach_potential so the rate stays observable).
 
     Parameters
@@ -322,25 +320,10 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
         Building-footprint GeoDataFrame from
         ``braunschweig.data.building_potentials`` (columns: building_id,
         potential_retail_daily, potential_retail_non_daily, potential_leisure,
-        potential_generic, commune_id, geometry(POLYGON), EPSG:25832).
-        When ``mapping`` is provided, the buildings frame must additionally
-        carry ``volume_m3`` and the Bosserhof class column (default
-        ``bosserhof_class_clean``).
+        potential_errands, commune_id, geometry(POLYGON), EPSG:25832).
     df_external:
         Optional GeoDataFrame of external Gemeinde centroids (long-distance
         secondary candidates).
-    mapping:
-        Optional DataFrame ``[bosserhof_class, eqasim_purpose, other_destination]``
-        from ``braunschweig.data.bosserhof_purpose``.  When provided (ON path)
-        the ``other`` potential is derived via
-        ``derive_other_potential`` (capped, whitelist-boosted) and the median of
-        the positive values is used as the spatial-join fallback (logged).
-        When ``None`` (default / OFF path) the raw ``potential_generic`` is used
-        with a zero fallback — byte-identical to the pre-feature behaviour.
-    other_potential_params:
-        Optional dict with keyword arguments forwarded to
-        ``derive_other_potential`` (``broad_share``, ``errand_share``,
-        ``min_volume_m3``, ``cap_percentile``). Ignored when ``mapping`` is None.
 
     Returns
     -------
@@ -400,35 +383,12 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
     # All legacy candidates become 'other'-only rows so the broad OSM/ALKIS/
     # landuse catalog is preserved for the 'other' purpose.
     legacy = df_secondary_legacy.copy()
-    if mapping is not None:
-        # ON path: derive a capped, whitelist-boosted potential_other via the
-        # Bosserhof function-class mapping. The footprint-join fallback is the
-        # median of the positive potential_other values (so candidates without a
-        # containing building still receive a reasonable non-zero potential rather
-        # than the 0.0 that the generic fallback would give). The rate is logged
-        # by attach_potential (no silent fallback).
-        from braunschweig.synthesis.locations.secondary_other_potential import (
-            derive_other_potential,
-        )
-        params = other_potential_params or {}
-        bld = df_buildings.copy()
-        pot_series, st = derive_other_potential(bld, mapping, **params)
-        bld["potential_other"] = pot_series.values
-        positive = pot_series[pot_series > 0.0]
-        median_prior = float(positive.median()) if len(positive) else 0.0
-        print("[braunschweig.secondary_chainsolvers] smart other potential: "
-              "cap=%.0f whitelist=%d non-whitelist=%d unknown_class=%d tiny=%d "
-              "median_prior=%.1f" % (st["cap_value"], st["n_whitelist"],
-              st["n_nonwhitelist"], st["n_unknown_class"], st["n_tiny"], median_prior))
-        pot_other, _p, _f = attach_potential(
-            legacy, bld, "potential_other",
-            fallback=np.full(len(legacy), median_prior, dtype=float), label="sec_other")
-    else:
-        # OFF path: byte-identical to the pre-feature behaviour (raw
-        # potential_generic, zero fallback). No new imports, no new logic.
-        pot_other, _p, _f = attach_potential(
-            legacy, df_buildings, "potential_generic",
-            fallback=np.zeros(len(legacy), dtype=float), label="sec_other")
+    # pot_other is the building's potential_errands (value_errands of the
+    # redistribution GeoPackage, owner decision 2026-11-07), attached by
+    # footprint join; zero fallback, rate logged by attach_potential.
+    pot_other, _p, _f = attach_potential(
+        legacy, df_buildings, "potential_errands",
+        fallback=np.zeros(len(legacy), dtype=float), label="sec_other")
     legacy_other = gpd.GeoDataFrame({
         "location_id": legacy["location_id"].astype(str).values,
         "commune_id": legacy["commune_id"].astype(str).values,

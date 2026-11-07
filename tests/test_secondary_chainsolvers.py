@@ -1132,7 +1132,7 @@ def test_build_secondary_candidates_carries_split_retail_columns():
     buildings = gpd.GeoDataFrame(
         {"building_id": [7],
          "potential_retail_daily": [4.0], "potential_retail_non_daily": [3.0],
-         "potential_leisure": [9.0], "potential_generic": [100.0],
+         "potential_leisure": [9.0], "potential_errands": [100.0],
          "commune_id": ["03101000"]},
         geometry=[b], crs="EPSG:25832",
     )
@@ -1297,7 +1297,7 @@ def test_build_secondary_candidates_appends_external_centroids():
     buildings = gpd.GeoDataFrame({
         "building_id": [1], "commune_id": ["03101000"],
         "potential_retail_daily": [2.0], "potential_retail_non_daily": [1.0],
-        "potential_leisure": [0.0], "potential_generic": [0.0],
+        "potential_leisure": [0.0], "potential_errands": [0.0],
         "geometry": [Polygon([(600000, 5790000), (600010, 5790000),
                               (600010, 5790010), (600000, 5790010)])],
     }, crs="EPSG:25832")
