@@ -7,13 +7,13 @@ pure functions (no synpp context).
 
 PLAN AMENDMENT (post-Task-4 review): the leisure_* categories genuinely MASK
 the existing pot_leisure aggregate (unchanged). The errand_* categories
-CANNOT mask pot_other -- every sec_b_* row carries pot_other=0.0 by
-construction and errand-class buildings (hospitals, services, ...) are
-excluded from build_secondary_candidates' candidate set entirely (its
-keep-filter is retail>0 | leisure>0). append_location_category_columns now
-takes the errand potential directly from potential_errands of df_potentials, and
-appends a new sec_b_<building_id> row for every errand-class building absent
-from the input candidates.
+do not mask pot_other (it is the building's whole potential_errands, while a
+category covers only its Bosserhof classes). append_location_category_columns
+takes the errand potential directly from potential_errands of df_potentials,
+and appends a new sec_b_<building_id> row for every errand-class building
+absent from the input candidates; with a consistent input (keep-filter
+retail|leisure|errands > 0) that append only fires for an inconsistent
+candidate frame, which these tests build on purpose.
 """
 import geopandas as gpd
 import pandas as pd

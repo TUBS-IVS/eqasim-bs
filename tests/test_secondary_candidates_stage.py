@@ -14,6 +14,7 @@ Synthetic frames only; no real data.
 from __future__ import annotations
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 import pytest
 from shapely.geometry import Point, Polygon, box
@@ -23,6 +24,7 @@ from braunschweig.matsim.scenario.facilities import (
     validate_secondary_coverage,
 )
 from braunschweig.synthesis.locations import secondary_candidates
+from braunschweig.synthesis.locations import secondary_chainsolvers
 
 
 class StubContext:
@@ -121,12 +123,11 @@ def _srv_building_potentials_frame():
 
     - 101/102/103 carry a positive pot_leisure and mask into the three
       leisure_* categories (unchanged leisure masking).
-    - 104/105 carry NO retail/leisure potential (so build_secondary_candidates'
-      keep-filter excludes them from the input candidates entirely) but carry
-      a positive potential_errands, so
-      append_location_category_columns takes a positive errand_* potential
-      for them directly from df_potentials and appends them as NEW sec_b_*
-      candidate rows (the #262 plan amendment, commit 75c6021).
+    - 104/105 carry NO retail/leisure potential but a positive
+      potential_errands, so build_secondary_candidates' keep-filter
+      (retail | leisure | errands > 0) keeps them with pot_other =
+      potential_errands, and append_location_category_columns takes their
+      errand_* potential directly from df_potentials.
     """
     boxes = [
         box(0, 100, 5, 105), box(10, 100, 15, 105), box(20, 100, 25, 105),
@@ -445,8 +446,49 @@ def test_coverage_validation_passes_when_all_ids_written():
     context = _stage_context(sec_enabled=True, external=True, visit=True)
     candidates = secondary_candidates.execute(context)
     fac = secondary_facility_frame(candidates)
-    # Realised ids drawn from every family the chainsolvers can produce.
+    # Realised ids drawn from every family the chainsolvers can produce on the
+    # ON path: gpkg buildings, external centroid, residential visit row (primary
+    # solve) and every candidate id the fallback may pick (it places on this same
+    # frame; see test_fallback_realised_ids_are_covered_by_the_facilities). Legacy
+    # sec_<n> ids are no longer realisable here.
     df_realised = pd.DataFrame({
         "location_id": ["sec_b_11", "sec_b_22", "03459999", "sec_res_77"]
+        + list(candidates["location_id"].astype(str))
     })
     validate_secondary_coverage(df_realised, fac)  # must not raise
+
+
+def test_fallback_realised_ids_are_covered_by_the_facilities():
+    """The fallback family (unbounded chains / carla-failed problems) placed on the
+    REPLACE candidate frame realises only ids the facilities writer holds, and
+    honours each candidate's offers_<purpose>. Placed on the legacy frame it
+    realised sec_<n> ids and validate_secondary_coverage raised."""
+    context = _stage_context(sec_enabled=True, external=True, visit=True)
+    candidates = secondary_candidates.execute(context)
+    fac = secondary_facility_frame(candidates)
+    purposes = ["shop", "leisure", "other", "escort"] * 25
+    problems = [
+        {"person_id": i, "activity_index": 1, "size": 1, "purposes": [p]}
+        for i, p in enumerate(purposes)
+    ]
+    rows, conv = secondary_chainsolvers._fallback_place(
+        problems, list(range(len(problems))), candidates,
+        np.random.RandomState(7), CRS,
+    )
+    assert len(rows) == len(problems) and all(ok for ok, _ in conv)
+    realised = pd.DataFrame({"location_id": [r[2] for r in rows]})
+    validate_secondary_coverage(realised, fac)  # must not raise
+
+    # Every realised id offers the purpose of its leg (escort is any-type only
+    # when the frame has no offers_escort column; here it is the column).
+    offers = candidates.set_index(candidates["location_id"].astype(str))
+    for (_, _, loc_id, _), purpose in zip(rows, purposes):
+        assert bool(offers.loc[loc_id, f"offers_{purpose}"])
+
+    # The RDA candidate index draws from the same universe, per purpose.
+    index = secondary_chainsolvers._build_rda_candidate_index(candidates)
+    all_ids = set(fac["location_id"].astype(str))
+    for purpose, pool in index.data.items():
+        ids = set(map(str, pool["identifiers"]))
+        assert ids and ids <= all_ids
+        assert all(bool(offers.loc[i, f"offers_{purpose}"]) for i in ids)

@@ -70,12 +70,14 @@ def append_location_category_columns(candidates: gpd.GeoDataFrame,
     not a new formula) and ``offers_<category> = pot_<category> > 0``.
 
     The two ``errand_*`` categories (``errand_authority_medical``,
-    ``errand_service``) are DIFFERENT: masking ``pot_other`` would be
-    structurally zero everywhere, because ``build_secondary_candidates`` sets
-    ``pot_other=0.0`` on every ``sec_b_*`` row and excludes errand-class
-    buildings (hospitals, authorities, services, ...) from the candidate set
-    entirely (its keep-filter is ``retail > 0 | leisure > 0``). Their
-    potential is instead taken directly from ``df_potentials``:
+    ``errand_service``) are DIFFERENT: they do not mask ``pot_other``, which
+    is the building's WHOLE ``potential_errands`` (``build_secondary_candidates``
+    keeps every building with ``retail | leisure | errands > 0``), while a
+    category covers only the buildings of its Bosserhof classes. Their
+    potential is instead taken directly from ``df_potentials``. With a
+    consistent input every errand building is already a candidate, so the
+    append path below fires only for an inconsistent input (a candidate frame
+    not built from the same ``df_potentials``):
 
         pot_<category>  = potential_errands where the building's class maps
                            to <category>, else 0.0

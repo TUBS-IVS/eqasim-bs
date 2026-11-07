@@ -60,3 +60,53 @@ def test_university_potential_weighting_splits_by_potential():
                                       weight_column="potential")
     caps = sorted(round(c) for c in gdf["capacity"])
     assert caps == [10, 90]   # 100 split 9:1 by potential
+
+
+# --- same-unit rule: potentials only if EVERY POI of a unit matched (> 0) -----
+NAN = float("nan")
+
+
+def test_kita_unit_with_all_pois_matched_uses_potentials(capsys):
+    gdf = build_kita_facilities(_kitas(), _osm_kg([1.0, 3.0], [9.0, 1.0]),
+                                weight_column="potential",
+                                area_weight_column="weight")
+    assert [round(c) for c in gdf["capacity"]] == [90, 10]
+    assert "units on potentials 1/1 (100.0%)" in capsys.readouterr().out
+
+
+def test_kita_unit_with_an_unmatched_poi_uses_area_weights_for_all(capsys):
+    # Mixing 9 places with 3 m2 x floors would give 75 / 25; the unit must use
+    # the area weights of BOTH POIs instead (1:3).
+    gdf = build_kita_facilities(_kitas(), _osm_kg([1.0, 3.0], [9.0, NAN]),
+                                weight_column="potential",
+                                area_weight_column="weight")
+    assert [round(c) for c in gdf["capacity"]] == [25, 75]
+    out = capsys.readouterr().out
+    assert "units on area x floors weights 1 (100.0%)" in out
+    assert "WARNING" in out  # share above the module threshold
+
+
+def test_kita_zero_potential_poi_counts_as_unmatched():
+    gdf = build_kita_facilities(_kitas(), _osm_kg([1.0, 3.0], [9.0, 0.0]),
+                                weight_column="potential",
+                                area_weight_column="weight")
+    assert [round(c) for c in gdf["capacity"]] == [25, 75]
+
+
+def test_university_unit_with_an_unmatched_building_uses_area_weights(capsys):
+    gdf = build_university_facilities(_hochschulen(),
+                                      _osm_uni([1.0, 3.0], [9.0, NAN]),
+                                      weight_column="potential",
+                                      area_weight_column="weight")
+    assert sorted(round(c) for c in gdf["capacity"]) == [25, 75]
+    assert "units on area x floors weights 1 (100.0%)" in capsys.readouterr().out
+
+
+def test_university_unit_with_all_buildings_matched_uses_potentials(capsys):
+    gdf = build_university_facilities(_hochschulen(),
+                                      _osm_uni([1.0, 3.0], [9.0, 1.0]),
+                                      weight_column="potential",
+                                      area_weight_column="weight")
+    assert sorted(round(c) for c in gdf["capacity"]) == [10, 90]
+    out = capsys.readouterr().out
+    assert "units on potentials 1/1 (100.0%)" in out and "WARNING" not in out

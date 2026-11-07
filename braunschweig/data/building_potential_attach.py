@@ -25,6 +25,42 @@ def log_attach_rate(label: str, primary: int, fallback: int) -> None:
     print(("WARNING: " + msg) if share > 0.20 else msg)
 
 
+# Share of facility units that fall back to the area x floors weights above which
+# the unit-basis log line is a WARNING. Module constant (this module reads no
+# config); same 20 % level as log_attach_rate above.
+MAX_AREA_WEIGHT_UNIT_SHARE = 0.20
+
+
+def pick_unit_weights(sub, potential_column: str, area_weight_column: str):
+    """Weights for ONE facility unit with a single, consistent unit of measure.
+
+    The capacity of a facility unit is split across its POIs proportionally to
+    the returned weights. ``potential_column`` (places, from a matched
+    building) and ``area_weight_column`` (m2 x floors) are different units, so
+    they must never be mixed inside a unit: if EVERY POI of the unit carries a
+    potential > 0 the potentials are used, otherwise the area weights of ALL
+    POIs are used. Unmatched POIs hold NaN in ``potential_column``.
+
+    Returns ``(weights, used_potential)``.
+    """
+    pot = sub[potential_column].to_numpy(float)
+    if len(pot) and bool((pot > 0).all()):
+        return pot, True
+    return sub[area_weight_column].to_numpy(float), False
+
+
+def log_unit_basis(label: str, n_potential_units: int, n_area_units: int) -> None:
+    """Log the share of facility units on potentials vs on area weights."""
+    total = n_potential_units + n_area_units
+    share = (n_area_units / total) if total else 0.0
+    msg = ("[building-potential-units:%s] units on potentials %d/%d (%.1f%%), "
+           "units on area x floors weights %d (%.1f%%)"
+           % (label, n_potential_units, total,
+              100.0 * (n_potential_units / total if total else 0.0),
+              n_area_units, 100.0 * share))
+    print(("WARNING: " + msg) if share > MAX_AREA_WEIGHT_UNIT_SHARE else msg)
+
+
 def attach_potential(candidates: gpd.GeoDataFrame, buildings: gpd.GeoDataFrame,
                      potential_column: str, fallback, label: str):
     """Return ``(values, primary_count, fallback_count)`` aligned to
