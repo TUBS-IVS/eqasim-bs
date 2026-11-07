@@ -96,12 +96,14 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
      membership). ASSUMPTION: hotels are excluded from `leisure_gastronomy`
      (lodging, not dining).
    - **Errand building categories** (`errand_authority_medical`,
-     `errand_service`) cannot mask `pot_other`: `build_secondary_candidates`
-     sets `pot_other = 0.0` on every building row and excludes errand-class
-     buildings (hospitals, authorities, service businesses) from its
-     `retail>0 | leisure>0` keep-filter, so masking alone left both
-     categories with zero structural supply — confirmed against real data via
-     the committed mapping CSV. Fix (approved plan amendment): potential is
+     `errand_service`) do not mask `pot_other`. Before ADR-0190
+     `build_secondary_candidates` set `pot_other = 0.0` on every building row
+     and excluded errand-class buildings (hospitals, authorities, service
+     businesses) from its `retail>0 | leisure>0` keep-filter, so masking alone
+     left both categories with zero structural supply — confirmed against real
+     data via the committed mapping CSV. Since ADR-0190 the keep-filter is
+     `retail | leisure | errands > 0` and `pot_other = potential_errands`, but
+     a category still covers only its own Bosserhof classes. Fix (approved plan amendment): potential is
      taken directly from `building_potentials` -- since ADR-0190 the
      delivered `potential_errands` of each building whose class maps to the
      category (before ADR-0190: a cap-and-floor formula on
