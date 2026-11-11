@@ -373,10 +373,17 @@ def _derive_count_style_kreis_columns(
         "number_of_bicycles" in active_kreis_entry_names
         and "number_of_bicycles" not in households.columns)
     need_ebike = "has_ebike" in active_kreis_entry_names and "has_ebike" not in households.columns
-    if need_bikes and need_ebike:
-        # Joint draw: has_ebike==1 implies number_of_bicycles>=1 (audit P3-F4).
+    # The pedelec column the joint draw conditions on: the configured e-bike seed column,
+    # else the MiD default H_ANZPED when the frame carries it.
+    joint_ebike_col = ebike_seed_column or (
+        "H_ANZPED" if "H_ANZPED" in households.columns else None)
+    if (need_bikes or need_ebike) and joint_ebike_col is not None:
+        # Joint draw even when only ONE of the two bicycle controls is active: a separate
+        # draw ignores the other, known component (e.g. a known zero bicycle count) and
+        # can pair an e-bike with zero bicycles (audit P3-F4, review of #606). Both
+        # columns are then written, so a legacy donor table carries the same pair.
         households = attributes.map_household_bicycles_and_ebike(
-            households, ebike_col=ebike_seed_column, rng=kreis_seed_rng)
+            households, ebike_col=joint_ebike_col, rng=kreis_seed_rng)
     elif need_bikes:
         # Default bikes_col="anzpedrad" (bicycles INCLUDING pedelecs/e-bikes; MiD H12.3 /
         # SrV alle-Raeder construct); see attributes.map_number_of_bicycles.

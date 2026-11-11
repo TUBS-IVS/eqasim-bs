@@ -1649,10 +1649,17 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     seed_households, seed_persons)``. The first two stay ``None`` on every path
     except member completion, where ``_load_donor_tables`` further down reuses
     them verbatim as the expansion donor tables.
-    Mutates: draws from ``kreis_seed_rng`` on the two MiD paths (the count-style
-    KREIS-control 99-code imputation inside the seed loaders) in the unchanged
-    order, and reports the seed completeness rate plus the member-completion
-    counts via ``context.set_info``.
+    Mutates: draws from ``kreis_seed_rng`` on the two MiD paths. On the
+    member-completion path (default) the draws are, in this order: (1)
+    ``_resolve_donor_household_counts`` over EVERY donor household, (2)
+    ``attributes.resolve_person_attributes`` over EVERY donor person -- both
+    independent of which controls are active (ADR-0192) -- then (3) the seed
+    derivations inside ``mid.project_completed_seed`` (trip_class, participation
+    and the remaining control columns). So the stream every later consumer sees
+    differs from the pre-ADR-0192 one even when no count or person control is
+    active. On the legacy path the draws stay inside ``mid.load_mid_seed`` (active
+    controls only). Also reports the seed completeness rate plus the
+    member-completion counts via ``context.set_info``.
     """
     completed_donor_households = None
     completed_donor_persons = None

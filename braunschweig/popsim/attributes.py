@@ -1058,8 +1058,11 @@ def resolve_person_attributes(
     working copy (by ``household_id_col`` from ``households``) for the imputation pools
     only; the returned frame does NOT gain the column, because downstream the persons'
     RegioStaR7 is the PLACED home's (assembly's collision guard). Persons whose household
-    has no RegioStaR7 fall back to the age-only pool inside ``missing.resolve``; their
-    count is logged. If no RegioStaR7 is available at all, a WARNING says so.
+    has no RegioStaR7 (or whose key does not match) get NaN; ``missing.resolve`` builds no
+    NaN-keyed pool, so their imputed codes come from the GLOBAL valid pool (all ages and
+    all regions), counted there as group fallback. Their number is logged as a WARNING.
+    In MiD every household carries RegioStaR7, so this is a guard, not an expected path.
+    If no RegioStaR7 is available at all, a WARNING says so.
     """
     work = persons
     attached = False
@@ -1075,7 +1078,8 @@ def resolve_person_attributes(
             log = logger.warning if n_missing else logger.info
             log(
                 "[braunschweig.popsim.attributes] person resolution: donor household "
-                "RegioStaR7 attached to %d/%d persons (%.1f%%), missing for %d",
+                "RegioStaR7 attached to %d/%d persons (%.1f%%), missing for %d (their "
+                "imputed codes come from the global pool: all ages, all regions)",
                 len(work) - n_missing, len(work),
                 100.0 * (len(work) - n_missing) / len(work) if len(work) else 0.0, n_missing,
             )
@@ -1131,7 +1135,23 @@ def carry_seed_household_counts(
     n = len(out)
     n_hit = int(in_seed.sum())
     if gaps:
-        fallback = resolve_household_counts(donor_households, rng=rng, ebike_col=ebike_col)
+        # When the seed carries only ONE of the two bicycle columns, the joint draw for the
+        # other is made CONDITIONAL on the carried value (it becomes the known component of
+        # map_household_bicycles_and_ebike), so an e-bike never meets zero bicycles. For a
+        # carried has_ebike=1 with a missing pedelec count, one pedelec stands in for ">= 1"
+        # (ASSUMPTION: the donor pool is then restricted to households with exactly one
+        # pedelec; legacy path only, used by no config).
+        work = donor_households.copy()
+        bikes_col = "anzpedrad"
+        if "number_of_bicycles" in carried and "has_ebike" not in carried:
+            known = out["number_of_bicycles"].notna()
+            work.loc[known, bikes_col] = out.loc[known, "number_of_bicycles"].astype(int)
+        elif "has_ebike" in carried and "number_of_bicycles" not in carried:
+            known = out["has_ebike"].notna()
+            pedelecs_missing = ~work[ebike_col].between(0, 10)
+            fill = known & pedelecs_missing
+            work.loc[fill, ebike_col] = (out.loc[fill, "has_ebike"] >= 1).astype(int)
+        fallback = resolve_household_counts(work, rng=rng, ebike_col=ebike_col)
         for col in HOUSEHOLD_COUNT_COLUMNS:
             if col not in out.columns:
                 out[col] = fallback[col]
@@ -1148,14 +1168,12 @@ def carry_seed_household_counts(
             "%s.", col, n_from_seed[col], n, 100.0 * n_from_seed[col] / max(n, 1),
             n - n_from_seed[col], 100.0 * (n - n_from_seed[col]) / max(n, 1),
             "" if col in carried else " (column absent from the seed: 100% fallback)")
-    # Known limit (ADR-0192): when the seed carries only ONE of the two bicycle columns, the
-    # other comes from an independent joint draw, so an e-bike can meet zero bicycles here.
-    # Counted, not hidden; the default path resolves both jointly and cannot produce it.
+    # Guard: the conditional fallback above should make this impossible; counted, not hidden.
     n_ebike_without_bicycle = int(((out["has_ebike"] == 1) & (out["number_of_bicycles"] == 0)).sum())
     if n_ebike_without_bicycle:
         logger.warning(
-            "[popsim.donor] %d/%d donors carry has_ebike=1 with number_of_bicycles=0: only one "
-            "of the two bicycle columns came from the seed (ADR-0192, legacy path).",
+            "[popsim.donor] %d/%d donors carry has_ebike=1 with number_of_bicycles=0 after the "
+            "seed carry-over (ADR-0192, legacy path): the conditional fallback did not hold.",
             n_ebike_without_bicycle, n)
     return out
 

@@ -13,6 +13,7 @@ import logging
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 import pandas as pd
 
 from braunschweig.popsim import assembly, attributes, expand, mid, sources
@@ -203,6 +204,25 @@ def test_legacy_donor_table_carries_seed_resolved_counts(caplog):
     # Per-column seed-vs-fallback rate (item: explicit rate for every count column).
     for column in attributes.HOUSEHOLD_COUNT_COLUMNS:
         assert f"household count {column}: from the seed" in text, column
+
+
+@pytest.mark.parametrize("only", ["has_ebike", "number_of_bicycles"])
+def test_legacy_carry_with_one_bicycle_control_stays_consistent(only):
+    """Only one bicycle control active: the other column is drawn conditional on it."""
+    donors = _donor_households(200)
+    cols = sources.get_source("mid").seed_columns()
+    persons = pd.DataFrame({
+        cols.person_household_id: donors[cols.household_id], cols.person_id: 1,
+        cols.person_weight: 1.0, cols.age: 40, cols.sex: 1, "anzwege1": 2, "alter_gr1": 5,
+    })
+    seed_hh, _ = mid.project_completed_seed(
+        donors, persons, cols, kreis_control_entries=[_entry(only)],
+        kreis_seed_rng=np.random.RandomState(99), ebike_seed_column="H_ANZPED",
+    )
+    for seed in range(5):
+        out = attributes.carry_seed_household_counts(
+            donors, seed_hh, id_col=cols.household_id, rng=np.random.RandomState(seed))
+        assert not ((out["has_ebike"] == 1) & (out["number_of_bicycles"] == 0)).any(), seed
 
 
 def _donor_persons_with_imputed_codes(mid_persons):

@@ -36,10 +36,11 @@
   from one donor household draw (`map_household_bicycles_and_ebike`), restricted to
   consistent donors (pedelecs <= bicycles), so an e-bike never appears without a bicycle.
   The legacy path (`complete_members=False`) carries the seed counts onto its separately
-  loaded donor table by `H_ID` (`carry_seed_household_counts`, fallback rate logged). Known
-  limit there: if only one of the two bicycle controls is active, the seed carries only that
-  column and the other comes from an independent joint draw, so an e-bike can meet zero
-  bicycles; such donors are counted and logged as a WARNING (no config uses this path).
+  loaded donor table by `H_ID` (`carry_seed_household_counts`, fallback rate logged). The
+  seed draws bicycles and e-bike jointly even when only one of the two controls is active,
+  so it carries a consistent pair; a donor absent from the seed gets a joint draw
+  conditional on any carried value (assumption for a carried e-bike with unknown pedelec
+  count: one pedelec, stated in code).
 - **Rejected alternative (B):** keep the per-clone draw but restrict it to the seed's control
   group. It still spends a second draw, would not reproduce the seed person's exact category
   and would need the seed group to travel with the clone; the single draw is simpler and exact.
