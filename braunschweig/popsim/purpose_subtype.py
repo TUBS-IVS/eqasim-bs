@@ -86,6 +86,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim.shop_subtype import TT_BANDS, tt_band  # noqa: F401 (re-exported for callers)
+from braunschweig.popsim.shop_subtype import drop_legs_of_unknown_duration
 from braunschweig.popsim.trips import W_ZWECK_OTHER_CODE
 
 logger = logging.getLogger(__name__)
@@ -350,6 +351,9 @@ def estimate_group_probabilities(mid_wege: pd.DataFrame, spec: SubtypeSpec, *, m
             f"from zero labelled observations."
         )
 
+    # A leg of unknown duration cannot be banded; it is left out, counted (audit B1).
+    labelled = drop_legs_of_unknown_duration(
+        labelled, label=f"purpose_subtype:{spec.purpose_label}").copy()
     labelled["_band"] = labelled["travel_time"].map(tt_band)
 
     group_names = spec.group_names
