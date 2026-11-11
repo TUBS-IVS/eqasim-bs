@@ -19,9 +19,12 @@
     session 'eqasim' and logs to logs/run_*.log).
 
 .PARAMETER ServerUser
-    SSH user. Default: felix
+    SSH user. Default: environment variable EQASIM_SERVER_USER; if neither is set,
+    ssh takes the user from ~/.ssh/config.
 .PARAMETER ServerHost
-    Host / IP. Default: 134.169.42.227
+    Host name, IP or ~/.ssh/config alias. Default: environment variable
+    EQASIM_SERVER_HOST. Required: the script stops if neither is set
+    (see scripts/server_target.ps1).
 .PARAMETER RemoteRepo
     Repo path on the server. Default: ~/eqasim-bs
 .PARAMETER RefreshSec
@@ -39,8 +42,8 @@
     ./scripts/monitor_server.ps1 -LastIteration 10 -Once
 #>
 param(
-    [string]$ServerUser    = "felix",
-    [string]$ServerHost    = "134.169.42.227",
+    [string]$ServerUser    = $env:EQASIM_SERVER_USER,
+    [string]$ServerHost    = $env:EQASIM_SERVER_HOST,
     [string]$RemoteRepo    = "~/eqasim-bs",
     [int]   $RefreshSec    = 10,
     [int]   $LastIteration = 99,
@@ -48,7 +51,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$server = "${ServerUser}@${ServerHost}"
+. (Join-Path $PSScriptRoot "server_target.ps1")
+$resolved   = Resolve-ServerTarget -ServerUser $ServerUser -ServerHost $ServerHost
+$ServerUser = $resolved.User
+$ServerHost = $resolved.Host
+$server = $resolved.Target
 
 # Remote snippet: gather everything in one round-trip, tab-separated KEY<TAB>VALUE
 # lines plus a tail block. Single-quoted here-string so PowerShell does not touch

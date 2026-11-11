@@ -31,10 +31,13 @@
     -Config for a real (non -CheckOnly) server run.
 
 .PARAMETER ServerUser
-    SSH user on the run server. Default: felix
+    SSH user on the run server. Default: environment variable EQASIM_SERVER_USER;
+    if neither is set, ssh takes the user from ~/.ssh/config.
 
 .PARAMETER ServerHost
-    Hostname or IP of the run server. Default: 134.169.42.227
+    Host name, IP or ~/.ssh/config alias of the run server. Default: environment
+    variable EQASIM_SERVER_HOST. Required: the script stops if neither is set
+    (see scripts/server_target.ps1).
 
 .PARAMETER RemoteRepo
     Path of the cloned repository on the server. Default: ~/eqasim-bs
@@ -51,16 +54,20 @@
 #>
 param(
     [string]$Config     = "configs/fixtures/config_local_braunschweig_25pct.yml",
-    [string]$ServerUser = "felix",
-    [string]$ServerHost = "134.169.42.227",
+    [string]$ServerUser = $env:EQASIM_SERVER_USER,
+    [string]$ServerHost = $env:EQASIM_SERVER_HOST,
     [string]$RemoteRepo = "~/eqasim-bs",
     [switch]$CheckOnly,
     [switch]$SkipData
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "server_target.ps1")
+$resolved   = Resolve-ServerTarget -ServerUser $ServerUser -ServerHost $ServerHost
+$ServerUser = $resolved.User
+$ServerHost = $resolved.Host
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$server   = "${ServerUser}@${ServerHost}"
+$server   = $resolved.Target
 
 # ---------------------------------------------------------------------------
 # Step 1: CODE - ensure the local checkout is committed and pushed.

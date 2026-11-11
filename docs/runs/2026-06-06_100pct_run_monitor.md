@@ -2,7 +2,7 @@
 
 **Run:** `cache_bs_100pct`, full ~1.13 M persons, cordon + own eqasim-java-bs jar,
 gtfs_cordon, 100 MATSim iterations (last_iteration 99), threads 48/12.
-**Server:** felix@134.169.42.227, 64 vCPU / 125 GB (KVM). tmux `eqasim`,
+**Server:** project run server (address not recorded in this public repository), 64 vCPU / 125 GB (KVM). tmux `eqasim`,
 log `run_20260606_115108.log`. Includes all P1/P2/P3 perf optimisations +
 fallback-transparency instrumentation (watch for `WARNING:` fallback lines).
 
