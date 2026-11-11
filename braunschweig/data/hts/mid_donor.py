@@ -240,6 +240,10 @@ HOUSEHOLD_AGE_COLUMNS = tuple(f"HP_ALTER_{i}" for i in range(1, 7))
 #: read from (ADR-0191).
 DONOR_HOUSEHOLD_INCOME_COLUMNS = ("H_ID", "H_GR", "hheink_gr1", "oek_status") + HOUSEHOLD_AGE_COLUMNS
 
+#: ASSUMPTION (a raise bound, not a reference value): share of household members without a valid
+#: age above which the household-age join is read as broken and the stage raises.
+HOUSEHOLD_AGE_UNKNOWN_RAISE_SHARE = 0.01
+
 #: Codeplan range of a valid interview age (85 = 85 and older).
 _VALID_AGE_RANGE = (0, 85)
 
@@ -271,7 +275,8 @@ def _load_household_ages(mid_dir):
         path, sep=detect_csv_separator(path), usecols=["H_ID", *HOUSEHOLD_AGE_COLUMNS])
 
 
-def _household_consumption_units(households):
+def _household_consumption_units(
+        households, age_unknown_raise_share=HOUSEHOLD_AGE_UNKNOWN_RAISE_SHARE):
     """OECD-modified consumption units per household, from ``H_GR`` and ``HP_ALTER_1..6``.
 
     Members = ``H_GR`` (top-coded at 6). Valid ages are 0..85; 999 and 3302..3306 are not.
@@ -305,6 +310,13 @@ def _household_consumption_units(households):
         "age": float(_AGE_OF_MEMBER_WITHOUT_VALID_AGE)})
     long = pd.concat([known, unknown], ignore_index=True)
     n_members, n_fallback = int(size.sum()), int(n_unknown.sum())
+    if n_members and n_fallback / n_members > age_unknown_raise_share:
+        raise ValueError(
+            f"[mid_donor] {n_fallback}/{n_members} household members "
+            f"({100.0 * n_fallback / n_members:.1f}%) have no valid age (HP_ALTER outside "
+            f"{_VALID_AGE_RANGE[0]}..{_VALID_AGE_RANGE[1]}), above "
+            f"{100.0 * age_unknown_raise_share:.0f}%: a broken join with the household age "
+            "file (check H_ID), not a few non-responses.")
     _log.info(
         "[mid_donor] consumption units: member age primary %d/%d (%.1f%%), fallback %d/%d (%.1f%%) "
         "counted as 14 or older", n_members - n_fallback, n_members,
@@ -314,7 +326,8 @@ def _household_consumption_units(households):
     return units.set_index("household_id")["consumption_units"]
 
 
-def attach_donor_household(persons, households, rng):
+def attach_donor_household(
+        persons, households, rng, age_unknown_raise_share=HOUSEHOLD_AGE_UNKNOWN_RAISE_SHARE):
     """Add each donor's MiD household income (EUR), economic status, size and consumption units
     (ADR-0191).
 
@@ -361,8 +374,8 @@ def attach_donor_household(persons, households, rng):
     hh = attributes.map_economic_status(households, rng=rng)
     hh = attributes.map_household_income(hh, rng=rng)
     hh["household_income_eur"] = placement_income.draw_own_income_eur(hh["household_income"], rng)
-    hh["household_size"] = pd.to_numeric(households["H_GR"], errors="coerce").to_numpy()
-    units = _household_consumption_units(households)
+    hh["household_size"] = pd.to_numeric(hh["H_GR"], errors="coerce")
+    units = _household_consumption_units(households, age_unknown_raise_share)
     hh["consumption_units"] = hh["H_ID"].map(units).to_numpy()
     by_household = hh.assign(H_ID=hh["H_ID"].astype(str)).set_index("H_ID")
     household_of_person = persons["person_id"].astype(str).str.split("_").str[0]
@@ -376,7 +389,8 @@ def attach_donor_household(persons, households, rng):
     # no household income; it stays NaN here and the worker in-commuter stage leaves such
     # donors out of its pool (incommuters.build_incommuter_frames), counted in both places.
     n = len(out)
-    n_missing = int(out[["household_income_eur", "economic_status"]].isna().any(axis=1).sum())
+    n_missing = int(out[["household_income_eur", "economic_status", "household_size",
+                         "consumption_units"]].isna().any(axis=1).sum())
     share = n_missing / n if n else 0.0
     message = (
         f"[mid_donor] donor household income: primary {n - n_missing}/{n} donors "
@@ -439,12 +453,15 @@ def attach_donor_draw_attributes(persons, raw_persons, trips):
         pd.Series(km.to_numpy(), index=legs["person_id"].to_numpy())).to_numpy(dtype=float)
     n = len(out)
     n_weekday = int(out["weekday_reporting_day"].sum())
+    kernwo_by_person = pd.to_numeric(raw["kernwo"], errors="coerce")
+    n_unreadable = int(out["person_id"].map(kernwo_by_person).isna().sum())
+    n_weekend = n - n_weekday - n_unreadable
     n_commute = int(out["commute_distance_km"].notna().sum())
     _log.info(
-        "[mid_donor] donor draw attributes: weekday reporting day primary %d/%d (%.1f%%), "
-        "fallback (weekend or unknown) %d/%d; commute distance from a home-work leg primary "
-        "%d/%d (%.1f%%), fallback (no such leg, NaN) %d/%d",
-        n_weekday, n, 100.0 * n_weekday / max(n, 1), n - n_weekday, n,
+        "[mid_donor] donor draw attributes: reporting day weekday %d/%d (%.1f%%), weekend %d/%d, "
+        "unreadable kernwo %d/%d; commute distance from a home-work leg primary %d/%d (%.1f%%), "
+        "fallback (no such leg, NaN) %d/%d",
+        n_weekday, n, 100.0 * n_weekday / max(n, 1), n_weekend, n, n_unreadable, n,
         n_commute, n, 100.0 * n_commute / max(n, 1), n - n_commute, n)
     return out
 

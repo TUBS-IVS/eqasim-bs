@@ -182,7 +182,8 @@ def _donors():
 def test_donor_carries_income_status_size_and_consumption_units_of_its_household():
     def attach(seed):
         return mid_donor.attach_donor_household(
-            _donors(), _donor_households(), np.random.RandomState(seed)).set_index("person_id")
+            _donors(), _donor_households(), np.random.RandomState(seed),
+            age_unknown_raise_share=0.5).set_index("person_id")
 
     out = attach(7)
     assert out["economic_status"].to_dict() == {"1_1": "high", "2_1": "high"}
@@ -198,6 +199,8 @@ def test_donor_carries_income_status_size_and_consumption_units_of_its_household
     (_donor_households().drop(columns="hheink_gr1"), "hheink_gr1"),
     (_donor_households().drop(columns="HP_ALTER_3"), "HP_ALTER_3"),
     (_donor_households().iloc[:1], "household record"),     # half of the donors without a household
+    # every member without a valid age: a broken join with the age file, not item non-response
+    (_donor_households().assign(HP_ALTER_1=999, HP_ALTER_2=999, HP_ALTER_3=999), "valid age"),
 ])
 def test_donor_household_fails_on_a_missing_column_or_a_broken_join(households, message):
     with pytest.raises(ValueError, match=message):
