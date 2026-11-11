@@ -11,11 +11,11 @@ result into the full eqasim persons frame.
 ## Split shape and import path
 
 Package conversion: the flat module (~1900 lines, per PR #284) — itself the
-renamed legacy `stage.py` — became a package. `__init__.py` (2136 lines) is
+renamed legacy `stage.py` — became a package. `__init__.py` is
 the synpp stage and re-exports every name its 6 submodules define, plus the
 module-level first-party helper bindings `validate()` hashes; `execute()`
-itself is decomposed into 26 named private orchestration steps (verified:
-`grep -c '^def _' braunschweig/popsim/stage/__init__.py`). Submodules:
+itself is decomposed into named private orchestration steps (the `_`-prefixed
+functions of `braunschweig/popsim/stage/__init__.py`). Submodules:
 `batch_cache` (work-dir batch cache invalidation: config-signature guard +
 stale `batch_*` folder purge), `cell_attributes` (per-cell ARS/RegioStaR7 join
 + Kreis-code derivation), `config_keys` (every `KEY_*` config-key constant, a

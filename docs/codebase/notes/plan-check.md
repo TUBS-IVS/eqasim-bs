@@ -85,6 +85,13 @@ that block, the pt shares of `n_pt_trips`; the failure rule reads `share_plans_l
 `share_plans_non_monotonic_large` and `share_pt_as_walk_long`. A subpopulation key is
 whatever the written file carries (persons without the attribute count as `residents`).
 
+A fourth failure-rule share exists when `frozen_pt_walk_lift` is on: `run(context, config_name, lift_report)` receives
+the lift's report, and the trips it lifted leave the measured `share_pt_as_walk_long`. Their `share_lifted` is written
+to `plan_check.json` as `threshold.share_lifted_frozen_pt_walk` and compared with the same
+`max_frozen_pt_as_walk_share`; above it, `KEY_SHARE_LIFTED_FROZEN_PT_WALK` (`share_lifted_frozen_pt_walk`) is added to
+`threshold.exceeded` by `find_threshold_violations` and handled like the other three (ERROR log, or raise with
+`fail_on_threshold`). With the lift off (`lift_report` None) the key is absent.
+
 ## The one-constant rule for the simulated day
 
 The simulated day exists ONCE as code: `MAX_PLAN_TIME_SECONDS` in `braunschweig/popsim/plan_validation.py`. The

@@ -370,14 +370,14 @@ for the exact discharge this owes (a server A/B at `shards: 62` comparing
 `processes: 8` against `processes: 62`), and for the code inspection of the
 installed `chainsolvers` package that narrows, but does not close, the risk.
 
-**2. The `processes` under-use warning advises changing a key whose caches do
-not track it.** `build_report` warns when `processes` sits below 75% of the
-core budget, but both read sites declare it `volatile = True`, so raising it
-changes the statistical-matching and secondary-location realisations WITHOUT
-invalidating those stages' caches. Changing the declarations would invalidate
-two more full-scale caches and is out of scope; the warning text therefore
-states the whole caveat instead. Do not "simplify" that text back to "raise the
-pin if that is not intended".
+**2. The `processes` under-use warning advises changing a key that changes
+realisations.** `build_report` warns when `processes` sits below 75% of the
+core budget. The two read sites that partition persons
+(`synthesis/population/matched.py`, `synthesis/population/spatial/secondary/locations.py`)
+declare it hashed, so raising it invalidates those caches and changes the
+statistical-matching and secondary-location realisations; the warning text
+states that caveat. Do not "simplify" that text back to "raise the pin if that
+is not intended".
 
 **3. The PopulationSim worker clamp has the omission the JVM heap had, latent.**
 `resolve_popsim_workers` divides the whole memory budget by `worker_memory_gb` and

@@ -65,7 +65,7 @@ patterns for the observed families, pinned by
 `tests/test_gitignore_root_scratch.py`.
 
 Two details that matter if you ever touch those rules. They are **root-anchored** with a
-leading slash on purpose: the repository tracks 31 `scripts/extract_*.py` and 3
+leading slash on purpose: the repository tracks many `scripts/extract_*.py` and
 `scripts/inspect_*.py` files, and an unanchored pattern would hide real tooling and every
 future sibling of it. And when you test such a rule, query `git check-ignore` with
 `--no-index`: without that flag git reports every tracked path as not-ignored whatever

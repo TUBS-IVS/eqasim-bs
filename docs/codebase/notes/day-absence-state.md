@@ -153,13 +153,13 @@ set: a home person without a donor who is also generally absent has their
 rows removed like any other absent person, not kept unchanged, so they must
 not inflate `n_home_unmatched`.
 
-**No escort protection in the general draw.** ADR-0104 Assumption 4 (an
-active escort leg evidences presence at home) is specific to the FAR-COMMUTER
-`absent` state; it is not re-applied here. A family vacation takes an
-escorted child along by construction of the household stage, and a solo
-escorting adult being absent is a genuine, measured SrV pattern (ADR-0110
-Context: partially absent households are dominated by lone 18-29-year-olds),
-not a defect to guard against.
+**Escort protection covers only the individual-stage draw.** The household
+stage of `draw_absence` is deliberately NOT escort-protected: a family vacation
+takes an escorted child along by construction, so nobody is stranded. The
+individual stage IS protected through `escort_protected_person_ids` (see
+"Second gate -- escort protection" above), switched by
+`day_absence_escort_protection_enabled` in `configs/base_bs.yml`; with the flag
+off the legacy unprotected path runs.
 
 ## The flag matrix (`trips_day_stage.py`)
 
