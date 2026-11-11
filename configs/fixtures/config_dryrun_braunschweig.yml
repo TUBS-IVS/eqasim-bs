@@ -46,6 +46,11 @@ config:
   education_building_distribution: false
 
   hts: entd
+  # Same HTS matching keys as every other fixture and configs/base_bs.yml. Without the key,
+  # synthesis.population.matched reads its upstream French default while
+  # braunschweig.ipf.attributed reads [], and the deterministic synpp fork rejects the
+  # dryrun (ImplicitConfigConflict).
+  matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
 
   # Region scope: ZGB-8 Kreise.
   braunschweig.political_prefix:
