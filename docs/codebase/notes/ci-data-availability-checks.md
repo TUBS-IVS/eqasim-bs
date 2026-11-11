@@ -16,10 +16,11 @@ portal silently moving, renaming, or retiring a source the pipeline documents.
 
 ## Why the French verifier is no longer scheduled
 
-`scripts/verify_data.py` is upstream Île-de-France code: it checks **36 French
-open-data URLs** and contains zero German or Braunschweig references. It is
-still in the repository and **untouched** — only its scheduling was the problem.
-Do not delete it and do not "fix" its URLs; it belongs to upstream.
+`scripts/verify_data.py` was upstream Île-de-France code: it checked **36 French
+open-data URLs** and contained zero German or Braunschweig references. It was
+removed from the repository (git history keeps it); its scheduling had been the
+problem before. Do not resurrect it and do not "fix" its URLs; it belonged to
+upstream.
 
 It was the weekly cron (Sunday 10:00) inherited with the fork, and it failed on
 both Sundays it ever ran here (2026-08-16, 2026-08-23), mailing a failure every
