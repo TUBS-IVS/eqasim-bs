@@ -146,6 +146,7 @@ from braunschweig.data.mid import income_by_status as _data_mid_income_by_status
 from braunschweig.data.census import household_size as _census_household_size
 
 from braunschweig.popsim import assembly
+from braunschweig.popsim import attributes
 from braunschweig.popsim import folders
 from braunschweig.popsim import batch
 from braunschweig.popsim import income as _income
@@ -1672,7 +1673,13 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
         # The same completed frames feed BOTH the PopulationSim seed (projected
         # here) AND the expansion donor tables below.
         donor = context.stage("completed_donor")
-        completed_donor_households = donor.households
+        # Household count attributes (cars / bicycles / e-bike) are resolved ONCE here with
+        # the seeded kreis rng; the seed derivation and the assembly of the clones both
+        # reuse these columns (audit P3-F1). A copy: the completed_donor cache is untouched.
+        completed_donor_households = _resolve_donor_household_counts(
+            donor.households, kreis_seed_rng=kreis_seed_rng,
+            ebike_seed_column=ebike_seed_column_cfg,
+        )
         completed_donor_persons = donor.persons
         report = donor.completeness_report
         completion_report = donor.completion_report
@@ -1730,6 +1737,21 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     return (
         completed_donor_households, completed_donor_persons, seed_households,
         seed_persons,
+    )
+
+
+def _resolve_donor_household_counts(
+    donor_households: pd.DataFrame, *, kreis_seed_rng, ebike_seed_column: str | None,
+) -> pd.DataFrame:
+    """Resolve number_of_cars / number_of_bicycles / has_ebike once per donor household.
+
+    Returns: a copy of ``donor_households`` with the three resolved columns; the seed
+    projection and the clone assembly both use them verbatim (audit P3-F1, P3-F4).
+    Mutates: nothing in place; draws from ``kreis_seed_rng``.
+    """
+    return attributes.resolve_household_counts(
+        donor_households, rng=kreis_seed_rng,
+        ebike_col=ebike_seed_column or "H_ANZPED",
     )
 
 

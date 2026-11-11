@@ -13,6 +13,7 @@ coordinates (``braunschweig.popsim.handoff``) are layered on top.
 from __future__ import annotations
 
 import functools
+import logging
 
 import numpy as np
 import pandas as pd
@@ -22,6 +23,9 @@ from braunschweig.popsim import passenger_availability
 from braunschweig.popsim import expand
 from braunschweig.popsim import income as _income_module
 from braunschweig.population import schema
+
+logger = logging.getLogger(__name__)
+
 
 def assign_donor_surrogates(
     persons: pd.DataFrame,
@@ -314,32 +318,39 @@ def map_mid_person_attributes(
     persons = attributes.map_pt_subscription_type(persons, rng=rng, rs7_conditioning=rs7_conditioning)
     persons = attributes.map_has_pt_subscription(persons)
 
-    donor_hh = attributes.map_building_type_3class(
-        attributes.map_housing_tenure(
-            attributes.map_has_ebike(
-                # map_number_of_bicycles now defaults to bikes_col="anzpedrad" (bicycles
-                # INCLUDING pedelecs/e-bikes, MiD H12.3 / SrV alle-Raeder construct;
-                # verified 2026-07-08), a deliberate construct change from the previous
-                # H_ANZRAD (conventional-bikes-only) default -- see the function docstring.
-                attributes.map_number_of_bicycles(
-                    attributes.map_number_of_cars(
-                        attributes.map_household_income(
-                            attributes.map_household_income_eur(
-                                attributes.map_economic_status(
-                                    mid_households, rs7_conditioning=rs7_conditioning
-                                ),
-                                rs7_conditioning=rs7_conditioning,
-                            ),
-                            rs7_conditioning=rs7_conditioning,
-                        ),
-                        rs7_conditioning=rs7_conditioning,
-                    ),
-                    rs7_conditioning=rs7_conditioning,
-                ),
-                rs7_conditioning=rs7_conditioning,
-            )
-        )
+    donor_hh = attributes.map_household_income(
+        attributes.map_household_income_eur(
+            attributes.map_economic_status(
+                mid_households, rs7_conditioning=rs7_conditioning
+            ),
+            rs7_conditioning=rs7_conditioning,
+        ),
+        rs7_conditioning=rs7_conditioning,
     )
+    # number_of_cars / number_of_bicycles / has_ebike are resolved ONCE per donor household
+    # by the popsim stage (attributes.resolve_household_counts, seeded kreis rng) and are
+    # used verbatim here, so a clone carries the value its donor was balanced on
+    # (audit P3-F1). Columns that are absent are resolved here with THIS call's seeded rng
+    # (direct callers, ENTD-free tests); that is logged, never a silent re-draw.
+    # number_of_bicycles uses bikes_col="anzpedrad" (bicycles INCLUDING pedelecs, MiD H12.3 /
+    # SrV alle-Raeder construct); see attributes.map_household_bicycles_and_ebike.
+    present = [c for c in attributes.HOUSEHOLD_COUNT_COLUMNS if c in donor_hh.columns]
+    if len(present) == len(attributes.HOUSEHOLD_COUNT_COLUMNS):
+        logger.info("[popsim.assembly] household counts %s taken from the donor table "
+                    "(resolved once, shared with the seed).", present)
+    elif present:
+        raise ValueError(
+            f"[popsim.assembly] donor households carry only some of the resolved household "
+            f"count columns {present} of {list(attributes.HOUSEHOLD_COUNT_COLUMNS)}; "
+            "resolve all or none (attributes.resolve_household_counts).")
+    else:
+        logger.warning(
+            "[popsim.assembly] donor households carry no resolved household counts; "
+            "resolving them here with the assembly rng (the seed was NOT balanced on these "
+            "draws unless no count control is active).")
+        donor_hh = attributes.resolve_household_counts(
+            donor_hh, rng=rng, rs7_conditioning=rs7_conditioning)
+    donor_hh = attributes.map_building_type_3class(attributes.map_housing_tenure(donor_hh))
     # RegioStaR7 collision guard: the donor household frame ALSO carries a
     # 'RegioStaR7' column (the DONOR's survey home region, MID_HOUSEHOLD_ATTR_COLS,
     # used upstream for Phase 4B donor stratification). It is deliberately NOT

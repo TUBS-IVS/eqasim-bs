@@ -882,6 +882,150 @@ def map_has_ebike(
     return out
 
 
+HOUSEHOLD_COUNT_COLUMNS = ("number_of_cars", "number_of_bicycles", "has_ebike")
+
+
+def map_household_bicycles_and_ebike(
+    households: pd.DataFrame, *, bikes_col: str = "anzpedrad", ebike_col: str = "H_ANZPED",
+    rng, rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Add ``number_of_bicycles`` and ``has_ebike`` from ONE joint imputation (audit P3-F4).
+
+    ``anzpedrad`` (bicycles incl. pedelecs, = ``min(H_ANZRAD + H_ANZPED, 10)``) and
+    ``H_ANZPED`` (pedelecs) describe the same household. Imputing them independently
+    (:func:`map_number_of_bicycles` + :func:`map_has_ebike`) could yield an e-bike in a
+    household with zero bicycles. Here a household with a missing code in either column
+    takes the missing component(s) from ONE drawn, fully valid donor household of the same
+    imputation group, restricted to donors whose value equals the household's KNOWN
+    component (both missing: any valid donor of the group). Consequently
+    ``has_ebike == 1`` implies ``number_of_bicycles >= 1`` for imputed rows.
+
+    Fallback tiers, each counted and logged (no silent fallback): (1) same group and same
+    known value, (2) global pool with the same known value (counted as group fallback),
+    (3) no such donor at all: the missing component is derived from the known one
+    (e-bike count 0 / bicycles = pedelecs); counted as default. Valid rows pass through
+    unchanged; valid rows with more pedelecs than bicycles are logged as inconsistent.
+
+    ``rng`` is REQUIRED (seeded; no hidden ``RandomState(0)`` default). Raises KeyError if
+    a source column is absent and ValueError on a code that is neither 0..10 nor a
+    nonresponse code.
+    """
+    for col in (bikes_col, ebike_col):
+        if col not in households.columns:
+            raise KeyError(
+                f"map_household_bicycles_and_ebike: source column {col!r} absent from the "
+                f"household frame (has {list(households.columns)}); no silent fallback.")
+    valid_codes = set(range(0, 11))
+    nonresponse = set(missing.NONRESPONSE_CODES) - valid_codes
+    b_src, p_src = households[bikes_col], households[ebike_col]
+    for name, src in ((bikes_col, b_src), (ebike_col, p_src)):
+        bad = src[~src.isin(valid_codes) & ~src.isin(nonresponse)]
+        if len(bad):
+            raise ValueError(
+                f"map_household_bicycles_and_ebike: {name} carries unenumerated codes "
+                f"{bad.value_counts().to_dict()} (neither 0..10 nor item nonresponse).")
+    b_ok, p_ok = b_src.isin(valid_codes).to_numpy(), p_src.isin(valid_codes).to_numpy()
+    b_arr = b_src.to_numpy()
+    p_arr = p_src.to_numpy()
+
+    gcols = list(imputation_group_cols(households, "hhgr_gr", rs7_conditioning=rs7_conditioning))
+    n = len(households)
+    keys = (list(households[gcols].itertuples(index=False, name=None)) if gcols else [()] * n)
+
+    # Pools of fully valid donor households, indexed by group and by the known component.
+    pool_all, pool_by_b, pool_by_p = {}, {}, {}
+    glob_all, glob_by_b, glob_by_p = [], {}, {}
+    both_ok = b_ok & p_ok
+    for i in np.flatnonzero(both_ok):
+        b, p, k = int(b_arr[i]), int(p_arr[i]), keys[i]
+        pair = (b, p)
+        pool_all.setdefault(k, []).append(pair)
+        pool_by_b.setdefault((k, b), []).append(pair)
+        pool_by_p.setdefault((k, p), []).append(pair)
+        glob_all.append(pair)
+        glob_by_b.setdefault(b, []).append(pair)
+        glob_by_p.setdefault(p, []).append(pair)
+    n_inconsistent = sum(
+        1 for i in np.flatnonzero(both_ok) if int(p_arr[i]) > int(b_arr[i]))
+
+    out_b = np.zeros(n, dtype=int)
+    out_p = np.zeros(n, dtype=int)
+    n_primary = n_b_imputed = n_p_imputed = n_both = n_group_fb = n_default = 0
+    for i in range(n):
+        if both_ok[i]:
+            out_b[i], out_p[i] = int(b_arr[i]), int(p_arr[i])
+            n_primary += 1
+            continue
+        k = keys[i]
+        if not b_ok[i] and not p_ok[i]:
+            n_both += 1
+            group, glob = pool_all.get(k), glob_all
+        elif not p_ok[i]:  # bicycles known, pedelecs missing
+            n_p_imputed += 1
+            b = int(b_arr[i])
+            group, glob = pool_by_b.get((k, b)), glob_by_b.get(b)
+        else:  # pedelecs known, bicycles missing
+            n_b_imputed += 1
+            p = int(p_arr[i])
+            group, glob = pool_by_p.get((k, p)), glob_by_p.get(p)
+        pool = group
+        if not pool:
+            n_group_fb += 1
+            pool = glob
+        if pool:
+            b, p = pool[rng.randint(len(pool))]
+        else:
+            n_default += 1
+            if b_ok[i]:
+                b, p = int(b_arr[i]), 0
+            elif p_ok[i]:
+                p = int(p_arr[i])
+                b = p
+            else:
+                b = p = 0
+        out_b[i], out_p[i] = b, p
+    out = households.copy()
+    out["number_of_bicycles"] = out_b
+    out["has_ebike"] = (out_p >= 1).astype(int)
+    n_imputed = n_b_imputed + n_p_imputed + n_both
+
+    def pct(x, d):
+        return 100.0 * x / d if d else 0.0
+
+    logger.info(
+        "[braunschweig.popsim.attributes] bicycles+e-bike joint resolution: primary %d/%d "
+        "(%.1f%%), imputed %d (%.1f%%; bicycles only %d, e-bike only %d, both %d); of the "
+        "imputed, fallback to the global pool %d (%.1f%%), no donor at all (derived default) "
+        "%d (%.1f%%); valid rows with more pedelecs than bicycles: %d",
+        n_primary, n, pct(n_primary, n), n_imputed, pct(n_imputed, n),
+        n_b_imputed, n_p_imputed, n_both, n_group_fb, pct(n_group_fb, n_imputed),
+        n_default, pct(n_default, n_imputed), n_inconsistent,
+    )
+    if n_inconsistent:
+        logger.warning(
+            "[braunschweig.popsim.attributes] %d valid households report more pedelecs than "
+            "bicycles; passed through unchanged.", n_inconsistent)
+    return out
+
+
+def resolve_household_counts(
+    households: pd.DataFrame, *, rng, bikes_col: str = "anzpedrad",
+    ebike_col: str = "H_ANZPED", cars_col: str = "H_ANZAUTO", rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Resolve ``number_of_cars``, ``number_of_bicycles`` and ``has_ebike`` ONCE (audit P3-F1).
+
+    Called by the popsim stage on the donor household table with the run's seeded rng;
+    the resulting columns are used verbatim by the PopulationSim seed derivation AND by
+    the assembly of the cloned households (both skip their own imputation when the
+    columns are present), so a donor carries the value it was balanced on.
+    """
+    out = map_number_of_cars(households, cars_col=cars_col, rng=rng,
+                             rs7_conditioning=rs7_conditioning)
+    return map_household_bicycles_and_ebike(
+        out, bikes_col=bikes_col, ebike_col=ebike_col, rng=rng,
+        rs7_conditioning=rs7_conditioning)
+
+
 def map_trip_class(
     persons: pd.DataFrame, *, trips_col: str = "anzwege1", rng=None,
     rs7_conditioning: bool = True,

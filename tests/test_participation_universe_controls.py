@@ -1148,7 +1148,9 @@ def test_build_populationsim_seed_forwards_the_leading_drop_to_both_mid_branches
             return sources.get_source("mid").seed_columns()
 
     class _Donor:
-        households = pd.DataFrame()
+        # The stage resolves the household counts on the donor table, so the double
+        # carries the raw count columns (empty: only the wiring is under test).
+        households = pd.DataFrame(columns=["H_ANZAUTO", "anzpedrad", "H_ANZPED"], dtype=int)
         persons = pd.DataFrame()
         completeness_report = _Report()
 
@@ -1217,7 +1219,7 @@ def test_build_populationsim_seed_forwards_the_purpose_correctness_flags_to_both
             return sources.get_source("mid").seed_columns()
 
     class _Donor:
-        households = pd.DataFrame()
+        households = pd.DataFrame(columns=["H_ANZAUTO", "anzpedrad", "H_ANZPED"], dtype=int)
         persons = pd.DataFrame()
         completeness_report = _Report()
 

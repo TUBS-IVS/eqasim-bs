@@ -29,6 +29,7 @@ import cycle results.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional, Sequence, Union
 
@@ -356,13 +357,31 @@ def _derive_count_style_kreis_columns(
     reassigned by the caller).
     Mutates: nothing in place.
     """
-    if "number_of_cars" in active_kreis_entry_names:
+    # Columns the popsim stage already resolved ONCE on the donor household table
+    # (attributes.resolve_household_counts) are used verbatim: the clones assembled later
+    # carry the same value, not a second draw (audit P3-F1). Only missing columns are
+    # derived here (load_mid_seed path, direct callers); that is logged.
+    wanted = [c for c in attributes.HOUSEHOLD_COUNT_COLUMNS if c in active_kreis_entry_names]
+    pre_resolved = [c for c in wanted if c in households.columns]
+    if pre_resolved:
+        logging.getLogger(__name__).info(
+            "[popsim.mid.seed] household count columns %s taken from the donor table "
+            "(resolved once, shared with the expansion); not re-imputed.", pre_resolved)
+    if "number_of_cars" in active_kreis_entry_names and "number_of_cars" not in households.columns:
         households = attributes.map_number_of_cars(households, rng=kreis_seed_rng)
-    if "number_of_bicycles" in active_kreis_entry_names:
+    need_bikes = (
+        "number_of_bicycles" in active_kreis_entry_names
+        and "number_of_bicycles" not in households.columns)
+    need_ebike = "has_ebike" in active_kreis_entry_names and "has_ebike" not in households.columns
+    if need_bikes and need_ebike:
+        # Joint draw: has_ebike==1 implies number_of_bicycles>=1 (audit P3-F4).
+        households = attributes.map_household_bicycles_and_ebike(
+            households, ebike_col=ebike_seed_column, rng=kreis_seed_rng)
+    elif need_bikes:
         # Default bikes_col="anzpedrad" (bicycles INCLUDING pedelecs/e-bikes; MiD H12.3 /
         # SrV alle-Raeder construct); see attributes.map_number_of_bicycles.
         households = attributes.map_number_of_bicycles(households, rng=kreis_seed_rng)
-    if "has_ebike" in active_kreis_entry_names:
+    elif need_ebike:
         households = attributes.map_has_ebike(
             households, ebike_col=ebike_seed_column, rng=kreis_seed_rng
         )
