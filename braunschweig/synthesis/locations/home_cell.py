@@ -588,9 +588,18 @@ def _thin_slots_by_type(
     the call explicit about the sampled case (callers only thin when it is < 1).
 
     ASSUMPTION: the sampled households are a uniform (Bernoulli) thinning of the cell's
-    full household set, as ``synthesis.population.sampled`` draws them, so a uniform
-    within-type subset of slots is the matching thinning of the dwellings. Dwelling
-    size pairing is assortative only within the kept subset.
+    full household set, as ``synthesis.population.sampled`` draws them, so WITHIN a
+    building type a uniform subset of slots is the matching thinning of the dwellings.
+    Dwelling size pairing is assortative only within the kept subset.
+
+    LIMITATION (known, not corrected): the type flow runs against the FULL slot counts,
+    so the sampled households meet no type contention. In a cell where one type is short
+    of slots at 100 % (e.g. 2 MFH dwellings for 10 MFH-type households), a sampled
+    household of that type still gets its own type, so at ``r < 1`` the scarce type's
+    buildings receive a larger share and the type-match rate is higher than at 100 %.
+    Correcting it would need the cell's full-population household-type mix, which a
+    sampled run does not have (estimating it as ``h_t / r`` is very noisy at one or two
+    households per cell). 100 % runs are unaffected.
     """
     del sampling_rate  # count comes from the realised sample, see docstring
     positions_by_type = {
