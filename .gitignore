@@ -136,7 +136,6 @@ zensus_hh_inspect.txt
 # OSM, GTFS, population/employment registers, ...) -- they stay local only.
 eqasim-data/*
 !eqasim-data/.gitkeep
-!eqasim-data/DOWNLOAD_CHECKLIST.md
 !eqasim-data/DOWNLOAD_CHECKLIST_BS.md
 
 # --- Internal working artefacts (kept out of the public research repository) ---

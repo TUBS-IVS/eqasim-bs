@@ -31,5 +31,16 @@ licensing:
   restricted: false
   redistribution: allowed
 limitations: null
-notes: Participation-by-Kreis controls, escort destination/distance factors, location-type-by-distance
+notes: |-
+  Participation-by-Kreis controls, escort destination/distance factors, location-type-by-distance
   and draw-share references.
+
+  Weight: the location-type tables (srv2023_location_type_by_distance.csv,
+  srv2023_secondary_type_shares.csv) and the escort tables (srv2023_escort_destination_types.csv,
+  srv2023_escort_distance_factors.csv) are GEWICHT_W_ZENSUS-weighted (ADR-0055). Until 2026-11-11
+  they used the stratum-internal GEWICHT_W (repository audit 2026-11-11, finding B9); the
+  regeneration changed only the weighted columns (unweighted leg counts identical, the old scripts
+  reproduced the old tables byte-for-byte from the same raw file). The escort draw weights and
+  distance factors copied into DEFAULT_ESCORT_LOCATIONS_WEIGHTS / DEFAULT_ESCORT_DISTANCE_FACTORS
+  (braunschweig.synthesis.locations.secondary_chainsolvers.activity_types) and configs/base_bs.yml
+  moved with them.

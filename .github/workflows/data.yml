@@ -7,10 +7,7 @@ name: Braunschweig input sources are still reachable
 # depend on. Local file presence -- the script's default mode -- cannot be checked
 # here because CI has no data.
 #
-# This workflow previously ran scripts/verify_data.py, the upstream
-# Ile-de-France verifier of 36 FRENCH open-data URLs with no Braunschweig
-# relevance. That script is upstream code and stays in the repository untouched;
-# only its SCHEDULING was the problem. See
+# History of the upstream French verifier this workflow once ran:
 # docs/codebase/notes/ci-data-availability-checks.md.
 
 on:

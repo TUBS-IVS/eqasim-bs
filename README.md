@@ -211,7 +211,7 @@ setup-oriented summary; all target paths are **relative to `eqasim-data/data/`**
 |---------|---------------------|-----------------------------------------------|
 | **VG250-EW** boundaries + population (BKG) | [gdz.bkg.bund.de](https://gdz.bkg.bund.de/index.php/default/digitale-geodaten/verwaltungsgebiete/) — GeoPackage UTM32s | `germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip` |
 | **KBA FE4** driving licences | [kba.de](https://www.kba.de) — Fahrerlaubnisbestand FE4 | `germany/fe4_2024.xlsx` |
-| **ENTD 2008** French HTS (open donor) | [statistiques.developpement-durable.gouv.fr](https://www.statistiques.developpement-durable.gouv.fr/enquete-nationale-transports-et-deplacements-entd-2008) | `entd_2008/{Q_individu,Q_tcm_individu,Q_menage,Q_tcm_menage_0,K_deploc,Q_ind_lieu_teg}.csv` |
+| **ENTD 2008** French HTS (open donor) | [statistiques.developpement-durable.gouv.fr](https://www.statistiques.developpement-durable.gouv.fr/enquete-nationale-transports-et-deplacements-entd-2008) | `entd_2008/{Q_individu,Q_tcm_individu,Q_menage,Q_tcm_menage_0,K_deploc}.csv` |
 | **DESTATIS 12411-0018** population Kreis×sex×age | [www-genesis.destatis.de](https://www-genesis.destatis.de/genesis/online) code `12411`, flat CSV | `braunschweig/12411-0018_de.csv` |
 | **GENESIS 13111-06-02-4** SvB at residence | [regionalstatistik.de](https://www.regionalstatistik.de/genesis/online) code `13111` | `braunschweig/13111-06-02-4.xlsx` |
 | **GENESIS 13111-01-03-5** SvB at workplace | regionalstatistik.de code `13111` | `braunschweig/13111-01-03-5.xlsx` |

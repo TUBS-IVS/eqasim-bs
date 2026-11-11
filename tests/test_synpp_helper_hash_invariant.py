@@ -538,12 +538,6 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
     "data.gtfs.cleaned": (
         "data.gtfs.utils",
     ),
-    "data.hts.edgt_44.raw": (
-        "data.hts.edgt_44.format",
-    ),
-    "eqasim_common.analysis.synthesis.statistics.monte_carlo": (
-        "eqasim_common.analysis.synthesis.statistics.marginal",
-    ),
     # DELIBERATE and permanent, not debt to be paid off (#330 / ADR-0095): the hang
     # watchdog is result-neutral operational machinery. matsim.runtime.java.execute()
     # produces no artifact, and process_watchdog only shapes how java.run WAITS on a
@@ -554,12 +548,6 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
     # threshold tweak. Do NOT "close" this gap.
     "matsim.runtime.java": (
         "matsim.runtime.process_watchdog",
-    ),
-    "synthesis.population.income.bhepop2": (
-        "synthesis.population.income.utils",
-    ),
-    "synthesis.population.income.uniform": (
-        "synthesis.population.income.utils",
     ),
     "synthesis.population.spatial.secondary.locations": (
         "synthesis.population.spatial.secondary.components",
@@ -576,12 +564,12 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
 def test_discovery_finds_a_plausible_number_of_stage_modules():
     """Sanity bound on the file walk, not a brittle exact pin.
 
-    The #290 audit snapshot found 230; legitimate, unrelated stage additions or
+    The #290 audit snapshot found 230 (160 after the unreachable inherited modules were removed); legitimate, unrelated stage additions or
     removals elsewhere in the repo will move this slightly over time, so this
     only guards against a badly broken walk (e.g. a root silently not found),
     not against normal repo growth.
     """
-    assert 200 <= len(_GATE_RESULTS) <= 320, (
+    assert 120 <= len(_GATE_RESULTS) <= 260, (
         f"discovered {len(_GATE_RESULTS)} stage modules -- outside the plausible "
         "range, check FIRST_PARTY_ROOTS and the file walk"
     )
@@ -589,7 +577,7 @@ def test_discovery_finds_a_plausible_number_of_stage_modules():
         "braunschweig.gravity.model",
         "braunschweig.popsim.stage",
         "braunschweig.freight.trips",
-        "data.census.raw",
+        "data.gtfs.cleaned",
     ):
         assert known_stage in _GATE_RESULTS, f"expected stage not discovered: {known_stage}"
 

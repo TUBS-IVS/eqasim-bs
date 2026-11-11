@@ -33,9 +33,8 @@ text; and a four-part version number is told apart from an address by its surrou
 
 ## Why this exists
 
-On 2026-11-11 the owner found the run server's IP address and SSH user as parameter
-defaults in the three PowerShell deploy scripts (committed 2026-06-04, copied into a run
-log on 2026-06-07) and a password-bearing FTP URL in the commented-out part of the
-inherited upstream `docs/verify_data.py`. The values were removed from the files; the
-scanner flags the two commits that introduced the server address when replayed on them.
-`tests/test_no_hardcoded_server_access.py` holds the regression tests.
+Host-specific values (a deploy target, a login, a credential) do not belong in a public
+repository, and removing them from the files later does not remove them from the history.
+A check before the commit is cheaper than any clean-up afterwards. The deploy scripts
+therefore read their target from the environment, and this scan keeps such values out of
+new changes. `tests/test_no_hardcoded_server_access.py` holds the tests.

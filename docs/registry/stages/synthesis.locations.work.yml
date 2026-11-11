@@ -8,7 +8,6 @@ lineage:
   notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
     per workflow (see resolves_to).
 code:
-- synthesis/locations/work.py
 - braunschweig/locations/work.py
 pipelines:
   popsim_mid: not_used

@@ -7,7 +7,7 @@
 Extracted from the ACTUAL synpp dependency graph (`docs/registry/dag/production.json`,
 `synpp.run(dryrun=True)` over `configs/base_bs.yml` + `configs/overlays/test_100pct.yml`).
 
-Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.departure_time_vs_srv`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 108 stages, 309 dependencies.
+Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.departure_time_vs_srv`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 104 stages, 304 dependencies.
 
 ## Model-area flow (condensed)
 
@@ -45,7 +45,6 @@ flowchart LR
     behavior --> infrastructure
     behavior --> matsim
     behavior --> secondary
-    behavior --> spatial
     behavior --> validation
     behavior --> work
     cordon --> analysis
@@ -183,16 +182,15 @@ flowchart LR
 | `data.census.filtered` | population | x | x | x |
 | `data.gtfs.cleaned` | matsim | x | x | x |
 | `data.hts.commute_distance` | behavior | -- | -- | x |
-| `data.hts.entd.cleaned` | behavior | x | x | x |
+| `data.hts.entd.cleaned` | behavior | -- | x | x |
 | `data.hts.entd.filtered` | behavior | -- | x | x |
-| `data.hts.entd.raw` | behavior | x | x | x |
+| `data.hts.entd.raw` | behavior | -- | x | x |
 | `data.hts.entd.reweighted` | behavior | -- | x | x |
 | `data.hts.selected` | behavior | -- | x | x |
 | `data.od.weighted` | work | x | x | x |
 | `data.osm.cleaned` | spatial | x | x | x |
 | `data.osm.osmosis` | spatial | x | x | x |
-| `data.spatial.codes` | spatial | x | x | x |
-| `data.spatial.departments` | spatial | x | x | x |
+| `data.spatial.codes` | spatial | -- | x | x |
 | `data.spatial.iris` | spatial | x | x | x |
 | `data.spatial.municipalities` | spatial | x | x | x |
 | `documentation.meta_output` | infrastructure | x | x | x |

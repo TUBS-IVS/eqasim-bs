@@ -24,7 +24,7 @@ Restricted datasets are never committed or redistributed.
 | [cleancensus_kreis_controls](../registry/data/cleancensus_kreis_controls.yml) | control | derived | `data/braunschweig/popsim/kreis_controls/` | o/-/r | no |
 | [destatis_population_kreis](../registry/data/destatis_population_kreis.yml) | control | manual_download | `data/braunschweig/12411-0018_de.csv` | r/-/o | no |
 | [detour_circuity_params](../registry/data/detour_circuity_params.yml) | calibration_target | committed | `data/braunschweig/calibration/detour_circuity_params.csv` | o/-/o | no |
-| [entd_2008](../registry/data/entd_2008.yml) | donor | manual_download | `data/entd_2008/{Q_individu,Q_tcm_individu,Q_menage,Q_tcm_menage_0,K_deploc,Q_ind_lieu_teg}.csv` | r/-/r | no |
+| [entd_2008](../registry/data/entd_2008.yml) | donor | manual_download | `data/entd_2008/{Q_individu,Q_tcm_individu,Q_menage,Q_tcm_menage_0,K_deploc}.csv` | r/-/- | no |
 | [external_regional_rail_single_fares_2026](../registry/data/external_regional_rail_single_fares_2026.yml) | reference_table, assumption_basis | derived (`scripts/normalize_external_rail_single_fares.py`) | `docs/data/external-regional-rail-single-fares-2026.json` | -/o/r | no |
 | [genesis_svb_residence](../registry/data/genesis_svb_residence.yml) | control | manual_download | `data/braunschweig/13111-06-02-4.xlsx` | r/-/o | no |
 | [genesis_svb_workplace](../registry/data/genesis_svb_workplace.yml) | control | manual_download | `data/braunschweig/13111-01-03-5.xlsx` | r/-/r | no |

@@ -76,6 +76,7 @@ _HELPER_MODULES = (_validation_output, _gate_assignment, _json_output)
 #: import, whose code this stage runs without importing it itself. The gate in
 #: tests/test_audit_synpp_helper_hash.py keeps this list complete (ADR-0136).
 _DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.data.cordon.external_points",  # imported by gate_assignment
     "braunschweig.data.cordon.validation",
 )
 

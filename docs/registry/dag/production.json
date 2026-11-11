@@ -441,14 +441,6 @@
    "matsim.simulation.prepare"
   ],
   [
-   "data.hts.entd.cleaned",
-   "data.spatial.codes"
-  ],
-  [
-   "data.hts.entd.raw",
-   "data.hts.entd.cleaned"
-  ],
-  [
    "data.od.weighted",
    "synthesis.population.spatial.primary.candidates"
   ],
@@ -459,14 +451,6 @@
   [
    "data.osm.osmosis",
    "data.osm.cleaned"
-  ],
-  [
-   "data.spatial.codes",
-   "matsim.simulation.prepare"
-  ],
-  [
-   "data.spatial.departments",
-   "matsim.simulation.prepare"
   ],
   [
    "data.spatial.iris",
@@ -555,10 +539,6 @@
   [
    "data.spatial.municipalities",
    "data.osm.cleaned"
-  ],
-  [
-   "data.spatial.municipalities",
-   "data.spatial.departments"
   ],
   [
    "data.spatial.municipalities",
@@ -1298,13 +1278,9 @@
   "braunschweig.synthesis.vehicles.cars.household",
   "data.census.filtered",
   "data.gtfs.cleaned",
-  "data.hts.entd.cleaned",
-  "data.hts.entd.raw",
   "data.od.weighted",
   "data.osm.cleaned",
   "data.osm.osmosis",
-  "data.spatial.codes",
-  "data.spatial.departments",
   "data.spatial.iris",
   "data.spatial.municipalities",
   "documentation.meta_output",

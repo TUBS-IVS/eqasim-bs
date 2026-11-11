@@ -1,0 +1,11 @@
+## Donor-build smoke for the fine-child-band fallback fix (PR #594): only braunschweig.popsim.completed_donor,
+## a fresh empty working directory per arm. <scratch> and <mid_b1_csv> are placeholders for the local paths used.
+working_directory: <scratch>/cache_<arm>
+run:
+  - braunschweig.popsim.completed_donor
+config:
+  sampling_rate: 0.01
+  output_path: <scratch>/output_<arm>
+  output_prefix: smoke_<arm>_
+  braunschweig.population.popsim.mid_raw_path: <mid_b1_csv>
+  braunschweig.population.popsim.mid_dir: <mid_b1_csv>
