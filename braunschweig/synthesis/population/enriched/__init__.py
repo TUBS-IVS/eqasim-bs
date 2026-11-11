@@ -166,7 +166,6 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # base: the MiD zone table, the eqasim enrichment it extends and that module's HTS readers.
     "braunschweig.data.mid.zones",
     "synthesis.population.enriched",
-    "data.hts.egt.cleaned",
     "data.hts.entd.cleaned",
     "data.hts.hts",
     # base and availability: the attribute mappers, their missing-value handling and the

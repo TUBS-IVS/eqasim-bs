@@ -137,7 +137,6 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.zensus_employment_age",
     "braunschweig.population.socioprofessional_class",
     "braunschweig.synthesis.portal_trips.config_keys",
-    "data.hts.egt.cleaned",
     "data.hts.entd.cleaned",
     "data.hts.hts",
     "synthesis.population.matched",

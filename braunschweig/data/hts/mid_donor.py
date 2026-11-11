@@ -81,7 +81,6 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.population.schema",
     "braunschweig.population.socioprofessional_class",
     "braunschweig.resources",
-    "data.hts.egt.cleaned",
     "data.hts.entd.cleaned",
     "data.hts.hts",
     "synthesis.population.matched",
