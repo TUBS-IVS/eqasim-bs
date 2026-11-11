@@ -14,7 +14,7 @@
 - **Measured exposure:** over all 420,979 persons of the MiD 2023 B1 persons file
   (MiD2023_Personen.csv), unfiltered, counted on 2026-11-11 with
   `python scripts/count_mid_person_nonresponse.py --persons-csv <path to that file>`:
-  `P_BKAT` code 9 is 200 persons (0.05 %); the imputed `P_FKARTE` codes 99 (990) and 206
+  `P_BKAT` code 9 is 200 persons (0.05 %); the imputed `P_FKARTE` codes 99 (990), 202 (0) and 206
   (24,568) are 25,558 persons (6.07 %). No effect size on model results is claimed: no run
   exists for this change.
 - **Decision:** (owner decision for persons, audit P3-F1: clones inherit the seed-resolved value)

@@ -248,7 +248,7 @@ def _multi_person_completed_donors():
     """Completed-donor shape: multi-person households and one member-completion filler.
 
     h0: persons 1, 2, 3 (3 is a filler mirroring person 2 of h1, member_imputed=True with
-    source_H_ID / source_P_ID, as the member-completion step produces it); h1: persons 1, 2;
+    source_H_ID / source_P_ID, as the member-completion step produces it); h1: persons 1, 2, 3;
     h2: persons 1, 2. Different imputed codes per person: P_BKAT 9 and P_FKARTE 99 / 206 sit
     on different persons of the SAME household, valid codes on the others.
     """
@@ -260,6 +260,10 @@ def _multi_person_completed_donors():
         ("h0", 3, 9, 206, True, "h1", 2),
         ("h1", 1, 2, 5, False, "h1", 1),
         ("h1", 2, 9, 99, False, "h1", 2),
+        # Valid codes that differ from h1's first person in BOTH attributes (teilzeit vs
+        # geringfuegig, other_flatrate vs deutschlandticket): makes the positive control
+        # below deterministic, independent of any imputation draw.
+        ("h1", 3, 3, 3, False, "h1", 3),
         ("h2", 1, 9, 206, False, "h2", 1),
         ("h2", 2, 3, 8, False, "h2", 2),
     ]
@@ -302,12 +306,10 @@ def test_multi_person_households_clones_carry_their_own_donor_person_values():
     # the household) would give at least one clone a value that is NOT its own person's.
     by_hid_only = seed_p.drop_duplicates(cols.person_household_id).set_index(
         cols.person_household_id)
-    wrong = by_hid_only.loc[clones["H_ID"], "employment_status"].to_numpy()
-    own = seed_keyed.loc[keys, "employment_status"].to_numpy()
-    assert (wrong != own).any(), "fixture too weak: H_ID-only lookup would also pass"
-    wrong_f = by_hid_only.loc[clones["H_ID"], "pt_ticket_group"].to_numpy()
-    own_f = seed_keyed.loc[keys, "pt_ticket_group"].to_numpy()
-    assert (wrong_f != own_f).any() or (wrong != own).any()
+    for column in ("employment_status", "pt_ticket_group"):
+        wrong = by_hid_only.loc[clones["H_ID"], column].to_numpy()
+        own = seed_keyed.loc[keys, column].to_numpy()
+        assert (wrong != own).any(), f"fixture too weak for {column}: H_ID-only lookup would pass"
 
 
 def test_legacy_complete_members_false_logs_warning_and_still_resolves_persons(caplog):
