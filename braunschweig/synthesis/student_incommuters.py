@@ -91,7 +91,6 @@ _STUDENT_PERSON_DEFAULTS = dict(
     number_of_bicycles=0,
     bicycle_availability="all", license_type="ja", has_license=True,
     has_pt_subscription=False, pt_subscription_type="never_pt",
-    high_income=False,
     is_bs_resident=False, is_urban_resident=False, age_range="higher_education",
     # See braunschweig.synthesis.incommuters._INCOMMUTER_PERSON_DEFAULTS for why
     # this completeness attribute (synthesise_housing_tenure,
@@ -387,6 +386,7 @@ def _build_student_persons(ids, donors, modes, household_income_eur=DEFAULT_HOUS
         "number_of_cars": np.where(is_car, 1, 0),
         "household_income_eur": income_eur,
         "household_income": [str(int(v)) for v in income_eur],
+        "high_income": _high_income(income_eur),
     })
     for key, value in _STUDENT_PERSON_DEFAULTS.items():
         persons[key] = value
@@ -403,6 +403,13 @@ def _build_student_persons(ids, donors, modes, household_income_eur=DEFAULT_HOUS
     return persons
 
 
+def _high_income(income_eur):
+    """``high_income`` by the resident rule, shared with the worker in-commuters (ADR-0191)."""
+    from braunschweig.synthesis.incommuters import _high_income as high_income_of
+
+    return high_income_of(income_eur)
+
+
 def _build_student_households(ids, modes, household_income_eur=DEFAULT_HOUSEHOLD_INCOME_EUR):
     """One single-person household per injected student in-commuter, mirroring
     ``braunschweig.synthesis.incommuters._build_households`` with the flat ASSUMPTION
@@ -417,7 +424,7 @@ def _build_student_households(ids, modes, household_income_eur=DEFAULT_HOUSEHOLD
         "census_household_id": household_ids,
         "household_income": [str(int(v)) for v in income_eur],
         "household_income_eur": income_eur,
-        "high_income": False,
+        "high_income": _high_income(income_eur),
         "car_availability": np.where(np.asarray(modes) == "car", "all", "none"),
         "bicycle_availability": "all",
     })

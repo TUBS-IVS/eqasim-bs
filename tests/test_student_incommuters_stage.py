@@ -818,6 +818,7 @@ def test_student_households_follow_the_mode_and_the_configured_income():
     """ADR-0191: a pt student's household has no car (it was 'all' for every household),
     and the flat household income is the configured ASSUMPTION value, not a hidden constant."""
     ids = pd.DataFrame({"person_id": [100, 101], "household_id": [50, 51]})
-    households = si._build_student_households(ids, ["car", "pt"], household_income_eur=2500.0)
+    households = si._build_student_households(ids, ["car", "pt"], household_income_eur=6000.0)
     assert households.set_index("household_id")["car_availability"].to_dict() == {50: "all", 51: "none"}
-    assert households["household_income_eur"].tolist() == [2500.0, 2500.0]
+    assert households["household_income_eur"].tolist() == [6000.0, 6000.0]
+    assert households["high_income"].all()   # the resident 5000 EUR rule, not a constant False

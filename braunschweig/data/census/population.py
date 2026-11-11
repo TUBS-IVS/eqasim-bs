@@ -110,9 +110,15 @@ def load_population_by_kreis(path: str, kreise) -> pd.Series:
     """Total inhabitants per 5-digit Kreis key from the DESTATIS 12411-0018 export at ``path``.
 
     Sums the (sex, age_class) counts of :func:`_load_destatis` (PRIMARY/skip logging
-    included); Kreise of ``kreise`` absent from the file are absent from the result.
+    included); Kreise of ``kreise`` absent from the file are absent from the result. A Kreis
+    with dropped (unparseable) cells would get a smaller total, so such Kreise are named.
     """
     counts = _load_destatis(path, {str(k) for k in kreise})
+    rows_per_kreis = counts.groupby("kreis").size()
+    incomplete = sorted(rows_per_kreis[rows_per_kreis < 2 * len(DESTATIS_AGES)].index)
+    if incomplete:
+        print(f"[braunschweig.population] WARNING: {len(incomplete)} Kreise have dropped DESTATIS "
+              f"cells, so their population total is too small: {incomplete[:10]}")
     return counts.groupby("kreis")["weight"].sum()
 
 

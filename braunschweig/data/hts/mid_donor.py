@@ -271,6 +271,11 @@ def attach_donor_household_income(persons, households, rng):
         raise ValueError(
             f"[mid_donor] the MiD household table lacks {missing_cols}; the in-commuter household "
             f"income and economic status are read from it (ADR-0191).")
+    duplicated = households["H_ID"][households["H_ID"].duplicated()].unique()
+    if len(duplicated):
+        raise ValueError(
+            f"[mid_donor] the MiD household table repeats {len(duplicated)} H_ID values "
+            f"(e.g. {list(duplicated[:5])}); one household income per H_ID is required.")
     hh = attributes.map_economic_status(households, rng=rng)
     hh = attributes.map_household_income(hh, rng=rng)
     hh["household_income_eur"] = placement_income.draw_own_income_eur(hh["household_income"], rng)
