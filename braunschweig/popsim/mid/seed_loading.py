@@ -483,9 +483,10 @@ def _derive_employment_status_seed_column(
     the trip_class derivation above. The caller's rng guard ensures kreis_seed_rng is
     set. Uses the SAME attributes.map_employment_status as the post-expansion
     assembly.build_persons, so seed and expanded values agree deterministically for
-    the 99.87% of persons with a valid (non-9) P_BKAT; the code-9 imputed cases may
-    differ by an independent rng draw -- acceptable for a control (matches the
-    trip_class precedent, task 4b).
+    the persons with a valid (non-9) P_BKAT. When the popsim stage already resolved
+    the column once on the completed donor persons (``attributes.resolve_person_attributes``,
+    ADR-0191) it is used verbatim, so the code-9 imputed persons carry the same value on
+    every assembled clone; only direct callers and ``load_mid_seed`` derive it here.
 
     In ``project_completed_seed``: derive employment_status from the completed
     donor's P_BKAT (already loaded via MID_PERSON_ATTR_COLS -- see
@@ -499,7 +500,12 @@ def _derive_employment_status_seed_column(
     Mutates: nothing in place.
     """
     if "employment_status" in active_kreis_entry_names:
-        persons = attributes.map_employment_status(persons, rng=kreis_seed_rng)
+        if "employment_status" in persons.columns:
+            logging.getLogger(__name__).info(
+                "[popsim.mid.seed] employment_status taken from the donor persons "
+                "(resolved once, shared with the expansion, ADR-0191); not re-imputed.")
+        else:
+            persons = attributes.map_employment_status(persons, rng=kreis_seed_rng)
     return persons
 
 
@@ -529,15 +535,22 @@ def _derive_pt_ticket_group_seed_column(
     filler's group matches its inherited P_FKARTE and the imputation pool reflects only the
     kept seed persons), and from the completed donor's P_FKARTE in
     ``project_completed_seed``. Seed and expanded population agree deterministically for
-    every person with a valid P_FKARTE code; the imputed cases may differ by an independent
-    rng draw, which is acceptable for a control (the trip_class / employment_status
-    precedent).
+    every person with a valid P_FKARTE code. A ``pt_subscription_type`` the popsim stage
+    already resolved once on the completed donor persons
+    (``attributes.resolve_person_attributes``, ADR-0191) is used verbatim, so the imputed
+    persons carry the same category on every assembled clone; only direct callers and
+    ``load_mid_seed`` resolve it here.
 
     Returns: the persons frame with the derived column (MUST be reassigned).
     Mutates: nothing in place.
     """
     if active_kreis_entry_names & {"pt_ticket_group", "pt_ticket_group4"}:
-        persons = attributes.map_pt_subscription_type(persons, rng=kreis_seed_rng)
+        if "pt_subscription_type" in persons.columns:
+            logging.getLogger(__name__).info(
+                "[popsim.mid.seed] pt_subscription_type taken from the donor persons "
+                "(resolved once, shared with the expansion, ADR-0191); not re-imputed.")
+        else:
+            persons = attributes.map_pt_subscription_type(persons, rng=kreis_seed_rng)
         persons = attributes.map_pt_ticket_group(persons)
     return persons
 

@@ -1151,7 +1151,9 @@ def test_build_populationsim_seed_forwards_the_leading_drop_to_both_mid_branches
         # The stage resolves the household counts on the donor table, so the double
         # carries the raw count columns (empty: only the wiring is under test).
         households = pd.DataFrame(columns=["H_ANZAUTO", "anzpedrad", "H_ANZPED"], dtype=int)
-        persons = pd.DataFrame()
+        # The stage also resolves employment_status / pt_subscription_type on the donor persons
+        # (ADR-0191), so the double carries the raw columns (empty: only the wiring is tested).
+        persons = pd.DataFrame(columns=["P_BKAT", "P_FKARTE"], dtype=int)
         completeness_report = _Report()
 
         class completion_report:
@@ -1220,7 +1222,9 @@ def test_build_populationsim_seed_forwards_the_purpose_correctness_flags_to_both
 
     class _Donor:
         households = pd.DataFrame(columns=["H_ANZAUTO", "anzpedrad", "H_ANZPED"], dtype=int)
-        persons = pd.DataFrame()
+        # The stage also resolves employment_status / pt_subscription_type on the donor persons
+        # (ADR-0191), so the double carries the raw columns (empty: only the wiring is tested).
+        persons = pd.DataFrame(columns=["P_BKAT", "P_FKARTE"], dtype=int)
         completeness_report = _Report()
 
         class completion_report:

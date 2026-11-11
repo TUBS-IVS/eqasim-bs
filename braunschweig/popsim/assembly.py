@@ -305,7 +305,26 @@ def map_mid_person_attributes(
     # employment_status (P9 taxonomy, MiD P_BKAT) rides alongside the boolean
     # employed flag -- NOT a popsim control, additive for analysis/validation
     # (see attributes.map_employment_status docstring).
-    persons = attributes.map_employment_status(persons, rng=rng, rs7_conditioning=rs7_conditioning)
+    # Resolved ONCE per donor person by the popsim stage (attributes.resolve_person_attributes,
+    # ADR-0191) and copied onto the clones by expand_to_persons; reused verbatim here so a
+    # clone carries the value its donor person was balanced on. Absent columns (direct
+    # callers) are resolved per clone with THIS call's rng, logged as a WARNING.
+    resolved = [c for c in attributes.PERSON_RESOLVED_COLUMNS if c in persons.columns]
+    if len(resolved) == len(attributes.PERSON_RESOLVED_COLUMNS):
+        logger.info("[popsim.assembly] person attributes %s taken from the donor persons "
+                    "(resolved once, shared with the seed).", resolved)
+    elif resolved:
+        raise ValueError(
+            f"[popsim.assembly] donor persons carry only some of the resolved person "
+            f"attribute columns {resolved} of {list(attributes.PERSON_RESOLVED_COLUMNS)}; "
+            "resolve all or none (attributes.resolve_person_attributes).")
+    else:
+        logger.warning(
+            "[popsim.assembly] donor persons carry no resolved employment_status / "
+            "pt_subscription_type; resolving them per clone with the assembly rng (the seed "
+            "was NOT balanced on these draws unless no such control is active).")
+        persons = attributes.map_employment_status(
+            persons, rng=rng, rs7_conditioning=rs7_conditioning)
     # Derive studies from P_TAET (Ausbildung/Schueler/Student -> True) BEFORE
     # map_socioprofessional_class, which uses the studies flag in its fallback path.
     # Bug D4: studies was absent, so the fallback treated all students as studies=False.
@@ -315,7 +334,9 @@ def map_mid_person_attributes(
     # DERIVED from it: both describe the same MiD answer (P_FKARTE), and resolving them
     # in two independent missing.resolve draws made them disagree for 0.86% of persons
     # (issue #319). eqasim reads the boolean, the P24.1 validation reads the category.
-    persons = attributes.map_pt_subscription_type(persons, rng=rng, rs7_conditioning=rs7_conditioning)
+    if not resolved:
+        persons = attributes.map_pt_subscription_type(
+            persons, rng=rng, rs7_conditioning=rs7_conditioning)
     persons = attributes.map_has_pt_subscription(persons)
 
     donor_hh = attributes.map_household_income(

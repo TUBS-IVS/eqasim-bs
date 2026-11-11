@@ -151,7 +151,7 @@ assessment:
     weights the surveys by RAW sample size (ADR-0089).
     The A/B must vary one flag at a time, since the flatrate share is strongly age-graded and
     ADR-0088 changed the age composition in the same release.
-  source: ADR-0089, ADR-0099
+  source: ADR-0089, ADR-0099, ADR-0191 (imputed persons resolved once per donor)
 notes: 'Two records of history, both current: ADR-0089 established the three-group control and
   supersedes the MiD-only first draft of its target (the claim that SrV offers only one category
   held for the committed all-ages aggregate, not for the microdata, and the apparent MiD-vs-SrV gap

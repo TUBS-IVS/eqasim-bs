@@ -1026,6 +1026,25 @@ def resolve_household_counts(
         rs7_conditioning=rs7_conditioning)
 
 
+PERSON_RESOLVED_COLUMNS = ("employment_status", "pt_subscription_type")
+
+
+def resolve_person_attributes(
+    persons: pd.DataFrame, *, rng, rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Resolve ``employment_status`` and ``pt_subscription_type`` ONCE per donor person.
+
+    Called by the popsim stage on the completed donor persons with the run's seeded rng.
+    The seed derivations and ``assembly.map_mid_person_attributes`` reuse these columns
+    verbatim, so a clone carries the value its donor person was balanced on (ADR-0191).
+    ``has_pt_subscription`` is derived from the resolved type. Imputed codes (P_BKAT 9,
+    P_FKARTE 99 / 202 / 206) are drawn conditioned on the donor's survey RegioStaR7.
+    """
+    out = map_employment_status(persons, rng=rng, rs7_conditioning=rs7_conditioning)
+    out = map_pt_subscription_type(out, rng=rng, rs7_conditioning=rs7_conditioning)
+    return map_has_pt_subscription(out)
+
+
 def carry_seed_household_counts(
     donor_households: pd.DataFrame, seed_households: pd.DataFrame, *, id_col: str, rng,
     ebike_col: str = "H_ANZPED",

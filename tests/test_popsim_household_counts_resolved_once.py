@@ -92,7 +92,10 @@ class _FakeContext:
         self.info[key] = value
 
 
-def _seed_and_assembled_clones(donors, mid_persons_extra=None):
+_COUNT_ENTRIES = ("number_of_cars", "number_of_bicycles", "has_ebike")
+
+
+def _seed_and_assembled_clones(donors, mid_persons_extra=None, entries=_COUNT_ENTRIES):
     """Run the stage's seed build, then assemble two clones per donor from ITS donor tables.
 
     Uses only entry points that exist on origin/main (``_build_populationsim_seed``,
@@ -120,8 +123,7 @@ def _seed_and_assembled_clones(donors, mid_persons_extra=None):
     )
     don_hh, don_p, seed_hh, seed_p = popsim_stage._build_populationsim_seed(
         _FakeContext(donor), sources.get_source("mid"), "mid", None, True, None,
-        [_entry("number_of_cars"), _entry("number_of_bicycles"), _entry("has_ebike")],
-        np.random.RandomState(7), "H_ANZPED",
+        [_entry(n) for n in entries], np.random.RandomState(7), "H_ANZPED",
     )
     merged = pd.DataFrame({
         "ZENSUS100m": ["A"] * len(ids), "ZENSUS1km": ["KA"] * len(ids), "H_ID": ids,
@@ -129,7 +131,8 @@ def _seed_and_assembled_clones(donors, mid_persons_extra=None):
     })
     merged = pd.concat([merged, merged], ignore_index=True)  # two clones per donor
     merged = expand.assign_synthetic_household_ids(merged)
-    persons = expand.expand_to_persons(merged, mid_persons, donor_col="H_ID")
+    # Clones are expanded from the donor persons the stage hands to the assembly.
+    persons = expand.expand_to_persons(merged, don_p, donor_col="H_ID")
     persons = expand.map_demographics(persons, rng=np.random.RandomState(3))
     persons = assembly.derive_zone_ids(persons)
     clones, _map = assembly.map_mid_person_attributes(
@@ -184,3 +187,49 @@ def test_legacy_donor_table_carries_seed_resolved_counts(caplog):
         assert out[column].notna().all()  # the 5 donors outside the seed got the fallback
     assert not ((out["has_ebike"] == 1) & (out["number_of_bicycles"] == 0)).any()
     assert "fallback" in " ".join(r.getMessage() for r in caplog.records)
+
+
+def _donor_persons_with_imputed_codes(mid_persons):
+    """Valid codes mixed with the imputed ones: P_BKAT 9, P_FKARTE 99 / 206 (and 202)."""
+    n = len(mid_persons)
+    out = mid_persons.copy()
+    out["P_FKARTE"] = [(3, 99, 206, 5, 8, 202, 1)[i % 7] for i in range(n)]
+    out["P_BKAT"] = [(1, 9, 2, 9, 3, 6, 4)[i % 7] for i in range(n)]
+    return out
+
+
+def test_seed_and_clones_carry_identical_person_attributes():
+    """employment_status / pt_subscription_type: seed person and every clone agree (P3-F1)."""
+    donors = _donor_households(70)
+    _hh, seed_p, clones = _seed_and_assembled_clones(
+        donors, mid_persons_extra=_donor_persons_with_imputed_codes,
+        entries=("employment_status", "pt_ticket_group"),
+    )
+    cols = sources.get_source("mid").seed_columns()
+    seed_by_id = seed_p.set_index(cols.person_household_id)
+    clone_groups = attributes.map_pt_ticket_group(clones)["pt_ticket_group"]
+    assert len(clones) == 2 * len(donors)
+    assert (clones["employment_status"].values
+            == seed_by_id.loc[clones["H_ID"], "employment_status"].values).all()
+    assert (clone_groups.values
+            == seed_by_id.loc[clones["H_ID"], "pt_ticket_group"].values).all()
+    # The boolean is derived from the same category on every clone (ADR-0087).
+    flat = clones["pt_subscription_type"].isin(attributes.PT_TICKET_FLATRATE)
+    assert (clones["has_pt_subscription"] == flat).all()
+    # The fixture exercises the imputed codes (a code-free fixture would pass vacuously).
+    assert (clones["P_BKAT"] == 9).any() and clones["P_FKARTE"].isin([99, 206]).any()
+
+
+def test_valid_person_codes_are_unchanged_by_the_single_resolution():
+    """Primary path: persons with valid P_BKAT / P_FKARTE keep exactly their mapped value."""
+    donors = _donor_households(70)
+    _hh, _seed_p, clones = _seed_and_assembled_clones(
+        donors, mid_persons_extra=_donor_persons_with_imputed_codes,
+        entries=("employment_status", "pt_ticket_group"),
+    )
+    valid_b = clones["P_BKAT"] != 9
+    expected_b = clones.loc[valid_b, "P_BKAT"].map(attributes.EMPLOYMENT_STATUS_BY_P_BKAT)
+    assert (clones.loc[valid_b, "employment_status"] == expected_b).all()
+    valid_f = clones["P_FKARTE"].isin(list(attributes.FKARTE_TO_CATEGORY))
+    expected_f = clones.loc[valid_f, "P_FKARTE"].map(attributes.FKARTE_TO_CATEGORY)
+    assert (clones.loc[valid_f, "pt_subscription_type"].astype(str) == expected_f).all()
