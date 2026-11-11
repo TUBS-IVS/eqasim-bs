@@ -86,7 +86,6 @@ INPUTS: List[Input] = [
             "Q_menage.csv",
             "Q_tcm_menage_0.csv",
             "K_deploc.csv",
-            "Q_ind_lieu_teg.csv",
         )
     ],
 
@@ -135,7 +134,7 @@ INPUTS: List[Input] = [
         notes="Read via braunschweig.pendler_aus_path.",
     ),
     # B6 removed: braunschweig.work_flow_path is dead config on the BS DAG
-    # (eqasim_common.data.census.employees is aliased to braunschweig.data.census.employees).
+    # (the upstream eqasim census-employees stage is replaced by braunschweig.data.census.employees).
     Input(
         name="B7  Zensus 2022 households 5000H-2001 flat-CSV",
         rel_path="braunschweig/5000H-2001_de_flat.csv",

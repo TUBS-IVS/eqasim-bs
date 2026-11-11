@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import numba
 
-import data.hts.egt.cleaned
 import data.hts.entd.cleaned
 
 import multiprocessing as mp

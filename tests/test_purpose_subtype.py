@@ -42,6 +42,17 @@ def test_estimate_cell_and_marginal_probabilities():
     assert marginal["visit"] == pytest.approx(0.5)
 
 
+def test_legs_of_unknown_duration_stay_out_of_the_estimate():
+    # Audit B1: a NaN duration used to be banded as the longest band, so these 40 local legs
+    # turned the long-leg cell half local.
+    df = pd.concat([_wege(n_local=0, n_visit=40, n_sentinel=0).assign(travel_time=2000.0),
+                    _wege(n_local=40, n_visit=0, n_sentinel=0).assign(travel_time=np.nan),
+                    _wege(n_local=40, n_visit=0, n_sentinel=0)], ignore_index=True)
+    cell_probs, marginal = ps.estimate_group_probabilities(df, SPEC, min_obs=30)
+    assert cell_probs[("car", 3)]["visit"] == pytest.approx(1.0)
+    assert marginal["local"] == pytest.approx(0.5)
+
+
 def test_thin_cells_fall_back_to_marginal():
     cell_probs, marginal = ps.estimate_group_probabilities(
         _wege(n_local=5, n_visit=5), SPEC, min_obs=30)

@@ -46,8 +46,13 @@ config:
   education_building_distribution: false
 
   hts: entd
-  use_urban_type: false
-  projection_year: null
+  # Explicit HTS matching keys. Without the key, synthesis.population.matched reads its
+  # upstream French default while braunschweig.ipf.attributed reads [], and the
+  # deterministic synpp fork rejects the dryrun (ImplicitConfigConflict). Unlike the other
+  # fixtures, household_size_class is left out: this fixture keeps the IPF household-size
+  # margin off, so every synthetic person carries the placeholder household_size 1 at
+  # matching time and the key would restrict donors to single-person households.
+  matching_attributes: ["sex", "age_class", "employed", "has_license", "urban_class"]
 
   # Region scope: ZGB-8 Kreise.
   braunschweig.political_prefix:

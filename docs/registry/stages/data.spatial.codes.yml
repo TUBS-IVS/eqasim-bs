@@ -8,13 +8,12 @@ lineage:
   notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
     per workflow (see resolves_to).
 code:
-- data/spatial/codes.py
 - eqasim_common/spatial/entd_codes.py
 pipelines:
-  popsim_mid: active
+  popsim_mid: not_used
   popsim_open: active
   simple_ipf_open: active
-production: true
+production: false
 resolves_to:
   popsim_mid: eqasim_common.spatial.entd_codes
   popsim_open: eqasim_common.spatial.entd_codes

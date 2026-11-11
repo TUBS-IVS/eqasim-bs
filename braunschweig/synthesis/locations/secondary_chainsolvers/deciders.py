@@ -47,6 +47,29 @@ OTHER_SUBTYPE_SEED_OFFSET = 90213    # SHOP_SUBTYPE_SEED_OFFSET + 2
 ESCORT_LOCATION_SEED_OFFSET = 90214  # SHOP_SUBTYPE_SEED_OFFSET + 3
 
 
+class _CountedDecider:
+    """A per-leg subtype decider that counts its legs and its marginal fallbacks.
+
+    Wraps ``decide(mode, travel_time_s) -> (outcome, used_marginal)`` and is itself called
+    as ``(mode, travel_time_s) -> outcome``, the contract the leg loop and its test doubles
+    use. ``used_marginal`` is True when the leg's (mode, tt_band) cell has no estimate of its
+    own and the marginal stood in (CLAUDE.md fallback transparency, audit B1); the stage
+    logs ``n_marginal_fallback / n_legs``. Counting draws no random number.
+    """
+
+    def __init__(self, decide):
+        self._decide = decide
+        self.n_legs = 0
+        self.n_marginal_fallback = 0
+
+    def __call__(self, mode: str, travel_time_s: float) -> str:
+        outcome, used_marginal = self._decide(mode, travel_time_s)
+        self.n_legs += 1
+        if used_marginal:
+            self.n_marginal_fallback += 1
+        return outcome
+
+
 def _build_shop_subtype_decider(context, random_seed: int):
     """Build the per-leg shop daily/non-daily decider, or return None when OFF.
 
@@ -85,7 +108,7 @@ def _build_shop_subtype_decider(context, random_seed: int):
     )
     from braunschweig.popsim.stage.config_keys import KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY
     from braunschweig.popsim.trips import (
-        map_mode, mid_time_seconds, restrict_to_weekday_diary_legs)
+        map_mode, mid_travel_time_seconds, restrict_to_weekday_diary_legs)
 
     pinned_share = context.config("secondary_shop_daily_share")
     min_obs = int(context.config("secondary_distance_min_obs"))
@@ -116,11 +139,10 @@ def _build_shop_subtype_decider(context, random_seed: int):
         # arrival - departure in seconds (the same derivation the distance
         # distributions stage uses).
         mid_wege = map_mode(mid_wege)
-        dep = mid_time_seconds(mid_wege, "W_SZS", "W_SZM")
-        arr = mid_time_seconds(mid_wege, "W_AZS", "W_AZM")
-        tt = arr - dep
-        tt = tt.where(tt >= 0, tt + 24 * 3600)  # repair midnight crossing
-        mid_wege = mid_wege.assign(travel_time=tt)
+        # Coded clock times take their duration from wegmin_imp1, exactly as in the
+        # distance stage (audit B1); a leg left without one is dropped by the estimator.
+        mid_wege = mid_wege.assign(travel_time=mid_travel_time_seconds(
+            mid_wege, log_tag="[braunschweig.secondary_chainsolvers] shop subtype"))
 
         n_shop = int((mid_wege["W_ZWECK"] == 4).sum())
         labelled_mask = (
@@ -142,14 +164,16 @@ def _build_shop_subtype_decider(context, random_seed: int):
 
     rng = np.random.RandomState(int(random_seed) + SHOP_SUBTYPE_SEED_OFFSET)
 
-    def decide(mode: str, travel_time_s: float) -> str:
+    def decide(mode: str, travel_time_s: float):
         # impute_subtype is vectorised; call it on a 1-element batch so the
         # estimation/imputation logic is shared (no duplicated probability
         # lookup). The dedicated rng keeps this independent of the distance RNG.
         is_daily = impute_subtype([mode], [travel_time_s], prob, marginal, rng)[0]
-        return "shop_daily" if is_daily else "shop_non_daily"
+        # A pinned flat share is the intended table, not a fallback.
+        used_marginal = pinned_share is None and (mode, tt_band(travel_time_s)) not in prob
+        return ("shop_daily" if is_daily else "shop_non_daily"), used_marginal
 
-    return decide
+    return _CountedDecider(decide)
 
 
 # ---------------------------------------------------------------------------
@@ -230,7 +254,7 @@ def _build_leisure_subtype_decider(context, random_seed: int):
         KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
     )
     from braunschweig.popsim.trips import (
-        map_mode, mid_time_seconds, restrict_to_weekday_diary_legs)
+        map_mode, mid_travel_time_seconds, restrict_to_weekday_diary_legs)
 
     min_obs = int(context.config("secondary_distance_min_obs"))
     # Execute-context config() takes the key alone (declared in configure()
@@ -255,11 +279,10 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     # departure in seconds (the same derivation as the shop decider / the
     # distance distributions stage).
     mid_wege = map_mode(mid_wege)
-    dep = mid_time_seconds(mid_wege, "W_SZS", "W_SZM")
-    arr = mid_time_seconds(mid_wege, "W_AZS", "W_AZM")
-    tt = arr - dep
-    tt = tt.where(tt >= 0, tt + 24 * 3600)  # repair midnight crossing
-    mid_wege = mid_wege.assign(travel_time=tt)
+    # Coded clock times take their duration from wegmin_imp1, exactly as in the
+    # distance stage (audit B1); a leg left without one is dropped by the estimator.
+    mid_wege = mid_wege.assign(travel_time=mid_travel_time_seconds(
+        mid_wege, log_tag="[braunschweig.secondary_chainsolvers] leisure subtype"))
 
     spec = leisure_spec(codeplan_sentinels, unspecified_subtype)
     # Coverage guard BEFORE the estimation (issue #373 final review M-4, ruling R14), on the
@@ -283,11 +306,12 @@ def _build_leisure_subtype_decider(context, random_seed: int):
 
     rng = np.random.RandomState(int(random_seed) + LEISURE_SUBTYPE_SEED_OFFSET)
 
-    def decide(mode: str, travel_time_s: float) -> str:
-        probs = cell_probs.get((mode, tt_band(travel_time_s)), marginal)
-        return _inverse_cdf_choice(probs, group_names, rng.random_sample())
+    def decide(mode: str, travel_time_s: float):
+        cell = cell_probs.get((mode, tt_band(travel_time_s)))
+        probs = marginal if cell is None else cell
+        return _inverse_cdf_choice(probs, group_names, rng.random_sample()), cell is None
 
-    return decide
+    return _CountedDecider(decide)
 
 
 def _build_other_subtype_decider(context, random_seed: int):
@@ -378,7 +402,7 @@ def _build_other_subtype_decider(context, random_seed: int):
         KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
     )
     from braunschweig.popsim.trips import (
-        PURPOSE_BY_W_ZWECK, W_ZWECK_NO_ANSWER_CODE, map_mode, mid_time_seconds,
+        PURPOSE_BY_W_ZWECK, W_ZWECK_NO_ANSWER_CODE, map_mode, mid_travel_time_seconds,
         restrict_to_weekday_diary_legs)
 
     exclude_no_answer_purpose = bool(context.config(KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS))
@@ -399,11 +423,10 @@ def _build_other_subtype_decider(context, random_seed: int):
         mid_wege = restrict_to_weekday_diary_legs(
             mid_wege, log_tag="[braunschweig.secondary_chainsolvers] other subtype")
     mid_wege = map_mode(mid_wege)
-    dep = mid_time_seconds(mid_wege, "W_SZS", "W_SZM")
-    arr = mid_time_seconds(mid_wege, "W_AZS", "W_AZM")
-    tt = arr - dep
-    tt = tt.where(tt >= 0, tt + 24 * 3600)  # repair midnight crossing
-    mid_wege = mid_wege.assign(travel_time=tt)
+    # Coded clock times take their duration from wegmin_imp1, exactly as in the
+    # distance stage (audit B1); a leg left without one is dropped by the estimator.
+    mid_wege = mid_wege.assign(travel_time=mid_travel_time_seconds(
+        mid_wege, log_tag="[braunschweig.secondary_chainsolvers] other subtype"))
 
     # Stage 1: coarse errand/(escort/)rest split, labelled directly by the raw
     # W_ZWECK code (never thinned by a missing W_ZWD).
@@ -468,8 +491,11 @@ def _build_other_subtype_decider(context, random_seed: int):
     group_names = tuple(sorted(outcome_names))
     rng = np.random.RandomState(int(random_seed) + OTHER_SUBTYPE_SEED_OFFSET)
 
-    def decide(mode: str, travel_time_s: float) -> str:
+    def decide(mode: str, travel_time_s: float):
         band = tt_band(travel_time_s)
+        # A leg counts as a marginal fallback when EITHER composed stage lacks its cell.
+        used_marginal = ((mode, band) not in coarse_cell_probs
+                         or (mode, band) not in errand_cell_probs)
         coarse = coarse_cell_probs.get((mode, band), coarse_marginal)
         errand = errand_cell_probs.get((mode, band), errand_marginal)
         p_errand = coarse.get("errand", 0.0)
@@ -480,9 +506,9 @@ def _build_other_subtype_decider(context, random_seed: int):
         }
         if not escort_purpose_on:
             probs["other_escort"] = coarse.get("escort", 0.0)
-        return _inverse_cdf_choice(probs, group_names, rng.random_sample())
+        return _inverse_cdf_choice(probs, group_names, rng.random_sample()), used_marginal
 
-    return decide
+    return _CountedDecider(decide)
 
 
 def _build_escort_location_decider(context, random_seed: int):

@@ -3,7 +3,11 @@ imputed onto synthetic shop legs. CATI/CAWI detail is estimated on labelled legs
 (no synthetic leg is dropped); see reference-mid-detail-purposes."""
 from __future__ import annotations
 
+import logging
+
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 # MiD W_ZWD codes for shopping sub-purpose detail (Tabelle: Wegezweck-Detail)
 SHOP_DAILY_W_ZWD = {501}                         # Einkauf taeglich
@@ -15,14 +19,48 @@ SHOP_DETAIL_MISSING = {2202, 4402, 7704, 7705, 599, 999}
 # Travel-time band edges in seconds: [0, 300, 600, 1200, inf)
 TT_BANDS = [0.0, 300.0, 600.0, 1200.0, float("inf")]
 
+# Warn threshold for the share of labelled estimation legs left out because their duration
+# is unknown (coded clock time AND invalid wegmin_imp1, see
+# braunschweig.popsim.trips.mid_travel_time_seconds). Heuristic, not a measured value: the
+# same bound the distance stage applies to the same quantity (trips.CODED_TIME_DROP_WARN_RATE);
+# above it the duration source is more likely broken than the legs unrecoverable.
+UNKNOWN_DURATION_WARN_SHARE = 0.02
+
 
 def tt_band(travel_time: float) -> int:
     """Return the 0-based travel-time band index for a travel time in seconds.
 
     Bands: [0, 300) -> 0, [300, 600) -> 1, [600, 1200) -> 2, [1200, inf) -> 3.
-    Uses np.digitize on the interior edges TT_BANDS[1:-1].
+    Uses np.digitize on the interior edges TT_BANDS[1:-1]. A non-finite travel time raises:
+    np.digitize would sort NaN into the longest band and so count a leg of unknown duration
+    as a long one (audit B1).
     """
-    return int(np.digitize(float(travel_time), TT_BANDS[1:-1]))
+    value = float(travel_time)
+    if not np.isfinite(value):
+        raise ValueError(f"tt_band needs a finite travel time in seconds, got {travel_time!r}")
+    return int(np.digitize(value, TT_BANDS[1:-1]))
+
+
+def drop_legs_of_unknown_duration(labelled, *, label: str):
+    """Return the labelled estimation legs that have a finite ``travel_time``.
+
+    Legs without a duration cannot be banded; they are left out of the estimate instead of
+    being counted in one band. The kept/dropped counts are logged, a dropped share above
+    ``UNKNOWN_DURATION_WARN_SHARE`` is a warning, and an empty result raises: an estimate
+    from zero legs would silently become a 0/0 marginal.
+    """
+    finite = np.isfinite(labelled["travel_time"].astype(float).to_numpy())
+    n_total = len(labelled)
+    n_dropped = int((~finite).sum())
+    share = n_dropped / n_total if n_total else 0.0
+    log = logger.warning if share > UNKNOWN_DURATION_WARN_SHARE else logger.info
+    log("[%s] labelled legs with a known duration %d/%d; left out (unknown duration) %d (%.1f%%)",
+        label, n_total - n_dropped, n_total, n_dropped, 100.0 * share)
+    if n_dropped == n_total:
+        raise ValueError(
+            f"[{label}] none of the {n_total} labelled legs has a known travel time; "
+            "cannot estimate probabilities from zero legs.")
+    return labelled[finite]
 
 
 def estimate_daily_probability(mid_wege, *, min_obs: int = 30) -> dict:
@@ -52,6 +90,7 @@ def estimate_daily_probability(mid_wege, *, min_obs: int = 30) -> dict:
     # Keep only legs with a labelled W_ZWD; sentinels are excluded here.
     labelled = df[df["W_ZWD"].isin(SHOP_DAILY_W_ZWD | SHOP_NONDAILY_W_ZWD)].copy()
 
+    labelled = drop_legs_of_unknown_duration(labelled, label="shop_subtype").copy()
     labelled["is_daily"] = labelled["W_ZWD"].isin(SHOP_DAILY_W_ZWD)
     labelled["band"] = labelled["travel_time"].map(tt_band)
 

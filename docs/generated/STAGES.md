@@ -83,16 +83,15 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [data.census.filtered](../registry/stages/data.census.filtered.yml) | population | overridden | x | A/A/A | popsim_mid: `braunschweig.popsim.stage`<br>popsim_open: `braunschweig.popsim.stage`<br>simple_ipf_open: `braunschweig.ipf.attributed` | age_aware_composition, diary_plan_match, employment_grid_control, escort_passive_from_adult, home_closure_model, housing_tenure, income_spatial_tilt, ipf_synthesis_legacy, kreis_income_control, mid_passenger_availability, ownership_grid_1km, participation_universe_controls, placement_income_l2, popsim_method, purpose_main_fold_code_10, sex_aware_couples, srv_participation_controls, tier3_kreis_controls |
 | [data.gtfs.cleaned](../registry/stages/data.gtfs.cleaned.yml) | matsim | configured | x | A/A/A | -- | -- |
 | [data.hts.commute_distance](../registry/stages/data.hts.commute_distance.yml) | behavior | inherited | -- | -/-/A | -- | -- |
-| [data.hts.entd.cleaned](../registry/stages/data.hts.entd.cleaned.yml) | behavior | configured | x | A/A/A | -- | -- |
+| [data.hts.entd.cleaned](../registry/stages/data.hts.entd.cleaned.yml) | behavior | configured | -- | -/A/A | -- | -- |
 | [data.hts.entd.filtered](../registry/stages/data.hts.entd.filtered.yml) | behavior | inherited | -- | -/A/A | -- | -- |
-| [data.hts.entd.raw](../registry/stages/data.hts.entd.raw.yml) | behavior | configured | x | A/A/A | -- | -- |
+| [data.hts.entd.raw](../registry/stages/data.hts.entd.raw.yml) | behavior | configured | -- | -/A/A | -- | -- |
 | [data.hts.entd.reweighted](../registry/stages/data.hts.entd.reweighted.yml) | behavior | inherited | -- | -/A/A | -- | -- |
 | [data.hts.selected](../registry/stages/data.hts.selected.yml) | behavior | inherited | -- | -/A/A | -- | -- |
 | [data.od.weighted](../registry/stages/data.od.weighted.yml) | work | overridden | x | A/A/A | popsim_mid: `braunschweig.gravity.model`<br>popsim_open: `braunschweig.gravity.model`<br>simple_ipf_open: `braunschweig.gravity.model` | gravity_od, gravity_slope_by_rs7, per_band_commute_friction, sector_aware_attraction_tilt, svb_wohn_work_production_mass, taz_work_location_choice, verbindungen_anchor |
 | [data.osm.cleaned](../registry/stages/data.osm.cleaned.yml) | spatial | configured | x | A/A/A | -- | -- |
 | [data.osm.osmosis](../registry/stages/data.osm.osmosis.yml) | spatial | inherited | x | A/A/A | -- | -- |
-| [data.spatial.codes](../registry/stages/data.spatial.codes.yml) | spatial | overridden | x | A/A/A | popsim_mid: `eqasim_common.spatial.entd_codes`<br>popsim_open: `eqasim_common.spatial.entd_codes`<br>simple_ipf_open: `eqasim_common.spatial.entd_codes` | -- |
-| [data.spatial.departments](../registry/stages/data.spatial.departments.yml) | spatial | configured | x | A/A/A | -- | -- |
+| [data.spatial.codes](../registry/stages/data.spatial.codes.yml) | spatial | overridden | -- | -/A/A | popsim_mid: `eqasim_common.spatial.entd_codes`<br>popsim_open: `eqasim_common.spatial.entd_codes`<br>simple_ipf_open: `eqasim_common.spatial.entd_codes` | -- |
 | [data.spatial.iris](../registry/stages/data.spatial.iris.yml) | spatial | overridden | x | A/A/A | popsim_mid: `eqasim_common.data.spatial.iris`<br>popsim_open: `eqasim_common.data.spatial.iris`<br>simple_ipf_open: `eqasim_common.data.spatial.iris` | -- |
 | [data.spatial.municipalities](../registry/stages/data.spatial.municipalities.yml) | spatial | configured | x | A/A/A | -- | -- |
 | [documentation.meta_output](../registry/stages/documentation.meta_output.yml) | infrastructure | inherited | x | A/A/A | -- | -- |

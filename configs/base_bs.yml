@@ -95,10 +95,10 @@ config:
   # Location-type draw weights derived from SrV 2023 BS+RGB V_ZWECK_BHOL
   # (scripts/derive_escort_location_weights.py ->
   # eqasim-data/data/braunschweig/srv/srv2023_escort_destination_types.csv;
-  # GEWICHT_W-weighted, 98.8% coverage). Defaults False in code -> byte-identical OFF.
+  # GEWICHT_W_ZENSUS-weighted per ADR-0055). Defaults False in code -> byte-identical OFF.
   escort_purpose: true
   escort_locations_activities: [edu_kindergarten, edu_school, edu_university, other, leisure, residential, shop]
-  escort_locations_weights: [0.433, 0.199, 0.004, 0.141, 0.113, 0.105, 0.005]
+  escort_locations_weights: [0.4305, 0.2032, 0.003, 0.145, 0.1105, 0.1023, 0.0055]
   # Phase 2: anchor escort activities at the education location of the youngest
   # child (<= max age) in the same household; unlinked escorters use the draw.
   escort_household_link: true
@@ -444,7 +444,7 @@ config:
     - braunschweig.data.freight.german_wide
     - braunschweig.freight.extraction
     - braunschweig.freight.trips
-    # Tier A: 32 verified sampling- AND path-independent stages (identical hash at
+    # Tier A: 25 verified sampling- AND path-independent stages (identical hash at
     # 1% and 25%). Shared from the store instead of recomputed every run.
     - braunschweig.data.buildings
     - braunschweig.data.census.employees
@@ -452,19 +452,13 @@ config:
     - braunschweig.data.cordon_network
     - braunschweig.data.cordon_pt_gates
     - braunschweig.data.locations
-    - braunschweig.data.mid.zones
     - braunschweig.data.schools.kita_facilities
     - braunschweig.data.schools.university_facilities
     - braunschweig.locations.secondary
     - braunschweig.locations.work
     - braunschweig.synthesis.cordon_gates
     - data.gtfs.cleaned
-    - data.hts.entd.cleaned
-    - data.hts.entd.filtered
-    - data.hts.entd.reweighted
-    - data.hts.selected
     - data.osm.cleaned
-    - data.spatial.departments
     - data.spatial.municipalities
     - eqasim_common.data.osm.chunked
     - eqasim_common.data.osm.locations
@@ -472,7 +466,6 @@ config:
     - eqasim_common.gravity.distance_matrix
     - eqasim_common.locations.education
     - eqasim_common.spatial.codes
-    - eqasim_common.spatial.entd_codes
     # alias TARGET (cache entries are named by the executed module, not the alias source)
     - braunschweig.matsim.scenario.supply_gtfs
     - matsim.scenario.supply.osm

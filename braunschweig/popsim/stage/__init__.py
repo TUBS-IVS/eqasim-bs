@@ -561,7 +561,6 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.population.schema",
     "braunschweig.population.socioprofessional_class",
     "braunschweig.synthesis.population.enriched.economic_status",
-    "data.hts.egt.cleaned",
     "data.hts.entd.cleaned",
     "data.hts.hts",
     "synthesis.population.matched",
@@ -661,11 +660,11 @@ def validate(context):
 
     Neither mechanism therefore reaches those modules, and without their entries an
     edit confined to one of them leaves this stage's cached output silently stale.
-    Five modules qualify today: ``braunschweig.data.census.household_size``, imported
-    here, and four reached through helpers -- ``braunschweig.data.census.household_income``
+    Four modules qualify today: ``braunschweig.data.census.household_size``, imported
+    here, and three reached through helpers -- ``braunschweig.data.census.household_income``
     (the income-class map of the enriched economic-status helper the ENTD adapters use),
-    ``synthesis.population.matched`` (``match_donors``) and the two HTS cleaners it
-    imports, ``data.hts.egt.cleaned`` and ``data.hts.entd.cleaned``.
+    ``synthesis.population.matched`` (``match_donors``) and the HTS cleaner it
+    imports, ``data.hts.entd.cleaned``.
 
     DELIBERATELY NOT COVERED:
 

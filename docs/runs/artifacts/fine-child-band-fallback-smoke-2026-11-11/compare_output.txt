@@ -1,0 +1,10 @@
+donor persons: 485709
+plan source changed: 0 (0.000 %)
+  age 6-13: 0 of 36791
+  other ages: 0 of 448918
+base: 6-13-year-olds with a foreign plan source 22622, of which across the 6-9 / 10-13 edge 1583
+fix: 6-13-year-olds with a foreign plan source 22622, of which across the 6-9 / 10-13 edge 1583
+weekend report base: WeekendMatchReport(n_weekend_households=62572, n_hh_matched=62572, n_person_fallback_households=0, n_persons_remapped=138777, hh_match_level_counts={0: 62239, 1: 295, 2: 32, 3: 6}, n_swept=0)
+weekend report fix:  WeekendMatchReport(n_weekend_households=62572, n_hh_matched=62572, n_person_fallback_households=0, n_persons_remapped=138777, hh_match_level_counts={0: 62239, 1: 295, 2: 32, 3: 6}, n_swept=0)
+diary report base: DiaryMatchReport(n_persons=485709, n_remapped=74884, counts_by_reason={'realisable': 407545, 'nodiary_mobile': 40582, 'holiday': 22964, 'only_rbw': 7022, 'nodiary_unknown': 4042, 'nodiary_immobile_keep': 3280, 'emptied_by_arrive_home_drop': 274}, match_level_counts={0: 74879, 1: 2, 2: 2, 3: 1}, share_remapped=0.15417461895908868, n_crossed_employment_boundary=0, n_remapped_in_split_child_band=4685, n_crossed_fine_child_age_band=0, n_crossed_passenger_class=432)
+diary report fix:  DiaryMatchReport(n_persons=485709, n_remapped=74884, counts_by_reason={'realisable': 407545, 'nodiary_mobile': 40582, 'holiday': 22964, 'only_rbw': 7022, 'nodiary_unknown': 4042, 'nodiary_immobile_keep': 3280, 'emptied_by_arrive_home_drop': 274}, match_level_counts={0: 74879, 1: 2, 2: 2, 3: 1}, share_remapped=0.15417461895908868, n_crossed_employment_boundary=0, n_remapped_in_split_child_band=4685, n_crossed_fine_child_age_band=0, n_crossed_passenger_class=432)

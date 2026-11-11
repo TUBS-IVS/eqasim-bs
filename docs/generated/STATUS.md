@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 112 | stages: 134 | datasets: 106 | ADRs: 185 | run manifests: 93
+- Features: 112 | stages: 133 | datasets: 106 | ADRs: 185 | run manifests: 94
 
 ## Population synthesis
 
@@ -56,7 +56,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Travel / activity behavior
 
-17 stage(s), 10 in the production DAG. Datasets: `entd_2008`, `mid2023_b1`, `mid2023_home_office_day_donors`, `mid2023_reference_tables`, `mid2023_workday_location`, `srv2023_absence_by_age_band`, `srv2023_absence_household_by_size`, `srv2023_departure_time_reference`
+17 stage(s), 8 in the production DAG. Datasets: `entd_2008`, `mid2023_b1`, `mid2023_home_office_day_donors`, `mid2023_reference_tables`, `mid2023_workday_location`, `srv2023_absence_by_age_band`, `srv2023_absence_household_by_size`, `srv2023_departure_time_reference`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -225,4 +225,4 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Spatial base data
 
-15 stage(s), 14 in the production DAG. Datasets: `alkis_buildings`, `atkis_landuse`, `osm_niedersachsen`, `regiostar`, `verbindungen`, `vg250_ew`
+14 stage(s), 12 in the production DAG. Datasets: `alkis_buildings`, `atkis_landuse`, `osm_niedersachsen`, `regiostar`, `verbindungen`, `vg250_ew`

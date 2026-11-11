@@ -19,7 +19,7 @@ Methodological note (2026-04-26)
 The BA Pendleratlas dataset by definition contains **only cross-Kreis
 commuters** ("Pendler" = Beschäftigte deren Wohn-Kreis ≠ Arbeits-Kreis).
 0 % of the 48 340 OD-pairs are intra-Kreis — see
-``scripts/check_pendler_intra.py``. As a consequence:
+the one-off check script ``check_pendler_intra.py`` (removed; see git history). As a consequence:
 
   - The flow-weighted mean distance implied by the BA-Atlas fit
     (~46 km on ZGB-8 at β = −0.065) is a **conditional** cross-Kreis

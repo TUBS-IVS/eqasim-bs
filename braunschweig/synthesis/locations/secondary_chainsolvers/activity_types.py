@@ -65,10 +65,12 @@ DEFAULT_ESCORT_LOCATIONS_ACTIVITIES = [
     "edu_kindergarten", "edu_school", "edu_university",
     "other", "leisure", "residential", "shop",
 ]
-DEFAULT_ESCORT_LOCATIONS_WEIGHTS = [0.433, 0.199, 0.004, 0.141, 0.113, 0.105, 0.005]
+# weight_share column rounded to 4 decimals by largest remainder, so the defaults sum to
+# exactly 1 (tests/test_escort_chainsolvers.py pins them against the CSV).
+DEFAULT_ESCORT_LOCATIONS_WEIGHTS = [0.4305, 0.2032, 0.003, 0.145, 0.1105, 0.1023, 0.0055]
 # SrV-derived escort distance factors per destination type (A3; issue #201
 # follow-up). Values are the factor_applied column of
 # srv2023_escort_distance_factors.csv (weighted-median ratio to the overall
 # escort median; thin categories neutralized to 1.0) -- regenerate via
 # scripts/derive_escort_location_weights.py, never edit here.
-DEFAULT_ESCORT_DISTANCE_FACTORS = [0.618, 0.8339, 1.0, 1.7361, 1.3607, 1.8035, 1.0]
+DEFAULT_ESCORT_DISTANCE_FACTORS = [0.6531, 0.8358, 1.0, 1.7092, 1.4608, 1.9394, 1.0]

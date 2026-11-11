@@ -4,15 +4,12 @@ import itertools
 
 """
 This stage has the census data as input and samples households according to the
-household weights given by INSEE. The resulting sample size can be controlled
+household weights of the census source stage. The resulting sample size can be controlled
 through the 'sampling_rate' configuration option.
 """
 
 def configure(context):
-    if context.config("projection_year", None) is None:
-        context.stage("data.census.filtered", alias = "source")
-    else:
-        context.stage("synthesis.population.projection.reweighted", alias = "source")
+    context.stage("data.census.filtered", alias = "source")
 
     context.config("random_seed")
     context.config("sampling_rate")
