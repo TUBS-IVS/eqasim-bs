@@ -95,7 +95,8 @@ class _FakeContext:
 _COUNT_ENTRIES = ("number_of_cars", "number_of_bicycles", "has_ebike")
 
 
-def _seed_and_assembled_clones(donors, mid_persons_extra=None, entries=_COUNT_ENTRIES):
+def _seed_and_assembled_clones(donors, mid_persons_extra=None, entries=_COUNT_ENTRIES,
+                               persons_frame=None):
     """Run the stage's seed build, then assemble two clones per donor from ITS donor tables.
 
     Uses only entry points that exist on origin/main (``_build_populationsim_seed``,
@@ -108,6 +109,8 @@ def _seed_and_assembled_clones(donors, mid_persons_extra=None, entries=_COUNT_EN
         "H_ID": ids, "P_ID": [1] * len(ids), "HP_ALTER": 40, "HP_SEX": 1, "P_TAET": 1,
         "P_FSCHEIN": 1, "P_FKARTE": 3, "P_BKAT": 1,
     })
+    if persons_frame is not None:
+        mid_persons = persons_frame  # completed-donor shape (multi-person, fillers)
     if mid_persons_extra is not None:
         mid_persons = mid_persons_extra(mid_persons)
     seed_persons_in = pd.DataFrame({
@@ -115,6 +118,8 @@ def _seed_and_assembled_clones(donors, mid_persons_extra=None, entries=_COUNT_EN
         cols.person_weight: 1.0, cols.age: 40, cols.sex: 1,
         "anzwege1": 2, "alter_gr1": 5,
         **{c: mid_persons[c] for c in ("P_TAET", "P_FSCHEIN", "P_FKARTE", "P_BKAT")},
+        **{c: mid_persons[c] for c in ("member_imputed", "source_H_ID", "source_P_ID")
+           if c in mid_persons.columns},
     })
     donor = SimpleNamespace(
         households=donors, persons=seed_persons_in,
@@ -186,7 +191,11 @@ def test_legacy_donor_table_carries_seed_resolved_counts(caplog):
         assert (got == seed_by_id.loc[got.index, column]).all(), column
         assert out[column].notna().all()  # the 5 donors outside the seed got the fallback
     assert not ((out["has_ebike"] == 1) & (out["number_of_bicycles"] == 0)).any()
-    assert "fallback" in " ".join(r.getMessage() for r in caplog.records)
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "fallback" in text
+    # Per-column seed-vs-fallback rate (item: explicit rate for every count column).
+    for column in attributes.HOUSEHOLD_COUNT_COLUMNS:
+        assert f"household count {column}: from the seed" in text, column
 
 
 def _donor_persons_with_imputed_codes(mid_persons):
@@ -233,3 +242,131 @@ def test_valid_person_codes_are_unchanged_by_the_single_resolution():
     valid_f = clones["P_FKARTE"].isin(list(attributes.FKARTE_TO_CATEGORY))
     expected_f = clones.loc[valid_f, "P_FKARTE"].map(attributes.FKARTE_TO_CATEGORY)
     assert (clones.loc[valid_f, "pt_subscription_type"].astype(str) == expected_f).all()
+
+
+def _multi_person_completed_donors():
+    """Completed-donor shape: multi-person households and one member-completion filler.
+
+    h0: persons 1, 2, 3 (3 is a filler mirroring person 2 of h1, member_imputed=True with
+    source_H_ID / source_P_ID, as the member-completion step produces it); h1: persons 1, 2;
+    h2: persons 1, 2. Different imputed codes per person: P_BKAT 9 and P_FKARTE 99 / 206 sit
+    on different persons of the SAME household, valid codes on the others.
+    """
+    hh = _donor_households(6).iloc[:3].copy()
+    rows = [
+        # H_ID, P_ID, P_BKAT, P_FKARTE, member_imputed, source_H_ID, source_P_ID
+        ("h0", 1, 9, 3, False, "h0", 1),
+        ("h0", 2, 1, 99, False, "h0", 2),
+        ("h0", 3, 9, 206, True, "h1", 2),
+        ("h1", 1, 2, 5, False, "h1", 1),
+        ("h1", 2, 9, 99, False, "h1", 2),
+        ("h2", 1, 9, 206, False, "h2", 1),
+        ("h2", 2, 3, 8, False, "h2", 2),
+    ]
+    persons = pd.DataFrame(rows, columns=[
+        "H_ID", "P_ID", "P_BKAT", "P_FKARTE", "member_imputed", "source_H_ID", "source_P_ID"])
+    persons["HP_ALTER"] = 40
+    persons["HP_SEX"] = 1
+    persons["P_TAET"] = 1
+    persons["P_FSCHEIN"] = 1
+    return hh, persons
+
+
+def _expand_clones_from_persons(donors, mid_persons):
+    """Seed build plus the same expansion/assembly as _seed_and_assembled_clones."""
+    return _seed_and_assembled_clones(
+        donors, entries=("employment_status", "pt_ticket_group"), persons_frame=mid_persons)
+
+
+def test_multi_person_households_clones_carry_their_own_donor_person_values():
+    """Key is (H_ID, P_ID): each clone carries ITS donor person's resolved values, fillers too.
+
+    Guards the H_ID-only lookup: with several persons per household (and a filler with its
+    own P_ID) a lookup by H_ID alone would hand every member the first member's value.
+    """
+    donors, mid_persons = _multi_person_completed_donors()
+    _hh, seed_p, clones = _expand_clones_from_persons(donors, mid_persons)
+    cols = sources.get_source("mid").seed_columns()
+    seed_keyed = seed_p.set_index([cols.person_household_id, cols.person_id])
+    assert len(clones) == 2 * len(mid_persons)
+    keys = list(zip(clones["H_ID"], clones["P_ID"]))
+    for column in ("employment_status", "pt_ticket_group"):
+        expected = seed_keyed.loc[keys, column].to_numpy()
+        got = (attributes.map_pt_ticket_group(clones)["pt_ticket_group"]
+               if column == "pt_ticket_group" else clones[column]).to_numpy()
+        assert (got == expected).all(), column
+    # The filler is a real, separate person row with its own imputed codes.
+    filler = clones[(clones["H_ID"] == "h0") & (clones["P_ID"] == 3)]
+    assert len(filler) == 2 and filler["member_imputed"].all()
+    # Positive control: the fixture discriminates. A lookup by H_ID only (first person of
+    # the household) would give at least one clone a value that is NOT its own person's.
+    by_hid_only = seed_p.drop_duplicates(cols.person_household_id).set_index(
+        cols.person_household_id)
+    wrong = by_hid_only.loc[clones["H_ID"], "employment_status"].to_numpy()
+    own = seed_keyed.loc[keys, "employment_status"].to_numpy()
+    assert (wrong != own).any(), "fixture too weak: H_ID-only lookup would also pass"
+    wrong_f = by_hid_only.loc[clones["H_ID"], "pt_ticket_group"].to_numpy()
+    own_f = seed_keyed.loc[keys, "pt_ticket_group"].to_numpy()
+    assert (wrong_f != own_f).any() or (wrong != own).any()
+
+
+def test_legacy_complete_members_false_logs_warning_and_still_resolves_persons(caplog):
+    """Legacy path: persons are NOT resolved once; the fallback is observable, not silent."""
+    donors, mid_persons = _multi_person_completed_donors()
+    cols = sources.get_source("mid").seed_columns()
+    persons = mid_persons.rename(columns={"H_ID": cols.person_household_id,
+                                          "P_ID": cols.person_id})
+    persons["anzwege1"] = 2
+    persons["alter_gr1"] = 5
+    persons[cols.person_weight] = 1.0
+    persons[cols.age] = 40
+    persons[cols.sex] = 1
+
+    class _Source:
+        def load_donor(self, _mid_dir):
+            return donors.copy(), persons, None
+
+    don_hh, don_p = popsim_stage._load_donor_tables(
+        None, _Source(), "mid", None, False, None, None,
+        seed_households=None, seed_id_col=cols.household_id,
+        fallback_rng=np.random.RandomState(3),
+    )
+    assert not any(c in don_p.columns for c in attributes.PERSON_RESOLVED_COLUMNS)
+    merged = pd.DataFrame({
+        "ZENSUS100m": ["A"] * 3, "ZENSUS1km": ["KA"] * 3, "H_ID": ["h0", "h1", "h2"],
+        "RegionalSchlussel_ARS": ["031010000000"] * 3,
+    })
+    merged = expand.assign_synthetic_household_ids(merged)
+    clones = expand.expand_to_persons(merged, don_p, donor_col="H_ID")
+    clones = expand.map_demographics(clones, rng=np.random.RandomState(3))
+    clones = assembly.derive_zone_ids(clones)
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.assembly"):
+        out, _map = assembly.map_mid_person_attributes(
+            clones, don_hh, rng=np.random.RandomState(3))
+    warnings = [r for r in caplog.records
+                if r.levelno == logging.WARNING and "resolving them per clone" in r.getMessage()]
+    assert len(warnings) == 1
+    assert out["employment_status"].isin(attributes.EMPLOYMENT_STATUS_CATEGORIES).all()
+    assert out["pt_subscription_type"].astype(str).isin(attributes.PT_TICKET_CATEGORIES).all()
+    assert len(out) == len(clones)
+
+
+def test_bicycle_donor_pool_excludes_inconsistent_rows_and_counts_them(caplog):
+    """A valid row with more pedelecs than bicycles must not be a donor (no e-bike w/o bike)."""
+    cols = sources.get_source("mid").seed_columns()
+    hh = pd.DataFrame({
+        cols.household_id: ["inconsistent", "known_p", "ok"],
+        "RegioStaR7": 73, "hhgr_gr": 1,
+        # inconsistent: 0 bicycles incl. pedelecs but 1 pedelec; known_p: pedelecs known (1),
+        # bicycles missing; ok: consistent donor with 2 bicycles, 1 pedelec.
+        "anzpedrad": [0, 99, 2], "H_ANZPED": [1, 1, 1],
+    })
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.attributes"):
+        for seed in range(20):
+            out = attributes.map_household_bicycles_and_ebike(
+                hh, rng=np.random.RandomState(seed)).set_index(cols.household_id)
+            assert out.loc["known_p", "number_of_bicycles"] == 2, seed  # only the ok donor
+            assert not ((out["has_ebike"] == 1) & (out["number_of_bicycles"] == 0))[
+                out.index != "inconsistent"].any()
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "excluded from the donor pools): 1" in text

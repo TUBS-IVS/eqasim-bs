@@ -198,6 +198,11 @@ PT_TICKET_GROUPS4: tuple[str, ...] = (
 # interview-mode / proxy coverage codes (202/206) are imputed, not forced here.
 PT_TICKET_NEVER = "never_pt"
 
+# P_FKARTE codes imputed from the valid pool in addition to the generic nonresponse codes
+# (202 PAPI interview mode, 206 adult proxy); single owner for map_pt_subscription_type and
+# scripts/count_mid_person_nonresponse.py.
+PT_SUBSCRIPTION_IMPUTE_CODES = (202, 206)
+
 
 def imputation_group_cols(
     frame: pd.DataFrame, base_col: str, *, rs7_conditioning: bool = True,
@@ -676,7 +681,7 @@ def map_pt_subscription_type(
         source_col=fkarte_col,
         value_map=FKARTE_TO_CATEGORY,
         structural={402: PT_TICKET_NEVER},   # Kind unter 14: deterministic under-14 floor
-        impute_codes=(202, 206),             # interview-mode / adult proxy coverage: impute
+        impute_codes=PT_SUBSCRIPTION_IMPUTE_CODES,             # interview-mode / adult proxy coverage: impute
         group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
         default=PT_TICKET_NEVER,
     )
@@ -904,7 +909,8 @@ def map_household_bicycles_and_ebike(
     known value, (2) global pool with the same known value (counted as group fallback),
     (3) no such donor at all: the missing component is derived from the known one
     (e-bike count 0 / bicycles = pedelecs); counted as default. Valid rows pass through
-    unchanged; valid rows with more pedelecs than bicycles are logged as inconsistent.
+    unchanged; valid rows with more pedelecs than bicycles are logged as inconsistent and excluded from
+    the donor pools, so a drawn donor never yields an e-bike without a bicycle.
 
     ``rng`` is REQUIRED (seeded; no hidden ``RandomState(0)`` default). Raises KeyError if
     a source column is absent and ValueError on a code that is neither 0..10 nor a
@@ -936,7 +942,11 @@ def map_household_bicycles_and_ebike(
     pool_all, pool_by_b, pool_by_p = {}, {}, {}
     glob_all, glob_by_b, glob_by_p = [], {}, {}
     both_ok = b_ok & p_ok
-    for i in np.flatnonzero(both_ok):
+    # Donor pools only take CONSISTENT rows (pedelecs <= bicycles incl. pedelecs): a donor
+    # with more pedelecs than bicycles would let a conditional draw yield has_ebike == 1
+    # with number_of_bicycles == 0. Excluded rows are counted and logged below.
+    consistent = both_ok & (p_arr.astype(float) <= b_arr.astype(float)) if n else both_ok
+    for i in np.flatnonzero(consistent):
         b, p, k = int(b_arr[i]), int(p_arr[i]), keys[i]
         pair = (b, p)
         pool_all.setdefault(k, []).append(pair)
@@ -945,8 +955,7 @@ def map_household_bicycles_and_ebike(
         glob_all.append(pair)
         glob_by_b.setdefault(b, []).append(pair)
         glob_by_p.setdefault(p, []).append(pair)
-    n_inconsistent = sum(
-        1 for i in np.flatnonzero(both_ok) if int(p_arr[i]) > int(b_arr[i]))
+    n_inconsistent = int((both_ok & ~consistent).sum())
 
     out_b = np.zeros(n, dtype=int)
     out_p = np.zeros(n, dtype=int)
@@ -996,7 +1005,7 @@ def map_household_bicycles_and_ebike(
         "[braunschweig.popsim.attributes] bicycles+e-bike joint resolution: primary %d/%d "
         "(%.1f%%), imputed %d (%.1f%%; bicycles only %d, e-bike only %d, both %d); of the "
         "imputed, fallback to the global pool %d (%.1f%%), no donor at all (derived default) "
-        "%d (%.1f%%); valid rows with more pedelecs than bicycles: %d",
+        "%d (%.1f%%); valid rows with more pedelecs than bicycles (excluded from the donor pools): %d",
         n_primary, n, pct(n_primary, n), n_imputed, pct(n_imputed, n),
         n_b_imputed, n_p_imputed, n_both, n_group_fb, pct(n_group_fb, n_imputed),
         n_default, pct(n_default, n_imputed), n_inconsistent,
@@ -1004,7 +1013,8 @@ def map_household_bicycles_and_ebike(
     if n_inconsistent:
         logger.warning(
             "[braunschweig.popsim.attributes] %d valid households report more pedelecs than "
-            "bicycles; passed through unchanged.", n_inconsistent)
+            "bicycles; passed through unchanged but excluded from the imputation donor pools.",
+            n_inconsistent)
     return out
 
 
@@ -1036,7 +1046,7 @@ def resolve_person_attributes(
 
     Called by the popsim stage on the completed donor persons with the run's seeded rng.
     The seed derivations and ``assembly.map_mid_person_attributes`` reuse these columns
-    verbatim, so a clone carries the value its donor person was balanced on (ADR-0191).
+    verbatim, so a clone carries the value its donor person was balanced on (ADR-0192).
     ``has_pt_subscription`` is derived from the resolved type. Imputed codes (P_BKAT 9,
     P_FKARTE 99 / 202 / 206) are drawn conditioned on the donor's survey RegioStaR7.
     """
@@ -1075,8 +1085,10 @@ def carry_seed_household_counts(
     seed_idx = seed_unique.set_index(seed_unique[id_col].astype(str))
     in_seed = key.isin(seed_idx.index)
     gaps = len(carried) < len(HOUSEHOLD_COUNT_COLUMNS)
+    n_from_seed = {c: 0 for c in HOUSEHOLD_COUNT_COLUMNS}
     for col in carried:
         out[col] = key.map(seed_idx[col])
+        n_from_seed[col] = int(out[col].notna().sum())
         gaps = gaps or bool(out[col].isna().any())
     n = len(out)
     n_hit = int(in_seed.sum())
@@ -1092,6 +1104,12 @@ def carry_seed_household_counts(
         "[popsim.donor] household counts carried from the seed for %d/%d donors (%.1f%%), "
         "fallback (resolved with the assembly rng) for %d (%.1f%%); columns from the seed: %s.",
         n_hit, n, 100.0 * n_hit / max(n, 1), n - n_hit, 100.0 * (n - n_hit) / max(n, 1), carried)
+    for col in HOUSEHOLD_COUNT_COLUMNS:
+        logger.info(
+            "[popsim.donor] household count %s: from the seed %d/%d (%.1f%%), fallback %d (%.1f%%)"
+            "%s.", col, n_from_seed[col], n, 100.0 * n_from_seed[col] / max(n, 1),
+            n - n_from_seed[col], 100.0 * (n - n_from_seed[col]) / max(n, 1),
+            "" if col in carried else " (column absent from the seed: 100% fallback)")
     return out
 
 

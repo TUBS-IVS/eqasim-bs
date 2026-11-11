@@ -485,7 +485,7 @@ def _derive_employment_status_seed_column(
     assembly.build_persons, so seed and expanded values agree deterministically for
     the persons with a valid (non-9) P_BKAT. When the popsim stage already resolved
     the column once on the completed donor persons (``attributes.resolve_person_attributes``,
-    ADR-0191) it is used verbatim, so the code-9 imputed persons carry the same value on
+    ADR-0192) it is used verbatim, so the code-9 imputed persons carry the same value on
     every assembled clone; only direct callers and ``load_mid_seed`` derive it here.
 
     In ``project_completed_seed``: derive employment_status from the completed
@@ -503,7 +503,7 @@ def _derive_employment_status_seed_column(
         if "employment_status" in persons.columns:
             logging.getLogger(__name__).info(
                 "[popsim.mid.seed] employment_status taken from the donor persons "
-                "(resolved once, shared with the expansion, ADR-0191); not re-imputed.")
+                "(resolved once, shared with the expansion, ADR-0192); not re-imputed.")
         else:
             persons = attributes.map_employment_status(persons, rng=kreis_seed_rng)
     return persons
@@ -537,7 +537,7 @@ def _derive_pt_ticket_group_seed_column(
     ``project_completed_seed``. Seed and expanded population agree deterministically for
     every person with a valid P_FKARTE code. A ``pt_subscription_type`` the popsim stage
     already resolved once on the completed donor persons
-    (``attributes.resolve_person_attributes``, ADR-0191) is used verbatim, so the imputed
+    (``attributes.resolve_person_attributes``, ADR-0192) is used verbatim, so the imputed
     persons carry the same category on every assembled clone; only direct callers and
     ``load_mid_seed`` resolve it here.
 
@@ -548,7 +548,7 @@ def _derive_pt_ticket_group_seed_column(
         if "pt_subscription_type" in persons.columns:
             logging.getLogger(__name__).info(
                 "[popsim.mid.seed] pt_subscription_type taken from the donor persons "
-                "(resolved once, shared with the expansion, ADR-0191); not re-imputed.")
+                "(resolved once, shared with the expansion, ADR-0192); not re-imputed.")
         else:
             persons = attributes.map_pt_subscription_type(persons, rng=kreis_seed_rng)
         persons = attributes.map_pt_ticket_group(persons)

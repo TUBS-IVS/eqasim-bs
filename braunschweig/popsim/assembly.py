@@ -306,7 +306,7 @@ def map_mid_person_attributes(
     # employed flag -- NOT a popsim control, additive for analysis/validation
     # (see attributes.map_employment_status docstring).
     # Resolved ONCE per donor person by the popsim stage (attributes.resolve_person_attributes,
-    # ADR-0191) and copied onto the clones by expand_to_persons; reused verbatim here so a
+    # ADR-0192) and copied onto the clones by expand_to_persons; reused verbatim here so a
     # clone carries the value its donor person was balanced on. Absent columns (direct
     # callers) are resolved per clone with THIS call's rng, logged as a WARNING.
     resolved = [c for c in attributes.PERSON_RESOLVED_COLUMNS if c in persons.columns]

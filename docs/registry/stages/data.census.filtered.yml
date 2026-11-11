@@ -63,7 +63,10 @@ decisions:
 - ADR-0112
 - ADR-0126
 - ADR-0137
+- ADR-0192
 notes: >-
+  DONOR RESOLUTION ONCE (ADR-0192): donor household counts and donor person attributes with
+  imputed codes are resolved once, before the seed, and inherited by the clones.
   RESOURCE-ADAPTIVE CONFIGURATION (ADR-0126, feature record resource_adaptive_config):
   the popsim_mid/popsim_open producer (braunschweig.popsim.stage) now clamps
   braunschweig.population.popsim.num_workers against the MACHINE's memory budget at
