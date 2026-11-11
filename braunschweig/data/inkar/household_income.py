@@ -9,8 +9,8 @@ The national mean is the mean of the Kreis values weighted with the DESTATIS
 12411-0018 Kreis population (ADR-0191): the indicator is income per inhabitant,
 so the weighted mean is the national value, which the INKAR export itself does
 not carry (it has Kreis rows only). ASSUMPTION: the population is the 31.12.2024
-DESTATIS stock while the income year is the INKAR year read here (2021 in the
-Ausgabe 2024); the difference in population year is not corrected.
+DESTATIS stock while the income year is the INKAR year read here (its vintage
+belongs to the data record); the difference in population year is not corrected.
 
 The MiD 2023 H4 quintile distribution used in
 ``braunschweig.data.census.household_income`` is regionless — it mixes all

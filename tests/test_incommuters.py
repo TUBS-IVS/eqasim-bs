@@ -1,6 +1,7 @@
 """Tests for in-commuter synthesis helpers (PT direct-ride entry stops + gate draw)."""
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -1445,6 +1446,42 @@ def test_redrawn_late_donors_are_drawn_from_the_commute_window_too():
     assert frames["day_bound"]["n_redrawn"] > 0
     assert set(frames["persons"]["hts_id"]) == {1}      # 3: outside the window, 2: late and re-drawn
     assert frames["donor_draw"]["n_agents"] == len(frames["persons"])
+
+
+def test_the_donor_draw_rates_are_logged_once_although_late_donors_are_re_drawn(caplog):
+    """A re-draw round runs (the day of donor 2 ends after the bound), yet the primary/fallback rates of the
+    donor draw are logged only for the first draw of all agents, not again per round."""
+    gates, assignment, flows, zgb_work, persons, trips = _donor_pool([
+        dict(age=42), dict(age=30), dict(age=20, commute_distance_km=5.0)])
+    late = trips["person_id"] == 2
+    trips.loc[late, "departure_time"] = [30 * 3600.0, 34 * 3600.0]
+    trips.loc[late, "arrival_time"] = [31 * 3600.0, 35 * 3600.0]
+    with caplog.at_level(logging.INFO, logger="braunschweig.data.cordon.donor_draw"):
+        frames = _frames((gates, assignment, flows, zgb_work, persons, trips), {"car": 1.0},
+                         donor_min_effective_pool=2.0, time_bound_s=29 * 3600.0)
+    assert frames["day_bound"]["n_redrawn"] > 0, "the fixture must run a re-draw round"
+    records = [r for r in caplog.records if r.name == "braunschweig.data.cordon.donor_draw"]
+    assert len(records) == 1
+    assert records[0].getMessage().startswith("[braunschweig.cordon.donor_draw]")
+
+
+def test_an_inkar_frame_keyed_differently_from_the_origin_kreise_fails():
+    """Every agent has no Kreis scale: a broken Kreis key, not a few Kreise missing from the table."""
+    with pytest.raises(ValueError, match="no INKAR scale"):
+        _frames(_donor_pool([dict(age=42)]), {"car": 1.0},
+                inkar_income=pd.DataFrame({"ars5": ["99999"], "scale": [1.1]}), donor_min_effective_pool=1.0)
+
+
+def test_gemeinden_keyed_differently_from_the_origin_kreise_fail_instead_of_using_the_gate_commute():
+    other_kreis = gpd.GeoDataFrame({"ars5": ["09999"], "ewz": [1000.0]}, geometry=[Point(0.0, 0.0)],
+                                   crs="EPSG:25832")
+    with pytest.raises(ValueError, match="broken Kreis key"):
+        _frames(_donor_pool([dict(age=42)]), {"car": 1.0}, gemeinden=other_kreis, donor_min_effective_pool=1.0)
+
+
+def test_commuter_donors_that_are_all_excluded_fail_with_a_clear_message():
+    with pytest.raises(ValueError, match="no eligible commuter donor"):
+        _frames(_donor_pool([dict(weekday_reporting_day=False)]), {"car": 1.0})
 
 
 def test_a_far_agent_draws_the_donor_of_its_kreis_centre_commute_not_of_its_gate_commute():

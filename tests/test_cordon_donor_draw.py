@@ -72,6 +72,15 @@ def test_cell_probabilities_follow_commute_window_kreis_scale_and_weights():
     assert weighted.cell_probabilities("Z", 5.0).to_dict() == pytest.approx({0: 0.75, 1: 0.25})
 
 
+def test_an_int_keyed_scale_table_is_found_for_the_string_kreis_of_the_agent():
+    keyed_by_int = dd.KreisDonorSampler(_pool(), {3101: 1.1}, min_effective_pool=2.0)
+    keyed_by_str = dd.KreisDonorSampler(_pool(), {"3101": 1.1}, min_effective_pool=2.0)
+    kreis, km = np.array(["3101"]), np.array([5.0])
+    assert keyed_by_int.report(kreis, km)["n_without_kreis_scale"] == 0
+    assert keyed_by_int.cell_probabilities("3101", 5.0).to_dict() == pytest.approx(
+        keyed_by_str.cell_probabilities("3101", 5.0).to_dict())
+
+
 def test_draw_stays_in_the_window_is_seeded_and_reports_every_fallback():
     sampler = dd.KreisDonorSampler(_pool(), {"A": 1.1, "X": 5.0}, min_effective_pool=2.0)
     kreis = np.array(["A", "A", "Z", "X"])

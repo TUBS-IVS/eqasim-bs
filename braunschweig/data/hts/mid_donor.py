@@ -6,8 +6,8 @@ student) draw their trip TIMING from German behaviour instead of the French
 ENTD. Distance/mode/count/origin of in-commuters come from other (German)
 sources and are unaffected. Reuses the tested popsim MiD machinery
 (braunschweig.popsim.attributes.map_employed/map_studies,
-braunschweig.popsim.trips.build_trip_table); no reimplementation. See
-docs/superpowers/specs/2026-07-18-incommuter-mid-donor-design.md.
+braunschweig.popsim.trips.build_trip_table); no reimplementation. The donor household
+and the donor draw attributes added here are defined in ADR-0191.
 """
 from __future__ import annotations
 
@@ -246,7 +246,7 @@ HOUSEHOLD_AGE_UNKNOWN_RAISE_SHARE = 0.01
 #: Codeplan range of a valid interview age (85 = 85 and older).
 _VALID_AGE_RANGE = (0, 85)
 
-#: ASSUMPTION (spec "Assumptions that remain"): a household member without a valid age counts as
+#: ASSUMPTION (ADR-0191, decision 2): a household member without a valid age counts as
 #: 14 or older in the OECD-modified scale; 14 is the youngest age counted as such by
 #: ``data.hts.hts.calculate_consumption_units``.
 _AGE_OF_MEMBER_WITHOUT_VALID_AGE = 14
@@ -349,8 +349,9 @@ def attach_donor_household(
             :data:`DONOR_HOUSEHOLD_INCOME_RNG_OFFSET`).
 
     Returns:
-        A copy of ``persons`` with ``household_income_eur`` (EUR/month) and ``economic_status``;
-        both NaN for a person without a household record (counted and warned).
+        A copy of ``persons`` with ``household_income_eur`` (EUR/month), ``economic_status``,
+        ``household_size`` and ``consumption_units``; all four NaN for a person without a household
+        record (counted and warned).
 
     Raises:
         ValueError: if a column is missing, or more than
@@ -383,7 +384,7 @@ def attach_donor_household(
                    "consumption_units"):
         out[column] = household_of_person.map(by_household[column]).to_numpy()
     if out["household_size"].notna().all():
-        out["household_size"] = out["household_size"].astype(int)
+        out["household_size"] = out["household_size"].astype("int64")
     # A person whose H_ID has no row in the household table (the raw B1 files carry a few) has
     # no household income; it stays NaN here and the worker in-commuter stage leaves such
     # donors out of its pool (incommuters.build_incommuter_frames), counted in both places.
@@ -394,7 +395,7 @@ def attach_donor_household(
     message = (
         f"[mid_donor] donor household income: primary {n - n_missing}/{n} donors "
         f"({100.0 * (1.0 - share):.2f}%) from their own MiD household, {n_missing} "
-        f"({100.0 * share:.2f}%) without a household record (income and status NaN)")
+        f"({100.0 * share:.2f}%) without a household record (all four household columns NaN)")
     if share > DONOR_HOUSEHOLD_MISSING_RAISE_SHARE:
         raise ValueError(
             f"{message}; above {100.0 * DONOR_HOUSEHOLD_MISSING_RAISE_SHARE:.0f}% this is a broken "
@@ -407,13 +408,14 @@ def attach_donor_household(
 
 
 def attach_donor_draw_attributes(persons, raw_persons, trips):
-    """Add the attributes the in-commuter donor draw reads (design: incommuter donor household).
+    """Add the attributes the in-commuter donor draw reads (ADR-0191, decisions 3 to 5).
 
     Adds ``donor_weight`` (``P_GEW``), ``weekday_reporting_day`` (``kernwo`` in
     ``braunschweig.popsim.trips.WEEKDAY_DIARY_KERNWO``), both joined from ``raw_persons`` on
     ``person_id = H_ID_P_ID``, and ``commute_distance_km``: ``wegkm_imp`` of the donor's first
-    leg (in ``trip_id`` order) between home and work in either direction, the rule of
-    ``braunschweig.popsim.commute_distance``; NaN for a donor without such a leg (counted).
+    leg (in ``trip_id`` order) between home and work in either direction; NaN for a donor
+    without such a leg (counted). The leg rule is the one of
+    ``braunschweig/popsim/commute_distance.py :: _per_purpose`` and must change with it.
 
     Raises:
         ValueError: naming a missing input column, or an impossible ``wegkm_imp`` value.

@@ -8,7 +8,9 @@ description: "Adds university student in-commuters from LSN enrollment with DEST
   of the commuter in-commuters (braunschweig.synthesis.incommuter_pt_connections.check_pt_days, the same switch
   braunschweig.incommuters.pt_connection_check.enabled): the whole day moves first, else the student drives from
   its home; counted and logged, reported as pt_connection. The stage therefore depends on the eqasim jar, the Java
-  runtime and the supply stages."
+  runtime and the supply stages. The household car_availability of a student follows its mode and the household
+  income is the flat config key braunschweig.student_incommuters.household_income_eur (ASSUMPTION), ADR-0191
+  decisions 6 and 7."
 lineage:
   type: braunschweig_new
   upstream: null

@@ -2,7 +2,9 @@ feature: student_incommuters
 title: Student in-commuters (#140)
 area: cordon
 description: 'Adds university student in-commuters from LSN enrollment and DESTATIS origin structure
-  as cordon-crossing agents (tri-state flag, default ON when education gravity is on; #140).'
+  as cordon-crossing agents (tri-state flag, default ON when education gravity is on; #140). Household
+  car_availability follows the mode; the household income is the flat config key
+  braunschweig.student_incommuters.household_income_eur (ASSUMPTION), ADR-0191 decisions 6 and 7.'
 stages:
 - braunschweig.synthesis.student_incommuters
 pipelines:

@@ -4,9 +4,11 @@ import logging
 import os
 from pathlib import Path
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pytest
+from shapely.geometry import Point
 
 from braunschweig.data.cordon import plans
 from braunschweig.data.hts import mid_donor
@@ -287,7 +289,6 @@ def test_worker_execute_forwards_time_flag(monkeypatch, enabled):
         "cordon_enabled": True, "random_seed": 1234, "data_path": "unused",
         "sampling_rate": 0.001, "braunschweig.political_prefix": ["03101"],
         "cordon_incommuter_time_chronology": enabled,
-        "braunschweig.student_incommuters.household_income_eur": 3000.0,
         "cordon_incommuter_real_origin": False,
         "cordon_incommuter_mode_balance": False,
         "cordon_incommuter_mode_reference_by_bundesland": False,
@@ -303,6 +304,9 @@ def test_worker_execute_forwards_time_flag(monkeypatch, enabled):
         "braunschweig.data.census.pendler": flows,
         "braunschweig.locations.work": work,
         "braunschweig.data.cordon_pt_gates": None,
+        # the Gemeinde of the origin Kreis of the flow: the agent commute is measured from its centre
+        "braunschweig.data.cordon_gemeinden": gpd.GeoDataFrame(
+            {"ars5": ["03241"], "ewz": [1000.0]}, geometry=[Point(604000, 5841000)], crs="EPSG:25832"),
         "braunschweig.data.inkar.household_income": None,
     }
     ctx.stage = lambda key: stages[key]

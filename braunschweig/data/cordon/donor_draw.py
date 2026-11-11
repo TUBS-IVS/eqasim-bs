@@ -2,10 +2,9 @@
 
 Pure mechanics, no file I/O: given a frame of MiD donors it draws, per agent, one donor row from the
 donors with a commute of about the agent's length, weighted by the MiD person weight and tilted so
-that the mean income per person of the origin Kreis follows an INKAR scale. The definitions (commute
-window, tilt, counted fallbacks) are owned by
-``docs/superpowers/specs/2026-11-11-incommuter-donor-household-design.md`` (section "Definitions")
-and ADR-0191; this module implements them and restates none of the configured values.
+that the mean income per person of the origin Kreis follows an INKAR scale. The definitions (donor
+pool, commute window, tilt, counted fallbacks) are owned by ADR-0191, decisions 3 to 5; this module
+implements them and restates none of the configured values.
 
 Fallbacks are counted per agent and logged as primary / fallback rates by :meth:`KreisDonorSampler.draw`
 (CLAUDE.md "Fallback transparency"); :meth:`KreisDonorSampler.report` returns the same counts.
@@ -22,8 +21,8 @@ import pandas as pd
 LOGGER = logging.getLogger(__name__)
 
 # ASSUMPTION: search bound of the tilt in weighted standard deviations of the income per person. A target
-# further away than a tilt of this size is a target no sensible donor weighting can meet; the draw then
-# uses the closest reachable tilt and counts the cell as "target not reached".
+# further away than a tilt of this size is a target no sensible donor weighting can meet; the cell is then
+# counted as "target not reached" and drawn from the untilted window weights (see ``KreisDonorSampler._cell``).
 MAX_ABS_TILT = 30.0
 
 # ASSUMPTION: agents whose commute distances differ by less than about 5 % share one window (and one
@@ -34,6 +33,11 @@ DISTANCE_BIN_STEP = 0.05
 # ASSUMPTION: warn threshold for the share of agents whose origin Kreis has no INKAR scale (they are
 # drawn without tilt). Above 5 % the scale table is probably keyed differently from the agents' Kreis.
 KREIS_SCALE_FALLBACK_WARN_SHARE = 0.05
+
+# ASSUMPTION: raise threshold (a bound, not a reference value) for the same share: when more than half of the
+# agents have no Kreis scale although a scale table was supplied, the table is keyed differently from the
+# agents' Kreis (a broken join), not missing a few Kreise; the in-commuter builder raises.
+KREIS_SCALE_FALLBACK_RAISE_SHARE = 0.5
 
 # ASSUMPTION: warn threshold for the Kish effective size of the smallest used draw cell. Below 100 donors
 # a cell repeats the same few households many times.

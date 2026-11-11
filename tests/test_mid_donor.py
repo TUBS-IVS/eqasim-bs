@@ -152,10 +152,11 @@ def test_execute_on_real_mid_yields_commute_donors():
     # nationwide MiD must supply real donor pools for both in-commuter kinds
     assert trips[trips["following_purpose"] == "work"]["person_id"].nunique() > 100
     assert trips[trips["following_purpose"] == "education"]["person_id"].nunique() > 10
-    # ADR-0191: every donor carries its household income and economic status (primary path
-    # on the real survey; missing codes are imputed, so none may stay empty).
-    assert persons["household_income_eur"].notna().all()
-    assert persons["economic_status"].notna().all()
+    # ADR-0191: nearly every donor carries its household income and economic status (primary
+    # path on the real survey; item non-response is imputed). A person without a household row
+    # stays NaN, so the share is bounded, not 1 (attach_donor_household counts and warns).
+    assert persons["household_income_eur"].notna().mean() > 0.99
+    assert persons["economic_status"].notna().mean() > 0.99
     for column in ("household_size", "consumption_units", "donor_weight"):
         assert persons[column].notna().mean() > 0.99
     assert persons["weekday_reporting_day"].mean() > 0.5
