@@ -565,6 +565,43 @@ def _batch_home_points_for_cells(
     return dict(zip(unique_pairs, points_in_buildings_crs))
 
 
+def _thin_slots_by_type(
+    slots: pd.DataFrame,
+    households_per_type: dict,
+    sampling_rate: float,
+    thin_rng: np.random.RandomState,
+) -> pd.DataFrame:
+    """Keep a uniform random subset of each building type's slots (original order kept).
+
+    The slots describe the whole census population of the cell, the households only a
+    sample of it. Per slot type ``t`` this keeps
+    ``min(n_t, max(round(n_t * sampling_rate), households_of_type_t))`` slots, so a
+    rare type (e.g. 2 MFH slots) is not thinned away from the households that need it
+    (a type-blind thinning would break the type match of the sampled households).
+
+    ASSUMPTION: keeping at least the sampled household count per type biases the kept
+    slot fraction slightly upward in cells where the Bernoulli sample exceeds its
+    expectation (``n_households > r * n_slots``); the thinning stays uniform within
+    each type, so the within-type distribution over buildings is unbiased.
+    """
+    keep_positions = []
+    for kind in bt.SLOT_CLASSES:
+        positions = np.flatnonzero((slots["btype"] == kind).to_numpy())
+        if len(positions) == 0:
+            continue
+        n_keep = min(
+            len(positions),
+            max(int(round(len(positions) * sampling_rate)), int(households_per_type.get(kind, 0))),
+        )
+        if n_keep < len(positions):
+            positions = thin_rng.choice(positions, size=n_keep, replace=False)
+        keep_positions.extend(int(p) for p in positions)
+    # Slots of an unknown type (never produced by the builders) are kept untouched.
+    known = slots["btype"].isin(bt.SLOT_CLASSES).to_numpy()
+    keep_positions.extend(int(p) for p in np.flatnonzero(~known))
+    return slots.iloc[sorted(keep_positions)].reset_index(drop=True)
+
+
 def assign_homes_typed(
     households: pd.DataFrame,
     buildings: gpd.GeoDataFrame,
@@ -617,9 +654,9 @@ def assign_homes_typed(
         Fraction of the population that ``households`` represents (``0 < r <= 1``).
         The slots are built from the FULL census occupied count, so for ``r < 1`` the
         few sampled households would otherwise fill the first (largest-building) slots
-        of each cell. After the full slot set is built, a uniform random subset of
-        ``max(round(len(slots) * r), n_households_in_cell)`` slots is kept (original
-        order preserved), drawn from a separate stream seeded with
+        of each cell. After the full slot set is built, a uniform random subset of each
+        building type's slots is kept (:func:`_thin_slots_by_type`, original order
+        preserved), drawn from a separate stream seeded with
         ``random_seed + SLOT_THINNING_SEED_OFFSET``. ``r == 1`` draws nothing.
 
     Returns
@@ -901,17 +938,13 @@ def assign_homes_typed(
         slots = slots_builder(typed, whg, max(occ, len(grp)), size_hist, rng,
                               apportionment=apportionment)
         if sampling_rate < 1.0:
-            # The slots describe the whole census population of the cell, the
-            # households only a sample of it: keep a uniform random subset of slots
-            # (never fewer than the households to place) instead of letting the sample
-            # take the first slots of the size-ordered queue (largest building first).
-            n_keep = min(len(slots), max(int(round(len(slots) * sampling_rate)), len(grp)))
-            if n_keep < len(slots):
-                keep = np.sort(thin_rng.choice(len(slots), size=n_keep, replace=False))
-                n_thin_before += len(slots)
-                n_thin_after += n_keep
+            n_before = len(slots)
+            slots = _thin_slots_by_type(
+                slots, grp["btype"].value_counts().to_dict(), sampling_rate, thin_rng)
+            if len(slots) < n_before:
+                n_thin_before += n_before
+                n_thin_after += len(slots)
                 n_cells_thinned += 1
-                slots = slots.iloc[keep].reset_index(drop=True)
         cell_hh = grp[[household_id_col, "btype", "household_size"]].rename(
             columns={household_id_col: "household_id"})
         amap, rep = matcher(cell_hh, slots, rng)
@@ -940,8 +973,10 @@ def assign_homes_typed(
     n = len(hh)
     if sampling_rate < 1.0:
         logger.info(
-            "[home_typed] slot thinning at sampling_rate=%.4g: %d cells thinned, slots %d -> %d",
+            "[home_typed] slot thinning at sampling_rate=%.4g: %d cells thinned, slots %d -> %d "
+            "(type-match %.1f%% of sampled households)",
             sampling_rate, n_cells_thinned, n_thin_before, n_thin_after,
+            100.0 * n_match / n if n else 0.0,
         )
     btype_default_rate = n_btype_defaulted / n if n else 0.0
     report = TypedHomeReport(

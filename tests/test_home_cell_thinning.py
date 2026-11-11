@@ -65,6 +65,36 @@ def test_thinned_sample_reproduces_the_full_distribution_over_buildings():
     bound = 4.0 * np.sqrt(p_full * (1.0 - p_full) / (n_sample * n_seeds))
     assert abs(float(np.mean(shares)) - p_full) < bound
 
+    # Negative control: with the thinning step bypassed the same sample is biased toward
+    # the largest building, far outside the bound -- the test can detect the defect.
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(home_cell, "_thin_slots_by_type", lambda slots, *args, **kwargs: slots)
+        unthinned = [_largest_share(home_cell.assign_homes_typed(
+            _households(n_sample), _buildings(), _cells(n_full), random_seed=seed,
+            sampling_rate=rate)[0]) for seed in range(n_seeds)]
+    assert abs(float(np.mean(unthinned)) - p_full) > bound
+
+
+def test_thinning_is_per_building_type_and_keeps_type_match():
+    """20 efh + 2 mfh slots, 2 mfh + 1 efh sampled households at r = 0.05.
+
+    A type-blind thinning keeps ~3 of the 22 slots at random and almost always loses the
+    two mfh slots; per-type thinning keeps every mfh slot the mfh households need."""
+    cells = _cells(20)
+    cells["MFH_3bis6Wohnungen_Geb_Gebaeudetyp_Groesse_100m_Gitter"] = 1.0
+    cells["FreiEFH_Geb_Gebaeudetyp_Groesse_100m_Gitter"] = float(len(_AREAS) - 1)
+    cells["MFH_3bis6Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter"] = 2.0
+    cells["BewohntWhg_Leerstand_100m_Gitter"] = 22.0
+    hh = _households(3)
+    hh["building_type_3class"] = ["mehrfamilienhaus", "mehrfamilienhaus", "ein_zweifamilienhaus"]
+    full, rep_full = home_cell.assign_homes_typed(
+        hh, _buildings(), cells, random_seed=1)
+    assert rep_full.type_match_rate == 1.0           # reference: all 3 matched at r = 1
+    for seed in range(30):
+        _, rep = home_cell.assign_homes_typed(
+            hh, _buildings(), cells, random_seed=seed, sampling_rate=0.05)
+        assert rep.type_match_rate == rep_full.type_match_rate, seed
+
 
 @pytest.mark.parametrize("batch", [True, False])
 def test_sampling_rate_one_is_byte_identical(batch):
