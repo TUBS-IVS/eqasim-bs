@@ -1,0 +1,65 @@
+id: fine-child-band-fallback-smoke-2026-11-11
+date: '2026-11-11'
+repository:
+  commit: '4ce913b4 (arm fix, head of PR #594); e3b09f10 (arm base, origin/main before PR #594)'
+  branch: chore/repo-audit-20261111
+  notes: >-
+    Two detached checkouts of eqasim-bs on the owner's Windows workstation: the PR #594 worktree at 4ce913b4 (it
+    contains commit 0b14dfb6, which passes the fine child age bands to the whole-household person fallback of
+    braunschweig.popsim.weekend_plan_match.reassign_weekend_plan_sources) and a worktree at e3b09f10 without that
+    commit. Both arms share every other line of code that this stage reads. PR #594 was merged afterwards.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - docs/runs/artifacts/fine-child-band-fallback-smoke-2026-11-11/overlay_donor_only.yml
+  notes: >-
+    One throwaway overlay per arm, identical apart from the working directory and output paths (placeholders in the
+    committed copy): run list braunschweig.popsim.completed_donor only, sampling_rate 0.01, the MiD paths pointed at
+    the local MiD 2023 B1 CSV delivery. Every other key keeps the base value, among them
+    donor_match_fine_child_age_bands true and the weekend plan match on.
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: the MiD 2023 donor universe; completed_donor does not depend on the sampling rate
+  notes: >-
+    braunschweig.popsim.completed_donor builds the completed donor table over all MiD persons whatever the sampling
+    rate, so the counts below are donor counts, not synthetic persons.
+pipeline:
+  targets:
+  - braunschweig.popsim.completed_donor
+  notes: >-
+    Each arm started from a new, empty working directory (no cache reused, nothing deleted). Arm fix ran 14:30 to
+    15:12, arm base 15:12 to 16:08 (local time), one after the other. Both executed exactly one stage,
+    braunschweig.popsim.completed_donor, and exited with code 0.
+classification:
+- smoke
+status:
+  execution: completed
+  notes: >-
+    Both arms completed (exit 0). Log lines of the weekend plan match and the stage start and end are in
+    stage_log_lines.txt; the output comparison is compare_output.txt.
+environment: 'owner workstation (Windows 11), conda env eqasim (Python 3.10.10, pandas 1.5.3, numpy 1.23.5)'
+validation:
+- metric: donor persons whose plan source differs between the arms (effect of commit 0b14dfb6)
+  reference: 'arm base (same code without the commit, same seed, same MiD delivery); no observed reference'
+  result: >-
+    0 of 485,709 donor persons changed their plan source (0 of 36,791 aged 6-13). Both arms report 62,572 weekend
+    households, all 62,572 matched at household level, 0 person-fallback households and 138,777 persons remapped: on
+    this delivery the branch the commit corrects is never reached, so the commit changes no output today. The diary
+    plan match report is identical between the arms.
+  artifact: 'docs/runs/artifacts/fine-child-band-fallback-smoke-2026-11-11/compare_output.txt (compare_arms.py on the two cached completed_donor pickles); stage_log_lines.txt'
+  notes: >-
+    The smoke verifies that the fix is output-neutral on the current MiD delivery; it says nothing about realism.
+- metric: 6-13-year-old donors whose plan source comes from the other fine band (6-9 vs 10-13)
+  reference: 'none; a property of the donor build'
+  result: >-
+    1,583 of the 22,622 6-13-year-olds with a plan source of another MiD person, identical in both arms. They do not
+    come from the weekend person fallback (unused here); their origin in the donor build is not yet established.
+  artifact: 'docs/runs/artifacts/fine-child-band-fallback-smoke-2026-11-11/compare_output.txt'
+features:
+- diary_plan_match
+artifacts:
+- docs/runs/artifacts/fine-child-band-fallback-smoke-2026-11-11/overlay_donor_only.yml
+- docs/runs/artifacts/fine-child-band-fallback-smoke-2026-11-11/compare_arms.py
+- docs/runs/artifacts/fine-child-band-fallback-smoke-2026-11-11/compare_output.txt
+- docs/runs/artifacts/fine-child-band-fallback-smoke-2026-11-11/stage_log_lines.txt
+source: 'Local runs of scripts/run_synpp.py with the overlay above; comparison by compare_arms.py (eqasim env)'
