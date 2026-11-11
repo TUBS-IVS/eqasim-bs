@@ -86,7 +86,6 @@ INPUTS: List[Input] = [
             "Q_menage.csv",
             "Q_tcm_menage_0.csv",
             "K_deploc.csv",
-            "Q_ind_lieu_teg.csv",
         )
     ],
 

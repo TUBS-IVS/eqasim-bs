@@ -14,7 +14,7 @@ pipelines:
   popsim_mid: active
   popsim_open: active
   simple_ipf_open: active
-production: true
+production: false
 resolves_to:
   popsim_mid: eqasim_common.spatial.entd_codes
   popsim_open: eqasim_common.spatial.entd_codes
