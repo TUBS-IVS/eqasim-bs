@@ -185,13 +185,15 @@ class KreisDonorSampler:
             from the untilted window weights, counted in ``n_target_not_reached`` and warned.
         min_effective_pool: minimum Kish effective size of the commute window; ``None`` draws from every
             donor without distance matching.
+        distance_column: the donor column holding the distance the window is matched on (km, > 0):
+            the commute length for the worker in-commuters, the education distance for the students.
     """
 
     def __init__(self, donors: pd.DataFrame, scale_by_kreis: Mapping[str, float] | None, *,
-                 min_effective_pool: float | None):
+                 min_effective_pool: float | None, distance_column: str = "commute_distance_km"):
         missing = [c for c in _REQUIRED_COLUMNS if c not in donors.columns]
-        if min_effective_pool is not None and "commute_distance_km" not in donors.columns:
-            missing.append("commute_distance_km")
+        if min_effective_pool is not None and distance_column not in donors.columns:
+            missing.append(distance_column)
         if missing:
             raise ValueError(f"donor frame lacks required column(s): {', '.join(missing)}")
         if len(donors) == 0:
@@ -208,9 +210,9 @@ class KreisDonorSampler:
         if min_effective_pool is not None:
             if min_effective_pool <= 0:
                 raise ValueError(f"min_effective_pool must be > 0, got {min_effective_pool}")
-            commute = donors["commute_distance_km"].to_numpy(dtype=float)
+            commute = donors[distance_column].to_numpy(dtype=float)
             if not np.isfinite(commute).all() or (commute <= 0).any():
-                raise ValueError("commute_distance_km must be finite and > 0 for every donor")
+                raise ValueError(f"{distance_column} must be finite and > 0 for every donor")
             self._commute_km = commute
         self._min_effective_pool = min_effective_pool
         if scale_by_kreis is not None:

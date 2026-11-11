@@ -34,7 +34,7 @@ def test_raw_mid_demographics_reach_both_incommuter_person_builders(caplog):
     worker = incommuters._build_persons(
         ids, with_donor_household(donors.iloc[[0]]), "person_id", ["car"])
     student = student_incommuters._build_student_persons(
-        ids, donors.iloc[[1]], ["pt"])
+        ids, with_donor_household(donors.iloc[[1]]), ["pt"])
     assert worker[["age", "sex"]].values.tolist() == [[55, "female"]]
     assert student[["age", "sex"]].values.tolist() == [[25, "female"]]
     assert "primary 2/2 (100.0%)" in caplog.text

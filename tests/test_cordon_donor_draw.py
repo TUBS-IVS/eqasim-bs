@@ -108,6 +108,16 @@ def test_without_a_minimum_pool_every_donor_is_drawn_from_and_a_too_large_minimu
     assert starved.report(np.array(["A", "B"]), np.array([5.0, 80.0]))["n_whole_pool_window"] == 2
 
 
+def test_the_window_is_matched_on_the_named_distance_column_not_on_the_commute_column():
+    # the commute column is a decoy at the opposite end of the pool; only education_distance_km may decide
+    pool = _pool().rename(columns={"commute_distance_km": "education_distance_km"}).assign(
+        commute_distance_km=KM[::-1])
+    sampler = dd.KreisDonorSampler(pool, None, min_effective_pool=2.0, distance_column="education_distance_km")
+    assert sampler.cell_probabilities("X", 5.0).to_dict() == pytest.approx({0: 0.5, 1: 0.5})
+    with pytest.raises(ValueError, match="education_distance_km"):
+        dd.KreisDonorSampler(_pool(), None, min_effective_pool=2.0, distance_column="education_distance_km")
+
+
 def test_invalid_donor_weight_or_agent_commute_fails():
     with pytest.raises(ValueError, match="donor_weight"):
         dd.KreisDonorSampler(_pool().assign(donor_weight=[1.0, -1.0, 1.0, 1.0, 1.0]), {}, min_effective_pool=2.0)

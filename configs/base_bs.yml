@@ -938,8 +938,9 @@ config:
   # MiD donor from: the window around the agent's own commute length grows until it is reached.
   # ASSUMPTION, not calibrated (ADR-0191).
   braunschweig.incommuters.donor_min_effective_pool: 1000.0
-  # Flat monthly household income (EUR) of the student in-commuters; ASSUMPTION without a source (ADR-0191).
-  braunschweig.student_incommuters.household_income_eur: 3000.0
+  # Smallest effective donor pool (Kish size) of the commute-distance window a student in-commuter draws its
+  # MiD donor from. ASSUMPTION, not calibrated (ADR-0191).
+  braunschweig.student_incommuters.donor_min_effective_pool: 300.0
   # Plan feasibility check on the written population (ADR-0146, #443): the last step of the prepare
   # stage counts plans with an activity end time after the simulated day (MAX_PLAN_TIME_SECONDS = qsim.endTime = 30 h),
   # non-monotonic plans and implausible walk/bicycle/long legs per subpopulation, split into frozen

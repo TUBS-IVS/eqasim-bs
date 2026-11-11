@@ -167,10 +167,11 @@ def validate_donor_min_effective_pool(value) -> float:
     return as_float
 
 
-def _require_donor_columns(hts_persons, *, needs_distance: bool = False) -> None:
+def _require_donor_columns(hts_persons, *, needs_distance: bool = False,
+                           distance_column: str = "commute_distance_km") -> None:
     """Raise ``ValueError`` when a column of :data:`DONOR_COLUMNS` (with ``needs_distance`` also
-    ``commute_distance_km``) is missing from the donor persons (ADR-0191)."""
-    required = DONOR_COLUMNS + (("commute_distance_km",) if needs_distance else ())
+    ``distance_column``) is missing from the donor persons (ADR-0191)."""
+    required = DONOR_COLUMNS + ((distance_column,) if needs_distance else ())
     missing = [c for c in required if c not in hts_persons.columns]
     if missing:
         raise ValueError(
@@ -179,19 +180,55 @@ def _require_donor_columns(hts_persons, *, needs_distance: bool = False) -> None
             f"attach_donor_draw_attributes, ADR-0191).")
 
 
-def _eligible_donors(commuter_donors, *, needs_distance: bool = False):
+def _check_draw_fallbacks(n, n_commute_fallback, gemeinden_supplied, report, *, commute_message="",
+                          scale_supplied=False) -> None:
+    """Raise ``ValueError`` when a fallback share of the donor draw says a Kreis key is broken (ADR-0191).
+
+    Shared by the worker and the student in-commuter builder, called at two points of each: with
+    ``n_commute_fallback`` (``report=None``) once the agent commutes are measured, and with the sampler
+    ``report`` (``n_commute_fallback=None``) once the donors are drawn; a ``None`` part is not checked.
+    Both bounds apply from :data:`FALLBACK_RAISE_MIN_AGENTS` agents on.
+
+    - Commute: with the Gemeinden supplied (``gemeinden_supplied``), more than
+      :data:`AGENT_COMMUTE_FALLBACK_RAISE_SHARE` of ``n`` agents on the commute fallback (``commute_message``
+      carries the primary/fallback rate) means the Kreis keys of agents and Gemeinden do not match.
+    - Scale: with an INKAR table supplied (``scale_supplied``), more than
+      ``donor_draw.KREIS_SCALE_FALLBACK_RAISE_SHARE`` of ``n`` agents without a Kreis scale
+      (``report["n_without_kreis_scale"]``) means the Kreis keys of the INKAR frame and the origins do not match.
+    """
+    if n < FALLBACK_RAISE_MIN_AGENTS:
+        return
+    if (n_commute_fallback is not None and gemeinden_supplied
+            and n_commute_fallback / n > AGENT_COMMUTE_FALLBACK_RAISE_SHARE):
+        # The Gemeinden were supplied, so most agents falling back means the Kreis keys do not match.
+        raise ValueError(
+            f"{commute_message}; above {100.0 * AGENT_COMMUTE_FALLBACK_RAISE_SHARE:.0f}% with the Gemeinden "
+            f"supplied this is a broken Kreis key between the agents and the Gemeinden (ars5), not a few "
+            f"Kreise without a Gemeinde.")
+    if (report is not None and scale_supplied
+            and report["n_without_kreis_scale"] / n > _donor_draw.KREIS_SCALE_FALLBACK_RAISE_SHARE):
+        raise ValueError(
+            f"[incommuters] {report['n_without_kreis_scale']}/{n} agents have no INKAR scale for their origin "
+            f"Kreis although a scale table was supplied, above "
+            f"{100.0 * _donor_draw.KREIS_SCALE_FALLBACK_RAISE_SHARE:.0f}%: the Kreis key (ars5) of the INKAR frame "
+            f"and of the in-commuter origins do not match.")
+
+
+def _eligible_donors(commuter_donors, *, needs_distance: bool = False,
+                     distance_column: str = "commute_distance_km"):
     """The commuter donors that can stand for an in-commuter household (ADR-0191, decision 3).
 
-    Applied to the result of ``select_commuter_donors``, so the logged rates are over commuter donors. Raises
+    Applied to the result of ``select_commuter_donors``, so the logged rates are over commuter donors (the student
+    stage passes its student donors the same way, with ``distance_column="education_distance_km"``). Raises
     ``ValueError`` when a donor column is missing (:func:`_require_donor_columns`) or nobody is left. Excluded,
     each donor counted once under the first reason that applies: no household record (income, status, size or
     consumption units missing), a reporting day outside the model's weekday universe, a donor weight that is
-    missing or not above 0, and with ``needs_distance`` a commute distance that is not a finite number above 0
-    (no home-work leg). The count per reason and the primary share are logged; the log is a WARNING above
-    :data:`DONOR_EXCLUDED_WARN_SHARE`.
+    missing or not above 0, and with ``needs_distance`` a ``distance_column`` value that is not a finite number
+    above 0 (no home-work or home-education leg). The count per reason and the primary share are logged; the log
+    is a WARNING above :data:`DONOR_EXCLUDED_WARN_SHARE`.
     """
     hts_persons = commuter_donors
-    _require_donor_columns(hts_persons, needs_distance=needs_distance)
+    _require_donor_columns(hts_persons, needs_distance=needs_distance, distance_column=distance_column)
     no_household = hts_persons[
         ["household_income_eur", "economic_status", "household_size", "consumption_units"]
     ].isna().any(axis=1)
@@ -199,7 +236,7 @@ def _eligible_donors(commuter_donors, *, needs_distance: bool = False):
     weight = pd.to_numeric(hts_persons["donor_weight"], errors="coerce")
     no_weight = ~(weight > 0)
     if needs_distance:
-        commute = pd.to_numeric(hts_persons["commute_distance_km"], errors="coerce")
+        commute = pd.to_numeric(hts_persons[distance_column], errors="coerce")
         no_commute = ~(np.isfinite(commute) & (commute > 0))
     else:
         no_commute = pd.Series(False, index=hts_persons.index)
@@ -827,13 +864,7 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                            f"{n - n_commute_fallback}/{n} ({100.0 * (n - n_commute_fallback) / n:.1f}%), fallback "
                            f"{n_commute_fallback} ({100.0 * n_commute_fallback / n:.1f}%) on the own gate or station "
                            f"(no real home, no Gemeinde of the origin Kreis; a lower bound of the commute)")
-        if (gemeinden is not None and n >= FALLBACK_RAISE_MIN_AGENTS
-                and n_commute_fallback / n > AGENT_COMMUTE_FALLBACK_RAISE_SHARE):
-            # The Gemeinden were supplied, so most agents falling back means the Kreis keys do not match.
-            raise ValueError(
-                f"{commute_message}; above {100.0 * AGENT_COMMUTE_FALLBACK_RAISE_SHARE:.0f}% with the Gemeinden "
-                f"supplied this is a broken Kreis key between the agents and the Gemeinden (ars5), not a few "
-                f"Kreise without a Gemeinde.")
+        _check_draw_fallbacks(n, n_commute_fallback, gemeinden is not None, None, commute_message=commute_message)
         if 100.0 * n_commute_fallback / n > AGENT_COMMUTE_FALLBACK_WARN_PERCENT:
             logger.warning(commute_message)
         else:
@@ -858,13 +889,7 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         bound_s=bound_s, max_attempts=validate_time_redraw_max_attempts(time_redraw_max_attempts),
         draw=draw_donors)
     donor_report = sampler.report(kreis, commute_km)
-    if (scale_by_kreis is not None and n >= FALLBACK_RAISE_MIN_AGENTS
-            and donor_report["n_without_kreis_scale"] / n > _donor_draw.KREIS_SCALE_FALLBACK_RAISE_SHARE):
-        raise ValueError(
-            f"[incommuters] {donor_report['n_without_kreis_scale']}/{n} agents have no INKAR scale for their origin "
-            f"Kreis although a scale table was supplied, above "
-            f"{100.0 * _donor_draw.KREIS_SCALE_FALLBACK_RAISE_SHARE:.0f}%: the Kreis key (ars5) of the INKAR frame "
-            f"and of the in-commuter origins do not match.")
+    _check_draw_fallbacks(n, None, gemeinden is not None, donor_report, scale_supplied=scale_by_kreis is not None)
     if inkar_income is None:
         logger.warning("[incommuters] no INKAR frame supplied: %d in-commuters are drawn without the "
                        "origin-Kreis income tilt", n)

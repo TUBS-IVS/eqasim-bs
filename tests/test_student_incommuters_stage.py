@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from braunschweig.synthesis import student_incommuters as si
+from tests.incommuter_donor_fixture import DONOR_HOUSEHOLD, with_donor_household
 
 
 class Ctx:
@@ -35,7 +36,8 @@ def test_build_student_persons_log_cites_never_pt_constant_and_adr(caplog):
     from braunschweig.popsim.attributes import PT_TICKET_NEVER
 
     ids = pd.DataFrame({"person_id": [100, 101], "household_id": [50, 51]})
-    donors = pd.DataFrame({"age": [20, 21], "sex": ["male", "female"], "person_id": [1, 2]})
+    donors = with_donor_household(
+        pd.DataFrame({"age": [20, 21], "sex": ["male", "female"], "person_id": [1, 2]}))
     modes = ["car", "pt"]
     with caplog.at_level(logging.INFO, logger="braunschweig.synthesis.student_incommuters"):
         si._build_student_persons(ids, donors, modes)
@@ -162,8 +164,8 @@ def _full_ctx():
         "person_id": [1, 2], "commune_id": ["", ""],
         "location_id": ["uni_loc_0", "uni_loc_0"], "geometry": [None, None]})
     resident_work = resident_education.iloc[0:0].copy()
-    hts_persons = pd.DataFrame({
-        "person_id": [10], "studies": [True], "employed": [False]})
+    hts_persons = with_donor_household(pd.DataFrame({
+        "person_id": [10], "studies": [True], "employed": [False], "age": [22]}))
     hts_trips = pd.DataFrame({
         "person_id": [10, 10],
         "departure_time": [30000.0, 55000.0], "arrival_time": [32000.0, 57000.0],
@@ -180,6 +182,8 @@ def _full_ctx():
         "hts": (None, hts_persons, hts_trips),
         "braunschweig.synthesis.cordon_gates": {"gates": gates, "assignment": None},
         "synthesis.population.enriched": residents,
+        # The origin Kreis of the mocked Gemeinde (_mocked_full_ctx) at the national mean income level.
+        "braunschweig.data.inkar.household_income": pd.DataFrame({"ars5": ["03402"], "scale": [1.0]}),
     }
     cfg = {"cordon_enabled": True, "education_gravity_enabled": True,
            "cordon_student_incommuters_enabled": None,
@@ -189,7 +193,9 @@ def _full_ctx():
            "sampling_rate": 0.5, "random_seed": 1,
            "cordon_gate_speed_kmh": 30.0,
            "cordon_incommuter_time_chronology": True,
-           "braunschweig.student_incommuters.household_income_eur": 3000.0,
+           # One donor of weight 1 reaches a Kish size of 1, so the commute window of these tests is never the
+           # whole pool; test_a_student_pool_below_the_minimum_draws_from_the_whole_pool raises it.
+           "braunschweig.student_incommuters.donor_min_effective_pool": 1.0,
            "braunschweig.incommuters.time_redraw_max_attempts": 20,
            "braunschweig.day_end_margin.enabled": True,
            "braunschweig.day_end_margin.last_arrival_margin_s": 3600.0,
@@ -335,8 +341,9 @@ def _with_late_donor(ctx, *, keep_fitting_donor):
 
     _hh, _persons, hts_trips = ctx._stages["hts"]
     ids = [10, 11] if keep_fitting_donor else [11]
-    hts_persons = pd.DataFrame({
-        "person_id": ids, "studies": [True] * len(ids), "employed": [False] * len(ids)})
+    hts_persons = with_donor_household(pd.DataFrame({
+        "person_id": ids, "studies": [True] * len(ids), "employed": [False] * len(ids),
+        "age": [22] * len(ids)}))
     late = pd.DataFrame({
         "person_id": [11, 11],
         "departure_time": [30000.0, MAX_PLAN_TIME_SECONDS + 10000.0],
@@ -814,11 +821,100 @@ def test_student_pt_days_are_not_checked_when_the_check_is_off(monkeypatch):
     assert (frames["trips"]["mode"] == "pt").all() and "pt_connection" not in frames
 
 
-def test_student_households_follow_the_mode_and_the_configured_income():
-    """ADR-0191: a pt student's household has no car (it was 'all' for every household),
-    and the flat household income is the configured ASSUMPTION value, not a hidden constant."""
+def test_student_households_follow_the_mode():
+    """ADR-0191: a pt student's household has no car (it was 'all' for every household)."""
     ids = pd.DataFrame({"person_id": [100, 101], "household_id": [50, 51]})
-    households = si._build_student_households(ids, ["car", "pt"], household_income_eur=6000.0)
+    donors = with_donor_household(pd.DataFrame({"person_id": [1, 2]}))
+    households = si._build_student_households(ids, donors, ["car", "pt"])
     assert households.set_index("household_id")["car_availability"].to_dict() == {50: "all", 51: "none"}
-    assert households["household_income_eur"].tolist() == [6000.0, 6000.0]
-    assert households["high_income"].all()   # the resident 5000 EUR rule, not a constant False
+
+
+# ---------------------------------------------------------------------------
+# The student in-commuter carries the household of its MiD donor, drawn weighted from the adult student donors
+# with a similar education distance and tilted to the income level of its origin Kreis (ADR-0191).
+# ---------------------------------------------------------------------------
+
+def _student_donor_frame(*rows):
+    """One donor per row dict (``person_id`` required) over the household columns of the fixture."""
+    return pd.DataFrame(
+        [{**DONOR_HOUSEHOLD, "studies": True, "employed": False, "age": 22, **row} for row in rows])
+
+
+def _student_stage_ctx(monkeypatch, donors, inkar=None, min_pool=None):
+    """The mocked student stage with ``donors`` as the MiD persons (every donor with the trips of donor 10)."""
+    ctx = _mocked_full_ctx()
+    _patch_mocked_geodata(monkeypatch, ctx)
+    _hh, _persons, trips = ctx._stages["hts"]
+    donor_trips = pd.concat(
+        [trips.assign(person_id=pid) for pid in donors["person_id"]], ignore_index=True)
+    ctx._stages["hts"] = (None, donors, donor_trips)
+    if inkar is not None:
+        ctx._stages["braunschweig.data.inkar.household_income"] = inkar
+    if min_pool is not None:
+        ctx._cfg["braunschweig.student_incommuters.donor_min_effective_pool"] = min_pool
+    return ctx
+
+
+def test_student_carries_its_donor_household_and_only_eligible_adult_donors_are_drawn(monkeypatch):
+    """Donor 1 is the only eligible one: 2 is a school child, 3 reports a weekend day, 4 has no household
+    record, 5 has no weight, 6 has no education leg distance. Every student carries donor 1's household."""
+    rows = [
+        {"person_id": 1, "household_income_eur": 2400.0, "household_size": 2, "consumption_units": 1.5},
+        {"person_id": 2, "age": 12},
+        {"person_id": 3, "weekday_reporting_day": False},
+        {"person_id": 4, "household_income_eur": np.nan},
+        {"person_id": 5, "donor_weight": 0.0},
+        {"person_id": 6, "education_distance_km": np.nan},
+    ]
+    frames = si.execute(_student_stage_ctx(monkeypatch, _student_donor_frame(*rows)))
+
+    persons, households = frames["persons"], frames["households"]
+    assert len(persons) > 0
+    assert set(persons["hts_id"]) == {1}
+    assert set(persons["household_income_eur"]) == {2400.0}
+    assert set(persons["household_size"]) == {2}
+    assert set(persons["consumption_units"]) == {1.5}
+    assert persons["income_per_consumption_unit_eur"].to_numpy() == pytest.approx(1600.0)
+    assert not persons["high_income"].any()
+    assert set(households["household_income_eur"]) == {2400.0}
+    merged = persons.merge(households, on="household_id", suffixes=("_person", "_household"))
+    assert (merged["car_availability_person"] == merged["car_availability_household"]).all()
+    assert frames["donor_draw"]["n_agents"] == len(persons)
+
+
+def test_student_draw_is_tilted_to_the_origin_kreis(monkeypatch):
+    """Income per person 1000 and 3000 (mean 2000); the INKAR scale 1.25 targets 2500, so the tilted weights
+    give P(donor 2) = 0.75 against 0.5 untilted."""
+    donors = _student_donor_frame(
+        {"person_id": 1, "household_income_eur": 1000.0, "household_size": 1, "consumption_units": 1.0},
+        {"person_id": 2, "household_income_eur": 3000.0, "household_size": 1, "consumption_units": 1.0})
+    inkar = pd.DataFrame({"ars5": ["03402"], "scale": [1.25]})
+    frames = si.execute(_student_stage_ctx(monkeypatch, donors, inkar=inkar, min_pool=2.0))
+
+    persons = frames["persons"]
+    assert len(persons) >= 40       # enough agents for the share to separate 0.75 from 0.5
+    assert (persons["hts_id"] == 2).mean() > 0.5
+    report = frames["donor_draw"]
+    assert report["tilted"] is True and report["n_target_not_reached"] == 0
+    assert report["n_without_kreis_scale"] == 0
+
+
+def test_a_student_pool_below_the_minimum_draws_from_the_whole_pool(monkeypatch):
+    donors = _student_donor_frame({"person_id": 1})
+    frames = si.execute(_student_stage_ctx(monkeypatch, donors, min_pool=300.0))
+
+    assert len(frames["persons"]) > 0
+    assert frames["donor_draw"]["n_whole_pool_window"] == len(frames["persons"])
+
+
+@pytest.mark.parametrize("column", [
+    "household_income_eur", "economic_status", "household_size", "consumption_units", "donor_weight",
+    "weekday_reporting_day", "education_distance_km", "age"])
+def test_a_student_donor_frame_without_a_required_column_raises(monkeypatch, column):
+    donors = _student_donor_frame({"person_id": 1}).drop(columns=[column])
+    with pytest.raises(ValueError, match=column):
+        si.execute(_student_stage_ctx(monkeypatch, donors))
+
+
+def test_empty_frames_carry_the_empty_donor_draw_report():
+    assert si._empty_frames()["donor_draw"]["n_agents"] == 0

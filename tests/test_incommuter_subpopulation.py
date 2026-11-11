@@ -232,7 +232,8 @@ def test_the_synthesis_labels_are_the_subpopulations_the_config_wires():
 
     svb = incommuters._build_persons(
         ids, with_donor_household(pd.DataFrame({"person_id": [7]})), "person_id", ["car"])
-    students = student_incommuters._build_student_persons(ids, pd.DataFrame({"person_id": [7]}), ["pt"])
+    students = student_incommuters._build_student_persons(
+        ids, with_donor_household(pd.DataFrame({"person_id": [7], "age": [22]})), ["pt"])
     assert set(svb["subpopulation"]) == {CS.INCOMMUTER_SUBPOPULATION}
     assert set(students["subpopulation"]) == {CS.STUDENT_INCOMMUTER_SUBPOPULATION}
     assert CS.INCOMMUTER_SUBPOPULATIONS == (CS.INCOMMUTER_SUBPOPULATION, CS.STUDENT_INCOMMUTER_SUBPOPULATION)
