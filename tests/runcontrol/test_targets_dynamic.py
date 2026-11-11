@@ -32,7 +32,7 @@ class FakeSsh:
         return (0, "")
 
 
-def _cfg(name="added", host="134.169.42.227", repo="~/eqasim-bs"):
+def _cfg(name="added", host="203.0.113.10", repo="~/eqasim-bs"):
     return TargetConfig(name=name, kind="ssh", repo=repo, host=host, runner="scripts/run_pipeline.sh")
 
 
@@ -57,7 +57,7 @@ def test_save_writes_expected_json_shape(tmp_path):
     save_dynamic_targets(path, {"added": _cfg()})
     raw = json.loads(path.read_text())
     assert raw["targets"]["added"]["kind"] == "ssh"
-    assert raw["targets"]["added"]["host"] == "134.169.42.227"
+    assert raw["targets"]["added"]["host"] == "203.0.113.10"
     assert raw["targets"]["added"]["repo"] == "~/eqasim-bs"
     assert raw["targets"]["added"]["runner"] == "scripts/run_pipeline.sh"
     assert raw["targets"]["added"]["data_dir"] == "eqasim-data"
@@ -66,7 +66,7 @@ def test_save_writes_expected_json_shape(tmp_path):
 
 def test_validate_rejects_bad_name():
     with pytest.raises(ValueError, match="name"):
-        validate_new_target("x y", "134.169.42.227", "~/eqasim-bs", existing=set())
+        validate_new_target("x y", "203.0.113.10", "~/eqasim-bs", existing=set())
 
 
 def test_validate_rejects_host_starting_with_dash():
@@ -76,27 +76,27 @@ def test_validate_rejects_host_starting_with_dash():
 
 def test_validate_rejects_host_with_whitespace():
     with pytest.raises(ValueError, match="host"):
-        validate_new_target("ok", "134.169.42.227 extra", "~/eqasim-bs", existing=set())
+        validate_new_target("ok", "203.0.113.10 extra", "~/eqasim-bs", existing=set())
 
 
 def test_validate_rejects_repo_starting_with_dash():
     with pytest.raises(ValueError, match="repo"):
-        validate_new_target("ok", "134.169.42.227", "-rf", existing=set())
+        validate_new_target("ok", "203.0.113.10", "-rf", existing=set())
 
 
 def test_validate_rejects_empty_repo():
     with pytest.raises(ValueError, match="repo"):
-        validate_new_target("ok", "134.169.42.227", "", existing=set())
+        validate_new_target("ok", "203.0.113.10", "", existing=set())
 
 
 def test_validate_rejects_name_collision_with_config_message():
     with pytest.raises(ValueError, match="runcontrol.toml"):
-        validate_new_target("server", "134.169.42.227", "~/eqasim-bs", existing={"server"})
+        validate_new_target("server", "203.0.113.10", "~/eqasim-bs", existing={"server"})
 
 
 def test_validate_accepts_ssh_alias_and_user_at_ip_host():
     validate_new_target("felix2", "felix", "~/eqasim-bs", existing={"server"})
-    validate_new_target("felix3", "user@134.169.42.227", "~/eqasim-bs", existing={"server"})
+    validate_new_target("felix3", "user@203.0.113.10", "~/eqasim-bs", existing={"server"})
 
 
 # ---- SshTarget.probe -----------------------------------------------------
