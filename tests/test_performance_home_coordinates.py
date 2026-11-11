@@ -514,6 +514,7 @@ def test_execute_forwards_home_coordinate_batching_switch(monkeypatch):
         def config(self, key):
             return {
                 "random_seed": 1234,
+                "sampling_rate": 1.0,
                 "braunschweig.home_matching": "typed",
                 "braunschweig.performance.home_coordinates": False,
                 home_cell.KEY_CELLS_100M: "unused",
@@ -552,6 +553,7 @@ def test_execute_uses_projected_home_signals_when_coordinate_optimization_is_on(
         def config(self, key):
             return {
                 "random_seed": 1234,
+                "sampling_rate": 0.05,
                 "braunschweig.home_matching": "typed",
                 "braunschweig.performance.home_coordinates": True,
                 home_cell.KEY_CELLS_100M: "prepared-cells.parquet",
@@ -560,6 +562,7 @@ def test_execute_uses_projected_home_signals_when_coordinate_optimization_is_on(
     def capture_assignment(*args, **kwargs):
         observed["cells"] = args[2]
         observed["batch_coordinates"] = kwargs["batch_coordinates"]
+        observed["sampling_rate"] = kwargs["sampling_rate"]
         return gpd.GeoDataFrame(
             {
                 "household_id": sampled["household_id"],
@@ -578,3 +581,4 @@ def test_execute_uses_projected_home_signals_when_coordinate_optimization_is_on(
     home_cell.execute(Context())
     assert observed["batch_coordinates"] is True
     assert observed["cells"] is cells
+    assert observed["sampling_rate"] == 0.05      # the configured rate reaches the thinning

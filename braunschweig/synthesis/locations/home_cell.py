@@ -108,6 +108,12 @@ CELL_SIZE_M = 100
 # independent of every other ``random_seed``-derived stream in the pipeline.
 RANDOM_SEED_OFFSET = 91207
 
+# Seed offset of the SEPARATE random stream that thins a cell's slots when only a
+# sample of the households is placed (``sampling_rate < 1``). A separate stream keeps
+# the main placement stream (``RANDOM_SEED_OFFSET``) untouched, so ``sampling_rate == 1``
+# stays byte-identical to the unthinned behaviour.
+SLOT_THINNING_SEED_OFFSET = 5040331
+
 # Households whose building_type_3class is NaN/unknown (e.g. MiD haustyp=95
 # "sonstige Angabe" donors, observed ~3.8% of placements in the 2026-07 audit)
 # default to single-family (efh_zfh) rather than being dropped -- ASSUMPTION:
@@ -569,6 +575,7 @@ def assign_homes_typed(
     commune_col: str = "commune_id",
     household_id_col: str = "household_id",
     batch_coordinates: bool = True,
+    sampling_rate: float = 1.0,
 ) -> tuple[gpd.GeoDataFrame, TypedHomeReport]:
     """Place each household in a type- and size-matched building of its 100 m cell.
 
@@ -606,6 +613,14 @@ def assign_homes_typed(
         centroid clamp/reprojection operations for repeated selected
         ``(building_id, cell_id)`` pairs. False preserves the legacy scalar
         path for equivalence checks and rollback.
+    sampling_rate:
+        Fraction of the population that ``households`` represents (``0 < r <= 1``).
+        The slots are built from the FULL census occupied count, so for ``r < 1`` the
+        few sampled households would otherwise fill the first (largest-building) slots
+        of each cell. After the full slot set is built, a uniform random subset of
+        ``max(round(len(slots) * r), n_households_in_cell)`` slots is kept (original
+        order preserved), drawn from a separate stream seeded with
+        ``random_seed + SLOT_THINNING_SEED_OFFSET``. ``r == 1`` draws nothing.
 
     Returns
     -------
@@ -613,7 +628,12 @@ def assign_homes_typed(
         The ``[household_id, commune_id, home_location_id, geometry]`` frame (CRS
         EPSG:25832, one row per household) and the placement report.
     """
+    if not (0.0 < float(sampling_rate) <= 1.0):
+        raise ValueError(
+            f"[home_typed] sampling_rate must satisfy 0 < sampling_rate <= 1, got {sampling_rate!r}."
+        )
     rng = np.random.RandomState(int(random_seed) + RANDOM_SEED_OFFSET)
+    thin_rng = np.random.RandomState(int(random_seed) + SLOT_THINNING_SEED_OFFSET)
     buildings = buildings.reset_index(drop=True).copy()
     # Guard: if the buildings frame has no height_m column, default to NaN so
     # the area-only fallback path in assign_building_types / build_slots holds
@@ -823,6 +843,7 @@ def assign_homes_typed(
     n_match = n_zero = n_over = n_in_cell = n_neighbour = 0
     n_zero_building_random = n_empty_slots_random = n_neighbour_rng_discarded = 0
     n_signal_missing = n_geb_zero = n_whg_zero = n_reapportioned = 0
+    n_cells_thinned = n_thin_before = n_thin_after = 0
     for cell_id, grp in hh.groupby(cell_col, sort=False):
         fps = fps_by_cell_df.get(str(cell_id))
         if fps is None or len(fps) == 0:
@@ -879,6 +900,18 @@ def assign_homes_typed(
             n_reapportioned += len(grp)
         slots = slots_builder(typed, whg, max(occ, len(grp)), size_hist, rng,
                               apportionment=apportionment)
+        if sampling_rate < 1.0:
+            # The slots describe the whole census population of the cell, the
+            # households only a sample of it: keep a uniform random subset of slots
+            # (never fewer than the households to place) instead of letting the sample
+            # take the first slots of the size-ordered queue (largest building first).
+            n_keep = min(len(slots), max(int(round(len(slots) * sampling_rate)), len(grp)))
+            if n_keep < len(slots):
+                keep = np.sort(thin_rng.choice(len(slots), size=n_keep, replace=False))
+                n_thin_before += len(slots)
+                n_thin_after += n_keep
+                n_cells_thinned += 1
+                slots = slots.iloc[keep].reset_index(drop=True)
         cell_hh = grp[[household_id_col, "btype", "household_size"]].rename(
             columns={household_id_col: "household_id"})
         amap, rep = matcher(cell_hh, slots, rng)
@@ -905,6 +938,11 @@ def assign_homes_typed(
         _flush_batched_home_points()
 
     n = len(hh)
+    if sampling_rate < 1.0:
+        logger.info(
+            "[home_typed] slot thinning at sampling_rate=%.4g: %d cells thinned, slots %d -> %d",
+            sampling_rate, n_cells_thinned, n_thin_before, n_thin_after,
+        )
     btype_default_rate = n_btype_defaulted / n if n else 0.0
     report = TypedHomeReport(
         n_households=n,
@@ -986,6 +1024,9 @@ def configure(context):
     context.stage("braunschweig.data.buildings")
     context.stage("synthesis.population.sampled")
     context.config("random_seed")
+    # Fraction of the population the sampled households represent: thins the typed
+    # home slots (see assign_homes_typed).
+    context.config("sampling_rate")
     # Home-matching mode: "typed" (default, ALKIS type-aware) or "legacy".
     context.config(KEY_HOME_MATCHING, _DEFAULT_HOME_MATCHING)
     # Batch deterministic typed-home coordinate transforms; OFF retains the scalar
@@ -1045,5 +1086,6 @@ def execute(context):
     result, _ = assign_homes_typed(
         households, buildings, cells, random_seed=context.config("random_seed"),
         batch_coordinates=batch_coordinates,
+        sampling_rate=float(context.config("sampling_rate")),
     )
     return result[["household_id", "commune_id", "home_location_id", "geometry"]]
