@@ -286,4 +286,4 @@ dropped share per mode (`trips beyond N m dropped`), and the candidate stage log
 - `no_connection.resolve_no_connection` handles stays without a gate in a counted order (tour to car, tour to car
   passenger, departure shift, kept); the stage logs the rates under `[portal_trips]` and warns above
   `braunschweig.portal.no_connection_warn_share`. Keys and defaults: `portal_trips/config_keys.py`.
-- Status: implemented, effect not yet measured (WP-E run manifest owed).
+- Run evidence: `docs/runs/i465-wpe-smoke-1pct-2026-10-23.yml` (a 1 % smoke; it validates nothing about the effect).
