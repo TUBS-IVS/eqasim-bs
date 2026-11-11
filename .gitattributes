@@ -11,3 +11,6 @@ tests/fixtures/population_passenger_availability_legacy.xml text eol=lf
 # driver and rebuilds the views from the merged registries; check D1-generated fails any view that
 # was not rebuilt.
 docs/generated/*.md text eol=lf merge=generated-view
+
+# Git hooks are run by sh and need LF on every platform.
+scripts/git-hooks/* text eol=lf

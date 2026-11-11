@@ -1,0 +1,12 @@
+#!/bin/sh
+# eqasim-bs secret scan: refuse a commit that adds server access data or credentials.
+# Installed by `python scripts/check_no_secrets.py --install`, which also copies the
+# scanner next to this file. Do not edit the installed copy; edit scripts/git-hooks/pre-commit.
+hook_directory=$(dirname "$0")
+for interpreter in python python3; do
+    if command -v "$interpreter" >/dev/null 2>&1; then
+        exec "$interpreter" -I "$hook_directory/check_no_secrets.py" --staged
+    fi
+done
+echo "[secret-scan] no python interpreter on PATH, so the staged change cannot be scanned; commit refused." >&2
+exit 1
