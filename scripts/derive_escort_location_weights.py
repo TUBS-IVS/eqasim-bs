@@ -2,7 +2,7 @@
 
 SrV 2023 asks escort trips (V_ZWECK == 12, "Bringen oder Holen von Personen")
 directly where the person was brought / picked up (V_ZWECK_BHOL). This script
-computes the GEWICHT_W-weighted share per candidate category and writes the
+computes the GEWICHT_W_ZENSUS-weighted share per candidate category and writes the
 pinned reference CSV consumed as the default for the ``escort_locations_*``
 config keys.
 
@@ -10,7 +10,7 @@ Usage:
     python scripts/derive_escort_location_weights.py [--wege <path>] [--out <path>]
 
 Input : eqasim-data/data/braunschweig/srv/srv2023_raw/SrV2023_Wege.csv
-        (cp1252 encoded, GEWICHT_W uses a decimal comma)
+        (cp1252 encoded, GEWICHT_W_ZENSUS uses a decimal comma)
 Output: eqasim-data/data/braunschweig/srv/srv2023_escort_destination_types.csv
 
 Category mapping (SrV2023_Datenkodierung_SciUse.xlsx, variable V_ZWECK_BHOL):
@@ -48,6 +48,10 @@ DEFAULT_WEGE_PATH = REPO / "eqasim-data" / "data" / "braunschweig" / "srv" / "sr
 DEFAULT_OUTPUT_PATH = REPO / "eqasim-data" / "data" / "braunschweig" / "srv" / "srv2023_escort_destination_types.csv"
 
 ESCORT_V_ZWECK = 12
+
+# Trip weight: the Zensus-2022 expansion weight, which ADR-0055 prescribes for every SrV
+# aggregate across the BS+RGB strata (the stratum-internal GEWICHT_W must not be used).
+WEIGHT_COLUMN = "GEWICHT_W_ZENSUS"
 
 BHOL_CATEGORY = {
     3: "edu_kindergarten",
@@ -98,7 +102,7 @@ def derive_distance_factors(df: pd.DataFrame,
     length in km (sentinel -7 where invalid; verified on the raw file 2026-08-11).
     Validity is therefore ``value > 0``, NOT a 0/1 flag. factor =
     weighted_median(length | category) / weighted_median(length | all escort legs),
-    GEWICHT_W-weighted, restricted to V_ZWECK == 12 legs with a valid BHOL
+    GEWICHT_W_ZENSUS-weighted, restricted to V_ZWECK == 12 legs with a valid BHOL
     destination. Categories with 0 < n < ``min_obs`` unweighted legs get
     factor_applied = 1.0 (documented neutralization, logged by the runtime);
     categories with n == 0 are reported SEPARATELY (``absent_categories`` -- on real
@@ -132,15 +136,15 @@ def derive_distance_factors(df: pd.DataFrame,
     sub = escort[valid_dest & gis_ok].copy()
     sub["length_km"] = length_km[valid_dest & gis_ok]
 
-    weight_all = escort.loc[valid_dest, "GEWICHT_W"].astype(float).sum()
-    coverage = float(sub["GEWICHT_W"].astype(float).sum() / weight_all) if weight_all else 0.0
+    weight_all = escort.loc[valid_dest, WEIGHT_COLUMN].astype(float).sum()
+    coverage = float(sub[WEIGHT_COLUMN].astype(float).sum() / weight_all) if weight_all else 0.0
     if coverage < 0.5:
         raise ValueError(
             f"[derive_distance_factors] GIS length coverage {coverage:.1%} < 50% of "
             "escort legs; refusing to derive factors from a minority subsample."
         )
 
-    overall_median = weighted_median(sub["length_km"], sub["GEWICHT_W"])
+    overall_median = weighted_median(sub["length_km"], sub[WEIGHT_COLUMN])
     if not (0.1 <= overall_median <= 100.0):
         raise ValueError(
             f"[derive_distance_factors] implausible overall median {overall_median} "
@@ -170,22 +174,22 @@ def derive_distance_factors(df: pd.DataFrame,
             f"{unmapped_dest}; extend BHOL_CATEGORY explicitly (no silent bucket)."
         )
     dest_only["category"] = dest_only["V_ZWECK_BHOL"].astype(int).map(BHOL_CATEGORY)
-    dest_only["GEWICHT_W"] = dest_only["GEWICHT_W"].astype(float)
-    denom_weight_by_category = dest_only.groupby("category")["GEWICHT_W"].sum()
+    dest_only[WEIGHT_COLUMN] = dest_only[WEIGHT_COLUMN].astype(float)
+    denom_weight_by_category = dest_only.groupby("category")[WEIGHT_COLUMN].sum()
 
     rows, neutralized, absent = [], [], []
     for category in CATEGORY_ORDER:
         cat = sub[sub["category"] == category]
         n = int(len(cat))
         denom_weight = float(denom_weight_by_category.get(category, 0.0))
-        numer_weight = float(cat["GEWICHT_W"].astype(float).sum())
+        numer_weight = float(cat[WEIGHT_COLUMN].astype(float).sum())
         gis_coverage = (numer_weight / denom_weight) if denom_weight > 0.0 else float("nan")
         if n == 0:
             median_km, factor = float("nan"), float("nan")
             applied = 1.0
             absent.append(category)
         else:
-            median_km = weighted_median(cat["length_km"], cat["GEWICHT_W"])
+            median_km = weighted_median(cat["length_km"], cat[WEIGHT_COLUMN])
             factor = median_km / overall_median
             applied = factor if n >= min_obs else 1.0
             if n < min_obs:
@@ -224,7 +228,7 @@ def compute_length_coherence(df_srv: pd.DataFrame, mid_wege_path,
                              ratio_high: float = 1.5) -> dict:
     """Coherence gate (spec section 3): do SrV GIS lengths and MiD reported lengths
     scale similarly for the ACTIVE escort side? Compares SrV V_ZWECK == 12
-    (GIS_LAENGE_GUELTIG > 0 as the valid-only km length, GEWICHT_W) against MiD
+    (GIS_LAENGE_GUELTIG > 0 as the valid-only km length, GEWICHT_W_ZENSUS) against MiD
     W_ZWECK == 6 (wegkm_imp, W_GEW) on the nine W12 bands + overall weighted
     medians. Zero-length legs are excluded on both sides (symmetric validity:
     ``> 0``, not ``>= 0``) so a leg reported as zero distance on one survey but
@@ -248,10 +252,10 @@ def compute_length_coherence(df_srv: pd.DataFrame, mid_wege_path,
             .groupby("b", observed=False)["w"].sum()
         return (share / share.sum()).to_numpy()
 
-    srv_shares = band_shares(srv["length_km"], srv["GEWICHT_W"])
+    srv_shares = band_shares(srv["length_km"], srv[WEIGHT_COLUMN])
     mid_shares = band_shares(mid["wegkm_imp"], mid["W_GEW"])
     band_l1_pp = float(np.abs(srv_shares - mid_shares).sum() * 100.0)
-    srv_median = weighted_median(srv["length_km"], srv["GEWICHT_W"])
+    srv_median = weighted_median(srv["length_km"], srv[WEIGHT_COLUMN])
     mid_median = weighted_median(mid["wegkm_imp"], mid["W_GEW"])
     median_ratio = srv_median / mid_median
     return {
@@ -271,7 +275,7 @@ def derive_weights(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     ----------
     df:
         SrV Wege frame with numeric columns V_ZWECK, V_ZWECK_BHOL,
-        E_ZWECK_OBHOL and float GEWICHT_W (decimal point, already parsed).
+        E_ZWECK_OBHOL and float GEWICHT_W_ZENSUS (decimal point, already parsed).
 
     Returns
     -------
@@ -289,7 +293,7 @@ def derive_weights(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
             "wrong input file or broken V_ZWECK parsing."
         )
 
-    weight = escort["GEWICHT_W"].astype(float)
+    weight = escort[WEIGHT_COLUMN].astype(float)
     valid = escort["V_ZWECK_BHOL"] >= 1
     coverage_weighted = float(weight[valid].sum() / weight.sum())
 
@@ -312,11 +316,11 @@ def derive_weights(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
             100.0 * obhol_consistency_share, 100.0 * OBHOL_CONSISTENCY_WARN_SHARE,
         )
 
-    w_total = float(sub["GEWICHT_W"].astype(float).sum())
+    w_total = float(sub[WEIGHT_COLUMN].astype(float).sum())
     if not len(sub) or w_total <= 0.0:
         raise ValueError(
             "[derive_escort_location_weights] no escort legs with a valid "
-            "V_ZWECK_BHOL remain (or their GEWICHT_W sums to zero); cannot "
+            "V_ZWECK_BHOL remain (or their GEWICHT_W_ZENSUS sums to zero); cannot "
             "derive destination-type shares from zero valid observations."
         )
     rows = []
@@ -324,7 +328,7 @@ def derive_weights(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         mask = sub["category"] == category
         rows.append({
             "category": category,
-            "weight_share": float(sub.loc[mask, "GEWICHT_W"].astype(float).sum() / w_total),
+            "weight_share": float(sub.loc[mask, WEIGHT_COLUMN].astype(float).sum() / w_total),
             "n_legs_unweighted": int(mask.sum()),
         })
     table = pd.DataFrame(rows, columns=["category", "weight_share", "n_legs_unweighted"])
@@ -375,11 +379,21 @@ def main(argv=None) -> int:
         )
     df = pd.read_csv(
         args.wege, sep=None, engine="python", encoding="cp1252",
-        usecols=["V_ZWECK", "V_ZWECK_BHOL", "E_ZWECK_OBHOL", "GEWICHT_W",
+        usecols=["V_ZWECK", "V_ZWECK_BHOL", "E_ZWECK_OBHOL", WEIGHT_COLUMN,
                  "GIS_LAENGE_GUELTIG"],
     )
-    df["GEWICHT_W"] = (df["GEWICHT_W"].astype(str)
-                       .str.replace(",", ".", regex=False).astype(float))
+    # An expansion weight must be present for every leg (ADR-0055); a leg silently
+    # dropped or zero-weighted would bias the shares, so fail early instead.
+    df[WEIGHT_COLUMN] = pd.to_numeric(
+        df[WEIGHT_COLUMN].astype("string").str.replace(",", ".", regex=False),
+        errors="coerce")
+    invalid_weight = df[WEIGHT_COLUMN].isna() | (df[WEIGHT_COLUMN] <= 0.0)
+    if invalid_weight.any():
+        raise ValueError(
+            f"[derive_escort_location_weights] {int(invalid_weight.sum())}/{len(df)} legs "
+            f"in {args.wege} have a missing or non-positive {WEIGHT_COLUMN}; every leg "
+            "needs its expansion weight (ADR-0055)."
+        )
     # GIS_LAENGE_GUELTIG: valid-only GIS route length in km (decimal comma) or
     # the -7 sentinel -- convert to float; derive_distance_factors treats
     # "value > 0" as valid (see its docstring).
@@ -400,7 +414,7 @@ def main(argv=None) -> int:
 
     header = (
         "# Source: SrV 2023 Braunschweig+RGB SciUse (TU Dresden), Wege table, "
-        "V_ZWECK==12 legs with valid V_ZWECK_BHOL, GEWICHT_W-weighted.\n"
+        "V_ZWECK==12 legs with valid V_ZWECK_BHOL, GEWICHT_W_ZENSUS-weighted.\n"
         f"# Generated by scripts/derive_escort_location_weights.py; "
         f"coverage_weighted={stats['coverage_weighted']:.4f}, "
         f"n_valid={stats['n_valid']}/{stats['n_escort_legs']}, "
@@ -432,7 +446,7 @@ def main(argv=None) -> int:
     factors_header = (
         "# Source: SrV 2023 Braunschweig+RGB SciUse (TU Dresden), Wege table, V_ZWECK==12,\n"
         "# length = GIS_LAENGE_GUELTIG (valid-only GIS route length, km; -7 sentinel = invalid;\n"
-        "# validity = value > 0), GEWICHT_W-weighted.\n"
+        "# validity = value > 0), GEWICHT_W_ZENSUS-weighted.\n"
         f"# factor = category weighted median / overall weighted median "
         f"({factor_stats['overall_weighted_median_km']:.3f} km); "
         f"gis_coverage_weighted={factor_stats['gis_coverage_weighted']:.4f}; "

@@ -3,7 +3,7 @@ activities (issue #262).
 
 SrV 2023 records the purpose of every leg via ``V_ZWECK``. For the leisure and
 "other" (errand) secondary-activity families this script computes, per
-(purpose, mode, euclidean-distance band) cell, the GEWICHT_W-weighted share of
+(purpose, mode, euclidean-distance band) cell, the GEWICHT_W_ZENSUS-weighted share of
 each finer category -- e.g. how much of a "leisure" leg by car in the 1-1.5 km
 band is a leisure_outdoor destination vs. a leisure_gastronomy one. These
 per-cell probabilities let the location-choice model draw a location TYPE
@@ -14,7 +14,7 @@ Usage:
         [--out-probs <path>] [--out-shares <path>] [--min-obs 30]
 
 Input : eqasim-data/data/braunschweig/srv/srv2023_raw/SrV2023_Wege.csv
-        (cp1252 encoded, GEWICHT_W and GIS_LAENGE_GUELTIG use a decimal comma)
+        (cp1252 encoded, GEWICHT_W_ZENSUS and GIS_LAENGE_GUELTIG use a decimal comma)
 Output: eqasim-data/data/braunschweig/srv/srv2023_location_type_by_distance.csv
         eqasim-data/data/braunschweig/srv/srv2023_secondary_type_shares.csv
 
@@ -63,6 +63,10 @@ DEFAULT_PROBS_OUTPUT_PATH = REPO / "eqasim-data" / "data" / "braunschweig" / "sr
 DEFAULT_SHARES_OUTPUT_PATH = REPO / "eqasim-data" / "data" / "braunschweig" / "srv" / "srv2023_secondary_type_shares.csv"
 
 DEFAULT_MIN_OBS = 30
+
+# Trip weight: the Zensus-2022 expansion weight, which ADR-0055 prescribes for every SrV
+# aggregate across the BS+RGB strata (the stratum-internal GEWICHT_W must not be used).
+WEIGHT_COLUMN = "GEWICHT_W_ZENSUS"
 
 # routed -> euclidean-equivalent detour factor; same ASSUMPTION as the MiD
 # distance layers (documented above and in derive_escort_location_weights.py).
@@ -130,7 +134,7 @@ def _filter_in_scope(df: pd.DataFrame, category_map: dict) -> tuple[pd.DataFrame
     mode or a distance is actually required (the per-cell band split; the
     weighted-median distance columns).
 
-    Returns the scoped frame (columns: purpose, category, GEWICHT_W as float,
+    Returns the scoped frame (columns: purpose, category, GEWICHT_W_ZENSUS as float,
     plus the original columns) and n_in_scope.
     """
     in_scope = df["V_ZWECK"].isin(category_map)
@@ -144,7 +148,7 @@ def _filter_in_scope(df: pd.DataFrame, category_map: dict) -> tuple[pd.DataFrame
     purpose_category = scoped["V_ZWECK"].map(category_map)
     scoped["purpose"] = purpose_category.map(lambda pc: pc[0])
     scoped["category"] = purpose_category.map(lambda pc: pc[1])
-    scoped["GEWICHT_W"] = scoped["GEWICHT_W"].astype(float)
+    scoped[WEIGHT_COLUMN] = scoped[WEIGHT_COLUMN].astype(float)
     return scoped, n_in_scope
 
 
@@ -173,14 +177,14 @@ def _apply_mode_length_filters(scoped: pd.DataFrame) -> tuple[pd.DataFrame, int,
 
 def derive_type_probabilities(df: pd.DataFrame, *, min_obs: int = DEFAULT_MIN_OBS
                               ) -> tuple[pd.DataFrame, dict]:
-    """Per (purpose, mode, euclidean-distance band) GEWICHT_W-weighted category
+    """Per (purpose, mode, euclidean-distance band) GEWICHT_W_ZENSUS-weighted category
     probabilities, plus a purpose-level marginal fallback for thin cells.
 
     Parameters
     ----------
     df:
         SrV Wege frame with numeric columns V_ZWECK, E_HVM_5 and float
-        GEWICHT_W, GIS_LAENGE_GUELTIG (decimal point, already parsed; the
+        GEWICHT_W_ZENSUS, GIS_LAENGE_GUELTIG (decimal point, already parsed; the
         CLI applies the decimal-comma conversion before calling this).
     min_obs:
         Minimum unweighted leg count for a (purpose, mode, band) cell to be
@@ -222,9 +226,9 @@ def derive_type_probabilities(df: pd.DataFrame, *, min_obs: int = DEFAULT_MIN_OB
     # purpose (in_scope_all, NOT mode/length-filtered -- see
     # _filter_in_scope's docstring) -- the fallback used for thin cells.
     for purpose, purpose_group in in_scope_all.groupby("purpose"):
-        w_total_purpose = float(purpose_group["GEWICHT_W"].sum())
+        w_total_purpose = float(purpose_group[WEIGHT_COLUMN].sum())
         for category, category_group in purpose_group.groupby("category"):
-            probability = float(category_group["GEWICHT_W"].sum() / w_total_purpose)
+            probability = float(category_group[WEIGHT_COLUMN].sum() / w_total_purpose)
             rows.append({
                 "purpose": purpose, "mode": "all",
                 "band_lower_km": 0.0, "band_upper_km": float("inf"),
@@ -241,9 +245,9 @@ def derive_type_probabilities(df: pd.DataFrame, *, min_obs: int = DEFAULT_MIN_OB
                 continue
             n_cells_reported += 1
             lower, upper = _band_bounds(np.array([band_index_value]))
-            w_total_cell = float(cell_group["GEWICHT_W"].sum())
+            w_total_cell = float(cell_group[WEIGHT_COLUMN].sum())
             for category, category_group in cell_group.groupby("category"):
-                probability = float(category_group["GEWICHT_W"].sum() / w_total_cell)
+                probability = float(category_group[WEIGHT_COLUMN].sum() / w_total_cell)
                 rows.append({
                     "purpose": purpose, "mode": mode,
                     "band_lower_km": float(lower[0]), "band_upper_km": float(upper[0]),
@@ -262,7 +266,7 @@ def derive_type_probabilities(df: pd.DataFrame, *, min_obs: int = DEFAULT_MIN_OB
 
 
 def derive_type_shares(df: pd.DataFrame) -> pd.DataFrame:
-    """Per (purpose, category) GEWICHT_W-weighted share within its purpose,
+    """Per (purpose, category) GEWICHT_W_ZENSUS-weighted share within its purpose,
     plus weighted-median GIS and euclidean-equivalent distances.
 
     Includes the ``shop`` purpose (SHOP_SHARE_CODES: shop_daily = code 8,
@@ -295,7 +299,7 @@ def derive_type_shares(df: pd.DataFrame) -> pd.DataFrame:
 
     rows = []
     for purpose, purpose_group in in_scope_all.groupby("purpose"):
-        w_total_purpose = float(purpose_group["GEWICHT_W"].sum())
+        w_total_purpose = float(purpose_group[WEIGHT_COLUMN].sum())
         for category, category_group in purpose_group.groupby("category"):
             codes = sorted(code for code, pc in combined_map.items() if pc[1] == category)
             length_valid_group = category_group[category_group["valid_length"]]
@@ -319,17 +323,33 @@ def derive_type_shares(df: pd.DataFrame) -> pd.DataFrame:
                 "purpose": purpose,
                 "category": category,
                 "srv_v_zweck_codes": "|".join(str(code) for code in codes),
-                "weight_share": float(category_group["GEWICHT_W"].sum() / w_total_purpose),
+                "weight_share": float(category_group[WEIGHT_COLUMN].sum() / w_total_purpose),
                 "n_legs_unweighted": n_legs,
                 "weighted_median_gis_km": weighted_median(
-                    length_valid_group["gis_km"], length_valid_group["GEWICHT_W"]),
+                    length_valid_group["gis_km"], length_valid_group[WEIGHT_COLUMN]),
                 "weighted_median_euclid_km": weighted_median(
-                    length_valid_group["euclid_km"], length_valid_group["GEWICHT_W"]),
+                    length_valid_group["euclid_km"], length_valid_group[WEIGHT_COLUMN]),
             })
     shares_df = pd.DataFrame(rows, columns=[
         "purpose", "category", "srv_v_zweck_codes", "weight_share",
         "n_legs_unweighted", "weighted_median_gis_km", "weighted_median_euclid_km"])
     return shares_df
+
+
+def _parse_expansion_weight(raw: pd.Series, path: Path) -> pd.Series:
+    """Parse the decimal-comma WEIGHT_COLUMN and fail early on a missing or
+    non-positive weight: an expansion weight must be present for every leg
+    (ADR-0055), and a leg silently dropped or zero-weighted would bias the shares."""
+    weight = pd.to_numeric(raw.astype("string").str.replace(",", ".", regex=False),
+                           errors="coerce")
+    invalid = weight.isna() | (weight <= 0.0)
+    if invalid.any():
+        raise ValueError(
+            f"[derive_srv_location_types] {int(invalid.sum())}/{len(weight)} legs in "
+            f"{path} have a missing or non-positive {WEIGHT_COLUMN}; every leg needs "
+            "its expansion weight (ADR-0055)."
+        )
+    return weight.astype(float)
 
 
 def _load_wege(path: Path) -> pd.DataFrame:
@@ -340,10 +360,9 @@ def _load_wege(path: Path) -> pd.DataFrame:
         )
     df = pd.read_csv(
         path, sep=None, engine="python", encoding="cp1252",
-        usecols=["V_ZWECK", "E_HVM_5", "GEWICHT_W", "GIS_LAENGE_GUELTIG"],
+        usecols=["V_ZWECK", "E_HVM_5", WEIGHT_COLUMN, "GIS_LAENGE_GUELTIG"],
     )
-    df["GEWICHT_W"] = (df["GEWICHT_W"].astype(str)
-                       .str.replace(",", ".", regex=False).astype(float))
+    df[WEIGHT_COLUMN] = _parse_expansion_weight(df[WEIGHT_COLUMN], path)
     # GIS_LAENGE_GUELTIG: valid-only GIS route length in km (decimal comma) or
     # the -7 sentinel -- convert to float; "value > 0" is treated as valid
     # (same idiom as derive_escort_location_weights.derive_distance_factors).
@@ -396,7 +415,7 @@ def main(argv=None) -> int:
 
     probs_header = (
         "# Source: SrV 2023 Braunschweig+RGB SciUse (TU Dresden), Wege table, "
-        "V_ZWECK in leisure/other category map, GEWICHT_W-weighted.\n"
+        "V_ZWECK in leisure/other category map, GEWICHT_W_ZENSUS-weighted.\n"
         f"# Generated by scripts/derive_srv_location_types.py; "
         f"n_in_scope={stats['n_in_scope']}; exclusion rates are counted against "
         f"n_in_scope: excluded_invalid_mode={stats['n_excluded_invalid_mode']}/"
@@ -433,7 +452,7 @@ def main(argv=None) -> int:
 
     shares_header = (
         "# Source: SrV 2023 Braunschweig+RGB SciUse (TU Dresden), Wege table, "
-        "V_ZWECK in leisure/other/shop category map, GEWICHT_W-weighted.\n"
+        "V_ZWECK in leisure/other/shop category map, GEWICHT_W_ZENSUS-weighted.\n"
         "# weight_share = category weight / purpose weight (sums to 1.0 within "
         "each purpose); weighted_median_*_km = cumulative-weight median (see "
         "weighted_median in this script).\n"

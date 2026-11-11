@@ -11,7 +11,7 @@ from scripts.derive_srv_location_types import (
 
 def _wege(rows):
     return pd.DataFrame(rows, columns=[
-        "V_ZWECK", "E_HVM_5", "GEWICHT_W", "GIS_LAENGE_GUELTIG"])
+        "V_ZWECK", "E_HVM_5", "GEWICHT_W_ZENSUS", "GIS_LAENGE_GUELTIG"])
 
 
 def test_probabilities_sum_to_one_per_cell_and_marginal():
@@ -56,3 +56,39 @@ def test_shares_include_shop_and_weighted_medians():
     shop = shares[shares.purpose == "shop"].set_index("category")
     assert shop.loc["shop_daily", "weight_share"] == pytest.approx(2 / 3)
     assert shop.loc["shop_daily", "weighted_median_euclid_km"] == pytest.approx(1.0)
+
+
+def _write_raw_wege(path, zensus_weights):
+    # Raw-file format (";"-separated, decimal comma). Both SrV trip weights are present
+    # and DISAGREE, so the written shares reveal which one the script used:
+    # culture leg GEWICHT_W 1 / GEWICHT_W_ZENSUS 3, gastronomy leg 1 / 1.
+    header = "V_ZWECK;E_HVM_5;GEWICHT_W;GEWICHT_W_ZENSUS;GIS_LAENGE_GUELTIG"
+    rows = [f"13;1;1,0;{zensus_weights[0]};1,3", f"14;1;1,0;{zensus_weights[1]};1,3"]
+    path.write_text("\n".join([header, *rows]), encoding="cp1252")
+
+
+def test_main_weights_by_zensus_expansion_weight(tmp_path):
+    # ADR-0055: SrV aggregates use GEWICHT_W_ZENSUS; the stratum-internal GEWICHT_W
+    # would give the culture leg a share of 0.5 instead of 3 / (3 + 1) = 0.75.
+    from scripts.derive_srv_location_types import main
+    wege = tmp_path / "wege.csv"
+    _write_raw_wege(wege, ("3,0", "1,0"))
+    probs_path, shares_path = tmp_path / "probs.csv", tmp_path / "shares.csv"
+    assert main(["--wege", str(wege), "--out-probs", str(probs_path),
+                 "--out-shares", str(shares_path), "--min-obs", "1"]) == 0
+
+    shares = pd.read_csv(shares_path, comment="#").set_index("category")
+    assert shares.loc["leisure_culture", "weight_share"] == pytest.approx(0.75)
+    probs = pd.read_csv(probs_path, comment="#")
+    marginal = probs[probs.is_marginal == 1].set_index("category")
+    assert marginal.loc["leisure_culture", "probability"] == pytest.approx(0.75)
+
+
+@pytest.mark.parametrize("bad_weight", ["0,0", ""])
+def test_main_rejects_missing_or_non_positive_zensus_weight(tmp_path, bad_weight):
+    from scripts.derive_srv_location_types import main
+    wege = tmp_path / "wege.csv"
+    _write_raw_wege(wege, (bad_weight, "1,0"))
+    with pytest.raises(ValueError, match="GEWICHT_W_ZENSUS"):
+        main(["--wege", str(wege), "--out-probs", str(tmp_path / "p.csv"),
+              "--out-shares", str(tmp_path / "s.csv")])
