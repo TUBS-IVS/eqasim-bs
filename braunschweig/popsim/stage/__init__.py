@@ -661,7 +661,7 @@ def validate(context):
     Neither mechanism therefore reaches those modules, and without their entries an
     edit confined to one of them leaves this stage's cached output silently stale.
     Four modules qualify today: ``braunschweig.data.census.household_size``, imported
-    here, and four reached through helpers -- ``braunschweig.data.census.household_income``
+    here, and three reached through helpers -- ``braunschweig.data.census.household_income``
     (the income-class map of the enriched economic-status helper the ENTD adapters use),
     ``synthesis.population.matched`` (``match_donors``) and the HTS cleaner it
     imports, ``data.hts.entd.cleaned``.

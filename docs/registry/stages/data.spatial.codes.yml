@@ -10,7 +10,7 @@ lineage:
 code:
 - eqasim_common/spatial/entd_codes.py
 pipelines:
-  popsim_mid: active
+  popsim_mid: not_used
   popsim_open: active
   simple_ipf_open: active
 production: false

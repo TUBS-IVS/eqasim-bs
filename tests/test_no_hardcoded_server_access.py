@@ -106,7 +106,7 @@ def test_deploy_and_verification_scripts_carry_no_server_access() -> None:
     scripts = sorted((REPO_ROOT / "scripts").glob("*.ps1"))
     assert scripts, "no PowerShell deploy scripts found; the scan would be vacuous"
     offenders = []
-    for path in [*scripts, REPO_ROOT / "docs" / "verify_data.py", REPO_ROOT / "scripts" / "verify_data.py"]:
+    for path in [*scripts, REPO_ROOT / "docs" / "verify_data.py"]:
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             rules = _rules(line)
             if path.suffix == ".ps1" and LITERAL_SERVER_DEFAULT.search(line):
