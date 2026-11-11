@@ -13,7 +13,11 @@ from __future__ import annotations
 import geopandas as gpd
 import pandas as pd
 
+from braunschweig import synpp_tokens
+from braunschweig.data.spatial import cordon as _cordon
 from braunschweig.data.spatial.cordon import build_cordon_polygon, buffer_m_from_fraction
+from braunschweig.data.cordon import gate_assignment as _gate_assignment
+from braunschweig.data.cordon import gates as _gates
 from braunschweig.data.cordon.gates import (
     dedupe_gates, derive_road_gates, select_major_gates)
 from braunschweig.data.cordon.gate_assignment import (
@@ -46,6 +50,19 @@ def build_gates_with_volume(municipalities, links, gemeinden, flows, zgb_kreise,
         gemeinden, major[["gate_id", "capacity", "geometry"]], volume,
         beta=beta, capacity_exponent=capacity_exponent)
     return major, assignment
+
+
+#: Helpers whose code this stage runs: a helper-only edit must re-execute the cached gates.
+_HELPER_MODULES = (_gate_assignment, _gates, _cordon)
+#: Rest of the import closure (gate_assignment imports it): tests/test_audit_synpp_helper_hash.py.
+_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.cordon.external_points",)
+
+
+def validate(context):
+    """Include the gate helpers in synpp's stage cache identity (structured source token)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):

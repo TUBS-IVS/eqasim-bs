@@ -19,6 +19,8 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from braunschweig.data.cordon.external_points import _largest_remainder
+
 
 def commuter_volume_by_kreis(flows: pd.DataFrame, zgb_kreise) -> pd.DataFrame:
     """Inbound and outbound SvB per external Kreis (one row per external Kreis).
@@ -174,8 +176,35 @@ def population_gravity_gate_assignment(gemeinden: gpd.GeoDataFrame, gates: gpd.G
             f"gemeinden frame -> volume DROPPED: {sorted(dropped['ars5'].astype(str))}"
         )
     long = long.merge(kreis_volume, on="ars5", how="left")
+    # Apportion each Kreis's integer volume over its gates (largest remainder, weights =
+    # the Kreis's gate factors): rounding every (Kreis, gate) cell on its own lost small
+    # Kreise entirely and made the per-Kreis totals differ from the BA input.
+    input_totals = {col: int(kreis_volume[col].fillna(0.0).astype(float).apply(int).sum())
+                    for col in value_cols}
     for col in value_cols:
-        long[col] = (long[col].fillna(0.0) * long["factor"]).round().astype(int)
+        volume = long[col].fillna(0.0).astype(float)
+        assigned = np.zeros(len(long), dtype=int)
+        for rows in long.groupby("ars5", sort=False).indices.values():
+            assigned[rows] = _largest_remainder(int(volume.iloc[rows[0]]),
+                                                long["factor"].to_numpy()[rows])
+        long[col] = assigned
+    mismatched = []
+    for ars5, rows in long.groupby("ars5", sort=False).indices.items():
+        src = kreis_volume.loc[kreis_volume["ars5"] == ars5, value_cols]
+        for col in value_cols:
+            want = int(src[col].fillna(0.0).iloc[0]) if len(src) else 0
+            if int(long[col].to_numpy()[rows].sum()) != want:
+                mismatched.append(str(ars5))
+                break
+    assigned_totals = {col: int(long[col].sum()) for col in value_cols}
+    print(
+        f"[cordon.gate_assignment] {long['ars5'].nunique()} Kreise; "
+        + "; ".join(f"{col}: input {input_totals[col]:,}, assigned {assigned_totals[col]:,}"
+                    for col in value_cols))
+    if mismatched:
+        print(
+            f"[cordon.gate_assignment] WARNING: {len(mismatched)} Kreis(e) with all-zero gate "
+            f"weights: assigned total differs from the input: {sorted(mismatched)}")
     long = long[long[value_cols].sum(axis=1) > 0]
     return long[["ars5", "gate_id"] + value_cols].reset_index(drop=True)
 

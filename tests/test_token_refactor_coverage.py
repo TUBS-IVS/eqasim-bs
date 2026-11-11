@@ -26,7 +26,8 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 #: 2026-10-23 on branch fix/i465-outside-pt-walks: 32 (+1 = braunschweig.synthesis.outside_tour_modes.activities_stage,
 #: ADR-0159).
 #: 2026-11-06 on branch fix/i574-portal-check-cut-supply: 33 (+1 = braunschweig.data.transit.cut_schedule, ADR-0186).
-EXPECTED_SOURCE_HASHING_STAGES = 33
+#: 2026-11-11 on branch worktree-agent-a359dd27d49867285: 34 (+1 = braunschweig.synthesis.cordon_gates, package B3).
+EXPECTED_SOURCE_HASHING_STAGES = 34
 
 #: Stages whose token holds a non-source part (data files, sizes) next to the module digests.
 _COMPOSITE_STAGES = {
