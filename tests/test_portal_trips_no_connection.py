@@ -182,6 +182,44 @@ def test_two_stays_in_one_tour_switch_together():
     assert len(g) == 0
 
 
+def test_lifted_tour_drops_the_shift_of_an_already_shifted_stay():
+    trips = _trips(1, [("home", "work", "pt", 3600, 4000), ("work", "out", "pt", 10000, 10500),
+                       ("out", "work", "pt", 20000, 20500), ("work", "out", "pt", 30000, 30500),
+                       ("out", "home", "pt", 40000, 40500)])
+    stays = pd.DataFrame([_stay(1, 1, 2), _stay(1, 3, 4)])
+
+    def probe(positions, out_dep, ret_dep):  # stay 0 only at outbound +1800 s, stay 1 never
+        found = (positions == 0) & np.isclose(out_dep, 10000 + 1800)
+        return _gates(["s" if f else None for f in found])
+
+    m, t, g = nc.resolve_no_connection(stays, trips, _modes(2), _avail_int(False, False), _gates([None, None]),
+                                       probe, fallback_gates=_fallback(2), last_resort=nc.LAST_RESORT_LIFT, **KW)
+    assert m["no_connection_action"].tolist() == [nc.ACTION_TOUR_TO_CAR_PASSENGER_LIFT] * 2
+    assert t["mode"].tolist() == ["car_passenger"] * 5
+    assert t["departure_time"].tolist() == trips["departure_time"].tolist()
+    assert t["arrival_time"].tolist() == trips["arrival_time"].tolist()
+
+
+def test_lifted_tour_keeps_a_shift_whose_undoing_would_overlap_the_previous_trip():
+    trips = _trips(1, [("home", "out", "pt", 10000, 10500), ("out", "home", "pt", 20000, 20500),
+                       ("home", "out", "pt", 23000, 23500), ("out", "work", "pt", 30000, 30500),
+                       ("work", "out", "pt", 40000, 40500), ("out", "home", "pt", 50000, 50500)])
+    stays = pd.DataFrame([_stay(1, 0, 1), _stay(1, 2, 3), _stay(1, 4, 5)])  # C, A, B
+
+    def probe(positions, out_dep, ret_dep):
+        found_a = (positions == 1) & np.isclose(out_dep, 24800)
+        found_c = (positions == 0) & np.isclose(ret_dep, 23600) & np.isclose(out_dep, 10000)
+        return _gates(["s" if a or c else None for a, c in zip(found_a, found_c)])
+
+    m, t, g = nc.resolve_no_connection(stays, trips, _modes(3), _avail_int(False, False), _gates([None] * 3),
+                                       probe, fallback_gates=_fallback(3), last_resort=nc.LAST_RESORT_LIFT, **KW)
+    assert m["no_connection_action"].tolist() == [nc.ACTION_DEPARTURE_SHIFTED] + \
+        [nc.ACTION_TOUR_TO_CAR_PASSENGER_LIFT] * 2
+    assert t.loc[2, "departure_time"] == 24800  # undoing it would start before C's shifted return arrives
+    assert t.loc[1, "departure_time"] == 23600
+    assert t.loc[4, "departure_time"] == 40000 and t.loc[3, "departure_time"] == 30000
+
+
 def test_stay_without_return_checks_only_outbound():
     seen = []
 
