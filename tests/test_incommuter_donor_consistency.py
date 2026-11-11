@@ -11,6 +11,7 @@ import pytest
 from braunschweig.data.cordon import plans
 from braunschweig.data.hts import mid_donor
 from braunschweig.synthesis import incommuters, student_incommuters
+from tests.incommuter_donor_fixture import with_donor_household
 from tests.test_mid_donor import _synthetic_mid
 
 
@@ -29,7 +30,7 @@ def test_raw_mid_demographics_reach_both_incommuter_person_builders(caplog):
     assert {"age", "sex"} <= set(donors)
     ids = pd.DataFrame({"person_id": [100], "household_id": [100]})
     worker = incommuters._build_persons(
-        ids, donors.iloc[[0]], "person_id", ["car"], [3000.0])
+        ids, with_donor_household(donors.iloc[[0]]), "person_id", ["car"])
     student = student_incommuters._build_student_persons(
         ids, donors.iloc[[1]], ["pt"])
     assert worker[["age", "sex"]].values.tolist() == [[55, "female"]]

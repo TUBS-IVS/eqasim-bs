@@ -14,6 +14,7 @@ from braunschweig.synthesis.incommuters import (  # noqa: E402
     _agent_times, build_incommuter_frames)
 from braunschweig.data.cordon.gate_entry import gate_entry_time_s  # noqa: E402
 from braunschweig.data.cordon.plans import extract_commute_times  # noqa: E402
+from tests.incommuter_donor_fixture import with_donor_household  # noqa: E402
 
 
 def _inputs():
@@ -27,9 +28,8 @@ def _inputs():
     zgb_work = gpd.GeoDataFrame(
         {"location_id": ["work_1"], "commune_id": ["03101000"], "employees": [50]},
         geometry=[Point(606000, 5805000)], crs="EPSG:25832")
-    hts_persons = pd.DataFrame({"person_id": [1], "employed": [True], "age": [42],
-                                "sex": ["female"], "household_income_eur": [4000.0],
-                                "economic_status": ["high"]})
+    hts_persons = with_donor_household(pd.DataFrame({
+        "person_id": [1], "employed": [True], "age": [42], "sex": ["female"]}))
     hts_trips = pd.DataFrame([
         (1, "home", "work", 7 * 3600.0, 8 * 3600.0),
         (1, "work", "home", 17 * 3600.0, 18 * 3600.0),

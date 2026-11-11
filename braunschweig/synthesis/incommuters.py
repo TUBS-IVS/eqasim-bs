@@ -76,14 +76,13 @@ RAIL_LIKE_MODES = frozenset({"rail", "train", "subway", "light_rail", "regional_
 # VALID attributes so the MATSim writer + downstream logic accept them. Their commute
 # mode is fixed by the eqasim "outside" tour (OutsideFilter), so car/PT availability
 # only needs to be self-consistent with the chosen mode.
-# NOTE: household_income / household_income_eur / high_income and the car attributes are
-# NOT in this constant dict -- the income comes per agent from the MiD donor household and
-# the origin-Kreis INKAR level (draw_incommuter_income, ADR-0191), the car attributes follow
-# the fixed commute mode (_build_persons).
-# ASSUMPTION (ADR-0191): household_size 1 -- the injected agent is a one-person household
-# although its income and economic status are those of its MiD donor's whole household.
+# NOTE: household_income / household_income_eur / high_income, household_size,
+# consumption_units and the car attributes are NOT in this constant dict -- they come per
+# agent from the MiD donor household (_build_persons, ADR-0191), the car attributes follow
+# the fixed commute mode.
+# The agent is the one simulated member of its donor household.
 _INCOMMUTER_PERSON_DEFAULTS = dict(
-    studies=False, household_size=1, consumption_units=1.0,
+    studies=False,
     socioprofessional_class=6, number_of_bicycles=0,
     bicycle_availability="all", license_type="ja", has_license=True,
     has_pt_subscription=False, pt_subscription_type="never_pt",
@@ -124,9 +123,10 @@ DEFAULT_PT_SHARE_TOLERANCE = 0.01
 KEY_REBALANCE_MAX_ITERATIONS = "braunschweig.incommuters.rebalance_max_iterations"
 DEFAULT_REBALANCE_MAX_ITERATIONS = 10
 
-#: Donor columns the in-commuter income and economic status are read from; set by
-#: ``braunschweig.data.hts.mid_donor.attach_donor_household_income`` (ADR-0191).
-DONOR_INCOME_COLUMNS = ("household_income_eur", "economic_status")
+#: Donor columns the in-commuter household and the donor eligibility are read from; set by
+#: ``braunschweig.data.hts.mid_donor.attach_donor_household`` (ADR-0191).
+DONOR_COLUMNS = ("household_income_eur", "economic_status", "household_size", "consumption_units",
+                 "donor_weight", "weekday_reporting_day")
 
 # Fallback-rate threshold above which the INKAR origin-Kreis miss is escalated to a
 # WARNING (CLAUDE.md "Fallback transparency"). A high rate means a systematic origin
@@ -134,20 +134,38 @@ DONOR_INCOME_COLUMNS = ("household_income_eur", "economic_status")
 INCOMMUTER_INCOME_FALLBACK_WARN_RATE = 5.0
 
 
-def _donors_with_household_income(hts_persons):
-    """The donor persons that carry a household income AND an economic status (ADR-0191).
+def _eligible_donors(hts_persons):
+    """The donor persons that can stand for an in-commuter household (ADR-0191, D1 and D4).
 
-    A MiD person without a household record has neither (``mid_donor`` counts them); such a
-    person cannot stand for an in-commuter household, so it leaves the worker donor pool. The
-    excluded count and share are logged; ``select_commuter_donors`` raises if nobody is left.
+    Raises ``ValueError`` when a column of :data:`DONOR_COLUMNS` is missing. Excluded, each donor
+    counted once under the first reason that applies: no household record (income, status, size or
+    consumption units missing), a reporting day outside the model's weekday universe, a donor weight
+    that is missing or not above 0. The count per reason and the primary share are logged;
+    ``select_commuter_donors`` raises if nobody is left.
     """
-    has_income = hts_persons[list(DONOR_INCOME_COLUMNS)].notna().all(axis=1)
-    n, n_excluded = len(hts_persons), int((~has_income).sum())
+    missing = [c for c in DONOR_COLUMNS if c not in hts_persons.columns]
+    if missing:
+        raise ValueError(
+            f"[incommuters] the donor persons lack {missing}; the in-commuter household comes from "
+            f"the MiD donor household (braunschweig.data.hts.mid_donor.attach_donor_household, "
+            f"ADR-0191).")
+    no_household = hts_persons[
+        ["household_income_eur", "economic_status", "household_size", "consumption_units"]
+    ].isna().any(axis=1)
+    not_weekday = ~hts_persons["weekday_reporting_day"].fillna(False).astype(bool)
+    weight = pd.to_numeric(hts_persons["donor_weight"], errors="coerce")
+    no_weight = ~(weight > 0)
+    reason_household = no_household
+    reason_weekday = ~reason_household & not_weekday
+    reason_weight = ~reason_household & ~reason_weekday & no_weight
+    keep = ~(reason_household | reason_weekday | reason_weight)
+    n, n_kept = len(hts_persons), int(keep.sum())
     logger.info(
-        "[incommuters] donor household income: primary %d/%d donor persons (%.2f%%), excluded %d "
-        "(%.2f%%) without a household income or economic status", n - n_excluded, n,
-        100.0 * (n - n_excluded) / n if n else 0.0, n_excluded, 100.0 * n_excluded / n if n else 0.0)
-    return hts_persons[has_income].reset_index(drop=True)
+        "[incommuters] donor eligibility: primary %d/%d donor persons (%.2f%%), excluded %d: "
+        "%d without a household record, %d without a weekday reporting day, %d without a "
+        "positive weight", n_kept, n, 100.0 * n_kept / n if n else 0.0, n - n_kept,
+        int(reason_household.sum()), int(reason_weekday.sum()), int(reason_weight.sum()))
+    return hts_persons[keep].reset_index(drop=True)
 
 
 def draw_incommuter_income(orig_ars, donor_income_eur, df_inkar):
@@ -460,17 +478,10 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     of the promotion attempts under ``pt_rebalance`` (kept apart from ``pt_connection``, whose
     rates are over the original pt days only).
 
-    The donors (``hts_persons``) must carry :data:`DONOR_INCOME_COLUMNS`: the income and the
-    economic status of an in-commuter are its donor household's (ADR-0191); a missing
-    column raises, there is no constant fallback.
+    The donors (``hts_persons``) must carry :data:`DONOR_COLUMNS`: the household of an in-commuter
+    is its donor household (ADR-0191); a missing column raises, there is no constant fallback.
     """
-    missing_income_cols = [c for c in DONOR_INCOME_COLUMNS if c not in hts_persons.columns]
-    if missing_income_cols:
-        raise ValueError(
-            f"[incommuters] the donor persons lack {missing_income_cols}; the in-commuter income "
-            f"and economic status come from the MiD donor household "
-            f"(braunschweig.data.hts.mid_donor.attach_donor_household_income, ADR-0191).")
-    hts_persons = _donors_with_household_income(hts_persons)
+    hts_persons = _eligible_donors(hts_persons)
     inbound = select_inbound_flows(flows, zgb_kreise, in_ring_kreise=set(assignment["ars5"]))
     # OD validation target for the per-run cordon analysis (#134): the full-population
     # BA inbound SvB flow per external source Kreis, direction "ein". Derived from the
@@ -967,8 +978,10 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         logger.warning("[incommuters] no INKAR frame supplied: %d in-commuters keep their "
                        "donor household income without the origin-Kreis scale", n)
 
-    persons = _build_persons(ids, donors, person_col, modes, income_eur)
-    households = _build_households(ids, income_eur, modes)
+    # Until the donor draw carries the Kreis level itself, both builders read the scaled value.
+    donors = donors.assign(household_income_eur=income_eur)
+    persons = _build_persons(ids, donors, person_col, modes)
+    households = _build_households(ids, donors, modes)
     # In-commuter cars are drawn from the German NDS fleet (Task F6) when a
     # ``data_path`` is supplied (the production stage); legacy callers / unit tests
     # that omit it keep the single default-car row so their behaviour is unchanged.
@@ -1189,19 +1202,23 @@ def _agent_times(donors, hts_trips, person_col, dist_km, home_to_gate_km,
     return arrive_work, depart_work, depart_home, arrive_home
 
 
-def _build_persons(ids, donors, person_col, modes, income_eur):
+def _build_persons(ids, donors, person_col, modes):
     """Persons frame for injected in-commuters with the resident attribute schema.
 
-    ``income_eur`` is the per-agent monthly household income (EUR) of
-    :func:`draw_incommuter_income`. The categorical ``household_income`` placeholder string
-    (read by the legacy Bavaria writer) is set to the same value so the two stay consistent;
-    ``high_income`` follows the resident rule (:func:`_high_income`). Car attributes follow
-    the fixed commute mode: a car-mode agent owns one car, a pt-mode agent none (ADR-0191).
+    Household income (EUR/month, rounded to whole EUR), household size and consumption units are
+    the agent's donor household's (``donors`` is agent-aligned and eligible, see
+    :func:`_eligible_donors`). The categorical ``household_income`` placeholder string (read by the
+    legacy Bavaria writer) is set to the same value so the two stay consistent; ``high_income``
+    follows the resident rule (:func:`_high_income`). Car attributes follow the fixed commute
+    mode: a car-mode agent owns one car, a pt-mode agent none (ADR-0191).
     """
+    from braunschweig.popsim.income import add_income_per_consumption_unit
+
+
     age = donors["age"].to_numpy() if "age" in donors.columns else 40
     sex = donors["sex"].to_numpy() if "sex" in donors.columns else "male"
     hts_id = donors[person_col].to_numpy() if person_col in donors.columns else -1
-    income_eur = np.asarray(income_eur, dtype=float)
+    income_eur = donors["household_income_eur"].to_numpy(dtype=float).round(0)
     is_car = np.asarray(modes) == "car"
     persons = pd.DataFrame({
         "person_id": ids["person_id"].to_numpy(),
@@ -1216,9 +1233,12 @@ def _build_persons(ids, donors, person_col, modes, income_eur):
         "household_income_eur": income_eur,
         "household_income": [str(int(v)) for v in income_eur],
         "high_income": _high_income(income_eur),
+        "household_size": donors["household_size"].to_numpy().astype(int),
+        "consumption_units": donors["consumption_units"].to_numpy(dtype=float),
     })
     for key, value in _INCOMMUTER_PERSON_DEFAULTS.items():
         persons[key] = value
+    persons = add_income_per_consumption_unit(persons)
     # The literal 'never_pt' below is braunschweig.popsim.attributes.PT_TICKET_NEVER,
     # spelled out rather than imported: braunschweig.synthesis must not import from
     # braunschweig.popsim (the one-way layering that
@@ -1239,14 +1259,13 @@ def _high_income(income_eur):
     return np.asarray(income_eur, dtype=float) >= HIGH_INCOME_THRESHOLD_EUR
 
 
-def _build_households(ids, income_eur, modes):
-    """One single-person household per injected in-commuter.
+def _build_households(ids, donors, modes):
+    """One household record per injected in-commuter (only the commuter is simulated).
 
-    ``income_eur`` is the per-agent monthly household income (EUR) of
-    :func:`draw_incommuter_income`; the household ``car_availability`` follows the fixed
-    commute mode like the person's (ADR-0191).
+    The monthly household income (EUR) is the donor household's; the household
+    ``car_availability`` follows the fixed commute mode like the person's (ADR-0191).
     """
-    income_eur = np.asarray(income_eur, dtype=float)
+    income_eur = donors["household_income_eur"].to_numpy(dtype=float).round(0)
     return pd.DataFrame({
         "household_id": ids["household_id"].to_numpy(),
         "person_id": ids["person_id"].to_numpy(),
