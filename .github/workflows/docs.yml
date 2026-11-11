@@ -32,6 +32,9 @@ jobs:
       - name: Generated views untouched by the pull request (ADR-0168)
         if: github.event_name == 'pull_request' && github.head_ref != 'bot/generated-views'
         run: python scripts/check_generated_views_untouched.py --base ${{ github.event.pull_request.base.sha }}
+      - name: No server access data or credentials added (docs/codebase/notes/secret-scan.md)
+        if: github.event_name == 'pull_request'
+        run: python scripts/check_no_secrets.py --base ${{ github.event.pull_request.base.sha }}
       - name: Documentation check (FAIL findings fail the job)
         run: python -m braunschweig.documentation check --quiet --no-dag
       - name: Registry guard tests
