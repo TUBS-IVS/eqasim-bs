@@ -2,7 +2,7 @@
 
 Aliased to synthesis.population.spatial.commute_distance for the popsim_mid workflow.
 
-The upstream default stage (removed from this repository; see git history) joined synthetic
+The default stage (synthesis/population/spatial/commute_distance.py) joins synthetic
 persons to the HTS commute distance via hts_id. In popsim_mid, each synthetic person
 IS a MiD respondent, so the commute distance is taken directly from the donor's real
 MiD trips. Mirroring the legacy HTS stage (data/hts/commute_distance.py), only
