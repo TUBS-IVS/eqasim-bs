@@ -80,7 +80,7 @@ patterns in `.git/info/exclude` work immediately and stay machine-local.
 
 `scripts/` is the home for durable tooling and already hosts a diagnostics family
 (`diagnose_anchor_p13.py`, `inspect_hh_gap.py`, `inspect_mid_p13.py`,
-`inspect_zensus_hh.py`, `check_pendler_intra.py`). A scratch script earns a place there
+`inspect_zensus_hh.py`). A scratch script earns a place there
 on two conditions: it takes its input as an ARGUMENT instead of hard-coding a cache path,
 and it answers a question the project still asks.
 
