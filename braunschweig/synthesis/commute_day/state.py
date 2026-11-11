@@ -21,8 +21,8 @@ Four building blocks, in the order a caller uses them:
    ``commute_day_state`` attribute and its diagnostics.
 
 None of this module reads a file, calls a synpp stage, or touches raw MiD data; it operates
-purely on DataFrames/GeoDataFrames passed in by the caller (a synpp stage, added in a later
-Phase B task) and is exercised in ``tests/test_commute_day_state.py`` on synthetic frames only.
+purely on DataFrames/GeoDataFrames passed in by the caller (the synpp stage
+:mod:`state_stage`) and is exercised in ``tests/test_commute_day_state.py`` on synthetic frames only.
 """
 from __future__ import annotations
 

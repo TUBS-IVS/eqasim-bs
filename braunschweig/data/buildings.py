@@ -1,12 +1,11 @@
 """
-Braunschweig building registry — drop-in replacement for
-``braunschweig.data.buildings``.
+Braunschweig building registry.
 
-Emits the same schema expected by ``bavaria.locations.home``:
+Emits the schema consumed by the home-location stages:
     building_id   int
     weight        float    (proxy for dwelling capacity, = footprint area)
-    commune_id    str      (AGS, 8-digit)
-    iris_id       str      (AGS, 8-digit; ZGB has no IRIS-level split)
+    commune_id    str      (12-digit ARS of the zone system)
+    iris_id       str      (ARS + "0000"; ZGB has no IRIS-level split)
     geometry      Point    (building centroid, EPSG:25832)
 
 The stage reads the ALKIS parquet produced by
@@ -32,9 +31,9 @@ import pandas as pd
 # filter so pure garages/sheds get excluded even without an explicit code.
 RESIDENTIAL_ACTIVITIES = {"residential", "unknown"}
 
-# Minimum / maximum footprint area in m² — same heuristic as the Bavarian
-# Hausumringe pipeline.  40 m² eliminates garages/sheds, 400 m² eliminates
-# apartment complexes that would otherwise dominate sampling.
+# Minimum footprint area in m².  40 m² eliminates garages/sheds.  There is no
+# upper cap: large multi-family footprints are kept because ``weight`` is a
+# capacity proxy.
 AREA_MIN = 40.0
 INCLUDE_LARGE_BUILDINGS = True   # the matcher uses capacity, so big MFH blocks are kept
 

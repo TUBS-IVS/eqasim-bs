@@ -115,7 +115,7 @@ def backbone_age_bands(fine_teen_age_bands: bool) -> List[tuple]:
     Parameters
     ----------
     fine_teen_age_bands:
-        ``True`` -> 11 bands (10-15 / 16-17 / 18-19 in place of 10-19);
+        ``True`` -> :data:`FINE_TEEN_AGE_BANDS` (10_14 / 15_17 / 18_19) in place of 10_19;
         ``False`` -> the nine ten-year :data:`AGE_BANDS` (the pre-#320 production set).
     """
     if not fine_teen_age_bands:
@@ -423,26 +423,26 @@ def _backbone_age_expression(band_label: str, lower: int | None, upper: int | No
 
 
 def tier0_backbone_catalog(*, fine_teen_age_bands: bool = True) -> List[CatalogControl]:
-    """Build the Tier-0 backbone catalog (LOSSLESS-reduced): 20 or 24 controls.
+    """Build the Tier-0 backbone catalog (LOSSLESS-reduced).
 
-    With ``fine_teen_age_bands=True`` (the default since issue #320) the 10-19 band is
-    replaced by 10-15 / 16-17 / 18-19, so the 100m block holds 22 age x sex controls
-    instead of 18 and the catalog has 24 controls instead of 20. ``False`` reproduces the
-    pre-#320 nine-band set byte-identically (see the committed baseline fixture).
+    With ``fine_teen_age_bands=True`` (the default) the 10-19 band is replaced by the
+    :data:`FINE_TEEN_AGE_BANDS` (10_14 / 15_17 / 18_19), which adds age x sex controls at
+    100m. ``False`` reproduces the nine ten-year-band set (see the committed baseline
+    fixture).
 
     This is the over-controlling fix: redundant/derivable marginals are dropped so
     PopulationSim is constrained only by an independent, non-redundant set, without
     losing any information (every dropped target is an exact sum of kept ones).
 
-    Reduced structure (21 controls):
+    Reduced structure:
 
-    - ``ZENSUS100m`` (19, or 23 with the fine teen bands): ``HH_TOTAL`` + the age x sex bands.
-      * ``POP_TOTAL`` is DROPPED at 100m -- it is the exact sum of the 18 age x sex
+    - ``ZENSUS100m``: ``HH_TOTAL`` + the age x sex bands.
+      * ``POP_TOTAL`` is DROPPED at 100m -- it is the exact sum of the age x sex
         bands, so it is fully derivable (lossless) and adds no independent constraint.
       * ``M_TOTAL`` / ``F_TOTAL`` are DROPPED at 100m -- each is the exact sum of that
-        sex's 9 age bands, again fully derivable (lossless).
-    - ``ZENSUS1km`` (1): ``HH_TOTAL`` only.
-      * The 18 age bands + ``M_TOTAL`` / ``F_TOTAL`` + ``POP_TOTAL`` are ALL DROPPED at
+        sex's age bands, again fully derivable (lossless).
+    - ``ZENSUS1km``: ``HH_TOTAL`` only.
+      * The age bands +``M_TOTAL`` / ``F_TOTAL`` + ``POP_TOTAL`` are ALL DROPPED at
         1km: the 100m age bands aggregate exactly to their 1km parent under nested
         sub_balancing, so every 1km person duplicate is redundant (lossless).
       * ``HH_TOTAL`` is KEPT at BOTH geographies: it is the required household
@@ -452,8 +452,7 @@ def tier0_backbone_catalog(*, fine_teen_age_bands: bool = True) -> List[CatalogC
         source set -> a 1km-only source column would be missing -> PopulationSim
         KeyError); persons are enforced via the 100m age x sex bands + aggregation.
 
-    Net: 100m = {HH_TOTAL, 18 bands} = 19 ; 1km = {HH_TOTAL} = 1 ; total 20
-    (with the fine teen bands: 100m = 23, total 24).
+    Net: 100m = {HH_TOTAL, age x sex bands} ; 1km = {HH_TOTAL}.
 
     All controls have both ``mid`` and ``entd`` seed expressions (the MiD and ENTD
     built tables share the column names HP_ALTER / HP_SEX / H_GEW / P_GEW).
@@ -471,8 +470,8 @@ def tier0_backbone_catalog(*, fine_teen_age_bands: bool = True) -> List[CatalogC
     Returns
     -------
     list[CatalogControl]
-        20 backbone controls (19 at ZENSUS100m, 1 at ZENSUS1km); 24 (23 + 1) when
-        ``fine_teen_age_bands`` is set.
+        The backbone controls (``HH_TOTAL`` at ZENSUS100m and ZENSUS1km, age x sex bands
+        at ZENSUS100m); more age x sex controls when ``fine_teen_age_bands`` is set.
     """
     HH_TOTAL_BASE = HH_TOTAL_CENSUS_COLUMN
     POP_TOTAL_BASE = "POP_TOTAL_100m_adj"
@@ -482,7 +481,7 @@ def tier0_backbone_catalog(*, fine_teen_age_bands: bool = True) -> List[CatalogC
 
     catalog: List[CatalogControl] = []
 
-    # --- ZENSUS100m: HH_TOTAL + 18 age x sex bands (POP_TOTAL / M_TOTAL / F_TOTAL
+    # --- ZENSUS100m: HH_TOTAL + the age x sex bands (POP_TOTAL / M_TOTAL / F_TOTAL
     #     dropped here as exact sums of kept controls -> lossless). ---
     catalog.append(
         CatalogControl(
@@ -1138,12 +1137,11 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employmen
     ----------
     include_tiers:
         Tiers to include (LOSSLESS-reduced catalog). ``"tier0"`` is always included
-        when present: 21 backbone Zensus controls (100m HH_TOTAL + 18 age x sex bands;
-        1km HH_TOTAL + POP_TOTAL). ``"tier1"`` adds the 10 household-size (6) +
-        household-type (4) controls at 100m. ``"tier2"`` adds the 5 tenure (2) +
-        building_type (3) controls at 100m. ``"tier3"`` adds the 7 employment/education
-        controls at KREIS geography (MiD-only; ENTD drops all via controls_for_seed).
-        Full ``("tier0","tier1","tier2","tier3")`` = 21 + 10 + 5 + 7 = 43.
+        when present: the backbone Zensus controls (see :func:`tier0_backbone_catalog`).
+        ``"tier1"`` adds the household-size + household-type controls at 100m.
+        ``"tier2"`` adds the tenure + building_type controls at 100m. ``"tier3"`` adds
+        the employment/education controls at KREIS geography (MiD-only; ENTD drops all
+        via controls_for_seed).
     include_employment_grid:
         Adds :func:`employment_grid_controls` -- the 1km employment/education SHAPE
         controls (issue #201). MiD-only. Independent of ``"tier3"``, which carries the
@@ -1163,8 +1161,8 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employmen
         attribute controls (:func:`attribute_kreis_controls`). Empty means none. An
         unknown name raises rather than being skipped.
     fine_teen_age_bands:
-        Forwarded to :func:`tier0_backbone_catalog`; ``True`` (default, issue #320) adds
-        4 controls by splitting the 10-19 band into 10-15 / 16-17 / 18-19 per sex.
+        Forwarded to :func:`tier0_backbone_catalog`; ``True`` (default) splits the
+        10-19 band into 10_14 / 15_17 / 18_19 per sex.
 
     Returns
     -------

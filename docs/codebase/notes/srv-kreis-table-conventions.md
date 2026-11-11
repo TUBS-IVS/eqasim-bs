@@ -18,11 +18,13 @@ prose, which had already drifted (the prose dropped the `SK` / `LK` prefixes
 ## The dominant convention (use this for a new table)
 
 Columns start `code,level,...`; `code` is the 5-digit ARS, `level` is `kreis`
-for a Kreis row and `total` for the region row, whose `code` is `03ZGB`. Seven
-Kreis rows: Wolfsburg (`03103`) is not surveyed by SrV and gets NO row, so a
-consumer that needs all eight fills Wolfsburg from the region total and
-documents that as an assumption (`scripts/build_participation_target.py` is the
-worked example). Tables following it:
+for a Kreis row and `total` for the region row, whose `code` is `03ZGB`. Eight
+Kreis rows: Wolfsburg (`03103`) is not surveyed by SrV and is emitted as an
+`n = 0` placeholder row (`n_unweighted` / `n_persons` 0, empty shares). A
+consumer must treat that row as absent, never read its shares as zeros, and
+fills Wolfsburg from the region total, documenting that as an assumption
+(`scripts/build_participation_target.py` is the worked example). Tables
+following it:
 
 - `srv2023_participation_by_kreis.csv`
 - `srv2023_work_by_employment_by_kreis.csv`
@@ -30,15 +32,13 @@ worked example). Tables following it:
 
 ## The one exception
 
-`srv2023_work_participation_by_kreis.csv` differs in three ways at once, and is
+`srv2023_work_participation_by_kreis.csv` differs in two ways at once, and is
 NOT the pattern to copy:
 
 - columns start `level,code,...` — the two swapped;
-- the region row is coded `zgb`, lowercase, with `level` also `zgb`;
-- it carries EIGHT Kreis rows, including a PLACEHOLDER `03103` Wolfsburg row with
-  `n_persons = 0` and empty (NaN) shares. That row is not a filled value: a
-  consumer must treat it as absent exactly as it treats a missing row in the
-  seven-row tables, and must never read its shares as zeros.
+- the region row is coded `zgb`, lowercase, with `level` also `zgb`.
+
+(It also carries the `n_persons = 0` Wolfsburg placeholder, like the tables above.)
 
 It is a validation reference for the commute-day-state model, not a control
 target, which is why the divergence was never load-bearing enough to justify

@@ -3,18 +3,20 @@
 Builders turn the local-only SrV 2023 "Braunschweig und RGB" scientific-use microdata
 (trips + persons + households) into small committed aggregate tables per home Kreis:
 work and education distance band shares (with an intra/inter-Gemeinde split for work),
-per-Kreis distance quantiles for the per-person commute-distance targets, and (addendum
-Task 15) a SENSITIVITY table -- NOT a target -- measuring two known caveats of the work
+per-Kreis distance quantiles for the per-person commute-distance targets, and a SENSITIVITY table -- NOT a target -- measuring two known caveats of the work
 table (destinations outside the surveyed ZGB polygon, and the GIS-invalid tail) as
 measured band-share variants. Loaders read the committed tables back. This module has
 no synpp dependency. It is imported by
-the analysis stages ``braunschweig.analysis.reference.srv.commute_distance`` and
-``braunschweig.analysis.synthesis.commute_distance_by_kreis`` (and the extraction
-script), but by no POPULATION-synthesis or location stage, so editing it never
-devalidates a cached POPULATION-synthesis or location result (the two analysis stages
-above are re-executed, which is intended).
+analysis stages (e.g. ``braunschweig.analysis.reference.srv.commute_distance``,
+``braunschweig.analysis.synthesis.commute_distance_by_kreis``), by sibling
+``braunschweig.calibration.srv_*`` modules and by the extraction scripts. It is
+also listed in ``_DEFERRED_HELPER_MODULE_NAMES`` of the stages
+``braunschweig.popsim.trips_stage``, ``braunschweig.synthesis.day_absence.absence_stage``,
+``braunschweig.synthesis.commute_day.trips_day_stage`` and
+``braunschweig.synthesis.commute_day.home_office_donors_stage``, so a code edit here
+devalidates those cached stage results (a comment or docstring edit does not).
 
-Conventions (spec docs/superpowers/specs/2026-09-03-srv-primary-distance-calibration-design.md):
+Conventions:
 - observation unit = person: first home->purpose trip, else first purpose->home trip;
 - distance = GIS-routed km (``GIS_LAENGE``) where ``GIS_LAENGE_GUELTIG > 0``; invalid rows
   are excluded and their share is reported;

@@ -729,11 +729,11 @@ def configure(context):
     # residential building stock (``braunschweig.data.buildings`` -- the SAME
     # GFK-filtered, area-weighted frame ``synthesis/locations/home_cell.py``
     # consumes for home placement) instead of the generic pot_leisure
-    # buildings; the other three leisure groups are unaffected. Requires
+    # buildings; the other leisure subtypes are unaffected. Requires
     # secondary_leisure_subtype_split AND secondary_building_potentials
     # (checked, fail-fast, in execute()). OFF (default) is byte-identical to
     # the Task-4 behaviour: leisure_visit maps to pot_leisure like the other
-    # three leisure groups.
+    # leisure subtypes.
     # Flag still read in execute() (fail-fast guards + locations_df schema); the
     # residential candidate rows themselves are appended by the
     # secondary_candidates stage, which owns the braunschweig.data.buildings dep.

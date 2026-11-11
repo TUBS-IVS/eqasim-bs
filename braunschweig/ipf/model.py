@@ -366,6 +366,12 @@ def configure(context):
         "braunschweig.ipf.employment_by_hhsize_path",
         None,
     )
+    if context.config("braunschweig.ipf.use_employment_margin"):
+        # execute() resolves a relative cross-tab path against data_path, and
+        # synpp raises on an option execute() reads without a request here.
+        # Requested only with the margin on, so the stage identity of every
+        # run without it is unchanged.
+        context.config("data_path")
     # TASK-011 — symmetric-Dirichlet prior strength α (pseudo-counts
     # added uniformly to the IPF seed). 0.0 disables the prior (=
     # bit-identical to legacy behaviour). Typical calibrated values are
@@ -374,10 +380,9 @@ def configure(context):
     context.config("braunschweig.ipf.dirichlet_prior_strength", 0.0)
     # Per-cell margin-deviation tolerance for the post-IPF control check.
     # Any cell whose achieved weight differs from its target by more than
-    # this fraction triggers a hard failure. Defaults to 1 % which is
-    # roughly 5x the iteration tolerance — tight enough to catch
-    # systematic infeasibilities but loose enough to absorb the residual
-    # IPF wiggle.
+    # this fraction triggers a hard failure. Defaults to 1 %: tight enough
+    # to catch systematic infeasibilities but loose enough to absorb the
+    # residual IPF wiggle.
     context.config("braunschweig.ipf.margin_validation_tolerance", 0.01)
 
 

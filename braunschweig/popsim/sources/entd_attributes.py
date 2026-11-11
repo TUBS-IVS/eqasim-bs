@@ -321,7 +321,8 @@ def map_person_attributes(
         )
 
     # --- is_urban_resident: True when person lives in Braunschweig city ----
-    # Replicates map_mid_person_attributes exactly (see assembly.py line ~310):
+    # Replicates map_mid_person_attributes exactly (see braunschweig/popsim/assembly.py
+    # :: map_mid_person_attributes):
     #   is_urban_resident = (departement_id == "03101")
     # ``departement_id`` is derived by derive_zone_ids (assembly.build_persons)
     # from the 12-digit ARS before the mapper is called.  For persons outside

@@ -133,6 +133,39 @@ def test_config_discovery_is_not_vacuous() -> None:
     assert POPSIM_CONFIGS, "No config with the popsim producer was discovered."
 
 
+class _RecordingConfigureContext:
+    """Minimal synpp configure context: records every option ``configure()`` requests."""
+
+    def __init__(self, values: dict) -> None:
+        self._values = dict(values)
+        self.requested: list = []
+
+    def stage(self, *args, **kwargs) -> None:
+        return None
+
+    def config(self, option, *default):
+        self.requested.append(option)
+        if option not in self._values and default:
+            self._values[option] = default[0]
+        return self._values.get(option)
+
+
+@pytest.mark.parametrize("flag_on", [True, False])
+def test_configure_requests_data_path_only_with_the_margin_on(flag_on: bool) -> None:
+    """``execute()`` resolves a relative cross-tab path against ``data_path``.
+
+    synpp raises on an option that ``execute()`` reads and ``configure()`` never
+    requested, so the first real run with the margin on died before any IPF work.
+    With the margin off the option stays unrequested, which keeps the stage
+    identity of every existing run unchanged.
+    """
+    from braunschweig.ipf import model as ipf_model
+
+    context = _RecordingConfigureContext({FLAG_KEY: flag_on})
+    ipf_model.configure(context)
+    assert ("data_path" in context.requested) is flag_on
+
+
 @pytest.mark.parametrize("config_path", ALL_CONFIGS, ids=lambda p: p.name)
 def test_flag_is_never_enabled_without_a_crosstab(config_path: Path) -> None:
     """``use_employment_margin: true`` without a path is now a run-time error.

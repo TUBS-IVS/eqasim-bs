@@ -2,8 +2,9 @@
 
 Origin: eqasim-bavaria @ b20fbe6, file ``bavaria/locations/education.py``.
 Moved to ``eqasim_common.locations`` in Phase 2.5 of the eqasim-bs refactor;
-inherited unchanged.  The producer aliased to ``eqasim_common.data.osm.locations``
-is overridden in BS configs to ``braunschweig.data.locations``.
+inherited unchanged.  It reads the OSM POIs staged by
+``eqasim_common.data.osm.locations`` (the BS configs define no alias for that
+stage).
 """
 
 import numpy as np

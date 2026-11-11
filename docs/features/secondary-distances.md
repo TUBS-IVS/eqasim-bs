@@ -277,7 +277,7 @@ separate issue).
 
 - *(A) Residual scorer tuning.* Tier 1+2 fix the desired distance; the combined
   scorer's `pot_weight` pull toward large buildings may add a residual. Tune
-  `secondary_dist_dev_weight` / `secondary_scorer_pot_weight` only after the 25%
+  `secondary_scorer_dist_dev_weight` / `secondary_scorer_pot_weight` only after the 25%
   ON run confirms a residual attributable to the scorer.
 - *(C) Distance-dependent detour `f(d)`.* Circuity decays with distance (Ballou
   et al.; Giacomin & Levinson 2015, *Road network circuity in metropolitan areas*).

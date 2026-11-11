@@ -4,10 +4,11 @@ The synthetic popsim_mid persons/households carry their MiD donor columns; this
 module maps them to the eqasim attribute schema. All code -> meaning mappings are
 grounded in the MiD 2023 codebook (Codeplaene B1), documented inline, not invented.
 
-Covered here (the simulation-relevant attributes available from the standard MiD
+Covered here (the simulation-relevant attributes available from the MiD
 household/person tables): employment, driving licence, economic status, household
-income (EUR), number of cars, and the derived car availability. PT subscription
-and bicycle availability need additional MiD columns and are a follow-on.
+income (EUR), number of cars, PT subscription (``map_pt_subscription_type``,
+``map_has_pt_subscription``), bicycles (``map_number_of_bicycles``, ``map_has_ebike``),
+trip and participation classes, and the further ``map_*`` functions below.
 """
 
 from __future__ import annotations

@@ -9,8 +9,8 @@ Pendleratlas Kreis-level commuter flows. Aliased from `data.od.weighted`.
 ## Split shape and import path
 
 Sibling-module split, **not** a package conversion (unlike the `enriched` /
-`secondary_chainsolvers` stage packages). `model.py` (currently 425 lines;
-1483 lines before the split, per PR #288) stays the sole synpp stage
+`secondary_chainsolvers` stage packages). `model.py` (1483 lines before the split,
+per PR #288) stays the sole synpp stage
 (`configure`/`execute`/`validate`) and the import path
 `braunschweig.gravity.model` for every consumer. Sections extracted from it
 live in 5 new sibling modules inside the **already-existing**
@@ -66,7 +66,7 @@ because every one of them is imported lazily inside a function; binding them at
 module level would have changed the stage's import timing, and in
 `production_mass`'s case would have turned its deferred back-import of
 `_GEMBAND_COLUMN_NAMES` from this facade into an import-time cycle. The token
-therefore folds in **nine** modules by two mechanisms.
+therefore folds in the modules of `_HELPER_MODULES` and `_DEFERRED_HELPER_MODULE_NAMES` (in `braunschweig/gravity/model.py`) by two mechanisms.
 
 `distance_matrix_taz.py` remains deliberately uncovered: it is its own synpp
 stage, hashed by synpp in its own right, so folding its source in here would

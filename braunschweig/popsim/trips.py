@@ -457,8 +457,8 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
         ``"leisure"`` instead of ``"other"``, following MiD's own hwzweck1
         fold (100 % of code-10 legs fold to 6 Freizeit; see the committed
         evidence table ``mid2023_w_zweck_by_hwzweck1.csv``). Default False
-        keeps every existing caller byte-identical; the production default is
-        wired in a later task (issue #373 task 2).
+        keeps every existing caller byte-identical; the production value is set
+        in ``configs/base_bs.yml``.
     escort_passive_from_adult:
         If True (issue #372, ADR-0112), a PAIRED passive escort leg (W_ZWECK
         13) takes the purpose derived from the accompanying adult's W_ZWECK
@@ -1428,7 +1428,7 @@ def build_validated_trip_table(
     # classification comes from its RepairReport) and BEFORE the resample; the
     # helper re-runs repair_trips on the imputed table so the now-timed chains
     # receive home-end closure, and returns the updated RepairReport whose
-    # unfixable set drives stage B (the existing same-cell resample).
+    # unfixable set drives stage B (_match_unfixable, attribute-matched replacement).
     if resample and repair_report is not None and repair_report.unfixable_persons:
         table, repair_report = _impute_nan_time_unfixable(
             table, repair_report, validator, random_seed=random_seed, dwell_model=dwell_model
@@ -1482,7 +1482,8 @@ def _impute_nan_time_unfixable(
        and it avoids a fragile subset-concat-recompute sequence.
     4. The second RepairReport's unfixable set (imputation-skipped persons,
        plus any chain the closure append pushed past the plan bound) flows to
-       stage B, the existing same-cell resample, unchanged.
+       stage B (``_match_unfixable``: attribute-matched replacement; the legacy
+       same-cell resample only when the persons frame has no ``sex`` column).
 
     The stage A RNG is a child stream of the caller's ``random_seed``
     (``RandomState(random_seed + TIME_IMPUTATION_SEED_OFFSET)``) so the

@@ -37,8 +37,8 @@ module before, so the synpp alias needed no change.
 The pre-split flat module had **no `validate()` hook at all** (verified: the
 last pre-split revision, `git show 9ea23800:braunschweig/synthesis/locations/secondary_chainsolvers.py`,
 defines only `configure`/`execute`). The split added one: `_HELPER_MODULES` in
-`__init__.py` lists all 13 submodules, and `validate()` hashes their combined
-source into the synpp validation token, so a helper-only edit now correctly
+`__init__.py` lists the submodules (`_DEFERRED_HELPER_MODULE_NAMES` the function-body
+imports), and `validate()` hashes their source into the synpp validation token, so a helper-only edit now correctly
 recomputes the stage instead of silently reusing stale cached output. Being a
 brand-new token, the first run after this change recomputes the stage and
 everything downstream of it once; every run after that is cache-stable.

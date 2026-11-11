@@ -13,7 +13,7 @@ behaviour is unchanged.
 
 Output schema is identical to ``braunschweig.gravity.model``::
 
-    origin_id          str   commune_id (8-digit AGS)
+    origin_id          str   commune_id (12-digit ARS)
     destination_id     str
     weight             float row-normalised P(destination | origin)
 
@@ -167,7 +167,7 @@ logger = logging.getLogger(__name__)
 # module extracted from this stage MUST be appended here.
 _HELPER_MODULES = (attraction_vector, balancing, base, kreis_calibration, od)
 
-# The four pre-existing package siblings this stage's result also depends on,
+# The pre-existing package siblings this stage's result also depends on,
 # covered by dotted NAME rather than as module objects because every one of them
 # is imported LAZILY, inside a function, and binding them at module level here
 # would change this stage's import timing for no benefit:
@@ -182,7 +182,7 @@ _HELPER_MODULES = (attraction_vector, balancing, base, kreis_calibration, od)
 # this facade inside a function; deferring the import here keeps that lazy
 # resolution untouched instead of turning it into an import-time cycle.
 #
-# Before this tuple existed these four were outside the stage hash, so an edit
+# Before this tuple existed these siblings were outside the stage hash, so an edit
 # to any of them silently reused stale cached output on a partial rerun. The
 # #267 split did not create that gap (this stage had no ``validate()`` hook at
 # all before it); this change closes it, and therefore devalidates more cached
@@ -212,14 +212,15 @@ def validate(context):
     stage exactly like an edit to this file would.
 
     THIS DOCSTRING IS THE CANONICAL STATEMENT of what the token covers. It folds
-    in two groups: the five siblings extracted from this stage by the #267 split
+    in two groups: the siblings extracted from this stage by the #267 split
     (``_HELPER_MODULES``, bound as module objects because this file imports them
-    at module level anyway) and the four pre-existing package siblings the stage
-    reaches through function-level imports (``_DEFERRED_HELPER_MODULE_NAMES``,
-    resolved by dotted name at RUN time so their deferral is preserved).
+    at module level anyway) and the pre-existing package siblings and further
+    modules the stage reaches through function-level imports
+    (``_DEFERRED_HELPER_MODULE_NAMES``, resolved by dotted name at RUN time so
+    their deferral is preserved).
 
     It does NOT cover: ``braunschweig.gravity.distance_matrix_taz`` (its own
-    synpp stage, hashed by synpp itself), what those nine modules import in
+    synpp stage, hashed by synpp itself), what those modules import in
     turn (the boundary is one level deep), or third-party sources (pinned by the
     environment). See ``docs/codebase/notes/synpp-helper-hash-audit.md`` for how
     that boundary compares across the repo.
@@ -331,10 +332,8 @@ def configure(context):
             SVB_FALLBACK_WARN_SHARE,
         )
 
-    # #193: inner VerBindungen calibration anchor. Default False -> byte-
-    # identical work OD (the anchor CHANGES scientific output when ON; the
-    # default flips only via the pre-registered decision rule + ADR --
-    # see docs/superpowers/specs/2026-07-16-verbindungen-calibration-anchor-design.md).
+    # #193: inner VerBindungen calibration anchor. The anchor CHANGES scientific
+    # output when ON relative to OFF (the OFF work OD is the plain calibrated one).
     # Default ON since 2026-07-17 (ADR-0068, HUMAN OVERRIDE of the
     # pre-registered gate v2 whose verdict was default_flip_supported=False):
     # evidence judged net-positive -- 5/6 P13-by-RS7 classes and the P38.2
@@ -446,7 +445,7 @@ def execute(context):
         population_key=population_key,
         population_value=population_value,
     )
-    # #193: inner VerBindungen anchor (flag-gated, default OFF). Runs on the
+    # #193: inner VerBindungen anchor (flag-gated, default ON, ADR-0068). Runs on the
     # CALIBRATED OD so the outer Kreis anchor is already satisfied; the inner
     # step preserves every Kreis-pair block total exactly (asserted inside).
     if context.config("braunschweig.gravity.verbindungen_anchor_enabled"):

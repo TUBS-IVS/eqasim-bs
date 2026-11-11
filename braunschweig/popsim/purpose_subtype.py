@@ -531,14 +531,16 @@ LEISURE_GROUPS = {
 LEISURE_SENTINELS = frozenset({2202, 4402, 599, 999, 503, 603, 605})
 # Defensive addition (issue #373, ADR-0111): 7704 "kein Einkaufs-, Erledigungs-, oder
 # Freizeitweg" and 7705 "Weg ohne Info zum Wegezweck" (codebook labels, MiD2023_
-# Codeplaene_B1_Standard_v1.1.xlsx, sheet "Wege", variable W_ZWD). LEISURE_SPEC's
-# zweck_values is {7} only, so a code-10 leg's OWN row never reaches ESTIMATION here
-# (estimate_group_probabilities / code_coverage_guard read only W_ZWECK == 7 rows);
-# these two sentinels guard a FUTURE widening of zweck_values to include 10, so such a
-# widening could not silently trip the coverage guard on a code-10 leg's sentinel-only
-# W_ZWD.
+# Codeplaene_B1_Standard_v1.1.xlsx, sheet "Wege", variable W_ZWD). On the flag-OFF
+# path (leisure_unspecified_subtype off) LEISURE_SPEC's zweck_values is {7} only, so a
+# code-10 leg's OWN row never reaches ESTIMATION there (estimate_group_probabilities /
+# code_coverage_guard read only W_ZWECK == 7 rows); the two sentinels keep the coverage
+# guard from tripping on a code-10 leg's sentinel-only W_ZWD. With the flag ON
+# (ADR-0115) LEISURE_SPEC_UNSPECIFIED adds LEISURE_UNSPECIFIED_ZWECK to zweck_values and gives code 10
+# its own group, so code-10 rows do reach estimation and these sentinels are what the
+# guard sees for their W_ZWD.
 #
-# That is true for ESTIMATION only -- it does NOT mean code-10 legs are unaffected by
+# The OFF-path statement above is true for ESTIMATION only -- it does NOT mean code-10 legs are unaffected by
 # w_zweck_10_as_leisure at APPLICATION time. distance_distributions.run()'s
 # leisure_subtype_split step filters on following_purpose == "leisure" (the eqasim-
 # mapped purpose, not the raw W_ZWECK); under the flag that set INCLUDES code-10 legs.

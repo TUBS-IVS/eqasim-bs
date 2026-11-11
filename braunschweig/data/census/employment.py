@@ -1,9 +1,9 @@
 """Employment marginals for ZGB Braunschweig from GENESIS 13111-06-02-4.
 
-Replaces `braunschweig.data.census.employment`. Reads the Regionalstatistik table
+Reads the Regionalstatistik table
 13111-06-02-4 "Sozialversicherungspflichtig Beschaeftigte am Wohnort nach
 Geschlecht, Nationalitaet und Altersgruppen" (Kreise) and emits per
-(Kreis, age_class, sex) totals, matching the Bavaria schema.
+(Kreis, age_class, sex) totals.
 
 Input XLSX columns (header rows 0..7, data from row 8):
     0  AGS (5-digit Kreis)                  -- ffilled
@@ -26,7 +26,7 @@ Age classes in the source:
     "65 Jahre und mehr"       -> 65
     "Insgesamt"               -> dropped
 
-Output schema (matches braunschweig.data.census.employment):
+Output schema:
     (departement_id, age_class, sex, weight)
 """
 

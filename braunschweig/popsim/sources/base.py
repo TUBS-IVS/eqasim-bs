@@ -1,7 +1,7 @@
 """PopsimSource Protocol: the interface every donor-source adapter must implement.
 
 A donor source encapsulates the survey-specific I/O and attribute-mapping logic
-for one household travel survey (currently MiD 2023; ENTD planned for Phase 2).
+for one household travel survey (``MidSource`` for MiD 2023, ``EntdSource`` for ENTD).
 All popsim workflows that need a donor population depend only on this Protocol,
 not on any survey-specific module, so the workflow code is survey-agnostic.
 
@@ -35,8 +35,16 @@ map_person_attributes(persons, households, *, rng) -> (persons, pseudonym_map):
     ``assembly.build_persons`` raises :class:`TypeError` on a non-tuple return
     so a pseudonymisation-required source can never silently lose its map.
 
+donor_stratum(seed_households) -> pd.Series:
+    Return the per-household stratum label used for donor stratification (same
+    label space as ``cell_stratum``).
+
+cell_stratum(cells) -> pd.Series:
+    Return the per-100m-cell stratum label (same label space as ``donor_stratum``).
+
 build_trips(persons, donor_trips, *, random_seed, escort_purpose=False,
-            escort_passive_education=False, exclude_rbw_legs=False,
+            escort_passive_education=False, explicit_round_trip_purposes=True,
+            exclude_rbw_legs=False,
             drop_leading_arrive_home_leg=False, closure_dwell_model="fixed_1h",
             closure_dwell_min_obs=30, w_zweck_10_as_leisure=False,
             escort_passive_from_adult=False,
@@ -46,7 +54,8 @@ build_trips(persons, donor_trips, *, random_seed, escort_purpose=False,
             departure_time_reference=None,
             departure_time_min_reference_n=200,
             departure_time_min_model_n=50,
-            departure_time_max_median_shift_hours=2.0) -> trips:
+            departure_time_max_median_shift_hours=2.0,
+            vectorized_validation=True) -> trips:
     Build the 11-column synthesis.population.trips contract DataFrame from the
     per-synthetic-person donor trip chains.  ``persons`` carries
     ``person_id``, ``H_ID``, ``P_ID``; ``donor_trips`` is the table returned
@@ -55,6 +64,9 @@ build_trips(persons, donor_trips, *, random_seed, escort_purpose=False,
     {6, 13} to the dedicated 'escort' purpose (issue #201).
     ``escort_passive_education`` further maps the passive leg (W_ZWECK 13) to
     'education' instead of 'escort' (issue #256); requires ``escort_purpose``.
+    ``explicit_round_trip_purposes`` gives the MiD round-trip leisure W_ZWECK codes
+    their own purposes instead of the 'other' catch-all (issue #241).
+    ``vectorized_validation`` selects the vectorised plan-validation path.
     ``exclude_rbw_legs`` / ``drop_leading_arrive_home_leg`` drop the two
     non-diary leg kinds (issue #366) and ``closure_dwell_model`` selects the
     dwell model for the synthesised chain closure (issue #367); an adapter
@@ -90,9 +102,9 @@ from braunschweig.popsim.seed import SeedColumns
 class PopsimSource(Protocol):
     """Protocol that every donor-source adapter must satisfy.
 
-    Implementations must provide a ``name`` attribute and four methods
-    (``seed_columns``, ``load_donor``, ``map_person_attributes``,
-    ``build_trips``).  See module-level docstring for the full contract.
+    Implementations must provide a ``name`` attribute and the methods
+    ``seed_columns``, ``load_donor``, ``map_person_attributes``, ``donor_stratum``,
+    ``cell_stratum`` and ``build_trips``.  See module-level docstring for the full contract.
     """
 
     name: str

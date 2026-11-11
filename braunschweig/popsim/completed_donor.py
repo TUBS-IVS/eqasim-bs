@@ -18,11 +18,11 @@ The diary plan match (``diary_plan_match.reassign_diaryless_plan_sources``, issu
 match, in that order, CONTINUING the same seeded RNG instance -- they are new
 steps appended to the byte-identity contract above, never inserted before or
 between the existing two. The stage now also depends on the MiD Wege (trip)
-  table (``mid.load_mid_wege``) and six scientific flags (diary_plan_match,
-exclude_holiday_plan_sources, exclude_rbw_legs, drop_leading_arrive_home_leg,
-diary_match_hard_employment) plus donor_match_fine_child_age_bands, which
-  applies to member completion and the weekend match as well and is therefore read
-  regardless of diary_plan_match;
+  table (``mid.load_mid_wege``) and the scientific flags that ``configure()`` declares
+(among them diary_plan_match, exclude_holiday_plan_sources, exclude_rbw_legs,
+drop_leading_arrive_home_leg, diary_match_hard_employment and
+donor_match_fine_child_age_bands, which applies to member completion and the weekend
+match as well and is therefore read regardless of diary_plan_match);
   ``braunschweig.performance.donor_matching`` additionally selects the default-ON
   prepared matching kernel without changing model behavior;
 it remains sampling- and controls-independent, so it is still shareable across

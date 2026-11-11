@@ -217,8 +217,8 @@ def load_regiostar() -> pd.DataFrame:
     """Load the RegioStaR-7 reference (commune_id -> regiostar7).
 
     Returns an empty frame with the expected schema if the source file is
-    missing -- RS7 diagnostics will then be silently skipped instead of
-    failing the whole validation run.
+    missing -- RS7 diagnostics will then be skipped (with a logged WARNING)
+    instead of failing the whole validation run.
     """
     if not REGIOSTAR_XLSX.exists():
         LOGGER.warning(

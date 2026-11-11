@@ -79,7 +79,7 @@ from braunschweig.popsim.trips import (
     DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
 from braunschweig.popsim.plan_validation import HOME_CLOSURE_DWELL_S
 # Authoritative plan-time bound lives in plan_validation (where bound-exceeding
-# persons are classified unfixable + resampled); re-exported here for the final
+# persons are classified unfixable and replaced); re-exported here for the final
 # backstop assertion and for tests referencing trips_stage.MAX_PLAN_TIME_SECONDS.
 from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
 
@@ -698,8 +698,10 @@ def run(
         straight-line = wegkm_imp * 1000 / DETOUR_FACTOR) when wegkm_imp is
         present, plus ``trip_key`` (traceability) and any remaining MiD extras.
     """
-    # Resample unfixable persons (e.g. NaN-time rbW/kA records, MiD codes 701/99)
-    # from same-cell donors so no NaN time and no multi-day timestamp survives.
+    # Unfixable persons (e.g. NaN-time rbW/kA records, MiD codes 701/99) are handled in
+    # build_validated_trip_table (stage A time imputation, stage B attribute-matched
+    # chain replacement) so no NaN time and no multi-day timestamp survives; the cell
+    # column below only serves the legacy same-cell fallback (persons without `sex`).
     resample_cell_col = _resolve_resample_cell_col(persons)
     # Built HERE, before the expensive dwell-model estimation and trip build below, so a persons
     # frame without the age/employed columns the model needs fails within seconds instead of
@@ -791,8 +793,8 @@ def run(
     # stages (synthesis/population/activities.py uses trip_index, not trip_id).
     table = table.sort_values(["person_id", "trip_index"]).reset_index(drop=True)
 
-    # NaN times must never reach the jitter: the resample above replaces every
-    # NaN-time (coded-time) person and drops home-only fallback placeholders.
+    # NaN times must never reach the jitter: build_validated_trip_table above imputes or
+    # replaces every NaN-time (coded-time) person and drops home-only fallback placeholders.
     for col in ("departure_time", "arrival_time"):
         n_nan = int(table[col].isna().sum())
         assert n_nan == 0, (
@@ -822,7 +824,7 @@ def run(
 
     # Absolute plan-time bound (final backstop): midnight-crossing repairs may
     # legitimately push times past 24h, but PlanValidator classifies any person
-    # exceeding MAX_PLAN_TIME_SECONDS as unfixable and the resample above
+    # exceeding MAX_PLAN_TIME_SECONDS as unfixable and the cascade above
     # replaces them — anything still beyond the bound here is a bug.
     _assert_time_bound(table)
 
@@ -920,7 +922,7 @@ def configure(context):
     # the popsim stage's education_flag KREIS-control seed, the distance layers and the
     # commute-day donor pool must all see the SAME value this trip build uses, or they disagree
     # on which code-13 legs are education and the seed describes a different day than the plan.
-    # Declared default False; the production true is added to configs/base_bs.yml by task 7
+    # Declared default False; the production value is set in configs/base_bs.yml
     # (see config_keys.KEY_ESCORT_PASSIVE_FROM_ADULT for the ONE statement of both defaults).
     escort_passive_from_adult = context.config(
         KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
@@ -966,7 +968,7 @@ def configure(context):
     # pre-assignment day and the reporting day must be built with the SAME start-time model or
     # a spliced home-office chain would follow a different start-time distribution than the day
     # it replaces. Declared default "eqasim_uniform" (byte-identical); the production value is
-    # added to configs/base_bs.yml by task 6 (see config_keys.KEY_DEPARTURE_TIME_MODEL for the
+    # set in configs/base_bs.yml (see config_keys.KEY_DEPARTURE_TIME_MODEL for the
     # ONE statement of both defaults).
     context.config(KEY_DEPARTURE_TIME_MODEL, DEFAULT_DEPARTURE_TIME_MODEL)
     context.config(KEY_DEPARTURE_TIME_MIN_REFERENCE_N, DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N)

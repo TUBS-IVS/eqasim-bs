@@ -91,8 +91,9 @@ def execute(context):
     available_kreis = set(df_kreis["departement_id"].unique())
 
     # In Lower Saxony there is no known kreisfrei/umliegender-Kreis split of driving-license
-    # records similar to Bavaria (where Rosenheim, Landshut, Bamberg etc. aggregate their
-    # surrounding Landkreis). All 9 Kreise in ARS prefix 031 appear individually in FE4.4.
+    # records (unlike Bavaria, where Rosenheim, Landshut, Bamberg etc. aggregate their
+    # surrounding Landkreis). Each Kreis in scope (``required_kreis``)
+    # appears individually in FE4.4.
     kreis_mapping: dict[str, str] = {}
 
     missing_kreis = required_kreis - available_kreis

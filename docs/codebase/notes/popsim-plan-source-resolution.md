@@ -122,11 +122,10 @@ call site:
   — if you change the ordering, that test is what will tell you, and it is a real
   contract, not a formality.
 
-`braunschweig.popsim.completed_donor.validate()` hashes the helper modules
-(`diary_facts`, `diary_plan_match`, `weekend_plan_match`, `member_completion`,
-`mid.donor`) because synpp hashes only the stage module itself; without it an edit to a
+`braunschweig.popsim.completed_donor.validate()` hashes the helper modules named in that
+stage module's `_HELPER_MODULES` / `_DEFERRED_HELPER_MODULE_NAMES` because synpp hashes only the stage module itself; without it an edit to a
 helper would serve a stale cached donor build. Edit a helper and the stage recomputes —
-that is intended, and it is why a cosmetic edit to one of those files is not free.
+that is intended, and it is why a code edit to one of those files is not free (comment and docstring edits do not move the semantic digest).
 
 ## Contract 2: the `src_*` columns propagate (intended)
 

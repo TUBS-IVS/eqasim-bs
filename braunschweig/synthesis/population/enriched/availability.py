@@ -212,7 +212,8 @@ def _apply_car_availability_pt_margin(
 # Categorical car_availability values (eqasim core vocabulary). The Java
 # mode-choice side and the MATSim writers treat the value as an opaque string,
 # so all three pass through unchanged; "some" is fully supported (the eqasim
-# core itself emits it, see synthesis/population/enriched.py:96-98).
+# core itself emits it, see the car_availability derivation in the eqasim core stage
+# ``synthesis.population.enriched``).
 CAR_AVAILABILITY_CATEGORIES = ("none", "some", "all")
 
 # Fallback-rate threshold above which the per-(Kreis) P19 raking fallback in
@@ -246,7 +247,8 @@ def _derive_car_availability_consistent(df_persons, mid, random_seed,
        not always available).
 
     The conditional rule reproduces the eqasim-core all/some/none logic at
-    HOUSEHOLD level (``synthesis/population/enriched.py:91-101``) but on the
+    HOUSEHOLD level (car_availability derivation of the eqasim core stage
+    ``synthesis.population.enriched``) but on the
     MiD-derived ``number_of_cars`` and the MiD-P17.1-derived ``has_license``,
     instead of the stale HTS-matched values the core saw before this stage
     overwrote them. On top of that, within each Kreis the ELIGIBLE persons

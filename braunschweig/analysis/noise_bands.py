@@ -18,7 +18,7 @@ REQUIRED_DRAW_COLUMNS = ("draw_seed", "metric_id", "group", "value")
 
 # Metric ids pinned from the ACTUAL braunschweig.analysis.run_mid_validation.run()
 # result dict (see that module, function `run`, the block building `report =
-# {...}` around line 975). The dict carries no Earth-Mover-Distance metrics --
+# {...}`). The dict carries no Earth-Mover-Distance metrics --
 # it reports per-Kreis MEAN deltas (synthetic - MiD), not distribution EMDs, so
 # the ids below are named accordingly rather than invented to match an assumed
 # "p13_emd"/"w12_emd"/"p36_dev" naming scheme:

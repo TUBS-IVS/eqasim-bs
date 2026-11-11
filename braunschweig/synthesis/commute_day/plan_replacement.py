@@ -48,8 +48,8 @@ Per person, by ``commute_day_state``:
   get today's jitter byte-identically.
 * ``home`` WITHOUT a donor match (:func:`matching.match_home_office_donors` found no replaceable
   cell) -- the person's original rows are kept UNCHANGED and counted in
-  ``diagnostics["n_home_unmatched"]``; ADR-0104 leaves it to the state stage (a later Phase B
-  task) to decide how to treat them (downgrading to ``at_workplace`` is the documented default).
+  ``diagnostics["n_home_unmatched"]``; ADR-0104 leaves it to the state stage (:mod:`state_stage`)
+  to decide how to treat them (downgrading to ``at_workplace`` is the documented default).
 * ``at_workplace``, or any person absent from ``states`` altogether (e.g. a non-worker who was
   never given a commute-day state) -- rows UNCHANGED.
 
