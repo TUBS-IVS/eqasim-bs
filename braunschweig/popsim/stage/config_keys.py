@@ -206,7 +206,7 @@ KEY_EMPLOYMENT_STATUS_KREIS_CONTROL = "braunschweig.population.popsim.employment
 # work_participation x Kreis control (feature #224 task 4, third PERSON-level entry):
 # steers the per-Kreis distribution of the 0/1 has-a-work-trip flag (derived from each
 # person's MiD Wege via mid.compute_has_work_trip) to the committed SrV-2023
-# participation blended target. Default "off" (see _KREIS_CONTROL_DEFAULT: work_by_employment
+# participation blended target. Default per _KREIS_CONTROL_DEFAULT (work_by_employment
 # replaces it). "on" adds its control + seed column. MiD-only
 # (its seed derivation reads the MiD Wege table); ignored for source="entd".
 KEY_WORK_PARTICIPATION_CONTROL = "braunschweig.population.popsim.work_participation_kreis_control"
@@ -214,8 +214,8 @@ KEY_WORK_PARTICIPATION_CONTROL = "braunschweig.population.popsim.work_participat
 # fourth and fifth PERSON-level entries): identical wiring to work_participation, steering
 # the per-Kreis distribution of the 0/1 has-a-leisure-trip / has-an-education-trip flag
 # (mid.compute_has_purpose_trip, parametrized by purpose) to their respective committed
-# SrV-2023 participation targets. Default per _KREIS_CONTROL_DEFAULT: leisure "on",
-# education "off" (education_by_age replaces it). "off" drops the control + seed column. MiD-only
+# SrV-2023 participation targets. Defaults per _KREIS_CONTROL_DEFAULT (education_by_age
+# replaces the education one). "off" drops the control + seed column. MiD-only
 # (seed derivation reads the MiD Wege table); ignored for source="entd".
 KEY_LEISURE_PARTICIPATION_CONTROL = "braunschweig.population.popsim.leisure_participation_kreis_control"
 KEY_EDUCATION_PARTICIPATION_CONTROL = "braunschweig.population.popsim.education_participation_kreis_control"

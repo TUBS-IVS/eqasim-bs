@@ -823,12 +823,12 @@ def configure(context):
     # is carried on the REGISTRY entry itself, not a separate config key.
     context.config(KEY_EMPLOYMENT_STATUS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["employment_status"])
     # work_participation (third PERSON-level KREIS control, feature #224 task 4). Default
-    # "off" (work_by_employment replaces it); its committed SrV-2023 participation blended target lives under data_path
+    # per _KREIS_CONTROL_DEFAULT (work_by_employment replaces it); its committed SrV-2023 participation blended target lives under data_path
     # (declared below via the any()-gate). Seed derivation reads the MiD Wege table
     # (mid.load_mid_wege) at the two seed call sites, gated on this control being active.
     context.config(KEY_WORK_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["work_participation"])
     # leisure_participation / education_participation (fourth/fifth PERSON-level KREIS
-    # controls, feature #224 task 5). Default leisure "on", education "off"; their committed SrV-2023
+    # controls, feature #224 task 5). Defaults per _KREIS_CONTROL_DEFAULT; their committed SrV-2023
     # participation blended targets live under data_path (declared below via the
     # any()-gate). Seed derivation reads the MiD Wege table (mid.load_mid_wege) at the
     # two seed call sites, gated on either control being active -- mirrors
