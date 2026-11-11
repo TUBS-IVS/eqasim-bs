@@ -188,9 +188,6 @@ def configure(context):
     context.stage("matsim.runtime.java")
     context.stage("matsim.runtime.eqasim")
 
-    context.stage("data.spatial.departments")
-    context.stage("data.spatial.codes")
-
     context.config("sampling_rate")
     # Execution detail, not scientific config: changing it must not devalidate cached stages (upstream eqasim-france #438)
     context.config("processes", volatile = True)

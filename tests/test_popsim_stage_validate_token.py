@@ -122,7 +122,6 @@ EXPECTED_OTHER_HELPER_MODULE_NAMES = (
 UNDECLARED_STAGE_LIBRARY_MODULE_NAMES = (
     "braunschweig.data.census.household_size",
     "braunschweig.data.census.household_income",
-    "data.hts.egt.cleaned",
     "data.hts.entd.cleaned",
     "synthesis.population.matched",
 )

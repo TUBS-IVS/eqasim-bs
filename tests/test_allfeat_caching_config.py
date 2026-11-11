@@ -27,7 +27,7 @@ SCALE_OVERLAYS = ["test_1pct.yml", "test_25pct.yml", "test_100pct.yml"]
 SHARED_WORK_DIR = "eqasim-data/popsim_work_allfeat"
 WORK_DIR_KEY = "braunschweig.population.popsim.work_dir"
 
-# Tier A: the 32 verified sampling- AND path-independent stages (identical hash at
+# Tier A: the 25 verified sampling- AND path-independent stages (identical hash at
 # 1% and 25%), plus Tier B1's popsim.stage and its trivial upstream distance build.
 EXPECTED_SHAREABLE_STAGES = {
     "braunschweig.data.buildings",
@@ -36,7 +36,6 @@ EXPECTED_SHAREABLE_STAGES = {
     "braunschweig.data.cordon_network",
     "braunschweig.data.cordon_pt_gates",
     "braunschweig.data.locations",
-    "braunschweig.data.mid.zones",
     "braunschweig.data.schools.kita_facilities",
     "braunschweig.data.schools.university_facilities",
     "braunschweig.freight.extraction",
@@ -45,12 +44,7 @@ EXPECTED_SHAREABLE_STAGES = {
     "braunschweig.locations.work",
     "braunschweig.synthesis.cordon_gates",
     "data.gtfs.cleaned",
-    "data.hts.entd.cleaned",
-    "data.hts.entd.filtered",
-    "data.hts.entd.reweighted",
-    "data.hts.selected",
     "data.osm.cleaned",
-    "data.spatial.departments",
     "data.spatial.municipalities",
     "eqasim_common.data.osm.chunked",
     "eqasim_common.data.osm.locations",
@@ -58,7 +52,6 @@ EXPECTED_SHAREABLE_STAGES = {
     "eqasim_common.gravity.distance_matrix",
     "eqasim_common.locations.education",
     "eqasim_common.spatial.codes",
-    "eqasim_common.spatial.entd_codes",
     "braunschweig.matsim.scenario.supply_gtfs",
     "matsim.scenario.supply.osm",
     "matsim.scenario.supply.processed",

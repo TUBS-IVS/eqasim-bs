@@ -33,7 +33,7 @@ list for missing files.
 |---|---------|--------|-------------|---------|
 | A1 | **VG250-EW 31.12.** (administrative boundaries with population) | https://gdz.bkg.bund.de/index.php/default/digitale-geodaten/verwaltungsgebiete/verwaltungsgebiete-1-250-000-mit-einwohnerzahlen-stand-31-12-vg250-ew-31-12.html | `germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip` | dl-de/by-2-0 (BKG) |
 | A2 | **KBA Fahrerlaubnisbestand FE4** (driving licences by Bundesland) | https://www.kba.de/DE/Statistik/Kraftfahrer/Fahrerlaubnisse/Fahrerlaubnisbestand/fahrerlaubnisbestand_node.html | `germany/fe4_2024.xlsx` | KBA terms (free download) |
-| A3 | **ENTD 2008** (French HTS — reused as travel-pattern donor) | https://www.statistiques.developpement-durable.gouv.fr/enquete-nationale-transports-et-deplacements-entd-2008 | `entd_2008/{Q_individu,Q_tcm_individu,Q_menage,Q_tcm_menage_0,K_deploc,Q_ind_lieu_teg}.csv` | INSEE/SDES open data |
+| A3 | **ENTD 2008** (French HTS — reused as travel-pattern donor) | https://www.statistiques.developpement-durable.gouv.fr/enquete-nationale-transports-et-deplacements-entd-2008 | `entd_2008/{Q_individu,Q_tcm_individu,Q_menage,Q_tcm_menage_0,K_deploc}.csv` | INSEE/SDES open data |
 
 A1 is required for the spatial pipeline (VG250 zones + landuse clipping).
 A2 is required for the licence-attribution stage (FE4.2 / FE4.3 / FE4.4

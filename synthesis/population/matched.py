@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import numba
 
-import data.hts.egt.cleaned
 import data.hts.entd.cleaned
 
 import multiprocessing as mp
@@ -18,7 +17,7 @@ def _income_class_function(hts):
     """Return the HTS income-class function, resolving the cleaning submodule lazily.
 
     The previous module-level ``INCOME_CLASS`` dict eagerly bound
-    ``data.hts.{egt,entd}.cleaned.calculate_income_class`` at import time. On some
+    ``data.hts.entd.cleaned.calculate_income_class`` at import time. On some
     synpp stage-resolution orders (notably ``matsim.output``) ``matched`` is imported
     while ``data.hts.entd.cleaned`` has not yet finished binding on the
     ``data.hts.entd`` package, so the attribute access raised ``AttributeError`` at
@@ -26,10 +25,8 @@ def _income_class_function(hts):
     long after every stage module is imported), which breaks the import cycle for all
     modules that import ``synthesis.population.matched`` (braunschweig.popsim.*).
     """
-    import data.hts.egt.cleaned
     import data.hts.entd.cleaned
     return {
-        "egt": data.hts.egt.cleaned.calculate_income_class,
         "entd": data.hts.entd.cleaned.calculate_income_class,
     }[hts]
 

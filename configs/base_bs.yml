@@ -444,7 +444,7 @@ config:
     - braunschweig.data.freight.german_wide
     - braunschweig.freight.extraction
     - braunschweig.freight.trips
-    # Tier A: 32 verified sampling- AND path-independent stages (identical hash at
+    # Tier A: 25 verified sampling- AND path-independent stages (identical hash at
     # 1% and 25%). Shared from the store instead of recomputed every run.
     - braunschweig.data.buildings
     - braunschweig.data.census.employees
@@ -452,19 +452,13 @@ config:
     - braunschweig.data.cordon_network
     - braunschweig.data.cordon_pt_gates
     - braunschweig.data.locations
-    - braunschweig.data.mid.zones
     - braunschweig.data.schools.kita_facilities
     - braunschweig.data.schools.university_facilities
     - braunschweig.locations.secondary
     - braunschweig.locations.work
     - braunschweig.synthesis.cordon_gates
     - data.gtfs.cleaned
-    - data.hts.entd.cleaned
-    - data.hts.entd.filtered
-    - data.hts.entd.reweighted
-    - data.hts.selected
     - data.osm.cleaned
-    - data.spatial.departments
     - data.spatial.municipalities
     - eqasim_common.data.osm.chunked
     - eqasim_common.data.osm.locations
@@ -472,7 +466,6 @@ config:
     - eqasim_common.gravity.distance_matrix
     - eqasim_common.locations.education
     - eqasim_common.spatial.codes
-    - eqasim_common.spatial.entd_codes
     # alias TARGET (cache entries are named by the executed module, not the alias source)
     - braunschweig.matsim.scenario.supply_gtfs
     - matsim.scenario.supply.osm

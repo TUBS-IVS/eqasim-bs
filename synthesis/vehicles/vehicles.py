@@ -5,8 +5,6 @@ def configure(context):
 
     if method == "default":
         context.stage("synthesis.vehicles.cars.default", alias = "cars")
-    elif method == "fleet_sample":
-        context.stage("synthesis.vehicles.cars.fleet_sampling", alias = "cars")
     elif method == "household":
         # Spec A4 / Task F5: exactly number_of_cars German vehicles per household,
         # each owned by a licensed adult and typed via the KBA/HBEFA fleet chain.

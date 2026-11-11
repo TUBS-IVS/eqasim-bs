@@ -43,7 +43,8 @@ IGNORED_AT_ROOT = (
 )
 
 # These must stay visible: real committed tooling under scripts/, plausible future
-# siblings of it, a tracked root script, and an ordinary module.
+# siblings of it, a tracked root file (environment.yml), a hypothetical root script and an
+# ordinary module.
 MUST_STAY_VISIBLE = (
     "scripts/extract_bbs_share_by_age.py",
     "scripts/extract_kba_fleet.py",
@@ -52,7 +53,9 @@ MUST_STAY_VISIBLE = (
     "scripts/export_data_source_inventory.py",
     "scripts/launch_something.sh",
     "scripts/diag_helper.py",
-    "make_smoke_configs.py",
+    "environment.yml",
+    # Hypothetical root-level script: no root scratch rule may swallow every /*.py.
+    "some_root_tool.py",
     "braunschweig/popsim/trips.py",
 )
 
@@ -63,7 +66,7 @@ REAL_TRACKED_EXAMPLES = (
     "scripts/extract_kba_fleet.py",
     "scripts/inspect_hh_gap.py",
     "scripts/inspect_mid_p13.py",
-    "make_smoke_configs.py",
+    "environment.yml",
 )
 
 

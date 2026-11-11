@@ -237,14 +237,6 @@
    "data.hts.entd.filtered"
   ],
   [
-   "data.spatial.codes",
-   "matsim.simulation.prepare"
-  ],
-  [
-   "data.spatial.departments",
-   "matsim.simulation.prepare"
-  ],
-  [
    "data.spatial.iris",
    "braunschweig.data.buildings"
   ],
@@ -291,10 +283,6 @@
   [
    "data.spatial.municipalities",
    "data.osm.cleaned"
-  ],
-  [
-   "data.spatial.municipalities",
-   "data.spatial.departments"
   ],
   [
    "data.spatial.municipalities",
@@ -790,7 +778,6 @@
   "data.osm.cleaned",
   "data.osm.osmosis",
   "data.spatial.codes",
-  "data.spatial.departments",
   "data.spatial.iris",
   "data.spatial.municipalities",
   "documentation.meta_output",

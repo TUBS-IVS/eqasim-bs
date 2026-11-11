@@ -1,6 +1,6 @@
 """VRB (Verkehrsverbund Region Braunschweig) tariff zones.
 
-Braunschweig analogue of ``eqasim_common.data.mvg.zones`` (Munich MVG).
+Braunschweig analogue of the upstream eqasim MVG zones stage (Munich, removed).
 Produces the *exact* same output schema so the downstream Java class
 ``org.eqasim.bavaria.scenario.AddTransitZoneInformation`` (kept under
 its bavaria namespace per Decision D-1c) and the MATSim mode-choice /
