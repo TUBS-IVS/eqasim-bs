@@ -1358,6 +1358,7 @@ def test_incommuter_carries_its_donor_household_and_only_eligible_donors_are_dra
     assert frames["donor_draw"]["n_agents"] == len(persons) and frames["donor_draw"]["tilted"] is False
     assert set(persons["hts_id"]) == {1}
     assert set(persons["household_income_eur"]) == {6000.0} and persons["high_income"].all()
+    assert set(households["household_income_eur"]) == {6000.0} and households["high_income"].all()
     assert set(persons["household_size"]) == {3} and set(persons["consumption_units"]) == {1.8}
     assert persons["income_per_consumption_unit_eur"].tolist() == pytest.approx([6000.0 / 1.8] * len(persons))
     is_car = persons["car_availability"] == "all"
@@ -1417,3 +1418,64 @@ def test_agent_commute_uses_the_real_home_or_the_population_centre_of_the_origin
         gemeinden=gemeinden, detour_factor=1.5)
     # real home 4 km away; Kreis centre 10 km away; Kreis without Gemeinden: its own gate, 6 km away
     assert km == pytest.approx([6.0, 15.0, 9.0]) and n_fallback == 1
+
+
+def test_a_gemeinde_without_a_point_does_not_pull_the_kreis_centre_towards_the_origin():
+    from braunschweig.synthesis import incommuters as incommuters_module  # noqa: PLC0415
+    gemeinden = gpd.GeoDataFrame(
+        {"ars5": ["03241", "03241", "03241"], "ewz": [3000, 1000, 8000]},
+        geometry=[Point(1000.0, 1000.0), Point(41000.0, 1000.0), Point()], crs="EPSG:25832")
+    km, n_fallback = incommuters_module._agent_commute_km(
+        home_x=np.array([99000.0]), home_y=np.array([1000.0]), work_x=np.array([1000.0]),
+        work_y=np.array([1000.0]), has_real_home=np.array([False]), orig_ars=np.array(["03241"]),
+        gemeinden=gemeinden, detour_factor=1.0)
+    assert km == pytest.approx([10.0]) and n_fallback == 0      # centre x = 11000 from the two usable Gemeinden
+
+
+def test_redrawn_late_donors_are_drawn_from_the_commute_window_too():
+    """The re-draw rounds draw through the sampler: the donor at 5 km is outside the window of the 35 km
+    commute in every round, so it is never an agent's final donor; the late donor is replaced."""
+    gates, assignment, flows, zgb_work, persons, trips = _donor_pool([
+        dict(age=42), dict(age=30), dict(age=20, commute_distance_km=5.0)])
+    late = trips["person_id"] == 2
+    trips.loc[late, "departure_time"] = [30 * 3600.0, 34 * 3600.0]
+    trips.loc[late, "arrival_time"] = [31 * 3600.0, 35 * 3600.0]
+    frames = _frames((gates, assignment, flows, zgb_work, persons, trips), {"car": 1.0},
+                     donor_min_effective_pool=2.0, time_bound_s=29 * 3600.0)
+    assert frames["day_bound"]["n_redrawn"] > 0
+    assert set(frames["persons"]["hts_id"]) == {1}      # 3: outside the window, 2: late and re-drawn
+    assert frames["donor_draw"]["n_agents"] == len(frames["persons"])
+
+
+def test_a_far_agent_draws_the_donor_of_its_kreis_centre_commute_not_of_its_gate_commute():
+    """Far Kreis 09162 (centre about 480 km from the work place, gate 35 km): with real_origin the donor
+    is matched on the Kreis-centre commute (routed, about 620 km), so the 620 km donor is drawn, not the 45 km one."""
+    gates, _assignment, _flows, zgb_work, persons, trips = _donor_pool([
+        dict(age=42, commute_distance_km=45.0), dict(age=30, commute_distance_km=620.0)])
+    assignment = pd.DataFrame([("09162", "gate_0000", 1000, 0)], columns=["ars5", "gate_id", "inbound", "outbound"])
+    flows = pd.DataFrame([("09162", "03101", 1000)], columns=["orig_ars", "dest_ars", "flow"])
+    frames = _frames((gates, assignment, flows, zgb_work, persons, trips), {"car": 1.0},
+                     donor_min_effective_pool=1.0, real_origin=True, gemeinden=_gemeinden_for_origin_test(),
+                     zgb_polygon=_zgb_polygon_for_test(), source_buffer_m=5000.0)
+    assert len(frames["persons"]) > 0 and set(frames["persons"]["hts_id"]) == {2}
+    assert frames["donor_draw"]["distance_matched"] is True
+
+
+def test_eligible_donors_keeps_exactly_the_donor_without_an_exclusion_reason():
+    from braunschweig.synthesis.incommuters import _eligible_donors  # noqa: PLC0415
+    persons = with_donor_household(pd.DataFrame({"person_id": [1, 2, 3, 4, 5]}))
+    persons.loc[1, ["household_income_eur", "economic_status"]] = [np.nan, None]    # no household record
+    persons.loc[2, "weekday_reporting_day"] = False                                  # weekend reporting day
+    persons.loc[3, "donor_weight"] = 0.0                                             # zero weight
+    persons.loc[4, "commute_distance_km"] = np.nan                                   # no commute distance
+    assert _eligible_donors(persons, needs_distance=True)["person_id"].tolist() == [1]
+    # without distance matching the donor without a commute distance stays eligible
+    assert _eligible_donors(persons)["person_id"].tolist() == [1, 5]
+
+
+@pytest.mark.parametrize("bad", [0, 0.0, -1.0, float("nan"), float("inf"), True, "abc", None])
+def test_donor_min_effective_pool_must_be_a_finite_number_above_zero(bad):
+    from braunschweig.synthesis.incommuters import validate_donor_min_effective_pool  # noqa: PLC0415
+    with pytest.raises(ValueError, match="donor_min_effective_pool"):
+        validate_donor_min_effective_pool(bad)
+    assert validate_donor_min_effective_pool("2.5") == 2.5

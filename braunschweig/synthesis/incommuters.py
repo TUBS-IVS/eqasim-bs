@@ -213,14 +213,18 @@ def _agent_commute_km(home_x, home_y, work_x, work_y, has_real_home, orig_ars, g
     if gemeinden is not None and len(gemeinden):
         points = gemeinden.geometry.representative_point()
         ewz = gemeinden["ewz"].to_numpy(dtype=float)
-        frame = pd.DataFrame({"ars5": gemeinden["ars5"].astype(str).to_numpy(),
-                              "wx": ewz * points.x.to_numpy(dtype=float),
-                              "wy": ewz * points.y.to_numpy(dtype=float), "ewz": ewz})
-        frame = frame[frame["ewz"] > 0].groupby("ars5").sum()
+        px, py = points.x.to_numpy(dtype=float), points.y.to_numpy(dtype=float)
+        # A Gemeinde without a finite representative point (empty geometry) or population is left out: a NaN
+        # would poison the sum, a 0 coordinate would pull the Kreis centre towards the origin.
+        usable = np.isfinite(px) & np.isfinite(py) & np.isfinite(ewz) & (ewz > 0)
+        frame = pd.DataFrame({"ars5": gemeinden["ars5"].astype(str).to_numpy()[usable],
+                              "wx": (ewz * px)[usable], "wy": (ewz * py)[usable], "ewz": ewz[usable]})
+        frame = frame.groupby("ars5").sum()
         centre = dict(zip(frame.index, zip(frame["wx"] / frame["ewz"], frame["wy"] / frame["ewz"])))
     n_fallback = 0
+    kreis = _incommuter_kreis_ags5(orig_ars)    # the key of the donor sampler
     for i in np.flatnonzero(~has_real_home):
-        found = centre.get(str(orig_ars[i]))
+        found = centre.get(kreis[i])
         if found is None:
             n_fallback += 1
         else:
@@ -490,7 +494,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     the smallest effective size (Kish) of the commute-distance window an agent's donor is drawn from. Set, the
     donors must also carry ``commute_distance_km``. The donor is drawn by ``donor_draw.KreisDonorSampler``
     (MiD weight, commute window, tilt to the INKAR level of the origin Kreis, ``inkar_income``); the frames
-    carry its report under ``donor_draw``.
+    carry its report under ``donor_draw``. The agent commute is measured before the pt station re-draw and the
+    re-balancing, so a later mode switch or station change does not change the donor.
     """
     hts_persons = _eligible_donors(hts_persons, needs_distance=donor_min_effective_pool is not None)
     inbound = select_inbound_flows(flows, zgb_kreise, in_ring_kreise=set(assignment["ars5"]))
@@ -778,30 +783,40 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     # The donor of an agent is drawn per origin Kreis from the donors with a commute of a similar length, weighted
     # by the MiD person weight and tilted to the Kreis's INKAR income level (ADR-0191, D2/D3/D5). The sampler logs
     # its own primary/fallback rates; only the agent commute fallback is logged here.
-    commute_km, n_commute_fallback = _agent_commute_km(
-        home_x, home_y, work_x, work_y, np.zeros(n, dtype=bool) if is_in_ring is None else is_in_ring,
-        orig_ars, gemeinden, detour_factor)
-    commute_message = (f"[braunschweig.incommuters] agent commute for the donor match: primary "
-                       f"{n - n_commute_fallback}/{n} ({100.0 * (n - n_commute_fallback) / n:.1f}%), fallback "
-                       f"{n_commute_fallback} ({100.0 * n_commute_fallback / n:.1f}%) on the own gate or station "
-                       f"(no real home, no Gemeinde of the origin Kreis; a lower bound of the commute)")
-    if 100.0 * n_commute_fallback / n > AGENT_COMMUTE_FALLBACK_WARN_PERCENT:
-        logger.warning(commute_message)
+    kreis = _incommuter_kreis_ags5(orig_ars)
+    if donor_min_effective_pool is None:
+        commute_km = np.full(n, np.nan)    # no distance matching: the sampler does not read the commute
     else:
-        logger.info(commute_message)
+        commute_km, n_commute_fallback = _agent_commute_km(
+            home_x, home_y, work_x, work_y, np.zeros(n, dtype=bool) if is_in_ring is None else is_in_ring,
+            orig_ars, gemeinden, detour_factor)
+        commute_message = (f"[braunschweig.incommuters] agent commute for the donor match: primary "
+                           f"{n - n_commute_fallback}/{n} ({100.0 * (n - n_commute_fallback) / n:.1f}%), fallback "
+                           f"{n_commute_fallback} ({100.0 * n_commute_fallback / n:.1f}%) on the own gate or station "
+                           f"(no real home, no Gemeinde of the origin Kreis; a lower bound of the commute)")
+        if 100.0 * n_commute_fallback / n > AGENT_COMMUTE_FALLBACK_WARN_PERCENT:
+            logger.warning(commute_message)
+        else:
+            logger.info(commute_message)
     pool = select_commuter_donors(hts_persons, hts_trips, person_col)
     scale_by_kreis = (None if inkar_income is None else
                       dict(zip(inkar_income["ars5"].astype(str), inkar_income["scale"].astype(float))))
     sampler = _donor_draw.KreisDonorSampler(pool, scale_by_kreis, min_effective_pool=donor_min_effective_pool)
-    kreis = _incommuter_kreis_ags5(orig_ars)
+    drawn_rounds = []
+
+    def draw_donors(positions):
+        # The first call draws every agent: its rates are logged once (and warned about); the re-draw rounds,
+        # which draw only the late agents, stay silent.
+        rows = sampler.draw(kreis[positions], commute_km[positions], rng, log=not drawn_rounds)
+        drawn_rounds.append(len(positions))
+        return pool.iloc[rows].reset_index(drop=True)
+
     donors, (arrive_work, depart_work, depart_home, arrive_home), redraw_stats = redraw_times_within_bound(
         pool, n, rng,
         lambda d, pos: _agent_times(d, hts_trips, person_col, dist_km_all[pos], home_to_gate_km_all[pos],
                                     gate_speed_kmh, detour_factor),
         bound_s=bound_s, max_attempts=validate_time_redraw_max_attempts(time_redraw_max_attempts),
-        draw=lambda positions: pool.iloc[sampler.draw(kreis[positions], commute_km[positions], rng)]
-        .reset_index(drop=True))
-    # The sampler logged (and warned about) its primary/fallback rates in draw(); the frames carry its report.
+        draw=draw_donors)
     donor_report = sampler.report(kreis, commute_km)
     if inkar_income is None:
         logger.warning("[incommuters] no INKAR frame supplied: %d in-commuters are drawn without the "

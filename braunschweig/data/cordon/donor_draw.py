@@ -280,20 +280,23 @@ class KreisDonorSampler:
 
     # -- draw and report ----------------------------------------------------------------------------
 
-    def draw(self, kreis, commute_km, rng: np.random.Generator) -> np.ndarray:
+    def draw(self, kreis, commute_km, rng: np.random.Generator, *, log: bool = True) -> np.ndarray:
         """Draw one donor row position per agent (row positions in the donor frame, agent order).
 
         Args:
             kreis: origin Kreis per agent.
             commute_km: agent commute distance per agent (km), > 0 with distance matching.
             rng: seeded numpy Generator; consumed cell by cell in sorted cell order.
+            log: log the primary/fallback rates of this draw (and warn); ``False`` for repeated draws
+                of a subset (re-draw rounds) whose rates the caller logged once for all agents.
         """
         cells = self._cells_of(kreis, commute_km)
         out = np.empty(len(np.asarray(commute_km)), dtype=int)
         for (bin_id, name), agents in cells.items():
             cell = self._cell(bin_id, name)
             out[agents] = rng.choice(cell.positions, size=len(agents), p=cell.probabilities)
-        self._log(self._report_of(cells))
+        if log:
+            self._log(self._report_of(cells))
         return out
 
     def report(self, kreis, commute_km) -> dict:
