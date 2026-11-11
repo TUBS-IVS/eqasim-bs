@@ -73,8 +73,15 @@ def test_joint_imputation_logs_primary_imputed_and_fallback_rates(caplog):
     hh = _donor_households()
     with caplog.at_level(logging.INFO, logger="braunschweig.popsim.attributes"):
         attributes.map_household_bicycles_and_ebike(hh, rng=np.random.RandomState(1))
-    text = " ".join(r.getMessage() for r in caplog.records)
-    assert "primary" in text and "imputed" in text and "fallback" in text
+    record = next(r for r in caplog.records if "joint resolution" in r.msg)
+    # Counts from the record's arguments, not its wording: (primary, n, pct, imputed, pct,
+    # bicycles only, e-bike only, both, group fallback, pct, derived default, pct, excluded).
+    n_primary, n, _, n_imputed = record.args[:4]
+    n_group_fallback, n_default = record.args[8], record.args[10]
+    assert n_primary + n_imputed == n and n_imputed > 0
+    # Primary method: every imputed household found a donor in its own group (both
+    # hhgr_gr groups of the fixture hold valid donors), so no fallback fires.
+    assert n_group_fallback == 0 and n_default == 0
 
 
 class _FakeContext:
@@ -227,6 +234,32 @@ def test_seed_and_clones_carry_identical_person_attributes():
     assert (clones["has_pt_subscription"] == flat).all()
     # The fixture exercises the imputed codes (a code-free fixture would pass vacuously).
     assert (clones["P_BKAT"] == 9).any() and clones["P_FKARTE"].isin([99, 206]).any()
+
+
+def test_imputed_persons_are_conditioned_on_the_donor_household_regiostar7():
+    """RegioStaR7 is a household column: the once-only person resolution must take it from
+    the donor household, or the imputed tickets come from a pool mixing city and country
+    (review of TUBS-IVS/eqasim-bs#606). Valid tickets: all Deutschlandticket in RS7 71
+    households, all never-PT in RS7 77 households; every third person has code 206."""
+    donors = _donor_households(90)
+    donors["RegioStaR7"] = [71 if i % 2 == 0 else 77 for i in range(len(donors))]
+    rs7_by_hh = donors.set_index("H_ID")["RegioStaR7"]
+
+    def _persons(mid_persons):
+        out = mid_persons.copy()
+        city = out["H_ID"].map(rs7_by_hh) == 71
+        out["P_FKARTE"] = np.where(city, 3, 8)
+        out.loc[out.index % 3 == 0, "P_FKARTE"] = 206
+        return out
+
+    _hh, _seed_p, clones = _seed_and_assembled_clones(
+        donors, mid_persons_extra=_persons, entries=("pt_ticket_group",))
+    imputed = clones["P_FKARTE"] == 206
+    donor_rs7 = clones["H_ID"].map(rs7_by_hh)
+    assert imputed.sum() > 20 and "RegioStaR7" not in _seed_p.columns
+    city = clones.loc[imputed & (donor_rs7 == 71), "pt_subscription_type"].astype(str)
+    country = clones.loc[imputed & (donor_rs7 == 77), "pt_subscription_type"].astype(str)
+    assert (city == "deutschlandticket").all() and (country == "never_pt").all()
 
 
 def test_valid_person_codes_are_unchanged_by_the_single_resolution():

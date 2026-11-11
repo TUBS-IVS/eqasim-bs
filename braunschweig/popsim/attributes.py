@@ -14,6 +14,7 @@ trip and participation classes, and the further ``map_*`` functions below.
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -1041,6 +1042,8 @@ PERSON_RESOLVED_COLUMNS = ("employment_status", "pt_subscription_type")
 
 def resolve_person_attributes(
     persons: pd.DataFrame, *, rng, rs7_conditioning: bool = True,
+    households: Optional[pd.DataFrame] = None, household_id_col: str = "H_ID",
+    rs7_col: str = "RegioStaR7",
 ) -> pd.DataFrame:
     """Resolve ``employment_status`` and ``pt_subscription_type`` ONCE per donor person.
 
@@ -1049,10 +1052,45 @@ def resolve_person_attributes(
     verbatim, so a clone carries the value its donor person was balanced on (ADR-0192).
     ``has_pt_subscription`` is derived from the resolved type. Imputed codes (P_BKAT 9,
     P_FKARTE 99 / 202 / 206) are drawn conditioned on the donor's survey RegioStaR7.
+
+    RegioStaR7 is a HOUSEHOLD column of MiD; the donor persons frame does not carry it.
+    With ``rs7_conditioning`` the donor household's value is therefore joined onto a
+    working copy (by ``household_id_col`` from ``households``) for the imputation pools
+    only; the returned frame does NOT gain the column, because downstream the persons'
+    RegioStaR7 is the PLACED home's (assembly's collision guard). Persons whose household
+    has no RegioStaR7 fall back to the age-only pool inside ``missing.resolve``; their
+    count is logged. If no RegioStaR7 is available at all, a WARNING says so.
     """
-    out = map_employment_status(persons, rng=rng, rs7_conditioning=rs7_conditioning)
+    work = persons
+    attached = False
+    if rs7_conditioning and rs7_col not in persons.columns:
+        if households is not None and rs7_col in households.columns:
+            rs7_by_household = households.drop_duplicates(household_id_col).set_index(
+                households.drop_duplicates(household_id_col)[household_id_col].astype(str)
+            )[rs7_col]
+            work = persons.copy()
+            work[rs7_col] = work[household_id_col].astype(str).map(rs7_by_household)
+            attached = True
+            n_missing = int(work[rs7_col].isna().sum())
+            log = logger.warning if n_missing else logger.info
+            log(
+                "[braunschweig.popsim.attributes] person resolution: donor household "
+                "RegioStaR7 attached to %d/%d persons (%.1f%%), missing for %d",
+                len(work) - n_missing, len(work),
+                100.0 * (len(work) - n_missing) / len(work) if len(work) else 0.0, n_missing,
+            )
+        else:
+            logger.warning(
+                "[braunschweig.popsim.attributes] person resolution: no RegioStaR7 on the "
+                "persons or the donor households -- the imputation pools of employment_status "
+                "and pt_subscription_type are NOT conditioned on RegioStaR7."
+            )
+    out = map_employment_status(work, rng=rng, rs7_conditioning=rs7_conditioning)
     out = map_pt_subscription_type(out, rng=rng, rs7_conditioning=rs7_conditioning)
-    return map_has_pt_subscription(out)
+    out = map_has_pt_subscription(out)
+    if attached:
+        out = out.drop(columns=[rs7_col])
+    return out
 
 
 def carry_seed_household_counts(
@@ -1110,6 +1148,15 @@ def carry_seed_household_counts(
             "%s.", col, n_from_seed[col], n, 100.0 * n_from_seed[col] / max(n, 1),
             n - n_from_seed[col], 100.0 * (n - n_from_seed[col]) / max(n, 1),
             "" if col in carried else " (column absent from the seed: 100% fallback)")
+    # Known limit (ADR-0192): when the seed carries only ONE of the two bicycle columns, the
+    # other comes from an independent joint draw, so an e-bike can meet zero bicycles here.
+    # Counted, not hidden; the default path resolves both jointly and cannot produce it.
+    n_ebike_without_bicycle = int(((out["has_ebike"] == 1) & (out["number_of_bicycles"] == 0)).sum())
+    if n_ebike_without_bicycle:
+        logger.warning(
+            "[popsim.donor] %d/%d donors carry has_ebike=1 with number_of_bicycles=0: only one "
+            "of the two bicycle columns came from the seed (ADR-0192, legacy path).",
+            n_ebike_without_bicycle, n)
     return out
 
 

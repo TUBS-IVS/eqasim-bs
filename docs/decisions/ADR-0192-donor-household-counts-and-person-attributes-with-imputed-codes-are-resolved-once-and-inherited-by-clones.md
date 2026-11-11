@@ -21,7 +21,9 @@
   1. `braunschweig.popsim.attributes.resolve_person_attributes` resolves `employment_status` and
      `pt_subscription_type` ONCE on the completed donor persons, always (independent of which
      Kreis controls are active), with the seeded `kreis_seed_rng`, in the popsim stage next to
-     the household-count resolution.
+     the household-count resolution. RegioStaR7 is a household column, so the donor
+     household's value is joined onto a working copy for the imputation pools only (the
+     persons frame does not keep it; its RegioStaR7 is the placed home's downstream).
   2. The seed derivations (`_derive_employment_status_seed_column`,
      `_derive_pt_ticket_group_seed_column`) reuse the resolved columns when present.
   3. `expand_to_persons` copies the donor person columns onto every clone, so the donor person
@@ -34,7 +36,10 @@
   from one donor household draw (`map_household_bicycles_and_ebike`), restricted to
   consistent donors (pedelecs <= bicycles), so an e-bike never appears without a bicycle.
   The legacy path (`complete_members=False`) carries the seed counts onto its separately
-  loaded donor table by `H_ID` (`carry_seed_household_counts`, fallback rate logged).
+  loaded donor table by `H_ID` (`carry_seed_household_counts`, fallback rate logged). Known
+  limit there: if only one of the two bicycle controls is active, the seed carries only that
+  column and the other comes from an independent joint draw, so an e-bike can meet zero
+  bicycles; such donors are counted and logged as a WARNING (no config uses this path).
 - **Rejected alternative (B):** keep the per-clone draw but restrict it to the seed's control
   group. It still spends a second draw, would not reproduce the seed person's exact category
   and would need the seed group to travel with the clone; the single draw is simpler and exact.

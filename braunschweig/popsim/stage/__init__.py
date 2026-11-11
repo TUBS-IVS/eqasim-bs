@@ -1680,9 +1680,11 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             ebike_seed_column=ebike_seed_column_cfg,
         )
         # Person attributes with imputed codes (employment_status, pt_subscription_type) are
-        # resolved ONCE here too, after the household counts (ADR-0192).
+        # resolved ONCE here too, after the household counts (ADR-0192). The donor
+        # household's RegioStaR7 conditions the imputation pools (persons carry none).
         completed_donor_persons = attributes.resolve_person_attributes(
-            donor.persons, rng=kreis_seed_rng)
+            donor.persons, rng=kreis_seed_rng, households=donor.households,
+            household_id_col=source.seed_columns().household_id)
         report = donor.completeness_report
         completion_report = donor.completion_report
         seed_columns = source.seed_columns()
