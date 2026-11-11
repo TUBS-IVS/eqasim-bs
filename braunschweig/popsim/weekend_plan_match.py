@@ -674,8 +674,8 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
                 ridx = target_members.loc[tpos, "index"]
                 trow = target_members.loc[tpos]
                 sh, sp, plevel = match_person(
-                    trow, weekday_pool, rng=rng,
-                    prepared_pool=prepared_for(AGE_BAND_EDGES), passenger_key=passenger_key,
+                    trow, weekday_pool, rng=rng, age_band_edges=age_band_edges,
+                    prepared_pool=prepared_for(age_band_edges), passenger_key=passenger_key,
                     lift_free_never=lift_free_never)
                 persons.loc[ridx, "source_H_ID"] = sh
                 persons.loc[ridx, "source_P_ID"] = sp
