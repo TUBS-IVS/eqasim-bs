@@ -12,8 +12,7 @@ Configuration
 ``braunschweig.inkar_panel`` (dict[str, str], optional)
     Map from indicator-name (the column key in the output) to a path
     (relative to ``data_path``) of the corresponding INKAR ``E_*.xls``.
-    Supported indicators include — but are not limited to — those
-    listed in ``plan/feature-bs-model-improvements-1.md`` for TASK-014:
+    Any indicator name can be mapped; typical examples:
 
         - ``population_density``   (E_Bevoelkerungsdichte.xls)
         - ``unemployment_rate``    (E_Arbeitslosenquote.xls)

@@ -39,6 +39,5 @@ Both aliases live in ``configs/base_bs.yml`` alongside the model's flags
 (``commute_day_state_enabled``, ``commute_day_far_threshold_km``,
 ``commute_day_absent_share_far``, ``commute_day_max_not_replaceable_share``). With the model
 disabled both ``.final`` stages are pass-throughs of the pre-assignment views. The consumers that
-read the ``.final`` view (secondary locations, the MATSim population, synthesis output) are wired
-in a later task.
+read the ``.final`` view are :mod:`spatial_locations_day`, :mod:`output_day` and :mod:`day_view`.
 """

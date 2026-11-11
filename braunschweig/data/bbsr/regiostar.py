@@ -13,9 +13,10 @@ Output
 ------
 ``DataFrame`` with one row per Gemeinde:
 
-    - ``commune_id``   8-digit AGS as zero-padded string (matches the
-                       ``commune_id`` keys used downstream in
-                       ``synthesis.locations`` etc.).
+    - ``commune_id``   8-digit AGS as zero-padded string. Downstream
+                       stages carry the 12-digit ARS ``commune_id``
+                       (``data.spatial.municipalities``); convert with
+                       ``ars_to_ags8`` before joining.
     - ``ars5``         5-digit Kreis prefix.
     - ``name``         Gemeindename.
     - ``regiostar7``   integer 71–77 RegioStaR-7 type.

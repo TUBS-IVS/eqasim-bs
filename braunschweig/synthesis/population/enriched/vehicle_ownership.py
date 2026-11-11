@@ -46,7 +46,8 @@ CARS_INCOME_AWARE_FALLBACK_WARN_RATE = 0.05
 # The numeric reference values live in CSV files under
 #   eqasim-data/data/braunschweig/mid/mid2023_H{7,12_3}_*.csv
 # and are written by scripts/seed_mid_constraint_tables.py. They are
-# loaded lazily in execute() through braunschweig.data.mid.reference_tables.
+# loaded when the sampling helpers run (e.g. ``_sample_vehicle_counts``) through
+# braunschweig.data.mid.reference_tables.
 
 
 # Map inside_<kreis> boolean flags to the 5-digit Kreis ARS code (AGS-5).

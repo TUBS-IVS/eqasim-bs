@@ -83,8 +83,8 @@ import pandas as pd
 # .. d_300km_plus) so that p38_band_shares() below bins MODEL flows onto the
 # same bands as the MiD P38.2 reference. This module does NOT load that
 # reference CSV or drop/renormalise its d_unplausibel_keine_angabe column --
-# p38_band_shares() only shares MODEL flow; see the TODO in
-# scripts/run_anchor_holdout.py for the deferred reference comparison.
+# p38_band_shares() only shares MODEL flow; the CLI scripts/run_anchor_holdout.py
+# loads the reference through ``trip_coherence.p38_2_band_target`` and compares.
 P38_BAND_EDGES_KM = [0.0, 5.0, 10.0, 20.0, 30.0, 50.0, 100.0, 200.0, 300.0,
                      float("inf")]
 

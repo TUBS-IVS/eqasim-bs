@@ -1,9 +1,8 @@
 """Region-neutral spatial helpers (AGS / ARS codes, generic geometry tools).
 
-Phase 2.3 of the refactor moves ``bavaria/entd_codes.py`` and
-``bavaria/data/spatial/codes.py`` here.  The synpp stage name changes from
-``bavaria.entd_codes`` to ``eqasim_common.spatial.codes``; aliases in the
-Braunschweig configs are updated in the same commit.
+Holds the synpp stages ``eqasim_common.spatial.codes`` (AGS / ARS code table)
+and ``eqasim_common.spatial.entd_codes`` (the ``departement_id`` values that
+occur in the cleaned ENTD data).
 """
 
 from __future__ import annotations

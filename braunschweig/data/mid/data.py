@@ -17,14 +17,15 @@ The reference percentages live in three CSV files produced by
   * ``mid2023_P24_1_pt_subscription_constraints.csv`` — PT subscriptions
 
 This stage glues the three CSVs together into the structure expected by
-``bavaria/synthesis/population/enriched.py``.
+``braunschweig/synthesis/population/enriched`` (see ``availability.py`` and
+``base.py``).
 
 Zones correspond to the eight ZGB Kreise (Landkreise/Kreisfreie Städte) and
 match one-to-one the 'Teilgebiete' row group in the MiD tables. 'external'
 catches residents outside the ZGB-8 scope; we anchor it on the Gesamtregion
 value since the MiD report does not cover the rest of Germany.
 
-Constraint semantics (see bavaria/synthesis/population/enriched.py):
+Constraint semantics (see braunschweig/synthesis/population/enriched/availability.py):
   - 'car_availability_constraints': share of persons (>= minimum_age) with
     'jederzeit' access to a car (P19 column 'jederzeit').
   - 'bicycle_availability_constraints': share of persons owning a non-electric

@@ -1,6 +1,6 @@
 """Majority rule over the public parking supply within walking distance (parking cost zones v2, issue #436).
 
-Spec Amendment B (approved by the owner on 2026-09-30, "A mit Vorbereitung C"; ADR-0139), all in EPSG:25832 metres.
+Spec Amendment B (approved by the owner on 2026-09-30, "option A, with preparation of option C"; ADR-0139), all in EPSG:25832 metres.
 It replaces the erosion rule of lever 1 (``braunschweig.parking.zone_geometry``, amendment A1), which yields no zone in
 any of the eight curated towns: a place lies in a paid zone when most of the usable public parking within ``W`` costs
 money.

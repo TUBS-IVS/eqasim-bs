@@ -18,7 +18,14 @@ this stage; the legacy/IPF configs keep the Gemeinde-level home stage untouched.
 
 Draw method
 -----------
-Within each 100 m cell a household draws a building proportional to its
+The stage option ``braunschweig.home_matching`` (``KEY_HOME_MATCHING``) selects the
+method; the default is ``typed`` (:func:`assign_homes_typed`: ALKIS footprints typed from
+the census building-count signal and households matched to dwelling slots on building type
+and size, see its docstring). The description below is the ``legacy`` mode
+(:func:`assign_homes_to_cell_buildings`) and the shared cell-grouping / fallback-reporting
+structure.
+
+In ``legacy`` mode, within each 100 m cell a household draws a building proportional to its
 ``weight`` (= footprint area, the dwelling-capacity proxy already used by the
 legacy area-weighted sampler), seeded deterministically. This is more faithful
 than the pure round-robin of ``braunschweig.popsim.handoff`` (a 1000 m^2 block
@@ -29,12 +36,17 @@ cell-grouping / fallback-reporting structure mirrors ``popsim.handoff``.
 Fallback (CLAUDE.md "Fallback transparency", no silent fallbacks)
 -----------------------------------------------------------------
 PRIMARY path: the household's 100 m cell contains at least one building -> the
-draw is restricted to that cell (cell-accurate). FALLBACK path: the cell has no
-building -> the household falls back to a commune-level area-weighted draw
+draw is restricted to that cell (cell-accurate). FALLBACK path (``legacy`` mode): the
+cell has no building -> the household falls back to a commune-level area-weighted draw
 (restricted to its own commune, the legacy behaviour). The cell-accurate vs
 commune-fallback split is counted and logged; households whose commune ALSO has
 no building (should be ~0) are logged loudly and left unplaced (they would be
 dropped, never silently placed elsewhere).
+
+In the default ``typed`` mode an empty cell is handled differently: the household is
+first snapped to the nearest building in the neighbouring cells
+(:func:`_nearest_neighbour_building`, up to ``NEIGHBOUR_MAX_RING`` rings) and only when
+none exists is it placed at a random point inside its own cell; both counts are logged.
 """
 
 from __future__ import annotations
@@ -539,8 +551,10 @@ def assign_homes_typed(
     cell's households to slots on type (primary) and size (secondary)
     (:func:`home_matcher.match_cell`). The chosen ``building_id`` maps to that
     building's centroid (EPSG:25832). Households in a cell with NO building are
-    placed at a random point inside the cell (:func:`home_matcher.random_point_in_cell`),
-    never silently relocated.
+    snapped to the nearest building of a neighbouring cell
+    (:func:`_nearest_neighbour_building`, up to ``NEIGHBOUR_MAX_RING`` rings); only
+    when no building exists within that radius are they placed at a random point
+    inside their own cell (:func:`home_matcher.random_point_in_cell`).
 
     Parameters
     ----------

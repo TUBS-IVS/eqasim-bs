@@ -2966,7 +2966,7 @@ def _powertrain_rake_factors(
     pmfs : (n_cars, n_powertrains) array of the per-car *masked* powertrain pmfs
         for the cars of this Kreis (each row sums to 1).
     kreis_target_share : {powertrain -> FZ 27.15 share} for this Kreis (the
-        electric entries are the rake targets).
+        entries for the powertrains in ``target_idx`` are the rake targets).
     target_idx : {powertrain -> column index in ``pmfs``} for every powertrain to rake.
     kreis : Kreis code, used only to make the WARNING log messages below
         traceable; has no effect on the computed factors/residuals.
@@ -2975,8 +2975,9 @@ def _powertrain_rake_factors(
     -------
     (factors, residuals) :
         ``factors`` is a length-``n_powertrains`` vector of multiplicative scale
-        factors (1.0 for every non-electric powertrain); ``residuals`` maps each
-        electric powertrain to ``achieved_share - target_share`` AFTER raking
+        factors (1.0 for every powertrain NOT in ``target_idx``; ``sample_fleet``
+        passes every powertrain, ADR-0085); ``residuals`` maps each raked
+        powertrain to ``achieved_share - target_share`` AFTER raking
         (≈0 when reachable; the signed unreachable residual otherwise).
 
         Two UNREACHABLE cases are possible and both are logged here as a
@@ -3005,10 +3006,10 @@ def _powertrain_rake_factors(
         [kreis_target_share.get(e, 0.0) for e in target_idx], dtype=float)
     cols = np.array(target_cols, dtype=int)
 
-    # Fixed-point iteration on the electric scale factors. After each update we
+    # Fixed-point iteration on the scale factors of the raked powertrains. After each update we
     # renormalise every car's pmf with the current factors and measure the mean
-    # electric shares; we then nudge each factor by target/achieved. Because the
-    # electric columns couple only through the (shared) renormalisation
+    # shares of those powertrains; we then nudge each factor by target/achieved. Because the
+    # raked columns couple only through the (shared) renormalisation
     # denominator, this converges in a handful of iterations.
     alpha = np.ones(len(cols), dtype=float)
     for _ in range(max_iterations):

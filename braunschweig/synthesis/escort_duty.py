@@ -45,8 +45,8 @@ logger = logging.getLogger(__name__)
 _LOG_TAG = "[escort duty]"
 
 #: Purpose label of an escort activity in the synthetic trip table (``following_purpose`` /
-#: ``preceding_purpose``). Pinned equal to the local copies in ``state_stage`` and
-#: ``plan_replacement`` by ``tests/test_escort_duty.py``.
+#: ``preceding_purpose``). This module owns the value;
+#: ``state_stage`` and ``plan_replacement`` re-export it as ``ESCORT_PURPOSE``.
 ESCORT_PURPOSE = "escort"
 
 _REQUIRED_COLUMNS = ("person_id", "following_purpose", "preceding_purpose")

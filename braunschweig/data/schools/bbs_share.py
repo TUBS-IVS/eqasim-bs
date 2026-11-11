@@ -19,7 +19,7 @@ allowed before the header)::
     16,<count>,<count>
     ...
 
-Data source (to be downloaded, not committed by default): regionalstatistik.de
+Data source (committed at ``eqasim-data/data/braunschweig/schools/nds_bbs_share_by_age.csv``): regionalstatistik.de
 / GENESIS statistic 21211 (Berufliche Schulen: Schueler nach Altersgruppen,
 Niedersachsen) for ``bbs_pupils`` and 21111 (Allgemeinbildende Schulen,
 gymnasiale Oberstufe Sek II by age) for ``oberstufe_pupils``; alternatively the

@@ -502,7 +502,7 @@ def _build_escort_location_decider(context, random_seed: int):
         return None
 
     # Execute-context config() takes the key alone (declared defaults live in
-    # configure(), wired by the next task); see
+    # configure() of the stage module); see
     # tests/test_execute_context_config_contract.py for the two-argument
     # crash this avoids.
     activities = list(context.config("escort_locations_activities"))

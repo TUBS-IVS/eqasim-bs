@@ -93,8 +93,8 @@ def match_household(target_id, target_feats, weekday_feats, *, rng, weekday_by_k
 
 AGE_BAND_EDGES = (-1, 5, 13, 17, 200)
 #: Refinement of :data:`AGE_BAND_EDGES` that splits the 6-13 child band into 6-9
-#: (primary school, Grundschule) and 10-13 (lower secondary), for the DIARY plan
-#: match only (issue #386). Under the coarse band a first-grader and a 13-year-old
+#: (primary school, Grundschule) and 10-13 (lower secondary). Member completion, the
+#: weekend match and the diary plan match all use it by default (issue #386). Under the coarse band a first-grader and a 13-year-old
 #: are interchangeable donors although their school days differ systematically:
 #: on the raw MiD 2023 B1 (measured 2026-09-09) a first education leg before 07:00
 #: occurs for 5.4 % of 6-9-year-olds but 18.2 % of 10-13-year-olds, and
@@ -397,8 +397,8 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
     ``age_band_edges`` are the ``pd.cut`` bin edges behind the ``age_band`` key
     (default :data:`AGE_BAND_EDGES`, today's coarse 0-5 / 6-13 / 14-17 / 18+ bands).
     :data:`FINE_CHILD_AGE_BAND_EDGES` additionally separates 6-9 from 10-13 and is
-    used by the DIARY match only (issue #386); the weekend match keeps the default,
-    whose draw sequence is a byte-identity contract. Like ``hard_keys``, the parameter
+    passed by all donor matchers by default (issue #386); the default coarse edges are
+    the flag-OFF path, whose draw sequence is a byte-identity contract. Like ``hard_keys``, the parameter
     changes WHICH donor is drawn, never HOW MANY rng values are consumed.
 
     ``level`` counts SOFT-key relaxations, so its maximum is ``len(soft keys)``:

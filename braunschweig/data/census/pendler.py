@@ -46,7 +46,7 @@ import numpy as np
 import pandas as pd
 
 
-# Neun Datenspalten nach den 4 ID-Spalten (Einheit: Personen).
+# Data columns following the 4 ID columns (unit: persons).
 NUMERIC_COLUMNS = ["total", "male", "female", "de", "foreign", "apprentice"]
 
 

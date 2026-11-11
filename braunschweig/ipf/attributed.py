@@ -802,7 +802,7 @@ def execute(context):
     # Household size: when the IPF balanced a hh_size margin, propagate the
     # cell label as the (per-person) household-size attribute. Otherwise
     # fall back to the legacy placeholder value of 1 — the placeholder is
-    # subsequently overwritten by ``bavaria.synthesis.population.enriched``
+    # subsequently overwritten by ``braunschweig.synthesis.population.enriched``
     # which samples from the regions-aggregated distribution.
     if "hh_size" in df.columns:
         df["household_size"] = df["hh_size"].astype(str)

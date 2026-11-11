@@ -112,9 +112,8 @@ class SeedColumns:
 
 
 # Canonical MiD 2023 raw seed column names. The day filter uses the MiD core-week
-# flag column ``kernwo``. The exact accepted value set is left to the caller /
-# workflow config (see the [TODO] in the module-level note) because it depends on
-# MiD raw semantics that must not be inspected here.
+# flag column ``kernwo``; the default accepted value set is the
+# ``day_filter_values`` below, and callers may override it per call.
 MID_SEED_COLUMNS = SeedColumns(
     household_id="H_ID",
     household_weight="H_GEW",

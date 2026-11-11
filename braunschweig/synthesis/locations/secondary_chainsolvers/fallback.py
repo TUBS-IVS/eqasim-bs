@@ -1,9 +1,11 @@
 """Fallback placement for problems the carla solver cannot solve.
 
 ``_rda_fallback_place`` re-runs eqasim's GravityChainSolver /
-AngularTailSolver / CustomFreeChainSolver pipeline over the LEGACY
-candidate frame (the default ``rda`` strategy, preserving the legacy
-distance-error objective); ``_fallback_place`` is the pre-2026-04-26
+AngularTailSolver / CustomFreeChainSolver pipeline over the fallback
+candidate frame ``df_fallback`` (the default ``rda`` strategy, preserving the legacy
+distance-error objective). The stage module (``__init__`` ``execute``) chooses that
+frame: the REPLACE candidate set when ``secondary_building_potentials`` is ON, the
+legacy frame when OFF;``_fallback_place`` is the pre-2026-04-26
 random-candidate stop-gap kept for the ``random`` strategy.
 ``_build_rda_candidate_index`` builds the KDTree candidate index shared by
 both rda fallback calls (unbounded chains and failed-bounded problems).

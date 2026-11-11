@@ -4,8 +4,9 @@ Task 7 of feature #224: a standalone, tested analysis module reused by the
 Task-8 popsim smoke to evaluate the pre-registered acceptance gate (spec
 Section 9) -- per-Kreis realised-vs-SrV-target participation shares, the
 Mobilitaetsquote (mobility rate), and a donor-duplication effective sample
-size (N_eff). This module is NOT wired into any live pipeline stage; it is a
-reusable analysis imported by whatever evaluates the gate.
+size (N_eff). This module is not part of the population synthesis; it is a
+reusable analysis imported by whatever evaluates the gate (e.g.
+``run_population_validation._participation_fit_report`` and the analysis suite).
 
 HONESTY CAVEAT (mandatory, reproduce in any report built on this module):
 these participation controls are a FIT CHECK (the SrV target STEERS the

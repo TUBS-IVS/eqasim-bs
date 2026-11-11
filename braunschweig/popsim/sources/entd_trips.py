@@ -282,7 +282,7 @@ def build_trips(
     trips = apply_per_person_jitter(trips, random_seed=random_seed)
 
     # euclidean_distance: the eqasim ENTD reweighted stage derives it as
-    # routed_distance / 1.3 (data/hts/entd/reweighted.py:28; the same 1.3 detour
+    # routed_distance / 1.3 (data/hts/entd/reweighted.py :: execute; the same 1.3 detour
     # factor the MiD path uses, wegkm_imp/1.3). The full-composition donor
     # (data.hts.entd.filtered) carries routed_distance but NOT euclidean_distance
     # -- that column is only added by the reweighted stage, which we deliberately

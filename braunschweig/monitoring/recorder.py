@@ -211,9 +211,10 @@ def record_from_config(config_path, log_path=None, root_pid=None,
     Returns a no-op context yielding ``None`` when ``monitoring_enabled`` is false,
     so a disabled run is byte-identical to one without this feature.
 
-    The recorded filesystems are the run's ``working_directory`` and its
-    ``output_path``: those are the two that fill up, and ENOSPC is a documented
-    failure class of this pipeline.
+    The recorded filesystems are those of ``_filesystem_paths_for_run``: the
+    run's ``working_directory``, its ``output_path`` and the PopulationSim
+    ``work_dir`` (deduplicated). These are the ones that fill up, and ENOSPC is
+    a documented failure class of this pipeline.
     """
     log = log or logger
     document, config = _read_config(config_path)

@@ -386,9 +386,10 @@ def execute(context):
     # round, review Minor 7) -- it costs a groupby over the whole population's trips and is read
     # by nothing when no chain is replaced.
     departure_time = _departure_time_settings(context, persons, trips, len(matches))
-    # Ruling R9: the attributes carry n_trips, which is what lets build_day_trips tell an
-    # EXPECTED immobile donor day (n_trips == 0) apart from a donor_id join failure -- both look
-    # like "no rows for this donor" in donor_trips alone.
+    # Ruling R9: the attributes carry the donor pool's is_immobile flag (no row in the raw MiD
+    # Wege file at all), which is what lets build_day_trips tell an EXPECTED immobile donor day
+    # apart from a donor_id join failure -- both look like "no rows for this donor" in
+    # donor_trips alone. n_trips == 0 is not the decider (see plan_replacement.build_day_trips).
     day_trips, diagnostics = build_day_trips(trips, states, matches, donor_trips,
                                              random_seed=int(context.config("random_seed")),
                                              donor_attributes=donor_attributes,

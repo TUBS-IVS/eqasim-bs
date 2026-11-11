@@ -16,11 +16,11 @@ MATSim writers. The default is ``simple_ipf_open``, which preserves the current
 pipeline behaviour exactly (see ``tests/test_simple_ipf_open_baseline.py`` and the
 opt-in byte-identity guard ``tests/test_smoke_1pct.py``).
 
-Phase 1 of the refactor wires only the contracts: the method constants, the
-fail-fast config validator, the output-schema contract, and the producer
-selector. The ``popsim_*`` producers are not implemented yet -- selecting them
-raises a clear ``NotImplementedError`` rather than silently falling back to the
-IPF workflow (no silent fallback; CLAUDE.md "Fallback transparency").
+The package holds the method constants, the fail-fast config validator, the
+output-schema contract and the producer selector. Both ``popsim_*`` methods
+resolve to the producer stage
+``braunschweig.popsim.stage``; the selector never silently falls back to the IPF
+workflow (no silent fallback; CLAUDE.md "Fallback transparency").
 """
 
 from braunschweig.population.methods import (
