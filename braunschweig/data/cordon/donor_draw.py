@@ -65,8 +65,9 @@ def tilt_to_mean(weights, values, target_mean: float, *, max_abs_tilt: float = M
     The result is ``p_i proportional to w_i * exp(t * z_i)`` with ``z`` the weight-standardised ``values``:
     the distribution closest to the weights (minimum relative entropy) that meets the mean. ``t`` is found
     by bisection on ``[-max_abs_tilt, max_abs_tilt]`` (the tilted mean rises with ``t``). A target outside
-    the range of ``values``, or values without spread, cannot be met: the closest reachable tilt is
-    returned with ``reached=False``.
+    the range of ``values``, or values without spread, cannot be met: the closest reachable tilt (the
+    probabilities at the search bound) is returned with ``reached=False``; a caller that must not draw from
+    such a distribution (see :class:`KreisDonorSampler`) falls back to the untilted weights itself.
 
     Args:
         weights: positive donor weights.
@@ -84,7 +85,9 @@ def tilt_to_mean(weights, values, target_mean: float, *, max_abs_tilt: float = M
     w = raw / raw.sum()
     mean = float((w * values).sum())
     sd = float(np.sqrt((w * (values - mean) ** 2).sum()))
-    if sd == 0.0:  # nothing to tilt
+    # No spread: exact zero is too strict, equal values with non-representable weights leave sd near 1e-13,
+    # and z would then be rounding noise that collapses the draw onto one donor.
+    if sd <= 1e-9 * max(1.0, abs(mean)):  # nothing to tilt
         return TiltedWeights(w, 0.0, bool(np.isclose(mean, target_mean, rtol=1e-6, atol=0.0)),
                              float(1.0 / (w ** 2).sum()))
     z = (values - mean) / sd
@@ -113,11 +116,13 @@ def _window(distance_km, weights, target_km: float, min_effective_size: float) -
     """Window positions and whether the minimum effective size was reached (else: the whole pool)."""
     distance_km = np.asarray(distance_km, dtype=float)
     w = _validated_weights(weights)
+    w = w / w.max()  # the Kish size is scale-free; this keeps huge weights from overflowing the squares
     gap = np.abs(np.log(distance_km) - np.log(float(target_km)))
     order = np.argsort(gap, kind="stable")
     cumulative = np.cumsum(w[order])
     kish = cumulative ** 2 / np.cumsum(w[order] ** 2)  # effective size after each added donor
-    enough = np.flatnonzero(kish >= min_effective_size)
+    # relative tolerance: a size of 2.9999999999999996 (rounding) counts as 3
+    enough = np.flatnonzero(kish >= min_effective_size * (1.0 - 1e-12))
     if len(enough) == 0:
         return np.arange(len(distance_km)), False
     reach = gap[order[enough[0]]]
@@ -170,7 +175,10 @@ class KreisDonorSampler:
             ``commute_distance_km`` (> 0).
         scale_by_kreis: origin Kreis -> factor on the weighted mean income per person of the window;
             ``None`` draws without tilt. A Kreis missing from the table (or with a non-finite factor) is
-            drawn without tilt and counted.
+            drawn without tilt and counted. The keys of the table and the agent Kreis values are compared
+            as strings (5-digit ARS): both are converted with ``str()``, so an int-keyed table matches too.
+            A cell whose target mean is outside the income range of its window (not reached) is drawn
+            from the untilted window weights, counted in ``n_target_not_reached`` and warned.
         min_effective_pool: minimum Kish effective size of the commute window; ``None`` draws from every
             donor without distance matching.
     """
@@ -205,7 +213,7 @@ class KreisDonorSampler:
             for kreis, scale in scale_by_kreis.items():
                 if np.isfinite(scale) and scale <= 0:
                     raise ValueError(f"scale of Kreis {kreis!r} must be > 0, got {scale}")
-        self._scale = None if scale_by_kreis is None else dict(scale_by_kreis)
+        self._scale = None if scale_by_kreis is None else {str(k): v for k, v in scale_by_kreis.items()}
         self._window_cache: dict[int, tuple[np.ndarray, bool]] = {}
         self._cell_cache: dict[tuple[int, str], _Cell] = {}
 
@@ -231,6 +239,7 @@ class KreisDonorSampler:
         return self._window_cache[bin_id]
 
     def _cell(self, bin_id: int, kreis: str) -> _Cell:
+        kreis = str(kreis)
         key = (bin_id, kreis)
         if key not in self._cell_cache:
             positions, reached = self._window_of(bin_id)
@@ -242,7 +251,9 @@ class KreisDonorSampler:
             if has_scale:
                 base = float((w * y).sum() / w.sum())
                 tilt = tilt_to_mean(w, y, base * float(scale))
-                probabilities = tilt.probabilities
+                # A target out of reach is counted and warned, but drawn from the untilted window weights:
+                # the bound tilt would collapse the draw onto the extreme donors.
+                probabilities = tilt.probabilities if tilt.reached else w / w.sum()
             else:
                 probabilities = w / w.sum()
             ratio = None

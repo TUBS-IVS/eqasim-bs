@@ -40,6 +40,13 @@ def test_tilt_reports_a_target_it_cannot_reach(values, target):
     assert tilted.probabilities.sum() == pytest.approx(1.0)
 
 
+def test_tilt_treats_equal_values_with_inexact_weights_as_no_spread():
+    # rounding leaves a weighted sd of about 1e-13 here; that must not become a tilt direction
+    tilted = dd.tilt_to_mean([0.3, 0.7], [2000.0, 2000.0], 2000.0)
+    assert tilted.probabilities == pytest.approx([0.3, 0.7])
+    assert tilted.reached
+
+
 @pytest.mark.parametrize("weights, target_km, min_size, expected", [
     ([1, 1, 1, 1, 1], 20.0, 1.0, [2]),              # the donor at 20 km alone is enough
     ([1, 1, 1, 1, 1], 20.0, 3.0, [1, 2, 3]),        # 10 and 40 km are equally near in log distance
@@ -77,7 +84,9 @@ def test_draw_stays_in_the_window_is_seeded_and_reports_every_fallback():
     assert report["n_without_kreis_scale"] == 1       # Kreis Z
     assert report["n_target_not_reached"] == 1        # Kreis X: 5000 * 5 is above every donor
     assert report["n_whole_pool_window"] == 0
-    assert 0.999 <= report["min_effective_size"] <= 2.0
+    assert 1.59 <= report["min_effective_size"] <= 2.0   # (80 km, A): 1 / (0.25 ** 2 + 0.75 ** 2)
+    # Kreis X cannot reach its target: it is drawn from the untilted window weights
+    assert sampler.cell_probabilities("X", 80.0).to_dict() == pytest.approx({3: 0.5, 4: 0.5})
     assert report["max_window_ratio"] == pytest.approx(2.0)   # 5..10 km and 40..80 km
 
 

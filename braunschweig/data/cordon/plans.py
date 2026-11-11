@@ -103,10 +103,17 @@ def redraw_times_within_bound(donor_pool, n, rng, times_of, *, bound_s, max_atte
     if max_attempts < 0:
         raise ValueError(f"redraw_times_within_bound: max_attempts must be >= 0, got {max_attempts}")
     if draw is None:
-        def draw(positions):
+        def draw_rows(positions):
             return sample_donors(donor_pool, len(positions), rng)
+    else:
+        def draw_rows(positions):
+            rows = draw(positions)
+            if len(rows) != len(positions):
+                raise ValueError(f"redraw_times_within_bound: draw returned {len(rows)} donor rows for "
+                                 f"{len(positions)} agent positions; it must return one row per position")
+            return rows
     positions = np.arange(n)
-    donors = draw(positions)
+    donors = draw_rows(positions)
     times = [np.asarray(a, dtype=float).copy() for a in times_of(donors, positions)]
 
     def _late():
@@ -118,7 +125,7 @@ def redraw_times_within_bound(donor_pool, n, rng, times_of, *, bound_s, max_atte
     attempts = 0
     while len(late) and attempts < max_attempts:
         attempts += 1
-        fresh = draw(late)
+        fresh = draw_rows(late)
         fresh_times = times_of(fresh, late)
         # Concat + positional take keeps every column's dtype, extension dtypes (categorical, nullable) included
         # (a to_numpy round trip would lose them; both frames come from the same pool, so categories agree).
