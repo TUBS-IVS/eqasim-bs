@@ -55,6 +55,7 @@ import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 import geopandas as gpd
 import numpy as np
@@ -565,56 +566,112 @@ def _batch_home_points_for_cells(
     return dict(zip(unique_pairs, points_in_buildings_crs))
 
 
+def full_households_per_cell_type(
+    full_households: pd.DataFrame,
+    *,
+    cell_col: str = "ZENSUS100m",
+    household_id_col: str = "household_id",
+    weight_col: str = "weight",
+) -> dict:
+    """Per 100 m cell, the FULL population's household count by preferred building type.
+
+    ``full_households`` is the population BEFORE ``synthesis.population.sampled`` thins
+    it (the ``data.census.filtered`` producer): one or more rows per household with its
+    cell, ``building_type_3class`` and, when present, the household ``weight`` the
+    sampling stage multiplies by (absent -> 1 each). The type mapping and its default
+    are the ones ``assign_homes_typed`` applies to the sampled households.
+
+    Returns ``{cell_id: {btype: expected household count}}`` (floats: weighted sums).
+    """
+    hh = full_households.drop_duplicates(household_id_col)
+    btype = hh["building_type_3class"].map(_BTYPE_MAP).fillna("efh_zfh")
+    weight = hh[weight_col].astype(float) if weight_col in hh.columns else 1.0
+    counts = (
+        pd.DataFrame({"cell": hh[cell_col].astype(str), "btype": btype, "w": weight})
+        .groupby(["cell", "btype"], sort=False)["w"].sum()
+    )
+    out: dict = {}
+    for (cell, kind), value in counts.items():
+        out.setdefault(cell, {})[kind] = float(value)
+    return out
+
+
 def _thin_slots_by_type(
     slots: pd.DataFrame,
     households_per_type: dict,
-    sampling_rate: float,
+    full_households_per_type: Optional[dict],
     thin_rng: np.random.RandomState,
 ) -> pd.DataFrame:
     """Keep exactly the slots the sampled households will occupy (original order kept).
 
     The slots describe the whole census population of the cell, the households only a
-    sample of it. The per-type demand is routed onto the slot types with the matcher's
-    own type flow (:func:`home_matcher.solve_type_flow`: own type first, then the
-    cheapest other type), and each slot type ``t`` keeps a uniform random subset of
-    exactly the number of slots that flow sends to it. So every sampled household keeps
-    a slot (also when its own type has none or too few in the cell), the type match is
-    the one the matcher would reach on the full slot set, and every kept slot is used:
-    the matcher's size-ordered, front-of-queue pairing cannot favour the largest
-    building, because no surplus slots remain to rank against each other.
+    sample of it. The type routing is taken from the FULL population: the matcher's own
+    type flow (:func:`home_matcher.solve_type_flow`: own type first, then the cheapest
+    other type) is solved for ``full_households_per_type`` against the full slot counts.
+    Each sampled household of type ``t`` then draws its destination type without
+    replacement from the destinations that flow gives type ``t`` -- the routing of a
+    uniformly chosen full-population household of its type. So a type that is short of
+    slots at 100 % (2 MFH dwellings for 10 MFH-type households) is as contested in the
+    sample as in the full run. Each slot type keeps a uniform random subset of exactly
+    the slots drawn into it: every sampled household keeps a slot, and every kept slot
+    is used, so the matcher's size-ordered, front-of-queue pairing cannot favour the
+    largest building.
 
-    ``sampling_rate`` is not used for the count: the realised household sample of the
-    cell, not its expectation, fixes how many slots are occupied. It is accepted to keep
-    the call explicit about the sampled case (callers only thin when it is < 1).
+    ``full_households_per_type`` None (the cell is missing from the full-population
+    table, or a caller passes none) falls back to the sampled counts as the demand:
+    no type contention is modelled then; the caller counts and logs these cells.
 
     ASSUMPTION: the sampled households are a uniform (Bernoulli) thinning of the cell's
-    full household set, as ``synthesis.population.sampled`` draws them, so WITHIN a
-    building type a uniform subset of slots is the matching thinning of the dwellings.
-    Dwelling size pairing is assortative only within the kept subset.
-
-    LIMITATION (known, not corrected): the type flow runs against the FULL slot counts,
-    so the sampled households meet no type contention. In a cell where one type is short
-    of slots at 100 % (e.g. 2 MFH dwellings for 10 MFH-type households), a sampled
-    household of that type still gets its own type, so at ``r < 1`` the scarce type's
-    buildings receive a larger share and the type-match rate is higher than at 100 %.
-    Correcting it would need the cell's full-population household-type mix, which a
-    sampled run does not have (estimating it as ``h_t / r`` is very noisy at one or two
-    households per cell). 100 % runs are unaffected.
+    full household set, as ``synthesis.population.sampled`` draws them, so the drawn
+    routing and a uniform within-type subset of slots are the matching thinning of the
+    100 % placement. Dwelling size pairing is assortative only within the kept subset.
+    Full households the 100 % flow cannot seat (more households than slots) have no
+    destination; a sampled household drawing none is routed by the matcher's flow over
+    the remaining capacity instead.
     """
-    del sampling_rate  # count comes from the realised sample, see docstring
+    classes = bt.SLOT_CLASSES
     positions_by_type = {
-        kind: np.flatnonzero((slots["btype"] == kind).to_numpy()) for kind in bt.SLOT_CLASSES
+        kind: np.flatnonzero((slots["btype"] == kind).to_numpy()) for kind in classes
     }
-    flow = hm.solve_type_flow(
-        {kind: int(households_per_type.get(kind, 0)) for kind in bt.SLOT_CLASSES},
-        {kind: len(positions_by_type[kind]) for kind in bt.SLOT_CLASSES},
-    )
+    capacity = {kind: len(positions_by_type[kind]) for kind in classes}
+    sampled = {kind: int(households_per_type.get(kind, 0)) for kind in classes}
+    if full_households_per_type is None:
+        full = dict(sampled)
+    else:
+        # The realised sample can exceed the rounded expectation of the full count.
+        full = {
+            kind: max(int(round(float(full_households_per_type.get(kind, 0.0)))), sampled[kind])
+            for kind in classes
+        }
+    full_flow = hm.solve_type_flow(full, capacity)
+    kept = {kind: 0 for kind in classes}
+    unrouted = {kind: 0 for kind in classes}
+    for source in classes:
+        if sampled[source] == 0:
+            continue
+        destinations = [
+            destination for destination in classes
+            for _ in range(full_flow.get((source, destination), 0))
+        ]
+        n_draw = min(sampled[source], len(destinations))
+        if n_draw == len(destinations):
+            drawn = destinations
+        else:
+            drawn = [destinations[i] for i in
+                     thin_rng.choice(len(destinations), size=n_draw, replace=False)]
+        for destination in drawn:
+            kept[destination] += 1
+        unrouted[source] = sampled[source] - n_draw
+    if any(unrouted.values()):
+        rest_flow = hm.solve_type_flow(
+            unrouted, {kind: capacity[kind] - kept[kind] for kind in classes})
+        for (_, destination), amount in rest_flow.items():
+            kept[destination] += amount
     keep_positions = []
-    for kind in bt.SLOT_CLASSES:
+    for kind in classes:
         positions = positions_by_type[kind]
-        n_keep = sum(amount for (_, destination), amount in flow.items() if destination == kind)
-        if n_keep < len(positions):
-            positions = thin_rng.choice(positions, size=n_keep, replace=False)
+        if kept[kind] < len(positions):
+            positions = thin_rng.choice(positions, size=kept[kind], replace=False)
         keep_positions.extend(int(p) for p in positions)
     # Slots of an unknown type (never produced by the builders) are kept untouched.
     known = slots["btype"].isin(bt.SLOT_CLASSES).to_numpy()
@@ -633,6 +690,7 @@ def assign_homes_typed(
     household_id_col: str = "household_id",
     batch_coordinates: bool = True,
     sampling_rate: float = 1.0,
+    full_households_by_cell_type: Optional[dict] = None,
 ) -> tuple[gpd.GeoDataFrame, TypedHomeReport]:
     """Place each household in a type- and size-matched building of its 100 m cell.
 
@@ -676,9 +734,15 @@ def assign_homes_typed(
         few sampled households would otherwise fill the first (largest-building) slots
         of each cell. After the full slot set is built, each building type keeps a
         uniform random subset of exactly the slots the sampled households occupy under
-        the matcher's type flow (:func:`_thin_slots_by_type`, original order
+        the FULL population's type flow (:func:`_thin_slots_by_type`, original order
         preserved), drawn from a separate stream seeded with
         ``random_seed + SLOT_THINNING_SEED_OFFSET``. ``r == 1`` draws nothing.
+    full_households_by_cell_type:
+        Only used for ``r < 1``: ``{cell_id: {btype: count}}`` of the population BEFORE
+        sampling (:func:`full_households_per_cell_type`). It sizes the slot set like the
+        100 % run does (``max(occupied, full household count)``) and gives the thinning
+        the type contention of the full cell. ``None``, or a cell missing from it, falls
+        back to the sampled households as the demand (counted, logged as a WARNING).
 
     Returns
     -------
@@ -901,7 +965,7 @@ def assign_homes_typed(
     n_match = n_zero = n_over = n_in_cell = n_neighbour = 0
     n_zero_building_random = n_empty_slots_random = n_neighbour_rng_discarded = 0
     n_signal_missing = n_geb_zero = n_whg_zero = n_reapportioned = 0
-    n_cells_thinned = n_thin_before = n_thin_after = 0
+    n_cells_thinned = n_thin_before = n_thin_after = n_thin_without_full = 0
     for cell_id, grp in hh.groupby(cell_col, sort=False):
         fps = fps_by_cell_df.get(str(cell_id))
         if fps is None or len(fps) == 0:
@@ -953,15 +1017,26 @@ def assign_homes_typed(
             if sum(whg.values()) <= 0:
                 n_whg_zero += len(grp)
         typed = bt.assign_building_types(fps[["building_id", "area_m2", "height_m"]], geb, rng)
-        apportionment = bt.slot_apportionment(typed, whg, max(occ, len(grp)))
+        # Households the slot set must seat: the cell's FULL population when the run is
+        # sampled and the full table knows the cell, else the households at hand.
+        full_per_type = None
+        n_seats = len(grp)
+        if sampling_rate < 1.0:
+            if full_households_by_cell_type is not None:
+                full_per_type = full_households_by_cell_type.get(str(cell_id))
+            if full_per_type is None:
+                n_thin_without_full += len(grp)
+            else:
+                n_seats = max(n_seats, int(round(sum(full_per_type.values()))))
+        apportionment = bt.slot_apportionment(typed, whg, max(occ, n_seats))
         if s is not None and apportionment.reapportioned:
             n_reapportioned += len(grp)
-        slots = slots_builder(typed, whg, max(occ, len(grp)), size_hist, rng,
+        slots = slots_builder(typed, whg, max(occ, n_seats), size_hist, rng,
                               apportionment=apportionment)
         if sampling_rate < 1.0:
             n_before = len(slots)
             slots = _thin_slots_by_type(
-                slots, grp["btype"].value_counts().to_dict(), sampling_rate, thin_rng)
+                slots, grp["btype"].value_counts().to_dict(), full_per_type, thin_rng)
             if len(slots) < n_before:
                 n_thin_before += n_before
                 n_thin_after += len(slots)
@@ -998,6 +1073,17 @@ def assign_homes_typed(
             "(type-match %.1f%% of sampled households)",
             sampling_rate, n_cells_thinned, n_thin_before, n_thin_after,
             100.0 * n_match / n if n else 0.0,
+        )
+        # Primary: type routing from the full population's cell mix. Fallback: the
+        # sampled households as demand (no type contention). Any fallback is a warning.
+        thin_log = logger.warning if n_thin_without_full else logger.info
+        thin_log(
+            "[home_typed] slot thinning type routing: full-population cell mix for %d/%d "
+            "in-cell households (%.1f%%), fallback to the sampled mix for %d (%.1f%%)",
+            n_in_cell - n_thin_without_full, n_in_cell,
+            100.0 * (n_in_cell - n_thin_without_full) / n_in_cell if n_in_cell else 0.0,
+            n_thin_without_full,
+            100.0 * n_thin_without_full / n_in_cell if n_in_cell else 0.0,
         )
     btype_default_rate = n_btype_defaulted / n if n else 0.0
     report = TypedHomeReport(
@@ -1082,7 +1168,10 @@ def configure(context):
     context.config("random_seed")
     # Fraction of the population the sampled households represent: thins the typed
     # home slots (see assign_homes_typed).
-    context.config("sampling_rate")
+    # Sampled runs read the population BEFORE sampling for each cell's full household-type
+    # mix (slot thinning). A 100 % run does not need it, so it adds no dependency there.
+    if float(context.config("sampling_rate")) < 1.0:
+        context.stage("data.census.filtered")
     # Home-matching mode: "typed" (default, ALKIS type-aware) or "legacy".
     context.config(KEY_HOME_MATCHING, _DEFAULT_HOME_MATCHING)
     # Batch deterministic typed-home coordinate transforms; OFF retains the scalar
@@ -1139,9 +1228,24 @@ def execute(context):
         load_home_signal_cells(cells_path, households["ZENSUS100m"])
         if batch_coordinates else load_prepared_cells(cells_path)
     )
+    sampling_rate = float(context.config("sampling_rate"))
+    full_by_cell_type = None
+    if sampling_rate < 1.0:
+        # The population before sampling gives each cell's full household-type mix.
+        df_full = context.stage("data.census.filtered")
+        needed = ["household_id", "ZENSUS100m", "building_type_3class"]
+        missing_full = [c for c in needed if c not in df_full.columns]
+        if missing_full:
+            raise ValueError(
+                f"[home_cell] data.census.filtered lacks column(s) {missing_full} needed for "
+                "the slot thinning at sampling_rate < 1."
+            )
+        keep = needed + (["weight"] if "weight" in df_full.columns else [])
+        full_by_cell_type = full_households_per_cell_type(df_full[keep])
     result, _ = assign_homes_typed(
         households, buildings, cells, random_seed=context.config("random_seed"),
         batch_coordinates=batch_coordinates,
-        sampling_rate=float(context.config("sampling_rate")),
+        sampling_rate=sampling_rate,
+        full_households_by_cell_type=full_by_cell_type,
     )
     return result[["household_id", "commune_id", "home_location_id", "geometry"]]

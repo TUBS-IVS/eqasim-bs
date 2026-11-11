@@ -128,6 +128,61 @@ def test_households_whose_type_has_too_few_slots_still_get_a_building(batch):
     assert rep.type_match_rate == rep_full.type_match_rate
 
 
+def test_sampled_households_meet_the_type_contention_of_the_full_cell():
+    """2 mfh dwellings for 10 mfh-type households (plus 12 efh households, 20 efh
+    dwellings): at 100 % only 2 of the 10 get the mfh building. A sampled mfh household
+    must get it equally rarely, not always (review of TUBS-IVS/eqasim-bs#605)."""
+    cells = _cells(20)
+    cells["MFH_3bis6Wohnungen_Geb_Gebaeudetyp_Groesse_100m_Gitter"] = 1.0
+    cells["FreiEFH_Geb_Gebaeudetyp_Groesse_100m_Gitter"] = float(len(_AREAS) - 1)
+    cells["MFH_3bis6Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter"] = 2.0
+    cells["BewohntWhg_Leerstand_100m_Gitter"] = 22.0
+    full_hh = _households(22)
+    full_hh["building_type_3class"] = ["mehrfamilienhaus"] * 10 + ["ein_zweifamilienhaus"] * 12
+    full, _ = home_cell.assign_homes_typed(full_hh, _buildings(), cells, random_seed=1)
+    # The largest footprint is the one typed mfh; share of the mfh households living there.
+    p_full = float((full["home_location_id"].iloc[:10] == 0).mean())
+    assert 0.0 < p_full < 0.5
+    by_cell_type = home_cell.full_households_per_cell_type(full_hh)
+    assert by_cell_type == {_CELL: {"mfh": 10.0, "efh_zfh": 12.0}}
+
+    one = _households(1)
+    one["building_type_3class"] = ["mehrfamilienhaus"]
+    n_seeds = 200
+    hits = sum(
+        int(home_cell.assign_homes_typed(
+            one, _buildings(), cells, random_seed=seed, sampling_rate=0.05,
+            full_households_by_cell_type=by_cell_type)[0]["home_location_id"].iloc[0] == 0)
+        for seed in range(n_seeds))
+    bound = 4.0 * np.sqrt(p_full * (1.0 - p_full) / n_seeds)
+    assert abs(hits / n_seeds - p_full) < bound
+    # Negative control: without the full cell mix (the fallback) the sampled mfh
+    # household meets no contention and always gets the mfh building.
+    uncontested = [
+        home_cell.assign_homes_typed(
+            one, _buildings(), cells, random_seed=seed,
+            sampling_rate=0.05)[0]["home_location_id"].iloc[0] == 0
+        for seed in range(10)]
+    assert all(uncontested)
+
+
+def test_cells_missing_from_the_full_population_table_are_counted(caplog):
+    """Fallback transparency: without the full cell mix the sampled mix is used, loudly."""
+    with caplog.at_level("INFO", logger=home_cell.logger.name):
+        home_cell.assign_homes_typed(
+            _households(3), _buildings(), _cells(40), random_seed=1, sampling_rate=0.05,
+            full_households_by_cell_type={})
+    record = next(r for r in caplog.records if "type routing" in r.msg)
+    assert record.levelname == "WARNING" and record.args[3] == 3   # 3 households on fallback
+    caplog.clear()
+    with caplog.at_level("INFO", logger=home_cell.logger.name):
+        home_cell.assign_homes_typed(
+            _households(3), _buildings(), _cells(40), random_seed=1, sampling_rate=0.05,
+            full_households_by_cell_type={_CELL: {"efh_zfh": 40.0}})
+    record = next(r for r in caplog.records if "type routing" in r.msg)
+    assert record.levelname == "INFO" and record.args[3] == 0      # primary path taken
+
+
 def test_thinning_is_per_building_type_and_keeps_type_match():
     """20 efh + 2 mfh slots, 2 mfh + 1 efh sampled households at r = 0.05.
 

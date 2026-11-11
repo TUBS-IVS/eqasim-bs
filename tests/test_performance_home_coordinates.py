@@ -269,6 +269,8 @@ def test_home_coordinate_batching_is_registered_default_on():
 
         def config(self, key, default=None):
             configured[key] = default
+            # sampling_rate has no default: synpp returns the configured value.
+            return 1.0 if key == "sampling_rate" else default
 
     home_cell.configure(Context())
     assert configured["braunschweig.performance.home_coordinates"] is True
@@ -548,6 +550,8 @@ def test_execute_uses_projected_home_signals_when_coordinate_optimization_is_on(
             return {
                 "braunschweig.data.buildings": buildings,
                 "synthesis.population.sampled": sampled,
+                # the population before sampling: read for the full cell type mix
+                "data.census.filtered": sampled,
             }[name]
 
         def config(self, key):
@@ -563,6 +567,7 @@ def test_execute_uses_projected_home_signals_when_coordinate_optimization_is_on(
         observed["cells"] = args[2]
         observed["batch_coordinates"] = kwargs["batch_coordinates"]
         observed["sampling_rate"] = kwargs["sampling_rate"]
+        observed["full"] = kwargs["full_households_by_cell_type"]
         return gpd.GeoDataFrame(
             {
                 "household_id": sampled["household_id"],
@@ -582,3 +587,5 @@ def test_execute_uses_projected_home_signals_when_coordinate_optimization_is_on(
     assert observed["batch_coordinates"] is True
     assert observed["cells"] is cells
     assert observed["sampling_rate"] == 0.05      # the configured rate reaches the thinning
+    # ... and so does the full-population household-type mix per cell
+    assert sum(sum(v.values()) for v in observed["full"].values()) == len(sampled)
