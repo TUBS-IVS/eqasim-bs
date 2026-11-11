@@ -15,25 +15,32 @@
     they bake in absolute paths and config hashes and are rebuilt on the server.
 
 .PARAMETER ServerUser
-    SSH user on the run server. Default: felix
+    SSH user on the run server. Default: environment variable EQASIM_SERVER_USER;
+    if neither is set, ssh takes the user from ~/.ssh/config.
 
 .PARAMETER ServerHost
-    Hostname or IP of the run server. Default: 134.169.42.227
+    Host name, IP or ~/.ssh/config alias of the run server. Default: environment
+    variable EQASIM_SERVER_HOST. Required: the script stops if neither is set
+    (see scripts/server_target.ps1).
 
 .PARAMETER RemoteRepo
     Path of the cloned repository on the server. Default: ~/eqasim-bs
 
 .EXAMPLE
     ./scripts/sync_data_to_server.ps1
-    ./scripts/sync_data_to_server.ps1 -ServerHost 192.168.1.50 -ServerUser felix
+    ./scripts/sync_data_to_server.ps1 -ServerHost <host-or-ssh-alias> -ServerUser <user>
 #>
 param(
-    [string]$ServerUser = "felix",
-    [string]$ServerHost = "134.169.42.227",
+    [string]$ServerUser = $env:EQASIM_SERVER_USER,
+    [string]$ServerHost = $env:EQASIM_SERVER_HOST,
     [string]$RemoteRepo = "~/eqasim-bs"
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "server_target.ps1")
+$resolved   = Resolve-ServerTarget -ServerUser $ServerUser -ServerHost $ServerHost
+$ServerUser = $resolved.User
+$ServerHost = $resolved.Host
 
 # Resolve the local data directory relative to this script (scripts/ -> repo root).
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -43,7 +50,7 @@ if (-not (Test-Path $localData)) {
     throw "Local data directory not found: $localData"
 }
 
-$remoteTarget = "${ServerUser}@${ServerHost}:${RemoteRepo}/eqasim-data/"
+$remoteTarget = "$($resolved.Target):${RemoteRepo}/eqasim-data/"
 
 # Prefer rsync via WSL (incremental, resumable). Detect WSL + rsync first.
 $haveWsl = $false
@@ -63,7 +70,7 @@ if ($haveWsl) {
     Write-Host "==> Syncing data with rsync (incremental) via WSL ..." -ForegroundColor Cyan
     # Trailing slash on the source copies the CONTENTS of data/ into the remote
     # eqasim-data/data/ (rsync creates 'data' as the last path element).
-    wsl rsync -avP --partial "$wslData" "${ServerUser}@${ServerHost}:${RemoteRepo}/eqasim-data/"
+    wsl rsync -avP --partial "$wslData" "$remoteTarget"
 }
 else {
     Write-Host "==> WSL/rsync not available - falling back to scp (full copy)." -ForegroundColor Yellow

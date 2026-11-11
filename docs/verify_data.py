@@ -85,14 +85,6 @@ tests = [
             "https://adresse.data.gouv.fr/donnees-nationales"
         ]
     },
-    # {
-    #     "name": "BD-TOPO",
-    #     "urls": [
-    #         "ftp://BDTOPO_V3_NL_ext:Ohp3quaz2aideel4@ftp3.ign.fr/BDTOPO_3-0_2020-12-15/BDTOPO_3-0_TOUSTHEMES_SHP_LAMB93_R11_2020-12-15.7z",
-    #         "ftp://BDTOPO_V3_NL_ext:Ohp3quaz2aideel4@ftp3.ign.fr/BDTOPO_3-0_2020-12-15/BDTOPO_3-0_TOUSTHEMES_SHP_LAMB93_R76_2020-12-15.7z",
-    #         "ftp://BDTOPO_V3_NL_ext:Ohp3quaz2aideel4@ftp3.ign.fr/BDTOPO_3-0_2020-12-15/BDTOPO_3-0_TOUSTHEMES_SHP_LAMB93_R84_2020-12-15.7z"
-    #     ]
-    # },
     {
         "name": "OSM",
         "urls": [
