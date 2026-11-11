@@ -61,6 +61,10 @@
    "braunschweig.synthesis.cordon_gates"
   ],
   [
+   "braunschweig.data.cordon_gemeinden",
+   "braunschweig.synthesis.incommuters"
+  ],
+  [
    "braunschweig.data.cordon_network",
    "braunschweig.synthesis.cordon_gates"
   ],
@@ -87,6 +91,10 @@
   [
    "braunschweig.data.inkar.household_income",
    "braunschweig.synthesis.incommuters"
+  ],
+  [
+   "braunschweig.data.inkar.household_income",
+   "braunschweig.synthesis.student_incommuters"
   ],
   [
    "braunschweig.data.inkar.household_income",
