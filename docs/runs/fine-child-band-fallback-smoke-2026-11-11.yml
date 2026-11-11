@@ -53,7 +53,13 @@ validation:
   reference: 'none; a property of the donor build'
   result: >-
     1,583 of the 22,622 6-13-year-olds with a plan source of another MiD person, identical in both arms. They do not
-    come from the weekend person fallback (unused here); their origin in the donor build is not yet established.
+    come from the weekend person fallback or the mixed-household sweep (both unused here), nor from the diary match
+    (its report counts 0 fine-band crossings). Likely cause, from reading the code and not measured: the third tier
+    of braunschweig.popsim.weekend_plan_match.align_members, which pairs a target member with the first free donor
+    member of any age when no donor of the same fine band is left; match_household does not key on the children's
+    ages, and WeekendMatchReport counts no tiers, so this fallback is not logged. compare_arms.py counts only
+    crossings to donors aged 6-13, so pairings of children with younger, older or adult donors are not in the 1,583
+    and the full crossing rate is higher.
   artifact: 'docs/runs/artifacts/fine-child-band-fallback-smoke-2026-11-11/compare_output.txt'
 features:
 - diary_plan_match
