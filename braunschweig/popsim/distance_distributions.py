@@ -1050,6 +1050,10 @@ def configure(context):
     leisure_unspecified_subtype = context.config(
         KEY_LEISURE_UNSPECIFIED_SUBTYPE, DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE)
     context.config("escort_purpose", False)
+    # Issue #241 / ADR-0091: the same W_ZWECK 14/15/16 mapping as the trip build, so the
+    # distance layers follow the A/B switch (audit B6). A literal, not an import: this stage
+    # does not hash the defining module (tests/test_trip_flag_declaration_parity.py pins it).
+    context.config("explicit_round_trip_purposes", True)
     context.config(KEY_ESCORT_PASSIVE_EDUCATION, DEFAULT_ESCORT_PASSIVE_EDUCATION)
     # W_ZWECK 10 "anderer Zweck" -> leisure (issue #373, ADR-0111): a SHARED
     # key/default constant, like the plan-structure flags elsewhere -- the
@@ -1168,6 +1172,7 @@ def execute(context):
     codeplan_sentinels = bool(context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS))
     leisure_unspecified_subtype = bool(context.config(KEY_LEISURE_UNSPECIFIED_SUBTYPE))
     escort_purpose = context.config("escort_purpose")
+    explicit_round_trip_purposes = bool(context.config("explicit_round_trip_purposes"))
     escort_passive_education = context.config(KEY_ESCORT_PASSIVE_EDUCATION)
     w_zweck_10_as_leisure = bool(context.config(KEY_W_ZWECK_10_AS_LEISURE))
     escort_passive_from_adult = bool(context.config(KEY_ESCORT_PASSIVE_FROM_ADULT))
@@ -1198,6 +1203,7 @@ def execute(context):
         other_subtype_split=other_subtype_split,
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
+        explicit_round_trip_purposes=explicit_round_trip_purposes,
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,

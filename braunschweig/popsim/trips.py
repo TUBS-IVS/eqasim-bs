@@ -1011,6 +1011,10 @@ def build_trip_table(
         ``"education"`` instead of ``"escort"`` (forwarded to ``map_purpose``
         via ``expand_persons_to_trips``). Requires ``escort_purpose=True``.
         Default False keeps the OFF path byte-identical.
+    explicit_round_trip_purposes:
+        Issue #241 / ADR-0091: True (default, production) maps W_ZWECK 14/15/16 to
+        ``"leisure"``, False reverts them to ``"other"`` for the A/B (forwarded to
+        ``map_purpose`` via ``expand_persons_to_trips``).
     exclude_rbw_legs:
         If True, drop rbW legs (``W_RBW == 1``) before the join (forwarded to
         ``expand_persons_to_trips``); see that function's docstring for the
@@ -1079,6 +1083,7 @@ def build_trip_table(
         trip_col=trip_col,
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
+        explicit_round_trip_purposes=explicit_round_trip_purposes,
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
