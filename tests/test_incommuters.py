@@ -1335,10 +1335,10 @@ def _donor_pool(rows):
     return gates, assignment, flows, zgb_work, persons, trips
 
 
-def _frames(inputs, mode_reference, **kwargs):
+def _frames(inputs, mode_reference, sampling_rate=0.05, **kwargs):
     gates, assignment, flows, zgb_work, hp, ht = inputs
     return build_incommuter_frames(
-        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05, gates=gates, assignment=assignment,
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=sampling_rate, gates=gates, assignment=assignment,
         zgb_work=zgb_work, mode_reference={">=10": mode_reference}, band_edges=(10,),
         hts_persons=hp, hts_trips=ht, person_col="person_id", n_residents=100,
         n_resident_households=40, rng=np.random.default_rng(3), gate_speed_kmh=30.0,
@@ -1466,9 +1466,10 @@ def test_the_donor_draw_rates_are_logged_once_although_late_donors_are_re_drawn(
 
 
 def test_an_inkar_frame_keyed_differently_from_the_origin_kreise_fails():
-    """Every agent has no Kreis scale: a broken Kreis key, not a few Kreise missing from the table."""
+    """Every agent has no Kreis scale: a broken Kreis key, not a few Kreise missing from the table.
+    The fixture flow of 1000 at sampling rate 0.2 gives 200 agents, above ``FALLBACK_RAISE_MIN_AGENTS``."""
     with pytest.raises(ValueError, match="no INKAR scale"):
-        _frames(_donor_pool([dict(age=42)]), {"car": 1.0},
+        _frames(_donor_pool([dict(age=42)]), {"car": 1.0}, sampling_rate=0.2,
                 inkar_income=pd.DataFrame({"ars5": ["99999"], "scale": [1.1]}), donor_min_effective_pool=1.0)
 
 
@@ -1476,7 +1477,23 @@ def test_gemeinden_keyed_differently_from_the_origin_kreise_fail_instead_of_usin
     other_kreis = gpd.GeoDataFrame({"ars5": ["09999"], "ewz": [1000.0]}, geometry=[Point(0.0, 0.0)],
                                    crs="EPSG:25832")
     with pytest.raises(ValueError, match="broken Kreis key"):
-        _frames(_donor_pool([dict(age=42)]), {"car": 1.0}, gemeinden=other_kreis, donor_min_effective_pool=1.0)
+        _frames(_donor_pool([dict(age=42)]), {"car": 1.0}, sampling_rate=0.2, gemeinden=other_kreis,
+                donor_min_effective_pool=1.0)
+
+
+def test_below_the_minimum_agent_count_a_broken_kreis_key_warns_instead_of_raising(caplog):
+    """50 agents (sampling rate 0.05) are below ``FALLBACK_RAISE_MIN_AGENTS``: one or two agents of an edge Kreis
+    can all fall back legitimately, so the share is no signal; the frames are returned and the fallback is warned."""
+    other_kreis = gpd.GeoDataFrame({"ars5": ["09999"], "ewz": [1000.0]}, geometry=[Point(0.0, 0.0)],
+                                   crs="EPSG:25832")
+    with caplog.at_level(logging.WARNING):
+        frames = _frames(_donor_pool([dict(age=42)]), {"car": 1.0}, gemeinden=other_kreis,
+                         inkar_income=pd.DataFrame({"ars5": ["99999"], "scale": [1.1]}),
+                         donor_min_effective_pool=1.0)
+    assert 0 < len(frames["persons"]) < 100
+    assert frames["donor_draw"]["n_without_kreis_scale"] == len(frames["persons"])
+    warnings = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("agent commute for the donor match" in m for m in warnings)
 
 
 def test_commuter_donors_that_are_all_excluded_fail_with_a_clear_message():

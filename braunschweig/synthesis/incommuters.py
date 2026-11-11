@@ -146,6 +146,11 @@ AGENT_COMMUTE_FALLBACK_WARN_PERCENT = 5.0
 #: ASSUMPTION: a raise bound, not a reference value.
 AGENT_COMMUTE_FALLBACK_RAISE_SHARE = 0.5
 
+#: Fewest agents for which the two raise bounds on a fallback share (:data:`AGENT_COMMUTE_FALLBACK_RAISE_SHARE`,
+#: ``donor_draw.KREIS_SCALE_FALLBACK_RAISE_SHARE``) apply. ASSUMPTION: below this a share is not a signal (one or
+#: two agents of an edge Kreis can legitimately all fall back); the warning stays. Not a reference value.
+FALLBACK_RAISE_MIN_AGENTS = 100
+
 #: Share of the commuter donors excluded by :func:`_eligible_donors` (a fraction) above which a WARNING is logged.
 #: ASSUMPTION: a warn bound, not a reference value.
 DONOR_EXCLUDED_WARN_SHARE = 0.5
@@ -822,7 +827,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                            f"{n - n_commute_fallback}/{n} ({100.0 * (n - n_commute_fallback) / n:.1f}%), fallback "
                            f"{n_commute_fallback} ({100.0 * n_commute_fallback / n:.1f}%) on the own gate or station "
                            f"(no real home, no Gemeinde of the origin Kreis; a lower bound of the commute)")
-        if gemeinden is not None and n_commute_fallback / n > AGENT_COMMUTE_FALLBACK_RAISE_SHARE:
+        if (gemeinden is not None and n >= FALLBACK_RAISE_MIN_AGENTS
+                and n_commute_fallback / n > AGENT_COMMUTE_FALLBACK_RAISE_SHARE):
             # The Gemeinden were supplied, so most agents falling back means the Kreis keys do not match.
             raise ValueError(
                 f"{commute_message}; above {100.0 * AGENT_COMMUTE_FALLBACK_RAISE_SHARE:.0f}% with the Gemeinden "
@@ -852,7 +858,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         bound_s=bound_s, max_attempts=validate_time_redraw_max_attempts(time_redraw_max_attempts),
         draw=draw_donors)
     donor_report = sampler.report(kreis, commute_km)
-    if scale_by_kreis is not None and donor_report["n_without_kreis_scale"] / n > _donor_draw.KREIS_SCALE_FALLBACK_RAISE_SHARE:
+    if (scale_by_kreis is not None and n >= FALLBACK_RAISE_MIN_AGENTS
+            and donor_report["n_without_kreis_scale"] / n > _donor_draw.KREIS_SCALE_FALLBACK_RAISE_SHARE):
         raise ValueError(
             f"[incommuters] {donor_report['n_without_kreis_scale']}/{n} agents have no INKAR scale for their origin "
             f"Kreis although a scale table was supplied, above "
@@ -1295,7 +1302,7 @@ def _build_persons(ids, donors, person_col, modes):
     """
     from braunschweig.popsim.income import add_income_per_consumption_unit
 
-    age =donors["age"].to_numpy() if "age" in donors.columns else 40
+    age = donors["age"].to_numpy() if "age" in donors.columns else 40
     sex = donors["sex"].to_numpy() if "sex" in donors.columns else "male"
     hts_id = donors[person_col].to_numpy() if person_col in donors.columns else -1
     income_eur = donors["household_income_eur"].to_numpy(dtype=float).round(0)
