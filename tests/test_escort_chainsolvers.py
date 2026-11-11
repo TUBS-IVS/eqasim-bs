@@ -549,6 +549,18 @@ def test_flag_off_path_has_no_type_counter_and_uses_escort_layer():
     assert stats["escort_distance_layer_fallback"] == 0
 
 
+def test_base_bs_config_escort_draw_matches_code_defaults():
+    # Production reads these keys from base_bs.yml, which overrides the code defaults that
+    # test_escort_defaults_match_pinned_csv pins to the SrV table; a regenerated table
+    # must not leave this copy stale either.
+    import pathlib, yaml
+    base = pathlib.Path(__file__).resolve().parents[1] / "configs" / "base_bs.yml"
+    with open(base, encoding="utf-8") as handle:
+        doc = yaml.safe_load(handle)
+    assert doc["config"]["escort_locations_activities"] == sc.DEFAULT_ESCORT_LOCATIONS_ACTIVITIES
+    assert doc["config"]["escort_locations_weights"] == sc.DEFAULT_ESCORT_LOCATIONS_WEIGHTS
+
+
 def test_base_bs_config_enables_distance_by_type():
     import pathlib, yaml
     base = pathlib.Path(__file__).resolve().parents[1] / "configs" / "base_bs.yml"
