@@ -480,7 +480,7 @@ def _first_home_leg_km(trips, purpose):
     is_leg = ((before == "home") & (after == purpose)) | ((before == purpose) & (after == "home"))
     legs = trips[is_leg].sort_values(["person_id", "trip_id"], kind="stable")
     legs = legs.drop_duplicates("person_id", keep="first")
-    km = validate_trip_length_km(legs["wegkm_imp"], log_tag="mid_donor")
+    km = validate_trip_length_km(legs["wegkm_imp"], log_tag=f"mid_donor {purpose}")
     return pd.Series(km.to_numpy(), index=legs["person_id"].to_numpy())
 
 

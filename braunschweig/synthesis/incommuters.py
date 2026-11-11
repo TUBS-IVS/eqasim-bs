@@ -168,10 +168,10 @@ def validate_donor_min_effective_pool(value) -> float:
 
 
 def _require_donor_columns(hts_persons, *, needs_distance: bool = False,
-                           distance_column: str = "commute_distance_km") -> None:
+                           distance_column: str = "commute_distance_km", extra_columns=()) -> None:
     """Raise ``ValueError`` when a column of :data:`DONOR_COLUMNS` (with ``needs_distance`` also
-    ``distance_column``) is missing from the donor persons (ADR-0191)."""
-    required = DONOR_COLUMNS + ((distance_column,) if needs_distance else ())
+    ``distance_column``, and any of ``extra_columns``) is missing from the donor persons (ADR-0191)."""
+    required = DONOR_COLUMNS + ((distance_column,) if needs_distance else ()) + tuple(extra_columns)
     missing = [c for c in required if c not in hts_persons.columns]
     if missing:
         raise ValueError(
@@ -180,32 +180,31 @@ def _require_donor_columns(hts_persons, *, needs_distance: bool = False,
             f"attach_donor_draw_attributes, ADR-0191).")
 
 
-def _check_draw_fallbacks(n, n_commute_fallback, gemeinden_supplied, report, *, commute_message="",
-                          scale_supplied=False) -> None:
-    """Raise ``ValueError`` when a fallback share of the donor draw says a Kreis key is broken (ADR-0191).
+def _check_commute_fallback(n, n_commute_fallback, commute_message) -> None:
+    """Raise ``ValueError`` when most agents are on the commute fallback although the Gemeinden were supplied.
 
-    Shared by the worker and the student in-commuter builder, called at two points of each: with
-    ``n_commute_fallback`` (``report=None``) once the agent commutes are measured, and with the sampler
-    ``report`` (``n_commute_fallback=None``) once the donors are drawn; a ``None`` part is not checked.
-    Both bounds apply from :data:`FALLBACK_RAISE_MIN_AGENTS` agents on.
-
-    - Commute: with the Gemeinden supplied (``gemeinden_supplied``), more than
-      :data:`AGENT_COMMUTE_FALLBACK_RAISE_SHARE` of ``n`` agents on the commute fallback (``commute_message``
-      carries the primary/fallback rate) means the Kreis keys of agents and Gemeinden do not match.
-    - Scale: with an INKAR table supplied (``scale_supplied``), more than
-      ``donor_draw.KREIS_SCALE_FALLBACK_RAISE_SHARE`` of ``n`` agents without a Kreis scale
-      (``report["n_without_kreis_scale"]``) means the Kreis keys of the INKAR frame and the origins do not match.
+    Shared by the worker and the student in-commuter builder (ADR-0191), called once the agent commutes are
+    measured and only when the Gemeinden were supplied: more than :data:`AGENT_COMMUTE_FALLBACK_RAISE_SHARE` of
+    ``n`` agents on the fallback then means the Kreis keys of agents and Gemeinden do not match. From
+    :data:`FALLBACK_RAISE_MIN_AGENTS` agents on; ``commute_message`` carries the primary/fallback rate.
     """
-    if n < FALLBACK_RAISE_MIN_AGENTS:
-        return
-    if (n_commute_fallback is not None and gemeinden_supplied
-            and n_commute_fallback / n > AGENT_COMMUTE_FALLBACK_RAISE_SHARE):
-        # The Gemeinden were supplied, so most agents falling back means the Kreis keys do not match.
+    if n >= FALLBACK_RAISE_MIN_AGENTS and n_commute_fallback / n > AGENT_COMMUTE_FALLBACK_RAISE_SHARE:
         raise ValueError(
             f"{commute_message}; above {100.0 * AGENT_COMMUTE_FALLBACK_RAISE_SHARE:.0f}% with the Gemeinden "
             f"supplied this is a broken Kreis key between the agents and the Gemeinden (ars5), not a few "
             f"Kreise without a Gemeinde.")
-    if (report is not None and scale_supplied
+
+
+def _check_kreis_scale_fallback(n, report) -> None:
+    """Raise ``ValueError`` when most agents have no INKAR scale although a scale table was supplied.
+
+    Shared by the worker and the student in-commuter builder (ADR-0191), called with the sampler ``report`` once
+    the donors are drawn and only when an INKAR table was supplied: more than
+    ``donor_draw.KREIS_SCALE_FALLBACK_RAISE_SHARE`` of ``n`` agents without a Kreis scale
+    (``report["n_without_kreis_scale"]``) means the Kreis keys of the INKAR frame and the origins do not match.
+    From :data:`FALLBACK_RAISE_MIN_AGENTS` agents on.
+    """
+    if (n >= FALLBACK_RAISE_MIN_AGENTS
             and report["n_without_kreis_scale"] / n > _donor_draw.KREIS_SCALE_FALLBACK_RAISE_SHARE):
         raise ValueError(
             f"[incommuters] {report['n_without_kreis_scale']}/{n} agents have no INKAR scale for their origin "
@@ -864,7 +863,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                            f"{n - n_commute_fallback}/{n} ({100.0 * (n - n_commute_fallback) / n:.1f}%), fallback "
                            f"{n_commute_fallback} ({100.0 * n_commute_fallback / n:.1f}%) on the own gate or station "
                            f"(no real home, no Gemeinde of the origin Kreis; a lower bound of the commute)")
-        _check_draw_fallbacks(n, n_commute_fallback, gemeinden is not None, None, commute_message=commute_message)
+        if gemeinden is not None:
+            _check_commute_fallback(n, n_commute_fallback, commute_message)
         if 100.0 * n_commute_fallback / n > AGENT_COMMUTE_FALLBACK_WARN_PERCENT:
             logger.warning(commute_message)
         else:
@@ -889,7 +889,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         bound_s=bound_s, max_attempts=validate_time_redraw_max_attempts(time_redraw_max_attempts),
         draw=draw_donors)
     donor_report = sampler.report(kreis, commute_km)
-    _check_draw_fallbacks(n, None, gemeinden is not None, donor_report, scale_supplied=scale_by_kreis is not None)
+    if scale_by_kreis is not None:
+        _check_kreis_scale_fallback(n, donor_report)
     if inkar_income is None:
         logger.warning("[incommuters] no INKAR frame supplied: %d in-commuters are drawn without the "
                        "origin-Kreis income tilt", n)

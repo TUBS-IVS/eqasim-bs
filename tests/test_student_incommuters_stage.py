@@ -880,6 +880,8 @@ def test_student_carries_its_donor_household_and_only_eligible_adult_donors_are_
     merged = persons.merge(households, on="household_id", suffixes=("_person", "_household"))
     assert (merged["car_availability_person"] == merged["car_availability_household"]).all()
     assert frames["donor_draw"]["n_agents"] == len(persons)
+    # the primary path: the one eligible donor reaches the fixture's minimum pool of 1.0, no whole-pool window
+    assert frames["donor_draw"]["n_whole_pool_window"] == 0
 
 
 def test_student_draw_is_tilted_to_the_origin_kreis(monkeypatch):
@@ -892,11 +894,30 @@ def test_student_draw_is_tilted_to_the_origin_kreis(monkeypatch):
     frames = si.execute(_student_stage_ctx(monkeypatch, donors, inkar=inkar, min_pool=2.0))
 
     persons = frames["persons"]
-    assert len(persons) >= 40       # enough agents for the share to separate 0.75 from 0.5
-    assert (persons["hts_id"] == 2).mean() > 0.5
+    n = len(persons)
+    assert n >= 200                 # enough agents for the share to separate 0.75 from 0.5
+    # The share of donor 2 is binomial(n, 0.75): its standard deviation is sqrt(0.75 * 0.25 / n). Four of them
+    # below 0.75 (about 0.67 at the fixture's n) still lies far above the untilted 0.5.
+    share = (persons["hts_id"] == 2).mean()
+    assert share > 0.75 - 4 * np.sqrt(0.75 * 0.25 / n)
+    assert share > 0.6
     report = frames["donor_draw"]
     assert report["tilted"] is True and report["n_target_not_reached"] == 0
     assert report["n_without_kreis_scale"] == 0
+
+
+def test_an_inkar_frame_keyed_differently_from_the_origin_kreise_fails(monkeypatch):
+    """Every student has no Kreis scale: a broken Kreis key, not a few Kreise missing from the table. The
+    fixture's agent count (498) is above ``FALLBACK_RAISE_MIN_AGENTS``."""
+    inkar = pd.DataFrame({"ars5": ["99999"], "scale": [1.1]})
+    with pytest.raises(ValueError, match="no INKAR scale"):
+        si.execute(_student_stage_ctx(monkeypatch, _student_donor_frame({"person_id": 1}), inkar=inkar))
+
+
+def test_only_school_age_student_donors_fail_naming_the_age_bound(monkeypatch):
+    donors = _student_donor_frame({"person_id": 1, "age": 12}, {"person_id": 2, "age": 16})
+    with pytest.raises(ValueError, match=r"at least 18 years.*all 2 student donors"):
+        si.execute(_student_stage_ctx(monkeypatch, donors))
 
 
 def test_a_student_pool_below_the_minimum_draws_from_the_whole_pool(monkeypatch):

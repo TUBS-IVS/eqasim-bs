@@ -460,6 +460,11 @@ def _adult_student_donors(student_donors, age_lower):
         "[student_incommuters] donor age: primary %d/%d student donors (%.2f%%), excluded %d: "
         "%d younger than %s, %d without an age", n_kept, n, 100.0 * n_kept / n if n else 0.0, n - n_kept,
         int(too_young.sum()), age_lower, int(no_age.sum()))
+    if n_kept == 0:
+        raise ValueError(
+            f"[student_incommuters] no student donor of at least {age_lower} years (the lower bound of "
+            f"student_incommuter_age_band): all {n} student donors are excluded ({int(too_young.sum())} younger, "
+            f"{int(no_age.sum())} without an age); check the age column of braunschweig.data.hts.mid_donor.")
     return student_donors[keep].reset_index(drop=True)
 
 
@@ -510,12 +515,9 @@ def _inject(context):
     inkar_income = context.stage("braunschweig.data.inkar.household_income")
     min_effective_pool = _validated_min_effective_pool(context.config(KEY_DONOR_MIN_EFFECTIVE_POOL))
     # Fail fast, before any origin is drawn: the donor household, the draw attributes and the age.
+    # (the age excludes the donors younger than the lower bound of student_incommuter_age_band).
     incommuters._require_donor_columns(
-        hts_persons, needs_distance=True, distance_column=DONOR_DISTANCE_COLUMN)
-    if "age" not in hts_persons.columns:
-        raise ValueError(
-            "[student_incommuters] the donor persons lack ['age']; the student donors younger than the lower "
-            "bound of student_incommuter_age_band are excluded by it (braunschweig.data.hts.mid_donor).")
+        hts_persons, needs_distance=True, distance_column=DONOR_DISTANCE_COLUMN, extra_columns=("age",))
 
     # 1. Counts per university commune (data-anchored count anchor, Task 2).
     counts = sic.compute_incommuter_counts(
@@ -624,7 +626,7 @@ def _inject(context):
                        f"{n - n_commute_fallback}/{n} ({100.0 * (n - n_commute_fallback) / n:.1f}%), fallback "
                        f"{n_commute_fallback} ({100.0 * n_commute_fallback / n:.1f}%) on the own gate "
                        f"(no real home, no Gemeinde of the origin Kreis; a lower bound of the distance)")
-    incommuters._check_draw_fallbacks(n, n_commute_fallback, True, None, commute_message=commute_message)
+    incommuters._check_commute_fallback(n, n_commute_fallback, commute_message)
     if 100.0 * n_commute_fallback / n > incommuters.AGENT_COMMUTE_FALLBACK_WARN_PERCENT:
         _log.warning(commute_message)
     else:
@@ -658,7 +660,8 @@ def _inject(context):
             bound_s=time_bound_s, max_attempts=int(context.config(KEY_TIME_REDRAW_MAX_ATTEMPTS)),
             draw=draw_donors))
     donor_report = sampler.report(kreis, commute_km)
-    incommuters._check_draw_fallbacks(n, None, True, donor_report, scale_supplied=scale_by_kreis is not None)
+    if scale_by_kreis is not None:
+        incommuters._check_kreis_scale_fallback(n, donor_report)
     if inkar_income is None:
         _log.warning("[student_incommuters] no INKAR frame supplied: %d in-commuters are drawn without the "
                      "origin-Kreis income tilt", n)
@@ -745,8 +748,8 @@ def _inject(context):
     # mode (eqasim core NETWORK_MODES = [car, car_passenger, truck]) that the
     # in-loop discrete mode choice can assign to ANY agent regardless of car
     # ownership, so a missing vehicle aborts the MATSim router. Car-mode agents
-    # additionally need a "car" vehicle. Students have no income/fleet model (see
-    # _build_student_persons), so they reuse the SvB stage's LEGACY (non-German-
+    # additionally need a "car" vehicle. Students have no fleet model (their income is
+    # the donor household's, see _build_student_persons), so they reuse the SvB stage's LEGACY (non-German-
     # fleet) vehicle builders -- the same path the SvB stage takes when no
     # ``data_path`` is supplied; no distinct HBEFA vehicle type is introduced, so
     # ``vehicle_types`` stays empty (the resident/SvB ``default_car`` /

@@ -221,3 +221,19 @@ def test_donor_draw_attributes_are_weight_weekday_and_first_home_legs():
     assert np.isnan(out.loc["2_1", "commute_distance_km"])   # a student: no leg between home and work
     assert out.loc["2_1", "education_distance_km"] == 3.5    # home -> education, not the 3.0 km return leg
     assert np.isnan(out.loc["1_1", "education_distance_km"])
+
+
+def test_a_trip_table_without_any_home_education_leg_gives_nan_education_distances():
+    _, persons, wege = _synthetic_mid()
+    persons = persons.assign(P_GEW=[1.5, 0.5], kernwo=[2, 4])
+    wege = wege.assign(wegkm_imp=[12.5, 11.0, 3.5, 3.0])
+    _, donors, trips = mid_donor.build_mid_donor_frames(
+        pd.DataFrame({"H_ID": [1, 2]}), persons, wege, rng=np.random.RandomState(0))
+    no_education = trips.assign(
+        preceding_purpose=trips["preceding_purpose"].replace("education", "other"),
+        following_purpose=trips["following_purpose"].replace("education", "other"))
+    assert not ((no_education["preceding_purpose"] == "education")
+                | (no_education["following_purpose"] == "education")).any()
+    out = mid_donor.attach_donor_draw_attributes(donors, persons, no_education)
+    assert out["education_distance_km"].isna().all()
+    assert out["commute_distance_km"].notna().any()     # the work legs are unaffected
