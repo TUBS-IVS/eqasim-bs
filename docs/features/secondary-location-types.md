@@ -12,7 +12,7 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
 
 - **Type-by-distance probability table** — SrV 2023 BS+RGB Wege
   (`V_ZWECK` mapped to 6 leisure + 3 other categories, `E_HVM_5` main mode,
-  `GIS_LAENGE_GUELTIG` valid-only routed length, GEWICHT_W-weighted),
+  `GIS_LAENGE_GUELTIG` valid-only routed length, GEWICHT_W_ZENSUS-weighted per ADR-0055),
   `min_obs=30` per `(purpose, category, mode, band)` cell, thin cells omitted
   and marginal-fallback rate-logged — `scripts/derive_srv_location_types.py`
   writes the pinned reference
@@ -29,9 +29,8 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
   distances for `leisure` (6 categories), `other` (3 categories), and — the
   #242 contribution — `shop` (`shop_daily`/`shop_non_daily`, VALIDATION-ONLY
   rows; shop location choice is decided by its own existing daily/non-daily
-  split, never by this decider). Largest categories by weighted share:
-  `leisure_outdoor` 31.2% (median 1.02 km), `errand_authority_medical` 44.8%
-  (median 3.55 km).
+  split, never by this decider). The shares and medians themselves live only
+  in that table.
 - **Bosserhof class -> location-category mapping** — the committed
   `eqasim-data/data/braunschweig/buildings/bosserhof_class_to_location_category.csv`
   (19 of the ~44 Bosserhof classes mapped to the 5 building-backed categories:
@@ -297,7 +296,8 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
   number in this document as a validated realised-output result until that
   run exists and is recorded in `RUNS.md`.
 - **Expected, intended result change** (by construction, not yet measured):
-  roughly 31% of leisure placements move from generic buildings to
+  the `leisure_outdoor` share of leisure placements
+  (`srv2023_secondary_type_shares.csv`) moves from generic buildings to
   green/open-space landuse candidates; errand placements split across the
   authority/medical and service whitelist halves. This is a genuine change
   to scientific output, not a refactor — the OFF path stays byte-identical.

@@ -95,10 +95,10 @@ config:
   # Location-type draw weights derived from SrV 2023 BS+RGB V_ZWECK_BHOL
   # (scripts/derive_escort_location_weights.py ->
   # eqasim-data/data/braunschweig/srv/srv2023_escort_destination_types.csv;
-  # GEWICHT_W-weighted, 98.8% coverage). Defaults False in code -> byte-identical OFF.
+  # GEWICHT_W_ZENSUS-weighted per ADR-0055). Defaults False in code -> byte-identical OFF.
   escort_purpose: true
   escort_locations_activities: [edu_kindergarten, edu_school, edu_university, other, leisure, residential, shop]
-  escort_locations_weights: [0.433, 0.199, 0.004, 0.141, 0.113, 0.105, 0.005]
+  escort_locations_weights: [0.4305, 0.2032, 0.003, 0.145, 0.1105, 0.1023, 0.0055]
   # Phase 2: anchor escort activities at the education location of the youngest
   # child (<= max age) in the same household; unlinked escorters use the draw.
   escort_household_link: true

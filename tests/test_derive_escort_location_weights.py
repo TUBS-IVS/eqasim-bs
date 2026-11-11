@@ -19,7 +19,7 @@ def _mini_srv_wege():
         "V_ZWECK":       [12, 12, 12, 12, 12, 12, 12, 12, 19],
         "V_ZWECK_BHOL":  [3, 3, 3, 3, 4, 15, 17, -8, -8],
         "E_ZWECK_OBHOL": [3, 3, 3, 3, 4, 15, 17, -8, 19],
-        "GEWICHT_W":     [1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 5.0, 1.0],
+        "GEWICHT_W_ZENSUS":     [1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 5.0, 1.0],
     })
 
 
@@ -75,7 +75,7 @@ def _length_frame():
         "V_ZWECK": [12] * (2 * n),
         "V_ZWECK_BHOL": [3] * n + [13] * n,     # 3 -> edu_kindergarten, 13 -> leisure
         "E_ZWECK_OBHOL": [3] * n + [13] * n,
-        "GEWICHT_W": [1.0] * n + [2.0] * n,
+        "GEWICHT_W_ZENSUS": [1.0] * n + [2.0] * n,
         "GIS_LAENGE_GUELTIG": [1.0] * n + [4.0] * n,   # km values (already valid)
     })
 
@@ -137,7 +137,7 @@ def test_derive_distance_factors_gis_coverage_weighted_distinguishes_partial_fro
         "V_ZWECK": [12] * 3,
         "V_ZWECK_BHOL": [3] * 3,          # edu_kindergarten, same as the 8 valid ones
         "E_ZWECK_OBHOL": [3] * 3,
-        "GEWICHT_W": [1.0] * 3,
+        "GEWICHT_W_ZENSUS": [1.0] * 3,
         "GIS_LAENGE_GUELTIG": [-7.0] * 3,  # sentinel: valid BHOL, invalid length
     })
     df = pd.concat([df, extra_invalid_length], ignore_index=True)
@@ -212,7 +212,7 @@ def test_main_returns_2_and_warns_on_gate_fail(tmp_path, caplog):
     # escort length (50 km, still inside the 0.1..100 km plausibility bound)
     # against a short MiD reference (2 km): median ratio 25 is far outside
     # [0.67, 1.5], guaranteeing a gate FAIL regardless of the band-L1 metric.
-    header = "V_ZWECK;V_ZWECK_BHOL;E_ZWECK_OBHOL;GEWICHT_W;GIS_LAENGE_GUELTIG"
+    header = "V_ZWECK;V_ZWECK_BHOL;E_ZWECK_OBHOL;GEWICHT_W_ZENSUS;GIS_LAENGE_GUELTIG"
     rows = ["12;3;3;1,0;50,0" for _ in range(10)]
     srv_path = tmp_path / "srv_wege.csv"
     srv_path.write_text("\n".join([header, *rows]), encoding="latin-1")
@@ -234,3 +234,48 @@ def test_main_returns_2_and_warns_on_gate_fail(tmp_path, caplog):
         ])
     assert exit_code == 2
     assert any("coherence gate FAILED" in record.message for record in caplog.records)
+
+
+def _write_raw_escort_wege(path, kindergarten_zensus_weight):
+    # Raw-file format with BOTH SrV trip weights, deliberately disagreeing:
+    # kindergarten leg (1 km) GEWICHT_W 3 / GEWICHT_W_ZENSUS 1,
+    # residential leg (4 km) GEWICHT_W 1 / GEWICHT_W_ZENSUS 3.
+    header = "V_ZWECK;V_ZWECK_BHOL;E_ZWECK_OBHOL;GEWICHT_W;GEWICHT_W_ZENSUS;GIS_LAENGE_GUELTIG"
+    rows = [f"12;3;3;3,0;{kindergarten_zensus_weight};1,0", "12;15;15;1,0;3,0;4,0"]
+    path.write_text("\n".join([header, *rows]), encoding="cp1252")
+
+
+def _write_mid_wege(path):
+    pd.DataFrame({"W_ZWECK": [6, 6], "W_GEW": [1.0, 3.0], "wegkm_imp": [1.0, 4.0]}).to_csv(
+        path, index=False)
+
+
+def test_main_weights_by_zensus_expansion_weight(tmp_path):
+    # ADR-0055: SrV aggregates use GEWICHT_W_ZENSUS. Hand-computed with it:
+    # kindergarten share 1 / (1 + 3) = 0.25; overall weighted median 4 km (cumulative
+    # weight 1 < half of 4 at 1 km), so the kindergarten length factor is 1 / 4 = 0.25.
+    # GEWICHT_W would give a share of 0.75 and a factor of 1.0.
+    from scripts.derive_escort_location_weights import main
+    wege, mid = tmp_path / "wege.csv", tmp_path / "mid.csv"
+    _write_raw_escort_wege(wege, "1,0")
+    _write_mid_wege(mid)
+    weights_path, factors_path = tmp_path / "weights.csv", tmp_path / "factors.csv"
+    main(["--wege", str(wege), "--mid-wege-path", str(mid), "--out", str(weights_path),
+          "--distance-factors-output", str(factors_path)])
+
+    weights = pd.read_csv(weights_path, comment="#").set_index("category")
+    assert weights.loc["edu_kindergarten", "weight_share"] == pytest.approx(0.25)
+    factors = pd.read_csv(factors_path, comment="#").set_index("category")
+    assert factors.loc["edu_kindergarten", "factor"] == pytest.approx(0.25)
+
+
+@pytest.mark.parametrize("bad_weight", ["0,0", ""])
+def test_main_rejects_missing_or_non_positive_zensus_weight(tmp_path, bad_weight):
+    from scripts.derive_escort_location_weights import main
+    wege, mid = tmp_path / "wege.csv", tmp_path / "mid.csv"
+    _write_raw_escort_wege(wege, bad_weight)
+    _write_mid_wege(mid)
+    with pytest.raises(ValueError, match="GEWICHT_W_ZENSUS"):
+        main(["--wege", str(wege), "--mid-wege-path", str(mid),
+              "--out", str(tmp_path / "w.csv"),
+              "--distance-factors-output", str(tmp_path / "f.csv")])

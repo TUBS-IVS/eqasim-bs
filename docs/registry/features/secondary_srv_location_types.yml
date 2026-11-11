@@ -56,7 +56,9 @@ validation:
     substrate 0 -> 31.9%; other typed-building substrate 0 -> 75.5%; purpose mix byte-identical
   note: Draw-coherence and substrate A/B on the server at 5%; realised distances stay ~1.5-2x
     above SrV euclid medians in BOTH runs (pre-existing MiD level gap) -- NOT a behavioural validation
-    (ADR-0075).
+    (ADR-0075). The listed run predates the 2026-11-11 GEWICHT_W_ZENSUS regeneration of the SrV
+    reference tables (data registry srv2023_reference_tables); it drew from and was compared against
+    the former GEWICHT_W tables, so its metric was measured against those, not the committed references.
 assessment:
   status: pending
   by: null

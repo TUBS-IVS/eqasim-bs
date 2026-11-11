@@ -10,19 +10,19 @@ W_ZWECK {6, 13}) is a dedicated plan-level activity purpose behind
   and `hwzweck1` derivations, 2026-07-24). Code 6 = active escort (Bringen/Holen);
   code 13 = passive escort, the escorted child's own leg (100% minors, issue #256).
 - Location-type weights: SrV 2023 BS+RGB `V_ZWECK_BHOL` ("wohin gebracht/
-  geholt"), GEWICHT_W-weighted, 98.8 % coverage --
+  geholt"), GEWICHT_W_ZENSUS-weighted (ADR-0055; coverage in the table header) --
   scripts/derive_escort_location_weights.py writes the pinned reference
   eqasim-data/data/braunschweig/srv/srv2023_escort_destination_types.csv.
   ASSUMPTION: work-type destinations fold into "other" (no work facilities in
   the secondary candidate universe).
 - Distance-by-type factors (A3): SrV 2023 BS+RGB `V_ZWECK == 12`, length =
   `GIS_LAENGE_GUELTIG` (valid-only GIS route km; -7 sentinel = invalid;
-  validity = value > 0), GEWICHT_W-weighted, GIS coverage 82.45 % of valid
-  escort legs (n_valid=2602); min_obs=30 neutralizes edu_university/shop --
+  validity = value > 0), GEWICHT_W_ZENSUS-weighted (ADR-0055); min_obs=30
+  neutralizes edu_university/shop --
   scripts/derive_escort_location_weights.py writes the pinned reference
   eqasim-data/data/braunschweig/srv/srv2023_escort_distance_factors.csv.
-  Coherence gate vs MiD W_ZWECK==6 wegkm_imp: PASS (band L1 9.29 pp, median
-  ratio 0.929).
+  Coherence gate vs MiD W_ZWECK==6 wegkm_imp: PASS; GIS coverage and the gate
+  metrics are in that table's header.
 - Active/passive split + active-only length profile: `mid2023_escort_w_zweck_split.csv`
   (MiD 2023 Wege, W_GEW-weighted, on the WEEKDAY reporting days the PopulationSim
   seed keeps -- the universe a run can realise, ruling C-R18; code_6 = 0.7819
@@ -50,8 +50,9 @@ W_ZWECK {6, 13}) is a dedicated plan-level activity purpose behind
    ASSUMPTION (A3): the between-type length ratios are treated as invariant
    across mode x travel-time strata (SrV provides only marginal medians).
    Because the type draw is independent of the leg's mode/travel time, the
-   expected escort distance level shifts by sum(w_c x factor_c) = 1.0305
-   (+3.1%) under the pinned draw weights and factors -- a known, accepted
+   expected escort distance level shifts by sum(w_c x factor_c) = 1.0671
+   (+6.7%) under the pinned draw weights and factors (1.0305 under the former
+   GEWICHT_W weighting of ADR-0072, before the ADR-0055 correction) -- a known, accepted
    by-construction drift (well inside the +-20% mean criterion); the 5%
    validation run reports the realised shift.
 3. Phase 2 (`escort_household_link`): escorters with household children (<=
