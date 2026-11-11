@@ -3,7 +3,7 @@ title: MiD 2023 donor build
 layer: population
 description: Adapts restricted MiD 2023 B1 microdata into worker and student in-commuter
   donor tables, retaining age and sex alongside employment, study status and trip timing, and
-  each donor's own household income and economic status (ADR-0191).
+  the donor household and draw attributes the worker in-commuter draw reads (ADR-0191).
 lineage:
   type: braunschweig_new
   upstream: null

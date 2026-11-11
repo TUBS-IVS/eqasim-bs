@@ -3,7 +3,7 @@ title: Einpendler injection
 area: cordon
 description: Generates in-commuters crossing the ZGB boundary from BA Pendleratlas Kreis flows
   with donor-timed home-work-home plans, injected as a fixed-mode incommuter subpopulation (ADR-0029);
-  income and economic status come from the MiD donor household (ADR-0191).
+  each worker in-commuter carries the household of its MiD donor, drawn as ADR-0191 decides.
 stages:
 - braunschweig.synthesis.incommuters
 - braunschweig.data.census.pendler
@@ -31,14 +31,17 @@ evidence:
   - tests/test_incommuter_core_frames.py
   - tests/test_incommuter_merge.py
   - tests/test_incommuter_origins.py
+  - tests/test_cordon_donor_draw.py
+  - tests/test_mid_donor.py
   off_path_byte_identical:
     claimed: not_applicable
     note: |
       No test name suggests an OFF-path (cordon_enabled=False) byte-identity claim for the injection stage itself.
   fallback_rate:
-    instrumented: false
+    instrumented: true
+    log_marker: '[braunschweig.cordon.donor_draw]'
     note: |
-      No fallback/primary rate log was found for the injection VOLUME logic itself (as distinct from the mode balancer, which is a separate declared feature with its own instrumentation).
+      The donor draw logs its fallbacks once per run (ADR-0191) and the donor eligibility its exclusions by reason ('[incommuters] donor eligibility'). No fallback/primary rate log exists for the injection VOLUME logic itself (as distinct from the mode balancer, which is a separate declared feature with its own instrumentation).
   reference:
     kind: none
     note: |
