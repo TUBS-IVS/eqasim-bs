@@ -75,6 +75,59 @@ def test_thinned_sample_reproduces_the_full_distribution_over_buildings():
     assert abs(float(np.mean(unthinned)) - p_full) > bound
 
 
+def test_below_expectation_samples_reproduce_the_full_distribution_over_buildings():
+    """Realistic sample sizes: the cell's sample is Bernoulli, so it is often SMALLER than
+    round(n_full * rate). Surplus kept slots would let the size-ordered matcher hand the
+    few households the largest building again (review of TUBS-IVS/eqasim-bs#605).
+    Only the below-expectation samples (1..4 households for an expected 5) are drawn,
+    because that is where surplus slots arise."""
+    n_full, rate = 100, 0.05
+    # Dwelling sizes spread over four bins: the builder hands the largest sizes to the
+    # largest building's slots, so the size-ordered matcher would reach for it first.
+    cells = _cells(n_full)
+    for prefix in ("50bis59", "70bis79", "90bis99", "110bis119"):
+        cells[f"{prefix}_Flaeche_der_Wohnung_10m2_Intervalle_100m_Gitter"] = n_full / 4
+    full, _ = home_cell.assign_homes_typed(
+        _households(n_full), _buildings(), cells, random_seed=1)
+    p_full = _largest_share(full)
+    placed, in_largest = 0, 0
+    for seed in range(160):
+        n_sample = 1 + seed % 4
+        out, _ = home_cell.assign_homes_typed(
+            _households(n_sample), _buildings(), cells, random_seed=seed,
+            sampling_rate=rate)
+        placed += len(out)
+        in_largest += int((out["home_location_id"] == 0).sum())
+    bound = 4.0 * np.sqrt(p_full * (1.0 - p_full) / placed)
+    assert abs(in_largest / placed - p_full) < bound
+
+
+@pytest.mark.parametrize("batch", [True, False])
+def test_households_whose_type_has_too_few_slots_still_get_a_building(batch):
+    """8 efh slots and no mfh slot, 1 mfh household; and 8 mfh households for 2 mfh +
+    20 efh slots. A per-type floor that ignores spill-over keeps 0 resp. 3 slots and
+    leaves households without a building (review of TUBS-IVS/eqasim-bs#605)."""
+    hh = _households(1)
+    hh["building_type_3class"] = ["mehrfamilienhaus"]
+    out, rep = home_cell.assign_homes_typed(
+        hh, _buildings(), _cells(8), random_seed=2, sampling_rate=0.05,
+        batch_coordinates=batch)
+    assert out["home_location_id"].notna().all() and rep.n_overcapacity == 0
+
+    cells = _cells(20)
+    cells["MFH_3bis6Wohnungen_Geb_Gebaeudetyp_Groesse_100m_Gitter"] = 1.0
+    cells["FreiEFH_Geb_Gebaeudetyp_Groesse_100m_Gitter"] = float(len(_AREAS) - 1)
+    cells["MFH_3bis6Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter"] = 2.0
+    cells["BewohntWhg_Leerstand_100m_Gitter"] = 22.0
+    hh = _households(8)
+    hh["building_type_3class"] = ["mehrfamilienhaus"] * 8
+    out, rep = home_cell.assign_homes_typed(
+        hh, _buildings(), cells, random_seed=2, sampling_rate=0.05, batch_coordinates=batch)
+    assert out["home_location_id"].notna().all() and rep.n_overcapacity == 0
+    full, rep_full = home_cell.assign_homes_typed(hh, _buildings(), cells, random_seed=2)
+    assert rep.type_match_rate == rep_full.type_match_rate
+
+
 def test_thinning_is_per_building_type_and_keeps_type_match():
     """20 efh + 2 mfh slots, 2 mfh + 1 efh sampled households at r = 0.05.
 

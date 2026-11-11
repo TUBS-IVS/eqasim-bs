@@ -571,28 +571,39 @@ def _thin_slots_by_type(
     sampling_rate: float,
     thin_rng: np.random.RandomState,
 ) -> pd.DataFrame:
-    """Keep a uniform random subset of each building type's slots (original order kept).
+    """Keep exactly the slots the sampled households will occupy (original order kept).
 
     The slots describe the whole census population of the cell, the households only a
-    sample of it. Per slot type ``t`` this keeps
-    ``min(n_t, max(round(n_t * sampling_rate), households_of_type_t))`` slots, so a
-    rare type (e.g. 2 MFH slots) is not thinned away from the households that need it
-    (a type-blind thinning would break the type match of the sampled households).
+    sample of it. The per-type demand is routed onto the slot types with the matcher's
+    own type flow (:func:`home_matcher.solve_type_flow`: own type first, then the
+    cheapest other type), and each slot type ``t`` keeps a uniform random subset of
+    exactly the number of slots that flow sends to it. So every sampled household keeps
+    a slot (also when its own type has none or too few in the cell), the type match is
+    the one the matcher would reach on the full slot set, and every kept slot is used:
+    the matcher's size-ordered, front-of-queue pairing cannot favour the largest
+    building, because no surplus slots remain to rank against each other.
 
-    ASSUMPTION: keeping at least the sampled household count per type biases the kept
-    slot fraction slightly upward in cells where the Bernoulli sample exceeds its
-    expectation (``n_households > r * n_slots``); the thinning stays uniform within
-    each type, so the within-type distribution over buildings is unbiased.
+    ``sampling_rate`` is not used for the count: the realised household sample of the
+    cell, not its expectation, fixes how many slots are occupied. It is accepted to keep
+    the call explicit about the sampled case (callers only thin when it is < 1).
+
+    ASSUMPTION: the sampled households are a uniform (Bernoulli) thinning of the cell's
+    full household set, as ``synthesis.population.sampled`` draws them, so a uniform
+    within-type subset of slots is the matching thinning of the dwellings. Dwelling
+    size pairing is assortative only within the kept subset.
     """
+    del sampling_rate  # count comes from the realised sample, see docstring
+    positions_by_type = {
+        kind: np.flatnonzero((slots["btype"] == kind).to_numpy()) for kind in bt.SLOT_CLASSES
+    }
+    flow = hm.solve_type_flow(
+        {kind: int(households_per_type.get(kind, 0)) for kind in bt.SLOT_CLASSES},
+        {kind: len(positions_by_type[kind]) for kind in bt.SLOT_CLASSES},
+    )
     keep_positions = []
     for kind in bt.SLOT_CLASSES:
-        positions = np.flatnonzero((slots["btype"] == kind).to_numpy())
-        if len(positions) == 0:
-            continue
-        n_keep = min(
-            len(positions),
-            max(int(round(len(positions) * sampling_rate)), int(households_per_type.get(kind, 0))),
-        )
+        positions = positions_by_type[kind]
+        n_keep = sum(amount for (_, destination), amount in flow.items() if destination == kind)
         if n_keep < len(positions):
             positions = thin_rng.choice(positions, size=n_keep, replace=False)
         keep_positions.extend(int(p) for p in positions)
@@ -654,8 +665,9 @@ def assign_homes_typed(
         Fraction of the population that ``households`` represents (``0 < r <= 1``).
         The slots are built from the FULL census occupied count, so for ``r < 1`` the
         few sampled households would otherwise fill the first (largest-building) slots
-        of each cell. After the full slot set is built, a uniform random subset of each
-        building type's slots is kept (:func:`_thin_slots_by_type`, original order
+        of each cell. After the full slot set is built, each building type keeps a
+        uniform random subset of exactly the slots the sampled households occupy under
+        the matcher's type flow (:func:`_thin_slots_by_type`, original order
         preserved), drawn from a separate stream seeded with
         ``random_seed + SLOT_THINNING_SEED_OFFSET``. ``r == 1`` draws nothing.
 
