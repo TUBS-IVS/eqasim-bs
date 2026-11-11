@@ -278,32 +278,46 @@ def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.Da
     # A lifted tour is relabelled as a whole, so the departure shift of a stay in it has lost its purpose (the shift
     # only served the timetable probe of a pt leg): undo it, unless the restored legs would then overlap the
     # person's neighbouring trips (another, still-pt stay was shifted against this one); that shift is kept.
-    n_undone = n_kept_shift = 0
-    for k in [k for k in shifted if int(pt_rows[k]) in switched]:
+    def _undo_shift_if_free(k) -> bool:
+        """Undo stay ``k``'s shift in ``dep``/``arr`` and drop it from ``shifted``; keep it when a restored leg
+        would then overlap the person's previous or next trip (current state). True when undone."""
         variant, d, _ = shifted[k]
         legs = ([out_pos[k]] if variant in ("out", "both") else []) + \
                ([ret_pos[k]] if variant in ("ret", "both") else [])
         for leg in legs:
             dep[leg] -= d
             arr[leg] -= d
-        overlap = False
         for leg in legs:
             person = trips_out["person_id"].iat[leg]
             index = int(trips_out["trip_index"].iat[leg])
             all_index = sorted_trips[person]["trip_index"].to_numpy()
             before, after = all_index[all_index < index], all_index[all_index > index]
-            if len(before) and arr[trip_pos[person, int(before.max())]] > dep[leg]:
-                overlap = True
-            if len(after) and dep[trip_pos[person, int(after.min())]] < arr[leg]:
-                overlap = True
-        if overlap:
-            for leg in legs:
-                dep[leg] += d
-                arr[leg] += d
-            n_kept_shift += 1
-        else:
-            del shifted[k]
-            n_undone += 1
+            if (len(before) and arr[trip_pos[person, int(before.max())]] > dep[leg]) or \
+                    (len(after) and dep[trip_pos[person, int(after.min())]] < arr[leg]):
+                for restored in legs:
+                    dep[restored] += d
+                    arr[restored] += d
+                return False
+        del shifted[k]
+        return True
+
+    # A shift may only fit because an EARLIER accepted shift moved a neighbour, so the undo walks the shifts in
+    # reverse acceptance order and repeats until a pass undoes nothing: a shift is kept only when it would still
+    # overlap once every other undoable shift is gone.
+    n_undone = 0
+    candidates = [k for k in reversed(list(shifted)) if int(pt_rows[k]) in switched]
+    changed = True
+    while changed:
+        changed = False
+        still_kept = []
+        for k in candidates:
+            if _undo_shift_if_free(k):
+                n_undone += 1
+                changed = True
+            else:
+                still_kept.append(k)
+        candidates = still_kept
+    n_kept_shift = len(candidates)
     if n_undone or n_kept_shift:
         logger.info("[portal_trips.no_connection] lifted tours: %d departure shifts undone, %d kept (restored legs "
                     "would overlap a neighbouring trip)", n_undone, n_kept_shift)

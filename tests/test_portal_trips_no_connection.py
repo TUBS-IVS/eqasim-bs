@@ -420,3 +420,26 @@ def test_an_unknown_last_resort_is_refused():
     with pytest.raises(ValueError, match="last_resort"):
         nc.resolve_no_connection(stays, _chain(), _modes(1), _avail_int(False, False), _gates([None]), _no_probe,
                                  fallback_gates=_fallback(1), **KW, last_resort="walk")
+
+
+def test_lifted_tour_undoes_a_shift_that_only_an_earlier_shift_made_room_for():
+    # One tour (no home in between): stays A (0, 1), B (2, 3) and D (4, 5). B's outbound is shifted
+    # +1800 s at step 1; A's return +3600 s fits at step 2 only because B had moved; D never gets a gate,
+    # so the lift relabels the whole tour. Undone in acceptance order, B would look blocked by A's
+    # still-shifted return and keep 30 min that no longer overlap anything (review of #598).
+    trips = _trips(1, [("home", "out", "pt", 10000, 10500), ("out", "work", "pt", 20000, 20500),
+                       ("work", "out", "pt", 23000, 23500), ("out", "work", "pt", 30000, 30500),
+                       ("work", "out", "pt", 40000, 40500), ("out", "home", "pt", 50000, 50500)])
+    stays = pd.DataFrame([_stay(1, 0, 1), _stay(1, 2, 3), _stay(1, 4, 5)])
+
+    def probe(positions, out_dep, ret_dep):
+        found = [(p == 0 and np.isclose(o, 10000) and np.isclose(r, 23600))
+                 or (p == 1 and np.isclose(o, 24800) and np.isclose(r, 30000))
+                 for p, o, r in zip(positions, out_dep, ret_dep)]
+        return _gates(["s" if f else None for f in found])
+
+    m, t, g = nc.resolve_no_connection(stays, trips, _modes(3), _avail_int(False, False), _gates([None] * 3),
+                                       probe, fallback_gates=_fallback(3), **KW, last_resort=nc.LAST_RESORT_LIFT)
+    assert m["no_connection_action"].tolist() == [nc.ACTION_TOUR_TO_CAR_PASSENGER_LIFT] * 3
+    assert t["departure_time"].tolist() == trips["departure_time"].tolist()
+    assert t["arrival_time"].tolist() == trips["arrival_time"].tolist()
