@@ -2,7 +2,8 @@ feature: einpendler_injection
 title: Einpendler injection
 area: cordon
 description: Generates in-commuters crossing the ZGB boundary from BA Pendleratlas Kreis flows
-  with donor-timed home-work-home plans, injected as a fixed-mode incommuter subpopulation (ADR-0029).
+  with donor-timed home-work-home plans, injected as a fixed-mode incommuter subpopulation (ADR-0029);
+  income and economic status come from the MiD donor household (ADR-0191).
 stages:
 - braunschweig.synthesis.incommuters
 - braunschweig.data.census.pendler

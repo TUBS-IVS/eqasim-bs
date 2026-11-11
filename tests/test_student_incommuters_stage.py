@@ -189,6 +189,7 @@ def _full_ctx():
            "sampling_rate": 0.5, "random_seed": 1,
            "cordon_gate_speed_kmh": 30.0,
            "cordon_incommuter_time_chronology": True,
+           "braunschweig.student_incommuters.household_income_eur": 3000.0,
            "braunschweig.incommuters.time_redraw_max_attempts": 20,
            "braunschweig.day_end_margin.enabled": True,
            "braunschweig.day_end_margin.last_arrival_margin_s": 3600.0,
@@ -811,3 +812,12 @@ def test_student_pt_days_are_not_checked_when_the_check_is_off(monkeypatch):
     frames = si.execute(ctx)
 
     assert (frames["trips"]["mode"] == "pt").all() and "pt_connection" not in frames
+
+
+def test_student_households_follow_the_mode_and_the_configured_income():
+    """ADR-0191: a pt student's household has no car (it was 'all' for every household),
+    and the flat household income is the configured ASSUMPTION value, not a hidden constant."""
+    ids = pd.DataFrame({"person_id": [100, 101], "household_id": [50, 51]})
+    households = si._build_student_households(ids, ["car", "pt"], household_income_eur=2500.0)
+    assert households.set_index("household_id")["car_availability"].to_dict() == {50: "all", 51: "none"}
+    assert households["household_income_eur"].tolist() == [2500.0, 2500.0]

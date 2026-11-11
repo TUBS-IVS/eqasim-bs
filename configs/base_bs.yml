@@ -941,6 +941,8 @@ config:
   braunschweig.incommuters.pt_share_tolerance: 0.01
   # Max. promotion rounds of car in-commuters to timetable-connected pt; 0 disables the re-balancing.
   braunschweig.incommuters.rebalance_max_iterations: 10
+  # Flat monthly household income (EUR) of the student in-commuters; ASSUMPTION without a source (ADR-0191).
+  braunschweig.student_incommuters.household_income_eur: 3000.0
   # Plan feasibility check on the written population (ADR-0146, #443): the last step of the prepare
   # stage counts plans with an activity end time after the simulated day (MAX_PLAN_TIME_SECONDS = qsim.endTime = 30 h),
   # non-monotonic plans and implausible walk/bicycle/long legs per subpopulation, split into frozen

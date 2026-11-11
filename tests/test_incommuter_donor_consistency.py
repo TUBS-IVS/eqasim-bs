@@ -187,12 +187,17 @@ class ConfigContext:
 @pytest.mark.parametrize("enabled", [True, False])
 def test_mid_stage_executes_with_configured_demographic_flag(monkeypatch, enabled):
     from braunschweig.popsim.sources.mid import MidSource
-    monkeypatch.setattr(MidSource, "load_donor", lambda self, path: raw_mid())
+    def load_donor(self, path):
+        households, persons, trips = raw_mid()
+        # The stage reads the donor household income and status from these MiD columns (ADR-0191).
+        return households.assign(hheink_gr1=[6, 9], oek_status=[3, 4]), persons, trips
+    monkeypatch.setattr(MidSource, "load_donor", load_donor)
     ctx = ConfigContext({"random_seed": 1234, mid_donor.KEY_DEMOGRAPHICS: enabled})
     mid_donor.configure(ctx)
     ctx.config = lambda key: ctx.cfg[key]
     donors = mid_donor.execute(ctx)[1]
     assert ("age" in donors and "sex" in donors) == enabled
+    assert donors["economic_status"].tolist() == ["medium", "high"]
 
 
 @pytest.mark.parametrize("module", [incommuters, student_incommuters])
@@ -269,6 +274,7 @@ def test_worker_execute_forwards_time_flag(monkeypatch, enabled):
         "cordon_enabled": True, "random_seed": 1234, "data_path": "unused",
         "sampling_rate": 0.001, "braunschweig.political_prefix": ["03101"],
         "cordon_incommuter_time_chronology": enabled,
+        "braunschweig.student_incommuters.household_income_eur": 3000.0,
         "cordon_incommuter_real_origin": False,
         "cordon_incommuter_mode_balance": False,
         "cordon_incommuter_mode_reference_by_bundesland": False,

@@ -76,16 +76,17 @@ RAIL_LIKE_MODES = frozenset({"rail", "train", "subway", "light_rail", "regional_
 # VALID attributes so the MATSim writer + downstream logic accept them. Their commute
 # mode is fixed by the eqasim "outside" tour (OutsideFilter), so car/PT availability
 # only needs to be self-consistent with the chosen mode.
-# NOTE: household_income / household_income_eur are NOT in this constant dict -- they
-# are set per agent from the origin-Kreis INKAR income level (see _build_persons /
-# draw_incommuter_income), so a Wolfsburg in-commuter no longer gets the same income
-# as a Goslar one.
+# NOTE: household_income / household_income_eur / high_income and the car attributes are
+# NOT in this constant dict -- the income comes per agent from the MiD donor household and
+# the origin-Kreis INKAR level (draw_incommuter_income, ADR-0191), the car attributes follow
+# the fixed commute mode (_build_persons).
+# ASSUMPTION (ADR-0191): household_size 1 -- the injected agent is a one-person household
+# although its income and economic status are those of its MiD donor's whole household.
 _INCOMMUTER_PERSON_DEFAULTS = dict(
     studies=False, household_size=1, consumption_units=1.0,
-    socioprofessional_class=6, number_of_bicycles=0, number_of_cars=1,
+    socioprofessional_class=6, number_of_bicycles=0,
     bicycle_availability="all", license_type="ja", has_license=True,
     has_pt_subscription=False, pt_subscription_type="never_pt",
-    high_income=False,
     is_bs_resident=False, is_urban_resident=False, age_range="higher_education",
     # In-commuters live outside the ZGB cordon, so the MiD-derived
     # ``housing_tenure`` completeness attribute (synthesise_housing_tenure,
@@ -123,12 +124,9 @@ DEFAULT_PT_SHARE_TOLERANCE = 0.01
 KEY_REBALANCE_MAX_ITERATIONS = "braunschweig.incommuters.rebalance_max_iterations"
 DEFAULT_REBALANCE_MAX_ITERATIONS = 10
 
-# Base monthly household income (EUR) for cross-cordon in-commuters, scaled per agent
-# by the INKAR Kreis factor of the agent's ORIGIN Kreis. This replaces the legacy
-# hardcoded constant "3000" (which gave every in-commuter the same income regardless
-# of where they live). The base equals the former constant so the regional mean is
-# unchanged; only the per-Kreis spread is added.
-INCOMMUTER_BASE_INCOME_EUR = 3000.0
+#: Donor columns the in-commuter income and economic status are read from; set by
+#: ``braunschweig.data.hts.mid_donor.attach_donor_household_income`` (ADR-0191).
+DONOR_INCOME_COLUMNS = ("household_income_eur", "economic_status")
 
 # Fallback-rate threshold above which the INKAR origin-Kreis miss is escalated to a
 # WARNING (CLAUDE.md "Fallback transparency"). A high rate means a systematic origin
@@ -136,48 +134,57 @@ INCOMMUTER_BASE_INCOME_EUR = 3000.0
 INCOMMUTER_INCOME_FALLBACK_WARN_RATE = 5.0
 
 
-def draw_incommuter_income(orig_ars, df_inkar, base_eur=INCOMMUTER_BASE_INCOME_EUR,
-                           rng=None):
-    """Per-agent monthly household income (EUR) drawn from the origin-Kreis INKAR level.
+def _donors_with_household_income(hts_persons):
+    """The donor persons that carry a household income AND an economic status (ADR-0191).
 
-    Each in-commuter lives OUTSIDE the ZGB cordon, so its household income should
-    reflect its home (origin) Kreis, not a single constant. The income is the base
-    monthly household income scaled by the INKAR per-Kreis ``scale`` factor of the
-    agent's origin Kreis (the same multiplicative factor the resident enrichment
-    applies in ``braunschweig.synthesis.population.enriched._apply_inkar_income_scale``),
-    with a small multiplicative log-normal jitter so agents from the same Kreis are not
-    all identical (the resident population varies within a Kreis too).
+    A MiD person without a household record has neither (``mid_donor`` counts them); such a
+    person cannot stand for an in-commuter household, so it leaves the worker donor pool. The
+    excluded count and share are logged; ``select_commuter_donors`` raises if nobody is left.
+    """
+    has_income = hts_persons[list(DONOR_INCOME_COLUMNS)].notna().all(axis=1)
+    n, n_excluded = len(hts_persons), int((~has_income).sum())
+    logger.info(
+        "[incommuters] donor household income: primary %d/%d donor persons (%.2f%%), excluded %d "
+        "(%.2f%%) without a household income or economic status", n - n_excluded, n,
+        100.0 * (n - n_excluded) / n if n else 0.0, n_excluded, 100.0 * n_excluded / n if n else 0.0)
+    return hts_persons[has_income].reset_index(drop=True)
 
-    Fallback transparency: the PRIMARY path looks the origin Kreis up in the INKAR
-    ``scale`` table; if the Kreis is absent (out-of-table / ars5-format mismatch), the
-    agent FALLS BACK to the regional mean (scale 1.0). The fallback count + rate are
-    logged, escalated to a WARNING above
-    :data:`INCOMMUTER_INCOME_FALLBACK_WARN_RATE`, so a systematic key mismatch is
-    visible rather than silent.
+
+def draw_incommuter_income(orig_ars, donor_income_eur, df_inkar):
+    """Per-agent monthly household income (EUR): the donor household's income x origin-Kreis scale.
+
+    ADR-0191: ``donor_income_eur`` is the agent's MiD donor household income (a national
+    survey), and the INKAR ``scale`` of the agent's ORIGIN Kreis is relative to the national
+    mean (``braunschweig.data.inkar.household_income``), so the product moves the national
+    donor income to the income level of the Kreis the agent lives in. ASSUMPTION: the scale
+    acts multiplicatively on the EUR value and leaves the donor's economic status unchanged.
+
+    Fallback transparency: the PRIMARY path looks the origin Kreis up in the INKAR ``scale``
+    table; a Kreis absent from it (out-of-table / ars5-format mismatch) keeps the donor
+    income (scale 1.0). The fallback count and rate are logged, escalated to a WARNING above
+    :data:`INCOMMUTER_INCOME_FALLBACK_WARN_RATE`, so a systematic key mismatch is visible.
 
     Args:
-        orig_ars: array-like of per-agent 5-digit origin Kreis ARS.
-        df_inkar: INKAR household-income frame with columns ``ars5`` and ``scale``
-            (from ``braunschweig.data.inkar.household_income``).
-        base_eur: base monthly household income (EUR) before the Kreis scale.
-        rng: ``numpy.random.Generator`` for the within-Kreis jitter (seeded by caller).
+        orig_ars: per-agent 5-digit origin Kreis ARS.
+        donor_income_eur: per-agent donor household income (EUR/month), agent-aligned.
+        df_inkar: INKAR frame with columns ``ars5`` and ``scale``.
 
     Returns:
-        ``(income_eur, n_fallback)`` -- a float ndarray of per-agent monthly household
-        income and the number of agents that used the regional-mean fallback.
+        ``(income_eur, n_fallback)`` -- per-agent income rounded to whole EUR and the number
+        of agents whose origin Kreis had no INKAR scale.
     """
-    if rng is None:
-        rng = np.random.default_rng()
     orig = np.asarray([str(a) for a in orig_ars])
+    donor_income_eur = np.asarray(donor_income_eur, dtype=float)
+    if len(donor_income_eur) != len(orig):
+        raise ValueError(
+            f"draw_incommuter_income: donor_income_eur ({len(donor_income_eur)}) and orig_ars "
+            f"({len(orig)}) must be agent-aligned.")
     n = len(orig)
     scale_lookup = dict(zip(df_inkar["ars5"].astype(str), df_inkar["scale"].astype(float)))
-    in_table = np.array([a in scale_lookup for a in orig])
+    in_table = np.array([a in scale_lookup for a in orig], dtype=bool)
     n_fallback = int((~in_table).sum())
     scale = np.array([scale_lookup.get(a, 1.0) for a in orig], dtype=float)
-    # Multiplicative log-normal jitter (sigma 0.20 in log space) so within-Kreis income
-    # varies; mean is ~1.0 so the per-Kreis mean stays at base_eur * scale.
-    jitter = rng.lognormal(mean=0.0, sigma=0.20, size=n)
-    income = (float(base_eur) * scale * jitter).round(0)
+    income = (donor_income_eur * scale).round(0)
 
     if n:
         share = 100.0 * n_fallback / n
@@ -187,8 +194,8 @@ def draw_incommuter_income(orig_ars, df_inkar, base_eur=INCOMMUTER_BASE_INCOME_E
                 f"[braunschweig.incommuters] {level}INKAR origin-Kreis income fallback: "
                 f"primary {n - n_fallback}/{n} ({100.0 - share:.1f}%), "
                 f"fallback {n_fallback} ({share:.1f}%) in-commuters had no INKAR scale "
-                f"for their origin Kreis -> regional mean (scale 1.0). A high rate means "
-                f"a systematic origin-Kreis vs INKAR ars5 key mismatch.",
+                f"for their origin Kreis -> donor income unscaled (scale 1.0). A high rate "
+                f"means a systematic origin-Kreis vs INKAR ars5 key mismatch.",
                 flush=True,
             )
         else:
@@ -452,7 +459,18 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     ``(1 - pt_share_tolerance)`` times the target. The frames carry the stats and the actions
     of the promotion attempts under ``pt_rebalance`` (kept apart from ``pt_connection``, whose
     rates are over the original pt days only).
+
+    The donors (``hts_persons``) must carry :data:`DONOR_INCOME_COLUMNS`: the income and the
+    economic status of an in-commuter are its donor household's (ADR-0191); a missing
+    column raises, there is no constant fallback.
     """
+    missing_income_cols = [c for c in DONOR_INCOME_COLUMNS if c not in hts_persons.columns]
+    if missing_income_cols:
+        raise ValueError(
+            f"[incommuters] the donor persons lack {missing_income_cols}; the in-commuter income "
+            f"and economic status come from the MiD donor household "
+            f"(braunschweig.data.hts.mid_donor.attach_donor_household_income, ADR-0191).")
+    hts_persons = _donors_with_household_income(hts_persons)
     inbound = select_inbound_flows(flows, zgb_kreise, in_ring_kreise=set(assignment["ars5"]))
     # OD validation target for the per-run cordon analysis (#134): the full-population
     # BA inbound SvB flow per external source Kreis, direction "ein". Derived from the
@@ -937,24 +955,26 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         zgb_work.crs, middle_purpose="work", repair_chronology=repair_chronology)
     trips, activities, locations = core["trips"], core["activities"], core["locations"]
 
-    # Per-agent monthly household income (EUR) from the origin-Kreis INKAR level,
-    # replacing the legacy hardcoded constant. Falls back to the regional mean (logged)
-    # for any origin Kreis absent from INKAR. When no INKAR frame is supplied (legacy
-    # callers / tests), every agent keeps the base constant so behaviour is unchanged.
+    # Per-agent monthly household income (EUR): the MiD donor household's income times the
+    # origin-Kreis INKAR scale (ADR-0191). Without an INKAR frame (unit tests) the donor
+    # income stays unscaled, and that is logged.
+    donor_income_eur = donors["household_income_eur"].to_numpy(dtype=float)
     if inkar_income is not None:
-        income_eur, _n_income_fallback = draw_incommuter_income(orig_ars, inkar_income,
-                                                                rng=rng)
+        income_eur, _n_income_fallback = draw_incommuter_income(orig_ars, donor_income_eur,
+                                                                inkar_income)
     else:
-        income_eur = np.full(n, INCOMMUTER_BASE_INCOME_EUR, dtype=float)
+        income_eur = donor_income_eur.round(0)
+        logger.warning("[incommuters] no INKAR frame supplied: %d in-commuters keep their "
+                       "donor household income without the origin-Kreis scale", n)
 
     persons = _build_persons(ids, donors, person_col, modes, income_eur)
-    households = _build_households(ids, income_eur)
+    households = _build_households(ids, income_eur, modes)
     # In-commuter cars are drawn from the German NDS fleet (Task F6) when a
     # ``data_path`` is supplied (the production stage); legacy callers / unit tests
     # that omit it keep the single default-car row so their behaviour is unchanged.
     if data_path is not None:
         vehicle_types, vehicles = build_incommuter_fleet(
-            person_ids, modes, orig_ars, income_eur,
+            person_ids, modes, orig_ars, donors["economic_status"].to_numpy(),
             persons["age"].to_numpy(dtype=float), data_path, rng)
     else:
         vehicle_types = pd.DataFrame(columns=["type_id", "length", "width", "mode",
@@ -1172,15 +1192,17 @@ def _agent_times(donors, hts_trips, person_col, dist_km, home_to_gate_km,
 def _build_persons(ids, donors, person_col, modes, income_eur):
     """Persons frame for injected in-commuters with the resident attribute schema.
 
-    ``income_eur`` is the per-agent monthly household income (EUR) drawn from the
-    origin-Kreis INKAR level (:func:`draw_incommuter_income`). The categorical
-    ``household_income`` placeholder string (read by the legacy Bavaria writer) is set
-    to the same value so the two stay consistent.
+    ``income_eur`` is the per-agent monthly household income (EUR) of
+    :func:`draw_incommuter_income`. The categorical ``household_income`` placeholder string
+    (read by the legacy Bavaria writer) is set to the same value so the two stay consistent;
+    ``high_income`` follows the resident rule (:func:`_high_income`). Car attributes follow
+    the fixed commute mode: a car-mode agent owns one car, a pt-mode agent none (ADR-0191).
     """
     age = donors["age"].to_numpy() if "age" in donors.columns else 40
     sex = donors["sex"].to_numpy() if "sex" in donors.columns else "male"
     hts_id = donors[person_col].to_numpy() if person_col in donors.columns else -1
     income_eur = np.asarray(income_eur, dtype=float)
+    is_car = np.asarray(modes) == "car"
     persons = pd.DataFrame({
         "person_id": ids["person_id"].to_numpy(),
         "household_id": ids["household_id"].to_numpy(),
@@ -1189,9 +1211,11 @@ def _build_persons(ids, donors, person_col, modes, income_eur):
         "hts_id": hts_id, "hts_household_id": -1,
         "age": age, "sex": sex, "employed": True,
         "subpopulation": "incommuter",
-        "car_availability": np.where(np.asarray(modes) == "car", "all", "none"),
+        "car_availability": np.where(is_car, "all", "none"),
+        "number_of_cars": np.where(is_car, 1, 0),
         "household_income_eur": income_eur,
         "household_income": [str(int(v)) for v in income_eur],
+        "high_income": _high_income(income_eur),
     })
     for key, value in _INCOMMUTER_PERSON_DEFAULTS.items():
         persons[key] = value
@@ -1208,11 +1232,19 @@ def _build_persons(ids, donors, person_col, modes, income_eur):
     return persons
 
 
-def _build_households(ids, income_eur):
+def _high_income(income_eur):
+    """``high_income`` by the resident rule: income >= ``HIGH_INCOME_THRESHOLD_EUR`` (EUR/month)."""
+    from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
+
+    return np.asarray(income_eur, dtype=float) >= HIGH_INCOME_THRESHOLD_EUR
+
+
+def _build_households(ids, income_eur, modes):
     """One single-person household per injected in-commuter.
 
-    ``income_eur`` is the per-agent monthly household income (EUR) drawn from the
-    origin-Kreis INKAR level (:func:`draw_incommuter_income`).
+    ``income_eur`` is the per-agent monthly household income (EUR) of
+    :func:`draw_incommuter_income`; the household ``car_availability`` follows the fixed
+    commute mode like the person's (ADR-0191).
     """
     income_eur = np.asarray(income_eur, dtype=float)
     return pd.DataFrame({
@@ -1221,39 +1253,10 @@ def _build_households(ids, income_eur):
         "census_household_id": ids["household_id"].to_numpy(),
         "household_income": [str(int(v)) for v in income_eur],
         "household_income_eur": income_eur,
-        "high_income": False,
-        "car_availability": "all", "bicycle_availability": "all",
+        "high_income": _high_income(income_eur),
+        "car_availability": np.where(np.asarray(modes) == "car", "all", "none"),
+        "bicycle_availability": "all",
     })
-
-
-# Monthly household income (EUR) quintile thresholds used to map a cross-cordon
-# in-commuter's INKAR-scaled income onto the 5-class MiD economic status the German
-# fleet's segment IPF expects. The income is INCOMMUTER_BASE_INCOME_EUR (the regional
-# mean, mapped to "medium") scaled by the origin-Kreis INKAR factor; the thresholds
-# are placed symmetrically around the base so that an at-mean income is "medium" and
-# the spread maps the richer / poorer origin Kreise onto the higher / lower classes.
-# This is a documented, transparent mapping (the in-commuter income carries no MiD
-# income CLASS, only a continuous EUR value), not a free parameter.
-_INCOMMUTER_STATUS_THRESHOLDS_EUR = (
-    0.70 * INCOMMUTER_BASE_INCOME_EUR,   # < -> very_low
-    0.90 * INCOMMUTER_BASE_INCOME_EUR,   # < -> low
-    1.10 * INCOMMUTER_BASE_INCOME_EUR,   # < -> medium
-    1.30 * INCOMMUTER_BASE_INCOME_EUR,   # < -> high ; else very_high
-)
-_INCOMMUTER_STATUS_LABELS = ("very_low", "low", "medium", "high", "very_high")
-
-
-def _economic_status_from_income(income_eur):
-    """Map per-agent monthly household income (EUR) to the 5-class economic status.
-
-    Uses :data:`_INCOMMUTER_STATUS_THRESHOLDS_EUR` (centred on the regional-mean
-    base income) so an in-commuter from a richer origin Kreis draws from a higher
-    economic status -- the same income->status coupling the resident fleet has via
-    the MiD H4 income classes, expressed here on the continuous INKAR-scaled EUR.
-    """
-    income_eur = np.asarray(income_eur, dtype=float)
-    idx = np.digitize(income_eur, _INCOMMUTER_STATUS_THRESHOLDS_EUR)
-    return np.array([_INCOMMUTER_STATUS_LABELS[i] for i in idx])
 
 
 def _incommuter_kreis_ags5(orig_ars):
@@ -1268,13 +1271,13 @@ def _incommuter_kreis_ags5(orig_ars):
     return np.array([str(a)[:5] for a in orig_ars])
 
 
-def build_incommuter_fleet(person_ids, modes, orig_ars, income_eur, ages, data_path, rng):
+def build_incommuter_fleet(person_ids, modes, orig_ars, economic_status, ages, data_path, rng):
     """Draw cross-cordon in-commuter cars from the German NDS fleet (Task F6).
 
     Replaces the legacy single hardcoded ``Gazole/euro6`` row: each car-mode
     in-commuter gets one vehicle drawn from the same KBA/HBEFA generative chain as
     residents (:func:`braunschweig.synthesis.vehicles.fleet_sampling_de.sample_fleet`),
-    using the agent's origin-Kreis-scaled economic status. The origin Gemeinde /
+    using the economic status of the agent's MiD donor household (ADR-0191). The origin Gemeinde /
     RegioStaR raumtyp are outside the ZGB scope and unavailable, so the Gemeinde
     BEV tilt and the raumtyp-specific segment IPF fall back to the Kreis / national
     levels -- this is logged by the sampler (no-silent-fallback rule).
@@ -1284,7 +1287,8 @@ def build_incommuter_fleet(person_ids, modes, orig_ars, income_eur, ages, data_p
     person_ids : per-agent in-commuter person ids (all modes).
     modes : per-agent fixed commute mode; only ``"car"`` agents get a vehicle.
     orig_ars : per-agent 5-digit origin Kreis ARS.
-    income_eur : per-agent monthly household income (EUR), origin-Kreis scaled.
+    economic_status : per-agent 5-class economic status of the donor household (all modes,
+        agent-ordered).
     ages : per-agent owner age in years (all modes, agent-ordered; the donor-age
         constant-40 substitution of ``_build_persons`` is applied upstream — those
         cars land in the 40-49 holder-age class through that pre-existing fallback,
@@ -1308,7 +1312,7 @@ def build_incommuter_fleet(person_ids, modes, orig_ars, income_eur, ages, data_p
     person_ids = np.asarray(person_ids)
     modes = np.asarray(modes)
     orig_ars = np.asarray(orig_ars)
-    income_eur = np.asarray(income_eur, dtype=float)
+    economic_status = np.asarray(economic_status, dtype=object)
     ages = np.asarray(ages, dtype=float)
     if len(ages) != len(person_ids):
         raise ValueError(
@@ -1328,7 +1332,7 @@ def build_incommuter_fleet(person_ids, modes, orig_ars, income_eur, ages, data_p
         return empty_types, empty_vehicles
 
     df_cars = pd.DataFrame({
-        "economic_status": _economic_status_from_income(income_eur[car_mask]),
+        "economic_status": economic_status[car_mask],
         "kreis_ags5": _incommuter_kreis_ags5(orig_ars[car_mask]),
         # Origin Gemeinde + RegioStaR raumtyp are outside ZGB -> not available; the
         # sampler falls back to the Kreis / national levels (logged).
@@ -1490,6 +1494,8 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.transit.schedule",
     "braunschweig.matsim.simulation.plan_check",
     "braunschweig.popsim.plan_validation",
+    # high_income by the resident 5000 EUR rule (_high_income, ADR-0191).
+    "braunschweig.popsim.income",
     "braunschweig.popsim.closure_dwell",
     "data.hts.hts",
 )

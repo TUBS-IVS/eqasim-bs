@@ -2,7 +2,8 @@ stage: braunschweig.data.hts.mid_donor
 title: MiD 2023 donor build
 layer: population
 description: Adapts restricted MiD 2023 B1 microdata into worker and student in-commuter
-  donor tables, retaining age and sex alongside employment, study status and trip timing.
+  donor tables, retaining age and sex alongside employment, study status and trip timing, and
+  each donor's own household income and economic status (ADR-0191).
 lineage:
   type: braunschweig_new
   upstream: null

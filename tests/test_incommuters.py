@@ -146,7 +146,8 @@ def _minimal_inputs():
         {"location_id": ["work_1"], "commune_id": ["03101000"], "employees": [50]},
         geometry=[Point(606000, 5805000)], crs="EPSG:25832")
     hts_persons = pd.DataFrame({"person_id": [1], "employed": [True], "age": [42],
-                                "sex": ["female"]})
+                                "sex": ["female"], "household_income_eur": [4000.0],
+                                "economic_status": ["high"]})
     hts_trips = pd.DataFrame([
         (1, "home", "work", 7 * 3600.0, 8 * 3600.0),
         (1, "work", "home", 17 * 3600.0, 18 * 3600.0),
@@ -647,7 +648,8 @@ def test_real_origin_far_agent_keeps_gate():
     zgb_work = gpd.GeoDataFrame(
         {"location_id": ["work_1"], "commune_id": ["03101000"], "employees": [50]},
         geometry=[Point(606000, 5805000)], crs="EPSG:25832")
-    hp = pd.DataFrame({"person_id": [1], "employed": [True], "age": [42], "sex": ["female"]})
+    hp = pd.DataFrame({"person_id": [1], "employed": [True], "age": [42], "sex": ["female"],
+                       "household_income_eur": [4000.0], "economic_status": ["high"]})
     ht = pd.DataFrame([
         (1, "home", "work", 7 * 3600.0, 8 * 3600.0),
         (1, "work", "home", 17 * 3600.0, 18 * 3600.0),
@@ -778,7 +780,8 @@ def test_mode_balance_on_with_mixed_demand_compensates_forced_car():
     zgb_work = gpd.GeoDataFrame(
         {"location_id": ["work_1"], "commune_id": ["03101000"], "employees": [50]},
         geometry=[Point(606000, 5805000)], crs="EPSG:25832")
-    hp = pd.DataFrame({"person_id": [1], "employed": [True], "age": [42], "sex": ["female"]})
+    hp = pd.DataFrame({"person_id": [1], "employed": [True], "age": [42], "sex": ["female"],
+                       "household_income_eur": [4000.0], "economic_status": ["high"]})
     ht = pd.DataFrame([
         (1, "home", "work", 7 * 3600.0, 8 * 3600.0),
         (1, "work", "home", 17 * 3600.0, 18 * 3600.0),
@@ -963,7 +966,9 @@ def _late_donor_frames(time_bound_s, pt_check=None, mode="car"):
     """Frames from a donor pool of one normal and one 35 h-late donor."""
     gates, assignment, flows, zgb_work, _hp, _ht = _minimal_inputs()
     hts_persons = pd.DataFrame({"person_id": [1, 2], "employed": [True, True],
-                                "age": [42, 30], "sex": ["female", "male"]})
+                                "age": [42, 30], "sex": ["female", "male"],
+                                "household_income_eur": [4000.0, 2500.0],
+                                "economic_status": ["high", "low"]})
     cols = ["person_id", "preceding_purpose", "following_purpose", "departure_time", "arrival_time"]
     hts_trips = pd.DataFrame([
         (1, "home", "work", 7 * 3600.0, 8 * 3600.0), (1, "work", "home", 17 * 3600.0, 18 * 3600.0),
@@ -1318,3 +1323,45 @@ def test_rebalancing_reports_the_router_probe_calls_per_round_and_in_total():
     # one round: the planned day only (a connected promoted agent needs no shift or station probe)
     assert report["router_probe_rounds"][0]["router_probe_calls"] == 1
     assert report["n_router_probe_calls"] == 1 and report["n_router_probe_tasks"] == 2
+
+
+def test_income_status_and_cars_follow_the_donor_household_and_the_mode():
+    """ADR-0191: the income is the donor household's EUR value times the origin-Kreis INKAR
+    scale (no base constant, no jitter), the fleet status is the donor's, high_income follows
+    the resident 5000 EUR rule, and only car-mode agents own a car. A donor without a
+    household record (NaN income) never stands for an in-commuter."""
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    hp = pd.concat([hp, hp.assign(person_id=2, household_income_eur=np.nan,
+                                  economic_status=None)], ignore_index=True)
+    ht = pd.concat([ht, ht.assign(person_id=2)], ignore_index=True)
+    inkar = pd.DataFrame({"ars5": ["03241"], "scale": [1.25]})
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"car": 0.5, "pt": 0.5}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=np.random.default_rng(3),
+        gate_speed_kmh=30.0, pt_entry_stops=_pt_entry_stops_new_schema(),
+        inkar_income=inkar)
+    persons, households = frames["persons"], frames["households"]
+    assert set(persons["household_income_eur"]) == {5000.0}       # 4000 EUR x 1.25, donor 1 only
+    assert persons["high_income"].all() and households["high_income"].all()
+    is_car = persons["car_availability"] == "all"
+    assert is_car.any() and (~is_car).any(), "the fixture must produce both modes"
+    assert (persons["number_of_cars"] == np.where(is_car, 1, 0)).all()
+    hh_car = households.set_index("household_id")["car_availability"]
+    assert (hh_car.loc[persons["household_id"]].to_numpy()
+            == persons["car_availability"].to_numpy()).all()
+
+
+@pytest.mark.parametrize("column", ["household_income_eur", "economic_status"])
+def test_a_donor_without_household_income_or_status_fails(column):
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    with pytest.raises(ValueError, match=column):
+        build_incommuter_frames(
+            flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+            gates=gates, assignment=assignment, zgb_work=zgb_work,
+            mode_reference={">=10": {"car": 1.0}}, band_edges=(10,),
+            hts_persons=hp.drop(columns=column), hts_trips=ht, person_col="person_id",
+            n_residents=100, n_resident_households=40, rng=np.random.default_rng(3),
+            gate_speed_kmh=30.0)

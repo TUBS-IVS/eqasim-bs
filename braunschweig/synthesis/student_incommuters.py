@@ -67,6 +67,24 @@ _ID_OFFSET_ABOVE_RESIDENTS = 10_000_000
 # braunschweig.synthesis.incommuters._INCOMMUTER_PERSON_DEFAULTS: no origin-Kreis
 # income tilt (INKAR) and no German-fleet vehicle draw -- see
 # ``_build_student_persons`` / ``_build_student_households``.
+#: ASSUMPTION (ADR-0191), no source: flat monthly household income (EUR) of every student
+#: in-commuter, the value the worker in-commuters had before ADR-0191 replaced theirs with the
+#: MiD donor household income. Config key :data:`KEY_HOUSEHOLD_INCOME_EUR`, EUR/month, > 0.
+KEY_HOUSEHOLD_INCOME_EUR = "braunschweig.student_incommuters.household_income_eur"
+DEFAULT_HOUSEHOLD_INCOME_EUR = 3000.0
+
+
+def validate_household_income_eur(value) -> float:
+    """``KEY_HOUSEHOLD_INCOME_EUR`` as a float: a finite number > 0 (EUR/month), else ValueError."""
+    try:
+        as_float = float(value)
+    except (TypeError, ValueError):
+        as_float = float("nan")
+    if isinstance(value, bool) or not np.isfinite(as_float) or as_float <= 0:
+        raise ValueError(f"{KEY_HOUSEHOLD_INCOME_EUR} must be a number > 0 (EUR/month), got {value!r}")
+    return as_float
+
+
 _STUDENT_PERSON_DEFAULTS = dict(
     employed=False, studies=True, household_size=1, consumption_units=1.0,
     socioprofessional_class=8,  # SPC_STUDENT, braunschweig.population.socioprofessional_class
@@ -120,6 +138,8 @@ def _empty_frames(crs=CRS_METRIC):
 #: ``ROUTED_DETOUR_FACTOR``, with which the straight-line distances are converted.
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.synthesis.incommuters",
+    # Reached through incommuters._high_income (ADR-0191).
+    "braunschweig.popsim.income",
     "braunschweig.data.cordon.plans",
     "braunschweig.constants",
     "braunschweig.data.cordon.demand",
@@ -205,6 +225,7 @@ def configure(context):
     # Timetable check of the pt days (#528): the same switch, keys and batch pt router as the commuter stage (#488).
     incommuters.configure_pt_check(context)
     context.config("data_path")
+    context.config(KEY_HOUSEHOLD_INCOME_EUR, DEFAULT_HOUSEHOLD_INCOME_EUR)
     # Mirror the keys declared by braunschweig.data.external_workplaces.configure()
     # (as braunschweig.synthesis.incommuters.configure() also does) so that
     # _inject()'s external_workplaces._load_gemeinden(context) can resolve the
@@ -332,7 +353,7 @@ def _donor_education_times(donors, hts_trips, person_col):
     return depart_home, arrive_mid, depart_mid, arrive_home
 
 
-def _build_student_persons(ids, donors, modes):
+def _build_student_persons(ids, donors, modes, household_income_eur=DEFAULT_HOUSEHOLD_INCOME_EUR):
     """Persons frame for injected student in-commuters, mirroring the resident
     attribute schema used by ``braunschweig.synthesis.incommuters._build_persons``
     (age/sex/hts linkage columns, car_availability, income columns) but with the
@@ -341,21 +362,19 @@ def _build_student_persons(ids, donors, modes):
 
     Deliberately simpler than the SvB in-commuter persons builder: no origin-
     Kreis income tilt (INKAR) and no per-agent German-fleet draw -- students get
-    a flat regional-mean household income
-    (``braunschweig.synthesis.incommuters.INCOMMUTER_BASE_INCOME_EUR``) and a
+    the flat ASSUMPTION household income ``household_income_eur``
+    (:data:`KEY_HOUSEHOLD_INCOME_EUR`) and a
     mode-consistent ``car_availability``/``number_of_cars`` (car-mode agents own a
     car; PT-mode agents do not -- a documented simplification, not a measured
     student car-ownership rate).
     """
-    from braunschweig.synthesis.incommuters import INCOMMUTER_BASE_INCOME_EUR
-
     person_ids = ids["person_id"].to_numpy()
     household_ids = ids["household_id"].to_numpy()
     modes = np.asarray(modes)
     age = donors["age"].to_numpy() if "age" in donors.columns else 22
     sex = donors["sex"].to_numpy() if "sex" in donors.columns else "male"
     hts_id = donors["person_id"].to_numpy() if "person_id" in donors.columns else -1
-    income_eur = np.full(len(person_ids), INCOMMUTER_BASE_INCOME_EUR, dtype=float)
+    income_eur = np.full(len(person_ids), float(household_income_eur), dtype=float)
     is_car = modes == "car"
     persons = pd.DataFrame({
         "person_id": person_ids,
@@ -384,15 +403,14 @@ def _build_student_persons(ids, donors, modes):
     return persons
 
 
-def _build_student_households(ids):
+def _build_student_households(ids, modes, household_income_eur=DEFAULT_HOUSEHOLD_INCOME_EUR):
     """One single-person household per injected student in-commuter, mirroring
-    ``braunschweig.synthesis.incommuters._build_households`` with the flat
-    regional-mean income (no INKAR tilt; see :func:`_build_student_persons`)."""
-    from braunschweig.synthesis.incommuters import INCOMMUTER_BASE_INCOME_EUR
-
+    ``braunschweig.synthesis.incommuters._build_households`` with the flat ASSUMPTION
+    income (no INKAR tilt; see :func:`_build_student_persons`); ``car_availability``
+    follows the fixed commute mode like the person's (ADR-0191)."""
     household_ids = ids["household_id"].to_numpy()
     person_ids = ids["person_id"].to_numpy()
-    income_eur = np.full(len(household_ids), INCOMMUTER_BASE_INCOME_EUR, dtype=float)
+    income_eur = np.full(len(household_ids), float(household_income_eur), dtype=float)
     return pd.DataFrame({
         "household_id": household_ids,
         "person_id": person_ids,
@@ -400,7 +418,8 @@ def _build_student_households(ids):
         "household_income": [str(int(v)) for v in income_eur],
         "household_income_eur": income_eur,
         "high_income": False,
-        "car_availability": "all", "bicycle_availability": "all",
+        "car_availability": np.where(np.asarray(modes) == "car", "all", "none"),
+        "bicycle_availability": "all",
     })
 
 
@@ -617,8 +636,9 @@ def _inject(context):
         repair_chronology=context.config("cordon_incommuter_time_chronology"))
 
     # 10. Minimal student persons/households (no income tilt, no fleet).
-    persons = _build_student_persons(ids, donors, modes)
-    households = _build_student_households(ids)
+    household_income_eur = validate_household_income_eur(context.config(KEY_HOUSEHOLD_INCOME_EUR))
+    persons = _build_student_persons(ids, donors, modes, household_income_eur)
+    households = _build_student_households(ids, modes, household_income_eur)
 
     # 10a. Origin Kreis + destination university commune, attached for the
     # downstream OD analysis (braunschweig.analysis.simwrapper.student_commuters,

@@ -106,6 +106,16 @@ def load_age_sex_by_kreis(data_path: str, scope_prefixes) -> pd.DataFrame:
     return _load_destatis(path, {str(p) for p in scope_prefixes})
 
 
+def load_population_by_kreis(path: str, kreise) -> pd.Series:
+    """Total inhabitants per 5-digit Kreis key from the DESTATIS 12411-0018 export at ``path``.
+
+    Sums the (sex, age_class) counts of :func:`_load_destatis` (PRIMARY/skip logging
+    included); Kreise of ``kreise`` absent from the file are absent from the result.
+    """
+    counts = _load_destatis(path, {str(k) for k in kreise})
+    return counts.groupby("kreis")["weight"].sum()
+
+
 def configure(context):
     context.config("data_path")
     context.config("braunschweig.destatis_population_path",

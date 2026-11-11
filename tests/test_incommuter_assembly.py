@@ -28,7 +28,8 @@ def _inputs():
         {"location_id": ["work_1"], "commune_id": ["03101000"], "employees": [50]},
         geometry=[Point(606000, 5805000)], crs="EPSG:25832")
     hts_persons = pd.DataFrame({"person_id": [1], "employed": [True], "age": [42],
-                                "sex": ["female"]})
+                                "sex": ["female"], "household_income_eur": [4000.0],
+                                "economic_status": ["high"]})
     hts_trips = pd.DataFrame([
         (1, "home", "work", 7 * 3600.0, 8 * 3600.0),
         (1, "work", "home", 17 * 3600.0, 18 * 3600.0),

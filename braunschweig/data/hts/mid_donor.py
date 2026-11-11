@@ -56,6 +56,12 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.trips",
     "braunschweig.popsim.sources.mid",
     "braunschweig.popsim.mid.donor",
+    # The donor household income draw (ADR-0191, attach_donor_household_income).
+    "braunschweig.popsim.placement_income",
+    "braunschweig.popsim.income_kreis_control",
+    "braunschweig.data.mid.income_by_size",
+    "braunschweig.data.mid.income_by_status",
+    "braunschweig.data.mid.raumtyp_tilt",
     # The rest of this stage's import closure: modules its helpers import, whose code this
     # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
     "braunschweig.data.bbsr.regiostar",
@@ -220,6 +226,80 @@ def build_mid_donor_frames(households, persons, wege, rng, *, preserve_demograph
     return households, persons_out, trips
 
 
+#: Offset of the RNG stream of :func:`attach_donor_household_income` from ``random_seed``, so its
+#: draws never shift the stream of :func:`build_mid_donor_frames` (whose bytes are pinned, #397).
+DONOR_HOUSEHOLD_INCOME_RNG_OFFSET = 52813
+
+#: MiD household columns the donor household income and status are read from (ADR-0191).
+DONOR_HOUSEHOLD_INCOME_COLUMNS = ("H_ID", "hheink_gr1", "oek_status")
+
+#: ASSUMPTION (a raise bound, not a reference value): share of donor persons without a MiD
+#: household record above which the person-household join is read as broken and the stage raises.
+DONOR_HOUSEHOLD_MISSING_RAISE_SHARE = 0.01
+
+
+def attach_donor_household_income(persons, households, rng):
+    """Add each donor's MiD household income (EUR) and economic status (ADR-0191).
+
+    ``economic_status`` is the household's ``oek_status`` and the income bracket its
+    ``hheink_gr1`` group, both mapped with the resident popsim mappers
+    (``attributes.map_economic_status`` / ``map_household_income``): item non-response is
+    imputed from the valid pool of the same household-size group (and RegioStaR7 when the
+    frame has it), its rate logged by ``missing.resolve``. ``household_income_eur`` is a
+    continuous draw WITHIN that bracket (``placement_income.draw_own_income_eur``: uniform,
+    truncated Pareto in the open top bracket), the same within-bracket ASSUMPTION as for
+    residents (ADR-0069). One value per donor household, shared by its members.
+
+    Args:
+        persons: donor persons of :func:`build_mid_donor_frames` (``person_id`` = ``H_ID_P_ID``).
+        households: raw MiD households with :data:`DONOR_HOUSEHOLD_INCOME_COLUMNS`.
+        rng: ``numpy.random.RandomState`` of this draw (its own stream, see
+            :data:`DONOR_HOUSEHOLD_INCOME_RNG_OFFSET`).
+
+    Returns:
+        A copy of ``persons`` with ``household_income_eur`` (EUR/month) and ``economic_status``;
+        both NaN for a person without a household record (counted and warned).
+
+    Raises:
+        ValueError: if a column is missing, or more than
+            :data:`DONOR_HOUSEHOLD_MISSING_RAISE_SHARE` of the persons have no household record.
+    """
+    from braunschweig.popsim import attributes, placement_income
+
+    missing_cols = [c for c in DONOR_HOUSEHOLD_INCOME_COLUMNS if c not in households.columns]
+    if missing_cols:
+        raise ValueError(
+            f"[mid_donor] the MiD household table lacks {missing_cols}; the in-commuter household "
+            f"income and economic status are read from it (ADR-0191).")
+    hh = attributes.map_economic_status(households, rng=rng)
+    hh = attributes.map_household_income(hh, rng=rng)
+    hh["household_income_eur"] = placement_income.draw_own_income_eur(hh["household_income"], rng)
+    by_household = hh.assign(H_ID=hh["H_ID"].astype(str)).set_index("H_ID")
+    household_of_person = persons["person_id"].astype(str).str.split("_").str[0]
+    out = persons.copy()
+    for column in ("household_income_eur", "economic_status"):
+        out[column] = household_of_person.map(by_household[column]).to_numpy()
+    # A person whose H_ID has no row in the household table (the raw B1 files carry a few) has
+    # no household income; it stays NaN here and the worker in-commuter stage leaves such
+    # donors out of its pool (incommuters.build_incommuter_frames), counted in both places.
+    n = len(out)
+    n_missing = int(out[["household_income_eur", "economic_status"]].isna().any(axis=1).sum())
+    share = n_missing / n if n else 0.0
+    message = (
+        f"[mid_donor] donor household income: primary {n - n_missing}/{n} donors "
+        f"({100.0 * (1.0 - share):.2f}%) from their own MiD household, {n_missing} "
+        f"({100.0 * share:.2f}%) without a household record (income and status NaN)")
+    if share > DONOR_HOUSEHOLD_MISSING_RAISE_SHARE:
+        raise ValueError(
+            f"{message}; above {100.0 * DONOR_HOUSEHOLD_MISSING_RAISE_SHARE:.0f}% this is a broken "
+            f"person-household join, not a few orphan persons (check the H_ID of both tables).")
+    if n_missing:
+        _log.warning(message)
+    else:
+        _log.info(message)
+    return out
+
+
 def configure(context):
     # Any cordon-enabled config without an explicit mid_raw_path falls back to
     # the canonical committed MiD path, so enabling cordon never hard-fails at
@@ -249,7 +329,11 @@ def execute(context):
     # key alone; passing a default here would crash the stage at runtime.)
     mid_dir = context.config(KEY_MID)
     households, persons, wege = MidSource().load_donor(mid_dir)
-    rng = np.random.RandomState(int(context.config("random_seed")))
-    return build_mid_donor_frames(
-        households, persons, wege, rng,
+    random_seed = int(context.config("random_seed"))
+    households_out, persons_out, trips = build_mid_donor_frames(
+        households, persons, wege, np.random.RandomState(random_seed),
         preserve_demographics=context.config(KEY_DEMOGRAPHICS))
+    persons_out = attach_donor_household_income(
+        persons_out, households,
+        np.random.RandomState(random_seed + DONOR_HOUSEHOLD_INCOME_RNG_OFFSET))
+    return households_out, persons_out, trips

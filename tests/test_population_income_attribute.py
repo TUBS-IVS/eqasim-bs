@@ -159,43 +159,14 @@ def _inkar_frame():
     })
 
 
-def test_incommuter_income_varies_by_origin_kreis():
-    # Agents from two Kreise with different INKAR scales must NOT all get the same
-    # income; the higher-scale Kreis must on average get a higher income.
-    df_inkar = _inkar_frame()
-    orig_ars = np.array(["03241"] * 50 + ["03158"] * 50)
-    rng = np.random.default_rng(0)
-    income, n_fallback = draw_incommuter_income(orig_ars, df_inkar, base_eur=3000.0,
-                                                rng=rng)
-    assert n_fallback == 0
-    assert len(income) == len(orig_ars)
-    assert len(np.unique(income)) > 1  # not all identical
-    mean_high = income[:50].mean()
-    mean_low = income[50:].mean()
-    assert mean_high > mean_low  # higher INKAR scale -> higher income
-
-
-def test_incommuter_income_falls_back_to_regional_mean_and_logs(capsys):
-    # An origin Kreis absent from INKAR falls back to the regional mean (scale 1.0)
-    # and the fallback count/rate is logged (CLAUDE.md no-silent-fallback).
-    df_inkar = _inkar_frame()
-    orig_ars = np.array(["03241", "09999", "09999"])  # 2 of 3 missing -> fallback
-    rng = np.random.default_rng(0)
-    income, n_fallback = draw_incommuter_income(orig_ars, df_inkar, base_eur=3000.0,
-                                                rng=rng)
-    assert n_fallback == 2
-    assert (income > 0).all()
-    out = capsys.readouterr().out
-    assert "fallback" in out.lower()
-    # high fallback rate (>5%) -> WARNING prefix
-    assert "WARNING" in out
-
-
-def test_incommuter_income_is_deterministic_given_rng():
-    df_inkar = _inkar_frame()
-    orig_ars = np.array(["03241", "03158", "03241"])
-    a, _ = draw_incommuter_income(orig_ars, df_inkar, base_eur=3000.0,
-                                  rng=np.random.default_rng(7))
-    b, _ = draw_incommuter_income(orig_ars, df_inkar, base_eur=3000.0,
-                                  rng=np.random.default_rng(7))
-    np.testing.assert_array_equal(a, b)
+def test_incommuter_income_is_the_donor_income_times_the_origin_scale(capsys):
+    # ADR-0191: primary path = donor household EUR x origin-Kreis INKAR scale (no base
+    # constant, no jitter); an origin Kreis absent from INKAR keeps the donor income
+    # (scale 1.0), and the fallback count/rate is logged (CLAUDE.md no-silent-fallback).
+    orig_ars = np.array(["03241", "03158", "09999"])
+    income, n_fallback = draw_incommuter_income(
+        orig_ars, np.array([4000.0, 4000.0, 2500.0]), _inkar_frame())
+    np.testing.assert_array_equal(income, [4800.0, 3600.0, 2500.0])
+    assert n_fallback == 1
+    # 1 of 3 (33 %) is above the 5 % warn rate -> WARNING prefix
+    assert "WARNING" in capsys.readouterr().out

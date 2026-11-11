@@ -152,3 +152,43 @@ def test_execute_on_real_mid_yields_commute_donors():
     # nationwide MiD must supply real donor pools for both in-commuter kinds
     assert trips[trips["following_purpose"] == "work"]["person_id"].nunique() > 100
     assert trips[trips["following_purpose"] == "education"]["person_id"].nunique() > 10
+    # ADR-0191: every donor carries its household income and economic status (primary path
+    # on the real survey; missing codes are imputed, so none may stay empty).
+    assert persons["household_income_eur"].notna().all()
+    assert persons["economic_status"].notna().all()
+
+
+def test_donor_household_income_and_status_come_from_the_donor_household():
+    """ADR-0191: each donor carries its own MiD household income (EUR within its hheink_gr1
+    bracket) and oek_status; a 99 'keine Angabe' code is imputed from the valid pool."""
+    _, persons, wege = _synthetic_mid()
+    _, donors, _ = mid_donor.build_mid_donor_frames(
+        pd.DataFrame({"H_ID": [1, 2]}), persons, wege, rng=np.random.RandomState(0))
+    households = pd.DataFrame({
+        "H_ID": [1, 2], "hhgr_gr": [1, 1],
+        "hheink_gr1": [6, 99],      # 6 -> 2600-3000 EUR; 99 -> imputed from household 1
+        "oek_status": [4, 9],       # 4 -> high; 9 -> imputed from household 1
+    })
+
+    def attach(seed):
+        return mid_donor.attach_donor_household_income(
+            donors, households, np.random.RandomState(seed)).set_index("person_id")
+
+    out = attach(7)
+    assert out["economic_status"].to_dict() == {"1_1": "high", "2_1": "high"}
+    assert out["household_income_eur"].between(2600.0, 3000.0).all()
+    pd.testing.assert_frame_equal(out, attach(7))
+
+
+@pytest.mark.parametrize("households, message", [
+    # a missing MiD column
+    (pd.DataFrame({"H_ID": [1, 2], "oek_status": [3, 3]}), "hheink_gr1"),
+    # half of the persons without a household record: a broken join, not a few orphans
+    (pd.DataFrame({"H_ID": [1], "hhgr_gr": [1], "hheink_gr1": [6], "oek_status": [3]}), "household record"),
+])
+def test_donor_household_income_fails_on_a_missing_column_or_a_broken_join(households, message):
+    _, persons, wege = _synthetic_mid()
+    _, donors, _ = mid_donor.build_mid_donor_frames(
+        pd.DataFrame({"H_ID": [1, 2]}), persons, wege, rng=np.random.RandomState(0))
+    with pytest.raises(ValueError, match=message):
+        mid_donor.attach_donor_household_income(donors, households, np.random.RandomState(0))

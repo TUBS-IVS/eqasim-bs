@@ -9,6 +9,7 @@ roles:
 - control
 used_by:
 - braunschweig.data.census.population
+- braunschweig.data.inkar.household_income
 - braunschweig.synthesis.student_incommuters
 acquisition:
   method: manual_download
