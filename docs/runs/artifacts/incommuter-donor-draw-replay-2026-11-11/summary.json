@@ -1,0 +1,1168 @@
+{
+  "created_utc": "2026-11-11T20:00:37+00:00",
+  "script": "replay_incommuter_donor_draw.py",
+  "cache": "/home/felix/prod100_20261031/cache",
+  "run_yml": "/home/felix/prod100_20261031/run.yml",
+  "run_log": "/home/felix/prod100_20261031/logs/run_20261031T071313.log",
+  "pt_timetable_check": "pt timetable check SWITCHED OFF in both arms (braunschweig.incommuters.pt_connection_check.enabled: false); the cached run had it on, so modes, times, stations and fleet of the replay are not those of the cached run",
+  "identity_check_limit": "The cached run had the pt check on; the replay has it off. Compared exactly: agent count, person ids, origin Kreis, donor ids of agents with the same mode, and every persons column except the mode-dependent ones and the income columns (reported, not gating: RNG-dependent after the pt check, see rng_dependent_income_columns). NOT compared: trips, activities, locations, vehicles of agents the pt check changed (mode, day shift, station), and the fleet draw (random numbers consumed by the re-balancing).",
+  "code": {
+    "old": {
+      "path": "/home/felix/incommuter_replay_20261111/old",
+      "commit": "9ae87aad3dd427e71a95beb608a40d549284a64e",
+      "tracked_files_modified": 0
+    },
+    "new": {
+      "path": "/home/felix/incommuter_replay_20261111/new",
+      "commit": "b8737bbe44aebaf2e1bc6c0cbf6d425f306e1eae",
+      "tracked_files_modified": 0
+    }
+  },
+  "stages_replayed": [
+    "braunschweig.synthesis.incommuters",
+    "braunschweig.synthesis.student_incommuters"
+  ],
+  "recomputed_in_new_arm": [
+    "braunschweig.data.inkar.household_income",
+    "braunschweig.data.hts.mid_donor"
+  ],
+  "random_seed": 1234,
+  "sampling_rate": 1.0,
+  "arms": {
+    "old": {
+      "exit_code": 0
+    },
+    "new": {
+      "exit_code": 0
+    }
+  },
+  "identity": {
+    "braunschweig.synthesis.incommuters": {
+      "passed": true,
+      "failures": [],
+      "checks": {
+        "n_agents": {
+          "replay": 68630,
+          "cached": 68630
+        },
+        "person_ids": {
+          "same_set": true,
+          "same_order": true
+        },
+        "origin_kreis": {
+          "compared": true,
+          "identical_share_pct": 100.0
+        },
+        "mode": {
+          "agents_with_equal_mode": 66289,
+          "agents_with_other_mode": 2341,
+          "note": "the pt check of the cached run switches some pt agents to car"
+        },
+        "donor_id": {
+          "identical_share_pct_of_equal_mode_agents": 100.0,
+          "identical_share_pct_of_all_agents": 100.0
+        },
+        "persons_columns_identical_share_pct": {
+          "household_id": 100.0,
+          "census_person_id": 100.0,
+          "census_household_id": 100.0,
+          "hts_id": 100.0,
+          "hts_household_id": 100.0,
+          "age": 100.0,
+          "sex": 100.0,
+          "employed": 100.0,
+          "subpopulation": 100.0,
+          "studies": 100.0,
+          "household_size": 100.0,
+          "consumption_units": 100.0,
+          "socioprofessional_class": 100.0,
+          "number_of_bicycles": 100.0,
+          "bicycle_availability": 100.0,
+          "license_type": 100.0,
+          "has_license": 100.0,
+          "has_pt_subscription": 100.0,
+          "pt_subscription_type": 100.0,
+          "is_bs_resident": 100.0,
+          "is_urban_resident": 100.0,
+          "age_range": 100.0,
+          "housing_tenure": 100.0
+        },
+        "persons_columns_only_in_replay": [],
+        "persons_columns_only_in_cached": [],
+        "rng_dependent_income_columns": {
+          "status": "RNG-dependent after the pt check: not comparable row by row",
+          "gating": false,
+          "reason": "old code: income = 3000 x INKAR scale x lognormal jitter, the jitter drawn from the stage's shared RNG after the pt timetable check; the replay has the check off, so the RNG state differs; not a replay defect",
+          "frames": {
+            "persons": {
+              "columns": {
+                "household_income_eur": {
+                  "identical_share_pct": 0.048083928311234155
+                },
+                "household_income": {
+                  "identical_share_pct": 0.048083928311234155
+                },
+                "high_income": {
+                  "identical_share_pct": 100.0
+                }
+              },
+              "household_income_eur_replay_eur_per_month": {
+                "n_finite": 68630,
+                "mean": 2915.239661955413,
+                "p10": 2192.0,
+                "p50": 2850.0,
+                "p90": 3719.0
+              },
+              "household_income_eur_cached_eur_per_month": {
+                "n_finite": 68630,
+                "mean": 2916.1181844674343,
+                "p10": 2191.0,
+                "p50": 2852.0,
+                "p90": 3723.0
+              }
+            },
+            "households": {
+              "columns": {
+                "household_income_eur": {
+                  "identical_share_pct": 0.048083928311234155
+                },
+                "household_income": {
+                  "identical_share_pct": 0.048083928311234155
+                },
+                "high_income": {
+                  "identical_share_pct": 100.0
+                }
+              },
+              "household_income_eur_replay_eur_per_month": {
+                "n_finite": 68630,
+                "mean": 2915.239661955413,
+                "p10": 2192.0,
+                "p50": 2850.0,
+                "p90": 3719.0
+              },
+              "household_income_eur_cached_eur_per_month": {
+                "n_finite": 68630,
+                "mean": 2916.1181844674343,
+                "p10": 2191.0,
+                "p50": 2852.0,
+                "p90": 3723.0
+              }
+            }
+          }
+        },
+        "first_trip_times": {
+          "identical_share_pct_of_equal_mode_agents": 98.90479566745614,
+          "gating": false
+        }
+      },
+      "limit": "The cached run had the pt check on; the replay has it off. Compared exactly: agent count, person ids, origin Kreis, donor ids of agents with the same mode, and every persons column except the mode-dependent ones and the income columns (reported, not gating: RNG-dependent after the pt check, see rng_dependent_income_columns). NOT compared: trips, activities, locations, vehicles of agents the pt check changed (mode, day shift, station), and the fleet draw (random numbers consumed by the re-balancing).",
+      "load_seconds": 2
+    },
+    "braunschweig.synthesis.student_incommuters": {
+      "passed": true,
+      "failures": [],
+      "checks": {
+        "n_agents": {
+          "replay": 6174,
+          "cached": 6174
+        },
+        "person_ids": {
+          "same_set": true,
+          "same_order": true
+        },
+        "origin_kreis": {
+          "compared": true,
+          "identical_share_pct": 100.0
+        },
+        "mode": {
+          "agents_with_equal_mode": 6152,
+          "agents_with_other_mode": 22,
+          "note": "the pt check of the cached run switches some pt agents to car"
+        },
+        "donor_id": {
+          "identical_share_pct_of_equal_mode_agents": 100.0,
+          "identical_share_pct_of_all_agents": 100.0
+        },
+        "persons_columns_identical_share_pct": {
+          "household_id": 100.0,
+          "census_person_id": 100.0,
+          "census_household_id": 100.0,
+          "hts_id": 100.0,
+          "hts_household_id": 100.0,
+          "age": 100.0,
+          "sex": 100.0,
+          "employed": 100.0,
+          "studies": 100.0,
+          "household_size": 100.0,
+          "consumption_units": 100.0,
+          "socioprofessional_class": 100.0,
+          "number_of_bicycles": 100.0,
+          "bicycle_availability": 100.0,
+          "license_type": 100.0,
+          "has_license": 100.0,
+          "has_pt_subscription": 100.0,
+          "pt_subscription_type": 100.0,
+          "is_bs_resident": 100.0,
+          "is_urban_resident": 100.0,
+          "age_range": 100.0,
+          "housing_tenure": 100.0,
+          "subpopulation": 100.0,
+          "orig_ars5": 100.0,
+          "dest_commune": 100.0
+        },
+        "persons_columns_only_in_replay": [],
+        "persons_columns_only_in_cached": [],
+        "rng_dependent_income_columns": {
+          "status": "RNG-dependent after the pt check: not comparable row by row",
+          "gating": false,
+          "reason": "old code: income = 3000 x INKAR scale x lognormal jitter, the jitter drawn from the stage's shared RNG after the pt timetable check; the replay has the check off, so the RNG state differs; not a replay defect",
+          "frames": {
+            "persons": {
+              "columns": {
+                "household_income_eur": {
+                  "identical_share_pct": 100.0
+                },
+                "household_income": {
+                  "identical_share_pct": 100.0
+                },
+                "high_income": {
+                  "identical_share_pct": 100.0
+                }
+              },
+              "household_income_eur_replay_eur_per_month": {
+                "n_finite": 6174,
+                "mean": 3000.0,
+                "p10": 3000.0,
+                "p50": 3000.0,
+                "p90": 3000.0
+              },
+              "household_income_eur_cached_eur_per_month": {
+                "n_finite": 6174,
+                "mean": 3000.0,
+                "p10": 3000.0,
+                "p50": 3000.0,
+                "p90": 3000.0
+              }
+            },
+            "households": {
+              "columns": {
+                "household_income_eur": {
+                  "identical_share_pct": 100.0
+                },
+                "household_income": {
+                  "identical_share_pct": 100.0
+                },
+                "high_income": {
+                  "identical_share_pct": 100.0
+                }
+              },
+              "household_income_eur_replay_eur_per_month": {
+                "n_finite": 6174,
+                "mean": 3000.0,
+                "p10": 3000.0,
+                "p50": 3000.0,
+                "p90": 3000.0
+              },
+              "household_income_eur_cached_eur_per_month": {
+                "n_finite": 6174,
+                "mean": 3000.0,
+                "p10": 3000.0,
+                "p50": 3000.0,
+                "p90": 3000.0
+              }
+            }
+          }
+        },
+        "first_trip_times": {
+          "identical_share_pct_of_equal_mode_agents": 99.52860858257478,
+          "gating": false
+        }
+      },
+      "limit": "The cached run had the pt check on; the replay has it off. Compared exactly: agent count, person ids, origin Kreis, donor ids of agents with the same mode, and every persons column except the mode-dependent ones and the income columns (reported, not gating: RNG-dependent after the pt check, see rng_dependent_income_columns). NOT compared: trips, activities, locations, vehicles of agents the pt check changed (mode, day shift, station), and the fleet draw (random numbers consumed by the re-balancing).",
+      "load_seconds": 0
+    }
+  },
+  "stages": {
+    "braunschweig.synthesis.incommuters": {
+      "old": {
+        "summary": {
+          "metrics": {
+            "n_agents": {
+              "value": 68630,
+              "unit": "agents"
+            },
+            "departure_home_h.n_finite": {
+              "value": 68630,
+              "unit": "agents"
+            },
+            "departure_home_h.mean": {
+              "value": 5.205525811551947,
+              "unit": "h of the day"
+            },
+            "departure_home_h.p10": {
+              "value": 2.1879027814911516,
+              "unit": "h of the day"
+            },
+            "departure_home_h.p50": {
+              "value": 4.917065174581215,
+              "unit": "h of the day"
+            },
+            "departure_home_h.p90": {
+              "value": 8.186578937946214,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.n_finite": {
+              "value": 68630,
+              "unit": "agents"
+            },
+            "arrival_first_activity_h.mean": {
+              "value": 8.39584171159357,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.p10": {
+              "value": 6.333333333333333,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.p50": {
+              "value": 7.833333333333333,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.p90": {
+              "value": 11.083333333333334,
+              "unit": "h of the day"
+            },
+            "mode_share_pct.car": {
+              "value": 84.92641701879644,
+              "unit": "%"
+            },
+            "mode_share_pct.pt": {
+              "value": 15.073582981203556,
+              "unit": "%"
+            },
+            "mode_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "household_income_eur.n_finite": {
+              "value": 68630,
+              "unit": "agents"
+            },
+            "household_income_eur.mean": {
+              "value": 2915.239661955413,
+              "unit": "EUR per month"
+            },
+            "household_income_eur.p10": {
+              "value": 2192.0,
+              "unit": "EUR per month"
+            },
+            "household_income_eur.p50": {
+              "value": 2850.0,
+              "unit": "EUR per month"
+            },
+            "household_income_eur.p90": {
+              "value": 3719.0,
+              "unit": "EUR per month"
+            },
+            "economic_status_share_pct": {
+              "value": "not available",
+              "unit": "%"
+            },
+            "household_size_share_pct.1": {
+              "value": 100.0,
+              "unit": "%"
+            },
+            "household_size_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "high_income_share_pct": {
+              "value": 0.0,
+              "unit": "%"
+            },
+            "n_distinct_donors": {
+              "value": 46278,
+              "unit": "donors"
+            },
+            "largest_agents_per_donor": {
+              "value": 7,
+              "unit": "agents per donor"
+            },
+            "fleet_segment_n_vehicles": {
+              "value": 58285,
+              "unit": "vehicles"
+            },
+            "fleet_segment_share_pct.gelaendewagen": {
+              "value": 6.3189499871321955,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.grossraum_vans": {
+              "value": 3.788281719138715,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.kleinwagen": {
+              "value": 20.54044779960539,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.kompaktklasse": {
+              "value": 22.53753109719482,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.mini_vans": {
+              "value": 4.400789225358154,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.minis": {
+              "value": 7.895684996139659,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.mittelklasse": {
+              "value": 10.002573560950502,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.obere_mittelklasse": {
+              "value": 3.1225872866089044,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.oberklasse": {
+              "value": 0.4821137513940122,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.sportwagen": {
+              "value": 2.0794372480054903,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.suv": {
+              "value": 12.222698807583427,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.utilities": {
+              "value": 4.596379857596294,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.wohnmobile": {
+              "value": 2.0125246632924423,
+              "unit": "%"
+            },
+            "fleet_powertrain_n_vehicles": {
+              "value": 58285,
+              "unit": "vehicles"
+            },
+            "fleet_powertrain_share_pct.bev": {
+              "value": 2.818907094449687,
+              "unit": "%"
+            },
+            "fleet_powertrain_share_pct.diesel": {
+              "value": 28.518486746161106,
+              "unit": "%"
+            },
+            "fleet_powertrain_share_pct.gas": {
+              "value": 0.737754139143862,
+              "unit": "%"
+            },
+            "fleet_powertrain_share_pct.hybrid": {
+              "value": 4.405936347259158,
+              "unit": "%"
+            },
+            "fleet_powertrain_share_pct.other": {
+              "value": 0.025735609505018443,
+              "unit": "%"
+            },
+            "fleet_powertrain_share_pct.petrol": {
+              "value": 61.9507592004804,
+              "unit": "%"
+            },
+            "fleet_powertrain_share_pct.phev": {
+              "value": 1.542420863000772,
+              "unit": "%"
+            }
+          },
+          "reports": {
+            "donor_draw": "not available",
+            "day_bound": {
+              "n": 68630,
+              "n_redrawn": 103,
+              "n_attempts_max": 1,
+              "n_unfit": 0,
+              "bound_s": 104400.0,
+              "n_days_moved": 621,
+              "n_still_late": 0
+            }
+          }
+        },
+        "log_lines": [
+          {
+            "logger": "braunschweig.synthesis.incommuters",
+            "level": "INFO",
+            "message": "[braunschweig.incommuters] day bound 104400 s: 621/68630 days moved earlier as a whole (0.9%), 0 still late"
+          },
+          {
+            "logger": "braunschweig.synthesis.incommuters",
+            "level": "INFO",
+            "message": "[incommuters] pt_subscription_type: 68630 in-commuter persons hard-coded to 'never_pt' (control-external source; the 14+ resident Kreis control does not see them -- see ADR-0099 for the rationale, issue #329)"
+          }
+        ],
+        "seconds": 325
+      },
+      "new": {
+        "summary": {
+          "metrics": {
+            "n_agents": {
+              "value": 68630,
+              "unit": "agents"
+            },
+            "departure_home_h.n_finite": {
+              "value": 68630,
+              "unit": "agents"
+            },
+            "departure_home_h.mean": {
+              "value": 5.036648420572106,
+              "unit": "h of the day"
+            },
+            "departure_home_h.p10": {
+              "value": 1.9531149460423938,
+              "unit": "h of the day"
+            },
+            "departure_home_h.p50": {
+              "value": 4.730735453135946,
+              "unit": "h of the day"
+            },
+            "departure_home_h.p90": {
+              "value": 7.9446695473777025,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.n_finite": {
+              "value": 68630,
+              "unit": "agents"
+            },
+            "arrival_first_activity_h.mean": {
+              "value": 8.213743018116471,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.p10": {
+              "value": 6.0,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.p50": {
+              "value": 7.666666666666667,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.p90": {
+              "value": 10.5,
+              "unit": "h of the day"
+            },
+            "mode_share_pct.car": {
+              "value": 84.92641701879644,
+              "unit": "%"
+            },
+            "mode_share_pct.pt": {
+              "value": 15.073582981203556,
+              "unit": "%"
+            },
+            "mode_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "household_income_eur.n_finite": {
+              "value": 68630,
+              "unit": "agents"
+            },
+            "household_income_eur.mean": {
+              "value": 4888.767638059157,
+              "unit": "EUR per month"
+            },
+            "household_income_eur.p10": {
+              "value": 2290.0,
+              "unit": "EUR per month"
+            },
+            "household_income_eur.p50": {
+              "value": 4768.0,
+              "unit": "EUR per month"
+            },
+            "household_income_eur.p90": {
+              "value": 6976.0999999999985,
+              "unit": "EUR per month"
+            },
+            "economic_status_source": {
+              "value": "MiD donor persons through hts_id",
+              "unit": "text"
+            },
+            "economic_status_share_pct.high": {
+              "value": 47.278158239836806,
+              "unit": "%"
+            },
+            "economic_status_share_pct.low": {
+              "value": 5.784642284715139,
+              "unit": "%"
+            },
+            "economic_status_share_pct.medium": {
+              "value": 24.866676380591578,
+              "unit": "%"
+            },
+            "economic_status_share_pct.very_high": {
+              "value": 19.122832580504152,
+              "unit": "%"
+            },
+            "economic_status_share_pct.very_low": {
+              "value": 2.947690514352324,
+              "unit": "%"
+            },
+            "economic_status_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "household_size_share_pct.1": {
+              "value": 19.825149351595513,
+              "unit": "%"
+            },
+            "household_size_share_pct.2": {
+              "value": 27.565204720967508,
+              "unit": "%"
+            },
+            "household_size_share_pct.3": {
+              "value": 20.85676817718199,
+              "unit": "%"
+            },
+            "household_size_share_pct.4": {
+              "value": 20.256447617659916,
+              "unit": "%"
+            },
+            "household_size_share_pct.5": {
+              "value": 9.74209529360338,
+              "unit": "%"
+            },
+            "household_size_share_pct.6": {
+              "value": 1.7543348389916946,
+              "unit": "%"
+            },
+            "household_size_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "high_income_share_pct": {
+              "value": 47.4194958472971,
+              "unit": "%"
+            },
+            "n_distinct_donors": {
+              "value": 9283,
+              "unit": "donors"
+            },
+            "largest_agents_per_donor": {
+              "value": 553,
+              "unit": "agents per donor"
+            },
+            "fleet_segment_n_vehicles": {
+              "value": 58285,
+              "unit": "vehicles"
+            },
+            "fleet_segment_share_pct.gelaendewagen": {
+              "value": 6.739298275714163,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.grossraum_vans": {
+              "value": 3.7522518658316892,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.kleinwagen": {
+              "value": 17.350947928283436,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.kompaktklasse": {
+              "value": 23.584112550398903,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.mini_vans": {
+              "value": 3.4863172342798316,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.minis": {
+              "value": 6.679248520202454,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.mittelklasse": {
+              "value": 11.79548768980012,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.obere_mittelklasse": {
+              "value": 4.028480741185554,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.oberklasse": {
+              "value": 0.612507506219439,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.sportwagen": {
+              "value": 1.8443853478596552,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.suv": {
+              "value": 13.63815733035944,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.utilities": {
+              "value": 4.440250493265848,
+              "unit": "%"
+            },
+            "fleet_segment_share_pct.wohnmobile": {
+              "value": 2.0485545165994683,
+              "unit": "%"
+            },
+            "fleet_powertrain_n_vehicles": {
+              "value": 58285,
+              "unit": "vehicles"
+            },
+            "fleet_powertrain_share_pct.bev": {
+              "value": 2.9904778244831434,
+              "unit": "%"
+            },
+            "fleet_powertrain_share_pct.diesel": {
+              "value": 28.34348460152698,
+              "unit": "%"
+            },
+            "fleet_powertrain_share_pct.gas": {
+              "value": 0.7806468216522261,
+              "unit": "%"
+            },
+            "fleet_powertrain_share_pct.hybrid": {
+              "value": 4.627262589002316,
+              "unit": "%"
+            },
+            "fleet_powertrain_share_pct.other": {
+              "value": 0.020588487604014754,
+              "unit": "%"
+            },
+            "fleet_powertrain_share_pct.petrol": {
+              "value": 61.544136570301106,
+              "unit": "%"
+            },
+            "fleet_powertrain_share_pct.phev": {
+              "value": 1.6934031054302137,
+              "unit": "%"
+            }
+          },
+          "reports": {
+            "donor_draw": {
+              "n_agents": 68630,
+              "tilted": true,
+              "distance_matched": true,
+              "n_without_kreis_scale": 0,
+              "n_target_not_reached": 0,
+              "n_whole_pool_window": 0,
+              "min_effective_size": 579.1307140087655,
+              "max_window_ratio": 22.031823745410037
+            },
+            "day_bound": {
+              "n": 68630,
+              "n_redrawn": 31,
+              "n_attempts_max": 1,
+              "n_unfit": 0,
+              "bound_s": 104400.0,
+              "n_days_moved": 1108,
+              "n_still_late": 0
+            }
+          }
+        },
+        "log_lines": [
+          {
+            "logger": "braunschweig.synthesis.incommuters",
+            "level": "INFO",
+            "message": "[braunschweig.incommuters] agent commute for the donor match: primary 68630/68630 (100.0%), fallback 0 (0.0%) on the own gate or station (no real home, no Gemeinde of the origin Kreis; a lower bound of the commute)"
+          },
+          {
+            "logger": "braunschweig.synthesis.incommuters",
+            "level": "INFO",
+            "message": "[incommuters] donor eligibility: primary 73477/81184 commuter donors (90.51%), excluded 7707: 14 without a household record, 4625 without a weekday reporting day, 0 without a positive weight, 3068 without a commute distance"
+          },
+          {
+            "logger": "braunschweig.data.cordon.donor_draw",
+            "level": "INFO",
+            "message": "[braunschweig.cordon.donor_draw] 68630 agents; tilted primary 68630/68630 (100.0%), no Kreis scale 0 (0.0%), target not reached 0 (0.0%); commute window primary 68630/68630 (100.0%), whole pool 0 (0.0%), widest window ratio 22.03; smallest effective size 579.1"
+          },
+          {
+            "logger": "braunschweig.synthesis.incommuters",
+            "level": "INFO",
+            "message": "[braunschweig.incommuters] day bound 104400 s: 1108/68630 days moved earlier as a whole (1.6%), 0 still late"
+          },
+          {
+            "logger": "braunschweig.synthesis.incommuters",
+            "level": "INFO",
+            "message": "[incommuters] pt_subscription_type: 68630 in-commuter persons hard-coded to 'never_pt' (control-external source; the 14+ resident Kreis control does not see them -- see ADR-0099 for the rationale, issue #329)"
+          }
+        ],
+        "seconds": 253
+      }
+    },
+    "braunschweig.synthesis.student_incommuters": {
+      "old": {
+        "summary": {
+          "metrics": {
+            "n_agents": {
+              "value": 6174,
+              "unit": "agents"
+            },
+            "departure_home_h.n_finite": {
+              "value": 6174,
+              "unit": "agents"
+            },
+            "departure_home_h.mean": {
+              "value": 6.3187115367079425,
+              "unit": "h of the day"
+            },
+            "departure_home_h.p10": {
+              "value": 5.0835000005549436,
+              "unit": "h of the day"
+            },
+            "departure_home_h.p50": {
+              "value": 6.042010061026562,
+              "unit": "h of the day"
+            },
+            "departure_home_h.p90": {
+              "value": 7.6508314360967455,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.n_finite": {
+              "value": 6174,
+              "unit": "agents"
+            },
+            "arrival_first_activity_h.mean": {
+              "value": 8.147187128819782,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.p10": {
+              "value": 7.333333333333333,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.p50": {
+              "value": 7.75,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.p90": {
+              "value": 9.383333333333333,
+              "unit": "h of the day"
+            },
+            "mode_share_pct.car": {
+              "value": 84.61289277615808,
+              "unit": "%"
+            },
+            "mode_share_pct.pt": {
+              "value": 15.387107223841918,
+              "unit": "%"
+            },
+            "mode_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "household_income_eur.n_finite": {
+              "value": 6174,
+              "unit": "agents"
+            },
+            "household_income_eur.mean": {
+              "value": 3000.0,
+              "unit": "EUR per month"
+            },
+            "household_income_eur.p10": {
+              "value": 3000.0,
+              "unit": "EUR per month"
+            },
+            "household_income_eur.p50": {
+              "value": 3000.0,
+              "unit": "EUR per month"
+            },
+            "household_income_eur.p90": {
+              "value": 3000.0,
+              "unit": "EUR per month"
+            },
+            "economic_status_share_pct": {
+              "value": "not available",
+              "unit": "%"
+            },
+            "household_size_share_pct.1": {
+              "value": 100.0,
+              "unit": "%"
+            },
+            "household_size_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "high_income_share_pct": {
+              "value": 0.0,
+              "unit": "%"
+            },
+            "n_distinct_donors": {
+              "value": 5286,
+              "unit": "donors"
+            },
+            "largest_agents_per_donor": {
+              "value": 5,
+              "unit": "agents per donor"
+            },
+            "fleet_segment_share_pct": {
+              "value": "not available",
+              "unit": "%"
+            },
+            "fleet_powertrain_share_pct": {
+              "value": "not available",
+              "unit": "%"
+            }
+          },
+          "reports": {
+            "donor_draw": "not available",
+            "day_bound": {
+              "n": 6174,
+              "n_redrawn": 10,
+              "n_attempts_max": 1,
+              "n_unfit": 0,
+              "bound_s": 104400.0,
+              "n_days_moved": 3,
+              "n_still_late": 0
+            }
+          }
+        },
+        "log_lines": [
+          {
+            "logger": "braunschweig.synthesis.student_incommuters",
+            "level": "INFO",
+            "message": "[student_incommuters] home placement: in-ring primary 6164/6174 (99.8%), gate fallback 10/6174 (0.2%)"
+          },
+          {
+            "logger": "braunschweig.synthesis.student_incommuters",
+            "level": "INFO",
+            "message": "[student_incommuters] day bound 104400 s: 3/6174 days moved earlier as a whole (0.0%), 0 still late"
+          },
+          {
+            "logger": "braunschweig.synthesis.student_incommuters",
+            "level": "INFO",
+            "message": "[student_incommuters] pt_subscription_type: 6174 in-commuter persons hard-coded to 'never_pt' (control-external source; the 14+ resident Kreis control does not see them -- see ADR-0099 for the rationale, issue #329)"
+          },
+          {
+            "logger": "braunschweig.synthesis.student_incommuters",
+            "level": "INFO",
+            "message": "[student_incommuters] injected 6174 students across 3 university communes: {'03102': 1647, '03153': 1735, '03158': 2792}"
+          }
+        ],
+        "seconds": 53
+      },
+      "new": {
+        "summary": {
+          "metrics": {
+            "n_agents": {
+              "value": 6174,
+              "unit": "agents"
+            },
+            "departure_home_h.n_finite": {
+              "value": 6174,
+              "unit": "agents"
+            },
+            "departure_home_h.mean": {
+              "value": 6.907957628598084,
+              "unit": "h of the day"
+            },
+            "departure_home_h.p10": {
+              "value": 5.000346336957792,
+              "unit": "h of the day"
+            },
+            "departure_home_h.p50": {
+              "value": 6.308234586976294,
+              "unit": "h of the day"
+            },
+            "departure_home_h.p90": {
+              "value": 9.739533887039583,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.n_finite": {
+              "value": 6174,
+              "unit": "agents"
+            },
+            "arrival_first_activity_h.mean": {
+              "value": 8.73767681675845,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.p10": {
+              "value": 7.166666666666667,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.p50": {
+              "value": 8.0,
+              "unit": "h of the day"
+            },
+            "arrival_first_activity_h.p90": {
+              "value": 11.55833333333332,
+              "unit": "h of the day"
+            },
+            "mode_share_pct.car": {
+              "value": 84.15937803692906,
+              "unit": "%"
+            },
+            "mode_share_pct.pt": {
+              "value": 15.840621963070943,
+              "unit": "%"
+            },
+            "mode_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "household_income_eur.n_finite": {
+              "value": 6174,
+              "unit": "agents"
+            },
+            "household_income_eur.mean": {
+              "value": 4442.817136378361,
+              "unit": "EUR per month"
+            },
+            "household_income_eur.p10": {
+              "value": 1355.0000000000007,
+              "unit": "EUR per month"
+            },
+            "household_income_eur.p50": {
+              "value": 4437.0,
+              "unit": "EUR per month"
+            },
+            "household_income_eur.p90": {
+              "value": 6800.799999999999,
+              "unit": "EUR per month"
+            },
+            "economic_status_source": {
+              "value": "MiD donor persons through hts_id",
+              "unit": "text"
+            },
+            "economic_status_share_pct.high": {
+              "value": 35.633300939423386,
+              "unit": "%"
+            },
+            "economic_status_share_pct.low": {
+              "value": 13.880790411402657,
+              "unit": "%"
+            },
+            "economic_status_share_pct.medium": {
+              "value": 26.935536119209587,
+              "unit": "%"
+            },
+            "economic_status_share_pct.very_high": {
+              "value": 9.248461289277616,
+              "unit": "%"
+            },
+            "economic_status_share_pct.very_low": {
+              "value": 14.301911240686751,
+              "unit": "%"
+            },
+            "economic_status_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "household_size_share_pct.1": {
+              "value": 11.11111111111111,
+              "unit": "%"
+            },
+            "household_size_share_pct.2": {
+              "value": 18.30255911888565,
+              "unit": "%"
+            },
+            "household_size_share_pct.3": {
+              "value": 27.59961127308066,
+              "unit": "%"
+            },
+            "household_size_share_pct.4": {
+              "value": 21.606737933268544,
+              "unit": "%"
+            },
+            "household_size_share_pct.5": {
+              "value": 16.229348882410108,
+              "unit": "%"
+            },
+            "household_size_share_pct.6": {
+              "value": 5.150631681243926,
+              "unit": "%"
+            },
+            "household_size_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "high_income_share_pct": {
+              "value": 42.0472951085196,
+              "unit": "%"
+            },
+            "n_distinct_donors": {
+              "value": 1091,
+              "unit": "donors"
+            },
+            "largest_agents_per_donor": {
+              "value": 127,
+              "unit": "agents per donor"
+            },
+            "fleet_segment_share_pct": {
+              "value": "not available",
+              "unit": "%"
+            },
+            "fleet_powertrain_share_pct": {
+              "value": "not available",
+              "unit": "%"
+            }
+          },
+          "reports": {
+            "donor_draw": {
+              "n_agents": 6174,
+              "tilted": true,
+              "distance_matched": true,
+              "n_without_kreis_scale": 0,
+              "n_target_not_reached": 0,
+              "n_whole_pool_window": 0,
+              "min_effective_size": 228.5523982569293,
+              "max_window_ratio": 22.0
+            },
+            "day_bound": {
+              "n": 6174,
+              "n_redrawn": 12,
+              "n_attempts_max": 1,
+              "n_unfit": 0,
+              "bound_s": 104400.0,
+              "n_days_moved": 40,
+              "n_still_late": 0
+            }
+          }
+        },
+        "log_lines": [
+          {
+            "logger": "braunschweig.synthesis.student_incommuters",
+            "level": "INFO",
+            "message": "[student_incommuters] home placement: in-ring primary 6164/6174 (99.8%), gate fallback 10/6174 (0.2%)"
+          },
+          {
+            "logger": "braunschweig.synthesis.student_incommuters",
+            "level": "INFO",
+            "message": "[student_incommuters] agent education distance for the donor match: primary 6174/6174 (100.0%), fallback 0 (0.0%) on the own gate (no real home, no Gemeinde of the origin Kreis; a lower bound of the distance)"
+          },
+          {
+            "logger": "braunschweig.synthesis.student_incommuters",
+            "level": "WARNING",
+            "message": "[student_incommuters] donor age: primary 4291/18852 student donors (22.76%), excluded 14561: 14561 younger than 18, 0 without an age"
+          },
+          {
+            "logger": "braunschweig.synthesis.incommuters",
+            "level": "INFO",
+            "message": "[incommuters] donor eligibility: primary 4039/4291 commuter donors (94.13%), excluded 252: 5 without a household record, 163 without a weekday reporting day, 0 without a positive weight, 84 without a commute distance"
+          },
+          {
+            "logger": "braunschweig.data.cordon.donor_draw",
+            "level": "INFO",
+            "message": "[braunschweig.cordon.donor_draw] 6174 agents; tilted primary 6174/6174 (100.0%), no Kreis scale 0 (0.0%), target not reached 0 (0.0%); commute window primary 6174/6174 (100.0%), whole pool 0 (0.0%), widest window ratio 22.00; smallest effective size 228.6"
+          },
+          {
+            "logger": "braunschweig.synthesis.student_incommuters",
+            "level": "INFO",
+            "message": "[student_incommuters] day bound 104400 s: 40/6174 days moved earlier as a whole (0.6%), 0 still late"
+          },
+          {
+            "logger": "braunschweig.synthesis.student_incommuters",
+            "level": "INFO",
+            "message": "[student_incommuters] pt_subscription_type: 6174 in-commuter persons hard-coded to 'never_pt' (control-external source; the 14+ resident Kreis control does not see them -- see ADR-0099 for the rationale, issue #329)"
+          },
+          {
+            "logger": "braunschweig.synthesis.student_incommuters",
+            "level": "INFO",
+            "message": "[student_incommuters] injected 6174 students across 3 university communes: {'03102': 1647, '03153': 1735, '03158': 2792}"
+          }
+        ],
+        "seconds": 31
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # ADR-0191 · 2026-11-11 · A worker in-commuter carries the household of its MiD donor, drawn weighted, by commute length and by the income level of its origin Kreis; the INKAR Kreis scale is relative to the population-weighted national mean
 
-- **Status:** accepted (implemented on branch `fix/audit-b8-b10-incommuter-income`; no model run with the change yet, so its effect on in-commuter timing, incomes, economic status and fleet is not measured)
+- **Status:** accepted (implemented on branch `fix/audit-b8-b10-incommuter-income`; the change of the two stage outputs is measured in the run manifest `incommuter-donor-draw-replay-2026-11-11`; no model run yet, so the effect on the simulated traffic is not measured)
 - **Numbering:** 0191 checked free across all branches and the open PRs on 2026-11-11 (highest record anywhere: ADR-0190).
 - **Issue:** none (repository audit 2026-11-11, work package B, findings B8 = P10-F1 and B10 = P6-F8 / P6-F9).
 - **Relates to:** ADR-0029 (Einpendler injection), ADR-0069 (placement_income: a donor keeps its own MiD income), ADR-0120 (in-commuter donor demographics), ADR-0099 (in-commuter PT ticket), ADR-0116 (the model's weekday universe).
@@ -48,11 +48,11 @@
 ## Consequences
 
 - **Outputs change.** The INKAR stage changes, so every stage downstream of it is recomputed (popsim included; with `income_kreis_control` on the resident incomes are expected to stay the same up to floating point). Worker and student in-commuters get other donors: their commute timing, incomes, economic status, household size, `high_income` and (workers) the fleet segment mix change; student in-commuters are no longer drawn from school children; PT in-commuters lose their car attribute. The mode of an in-commuter is fixed by the outside tour, so no direct mode-choice effect is expected; this is not measured. Where the scale is used absolutely (the enriched path `braunschweig/synthesis/population/enriched/income_distribution.py :: _apply_inkar_income_scale`, and `braunschweig/popsim/income.py` with `income_kreis_control` off), every resident `household_income_eur` shifts by the constant ratio of the unweighted to the weighted national mean.
-- **Fewer distinct donors.** The weighted, distance-matched pool is smaller in effective size than the uniform pool, so more agents share one donor's working times. The size of this effect on the departure profile is not measured.
+- **Fewer distinct donors.** The weighted, distance-matched pool is smaller in effective size than the uniform pool, so more agents share one donor's working times; the run manifest `incommuter-donor-draw-replay-2026-11-11` records the donor reuse. Its effect on the departure profile of the simulation is not measured.
 - **Household attributes of in-commuters.** `household_size` and `consumption_units` of a worker in-commuter now describe its donor household, not the number of simulated members. Traced on 2026-11-11: the analysis readers of household size, income, economic status and cars read the `synthesis.output` files, which are written before the in-commuters are merged (the merge is in `braunschweig/matsim/scenario/`), so they do not see in-commuters; not opened were three presentation figure scripts and one notebook under `braunschweig/analysis/`.
-- **Not validated.** No run exists yet; the effect must be measured in a run manifest before any claim.
+- **Not validated.** The replay manifest measures how the stage outputs change; no model run and no observed reference exist, so nothing here is a validation.
 
 ## Evidence
 
 - Code and tests on the implementing branch (`tests/test_inkar_household_income.py`, `tests/test_cordon_donor_draw.py`, `tests/test_mid_donor.py`, `tests/test_incommuters.py`, `tests/test_student_incommuters_stage.py`).
-- No run manifest yet.
+- Run manifest `incommuter-donor-draw-replay-2026-11-11`: a replay of the two in-commuter stages on a production cache, old against new (donor pool, donor reuse, timing, income, household, fleet). It measures the change of the stage outputs, not the effect on the simulated traffic, and it is not a validation.
