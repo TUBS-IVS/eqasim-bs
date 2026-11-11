@@ -1,6 +1,6 @@
 """Generic location-synthesis stages (replacement, education).
 
-Populated in Phase 2.4 of the refactor.
+Modules: ``replacement`` and ``education``.
 """
 
 from __future__ import annotations

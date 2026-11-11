@@ -1,7 +1,6 @@
 """Region-neutral gravity-model utilities.
 
-Phase 2.2 of the refactor moves :mod:`braunschweig.gravity.distance_matrix` here.
-Until then, this package is intentionally empty.
+Holds :mod:`eqasim_common.gravity.distance_matrix`.
 """
 
 from __future__ import annotations

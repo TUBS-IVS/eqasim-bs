@@ -19,8 +19,10 @@ a rate (``DiaryMatchReport.n_crossed_employment_boundary``).
 
 Under ``fine_child_age_bands`` (issue #386) the ``age_band`` key uses
 ``weekend_plan_match.FINE_CHILD_AGE_BAND_EDGES``, which splits the coarse 6-13 child band into
-6-9 (primary school) and 10-13 (lower secondary), for THIS match only -- the weekend match keeps
-the coarse edges, whose draw sequence is a byte-identity contract pinned by
+6-9 (primary school) and 10-13 (lower secondary). All three donor matchers (member completion,
+the weekend match with its person-level fallback and mixed-household sweep, and this diary
+match) take the same flag and use the fine bands by default; the coarse edges remain the
+flag-OFF path, whose draw sequence is a byte-identity contract pinned by
 ``tests/test_weekend_plan_match.py``. Under the coarse band a first-grader can inherit a
 13-year-old's school day, whose departure times and trip lengths differ systematically. Unlike
 the employment guard above, ``age_band`` stays a SOFT key that the relaxation ladder may still
@@ -303,7 +305,7 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     ``fine_child_age_bands``: when True, the ``age_band`` key uses
     :data:`weekend_plan_match.FINE_CHILD_AGE_BAND_EDGES` instead of the coarse production
     edges, so a 6-9-year-old is no longer interchangeable with a 10-13-year-old (issue #386).
-    THIS match only -- the weekend match keeps the coarse edges. ``match_person`` draws
+    The weekend match and member completion take the same flag. ``match_person`` draws
     exactly one weighted value per call either way, so the shared completion RNG stream
     consumes the same number of values with the flag on or off. Crossings of the fine band
     are counted in BOTH arms (see :func:`_count_fine_child_band_crossings`) and logged as a

@@ -553,7 +553,8 @@ def _rate_pct(count, total) -> float:
     """Percentage of ``count`` over ``total``, or 0.0 when ``total`` is falsy
     (guards the ZeroDivisionError on an empty leg group, e.g. no bounded
     escort legs at all). Shared by every fallback-rate / per-group-share
-    percentage the execute() summary print block below reports, so the
+    percentage the stage summary prints report (``execute()`` of the stage module and
+    the reporting helpers in this module), so the
     guarded formula is defined once instead of being repeated inline at
     each call site."""
     return 100.0 * count / total if total else 0.0

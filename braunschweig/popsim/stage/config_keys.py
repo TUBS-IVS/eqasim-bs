@@ -75,9 +75,8 @@ KEY_CLEANUP_H5 = "braunschweig.population.popsim.cleanup_batch_pipeline"
 KEY_KREISE = "braunschweig.political_prefix"
 # Donor source identifier: "mid" (default) or a future registered source name.
 KEY_SOURCE = "braunschweig.population.popsim.source"
-# RegioStaR donor stratification (Phase 4B). Default ON (project rule: new features
-# default on); set False for the byte-identical pre-4B path (full seed per batch,
-# still supported + unit-tested).
+# RegioStaR donor stratification. Default False (configure() in braunschweig.popsim.stage):
+# the full seed is used per batch. Set True to opt into the stratified path.
 KEY_STRATIFY = "braunschweig.population.popsim.stratify_regiostar"
 # Member completion (decision D3, mid source only): fill member-incomplete MiD
 # donor households by mirror-household sampling, in ONE pass on the attribute
@@ -101,7 +100,8 @@ KEY_CONTROL_TIERS = "braunschweig.population.popsim.control_tiers"
 KEY_KREIS_CONTROLS = "braunschweig.population.popsim.kreis_controls_dir"
 # Employment grid control (Task 5): when "on", activates the ten age-group x sex-resolved
 # 100m employment controls (EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg). The targets are
-# computed per cell from the Zensus 2000S-2001 employment-by-age SHAPE rescaled per
+# computed per cell from an employment-by-age SHAPE (source chosen by
+# KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE) rescaled per
 # Kreis x sex x group to the census Erwerbstaetige Kreis level
 # (braunschweig.popsim.employment_grid). Default "off" = byte-identical to today.
 KEY_EMPLOYMENT_GRID = "braunschweig.population.popsim.employment_grid"
@@ -206,16 +206,16 @@ KEY_EMPLOYMENT_STATUS_KREIS_CONTROL = "braunschweig.population.popsim.employment
 # work_participation x Kreis control (feature #224 task 4, third PERSON-level entry):
 # steers the per-Kreis distribution of the 0/1 has-a-work-trip flag (derived from each
 # person's MiD Wege via mid.compute_has_work_trip) to the committed SrV-2023
-# participation blended target. Default "on" (project rule: new features default on).
-# "off" drops its control + seed column (byte-identical for that attribute). MiD-only
+# participation blended target. Default per _KREIS_CONTROL_DEFAULT (work_by_employment
+# replaces it). "on" adds its control + seed column. MiD-only
 # (its seed derivation reads the MiD Wege table); ignored for source="entd".
 KEY_WORK_PARTICIPATION_CONTROL = "braunschweig.population.popsim.work_participation_kreis_control"
 # leisure_participation / education_participation x Kreis controls (feature #224 task 5,
 # fourth and fifth PERSON-level entries): identical wiring to work_participation, steering
 # the per-Kreis distribution of the 0/1 has-a-leisure-trip / has-an-education-trip flag
 # (mid.compute_has_purpose_trip, parametrized by purpose) to their respective committed
-# SrV-2023 participation targets. Default "on" (project rule: new features default on).
-# "off" drops the control + seed column (byte-identical for that attribute). MiD-only
+# SrV-2023 participation targets. Defaults per _KREIS_CONTROL_DEFAULT (education_by_age
+# replaces the education one). "off" drops the control + seed column. MiD-only
 # (seed derivation reads the MiD Wege table); ignored for source="entd".
 KEY_LEISURE_PARTICIPATION_CONTROL = "braunschweig.population.popsim.leisure_participation_kreis_control"
 KEY_EDUCATION_PARTICIPATION_CONTROL = "braunschweig.population.popsim.education_participation_kreis_control"

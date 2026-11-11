@@ -6,10 +6,10 @@ produced by the in-house IPF chain via ``braunschweig.ipf.attributed`` (aliased
 to ``data.census.filtered`` in the run configs); ``simple_ipf_open`` therefore
 resolves to that existing producer, preserving current behaviour exactly.
 
-The PopulationSim producers (``popsim_open`` / ``popsim_mid``) are introduced in
-later phases of the refactor. Until then, selecting them raises a clear
-``NotImplementedError`` -- the pipeline must NOT silently fall back to the IPF
-workflow (CLAUDE.md "Fallback transparency").
+The PopulationSim producers (``popsim_open`` / ``popsim_mid``) both resolve to
+``braunschweig.popsim.stage``. The pipeline must NOT silently fall back to the IPF
+workflow (CLAUDE.md "Fallback transparency"); ``PopulationMethodNotImplemented``
+remains for any recognised method without a producer.
 
 This module only *resolves* the producer name; wiring it into the synpp DAG
 (swapping the ``data.census.filtered`` alias by method) is a later phase.
@@ -58,7 +58,7 @@ def resolve_population_producer(method: str) -> str:
         If ``method`` is not a known method (defensive; callers should validate
         via ``braunschweig.population.config`` first).
     PopulationMethodNotImplemented
-        If ``method`` is a recognised PopulationSim method that is not wired yet.
+        If ``method`` is a recognised method that has no producer wired.
         Never falls back to the IPF producer.
     """
     if not is_valid_method(method):

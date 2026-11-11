@@ -20,8 +20,9 @@ from .activity_types import LEISURE_SUBTYPE_ACTIVITIES, OTHER_SUBTYPE_ACTIVITIES
 # genuinely distinct split retail potentials; the aggregate "shop" maps to the
 # summed pot_shop and is the only shop key on the OFF path. The leisure/other
 # subtypes (Task 4) map to the SAME aggregate potential as their parent purpose
-# -- there is no per-subtype building potential yet (a dedicated "pot_visit"
-# column is deferred to a later task).
+# -- there is no per-subtype building potential, except that ``leisure_visit``
+# can be rerouted onto the dedicated ``pot_visit`` column (VISIT_POTENTIAL_COLUMN, below)
+# when ``leisure_visit_building_potential`` is ON.
 _ACTIVITY_POTENTIAL_COLUMN = {
     "shop": "pot_shop",
     "shop_daily": "pot_shop_daily",
@@ -49,7 +50,7 @@ _ACTIVITY_POTENTIAL_COLUMN.update({
 # ``leisure_visit_building_potential`` is ON (Task 5, issue #127). Residential
 # candidates appended by ``append_residential_visit_candidates`` carry
 # ``offers_visit`` / ``pot_visit`` instead of the generic ``offers_leisure`` /
-# ``pot_leisure`` shared by the other three leisure groups, so a residential
+# ``pot_leisure`` shared by the other leisure subtypes, so a residential
 # building is a candidate for "leisure_visit" and NOTHING else. This dict
 # stays fixed (does not update ``_ACTIVITY_POTENTIAL_COLUMN``, which is the
 # OFF-path / default mapping tested by

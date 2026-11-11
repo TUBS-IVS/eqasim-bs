@@ -53,8 +53,8 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
     tiers: tuple of tier names to include when controls_source="catalog". Default
     ("tier0",) reproduces the pre-Task-7 baseline byte-identically.
 
-    employment_grid: when True (catalog source only), append the six age-group x
-    sex-resolved 100m employment controls (EMPLOYED_{M,F}_{young,prime,old}_agg) to the
+    employment_grid: when True (catalog source only), append the age-group x
+    sex-resolved 100m employment controls (EMPLOYED_{M,F}_{16_29,...,60plus}_agg) to the
     catalog. Default False = byte-identical to the pre-employment-grid catalog.
 
     ownership_grid: when True (catalog source only), append the nine ZENSUS1km car/bike

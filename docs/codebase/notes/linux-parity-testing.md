@@ -122,9 +122,8 @@ or compare with `check_dtype=False` and assert the dtype separately, in a
 platform-independent way, only where the dtype is genuinely load-bearing. A
 golden that silently encodes the author's platform is not a behaviour pin.
 
-The three tests named above were being removed, in a parallel change, at the
-time of writing, judged unsound for exactly this reason -- if you do not find
-them in the suite, that is why; do not assume they were never wired up. If a
+The three tests named above still exist in the suite (`tests/test_diary_facts.py`,
+`tests/test_commute_day_donor_pool.py`, `tests/test_day_absence.py`). If a
 Linux-only failure shows up in a test that still exists, the first check is to
 re-run the same node ids, unmodified, against an untouched `origin/main` before
 treating it as caused by your branch (see the next section).

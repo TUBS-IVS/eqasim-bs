@@ -74,7 +74,7 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
    conditioning is exactly `(mode, band)` — no mode reduction was needed.
    Thin `(mode, band)` cells fall back to the purpose's marginal category
    distribution; the fallback rate is counted and rate-logged PER PURPOSE
-   (`srv_location_marginal_fallback_leisure` / `_other`), not pooled — leisure
+   (`srv_location_marginal_fallback_<purpose>`, built per purpose by `srv_location_marginal_fallback_stat(purpose)`), not pooled — leisure
    legs outnumber `other` legs several times over, so a pooled rate would let
    a badly covered purpose hide behind a well-covered one. A per-purpose share
    >= 20% (heuristic, `SRV_LOCATION_MARGINAL_FALLBACK_WARN_SHARE`) escalates
@@ -173,7 +173,7 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
         addition to its in-area candidates, regardless of whether the
         category is locally thin.
      3. **The counted per-purpose marginal fallback of the A2 draw** (point 2
-        above, `srv_location_marginal_fallback_leisure` / `_other`) is a
+        above, the `srv_location_marginal_fallback_<purpose>` counters) is a
         different fallback: it degrades a thin `(mode, band)` CELL to the
         purpose's marginal CATEGORY distribution during the type DRAW, before
         any candidate lookup happens — not a candidate-universe fallback.

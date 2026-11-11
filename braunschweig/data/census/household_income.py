@@ -3,19 +3,17 @@ Household-income distribution for the Braunschweig region, derived from the
 MiD 2023 regional sample, Tabelle H4 'Ökonomischer
 Status des Haushalts' (Zeilengruppe Haushaltsgröße).
 
-This replaces bavaria/data/census/household_income.py which depends on
-bavaria/12211-101.xlsx — a GENESIS extract that we do not have for Lower
-Saxony. MiD H4 reports the BMDV-defined quintile status (needs-adjusted
-net equivalent income, OECD scale) crossed with household size, which
-matches exactly what bavaria/synthesis/population/enriched.py requires
-(it samples household_income per household_size).
+MiD H4 reports the BMDV-defined quintile status (needs-adjusted net
+equivalent income, OECD scale) crossed with household size; the enriched
+synthesis samples household_income per household_size from it.
 
-Schema compatibility: Bavaria emits the € classes of GENESIS 12211-101.
-Downstream code in enriched.py only uses income_class to set
-    high_income = (household_income == "5000+")
-so the mapping MiD-Status → Bavaria-€-Class only needs to be accurate at
-the top bracket. We use BMDV's defining thresholds for the mid-brackets
-as a best-effort approximation:
+The quintile status is labelled with the € class labels of the legacy GENESIS
+12211-101 vocabulary. Every class is consumed downstream: each label maps to
+its economic-status category (``economic_status.py ::
+_build_economic_status_by_income_class``) and to a € midpoint
+(``load_class_midpoint_eur``, used for ``household_income_eur`` and by
+``income_distribution.py :: _income_class_from_eur``). The label is a name for
+the BMDV quintile, with these defining thresholds:
 
     very_low    → "0-500"        (< 90% median equivalent net income)
     low         → "1500-2000"    (90-110%)
@@ -36,8 +34,8 @@ from braunschweig.data.mid.reference_tables import (
 )
 
 
-# Bavaria GENESIS €-class ↔ position in the H4 quintile vector.
-# Only the "5000+" mapping is consumed downstream (high_income flag).
+# € class label ↔ position in the H4 quintile vector. All five entries are
+# consumed downstream (economic-status mapping and class-midpoint lookup).
 INCOME_CLASS_MAP = [
     ("0-500",     0),   # sehr niedrig
     ("1500-2000", 1),   # niedrig

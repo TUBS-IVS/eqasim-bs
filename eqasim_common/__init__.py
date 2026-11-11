@@ -24,10 +24,8 @@ Conventions enforced inside this package
 * Public API stays small; prefer free functions over classes unless state
   is genuinely needed.
 
-This package was introduced in Phase 1 of the ``refactor/braunschweig-clean-fork``
-branch (see :doc:`/plan/refactor-eqasim-bs.md`).  It currently exposes no
-symbols at the top level; sub-packages are populated incrementally during
-Phase 2.
+This package exposes no symbols at the top level; use its sub-packages
+(``analysis``, ``data``, ``gravity``, ``locations``, ``spatial``).
 """
 
 from __future__ import annotations

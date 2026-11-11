@@ -10,7 +10,7 @@ DENOM  = the prepared cells' single-year {M,F}_AGE_<year> columns, summed to Kre
 The per-cell employed target binds employment at the 100m grid (where the final
 household weights are set) instead of only at KREIS, and respects each cell's age
 composition. It rescales per Kreis×sex×group to census_level × age_share, so the
-Zensus 2001 source is used only for the age SHAPE; the absolute LEVEL is census.
+age-shape source is used only for the age SHAPE; the absolute LEVEL is census.
 
 Produces 10 control columns: EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg.
 """
@@ -53,7 +53,7 @@ def select_load_columns(
 ):
     """Adjust the parquet load set for the employment-grid control.
 
-    The six employment-grid targets (``EMPLOYED_{M,F}_{young,prime,old}_agg``) are
+    The employment-grid targets (``EMPLOYED_{M,F}_{16_29,...,60plus}_agg``) are
     COMPUTED per cell by :func:`per_cell_employment_targets`; they are not stored in
     the prepared-cell parquet, so they must be removed from ``load_cols`` (loading
     them would raise / yield bogus columns). In their place the single-year
@@ -68,7 +68,7 @@ def select_load_columns(
     available_parquet_cols:
         The cleaned column names actually present in the parquet schema.
     computed_cols:
-        Set of computed target names to strip out (the 6 ``EMPLOYED_*_agg`` names).
+        Set of computed target names to strip out (the ``EMPLOYED_*_agg`` names).
     min_age, single_year_max:
         Inclusive single-year range whose ``{M,F}_AGE_<year>`` columns are added.
 

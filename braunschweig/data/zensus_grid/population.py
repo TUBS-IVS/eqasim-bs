@@ -11,7 +11,7 @@ metres.
 
 Output
 ------
-A ``geopandas.GeoDataFrame`` indexed by ``grid_id`` with columns:
+A ``geopandas.GeoDataFrame`` with a default RangeIndex and columns:
 
     - ``grid_id``      INSPIRE-style identifier ``CRS3035RES100mN{y}E{x}``
                        where the integers are SW-corner cell coordinates
@@ -21,7 +21,7 @@ A ``geopandas.GeoDataFrame`` indexed by ``grid_id`` with columns:
                        2022-05-15).
 
 The cells are filtered to the bounding box of the dissolved ZGB-8 union
-plus a small buffer (default 100 m) so that downstream stages can
+plus a small buffer (default 200 m, ``zensus_grid.bbox_buffer_m``) so that downstream stages can
 spatially join cells against Kreis polygons without losing edge cells.
 
 Configuration keys

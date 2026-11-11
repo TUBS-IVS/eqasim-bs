@@ -37,8 +37,9 @@ midpoints. The ENTD bands come from :mod:`data.hts.entd.cleaned`
 ``INCOME_CLASS_BOUNDS = [400, 600, 800, 1000, 1200, 1500, 1800, 2000, 2500, 3000,
 4000, 6000, 10000, 1e6]``. Midpoints are the arithmetic midpoint of each band;
 the open top band (>=10000, class 13) uses a conservative estimate of 12000.0 EUR.
-Class -1 (missing / not reported) has midpoint ``None`` and is treated as a
-structural fallback (scale=1.0 applied to 0.0 -> household_income_eur=0.0, logged).
+Class -1 (missing / not reported) has midpoint ``None``; ``apply_inkar_income_eur``
+keeps it as NaN in ``household_income_eur`` (no count is logged for it) and sets
+``high_income`` to False for those rows.
 """
 
 from __future__ import annotations
@@ -156,7 +157,8 @@ def apply_inkar_income_eur(
     Notes
     -----
     The rounding formula ``round(0)`` (round to nearest integer EUR) matches
-    the IPF path (enriched.py line 2689).
+    the IPF path (braunschweig/synthesis/population/enriched/income_distribution.py
+    :: _apply_inkar_income_scale).
     """
     out = persons.copy()
     n_total = len(out)
@@ -223,7 +225,7 @@ def apply_inkar_income_eur(
     # shields these rows from the tilt, and high_income uses .fillna(0.0) below so
     # those households are correctly classified False.  Do NOT fill NaN to 0.0 here.
     midpoint_float = pd.to_numeric(midpoint_series, errors="coerce").reindex(out.index)
-    # Round to nearest integer EUR (matches enriched.py line 2689).
+    # Round to nearest integer EUR (as in income_distribution.py :: _apply_inkar_income_scale).
     out["household_income_eur"] = (midpoint_float * scale).round(0)
 
     # --- Derive high_income from the numeric EUR value -----------------------

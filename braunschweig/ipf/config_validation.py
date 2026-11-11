@@ -1,6 +1,6 @@
 """Central validation of the household-realism / IPF feature-flag combination.
 
-The household-realism features (see CLAUDE.md, "IPF household synthesis") are
+The household-realism features of ``braunschweig.ipf.model`` are
 gated by several config flags with hard interdependencies. These were previously
 checked by guards scattered across ``braunschweig.ipf.model`` and
 ``braunschweig.ipf.attributed``. This module centralises them into one pure

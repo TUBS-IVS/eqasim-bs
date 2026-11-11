@@ -14,10 +14,11 @@ codebase (``braunschweig.data.bbsr.regiostar.regiostar2_label`` and
 ``synthesis.population.matched.URBAN_TYPE_TO_URBAN_CLASS``) to avoid duplicating
 the mapping logic.
 
-These helpers are PLUMBING only: Phase 4A carries the stratum key as an extra
-column on cells, the MiD seed households, and the ENTD donor households.
-Phase 4B will use them to stratify donor selection.  No synthesis behaviour
-is changed until Phase 4B.
+These helpers only map a source's urbanity indicator to the stratum label; the
+stratum key is carried as an extra column on cells, the MiD seed households, and the
+ENTD donor households. Donor selection is stratified by the callers
+(``braunschweig.popsim.mid.donor_stratification``, the ENTD adapter
+``braunschweig.popsim.sources.entd_donor``) when the stratify option is on.
 
 RegioStaR-2 split (BMVI/BBSR):
     Stadtregion (urban)  -- RS7 71, 72, 73, 74

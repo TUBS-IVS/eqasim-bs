@@ -10,12 +10,12 @@ mirrors the MVG stage's output schema (``GeoDataFrame[zone, geometry]``
 in EPSG:25832, 400 m buffered MultiPoint per zone) so the downstream
 Java consumer sees an identical input.
 
-The ``org.eqasim.bavaria.scenario.AddTransitZoneInformation`` Java class
-reference is intentionally retained per Decision D-1c: renaming the Java
-package to ``org.eqasim.braunschweig.*`` is out of scope for the Python
-refactor. The cached eqasim-java checkout still publishes the bavaria
-namespace; the class itself is region-neutral (point-in-polygon zone
-attribution against the supplied shapefile).
+The Java tools called from this module are
+``org.eqasim.braunschweig.scenario.AddTransitZoneInformation`` (region-neutral
+point-in-polygon zone attribution against the supplied shapefile),
+``org.eqasim.braunschweig.scenario.AddVrbTariffZoneInformation``,
+``org.eqasim.braunschweig.scenario.RunInjectFreight`` and the eqasim core cutter
+``org.eqasim.core.scenario.cutter.RunScenarioCutter`` (see ``eqasim.run`` calls below).
 """
 
 import datetime
@@ -718,7 +718,7 @@ def _cut_to_cordon(context):
     # The cutter loads the scenario relative to the config file's directory (the
     # stage path, the java cwd), so config-path / extent-path are given relative.
     # No --eqasim-configurator is passed: like every other prepare/run java call,
-    # the cutter falls back to the bavaria jar's default configurator (the cutter's
+    # the cutter falls back to the eqasim jar's default configurator (the cutter's
     # option is "eqasim-configurator", not "...-class", and is unnecessary here).
     arguments = [
         "--config-path", "%sconfig.xml" % prefix,

@@ -18,9 +18,9 @@ Output schema::
     hh_size    : str   "1" / "2" / "3" / "4" / "5" / "6+"
     weight     : float persons in that cell (suppressed cells = 0)
 
-Suppressed cells (``value_q == 'e'`` or ``value`` literal ``-`` / ``.``)
-are interpreted as zero — that is the official DESTATIS convention for
-disclosure-controlled cells in 1000A flat files.
+Cells whose ``value`` is non-numeric (literal ``-`` / ``.``) are interpreted
+as zero. Cells flagged ``value_q == 'e'`` keep their numeric value (see
+``_parse_value``).
 """
 
 from __future__ import annotations

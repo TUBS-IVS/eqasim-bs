@@ -100,7 +100,10 @@ The families:
   street free (E07) and just not free (E08), the street unavailable (E09) and the zone garage family superseded (E10),
   the early rules before the mixture (E11..E14), a campus (E15), decay 0 (E16), a 0 ct garage option (E17), a tiered, a
   banded, a first-period and a grace-period garage inside the mixture (E18..E23), the zone commuter product as street
-  option (E24), T1 (E25), L1 (E26) and a resident zone with garage options (E27, E28).
+  option (E24), T1 (E25), L1 (E26) and a resident zone with garage options (E27, E28). E29..E32 (spec Amendment E14) add
+  the free garage option ``fx_g17_free``: a free garage at 300 m and at 100 m lowering the expected street cost (E29, E30), a
+  free street stay that stays FREE_WITHIN_LIMIT (E31) and a street above the maximum stay with the free garage as the
+  only option (E32).
   Every expected number is hand-derived in the comment above its row and its
   unrounded expectation keeps at least ``ROUNDING_MARGIN_CENTS`` from a half cent (the generator asserts it), so that
   ``Math.exp`` of Java cannot flip a rounding.
@@ -121,7 +124,7 @@ The families:
   the full schedule one minute above it, no deduction (X03), a person who is no exemption holder (X04), the exemption clipped
   by the maximum stay (X05 exactly at the maximum, X06 above it and within the exemption), an exempt person with a garage in
   range (X07, E4) and above the limit (X08, a mixture), and a rule that expired before the snapshot date (X09).
-- O01..O44 (``GOLDEN_GARAGE_OPTION_CASES``, the key ``garage_option_cases`` of the JSON): the price of ONE garage option
+- O01 onwards (``GOLDEN_GARAGE_OPTION_CASES``, the cases of ``_O_CASE_ROWS``, the key ``garage_option_cases`` of the JSON): the price of ONE garage option
   without any mixture, pinning the three tariff structures (spec E10, E11, E12 and the amendments P6, P8, P9, P10) exactly:
   single window with a first period tied to a clock window, tiers (a stay across tier boundaries, a night stay, a unit that
   starts exactly at a boundary, times outside every tier, the day cap), a first period with its clock window, bands (the

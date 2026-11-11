@@ -5,8 +5,8 @@ on disk like the zone polygons, EPSG:25832 in memory) with its identity, the gar
 monthly product where one is published, the reported capacity and the provenance of every value. The dataset is built by
 the curation step ``scripts/curation/parking_zones_2026/regional_garages.py`` from the regional evidence package of
 2026-10-07 and read by the distance-weighted garage options of spec Amendment E (task 4d): the zone release stage
-(``braunschweig.parking.zones_stage``) loads and validates it, the tariff model export writes its priced garages (schema 3
-introduced them; the export is schema 4 now) and ``braunschweig.parking.cost.parking_cost_with_garages`` is the reference pricing.
+(``braunschweig.parking.zones_stage``) loads and validates it, the tariff model export writes its priced garages (since
+export schema 3; the current version is ``tariff_export.SCHEMA_VERSION``) and ``braunschweig.parking.cost.parking_cost_with_garages`` is the reference pricing.
 
 The garage tariff columns are those of the tariff table (``braunschweig.parking.zones.GARAGE_COLUMNS``, money in EUR,
 minutes as whole numbers, fee window in decimal hours of the weekday) and mean the same: the core (hourly rate, billing
@@ -564,7 +564,7 @@ def load_garages(path, *, allow_legacy_columns: bool = False) -> gpd.GeoDataFram
     ``DATASET_COLUMNS``. The dataset is NOT validated here; call :func:`validate_garages`. Logs the garages, how many are
     priced and how many rest on each assumption, as rates, so that a dataset in which most garages are not priced, or in
     which most prices rest on an assumption, is visible at every load. A file without a column of
-    ``LEGACY_OPTIONAL_COLUMNS`` (``monthly_imputed_eur``, written before spec Amendment F) raises ``LegacyColumnsError`` that names
+    ``LEGACY_OPTIONAL_COLUMNS`` (columns that older dataset files lack, see that constant) raises ``LegacyColumnsError`` that names
     the column and the curation command, unless ``allow_legacy_columns`` is True (the fixtures of the tests, which then get the
     column empty and a warning): a production dataset must never silently lack its imputed products.
     """
@@ -689,8 +689,8 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
     Dataset: not empty, EPSG:25832, exactly the columns ``DATASET_COLUMNS``, unique lower-case ASCII ``garage_id``.
     Position: a non-empty point with finite coordinates inside ``ZGB_EXTENT_25832``. Identity and provenance: the required
     text columns set, an 8-digit AGS of the ZGB counties, ``source_url`` and ``geometry_source_url`` http(s) URLs, an ISO
-    ``source_date``, one to three distinct hexadecimal SHA-256 values of the packages (the regional package, and the supplement
-    and follow-up packages where they touch the row, specs E12 and E13), ``notes`` set. Tariff (spec Amendment A6, rulings
+    ``source_date``, one to ``MAXIMUM_PACKAGE_HASHES`` distinct hexadecimal SHA-256 values of the packages (the regional package, and the
+    supplement and further packages where they touch the row, see ``MAXIMUM_PACKAGE_HASHES``), ``notes`` set. Tariff (spec Amendment A6, rulings
     R-4b-10b and R-4b-11): a garage is priced in exactly one form, the single-window core (hourly rate, billing unit, fee
     start, fee end; set completely or not at all), ``tariff_tiers`` (a text that :func:`parse_tariff_tiers` accepts, with the
     four core columns empty) or ``tariff_duration_bands`` (a text that :func:`parse_duration_bands` accepts, with the rate and the

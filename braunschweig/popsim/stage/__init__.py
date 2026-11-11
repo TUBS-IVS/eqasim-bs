@@ -22,7 +22,7 @@ popsimprep PopulationSim config.
 
 The active donor source is controlled by ``braunschweig.population.popsim.source``
 (default ``"mid"``). The default ``"mid"`` path is byte-identical to the pre-source
-implementation. Switching to ``"entd"`` (Phase 2) will route the seed build, donor
+implementation. Setting it to ``"entd"`` routes the seed build, donor
 loading, and attribute mapping through the ENTD adapter without changing the
 structural PopulationSim orchestration.
 
@@ -708,8 +708,8 @@ def configure(context):
     """Declare the popsim config keys.
 
     When the donor source is "entd" (popsim_open workflow), an additional
-    dependency on ``data.hts.selected`` is registered so synpp wires the
-    cleaned ENTD frames into the DAG.  For source="mid" (default) the stage
+    dependency on ``data.hts.entd.filtered`` is registered so synpp wires the
+    filtered ENTD frames into the DAG.  For source="mid" (default) the stage
     depends only on the local config paths and no HTS stage is needed.
 
     The INKAR per-Kreis income scale (``braunschweig.data.inkar.household_income``)
@@ -745,7 +745,7 @@ def configure(context):
     # Seeded attribute imputation in build_persons; declaring the key also makes
     # synpp invalidate the stage cache when the pipeline random_seed changes.
     context.config("random_seed")
-    # RegioStaR donor stratification (Phase 4B): default OFF (user decision 2026-07-09).
+    # RegioStaR donor stratification: default OFF.
     # The FULL donor pool is the core of the popsim_mid design: PopulationSim selects
     # suitable donor households by their mobility-relevant characteristics from the
     # ENTIRE national pool; restricting donors to the cell's RegioStaR class breaks
@@ -822,12 +822,12 @@ def configure(context):
     # is carried on the REGISTRY entry itself, not a separate config key.
     context.config(KEY_EMPLOYMENT_STATUS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["employment_status"])
     # work_participation (third PERSON-level KREIS control, feature #224 task 4). Default
-    # "on"; its committed SrV-2023 participation blended target lives under data_path
+    # per _KREIS_CONTROL_DEFAULT (work_by_employment replaces it); its committed SrV-2023 participation blended target lives under data_path
     # (declared below via the any()-gate). Seed derivation reads the MiD Wege table
     # (mid.load_mid_wege) at the two seed call sites, gated on this control being active.
     context.config(KEY_WORK_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["work_participation"])
     # leisure_participation / education_participation (fourth/fifth PERSON-level KREIS
-    # controls, feature #224 task 5). Default "on"; their committed SrV-2023
+    # controls, feature #224 task 5). Defaults per _KREIS_CONTROL_DEFAULT; their committed SrV-2023
     # participation blended targets live under data_path (declared below via the
     # any()-gate). Seed derivation reads the MiD Wege table (mid.load_mid_wege) at the
     # two seed call sites, gated on either control being active -- mirrors
@@ -1059,7 +1059,7 @@ def _read_batching_and_scope_config(context):
     """
     max_cells = int(context.config(KEY_MAX_CELLS))
     # The worker count is MEMORY-bound, not core-bound: each worker drives its own
-    # PopulationSim subprocess with a measured 25-30 GB peak, so a configured value
+    # PopulationSim subprocess with an assumed 25-30 GB peak (see configure()), so a configured value
     # is treated as a ceiling and clamped down when the machine cannot carry it.
     # The configured value itself is never rewritten -- that would change this
     # stage's hash and discard the shared popsim cache.
@@ -2044,7 +2044,7 @@ def _load_donor_tables(context, source, source_name: str, mid_dir, complete_memb
 
     For source="mid": MidSource.load_donor reads from mid_dir (byte-identical).
     For source="entd": EntdSource.load_donor receives the frames injected from
-    the data.hts.selected stage (no filesystem read).
+    the data.hts.entd.filtered stage (no filesystem read).
     Loaded here, directly above the placement_income reallocation, because that
     block needs the donor income + household size; it has no dependency on the
     cell-attribute join above (donor loading and the join are independent).

@@ -63,7 +63,7 @@ Trip selection filter (identical to the default stage):
     (home, work, education) are excluded. Trips between a primary and a secondary
     location (or two different secondary locations) are included. This matches the
     filter in synthesis/population/spatial/secondary/distance_distributions.py
-    lines 43-47 exactly.
+    :: execute (``primary_activities``) exactly.
 
 Activity purposes:
     purpose (following_purpose) is mapped from MiD W_ZWECK via
@@ -223,11 +223,12 @@ def validate(context):
 
 # Primary activity types — trips where BOTH ends are primary are excluded.
 # Matches the default stage exactly (synthesis/population/spatial/secondary/
-# distance_distributions.py, line 43).
+# distance_distributions.py :: execute, ``primary_activities``).
 PRIMARY_ACTIVITIES = frozenset(["home", "work", "education"])
 
 # Bin size: number of travel-time observations per quantile bin.
-# Must match the default stage (line 51: bin_size = 200).
+# Must match the default stage (synthesis/population/spatial/secondary/
+# distance_distributions.py :: execute, ``bin_size = 200``).
 BIN_SIZE = 200
 
 # MiD columns required to build the distributions.
@@ -845,7 +846,7 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
             keep_cols.append(opt_col)
     df = df[keep_cols].rename(columns={"W_GEW": "weight"})
 
-    # Replicate the default stage filter exactly (lines 43-47):
+    # Replicate the default stage filter exactly (see PRIMARY_ACTIVITIES):
     # exclude trips where BOTH ends are primary activities.
     is_primary_both = (
         df["preceding_purpose"].isin(PRIMARY_ACTIVITIES) &
