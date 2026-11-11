@@ -1,0 +1,6 @@
+fix  14:30:20 │ INFO    │ synpp            │ Executing stage braunschweig.popsim.completed_donor__e248a8f5452abef56cd29b98a147c164 ...
+fix  14:47:10 │ INFO    │ popsim.completed_donor │ [completed_donor] weekend_plan_match: WeekendMatchReport(n_weekend_households=62572, n_hh_matched=62572, n_person_fallback_households=0, n_persons_remapped=138777, hh_match_level_counts={0: 62239, 1: 295, 2: 32, 3: 6}, n_swept=0)
+fix  15:12:29 │ INFO    │ synpp            │ Finished running braunschweig.popsim.completed_donor__e248a8f5452abef56cd29b98a147c164.
+base 15:12:44 │ INFO    │ synpp            │ Executing stage braunschweig.popsim.completed_donor__e248a8f5452abef56cd29b98a147c164 ...
+base 15:34:28 │ INFO    │ popsim.completed_donor │ [completed_donor] weekend_plan_match: WeekendMatchReport(n_weekend_households=62572, n_hh_matched=62572, n_person_fallback_households=0, n_persons_remapped=138777, hh_match_level_counts={0: 62239, 1: 295, 2: 32, 3: 6}, n_swept=0)
+base 16:08:36 │ INFO    │ synpp            │ Finished running braunschweig.popsim.completed_donor__e248a8f5452abef56cd29b98a147c164.

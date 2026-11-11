@@ -63,7 +63,12 @@ validation:
     every W_ZWECK code in the donor data is explicitly mapped and nothing reaches the
     fallback. The purpose SHARES are not yet measured against a reference. Owed: an A/B varying THIS flag alone (ADR-0088
     and ADR-0089 change the same population in the same release) with the realised trip-purpose
-    mix re-measured and recorded in a run manifest.'
+    mix re-measured and recorded in a run manifest. Until the 2026-11 repository audit (item B6)
+    the flag-off arm was dead: build_trip_table and the distance-distribution stage never passed
+    the flag on, so an A/B run before that fix compared the flag-on population with itself. Since
+    then trips_stage.configure refuses the flag-off arm: the passive escort pairing, the
+    other-subtype decider and the leisure participation seed still map 14/15/16 to leisure, so
+    the A/B first needs those three to read the flag.'
 assessment:
   status: pending
   by: null

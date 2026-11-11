@@ -10,7 +10,6 @@ lineage:
   notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
     per workflow (see resolves_to).
 code:
-- synthesis/population/spatial/commute_distance.py
 - braunschweig/popsim/commute_distance.py
 - braunschweig/synthesis/spatial/commute_distance.py
 pipelines:

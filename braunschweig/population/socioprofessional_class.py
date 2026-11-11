@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 # eqasim/INSEE CS1 socioprofessional-class codes (see
-# eqasim_common.analysis.marginals.SOCIOPROFESIONAL_CLASS_LABELS):
+# upstream eqasim analysis marginals (removed from this repository; see git history)):
 #   0 ??? 1 Agriculture 2 Independent 3 Science 4 Intermediate
 #   5 Employee 6 Worker 7 Retired 8 Other (incl. students/children)
 SPC_INDEPENDENT = 2

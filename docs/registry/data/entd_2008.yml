@@ -14,7 +14,7 @@ acquisition:
   source: https://www.statistiques.developpement-durable.gouv.fr/enquete-nationale-transports-et-deplacements-entd-2008
   script: null
 storage:
-  expected_path: eqasim-data/data/entd_2008/{Q_individu,Q_tcm_individu,Q_menage,Q_tcm_menage_0,K_deploc,Q_ind_lieu_teg}.csv
+  expected_path: eqasim-data/data/entd_2008/{Q_individu,Q_tcm_individu,Q_menage,Q_tcm_menage_0,K_deploc}.csv
   committed: false
   local_only: true
 verification:
@@ -22,7 +22,7 @@ verification:
 requirements:
   synthesis: required
   matsim: not_needed
-  production: required
+  production: not_needed
 licensing:
   license: INSEE/SDES open data
   restricted: false

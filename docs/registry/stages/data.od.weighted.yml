@@ -10,7 +10,6 @@ lineage:
   notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
     per workflow (see resolves_to).
 code:
-- data/od/weighted.py
 - braunschweig/gravity/model.py
 - braunschweig/gravity/base.py
 - braunschweig/gravity/attraction_vector.py

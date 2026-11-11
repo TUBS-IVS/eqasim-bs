@@ -10,7 +10,6 @@ lineage:
   notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
     per workflow (see resolves_to).
 code:
-- data/census/filtered.py
 - braunschweig/ipf/attributed.py
 - braunschweig/popsim/stage/
 - braunschweig/popsim/ownership_grid.py

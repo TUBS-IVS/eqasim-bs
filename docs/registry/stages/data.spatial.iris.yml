@@ -9,7 +9,6 @@ lineage:
   notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
     per workflow (see resolves_to).
 code:
-- data/spatial/iris.py
 - eqasim_common/data/spatial/iris.py
 pipelines:
   popsim_mid: active

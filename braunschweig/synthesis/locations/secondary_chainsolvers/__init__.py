@@ -383,7 +383,6 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.weekend_plan_match",
     "braunschweig.population.methods",
     "braunschweig.population.socioprofessional_class",
-    "data.hts.egt.cleaned",
     "data.hts.entd.cleaned",
     "data.hts.hts",
     "synthesis.population.matched",
@@ -1136,6 +1135,23 @@ def _log_subtype_draw_rates(context, subtype_stats, desired_by_category, *,
             f"distance-layer fallback to aggregate 'other' "
             f"{n_dist_fb:,}/{n_other_legs:,} "
             f"({_rate_pct(n_dist_fb, n_other_legs):.1f}%)"
+        )
+    # Marginal-fallback rate of the MiD subtype deciders (audit B1): a leg whose (mode,
+    # tt_band) cell has no estimate of its own draws from the marginal. Read with getattr,
+    # because test doubles are plain callables without the counters of _CountedDecider.
+    for purpose, decider in (("shop", shop_subtype_decider),
+                             ("leisure", leisure_subtype_decider),
+                             ("other", other_subtype_decider)):
+        n_legs = getattr(decider, "n_legs", None)
+        if n_legs is None:
+            continue
+        n_marginal = decider.n_marginal_fallback
+        share = (n_marginal / n_legs) if n_legs else 0.0
+        prefix = "WARNING: " if share >= SRV_LOCATION_MARGINAL_FALLBACK_WARN_SHARE else ""
+        print(
+            f"[braunschweig.secondary_chainsolvers] {prefix}{purpose} subtype marginal "
+            f"fallback (no (mode, tt_band) cell estimated) {n_marginal:,}/{n_legs:,} "
+            f"({share * 100.0:.1f}%)"
         )
     if escort_location_decider is not None:
         n_by_type = {name: subtype_stats[name] for name in ESCORT_LOCATION_ACTIVITIES}

@@ -383,18 +383,23 @@ def test_configure_declares_escort_keys_with_documented_defaults():
 
 
 # --- escort distance-by-type (A3): factor map builder -------------------------
-def test_distance_factor_defaults_match_pinned_csv():
+@pytest.mark.parametrize("csv_name, column, defaults_name, tolerance", [
+    ("srv2023_escort_distance_factors.csv", "factor_applied", "DEFAULT_ESCORT_DISTANCE_FACTORS", 1e-9),
+    # The draw weights are rounded to 4 decimals (largest remainder, so they sum to 1).
+    ("srv2023_escort_destination_types.csv", "weight_share", "DEFAULT_ESCORT_LOCATIONS_WEIGHTS", 1e-4),
+])
+def test_escort_defaults_match_pinned_csv(csv_name, column, defaults_name, tolerance):
+    # A regenerated SrV table must never leave the code defaults stale.
     import csv, pathlib
     csv_path = pathlib.Path(__file__).resolve().parents[1] / "eqasim-data" / "data" \
-        / "braunschweig" / "srv" / "srv2023_escort_distance_factors.csv"
+        / "braunschweig" / "srv" / csv_name
     with open(csv_path, encoding="utf-8") as handle:
         rows = [r for r in csv.DictReader(
             line for line in handle if not line.startswith("#"))]
-    pinned = {r["category"]: float(r["factor_applied"]) for r in rows}
+    pinned = {r["category"]: float(r[column]) for r in rows}
     assert list(pinned) and set(pinned) == set(sc.DEFAULT_ESCORT_LOCATIONS_ACTIVITIES)
-    for category, factor in zip(sc.DEFAULT_ESCORT_LOCATIONS_ACTIVITIES,
-                                sc.DEFAULT_ESCORT_DISTANCE_FACTORS):
-        assert factor == pytest.approx(pinned[category], abs=1e-9)
+    for category, value in zip(sc.DEFAULT_ESCORT_LOCATIONS_ACTIVITIES, getattr(sc, defaults_name)):
+        assert value == pytest.approx(pinned[category], abs=tolerance)
 
 
 def test_factor_map_off_returns_none():
@@ -542,6 +547,18 @@ def test_flag_off_path_has_no_type_counter_and_uses_escort_layer():
     )
     assert "escort_type_distance_layer_fallback" not in stats
     assert stats["escort_distance_layer_fallback"] == 0
+
+
+def test_base_bs_config_escort_draw_matches_code_defaults():
+    # Production reads these keys from base_bs.yml, which overrides the code defaults that
+    # test_escort_defaults_match_pinned_csv pins to the SrV table; a regenerated table
+    # must not leave this copy stale either.
+    import pathlib, yaml
+    base = pathlib.Path(__file__).resolve().parents[1] / "configs" / "base_bs.yml"
+    with open(base, encoding="utf-8") as handle:
+        doc = yaml.safe_load(handle)
+    assert doc["config"]["escort_locations_activities"] == sc.DEFAULT_ESCORT_LOCATIONS_ACTIVITIES
+    assert doc["config"]["escort_locations_weights"] == sc.DEFAULT_ESCORT_LOCATIONS_WEIGHTS
 
 
 def test_base_bs_config_enables_distance_by_type():

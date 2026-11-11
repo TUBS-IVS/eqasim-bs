@@ -34,6 +34,9 @@
   `eqasim-data/data/braunschweig/srv/`), generated 2026-08-11 by
   `scripts/derive_escort_location_weights.py` from `SrV2023_Wege.csv` (GEWICHT_W-weighted,
   GIS coverage 82.45 % of valid-BHOL escort legs, n_valid=2602) and `MiD2023_Wege.csv`.
+  Note (2026-11-11): these figures are from that 2026-08-11 header. The table was regenerated
+  with `GEWICHT_W_ZENSUS` per ADR-0055 on 2026-11-11 (data registry
+  `srv2023_reference_tables`); the gate still passes, and the current figures are in its header.
 - **Consequences:** per-type distance layers are synthesized inside the chainsolver
   stage at runtime (no upstream cache invalidation -- the shared `distance_distributions`
   stage is untouched). Thin categories `edu_university` (n=11) and `shop` (n=13)

@@ -106,5 +106,18 @@ def test_population_gravity_splits_kreis_across_gates():
     by_gate = out.groupby("gate_id")["inbound"].sum()
     assert set(by_gate.index) == {"gate_0000", "gate_0001"}        # split across both
     assert by_gate["gate_0000"] > by_gate["gate_0001"] > 0          # high-cap gate larger
-    assert abs(int(out["inbound"].sum()) - 1000) <= 2              # volume conserved
-    assert abs(int(out["outbound"].sum()) - 500) <= 2
+    assert int(out["inbound"].sum()) == 1000                      # volume conserved
+    assert int(out["outbound"].sum()) == 500
+
+def test_small_kreis_volume_is_not_lost_to_per_cell_rounding():
+    # One Kreis, 8 equidistant equal gates, inbound 3: every cell is 0.375 and used to round to 0,
+    # so the Kreis vanished. The volume must be apportioned over the gates and keep its total.
+    gemeinden = gpd.GeoDataFrame(
+        {"ars5": ["03241"], "ewz": [1000]}, geometry=[Point(0, 0)], crs="EPSG:25832")
+    gates = gpd.GeoDataFrame(
+        {"gate_id": [f"gate_{i:04d}" for i in range(8)], "capacity": [1000.0] * 8},
+        geometry=[Point(10000, 0)] * 8, crs="EPSG:25832")
+    kreis_volume = pd.DataFrame([("03241", 3, 0)], columns=["ars5", "inbound", "outbound"])
+    out = population_gravity_gate_assignment(gemeinden, gates, kreis_volume)
+    assert int(out["inbound"].sum()) == 3
+    assert (out["ars5"] == "03241").any()

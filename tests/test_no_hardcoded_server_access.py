@@ -1,9 +1,9 @@
 """Tests for scripts/check_no_secrets.py and the deploy-script address lint.
 
 Defects caught: a server address, an SSH login target, a URL with an embedded password or
-a private key reaching a commit of this PUBLIC repository (found on 2026-11-11 in the
-deploy scripts and the inherited ``docs/verify_data.py``); a scanner rule that silently
-matches nothing; an installed pre-commit hook that does not actually refuse the commit.
+a private key reaching a commit of this public repository, including as a default in the
+deploy scripts; a scanner rule that silently matches nothing; an installed pre-commit hook
+that does not actually refuse the commit.
 
 The offending idioms below are synthetic. Their lines carry the scanner's allow marker,
 because this file is itself scanned when it is committed.
@@ -106,7 +106,7 @@ def test_deploy_and_verification_scripts_carry_no_server_access() -> None:
     scripts = sorted((REPO_ROOT / "scripts").glob("*.ps1"))
     assert scripts, "no PowerShell deploy scripts found; the scan would be vacuous"
     offenders = []
-    for path in [*scripts, REPO_ROOT / "docs" / "verify_data.py", REPO_ROOT / "scripts" / "verify_data.py"]:
+    for path in [*scripts, REPO_ROOT / "docs" / "verify_data.py"]:
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             rules = _rules(line)
             if path.suffix == ".ps1" and LITERAL_SERVER_DEFAULT.search(line):

@@ -2,7 +2,7 @@
 attribute from (employed, age, studies) instead of the hardcoded constant 0.
 
 The SPC code space is the eqasim/INSEE CS1 partition used by the analysis
-marginals (``eqasim_common.analysis.marginals.SOCIOPROFESIONAL_CLASS_LABELS``):
+marginals (upstream eqasim analysis marginals, removed from this repository; see git history):
 
     0 ???  1 Agriculture  2 Independent  3 Science  4 Intermediate
     5 Employee  6 Worker  7 Retired  8 Other (incl. students/children)

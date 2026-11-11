@@ -118,8 +118,8 @@ class AngularTailSolver(RelaxationSolver):
 
 class GravityChainSolver:
     def __init__(self, random, alpha = 0.3, eps = 1.0, maximum_iterations = 1000, lateral_deviation = None):
-        self.alpha = 0.3
-        self.eps = 1e-2
+        self.alpha = alpha
+        self.eps = eps
         self.maximum_iterations = maximum_iterations
         self.random = random
         self.lateral_deviation = lateral_deviation
@@ -212,9 +212,12 @@ class GravityChainSolver:
                 valid = False, locations = locations[1:-1], iterations = None
             )
 
-        # Add lateral devations
+        # Add lateral devations, uniform in [-lateral_deviation, lateral_deviation) around the
+        # origin-destination line. The "- 0.5" centring requires a uniform [0, 1) draw; the
+        # inherited normal draw shifted every start point by -lateral_deviation, so most chains
+        # bent to the same side (audit 2026-11-11, U1-F2; tests/test_rda_lateral_jitter.py).
         lateral_deviation = self.lateral_deviation if not self.lateral_deviation is None else max(direct_distance, 1.0)
-        locations[1:-1] += normal * 2.0 * (self.random.normal(size = len(distances) - 1)[:, np.newaxis] - 0.5) * lateral_deviation
+        locations[1:-1] += normal * 2.0 * (self.random.random_sample(size = len(distances) - 1)[:, np.newaxis] - 0.5) * lateral_deviation
 
         # Prepare gravity simulation
         valid = False

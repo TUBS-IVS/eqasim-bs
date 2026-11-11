@@ -195,3 +195,13 @@ def test_the_popsim_stage_agrees_on_the_seed_day_and_weekend_match_defaults():
         assert stage_declared[key] == donor_declared[key], (
             f"popsim.stage declares {key} with {stage_declared[key]!r}, completed_donor "
             f"with {donor_declared[key]!r}")
+
+
+def test_the_distance_stage_declares_the_round_trip_purpose_flag():
+    """Audit B6: the distance layers map W_ZWECK 14/15/16 like the plan does only if the
+    stage reads the flag; it used to leave it out and always build the ON arm."""
+    from braunschweig.synthesis.commute_day import home_office_donors_stage as donors
+
+    declared = _declared(_trip_flag_stages()["distance_distributions"])
+    assert declared.get(donors.KEY_EXPLICIT_ROUND_TRIP_PURPOSES, "missing") == \
+        donors.DEFAULT_EXPLICIT_ROUND_TRIP_PURPOSES
