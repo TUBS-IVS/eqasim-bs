@@ -874,9 +874,11 @@ def assign_homes_typed(
             if sum(whg.values()) <= 0:
                 n_whg_zero += len(grp)
         typed = bt.assign_building_types(fps[["building_id", "area_m2", "height_m"]], geb, rng)
-        if s is not None and bt.slot_apportionment(typed, whg, max(occ, len(grp))).reapportioned:
+        apportionment = bt.slot_apportionment(typed, whg, max(occ, len(grp)))
+        if s is not None and apportionment.reapportioned:
             n_reapportioned += len(grp)
-        slots = slots_builder(typed, whg, max(occ, len(grp)), size_hist, rng)
+        slots = slots_builder(typed, whg, max(occ, len(grp)), size_hist, rng,
+                              apportionment=apportionment)
         cell_hh = grp[[household_id_col, "btype", "household_size"]].rename(
             columns={household_id_col: "household_id"})
         amap, rep = matcher(cell_hh, slots, rng)

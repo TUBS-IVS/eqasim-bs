@@ -126,10 +126,17 @@ def slot_apportionment(typed, whg_by_type, occupied) -> SlotApportionment:
                              dwellings_zero=tot_whg <= 0)
 
 
-def build_slots(typed, whg_by_type, occupied, size_hist, rng):
+def build_slots(typed, whg_by_type, occupied, size_hist, rng, apportionment=None):
+    """Capacitated dwelling slots of one cell.
+
+    ``apportionment`` is the cell's :func:`slot_apportionment`; pass it when the caller
+    already computed it (same ``typed``/``whg_by_type``/``occupied``), else it is computed here.
+    """
     rows = []
     CLASSES = SLOT_CLASSES
-    type_n = dict(zip(CLASSES, slot_apportionment(typed, whg_by_type, occupied).type_slots))
+    if apportionment is None:
+        apportionment = slot_apportionment(typed, whg_by_type, occupied)
+    type_n = dict(zip(CLASSES, apportionment.type_slots))
     for cls in CLASSES:
         n = type_n[cls]
         b = typed[typed["btype"] == cls]
@@ -165,14 +172,16 @@ def build_slots(typed, whg_by_type, occupied, size_hist, rng):
     return slots[["slot_id", "building_id", "btype", "size"]]
 
 
-def build_slots_arrays(typed, whg_by_type, occupied, size_hist, rng):
+def build_slots_arrays(typed, whg_by_type, occupied, size_hist, rng, apportionment=None):
     """Array-backed equivalent of :func:`build_slots` for the default-ON path.
 
     It preserves the three-class Hamilton allocation (:func:`slot_apportionment`) and slot order exactly while
     avoiding a DataFrame filter and sort for every building class.
     """
     classes = SLOT_CLASSES
-    type_slots = slot_apportionment(typed, whg_by_type, occupied).type_slots
+    if apportionment is None:
+        apportionment = slot_apportionment(typed, whg_by_type, occupied)
+    type_slots = apportionment.type_slots
     building_types = typed["btype"].to_numpy(dtype=object)
     positions_by_type = {kind: np.flatnonzero(building_types == kind) for kind in classes}
 
