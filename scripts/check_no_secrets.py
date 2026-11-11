@@ -44,8 +44,10 @@ HOOK_SOURCE = Path(__file__).resolve().parent / "git-hooks" / "pre-commit"
 HOOK_SIGNATURE = "eqasim-bs secret scan"
 
 _PASSWORD_URL = re.compile(r"[a-z][a-z0-9+.-]*://[^/\s:@\"']+:[^/\s@\"']+@", re.IGNORECASE)
-_PRIVATE_KEY = re.compile(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----")
-_IPV4 = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
+_PRIVATE_KEY = re.compile(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----")  # " BLOCK": OpenPGP
+# Exactly four dot-separated groups. A dot directly after the quad is allowed when no digit
+# follows it, so an address that ends a sentence is still seen.
+_IPV4 = re.compile(r"(?<!\d)(?<!\d\.)(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)")
 _SSH_COMMAND = re.compile(r"\b(?:ssh|scp|sftp|rsync)\b", re.IGNORECASE)
 _LOGIN_TARGET = re.compile(r"(?<![\w.$-])([A-Za-z_][\w.-]*)@[A-Za-z0-9][\w.-]*")
 
@@ -56,13 +58,16 @@ class Finding(NamedTuple):
     line_number: int = 0
 
 
-# A four-part version number (JDK "25.0.4.1", kernel "5.15.153.1") parses as a public
+# A four-part version number (JDK 25.0.4.1, kernel Linux-5.15.153.1) parses as a public
 # address. It is recognised by what surrounds it: glued to a name ("jdk-25.0.4.101-hotspot",
-# "Temurin-25.0.4.1+1") or announced by a version word shortly before it. Measured on the
-# tracked tree of 2026-11-11: all 37 dotted quads in docs/runs/ are such version numbers.
+# "Temurin-25.0.4.1+1") or directly announced by a version word ("JDK 25.0.4.1",
+# 'version "25.0.4.1"', "(build 25.0.4.1"). Nothing may stand between the word and the
+# number except one separator and a quote: "the build server <address>" is not exempt.
+# Measured on the tracked tree of 2026-11-11: 36 of the 37 dotted quads in docs/runs/ are
+# recognised this way; the one left starts a wrapped line and would need the allow marker.
 _VERSION_GLUE_BEFORE = re.compile(r"[A-Za-z_-]$")
 _VERSION_GLUE_AFTER = re.compile(r"^[A-Za-z_+-]")
-_VERSION_WORD_BEFORE = re.compile(r"\b(?:jdk|jre|java|temurin|version|build|kernel|linux)\b[^,;]{0,12}$", re.IGNORECASE)
+_VERSION_WORD_BEFORE = re.compile(r"\b(?:jdk|jre|java|temurin|version|build)[:=]?\s?[\"']?v?$", re.IGNORECASE)
 
 
 def _is_version_number(line: str, start: int, end: int) -> bool:
@@ -121,17 +126,29 @@ _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)")
 
 
 def scan_diff(diff_text: str) -> list:
-    """Findings on the added lines of a unified diff produced with ``-U0``."""
-    findings, path, line_number = [], None, 0
+    """Findings on the added lines of a unified diff produced with ``_DIFF_OPTIONS``.
+
+    A file's header lines end at its first hunk, so an added content line that itself
+    starts with "++ " is content, not a header. A hunk without a recognised ``+++ b/<path>``
+    header raises: scanning nothing must never look like a clean change.
+    """
+    findings, path, line_number, in_header = [], None, 0, True
     for line in diff_text.splitlines():
-        if line.startswith("+++ "):
-            path = line[6:] if line.startswith("+++ b/") else None  # "+++ /dev/null": a deletion
+        if line.startswith("diff --git "):
+            path, in_header = None, True
             continue
         hunk = _HUNK.match(line)
         if hunk:
-            line_number = int(hunk.group(1))
+            if path is None:
+                raise RuntimeError("the diff has a hunk without a recognised '+++ b/<path>' file header; "
+                                   "the change cannot be scanned")
+            line_number, in_header = int(hunk.group(1)), False
             continue
-        if path is None or not line.startswith("+"):
+        if in_header:
+            if line.startswith("+++ b/"):
+                path = line[6:]
+            continue
+        if not line.startswith("+"):
             continue
         if not _is_excluded(path):
             findings.extend(Finding(f.rule, path, line_number) for f in scan_line(line[1:]))
@@ -139,13 +156,19 @@ def scan_diff(diff_text: str) -> list:
     return findings
 
 
+# Fixed prefixes and no external diff or textconv driver: the output must not depend on the
+# user's git configuration (diff.mnemonicPrefix and diff.noprefix rename the prefixes).
+_DIFF_OPTIONS = ("-U0", "--no-color", "--no-renames", "--diff-filter=AM", "--src-prefix=a/", "--dst-prefix=b/",
+                 "--no-ext-diff", "--no-textconv")
+
+
 def scan_staged(repo: Path) -> list:
-    return scan_diff(_git(repo, "diff", "--cached", "-U0", "--no-color", "--no-renames", "--diff-filter=AM"))
+    return scan_diff(_git(repo, "diff", "--cached", *_DIFF_OPTIONS))
 
 
 def scan_range(repo: Path, base: str, head: str = "HEAD") -> list:
     merge_base = _git(repo, "merge-base", base, head).strip()
-    return scan_diff(_git(repo, "diff", "-U0", "--no-color", "--no-renames", "--diff-filter=AM", merge_base, head))
+    return scan_diff(_git(repo, "diff", *_DIFF_OPTIONS, merge_base, head))
 
 
 def scan_tree(repo: Path) -> list:
