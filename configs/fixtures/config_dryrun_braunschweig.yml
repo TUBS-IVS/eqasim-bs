@@ -46,7 +46,6 @@ config:
   education_building_distribution: false
 
   hts: entd
-  use_urban_type: false
 
   # Region scope: ZGB-8 Kreise.
   braunschweig.political_prefix:
