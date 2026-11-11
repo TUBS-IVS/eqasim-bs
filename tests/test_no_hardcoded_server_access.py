@@ -1,9 +1,9 @@
 """Tests for scripts/check_no_secrets.py and the deploy-script address lint.
 
 Defects caught: a server address, an SSH login target, a URL with an embedded password or
-a private key reaching a commit of this PUBLIC repository (found on 2026-11-11 in the
-deploy scripts and the inherited ``docs/verify_data.py``); a scanner rule that silently
-matches nothing; an installed pre-commit hook that does not actually refuse the commit.
+a private key reaching a commit of this public repository, including as a default in the
+deploy scripts; a scanner rule that silently matches nothing; an installed pre-commit hook
+that does not actually refuse the commit.
 
 The offending idioms below are synthetic. Their lines carry the scanner's allow marker,
 because this file is itself scanned when it is committed.
