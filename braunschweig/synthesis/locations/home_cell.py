@@ -61,6 +61,9 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import Point, box as _shapely_box
 
+from braunschweig import synpp_tokens
+from braunschweig.popsim import cells as _cells
+from braunschweig.popsim import prepared_cells as _prepared_cells
 from braunschweig.popsim.cells import parse_inspire_id as _parse_inspire_id
 from braunschweig.popsim.prepared_cells import clean_col_name, load_prepared_cells
 from braunschweig.synthesis.locations import building_typing as bt
@@ -113,6 +116,15 @@ RANDOM_SEED_OFFSET = 91207
 # enough to materially skew the housing-type mix, so it is escalated to a
 # warning rather than passing through the info-level summary log unnoticed.
 BTYPE_DEFAULT_WARN_RATE = 0.10
+
+# Share of households placed through a census-signal fallback of
+# :func:`assign_homes_typed` (cell missing from the signal table, no census building
+# counts, no census dwelling counts, or slot share redistributed because a census
+# class with dwellings had no footprint). Above this rate per fallback the primary
+# census-calibrated method is not doing the work and a warning is logged.
+# ASSUMPTION: 10 % mirrors BTYPE_DEFAULT_WARN_RATE; it is a monitoring threshold,
+# not a validated limit.
+FALLBACK_WARN_RATE = 0.10
 
 # Upper area cap (m^2) applied ONLY in the legacy area-weighted draw.
 # The shared buildings stage is now uncapped so the typed path can use large
@@ -501,6 +513,22 @@ class TypedHomeReport:
     n_overcapacity: int
     n_btype_defaulted: int
     btype_default_rate: float
+    n_signal_missing_hh: int = 0
+    signal_missing_rate: float = 0.0
+    n_geb_counts_zero_hh: int = 0
+    geb_counts_zero_rate: float = 0.0
+    n_whg_counts_zero_hh: int = 0
+    whg_counts_zero_rate: float = 0.0
+    n_slot_reapportioned_hh: int = 0
+    slot_reapportioned_rate: float = 0.0
+    # Fallback households (in-cell only; ``*_rate`` = count / n_households):
+    #   n_signal_missing_hh      cell absent from the signal table (no census signal at all).
+    #   n_geb_counts_zero_hh     signal present but all census building counts zero, so the
+    #                            footprints are typed by LoD2 height only (or all efh_zfh).
+    #   n_whg_counts_zero_hh     signal present but all census dwelling counts zero, so the
+    #                            slot shares come from the typed footprint counts.
+    #   n_slot_reapportioned_hh  a census class with dwellings had no typed footprint, so its
+    #                            slots were redistributed over the classes that have one.
 
 
 def _batch_home_points_for_cells(
@@ -594,6 +622,16 @@ def assign_homes_typed(
         buildings["height_m"] = float("nan")
     cent3035 = buildings.geometry.to_crs(ZENSUS_CRS)
     buildings["_cell_id"] = [building_cell_id(north_m=g.y, east_m=g.x) for g in cent3035]
+
+    # A NaN cell id would be dropped silently by ``groupby`` below (the household would
+    # vanish from the output), so fail loudly instead.
+    _nan_cell = households[cell_col].isna()
+    if _nan_cell.any():
+        raise ValueError(
+            f"[home_typed] {int(_nan_cell.sum())} household(s) have a missing '{cell_col}' "
+            f"(NaN); they would be dropped from the output. Example household ids: "
+            f"{households.loc[_nan_cell, household_id_col].head(5).tolist()}."
+        )
 
     # Sanity-check: household ZENSUS100m ids must use the INSPIRE 100 m format.
     # A mismatch here almost certainly means a wrong CRS or misjoined column,
@@ -784,6 +822,7 @@ def assign_homes_typed(
 
     n_match = n_zero = n_over = n_in_cell = n_neighbour = 0
     n_zero_building_random = n_empty_slots_random = n_neighbour_rng_discarded = 0
+    n_signal_missing = n_geb_zero = n_whg_zero = n_reapportioned = 0
     for cell_id, grp in hh.groupby(cell_col, sort=False):
         fps = fps_by_cell_df.get(str(cell_id))
         if fps is None or len(fps) == 0:
@@ -825,7 +864,18 @@ def assign_homes_typed(
                for c in cbs.THREE_CLASSES}
         occ = float(s["occupied"]) if s is not None else float(len(grp))
         size_hist = s["size_hist"] if s is not None else []
+        # Fallback instrumentation (CLAUDE.md "no silent fallbacks"): count households
+        # whose cell is NOT served by the full census signal.
+        if s is None:
+            n_signal_missing += len(grp)
+        else:
+            if sum(geb.values()) <= 0:
+                n_geb_zero += len(grp)
+            if sum(whg.values()) <= 0:
+                n_whg_zero += len(grp)
         typed = bt.assign_building_types(fps[["building_id", "area_m2", "height_m"]], geb, rng)
+        if s is not None and bt.slot_apportionment(typed, whg, max(occ, len(grp))).reapportioned:
+            n_reapportioned += len(grp)
         slots = slots_builder(typed, whg, max(occ, len(grp)), size_hist, rng)
         cell_hh = grp[[household_id_col, "btype", "household_size"]].rename(
             columns={household_id_col: "household_id"})
@@ -863,6 +913,31 @@ def assign_homes_typed(
         n_overcapacity=n_over,
         n_btype_defaulted=n_btype_defaulted,
         btype_default_rate=btype_default_rate,
+        n_signal_missing_hh=n_signal_missing,
+        signal_missing_rate=(n_signal_missing / n if n else 0.0),
+        n_geb_counts_zero_hh=n_geb_zero,
+        geb_counts_zero_rate=(n_geb_zero / n if n else 0.0),
+        n_whg_counts_zero_hh=n_whg_zero,
+        whg_counts_zero_rate=(n_whg_zero / n if n else 0.0),
+        n_slot_reapportioned_hh=n_reapportioned,
+        slot_reapportioned_rate=(n_reapportioned / n if n else 0.0),
+    )
+    fallback_rates = (report.signal_missing_rate, report.geb_counts_zero_rate,
+                      report.whg_counts_zero_rate, report.slot_reapportioned_rate)
+    high_fallback = any(r > FALLBACK_WARN_RATE for r in fallback_rates)
+    # Households may count in several fallbacks (e.g. no building and no dwelling counts),
+    # so the per-fallback rates are not additive; each is reported on its own.
+    (logger.warning if high_fallback else logger.info)(
+        "[home_typed] census-signal fallback households (of %d): %d cell-signal-missing "
+        "(%.1f%%), %d no-building-counts (%.1f%%), %d no-dwelling-counts (%.1f%%), "
+        "%d slot-share-reapportioned (%.1f%%)%s",
+        n,
+        n_signal_missing, report.signal_missing_rate * 100,
+        n_geb_zero, report.geb_counts_zero_rate * 100,
+        n_whg_zero, report.whg_counts_zero_rate * 100,
+        n_reapportioned, report.slot_reapportioned_rate * 100,
+        (f" -- a fallback rate exceeds {FALLBACK_WARN_RATE:.0%}: the census-calibrated "
+         "primary method is not carrying these cells") if high_fallback else "",
     )
     log = logger.warning if (n_zero or n_over or btype_default_rate > BTYPE_DEFAULT_WARN_RATE) else logger.info
     n_random_emitted = n_zero_building_random + n_empty_slots_random
@@ -886,6 +961,23 @@ def assign_homes_typed(
     if result.crs is not None and result.crs.to_epsg() != 25832:
         result = result.to_crs(BUILDINGS_CRS)
     return result[["household_id", "commune_id", "home_location_id", "geometry"]], report
+
+
+#: Helper modules whose sources feed this stage's cache token (see :func:`validate`).
+_HELPER_MODULES = (bt, cbs, hm, _cells, _prepared_cells)
+
+
+def validate(context):
+    """synpp validation token: structured token over the helper modules' sources.
+
+    synpp hashes only THIS module's source, so an edit to a helper it imports would
+    otherwise leave the cached home placement in place although the rules that produced
+    it changed (same mechanism as ``secondary_candidates.validate``).
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``.
+    """
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, (), stage_label=__name__ + ".validate()")
 
 
 def configure(context):

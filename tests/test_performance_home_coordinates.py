@@ -211,12 +211,18 @@ def test_typed_home_signal_projection_keeps_unused_nullable_size_bin_error():
         )
 
 
-def test_typed_home_log_separates_empty_slots_random_fallback(caplog):
+def test_typed_home_log_separates_empty_slots_random_fallback(caplog, monkeypatch):
     """A nonempty cell with no supported slots must be visible in the run log."""
     households, buildings, cells = _one_building_per_cell_fixture([CELL_A])
     households["building_type_3class"] = "mehrfamilienhaus"
     cells["FreiEFH_Wohnung_Gebaeudetyp_Groesse_100m_Gitter"] = 0.0
     cells["MFH_3bis6Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter"] = 1.0
+    # Since audit B4 F1 a census class without footprint no longer empties the slots, so
+    # the empty-slots path is forced here through the slot builder it guards.
+    monkeypatch.setattr(
+        home_cell.bt, "build_slots_arrays",
+        lambda *args, **kwargs: pd.DataFrame(
+            columns=["slot_id", "building_id", "btype", "size"]))
 
     with caplog.at_level(logging.WARNING, logger=home_cell.__name__):
         result, report = home_cell.assign_homes_typed(

@@ -530,11 +530,6 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
     "braunschweig.synthesis.locations.education_gravity": (
         "braunschweig.synthesis.locations.education_gravity_model",
     ),
-    "braunschweig.synthesis.locations.home_cell": (
-        "braunschweig.synthesis.locations.building_typing",
-        "braunschweig.synthesis.locations.cell_building_signals",
-        "braunschweig.synthesis.locations.home_matcher",
-    ),
     "data.gtfs.cleaned": (
         "data.gtfs.utils",
     ),
