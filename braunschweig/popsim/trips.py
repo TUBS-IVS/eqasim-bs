@@ -361,8 +361,9 @@ def passive_purpose_for_pairs(adult_codes, *, escort_passive_education: bool,
     ``explicit_round_trip_purposes`` is deliberately NOT threaded in: it is True in production
     and inert there, and its pre-#241 arm would send the ADULT's own leg for W_ZWECK 14/15/16
     back to ``"other"`` while this table still gives the child ``"leisure"`` -- an asymmetry that
-    only matters on that A/B arm, where ``escort_passive_from_adult`` is not used. Thread it if
-    the two flags are ever combined.
+    only matters on that A/B arm. ``braunschweig.popsim.trips_stage.configure`` therefore refuses
+    the False arm until this function, the other-subtype decider and the leisure participation
+    seed read the flag too.
     """
     # to_numeric(errors="coerce"), NOT astype(int): a NaN adult code (an unpaired row slipping
     # in, or a delivery with a blank W_ZWECK) would otherwise raise IntCastingNaNError instead of

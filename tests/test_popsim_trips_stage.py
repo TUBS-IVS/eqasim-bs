@@ -1099,3 +1099,12 @@ def test_run_output_does_not_depend_on_the_unused_mid_wege_columns(vectorized_va
     assert list(narrowed.columns) == [column for column in full.columns
                                       if column in set(narrowed.columns)]
     pd.testing.assert_frame_equal(narrowed, full[list(narrowed.columns)])
+
+
+def test_trips_stage_configure_refuses_the_incomplete_round_trip_off_arm():
+    """Review of #598: with the flag wired, the False arm became reachable, but the passive
+    pairing, the other-subtype decider and the participation seed still map 14/15/16 to leisure,
+    so the arm must fail before PopulationSim runs instead of building a mixed population."""
+    ctx = _RecordingConfigureContext(values={"explicit_round_trip_purposes": False})
+    with pytest.raises(ValueError, match="explicit_round_trip_purposes"):
+        trips_stage.configure(ctx)
