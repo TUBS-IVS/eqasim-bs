@@ -954,6 +954,46 @@ def test_weekend_match_fine_child_bands_change_sources_without_moving_the_rng_st
     assert (fine_child["source_H_ID"], fine_child["source_P_ID"]) == (1, 4)
 
 
+def test_whole_household_person_fallback_uses_the_fine_child_bands():
+    """Issue #386 names three person-level uses of the fine bands; this is the largest
+    one, the fallback for a weekend household with no weekday household of equal size.
+
+    Weekend household 3 (a parent and a 7-year-old) is the only household of size 2, so
+    both members go to the person fallback. The weekday pool offers a 7-year-old and a
+    13-year-old that agree in every other match key; the 13-year-old carries the heavier
+    weight, so under the coarse 6-13 band it wins the draw.
+    """
+    households = pd.DataFrame({
+        "H_ID": [1, 2, 3, 4], "H_GR": [1, 1, 2, 1],
+        "hh_type5": ["single", "single", "single_parent", "single"],
+        "oek_status": [3, 3, 3, 3], "RegioStaR7": [71, 71, 71, 71],
+        "H_ANZAUTO": [1, 0, 1, 0], "H_GEW": [1.0, 1.0, 1.0, 1.0],
+    })
+    persons = pd.DataFrame({
+        "H_ID": [1, 2, 3, 3, 4], "P_ID": [1, 1, 1, 2, 1],
+        "HP_ALTER": [40, 7, 41, 7, 13],
+        "HP_SEX": [2, 1, 2, 1, 1],
+        "P_FSCHEIN": [1, 2, 1, 2, 2],
+        "P_TAET": [1, 9, 1, 9, 9],
+        "P_FKARTE": [1, 3, 1, 3, 3],
+        "kernwo": [2, 2, 6, 6, 2],                 # household 3 reports on a weekend
+        "source_H_ID": [1, 2, 3, 3, 4], "source_P_ID": [1, 1, 1, 2, 1],
+        "member_imputed": [False] * 5,
+        "P_GEW": [1.0, 1.0, 1.0, 1.0, 1000.0],
+    })
+
+    def child_source(fine_child_age_bands):
+        out, _trace, report = wpm.reassign_weekend_plan_sources(
+            households.copy(), persons.copy(), rng=np.random.RandomState(0),
+            fine_child_age_bands=fine_child_age_bands)
+        assert report.n_hh_matched == 0 and report.n_person_fallback_households == 1
+        child = out[(out["H_ID"] == 3) & (out["P_ID"] == 2)].iloc[0]
+        return int(child["source_H_ID"]), int(child["source_P_ID"])
+
+    assert child_source(False) == (4, 1)   # coarse band: the heavy 13-year-old wins
+    assert child_source(True) == (2, 1)    # fine band: the 7-year-old is the only candidate
+
+
 def _random_weekend_population(n_households=60, seed=11):
     """A randomised donor population: mixed sizes, both day types, many school children.
 

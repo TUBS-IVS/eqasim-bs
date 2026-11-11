@@ -34,8 +34,8 @@ A retry generation after a lost worker runs with half the workers
   measured WITHOUT the freeze. Lower it only with the pool line of a run that had the freeze, via a
   run manifest.
 - **Keep this pool's changes out of `braunschweig.parallelism` and `braunschweig.resources`.** Both
-  are hashed by the PopulationSim stage (630 min at 100 %). An edit there, even a comment, re-runs
-  PopulationSim. This is also why the code default of `worker_memory_gb` in `resources.py` still
+  are hashed by the PopulationSim stage (630 min at 100 %). A code edit there re-runs
+  PopulationSim (comments and docstrings do not: the token is a semantic digest). This is also why the code default of `worker_memory_gb` in `resources.py` still
   reads 0.86 while the base config carries 1.09.
 - **The tests that prove the protections need Linux.** The fork, `/proc/self/smaps_rollup` and
   `/proc/self/oom_score_adj` tests skip on Windows. Run `tests/test_chainsolver_pool_protection.py`

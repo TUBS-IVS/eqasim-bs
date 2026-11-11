@@ -194,7 +194,7 @@ Readers of the pipeline trips file and what each takes:
 | `population_validation/population_source._read_dir` (feeds `participation_fit`, `trip_coherence`, the universe participation fit and `run_population_validation`) | pre-portal when present | diary against survey |
 | `analysis/run_mid_validation` (`_read_pipeline_trips`: `n_trips`, `trips_per_person`, the trip plot; `_activity_purpose_counts`: `03_activity_purposes.png`, `n_activities`) | pre-portal when present and current | diary against MiD |
 | `scripts/measure_trip_coherence.py` | pre-portal when present | diary against MiD |
-| `analysis/dashboard/run_metrics.metrics_eqasim` (`*_trips.csv` glob), `scripts/validate_three_cases.py`, `scripts/compare_25pct_vs_baseline.py`, `eqasim_common/analysis/grid/comparison_flow_volume.py` | `trips.csv` | realised plan, named by file; the new file does not match the `*_trips.csv` glob |
+| `analysis/dashboard/run_metrics.metrics_eqasim` (`*_trips.csv` glob), `validate_three_cases.py` (repository root), `scripts/compare_25pct_vs_baseline.py`, `eqasim_common/analysis/grid/comparison_flow_volume.py` | `trips.csv` | realised plan, named by file; the new file does not match the `*_trips.csv` glob |
 | `scripts/validate_bs_10pct` | `trips.csv` | joins by `(person_id, trip_index)` with MATSim output and the trips geopackage, which index the post-portal table |
 
 Activities in `run_mid_validation`: the activities file (`<prefix>activities.gpkg`) is the
@@ -286,4 +286,4 @@ dropped share per mode (`trips beyond N m dropped`), and the candidate stage log
 - `no_connection.resolve_no_connection` handles stays without a gate in a counted order (tour to car, tour to car
   passenger, departure shift, kept); the stage logs the rates under `[portal_trips]` and warns above
   `braunschweig.portal.no_connection_warn_share`. Keys and defaults: `portal_trips/config_keys.py`.
-- Status: implemented, effect not yet measured (WP-E run manifest owed).
+- Run evidence: `docs/runs/i465-wpe-smoke-1pct-2026-10-23.yml` (a 1 % smoke; it validates nothing about the effect).

@@ -96,8 +96,6 @@ SCALE_ONLY_KEYS = {
     "cache_share_export", "cache_share_recompute",
 }
 
-SESSION_LOG = "SESSION_LOG.md"
-
 
 @dataclass(frozen=True)
 class Finding:
@@ -766,13 +764,6 @@ def check_archive_banners(context: CheckContext) -> List[Finding]:
     return findings
 
 
-#: Files that legitimately mention the retired documents (stubs, history,
-#: records quoting them as evidence).
-_D6_ALLOWED_PREFIXES = (
-    "docs/archive/", "docs/decisions/", "docs/runs/", "docs/registry/",
-    "docs/superpowers/", "docs/generated/", ".superpowers/", "plan/",
-    "docs/DECISIONS.md",
-)
 _D6_TARGETS = ("PROJECT_STATUS.md", "PROJECT_BACKLOG.md")
 _D6_SCOPES = ("CLAUDE.md", "README.md", "CONTRIBUTING.md", "AGENTS.md",
               os.path.join("docs", "ONBOARDING.md"))

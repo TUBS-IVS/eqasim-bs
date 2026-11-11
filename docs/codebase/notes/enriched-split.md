@@ -35,21 +35,19 @@ resolves to the package's `__init__.py`.
 ## Cache / `validate()` consequences
 
 The stage gained a `validate()` hook it never had before: `_HELPER_MODULES` in
-`__init__.py` lists all 6 submodules, and `validate()` hashes their combined
+`__init__.py` lists the in-package submodules, and `validate()` hashes their
 source into the synpp validation token. As with the other stage-package
 splits, the first run after this change recomputes the stage and everything
 downstream of it once (a new token has nothing stored to compare against);
 every run after that is cache-stable.
 
-**Known gap (found by the #290 audit).** The token covers the 6 in-package
-submodules. Four first-party modules imported from outside the package are not
-in the tuple and therefore outside it: `braunschweig.data.mid.reference_tables`
-(module level, and again inside `availability`) plus
-`braunschweig.data.mid.{income_by_size,income_by_status,tenure_by_income}`
-(imported inside functions). Editing any of them does not devalidate this stage.
-Note the contrast with `braunschweig.data.mid.{data,zones}`, which this stage
-declares properly via `context.stage(...)` and which therefore need no token
-coverage at all. See `synpp-helper-hash-audit.md`.
+**Gap found by the #290 audit: closed.** The first-party modules imported from
+outside the package (the `braunschweig.data.mid` loaders and the modules they
+use) are now covered: `_HELPER_MODULES` holds the in-package submodules and
+`_DEFERRED_HELPER_MODULE_NAMES` (both in `__init__.py`) names the modules
+imported inside function bodies. `braunschweig.data.mid.{data,zones}` are
+declared via `context.stage(...)` and need no token coverage. See
+`synpp-helper-hash-audit.md`.
 
 ## Standing rules
 

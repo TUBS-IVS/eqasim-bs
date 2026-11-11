@@ -155,7 +155,7 @@ def derive_zone_ids(df: pd.DataFrame, *, ars_col: str = ARS_COLUMN) -> pd.DataFr
 
     The eqasim spatial pipeline keys homes and home-location candidates on the
     SAME ``commune_id`` / ``iris_id`` that ``data.spatial.municipalities`` and the
-    default IPF producer (braunschweig.ipf.attributed lines 814-816) use, which is
+    default IPF producer (braunschweig.ipf.attributed) use, which is
     the **full 12-digit ARS** (NOT the 8-digit AGS). Using the AGS here produces an
     ``iris_id`` that matches no home-location candidate, so the home-location
     sampling stage asserts ``location_count > 0`` and crashes. The formats are:
@@ -165,10 +165,10 @@ def derive_zone_ids(df: pd.DataFrame, *, ars_col: str = ARS_COLUMN) -> pd.DataFr
                           against the working IPF cache). AGS8 consumers (RegioStaR)
                           convert via ``ars_to_ags8`` themselves, which is idempotent.
     - ``departement_id``= first 5 chars of commune_id = 5-digit Kreis string, e.g. "03101".
-                          Matches ipf/prepare.py line 126 (commune_id[:5]).
+                          Same rule as braunschweig.ipf.prepare (commune_id[:5]).
     - ``iris_id``       = commune_id + "0000" stored as category, e.g. "0310100000000000".
-                          Source: ipf/attributed.py lines 815-816 (= eqasim_common
-                          .data.spatial.iris line 17). Germany has no sub-commune
+                          Same rule as braunschweig.ipf.attributed (= eqasim_common
+                          .data.spatial.iris). Germany has no sub-commune
                           IRIS zones; "0000" is the eqasim placeholder.
 
     Parameters
@@ -203,21 +203,21 @@ def derive_zone_ids(df: pd.DataFrame, *, ars_col: str = ARS_COLUMN) -> pd.DataFr
     # home-location candidates are keyed on; using the 8-digit AGS broke the
     # home-location join (the popsim iris_id matched no candidate).
     out["commune_id"] = out[ars_col].astype(str).str.zfill(12)
-    # departement_id: 5-digit Kreis prefix.  Matches ipf/prepare.py:126
+    # departement_id: 5-digit Kreis prefix.  Same rule as braunschweig.ipf.prepare
     # (df_population["commune_id"].str[:5]).
     out["departement_id"] = out["commune_id"].str[:5]
-    # iris_id: commune_id + "0000".  Matches ipf/attributed.py lines 815-816 and
-    # eqasim_common.data.spatial.iris line 17. Germany has no sub-commune IRIS zones.
+    # iris_id: commune_id + "0000".  Same rule as braunschweig.ipf.attributed and
+    # eqasim_common.data.spatial.iris. Germany has no sub-commune IRIS zones.
     out["iris_id"] = (out["commune_id"] + "0000").astype("category")
     return out
 
-# age_range bins and labels — MUST match synthesis/population/enriched.py lines
-# 110-114 exactly so both population workflows produce the same categorical values
+# age_range bins and labels — MUST match the default population workflow
+# (braunschweig.synthesis.population.enriched package) exactly so both population workflows produce the same categorical values
 # consumed by the spatial (education / gravity) stages. The bins correspond to:
 #   (-1, 10] = primary_school (age <= 10)
 #   (10, 14] = middle_school  (age 11-14)
 #   (14, 17] = high_school    (age 15-17)
-#   (17, inf) = higher_education (age >= 18, the default in enriched.py)
+#   (17, inf) = higher_education (age >= 18)
 _AGE_RANGE_BINS: list = [-1, 10, 14, 17, np.inf]
 _AGE_RANGE_LABELS: list[str] = [
     "primary_school", "middle_school", "high_school", "higher_education"
@@ -398,9 +398,9 @@ def map_mid_person_attributes(
         )
         persons["hh_type5"] = persons["household_id"].map(hh_type5_series)
     # --- Schema-gap columns (integration spec Section 5.1) -------------------
-    # age_range: matches synthesis/population/enriched.py lines 110-114 exactly.
+    # age_range: bins as _AGE_RANGE_BINS above (default population workflow).
     # (-1,10] = primary_school; (10,14] = middle_school; (14,17] = high_school;
-    # (17,inf) = higher_education (the default in enriched.py, age >= 18).
+    # (17,inf) = higher_education (age >= 18).
     persons["age_range"] = pd.cut(
         persons["age"],
         bins=_AGE_RANGE_BINS,
@@ -421,13 +421,14 @@ def map_mid_person_attributes(
     # city (Kreisfreie Stadt Braunschweig, AGS-5 = "03101").
     #
     # Replicates the DEFAULT braunschweig path exactly:
-    #   synthesis/population/enriched.py line 2785:
+    #   braunschweig.synthesis.population.enriched (package __init__):
     #       is_urban_resident = inside_braunschweig
     # where ``inside_braunschweig`` is the flag set when the person's Kreis-5
-    # code equals "03101" (see INSIDE_FLAG_TO_ARS5 in enriched.py line 1275).
-    # commune_id is the 8-digit AGS (e.g. "03101000") produced by derive_zone_ids
+    # code equals "03101" (see INSIDE_FLAG_TO_ARS5 in
+    # braunschweig.synthesis.population.enriched.vehicle_ownership).
+    # commune_id is the 12-digit ARS (e.g. "031010000000") produced by derive_zone_ids
     # above; departement_id == commune_id[:5] is the exact equivalent predicate.
-    # Since Braunschweig is a kreisfreie Stadt (one commune, "03101000"), the
+    # Since Braunschweig is a kreisfreie Stadt (one commune, ARS "031010000000"), the
     # predicates commune_id.startswith("03101") and departement_id == "03101"
     # are equivalent and both faithful to the default's single-commune definition.
     _BS_KREIS5 = "03101"

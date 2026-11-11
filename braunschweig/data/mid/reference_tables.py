@@ -53,7 +53,8 @@ def _read_csv(path: str, dtype: dict | None = None) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 # Mapping CSV ``key`` (age dimension) → constraint dict consumed by
-# bavaria/synthesis/population/enriched.py:_apply_*_constraints.
+# braunschweig/synthesis/population/enriched/availability.py (car availability
+# constraints, consumed via ``mid["car_availability_constraints"]``).
 def _row_to_constraint(row: pd.Series) -> dict[str, Any]:
     dim = row["dimension"]
     target = float(row["target"])
@@ -319,9 +320,8 @@ def load_pt_subscription_margins(
     return by_sex, by_age
 
 
-# Filename of the (optional, manually-downloaded) MiD P24.1 x Pkw-Verfuegbarkeit
-# cross-tab. It is NOT seeded by ``scripts/seed_mid_constraint_tables.py`` because
-# the underlying MiD regional export has not yet been obtained (see
+# Filename of the MiD P24.1 x Pkw-Verfuegbarkeit cross-tab (committed under
+# ``eqasim-data/data/braunschweig/mid/``; see
 # ``load_pt_subscription_by_car_availability``).
 PT_BY_CAR_AVAILABILITY_FILENAME = "mid2023_P24_1_by_car_availability.csv"
 
@@ -337,13 +337,11 @@ def load_pt_subscription_by_car_availability(
     """Load the OPTIONAL MiD P24.1 x Pkw-Verfuegbarkeit cross-tab (A6 hook).
 
     This wires the carless<->PT-pass correlation into the PT-subscription IPF as
-    an additional margin. The required MiD regional export
-    (P24.1 broken down by Pkw-Verfuegbarkeit) has NOT yet been obtained, so the
-    CSV is normally absent. When it is absent this function returns ``None`` and
-    logs an INFO message: this is a DOCUMENTED fallback (the carless<->PT coupling
-    is simply not calibrated yet), not a silent one. When the CSV arrives, drop it
-    at ``<data_path>/braunschweig/mid/mid2023_P24_1_by_car_availability.csv`` and
-    the PT IPF picks up the extra margin automatically.
+    an additional margin. The CSV is committed at
+    ``<data_path>/braunschweig/mid/mid2023_P24_1_by_car_availability.csv``. When
+    it is absent this function returns ``None`` and logs an INFO message: this
+    is a DOCUMENTED fallback (the carless<->PT coupling is then not calibrated),
+    not a silent one.
 
     Expected schema (one row per car-availability category, header order free).
     The example below shows the raw codebook-German column headers, exactly as

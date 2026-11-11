@@ -146,24 +146,14 @@ leisure `W_ZWD` detail at all.
 
 ## Cache tokens that currently cover these rules
 
-- `braunschweig.popsim.trips_stage._HELPER_MODULES` includes `escort_pairing`.
-- `braunschweig.popsim.stage._DEFERRED_HELPER_MODULE_NAMES` includes `escort_pairing`
-  (it decides which W_ZWECK-13 legs the `education_flag` seed counts -- the same
-  stale-seed hazard the other second-level exceptions were admitted for).
-- `braunschweig.synthesis.commute_day.home_office_donors_stage._HELPER_MODULES`
-  includes `escort_pairing`.
-- `braunschweig.synthesis.locations.secondary_chainsolvers._HELPER_MODULES` includes
-  `braunschweig.popsim.purpose_subtype` (imported at that package's module level
-  solely so it is a hashable module object).
-- `braunschweig.popsim.distance_distributions` gained its own `validate()` in the
-  purpose-correctness wave (issue #373): `_HELPER_MODULES` covers `trips`,
-  `time_imputation`, `escort_pairing`, `constants` and the default upstream
-  distance-distributions module, and `_DEFERRED_HELPER_MODULE_NAMES` covers `mid`,
-  `mid.donor`, `purpose_subtype`, `shop_subtype` and `stage.config_keys`, so a rule
-  change inside any of them now invalidates the cached distributions even when no
-  declared config value moved. This closes the gap this note previously recorded as
-  open; `synpp-helper-hash-audit.md` remains the shared register of the gaps that
-  are still open elsewhere.
+The modules that carry these rules (`escort_pairing`, `purpose_subtype`, `mid.donor`
+and the others) are covered by each consuming stage's `_HELPER_MODULES` /
+`_DEFERRED_HELPER_MODULE_NAMES` tuples, in `braunschweig/popsim/trips_stage.py`,
+`braunschweig/popsim/stage/__init__.py`, `braunschweig/popsim/distance_distributions.py`,
+`braunschweig/synthesis/commute_day/home_office_donors_stage.py` and
+`braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py`. Those tuples
+are the owner; `scripts/audit_synpp_helper_hash.py` audits them and
+`synpp-helper-hash-audit.md` is the shared register of any open gaps.
 
 ## Where the vocabulary's evidence lives
 

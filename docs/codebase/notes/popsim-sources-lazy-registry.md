@@ -79,13 +79,9 @@ lazy" change. Left for maintainers to decide as a follow-up.
 `braunschweig/popsim/sources/__init__.py` is itself one of the modules
 `braunschweig.popsim.stage`'s `validate()` hashes (via the `sources` /
 `_sources_base` / `_sources_mid` / `_sources_entd*` module-level imports), so
-editing this file's source text moves the popsim_mid stage's cache token —
-a one-time cache devalidation, exactly like any other edit to a covered
-helper. Measured directly (`stage.validate(DummyContext())` before/after
-this change, same interpreter, same `braunschweig` checkout):
-
-- before: `43126fb45b16194e0c72d17acb96f7e3`
-- after: `5fc7e12dbf90ed972299e5ec12557a13`
+a code edit to this file moves the popsim_mid stage's cache token —
+a one-time cache devalidation, exactly like any other code edit to a covered
+helper (comment and docstring edits do not, the token is a semantic digest).
 
 ## Tests
 

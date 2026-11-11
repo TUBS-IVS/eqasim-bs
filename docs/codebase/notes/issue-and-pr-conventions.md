@@ -56,7 +56,7 @@ step.
 
 ### The stage is a body field, not a label
 
-115 stages would be 115 labels. Every model issue names its stage(s) twice: as the object
+One label per stage would be as many labels as there are stages. Every model issue names its stage(s) twice: as the object
 at the front of the title, and as the first body line
 
 ```

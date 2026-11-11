@@ -1,8 +1,7 @@
 """OSM utilities (osmconvert wrapper, chunked PBF reading).
 
-Phase 2.1 of the refactor moves ``bavaria/data/osm/{osmconvert,chunked}.py``
-here.  The package is intentionally empty until then; the move includes
-deprecation re-exports at the old path for one minor release.
+Modules: ``osmconvert`` (osmconvert wrapper), ``chunked`` (chunked PBF reading)
+and ``locations`` (OSM POI extraction).
 """
 
 from __future__ import annotations

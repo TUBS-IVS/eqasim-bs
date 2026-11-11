@@ -23,7 +23,7 @@ Output contract matches the default stage exactly:
      "education": DataFrame[person_id, commute_distance]}
 
 This is the two-column subset that synthesis/population/spatial/primary/locations.py
-consumes via a left-merge on person_id (lines 104-105). The hts_id column present in
+:: execute consumes via a left-merge on person_id. The hts_id column present in
 the default stage output is not used downstream and is intentionally omitted here.
 
 euclidean_distance is in metres (wegkm_imp * 1000 / 1.3 ENTD detour factor),

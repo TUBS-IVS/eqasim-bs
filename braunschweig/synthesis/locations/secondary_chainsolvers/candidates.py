@@ -129,7 +129,7 @@ def append_residential_visit_candidates(candidates: gpd.GeoDataFrame,
         If ``df_residential_buildings`` is missing a required column
         (fail-fast; no silent fallback to an empty/degenerate residential
         candidate set -- see the ``leisure_visit_building_potential`` caller
-        in ``execute()``).
+        in ``secondary_candidates.execute``).
     """
     required = ["building_id", "weight", "commune_id", "geometry"]
     missing = [c for c in required if c not in df_residential_buildings.columns]
@@ -477,7 +477,7 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
     so it only targets residential buildings appended by
     ``append_residential_visit_candidates`` (a "leisure_visit" offer with a
     non-positive ``pot_visit`` is dropped, mirroring the shop-subtype
-    zero-skip). The other three leisure groups are unaffected (still
+    zero-skip). The other leisure subtypes are unaffected (still
     "offers_leisure" / "pot_leisure"). Requires ``leisure_subtype_split`` and
     ``with_potentials``; fails fast if ``pot_visit`` is absent from
     ``df_secondary`` (no silent fallback to ``pot_leisure``).

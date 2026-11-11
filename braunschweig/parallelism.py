@@ -7,8 +7,11 @@ processes whose numeric libraries must be pinned to a single BLAS/OpenMP
 thread each -- otherwise N workers x an ncores-sized BLAS pool oversubscribes
 the box (observed on the 64-core server: ~4000 threads, libc segfaults, 12
 lost PopulationSim batches; see issue #122). :func:`limit_worker_blas_threads`
-is that one shared pin, called from each pool's worker initializer, so the two
-parallel paths cannot drift apart.
+is that one shared pin. The chainsolver pool calls it from its worker
+(``secondary_chainsolvers/parallel_solving.py``); the PopulationSim batch runner
+instead passes :data:`SINGLE_THREAD_BLAS_ENV` in the environment of each
+subprocess it launches, so the two parallel paths share one set of pins and
+cannot drift apart.
 
 This module previously also resolved worker-COUNT sentinels
 (``resolve_workers`` / ``available_cores``: a positive integer used verbatim,

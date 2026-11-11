@@ -44,9 +44,9 @@ from .srv_location_types import (
 # class maps to the category) and
 # appends a NEW ``sec_b_<building_id>`` candidate row for every errand-class
 # building missing from ``candidates``. The dict below is kept as the
-# leisure/errand grouping key other callers (e.g.
-# ``secondary_candidates.execute``) use to select the leisure subset; for the
-# errand entries it no longer means "mask this column literally".
+# leisure/errand grouping key ``append_location_category_columns`` uses to
+# select the leisure and errand subsets; for the errand entries it no longer
+# means "mask this column literally".
 SRV_BUILDING_CATEGORY_BASE_POTENTIAL = {
     "leisure_culture": "pot_leisure",
     "leisure_gastronomy": "pot_leisure",
@@ -659,8 +659,9 @@ def external_centroid_mask(candidates: gpd.GeoDataFrame) -> pd.Series:
     as that function constructs them -- ``location_id`` IS the bare
     ``commune_id`` (every in-area family is prefixed: ``sec_b_``, ``sec_lu_``,
     ``sec_res_``, ``sec_edu_``, legacy ``sec_``) AND all three base purposes are
-    offered (which no other family does: legacy rows are ``other``-only,
-    building rows never offer ``other``, visit/education rows offer neither).
+    offered (legacy rows are ``other``-only and visit/education rows offer
+    neither; a building row can offer all three when it has retail, leisure and
+    errand potential, so the unprefixed id is what separates it from a centroid).
     Both conditions are required so a hypothetical unprefixed in-area id cannot
     be mistaken for an external centroid.
     """

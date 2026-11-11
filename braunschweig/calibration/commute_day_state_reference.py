@@ -319,7 +319,7 @@ def measure_bin_convention_deviation(persons: pd.DataFrame) -> dict:
 
     Returns a dict:
 
-    * ``max_abs_share_deviation`` -- the largest absolute difference of any of the five
+    * ``max_abs_share_deviation`` -- the largest absolute difference of any of the
       ``SHARE_COLUMNS`` between the two conventions, over every distance class present in EITHER
       table (a class present in only one convention contributes nothing -- there is no matching
       row to difference against).

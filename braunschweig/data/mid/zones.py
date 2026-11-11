@@ -6,12 +6,13 @@ MiD 2023 regional tables, so we build the zones by dissolving the Gemeinde
 polygons (from eqasim_common.data.spatial.iris) on their 5-digit Kreis code
 (departement_id / AGS-5).
 
-Zone names follow the naming convention used in braunschweig/data/mid/data.py.
+Zone names are the lower-case keys of ``ZONE_NAMES`` below (matching the
+``zone`` keys of the MiD constraint tables).
 """
 
 import geopandas as gpd
 
-# AGS-5 -> zone name used in data.py
+# AGS-5 -> zone name (matches the zone values of the MiD constraint tables)
 ZONE_NAMES = {
     "03101": "braunschweig",
     "03102": "salzgitter",

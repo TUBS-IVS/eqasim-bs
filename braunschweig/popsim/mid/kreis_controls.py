@@ -34,7 +34,7 @@ stdlib generic alias through a sibling submodule was a fragile indirection).
 ``_batch_kreis_apportion_weights`` sat, in the original module, under a shared
 "Folder assembly + orchestration" section header that also covers
 ``assemble_batch_folder`` / ``cell_groups`` / ``run_popsim_mid`` -- those three
-stay in ``__init__.py`` under that original header, so a new dedicated header is
+now live in ``batch_folders.py`` (re-exported from ``__init__.py``), so a new dedicated header is
 introduced below for the functions moved here (precedent: the sibling module
 ``participation.py`` introduced its own "Participation" header for functions
 lifted out of the original module's shared "Seed" section).

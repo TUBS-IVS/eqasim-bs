@@ -5,8 +5,7 @@ the MiD variable glossary this module relies on is documented in the module docs
 :mod:`braunschweig.calibration.commute_day_state_reference`, which this module imports from).
 No synpp stage, no file I/O -- exercised only against tiny synthetic frames in
 ``tests/test_commute_day_donor_pool.py``. The synpp stage that calls this pure builder against
-the real MiD delivery is a later Phase B task (see the package docstring,
-``home_office_donors_stage``).
+the real MiD delivery is :mod:`braunschweig.synthesis.commute_day.home_office_donors_stage`.
 
 The donor UNIVERSE is MiD persons who worked AT HOME on their reporting day (weekday, worked,
 ``starb2 == at home`` -- see :func:`select_home_office_day_donors`). Two outputs are built per
@@ -15,7 +14,7 @@ whole delivery, distinct from the household-relative ``(H_ID, P_ID)`` pair used 
 Wege/trip file):
 
 * :func:`donor_attributes` -- one row per donor: the demographic + household attributes the
-  plan-replacement step (a later Phase B task) needs to match a synthetic worker to a donor day.
+  plan-replacement step (:mod:`plan_replacement`) needs to match a synthetic worker to a donor day.
 * :func:`donor_trips` -- the donor's own trip chain in the ``synthesis.population.trips``
   CONTRACT (:data:`braunschweig.popsim.trips_stage.CONTRACT`), built with
   :func:`braunschweig.popsim.trips.build_validated_trip_table` using the keyword arguments

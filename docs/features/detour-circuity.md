@@ -122,7 +122,7 @@ pipeline is byte-identical to the pre-Tier-3 constant `1.3`:
 **Tier 3A — secondary scorer-weight calibration (built, NOT activated).**
 `braunschweig/calibration/secondary.py` implements a pure coordinate-descent
 optimiser (`coordinate_descent`) for per-purpose chainsolvers scorer weights
-(`secondary_dist_dev_weight` / `secondary_scorer_pot_weight`). Infrastructure
+(`secondary_scorer_dist_dev_weight` / `secondary_scorer_pot_weight`). Infrastructure
 only — pinning/activating the weights is gated on the deferred 25% ON validation
 run actually showing a shop residual vs MiD W12. Until then the weights stay at
 their current config values.

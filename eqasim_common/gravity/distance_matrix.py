@@ -24,7 +24,7 @@ def execute(context):
     df_municipalities = context.stage("eqasim_common.data.spatial.iris")
     municipalities = df_municipalities["commune_id"].values
         
-    # Initialize matrix to zero
+    # Initialize matrix to ones (every entry is overwritten below)
     distance_matrix = np.ones((len(municipalities), len(municipalities)))
     
     # Convert locations to (N,2)-array

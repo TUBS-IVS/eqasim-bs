@@ -144,26 +144,13 @@ a semantic digest of each pure helper's source (`braunschweig.synpp_tokens.sourc
 (the same mechanism `braunschweig.synthesis.locations.secondary_chainsolvers.validate`
 uses):
 
-| Stage | Helper modules hashed |
-|---|---|
-| `home_office_donors_stage` | `donor_pool`, `braunschweig.popsim.trips`, `braunschweig.popsim.plan_validation` |
-| `state_stage` | `state`, `matching` |
-| `trips_day_stage` | `plan_replacement` |
-| `spatial_locations_day` | `day_view`, the vendored `synthesis.population.spatial.locations` |
-| `output_day` | `day_view`, the vendored `synthesis.output` |
+The helper modules each stage hashes are owned by that stage module's
+`_HELPER_MODULES` (and, where present, `_DEFERRED_HELPER_MODULE_NAMES`) tuples
+in `braunschweig/synthesis/commute_day/`; `scripts/audit_synpp_helper_hash.py`
+audits them. Do not copy the lists here.
 
-`activities_day_stage` is the one exception: it defines no `validate()` of
-its own. It holds no pure helper module — every rule it depends on either
-lives in the vendored `synthesis.population.activities` (governed by synpp's
-default per-file hash of that module) or in `synthesis.population.trips.final`
-(governed by ITS OWN `validate()`), so there is nothing left for a helper-hash
-token to cover here.
-
-**Rule for touching a pure helper module:** a comment-only or docstring-only
-edit still changes `inspect.getsource(...)`'s output and therefore still
-devalidates every stage that hashes it. This is deliberate (the whole point
-of the token), not a bug to work around — but it means a large helper-module
-docstring rewrite carries a real re-solve cost at 100% scale (ADR-0104
-records the order of magnitude as hours for the downstream chainsolver
-re-solve alone), so batch such edits rather than landing them one comment at
-a time.
+The digest is semantic (`braunschweig/synpp_tokens.py :: semantic_module_digest`
+ignores comments and docstrings), so only a code edit to a hashed helper
+devalidates the stages that hash it. Such an edit carries a real re-solve cost
+at 100% scale (ADR-0104 records the order of magnitude as hours for the
+downstream chainsolver re-solve alone), so batch code edits to helpers.

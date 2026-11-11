@@ -50,7 +50,7 @@ class KreisAttributeControl:
     seed_column: str
     level: str  # "household" | "person"
     categories: tuple  # ((label, predicate on seed_column), ...), e.g. ("3", ">= 3")
-    target_csv_relpath: str  # under data_path, e.g. "braunschweig/mid/mid2023_H4_status_by_kreis.csv"
+    target_csv_relpath: str  # under data_path, e.g. "braunschweig/targets/target2026_economic_status_by_kreis.csv"
     target_columns: tuple  # CSV share columns, in category order
     tier: str  # "hard" | "soft"
     # Minimum person age the control's universe is restricted to (inclusive), or None for

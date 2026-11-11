@@ -31,7 +31,8 @@ HOME_CLOSURE_DWELL_S = 3600.0
 # the written config agrees with this constant (ADR-0146, issue #443). Chains
 # crossing midnight may legitimately pass 24h via the +24h shift in
 # hts.fix_trip_times; a chain beyond the simulated day cannot be lived in the
-# simulation and is resampled from a same-cell donor instead. This is the
+# simulation and is classified unfixable, so build_validated_trip_table replaces it
+# with an attribute-matched donor chain instead. This is the
 # authoritative constant; trips_stage imports it for its final backstop assertion,
 # time_imputation and departure_time_model for their guards.
 MAX_PLAN_TIME_SECONDS = 30 * 3600
@@ -166,7 +167,8 @@ def _append_return_home(
       (``dwell_model.report["kind"] == "empirical"``). With ``fixed_1h`` or no
       model the behaviour is exactly what it was before issue #367: no cap, and
       a chain that ends up beyond the bound is left to the existing post-repair
-      bound validation, which resamples the person from a same-cell donor.
+      bound validation, which classifies the person unfixable so the caller replaces
+      the chain (``trips.build_validated_trip_table`` cascade).
       Capping the constant path too would have made that path non-byte-identical
       and could produce a zero-duration final activity.
 
@@ -584,7 +586,7 @@ class PlanValidator:
         7. Log rates explicitly (no silent fallback).
 
         Returns (fixed_df, RepairReport).  Never filters the donor pool (preserves
-        H_GEW weighting).  The unfixable set is what Task 7 (resample) replaces.
+        H_GEW weighting).  The unfixable set is what ``trips.build_validated_trip_table`` replaces.
         The returned frame always carries an ``is_synthetic_closure`` column
         (``True`` on appended return-home rows, ``False`` everywhere else,
         including when no closure at all was appended or ``require_home_closure``
@@ -614,12 +616,13 @@ class PlanValidator:
 
         # --- Step 2b: identify NaN-time persons (MiD coded times 99/701) -------
         # ANY NaN departure/arrival time makes the person unfixable: an all-NaN
-        # person crashes _append_return_home (groupby idxmax yields NaN ->
-        # df.loc[NaN] KeyError), and a mixed-NaN person would get a bogus
-        # return-home trip anchored on a partial timeline.  These persons are
-        # therefore excluded from the home-closure repair entirely; the explicit
-        # "nan_times" validation issue routes them to the unfixable set, which
-        # the caller replaces by the same-cell resample.
+        # person has no last arrival to anchor a return-home trip on, and a
+        # mixed-NaN person would get a bogus return-home trip anchored on a
+        # partial timeline.  These persons are therefore excluded from the
+        # home-closure repair entirely; the explicit "nan_times" validation issue
+        # routes them to the unfixable set, which the caller handles through the
+        # trips.build_validated_trip_table cascade (stage A time imputation, then
+        # stage B attribute-matched chain replacement).
         nan_time_rows = fixed["departure_time"].isna() | fixed["arrival_time"].isna()
         nan_time_persons = set(fixed.loc[nan_time_rows, "person_id"].unique())
 
@@ -632,7 +635,8 @@ class PlanValidator:
         # anchored on an arrival beyond the bound would only extend the broken
         # timeline) and
         # flow to the unfixable set via the "time_exceeds_bound" validation
-        # issue, which the caller replaces by the same-cell resample.
+        # issue, which the caller replaces by an attribute-matched donor chain
+        # (trips.build_validated_trip_table stage B).
         bound_rows = (
             (fixed["departure_time"] > self.max_plan_time_seconds)
             | (fixed["arrival_time"] > self.max_plan_time_seconds)

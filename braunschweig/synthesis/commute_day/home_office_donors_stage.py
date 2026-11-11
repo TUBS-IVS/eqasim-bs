@@ -81,13 +81,11 @@ KEY_ESCORT_PASSIVE_EDUCATION = "escort_passive_education"
 DEFAULT_ESCORT_PASSIVE_EDUCATION = False
 KEY_EXPLICIT_ROUND_TRIP_PURPOSES = "explicit_round_trip_purposes"
 DEFAULT_EXPLICIT_ROUND_TRIP_PURPOSES = True
-#: Passive escort leg -> the accompanying adult's purpose (issue #372, ADR-0112). Key names and
-#: defaults are imported from ``braunschweig.popsim.stage.config_keys`` (the SHARED constants),
-#: never re-typed here -- same rule as ``w_zweck_10_as_leisure`` below.
-#: W_ZWECK 10 "anderer Zweck" -> leisure (issue #373, ADR-0111). Key name and default are
-#: imported from ``braunschweig.popsim.stage.config_keys`` (the SHARED constants), never
-#: re-typed here -- see the plan-structure-keys note below for why every stage that reads
-#: a key declared by more than one stage must import the same constant.
+#: The passive-escort keys (issue #372, ADR-0112) and ``w_zweck_10_as_leisure`` (issue #373,
+#: ADR-0111) are NOT defined in this file: their key names and defaults are imported inside
+#: ``configure()``/``execute()`` from ``braunschweig.popsim.stage.config_keys`` (the SHARED
+#: constants), never re-typed -- see the plan-structure-keys note below for why every stage that
+#: reads a key declared by more than one stage must import the same constant.
 
 #: Plan-structure keys (issues #366/#367), declared and read here for the SAME reason the three
 #: flags above are: the donor's day must be built by exactly the rules the replaced day was built

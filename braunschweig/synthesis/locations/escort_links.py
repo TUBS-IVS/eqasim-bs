@@ -14,7 +14,7 @@ The link rate is logged -- an escorter escorting a non-household person
 
 This replaces the earlier one-link-per-escorter assumption, whose collapse of
 multi-drop chains onto one point produced ~9% zero-distance escort legs
-(674 legs, 5% run 2026-08-11 -- see RUNS.md row escort-AB-5pct-2026-08-11 and
+(674 legs, 5% run 2026-08-11 -- see ``docs/runs/escort-AB-5pct-2026-08-11.yml`` and
 ADR-0073).
 """
 from __future__ import annotations

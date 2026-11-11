@@ -1,6 +1,6 @@
 """Employment marginals for the ZGB Braunschweig region from BA Gemeindedaten.
 
-Replaces `braunschweig.data.census.employment`. Reads the BA Statistik
+Reads the BA Statistik
 "Gemeindedaten der sozialversicherungspflichtig Beschäftigten" (XLSX), filters
 for the ZGB-8 Kreise and emits totals per (Kreis, sex) with a single age class.
 

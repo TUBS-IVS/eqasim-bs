@@ -1,26 +1,25 @@
 """
-Braunschweig activity-location catalogue — drop-in replacement for
-``braunschweig.data.locations``.
+Braunschweig activity-location catalogue.
 
 Sources candidate non-home locations from:
 
-  * ALKIS Hausumringe (``braunschweig.data.alkis``) — 944k buildings with
+  * ALKIS Hausumringe (``braunschweig.data.alkis``) — buildings with
     AAA Gebäudefunktion (GFK) codes mapped to work / education / shop /
     leisure by ``scripts/preprocess_alkis_landuse.py``.
   * ATKIS Landesnutzung (``braunschweig.data.landuse``) — polygon
     supplements, primarily used to densify the sparse ALKIS ``education``
     layer with ``ln_oeffentlicheeinrichtungen`` polygons (centroids).
 
-Emits the exact schema consumed by ``bavaria.locations.{work,education,
-secondary}``::
+Emits the schema consumed by ``braunschweig.locations.{work,secondary}`` and
+the education location stages::
 
     geometry        Point      (centroid, EPSG:25832)
     building        str/NaN    (OSM-style tag; drives education typing)
     amenity         str/NaN    (OSM-style tag; drives education typing)
     area            float      (m² — footprint or polygon area)
     floors          int        (default 2, 1 for landuse polygons)
-    commune_id      str        (AGS, 8-digit)
-    iris_id         str        (= commune_id for the ZGB)
+    commune_id      str        (12-digit ARS of the zone system)
+    iris_id         str        (ARS + "0000" for the ZGB)
     location_type   str        (work / education / shop / leisure)
 """
 
@@ -34,7 +33,7 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 # GFK → OSM-style building/amenity tag mapping.
 #
-# The downstream bavaria.locations.education stage inspects ``building`` and
+# The downstream education location stage inspects ``building`` and
 # ``amenity`` to assign an ``education_type`` of {kindergarten, school,
 # university}.  For every other activity these columns are purely
 # informational — we still populate them for debugging but they do not

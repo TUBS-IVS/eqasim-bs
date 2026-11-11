@@ -104,7 +104,7 @@ function each method calls), not on the facade. Concretely, per method:
   regression #295 explicitly guards against.
 
 Net effect: the full documentation text exists exactly once (on the
-delegate), `entd.py` shrank from 652 to 453 lines, and runtime introspection
+delegate), `entd.py` shrank (from 652 lines at the time of the split), and runtime introspection
 (`help()`, `inspect.getdoc`) is unchanged from before the dedup --
 `tests/test_entd_facade_docstrings.py` pins both the non-empty resolved
 docstring per method and the eight method signatures pinned since #287.

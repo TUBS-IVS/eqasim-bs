@@ -360,7 +360,7 @@ def _step_impute_driving_licence(context, df_persons):
 
     The boolean ``has_license`` (later renamed to ``has_driving_license``
     by the eqasim output writer) is then derived as
-      has_license = pt_subscription_type ∈ LICENSE_TRUE  (= {"ja"})
+      has_license = license_type ∈ LICENSE_TRUE  (= {"ja"})
     and overwrites the HTS-matched value coming from
     ``synthesis.population.enriched``.  ``keine_angabe`` is conservatively
     mapped to ``False`` (see ``LICENSE_TRUE``); persons below
