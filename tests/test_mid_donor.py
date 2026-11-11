@@ -156,39 +156,62 @@ def test_execute_on_real_mid_yields_commute_donors():
     # on the real survey; missing codes are imputed, so none may stay empty).
     assert persons["household_income_eur"].notna().all()
     assert persons["economic_status"].notna().all()
+    for column in ("household_size", "consumption_units", "donor_weight"):
+        assert persons[column].notna().mean() > 0.99
+    assert persons["weekday_reporting_day"].mean() > 0.5
 
 
-def test_donor_household_income_and_status_come_from_the_donor_household():
-    """ADR-0191: each donor carries its own MiD household income (EUR within its hheink_gr1
-    bracket) and oek_status; a 99 'keine Angabe' code is imputed from the valid pool."""
-    _, persons, wege = _synthetic_mid()
-    _, donors, _ = mid_donor.build_mid_donor_frames(
-        pd.DataFrame({"H_ID": [1, 2]}), persons, wege, rng=np.random.RandomState(0))
-    households = pd.DataFrame({
-        "H_ID": [1, 2], "hhgr_gr": [1, 1],
-        "hheink_gr1": [6, 99],      # 6 -> 2600-3000 EUR; 99 -> imputed from household 1
-        "oek_status": [4, 9],       # 4 -> high; 9 -> imputed from household 1
+def _donor_households():
+    absent = {f"HP_ALTER_{i}": [3300 + i, 3300 + i] for i in (4, 5, 6)}
+    return pd.DataFrame({
+        "H_ID": [1, 2], "hhgr_gr": [3, 3], "H_GR": [3, 3],
+        "HP_ALTER_1": [45, 22], "HP_ALTER_2": [43, 20],
+        "HP_ALTER_3": [9, 999],          # a child of 9; a member without a valid age
+        "hheink_gr1": [6, 99],           # 6 -> 2600-3000 EUR; 99 -> imputed from household 1
+        "oek_status": [4, 9],            # 4 -> high; 9 -> imputed from household 1
+        **absent,
     })
 
+
+def _donors():
+    _, persons, wege = _synthetic_mid()
+    return mid_donor.build_mid_donor_frames(
+        pd.DataFrame({"H_ID": [1, 2]}), persons, wege, rng=np.random.RandomState(0))[1]
+
+
+def test_donor_carries_income_status_size_and_consumption_units_of_its_household():
     def attach(seed):
-        return mid_donor.attach_donor_household_income(
-            donors, households, np.random.RandomState(seed)).set_index("person_id")
+        return mid_donor.attach_donor_household(
+            _donors(), _donor_households(), np.random.RandomState(seed)).set_index("person_id")
 
     out = attach(7)
     assert out["economic_status"].to_dict() == {"1_1": "high", "2_1": "high"}
     assert out["household_income_eur"].between(2600.0, 3000.0).all()
+    assert out["household_size"].to_dict() == {"1_1": 3, "2_1": 3}
+    # OECD-modified: 1.0 + 0.5 (second adult) + 0.3 (child of 9) = 1.8; the member without a
+    # valid age counts as 14 or older: 1.0 + 0.5 + 0.5 = 2.0
+    assert out["consumption_units"].to_dict() == pytest.approx({"1_1": 1.8, "2_1": 2.0})
     pd.testing.assert_frame_equal(out, attach(7))
 
 
 @pytest.mark.parametrize("households, message", [
-    # a missing MiD column
-    (pd.DataFrame({"H_ID": [1, 2], "oek_status": [3, 3]}), "hheink_gr1"),
-    # half of the persons without a household record: a broken join, not a few orphans
-    (pd.DataFrame({"H_ID": [1], "hhgr_gr": [1], "hheink_gr1": [6], "oek_status": [3]}), "household record"),
+    (_donor_households().drop(columns="hheink_gr1"), "hheink_gr1"),
+    (_donor_households().drop(columns="HP_ALTER_3"), "HP_ALTER_3"),
+    (_donor_households().iloc[:1], "household record"),     # half of the donors without a household
 ])
-def test_donor_household_income_fails_on_a_missing_column_or_a_broken_join(households, message):
-    _, persons, wege = _synthetic_mid()
-    _, donors, _ = mid_donor.build_mid_donor_frames(
-        pd.DataFrame({"H_ID": [1, 2]}), persons, wege, rng=np.random.RandomState(0))
+def test_donor_household_fails_on_a_missing_column_or_a_broken_join(households, message):
     with pytest.raises(ValueError, match=message):
-        mid_donor.attach_donor_household_income(donors, households, np.random.RandomState(0))
+        mid_donor.attach_donor_household(_donors(), households, np.random.RandomState(0))
+
+
+def test_donor_draw_attributes_are_weight_weekday_and_first_home_work_leg():
+    _, persons, wege = _synthetic_mid()
+    persons = persons.assign(P_GEW=[1.5, 0.5], kernwo=[2, 4])        # 4 = weekend
+    wege = wege.assign(wegkm_imp=[12.5, 11.0, 3.0, 3.0])
+    _, donors, trips = mid_donor.build_mid_donor_frames(
+        pd.DataFrame({"H_ID": [1, 2]}), persons, wege, rng=np.random.RandomState(0))
+    out = mid_donor.attach_donor_draw_attributes(donors, persons, trips).set_index("person_id")
+    assert out["donor_weight"].to_dict() == {"1_1": 1.5, "2_1": 0.5}
+    assert out["weekday_reporting_day"].to_dict() == {"1_1": True, "2_1": False}
+    assert out.loc["1_1", "commute_distance_km"] == 12.5     # home -> work, not the 11.0 km return leg
+    assert np.isnan(out.loc["2_1", "commute_distance_km"])   # a student: no leg between home and work

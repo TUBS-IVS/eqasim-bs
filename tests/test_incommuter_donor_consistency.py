@@ -190,14 +190,26 @@ def test_mid_stage_executes_with_configured_demographic_flag(monkeypatch, enable
     def load_donor(self, path):
         households, persons, trips = raw_mid()
         # The stage reads the donor household income and status from these MiD columns (ADR-0191).
-        return households.assign(hheink_gr1=[6, 9], oek_status=[3, 4]), persons, trips
+        households = households.assign(
+            H_GR=[1, 1], hheink_gr1=[6, 9], oek_status=[3, 4])
+        persons = persons.assign(P_GEW=[1.0, 2.0], kernwo=[2, 2])
+        return households, persons, trips.assign(wegkm_imp=[10.0, 10.0, 4.0, 4.0])
+
+    def load_household_ages(mid_dir):
+        absent = {f"HP_ALTER_{i}": [3300 + i] * 2 for i in range(2, 7)}
+        return pd.DataFrame({"H_ID": [1, 2], "HP_ALTER_1": [40, 30], **absent})
     monkeypatch.setattr(MidSource, "load_donor", load_donor)
+    monkeypatch.setattr(mid_donor, "_load_household_ages", load_household_ages)
     ctx = ConfigContext({"random_seed": 1234, mid_donor.KEY_DEMOGRAPHICS: enabled})
     mid_donor.configure(ctx)
     ctx.config = lambda key: ctx.cfg[key]
     donors = mid_donor.execute(ctx)[1]
     assert ("age" in donors and "sex" in donors) == enabled
     assert donors["economic_status"].tolist() == ["medium", "high"]
+    assert donors["household_size"].tolist() == [1, 1]
+    assert donors["consumption_units"].tolist() == [1.0, 1.0]
+    assert donors["donor_weight"].tolist() == [1.0, 2.0]
+    assert donors["weekday_reporting_day"].all()
 
 
 @pytest.mark.parametrize("module", [incommuters, student_incommuters])

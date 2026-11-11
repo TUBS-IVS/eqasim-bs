@@ -56,8 +56,10 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.trips",
     "braunschweig.popsim.sources.mid",
     "braunschweig.popsim.mid.donor",
-    # The donor household income draw (ADR-0191, attach_donor_household_income).
+    # The donor household income draw (ADR-0191, attach_donor_household).
     "braunschweig.popsim.placement_income",
+    # The donor household size / consumption units and the donor draw attributes.
+    "braunschweig.popsim.diary_facts",
     "braunschweig.popsim.income_kreis_control",
     "braunschweig.data.mid.income_by_size",
     "braunschweig.data.mid.income_by_status",
@@ -226,20 +228,98 @@ def build_mid_donor_frames(households, persons, wege, rng, *, preserve_demograph
     return households, persons_out, trips
 
 
-#: Offset of the RNG stream of :func:`attach_donor_household_income` from ``random_seed``, so its
+#: Offset of the RNG stream of :func:`attach_donor_household` from ``random_seed``, so its
 #: draws never shift the stream of :func:`build_mid_donor_frames` (whose bytes are pinned, #397).
 DONOR_HOUSEHOLD_INCOME_RNG_OFFSET = 52813
 
-#: MiD household columns the donor household income and status are read from (ADR-0191).
-DONOR_HOUSEHOLD_INCOME_COLUMNS = ("H_ID", "hheink_gr1", "oek_status")
+#: MiD household columns holding the interview ages of the household members 1..6 (codeplan:
+#: 0..85, 999 = no answer, 3302..3306 = person n not in the household).
+HOUSEHOLD_AGE_COLUMNS = tuple(f"HP_ALTER_{i}" for i in range(1, 7))
+
+#: MiD household columns the donor household income, status, size and consumption units are
+#: read from (ADR-0191).
+DONOR_HOUSEHOLD_INCOME_COLUMNS = ("H_ID", "H_GR", "hheink_gr1", "oek_status") + HOUSEHOLD_AGE_COLUMNS
+
+#: Codeplan range of a valid interview age (85 = 85 and older).
+_VALID_AGE_RANGE = (0, 85)
+
+#: ASSUMPTION (spec "Assumptions that remain"): a household member without a valid age counts as
+#: 14 or older in the OECD-modified scale; 14 is the youngest age counted as such by
+#: ``data.hts.hts.calculate_consumption_units``.
+_AGE_OF_MEMBER_WITHOUT_VALID_AGE = 14
 
 #: ASSUMPTION (a raise bound, not a reference value): share of donor persons without a MiD
 #: household record above which the person-household join is read as broken and the stage raises.
 DONOR_HOUSEHOLD_MISSING_RAISE_SHARE = 0.01
 
 
-def attach_donor_household_income(persons, households, rng):
-    """Add each donor's MiD household income (EUR) and economic status (ADR-0191).
+def _load_household_ages(mid_dir):
+    """Read ``H_ID`` and :data:`HOUSEHOLD_AGE_COLUMNS` from ``MiD2023_Haushalte.csv``.
+
+    It lives in this stage on purpose: the shared loader
+    ``braunschweig.popsim.mid.donor.load_mid_attributes`` is hashed by every popsim stage, so a
+    change there would re-key their caches for columns only this stage reads.
+    """
+    import os
+
+    import pandas as pd
+
+    from braunschweig.popsim.mid.csv_format import detect_csv_separator
+
+    path = os.path.join(mid_dir, "MiD2023_Haushalte.csv")
+    return pd.read_csv(
+        path, sep=detect_csv_separator(path), usecols=["H_ID", *HOUSEHOLD_AGE_COLUMNS])
+
+
+def _household_consumption_units(households):
+    """OECD-modified consumption units per household, from ``H_GR`` and ``HP_ALTER_1..6``.
+
+    Members = ``H_GR`` (top-coded at 6). Valid ages are 0..85; 999 and 3302..3306 are not.
+    A member without a valid age counts as 14 or older (ASSUMPTION, counted and logged as the
+    fallback). The coefficients come from ``data.hts.hts.calculate_consumption_units``.
+    """
+    import pandas as pd
+
+    from data.hts.hts import calculate_consumption_units
+
+    size = pd.to_numeric(households["H_GR"], errors="coerce")
+    if (size.isna() | (size < 1) | (size != np.floor(size))).any():
+        raise ValueError(
+            "[mid_donor] H_GR must be a positive integer household size for every household")
+    size = size.astype(int).to_numpy()
+    ages = households[list(HOUSEHOLD_AGE_COLUMNS)].apply(pd.to_numeric, errors="coerce")
+    valid = ages.ge(_VALID_AGE_RANGE[0]) & ages.le(_VALID_AGE_RANGE[1])
+    n_valid = valid.sum(axis=1).to_numpy()
+    too_many = n_valid > size
+    if too_many.any():
+        raise ValueError(
+            f"[mid_donor] {int(too_many.sum())} households list more valid HP_ALTER ages than "
+            f"H_GR members (e.g. H_ID {list(households['H_ID'][too_many][:5])}); check the "
+            "household file.")
+    known = pd.DataFrame({
+        "household_id": np.repeat(households["H_ID"].to_numpy(), len(HOUSEHOLD_AGE_COLUMNS)),
+        "age": ages.where(valid).to_numpy().ravel()}).dropna()
+    n_unknown = size - n_valid
+    unknown = pd.DataFrame({
+        "household_id": np.repeat(households["H_ID"].to_numpy(), n_unknown),
+        "age": float(_AGE_OF_MEMBER_WITHOUT_VALID_AGE)})
+    long = pd.concat([known, unknown], ignore_index=True)
+    n_members, n_fallback = int(size.sum()), int(n_unknown.sum())
+    _log.info(
+        "[mid_donor] consumption units: member age primary %d/%d (%.1f%%), fallback %d/%d (%.1f%%) "
+        "counted as 14 or older", n_members - n_fallback, n_members,
+        100.0 * (n_members - n_fallback) / max(n_members, 1), n_fallback, n_members,
+        100.0 * n_fallback / max(n_members, 1))
+    units = calculate_consumption_units(long)
+    return units.set_index("household_id")["consumption_units"]
+
+
+def attach_donor_household(persons, households, rng):
+    """Add each donor's MiD household income (EUR), economic status, size and consumption units
+    (ADR-0191).
+
+    ``household_size`` is ``H_GR`` (6 = six and more) and ``consumption_units`` the OECD-modified
+    scale from the interview ages ``HP_ALTER_1..6`` (:func:`_household_consumption_units`).
 
     ``economic_status`` is the household's ``oek_status`` and the income bracket its
     ``hheink_gr1`` group, both mapped with the resident popsim mappers
@@ -264,6 +344,8 @@ def attach_donor_household_income(persons, households, rng):
         ValueError: if a column is missing, or more than
             :data:`DONOR_HOUSEHOLD_MISSING_RAISE_SHARE` of the persons have no household record.
     """
+    import pandas as pd
+
     from braunschweig.popsim import attributes, placement_income
 
     missing_cols = [c for c in DONOR_HOUSEHOLD_INCOME_COLUMNS if c not in households.columns]
@@ -279,11 +361,17 @@ def attach_donor_household_income(persons, households, rng):
     hh = attributes.map_economic_status(households, rng=rng)
     hh = attributes.map_household_income(hh, rng=rng)
     hh["household_income_eur"] = placement_income.draw_own_income_eur(hh["household_income"], rng)
+    hh["household_size"] = pd.to_numeric(households["H_GR"], errors="coerce").to_numpy()
+    units = _household_consumption_units(households)
+    hh["consumption_units"] = hh["H_ID"].map(units).to_numpy()
     by_household = hh.assign(H_ID=hh["H_ID"].astype(str)).set_index("H_ID")
     household_of_person = persons["person_id"].astype(str).str.split("_").str[0]
     out = persons.copy()
-    for column in ("household_income_eur", "economic_status"):
+    for column in ("household_income_eur", "economic_status", "household_size",
+                   "consumption_units"):
         out[column] = household_of_person.map(by_household[column]).to_numpy()
+    if out["household_size"].notna().all():
+        out["household_size"] = out["household_size"].astype(int)
     # A person whose H_ID has no row in the household table (the raw B1 files carry a few) has
     # no household income; it stays NaN here and the worker in-commuter stage leaves such
     # donors out of its pool (incommuters.build_incommuter_frames), counted in both places.
@@ -302,6 +390,62 @@ def attach_donor_household_income(persons, households, rng):
         _log.warning(message)
     else:
         _log.info(message)
+    return out
+
+
+def attach_donor_draw_attributes(persons, raw_persons, trips):
+    """Add the attributes the in-commuter donor draw reads (design: incommuter donor household).
+
+    Adds ``donor_weight`` (``P_GEW``), ``weekday_reporting_day`` (``kernwo`` in
+    ``braunschweig.popsim.trips.WEEKDAY_DIARY_KERNWO``), both joined from ``raw_persons`` on
+    ``person_id = H_ID_P_ID``, and ``commute_distance_km``: ``wegkm_imp`` of the donor's first
+    leg (in ``trip_id`` order) between home and work in either direction, the rule of
+    ``braunschweig.popsim.commute_distance``; NaN for a donor without such a leg (counted).
+
+    Raises:
+        ValueError: naming a missing input column, or an impossible ``wegkm_imp`` value.
+    """
+    import pandas as pd
+
+    from braunschweig.popsim.diary_facts import validate_trip_length_km
+    from braunschweig.popsim.trips import WEEKDAY_DIARY_KERNWO
+
+    for name, frame, columns in (
+            ("raw persons", raw_persons, ("H_ID", "P_ID", "P_GEW", "kernwo")),
+            ("trips", trips, ("person_id", "trip_id", "preceding_purpose", "following_purpose",
+                              "wegkm_imp"))):
+        missing = [c for c in columns if c not in frame.columns]
+        if missing:
+            raise ValueError(f"[mid_donor] the {name} table lacks {missing}; the donor draw "
+                             "attributes are read from it.")
+    raw = raw_persons.assign(
+        person_id=raw_persons["H_ID"].astype(str) + "_" + raw_persons["P_ID"].astype(str))
+    if not raw["person_id"].is_unique:
+        raise ValueError("[mid_donor] non-unique (H_ID, P_ID) in the raw persons")
+    raw = raw.set_index("person_id")
+    out = persons.copy()
+    out["donor_weight"] = out["person_id"].map(
+        pd.to_numeric(raw["P_GEW"], errors="coerce")).to_numpy(dtype=float)
+    weekday = pd.to_numeric(raw["kernwo"], errors="coerce").isin(WEEKDAY_DIARY_KERNWO)
+    out["weekday_reporting_day"] = out["person_id"].map(weekday).fillna(False).astype(bool).to_numpy()
+
+    is_commute = (
+        ((trips["preceding_purpose"] == "home") & (trips["following_purpose"] == "work"))
+        | ((trips["preceding_purpose"] == "work") & (trips["following_purpose"] == "home")))
+    legs = trips[is_commute].sort_values(["person_id", "trip_id"], kind="stable")
+    legs = legs.drop_duplicates("person_id", keep="first")
+    km = validate_trip_length_km(legs["wegkm_imp"], log_tag="mid_donor")
+    out["commute_distance_km"] = out["person_id"].map(
+        pd.Series(km.to_numpy(), index=legs["person_id"].to_numpy())).to_numpy(dtype=float)
+    n = len(out)
+    n_weekday = int(out["weekday_reporting_day"].sum())
+    n_commute = int(out["commute_distance_km"].notna().sum())
+    _log.info(
+        "[mid_donor] donor draw attributes: weekday reporting day primary %d/%d (%.1f%%), "
+        "fallback (weekend or unknown) %d/%d; commute distance from a home-work leg primary "
+        "%d/%d (%.1f%%), fallback (no such leg, NaN) %d/%d",
+        n_weekday, n, 100.0 * n_weekday / max(n, 1), n - n_weekday, n,
+        n_commute, n, 100.0 * n_commute / max(n, 1), n - n_commute, n)
     return out
 
 
@@ -338,7 +482,10 @@ def execute(context):
     households_out, persons_out, trips = build_mid_donor_frames(
         households, persons, wege, np.random.RandomState(random_seed),
         preserve_demographics=context.config(KEY_DEMOGRAPHICS))
-    persons_out = attach_donor_household_income(
-        persons_out, households,
+    households_with_ages = households.merge(
+        _load_household_ages(mid_dir), on="H_ID", how="left", validate="one_to_one")
+    persons_out = attach_donor_household(
+        persons_out, households_with_ages,
         np.random.RandomState(random_seed + DONOR_HOUSEHOLD_INCOME_RNG_OFFSET))
+    persons_out = attach_donor_draw_attributes(persons_out, persons, trips)
     return households_out, persons_out, trips
