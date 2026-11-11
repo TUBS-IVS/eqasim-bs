@@ -361,8 +361,9 @@ def passive_purpose_for_pairs(adult_codes, *, escort_passive_education: bool,
     ``explicit_round_trip_purposes`` is deliberately NOT threaded in: it is True in production
     and inert there, and its pre-#241 arm would send the ADULT's own leg for W_ZWECK 14/15/16
     back to ``"other"`` while this table still gives the child ``"leisure"`` -- an asymmetry that
-    only matters on that A/B arm, where ``escort_passive_from_adult`` is not used. Thread it if
-    the two flags are ever combined.
+    only matters on that A/B arm. ``braunschweig.popsim.trips_stage.configure`` therefore refuses
+    the False arm until this function, the other-subtype decider and the leisure participation
+    seed read the flag too.
     """
     # to_numeric(errors="coerce"), NOT astype(int): a NaN adult code (an unpaired row slipping
     # in, or a delivery with a blank W_ZWECK) would otherwise raise IntCastingNaNError instead of
@@ -822,6 +823,89 @@ def mid_time_seconds(wege: pd.DataFrame, hour_col: str, minute_col: str) -> pd.S
     return seconds
 
 
+#: Warn threshold for the share of legs that keep NO travel time after the wegmin_imp1 rescue
+#: of :func:`mid_travel_time_seconds` (coded clock time AND invalid wegmin_imp1; issue #160).
+#: A rate above this almost always signals a broken wegmin_imp1 join/load rather than
+#: genuinely unrecoverable legs. Heuristic, not a measured value.
+CODED_TIME_DROP_WARN_RATE = 0.02
+
+
+def mid_travel_time_seconds(wege: pd.DataFrame, *, log_tag: str,
+                            log: logging.Logger | None = None) -> pd.Series:
+    """Leg duration in seconds from the MiD clock times, rescued from ``wegmin_imp1``.
+
+    ``arrival - departure`` of :func:`mid_time_seconds`, +24 h where negative (midnight
+    crossing). The coded clock times (W_SZS/W_SZM/W_AZS/W_AZM design codes 99 and 701, NOT
+    missing at random: rbW summary records of regular commuters) give NaN there; for those
+    legs the duration is taken from ``wegmin_imp1`` (MiD's own imputed per-leg duration in
+    minutes, valid in ``(0, time_imputation.WEGMIN_CODE_THRESHOLD)``). Legs whose
+    ``wegmin_imp1`` is itself coded/missing, or when the column is absent, stay NaN.
+
+    The observed/imputed/dropped counts and rates are logged; a dropped share above
+    ``CODED_TIME_DROP_WARN_RATE`` is a WARNING. Returns a Series aligned to ``wege.index``;
+    the caller decides what to do with the remaining NaN rows.
+    """
+    from braunschweig.popsim.time_imputation import WEGMIN_CODE_THRESHOLD
+
+    log = log if log is not None else logger
+    departure = mid_time_seconds(wege, "W_SZS", "W_SZM")
+    arrival = mid_time_seconds(wege, "W_AZS", "W_AZM")
+    travel_time = arrival - departure
+
+    # Repair negative travel_time from midnight crossing: add 24 h.
+    midnight_cross = travel_time < 0
+    travel_time.loc[midnight_cross] += 24 * 3600
+
+    coded_clock_time = travel_time.isna()
+    if "wegmin_imp1" in wege.columns:
+        wegmin_minutes = wege["wegmin_imp1"].astype(float)
+        wegmin_is_valid = (
+            wegmin_minutes.notna()
+            & (wegmin_minutes > 0)
+            & (wegmin_minutes < WEGMIN_CODE_THRESHOLD)
+        )
+        rescued = coded_clock_time & wegmin_is_valid
+        travel_time.loc[rescued] = wegmin_minutes.loc[rescued] * 60.0
+    else:
+        # Loud because this column is always present in production
+        # (mid.MID_WEGE_REQUIRED_COLS).
+        rescued = pd.Series(False, index=wege.index)
+        if coded_clock_time.any():
+            log.warning(
+                "%s %d rows have coded/missing clock "
+                "times (W_SZS/W_AZS design codes 99/701) but 'wegmin_imp1' is not "
+                "present in the input frame; none of these rows can be rescued and "
+                "all keep a NaN travel time.",
+                log_tag, int(coded_clock_time.sum()),
+            )
+
+    n_total_time = len(wege)
+    n_rescued = int(rescued.sum())
+    n_observed = n_total_time - int(coded_clock_time.sum())
+    n_dropped_time = int(coded_clock_time.sum()) - n_rescued
+    log.info(
+        "%s travel_time source: observed (valid "
+        "clock times) %d/%d (%.1f%%); imputed from wegmin_imp1 (coded W_SZS/"
+        "W_AZS, design codes 99/701) %d/%d (%.1f%%); dropped (coded clock time "
+        "AND invalid/missing wegmin_imp1) %d/%d (%.1f%%).",
+        log_tag,
+        n_observed, n_total_time, 100.0 * n_observed / n_total_time if n_total_time else 0.0,
+        n_rescued, n_total_time, 100.0 * n_rescued / n_total_time if n_total_time else 0.0,
+        n_dropped_time, n_total_time, 100.0 * n_dropped_time / n_total_time if n_total_time else 0.0,
+    )
+    if n_total_time > 0 and (n_dropped_time / n_total_time) > CODED_TIME_DROP_WARN_RATE:
+        log.warning(
+            "%s %.1f%% of trips were dropped because "
+            "BOTH the clock time and wegmin_imp1 were coded/missing -- this exceeds "
+            "the %.0f%% expected-rare threshold and likely signals a data or join "
+            "problem rather than genuinely unrecoverable trips.",
+            log_tag,
+            100.0 * n_dropped_time / n_total_time,
+            100.0 * CODED_TIME_DROP_WARN_RATE,
+        )
+    return travel_time
+
+
 # Ordered tuple of columns that constitute the eqasim trip schema subset produced by
 # build_trip_table.  Downstream stages (data/hts/hts.py fix/validate and
 # synthesis/population/activities.py) expect exactly these columns; all other MiD
@@ -928,6 +1012,10 @@ def build_trip_table(
         ``"education"`` instead of ``"escort"`` (forwarded to ``map_purpose``
         via ``expand_persons_to_trips``). Requires ``escort_purpose=True``.
         Default False keeps the OFF path byte-identical.
+    explicit_round_trip_purposes:
+        Issue #241 / ADR-0091: True (default, production) maps W_ZWECK 14/15/16 to
+        ``"leisure"``, False reverts them to ``"other"`` for the A/B (forwarded to
+        ``map_purpose`` via ``expand_persons_to_trips``).
     exclude_rbw_legs:
         If True, drop rbW legs (``W_RBW == 1``) before the join (forwarded to
         ``expand_persons_to_trips``); see that function's docstring for the
@@ -996,6 +1084,7 @@ def build_trip_table(
         trip_col=trip_col,
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
+        explicit_round_trip_purposes=explicit_round_trip_purposes,
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,

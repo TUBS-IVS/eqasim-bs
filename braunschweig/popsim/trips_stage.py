@@ -897,7 +897,17 @@ def configure(context):
     # (Sport / Freunde besuchen / Unterricht nicht Schule) to "leisure" instead of letting
     # them reach "other" through the silent fallback. False reproduces the pre-#241
     # assignment for the A/B.
-    context.config("explicit_round_trip_purposes", True)
+    explicit_round_trip_purposes = context.config("explicit_round_trip_purposes", True)
+    # The False arm is not a complete A/B yet (review of #598): the passive pairing
+    # (trips.passive_purpose_for_pairs), the other-subtype decider's code set and the seed's
+    # leisure participation codes (trips.leisure_w_zweck_codes) still treat 14/15/16 as leisure,
+    # so one joint trip would get two purposes. Refuse it at configure time, before PopulationSim
+    # runs, until those three read the flag too.
+    if not explicit_round_trip_purposes:
+        raise ValueError(
+            "[trips_stage] explicit_round_trip_purposes=False is not supported yet: the passive "
+            "escort pairing, the other-subtype decider and the leisure participation seed still map "
+            "W_ZWECK 14/15/16 to leisure, so this arm would not vary the flag alone. Keep it True.")
     # Plan-structure flags (issues #366 / #367). The first two mirror the keys
     # completed_donor declares for the plan-source side of the same decision (a
     # diary is only realisable if it still has legs after these drops), so both

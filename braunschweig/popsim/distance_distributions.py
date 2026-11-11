@@ -105,10 +105,9 @@ from braunschweig.popsim import diary_facts as _diary_facts
 from braunschweig.popsim import escort_pairing as _escort_pairing
 from braunschweig.popsim import time_imputation as _time_imputation
 from braunschweig.popsim import trips as _trips
-from braunschweig.popsim.time_imputation import WEGMIN_CODE_THRESHOLD
 from braunschweig.popsim.trips import (
     DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
-    map_mode, map_purpose, mid_time_seconds)
+    map_mode, map_purpose)
 
 # The key and its default are owned by the popsim stage package; declaring them as bare
 # string literals here let the same fact live in two files (issue #368 review).
@@ -136,8 +135,8 @@ from braunschweig.constants import ROUTED_DETOUR_FACTOR as DETOUR_FACTOR
 #
 # trips carries map_mode/map_purpose, which this stage's ENTIRE output (mode + purpose
 # vocabulary, for both the legacy and the by_purpose layer) is built from. time_imputation
-# defines WEGMIN_CODE_THRESHOLD, the validity bound the coded-clock-time rescue (Step 3b
-# above) uses to decide whether wegmin_imp1 can rescue a trip's travel_time. escort_pairing
+# defines WEGMIN_CODE_THRESHOLD, the validity bound the coded-clock-time rescue
+# (trips.mid_travel_time_seconds, Step 3 below) uses to decide whether wegmin_imp1 can rescue a trip's travel_time. escort_pairing
 # decides WHICH adult leg a passive escort leg (W_ZWECK 13) is paired with under
 # escort_passive_from_adult, and therefore which purpose -- and so which distance layer --
 # that leg's distance value lands in; this module never calls it directly, trips.map_purpose
@@ -235,10 +234,9 @@ BIN_SIZE = 200
 REQUIRED_COLUMNS = ("H_ID", "P_ID", "W_ID", "W_ZWECK", "hvm_imp",
                     "wegkm_imp", "W_SZS", "W_SZM", "W_AZS", "W_AZM", "W_GEW")
 
-# Warn threshold for the coded-clock-time-AND-invalid-wegmin_imp1 drop rate
-# (see Step 3 below). A rate above this almost always signals a broken
-# wegmin_imp1 join/load rather than genuinely unrecoverable trips (issue #160).
-CODED_TIME_DROP_WARN_RATE = 0.02
+# Warn threshold of the coded-clock-time drop rate; owned by the shared helper
+# trips.mid_travel_time_seconds (Step 3), re-exported under its former name here.
+CODED_TIME_DROP_WARN_RATE = _trips.CODED_TIME_DROP_WARN_RATE
 
 # Optional columns kept when present:
 # - W_ZWD (Wegezweck-Detail): needed by the shop daily/non-daily split (Task 5) and by
@@ -735,82 +733,14 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
     # --- Step 2: derive preceding_purpose (diary-starts-at-home). ----------
     df["preceding_purpose"] = _build_preceding_purpose(df)
 
-    # --- Step 3: compute travel_time in seconds. ----------------------------
-    df["departure_time"] = mid_time_seconds(df, "W_SZS", "W_SZM")
-    df["arrival_time"] = mid_time_seconds(df, "W_AZS", "W_AZM")
-    df["travel_time"] = df["arrival_time"] - df["departure_time"]
-
-    # Repair negative travel_time from midnight crossing: add 24 h.
-    midnight_cross = df["travel_time"] < 0
-    df.loc[midnight_cross, "travel_time"] += 24 * 3600
-
-    # --- Step 3b: rescue coded clock times via wegmin_imp1 (issue #160). ---
-    # W_SZS/W_SZM/W_AZS/W_AZM carry the MiD design codes 99 ("keine Angabe",
-    # item non-response, ~1% of Wege) and 701 ("bei regelmaessigen beruflichen
-    # Wegen nicht erhoben" -- rbW summary records of REGULAR COMMUTERS, ~10%),
-    # which are NOT missing at random (see braunschweig.popsim.time_imputation
-    # module docstring). mid_time_seconds NaNs travel_time for these rows;
-    # blindly dropping them (the previous behaviour) silently removed almost
-    # all commuter trips from the secondary distance distributions, biasing
-    # them towards non-commute travel.
-    #
-    # Unlike the trips.py consumer (braunschweig.popsim.time_imputation.
-    # impute_chain_times), this aggregate stage only needs the trip's
-    # DURATION as a quantile-binning key -- never an absolute clock time --
-    # so there is no need to reconstruct a full day schedule from empirical
-    # anchor/activity-duration pools. Instead we reuse the SAME primary data
-    # source stage A trusts for a trip's own duration: wegmin_imp1, MiD's own
-    # imputed per-trip duration in minutes (audited as fully populated and
-    # code-free for rbW rows; see time_imputation.py). Rows whose
-    # wegmin_imp1 is ITSELF coded/missing cannot be reconstructed and are
-    # dropped -- this should be rare, and the rate is logged below so a high
-    # drop rate (e.g. a broken wegmin_imp1 load) is never silent.
-    coded_clock_time = df["travel_time"].isna()
-    if "wegmin_imp1" in df.columns:
-        wegmin_minutes = df["wegmin_imp1"].astype(float)
-        wegmin_is_valid = (
-            wegmin_minutes.notna()
-            & (wegmin_minutes > 0)
-            & (wegmin_minutes < WEGMIN_CODE_THRESHOLD)
-        )
-        rescued = coded_clock_time & wegmin_is_valid
-        df.loc[rescued, "travel_time"] = wegmin_minutes.loc[rescued] * 60.0
-    else:
-        # wegmin_imp1 not supplied by the caller: no rescue is possible, so
-        # every coded-clock-time row is dropped below. Loud because this
-        # column is always present in production (mid.MID_WEGE_REQUIRED_COLS).
-        rescued = pd.Series(False, index=df.index)
-        if coded_clock_time.any():
-            logger.warning(
-                "[popsim.distance_distributions] %d rows have coded/missing clock "
-                "times (W_SZS/W_AZS design codes 99/701) but 'wegmin_imp1' is not "
-                "present in the input frame; none of these rows can be rescued and "
-                "all will be dropped from the distance distributions.",
-                int(coded_clock_time.sum()),
-            )
-
-    n_total_time = len(df)
-    n_rescued = int(rescued.sum())
-    n_observed = n_total_time - int(coded_clock_time.sum())
-    n_dropped_time = int(coded_clock_time.sum()) - n_rescued
-    logger.info(
-        "[popsim.distance_distributions] travel_time source: observed (valid "
-        "clock times) %d/%d (%.1f%%); imputed from wegmin_imp1 (coded W_SZS/"
-        "W_AZS, design codes 99/701) %d/%d (%.1f%%); dropped (coded clock time "
-        "AND invalid/missing wegmin_imp1) %d/%d (%.1f%%).",
-        n_observed, n_total_time, 100.0 * n_observed / n_total_time if n_total_time else 0.0,
-        n_rescued, n_total_time, 100.0 * n_rescued / n_total_time if n_total_time else 0.0,
-        n_dropped_time, n_total_time, 100.0 * n_dropped_time / n_total_time if n_total_time else 0.0,
-    )
-    if n_total_time > 0 and (n_dropped_time / n_total_time) > CODED_TIME_DROP_WARN_RATE:
-        logger.warning(
-            "[popsim.distance_distributions] %.1f%% of trips were dropped because "
-            "BOTH the clock time and wegmin_imp1 were coded/missing -- this exceeds "
-            "the %.0f%% expected-rare threshold and likely signals a data or join "
-            "problem rather than genuinely unrecoverable trips.",
-            100.0 * n_dropped_time / n_total_time,
-            100.0 * CODED_TIME_DROP_WARN_RATE,
-        )
+    # --- Step 3: travel_time in seconds, coded clock times rescued (issue #160). ---
+    # The clock-time duration, the midnight repair and the wegmin_imp1 rescue of the coded
+    # clock times (MiD design codes 99/701, NOT missing at random: rbW summary records of
+    # regular commuters) live in ONE helper shared with the secondary-location subtype
+    # deciders, so both estimate on the same durations (audit B1). Rows that keep NaN are
+    # dropped by the clamp below; the helper logs the observed/imputed/dropped rate.
+    df["travel_time"] = _trips.mid_travel_time_seconds(
+        df, log_tag="[popsim.distance_distributions]", log=logger)
 
     # Clamp to positive (zero-duration trips are kept; negative after repair
     # cannot occur but guard against data errors). Rows still NaN here are the
@@ -1120,6 +1050,10 @@ def configure(context):
     leisure_unspecified_subtype = context.config(
         KEY_LEISURE_UNSPECIFIED_SUBTYPE, DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE)
     context.config("escort_purpose", False)
+    # Issue #241 / ADR-0091: the same W_ZWECK 14/15/16 mapping as the trip build, so the
+    # distance layers follow the A/B switch (audit B6). A literal, not an import: this stage
+    # does not hash the defining module (tests/test_trip_flag_declaration_parity.py pins it).
+    context.config("explicit_round_trip_purposes", True)
     context.config(KEY_ESCORT_PASSIVE_EDUCATION, DEFAULT_ESCORT_PASSIVE_EDUCATION)
     # W_ZWECK 10 "anderer Zweck" -> leisure (issue #373, ADR-0111): a SHARED
     # key/default constant, like the plan-structure flags elsewhere -- the
@@ -1238,6 +1172,7 @@ def execute(context):
     codeplan_sentinels = bool(context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS))
     leisure_unspecified_subtype = bool(context.config(KEY_LEISURE_UNSPECIFIED_SUBTYPE))
     escort_purpose = context.config("escort_purpose")
+    explicit_round_trip_purposes = bool(context.config("explicit_round_trip_purposes"))
     escort_passive_education = context.config(KEY_ESCORT_PASSIVE_EDUCATION)
     w_zweck_10_as_leisure = bool(context.config(KEY_W_ZWECK_10_AS_LEISURE))
     escort_passive_from_adult = bool(context.config(KEY_ESCORT_PASSIVE_FROM_ADULT))
@@ -1268,6 +1203,7 @@ def execute(context):
         other_subtype_split=other_subtype_split,
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
+        explicit_round_trip_purposes=explicit_round_trip_purposes,
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,

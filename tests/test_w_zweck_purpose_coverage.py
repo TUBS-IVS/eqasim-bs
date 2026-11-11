@@ -89,3 +89,15 @@ def test_leisure_remap_can_be_switched_off_for_the_ab_run():
     flag-gated: OFF reproduces the pre-#241 assignment for an A/B."""
     out = T.map_purpose(_wege([14, 15, 16]), explicit_round_trip_purposes=False)
     assert out["purpose"].tolist() == ["other", "other", "other"]
+
+
+def test_the_trip_table_build_honours_the_switch_off():
+    """Audit B6: build_trip_table took the flag but never passed it on, so the OFF arm
+    of the A/B built exactly the ON trip table."""
+    persons = pd.DataFrame({"person_id": [0], "H_ID": [1], "P_ID": [1]})
+    wege = pd.DataFrame([dict(H_ID=1, P_ID=1, W_ID=1, W_ZWECK=14, hvm_imp=3, W_SZS=8, W_SZM=0,
+                              W_AZS=8, W_AZM=30, wegkm_imp=5.0, wegmin_imp1=30, W_GEW=1.0)])
+    off = T.build_trip_table(persons, wege, explicit_round_trip_purposes=False)
+    on = T.build_trip_table(persons, wege, explicit_round_trip_purposes=True)
+    assert off["following_purpose"].tolist() == ["other"]
+    assert on["following_purpose"].tolist() == ["leisure"]

@@ -1662,3 +1662,44 @@ def test_exclude_no_answer_purpose_default_agrees_across_its_two_homes():
     ctx_dd = _FakeContext()
     dd.configure(ctx_dd)
     assert ctx_dd.registered[KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS] is DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS
+
+
+# ---------------------------------------------------------------------------
+# Audit B1: legs whose MiD clock time is coded take their duration from wegmin_imp1 (the
+# distance stage's rescue), and every marginal fallback of a decider is counted.
+# ---------------------------------------------------------------------------
+
+
+def _shop_coded_clock_time_wege():
+    """40 daily legs with a coded clock time (W_SZS 99) but a valid wegmin_imp1 of 2 min,
+    and 40 non-daily legs of 10 min with valid clock times."""
+    rows = []
+    row_id = _add_rows(rows, 0, w_zweck=4, w_zwd=501, wegkm=1.0, n=40)
+    _add_rows(rows, row_id, w_zweck=4, w_zwd=502, wegkm=8.0, n=40)
+    wege = pd.DataFrame(rows)
+    wege["wegmin_imp1"] = 10.0
+    wege.loc[:39, "W_SZS"] = 99
+    wege.loc[:39, "wegmin_imp1"] = 2.0
+    return wege
+
+
+def test_shop_decider_bands_a_coded_clock_time_by_its_wegmin_duration_and_counts_fallbacks(monkeypatch):
+    ctx = _decider_context({"secondary_shop_daily_split": True}, monkeypatch,
+                           _shop_coded_clock_time_wege())
+    decide = sc._build_shop_subtype_decider(ctx, random_seed=1)
+    # The 2-minute daily legs form the shortest band on their own: every short leg is daily.
+    assert {decide("car", 100.0) for _ in range(20)} == {"shop_daily"}
+    assert (decide.n_legs, decide.n_marginal_fallback) == (20, 0)
+    decide("car", 400.0)  # no (car, 300-600 s) cell -> marginal
+    assert (decide.n_legs, decide.n_marginal_fallback) == (21, 1)
+
+
+def test_other_decider_counts_a_leg_without_an_estimated_cell(monkeypatch):
+    rows = []
+    _add_rows(rows, 0, w_zweck=5, w_zwd=601, wegkm=6.0, n=40)  # 600 s legs only
+    ctx = _decider_context({"secondary_other_subtype_split": True}, monkeypatch,
+                           pd.DataFrame(rows))
+    decide = sc._build_other_subtype_decider(ctx, random_seed=1)
+    decide("car", 700.0)   # the estimated (car, 600-1200 s) cell
+    decide("walk", 700.0)  # no walk cell -> marginal
+    assert (decide.n_legs, decide.n_marginal_fallback) == (2, 1)

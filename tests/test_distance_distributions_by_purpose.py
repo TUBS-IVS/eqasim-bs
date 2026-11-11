@@ -11,6 +11,7 @@ Three scenarios:
 
 import numpy as np
 import pandas as pd
+import pytest
 
 
 def _synthetic_wege():
@@ -584,3 +585,27 @@ def test_weekday_legs_only_defaults_to_false():
     from braunschweig.popsim.distance_distributions import run
 
     assert inspect.signature(run).parameters["weekday_legs_only"].default is False
+
+
+@pytest.mark.parametrize("flag", [True, False])
+def test_execute_forwards_the_round_trip_purpose_flag_to_run(monkeypatch, flag):
+    """Audit B6: execute() must hand explicit_round_trip_purposes to run(), or the
+    distance layers ignore the A/B switch the trip build honours."""
+    from braunschweig.popsim import distance_distributions as dd
+    from braunschweig.popsim.mid import donor
+    from braunschweig.popsim.stage import config_keys as stage_keys
+
+    seen = {}
+    monkeypatch.setattr(donor, "load_mid_wege", lambda mid_dir: pd.DataFrame())
+    monkeypatch.setattr(dd, "run", lambda wege, **kwargs: seen.update(kwargs) or {})
+    values = {"explicit_round_trip_purposes": flag,
+              stage_keys.KEY_PASSIVE_PAIR_MAX_GAP_MINUTES: 10.0,
+              stage_keys.KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS: 18}
+
+    class _Context:
+        def config(self, key, *default):
+            assert not default, "execute() must read config with ONE argument"
+            return values.get(key, "unused" if key.endswith("mid_dir") else False)
+
+    dd.execute(_Context())
+    assert seen["explicit_round_trip_purposes"] is flag
