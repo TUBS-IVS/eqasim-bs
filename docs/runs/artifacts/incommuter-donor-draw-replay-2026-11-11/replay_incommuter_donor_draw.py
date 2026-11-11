@@ -34,9 +34,16 @@ draw), so modes, times, locations and vehicles can differ. What the pt check nev
 3. the donor id (``hts_id``) of every agent whose mode in the cached output equals its mode in the replay: the share
    with identical donors must be at least 99 %, else exit code 2;
 4. STRONGER than the brief's minimum: every other column that both ``persons`` frames carry, except the two that
-   follow the final mode (``car_availability``, ``number_of_cars``), over ALL agents, each at least 99 % identical.
-   The donor draw runs before the pt check and the household columns derive from the donor only, so these columns
-   must match exactly. The share per column is reported.
+   follow the final mode (``car_availability``, ``number_of_cars``) and the income columns named below, over ALL
+   agents, each at least 99 % identical. The donor draw runs before the pt check and these columns derive from the
+   donor only, so they must match exactly. The share per column is reported.
+
+NOT gating: ``household_income_eur``, ``household_income`` and ``high_income`` of the ``persons`` AND ``households``
+frames. In the old code the income is 3000 x INKAR scale x a lognormal jitter, and the jitter is drawn from the
+stage's shared RNG AFTER the pt timetable check; with the check switched off the RNG state at that point differs, so
+the jitter differs although the rule is the same (not a replay defect). They are reported as "RNG-dependent after the
+pt check: not comparable row by row", with the share of identical rows and the mean and the 10/50/90 % quantiles of
+``household_income_eur`` of the replay and of the cached output, so a reader sees whether the distributions agree.
 
 Not compared (informational only): trips, activities, locations, vehicles. The share of mode-equal agents with equal
 first-trip times is reported. Limit of the check: it proves the old code reproduces the donors, origins and persons
@@ -93,13 +100,21 @@ LOGGER_NAMES = ("braunschweig.synthesis.incommuters", "braunschweig.synthesis.st
                 "braunschweig.data.cordon.donor_draw", "braunschweig.data.hts.mid_donor")
 #: Persons columns that follow the FINAL mode, which the pt check can change: not part of the identity check.
 MODE_DEPENDENT_PERSON_COLUMNS = ("car_availability", "number_of_cars")
+#: Income columns of the persons AND households frames that are reported, not gated, in the identity check: in the old
+#: code the income is 3000 x INKAR scale x a lognormal jitter drawn from the stage's shared RNG AFTER the pt timetable
+#: check, so with the check switched off the RNG state at that point differs although the rule is the same.
+RNG_DEPENDENT_INCOME_COLUMNS = ("household_income_eur", "household_income", "high_income")
+RNG_DEPENDENT_REASON = ("old code: income = 3000 x INKAR scale x lognormal jitter, the jitter drawn from the stage's "
+                        "shared RNG after the pt timetable check; the replay has the check off, so the RNG state "
+                        "differs; not a replay defect")
 #: Smallest share of agents (a fraction) that must agree in the identity check. ASSUMPTION: the bound of the brief.
 MIN_SHARE_IDENTICAL = 0.99
 EXIT_IDENTITY_FAILED = 2
 QUANTILES = (10, 50, 90)
 IDENTITY_LIMIT = ("The cached run had the pt check on; the replay has it off. Compared exactly: agent count, person "
                   "ids, origin Kreis, donor ids of agents with the same mode, and every persons column except the "
-                  "mode-dependent ones. NOT compared: trips, activities, locations, vehicles of agents the pt check "
+                  "mode-dependent ones and the income columns (reported, not gating: RNG-dependent after the pt "
+                  "check, see rng_dependent_income_columns). NOT compared: trips, activities, locations, vehicles of agents the pt check "
                   "changed (mode, day shift, station), and the fleet draw (random numbers consumed by the "
                   "re-balancing).")
 
@@ -402,6 +417,54 @@ def _same(left: pd.Series, right: pd.Series) -> np.ndarray:
     return (left.eq(right) | (left.isna() & right.isna())).to_numpy(dtype=bool)
 
 
+def _income_distribution(values: pd.Series) -> dict:
+    """Mean and 10/50/90 % quantiles (EUR per month) of the finite values; ``None`` entries when there are none."""
+    arr = pd.to_numeric(values, errors="coerce").to_numpy(dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if not len(arr):
+        return {"n_finite": 0, "mean": None, **{f"p{q}": None for q in QUANTILES}}
+    return {"n_finite": int(len(arr)), "mean": float(arr.mean()),
+            **{f"p{q}": float(np.percentile(arr, q)) for q in QUANTILES}}
+
+
+def _rng_dependent_income_report(replay: dict, cached: dict, persons_replay: pd.DataFrame,
+                                 persons_cached: pd.DataFrame) -> dict:
+    """Report, NOT gate, the income columns that depend on the random numbers left after the pt check.
+
+    For the ``persons`` frames (aligned by person id, passed in) and the ``households`` frames (aligned by
+    ``person_id`` where both carry it): per column the share of identical rows and, for ``household_income_eur``, the
+    mean and the 10/50/90 % quantiles of the replay and of the cached output, so the reader sees whether the
+    distributions agree although the rows do not.
+    """
+    report: dict = {"status": "RNG-dependent after the pt check: not comparable row by row", "gating": False,
+                    "reason": RNG_DEPENDENT_REASON, "frames": {}}
+    households_r, households_c = replay.get("households"), cached.get("households")
+    pairs = {"persons": (persons_replay, persons_cached)}
+    if (households_r is not None and households_c is not None and "person_id" in households_r.columns
+            and "person_id" in households_c.columns and not households_r["person_id"].duplicated().any()
+            and not households_c["person_id"].duplicated().any()):
+        pairs["households"] = (households_r.set_index("person_id").sort_index(),
+                               households_c.set_index("person_id").sort_index())
+    for frame_name, (left, right) in pairs.items():
+        entry: dict = {"columns": {}}
+        aligned = left.index.equals(right.index)
+        for column in RNG_DEPENDENT_INCOME_COLUMNS:
+            if column not in left.columns or column not in right.columns:
+                entry["columns"][column] = NOT_AVAILABLE
+            elif not aligned:
+                entry["columns"][column] = "not comparable: the frames list different person ids"
+            else:
+                try:
+                    entry["columns"][column] = {"identical_share_pct": 100.0 * float(_same(left[column], right[column]).mean())}
+                except (TypeError, ValueError) as exc:
+                    entry["columns"][column] = f"not comparable: {exc}"
+        if "household_income_eur" in left.columns and "household_income_eur" in right.columns:
+            entry["household_income_eur_replay_eur_per_month"] = _income_distribution(left["household_income_eur"])
+            entry["household_income_eur_cached_eur_per_month"] = _income_distribution(right["household_income_eur"])
+        report["frames"][frame_name] = entry
+    return report
+
+
 def identity_check(replay: dict, cached: dict, *, min_share: float = MIN_SHARE_IDENTICAL) -> dict:
     """Compare the replay with the cached stage output in what the pt check never changes (module docstring).
 
@@ -465,7 +528,7 @@ def identity_check(replay: dict, cached: dict, *, min_share: float = MIN_SHARE_I
     columns, only_replay = {}, [c for c in rp.columns if c not in cp.columns]
     only_cached = [c for c in cp.columns if c not in rp.columns]
     for column in rp.columns:
-        if column in cp.columns and column not in MODE_DEPENDENT_PERSON_COLUMNS:
+        if column in cp.columns and column not in MODE_DEPENDENT_PERSON_COLUMNS + RNG_DEPENDENT_INCOME_COLUMNS:
             try:
                 columns[column] = 100.0 * float(_same(rp[column], cp[column]).mean())
             except (TypeError, ValueError) as exc:
@@ -476,6 +539,8 @@ def identity_check(replay: dict, cached: dict, *, min_share: float = MIN_SHARE_I
         if isinstance(share, float) and share < 100.0 * min_share:
             failures.append(f"persons column {column!r} identical for only {share:.2f}% of the agents (need "
                             f"{100.0 * min_share:.0f}%)")
+
+    checks["rng_dependent_income_columns"] = _rng_dependent_income_report(replay, cached, rp, cp)
 
     # Informational: first-trip times of the agents with an equal mode (the pt check can shift a day).
     first_r = first_trips(replay["trips"]).reindex(rp.index)
@@ -722,6 +787,10 @@ def orchestrate(args) -> int:
         print(f"identity {stage}: {'passed' if (entry or {}).get('passed') else 'FAILED'}; donor id identical "
               f"{donor.get('identical_share_pct_of_equal_mode_agents', float('nan')):.2f}% of the agents with an "
               f"equal mode; limit: {IDENTITY_LIMIT}")
+        income = checks.get("rng_dependent_income_columns")
+        if income:
+            print(f"identity {stage}: {income['status']} (not gating): "
+                  f"{json.dumps(income['frames'], sort_keys=True)}")
     for stage in args.stage:
         old_s = (summary["stages"][stage]["old"] or {}).get("summary")
         new_s = (summary["stages"][stage]["new"] or {}).get("summary")
@@ -802,9 +871,28 @@ def self_test() -> int:
     broken = {key: value.copy() if hasattr(value, "copy") else value for key, value in cached.items()}
     broken["persons"].loc[broken["persons"].index[:20], "hts_id"] += 1000
     assert not identity_check(frames, broken)["passed"]
-    broken = {key: value.copy() if hasattr(value, "copy") else value for key, value in cached.items()}
-    broken["persons"].loc[broken["persons"].index[:20], "household_income_eur"] += 1.0
-    assert any("household_income_eur" in f for f in identity_check(frames, broken)["failures"])
+    # The income columns are RNG-dependent after the pt check: different values there must NOT fail the check, but
+    # they are reported with their identical share and the distributions.
+    jittered = {key: value.copy() if hasattr(value, "copy") else value for key, value in cached.items()}
+    jittered["persons"].loc[:, "household_income_eur"] += 1.0
+    jittered["persons"]["household_income"] = jittered["persons"]["household_income_eur"].astype(int).astype(str)
+    jittered["persons"].loc[jittered["persons"].index[:50], "high_income"] ^= True
+    frames_hh = {key: value.copy() if hasattr(value, "copy") else value for key, value in frames.items()}
+    frames_hh["households"] = frames["persons"][["person_id", "household_income_eur", "high_income"]].copy()
+    jittered["households"] = jittered["persons"][["person_id", "household_income_eur", "high_income"]].copy()
+    jitter_report = identity_check(frames_hh, jittered)
+    assert jitter_report["passed"], jitter_report["failures"]
+    income = jitter_report["checks"]["rng_dependent_income_columns"]
+    assert income["gating"] is False and "RNG-dependent" in income["status"]
+    assert income["frames"]["persons"]["columns"]["household_income_eur"]["identical_share_pct"] == 0.0
+    assert income["frames"]["households"]["columns"]["high_income"]["identical_share_pct"] < 100.0
+    assert abs(income["frames"]["persons"]["household_income_eur_replay_eur_per_month"]["mean"]
+               - income["frames"]["persons"]["household_income_eur_cached_eur_per_month"]["mean"] + 1.0) < 1e-9
+    assert income["frames"]["persons"]["household_income_eur_cached_eur_per_month"]["p50"] is not None
+    assert "household_income_eur" not in jitter_report["checks"]["persons_columns_identical_share_pct"]
+    # ... while a changed donor id still fails next to such income differences.
+    jittered["persons"].loc[jittered["persons"].index[:20], "hts_id"] += 1000
+    assert not identity_check(frames_hh, jittered)["passed"]
     broken = {key: value.copy() if hasattr(value, "copy") else value for key, value in cached.items()}
     broken["validation"].loc[broken["validation"].index[:20], "ars5"] = "99999"
     assert any("origin Kreis" in f for f in identity_check(frames, broken)["failures"])
