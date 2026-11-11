@@ -1,15 +1,11 @@
 """Tests for Task A2 -- write the realistic continuous income to MATSim.
 
-Two concerns are covered:
-
-1. The MATSim person-attribute writer emits a numeric ``householdIncomeEur``
-   attribute equal to the synthesised ``household_income_eur`` when the config
-   flag ``write_income_eur`` is ON, and OMITS it (byte-identical legacy output)
-   when the flag is OFF.
-2. The cross-cordon in-commuter income is drawn from the origin-Kreis INKAR
-   income level (so incomes vary across source Kreise instead of the legacy
-   hardcoded constant), with a logged primary-vs-fallback rate when an origin
-   Kreis is missing from the INKAR table (CLAUDE.md "Fallback transparency").
+The MATSim person-attribute writer emits a numeric ``householdIncomeEur``
+attribute equal to the synthesised ``household_income_eur`` when the config
+flag ``write_income_eur`` is ON, and OMITS it (byte-identical legacy output)
+when the flag is OFF. (The in-commuter income is the MiD donor household's,
+drawn per origin Kreis by ``braunschweig.data.cordon.donor_draw``, ADR-0191;
+tested in ``tests/test_cordon_donor_draw.py`` and ``tests/test_incommuters.py``.)
 """
 from __future__ import annotations
 
@@ -18,15 +14,12 @@ import io
 import sys
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 import matsim.scenario.population as pop  # noqa: E402
 import matsim.writers as writers  # noqa: E402
-from braunschweig.synthesis.incommuters import draw_incommuter_income  # noqa: E402
 
 
 def _write_one_person(person_row, write_income_eur):
@@ -146,27 +139,3 @@ def test_household_income_eur_attribute_off_is_legacy_byte_identical():
     assert "householdIncomeEur" not in xml_off
     # the categorical placeholder string attribute is still present (unchanged)
     assert 'name="householdIncome"' in xml_off
-
-
-# --- in-commuter INKAR income draw ------------------------------------------------
-
-def _inkar_frame():
-    """Two source Kreise with distinct INKAR scales + a regional mean of 1.0."""
-    return pd.DataFrame({
-        "ars5": ["03241", "03158"],
-        "einkommen_eur": [2400.0, 1800.0],
-        "scale": [1.20, 0.90],
-    })
-
-
-def test_incommuter_income_is_the_donor_income_times_the_origin_scale(capsys):
-    # ADR-0191: primary path = donor household EUR x origin-Kreis INKAR scale (no base
-    # constant, no jitter); an origin Kreis absent from INKAR keeps the donor income
-    # (scale 1.0), and the fallback count/rate is logged (CLAUDE.md no-silent-fallback).
-    orig_ars = np.array(["03241", "03158", "09999"])
-    income, n_fallback = draw_incommuter_income(
-        orig_ars, np.array([4000.0, 4000.0, 2500.0]), _inkar_frame())
-    np.testing.assert_array_equal(income, [4800.0, 3600.0, 2500.0])
-    assert n_fallback == 1
-    # 1 of 3 (33 %) is above the 5 % warn rate -> WARNING prefix
-    assert "WARNING" in capsys.readouterr().out

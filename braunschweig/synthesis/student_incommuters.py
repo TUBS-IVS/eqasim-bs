@@ -139,6 +139,8 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.synthesis.incommuters",
     # Reached through incommuters._high_income (ADR-0191).
     "braunschweig.popsim.income",
+    # Imported by incommuters for the worker donor draw (ADR-0191); the student path does not draw donors.
+    "braunschweig.data.cordon.donor_draw",
     "braunschweig.data.cordon.plans",
     "braunschweig.constants",
     "braunschweig.data.cordon.demand",

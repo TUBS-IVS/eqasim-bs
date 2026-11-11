@@ -1281,6 +1281,7 @@ def test_empty_frames_carry_the_zero_day_bound_report():
     assert off["n"] == 0 and off["n_redrawn"] == 0 and off["n_days_moved"] == 0 and off["bound_s"] is None
     no_agents = incommuters_module._empty_frames("EPSG:25832", bound_s=29 * 3600.0)["day_bound"]
     assert no_agents["bound_s"] == 29 * 3600.0 and no_agents["n_still_late"] == 0
+    assert incommuters_module._empty_frames("EPSG:25832")["donor_draw"]["n_agents"] == 0
 
 
 @pytest.mark.parametrize("key,bad", [
@@ -1354,6 +1355,7 @@ def test_incommuter_carries_its_donor_household_and_only_eligible_donors_are_dra
         dict(donor_weight=0.0),
     ]), {"car": 0.5, "pt": 0.5})
     persons, households = frames["persons"], frames["households"]
+    assert frames["donor_draw"]["n_agents"] == len(persons) and frames["donor_draw"]["tilted"] is False
     assert set(persons["hts_id"]) == {1}
     assert set(persons["household_income_eur"]) == {6000.0} and persons["high_income"].all()
     assert set(persons["household_size"]) == {3} and set(persons["consumption_units"]) == {1.8}
@@ -1372,3 +1374,46 @@ def test_a_donor_frame_without_a_required_column_fails(column):
     gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
     with pytest.raises(ValueError, match=column):
         _frames((gates, assignment, flows, zgb_work, hp.drop(columns=column), ht), {"car": 1.0})
+
+
+def test_agents_draw_donors_with_a_similar_commute_tilted_to_their_kreis():
+    """The fixture commute is 35 km straight-line (45.5 km routed): the donors at 30 and 60 km
+    form the window, the donor at 5 km is never drawn."""
+    frames = _frames(_donor_pool([
+        dict(household_income_eur=2000.0, household_size=1, commute_distance_km=30.0),   # 2000 EUR per person
+        dict(household_income_eur=8000.0, household_size=2, commute_distance_km=60.0),   # 4000 EUR per person
+        dict(household_income_eur=1000.0, household_size=1, commute_distance_km=5.0),
+    ]), {"car": 1.0}, inkar_income=pd.DataFrame({"ars5": ["03241"], "scale": [1.25]}),
+        donor_min_effective_pool=2.0)
+    drawn = frames["persons"]["hts_id"]
+    assert 3 not in set(drawn)
+    # target 3000 * 1.25 = 3750 EUR per person -> P(donor 2) = 0.875; 50 agents never fall to 0.6
+    assert (drawn == 2).mean() > 0.6
+    # the donor income is used as it is: no multiplication by the Kreis scale any more
+    assert set(frames["persons"]["household_income_eur"]) <= {2000.0, 8000.0}
+    report = frames["donor_draw"]
+    assert report["n_agents"] == len(drawn) and report["tilted"] is True and report["distance_matched"] is True
+    assert report["n_without_kreis_scale"] == 0 and report["n_target_not_reached"] == 0
+    assert report["n_whole_pool_window"] == 0
+
+
+def test_distance_matching_needs_the_donor_commute_distance():
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    with pytest.raises(ValueError, match="commute_distance_km"):
+        _frames((gates, assignment, flows, zgb_work, hp.drop(columns="commute_distance_km"), ht),
+                {"car": 1.0}, donor_min_effective_pool=2.0)
+
+
+def test_agent_commute_uses_the_real_home_or_the_population_centre_of_the_origin_kreis():
+    from braunschweig.synthesis import incommuters as incommuters_module  # noqa: PLC0415
+    gemeinden = gpd.GeoDataFrame(
+        {"ars5": ["03241", "03241"], "ewz": [3000, 1000]},
+        geometry=[Point(1000.0, 1000.0), Point(41000.0, 1000.0)], crs="EPSG:25832")
+    # population centre of 03241: x = (3 * 1000 + 1 * 41000) / 4 = 11000, y = 1000
+    km, n_fallback = incommuters_module._agent_commute_km(
+        home_x=np.array([5000.0, 99000.0, 7000.0]), home_y=np.array([1000.0, 1000.0, 1000.0]),
+        work_x=np.array([1000.0, 1000.0, 1000.0]), work_y=np.array([1000.0, 1000.0, 1000.0]),
+        has_real_home=np.array([True, False, False]), orig_ars=np.array(["03241", "03241", "09999"]),
+        gemeinden=gemeinden, detour_factor=1.5)
+    # real home 4 km away; Kreis centre 10 km away; Kreis without Gemeinden: its own gate, 6 km away
+    assert km == pytest.approx([6.0, 15.0, 9.0]) and n_fallback == 1

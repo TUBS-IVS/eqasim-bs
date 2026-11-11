@@ -30,6 +30,7 @@ from braunschweig import constants as _constants
 from braunschweig import synpp_tokens
 from braunschweig.constants import ROUTED_DETOUR_FACTOR
 from braunschweig.data.cordon import demand as _demand
+from braunschweig.data.cordon import donor_draw as _donor_draw
 from braunschweig.data.cordon.demand import (
     expand_to_agents, make_incommuter_ids, select_inbound_flows)
 from braunschweig.data.cordon import gate_assignment as _gate_assignment
@@ -128,101 +129,104 @@ DEFAULT_REBALANCE_MAX_ITERATIONS = 10
 DONOR_COLUMNS = ("household_income_eur", "economic_status", "household_size", "consumption_units",
                  "donor_weight", "weekday_reporting_day")
 
-# Fallback-rate threshold above which the INKAR origin-Kreis miss is escalated to a
-# WARNING (CLAUDE.md "Fallback transparency"). A high rate means a systematic origin
-# Kreis vs INKAR ars5 key mismatch, not a few genuinely out-of-table Kreise.
-INCOMMUTER_INCOME_FALLBACK_WARN_RATE = 5.0
+#: Smallest effective donor pool (Kish size) of the commute-distance window a worker in-commuter draws its MiD
+#: donor from (ADR-0191, D5); > 0. The window around the agent's commute length grows until it is reached.
+KEY_DONOR_MIN_EFFECTIVE_POOL = "braunschweig.incommuters.donor_min_effective_pool"
+DEFAULT_DONOR_MIN_EFFECTIVE_POOL = 1000.0   # ASSUMPTION: owner decision 2026-11-11, not calibrated
+
+#: Share of agents (percent) on the origin-Kreis-centre commute fallback above which a WARNING is logged.
+#: ASSUMPTION: the 5 % warn rate of the other in-commuter fallbacks of this module, not calibrated.
+AGENT_COMMUTE_FALLBACK_WARN_PERCENT = 5.0
 
 
-def _eligible_donors(hts_persons):
+def validate_donor_min_effective_pool(value) -> float:
+    """``KEY_DONOR_MIN_EFFECTIVE_POOL`` as a float: a finite number > 0, else ValueError."""
+    try:
+        as_float = float(value)
+    except (TypeError, ValueError):
+        as_float = float("nan")
+    if isinstance(value, bool) or not np.isfinite(as_float) or as_float <= 0.0:
+        raise ValueError(f"{KEY_DONOR_MIN_EFFECTIVE_POOL} must be a finite number > 0, got {value!r}")
+    return as_float
+
+
+def _eligible_donors(hts_persons, *, needs_distance: bool = False):
     """The donor persons that can stand for an in-commuter household (ADR-0191, D1 and D4).
 
-    Raises ``ValueError`` when a column of :data:`DONOR_COLUMNS` is missing. Excluded, each donor
-    counted once under the first reason that applies: no household record (income, status, size or
-    consumption units missing), a reporting day outside the model's weekday universe, a donor weight
-    that is missing or not above 0. The count per reason and the primary share are logged;
-    ``select_commuter_donors`` raises if nobody is left.
+    Raises ``ValueError`` when a column of :data:`DONOR_COLUMNS` is missing (with ``needs_distance`` also
+    ``commute_distance_km``). Excluded, each donor counted once under the first reason that applies: no
+    household record (income, status, size or consumption units missing), a reporting day outside the
+    model's weekday universe, a donor weight that is missing or not above 0, and with ``needs_distance`` a
+    commute distance that is not a finite number above 0 (no home-work leg). The count per reason and the
+    primary share are logged; ``select_commuter_donors`` raises if nobody is left.
     """
-    missing = [c for c in DONOR_COLUMNS if c not in hts_persons.columns]
+    required = DONOR_COLUMNS + (("commute_distance_km",) if needs_distance else ())
+    missing = [c for c in required if c not in hts_persons.columns]
     if missing:
         raise ValueError(
             f"[incommuters] the donor persons lack {missing}; the in-commuter household comes from "
-            f"the MiD donor household (braunschweig.data.hts.mid_donor.attach_donor_household, "
-            f"ADR-0191).")
+            f"the MiD donor household (braunschweig.data.hts.mid_donor.attach_donor_household and "
+            f"attach_donor_draw_attributes, ADR-0191).")
     no_household = hts_persons[
         ["household_income_eur", "economic_status", "household_size", "consumption_units"]
     ].isna().any(axis=1)
     not_weekday = ~hts_persons["weekday_reporting_day"].fillna(False).astype(bool)
     weight = pd.to_numeric(hts_persons["donor_weight"], errors="coerce")
     no_weight = ~(weight > 0)
+    if needs_distance:
+        commute = pd.to_numeric(hts_persons["commute_distance_km"], errors="coerce")
+        no_commute = ~(np.isfinite(commute) & (commute > 0))
+    else:
+        no_commute = pd.Series(False, index=hts_persons.index)
     reason_household = no_household
     reason_weekday = ~reason_household & not_weekday
     reason_weight = ~reason_household & ~reason_weekday & no_weight
-    keep = ~(reason_household | reason_weekday | reason_weight)
+    reason_commute = ~reason_household & ~reason_weekday & ~reason_weight & no_commute
+    keep = ~(reason_household | reason_weekday | reason_weight | reason_commute)
     n, n_kept = len(hts_persons), int(keep.sum())
     logger.info(
         "[incommuters] donor eligibility: primary %d/%d donor persons (%.2f%%), excluded %d: "
         "%d without a household record, %d without a weekday reporting day, %d without a "
-        "positive weight", n_kept, n, 100.0 * n_kept / n if n else 0.0, n - n_kept,
-        int(reason_household.sum()), int(reason_weekday.sum()), int(reason_weight.sum()))
+        "positive weight, %d without a commute distance", n_kept, n, 100.0 * n_kept / n if n else 0.0,
+        n - n_kept, int(reason_household.sum()), int(reason_weekday.sum()), int(reason_weight.sum()),
+        int(reason_commute.sum()))
     return hts_persons[keep].reset_index(drop=True)
 
 
-def draw_incommuter_income(orig_ars, donor_income_eur, df_inkar):
-    """Per-agent monthly household income (EUR): the donor household's income x origin-Kreis scale.
+def _agent_commute_km(home_x, home_y, work_x, work_y, has_real_home, orig_ars, gemeinden, detour_factor):
+    """Routed commute length (km) per agent, the length its MiD donor is matched on (ADR-0191, D5).
 
-    ADR-0191: ``donor_income_eur`` is the agent's MiD donor household income (a national
-    survey), and the INKAR ``scale`` of the agent's ORIGIN Kreis is relative to the national
-    mean (``braunschweig.data.inkar.household_income``), so the product moves the national
-    donor income to the income level of the Kreis the agent lives in. ASSUMPTION: the scale
-    acts multiplicatively on the EUR value and leaves the donor's economic status unchanged.
+    The origin of an agent is its home where ``has_real_home`` (a real in-ring Gemeinde point); else the
+    population-weighted mean (``ewz``) of the representative points of the Gemeinden of its origin Kreis
+    (``gemeinden``: ``ars5``, ``ewz``, geometry in the metric CRS of the coordinates). FALLBACK: for an
+    origin Kreis without Gemeinde rows, or without ``gemeinden``, the origin is the agent's own home point
+    (road gate or station, a lower bound of the commute); those agents are counted. The commute is
+    ``detour_factor`` times the straight-line distance origin -> work.
 
-    Fallback transparency: the PRIMARY path looks the origin Kreis up in the INKAR ``scale``
-    table; a Kreis absent from it (out-of-table / ars5-format mismatch) keeps the donor
-    income (scale 1.0). The fallback count and rate are logged, escalated to a WARNING above
-    :data:`INCOMMUTER_INCOME_FALLBACK_WARN_RATE`, so a systematic key mismatch is visible.
-
-    Args:
-        orig_ars: per-agent 5-digit origin Kreis ARS.
-        donor_income_eur: per-agent donor household income (EUR/month), agent-aligned.
-        df_inkar: INKAR frame with columns ``ars5`` and ``scale``.
-
-    Returns:
-        ``(income_eur, n_fallback)`` -- per-agent income rounded to whole EUR and the number
-        of agents whose origin Kreis had no INKAR scale.
+    Returns ``(commute_km, n_fallback)``; ``n_fallback`` counts only agents without a real home.
     """
-    orig = np.asarray([str(a) for a in orig_ars])
-    donor_income_eur = np.asarray(donor_income_eur, dtype=float)
-    if len(donor_income_eur) != len(orig):
-        raise ValueError(
-            f"draw_incommuter_income: donor_income_eur ({len(donor_income_eur)}) and orig_ars "
-            f"({len(orig)}) must be agent-aligned.")
-    n = len(orig)
-    scale_lookup = dict(zip(df_inkar["ars5"].astype(str), df_inkar["scale"].astype(float)))
-    in_table = np.array([a in scale_lookup for a in orig], dtype=bool)
-    n_fallback = int((~in_table).sum())
-    scale = np.array([scale_lookup.get(a, 1.0) for a in orig], dtype=float)
-    income = (donor_income_eur * scale).round(0)
-
-    if n:
-        share = 100.0 * n_fallback / n
-        if n_fallback:
-            level = "WARNING: " if share > INCOMMUTER_INCOME_FALLBACK_WARN_RATE else ""
-            print(
-                f"[braunschweig.incommuters] {level}INKAR origin-Kreis income fallback: "
-                f"primary {n - n_fallback}/{n} ({100.0 - share:.1f}%), "
-                f"fallback {n_fallback} ({share:.1f}%) in-commuters had no INKAR scale "
-                f"for their origin Kreis -> donor income unscaled (scale 1.0). A high rate "
-                f"means a systematic origin-Kreis vs INKAR ars5 key mismatch.",
-                flush=True,
-            )
+    home_x = np.asarray(home_x, dtype=float)
+    home_y = np.asarray(home_y, dtype=float)
+    has_real_home = np.asarray(has_real_home, dtype=bool)
+    origin_x, origin_y = home_x.copy(), home_y.copy()
+    centre = {}
+    if gemeinden is not None and len(gemeinden):
+        points = gemeinden.geometry.representative_point()
+        ewz = gemeinden["ewz"].to_numpy(dtype=float)
+        frame = pd.DataFrame({"ars5": gemeinden["ars5"].astype(str).to_numpy(),
+                              "wx": ewz * points.x.to_numpy(dtype=float),
+                              "wy": ewz * points.y.to_numpy(dtype=float), "ewz": ewz})
+        frame = frame[frame["ewz"] > 0].groupby("ars5").sum()
+        centre = dict(zip(frame.index, zip(frame["wx"] / frame["ewz"], frame["wy"] / frame["ewz"])))
+    n_fallback = 0
+    for i in np.flatnonzero(~has_real_home):
+        found = centre.get(str(orig_ars[i]))
+        if found is None:
+            n_fallback += 1
         else:
-            print(
-                f"[braunschweig.incommuters] INKAR origin-Kreis income PRIMARY lookup "
-                f"hit all {n}/{n} in-commuters (fallback rate 0.0%).",
-                flush=True,
-            )
-    return income, n_fallback
+            origin_x[i], origin_y[i] = found
+    commute_km = float(detour_factor) * straight_line_distance_km(origin_x, origin_y, work_x, work_y)
+    return commute_km, n_fallback
 
 
 def direct_ride_stops(routes, stop_kreis, zgb_kreise):
@@ -384,7 +388,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                             time_bound_s=float(MAX_PLAN_TIME_SECONDS),
                             time_redraw_max_attempts=DEFAULT_TIME_REDRAW_MAX_ATTEMPTS,
                             pt_share_tolerance=DEFAULT_PT_SHARE_TOLERANCE,
-                            rebalance_max_iterations=DEFAULT_REBALANCE_MAX_ITERATIONS):
+                            rebalance_max_iterations=DEFAULT_REBALANCE_MAX_ITERATIONS,
+                            donor_min_effective_pool=None):
     """Assemble every in-commuter frame.
 
     Returns a dict with keys persons, trips, activities, locations, vehicles,
@@ -480,8 +485,14 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
 
     The donors (``hts_persons``) must carry :data:`DONOR_COLUMNS`: the household of an in-commuter
     is its donor household (ADR-0191); a missing column raises, there is no constant fallback.
+
+    ``donor_min_effective_pool`` (default ``None``: no distance matching, every donor can be drawn; unit tests):
+    the smallest effective size (Kish) of the commute-distance window an agent's donor is drawn from. Set, the
+    donors must also carry ``commute_distance_km``. The donor is drawn by ``donor_draw.KreisDonorSampler``
+    (MiD weight, commute window, tilt to the INKAR level of the origin Kreis, ``inkar_income``); the frames
+    carry its report under ``donor_draw``.
     """
-    hts_persons = _eligible_donors(hts_persons)
+    hts_persons = _eligible_donors(hts_persons, needs_distance=donor_min_effective_pool is not None)
     inbound = select_inbound_flows(flows, zgb_kreise, in_ring_kreise=set(assignment["ars5"]))
     # OD validation target for the per-run cordon analysis (#134): the full-population
     # BA inbound SvB flow per external source Kreis, direction "ein". Derived from the
@@ -764,11 +775,37 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     # re-drawn up to ``time_redraw_max_attempts`` times (#467); the persons follow the final donor.
     bound_s = float(time_bound_s) if pt_check is None else min(float(time_bound_s), float(pt_check.bound_s))
     dist_km_all, home_to_gate_km_all = np.asarray(dist_km, dtype=float), np.asarray(home_to_gate_km, dtype=float)
+    # The donor of an agent is drawn per origin Kreis from the donors with a commute of a similar length, weighted
+    # by the MiD person weight and tilted to the Kreis's INKAR income level (ADR-0191, D2/D3/D5). The sampler logs
+    # its own primary/fallback rates; only the agent commute fallback is logged here.
+    commute_km, n_commute_fallback = _agent_commute_km(
+        home_x, home_y, work_x, work_y, np.zeros(n, dtype=bool) if is_in_ring is None else is_in_ring,
+        orig_ars, gemeinden, detour_factor)
+    commute_message = (f"[braunschweig.incommuters] agent commute for the donor match: primary "
+                       f"{n - n_commute_fallback}/{n} ({100.0 * (n - n_commute_fallback) / n:.1f}%), fallback "
+                       f"{n_commute_fallback} ({100.0 * n_commute_fallback / n:.1f}%) on the own gate or station "
+                       f"(no real home, no Gemeinde of the origin Kreis; a lower bound of the commute)")
+    if 100.0 * n_commute_fallback / n > AGENT_COMMUTE_FALLBACK_WARN_PERCENT:
+        logger.warning(commute_message)
+    else:
+        logger.info(commute_message)
+    pool = select_commuter_donors(hts_persons, hts_trips, person_col)
+    scale_by_kreis = (None if inkar_income is None else
+                      dict(zip(inkar_income["ars5"].astype(str), inkar_income["scale"].astype(float))))
+    sampler = _donor_draw.KreisDonorSampler(pool, scale_by_kreis, min_effective_pool=donor_min_effective_pool)
+    kreis = _incommuter_kreis_ags5(orig_ars)
     donors, (arrive_work, depart_work, depart_home, arrive_home), redraw_stats = redraw_times_within_bound(
-        select_commuter_donors(hts_persons, hts_trips, person_col), n, rng,
+        pool, n, rng,
         lambda d, pos: _agent_times(d, hts_trips, person_col, dist_km_all[pos], home_to_gate_km_all[pos],
                                     gate_speed_kmh, detour_factor),
-        bound_s=bound_s, max_attempts=validate_time_redraw_max_attempts(time_redraw_max_attempts))
+        bound_s=bound_s, max_attempts=validate_time_redraw_max_attempts(time_redraw_max_attempts),
+        draw=lambda positions: pool.iloc[sampler.draw(kreis[positions], commute_km[positions], rng)]
+        .reset_index(drop=True))
+    # The sampler logged (and warned about) its primary/fallback rates in draw(); the frames carry its report.
+    donor_report = sampler.report(kreis, commute_km)
+    if inkar_income is None:
+        logger.warning("[incommuters] no INKAR frame supplied: %d in-commuters are drawn without the "
+                       "origin-Kreis income tilt", n)
 
     # 4a) Impute the missing donor times (assemble_incommuter_core_frames imputes the same way; on complete times
     # the second imputation changes nothing). A day that still ends after the bound moves earlier as a whole, as
@@ -966,20 +1003,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         zgb_work.crs, middle_purpose="work", repair_chronology=repair_chronology)
     trips, activities, locations = core["trips"], core["activities"], core["locations"]
 
-    # Per-agent monthly household income (EUR): the MiD donor household's income times the
-    # origin-Kreis INKAR scale (ADR-0191). Without an INKAR frame (unit tests) the donor
-    # income stays unscaled, and that is logged.
-    donor_income_eur = donors["household_income_eur"].to_numpy(dtype=float)
-    if inkar_income is not None:
-        income_eur, _n_income_fallback = draw_incommuter_income(orig_ars, donor_income_eur,
-                                                                inkar_income)
-    else:
-        income_eur = donor_income_eur.round(0)
-        logger.warning("[incommuters] no INKAR frame supplied: %d in-commuters keep their "
-                       "donor household income without the origin-Kreis scale", n)
-
-    # Until the donor draw carries the Kreis level itself, both builders read the scaled value.
-    donors = donors.assign(household_income_eur=income_eur)
+    # The household income (EUR per month) of an agent is its donor household's, unscaled: the origin-Kreis
+    # income level acts through the donor draw above (ADR-0191, D3).
     persons = _build_persons(ids, donors, person_col, modes)
     households = _build_households(ids, donors, modes)
     # In-commuter cars are drawn from the German NDS fleet (Task F6) when a
@@ -1068,6 +1093,7 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                   validation=validation, mode_target=mode_target,
                   od_target=od_target)
     frames["day_bound"] = day_bound
+    frames["donor_draw"] = donor_report
     if pt_report is not None:
         frames["pt_connection"] = pt_report
     if rebalance_report is not None:
@@ -1451,10 +1477,11 @@ def _empty_frames(crs, bound_s=None):
     """Zero-row frames (the flag-OFF / no-agent path) so the merge is a perfect no-op.
 
     They carry the zero ``day_bound`` report too (``bound_s`` None when the stage is off), so the key is always
-    present (ADR-0172).
+    present (ADR-0172); likewise ``donor_draw`` (the sampler report without agents).
     """
     return dict(
         day_bound=_plans.empty_day_bound(bound_s),
+        donor_draw=_donor_draw.empty_report(),
         persons=pd.DataFrame(columns=["person_id"]),
         trips=pd.DataFrame(columns=["person_id"]),
         activities=pd.DataFrame(columns=["person_id"]),
@@ -1479,7 +1506,7 @@ def _empty_frames(crs, bound_s=None):
 #: shared plan repairs, ``mikrozensus.reference`` maps an origin ARS to the Bundesland whose
 #: mode reference is applied, and ``constants`` carries ``ROUTED_DETOUR_FACTOR``, with which
 #: every straight-line distance here is converted.
-_HELPER_MODULES = (_plans, _constants, _demand, _gate_assignment, _mode_balancer,
+_HELPER_MODULES = (_plans, _constants, _demand, _donor_draw, _gate_assignment, _mode_balancer,
                    _mode_reference, _mikrozensus_reference, _pt_connections, _day_end_margin)
 
 #: The same requirement for the five helpers reached through FUNCTION-LEVEL imports, hashed by
@@ -1598,6 +1625,8 @@ def configure(context):
     rebalance_max_iterations = context.config(KEY_REBALANCE_MAX_ITERATIONS, DEFAULT_REBALANCE_MAX_ITERATIONS)
     if int(rebalance_max_iterations) < 0:
         raise ValueError(f"{KEY_REBALANCE_MAX_ITERATIONS} must be >= 0, got {rebalance_max_iterations}")
+    # Smallest effective donor pool of the commute window of the donor draw (ADR-0191, D5).
+    validate_donor_min_effective_pool(context.config(KEY_DONOR_MIN_EFFECTIVE_POOL, DEFAULT_DONOR_MIN_EFFECTIVE_POOL))
     context.config(_day_end_margin.KEY_ENABLED, _day_end_margin.DEFAULT_ENABLED)
     context.config(_day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S, _day_end_margin.DEFAULT_LAST_ARRIVAL_MARGIN_S)
     configure_pt_check(context)
@@ -1737,6 +1766,7 @@ def execute(context):
         time_redraw_max_attempts=int(context.config(KEY_TIME_REDRAW_MAX_ATTEMPTS)),
         pt_share_tolerance=float(context.config(KEY_PT_SHARE_TOLERANCE)),
         rebalance_max_iterations=int(context.config(KEY_REBALANCE_MAX_ITERATIONS)),
+        donor_min_effective_pool=validate_donor_min_effective_pool(context.config(KEY_DONOR_MIN_EFFECTIVE_POOL)),
     )
     print(f"[braunschweig.synthesis.incommuters] {len(frames['persons'])} in-commuters "
           f"injected ({(frames['trips']['mode'] == 'pt').sum() // 2} PT, rest car)")
