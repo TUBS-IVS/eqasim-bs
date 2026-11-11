@@ -25,7 +25,6 @@ code_paths:
 - braunschweig/calibration/srv_distance_targets.py
 - braunschweig/calibration/decision.py
 - scripts/extract_srv_primary_distance_targets.py
-- documentation/plots/srv_commute_distance.py
 evidence:
   tests:
   - tests/test_srv_distance_targets.py
@@ -33,7 +32,6 @@ evidence:
   - tests/test_srv_distance_decision.py
   - tests/test_srv_commute_distance_reference_stage.py
   - tests/test_commute_distance_by_kreis.py
-  - tests/test_srv_commute_distance_plot.py
   off_path_byte_identical:
     claimed: not_applicable
     note: Analysis-only stages; they read cached synthesis stages and write a report, no pipeline output changes.
