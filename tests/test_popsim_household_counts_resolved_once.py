@@ -10,6 +10,7 @@ end with an e-bike and zero bicycles.
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -76,49 +77,110 @@ def test_joint_imputation_logs_primary_imputed_and_fallback_rates(caplog):
     assert "primary" in text and "imputed" in text and "fallback" in text
 
 
-def test_seed_and_clones_carry_identical_household_counts():
-    """The seed value and the value on every assembled clone are the SAME draw."""
-    donors = _donor_households()
+class _FakeContext:
+    """Minimal synpp context: serves the completed_donor stage result, records set_info."""
+
+    def __init__(self, donor):
+        self._donor = donor
+        self.info = {}
+
+    def stage(self, name):
+        assert name == "completed_donor"
+        return self._donor
+
+    def set_info(self, key, value):
+        self.info[key] = value
+
+
+def _seed_and_assembled_clones(donors, mid_persons_extra=None):
+    """Run the stage's seed build, then assemble two clones per donor from ITS donor tables.
+
+    Uses only entry points that exist on origin/main (``_build_populationsim_seed``,
+    ``expand_to_persons``, ``assembly.map_mid_person_attributes``), so the test is red on the
+    pre-fix code for the real defect, not for a missing new function.
+    """
     cols = sources.get_source("mid").seed_columns()
-    resolved = popsim_stage._resolve_donor_household_counts(
-        donors, kreis_seed_rng=np.random.RandomState(7), ebike_seed_column="H_ANZPED",
-    )
     ids = donors[cols.household_id].tolist()
-    seed_persons = pd.DataFrame({
-        cols.person_household_id: ids,
-        cols.person_id: [f"p{i}" for i in range(len(ids))],
+    mid_persons = pd.DataFrame({
+        "H_ID": ids, "P_ID": [1] * len(ids), "HP_ALTER": 40, "HP_SEX": 1, "P_TAET": 1,
+        "P_FSCHEIN": 1, "P_FKARTE": 3, "P_BKAT": 1,
+    })
+    if mid_persons_extra is not None:
+        mid_persons = mid_persons_extra(mid_persons)
+    seed_persons_in = pd.DataFrame({
+        cols.person_household_id: mid_persons["H_ID"], cols.person_id: mid_persons["P_ID"],
         cols.person_weight: 1.0, cols.age: 40, cols.sex: 1,
         "anzwege1": 2, "alter_gr1": 5,
+        **{c: mid_persons[c] for c in ("P_TAET", "P_FSCHEIN", "P_FKARTE", "P_BKAT")},
     })
-    seed_hh, _seed_p = mid.project_completed_seed(
-        resolved, seed_persons, cols,
-        kreis_control_entries=[
-            _entry("number_of_cars"), _entry("number_of_bicycles"), _entry("has_ebike")],
-        kreis_seed_rng=np.random.RandomState(99),  # a different stream must not matter
-        ebike_seed_column="H_ANZPED",
+    donor = SimpleNamespace(
+        households=donors, persons=seed_persons_in,
+        completeness_report=SimpleNamespace(completeness_rate=1.0),
+        completion_report=SimpleNamespace(n_households_filled=0, n_persons_added=0),
     )
-    seed_by_id = seed_hh.set_index(cols.household_id)
-
-    # Two clones per donor, both through the real assembly mapper on the SAME resolved frame.
+    don_hh, don_p, seed_hh, seed_p = popsim_stage._build_populationsim_seed(
+        _FakeContext(donor), sources.get_source("mid"), "mid", None, True, None,
+        [_entry("number_of_cars"), _entry("number_of_bicycles"), _entry("has_ebike")],
+        np.random.RandomState(7), "H_ANZPED",
+    )
     merged = pd.DataFrame({
         "ZENSUS100m": ["A"] * len(ids), "ZENSUS1km": ["KA"] * len(ids), "H_ID": ids,
         "RegionalSchlussel_ARS": ["031010000000"] * len(ids),
     })
     merged = pd.concat([merged, merged], ignore_index=True)  # two clones per donor
     merged = expand.assign_synthetic_household_ids(merged)
-    mid_persons = pd.DataFrame({
-        "H_ID": ids, "P_ID": [1] * len(ids), "HP_ALTER": 40, "HP_SEX": 1, "P_TAET": 1,
-        "P_FSCHEIN": 1, "P_FKARTE": 3, "P_BKAT": 1,
-    })
     persons = expand.expand_to_persons(merged, mid_persons, donor_col="H_ID")
     persons = expand.map_demographics(persons, rng=np.random.RandomState(3))
     persons = assembly.derive_zone_ids(persons)
     clones, _map = assembly.map_mid_person_attributes(
-        persons, resolved, rng=np.random.RandomState(3),
+        persons, don_hh, rng=np.random.RandomState(3),
     )
+    return seed_hh.set_index(cols.household_id), seed_p, clones
+
+
+def test_seed_and_clones_carry_identical_household_counts():
+    """The seed value and the value on every assembled clone are the SAME draw (P3-F1)."""
+    donors = _donor_households()
+    seed_by_id, _seed_p, clones = _seed_and_assembled_clones(donors)
     for column in ("number_of_cars", "number_of_bicycles", "has_ebike"):
         for donor_id, value in clones.groupby("H_ID")[column].first().items():
             assert seed_by_id.loc[donor_id, column] == value, (column, donor_id)
     # The fixture really exercises the 99 path (a missing-free fixture would pass vacuously).
     assert (donors["H_ANZAUTO"] == 99).any()
-    assert not ((clones["has_ebike"] == 1) & (clones["number_of_bicycles"] == 0)).any()
+
+
+def test_legacy_donor_table_carries_seed_resolved_counts(caplog):
+    """complete_members=False: the separately loaded donor table takes the seed's values."""
+    donors = _donor_households()
+    cols = sources.get_source("mid").seed_columns()
+    persons = pd.DataFrame({
+        cols.person_household_id: donors[cols.household_id], cols.person_id: 1,
+        cols.person_weight: 1.0, cols.age: 40, cols.sex: 1, "anzwege1": 2, "alter_gr1": 5,
+    })
+    # The seed as load_mid_seed builds it: its own household frame, its own rng stream.
+    seed_hh, _ = mid.project_completed_seed(
+        donors.iloc[:-5], persons.iloc[:-5], cols,
+        kreis_control_entries=[
+            _entry("number_of_cars"), _entry("number_of_bicycles"), _entry("has_ebike")],
+        kreis_seed_rng=np.random.RandomState(99), ebike_seed_column="H_ANZPED",
+    )
+
+    class _Source:
+        def load_donor(self, _mid_dir):
+            return donors.copy(), persons, None
+
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.attributes"):
+        out, _ = popsim_stage._load_donor_tables(
+            None, _Source(), "mid", None, False, None, None,
+            seed_households=seed_hh, seed_id_col=cols.household_id,
+            fallback_rng=np.random.RandomState(3),
+        )
+    seed_by_id = seed_hh.set_index(cols.household_id)
+    in_seed = out[cols.household_id].isin(seed_by_id.index)
+    assert in_seed.sum() == len(donors) - 5
+    for column in attributes.HOUSEHOLD_COUNT_COLUMNS:
+        got = out.loc[in_seed].set_index(cols.household_id)[column]
+        assert (got == seed_by_id.loc[got.index, column]).all(), column
+        assert out[column].notna().all()  # the 5 donors outside the seed got the fallback
+    assert not ((out["has_ebike"] == 1) & (out["number_of_bicycles"] == 0)).any()
+    assert "fallback" in " ".join(r.getMessage() for r in caplog.records)

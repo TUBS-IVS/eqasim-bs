@@ -2062,7 +2062,8 @@ def _join_cell_attributes_onto_merged_output(merge_report, cells: pd.DataFrame) 
 
 def _load_donor_tables(context, source, source_name: str, mid_dir, complete_members: bool,
         completed_donor_households, completed_donor_persons,
-        passenger_availability_enabled: bool = False):
+        passenger_availability_enabled: bool = False, seed_households=None, seed_id_col=None,
+        fallback_rng=None):
     """Load the donor attribute tables through the active source adapter.
 
     For source="mid": MidSource.load_donor reads from mid_dir (byte-identical).
@@ -2102,6 +2103,13 @@ def _load_donor_tables(context, source, source_name: str, mid_dir, complete_memb
             )
         else:
             donor_households, donor_persons, _donor_trips = source.load_donor(mid_dir)
+        # The seed (load_mid_seed) resolved the count columns on its own household frame:
+        # carry them onto this separately loaded table so clones keep the value their donor
+        # was balanced on (audit P3-F1); counted and logged inside the helper.
+        if seed_households is not None:
+            donor_households = attributes.carry_seed_household_counts(
+                donor_households, seed_households, id_col=seed_id_col or H_ID,
+                rng=fallback_rng)
     return donor_households, donor_persons
 
 
@@ -2670,6 +2678,8 @@ def execute(context) -> pd.DataFrame:
         context, source, source_name, mid_dir, complete_members,
         completed_donor_households, completed_donor_persons,
         passenger_availability_enabled=passenger_availability_enabled,
+        seed_households=seed_households, seed_id_col=source.seed_columns().household_id,
+        fallback_rng=rng,
     )
     placement_income_on = _resolve_placement_income_flag(context, source_name)
 

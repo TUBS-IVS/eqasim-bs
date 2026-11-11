@@ -1026,6 +1026,56 @@ def resolve_household_counts(
         rs7_conditioning=rs7_conditioning)
 
 
+def carry_seed_household_counts(
+    donor_households: pd.DataFrame, seed_households: pd.DataFrame, *, id_col: str, rng,
+    ebike_col: str = "H_ANZPED",
+) -> pd.DataFrame:
+    """Copy the seed-resolved household count columns onto an independently loaded donor table.
+
+    Legacy path (``complete_members=False``): ``load_mid_seed`` resolves the count
+    columns on its own household frame while ``source.load_donor`` loads a separate donor
+    table, so the clones would not carry the value their donor was balanced on (audit
+    P3-F1). The seed columns are matched by ``id_col``; the match rate is logged.
+
+    Returns: a copy of ``donor_households`` carrying all of ``HOUSEHOLD_COUNT_COLUMNS``.
+    Donors absent from the seed (and columns the seed did not derive because their control
+    is inactive) are resolved with ``rng`` and counted as FALLBACK in the log. If the seed
+    carries none of the columns the table is returned unchanged: the assembly then resolves
+    all of them itself and logs it (the unchanged pre-fix behaviour; no control was
+    balanced on them).
+    Mutates: nothing in place; draws from ``rng`` only when a gap has to be filled.
+    """
+    carried = [c for c in HOUSEHOLD_COUNT_COLUMNS if c in seed_households.columns]
+    if not carried:
+        logger.info("[popsim.donor] seed carries no household count column; "
+                    "the assembly resolves them (no count control active).")
+        return donor_households
+    out = donor_households.copy()
+    key = out[id_col].astype(str)
+    seed_unique = seed_households.drop_duplicates(id_col)
+    seed_idx = seed_unique.set_index(seed_unique[id_col].astype(str))
+    in_seed = key.isin(seed_idx.index)
+    gaps = len(carried) < len(HOUSEHOLD_COUNT_COLUMNS)
+    for col in carried:
+        out[col] = key.map(seed_idx[col])
+        gaps = gaps or bool(out[col].isna().any())
+    n = len(out)
+    n_hit = int(in_seed.sum())
+    if gaps:
+        fallback = resolve_household_counts(donor_households, rng=rng, ebike_col=ebike_col)
+        for col in HOUSEHOLD_COUNT_COLUMNS:
+            if col not in out.columns:
+                out[col] = fallback[col]
+            else:
+                out[col] = out[col].where(out[col].notna(), fallback[col])
+            out[col] = out[col].astype(fallback[col].dtype)
+    logger.info(
+        "[popsim.donor] household counts carried from the seed for %d/%d donors (%.1f%%), "
+        "fallback (resolved with the assembly rng) for %d (%.1f%%); columns from the seed: %s.",
+        n_hit, n, 100.0 * n_hit / max(n, 1), n - n_hit, 100.0 * (n - n_hit) / max(n, 1), carried)
+    return out
+
+
 def map_trip_class(
     persons: pd.DataFrame, *, trips_col: str = "anzwege1", rng=None,
     rs7_conditioning: bool = True,
