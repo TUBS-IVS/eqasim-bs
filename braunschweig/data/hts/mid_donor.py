@@ -414,15 +414,14 @@ def attach_donor_draw_attributes(persons, raw_persons, trips):
     ``braunschweig.popsim.trips.WEEKDAY_DIARY_KERNWO``), both joined from ``raw_persons`` on
     ``person_id = H_ID_P_ID``, and ``commute_distance_km``: ``wegkm_imp`` of the donor's first
     leg (in ``trip_id`` order) between home and work in either direction; NaN for a donor
-    without such a leg (counted). The leg rule is the one of
-    ``braunschweig/popsim/commute_distance.py :: _per_purpose`` and must change with it.
+    without such a leg (counted), and ``education_distance_km``: the same for the purpose
+    ``education``. The leg rule lives in ``_first_home_leg_km``.
 
     Raises:
         ValueError: naming a missing input column, or an impossible ``wegkm_imp`` value.
     """
     import pandas as pd
 
-    from braunschweig.popsim.diary_facts import validate_trip_length_km
     from braunschweig.popsim.trips import WEEKDAY_DIARY_KERNWO
 
     for name, frame, columns in (
@@ -444,27 +443,45 @@ def attach_donor_draw_attributes(persons, raw_persons, trips):
     weekday = pd.to_numeric(raw["kernwo"], errors="coerce").isin(WEEKDAY_DIARY_KERNWO)
     out["weekday_reporting_day"] = out["person_id"].map(weekday).fillna(False).astype(bool).to_numpy()
 
-    is_commute = (
-        ((trips["preceding_purpose"] == "home") & (trips["following_purpose"] == "work"))
-        | ((trips["preceding_purpose"] == "work") & (trips["following_purpose"] == "home")))
-    legs = trips[is_commute].sort_values(["person_id", "trip_id"], kind="stable")
-    legs = legs.drop_duplicates("person_id", keep="first")
-    km = validate_trip_length_km(legs["wegkm_imp"], log_tag="mid_donor")
     out["commute_distance_km"] = out["person_id"].map(
-        pd.Series(km.to_numpy(), index=legs["person_id"].to_numpy())).to_numpy(dtype=float)
+        _first_home_leg_km(trips, "work")).to_numpy(dtype=float)
+    out["education_distance_km"] = out["person_id"].map(
+        _first_home_leg_km(trips, "education")).to_numpy(dtype=float)
     n = len(out)
     n_weekday = int(out["weekday_reporting_day"].sum())
     kernwo_by_person = pd.to_numeric(raw["kernwo"], errors="coerce")
     n_unreadable = int(out["person_id"].map(kernwo_by_person).isna().sum())
     n_weekend = n - n_weekday - n_unreadable
     n_commute = int(out["commute_distance_km"].notna().sum())
+    n_education = int(out["education_distance_km"].notna().sum())
     _log.info(
         "[mid_donor] donor draw attributes: reporting day weekday %d/%d (%.1f%%), weekend %d/%d, "
         "unreadable kernwo %d/%d; commute distance from a home-work leg primary %d/%d (%.1f%%), "
-        "fallback (no such leg, NaN) %d/%d",
+        "fallback (no such leg, NaN) %d/%d; education distance from a home-education leg "
+        "primary %d/%d (%.1f%%), fallback (no such leg, NaN) %d/%d",
         n_weekday, n, 100.0 * n_weekday / max(n, 1), n_weekend, n, n_unreadable, n,
-        n_commute, n, 100.0 * n_commute / max(n, 1), n - n_commute, n)
+        n_commute, n, 100.0 * n_commute / max(n, 1), n - n_commute, n,
+        n_education, n, 100.0 * n_education / max(n, 1), n - n_education, n)
     return out
+
+
+def _first_home_leg_km(trips, purpose):
+    """``wegkm_imp`` of each person's first leg (``trip_id`` order) between home and ``purpose``.
+
+    Either direction counts. Returns a Series indexed by ``person_id``; persons without such a
+    leg are absent. The rule is the one of ``braunschweig/popsim/commute_distance.py ::
+    _per_purpose`` and must change with it.
+    """
+    import pandas as pd
+
+    from braunschweig.popsim.diary_facts import validate_trip_length_km
+
+    before, after = trips["preceding_purpose"], trips["following_purpose"]
+    is_leg = ((before == "home") & (after == purpose)) | ((before == purpose) & (after == "home"))
+    legs = trips[is_leg].sort_values(["person_id", "trip_id"], kind="stable")
+    legs = legs.drop_duplicates("person_id", keep="first")
+    km = validate_trip_length_km(legs["wegkm_imp"], log_tag="mid_donor")
+    return pd.Series(km.to_numpy(), index=legs["person_id"].to_numpy())
 
 
 def configure(context):

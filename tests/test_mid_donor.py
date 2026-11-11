@@ -208,10 +208,10 @@ def test_donor_household_fails_on_a_missing_column_or_a_broken_join(households, 
         mid_donor.attach_donor_household(_donors(), households, np.random.RandomState(0))
 
 
-def test_donor_draw_attributes_are_weight_weekday_and_first_home_work_leg():
+def test_donor_draw_attributes_are_weight_weekday_and_first_home_legs():
     _, persons, wege = _synthetic_mid()
     persons = persons.assign(P_GEW=[1.5, 0.5], kernwo=[2, 4])        # 4 = weekend
-    wege = wege.assign(wegkm_imp=[12.5, 11.0, 3.0, 3.0])
+    wege = wege.assign(wegkm_imp=[12.5, 11.0, 3.5, 3.0])
     _, donors, trips = mid_donor.build_mid_donor_frames(
         pd.DataFrame({"H_ID": [1, 2]}), persons, wege, rng=np.random.RandomState(0))
     out = mid_donor.attach_donor_draw_attributes(donors, persons, trips).set_index("person_id")
@@ -219,3 +219,5 @@ def test_donor_draw_attributes_are_weight_weekday_and_first_home_work_leg():
     assert out["weekday_reporting_day"].to_dict() == {"1_1": True, "2_1": False}
     assert out.loc["1_1", "commute_distance_km"] == 12.5     # home -> work, not the 11.0 km return leg
     assert np.isnan(out.loc["2_1", "commute_distance_km"])   # a student: no leg between home and work
+    assert out.loc["2_1", "education_distance_km"] == 3.5    # home -> education, not the 3.0 km return leg
+    assert np.isnan(out.loc["1_1", "education_distance_km"])
