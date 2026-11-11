@@ -203,8 +203,9 @@ def population_gravity_gate_assignment(gemeinden: gpd.GeoDataFrame, gates: gpd.G
                     for col in value_cols))
     if mismatched:
         print(
-            f"[cordon.gate_assignment] WARNING: {len(mismatched)} Kreis(e) with all-zero gate "
-            f"weights: assigned total differs from the input: {sorted(mismatched)}")
+            f"[cordon.gate_assignment] WARNING: {len(mismatched)} Kreis(e) whose assigned "
+            f"total differs from the input (expected only for all-zero gate weights): "
+            f"{sorted(mismatched)}")
     long = long[long[value_cols].sum(axis=1) > 0]
     return long[["ars5", "gate_id"] + value_cols].reset_index(drop=True)
 
