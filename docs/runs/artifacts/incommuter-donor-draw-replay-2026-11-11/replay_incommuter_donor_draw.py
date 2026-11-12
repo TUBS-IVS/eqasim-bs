@@ -290,6 +290,11 @@ def first_trips(trips: pd.DataFrame) -> pd.DataFrame:
     return ordered.drop_duplicates("person_id", keep="first").set_index("person_id")
 
 
+#: Age classes (years, left-closed) of the age distribution in the summary; reporting bins, not a model parameter.
+AGE_CLASS_EDGES_YEARS = (0, 18, 21, 30, 40, 50, 60, 70, 200)
+AGE_CLASS_LABELS = ("00_17", "18_20", "21_29", "30_39", "40_49", "50_59", "60_69", "70_plus")
+
+
 def _shares_pct(series: pd.Series) -> tuple:
     """``({category: share in percent of the non-missing values}, number of missing values)``."""
     valid = series.dropna()
@@ -345,6 +350,19 @@ def summarise_stage(frames: dict, donor_persons: pd.DataFrame | None = None) -> 
     else:
         put("departure_home_h", NOT_AVAILABLE, "h of the day")
         put("mode_share_pct", NOT_AVAILABLE, "%")
+
+    # Age and sex come from the donor (ADR-0120), so a changed donor draw changes them too.
+    if "age" in persons.columns:
+        age = pd.to_numeric(persons["age"], errors="coerce")
+        put_distribution("age_years", age.to_numpy(dtype=float), "years")
+        put_shares("age_class_share_pct", pd.cut(age, AGE_CLASS_EDGES_YEARS, right=False,
+                                                 labels=AGE_CLASS_LABELS).astype("object"))
+    else:
+        put("age_years", NOT_AVAILABLE, "years")
+    if "sex" in persons.columns:
+        put_shares("sex_share_pct", persons["sex"].astype("object"))
+    else:
+        put("sex_share_pct", NOT_AVAILABLE, "%")
 
     if "household_income_eur" in persons.columns:
         income = pd.to_numeric(persons["household_income_eur"], errors="coerce").to_numpy(dtype=float)
