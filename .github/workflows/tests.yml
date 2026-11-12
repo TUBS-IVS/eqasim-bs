@@ -64,12 +64,18 @@ jobs:
       # A hit skips the download and install of every package; the two verification steps below still run
       # against the restored environment. actions/cache stores a new entry only when the whole job passed,
       # so a broken environment is never cached. Bump "v1" to discard all cached environments.
+      # Ask conda itself where environments live: the runner image presets its own CONDA variable, so the
+      # path is not taken from the job environment.
+      - name: Locate the environment directory
+        id: envdir
+        if: steps.green.outputs.cache-hit != 'true'
+        run: echo "path=$(conda info --base)/envs/eqasim" >> "$GITHUB_OUTPUT"
       - name: Restore the locked environment
         id: envcache
         if: steps.green.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
-          path: ${{ env.CONDA }}/envs/eqasim
+          path: ${{ steps.envdir.outputs.path }}
           key: >-
             eqasim-env-v1-${{ runner.os }}-miniforge-26.7.2-1-${{
             runner.os == 'Linux'

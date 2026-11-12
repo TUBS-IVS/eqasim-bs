@@ -579,7 +579,9 @@ SNAPSHOT_FIX = ("create a fresh conda env from the two snapshot files (see scrip
                 "or pass --allow-environment-mismatch to run on this env knowingly")
 MAX_OFFENDERS = 10
 # One subprocess of the target interpreter: its prefix, platform, conda-meta file names (None when the prefix
-# has no conda-meta directory) and {normalised distribution name: version}.
+# has no conda-meta directory) and {normalised distribution name: version}. Run it with `python -I` so neither
+# the current directory nor PYTHON* variables add distributions. When a name has two dist-info directories
+# (a pip install over a conda package can leave both), the first one on sys.path counts, as for an import.
 ENVIRONMENT_PROBE = (
     "import json, os, re, sys\n"
     "from importlib import metadata\n"
@@ -588,7 +590,7 @@ ENVIRONMENT_PROBE = (
     "for d in metadata.distributions():\n"
     "    n = d.metadata['Name']\n"
     "    if n:\n"
-    "        dists[re.sub(r'[-_.]+', '-', n.lower())] = d.version\n"
+    "        dists.setdefault(re.sub(r'[-_.]+', '-', n.lower()), d.version)\n"
     "print(json.dumps({'prefix': sys.prefix, 'platform': sys.platform, 'dists': dists,\n"
     "    'conda_meta': sorted(f for f in os.listdir(meta) if f.endswith('.json')) if os.path.isdir(meta) else None}))\n"
 )
@@ -674,7 +676,7 @@ def check_environment(lock_text: str, requirements_text: str, facts: dict) -> En
 
 def _environment_gate(args, host: Host, bs_dir: Path, env: dict) -> dict:
     """Environment check of ``gate``; returns the record entry, raises on a mismatch unless overridden."""
-    result = host.run([args.python, "-c", ENVIRONMENT_PROBE], env=env)
+    result = host.run([args.python, "-I", "-c", ENVIRONMENT_PROBE], env=env)
     try:
         facts = json.loads(result.stdout)
     except ValueError:

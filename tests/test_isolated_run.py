@@ -165,7 +165,7 @@ class FakeMachine:
             assert argv[1] == "-a"
             shutil.copytree(argv[-2], argv[-1], symlinks=True)
             return subprocess.CompletedProcess(argv, 0, "", "")
-        if argv[1] == "-c":
+        if tool.ENVIRONMENT_PROBE in argv:
             return subprocess.CompletedProcess(argv, 0, json.dumps(self.env_facts), "")
         if argv[1].endswith("explain_stale_stages.py"):
             return subprocess.CompletedProcess(argv, 0, self.explain_text, "")
@@ -477,7 +477,7 @@ def test_environment_built_from_the_snapshot_matches_it_completely():
     """Primary path on real input: the Linux CI job installs exactly these two files, so the probe and the
     comparison must report a full match there. A parser that misreads the lock or the conda-meta names fails here."""
     environments = Path(__file__).resolve().parents[1] / "environments"
-    probe = subprocess.run([sys.executable, "-c", tool.ENVIRONMENT_PROBE], capture_output=True, text=True, check=True)
+    probe = subprocess.run([sys.executable, "-I", "-c", tool.ENVIRONMENT_PROBE], capture_output=True, text=True, check=True)
 
     check = tool.check_environment((environments / "server-linux-64.lock").read_text(encoding="utf-8"),
                                    (environments / "requirements-server-linux-64.txt").read_text(encoding="utf-8"),

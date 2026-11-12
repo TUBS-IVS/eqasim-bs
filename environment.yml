@@ -46,8 +46,8 @@ dependencies:
     - pytest==9.1.1
     - synpp==1.6.2
     - bhepop2==2.0.0
-    # Not imported by this repository: wheel dependencies of the packages above (plotly and narwhals via bhepop2,
-    # pyzmq via synpp). Pinned to the versions of the production Linux snapshot
+    # Not imported by this repository: wheel dependencies of the packages above (plotly via bhepop2, narwhals via
+    # plotly, pyzmq via synpp). Pinned to the versions of the production Linux snapshot
     # (environments/requirements-server-linux-64.txt) so the Windows lock does not resolve newer releases;
     # tests/test_environment_lock_consistency.py compares the two pip layers.
     - plotly==6.8.0
