@@ -15,8 +15,11 @@
         (python / java), top CPU process, error/warning tallies
       - tail of the live log
 
-    Monitors a run started with run_pipeline.sh / scripts/isolated_run.py
-    (logs to logs/run_*.log).
+    Monitors the newest run_*.log in a log directory. By default that is
+    <RemoteRepo>/logs, with liveness judged by log freshness (modified within the
+    last 120 s). For a run started by hand in a tmux session, pass -Session to
+    judge liveness by that session instead. For an isolated_run.py run (detached
+    via setsid nohup, logs under RUN_DIR/logs), pass -LogDir RUN_DIR/logs.
 
 .PARAMETER ServerUser
     SSH user. Default: environment variable EQASIM_SERVER_USER; if neither is set,
@@ -27,6 +30,12 @@
     (see scripts/server_target.ps1).
 .PARAMETER RemoteRepo
     Repo path on the server. Default: ~/eqasim-bs
+.PARAMETER LogDir
+    Directory holding the run_*.log files on the server. Default:
+    <RemoteRepo>/logs. For an isolated run use RUN_DIR/logs.
+.PARAMETER Session
+    Optional tmux session name. When set, "alive" means that session exists; when
+    empty (default), "alive" means the newest log changed within the last 120 s.
 .PARAMETER RefreshSec
     Seconds between refreshes. Default: 10
 .PARAMETER LastIteration
@@ -39,12 +48,16 @@
 .EXAMPLE
     ./scripts/monitor_server.ps1
     ./scripts/monitor_server.ps1 -RefreshSec 5
+    ./scripts/monitor_server.ps1 -LogDir ~/runs/<run_id>/logs
+    ./scripts/monitor_server.ps1 -Session eqasim
     ./scripts/monitor_server.ps1 -LastIteration 10 -Once
 #>
 param(
     [string]$ServerUser    = $env:EQASIM_SERVER_USER,
     [string]$ServerHost    = $env:EQASIM_SERVER_HOST,
     [string]$RemoteRepo    = "~/eqasim-bs",
+    [string]$LogDir        = "",
+    [string]$Session       = "",
     [int]   $RefreshSec    = 10,
     [int]   $LastIteration = 99,
     [switch]$Once
@@ -66,10 +79,21 @@ REPO=__REPO__
 # word, so once REPO is used as "$REPO/logs/..." bash would treat the tilde as a
 # literal directory name. Substitute $HOME for a leading "~" explicitly.
 REPO="${REPO/#\~/$HOME}"
-LOG=$(ls -t $REPO/logs/run_*.log 2>/dev/null | head -1)
+LOGDIR='__LOGDIR__'
+LOGDIR="${LOGDIR/#\~/$HOME}"
+[ -n "$LOGDIR" ] || LOGDIR="$REPO/logs"
+SESSION='__SESSION__'
+LOG=$(ls -t "$LOGDIR"/run_*.log 2>/dev/null | head -1)
 printf 'LOG\t%s\n' "$LOG"
-if tmux has-session -t eqasim 2>/dev/null; then printf 'ALIVE\tyes\n'; else printf 'ALIVE\tno\n'; fi
 NOW_E=$(date +%s)
+if [ -n "$SESSION" ]; then
+  if tmux has-session -t "$SESSION" 2>/dev/null; then ALIVE=yes; else ALIVE=no; fi
+else
+  # No tmux session: a run is alive while its log keeps changing (isolated runs).
+  ALIVE=no
+  if [ -n "$LOG" ] && [ $((NOW_E-$(date -r "$LOG" +%s))) -lt 120 ]; then ALIVE=yes; fi
+fi
+printf 'ALIVE\t%s\n' "$ALIVE"
 printf 'NOW\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
 printf 'LOAD\t%s\n' "$(uptime | sed 's/.*load average: //')"
 printf 'NPROC\t%s\n' "$(nproc)"
@@ -173,7 +197,7 @@ fi
 # piped to the remote "bash", every line would keep a trailing carriage return,
 # so e.g. REPO=~/eqasim-bs<CR> yields the invalid path "$REPO<CR>/logs" and all
 # REPO-derived fields come back empty. Normalise to LF before sending.
-$remoteCmd = $remoteTemplate.Replace("__REPO__", $RemoteRepo).Replace("`r`n", "`n").Replace("`r", "`n")
+$remoteCmd = $remoteTemplate.Replace("__REPO__", $RemoteRepo).Replace("__LOGDIR__", $LogDir).Replace("__SESSION__", $Session).Replace("`r`n", "`n").Replace("`r", "`n")
 
 function Get-Snapshot {
     # Send the remote script base64-encoded as a single ASCII ssh argument and
@@ -260,7 +284,7 @@ function Show-Dashboard($snap) {
     Write-Host ("  " + ("-" * $width))
 
     # --- session + machine ---------------------------------------------------
-    $sessionText = if ($alive -eq 'yes') { 'RUNNING (tmux: eqasim)' } else { 'not running' }
+    $sessionText = if ($alive -eq 'yes') { $(if ($Session) { "RUNNING (tmux: $Session)" } else { 'RUNNING (log active)' }) } else { 'not running' }
     Write-Host -NoNewline "  session : "
     Write-Host -NoNewline $sessionText -ForegroundColor $aliveColor
     if ($f['ELAPSED']) { Write-Host "    elapsed $($f['ELAPSED'])" -ForegroundColor Gray } else { Write-Host "" }
@@ -395,7 +419,8 @@ function Show-Dashboard($snap) {
     foreach ($t in $snap.Tail) { Write-Host "    $t" -ForegroundColor DarkGray }
     Write-Host ""
     if (-not $Once) {
-        Write-Host "  refresh ${RefreshSec}s  -  Ctrl-C to stop  -  live attach: ssh $server then tmux attach -t eqasim" -ForegroundColor DarkCyan
+        $attach = if ($Session) { "  -  live attach: ssh $server then tmux attach -t $Session" } else { "" }
+        Write-Host "  refresh ${RefreshSec}s  -  Ctrl-C to stop$attach" -ForegroundColor DarkCyan
     }
 }
 
