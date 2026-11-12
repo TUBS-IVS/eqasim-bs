@@ -1633,6 +1633,13 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.income",
     "braunschweig.popsim.closure_dwell",
     "data.hts.hts",
+    # Declared stages this stage runs as libraries, and their imports (ADR-0194): the DAG edge covers their
+    # output, not this code. The batch pt router of the timetable check starts through ``matsim.runtime.eqasim``.
+    "matsim.runtime.eqasim",
+    "matsim.runtime.git",
+    "matsim.runtime.java",
+    "matsim.runtime.maven",
+    "matsim.runtime.process_watchdog",
 )
 
 

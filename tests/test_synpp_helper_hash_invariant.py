@@ -47,14 +47,14 @@ guarded branches are pruned (they never execute at runtime); ``from X import Y``
 is tried both as an attribute of ``X`` and as the submodule ``X.Y``, keeping
 whichever exists on disk; relative imports are resolved with the same
 ``bits = package.rsplit('.', level - 1)`` rule ``importlib`` itself uses. A
-first-party import that is itself a synpp stage the importer's own
-``configure()`` DECLARES via a literal ``context.stage("name")`` call (resolved
-through the ``aliases:`` block of ``configs/base_bs.yml``) is excluded from the
-required set: synpp's own DAG hashes that stage and propagates it through the
-declared edge, so no extra token is needed for it (this is exactly why
-``braunschweig.freight.trips`` -- which imports its own-package sibling
-``braunschweig.freight.extraction`` at module level AND declares it -- is not a
-gate violation).
+first-party import that is itself a synpp stage the importer DECLARES via a
+literal ``context.stage("name")`` call is NOT excluded from the required set
+(ADR-0194, the same rule as ``scripts/audit_synpp_helper_hash.py``): under
+content-addressed validity an unchanged parent output spares the child, so the
+DAG edge covers the parent's output, never the library code the child imports
+from that stage module and runs itself (``braunschweig.freight.trips`` imports
+its own-package sibling ``braunschweig.freight.extraction`` at module level AND
+declares it, so its token hashes that sibling like any other).
 
 "Own package" is the package the stage's own file lives inside: for a plain
 module ``pkg.sub.mod``, that is ``pkg.sub``; for a package-style stage
@@ -109,7 +109,6 @@ import ast
 from pathlib import Path
 
 import pytest
-import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -328,31 +327,6 @@ def _resolve_imports(stage: StageModule) -> ImportResolution:
 
 
 # ---------------------------------------------------------------------------
-# declared stage dependencies: context.stage("literal"), alias-resolved
-# ---------------------------------------------------------------------------
-
-def _load_aliases() -> dict[str, str]:
-    config = yaml.safe_load((REPO_ROOT / "configs" / "base_bs.yml").read_text(encoding="utf-8"))
-    return dict(config.get("aliases") or {})
-
-
-def _declared_stage_names(tree: ast.Module, aliases: dict[str, str]) -> set[str]:
-    declared = set()
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "stage"
-            and node.args
-            and isinstance(node.args[0], ast.Constant)
-            and isinstance(node.args[0].value, str)
-        ):
-            literal = node.args[0].value
-            declared.add(aliases.get(literal, literal))
-    return declared
-
-
-# ---------------------------------------------------------------------------
 # reading _HELPER_MODULES / _DEFERRED_HELPER_MODULE_NAMES via AST
 # ---------------------------------------------------------------------------
 
@@ -449,19 +423,18 @@ class GateResult:
 
 
 def _compute_gate_results() -> tuple[dict[str, GateResult], list[UndecidedElement]]:
-    aliases = _load_aliases()
     undecided: list[UndecidedElement] = []
     results: dict[str, GateResult] = {}
 
     for stage in _discover_stage_modules():
         resolution = _resolve_imports(stage)
         own_package = stage.own_package
+        # A declared stage module the stage imports stays required: the DAG edge covers the
+        # parent's output, not the library code this stage runs from it (ADR-0194).
         required = {
             name for name in resolution.first_party_names
             if name != stage.dotted_name and own_package and name.startswith(own_package + ".")
         }
-        declared = _declared_stage_names(stage.tree, aliases)
-        required -= declared
 
         covered = _covered_names(stage, resolution.module_level_bindings, undecided)
         results[stage.dotted_name] = GateResult(stage, required, covered)
@@ -494,6 +467,10 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
     "braunschweig.data.mid.data": (
         "braunschweig.data.mid.reference_tables",
     ),
+    # Declared stage imported as a library (ADR-0194); the stage has no source token yet, out of scope.
+    "braunschweig.freight.trips": (
+        "braunschweig.freight.extraction",
+    ),
     "braunschweig.ipf.attributed": (
         "braunschweig.ipf.config_validation",
         "braunschweig.ipf.household_composition",
@@ -504,6 +481,26 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
     ),
     "braunschweig.ipf.prepare": (
         "braunschweig.ipf.joint_age_size",
+    ),
+    # Declared stage imported as a library (ADR-0194); the stage has no source token yet, out of scope.
+    "eqasim_common.data.osm.chunked": (
+        "eqasim_common.data.osm.osmconvert",
+    ),
+    # Declared stage imported as a library (ADR-0194); the stage has no source token yet, out of scope.
+    "matsim.runtime.eqasim": (
+        "matsim.runtime.git",
+        "matsim.runtime.java",
+        "matsim.runtime.maven",
+    ),
+    # Declared stage imported as a library (ADR-0194); the stage has no source token yet, out of scope.
+    "matsim.runtime.pt2matsim": (
+        "matsim.runtime.git",
+        "matsim.runtime.java",
+        "matsim.runtime.maven",
+    ),
+    # Declared stage imported as a library (ADR-0194); the stage has no source token yet, out of scope.
+    "synthesis.population.spatial.primary.locations": (
+        "synthesis.population.spatial.primary.candidates",
     ),
     "synthesis.population.spatial.secondary.locations": (
         "synthesis.population.spatial.secondary.components",

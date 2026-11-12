@@ -97,6 +97,22 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "data.hts.entd.cleaned",
     "data.hts.hts",
     "synthesis.population.matched",
+    # Declared stages this stage runs as libraries, and their imports (ADR-0194): the DAG edge covers their
+    # output, not this code. ``popsim.trips_stage`` is the declared stage whose trip build the donor pool
+    # reuses; the rest is the import closure the audit reports behind it.
+    "braunschweig.popsim.trips_stage",
+    "braunschweig.calibration.reported_time_precision",
+    "braunschweig.calibration.srv_departure_times",
+    "braunschweig.calibration.srv_distance_targets",
+    "braunschweig.calibration.srv_plan_structure",
+    "braunschweig.gravity.friction",
+    "braunschweig.popsim.departure_time_model",
+    "braunschweig.popsim.sources",
+    "braunschweig.popsim.sources.base",
+    "braunschweig.popsim.stage.config_keys",
+    "braunschweig.popsim.unused_mid_wege_columns",
+    "braunschweig.population.methods",
+    "braunschweig.resources",
 )
 
 # --------------------------------------------------------------------------- config keys

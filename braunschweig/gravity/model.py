@@ -77,6 +77,7 @@ import numpy as np  # noqa: F401  (unused here; kept for facade namespace parity
 import pandas as pd  # noqa: F401  (unused here; kept for facade namespace parity, see below)
 
 from braunschweig import synpp_tokens
+from braunschweig.data.bbsr import regiostar as _regiostar
 from braunschweig.data.bbsr.regiostar import ars_to_ags8  # noqa: F401  (namespace parity, see below)
 from braunschweig.gravity import attraction_vector, balancing, base, kreis_calibration, od
 from braunschweig.gravity.friction import build_friction_matrix  # noqa: F401  (namespace parity, see below)
@@ -165,7 +166,11 @@ logger = logging.getLogger(__name__)
 # in a deterministic order (never via ``dir()`` or a directory glob) so the
 # token depends only on the sources, not on import or filesystem order. Every
 # module extracted from this stage MUST be appended here.
-_HELPER_MODULES = (attraction_vector, balancing, base, kreis_calibration, od)
+#
+# ``_regiostar`` is the declared stage ``braunschweig.data.bbsr.regiostar`` imported as a
+# library (``ars_to_ags8`` is called from the extracted siblings): the DAG edge covers its
+# output, not this code, so its source is hashed here as well (ADR-0194).
+_HELPER_MODULES = (attraction_vector, balancing, base, kreis_calibration, od, _regiostar)
 
 # The pre-existing package siblings this stage's result also depends on,
 # covered by dotted NAME rather than as module objects because every one of them
@@ -195,12 +200,15 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # The rest of this stage's import closure: modules its helpers import, whose code this
     # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
     "braunschweig.analysis.verbindungen_validation",
+    # Declared stages this stage runs as libraries, and their imports (ADR-0194): the DAG edge
+    # covers their output, not this code.
+    "braunschweig.data.verbindungen.zones",
 )
 
-# ``braunschweig.gravity.distance_matrix_taz`` is deliberately NOT covered: it
-# is its own synpp stage (``configure``/``execute``), declared as a dependency
-# and hashed by synpp in its own right, so folding its source in here would
-# double-count it rather than close a gap.
+# ``braunschweig.gravity.distance_matrix_taz`` is deliberately NOT covered: it is its own
+# synpp stage and this stage only consumes its OUTPUT through ``context.stage(...)``, never
+# importing its module, so there is no library code of it to hash. A declared stage module
+# this stage DOES import is hashed (``_regiostar`` above; ADR-0194).
 
 
 def validate(context):
@@ -220,9 +228,9 @@ def validate(context):
     their deferral is preserved).
 
     It does NOT cover: ``braunschweig.gravity.distance_matrix_taz`` (its own
-    synpp stage, hashed by synpp itself), what those modules import in
-    turn (the boundary is one level deep), or third-party sources (pinned by the
-    environment). See ``docs/codebase/notes/synpp-helper-hash-audit.md`` for how
+    synpp stage whose module this stage never imports, only its output), what
+    those modules import in turn (the boundary is one level deep), or third-party
+    sources (pinned by the environment). See ``docs/codebase/notes/synpp-helper-hash-audit.md`` for how
     that boundary compares across the repo.
 
     This stage had NO ``validate`` hook before the #267 split, so the token is

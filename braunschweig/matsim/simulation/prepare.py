@@ -194,6 +194,12 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "data.hts.hts",
     # The routed day-end check (ADR-0160) of the delegate reads its keys, margin rule and router option from here.
     "braunschweig.matsim.scenario.day_end_margin",
+    # Declared stages this stage runs as libraries, and their imports (ADR-0194): the DAG edge covers their
+    # output, not this code. ``_inject_freight`` imports ``TRIP_COLUMNS`` from ``freight.trips``, which reads
+    # the trips of ``freight.extraction``, which runs the jar of ``freight.extraction_tool``.
+    "braunschweig.freight.trips",
+    "braunschweig.freight.extraction",
+    "braunschweig.freight.extraction_tool",
 )
 
 

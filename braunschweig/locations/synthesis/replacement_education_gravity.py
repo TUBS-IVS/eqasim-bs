@@ -13,7 +13,12 @@ from braunschweig import synpp_tokens
 # source goes into the stage token (audit C2, ADR-0136). ``base`` is the upstream stage
 # module this one delegates its work assignment to.
 _HELPER_MODULES = (base,)
-_DEFERRED_HELPER_MODULE_NAMES = ()
+_DEFERRED_HELPER_MODULE_NAMES = (
+    # Declared stages this stage runs as libraries, and their imports (ADR-0194): the DAG edge
+    # covers their output, not this code. ``base`` imports them; this stage runs ``base.execute``.
+    "braunschweig.gravity.taz_margins",
+    "synthesis.population.spatial.primary.candidates",
+)
 
 
 def configure(context):

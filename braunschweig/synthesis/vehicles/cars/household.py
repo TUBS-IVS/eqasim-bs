@@ -82,6 +82,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig import synpp_tokens
+from braunschweig.data.bbsr import regiostar as _regiostar
 from braunschweig.data.bbsr.regiostar import ars_to_ags8
 from braunschweig.data.kba import hsn_tsn
 from braunschweig.synthesis.vehicles import fleet_sampling_de as fleet
@@ -89,8 +90,10 @@ from braunschweig.synthesis.vehicles import fleet_sampling_de as fleet
 # Helpers whose code this stage runs: synpp hashes only this module's source, so their
 # source goes into the stage token (audit C2, ADR-0136). ``fleet`` and ``hsn_tsn`` are the
 # modules imported above; ``fleet_tables`` is imported inside ``execute`` and the rest is
-# reached through them, so those are hashed by name.
-_HELPER_MODULES = (hsn_tsn, fleet)
+# reached through them, so those are hashed by name. ``_regiostar`` is the declared stage
+# ``braunschweig.data.bbsr.regiostar`` imported as a library (``ars_to_ags8``): the DAG edge
+# covers its output, not this code (ADR-0194).
+_HELPER_MODULES = (hsn_tsn, fleet, _regiostar)
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.kba.feasible_fuels",
     "braunschweig.data.kba.fleet_tables",

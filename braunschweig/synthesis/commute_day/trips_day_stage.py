@@ -45,6 +45,7 @@ from braunschweig.calibration import srv_departure_times as _srv_departure_times
 from braunschweig.calibration import srv_plan_structure as _srv_plan_structure
 from braunschweig.popsim import departure_time_model as _departure_time_model
 from braunschweig.popsim import plan_validation as _plan_validation
+from braunschweig.popsim import trips_stage as _trips_stage
 from braunschweig.synthesis import escort_duty as _escort_duty
 from braunschweig.popsim.trips_stage import CONTRACT
 from braunschweig.synthesis.commute_day import plan_replacement as _plan_replacement
@@ -75,8 +76,11 @@ _LOG_TAG = "[commute day trips]"
 #: a cached stage anyway.)
 # _escort_duty owns the escort-leg rule _plan_replacement reads for its stranded-children
 # diagnostic (#425); hashing _plan_replacement alone would not cover an edit to that rule.
+# _trips_stage is the declared stage ``braunschweig.popsim.trips_stage`` imported as a library
+# (``CONTRACT``): the DAG edge covers its output, not this code (ADR-0194).
 _HELPER_MODULES = (_plan_replacement, _departure_time_model, _reported_time_precision,
-                   _srv_departure_times, _srv_plan_structure, _plan_validation, _escort_duty)
+                   _srv_departure_times, _srv_plan_structure, _plan_validation, _escort_duty,
+                   _trips_stage)
 
 #: Helper modules this stage reaches only through FUNCTION-LEVEL imports, hashed by dotted
 #: NAME because there is no module object at this file's top level to list above.
@@ -97,6 +101,32 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.population.socioprofessional_class",
     "braunschweig.resources",
     "data.hts.hts",
+    # Declared stages this stage runs as libraries, and their imports (ADR-0194): the DAG edge covers their
+    # output, not this code. ``state_stage`` is imported inside ``execute`` (``STATE_COLUMNS``); ``trips_stage``
+    # is hashed through ``_HELPER_MODULES`` above. ``braunschweig.analysis.json_output`` stays out on purpose
+    # (EXPECTED_UNCOVERED in tests/test_audit_synpp_helper_hash.py).
+    "braunschweig.synthesis.commute_day.state_stage",
+    "braunschweig.calibration.commute_day_state_reference",
+    "braunschweig.constants",
+    "braunschweig.data.mid.status_by_hhtype",
+    "braunschweig.popsim.chain_matching",
+    "braunschweig.popsim.day_type",
+    "braunschweig.popsim.diary_facts",
+    "braunschweig.popsim.diary_plan_match",
+    "braunschweig.popsim.escort_pairing",
+    "braunschweig.popsim.sampling",
+    "braunschweig.popsim.seed",
+    "braunschweig.popsim.sources",
+    "braunschweig.popsim.sources.base",
+    "braunschweig.popsim.time_imputation",
+    "braunschweig.popsim.trips",
+    "braunschweig.popsim.unused_mid_wege_columns",
+    "braunschweig.popsim.weekend_plan_match",
+    "braunschweig.synthesis.commute_day.donor_pool",
+    "braunschweig.synthesis.commute_day.matching",
+    "braunschweig.synthesis.commute_day.state",
+    "data.hts.entd.cleaned",
+    "synthesis.population.matched",
 )
 
 #: ``context.set_info`` key under which this stage reports its diagnostics (issue #378).

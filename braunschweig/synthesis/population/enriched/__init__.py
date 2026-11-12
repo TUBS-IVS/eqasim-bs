@@ -173,6 +173,9 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.attributes",
     "braunschweig.popsim.missing",
     "braunschweig.population.socioprofessional_class",
+    # Declared stages this stage runs as libraries, and their imports (ADR-0194): the DAG edge covers their
+    # output, not this code. The helpers call ``regiostar.ars_to_ags8``.
+    "braunschweig.data.bbsr.regiostar",
 )
 
 

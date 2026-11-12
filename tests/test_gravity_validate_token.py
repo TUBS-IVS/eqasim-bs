@@ -42,6 +42,12 @@ EXPECTED_HELPER_MODULE_NAMES = (
     "braunschweig.gravity.od",
 )
 
+# The declared stage the stage imports as a library (``ars_to_ags8``): the DAG edge covers its
+# output, not this code, so it closes the module-object tuple (ADR-0194).
+EXPECTED_DECLARED_LIBRARY_MODULE_NAMES = (
+    "braunschweig.data.bbsr.regiostar",
+)
+
 # The four pre-existing package siblings the stage reaches through
 # function-level imports. They open the deferred tuple; the rest of the stage's
 # import closure follows them and is gated in tests/test_audit_synpp_helper_hash.py.
@@ -53,10 +59,10 @@ EXPECTED_DEFERRED_MODULE_NAMES = (
 )
 
 # Modules in the package that must NOT be in the token, each for a stated
-# reason. ``distance_matrix_taz`` is its own synpp stage: synpp hashes it in its
-# own right, so folding its source in here would double-count it rather than
-# close a gap. ``model`` is the stage module itself, already covered by
-# ``get_stage_hash``.
+# reason. ``distance_matrix_taz`` is its own synpp stage whose module the stage never
+# imports (it only consumes its output through ``context.stage``), so there is no library
+# code of it to hash; a declared stage module the stage DOES import is hashed (ADR-0194).
+# ``model`` is the stage module itself, already covered by ``get_stage_hash``.
 DELIBERATELY_EXCLUDED_MODULE_NAMES = {
     "braunschweig.gravity.distance_matrix_taz",
     "braunschweig.gravity.model",
@@ -85,9 +91,9 @@ def _discovered_module_names():
     }
 
 
-def test_helper_modules_tuple_holds_the_five_extracted_siblings():
+def test_helper_modules_tuple_holds_the_five_extracted_siblings_and_the_declared_library():
     assert tuple(module.__name__ for module in model._HELPER_MODULES) == \
-        EXPECTED_HELPER_MODULE_NAMES
+        EXPECTED_HELPER_MODULE_NAMES + EXPECTED_DECLARED_LIBRARY_MODULE_NAMES
 
 
 def test_deferred_names_tuple_holds_the_four_pre_existing_siblings():

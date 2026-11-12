@@ -4,15 +4,21 @@ import shapely.geometry as geo
 import glob
 
 from braunschweig import synpp_tokens
+from data.osm import osmosis as _osmosis
 
 # Helpers whose code this stage runs: synpp hashes only this module's source, so their
 # source goes into the stage token (audit C2, ADR-0136). ``network_clip`` is imported inside
-# ``execute`` and ``spatial.cordon`` is reached through it, so both are hashed by name;
-# ``data.osm.osmosis`` is a declared stage with its own token.
-_HELPER_MODULES = ()
+# ``execute`` and ``spatial.cordon`` is reached through it, so both are hashed by name.
+# ``data.osm.osmosis`` is a declared stage this stage runs as a library (``osmosis.run``): the
+# DAG edge covers its output, not this code, so it is hashed here as well (ADR-0194).
+_HELPER_MODULES = (_osmosis,)
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.cordon.network_clip",
     "braunschweig.data.spatial.cordon",
+    # Declared stages this stage runs as libraries, and their imports (ADR-0194): the DAG edge
+    # covers their output, not this code. ``osmosis.run`` imports ``resources``, which reaches ``methods``.
+    "braunschweig.resources",
+    "braunschweig.population.methods",
 )
 
 """

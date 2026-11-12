@@ -182,7 +182,9 @@ def test_validate_token_covers_the_helpers():
     # A dropped helper (or an unhashed one) turns this red.
     assert {module.__name__ for module in stage._HELPER_MODULES} == {
         "braunschweig.data.transit.schedule", "braunschweig.data.spatial.cordon",
-        "braunschweig.data.cordon.extent", "matsim.runtime.eqasim"}
+        "braunschweig.data.cordon.extent", "matsim.runtime.eqasim",
+        # ``java.run`` is called through ``eqasim.run``: a declared stage imported as a library (ADR-0194).
+        "matsim.runtime.java"}
     assert set(token["modules"]) >= {module.__name__ for module in stage._HELPER_MODULES}
 
 
