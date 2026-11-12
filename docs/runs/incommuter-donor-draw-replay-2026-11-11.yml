@@ -1,10 +1,12 @@
 id: incommuter-donor-draw-replay-2026-11-11
 date: '2026-11-11'
 repository:
-  commit: b8737bbe44aebaf2e1bc6c0cbf6d425f306e1eae
+  commit: 36de0e9162486ceafcf47b11707102b610102cc8
   branch: fix/audit-b8-b10-incommuter-income
   notes: >-
-    "New" arm: the branch at b8737bbe (ADR-0191), a detached worktree on felix fetched from a git bundle. "Old" arm:
+    "New" arm: the branch at 36de0e91 (ADR-0191), a detached worktree on felix fetched from a git bundle. The figures
+    are those of the second complete run (2026-11-12, which added age and sex to the summary); the first complete run
+    at b8737bbe gave identical values for every metric both runs report. "Old" arm:
     origin/main at 9ae87aad. The cached reference run prod100_20261031 was produced with 7a41f0ba; the old arm
     reproduces its donor draw exactly (see status), so main and the run agree on what is compared.
 configuration:
@@ -39,9 +41,9 @@ status:
     identical. A replay of two stages on production inputs, NOT a validation: no observed data is involved, and no
     reference exists for in-commuter incomes or working times. The effect on the simulated traffic is not measured.
 source: >-
-  felix:~/incommuter_replay_20261111/out3 (scratch). Committed in
+  felix:~/incommuter_replay_20261111/out4 (scratch). Committed in
   docs/runs/artifacts/incommuter-donor-draw-replay-2026-11-11/: replay_incommuter_donor_draw.py (sha256
-  c88e0007b37353b7f1ffd8e771e463319adbee2d95fdb980bd0d36a210dd9dd9), summary.json (all figures, both arms, the
+  0ca7474fb46865a9822fb501b961e668d3a46a6c0bd2970e9250ce8d78598914), summary.json (all figures, both arms, the
   identity check) and replay_log.txt (log copy, because *.log is git-ignored).
 environment: 'server (felix, hostname matsim), conda eqasim (~/miniforge3/envs/eqasim)'
 validation:
@@ -88,6 +90,21 @@ validation:
     one leg between home and the activity), so more times come from the duration pool instead of the donor. The cause
     is inferred from the rule, not traced donor by donor; the effect on the simulated departure profile is not
     measured.
+- metric: age and sex of the worker in-commuters, old against new
+  reference: >-
+    sex: BA Pendlerstatistik (data record ba_pendleratlas, Gebietsstand 06/2025), SvB in-commuters into the eight ZGB
+    Kreise from outside the ZGB, Einpendler file: 68,630 in-commuters, of whom 34.9 % women (OBSERVED data, sum of the
+    Maenner/Frauen columns over the 623 Kreis pairs). Age: no reference (model output only).
+  result: >-
+    Women 46.9 % (old) against 27.4 % (new); observed 34.9 %. Age: mean 46.6 against 43.5 years, median 48 against 44;
+    21 to 29 years 9.4 % against 16.4 %, 50 to 59 years 31.9 % against 26.9 %, 60 to 69 years 15.2 % against 10.3 %.
+  artifact: docs/runs/artifacts/incommuter-donor-draw-replay-2026-11-11/summary.json
+  notes: >-
+    Age and sex come from the donor (ADR-0120), so the new draw changes them: the commute window and the Kreis tilt
+    favour long-distance commuters with high income per person, who are more often men. Against the observed sex
+    share both arms are off, the old one by 12.0 percentage points (too many women), the new one by 7.5 points (too
+    few). The model does not draw the sex of the in-commuters from the BA data although the data carry it per Kreis
+    pair.
 - metric: student in-commuters, old against new
   reference: 'the old arm, model output'
   result: >-
@@ -98,7 +115,8 @@ validation:
     8.15 h against 8.74 h, median 7.75 h against 8.00 h, 90 % quantile 9.38 h against 11.56 h. Household income: flat
     3,000 EUR against mean 4,443 EUR (10 % quantile 1,355, median 4,437, 90 % quantile 6,801); high_income 0.0 %
     against 42.0 %; one-person households 100 % against 11.1 %. Economic status (new): very low 14.3 %, low 13.9 %,
-    medium 26.9 %, high 35.6 %, very high 9.2 %. Mode shares car 84.6 % against 84.2 %: the student stage draws its
+    medium 26.9 %, high 35.6 %, very high 9.2 %. Age: under 18 years 77.0 % (old) against 0 % (new), mean 14.0
+    against 22.0 years; women 47.7 % against 44.9 %. Mode shares car 84.6 % against 84.2 %: the student stage draws its
     modes after the donors from the same random stream, so this shift is re-sequencing of the stream, not an effect of
     the household draw.
   artifact: docs/runs/artifacts/incommuter-donor-draw-replay-2026-11-11/summary.json

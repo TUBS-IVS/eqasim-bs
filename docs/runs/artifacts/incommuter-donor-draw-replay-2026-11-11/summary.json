@@ -1,5 +1,5 @@
 {
-  "created_utc": "2026-11-11T20:00:37+00:00",
+  "created_utc": "2026-11-12T07:45:41+00:00",
   "script": "replay_incommuter_donor_draw.py",
   "cache": "/home/felix/prod100_20261031/cache",
   "run_yml": "/home/felix/prod100_20261031/run.yml",
@@ -14,7 +14,7 @@
     },
     "new": {
       "path": "/home/felix/incommuter_replay_20261111/new",
-      "commit": "b8737bbe44aebaf2e1bc6c0cbf6d425f306e1eae",
+      "commit": "36de0e9162486ceafcf47b11707102b610102cc8",
       "tracked_files_modified": 0
     }
   },
@@ -343,6 +343,74 @@
               "value": 0,
               "unit": "agents"
             },
+            "age_years.n_finite": {
+              "value": 68630,
+              "unit": "agents"
+            },
+            "age_years.mean": {
+              "value": 46.62417310214192,
+              "unit": "years"
+            },
+            "age_years.p10": {
+              "value": 29.0,
+              "unit": "years"
+            },
+            "age_years.p50": {
+              "value": 48.0,
+              "unit": "years"
+            },
+            "age_years.p90": {
+              "value": 61.0,
+              "unit": "years"
+            },
+            "age_class_share_pct.00_17": {
+              "value": 0.2433338190295789,
+              "unit": "%"
+            },
+            "age_class_share_pct.18_20": {
+              "value": 1.4162902520763514,
+              "unit": "%"
+            },
+            "age_class_share_pct.21_29": {
+              "value": 9.350138423429987,
+              "unit": "%"
+            },
+            "age_class_share_pct.30_39": {
+              "value": 19.475448054786536,
+              "unit": "%"
+            },
+            "age_class_share_pct.40_49": {
+              "value": 21.698965466996942,
+              "unit": "%"
+            },
+            "age_class_share_pct.50_59": {
+              "value": 31.862159405507796,
+              "unit": "%"
+            },
+            "age_class_share_pct.60_69": {
+              "value": 15.235319830977707,
+              "unit": "%"
+            },
+            "age_class_share_pct.70_plus": {
+              "value": 0.7183447471951042,
+              "unit": "%"
+            },
+            "age_class_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "sex_share_pct.female": {
+              "value": 46.87745883724319,
+              "unit": "%"
+            },
+            "sex_share_pct.male": {
+              "value": 53.12254116275681,
+              "unit": "%"
+            },
+            "sex_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
             "household_income_eur.n_finite": {
               "value": 68630,
               "unit": "agents"
@@ -501,7 +569,7 @@
             "message": "[incommuters] pt_subscription_type: 68630 in-commuter persons hard-coded to 'never_pt' (control-external source; the 14+ resident Kreis control does not see them -- see ADR-0099 for the rationale, issue #329)"
           }
         ],
-        "seconds": 325
+        "seconds": 311
       },
       "new": {
         "summary": {
@@ -559,6 +627,74 @@
               "unit": "%"
             },
             "mode_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "age_years.n_finite": {
+              "value": 68630,
+              "unit": "agents"
+            },
+            "age_years.mean": {
+              "value": 43.5324493661664,
+              "unit": "years"
+            },
+            "age_years.p10": {
+              "value": 25.0,
+              "unit": "years"
+            },
+            "age_years.p50": {
+              "value": 44.0,
+              "unit": "years"
+            },
+            "age_years.p90": {
+              "value": 60.0,
+              "unit": "years"
+            },
+            "age_class_share_pct.00_17": {
+              "value": 0.38175724901646513,
+              "unit": "%"
+            },
+            "age_class_share_pct.18_20": {
+              "value": 1.3565496138714848,
+              "unit": "%"
+            },
+            "age_class_share_pct.21_29": {
+              "value": 16.399533731604254,
+              "unit": "%"
+            },
+            "age_class_share_pct.30_39": {
+              "value": 21.392976832289087,
+              "unit": "%"
+            },
+            "age_class_share_pct.40_49": {
+              "value": 22.331341978726506,
+              "unit": "%"
+            },
+            "age_class_share_pct.50_59": {
+              "value": 26.934285297974647,
+              "unit": "%"
+            },
+            "age_class_share_pct.60_69": {
+              "value": 10.27976103744718,
+              "unit": "%"
+            },
+            "age_class_share_pct.70_plus": {
+              "value": 0.9237942590703774,
+              "unit": "%"
+            },
+            "age_class_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "sex_share_pct.female": {
+              "value": 27.442809267084364,
+              "unit": "%"
+            },
+            "sex_share_pct.male": {
+              "value": 72.55719073291563,
+              "unit": "%"
+            },
+            "sex_share_pct.n_missing": {
               "value": 0,
               "unit": "agents"
             },
@@ -788,7 +924,7 @@
             "message": "[incommuters] pt_subscription_type: 68630 in-commuter persons hard-coded to 'never_pt' (control-external source; the 14+ resident Kreis control does not see them -- see ADR-0099 for the rationale, issue #329)"
           }
         ],
-        "seconds": 253
+        "seconds": 230
       }
     },
     "braunschweig.synthesis.student_incommuters": {
@@ -848,6 +984,70 @@
               "unit": "%"
             },
             "mode_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "age_years.n_finite": {
+              "value": 6174,
+              "unit": "agents"
+            },
+            "age_years.mean": {
+              "value": 13.991901522513768,
+              "unit": "years"
+            },
+            "age_years.p10": {
+              "value": 7.0,
+              "unit": "years"
+            },
+            "age_years.p50": {
+              "value": 13.0,
+              "unit": "years"
+            },
+            "age_years.p90": {
+              "value": 22.0,
+              "unit": "years"
+            },
+            "age_class_share_pct.00_17": {
+              "value": 77.03271784904437,
+              "unit": "%"
+            },
+            "age_class_share_pct.18_20": {
+              "value": 10.414642047295109,
+              "unit": "%"
+            },
+            "age_class_share_pct.21_29": {
+              "value": 11.35406543569809,
+              "unit": "%"
+            },
+            "age_class_share_pct.30_39": {
+              "value": 0.7612568837058633,
+              "unit": "%"
+            },
+            "age_class_share_pct.40_49": {
+              "value": 0.2915451895043732,
+              "unit": "%"
+            },
+            "age_class_share_pct.50_59": {
+              "value": 0.12957563977972142,
+              "unit": "%"
+            },
+            "age_class_share_pct.60_69": {
+              "value": 0.016196954972465177,
+              "unit": "%"
+            },
+            "age_class_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "sex_share_pct.female": {
+              "value": 47.70003239390994,
+              "unit": "%"
+            },
+            "sex_share_pct.male": {
+              "value": 52.29996760609006,
+              "unit": "%"
+            },
+            "sex_share_pct.n_missing": {
               "value": 0,
               "unit": "agents"
             },
@@ -939,7 +1139,7 @@
             "message": "[student_incommuters] injected 6174 students across 3 university communes: {'03102': 1647, '03153': 1735, '03158': 2792}"
           }
         ],
-        "seconds": 53
+        "seconds": 48
       },
       "new": {
         "summary": {
@@ -997,6 +1197,62 @@
               "unit": "%"
             },
             "mode_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "age_years.n_finite": {
+              "value": 6174,
+              "unit": "agents"
+            },
+            "age_years.mean": {
+              "value": 21.993683187560737,
+              "unit": "years"
+            },
+            "age_years.p10": {
+              "value": 18.0,
+              "unit": "years"
+            },
+            "age_years.p50": {
+              "value": 21.0,
+              "unit": "years"
+            },
+            "age_years.p90": {
+              "value": 26.0,
+              "unit": "years"
+            },
+            "age_class_share_pct.18_20": {
+              "value": 46.55004859086492,
+              "unit": "%"
+            },
+            "age_class_share_pct.21_29": {
+              "value": 47.21412374473599,
+              "unit": "%"
+            },
+            "age_class_share_pct.30_39": {
+              "value": 4.09782960803369,
+              "unit": "%"
+            },
+            "age_class_share_pct.40_49": {
+              "value": 1.8788467768059605,
+              "unit": "%"
+            },
+            "age_class_share_pct.50_59": {
+              "value": 0.25915127955944284,
+              "unit": "%"
+            },
+            "age_class_share_pct.n_missing": {
+              "value": 0,
+              "unit": "agents"
+            },
+            "sex_share_pct.female": {
+              "value": 44.914156138645936,
+              "unit": "%"
+            },
+            "sex_share_pct.male": {
+              "value": 55.085843861354064,
+              "unit": "%"
+            },
+            "sex_share_pct.n_missing": {
               "value": 0,
               "unit": "agents"
             },
@@ -1132,7 +1388,7 @@
           },
           {
             "logger": "braunschweig.synthesis.student_incommuters",
-            "level": "WARNING",
+            "level": "INFO",
             "message": "[student_incommuters] donor age: primary 4291/18852 student donors (22.76%), excluded 14561: 14561 younger than 18, 0 without an age"
           },
           {
@@ -1161,7 +1417,7 @@
             "message": "[student_incommuters] injected 6174 students across 3 university communes: {'03102': 1647, '03153': 1735, '03158': 2792}"
           }
         ],
-        "seconds": 31
+        "seconds": 34
       }
     }
   }
