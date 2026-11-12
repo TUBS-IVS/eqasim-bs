@@ -105,6 +105,30 @@ AGE_BAND_EDGES = (-1, 5, 13, 17, 200)
 FINE_CHILD_AGE_BAND_EDGES = (-1, 5, 9, 13, 17, 200)
 
 
+def _split_child_age_range():
+    """Inclusive age range of the coarse band the fine edges split, from the edges themselves.
+
+    ``pd.cut`` bins are right-closed, so a coarse band ``(lower, upper]`` covers the ages
+    ``lower + 1 .. upper``. The split band is the coarse band that contains the edge(s) the
+    fine set adds (here: 9, inside the coarse ``(5, 13]`` band -> ages 6-13).
+    """
+    added = sorted(set(FINE_CHILD_AGE_BAND_EDGES) - set(AGE_BAND_EDGES))
+    if not added:
+        raise ValueError("FINE_CHILD_AGE_BAND_EDGES adds no edge to AGE_BAND_EDGES")
+    lower = max(edge for edge in AGE_BAND_EDGES if edge < added[0])
+    upper = min(edge for edge in AGE_BAND_EDGES if edge >= added[-1])
+    return lower + 1, upper
+
+
+#: The ONE coarse band (:data:`AGE_BAND_EDGES`) that :data:`FINE_CHILD_AGE_BAND_EDGES`
+#: splits, as the inclusive age range ``(6, 13)``. The crossing counters
+#: (:func:`count_pair_band_crossings` here, the diary counter in ``diary_plan_match``) report
+#: over exactly the persons inside it -- the only ones the fine bands can move -- so the rate
+#: is not diluted by adults, for whom the two edge sets are identical. Derived from the two
+#: edge tuples rather than typed as literals, so it cannot drift away from them.
+SPLIT_CHILD_AGE_RANGE = _split_child_age_range()
+
+
 def _validate_age_band_edges(edges, *, what: str) -> list:
     """Return ``edges`` as a list after checking it is a usable ``pd.cut`` bin spec.
 
@@ -193,12 +217,6 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
     return pairs
 
 
-def _split_range() -> tuple:
-    """``diary_plan_match.SPLIT_CHILD_AGE_RANGE`` (lazy import: that module imports this one)."""
-    from braunschweig.popsim.diary_plan_match import SPLIT_CHILD_AGE_RANGE
-    return SPLIT_CHILD_AGE_RANGE
-
-
 def count_pair_band_crossings(target_members: pd.DataFrame, donor_members: pd.DataFrame, pairs) -> tuple:
     """``(n_pairs, n_crossed_coarse, n_in_split_child_band, n_crossed_fine_child_band)`` of ``pairs``.
 
@@ -212,7 +230,7 @@ def count_pair_band_crossings(target_members: pd.DataFrame, donor_members: pd.Da
     ``diary_plan_match._count_fine_child_band_crossings``: the coarse crossings against
     :data:`AGE_BAND_EDGES` over all pairs, the fine crossings against
     :data:`FINE_CHILD_AGE_BAND_EDGES` over the pairs whose TARGET age lies in
-    ``diary_plan_match.SPLIT_CHILD_AGE_RANGE`` (outside it both edge sets agree, so adults
+    :data:`SPLIT_CHILD_AGE_RANGE` (outside it both edge sets agree, so adults
     would only dilute the rate).
     """
     if not pairs:
@@ -224,7 +242,7 @@ def count_pair_band_crossings(target_members: pd.DataFrame, donor_members: pd.Da
     crossed_coarse = (age_band_index(t_ages, AGE_BAND_EDGES) != age_band_index(d_ages, AGE_BAND_EDGES))
     crossed_fine = (age_band_index(t_ages, FINE_CHILD_AGE_BAND_EDGES)
                     != age_band_index(d_ages, FINE_CHILD_AGE_BAND_EDGES))
-    lower, upper = _split_range()
+    lower, upper = SPLIT_CHILD_AGE_RANGE
     in_split = ((t_ages >= lower) & (t_ages <= upper)).to_numpy()
     return len(pairs), int(crossed_coarse.sum()), int(in_split.sum()), int((crossed_fine & in_split).sum())
 
@@ -563,7 +581,7 @@ class WeekendMatchReport:
     #: Pairs whose donor sits in a different COARSE age band (:data:`AGE_BAND_EDGES`), i.e. the pairs
     #: that took the any-age third tier under the coarse bands. Counted in both flag arms.
     n_crossed_coarse_age_band: int = 0
-    #: Pairs whose TARGET age lies in ``diary_plan_match.SPLIT_CHILD_AGE_RANGE``: denominator of the
+    #: Pairs whose TARGET age lies in :data:`SPLIT_CHILD_AGE_RANGE`: denominator of the
     #: fine crossing rate (same name and meaning as ``DiaryMatchReport.n_remapped_in_split_child_band``).
     n_paired_in_split_child_band: int = 0
     #: Of those, the pairs whose donor sits in a different FINE child age band, measured against the
@@ -817,7 +835,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         report.n_crossed_coarse_age_band, report.n_paired_members,
         100.0 * report.n_crossed_coarse_age_band / max(report.n_paired_members, 1),
         report.n_crossed_fine_child_age_band, report.n_paired_in_split_child_band,
-        _split_range()[0], _split_range()[1],
+        SPLIT_CHILD_AGE_RANGE[0], SPLIT_CHILD_AGE_RANGE[1],
         100.0 * report.n_crossed_fine_child_age_band / max(report.n_paired_in_split_child_band, 1),
         fine_child_age_bands)
     if len(weekend_ids) and report.n_hh_matched == 0:

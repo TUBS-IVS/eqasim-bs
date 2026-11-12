@@ -43,8 +43,8 @@ from braunschweig.popsim.attributes import EMPLOYED_TAET
 from braunschweig.popsim.fallback_rates import log_fallback_rate
 from braunschweig.popsim.seed import WEEKDAY_KERNWO
 from braunschweig.popsim.weekend_plan_match import (
-    AGE_BAND_EDGES, DONOR_LIFT_COLUMN, FINE_CHILD_AGE_BAND_EDGES, age_band_index, match_person,
-    passenger_never_class, prepare_person_pool,
+    AGE_BAND_EDGES, DONOR_LIFT_COLUMN, FINE_CHILD_AGE_BAND_EDGES, SPLIT_CHILD_AGE_RANGE, age_band_index,
+    match_person, passenger_never_class, prepare_person_pool,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,30 +77,6 @@ EXPECTED_SHARE_REMAPPED = (0.05, 0.30)
 #: ``P_TAET in attributes.EMPLOYED_TAET`` -- the same single source of truth the
 #: employment control and the crossing counter below use.
 HARD_EMPLOYMENT_KEYS = frozenset({"employed"})
-
-
-def _split_child_age_range():
-    """Inclusive age range of the coarse band the fine edges split, from the edges themselves.
-
-    ``pd.cut`` bins are right-closed, so a coarse band ``(lower, upper]`` covers the ages
-    ``lower + 1 .. upper``. The split band is the coarse band that contains the edge(s) the
-    fine set adds (here: 9, inside the coarse ``(5, 13]`` band -> ages 6-13).
-    """
-    added = sorted(set(FINE_CHILD_AGE_BAND_EDGES) - set(AGE_BAND_EDGES))
-    if not added:
-        raise ValueError("FINE_CHILD_AGE_BAND_EDGES adds no edge to AGE_BAND_EDGES")
-    lower = max(edge for edge in AGE_BAND_EDGES if edge < added[0])
-    upper = min(edge for edge in AGE_BAND_EDGES if edge >= added[-1])
-    return lower + 1, upper
-
-
-#: The ONE coarse band (:data:`weekend_plan_match.AGE_BAND_EDGES`) that
-#: :data:`weekend_plan_match.FINE_CHILD_AGE_BAND_EDGES` splits, as the inclusive age range
-#: ``(6, 13)``. The crossing counter below reports over exactly the persons inside it -- the
-#: only ones the fine bands can move -- so the rate is not diluted by adults, for whom the
-#: two edge sets are identical. Derived from the two edge tuples rather than typed as
-#: literals, so it cannot drift away from them.
-SPLIT_CHILD_AGE_RANGE = _split_child_age_range()
 
 
 @dataclass(frozen=True)
