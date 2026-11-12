@@ -229,3 +229,49 @@ def test_build_slots_all_nan_height_equals_area():
         slots_no_col.reset_index(drop=True),
         check_like=False,
     )
+
+
+# --- F1 (repository audit B4): slots apportioned only over classes with footprints ----------
+
+def test_build_slots_apportions_only_over_classes_with_footprints():
+    """Census says all dwellings are MFH, but every footprint types as efh_zfh.
+
+    Before the fix the MFH share of T found no footprint and its slots vanished; the
+    total must stay T and land on the footprints that exist (PRIMARY apportionment).
+    """
+    typed = pd.DataFrame({"building_id": [0, 1], "area_m2": [80.0, 120.0],
+                          "btype": ["efh_zfh", "efh_zfh"]})
+    whg = {"efh_zfh": 0.0, "mfh": 5.0, "sonst": 0.0}
+    for builder in (bt.build_slots, bt.build_slots_arrays):
+        slots = builder(typed, whg, 5, [(70.0, 5.0)], np.random.RandomState(0))
+        assert len(slots) == 5, builder.__name__
+        assert (slots["btype"] == "efh_zfh").all()
+
+
+def test_build_slots_renormalises_shares_over_available_classes():
+    typed = pd.DataFrame({"building_id": [0, 1], "area_m2": [100.0, 100.0],
+                          "btype": ["efh_zfh", "mfh"]})
+    whg = {"efh_zfh": 2.0, "mfh": 2.0, "sonst": 6.0}   # sonst has dwellings, no footprint
+    for builder in (bt.build_slots, bt.build_slots_arrays):
+        slots = builder(typed, whg, 10, [(60.0, 10.0)], np.random.RandomState(0))
+        assert len(slots) == 10
+        assert slots["btype"].value_counts().to_dict() == {"efh_zfh": 5, "mfh": 5}
+
+
+def test_build_slots_zero_weight_on_available_classes_uses_footprint_counts():
+    typed = pd.DataFrame({"building_id": [0, 1, 2], "area_m2": [100.0] * 3,
+                          "btype": ["efh_zfh", "efh_zfh", "efh_zfh"]})
+    whg = {"efh_zfh": 0.0, "mfh": 0.0, "sonst": 4.0}
+    for builder in (bt.build_slots, bt.build_slots_arrays):
+        slots = builder(typed, whg, 4, [(60.0, 4.0)], np.random.RandomState(0))
+        assert len(slots) == 4 and (slots["btype"] == "efh_zfh").all()
+
+
+def test_slot_apportionment_flags_reapportioned_and_zero_dwelling_cases():
+    typed = pd.DataFrame({"building_id": [0], "area_m2": [100.0], "btype": ["efh_zfh"]})
+    lost = bt.slot_apportionment(typed, {"efh_zfh": 1.0, "mfh": 3.0, "sonst": 0.0}, 4)
+    assert lost.reapportioned and not lost.dwellings_zero and lost.total == 4
+    clean = bt.slot_apportionment(typed, {"efh_zfh": 4.0, "mfh": 0.0, "sonst": 0.0}, 4)
+    assert not clean.reapportioned and not clean.dwellings_zero
+    zero = bt.slot_apportionment(typed, {"efh_zfh": 0.0, "mfh": 0.0, "sonst": 0.0}, 4)
+    assert zero.dwellings_zero and not zero.reapportioned

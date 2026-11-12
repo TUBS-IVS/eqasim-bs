@@ -211,12 +211,18 @@ def test_typed_home_signal_projection_keeps_unused_nullable_size_bin_error():
         )
 
 
-def test_typed_home_log_separates_empty_slots_random_fallback(caplog):
+def test_typed_home_log_separates_empty_slots_random_fallback(caplog, monkeypatch):
     """A nonempty cell with no supported slots must be visible in the run log."""
     households, buildings, cells = _one_building_per_cell_fixture([CELL_A])
     households["building_type_3class"] = "mehrfamilienhaus"
     cells["FreiEFH_Wohnung_Gebaeudetyp_Groesse_100m_Gitter"] = 0.0
     cells["MFH_3bis6Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter"] = 1.0
+    # Since audit B4 F1 a census class without footprint no longer empties the slots, so
+    # the empty-slots path is forced here through the slot builder it guards.
+    monkeypatch.setattr(
+        home_cell.bt, "build_slots_arrays",
+        lambda *args, **kwargs: pd.DataFrame(
+            columns=["slot_id", "building_id", "btype", "size"]))
 
     with caplog.at_level(logging.WARNING, logger=home_cell.__name__):
         result, report = home_cell.assign_homes_typed(
@@ -263,6 +269,8 @@ def test_home_coordinate_batching_is_registered_default_on():
 
         def config(self, key, default=None):
             configured[key] = default
+            # sampling_rate has no default: synpp returns the configured value.
+            return 1.0 if key == "sampling_rate" else default
 
     home_cell.configure(Context())
     assert configured["braunschweig.performance.home_coordinates"] is True
@@ -508,6 +516,7 @@ def test_execute_forwards_home_coordinate_batching_switch(monkeypatch):
         def config(self, key):
             return {
                 "random_seed": 1234,
+                "sampling_rate": 1.0,
                 "braunschweig.home_matching": "typed",
                 "braunschweig.performance.home_coordinates": False,
                 home_cell.KEY_CELLS_100M: "unused",
@@ -541,11 +550,14 @@ def test_execute_uses_projected_home_signals_when_coordinate_optimization_is_on(
             return {
                 "braunschweig.data.buildings": buildings,
                 "synthesis.population.sampled": sampled,
+                # the population before sampling: read for the full cell type mix
+                "data.census.filtered": sampled,
             }[name]
 
         def config(self, key):
             return {
                 "random_seed": 1234,
+                "sampling_rate": 0.05,
                 "braunschweig.home_matching": "typed",
                 "braunschweig.performance.home_coordinates": True,
                 home_cell.KEY_CELLS_100M: "prepared-cells.parquet",
@@ -554,6 +566,8 @@ def test_execute_uses_projected_home_signals_when_coordinate_optimization_is_on(
     def capture_assignment(*args, **kwargs):
         observed["cells"] = args[2]
         observed["batch_coordinates"] = kwargs["batch_coordinates"]
+        observed["sampling_rate"] = kwargs["sampling_rate"]
+        observed["full"] = kwargs["full_households_by_cell_type"]
         return gpd.GeoDataFrame(
             {
                 "household_id": sampled["household_id"],
@@ -572,3 +586,6 @@ def test_execute_uses_projected_home_signals_when_coordinate_optimization_is_on(
     home_cell.execute(Context())
     assert observed["batch_coordinates"] is True
     assert observed["cells"] is cells
+    assert observed["sampling_rate"] == 0.05      # the configured rate reaches the thinning
+    # ... and so does the full-population household-type mix per cell
+    assert sum(sum(v.values()) for v in observed["full"].values()) == len(sampled)

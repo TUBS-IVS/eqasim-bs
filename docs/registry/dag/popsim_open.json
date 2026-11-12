@@ -213,6 +213,10 @@
    "synthesis.population.sampled"
   ],
   [
+   "data.census.filtered",
+   "synthesis.population.spatial.home.locations"
+  ],
+  [
    "data.gtfs.cleaned",
    "matsim.scenario.supply.gtfs"
   ],

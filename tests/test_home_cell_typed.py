@@ -208,3 +208,83 @@ def test_typed_uses_height_for_capacity():
     # the tall building (id 0) hosts MORE households than the flat one (id 1)
     vc = out["home_location_id"].value_counts()
     assert vc.get(0, 0) > vc.get(1, 0)
+
+
+# --- repository audit B4: F1 / F2 / F6 ---------------------------------------------------------
+
+_CELL = "CRS3035RES100mN2689100E4337000"
+
+
+def _cell_row(**over):
+    row = {"ZENSUS100m": _CELL,
+           "BewohntWhg_Leerstand_100m_Gitter": 4.0,
+           "90bis99_Flaeche_der_Wohnung_10m2_Intervalle_100m_Gitter": 4.0}
+    row.update(over)
+    return pd.DataFrame([row])
+
+
+def _hh(n, cell=_CELL, btype="mehrfamilienhaus"):
+    return pd.DataFrame({
+        "household_id": [f"h{i}" for i in range(n)], "commune_id": ["031010000000"] * n,
+        "ZENSUS100m": [cell] * n, "building_type_3class": [btype] * n,
+        "household_size": [2] * n})
+
+
+def test_f1_census_mfh_dwellings_without_mfh_footprint_keeps_all_slots():
+    """Census: 4 MFH dwellings, building count only EFH -> both footprints type efh_zfh.
+
+    The 4 occupied dwellings must all become slots (n_overcapacity == 0); they used to
+    vanish because the MFH share of the slot total had no footprint."""
+    buildings = _geo([(0, 80.0, 2689100, 4337000), (1, 120.0, 2689100, 4337000)])
+    cells = _cell_row(**{
+        "FreiEFH_Geb_Gebaeudetyp_Groesse_100m_Gitter": 2.0,
+        "MFH_3bis6Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter": 4.0})
+    for batch in (True, False):
+        out, rep = home_cell.assign_homes_typed(
+            _hh(4), buildings, cells, random_seed=1, batch_coordinates=batch)
+        assert rep.n_overcapacity == 0, batch
+        assert out["home_location_id"].notna().all()
+        assert out["home_location_id"].nunique() == 2     # spread, not one building
+        assert rep.n_slot_reapportioned_hh == 4
+
+
+def test_f2_fallback_counters_are_reported():
+    buildings = _geo([(0, 80.0, 2689100, 4337000), (1, 120.0, 2689100, 4337000)])
+    # (b) + (c): census row present but all building and dwelling counts zero
+    out, rep = home_cell.assign_homes_typed(
+        _hh(4), buildings, _cell_row(), random_seed=1)
+    assert rep.n_geb_counts_zero_hh == 4 and rep.geb_counts_zero_rate == 1.0
+    assert rep.n_whg_counts_zero_hh == 4 and rep.whg_counts_zero_rate == 1.0
+    assert rep.n_signal_missing_hh == 0
+    # (a): cell absent from the signal table
+    other = _cell_row()
+    other["ZENSUS100m"] = "CRS3035RES100mN2689100E4337100"
+    out, rep = home_cell.assign_homes_typed(_hh(3), buildings, other, random_seed=1)
+    assert rep.n_signal_missing_hh == 3 and rep.signal_missing_rate == 1.0
+    # primary path: full census signal -> no fallback counted
+    full = _cell_row(**{
+        "FreiEFH_Geb_Gebaeudetyp_Groesse_100m_Gitter": 2.0,
+        "FreiEFH_Wohnung_Gebaeudetyp_Groesse_100m_Gitter": 4.0})
+    out, rep = home_cell.assign_homes_typed(
+        _hh(4, btype="ein_zweifamilienhaus"), buildings, full, random_seed=1)
+    assert (rep.n_signal_missing_hh, rep.n_geb_counts_zero_hh,
+            rep.n_whg_counts_zero_hh, rep.n_slot_reapportioned_hh) == (0, 0, 0, 0)
+
+
+def test_f2_high_fallback_rate_warns(caplog):
+    import logging
+    buildings = _geo([(0, 80.0, 2689100, 4337000)])
+    with caplog.at_level(logging.WARNING, logger=home_cell.logger.name):
+        home_cell.assign_homes_typed(_hh(4), buildings, _cell_row(), random_seed=1)
+    assert any("fallback" in r.getMessage() and r.levelno == logging.WARNING
+               for r in caplog.records)
+    assert 0 < home_cell.FALLBACK_WARN_RATE < 1
+
+
+def test_f6_nan_cell_households_raise_instead_of_vanishing():
+    import pytest
+    buildings = _geo([(0, 80.0, 2689100, 4337000)])
+    hh = _hh(3)
+    hh.loc[1, "ZENSUS100m"] = np.nan
+    with pytest.raises(ValueError, match="h1"):
+        home_cell.assign_homes_typed(hh, buildings, _cell_row(), random_seed=1)
