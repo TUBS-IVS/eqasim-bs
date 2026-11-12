@@ -32,10 +32,8 @@ archive before the pip step.
 The pip layer intentionally overrides some conda-installed packages. In
 particular, the server has conda `pytest=7.2.2` but its effective runtime is pip
 `pytest=9.1.1`, pulled in with the pinned `chainsolvers` installation. This is
-documented and replayed rather than hidden. The other captured pip packages are
-`py-spy=0.4.2`, `plotly=6.8.0`, `PyYAML=6.0.3`, `narwhals=2.22.0`,
-`frozendict=2.4.7`, `pyzmq=27.1.0`, `bhepop2=2.0.0`, `synpp=1.6.2`, and
-`Pygments=2.20.0`.
+documented and replayed rather than hidden. The full captured pip layer is
+listed in `environments/requirements-server-linux-64.txt`.
 
 ## Match configuration as well as packages
 
@@ -51,9 +49,11 @@ An environment mirror alone does not provision input data, popsimprep or Java
 build tools.
 
 The Linux shell wrappers require JDK 25. Bootstrap installs the captured Linux
-snapshot for a new environment and preserves an existing one. The update script
-stops if the Linux snapshot changes, requiring an explicit environment refresh;
-it never re-solves the server from the Windows source file.
+snapshot for a new environment and preserves an existing one; it never re-solves the server from the Windows source
+file. A run whose commit carries a changed Linux snapshot is stopped by the
+environment check of `scripts/isolated_run.py gate`
+([isolated-server-runs.md](isolated-server-runs.md)), which requires an explicit
+environment refresh.
 
 If initial pip installation is interrupted after conda creation, fix the artifact
 access problem and explicitly run `bash scripts/bootstrap_server.sh --repair-pip`.
