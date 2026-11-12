@@ -79,7 +79,7 @@ def _per_purpose(trips: pd.DataFrame, purpose: str, *, rng: np.random.RandomStat
             purpose, n_missing, n_legs, n_missing,
         )
     logger.info(
-        "[popsim.commute_distance] %s: %d of %d persons have no home<->%s leg and get no row.",
+        "[popsim.commute_distance] %s: %d of %d persons with at least one trip have no home<->%s leg and get no row.",
         purpose, n_no_leg, n_persons, purpose,
     )
     return legs

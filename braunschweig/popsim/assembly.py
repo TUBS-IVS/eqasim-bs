@@ -529,8 +529,9 @@ def _attach_donor_household_attrs(
     if n_unmatched:
         sample = sorted(persons.loc[unmatched, donor_col].astype(str).unique())[:5]
         logger.warning(
-            "[popsim.assembly] donor household attrs: example unmatched %s ids: %s",
-            donor_col, sample,
+            "[popsim.assembly] donor household attrs: %d of %d person(s) have an unmatched %s "
+            "(count attributes zero-filled); example ids: %s",
+            n_unmatched, n_total, donor_col, sample,
         )
     persons["number_of_cars"] = persons["number_of_cars"].fillna(0).astype(int)
     persons["number_of_bicycles"] = persons["number_of_bicycles"].fillna(0).astype(int)

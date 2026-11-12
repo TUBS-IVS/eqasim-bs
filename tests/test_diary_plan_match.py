@@ -287,14 +287,18 @@ def test_reassign_fine_child_bands_off_is_byte_identical_to_today():
     assert off_state[2:] == on_state[2:]
 
 
-def test_reassign_holiday_source_type_rate_is_primary_for_integer_counts(caplog):
-    # The fixture's donor ``anzwege1`` is integer-typed, so the holiday source takes the primary
-    # (isinstance int) branch and the float-typed routing defect (audit P2-F21) is not exercised.
+@pytest.mark.parametrize("anzwege1_dtype, expected_prefix, expected_level", [
+    # The fixture's integer-typed donor ``anzwege1`` takes the primary (isinstance int) branch.
+    (int, "[diary_plan_match.holiday_source_anzwege1_type] primary 1/1", logging.INFO),
+    # A float donor ``anzwege1`` fails the isinstance test (known defect, audit P2-F21): counted as fallback.
+    (float, "[diary_plan_match.holiday_source_anzwege1_type] primary 0/1", logging.WARNING),
+])
+def test_reassign_holiday_source_type_rate(caplog, anzwege1_dtype, expected_prefix, expected_level):
     donors = _donors(); facts = dfm.compute_diary_facts(_wege())
+    donors["anzwege1"] = donors["anzwege1"].astype(anzwege1_dtype)
     with caplog.at_level(logging.INFO, logger="braunschweig.popsim.diary_plan_match"):
         dpm.reassign_diaryless_plan_sources(donors, donors, facts, rng=np.random.RandomState(3),
                                             hard_employment=True, fine_child_age_bands=False, **FLAGS)
-    rate_lines = [r for r in caplog.records
-                  if r.getMessage().startswith("[diary_plan_match.holiday_source_anzwege1_type] primary 1/1")]
+    rate_lines = [r for r in caplog.records if r.getMessage().startswith(expected_prefix)]
     assert len(rate_lines) == 1, caplog.text
-    assert rate_lines[0].levelno == logging.INFO
+    assert rate_lines[0].levelno == expected_level

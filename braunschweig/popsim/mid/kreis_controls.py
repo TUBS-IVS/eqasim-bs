@@ -216,6 +216,7 @@ def _kreis_pop_from_crosswalk(
             f"cells without a crosswalk Kreis are dropped from the {weight_col} sums "
             f"(weight share dropped {(100.0 * unmapped_w / total_w) if total_w else 0.0:.1f}%)"
         ),
+        threshold=0.0,
     )
     grouped = work.groupby(folders.GEO_KREIS, sort=False)["_w"].sum()
     return {str(k): float(v) for k, v in grouped.items()}

@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 
 import pandas as pd
+import pytest
 
 from braunschweig.popsim import stage
 
@@ -36,11 +37,16 @@ def test_derive_geo_kreis_from_ars_integer_dtype_input():
     assert list(out) == ["03101", "03102"]
 
 
-def test_derive_geo_kreis_logs_placeholder_rate_on_primary_path(caplog):
-    ars = pd.Series(["031010000000", "031020000000"] * 20)
+@pytest.mark.parametrize("ars, expected_prefix, expect_warning", [
+    (pd.Series(["031010000000", "031020000000"] * 20), "[popsim.stage.geo_kreis] primary 40/40", False),
+    # A numeric ARS column with a missing value is float64: the valid row stringifies as
+    # "31010000000.0" (a WRONG Kreis) and the NaN as "nan"; both are counted, and any count warns.
+    (pd.Series([31010000000, float("nan")]), "[popsim.stage.geo_kreis] primary 0/2", True),
+])
+def test_derive_geo_kreis_logs_placeholder_rate(caplog, ars, expected_prefix, expect_warning):
     with caplog.at_level(logging.INFO, logger="braunschweig.popsim.stage.cell_attributes"):
         out = stage.derive_geo_kreis_from_ars(ars)
-    assert set(out) == {"03101", "03102"}
+    assert len(out) == len(ars)
     messages = [r.getMessage() for r in caplog.records]
-    assert any(m.startswith("[popsim.stage.geo_kreis] primary 40/40") for m in messages)
-    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any(m.startswith(expected_prefix) for m in messages)
+    assert bool([r for r in caplog.records if r.levelno >= logging.WARNING]) is expect_warning

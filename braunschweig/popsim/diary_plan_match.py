@@ -369,7 +369,8 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     log_fallback_rate(
         logger, "diary_plan_match.holiday_source_anzwege1_type", n_non_int_holiday_sources, n_holiday_sources,
         what="holiday sources whose donor anzwege1 is not integer-typed (e.g. float) are routed to pool "
-             '"any" instead of "mobile" (known defect, audit P2-F21)')
+             '"any" regardless of their value, even a mobile count that would go to "mobile" '
+             "(known defect, audit P2-F21)")
     crossed = _count_employment_boundary_crossings(persons, pools["any"], to_remap)
     n_split_band, crossed_band = _count_fine_child_band_crossings(persons, pools["any"], to_remap)
     crossed_passenger = _count_passenger_class_crossings(persons, pools["any"], to_remap)

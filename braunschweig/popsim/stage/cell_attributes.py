@@ -105,15 +105,24 @@ def derive_geo_kreis_from_ars(ars: pd.Series) -> pd.Series:
     Kreis-level ARS -- kept as a single reusable helper so the three call sites
     cannot drift apart.
     """
-    kreis = ars.astype(str).str.zfill(12).str[:5]
+    raw = ars.astype(str)
+    kreis = raw.str.zfill(12).str[:5]
     # Observability only (audit P3-F5, CLAUDE.md "Fallback transparency"): a missing ARS is
     # cast to the string "nan", zero-padded and sliced to the placeholder Kreis "00000", which
-    # is no real Kreis. KNOWN BUG, deliberately not fixed here: it is counted and logged only.
+    # is no real Kreis. A numeric ARS column with a missing value is float64, so valid rows
+    # stringify as e.g. "31010000000.0" and derive a WRONG Kreis. Every row whose raw string is
+    # not a clean digit string, or whose Kreis is "00000", is counted. KNOWN BUG, deliberately
+    # not fixed here: it is counted and logged only (return value untouched).
+    n_bad = int(((~raw.str.fullmatch(r"\d+")) | (kreis == "00000")).sum())
     log_fallback_rate(
         logger,
         "popsim.stage.geo_kreis",
-        int((kreis == "00000").sum()),
+        n_bad,
         len(kreis),
-        what='rows carry the placeholder Kreis "00000" (missing ARS; audit P3-F5)',
+        what=(
+            "rows have a missing / non-digit ARS (NaN, float repr) or the placeholder "
+            'Kreis "00000" (audit P3-F5)'
+        ),
+        threshold=0.0,
     )
     return kreis

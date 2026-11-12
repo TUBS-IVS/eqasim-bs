@@ -158,7 +158,7 @@ def map_demographics(persons, *, age_col="HP_ALTER", sex_col="HP_SEX", rng=None)
     n_total = len(out)
     log_fallback_rate(
         logger, "popsim.expand.sex", n_missing, n_total,
-        what="persons without an observed binary sex (codes 3 diverse / 9 k.A.), imputed",
+        what="persons without an observed binary sex (codes 3 diverse / 9 not specified), imputed",
     )
     if n_missing:
         n_unassigned = int(binary.isna().sum())
@@ -167,11 +167,17 @@ def map_demographics(persons, *, age_col="HP_ALTER", sex_col="HP_SEX", rng=None)
             "constant 'male' %d, unassigned (NaN alter_gr1) %d.",
             n_missing, n_band, n_global, n_constant, n_unassigned,
         )
+        if n_unassigned:
+            logger.warning(
+                "[popsim.expand.sex] %d person(s) with a missing alter_gr1 got NO imputed sex and "
+                "keep a missing sex value.", n_unassigned)
+        # Denominator: only the imputed persons that were assigned a sex (unassigned ones sit in none
+        # of the tiers).
         log_fallback_rate(
-            logger, "popsim.expand.sex_constant", n_constant, n_missing,
+            logger, "popsim.expand.sex_constant", n_constant, n_missing - n_unassigned,
             what="imputed persons that got the constant 'male' because no pool existed",
         )
     logger.info(
-        "[popsim.expand] sex: imputed %d non-binary/missing codes (3 diverse / 9 k.A.) "
+        "[popsim.expand] sex: imputed %d non-binary/missing codes (3 diverse / 9 not specified) "
         "to binary male/female (seeded); sex_raw retains the original category.", n_missing)
     return out

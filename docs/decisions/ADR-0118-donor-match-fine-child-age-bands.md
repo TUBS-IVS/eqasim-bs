@@ -181,7 +181,8 @@
   `braunschweig/popsim/member_completion.py` (`_match_present_members(age_band_edges=...)`,
   `complete_members(fine_child_age_bands=...)`), `braunschweig/popsim/mid/donor.py`
   (`load_completed_donor(fine_child_age_bands=...)`), `braunschweig/popsim/diary_plan_match.py`
-  (`SPLIT_CHILD_AGE_RANGE`, `_count_fine_child_band_crossings`) and
+  (`_count_fine_child_band_crossings`; `SPLIT_CHILD_AGE_RANGE` lives in
+  `braunschweig/popsim/weekend_plan_match.py :: SPLIT_CHILD_AGE_RANGE`) and
   `braunschweig/popsim/completed_donor.py` (flag threading, `configure`, `execute`, `set_info`);
   the tests listed in `docs/registry/features/diary_plan_match.yml`. Related: ADR-0106 (realisable
   plan sources), ADR-0109 (the un-relaxable employment key whose shape this mirrors), ADR-0114
