@@ -36,6 +36,32 @@ OSM_FILTERS = [
 
 DEFAULT_FLOORS = 2
 
+# Share of fallback items above which a warning is printed
+FALLBACK_WARN_RATE = 0.05
+
+def report_fallback_rates(chunk_attempts, chunks_dropped, poi_total, floors_defaulted):
+    """Print primary/fallback rates of the OSM POI extraction (output is not changed).
+
+    A chunk attempt is one (location type, municipality chunk) pair; a dropped chunk
+    lost all its POIs of that type because pyrosm raised KeyError/AttributeError.
+    """
+    chunk_rate = chunks_dropped / max(chunk_attempts, 1)
+    print("[osm.locations] chunks primary {}/{} ({:.1f}%), dropped {} ({:.1f}%)".format(
+        chunk_attempts - chunks_dropped, chunk_attempts, 100 * (1 - chunk_rate),
+        chunks_dropped, 100 * chunk_rate))
+
+    floors_rate = floors_defaulted / max(poi_total, 1)
+    print("[osm.locations] floors primary {}/{} ({:.1f}%), default {} floors for {} ({:.1f}%)".format(
+        poi_total - floors_defaulted, poi_total, 100 * (1 - floors_rate),
+        DEFAULT_FLOORS, floors_defaulted, 100 * floors_rate))
+
+    if chunk_rate > FALLBACK_WARN_RATE:
+        print("[osm.locations] WARNING: {:.1f}% of chunks dropped (> {:.0f}%)".format(
+            100 * chunk_rate, 100 * FALLBACK_WARN_RATE))
+    if floors_rate > FALLBACK_WARN_RATE:
+        print("[osm.locations] WARNING: {:.1f}% of POIs use the default floors (> {:.0f}%)".format(
+            100 * floors_rate, 100 * FALLBACK_WARN_RATE))
+
 def configure(context):
     context.stage("eqasim_common.data.osm.chunked")
     context.stage("data.spatial.municipalities")
@@ -46,6 +72,12 @@ def execute(context):
     chunk_ids = context.stage("eqasim_common.data.osm.chunked")
 
     df_locations = []
+    # Fallback counters (CLAUDE.md "Fallback transparency")
+    chunk_attempts = 0
+    chunks_dropped = 0
+    poi_total = 0
+    floors_defaulted = 0
+
     for osm_filter in OSM_FILTERS:
         print("Processing {} ...".format(osm_filter["location_type"]))
 
@@ -58,10 +90,12 @@ def execute(context):
                     warnings.filterwarnings("ignore", category = FutureWarning)
 
                     df_selection = osm.get_buildings(osm_filter["filter"])
-            except AttributeError:
+            except (AttributeError, KeyError):
+                # The municipality's POIs of this location type are dropped; counted below
                 df_selection = None
-            except KeyError:
-                df_selection = None
+                chunks_dropped += 1
+
+            chunk_attempts += 1
 
             if df_selection is not None and len(df_selection) > 0:
                 columns = ["geometry"] + [
@@ -83,6 +117,8 @@ def execute(context):
                 else:
                     df_selection["floors"] = np.nan
 
+                poi_total += len(df_selection)
+                floors_defaulted += int(df_selection["floors"].isna().sum())
                 df_selection["floors"] = df_selection["floors"].fillna(DEFAULT_FLOORS)
                 df_selection["floors"] = np.maximum(df_selection["floors"], 1) # avoid negative
 
@@ -93,6 +129,8 @@ def execute(context):
                 df_selection["location_type"] = osm_filter["location_type"]
                 df_locations.append(df_selection)
     
+    report_fallback_rates(chunk_attempts, chunks_dropped, poi_total, floors_defaulted)
+
     df_locations = pd.concat(df_locations)
 
     if not "floors" in df_locations: df_locations["floors"] = np.nan

@@ -338,7 +338,42 @@ class _NullProgress:
         pass
 
 
-def match_donors(df_target, df_source, *, matching_columns, minimum_observations,
+# Share of non-primary (relaxed or random) matches above which a warning is printed
+FALLBACK_WARN_RATE = 0.05
+
+
+def report_matching_levels(levels, number_of_columns):
+    """Print the distribution of the matching levels returned by ``statistical_matching``.
+
+    Level encoding: ``number_of_columns`` = full match on every key (primary), ``1`` ..
+    ``number_of_columns - 1`` = keys relaxed from the end, ``0`` = random draw from the whole
+    donor pool (fallback; ``statistical_matching`` raises before returning it, so it is
+    reported for completeness). Warns when the non-primary share exceeds ``FALLBACK_WARN_RATE``.
+    Returns the non-primary share; the matching itself is not changed.
+    """
+    levels = np.asarray(levels)
+    total = len(levels)
+    n_primary = int(np.count_nonzero(levels == number_of_columns))
+    n_random = int(np.count_nonzero(levels == 0))
+    n_relaxed = total - n_primary - n_random
+    share = (total - n_primary) / max(total, 1)
+
+    print("[matched] primary (full match) %d/%d (%.1f%%), relaxed %d (%.1f%%), random fallback %d (%.1f%%)"
+          % (n_primary, total, 100.0 * n_primary / max(total, 1),
+             n_relaxed, 100.0 * n_relaxed / max(total, 1),
+             n_random, 100.0 * n_random / max(total, 1)))
+    for level in range(number_of_columns - 1, -1, -1):
+        count = int(np.count_nonzero(levels == level))
+        if count > 0:
+            print("[matched]   level %d of %d keys: %d (%.1f%%)"
+                  % (level, number_of_columns, count, 100.0 * count / max(total, 1)))
+    if share > FALLBACK_WARN_RATE:
+        print("[matched] WARNING: %.1f%% of the targets were not matched on all keys (> %.0f%%)"
+              % (100.0 * share, 100.0 * FALLBACK_WARN_RATE))
+    return share
+
+
+def match_donors(df_target,df_source, *, matching_columns, minimum_observations,
                  random_seed, weight_column = "weight"):
     """Reusable hierarchical-relaxation donor matching (public API).
 
@@ -390,10 +425,12 @@ def match_donors(df_target, df_source, *, matching_columns, minimum_observations
         donors). This mirrors the stage behaviour: unmatched targets are never
         returned silently.
     """
-    df_assignment, _levels = statistical_matching(
+    df_assignment, levels = statistical_matching(
         _NullProgress(), df_source, "hts_id", weight_column,
         df_target, "person_id", list(matching_columns),
         random_seed = random_seed, minimum_observations = minimum_observations)
+
+    report_matching_levels(levels, len(list(matching_columns)))
 
     return df_assignment
 

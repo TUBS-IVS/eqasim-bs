@@ -771,6 +771,18 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
                                remode_counter=remode_counter)
                     progress.update()
 
+            # A valid population consumes every vehicle (each person takes the vehicles it owns).
+            # A leftover vehicle belongs to no written person: it would be dropped silently.
+            if vehicle_iterator.has_next():
+                orphan = vehicle_iterator.next()
+                raise ValueError(
+                    "[population] vehicle %r (owner_id %r) belongs to no written person: every "
+                    "vehicle must be owned by a person of the population (and the vehicles must be "
+                    "sorted by owner_id like the persons). Check the vehicle fleet stage and the "
+                    "in-commuter merge for owners missing from the person frame."
+                    % (orphan[VEHICLE_FIELDS.index("vehicle_id")],
+                       orphan[VEHICLE_FIELDS.index("owner_id")]))
+
             writer.end_population()
 
     if writes_rbw_attributes:
