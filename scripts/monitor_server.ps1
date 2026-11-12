@@ -15,8 +15,8 @@
         (python / java), top CPU process, error/warning tallies
       - tail of the live log
 
-    Pairs with run_pipeline_on_server.ps1 (which starts the run in the tmux
-    session 'eqasim' and logs to logs/run_*.log).
+    Monitors a run started with run_pipeline.sh / scripts/isolated_run.py
+    (logs to logs/run_*.log).
 
 .PARAMETER ServerUser
     SSH user. Default: environment variable EQASIM_SERVER_USER; if neither is set,

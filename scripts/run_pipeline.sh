@@ -3,8 +3,8 @@
 # run_pipeline.sh - activate the conda environment and run the synpp pipeline
 # for a given config on the Linux run server.
 #
-# This is the server-side runner invoked (inside a tmux session) by the Windows
-# orchestrator run_pipeline_on_server.ps1. It can also be called directly:
+# This is the server-side runner. Isolated runs at a given commit are started by
+# scripts/isolated_run.py; it can also be called directly:
 #
 #   bash ~/eqasim-bs/scripts/run_pipeline.sh configs/fixtures/config_local_braunschweig_25pct.yml
 #
