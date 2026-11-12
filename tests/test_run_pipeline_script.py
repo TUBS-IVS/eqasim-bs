@@ -104,3 +104,39 @@ def test_jdk_preflight_selects_or_rejects_the_configured_jdk(
     if java_version == "25.0.3" and java_runs and expected == "Using JDK 25":
         assert str(java_home) in output
         assert "Maven (mvn) not found" in output
+
+
+def _script_text() -> str:
+    return SCRIPT.read_bytes().decode("utf-8").replace("\r\n", "\n")
+
+
+def test_load_sampler_is_killed_on_every_exit_path():
+    """A failing run exits under `set -e` before the explicit kill: the EXIT trap must cover it."""
+    text = _script_text()
+    assert text.index("SAMPLER_PID=$!") < text.index("trap 'kill \"$SAMPLER_PID\"")
+    assert "EXIT" in text.split("trap 'kill \"$SAMPLER_PID\"", 1)[1].split("\n", 1)[0]
+
+
+def test_all_config_arguments_are_forwarded_to_run_synpp():
+    """The composed base+overlay form must reach run_synpp.py, not just the first path."""
+    text = _script_text()
+    assert 'python scripts/run_synpp.py "${CONFIGS[@]}"' in text
+    assert 'python scripts/run_synpp.py "$CONFIG"' not in text
+
+
+@pytest.mark.skipif(os.name != "posix" or BASH is None,
+                    reason="run_pipeline.sh harness requires POSIX bash")
+def test_every_composed_config_is_preflight_checked(tmp_path: Path):
+    """A java_home override in the overlay (second path) is rejected like one in the base."""
+    environment, _ = _prepare_harness(
+        tmp_path, java_version="25.0.3", explicit_java_home=True, java_runs=True,
+        java_home_has_spaces=False)
+    (tmp_path / "overlay.yml").write_text(
+        "config:\n  java_home: /different/jdk-25\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [BASH, str(tmp_path / "run_pipeline.sh"), "config.yml", "overlay.yml"],
+        cwd=tmp_path, env=environment, text=True, capture_output=True, check=False)
+
+    assert result.returncode == 1
+    assert "config java_home does not match" in result.stdout + result.stderr
