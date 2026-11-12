@@ -184,7 +184,8 @@ def test_validate_returns_a_content_token(java_repo):
         def config(self, key):
             return {"eqasim_source_path": str(java_repo), "eqasim_path": "", "git_binary": "git"}[key]
     token = eqasim.validate(_Context())
-    assert token == {"format": 1, "source": eqasim.source_tree_digest(str(java_repo))}
+    assert token["provided"] == {"format": 1, "source": eqasim.source_tree_digest(str(java_repo))}
+    assert {"matsim.runtime.git", "matsim.runtime.java", "matsim.runtime.maven"} <= set(token["helpers"]["modules"])
 
 
 def test_validate_follows_execute_precedence_when_both_keys_are_set(java_repo, tmp_path):
@@ -197,7 +198,18 @@ def test_validate_follows_execute_precedence_when_both_keys_are_set(java_repo, t
             return {"eqasim_source_path": str(java_repo), "eqasim_path": str(jar),
                     "git_binary": "git"}[key]
     token = eqasim.validate(_Context())
-    assert token == {"format": 1, "jar": eqasim._sha256_file(str(jar))}
+    assert token["provided"] == {"format": 1, "jar": eqasim._sha256_file(str(jar))}
+    assert "matsim.runtime.java" in token["helpers"]["modules"]
+
+
+def test_validate_hashes_the_runtime_helpers_in_the_upstream_clone_branch():
+    # Neither eqasim_path nor eqasim_source_path: the legacy upstream-clone build, whose provided part is True.
+    class _Context:
+        def config(self, key):
+            return {"eqasim_source_path": "", "eqasim_path": ""}[key]
+    token = eqasim.validate(_Context())
+    assert token["provided"] is True
+    assert {"matsim.runtime.git", "matsim.runtime.java", "matsim.runtime.maven"} <= set(token["helpers"]["modules"])
 
 
 def test_validate_returns_a_jar_content_token(tmp_path):

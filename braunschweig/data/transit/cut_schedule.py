@@ -47,10 +47,23 @@ EXTENT_FILE_NAME = "cordon_extent.gpkg"
 HUB_TABLE_COLUMNS = ("name", "stop_id", "x", "y", "inside_extent")
 
 #: Own-package helpers whose source shapes this stage's output (hashed by validate()).
-_HELPER_MODULES = (_schedule, _cordon, _extent, eqasim)
+#: ``eqasim`` and ``java`` are declared stages this stage runs as libraries (``eqasim.run``, ``java.run``): the DAG edge
+#: covers their output, not this code (ADR-0194).
+_HELPER_MODULES = (_schedule, _cordon, _extent, eqasim, java)
 #: The schedule reader imports ``plan_check.parse_time_s``; the audit requires its import closure to be hashed too.
 _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.matsim.simulation.plan_check", "braunschweig.popsim.closure_dwell",
-                                 "braunschweig.popsim.plan_validation", "data.hts.hts")
+                                 "braunschweig.popsim.plan_validation", "data.hts.hts",
+                                 # Declared stages this stage runs as libraries, and their imports (ADR-0194): the DAG
+                                 # edge covers their output, not this code.
+                                 "matsim.runtime.process_watchdog")
+#: Stage modules the closure walk reaches through the hashed ``matsim.runtime.eqasim`` helper but
+#: whose code this stage never runs (read by scripts/audit_synpp_helper_hash.py, ADR-0136).
+_TOKEN_CLOSURE_BOUNDARIES = {
+    "matsim.runtime.git": "only matsim.runtime.eqasim.execute/configure call git.run; this stage "
+                          "calls eqasim.run, which calls java.run",
+    "matsim.runtime.maven": "only matsim.runtime.eqasim.execute/configure call maven.run; this stage "
+                            "calls eqasim.run, which calls java.run",
+}
 
 
 def validate_mode(value) -> str:

@@ -18,7 +18,15 @@ from __future__ import annotations
 
 import geopandas as gpd
 
+from braunschweig import synpp_tokens
+from braunschweig.data import external_workplaces as _external_workplaces
 from braunschweig.data.external_workplaces import _load_gemeinden
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``cordon.external_points`` is
+# reached through the imports of ``external_workplaces``.
+_HELPER_MODULES = (_external_workplaces,)
+_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.cordon.external_points",)
 
 
 def build_external_secondary_points(gemeinden, zgb_prefixes):
@@ -86,4 +94,9 @@ def validate(context):
     )
     if not os.path.exists(path):
         raise RuntimeError(f"VG250 archive not found: {path}")
-    return os.path.getsize(path)
+    return {
+        "vg250_size": os.path.getsize(path),
+        "helpers": synpp_tokens.source_token(
+            _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+            stage_label=__name__ + ".validate()"),
+    }

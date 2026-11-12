@@ -33,6 +33,14 @@ from braunschweig.matsim import config_modules
 
 log = logging.getLogger(__name__)
 
+#: Read by scripts/audit_synpp_helper_hash.py (ADR-0136): remove the marker as soon as a function here changes a
+#: MATSim argument, a written file or the stage result; the audit then asks every stage that reaches it to hash it.
+_SYNPP_TOKEN_EXEMPTION = (
+    "run-time checks of matsim.simulation.run: it calls parking_module_enabled only to decide whether to run the "
+    "two checks, and require_parking_package / require_parking_outcomes raise or pass (the iteration the latter "
+    "returns is discarded); no function here changes a MATSim argument, a written file or a stage result"
+)
+
 #: MATSim config module of the Java ``ParkingConfigGroup`` (``GROUP_NAME``), the name
 #: ``braunschweig.matsim.simulation.prepare.PARKING_MODULE`` writes. Kept here rather than imported from that stage
 #: module, which would pull the preparation's import chain into the run stage; ``tests/test_parking_run_checks.py``

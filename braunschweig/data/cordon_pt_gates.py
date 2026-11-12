@@ -37,6 +37,9 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 
+from braunschweig import synpp_tokens
+from braunschweig.data.cordon import network as _network
+from braunschweig.data.cordon import pt_reachability as _pt_reachability
 from braunschweig.data.cordon.network import (
     read_external_gemeinden,
     read_kreise,
@@ -47,6 +50,12 @@ from braunschweig.data.cordon.pt_reachability import (
     attach_station_population,
     eligible_rail_entry_stations,
 )
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). Neither imports another
+# first-party module.
+_HELPER_MODULES = (_network, _pt_reachability)
+_DEFERRED_HELPER_MODULE_NAMES = ()
 
 # Columns of the empty frame returned when cordon is disabled.
 _NEW_COLUMNS = ["source_ars5", "stop_id", "x", "y", "reach", "ewz", "dist_to_zgb_km"]
@@ -253,6 +262,13 @@ def configure(context):
         # never incorrectly exclude a station that is truly within reach).
         # Re-calibrate against observed in-commuter origins when origin data are available.
         context.config("cordon_pt_max_station_distance_km", 150.0)
+
+
+def validate(context):
+    """Include the helper modules' source in synpp's stage cache identity (ADR-0136)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def execute(context):

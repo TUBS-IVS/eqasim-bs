@@ -50,8 +50,20 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from braunschweig import synpp_tokens
 from braunschweig.calibration import decision as D
 from braunschweig.calibration import srv_distance_targets as T
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``analysis.spatial`` is imported
+# inside ``execute``; ``data.bbsr.regiostar`` is read by ``analysis.spatial`` and
+# ``gravity.friction`` by ``srv_distance_targets``.
+_HELPER_MODULES = (D, T)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.analysis.spatial",
+    "braunschweig.data.bbsr.regiostar",
+    "braunschweig.gravity.friction",
+)
 
 LOGGER = logging.getLogger("braunschweig.analysis.synthesis.commute_distance_by_kreis")
 
@@ -152,6 +164,13 @@ def configure(context):
     context.config(KEY_MAX_UNMATCHED_HOME_SHARE, DEFAULT_MAX_UNMATCHED_HOME_SHARE)
     context.config(KEY_WARN_UNMATCHED_DESTINATION_SHARE, DEFAULT_WARN_UNMATCHED_DESTINATION_SHARE)
     context.config(KEY_SENSITIVITY_THRESHOLDS, DEFAULT_SENSITIVITY_THRESHOLDS)
+
+
+def validate(context):
+    """Include the helper modules' source in synpp's stage cache identity (ADR-0136)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 # --------------------------------------------------------------------------- pure helpers

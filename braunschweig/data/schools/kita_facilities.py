@@ -15,9 +15,17 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from braunschweig import synpp_tokens
+from braunschweig.data import building_potential_attach as _building_potential_attach
 from braunschweig.data.building_potential_attach import (
     log_unit_basis, pick_unit_weights,
 )
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``execute`` imports
+# ``attach_potential`` from the same module inside the function.
+_HELPER_MODULES = (_building_potential_attach,)
+_DEFERRED_HELPER_MODULE_NAMES = ()
 
 CRS_METRIC = "EPSG:25832"
 
@@ -150,4 +158,9 @@ def validate(context):
     path = os.path.join(context.config("data_path"), context.config("nds_kitas_path"))
     if not os.path.exists(path):
         raise RuntimeError("nds_kitas_zgb.csv missing: run scripts/extract_nds_kitas.py")
-    return os.path.getsize(path)
+    return {
+        "nds_kitas_csv_size": os.path.getsize(path),
+        "helpers": synpp_tokens.source_token(
+            _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+            stage_label=__name__ + ".validate()"),
+    }

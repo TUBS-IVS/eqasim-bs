@@ -208,3 +208,18 @@ def test_validate_token_changes_when_the_price_stage_matrix_changes(tmp_path, mo
     before = zp.validate(context)
     matrix.write_text("\n".join([header, "40,71,defined,1", ""]), encoding="utf-8")
     assert zp.validate(context) != before
+
+
+def test_validate_token_of_the_committed_matrix_is_the_same_for_crlf_and_lf_checkouts(tmp_path, monkeypatch):
+    # core.autocrlf is true on the Windows laptop: the same commit holds CRLF there and LF on Linux, and
+    # the cache token must not depend on it (audit C3). The different-content case is the test above.
+    _three_zones(tmp_path)
+    matrix = tmp_path / "matrix.csv"
+    lf_text = b"origin_zone,destination_zone,status,price_stage\n40,40,defined,1\n40,70,defined,2\n"
+    prices, _, rail = zp.fare_model_export.committed_input_paths()
+    monkeypatch.setattr(zp.fare_model_export, "committed_input_paths", lambda: (prices, matrix, rail))
+    context = _Context(tmp_path, tmp_path, tmp_path)
+    matrix.write_bytes(lf_text)
+    lf_token = zp.validate(context)
+    matrix.write_bytes(lf_text.replace(b"\n", b"\r\n"))
+    assert zp.validate(context) == lf_token

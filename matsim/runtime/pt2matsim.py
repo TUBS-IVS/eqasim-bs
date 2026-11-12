@@ -5,6 +5,16 @@ import matsim.runtime.git as git
 import matsim.runtime.java as java
 import matsim.runtime.maven as maven
 
+from braunschweig import synpp_tokens
+
+# Helpers whose code this stage runs (ADR-0194): ``git``, ``java`` and ``maven`` are declared stages it
+# runs as libraries, so the DAG edge covers their output, not this code. ``process_watchdog`` is
+# imported by ``java`` and hashed by name.
+_HELPER_MODULES = (git, java, maven)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "matsim.runtime.process_watchdog",
+)
+
 def configure(context):
     context.stage("matsim.runtime.git")
     context.stage("matsim.runtime.java")
@@ -31,6 +41,12 @@ def run(context, command, arguments, vm_arguments=[]):
         context.path("matsim.runtime.pt2matsim"), version
     )
     java.run(context, command, arguments, jar_path, vm_arguments)
+
+def validate(context):
+    """Hash the helper modules this stage runs into the stage token (ADR-0194)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 def execute(context):
     version = context.config("pt2matsim_version")

@@ -54,7 +54,14 @@ import os
 import geopandas as gpd
 import pandas as pd
 
+from braunschweig import synpp_tokens
+from braunschweig.data.cordon import external_points as _external_points
 from braunschweig.data.cordon.external_points import gemeinde_external_points
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136).
+_HELPER_MODULES = (_external_points,)
+_DEFERRED_HELPER_MODULE_NAMES = ()
 
 # Default lower bound: Kreise that attract fewer than this many SvB
 # commuters from the whole ZGB are dropped.  Keeps the synthetic
@@ -259,4 +266,9 @@ def validate(context):
     )
     if not os.path.exists(path):
         raise RuntimeError(f"VG250 archive not found: {path}")
-    return os.path.getsize(path)
+    return {
+        "vg250_size": os.path.getsize(path),
+        "helpers": synpp_tokens.source_token(
+            _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+            stage_label=__name__ + ".validate()"),
+    }

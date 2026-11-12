@@ -2,6 +2,14 @@ import pandas as pd
 import numpy as np
 import geopandas as gpd
 
+from braunschweig import synpp_tokens
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``taz_margins`` is imported inside
+# ``execute``, so it is hashed by name.
+_HELPER_MODULES = ()
+_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.gravity.taz_margins",)
+
 
 def _filter_pool_by_zone(pool: pd.DataFrame, zone_value, zone_key: str = "commune_id") -> pd.DataFrame:
     """Return rows of *pool* whose *zone_key* column equals *zone_value*.
@@ -79,6 +87,14 @@ def configure(context):
     if context.config("taz_work_location_choice", False):
         context.stage("synthesis.population.spatial.home.locations")
         context.stage("braunschweig.data.spatial.taz")
+
+
+def validate(context):
+    """Include the helper module's source in synpp's stage cache identity (ADR-0136)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
+
 
 EDUCATION_MAPPING = {
     "primary_school": ["C1"],

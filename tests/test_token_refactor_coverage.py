@@ -2,7 +2,7 @@
 
 The stage set is the AUDIT's own (``scripts/audit_synpp_helper_hash.py``), not a text grep, so a
 stage that the closure gate treats as source-hashing cannot keep a private md5 loop unnoticed.
-Stages whose token also covers data files (the five ``_COMPOSITE_STAGES``) add that part under its
+Stages whose token also covers data files (the ``_COMPOSITE_STAGES``) add that part under its
 own key next to the module digests. The pre-refactor token is never kept as code in the
 stages: the migration replays the validate() of the pre-refactor revision (task-13 ruling G).
 """
@@ -29,7 +29,10 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 #: 2026-11-11 on branch worktree-agent-a359dd27d49867285: 34 (+1 = braunschweig.synthesis.cordon_gates, package B3).
 #: 2026-11-11 on branch fix/audit-b4-home-slot-apportionment: 35 (+1 = braunschweig.synthesis.locations.home_cell, repository audit B4 F3).
 #: 2026-11-12 on branch fix/audit-b8-b10-incommuter-income, after merging main: 36 (+1 = braunschweig.data.inkar.household_income, ADR-0191).
-EXPECTED_SOURCE_HASHING_STAGES = 36
+#: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 48 (+12 production-reachable stages without a token, repository audit C2, group 1).
+#: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 61 (+13, group 2 of the production-reachable stages without a token, repository audit C2).
+#: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 69 (+8 production stages that run declared stages as libraries, ADR-0194).
+EXPECTED_SOURCE_HASHING_STAGES = 69
 
 #: Stages whose token holds a non-source part (data files, sizes) next to the module digests.
 _COMPOSITE_STAGES = {
@@ -39,6 +42,21 @@ _COMPOSITE_STAGES = {
     "braunschweig.matsim.simulation.prepare",
     "braunschweig.synthesis.commute_day.home_office_donors_stage",
     "braunschweig.synthesis.outside_tour_modes.stage",
+    "braunschweig.data.external_secondary_points",
+    "braunschweig.data.external_workplaces",
+    "braunschweig.data.schools.facilities",
+    "braunschweig.data.schools.kita_facilities",
+    "braunschweig.data.schools.university_facilities",
+    "data.gtfs.cleaned",
+    "data.osm.cleaned",
+    # Holds the SrV location-type table digests next to the module digests while
+    # secondary_srv_location_types is ON (repository audit C3).
+    "braunschweig.synthesis.locations.secondary_chainsolvers",
+    # Hold the tool-jar inputs, the OSM extract size and the jar or source-tree digest next to the module
+    # digests (ADR-0194).
+    "braunschweig.freight.extraction_tool",
+    "eqasim_common.data.osm.chunked",
+    "matsim.runtime.eqasim",
 }
 
 
@@ -144,3 +162,25 @@ def test_the_legacy_loop_token_of_every_pure_stage_is_still_reproducible(source_
         token = synpp_tokens.legacy_source_token(getattr(module, "_HELPER_MODULES", ()),
                                                  getattr(module, "_DEFERRED_HELPER_MODULE_NAMES", ()))
         assert len(token) == 32 and set(token) <= set("0123456789abcdef"), name
+
+
+class _ConfigContext:
+    """Minimal synpp validate() context: ``config(key)`` only."""
+
+    def __init__(self, values):
+        self._values = values
+
+    def config(self, key):
+        return self._values[key]
+
+
+def test_a_composite_token_keeps_its_data_part_next_to_the_module_digests(tmp_path):
+    """The composite stages are skipped by the legacy check above, so nothing else notices when a
+    composite validate() drops its old data part while it adds the helper digests. One
+    representative: the chunked OSM stage keeps the network file size and hashes osmconvert."""
+    module = importlib.import_module("eqasim_common.data.osm.chunked")
+    network = tmp_path / "network.osm.pbf"
+    network.write_bytes(b"0123456789")
+    token = module.validate(_ConfigContext({"data_path": str(tmp_path), "osm_network_path": network.name}))
+    assert token["osm_network_size"] == 10
+    assert "eqasim_common.data.osm.osmconvert" in token["helpers"]["modules"]

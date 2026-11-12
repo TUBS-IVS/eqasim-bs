@@ -20,6 +20,16 @@ import shutil
 import matsim.runtime.java as java
 import matsim.runtime.maven as maven
 
+from braunschweig import synpp_tokens
+
+# Helpers whose code this stage runs (ADR-0194): ``maven.run`` builds the jar and ``java`` is a declared
+# stage it runs as a library, so the DAG edge covers its output, not this code. ``process_watchdog`` is
+# imported by ``java`` and hashed by name.
+_HELPER_MODULES = (java, maven)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "matsim.runtime.process_watchdog",
+)
+
 logger = logging.getLogger(__name__)
 
 ENTRY_POINT = "org.eqasim.braunschweig.freight.RunExtractFreightTrips"
@@ -188,7 +198,10 @@ def validate(context):
     with open(WRAPPER_SOURCE, encoding="utf-8") as handle:
         wrapper = handle.read()
     return {"format": 1, "matsim_version": matsim_version, "java_release": java_release,
-            "wrapper": _sha256_text(wrapper), "pom": _sha256_text(render_pom(matsim_version, java_release))}
+            "wrapper": _sha256_text(wrapper), "pom": _sha256_text(render_pom(matsim_version, java_release)),
+            "helpers": synpp_tokens.source_token(
+                _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+                stage_label=__name__ + ".validate()")}
 
 
 def _log_resolved_versions(context, matsim_version, java_release):

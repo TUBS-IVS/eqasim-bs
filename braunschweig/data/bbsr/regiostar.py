@@ -46,6 +46,8 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from braunschweig import synpp_tokens
+
 REGIOSTAR7_LABELS = {
     71: "Metropole",
     72: "Regiopole, Großstadt",
@@ -197,6 +199,13 @@ def _resolve_path(context) -> str:
     )
 
 
+def _vg250_path(context) -> str:
+    """The VG250 archive: the one path ``execute`` opens (through ``/vsizip/``) and ``validate`` hashes."""
+    return os.path.join(
+        context.config("data_path"), "germany", "vg250-ew_12-31.utm32s.gpkg.ebenen.zip"
+    )
+
+
 def execute(context) -> pd.DataFrame:
     path = _resolve_path(context)
     raw = pd.read_excel(path, sheet_name=SHEET, header=0)
@@ -238,9 +247,7 @@ def execute(context) -> pd.DataFrame:
         )
 
     # Expected universe: all Gemeinden in scope, from VG250 (gives coords too).
-    vg250 = os.path.join(context.config("data_path"),
-                         "germany", "vg250-ew_12-31.utm32s.gpkg.ebenen.zip")
-    vsi = ("/vsizip/" + vg250 +
+    vsi = ("/vsizip/" + _vg250_path(context) +
            "/vg250-ew_12-31.utm32s.gpkg.ebenen/vg250-ew_ebenen_1231/DE_VG250.gpkg")
     gem = gpd.read_file(vsi, layer="vg250_gem", columns=["AGS", "GEN"])
     gem["commune_id"] = gem["AGS"].astype(str).str.zfill(8)
@@ -287,10 +294,23 @@ def execute(context) -> pd.DataFrame:
 
 
 def validate(context):
+    """Cache token: the workbook size plus the content digest of the VG250 archive.
+
+    ``execute`` reads two inputs: the RegioStaR workbook and the VG250 archive, whose Gemeinde
+    universe and centroids decide which Gemeinden are filled by the nearest neighbour. Both
+    must be in the token, or a replaced VG250 archive would serve a stale cached table.
+    """
     path = _resolve_path(context)
     if not os.path.exists(path):
         raise RuntimeError(
             f"RegioStaR reference file not found: {path}\n"
             "Run scripts/download_regiostar.py to fetch it."
         )
-    return os.path.getsize(path)
+    vg250 = _vg250_path(context)
+    if not os.path.exists(vg250):
+        raise RuntimeError(
+            f"VG250 archive not found: {vg250}; the RegioStaR stage reads the Gemeinde "
+            "universe and centroids from it."
+        )
+    return {"workbook_size": os.path.getsize(path),
+            "vg250_sha256": synpp_tokens.file_sha256(vg250)}

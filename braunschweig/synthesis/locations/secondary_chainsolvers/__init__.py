@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import geopandas as gpd
@@ -391,6 +392,36 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 )
 
 
+#: The two config keys naming the pinned SrV-2023 tables the stage reads while
+#: ``secondary_srv_location_types`` is ON (probabilities: ``_build_srv_location_decider``;
+#: shares reference: ``_write_srv_location_draw_summary``). Both are read as the raw config
+#: value, relative to the working directory, exactly like the loaders open them.
+_SRV_LOCATION_TYPE_FILE_KEYS = ("srv_location_type_probs_path", "srv_location_type_shares_path")
+
+
+def _srv_location_type_file_digests(context) -> Dict[str, str]:
+    """``{config key: LF-normalised sha256}`` of the two pinned SrV location-type tables.
+
+    Keyed by config key, not by file name, so two tables with the same name in different
+    folders cannot overwrite each other's digest.
+
+    The tables are committed text files that decide every leisure / other destination
+    category (probabilities) and the draw-coherence check (shares), so a corrected table
+    must devalidate the cached stage output. A missing file raises: execute() cannot run
+    without it, and a token that skipped it would hide the missing input.
+    """
+    digests: Dict[str, str] = {}
+    for key in _SRV_LOCATION_TYPE_FILE_KEYS:
+        path = Path(context.config(key))
+        if not path.is_file():
+            raise RuntimeError(
+                f"[braunschweig.secondary_chainsolvers] SrV location-type table missing at "
+                f"{path} (config key {key!r}); secondary_srv_location_types is ON, so the "
+                "stage reads it. Restore the pinned table or point the key at it.")
+        digests[key] = synpp_tokens.text_file_sha256(path)
+    return digests
+
+
 def validate(context):
     """synpp validation token: structured token over the helper submodules' sources.
 
@@ -399,11 +430,18 @@ def validate(context):
     changes recompute the stage just like changes to this file itself.
 
     Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
-    digest per helper module (docstrings, comments and formatting do not change it).
+    digest per helper module (docstrings, comments and formatting do not change it). While
+    ``secondary_srv_location_types`` is ON the token also carries ``srv_location_type_files``,
+    the content digest of the two pinned SrV tables the stage reads (LF-normalised, so a
+    Windows and a Linux checkout of one commit give one token); with the flag OFF the token is
+    exactly the source token, so an edit to the tables never re-executes an OFF run.
     """
-    return synpp_tokens.source_token(
+    token = synpp_tokens.source_token(
         _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
         stage_label=__name__ + ".validate()")
+    if context.config("secondary_srv_location_types"):
+        token["srv_location_type_files"] = _srv_location_type_file_digests(context)
+    return token
 
 
 #: Stage delivering the gate anchors of the portal stays (eqasim-bs#442); a dependency of this stage

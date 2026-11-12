@@ -45,8 +45,9 @@ every run after that is cache-stable.
 outside the package (the `braunschweig.data.mid` loaders and the modules they
 use) are now covered: `_HELPER_MODULES` holds the in-package submodules and
 `_DEFERRED_HELPER_MODULE_NAMES` (both in `__init__.py`) names the modules
-imported inside function bodies. `braunschweig.data.mid.{data,zones}` are
-declared via `context.stage(...)` and need no token coverage. See
+imported inside function bodies. A declared stage the package imports is hashed like any helper
+(ADR-0194; `braunschweig.data.mid.zones`, `braunschweig.data.bbsr.regiostar`); one it only
+declares, like `braunschweig.data.mid.data`, reaches it as output only. See
 `synpp-helper-hash-audit.md`.
 
 ## Standing rules

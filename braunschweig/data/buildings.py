@@ -24,6 +24,8 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from braunschweig import synpp_tokens
+
 
 # Residential GFK codes collapse to these activity labels in the
 # preprocessing stage.  'unknown' is a fallback for codes not yet in our
@@ -226,13 +228,33 @@ def join_lod2_heights(buildings, heights):
     """LEFT-join LoD2 height onto footprints by OI. Non-destructive: every footprint
     and every existing column is kept; only `height_m` is added (NaN where no LoD2 match)."""
     if "OI" not in buildings.columns:
+        # Fallback transparency (CLAUDE.md): without the OI key no footprint can be matched.
+        print("WARNING: [braunschweig.data.buildings] footprints carry no OI column: "
+              f"all {len(buildings):,} footprints get height_m NaN (LoD2 heights are not joined).")
         out = buildings.copy(); out["height_m"] = float("nan"); return out
     h = heights[["OI", "height_m"]].drop_duplicates("OI")
     out = buildings.merge(h, on="OI", how="left")
     cov = out["height_m"].notna().mean() if len(out) else 0.0
-    print(f"[braunschweig.data.buildings] LoD2 height coverage: {cov:.1%} "
-          f"({int(out['height_m'].notna().sum())}/{len(out)} footprints)")
+    matched = int(out["height_m"].notna().sum())
+    message = (f"[braunschweig.data.buildings] LoD2 height coverage: {cov:.1%} "
+               f"({matched}/{len(out)} footprints)")
+    if len(out) and matched == 0:
+        # Fallback transparency (CLAUDE.md): a join that matches no footprint is the 100 %
+        # fallback (every height_m NaN); it almost always means an OI key mismatch.
+        print("WARNING: " + message + " -- no footprint matched an LoD2 OI, so every height_m "
+              "is NaN; check the OI keys of the heights file against the ALKIS footprints.")
+    else:
+        print(message)
     return out
+
+
+#: ``validate`` token while the optional LoD2 heights file does not exist.
+LOD2_HEIGHTS_ABSENT = "lod2_heights:absent"
+
+
+def _lod2_heights_path(context) -> str:
+    """The preprocessed LoD2 heights parquet: the one path ``execute`` reads and ``validate`` hashes."""
+    return os.path.join(context.config("data_path"), "braunschweig/preprocessed/lod2_heights.parquet")
 
 
 def configure(context):
@@ -342,15 +364,31 @@ def execute(context) -> gpd.GeoDataFrame:
         )
     )
 
-    heights_path = os.path.join(context.config("data_path"),
-                                "braunschweig/preprocessed/lod2_heights.parquet")
+    heights_path = _lod2_heights_path(context)
     if os.path.exists(heights_path):
         df_combined = join_lod2_heights(df_combined, pd.read_parquet(heights_path))
     else:
+        # Fallback transparency (CLAUDE.md): no LoD2 heights at all is the 100 % fallback
+        # of the height join, so it is named with the footprint count, never silent.
+        print(
+            "WARNING: [braunschweig.data.buildings] LoD2 heights file missing at "
+            f"{heights_path}: all {len(df_combined):,} footprints get height_m NaN "
+            "(building typing and home_cell then see no heights)."
+        )
         df_combined["height_m"] = float("nan")
 
     return df_combined
 
 
 def validate(context):
-    return 0
+    """Cache token: the sha256 of the LoD2 heights parquet, or ``LOD2_HEIGHTS_ABSENT`` without it.
+
+    The heights decide ``height_m`` of every footprint, which building typing and home_cell
+    read, so a re-preprocessed heights file must recompute this stage and everything below it.
+    The file is optional (``execute`` sets ``height_m`` to NaN without it), so a missing file
+    is a legal state with its own marker: adding the file changes the token as well.
+    """
+    path = _lod2_heights_path(context)
+    if not os.path.exists(path):
+        return LOD2_HEIGHTS_ABSENT
+    return synpp_tokens.file_sha256(path)

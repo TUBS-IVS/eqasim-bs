@@ -537,6 +537,9 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # The rest of this stage's import closure: modules its helpers import, whose code
     # this stage runs without importing it itself (ADR-0136).
     "braunschweig.constants",
+    # A declared stage that this stage's helpers run as a library: the DAG edge covers its
+    # output, not this code (ADR-0194).
+    "braunschweig.data.bbsr.regiostar",
     "braunschweig.data.census.household_income",
     "braunschweig.data.mid.raumtyp_tilt",
     "braunschweig.data.mid.reference_tables",
@@ -669,15 +672,13 @@ def validate(context):
 
     DELIBERATELY NOT COVERED:
 
-    * Modules that are themselves synpp stages AND are DECLARED dependencies of
-      this stage (``context.stage(...)`` in ``configure``:
-      ``braunschweig.data.inkar.household_income``,
-      ``braunschweig.data.bbsr.regiostar``,
-      ``braunschweig.popsim.completed_donor``, ``data.hts.entd.filtered``).
-      synpp derives their hash from their own source and propagates it through
-      the declared edge, so listing one here would only add churn. The two
-      undeclared library stages above are the complement of that rule, not an
-      exception to it.
+    * Declared stage dependencies (``context.stage(...)`` in ``configure``) whose
+      module this stage's import closure does not reach: their OUTPUT reaches it
+      through the declared edge, their code does not run here. A declared stage
+      that IS reached is code this stage runs and is hashed like any helper
+      (``braunschweig.data.bbsr.regiostar``): under content-addressed validity an
+      unchanged parent output spares this stage, so the declared edge alone would
+      keep a cache built with old library code (ADR-0194).
     * THIRD-PARTY imports, whether module-level or deferred (e.g. the
       function-level ``pyarrow.parquet``). This token covers first-party source
       text; third-party versions are pinned by the environment, not hashed here.

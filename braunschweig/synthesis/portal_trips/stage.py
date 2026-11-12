@@ -69,7 +69,12 @@ _HELPER_MODULES = (_classification, _config_keys, _gates, _modes, _no_connection
 _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon", "braunschweig.data.cordon.network",
                                  "braunschweig.data.transit.schedule", "braunschweig.data.transit.connections",
                                  "braunschweig.matsim.scenario.day_end_margin",
-                                 "braunschweig.popsim.closure_dwell", "data.hts.hts")
+                                 "braunschweig.popsim.closure_dwell", "data.hts.hts",
+                                 # Declared stages this stage runs as libraries, and their imports (ADR-0194): the
+                                 # DAG edge covers their output, not this code. The batch pt router starts through
+                                 # ``matsim.runtime.eqasim``.
+                                 "matsim.runtime.eqasim", "matsim.runtime.git", "matsim.runtime.java",
+                                 "matsim.runtime.maven", "matsim.runtime.process_watchdog")
 
 #: Router work files live in a subdirectory of the stage directory.
 ROUTER_WORK_DIR_NAME = "pt_router"

@@ -10,7 +10,14 @@ import os
 
 import geopandas as gpd
 
+from braunschweig import synpp_tokens
+from braunschweig.data.cordon import network as _network
 from braunschweig.data.cordon.network import read_external_gemeinden
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136).
+_HELPER_MODULES = (_network,)
+_DEFERRED_HELPER_MODULE_NAMES = ()
 
 
 def configure(context):
@@ -19,6 +26,13 @@ def configure(context):
     context.config("cordon_vg250_path",
                    "germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip")
     context.config("braunschweig.political_prefix")
+
+
+def validate(context):
+    """Include the helper modules' source in synpp's stage cache identity (ADR-0136)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def execute(context):

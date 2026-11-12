@@ -53,6 +53,10 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # polygon builder this stage runs when the external centroids are bounded to the ring.
     "braunschweig.synthesis.portal_trips.config_keys",
     "braunschweig.data.spatial.cordon",
+    # Declared stages this stage runs as libraries, and their imports (ADR-0194): the DAG edge covers their
+    # output, not this code. ``execute`` imports ``BUILDING_CATEGORIES`` from ``bosserhof_location_category``.
+    "braunschweig.data.bosserhof_location_category",
+    "braunschweig.data.bosserhof_purpose",
 )
 
 

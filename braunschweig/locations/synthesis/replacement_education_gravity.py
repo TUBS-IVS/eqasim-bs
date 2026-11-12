@@ -7,6 +7,19 @@ NDS schools, capacity-constrained gravity); work is unchanged.
 """
 import synthesis.population.spatial.primary.locations as base
 
+from braunschweig import synpp_tokens
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``base`` is the upstream stage
+# module this one delegates its work assignment to.
+_HELPER_MODULES = (base,)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    # Declared stages this stage runs as libraries, and their imports (ADR-0194): the DAG edge
+    # covers their output, not this code. ``base`` imports them; this stage runs ``base.execute``.
+    "braunschweig.gravity.taz_margins",
+    "synthesis.population.spatial.primary.candidates",
+)
+
 
 def configure(context):
     context.stage("synthesis.population.spatial.primary.candidates")
@@ -29,6 +42,13 @@ def configure(context):
     else:
         context.stage("eqasim_common.locations.synthesis.education",
                       alias="education_source")
+
+
+def validate(context):
+    """Include the delegated base module's source in synpp's stage cache identity (ADR-0136)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def execute(context):

@@ -17,7 +17,18 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 
-from braunschweig.synthesis.incommuters import RAIL_LIKE_MODES
+# Defined here, not in the in-commuter stage that also uses it: importing it from that stage
+# module put the whole in-commuter synthesis into the import closure, and so into the cache
+# token, of the cordon_pt_gates data stage (ADR-0194).
+# Transit modes that count as regional rail for in-commuter boarding-stop selection.
+# A regional-rail (or S-Bahn / regional train) station is the realistic access point
+# for a cross-cordon PT commuter: it offers a fast, high-frequency, one-seat ride into
+# ZGB. Local feeders (tram, bus) are deliberately EXCLUDED -- they are the kind of
+# single-line, low-frequency village halt the geometry-only nearest-stop rule wrongly
+# preferred over a nearby station. The set is kept conservative and matched against the
+# MATSim transit ``transportMode`` (lower-cased) verbatim; the common GTFS->MATSim mode
+# strings for heavy/regional/urban rail are covered. Tram/bus -> not rail.
+RAIL_LIKE_MODES = frozenset({"rail", "train", "subway", "light_rail", "regional_rail"})
 
 
 def eligible_rail_entry_stations(

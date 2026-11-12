@@ -169,6 +169,15 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "data.hts.entd.cleaned",
     "data.hts.hts",
     "synthesis.population.matched",
+    # Declared stages this stage runs as libraries, and their imports (ADR-0194): the DAG edge covers their
+    # output, not this code. ``popsim.trips_stage`` is the declared trips stage whose helpers this stage's
+    # helpers import; the four modules after it and ``braunschweig.constants`` are what it imports.
+    "braunschweig.popsim.trips_stage",
+    "braunschweig.constants",
+    "braunschweig.popsim.diary_facts",
+    "braunschweig.popsim.sources",
+    "braunschweig.popsim.sources.base",
+    "braunschweig.popsim.unused_mid_wege_columns",
 )
 
 

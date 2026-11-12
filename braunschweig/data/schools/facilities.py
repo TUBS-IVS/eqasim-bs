@@ -15,7 +15,14 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 
+from braunschweig import synpp_tokens
+from braunschweig.data.schools import typing as _typing
 from braunschweig.data.schools.typing import SCHOOL_LEVELS
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136).
+_HELPER_MODULES = (_typing,)
+_DEFERRED_HELPER_MODULE_NAMES = ()
 
 CRS_METRIC = "EPSG:25832"
 
@@ -84,4 +91,9 @@ def validate(context):
             f"NDS school facilities CSV not found: {path}\n"
             "Run scripts/extract_nds_schools.py to generate it."
         )
-    return os.path.getsize(path)
+    return {
+        "nds_schools_csv_size": os.path.getsize(path),
+        "helpers": synpp_tokens.source_token(
+            _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+            stage_label=__name__ + ".validate()"),
+    }

@@ -87,6 +87,41 @@ def source_token(helper_modules, deferred_module_names, *, stage_label: str = "v
     return {"format": TOKEN_FORMAT, "python": python_tag(), "modules": modules}
 
 
+#: Read size of ``file_sha256``: the VG250 archive and the LoD2 parquet are too large to hold twice in memory.
+_FILE_CHUNK_BYTES = 1 << 20
+
+
+def file_sha256(path) -> str:
+    """sha256 hex of the file's raw bytes, read in 1 MiB chunks.
+
+    Use it for binary or downloaded inputs (archives, parquet, polygon downloads), where every
+    byte is content. Raises ``FileNotFoundError`` for a missing file; a caller for which a
+    missing file is legal checks for it first.
+    """
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(_FILE_CHUNK_BYTES), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def text_file_sha256(path) -> str:
+    """sha256 hex of a COMMITTED text file as git stores it: CRLF line endings become LF.
+
+    Use it for tables that are committed to the repository: a Windows checkout with
+    ``core.autocrlf`` holds CRLF while a Linux checkout of the same commit holds LF, and one
+    commit must give one token. Do not use it for downloaded or binary files (``file_sha256``).
+    The shared definition for stage code: ``content_sha256`` of
+    ``braunschweig.data.vrb.fare_model_export`` and of ``braunschweig.parking.tariff_export``
+    and the jar-source digest of ``matsim.runtime.eqasim`` delegate here, so a provenance record
+    and a cache token of the same committed file always agree. Raises
+    ``FileNotFoundError`` for a missing file; a caller for which a missing file is legal checks
+    for it first.
+    """
+    with open(path, "rb") as handle:
+        return hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
+
+
 def legacy_source_token(helper_modules, deferred_module_names) -> str:
     """The pre-2026-10 md5-over-raw-text token; used by the cache migration only."""
     digest = hashlib.md5()

@@ -16,3 +16,4 @@ pipelines:
 production: true
 inputs:
 - regiostar
+- vg250_ew

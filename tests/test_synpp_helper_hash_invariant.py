@@ -47,14 +47,14 @@ guarded branches are pruned (they never execute at runtime); ``from X import Y``
 is tried both as an attribute of ``X`` and as the submodule ``X.Y``, keeping
 whichever exists on disk; relative imports are resolved with the same
 ``bits = package.rsplit('.', level - 1)`` rule ``importlib`` itself uses. A
-first-party import that is itself a synpp stage the importer's own
-``configure()`` DECLARES via a literal ``context.stage("name")`` call (resolved
-through the ``aliases:`` block of ``configs/base_bs.yml``) is excluded from the
-required set: synpp's own DAG hashes that stage and propagates it through the
-declared edge, so no extra token is needed for it (this is exactly why
-``braunschweig.freight.trips`` -- which imports its own-package sibling
-``braunschweig.freight.extraction`` at module level AND declares it -- is not a
-gate violation).
+first-party import that is itself a synpp stage the importer DECLARES via a
+literal ``context.stage("name")`` call is NOT excluded from the required set
+(ADR-0194, the same rule as ``scripts/audit_synpp_helper_hash.py``): under
+content-addressed validity an unchanged parent output spares the child, so the
+DAG edge covers the parent's output, never the library code the child imports
+from that stage module and runs itself (``braunschweig.freight.trips`` imports
+its own-package sibling ``braunschweig.freight.extraction`` at module level AND
+declares it, so its token hashes that sibling like any other).
 
 "Own package" is the package the stage's own file lives inside: for a plain
 module ``pkg.sub.mod``, that is ``pkg.sub``; for a package-style stage
@@ -109,7 +109,6 @@ import ast
 from pathlib import Path
 
 import pytest
-import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -328,31 +327,6 @@ def _resolve_imports(stage: StageModule) -> ImportResolution:
 
 
 # ---------------------------------------------------------------------------
-# declared stage dependencies: context.stage("literal"), alias-resolved
-# ---------------------------------------------------------------------------
-
-def _load_aliases() -> dict[str, str]:
-    config = yaml.safe_load((REPO_ROOT / "configs" / "base_bs.yml").read_text(encoding="utf-8"))
-    return dict(config.get("aliases") or {})
-
-
-def _declared_stage_names(tree: ast.Module, aliases: dict[str, str]) -> set[str]:
-    declared = set()
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "stage"
-            and node.args
-            and isinstance(node.args[0], ast.Constant)
-            and isinstance(node.args[0].value, str)
-        ):
-            literal = node.args[0].value
-            declared.add(aliases.get(literal, literal))
-    return declared
-
-
-# ---------------------------------------------------------------------------
 # reading _HELPER_MODULES / _DEFERRED_HELPER_MODULE_NAMES via AST
 # ---------------------------------------------------------------------------
 
@@ -449,19 +423,18 @@ class GateResult:
 
 
 def _compute_gate_results() -> tuple[dict[str, GateResult], list[UndecidedElement]]:
-    aliases = _load_aliases()
     undecided: list[UndecidedElement] = []
     results: dict[str, GateResult] = {}
 
     for stage in _discover_stage_modules():
         resolution = _resolve_imports(stage)
         own_package = stage.own_package
+        # A declared stage module the stage imports stays required: the DAG edge covers the
+        # parent's output, not the library code this stage runs from it (ADR-0194).
         required = {
             name for name in resolution.first_party_names
             if name != stage.dotted_name and own_package and name.startswith(own_package + ".")
         }
-        declared = _declared_stage_names(stage.tree, aliases)
-        required -= declared
 
         covered = _covered_names(stage, resolution.module_level_bindings, undecided)
         results[stage.dotted_name] = GateResult(stage, required, covered)
@@ -488,33 +461,11 @@ _GATE_RESULTS, _UNDECIDED = _compute_gate_results()
 # ---------------------------------------------------------------------------
 
 ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
-    "braunschweig.data.bosserhof_location_category": (
-        "braunschweig.data.bosserhof_purpose",
-    ),
     "braunschweig.data.census.households_type": (
         "braunschweig.data.census.households_size_age",
     ),
-    "braunschweig.data.cordon_gemeinden": (
-        "braunschweig.data.cordon.network",
-    ),
-    "braunschweig.data.cordon_network": (
-        "braunschweig.data.cordon.network",
-    ),
-    "braunschweig.data.cordon_pt_gates": (
-        "braunschweig.data.cordon.network",
-        "braunschweig.data.cordon.pt_reachability",
-    ),
-    "braunschweig.data.external_secondary_points": (
-        "braunschweig.data.external_workplaces",
-    ),
-    "braunschweig.data.external_workplaces": (
-        "braunschweig.data.cordon.external_points",
-    ),
     "braunschweig.data.mid.data": (
         "braunschweig.data.mid.reference_tables",
-    ),
-    "braunschweig.data.schools.facilities": (
-        "braunschweig.data.schools.typing",
     ),
     "braunschweig.ipf.attributed": (
         "braunschweig.ipf.config_validation",
@@ -527,22 +478,10 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
     "braunschweig.ipf.prepare": (
         "braunschweig.ipf.joint_age_size",
     ),
-    "braunschweig.synthesis.locations.education_gravity": (
-        "braunschweig.synthesis.locations.education_gravity_model",
-    ),
-    "data.gtfs.cleaned": (
-        "data.gtfs.utils",
-    ),
-    # DELIBERATE and permanent, not debt to be paid off (#330 / ADR-0095): the hang
-    # watchdog is result-neutral operational machinery. matsim.runtime.java.execute()
-    # produces no artifact, and process_watchdog only shapes how java.run WAITS on a
-    # subprocess while other stages execute -- those stages import the current source
-    # at run time, so a watchdog change takes effect on the next run regardless of any
-    # cache. Folding it into the module hash would buy nothing and cost a devalidation
-    # of matsim.runtime.java plus its 22 dependents (~1.5 h at 100 %) on every
-    # threshold tweak. Do NOT "close" this gap.
-    "matsim.runtime.java": (
-        "matsim.runtime.process_watchdog",
+    # Declared stage imported as a library. Not run in production: configs alias it to
+    # braunschweig.locations.synthesis.replacement_education_gravity; out of scope (ADR-0194).
+    "synthesis.population.spatial.primary.locations": (
+        "synthesis.population.spatial.primary.candidates",
     ),
     "synthesis.population.spatial.secondary.locations": (
         "synthesis.population.spatial.secondary.components",
@@ -861,8 +800,16 @@ def test_secondary_chainsolvers_token_changes_when_the_seed_day_filter_source_ch
     import braunschweig.synthesis.locations.secondary_chainsolvers as chainsolvers
     from braunschweig.popsim import seed as popsim_seed
 
+    class _FlagOffContext:
+        """validate() reads the SrV flag; OFF, the token is the plain source token."""
+
+        @staticmethod
+        def config(key):
+            assert key == "secondary_srv_location_types"
+            return False
+
     assert popsim_seed in chainsolvers._HELPER_MODULES
-    token_before = chainsolvers.validate(None)
+    token_before = chainsolvers.validate(_FlagOffContext)
     real_getsource = inspect.getsource
 
     def patched_getsource(obj):
@@ -871,4 +818,4 @@ def test_secondary_chainsolvers_token_changes_when_the_seed_day_filter_source_ch
         return real_getsource(obj)
 
     monkeypatch.setattr(inspect, "getsource", patched_getsource)
-    assert chainsolvers.validate(None) != token_before
+    assert chainsolvers.validate(_FlagOffContext) != token_before

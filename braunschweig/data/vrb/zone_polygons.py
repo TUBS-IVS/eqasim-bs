@@ -14,7 +14,6 @@ CRS: EPSG:25832 throughout; all distances in metres.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 from pathlib import Path
@@ -207,14 +206,15 @@ def _polygons_path(context) -> Path:
 def validate(context):
     """Cache token: the structured source token of the helper modules plus ``files``, the sha256 of the polygon
     file bytes (a new download must invalidate the stage) and of the price-stage matrix the expected zone ids
-    come from, each keyed by its file name."""
+    come from, each keyed by its file name. The matrix is a committed text file and is hashed LF-normalised,
+    so a Windows (CRLF) and a Linux (LF) checkout of one commit give one token; the download stays raw."""
     path = _polygons_path(context)
     if not path.is_file():
         raise RuntimeError(f"VRB zone polygons missing at {path}; download them with the curl command in "
                            "docs/registry/data/vrb_tariff_zone_polygons.yml")
     _, matrix_path, _ = fare_model_export.committed_input_paths()
-    files = {path.name: hashlib.sha256(path.read_bytes()).hexdigest(),
-             Path(matrix_path).name: hashlib.sha256(Path(matrix_path).read_bytes()).hexdigest()}
+    files = {path.name: synpp_tokens.file_sha256(path),
+             Path(matrix_path).name: synpp_tokens.text_file_sha256(matrix_path)}
     token = synpp_tokens.source_token(_HELPER_MODULES, (), stage_label=__name__ + ".validate()")
     token["files"] = files
     return token
