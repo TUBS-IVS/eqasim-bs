@@ -10,8 +10,12 @@ Step 2  collect own imports    -- whole-AST walk, module-level vs lazy (inside a
                                   on-disk modules; a relative import resolves against the
                                   importing module's package.
 Step 3  declared stage edges   -- literal context.stage("name") calls, resolved through the
-                                  `aliases:` block of configs/base_bs.yml.
-                                  required_helpers = first-party imports - declared stages.
+                                  `aliases:` block of configs/base_bs.yml; reported, but
+                                  NOT subtracted: required_helpers = every first-party
+                                  import, a declared stage module included. Under
+                                  content-addressed validity (ADR-0149) an unchanged
+                                  parent output spares the child, so the DAG edge never
+                                  covers library code the child runs itself (ADR-0194).
 Step 4  validate() coverage    -- stages whose validate() hashes source (detected from the AST:
                                   a call of inspect.getsource or synpp_tokens.source_token
                                   inside the top-level validate(), never a comment); their
@@ -21,9 +25,9 @@ Step 4  validate() coverage    -- stages whose validate() hashes source (detecte
 Step 5  transitive closure     -- the same imports followed through every first-party
                                   module a source-hashing stage reaches (starting at the
                                   stage module AND at every module its helper tuples
-                                  name, so a module loaded by name is walked too), stopping at its
-                                  declared stage edges; what the token misses of that closure
-                                  is ``transitive_uncovered`` (ADR-0136). Two declarations
+                                  name, so a module loaded by name is walked too), through
+                                  declared stage modules as well; what the token misses of
+                                  that closure is ``transitive_uncovered`` (ADR-0136). Two declarations
                                   end the walk early, each with its reason: a module whose
                                   ``_SYNPP_TOKEN_EXEMPTION`` says it never shapes a stage
                                   result, and a stage module the walking stage lists in its
@@ -362,39 +366,40 @@ def covered_by_entry(name: str) -> set[str]:
     return {name}
 
 
-def import_closure(stage: str, imports: dict[str, set[str]], stages, declared_modules,
+def import_closure(stage: str, imports: dict[str, set[str]],
                    exempt=frozenset(), boundaries=frozenset(), roots=frozenset()) -> set[str]:
     """Every first-party module ``stage`` reaches through imports, the stage module excluded.
 
     Follows module-level and lazy imports from the stage module through every module it
-    reaches and stops at the stage's DECLARED synpp dependencies, whose code the DAG covers.
-    Static, so it over-approximates the code a run executes: it can ask a token to hash a
-    module the stage never calls, never the other way round. Step 2 stops after the stage
-    module's own imports, the one-level boundary the audit note describes (ADR-0136).
+    reaches. Static, so it over-approximates the code a run executes: it can ask a token to
+    hash a module the stage never calls, never the other way round. Step 2 stops after the
+    stage module's own imports, the one-level boundary the audit note describes (ADR-0136).
+
+    The walk does NOT stop at the stage's declared synpp dependencies. A declared stage module
+    the stage imports is code the stage may run itself (``cut_schedule`` calls
+    ``matsim.runtime.eqasim.run``, ``regiostar.ars_to_ags8`` is called by its consumers). Under
+    content-addressed validity (ADR-0149) an edit to that module re-executes the parent, an
+    unchanged parent output spares the child, and the child would keep a cache built with the
+    old code; the DAG edge covers the parent's OUTPUT, never the library code (ADR-0194).
 
     ``roots`` are the modules the stage's helper tuples name. The walk starts at them as well:
     a module the stage loads only by name (``importlib``, listed in
     ``_DEFERRED_HELPER_MODULE_NAMES``) has no static import edge from the stage, yet it runs
     inside the stage together with everything it imports (audit finding P1-F4). A root is
-    part of the closure like any other module reached. A root that is also a DECLARED stage
-    dependency is walked as well: listing it in a helper tuple states that the stage runs its
-    code itself (``cut_schedule`` calls ``matsim.runtime.eqasim.run``), which the DAG edge does
-    not cover.
+    part of the closure like any other module reached.
 
-    The walk also ends, without reporting the module, at an ``exempt`` module (one that never
+    The walk ends, without reporting the module, at an ``exempt`` module (one that never
     shapes a stage result, so neither it nor what it imports for its own purpose needs
     hashing) and at one of the stage's own ``boundaries``.
     """
-    def enters(target: str, is_root: bool = False) -> bool:
+    def enters(target: str) -> bool:
         if target == stage or target in reached:
-            return False
-        if not is_root and target in stages and target in declared_modules:
             return False
         return target not in exempt and target not in boundaries
 
     reached, frontier = set(), [stage]
     for root in sorted(roots):
-        if enters(root, is_root=True):
+        if enters(root):
             reached.add(root)
             frontier.append(root)
     while frontier:
@@ -452,7 +457,6 @@ def build_report(repo: Path) -> dict:
         if {"configure", "execute"} <= funcs:
             stages[name] = path
 
-    aliases = read_aliases(repo)
     # Step 5 needs the first-party imports of every module, not only of the stages.
     imports = {}
     exempt = set()
@@ -474,10 +478,10 @@ def build_report(repo: Path) -> dict:
         module_level, lazy = collect_imports(tree, name, on_disk, is_package=name in packages)
         first_party = module_level | lazy
         declared = declared_stages(tree)
-        declared_modules = {aliases.get(d, d) for d in declared}
-        # A first-party import that IS a stage AND is declared is covered by synpp's DAG.
-        covered_by_dag = {m for m in first_party if m in stages and m in declared_modules}
-        required = first_party - covered_by_dag
+        # Every first-party import is required, a declared stage module included: the DAG edge
+        # covers that stage's output, not the library code this stage imports from it and runs
+        # (content-addressed validity spares a child whose parent output is unchanged; ADR-0194).
+        required = set(first_party)
         entry = {
             "module_level": sorted(module_level),
             "lazy": sorted(lazy),
@@ -501,7 +505,7 @@ def build_report(repo: Path) -> dict:
             for dotted in deferred:
                 resolved |= covered_by_entry(dotted)
             boundaries = closure_boundaries(tree, name)
-            closure = import_closure(name, imports, stages, declared_modules,
+            closure = import_closure(name, imports,
                                      exempt=exempt, boundaries=set(boundaries),
                                      roots=resolved)
             walked = closure | {name}

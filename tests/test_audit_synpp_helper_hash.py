@@ -212,9 +212,13 @@ def test_every_source_hashing_stage_covers_its_required_helpers(real_repository_
 # stage just the same: the enriched stage's car-ownership draw read its tilt and base table from
 # braunschweig.data.mid.cars_by_status through vehicle_ownership, and no token hashed that module.
 
-def test_the_closure_follows_helpers_and_stops_at_declared_stages(tmp_path):
-    """A module the stage reaches only through its hashed helper is reported; a declared stage
-    dependency ends the walk, because the DAG covers its code and its own imports."""
+def test_the_closure_follows_helpers_through_declared_stages_used_as_libraries(tmp_path):
+    """A module the stage reaches only through its hashed helper is reported, and so is a DECLARED
+    stage the stage imports (directly or through a helper), together with what it imports.
+
+    The DAG edge does not cover code the child runs itself: under content-addressed validity
+    (ADR-0149) an edit to the parent module re-executes the parent, an unchanged parent output
+    spares the child, and the child keeps a cache built with the old library code (ADR-0194)."""
     package = tmp_path / "braunschweig"
     package.mkdir()
     (tmp_path / "configs").mkdir()
@@ -223,10 +227,11 @@ def test_the_closure_follows_helpers_and_stops_at_declared_stages(tmp_path):
         "__init__.py": "",
         "stage_a.py": (
             "import hashlib\nimport inspect\n"
-            "from braunschweig import helper_one\n"
+            "from braunschweig import helper_one, stage_c\n"
             "_HELPER_MODULES = (helper_one,)\n"
-            "def configure(context):\n    context.stage('braunschweig.stage_b')\n"
-            "def execute(context):\n    return helper_one.run()\n"
+            "def configure(context):\n"
+            "    context.stage('braunschweig.stage_b')\n    context.stage('braunschweig.stage_c')\n"
+            "def execute(context):\n    return helper_one.run() + stage_c.scale(1)\n"
             "def validate(context):\n"
             "    sources = [inspect.getsource(module) for module in _HELPER_MODULES]\n"
             "    return hashlib.md5(''.join(sources).encode()).hexdigest()\n"),
@@ -240,13 +245,20 @@ def test_the_closure_follows_helpers_and_stops_at_declared_stages(tmp_path):
             "def configure(context):\n    pass\n"
             "def execute(context):\n    return VALUE\n"),
         "behind_stage_b.py": "VALUE = 2\n",
+        "stage_c.py": (
+            "def scale(value):\n    return 2 * value\n"
+            "def configure(context):\n    pass\n"
+            "def execute(context):\n    return None\n"),
     }
     for name, source in files.items():
         (package / name).write_text(source, encoding="utf-8")
 
     entry = audit.build_report(tmp_path)["braunschweig.stage_a"]
-    assert entry["uncovered"] == []  # the one-level gate sees nothing missing
-    assert entry["transitive_uncovered"] == ["braunschweig.helper_two"]
+    # One level: the declared stage_c is imported and its scale() runs inside stage_a.
+    assert entry["required_helpers"] == ["braunschweig.helper_one", "braunschweig.stage_c"]
+    assert entry["uncovered"] == ["braunschweig.stage_c"]
+    assert entry["transitive_uncovered"] == ["braunschweig.behind_stage_b", "braunschweig.helper_two",
+                                             "braunschweig.stage_b", "braunschweig.stage_c"]
 
 
 def test_a_module_object_re_exported_by_another_module_counts_as_that_module(tmp_path):
