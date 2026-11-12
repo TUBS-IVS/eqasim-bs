@@ -23,7 +23,17 @@ def test_layout_matches_the_canonical_overlay(rate_pct: int):
     assert prefix == overlay["config"]["output_prefix"]
 
 
-def test_ten_percent_keeps_the_legacy_layout():
-    out_dir, cache_dir, prefix = rate_layout(10, REPO)
-    assert out_dir.name == "output_bs_10pct" and cache_dir.name == "cache_bs_10pct"
-    assert prefix == "braunschweig_10pct_"
+@pytest.mark.parametrize("rate_pct, layout", [(10, "auto"), (25, "legacy")])
+def test_legacy_layout_matches_the_legacy_fixture(rate_pct: int, layout: str):
+    """10 % has no overlay; --layout legacy reads a run of the legacy fixture (the analysis README recipe)."""
+    fixture = yaml.safe_load(
+        (REPO / "configs" / "fixtures" / f"config_local_braunschweig_{rate_pct}pct.yml").read_text(encoding="utf-8"))
+    out_dir, _, prefix = rate_layout(rate_pct, REPO, layout)
+
+    assert out_dir == REPO / fixture["config"]["output_path"]
+    assert prefix == fixture["config"]["output_prefix"]
+
+
+def test_canonical_layout_refuses_a_rate_without_overlay():
+    with pytest.raises(ValueError, match="no canonical overlay"):
+        rate_layout(10, REPO, "canonical")

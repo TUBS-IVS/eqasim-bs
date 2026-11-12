@@ -10,7 +10,7 @@ when called as a fresh Python process (no prior import of the
 submodules).
 
 Usage:
-    python -m scripts.run_bs_validation --rate {1|10|25|100} [--out PATH]
+    python -m scripts.run_bs_validation --rate {1|10|25|100} [--layout {auto|canonical|legacy}] [--out PATH]
 """
 from __future__ import annotations
 
@@ -26,11 +26,22 @@ from pathlib import Path
 # braunschweig_<rate>pct_allfeat_popsim_. The 10 % rate has no overlay; it keeps the
 # legacy layout that scripts.validate_bs_10pct was written for.
 CANONICAL_RATES = (1, 25, 100)
+# "auto" picks the canonical layout for CANONICAL_RATES and the legacy one otherwise;
+# "legacy" reads a run of the legacy fixtures (configs/fixtures/config_local_braunschweig_*pct.yml,
+# output_bs_<rate>pct); "canonical" requires an overlay rate.
+LAYOUTS = ("auto", "canonical", "legacy")
 
 
-def rate_layout(rate_pct: int, repo: Path) -> tuple[Path, Path, str]:
+def rate_layout(rate_pct: int, repo: Path, layout: str = "auto") -> tuple[Path, Path, str]:
     """Return (output dir, cache dir, file prefix) the run of ``rate_pct`` % writes."""
-    if rate_pct in CANONICAL_RATES:
+    if layout not in LAYOUTS:
+        raise ValueError(f"unknown layout {layout!r}; expected one of {LAYOUTS}")
+    if layout == "canonical" and rate_pct not in CANONICAL_RATES:
+        raise ValueError(
+            f"rate {rate_pct}% has no canonical overlay in configs/overlays/; "
+            f"canonical rates are {CANONICAL_RATES}, use --layout legacy"
+        )
+    if layout != "legacy" and rate_pct in CANONICAL_RATES:
         suffix = f"{rate_pct}pct_allfeat_popsim"
         return (repo / "eqasim-data" / f"output_bs_{suffix}",
                 repo / "eqasim-data" / f"cache_bs_{suffix}",
@@ -40,12 +51,12 @@ def rate_layout(rate_pct: int, repo: Path) -> tuple[Path, Path, str]:
             f"braunschweig_{rate_pct}pct_")
 
 
-def _patch_config(rate_pct: int) -> Path:
+def _patch_config(rate_pct: int, layout: str = "auto") -> Path:
     # Import the config module first; submodules MUST NOT yet be imported.
     from scripts.validate_bs_10pct import config
 
     rate = rate_pct / 100.0
-    out_dir, cache_dir, prefix = rate_layout(rate_pct, config.REPO)
+    out_dir, cache_dir, prefix = rate_layout(rate_pct, config.REPO, layout)
 
     if not out_dir.exists():
         raise FileNotFoundError(
@@ -64,6 +75,10 @@ def main() -> int:
     parser.add_argument("--rate", type=int, choices=[1, 10, 25, 100], required=True)
     parser.add_argument("--out", type=Path, default=None,
                         help="Output directory (default: <output>/validation)")
+    parser.add_argument("--layout", choices=LAYOUTS, default="auto",
+                        help="Run layout to read: 'auto' (canonical overlay layout for "
+                             "1/25/100 %%, legacy for 10 %%), 'canonical' or 'legacy' "
+                             "(a run of configs/fixtures/config_local_braunschweig_*pct.yml)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO,
@@ -88,8 +103,8 @@ def main() -> int:
             "and have captured the default 10 % paths: " + ", ".join(leaked)
         )
 
-    out = _patch_config(args.rate)
-    log.info("Running validation for rate=%d%% on %s", args.rate, out)
+    out = _patch_config(args.rate, args.layout)
+    log.info("Running validation for rate=%d%% (layout %s) on %s", args.rate, args.layout, out)
 
     # Now safe to import the submodules — they capture the patched config.
     from scripts.validate_bs_10pct import plots, report
