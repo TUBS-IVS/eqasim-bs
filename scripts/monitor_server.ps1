@@ -16,10 +16,10 @@
       - tail of the live log
 
     Monitors the newest run_*.log in a log directory. By default that is
-    <RemoteRepo>/logs, with liveness judged by log freshness (modified within the
-    last 120 s). For a run started by hand in a tmux session, pass -Session to
+    <RemoteRepo>/logs. For a run started by hand in a tmux session, pass -Session to
     judge liveness by that session instead. For an isolated_run.py run (detached
-    via setsid nohup, logs under RUN_DIR/logs), pass -LogDir RUN_DIR/logs.
+    via setsid nohup, logs under RUN_DIR/logs), pass -LogDir RUN_DIR/logs; liveness
+    is then a process check and GIT/DISK read RUN_DIR/eqasim-bs.
 
 .PARAMETER ServerUser
     SSH user. Default: environment variable EQASIM_SERVER_USER; if neither is set,
@@ -34,8 +34,14 @@
     Directory holding the run_*.log files on the server. Default:
     <RemoteRepo>/logs. For an isolated run use RUN_DIR/logs.
 .PARAMETER Session
-    Optional tmux session name. When set, "alive" means that session exists; when
-    empty (default), "alive" means the newest log changed within the last 120 s.
+    Optional tmux session name. When set, "alive" means that session exists. When
+    empty (default) and a run.yml sits next to the log directory (isolated run),
+    "alive" means a process has that run.yml on its command line. Only without a
+    run.yml does "alive" fall back to log freshness (see -LivenessWindowSec); the
+    dashboard names the basis used.
+.PARAMETER LivenessWindowSec
+    Window in seconds for the log-freshness fallback. Default: 300 (a silent stage
+    such as the chain solver can leave the log quiet for minutes).
 .PARAMETER RefreshSec
     Seconds between refreshes. Default: 10
 .PARAMETER LastIteration
@@ -58,6 +64,7 @@ param(
     [string]$RemoteRepo    = "~/eqasim-bs",
     [string]$LogDir        = "",
     [string]$Session       = "",
+    [int]   $LivenessWindowSec = 300,
     [int]   $RefreshSec    = 10,
     [int]   $LastIteration = 99,
     [switch]$Once
@@ -81,19 +88,35 @@ REPO=__REPO__
 REPO="${REPO/#\~/$HOME}"
 LOGDIR='__LOGDIR__'
 LOGDIR="${LOGDIR/#\~/$HOME}"
+WINDOW='__WINDOW__'
+# An isolated run keeps its own checkout next to its logs: RUN_DIR/eqasim-bs. Use it
+# for the GIT and DISK fields instead of RemoteRepo.
+if [ -n "$LOGDIR" ] && [ -d "$LOGDIR/../eqasim-bs" ]; then
+  REPO=$(cd "$LOGDIR/../eqasim-bs" && pwd)
+fi
 [ -n "$LOGDIR" ] || LOGDIR="$REPO/logs"
 SESSION='__SESSION__'
 LOG=$(ls -t "$LOGDIR"/run_*.log 2>/dev/null | head -1)
 printf 'LOG\t%s\n' "$LOG"
 NOW_E=$(date +%s)
+RUN_YML="$LOGDIR/../run.yml"
 if [ -n "$SESSION" ]; then
   if tmux has-session -t "$SESSION" 2>/dev/null; then ALIVE=yes; else ALIVE=no; fi
+  ALIVE_BASIS="tmux session"
+elif [ -f "$RUN_YML" ]; then
+  # Isolated run: alive while a process has the run's run.yml on its command line (as
+  # isolated_run.py find_run_processes). A silent stage cannot make it look dead.
+  RUN_YML=$(cd "$(dirname "$RUN_YML")" && pwd)/run.yml
+  if pgrep -f -- "$RUN_YML" >/dev/null 2>&1; then ALIVE=yes; else ALIVE=no; fi
+  ALIVE_BASIS="process check ($RUN_YML)"
 else
-  # No tmux session: a run is alive while its log keeps changing (isolated runs).
+  # No tmux session and no run.yml: heuristic only, a run is alive while its log keeps changing.
   ALIVE=no
-  if [ -n "$LOG" ] && [ $((NOW_E-$(date -r "$LOG" +%s))) -lt 120 ]; then ALIVE=yes; fi
+  if [ -n "$LOG" ] && [ $((NOW_E-$(date -r "$LOG" +%s))) -lt "$WINDOW" ]; then ALIVE=yes; fi
+  ALIVE_BASIS="log freshness (${WINDOW} s window)"
 fi
 printf 'ALIVE\t%s\n' "$ALIVE"
+printf 'ALIVE_BASIS\t%s\n' "$ALIVE_BASIS"
 printf 'NOW\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
 printf 'LOAD\t%s\n' "$(uptime | sed 's/.*load average: //')"
 printf 'NPROC\t%s\n' "$(nproc)"
@@ -197,7 +220,7 @@ fi
 # piped to the remote "bash", every line would keep a trailing carriage return,
 # so e.g. REPO=~/eqasim-bs<CR> yields the invalid path "$REPO<CR>/logs" and all
 # REPO-derived fields come back empty. Normalise to LF before sending.
-$remoteCmd = $remoteTemplate.Replace("__REPO__", $RemoteRepo).Replace("__LOGDIR__", $LogDir).Replace("__SESSION__", $Session).Replace("`r`n", "`n").Replace("`r", "`n")
+$remoteCmd = $remoteTemplate.Replace("__REPO__", $RemoteRepo).Replace("__LOGDIR__", $LogDir).Replace("__SESSION__", $Session).Replace("__WINDOW__", [string]$LivenessWindowSec).Replace("`r`n", "`n").Replace("`r", "`n")
 
 function Get-Snapshot {
     # Send the remote script base64-encoded as a single ASCII ssh argument and
@@ -324,6 +347,7 @@ function Show-Dashboard($snap) {
         Write-Host "  storage : $diskText" -ForegroundColor $diskColor
     }
     if ($f['GIT']) { Write-Host "  commit  : $($f['GIT'])" -ForegroundColor DarkGray }
+    if ($f['ALIVE_BASIS']) { Write-Host "  liveness: $($f['ALIVE_BASIS'])" -ForegroundColor DarkGray }
     Write-Host "  log     : $($f['LOG'])" -ForegroundColor DarkGray
     Write-Host "  updated : $($f['MTIME'])   (server now $($f['NOW']))" -ForegroundColor DarkGray
     Write-Host ("  " + ("-" * $width))
