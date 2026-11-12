@@ -58,12 +58,17 @@ def test_tier_line_primary_path_and_allocation_unchanged(capsys):
     # The orphan step reports also when nothing needs merging.
     assert "adult-less orphan households: 0;" in _line(text, "adult-less orphan households")
 
-    # The optional stats argument never alters the allocation.
-    shares = att._prepare_type_shares(types)
+    # The optional stats argument never alters the allocation. Three equal shares
+    # over 10 households force non-integer quotas, so the order of the
+    # largest-remainder rounding is exercised.
+    mixed = _types([("A", "2", "couple", 1.0), ("A", "2", "other_multi", 1.0),
+                    ("A", "2", "single_parent", 1.0)])
+    shares = att._prepare_type_shares(mixed)
     plain = att._allocate_types_for_bucket(shares[2], shares[1], "A", "2", 10)
     counted = att._allocate_types_for_bucket(
         shares[2], shares[1], "A", "2", 10, stats={})
     assert plain == counted
+    assert len(set(plain)) == 3
 
 
 @pytest.mark.parametrize("types_rows,key", [
@@ -90,8 +95,14 @@ def test_orphan_merge_is_reported_and_skip_is_counted(capsys):
     assert "merged 1/41 persons" in line
     assert "0 orphan households (0 persons" in line
     assert "WARNING" not in line
-    # the orphan really ended up in an adult household
+    # the orphan really ended up in an adult household, and that household's
+    # realised size and hh_type were rebuilt after the merge
     assert out.groupby("household_id")["age"].max().min() >= 18
+    assert (out["household_size"]
+            == out.groupby("household_id")["household_id"].transform("size")).all()
+    child_hh = out.loc[out["age"] < 18, "household_id"].iloc[0]
+    assert set(out.loc[out["household_id"] == child_hh, "hh_type"].astype(str)) == {
+        "couple_with_children"}
 
     # No adult anywhere in the commune: the orphan stays, is counted, and warns.
     out2, text2 = _run(_persons([("C", "1", 5)]), _types(
@@ -111,12 +122,12 @@ def test_orphan_merge_is_reported_and_skip_is_counted(capsys):
     assert "WARNING" not in line3
 
 
-@pytest.mark.parametrize("hh_type,size,adults,children,promoted,warn", [
-    ("single_parent", "2", 4, 4, 0, False),    # child slots already match the pool
-    ("other_multi", "3", 6, 3, 3, True),       # every child slot is a promotion
+@pytest.mark.parametrize("hh_type,size,adults,children,promoted,primary,warn", [
+    ("single_parent", "2", 4, 4, 0, "primary 4/4", False),  # slots match the pool
+    ("other_multi", "3", 6, 3, 3, "primary 0/3", True),     # every slot promoted
 ])
 def test_child_slot_promotion_is_reported(capsys, hh_type, size, adults, children,
-                                          promoted, warn):
+                                          promoted, primary, warn):
     rows = ([("A", size, 30 + i) for i in range(adults)]
             + [("A", size, 5 + i % 3) for i in range(children)])
     df = _persons(rows)
@@ -125,6 +136,7 @@ def test_child_slot_promotion_is_reported(capsys, hh_type, size, adults, childre
     line = _line(text, "child slots")
     m = re.search(r"promoted to non-child shells ([\d,]+)", line)
     assert int(m.group(1).replace(",", "")) == promoted
+    assert primary in line  # denominator is child slots, not persons
     assert ("WARNING" in line) is warn
 
 

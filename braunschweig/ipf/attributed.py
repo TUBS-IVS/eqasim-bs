@@ -299,8 +299,10 @@ def _index_type_shares(df_zt: pd.DataFrame) -> dict:
     }
 
 
-# Share of households (or persons) on a fallback path above which the aggregate
-# fallback line is prefixed ``WARNING:`` (CLAUDE.md "Fallback transparency").
+# Fallback share above which a rate line of this module is flagged ``WARNING``
+# (CLAUDE.md "Fallback transparency"). The share is taken over the unit each line
+# names: households (hh_type tiers), persons (orphans left adult-less) or child
+# slots (promoted slots).
 FALLBACK_WARN_FRACTION: float = 0.05
 
 
@@ -645,11 +647,14 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
     if relaxation_stats.get("buckets", 0):
         promoted_share = promoted / child_slots if child_slots else 0.0
         warn = promoted_share > FALLBACK_WARN_FRACTION
+        # Without child slots a rate has no meaning: print n/a, not 100 %.
+        primary_pct = f"{1.0 - promoted_share:.1%}" if child_slots else "n/a"
+        promoted_pct = f"{promoted_share:.1%}" if child_slots else "n/a"
         print(
             f"[braunschweig.ipf.attributed] {'WARNING: ' if warn else ''}"
             f"child slots: primary {child_slots - promoted:,}/{child_slots:,} "
-            f"({1.0 - promoted_share:.1%}), promoted to non-child shells "
-            f"{promoted:,} ({promoted_share:.1%})"
+            f"({primary_pct}), promoted to non-child shells "
+            f"{promoted:,} ({promoted_pct})"
         )
 
     # Tier rates of the hh_type allocation (primary / scope-wide / forced).
@@ -717,14 +722,13 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
         f"{n_skipped_orphans:,} orphan households ({n_skipped_persons:,} "
         f"persons, {skipped_share:.2%}) left adult-less (no adult in commune)"
     )
-    if orphan_hids.size:
-        if n_merged:
-            # Rebuild realised size + hh_type for the (rarely) changed households.
-            diag = pd.DataFrame({"hid": household_id, "age": ages_all})
-            household_size = diag.groupby("hid")["hid"].transform("size").to_numpy()
-            types = diag.groupby("hid")["age"].apply(
-                lambda a: hc_module._realised_type(list(a.to_numpy()), min_adult))
-            hh_type = pd.Series(household_id).map(types).to_numpy()
+    if n_merged:
+        # Rebuild realised size + hh_type for the (rarely) changed households.
+        diag = pd.DataFrame({"hid": household_id, "age": ages_all})
+        household_size = diag.groupby("hid")["hid"].transform("size").to_numpy()
+        types = diag.groupby("hid")["age"].apply(
+            lambda a: hc_module._realised_type(list(a.to_numpy()), min_adult))
+        hh_type = pd.Series(household_id).map(types).to_numpy()
 
     repeated["household_id"] = household_id
     repeated["hh_type"] = np.asarray(hh_type).astype(str)

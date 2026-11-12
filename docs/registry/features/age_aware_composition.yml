@@ -44,10 +44,13 @@ evidence:
       Measured on the SK Braunschweig verification run: 33,906 of 252,954 slots
       relaxed (13.4%) -- below the threshold, but non-trivial and now visible.
       Three further fallbacks of the age-aware formation print their own rate lines
-      (audit package D), each warning above attributed.FALLBACK_WARN_FRACTION: the
-      hh_type allocation tiers ("age-aware hh_type allocation"), the adult-less orphan
-      merge ("adult-less orphan households") and the child slots promoted onto childless
-      shells ("child slots: primary"). Their real-run rates are not yet measured.
+      (audit package D), flagged WARNING above attributed.FALLBACK_WARN_FRACTION: the
+      hh_type allocation tiers ("age-aware hh_type allocation"; share of households
+      on the scope-wide or forced tier), the orphan merge ("adult-less orphan
+      households"; share of persons left adult-less, a successful merge does not
+      warn) and the child slots promoted onto childless shells ("child slots:
+      primary"; share of child slots). Their real-run rates are unmeasured: the
+      next run manifest of a full pipeline run records them.
   reference:
     kind: assumption
     note: |
