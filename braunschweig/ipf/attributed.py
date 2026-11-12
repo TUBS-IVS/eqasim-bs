@@ -418,13 +418,18 @@ def _assign_household_types(
         hh_df["hh_type"].value_counts(normalize=True).sort_index().to_dict()
     )
     fallback_share = (n_fallback + n_default) / n_hh if n_hh else 0.0
-    warn_prefix = "WARNING: " if fallback_share > FALLBACK_WARN_FRACTION else ""
+    # The WARNING goes at the end: the line's start is the log marker the Feature
+    # Registry record ipf_synthesis_legacy declares (documentation check E2-fallback).
+    warn_suffix = (
+        f" -- WARNING: fallback share {fallback_share:.1%} above "
+        f"{FALLBACK_WARN_FRACTION:.0%}" if fallback_share > FALLBACK_WARN_FRACTION else ""
+    )
     print(
-        f"[braunschweig.ipf.attributed] {warn_prefix}"
-        f"assigned hh_type to {n_hh:,} households; "
+        f"[braunschweig.ipf.attributed] assigned hh_type to {n_hh:,} households; "
         f"{n_fallback:,} drawn from scope-wide fallback, "
         f"{n_default:,} forced to 'other_multi'; share = "
         + ", ".join(f"{k}={v:.1%}" for k, v in type_counts.items())
+        + warn_suffix
     )
     return df
 
