@@ -20,10 +20,14 @@ cordon in-commuter stage), but Home->Education->Home instead of Home->Work->Home
              (never left NaN; see :func:`_nearest_gate_xy`).
   - core frames: the shared ``assemble_incommuter_core_frames`` helper (Task 1),
              called with ``middle_purpose="education"`` -- DRY with the SvB stage.
-  - persons/households: student-specific, deliberately simpler than the SvB
-             ``_build_persons``/``_build_households`` (no origin-Kreis income
-             tilt, no per-agent German fleet draw); see
-             :func:`_build_student_persons` / :func:`_build_student_households`.
+  - donors:  every student draws its MiD donor household like the SvB in-commuter
+             (``braunschweig.data.cordon.donor_draw.KreisDonorSampler``, ADR-0191): from the
+             adult weekday student donors with a similar education distance, tilted to the
+             income level of the origin Kreis (INKAR); see :func:`_inject`.
+  - persons/households: the donor household's income, size and consumption units, built
+             like the SvB ``_build_persons``/``_build_households`` but without the per-agent
+             German fleet draw; see :func:`_build_student_persons` /
+             :func:`_build_student_households`.
   - vehicles: reuses the SvB stage's legacy (non-German-fleet) vehicle builders
              ``_build_legacy_vehicles`` / ``_build_incommuter_passenger_vehicles``
              -- one ``car`` vehicle per car-mode agent plus a ``car_passenger``
@@ -47,6 +51,11 @@ CRS_METRIC = "EPSG:25832"
 # (100000) or SvB in-commuters. Distinct offset keeps draws reproducible+disjoint.
 _RNG_OFFSET = 200000
 
+# ASSUMPTION (a warn bound, not a reference value): share of student donors excluded by the age bound
+# above which ``_adult_student_donors`` warns. The survey's study flag covers school children, who are
+# excluded by design (ADR-0191 decision 7), so a large exclusion is the expected state.
+STUDENT_DONOR_AGE_EXCLUDED_WARN_SHARE = 0.9
+
 # Person/household id block reserved above the resident id range for student
 # in-commuters, additionally offset above the (unrelated) block the SvB
 # in-commuter stage uses starting at the same n_residents/n_resident_households
@@ -63,17 +72,33 @@ _ID_OFFSET_ABOVE_RESIDENTS = 10_000_000
 # activity-status mapping used for residents
 # (braunschweig.population.socioprofessional_class.derive_socioprofessional_class): studying takes
 # precedence over employment, so SPC_STUDENT (=8) applies regardless of the HTS
-# donor's own employment status. Deliberately simpler than
-# braunschweig.synthesis.incommuters._INCOMMUTER_PERSON_DEFAULTS: no origin-Kreis
-# income tilt (INKAR) and no German-fleet vehicle draw -- see
-# ``_build_student_persons`` / ``_build_student_households``.
+# donor's own employment status. Household income, size and consumption units are NOT defaults: they
+# come from the donor household (``_build_student_persons``, ADR-0191).
+#: Smallest effective donor pool (Kish size) of the education-distance window a student in-commuter draws its
+#: MiD donor from (ADR-0191); > 0. The window around the agent's education distance grows until it is reached.
+KEY_DONOR_MIN_EFFECTIVE_POOL = "braunschweig.student_incommuters.donor_min_effective_pool"
+DEFAULT_DONOR_MIN_EFFECTIVE_POOL = 300.0   # ASSUMPTION: owner decision 2026-11-11, not calibrated
+
+#: The donor column the education-distance window is matched on (km, the home-education leg of the MiD donor).
+DONOR_DISTANCE_COLUMN = "education_distance_km"
+
+
+def _validated_min_effective_pool(value) -> float:
+    """``KEY_DONOR_MIN_EFFECTIVE_POOL`` as a float: a finite number > 0, else ValueError naming this key."""
+    from braunschweig.synthesis import incommuters
+
+    try:
+        return incommuters.validate_donor_min_effective_pool(value)
+    except ValueError as exc:
+        raise ValueError(f"{KEY_DONOR_MIN_EFFECTIVE_POOL} must be a finite number > 0, got {value!r}") from exc
+
+
 _STUDENT_PERSON_DEFAULTS = dict(
-    employed=False, studies=True, household_size=1, consumption_units=1.0,
+    employed=False, studies=True,
     socioprofessional_class=8,  # SPC_STUDENT, braunschweig.population.socioprofessional_class
     number_of_bicycles=0,
     bicycle_availability="all", license_type="ja", has_license=True,
     has_pt_subscription=False, pt_subscription_type="never_pt",
-    high_income=False,
     is_bs_resident=False, is_urban_resident=False, age_range="higher_education",
     # See braunschweig.synthesis.incommuters._INCOMMUTER_PERSON_DEFAULTS for why
     # this completeness attribute (synthesise_housing_tenure,
@@ -86,7 +111,7 @@ _STUDENT_PERSON_DEFAULTS = dict(
 def _empty_frames(crs=CRS_METRIC):
     import geopandas as gpd
 
-    from braunschweig.data.cordon import plans  # noqa: PLC0415 (function-level like _inject's import)
+    from braunschweig.data.cordon import donor_draw, plans  # noqa: PLC0415 (function-level like _inject's import)
     return {
         # The zero day-bound report, so frames["day_bound"] is always present (ADR-0172).
         "day_bound": plans.empty_day_bound(),
@@ -103,6 +128,8 @@ def _empty_frames(crs=CRS_METRIC):
         "vehicle_types": pd.DataFrame(columns=["type_id", "length", "width", "mode",
                                                "hbefa_cat", "hbefa_tech", "hbefa_size",
                                                "hbefa_emission"]),
+        # The report of a donor draw without agents, so frames["donor_draw"] is always present (ADR-0191).
+        "donor_draw": donor_draw.empty_report(),
     }
 
 
@@ -120,6 +147,10 @@ def _empty_frames(crs=CRS_METRIC):
 #: ``ROUTED_DETOUR_FACTOR``, with which the straight-line distances are converted.
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.synthesis.incommuters",
+    # Reached through incommuters._high_income (ADR-0191).
+    "braunschweig.popsim.income",
+    # The weighted, distance-matched and Kreis-tilted donor draw of the student in-commuters (ADR-0191).
+    "braunschweig.data.cordon.donor_draw",
     "braunschweig.data.cordon.plans",
     "braunschweig.constants",
     "braunschweig.data.cordon.demand",
@@ -205,6 +236,7 @@ def configure(context):
     # Timetable check of the pt days (#528): the same switch, keys and batch pt router as the commuter stage (#488).
     incommuters.configure_pt_check(context)
     context.config("data_path")
+    _validated_min_effective_pool(context.config(KEY_DONOR_MIN_EFFECTIVE_POOL, DEFAULT_DONOR_MIN_EFFECTIVE_POOL))
     # Mirror the keys declared by braunschweig.data.external_workplaces.configure()
     # (as braunschweig.synthesis.incommuters.configure() also does) so that
     # _inject()'s external_workplaces._load_gemeinden(context) can resolve the
@@ -224,6 +256,7 @@ def configure(context):
     context.stage("braunschweig.data.hts.mid_donor", alias="hts")
     context.stage("braunschweig.synthesis.cordon_gates")
     context.stage("synthesis.population.enriched")
+    context.stage("braunschweig.data.inkar.household_income")   # origin-Kreis income level (ADR-0191)
 
 
 def _active(context):
@@ -339,23 +372,22 @@ def _build_student_persons(ids, donors, modes):
     student-specific defaults from :data:`_STUDENT_PERSON_DEFAULTS` instead of the
     SvB employed-commuter defaults.
 
-    Deliberately simpler than the SvB in-commuter persons builder: no origin-
-    Kreis income tilt (INKAR) and no per-agent German-fleet draw -- students get
-    a flat regional-mean household income
-    (``braunschweig.synthesis.incommuters.INCOMMUTER_BASE_INCOME_EUR``) and a
-    mode-consistent ``car_availability``/``number_of_cars`` (car-mode agents own a
-    car; PT-mode agents do not -- a documented simplification, not a measured
-    student car-ownership rate).
+    ``donors`` is agent-aligned and eligible (:func:`_inject`). Household income (EUR/month, rounded to
+    whole EUR), household size and consumption units are the donor household's, as for the worker
+    in-commuters (ADR-0191); ``high_income`` follows the resident rule. There is no per-agent
+    German-fleet draw: ``car_availability``/``number_of_cars`` follow the fixed commute mode (car-mode
+    agents own a car; PT-mode agents do not -- a documented simplification, not a measured student
+    car-ownership rate).
     """
-    from braunschweig.synthesis.incommuters import INCOMMUTER_BASE_INCOME_EUR
+    from braunschweig.popsim.income import add_income_per_consumption_unit
 
     person_ids = ids["person_id"].to_numpy()
     household_ids = ids["household_id"].to_numpy()
     modes = np.asarray(modes)
-    age = donors["age"].to_numpy() if "age" in donors.columns else 22
+    age = donors["age"].to_numpy()   # a required donor column, checked by _inject
     sex = donors["sex"].to_numpy() if "sex" in donors.columns else "male"
     hts_id = donors["person_id"].to_numpy() if "person_id" in donors.columns else -1
-    income_eur = np.full(len(person_ids), INCOMMUTER_BASE_INCOME_EUR, dtype=float)
+    income_eur = donors["household_income_eur"].to_numpy(dtype=float).round(0)
     is_car = modes == "car"
     persons = pd.DataFrame({
         "person_id": person_ids,
@@ -368,12 +400,16 @@ def _build_student_persons(ids, donors, modes):
         "number_of_cars": np.where(is_car, 1, 0),
         "household_income_eur": income_eur,
         "household_income": [str(int(v)) for v in income_eur],
+        "high_income": _high_income(income_eur),
+        "household_size": donors["household_size"].to_numpy().astype("int64"),
+        "consumption_units": donors["consumption_units"].to_numpy(dtype=float),
     })
     for key, value in _STUDENT_PERSON_DEFAULTS.items():
         persons[key] = value
+    persons = add_income_per_consumption_unit(persons)
     # The literal 'never_pt' below is braunschweig.popsim.attributes.PT_TICKET_NEVER,
     # spelled out rather than imported: braunschweig.synthesis must not import from
-    # braunschweig.popsim (the one-way layering that
+    # braunschweig.popsim at module level (the one-way layering that
     # braunschweig.popsim.sources.entd_attributes relies on to import safely FROM
     # braunschweig.synthesis without a cycle). If PT_TICKET_NEVER's value ever changes,
     # this literal must be updated to match.
@@ -384,24 +420,56 @@ def _build_student_persons(ids, donors, modes):
     return persons
 
 
-def _build_student_households(ids):
-    """One single-person household per injected student in-commuter, mirroring
-    ``braunschweig.synthesis.incommuters._build_households`` with the flat
-    regional-mean income (no INKAR tilt; see :func:`_build_student_persons`)."""
-    from braunschweig.synthesis.incommuters import INCOMMUTER_BASE_INCOME_EUR
+def _high_income(income_eur):
+    """``high_income`` by the resident rule, shared with the worker in-commuters (ADR-0191)."""
+    from braunschweig.synthesis.incommuters import _high_income as high_income_of
 
-    household_ids = ids["household_id"].to_numpy()
-    person_ids = ids["person_id"].to_numpy()
-    income_eur = np.full(len(household_ids), INCOMMUTER_BASE_INCOME_EUR, dtype=float)
+    return high_income_of(income_eur)
+
+
+def _build_student_households(ids, donors, modes):
+    """One household record per injected student in-commuter (only the student is simulated),
+    mirroring ``braunschweig.synthesis.incommuters._build_households``: the monthly income (EUR,
+    rounded) is the donor household's; ``car_availability`` follows the fixed commute mode like the
+    person's (ADR-0191)."""
+    income_eur = donors["household_income_eur"].to_numpy(dtype=float).round(0)
     return pd.DataFrame({
-        "household_id": household_ids,
-        "person_id": person_ids,
-        "census_household_id": household_ids,
+        "household_id": ids["household_id"].to_numpy(),
+        "person_id": ids["person_id"].to_numpy(),
+        "census_household_id": ids["household_id"].to_numpy(),
         "household_income": [str(int(v)) for v in income_eur],
         "household_income_eur": income_eur,
-        "high_income": False,
-        "car_availability": "all", "bicycle_availability": "all",
+        "high_income": _high_income(income_eur),
+        "car_availability": np.where(np.asarray(modes) == "car", "all", "none"),
+        "bicycle_availability": "all",
     })
+
+
+def _adult_student_donors(student_donors, age_lower):
+    """The student donors of at least ``age_lower`` years (``student_incommuter_age_band[0]``).
+
+    ASSUMPTION: the in-commuters are university students, but the MiD ``studies`` flag also covers school
+    children; a donor younger than the lower bound of the configured age band (or without an age) is excluded.
+    The count and the primary share are logged next to the donor eligibility of
+    :func:`braunschweig.synthesis.incommuters._eligible_donors`; WARNING above
+    :data:`STUDENT_DONOR_AGE_EXCLUDED_WARN_SHARE`.
+    """
+    age = pd.to_numeric(student_donors["age"], errors="coerce")
+    no_age = age.isna()
+    too_young = ~no_age & (age < float(age_lower))
+    keep = ~(no_age | too_young)
+    n, n_kept = len(student_donors), int(keep.sum())
+    share = (n - n_kept) / n if n else 0.0
+    (_log.warning if share > STUDENT_DONOR_AGE_EXCLUDED_WARN_SHARE else _log.info)(
+        "[student_incommuters] donor age: primary %d/%d student donors (%.2f%%), excluded %d: "
+        "%d younger than %s, %d without an age", n_kept, n, 100.0 * n_kept / n if n else 0.0, n - n_kept,
+        int(too_young.sum()), age_lower, int(no_age.sum()))
+    if n_kept == 0:
+        raise ValueError(
+            f"[student_incommuters] no student donor of at least {age_lower} years (the lower bound of "
+            f"student_incommuter_age_band): all {n} student donors are excluded ({int(too_young.sum())} younger, "
+            f"{int(no_age.sum())} without an age); check the age column of braunschweig.data.hts.mid_donor.")
+    return student_donors[keep].reset_index(drop=True)
 
 
 def _inject(context):
@@ -413,11 +481,12 @@ def _inject(context):
     above. See the module docstring for the stage-level design.
     """
     from braunschweig.constants import ROUTED_DETOUR_FACTOR
-    from braunschweig.data.cordon import plans
+    from braunschweig.data.cordon import donor_draw, plans
     from braunschweig.data.cordon.demand import make_incommuter_ids
     from braunschweig.data.cordon.incommuter_origins import incommuter_origin_homes
     from braunschweig.data.cordon.mode_reference import (
         MID_DISTANCE_EDGES, restrict_to_modes, route_distance_band)
+    from braunschweig.data.hts import mid_donor
     from braunschweig.data.education import student_incommuter_counts as sic
     from braunschweig.data.education import student_origins as so
     from braunschweig.data.external_workplaces import _load_gemeinden
@@ -448,6 +517,17 @@ def _inject(context):
     residents = context.stage("synthesis.population.enriched")
     _hh, hts_persons, hts_trips = context.stage("hts")
     gate_frames = context.stage("braunschweig.synthesis.cordon_gates")
+    inkar_income = context.stage("braunschweig.data.inkar.household_income")
+    min_effective_pool = _validated_min_effective_pool(context.config(KEY_DONOR_MIN_EFFECTIVE_POOL))
+    # Fail fast, before any origin is drawn: the donor household, the draw attributes and the age.
+    # (the age excludes the donors younger than the lower bound of student_incommuter_age_band).
+    if "age" not in hts_persons.columns:
+        raise ValueError(
+            "[student_incommuters] the student in-commuter donor draw needs the donor age (ADR-0191 "
+            "decision 7: it bounds the student donors by student_incommuter_age_band), which the MiD "
+            f"donor stage only delivers when {mid_donor.KEY_DEMOGRAPHICS} is set to true.")
+    incommuters._require_donor_columns(
+        hts_persons, needs_distance=True, distance_column=DONOR_DISTANCE_COLUMN, extra_columns=("age",))
 
     # 1. Counts per university commune (data-anchored count anchor, Task 2).
     counts = sic.compute_incommuter_counts(
@@ -543,18 +623,58 @@ def _inject(context):
 
     # 8. Donors + education-leg timings (memoised per unique donor id) + fixed
     #    commute mode from the Mikrozensus distance-band reference.
-    donors_pool = plans.select_student_donors(hts_persons, hts_trips, "person_id")
+    dist_km = plans.straight_line_distance_km(home_x, home_y, dest_x, dest_y)
+
+    # The donor of an agent is drawn per origin Kreis from the adult student donors with an education distance of a
+    # similar length, weighted by the MiD person weight and tilted to the Kreis's INKAR income level (ADR-0191,
+    # decisions 3 to 5), as for the worker in-commuters. The sampler logs its own primary/fallback rates; only the
+    # agent distance fallback is logged here.
+    commute_km, n_commute_fallback = incommuters._agent_commute_km(
+        home_x, home_y, dest_x, dest_y, has_real_home=is_in_ring, orig_ars=origins["orig_ars5"].to_numpy(),
+        gemeinden=gem, detour_factor=ROUTED_DETOUR_FACTOR)
+    commute_message = (f"[student_incommuters] agent education distance for the donor match: primary "
+                       f"{n - n_commute_fallback}/{n} ({100.0 * (n - n_commute_fallback) / n:.1f}%), fallback "
+                       f"{n_commute_fallback} ({100.0 * n_commute_fallback / n:.1f}%) on the own gate "
+                       f"(no real home, no Gemeinde of the origin Kreis; a lower bound of the distance)")
+    incommuters._check_commute_fallback(n, n_commute_fallback, commute_message)
+    if 100.0 * n_commute_fallback / n > incommuters.AGENT_COMMUTE_FALLBACK_WARN_PERCENT:
+        _log.warning(commute_message)
+    else:
+        _log.info(commute_message)
+
+    pool = incommuters._eligible_donors(
+        _adult_student_donors(plans.select_student_donors(hts_persons, hts_trips, "person_id"), age_lower),
+        needs_distance=True, distance_column=DONOR_DISTANCE_COLUMN)
+    scale_by_kreis = (None if inkar_income is None else
+                      dict(zip(inkar_income["ars5"].astype(str), inkar_income["scale"].astype(float))))
+    sampler = donor_draw.KreisDonorSampler(
+        pool, scale_by_kreis, min_effective_pool=min_effective_pool, distance_column=DONOR_DISTANCE_COLUMN)
+    kreis = incommuters._incommuter_kreis_ags5(origins["orig_ars5"].to_numpy())
+    drawn_rounds = []
+
+    def draw_donors(positions):
+        # The first call draws every agent: its rates are logged once (and warned about); the re-draw rounds,
+        # which draw only the late agents, stay silent.
+        rows = sampler.draw(kreis[positions], commute_km[positions], rng, log=not drawn_rounds)
+        drawn_rounds.append(len(positions))
+        return pool.iloc[rows].reset_index(drop=True)
+
     # A donor whose day ends after the bound (the simulated day minus the day-end margin) is re-drawn up to
     # ``time_redraw_max_attempts`` times and the persons follow the final donor (#467); the donor's own
     # home-departure time is replaced below by the distance-consistent seed, so the chain end is the return arrival.
     time_bound_s = _time_bound_s(context)
     donors, (_donor_depart_home, arrive_mid, depart_mid, arrive_home), redraw_stats = (
         plans.redraw_times_within_bound(
-            donors_pool, n, rng,
+            pool, n, rng,
             lambda d, _pos: _donor_education_times(d, hts_trips, "person_id"),
-            bound_s=time_bound_s, max_attempts=int(context.config(KEY_TIME_REDRAW_MAX_ATTEMPTS))))
-
-    dist_km = plans.straight_line_distance_km(home_x, home_y, dest_x, dest_y)
+            bound_s=time_bound_s, max_attempts=int(context.config(KEY_TIME_REDRAW_MAX_ATTEMPTS)),
+            draw=draw_donors))
+    donor_report = sampler.report(kreis, commute_km)
+    if scale_by_kreis is not None:
+        incommuters._check_kreis_scale_fallback(n, donor_report)
+    if inkar_income is None:
+        _log.warning("[student_incommuters] no INKAR frame supplied: %d in-commuters are drawn without the "
+                     "origin-Kreis income tilt", n)
 
     # Distance-consistent home-departure seed (mirrors the SvB path's _agent_times):
     # the RAW donor depart_home comes from an HTS trip whose length is unrelated to
@@ -616,9 +736,9 @@ def _inject(context):
         municipalities.crs, middle_purpose="education",
         repair_chronology=context.config("cordon_incommuter_time_chronology"))
 
-    # 10. Minimal student persons/households (no income tilt, no fleet).
+    # 10. Student persons/households: the donor household (no fleet draw).
     persons = _build_student_persons(ids, donors, modes)
-    households = _build_student_households(ids)
+    households = _build_student_households(ids, donors, modes)
 
     # 10a. Origin Kreis + destination university commune, attached for the
     # downstream OD analysis (braunschweig.analysis.simwrapper.student_commuters,
@@ -638,8 +758,8 @@ def _inject(context):
     # mode (eqasim core NETWORK_MODES = [car, car_passenger, truck]) that the
     # in-loop discrete mode choice can assign to ANY agent regardless of car
     # ownership, so a missing vehicle aborts the MATSim router. Car-mode agents
-    # additionally need a "car" vehicle. Students have no income/fleet model (see
-    # _build_student_persons), so they reuse the SvB stage's LEGACY (non-German-
+    # additionally need a "car" vehicle. Students have no fleet model (their income is
+    # the donor household's, see _build_student_persons), so they reuse the SvB stage's LEGACY (non-German-
     # fleet) vehicle builders -- the same path the SvB stage takes when no
     # ``data_path`` is supplied; no distinct HBEFA vehicle type is introduced, so
     # ``vehicle_types`` stays empty (the resident/SvB ``default_car`` /
@@ -663,6 +783,7 @@ def _inject(context):
         "locations": core["locations"],
         "vehicles": vehicles, "vehicle_types": vehicle_types,
         "day_bound": day_bound,
+        "donor_draw": donor_report,
     }
     if pt_report is not None:
         frames["pt_connection"] = pt_report   # the counts of the #528 check, as the commuter stage reports them

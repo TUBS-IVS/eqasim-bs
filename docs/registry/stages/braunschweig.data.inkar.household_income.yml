@@ -2,7 +2,9 @@ stage: braunschweig.data.inkar.household_income
 title: INKAR income (popsim)
 layer: attributes
 description: INKAR per-Kreis household income read for the PopulationSim income mechanisms (placement_income
-  / kreis control).
+  / kreis control) and the in-commuter income; its scale is relative to the population-weighted national
+  mean (ADR-0191); where used absolutely (enriched path, popsim with income_kreis_control off) every resident
+  income shifts by a constant ratio, see ADR-0191 Consequences.
 lineage:
   type: braunschweig_new
   upstream: null
@@ -16,3 +18,4 @@ pipelines:
 production: true
 inputs:
 - inkar_household_income
+- destatis_population_kreis

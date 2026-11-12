@@ -1,0 +1,644 @@
+2026-11-12 08:45:42,483 INFO braunschweig [config-merge] working_directory: (added) ../cache
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] run: (added) ['matsim.output']
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] config.sampling_rate: (added) 1.0
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] config.output_path: (added) ../output
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] config.analysis_working_directory: (added) ../cache
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] config.output_prefix: (added) braunschweig_100pct_prod20261031_
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] config.matsim_last_iteration: (added) 150
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] config.braunschweig.population.popsim.work_dir: (added) ../popsim_work
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] config.braunschweig.population.popsim.max_cells: (added) 750
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] config.braunschweig.population.popsim.num_workers: (added) 3
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] config.braunschweig.population.popsim.importance_profile: (added) optimized_2026_06_30
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] config.cache_share_enabled: True -> False
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] config.cache_share_export: (added) False
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] config.cache_share_recompute: (added) []
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] config.braunschweig.chainsolvers.processes: 0 -> 16
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] config.synpp_expected_stale_stages: [] -> ['matsim.output', 'matsim.simulation.run']
+2026-11-12 08:45:42,484 INFO braunschweig [config-merge] composed /home/felix/incommuter_replay_20261111/old/configs/base_bs.yml + /home/felix/prod100_20261031/run.yml: 3 overridden, 13 added
+2026-11-12 08:45:42,484 INFO replay_incommuter_donor_draw arm old: code /home/felix/incommuter_replay_20261111/old, cache /home/felix/prod100_20261031/cache, 277 config keys, 29 aliases; pt timetable check SWITCHED OFF in both arms (braunschweig.incommuters.pt_connection_check.enabled: false); the cached run had it on, so modes, times, stations and fleet of the replay are not those of the cached run
+2026-11-12 08:45:42,836 INFO replay_incommuter_donor_draw === replay braunschweig.synthesis.incommuters (run stem braunschweig.synthesis.incommuters__735abeff3315009a7538b415aca5cd37) ===
+2026-11-12 08:45:42,839 WARNING braunschweig.data.cordon.network [cordon] cannot verify the osm/cordon ring buffer: no .clip_signature in eqasim-data/data/osm/cordon -- regenerate via scripts/clip_osm_to_cordon_ring.py to enable the freshness check (proceeding; the pre-clip is ASSUMED to match the configured buffer).
+2026-11-12 08:45:42,841 INFO replay_incommuter_donor_draw loaded braunschweig.synthesis.cordon_gates (braunschweig.synthesis.cordon_gates__11eceeb40f1c607cc7669833cb38e93c) in 0 s
+2026-11-12 08:45:45,128 INFO replay_incommuter_donor_draw loaded braunschweig.popsim.enriched_adapter (braunschweig.popsim.enriched_adapter__451bf968c790012e5fcf2ace9efddefe) in 2 s
+2026-11-12 08:45:50,796 INFO replay_incommuter_donor_draw loaded braunschweig.data.hts.mid_donor (braunschweig.data.hts.mid_donor__8ae54c4fad3b63cf2d9f81c74777bc69) in 6 s
+2026-11-12 08:45:50,802 INFO replay_incommuter_donor_draw loaded data.spatial.municipalities (data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421) in 0 s
+ERROR 1: PROJ: proj_create_from_database: Open of /home/felix/miniforge3/envs/eqasim/share/proj failed
+[braunschweig.incommuters] real-origin ON: 10754 external Gemeinden loaded for in-ring origin draw (source_buffer_m=45000 m)
+2026-11-12 08:45:58,682 INFO replay_incommuter_donor_draw loaded braunschweig.data.census.pendler (braunschweig.data.census.pendler__ba229329bf17df62cdd3928452df1e8f) in 0 s
+[braunschweig.synthesis.incommuters] per-Bundesland mode reference ON: built references for 16/16 source Bundeslaender ['Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen', 'Hamburg', 'Hessen', 'Mecklenburg-Vorpommern', 'Niedersachsen', 'Nordrhein-Westfalen', 'Rheinland-Pfalz', 'Saarland', 'Sachsen', 'Sachsen-Anhalt', 'Schleswig-Holstein', 'Thüringen'] (others -> national fallback)
+2026-11-12 08:45:59,474 INFO replay_incommuter_donor_draw loaded braunschweig.locations.work (braunschweig.locations.work__1a0249bd0d48e888313eb41d7a4ec23b) in 1 s
+2026-11-12 08:45:59,488 INFO replay_incommuter_donor_draw loaded braunschweig.data.cordon_pt_gates (braunschweig.data.cordon_pt_gates__2deda5175627e65110f6684bd5e82845) in 0 s
+2026-11-12 08:45:59,489 INFO replay_incommuter_donor_draw loaded braunschweig.data.inkar.household_income (braunschweig.data.inkar.household_income__b3c4c993ddc44800156da0ffce772a83) in 0 s
+[braunschweig.cordon.mode_reference] WARNING: restrict_to_modes: primary 7/9 (77.8%), fallback 2 (22.2%) distance band(s) had zero mass in the allowed modes ('car', 'pt') -> forced to car=1.0. Affected bands: ['50-100', '>=100'].
+[braunschweig.incommuters] per-Bundesland mode reference: primary 68630/68630 (100.0%), national fallback 0 (0.0%) in-commuters had no per-Bundesland reference for their origin Land -> national blend. A high rate means a systematic ARS-prefix vs Bundesland-name key mismatch.
+[braunschweig.incommuters] mode balancer: mikrozensus_target 10345/68630 PT (15.1%), forced_to_car 3801, promoted 3801, final_pt 10345/68630 (15.1%), residual 0
+[braunschweig.incommuters] PT station placement: all 10345/10345 PT agents placed at rail stations (fallback 0.0%).
+2026-11-12 08:47:03,827 INFO braunschweig.data.cordon.incommuter_origins [incommuter_origins] in-ring primary 53210/68630 (77.5%), far (caller fallback) 15420 (22.5%)
+[braunschweig.incommuters] real-origin override: in-ring primary 53210/68630 (77.5%), far gate/station fallback 15420 (22.5%)
+2026-11-12 08:49:50,953 INFO braunschweig.data.cordon.plans [braunschweig.cordon.plans] in-commuter day bound 104400 s: primary 68527/68630 fit at the first draw, re-drawn 103 (0.2%, max attempts used 1/20), still unfit 0
+2026-11-12 08:49:50,959 WARNING braunschweig.data.cordon.plans [incommuters] middle arrival (work): primary 62024/68630 (90.4%), fallback 6606/68630 (9.6%)
+2026-11-12 08:49:50,961 WARNING braunschweig.data.cordon.plans [incommuters] middle departure (work): primary 57412/68630 (83.7%), fallback 11218/68630 (16.3%)
+2026-11-12 08:49:50,962 INFO braunschweig.data.cordon.plans [incommuters] middle activity duration imputation: duration pool 11218/11218 (100.0%), direct fixed assumption 0/11218 (0.0%); pool may include repaired anchors; empty-pool assumption 28800 seconds
+2026-11-12 08:49:50,963 WARNING braunschweig.data.cordon.plans [incommuters] home departure (work): primary 62024/68630 (90.4%), fallback 6606/68630 (9.6%)
+2026-11-12 08:49:50,964 INFO braunschweig.data.cordon.plans [incommuters] outbound duration imputation: duration pool 6606/6606 (100.0%), direct fixed assumption 0/6606 (0.0%); pool may include repaired anchors; empty-pool assumption 3600 seconds
+2026-11-12 08:49:50,965 WARNING braunschweig.data.cordon.plans [incommuters] home arrival (work): primary 57209/68630 (83.4%), fallback 11421/68630 (16.6%)
+2026-11-12 08:49:50,966 INFO braunschweig.data.cordon.plans [incommuters] return duration imputation: duration pool 11421/11421 (100.0%), direct fixed assumption 0/11421 (0.0%); pool may include repaired anchors; empty-pool assumption 3600 seconds
+2026-11-12 08:49:50,970 INFO braunschweig.synthesis.incommuters [braunschweig.incommuters] day bound 104400 s: 621/68630 days moved earlier as a whole (0.9%), 0 still late
+2026-11-12 08:49:51,003 INFO braunschweig.data.cordon.plans [incommuters] middle arrival (work): primary 68630/68630 (100.0%), fallback 0/68630 (0.0%)
+2026-11-12 08:49:51,004 INFO braunschweig.data.cordon.plans [incommuters] middle departure (work): primary 68630/68630 (100.0%), fallback 0/68630 (0.0%)
+2026-11-12 08:49:51,005 INFO braunschweig.data.cordon.plans [incommuters] home departure (work): primary 68630/68630 (100.0%), fallback 0/68630 (0.0%)
+2026-11-12 08:49:51,005 INFO braunschweig.data.cordon.plans [incommuters] home arrival (work): primary 68630/68630 (100.0%), fallback 0/68630 (0.0%)
+[braunschweig.incommuters] INKAR origin-Kreis income PRIMARY lookup hit all 68630/68630 in-commuters (fallback rate 0.0%).
+2026-11-12 08:49:55,346 INFO braunschweig.synthesis.incommuters [incommuters] pt_subscription_type: 68630 in-commuter persons hard-coded to 'never_pt' (control-external source; the 14+ resident Kreis control does not see them -- see ADR-0099 for the rationale, issue #329)
+2026-11-12 08:49:55,969 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] per-Kreis powertrain marginal: primary source = Regionalstatistik 46251-02 fuel counts (kba_kreis_fuel.csv); real petrol:diesel ratio used per Kreis.
+2026-11-12 08:49:56,152 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] per-Kreis powertrain marginal coverage: 403 Kreise (8 ZGB + 395 non-ZGB).
+2026-11-12 08:49:56,152 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] per-Kreis powertrain marginal: all 403 Kreis(e) used real per-Kreis fuel mass (0 degenerate).
+2026-11-12 08:49:56,158 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Gemeinde EV tilt source (2026): column(s) ['bev_share', 'phev_share'] carry no positive value in any of the 113 row(s) -- treated as ABSENT, not as measured zeros. The tilt uses the combined electric share instead (ADR-0086).
+2026-11-12 08:49:56,169 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Gemeinde EV tilt source (2026): 0/113 row(s) carry a per-powertrain BEV/PHEV split; the rest tilt on the combined electric share.
+2026-11-12 08:49:56,200 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] gemeinde EV tilt: 2026 Kreis-mean denominator weights: primary (FZ27.17 private_total) 113/113 (100.0%), fallback (no FZ27.17 match, weight=1) 0 (0.0%).
+2026-11-12 08:49:56,211 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] gemeinde BEV/PHEV composition (FZ 27.17): primary 103/110 (93.6%), fallback 7 (6.4%) without a usable BEV:PHEV ratio (suppressed count or zero electric stock) -> composition factor 1.0 for them: 03154/BEIERSTEDT, 03154/JERXHEIM, 03154/QUERENHORST, 03158/DAHLUM, 03158/HEDEPER, 03158/UEHRDE, 03158/WINNIGSTEDT; not applicable 3 (sole Gemeinde of Kreis 03101, 03102, 03103: factor 1.0 by construction, in neither rate)
+2026-11-12 08:49:56,216 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] gemeinde EV tilt: 2026 source (kba_gemeinde_ev); 113 Gemeinden loaded; same-vintage (2026/2026) weighted Kreis-mean denominator (pure relative tilt, no EV level shift).
+2026-11-12 08:49:56,475 INFO braunschweig.data.kba.feasible_fuels [feasible_fuels] built feasibility for 1482 (brand, family) keys and 62 brand-level keys from HSN/TSN lookup.
+2026-11-12 08:49:57,678 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] per-Kreis euro joint (46251-03): building per-(Kreis, powertrain) age-euro IPF joints.
+2026-11-12 08:49:57,681 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] per-Kreis euro joint (46251-03): lazy index covers 403 Kreise x 8 powertrains (index built in 0.002 s). Individual (kreis, powertrain) IPF joints are computed and cached on first draw, not eagerly (Task B3 performance note: eager build measured ~15 s at ~400-Kreis scale).
+2026-11-12 08:49:57,769 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] model-fuel weight: active (623 models).
+2026-11-12 08:49:57,781 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] EV-income tilt: active (mid2023_antrieb_by_status.csv found).
+2026-11-12 08:49:58,534 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Euro-6 substage per-Kreis composition (kba_kreis_euro.csv, 403 Kreise): diesel cells 403/403 usable (0 all-zero/NaN -> national fallback); non-diesel-combustion cells 403/403 usable (0 all-zero/NaN -> national fallback).
+2026-11-12 08:49:58,545 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Euro-6 substage national fallback: 1 fuel(s) have an all-zero substage total (no Euro-6 registrations for that fuel) -> no national pmf for those fuels (falls through to plain euro6).
+2026-11-12 08:49:58,546 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Euro-6 substage model built: 1612 per-Kreis cell(s), 6 national fuel(s).
+2026-11-12 08:49:58,553 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] wohnmobile holder-age tilt: reference loaded (kba_wohnmobile_holder_age.csv).
+2026-11-12 08:49:59,130 INFO braunschweig.synthesis.vehicles.age_income [age_income] loaded 65 (segment,status) cells above MIN_CELL_WEIGHT=30 (of 65 total); 5 status-level pools; marginal P_MiD(age) computed
+2026-11-12 08:49:59,390 INFO braunschweig.synthesis.vehicles.wohnmobile_age [wohnmobile_age] fit: 58140/58285 cars with usable owner_age (99.8%), c=1.0002, untilted E[wm]=2.0174%; P_pop={'21_29': 0.0944, '30_39': 0.1941, '40_49': 0.2165, '50_59': 0.3196, '60_69': 0.1539, '70_79': 0.0063, '80_plus': 0.0009, 'up_to_20': 0.0142}; raw r={'up_to_20': 0.054, '21_29': 0.182, '30_39': 0.422, '40_49': 0.633, '50_59': 0.861, '60_69': 2.149, '70_79': 20.445, '80_plus': 33.328}
+2026-11-12 08:50:17,670 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de][in-commuters (origin outside ZGB)] BEV/PHEV composition aggregate correction: no Kreis needed a shift (this population's cars-per-Gemeinde distribution already matches the FZ 27.17 electric-stock weights).
+2026-11-12 08:50:17,709 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 01051 petrol UNREACHABLE (under target) -- target 0.5528, max achievable 0.5170 (residual -0.0358); too few cars whose feasible set allows it.
+2026-11-12 08:50:17,709 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 01051 diesel UNREACHABLE (under target) -- target 0.3653, max achievable 0.3416 (residual -0.0236); too few cars whose feasible set allows it.
+2026-11-12 08:50:17,709 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 01051 bev UNREACHABLE (over target) -- target 0.0256, min achievable 0.0681 (residual 0.0426); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:17,709 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 01051 phev UNREACHABLE (over target) -- target 0.0120, min achievable 0.0319 (residual 0.0199); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,078 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03401 petrol UNREACHABLE (under target) -- target 0.6445, max achievable 0.5983 (residual -0.0461); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,078 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03401 diesel UNREACHABLE (under target) -- target 0.2771, max achievable 0.2573 (residual -0.0198); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,078 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03401 bev UNREACHABLE (over target) -- target 0.0256, min achievable 0.1000 (residual 0.0744); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,140 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03460 bev UNREACHABLE (over target) -- target 0.0393, min achievable 0.0500 (residual 0.0107); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,165 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05112 bev UNREACHABLE (over target) -- target 0.0223, min achievable 0.0333 (residual 0.0110); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,335 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05915 petrol UNREACHABLE (under target) -- target 0.6387, max achievable 0.6218 (residual -0.0169); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,335 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05915 bev UNREACHABLE (over target) -- target 0.0335, min achievable 0.0542 (residual 0.0207); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,341 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05916 petrol UNREACHABLE (under target) -- target 0.6972, max achievable 0.6470 (residual -0.0503); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,341 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05916 diesel UNREACHABLE (under target) -- target 0.2074, max achievable 0.1925 (residual -0.0150); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,341 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05916 gas UNREACHABLE (over target) -- target 0.0148, min achievable 0.0491 (residual 0.0343); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,341 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05916 bev UNREACHABLE (over target) -- target 0.0152, min achievable 0.0509 (residual 0.0357); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,348 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05962 petrol UNREACHABLE (under target) -- target 0.6260, max achievable 0.5803 (residual -0.0456); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,348 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05962 diesel UNREACHABLE (under target) -- target 0.2438, max achievable 0.2261 (residual -0.0178); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,348 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05962 bev UNREACHABLE (over target) -- target 0.0291, min achievable 0.1000 (residual 0.0709); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,359 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05978 petrol UNREACHABLE (under target) -- target 0.6516, max achievable 0.6266 (residual -0.0250); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,359 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05978 bev UNREACHABLE (over target) -- target 0.0293, min achievable 0.0667 (residual 0.0373); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,377 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 06431 petrol UNREACHABLE (over target) -- target 0.6254, min achievable 0.6401 (residual 0.0147); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,377 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 06431 bev UNREACHABLE (under target) -- target 0.0227, max achievable 0.0000 (residual -0.0227); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,417 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 06534 petrol UNREACHABLE (under target) -- target 0.6167, max achievable 0.5750 (residual -0.0418); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,417 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 06534 diesel UNREACHABLE (under target) -- target 0.2756, max achievable 0.2570 (residual -0.0187); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,417 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 06534 bev UNREACHABLE (over target) -- target 0.0345, min achievable 0.1000 (residual 0.0655); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,491 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08119 petrol UNREACHABLE (under target) -- target 0.6064, max achievable 0.5840 (residual -0.0224); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,491 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08119 hybrid UNREACHABLE (over target) -- target 0.0654, min achievable 0.1000 (residual 0.0346); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,546 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08415 petrol UNREACHABLE (under target) -- target 0.6085, max achievable 0.4417 (residual -0.1668); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,546 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08415 diesel UNREACHABLE (under target) -- target 0.2733, max achievable 0.1984 (residual -0.0749); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,546 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08415 gas UNREACHABLE (over target) -- target 0.0052, min achievable 0.0439 (residual 0.0387); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,546 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08415 bev UNREACHABLE (over target) -- target 0.0303, min achievable 0.2561 (residual 0.2258); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,546 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08415 hybrid UNREACHABLE (under target) -- target 0.0564, max achievable 0.0409 (residual -0.0155); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,551 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08421 petrol UNREACHABLE (over target) -- target 0.5437, min achievable 0.5763 (residual 0.0325); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,552 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08421 diesel UNREACHABLE (over target) -- target 0.2987, min achievable 0.3166 (residual 0.0179); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,552 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08421 bev UNREACHABLE (under target) -- target 0.0561, max achievable 0.0000 (residual -0.0561); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,572 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09174 petrol UNREACHABLE (over target) -- target 0.5709, min achievable 0.5930 (residual 0.0221); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,573 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09174 diesel UNREACHABLE (over target) -- target 0.2812, min achievable 0.2921 (residual 0.0109); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,573 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09174 bev UNREACHABLE (under target) -- target 0.0372, max achievable 0.0000 (residual -0.0372); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,605 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09187 phev UNREACHABLE (under target) -- target 0.0143, max achievable 0.0000 (residual -0.0143); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,646 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09671 petrol UNREACHABLE (under target) -- target 0.6187, max achievable 0.5854 (residual -0.0333); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,646 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09671 diesel UNREACHABLE (under target) -- target 0.2859, max achievable 0.2705 (residual -0.0154); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,646 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09671 bev UNREACHABLE (over target) -- target 0.0417, min achievable 0.0854 (residual 0.0438); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,656 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09761 petrol UNREACHABLE (under target) -- target 0.6056, max achievable 0.5667 (residual -0.0389); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,656 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09761 diesel UNREACHABLE (under target) -- target 0.2640, max achievable 0.2470 (residual -0.0170); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,657 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09761 gas UNREACHABLE (over target) -- target 0.0088, min achievable 0.0233 (residual 0.0144); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,657 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09761 bev UNREACHABLE (over target) -- target 0.0292, min achievable 0.0767 (residual 0.0476); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,712 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 12051 petrol UNREACHABLE (under target) -- target 0.6714, max achievable 0.6598 (residual -0.0117); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,712 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 12051 bev UNREACHABLE (over target) -- target 0.0201, min achievable 0.0333 (residual 0.0132); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,734 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 12062 hybrid UNREACHABLE (over target) -- target 0.0346, min achievable 0.0500 (residual 0.0154); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,770 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 12070 petrol UNREACHABLE (under target) -- target 0.6118, max achievable 0.5941 (residual -0.0177); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,771 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 12070 bev UNREACHABLE (over target) -- target 0.0150, min achievable 0.0349 (residual 0.0200); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,807 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13074 petrol UNREACHABLE (under target) -- target 0.6157, max achievable 0.5933 (residual -0.0224); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,807 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13074 diesel UNREACHABLE (under target) -- target 0.3360, max achievable 0.3238 (residual -0.0122); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,807 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13074 bev UNREACHABLE (over target) -- target 0.0141, min achievable 0.0500 (residual 0.0359); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,833 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14522 bev UNREACHABLE (over target) -- target 0.0140, min achievable 0.0250 (residual 0.0110); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,838 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14523 petrol UNREACHABLE (under target) -- target 0.6607, max achievable 0.6066 (residual -0.0541); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,838 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14523 diesel UNREACHABLE (under target) -- target 0.2527, max achievable 0.2320 (residual -0.0207); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,838 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14523 gas UNREACHABLE (over target) -- target 0.0061, min achievable 0.0312 (residual 0.0251); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,838 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14523 bev UNREACHABLE (over target) -- target 0.0134, min achievable 0.0688 (residual 0.0554); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,859 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14626 petrol UNREACHABLE (under target) -- target 0.6998, max achievable 0.6838 (residual -0.0160); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,860 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14626 bev UNREACHABLE (over target) -- target 0.0102, min achievable 0.0333 (residual 0.0231); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,865 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14627 petrol UNREACHABLE (under target) -- target 0.6401, max achievable 0.6023 (residual -0.0378); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,865 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14627 diesel UNREACHABLE (under target) -- target 0.2756, max achievable 0.2594 (residual -0.0163); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,865 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14627 bev UNREACHABLE (over target) -- target 0.0170, min achievable 0.0750 (residual 0.0580); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,884 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14729 bev UNREACHABLE (over target) -- target 0.0143, min achievable 0.0286 (residual 0.0142); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,890 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14730 petrol UNREACHABLE (under target) -- target 0.6497, max achievable 0.6341 (residual -0.0156); too few cars whose feasible set allows it.
+2026-11-12 08:50:18,890 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14730 bev UNREACHABLE (over target) -- target 0.0158, min achievable 0.0333 (residual 0.0175); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:18,895 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 15001 bev UNREACHABLE (over target) -- target 0.0138, min achievable 0.0250 (residual 0.0112); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:19,152 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16053 petrol UNREACHABLE (under target) -- target 0.6204, max achievable 0.5704 (residual -0.0500); too few cars whose feasible set allows it.
+2026-11-12 08:50:19,152 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16053 diesel UNREACHABLE (under target) -- target 0.2817, max achievable 0.2590 (residual -0.0227); too few cars whose feasible set allows it.
+2026-11-12 08:50:19,153 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16053 bev UNREACHABLE (over target) -- target 0.0209, min achievable 0.1000 (residual 0.0791); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:19,171 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16064 petrol UNREACHABLE (under target) -- target 0.6256, max achievable 0.5115 (residual -0.1141); too few cars whose feasible set allows it.
+2026-11-12 08:50:19,172 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16064 diesel UNREACHABLE (under target) -- target 0.2901, max achievable 0.2372 (residual -0.0529); too few cars whose feasible set allows it.
+2026-11-12 08:50:19,172 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16064 bev UNREACHABLE (over target) -- target 0.0215, min achievable 0.2000 (residual 0.1785); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:50:19,360 WARNING braunschweig.synthesis.vehicles.age_income [age_income] missing/low-base (segment,status) cell for ('wohnmobile', 'low') -> (status)-only pool fallback; further draws of this cell counted silently
+2026-11-12 08:50:19,541 WARNING braunschweig.synthesis.vehicles.age_income [age_income] missing/low-base (segment,status) cell for ('wohnmobile', 'high') -> (status)-only pool fallback; further draws of this cell counted silently
+2026-11-12 08:50:19,646 WARNING braunschweig.synthesis.vehicles.age_income [age_income] missing/low-base (segment,status) cell for ('wohnmobile', 'medium') -> (status)-only pool fallback; further draws of this cell counted silently
+2026-11-12 08:50:19,759 WARNING braunschweig.synthesis.vehicles.age_income [age_income] missing/low-base (segment,status) cell for ('wohnmobile', 'very_high') -> (status)-only pool fallback; further draws of this cell counted silently
+2026-11-12 08:50:19,835 WARNING braunschweig.synthesis.vehicles.age_income [age_income] missing/low-base (segment,status) cell for ('wohnmobile', 'very_low') -> (status)-only pool fallback; further draws of this cell counted silently
+2026-11-12 08:50:50,667 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de][in-commuters (origin outside ZGB)] powertrain Kreis lookup: primary 58285/58285 (100.0%), fallback 0 (0.0%)
+2026-11-12 08:50:50,667 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de][in-commuters (origin outside ZGB)] powertrain Gemeinde tilt: primary 0/0 (0.0%), fallback 0 (0.0%); not applicable 58285 (no home-Gemeinde label and no Gemeinde table rows for the car's Kreis, in neither rate)
+2026-11-12 08:50:50,667 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de][in-commuters (origin outside ZGB)] powertrain grid tilt: primary 0/0 (0.0%), fallback 0 (0.0%)
+2026-11-12 08:50:50,667 INFO braunschweig.synthesis.vehicles.age_income [age_income] tilt: primary 57112/58285 (98.0%), fallback 1173 (2.0%)
+2026-11-12 08:50:50,667 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] EV-income tilt: primary 58285/58285 (100.0%), fallback 0 (0.0%)
+2026-11-12 08:50:50,667 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Euro-6 substage draw: per-Kreis 23321/23321 (100.0%), national fallback 0 (0.0%), plain-euro6 fallback (no substage data) 0 (0.0%).
+2026-11-12 08:50:50,667 INFO braunschweig.synthesis.vehicles.wohnmobile_age [wohnmobile_age][in-commuters (origin outside ZGB)] holder-age tilt: primary 58140/58285 (99.8%), fallback 145 (0.2%), guard hits 0 (exactness caveat when > 0), c=1.0002
+2026-11-12 08:50:50,668 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] HBEFA size map: primary 58285/58285 (100.0%), fallback 0 (0.0%)
+2026-11-12 08:50:50,668 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] brand/model draw: primary 58285/58285 (100.0%), fallback 0 (0.0%)
+2026-11-12 08:50:50,668 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] sonstige redistribution (consistency_v2): 1209/58285 vehicles (2.1%) redistributed to modelled segments.
+2026-11-12 08:50:50,674 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] model-feasible powertrain mask (consistency_v2, Bug 2): 57962/58285 vehicles (99.4%) model-constrained (tier1 exact-family=51665, tier2 brand-fallback=6297); 3 (0.0%) no-overlap fallbacks (unmasked pmf kept).
+2026-11-12 08:50:52,941 INFO braunschweig.synthesis.vehicles.fleet_validation [fleet_validation] powertrain: max dev 0.10pp (band 0.80pp) -> ok
+2026-11-12 08:50:52,944 INFO braunschweig.synthesis.vehicles.fleet_validation [fleet_validation] age_band: max dev 0.22pp (band 0.75pp) -> ok
+2026-11-12 08:50:52,947 INFO braunschweig.synthesis.vehicles.fleet_validation [fleet_validation] euro_class: max dev 0.29pp (band 0.83pp) -> ok
+2026-11-12 08:50:52,954 INFO braunschweig.synthesis.vehicles.fleet_validation [fleet_validation] euro6_substage: max dev 0.12pp (band 0.81pp) -> ok
+2026-11-12 08:50:52,960 INFO braunschweig.synthesis.vehicles.fleet_validation [fleet_validation] segment: max dev 0.26pp (band 0.69pp) -> ok
+2026-11-12 08:50:52,960 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] realised-margin validation (consistency_v2): any_flagged=False
+2026-11-12 08:50:52,999 INFO braunschweig.synthesis.vehicles.fleet_validation [wohnmobile_holder_age] aggregate: realised 2.0125% vs effective 2.0584% (dev -0.046pp, band 0.235pp) -> ok
+2026-11-12 08:50:52,999 INFO braunschweig.synthesis.vehicles.fleet_validation [wohnmobile_holder_age] aggregate vs untilted (reported only, carries the sonstige-redraw leak): 2.0174% (dev_untilted -0.005pp).
+2026-11-12 08:50:53,005 INFO braunschweig.synthesis.vehicles.fleet_validation [wohnmobile_holder_age] composition over 1168 motorhomes: max dev 2.09pp -> ok
+[braunschweig.synthesis.incommuters] 68630 in-commuters injected (10345 PT, rest car)
+2026-11-12 08:50:53,543 INFO replay_incommuter_donor_draw === braunschweig.synthesis.incommuters finished in 311 s ===
+2026-11-12 08:50:53,544 INFO replay_incommuter_donor_draw [replay] stage input stems: primary (run log) 16/16 (100%), fallback (only cached variant) 0 (0%)
+2026-11-12 08:50:55,203 INFO replay_incommuter_donor_draw identity check braunschweig.synthesis.incommuters: PASSED
+2026-11-12 08:50:55,799 INFO replay_incommuter_donor_draw === replay braunschweig.synthesis.student_incommuters (run stem braunschweig.synthesis.student_incommuters__741d29509ea1724583f3da017b2842d9) ===
+2026-11-12 08:50:55,949 INFO replay_incommuter_donor_draw loaded braunschweig.data.schools.university_facilities (braunschweig.data.schools.university_facilities__deeccc1639a27b53658fe5b092a38615) in 0 s
+2026-11-12 08:50:55,954 INFO replay_incommuter_donor_draw loaded data.spatial.municipalities (data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421) in 0 s
+2026-11-12 08:50:57,190 INFO replay_incommuter_donor_draw loaded braunschweig.locations.synthesis.replacement_education_gravity (braunschweig.locations.synthesis.replacement_education_gravity__73fbbf444ee75cf740778dff43e520ff) in 1 s
+2026-11-12 08:50:59,686 INFO replay_incommuter_donor_draw loaded braunschweig.popsim.enriched_adapter (braunschweig.popsim.enriched_adapter__451bf968c790012e5fcf2ace9efddefe) in 2 s
+2026-11-12 08:51:04,324 INFO replay_incommuter_donor_draw loaded braunschweig.data.hts.mid_donor (braunschweig.data.hts.mid_donor__8ae54c4fad3b63cf2d9f81c74777bc69) in 5 s
+2026-11-12 08:51:04,326 INFO replay_incommuter_donor_draw loaded braunschweig.synthesis.cordon_gates (braunschweig.synthesis.cordon_gates__11eceeb40f1c607cc7669833cb38e93c) in 0 s
+2026-11-12 08:51:04,457 WARNING braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03101: residents 16671 exceed scaled enrollment 15627 -> in_commuters floored to 0 (check university slope)
+2026-11-12 08:51:04,457 INFO braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03101: enrollment(scaled) 15627, residents 16671, in_commuters 0
+2026-11-12 08:51:04,457 INFO braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03102: enrollment(scaled) 3087, residents 1440, in_commuters 1647
+2026-11-12 08:51:04,458 WARNING braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03103: residents 562 exceed scaled enrollment 108 -> in_commuters floored to 0 (check university slope)
+2026-11-12 08:51:04,458 INFO braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03103: enrollment(scaled) 108, residents 562, in_commuters 0
+2026-11-12 08:51:04,458 INFO braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03153: enrollment(scaled) 2811, residents 1076, in_commuters 1735
+2026-11-12 08:51:04,458 INFO braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03158: enrollment(scaled) 6178, residents 3386, in_commuters 2792
+[braunschweig.population] DESTATIS cells: primary 6664/6664 (100.0%), skipped 0 (0.0%)
+[student_incommuter_origin:03102] primary 1647/1647 (100.0%), nearest-campus fallback 0 (0.0%)
+[student_incommuter_origin:03153] primary 1735/1735 (100.0%), nearest-campus fallback 0 (0.0%)
+[student_incommuter_origin:03158] primary 2792/2792 (100.0%), nearest-campus fallback 0 (0.0%)
+2026-11-12 08:51:23,484 INFO braunschweig.data.cordon.incommuter_origins [incommuter_origins] in-ring primary 6164/6174 (99.8%), far (caller fallback) 10 (0.2%)
+2026-11-12 08:51:23,488 INFO braunschweig.synthesis.student_incommuters [student_incommuters] home placement: in-ring primary 6164/6174 (99.8%), gate fallback 10/6174 (0.2%)
+2026-11-12 08:51:42,740 INFO braunschweig.data.cordon.plans [braunschweig.cordon.plans] in-commuter day bound 104400 s: primary 6164/6174 fit at the first draw, re-drawn 10 (0.2%, max attempts used 1/20), still unfit 0
+2026-11-12 08:51:42,742 WARNING braunschweig.data.cordon.plans [incommuters] middle arrival (education): primary 6157/6174 (99.7%), fallback 17/6174 (0.3%)
+2026-11-12 08:51:42,742 WARNING braunschweig.data.cordon.plans [incommuters] middle departure (education): primary 6113/6174 (99.0%), fallback 61/6174 (1.0%)
+2026-11-12 08:51:42,742 INFO braunschweig.data.cordon.plans [incommuters] middle activity duration imputation: duration pool 61/61 (100.0%), direct fixed assumption 0/61 (0.0%); pool may include repaired anchors; empty-pool assumption 21600 seconds
+2026-11-12 08:51:42,743 WARNING braunschweig.data.cordon.plans [incommuters] home departure (education): primary 6157/6174 (99.7%), fallback 17/6174 (0.3%)
+2026-11-12 08:51:42,743 INFO braunschweig.data.cordon.plans [incommuters] outbound duration imputation: duration pool 17/17 (100.0%), direct fixed assumption 0/17 (0.0%); pool may include repaired anchors; empty-pool assumption 3600 seconds
+2026-11-12 08:51:42,743 WARNING braunschweig.data.cordon.plans [incommuters] home arrival (education): primary 6110/6174 (99.0%), fallback 64/6174 (1.0%)
+2026-11-12 08:51:42,743 INFO braunschweig.data.cordon.plans [incommuters] return duration imputation: duration pool 64/64 (100.0%), direct fixed assumption 0/64 (0.0%); pool may include repaired anchors; empty-pool assumption 3600 seconds
+2026-11-12 08:51:42,744 INFO braunschweig.synthesis.student_incommuters [student_incommuters] day bound 104400 s: 3/6174 days moved earlier as a whole (0.0%), 0 still late
+2026-11-12 08:51:43,110 INFO braunschweig.data.cordon.plans [incommuters] middle arrival (education): primary 6174/6174 (100.0%), fallback 0/6174 (0.0%)
+2026-11-12 08:51:43,110 INFO braunschweig.data.cordon.plans [incommuters] middle departure (education): primary 6174/6174 (100.0%), fallback 0/6174 (0.0%)
+2026-11-12 08:51:43,110 INFO braunschweig.data.cordon.plans [incommuters] home departure (education): primary 6174/6174 (100.0%), fallback 0/6174 (0.0%)
+2026-11-12 08:51:43,111 INFO braunschweig.data.cordon.plans [incommuters] home arrival (education): primary 6174/6174 (100.0%), fallback 0/6174 (0.0%)
+2026-11-12 08:51:43,495 INFO braunschweig.synthesis.student_incommuters [student_incommuters] pt_subscription_type: 6174 in-commuter persons hard-coded to 'never_pt' (control-external source; the 14+ resident Kreis control does not see them -- see ADR-0099 for the rationale, issue #329)
+2026-11-12 08:51:43,541 INFO braunschweig.synthesis.student_incommuters [student_incommuters] injected 6174 students across 3 university communes: {'03102': 1647, '03153': 1735, '03158': 2792}
+2026-11-12 08:51:43,557 INFO replay_incommuter_donor_draw === braunschweig.synthesis.student_incommuters finished in 48 s ===
+2026-11-12 08:51:43,557 INFO replay_incommuter_donor_draw [replay] stage input stems: primary (run log) 12/12 (100%), fallback (only cached variant) 0 (0%)
+2026-11-12 08:51:44,076 INFO replay_incommuter_donor_draw identity check braunschweig.synthesis.student_incommuters: PASSED
+2026-11-12 08:51:46,544 INFO braunschweig [config-merge] working_directory: (added) ../cache
+2026-11-12 08:51:46,544 INFO braunschweig [config-merge] run: (added) ['matsim.output']
+2026-11-12 08:51:46,545 INFO braunschweig [config-merge] config.sampling_rate: (added) 1.0
+2026-11-12 08:51:46,545 INFO braunschweig [config-merge] config.output_path: (added) ../output
+2026-11-12 08:51:46,545 INFO braunschweig [config-merge] config.analysis_working_directory: (added) ../cache
+2026-11-12 08:51:46,545 INFO braunschweig [config-merge] config.output_prefix: (added) braunschweig_100pct_prod20261031_
+2026-11-12 08:51:46,545 INFO braunschweig [config-merge] config.matsim_last_iteration: (added) 150
+2026-11-12 08:51:46,545 INFO braunschweig [config-merge] config.braunschweig.population.popsim.work_dir: (added) ../popsim_work
+2026-11-12 08:51:46,545 INFO braunschweig [config-merge] config.braunschweig.population.popsim.max_cells: (added) 750
+2026-11-12 08:51:46,545 INFO braunschweig [config-merge] config.braunschweig.population.popsim.num_workers: (added) 3
+2026-11-12 08:51:46,545 INFO braunschweig [config-merge] config.braunschweig.population.popsim.importance_profile: (added) optimized_2026_06_30
+2026-11-12 08:51:46,545 INFO braunschweig [config-merge] config.cache_share_enabled: True -> False
+2026-11-12 08:51:46,545 INFO braunschweig [config-merge] config.cache_share_export: (added) False
+2026-11-12 08:51:46,545 INFO braunschweig [config-merge] config.cache_share_recompute: (added) []
+2026-11-12 08:51:46,545 INFO braunschweig [config-merge] config.braunschweig.chainsolvers.processes: 0 -> 16
+2026-11-12 08:51:46,545 INFO braunschweig [config-merge] config.synpp_expected_stale_stages: [] -> ['matsim.output', 'matsim.simulation.run']
+2026-11-12 08:51:46,545 INFO braunschweig [config-merge] composed /home/felix/incommuter_replay_20261111/new/configs/base_bs.yml + /home/felix/prod100_20261031/run.yml: 3 overridden, 13 added
+2026-11-12 08:51:46,545 INFO replay_incommuter_donor_draw arm new: code /home/felix/incommuter_replay_20261111/new, cache /home/felix/prod100_20261031/cache, 279 config keys, 29 aliases; pt timetable check SWITCHED OFF in both arms (braunschweig.incommuters.pt_connection_check.enabled: false); the cached run had it on, so modes, times, stations and fleet of the replay are not those of the cached run
+2026-11-12 08:51:46,690 INFO replay_incommuter_donor_draw === replay braunschweig.data.inkar.household_income (run stem None) ===
+WARNING *** OLE2 inconsistency: SSCS size is 0 but SSAT size is non-zero
+[braunschweig.population] DESTATIS cells: primary 6800/6800 (100.0%), skipped 0 (0.0%)
+[braunschweig.data.inkar.household_income] INKAR 2021: national mean 2033.8 EUR (population-weighted, DESTATIS 12411-0018); unweighted Kreis mean 2013.0 EUR
+[braunschweig.data.inkar.household_income] INKAR 2021: national mean 2034 EUR; scope scale range 0.873..1.080
+2026-11-12 08:51:47,116 INFO replay_incommuter_donor_draw === braunschweig.data.inkar.household_income finished in 0 s ===
+2026-11-12 08:51:47,116 INFO replay_incommuter_donor_draw [replay] stage inputs: none read
+2026-11-12 08:51:47,862 INFO replay_incommuter_donor_draw === replay braunschweig.data.hts.mid_donor (run stem None) ===
+2026-11-12 08:52:58,887 INFO braunschweig.popsim.sources.mid [MidSource] loaded donor: 218101 households, 420979 persons, 1087393 trips from eqasim-data/data/braunschweig/popsim/mid2023_raw
+2026-11-12 08:52:59,918 INFO braunschweig.popsim.missing [popsim.missing] employed: 0/420979 structural (deterministic), 200 (0.05%) item-nonresponse (imputed from ('alter_gr1',) group; 0/200 (0.0%) fell back to the global pool on an unseen group key)
+2026-11-12 08:52:59,995 INFO braunschweig.data.hts.mid_donor [mid_donor] sex: primary 420238/420979 (99.8%), fallback 741/420979 (0.2%); non-binary/missing codes use the observed MiD pool, seeded by random_seed; within the expected bound of 1.0% (MiD 2023 carries such codes by construction)
+2026-11-12 08:53:00,672 INFO braunschweig.popsim.expand [popsim.expand] sex: imputed 741 non-binary/missing codes (3 diverse / 9 k.A.) to binary male/female (seeded); sex_raw retains the original category.
+2026-11-12 08:53:00,684 INFO braunschweig.data.hts.mid_donor [mid_donor] age: primary 420979/420979 (100.0%), fallback 0/420979 (0.0%)
+2026-11-12 08:53:12,641 INFO braunschweig.popsim.trips [popsim.trips] expand_persons_to_trips: 305206/420979 persons (72.5%) have donor trips; 115773 persons without trips.
+2026-11-12 08:53:24,936 INFO braunschweig.popsim.trips [popsim.trips] home-start assumption applied to 305206 first trips (MiD has no per-trip origin purpose; diary-starts-at-home convention, mirrors entd/cleaned.py). Home-END closure is checked/repaired by PlanValidator.
+Found 0 occurences with negative duration
+  of which 0 can swap departure and arrival time without conflicts with previous or following trip
+  of which 0 are unlikely to cover midnight, so we swap arrival and departure time although there are conflicts
+  of which 0 seem to cover midnight, so we shift arrival time by 24h
+Shifting trips that should start after midnight
+  Shifted 1761 trips in round 1
+  Shifted 7 trips in round 2
+  No more occurences where current trip is after the next
+Found 1461 occurences where current trip ends after next trip starts
+  of which we're able to shorten 1333 to make it consistent
+Found 591 occurences where current trip is included in next trip
+Fixing 0 inconsistent activity types
+Trips with inconsistent activity types: 0
+2026-11-12 08:54:02,383 INFO braunschweig.data.hts.mid_donor [mid_donor] 218101 households, 420979 persons, 1087393 trips; donor pool: 86697 with a work leg, 26082 with an education leg
+2026-11-12 08:54:03,673 INFO braunschweig.popsim.missing [popsim.missing] economic_status: 0/218101 structural (deterministic), 0 (0.00%) item-nonresponse (imputed from ('hhgr_gr', 'RegioStaR7') group; 0/0 (0.0%) fell back to the global pool on an unseen group key)
+2026-11-12 08:54:03,730 INFO braunschweig.popsim.missing [popsim.missing] household_income: 0/218101 structural (deterministic), 0 (0.00%) item-nonresponse (imputed from ('hhgr_gr', 'RegioStaR7') group; 0/0 (0.0%) fell back to the global pool on an unseen group key)
+2026-11-12 08:54:04,117 INFO braunschweig.data.hts.mid_donor [mid_donor] consumption units: member age primary 485462/485733 (99.9%), fallback 271/485733 (0.1%) counted as 14 or older
+2026-11-12 08:54:07,293 INFO braunschweig.data.hts.mid_donor [mid_donor] donor household income: primary 420667/420979 donors (99.93%) from their own MiD household, 312 (0.07%) without a household record (all four household columns NaN)
+2026-11-12 08:54:11,417 INFO braunschweig.data.hts.mid_donor [mid_donor] donor draw attributes: reporting day weekday 299889/420979 (71.2%), weekend 121090/420979, unreadable kernwo 0/420979; commute distance from a home-work leg primary 83062/420979 (19.7%), fallback (no such leg, NaN) 337917/420979; education distance from a home-education leg primary 25734/420979 (6.1%), fallback (no such leg, NaN) 395245/420979
+2026-11-12 08:54:11,469 INFO replay_incommuter_donor_draw === braunschweig.data.hts.mid_donor finished in 144 s ===
+2026-11-12 08:54:11,469 INFO replay_incommuter_donor_draw [replay] stage inputs: none read
+2026-11-12 08:54:11,718 WARNING replay_incommuter_donor_draw stem of braunschweig.data.cordon_gemeinden not named by the run log before the stage; the only cached one is used: braunschweig.data.cordon_gemeinden__368060e74a9360851d6e25c870f15dde
+2026-11-12 08:54:11,718 INFO replay_incommuter_donor_draw === replay braunschweig.synthesis.incommuters (run stem braunschweig.synthesis.incommuters__735abeff3315009a7538b415aca5cd37) ===
+2026-11-12 08:54:11,722 WARNING braunschweig.data.cordon.network [cordon] cannot verify the osm/cordon ring buffer: no .clip_signature in eqasim-data/data/osm/cordon -- regenerate via scripts/clip_osm_to_cordon_ring.py to enable the freshness check (proceeding; the pre-clip is ASSUMED to match the configured buffer).
+2026-11-12 08:54:11,724 INFO replay_incommuter_donor_draw loaded braunschweig.synthesis.cordon_gates (braunschweig.synthesis.cordon_gates__11eceeb40f1c607cc7669833cb38e93c) in 0 s
+2026-11-12 08:54:13,038 INFO replay_incommuter_donor_draw loaded braunschweig.popsim.enriched_adapter (braunschweig.popsim.enriched_adapter__451bf968c790012e5fcf2ace9efddefe) in 1 s
+2026-11-12 08:54:13,202 INFO replay_incommuter_donor_draw loaded braunschweig.data.cordon_gemeinden (braunschweig.data.cordon_gemeinden__368060e74a9360851d6e25c870f15dde) in 0 s
+2026-11-12 08:54:13,206 INFO replay_incommuter_donor_draw loaded data.spatial.municipalities (data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421) in 0 s
+ERROR 1: PROJ: proj_create_from_database: Open of /home/felix/miniforge3/envs/eqasim/share/proj failed
+[braunschweig.incommuters] real-origin ON: 10754 external Gemeinden loaded for in-ring origin draw (source_buffer_m=45000 m)
+2026-11-12 08:54:21,268 INFO replay_incommuter_donor_draw loaded braunschweig.data.census.pendler (braunschweig.data.census.pendler__ba229329bf17df62cdd3928452df1e8f) in 0 s
+[braunschweig.synthesis.incommuters] per-Bundesland mode reference ON: built references for 16/16 source Bundeslaender ['Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen', 'Hamburg', 'Hessen', 'Mecklenburg-Vorpommern', 'Niedersachsen', 'Nordrhein-Westfalen', 'Rheinland-Pfalz', 'Saarland', 'Sachsen', 'Sachsen-Anhalt', 'Schleswig-Holstein', 'Thüringen'] (others -> national fallback)
+2026-11-12 08:54:22,007 INFO replay_incommuter_donor_draw loaded braunschweig.locations.work (braunschweig.locations.work__1a0249bd0d48e888313eb41d7a4ec23b) in 1 s
+2026-11-12 08:54:22,021 INFO replay_incommuter_donor_draw loaded braunschweig.data.cordon_pt_gates (braunschweig.data.cordon_pt_gates__2deda5175627e65110f6684bd5e82845) in 0 s
+[braunschweig.cordon.mode_reference] WARNING: restrict_to_modes: primary 7/9 (77.8%), fallback 2 (22.2%) distance band(s) had zero mass in the allowed modes ('car', 'pt') -> forced to car=1.0. Affected bands: ['50-100', '>=100'].
+[braunschweig.incommuters] per-Bundesland mode reference: primary 68630/68630 (100.0%), national fallback 0 (0.0%) in-commuters had no per-Bundesland reference for their origin Land -> national blend. A high rate means a systematic ARS-prefix vs Bundesland-name key mismatch.
+[braunschweig.incommuters] mode balancer: mikrozensus_target 10345/68630 PT (15.1%), forced_to_car 3801, promoted 3801, final_pt 10345/68630 (15.1%), residual 0
+[braunschweig.incommuters] PT station placement: all 10345/10345 PT agents placed at rail stations (fallback 0.0%).
+2026-11-12 08:55:28,620 INFO braunschweig.data.cordon.incommuter_origins [incommuter_origins] in-ring primary 53210/68630 (77.5%), far (caller fallback) 15420 (22.5%)
+[braunschweig.incommuters] real-origin override: in-ring primary 53210/68630 (77.5%), far gate/station fallback 15420 (22.5%)
+2026-11-12 08:55:28,766 INFO braunschweig.synthesis.incommuters [braunschweig.incommuters] agent commute for the donor match: primary 68630/68630 (100.0%), fallback 0 (0.0%) on the own gate or station (no real home, no Gemeinde of the origin Kreis; a lower bound of the commute)
+2026-11-12 08:55:29,303 INFO braunschweig.synthesis.incommuters [incommuters] donor eligibility: primary 73477/81184 commuter donors (90.51%), excluded 7707: 14 without a household record, 4625 without a weekday reporting day, 0 without a positive weight, 3068 without a commute distance
+2026-11-12 08:56:21,209 INFO braunschweig.data.cordon.donor_draw [braunschweig.cordon.donor_draw] 68630 agents; tilted primary 68630/68630 (100.0%), no Kreis scale 0 (0.0%), target not reached 0 (0.0%); commute window primary 68630/68630 (100.0%), whole pool 0 (0.0%), widest window ratio 22.03; smallest effective size 579.1
+2026-11-12 08:56:56,509 INFO braunschweig.data.cordon.plans [braunschweig.cordon.plans] in-commuter day bound 104400 s: primary 68599/68630 fit at the first draw, re-drawn 31 (0.0%, max attempts used 1/20), still unfit 0
+2026-11-12 08:56:56,582 WARNING braunschweig.data.cordon.plans [incommuters] middle arrival (work): primary 56372/68630 (82.1%), fallback 12258/68630 (17.9%)
+2026-11-12 08:56:56,584 WARNING braunschweig.data.cordon.plans [incommuters] middle departure (work): primary 51432/68630 (74.9%), fallback 17198/68630 (25.1%)
+2026-11-12 08:56:56,586 INFO braunschweig.data.cordon.plans [incommuters] middle activity duration imputation: duration pool 17198/17198 (100.0%), direct fixed assumption 0/17198 (0.0%); pool may include repaired anchors; empty-pool assumption 28800 seconds
+2026-11-12 08:56:56,588 WARNING braunschweig.data.cordon.plans [incommuters] home departure (work): primary 56372/68630 (82.1%), fallback 12258/68630 (17.9%)
+2026-11-12 08:56:56,590 INFO braunschweig.data.cordon.plans [incommuters] outbound duration imputation: duration pool 12258/12258 (100.0%), direct fixed assumption 0/12258 (0.0%); pool may include repaired anchors; empty-pool assumption 3600 seconds
+2026-11-12 08:56:56,591 WARNING braunschweig.data.cordon.plans [incommuters] home arrival (work): primary 51691/68630 (75.3%), fallback 16939/68630 (24.7%)
+2026-11-12 08:56:56,593 INFO braunschweig.data.cordon.plans [incommuters] return duration imputation: duration pool 16939/16939 (100.0%), direct fixed assumption 0/16939 (0.0%); pool may include repaired anchors; empty-pool assumption 3600 seconds
+2026-11-12 08:56:56,597 INFO braunschweig.synthesis.incommuters [braunschweig.incommuters] day bound 104400 s: 1108/68630 days moved earlier as a whole (1.6%), 0 still late
+2026-11-12 08:56:56,641 INFO braunschweig.data.cordon.plans [incommuters] middle arrival (work): primary 68630/68630 (100.0%), fallback 0/68630 (0.0%)
+2026-11-12 08:56:56,642 INFO braunschweig.data.cordon.plans [incommuters] middle departure (work): primary 68630/68630 (100.0%), fallback 0/68630 (0.0%)
+2026-11-12 08:56:56,642 INFO braunschweig.data.cordon.plans [incommuters] home departure (work): primary 68630/68630 (100.0%), fallback 0/68630 (0.0%)
+2026-11-12 08:56:56,643 INFO braunschweig.data.cordon.plans [incommuters] home arrival (work): primary 68630/68630 (100.0%), fallback 0/68630 (0.0%)
+2026-11-12 08:57:01,150 INFO braunschweig.synthesis.incommuters [incommuters] pt_subscription_type: 68630 in-commuter persons hard-coded to 'never_pt' (control-external source; the 14+ resident Kreis control does not see them -- see ADR-0099 for the rationale, issue #329)
+2026-11-12 08:57:01,774 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] per-Kreis powertrain marginal: primary source = Regionalstatistik 46251-02 fuel counts (kba_kreis_fuel.csv); real petrol:diesel ratio used per Kreis.
+2026-11-12 08:57:01,981 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] per-Kreis powertrain marginal coverage: 403 Kreise (8 ZGB + 395 non-ZGB).
+2026-11-12 08:57:01,981 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] per-Kreis powertrain marginal: all 403 Kreis(e) used real per-Kreis fuel mass (0 degenerate).
+2026-11-12 08:57:01,988 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Gemeinde EV tilt source (2026): column(s) ['bev_share', 'phev_share'] carry no positive value in any of the 113 row(s) -- treated as ABSENT, not as measured zeros. The tilt uses the combined electric share instead (ADR-0086).
+2026-11-12 08:57:01,997 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Gemeinde EV tilt source (2026): 0/113 row(s) carry a per-powertrain BEV/PHEV split; the rest tilt on the combined electric share.
+2026-11-12 08:57:02,029 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] gemeinde EV tilt: 2026 Kreis-mean denominator weights: primary (FZ27.17 private_total) 113/113 (100.0%), fallback (no FZ27.17 match, weight=1) 0 (0.0%).
+2026-11-12 08:57:02,044 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] gemeinde BEV/PHEV composition (FZ 27.17): primary 103/110 (93.6%), fallback 7 (6.4%) without a usable BEV:PHEV ratio (suppressed count or zero electric stock) -> composition factor 1.0 for them: 03154/BEIERSTEDT, 03154/JERXHEIM, 03154/QUERENHORST, 03158/DAHLUM, 03158/HEDEPER, 03158/UEHRDE, 03158/WINNIGSTEDT; not applicable 3 (sole Gemeinde of Kreis 03101, 03102, 03103: factor 1.0 by construction, in neither rate)
+2026-11-12 08:57:02,053 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] gemeinde EV tilt: 2026 source (kba_gemeinde_ev); 113 Gemeinden loaded; same-vintage (2026/2026) weighted Kreis-mean denominator (pure relative tilt, no EV level shift).
+2026-11-12 08:57:02,306 INFO braunschweig.data.kba.feasible_fuels [feasible_fuels] built feasibility for 1482 (brand, family) keys and 62 brand-level keys from HSN/TSN lookup.
+2026-11-12 08:57:03,553 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] per-Kreis euro joint (46251-03): building per-(Kreis, powertrain) age-euro IPF joints.
+2026-11-12 08:57:03,555 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] per-Kreis euro joint (46251-03): lazy index covers 403 Kreise x 8 powertrains (index built in 0.001 s). Individual (kreis, powertrain) IPF joints are computed and cached on first draw, not eagerly (Task B3 performance note: eager build measured ~15 s at ~400-Kreis scale).
+2026-11-12 08:57:03,658 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] model-fuel weight: active (623 models).
+2026-11-12 08:57:03,667 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] EV-income tilt: active (mid2023_antrieb_by_status.csv found).
+2026-11-12 08:57:04,513 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Euro-6 substage per-Kreis composition (kba_kreis_euro.csv, 403 Kreise): diesel cells 403/403 usable (0 all-zero/NaN -> national fallback); non-diesel-combustion cells 403/403 usable (0 all-zero/NaN -> national fallback).
+2026-11-12 08:57:04,525 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Euro-6 substage national fallback: 1 fuel(s) have an all-zero substage total (no Euro-6 registrations for that fuel) -> no national pmf for those fuels (falls through to plain euro6).
+2026-11-12 08:57:04,525 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Euro-6 substage model built: 1612 per-Kreis cell(s), 6 national fuel(s).
+2026-11-12 08:57:04,532 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] wohnmobile holder-age tilt: reference loaded (kba_wohnmobile_holder_age.csv).
+2026-11-12 08:57:05,132 INFO braunschweig.synthesis.vehicles.age_income [age_income] loaded 65 (segment,status) cells above MIN_CELL_WEIGHT=30 (of 65 total); 5 status-level pools; marginal P_MiD(age) computed
+2026-11-12 08:57:05,411 INFO braunschweig.synthesis.vehicles.wohnmobile_age [wohnmobile_age] fit: 58071/58285 cars with usable owner_age (99.6%), c=0.9994, untilted E[wm]=1.9823%; P_pop={'21_29': 0.164, '30_39': 0.2154, '40_49': 0.2244, '50_59': 0.271, '60_69': 0.1021, '70_79': 0.0077, '80_plus': 0.0018, 'up_to_20': 0.0136}; raw r={'up_to_20': 0.056, '21_29': 0.105, '30_39': 0.381, '40_49': 0.611, '50_59': 1.016, '60_69': 3.241, '70_79': 16.75, '80_plus': 15.852}
+2026-11-12 08:57:24,533 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de][in-commuters (origin outside ZGB)] BEV/PHEV composition aggregate correction: no Kreis needed a shift (this population's cars-per-Gemeinde distribution already matches the FZ 27.17 electric-stock weights).
+2026-11-12 08:57:24,560 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 01001 petrol UNREACHABLE (under target) -- target 0.5394, max achievable 0.5120 (residual -0.0274); too few cars whose feasible set allows it.
+2026-11-12 08:57:24,560 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 01001 diesel UNREACHABLE (under target) -- target 0.3265, max achievable 0.3099 (residual -0.0166); too few cars whose feasible set allows it.
+2026-11-12 08:57:24,560 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 01001 bev UNREACHABLE (over target) -- target 0.0479, min achievable 0.0929 (residual 0.0450); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:24,572 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 01004 petrol UNREACHABLE (under target) -- target 0.5949, max achievable 0.5789 (residual -0.0160); too few cars whose feasible set allows it.
+2026-11-12 08:57:24,573 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 01004 bev UNREACHABLE (over target) -- target 0.0235, min achievable 0.0500 (residual 0.0265); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:24,586 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 01053 petrol UNREACHABLE (under target) -- target 0.5867, max achievable 0.5685 (residual -0.0182); too few cars whose feasible set allows it.
+2026-11-12 08:57:24,586 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 01053 bev UNREACHABLE (over target) -- target 0.0374, min achievable 0.0620 (residual 0.0246); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:24,627 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 01060 bev UNREACHABLE (over target) -- target 0.0288, min achievable 0.0429 (residual 0.0140); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:24,938 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03357 petrol UNREACHABLE (under target) -- target 0.5275, max achievable 0.5159 (residual -0.0116); too few cars whose feasible set allows it.
+2026-11-12 08:57:24,938 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03357 bev UNREACHABLE (over target) -- target 0.0284, min achievable 0.0500 (residual 0.0216); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:24,979 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03401 petrol UNREACHABLE (over target) -- target 0.6224, min achievable 0.6387 (residual 0.0164); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:24,979 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03401 bev UNREACHABLE (under target) -- target 0.0253, max achievable 0.0000 (residual -0.0253); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,101 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05112 petrol UNREACHABLE (under target) -- target 0.6621, max achievable 0.6287 (residual -0.0334); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,101 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05112 diesel UNREACHABLE (under target) -- target 0.2344, max achievable 0.2226 (residual -0.0118); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,101 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05112 bev UNREACHABLE (over target) -- target 0.0170, min achievable 0.0667 (residual 0.0497); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,120 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05124 petrol UNREACHABLE (under target) -- target 0.6404, max achievable 0.6257 (residual -0.0147); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,120 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05124 bev UNREACHABLE (over target) -- target 0.0333, min achievable 0.0497 (residual 0.0164); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,126 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05154 petrol UNREACHABLE (under target) -- target 0.5488, max achievable 0.5370 (residual -0.0119); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,126 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05154 bev UNREACHABLE (over target) -- target 0.0391, min achievable 0.0600 (residual 0.0209); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,216 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05554 petrol UNREACHABLE (under target) -- target 0.5372, max achievable 0.5264 (residual -0.0108); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,217 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05554 bev UNREACHABLE (over target) -- target 0.0539, min achievable 0.0662 (residual 0.0123); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,240 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05570 bev UNREACHABLE (over target) -- target 0.0393, min achievable 0.0500 (residual 0.0107); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,279 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05774 petrol UNREACHABLE (under target) -- target 0.5786, max achievable 0.5623 (residual -0.0163); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,279 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05774 bev UNREACHABLE (over target) -- target 0.0395, min achievable 0.0667 (residual 0.0272); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,302 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05916 petrol UNREACHABLE (under target) -- target 0.7111, max achievable 0.6879 (residual -0.0232); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,302 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05916 bev UNREACHABLE (over target) -- target 0.0177, min achievable 0.0500 (residual 0.0323); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,383 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 06435 petrol UNREACHABLE (under target) -- target 0.6065, max achievable 0.5932 (residual -0.0133); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,383 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 06435 bev UNREACHABLE (over target) -- target 0.0285, min achievable 0.0500 (residual 0.0215); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,474 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 07339 petrol UNREACHABLE (under target) -- target 0.5946, max achievable 0.5562 (residual -0.0384); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,474 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 07339 diesel UNREACHABLE (under target) -- target 0.2846, max achievable 0.2662 (residual -0.0184); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,474 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 07339 bev UNREACHABLE (over target) -- target 0.0377, min achievable 0.1000 (residual 0.0623); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,498 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08116 petrol UNREACHABLE (under target) -- target 0.6040, max achievable 0.5912 (residual -0.0128); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,498 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08116 bev UNREACHABLE (over target) -- target 0.0547, min achievable 0.0729 (residual 0.0181); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,505 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08117 petrol UNREACHABLE (under target) -- target 0.6179, max achievable 0.5781 (residual -0.0398); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,505 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08117 diesel UNREACHABLE (under target) -- target 0.2738, max achievable 0.2561 (residual -0.0176); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,505 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08117 bev UNREACHABLE (over target) -- target 0.0380, min achievable 0.1000 (residual 0.0620); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,537 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08212 petrol UNREACHABLE (under target) -- target 0.5778, max achievable 0.5638 (residual -0.0139); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,537 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08212 bev UNREACHABLE (over target) -- target 0.0519, min achievable 0.0750 (residual 0.0231); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,550 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08221 petrol UNREACHABLE (under target) -- target 0.5696, max achievable 0.4898 (residual -0.0798); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,550 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08221 diesel UNREACHABLE (under target) -- target 0.2590, max achievable 0.2227 (residual -0.0363); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,550 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08221 bev UNREACHABLE (over target) -- target 0.0651, min achievable 0.1868 (residual 0.1217); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,550 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08221 hybrid UNREACHABLE (under target) -- target 0.0721, max achievable 0.0620 (residual -0.0101); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,567 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08311 petrol UNREACHABLE (under target) -- target 0.5583, max achievable 0.5269 (residual -0.0314); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,567 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08311 diesel UNREACHABLE (under target) -- target 0.3153, max achievable 0.2976 (residual -0.0178); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,567 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08311 gas UNREACHABLE (over target) -- target 0.0086, min achievable 0.0500 (residual 0.0414); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,567 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08311 bev UNREACHABLE (over target) -- target 0.0374, min achievable 0.0500 (residual 0.0126); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,573 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08315 bev UNREACHABLE (over target) -- target 0.0294, min achievable 0.0409 (residual 0.0115); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,590 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08326 petrol UNREACHABLE (under target) -- target 0.5689, max achievable 0.5382 (residual -0.0307); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,590 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08326 diesel UNREACHABLE (under target) -- target 0.2838, max achievable 0.2685 (residual -0.0153); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,590 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08326 bev UNREACHABLE (over target) -- target 0.0484, min achievable 0.1000 (residual 0.0516); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,596 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08415 petrol UNREACHABLE (under target) -- target 0.6171, max achievable 0.5076 (residual -0.1095); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,596 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08415 diesel UNREACHABLE (under target) -- target 0.2772, max achievable 0.2280 (residual -0.0492); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,596 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 08415 bev UNREACHABLE (over target) -- target 0.0272, min achievable 0.2000 (residual 0.1728); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,623 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09174 petrol UNREACHABLE (over target) -- target 0.5940, min achievable 0.6272 (residual 0.0332); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,623 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09174 diesel UNREACHABLE (over target) -- target 0.2926, min achievable 0.3090 (residual 0.0164); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,623 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09174 bev UNREACHABLE (under target) -- target 0.0362, max achievable 0.0000 (residual -0.0362); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,623 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09174 phev UNREACHABLE (under target) -- target 0.0166, max achievable 0.0000 (residual -0.0166); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,661 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09187 petrol UNREACHABLE (under target) -- target 0.5802, max achievable 0.5421 (residual -0.0381); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,662 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09187 diesel UNREACHABLE (under target) -- target 0.3201, max achievable 0.2991 (residual -0.0210); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,662 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09187 bev UNREACHABLE (over target) -- target 0.0318, min achievable 0.0869 (residual 0.0550); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,698 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09574 petrol UNREACHABLE (under target) -- target 0.6108, max achievable 0.6004 (residual -0.0104); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,698 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09574 bev UNREACHABLE (over target) -- target 0.0435, min achievable 0.0600 (residual 0.0165); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,708 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09671 petrol UNREACHABLE (under target) -- target 0.6212, max achievable 0.5765 (residual -0.0447); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,708 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09671 diesel UNREACHABLE (under target) -- target 0.2870, max achievable 0.2664 (residual -0.0207); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,708 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09671 gas UNREACHABLE (over target) -- target 0.0070, min achievable 0.0234 (residual 0.0164); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,708 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09671 bev UNREACHABLE (over target) -- target 0.0230, min achievable 0.0766 (residual 0.0535); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,743 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 10045 petrol UNREACHABLE (under target) -- target 0.6232, max achievable 0.6126 (residual -0.0106); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,743 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 10045 bev UNREACHABLE (over target) -- target 0.0333, min achievable 0.0500 (residual 0.0167); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,804 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 12061 petrol UNREACHABLE (under target) -- target 0.6131, max achievable 0.6021 (residual -0.0110); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,804 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 12061 bev UNREACHABLE (over target) -- target 0.0326, min achievable 0.0500 (residual 0.0174); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,838 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 12068 petrol UNREACHABLE (under target) -- target 0.6184, max achievable 0.5840 (residual -0.0344); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,838 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 12068 diesel UNREACHABLE (under target) -- target 0.3140, max achievable 0.2966 (residual -0.0175); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,838 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 12068 bev UNREACHABLE (over target) -- target 0.0136, min achievable 0.0667 (residual 0.0530); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,851 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 12070 bev UNREACHABLE (over target) -- target 0.0144, min achievable 0.0250 (residual 0.0106); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,878 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13071 petrol UNREACHABLE (under target) -- target 0.6081, max achievable 0.5798 (residual -0.0283); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,878 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13071 diesel UNREACHABLE (under target) -- target 0.3151, max achievable 0.3004 (residual -0.0147); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,878 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13071 gas UNREACHABLE (over target) -- target 0.0062, min achievable 0.0195 (residual 0.0134); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,878 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13071 bev UNREACHABLE (over target) -- target 0.0149, min achievable 0.0472 (residual 0.0323); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,883 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13072 petrol UNREACHABLE (under target) -- target 0.5767, max achievable 0.5591 (residual -0.0177); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,884 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13072 diesel UNREACHABLE (under target) -- target 0.3341, max achievable 0.3239 (residual -0.0102); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,884 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13072 bev UNREACHABLE (over target) -- target 0.0197, min achievable 0.0500 (residual 0.0303); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,889 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13073 petrol UNREACHABLE (under target) -- target 0.6103, max achievable 0.5717 (residual -0.0387); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,889 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13073 diesel UNREACHABLE (under target) -- target 0.3147, max achievable 0.2948 (residual -0.0199); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,889 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13073 bev UNREACHABLE (over target) -- target 0.0122, min achievable 0.0750 (residual 0.0628); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,899 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13075 petrol UNREACHABLE (under target) -- target 0.6282, max achievable 0.6172 (residual -0.0110); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,900 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13075 bev UNREACHABLE (over target) -- target 0.0141, min achievable 0.0262 (residual 0.0121); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,915 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14521 petrol UNREACHABLE (under target) -- target 0.6706, max achievable 0.6312 (residual -0.0394); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,915 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14521 diesel UNREACHABLE (under target) -- target 0.2610, max achievable 0.2456 (residual -0.0153); too few cars whose feasible set allows it.
+2026-11-12 08:57:25,915 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14521 gas UNREACHABLE (over target) -- target 0.0047, min achievable 0.0209 (residual 0.0161); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,915 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14521 bev UNREACHABLE (over target) -- target 0.0123, min achievable 0.0541 (residual 0.0418); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:25,945 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14626 petrol UNREACHABLE (under target) -- target 0.6940, max achievable 0.6838 (residual -0.0102); too few cars whose feasible set allows it.
+2026-11-12 08:57:26,228 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 15091 gas UNREACHABLE (over target) -- target 0.0064, min achievable 0.0167 (residual 0.0103); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:26,249 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16055 petrol UNREACHABLE (under target) -- target 0.6320, max achievable 0.5457 (residual -0.0863); too few cars whose feasible set allows it.
+2026-11-12 08:57:26,250 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16055 diesel UNREACHABLE (under target) -- target 0.2706, max achievable 0.2337 (residual -0.0370); too few cars whose feasible set allows it.
+2026-11-12 08:57:26,250 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16055 bev UNREACHABLE (over target) -- target 0.0259, min achievable 0.0709 (residual 0.0450); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:26,250 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16055 hybrid UNREACHABLE (over target) -- target 0.0472, min achievable 0.1291 (residual 0.0819); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:26,268 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16066 petrol UNREACHABLE (under target) -- target 0.6138, max achievable 0.5860 (residual -0.0278); too few cars whose feasible set allows it.
+2026-11-12 08:57:26,268 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16066 diesel UNREACHABLE (under target) -- target 0.3063, max achievable 0.2924 (residual -0.0139); too few cars whose feasible set allows it.
+2026-11-12 08:57:26,268 WARNING braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16066 gas UNREACHABLE (over target) -- target 0.0048, min achievable 0.0500 (residual 0.0452); the mask forces this powertrain on too many cars to scale it down further.
+2026-11-12 08:57:26,422 WARNING braunschweig.synthesis.vehicles.age_income [age_income] missing/low-base (segment,status) cell for ('wohnmobile', 'high') -> (status)-only pool fallback; further draws of this cell counted silently
+2026-11-12 08:57:26,424 WARNING braunschweig.synthesis.vehicles.age_income [age_income] missing/low-base (segment,status) cell for ('wohnmobile', 'very_high') -> (status)-only pool fallback; further draws of this cell counted silently
+2026-11-12 08:57:26,424 WARNING braunschweig.synthesis.vehicles.age_income [age_income] missing/low-base (segment,status) cell for ('wohnmobile', 'medium') -> (status)-only pool fallback; further draws of this cell counted silently
+2026-11-12 08:57:26,622 WARNING braunschweig.synthesis.vehicles.age_income [age_income] missing/low-base (segment,status) cell for ('wohnmobile', 'very_low') -> (status)-only pool fallback; further draws of this cell counted silently
+2026-11-12 08:57:27,618 WARNING braunschweig.synthesis.vehicles.age_income [age_income] missing/low-base (segment,status) cell for ('wohnmobile', 'low') -> (status)-only pool fallback; further draws of this cell counted silently
+2026-11-12 08:57:58,168 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de][in-commuters (origin outside ZGB)] powertrain Kreis lookup: primary 58285/58285 (100.0%), fallback 0 (0.0%)
+2026-11-12 08:57:58,168 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de][in-commuters (origin outside ZGB)] powertrain Gemeinde tilt: primary 0/0 (0.0%), fallback 0 (0.0%); not applicable 58285 (no home-Gemeinde label and no Gemeinde table rows for the car's Kreis, in neither rate)
+2026-11-12 08:57:58,168 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de][in-commuters (origin outside ZGB)] powertrain grid tilt: primary 0/0 (0.0%), fallback 0 (0.0%)
+2026-11-12 08:57:58,168 INFO braunschweig.synthesis.vehicles.age_income [age_income] tilt: primary 57091/58285 (98.0%), fallback 1194 (2.0%)
+2026-11-12 08:57:58,168 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] EV-income tilt: primary 58285/58285 (100.0%), fallback 0 (0.0%)
+2026-11-12 08:57:58,168 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] Euro-6 substage draw: per-Kreis 26556/26556 (100.0%), national fallback 0 (0.0%), plain-euro6 fallback (no substage data) 0 (0.0%).
+2026-11-12 08:57:58,168 INFO braunschweig.synthesis.vehicles.wohnmobile_age [wohnmobile_age][in-commuters (origin outside ZGB)] holder-age tilt: primary 58071/58285 (99.6%), fallback 214 (0.4%), guard hits 0 (exactness caveat when > 0), c=0.9994
+2026-11-12 08:57:58,168 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] HBEFA size map: primary 58285/58285 (100.0%), fallback 0 (0.0%)
+2026-11-12 08:57:58,168 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] brand/model draw: primary 58285/58285 (100.0%), fallback 0 (0.0%)
+2026-11-12 08:57:58,168 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] sonstige redistribution (consistency_v2): 1413/58285 vehicles (2.4%) redistributed to modelled segments.
+2026-11-12 08:57:58,174 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] model-feasible powertrain mask (consistency_v2, Bug 2): 57919/58285 vehicles (99.4%) model-constrained (tier1 exact-family=51188, tier2 brand-fallback=6731); 5 (0.0%) no-overlap fallbacks (unmasked pmf kept).
+2026-11-12 08:58:00,644 INFO braunschweig.synthesis.vehicles.fleet_validation [fleet_validation] powertrain: max dev 0.12pp (band 0.81pp) -> ok
+2026-11-12 08:58:00,647 INFO braunschweig.synthesis.vehicles.fleet_validation [fleet_validation] age_band: max dev 0.22pp (band 0.76pp) -> ok
+2026-11-12 08:58:00,650 INFO braunschweig.synthesis.vehicles.fleet_validation [fleet_validation] euro_class: max dev 0.28pp (band 0.83pp) -> ok
+2026-11-12 08:58:00,656 INFO braunschweig.synthesis.vehicles.fleet_validation [fleet_validation] euro6_substage: max dev 0.22pp (band 0.82pp) -> ok
+2026-11-12 08:58:00,661 INFO braunschweig.synthesis.vehicles.fleet_validation [fleet_validation] segment: max dev 0.27pp (band 0.70pp) -> ok
+2026-11-12 08:58:00,661 INFO braunschweig.synthesis.vehicles.fleet_sampling_de [fleet_de] realised-margin validation (consistency_v2): any_flagged=False
+2026-11-12 08:58:00,729 INFO braunschweig.synthesis.vehicles.fleet_validation [wohnmobile_holder_age] aggregate: realised 2.0486% vs effective 2.0306% (dev +0.018pp, band 0.234pp) -> ok
+2026-11-12 08:58:00,729 INFO braunschweig.synthesis.vehicles.fleet_validation [wohnmobile_holder_age] aggregate vs untilted (reported only, carries the sonstige-redraw leak): 1.9823% (dev_untilted +0.066pp).
+2026-11-12 08:58:00,737 INFO braunschweig.synthesis.vehicles.fleet_validation [wohnmobile_holder_age] composition over 1189 motorhomes: max dev 1.75pp -> ok
+[braunschweig.synthesis.incommuters] 68630 in-commuters injected (10345 PT, rest car)
+2026-11-12 08:58:01,349 INFO replay_incommuter_donor_draw === braunschweig.synthesis.incommuters finished in 230 s ===
+2026-11-12 08:58:01,349 INFO replay_incommuter_donor_draw [replay] stage input stems: primary (run log) 13/14 (93%), fallback (only cached variant) 1 (7%)
+2026-11-12 08:58:02,300 INFO replay_incommuter_donor_draw === replay braunschweig.synthesis.student_incommuters (run stem braunschweig.synthesis.student_incommuters__741d29509ea1724583f3da017b2842d9) ===
+2026-11-12 08:58:02,460 INFO replay_incommuter_donor_draw loaded braunschweig.data.schools.university_facilities (braunschweig.data.schools.university_facilities__deeccc1639a27b53658fe5b092a38615) in 0 s
+2026-11-12 08:58:02,469 INFO replay_incommuter_donor_draw loaded data.spatial.municipalities (data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421) in 0 s
+2026-11-12 08:58:03,934 INFO replay_incommuter_donor_draw loaded braunschweig.locations.synthesis.replacement_education_gravity (braunschweig.locations.synthesis.replacement_education_gravity__73fbbf444ee75cf740778dff43e520ff) in 1 s
+2026-11-12 08:58:06,348 INFO replay_incommuter_donor_draw loaded braunschweig.popsim.enriched_adapter (braunschweig.popsim.enriched_adapter__451bf968c790012e5fcf2ace9efddefe) in 2 s
+2026-11-12 08:58:06,350 INFO replay_incommuter_donor_draw loaded braunschweig.synthesis.cordon_gates (braunschweig.synthesis.cordon_gates__11eceeb40f1c607cc7669833cb38e93c) in 0 s
+2026-11-12 08:58:06,517 WARNING braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03101: residents 16671 exceed scaled enrollment 15627 -> in_commuters floored to 0 (check university slope)
+2026-11-12 08:58:06,517 INFO braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03101: enrollment(scaled) 15627, residents 16671, in_commuters 0
+2026-11-12 08:58:06,518 INFO braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03102: enrollment(scaled) 3087, residents 1440, in_commuters 1647
+2026-11-12 08:58:06,518 WARNING braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03103: residents 562 exceed scaled enrollment 108 -> in_commuters floored to 0 (check university slope)
+2026-11-12 08:58:06,518 INFO braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03103: enrollment(scaled) 108, residents 562, in_commuters 0
+2026-11-12 08:58:06,518 INFO braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03153: enrollment(scaled) 2811, residents 1076, in_commuters 1735
+2026-11-12 08:58:06,518 INFO braunschweig.data.education.student_incommuter_counts [student_incommuter_counts] commune 03158: enrollment(scaled) 6178, residents 3386, in_commuters 2792
+[braunschweig.population] DESTATIS cells: primary 6664/6664 (100.0%), skipped 0 (0.0%)
+[student_incommuter_origin:03102] primary 1647/1647 (100.0%), nearest-campus fallback 0 (0.0%)
+[student_incommuter_origin:03153] primary 1735/1735 (100.0%), nearest-campus fallback 0 (0.0%)
+[student_incommuter_origin:03158] primary 2792/2792 (100.0%), nearest-campus fallback 0 (0.0%)
+2026-11-12 08:58:27,457 INFO braunschweig.data.cordon.incommuter_origins [incommuter_origins] in-ring primary 6164/6174 (99.8%), far (caller fallback) 10 (0.2%)
+2026-11-12 08:58:27,461 INFO braunschweig.synthesis.student_incommuters [student_incommuters] home placement: in-ring primary 6164/6174 (99.8%), gate fallback 10/6174 (0.2%)
+2026-11-12 08:58:27,542 INFO braunschweig.synthesis.student_incommuters [student_incommuters] agent education distance for the donor match: primary 6174/6174 (100.0%), fallback 0 (0.0%) on the own gate (no real home, no Gemeinde of the origin Kreis; a lower bound of the distance)
+2026-11-12 08:58:27,802 INFO braunschweig.synthesis.student_incommuters [student_incommuters] donor age: primary 4291/18852 student donors (22.76%), excluded 14561: 14561 younger than 18, 0 without an age
+2026-11-12 08:58:27,812 INFO braunschweig.synthesis.incommuters [incommuters] donor eligibility: primary 4039/4291 commuter donors (94.13%), excluded 252: 5 without a household record, 163 without a weekday reporting day, 0 without a positive weight, 84 without a commute distance
+2026-11-12 08:58:30,312 INFO braunschweig.data.cordon.donor_draw [braunschweig.cordon.donor_draw] 6174 agents; tilted primary 6174/6174 (100.0%), no Kreis scale 0 (0.0%), target not reached 0 (0.0%); commute window primary 6174/6174 (100.0%), whole pool 0 (0.0%), widest window ratio 22.00; smallest effective size 228.6
+2026-11-12 08:58:34,975 INFO braunschweig.data.cordon.plans [braunschweig.cordon.plans] in-commuter day bound 104400 s: primary 6162/6174 fit at the first draw, re-drawn 12 (0.2%, max attempts used 1/20), still unfit 0
+2026-11-12 08:58:34,993 WARNING braunschweig.data.cordon.plans [incommuters] middle arrival (education): primary 6144/6174 (99.5%), fallback 30/6174 (0.5%)
+2026-11-12 08:58:34,994 WARNING braunschweig.data.cordon.plans [incommuters] middle departure (education): primary 5851/6174 (94.8%), fallback 323/6174 (5.2%)
+2026-11-12 08:58:34,995 INFO braunschweig.data.cordon.plans [incommuters] middle activity duration imputation: duration pool 323/323 (100.0%), direct fixed assumption 0/323 (0.0%); pool may include repaired anchors; empty-pool assumption 21600 seconds
+2026-11-12 08:58:34,995 WARNING braunschweig.data.cordon.plans [incommuters] home departure (education): primary 6144/6174 (99.5%), fallback 30/6174 (0.5%)
+2026-11-12 08:58:34,996 INFO braunschweig.data.cordon.plans [incommuters] outbound duration imputation: duration pool 30/30 (100.0%), direct fixed assumption 0/30 (0.0%); pool may include repaired anchors; empty-pool assumption 3600 seconds
+2026-11-12 08:58:34,996 WARNING braunschweig.data.cordon.plans [incommuters] home arrival (education): primary 5793/6174 (93.8%), fallback 381/6174 (6.2%)
+2026-11-12 08:58:34,996 INFO braunschweig.data.cordon.plans [incommuters] return duration imputation: duration pool 381/381 (100.0%), direct fixed assumption 0/381 (0.0%); pool may include repaired anchors; empty-pool assumption 3600 seconds
+2026-11-12 08:58:34,998 INFO braunschweig.synthesis.student_incommuters [student_incommuters] day bound 104400 s: 40/6174 days moved earlier as a whole (0.6%), 0 still late
+2026-11-12 08:58:35,396 INFO braunschweig.data.cordon.plans [incommuters] middle arrival (education): primary 6174/6174 (100.0%), fallback 0/6174 (0.0%)
+2026-11-12 08:58:35,397 INFO braunschweig.data.cordon.plans [incommuters] middle departure (education): primary 6174/6174 (100.0%), fallback 0/6174 (0.0%)
+2026-11-12 08:58:35,397 INFO braunschweig.data.cordon.plans [incommuters] home departure (education): primary 6174/6174 (100.0%), fallback 0/6174 (0.0%)
+2026-11-12 08:58:35,397 INFO braunschweig.data.cordon.plans [incommuters] home arrival (education): primary 6174/6174 (100.0%), fallback 0/6174 (0.0%)
+2026-11-12 08:58:35,829 INFO braunschweig.synthesis.student_incommuters [student_incommuters] pt_subscription_type: 6174 in-commuter persons hard-coded to 'never_pt' (control-external source; the 14+ resident Kreis control does not see them -- see ADR-0099 for the rationale, issue #329)
+2026-11-12 08:58:35,894 INFO braunschweig.synthesis.student_incommuters [student_incommuters] injected 6174 students across 3 university communes: {'03102': 1647, '03153': 1735, '03158': 2792}
+2026-11-12 08:58:35,917 INFO replay_incommuter_donor_draw === braunschweig.synthesis.student_incommuters finished in 34 s ===
+2026-11-12 08:58:35,918 INFO replay_incommuter_donor_draw [replay] stage input stems: primary (run log) 10/10 (100%), fallback (only cached variant) 0 (0%)
+
+pt timetable check SWITCHED OFF in both arms (braunschweig.incommuters.pt_connection_check.enabled: false); the cached run had it on, so modes, times, stations and fleet of the replay are not those of the cached run
+seed 1234, sampling rate 1.0; old 9ae87aad3dd427e71a95beb608a40d549284a64e, new 36de0e9162486ceafcf47b11707102b610102cc8; 2026-11-12T07:45:41+00:00
+identity braunschweig.synthesis.incommuters: passed; donor id identical 100.00% of the agents with an equal mode; limit: The cached run had the pt check on; the replay has it off. Compared exactly: agent count, person ids, origin Kreis, donor ids of agents with the same mode, and every persons column except the mode-dependent ones and the income columns (reported, not gating: RNG-dependent after the pt check, see rng_dependent_income_columns). NOT compared: trips, activities, locations, vehicles of agents the pt check changed (mode, day shift, station), and the fleet draw (random numbers consumed by the re-balancing).
+identity braunschweig.synthesis.incommuters: RNG-dependent after the pt check: not comparable row by row (not gating): {"households": {"columns": {"high_income": {"identical_share_pct": 100.0}, "household_income": {"identical_share_pct": 0.048083928311234155}, "household_income_eur": {"identical_share_pct": 0.048083928311234155}}, "household_income_eur_cached_eur_per_month": {"mean": 2916.1181844674343, "n_finite": 68630, "p10": 2191.0, "p50": 2852.0, "p90": 3723.0}, "household_income_eur_replay_eur_per_month": {"mean": 2915.239661955413, "n_finite": 68630, "p10": 2192.0, "p50": 2850.0, "p90": 3719.0}}, "persons": {"columns": {"high_income": {"identical_share_pct": 100.0}, "household_income": {"identical_share_pct": 0.048083928311234155}, "household_income_eur": {"identical_share_pct": 0.048083928311234155}}, "household_income_eur_cached_eur_per_month": {"mean": 2916.1181844674343, "n_finite": 68630, "p10": 2191.0, "p50": 2852.0, "p90": 3723.0}, "household_income_eur_replay_eur_per_month": {"mean": 2915.239661955413, "n_finite": 68630, "p10": 2192.0, "p50": 2850.0, "p90": 3719.0}}}
+identity braunschweig.synthesis.student_incommuters: passed; donor id identical 100.00% of the agents with an equal mode; limit: The cached run had the pt check on; the replay has it off. Compared exactly: agent count, person ids, origin Kreis, donor ids of agents with the same mode, and every persons column except the mode-dependent ones and the income columns (reported, not gating: RNG-dependent after the pt check, see rng_dependent_income_columns). NOT compared: trips, activities, locations, vehicles of agents the pt check changed (mode, day shift, station), and the fleet draw (random numbers consumed by the re-balancing).
+identity braunschweig.synthesis.student_incommuters: RNG-dependent after the pt check: not comparable row by row (not gating): {"households": {"columns": {"high_income": {"identical_share_pct": 100.0}, "household_income": {"identical_share_pct": 100.0}, "household_income_eur": {"identical_share_pct": 100.0}}, "household_income_eur_cached_eur_per_month": {"mean": 3000.0, "n_finite": 6174, "p10": 3000.0, "p50": 3000.0, "p90": 3000.0}, "household_income_eur_replay_eur_per_month": {"mean": 3000.0, "n_finite": 6174, "p10": 3000.0, "p50": 3000.0, "p90": 3000.0}}, "persons": {"columns": {"high_income": {"identical_share_pct": 100.0}, "household_income": {"identical_share_pct": 100.0}, "household_income_eur": {"identical_share_pct": 100.0}}, "household_income_eur_cached_eur_per_month": {"mean": 3000.0, "n_finite": 6174, "p10": 3000.0, "p50": 3000.0, "p90": 3000.0}, "household_income_eur_replay_eur_per_month": {"mean": 3000.0, "n_finite": 6174, "p10": 3000.0, "p50": 3000.0, "p90": 3000.0}}}
+
+=== braunschweig.synthesis.incommuters ===
+metric                                      unit                           old               new
+n_agents                                    agents                       68630             68630
+departure_home_h.n_finite                   agents                       68630             68630
+departure_home_h.mean                       h of the day                 5.206             5.037
+departure_home_h.p10                        h of the day                 2.188             1.953
+departure_home_h.p50                        h of the day                 4.917             4.731
+departure_home_h.p90                        h of the day                 8.187             7.945
+arrival_first_activity_h.n_finite           agents                       68630             68630
+arrival_first_activity_h.mean               h of the day                 8.396             8.214
+arrival_first_activity_h.p10                h of the day                 6.333             6.000
+arrival_first_activity_h.p50                h of the day                 7.833             7.667
+arrival_first_activity_h.p90                h of the day                11.083            10.500
+mode_share_pct.car                          %                           84.926            84.926
+mode_share_pct.pt                           %                           15.074            15.074
+mode_share_pct.n_missing                    agents                           0                 0
+age_years.n_finite                          agents                       68630             68630
+age_years.mean                              years                       46.624            43.532
+age_years.p10                               years                       29.000            25.000
+age_years.p50                               years                       48.000            44.000
+age_years.p90                               years                       61.000            60.000
+age_class_share_pct.00_17                   %                            0.243             0.382
+age_class_share_pct.18_20                   %                            1.416             1.357
+age_class_share_pct.21_29                   %                            9.350            16.400
+age_class_share_pct.30_39                   %                           19.475            21.393
+age_class_share_pct.40_49                   %                           21.699            22.331
+age_class_share_pct.50_59                   %                           31.862            26.934
+age_class_share_pct.60_69                   %                           15.235            10.280
+age_class_share_pct.70_plus                 %                            0.718             0.924
+age_class_share_pct.n_missing               agents                           0                 0
+sex_share_pct.female                        %                           46.877            27.443
+sex_share_pct.male                          %                           53.123            72.557
+sex_share_pct.n_missing                     agents                           0                 0
+household_income_eur.n_finite               agents                       68630             68630
+household_income_eur.mean                   EUR per month             2915.240          4888.768
+household_income_eur.p10                    EUR per month             2192.000          2290.000
+household_income_eur.p50                    EUR per month             2850.000          4768.000
+household_income_eur.p90                    EUR per month             3719.000          6976.100
+economic_status_share_pct                   %                    not available     not available
+household_size_share_pct.1                  %                          100.000            19.825
+household_size_share_pct.n_missing          agents                           0                 0
+high_income_share_pct                       %                            0.000            47.419
+n_distinct_donors                           donors                       46278              9283
+largest_agents_per_donor                    agents per donor                 7               553
+fleet_segment_n_vehicles                    vehicles                     58285             58285
+fleet_segment_share_pct.gelaendewagen       %                            6.319             6.739
+fleet_segment_share_pct.grossraum_vans      %                            3.788             3.752
+fleet_segment_share_pct.kleinwagen          %                           20.540            17.351
+fleet_segment_share_pct.kompaktklasse       %                           22.538            23.584
+fleet_segment_share_pct.mini_vans           %                            4.401             3.486
+fleet_segment_share_pct.minis               %                            7.896             6.679
+fleet_segment_share_pct.mittelklasse        %                           10.003            11.795
+fleet_segment_share_pct.obere_mittelklasse  %                            3.123             4.028
+fleet_segment_share_pct.oberklasse          %                            0.482             0.613
+fleet_segment_share_pct.sportwagen          %                            2.079             1.844
+fleet_segment_share_pct.suv                 %                           12.223            13.638
+fleet_segment_share_pct.utilities           %                            4.596             4.440
+fleet_segment_share_pct.wohnmobile          %                            2.013             2.049
+fleet_powertrain_n_vehicles                 vehicles                     58285             58285
+fleet_powertrain_share_pct.bev              %                            2.819             2.990
+fleet_powertrain_share_pct.diesel           %                           28.518            28.343
+fleet_powertrain_share_pct.gas              %                            0.738             0.781
+fleet_powertrain_share_pct.hybrid           %                            4.406             4.627
+fleet_powertrain_share_pct.other            %                            0.026             0.021
+fleet_powertrain_share_pct.petrol           %                           61.951            61.544
+fleet_powertrain_share_pct.phev             %                            1.542             1.693
+economic_status_source                      text                 not available  MiD donor persons through hts_id
+economic_status_share_pct.high              %                    not available            47.278
+economic_status_share_pct.low               %                    not available             5.785
+economic_status_share_pct.medium            %                    not available            24.867
+economic_status_share_pct.very_high         %                    not available            19.123
+economic_status_share_pct.very_low          %                    not available             2.948
+economic_status_share_pct.n_missing         agents               not available                 0
+household_size_share_pct.2                  %                    not available            27.565
+household_size_share_pct.3                  %                    not available            20.857
+household_size_share_pct.4                  %                    not available            20.256
+household_size_share_pct.5                  %                    not available             9.742
+household_size_share_pct.6                  %                    not available             1.754
+donor_draw [old]: "not available"
+day_bound [old]: {"bound_s": 104400.0, "n": 68630, "n_attempts_max": 1, "n_days_moved": 621, "n_redrawn": 103, "n_still_late": 0, "n_unfit": 0}
+donor_draw [new]: {"distance_matched": true, "max_window_ratio": 22.031823745410037, "min_effective_size": 579.1307140087655, "n_agents": 68630, "n_target_not_reached": 0, "n_whole_pool_window": 0, "n_without_kreis_scale": 0, "tilted": true}
+day_bound [new]: {"bound_s": 104400.0, "n": 68630, "n_attempts_max": 1, "n_days_moved": 1108, "n_redrawn": 31, "n_still_late": 0, "n_unfit": 0}
+
+=== braunschweig.synthesis.student_incommuters ===
+metric                               unit                           old               new
+n_agents                             agents                        6174              6174
+departure_home_h.n_finite            agents                        6174              6174
+departure_home_h.mean                h of the day                 6.319             6.908
+departure_home_h.p10                 h of the day                 5.084             5.000
+departure_home_h.p50                 h of the day                 6.042             6.308
+departure_home_h.p90                 h of the day                 7.651             9.740
+arrival_first_activity_h.n_finite    agents                        6174              6174
+arrival_first_activity_h.mean        h of the day                 8.147             8.738
+arrival_first_activity_h.p10         h of the day                 7.333             7.167
+arrival_first_activity_h.p50         h of the day                 7.750             8.000
+arrival_first_activity_h.p90         h of the day                 9.383            11.558
+mode_share_pct.car                   %                           84.613            84.159
+mode_share_pct.pt                    %                           15.387            15.841
+mode_share_pct.n_missing             agents                           0                 0
+age_years.n_finite                   agents                        6174              6174
+age_years.mean                       years                       13.992            21.994
+age_years.p10                        years                        7.000            18.000
+age_years.p50                        years                       13.000            21.000
+age_years.p90                        years                       22.000            26.000
+age_class_share_pct.00_17            %                           77.033     not available
+age_class_share_pct.18_20            %                           10.415            46.550
+age_class_share_pct.21_29            %                           11.354            47.214
+age_class_share_pct.30_39            %                            0.761             4.098
+age_class_share_pct.40_49            %                            0.292             1.879
+age_class_share_pct.50_59            %                            0.130             0.259
+age_class_share_pct.60_69            %                            0.016     not available
+age_class_share_pct.n_missing        agents                           0                 0
+sex_share_pct.female                 %                           47.700            44.914
+sex_share_pct.male                   %                           52.300            55.086
+sex_share_pct.n_missing              agents                           0                 0
+household_income_eur.n_finite        agents                        6174              6174
+household_income_eur.mean            EUR per month             3000.000          4442.817
+household_income_eur.p10             EUR per month             3000.000          1355.000
+household_income_eur.p50             EUR per month             3000.000          4437.000
+household_income_eur.p90             EUR per month             3000.000          6800.800
+economic_status_share_pct            %                    not available     not available
+household_size_share_pct.1           %                          100.000            11.111
+household_size_share_pct.n_missing   agents                           0                 0
+high_income_share_pct                %                            0.000            42.047
+n_distinct_donors                    donors                        5286              1091
+largest_agents_per_donor             agents per donor                 5               127
+fleet_segment_share_pct              %                    not available     not available
+fleet_powertrain_share_pct           %                    not available     not available
+economic_status_source               text                 not available  MiD donor persons through hts_id
+economic_status_share_pct.high       %                    not available            35.633
+economic_status_share_pct.low        %                    not available            13.881
+economic_status_share_pct.medium     %                    not available            26.936
+economic_status_share_pct.very_high  %                    not available             9.248
+economic_status_share_pct.very_low   %                    not available            14.302
+economic_status_share_pct.n_missing  agents               not available                 0
+household_size_share_pct.2           %                    not available            18.303
+household_size_share_pct.3           %                    not available            27.600
+household_size_share_pct.4           %                    not available            21.607
+household_size_share_pct.5           %                    not available            16.229
+household_size_share_pct.6           %                    not available             5.151
+donor_draw [old]: "not available"
+day_bound [old]: {"bound_s": 104400.0, "n": 6174, "n_attempts_max": 1, "n_days_moved": 3, "n_redrawn": 10, "n_still_late": 0, "n_unfit": 0}
+donor_draw [new]: {"distance_matched": true, "max_window_ratio": 22.0, "min_effective_size": 228.5523982569293, "n_agents": 6174, "n_target_not_reached": 0, "n_whole_pool_window": 0, "n_without_kreis_scale": 0, "tilted": true}
+day_bound [new]: {"bound_s": 104400.0, "n": 6174, "n_attempts_max": 1, "n_days_moved": 40, "n_redrawn": 12, "n_still_late": 0, "n_unfit": 0}
+
+written: /home/felix/incommuter_replay_20261111/out4/summary.json

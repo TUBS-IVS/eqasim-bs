@@ -4,13 +4,16 @@ import logging
 import os
 from pathlib import Path
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pytest
+from shapely.geometry import Point
 
 from braunschweig.data.cordon import plans
 from braunschweig.data.hts import mid_donor
 from braunschweig.synthesis import incommuters, student_incommuters
+from tests.incommuter_donor_fixture import with_donor_household
 from tests.test_mid_donor import _synthetic_mid
 
 
@@ -29,9 +32,9 @@ def test_raw_mid_demographics_reach_both_incommuter_person_builders(caplog):
     assert {"age", "sex"} <= set(donors)
     ids = pd.DataFrame({"person_id": [100], "household_id": [100]})
     worker = incommuters._build_persons(
-        ids, donors.iloc[[0]], "person_id", ["car"], [3000.0])
+        ids, with_donor_household(donors.iloc[[0]]), "person_id", ["car"])
     student = student_incommuters._build_student_persons(
-        ids, donors.iloc[[1]], ["pt"])
+        ids, with_donor_household(donors.iloc[[1]]), ["pt"])
     assert worker[["age", "sex"]].values.tolist() == [[55, "female"]]
     assert student[["age", "sex"]].values.tolist() == [[25, "female"]]
     assert "primary 2/2 (100.0%)" in caplog.text
@@ -187,12 +190,29 @@ class ConfigContext:
 @pytest.mark.parametrize("enabled", [True, False])
 def test_mid_stage_executes_with_configured_demographic_flag(monkeypatch, enabled):
     from braunschweig.popsim.sources.mid import MidSource
-    monkeypatch.setattr(MidSource, "load_donor", lambda self, path: raw_mid())
+    def load_donor(self, path):
+        households, persons, trips = raw_mid()
+        # The stage reads the donor household income and status from these MiD columns (ADR-0191).
+        households = households.assign(
+            H_GR=[1, 1], hheink_gr1=[6, 9], oek_status=[3, 4])
+        persons = persons.assign(P_GEW=[1.0, 2.0], kernwo=[2, 2])
+        return households, persons, trips.assign(wegkm_imp=[10.0, 10.0, 4.0, 4.0])
+
+    def load_household_ages(mid_dir):
+        absent = {f"HP_ALTER_{i}": [3300 + i] * 2 for i in range(2, 7)}
+        return pd.DataFrame({"H_ID": [1, 2], "HP_ALTER_1": [40, 30], **absent})
+    monkeypatch.setattr(MidSource, "load_donor", load_donor)
+    monkeypatch.setattr(mid_donor, "_load_household_ages", load_household_ages)
     ctx = ConfigContext({"random_seed": 1234, mid_donor.KEY_DEMOGRAPHICS: enabled})
     mid_donor.configure(ctx)
     ctx.config = lambda key: ctx.cfg[key]
     donors = mid_donor.execute(ctx)[1]
     assert ("age" in donors and "sex" in donors) == enabled
+    assert donors["economic_status"].tolist() == ["medium", "high"]
+    assert donors["household_size"].tolist() == [1, 1]
+    assert donors["consumption_units"].tolist() == [1.0, 1.0]
+    assert donors["donor_weight"].tolist() == [1.0, 2.0]
+    assert donors["weekday_reporting_day"].all()
 
 
 @pytest.mark.parametrize("module", [incommuters, student_incommuters])
@@ -284,6 +304,9 @@ def test_worker_execute_forwards_time_flag(monkeypatch, enabled):
         "braunschweig.data.census.pendler": flows,
         "braunschweig.locations.work": work,
         "braunschweig.data.cordon_pt_gates": None,
+        # the Gemeinde of the origin Kreis of the flow: the agent commute is measured from its centre
+        "braunschweig.data.cordon_gemeinden": gpd.GeoDataFrame(
+            {"ars5": ["03241"], "ewz": [1000.0]}, geometry=[Point(604000, 5841000)], crs="EPSG:25832"),
         "braunschweig.data.inkar.household_income": None,
     }
     ctx.stage = lambda key: stages[key]

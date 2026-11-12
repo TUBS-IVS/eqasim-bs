@@ -228,8 +228,12 @@ def test_the_synthesis_labels_are_the_subpopulations_the_config_wires():
     from braunschweig.synthesis import incommuters, student_incommuters
 
     ids = pd.DataFrame({"person_id": [5], "household_id": [5]})
-    svb = incommuters._build_persons(ids, pd.DataFrame({"person_id": [7]}), "person_id", ["car"], [3000.0])
-    students = student_incommuters._build_student_persons(ids, pd.DataFrame({"person_id": [7]}), ["pt"])
+    from tests.incommuter_donor_fixture import with_donor_household
+
+    svb = incommuters._build_persons(
+        ids, with_donor_household(pd.DataFrame({"person_id": [7]})), "person_id", ["car"])
+    students = student_incommuters._build_student_persons(
+        ids, with_donor_household(pd.DataFrame({"person_id": [7], "age": [22]})), ["pt"])
     assert set(svb["subpopulation"]) == {CS.INCOMMUTER_SUBPOPULATION}
     assert set(students["subpopulation"]) == {CS.STUDENT_INCOMMUTER_SUBPOPULATION}
     assert CS.INCOMMUTER_SUBPOPULATIONS == (CS.INCOMMUTER_SUBPOPULATION, CS.STUDENT_INCOMMUTER_SUBPOPULATION)

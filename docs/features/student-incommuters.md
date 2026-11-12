@@ -136,9 +136,8 @@ this feature in.
 Home->Education->Home persons, households, trips, activities, locations, and
 vehicles are built by `_inject()` and merged into the same frames as the SvB
 in-commuters (see the module docstrings of the four `braunschweig/matsim/scenario/*.py`
-writers). Persons/households are deliberately simpler than the SvB builders: no
-origin-Kreis INKAR income tilt (flat `INCOMMUTER_BASE_INCOME_EUR` for every
-student) and no per-agent German-fleet vehicle draw (students reuse the legacy
+writers). Persons/households carry the household of the student's MiD donor, drawn as
+ADR-0191 decision 7 says; unlike the SvB builders there is no per-agent German-fleet vehicle draw (students reuse the legacy
 `default_car` / `default_car_passenger` vehicle types). Person/household ids are
 offset by a fixed `10,000,000` block above the resident range
 (`_ID_OFFSET_ABOVE_RESIDENTS`) to avoid colliding with the SvB in-commuter id

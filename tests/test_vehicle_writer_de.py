@@ -263,12 +263,12 @@ def test_incommuter_vehicles_drawn_from_nds_fleet():
     person_ids = np.arange(1000, 1000 + n)
     modes = ["car"] * n
     orig_ars = np.array(["03241"] * n)            # Hannover region (out of ZGB)
-    income_eur = np.full(n, 3000.0)
+    economic_status = np.full(n, "medium")
     ages = np.random.default_rng(7).integers(20, 80, size=n).astype(float)
     rng = np.random.default_rng(7)
 
     df_types, df_vehicles = ic.build_incommuter_fleet(
-        person_ids, modes, orig_ars, income_eur, ages, DATA_PATH, rng)
+        person_ids, modes, orig_ars, economic_status, ages, DATA_PATH, rng)
 
     # Every car-mode in-commuter gets exactly one vehicle.
     assert len(df_vehicles) == n
@@ -287,11 +287,11 @@ def test_incommuter_non_car_modes_get_no_vehicle():
     person_ids = np.array([1, 2, 3, 4])
     modes = ["car", "pt", "car", "pt"]
     orig_ars = np.array(["03241"] * 4)
-    income_eur = np.full(4, 3000.0)
+    economic_status = np.full(4, "medium")
     ages = np.array([35.0, 40.0, 50.0, 45.0])
     rng = np.random.default_rng(1)
 
     _, df_vehicles = ic.build_incommuter_fleet(
-        person_ids, modes, orig_ars, income_eur, ages, DATA_PATH, rng)
+        person_ids, modes, orig_ars, economic_status, ages, DATA_PATH, rng)
     assert len(df_vehicles) == 2          # only the two car commuters
     assert set(df_vehicles["owner_id"]) == {1, 3}

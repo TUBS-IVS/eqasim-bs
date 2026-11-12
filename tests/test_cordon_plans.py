@@ -164,6 +164,34 @@ def test_redraw_times_within_bound_nan_end_fits_and_rng_unchanged_when_nothing_l
     assert rng.integers(0, 1000) == ref.integers(0, 1000)
 
 
+def test_redraw_draws_through_the_hook_for_exactly_the_late_agents():
+    from braunschweig.data.cordon.plans import redraw_times_within_bound
+    pool = pd.DataFrame({"person_id": [1, 2], "end": [100.0, 10.0]})
+    calls = []
+
+    def draw(positions):
+        calls.append(np.asarray(positions).tolist())
+        # agent 1 gets the late donor (end 100 s) at the first draw, everybody else the fitting one
+        rows = [0 if (len(calls) == 1 and position == 1) else 1 for position in positions]
+        return pool.iloc[rows].reset_index(drop=True)
+
+    donors, times, stats = redraw_times_within_bound(
+        pool, 3, np.random.default_rng(0), lambda d, positions: (d["end"].to_numpy(dtype=float),),
+        bound_s=50.0, max_attempts=5, draw=draw)
+    assert calls == [[0, 1, 2], [1]]
+    assert donors["person_id"].tolist() == [2, 2, 2]
+    assert stats["n_redrawn"] == 1 and stats["n_unfit"] == 0
+
+
+def test_redraw_fails_when_the_draw_hook_returns_the_wrong_number_of_rows():
+    from braunschweig.data.cordon.plans import redraw_times_within_bound
+    pool = pd.DataFrame({"person_id": [1, 2], "end": [10.0, 10.0]})
+    with pytest.raises(ValueError, match="one row per position"):
+        redraw_times_within_bound(
+            pool, 3, np.random.default_rng(0), lambda d, positions: (d["end"].to_numpy(dtype=float),),
+            bound_s=50.0, max_attempts=5, draw=lambda positions: pool)    # 2 rows for 3 agents
+
+
 def test_redraw_times_within_bound_keeps_donor_dtypes():
     from braunschweig.data.cordon.plans import redraw_times_within_bound
     pool = pd.DataFrame({"person_id": [1, 2], "employed": [True, True], "sex": ["f", "m"],

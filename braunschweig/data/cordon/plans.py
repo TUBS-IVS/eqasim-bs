@@ -85,7 +85,7 @@ def sample_donors(donors, n, rng):
     return donors.iloc[idx].reset_index(drop=True)
 
 
-def redraw_times_within_bound(donor_pool, n, rng, times_of, *, bound_s, max_attempts):
+def redraw_times_within_bound(donor_pool, n, rng, times_of, *, bound_s, max_attempts, draw=None):
     """Draw ``n`` donors and re-draw those whose day ends after ``bound_s`` (s).
 
     ``times_of(donors, positions)`` returns the per-agent time arrays of the donor frame ``donors`` standing for
@@ -94,14 +94,26 @@ def redraw_times_within_bound(donor_pool, n, rng, times_of, *, bound_s, max_atte
     finite end after ``bound_s``; NaN ends count as fitting (imputation runs later). Late agents are re-sampled
     with ``sample_donors`` for up to ``max_attempts`` rounds; the re-drawn donors REPLACE those agents' rows in the
     returned donor frame, so persons follow the final donor. What is still late afterwards is left unchanged
-    (no clamp) and counted ``n_unfit``; the caller moves such days as a whole.
+    (no clamp) and counted ``n_unfit``; the caller moves such days as a whole. ``draw(positions)`` replaces the
+    default draw: it returns the fresh-indexed donor rows for the int array ``positions`` (first all agents,
+    then each round only the late ones), so a caller can draw per agent instead of from the whole pool.
 
     Returns ``(donors, times, stats)`` with stats ``{"n", "n_redrawn", "n_attempts_max", "n_unfit"}``.
     """
     if max_attempts < 0:
         raise ValueError(f"redraw_times_within_bound: max_attempts must be >= 0, got {max_attempts}")
-    donors = sample_donors(donor_pool, n, rng)
+    if draw is None:
+        def draw_rows(positions):
+            return sample_donors(donor_pool, len(positions), rng)
+    else:
+        def draw_rows(positions):
+            rows = draw(positions)
+            if len(rows) != len(positions):
+                raise ValueError(f"redraw_times_within_bound: draw returned {len(rows)} donor rows for "
+                                 f"{len(positions)} agent positions; it must return one row per position")
+            return rows
     positions = np.arange(n)
+    donors = draw_rows(positions)
     times = [np.asarray(a, dtype=float).copy() for a in times_of(donors, positions)]
 
     def _late():
@@ -113,7 +125,7 @@ def redraw_times_within_bound(donor_pool, n, rng, times_of, *, bound_s, max_atte
     attempts = 0
     while len(late) and attempts < max_attempts:
         attempts += 1
-        fresh = sample_donors(donor_pool, len(late), rng)
+        fresh = draw_rows(late)
         fresh_times = times_of(fresh, late)
         # Concat + positional take keeps every column's dtype, extension dtypes (categorical, nullable) included
         # (a to_numpy round trip would lose them; both frames come from the same pool, so categories agree).

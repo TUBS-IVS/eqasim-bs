@@ -1,0 +1,131 @@
+id: incommuter-donor-draw-replay-2026-11-11
+date: '2026-11-11'
+repository:
+  commit: 36de0e9162486ceafcf47b11707102b610102cc8
+  branch: fix/audit-b8-b10-incommuter-income
+  notes: >-
+    "New" arm: the branch at 36de0e91 (ADR-0191), a detached worktree on felix fetched from a git bundle. The figures
+    are those of the second complete run (2026-11-12, which added age and sex to the summary); the first complete run
+    at b8737bbe gave identical values for every metric both runs report. "Old" arm:
+    origin/main at 9ae87aad. The cached reference run prod100_20261031 was produced with 7a41f0ba; the old arm
+    reproduces its donor draw exactly (see status), so main and the run agree on what is compared.
+configuration:
+  config: configs/base_bs.yml of each arm's code with the run overlay of prod100_20261031 (felix:~/prod100_20261031/run.yml)
+  notes: >-
+    The pt timetable check of the in-commuters is switched off in BOTH arms
+    (braunschweig.incommuters.pt_connection_check.enabled: false); the reference run had it on. New arm: worker
+    minimum donor pool 1000, student minimum donor pool 300 (the branch defaults, ASSUMPTIONs of ADR-0191). Seed 1234.
+sampling:
+  rate: 1.0
+  scope: >-
+    the two in-commuter stages (braunschweig.synthesis.incommuters, braunschweig.synthesis.student_incommuters) on the
+    cached inputs of prod100_20261031: 68,630 worker and 6,174 student in-commuters in both arms.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run, no MATSim run, no population synthesis. configure and execute of the two stages ran outside
+    synpp with a stand-in context (replay_incommuter_donor_draw.py), each arm in its own Python process, loading the
+    parents' cache stems named in the run log (logs/run_20261031T071313.log). In the new arm the stages
+    braunschweig.data.inkar.household_income and braunschweig.data.hts.mid_donor were executed with the new code,
+    because their outputs change on the branch; everything else was unpickled.
+classification:
+- ab_test
+status:
+  execution: completed
+  notes: >-
+    Completed on 2026-11-11. A first run stopped in the identity check on the income columns only: in the old code the
+    income jitter is drawn from the stage's RNG after the pt check, so with the check off it cannot be compared row by
+    row; the script now reports these columns by distribution (old-arm mean 2,915 EUR against 2,916 EUR in the cached
+    output) and gates on everything else. Identity of the old arm with the cached stage outputs, both stages: agent
+    count, person ids, origin Kreis and donor ids identical for 100 % of the agents, every other persons column
+    identical. A replay of two stages on production inputs, NOT a validation: no observed data is involved, and no
+    reference exists for in-commuter incomes or working times. The effect on the simulated traffic is not measured.
+source: >-
+  felix:~/incommuter_replay_20261111/out4 (scratch). Committed in
+  docs/runs/artifacts/incommuter-donor-draw-replay-2026-11-11/: replay_incommuter_donor_draw.py (sha256
+  0ca7474fb46865a9822fb501b961e668d3a46a6c0bd2970e9250ce8d78598914), summary.json (all figures, both arms, the
+  identity check) and replay_log.txt (log copy, because *.log is git-ignored).
+environment: 'server (felix, hostname matsim), conda eqasim (~/miniforge3/envs/eqasim)'
+validation:
+- metric: donor pool of the worker in-commuters (new arm)
+  reference: 'none (model output of the new arm; the old arm draws uniformly from all commuter donors)'
+  result: >-
+    73,477 of 81,184 commuter donors eligible (90.5 %): excluded 4,625 without a weekday reporting day, 3,068 without a
+    leg between home and work, 14 without a household record, 0 without a positive weight. Agent commute measured from
+    a real home or the Kreis centre for 68,630/68,630 agents. No draw fallback: 0 agents without a Kreis scale, 0
+    unreached Kreis targets, 0 whole-pool windows; smallest effective donor pool of a draw cell 579; widest window
+    ratio (longest to shortest donor commute) 22.
+  artifact: docs/runs/artifacts/incommuter-donor-draw-replay-2026-11-11/summary.json
+  notes: null
+- metric: donor reuse of the worker in-commuters
+  reference: 'the old arm (uniform draw), model output'
+  result: >-
+    distinct donors 46,278 (old) against 9,283 (new) for 68,630 agents; the most used donor stands for 7 agents (old)
+    against 553 agents (new). The agents of one donor share its working times.
+  artifact: docs/runs/artifacts/incommuter-donor-draw-replay-2026-11-11/summary.json
+  notes: 'The cost of the weighted, distance-matched draw named in ADR-0191; its effect on the departure profile of the simulation is not measured.'
+- metric: timing, income, household and fleet of the worker in-commuters, old against new
+  reference: 'the old arm, model output'
+  result: >-
+    Arrival at work: mean 8.40 h (old) against 8.21 h (new), median 7.83 h against 7.67 h, 90 % quantile 11.08 h
+    against 10.50 h. Household income: mean 2,915 EUR per month against 4,889 EUR, median 2,850 against 4,768.
+    high_income 0.0 % against 47.4 %. Household size: 100 % one person against 19.8 % one person (27.6 % two, 20.9 %
+    three, 20.3 % four, 9.7 % five, 1.8 % six and more). Economic status (new arm; the old arm has no status column):
+    very low 2.9 %, low 5.8 %, medium 24.9 %, high 47.3 %, very high 19.1 %. Mode shares unchanged (car 84.9 %, pt
+    15.1 %). Fleet of the 58,285 car agents, selected segments: Kleinwagen 20.5 % against 17.4 %, Minis 7.9 % against
+    6.7 %, Mittelklasse 10.0 % against 11.8 %, SUV 12.2 % against 13.6 %, obere Mittelklasse 3.1 % against 4.0 %;
+    powertrain shares move by at most 0.4 percentage points (petrol 62.0 % against 61.5 %, BEV 2.8 % against 3.0 %).
+  artifact: docs/runs/artifacts/incommuter-donor-draw-replay-2026-11-11/summary.json
+  notes: 'pt check off in both arms; with the check on, some pt agents switch to car and some days shift.'
+- metric: donor times imputed instead of surveyed (fallback rates of braunschweig.data.cordon.plans), old against new
+  reference: 'the old arm, model output'
+  result: >-
+    Worker in-commuters (68,630): arrival at work imputed 9.6 % (old) against 17.9 % (new), departure from work 16.3 %
+    against 25.1 %, arrival home 16.6 % against 24.7 %; days moved earlier as a whole to fit the day 0.9 % against
+    1.6 %. Student in-commuters (6,174): arrival at the university 0.3 % against 0.5 %, departure 1.0 % against 5.2 %,
+    arrival home 1.0 % against 6.2 %; days moved earlier 0.0 % against 0.6 %.
+  artifact: docs/runs/artifacts/incommuter-donor-draw-replay-2026-11-11/replay_log.txt
+  notes: >-
+    The new draw takes more donors whose day lacks a leg back home from work or university (the donor pool only requires
+    one leg between home and the activity), so more times come from the duration pool instead of the donor. The cause
+    is inferred from the rule, not traced donor by donor; the effect on the simulated departure profile is not
+    measured.
+- metric: age and sex of the worker in-commuters, old against new
+  reference: >-
+    sex: BA Pendlerstatistik (data record ba_pendleratlas, Gebietsstand 06/2025), SvB in-commuters into the eight ZGB
+    Kreise from outside the ZGB, Einpendler file: 68,630 in-commuters, of whom 34.9 % women (OBSERVED data, sum of the
+    Maenner/Frauen columns over the 623 Kreis pairs). Age: no reference (model output only).
+  result: >-
+    Women 46.9 % (old) against 27.4 % (new); observed 34.9 %. Age: mean 46.6 against 43.5 years, median 48 against 44;
+    21 to 29 years 9.4 % against 16.4 %, 50 to 59 years 31.9 % against 26.9 %, 60 to 69 years 15.2 % against 10.3 %.
+  artifact: docs/runs/artifacts/incommuter-donor-draw-replay-2026-11-11/summary.json
+  notes: >-
+    Age and sex come from the donor (ADR-0120), so the new draw changes them: the commute window and the Kreis tilt
+    favour long-distance commuters with high income per person, who are more often men. Against the observed sex
+    share both arms are off, the old one by 12.0 percentage points (too many women), the new one by 7.5 points (too
+    few). The model does not draw the sex of the in-commuters from the BA data although the data carry it per Kreis
+    pair.
+- metric: student in-commuters, old against new
+  reference: 'the old arm, model output'
+  result: >-
+    Donor pool: 4,291 of 18,852 studying donors with an education leg are 18 or older (22.8 %; 14,561 younger); of
+    these 4,039 eligible (163 without a weekday reporting day, 84 without a leg between home and education, 5 without
+    a household record). Distinct donors 5,286 (old) against 1,091 (new) for 6,174 agents; most used donor 5 against
+    127 agents; smallest effective donor pool of a draw cell 229; no draw fallback. Arrival at the university: mean
+    8.15 h against 8.74 h, median 7.75 h against 8.00 h, 90 % quantile 9.38 h against 11.56 h. Household income: flat
+    3,000 EUR against mean 4,443 EUR (10 % quantile 1,355, median 4,437, 90 % quantile 6,801); high_income 0.0 %
+    against 42.0 %; one-person households 100 % against 11.1 %. Economic status (new): very low 14.3 %, low 13.9 %,
+    medium 26.9 %, high 35.6 %, very high 9.2 %. Age: under 18 years 77.0 % (old) against 0 % (new), mean 14.0
+    against 22.0 years; women 47.7 % against 44.9 %. Mode shares car 84.6 % against 84.2 %: the student stage draws its
+    modes after the donors from the same random stream, so this shift is re-sequencing of the stream, not an effect of
+    the household draw.
+  artifact: docs/runs/artifacts/incommuter-donor-draw-replay-2026-11-11/summary.json
+  notes: 'The old arm drew the donors from all studying survey persons, most of them school children.'
+features:
+- einpendler_injection
+- student_incommuters
+decisions:
+- ADR-0191
+notes: >-
+  Measures what ADR-0191 changes in the two in-commuter stages. It does not show that the new values are closer to
+  reality: there is no observed reference for the income, household or working times of in-commuters.

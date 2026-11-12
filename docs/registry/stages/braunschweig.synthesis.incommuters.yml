@@ -20,7 +20,10 @@ description: 'Generates the cordon-crossing worker agents from BA Pendleratlas f
   n_promoted, n_promoted_unconnected, residual, met, promotion_actions). The realised pt share has no observed
   reference; a smoke is not a validation. Since ADR-0173 (issue #528) the check, the day shifts, the switch to car
   and the rate log run in incommuter_pt_connections.check_pt_days and the configure declarations in
-  configure_pt_check, both shared with braunschweig.synthesis.student_incommuters (no output change here).'
+  configure_pt_check, both shared with braunschweig.synthesis.student_incommuters (no output change here).
+  Since ADR-0191 the donor is drawn weighted, by commute length and by the income level of the origin Kreis
+  (braunschweig.data.cordon.donor_draw, braunschweig.incommuters.donor_min_effective_pool, ASSUMPTION), and the
+  agent carries its donor household; report key donor_draw.'
 lineage:
   type: braunschweig_new
   upstream: null
@@ -28,6 +31,7 @@ lineage:
 code:
 - braunschweig/synthesis/incommuters.py
 - braunschweig/synthesis/incommuter_pt_connections.py
+- braunschweig/data/cordon/donor_draw.py
 pipelines:
   popsim_mid: active
   popsim_open: active

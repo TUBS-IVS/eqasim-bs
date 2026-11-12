@@ -368,11 +368,11 @@ def test_incommuter_fleet_passes_owner_age(monkeypatch):
     person_ids = np.array([1, 2, 3])
     modes = np.array(["car", "pt", "car"])
     orig_ars = np.array(["12345", "12345", "54321"])
-    income = np.array([3000.0, 3000.0, 3000.0])
+    economic_status = np.array(["medium", "medium", "medium"])
     ages = np.array([62.0, 30.0, 41.0])
     rng = np.random.default_rng(0)
     _, vehicles = incommuters.build_incommuter_fleet(
-        person_ids, modes, orig_ars, income, ages, DATA_PATH, rng)
+        person_ids, modes, orig_ars, economic_status, ages, DATA_PATH, rng)
     assert "owner_age" in captured["df_cars"].columns
     # Only the car-mode agents (indices 0 and 2), in order.
     np.testing.assert_array_equal(

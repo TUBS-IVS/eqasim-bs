@@ -152,3 +152,105 @@ def test_execute_on_real_mid_yields_commute_donors():
     # nationwide MiD must supply real donor pools for both in-commuter kinds
     assert trips[trips["following_purpose"] == "work"]["person_id"].nunique() > 100
     assert trips[trips["following_purpose"] == "education"]["person_id"].nunique() > 10
+    # ADR-0191: nearly every donor carries its household income and economic status (primary
+    # path on the real survey; item non-response is imputed). A person without a household row
+    # stays NaN, so the share is bounded, not 1 (attach_donor_household counts and warns).
+    assert persons["household_income_eur"].notna().mean() > 0.99
+    assert persons["economic_status"].notna().mean() > 0.99
+    for column in ("household_size", "consumption_units", "donor_weight"):
+        assert persons[column].notna().mean() > 0.99
+    assert persons["weekday_reporting_day"].mean() > 0.5
+
+
+def _donor_households():
+    absent = {f"HP_ALTER_{i}": [3300 + i, 3300 + i] for i in (4, 5, 6)}
+    return pd.DataFrame({
+        "H_ID": [1, 2], "hhgr_gr": [3, 3], "H_GR": [3, 3],
+        "HP_ALTER_1": [45, 22], "HP_ALTER_2": [43, 20],
+        "HP_ALTER_3": [9, 999],          # a child of 9; a member without a valid age
+        "hheink_gr1": [6, 99],           # 6 -> 2600-3000 EUR; 99 -> imputed from household 1
+        "oek_status": [4, 9],            # 4 -> high; 9 -> imputed from household 1
+        **absent,
+    })
+
+
+def _donors():
+    _, persons, wege = _synthetic_mid()
+    return mid_donor.build_mid_donor_frames(
+        pd.DataFrame({"H_ID": [1, 2]}), persons, wege, rng=np.random.RandomState(0))[1]
+
+
+def test_donor_carries_income_status_size_and_consumption_units_of_its_household():
+    def attach(seed):
+        return mid_donor.attach_donor_household(
+            _donors(), _donor_households(), np.random.RandomState(seed),
+            age_unknown_raise_share=0.5).set_index("person_id")
+
+    out = attach(7)
+    assert out["economic_status"].to_dict() == {"1_1": "high", "2_1": "high"}
+    assert out["household_income_eur"].between(2600.0, 3000.0).all()
+    assert out["household_size"].to_dict() == {"1_1": 3, "2_1": 3}
+    # OECD-modified: 1.0 + 0.5 (second adult) + 0.3 (child of 9) = 1.8; the member without a
+    # valid age counts as 14 or older: 1.0 + 0.5 + 0.5 = 2.0
+    assert out["consumption_units"].to_dict() == pytest.approx({"1_1": 1.8, "2_1": 2.0})
+    pd.testing.assert_frame_equal(out, attach(7))
+
+
+@pytest.mark.parametrize("households, message", [
+    (_donor_households().drop(columns="hheink_gr1"), "hheink_gr1"),
+    (_donor_households().drop(columns="HP_ALTER_3"), "HP_ALTER_3"),
+    (_donor_households().iloc[:1], "household record"),     # half of the donors without a household
+    # every member without a valid age: a broken join with the age file, not item non-response
+    (_donor_households().assign(HP_ALTER_1=999, HP_ALTER_2=999, HP_ALTER_3=999), "valid age"),
+])
+def test_donor_household_fails_on_a_missing_column_or_a_broken_join(households, message):
+    with pytest.raises(ValueError, match=message):
+        mid_donor.attach_donor_household(_donors(), households, np.random.RandomState(0))
+
+
+@pytest.mark.parametrize("n_orphans, level", [(0, "INFO"), (1, "INFO"), (5, "WARNING")])
+def test_donor_household_orphan_share_logs_info_within_the_warn_bound_and_warning_above(
+        caplog, n_orphans, level):
+    """Of 2000 donors, 1 orphan (0.05%) is within the warn bound, 5 (0.25%) above it; none reaches the raise bound."""
+    import logging
+
+    n = 2000
+    donors = pd.concat([_donors().iloc[[0]]] * n, ignore_index=True)
+    donors["person_id"] = [f"{i}_1" for i in range(1, n + 1)]
+    households = pd.concat([_donor_households().iloc[[0]]] * (n - n_orphans), ignore_index=True)
+    households["H_ID"] = range(1, n - n_orphans + 1)
+    with caplog.at_level(logging.DEBUG, logger=mid_donor._log.name):
+        mid_donor.attach_donor_household(donors, households, np.random.RandomState(0))
+    levels = {r.levelname for r in caplog.records if "donor household income" in r.getMessage()}
+    assert levels == {level}
+
+
+def test_donor_draw_attributes_are_weight_weekday_and_first_home_legs():
+    _, persons, wege = _synthetic_mid()
+    persons = persons.assign(P_GEW=[1.5, 0.5], kernwo=[2, 4])        # 4 = weekend
+    wege = wege.assign(wegkm_imp=[12.5, 11.0, 3.5, 3.0])
+    _, donors, trips = mid_donor.build_mid_donor_frames(
+        pd.DataFrame({"H_ID": [1, 2]}), persons, wege, rng=np.random.RandomState(0))
+    out = mid_donor.attach_donor_draw_attributes(donors, persons, trips).set_index("person_id")
+    assert out["donor_weight"].to_dict() == {"1_1": 1.5, "2_1": 0.5}
+    assert out["weekday_reporting_day"].to_dict() == {"1_1": True, "2_1": False}
+    assert out.loc["1_1", "commute_distance_km"] == 12.5     # home -> work, not the 11.0 km return leg
+    assert np.isnan(out.loc["2_1", "commute_distance_km"])   # a student: no leg between home and work
+    assert out.loc["2_1", "education_distance_km"] == 3.5    # home -> education, not the 3.0 km return leg
+    assert np.isnan(out.loc["1_1", "education_distance_km"])
+
+
+def test_a_trip_table_without_any_home_education_leg_gives_nan_education_distances():
+    _, persons, wege = _synthetic_mid()
+    persons = persons.assign(P_GEW=[1.5, 0.5], kernwo=[2, 4])
+    wege = wege.assign(wegkm_imp=[12.5, 11.0, 3.5, 3.0])
+    _, donors, trips = mid_donor.build_mid_donor_frames(
+        pd.DataFrame({"H_ID": [1, 2]}), persons, wege, rng=np.random.RandomState(0))
+    no_education = trips.assign(
+        preceding_purpose=trips["preceding_purpose"].replace("education", "other"),
+        following_purpose=trips["following_purpose"].replace("education", "other"))
+    assert not ((no_education["preceding_purpose"] == "education")
+                | (no_education["following_purpose"] == "education")).any()
+    out = mid_donor.attach_donor_draw_attributes(donors, persons, no_education)
+    assert out["education_distance_km"].isna().all()
+    assert out["commute_distance_km"].notna().any()     # the work legs are unaffected
