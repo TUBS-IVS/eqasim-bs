@@ -9,8 +9,8 @@ Step 2  collect own imports    -- whole-AST walk, module-level vs lazy (inside a
                                   TYPE_CHECKING-guarded excluded, resolved to first-party
                                   on-disk modules; a relative import resolves against the
                                   importing module's package.
-Step 3  declared stage edges   -- literal context.stage("name") calls, resolved through the
-                                  `aliases:` block of configs/base_bs.yml; reported, but
+Step 3  declared stage edges   -- literal context.stage("name") calls, reported as
+                                  written (no alias resolution; no gate reads them), but
                                   NOT subtracted: required_helpers = every first-party
                                   import, a declared stage module included. Under
                                   content-addressed validity (ADR-0149) an unchanged
@@ -221,13 +221,6 @@ def declared_stages(tree) -> set[str]:
             if isinstance(first, ast.Constant) and isinstance(first.value, str):
                 out.add(first.value)
     return out
-
-
-def read_aliases(repo: Path) -> dict[str, str]:
-    import yaml
-    with open(repo / "configs" / "base_bs.yml", encoding="utf-8") as handle:
-        cfg = yaml.safe_load(handle)
-    return dict(cfg.get("aliases") or {})
 
 
 def helper_tuples(tree, own_module: str,

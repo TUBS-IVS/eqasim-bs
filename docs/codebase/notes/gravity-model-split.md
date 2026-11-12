@@ -69,8 +69,9 @@ module level would have changed the stage's import timing, and in
 therefore folds in the modules of `_HELPER_MODULES` and `_DEFERRED_HELPER_MODULE_NAMES` (in `braunschweig/gravity/model.py`) by two mechanisms.
 
 `distance_matrix_taz.py` remains deliberately uncovered: it is its own synpp
-stage, hashed by synpp in its own right, so folding its source in here would
-double-count it rather than close a gap. `tests/test_gravity_validate_token.py`
+stage that this stage only declares and never imports, so its output reaches
+the gravity model through the declared edge and none of its code runs here. A
+declared stage that IS imported is hashed like any helper (ADR-0194). `tests/test_gravity_validate_token.py`
 pins both tuples literally, enumerates the package from disk so a newly added
 module cannot stay unlisted, and asserts that `distance_matrix_taz` really is
 still a stage — otherwise its exclusion would silently become a gap.

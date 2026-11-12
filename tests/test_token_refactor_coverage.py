@@ -162,3 +162,25 @@ def test_the_legacy_loop_token_of_every_pure_stage_is_still_reproducible(source_
         token = synpp_tokens.legacy_source_token(getattr(module, "_HELPER_MODULES", ()),
                                                  getattr(module, "_DEFERRED_HELPER_MODULE_NAMES", ()))
         assert len(token) == 32 and set(token) <= set("0123456789abcdef"), name
+
+
+class _ConfigContext:
+    """Minimal synpp validate() context: ``config(key)`` only."""
+
+    def __init__(self, values):
+        self._values = values
+
+    def config(self, key):
+        return self._values[key]
+
+
+def test_a_composite_token_keeps_its_data_part_next_to_the_module_digests(tmp_path):
+    """The composite stages are skipped by the legacy check above, so nothing else notices when a
+    composite validate() drops its old data part while it adds the helper digests. One
+    representative: the chunked OSM stage keeps the network file size and hashes osmconvert."""
+    module = importlib.import_module("eqasim_common.data.osm.chunked")
+    network = tmp_path / "network.osm.pbf"
+    network.write_bytes(b"0123456789")
+    token = module.validate(_ConfigContext({"data_path": str(tmp_path), "osm_network_path": network.name}))
+    assert token["osm_network_size"] == 10
+    assert "eqasim_common.data.osm.osmconvert" in token["helpers"]["modules"]

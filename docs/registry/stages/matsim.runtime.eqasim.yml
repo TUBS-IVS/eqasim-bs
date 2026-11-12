@@ -3,7 +3,8 @@ title: eqasim Java build
 layer: infrastructure
 description: Builds the eqasim Java package -- from the project's own eqasim-java-bs fork via
   eqasim_source_path (ADR-0038). Its cache token is a content digest of the Java source tree
-  (or of a prebuilt jar), not the newest mtime (ADR-0148). The Maven build is byte-reproducible
+  (or of a prebuilt jar), not the newest mtime (ADR-0148), next to the digests of the runner
+  modules it runs (git, maven, java; ADR-0194). The Maven build is byte-reproducible
   (a fixed project.build.outputTimestamp; Maven's maven-status bookkeeping is excluded from the
   output hash), so a rebuild from the same inputs leaves the MATSim chain cached under early
   cutoff (ADR-0149 decision 8).

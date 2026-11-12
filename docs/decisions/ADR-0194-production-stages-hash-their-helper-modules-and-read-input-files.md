@@ -25,7 +25,8 @@
   and the child keeps a cache built with the old code it runs itself.
 - Stages without a source token are not gated at all. Production (`configs/base_bs.yml` +
   `configs/overlays/test_100pct.yml`, aliases resolved) reached 26 stages with first-party
-  helpers and no token, and 8 more that ran declared stages as libraries.
+  helpers and no token (`matsim.simulation.run` among them), and 7 more whose only first-party
+  helpers were declared stages they run as libraries.
 - Four input files were read by stage code without being in `validate()`: the two SrV-2023
   location-type tables of the chainsolver stage, the LoD2 heights parquet of the buildings
   stage, the VG250 archive of the RegioStaR stage. The committed VRB matrix CSV was in the
@@ -68,10 +69,12 @@
 
 - **Fix the declared-library gap only where it costs no extra re-execution, and issue the rest.**
   Offered; the owner chose the complete fix.
-- **Leave the two jar stages and `matsim.simulation.run` without a token.** Offered because the
-  jars are not byte-reproducible (`docs/runs/content-addressed-cache-acceptance-100pct-2026-10-22.yml`),
-  so their tokens re-run every Java-dependent stage once now and after every edit to a runner
-  module; the owner chose consistency.
+- **Leave `matsim.runtime.eqasim`, `matsim.runtime.pt2matsim` and `matsim.simulation.run` without
+  a token.** Offered because their tokens re-run the Java-dependent stages after an edit to a
+  runner module; the owner chose consistency. The offer also said that the jars are not
+  byte-reproducible, which is outdated: the eqasim and freight-tool builds are byte-reproducible
+  since #474 (ADR-0149 decision 8, `docs/runs/reproducible-jar-builds-local-2026-10-22.yml`,
+  `docs/runs/reproducible-jar-builds-felix-2026-10-22.yml`), so the cost is lower than stated.
 - **Exempt `process_watchdog`.** Three stages (`supply_gtfs`, `simulation.prepare`,
   `student_incommuters`) hashed it already; an exemption would change their tokens, and the
   watchdog decides whether a Java call is killed, so it is not plainly result-neutral.
@@ -91,18 +94,23 @@
 - Every stage whose token is new or changed re-executes once, and so does every stage whose token
   hashes a module this change edited. Recompute the list with the `covered` field of
   `python scripts/audit_synpp_helper_hash.py . --json <out.json>` against
-  `git diff --name-only` of this change; the pull request lists it. Because the two jar stages
-  re-execute and their jars are not byte-reproducible, every stage downstream of a jar re-executes
-  as well, MATSim included. Elsewhere children are spared only where the re-executed parent
-  reproduces its output byte for byte; that is not measured for this change.
+  `git diff --name-only` of this change; the pull request of this change lists the result.
+  `matsim.runtime.eqasim` rebuilds a byte-identical jar (#474), so the jar itself spares its
+  children; MATSim and the other stages that run `eqasim.run` re-execute because their own
+  tokens changed. The pt2matsim build is not made reproducible: ASSUMPTION (not measured) that
+  its jar differs after a rebuild, so every stage below it re-executes too. Elsewhere children
+  are spared only where the re-executed parent reproduces its output byte for byte; that is not
+  measured for this change.
 - No stage computes anything differently: outputs do not change, except that the buildings stage
   now prints a warning when no footprint gets an LoD2 height.
 - From now on an edit to a module a stage runs re-executes that stage, a declared stage it runs
   as a library included: an edit to the popsim assembly code re-runs `trips_stage`; an edit to
-  `matsim/runtime/{git,maven,java,process_watchdog}.py` rebuilds the jars and re-runs everything
-  below them.
+  `matsim/runtime/{git,maven,java,process_watchdog}.py` re-runs every stage whose token hashes it:
+  the jar stages, MATSim and every other stage that runs Java.
 - Open, not fixed here: other stage modules read VG250 directly without it in `validate()`, and
   the composite stages `external_workplaces` and `external_secondary_points` key on the VG250
-  file SIZE, so a replaced archive of equal size re-runs `regiostar` but not them; no scan finds
+  file SIZE, so a replaced archive of equal size re-runs `regiostar` but not them (the other
+  composite stages likewise keep the size-only file parts they had: OSM, GTFS, the NDS school
+  tables); no scan finds
   a file read that `validate()` misses; the audit's scan roots exclude `documentation.meta_output`
   (left to package M of the audit follow-up).

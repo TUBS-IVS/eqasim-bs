@@ -3,7 +3,8 @@ title: Freight extraction tool jar
 layer: freight
 description: Builds a shaded jar of MATSim's application contrib at the fork pom's ${matsim.version}
   plus the four-line RunExtractFreightTrips wrapper, so the freight routing depends on the pinned
-  MATSim version and its inputs only, not on the eqasim fork jar. The build is byte-reproducible
+  MATSim version and its inputs only, not on the eqasim fork jar. Its cache token also carries
+  the digests of the runner modules it runs (maven, java; ADR-0194). The build is byte-reproducible
   (a fixed project.build.outputTimestamp in the rendered pom; Maven's maven-status bookkeeping is
   excluded from the output hash), so a rebuild from the same inputs leaves the routing cached
   under early cutoff (ADR-0149 decision 8).
