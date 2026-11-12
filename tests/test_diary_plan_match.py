@@ -285,3 +285,16 @@ def test_reassign_fine_child_bands_off_is_byte_identical_to_today():
     assert off_state[0] == on_state[0]
     assert (off_state[1] == on_state[1]).all()
     assert off_state[2:] == on_state[2:]
+
+
+def test_reassign_holiday_source_type_rate_is_primary_for_integer_counts(caplog):
+    # The fixture's donor ``anzwege1`` is integer-typed, so the holiday source takes the primary
+    # (isinstance int) branch and the float-typed routing defect (audit P2-F21) is not exercised.
+    donors = _donors(); facts = dfm.compute_diary_facts(_wege())
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.diary_plan_match"):
+        dpm.reassign_diaryless_plan_sources(donors, donors, facts, rng=np.random.RandomState(3),
+                                            hard_employment=True, fine_child_age_bands=False, **FLAGS)
+    rate_lines = [r for r in caplog.records
+                  if r.getMessage().startswith("[diary_plan_match.holiday_source_anzwege1_type] primary 1/1")]
+    assert len(rate_lines) == 1, caplog.text
+    assert rate_lines[0].levelno == logging.INFO

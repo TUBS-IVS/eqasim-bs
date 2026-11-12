@@ -40,6 +40,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim.attributes import EMPLOYED_TAET
+from braunschweig.popsim.fallback_rates import log_fallback_rate
 from braunschweig.popsim.seed import WEEKDAY_KERNWO
 from braunschweig.popsim.weekend_plan_match import (
     AGE_BAND_EDGES, DONOR_LIFT_COLUMN, FINE_CHILD_AGE_BAND_EDGES, age_band_index, match_person,
@@ -362,6 +363,8 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     # sequence independent of row order on its own, which matters here because the
     # completed-donor frame this consumes is built in a fixed order upstream
     # (member_completion / seed) that this function must not rely on for reproducibility.
+    n_holiday_sources = 0
+    n_non_int_holiday_sources = 0
     for ridx in sorted(to_remap.tolist()):
         reason = reasons.loc[ridx]
         pool = pools["mobile"] if reason in for_mobile else pools["any"]
@@ -369,6 +372,12 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
             # keep the source's own mobility state: mobile source -> mobile pool
             src_anz = donor_anzwege1.get(
                 (persons.at[ridx, "source_H_ID"], persons.at[ridx, "source_P_ID"]), 0)
+            # Observability only (audit P2-F21, known defect, NOT fixed here because fixing it changes
+            # results): a non-integer-typed count (e.g. a float donor ``anzwege1``) fails the isinstance
+            # test and is routed to pool "any" even when it is a mobile count.
+            n_holiday_sources += 1
+            if not isinstance(src_anz, (int, np.integer)):
+                n_non_int_holiday_sources += 1
             pool = pools["mobile"] if (isinstance(src_anz, (int, np.integer)) and 0 < src_anz < 800) else pools["any"]
         sh, sp, level = match_person(persons.loc[ridx], pool, rng=rng, hard_keys=hard_keys,
                                      age_band_edges=age_band_edges,
@@ -381,6 +390,10 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     counts = reasons.value_counts().to_dict()
     n_remapped = int(reasons.isin(REASONS_REMAP).sum())
     share = n_remapped / max(len(persons), 1)
+    log_fallback_rate(
+        logger, "diary_plan_match.holiday_source_anzwege1_type", n_non_int_holiday_sources, n_holiday_sources,
+        what="holiday sources whose donor anzwege1 is not integer-typed (e.g. float) are routed to pool "
+             '"any" instead of "mobile" (known defect, audit P2-F21)')
     crossed = _count_employment_boundary_crossings(persons, pools["any"], to_remap)
     n_split_band, crossed_band = _count_fine_child_band_crossings(persons, pools["any"], to_remap)
     crossed_passenger = _count_passenger_class_crossings(persons, pools["any"], to_remap)
