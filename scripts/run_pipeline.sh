@@ -3,8 +3,8 @@
 # run_pipeline.sh - activate the conda environment and run the synpp pipeline
 # for a given config on the Linux run server.
 #
-# This is the server-side runner invoked (inside a tmux session) by the Windows
-# orchestrator run_pipeline_on_server.ps1. It can also be called directly:
+# This is the server-side runner. Isolated runs at a given commit are started by
+# scripts/isolated_run.py; it can also be called directly:
 #
 #   bash ~/eqasim-bs/scripts/run_pipeline.sh configs/fixtures/config_local_braunschweig_25pct.yml
 #
@@ -16,11 +16,12 @@
 #   - the conda environment is named "eqasim"
 #   - the working directory is the repository root
 #
-# NOTE: this script forwards exactly ONE config path to `python scripts/run_synpp.py`
-# (below), so it does not yet support the composed base+overlay form (config-
-# composition cleanup, #230; see configs/base_bs.yml). For a composed all-features
-# run, invoke run_synpp.py directly with two arguments instead of this script:
-#   python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml
+# All config arguments are forwarded to `python scripts/run_synpp.py`, which takes
+# either one complete config or the composed form <base> <overlay> (config
+# composition, #230; see configs/base_bs.yml):
+#   bash scripts/run_pipeline.sh configs/base_bs.yml configs/overlays/test_25pct.yml
+# The JDK override check below inspects every given file; the working and output
+# directories are created by run_synpp.py (ensure_run_directories) from the resolved config.
 
 set -euo pipefail
 
@@ -32,14 +33,23 @@ REQUESTED_JAVA_HOME="${JAVA_HOME:-}"
 # Default is a syntax placeholder only (its former Linux server counterpart,
 # config_server_braunschweig_25pct.yml, was removed as superseded ballast, #230);
 # ALWAYS pass an explicit config for a real run.
-CONFIG="${1:-configs/fixtures/config_local_braunschweig_25pct.yml}"
+if [[ $# -gt 2 ]]; then
+    echo "ERROR: at most two config paths are supported (<config> or <base> <overlay>)." >&2
+    exit 1
+fi
+if [[ $# -eq 0 ]]; then
+    set -- configs/fixtures/config_local_braunschweig_25pct.yml
+fi
+CONFIGS=("$@")
 
 cd "$REPO_DIR"
 
-if [[ ! -f "$CONFIG" ]]; then
-    echo "ERROR: config '$CONFIG' not found in $REPO_DIR" >&2
-    exit 1
-fi
+for config_file in "${CONFIGS[@]}"; do
+    if [[ ! -f "$config_file" ]]; then
+        echo "ERROR: config '$config_file' not found in $REPO_DIR" >&2
+        exit 1
+    fi
+done
 
 # Activate conda in this non-interactive shell (conda activate is a shell
 # function that only exists after sourcing conda.sh).
@@ -86,7 +96,7 @@ echo "==> Using JDK 25 at $JAVA_HOME"
 
 # The Python runtime stages may override the shell selection through their
 # config. Reject a conflicting override here, before Maven or MATSim starts.
-if ! python - "$CONFIG" "$JAVA_HOME" "$java_binary" <<'PY'
+if ! python - "$JAVA_HOME" "$java_binary" "${CONFIGS[@]}" <<'PY'
 import os
 import shutil
 import sys
@@ -94,50 +104,57 @@ import sys
 import yaml
 
 
-config_path, selected_home, selected_binary = sys.argv[1:]
-with open(config_path, encoding="utf-8") as config_file:
-    config = yaml.safe_load(config_file) or {}
-
-if not isinstance(config, dict):
-    print(f"ERROR: config '{config_path}' must contain a mapping.", file=sys.stderr)
-    raise SystemExit(1)
-
-runtime_config = config.get("config", {})
-if not isinstance(runtime_config, dict):
-    print(f"ERROR: config '{config_path}' field 'config' must contain a mapping.", file=sys.stderr)
-    raise SystemExit(1)
+selected_home, selected_binary, *config_paths = sys.argv[1:]
 
 
 def real_path(path: str) -> str:
     return os.path.realpath(os.path.expanduser(path))
 
 
-configured_home = runtime_config.get("java_home")
-if configured_home and real_path(str(configured_home)) != real_path(selected_home):
-    print(
-        "ERROR: config java_home does not match the selected JDK 25: "
-        f"{configured_home!r} != {selected_home!r}.",
-        file=sys.stderr,
-    )
-    raise SystemExit(1)
+def check_config(config_path):
+    with open(config_path, encoding="utf-8") as config_file:
+        config = yaml.safe_load(config_file) or {}
 
-configured_binary = runtime_config.get("java_binary")
-if configured_binary:
-    resolved_binary = shutil.which(str(configured_binary))
-    if resolved_binary is None:
+    if not isinstance(config, dict):
+        print(f"ERROR: config '{config_path}' must contain a mapping.", file=sys.stderr)
+        raise SystemExit(1)
+
+    runtime_config = config.get("config", {})
+    if not isinstance(runtime_config, dict):
+        print(f"ERROR: config '{config_path}' field 'config' must contain a mapping.",
+              file=sys.stderr)
+        raise SystemExit(1)
+
+    configured_home = runtime_config.get("java_home")
+    if configured_home and real_path(str(configured_home)) != real_path(selected_home):
         print(
-            f"ERROR: config java_binary cannot be resolved: {configured_binary!r}.",
+            "ERROR: config java_home does not match the selected JDK 25: "
+            f"{configured_home!r} != {selected_home!r}.",
             file=sys.stderr,
         )
         raise SystemExit(1)
-    if real_path(resolved_binary) != real_path(selected_binary):
-        print(
-            "ERROR: config java_binary does not match the selected JDK 25: "
-            f"{configured_binary!r} resolves to {resolved_binary!r}, "
-            f"not {selected_binary!r}.",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
+
+    configured_binary = runtime_config.get("java_binary")
+    if configured_binary:
+        resolved_binary = shutil.which(str(configured_binary))
+        if resolved_binary is None:
+            print(
+                f"ERROR: config java_binary cannot be resolved: {configured_binary!r}.",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+        if real_path(resolved_binary) != real_path(selected_binary):
+            print(
+                "ERROR: config java_binary does not match the selected JDK 25: "
+                f"{configured_binary!r} resolves to {resolved_binary!r}, "
+                f"not {selected_binary!r}.",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+
+
+for path in config_paths:
+    check_config(path)
 PY
 then
     exit 1
@@ -171,19 +188,6 @@ else
     echo "==> Preflight SKIPPED (EQASIM_SKIP_VERIFY=1)"
 fi
 
-# synpp's output stage (synthesis/output.py validate()) requires the configured
-# output directory to already exist and aborts the whole run otherwise. Extract
-# output_path from the YAML config and create it up front so a fresh server
-# checkout does not crash on a missing directory.
-output_path=$(grep -E '^[[:space:]]*output_path:' "$CONFIG" \
-    | head -1 \
-    | sed -E 's/^[[:space:]]*output_path:[[:space:]]*//; s/[[:space:]]*$//' \
-    | tr -d '"'"'"'')
-if [[ -n "$output_path" ]]; then
-    mkdir -p "$output_path"
-    echo "==> Ensured output directory exists: $output_path"
-fi
-
 # Timestamp is taken from the server clock at launch time for traceability.
 log_file="logs/run_$(date +%Y%m%d_%H%M%S).log"
 
@@ -198,12 +202,17 @@ log_file="logs/run_$(date +%Y%m%d_%H%M%S).log"
 samples_csv="${log_file%.log}_samples.csv"
 bash scripts/sample_load.sh "$samples_csv" 15 &
 SAMPLER_PID=$!
+# `set -e` + pipefail exits on a failing run before the explicit kill below; the
+# EXIT trap guarantees the sampler never outlives the script. A plain trap command
+# does not change the exit status, so the run's own status is preserved.
+trap 'kill "$SAMPLER_PID" 2>/dev/null || true' EXIT
 
-echo "==> Running synpp on $CONFIG (env: $CONDA_ENV), logging to $log_file"
-PYTHONUTF8=1 python scripts/run_synpp.py "$CONFIG" 2>&1 | tee "$log_file"
+echo "==> Running synpp on ${CONFIGS[*]} (env: $CONDA_ENV), logging to $log_file"
+PYTHONUTF8=1 python scripts/run_synpp.py "${CONFIGS[@]}" 2>&1 | tee "$log_file"
 
 # Stop the load sampler.
 kill "$SAMPLER_PID" 2>/dev/null || true
+trap - EXIT   # already stopped; do not signal the PID a second time
 
 echo "==> Pipeline finished. Log: $REPO_DIR/$log_file"
 

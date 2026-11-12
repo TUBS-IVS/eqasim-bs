@@ -24,9 +24,6 @@ cache/
 output/
 **/output/
 
-# Local pipeline data
-data/nantes_2015/
-data/lyon_2015/
 
 # Local configuration files
 config_local_*.yml

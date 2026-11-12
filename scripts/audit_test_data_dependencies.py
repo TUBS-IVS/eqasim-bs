@@ -140,14 +140,20 @@ def pytest_runtest_teardown(item, nextitem):
 
 
 def pytest_runtest_logreport(report):
-    """Keep one row per test: its outcome plus every absent input it probed."""
-    if report.when != "call" and not (report.when == "setup" and report.skipped):
+    """Keep one row per test: its outcome plus every absent input it probed.
+
+    Recorded phases: ``call``, and ``setup`` when it failed or was skipped (a fixture
+    that raises on an absent input is the false-RED class; no call phase follows).
+    A passing setup and every teardown report are ignored.
+    """
+    if report.when != "call" and not (
+            report.when == "setup" and (report.failed or report.skipped)):
         return
     outcome = report.outcome
     probes = set(_current_probes)
     previous = _records.get(report.nodeid)
     if previous is not None:
-        # A skip decided in setup must not be overwritten by the call phase.
+        # An outcome decided in setup (skip or failure) must not be overwritten by the call phase.
         outcome = previous[0] if previous[0] != "passed" else outcome
         probes |= set(previous[1])
     _records[report.nodeid] = (outcome, sorted(probes))

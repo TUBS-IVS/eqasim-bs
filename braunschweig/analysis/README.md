@@ -36,7 +36,7 @@ python scripts/run_synpp.py configs/fixtures/config_local_braunschweig_25pct.yml
 # 3. Run the validation harness against each rate
 python -m scripts.validate_bs_10pct                       # 10 % (legacy entry)
 python -m scripts.run_bs_validation --rate 10
-python -m scripts.run_bs_validation --rate 25
+python -m scripts.run_bs_validation --rate 25 --layout legacy  # the fixture writes output_bs_25pct
 
 # 4. Copy the validation outputs into this folder
 Copy-Item eqasim-data\output_bs_10pct\validation\* braunschweig\analysis\results\10pct\ -Force
