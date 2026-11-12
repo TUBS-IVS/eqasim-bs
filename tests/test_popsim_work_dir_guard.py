@@ -3,13 +3,21 @@
 The PopulationSim work_dir persists across runs outside synpp's stage cache; the
 batch runner skips a batch whose completion marker exists. On a config change the
 re-assembled inputs no longer match the stale outputs, so they must be purged.
-``purge_stale_batches_on_config_change`` enforces this via a signature file.
+``purge_stale_batches_on_config_change`` enforces this coarsely via a signature file;
+the per-batch decision (``braunschweig.popsim.batch.reconcile_batch_outputs``) is
+driven through ``mid.run_popsim_mid`` and the real batch runner at the end of this file.
 """
+import logging
 import os
+from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
-from braunschweig.popsim import stage
+from braunschweig.popsim import batch, folders, mid, stage
+from braunschweig.popsim.mid import batch_folders as mid_batch_folders
+from braunschweig.popsim.sources.mid import MidSource
 
 
 def _sig(**overrides):
@@ -115,3 +123,237 @@ def test_empty_work_dir_is_safe(tmp_path):
     purged = stage.purge_stale_batches_on_config_change(str(wd), "sigA")
     assert purged == 0
     assert (wd / stage.WORK_DIR_SIGNATURE_FILE).is_file()
+
+
+# --------------------------------------------------------------------------- #
+# Per-batch reuse decision: a completed batch is reused only for the inputs it was
+# built from (audit finding P3-F2). The work-dir signature above does not see the
+# per-cell control targets, so these tests change exactly those.
+# --------------------------------------------------------------------------- #
+
+_CELLS_100M = (
+    "CRS3035RES100mN2689000E4337000",
+    "CRS3035RES100mN2689100E4337000",
+    "CRS3035RES100mN2690000E4341000",
+    "CRS3035RES100mN2691000E4342000",
+)
+_PARENTS_1KM = (
+    "CRS3035RES1000mN2689000E4337000",
+    "CRS3035RES1000mN2689000E4337000",
+    "CRS3035RES1000mN2690000E4341000",
+    "CRS3035RES1000mN2691000E4342000",
+)
+# With max_cells=2 the first 1 km parent (two cells) fills batch_000 and the other two
+# parents share batch_001, so the third 100 m cell belongs to batch_001 only. The
+# RegioStaR7 strata (71 for the first parent, 77 for the others) give the stratified
+# branch the same two batches.
+_CELL_OF_BATCH_001 = _CELLS_100M[2]
+
+# The two branches of run_popsim_mid; each assembles its batch folders in its own loop.
+_BRANCHES = pytest.mark.parametrize(
+    "branch_options",
+    [{}, {"stratify_regiostar": True, "source": MidSource()}],
+    ids=["unstratified", "regiostar_stratified"],
+)
+
+
+def _cells(target_of_batch_000_cell=1.0, target_of_batch_001_cell=3.0):
+    cells = folders.build_geo_crosswalk(
+        pd.DataFrame({"GITTER_ID_100m": _CELLS_100M, "GITTER_ID_1km": _PARENTS_1KM})
+    )
+    cells["POP"] = [target_of_batch_000_cell, 2.0, target_of_batch_001_cell, 4.0]
+    cells["RegioStaR7"] = [71, 71, 77, 77]
+    return cells
+
+
+class _FakePopulationSim:
+    """Stand-in for the PopulationSim process started by the real batch runner.
+
+    Notes each folder it is started for and whether that folder's checkpoint store
+    existed at that moment, then writes the completion marker from the 100 m control
+    targets it finds in the folder, so the merged table shows which inputs produced it.
+    It creates no directory: the marker goes into the output directory that
+    ``folders.write_popsim_folder`` prepared, so every run here fails if that
+    directory and ``batch.COMPLETION_MARKER`` ever disagree.
+    """
+
+    def __init__(self):
+        self.started = []
+        self.store_at_start = {}
+
+    def __call__(self, command, **kwargs):
+        folder = Path(command[command.index("-w") + 1])
+        self.started.append(folder.name)
+        self.store_at_start[folder.name] = (folder / batch.PIPELINE_STORE).exists()
+        targets = pd.read_csv(folder / "data" / "control_totals_ZENSUS100m.csv")
+        targets.assign(H_ID=1).to_csv(folder / batch.COMPLETION_MARKER, index=False)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+
+def _run(work_dir, popsim, cells, *, logging_yaml="version: 1\n", donor_strata=(71, 77),
+         **branch_options):
+    controls_df = pd.DataFrame(
+        {"target": ["POP_ZENSUS100m_target"], "geography": ["ZENSUS100m"],
+         "seed_table": ["persons"], "importance": [1000],
+         "control_field": ["POP_ZENSUS100m"], "expression": ["(persons.P_GEW > 0)"]}
+    )
+    # One donor household per RegioStaR7 stratum, so the stratified branch finds donors.
+    household_ids = list(range(1, len(donor_strata) + 1))
+    seed_hh = pd.DataFrame(
+        {"H_ID": household_ids, "H_GEW": 2.0, "STAAT": 1, "RegioStaR7": list(donor_strata)}
+    )
+    seed_p = pd.DataFrame({"H_ID": household_ids, "P_ID": household_ids, "STAAT": 1})
+    run_one = batch.make_populationsim_run_one(
+        command_prefix=("populationsim",), subprocess_run=popsim, cleanup_pipeline_h5=False,
+    )
+    return mid.run_popsim_mid(
+        cells, ["POP"], controls_df, seed_hh, seed_p,
+        work_dir=work_dir, settings_yaml="x: 1\n", logging_yaml=logging_yaml,
+        max_cells=2, run_one=run_one, num_workers=1, **branch_options,
+    )
+
+
+def _popsim_warnings(caplog):
+    """Records at WARNING or above from the braunschweig.popsim loggers."""
+    return [
+        record for record in caplog.records
+        if record.name.startswith("braunschweig.popsim") and record.levelno >= logging.WARNING
+    ]
+
+
+@_BRANCHES
+def test_batch_starts_again_exactly_when_its_inputs_change(tmp_path, caplog, branch_options):
+    _run(tmp_path, _FakePopulationSim(), _cells(), **branch_options)
+
+    # Same inputs; only PopulationSim's own logging setup differs: every batch is reused,
+    # and with nothing discarded nothing is reported as a warning.
+    rerun = _FakePopulationSim()
+    caplog.clear()
+    _run(tmp_path, rerun, _cells(), logging_yaml="version: 1\nroot: {level: DEBUG}\n",
+         **branch_options)
+    assert rerun.started == []
+    assert _popsim_warnings(caplog) == []
+
+    # Regression (P3-F2): one cell's control target changed. Before the fix no batch
+    # started again and the merged table carried the old target 3.
+    rerun = _FakePopulationSim()
+    caplog.clear()
+    report = _run(tmp_path, rerun, _cells(target_of_batch_001_cell=7.0), **branch_options)
+    assert rerun.started == ["batch_001"]
+    assert _popsim_warnings(caplog)  # the discarded output is reported as a warning
+    merged_targets = report.combined.set_index("ZENSUS100m")["POP_ZENSUS100m"]
+    assert merged_targets[_CELL_OF_BATCH_001] == 7
+    assert merged_targets[_CELLS_100M[0]] == 1  # the reused batch_000 is still merged
+
+
+def _content(path):
+    """File bytes, or None when the file is gone."""
+    return path.read_bytes() if path.is_file() else None
+
+
+def _fail_on_stratum_77(monkeypatch):
+    """Stratified branch: stratum 77 is assembled after 71 and gets no donor household."""
+    return {"donor_strata": (71,)}
+
+
+def _fail_on_second_folder(monkeypatch):
+    """Unstratified branch: assembling any folder after batch_000 raises."""
+    assemble = mid_batch_folders.assemble_batch_folder
+
+    def assemble_batch_000_only(folder, *args, **kwargs):
+        if Path(folder).name != "batch_000":
+            raise ValueError("simulated assembly error")
+        return assemble(folder, *args, **kwargs)
+
+    monkeypatch.setattr(mid_batch_folders, "assemble_batch_folder", assemble_batch_000_only)
+    return {}
+
+
+@pytest.mark.parametrize(
+    "branch_options, break_second_folder",
+    [({}, _fail_on_second_folder),
+     ({"stratify_regiostar": True, "source": MidSource()}, _fail_on_stratum_77)],
+    ids=["unstratified", "regiostar_stratified"],
+)
+def test_assembly_error_leaves_every_output_and_record_untouched(
+        tmp_path, monkeypatch, branch_options, break_second_folder):
+    # An aborted run must not destroy output that a later run with the original
+    # inputs could still reuse. The second run rewrites batch_000 with a changed
+    # target, then fails while assembling the next folder.
+    _run(tmp_path, _FakePopulationSim(), _cells(), **branch_options)
+    batch_000 = tmp_path / "batch_000"
+    marker = batch_000 / batch.COMPLETION_MARKER
+    record = batch_000 / batch.INPUT_FINGERPRINT_FILE
+    marker_before, record_before = marker.read_bytes(), record.read_bytes()
+
+    second_run_options = break_second_folder(monkeypatch)
+    with pytest.raises(ValueError):
+        _run(tmp_path, _FakePopulationSim(), _cells(target_of_batch_000_cell=5.0),
+             **branch_options, **second_run_options)
+
+    rewritten = pd.read_csv(batch_000 / "data" / "control_totals_ZENSUS100m.csv")
+    assert rewritten.set_index("ZENSUS100m")["POP_ZENSUS100m"][_CELLS_100M[0]] == 5
+    assert _content(marker) == marker_before
+    assert _content(record) == record_before
+
+
+def _failing_rmtree(path, *args, **kwargs):
+    raise OSError(f"simulated: cannot remove {path}")
+
+
+@pytest.mark.parametrize(
+    "deleting_module, folder",
+    [(batch, "batch_001"), (mid_batch_folders, "batch_002")],
+    ids=["discarded_output", "removed_folder"],
+)
+def test_failed_deletion_is_already_logged_with_the_folder_name(
+        tmp_path, caplog, monkeypatch, deleting_module, folder):
+    # A deletion that fails midway (e.g. a file still open on Windows) aborts the run
+    # before its summary line, so the folder must already be named in the log.
+    _run(tmp_path, _FakePopulationSim(), _cells())
+    (tmp_path / "batch_002").mkdir()  # left by an earlier, larger partition
+    monkeypatch.setattr(deleting_module, "shutil", SimpleNamespace(rmtree=_failing_rmtree))
+
+    with pytest.raises(OSError, match="simulated"):
+        _run(tmp_path, _FakePopulationSim(), _cells(target_of_batch_001_cell=7.0))
+
+    assert any(
+        folder in record.getMessage()
+        for record in caplog.records
+        if record.name == deleting_module.__name__ and record.levelno == logging.WARNING
+    )
+
+
+def test_completed_batch_without_input_record_starts_again(tmp_path):
+    # A work dir written before the per-batch record existed (or one whose record was
+    # lost) cannot prove which inputs its output was built from.
+    _run(tmp_path, _FakePopulationSim(), _cells())
+    (tmp_path / "batch_000" / batch.INPUT_FINGERPRINT_FILE).unlink()
+
+    rerun = _FakePopulationSim()
+    _run(tmp_path, rerun, _cells())
+    assert rerun.started == ["batch_000"]
+
+
+def test_changed_inputs_discard_the_checkpoint_store_of_an_unfinished_batch(tmp_path):
+    _run(tmp_path, _FakePopulationSim(), _cells())
+    # Both batches were interrupted: no completion marker, a checkpoint store left behind.
+    for name in ("batch_000", "batch_001"):
+        (tmp_path / name / batch.COMPLETION_MARKER).unlink()
+        (tmp_path / name / batch.PIPELINE_STORE).write_bytes(b"checkpoint")
+
+    rerun = _FakePopulationSim()
+    _run(tmp_path, rerun, _cells(target_of_batch_001_cell=7.0))
+    # PopulationSim resumes from the store, so batch_001 must not see the one built
+    # for its old targets; batch_000's inputs are unchanged, so its resume is kept.
+    assert rerun.store_at_start == {"batch_000": True, "batch_001": False}
+
+
+def test_batch_folder_of_an_earlier_larger_partition_is_removed(tmp_path):
+    # Not merged, but summarize_integerizer_feasibility would still read its log.
+    leftover = tmp_path / "batch_002"
+    (leftover / "output").mkdir(parents=True)
+    (leftover / "output" / "populationsim.log").write_text("OLD RUN", encoding="utf-8")
+
+    _run(tmp_path, _FakePopulationSim(), _cells())
+    assert not leftover.exists()

@@ -26,10 +26,11 @@ import pickle
 
 import networkx as nx
 from networkx.readwrite.json_graph import node_link_data
-from synpp.pipeline import ExecuteContext, PipelineError, ValidateContext, rmtree, update_json
+from synpp.pipeline import ExecuteContext, PipelineError, ValidateContext, rmtree
 
 from braunschweig import synpp_tokens
 from braunschweig.synpp_deterministic import process_stages  # PATCH deterministic-propagation
+from braunschweig.synpp_fork import metadata as _metadata  # PATCH atomic-metadata
 from braunschweig.synpp_fork import output_hash as _output_hash  # PATCH content-addressed-validity
 from braunschweig.synpp_fork import staleness as _staleness  # PATCH content-addressed-validity
 
@@ -314,7 +315,7 @@ def run(definitions, config = {}, working_directory = None, flowchart_path = Non
             del meta[hash]
 
     if not working_directory is None:
-        update_json(meta, working_directory)
+        _metadata.write_meta(meta, working_directory)  # PATCH atomic-metadata: instead of update_json
 
     logger.info("Successfully reset meta data")
 
@@ -439,7 +440,7 @@ def run(definitions, config = {}, working_directory = None, flowchart_path = Non
                         _mark_stale(child_hash, reason)
 
             if not working_directory is None:
-                update_json(meta, working_directory)
+                _metadata.write_meta(meta, working_directory)  # PATCH atomic-metadata: instead of update_json
 
             # Clear cache for ephemeral stages if they are no longer needed
             if not working_directory is None:

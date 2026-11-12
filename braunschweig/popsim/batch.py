@@ -11,6 +11,9 @@ This module provides:
   partitions of at most ``max_cells`` 100 m cells (atomic 1 km cells);
 - a content-hash ``SplitManifest`` so a split folder can be recognised as
   up-to-date (or stale) without re-running -- deterministic, no time/randomness;
+- ``input_fingerprint`` + ``reconcile_batch_outputs`` -- the per-batch decision
+  whether a folder's existing output still belongs to the inputs just written
+  into it (else the output is discarded before the runner looks at the folder);
 - a runner abstraction (``run_batches`` + injectable ``run_one``) so the real
   PopulationSim subprocess stays out of the tested path.
 
@@ -23,6 +26,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -35,8 +39,17 @@ from typing import Callable, Mapping, Optional, Sequence, Union
 
 logger = logging.getLogger(__name__)
 
+# The directory of a batch folder that PopulationSim writes into: it holds
+# COMPLETION_MARKER, PIPELINE_STORE and the run log, and reconcile_batch_outputs
+# discards it as a whole. braunschweig.popsim.folders.write_popsim_folder creates the
+# same directory under its own literal (that module does not import this one); if the
+# two ever disagree, every run_popsim_mid test in tests/test_popsim_work_dir_guard.py
+# fails, because its PopulationSim stand-in writes COMPLETION_MARKER into the
+# directory write_popsim_folder prepared without creating one.
+_OUTPUT_DIR = "output"
+
 # The output file PopulationSim writes; its presence marks a finished batch.
-COMPLETION_MARKER = "output/final_expanded_household_ids.csv"
+COMPLETION_MARKER = f"{_OUTPUT_DIR}/final_expanded_household_ids.csv"
 
 # PopulationSim's per-batch checkpoint store. Once the completion marker exists it is
 # dead weight: the merge stage reads only the marker CSV, no repo code reads the h5,
@@ -44,7 +57,7 @@ COMPLETION_MARKER = "output/final_expanded_household_ids.csv"
 # pool it grows to ~15 GB per batch (a dense per-signature x per-100m-cell weight
 # table, ~99.9% zeros), enough to fill the run server's disk mid-campaign (issue #153),
 # so the runner deletes it after verified completion when cleanup is enabled.
-PIPELINE_STORE = "output/pipeline.h5"
+PIPELINE_STORE = f"{_OUTPUT_DIR}/pipeline.h5"
 
 # Valid batch run statuses.
 _VALID_STATUSES = frozenset({"succeeded", "failed", "skipped"})
@@ -211,6 +224,127 @@ def read_manifest(path: Union[str, Path]) -> SplitManifest:
 def is_completed(folder: Union[str, Path]) -> bool:
     """Return ``True`` iff ``folder`` already holds the PopulationSim output."""
     return (Path(folder) / COMPLETION_MARKER).is_file()
+
+
+# File in a batch folder (beside output/, never inside it, so discarding the output
+# keeps it) holding the fingerprint of the inputs the folder's output belongs to.
+# Written by reconcile_batch_outputs before the runner starts the batch.
+INPUT_FINGERPRINT_FILE = ".input_fingerprint"
+
+# Input files left out of input_fingerprint. logging.yaml configures only
+# PopulationSim's own logging and cannot change a result, so editing it must not
+# discard a completed batch.
+_FINGERPRINT_EXCLUDED_FILES = frozenset({"logging.yaml"})
+
+# Chunk size for hashing input files: the seed tables can be large, so they are
+# streamed instead of read whole.
+_FINGERPRINT_CHUNK_BYTES = 1 << 20
+
+# Return values of reconcile_batch_outputs (one per row of its decision table).
+INPUTS_UNCHANGED = "unchanged"
+INPUTS_CHANGED = "changed"
+INPUTS_UNRECORDED = "unrecorded"
+INPUTS_NEW = "new"
+
+
+def input_fingerprint(input_paths: Mapping[str, Union[str, Path]]) -> str:
+    """Fingerprint (sha256 hex) of the input files a batch folder holds.
+
+    ``input_paths`` is the mapping file name -> path that
+    ``braunschweig.popsim.folders.write_popsim_folder`` returns. The fingerprint is
+    taken over the name and the sha256 content digest of every file, in sorted name
+    order, except the files in ``_FINGERPRINT_EXCLUDED_FILES``. It depends only on
+    file names and bytes (no timestamps), so inputs rewritten byte for byte give
+    the same fingerprint on every run.
+    """
+    hasher = hashlib.sha256()
+    for name in sorted(input_paths):
+        if name in _FINGERPRINT_EXCLUDED_FILES:
+            continue
+        content = hashlib.sha256()
+        with open(input_paths[name], "rb") as handle:
+            for chunk in iter(lambda: handle.read(_FINGERPRINT_CHUNK_BYTES), b""):
+                content.update(chunk)
+        # NUL after the name and newline after the fixed-length digest keep the
+        # (name, digest) sequence unambiguous.
+        hasher.update(name.encode("utf-8"))
+        hasher.update(b"\0")
+        hasher.update(content.hexdigest().encode("ascii"))
+        hasher.update(b"\n")
+    return hasher.hexdigest()
+
+
+def reconcile_batch_outputs(
+    folder: Union[str, Path], input_paths: Mapping[str, Union[str, Path]]
+) -> str:
+    """Keep a batch folder's output only if it was built from the inputs it now holds.
+
+    Call this after the folder's inputs were (re)written and before the batch
+    runner looks at the folder: the runner skips a folder whose completion marker
+    exists and lets PopulationSim resume from ``PIPELINE_STORE``, so output built
+    from other inputs must be gone by then. The fingerprint of ``input_paths``
+    (:func:`input_fingerprint`) is compared with the record in
+    ``INPUT_FINGERPRINT_FILE``:
+
+    ==================  ======================  =====================  ============================
+    Record              ``output/`` has a file  Returned               Action
+    ==================  ======================  =====================  ============================
+    equals fingerprint  any                     ``INPUTS_UNCHANGED``   none
+    differs             any                     ``INPUTS_CHANGED``     discard output, write record
+    absent              yes                     ``INPUTS_UNRECORDED``  discard output, write record
+    absent              no                      ``INPUTS_NEW``         write record
+    ==================  ======================  =====================  ============================
+
+    An absent record with existing output is never trusted: a folder written before
+    the record existed, or one whose record was lost, cannot prove which inputs its
+    output was built from.
+
+    Mutates: "discard output" removes the whole output directory (completion
+    marker, checkpoint store, log) and recreates it empty. When that directory
+    holds at least one file, a WARNING names the batch folder and the reason
+    (inputs changed since the output was built / output without a recorded input
+    fingerprint) before it is removed, so a removal that fails midway is still on
+    record. Nothing is logged here when no file is deleted (``INPUTS_UNCHANGED``,
+    ``INPUTS_NEW``, or ``INPUTS_CHANGED`` with an empty or absent output
+    directory, e.g. after a run that stopped before the batch wrote anything).
+    The record is written atomically (temporary file in the folder, then
+    ``os.replace``) and only after the discard, so a process killed in between
+    leaves a record that still differs from the inputs, or no record and no output.
+    """
+    folder_path = Path(folder)
+    record_path = folder_path / INPUT_FINGERPRINT_FILE
+    output_dir = folder_path / _OUTPUT_DIR
+    fingerprint = input_fingerprint(input_paths)
+    recorded = (
+        record_path.read_text(encoding="utf-8").strip() if record_path.is_file() else None
+    )
+    if recorded == fingerprint:
+        return INPUTS_UNCHANGED
+    has_output = output_dir.is_dir() and any(path.is_file() for path in output_dir.rglob("*"))
+    if recorded is not None:
+        state = INPUTS_CHANGED
+    elif has_output:
+        state = INPUTS_UNRECORDED
+    else:
+        state = INPUTS_NEW
+    if state != INPUTS_NEW:
+        if has_output:
+            reason = (
+                "its inputs changed since the output was built"
+                if state == INPUTS_CHANGED
+                else "the output exists without a recorded input fingerprint"
+            )
+            logger.warning(
+                "[popsim.batch] discarding the PopulationSim output of %s: %s; "
+                "the batch runs again.", folder_path, reason,
+            )
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
+        output_dir.mkdir(parents=True)
+    temporary_path = record_path.with_name(record_path.name + ".tmp")
+    temporary_path.write_text(fingerprint, encoding="utf-8")
+    os.replace(temporary_path, record_path)
+    return state
 
 
 @dataclass(frozen=True)

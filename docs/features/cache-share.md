@@ -56,8 +56,10 @@ sampling- AND path-independent stages (identical synpp hash at 1% and 25%) plus
 `braunschweig.population.popsim.work_dir`: 1% and 25% use
 `eqasim-data/popsim_work_allfeat`, while 100% intentionally keeps
 `eqasim-data/popsim_work_allfeat_opt` and different importance weights;
-the stale-batch guard (`purge_stale_batches_on_config_change`) keeps a shared
-work_dir safe on a config change. The MiD donor build (member completion +
+two guards keep a shared work_dir safe: the work-dir signature purges every batch
+folder on a config change (`purge_stale_batches_on_config_change`), and the output
+of each batch is reused only for the input files it was built from
+(`braunschweig.popsim.batch.reconcile_batch_outputs`, ADR-0193). The MiD donor build (member completion +
 weekend-plan match) is the `braunschweig.popsim.completed_donor` stage: it depends
 on the MiD data, random seed and declared donor-construction options and helper
 sources; it is independent of controls / sampling / work_dir. A compatible
