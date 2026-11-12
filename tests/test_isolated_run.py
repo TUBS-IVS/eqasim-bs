@@ -470,6 +470,23 @@ def test_real_snapshot_files_parse_and_an_empty_env_misses_every_pin():
     assert len(empty.offenders) == empty.conda_total + empty.pip_total + empty.git_pins
 
 
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux") or not (Path(sys.prefix) / "conda-meta").is_dir(),
+    reason="primary-path check needs a Linux conda environment built from the committed snapshot (the CI job)")
+def test_environment_built_from_the_snapshot_matches_it_completely():
+    """Primary path on real input: the Linux CI job installs exactly these two files, so the probe and the
+    comparison must report a full match there. A parser that misreads the lock or the conda-meta names fails here."""
+    environments = Path(__file__).resolve().parents[1] / "environments"
+    probe = subprocess.run([sys.executable, "-c", tool.ENVIRONMENT_PROBE], capture_output=True, text=True, check=True)
+
+    check = tool.check_environment((environments / "server-linux-64.lock").read_text(encoding="utf-8"),
+                                   (environments / "requirements-server-linux-64.txt").read_text(encoding="utf-8"),
+                                   json.loads(probe.stdout))
+
+    assert check.offenders == []
+    assert check.conda_matched == check.conda_total > 0 and check.pip_matched == check.pip_total > 0
+
+
 def gated_run(root, machine):
     run_dir, source = make_run_dir(root)
     host = machine.host(root)
