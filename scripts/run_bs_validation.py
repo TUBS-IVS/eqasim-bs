@@ -10,7 +10,7 @@ when called as a fresh Python process (no prior import of the
 submodules).
 
 Usage:
-    python -m scripts.run_bs_validation --rate {1|10|25} [--out PATH]
+    python -m scripts.run_bs_validation --rate {1|10|25|100} [--out PATH]
 """
 from __future__ import annotations
 
@@ -20,23 +20,32 @@ import sys
 from pathlib import Path
 
 
+# Rates with a canonical overlay in configs/overlays/ (test_1pct.yml, test_25pct.yml,
+# test_100pct.yml): those write output_bs_<rate>pct_allfeat_popsim,
+# cache_bs_<rate>pct_allfeat_popsim and the file prefix
+# braunschweig_<rate>pct_allfeat_popsim_. The 10 % rate has no overlay; it keeps the
+# legacy layout that scripts.validate_bs_10pct was written for.
+CANONICAL_RATES = (1, 25, 100)
+
+
+def rate_layout(rate_pct: int, repo: Path) -> tuple[Path, Path, str]:
+    """Return (output dir, cache dir, file prefix) the run of ``rate_pct`` % writes."""
+    if rate_pct in CANONICAL_RATES:
+        suffix = f"{rate_pct}pct_allfeat_popsim"
+        return (repo / "eqasim-data" / f"output_bs_{suffix}",
+                repo / "eqasim-data" / f"cache_bs_{suffix}",
+                f"braunschweig_{suffix}_")
+    return (repo / "eqasim-data" / f"output_bs_{rate_pct}pct",
+            repo / "eqasim-data" / f"cache_bs_{rate_pct}pct",
+            f"braunschweig_{rate_pct}pct_")
+
+
 def _patch_config(rate_pct: int) -> Path:
     # Import the config module first; submodules MUST NOT yet be imported.
     from scripts.validate_bs_10pct import config
 
     rate = rate_pct / 100.0
-    repo = config.REPO
-
-    if rate_pct == 1:
-        # Default 1 % output directory matches `eqasim-data/output_bs/`
-        # and `eqasim-data/cache_bs/`; the file prefix has no rate suffix.
-        out_dir = repo / "eqasim-data" / "output_bs"
-        cache_dir = repo / "eqasim-data" / "cache_bs"
-        prefix = "braunschweig_"
-    else:
-        out_dir = repo / "eqasim-data" / f"output_bs_{rate_pct}pct"
-        cache_dir = repo / "eqasim-data" / f"cache_bs_{rate_pct}pct"
-        prefix = f"braunschweig_{rate_pct}pct_"
+    out_dir, cache_dir, prefix = rate_layout(rate_pct, config.REPO)
 
     if not out_dir.exists():
         raise FileNotFoundError(
@@ -52,7 +61,7 @@ def _patch_config(rate_pct: int) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run BS validation for any rate")
-    parser.add_argument("--rate", type=int, choices=[1, 10, 25], required=True)
+    parser.add_argument("--rate", type=int, choices=[1, 10, 25, 100], required=True)
     parser.add_argument("--out", type=Path, default=None,
                         help="Output directory (default: <output>/validation)")
     args = parser.parse_args()
