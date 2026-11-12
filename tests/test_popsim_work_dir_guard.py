@@ -12,8 +12,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 from braunschweig.popsim import batch, folders, mid, stage
+from braunschweig.popsim.sources.mid import MidSource
 
 
 def _sig(**overrides):
@@ -140,8 +142,17 @@ _PARENTS_1KM = (
     "CRS3035RES1000mN2691000E4342000",
 )
 # With max_cells=2 the first 1 km parent (two cells) fills batch_000 and the other two
-# parents share batch_001, so the third 100 m cell belongs to batch_001 only.
+# parents share batch_001, so the third 100 m cell belongs to batch_001 only. The
+# RegioStaR7 strata (71 for the first parent, 77 for the others) give the stratified
+# branch the same two batches.
 _CELL_OF_BATCH_001 = _CELLS_100M[2]
+
+# The two branches of run_popsim_mid; each assembles its batch folders in its own loop.
+_BRANCHES = pytest.mark.parametrize(
+    "branch_options",
+    [{}, {"stratify_regiostar": True, "source": MidSource()}],
+    ids=["unstratified", "regiostar_stratified"],
+)
 
 
 def _cells(target_of_batch_001_cell=3.0):
@@ -149,6 +160,7 @@ def _cells(target_of_batch_001_cell=3.0):
         pd.DataFrame({"GITTER_ID_100m": _CELLS_100M, "GITTER_ID_1km": _PARENTS_1KM})
     )
     cells["POP"] = [1.0, 2.0, target_of_batch_001_cell, 4.0]
+    cells["RegioStaR7"] = [71, 71, 77, 77]
     return cells
 
 
@@ -158,6 +170,9 @@ class _FakePopulationSim:
     Notes each folder it is started for and whether that folder's checkpoint store
     existed at that moment, then writes the completion marker from the 100 m control
     targets it finds in the folder, so the merged table shows which inputs produced it.
+    It creates no directory: the marker goes into the output directory that
+    ``folders.write_popsim_folder`` prepared, so every run here fails if that
+    directory and ``batch.COMPLETION_MARKER`` ever disagree.
     """
 
     def __init__(self):
@@ -173,36 +188,41 @@ class _FakePopulationSim:
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
 
-def _run(work_dir, popsim, cells, *, logging_yaml="version: 1\n"):
+def _run(work_dir, popsim, cells, *, logging_yaml="version: 1\n", **branch_options):
     controls_df = pd.DataFrame(
         {"target": ["POP_ZENSUS100m_target"], "geography": ["ZENSUS100m"],
          "seed_table": ["persons"], "importance": [1000],
          "control_field": ["POP_ZENSUS100m"], "expression": ["(persons.P_GEW > 0)"]}
     )
-    seed_hh = pd.DataFrame({"H_ID": [1], "H_GEW": [2.0], "STAAT": [1]})
-    seed_p = pd.DataFrame({"H_ID": [1], "P_ID": [1], "STAAT": [1]})
+    # One donor household per RegioStaR7 stratum, so the stratified branch finds donors.
+    seed_hh = pd.DataFrame(
+        {"H_ID": [1, 2], "H_GEW": [2.0, 2.0], "STAAT": [1, 1], "RegioStaR7": [71, 77]}
+    )
+    seed_p = pd.DataFrame({"H_ID": [1, 2], "P_ID": [1, 2], "STAAT": [1, 1]})
     run_one = batch.make_populationsim_run_one(
         command_prefix=("populationsim",), subprocess_run=popsim, cleanup_pipeline_h5=False,
     )
     return mid.run_popsim_mid(
         cells, ["POP"], controls_df, seed_hh, seed_p,
         work_dir=work_dir, settings_yaml="x: 1\n", logging_yaml=logging_yaml,
-        max_cells=2, run_one=run_one, num_workers=1,
+        max_cells=2, run_one=run_one, num_workers=1, **branch_options,
     )
 
 
-def test_batch_starts_again_exactly_when_its_inputs_change(tmp_path):
-    _run(tmp_path, _FakePopulationSim(), _cells())
+@_BRANCHES
+def test_batch_starts_again_exactly_when_its_inputs_change(tmp_path, branch_options):
+    _run(tmp_path, _FakePopulationSim(), _cells(), **branch_options)
 
     # Same inputs; only PopulationSim's own logging setup differs: every batch is reused.
     rerun = _FakePopulationSim()
-    _run(tmp_path, rerun, _cells(), logging_yaml="version: 1\nroot: {level: DEBUG}\n")
+    _run(tmp_path, rerun, _cells(), logging_yaml="version: 1\nroot: {level: DEBUG}\n",
+         **branch_options)
     assert rerun.started == []
 
     # Regression (P3-F2): one cell's control target changed. Before the fix no batch
     # started again and the merged table carried the old target 3.
     rerun = _FakePopulationSim()
-    report = _run(tmp_path, rerun, _cells(target_of_batch_001_cell=7.0))
+    report = _run(tmp_path, rerun, _cells(target_of_batch_001_cell=7.0), **branch_options)
     assert rerun.started == ["batch_001"]
     merged_targets = report.combined.set_index("ZENSUS100m")["POP_ZENSUS100m"]
     assert merged_targets[_CELL_OF_BATCH_001] == 7

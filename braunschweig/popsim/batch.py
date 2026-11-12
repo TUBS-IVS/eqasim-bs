@@ -39,8 +39,17 @@ from typing import Callable, Mapping, Optional, Sequence, Union
 
 logger = logging.getLogger(__name__)
 
+# The directory of a batch folder that PopulationSim writes into: it holds
+# COMPLETION_MARKER, PIPELINE_STORE and the run log, and reconcile_batch_outputs
+# discards it as a whole. braunschweig.popsim.folders.write_popsim_folder creates the
+# same directory under its own literal (that module does not import this one); if the
+# two ever disagree, every run_popsim_mid test in tests/test_popsim_work_dir_guard.py
+# fails, because its PopulationSim stand-in writes COMPLETION_MARKER into the
+# directory write_popsim_folder prepared without creating one.
+_OUTPUT_DIR = "output"
+
 # The output file PopulationSim writes; its presence marks a finished batch.
-COMPLETION_MARKER = "output/final_expanded_household_ids.csv"
+COMPLETION_MARKER = f"{_OUTPUT_DIR}/final_expanded_household_ids.csv"
 
 # PopulationSim's per-batch checkpoint store. Once the completion marker exists it is
 # dead weight: the merge stage reads only the marker CSV, no repo code reads the h5,
@@ -48,7 +57,7 @@ COMPLETION_MARKER = "output/final_expanded_household_ids.csv"
 # pool it grows to ~15 GB per batch (a dense per-signature x per-100m-cell weight
 # table, ~99.9% zeros), enough to fill the run server's disk mid-campaign (issue #153),
 # so the runner deletes it after verified completion when cleanup is enabled.
-PIPELINE_STORE = "output/pipeline.h5"
+PIPELINE_STORE = f"{_OUTPUT_DIR}/pipeline.h5"
 
 # Valid batch run statuses.
 _VALID_STATUSES = frozenset({"succeeded", "failed", "skipped"})
@@ -216,10 +225,6 @@ def is_completed(folder: Union[str, Path]) -> bool:
     """Return ``True`` iff ``folder`` already holds the PopulationSim output."""
     return (Path(folder) / COMPLETION_MARKER).is_file()
 
-
-# The directory of a batch folder that PopulationSim writes into: it holds
-# COMPLETION_MARKER, PIPELINE_STORE and the run log.
-_OUTPUT_DIR = "output"
 
 # File in a batch folder (beside output/, never inside it, so discarding the output
 # keeps it) holding the fingerprint of the inputs the folder's output belongs to.
