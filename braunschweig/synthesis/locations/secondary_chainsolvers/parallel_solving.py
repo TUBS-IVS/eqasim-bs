@@ -198,6 +198,7 @@ def _solve_person_shard(task):
 
     result_chunks: List[pd.DataFrame] = []
     failed_problem_idx: List[int] = []
+    seen_errors: set = set()
 
     for start in range(0, len(shard_uids), _CHAIN_CHUNK_SIZE):
         chunk_uids = shard_uids[start:start + _CHAIN_CHUNK_SIZE]
@@ -220,7 +221,16 @@ def _solve_person_shard(task):
                 try:
                     res_df, _seg, _v = cs.solve(ctx=ctx, plans_df=person_chunk)
                     result_chunks.append(res_df)
-                except Exception:
+                except Exception as exc:
+                    error_key = (type(exc).__name__, str(exc))
+                    if (error_key not in seen_errors
+                            and len(seen_errors) < MAX_LOGGED_SHARD_EXCEPTIONS):
+                        seen_errors.add(error_key)
+                        print(
+                            f"[braunschweig.secondary_chainsolvers] shard "
+                            f"{shard_index}: person {uid} failed with "
+                            f"{error_key[0]}: {error_key[1]}"
+                        )
                     try:
                         _, prob_idx_str = str(uid).rsplit("#", 1)
                         failed_problem_idx.append(int(prob_idx_str))
@@ -230,6 +240,9 @@ def _solve_person_shard(task):
     result_df = pd.concat(result_chunks, ignore_index=True) if result_chunks else None
     return shard_index, result_df, failed_problem_idx
 
+
+#: Distinct (exception type, message) pairs a shard worker prints for failed persons.
+MAX_LOGGED_SHARD_EXCEPTIONS = 5
 
 #: How many executor generations a shard set may be run through before the stage
 #: gives up. 1 = no recovery (fail on the first lost worker). The default allows

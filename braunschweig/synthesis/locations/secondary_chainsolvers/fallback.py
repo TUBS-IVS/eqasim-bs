@@ -112,6 +112,14 @@ def _build_rda_candidate_index(df_secondary: pd.DataFrame):
     return CandidateIndex(destinations)
 
 
+#: Share of failed fallback problems above which a WARNING is printed (CLAUDE.md
+#: "Fallback transparency"); logging only, no effect on results.
+FALLBACK_WARN_RATE = 0.05
+
+#: Number of distinct (exception type, message) pairs printed per RDA fallback call.
+MAX_LOGGED_EXCEPTIONS = 5
+
+
 def _rda_fallback_place(problems: List[Dict[str, Any]],
                         problem_indices: List[int],
                         candidate_index,
@@ -197,12 +205,21 @@ def _rda_fallback_place(problems: List[Dict[str, Any]],
     out_rows: List[tuple] = []
     convergence_rows: List[tuple] = []
     n_failed = 0
+    seen_errors: set = set()
     for prob_idx in problem_indices:
         problem = problems[prob_idx]
         try:
             result = assignment_solver.solve(problem)
-        except Exception:
+        except Exception as exc:
             n_failed += 1
+            error_key = (type(exc).__name__, str(exc))
+            if (error_key not in seen_errors
+                    and len(seen_errors) < MAX_LOGGED_EXCEPTIONS):
+                seen_errors.add(error_key)
+                print(
+                    f"[braunschweig.secondary_chainsolvers]{pass_label} RDA fallback "
+                    f"problem {prob_idx} raised {error_key[0]}: {error_key[1]}"
+                )
             convergence_rows.append((False, problem["size"]))
             continue
         a0 = problem["activity_index"]
@@ -221,6 +238,20 @@ def _rda_fallback_place(problems: List[Dict[str, Any]],
         f"{len(problem_indices) - n_failed:,}/{len(problem_indices):,} "
         f"problems (raised={n_failed:,})"
     )
+    if problem_indices:
+        failed_rate = n_failed / len(problem_indices)
+        print(
+            f"[braunschweig.secondary_chainsolvers]{pass_label} RDA fallback "
+            f"primary {len(problem_indices) - n_failed}/{len(problem_indices)} "
+            f"({100.0 * (1.0 - failed_rate):.1f}%), failed {n_failed} "
+            f"({100.0 * failed_rate:.1f}%)"
+        )
+        if failed_rate > FALLBACK_WARN_RATE:
+            print(
+                f"[braunschweig.secondary_chainsolvers]{pass_label} WARNING: RDA "
+                f"fallback failure rate {100.0 * failed_rate:.1f}% exceeds "
+                f"{100.0 * FALLBACK_WARN_RATE:.0f}%"
+            )
     return out_rows, convergence_rows
 
 

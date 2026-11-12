@@ -24,6 +24,7 @@ from .activity_types import (
     OTHER_SUBTYPE_ACTIVITIES,
     SHOP_SUBTYPE_ACTIVITIES,
 )
+from .fallback import FALLBACK_WARN_RATE
 from .plans import SECONDARY_PURPOSES
 from .srv_location_types import SRV_LEISURE_CATEGORIES, SRV_OTHER_CATEGORIES
 
@@ -184,6 +185,26 @@ def _extract_locations(result_df: pd.DataFrame,
         else f"cs_{kept_prob_idx[i]}_{kept_leg_idx[i]}"
         for i, cand in enumerate(kept_cand)
     ]
+    # Fallback transparency: a synthesised id means the solver returned an unknown id.
+    n_placed_legs = len(location_id)
+    n_synthesised = sum(
+        1 for cand in kept_cand
+        if not (isinstance(cand, str) and cand in known_location_ids)
+    )
+    synthesised_rate = n_synthesised / n_placed_legs
+    print(
+        f"[braunschweig.secondary_chainsolvers] result mapping: known solver id "
+        f"{n_placed_legs - n_synthesised}/{n_placed_legs} "
+        f"({100.0 * (1.0 - synthesised_rate):.1f}%), synthesised cs_* id "
+        f"{n_synthesised} ({100.0 * synthesised_rate:.1f}%)"
+    )
+    if synthesised_rate > FALLBACK_WARN_RATE:
+        print(
+            f"[braunschweig.secondary_chainsolvers] WARNING: {100.0 * synthesised_rate:.1f}% "
+            f"of the placed legs carry a synthesised cs_* location id (above "
+            f"{100.0 * FALLBACK_WARN_RATE:.0f}%) -- the solver returned unknown "
+            "identifiers (check the candidate id column)."
+        )
 
     # Geometry built in one shot from the float coordinate arrays.
     geometry = gpd.points_from_xy(to_x[keep], to_y[keep])

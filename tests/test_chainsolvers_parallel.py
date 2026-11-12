@@ -364,3 +364,15 @@ def test_chain_shards_rejects_a_yaml_boolean():
     for value in (True, False):
         with pytest.raises(ValueError, match="must be a positive integer"):
             scs._resolve_chain_shards(value)
+
+
+def test_solve_person_shard_logs_failing_person_exception(fake_chainsolvers, capsys):
+    """P5a-F14: the per-person failure is logged with exception type and message."""
+    persons = ["p0#0", "pBAD#1", "p2#2"]
+    scs._init_chain_worker(locations_df=None, solver="carla")
+    _idx, result_df, failed = scs._solve_person_shard(
+        (0, persons, _plans(persons), 5)
+    )
+    out = capsys.readouterr().out
+    assert failed == [1]  # same result as without the logging
+    assert "ValueError: unsolvable person pBAD#1" in out
