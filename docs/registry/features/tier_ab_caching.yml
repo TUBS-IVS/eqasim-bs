@@ -20,6 +20,8 @@ introduced:
 detail_doc: docs/features/cache-share.md
 code_paths:
 - braunschweig/popsim/stage/
+- braunschweig/popsim/batch.py
+- braunschweig/popsim/mid/batch_folders.py
 evidence:
   tests:
   - tests/test_allfeat_caching_config.py
@@ -33,7 +35,7 @@ evidence:
   fallback_rate:
     instrumented: false
     note: |
-      No primary-vs-fallback rate log exists for the caching mechanism itself (synpp's own hash-validation handles hit/miss silently). The closest instrumented log is the stale-batch guard (braunschweig/popsim/stage/), which logs how many stale batch folders were purged when the popsim config changed -- a safety guard, not a fallback rate.
+      No primary-vs-fallback rate log exists for the caching mechanism itself (synpp's own hash-validation handles hit/miss silently). The closest instrumented logs are the two guards of the shared work_dir, safety guards and not fallback rates: the work-dir signature (braunschweig/popsim/stage/batch_cache.py), which logs how many batch folders were purged when the popsim config changed, and the per-batch input fingerprint (braunschweig.popsim.batch.reconcile_batch_outputs, ADR-0193), whose one log line per run counts the batch outputs kept, discarded and new and the batch folders removed.
   reference:
     kind: none
     note: Infrastructure feature (stage caching); no external reference applies.

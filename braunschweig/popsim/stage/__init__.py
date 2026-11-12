@@ -1945,9 +1945,12 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
     Purge stale batch folders if the popsim config/control set changed since the last
     run that used this work_dir (the work_dir persists outside synpp's stage cache, so
     a config change would otherwise leave old completion markers that the batch runner
-    skips -> stale-config population for those cells). Signature = everything that
-    determines a batch's inputs (the full control set, the PopulationSim settings, the
-    batching/stratification, the donor source, the KREIS controls, the seed-day filter).
+    skips -> stale-config population for those cells). The signature covers the control
+    set, the PopulationSim settings, the batching/stratification, the donor source, the
+    KREIS controls, the seed-day filter and the content of the seed and Kreis-target
+    frames. It does not cover the per-cell control targets: whether one batch's output
+    still belongs to its inputs is decided afterwards, per batch, by
+    ``braunschweig.popsim.batch.reconcile_batch_outputs`` (ADR-0193).
 
     Returns: nothing.
     Mutates: DELETES stale ``batch_*`` folders under ``work_dir`` and rewrites

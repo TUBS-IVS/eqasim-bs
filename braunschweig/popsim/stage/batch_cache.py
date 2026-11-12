@@ -9,8 +9,8 @@
   frame (row values + column layout), used by
   :func:`compute_batch_config_signature`.
 - :func:`compute_batch_config_signature` -- compute the work-dir batch-input
-  signature (sha256 hex) that captures everything determining a batch's
-  inputs.
+  signature (sha256 hex) over the batch inputs it lists (not all of them, see
+  its docstring).
 
 Extracted verbatim from the stage module (``__init__``); see the package
 docstring for the stage-level context.
@@ -106,9 +106,13 @@ def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
                                    status_prior_n=0.0) -> str:
     """Compute the work-dir batch-input signature (sha256 hex).
 
-    The signature captures EVERYTHING that determines a batch's inputs, so that a change
-    since the last run in the same ``work_dir`` purges the stale completed batches
-    (:func:`purge_stale_batches_on_config_change`). Beyond the control set, settings,
+    The signature covers the batch inputs listed in ``payload`` below, so that a change to
+    one of them since the last run in the same ``work_dir`` purges the stale completed
+    batches (:func:`purge_stale_batches_on_config_change`). It is NOT complete: the
+    per-cell control targets (the ``cells`` frame) are not part of it, and a code change
+    to the functions that build the batch inputs does not move it. Those cases are decided
+    per batch by ``braunschweig.popsim.batch.reconcile_batch_outputs`` (ADR-0193).
+    Beyond the control set, settings,
     batching and source, it hashes the CONTENT of the seed frames and the per-Kreis
     target table: the seed content captures the full seed identity (weekend_plan_match /
     complete_members / e-bike column / imputation seed all flow into the seed VALUES), and
