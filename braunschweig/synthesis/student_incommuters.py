@@ -51,6 +51,11 @@ CRS_METRIC = "EPSG:25832"
 # (100000) or SvB in-commuters. Distinct offset keeps draws reproducible+disjoint.
 _RNG_OFFSET = 200000
 
+# ASSUMPTION (a warn bound, not a reference value): share of student donors excluded by the age bound
+# above which ``_adult_student_donors`` warns. The survey's study flag covers school children, who are
+# excluded by design (ADR-0191 decision 7), so a large exclusion is the expected state.
+STUDENT_DONOR_AGE_EXCLUDED_WARN_SHARE = 0.9
+
 # Person/household id block reserved above the resident id range for student
 # in-commuters, additionally offset above the (unrelated) block the SvB
 # in-commuter stage uses starting at the same n_residents/n_resident_households
@@ -446,17 +451,16 @@ def _adult_student_donors(student_donors, age_lower):
     ASSUMPTION: the in-commuters are university students, but the MiD ``studies`` flag also covers school
     children; a donor younger than the lower bound of the configured age band (or without an age) is excluded.
     The count and the primary share are logged next to the donor eligibility of
-    :func:`braunschweig.synthesis.incommuters._eligible_donors`; WARNING above its warn share.
+    :func:`braunschweig.synthesis.incommuters._eligible_donors`; WARNING above
+    :data:`STUDENT_DONOR_AGE_EXCLUDED_WARN_SHARE`.
     """
-    from braunschweig.synthesis import incommuters
-
     age = pd.to_numeric(student_donors["age"], errors="coerce")
     no_age = age.isna()
     too_young = ~no_age & (age < float(age_lower))
     keep = ~(no_age | too_young)
     n, n_kept = len(student_donors), int(keep.sum())
     share = (n - n_kept) / n if n else 0.0
-    (_log.warning if share > incommuters.DONOR_EXCLUDED_WARN_SHARE else _log.info)(
+    (_log.warning if share > STUDENT_DONOR_AGE_EXCLUDED_WARN_SHARE else _log.info)(
         "[student_incommuters] donor age: primary %d/%d student donors (%.2f%%), excluded %d: "
         "%d younger than %s, %d without an age", n_kept, n, 100.0 * n_kept / n if n else 0.0, n - n_kept,
         int(too_young.sum()), age_lower, int(no_age.sum()))
@@ -482,6 +486,7 @@ def _inject(context):
     from braunschweig.data.cordon.incommuter_origins import incommuter_origin_homes
     from braunschweig.data.cordon.mode_reference import (
         MID_DISTANCE_EDGES, restrict_to_modes, route_distance_band)
+    from braunschweig.data.hts import mid_donor
     from braunschweig.data.education import student_incommuter_counts as sic
     from braunschweig.data.education import student_origins as so
     from braunschweig.data.external_workplaces import _load_gemeinden
@@ -516,6 +521,11 @@ def _inject(context):
     min_effective_pool = _validated_min_effective_pool(context.config(KEY_DONOR_MIN_EFFECTIVE_POOL))
     # Fail fast, before any origin is drawn: the donor household, the draw attributes and the age.
     # (the age excludes the donors younger than the lower bound of student_incommuter_age_band).
+    if "age" not in hts_persons.columns:
+        raise ValueError(
+            "[student_incommuters] the student in-commuter donor draw needs the donor age (ADR-0191 "
+            "decision 7: it bounds the student donors by student_incommuter_age_band), which the MiD "
+            f"donor stage only delivers when {mid_donor.KEY_DEMOGRAPHICS} is set to true.")
     incommuters._require_donor_columns(
         hts_persons, needs_distance=True, distance_column=DONOR_DISTANCE_COLUMN, extra_columns=("age",))
 

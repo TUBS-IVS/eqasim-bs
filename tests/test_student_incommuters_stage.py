@@ -937,5 +937,27 @@ def test_a_student_donor_frame_without_a_required_column_raises(monkeypatch, col
         si.execute(_student_stage_ctx(monkeypatch, donors))
 
 
+def test_a_student_donor_frame_without_age_names_the_demographics_key(monkeypatch):
+    """Without the MiD donor demographics the age is missing: the message names the config key to switch on."""
+    from braunschweig.data.hts import mid_donor
+
+    donors = _student_donor_frame({"person_id": 1}).drop(columns=["age"])
+    with pytest.raises(ValueError, match=mid_donor.KEY_DEMOGRAPHICS):
+        si.execute(_student_stage_ctx(monkeypatch, donors))
+
+
+@pytest.mark.parametrize("n_children, level", [(9, "INFO"), (19, "WARNING")])
+def test_student_donor_age_exclusion_logs_info_within_the_warn_bound_and_warning_above(
+        caplog, n_children, level):
+    """One adult next to 9 children excludes 90% (the bound itself), next to 19 children 95%."""
+    import logging
+
+    donors = _student_donor_frame(
+        {"person_id": 0, "age": 22}, *[{"person_id": i, "age": 12} for i in range(1, n_children + 1)])
+    with caplog.at_level(logging.DEBUG, logger="braunschweig.synthesis.student_incommuters"):
+        si._adult_student_donors(donors, 18)
+    assert {r.levelname for r in caplog.records} == {level}
+
+
 def test_empty_frames_carry_the_empty_donor_draw_report():
     assert si._empty_frames()["donor_draw"]["n_agents"] == 0

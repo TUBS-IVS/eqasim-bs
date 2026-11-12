@@ -208,6 +208,23 @@ def test_donor_household_fails_on_a_missing_column_or_a_broken_join(households, 
         mid_donor.attach_donor_household(_donors(), households, np.random.RandomState(0))
 
 
+@pytest.mark.parametrize("n_orphans, level", [(0, "INFO"), (1, "INFO"), (5, "WARNING")])
+def test_donor_household_orphan_share_logs_info_within_the_warn_bound_and_warning_above(
+        caplog, n_orphans, level):
+    """Of 2000 donors, 1 orphan (0.05%) is within the warn bound, 5 (0.25%) above it; none reaches the raise bound."""
+    import logging
+
+    n = 2000
+    donors = pd.concat([_donors().iloc[[0]]] * n, ignore_index=True)
+    donors["person_id"] = [f"{i}_1" for i in range(1, n + 1)]
+    households = pd.concat([_donor_households().iloc[[0]]] * (n - n_orphans), ignore_index=True)
+    households["H_ID"] = range(1, n - n_orphans + 1)
+    with caplog.at_level(logging.DEBUG, logger=mid_donor._log.name):
+        mid_donor.attach_donor_household(donors, households, np.random.RandomState(0))
+    levels = {r.levelname for r in caplog.records if "donor household income" in r.getMessage()}
+    assert levels == {level}
+
+
 def test_donor_draw_attributes_are_weight_weekday_and_first_home_legs():
     _, persons, wege = _synthetic_mid()
     persons = persons.assign(P_GEW=[1.5, 0.5], kernwo=[2, 4])        # 4 = weekend

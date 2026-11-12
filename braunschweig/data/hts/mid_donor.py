@@ -255,6 +255,12 @@ _AGE_OF_MEMBER_WITHOUT_VALID_AGE = 14
 #: household record above which the person-household join is read as broken and the stage raises.
 DONOR_HOUSEHOLD_MISSING_RAISE_SHARE = 0.01
 
+#: ASSUMPTION (a warn bound, not a reference value): share of donor persons without a MiD household
+#: record above which ``attach_donor_household`` warns instead of informing. The MiD 2023 delivery
+#: carries the orphan bucket named by ``braunschweig.popsim.mid.donor.MID_2023_INVALID_HOUSEHOLD_PERSONS``
+#: by construction, so a small share is an expected state; only a share above this bound is unusual.
+DONOR_HOUSEHOLD_MISSING_WARN_SHARE = 0.001
+
 
 def _load_household_ages(mid_dir):
     """Read ``H_ID`` and :data:`HOUSEHOLD_AGE_COLUMNS` from ``MiD2023_Haushalte.csv``.
@@ -400,7 +406,7 @@ def attach_donor_household(
         raise ValueError(
             f"{message}; above {100.0 * DONOR_HOUSEHOLD_MISSING_RAISE_SHARE:.0f}% this is a broken "
             f"person-household join, not a few orphan persons (check the H_ID of both tables).")
-    if n_missing:
+    if share > DONOR_HOUSEHOLD_MISSING_WARN_SHARE:
         _log.warning(message)
     else:
         _log.info(message)
