@@ -140,7 +140,9 @@ def apply_spatial_income_tilt(frame: pd.DataFrame, cell_index: pd.DataFrame, *,
     # Observability only (CLAUDE.md "Fallback transparency"): a row whose cell is absent from
     # the index (or has a NaN index) silently gets the neutral factor 1.0 below. Primary = the
     # index the row actually uses (owner index for owner rows, renter index for every other
-    # tenure) exists; fallback = neutral 1.0. Each line is per tenure group.
+    # tenure) exists; fallback = neutral 1.0. Each line is per tenure group. A missing (NaN)
+    # tenure becomes the string "nan" above, so such a row counts as non-owner, exactly as the
+    # factor below treats it.
     n_renter_rows = int((~is_owner).sum())
     n_owner_rows = int(is_owner.sum())
     log_fallback_rate(

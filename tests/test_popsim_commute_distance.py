@@ -51,7 +51,7 @@ def test_commute_distance_imputes_missing_from_cdf():
 
 def test_commute_distance_rate_logged_primary_when_distances_observed(caplog):
     import logging
-    n = 20
+    n = 40  # 1 NaN of 40 = 2.5 %, clearly below the 5 % warn threshold
     trips = pd.DataFrame({
         "person_id": list(range(n)),
         "preceding_purpose": ["home"] * n,
@@ -61,6 +61,6 @@ def test_commute_distance_rate_logged_primary_when_distances_observed(caplog):
     with caplog.at_level(logging.INFO, logger="braunschweig.popsim.commute_distance"):
         out = cd.run(trips)
     recs = [r for r in caplog.records
-            if "[popsim.commute_distance.work] primary 19/20" in r.message]
+            if "[popsim.commute_distance.work] primary 39/40" in r.message]
     assert len(recs) == 1 and recs[0].levelno == logging.INFO
     assert out["work"]["commute_distance"].notna().all()

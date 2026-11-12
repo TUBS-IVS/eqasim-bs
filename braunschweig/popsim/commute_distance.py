@@ -69,15 +69,10 @@ def _per_purpose(trips: pd.DataFrame, purpose: str, *, rng: np.random.RandomStat
     # primary = observed leg distance; fallback = NaN distance (imputed when a pool exists)
     log_fallback_rate(
         logger, f"popsim.commute_distance.{purpose}", n_missing, n_legs,
-        what=f"persons with a home<->{purpose} leg whose distance was NaN",
+        what=(f"persons with a home<->{purpose} leg whose distance was NaN, drawn from the "
+              "observed leg distances (unless that pool is empty, see the warning below)"),
     )
-    if n_missing and len(pool):
-        logger.info(
-            "[popsim.commute_distance] %s: %d of %d persons with a leg had NaN distance "
-            "imputed from the observed pool of %d legs.",
-            purpose, n_missing, n_legs, len(pool),
-        )
-    elif n_missing:
+    if n_missing and not len(pool):
         logger.warning(
             "[popsim.commute_distance] %s: %d of %d persons with a leg have NaN distance and "
             "the observed pool is empty: NOTHING was imputed, %d stay missing (NaN).",

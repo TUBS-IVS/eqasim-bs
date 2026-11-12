@@ -8,8 +8,8 @@ key). This module holds the one threshold and the one log format the popsim site
 (audit package D, 2026-11-12). It only logs and returns numbers; it never changes a value a
 stage returns, so no synpp stage token needs to hash it.
 
-Threshold choice (owner decision 2026-11-12): one module constant, no per-site config keys.
-5 % is a review trigger, not a validated tolerance: a rate above it asks a human to look.
+The rule for popsim sites (threshold choice, raise vs warn, cache consequence) is owned by
+``docs/codebase/notes/popsim-fallback-rates.md``.
 """
 
 from __future__ import annotations

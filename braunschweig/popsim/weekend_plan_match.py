@@ -224,7 +224,11 @@ def count_pair_band_crossings(target_members: pd.DataFrame, donor_members: pd.Da
     first free donor of ANY age when no donor of the same age band is left, so the pair
     count alone hides how often a child inherits another age group's day. The tier is
     counted per pair AFTER the pairing, from the returned positions, so the pairing itself
-    (and its rng-free determinism) is untouched.
+    (and its rng-free determinism) is untouched. Every tier before ``any_free`` (the
+    ``passenger_key`` and ``lift_free_never`` reorderings included) stays inside the target's
+    band of the ACTIVE edge set, so a crossing of the active bands is exactly an ``any_free``
+    pair. A crossing of the inactive bands is not: with the coarse edges active, a fine
+    crossing can also come from the in-band tiers (two children of the same coarse band).
 
     Both band systems are measured in BOTH arms of the ``fine_child_age_bands`` flag, as in
     ``diary_plan_match._count_fine_child_band_crossings``: the coarse crossings against
