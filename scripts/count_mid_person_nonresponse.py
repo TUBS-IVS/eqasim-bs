@@ -42,6 +42,11 @@ def count_codes(series: pd.Series, codes) -> dict:
     return {"by_code": counts, "n_nan": int(numeric.isna().sum()), "n_persons": len(series)}
 
 
+def share(count: int, n: int) -> str:
+    """``count`` as a percentage of ``n``; an empty persons file has no share."""
+    return f"{100.0 * count / n:.2f} %" if n else "n/a"
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--persons-csv", required=True, type=Path,
@@ -62,8 +67,8 @@ def main(argv=None) -> int:
         total = 0
         for code, k in res["by_code"].items():
             total += k
-            print(f"  code {code}: {k} ({100.0 * k / n:.2f} %)")
-        print(f"  nonresponse codes total: {total} ({100.0 * total / n:.2f} %); "
+            print(f"  code {code}: {k} ({share(k, n)})")
+        print(f"  nonresponse codes total: {total} ({share(total, n)}); "
               f"NaN cells: {res['n_nan']}")
     return 0
 

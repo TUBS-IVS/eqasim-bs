@@ -77,6 +77,12 @@ structure_paths:
   - ".github/claude-review-prompt.md"
 
 # Branch kinds (prefix before "/") that skip the review unless a critical path is touched.
+# TEST of TUBS-IVS/claude-pr-review#6: documentation and tests do not count towards the deep tier's size.
+supporting_paths:
+  - "docs/**"
+  - "tests/**"
+  - "**/*.md"
+
 skip_kinds:
   - docs
 
@@ -111,6 +117,8 @@ thresholds:
 rereview:
   max_rounds: 3
   verify_tier: light
+  small_push_lines: 60
+  verify_effort: low
 
 # Each tier's hard budget per run (claude -p --max-budget-usd) is the owner's and comes from the
 # organization secret CLAUDE_REVIEW_BUDGETS, which the caller passes: no budget is published
