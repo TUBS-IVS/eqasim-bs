@@ -5,6 +5,18 @@ import os.path
 import matsim.runtime.eqasim as eqasim
 import matsim.runtime.java as java
 
+from braunschweig import synpp_tokens
+
+# Helpers whose code this stage runs (ADR-0194): ``eqasim`` and ``java`` are declared stages it runs as
+# libraries (``eqasim.run``), so the DAG edge covers their output, not this code. The rest is what they
+# import and run (the Git and Maven launchers and the JVM watchdog), hashed by name.
+_HELPER_MODULES = (eqasim, java)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "matsim.runtime.git",
+    "matsim.runtime.maven",
+    "matsim.runtime.process_watchdog",
+)
+
 logger = logging.getLogger(__name__)
 
 def materialise_output_symlinks(directory):
@@ -70,6 +82,16 @@ def configure(context):
     # are unchanged.
     context.config("matsim_threads", None)
     context.config("matsim_qsim_threads", None)
+
+def validate(context):
+    """The token covers the Java runner modules the run calls, not the parking checks
+    (``braunschweig.parking.runtime_checks`` is exempt from every token).
+
+    An edit to a runner module therefore re-runs MATSim once (ADR-0194).
+    """
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 def execute(context):
     config_path = "%s/%s" % (

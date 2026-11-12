@@ -7,6 +7,16 @@ import matsim.runtime.git as git
 import matsim.runtime.java as java
 import matsim.runtime.maven as maven
 
+from braunschweig import synpp_tokens
+
+# Helpers whose code this stage runs (ADR-0194): ``git``, ``java`` and ``maven`` are declared stages it
+# runs as libraries, so the DAG edge covers their output, not this code. ``process_watchdog`` is
+# imported by ``java`` and hashed by name.
+_HELPER_MODULES = (git, java, maven)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "matsim.runtime.process_watchdog",
+)
+
 # eqasim-java-bs sits on upstream eqasim-java v2.2.0 (ab938aaac, 2026-06-03) but keeps
 # its own release line on top, so the fork's version is NOT the upstream one (see
 # TUBS-IVS/eqasim-java-bs docs/versioning.md). The braunschweig module version drives the
@@ -315,16 +325,20 @@ def validate(context):
     # with it every Java-dependent stage; an edited source file still does.
     # Same precedence as execute(): a prebuilt eqasim_path jar wins over eqasim_source_path,
     # so the token always describes the jar that is actually provided.
+    helpers = synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
     path = context.config("eqasim_path")
     if path != "":
         if not os.path.exists(path):
             raise RuntimeError("Cannot find eqasim at: %s" % path)
-        return {"format": 1, "jar": _sha256_file(path)}
+        return {"provided": {"format": 1, "jar": _sha256_file(path)}, "helpers": helpers}
 
     source_path = context.config("eqasim_source_path")
     if source_path != "":
         if not os.path.exists(source_path):
             raise RuntimeError("eqasim_source_path does not exist: %s" % source_path)
-        return {"format": 1, "source": source_tree_digest(source_path, context.config("git_binary"))}
+        return {"provided": {"format": 1, "source": source_tree_digest(source_path, context.config("git_binary"))},
+                "helpers": helpers}
 
-    return True
+    return {"provided": True, "helpers": helpers}

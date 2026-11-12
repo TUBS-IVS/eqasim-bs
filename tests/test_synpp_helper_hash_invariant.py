@@ -467,10 +467,6 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
     "braunschweig.data.mid.data": (
         "braunschweig.data.mid.reference_tables",
     ),
-    # Declared stage imported as a library (ADR-0194); the stage has no source token yet, out of scope.
-    "braunschweig.freight.trips": (
-        "braunschweig.freight.extraction",
-    ),
     "braunschweig.ipf.attributed": (
         "braunschweig.ipf.config_validation",
         "braunschweig.ipf.household_composition",
@@ -482,23 +478,8 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
     "braunschweig.ipf.prepare": (
         "braunschweig.ipf.joint_age_size",
     ),
-    # Declared stage imported as a library (ADR-0194); the stage has no source token yet, out of scope.
-    "eqasim_common.data.osm.chunked": (
-        "eqasim_common.data.osm.osmconvert",
-    ),
-    # Declared stage imported as a library (ADR-0194); the stage has no source token yet, out of scope.
-    "matsim.runtime.eqasim": (
-        "matsim.runtime.git",
-        "matsim.runtime.java",
-        "matsim.runtime.maven",
-    ),
-    # Declared stage imported as a library (ADR-0194); the stage has no source token yet, out of scope.
-    "matsim.runtime.pt2matsim": (
-        "matsim.runtime.git",
-        "matsim.runtime.java",
-        "matsim.runtime.maven",
-    ),
-    # Declared stage imported as a library (ADR-0194); the stage has no source token yet, out of scope.
+    # Declared stage imported as a library. Not run in production: configs alias it to
+    # braunschweig.locations.synthesis.replacement_education_gravity; out of scope (ADR-0194).
     "synthesis.population.spatial.primary.locations": (
         "synthesis.population.spatial.primary.candidates",
     ),

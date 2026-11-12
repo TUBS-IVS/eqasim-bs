@@ -11,6 +11,14 @@ downstream loaders can process them in parallel.
 import os
 
 import eqasim_common.data.osm.osmconvert
+from eqasim_common.data.osm import osmconvert as _osmconvert
+
+from braunschweig import synpp_tokens
+
+# Helpers whose code this stage runs (ADR-0194): ``osmconvert`` is a declared stage it runs as a library,
+# so the DAG edge covers its output, not this code.
+_HELPER_MODULES = (_osmconvert,)
+_DEFERRED_HELPER_MODULE_NAMES = ()
 
 
 def configure(context):
@@ -66,4 +74,10 @@ def execute(context):
     return df_zones["commune_id"].values
 
 def validate(context):
-    return os.path.getsize("{}/{}".format(context.config("data_path"), context.config("osm_network_path")))
+    return {
+        "osm_network_size": os.path.getsize(
+            "{}/{}".format(context.config("data_path"), context.config("osm_network_path"))),
+        "helpers": synpp_tokens.source_token(
+            _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+            stage_label=__name__ + ".validate()"),
+    }

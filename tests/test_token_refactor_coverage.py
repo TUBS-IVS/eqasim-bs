@@ -31,7 +31,8 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 #: 2026-11-12 on branch fix/audit-b8-b10-incommuter-income, after merging main: 36 (+1 = braunschweig.data.inkar.household_income, ADR-0191).
 #: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 48 (+12 production-reachable stages without a token, repository audit C2, group 1).
 #: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 61 (+13, group 2 of the production-reachable stages without a token, repository audit C2).
-EXPECTED_SOURCE_HASHING_STAGES = 61
+#: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 69 (+8 production stages that run declared stages as libraries, ADR-0194).
+EXPECTED_SOURCE_HASHING_STAGES = 69
 
 #: Stages whose token holds a non-source part (data files, sizes) next to the module digests.
 _COMPOSITE_STAGES = {
@@ -51,6 +52,11 @@ _COMPOSITE_STAGES = {
     # Holds the SrV location-type table digests next to the module digests while
     # secondary_srv_location_types is ON (repository audit C3).
     "braunschweig.synthesis.locations.secondary_chainsolvers",
+    # Hold the tool-jar inputs, the OSM extract size and the jar or source-tree digest next to the module
+    # digests (ADR-0194).
+    "braunschweig.freight.extraction_tool",
+    "eqasim_common.data.osm.chunked",
+    "matsim.runtime.eqasim",
 }
 
 

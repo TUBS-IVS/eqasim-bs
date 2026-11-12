@@ -2,6 +2,19 @@ import os.path
 
 import matsim.runtime.pt2matsim as pt2matsim
 
+from braunschweig import synpp_tokens
+
+# Helpers whose code this stage runs (ADR-0194): ``pt2matsim`` is a declared stage it runs as a library
+# (``pt2matsim.run``), so the DAG edge covers its output, not this code. The rest is what ``pt2matsim``
+# imports and runs (the Git, Java and Maven launchers and the JVM watchdog), hashed by name.
+_HELPER_MODULES = (pt2matsim,)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "matsim.runtime.git",
+    "matsim.runtime.java",
+    "matsim.runtime.maven",
+    "matsim.runtime.process_watchdog",
+)
+
 def configure(context):
     context.stage("matsim.runtime.java")
     context.stage("matsim.runtime.pt2matsim")
@@ -29,6 +42,12 @@ def configure(context):
     # raises 'Config option pt2matsim_version is not requested' as soon as this
     # stage's cache is devalidated (2026-08-20 night run, eqasim-java 2.3.0 bump).
     pt2matsim.configure(context)
+
+def validate(context):
+    """Hash the helper modules this stage runs into the stage token (ADR-0194)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 def execute(context):
     # Prepare input paths

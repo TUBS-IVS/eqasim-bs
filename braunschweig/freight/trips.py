@@ -28,7 +28,20 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 
+from braunschweig import synpp_tokens
 from braunschweig.freight import extraction
+
+# Helpers whose code this stage runs (ADR-0194): ``extraction`` is a declared stage whose constants this
+# stage reads, so the DAG edge covers its output, not this code. The rest is what ``extraction`` imports
+# and runs (the study area, the tool jar and the Java and Maven launchers), hashed by name.
+_HELPER_MODULES = (extraction,)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.data.spatial.cordon",
+    "braunschweig.freight.extraction_tool",
+    "matsim.runtime.java",
+    "matsim.runtime.maven",
+    "matsim.runtime.process_watchdog",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +177,13 @@ def configure(context):
     # as the module-level default value only (not read directly here) so the two
     # stages cannot silently diverge.
     context.config("freight_crs", FREIGHT_CRS)
+
+
+def validate(context):
+    """Hash the helper modules this stage runs into the stage token (ADR-0194)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def _log_extraction_count_cross_check(extraction_path, category, n_realized):
