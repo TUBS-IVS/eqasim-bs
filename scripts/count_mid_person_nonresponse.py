@@ -69,7 +69,7 @@ def main(argv=None) -> int:
             total += k
             print(f"  code {code}: {k} ({share(k, n)})")
         print(f"  nonresponse codes total: {total} ({share(total, n)}); "
-              f"NaN cells: {res['n_nan']}")
+              f"NaN cells: {res['n_nan']} ({share(res['n_nan'], n)})")
     return 0
 
 
