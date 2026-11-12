@@ -20,8 +20,8 @@
 # either one complete config or the composed form <base> <overlay> (config
 # composition, #230; see configs/base_bs.yml):
 #   bash scripts/run_pipeline.sh configs/base_bs.yml configs/overlays/test_25pct.yml
-# The JDK override check below inspects every given file; the output directory is
-# created by run_synpp.py from the resolved (merged) config.
+# The JDK override check below inspects every given file; the working and output
+# directories are created by run_synpp.py (ensure_run_directories) from the resolved config.
 
 set -euo pipefail
 
@@ -40,7 +40,6 @@ fi
 if [[ $# -eq 0 ]]; then
     set -- configs/fixtures/config_local_braunschweig_25pct.yml
 fi
-CONFIG="$1"
 CONFIGS=("$@")
 
 cd "$REPO_DIR"
@@ -189,28 +188,6 @@ else
     echo "==> Preflight SKIPPED (EQASIM_SKIP_VERIFY=1)"
 fi
 
-# synpp's output stage (synthesis/output.py validate()) requires the configured
-# output directory to already exist and aborts the whole run otherwise. Extract
-# output_path from the YAML config and create it up front so a fresh server
-# checkout does not crash on a missing directory.
-# Per file the FIRST output_path line counts; a later config (the overlay) overrides
-# the earlier one, as in the synpp merge. `|| true` keeps a config without the key
-# from aborting the script under pipefail.
-output_path=""
-for config_file in "${CONFIGS[@]}"; do
-    value=$( { grep -E '^[[:space:]]*output_path:' "$config_file" || true; } \
-        | head -1 \
-        | sed -E 's/^[[:space:]]*output_path:[[:space:]]*//; s/[[:space:]]*$//' \
-        | tr -d '"'"'"'')
-    if [[ -n "$value" ]]; then
-        output_path="$value"
-    fi
-done
-if [[ -n "$output_path" ]]; then
-    mkdir -p "$output_path"
-    echo "==> Ensured output directory exists: $output_path"
-fi
-
 # Timestamp is taken from the server clock at launch time for traceability.
 log_file="logs/run_$(date +%Y%m%d_%H%M%S).log"
 
@@ -235,6 +212,7 @@ PYTHONUTF8=1 python scripts/run_synpp.py "${CONFIGS[@]}" 2>&1 | tee "$log_file"
 
 # Stop the load sampler.
 kill "$SAMPLER_PID" 2>/dev/null || true
+trap - EXIT   # already stopped; do not signal the PID a second time
 
 echo "==> Pipeline finished. Log: $REPO_DIR/$log_file"
 
