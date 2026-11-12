@@ -19,6 +19,8 @@ import logging
 import sys
 from pathlib import Path
 
+import yaml
+
 
 # Rates with a canonical overlay in configs/overlays/ (test_1pct.yml, test_25pct.yml,
 # test_100pct.yml): those write output_bs_<rate>pct_allfeat_popsim,
@@ -29,6 +31,12 @@ CANONICAL_RATES = (1, 25, 100)
 # "auto" picks the canonical layout for CANONICAL_RATES and the legacy one otherwise;
 # "legacy" reads a run of the legacy fixtures (configs/fixtures/config_local_braunschweig_*pct.yml,
 # output_bs_<rate>pct); "canonical" requires an overlay rate.
+# Legacy fixture per rate; the fixture YAML is the single owner of that run's directories and prefix.
+LEGACY_FIXTURES = {
+    1: "config_local_braunschweig.yml",
+    10: "config_local_braunschweig_10pct.yml",
+    25: "config_local_braunschweig_25pct.yml",
+}
 LAYOUTS = ("auto", "canonical", "legacy")
 
 
@@ -46,9 +54,19 @@ def rate_layout(rate_pct: int, repo: Path, layout: str = "auto") -> tuple[Path, 
         return (repo / "eqasim-data" / f"output_bs_{suffix}",
                 repo / "eqasim-data" / f"cache_bs_{suffix}",
                 f"braunschweig_{suffix}_")
-    return (repo / "eqasim-data" / f"output_bs_{rate_pct}pct",
-            repo / "eqasim-data" / f"cache_bs_{rate_pct}pct",
-            f"braunschweig_{rate_pct}pct_")
+    fixture_name = LEGACY_FIXTURES.get(rate_pct)
+    if fixture_name is None:
+        raise ValueError(
+            f"rate {rate_pct}% has no legacy fixture in configs/fixtures/; "
+            f"legacy rates are {tuple(LEGACY_FIXTURES)}"
+        )
+    # The fixture owns its own layout (the 1 % fixture writes eqasim-data/output_bs, the others
+    # output_bs_<rate>pct), so read it instead of re-deriving the names here.
+    fixture_path = repo / "configs" / "fixtures" / fixture_name
+    fixture = yaml.safe_load(fixture_path.read_text(encoding="utf-8"))
+    return (repo / fixture["config"]["output_path"],
+            repo / fixture["working_directory"],
+            fixture["config"]["output_prefix"])
 
 
 def _patch_config(rate_pct: int, layout: str = "auto") -> Path:
@@ -60,7 +78,8 @@ def _patch_config(rate_pct: int, layout: str = "auto") -> Path:
 
     if not out_dir.exists():
         raise FileNotFoundError(
-            f"output directory for rate {rate_pct}% not found: {out_dir}"
+            f"output directory for rate {rate_pct}% (layout {layout!r}) not found: {out_dir}; "
+            f"if the run used the other directory layout, pass --layout canonical or --layout legacy"
         )
 
     config.SAMPLING_RATE = rate

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts.run_bs_validation import CANONICAL_RATES, rate_layout
+from scripts.run_bs_validation import CANONICAL_RATES, LEGACY_FIXTURES, rate_layout
 
 REPO = Path(__file__).resolve().parents[1]
 OVERLAY = {1: "test_1pct.yml", 25: "test_25pct.yml", 100: "test_100pct.yml"}
@@ -23,15 +23,20 @@ def test_layout_matches_the_canonical_overlay(rate_pct: int):
     assert prefix == overlay["config"]["output_prefix"]
 
 
-@pytest.mark.parametrize("rate_pct, layout", [(10, "auto"), (25, "legacy")])
+@pytest.mark.parametrize("rate_pct, layout", [(1, "legacy"), (10, "auto"), (25, "legacy")])
 def test_legacy_layout_matches_the_legacy_fixture(rate_pct: int, layout: str):
     """10 % has no overlay; --layout legacy reads a run of the legacy fixture (the analysis README recipe)."""
     fixture = yaml.safe_load(
-        (REPO / "configs" / "fixtures" / f"config_local_braunschweig_{rate_pct}pct.yml").read_text(encoding="utf-8"))
+        (REPO / "configs" / "fixtures" / LEGACY_FIXTURES[rate_pct]).read_text(encoding="utf-8"))
     out_dir, _, prefix = rate_layout(rate_pct, REPO, layout)
 
     assert out_dir == REPO / fixture["config"]["output_path"]
     assert prefix == fixture["config"]["output_prefix"]
+
+
+def test_legacy_layout_refuses_a_rate_without_fixture():
+    with pytest.raises(ValueError, match="no legacy fixture"):
+        rate_layout(100, REPO, "legacy")
 
 
 def test_canonical_layout_refuses_a_rate_without_overlay():
