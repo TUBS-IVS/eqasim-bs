@@ -30,7 +30,7 @@ may only name run manifests (no run, no claim).
 | [economic_status_bayes](../registry/features/economic_status_bayes.yml) | attributes | active | off | -/-/A | 2 | proven | marker | committed | unvalidated | pending |
 | [education_enrollment_validation](../registry/features/education_enrollment_validation.yml) | validation | active | ON | A/s/- | 1 | -- | marker | none | unvalidated | pending |
 | [education_gravity](../registry/features/education_gravity.yml) | education | active | ON | A/A/- | 4 | not claimed | none | committed | unvalidated | pending |
-| [einpendler_injection](../registry/features/einpendler_injection.yml) | cordon | active | ON | A/A/- | 5 | -- | none | none | unvalidated | pending |
+| [einpendler_injection](../registry/features/einpendler_injection.yml) | cordon | active | ON | A/A/- | 7 | -- | marker | none | unvalidated | pending |
 | [employment_grid_control](../registry/features/employment_grid_control.yml) | attributes | active | ON | A/s/- | 4 | proven | marker | none | unvalidated | pending |
 | [employment_margin](../registry/features/employment_margin.yml) | attributes | parked | off | -/-/i | 1 | -- | marker | none | unvalidated | pending |
 | [eqasim_java_fork](../registry/features/eqasim_java_fork.yml) | infrastructure | active | ON | A/A/A | 0 | -- | none | none | unvalidated (`matsim-e2e-2.2.0-kreis03101-2026-07-23`) | pending |
@@ -63,7 +63,7 @@ may only name run manifests (no run, no claim).
 | [housing_tenure](../registry/features/housing_tenure.yml) | attributes | active | ON | A/A/A | 1 | -- | marker | committed | unvalidated | pending |
 | [income_aware_cars](../registry/features/income_aware_cars.yml) | attributes | active | off | -/-/A | 1 | proven | marker | committed | unvalidated | pending |
 | [income_spatial_tilt](../registry/features/income_spatial_tilt.yml) | population | active | off | i/i/- | 3 | proven | marker | none | unvalidated | pending |
-| [incommuter_donor_demographics](../registry/features/incommuter_donor_demographics.yml) | cordon | active | ON | A/A/- | 2 | proven | marker | none | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | pending |
+| [incommuter_donor_demographics](../registry/features/incommuter_donor_demographics.yml) | cordon | active | ON | A/A/- | 2 | not claimed | marker | none | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | pending |
 | [incommuter_time_chronology](../registry/features/incommuter_time_chronology.yml) | cordon | active | ON | A/A/- | 3 | proven | marker | none | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | pending |
 | [initial_mode_choice](../registry/features/initial_mode_choice.yml) | matsim | active | ON | A/A/A | 2 | -- | marker | none | unvalidated | pending |
 | [integerizer_quality](../registry/features/integerizer_quality.yml) | analysis | active | ON | A/s/- | 1 | -- | marker | none | unvalidated | pending |

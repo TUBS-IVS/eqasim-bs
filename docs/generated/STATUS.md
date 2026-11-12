@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 112 | stages: 133 | datasets: 106 | ADRs: 186 | run manifests: 94
+- Features: 112 | stages: 133 | datasets: 106 | ADRs: 187 | run manifests: 95
 
 ## Population synthesis
 
@@ -32,7 +32,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Person & household attributes
 
-6 stage(s), 3 in the production DAG. Datasets: `genesis_svb_residence`, `inkar_household_income`, `kba_fe4_licences`
+6 stage(s), 3 in the production DAG. Datasets: `destatis_population_kreis`, `genesis_svb_residence`, `inkar_household_income`, `kba_fe4_licences`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
