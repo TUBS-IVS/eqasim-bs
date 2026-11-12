@@ -16,6 +16,7 @@ import logging
 import pandas as pd
 
 from braunschweig.popsim import mid
+from braunschweig.popsim.fallback_rates import log_fallback_rate
 
 logger = logging.getLogger(__name__)
 
@@ -104,4 +105,15 @@ def derive_geo_kreis_from_ars(ars: pd.Series) -> pd.Series:
     Kreis-level ARS -- kept as a single reusable helper so the three call sites
     cannot drift apart.
     """
-    return ars.astype(str).str.zfill(12).str[:5]
+    kreis = ars.astype(str).str.zfill(12).str[:5]
+    # Observability only (audit P3-F5, CLAUDE.md "Fallback transparency"): a missing ARS is
+    # cast to the string "nan", zero-padded and sliced to the placeholder Kreis "00000", which
+    # is no real Kreis. KNOWN BUG, deliberately not fixed here: it is counted and logged only.
+    log_fallback_rate(
+        logger,
+        "popsim.stage.geo_kreis",
+        int((kreis == "00000").sum()),
+        len(kreis),
+        what='rows carry the placeholder Kreis "00000" (missing ARS; audit P3-F5)',
+    )
+    return kreis
