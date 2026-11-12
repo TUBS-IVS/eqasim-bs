@@ -198,7 +198,8 @@ def test_orphan_vehicle_raises_and_the_same_population_without_it_is_written(tmp
 
     orphan = pd.DataFrame([{"owner_id": 2, "vehicle_id": "2:car", "mode": "car"}])
     vehicles = pd.concat([vehicles, orphan]).sort_values("owner_id")
-    with pytest.raises(ValueError, match="2:car"):
+    # Owner 2 is not in the person frame: the pre-check names the count and the owner id
+    with pytest.raises(ValueError, match=r"1 vehicle\(s\) are owned by persons missing.*\[2\]"):
         _write(tmp_path, (persons, activities, trips, vehicles))
 
 

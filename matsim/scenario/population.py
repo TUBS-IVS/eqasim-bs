@@ -688,6 +688,18 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
         column in df_persons.columns for column, _, _, _ in RBW_PERSON_ATTRIBUTES)
     writes_passenger_availability = "car_passenger_availability" in df_persons.columns
 
+    # Fast pre-check before the (slow) writer opens: vehicles whose owner is not in the person
+    # frame can never be consumed. The post-loop leftover check below stays: it also catches
+    # vehicles that are out of owner order.
+    orphan_owner_mask = ~df_vehicles["owner_id"].isin(df_persons["person_id"])
+    if orphan_owner_mask.any():
+        orphan_owner_ids = df_vehicles.loc[orphan_owner_mask, "owner_id"].drop_duplicates().head(5).tolist()
+        raise ValueError(
+            "[population] %d vehicle(s) are owned by persons missing from the person frame "
+            "(first owner ids: %r): every vehicle must be owned by a person of the population. "
+            "Check the vehicle fleet stage and the in-commuter merge."
+            % (int(orphan_owner_mask.sum()), orphan_owner_ids))
+
     with gzip.open(output_path, 'wb+') as writer:
         with io.BufferedWriter(writer, buffer_size = 2 * 1024**3) as writer:
             writer = writers.PopulationWriter(writer)

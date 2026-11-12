@@ -635,6 +635,7 @@ def execute(context):
     # add the columns and fall back to Gemeinde-only tilt (no-silent-fallback rule).
     if electric_calibration == "kreis_mix_gemeinde_grid_bev_tilt":
         _grid_cols_added = False
+        _grid_failure_logged = False
         try:
             from braunschweig.data.kba import fleet_tables as ft
             grid_df = ft.load_ev_grid(fleet_data_path)
@@ -678,10 +679,13 @@ def execute(context):
                 electric_calibration,
             )
         except FileNotFoundError:
+            # One WARNING per failure: the generic "grid tilt not active" line below
+            # is skipped once a specific failure has been logged.
+            _grid_failure_logged = True
             logger.warning(
                 "[vehicles.household] fleet_electric_calibration=%s: "
                 "kba_ev_grid.csv absent -> falling back to Gemeinde-only tilt "
-                "(no grid columns on df_cars).",
+                "(grid tilt not active, no grid columns on df_cars).",
                 electric_calibration,
             )
         except Exception as exc:  # noqa: BLE001 -- log (with traceback) and degrade gracefully
@@ -689,13 +693,14 @@ def execute(context):
             # here (e.g. a wrong column name, a geopandas/shapely import error, a
             # CRS mismatch) is diagnosable from the run log instead of being
             # silently masked as a graceful fallback (no-silent-fallback rule).
+            _grid_failure_logged = True
             logger.warning(
                 "[vehicles.household] fleet_electric_calibration=%s: "
                 "grid tilt setup failed (%s) -> falling back to Gemeinde-only "
                 "tilt (no grid columns on df_cars).",
                 electric_calibration, exc, exc_info=True,
             )
-        if not _grid_cols_added:
+        if not _grid_cols_added and not _grid_failure_logged:
             logger.warning(
                 "[vehicles.household] grid tilt not active for this run; "
                 "Gemeinde-only tilt will be used."

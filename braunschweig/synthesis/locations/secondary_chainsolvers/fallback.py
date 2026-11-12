@@ -233,11 +233,6 @@ def _rda_fallback_place(problems: List[Dict[str, Any]],
             ))
         convergence_rows.append((bool(result["valid"]), problem["size"]))
 
-    print(
-        f"[braunschweig.secondary_chainsolvers]{pass_label} RDA fallback placed "
-        f"{len(problem_indices) - n_failed:,}/{len(problem_indices):,} "
-        f"problems (raised={n_failed:,})"
-    )
     if problem_indices:
         failed_rate = n_failed / len(problem_indices)
         print(

@@ -373,7 +373,7 @@ def report_matching_levels(levels, number_of_columns):
     return share
 
 
-def match_donors(df_target,df_source, *, matching_columns, minimum_observations,
+def match_donors(df_target, df_source, *, matching_columns, minimum_observations,
                  random_seed, weight_column = "weight"):
     """Reusable hierarchical-relaxation donor matching (public API).
 

@@ -176,3 +176,47 @@ def test_kreis_missing_fallback_rate_split_and_warned(capsys):
         "pt_subscription_type", "never_pt", np.zeros(10, dtype=int), eligible)
     out = capsys.readouterr().out
     assert counts == (6, 4, 0) and "WARNING" not in out
+
+
+class _Stop(Exception):
+    """Raised by the spy to end a step right after its fallback report."""
+
+
+def test_imputation_steps_report_kreis_fallback_rates(monkeypatch):
+    """Both imputation steps must call the Kreis fallback report with their own
+    (person_kreis, eligible) arrays; deleting a call site would silence the rate."""
+    from braunschweig.data.mid import reference_tables as rt
+    from braunschweig.synthesis.population.enriched import base
+
+    calls = []
+
+    def spy(label, forced_label, person_kreis, eligible):
+        calls.append((label, person_kreis.tolist(), eligible.tolist()))
+        raise _Stop
+
+    monkeypatch.setattr(base, "_report_kreis_fallback_rates", spy)
+    vec = np.full(len(rt.LICENSE_CATEGORIES), 1.0 / len(rt.LICENSE_CATEGORIES))
+    pt_vec = np.full(len(rt.PT_TICKET_CATEGORIES), 1.0 / len(rt.PT_TICKET_CATEGORIES))
+    monkeypatch.setattr(rt, "load_license_breakdown", lambda p: ({"03101": vec}, None))
+    monkeypatch.setattr(rt, "load_license_margins", lambda p: ({"male": vec, "female": vec}, [(0, 120, vec)]))
+    monkeypatch.setattr(rt, "load_pt_subscription_breakdown", lambda p: ({"03101": pt_vec}, None))
+    monkeypatch.setattr(rt, "load_pt_subscription_margins",
+                        lambda p: ({"male": pt_vec, "female": pt_vec}, [(0, 120, pt_vec)]))
+
+    class _Context:
+        def config(self, key):
+            return {"data_path": "unused", "braunschweig.minimum_age.pt_subscription": 14}[key]
+
+    # adult, adult (both in Braunschweig), child in Braunschweig, adult without a zone
+    persons = pd.DataFrame({
+        "sex": ["male", "female", "male", "female"], "age": [30, 40, 5, 50],
+        "inside_braunschweig": [True, True, True, False]})
+
+    for step, label in ((base._step_impute_driving_licence, "license_type"),
+                        (base._step_sample_pt_subscription, "pt_subscription_type")):
+        calls.clear()
+        try:
+            step(_Context(), persons.copy())
+        except _Stop:
+            pass
+        assert calls == [(label, [0, 0, 0, -1], [True, True, False, False])]

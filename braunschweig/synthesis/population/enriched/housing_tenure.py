@@ -59,7 +59,8 @@ def _apply_housing_tenure(df_persons, df_tenure_bund, df_tenure_raum,
     untouched.
 
     Fallback transparency (CLAUDE.md): a household whose raumtyp Bayes matrix is
-    unavailable (status/tenure cell missing) falls back to the unconditional NDS
+    unavailable (status/tenure cell absent) OR whose raumtyp cannot be resolved
+    (missing raumtyp) falls back to the unconditional NDS
     tenure marginal (raumtyp_region=None); the primary/fallback rate is logged and
     stored on ``df_persons.attrs``.
     """
@@ -170,7 +171,7 @@ def _apply_housing_tenure(df_persons, df_tenure_bund, df_tenure_raum,
         f"[braunschweig.enriched] {level}housing_tenure (completeness attribute, "
         f"not consumed by the simulation): MiD Bayes P(tenure|bracket,raumtyp) "
         f"primary {n_primary}/{n_hh} households ({1 - fallback_rate:.2%}), fallback "
-        f"(unconditional NDS tenure marginal; raumtyp cell absent) {n_fallback} "
+        f"(unconditional NDS tenure marginal; raumtyp cell absent or raumtyp missing) {n_fallback} "
         f"({fallback_rate:.2%}). realised household shares: "
         + ", ".join(f"{k}={v:.1%}" for k, v in shares.items())
     )

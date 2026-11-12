@@ -47,7 +47,10 @@ def test_osm_locations_count_dropped_municipality_chunks_and_default_floors(monk
             return gpd.GeoDataFrame({"building": ["school"]}, geometry=[_square(10.0)], crs=CRS)
 
     monkeypatch.setitem(sys.modules, "pyrosm", types.SimpleNamespace(OSM=_FakeOSM))
-    sys.modules.pop("eqasim_common.data.osm.locations", None)
+    # monkeypatch restores sys.modules, so the fake-pyrosm module import does not leak
+    # setitem first so undo also removes the module imported below when it was absent before
+    monkeypatch.setitem(sys.modules, "eqasim_common.data.osm.locations", None)
+    monkeypatch.delitem(sys.modules, "eqasim_common.data.osm.locations")
     module = importlib.import_module("eqasim_common.data.osm.locations")
 
     zones = gpd.GeoDataFrame(
@@ -62,8 +65,10 @@ def test_osm_locations_count_dropped_municipality_chunks_and_default_floors(monk
     assert len(result) == n_filters  # primary path: one POI of municipality A per location type
     assert set(result["commune_id"]) == {"A"}
     assert set(result["floors"]) == {module.DEFAULT_FLOORS}
-    assert "chunks primary %d/%d" % (n_filters, 2 * n_filters) in output
-    assert "WARNING" in output  # 50% of the chunks dropped > FALLBACK_WARN_RATE
+    assert "chunks with POIs %d/%d" % (n_filters, 2 * n_filters) in output
+    # every POI lacks building:levels -> the floors default is the reported fallback
+    assert "WARNING: 100.0% of POIs use the default floors" in output
+    assert "chunks dropped" not in output  # no-POI chunks are not-applicable, never warned
 
 
 def test_education_reports_centroid_fallback_rate(capsys):

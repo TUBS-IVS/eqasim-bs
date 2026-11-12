@@ -42,22 +42,22 @@ FALLBACK_WARN_RATE = 0.05
 def report_fallback_rates(chunk_attempts, chunks_dropped, poi_total, floors_defaulted):
     """Print primary/fallback rates of the OSM POI extraction (output is not changed).
 
-    A chunk attempt is one (location type, municipality chunk) pair; a dropped chunk
-    lost all its POIs of that type because pyrosm raised KeyError/AttributeError.
+    A chunk attempt is one (location type, municipality chunk) pair. pyrosm raises
+    KeyError/AttributeError when a chunk simply has no matching feature, so such a chunk
+    is "not applicable" (docs/codebase/notes/fallback-counter-states.md), not a fallback.
     """
     chunk_rate = chunks_dropped / max(chunk_attempts, 1)
-    print("[osm.locations] chunks primary {}/{} ({:.1f}%), dropped {} ({:.1f}%)".format(
-        chunk_attempts - chunks_dropped, chunk_attempts, 100 * (1 - chunk_rate),
-        chunks_dropped, 100 * chunk_rate))
+    print("[osm.locations] chunks with POIs {}/{}, without POIs of this type "
+          "(pyrosm KeyError/AttributeError) {} ({:.1f}%)".format(
+        chunk_attempts - chunks_dropped, chunk_attempts, chunks_dropped, 100 * chunk_rate))
 
     floors_rate = floors_defaulted / max(poi_total, 1)
     print("[osm.locations] floors primary {}/{} ({:.1f}%), default {} floors for {} ({:.1f}%)".format(
         poi_total - floors_defaulted, poi_total, 100 * (1 - floors_rate),
         DEFAULT_FLOORS, floors_defaulted, 100 * floors_rate))
 
-    if chunk_rate > FALLBACK_WARN_RATE:
-        print("[osm.locations] WARNING: {:.1f}% of chunks dropped (> {:.0f}%)".format(
-            100 * chunk_rate, 100 * FALLBACK_WARN_RATE))
+    # No warning for chunks: a missing feature cannot be told apart from a read error here,
+    # so a threshold would fire on every normal run (many chunks have no POI of a type).
     if floors_rate > FALLBACK_WARN_RATE:
         print("[osm.locations] WARNING: {:.1f}% of POIs use the default floors (> {:.0f}%)".format(
             100 * floors_rate, 100 * FALLBACK_WARN_RATE))

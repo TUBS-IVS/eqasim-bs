@@ -180,17 +180,19 @@ def _extract_locations(result_df: pd.DataFrame,
     # identifier; fall back to a synthesised "cs_{prob}_{leg}" id when the id is
     # not a string or is not a known facility (identical to the loop's rule).
     kept_cand = identifiers[keep]
+    # The known-id predicate is evaluated once per leg; the boolean mask feeds both the
+    # id choice and the fallback count (no second Python pass over millions of legs).
+    is_known_id = np.fromiter(
+        (isinstance(cand, str) and cand in known_location_ids for cand in kept_cand),
+        dtype=bool, count=len(kept_cand),
+    )
     location_id = [
-        cand if (isinstance(cand, str) and cand in known_location_ids)
-        else f"cs_{kept_prob_idx[i]}_{kept_leg_idx[i]}"
+        cand if is_known_id[i] else f"cs_{kept_prob_idx[i]}_{kept_leg_idx[i]}"
         for i, cand in enumerate(kept_cand)
     ]
     # Fallback transparency: a synthesised id means the solver returned an unknown id.
     n_placed_legs = len(location_id)
-    n_synthesised = sum(
-        1 for cand in kept_cand
-        if not (isinstance(cand, str) and cand in known_location_ids)
-    )
+    n_synthesised = int((~is_known_id).sum())
     synthesised_rate = n_synthesised / n_placed_legs
     print(
         f"[braunschweig.secondary_chainsolvers] result mapping: known solver id "
