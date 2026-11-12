@@ -30,6 +30,7 @@ PATCHES = (
                                    # per-child early cutoff instead of devalidating every descendant
     "order-after",                 # run(): execution order honours the stages' _ORDER_AFTER_STAGES
                                    # (ordering only, not a dependency; ADR-0177)
+    "atomic-metadata",             # run(): pipeline.json through metadata.write_meta, not update_json
 )
 
 
