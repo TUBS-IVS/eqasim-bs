@@ -15,8 +15,11 @@
         (python / java), top CPU process, error/warning tallies
       - tail of the live log
 
-    Pairs with run_pipeline_on_server.ps1 (which starts the run in the tmux
-    session 'eqasim' and logs to logs/run_*.log).
+    Monitors the newest run_*.log in a log directory. By default that is
+    <RemoteRepo>/logs. For a run started by hand in a tmux session, pass -Session to
+    judge liveness by that session instead. For an isolated_run.py run (detached
+    via setsid nohup, logs under RUN_DIR/logs), pass -LogDir RUN_DIR/logs; liveness
+    is then a process check and GIT/DISK read RUN_DIR/eqasim-bs.
 
 .PARAMETER ServerUser
     SSH user. Default: environment variable EQASIM_SERVER_USER; if neither is set,
@@ -27,6 +30,20 @@
     (see scripts/server_target.ps1).
 .PARAMETER RemoteRepo
     Repo path on the server. Default: ~/eqasim-bs
+.PARAMETER LogDir
+    Directory holding the run_*.log files on the server. Default:
+    <RemoteRepo>/logs. For an isolated run use RUN_DIR/logs.
+.PARAMETER Session
+    Optional tmux session name. When set, "alive" means that session exists. When
+    empty (default) and a run.yml sits next to the log directory (isolated run),
+    "alive" means a process has that run.yml on its command line. Only without a
+    run.yml does "alive" fall back to log freshness (see -LivenessWindowSec); the
+    dashboard names the basis used.
+.PARAMETER LivenessWindowSec
+    Window in seconds for the log-freshness fallback. Default: 300 (a silent stage
+    such as the chain solver can leave the log quiet for minutes). A quiet log is
+    shown as "log quiet", never as an ended run, and raises no end-of-run alarm;
+    in this mode only the DONE marker in the log does.
 .PARAMETER RefreshSec
     Seconds between refreshes. Default: 10
 .PARAMETER LastIteration
@@ -39,12 +56,17 @@
 .EXAMPLE
     ./scripts/monitor_server.ps1
     ./scripts/monitor_server.ps1 -RefreshSec 5
+    ./scripts/monitor_server.ps1 -LogDir ~/runs/<run_id>/logs
+    ./scripts/monitor_server.ps1 -Session eqasim
     ./scripts/monitor_server.ps1 -LastIteration 10 -Once
 #>
 param(
     [string]$ServerUser    = $env:EQASIM_SERVER_USER,
     [string]$ServerHost    = $env:EQASIM_SERVER_HOST,
     [string]$RemoteRepo    = "~/eqasim-bs",
+    [string]$LogDir        = "",
+    [string]$Session       = "",
+    [int]   $LivenessWindowSec = 300,
     [int]   $RefreshSec    = 10,
     [int]   $LastIteration = 99,
     [switch]$Once
@@ -66,10 +88,39 @@ REPO=__REPO__
 # word, so once REPO is used as "$REPO/logs/..." bash would treat the tilde as a
 # literal directory name. Substitute $HOME for a leading "~" explicitly.
 REPO="${REPO/#\~/$HOME}"
-LOG=$(ls -t $REPO/logs/run_*.log 2>/dev/null | head -1)
+LOGDIR='__LOGDIR__'
+LOGDIR="${LOGDIR/#\~/$HOME}"
+WINDOW='__WINDOW__'
+# An isolated run keeps its own checkout next to its logs: RUN_DIR/eqasim-bs. Use it
+# for the GIT and DISK fields instead of RemoteRepo.
+if [ -n "$LOGDIR" ] && [ -d "$LOGDIR/../eqasim-bs" ]; then
+  REPO=$(cd "$LOGDIR/../eqasim-bs" && pwd)
+fi
+[ -n "$LOGDIR" ] || LOGDIR="$REPO/logs"
+SESSION='__SESSION__'
+LOG=$(ls -t "$LOGDIR"/run_*.log 2>/dev/null | head -1)
 printf 'LOG\t%s\n' "$LOG"
-if tmux has-session -t eqasim 2>/dev/null; then printf 'ALIVE\tyes\n'; else printf 'ALIVE\tno\n'; fi
 NOW_E=$(date +%s)
+RUN_YML="$LOGDIR/../run.yml"
+if [ -n "$SESSION" ]; then
+  if tmux has-session -t "$SESSION" 2>/dev/null; then ALIVE=yes; else ALIVE=no; fi
+  ALIVE_BASIS="tmux session"
+elif [ -f "$RUN_YML" ]; then
+  # Isolated run: alive while a run_synpp.py process has the run's run.yml on its command line
+  # (the rule of isolated_run.py find_run_processes). A silent stage cannot make it look dead.
+  # `pwd -P` resolves symlinks like the tool's Path.resolve(), which is the path form the launch
+  # puts on the command line; grep -F matches it as plain text, not as a regex.
+  RUN_YML=$(cd "$(dirname "$RUN_YML")" && pwd -P)/run.yml
+  if pgrep -af '[r]un_synpp\.py' 2>/dev/null | grep -qF -- "$RUN_YML"; then ALIVE=yes; else ALIVE=no; fi
+  ALIVE_BASIS="process check ($RUN_YML)"
+else
+  # No tmux session and no run.yml: heuristic only, a run is alive while its log keeps changing.
+  ALIVE=no
+  if [ -n "$LOG" ] && [ $((NOW_E-$(date -r "$LOG" +%s))) -lt "$WINDOW" ]; then ALIVE=yes; fi
+  ALIVE_BASIS="log freshness (${WINDOW} s window)"
+fi
+printf 'ALIVE\t%s\n' "$ALIVE"
+printf 'ALIVE_BASIS\t%s\n' "$ALIVE_BASIS"
 printf 'NOW\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
 printf 'LOAD\t%s\n' "$(uptime | sed 's/.*load average: //')"
 printf 'NPROC\t%s\n' "$(nproc)"
@@ -173,7 +224,7 @@ fi
 # piped to the remote "bash", every line would keep a trailing carriage return,
 # so e.g. REPO=~/eqasim-bs<CR> yields the invalid path "$REPO<CR>/logs" and all
 # REPO-derived fields come back empty. Normalise to LF before sending.
-$remoteCmd = $remoteTemplate.Replace("__REPO__", $RemoteRepo).Replace("`r`n", "`n").Replace("`r", "`n")
+$remoteCmd = $remoteTemplate.Replace("__REPO__", $RemoteRepo).Replace("__LOGDIR__", $LogDir).Replace("__SESSION__", $Session).Replace("__WINDOW__", [string]$LivenessWindowSec).Replace("`r`n", "`n").Replace("`r", "`n")
 
 function Get-Snapshot {
     # Send the remote script base64-encoded as a single ASCII ssh argument and
@@ -254,13 +305,20 @@ function Show-Dashboard($snap) {
     $f = $snap.Fields
     Clear-Host
     $alive = $f['ALIVE']
-    $aliveColor = if ($alive -eq 'yes') { 'Green' } else { 'Red' }
+    # The remote script names the basis of ALIVE (tmux session, process check, or the log-freshness
+    # heuristic). A quiet log proves nothing about a run in a silent stage, so that case is shown
+    # as unknown, not as "not running".
+    $basis = if ($f['ALIVE_BASIS']) { $f['ALIVE_BASIS'] } else { 'basis unknown' }
+    $heuristic = ($basis -like 'log freshness*')
+    $aliveColor = if ($alive -eq 'yes') { 'Green' } elseif ($heuristic) { 'Yellow' } else { 'Red' }
     $width = 72
     Write-Host "  eqasim-bs run monitor  -  $server" -ForegroundColor Cyan
     Write-Host ("  " + ("-" * $width))
 
     # --- session + machine ---------------------------------------------------
-    $sessionText = if ($alive -eq 'yes') { 'RUNNING (tmux: eqasim)' } else { 'not running' }
+    $sessionText = if ($alive -eq 'yes') { "RUNNING ($basis)" }
+                   elseif ($heuristic) { "log quiet ($basis): silent stage or ended" }
+                   else { "not running ($basis)" }
     Write-Host -NoNewline "  session : "
     Write-Host -NoNewline $sessionText -ForegroundColor $aliveColor
     if ($f['ELAPSED']) { Write-Host "    elapsed $($f['ELAPSED'])" -ForegroundColor Gray } else { Write-Host "" }
@@ -395,7 +453,8 @@ function Show-Dashboard($snap) {
     foreach ($t in $snap.Tail) { Write-Host "    $t" -ForegroundColor DarkGray }
     Write-Host ""
     if (-not $Once) {
-        Write-Host "  refresh ${RefreshSec}s  -  Ctrl-C to stop  -  live attach: ssh $server then tmux attach -t eqasim" -ForegroundColor DarkCyan
+        $attach = if ($Session) { "  -  live attach: ssh $server then tmux attach -t $Session" } else { "" }
+        Write-Host "  refresh ${RefreshSec}s  -  Ctrl-C to stop$attach" -ForegroundColor DarkCyan
     }
 }
 
@@ -410,10 +469,19 @@ $beeped = $false
 while ($true) {
     try {
         $snap = Get-Snapshot
+        # A failed ssh call does not throw: it returns text without fields. Without an ALIVE
+        # field this is a failed poll, not an ended run, so it must not reach the alarm below.
+        if (-not $snap.Fields['ALIVE']) {
+            throw "the server returned no status fields (ssh failed or timed out)"
+        }
         Show-Dashboard $snap
         $f = $snap.Fields
         $done = ($f['DONE'] -and [int]$f['DONE'] -gt 0)
-        $ended = ($f['ALIVE'] -ne 'yes')
+        # A quiet log (the heuristic basis) is not an end-of-run signal: a silent stage looks the
+        # same. Only a tmux session or process check that turns negative, or the DONE marker,
+        # latches the one-time alarm.
+        $heuristic = ($f['ALIVE_BASIS'] -like 'log freshness*')
+        $ended = ($f['ALIVE'] -ne 'yes') -and -not $heuristic
         if (-not $beeped -and ($done -or ($ended -and $wasAlive))) {
             $errN = if ($f['ERRORS']) { [int]$f['ERRORS'] } else { 0 }
             if ($done -and $errN -eq 0) {

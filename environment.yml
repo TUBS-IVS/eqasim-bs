@@ -46,10 +46,21 @@ dependencies:
     - pytest==9.1.1
     - synpp==1.6.2
     - bhepop2==2.0.0
+    # Not imported by this repository: wheel dependencies of the packages above (plotly via bhepop2, narwhals via
+    # plotly, pyzmq via synpp). Pinned to the versions of the production Linux snapshot
+    # (environments/requirements-server-linux-64.txt) so the Windows lock does not resolve newer releases;
+    # tests/test_environment_lock_consistency.py compares the two pip layers.
+    - plotly==6.8.0
+    - narwhals==2.22.0
+    - pyzmq==27.1.0
     # PDF table reader for the curation scripts (the Peine resident list of parking v3 B3, the MiD/fare extractors);
-    # not used by any pipeline stage. Its wheel dependencies pdfminer.six, pypdfium2 and cryptography are listed with
-    # hashes in environments/requirements-server-linux-64.txt and environments/conda-win-64.lock.
+    # not used by any pipeline stage. Its wheel dependencies pdfminer.six, pypdfium2 and cryptography are pinned here
+    # to the versions of the production Linux snapshot (environments/requirements-server-linux-64.txt), so the
+    # Windows lock (environments/conda-lock.yml) resolves the same releases instead of the newest ones.
     - pdfplumber==0.11.9
+    - pdfminer.six==20251230
+    - pypdfium2==5.7.1
+    - cryptography==46.0.7
     # Secondary-location chain solver used by
     # braunschweig.synthesis.locations.secondary_chainsolvers (default solver
     # "carla"). Pure-python (py3-none-any), MIT. Without it the secondary-

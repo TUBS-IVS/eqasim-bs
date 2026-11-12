@@ -3,7 +3,7 @@
 The Linux runtime is a captured, audited production-server snapshot, not a new
 solver result. `environments/server-linux-64.lock` lists the 312 installed
 conda artifacts as exact URLs, MD5 checksums, SHA-256 checksums, versions, and
-builds. `environments/requirements-server-linux-64.txt` records the 11
+builds. `environments/requirements-server-linux-64.txt` records the
 effective pip installations and their exact PyPI artifact URLs and SHA-256
 hashes. It is the canonical environment for WSL2 and the Linux production
 server.
@@ -32,10 +32,8 @@ archive before the pip step.
 The pip layer intentionally overrides some conda-installed packages. In
 particular, the server has conda `pytest=7.2.2` but its effective runtime is pip
 `pytest=9.1.1`, pulled in with the pinned `chainsolvers` installation. This is
-documented and replayed rather than hidden. The other captured pip packages are
-`py-spy=0.4.2`, `plotly=6.8.0`, `PyYAML=6.0.3`, `narwhals=2.22.0`,
-`frozendict=2.4.7`, `pyzmq=27.1.0`, `bhepop2=2.0.0`, `synpp=1.6.2`, and
-`Pygments=2.20.0`.
+documented and replayed rather than hidden. The full captured pip layer is
+listed in `environments/requirements-server-linux-64.txt`.
 
 ## Match configuration as well as packages
 
@@ -51,9 +49,11 @@ An environment mirror alone does not provision input data, popsimprep or Java
 build tools.
 
 The Linux shell wrappers require JDK 25. Bootstrap installs the captured Linux
-snapshot for a new environment and preserves an existing one. The update script
-stops if the Linux snapshot changes, requiring an explicit environment refresh;
-it never re-solves the server from the Windows source file.
+snapshot for a new environment and preserves an existing one; it never re-solves the server from the Windows source
+file. A run whose commit carries a changed Linux snapshot is stopped by the
+environment check of `scripts/isolated_run.py gate`
+([isolated-server-runs.md](isolated-server-runs.md)), which requires an explicit
+environment refresh.
 
 If initial pip installation is interrupted after conda creation, fix the artifact
 access problem and explicitly run `bash scripts/bootstrap_server.sh --repair-pip`.
@@ -82,9 +82,24 @@ known production runtime. Refresh it only from a new read-only server snapshot,
 then record both the conda artifacts and the effective pip metadata again.
 
 Regenerate the Windows lock after changing `environment.yml` with the recorded
-tool version:
+tool version, and never edit either lock file by hand: Windows CI and the README
+install the unified `conda-lock.yml`, so an entry added only to the explicit
+`conda-win-64.lock` never reaches an installed environment.
 
 ```bash
-uvx --from conda-lock==4.0.2 conda-lock lock --micromamba --file environment.yml --platform win-64 --kind lock --lockfile environments/conda-lock.yml
+MAPPING=https://raw.githubusercontent.com/conda-forge/conda-forge-bot-data/ec11ab5bb86d198e26b745af80c110b38bec3783/mappings/pypi/grayskull_pypi_mapping.json
+uvx --from conda-lock==4.0.2 conda-lock lock --micromamba --pypi_to_conda_lookup_file "$MAPPING" --file environment.yml --platform win-64 --kind lock --lockfile environments/conda-lock.yml --update <changed package> ...
 uvx --from conda-lock==4.0.2 conda-lock render --platform win-64 --kind explicit --filename-template 'environments/conda-{platform}.lock' environments/conda-lock.yml
 ```
+
+- `--pypi_to_conda_lookup_file` is required with conda-lock 4.0.2: its built-in
+  PyPI-to-conda name mapping URL (`regro/cf-graph-countyfair`) returns 404 since
+  the file moved to `conda-forge/conda-forge-bot-data`. The URL above is pinned
+  to a commit so a re-lock is repeatable.
+- `--update` with the changed packages keeps the other direct pins, but the
+  conda solver still re-resolves transitive libraries (openssl, glib, the VC
+  runtime, ...), up or down. Review the diff of `conda-win-64.lock` and prove the lock
+  with a fresh `conda-lock install` before committing it.
+- Pin a new pip package's own wheel dependencies in `environment.yml` to the
+  versions of `environments/requirements-server-linux-64.txt`; otherwise the
+  Windows lock picks the newest releases and the platforms diverge.

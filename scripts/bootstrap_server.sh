@@ -13,7 +13,7 @@
 #      server's approved distribution; do not assume an openjdk-25 package is
 #      available from the operating system repository. A plain JRE is not
 #      sufficient for the Maven build stage.)
-#   - start the pipeline (that is run_pipeline.sh / run_pipeline_on_server.ps1)
+#   - start the pipeline (that is run_pipeline.sh / scripts/isolated_run.py)
 #
 # Run it by piping this file to the server's bash over SSH (no checkout needed
 # yet, since this is what does the checkout):

@@ -132,6 +132,23 @@ list, because an empty list means "no gate" to the launcher, and `gate` refuses 
 switches the launcher's explain step off (`synpp_explain_before_run: false` or `dryrun: true`).
 An old gate list of the source overlay is always dropped.
 
+**The environment must fit the run's commit.** `gate` compares the interpreter given as
+`--python` with the production snapshot files of the run worktree
+(`environments/server-linux-64.lock`, `environments/requirements-server-linux-64.txt`), in one
+subprocess of that interpreter: every conda artifact needs its `conda-meta` file in `sys.prefix`
+(a prefix without `conda-meta` fails), every pip pin must be installed at the pinned version
+(the one git pin: presence only). The rate line (`environment: conda n/N matched, pip n/N
+matched ...`) is printed and stored in `run.json` under `gate.environment`; a missing or
+different package refuses the gate (exit 1), naming up to ten of them. Fix: build a fresh env
+from the two files (`scripts/bootstrap_server.sh`). `--allow-environment-mismatch` turns the
+refusal into a warning and records the offenders. On a non-Linux interpreter the check is not
+applicable; `gate` says so and records `checked: false`. The entry also stores the probed `prefix`
+and `python`; `launch` resolves the prefix of the `--conda-env` it activates and refuses when it
+differs from the gated one (gate with that env's python, or pass the matching `--conda-env`); a
+gate record without a checked prefix is reported in one line, not blocked. `bootstrap_server.sh`
+keeps an existing env, so a fresh one needs another name (`EQASIM_CONDA_ENV`). It replaces the check of the retired
+`update_server.sh`.
+
 **PopulationSim recomputes only on request, and never into another run.** The gate exits 2
 when `braunschweig.popsim.stage` is `STALE` or `RECOMPUTE`, unless `--allow-popsim`. A
 recomputing popsim purges stale `batch_*` folders in its work dir
