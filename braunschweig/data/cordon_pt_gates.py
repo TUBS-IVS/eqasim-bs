@@ -37,6 +37,9 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 
+from braunschweig import synpp_tokens
+from braunschweig.data.cordon import network as _network
+from braunschweig.data.cordon import pt_reachability as _pt_reachability
 from braunschweig.data.cordon.network import (
     read_external_gemeinden,
     read_kreise,
@@ -46,6 +49,51 @@ from braunschweig.data.cordon.pt_reachability import (
     apply_station_distance_cap,
     attach_station_population,
     eligible_rail_entry_stations,
+)
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``pt_reachability`` imports
+# ``RAIL_LIKE_MODES`` from the ``braunschweig.synthesis.incommuters`` stage module, so that
+# module and its whole import closure run here too; hashing all of it is a deliberate
+# over-approximation (an edit to any of them re-executes this stage, which is cheap).
+_HELPER_MODULES = (_network, _pt_reachability)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.constants",
+    "braunschweig.data.cordon.demand",
+    "braunschweig.data.cordon.donor_draw",
+    "braunschweig.data.cordon.external_points",
+    "braunschweig.data.cordon.gate_assignment",
+    "braunschweig.data.cordon.incommuter_origins",
+    "braunschweig.data.cordon.mode_balancer",
+    "braunschweig.data.cordon.mode_reference",
+    "braunschweig.data.cordon.plans",
+    "braunschweig.data.external_workplaces",
+    "braunschweig.data.kba.feasible_fuels",
+    "braunschweig.data.kba.fleet_tables",
+    "braunschweig.data.kba.hsn_tsn",
+    "braunschweig.data.mikrozensus.reference",
+    "braunschweig.data.transit.connections",
+    "braunschweig.data.transit.schedule",
+    "braunschweig.ipf.joint_age_size",
+    "braunschweig.matsim.scenario.day_end_margin",
+    "braunschweig.matsim.simulation.plan_check",
+    "braunschweig.popsim.closure_dwell",
+    "braunschweig.popsim.income",
+    "braunschweig.popsim.plan_validation",
+    "braunschweig.synthesis.incommuter_pt_connections",
+    "braunschweig.synthesis.incommuters",
+    "braunschweig.synthesis.vehicles.age_income",
+    "braunschweig.synthesis.vehicles.fleet_sampling_de",
+    "braunschweig.synthesis.vehicles.fleet_validation",
+    "braunschweig.synthesis.vehicles.hbefa",
+    "braunschweig.synthesis.vehicles.segment",
+    "braunschweig.synthesis.vehicles.wohnmobile_age",
+    "data.hts.hts",
+    "matsim.runtime.eqasim",
+    "matsim.runtime.git",
+    "matsim.runtime.java",
+    "matsim.runtime.maven",
+    "matsim.runtime.process_watchdog",
 )
 
 # Columns of the empty frame returned when cordon is disabled.
@@ -253,6 +301,13 @@ def configure(context):
         # never incorrectly exclude a station that is truly within reach).
         # Re-calibrate against observed in-commuter origins when origin data are available.
         context.config("cordon_pt_max_station_distance_km", 150.0)
+
+
+def validate(context):
+    """Include the helper modules' source in synpp's stage cache identity (ADR-0136)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def execute(context):

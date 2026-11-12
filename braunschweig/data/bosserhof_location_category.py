@@ -12,6 +12,14 @@ from __future__ import annotations
 
 import pandas as pd
 
+from braunschweig import synpp_tokens
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``bosserhof_purpose`` is imported
+# inside ``execute``, so it is hashed by name.
+_HELPER_MODULES = ()
+_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.bosserhof_purpose",)
+
 # The 5 location categories that have building candidates. Outdoor, visit,
 # and misc are not building categories and are served by the aggregate pools.
 BUILDING_CATEGORIES = (
@@ -84,6 +92,13 @@ def configure(context):
                    "eqasim-data/data/braunschweig/buildings/bosserhof_class_to_location_category.csv")
     context.config("bosserhof_class_purpose_path",
                    "eqasim-data/data/braunschweig/buildings/bosserhof_class_to_purpose.csv")
+
+
+def validate(context):
+    """Include the helper module's source in synpp's stage cache identity (ADR-0136)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def execute(context):

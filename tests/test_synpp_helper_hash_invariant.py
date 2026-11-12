@@ -488,33 +488,11 @@ _GATE_RESULTS, _UNDECIDED = _compute_gate_results()
 # ---------------------------------------------------------------------------
 
 ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
-    "braunschweig.data.bosserhof_location_category": (
-        "braunschweig.data.bosserhof_purpose",
-    ),
     "braunschweig.data.census.households_type": (
         "braunschweig.data.census.households_size_age",
     ),
-    "braunschweig.data.cordon_gemeinden": (
-        "braunschweig.data.cordon.network",
-    ),
-    "braunschweig.data.cordon_network": (
-        "braunschweig.data.cordon.network",
-    ),
-    "braunschweig.data.cordon_pt_gates": (
-        "braunschweig.data.cordon.network",
-        "braunschweig.data.cordon.pt_reachability",
-    ),
-    "braunschweig.data.external_secondary_points": (
-        "braunschweig.data.external_workplaces",
-    ),
-    "braunschweig.data.external_workplaces": (
-        "braunschweig.data.cordon.external_points",
-    ),
     "braunschweig.data.mid.data": (
         "braunschweig.data.mid.reference_tables",
-    ),
-    "braunschweig.data.schools.facilities": (
-        "braunschweig.data.schools.typing",
     ),
     "braunschweig.ipf.attributed": (
         "braunschweig.ipf.config_validation",

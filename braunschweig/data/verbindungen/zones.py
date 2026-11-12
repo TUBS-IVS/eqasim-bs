@@ -44,7 +44,14 @@ import os
 import geopandas as gpd
 import pandas as pd
 
+from braunschweig import synpp_tokens
+from braunschweig.data.bbsr import regiostar as _regiostar
 from braunschweig.data.bbsr.regiostar import ars_to_ags8
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136).
+_HELPER_MODULES = (_regiostar,)
+_DEFERRED_HELPER_MODULE_NAMES = ()
 
 LAYER = "verbindungen-verkehrszellen"
 SHAPE_ZIP = "Shapefiles_VerBindungen_Zellen.zip"
@@ -350,6 +357,13 @@ def configure(context):
     context.config("braunschweig.verbindungen.max_ags_fallback_share", 0.10)
     context.config("braunschweig.political_prefix")
     context.stage("data.spatial.municipalities")
+
+
+def validate(context):
+    """Include the helper module's source in synpp's stage cache identity (ADR-0136)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def execute(context):

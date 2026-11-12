@@ -18,15 +18,29 @@ from __future__ import annotations
 import logging
 import os
 
+from braunschweig import synpp_tokens
 from braunschweig.calibration import srv_distance_targets as T
 
 logger = logging.getLogger(__name__)
 
 SRV_SUBDIR = ("braunschweig", "srv")
 
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``gravity.friction`` is reached
+# through the imports of ``srv_distance_targets``.
+_HELPER_MODULES = (T,)
+_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.gravity.friction",)
+
 
 def configure(context):
     context.config("data_path")
+
+
+def validate(context):
+    """Include the helper modules' source in synpp's stage cache identity (ADR-0136)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def execute(context):

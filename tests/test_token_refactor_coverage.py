@@ -29,7 +29,8 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 #: 2026-11-11 on branch worktree-agent-a359dd27d49867285: 34 (+1 = braunschweig.synthesis.cordon_gates, package B3).
 #: 2026-11-11 on branch fix/audit-b4-home-slot-apportionment: 35 (+1 = braunschweig.synthesis.locations.home_cell, repository audit B4 F3).
 #: 2026-11-12 on branch fix/audit-b8-b10-incommuter-income, after merging main: 36 (+1 = braunschweig.data.inkar.household_income, ADR-0191).
-EXPECTED_SOURCE_HASHING_STAGES = 36
+#: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 48 (+12 production-reachable stages without a token, repository audit C2, group 1).
+EXPECTED_SOURCE_HASHING_STAGES = 48
 
 #: Stages whose token holds a non-source part (data files, sizes) next to the module digests.
 _COMPOSITE_STAGES = {
@@ -39,6 +40,11 @@ _COMPOSITE_STAGES = {
     "braunschweig.matsim.simulation.prepare",
     "braunschweig.synthesis.commute_day.home_office_donors_stage",
     "braunschweig.synthesis.outside_tour_modes.stage",
+    "braunschweig.data.external_secondary_points",
+    "braunschweig.data.external_workplaces",
+    "braunschweig.data.schools.facilities",
+    "braunschweig.data.schools.kita_facilities",
+    "braunschweig.data.schools.university_facilities",
 }
 
 
