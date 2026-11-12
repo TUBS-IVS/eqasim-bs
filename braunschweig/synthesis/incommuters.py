@@ -56,24 +56,14 @@ from braunschweig.data.mikrozensus.reference import bundesland_of_ars
 from braunschweig.matsim.scenario import day_end_margin as _day_end_margin
 from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
 from braunschweig.synthesis import incommuter_pt_connections as _pt_connections
+from braunschweig.data.cordon import pt_reachability as _pt_reachability
 
 logger = logging.getLogger(__name__)
 
-# NOTE: braunschweig.data.cordon.pt_reachability imports RAIL_LIKE_MODES from this
-# module (incommuters), which creates a circular dependency if imported at module level.
-# weight_entry_stations and sample_pt_station_per_agent are therefore imported LOCALLY
-# inside build_incommuter_frames to break the cycle.  They are pure data functions and
-# the lazy import has no performance impact at production scale (called once per run).
-
-# Transit modes that count as regional rail for in-commuter boarding-stop selection.
-# A regional-rail (or S-Bahn / regional train) station is the realistic access point
-# for a cross-cordon PT commuter: it offers a fast, high-frequency, one-seat ride into
-# ZGB. Local feeders (tram, bus) are deliberately EXCLUDED -- they are the kind of
-# single-line, low-frequency village halt the geometry-only nearest-stop rule wrongly
-# preferred over a nearby station. The set is kept conservative and matched against the
-# MATSim transit ``transportMode`` (lower-cased) verbatim; the common GTFS->MATSim mode
-# strings for heavy/regional/urban rail are covered. Tram/bus -> not rail.
-RAIL_LIKE_MODES = frozenset({"rail", "train", "subway", "light_rail", "regional_rail"})
+# Transit modes that count as regional rail for in-commuter boarding-stop selection; the
+# definition and its rationale live with the rail entry-station logic in
+# braunschweig.data.cordon.pt_reachability, re-exported here for this module's callers.
+RAIL_LIKE_MODES = _pt_reachability.RAIL_LIKE_MODES
 
 # Person attribute defaults for injected in-commuters: non-residents with minimal but
 # VALID attributes so the MATSim writer + downstream logic accept them. Their commute
@@ -729,11 +719,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     )
 
     if _has_new_schema:
-        # Local import to avoid the circular dependency between incommuters and
-        # pt_reachability (pt_reachability imports RAIL_LIKE_MODES from this module).
-        from braunschweig.data.cordon.pt_reachability import (  # noqa: PLC0415
-            sample_pt_station_per_agent, weight_entry_stations)
-        weighted = weight_entry_stations(pt_entry_stops, transfer_penalty=pt_transfer_penalty,
+        sample_pt_station_per_agent = _pt_reachability.sample_pt_station_per_agent
+        weighted = _pt_reachability.weight_entry_stations(pt_entry_stops, transfer_penalty=pt_transfer_penalty,
                                          beta=pt_gravity_beta)
         # Build a coordinate lookup: stop_id -> (x, y) from the full pt_entry_stops table.
         _stop_xy = dict(zip(pt_entry_stops["stop_id"], zip(
@@ -1596,18 +1583,18 @@ def _empty_frames(crs, bound_s=None):
 #: mode reference is applied, and ``constants`` carries ``ROUTED_DETOUR_FACTOR``, with which
 #: every straight-line distance here is converted.
 _HELPER_MODULES = (_plans, _constants, _demand, _donor_draw, _gate_assignment, _mode_balancer,
-                   _mode_reference, _mikrozensus_reference, _pt_connections, _day_end_margin)
+                   _mode_reference, _mikrozensus_reference, _pt_connections, _day_end_margin,
+                   _pt_reachability)
 
-#: The same requirement for the five helpers reached through FUNCTION-LEVEL imports, hashed by
-#: dotted NAME because no module object exists at this file's top level: ``pt_reachability``
-#: (imported locally to break the documented cycle above) weights the entry stations,
+#: The same requirement for the four helpers reached through FUNCTION-LEVEL imports, hashed by
+#: dotted NAME because no module object exists at this file's top level (``pt_reachability``,
+#: which weights the entry stations, is a module-level helper above):
 #: ``incommuter_origins`` places the origins, ``network`` owns the clip-signature check,
 #: ``external_workplaces`` supplies the Gemeinden the destinations are drawn in, and
 #: ``fleet_sampling_de`` draws the in-commuters' vehicles.
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.cordon.incommuter_origins",
     "braunschweig.data.cordon.network",
-    "braunschweig.data.cordon.pt_reachability",
     "braunschweig.data.external_workplaces",
     "braunschweig.synthesis.vehicles.fleet_sampling_de",
     # The rest of this stage's import closure: modules its helpers import, whose code this

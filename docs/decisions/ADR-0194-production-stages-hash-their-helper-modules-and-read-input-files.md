@@ -49,10 +49,12 @@
    returned a file size or a digest keeps it next to the module digests (`_COMPOSITE_STAGES`).
    This includes `matsim.runtime.eqasim` and `matsim.runtime.pt2matsim` (they run `git.run`,
    `maven.run`, `java.run`) and `matsim.simulation.run` (it runs `eqasim.run` -> `java.run`).
-   Over-hashing is accepted: `trips_stage` hashes everything its donor adapters import, and
-   `braunschweig.data.cordon_pt_gates` hashes the closure of the `incommuters` stage module
-   because `pt_reachability` reads `RAIL_LIKE_MODES` from it. A closure boundary is used only
-   where its condition holds: `cut_schedule` never runs `matsim.runtime.git` or `maven`.
+   Over-hashing is accepted (`trips_stage` hashes everything its donor adapters import), but
+   an import that pulls a large closure in for one name is narrowed first: `RAIL_LIKE_MODES`
+   moved from the `incommuters` stage module into `braunschweig.data.cordon.pt_reachability`,
+   its only other user, so `braunschweig.data.cordon_pt_gates` no longer reaches the in-commuter
+   synthesis. A closure boundary is used only where its condition holds: `cut_schedule` never
+   runs `matsim.runtime.git` or `maven`.
 4. `matsim.runtime.java` hashes `process_watchdog`; the #330 exception is removed. The watchdog
    thresholds stay volatile config keys (ADR-0095), so tuning them re-runs nothing.
 5. `braunschweig.parking.runtime_checks` declares `_SYNPP_TOKEN_EXEMPTION`: `matsim.simulation.run`
@@ -80,8 +82,10 @@
   watchdog decides whether a Java call is killed, so it is not plainly result-neutral.
 - **Keep the #330 exception.** The java stage would stay the one production stage whose helper is
   outside every check.
-- **A boundary at `incommuters` for `cordon_pt_gates`.** The stage reads a constant of that module,
-  so the boundary's claim ("never runs it") would be false.
+- **A boundary at `incommuters` for `cordon_pt_gates`, or hashing its whole closure.** The stage
+  read a constant of that module, so the boundary's claim ("never runs it") would have been
+  false; hashing the closure re-ran a PT-gate data stage for every vehicle-fleet or Java-runner
+  edit (Claude review of the pull request). Moving the constant removes the edge instead.
 - **Tokens for the stages that only fixture configs reach** (stages without a token whose module
   is not a node of the production DAG snapshot `docs/registry/dag/production.json` after alias
   resolution). No production run reads their cache; the own-package invariant still lists them.

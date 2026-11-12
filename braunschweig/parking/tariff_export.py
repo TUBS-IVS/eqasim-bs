@@ -65,7 +65,6 @@ caller, which knows the paths). Nothing here reads the tariff table itself; the 
 from __future__ import annotations
 
 import datetime
-import hashlib
 import json
 import logging
 import math
@@ -77,6 +76,7 @@ from typing import Mapping, Sequence
 import numpy as np
 import pandas as pd
 
+from braunschweig import synpp_tokens
 from braunschweig.parking import garages as parking_garages
 from braunschweig.parking.cost import (GARAGE_MAX_DISTANCE_M, SECONDS_PER_DAY, ZONE_TYPES, GarageBand, GarageTariff,
                                        GarageTier, ZoneTariff, check_option_price_beta, not_applicable_fields)
@@ -414,7 +414,7 @@ def content_sha256(path) -> str:
     core.autocrlf holds CRLF, and hashing the LF-normalised bytes keeps the recorded provenance identical on
     every platform and equal to the committed content.
     """
-    return hashlib.sha256(Path(path).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    return synpp_tokens.text_file_sha256(path)
 
 
 def _is_empty(value) -> bool:

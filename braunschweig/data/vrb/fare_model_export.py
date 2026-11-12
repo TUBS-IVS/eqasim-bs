@@ -8,10 +8,11 @@ euro cents, distances in kilometres, validity in minutes.
 from __future__ import annotations
 
 import csv
-import hashlib
 import json
 from pathlib import Path
 from typing import Mapping
+
+from braunschweig import synpp_tokens
 
 REPO = Path(__file__).resolve().parents[3]
 PRICE_INPUTS = REPO / "docs/data/vrb-dated-price-inputs.json"
@@ -65,7 +66,7 @@ def content_sha256(path) -> str:
     A Windows checkout with core.autocrlf holds CRLF; hashing the LF-normalised bytes keeps the
     recorded provenance identical on every platform and equal to the committed content.
     """
-    return hashlib.sha256(Path(path).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    return synpp_tokens.text_file_sha256(path)
 
 
 def _file_source(source_id: str, path: Path) -> dict:
