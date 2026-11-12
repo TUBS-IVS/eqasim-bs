@@ -41,7 +41,9 @@
     dashboard names the basis used.
 .PARAMETER LivenessWindowSec
     Window in seconds for the log-freshness fallback. Default: 300 (a silent stage
-    such as the chain solver can leave the log quiet for minutes).
+    such as the chain solver can leave the log quiet for minutes). A quiet log is
+    shown as "log quiet", never as an ended run, and raises no end-of-run alarm;
+    in this mode only the DONE marker in the log does.
 .PARAMETER RefreshSec
     Seconds between refreshes. Default: 10
 .PARAMETER LastIteration
@@ -303,13 +305,20 @@ function Show-Dashboard($snap) {
     $f = $snap.Fields
     Clear-Host
     $alive = $f['ALIVE']
-    $aliveColor = if ($alive -eq 'yes') { 'Green' } else { 'Red' }
+    # The remote script names the basis of ALIVE (tmux session, process check, or the log-freshness
+    # heuristic). A quiet log proves nothing about a run in a silent stage, so that case is shown
+    # as unknown, not as "not running".
+    $basis = if ($f['ALIVE_BASIS']) { $f['ALIVE_BASIS'] } else { 'basis unknown' }
+    $heuristic = ($basis -like 'log freshness*')
+    $aliveColor = if ($alive -eq 'yes') { 'Green' } elseif ($heuristic) { 'Yellow' } else { 'Red' }
     $width = 72
     Write-Host "  eqasim-bs run monitor  -  $server" -ForegroundColor Cyan
     Write-Host ("  " + ("-" * $width))
 
     # --- session + machine ---------------------------------------------------
-    $sessionText = if ($alive -eq 'yes') { $(if ($Session) { "RUNNING (tmux: $Session)" } else { 'RUNNING (log active)' }) } else { 'not running' }
+    $sessionText = if ($alive -eq 'yes') { "RUNNING ($basis)" }
+                   elseif ($heuristic) { "log quiet ($basis): silent stage or ended" }
+                   else { "not running ($basis)" }
     Write-Host -NoNewline "  session : "
     Write-Host -NoNewline $sessionText -ForegroundColor $aliveColor
     if ($f['ELAPSED']) { Write-Host "    elapsed $($f['ELAPSED'])" -ForegroundColor Gray } else { Write-Host "" }
@@ -349,7 +358,6 @@ function Show-Dashboard($snap) {
         Write-Host "  storage : $diskText" -ForegroundColor $diskColor
     }
     if ($f['GIT']) { Write-Host "  commit  : $($f['GIT'])" -ForegroundColor DarkGray }
-    if ($f['ALIVE_BASIS']) { Write-Host "  liveness: $($f['ALIVE_BASIS'])" -ForegroundColor DarkGray }
     Write-Host "  log     : $($f['LOG'])" -ForegroundColor DarkGray
     Write-Host "  updated : $($f['MTIME'])   (server now $($f['NOW']))" -ForegroundColor DarkGray
     Write-Host ("  " + ("-" * $width))
@@ -464,7 +472,11 @@ while ($true) {
         Show-Dashboard $snap
         $f = $snap.Fields
         $done = ($f['DONE'] -and [int]$f['DONE'] -gt 0)
-        $ended = ($f['ALIVE'] -ne 'yes')
+        # A quiet log (the heuristic basis) is not an end-of-run signal: a silent stage looks the
+        # same. Only a tmux session or process check that turns negative, or the DONE marker,
+        # latches the one-time alarm.
+        $heuristic = ($f['ALIVE_BASIS'] -like 'log freshness*')
+        $ended = ($f['ALIVE'] -ne 'yes') -and -not $heuristic
         if (-not $beeped -and ($done -or ($ended -and $wasAlive))) {
             $errN = if ($f['ERRORS']) { [int]$f['ERRORS'] } else { 0 }
             if ($done -and $errN -eq 0) {
