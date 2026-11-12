@@ -808,3 +808,18 @@ def test_drop_invalid_households_noop_when_all_valid():
     assert n_hh == 0 and n_p == 0
     assert len(hh_out) == 3 and len(p_out) == 3
 
+
+def test_kreis_pop_from_crosswalk_logs_primary_path_rates(caplog):
+    from braunschweig.popsim.mid.kreis_controls import _kreis_pop_from_crosswalk
+
+    xwalk = pd.DataFrame(
+        {folders.GEO_100M: [f"c{i}" for i in range(40)], folders.GEO_KREIS: ["03101"] * 20 + ["03102"] * 20}
+    )
+    cells = pd.DataFrame({"ZENSUS100m": xwalk[folders.GEO_100M], "POP_TOTAL_100m_adj": [1.0] * 40})
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.mid.kreis_controls"):
+        totals = _kreis_pop_from_crosswalk(cells, xwalk)
+    assert totals == {"03101": 20.0, "03102": 20.0}
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(m.startswith("[kreis_pop_from_crosswalk.weight] primary 40/40") for m in messages)
+    assert any(m.startswith("[kreis_pop_from_crosswalk.kreis] primary 40/40") for m in messages)
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]

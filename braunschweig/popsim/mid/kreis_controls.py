@@ -49,6 +49,7 @@ from typing import Iterable, Mapping, Optional, Sequence, Union
 import pandas as pd
 
 from braunschweig.popsim import folders
+from braunschweig.popsim.fallback_rates import log_fallback_rate
 
 from .control_cells import _ARS_COLUMN
 
@@ -186,11 +187,35 @@ def _kreis_pop_from_crosswalk(
     batches reproduces the region-wide per-Kreis total exactly.
     """
     kreis_of = geo_crosswalk.set_index(folders.GEO_100M)[folders.GEO_KREIS]
+    numeric_w = pd.to_numeric(cells_subset[weight_col], errors="coerce")
     work = pd.DataFrame(
         {
             folders.GEO_KREIS: cells_subset["ZENSUS100m"].astype(str).map(kreis_of),
-            "_w": pd.to_numeric(cells_subset[weight_col], errors="coerce").fillna(0.0).to_numpy(),
+            "_w": numeric_w.fillna(0.0).to_numpy(),
         }
+    )
+    # Observability only (CLAUDE.md "Fallback transparency"): the two silent paths below are
+    # the weight coerced to 0 and the cell dropped by the groupby because it has no Kreis.
+    n_cells = len(work)
+    log_fallback_rate(
+        logger,
+        "kreis_pop_from_crosswalk.weight",
+        int(numeric_w.isna().sum()),
+        n_cells,
+        what=f"{weight_col} missing or non-numeric, coerced to 0",
+    )
+    unmapped = work[folders.GEO_KREIS].isna().to_numpy()
+    total_w = float(work["_w"].sum())
+    unmapped_w = float(work.loc[unmapped, "_w"].sum())
+    log_fallback_rate(
+        logger,
+        "kreis_pop_from_crosswalk.kreis",
+        int(unmapped.sum()),
+        n_cells,
+        what=(
+            f"cells without a crosswalk Kreis are dropped from the {weight_col} sums "
+            f"(weight share dropped {(100.0 * unmapped_w / total_w) if total_w else 0.0:.1f}%)"
+        ),
     )
     grouped = work.groupby(folders.GEO_KREIS, sort=False)["_w"].sum()
     return {str(k): float(v) for k, v in grouped.items()}
