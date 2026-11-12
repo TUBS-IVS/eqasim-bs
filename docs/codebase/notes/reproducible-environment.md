@@ -3,7 +3,7 @@
 The Linux runtime is a captured, audited production-server snapshot, not a new
 solver result. `environments/server-linux-64.lock` lists the 312 installed
 conda artifacts as exact URLs, MD5 checksums, SHA-256 checksums, versions, and
-builds. `environments/requirements-server-linux-64.txt` records the 11
+builds. `environments/requirements-server-linux-64.txt` records the
 effective pip installations and their exact PyPI artifact URLs and SHA-256
 hashes. It is the canonical environment for WSL2 and the Linux production
 server.
@@ -82,9 +82,24 @@ known production runtime. Refresh it only from a new read-only server snapshot,
 then record both the conda artifacts and the effective pip metadata again.
 
 Regenerate the Windows lock after changing `environment.yml` with the recorded
-tool version:
+tool version, and never edit either lock file by hand: Windows CI and the README
+install the unified `conda-lock.yml`, so an entry added only to the explicit
+`conda-win-64.lock` never reaches an installed environment.
 
 ```bash
-uvx --from conda-lock==4.0.2 conda-lock lock --micromamba --file environment.yml --platform win-64 --kind lock --lockfile environments/conda-lock.yml
+MAPPING=https://raw.githubusercontent.com/conda-forge/conda-forge-bot-data/ec11ab5bb86d198e26b745af80c110b38bec3783/mappings/pypi/grayskull_pypi_mapping.json
+uvx --from conda-lock==4.0.2 conda-lock lock --micromamba --pypi_to_conda_lookup_file "$MAPPING" --file environment.yml --platform win-64 --kind lock --lockfile environments/conda-lock.yml --update <changed package> ...
 uvx --from conda-lock==4.0.2 conda-lock render --platform win-64 --kind explicit --filename-template 'environments/conda-{platform}.lock' environments/conda-lock.yml
 ```
+
+- `--pypi_to_conda_lookup_file` is required with conda-lock 4.0.2: its built-in
+  PyPI-to-conda name mapping URL (`regro/cf-graph-countyfair`) returns 404 since
+  the file moved to `conda-forge/conda-forge-bot-data`. The URL above is pinned
+  to a commit so a re-lock is repeatable.
+- `--update` with the changed packages keeps the other direct pins, but the
+  conda solver still moves transitive libraries (openssl, glib, the VC runtime,
+  ...) to newer builds. Review the diff of `conda-win-64.lock` and prove the lock
+  with a fresh `conda-lock install` before committing it.
+- Pin a new pip package's own wheel dependencies in `environment.yml` to the
+  versions of `environments/requirements-server-linux-64.txt`; otherwise the
+  Windows lock picks the newest releases and the platforms diverge.
