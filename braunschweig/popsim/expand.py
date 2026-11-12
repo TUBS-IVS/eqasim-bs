@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from braunschweig.popsim.fallback_rates import log_fallback_rate
+
 # MiD sex codes (HP_SEX): 1 = male, 2 = female; others (3 "diverse", 9 "no answer").
 _SEX_LABELS = {1: "male", 2: "female"}
 _SEX_RAW_LABELS = {1: "male", 2: "female", 3: "diverse", 9: "not_specified"}
@@ -112,6 +114,11 @@ def map_demographics(persons, *, age_col="HP_ALTER", sex_col="HP_SEX", rng=None)
     within the same alter_gr1 band, seeded). The original category is retained in
     ``sex_raw`` (male/female/diverse/not_specified) for analysis but is NOT written
     to the MATSim population.
+
+    Imputation tiers, each counted and logged: observed binary sex (primary), then the
+    same-band pool, then the global pool, then the constant "male" (last resort, logged
+    with its own rate). Persons whose ``alter_gr1`` is NaN are not visited by the band
+    loop and keep a missing sex; they are counted as ``unassigned``.
     """
     import logging
     import numpy as np
@@ -122,6 +129,7 @@ def map_demographics(persons, *, age_col="HP_ALTER", sex_col="HP_SEX", rng=None)
     binary = out[sex_col].map(_SEX_LABELS)
     missing_mask = binary.isna()
     n_missing = int(missing_mask.sum())
+    n_band = n_global = n_constant = 0
     if n_missing:
         global_pool = binary[~missing_mask]
         if "alter_gr1" in out.columns:
@@ -130,16 +138,40 @@ def map_demographics(persons, *, age_col="HP_ALTER", sex_col="HP_SEX", rng=None)
                 draw_pool = band_pool if len(band_pool) else global_pool
                 if len(draw_pool):
                     binary.loc[idx] = [draw_pool.iloc[rng.randint(len(draw_pool))] for _ in idx]
+                    if len(band_pool):
+                        n_band += len(idx)
+                    else:
+                        n_global += len(idx)
                 else:
                     binary.loc[idx] = "male"
+                    n_constant += len(idx)
         else:
             if len(global_pool):
                 binary.loc[missing_mask] = [global_pool.iloc[rng.randint(len(global_pool))]
                                             for _ in range(n_missing)]
+                n_global += n_missing
             else:
                 binary.loc[missing_mask] = "male"
+                n_constant += n_missing
     out["sex"] = binary
-    logging.getLogger(__name__).info(
+    logger = logging.getLogger(__name__)
+    n_total = len(out)
+    log_fallback_rate(
+        logger, "popsim.expand.sex", n_missing, n_total,
+        what="persons without an observed binary sex (codes 3 diverse / 9 k.A.), imputed",
+    )
+    if n_missing:
+        n_unassigned = int(binary.isna().sum())
+        logger.info(
+            "[popsim.expand.sex] imputation tiers for %d persons: band pool %d, global pool %d, "
+            "constant 'male' %d, unassigned (NaN alter_gr1) %d.",
+            n_missing, n_band, n_global, n_constant, n_unassigned,
+        )
+        log_fallback_rate(
+            logger, "popsim.expand.sex_constant", n_constant, n_missing,
+            what="imputed persons that got the constant 'male' because no pool existed",
+        )
+    logger.info(
         "[popsim.expand] sex: imputed %d non-binary/missing codes (3 diverse / 9 k.A.) "
         "to binary male/female (seeded); sex_raw retains the original category.", n_missing)
     return out

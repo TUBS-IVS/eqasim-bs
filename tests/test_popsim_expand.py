@@ -105,3 +105,18 @@ def test_map_demographics_imputes_sex_and_keeps_raw():
     out = expand.map_demographics(df, rng=np.random.RandomState(0))
     assert set(out["sex"].unique()) <= {"male", "female"}        # binary, no "unknown"
     assert out["sex_raw"].tolist() == ["male", "female", "diverse", "not_specified"]
+
+
+def test_map_demographics_sex_rate_logged_primary_dominates(caplog):
+    import logging
+    import numpy as np
+    n = 20
+    df = pd.DataFrame({"HP_ALTER": [30] * n, "HP_SEX": [1, 2] * 9 + [3, 1],
+                       "alter_gr1": [5] * n})
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.expand"):
+        out = expand.map_demographics(df, rng=np.random.RandomState(0))
+    recs = [r for r in caplog.records if "[popsim.expand.sex] primary 19/20" in r.message]
+    assert len(recs) == 1 and recs[0].levelno == logging.INFO
+    const = [r for r in caplog.records if "[popsim.expand.sex_constant]" in r.message]
+    assert len(const) == 1 and const[0].levelno == logging.INFO  # band pool existed: no constant
+    assert out["sex"].notna().all()
