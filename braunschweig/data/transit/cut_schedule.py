@@ -51,6 +51,14 @@ _HELPER_MODULES = (_schedule, _cordon, _extent, eqasim)
 #: The schedule reader imports ``plan_check.parse_time_s``; the audit requires its import closure to be hashed too.
 _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.matsim.simulation.plan_check", "braunschweig.popsim.closure_dwell",
                                  "braunschweig.popsim.plan_validation", "data.hts.hts")
+#: Stage modules the closure walk reaches through the hashed ``matsim.runtime.eqasim`` helper but
+#: whose code this stage never runs (read by scripts/audit_synpp_helper_hash.py, ADR-0136).
+_TOKEN_CLOSURE_BOUNDARIES = {
+    "matsim.runtime.git": "only matsim.runtime.eqasim.execute/configure call git.run; this stage "
+                          "calls eqasim.run, which calls java.run",
+    "matsim.runtime.maven": "only matsim.runtime.eqasim.execute/configure call maven.run; this stage "
+                            "calls eqasim.run, which calls java.run",
+}
 
 
 def validate_mode(value) -> str:

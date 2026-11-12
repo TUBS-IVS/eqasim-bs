@@ -168,6 +168,34 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "data.hts.entd.cleaned",
     "data.hts.hts",
     "synthesis.population.matched",
+    # What the donor-source adapters above import. execute() resolves the adapter by name
+    # (importlib), calls its load_donor (the MiD donor reader, the ENTD seed and attribute
+    # code) and its build_trips, so this code runs inside this stage. The closure walk did not
+    # start at modules loaded by name until audit finding P1-F4 was fixed; the whole closure is
+    # hashed on purpose (owner decision 2026-11-12): an edit to popsim assembly code rebuilds
+    # this stage. The two stage modules here are run as libraries (economic_status calls
+    # regiostar.ars_to_ags8 and reads census.household_income.INCOME_CLASS_MAP) and are not
+    # declared dependencies, so no DAG edge and no closure boundary covers them.
+    "braunschweig.data.bbsr.regiostar",
+    "braunschweig.data.census.household_income",
+    "braunschweig.popsim.assembly",
+    "braunschweig.popsim.day_type",
+    "braunschweig.popsim.expand",
+    "braunschweig.popsim.income",
+    "braunschweig.popsim.member_completion",
+    "braunschweig.popsim.mid.csv_format",
+    "braunschweig.popsim.mid.donor",
+    "braunschweig.popsim.passenger_availability",
+    "braunschweig.popsim.sampling",
+    "braunschweig.popsim.sources.entd_attributes",
+    "braunschweig.popsim.sources.entd_donor",
+    "braunschweig.popsim.sources.entd_schema",
+    "braunschweig.popsim.sources.entd_seed",
+    "braunschweig.popsim.sources.entd_vocabulary",
+    "braunschweig.popsim.stratum",
+    "braunschweig.popsim.weekend_plan_match",
+    "braunschweig.population.schema",
+    "braunschweig.synthesis.population.enriched.economic_status",
 )
 
 

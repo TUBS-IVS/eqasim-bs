@@ -336,6 +336,45 @@ def test_exemptions_boundaries_and_unread_tuples_shape_the_closure(tmp_path):
         audit.build_report(tmp_path)
 
 
+def test_the_closure_also_walks_from_modules_the_stage_loads_by_name(tmp_path):
+    """A module named only in ``_DEFERRED_HELPER_MODULE_NAMES`` (loaded through importlib, the
+    donor-source registry of the trips stage) runs inside the stage, and so does everything it
+    imports. The walk started at the stage module's static imports only, so those modules were
+    invisible to the closure gate (audit finding P1-F4).
+
+    A DECLARED stage the stage also lists in a helper tuple is walked too: the tuple states that
+    the stage runs that module's code itself (``cut_schedule`` calls ``eqasim.run``)."""
+    _write_package(tmp_path, {
+        "__init__.py": "",
+        "stage_a.py": (
+            "import importlib\nimport inspect\n"
+            "from braunschweig import runtime\n"
+            "_HELPER_MODULES = (runtime,)\n"
+            "_DEFERRED_HELPER_MODULE_NAMES = ('braunschweig.registry',)\n"
+            "def configure(context):\n    context.stage('braunschweig.runtime')\n"
+            "def execute(context):\n"
+            "    runtime.run(context)\n"
+            "    return importlib.import_module('braunschweig.registry').run()\n"
+            "def validate(context):\n"
+            "    modules = list(_HELPER_MODULES) + [importlib.import_module(name)\n"
+            "                                       for name in _DEFERRED_HELPER_MODULE_NAMES]\n"
+            "    return [inspect.getsource(module) for module in modules]\n"),
+        "registry.py": (
+            "from braunschweig import adapter\n"
+            "def run():\n    return adapter.value()\n"),
+        "adapter.py": "def value():\n    return 1\n",
+        "runtime.py": (
+            "from braunschweig import launcher\n"
+            "def configure(context):\n    pass\n"
+            "def execute(context):\n    return 1\n"
+            "def run(context):\n    return launcher.start()\n"),
+        "launcher.py": "def start():\n    return 1\n",
+    })
+    entry = audit.build_report(tmp_path)["braunschweig.stage_a"]
+    assert entry["covered"] == ["braunschweig.registry", "braunschweig.runtime"]
+    assert entry["transitive_uncovered"] == ["braunschweig.adapter", "braunschweig.launcher"]
+
+
 #: Transitive gaps left open on purpose, per stage. A shrinking register like
 #: EXPECTED_UNCOVERED, empty by design: every entry needs its reason, and the gate fails when an
 #: entry closes. Two kinds of module are not gaps and are declared where they live instead: a

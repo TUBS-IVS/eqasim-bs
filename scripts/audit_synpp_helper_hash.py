@@ -19,7 +19,9 @@ Step 4  validate() coverage    -- stages whose validate() hashes source (detecte
                                   STATICALLY, each credited only when validate() reads it;
                                   a package entry covers its own __init__ only.
 Step 5  transitive closure     -- the same imports followed through every first-party
-                                  module a source-hashing stage reaches, stopping at its
+                                  module a source-hashing stage reaches (starting at the
+                                  stage module AND at every module its helper tuples
+                                  name, so a module loaded by name is walked too), stopping at its
                                   declared stage edges; what the token misses of that closure
                                   is ``transitive_uncovered`` (ADR-0136). Two declarations
                                   end the walk early, each with its reason: a module whose
@@ -361,7 +363,7 @@ def covered_by_entry(name: str) -> set[str]:
 
 
 def import_closure(stage: str, imports: dict[str, set[str]], stages, declared_modules,
-                   exempt=frozenset(), boundaries=frozenset()) -> set[str]:
+                   exempt=frozenset(), boundaries=frozenset(), roots=frozenset()) -> set[str]:
     """Every first-party module ``stage`` reaches through imports, the stage module excluded.
 
     Follows module-level and lazy imports from the stage module through every module it
@@ -370,19 +372,35 @@ def import_closure(stage: str, imports: dict[str, set[str]], stages, declared_mo
     module the stage never calls, never the other way round. Step 2 stops after the stage
     module's own imports, the one-level boundary the audit note describes (ADR-0136).
 
+    ``roots`` are the modules the stage's helper tuples name. The walk starts at them as well:
+    a module the stage loads only by name (``importlib``, listed in
+    ``_DEFERRED_HELPER_MODULE_NAMES``) has no static import edge from the stage, yet it runs
+    inside the stage together with everything it imports (audit finding P1-F4). A root is
+    part of the closure like any other module reached. A root that is also a DECLARED stage
+    dependency is walked as well: listing it in a helper tuple states that the stage runs its
+    code itself (``cut_schedule`` calls ``matsim.runtime.eqasim.run``), which the DAG edge does
+    not cover.
+
     The walk also ends, without reporting the module, at an ``exempt`` module (one that never
     shapes a stage result, so neither it nor what it imports for its own purpose needs
     hashing) and at one of the stage's own ``boundaries``.
     """
+    def enters(target: str, is_root: bool = False) -> bool:
+        if target == stage or target in reached:
+            return False
+        if not is_root and target in stages and target in declared_modules:
+            return False
+        return target not in exempt and target not in boundaries
+
     reached, frontier = set(), [stage]
+    for root in sorted(roots):
+        if enters(root, is_root=True):
+            reached.add(root)
+            frontier.append(root)
     while frontier:
         module = frontier.pop()
         for target in imports.get(module, ()):
-            if target == stage or target in reached:
-                continue
-            if target in stages and target in declared_modules:
-                continue
-            if target in exempt or target in boundaries:
+            if not enters(target):
                 continue
             reached.add(target)
             frontier.append(target)
@@ -484,7 +502,8 @@ def build_report(repo: Path) -> dict:
                 resolved |= covered_by_entry(dotted)
             boundaries = closure_boundaries(tree, name)
             closure = import_closure(name, imports, stages, declared_modules,
-                                     exempt=exempt, boundaries=set(boundaries))
+                                     exempt=exempt, boundaries=set(boundaries),
+                                     roots=resolved)
             walked = closure | {name}
             helper_entries, deferred_entries = tuple_entries(tree)
             hashed = [resolve_module_binding(alias_map.get(alias, alias), trees, on_disk, packages)
