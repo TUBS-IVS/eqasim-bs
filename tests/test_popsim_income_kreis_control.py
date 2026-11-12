@@ -496,3 +496,21 @@ def test_add_per_capita_income_handles_nan_and_zero_size():
     pc = out["household_income_per_capita_eur"].to_numpy()
     assert np.isnan(pc[0])   # NaN income -> NaN per-capita
     assert pc[1] == 4000.0   # size 0 floored to 1
+
+
+def test_apply_on_path_logs_pmf_rate_as_primary(caplog):
+    import logging
+
+    import pandas as pd
+    df = _persons_two_kreise()
+    inkar = pd.DataFrame({"ars5": ["03102", "03103"], "scale": [0.882, 1.091]})
+    stats = pd.DataFrame({"ars5": ["03102", "03103"], "hh_count": [400.0, 400.0],
+                          "mean_size": [1.8, 2.1]})
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.income_kreis_control"):
+        _out, diag = kic.apply_kreis_income_control(
+            df, inkar_df=inkar, kreis_stats_df=stats, income_tables=_toy_income_tables(),
+            enabled=True, method="combined", random_seed=1234)
+    assert diag["pmf_fallback_rate"] == 0.0
+    lines = [r for r in caplog.records
+             if r.getMessage().startswith("[income_kreis_control.pmf] primary ")]
+    assert len(lines) == 1 and lines[0].levelno == logging.INFO
