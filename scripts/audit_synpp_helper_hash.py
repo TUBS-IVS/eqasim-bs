@@ -304,7 +304,7 @@ def validate_hashes_source(tree: ast.Module) -> bool:
     ``synpp_tokens.source_token``. Only a call counts, never a mention in a comment or string.
 
     An aliased or from-import of ``inspect.getsource`` / ``synpp_tokens.source_token`` is not
-    recognised; the exact-30 pin in ``tests/test_token_refactor_coverage.py`` makes such a drop
+    recognised; the exact pin ``EXPECTED_SOURCE_HASHING_STAGES`` in ``tests/test_token_refactor_coverage.py`` makes such a drop
     fail loudly.
     """
     for node in tree.body:

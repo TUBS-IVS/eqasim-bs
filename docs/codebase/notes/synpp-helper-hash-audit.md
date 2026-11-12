@@ -11,7 +11,10 @@ output is their only home.
 synpp's `get_stage_hash` (semantic AST digest in the fork, `docs/codebase/notes/synpp-fork.md`)
 covers only a stage module's OWN source. Code the stage calls in another first-party module is
 outside its cache key: edit that helper and a partial rerun silently reuses output produced by
-the old code. A stage closes the gap with a `validate()` token over its helper modules:
+the old code. That holds for a declared synpp dependency too when the stage imports it and runs
+its code: the DAG edge carries the parent's OUTPUT, and under content-addressed validity
+(ADR-0149) an unchanged parent output spares the child, so an edit to the parent's library code
+re-executes the parent only (ADR-0194). A stage closes the gap with a `validate()` token over its helper modules:
 `_HELPER_MODULES` (module objects, for module-level imports) and `_DEFERRED_HELPER_MODULE_NAMES`
 (dotted names, for function-level imports and for modules reached only through a helper), passed
 to `braunschweig.synpp_tokens.source_token`. The import site decides the tuple; each module is
@@ -53,10 +56,11 @@ imported or executed.
    helper). Relative imports resolve against the importing module's package, exactly as
    `importlib` does (`bits = package.rsplit('.', level - 1)`); a package `__init__` is its own
    anchor. Only first-party modules are kept; third-party versions are pinned by the environment.
-3. **Separate declared stage edges.** A first-party import that is itself a stage AND that the
-   stage declares with a literal `context.stage("name")` (names resolved through the `aliases:`
-   of `configs/base_bs.yml`) is covered by synpp's own hash propagation. `required_helpers` is
-   every other first-party import.
+3. **Declared stage edges are reported, not subtracted.** The literal `context.stage("name")`
+   calls are listed (`declared`), but `required_helpers` is every first-party import, a declared
+   stage module included: the edge covers that stage's output, not code this stage imports from
+   it (see "The problem"). Until 2026-11-12 such imports were subtracted as "covered by synpp's
+   hash propagation", which the early cutoff of ADR-0149 had made false (ADR-0194).
 4. **Read the token.** A stage hashes source when its top-level `validate()` CALLS
    `inspect.getsource` or `synpp_tokens.source_token` (a mention in a comment or string does not
    count). Its tuples are read statically, following both import binding forms (`import a.b as
@@ -68,10 +72,8 @@ imported or executed.
    module its helper tuples name: a module the stage loads by name through `importlib` (the
    donor-source registry of `braunschweig.popsim.trips_stage`) has no static import edge from the
    stage, yet it runs inside the stage together with what it imports (audit finding P1-F4,
-   2026-11-12). A declared stage that the stage ALSO lists in a helper tuple is walked too: the
-   tuple states that the stage runs that module's code itself (`cut_schedule` calls
-   `matsim.runtime.eqasim.run`), which the DAG edge does not cover. The walk stops at:
-   - a declared stage edge reached through an import (step 3);
+   2026-11-12). The walk goes through declared stage modules like through any other module
+   (step 3). It stops at:
    - a module whose `_SYNPP_TOKEN_EXEMPTION` states that it never shapes a stage result (progress
      output, terminal colours, process monitoring, the token builder itself, runtime-only
      checks); an exemption without a non-empty reason is an error;
@@ -113,14 +115,16 @@ stale, or say nothing at all.
 - **Computed import names.** A module loaded through `importlib` with a name that is not in a
   helper tuple is invisible to the walk. The registry pattern is covered only because its module
   names are listed in `_DEFERRED_HELPER_MODULE_NAMES` (step 5).
-- **PEP 562 `__getattr__`.** Three first-party modules define one
-  (`braunschweig/data/census/household_income.py`, `braunschweig/popsim/stage/__init__.py`,
-  `braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py`); none reaches a module
-  the import scan would miss.
-- **Computed `context.stage(...)` names** would make the declared-edge step guess; every call
-  uses a literal today, and a computed one would have to be flagged, not resolved.
-- **Aliases come from `configs/base_bs.yml` only.** A fixture config may alias a stage
-  differently; declared-edge status is evaluated against the canonical config.
+- **PEP 562 `__getattr__`.** Three first-party modules define a module-level one.
+  `braunschweig/data/census/household_income.py` computes a value from data and
+  `braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py` forwards names to an
+  already imported sibling; neither reaches a module the scan would miss.
+  `braunschweig/popsim/sources/__init__.py` resolves the donor adapter classes by importing
+  their modules by name: the scan does not see those imports, so every stage that uses the
+  registry must list the adapter modules in `_DEFERRED_HELPER_MODULE_NAMES` (the previous
+  bullet).
+- **`declared` is informational.** It lists literal `context.stage(...)` names as written
+  (no alias resolution, no computed names); no gate reads it since ADR-0194.
 - **Scan roots.** Only `ROOTS` are scanned. The production stage `documentation.meta_output` lives
   outside them, so its coverage is unknown, not derived.
 

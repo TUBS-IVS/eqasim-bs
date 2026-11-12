@@ -153,7 +153,7 @@ and the others) are covered by each consuming stage's `_HELPER_MODULES` /
 `braunschweig/synthesis/commute_day/home_office_donors_stage.py` and
 `braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py`. Those tuples
 are the owner; `scripts/audit_synpp_helper_hash.py` audits them and
-`synpp-helper-hash-audit.md` is the shared register of any open gaps.
+the open gaps are the registers of its gate tests (see `synpp-helper-hash-audit.md`).
 
 ## Where the vocabulary's evidence lives
 

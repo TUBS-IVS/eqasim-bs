@@ -6,6 +6,10 @@
   branches: ADR-0134 is on the #435 branches and ADR-0135 on the local branch
   `fix/parallel-memory-robustness`.
 - **Issue:** none; found in the #434 follow-up and fixed there on the maintainer's instruction.
+- **Superseded in part by ADR-0194 (2026-11-12):** Decision 1's walk no longer stops at a
+  stage's declared synpp dependencies; a declared stage the stage imports is hashed like any
+  helper, because the DAG edge carries its output, not its code. The walk also starts at the
+  modules the helper tuples name.
 
 ## Context
 
