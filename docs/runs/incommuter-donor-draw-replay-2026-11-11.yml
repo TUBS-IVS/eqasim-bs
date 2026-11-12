@@ -75,6 +75,19 @@ validation:
     powertrain shares move by at most 0.4 percentage points (petrol 62.0 % against 61.5 %, BEV 2.8 % against 3.0 %).
   artifact: docs/runs/artifacts/incommuter-donor-draw-replay-2026-11-11/summary.json
   notes: 'pt check off in both arms; with the check on, some pt agents switch to car and some days shift.'
+- metric: donor times imputed instead of surveyed (fallback rates of braunschweig.data.cordon.plans), old against new
+  reference: 'the old arm, model output'
+  result: >-
+    Worker in-commuters (68,630): arrival at work imputed 9.6 % (old) against 17.9 % (new), departure from work 16.3 %
+    against 25.1 %, arrival home 16.6 % against 24.7 %; days moved earlier as a whole to fit the day 0.9 % against
+    1.6 %. Student in-commuters (6,174): arrival at the university 0.3 % against 0.5 %, departure 1.0 % against 5.2 %,
+    arrival home 1.0 % against 6.2 %; days moved earlier 0.0 % against 0.6 %.
+  artifact: docs/runs/artifacts/incommuter-donor-draw-replay-2026-11-11/replay_log.txt
+  notes: >-
+    The new draw takes more donors whose day lacks a leg back home from work or university (the donor pool only requires
+    one leg between home and the activity), so more times come from the duration pool instead of the donor. The cause
+    is inferred from the rule, not traced donor by donor; the effect on the simulated departure profile is not
+    measured.
 - metric: student in-commuters, old against new
   reference: 'the old arm, model output'
   result: >-
@@ -85,7 +98,9 @@ validation:
     8.15 h against 8.74 h, median 7.75 h against 8.00 h, 90 % quantile 9.38 h against 11.56 h. Household income: flat
     3,000 EUR against mean 4,443 EUR (10 % quantile 1,355, median 4,437, 90 % quantile 6,801); high_income 0.0 %
     against 42.0 %; one-person households 100 % against 11.1 %. Economic status (new): very low 14.3 %, low 13.9 %,
-    medium 26.9 %, high 35.6 %, very high 9.2 %. Mode shares car 84.6 % against 84.2 %.
+    medium 26.9 %, high 35.6 %, very high 9.2 %. Mode shares car 84.6 % against 84.2 %: the student stage draws its
+    modes after the donors from the same random stream, so this shift is re-sequencing of the stream, not an effect of
+    the household draw.
   artifact: docs/runs/artifacts/incommuter-donor-draw-replay-2026-11-11/summary.json
   notes: 'The old arm drew the donors from all studying survey persons, most of them school children.'
 features:

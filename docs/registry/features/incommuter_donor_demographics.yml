@@ -31,7 +31,9 @@ evidence:
   off_path_byte_identical:
     claimed: true
     test: tests/test_incommuter_donor_consistency.py::test_legacy_off_outputs_match_frozen_pre_fix_baseline
-    note: Raw MiD donor tables and subsequent RNG bytes match the frozen 1502e88e baseline.
+    note: Raw MiD donor tables and subsequent RNG bytes match the frozen 1502e88e baseline. Since ADR-0191 the
+      student in-commuter stage needs the donor age and raises with the flag off; the OFF path holds for the
+      donor stage only.
   fallback_rate:
     instrumented: true
     log_marker: '[mid_donor] sex: primary'
