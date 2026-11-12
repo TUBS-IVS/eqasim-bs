@@ -480,8 +480,10 @@ def test_a_metadata_write_that_fails_mid_run_keeps_the_previous_pipeline_json(tw
     two_stage.run()
     parent_key, parent_record = two_stage.key("ec_parent"), two_stage.record("ec_parent")
     child = two_stage.root / "ec_child.py"
-    child.write_bytes(child.read_bytes().replace(      # run() stores context.stage_info in pipeline.json
-        b"    total = ", b'    context.set_info("handle", object())\n    total = '))
+    source, anchor = child.read_bytes(), b"    total = "
+    assert source.count(anchor) == 1, "the set_info injection needs exactly one %r line in ec_child.py" % anchor
+    child.write_bytes(source.replace(                   # run() stores context.stage_info in pipeline.json
+        anchor, b'    context.set_info("handle", object())\n' + anchor))
     with pytest.raises(TypeError, match="not JSON serializable"):
         two_stage.run()
     assert two_stage.events() == ["ec_parent", "ec_child", "ec_child"]      # failed in the write after ec_child
