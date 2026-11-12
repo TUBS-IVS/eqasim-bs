@@ -1,8 +1,8 @@
 """Fallback-rate observability of the IPF household formation (audit package D).
 
 The rate lines are logging only: each test checks that the PRIMARY path is taken on
-representative input (fallback counts 0) and that the formed households do not depend
-on the observability arguments.
+representative input (fallback counts 0); the tier test also checks that the
+optional stats argument does not alter the hh_type allocation.
 """
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def _line(text, needle):
     return lines[0]
 
 
-def test_tier_line_primary_path_and_outputs_unchanged(capsys):
+def test_tier_line_primary_path_and_allocation_unchanged(capsys):
     df = _persons(_adults("A", "2", 20))
     types = _types([("A", "2", "other_multi", 1.0)])
     _, text = _run(df, types, capsys)
@@ -55,6 +55,8 @@ def test_tier_line_primary_path_and_outputs_unchanged(capsys):
     assert "10 primary" in line
     assert "0 drawn from scope-wide fallback, 0 forced" in line
     assert "WARNING" not in line
+    # The orphan step reports also when nothing needs merging.
+    assert "adult-less orphan households: 0;" in _line(text, "adult-less orphan households")
 
     # The optional stats argument never alters the allocation.
     shares = att._prepare_type_shares(types)
@@ -100,6 +102,14 @@ def test_orphan_merge_is_reported_and_skip_is_counted(capsys):
     assert "WARNING" in line2
     assert len(out2) == 1
 
+    # A large but successful merge is the intended repair, not a fallback: no WARNING.
+    out3, text3 = _run(_persons(_adults("D", "2", 10) + [("D", "1", 4), ("D", "1", 6)]),
+                       _types([("D", "2", "other_multi", 1.0), ("D", "1", "single", 1.0)]),
+                       capsys)
+    line3 = _line(text3, "adult-less orphan households")
+    assert "merged 2/12 persons" in line3
+    assert "WARNING" not in line3
+
 
 @pytest.mark.parametrize("hh_type,size,adults,children,promoted,warn", [
     ("single_parent", "2", 4, 4, 0, False),    # child slots already match the pool
@@ -134,3 +144,11 @@ def test_legacy_assign_types_warns_above_threshold(capsys):
     line = _line(capsys.readouterr().out, "assigned hh_type")
     assert "WARNING" in line
     assert "10 drawn from scope-wide fallback" in line
+    # Exactly at the threshold (1 of 20 households = 5 %) there is no WARNING: the
+    # rule is "share > FALLBACK_WARN_FRACTION".
+    edge = pd.DataFrame({"household_id": range(20),
+                         "commune_id": ["A"] * 19 + ["B"], "household_size": 2})
+    att._assign_household_types(edge, ok, 1)
+    line = _line(capsys.readouterr().out, "assigned hh_type")
+    assert "1 drawn from scope-wide fallback" in line
+    assert "WARNING" not in line

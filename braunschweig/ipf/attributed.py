@@ -699,17 +699,20 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
             target = cand[np.argmin(np.abs(young[cand] - (mean_child_age + gap_mean)))]
             household_id[persons] = target
             n_merged += len(persons)
-        n_orphans = int(orphan_hids.size)
-        merged_share = n_merged / n if n else 0.0
-        skipped_share = n_skipped_persons / n if n else 0.0
-        warn = (merged_share + skipped_share) > FALLBACK_WARN_FRACTION
-        print(
-            f"[braunschweig.ipf.attributed] {'WARNING: ' if warn else ''}"
-            f"adult-less orphan households: {n_orphans:,}; merged {n_merged:,}/"
-            f"{n:,} persons ({merged_share:.2%}) into adult households, "
-            f"{n_skipped_orphans:,} orphan households ({n_skipped_persons:,} "
-            f"persons, {skipped_share:.2%}) left adult-less (no adult in commune)"
-        )
+    # Printed also with zero orphans so every run leaves evidence of this step.
+    # The merge is the intended repair; only orphans that stay adult-less
+    # (no adult household in their commune) count towards the WARNING.
+    merged_share = n_merged / n if n else 0.0
+    skipped_share = n_skipped_persons / n if n else 0.0
+    warn = skipped_share > FALLBACK_WARN_FRACTION
+    print(
+        f"[braunschweig.ipf.attributed] {'WARNING: ' if warn else ''}"
+        f"adult-less orphan households: {int(orphan_hids.size):,}; merged "
+        f"{n_merged:,}/{n:,} persons ({merged_share:.2%}) into adult households, "
+        f"{n_skipped_orphans:,} orphan households ({n_skipped_persons:,} "
+        f"persons, {skipped_share:.2%}) left adult-less (no adult in commune)"
+    )
+    if orphan_hids.size:
         if n_merged:
             # Rebuild realised size + hh_type for the (rarely) changed households.
             diag = pd.DataFrame({"hid": household_id, "age": ages_all})
