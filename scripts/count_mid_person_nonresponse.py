@@ -55,6 +55,8 @@ def main(argv=None) -> int:
     if not args.persons_csv.is_file():
         parser.error(f"persons file not found: {args.persons_csv}")
     persons = pd.read_csv(args.persons_csv, usecols=["P_BKAT", "P_FKARTE"], **CSV_READ_KWARGS)
+    if persons.empty:
+        print(f"warning: {args.persons_csv} holds no persons; every share is n/a", file=sys.stderr)
     specs = {
         "P_BKAT": nonresponse_codes(attributes.EMPLOYMENT_STATUS_BY_P_BKAT),
         "P_FKARTE": nonresponse_codes(attributes.FKARTE_TO_CATEGORY,
