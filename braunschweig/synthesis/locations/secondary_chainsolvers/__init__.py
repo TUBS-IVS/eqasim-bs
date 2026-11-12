@@ -400,7 +400,10 @@ _SRV_LOCATION_TYPE_FILE_KEYS = ("srv_location_type_probs_path", "srv_location_ty
 
 
 def _srv_location_type_file_digests(context) -> Dict[str, str]:
-    """``{file name: LF-normalised sha256}`` of the two pinned SrV location-type tables.
+    """``{config key: LF-normalised sha256}`` of the two pinned SrV location-type tables.
+
+    Keyed by config key, not by file name, so two tables with the same name in different
+    folders cannot overwrite each other's digest.
 
     The tables are committed text files that decide every leisure / other destination
     category (probabilities) and the draw-coherence check (shares), so a corrected table
@@ -415,7 +418,7 @@ def _srv_location_type_file_digests(context) -> Dict[str, str]:
                 f"[braunschweig.secondary_chainsolvers] SrV location-type table missing at "
                 f"{path} (config key {key!r}); secondary_srv_location_types is ON, so the "
                 "stage reads it. Restore the pinned table or point the key at it.")
-        digests[path.name] = synpp_tokens.text_file_sha256(path)
+        digests[key] = synpp_tokens.text_file_sha256(path)
     return digests
 
 

@@ -250,7 +250,8 @@ def test_validate_token_follows_srv_table_content_but_not_its_line_endings(tmp_p
     path = pathlib.Path(cfg[_SRV_FILE_KEYS[name]])
     lf_bytes = path.read_bytes()
     before = sc.validate(ctx)
-    assert set(before["srv_location_type_files"]) == {"srv_probs.csv", "srv_shares.csv"}
+    assert set(before["srv_location_type_files"]) == {"srv_location_type_probs_path",
+                                                      "srv_location_type_shares_path"}
 
     path.write_bytes(lf_bytes.replace(b"\n", b"\r\n"))                  # the Windows (core.autocrlf) checkout
     assert sc.validate(ctx) == before

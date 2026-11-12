@@ -48,6 +48,9 @@ _COMPOSITE_STAGES = {
     "braunschweig.data.schools.university_facilities",
     "data.gtfs.cleaned",
     "data.osm.cleaned",
+    # Holds the SrV location-type table digests next to the module digests while
+    # secondary_srv_location_types is ON (repository audit C3).
+    "braunschweig.synthesis.locations.secondary_chainsolvers",
 }
 
 
