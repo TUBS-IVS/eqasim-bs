@@ -572,6 +572,139 @@ def _worktree_commits(host: Host, run_dir: Path) -> Dict[str, str]:
     return {name: _git(host, run_dir / name, "rev-parse", "HEAD").strip() for name in (BS_DIR, JAVA_DIR)}
 
 
+# The production environment snapshot (conda explicit lock + pip layer) of the run worktree's commit.
+SNAPSHOT_LOCK = "environments/server-linux-64.lock"
+SNAPSHOT_REQUIREMENTS = "environments/requirements-server-linux-64.txt"
+SNAPSHOT_FIX = ("create a fresh conda env from the two snapshot files (see scripts/bootstrap_server.sh), "
+                "or pass --allow-environment-mismatch to run on this env knowingly")
+MAX_OFFENDERS = 10
+# One subprocess of the target interpreter: its prefix, platform, conda-meta file names (None when the prefix
+# has no conda-meta directory) and {normalised distribution name: version}.
+ENVIRONMENT_PROBE = (
+    "import json, os, re, sys\n"
+    "from importlib import metadata\n"
+    "meta = os.path.join(sys.prefix, 'conda-meta')\n"
+    "dists = {}\n"
+    "for d in metadata.distributions():\n"
+    "    n = d.metadata['Name']\n"
+    "    if n:\n"
+    "        dists[re.sub(r'[-_.]+', '-', n.lower())] = d.version\n"
+    "print(json.dumps({'prefix': sys.prefix, 'platform': sys.platform, 'dists': dists,\n"
+    "    'conda_meta': sorted(f for f in os.listdir(meta) if f.endswith('.json')) if os.path.isdir(meta) else None}))\n"
+)
+
+
+def _normalise_dist_name(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name.lower())
+
+
+@dataclasses.dataclass
+class EnvironmentCheck:
+    conda_total: int = 0
+    conda_matched: int = 0
+    pip_total: int = 0
+    pip_matched: int = 0
+    git_pins: int = 0
+    extra_conda: int = 0
+    offenders: List[str] = dataclasses.field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.offenders
+
+    def rate_line(self) -> str:
+        return (f"environment: conda {self.conda_matched}/{self.conda_total} matched, "
+                f"pip {self.pip_matched}/{self.pip_total} matched ({self.git_pins} git pin: presence only), "
+                f"{self.extra_conda} conda packages beyond the snapshot (info)")
+
+    def as_record(self) -> dict:
+        return {"conda": f"{self.conda_matched}/{self.conda_total}", "pip": f"{self.pip_matched}/{self.pip_total}",
+                "git_pins": self.git_pins, "extra_conda": self.extra_conda, "offenders": list(self.offenders)}
+
+
+def check_environment(lock_text: str, requirements_text: str, facts: dict) -> EnvironmentCheck:
+    """Compare a Python environment (``facts`` as printed by ENVIRONMENT_PROBE) with the snapshot texts."""
+    check = EnvironmentCheck()
+    conda_meta = facts.get("conda_meta")
+    if conda_meta is None:
+        check.offenders.append(f"{facts.get('prefix')} has no conda-meta directory: not a conda environment")
+        return check
+    present, wanted = set(conda_meta), set()
+    for line in lock_text.splitlines():
+        line = line.strip()
+        if not line or line.startswith(("#", "@")):
+            continue
+        artifact = line.split("#", 1)[0].rsplit("/", 1)[-1]
+        stem = re.sub(r"\.(conda|tar\.bz2)$", "", artifact)
+        if stem == artifact:
+            raise IsolatedRunError(f"{SNAPSHOT_LOCK}: unreadable line {line!r}")
+        wanted.add(stem + ".json")
+        check.conda_total += 1
+        if stem + ".json" in present:
+            check.conda_matched += 1
+        else:
+            check.offenders.append(f"conda {stem} missing")
+    check.extra_conda = len(present - wanted)
+    dists = facts.get("dists") or {}
+    for line in requirements_text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        name, separator, url = (part.strip() for part in line.partition(" @ "))
+        if not separator:
+            raise IsolatedRunError(f"{SNAPSHOT_REQUIREMENTS}: unreadable line {line!r}")
+        key = _normalise_dist_name(name)
+        if url.startswith("git+"):
+            check.git_pins += 1
+            if key not in dists:
+                check.offenders.append(f"pip {name} (git pin, presence only) missing")
+            continue
+        wheel = url.split("#", 1)[0].rsplit("/", 1)[-1]
+        if not wheel.endswith(".whl") or wheel.count("-") < 4:
+            raise IsolatedRunError(f"{SNAPSHOT_REQUIREMENTS}: cannot read a version from {line[:120]!r}")
+        version = wheel.split("-")[1]
+        check.pip_total += 1
+        if dists.get(key) == version:
+            check.pip_matched += 1
+        else:
+            check.offenders.append(f"pip {name} {version} wanted, "
+                                   + (f"{dists[key]} installed" if key in dists else "not installed"))
+    return check
+
+
+def _environment_gate(args, host: Host, bs_dir: Path, env: dict) -> dict:
+    """Environment check of ``gate``; returns the record entry, raises on a mismatch unless overridden."""
+    result = host.run([args.python, "-c", ENVIRONMENT_PROBE], env=env)
+    try:
+        facts = json.loads(result.stdout)
+    except ValueError:
+        facts = None
+    if result.returncode != 0 or not isinstance(facts, dict):
+        raise IsolatedRunError(f"could not read the environment of {args.python} (exit {result.returncode}): "
+                               f"{_tail((result.stdout or '') + (result.stderr or ''))}")
+    if not str(facts.get("platform", "")).startswith("linux"):
+        print(f"environment: the Linux snapshot check does not apply on platform {facts.get('platform')!r}; "
+              "NOT checked")
+        return {"checked": False, "platform": facts.get("platform")}
+    for relative in (SNAPSHOT_LOCK, SNAPSHOT_REQUIREMENTS):
+        if not (bs_dir / relative).is_file():
+            raise IsolatedRunError(f"{bs_dir / relative} is missing: the run commit has no environment snapshot")
+    check = check_environment(_read_text(bs_dir / SNAPSHOT_LOCK), _read_text(bs_dir / SNAPSHOT_REQUIREMENTS), facts)
+    print(check.rate_line())
+    entry = dict(check.as_record(), checked=True, platform=facts["platform"], overridden=False)
+    if check.ok:
+        return entry
+    shown = "; ".join(check.offenders[:MAX_OFFENDERS])
+    more = f" (+{len(check.offenders) - MAX_OFFENDERS} more)" if len(check.offenders) > MAX_OFFENDERS else ""
+    message = (f"the environment of {args.python} differs from the snapshot of this run's commit: {shown}{more}. "
+               f"Fix: {SNAPSHOT_FIX}")
+    if not args.allow_environment_mismatch:
+        raise IsolatedRunError(message)
+    print(f"WARNING: {message} (--allow-environment-mismatch: continuing, recorded in run.json)", file=sys.stderr)
+    entry["overridden"] = True
+    return entry
+
+
 def cmd_gate(args, host: Host) -> int:
     run_dir = _expand(args.run_dir)
     record = _load_record(run_dir)
@@ -588,6 +721,7 @@ def cmd_gate(args, host: Host) -> int:
     logs.mkdir(exist_ok=True)
     stamp = _stamp(host)
     utf8 = dict(os.environ, PYTHONUTF8="1")
+    environment = _environment_gate(args, host, bs_dir, utf8)
 
     explain_log = logs / f"explain_{stamp}.log"
     result = host.run([args.python, EXPLAIN_SCRIPT, BASE_CONFIG, str(run_yml)], cwd=bs_dir, env=utf8)
@@ -639,7 +773,7 @@ def cmd_gate(args, host: Host) -> int:
         "inputs_log": None if inputs_log is None else str(inputs_log), "inputs_checked": not args.skip_input_check,
         "stale_stages": report.stale, "summary": report.summary, "popsim_status": verdict.status,
         "allow_popsim": args.allow_popsim, "commits": _worktree_commits(host, run_dir),
-        "run_yml_sha256": digest, "tool_blob": _tool_blob(),
+        "run_yml_sha256": digest, "tool_blob": _tool_blob(), "environment": environment,
     }
     _save_record(run_dir, record)
     print(f"gate list of {len(report.stale)} stages written to {run_yml}")
@@ -1426,6 +1560,9 @@ def build_parser() -> argparse.ArgumentParser:
     gate.add_argument("--allow-popsim", action="store_true",
                       help="accept a PopulationSim recompute (never one into a work dir outside the run)")
     gate.add_argument("--skip-input-check", action="store_true", help=f"do not run {INPUTS_SCRIPT}")
+    gate.add_argument("--allow-environment-mismatch", action="store_true",
+                      help="downgrade a mismatch between the env and the commit's environment snapshot to a "
+                           "warning recorded in run.json")
     gate.add_argument("--python", default=sys.executable, help="interpreter of the eqasim env (default: this one)")
     gate.set_defaults(handler=cmd_gate)
 

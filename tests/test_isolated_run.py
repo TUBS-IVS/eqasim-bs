@@ -51,6 +51,23 @@ SOURCE_OVERLAY = {
     },
 }
 STALE_WITHOUT_POPSIM = ["braunschweig.freight.extraction", "braunschweig.synthesis.incommuters", "matsim.output"]
+SNAP_LOCK = ("# comment\n@EXPLICIT\n"
+             "https://conda.anaconda.org/conda-forge/linux-64/libfoo-1.2-h123_0.conda#aaaa\n"
+             "https://conda.anaconda.org/conda-forge/noarch/bar-baz-2.0-pyh_1.tar.bz2\n")
+SNAP_REQUIREMENTS = ("# pip layer\n"
+                     "PyYAML @ https://files.example/p/PyYAML-6.0.3-cp312-cp312-manylinux.whl#sha256=ab\n"
+                     "pdfminer.six @ https://files.example/p/pdfminer_six-2025.1-py3-none-any.whl#sha256=cd\n"
+                     "chainsolvers @ git+https://example.org/chainsolvers.git@d8d8ae\n")
+
+
+def matching_facts(**changes):
+    facts = {"prefix": "/env", "platform": "linux",
+             "conda_meta": ["libfoo-1.2-h123_0.json", "bar-baz-2.0-pyh_1.json", "extra-1-0.json"],
+             "dists": {"pyyaml": "6.0.3", "pdfminer-six": "2025.1", "chainsolvers": "0.1"}}
+    facts.update(changes)
+    return facts
+
+
 EXECUTING_LINE = "12:00:10 │ INFO    │ synpp            │ Executing stage matsim.output__0123abcd ..."
 
 
@@ -119,7 +136,8 @@ class FakeMachine:
     """Answers the tool's git, cp and helper-script calls like the server would; records every call."""
 
     def __init__(self, explain_text=None, inputs_returncode=0, launch_log=None, launch_returncode=None,
-                 bundle_verify_returncode=0, dirty_after_worktree_add=False):
+                 bundle_verify_returncode=0, dirty_after_worktree_add=False, env_facts=None):
+        self.env_facts = matching_facts() if env_facts is None else env_facts
         self.calls = []
         self.popen_calls = []
         self.explain_text = explain_report("HIT") if explain_text is None else explain_text
@@ -147,6 +165,8 @@ class FakeMachine:
             assert argv[1] == "-a"
             shutil.copytree(argv[-2], argv[-1], symlinks=True)
             return subprocess.CompletedProcess(argv, 0, "", "")
+        if argv[1] == "-c":
+            return subprocess.CompletedProcess(argv, 0, json.dumps(self.env_facts), "")
         if argv[1].endswith("explain_stale_stages.py"):
             return subprocess.CompletedProcess(argv, 0, self.explain_text, "")
         if argv[1].endswith("verify_braunschweig_inputs.py"):
@@ -254,6 +274,9 @@ def make_run_dir(root, name="r1", source_overlay=SOURCE_OVERLAY):
     (run_dir / tool.JAVA_DIR).mkdir()
     (run_dir / tool.BS_DIR / "configs" / "base_bs.yml").write_text(
         yaml.safe_dump({"config": {"synpp_explain_before_run": True}}), encoding="utf-8")
+    (run_dir / tool.BS_DIR / "environments").mkdir()
+    (run_dir / tool.BS_DIR / tool.SNAPSHOT_LOCK).write_text(SNAP_LOCK, encoding="utf-8")
+    (run_dir / tool.BS_DIR / tool.SNAPSHOT_REQUIREMENTS).write_text(SNAP_REQUIREMENTS, encoding="utf-8")
     (run_dir / tool.RUN_JSON).write_text(json.dumps({"schema_version": tool.RECORD_SCHEMA_VERSION, "run_name": name}),
                                          encoding="utf-8")
     source = root / "source_overlay.yml"
@@ -389,6 +412,62 @@ def test_gate_refuses_a_run_that_would_fail_or_go_ungated(root, problem):
     assert tool.GATE_KEY not in load_yaml(run_dir / tool.RUN_YML)["config"]
     if problem == "missing-inputs":
         assert tool.main(["gate", str(run_dir), "--write", "--skip-input-check"], host=host) == 0
+
+
+def test_gate_passes_a_matching_environment_and_prints_the_rate(root, capsys):
+    run_dir, source = make_run_dir(root)
+    host = FakeMachine().host(root)
+    assert tool.main(["overlay", str(run_dir), "--from", str(source)], host=host) == 0
+
+    assert tool.main(["gate", str(run_dir), "--write"], host=host) == 0
+
+    assert "conda 2/2 matched, pip 2/2 matched (1 git pin: presence only)" in capsys.readouterr().out
+    environment = load_record(run_dir)["gate"]["environment"]
+    assert environment["offenders"] == [] and environment["overridden"] is False and environment["extra_conda"] == 1
+
+
+@pytest.mark.parametrize("facts, offender", [
+    pytest.param(matching_facts(dists={"pyyaml": "5.4", "pdfminer-six": "2025.1", "chainsolvers": "0.1"}),
+                 "pip PyYAML 6.0.3 wanted, 5.4 installed", id="pip-version-differs"),
+    pytest.param(matching_facts(conda_meta=["libfoo-1.2-h123_0.json"]), "conda bar-baz-2.0-pyh_1 missing",
+                 id="conda-artifact-missing"),
+    pytest.param(matching_facts(conda_meta=None), "not a conda environment", id="not-a-conda-prefix"),
+])
+def test_gate_refuses_a_mismatching_environment_unless_overridden(root, capsys, facts, offender):
+    run_dir, source = make_run_dir(root)
+    host = FakeMachine(env_facts=facts).host(root)
+    assert tool.main(["overlay", str(run_dir), "--from", str(source)], host=host) == 0
+
+    assert tool.main(["gate", str(run_dir), "--write"], host=host) == 1
+    assert offender in capsys.readouterr().err
+    assert "gate" not in load_record(run_dir)
+
+    assert tool.main(["gate", str(run_dir), "--write", "--allow-environment-mismatch"], host=host) == 0
+    assert "WARNING" in capsys.readouterr().err
+    environment = load_record(run_dir)["gate"]["environment"]
+    assert environment["overridden"] is True and any(offender in item for item in environment["offenders"])
+
+
+def test_gate_states_that_the_linux_snapshot_does_not_apply_on_another_platform(root, capsys):
+    run_dir, source = make_run_dir(root)
+    host = FakeMachine(env_facts=matching_facts(platform="win32", conda_meta=None)).host(root)
+    assert tool.main(["overlay", str(run_dir), "--from", str(source)], host=host) == 0
+
+    assert tool.main(["gate", str(run_dir), "--write"], host=host) == 0
+
+    assert "does not apply" in capsys.readouterr().out
+    assert load_record(run_dir)["gate"]["environment"]["checked"] is False
+
+
+def test_real_snapshot_files_parse_and_an_empty_env_misses_every_pin():
+    environments = Path(__file__).resolve().parents[1] / "environments"
+    lock = (environments / "server-linux-64.lock").read_text(encoding="utf-8")
+    requirements = (environments / "requirements-server-linux-64.txt").read_text(encoding="utf-8")
+
+    empty = tool.check_environment(lock, requirements, matching_facts(conda_meta=[], dists={}))
+
+    assert empty.conda_total > 0 and empty.pip_total > 0 and empty.git_pins > 0
+    assert len(empty.offenders) == empty.conda_total + empty.pip_total + empty.git_pins
 
 
 def gated_run(root, machine):
