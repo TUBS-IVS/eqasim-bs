@@ -28,6 +28,8 @@ jobs:
         with:
           python-version: "3.10"
       - name: Install metadata dependencies
+        # Versions follow the production pip layer, environments/requirements-server-linux-64.txt;
+        # update them together with that snapshot.
         run: pip install "pyyaml==6.0.3" "pytest==9.1.1"
       - name: Generated views untouched by the pull request (ADR-0168)
         if: github.event_name == 'pull_request' && github.head_ref != 'bot/generated-views'

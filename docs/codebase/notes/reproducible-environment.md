@@ -97,8 +97,8 @@ uvx --from conda-lock==4.0.2 conda-lock render --platform win-64 --kind explicit
   the file moved to `conda-forge/conda-forge-bot-data`. The URL above is pinned
   to a commit so a re-lock is repeatable.
 - `--update` with the changed packages keeps the other direct pins, but the
-  conda solver still moves transitive libraries (openssl, glib, the VC runtime,
-  ...) to newer builds. Review the diff of `conda-win-64.lock` and prove the lock
+  conda solver still re-resolves transitive libraries (openssl, glib, the VC
+  runtime, ...), up or down. Review the diff of `conda-win-64.lock` and prove the lock
   with a fresh `conda-lock install` before committing it.
 - Pin a new pip package's own wheel dependencies in `environment.yml` to the
   versions of `environments/requirements-server-linux-64.txt`; otherwise the
