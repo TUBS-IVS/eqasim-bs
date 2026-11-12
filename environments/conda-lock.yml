@@ -13,7 +13,7 @@
 version: 1
 metadata:
   content_hash:
-    win-64: 93d0ed90f6fc963855864acd8570061cbe1cf35f1c3aafeb0bfe0786d53ba9da
+    win-64: 2880af0c25e04550b64926b6282fa20c80239608acd5a45ed3676cb514e98e65
   channels:
   - url: conda-forge
     used_env_vars: []
@@ -3897,13 +3897,13 @@ package:
   category: main
   optional: false
 - name: narwhals
-  version: 2.26.0
+  version: 2.22.0
   manager: pip
   platform: win-64
   dependencies: {}
-  url: https://files.pythonhosted.org/packages/40/b5/1b84b2c784db76d69442334bc8b8748c840f13ca53be086f4f250ad4a0bc/narwhals-2.26.0-py3-none-any.whl
+  url: https://files.pythonhosted.org/packages/1f/b6/e7cdde7b8e90d5dff25b622f95833ef26567ad184c977278b93a1cbd5717/narwhals-2.22.0-py3-none-any.whl
   hash:
-    sha256: 29326d74f107c347fd1009bd58e38d9f7c7c5b51e6de97bc93dbc325d9038b54
+    sha256: 1421797ede01789cc1537619dbc3f36f840737240f748fdb24a60a0225fc80be
   category: main
   optional: false
 - name: pdfminer-six
@@ -3932,15 +3932,15 @@ package:
   category: main
   optional: false
 - name: plotly
-  version: 7.0.0
+  version: 6.8.0
   manager: pip
   platform: win-64
   dependencies:
     narwhals: '>=1.15.1'
     packaging: '*'
-  url: https://files.pythonhosted.org/packages/e0/2f/6f492108d9955bac97979d9949c1b35eab30fc630b1f22bbdd2c7cacbab4/plotly-7.0.0-py3-none-any.whl
+  url: https://files.pythonhosted.org/packages/f9/14/abe5ce876ab5b66ee3c691bf537fcd43d037aea55d447aacf74630a8f31e/plotly-6.8.0-py3-none-any.whl
   hash:
-    sha256: 78cbf7bd06d1b05bb3b8ec1b709864695229b55151b6f7530fbf55517ead6fdd
+    sha256: 13c5c4a0f70b74cab1913eda0de49b826df5931708eb6f9c3010040614700ec8
   category: main
   optional: false
 - name: pypdfium2
@@ -3964,14 +3964,14 @@ package:
   category: main
   optional: false
 - name: pyzmq
-  version: 27.2.0
+  version: 27.1.0
   manager: pip
   platform: win-64
   dependencies:
     cffi: '*'
-  url: https://files.pythonhosted.org/packages/ce/b3/3e99a7af1c25e84f68c6c7b16c51b664dd51e12d0bc3d252a48d298e9a08/pyzmq-27.2.0-cp310-cp310-win_amd64.whl
+  url: https://files.pythonhosted.org/packages/62/b2/f4ab56c8c595abcb26b2be5fd9fa9e6899c1e5ad54964e93ae8bb35482be/pyzmq-27.1.0-cp310-cp310-win_amd64.whl
   hash:
-    sha256: 82a09aa67871d4f2fcafd47bf670fb93210b232a7c2d4b8a54676314edf04033
+    sha256: c0bb87227430ee3aefcc0ade2088100e528d5d3298a0a715a64f3d04c60ba02f
   category: main
   optional: false
 - name: synpp

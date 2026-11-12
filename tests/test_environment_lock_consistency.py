@@ -76,3 +76,27 @@ def test_explicit_lock_and_conda_lock_carry_the_same_pip_packages():
 def test_explicit_lock_input_hash_matches_conda_lock_content_hash():
     content_hash = _load_conda_lock()["metadata"]["content_hash"]["win-64"]
     assert _explicit_lock_input_hash() == content_hash
+
+
+LINUX_PIP_REQUIREMENTS_FILE = REPO / "environments" / "requirements-server-linux-64.txt"
+
+
+def _linux_pip_versions(requirements_file: Path = LINUX_PIP_REQUIREMENTS_FILE) -> dict[str, str]:
+    """Versions of the production Linux pip layer, read from the wheel file names (VCS pins carry none)."""
+    versions: dict[str, str] = {}
+    pattern = re.compile(r"^(\S+) @ https://\S+/[A-Za-z0-9_.]+?-(\d[0-9A-Za-z.]*)-[^/]+\.whl", flags=re.MULTILINE)
+    for match in pattern.finditer(requirements_file.read_text(encoding="utf-8")):
+        versions[_normalise(match.group(1))] = match.group(2)
+    return versions
+
+
+def test_windows_and_linux_pip_layers_agree_on_shared_packages():
+    """Defect class (audit TOOL-F17): an unpinned wheel dependency resolves newer on Windows than on the server."""
+    linux = _linux_pip_versions()
+    windows = _lock_pip_packages(_load_conda_lock())
+    shared = set(linux) & set(windows)
+    assert len(shared) >= 5, f"too few shared pip packages parsed ({sorted(shared)}); a parser is broken"
+    different = {name: (windows[name], linux[name]) for name in sorted(shared) if windows[name] != linux[name]}
+    assert not different, (
+        "pip packages locked at different versions (Windows conda-lock.yml, Linux snapshot); pin the Linux "
+        f"version in environment.yml and re-lock: {different}")
