@@ -7,6 +7,7 @@ re-assembled inputs no longer match the stale outputs, so they must be purged.
 the per-batch decision (``braunschweig.popsim.batch.reconcile_batch_outputs``) is
 driven through ``mid.run_popsim_mid`` and the real batch runner at the end of this file.
 """
+import logging
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -155,11 +156,11 @@ _BRANCHES = pytest.mark.parametrize(
 )
 
 
-def _cells(target_of_batch_001_cell=3.0):
+def _cells(target_of_batch_000_cell=1.0, target_of_batch_001_cell=3.0):
     cells = folders.build_geo_crosswalk(
         pd.DataFrame({"GITTER_ID_100m": _CELLS_100M, "GITTER_ID_1km": _PARENTS_1KM})
     )
-    cells["POP"] = [1.0, 2.0, target_of_batch_001_cell, 4.0]
+    cells["POP"] = [target_of_batch_000_cell, 2.0, target_of_batch_001_cell, 4.0]
     cells["RegioStaR7"] = [71, 71, 77, 77]
     return cells
 
@@ -188,17 +189,19 @@ class _FakePopulationSim:
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
 
-def _run(work_dir, popsim, cells, *, logging_yaml="version: 1\n", **branch_options):
+def _run(work_dir, popsim, cells, *, logging_yaml="version: 1\n", donor_strata=(71, 77),
+         **branch_options):
     controls_df = pd.DataFrame(
         {"target": ["POP_ZENSUS100m_target"], "geography": ["ZENSUS100m"],
          "seed_table": ["persons"], "importance": [1000],
          "control_field": ["POP_ZENSUS100m"], "expression": ["(persons.P_GEW > 0)"]}
     )
     # One donor household per RegioStaR7 stratum, so the stratified branch finds donors.
+    household_ids = list(range(1, len(donor_strata) + 1))
     seed_hh = pd.DataFrame(
-        {"H_ID": [1, 2], "H_GEW": [2.0, 2.0], "STAAT": [1, 1], "RegioStaR7": [71, 77]}
+        {"H_ID": household_ids, "H_GEW": 2.0, "STAAT": 1, "RegioStaR7": list(donor_strata)}
     )
-    seed_p = pd.DataFrame({"H_ID": [1, 2], "P_ID": [1, 2], "STAAT": [1, 1]})
+    seed_p = pd.DataFrame({"H_ID": household_ids, "P_ID": household_ids, "STAAT": 1})
     run_one = batch.make_populationsim_run_one(
         command_prefix=("populationsim",), subprocess_run=popsim, cleanup_pipeline_h5=False,
     )
@@ -209,24 +212,64 @@ def _run(work_dir, popsim, cells, *, logging_yaml="version: 1\n", **branch_optio
     )
 
 
+def _popsim_warnings(caplog):
+    """Records at WARNING or above from the braunschweig.popsim loggers."""
+    return [
+        record for record in caplog.records
+        if record.name.startswith("braunschweig.popsim") and record.levelno >= logging.WARNING
+    ]
+
+
 @_BRANCHES
-def test_batch_starts_again_exactly_when_its_inputs_change(tmp_path, branch_options):
+def test_batch_starts_again_exactly_when_its_inputs_change(tmp_path, caplog, branch_options):
     _run(tmp_path, _FakePopulationSim(), _cells(), **branch_options)
 
-    # Same inputs; only PopulationSim's own logging setup differs: every batch is reused.
+    # Same inputs; only PopulationSim's own logging setup differs: every batch is reused,
+    # and with nothing discarded nothing is reported as a warning.
     rerun = _FakePopulationSim()
+    caplog.clear()
     _run(tmp_path, rerun, _cells(), logging_yaml="version: 1\nroot: {level: DEBUG}\n",
          **branch_options)
     assert rerun.started == []
+    assert _popsim_warnings(caplog) == []
 
     # Regression (P3-F2): one cell's control target changed. Before the fix no batch
     # started again and the merged table carried the old target 3.
     rerun = _FakePopulationSim()
+    caplog.clear()
     report = _run(tmp_path, rerun, _cells(target_of_batch_001_cell=7.0), **branch_options)
     assert rerun.started == ["batch_001"]
+    assert _popsim_warnings(caplog)  # the discarded output is reported as a warning
     merged_targets = report.combined.set_index("ZENSUS100m")["POP_ZENSUS100m"]
     assert merged_targets[_CELL_OF_BATCH_001] == 7
     assert merged_targets[_CELLS_100M[0]] == 1  # the reused batch_000 is still merged
+
+
+def _content(path):
+    """File bytes, or None when the file is gone."""
+    return path.read_bytes() if path.is_file() else None
+
+
+def test_assembly_error_leaves_every_output_and_record_untouched(tmp_path):
+    # An aborted run must not destroy output that a later run with the original
+    # inputs could still reuse. The stratified branch assembles its strata in sorted
+    # order: the second run rewrites batch_000 (stratum 71) with a changed target, then
+    # fails on stratum 77, which has no donor household left.
+    stratified = {"stratify_regiostar": True, "source": MidSource()}
+    _run(tmp_path, _FakePopulationSim(), _cells(), **stratified)
+    batch_000 = tmp_path / "batch_000"
+    marker = batch_000 / batch.COMPLETION_MARKER
+    record = batch_000 / batch.INPUT_FINGERPRINT_FILE
+    marker_before, record_before = marker.read_bytes(), record.read_bytes()
+
+    with pytest.raises(ValueError):
+        _run(tmp_path, _FakePopulationSim(), _cells(target_of_batch_000_cell=5.0),
+             donor_strata=(71,), **stratified)
+
+    rewritten = pd.read_csv(batch_000 / "data" / "control_totals_ZENSUS100m.csv")
+    assert rewritten.set_index("ZENSUS100m")["POP_ZENSUS100m"][_CELLS_100M[0]] == 5
+    assert _content(marker) == marker_before
+    assert _content(record) == record_before
 
 
 def test_completed_batch_without_input_record_starts_again(tmp_path):

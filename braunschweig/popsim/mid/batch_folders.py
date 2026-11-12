@@ -197,12 +197,17 @@ def _reconcile_run_batch_folders(
     1. ``batch.reconcile_batch_outputs`` for every folder of this run
        (``batch_inputs`` maps the folder to the file mapping
        ``assemble_batch_folder`` returned), so output built from other inputs is
-       discarded;
+       discarded, each discard logged by name as a WARNING before it happens;
     2. every ``batch_*`` directory directly under ``work_dir`` that is not a folder
-       of this run (left by an earlier, larger partition) is removed: its output is
-       not merged, but ``summarize_integerizer_feasibility`` would still read its log;
+       of this run (left by an earlier, larger partition) is removed, each logged by
+       name as a WARNING before it is removed: its output is not merged, but
+       ``summarize_integerizer_feasibility`` would still read its log;
     3. one log line with the four reconcile counts and the removed-folder count,
        at WARNING when any output was discarded or any folder removed.
+
+    Logging each deletion before it happens keeps every deletion on record even
+    when a removal fails midway (for example a file still open on Windows) and the
+    summary line is never reached.
 
     With no batch folder at all it does nothing, so ``_run_batches_and_merge``
     raises its "batch run incomplete" error before anything is deleted.
@@ -217,6 +222,10 @@ def _reconcile_run_batch_folders(
     n_removed = 0
     for path in sorted(Path(work_dir).glob("batch_*")):
         if path.is_dir() and path not in run_folders:
+            logger.warning(
+                "[popsim.mid] removing batch folder %s: it is not part of this run "
+                "(left by an earlier, larger partition).", path,
+            )
             shutil.rmtree(path)
             n_removed += 1
     n_discarded = counts[batch.INPUTS_CHANGED] + counts[batch.INPUTS_UNRECORDED]

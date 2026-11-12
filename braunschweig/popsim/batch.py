@@ -300,10 +300,13 @@ def reconcile_batch_outputs(
     output was built from.
 
     Mutates: "discard output" removes the whole output directory (completion
-    marker, checkpoint store, log) and recreates it empty. The record is written
-    atomically (temporary file in the folder, then ``os.replace``) and only after
-    the discard, so a process killed in between leaves a record that still differs
-    from the inputs, or no record and no output.
+    marker, checkpoint store, log) and recreates it empty. Before it is removed, a
+    WARNING names the batch folder and the reason (inputs changed since the output
+    was built / output without a recorded input fingerprint), so a removal that
+    fails midway is still on record; the states that delete nothing log nothing
+    here. The record is written atomically (temporary file in the folder, then
+    ``os.replace``) and only after the discard, so a process killed in between
+    leaves a record that still differs from the inputs, or no record and no output.
     """
     folder_path = Path(folder)
     record_path = folder_path / INPUT_FINGERPRINT_FILE
@@ -321,6 +324,15 @@ def reconcile_batch_outputs(
     else:
         state = INPUTS_NEW
     if state != INPUTS_NEW:
+        reason = (
+            "its inputs changed since the output was built"
+            if state == INPUTS_CHANGED
+            else "the output exists without a recorded input fingerprint"
+        )
+        logger.warning(
+            "[popsim.batch] discarding the PopulationSim output of %s: %s; "
+            "the batch runs again.", folder_path, reason,
+        )
         if output_dir.exists():
             shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True)
