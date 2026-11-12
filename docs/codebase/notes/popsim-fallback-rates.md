@@ -15,7 +15,7 @@ live in one place (CLAUDE.md "Fallback transparency"; audit package D, 2026-11-1
   ([fallback-counter-states.md](fallback-counter-states.md)).
 - Raise instead of warn only where a sibling site already raises or the state is impossible
   (owner decision 2026-11-12). A known defect that is only counted names its audit finding in
-  the `what=` text and is proposed as a GitHub issue to the owner (audit finding id in the `what=` text).
+  the `what=` text and is proposed to the owner as a GitHub issue.
 
 ## Cache consequence
 
