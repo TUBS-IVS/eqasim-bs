@@ -1,730 +1,134 @@
 # synpp stage helper-hash coverage audit
 
-> **Snapshot as of 2026-09-17**, re-run on the merge of `origin/main` into
-> `chore/triaged-minor-findings-cleanup` (the #327 re-audit itself was 2026-09-09, commit
-> `c27b4307`; the snapshot before that was 2026-08-14, commit `4175515a`). This is a
-> point-in-time inventory, not a live view: treat any number here as stale the moment the
-> codebase changes. The 2026-08-14 pass was produced by hand for issue #290; every refresh
-> since RE-RUNS its method as an executable script,
-> `scripts/audit_synpp_helper_hash.py`, so a refresh is a command rather
-> than a repeat of that manual exercise. The 2026-08-14 pass deliberately fixed
-> nothing; the two since did (see the closure statement below and "Scope").
->
-> **Why this file was re-run a second time within a week, and what that demonstrates.** The
-> #327 re-audit measured a branch that was 227 commits behind `main`. In those commits `main`
-> gave FIVE further stages a source-hashing `validate()` with partial coverage
-> (`analysis.synthesis.departure_time_vs_srv`, `matsim.scenario.population`,
-> `matsim.simulation.prepare`, `synthesis.incommuters`, `synthesis.student_incommuters`) and
-> added imports to two already-gated ones (`commute_day.trips_day_stage`,
-> `locations.secondary_chainsolvers`). None of that was visible from the branch, and each PR
-> was green on its own base -- the #284/#287 merge-order class. The 28 resulting gaps were
-> closed on the merge; the numbers below are that post-merge re-run. The standing consequence:
-> re-run this audit AFTER merging `main`, never only against the branch's original base.
->
-> **What the re-audit changed, and why the old numbers were wrong.** #327 recorded
-> that the category-(b) row for `braunschweig.popsim.stage` was stale by seven
-> modules that had joined `_DEFERRED_HELPER_MODULE_NAMES`
-> (`employment_grid`, `folders`, `kreis_attribute_control`, `placement_income`,
-> `zensus_employment_age`, `attributes`, `trips`) after the 44/46 figure was
-> written and after the 45/47 addendum. The 2026-09-09 re-run confirmed it independently:
-> required was 45 that day, exactly as that addendum predicted, and covered 54 = 47 + 7.
-> (The table below carries the CURRENT pair; do not read these historical figures as it.)
-> The codebase also grew from 564 to 620 scanned `.py` files and from 230 to 242
-> stages, and — the substantive change — the number of stages whose `validate()`
-> hashes Python source at all rose from **5 to 24** (16 at the #327 re-audit, 24 after
-> merging `main`).
->
-> **EVERY gap either pass found is now closed, and gated.** All 24 source-hashing stages
-> cover their full first-party surface but for the ONE documented exception below: the #327
-> pass closed 20 unhashed modules across eight stages, and the post-merge re-run closed a
-> further 28 across seven.
-> The fixes are of three kinds. Most were a missing entry in `_HELPER_MODULES` (module-level
-> import) or in a new `_DEFERRED_HELPER_MODULE_NAMES` (function-level import). Four stages
-> had no deferred list at all and gained one plus the loop that digests it. And ONE was fixed
-> by NARROWING the import instead: `completed_donor` read its `KEY_*` names from the
-> `braunschweig.popsim.stage` package, so covering them would have meant hashing a
-> ~3000-line DOWNSTREAM package and re-running a 49-minute donor build on every unrelated
-> edit to it -- it now reads them from the `config_keys` leaf it already hashed.
->
-> Two of the 20 were behaviour-bearing constants that would have bitten quietly:
-> `braunschweig.constants` (`ROUTED_DETOUR_FACTOR`) fed both `trips_stage` and
-> `state_stage`, and `braunschweig.data.mid.reference_tables`
-> (`load_class_midpoint_eur`) fed the enriched population's income assignment.
->
-> **Closing a gap devalidates that stage's cache -- necessarily**, since the token is what
-> changes. Where the previously unhashed code has not changed since the cached run, the
-> recompute reproduces the identical output, so the cost is compute once and the gain is that
-> the cache can no longer lie.
->
-> **The gate:** `tests/test_audit_synpp_helper_hash.py::test_every_source_hashing_stage_covers_its_required_helpers`
-> re-runs this audit and fails on ANY unhashed first-party import, against an
-> `EXPECTED_UNCOVERED` register holding exactly ONE entry:
-> `commute_day.trips_day_stage` -> `braunschweig.analysis.json_output`. That one is a
-> deliberate exception of the kind the register exists for -- `json_output` decides only how
-> that stage's `INFO_KEY` diagnostics are RENDERED, never a value of the returned frame, so
-> hashing it would devalidate a 3.4 M-row stage (and hours of everything downstream at 100 %
-> scale) on a pure formatting change, and narrowing the import cannot help because the stage
-> genuinely calls `json_safe()`. The register is a debt list, not a mute button: the gate
-> fails if that set changes at all, and on any NEW unhashed import. The inventory below can
-> therefore no longer drift back into debt unnoticed. Since 2026-09-28
-> `test_every_source_hashing_stage_hashes_its_whole_import_closure` extends the same gate from
-> each stage's own imports to its whole import closure (ADR-0136; "Limitations" below).
->
-> **The live authority is the gate, not this file.**
-> `tests/test_synpp_helper_hash_invariant.py` enforces the narrower
-> **own-package-siblings-only** slice (a stage's helper submodules living in its
-> own directory — the #267 sibling-split pattern, not every first-party import
-> counted here) as a SHRINKING allow-list, so a new own-package gap fails CI
-> instead of quietly joining a list in this file. Read that test's
-> `ALLOWED_VIOLATIONS` for the current, verified own-package state. The WIDER
-> first-party surface this file inventories is no longer un-gated either: since the
-> 2026-09-09 re-audit
-> `tests/test_audit_synpp_helper_hash.py::test_every_source_hashing_stage_covers_its_required_helpers`
-> enforces it for every source-hashing stage. That test module also records the
-> AST-resolver bugs found so far. A sizing probe hit the first two (an
-> `ast.AnnAssign`-typed `_HELPER_MODULES` declaration, and a bare `from . import name`
-> relative-import binding), and the re-audit script reproduced BOTH on its first pass
-> before they were fixed there, which is the best argument for keeping the method in
-> code where it can be corrected once. Two more surfaced on 2026-09-29: a relative
-> import in a plain module was anchored at the module instead of its package and
-> silently dropped, and a module object re-exported through another module was not
-> credited (see "Limitations").
->
-> **Reproduce:** `python scripts/audit_synpp_helper_hash.py . --json <out.json>`.
-> The counts below are that script's output; the per-name category (a) and (c)
-> LISTS further down are still the 2026-08-14 enumeration and are marked as such.
+How the repository checks that a synpp stage's cache key covers the Python code the stage runs,
+what the check can and cannot see, and where its live results are. The method is code
+(`scripts/audit_synpp_helper_hash.py`); this note says WHY each step is drawn where it is. It
+holds no inventory: per-stage lists and counts go stale with the next commit, so the script's
+output is their only home.
 
-## Scope
+## The problem
 
-synpp's `get_stage_hash` hashes only a stage module's **own** source. Code a
-stage calls that lives in another first-party module is therefore outside its
-cache key: edit that helper, and a partial rerun silently reuses output
-produced by the old code (see `docs/codebase/notes/gravity-model-split.md`
-and `popsim-stage-split.md` for the two known, already-fixed cases). This
-audit answers, for **every** synpp stage in the repo, not just those two:
+synpp's `get_stage_hash` (semantic AST digest in the fork, `docs/codebase/notes/synpp-fork.md`)
+covers only a stage module's OWN source. Code the stage calls in another first-party module is
+outside its cache key: edit that helper and a partial rerun silently reuses output produced by
+the old code. A stage closes the gap with a `validate()` token over its helper modules:
+`_HELPER_MODULES` (module objects, for module-level imports) and `_DEFERRED_HELPER_MODULE_NAMES`
+(dotted names, for function-level imports and for modules reached only through a helper), passed
+to `braunschweig.synpp_tokens.source_token`. The import site decides the tuple; each module is
+listed once. A stage whose token also covers data files returns that part next to the module
+digests (`_COMPOSITE_STAGES` in `tests/test_token_refactor_coverage.py`).
 
-1. How many stages exist, and how they were counted.
-2. Which first-party modules each stage's own code imports directly — module
-   level AND lazy (function-body) imports.
-3. Whether an optional `validate(context)` hook closes that gap, and if so
-   whether its coverage is complete.
-4. Which stages use another synpp stage module as a plain function library
-   without declaring it via `context.stage(...)` (undeclared cache edge).
+## Where the live state is
 
-The 2026-08-14 pass was an **inventory**, not a fix: no behaviour, cache token
-or `_HELPER_MODULES` tuple was changed while producing it. The 2026-09-09
-re-audit DID fix, on the user's decision: all 20 unhashed modules across the
-eight incompletely covered source-hashing stages were folded into their tokens,
-and the result is gated (see the banner). No stage BEHAVIOUR changed -- only
-which sources feed a cache token, so the sole consequence is that those stages
-recompute once.
+- `python scripts/audit_synpp_helper_hash.py . --json <out.json>`: per stage its first-party
+  imports, declared stage edges, `required_helpers`, whether `validate()` hashes source, and for
+  those that do `covered`, `uncovered`, `transitive_uncovered`, `transitive_exempt`,
+  `closure_boundaries` and `hashed_twice`. The `covered` field also answers "which stages
+  re-execute when I edit module X".
+- The gates, in `tests/test_audit_synpp_helper_hash.py`:
+  `test_every_source_hashing_stage_covers_its_required_helpers` (the stage module's own imports,
+  register `EXPECTED_UNCOVERED`) and `test_every_source_hashing_stage_hashes_its_whole_import_closure`
+  (the whole closure, ADR-0136, register `DEFERRED_TRANSITIVE_GAPS`). Each register entry carries
+  its reason; the gate fails when the set changes in either direction.
+- `tests/test_synpp_helper_hash_invariant.py` `ALLOWED_VIOLATIONS`: the narrower own-package
+  slice (a stage's sibling submodules), also checked for stages without a token, as a shrinking
+  allow-list.
+- `EXPECTED_SOURCE_HASHING_STAGES` in `tests/test_token_refactor_coverage.py` pins how many stages
+  hash source; its comment lines record when and why the number moved.
 
 ## Method
 
-A pure static-analysis pass over the repository's Python AST; nothing is
+A static pass over the Python AST of the first-party roots (`ROOTS` in the script); nothing is
 imported or executed.
 
-**The method now lives in `scripts/audit_synpp_helper_hash.py`** -- run
-`python scripts/audit_synpp_helper_hash.py . --json <out.json>` to refresh every
-count in this file. The four steps below are that script's docstringed structure,
-kept here because they state WHY each step is drawn where it is; the script is the
-authority on HOW. Its AST resolver is itself pinned by
-`tests/test_audit_synpp_helper_hash.py`, which regression-tests the two bugs this
-file has always warned about (the bare `from . import name` binding and the
-`ast.AnnAssign` tuple form) plus the "one reading per imported name" rule -- all
-three were live defects on the script's first passes, so they are exactly the
-places a hand-run of this method goes wrong.
+1. **Enumerate stages.** A module is a stage when its top-level body defines `configure` and
+   `execute`; a package counts through its `__init__.py`. Static and `def`-only, so a stage
+   produced by a factory that binds `configure = ...` at module level would be missed (none
+   exists; `braunschweig/synthesis/incommuter_merge/_base.py` defines such a factory but nothing
+   binds a module-level stage with it).
+2. **Collect each module's imports.** The whole AST, at any nesting depth: module-level and lazy
+   (inside a function body) imports both count, because lazy imports are how many helpers are
+   reached. `if TYPE_CHECKING:` blocks are excluded. `from X import Y` gives ONE reading: `X.Y`
+   when that is a module on disk, otherwise `X` (adding both would list every parent package as a
+   helper). Relative imports resolve against the importing module's package, exactly as
+   `importlib` does (`bits = package.rsplit('.', level - 1)`); a package `__init__` is its own
+   anchor. Only first-party modules are kept; third-party versions are pinned by the environment.
+3. **Separate declared stage edges.** A first-party import that is itself a stage AND that the
+   stage declares with a literal `context.stage("name")` (names resolved through the `aliases:`
+   of `configs/base_bs.yml`) is covered by synpp's own hash propagation. `required_helpers` is
+   every other first-party import.
+4. **Read the token.** A stage hashes source when its top-level `validate()` CALLS
+   `inspect.getsource` or `synpp_tokens.source_token` (a mention in a comment or string does not
+   count). Its tuples are read statically, following both import binding forms (`import a.b as
+   x`, `from . import name`) and re-exports of a module object through another module. A tuple
+   counts only when `validate()` reads it, and a package entry covers its own `__init__.py` only
+   (`inspect.getsource` of a package returns that file, never its submodules).
+5. **Walk the closure (ADR-0136).** For a source-hashing stage the same imports are followed
+   through every first-party module it reaches. The walk starts at the stage module AND at every
+   module its helper tuples name: a module the stage loads by name through `importlib` (the
+   donor-source registry of `braunschweig.popsim.trips_stage`) has no static import edge from the
+   stage, yet it runs inside the stage together with what it imports (audit finding P1-F4,
+   2026-11-12). A declared stage that the stage ALSO lists in a helper tuple is walked too: the
+   tuple states that the stage runs that module's code itself (`cut_schedule` calls
+   `matsim.runtime.eqasim.run`), which the DAG edge does not cover. The walk stops at:
+   - a declared stage edge reached through an import (step 3);
+   - a module whose `_SYNPP_TOKEN_EXEMPTION` states that it never shapes a stage result (progress
+     output, terminal colours, process monitoring, the token builder itself, runtime-only
+     checks); an exemption without a non-empty reason is an error;
+   - a stage module the walking stage lists in `_TOKEN_CLOSURE_BOUNDARIES` with a reason: a stage
+     it reaches through its helpers but whose code it never runs. A boundary must be a stage, must
+     not be imported by the walking stage itself, and must still be reached
+     (`test_closure_boundaries_are_stages_the_stage_reaches_without_importing_them`). A stage
+     module whose functions or constants the walking stage does use is hashed, not bounded.
+   What the token misses of the closure is `transitive_uncovered`.
 
-The 2026-08-14 pass ran one extra cross-check ("Verification" below) that imported
-five modules to read their `_HELPER_MODULES` tuples back at runtime. The script does
-NOT do that: it reads the tuples statically, which is what lets it run without
-importing the stage packages at all.
+The walk is static, so it over-approximates: it can ask a token to hash a module the stage never
+calls, never the other way round. Over-hashing costs a one-time rebuild when that module changes;
+under-hashing serves a stale cache. Where covering a module would be clearly worse (a pure
+rendering helper of a multi-hour stage), the right fix is usually to narrow the import to a leaf
+module; only if that cannot help does the module go into a register with its reason.
 
-**Step 1 — enumerate stages.** Walked every `.py` file under the five
-first-party roots — `braunschweig/`, `data/`, `eqasim_common/`, `matsim/`,
-`synthesis/` (verified these are the only top-level first-party packages by
-listing the repo root; the `documentation/` directory at repo root is a
-separate, unrelated set of paper-generation scripts, not a package under
-audit — see "Limitations"). A module is a **stage** if `ast.parse` finds
-`FunctionDef` nodes named `configure` **and** `execute` directly in the
-module's top-level body (`ast.Module.body`, not nested in a class or another
-function). A package counts via its `__init__.py`, addressed by the package's
-dotted name. Verified there is no factory-assignment stage pattern
-(`configure = ...` / `execute = ...` at module level) anywhere in the five
-roots that this `def`-only check would miss (`grep` for the pattern found
-none) — see "Limitations" for what a purely static check still cannot rule
-out.
+## What a token change costs
 
-**Step 2 — collect each stage's own imports.** For every stage module, walked
-the **whole** AST (any nesting depth, not just the top level) collecting every
-`Import`/`ImportFrom` node, and classified each as **module-level** (executes
-at import time: top-level statements, module-level `if`/`try` branches, class
-bodies) or **lazy** (nested inside a `FunctionDef`/`AsyncFunctionDef` body at
-any depth — this is exactly how three of the four uncovered gravity
-dependencies and two of the `popsim.stage` undeclared-library imports are
-reached, so a module-level-only scan would have missed them). `if
-TYPE_CHECKING:`-guarded imports are excluded (they never execute at runtime);
-six non-stage files use that guard, none of the 230 stage modules do, so the
-exclusion is inert on this codebase today but is checked, not assumed. For
-`from X import Y`, both readings — `Y` as an attribute of `X`, and `X.Y` as a
-submodule — were tried against the on-disk module set, and whichever exists
-was kept (this is exactly the `from braunschweig.gravity import
-attraction_vector, balancing, ...` shape: `attraction_vector` is a submodule,
-not an attribute). Relative imports (`from . import x`) were resolved with
-the same `bits = package.rsplit('.', level - 1)` rule `importlib` itself uses.
-Only first-party roots were kept (third-party is out of scope, pinned by the
-environment per CLAUDE.md). No import failed to resolve to an on-disk module
-across all 230 stages (reported explicitly, not assumed — see the counts
-below).
-
-**Step 3 — separate "already covered by synpp" from "helper".** A first-party
-import that is itself a stage module (has `configure`+`execute`) is not
-automatically a coverage gap: if the importing stage's own `configure()`
-declares it via a literal `context.stage("name")` call, synpp's own DAG
-derives that stage's hash and propagates it through the declared edge — no
-extra token needed for that one. Declared names were resolved through the
-`aliases:` block of `configs/base_bs.yml` (22 entries; overlays carry no
-aliases, confirmed by reading `configs/overlays/test_100pct.yml`) before
-comparing, since a declared name is often an upstream alias, not the real
-module path (e.g. `context.stage("data.census.filtered")` really means
-`braunschweig.popsim.stage`). Every `context.stage(...)` call found across all
-230 stages had a literal string first argument — none were dynamic/computed,
-so no stage needed an `unknown` mark for this step. A stage's **required
-helper set** = (all first-party imports) minus (first-party stage imports
-that are declared dependencies). This set is what a `validate()` hook would
-need to cover completely for category (b).
-
-**Step 4 — read `validate()` coverage.** 78 of the 230 stages define a
-module-level `validate()`, but `grep -rl "inspect.getsource"` across the five
-roots shows only **five** of those actually hash Python source at all —
-`braunschweig/gravity/model.py`, `braunschweig/popsim/stage/__init__.py`,
-`braunschweig/synthesis/locations/secondary_candidates.py`,
-`braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py`, and
-`braunschweig/synthesis/population/enriched/__init__.py`. The other 73 use
-`validate()` for the standard, unrelated synpp idiom of hashing **input data
-file** existence/size (e.g. `data/census/raw.py`: `return
-os.path.getsize(census_path)`) — a legitimate, separate mechanism for
-detecting changed raw inputs, but it covers zero Python source and therefore
-zero of the required-helper gap. For the five source-hashing stages, their
-`_HELPER_MODULES` (and, for `popsim.stage`, `_DEFERRED_HELPER_MODULE_NAMES`)
-tuples were read directly from source and, to remove any hand-transcription
-risk, resolved by actually importing each of the five modules in this
-environment and reading `{m.__name__ for m in mod._HELPER_MODULES}` back —
-module import only, no stage execution.
-
-## Stage count (2026-09-17 post-merge re-run)
-
-**242 stage modules** found across the five roots (`braunschweig` 96, `data`
-57, `eqasim_common` 45, `synthesis` 29, `matsim` 15 — both stand-alone modules
-and package `__init__.py`s counted by their package's dotted name). 620 `.py`
-files were scanned in total across the five roots; 242 of them define both
-`configure` and `execute` at module level. (2026-09-09: 607 files, 240 stages,
-`braunschweig` 94. 2026-08-14: 564 files, 230 stages, `braunschweig` 84 — every
-stage added since is under `braunschweig`.)
-
-Category totals from this re-run: **(a) 143** stages with no first-party helper,
-**(b) 23** with helpers and complete coverage, **(c) 76** with helpers and no or
-incomplete coverage. The 2026-09-09 figures were 144 / 16 / 80 and the
-2026-08-14 ones 143 / 2 / 86. Category (b) grew in two waves: on 2026-09-09
-because the `braunschweig.synthesis.commute_day` family and
-`braunschweig.analysis.cordon_validation` added source-hashing `validate()`
-hooks that cover their whole required set and because `trips_stage`'s
-`braunschweig.constants` gap was closed, and on 2026-09-17 because the five
-stages `main` had newly given a partial token plus the two it had added imports
-to were completed (see the banner). 24 stages hash source; 23 of them are
-category (b), the 24th being `commute_day.trips_day_stage` with its one
-documented `json_output` exception.
-
-## Category (a) — no first-party helpers (143 stages)
-
-Cache-correct by construction: every first-party module these stages import
-is either absent entirely, or is itself a synpp stage the `configure()`
-already declares (so synpp's own DAG hash covers it — e.g.
-`braunschweig.freight.trips` imports `braunschweig.freight.extraction` at
-module level, but also declares `context.stage("braunschweig.freight.extraction")`,
-so this is not a gap). Grouped by root; no further detail is owed to these
-since by definition there is nothing left uncovered:
-
-- **braunschweig** (39): `braunschweig.analysis.verbindungen_validation`, `braunschweig.data.alkis`, `braunschweig.data.bbsr.regiostar`, `braunschweig.data.bosserhof_purpose`, `braunschweig.data.building_potentials`, `braunschweig.data.buildings`, `braunschweig.data.census.employees`, `braunschweig.data.census.employment`, `braunschweig.data.census.employment_gemband`, `braunschweig.data.census.household_size`, `braunschweig.data.census.households_size_age`, `braunschweig.data.census.licenses`, `braunschweig.data.census.pendler`, `braunschweig.data.census.population`, `braunschweig.data.education.student_share`, `braunschweig.data.freight.german_wide`, `braunschweig.data.inkar.household_income`, `braunschweig.data.inspire.landuse`, `braunschweig.data.landuse`, `braunschweig.data.locations`, `braunschweig.data.mid.references`, `braunschweig.data.mid.zones`, `braunschweig.data.osm`, `braunschweig.data.spatial.taz`, `braunschweig.data.verbindungen.margins`, `braunschweig.data.verbindungen.work_od`, `braunschweig.data.vrb.zones`, `braunschweig.data.zensus_grid.population`, `braunschweig.freight.trips`, `braunschweig.gravity.distance_matrix_taz`, `braunschweig.locations.home`, `braunschweig.locations.secondary`, `braunschweig.locations.work`, `braunschweig.popsim.commute_distance`, `braunschweig.popsim.enriched_adapter`, `braunschweig.synthesis.income`, `braunschweig.synthesis.population.regiostar`, `braunschweig.synthesis.spatial.commute_distance`, `braunschweig.synthesis.spatial.home_zones`
-- **data** (43): `data.ban.raw`, `data.bdtopo.output`, `data.bdtopo.raw`, `data.bpe.raw`, `data.census.filtered`, `data.census.projection`, `data.census.raw`, `data.external.education`, `data.gtfs.output`, `data.hts.commute_distance`, `data.hts.comparison`, `data.hts.edgt_44.reweighted`, `data.hts.edgt_lyon.raw_adisp`, `data.hts.edgt_lyon.raw_cerema`, `data.hts.edgt_lyon.reweighted`, `data.hts.egt.raw`, `data.hts.entd.raw`, `data.hts.entd.reweighted`, `data.hts.output`, `data.hts.selected`, `data.income.municipality`, `data.income.region`, `data.od.cleaned`, `data.od.raw`, `data.od.weighted`, `data.osm.osmosis`, `data.sirene.cleaned`, `data.sirene.localized`, `data.sirene.output`, `data.sirene.raw_geoloc`, `data.sirene.raw_siren`, `data.sirene.raw_siret`, `data.spatial.centroid_distances`, `data.spatial.code_changes`, `data.spatial.codes`, `data.spatial.departments`, `data.spatial.iris`, `data.spatial.municipalities`, `data.spatial.population`, `data.spatial.urban_type`, `data.tiles.raw`, `data.vehicles.raw`, `data.vehicles.types`
-- **eqasim_common** (28): `eqasim_common.analysis.debug.sc`, `eqasim_common.analysis.grid.comparison_flow_volume`, `eqasim_common.analysis.reference.hts.activities`, `eqasim_common.analysis.reference.hts.mode_distances`, `eqasim_common.analysis.reference.income`, `eqasim_common.analysis.reference.od.commute_distance`, `eqasim_common.analysis.reference.od.commute_flow`, `eqasim_common.data.buildings`, `eqasim_common.data.census.employees`, `eqasim_common.data.census.employment`, `eqasim_common.data.census.household_income`, `eqasim_common.data.census.household_size`, `eqasim_common.data.census.licenses`, `eqasim_common.data.census.population`, `eqasim_common.data.mid.data`, `eqasim_common.data.mid.zones`, `eqasim_common.data.mvg.zones`, `eqasim_common.data.osm.chunked`, `eqasim_common.data.osm.locations`, `eqasim_common.data.osm.osmconvert`, `eqasim_common.data.population.municipalities`, `eqasim_common.data.population.raw`, `eqasim_common.data.spatial.iris`, `eqasim_common.gravity.distance_matrix`, `eqasim_common.locations.education`, `eqasim_common.locations.synthesis.education`, `eqasim_common.spatial.codes`, `eqasim_common.spatial.entd_codes`
-- **matsim** (11): `matsim.output`, `matsim.runtime.eqasim`, `matsim.runtime.git`, `matsim.runtime.java`, `matsim.runtime.maven`, `matsim.runtime.pt2matsim`, `matsim.scenario.supply.gtfs`, `matsim.scenario.supply.osm`, `matsim.scenario.supply.processed`, `matsim.simulation.prepare` *(vendored `matsim.simulation.prepare`; the BS override `braunschweig.matsim.simulation.prepare` is a separate stage, listed under category (c)/(d) below)*, `matsim.simulation.run`
-- **synthesis** (22): `synthesis.locations.education`, `synthesis.locations.home.addresses`, `synthesis.locations.home.locations`, `synthesis.locations.home.output`, `synthesis.locations.secondary`, `synthesis.locations.work`, `synthesis.output`, `synthesis.population.activities`, `synthesis.population.income.selected`, `synthesis.population.projection.ipu`, `synthesis.population.projection.reweighted`, `synthesis.population.sampled`, `synthesis.population.spatial.commute_distance`, `synthesis.population.spatial.home.zones`, `synthesis.population.spatial.locations`, `synthesis.population.spatial.primary.locations`, `synthesis.population.spatial.secondary.distance_distributions`, `synthesis.population.trips`, `synthesis.vehicles.cars.default`, `synthesis.vehicles.cars.fleet_sampling`, `synthesis.vehicles.passengers.default`, `synthesis.vehicles.vehicles`
-
-## Category (b) — has helpers, fully covered (23 stages, 2026-09-17)
-
-Generated by `python scripts/audit_synpp_helper_hash.py`, not re-typed: the two pre-fix
-inventory tables the 2026-09-09 pass carried here were what went stale within a week, so
-this section now records only the audit's own output. "Covered" exceeds "required" wherever
-a stage deliberately over-hashes (a parent package, or a module one edge further out).
-
-| Stage | Required helpers | Covered |
-|---|---|---|
-| `braunschweig.analysis.cordon_validation` | 3 | 3 |
-| `braunschweig.analysis.synthesis.departure_time_vs_srv` | 9 | 9 |
-| `braunschweig.analysis.synthesis.plan_structure_vs_srv` | 6 | 6 |
-| `braunschweig.analysis.synthesis.work_participation_by_kreis` | 7 | 7 |
-| `braunschweig.data.hts.mid_donor` | 7 | 8 |
-| `braunschweig.gravity.model` | 9 | 9 |
-| `braunschweig.matsim.scenario.population` | 3 | 3 |
-| `braunschweig.matsim.simulation.prepare` | 4 | 4 |
-| `braunschweig.popsim.completed_donor` | 7 | 9 |
-| `braunschweig.popsim.distance_distributions` | 10 | 12 |
-| `braunschweig.popsim.stage` | 46 | 56 |
-| `braunschweig.popsim.trips_stage` | 13 | 18 |
-| `braunschweig.synthesis.commute_day.activities_day_stage` | 1 | 1 |
-| `braunschweig.synthesis.commute_day.home_office_donors_stage` | 11 | 11 |
-| `braunschweig.synthesis.commute_day.output_day` | 2 | 2 |
-| `braunschweig.synthesis.commute_day.spatial_locations_day` | 2 | 2 |
-| `braunschweig.synthesis.commute_day.state_stage` | 5 | 5 |
-| `braunschweig.synthesis.day_absence.absence_stage` | 2 | 2 |
-| `braunschweig.synthesis.incommuters` | 12 | 12 |
-| `braunschweig.synthesis.locations.secondary_candidates` | 2 | 2 |
-| `braunschweig.synthesis.locations.secondary_chainsolvers` | 23 | 23 |
-| `braunschweig.synthesis.population.enriched` | 10 | 10 |
-| `braunschweig.synthesis.student_incommuters` | 10 | 10 |
-
-### The 24th source-hashing stage
-
-`braunschweig.synthesis.commute_day.trips_day_stage` requires 8 and covers 7: it is the
-single `EXPECTED_UNCOVERED` entry, `braunschweig.analysis.json_output`, whose exclusion is
-argued at that module's own `_HELPER_MODULES` and in the banner above. It is therefore the
-one source-hashing stage outside category (b), by decision rather than by omission.
-
-### What a non-zero "uncovered" means
-
-A non-zero "uncovered" is a MECHANICAL finding -- the module is imported and its source is
-outside the token -- and not by itself a verdict that a run is wrong: some entries are
-constant leaves or parent-package `__init__` files whose change could not alter the stage's
-output. Each still needs deciding individually. Since 2026-09-09 the deciding is no longer
-optional, because the gate fails on any such finding that is not argued in
-`EXPECTED_UNCOVERED`.
-
-Ranking the 2026-09-09 findings by consequence, recorded because it is the reasoning that
-decided the fix ORDER: the two ANALYSIS stages (`plan_structure_vs_srv`,
-`work_participation_by_kreis`) were the least consequential of the then non-empty rows --
-they produce comparison tables, not population or plans, so a stale cached table is a
-reporting error a re-run corrects rather than a silently wrong population, whereas
-`state_stage`'s and `secondary_chainsolvers`' rows carried model behaviour. All of them are
-closed now, so the ranking no longer selects work; it records why nothing was deferred.
-
-`braunschweig.popsim.stage`'s token is its direct helpers plus exactly TWO deliberate
-second-level exceptions (`braunschweig.popsim.attributes` via `assembly` /
-`mid.seed_loading`, `braunschweig.popsim.trips` via `mid.participation`) -- the RULE, stated
-without an arithmetic count here on purpose, because that count is what went stale twice and
-the table above carries the current figures. The two exceptions were added after the
-2026-08-19 verification smoke proved the hazard live: both modules changed behaviour (the
-under-16 licence floor, the W_ZWECK purpose fix) while the stage hash AND the token stayed
-identical, so a warm cache reused the pre-fix population
-(`docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml`). The one-level boundary otherwise
-stands; a further second-level entry needs the same standard of evidence.
-`braunschweig.popsim.trips_stage` had NO token at all until then (it sat in category (c));
-its token covers its four own-package helpers plus the `braunschweig.popsim.sources`
-adapters one level deep, whose `build_trips()` IS the trip construction. Both are pinned by
-regression tests in `tests/test_synpp_helper_hash_invariant.py`.
-
-`braunschweig.popsim.stage` — see `docs/codebase/notes/popsim-stage-split.md` for the canonical
-description. It is worth stating explicitly: this stage **also** exhibits the
-category-(d) pattern (it imports two other synpp stages,
-`braunschweig.data.census.household_size` and
-`braunschweig.synthesis.population.enriched`, as plain libraries without
-declaring them via `context.stage(...)`), but because its `_DEFERRED_HELPER_MODULE_NAMES`
-/ `_HELPER_MODULES` tuples explicitly include both, that gap is closed too.
-**Tie-break rule applied:** the issue text only resolves the (c)+(d) overlap
-("list it under (c) and mark it"); by the same logic, a stage that would
-otherwise qualify for both (b) and (d) is listed under (b) (coverage is what
-determines cache correctness) and flagged as also exhibiting the (d) pattern,
-rather than invented as a fifth category.
-
-## Category (c) — has helpers, no or incomplete coverage (76 stages, 2026-09-17)
-
-> **The per-name lists in this section are the 2026-08-14 enumeration (86 stages)**
-> and were NOT re-typed by either re-audit; only the COUNT above comes from
-> the re-run. It moved 86 -> 80 -> 76 as stages gained complete tokens and left for (b),
-> against new stages arriving. Regenerate the names with
-> `python scripts/audit_synpp_helper_hash.py . --json <out.json>` and read the
-> `required_helpers` / `uncovered` fields, rather than trusting a name below to still
-> be in this category. One known movement since 2026-08-14:
-> `braunschweig.gravity.model` LEFT for category (b) (issue #289).
-> `braunschweig.popsim.trips_stage` would have JOINED -- its `braunschweig.constants`
-> import sat outside its token -- but that gap was closed in the same change as this
-> re-audit, so it remains in (b).
-
-37 of these are reachable in the resolved production config (see
-"Prioritisation"); those are listed first, sorted by name. The remaining 49
-follow, also sorted by name. "d" marks a stage that also qualifies for
-category (d) (an uncovered module that is itself an undeclared stage
-dependency — see that column's entry in the next table for exactly which
-one). All 86 came from the 87 stages with a non-empty required-helper set,
-minus `braunschweig.popsim.stage` (fully covered, category (b) above).
-
-### Production-reachable (37)
-
-| Stage | Path | Uncovered modules | d |
-|---|---|---|---|
-| `braunschweig.analysis.analysis_suite` | `braunschweig/analysis/analysis_suite.py` | `braunschweig.analysis.dashboard.build_dashboard`, `braunschweig.analysis.popsim_validation.run_popsim_control_validation`, `braunschweig.analysis.population_validation.controls`, `braunschweig.analysis.population_validation.population_source`, `braunschweig.analysis.population_validation.run_population_validation`, `braunschweig.analysis.run_education_validation`, `braunschweig.analysis.run_household_composition`, `braunschweig.analysis.run_integerizer_quality`, `braunschweig.analysis.run_mid_validation` | |
-| `braunschweig.analysis.cordon_validation` | `braunschweig/analysis/cordon_validation.py` | `braunschweig.data.cordon.validation_output` | |
-| `braunschweig.analysis.simwrapper_export` | `braunschweig/analysis/simwrapper_export.py` | `braunschweig.analysis.simwrapper.export` | |
-| `braunschweig.data.bosserhof_location_category` | `braunschweig/data/bosserhof_location_category.py` | `braunschweig.data.bosserhof_purpose` | d |
-| `braunschweig.data.cordon_gemeinden` | `braunschweig/data/cordon_gemeinden.py` | `braunschweig.data.cordon.network` | |
-| `braunschweig.data.cordon_network` | `braunschweig/data/cordon_network.py` | `braunschweig.data.cordon.network` | |
-| `braunschweig.data.cordon_pt_gates` | `braunschweig/data/cordon_pt_gates.py` | `braunschweig.data.cordon.network`, `braunschweig.data.cordon.pt_reachability` | |
-| `braunschweig.data.external_secondary_points` | `braunschweig/data/external_secondary_points.py` | `braunschweig.data.external_workplaces` | d |
-| `braunschweig.data.external_workplaces` | `braunschweig/data/external_workplaces.py` | `braunschweig.data.cordon.external_points` | |
-| `braunschweig.data.hts.mid_donor` | `braunschweig/data/hts/mid_donor.py` | `braunschweig.popsim.attributes`, `braunschweig.popsim.sources.mid`, `braunschweig.popsim.stage`, `braunschweig.popsim.trips` | d |
-| `braunschweig.data.schools.facilities` | `braunschweig/data/schools/facilities.py` | `braunschweig.data.schools.typing` | |
-| `braunschweig.data.schools.kita_facilities` | `braunschweig/data/schools/kita_facilities.py` | `braunschweig.data.building_potential_attach` | |
-| `braunschweig.data.schools.university_facilities` | `braunschweig/data/schools/university_facilities.py` | `braunschweig.data.building_potential_attach` | |
-| `braunschweig.data.verbindungen.zones` | `braunschweig/data/verbindungen/zones.py` | `braunschweig.data.bbsr.regiostar` | d |
-| `braunschweig.freight.extraction` | `braunschweig/freight/extraction.py` | `braunschweig.data.spatial.cordon` | |
-| `braunschweig.gravity.model` | `braunschweig/gravity/model.py` | `braunschweig.gravity.friction`, `braunschweig.gravity.production_mass`, `braunschweig.gravity.taz_margins`, `braunschweig.gravity.verbindungen_anchor` | |
-| `braunschweig.locations.synthesis.replacement_education_gravity` | `braunschweig/locations/synthesis/replacement_education_gravity.py` | `synthesis.population.spatial.primary.locations` | d |
-| `braunschweig.matsim.scenario.facilities` | `braunschweig/matsim/scenario/facilities.py` | `matsim.scenario.facilities` | d |
-| `braunschweig.matsim.scenario.households` | `braunschweig/matsim/scenario/households.py` | `braunschweig.synthesis.incommuter_merge._base`, `matsim.scenario.households` | d |
-| `braunschweig.matsim.scenario.population` | `braunschweig/matsim/scenario/population.py` | `braunschweig.synthesis.incommuter_merge._base`, `matsim.scenario.population` | d |
-| `braunschweig.matsim.scenario.vehicles` | `braunschweig/matsim/scenario/vehicles.py` | `braunschweig.synthesis.incommuter_merge._base`, `matsim.scenario.vehicles` | d |
-| `braunschweig.matsim.simulation.prepare` | `braunschweig/matsim/simulation/prepare.py` | `braunschweig.data.cordon.extent`, `braunschweig.data.spatial.cordon`, `matsim.runtime.eqasim`, `matsim.simulation.prepare` | d |
-| `braunschweig.popsim.completed_donor` | `braunschweig/popsim/completed_donor.py` | `braunschweig.popsim.mid`, `braunschweig.popsim.seed`, `braunschweig.popsim.stage`, `braunschweig.popsim.weekend_plan_match` | d |
-| `braunschweig.popsim.distance_distributions` | `braunschweig/popsim/distance_distributions.py` | `braunschweig.constants`, `braunschweig.popsim.mid`, `braunschweig.popsim.purpose_subtype`, `braunschweig.popsim.shop_subtype`, `braunschweig.popsim.time_imputation`, `braunschweig.popsim.trips`, `synthesis.population.spatial.secondary.distance_distributions` | d |
-| `braunschweig.synthesis.cordon_gates` | `braunschweig/synthesis/cordon_gates.py` | `braunschweig.data.cordon.gate_assignment`, `braunschweig.data.cordon.gates`, `braunschweig.data.spatial.cordon` | |
-| `braunschweig.synthesis.incommuters` | `braunschweig/synthesis/incommuters.py` | `braunschweig.constants`, `braunschweig.data.cordon.demand`, `braunschweig.data.cordon.gate_assignment`, `braunschweig.data.cordon.incommuter_origins`, `braunschweig.data.cordon.mode_balancer`, `braunschweig.data.cordon.mode_reference`, `braunschweig.data.cordon.network`, `braunschweig.data.cordon.plans`, `braunschweig.data.cordon.pt_reachability`, `braunschweig.data.external_workplaces`, `braunschweig.data.mikrozensus.reference`, `braunschweig.synthesis.vehicles.fleet_sampling_de` | d |
-| `braunschweig.synthesis.locations.education_gravity` | `braunschweig/synthesis/locations/education_gravity.py` | `braunschweig.data.schools.bbs_share`, `braunschweig.synthesis.locations.education_gravity_model` | |
-| `braunschweig.synthesis.locations.home_cell` | `braunschweig/synthesis/locations/home_cell.py` | none since the repository-audit B4 change: the stage now has a source-hashing `validate()` over all its first-party helpers (row kept as the snapshot's finding, no longer a gap) | |
-| `braunschweig.synthesis.locations.secondary_candidates` | `braunschweig/synthesis/locations/secondary_candidates.py` | `braunschweig.synthesis.locations.landuse_candidates`, `braunschweig.synthesis.locations.secondary_chainsolvers` | d |
-| `braunschweig.synthesis.locations.secondary_chainsolvers` | `braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py` | `braunschweig.calibration.secondary_measurement`, `braunschweig.parallelism`, `braunschweig.synthesis.locations.escort_links`, `synthesis.population.spatial.secondary.problems` | |
-| `braunschweig.synthesis.student_incommuters` | `braunschweig/synthesis/student_incommuters.py` | `braunschweig.constants`, `braunschweig.data.cordon.demand`, `braunschweig.data.cordon.incommuter_origins`, `braunschweig.data.cordon.mode_reference`, `braunschweig.data.cordon.plans`, `braunschweig.data.education.student_incommuter_counts`, `braunschweig.data.education.student_origins`, `braunschweig.data.external_workplaces`, `braunschweig.data.mikrozensus.reference`, `braunschweig.synthesis.incommuters` | d |
-| `braunschweig.synthesis.vehicles.cars.household` | `braunschweig/synthesis/vehicles/cars/household.py` | `braunschweig.data.kba.hsn_tsn`, `braunschweig.synthesis.vehicles.fleet_sampling_de` | |
-| `data.gtfs.cleaned` | `data/gtfs/cleaned.py` | `braunschweig.data.cordon.network_clip`, `data.gtfs.utils` | |
-| `data.hts.entd.cleaned` | `data/hts/entd/cleaned.py` | `data.hts.hts` | |
-| `data.osm.cleaned` | `data/osm/cleaned.py` | `braunschweig.data.cordon.network_clip` | |
-| `synthesis.population.spatial.primary.candidates` | `synthesis/population/spatial/primary/candidates.py` | `braunschweig.gravity.taz_margins` | |
-
-Note: `braunschweig.freight.extraction` appears here because it is imported
-by `braunschweig.freight.trips` at module level as expected (a declared
-dependency, not a gap for `trips`), but `extraction` **itself** imports
-`braunschweig.data.spatial.cordon` without declaring it — the gap belongs to
-`extraction`, not to its caller.
-
-### Not reachable in the resolved production config (49)
-
-| Stage | Uncovered modules | d |
-|---|---|---|
-| `braunschweig.data.ba.pendler_detailed` | `braunschweig.data.kreis_key_guard` | |
-| `braunschweig.data.census.household_income` | `braunschweig.data.mid.reference_tables` | |
-| `braunschweig.data.census.households_type` | `braunschweig.data.census.households_size_age` | d |
-| `braunschweig.data.inkar.full_panel` | `braunschweig.data.kreis_key_guard` | |
-| `braunschweig.data.mid.data` | `braunschweig.data.mid.reference_tables` | |
-| `braunschweig.data.mid.school_distance` | `braunschweig.calibration.circuity` | |
-| `braunschweig.data.mikrozensus.school_distance` | `braunschweig.calibration.circuity` | |
-| `braunschweig.ipf.attributed` | `braunschweig.ipf.config_validation`, `braunschweig.ipf.household_composition` | |
-| `braunschweig.ipf.model` | `braunschweig.ipf.config_validation`, `braunschweig.ipf.joint_age_size` | |
-| `braunschweig.ipf.prepare` | `braunschweig.ipf.joint_age_size` | |
-| `braunschweig.synthesis.population.enriched` | `braunschweig.data.mid.income_by_size`, `braunschweig.data.mid.income_by_status`, `braunschweig.data.mid.reference_tables`, `braunschweig.data.mid.tenure_by_income` | |
-| `data.bpe.cleaned` | `data.spatial.utils` | |
-| `data.census.cleaned` | `data.hts.hts` | |
-| `data.hts.edgt_44.cleaned` | `data.hts.hts` | |
-| `data.hts.edgt_44.filtered` | `data.hts.hts` | |
-| `data.hts.edgt_44.raw` | `data.hts.edgt_44.format` | |
-| `data.hts.edgt_lyon.cleaned_adisp` | `data.hts.hts` | |
-| `data.hts.edgt_lyon.cleaned_cerema` | `data.hts.hts` | |
-| `data.hts.edgt_lyon.filtered` | `data.hts.hts` | |
-| `data.hts.egt.cleaned` | `data.hts.hts` | |
-| `data.hts.egt.filtered` | `data.hts.hts` | |
-| `data.hts.entd.filtered` | `data.hts.hts` | |
-| `eqasim_common.analysis.methods.income.compare_methods` | `synthesis.population.income.utils` | |
-| `eqasim_common.analysis.reference.census.sociodemographics` | `eqasim_common.analysis.marginals`, `eqasim_common.analysis.statistics` | |
-| `eqasim_common.analysis.reference.hts.chains` | `eqasim_common.analysis.bootstrapping`, `eqasim_common.analysis.chains`, `eqasim_common.analysis.marginals`, `eqasim_common.analysis.statistics` | |
-| `eqasim_common.analysis.reference.hts.commute_distance` | `eqasim_common.analysis.bootstrapping`, `eqasim_common.analysis.marginals`, `eqasim_common.analysis.statistics` | |
-| `eqasim_common.analysis.reference.hts.commute_flow` | `eqasim_common.analysis.bootstrapping`, `eqasim_common.analysis.marginals`, `eqasim_common.analysis.statistics` | |
-| `eqasim_common.analysis.reference.hts.sociodemographics` | `eqasim_common.analysis.marginals`, `eqasim_common.analysis.statistics` | |
-| `eqasim_common.analysis.synthesis.commute_distance` | `eqasim_common.analysis.bootstrapping`, `eqasim_common.analysis.marginals`, `eqasim_common.analysis.statistics` | |
-| `eqasim_common.analysis.synthesis.commute_flow` | `eqasim_common.analysis.bootstrapping`, `eqasim_common.analysis.marginals`, `eqasim_common.analysis.statistics` | |
-| `eqasim_common.analysis.synthesis.income` | `eqasim_common.analysis.bootstrapping`, `eqasim_common.analysis.marginals`, `eqasim_common.analysis.statistics` | |
-| `eqasim_common.analysis.synthesis.matching` | `eqasim_common.analysis.bootstrapping`, `eqasim_common.analysis.marginals`, `eqasim_common.analysis.statistics` | |
-| `eqasim_common.analysis.synthesis.mode_distances` | `eqasim_common.analysis.bootstrapping`, `eqasim_common.analysis.marginals`, `eqasim_common.analysis.statistics` | |
-| `eqasim_common.analysis.synthesis.sociodemographics.chains` | `eqasim_common.analysis.bootstrapping`, `eqasim_common.analysis.chains`, `eqasim_common.analysis.marginals`, `eqasim_common.analysis.statistics` | |
-| `eqasim_common.analysis.synthesis.sociodemographics.general` | `eqasim_common.analysis.bootstrapping`, `eqasim_common.analysis.marginals`, `eqasim_common.analysis.statistics` | |
-| `eqasim_common.analysis.synthesis.sociodemographics.spatial` | `eqasim_common.analysis.bootstrapping`, `eqasim_common.analysis.marginals`, `eqasim_common.analysis.statistics` | |
-| `eqasim_common.analysis.synthesis.statistics.marginal` | `eqasim_common.analysis.marginals`, `eqasim_common.analysis.statistics` | |
-| `eqasim_common.analysis.synthesis.statistics.monte_carlo` | `eqasim_common.analysis.bootstrapping`, `eqasim_common.analysis.marginals`, `eqasim_common.analysis.statistics`, `eqasim_common.analysis.synthesis.statistics.marginal` | d |
-| `eqasim_common.locations.synthesis.replacement` | `synthesis.population.spatial.primary.locations` | d |
-| `matsim.scenario.facilities` | `matsim.writers` | |
-| `matsim.scenario.households` | `matsim.writers` | |
-| `matsim.scenario.population` | `matsim.writers` | |
-| `matsim.scenario.vehicles` | `matsim.writers` | |
-| `synthesis.population.enriched` | `data.hts.egt.cleaned`, `data.hts.entd.cleaned` | d |
-| `synthesis.population.income.bhepop2` | `synthesis.population.income.utils` | |
-| `synthesis.population.income.uniform` | `synthesis.population.income.utils` | |
-| `synthesis.population.matched` | `data.hts.egt.cleaned`, `data.hts.entd.cleaned` | d |
-| `synthesis.population.spatial.home.locations` | `data.spatial.utils` | |
-| `synthesis.population.spatial.secondary.locations` | `synthesis.population.spatial.secondary.components`, `synthesis.population.spatial.secondary.problems`, `synthesis.population.spatial.secondary.rda` | |
-
-These are mostly vendored-upstream stage variants (ENTD/EDGT/EGT/Lyon HTS
-pipelines, the plain `matsim.scenario.*` MATSim writers, the base
-`synthesis.population.enriched`/`matched`) that the BS production config
-supersedes via the `aliases:` block rather than running directly — "not
-reachable" here is a firm, derived answer (from the committed DAG snapshot,
-not a guess), not `unknown`.
-
-## Category (d) — undeclared stage-as-library import (21 stages)
-
-Every stage whose own code imports another synpp stage module (has its own
-`configure`+`execute`) as a plain function/attribute library, where that
-import is **not** matched by a `context.stage(...)` call (alias-resolved) in
-the importer's own `configure()`. 16 of 21 are production-reachable.
-
-| Stage | Reachable | Primary category | Undeclared stage import(s) |
-|---|---|---|---|
-| `braunschweig.data.bosserhof_location_category` | yes | c | `braunschweig.data.bosserhof_purpose` |
-| `braunschweig.data.external_secondary_points` | yes | c | `braunschweig.data.external_workplaces` |
-| `braunschweig.data.hts.mid_donor` | yes | c | `braunschweig.popsim.stage` |
-| `braunschweig.data.verbindungen.zones` | yes | c | `braunschweig.data.bbsr.regiostar` |
-| `braunschweig.locations.synthesis.replacement_education_gravity` | yes | c | `synthesis.population.spatial.primary.locations` |
-| `braunschweig.matsim.scenario.facilities` | yes | c | `matsim.scenario.facilities` |
-| `braunschweig.matsim.scenario.households` | yes | c | `matsim.scenario.households` |
-| `braunschweig.matsim.scenario.population` | yes | c | `matsim.scenario.population` |
-| `braunschweig.matsim.scenario.vehicles` | yes | c | `matsim.scenario.vehicles` |
-| `braunschweig.matsim.simulation.prepare` | yes | c | `matsim.runtime.eqasim`, `matsim.simulation.prepare` |
-| `braunschweig.popsim.completed_donor` | yes | c | `braunschweig.popsim.stage` |
-| `braunschweig.popsim.distance_distributions` | yes | c | `synthesis.population.spatial.secondary.distance_distributions` |
-| `braunschweig.popsim.stage` | yes | **b** | `braunschweig.data.census.household_size`, `braunschweig.synthesis.population.enriched` |
-| `braunschweig.synthesis.incommuters` | yes | c | `braunschweig.data.external_workplaces` |
-| `braunschweig.synthesis.locations.secondary_candidates` | yes | c | `braunschweig.synthesis.locations.secondary_chainsolvers` |
-| `braunschweig.synthesis.student_incommuters` | yes | c | `braunschweig.data.external_workplaces`, `braunschweig.synthesis.incommuters` |
-| `braunschweig.data.census.households_type` | no | c | `braunschweig.data.census.households_size_age` |
-| `eqasim_common.analysis.synthesis.statistics.monte_carlo` | no | c | `eqasim_common.analysis.synthesis.statistics.marginal` |
-| `eqasim_common.locations.synthesis.replacement` | no | c | `synthesis.population.spatial.primary.locations` |
-| `synthesis.population.enriched` | no | c | `data.hts.egt.cleaned`, `data.hts.entd.cleaned` |
-| `synthesis.population.matched` | no | c | `data.hts.egt.cleaned`, `data.hts.entd.cleaned` |
-
-**A distinct, systematic sub-pattern inside this list:** the four BS
-MATSim-writer overrides (`braunschweig.matsim.scenario.facilities` /
-`households` / `population` / `vehicles`) plus
-`braunschweig.matsim.simulation.prepare` each `import matsim.scenario.<X> as
-base` (or the `matsim.simulation.prepare` equivalent) at module level and call
-into it as a code base, without ever declaring
-`context.stage("matsim.scenario.<X>")`. This is the same shape as the two
-documented `popsim.stage` cases, just repeated four/five times across the
-MATSim-scenario-writer family — none of these five stages currently has a
-`validate()` hook at all, so an edit confined to the vendored base module
-would silently reuse stale cached scenario-writer output.
-
-`determining "declared"` required resolving each `context.stage("name")`
-literal through the 22-entry `aliases:` table in `configs/base_bs.yml` before
-comparing to the imported module's own dotted path (see "Method", step 3);
-every case above was resolved this way with no ambiguity — no stage needed an
-`unknown` mark for this determination.
-
-## Prioritisation (production impact)
-
-"Reachable" = the stage's alias-resolved module dotted name appears as a node
-in the committed DAG snapshot `docs/registry/dag/production.json`, which
-records the resolution of exactly `configs/base_bs.yml` +
-`configs/overlays/test_100pct.yml` (confirmed from the snapshot's own
-`config.base`/`config.overlay` fields) — i.e. derived from the canonical
-production config, not guessed. 90 of the snapshot's 91 nodes map onto a
-scanned stage (the missing one, `documentation.meta_output`, lives outside
-the five audited roots — see "Limitations").
-
-Ordered by combined severity — reachable AND in category (d) (an undeclared
-stage-as-library edge, the sharper failure mode since neither synpp's DAG nor
-any token sees it) first, then reachable category (c) with the largest
-uncovered surface, then everything else:
-
-1. **The `matsim.scenario.*` BS-override family (5 stages, reachable, (d), no
-   `validate()` at all):** `braunschweig.matsim.scenario.facilities`,
-   `households`, `population`, `vehicles`, and
-   `braunschweig.matsim.simulation.prepare` each use the vendored
-   `matsim.scenario.*`/`matsim.simulation.prepare` stage as an undeclared
-   code base. This is the MATSim-facing end of the pipeline (facilities,
-   households, population and vehicle scenario files, and simulation
-   preparation) — a silently stale scenario write would be very hard to
-   notice downstream. No coverage of any kind exists today.
-2. **`braunschweig.synthesis.incommuters` / `student_incommuters` /
-   `popsim.completed_donor` (reachable, (d), no `validate()`):** the cordon
-   in-commuter chain — each has a large plain-helper surface (11-12 uncovered
-   modules for `incommuters`) plus an undeclared stage-as-library edge, and no
-   token at all.
-3. **`braunschweig.gravity.model` (reachable, (c), known):** the documented
-   gap from issue #289 — `friction`, `production_mass`, `taz_margins`,
-   `verbindungen_anchor` uncovered; already tracked, not new.
-4. **`braunschweig.synthesis.locations.secondary_chainsolvers` (reachable,
-   (c), NOT previously documented):** its own split note
-   (`secondary-chainsolvers-split.md`) states "this package has no external
-   siblings outside its own boundary... so there is no equivalent 'known
-   gap'" — that claim only considered sibling submodules; it imports 4
-   modules **outside** its own package boundary
-   (`braunschweig.calibration.secondary_measurement`, `braunschweig.parallelism`,
-   `braunschweig.synthesis.locations.escort_links`,
-   `synthesis.population.spatial.secondary.problems`) that its `validate()`
-   does not hash. This is a genuine, newly-surfaced gap on a stage already
-   believed fully covered.
-5. **`braunschweig.synthesis.population.enriched` (reachable only via the
-   `simple_ipf_open` fixture per its own split note; not in the popsim-based
-   production DAG snapshot — hence listed as "not reachable" above, but
-   flagged here because it is the enrichment path for the non-popsim
-   pipeline) (c), NOT previously documented:** its own module-level import
-   `from braunschweig.data.mid.reference_tables import load_class_midpoint_eur`
-   plus 3 lazily-imported `braunschweig.data.mid.*` modules are outside
-   `_HELPER_MODULES`.
-6. **`braunschweig.synthesis.locations.secondary_candidates` (reachable, (c)
-   + (d)):** its `validate()` delegates entirely to
-   `secondary_chainsolvers._HELPER_MODULES`, so it hashes chainsolvers'
-   submodules but never `secondary_chainsolvers/__init__.py` itself (the
-   facade file, undeclared as a dependency) nor
-   `braunschweig.synthesis.locations.landuse_candidates`.
-7. Everything else in the reachable category-(c) table, roughly grouped by
-   family: the cordon-data chain (`cordon_network`/`cordon_gemeinden`/
-   `cordon_pt_gates`/`cordon_gates`/`external_secondary_points`/
-   `external_workplaces`), the schools family, and
-   `braunschweig.analysis.analysis_suite`/`cordon_validation`/
-   `simwrapper_export` (each of which fans out to several
-   `braunschweig.analysis.*` submodules with no token covering them).
-
-Category (c)/(d) stages **not** in the reachable table (49 + 5) are lower
-priority: mostly vendored HTS pipeline variants (ENTD/EDGT/EGT/Lyon) and
-`eqasim_common` analysis-reference modules the BS config's `run:` targets
-never reach.
-
-## Verification
-
-**Classifier reproduces both known-good reference cases:**
-
-- `braunschweig/gravity/model.py`: required helpers = the 5 covered siblings
-  (`attraction_vector`, `balancing`, `base`, `kreis_calibration`, `od`) **plus**
-  `friction`, `production_mass`, `taz_margins`, `verbindungen_anchor` — 9
-  total, 5 covered, 4 uncovered. The 4 uncovered names match issue #289's list
-  **exactly**. Reproduced independently, not copied from the issue text.
-- `braunschweig/popsim/stage/__init__.py`: required helpers = 44, covered =
-  44, uncovered = none (category b). The two undeclared-stage-as-library
-  imports the classifier found by AST alone —
-  `braunschweig.data.census.household_size` and
-  `braunschweig.synthesis.population.enriched` — match the two cases the
-  stage's own `validate()` docstring names as "exactly two modules qualify
-  today".
-
-**Three category-(a) verdicts checked by hand:**
-
-- `braunschweig/freight/trips.py` imports `braunschweig.freight.extraction` at
-  module level (`from braunschweig.freight import extraction`), but its
-  `configure()` declares `context.stage("braunschweig.freight.extraction")`,
-  so this is a declared edge already covered by synpp's own hash propagation,
-  not a gap — correctly excluded from `required_helpers`. (`extraction`
-  itself is a separate row in the reachable category-(c) table above, for its
-  own, unrelated uncovered import of `braunschweig.data.spatial.cordon`.)
-- `data/sirene/raw_siret.py` imports only `os` and `pandas` — no first-party
-  imports at all; trivially category (a).
-- `braunschweig/synthesis/income.py` imports only `numpy`, `pandas`,
-  `multiprocessing`, `tqdm` — no first-party imports; trivially category (a).
-
-**Three category-(c) verdicts checked by hand (beyond gravity, above):**
-
-- `braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py` line
-  66-67: `from braunschweig.calibration.secondary_measurement import
-  boundary_clip_share` and `from synthesis.population.spatial.secondary.problems
-  import find_assignment_problems`, both module-level, neither in
-  `_HELPER_MODULES` (verified by reading the tuple directly at source line
-  251).
-- `data/hts/entd/cleaned.py` line 4: `import data.hts.hts as hts` at module
-  level; the stage has no `validate()` at all, so this plain helper import is
-  completely uncovered.
-- `synthesis/population/spatial/primary/candidates.py` line 227:
-  `from braunschweig.gravity.taz_margins import assign_taz`, inside a function
-  body (lazy) — exactly the kind of import a module-level-only scan would
-  miss; the stage has no `validate()`, so it is uncovered.
+Closing a gap changes the token, so the stage re-executes once. A code edit to a helper changes
+the token of every stage that hashes it (the `covered` field); comment, docstring and formatting
+edits change no digest (ADR-0149). Children are spared only where the re-executed parent
+reproduces its output byte for byte (content-addressed validity, `docs/codebase/notes/synpp-fork.md`).
 
 ## Limitations
 
-What this method cannot see, checked rather than assumed:
+Checked rather than assumed; each is a place where the check can say "covered" while a cache is
+stale, or say nothing at all.
 
-- **`__getattr__`-based lazy attribute access (PEP 562):** three first-party
-  modules define a module-level `__getattr__` —
-  `braunschweig/data/census/household_income.py` (lazily computes
-  `CLASS_MIDPOINT_EUR` from data, not a module import),
-  `braunschweig/popsim/stage/__init__.py` and
-  `braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py` (both
-  forward a fixed, small set of named attributes to an already-imported
-  sibling module for worker-state mutability — not a way to reach an
-  otherwise-uncounted module). None of the three introduces an import this
-  scan would miss.
-- **Dynamic `importlib.import_module` with a computed name:** the only
-  non-trivial use found was inside the stages' own `validate()` hooks, over their
-  fixed, literal `_DEFERRED_HELPER_MODULE_NAMES` tuples — not a computed name,
-  so fully resolvable statically (checked by `grep` on 2026-08-14).
-- **A `def`-only stage-detection rule:** confirmed (by `grep` for
-  `^configure\s*=`/`^execute\s*=` across all five roots) that no stage in this
-  codebase is produced by a factory function returning `(configure, execute)`
-  closures bound at module level — `braunschweig/synthesis/incommuter_merge/_base.py`
-  defines exactly such a factory (`make_wrapper`) but nothing currently calls
-  it to produce a module-level stage, so it does not register as one and
-  correctly does not appear in the 230.
-- **Out-of-scope root:** `documentation.meta_output`, one of the 91 nodes in
-  the committed production DAG snapshot, resolves to a module under the
-  repo-root `documentation/` directory, which is not one of the five audited
-  first-party roots (it is a separate set of paper/report-generation
-  scripts, unrelated to the `braunschweig`/`data`/`eqasim_common`/`matsim`/
-  `synthesis` package tree). Its coverage status is genuinely `unknown` here,
-  not derived.
-- **Every count in the categories is a LOWER BOUND, not a total.** The
-  categories stop at one level (next bullet), so a stage counted as (b) "fully
-  covered" is covered only to that same depth, and the uncovered-module lists for
-  (c) name only the stage module's own direct imports. Read a (c) row as "at least
-  these". Source-hashing stages are held to their whole closure since 2026-09-28.
-- **Transitive imports beyond one level:** the categories above resolve only
-  each stage's **own direct** imports, not what its helpers in turn import,
-  matching the two reference implementations' own stated boundary. Since
-  2026-09-28 the script also follows the imports through every first-party
-  module a source-hashing stage reaches (step 5) and reports what the token
-  misses as `transitive_uncovered` (ADR-0136). That boundary had hidden a real
-  gap: the enriched stage's car-ownership draw read its base table and raumtyp
-  tilt from `braunschweig.data.mid.cars_by_status`, imported inside a
-  `vehicle_ownership` function, and no token hashed it. At commit `ed1f263a`,
-  with the enriched stage already covered, 20 of the 25 source-hashing stages
-  still had such gaps: 479 stage-module pairs over 154 modules. All are closed,
-  and `test_every_source_hashing_stage_hashes_its_whole_import_closure` gates
-  every source-hashing stage on its whole closure. How the gaps were closed:
-  - Imports that reached a whole package for one name were narrowed to the
-    submodule defining it: the MiD loaders to `braunschweig.popsim.mid.donor`,
-    the two enriched helpers to `economic_status` and `housing_tenure`, the
-    candidate builders to the chainsolver's `candidates` and `srv_candidates`,
-    and `KEY_MID` to `braunschweig.popsim.stage.config_keys`.
-  - The walk ends at a module that declares a `_SYNPP_TOKEN_EXEMPTION` reason,
-    because it never shapes a stage result (`braunschweig.progress`,
-    `braunschweig.theme`, `braunschweig.monitoring.process_tree`), and at a
-    stage module that the walking stage lists in `_TOKEN_CLOSURE_BOUNDARIES`.
-    The only boundary is the trips stage, for `popsim.stage` and
-    `data.hts.mid_donor`, which reach it through `build_trips`;
-    `test_only_the_trips_stage_builds_trips_through_a_donor_source` pins that
-    only the trips stage calls it.
-  - Everything else the walk reaches is hashed by dotted name, in a commented
-    group at the end of each stage's `_DEFERRED_HELPER_MODULE_NAMES`.
-  - A helper tuple counts only when the stage's `validate()` reads it, and a stage
-    token may hash each module once (`test_no_stage_token_hashes_a_module_twice`).
-  - Two resolver bugs hid part of the closure until 2026-09-29. Relative imports in
-    plain modules were dropped, so the candidates stage hashed none of the three
-    chainsolver submodules its `candidates` builder imports relatively
-    (`activity_types`, `candidate_columns`, `srv_location_types`). And a module object
-    re-exported through another module was not credited. With both fixed, the
-    inverse-CDF draw moved from `deciders` into the leaf module `inverse_cdf`, which
-    keeps the decider machinery out of the candidates stage's closure.
-- **No dynamic/computed `context.stage(...)` calls exist today** (checked:
-  every call across all 230 stages had a literal string first argument), so
-  no stage needed an `unknown` mark for declared-dependency resolution this
-  time; a future stage that builds its dependency name from a variable would
-  need one, and this method would have to flag it explicitly rather than
-  guess.
-- **Aliases are read only from `configs/base_bs.yml`**, the canonical
-  production config, per CLAUDE.md's truth hierarchy — other committed
-  configs (`configs/dryrun_*`, any fixture-only config) may declare different
-  aliases for the same stage name; this audit does not attempt to resolve
-  "declared" against every possible config, only the canonical one, so a
-  stage's undeclared-dependency status could differ under a non-canonical
-  config. Not evaluated here; out of scope by the issue's own framing
-  ("prioritised by whether affected stages are default-ON in the canonical
-  production config").
+- **Stages without a source token are not gated.** The two closure gates look only at stages
+  whose `validate()` hashes source. A stage with first-party helpers and no token is listed in
+  the script output (`hashes_source: false`, non-empty `required_helpers`) but fails no test; the
+  own-package invariant catches only sibling submodules. Whether such a stage is reached by the
+  production config is not part of the check (which stages were given a token and which were
+  left without one, and why: ADR-0194).
+- **Data files are invisible.** The check covers Python source only. An input file a stage reads
+  must be in its `validate()` by hand (a content digest via `synpp_tokens.file_sha256`, or
+  `synpp_tokens.text_file_sha256` for a committed text file, which normalises CRLF so a Windows
+  and a Linux checkout give one token). No scan finds a file read that `validate()` misses.
+- **Computed import names.** A module loaded through `importlib` with a name that is not in a
+  helper tuple is invisible to the walk. The registry pattern is covered only because its module
+  names are listed in `_DEFERRED_HELPER_MODULE_NAMES` (step 5).
+- **PEP 562 `__getattr__`.** Three first-party modules define one
+  (`braunschweig/data/census/household_income.py`, `braunschweig/popsim/stage/__init__.py`,
+  `braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py`); none reaches a module
+  the import scan would miss.
+- **Computed `context.stage(...)` names** would make the declared-edge step guess; every call
+  uses a literal today, and a computed one would have to be flagged, not resolved.
+- **Aliases come from `configs/base_bs.yml` only.** A fixture config may alias a stage
+  differently; declared-edge status is evaluated against the canonical config.
+- **Scan roots.** Only `ROOTS` are scanned. The production stage `documentation.meta_output` lives
+  outside them, so its coverage is unknown, not derived.
 
-## PR / issue reference
+## History
 
-Issue #290 (audit), companion to issue #289 (the gravity-specific coverage
-gap this audit reproduces independently). No code, cache token, or
-`_HELPER_MODULES` tuple was changed to produce this file.
+Issue #290 produced the first, hand-made inventory (2026-08-14); #327 turned the method into the
+script and closed the gaps it found; ADR-0136 extended the gate to the whole import closure; the
+2026-11-11 repository audit (package C) fixed the walk start (P1-F4) and gave the
+production-reachable stages with helpers a token (ADR-0194). The dated inventories of those passes are in
+this file's git history (`git log -p -- docs/codebase/notes/synpp-helper-hash-audit.md`), not
+here.
