@@ -300,11 +300,14 @@ def reconcile_batch_outputs(
     output was built from.
 
     Mutates: "discard output" removes the whole output directory (completion
-    marker, checkpoint store, log) and recreates it empty. Before it is removed, a
-    WARNING names the batch folder and the reason (inputs changed since the output
-    was built / output without a recorded input fingerprint), so a removal that
-    fails midway is still on record; the states that delete nothing log nothing
-    here. The record is written atomically (temporary file in the folder, then
+    marker, checkpoint store, log) and recreates it empty. When that directory
+    holds at least one file, a WARNING names the batch folder and the reason
+    (inputs changed since the output was built / output without a recorded input
+    fingerprint) before it is removed, so a removal that fails midway is still on
+    record. Nothing is logged here when no file is deleted (``INPUTS_UNCHANGED``,
+    ``INPUTS_NEW``, or ``INPUTS_CHANGED`` with an empty or absent output
+    directory, e.g. after a run that stopped before the batch wrote anything).
+    The record is written atomically (temporary file in the folder, then
     ``os.replace``) and only after the discard, so a process killed in between
     leaves a record that still differs from the inputs, or no record and no output.
     """
@@ -317,22 +320,24 @@ def reconcile_batch_outputs(
     )
     if recorded == fingerprint:
         return INPUTS_UNCHANGED
+    has_output = output_dir.is_dir() and any(path.is_file() for path in output_dir.rglob("*"))
     if recorded is not None:
         state = INPUTS_CHANGED
-    elif output_dir.is_dir() and any(path.is_file() for path in output_dir.rglob("*")):
+    elif has_output:
         state = INPUTS_UNRECORDED
     else:
         state = INPUTS_NEW
     if state != INPUTS_NEW:
-        reason = (
-            "its inputs changed since the output was built"
-            if state == INPUTS_CHANGED
-            else "the output exists without a recorded input fingerprint"
-        )
-        logger.warning(
-            "[popsim.batch] discarding the PopulationSim output of %s: %s; "
-            "the batch runs again.", folder_path, reason,
-        )
+        if has_output:
+            reason = (
+                "its inputs changed since the output was built"
+                if state == INPUTS_CHANGED
+                else "the output exists without a recorded input fingerprint"
+            )
+            logger.warning(
+                "[popsim.batch] discarding the PopulationSim output of %s: %s; "
+                "the batch runs again.", folder_path, reason,
+            )
         if output_dir.exists():
             shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True)

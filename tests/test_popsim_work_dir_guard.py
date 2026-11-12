@@ -16,6 +16,7 @@ import pandas as pd
 import pytest
 
 from braunschweig.popsim import batch, folders, mid, stage
+from braunschweig.popsim.mid import batch_folders as mid_batch_folders
 from braunschweig.popsim.sources.mid import MidSource
 
 
@@ -250,26 +251,77 @@ def _content(path):
     return path.read_bytes() if path.is_file() else None
 
 
-def test_assembly_error_leaves_every_output_and_record_untouched(tmp_path):
+def _fail_on_stratum_77(monkeypatch):
+    """Stratified branch: stratum 77 is assembled after 71 and gets no donor household."""
+    return {"donor_strata": (71,)}
+
+
+def _fail_on_second_folder(monkeypatch):
+    """Unstratified branch: assembling any folder after batch_000 raises."""
+    assemble = mid_batch_folders.assemble_batch_folder
+
+    def assemble_batch_000_only(folder, *args, **kwargs):
+        if Path(folder).name != "batch_000":
+            raise ValueError("simulated assembly error")
+        return assemble(folder, *args, **kwargs)
+
+    monkeypatch.setattr(mid_batch_folders, "assemble_batch_folder", assemble_batch_000_only)
+    return {}
+
+
+@pytest.mark.parametrize(
+    "branch_options, break_second_folder",
+    [({}, _fail_on_second_folder),
+     ({"stratify_regiostar": True, "source": MidSource()}, _fail_on_stratum_77)],
+    ids=["unstratified", "regiostar_stratified"],
+)
+def test_assembly_error_leaves_every_output_and_record_untouched(
+        tmp_path, monkeypatch, branch_options, break_second_folder):
     # An aborted run must not destroy output that a later run with the original
-    # inputs could still reuse. The stratified branch assembles its strata in sorted
-    # order: the second run rewrites batch_000 (stratum 71) with a changed target, then
-    # fails on stratum 77, which has no donor household left.
-    stratified = {"stratify_regiostar": True, "source": MidSource()}
-    _run(tmp_path, _FakePopulationSim(), _cells(), **stratified)
+    # inputs could still reuse. The second run rewrites batch_000 with a changed
+    # target, then fails while assembling the next folder.
+    _run(tmp_path, _FakePopulationSim(), _cells(), **branch_options)
     batch_000 = tmp_path / "batch_000"
     marker = batch_000 / batch.COMPLETION_MARKER
     record = batch_000 / batch.INPUT_FINGERPRINT_FILE
     marker_before, record_before = marker.read_bytes(), record.read_bytes()
 
+    second_run_options = break_second_folder(monkeypatch)
     with pytest.raises(ValueError):
         _run(tmp_path, _FakePopulationSim(), _cells(target_of_batch_000_cell=5.0),
-             donor_strata=(71,), **stratified)
+             **branch_options, **second_run_options)
 
     rewritten = pd.read_csv(batch_000 / "data" / "control_totals_ZENSUS100m.csv")
     assert rewritten.set_index("ZENSUS100m")["POP_ZENSUS100m"][_CELLS_100M[0]] == 5
     assert _content(marker) == marker_before
     assert _content(record) == record_before
+
+
+def _failing_rmtree(path, *args, **kwargs):
+    raise OSError(f"simulated: cannot remove {path}")
+
+
+@pytest.mark.parametrize(
+    "deleting_module, folder",
+    [(batch, "batch_001"), (mid_batch_folders, "batch_002")],
+    ids=["discarded_output", "removed_folder"],
+)
+def test_failed_deletion_is_already_logged_with_the_folder_name(
+        tmp_path, caplog, monkeypatch, deleting_module, folder):
+    # A deletion that fails midway (e.g. a file still open on Windows) aborts the run
+    # before its summary line, so the folder must already be named in the log.
+    _run(tmp_path, _FakePopulationSim(), _cells())
+    (tmp_path / "batch_002").mkdir()  # left by an earlier, larger partition
+    monkeypatch.setattr(deleting_module, "shutil", SimpleNamespace(rmtree=_failing_rmtree))
+
+    with pytest.raises(OSError, match="simulated"):
+        _run(tmp_path, _FakePopulationSim(), _cells(target_of_batch_001_cell=7.0))
+
+    assert any(
+        folder in record.getMessage()
+        for record in caplog.records
+        if record.name == deleting_module.__name__ and record.levelno == logging.WARNING
+    )
 
 
 def test_completed_batch_without_input_record_starts_again(tmp_path):
