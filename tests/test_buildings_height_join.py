@@ -1,6 +1,8 @@
 # tests/test_buildings_height_join.py
 import re
 
+import pytest
+
 import geopandas as gpd, pandas as pd
 from shapely.geometry import Point, Polygon
 from braunschweig.data import buildings as B
@@ -90,8 +92,12 @@ def test_execute_joins_heights_when_the_file_exists_and_warns_loudly_when_it_doe
     assert joined.set_index("OI")["height_m"].to_dict() == {"DENIALa": 10.0, "DENIALb": 20.0}
 
 
-def test_join_warns_with_the_footprint_count_when_footprints_carry_no_oi(capsys, tmp_path):
-    out = B.join_lod2_heights(_b().drop(columns=["OI"]), pd.DataFrame({"OI": ["x"], "height_m": [1.0]}))
+@pytest.mark.parametrize("drop_oi", [True, False], ids=["no_oi_column", "no_oi_matches"])
+def test_join_warns_with_the_footprint_count_when_no_footprint_gets_a_height(capsys, tmp_path, drop_oi):
+    """Both 100 % fallbacks of the join warn: footprints without an OI column, and OI keys that
+    match no LoD2 row (a key format mismatch would otherwise log a plain 0.0 % coverage line)."""
+    buildings = _b().drop(columns=["OI"]) if drop_oi else _b()
+    out = B.join_lod2_heights(buildings, pd.DataFrame({"OI": ["no-such-oi"], "height_m": [1.0]}))
     assert out["height_m"].isna().all()
     warnings = _height_warnings(capsys.readouterr().out, tmp_path)
     assert len(warnings) == 1 and re.search(r"\b3\b", warnings[0])

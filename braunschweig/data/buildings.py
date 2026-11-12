@@ -235,8 +235,16 @@ def join_lod2_heights(buildings, heights):
     h = heights[["OI", "height_m"]].drop_duplicates("OI")
     out = buildings.merge(h, on="OI", how="left")
     cov = out["height_m"].notna().mean() if len(out) else 0.0
-    print(f"[braunschweig.data.buildings] LoD2 height coverage: {cov:.1%} "
-          f"({int(out['height_m'].notna().sum())}/{len(out)} footprints)")
+    matched = int(out["height_m"].notna().sum())
+    message = (f"[braunschweig.data.buildings] LoD2 height coverage: {cov:.1%} "
+               f"({matched}/{len(out)} footprints)")
+    if len(out) and matched == 0:
+        # Fallback transparency (CLAUDE.md): a join that matches no footprint is the 100 %
+        # fallback (every height_m NaN); it almost always means an OI key mismatch.
+        print("WARNING: " + message + " -- no footprint matched an LoD2 OI, so every height_m "
+              "is NaN; check the OI keys of the heights file against the ALKIS footprints.")
+    else:
+        print(message)
     return out
 
 

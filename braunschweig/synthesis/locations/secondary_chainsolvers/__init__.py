@@ -434,7 +434,7 @@ def validate(context):
     ``secondary_srv_location_types`` is ON the token also carries ``srv_location_type_files``,
     the content digest of the two pinned SrV tables the stage reads (LF-normalised, so a
     Windows and a Linux checkout of one commit give one token); with the flag OFF the token is
-    exactly the source token, so an OFF run keeps its cache.
+    exactly the source token, so an edit to the tables never re-executes an OFF run.
     """
     token = synpp_tokens.source_token(
         _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,

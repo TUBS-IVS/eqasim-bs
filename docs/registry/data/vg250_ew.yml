@@ -8,6 +8,7 @@ crs: EPSG:25832
 roles:
 - spatial_input
 used_by:
+- braunschweig.data.bbsr.regiostar
 - braunschweig.data.cordon_gemeinden
 - data.spatial.municipalities
 acquisition:
