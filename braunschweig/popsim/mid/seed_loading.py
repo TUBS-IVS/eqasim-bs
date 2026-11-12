@@ -29,6 +29,7 @@ import cycle results.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional, Sequence, Union
 
@@ -150,19 +151,20 @@ def _read_seed_households(
         household_cols.append("hhgr_gr")
     if "number_of_cars" in active_kreis_entry_names:
         household_cols.append("H_ANZAUTO")
-    if "number_of_bicycles" in active_kreis_entry_names:
+    if "has_ebike" in active_kreis_entry_names and not ebike_seed_column:
+        raise ValueError(
+            "load_mid_seed: has_ebike kreis control is active but ebike_seed_column is "
+            "not configured; set braunschweig.population.popsim.ebike_seed_column to the "
+            "verified MiD household e-bike column (no silent fallback)."
+        )
+    if active_kreis_entry_names & {"number_of_bicycles", "has_ebike"}:
+        # Either bicycle control needs BOTH raw columns: bicycles and e-bike are drawn
+        # jointly (ADR-0192), conditioned on whichever component is known.
         # anzpedrad = bicycles INCLUDING pedelecs/e-bikes (MiD H12.3 / SrV alle-Raeder
         # construct; verified 2026-07-08 to equal min(H_ANZRAD + H_ANZPED, 10) on all
         # 218,039 valid MiD B1 household rows). See attributes.map_number_of_bicycles.
         household_cols.append("anzpedrad")
-    if "has_ebike" in active_kreis_entry_names:
-        if not ebike_seed_column:
-            raise ValueError(
-                "load_mid_seed: has_ebike kreis control is active but ebike_seed_column is "
-                "not configured; set braunschweig.population.popsim.ebike_seed_column to the "
-                "verified MiD household e-bike column (no silent fallback)."
-            )
-        household_cols.append(ebike_seed_column)
+        household_cols.append(ebike_seed_column or "H_ANZPED")
     households = pd.read_csv(
         households_path,
         usecols=list(dict.fromkeys(household_cols)),
@@ -356,13 +358,48 @@ def _derive_count_style_kreis_columns(
     reassigned by the caller).
     Mutates: nothing in place.
     """
-    if "number_of_cars" in active_kreis_entry_names:
+    # Columns the popsim stage already resolved ONCE on the donor household table
+    # (attributes.resolve_household_counts) are used verbatim: the clones assembled later
+    # carry the same value, not a second draw (audit P3-F1). Only missing columns are
+    # derived here (load_mid_seed path, direct callers); that is logged.
+    wanted = [c for c in attributes.HOUSEHOLD_COUNT_COLUMNS if c in active_kreis_entry_names]
+    pre_resolved = [c for c in wanted if c in households.columns]
+    if pre_resolved:
+        logging.getLogger(__name__).info(
+            "[popsim.mid.seed] household count columns %s taken from the donor table "
+            "(resolved once, shared with the expansion); not re-imputed.", pre_resolved)
+    if "number_of_cars" in active_kreis_entry_names and "number_of_cars" not in households.columns:
         households = attributes.map_number_of_cars(households, rng=kreis_seed_rng)
-    if "number_of_bicycles" in active_kreis_entry_names:
+    need_bikes = (
+        "number_of_bicycles" in active_kreis_entry_names
+        and "number_of_bicycles" not in households.columns)
+    need_ebike = "has_ebike" in active_kreis_entry_names and "has_ebike" not in households.columns
+    # The pedelec column the joint draw conditions on: the configured e-bike seed column,
+    # else the MiD default H_ANZPED. Both seed loaders read it together with anzpedrad
+    # whenever either bicycle control is active (_read_seed_households).
+    joint_ebike_col = ebike_seed_column or "H_ANZPED"
+    both_raw = {"anzpedrad", joint_ebike_col} <= set(households.columns)
+    if (need_bikes or need_ebike) and both_raw:
+        # Joint draw even when only ONE of the two bicycle controls is active: a separate
+        # draw ignores the other, known component (e.g. a known zero bicycle count) and
+        # can pair an e-bike with zero bicycles (audit P3-F4, review of #606). Only the
+        # active control's column is kept on the seed (select_seed_columns); a legacy donor
+        # table gets the other one from carry_seed_household_counts' conditional draw.
+        households = attributes.map_household_bicycles_and_ebike(
+            households, ebike_col=joint_ebike_col, rng=kreis_seed_rng)
+        return households
+    if need_bikes or need_ebike:
+        # Fallback for a caller-built frame without one of the raw columns: separate
+        # resolution, observable because it can pair an e-bike with zero bicycles.
+        logging.getLogger(__name__).warning(
+            "[seed] bicycle/e-bike seed columns resolved SEPARATELY: the frame lacks %s, "
+            "so an e-bike can meet zero bicycles (ADR-0192).",
+            sorted({"anzpedrad", joint_ebike_col} - set(households.columns)))
+    if need_bikes:
         # Default bikes_col="anzpedrad" (bicycles INCLUDING pedelecs/e-bikes; MiD H12.3 /
         # SrV alle-Raeder construct); see attributes.map_number_of_bicycles.
         households = attributes.map_number_of_bicycles(households, rng=kreis_seed_rng)
-    if "has_ebike" in active_kreis_entry_names:
+    if need_ebike:
         households = attributes.map_has_ebike(
             households, ebike_col=ebike_seed_column, rng=kreis_seed_rng
         )
@@ -464,9 +501,10 @@ def _derive_employment_status_seed_column(
     the trip_class derivation above. The caller's rng guard ensures kreis_seed_rng is
     set. Uses the SAME attributes.map_employment_status as the post-expansion
     assembly.build_persons, so seed and expanded values agree deterministically for
-    the 99.87% of persons with a valid (non-9) P_BKAT; the code-9 imputed cases may
-    differ by an independent rng draw -- acceptable for a control (matches the
-    trip_class precedent, task 4b).
+    the persons with a valid (non-9) P_BKAT. When the popsim stage already resolved
+    the column once on the completed donor persons (``attributes.resolve_person_attributes``,
+    ADR-0192) it is used verbatim, so the code-9 imputed persons carry the same value on
+    every assembled clone; only direct callers and ``load_mid_seed`` derive it here.
 
     In ``project_completed_seed``: derive employment_status from the completed
     donor's P_BKAT (already loaded via MID_PERSON_ATTR_COLS -- see
@@ -480,7 +518,12 @@ def _derive_employment_status_seed_column(
     Mutates: nothing in place.
     """
     if "employment_status" in active_kreis_entry_names:
-        persons = attributes.map_employment_status(persons, rng=kreis_seed_rng)
+        if "employment_status" in persons.columns:
+            logging.getLogger(__name__).info(
+                "[popsim.mid.seed] employment_status taken from the donor persons "
+                "(resolved once, shared with the expansion, ADR-0192); not re-imputed.")
+        else:
+            persons = attributes.map_employment_status(persons, rng=kreis_seed_rng)
     return persons
 
 
@@ -510,15 +553,22 @@ def _derive_pt_ticket_group_seed_column(
     filler's group matches its inherited P_FKARTE and the imputation pool reflects only the
     kept seed persons), and from the completed donor's P_FKARTE in
     ``project_completed_seed``. Seed and expanded population agree deterministically for
-    every person with a valid P_FKARTE code; the imputed cases may differ by an independent
-    rng draw, which is acceptable for a control (the trip_class / employment_status
-    precedent).
+    every person with a valid P_FKARTE code. A ``pt_subscription_type`` the popsim stage
+    already resolved once on the completed donor persons
+    (``attributes.resolve_person_attributes``, ADR-0192) is used verbatim, so the imputed
+    persons carry the same category on every assembled clone; only direct callers and
+    ``load_mid_seed`` resolve it here.
 
     Returns: the persons frame with the derived column (MUST be reassigned).
     Mutates: nothing in place.
     """
     if active_kreis_entry_names & {"pt_ticket_group", "pt_ticket_group4"}:
-        persons = attributes.map_pt_subscription_type(persons, rng=kreis_seed_rng)
+        if "pt_subscription_type" in persons.columns:
+            logging.getLogger(__name__).info(
+                "[popsim.mid.seed] pt_subscription_type taken from the donor persons "
+                "(resolved once, shared with the expansion, ADR-0192); not re-imputed.")
+        else:
+            persons = attributes.map_pt_subscription_type(persons, rng=kreis_seed_rng)
         persons = attributes.map_pt_ticket_group(persons)
     return persons
 

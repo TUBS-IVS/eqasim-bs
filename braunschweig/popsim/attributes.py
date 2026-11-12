@@ -14,6 +14,7 @@ trip and participation classes, and the further ``map_*`` functions below.
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -197,6 +198,11 @@ PT_TICKET_GROUPS4: tuple[str, ...] = (
 # and as the default for persons whose code cannot be resolved. Adult
 # interview-mode / proxy coverage codes (202/206) are imputed, not forced here.
 PT_TICKET_NEVER = "never_pt"
+
+# P_FKARTE codes imputed from the valid pool in addition to the generic nonresponse codes
+# (202 PAPI interview mode, 206 adult proxy); single owner for map_pt_subscription_type and
+# scripts/count_mid_person_nonresponse.py.
+PT_SUBSCRIPTION_IMPUTE_CODES = (202, 206)
 
 
 def imputation_group_cols(
@@ -676,7 +682,7 @@ def map_pt_subscription_type(
         source_col=fkarte_col,
         value_map=FKARTE_TO_CATEGORY,
         structural={402: PT_TICKET_NEVER},   # Kind unter 14: deterministic under-14 floor
-        impute_codes=(202, 206),             # interview-mode / adult proxy coverage: impute
+        impute_codes=PT_SUBSCRIPTION_IMPUTE_CODES,             # interview-mode / adult proxy coverage: impute
         group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
         default=PT_TICKET_NEVER,
     )
@@ -879,6 +885,296 @@ def map_has_ebike(
     out = households.copy()
     counts, _ = missing.resolve(out, spec, rng=rng)
     out["has_ebike"] = (counts.astype(int) >= 1).astype(int)
+    return out
+
+
+HOUSEHOLD_COUNT_COLUMNS = ("number_of_cars", "number_of_bicycles", "has_ebike")
+
+
+def map_household_bicycles_and_ebike(
+    households: pd.DataFrame, *, bikes_col: str = "anzpedrad", ebike_col: str = "H_ANZPED",
+    rng, rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Add ``number_of_bicycles`` and ``has_ebike`` from ONE joint imputation (audit P3-F4).
+
+    ``anzpedrad`` (bicycles incl. pedelecs, = ``min(H_ANZRAD + H_ANZPED, 10)``) and
+    ``H_ANZPED`` (pedelecs) describe the same household. Imputing them independently
+    (:func:`map_number_of_bicycles` + :func:`map_has_ebike`) could yield an e-bike in a
+    household with zero bicycles. Here a household with a missing code in either column
+    takes the missing component(s) from ONE drawn, fully valid donor household of the same
+    imputation group, restricted to donors whose value equals the household's KNOWN
+    component (both missing: any valid donor of the group). Consequently
+    ``has_ebike == 1`` implies ``number_of_bicycles >= 1`` for imputed rows.
+
+    Fallback tiers, each counted and logged (no silent fallback): (1) same group and same
+    known value, (2) global pool with the same known value (counted as group fallback),
+    (3) no such donor at all: the missing component is derived from the known one
+    (e-bike count 0 / bicycles = pedelecs); counted as default. Valid rows pass through
+    unchanged; valid rows with more pedelecs than bicycles are logged as inconsistent and excluded from
+    the donor pools, so a drawn donor never yields an e-bike without a bicycle.
+
+    ``rng`` is REQUIRED (seeded; no hidden ``RandomState(0)`` default). Raises KeyError if
+    a source column is absent and ValueError on a code that is neither 0..10 nor a
+    nonresponse code.
+    """
+    for col in (bikes_col, ebike_col):
+        if col not in households.columns:
+            raise KeyError(
+                f"map_household_bicycles_and_ebike: source column {col!r} absent from the "
+                f"household frame (has {list(households.columns)}); no silent fallback.")
+    valid_codes = set(range(0, 11))
+    nonresponse = set(missing.NONRESPONSE_CODES) - valid_codes
+    b_src, p_src = households[bikes_col], households[ebike_col]
+    for name, src in ((bikes_col, b_src), (ebike_col, p_src)):
+        bad = src[~src.isin(valid_codes) & ~src.isin(nonresponse)]
+        if len(bad):
+            raise ValueError(
+                f"map_household_bicycles_and_ebike: {name} carries unenumerated codes "
+                f"{bad.value_counts().to_dict()} (neither 0..10 nor item nonresponse).")
+    b_ok, p_ok = b_src.isin(valid_codes).to_numpy(), p_src.isin(valid_codes).to_numpy()
+    b_arr = b_src.to_numpy()
+    p_arr = p_src.to_numpy()
+
+    gcols = list(imputation_group_cols(households, "hhgr_gr", rs7_conditioning=rs7_conditioning))
+    n = len(households)
+    keys = (list(households[gcols].itertuples(index=False, name=None)) if gcols else [()] * n)
+
+    # Pools of fully valid donor households, indexed by group and by the known component.
+    pool_all, pool_by_b, pool_by_p = {}, {}, {}
+    glob_all, glob_by_b, glob_by_p = [], {}, {}
+    both_ok = b_ok & p_ok
+    # Donor pools only take CONSISTENT rows (pedelecs <= bicycles incl. pedelecs): a donor
+    # with more pedelecs than bicycles would let a conditional draw yield has_ebike == 1
+    # with number_of_bicycles == 0. Excluded rows are counted and logged below.
+    consistent = both_ok & (p_arr.astype(float) <= b_arr.astype(float)) if n else both_ok
+    for i in np.flatnonzero(consistent):
+        b, p, k = int(b_arr[i]), int(p_arr[i]), keys[i]
+        pair = (b, p)
+        pool_all.setdefault(k, []).append(pair)
+        pool_by_b.setdefault((k, b), []).append(pair)
+        pool_by_p.setdefault((k, p), []).append(pair)
+        glob_all.append(pair)
+        glob_by_b.setdefault(b, []).append(pair)
+        glob_by_p.setdefault(p, []).append(pair)
+    n_inconsistent = int((both_ok & ~consistent).sum())
+
+    out_b = np.zeros(n, dtype=int)
+    out_p = np.zeros(n, dtype=int)
+    n_primary = n_b_imputed = n_p_imputed = n_both = n_group_fb = n_default = 0
+    for i in range(n):
+        if both_ok[i]:
+            out_b[i], out_p[i] = int(b_arr[i]), int(p_arr[i])
+            n_primary += 1
+            continue
+        k = keys[i]
+        if not b_ok[i] and not p_ok[i]:
+            n_both += 1
+            group, glob = pool_all.get(k), glob_all
+        elif not p_ok[i]:  # bicycles known, pedelecs missing
+            n_p_imputed += 1
+            b = int(b_arr[i])
+            group, glob = pool_by_b.get((k, b)), glob_by_b.get(b)
+        else:  # pedelecs known, bicycles missing
+            n_b_imputed += 1
+            p = int(p_arr[i])
+            group, glob = pool_by_p.get((k, p)), glob_by_p.get(p)
+        pool = group
+        if not pool:
+            n_group_fb += 1
+            pool = glob
+        if pool:
+            b, p = pool[rng.randint(len(pool))]
+        else:
+            n_default += 1
+            if b_ok[i]:
+                b, p = int(b_arr[i]), 0
+            elif p_ok[i]:
+                p = int(p_arr[i])
+                b = p
+            else:
+                b = p = 0
+        out_b[i], out_p[i] = b, p
+    out = households.copy()
+    out["number_of_bicycles"] = out_b
+    out["has_ebike"] = (out_p >= 1).astype(int)
+    n_imputed = n_b_imputed + n_p_imputed + n_both
+
+    def pct(x, d):
+        return 100.0 * x / d if d else 0.0
+
+    logger.info(
+        "[braunschweig.popsim.attributes] bicycles+e-bike joint resolution: primary %d/%d "
+        "(%.1f%%), imputed %d (%.1f%%; bicycles only %d, e-bike only %d, both %d); of the "
+        "imputed, fallback to the global pool %d (%.1f%%), no donor at all (derived default) "
+        "%d (%.1f%%); valid rows with more pedelecs than bicycles (excluded from the donor pools): %d",
+        n_primary, n, pct(n_primary, n), n_imputed, pct(n_imputed, n),
+        n_b_imputed, n_p_imputed, n_both, n_group_fb, pct(n_group_fb, n_imputed),
+        n_default, pct(n_default, n_imputed), n_inconsistent,
+    )
+    if n_inconsistent:
+        logger.warning(
+            "[braunschweig.popsim.attributes] %d valid households report more pedelecs than "
+            "bicycles; passed through unchanged but excluded from the imputation donor pools.",
+            n_inconsistent)
+    return out
+
+
+def resolve_household_counts(
+    households: pd.DataFrame, *, rng, bikes_col: str = "anzpedrad",
+    ebike_col: str = "H_ANZPED", cars_col: str = "H_ANZAUTO", rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Resolve ``number_of_cars``, ``number_of_bicycles`` and ``has_ebike`` ONCE (audit P3-F1).
+
+    Called by the popsim stage on the donor household table with the run's seeded rng;
+    the resulting columns are used verbatim by the PopulationSim seed derivation AND by
+    the assembly of the cloned households (both skip their own imputation when the
+    columns are present), so a donor carries the value it was balanced on.
+    """
+    out = map_number_of_cars(households, cars_col=cars_col, rng=rng,
+                             rs7_conditioning=rs7_conditioning)
+    return map_household_bicycles_and_ebike(
+        out, bikes_col=bikes_col, ebike_col=ebike_col, rng=rng,
+        rs7_conditioning=rs7_conditioning)
+
+
+PERSON_RESOLVED_COLUMNS = ("employment_status", "pt_subscription_type")
+
+
+def resolve_person_attributes(
+    persons: pd.DataFrame, *, rng, rs7_conditioning: bool = True,
+    households: Optional[pd.DataFrame] = None, household_id_col: str = "H_ID",
+    rs7_col: str = "RegioStaR7",
+) -> pd.DataFrame:
+    """Resolve ``employment_status`` and ``pt_subscription_type`` ONCE per donor person.
+
+    Called by the popsim stage on the completed donor persons with the run's seeded rng.
+    The seed derivations and ``assembly.map_mid_person_attributes`` reuse these columns
+    verbatim, so a clone carries the value its donor person was balanced on (ADR-0192).
+    ``has_pt_subscription`` is derived from the resolved type. Imputed codes (P_BKAT 9,
+    P_FKARTE 99 / 202 / 206) are drawn conditioned on the donor's survey RegioStaR7.
+
+    RegioStaR7 is a HOUSEHOLD column of MiD; the donor persons frame does not carry it.
+    With ``rs7_conditioning`` the donor household's value is therefore joined onto a
+    working copy (by ``household_id_col`` from ``households``) for the imputation pools
+    only; the returned frame does NOT gain the column, because downstream the persons'
+    RegioStaR7 is the PLACED home's (assembly's collision guard). Persons whose household
+    has no RegioStaR7 (or whose key does not match) get NaN; ``missing.resolve`` builds no
+    NaN-keyed pool, so their imputed codes come from the GLOBAL valid pool (all ages and
+    all regions), counted there as group fallback. Their number is logged as a WARNING.
+    In MiD every household carries RegioStaR7, so this is a guard, not an expected path.
+    If no RegioStaR7 is available at all, a WARNING says so.
+    """
+    work = persons
+    attached = False
+    if rs7_conditioning and rs7_col not in persons.columns:
+        if households is not None and rs7_col in households.columns:
+            rs7_by_household = households.drop_duplicates(household_id_col).set_index(
+                households.drop_duplicates(household_id_col)[household_id_col].astype(str)
+            )[rs7_col]
+            work = persons.copy()
+            work[rs7_col] = work[household_id_col].astype(str).map(rs7_by_household)
+            attached = True
+            n_missing = int(work[rs7_col].isna().sum())
+            log = logger.warning if n_missing else logger.info
+            log(
+                "[braunschweig.popsim.attributes] person resolution: donor household "
+                "RegioStaR7 attached to %d/%d persons (%.1f%%), missing for %d (their "
+                "imputed codes come from the global pool: all ages, all regions)",
+                len(work) - n_missing, len(work),
+                100.0 * (len(work) - n_missing) / len(work) if len(work) else 0.0, n_missing,
+            )
+        else:
+            logger.warning(
+                "[braunschweig.popsim.attributes] person resolution: no RegioStaR7 on the "
+                "persons or the donor households -- the imputation pools of employment_status "
+                "and pt_subscription_type are NOT conditioned on RegioStaR7."
+            )
+    out = map_employment_status(work, rng=rng, rs7_conditioning=rs7_conditioning)
+    out = map_pt_subscription_type(out, rng=rng, rs7_conditioning=rs7_conditioning)
+    out = map_has_pt_subscription(out)
+    if attached:
+        out = out.drop(columns=[rs7_col])
+    return out
+
+
+def carry_seed_household_counts(
+    donor_households: pd.DataFrame, seed_households: pd.DataFrame, *, id_col: str, rng,
+    ebike_col: str = "H_ANZPED",
+) -> pd.DataFrame:
+    """Copy the seed-resolved household count columns onto an independently loaded donor table.
+
+    Legacy path (``complete_members=False``): ``load_mid_seed`` resolves the count
+    columns on its own household frame while ``source.load_donor`` loads a separate donor
+    table, so the clones would not carry the value their donor was balanced on (audit
+    P3-F1). The seed columns are matched by ``id_col``; the match rate is logged.
+
+    Returns: a copy of ``donor_households`` carrying all of ``HOUSEHOLD_COUNT_COLUMNS``.
+    Donors absent from the seed (and columns the seed did not derive because their control
+    is inactive) are resolved with ``rng`` and counted as FALLBACK in the log. If the seed
+    carries none of the columns the table is returned unchanged: the assembly then resolves
+    all of them itself and logs it (the unchanged pre-fix behaviour; no control was
+    balanced on them).
+    Mutates: nothing in place; draws from ``rng`` only when a gap has to be filled.
+    """
+    carried = [c for c in HOUSEHOLD_COUNT_COLUMNS if c in seed_households.columns]
+    if not carried:
+        logger.info("[popsim.donor] seed carries no household count column; "
+                    "the assembly resolves them (no count control active).")
+        return donor_households
+    out = donor_households.copy()
+    key = out[id_col].astype(str)
+    seed_unique = seed_households.drop_duplicates(id_col)
+    seed_idx = seed_unique.set_index(seed_unique[id_col].astype(str))
+    in_seed = key.isin(seed_idx.index)
+    gaps = len(carried) < len(HOUSEHOLD_COUNT_COLUMNS)
+    n_from_seed = {c: 0 for c in HOUSEHOLD_COUNT_COLUMNS}
+    for col in carried:
+        out[col] = key.map(seed_idx[col])
+        n_from_seed[col] = int(out[col].notna().sum())
+        gaps = gaps or bool(out[col].isna().any())
+    n = len(out)
+    n_hit = int(in_seed.sum())
+    if gaps:
+        # When the seed carries only ONE of the two bicycle columns, the joint draw for the
+        # other is made CONDITIONAL on the carried value (it becomes the known component of
+        # map_household_bicycles_and_ebike), so an e-bike never meets zero bicycles. For a
+        # carried has_ebike=1 with a missing pedelec count, one pedelec stands in for ">= 1"
+        # (ASSUMPTION: the donor pool is then restricted to households with exactly one
+        # pedelec; legacy path only, used by no config).
+        work = donor_households.copy()
+        bikes_col = "anzpedrad"
+        if "number_of_bicycles" in carried and "has_ebike" not in carried:
+            known = out["number_of_bicycles"].notna()
+            work.loc[known, bikes_col] = out.loc[known, "number_of_bicycles"].astype(int)
+        elif "has_ebike" in carried and "number_of_bicycles" not in carried:
+            known = out["has_ebike"].notna()
+            pedelecs_missing = ~work[ebike_col].between(0, 10)
+            fill = known & pedelecs_missing
+            work.loc[fill, ebike_col] = (out.loc[fill, "has_ebike"] >= 1).astype(int)
+        fallback = resolve_household_counts(work, rng=rng, ebike_col=ebike_col)
+        for col in HOUSEHOLD_COUNT_COLUMNS:
+            if col not in out.columns:
+                out[col] = fallback[col]
+            else:
+                out[col] = out[col].where(out[col].notna(), fallback[col])
+            out[col] = out[col].astype(fallback[col].dtype)
+    logger.info(
+        "[popsim.donor] household counts carried from the seed for %d/%d donors (%.1f%%), "
+        "fallback (resolved with the assembly rng) for %d (%.1f%%); columns from the seed: %s.",
+        n_hit, n, 100.0 * n_hit / max(n, 1), n - n_hit, 100.0 * (n - n_hit) / max(n, 1), carried)
+    for col in HOUSEHOLD_COUNT_COLUMNS:
+        logger.info(
+            "[popsim.donor] household count %s: from the seed %d/%d (%.1f%%), fallback %d (%.1f%%)"
+            "%s.", col, n_from_seed[col], n, 100.0 * n_from_seed[col] / max(n, 1),
+            n - n_from_seed[col], 100.0 * (n - n_from_seed[col]) / max(n, 1),
+            "" if col in carried else " (column absent from the seed: 100% fallback)")
+    # Guard: the conditional fallback above should make this impossible; counted, not hidden.
+    n_ebike_without_bicycle = int(((out["has_ebike"] == 1) & (out["number_of_bicycles"] == 0)).sum())
+    if n_ebike_without_bicycle:
+        logger.warning(
+            "[popsim.donor] %d/%d donors carry has_ebike=1 with number_of_bicycles=0 after the "
+            "seed carry-over (ADR-0192, legacy path): the conditional fallback did not hold.",
+            n_ebike_without_bicycle, n)
     return out
 
 
