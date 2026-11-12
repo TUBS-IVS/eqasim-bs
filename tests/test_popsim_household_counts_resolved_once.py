@@ -207,18 +207,23 @@ def test_legacy_donor_table_carries_seed_resolved_counts(caplog):
 
 
 @pytest.mark.parametrize("only", ["has_ebike", "number_of_bicycles"])
-def test_legacy_carry_with_one_bicycle_control_stays_consistent(only):
-    """Only one bicycle control active: the other column is drawn conditional on it."""
+def test_legacy_carry_with_one_bicycle_control_stays_consistent(only, tmp_path):
+    """Only one bicycle control active, through the legacy loader ``load_mid_seed`` (which
+    reads only the columns the active controls need): no crash, and the donor table's
+    other column is drawn conditional on the carried one (review of #606)."""
     donors = _donor_households(200)
     cols = sources.get_source("mid").seed_columns()
-    persons = pd.DataFrame({
-        cols.person_household_id: donors[cols.household_id], cols.person_id: 1,
-        cols.person_weight: 1.0, cols.age: 40, cols.sex: 1, "anzwege1": 2, "alter_gr1": 5,
-    })
-    seed_hh, _ = mid.project_completed_seed(
-        donors, persons, cols, kreis_control_entries=[_entry(only)],
+    donors.to_csv(tmp_path / "MiD2023_Haushalte.csv", sep=";", index=False)
+    pd.DataFrame({
+        "P_ID": range(len(donors)), "H_ID": donors[cols.household_id], "P_GEW": 1.0,
+        "HP_ALTER": 40, "HP_SEX": 1, "kernwo": 1, "alter_gr1": 5, "anzwege1": 2,
+    }).to_csv(tmp_path / "MiD2023_Personen.csv", sep=";", index=False)
+    # The stage always passes its configured e-bike column, also when has_ebike is off.
+    seed_hh, _seed_p, _rep = mid.load_mid_seed(
+        tmp_path, day_filter_values=(), kreis_control_entries=[_entry(only)],
         kreis_seed_rng=np.random.RandomState(99), ebike_seed_column="H_ANZPED",
     )
+    assert only in seed_hh.columns
     for seed in range(5):
         out = attributes.carry_seed_household_counts(
             donors, seed_hh, id_col=cols.household_id, rng=np.random.RandomState(seed))

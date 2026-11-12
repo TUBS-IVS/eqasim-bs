@@ -151,19 +151,20 @@ def _read_seed_households(
         household_cols.append("hhgr_gr")
     if "number_of_cars" in active_kreis_entry_names:
         household_cols.append("H_ANZAUTO")
-    if "number_of_bicycles" in active_kreis_entry_names:
+    if "has_ebike" in active_kreis_entry_names and not ebike_seed_column:
+        raise ValueError(
+            "load_mid_seed: has_ebike kreis control is active but ebike_seed_column is "
+            "not configured; set braunschweig.population.popsim.ebike_seed_column to the "
+            "verified MiD household e-bike column (no silent fallback)."
+        )
+    if active_kreis_entry_names & {"number_of_bicycles", "has_ebike"}:
+        # Either bicycle control needs BOTH raw columns: bicycles and e-bike are drawn
+        # jointly (ADR-0192), conditioned on whichever component is known.
         # anzpedrad = bicycles INCLUDING pedelecs/e-bikes (MiD H12.3 / SrV alle-Raeder
         # construct; verified 2026-07-08 to equal min(H_ANZRAD + H_ANZPED, 10) on all
         # 218,039 valid MiD B1 household rows). See attributes.map_number_of_bicycles.
         household_cols.append("anzpedrad")
-    if "has_ebike" in active_kreis_entry_names:
-        if not ebike_seed_column:
-            raise ValueError(
-                "load_mid_seed: has_ebike kreis control is active but ebike_seed_column is "
-                "not configured; set braunschweig.population.popsim.ebike_seed_column to the "
-                "verified MiD household e-bike column (no silent fallback)."
-            )
-        household_cols.append(ebike_seed_column)
+        household_cols.append(ebike_seed_column or "H_ANZPED")
     households = pd.read_csv(
         households_path,
         usecols=list(dict.fromkeys(household_cols)),
@@ -374,21 +375,31 @@ def _derive_count_style_kreis_columns(
         and "number_of_bicycles" not in households.columns)
     need_ebike = "has_ebike" in active_kreis_entry_names and "has_ebike" not in households.columns
     # The pedelec column the joint draw conditions on: the configured e-bike seed column,
-    # else the MiD default H_ANZPED when the frame carries it.
-    joint_ebike_col = ebike_seed_column or (
-        "H_ANZPED" if "H_ANZPED" in households.columns else None)
-    if (need_bikes or need_ebike) and joint_ebike_col is not None:
+    # else the MiD default H_ANZPED. Both seed loaders read it together with anzpedrad
+    # whenever either bicycle control is active (_read_seed_households).
+    joint_ebike_col = ebike_seed_column or "H_ANZPED"
+    both_raw = {"anzpedrad", joint_ebike_col} <= set(households.columns)
+    if (need_bikes or need_ebike) and both_raw:
         # Joint draw even when only ONE of the two bicycle controls is active: a separate
         # draw ignores the other, known component (e.g. a known zero bicycle count) and
-        # can pair an e-bike with zero bicycles (audit P3-F4, review of #606). Both
-        # columns are then written, so a legacy donor table carries the same pair.
+        # can pair an e-bike with zero bicycles (audit P3-F4, review of #606). Only the
+        # active control's column is kept on the seed (select_seed_columns); a legacy donor
+        # table gets the other one from carry_seed_household_counts' conditional draw.
         households = attributes.map_household_bicycles_and_ebike(
             households, ebike_col=joint_ebike_col, rng=kreis_seed_rng)
-    elif need_bikes:
+        return households
+    if need_bikes or need_ebike:
+        # Fallback for a caller-built frame without one of the raw columns: separate
+        # resolution, observable because it can pair an e-bike with zero bicycles.
+        logging.getLogger(__name__).warning(
+            "[seed] bicycle/e-bike seed columns resolved SEPARATELY: the frame lacks %s, "
+            "so an e-bike can meet zero bicycles (ADR-0192).",
+            sorted({"anzpedrad", joint_ebike_col} - set(households.columns)))
+    if need_bikes:
         # Default bikes_col="anzpedrad" (bicycles INCLUDING pedelecs/e-bikes; MiD H12.3 /
         # SrV alle-Raeder construct); see attributes.map_number_of_bicycles.
         households = attributes.map_number_of_bicycles(households, rng=kreis_seed_rng)
-    elif need_ebike:
+    if need_ebike:
         households = attributes.map_has_ebike(
             households, ebike_col=ebike_seed_column, rng=kreis_seed_rng
         )
