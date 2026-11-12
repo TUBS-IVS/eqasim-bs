@@ -32,6 +32,7 @@ critical_paths:
   - "configs/**"
   - "scripts/run_tests.py"
   - "scripts/run_synpp.py"
+  - "environment.yml"
   - ".github/workflows/**"
   - ".github/claude-review.yml"
   - ".github/claude-review-prompt.md"

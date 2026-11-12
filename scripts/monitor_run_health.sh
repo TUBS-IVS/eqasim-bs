@@ -13,21 +13,34 @@
 #   - run / process death                                  -> tmux, last_log
 #
 # Usage: monitor_run_health.sh [LOG] [WORKDIR] [TMUX_SESSION]
-#   LOG     default: newest ~/eqasim-bs/logs/run_*.log
-#   WORKDIR default: ~/eqasim-bs/eqasim-data/popsim_work_allfeat (PopulationSim batches)
-#   SESSION default: bs25
+#   LOG     default: newest ~/eqasim-bs/logs/run_*.log. Isolated runs (scripts/isolated_run.py)
+#           log to RUN_DIR/logs/ instead: pass that log explicitly.
+#   WORKDIR directory searched for PopulationSim batch folders (batch_*). Default: empty =
+#           the batch line is skipped. Pass the run's synpp working_directory (for an isolated
+#           run RUN_DIR/cache; for a direct run the overlay's working_directory, e.g.
+#           eqasim-data/cache_bs_100pct_allfeat_popsim).
+#   SESSION tmux session name. Default: empty = the tmux check is skipped. isolated_run.py
+#           launches detached with setsid nohup, not in tmux.
 #
 # Read-only: it never kills, deletes, or restarts anything -- the caller decides.
 
 LOG="${1:-$(ls -t "$HOME"/eqasim-bs/logs/run_*.log 2>/dev/null | head -1)}"
-WORKDIR="${2:-$HOME/eqasim-bs/eqasim-data/popsim_work_allfeat}"
-SESS="${3:-bs25}"
+WORKDIR="${2:-}"
+SESS="${3:-}"
 
 echo "=== health @ $(date "+%F %T") ==="
 echo "log: $LOG"
-echo "tmux($SESS): $(tmux ls 2>/dev/null | grep -q "^$SESS:" && echo UP || echo DOWN)"
+if [ -n "$SESS" ]; then
+  echo "tmux($SESS): $(tmux ls 2>/dev/null | grep -q "^$SESS:" && echo UP || echo DOWN)"
+fi
 echo "stage: $(grep -aE "Executing stage|Pipeline progress" "$LOG" 2>/dev/null | tail -1 | sed "s/.*synpp[^E]*//")"
-echo "markers: $(find "$WORKDIR" -name final_expanded_household_ids.csv 2>/dev/null | wc -l)/33"
+if [ -n "$WORKDIR" ]; then
+  # No hard-coded batch total: it depends on the run. The denominator is the number of
+  # batch folders found, so it only covers batches whose folder already exists.
+  done_batches=$(find "$WORKDIR" -name final_expanded_household_ids.csv 2>/dev/null | wc -l)
+  found_batches=$(find "$WORKDIR" -type d -name "batch_*" 2>/dev/null | wc -l)
+  echo "markers: $done_batches done, $found_batches batch folders found under $WORKDIR"
+fi
 echo "popsim_procs: $(ps -eo comm | grep -c populationsim)"
 echo "segfaults_total: $(dmesg 2>/dev/null | grep -c "populationsim.*segfault")"
 echo "disk_avail: $(df -h "$HOME" | awk "NR==2{print \$4\" (\"\$5\" used)\"}")"

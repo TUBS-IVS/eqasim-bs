@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import types
 
 import pytest
 
@@ -30,6 +31,25 @@ def _load():
 
 
 _LOCAL_ONLY_INPUT = "eqasim-data/data/braunschweig/x.csv"
+
+
+def test_fixture_failing_in_setup_is_recorded_as_failed_with_its_probes():
+    # A fixture that raises because an input is absent fails in SETUP; no call phase runs.
+    # That is the false-RED class the audit exists for, so it must not be dropped.
+    audit = _load()
+    node_id = "tests/test_x.py::test_fixture_reads_absent_input"
+    item = types.SimpleNamespace(nodeid=node_id)
+
+    audit.pytest_runtest_setup(item)
+    audit._note_absent("eqasim-data/data/_absent_for_audit_test/x.csv")
+    audit.pytest_runtest_logreport(types.SimpleNamespace(
+        nodeid=node_id, when="setup", outcome="failed", failed=True, skipped=False))
+    audit.pytest_runtest_teardown(item, None)
+    audit.pytest_runtest_logreport(types.SimpleNamespace(
+        nodeid=node_id, when="teardown", outcome="passed", failed=False, skipped=False))
+
+    assert audit._records[node_id] == (
+        "failed", ["eqasim-data/data/_absent_for_audit_test/x.csv"])
 
 
 @pytest.mark.parametrize("outcome, test_id, probes, expected_class", [
