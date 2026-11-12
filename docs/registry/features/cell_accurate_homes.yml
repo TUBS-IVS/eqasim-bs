@@ -25,6 +25,9 @@ evidence:
   tests:
   - tests/test_home_cell.py
   - tests/test_home_cell_legacy_cap.py
+  - tests/test_home_cell_typed.py
+  - tests/test_home_cell_thinning.py
+  - tests/test_building_typing_golden.py
   off_path_byte_identical:
     claimed: not_applicable
     note: |
@@ -34,6 +37,8 @@ evidence:
     log_marker: '[home_cell] %d households: %d placed in their 100m cell'
     note: |
       Logs placed-in-own-cell vs. commune-fallback (no building in cell) vs. unplaced (no building at all) rates, escalating to a warning when either fallback occurs.
+      The typed path (home_cell.assign_homes_typed) counts its census-signal fallbacks per household in the TypedHomeReport fallback fields (log marker '[home_typed] census-signal fallback households') and warns above home_cell.FALLBACK_WARN_RATE.
+      The typed path also thins its slots per building type to the sampled households when the config key sampling_rate is below 1 (home_cell._thin_slots_by_type; log marker '[home_typed] slot thinning at sampling_rate'); the type routing uses the full-population household-type mix per cell read from data.census.filtered (home_cell.full_households_per_cell_type), with the sampled mix as a counted fallback (log marker '[home_typed] slot thinning type routing').
   reference:
     kind: none
     note: |

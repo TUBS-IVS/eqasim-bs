@@ -1,5 +1,6 @@
 """Type and capacitate a cell's ALKIS footprints, census-calibrated."""
 from __future__ import annotations
+from dataclasses import dataclass
 import numpy as np, pandas as pd
 from braunschweig.synthesis.locations.cell_building_signals import THREE_CLASSES
 
@@ -64,31 +65,78 @@ def _expand_sizes(size_hist):
     return sizes
 
 
-def build_slots(typed, whg_by_type, occupied, size_hist, rng):
-    rows = []
-    # target occupied dwellings per type = dwelling-mix share * occupied total
-    tot_whg = sum(max(0.0, float(whg_by_type.get(c, 0.0))) for c in ("efh_zfh", "mfh", "sonst"))
+SLOT_CLASSES = ("efh_zfh", "mfh", "sonst")
+
+
+@dataclass(frozen=True)
+class SlotApportionment:
+    """Per-class slot counts of one cell plus the fallback flags that explain them.
+
+    ``reapportioned``: the census reports dwellings for a class that has NO typed
+    footprint in the cell, so that class's share was redistributed over the classes
+    that do have footprints (dwelling shares renormalised, or footprint-count shares
+    when none of the available classes carries dwelling weight).
+    ``dwellings_zero``: all three census dwelling counts are zero, so the shares come
+    from the typed footprint counts.
+    """
+
+    total: int
+    type_slots: tuple
+    reapportioned: bool
+    dwellings_zero: bool
+
+
+def slot_apportionment(typed, whg_by_type, occupied) -> SlotApportionment:
+    """Hamilton (largest-remainder) split of the cell's slot total over its typed classes.
+
+    The total ``T = round(occupied)`` (the dwelling total when ``occupied`` is not
+    positive) is apportioned ONLY over classes that have at least one typed footprint:
+    a class without a footprint cannot host a slot, and skipping it afterwards used to
+    drop its share of ``T`` (the surplus households became over-capacity in one
+    building). Shares are the census dwelling shares renormalised over those classes;
+    if they carry no dwelling weight, the typed footprint-count shares are used.
+    ``sum(type_slots) == T`` whenever at least one class has a footprint.
+    """
+    btypes = typed["btype"].to_numpy(dtype=object)
+    counts = [int((btypes == c).sum()) for c in SLOT_CLASSES]
+    whg = [max(0.0, float(whg_by_type.get(c, 0.0))) for c in SLOT_CLASSES]
+    tot_whg = sum(whg)
     occ = float(occupied) if occupied and occupied > 0 else tot_whg
-    # --- Hamilton (largest-remainder) apportionment ---
-    # guarantees sum(n_i) == T = round(occ) regardless of share fractions
-    CLASSES = ("efh_zfh", "mfh", "sonst")
-    T = int(round(occ))
-    if tot_whg > 0:
-        shares = [max(0.0, float(whg_by_type.get(c, 0.0))) / tot_whg for c in CLASSES]
-    elif len(typed) > 0:
-        shares = [(typed["btype"] == c).sum() / len(typed) for c in CLASSES]
-    else:
-        shares = [0.0] * len(CLASSES)
-    exacts = [occ * s for s in shares]
+    total = int(round(occ))
+    available = [i for i, n in enumerate(counts) if n > 0]
+    reapportioned = any(whg[i] > 0 and counts[i] == 0 for i in range(len(SLOT_CLASSES)))
+    shares = [0.0] * len(SLOT_CLASSES)
+    avail_whg = sum(whg[i] for i in available)
+    if avail_whg > 0:
+        for i in available:
+            shares[i] = whg[i] / avail_whg
+    elif available:
+        n_typed = sum(counts)
+        for i in available:
+            shares[i] = counts[i] / n_typed
+    exacts = [occ * sh for sh in shares]
     floors = [int(e) for e in exacts]
     remainders = [e - f for e, f in zip(exacts, floors)]
-    leftover = T - sum(floors)
-    # distribute leftover to types with largest fractional remainders
-    order_rem = sorted(range(len(CLASSES)), key=lambda i: remainders[i], reverse=True)
     ns = list(floors)
-    for i in range(leftover):
-        ns[order_rem[i % len(order_rem)]] += 1
-    type_n = {cls: ns[idx] for idx, cls in enumerate(CLASSES)}
+    if available:
+        order_rem = sorted(available, key=lambda i: remainders[i], reverse=True)
+        for k in range(total - sum(floors)):
+            ns[order_rem[k % len(order_rem)]] += 1
+    return SlotApportionment(total=total, type_slots=tuple(ns), reapportioned=reapportioned,
+                             dwellings_zero=tot_whg <= 0)
+
+
+def build_slots(typed, whg_by_type, occupied, size_hist, rng, apportionment=None):
+    """Capacitated dwelling slots of one cell.
+
+    ``apportionment`` is the cell's :func:`slot_apportionment`; pass it when the caller
+    already computed it (same ``typed``/``whg_by_type``/``occupied``), else it is computed here.
+    """
+    rows = []
+    CLASSES = SLOT_CLASSES
+    if apportionment is None:
+        apportionment = slot_apportionment(typed, whg_by_type, occupied)
+    type_n = dict(zip(CLASSES, apportionment.type_slots))
     for cls in CLASSES:
         n = type_n[cls]
         b = typed[typed["btype"] == cls]
@@ -124,32 +172,18 @@ def build_slots(typed, whg_by_type, occupied, size_hist, rng):
     return slots[["slot_id", "building_id", "btype", "size"]]
 
 
-def build_slots_arrays(typed, whg_by_type, occupied, size_hist, rng):
+def build_slots_arrays(typed, whg_by_type, occupied, size_hist, rng, apportionment=None):
     """Array-backed equivalent of :func:`build_slots` for the default-ON path.
 
-    It preserves the three-class Hamilton allocation and slot order exactly while
+    It preserves the three-class Hamilton allocation (:func:`slot_apportionment`) and slot order exactly while
     avoiding a DataFrame filter and sort for every building class.
     """
-    classes = ("efh_zfh", "mfh", "sonst")
-    total_dwellings = sum(max(0.0, float(whg_by_type.get(kind, 0.0))) for kind in classes)
-    occupied_dwellings = float(occupied) if occupied and occupied > 0 else total_dwellings
-    total_slots = int(round(occupied_dwellings))
+    classes = SLOT_CLASSES
+    if apportionment is None:
+        apportionment = slot_apportionment(typed, whg_by_type, occupied)
+    type_slots = apportionment.type_slots
     building_types = typed["btype"].to_numpy(dtype=object)
     positions_by_type = {kind: np.flatnonzero(building_types == kind) for kind in classes}
-    if total_dwellings > 0:
-        shares = [max(0.0, float(whg_by_type.get(kind, 0.0))) / total_dwellings for kind in classes]
-    elif len(typed) > 0:
-        shares = [len(positions_by_type[kind]) / len(typed) for kind in classes]
-    else:
-        shares = [0.0] * len(classes)
-    exacts = [occupied_dwellings * share for share in shares]
-    floors = [int(exact) for exact in exacts]
-    remainders = [exact - floor for exact, floor in zip(exacts, floors)]
-    leftover = total_slots - sum(floors)
-    remainder_order = sorted(range(len(classes)), key=lambda index: remainders[index], reverse=True)
-    type_slots = list(floors)
-    for index in range(leftover):
-        type_slots[remainder_order[index % len(remainder_order)]] += 1
 
     building_ids = typed["building_id"].to_numpy()
     areas = typed["area_m2"].to_numpy()
