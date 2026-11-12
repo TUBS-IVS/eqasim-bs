@@ -145,3 +145,42 @@ def test_landkreis_aggregate_rows_are_excluded_not_counted_as_lost(
     assert out_df["weight"].sum() == 1500
     assert "0 AGS unmatched" in out
     assert "WARNING" not in out
+
+
+def test_unexplained_non_numeric_weight_cells_are_reported(tmp_path, monkeypatch, capsys):
+    # Audit D (P9-F6): a stray text cell in all_total used to become a silent 0.
+    # "." is a documented GENESIS marker and stays silent; "N/A" is counted.
+    raw = _employees_raw_frame([
+        ["03101000", "Braunschweig", 1000, 600, 400, 50, 30, 20],
+        ["03102000", "Wolfsburg", "N/A", 500, 300, 40, 20, 20],
+        ["03103000", "Suppressed", ".", 5, 5, 0, 0, 0],
+        ["03104000", "Other", 400, 200, 200, 0, 0, 0],
+    ])
+    monkeypatch.setattr(employees.pd, "read_excel", lambda *a, **k: raw)
+    (tmp_path / "employees.xlsx").touch()
+    df_codes = _codes_frame(["03101000", "03102000", "03103000", "03104000"])
+    ctx = _FakeContext(
+        {"data_path": str(tmp_path), "braunschweig.employees_path": "employees.xlsx"},
+        {"eqasim_common.spatial.codes": df_codes},
+    )
+    out_df = employees.execute(ctx)
+    out = capsys.readouterr().out
+    assert "1/4" in out and "all_total" in out and "WARNING" in out
+    assert out_df["weight"].sum() == 1400  # returned table unchanged: N/A -> 0
+
+
+def test_all_zero_input_raises_instead_of_passing(tmp_path, monkeypatch):
+    # Audit D (P9-F6): weight_before == 0 used to give lost_fraction 0.0 and
+    # return an all-zero attraction vector.
+    raw = _employees_raw_frame([
+        ["03101000", "Braunschweig", 0, 0, 0, 0, 0, 0],
+        ["03102000", "Wolfsburg", "-", 0, 0, 0, 0, 0],
+    ])
+    monkeypatch.setattr(employees.pd, "read_excel", lambda *a, **k: raw)
+    (tmp_path / "employees.xlsx").touch()
+    ctx = _FakeContext(
+        {"data_path": str(tmp_path), "braunschweig.employees_path": "employees.xlsx"},
+        {"eqasim_common.spatial.codes": _codes_frame(["03101000", "03102000"])},
+    )
+    with pytest.raises(RuntimeError, match="zero total"):
+        employees.execute(ctx)
