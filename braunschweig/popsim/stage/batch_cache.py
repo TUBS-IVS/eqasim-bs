@@ -14,6 +14,10 @@
 
 Extracted verbatim from the stage module (``__init__``); see the package
 docstring for the stage-level context.
+
+The work-dir signature is a coarse purge of the whole work dir; whether one batch's
+existing output may be reused is decided per batch, from the files the batch reads,
+by ``braunschweig.popsim.batch.reconcile_batch_outputs``.
 """
 
 import hashlib
@@ -47,6 +51,10 @@ def purge_stale_batches_on_config_change(work_dir, signature: str) -> int:
     MATCH (same config -- e.g. a resumed interrupted run) the folders are kept, so the
     skip-completed-batches resume optimisation still works. Returns the number of
     batch folders purged.
+
+    This is a coarse purge of the whole work dir; the per-batch decision whether a
+    kept folder's output still matches its inputs is taken afterwards by
+    ``braunschweig.popsim.batch.reconcile_batch_outputs``.
     """
     work_dir = Path(work_dir)
     sig_path = work_dir / WORK_DIR_SIGNATURE_FILE

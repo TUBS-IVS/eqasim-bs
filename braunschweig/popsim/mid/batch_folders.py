@@ -13,6 +13,8 @@ below.
                                            feasibility across a run's batch logs
 - ``_run_batches_and_merge``            -- run every batch, merge, and fail loudly
                                            on any missing batch output
+- ``_reconcile_run_batch_folders``      -- discard batch output whose inputs changed
+                                           and remove batch folders not in this run
 - ``assemble_batch_folder``             -- write one PopulationSim run folder
                                            (with optional Tier-3 KREIS controls)
 - ``cell_groups``                       -- map each 1 km parent to its 100 m children
@@ -63,6 +65,8 @@ unchanged (verbatim-move constraint).
 from __future__ import annotations
 
 import logging
+import shutil
+from collections import Counter
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence, Union
 
@@ -178,6 +182,53 @@ def _run_batches_and_merge(
         n_total - n_missing, n_total, n_missing, 100.0 * rate,
     )
     return report
+
+
+def _reconcile_run_batch_folders(
+    work_dir: Path, batch_inputs: Mapping[str, Mapping[str, Path]]
+) -> None:
+    """Leave in ``work_dir`` only batch output built from this run's batch inputs.
+
+    The work dir persists across runs outside the synpp stage cache, and the batch
+    runner skips a folder whose completion marker exists. Called once per run after
+    ALL batch folders were assembled (so an assembly error leaves every record and
+    every output untouched) and before ``_run_batches_and_merge``:
+
+    1. ``batch.reconcile_batch_outputs`` for every folder of this run
+       (``batch_inputs`` maps the folder to the file mapping
+       ``assemble_batch_folder`` returned), so output built from other inputs is
+       discarded;
+    2. every ``batch_*`` directory directly under ``work_dir`` that is not a folder
+       of this run (left by an earlier, larger partition) is removed: its output is
+       not merged, but ``summarize_integerizer_feasibility`` would still read its log;
+    3. one log line with the four reconcile counts and the removed-folder count,
+       at WARNING when any output was discarded or any folder removed.
+
+    With no batch folder at all it does nothing, so ``_run_batches_and_merge``
+    raises its "batch run incomplete" error before anything is deleted.
+    """
+    if not batch_inputs:
+        return
+    counts = Counter(
+        batch.reconcile_batch_outputs(folder, input_paths)
+        for folder, input_paths in batch_inputs.items()
+    )
+    run_folders = {Path(folder) for folder in batch_inputs}
+    n_removed = 0
+    for path in sorted(Path(work_dir).glob("batch_*")):
+        if path.is_dir() and path not in run_folders:
+            shutil.rmtree(path)
+            n_removed += 1
+    n_discarded = counts[batch.INPUTS_CHANGED] + counts[batch.INPUTS_UNRECORDED]
+    log = logger.warning if (n_discarded or n_removed) else logger.info
+    log(
+        "[popsim.mid] batch output reuse by input fingerprint over %d batch(es): "
+        "%d unchanged (output kept), %d changed and %d unrecorded (output discarded, "
+        "batch re-runs), %d new; removed %d batch folder(s) not part of this run "
+        "under %s.",
+        len(batch_inputs), counts[batch.INPUTS_UNCHANGED], counts[batch.INPUTS_CHANGED],
+        counts[batch.INPUTS_UNRECORDED], counts[batch.INPUTS_NEW], n_removed, work_dir,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -339,7 +390,9 @@ def run_popsim_mid(
     seed_persons:
         Donor person frame.
     work_dir:
-        Directory for batch folders.
+        Directory for batch folders. It persists across runs: existing batch output
+        is reused only for the inputs it was built from, and ``batch_*`` folders
+        that are not part of this run are removed (``_reconcile_run_batch_folders``).
     settings_yaml / logging_yaml:
         PopulationSim configuration files as strings.
     max_cells:
@@ -410,10 +463,11 @@ def run_popsim_mid(
         # Default OFF path: unchanged behaviour (byte-identical to pre-4B).
         partitions = batch.partition_by_1km(groups, max_cells)
         batch_folders: list[str] = []
+        batch_inputs: dict[str, dict[str, Path]] = {}
         for index, km_cells in enumerate(partitions):
             subset = cells[cells["ZENSUS1km"].isin(km_cells)].copy()
             folder = work_dir / f"batch_{index:03d}"
-            assemble_batch_folder(
+            batch_inputs[str(folder)] = assemble_batch_folder(
                 folder, subset, base_cols, controls_df,
                 seed_households, seed_persons,
                 settings_yaml=settings_yaml, logging_yaml=logging_yaml,
@@ -424,6 +478,7 @@ def run_popsim_mid(
             )
             batch_folders.append(str(folder))
 
+        _reconcile_run_batch_folders(work_dir, batch_inputs)
         return _run_batches_and_merge(
             batch_folders, run_one, num_workers=num_workers
         )
@@ -457,6 +512,7 @@ def run_popsim_mid(
 
     # (3) Partition WITHIN each stratum + filter seed per batch.
     batch_folders_stratified: list[str] = []
+    batch_inputs_stratified: dict[str, dict[str, Path]] = {}
     global_batch_index = 0
     for stratum, km_ids in sorted(stratum_to_km_ids.items(), key=lambda x: str(x[0])):
         # Build the per-stratum cell_groups (only 1km parents in this stratum).
@@ -475,7 +531,7 @@ def run_popsim_mid(
         for km_cells in partitions_s:
             subset = cells[cells["ZENSUS1km"].isin(km_cells)].copy()
             folder = work_dir / f"batch_{global_batch_index:03d}"
-            assemble_batch_folder(
+            batch_inputs_stratified[str(folder)] = assemble_batch_folder(
                 folder, subset, base_cols, controls_df,
                 hh_stratum, p_stratum,
                 settings_yaml=settings_yaml, logging_yaml=logging_yaml,
@@ -487,6 +543,7 @@ def run_popsim_mid(
             batch_folders_stratified.append(str(folder))
             global_batch_index += 1
 
+    _reconcile_run_batch_folders(work_dir, batch_inputs_stratified)
     return _run_batches_and_merge(
         batch_folders_stratified, run_one, num_workers=num_workers
     )
