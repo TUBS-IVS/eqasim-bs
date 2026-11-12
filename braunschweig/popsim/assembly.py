@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim import attributes
+from braunschweig.popsim.fallback_rates import log_fallback_rate
 from braunschweig.popsim import passenger_availability
 from braunschweig.popsim import expand
 from braunschweig.popsim import income as _income_module
@@ -513,15 +514,23 @@ def _attach_donor_household_attrs(
     unmatched = persons["number_of_cars"].isna()
     n_unmatched = int(unmatched.sum())
     n_total = len(persons)
+    # Primary = donor household found; fallback = unmatched person, count attributes zero-filled.
+    log_fallback_rate(
+        logger,
+        "popsim.assembly.donor_hh_attrs",
+        n_unmatched,
+        n_total,
+        what=(
+            f"persons reference a {donor_col} absent from the donor household frame -> "
+            f"count attributes zero-filled; a non-zero rate means the expansion and the "
+            f"donor pool diverged (key mismatch)"
+        ),
+    )
     if n_unmatched:
         sample = sorted(persons.loc[unmatched, donor_col].astype(str).unique())[:5]
-        print(
-            f"[popsim.assembly] WARNING: donor household attrs: "
-            f"{n_unmatched}/{n_total} persons "
-            f"({100.0 * n_unmatched / n_total:.2f}%) reference a {donor_col} "
-            f"absent from the donor household frame -> count attributes "
-            f"zero-filled. Example ids: {sample}. A non-zero rate means the "
-            f"expansion and the donor pool diverged (key mismatch)."
+        logger.warning(
+            "[popsim.assembly] donor household attrs: example unmatched %s ids: %s",
+            donor_col, sample,
         )
     persons["number_of_cars"] = persons["number_of_cars"].fillna(0).astype(int)
     persons["number_of_bicycles"] = persons["number_of_bicycles"].fillna(0).astype(int)
