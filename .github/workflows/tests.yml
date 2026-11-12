@@ -59,13 +59,29 @@ jobs:
         run: >
           echo "::notice::Regression inputs ${{ steps.key.outputs.key }} already passed on ${{ runner.os }};
           only docs/generated/ or docs/decisions/ differ (ADR-0165). The suite is not re-run."
+      # The installed environment is a pure function of the lock files of this platform, so it is cached
+      # under their hash (plus the Miniforge version above, whose install path the environment embeds).
+      # A hit skips the download and install of every package; the two verification steps below still run
+      # against the restored environment. actions/cache stores a new entry only when the whole job passed,
+      # so a broken environment is never cached. Bump "v1" to discard all cached environments.
+      - name: Restore the locked environment
+        id: envcache
+        if: steps.green.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONDA }}/envs/eqasim
+          key: >-
+            eqasim-env-v1-${{ runner.os }}-miniforge-26.7.2-1-${{
+            runner.os == 'Linux'
+            && hashFiles('environments/server-linux-64.lock', 'environments/requirements-server-linux-64.txt')
+            || hashFiles('environments/conda-lock.yml') }}
       - name: Install production Linux snapshot
-        if: runner.os == 'Linux' && steps.green.outputs.cache-hit != 'true'
+        if: runner.os == 'Linux' && steps.green.outputs.cache-hit != 'true' && steps.envcache.outputs.cache-hit != 'true'
         run: |
           conda create --yes --name eqasim --file environments/server-linux-64.lock
           conda run --no-capture-output -n eqasim python -m pip install --no-deps -r environments/requirements-server-linux-64.txt
       - name: Install locked Windows environment
-        if: runner.os == 'Windows' && steps.green.outputs.cache-hit != 'true'
+        if: runner.os == 'Windows' && steps.green.outputs.cache-hit != 'true' && steps.envcache.outputs.cache-hit != 'true'
         run: |
           python -m pip install conda-lock==4.0.2
           conda-lock install --name eqasim environments/conda-lock.yml
