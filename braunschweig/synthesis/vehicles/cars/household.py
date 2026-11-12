@@ -81,9 +81,26 @@ import logging
 import numpy as np
 import pandas as pd
 
+from braunschweig import synpp_tokens
 from braunschweig.data.bbsr.regiostar import ars_to_ags8
 from braunschweig.data.kba import hsn_tsn
 from braunschweig.synthesis.vehicles import fleet_sampling_de as fleet
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``fleet`` and ``hsn_tsn`` are the
+# modules imported above; ``fleet_tables`` is imported inside ``execute`` and the rest is
+# reached through them, so those are hashed by name.
+_HELPER_MODULES = (hsn_tsn, fleet)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.data.kba.feasible_fuels",
+    "braunschweig.data.kba.fleet_tables",
+    "braunschweig.ipf.joint_age_size",
+    "braunschweig.synthesis.vehicles.age_income",
+    "braunschweig.synthesis.vehicles.fleet_validation",
+    "braunschweig.synthesis.vehicles.hbefa",
+    "braunschweig.synthesis.vehicles.segment",
+    "braunschweig.synthesis.vehicles.wohnmobile_age",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -552,6 +569,13 @@ def configure(context):
     # ``data_path``; the key is registered so an explicit override invalidates the
     # synpp cache and is documented in one place.
     context.config("kba_fleet_paths", None)
+
+
+def validate(context):
+    """Include the helper modules' source in synpp's stage cache identity (ADR-0136)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def execute(context):

@@ -4,6 +4,21 @@ import os.path
 import json
 import datetime
 
+from braunschweig import synpp_tokens
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``fare_config_xml`` and
+# ``tariff_export`` are imported inside the copy functions and the parking modules are
+# reached through them, so all are hashed by name.
+_HELPER_MODULES = ()
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.data.vrb.fare_config_xml",
+    "braunschweig.parking.cost",
+    "braunschweig.parking.garages",
+    "braunschweig.parking.tariff_export",
+    "braunschweig.parking.zones",
+)
+
 
 def mirror_directory_tree(source_dir, target_dir):
     """Recursively mirror source_dir into target_dir.
@@ -173,6 +188,14 @@ def configure(context):
     
 
     context.stage("documentation.meta_output")
+
+
+def validate(context):
+    """Include the helper modules' source in synpp's stage cache identity (ADR-0136)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
+
 
 def execute(context):
     config_path = "%s/%s" % (

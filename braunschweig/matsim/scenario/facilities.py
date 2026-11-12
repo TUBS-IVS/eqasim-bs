@@ -60,8 +60,17 @@ import geopandas as gpd
 import pandas as pd
 
 import matsim.scenario.facilities as base
+from braunschweig import synpp_tokens
 from braunschweig.data.cordon import gate_facility_links
+from braunschweig.synthesis.portal_trips import config_keys as _config_keys
 from braunschweig.synthesis.portal_trips.config_keys import PORTAL_LOCATION_ID_PREFIX
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``base`` is the upstream stage this
+# one extends; ``data.spatial.cordon`` is imported inside ``_attach_gate_facility_links`` and
+# ``matsim.writers`` is reached through ``base``, so both are hashed by name.
+_HELPER_MODULES = (base, gate_facility_links, _config_keys)
+_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon", "matsim.writers")
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +118,13 @@ def configure(context):
 
     # Realised secondary locations, for the dangling-id validation below.
     context.stage("synthesis.population.spatial.secondary.locations")
+
+
+def validate(context):
+    """Include the helper modules' source in synpp's stage cache identity (ADR-0136)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def secondary_facility_frame(df_candidates, *, leisure_visit_enabled=True,

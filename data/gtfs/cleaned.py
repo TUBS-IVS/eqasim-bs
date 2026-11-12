@@ -1,6 +1,17 @@
 import data.gtfs.utils as gtfs
 import os, pathlib
 
+from braunschweig import synpp_tokens
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``network_clip`` is imported inside
+# ``execute`` and ``spatial.cordon`` is reached through it, so both are hashed by name.
+_HELPER_MODULES = (gtfs,)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.data.cordon.network_clip",
+    "braunschweig.data.spatial.cordon",
+)
+
 """
 This file reads GTFS schedules, cuts them to the scenario area (defined by the
 selected regions and departments) and merges them together.
@@ -104,4 +115,9 @@ def validate(context):
     for path in input_files:
         total_size += os.path.getsize(path)
 
-    return total_size
+    return {
+        "gtfs_input_size": total_size,
+        "helpers": synpp_tokens.source_token(
+            _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+            stage_label=__name__ + ".validate()"),
+    }

@@ -40,7 +40,15 @@ import geopandas as gpd
 
 import matsim.runtime.java as java
 
+from braunschweig import synpp_tokens
 from braunschweig.freight import extraction_tool
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``data.spatial.cordon`` is imported
+# inside ``_study_area``, so it is hashed by name; ``java`` and ``extraction_tool`` are declared
+# stages with their own tokens.
+_HELPER_MODULES = ()
+_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon",)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +76,13 @@ def configure(context):
     context.config("cordon_enabled", False)
     context.config("cordon_network_buffer_fraction", 0.10)
     context.config("freight_crs", "EPSG:25832")
+
+
+def validate(context):
+    """Include the helper module's source in synpp's stage cache identity (ADR-0136)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def tool_java_invocation(tool_cache_path, jar_relative):

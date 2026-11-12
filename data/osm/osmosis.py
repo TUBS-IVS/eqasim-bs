@@ -1,6 +1,17 @@
 import subprocess as sp
 import shutil, os
 
+from braunschweig import synpp_tokens
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``resources`` is imported inside
+# ``run`` and ``population.methods`` is reached through it, so both are hashed by name.
+_HELPER_MODULES = ()
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.population.methods",
+    "braunschweig.resources",
+)
+
 def configure(context):
     context.config("osmosis_binary", "osmosis")
 
@@ -47,6 +58,10 @@ def validate(context):
         "-v"
     ], stderr = sp.STDOUT):
         print("WARNING! Osmosis of at least version 0.48.x is recommended!")
+
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 def execute(context):
     pass

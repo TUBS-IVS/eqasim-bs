@@ -19,7 +19,15 @@ from __future__ import annotations
 import pandas as pd
 
 import matsim.scenario.vehicles as base
+from braunschweig import synpp_tokens
+from braunschweig.synthesis.incommuter_merge import _base as _merge_base
 from braunschweig.synthesis.incommuter_merge._base import concat_frame
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``base`` is the upstream stage this
+# one extends; ``matsim.writers`` is reached through ``base``, so it is hashed by name.
+_HELPER_MODULES = (base, _merge_base)
+_DEFERRED_HELPER_MODULE_NAMES = ("matsim.writers",)
 
 
 def configure(context):
@@ -28,6 +36,13 @@ def configure(context):
     if context.config("cordon_enabled"):
         context.stage("braunschweig.synthesis.incommuters")
         context.stage("braunschweig.synthesis.student_incommuters")
+
+
+def validate(context):
+    """Include the helper modules' source in synpp's stage cache identity (ADR-0136)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def _merge_incommuter_vehicles(df_vehicles, df_vehicle_types, inc):

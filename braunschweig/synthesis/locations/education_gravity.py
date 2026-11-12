@@ -17,10 +17,18 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 
+from braunschweig import synpp_tokens
+from braunschweig.synthesis.locations import education_gravity_model as _education_gravity_model
 from braunschweig.synthesis.locations.education_gravity_model import (
     assign_by_capacity_gravity, assign_by_decay, FALLBACK_WARN_SHARE,
 )
 from braunschweig.data.bbsr.regiostar import ars_to_ags8
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136). ``bbs_share`` is imported inside
+# ``_resolve_bbs_share_by_age``, so it is hashed by name.
+_HELPER_MODULES = (_education_gravity_model,)
+_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.schools.bbs_share",)
 
 _SCHOOL_BANDS = [
     ("kindergarten", 0, 5),
@@ -369,6 +377,13 @@ def _resolve_bbs_share_by_age(context):
     path = os.path.join(context.config("data_path"),
                         context.config("education_bbs_share_by_age_path"))
     return load_bbs_share_by_age(path)
+
+
+def validate(context):
+    """Include the helper modules' source in synpp's stage cache identity (ADR-0136)."""
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def execute(context):

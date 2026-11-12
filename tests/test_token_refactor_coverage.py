@@ -2,7 +2,7 @@
 
 The stage set is the AUDIT's own (``scripts/audit_synpp_helper_hash.py``), not a text grep, so a
 stage that the closure gate treats as source-hashing cannot keep a private md5 loop unnoticed.
-Stages whose token also covers data files (the five ``_COMPOSITE_STAGES``) add that part under its
+Stages whose token also covers data files (the ``_COMPOSITE_STAGES``) add that part under its
 own key next to the module digests. The pre-refactor token is never kept as code in the
 stages: the migration replays the validate() of the pre-refactor revision (task-13 ruling G).
 """
@@ -30,7 +30,8 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 #: 2026-11-11 on branch fix/audit-b4-home-slot-apportionment: 35 (+1 = braunschweig.synthesis.locations.home_cell, repository audit B4 F3).
 #: 2026-11-12 on branch fix/audit-b8-b10-incommuter-income, after merging main: 36 (+1 = braunschweig.data.inkar.household_income, ADR-0191).
 #: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 48 (+12 production-reachable stages without a token, repository audit C2, group 1).
-EXPECTED_SOURCE_HASHING_STAGES = 48
+#: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 61 (+13, group 2 of the production-reachable stages without a token, repository audit C2).
+EXPECTED_SOURCE_HASHING_STAGES = 61
 
 #: Stages whose token holds a non-source part (data files, sizes) next to the module digests.
 _COMPOSITE_STAGES = {
@@ -45,6 +46,8 @@ _COMPOSITE_STAGES = {
     "braunschweig.data.schools.facilities",
     "braunschweig.data.schools.kita_facilities",
     "braunschweig.data.schools.university_facilities",
+    "data.gtfs.cleaned",
+    "data.osm.cleaned",
 }
 
 

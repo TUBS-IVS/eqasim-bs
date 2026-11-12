@@ -3,6 +3,13 @@ import os, shutil
 
 import matsim.runtime.process_watchdog as process_watchdog
 
+from braunschweig import synpp_tokens
+
+# Helpers whose code this stage runs: synpp hashes only this module's source, so their
+# source goes into the stage token (audit C2, ADR-0136).
+_HELPER_MODULES = (process_watchdog,)
+_DEFERRED_HELPER_MODULE_NAMES = ()
+
 # Config keys of the hang watchdog (issue #330). Kept as constants so the stages
 # that must declare them cannot drift from what run() reads.
 KEY_HANG_TIMEOUT = "java_hang_timeout_s"
@@ -96,6 +103,13 @@ def run(context, entry_point, arguments = [], class_path = None, vm_arguments = 
         raise RuntimeError("Mode is expected to be one of 'raise', 'return_code' or 'output'")
 
 def validate(context):
+    """Check the Java binary and include the watchdog's source in the stage cache identity (ADR-0136).
+
+    The hang watchdog's code is hashed, so a code change to it re-executes this stage once. execute()
+    writes nothing, so its output is identical; the stages downstream are spared by the content-addressed
+    cache only where the re-executed parent reproduces its output byte for byte (not measured). The
+    operational thresholds stay volatile config keys (ADR-0095), so tuning them still re-executes nothing.
+    """
     if shutil.which(context.config("java_binary")) in ["", None]:
         raise RuntimeError("Cannot find Java binary at: %s" % context.config("java_binary"))
 
@@ -104,6 +118,10 @@ def validate(context):
         "-version"
     ], stderr = sp.STDOUT):
         print("WARNING! A Java JDK of at least version 11 is recommended.")
+
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 def execute(context):
     pass
