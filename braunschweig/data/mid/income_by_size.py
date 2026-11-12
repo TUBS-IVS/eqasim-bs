@@ -62,13 +62,26 @@ hard-coding percentages in Python is prohibited (see CLAUDE.md).
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Iterable
 
 import numpy as np
 import pandas as pd
 
-from braunschweig.data.mid.raumtyp_tilt import tilt_toward_region
+from braunschweig.data.mid.raumtyp_tilt import FallbackTally, tilt_toward_region
+
+logger = logging.getLogger(__name__)
+
+# Counts the degenerate-input branches of this module; the caller logs the rate once
+# per build via :func:`report_fallback_rates` (CLAUDE.md "Fallback transparency").
+_TALLY = FallbackTally("income_by_size", logger)
+
+
+def report_fallback_rates() -> None:
+    """Log the primary/fallback rate of the cells built since the last report."""
+    _TALLY.report()
+
 
 MID_SUBDIR = os.path.join("braunschweig", "mid")
 
@@ -293,7 +306,7 @@ def _national_raumtyp_pmf(
             & (df_raumtyp["hh_size"].astype(str) == str(hh_size))
         ]
         base = float(sub["base_weighted"].drop_duplicates().sum())
-        if base <= 0:
+        if _TALLY.check("zero_base_equal_weight", base <= 0):
             base = 1.0  # degenerate base -> equal weight (does not zero a region)
         acc += base * pmf
         base_total += base
@@ -315,15 +328,19 @@ def income_bracket_probabilities(
     within-NDS multiplicative tilt (see the module docstring). The returned
     vector is ordered like :data:`INCOME_BRACKET_CATEGORIES` and sums to 1.
 
-    Returns ``None`` (caller logs a FALLBACK -- no silent fallback) when the NDS
-    base cell for ``hh_size`` is absent. With ``raumtyp_region is None`` or absent
-    from the raumtyp table, the untilted NDS base is returned.
+    Returns ``None`` when the NDS base cell for ``hh_size`` is absent. With
+    ``raumtyp_region is None`` the untilted NDS base is the primary result; with a
+    raumtyp region absent from the raumtyp table it is a FALLBACK. Each call is one
+    unit of the module tally: the ``None`` return, the untilted-base return and a
+    zero ``base_weighted`` replaced by equal weight are counted by branch, and the
+    caller logs the rate once via :func:`report_fallback_rates`.
     """
     brackets = list(include_brackets)
+    _TALLY.unit()
     base = _bracket_pmf_for_region_size(
         df_bundesland, BUNDESLAND_NIEDERSACHSEN, hh_size, brackets
     )
-    if base is None:
+    if _TALLY.check("nds_base_absent_none", base is None):
         return None
 
     if raumtyp_region is None:
@@ -331,7 +348,7 @@ def income_bracket_probabilities(
 
     region_pmf = _bracket_pmf_for_region_size(df_raumtyp, raumtyp_region, hh_size, brackets)
     national_pmf = _national_raumtyp_pmf(df_raumtyp, hh_size, brackets)
-    if region_pmf is None or national_pmf is None:
+    if _TALLY.check("untilted_base", region_pmf is None or national_pmf is None):
         return base.copy()
 
     return tilt_toward_region(base, region_pmf, national_pmf)

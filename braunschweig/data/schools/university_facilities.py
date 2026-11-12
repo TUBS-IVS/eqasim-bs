@@ -78,6 +78,7 @@ def build_university_facilities(df_hochschulen, df_osm_uni, weight_column="weigh
     osm["ars5"] = osm["commune_id"].astype(str).str[:5]
 
     unit_basis = []  # one bool per distributed unit: True = on potentials
+    unit_counts = [0, 0]  # [units with buildings, zero-weight units skipped]
 
     def _distribute(enrollment, communes):
         sub = osm[osm["ars5"].isin(communes)]
@@ -89,7 +90,10 @@ def build_university_facilities(df_hochschulen, df_osm_uni, weight_column="weigh
             weights, used_potential = pick_unit_weights(
                 sub, weight_column, area_weight_column)
         total_area = weights.sum()
+        unit_counts[0] += 1
         if total_area <= 0:
+            # Zero-weight unit: its enrollment is not placed (counted, see print below).
+            unit_counts[1] += 1
             return
         if area_weight_column is not None:
             unit_basis.append(used_potential)
@@ -112,6 +116,12 @@ def build_university_facilities(df_hochschulen, df_osm_uni, weight_column="weigh
 
     if area_weight_column is not None:
         log_unit_basis("university", sum(unit_basis), len(unit_basis) - sum(unit_basis))
+    if unit_counts[0]:
+        print("[university_facilities] units with OSM buildings: placed %d/%d (%.1f%%), "
+              "zero-weight units skipped (enrollment not placed) %d (%.1f%%)" % (
+                  unit_counts[0] - unit_counts[1], unit_counts[0],
+                  100.0 * (unit_counts[0] - unit_counts[1]) / unit_counts[0],
+                  unit_counts[1], 100.0 * unit_counts[1] / unit_counts[0]))
 
     gdf = gpd.GeoDataFrame(
         {"location_id": rows_id, "capacity": rows_cap},

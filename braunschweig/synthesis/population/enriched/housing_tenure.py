@@ -146,6 +146,10 @@ def _apply_housing_tenure(df_persons, df_tenure_bund, df_tenure_raum,
             c = int(np.searchsorted(np.cumsum(pmf), u[r], side="right"))
             hh_tenure[r] = tenure_arr[min(max(c, 0), n_tenure - 1)]
 
+    # One rate line per build for the MiD tenure-table fallbacks (CLAUDE.md fallback rule).
+    from braunschweig.data.mid.tenure_by_income import report_fallback_rates
+    report_fallback_rates()
+
     tenure_by_hh = dict(zip(hh_ids, hh_tenure))
     df_persons["housing_tenure"] = pd.Categorical(
         df_persons["household_id"].map(tenure_by_hh),

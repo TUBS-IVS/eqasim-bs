@@ -350,6 +350,13 @@ def _apply_distribution_income(df_persons, df_inkar, df_bundesland, df_raumtyp,
         hh_bracket[rows[hh_order]] = bracket_sorted
         n_fallback += m
 
+    # One rate line per build for the MiD income derivation fallbacks (all cells above
+    # are cached, so each distinct cell was counted once).
+    from braunschweig.data.mid import income_by_size as _income_by_size
+    from braunschweig.data.mid import income_by_status as _income_by_status
+    _income_by_size.report_fallback_rates()
+    _income_by_status.report_fallback_rates()
+
     # Draw a continuous EUR value within each household's bracket.
     hh_low = bracket_low[hh_bracket]
     hh_high = bracket_high[hh_bracket]

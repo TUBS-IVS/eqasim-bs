@@ -222,6 +222,10 @@ def _derive_economic_status_from_hhtype(df_persons, data_path, df_regiostar,
             continue
         probs[rows, :] = vec
 
+    # One rate line per build for the MiD Bayes-table fallbacks (CLAUDE.md fallback rule).
+    from braunschweig.data.mid.status_by_hhtype import report_fallback_rates
+    report_fallback_rates()
+
     n_fallback = int(fallback_mask.sum())
     n_primary = n - n_fallback
     fallback_rate = (n_fallback / n) if n else 0.0

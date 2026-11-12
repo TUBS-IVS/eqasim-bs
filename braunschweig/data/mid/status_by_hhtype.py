@@ -30,6 +30,7 @@ hard-coding percentages in Python is prohibited (see CLAUDE.md).
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Iterable
 
@@ -143,6 +144,54 @@ RS7_TO_RAUMTYP_KEY: dict[int, str] = {
 }
 
 
+logger = logging.getLogger(__name__)
+
+# Counts the zero-mass prior fallbacks of the Bayes cells; callers log the rate once
+# per build via report_fallback_rates() (CLAUDE.md "Fallback transparency").
+# status_by_hhtype is imported by stages that do not reach raumtyp_tilt, so it keeps
+# this small local tally instead of raumtyp_tilt.FallbackTally (no new import edge, which
+# would widen the synpp helper-hash closure of those stages).
+_FALLBACK_WARN_FRACTION = 0.05
+
+
+class _Tally:
+    """Units and fired fallback branches of the Bayes cells; one rate line per report."""
+
+    def __init__(self):
+        self.units = 0
+        self.fallbacks: dict[str, int] = {}
+
+    def unit(self) -> None:
+        self.units += 1
+
+    def check(self, branch: str, fired: bool) -> bool:
+        """Count ``branch`` when ``fired`` and return ``fired`` unchanged."""
+        if fired:
+            self.fallbacks[branch] = self.fallbacks.get(branch, 0) + 1
+        return fired
+
+    def report(self) -> None:
+        n, fired = self.units, self.fallbacks
+        self.units, self.fallbacks = 0, {}
+        if n <= 0:
+            return
+        n_fb = sum(fired.values())
+        parts = ", ".join(
+            f"fallback {b} {k} ({100.0 * k / n:.1f}%)" for b, k in sorted(fired.items())
+        ) or "fallback 0 (0.0%)"
+        msg = (f"status_by_hhtype: primary {max(n - n_fb, 0)}/{n} "
+               f"({100.0 * max(n - n_fb, 0) / n:.1f}%), {parts}")
+        logger.warning(msg) if n_fb / n > _FALLBACK_WARN_FRACTION else logger.info(msg)
+
+
+_TALLY = _Tally()
+
+
+def report_fallback_rates() -> None:
+    """Log the primary/fallback rate of the cells built since the last report."""
+    _TALLY.report()
+
+
 def _path(data_path: str, filename: str) -> str:
     return os.path.join(data_path, MID_SUBDIR, filename)
 
@@ -213,7 +262,8 @@ def _pooled_bayes(
         share = np.where(den.to_numpy() > 0, num.to_numpy() / np.maximum(den.to_numpy(), 1e-12), 0.0)
         joint = share * p_status.to_numpy(dtype=float)
         total = joint.sum()
-        out[hhtype] = joint / total if total > 0 else p_status.to_numpy(dtype=float).copy()
+        _TALLY.unit()
+        out[hhtype] = joint / total if not _TALLY.check("pooled_status_prior", total <= 0) else p_status.to_numpy(dtype=float).copy()
     return out
 
 
@@ -251,14 +301,15 @@ def region_status_probabilities(
     for hhtype, base_vec in base.items():
         reg = region_b.get(hhtype)
         nat = national_b.get(hhtype)
-        if reg is None or nat is None:
+        _TALLY.unit()
+        if _TALLY.check("untilted_base", reg is None or nat is None):
             out[hhtype] = base_vec.copy()
             continue
         with np.errstate(divide="ignore", invalid="ignore"):
             tilt = np.where(nat > 1e-12, reg / nat, 1.0)
         tilted = base_vec * tilt
         total = tilted.sum()
-        out[hhtype] = tilted / total if total > 0 else base_vec.copy()
+        out[hhtype] = tilted / total if not _TALLY.check("zero_tilt_mass_untilted_base", total <= 0) else base_vec.copy()
     return out
 
 
@@ -298,7 +349,8 @@ def bayes_status_given_hhtype(
         .reindex(statuses).fillna(0.0)
     )
     base_sum = base.sum()
-    p_status = (base / base_sum) if base_sum > 0 else pd.Series(
+    _TALLY.unit()
+    p_status = (base / base_sum) if not _TALLY.check("region_uniform_status_prior", base_sum <= 0) else pd.Series(
         np.ones(len(statuses)) / len(statuses), index=statuses
     )
 
@@ -314,7 +366,8 @@ def bayes_status_given_hhtype(
         # extra normalisation over status is needed for the Bayes product.
         joint = row.to_numpy(dtype=float) * p_status.to_numpy(dtype=float)
         total = joint.sum()
-        if total > 0:
+        _TALLY.unit()
+        if not _TALLY.check("hhtype_status_prior", total <= 0):
             out[hhtype] = joint / total
         else:
             # Degenerate (all-zero share for this hhtype across status): fall

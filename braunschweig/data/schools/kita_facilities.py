@@ -70,9 +70,11 @@ def build_kita_facilities(df_kitas, df_osm_kg, weight_column="weight",
 
     rows_id, rows_cap, rows_geom = [], [], []
     n_potential_units = n_area_units = 0
+    n_units = n_zero_weight = 0
     for unit, sub in osm.groupby("unit"):
         if unit not in plaetze:
             continue
+        n_units += 1
         if area_weight_column is None:
             weights = sub[weight_column].to_numpy(float)
         else:
@@ -80,6 +82,8 @@ def build_kita_facilities(df_kitas, df_osm_kg, weight_column="weight",
                 sub, weight_column, area_weight_column)
         total = weights.sum()
         if total <= 0:
+            # Zero-weight unit: its Plaetze are not placed (counted, see print below).
+            n_zero_weight += 1
             continue
         if area_weight_column is not None:
             n_potential_units += int(used_potential)
@@ -90,6 +94,12 @@ def build_kita_facilities(df_kitas, df_osm_kg, weight_column="weight",
             rows_geom.append(geom)
     if area_weight_column is not None:
         log_unit_basis("kita", n_potential_units, n_area_units)
+    if n_units:
+        print("[kita_facilities] units with OSM POIs: placed %d/%d (%.1f%%), zero-weight "
+              "units skipped (Plaetze not placed) %d (%.1f%%)" % (
+                  n_units - n_zero_weight, n_units,
+                  100.0 * (n_units - n_zero_weight) / n_units,
+                  n_zero_weight, 100.0 * n_zero_weight / n_units))
 
     gdf = gpd.GeoDataFrame({"location_id": rows_id, "capacity": rows_cap},
                            geometry=rows_geom, crs=CRS_METRIC)
