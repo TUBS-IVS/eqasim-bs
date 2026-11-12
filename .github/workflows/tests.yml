@@ -99,6 +99,9 @@ jobs:
         run: conda run --no-capture-output -n eqasim python scripts/run_tests.py --check
       - name: Regression tests with duration report
         if: steps.green.outputs.cache-hit != 'true'
+        env:
+          # Opt-in for the real-snapshot environment test (a developer env may drift from the snapshot).
+          EQASIM_SNAPSHOT_ENV: ${{ runner.os == 'Linux' && '1' || '0' }}
         run: conda run --no-capture-output -n eqasim python scripts/run_tests.py -q --durations=30 --junitxml=test-results.xml
       - name: Upload test report
         if: always()
