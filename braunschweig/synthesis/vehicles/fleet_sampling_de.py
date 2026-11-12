@@ -439,7 +439,7 @@ class PowertrainModel:
         except FileNotFoundError:
             kreis_marginal = cls._kreis_powertrain_marginal(
                 df_kreis, powertrains, petrol_fraction)
-            logger.info(
+            logger.warning(
                 "[fleet_de] per-Kreis powertrain marginal: fallback to "
                 "FZ 27.15 + NDS petrol:diesel split (kba_kreis_fuel.csv absent)."
             )
@@ -2406,11 +2406,12 @@ class Euro6SubstageModel:
         substages = list(ft.EURO6_SUBSTAGE_LABELS)
         try:
             df = ft.load_fuel_euro6_substage_nds(data_path)
-        except FileNotFoundError:
-            logger.info(
+        except FileNotFoundError as exc:
+            logger.warning(
                 "[fleet_de] Euro-6 substage: kba_fuel_euro6_substage_nds.csv "
                 "absent -> national fallback disabled (per-Kreis-only or "
-                "plain-euro6 fallback)."
+                "plain-euro6 fallback). Missing input: %s.",
+                exc,
             )
             return {}
         out: dict[str, np.ndarray] = {}
@@ -2786,10 +2787,12 @@ class FleetSampler:
         feasible_fuels: Optional[FeasibleFuels] = None
         try:
             feasible_fuels = FeasibleFuels.from_data_path(data_path)
-        except FileNotFoundError:
-            logger.info(
+        except FileNotFoundError as exc:
+            logger.warning(
                 "[fleet_de] HSN/TSN lookup absent; model-feasible powertrain "
-                "mask (Bug 2) disabled (consistency_v2 keeps the unmasked pmf)."
+                "mask (Bug 2) disabled (consistency_v2 keeps the unmasked pmf). "
+                "Missing input: %s.",
+                exc,
             )
         euro_given = _euro_given_powertrain(data_path)
         age_given = _age_given_powertrain(data_path)
@@ -2824,7 +2827,7 @@ class FleetSampler:
                 _n_kreise_euro, len(POWERTRAINS), _build_seconds,
             )
         else:
-            logger.info(
+            logger.warning(
                 "[fleet_de] national euro joint (FZ27.4 fallback): "
                 "kba_kreis_euro.csv absent; per-Kreis euro marginal disabled."
             )
@@ -2839,9 +2842,11 @@ class FleetSampler:
                 "[fleet_de] model-fuel weight: active (%d models).",
                 len(model_fuel),
             )
-        except FileNotFoundError:
-            logger.info(
-                "[fleet_de] model-fuel weight: absent -> binary feasibility mask."
+        except FileNotFoundError as exc:
+            logger.warning(
+                "[fleet_de] model-fuel weight: absent -> binary feasibility mask. "
+                "Missing input: %s.",
+                exc,
             )
         # Task B2: EV-income tilt. Absent CSV -> tilt inactive, byte-identical
         # to the pre-Task-B2 behaviour (see EvIncomeTiltModel docstring for the
@@ -2854,11 +2859,12 @@ class FleetSampler:
                 "[fleet_de] EV-income tilt: active "
                 "(mid2023_antrieb_by_status.csv found)."
             )
-        except FileNotFoundError:
-            logger.info(
+        except FileNotFoundError as exc:
+            logger.warning(
                 "[fleet_de] EV-income tilt: mid2023_antrieb_by_status.csv "
                 "absent -> tilt inactive (byte-identical to the no-tilt "
-                "behaviour)."
+                "behaviour). Missing input: %s.",
+                exc,
             )
         # Task B5: Euro-6 substage model. Always constructed (never raises);
         # both its sources degrade gracefully to an empty dict when their CSV

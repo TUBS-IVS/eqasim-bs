@@ -153,3 +153,26 @@ def test_zone_membership_coverage_or_matches_loop():
         legacy_cov |= legacy["inside_{}".format(zone)].to_numpy()
         new_cov |= new["inside_{}".format(zone)].to_numpy()
     assert np.array_equal(legacy_cov, new_cov)
+
+
+def test_kreis_missing_fallback_rate_split_and_warned(capsys):
+    """Licence / PT-subscription imputation: persons without a Kreis are a
+    FALLBACK (forced category), persons ineligible by the age/sex rule are
+    forced by rule, the rest take the primary IPF path; a Kreis-missing share
+    above FALLBACK_WARN_RATE is flagged."""
+    from braunschweig.synthesis.population.enriched.base import (
+        FALLBACK_WARN_RATE, _report_kreis_fallback_rates)
+
+    # 10 persons: 6 eligible with a Kreis, 1 child with a Kreis (rule), 3 no Kreis.
+    person_kreis = np.array([0, 0, 1, 1, 2, 2, 0, -1, -1, -1])
+    eligible = np.array([True] * 6 + [False] * 4)
+    counts = _report_kreis_fallback_rates("license_type", "nein", person_kreis, eligible)
+    out = capsys.readouterr().out
+    assert counts == (6, 1, 3)
+    assert 3 / 10 > FALLBACK_WARN_RATE and "WARNING: license_type" in out
+
+    # No missing Kreis -> no warning, zero fallback.
+    counts = _report_kreis_fallback_rates(
+        "pt_subscription_type", "never_pt", np.zeros(10, dtype=int), eligible)
+    out = capsys.readouterr().out
+    assert counts == (6, 4, 0) and "WARNING" not in out

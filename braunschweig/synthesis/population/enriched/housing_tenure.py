@@ -136,8 +136,11 @@ def _apply_housing_tenure(df_persons, df_tenure_bund, df_tenure_raum,
         rows = grp["row"].to_numpy()
         rk = raumtyp_key if raumtyp_key is not None else None
         matrix = _bayes_for(rk)
-        if matrix is None:
-            matrix = fallback_matrix
+        # A missing raumtyp (None/NaN) reuses the unconditional matrix: that is a
+        # FALLBACK (the conditional P(tenure|bracket,raumtyp) was not applied),
+        # even though _bayes_for(None) itself returns a matrix.
+        if matrix is None or pd.isna(raumtyp_key):
+            matrix = fallback_matrix if matrix is None else matrix
             n_fallback += len(rows)
         else:
             n_primary += len(rows)

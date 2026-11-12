@@ -34,6 +34,42 @@ from .availability import (
 from .economic_status import _derive_economic_status, _derive_economic_status_from_hhtype
 from .vehicle_ownership import _binarise_availability, _sample_cars_income_aware, _sample_vehicle_counts
 
+#: Share of persons with a missing Kreis (forced to the "no licence" / "never PT"
+#: category instead of the MiD-derived distribution) above which the Kreis-missing
+#: fallback is reported as a WARNING. A missing Kreis normally means a broken zone
+#: assignment (no ``inside_<zone>`` column or an unknown zone name).
+FALLBACK_WARN_RATE = 0.05
+
+
+def _report_kreis_fallback_rates(label, forced_label, person_kreis, eligible):
+    """Print primary / forced-by-rule / Kreis-missing-fallback person counts.
+
+    * primary: eligible persons, drawn from the IPF-derived MiD distribution;
+    * forced by rule: persons without a Kreis-independent claim to the MiD
+      distribution (below the age cut-off, unknown sex or no age band); the
+      deterministic category is the documented rule, not a fallback;
+    * fallback: persons with no Kreis (``person_kreis < 0``), forced to the same
+      category because the Kreis-conditional MiD marginal cannot be applied.
+
+    Prints only; the category assignment is done by the caller. Returns the
+    ``(n_primary, n_forced_by_rule, n_kreis_missing)`` counts.
+    """
+    n_total = len(person_kreis)
+    kreis_missing = person_kreis < 0
+    n_kreis_missing = int(kreis_missing.sum())
+    n_primary = int(eligible.sum())
+    n_forced = int((~eligible & ~kreis_missing).sum())
+    denom = max(n_total, 1)
+    kreis_rate = n_kreis_missing / denom
+    level = "WARNING: " if kreis_rate > FALLBACK_WARN_RATE else ""
+    print(
+        f"[braunschweig.enriched] {level}{label}: primary {n_primary}/{n_total} "
+        f"({n_primary / denom:.1%}), forced by rule ({forced_label}) {n_forced} "
+        f"({n_forced / denom:.1%}), fallback (Kreis missing -> {forced_label}) "
+        f"{n_kreis_missing} ({kreis_rate:.1%})"
+    )
+    return n_primary, n_forced, n_kreis_missing
+
 
 # --- Inherited from eqasim-bavaria -----------------------------------------
 
@@ -415,6 +451,9 @@ def _step_impute_driving_licence(context, df_persons):
         & (lic_person_sex >= 0)
         & (lic_person_age >= 0)
         & (lic_age_arr >= LICENSE_MIN_AGE)
+    )
+    _report_kreis_fallback_rates(
+        "license_type", "nein", lic_person_kreis, lic_eligible
     )
     n_lic_kreise = len(lic_ars5_list)
     n_lic_sex = 2
@@ -911,6 +950,9 @@ def _step_sample_pt_subscription(context, df_persons):
         & (person_sex >= 0)
         & (person_age >= 0)
         & (age_arr >= max(pt_min_age, 14))
+    )
+    _report_kreis_fallback_rates(
+        "pt_subscription_type", PT_TICKET_NEVER, person_kreis, f_eligible
     )
     n_kreise = len(ars5_list)
     n_sex = 2

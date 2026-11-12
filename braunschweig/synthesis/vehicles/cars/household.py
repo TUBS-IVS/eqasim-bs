@@ -678,7 +678,7 @@ def execute(context):
                 electric_calibration,
             )
         except FileNotFoundError:
-            logger.info(
+            logger.warning(
                 "[vehicles.household] fleet_electric_calibration=%s: "
                 "kba_ev_grid.csv absent -> falling back to Gemeinde-only tilt "
                 "(no grid columns on df_cars).",
@@ -696,7 +696,7 @@ def execute(context):
                 electric_calibration, exc, exc_info=True,
             )
         if not _grid_cols_added:
-            logger.info(
+            logger.warning(
                 "[vehicles.household] grid tilt not active for this run; "
                 "Gemeinde-only tilt will be used."
             )
