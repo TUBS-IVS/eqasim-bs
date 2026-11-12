@@ -146,6 +146,7 @@ from braunschweig.data.mid import income_by_status as _data_mid_income_by_status
 from braunschweig.data.census import household_size as _census_household_size
 
 from braunschweig.popsim import assembly
+from braunschweig.popsim import attributes
 from braunschweig.popsim import folders
 from braunschweig.popsim import batch
 from braunschweig.popsim import income as _income
@@ -1648,10 +1649,17 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     seed_households, seed_persons)``. The first two stay ``None`` on every path
     except member completion, where ``_load_donor_tables`` further down reuses
     them verbatim as the expansion donor tables.
-    Mutates: draws from ``kreis_seed_rng`` on the two MiD paths (the count-style
-    KREIS-control 99-code imputation inside the seed loaders) in the unchanged
-    order, and reports the seed completeness rate plus the member-completion
-    counts via ``context.set_info``.
+    Mutates: draws from ``kreis_seed_rng`` on the two MiD paths. On the
+    member-completion path (default) the draws are, in this order: (1)
+    ``_resolve_donor_household_counts`` over EVERY donor household, (2)
+    ``attributes.resolve_person_attributes`` over EVERY donor person -- both
+    independent of which controls are active (ADR-0192) -- then (3) the seed
+    derivations inside ``mid.project_completed_seed`` (trip_class, participation
+    and the remaining control columns). So the stream every later consumer sees
+    differs from the pre-ADR-0192 one even when no count or person control is
+    active. On the legacy path the draws stay inside ``mid.load_mid_seed`` (active
+    controls only). Also reports the seed completeness rate plus the
+    member-completion counts via ``context.set_info``.
     """
     completed_donor_households = None
     completed_donor_persons = None
@@ -1671,8 +1679,19 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
         # The same completed frames feed BOTH the PopulationSim seed (projected
         # here) AND the expansion donor tables below.
         donor = context.stage("completed_donor")
-        completed_donor_households = donor.households
-        completed_donor_persons = donor.persons
+        # Household count attributes (cars / bicycles / e-bike) are resolved ONCE here with
+        # the seeded kreis rng; the seed derivation and the assembly of the clones both
+        # reuse these columns (audit P3-F1). A copy: the completed_donor cache is untouched.
+        completed_donor_households = _resolve_donor_household_counts(
+            donor.households, kreis_seed_rng=kreis_seed_rng,
+            ebike_seed_column=ebike_seed_column_cfg,
+        )
+        # Person attributes with imputed codes (employment_status, pt_subscription_type) are
+        # resolved ONCE here too, after the household counts (ADR-0192). The donor
+        # household's RegioStaR7 conditions the imputation pools (persons carry none).
+        completed_donor_persons = attributes.resolve_person_attributes(
+            donor.persons, rng=kreis_seed_rng, households=donor.households,
+            household_id_col=source.seed_columns().household_id)
         report = donor.completeness_report
         completion_report = donor.completion_report
         seed_columns = source.seed_columns()
@@ -1729,6 +1748,21 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     return (
         completed_donor_households, completed_donor_persons, seed_households,
         seed_persons,
+    )
+
+
+def _resolve_donor_household_counts(
+    donor_households: pd.DataFrame, *, kreis_seed_rng, ebike_seed_column: str | None,
+) -> pd.DataFrame:
+    """Resolve number_of_cars / number_of_bicycles / has_ebike once per donor household.
+
+    Returns: a copy of ``donor_households`` with the three resolved columns; the seed
+    projection and the clone assembly both use them verbatim (audit P3-F1, P3-F4).
+    Mutates: nothing in place; draws from ``kreis_seed_rng``.
+    """
+    return attributes.resolve_household_counts(
+        donor_households, rng=kreis_seed_rng,
+        ebike_col=ebike_seed_column or "H_ANZPED",
     )
 
 
@@ -2039,7 +2073,8 @@ def _join_cell_attributes_onto_merged_output(merge_report, cells: pd.DataFrame) 
 
 def _load_donor_tables(context, source, source_name: str, mid_dir, complete_members: bool,
         completed_donor_households, completed_donor_persons,
-        passenger_availability_enabled: bool = False):
+        passenger_availability_enabled: bool = False, seed_households=None, seed_id_col=None,
+        fallback_rng=None):
     """Load the donor attribute tables through the active source adapter.
 
     For source="mid": MidSource.load_donor reads from mid_dir (byte-identical).
@@ -2079,6 +2114,13 @@ def _load_donor_tables(context, source, source_name: str, mid_dir, complete_memb
             )
         else:
             donor_households, donor_persons, _donor_trips = source.load_donor(mid_dir)
+        # The seed (load_mid_seed) resolved the count columns on its own household frame:
+        # carry them onto this separately loaded table so clones keep the value their donor
+        # was balanced on (audit P3-F1); counted and logged inside the helper.
+        if seed_households is not None:
+            donor_households = attributes.carry_seed_household_counts(
+                donor_households, seed_households, id_col=seed_id_col or H_ID,
+                rng=fallback_rng)
     return donor_households, donor_persons
 
 
@@ -2647,6 +2689,8 @@ def execute(context) -> pd.DataFrame:
         context, source, source_name, mid_dir, complete_members,
         completed_donor_households, completed_donor_persons,
         passenger_availability_enabled=passenger_availability_enabled,
+        seed_households=seed_households, seed_id_col=source.seed_columns().household_id,
+        fallback_rng=rng,
     )
     placement_income_on = _resolve_placement_income_flag(context, source_name)
 

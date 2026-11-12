@@ -13,6 +13,7 @@ coordinates (``braunschweig.popsim.handoff``) are layered on top.
 from __future__ import annotations
 
 import functools
+import logging
 
 import numpy as np
 import pandas as pd
@@ -22,6 +23,9 @@ from braunschweig.popsim import passenger_availability
 from braunschweig.popsim import expand
 from braunschweig.popsim import income as _income_module
 from braunschweig.population import schema
+
+logger = logging.getLogger(__name__)
+
 
 def assign_donor_surrogates(
     persons: pd.DataFrame,
@@ -301,7 +305,26 @@ def map_mid_person_attributes(
     # employment_status (P9 taxonomy, MiD P_BKAT) rides alongside the boolean
     # employed flag -- NOT a popsim control, additive for analysis/validation
     # (see attributes.map_employment_status docstring).
-    persons = attributes.map_employment_status(persons, rng=rng, rs7_conditioning=rs7_conditioning)
+    # Resolved ONCE per donor person by the popsim stage (attributes.resolve_person_attributes,
+    # ADR-0192) and copied onto the clones by expand_to_persons; reused verbatim here so a
+    # clone carries the value its donor person was balanced on. Absent columns (direct
+    # callers) are resolved per clone with THIS call's rng, logged as a WARNING.
+    resolved = [c for c in attributes.PERSON_RESOLVED_COLUMNS if c in persons.columns]
+    if len(resolved) == len(attributes.PERSON_RESOLVED_COLUMNS):
+        logger.info("[popsim.assembly] person attributes %s taken from the donor persons "
+                    "(resolved once, shared with the seed).", resolved)
+    elif resolved:
+        raise ValueError(
+            f"[popsim.assembly] donor persons carry only some of the resolved person "
+            f"attribute columns {resolved} of {list(attributes.PERSON_RESOLVED_COLUMNS)}; "
+            "resolve all or none (attributes.resolve_person_attributes).")
+    else:
+        logger.warning(
+            "[popsim.assembly] donor persons carry no resolved employment_status / "
+            "pt_subscription_type; resolving them per clone with the assembly rng (the seed "
+            "was NOT balanced on these draws unless no such control is active).")
+        persons = attributes.map_employment_status(
+            persons, rng=rng, rs7_conditioning=rs7_conditioning)
     # Derive studies from P_TAET (Ausbildung/Schueler/Student -> True) BEFORE
     # map_socioprofessional_class, which uses the studies flag in its fallback path.
     # Bug D4: studies was absent, so the fallback treated all students as studies=False.
@@ -311,35 +334,44 @@ def map_mid_person_attributes(
     # DERIVED from it: both describe the same MiD answer (P_FKARTE), and resolving them
     # in two independent missing.resolve draws made them disagree for 0.86% of persons
     # (issue #319). eqasim reads the boolean, the P24.1 validation reads the category.
-    persons = attributes.map_pt_subscription_type(persons, rng=rng, rs7_conditioning=rs7_conditioning)
+    if not resolved:
+        persons = attributes.map_pt_subscription_type(
+            persons, rng=rng, rs7_conditioning=rs7_conditioning)
     persons = attributes.map_has_pt_subscription(persons)
 
-    donor_hh = attributes.map_building_type_3class(
-        attributes.map_housing_tenure(
-            attributes.map_has_ebike(
-                # map_number_of_bicycles now defaults to bikes_col="anzpedrad" (bicycles
-                # INCLUDING pedelecs/e-bikes, MiD H12.3 / SrV alle-Raeder construct;
-                # verified 2026-07-08), a deliberate construct change from the previous
-                # H_ANZRAD (conventional-bikes-only) default -- see the function docstring.
-                attributes.map_number_of_bicycles(
-                    attributes.map_number_of_cars(
-                        attributes.map_household_income(
-                            attributes.map_household_income_eur(
-                                attributes.map_economic_status(
-                                    mid_households, rs7_conditioning=rs7_conditioning
-                                ),
-                                rs7_conditioning=rs7_conditioning,
-                            ),
-                            rs7_conditioning=rs7_conditioning,
-                        ),
-                        rs7_conditioning=rs7_conditioning,
-                    ),
-                    rs7_conditioning=rs7_conditioning,
-                ),
-                rs7_conditioning=rs7_conditioning,
-            )
-        )
+    donor_hh = attributes.map_household_income(
+        attributes.map_household_income_eur(
+            attributes.map_economic_status(
+                mid_households, rs7_conditioning=rs7_conditioning
+            ),
+            rs7_conditioning=rs7_conditioning,
+        ),
+        rs7_conditioning=rs7_conditioning,
     )
+    # number_of_cars / number_of_bicycles / has_ebike are resolved ONCE per donor household
+    # by the popsim stage (attributes.resolve_household_counts, seeded kreis rng) and are
+    # used verbatim here, so a clone carries the value its donor was balanced on
+    # (audit P3-F1). Columns that are absent are resolved here with THIS call's seeded rng
+    # (direct callers, ENTD-free tests); that is logged, never a silent re-draw.
+    # number_of_bicycles uses bikes_col="anzpedrad" (bicycles INCLUDING pedelecs, MiD H12.3 /
+    # SrV alle-Raeder construct); see attributes.map_household_bicycles_and_ebike.
+    present = [c for c in attributes.HOUSEHOLD_COUNT_COLUMNS if c in donor_hh.columns]
+    if len(present) == len(attributes.HOUSEHOLD_COUNT_COLUMNS):
+        logger.info("[popsim.assembly] household counts %s taken from the donor table "
+                    "(resolved once, shared with the seed).", present)
+    elif present:
+        raise ValueError(
+            f"[popsim.assembly] donor households carry only some of the resolved household "
+            f"count columns {present} of {list(attributes.HOUSEHOLD_COUNT_COLUMNS)}; "
+            "resolve all or none (attributes.resolve_household_counts).")
+    else:
+        logger.warning(
+            "[popsim.assembly] donor households carry no resolved household counts; "
+            "resolving them here with the assembly rng (the seed was NOT balanced on these "
+            "draws unless no count control is active).")
+        donor_hh = attributes.resolve_household_counts(
+            donor_hh, rng=rng, rs7_conditioning=rs7_conditioning)
+    donor_hh = attributes.map_building_type_3class(attributes.map_housing_tenure(donor_hh))
     # RegioStaR7 collision guard: the donor household frame ALSO carries a
     # 'RegioStaR7' column (the DONOR's survey home region, MID_HOUSEHOLD_ATTR_COLS,
     # used upstream for Phase 4B donor stratification). It is deliberately NOT
