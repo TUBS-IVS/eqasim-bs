@@ -104,10 +104,12 @@ if [ -n "$SESSION" ]; then
   if tmux has-session -t "$SESSION" 2>/dev/null; then ALIVE=yes; else ALIVE=no; fi
   ALIVE_BASIS="tmux session"
 elif [ -f "$RUN_YML" ]; then
-  # Isolated run: alive while a process has the run's run.yml on its command line (as
-  # isolated_run.py find_run_processes). A silent stage cannot make it look dead.
-  RUN_YML=$(cd "$(dirname "$RUN_YML")" && pwd)/run.yml
-  if pgrep -f -- "$RUN_YML" >/dev/null 2>&1; then ALIVE=yes; else ALIVE=no; fi
+  # Isolated run: alive while a run_synpp.py process has the run's run.yml on its command line
+  # (the rule of isolated_run.py find_run_processes). A silent stage cannot make it look dead.
+  # `pwd -P` resolves symlinks like the tool's Path.resolve(), which is the path form the launch
+  # puts on the command line; grep -F matches it as plain text, not as a regex.
+  RUN_YML=$(cd "$(dirname "$RUN_YML")" && pwd -P)/run.yml
+  if pgrep -af '[r]un_synpp\.py' 2>/dev/null | grep -qF -- "$RUN_YML"; then ALIVE=yes; else ALIVE=no; fi
   ALIVE_BASIS="process check ($RUN_YML)"
 else
   # No tmux session and no run.yml: heuristic only, a run is alive while its log keeps changing.
