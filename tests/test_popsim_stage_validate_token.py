@@ -27,10 +27,10 @@ have:
   uncovered even when it is only imported dynamically,
 - the enriched stage is not hashed as a package: this stage calls one helper of it,
   imported from its submodule,
-- and the only synpp stages listed are the documented UNDECLARED library
-  dependencies: a stage this one declares via ``context.stage(...)`` is hashed by
-  synpp and propagated through that declared edge, so listing it would only add
-  churn, whereas an undeclared one is reached by no other mechanism at all.
+- and the only synpp stages listed are the documented stages this one runs as
+  libraries, declared or not: a declared edge carries a stage's OUTPUT, and under
+  content-addressed validity an unchanged output spares this stage, so the edge
+  never covers library code this stage runs itself (ADR-0194).
 
 The "source changed" case is simulated by monkeypatching ``inspect.getsource``
 for ONE listed module; no file on disk is written or modified, and nothing
@@ -109,21 +109,23 @@ EXPECTED_OTHER_HELPER_MODULE_NAMES = (
 )
 
 # The modules that ARE synpp stages (``configure`` + ``execute``) yet MUST be
-# covered, because this stage runs their code as plain function libraries WITHOUT
-# declaring the dependency via ``context.stage(...)``: synpp's own stage hash for
-# them therefore never reaches this stage, and no declared DAG edge propagates it
-# either, so this token is the ONLY mechanism that can see a change in them.
+# covered, because this stage runs their code as plain function libraries. For the
+# undeclared ones no DAG edge exists at all; for a declared one (regiostar, whose
+# ars_to_ags8 the enriched economic-status helper calls) the edge carries its output
+# only, and an unchanged output spares this stage (ADR-0194). Either way this token
+# is the ONLY mechanism that can see a change in their code.
 # ``household_size`` is imported at MODULE level for ``kreis_household_stats``, so
 # it is covered as a module OBJECT in ``_HELPER_MODULES``; the other four are reached
 # through helpers (the census income-class map of the enriched economic-status
 # helper, and the eqasim donor matching with the two HTS cleaners it imports), so
 # they are covered by dotted NAME. Named explicitly so a further synpp stage cannot
 # silently join the token: adding one has to be a visible edit to this tuple.
-UNDECLARED_STAGE_LIBRARY_MODULE_NAMES = (
+STAGE_LIBRARY_MODULE_NAMES = (
     "braunschweig.data.census.household_size",
     "braunschweig.data.census.household_income",
     "data.hts.entd.cleaned",
     "synthesis.population.matched",
+    "braunschweig.data.bbsr.regiostar",
 )
 
 # The one helper this stage takes from the enriched stage, and the stage package it
@@ -418,23 +420,23 @@ def test_helper_modules_cover_the_sources_package_one_level_deep():
     assert not missing, f"sources modules missing from _HELPER_MODULES: {missing}"
 
 
-def test_the_undeclared_stage_libraries_are_covered_by_one_of_the_two_mechanisms():
-    """The undeclared synpp-stage libraries must be covered.
+def test_the_stage_libraries_are_covered_by_one_of_the_two_mechanisms():
+    """The synpp-stage libraries must be covered.
 
     All of them are synpp stages whose code this stage runs as a plain function
-    library while ``configure()`` does NOT declare the dependency, so neither synpp's
-    own stage hashing nor a declared DAG edge propagates their source into this
-    stage's cache key. If one is dropped from BOTH tuples, an edit to it (for example
+    library; neither synpp's own stage hashing nor a declared DAG edge (which
+    carries output, not code; ADR-0194) brings their source into this stage's
+    cache key. If one is dropped from BOTH tuples, an edit to it (for example
     to ``kreis_household_stats`` or ``match_donors``) silently reuses stale output --
     fail loudly here.
     """
     covered = _covered_module_names()
 
     missing = [
-        name for name in UNDECLARED_STAGE_LIBRARY_MODULE_NAMES if name not in covered
+        name for name in STAGE_LIBRARY_MODULE_NAMES if name not in covered
     ]
     assert not missing, (
-        "undeclared synpp-stage libraries missing from both _HELPER_MODULES and "
+        "synpp-stage libraries missing from both _HELPER_MODULES and "
         f"_DEFERRED_HELPER_MODULE_NAMES: {missing}"
     )
 
@@ -502,21 +504,18 @@ def test_helper_modules_cover_the_other_first_party_helpers():
 
 
 def test_helper_modules_contains_no_synpp_stage():
-    """Only the documented undeclared stage libraries may be synpp stages.
+    """Only the documented stage libraries may be synpp stages.
 
-    A synpp stage whose dependency this stage DECLARES (``context.stage(...)`` in
-    ``configure``) is hashed by synpp from its own source and propagated through
-    that declared edge, so covering it here would double-cover it and add cache
-    churn without closing any gap -- this assertion keeps such a module out. BOTH
-    tuples are checked, because the mechanism a module is covered by follows its
-    import site, so a declared stage could just as easily slip into the deferred
-    names as into the module objects.
+    A synpp stage this stage only DECLARES (``context.stage(...)`` in ``configure``)
+    and never imports reaches it as output through the declared edge; hashing its
+    source here would add cache churn without closing any gap, so this assertion
+    keeps such a module out. BOTH tuples are checked, because the mechanism a module
+    is covered by follows its import site.
 
-    The exceptions in ``UNDECLARED_STAGE_LIBRARY_MODULE_NAMES`` are allowed
-    precisely because that propagation does NOT happen for them: they are used as
-    plain function libraries and are not declared dependencies, so the token is
-    the only mechanism that can see them (see
-    ``test_the_undeclared_stage_libraries_are_covered_by_one_of_the_two_mechanisms``).
+    The exceptions in ``STAGE_LIBRARY_MODULE_NAMES`` are allowed because this stage
+    runs their code as plain function libraries, declared or not, so the token is
+    the only mechanism that can see a change in it (ADR-0194; see
+    ``test_the_stage_libraries_are_covered_by_one_of_the_two_mechanisms``).
     They are named explicitly rather than waved through by a predicate, so a further
     synpp stage joining the token has to be justified in a visible edit here
     instead of slipping in silently.
@@ -532,12 +531,12 @@ def test_helper_modules_contains_no_synpp_stage():
 
     unexpected = [
         name for name in stages
-        if name not in UNDECLARED_STAGE_LIBRARY_MODULE_NAMES
+        if name not in STAGE_LIBRARY_MODULE_NAMES
     ]
 
     assert not unexpected, (
         "synpp stages must not be covered by the token unless they are an "
-        f"undeclared library dependency: {unexpected}"
+        f"documented library dependency: {unexpected}"
     )
 
 
