@@ -193,10 +193,19 @@ fi
 # output directory to already exist and aborts the whole run otherwise. Extract
 # output_path from the YAML config and create it up front so a fresh server
 # checkout does not crash on a missing directory.
-output_path=$(cat "${CONFIGS[@]}" | grep -E '^[[:space:]]*output_path:' \
-    | tail -1 \
-    | sed -E 's/^[[:space:]]*output_path:[[:space:]]*//; s/[[:space:]]*$//' \
-    | tr -d '"'"'"'')
+# Per file the FIRST output_path line counts; a later config (the overlay) overrides
+# the earlier one, as in the synpp merge. `|| true` keeps a config without the key
+# from aborting the script under pipefail.
+output_path=""
+for config_file in "${CONFIGS[@]}"; do
+    value=$( { grep -E '^[[:space:]]*output_path:' "$config_file" || true; } \
+        | head -1 \
+        | sed -E 's/^[[:space:]]*output_path:[[:space:]]*//; s/[[:space:]]*$//' \
+        | tr -d '"'"'"'')
+    if [[ -n "$value" ]]; then
+        output_path="$value"
+    fi
+done
 if [[ -n "$output_path" ]]; then
     mkdir -p "$output_path"
     echo "==> Ensured output directory exists: $output_path"
