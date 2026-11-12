@@ -78,17 +78,15 @@ SOURCE_EXCLUDED_FILE_NAMES = ("dependency-reduced-pom.xml",)
 
 
 def _sha256_file(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    """sha256 hex of a file's raw bytes (the shared definition in ``braunschweig.synpp_tokens``)."""
+    return synpp_tokens.file_sha256(path)
 
 
 def _sha256_text_file(path):
-    """sha256 hex of a text file with CRLF normalised to LF (``core.autocrlf`` checkouts)."""
-    with open(path, "rb") as handle:
-        return hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
+    """sha256 hex of a text file with CRLF normalised to LF (``core.autocrlf`` checkouts); the
+    shared definition in ``braunschweig.synpp_tokens``, so the jar-source digest and every other
+    committed-text digest follow one rule."""
+    return synpp_tokens.text_file_sha256(path)
 
 
 def _git_output(git_binary, source_path, arguments):

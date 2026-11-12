@@ -111,9 +111,10 @@ def text_file_sha256(path) -> str:
     Use it for tables that are committed to the repository: a Windows checkout with
     ``core.autocrlf`` holds CRLF while a Linux checkout of the same commit holds LF, and one
     commit must give one token. Do not use it for downloaded or binary files (``file_sha256``).
-    The one definition: ``content_sha256`` of ``braunschweig.data.vrb.fare_model_export`` and
-    of ``braunschweig.parking.tariff_export`` delegate here, so a provenance record and a
-    cache token of the same committed file always agree. Raises
+    The shared definition for stage code: ``content_sha256`` of
+    ``braunschweig.data.vrb.fare_model_export`` and of ``braunschweig.parking.tariff_export``
+    and the jar-source digest of ``matsim.runtime.eqasim`` delegate here, so a provenance record
+    and a cache token of the same committed file always agree. Raises
     ``FileNotFoundError`` for a missing file; a caller for which a missing file is legal checks
     for it first.
     """
