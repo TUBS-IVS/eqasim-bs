@@ -1056,3 +1056,17 @@ def test_fine_child_bands_leave_the_rng_stream_untouched_on_a_randomised_populat
     differing = (coarse_out["source_P_ID"].to_numpy() != fine_out["source_P_ID"].to_numpy()) | (
         coarse_out["source_H_ID"].to_numpy() != fine_out["source_H_ID"].to_numpy())
     assert differing.any()
+
+
+def test_plan_source_resolution_primary_path_is_logged_with_no_unresolved_source(caplog):
+    # Every plan source points at a real donor person, so the PRIMARY path must dominate:
+    # the rate line is logged at INFO (below the warn threshold) and the unresolved-source
+    # warning stays silent.
+    households, persons = _school_child_households()
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.weekend_plan_match"):
+        wpm.reassign_weekend_plan_sources(households, persons, rng=np.random.RandomState(0))
+    rate_lines = [r for r in caplog.records
+                  if r.getMessage().startswith("[weekend_plan_match.plan_source_resolution] primary")]
+    assert len(rate_lines) == 1, caplog.text
+    assert rate_lines[0].levelno == logging.INFO
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING], caplog.text

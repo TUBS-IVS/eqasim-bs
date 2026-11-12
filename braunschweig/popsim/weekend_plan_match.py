@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim.attributes import EMPLOYED_TAET, PT_SUBSCRIPTION_FKARTE
+from braunschweig.popsim.fallback_rates import log_fallback_rate
 from braunschweig.popsim.sampling import weighted_choice
 
 logger = logging.getLogger(__name__)
@@ -698,6 +699,12 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     # (upstream corruption / a dropped donor); such a person would be silently skipped by
     # the weekend-source sweep below, so surface it loudly rather than hide it.
     n_unresolved = int(src_kernwo.isna().sum())
+    # Observability only (audit package D): the primary path is "plan source resolves to a real
+    # donor person"; an unresolved source is the failure the warning below reports. Raise-vs-warn
+    # stays an open owner decision, so the warning is kept unchanged.
+    log_fallback_rate(
+        logger, "weekend_plan_match.plan_source_resolution", n_unresolved, len(persons),
+        what="persons whose plan source does not resolve to a real donor person")
     if n_unresolved:
         logger.warning(
             "[weekend_plan_match] %d person(s) have a plan-source that does not resolve "
