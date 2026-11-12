@@ -575,8 +575,10 @@ def _worktree_commits(host: Host, run_dir: Path) -> Dict[str, str]:
 # The production environment snapshot (conda explicit lock + pip layer) of the run worktree's commit.
 SNAPSHOT_LOCK = "environments/server-linux-64.lock"
 SNAPSHOT_REQUIREMENTS = "environments/requirements-server-linux-64.txt"
-SNAPSHOT_FIX = ("create a fresh conda env from the two snapshot files (see scripts/bootstrap_server.sh), "
-                "or pass --allow-environment-mismatch to run on this env knowingly")
+SNAPSHOT_FIX = ("create a fresh conda env from the two snapshot files under another name (bootstrap_server.sh "
+                "keeps an existing env: set EQASIM_CONDA_ENV, see scripts/bootstrap_server.sh), then gate with "
+                "THAT env's python and launch with --conda-env <that name>; or pass --allow-environment-mismatch "
+                "to run on this env knowingly")
 MAX_OFFENDERS = 10
 # One subprocess of the target interpreter: its prefix, platform, conda-meta file names (None when the prefix
 # has no conda-meta directory) and {normalised distribution name: version}. Run it with `python -I` so neither
@@ -687,13 +689,15 @@ def _environment_gate(args, host: Host, bs_dir: Path, env: dict) -> dict:
     if not str(facts.get("platform", "")).startswith("linux"):
         print(f"environment: the Linux snapshot check does not apply on platform {facts.get('platform')!r}; "
               "NOT checked")
-        return {"checked": False, "platform": facts.get("platform")}
+        return {"checked": False, "platform": facts.get("platform"), "prefix": facts.get("prefix"),
+                "python": str(args.python)}
     for relative in (SNAPSHOT_LOCK, SNAPSHOT_REQUIREMENTS):
         if not (bs_dir / relative).is_file():
             raise IsolatedRunError(f"{bs_dir / relative} is missing: the run commit has no environment snapshot")
     check = check_environment(_read_text(bs_dir / SNAPSHOT_LOCK), _read_text(bs_dir / SNAPSHOT_REQUIREMENTS), facts)
     print(check.rate_line())
-    entry = dict(check.as_record(), checked=True, platform=facts["platform"], overridden=False)
+    entry = dict(check.as_record(), checked=True, platform=facts["platform"], overridden=False,
+                  prefix=facts.get("prefix"), python=str(args.python))
     if check.ok:
         return entry
     shown = "; ".join(check.offenders[:MAX_OFFENDERS])
@@ -1342,6 +1346,36 @@ def build_launch_script(run_name: str, bs_dir: Path, run_yml: Path, java_home: P
     ]) + "\n"
 
 
+def _launch_prefix(host: Host, conda_sh: Path, conda_env: str) -> str:
+    """sys.prefix of the env the launch script activates (same ``source`` + ``conda activate`` as the script)."""
+    quote = shlex.quote
+    script = (f"source {quote(str(conda_sh))} && conda activate {quote(conda_env)} && "
+              "python -I -c 'import sys; print(sys.prefix)'")
+    result = host.run(["bash", "-c", script], env=dict(os.environ, PYTHONUTF8="1"))
+    lines = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
+    if result.returncode != 0 or not lines:
+        raise IsolatedRunError(f"could not resolve the prefix of conda env {conda_env!r} (exit {result.returncode}): "
+                               f"{_tail((result.stdout or '') + (result.stderr or ''))}")
+    return lines[-1]
+
+
+def _check_launch_environment(record: dict, host: Host, conda_sh: Path, conda_env: str) -> None:
+    """Refuse a launch whose conda env is not the environment the gate verified."""
+    environment = (record.get("gate") or {}).get("environment")
+    if not environment or not environment.get("checked") or not environment.get("prefix"):
+        print("environment: the gate record holds no checked environment prefix (older run.json, non-Linux gate "
+              "or no gate); the launch env is NOT compared with a verified one")
+        return
+    launch_prefix = _launch_prefix(host, conda_sh, conda_env)
+    gated_prefix = environment["prefix"]
+    if not _same_path(launch_prefix, gated_prefix):
+        raise IsolatedRunError(
+            f"the launch would run in conda env {conda_env!r} (prefix {launch_prefix}), but the gate verified "
+            f"{gated_prefix} (python {environment.get('python')}). Fix: re-run `gate --write` with the python of "
+            "the env you launch in, or pass the --conda-env that matches the gated python")
+    print(f"environment: launch env {conda_env!r} has the gated prefix {gated_prefix}")
+
+
 def _gate_problem(record: dict, doc: dict, run_yml: Path, run_dir: Path, commits: Dict[str, str]) -> Optional[str]:
     """Why this run.yml is not covered by a current gate, or None."""
     gate_off = _launcher_gate_off(run_dir, doc)
@@ -1434,6 +1468,7 @@ def cmd_launch(args, host: Host) -> int:
         raise IsolatedRunError(f"{java_home}/bin/java not found (--java-home)")
     if not conda_sh.is_file():
         raise IsolatedRunError(f"{conda_sh} not found (--conda-sh)")
+    _check_launch_environment(record, host, conda_sh, args.conda_env)
     logs = run_dir / LOGS_DIR
     logs.mkdir(exist_ok=True)
     log_path = logs / f"run_{_stamp(host)}.log"

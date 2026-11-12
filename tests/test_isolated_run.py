@@ -136,7 +136,9 @@ class FakeMachine:
     """Answers the tool's git, cp and helper-script calls like the server would; records every call."""
 
     def __init__(self, explain_text=None, inputs_returncode=0, launch_log=None, launch_returncode=None,
-                 bundle_verify_returncode=0, dirty_after_worktree_add=False, env_facts=None):
+                 bundle_verify_returncode=0, dirty_after_worktree_add=False, env_facts=None,
+                 launch_prefix="/env"):
+        self.launch_prefix = launch_prefix  # sys.prefix the launch script's conda env resolves to
         self.env_facts = matching_facts() if env_facts is None else env_facts
         self.calls = []
         self.popen_calls = []
@@ -165,6 +167,8 @@ class FakeMachine:
             assert argv[1] == "-a"
             shutil.copytree(argv[-2], argv[-1], symlinks=True)
             return subprocess.CompletedProcess(argv, 0, "", "")
+        if argv[0] == "bash":
+            return subprocess.CompletedProcess(argv, 0, f"noise\n{self.launch_prefix}\n", "")
         if tool.ENVIRONMENT_PROBE in argv:
             return subprocess.CompletedProcess(argv, 0, json.dumps(self.env_facts), "")
         if argv[1].endswith("explain_stale_stages.py"):
@@ -424,6 +428,7 @@ def test_gate_passes_a_matching_environment_and_prints_the_rate(root, capsys):
     assert "conda 2/2 matched, pip 2/2 matched (1 git pin: presence only)" in capsys.readouterr().out
     environment = load_record(run_dir)["gate"]["environment"]
     assert environment["offenders"] == [] and environment["overridden"] is False and environment["extra_conda"] == 1
+    assert environment["prefix"] == "/env" and environment["python"]
 
 
 @pytest.mark.parametrize("facts, offender", [
@@ -471,8 +476,10 @@ def test_real_snapshot_files_parse_and_an_empty_env_misses_every_pin():
 
 
 @pytest.mark.skipif(
-    not sys.platform.startswith("linux") or not (Path(sys.prefix) / "conda-meta").is_dir(),
-    reason="primary-path check needs a Linux conda environment built from the committed snapshot (the CI job)")
+    os.environ.get("EQASIM_SNAPSHOT_ENV") != "1" or not sys.platform.startswith("linux")
+    or not (Path(sys.prefix) / "conda-meta").is_dir(),
+    reason="primary-path check needs a Linux conda env built from the committed snapshot; "
+           "enable with EQASIM_SNAPSHOT_ENV=1 (set by the Linux CI job)")
 def test_environment_built_from_the_snapshot_matches_it_completely():
     """Primary path on real input: the Linux CI job installs exactly these two files, so the probe and the
     comparison must report a full match there. A parser that misreads the lock or the conda-meta names fails here."""
@@ -527,6 +534,19 @@ def test_launch_starts_one_detached_gated_run(root, log_tail, returncode, expect
     assert launch_record["pid"] == FakeProcess.pid and launch_record["log"] == str(log)
     # a launched run.yml is never replaced: its provenance belongs to the cache it wrote
     assert tool.main(["overlay", str(run_dir), "--from", str(source), "--force"], host=host) == 1
+
+
+@pytest.mark.parametrize("launch_prefix, expected_exit", [("/env", 0), ("/drifted-env", 1)])
+def test_launch_runs_only_in_the_environment_the_gate_verified(root, capsys, launch_prefix, expected_exit):
+    machine = FakeMachine(launch_log=run_log(explain_report("HIT"), EXECUTING_LINE), launch_prefix=launch_prefix)
+    run_dir, source, host, launch, java_home = gated_run(root, machine)
+
+    assert tool.main(launch, host=host) == expected_exit
+
+    assert len(machine.popen_calls) == expected_exit ^ 1
+    if expected_exit:
+        error = capsys.readouterr().err
+        assert "/drifted-env" in error and "/env" in error and "--conda-env" in error
 
 
 @pytest.mark.parametrize("problem, expected_exit", [

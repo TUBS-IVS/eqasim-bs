@@ -142,7 +142,11 @@ matched ...`) is printed and stored in `run.json` under `gate.environment`; a mi
 different package refuses the gate (exit 1), naming up to ten of them. Fix: build a fresh env
 from the two files (`scripts/bootstrap_server.sh`). `--allow-environment-mismatch` turns the
 refusal into a warning and records the offenders. On a non-Linux interpreter the check is not
-applicable; `gate` says so and records `checked: false`. It replaces the check of the retired
+applicable; `gate` says so and records `checked: false`. The entry also stores the probed `prefix`
+and `python`; `launch` resolves the prefix of the `--conda-env` it activates and refuses when it
+differs from the gated one (gate with that env's python, or pass the matching `--conda-env`); a
+gate record without a checked prefix is reported in one line, not blocked. `bootstrap_server.sh`
+keeps an existing env, so a fresh one needs another name (`EQASIM_CONDA_ENV`). It replaces the check of the retired
 `update_server.sh`.
 
 **PopulationSim recomputes only on request, and never into another run.** The gate exits 2
