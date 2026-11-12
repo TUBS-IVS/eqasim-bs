@@ -2,10 +2,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 import pandas as pd
+import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
+from braunschweig.data.bbsr import regiostar  # noqa: E402
 from braunschweig.data.bbsr.regiostar import fill_missing_rs7_nearest_neighbour  # noqa: E402
 
 
@@ -29,6 +31,45 @@ def test_missing_gemeinde_gets_nearest_neighbour_rs7():
     assert bool(row["rs7_filled"]) is True
     assert int(out[out["commune_id"] == "03153017"].iloc[0]["regiostar7"]) == 75
     assert bool(out[out["commune_id"] == "03153017"].iloc[0]["rs7_filled"]) is False
+
+
+class _ValidateContext:
+    """Declared-options-only config, like synpp's ValidateContext (``config(key)`` takes the key alone)."""
+
+    def __init__(self, data_path):
+        self._values = {"data_path": str(data_path), "regiostar.path": "regiostar/workbook.xlsx"}
+
+    def config(self, key):
+        return self._values[key]
+
+
+def _validate_inputs(data_path):
+    workbook = data_path / "regiostar" / "workbook.xlsx"
+    workbook.parent.mkdir(parents=True)
+    workbook.write_bytes(b"workbook-bytes")
+    vg250 = data_path / "germany" / "vg250-ew_12-31.utm32s.gpkg.ebenen.zip"
+    vg250.parent.mkdir(parents=True)
+    vg250.write_bytes(b"vg250-archive-A")
+    return vg250
+
+
+def test_validate_token_follows_the_vg250_archive_content_not_only_the_workbook(tmp_path):
+    # execute() reads the VG250 archive for the Gemeinde universe and centroids; a replaced archive of
+    # the same size must not serve the cached table (audit C3).
+    vg250 = _validate_inputs(tmp_path)
+    context = _ValidateContext(tmp_path)
+    before = regiostar.validate(context)
+    vg250.write_bytes(b"vg250-archive-B")          # same length, other content
+    after = regiostar.validate(context)
+    assert after["vg250_sha256"] != before["vg250_sha256"]
+    assert after["workbook_size"] == before["workbook_size"] == len(b"workbook-bytes")
+
+
+def test_validate_raises_naming_the_path_when_the_vg250_archive_is_missing(tmp_path):
+    vg250 = _validate_inputs(tmp_path)
+    vg250.unlink()
+    with pytest.raises(RuntimeError, match="vg250-ew_12-31"):
+        regiostar.validate(_ValidateContext(tmp_path))
 
 
 def test_ars_to_ags8_drops_verbandsgemeinde_block():

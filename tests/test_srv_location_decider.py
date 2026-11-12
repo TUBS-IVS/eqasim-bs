@@ -223,3 +223,56 @@ def test_decider_unknown_purpose_raises(tmp_path):
 
     with pytest.raises(ValueError, match="unknown purpose"):
         decide("escort", "car", 500.0)
+
+
+# ---------------------------------------------------------------------------
+# validate(): the two pinned SrV tables are inputs of the stage (audit C3)
+# ---------------------------------------------------------------------------
+
+_SRV_FILE_KEYS = {"probs": "srv_location_type_probs_path", "shares": "srv_location_type_shares_path"}
+_SRV_FILE_TEXT = {"probs": _BASIC_CSV, "shares": "# reference shares\npurpose,category,share\nleisure,leisure_culture,1.0\n"}
+
+
+def _srv_validate_context(tmp_path, *, flag=True):
+    """A validate context over two real files; ``_Ctx`` raises KeyError for any key not declared here."""
+    cfg = {"secondary_srv_location_types": flag}
+    if flag:
+        for name, key in _SRV_FILE_KEYS.items():
+            path = tmp_path / f"srv_{name}.csv"
+            path.write_bytes(_SRV_FILE_TEXT[name].encode("utf-8"))      # bytes: write_text would add CR on Windows
+            cfg[key] = str(path)
+    return _Ctx(cfg), cfg
+
+
+@pytest.mark.parametrize("name", sorted(_SRV_FILE_KEYS))
+def test_validate_token_follows_srv_table_content_but_not_its_line_endings(tmp_path, name):
+    ctx, cfg = _srv_validate_context(tmp_path)
+    path = pathlib.Path(cfg[_SRV_FILE_KEYS[name]])
+    lf_bytes = path.read_bytes()
+    before = sc.validate(ctx)
+    assert set(before["srv_location_type_files"]) == {"srv_probs.csv", "srv_shares.csv"}
+
+    path.write_bytes(lf_bytes.replace(b"\n", b"\r\n"))                  # the Windows (core.autocrlf) checkout
+    assert sc.validate(ctx) == before
+
+    path.write_bytes(lf_bytes.replace(b"1.0", b"0.9"))                  # a corrected table
+    assert sc.validate(ctx) != before
+
+
+def test_validate_token_with_the_flag_off_is_the_plain_source_token_and_reads_no_file(tmp_path):
+    # _Ctx raises KeyError for a path key, so this also proves the OFF path never touches the files.
+    ctx, _ = _srv_validate_context(tmp_path, flag=False)
+    token = sc.validate(ctx)
+    assert "srv_location_type_files" not in token
+    assert token == sc.synpp_tokens.source_token(
+        sc._HELPER_MODULES, sc._DEFERRED_HELPER_MODULE_NAMES, stage_label=sc.__name__ + ".validate()")
+
+
+@pytest.mark.parametrize("name", sorted(_SRV_FILE_KEYS))
+def test_validate_raises_naming_path_and_key_when_a_srv_table_is_missing(tmp_path, name):
+    ctx, cfg = _srv_validate_context(tmp_path)
+    missing = pathlib.Path(cfg[_SRV_FILE_KEYS[name]])
+    missing.unlink()
+    with pytest.raises(RuntimeError) as error:
+        sc.validate(ctx)
+    assert str(missing) in str(error.value) and _SRV_FILE_KEYS[name] in str(error.value)

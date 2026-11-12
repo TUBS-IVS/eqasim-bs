@@ -822,8 +822,16 @@ def test_secondary_chainsolvers_token_changes_when_the_seed_day_filter_source_ch
     import braunschweig.synthesis.locations.secondary_chainsolvers as chainsolvers
     from braunschweig.popsim import seed as popsim_seed
 
+    class _FlagOffContext:
+        """validate() reads the SrV flag; OFF, the token is the plain source token."""
+
+        @staticmethod
+        def config(key):
+            assert key == "secondary_srv_location_types"
+            return False
+
     assert popsim_seed in chainsolvers._HELPER_MODULES
-    token_before = chainsolvers.validate(None)
+    token_before = chainsolvers.validate(_FlagOffContext)
     real_getsource = inspect.getsource
 
     def patched_getsource(obj):
@@ -832,4 +840,4 @@ def test_secondary_chainsolvers_token_changes_when_the_seed_day_filter_source_ch
         return real_getsource(obj)
 
     monkeypatch.setattr(inspect, "getsource", patched_getsource)
-    assert chainsolvers.validate(None) != token_before
+    assert chainsolvers.validate(_FlagOffContext) != token_before
