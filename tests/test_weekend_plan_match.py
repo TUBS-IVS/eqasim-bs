@@ -1070,3 +1070,25 @@ def test_plan_source_resolution_primary_path_is_logged_with_no_unresolved_source
     assert len(rate_lines) == 1, caplog.text
     assert rate_lines[0].levelno == logging.INFO
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING], caplog.text
+
+
+@pytest.mark.parametrize("target_child_ages, donor_child_ages, expected_fine_crossings", [
+    # Each child finds a same-fine-band donor: the primary path, no crossing.
+    ((7, 13), (13, 7), 0),
+    # Only one primary-school donor for two primary-school children: exactly one forced crossing
+    # (the second child takes the any-age tier and gets the 13-year-old's day).
+    ((7, 8), (13, 7), 1),
+])
+def test_weekend_match_report_counts_fine_band_crossings(
+        target_child_ages, donor_child_ages, expected_fine_crossings):
+    households, persons = _school_child_households()
+    is_child = (persons["P_ID"] >= 3).to_numpy()
+    persons.loc[(persons["H_ID"] == 2).to_numpy() & is_child, "HP_ALTER"] = list(target_child_ages)
+    persons.loc[(persons["H_ID"] == 1).to_numpy() & is_child, "HP_ALTER"] = list(donor_child_ages)
+    _out, _trace, report = wpm.reassign_weekend_plan_sources(
+        households, persons, rng=np.random.RandomState(0))
+    assert report.n_paired_members == 4
+    assert report.n_paired_in_split_child_band == 2
+    assert report.n_crossed_fine_child_age_band == expected_fine_crossings
+    # Both children stay inside the coarse 6-13 band and the adults pair with adults.
+    assert report.n_crossed_coarse_age_band == 0
