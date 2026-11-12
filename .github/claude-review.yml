@@ -76,6 +76,14 @@ structure_paths:
   - ".github/claude-review.yml"
   - ".github/claude-review-prompt.md"
 
+# Documentation and tests (claude-pr-review v1.5.0): their changed lines and files do not count towards
+# the deep tier's size thresholds; they still count for the full tier and are still reviewed.
+supporting_paths:
+  - "docs/**"
+  - "tests/**"
+  - "**/src/test/**"
+  - "**/*.md"
+
 # Branch kinds (prefix before "/") that skip the review unless a critical path is touched.
 skip_kinds:
   - docs
@@ -111,6 +119,11 @@ thresholds:
 rereview:
   max_rounds: 3
   verify_tier: light
+  # claude-pr-review v1.5.0: a push of at most this many changed lines is only checked, on verify_tier,
+  # at verify_effort (as every verify round). ASSUMPTION: starting values of 2026-11-12, re-tune from
+  # the run records.
+  small_push_lines: 60
+  verify_effort: medium
 
 # Each tier's hard budget per run (claude -p --max-budget-usd) is the owner's and comes from the
 # organization secret CLAUDE_REVIEW_BUDGETS, which the caller passes: no budget is published
