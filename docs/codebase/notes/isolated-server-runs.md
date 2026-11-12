@@ -137,7 +137,7 @@ when `braunschweig.popsim.stage` is `STALE` or `RECOMPUTE`, unless `--allow-pops
 recomputing popsim purges stale `batch_*` folders in its work dir
 (`braunschweig.popsim.stage.batch_cache`, `purge_stale_batches_on_config_change`), discards
 batch output whose input files changed and removes batch folders that are not part of the run
-(`braunschweig.popsim.batch.reconcile_batch_outputs`, ADR-0193), so when that
+(`braunschweig.popsim.mid.batch_folders.run_popsim_mid`, ADR-0193), so when that
 work dir resolves outside `RUN_DIR` (the WP-E overlay's `/home/felix/wt-i453-ab/popsim_work`
 does) a certain recompute is refused even with `--allow-popsim`: point the work dir into the
 run, which costs nothing when popsim recomputes anyway. A possible recompute (`STALE-IF`, where

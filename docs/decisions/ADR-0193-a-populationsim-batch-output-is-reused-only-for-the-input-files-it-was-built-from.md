@@ -36,13 +36,14 @@
 4. `logging.yaml` is not part of the fingerprint: it configures PopulationSim's logging only.
 5. The work-dir signature stays as it is. It purges the whole work dir when one of the inputs it
    lists changes; it is no longer what protects a single batch.
-6. One log line per run states how many batch outputs were kept, how many were discarded because
-   the inputs changed, how many because no fingerprint was recorded, how many folders were new
-   and how many were removed. It is a warning when anything was discarded or removed.
+6. Every discarded output and every removed folder is logged by name before it is deleted, as a
+   warning. One line per run states how many batch outputs were kept, how many were discarded
+   because the inputs changed, how many because no fingerprint was recorded, how many folders
+   were new and how many were removed; it is a warning when anything was discarded or removed.
 
 ## Rejected
 
-- **Add the `cells` frame to the hand-written signature.** About ten lines, and enough for the
+- **Add the `cells` frame to the hand-written signature.** A small change, and enough for the
   finding as written. Rejected because it repeats the pattern that has now failed three times (an
   input reaches the batch folders and the list is not updated) and because it cannot see a code
   change to the batch-input builders.
@@ -51,14 +52,24 @@
 
 Apart from the PopulationSim installation itself, the files in a batch folder are everything a
 batch reads. A fingerprint over them cannot miss an input that reaches a batch, whoever adds it.
-It also tells the batches apart: a change to the targets of some cells re-runs the batches that
-hold those cells and no others.
+It also tells the batches apart: exactly the batches whose input files changed run again. With
+Kreis controls these can be more than the batches that hold a changed cell, because the share of
+a Kreis target that a batch receives depends on the Kreis total
+(`braunschweig.popsim.mid.batch_folders.assemble_batch_folder`).
 
 ## Consequences
 
 - The first run after this change in an existing work dir executes every PopulationSim batch once
   (decision 2). `braunschweig.popsim.stage` re-executes once as well, because its token hashes
   the two edited helper modules. The duration was not measured for this change.
+- That re-run gives the same population only if PopulationSim reproduces its output for identical
+  inputs. No run establishes this. If it does not, the realised population differs after that
+  first run, and every stage downstream of `braunschweig.popsim.stage` re-executes.
+- The fingerprint is recorded before the batch runs, so the guard holds for one pipeline process
+  per work dir. A PopulationSim process that survives a killed pipeline and finishes after a
+  restart with other inputs writes its completion marker into a folder whose record already
+  names the new inputs; the runner then skips the folder and the old output is merged. Neither
+  guard detects this.
 - A change of the PopulationSim installation (the package version in the `popsimprep`
   environment) is still not detected: neither guard reads it.
 - Two runs that use one work dir with different inputs discard each other's batch outputs. That
