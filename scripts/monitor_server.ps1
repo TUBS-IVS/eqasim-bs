@@ -469,6 +469,11 @@ $beeped = $false
 while ($true) {
     try {
         $snap = Get-Snapshot
+        # A failed ssh call does not throw: it returns text without fields. Without an ALIVE
+        # field this is a failed poll, not an ended run, so it must not reach the alarm below.
+        if (-not $snap.Fields['ALIVE']) {
+            throw "the server returned no status fields (ssh failed or timed out)"
+        }
         Show-Dashboard $snap
         $f = $snap.Fields
         $done = ($f['DONE'] -and [int]$f['DONE'] -gt 0)
