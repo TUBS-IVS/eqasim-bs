@@ -125,7 +125,12 @@ def _prepare_stubbed_run(tmp_path: Path, synpp_exit_code: int) -> dict[str, str]
     # The sampler stub records its pid and then idles, like the real background sampler.
     (scripts / "sample_load.sh").write_text("echo $$ > sampler.pid\nexec sleep 300\n", encoding="utf-8")
     (scripts / "run_synpp.py").write_text(
-        "import sys\n"
+        "import os, sys, time\n"
+        # Sync point: the background sampler must have written its pid before this run ends, or the
+        # script's cleanup could kill the sampler before the pid exists and the test would read nothing.
+        "deadline = time.monotonic() + 5.0\n"
+        "while not os.path.exists('sampler.pid') and time.monotonic() < deadline:\n"
+        "    time.sleep(0.02)\n"
         "open('synpp_args.txt', 'w').write('\\n'.join(sys.argv[1:]))\n"
         f"raise SystemExit({synpp_exit_code})\n", encoding="utf-8")
     return environment | {"EQASIM_SKIP_VERIFY": "1"}
