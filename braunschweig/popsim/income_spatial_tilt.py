@@ -13,6 +13,8 @@ import logging
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.fallback_rates import log_fallback_rate
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_BETA = 0.3
@@ -132,9 +134,31 @@ def apply_spatial_income_tilt(frame: pd.DataFrame, cell_index: pd.DataFrame, *,
     covariance); this covariance is expected to be small in practice."""
     out = frame.copy()
     idx = cell_index.set_index(cell_col)
-    renter_idx = out[cell_col].map(idx["renter_income_index"]).fillna(1.0).to_numpy()
-    owner_idx = out[cell_col].map(idx["owner_income_index"]).fillna(1.0).to_numpy()
+    renter_raw = out[cell_col].map(idx["renter_income_index"])
+    owner_raw = out[cell_col].map(idx["owner_income_index"])
     is_owner = (out[tenure_col].astype(str) == "owner").to_numpy()
+    # Observability only (CLAUDE.md "Fallback transparency"): a row whose cell is absent from
+    # the index (or has a NaN index) silently gets the neutral factor 1.0 below. Primary = the
+    # index the row actually uses (owner index for owner rows, renter index for every other
+    # tenure) exists; fallback = neutral 1.0. Each line is per tenure group.
+    n_renter_rows = int((~is_owner).sum())
+    n_owner_rows = int(is_owner.sum())
+    log_fallback_rate(
+        logger,
+        "income_spatial_tilt.renter_index",
+        int(renter_raw.isna().to_numpy()[~is_owner].sum()),
+        n_renter_rows,
+        what="non-owner rows whose cell has no renter income index -> neutral factor 1.0",
+    )
+    log_fallback_rate(
+        logger,
+        "income_spatial_tilt.owner_index",
+        int(owner_raw.isna().to_numpy()[is_owner].sum()),
+        n_owner_rows,
+        what="owner rows whose cell has no owner income index -> neutral factor 1.0",
+    )
+    renter_idx = renter_raw.fillna(1.0).to_numpy()
+    owner_idx = owner_raw.fillna(1.0).to_numpy()
     factor = np.where(is_owner, owner_idx, renter_idx)
     clipped = np.clip(factor, 1.0 - clip, 1.0 + clip)
     clipped_fraction = float(np.mean(clipped != factor))
