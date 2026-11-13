@@ -174,6 +174,7 @@ from .results import (  # noqa: F401  (re-exports)
     _extract_locations,
 )
 from .fallback import (  # noqa: F401  (re-exports)
+    FALLBACK_WARN_RATE,
     _build_rda_candidate_index,
     _fallback_place,
     _rda_fallback_place,
@@ -960,6 +961,11 @@ def _apply_portal_anchors(portal_anchor_rows, escort_activity_anchors):
     return activity_anchors, portal_location_rows
 
 
+#: Allowed values of ``secondary_scorer_selection`` (see the config registration in
+#: ``configure``); anything else is rejected in :func:`_build_scorer_spec`.
+ALLOWED_SCORER_SELECTIONS = ("top_n", "top_n_spatial_downsample", "mnl")
+
+
 def _build_scorer_spec(context, sec_enabled):
     """Scorer spec forwarded to the workers, or ``None`` when potentials are OFF.
 
@@ -974,6 +980,12 @@ def _build_scorer_spec(context, sec_enabled):
     if not sec_enabled:
         return None
     selection = str(context.config("secondary_scorer_selection") or "top_n")
+    if selection not in ALLOWED_SCORER_SELECTIONS:
+        raise ValueError(
+            f"secondary_scorer_selection={selection!r} is not allowed; expected one of "
+            f"{list(ALLOWED_SCORER_SELECTIONS)} (an unknown value would silently run "
+            "the native carla defaults)."
+        )
     cs_parameters = (
         {
             "selection_strategy_complex_case": "mnl",
@@ -1114,6 +1126,21 @@ def _report_excursion_boundary_clip(plans_df, problems, df_secondary, *,
         print(_with_pass_label(_excursion_boundary_clip_summary(n_clipped, n_total), pass_label))
 
 
+def _warn_distance_layer_fallback(label, n_fallback, n_legs):
+    """Print a WARNING when the distance-layer fallback of ``label`` exceeds 5 %.
+
+    Logging only (CLAUDE.md fallback transparency); the rate line itself is printed
+    by the caller.
+    """
+    if n_legs and n_fallback / n_legs > FALLBACK_WARN_RATE:
+        print(
+            f"[braunschweig.secondary_chainsolvers] WARNING: {label} distance-layer "
+            f"fallback {n_fallback:,}/{n_legs:,} ({_rate_pct(n_fallback, n_legs):.1f}%) "
+            f"exceeds {100.0 * FALLBACK_WARN_RATE:.0f}% -- the distance layer is "
+            "probably not working (check its distribution keys)."
+        )
+
+
 def _log_subtype_draw_rates(context, subtype_stats, desired_by_category, *,
                             shop_subtype_decider, leisure_subtype_decider,
                             other_subtype_decider, escort_location_decider,
@@ -1142,6 +1169,7 @@ def _log_subtype_draw_rates(context, subtype_stats, desired_by_category, *,
             f"{n_dist_fb:,}/{n_shop_legs:,} "
             f"({_rate_pct(n_dist_fb, n_shop_legs):.1f}%)"
         )
+        _warn_distance_layer_fallback("shop", n_dist_fb, n_shop_legs)
     if leisure_subtype_decider is not None:
         n_by_group = {name: subtype_stats[name] for name in LEISURE_SUBTYPE_ACTIVITIES}
         n_leisure_legs = sum(n_by_group.values())
@@ -1158,6 +1186,7 @@ def _log_subtype_draw_rates(context, subtype_stats, desired_by_category, *,
             f"{n_dist_fb:,}/{n_leisure_legs:,} "
             f"({_rate_pct(n_dist_fb, n_leisure_legs):.1f}%)"
         )
+        _warn_distance_layer_fallback("leisure", n_dist_fb, n_leisure_legs)
     if other_subtype_decider is not None:
         n_by_outcome = {name: subtype_stats[name] for name in (*OTHER_SUBTYPE_ACTIVITIES, "other_rest")}
         n_other_legs = sum(n_by_outcome.values())
@@ -1174,6 +1203,7 @@ def _log_subtype_draw_rates(context, subtype_stats, desired_by_category, *,
             f"{n_dist_fb:,}/{n_other_legs:,} "
             f"({_rate_pct(n_dist_fb, n_other_legs):.1f}%)"
         )
+        _warn_distance_layer_fallback("other", n_dist_fb, n_other_legs)
     # Marginal-fallback rate of the MiD subtype deciders (audit B1): a leg whose (mode,
     # tt_band) cell has no estimate of its own draws from the marginal. Read with getattr,
     # because test doubles are plain callables without the counters of _CountedDecider.
@@ -1207,6 +1237,7 @@ def _log_subtype_draw_rates(context, subtype_stats, desired_by_category, *,
             f"{n_dist_fb:,}/{n_escort_legs:,} "
             f"({_rate_pct(n_dist_fb, n_escort_legs):.1f}%)"
         )
+        _warn_distance_layer_fallback("escort", n_dist_fb, n_escort_legs)
         if "escort_type_distance_layer_fallback" in subtype_stats:
             n_type_fb = subtype_stats["escort_type_distance_layer_fallback"]
             print(

@@ -17,6 +17,9 @@ def configure(context):
 
 MINIMUM_AREA = 20
 
+# Share of fallback items above which a warning is printed
+FALLBACK_WARN_RATE = 0.05
+
 def execute(context):
     # Load data
     df = context.stage("eqasim_common.data.osm.locations")    
@@ -42,6 +45,18 @@ def execute(context):
     df_fake = df_fake[~df_fake["commune_id"].isin(df["commune_id"])].copy()
 
     df_fake["geometry"] = df_fake["geometry"].centroid
+
+    # Fallback transparency: real OSM education POIs vs. municipality-centroid placeholders
+    n_real_municipalities = df["commune_id"].nunique()
+    n_fake_municipalities = len(df_fake)
+    n_municipalities = n_real_municipalities + n_fake_municipalities
+    fake_rate = n_fake_municipalities / max(n_municipalities, 1)
+    print("[education] municipalities with OSM POI (primary) {}/{} ({:.1f}%), centroid fallback {} ({:.1f}%)".format(
+        n_real_municipalities, n_municipalities, 100 * (1 - fake_rate),
+        n_fake_municipalities, 100 * fake_rate))
+    if fake_rate > FALLBACK_WARN_RATE:
+        print("[education] WARNING: {:.1f}% of municipalities use a centroid fallback (> {:.0f}%)".format(
+            100 * fake_rate, 100 * FALLBACK_WARN_RATE))
 
     df_fake["iris_id"] = df_fake["commune_id"].astype(str) + "0000"
     df_fake["iris_id"] = df_fake["iris_id"].astype("category")

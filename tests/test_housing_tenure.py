@@ -191,21 +191,24 @@ def test_helper_shares_plausible_and_monotone(capsys):
     assert df.attrs["housing_tenure_fallback_rate"] < 0.01
 
 
-def test_unknown_raumtyp_uses_untilted_nds_primary(capsys):
-    """A household whose commune_id has no RS7 mapping is handled by the untilted
-    NDS Bayes (raumtyp=None) -- a valid PRIMARY result, not a fallback (the
-    fallback fires only when a raumtyp data cell is genuinely absent). Every
-    household still receives a valid tenure with no crash."""
+def test_unknown_raumtyp_counted_as_fallback(capsys):
+    """A household whose commune_id has no RS7 mapping is drawn from the untilted
+    NDS Bayes (raumtyp=None), which is a FALLBACK: the raumtyp-conditional
+    P(tenure|bracket,raumtyp) was not applied. It must be counted and reported
+    (the matrix choice itself is unchanged). Every household still receives a
+    valid tenure with no crash."""
     df = _make_population_with_income(n_households=400)
     bad = df["household_id"] % 2 == 0
     df.loc[bad, "commune_id"] = "099990000000"  # no RegioStaR mapping
     df = _run_tenure(df)
     out = capsys.readouterr().out
     assert "housing_tenure" in out
-    # No genuine data-cell fallback with the real NDS table (raumtyp None is
-    # primary), and every household has a tenure.
-    assert df.attrs["housing_tenure_fallback_count"] == 0
-    assert df.attrs["housing_tenure_primary_count"] == 400
+    # Half the households (even ids) lost their raumtyp -> fallback; the rest
+    # took the primary path. The rate exceeds the warn threshold, so the line
+    # is flagged.
+    assert df.attrs["housing_tenure_fallback_count"] == 200
+    assert df.attrs["housing_tenure_primary_count"] == 200
+    assert "WARNING: housing_tenure" in out
     assert df["housing_tenure"].notna().all()
     assert set(df["housing_tenure"].dropna().unique()) <= set(TENURE_CATEGORIES)
 

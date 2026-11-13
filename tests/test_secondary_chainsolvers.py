@@ -13,6 +13,7 @@ import inspect
 
 import geopandas as gpd
 import numpy as np
+import pytest
 import pandas as pd
 from shapely import geometry as geo
 
@@ -1368,3 +1369,74 @@ def test_parallel_worker_falls_back_to_the_same_default():
     src = inspect.getsource(parallel_solving)
     assert 'or "carla"' not in src, "worker still carries a hardcoded solver literal"
     assert "DEFAULT_CHAIN_SOLVER" in src
+
+
+# ---------------------------------------------------------------------------
+# Fallback transparency (audit D, P5a-F1/F4/F9/F10): logging only, same output.
+# ---------------------------------------------------------------------------
+
+def test_rda_fallback_logs_primary_rate_and_failure_details(capsys):
+    index = sc._build_rda_candidate_index(_df_secondary_fallback())
+    problems = _fallback_problems()
+    random = np.random.RandomState(1)
+
+    rows, conv = sc._rda_fallback_place(
+        problems, [1, 2], index, _flat_distribution(), 2.0, random, "EPSG:25832")
+    out = capsys.readouterr().out
+    assert "primary 2/2 (100.0%), failed 0 (0.0%)" in out
+    assert "WARNING" not in out
+    assert all(valid is not None for valid, _ in conv)
+
+    # A malformed problem raises inside the solver: counted, typed, warned about.
+    broken = [{"person_id": 1, "activity_index": 0, "size": 1}]
+    _, conv = sc._rda_fallback_place(
+        broken, [0], index, _flat_distribution(), 2.0, random, "EPSG:25832")
+    out = capsys.readouterr().out
+    assert conv == [(False, 1)]
+    assert "failed 1 (100.0%)" in out
+    assert "raised " in out
+    assert "WARNING" in out
+
+
+def test_extract_locations_logs_synthesised_id_rate(capsys):
+    meta = [{"problem_idx": 0, "person_id": 7, "activity_index": 3, "n_secondary": 2}]
+    sc._extract_locations(_result_df(), meta, _df_secondary(), crs="EPSG:25832")
+    out = capsys.readouterr().out
+    assert "known solver id 2/2 (100.0%), synthesised cs_* id 0 (0.0%)" in out
+    assert "WARNING" not in out
+
+    rdf = _result_df()
+    rdf.loc[0, "to_act_identifier"] = "UNKNOWN"
+    sc._extract_locations(rdf, meta, _df_secondary(), crs="EPSG:25832")
+    out = capsys.readouterr().out
+    assert "synthesised cs_* id 1 (50.0%)" in out
+    assert "WARNING" in out
+
+
+def test_distance_layer_fallback_warns_above_five_percent(capsys):
+    def log(n_fallback):
+        sc._log_subtype_draw_rates(
+            None, {"shop_daily": 50, "shop_non_daily": 50,
+                   "distance_layer_fallback": n_fallback}, {},
+            shop_subtype_decider=lambda *a, **k: None, leisure_subtype_decider=None,
+            other_subtype_decider=None, escort_location_decider=None,
+            srv_location_decider=None)
+        return capsys.readouterr().out
+
+    assert "WARNING" not in log(5)       # 5 % is not above the threshold
+    assert "WARNING: shop distance-layer fallback" in log(6)
+
+
+@pytest.mark.parametrize("selection", ["top_n", "top_n_spatial_downsample", "mnl"])
+def test_scorer_selection_accepts_allowed_and_rejects_unknown(selection):
+    class _Ctx:
+        def __init__(self, value):
+            self.value = value
+
+        def config(self, key):
+            return self.value if key == "secondary_scorer_selection" else key
+
+    spec = sc._build_scorer_spec(_Ctx(selection), True)
+    assert (spec["_cs_parameters"] is not None) == (selection == "mnl")
+    with pytest.raises(ValueError, match="top_n_spatial_downsample"):
+        sc._build_scorer_spec(_Ctx("mnl_typo"), True)

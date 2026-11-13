@@ -299,6 +299,13 @@ def _index_type_shares(df_zt: pd.DataFrame) -> dict:
     }
 
 
+# Fallback share above which a rate line of this module is flagged ``WARNING``
+# (CLAUDE.md "Fallback transparency"). The share is taken over the unit each line
+# names: households (hh_type tiers), persons (orphans left adult-less) or child
+# slots (promoted slots).
+FALLBACK_WARN_FRACTION: float = 0.05
+
+
 def _assign_household_types(
     df: pd.DataFrame,
     df_household_type: pd.DataFrame,
@@ -412,11 +419,19 @@ def _assign_household_types(
     type_counts = (
         hh_df["hh_type"].value_counts(normalize=True).sort_index().to_dict()
     )
+    fallback_share = (n_fallback + n_default) / n_hh if n_hh else 0.0
+    # The WARNING goes at the end: the line's start is the log marker the Feature
+    # Registry record ipf_synthesis_legacy declares (documentation check E2-fallback).
+    warn_suffix = (
+        f" -- WARNING: fallback share {fallback_share:.1%} above "
+        f"{FALLBACK_WARN_FRACTION:.0%}" if fallback_share > FALLBACK_WARN_FRACTION else ""
+    )
     print(
         f"[braunschweig.ipf.attributed] assigned hh_type to {n_hh:,} households; "
         f"{n_fallback:,} drawn from scope-wide fallback, "
         f"{n_default:,} forced to 'other_multi'; share = "
         + ", ".join(f"{k}={v:.1%}" for k, v in type_counts.items())
+        + warn_suffix
     )
     return df
 
@@ -467,7 +482,7 @@ def _largest_remainder(choices: np.ndarray, weights: np.ndarray, n: int) -> list
 
 
 def _allocate_types_for_bucket(type_shares_by_bucket, fallback, commune_id,
-                               hh_size_bin, n):
+                               hh_size_bin, n, stats: dict | None = None):
     """Deterministic exact-count hh_type allocation for a (commune, hh_size_bin)
     bucket from the Zensus 1000A-2081 shares (scope-wide fallback, then the
     ``other_multi`` default). Unlike per-household sampling this reproduces the
@@ -477,16 +492,26 @@ def _allocate_types_for_bucket(type_shares_by_bucket, fallback, commune_id,
 
     ``type_shares_by_bucket`` is the pre-built ``(commune_id, hh_size)`` -> sub-frame
     index from ``_prepare_type_shares``; the lookup is O(1) and row-order-identical
-    to the previous boolean-mask filter, so the allocation is unchanged."""
+    to the previous boolean-mask filter, so the allocation is unchanged.
+
+    ``stats`` (optional) counts households per tier (``primary`` /
+    ``scope_wide`` / ``other_multi``) for fallback-rate reporting; it never
+    alters the returned list."""
     local = type_shares_by_bucket.get((commune_id, hh_size_bin),
                                       _EMPTY_TYPE_SHARES)
     if float(local["weight"].sum()) > 0:
+        if stats is not None:
+            stats["primary"] = stats.get("primary", 0) + n
         return _largest_remainder(
             local["hh_type"].to_numpy(), local["weight"].to_numpy(), n)
     fb = fallback[fallback["hh_size"] == hh_size_bin]
     if float(fb["weight"].sum()) > 0:
+        if stats is not None:
+            stats["scope_wide"] = stats.get("scope_wide", 0) + n
         return _largest_remainder(
             fb["hh_type"].to_numpy(), fb["weight"].to_numpy(), n)
+    if stats is not None:
+        stats["other_multi"] = stats.get("other_multi", 0) + n
     return ["other_multi"] * n
 
 
@@ -562,6 +587,8 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
     # pool cannot serve the requested hh_type composition. Accumulate it here and
     # report ONE rate after the loop.
     relaxation_stats: dict = {}
+    # Households per hh_type allocation tier (see _allocate_types_for_bucket).
+    tier_stats: dict = {"primary": 0, "scope_wide": 0, "other_multi": 0}
 
     for (cid, size_int), g in repeated.groupby(
         ["commune_id", "_hh_size_int"], sort=True, observed=True,
@@ -574,7 +601,8 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
         sizes = [N] * (n_chunks - 1) + [bucket_size - N * (n_chunks - 1)]
         hh_size_bin = _INT_TO_HH_SIZE_BIN[min(N, 6)]
         types = _allocate_types_for_bucket(
-            type_shares_by_bucket, fallback, cid, hh_size_bin, n_chunks)
+            type_shares_by_bucket, fallback, cid, hh_size_bin, n_chunks,
+            stats=tier_stats)
 
         bucket_ages = ages_all[idx]
         bucket_is_female = None if is_female_all is None else is_female_all[idx]
@@ -612,6 +640,37 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
                   "consistent.".format(relaxed_share,
                                        COMPOSITION_RELAXATION_WARN_FRACTION))
 
+    # Child slots promoted onto non-child shells (_ensure_child_capacity): a
+    # silent trade of hh_type fidelity for age plausibility, reported once here.
+    promoted = relaxation_stats.get("promoted_child_slots", 0)
+    child_slots = relaxation_stats.get("child_slots", 0)
+    if relaxation_stats.get("buckets", 0):
+        promoted_share = promoted / child_slots if child_slots else 0.0
+        warn = promoted_share > FALLBACK_WARN_FRACTION
+        # Without child slots a rate has no meaning: print n/a, not 100 %.
+        primary_pct = f"{1.0 - promoted_share:.1%}" if child_slots else "n/a"
+        promoted_pct = f"{promoted_share:.1%}" if child_slots else "n/a"
+        print(
+            f"[braunschweig.ipf.attributed] {'WARNING: ' if warn else ''}"
+            f"child slots: primary {child_slots - promoted:,}/{child_slots:,} "
+            f"({primary_pct}), promoted to non-child shells "
+            f"{promoted:,} ({promoted_pct})"
+        )
+
+    # Tier rates of the hh_type allocation (primary / scope-wide / forced).
+    n_alloc = tier_stats["primary"] + tier_stats["scope_wide"] + tier_stats["other_multi"]
+    if n_alloc:
+        fb_share = (tier_stats["scope_wide"] + tier_stats["other_multi"]) / n_alloc
+        print(
+            f"[braunschweig.ipf.attributed] "
+            f"{'WARNING: ' if fb_share > FALLBACK_WARN_FRACTION else ''}"
+            f"age-aware hh_type allocation for {n_alloc:,} households: "
+            f"{tier_stats['primary']:,} primary ({tier_stats['primary'] / n_alloc:.1%}); "
+            f"{tier_stats['scope_wide']:,} drawn from scope-wide fallback, "
+            f"{tier_stats['other_multi']:,} forced to 'other_multi' "
+            f"(fallback share {fb_share:.1%})"
+        )
+
     # Global hard rule: eliminate any remaining all-children household (a bucket
     # that had no adult at all -- e.g. a tiny rural commune-size cell that
     # stochastically rounded to only children). Merge its children into the
@@ -629,6 +688,8 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
     used[household_id] = True
     orphan_hids = np.nonzero((~has_adult) & used)[0]
     n_merged = 0
+    n_skipped_orphans = 0
+    n_skipped_persons = 0
     if orphan_hids.size:
         communes = repeated["commune_id"].to_numpy()
         commune_of = np.empty(nh, dtype=object)
@@ -639,19 +700,35 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
         for hid in orphan_hids:
             cand = np.nonzero((young < np.inf) & (commune_of == commune_of[hid]))[0]
             if cand.size == 0:
+                # No adult household in the commune: the orphan stays adult-less.
+                n_skipped_orphans += 1
+                n_skipped_persons += int(np.count_nonzero(household_id == hid))
                 continue
             persons = np.nonzero(household_id == hid)[0]
             mean_child_age = float(ages_all[persons].mean())
             target = cand[np.argmin(np.abs(young[cand] - (mean_child_age + gap_mean)))]
             household_id[persons] = target
             n_merged += len(persons)
-        if n_merged:
-            # Rebuild realised size + hh_type for the (rarely) changed households.
-            diag = pd.DataFrame({"hid": household_id, "age": ages_all})
-            household_size = diag.groupby("hid")["hid"].transform("size").to_numpy()
-            types = diag.groupby("hid")["age"].apply(
-                lambda a: hc_module._realised_type(list(a.to_numpy()), min_adult))
-            hh_type = pd.Series(household_id).map(types).to_numpy()
+    # Printed also with zero orphans so every run leaves evidence of this step.
+    # The merge is the intended repair; only orphans that stay adult-less
+    # (no adult household in their commune) count towards the WARNING.
+    merged_share = n_merged / n if n else 0.0
+    skipped_share = n_skipped_persons / n if n else 0.0
+    warn = skipped_share > FALLBACK_WARN_FRACTION
+    print(
+        f"[braunschweig.ipf.attributed] {'WARNING: ' if warn else ''}"
+        f"adult-less orphan households: {int(orphan_hids.size):,}; merged "
+        f"{n_merged:,}/{n:,} persons ({merged_share:.2%}) into adult households, "
+        f"{n_skipped_orphans:,} orphan households ({n_skipped_persons:,} "
+        f"persons, {skipped_share:.2%}) left adult-less (no adult in commune)"
+    )
+    if n_merged:
+        # Rebuild realised size + hh_type for the (rarely) changed households.
+        diag = pd.DataFrame({"hid": household_id, "age": ages_all})
+        household_size = diag.groupby("hid")["hid"].transform("size").to_numpy()
+        types = diag.groupby("hid")["age"].apply(
+            lambda a: hc_module._realised_type(list(a.to_numpy()), min_adult))
+        hh_type = pd.Series(household_id).map(types).to_numpy()
 
     repeated["household_id"] = household_id
     repeated["hh_type"] = np.asarray(hh_type).astype(str)

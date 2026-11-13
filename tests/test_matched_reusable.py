@@ -30,6 +30,30 @@ def test_match_donors_assigns_within_cell():
     assert len(out) == 2
 
 
+def test_match_donors_reports_relaxed_share_and_warns(capsys):
+    from synthesis.population.matched import match_donors
+
+    target = pd.DataFrame({
+        "person_id": [1, 2],
+        "sex": pd.Categorical(["male", "female"]),
+        "age_class": [3, 4],  # no donor of age class 4: person 2 is matched after relaxing age_class
+    })
+    donor = pd.DataFrame({
+        "hts_id": [10, 11],
+        "sex": pd.Categorical(["male", "female"]),
+        "age_class": [3, 3],
+        "weight": [1.0, 1.0],
+    })
+
+    out = match_donors(target, donor, matching_columns=["sex", "age_class"],
+                       minimum_observations=1, random_seed=0)
+    output = capsys.readouterr().out
+
+    assert out.set_index("person_id").loc[2, "hts_id"] == 11
+    assert "primary (full match) 1/2" in output
+    assert "WARNING" in output  # 50% relaxed > FALLBACK_WARN_RATE
+
+
 def test_match_donors_is_deterministic_for_fixed_seed():
     from synthesis.population.matched import match_donors
 

@@ -10,7 +10,7 @@ may only name run manifests (no run, no claim).
 
 | Feature | Area | Lifecycle | Prod | mid/open/ipf | Tests | OFF byte-id | Fallback | Reference | Validation | Assessment |
 |---|---|---|---|---|---|---|---|---|---|---|
-| [age_aware_composition](../registry/features/age_aware_composition.yml) | population | supported | off | -/-/A | 1 | -- | marker | assumption | unvalidated | pending |
+| [age_aware_composition](../registry/features/age_aware_composition.yml) | population | supported | off | -/-/A | 2 | -- | marker | assumption | unvalidated | pending |
 | [alkis_home_matching](../registry/features/alkis_home_matching.yml) | home | active | ON | A/A/- | 2 | -- | marker | none | unvalidated | pending |
 | [building_potentials_education](../registry/features/building_potentials_education.yml) | education | active | ON | A/A/- | 1 | -- | none | none | unvalidated | pending |
 | [building_potentials_secondary](../registry/features/building_potentials_secondary.yml) | secondary | active | ON | A/i/i | 1 | -- | none | committed | unvalidated | pending |
@@ -67,7 +67,7 @@ may only name run manifests (no run, no claim).
 | [incommuter_time_chronology](../registry/features/incommuter_time_chronology.yml) | cordon | active | ON | A/A/- | 3 | proven | marker | none | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | pending |
 | [initial_mode_choice](../registry/features/initial_mode_choice.yml) | matsim | active | ON | A/A/A | 2 | -- | marker | none | unvalidated | pending |
 | [integerizer_quality](../registry/features/integerizer_quality.yml) | analysis | active | ON | A/s/- | 1 | -- | marker | none | unvalidated | pending |
-| [ipf_synthesis_legacy](../registry/features/ipf_synthesis_legacy.yml) | population | supported | off | -/-/A | 3 | -- | marker | none | unvalidated | pending |
+| [ipf_synthesis_legacy](../registry/features/ipf_synthesis_legacy.yml) | population | supported | off | -/-/A | 4 | -- | marker | none | unvalidated | pending |
 | [java_hang_watchdog](../registry/features/java_hang_watchdog.yml) | infrastructure | active | ON | A/A/A | 2 | proven | marker | none | unvalidated | pending |
 | [joint_age_size_margin](../registry/features/joint_age_size_margin.yml) | population | supported | off | -/-/A | 1 | -- | none | none | unvalidated | pending |
 | [kreis_income_control](../registry/features/kreis_income_control.yml) | attributes | active | off | i/i/- | 2 | proven | marker | committed | unvalidated | pending |

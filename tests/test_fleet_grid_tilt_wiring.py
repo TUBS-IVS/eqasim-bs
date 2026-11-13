@@ -435,3 +435,53 @@ class TestSampleFleetLegacyPathGridColumnsIgnored:
             r_base[["powertrain", "segment"]],
             r_nan[["powertrain", "segment"]],
         )
+
+
+class _StopAfterGridSetup(Exception):
+    """Raised by a stub to end ``execute`` right after the grid-tilt block."""
+
+
+def test_missing_ev_grid_csv_logs_exactly_one_warning(monkeypatch, caplog):
+    """A missing kba_ev_grid.csv is a fallback to the Gemeinde-only tilt: it must be
+    visible as exactly ONE WARNING (not INFO, not a second generic line)."""
+    import logging
+
+    from braunschweig.data.kba import fleet_tables as ft
+    from braunschweig.synthesis.vehicles.cars import household
+
+    cars = pd.DataFrame({"household_id": [1, 2]})
+    monkeypatch.setattr(household, "build_household_car_frame", lambda *a, **k: cars)
+    monkeypatch.setattr(household, "assign_vehicle_ids", lambda df: df)
+
+    def _missing(path):
+        raise FileNotFoundError("kba_ev_grid.csv")
+
+    def _stop(*args, **kwargs):
+        raise _StopAfterGridSetup
+
+    monkeypatch.setattr(ft, "load_ev_grid", _missing)
+    monkeypatch.setattr(household.fleet, "sample_fleet", _stop)
+
+    config = {"data_path": "unused", "random_seed": 0, "hbefa_segment_size_map": None,
+              "braunschweig.performance.fleet_home_lookup": True, "fleet_model_enabled": True,
+              "fleet_model_brands": True, "fleet_hsn_tsn_attributes": True,
+              "fleet_consistency_v2": True, "fleet_age_income_coupling": True,
+              "fleet_ev_income_tilt": True, "fleet_euro6_substage": True,
+              "fleet_wohnmobile_age_tilt": True, "fleet_gemeinde_bev_composition_tilt": True,
+              "fleet_electric_calibration": "kreis_mix_gemeinde_grid_bev_tilt",
+              "kba_fleet_paths": None}
+
+    class _Context:
+        def stage(self, name):
+            return pd.DataFrame()
+
+        def config(self, key):
+            return config[key]
+
+    with caplog.at_level(logging.INFO, logger=household.logger.name):
+        with pytest.raises(_StopAfterGridSetup):
+            household.execute(_Context())
+
+    warnings_ = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings_) == 1
+    assert "kba_ev_grid.csv absent" in warnings_[0].getMessage()

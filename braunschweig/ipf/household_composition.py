@@ -370,7 +370,13 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
 
     # Grow child-bearing capacity so every child gets a (young) adult instead of
     # spilling onto the oldest childless-shell adults (see _ensure_child_capacity).
-    _ensure_child_capacity(a_req, c_req, list(sizes), len(child_arr))
+    promoted = _ensure_child_capacity(a_req, c_req, list(sizes), len(child_arr))
+    if relaxation_stats is not None:
+        # Fallback observability: child slots promoted onto non-child shells.
+        relaxation_stats["promoted_child_slots"] = (
+            relaxation_stats.get("promoted_child_slots", 0) + int(promoted or 0))
+        relaxation_stats["child_slots"] = (
+            relaxation_stats.get("child_slots", 0) + int(sum(c_req)))
 
     members: list[list[int]] = [[] for _ in range(H)]
 

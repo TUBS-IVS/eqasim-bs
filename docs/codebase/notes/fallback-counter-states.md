@@ -58,3 +58,16 @@ When adding or reviewing a flag-gated feature that has a fallback:
 Related: CLAUDE.md "Fallback transparency"; ADR-0086 (a fallback counter that treated
 "matched but did nothing" as a primary hit); ADR-0125 decision 8 and its OFF-path
 tests in `tests/test_fleet_gemeinde_bev_composition.py`.
+
+## Audit package D sites (2026-11-12)
+
+Counted and logged as primary vs fallback (path + symbol):
+- `braunschweig/synthesis/locations/secondary_chainsolvers/`: `_rda_fallback_place`, `_extract_locations` (synthesised `cs_*` ids), `_solve_person_shard` (chunk retries), the distance-layer warning `_warn_distance_layer_fallback`.
+- `braunschweig/synthesis/population/enriched/base.py`: `_report_kreis_fallback_rates` (licence and PT subscription, Kreis missing).
+- `braunschweig/synthesis/population/enriched/housing_tenure.py`: `_apply_housing_tenure`; `housing_tenure_fallback_count` now includes households with a missing raumtyp, not only an absent cell.
+- `eqasim_common/data/osm/locations.py`: `report_fallback_rates`; `eqasim_common/locations/education.py`: `execute` (centroid fallback); `synthesis/population/matched.py`: `report_matching_levels`.
+- OSM chunks without POIs of a type (pyrosm KeyError/AttributeError) are counted as **not applicable**, with no warning: they cannot be told apart from a read error and occur in every normal run. Only the default-floors rate warns.
+
+Two new fail-fast checks (no counter, a raise):
+- `_build_scorer_spec` rejects a scorer selection outside `ALLOWED_SCORER_SELECTIONS`.
+- `matsim/scenario/population.py :: write_population` raises on a vehicle whose owner is missing from the person frame (pre-check) or that is left over after the person loop (out of order).

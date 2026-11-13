@@ -827,3 +827,22 @@ def _make_minimal_cars(n: int = 200, seed: int = 0) -> pd.DataFrame:
             "raumtyp": rng.choice(raumtypen),
         })
     return pd.DataFrame(rows)
+
+
+def test_missing_optional_tables_warn_and_primary_sources_stay_quiet(tmp_path, caplog):
+    """Fallback transparency: with the per-Kreis fuel and euro tables present the
+    primary path is taken and neither the fuel nor the euro-joint fallback warns;
+    an absent optional table (the Euro-6 substage CSV is not in the synthetic data)
+    is reported at WARNING level, not INFO, and names the missing input."""
+    tmp_data = _make_tmp_data_path_with_fuel_and_euro(
+        tmp_path, _make_kreis_fuel_df_all_zgb_plus_extra(),
+        _make_kreis_euro_df_all_zgb_plus_extra())
+    with caplog.at_level(logging.INFO):
+        fs.FleetSampler.from_data_path(tmp_data)
+    warnings = " ".join(
+        r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING)
+    infos = " ".join(r.getMessage() for r in caplog.records)
+    assert "primary source" in infos  # per-Kreis fuel counts used
+    assert "kba_kreis_fuel.csv absent" not in warnings
+    assert "FZ27.4 fallback" not in warnings
+    assert "Euro-6 substage" in warnings and "Missing input" in warnings
