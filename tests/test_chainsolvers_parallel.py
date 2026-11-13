@@ -364,3 +364,25 @@ def test_chain_shards_rejects_a_yaml_boolean():
     for value in (True, False):
         with pytest.raises(ValueError, match="must be a positive integer"):
             scs._resolve_chain_shards(value)
+
+
+def test_solve_person_shard_logs_failing_person_exception(fake_chainsolvers, capsys):
+    """P5a-F14: the per-person failure is logged with exception type and message."""
+    persons = ["p0#0", "pBAD#1", "p2#2"]
+    scs._init_chain_worker(locations_df=None, solver="carla")
+    _idx, result_df, failed = scs._solve_person_shard(
+        (0, persons, _plans(persons), 5)
+    )
+    out = capsys.readouterr().out
+    assert failed == [1]  # same result as without the logging
+    assert "ValueError: unsolvable person pBAD#1" in out
+
+
+def test_solve_person_shard_reports_chunk_retry_with_exception_and_rate(fake_chainsolvers, capsys):
+    """A failing chunk solve is not silent: the chunk exception and the retry rate are printed."""
+    persons = ["p0#0", "pBAD#1", "p2#2"]
+    scs._init_chain_worker(locations_df=None, solver="carla")
+    scs._solve_person_shard((0, persons, _plans(persons), 5))
+    out = capsys.readouterr().out
+    assert "failed with ValueError: unsolvable person pBAD#1 -> retrying per person" in out
+    assert "chunk solve primary 0/1" in out and "per-person retry 1 (100.0%)" in out

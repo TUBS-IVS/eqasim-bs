@@ -189,6 +189,20 @@ def test_remode_rate_is_logged_once_with_portal_legs(tmp_path, caplog):
     assert xml.count(b'mode="car"') == 1
 
 
+def test_orphan_vehicle_raises_and_the_same_population_without_it_is_written(tmp_path):
+    import pytest
+
+    plans = {1: (["home", "work"], ["car"]), 3: (["home", "work"], ["car"])}
+    persons, activities, trips, vehicles = _frames(plans, owns_car={1, 3})
+    assert b"<person" in _write(tmp_path, (persons, activities, trips, vehicles))
+
+    orphan = pd.DataFrame([{"owner_id": 2, "vehicle_id": "2:car", "mode": "car"}])
+    vehicles = pd.concat([vehicles, orphan]).sort_values("owner_id")
+    # Owner 2 is not in the person frame: the pre-check names the count and the owner id
+    with pytest.raises(ValueError, match=r"1 vehicle\(s\) are owned by persons missing.*\[2\]"):
+        _write(tmp_path, (persons, activities, trips, vehicles))
+
+
 def test_remode_rate_is_not_logged_when_flag_is_off(tmp_path, caplog):
     frames = _frames({1: (["home", "outside", "home"], ["car", "car"])}, owns_car=set())
     with caplog.at_level("INFO", logger=LOGGER_NAME):
