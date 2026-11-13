@@ -117,8 +117,9 @@ def map_demographics(persons, *, age_col="HP_ALTER", sex_col="HP_SEX", rng=None)
 
     Imputation tiers, each counted and logged: observed binary sex (primary), then the
     same-band pool, then the global pool, then the constant "male" (last resort, logged
-    with its own rate). Persons whose ``alter_gr1`` is NaN are not visited by the band
-    loop and keep a missing sex; they are counted as ``unassigned``.
+    with its own rate). Persons whose ``alter_gr1`` is NaN have no band pool and draw
+    from the global pool after all band draws, so every imputed person lands in exactly
+    one tier (checked; a broken count raises).
     """
     import logging
     import numpy as np
@@ -145,6 +146,17 @@ def map_demographics(persons, *, age_col="HP_ALTER", sex_col="HP_SEX", rng=None)
                 else:
                     binary.loc[idx] = "male"
                     n_constant += len(idx)
+            # groupby drops a NaN alter_gr1, so those persons are not visited above. They draw
+            # from the global pool AFTER the band loop, so every banded person keeps its draw.
+            no_band = missing_mask & out["alter_gr1"].isna()
+            n_no_band = int(no_band.sum())
+            if n_no_band and len(global_pool):
+                binary.loc[no_band] = [global_pool.iloc[rng.randint(len(global_pool))]
+                                       for _ in range(n_no_band)]
+                n_global += n_no_band
+            elif n_no_band:
+                binary.loc[no_band] = "male"
+                n_constant += n_no_band
         else:
             if len(global_pool):
                 binary.loc[missing_mask] = [global_pool.iloc[rng.randint(len(global_pool))]
@@ -162,19 +174,18 @@ def map_demographics(persons, *, age_col="HP_ALTER", sex_col="HP_SEX", rng=None)
     )
     if n_missing:
         n_unassigned = int(binary.isna().sum())
+        # Every imputed person lands in exactly one tier; anything else is a broken invariant.
+        if n_unassigned or n_band + n_global + n_constant != n_missing:
+            raise RuntimeError(
+                f"[popsim.expand.sex] imputation tiers do not add up: {n_missing} to impute, band "
+                f"{n_band} + global {n_global} + constant {n_constant}, {n_unassigned} left without a sex")
         logger.info(
-            "[popsim.expand.sex] imputation tiers for %d persons: band pool %d, global pool %d, "
-            "constant 'male' %d, unassigned (NaN alter_gr1) %d.",
-            n_missing, n_band, n_global, n_constant, n_unassigned,
+            "[popsim.expand.sex] imputation tiers for %d persons: band pool %d, global pool %d "
+            "(incl. persons without alter_gr1), constant 'male' %d.",
+            n_missing, n_band, n_global, n_constant,
         )
-        if n_unassigned:
-            logger.warning(
-                "[popsim.expand.sex] %d person(s) with a missing alter_gr1 got NO imputed sex and "
-                "keep a missing sex value.", n_unassigned)
-        # Denominator: only the imputed persons that were assigned a sex (unassigned ones sit in none
-        # of the tiers).
         log_fallback_rate(
-            logger, "popsim.expand.sex_constant", n_constant, n_missing - n_unassigned,
+            logger, "popsim.expand.sex_constant", n_constant, n_missing,
             what="imputed persons that got the constant 'male' because no pool existed",
         )
     logger.info(
