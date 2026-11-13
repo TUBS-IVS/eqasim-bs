@@ -30,6 +30,7 @@ evidence:
   - tests/test_simple_ipf_open_baseline.py
   - tests/test_population_config.py
   - tests/test_population_selector.py
+  - tests/test_ipf_fallback_rates.py
   off_path_byte_identical:
     claimed: not_applicable
     note: This is a population-synthesis METHOD (one of three), not a boolean toggle.
