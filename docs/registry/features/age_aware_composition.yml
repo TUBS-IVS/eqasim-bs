@@ -25,6 +25,7 @@ code_paths:
 evidence:
   tests:
   - tests/test_household_formation.py
+  - tests/test_ipf_fallback_rates.py
   off_path_byte_identical:
     claimed: not_applicable
     note: |
