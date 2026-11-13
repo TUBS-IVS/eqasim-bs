@@ -9,6 +9,8 @@ such join reports its match coverage and WARNs loudly on unmatched keys.
 """
 from __future__ import annotations
 
+import logging
+
 import geopandas as gpd
 import pandas as pd
 import pytest
@@ -106,7 +108,7 @@ def test_population_gravity_full_match_no_warning(capsys):
 # popsim.assembly donor-household attribute attach
 # ---------------------------------------------------------------------------
 
-def test_attach_donor_household_attrs_warns_on_unmatched_donor(capsys):
+def test_attach_donor_household_attrs_warns_on_unmatched_donor(caplog):
     persons = pd.DataFrame({
         "person_id": [1, 2, 3],
         "donor_hh_id": [10, 10, 99],  # 99 has no donor household row
@@ -121,15 +123,15 @@ def test_attach_donor_household_attrs_warns_on_unmatched_donor(capsys):
         persons, donor_hh, "donor_hh_id",
         ["number_of_cars", "number_of_bicycles", "has_ebike"],
     )
-    captured = capsys.readouterr().out
-    assert "WARNING" in captured
-    assert "1/3" in captured or "1 " in captured
+    warnings = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any(m.startswith("[popsim.assembly.donor_hh_attrs] primary 2/3") for m in warnings)
     # Behaviour unchanged: unmatched person zero-filled on the count attrs.
     assert out.loc[out["person_id"] == 3, "number_of_cars"].iloc[0] == 0
     assert out.loc[out["person_id"] == 1, "number_of_cars"].iloc[0] == 2
 
 
-def test_attach_donor_household_attrs_full_match_no_warning(capsys):
+def test_attach_donor_household_attrs_full_match_no_warning(caplog):
+    caplog.set_level(logging.INFO, logger="braunschweig.popsim.assembly")
     persons = pd.DataFrame({"person_id": [1], "donor_hh_id": [10]})
     donor_hh = pd.DataFrame({
         "donor_hh_id": [10],
@@ -141,5 +143,8 @@ def test_attach_donor_household_attrs_full_match_no_warning(capsys):
         persons, donor_hh, "donor_hh_id",
         ["number_of_cars", "number_of_bicycles", "has_ebike"],
     )
-    assert "WARNING" not in capsys.readouterr().out
+    # Primary path: the donor household matched, so the rate line is INFO, not a warning.
+    infos = [r for r in caplog.records if r.getMessage().startswith("[popsim.assembly.donor_hh_attrs] primary 1/1")]
+    assert infos and all(r.levelno == logging.INFO for r in infos)
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
     assert out["number_of_cars"].iloc[0] == 1

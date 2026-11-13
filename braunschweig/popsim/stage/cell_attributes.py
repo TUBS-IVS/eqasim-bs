@@ -16,6 +16,7 @@ import logging
 import pandas as pd
 
 from braunschweig.popsim import mid
+from braunschweig.popsim.fallback_rates import log_fallback_rate
 
 logger = logging.getLogger(__name__)
 
@@ -73,13 +74,17 @@ def join_cell_attributes(
     cell_attributes = cells[join_cols].drop_duplicates("ZENSUS100m")
     combined = combined.merge(cell_attributes, on="ZENSUS100m", how="left")
 
-    n_missing_ars = int(combined[ars_col].isna().sum())
-    if n_missing_ars:
-        logger.warning(
-            "[popsim.stage] %d/%d households could not be matched to an ARS after "
-            "the cells join (unexpected; cells used in PopulationSim must be a subset "
-            "of the loaded cells frame).",
-            n_missing_ars, len(combined),
+    # Every cell PopulationSim placed a household in comes from the loaded cells frame, so a
+    # household without an ARS after the join is a broken input, not a fallback. It used to
+    # be only warned about and then derived the placeholder Kreis "00000" (audit P3-F5).
+    missing_ars = combined[ars_col].isna()
+    if missing_ars.any():
+        examples = combined.loc[missing_ars, "ZENSUS100m"].astype(str).unique()[:5].tolist()
+        raise ValueError(
+            f"[popsim.stage] {int(missing_ars.sum())}/{len(combined)} households have no cell ARS "
+            f"({ars_col!r}) after the cells join (example cells: {examples}). The cells used in "
+            "PopulationSim must be a subset of the loaded cells frame; check that the PopulationSim "
+            "work directory was built from the same cells parquet."
         )
 
     if has_rs7:
@@ -103,5 +108,26 @@ def derive_geo_kreis_from_ars(ars: pd.Series) -> pd.Series:
     ``assembly.derive_zone_ids``, which both ``zfill(12)`` before deriving the
     Kreis-level ARS -- kept as a single reusable helper so the three call sites
     cannot drift apart.
+
+    Raises ``ValueError`` on a missing or malformed ARS (audit P3-F5): a missing value used to
+    become the string "nan" and the placeholder Kreis "00000", and a float-typed column (what
+    pandas makes of an integer column with one missing value) stringified valid rows as
+    "31010000000.0" and derived a WRONG Kreis. Neither can come from the ZGB-filtered cells
+    frame (``mid.filter_zgb_cells`` keeps only cells of an in-scope Kreis), so both are broken
+    input, not a fallback.
     """
-    return ars.astype(str).str.zfill(12).str[:5]
+    raw = ars.astype(str)
+    malformed = ars.isna() | ~raw.str.fullmatch(r"\d{1,12}")
+    if malformed.any():
+        examples = raw[malformed].unique()[:5].tolist()
+        raise ValueError(
+            f"[popsim.stage.geo_kreis] {int(malformed.sum())}/{len(ars)} cell ARS values are missing "
+            f"or not a 1-12 digit Regionalschluessel (examples: {examples}); cannot derive the Kreis. "
+            "Load the ARS column as a string (a float column means a missing value upstream)."
+        )
+    kreis = raw.str.zfill(12).str[:5]
+    log_fallback_rate(
+        logger, "popsim.stage.geo_kreis", int((kreis == "00000").sum()), len(kreis),
+        what='rows derive the Kreis "00000", which is no real Kreis', threshold=0.0,
+    )
+    return kreis

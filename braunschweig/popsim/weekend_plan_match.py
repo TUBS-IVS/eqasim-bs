@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim.attributes import EMPLOYED_TAET, PT_SUBSCRIPTION_FKARTE
+from braunschweig.popsim.fallback_rates import log_fallback_rate
 from braunschweig.popsim.sampling import weighted_choice
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,30 @@ AGE_BAND_EDGES = (-1, 5, 13, 17, 200)
 FINE_CHILD_AGE_BAND_EDGES = (-1, 5, 9, 13, 17, 200)
 
 
+def _split_child_age_range():
+    """Inclusive age range of the coarse band the fine edges split, from the edges themselves.
+
+    ``pd.cut`` bins are right-closed, so a coarse band ``(lower, upper]`` covers the ages
+    ``lower + 1 .. upper``. The split band is the coarse band that contains the edge(s) the
+    fine set adds (here: 9, inside the coarse ``(5, 13]`` band -> ages 6-13).
+    """
+    added = sorted(set(FINE_CHILD_AGE_BAND_EDGES) - set(AGE_BAND_EDGES))
+    if not added:
+        raise ValueError("FINE_CHILD_AGE_BAND_EDGES adds no edge to AGE_BAND_EDGES")
+    lower = max(edge for edge in AGE_BAND_EDGES if edge < added[0])
+    upper = min(edge for edge in AGE_BAND_EDGES if edge >= added[-1])
+    return lower + 1, upper
+
+
+#: The ONE coarse band (:data:`AGE_BAND_EDGES`) that :data:`FINE_CHILD_AGE_BAND_EDGES`
+#: splits, as the inclusive age range ``(6, 13)``. The crossing counters
+#: (:func:`count_pair_band_crossings` here, the diary counter in ``diary_plan_match``) report
+#: over exactly the persons inside it -- the only ones the fine bands can move -- so the rate
+#: is not diluted by adults, for whom the two edge sets are identical. Derived from the two
+#: edge tuples rather than typed as literals, so it cannot drift away from them.
+SPLIT_CHILD_AGE_RANGE = _split_child_age_range()
+
+
 def _validate_age_band_edges(edges, *, what: str) -> list:
     """Return ``edges`` as a list after checking it is a usable ``pd.cut`` bin spec.
 
@@ -190,6 +215,52 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
                 used[cand[0]] = True
                 break
     return pairs
+
+
+def count_pair_band_crossings(target_members: pd.DataFrame, donor_members: pd.DataFrame, pairs,
+                              age_band_edges=AGE_BAND_EDGES) -> tuple:
+    """``(n_pairs, n_crossed_coarse, n_in_split_child_band, n_crossed_fine_child_band, n_any_free)``.
+
+    The fifth value, ``n_any_free``, is the number of pairs whose donor sits in a different band
+    of the ACTIVE ``age_band_edges`` (pass the edges given to :func:`align_members`): exactly the
+    pairs that took the ``any_free`` tier. Ages are read as floats (a missing age is NaN and
+    counts as a crossing, as it matches no donor band in :func:`align_members`), so a nullable
+    ``Int64`` age column with ``pd.NA`` does not raise.
+
+    Observability for the third tier of :func:`align_members`: a member is paired with the
+    first free donor of ANY age when no donor of the same age band is left, so the pair
+    count alone hides how often a child inherits another age group's day. The tier is
+    counted per pair AFTER the pairing, from the returned positions, so the pairing itself
+    (and its rng-free determinism) is untouched. Every tier before ``any_free`` (the
+    ``passenger_key`` and ``lift_free_never`` reorderings included) stays inside the target's
+    band of the ACTIVE edge set, so a crossing of the active bands is exactly an ``any_free``
+    pair. A crossing of the inactive bands is not: with the coarse edges active, a fine
+    crossing can also come from the in-band tiers (two children of the same coarse band).
+
+    Both band systems are measured in BOTH arms of the ``fine_child_age_bands`` flag, as in
+    ``diary_plan_match._count_fine_child_band_crossings``: the coarse crossings against
+    :data:`AGE_BAND_EDGES` over all pairs, the fine crossings against
+    :data:`FINE_CHILD_AGE_BAND_EDGES` over the pairs whose TARGET age lies in
+    :data:`SPLIT_CHILD_AGE_RANGE` (outside it both edge sets agree, so adults
+    would only dilute the rate).
+    """
+    if not pairs:
+        return 0, 0, 0, 0, 0
+    tpos = np.fromiter((t for t, _ in pairs), dtype=int, count=len(pairs))
+    dpos = np.fromiter((d for _, d in pairs), dtype=int, count=len(pairs))
+    t_ages = pd.Series(pd.to_numeric(target_members["HP_ALTER"].iloc[tpos], errors="coerce")
+                       .to_numpy(dtype=float, na_value=np.nan))
+    d_ages = pd.Series(pd.to_numeric(donor_members["HP_ALTER"].iloc[dpos], errors="coerce")
+                       .to_numpy(dtype=float, na_value=np.nan))
+    crossed_coarse = (age_band_index(t_ages, AGE_BAND_EDGES) != age_band_index(d_ages, AGE_BAND_EDGES))
+    crossed_fine = (age_band_index(t_ages, FINE_CHILD_AGE_BAND_EDGES)
+                    != age_band_index(d_ages, FINE_CHILD_AGE_BAND_EDGES))
+    crossed_active = (age_band_index(t_ages, age_band_edges) != age_band_index(d_ages, age_band_edges))
+    lower, upper = SPLIT_CHILD_AGE_RANGE
+    t_float = t_ages.to_numpy(dtype=float)
+    in_split = (t_float >= lower) & (t_float <= upper)  # NaN compares False: not in the split band
+    return (len(pairs), int(crossed_coarse.sum()), int(in_split.sum()),
+            int((crossed_fine & in_split).sum()), int(crossed_active.sum()))
 
 
 PERSON_KEYS_BY_PRIORITY = ("has_license", "sex", "age_band", "employed", "has_pt")
@@ -515,12 +586,34 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
 
 @dataclass(frozen=True)
 class WeekendMatchReport:
+    """Result counts of :func:`reassign_weekend_plan_sources`.
+
+    The ``n_paired_*`` / ``n_crossed_*`` / ``n_any_free_pairs`` counts cover household-aligned
+    pairs only (:func:`align_members`); persons remapped through :func:`match_person` (surplus
+    members, unmatched households, the safety-net sweep) are not in them.
+    """
+
     n_weekend_households: int
     n_hh_matched: int
     n_person_fallback_households: int
     n_persons_remapped: int
     hh_match_level_counts: dict
     n_swept: int = 0
+    #: Household-aligned member pairs (:func:`align_members`); denominator of the coarse crossing rate.
+    n_paired_members: int = 0
+    #: Pairs whose donor sits in a different COARSE age band (:data:`AGE_BAND_EDGES`), i.e. the pairs
+    #: that took the any-age third tier under the coarse bands. Counted in both flag arms.
+    n_crossed_coarse_age_band: int = 0
+    #: Pairs whose TARGET age lies in :data:`SPLIT_CHILD_AGE_RANGE`: denominator of the
+    #: fine crossing rate (same meaning as ``DiaryMatchReport.n_remapped_in_split_child_band``).
+    n_paired_in_split_child_band: int = 0
+    #: Of those, the pairs whose donor sits in a different FINE child age band, measured against the
+    #: FINE edges in BOTH arms (same meaning as ``DiaryMatchReport.n_crossed_fine_child_age_band``).
+    #: Run evidence for the size of the effect: ``docs/runs/fine-child-band-fallback-smoke-2026-11-11.yml``.
+    n_crossed_fine_child_age_band: int = 0
+    #: Pairs whose donor sits in a different band of the ACTIVE ``age_band_edges``: exactly the pairs that
+    #: took the ``any_free`` tier of :func:`align_members`.
+    n_any_free_pairs: int = 0
 
 
 def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_ID",
@@ -613,6 +706,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     n_person_fallback = 0
     n_remapped = 0
     level_counts: dict = {}
+    band_totals = np.zeros(5, dtype=int)  # pairs, coarse crossed, in split band, fine crossed, any_free
 
     # Pre-group the weekday pool on the two HARD match keys (size, regiostar7) ONCE,
     # so match_household does an O(1) lookup per weekend household instead of
@@ -640,6 +734,8 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
             paired = align_members(target_members, donor_members,
                                    age_band_edges=age_band_edges, passenger_key=passenger_key,
                                    lift_free_never=lift_free_never)
+            band_totals += count_pair_band_crossings(
+                target_members, donor_members, paired, age_band_edges=age_band_edges)
             for tpos, dpos in paired:
                 ridx = target_members.loc[tpos, "index"]
                 persons.loc[ridx, "source_H_ID"] = donor_members.loc[dpos, "source_H_ID"]
@@ -698,6 +794,12 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     # (upstream corruption / a dropped donor); such a person would be silently skipped by
     # the weekend-source sweep below, so surface it loudly rather than hide it.
     n_unresolved = int(src_kernwo.isna().sum())
+    # Observability only (audit package D): the primary path is "plan source resolves to a real
+    # donor person"; an unresolved source is the failure the warning below reports. Raise-vs-warn
+    # stays an open owner decision, so the warning is kept unchanged.
+    log_fallback_rate(
+        logger, "weekend_plan_match.plan_source_resolution", n_unresolved, len(persons),
+        what="persons whose plan source does not resolve to a real donor person")
     if n_unresolved:
         logger.warning(
             "[weekend_plan_match] %d person(s) have a plan-source that does not resolve "
@@ -737,7 +839,17 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         n_persons_remapped=n_remapped,
         hh_match_level_counts=level_counts,
         n_swept=n_swept,
+        n_paired_members=int(band_totals[0]),
+        n_crossed_coarse_age_band=int(band_totals[1]),
+        n_paired_in_split_child_band=int(band_totals[2]),
+        n_crossed_fine_child_age_band=int(band_totals[3]),
+        n_any_free_pairs=int(band_totals[4]),
     )
+    log_fallback_rate(
+        logger, "weekend_plan_match.align_members_any_free", report.n_any_free_pairs,
+        report.n_paired_members,
+        what="household-aligned member pairs took the any-age third tier (donor in another band of the "
+             "active age_band_edges; person-level remaps are not counted)")
     logger.info(
         "[weekend_plan_match] %d weekend households: %d HH-matched, %d via "
         "person-fallback; %d persons remapped, %d swept by per-person safety net. "
@@ -746,6 +858,19 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         report.n_person_fallback_households, report.n_persons_remapped,
         report.n_swept, report.hh_match_level_counts,
     )
+    # No silent fallback (audit package D): align_members' third tier pairs a member with a donor of
+    # ANY age once no same-age-band donor is free. Reported as rates, mirroring DiaryMatchReport; no
+    # threshold is asserted because the age band is a preference, not a hard key.
+    logger.info(
+        "[weekend_plan_match] coarse age band crossed by %d/%d household-aligned member pairs (%.2f%%); "
+        "fine child age band crossed by %d/%d pairs of %d-%d-year-olds (%.2f%%); fine_child_age_bands=%s "
+        "(both measured in BOTH arms, so the OFF arm reports today's rate)",
+        report.n_crossed_coarse_age_band, report.n_paired_members,
+        100.0 * report.n_crossed_coarse_age_band / max(report.n_paired_members, 1),
+        report.n_crossed_fine_child_age_band, report.n_paired_in_split_child_band,
+        SPLIT_CHILD_AGE_RANGE[0], SPLIT_CHILD_AGE_RANGE[1],
+        100.0 * report.n_crossed_fine_child_age_band / max(report.n_paired_in_split_child_band, 1),
+        fine_child_age_bands)
     if len(weekend_ids) and report.n_hh_matched == 0:
         logger.warning(
             "[weekend_plan_match] no weekend household matched at HH level; all "

@@ -19,6 +19,7 @@ import pandas as pd
 from data.hts import hts  # noqa: E402
 
 from braunschweig.popsim.closure_dwell import CLOSURE_GLOBAL_FALLBACK_WARN_RATE
+from braunschweig.popsim.fallback_rates import log_fallback_rate
 
 logger = logging.getLogger(__name__)
 
@@ -189,9 +190,11 @@ def _append_return_home(
       ``trip_duration`` is available and non-NaN that is preferred)
     - ``preceding_purpose = last.following_purpose``
     - ``following_purpose = "home"``
-    - ``mode = last.mode`` if the column exists, else ``"car"`` as a conservative
-      default (the mode assumption is logged; Task 7 replaces unfixable persons
-      by resampling so the default is rarely load-bearing)
+    - ``mode = last.mode`` if the column exists and the value is not missing, else
+      ``"car"`` as a conservative default. The closures that needed this fill are counted
+      against all appended return-home legs and logged as a primary-vs-fallback rate
+      (``[plan_validation.return_home_mode]``; WARNING above the shared fallback
+      threshold). Task 7 replaces unfixable persons by resampling.
     - ``is_first_trip = False``, ``is_last_trip = True``; the old last trip's
       ``is_last_trip`` is flipped to ``False``
     - ``is_synthetic_closure = True`` (new column, ``False`` on every original
@@ -242,6 +245,7 @@ def _append_return_home(
     idx_to_flip = []  # old last-trip indices that need is_last_trip -> False
     n_capped = 0
     n_cap_impossible = 0
+    n_mode_filled = 0  # closures whose mode had to be filled with the "car" default
     # Ruling R19: only a DRAWN dwell can exceed the bound where the constant would
     # not have; capping the constant path would change the pre-#367 behaviour.
     cap_applies = dwell_model is not None and dwell_model.report.get("kind") == "empirical"
@@ -284,7 +288,11 @@ def _append_return_home(
             else:
                 n_cap_impossible += 1
 
-        mode = last["mode"] if "mode" in df.columns and not pd.isna(last.get("mode")) else "car"
+        if "mode" in df.columns and not pd.isna(last.get("mode")):
+            mode = last["mode"]
+        else:
+            mode = "car"
+            n_mode_filled += 1
 
         new_row = {col: np.nan for col in df.columns}
         new_row.update({
@@ -311,6 +319,11 @@ def _append_return_home(
 
     if not rows_to_append:
         return df
+
+    log_fallback_rate(
+        logger, "plan_validation.return_home_mode", n_mode_filled, len(rows_to_append),
+        what='appended return-home legs whose mode was missing and was filled with "car"',
+    )
 
     if n_capped or n_cap_impossible:
         n_draws = len(rows_to_append)

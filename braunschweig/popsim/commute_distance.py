@@ -36,6 +36,8 @@ import logging
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.fallback_rates import log_fallback_rate
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,7 +46,10 @@ def _per_purpose(trips: pd.DataFrame, purpose: str, *, rng: np.random.RandomStat
     NOT the max over all purpose-bound trips (W_ZWECK=2 dienstlich also maps to
     'work', so a single long business trip would dominate). Persons whose selected
     leg has a NaN distance are imputed from the observed leg-distance pool
-    (seeded draw); the imputation rate is logged (no silent NaN)."""
+    (seeded draw); the imputation rate is logged (no silent NaN). If the observed pool
+    is empty nothing can be imputed and those persons keep a NaN distance; the log says
+    so. Persons with no home<->purpose leg at all are not in the result; their count is
+    logged."""
     is_leg = (
         ((trips["preceding_purpose"] == "home") & (trips["following_purpose"] == purpose))
         | ((trips["preceding_purpose"] == purpose) & (trips["following_purpose"] == "home"))
@@ -58,11 +63,24 @@ def _per_purpose(trips: pd.DataFrame, purpose: str, *, rng: np.random.RandomStat
     n_missing = int(missing.sum())
     if n_missing and len(pool):
         legs.loc[missing, "commute_distance"] = pool[rng.randint(len(pool), size=n_missing)]
+    n_legs = len(legs)
+    n_persons = int(trips["person_id"].nunique())
+    n_no_leg = n_persons - int(legs["person_id"].nunique())
+    # primary = observed leg distance; fallback = NaN distance (imputed when a pool exists)
+    log_fallback_rate(
+        logger, f"popsim.commute_distance.{purpose}", n_missing, n_legs,
+        what=(f"persons with a home<->{purpose} leg whose distance was NaN, drawn from the "
+              "observed leg distances (unless that pool is empty, see the warning below)"),
+    )
+    if n_missing and not len(pool):
+        logger.warning(
+            "[popsim.commute_distance] %s: %d of %d persons with a leg have NaN distance and "
+            "the observed pool is empty: NOTHING was imputed, %d stay missing (NaN).",
+            purpose, n_missing, n_legs, n_missing,
+        )
     logger.info(
-        "[popsim.commute_distance] %s: %d persons with a home<->%s leg; "
-        "%d (%.1f%%) had NaN distance imputed from the observed pool.",
-        purpose, len(legs), purpose, n_missing,
-        100.0 * n_missing / len(legs) if len(legs) else 0.0,
+        "[popsim.commute_distance] %s: %d of %d persons with at least one trip have no home<->%s leg and get no row.",
+        purpose, n_no_leg, n_persons, purpose,
     )
     return legs
 

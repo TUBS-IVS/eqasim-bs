@@ -60,6 +60,7 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.fallback_rates import log_fallback_rate
 from braunschweig.popsim.sampling import weighted_choice
 # ONE owner for the donor-matching age bands: weekend_plan_match defines both edge
 # sets and the banding helper, and this module's mirror role matching bands ages for
@@ -268,6 +269,7 @@ def complete_members(
     n_filled = 0
     n_added = 0
     n_unfillable = 0
+    n_hosts_without_day_type = 0  # hosts on the day-type-free fallback pool
 
     incomplete_sorted = incomplete.sort_values(household_id)
     n_incomplete_total = len(incomplete_sorted)
@@ -289,6 +291,8 @@ def complete_members(
             candidates = complete_by_size_daytype.get((row[size_col], host_dt))
         else:
             candidates = complete_by_size.get(row[size_col])
+            if hh_dt is not None:
+                n_hosts_without_day_type += 1
         if candidates is None or len(candidates) == 0:
             n_unfillable += 1
             continue
@@ -347,11 +351,21 @@ def complete_members(
         100.0 * n_filled / n_incomplete if n_incomplete else 0.0,
         n_added,
     )
+    if hh_dt is not None:
+        # Primary = host has a household day type (mirror pool is size AND day type);
+        # fallback = host absent from hh_dt (no present person), day-type-free pool.
+        log_fallback_rate(
+            logger, "popsim.member_completion.day_type_mirror",
+            n_hosts_without_day_type, n_incomplete_total,
+            what="incomplete hosts without a household day type, matched on a "
+                 "day-type-free mirror pool",
+        )
     if n_unfillable > 0:
         logger.warning(
             "[popsim.member_completion] %d incomplete household(s) could NOT be "
-            "filled (no complete mirror household of equal %s exists); they "
-            "remain undersized in the seed.",
+            "filled (no complete mirror household with a matching %s exists, and, when "
+            "the kernwo-aware mode is active, of the host's day type; or the "
+            "complete-household pool is empty); they remain undersized in the seed.",
             n_unfillable, size_col,
         )
 
