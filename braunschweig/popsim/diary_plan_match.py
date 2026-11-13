@@ -79,6 +79,18 @@ EXPECTED_SHARE_REMAPPED = (0.05, 0.30)
 HARD_EMPLOYMENT_KEYS = frozenset({"employed"})
 
 
+def _is_known_trip_count(value) -> bool:
+    """True when a donor ``anzwege1`` is a real number (int or float dtype alike), not NaN.
+
+    ``bool`` is excluded: it is an ``int`` subclass but never a trip count.
+    """
+    if isinstance(value, (bool, np.bool_)):
+        return False
+    if not isinstance(value, (int, float, np.integer, np.floating)):
+        return False
+    return not np.isnan(value)
+
+
 @dataclass(frozen=True)
 class DiaryMatchReport:
     n_persons: int
@@ -340,7 +352,7 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     # completed-donor frame this consumes is built in a fixed order upstream
     # (member_completion / seed) that this function must not rely on for reproducibility.
     n_holiday_sources = 0
-    n_non_int_holiday_sources = 0
+    n_unknown_holiday_sources = 0
     for ridx in sorted(to_remap.tolist()):
         reason = reasons.loc[ridx]
         pool = pools["mobile"] if reason in for_mobile else pools["any"]
@@ -348,13 +360,15 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
             # keep the source's own mobility state: mobile source -> mobile pool
             src_anz = donor_anzwege1.get(
                 (persons.at[ridx, "source_H_ID"], persons.at[ridx, "source_P_ID"]), 0)
-            # Observability only (audit P2-F21, known defect, NOT fixed here because fixing it changes
-            # results): a non-integer-typed count (e.g. a float donor ``anzwege1``) fails the isinstance
-            # test and is routed to pool "any" even when it is a mobile count.
+            # The pool follows the VALUE of the count, never its dtype (audit P2-F21): pandas stores an
+            # integer column with one missing value as float64, and an isinstance(int) test used to
+            # send every such source to pool "any". A count that is unknown (NaN or not numeric)
+            # cannot say whether the source was mobile; it goes to "any" and is counted as fallback.
             n_holiday_sources += 1
-            if not isinstance(src_anz, (int, np.integer)):
-                n_non_int_holiday_sources += 1
-            pool = pools["mobile"] if (isinstance(src_anz, (int, np.integer)) and 0 < src_anz < 800) else pools["any"]
+            known_count = _is_known_trip_count(src_anz)
+            if not known_count:
+                n_unknown_holiday_sources += 1
+            pool = pools["mobile"] if (known_count and 0 < src_anz < 800) else pools["any"]
         sh, sp, level = match_person(persons.loc[ridx], pool, rng=rng, hard_keys=hard_keys,
                                      age_band_edges=age_band_edges,
                                      prepared_pool=prepared_pools.get(
@@ -367,10 +381,8 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     n_remapped = int(reasons.isin(REASONS_REMAP).sum())
     share = n_remapped / max(len(persons), 1)
     log_fallback_rate(
-        logger, "diary_plan_match.holiday_source_anzwege1_type", n_non_int_holiday_sources, n_holiday_sources,
-        what="holiday sources whose donor anzwege1 is not integer-typed (e.g. float) are routed to pool "
-             '"any" regardless of their value, even a mobile count that would go to "mobile" '
-             "(known defect, audit P2-F21)")
+        logger, "diary_plan_match.holiday_source_anzwege1", n_unknown_holiday_sources, n_holiday_sources,
+        what='holiday sources whose donor anzwege1 is unknown (NaN or not numeric) go to pool "any"')
     crossed = _count_employment_boundary_crossings(persons, pools["any"], to_remap)
     n_split_band, crossed_band = _count_fine_child_band_crossings(persons, pools["any"], to_remap)
     crossed_passenger = _count_passenger_class_crossings(persons, pools["any"], to_remap)
