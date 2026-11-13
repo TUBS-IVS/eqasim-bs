@@ -157,7 +157,11 @@ validation:
     0.843 (SrV 0.900). Against the at_home_zero universe the model is over-mobile by the
     construction of the target (ADR-0106 proof section). Arm 1 alone (package 1 only) was not
     run, so the attribution of the mobility gain to this package alone is by mechanism, not by
-    A/B isolation.
+    A/B isolation. Caveat for every run before branch fix/audit-d-popsim-fallback-rates
+    (2026-11-13): the holiday-remap pool was chosen by the dtype of the donor anzwege1, so a
+    float-typed column sent all holiday remaps to the "any" pool instead of the "mobile" pool.
+    Whether the production column was float-typed is unknown; the
+    [diary_plan_match.holiday_source_anzwege1] log line of a later run counts the unknown counts.
 assessment:
   status: pending
   by: null

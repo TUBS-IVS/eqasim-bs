@@ -359,7 +359,9 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
         if reason == "holiday":
             # keep the source's own mobility state: mobile source -> mobile pool
             src_anz = donor_anzwege1.get(
-                (persons.at[ridx, "source_H_ID"], persons.at[ridx, "source_P_ID"]), 0)
+                (persons.at[ridx, "source_H_ID"], persons.at[ridx, "source_P_ID"]), None)
+            # A source absent from the donor lookup has an unknown count: same pool "any" as the
+            # former default 0, but now counted as fallback instead of passing as a known count.
             # The pool follows the VALUE of the count, never its dtype (audit P2-F21): pandas stores an
             # integer column with one missing value as float64, and an isinstance(int) test used to
             # send every such source to pool "any". A count that is unknown (NaN or not numeric)
