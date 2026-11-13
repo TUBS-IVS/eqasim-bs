@@ -117,6 +117,11 @@ logger = logging.getLogger(__name__)
 _TALLY = FallbackTally("cars_by_status", logger)
 
 
+def reset_fallback_rates() -> None:
+    """Discard the counts accumulated so far (a reporting stage calls this first)."""
+    _TALLY.reset()
+
+
 def report_fallback_rates() -> None:
     """Log the primary/fallback rate of the cells built since the last report."""
     _TALLY.report()
@@ -208,7 +213,7 @@ def _base_cars_given_hhtype_status(
         )
         base_sum = base.sum()
         _TALLY.unit()
-        p_cars = (base / base_sum) if not _TALLY.check("status_uniform_cars_prior", base_sum <= 0) else pd.Series(
+        p_cars = (base / base_sum) if not _TALLY.check("status_uniform_cars_prior", not (base_sum > 0)) else pd.Series(
             np.ones(len(cars)) / len(cars), index=cars
         )
         for hhtype in sub["hhtype"].unique():
@@ -220,7 +225,7 @@ def _base_cars_given_hhtype_status(
             joint = row.to_numpy(dtype=float) * p_cars.to_numpy(dtype=float)
             total = joint.sum()
             _TALLY.unit()
-            if not _TALLY.check("hhtype_status_prior_cars", total <= 0):
+            if not _TALLY.check("hhtype_status_prior_cars", not (total > 0)):
                 out[(hhtype, status)] = joint / total
             else:
                 out[(hhtype, status)] = p_cars.to_numpy(dtype=float).copy()
@@ -249,12 +254,12 @@ def _raumtyp_cars_distribution(
         national += vec
         total = vec.sum()
         _TALLY.unit()
-        by_region[region] = (vec / total) if not _TALLY.check("region_uniform_cars", total <= 0) else (
+        by_region[region] = (vec / total) if not _TALLY.check("region_uniform_cars", not (total > 0)) else (
             np.ones(len(cars)) / len(cars)
         )
     nat_total = national.sum()
     _TALLY.unit()
-    national = (national / nat_total) if not _TALLY.check("national_uniform_cars", nat_total <= 0) else (
+    national = (national / nat_total) if not _TALLY.check("national_uniform_cars", not (nat_total > 0)) else (
         np.ones(len(cars)) / len(cars)
     )
     return by_region, national
@@ -336,6 +341,8 @@ def cars_probabilities_table(
     distinct combination. Mirrors the ``prob_cache`` pattern used by
     ``_derive_economic_status_from_hhtype``.
     """
+    # Report only this build: drop counts left by other callers of the helpers.
+    reset_fallback_rates()
     base_map = _base_cars_given_hhtype_status(df_hhtype, include_cars)
     by_region, national = _raumtyp_cars_distribution(df_raumtyp, include_cars)
     report_fallback_rates()

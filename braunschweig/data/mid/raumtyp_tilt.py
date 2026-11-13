@@ -51,6 +51,9 @@ class FallbackTally:
         self._logger = logger
         self.units = 0
         self.fallbacks: dict[str, int] = {}
+        # Branches counted inside loops: (unit name, branch) -> fired, unit name -> units.
+        self.aux_units: dict[str, int] = {}
+        self.aux_fallbacks: dict[tuple[str, str], int] = {}
 
     def unit(self, n: int = 1) -> None:
         """Register ``n`` decisions taken by the table build."""
@@ -62,12 +65,41 @@ class FallbackTally:
             self.fallbacks[branch] = self.fallbacks.get(branch, 0) + 1
         return fired
 
+    def aux_check(self, unit_name: str, branch: str, fired: bool) -> bool:
+        """Like :meth:`check` for a branch inside a loop: one ``unit_name`` unit per call.
+
+        Such a branch has its own denominator (``unit_name``) and is reported on its own
+        line, so every printed percentage is a share of its own stated unit.
+        """
+        self.aux_units[unit_name] = self.aux_units.get(unit_name, 0) + 1
+        if fired:
+            key = (unit_name, branch)
+            self.aux_fallbacks[key] = self.aux_fallbacks.get(key, 0) + 1
+        return fired
+
+    def reset(self) -> None:
+        """Discard all counts (a reporting stage calls this before its build)."""
+        self.units = 0
+        self.fallbacks = {}
+        self.aux_units = {}
+        self.aux_fallbacks = {}
+
     def report(self) -> None:
         """Log ``"<table>: primary X/N (..%), fallback <branch> Y (..%)"`` and reset."""
         n = self.units
         fired = dict(self.fallbacks)
-        self.units = 0
-        self.fallbacks = {}
+        aux_n = dict(self.aux_units)
+        aux_fired = dict(self.aux_fallbacks)
+        self.reset()
+        for unit_name, total in sorted(aux_n.items()):
+            parts = [(b, c) for (u, b), c in sorted(aux_fired.items()) if u == unit_name]
+            n_aux = sum(c for _, c in parts)
+            text = ", ".join(f"fallback {b} {c} ({100.0 * c / total:.1f}%)" for b, c in parts) or "fallback 0 (0.0%)"
+            msg = f"{self.table}: per {unit_name} (n={total}): {text}"
+            if n_aux / total > FALLBACK_WARN_FRACTION:
+                self._logger.warning(msg)
+            else:
+                self._logger.info(msg)
         if n <= 0:
             return
         n_fb = sum(fired.values())

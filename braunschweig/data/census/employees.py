@@ -21,14 +21,10 @@ Output schema:
 import os
 import pandas as pd
 
-# Share the unexplained-cell policy of the sibling GENESIS loader
-# (``braunschweig.data.census.employment._coerce_int``): same suppression
-# markers, same warn / raise fractions.
-from braunschweig.data.census.employment import (
-    EMPLOYMENT_COERCE_RAISE_FRACTION,
-    EMPLOYMENT_COERCE_WARN_FRACTION,
-    GENESIS_SUPPRESSION_MARKERS,
-)
+# Kept equal to braunschweig.data.census.employment; same GENESIS policy.
+GENESIS_SUPPRESSION_MARKERS = {".", "-"}
+EMPLOYMENT_COERCE_WARN_FRACTION: float = 0.05
+EMPLOYMENT_COERCE_RAISE_FRACTION: float = 0.50
 
 
 COLUMN_NAMES = [

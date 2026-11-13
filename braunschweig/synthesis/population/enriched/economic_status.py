@@ -159,11 +159,14 @@ def _derive_economic_status_from_hhtype(df_persons, data_path, df_regiostar,
         load_status_by_hhtype_raumtyp,
         map_households_to_hhtype,
         region_status_probabilities,
+        reset_fallback_rates,
     )
     from braunschweig.data.bbsr.regiostar import ars_to_ags8
 
     assert tuple(STATUS_CATEGORIES) == ECONOMIC_STATUS_CATEGORIES
 
+    # Report only this build: other callers of the Bayes helpers also feed the tally.
+    reset_fallback_rates()
     df_bund = load_status_by_hhtype_bundesland(data_path)
     df_raum = load_status_by_hhtype_raumtyp(data_path)
 

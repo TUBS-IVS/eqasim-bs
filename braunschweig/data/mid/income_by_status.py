@@ -73,6 +73,11 @@ logger = logging.getLogger(__name__)
 _TALLY = FallbackTally("income_by_status", logger)
 
 
+def reset_fallback_rates() -> None:
+    """Discard the counts accumulated so far (a reporting stage calls this first)."""
+    _TALLY.reset()
+
+
 def report_fallback_rates() -> None:
     """Log the primary/fallback rate of the cells built since the last report."""
     _TALLY.report()
@@ -202,7 +207,7 @@ def _national_raumtyp_pmf(
             & (df_raumtyp["status"].astype(str) == str(status))
         ]
         base = float(sub["base_weighted"].drop_duplicates().sum())
-        if _TALLY.check("zero_base_equal_weight", base <= 0):
+        if _TALLY.aux_check("raumtyp base cell", "zero_base_equal_weight", base <= 0):
             base = 1.0  # degenerate base -> equal weight (does not zero a region)
         acc += base * pmf
         base_total += base
@@ -279,7 +284,7 @@ def overall_bracket_pmf(
             continue
         sub = nds[nds["status"].astype(str) == status]
         base = float(sub["base_weighted"].drop_duplicates().sum())
-        if _TALLY.check("zero_base_equal_weight", base <= 0):
+        if _TALLY.aux_check("nds base cell", "zero_base_equal_weight", base <= 0):
             base = 1.0
         acc += base * pmf
         base_total += base

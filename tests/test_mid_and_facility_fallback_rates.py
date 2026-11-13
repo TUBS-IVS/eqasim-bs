@@ -222,3 +222,55 @@ def test_university_primary_path_prints_no_zero_weight_units(capsys):
     out = capsys.readouterr().out
     assert "[university_facilities] units with OSM buildings: placed 1/1 (100.0%)" in out
     assert "zero-weight units skipped (enrollment not placed) 0 (0.0%)" in out
+
+
+# ---------------------------------------------------------------------------
+# Counting never changes a value; a report covers exactly one build
+# ---------------------------------------------------------------------------
+
+def test_cars_nan_total_takes_the_uniform_fallback_like_origin_main():
+    from braunschweig.data.mid import cars_by_status as mod
+
+    cars = mod.CAR_COUNT_CATEGORIES
+    # +inf and -inf make the region sum NaN: origin/main tested ``total > 0`` (False for NaN)
+    # and returned the uniform vector, so the counted branch must do the same.
+    base = [np.inf, -np.inf] + [1.0] * (len(cars) - 2)
+    df_rt = pd.DataFrame([{"num_cars": c, "region": "r1", "base_weighted": b}
+                          for c, b in zip(cars, base)])
+    mod.reset_fallback_rates()
+    by_region, national = mod._raumtyp_cars_distribution(df_rt)
+    assert by_region["r1"].tolist() == pytest.approx([1.0 / len(cars)] * len(cars))
+    assert national.tolist() == pytest.approx([1.0 / len(cars)] * len(cars))
+    assert mod._TALLY.fallbacks == {"region_uniform_cars": 1, "national_uniform_cars": 1}
+
+
+def test_reset_drops_counts_of_other_callers(caplog):
+    from braunschweig.data.mid import income_by_size as mod
+
+    df_bl = _income_df("1", "hh_size", ["niedersachsen"])
+    df_rt = _income_df("1", "hh_size", ["r1"])
+    mod.income_bracket_probabilities(df_bl, df_rt, "1", "unknown_region")  # foreign caller
+    mod.reset_fallback_rates()  # what a reporting stage does at the start of its build
+    with caplog.at_level(logging.INFO, logger=mod.logger.name):
+        mod.income_bracket_probabilities(df_bl, df_rt, "1", "r1")
+        mod.report_fallback_rates()
+    (line,) = _rate_lines(caplog, "income_by_size")
+    assert "primary 1/1 (100.0%)" in line.getMessage()
+    assert "fallback 0 (0.0%)" in line.getMessage()
+
+
+def test_loop_branch_is_reported_against_its_own_unit(caplog):
+    from braunschweig.data.mid import income_by_size as mod
+
+    df_bl = _income_df("1", "hh_size", ["niedersachsen"])
+    df_rt = _income_df("1", "hh_size", ["r1", "r2"])
+    df_rt["base_weighted"] = 0.0  # zero base in every raumtyp cell: equal weight, not a skip
+    mod.reset_fallback_rates()
+    with caplog.at_level(logging.INFO, logger=mod.logger.name):
+        mod.income_bracket_probabilities(df_bl, df_rt, "1", "r1")
+        mod.report_fallback_rates()
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("per raumtyp base cell (n=2): fallback zero_base_equal_weight 2 (100.0%)" in m
+               for m in msgs)
+    (line,) = _rate_lines(caplog, "income_by_size")
+    assert "primary 1/1 (100.0%)" in line.getMessage()  # the call itself was primary

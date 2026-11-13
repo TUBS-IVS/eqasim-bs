@@ -105,6 +105,11 @@ logger = logging.getLogger(__name__)
 _TALLY = FallbackTally("tenure_by_income", logger)
 
 
+def reset_fallback_rates() -> None:
+    """Discard the counts accumulated so far (a reporting stage calls this first)."""
+    _TALLY.reset()
+
+
 def report_fallback_rates() -> None:
     """Log the primary/fallback rate of the cells built since the last report."""
     _TALLY.report()
@@ -231,13 +236,13 @@ def _tilted_bracket_given_tenure(
             & (df_raumtyp["tenure"].astype(str) == str(tenure))
         ]
         b = float(sub["base_weighted"].drop_duplicates().sum())
-        if _TALLY.check("zero_base_equal_weight", b <= 0):
+        if _TALLY.aux_check("raumtyp base cell", "zero_base_equal_weight", b <= 0):
             b = 1.0
         acc += b * pmf
         base_total += b
     national_pmf = (acc / base_total) if base_total > 0 else None
 
-    if _TALLY.check("untilted_base", region_pmf is None or national_pmf is None):
+    if _TALLY.aux_check("tenure bracket pmf", "untilted_base", region_pmf is None or national_pmf is None):
         return base.copy()
     return tilt_toward_region(base, region_pmf, national_pmf)
 
@@ -280,8 +285,7 @@ def tenure_probabilities_given_income(
         cond = _tilted_bracket_given_tenure(
             df_bundesland, df_raumtyp, tenure, raumtyp_region, brackets
         )
-        _TALLY.unit()
-        if _TALLY.check("tenure_cond_absent_zero", cond is None):
+        if _TALLY.aux_check("tenure bracket pmf", "tenure_cond_absent_zero", cond is None):
             cond = np.zeros(n_brackets, dtype=float)
         joint[:, ti] = cond * p_tenure[ti]
 
@@ -292,9 +296,8 @@ def tenure_probabilities_given_income(
     # A bracket with zero joint mass across all tenures (no data) -> fall back to
     # the unconditional tenure marginal so every bracket row is a valid pmf.
     empty = (row_sums[:, 0] <= 0)
-    _TALLY.unit(n_brackets)
-    for _ in range(int(empty.sum())):
-        _TALLY.check("empty_bracket_row_tenure_marginal", True)
+    for is_empty in empty:
+        _TALLY.aux_check("bracket row", "empty_bracket_row_tenure_marginal", bool(is_empty))
     if empty.any():
         out[empty, :] = p_tenure
     return out

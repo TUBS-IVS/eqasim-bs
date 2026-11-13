@@ -170,6 +170,9 @@ class _Tally:
             self.fallbacks[branch] = self.fallbacks.get(branch, 0) + 1
         return fired
 
+    def reset(self) -> None:
+        self.units, self.fallbacks = 0, {}
+
     def report(self) -> None:
         n, fired = self.units, self.fallbacks
         self.units, self.fallbacks = 0, {}
@@ -185,6 +188,11 @@ class _Tally:
 
 
 _TALLY = _Tally()
+
+
+def reset_fallback_rates() -> None:
+    """Discard the counts accumulated so far (a reporting stage calls this first)."""
+    _TALLY.reset()
 
 
 def report_fallback_rates() -> None:
@@ -263,7 +271,7 @@ def _pooled_bayes(
         joint = share * p_status.to_numpy(dtype=float)
         total = joint.sum()
         _TALLY.unit()
-        out[hhtype] = joint / total if not _TALLY.check("pooled_status_prior", total <= 0) else p_status.to_numpy(dtype=float).copy()
+        out[hhtype] = joint / total if not _TALLY.check("pooled_status_prior", not (total > 0)) else p_status.to_numpy(dtype=float).copy()
     return out
 
 
@@ -309,7 +317,7 @@ def region_status_probabilities(
             tilt = np.where(nat > 1e-12, reg / nat, 1.0)
         tilted = base_vec * tilt
         total = tilted.sum()
-        out[hhtype] = tilted / total if not _TALLY.check("zero_tilt_mass_untilted_base", total <= 0) else base_vec.copy()
+        out[hhtype] = tilted / total if not _TALLY.check("zero_tilt_mass_untilted_base", not (total > 0)) else base_vec.copy()
     return out
 
 
@@ -350,7 +358,7 @@ def bayes_status_given_hhtype(
     )
     base_sum = base.sum()
     _TALLY.unit()
-    p_status = (base / base_sum) if not _TALLY.check("region_uniform_status_prior", base_sum <= 0) else pd.Series(
+    p_status = (base / base_sum) if not _TALLY.check("region_uniform_status_prior", not (base_sum > 0)) else pd.Series(
         np.ones(len(statuses)) / len(statuses), index=statuses
     )
 
@@ -367,7 +375,7 @@ def bayes_status_given_hhtype(
         joint = row.to_numpy(dtype=float) * p_status.to_numpy(dtype=float)
         total = joint.sum()
         _TALLY.unit()
-        if not _TALLY.check("hhtype_status_prior", total <= 0):
+        if not _TALLY.check("hhtype_status_prior", not (total > 0)):
             out[hhtype] = joint / total
         else:
             # Degenerate (all-zero share for this hhtype across status): fall

@@ -33,15 +33,22 @@ logger = logging.getLogger(__name__)
 FALLBACK_WARN_FRACTION: float = 0.05
 
 
-def _normalise_or_uniform(vec: np.ndarray, counter: list[int]) -> np.ndarray:
+def _normalise_or_uniform(
+    vec: np.ndarray, counter: list[int], nan_stays_nan: bool = False
+) -> np.ndarray:
     """Normalise ``vec`` to sum 1; a zero-sum row becomes uniform and is counted.
 
     ``counter`` is a ``[zero_rows, total_rows]`` pair updated in place so a
     loader can report its fallback rate via :func:`_report_zero_sum_rows`.
+
+    A NaN row sum is handled as in the original loaders: the margin loaders test
+    ``sum > 0`` (NaN -> uniform, counted); the two breakdown loaders test
+    ``sum <= 0`` (``nan_stays_nan=True``: NaN is divided through and stays NaN).
     """
     counter[1] += 1
     total = vec.sum()
-    if total > 0:
+    zero_sum = (total <= 0) if nan_stays_nan else (not total > 0)
+    if not zero_sum:
         return vec / total
     counter[0] += 1
     return np.ones(len(vec)) / len(vec)
@@ -300,7 +307,7 @@ def load_pt_subscription_breakdown(
             [float(row[P24_RAW_COLUMN_BY_CATEGORY[c]]) for c in cols], dtype=float
         )
         # All zeros / missing becomes a counted uniform fallback.
-        vec = _normalise_or_uniform(vec, zero_rows)
+        vec = _normalise_or_uniform(vec, zero_rows, nan_stays_nan=True)
         if ars5 == "03ZGB":
             region = vec
         else:
@@ -497,7 +504,7 @@ def load_license_breakdown(
     for _, row in df.iterrows():
         ars5 = str(row["ars5"])
         vec = np.asarray([float(row[c]) for c in cols], dtype=float)
-        vec = _normalise_or_uniform(vec, zero_rows)
+        vec = _normalise_or_uniform(vec, zero_rows, nan_stays_nan=True)
         if ars5 == "03ZGB":
             region = vec
         else:

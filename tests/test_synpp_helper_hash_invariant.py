@@ -461,13 +461,6 @@ _GATE_RESULTS, _UNDECIDED = _compute_gate_results()
 # ---------------------------------------------------------------------------
 
 ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
-    # employees reads three threshold constants (suppression markers, warn and raise
-    # fractions) from its sibling GENESIS loader so both share one policy; the stage
-    # token stays the xlsx size, so an edit of those constants alone does not
-    # devalidate the cache. Close it by moving the constants to a shared helper.
-    "braunschweig.data.census.employees": (
-        "braunschweig.data.census.employment",
-    ),
     "braunschweig.data.census.households_type": (
         "braunschweig.data.census.households_size_age",
     ),

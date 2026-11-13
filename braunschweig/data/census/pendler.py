@@ -168,9 +168,15 @@ def execute(context) -> pd.DataFrame:
     # below the suppression threshold in only one of the two views).
     df = pd.concat([df_ein, df_aus], ignore_index=True)
     n_before_dedup = len(df)
-    n_conflicting = int(
+    # A 0 in one view is the expected BA suppression artefact (see above); only two
+    # different POSITIVE values for one pair are a genuine disagreement.
+    n_differing_any = int(
         (df.groupby(["orig_ars", "dest_ars"])["flow"].nunique() > 1).sum()
     )
+    n_conflicting = int(
+        (df[df["flow"] > 0].groupby(["orig_ars", "dest_ars"])["flow"].nunique() > 1).sum()
+    )
+    n_zero_vs_positive = n_differing_any - n_conflicting
     df = (
         df.groupby(["orig_ars", "dest_ars"], as_index=False)
           .agg(flow=("flow", "max"))
@@ -185,6 +191,12 @@ def execute(context) -> pd.DataFrame:
         "({} collapsed by max, {} pairs with differing flows = {:.1f}%)".format(
             tag, n_before_dedup, len(df), n_collapsed, n_conflicting,
             100.0 * conflict_fraction,
+        )
+    )
+    print(
+        "[braunschweig.data.census.pendler] dedup info: {} pairs with a zero in "
+        "one view and a positive flow in the other (expected, not warned)".format(
+            n_zero_vs_positive
         )
     )
 

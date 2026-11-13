@@ -67,8 +67,12 @@ def _apply_housing_tenure(df_persons, df_tenure_bund, df_tenure_raum,
         TENURE_CATEGORIES,
         RS7_TO_RAUMTYP_KEY,
         tenure_probabilities_given_income,
+        reset_fallback_rates,
     )
     from braunschweig.data.bbsr.regiostar import ars_to_ags8
+
+    # Report only this build: other callers of the tenure helpers also feed the tally.
+    reset_fallback_rates()
 
     tenure_arr = np.asarray(TENURE_CATEGORIES, dtype=object)
     n_tenure = len(TENURE_CATEGORIES)
