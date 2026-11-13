@@ -37,16 +37,32 @@ def test_derive_geo_kreis_from_ars_integer_dtype_input():
     assert list(out) == ["03101", "03102"]
 
 
-@pytest.mark.parametrize("ars, expected_prefix, expect_warning", [
-    (pd.Series(["031010000000", "031020000000"] * 20), "[popsim.stage.geo_kreis] primary 40/40", False),
-    # A numeric ARS column with a missing value is float64: the valid row stringifies as
-    # "31010000000.0" (a WRONG Kreis) and the NaN as "nan"; both are counted, and any count warns.
-    (pd.Series([31010000000, float("nan")]), "[popsim.stage.geo_kreis] primary 0/2", True),
-])
-def test_derive_geo_kreis_logs_placeholder_rate(caplog, ars, expected_prefix, expect_warning):
+def test_derive_geo_kreis_logs_full_primary_rate_on_valid_ars(caplog):
+    ars = pd.Series(["031010000000", "031020000000"] * 20)
     with caplog.at_level(logging.INFO, logger="braunschweig.popsim.stage.cell_attributes"):
-        out = stage.derive_geo_kreis_from_ars(ars)
-    assert len(out) == len(ars)
-    messages = [r.getMessage() for r in caplog.records]
-    assert any(m.startswith(expected_prefix) for m in messages)
-    assert bool([r for r in caplog.records if r.levelno >= logging.WARNING]) is expect_warning
+        stage.derive_geo_kreis_from_ars(ars)
+    lines = [r for r in caplog.records if r.getMessage().startswith("[popsim.stage.geo_kreis] primary 40/40")]
+    assert len(lines) == 1 and lines[0].levelno == logging.INFO
+
+
+@pytest.mark.parametrize("ars", [
+    # A missing ARS used to become the string "nan" and the placeholder Kreis "00000" (audit P3-F5).
+    pd.Series(["031010000000", None], dtype=object),
+    # A numeric ARS column with a missing value is float64: the valid row stringified as
+    # "31010000000.0" and derived the WRONG Kreis "31010" instead of "03101".
+    pd.Series([31010000000, float("nan")]),
+    # Not a Regionalschluessel at all.
+    pd.Series(["03101000000X"]),
+])
+def test_derive_geo_kreis_rejects_missing_or_malformed_ars(ars):
+    with pytest.raises(ValueError, match="ARS"):
+        stage.derive_geo_kreis_from_ars(ars)
+
+
+def test_join_cell_attributes_rejects_a_household_without_cell_ars():
+    """Every PopulationSim cell comes from the loaded cells frame, so a household whose cell
+    has no ARS after the join is a broken input, not a fallback (audit P3-F5)."""
+    combined = pd.DataFrame({"ZENSUS100m": ["a", "b"], "H_ID": [1, 2]})
+    cells = pd.DataFrame({"ZENSUS100m": ["a"], stage.mid._ARS_COLUMN: ["031010000000"]})
+    with pytest.raises(ValueError, match="ARS"):
+        stage.join_cell_attributes(combined, cells)
