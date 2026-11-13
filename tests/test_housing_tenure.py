@@ -213,6 +213,31 @@ def test_unknown_raumtyp_counted_as_fallback(capsys):
     assert set(df["housing_tenure"].dropna().unique()) <= set(TENURE_CATEGORIES)
 
 
+def test_raumtyp_without_tilt_rows_counted_as_fallback(capsys):
+    """A valid raumtyp whose tilt rows are absent from the raumtyp table is drawn from
+    the untilted NDS matrix: that is a FALLBACK, although the raumtyp resolves. The
+    assignments equal those of households with an unresolvable raumtyp (same untilted
+    matrix, same RNG stream)."""
+    from braunschweig.data.mid.tenure_by_income import RS7_TO_RAUMTYP_KEY
+    from braunschweig.synthesis.population.enriched import _apply_housing_tenure
+    df_b = load_tenure_by_income_bundesland(DATA_PATH)
+    df_r = load_tenure_by_income_raumtyp(DATA_PATH)
+    df_r_without = df_r[df_r["region"] != RS7_TO_RAUMTYP_KEY[72]]
+
+    df = _make_population_with_income(n_households=300)
+    n_hh = df["household_id"].nunique()
+    out_df = _apply_housing_tenure(df.copy(), df_b, df_r_without, _regiostar_frame(), 5)
+    out = capsys.readouterr().out
+    assert out_df.attrs["housing_tenure_fallback_count"] == n_hh
+    assert out_df.attrs["housing_tenure_primary_count"] == 0
+    assert "WARNING: housing_tenure" in out
+
+    unresolved = df.copy()
+    unresolved["commune_id"] = "099990000000"  # no RegioStaR mapping -> raumtyp None
+    ref = _apply_housing_tenure(unresolved, df_b, df_r, _regiostar_frame(), 5)
+    assert out_df["housing_tenure"].astype(str).tolist() == ref["housing_tenure"].astype(str).tolist()
+
+
 def test_helper_fallback_logged_when_cell_missing(capsys):
     """When the raumtyp Bayes matrix is genuinely unavailable for a household's
     cell, it falls back to the unconditional NDS marginal and is counted. We force

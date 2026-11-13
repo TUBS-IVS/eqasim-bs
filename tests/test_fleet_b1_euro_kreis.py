@@ -846,3 +846,21 @@ def test_missing_optional_tables_warn_and_primary_sources_stay_quiet(tmp_path, c
     assert "kba_kreis_fuel.csv absent" not in warnings
     assert "FZ27.4 fallback" not in warnings
     assert "Euro-6 substage" in warnings and "Missing input" in warnings
+
+
+def test_absent_gemeinde_ev_table_warns_with_missing_input(tmp_path, caplog):
+    """The committed Gemeinde EV table is constructed absent: the FZ27.17 fallback of the
+    Gemeinde EV tilt is a WARNING that names the missing input, not an INFO line."""
+    real_derived = DATA / "braunschweig" / "kba" / "derived"
+    if not real_derived.exists():
+        pytest.skip("real derived data directory absent")
+    derived = tmp_path / "braunschweig" / "kba" / "derived"
+    derived.mkdir(parents=True)
+    for src in real_derived.glob("*.csv"):
+        if src.name != "kba_gemeinde_ev.csv":
+            shutil.copy2(src, derived / src.name)
+    with caplog.at_level(logging.INFO):
+        fs.PowertrainModel.from_data_path(str(tmp_path), list(ft.SEGMENT_LABELS[:5]))
+    fallback = [r for r in caplog.records if "FZ27.17 fallback" in r.getMessage()]
+    assert fallback and all(r.levelno == logging.WARNING for r in fallback)
+    assert "kba_gemeinde_ev.csv" in fallback[0].getMessage()
