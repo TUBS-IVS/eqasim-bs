@@ -87,7 +87,10 @@ KEY_STRATIFY = "braunschweig.population.popsim.stratify_regiostar"
 # docs/registry/features/popsim_data_dictionary.yml). False saves its step time
 # (braunschweig.popsim.folders.resolve_batch_settings_yaml; audit package H, item I).
 # Declared volatile in configure(): flipping it never invalidates the popsim stage cache.
-# With False the settings file must list the step exactly once as a block-list item,
+# It does change the batch settings.yaml, which the per-batch input fingerprint
+# (braunschweig.popsim.batch.input_fingerprint, ADR-0193) covers: when the stage next
+# runs against an existing work_dir, the completed batches written with the other
+# setting are re-run once. With False the settings file must list the step exactly once as a block-list item,
 # else the stage raises.
 KEY_WRITE_DATA_DICTIONARY = "braunschweig.population.popsim.write_data_dictionary"
 # Member completion (decision D3, mid source only): fill member-incomplete MiD

@@ -181,11 +181,10 @@ def resolve_batch_settings_yaml(settings_yaml: str, write_data_dictionary: bool)
     """Return the settings text that is written into every PopulationSim batch folder.
 
     ``write_data_dictionary=True`` returns the source text unchanged. ``False`` drops the
-    diagnostic ``write_data_dictionary`` step via :func:`drop_data_dictionary_step`; it
-    writes only ``output/data_dict.csv`` / ``data_dict.txt`` and no later PopulationSim step
-    reads them, so the synthetic households and persons are unchanged (identity proof:
-    ``docs/runs/popsim-data-dictionary-identity-2026-11-16.yml``). The decision is logged
-    either way.
+    diagnostic ``write_data_dictionary`` step via :func:`drop_data_dictionary_step`. Why
+    that leaves the synthetic population unchanged, and how far that is checked: the
+    comment of ``braunschweig.popsim.stage.config_keys.KEY_WRITE_DATA_DICTIONARY``. The
+    decision is logged either way.
     """
     if write_data_dictionary:
         logger.info("[popsim] batch settings keep PopulationSim step '%s' "

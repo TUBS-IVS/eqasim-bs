@@ -1979,6 +1979,20 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
     purge_stale_batches_on_config_change(work_dir, _config_signature)
 
 
+def _batch_settings_yaml(context, settings_path) -> str:
+    """Return the PopulationSim settings text written into every batch folder.
+
+    Reads the server-local settings file and applies the
+    ``braunschweig.population.popsim.write_data_dictionary`` switch
+    (meaning: ``config_keys.KEY_WRITE_DATA_DICTIONARY``). The stage-level config
+    signature (``_purge_stale_batches_for_changed_config``) hashes the raw file; the
+    per-batch input fingerprint hashes this resolved text.
+    """
+    return folders.resolve_batch_settings_yaml(
+        Path(settings_path).read_text(encoding="utf-8"),
+        bool(context.config(KEY_WRITE_DATA_DICTIONARY)))
+
+
 def _run_populationsim_batches(context, cells: pd.DataFrame, base_cols, controls_df: pd.DataFrame,
         seed_households: pd.DataFrame, seed_persons: pd.DataFrame, work_dir,
         settings_path, logging_path, max_cells: int, run_one, num_workers: int,
@@ -1994,12 +2008,7 @@ def _run_populationsim_batches(context, cells: pd.DataFrame, base_cols, controls
     merge_report = mid.run_popsim_mid(
         cells, base_cols, controls_df, seed_households, seed_persons,
         work_dir=Path(work_dir),
-        # The batch config signature (_purge_stale_batches_for_changed_config) hashes the
-        # raw source file, not this resolved text, on purpose: the switch changes no
-        # synthetic output, so flipping it must not purge completed batches.
-        settings_yaml=folders.resolve_batch_settings_yaml(
-            Path(settings_path).read_text(encoding="utf-8"),
-            bool(context.config(KEY_WRITE_DATA_DICTIONARY))),
+        settings_yaml=_batch_settings_yaml(context, settings_path),
         logging_yaml=Path(logging_path).read_text(encoding="utf-8"),
         max_cells=max_cells,
         run_one=run_one,

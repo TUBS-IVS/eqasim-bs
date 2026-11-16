@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 
 import pytest
-import yaml
 
 from braunschweig.popsim import folders
 from braunschweig.popsim.stage import config_keys
@@ -42,13 +41,8 @@ output_tables:
 """
 
 
-def test_drop_removes_only_the_step_line_and_keeps_all_other_settings():
-    result = folders.drop_data_dictionary_step(SETTINGS)
-    assert result == SETTINGS.replace(STEP_LINE, "")
-    original, parsed = yaml.safe_load(SETTINGS), yaml.safe_load(result)
-    assert parsed["models"] == [m for m in original["models"] if m != "write_data_dictionary"]
-    assert {k: v for k, v in parsed.items() if k != "models"} == \
-        {k: v for k, v in original.items() if k != "models"}
+def test_drop_removes_only_the_step_line():
+    assert folders.drop_data_dictionary_step(SETTINGS) == SETTINGS.replace(STEP_LINE, "")
 
 
 def test_drop_preserves_crlf_line_endings_and_trailing_comment():
@@ -73,15 +67,29 @@ def test_drop_refuses_settings_it_cannot_cut_cleanly(text, message):
         folders.drop_data_dictionary_step(text)
 
 
-def test_resolve_on_is_byte_identical_off_drops_and_both_log(caplog):
+class _ExecuteContext:
+    """synpp execute() context double: ``config(key)`` takes ONE argument, like synpp's."""
+
+    def __init__(self, values):
+        self._values = values
+
+    def config(self, key):
+        return self._values[key]
+
+
+@pytest.mark.parametrize("switch, expected", [
+    (True, SETTINGS),
+    (False, SETTINGS.replace(STEP_LINE, "")),
+], ids=["on-byte-identical", "off-drops-step"])
+def test_stage_writes_batch_settings_per_switch_and_logs(tmp_path, caplog, switch, expected):
+    from braunschweig.popsim import stage
+
+    settings_path = tmp_path / "settings.yaml"
+    settings_path.write_bytes(SETTINGS.encode("utf-8"))
+    context = _ExecuteContext({config_keys.KEY_WRITE_DATA_DICTIONARY: switch})
     with caplog.at_level(logging.INFO, logger=folders.__name__):
-        assert folders.resolve_batch_settings_yaml(SETTINGS, True) is SETTINGS
-        kept_log = caplog.text
-        caplog.clear()
-        dropped = folders.resolve_batch_settings_yaml(SETTINGS, False)
-    assert "write_data_dictionary" in kept_log
+        assert stage._batch_settings_yaml(context, settings_path) == expected
     assert "write_data_dictionary" in caplog.text
-    assert dropped == SETTINGS.replace(STEP_LINE, "")
 
 
 class _RecordingContext:
