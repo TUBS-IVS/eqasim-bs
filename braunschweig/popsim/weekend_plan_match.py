@@ -12,7 +12,7 @@ import pandas as pd
 
 from braunschweig.popsim.attributes import EMPLOYED_TAET, PT_SUBSCRIPTION_FKARTE
 from braunschweig.popsim.fallback_rates import log_fallback_rate
-from braunschweig.popsim.sampling import weighted_choice
+from braunschweig.popsim.sampling import draw_prepared_choice, prepare_weighted_choice, weighted_choice
 
 logger = logging.getLogger(__name__)
 
@@ -290,10 +290,13 @@ def passenger_never_class(p_vauto: pd.Series) -> pd.Series:
     return pd.to_numeric(p_vauto, errors="coerce").eq(P_VAUTO_NEVER)
 
 
+_P_VAUTO_MISSING = ("the passenger access key needs the MiD column P_VAUTO (loaded only with "
+                    "mid_passenger_availability on)")
+
+
 def _require_passenger_class(persons: pd.DataFrame, *, what: str) -> np.ndarray:
     if "P_VAUTO" not in persons.columns:
-        raise KeyError(f"{what}: the passenger access key needs the MiD column P_VAUTO (loaded only with "
-                       "mid_passenger_availability on)")
+        raise KeyError(f"{what}: {_P_VAUTO_MISSING}")
     return passenger_never_class(persons["P_VAUTO"]).to_numpy()
 
 
@@ -339,14 +342,62 @@ def _base_person_keys(persons: pd.DataFrame, *, age_band_edges) -> pd.DataFrame:
     }, index=persons.index)
 
 
+def _scalar_age_band(age, edges):
+    """Band index of ONE age, equal to ``age_band_index`` (``pd.cut``, right-closed bins).
+
+    Band ``i`` holds ``edges[i] < age <= edges[i + 1]``; an age at or below the first edge,
+    above the last one, or missing has no band (NaN), as in ``pd.cut``.
+    """
+    # pd.cut refuses a non-numeric age and the object column a None / pd.NA age yields in a
+    # one-row frame; refuse them here too rather than coercing (a float NaN has no band).
+    if age is None or age is pd.NA or not isinstance(age, (int, float, np.integer, np.floating, np.bool_)):
+        raise TypeError(f"match_person: HP_ALTER must be numeric, got {age!r}")
+    if np.isnan(float(age)):
+        return np.nan
+    position = int(np.searchsorted(np.asarray(edges, dtype=float), float(age), side="left"))
+    if position == 0 or position == len(edges):
+        return np.nan
+    return position - 1
+
+
+def _target_person_keys(target_row: pd.Series, *, age_band_edges, passenger_key: bool) -> dict:
+    """Match keys of ONE target row, value-equal to ``_person_keys(pd.DataFrame([target_row])).iloc[0]``.
+
+    The prepared path of :func:`match_person` reads the keys only for the candidate-cell
+    lookup, which compares by value (``1 == 1.0 == np.int64(1)``) and treats a missing value
+    as "matches no donor". This scalar form gives the same values and the same missing
+    values without building a one-row DataFrame per call; the equivalence is pinned by
+    tests/test_performance_donor_matching.py.
+    """
+    def _code_in(value, codes) -> bool:
+        # Series.isin semantics for one value: a missing value is never in the code set.
+        return False if pd.isna(value) else value in codes
+
+    p_fschein = target_row["P_FSCHEIN"]
+    keys = {
+        "age_band": _scalar_age_band(target_row["HP_ALTER"], age_band_edges),
+        "sex": target_row["HP_SEX"],
+        "has_license": False if pd.isna(p_fschein) else bool(p_fschein == 1),
+        "employed": _code_in(target_row["P_TAET"], EMPLOYED_TAET),
+        "has_pt": _code_in(target_row["P_FKARTE"], PT_SUBSCRIPTION_FKARTE),
+    }
+    if passenger_key:
+        if "P_VAUTO" not in target_row.index:
+            raise KeyError(f"match_person: {_P_VAUTO_MISSING}")
+        p_vauto = pd.to_numeric(target_row["P_VAUTO"], errors="coerce")
+        keys[PASSENGER_KEY] = False if pd.isna(p_vauto) else bool(p_vauto == P_VAUTO_NEVER)
+    return keys
+
+
 @dataclass
 class PreparedPersonPool:
     """Invariant donor features and bounded candidate indexes for one exact frame.
 
     The source frame is bound by identity and by exact snapshots of every column
     that can affect matching. Candidate indexes are created lazily for the finite
-    subsets of :data:`PERSON_KEYS_BY_PRIORITY` requested by relaxation ladders;
-    target signatures themselves are never cached.
+    subsets of :data:`PERSON_KEYS_BY_PRIORITY` requested by relaxation ladders. Each
+    candidate cell that a target reaches caches its prepared weighted draw
+    (:meth:`cell_choice`), keyed by the match keys and the target's key values.
     """
     _source: pd.DataFrame = field(repr=False)
     age_band_edges: tuple
@@ -358,10 +409,35 @@ class PreparedPersonPool:
     passenger_key: bool = False
     lift_free_never: bool = False
     _candidate_indexes: dict = field(default_factory=dict, repr=False)
+    #: ``(match_keys, target_values) -> PreparedWeightedChoice | None`` per candidate key cell.
+    _cell_choices: dict = field(default_factory=dict, repr=False)
 
     def validate(self, weekday_persons: pd.DataFrame, age_band_edges, passenger_key: bool = False,
                  lift_free_never: bool = False) -> None:
-        """Reject a prepared pool whose source, content, age bands or passenger key setting changed."""
+        """Reject a prepared pool whose source, content, age bands or passenger key setting changed.
+
+        The content check compares every snapshot column and is O(pool size), so
+        :func:`match_person` does NOT run it per call (it runs only the O(1)
+        :meth:`check_binding`). A caller that loops over ``match_person`` with a prepared
+        pool runs this full check before and after its loop (the rule and its reason:
+        ``docs/codebase/notes/performance-equivalence.md``).
+        """
+        self.check_binding(weekday_persons, age_band_edges, passenger_key, lift_free_never)
+        current_columns = tuple(c for c in _PERSON_POOL_COLUMNS if c in weekday_persons.columns)
+        if current_columns != tuple(self._snapshot_columns):
+            raise ValueError(
+                "match_person: weekday person pool changed since preparation")
+        if not weekday_persons.index.equals(self._snapshot_index):
+            raise ValueError(
+                "match_person: weekday person pool changed since preparation")
+        if any(not weekday_persons[column].equals(snapshot)
+               for column, snapshot in self._snapshot_columns.items()):
+            raise ValueError(
+                "match_person: weekday person pool changed since preparation")
+
+    def check_binding(self, weekday_persons: pd.DataFrame, age_band_edges, passenger_key: bool = False,
+                      lift_free_never: bool = False) -> None:
+        """O(1) per-call check: same source object, age bands and passenger key settings."""
         if weekday_persons is not self._source:
             raise ValueError(
                 "match_person: prepared_pool belongs to a different person pool")
@@ -377,17 +453,6 @@ class PreparedPersonPool:
             raise ValueError(
                 f"match_person: prepared_pool was prepared with lift_free_never={self.lift_free_never}, "
                 f"the call requests lift_free_never={bool(lift_free_never)}")
-        current_columns = tuple(c for c in _PERSON_POOL_COLUMNS if c in weekday_persons.columns)
-        if current_columns != tuple(self._snapshot_columns):
-            raise ValueError(
-                "match_person: weekday person pool changed since preparation")
-        if not weekday_persons.index.equals(self._snapshot_index):
-            raise ValueError(
-                "match_person: weekday person pool changed since preparation")
-        if any(not weekday_persons[column].equals(snapshot)
-               for column, snapshot in self._snapshot_columns.items()):
-            raise ValueError(
-                "match_person: weekday person pool changed since preparation")
 
     def candidate_positions(self, target_keys: pd.Series, match_keys: tuple) -> tuple:
         """Return original row positions matching one relaxation-level key set."""
@@ -412,6 +477,25 @@ class PreparedPersonPool:
         """Return raw item/weight pairs in the source frame's original order."""
         return ([self._items[position] for position in positions],
                 self._weights[list(positions)])
+
+    def cell_choice(self, target_keys, match_keys: tuple):
+        """Prepared weighted draw over the candidate cell of ``target_keys`` at ``match_keys``.
+
+        Returns None for an empty cell. The canonical sort and the cumulative weights of
+        :func:`~braunschweig.popsim.sampling.prepare_weighted_choice` are computed once per
+        cell and cached; the cell is identified by the target's key VALUES, the same
+        equality the candidate index lookup uses, so two targets sharing a cell share
+        exactly the same candidate positions. ``match_keys=()`` is the whole pool.
+        """
+        target_values = tuple(target_keys[key] for key in match_keys)
+        if any(pd.isna(value) for value in target_values):
+            return None  # same as candidate_positions: a missing target key matches no donor
+        cache_key = (match_keys, target_values)
+        if cache_key not in self._cell_choices:
+            positions = self.candidate_positions(target_keys, match_keys)
+            self._cell_choices[cache_key] = (
+                prepare_weighted_choice(*self.weighted_candidates(positions)) if positions else None)
+        return self._cell_choices[cache_key]
 
 
 def prepare_person_pool(weekday_persons, *, age_band_edges=AGE_BAND_EDGES, passenger_key: bool = False,
@@ -478,9 +562,13 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
     therefore read them against the hard-key setting of the run.
 
     ``prepared_pool`` may hold features and candidate positions prepared explicitly
-    by :func:`prepare_person_pool`. It is accepted only for the identical, unchanged
-    ``weekday_persons`` object and identical age bands; otherwise matching fails
-    rather than silently drawing from stale candidates.
+    by :func:`prepare_person_pool`. It is accepted only for the identical
+    ``weekday_persons`` object, identical age bands and passenger key settings (checked on
+    every call). That the pool CONTENT is unchanged is checked by
+    :meth:`PreparedPersonPool.validate`, which a caller runs once before and once after its
+    loop of calls, so a changed pool fails the pass rather than silently drawing from stale
+    candidates. Each candidate cell's sorted items and cumulative weights are cached on
+    the prepared pool, so a call draws with one ``rng.uniform`` and a binary search.
 
     ``passenger_key`` (ADR-0162): when True the ladder is :data:`PERSON_KEYS_WITH_PASSENGER`, which
     adds the passenger access class (:func:`passenger_never_class`, needs ``P_VAUTO``) as a soft key
@@ -524,22 +612,20 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
     if prepared_pool is not None:
         if not isinstance(prepared_pool, PreparedPersonPool):
             raise TypeError("match_person: prepared_pool must be a PreparedPersonPool")
-        prepared_pool.validate(weekday_persons, edges, passenger_key, lift_free_never)
-        tkeys = _person_keys(pd.DataFrame([target_row]), age_band_edges=edges,
-                             passenger_key=passenger_key).iloc[0]
+        # O(1) binding check only; the O(pool) content check is the caller's, once before and
+        # once after its loop (PreparedPersonPool.validate).
+        prepared_pool.check_binding(weekday_persons, edges, passenger_key, lift_free_never)
+        tkeys = _target_person_keys(target_row, age_band_edges=edges, passenger_key=passenger_key)
         active = list(soft)
         while True:
             match_keys = tuple(
                 key for key in keys_by_priority if key in hard or key in active)
-            positions = prepared_pool.candidate_positions(tkeys, match_keys)
-            if positions:
-                items, weights = prepared_pool.weighted_candidates(positions)
-                h, p = weighted_choice(items, weights, rng=rng)
+            choice = prepared_pool.cell_choice(tkeys, match_keys)
+            if choice is not None:
+                h, p = draw_prepared_choice(choice, rng=rng)
                 return h, p, len(soft) - len(active)
             if not active:
-                items, weights = prepared_pool.weighted_candidates(
-                    tuple(range(len(weekday_persons))))
-                h, p = weighted_choice(items, weights, rng=rng)
+                h, p = draw_prepared_choice(prepared_pool.cell_choice(tkeys, ()), rng=rng)
                 hard_note = f" and no donor shares the hard key(s) {hard}" if hard else ""
                 logger.debug(
                     "[weekend_plan_match] match_person hit the whole-pool size-only "
@@ -819,6 +905,11 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         match_level[ridx] = plevel
         n_remapped += 1
         n_swept += 1
+    # The full content check of the prepared pool, once after all match_person calls (it was
+    # prepared on first use, so its preparation is the "before" check); match_person itself
+    # checks only the O(1) binding per call.
+    for edges, prepared in prepared_pools.items():
+        prepared.validate(weekday_pool, edges, passenger_key, lift_free_never)
 
     if lift_free_never:
         persons = persons[output_columns]
