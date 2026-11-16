@@ -375,7 +375,9 @@ realisations.** `build_report` warns when `processes` sits below 75% of the
 core budget. The two read sites that partition persons
 (`synthesis/population/matched.py`, `synthesis/population/spatial/secondary/locations.py`)
 declare it hashed, so raising it invalidates those caches and changes the
-statistical-matching and secondary-location realisations; the warning text
+statistical-matching and secondary-location realisations (`matched.py` is not in the
+`popsim_mid` DAG; which stages a change reaches is owned by the comment on `processes` in
+`configs/base_bs.yml`); the warning text
 states that caveat. Do not "simplify" that text back to "raise the pin if that
 is not intended".
 
