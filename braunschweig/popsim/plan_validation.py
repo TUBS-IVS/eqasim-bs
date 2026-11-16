@@ -252,11 +252,12 @@ def _append_return_home(
     # holding Python int instead of np.int64 (equal values); no stage builds one.
     needs_closure = (last_rows["following_purpose"] != "home").to_numpy()
     closure_rows = last_rows.loc[needs_closure]
-    # The person ids go through a pandas Index exactly as before (a Series keyed by
-    # person_id, iterated with .items()): the Index normalises the key type (an int32
-    # person_id column yields int64 keys), and that type reaches the appended rows and
-    # thus the result's person_id dtype.
-    closure_last_idx = pd.Series(closure_rows.index, index=closure_rows["person_id"].to_numpy())
+    closure_idx = closure_rows.index.to_numpy()
+    # The appended rows take the ids as stored, so an integer person_id keeps its
+    # dtype. Until audit H the ids passed through a pandas Index, which widened an
+    # int32 column (np.arange ids on Windows) to int64 as a side effect; Linux
+    # production ids are int64 already, so production output is unchanged.
+    closure_person_ids = closure_rows["person_id"].to_numpy()
     closure_purposes = closure_rows["following_purpose"].to_numpy()
     closure_departures = closure_rows["departure_time"].to_numpy()
     closure_arrivals = closure_rows["arrival_time"].to_numpy()
@@ -271,7 +272,7 @@ def _append_return_home(
     has_trip_id = "trip_id" in df.columns
     if has_trip_id:
         max_trip_id_by_person = df.groupby("person_id", sort=False)["trip_id"].max()
-        closure_max_trip_ids = max_trip_id_by_person.reindex(closure_rows["person_id"].to_numpy()).to_numpy()
+        closure_max_trip_ids = max_trip_id_by_person.reindex(closure_person_ids).to_numpy()
     else:
         closure_max_trip_ids = None
 
@@ -284,7 +285,8 @@ def _append_return_home(
     # not have; capping the constant path would change the pre-#367 behaviour.
     cap_applies = dwell_model is not None and dwell_model.report.get("kind") == "empirical"
 
-    for i, (person_id, idx) in enumerate(closure_last_idx.items()):
+    for i, idx in enumerate(closure_idx):
+        person_id = closure_person_ids[i]
         purpose = closure_purposes[i]
         last_arrival = float(closure_arrivals[i])
 

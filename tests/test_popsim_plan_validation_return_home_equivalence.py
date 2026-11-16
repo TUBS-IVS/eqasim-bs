@@ -4,7 +4,9 @@ Audit package H, finding P1-F2: the closure loop visited every person through on
 ``df.loc`` row Series and scanned the whole frame for each closure's ``trip_id``.
 The rewrite only visits the persons that need a closure. It must stay byte-identical,
 including the sequence of ``ClosureDwellModel.draw`` calls, because each empirical
-draw consumes the RNG that later stages continue to use.
+draw consumes the RNG that later stages continue to use. The one intended difference:
+an integer person_id narrower than int64 keeps its dtype instead of being widened
+(``_align_reference_person_id``); int64 ids, as in production on Linux, are unaffected.
 
 ``_reference_append_return_home`` below is a verbatim copy of the implementation
 before the rewrite (commit a46968a4), kept only as the test oracle.
@@ -185,8 +187,8 @@ def _random_trips(seed: int, n_persons: int, *, late: bool = False, variant: int
         flag[rng.rand(len(frame)) < 0.05] = np.nan
         frame["is_synthetic_closure"] = flag.to_numpy()
     if variant == 4:
-        # int32 ids and none of the optional columns: the former Series-index iteration
-        # turned int32 keys into int64, which the rewrite must reproduce.
+        # int32 ids and none of the optional columns: the rewrite keeps int32, where
+        # the former implementation widened it to int64 (see _align_reference_person_id).
         frame["person_id"] = frame["person_id"].astype(np.int32)
     if variant == 5:
         # Float ids with some missing ones (sorted last, grouped as one key).
@@ -223,6 +225,21 @@ def _models(kind: str, seed: int):
     )
 
 
+def _align_reference_person_id(expected: pd.DataFrame, trips: pd.DataFrame) -> pd.DataFrame:
+    """Apply the one intended difference to the oracle's output.
+
+    The former implementation widened an integer person_id narrower than int64 (int32
+    ids from np.arange on Windows) to int64 as a side effect of a pandas Index; the
+    rewrite keeps the input dtype. Values are unchanged. Every other column must match
+    the oracle exactly.
+    """
+    input_dtype = trips["person_id"].dtype
+    if pd.api.types.is_integer_dtype(input_dtype) and expected["person_id"].dtype != input_dtype:
+        expected = expected.copy()
+        expected["person_id"] = expected["person_id"].astype(input_dtype)
+    return expected
+
+
 def _run(function, trips, model, max_plan_time_seconds, caplog):
     caplog.clear()
     with caplog.at_level(logging.INFO, logger=pv.__name__):
@@ -247,6 +264,9 @@ def test_append_return_home_is_byte_identical_to_the_reference(variant, kind, la
     expected, expected_logs = _run(_reference_append_return_home, trips, reference_model, bound, caplog)
     actual, actual_logs = _run(pv._append_return_home, trips, new_model, bound, caplog)
 
+    # The person_id dtype of the input survives (the oracle widened int32 to int64).
+    assert actual["person_id"].dtype == trips["person_id"].dtype
+    expected = _align_reference_person_id(expected, trips)
     # Frame: values, dtypes, column order and index exactly equal.
     pd.testing.assert_frame_equal(actual, expected, check_exact=True)
     assert list(actual.dtypes) == list(expected.dtypes)
@@ -302,7 +322,7 @@ def test_append_return_home_is_faster_than_the_reference(caplog):
     actual, _ = _run(pv._append_return_home, trips, new_model, pv.MAX_PLAN_TIME_SECONDS, caplog)
     new_seconds = time.perf_counter() - start
 
-    pd.testing.assert_frame_equal(actual, expected, check_exact=True)
+    pd.testing.assert_frame_equal(actual, _align_reference_person_id(expected, trips), check_exact=True)
     print(f"reference {reference_seconds:.3f} s, vectorised {new_seconds:.3f} s, "
           f"speedup {reference_seconds / new_seconds:.1f}x")
     assert new_seconds * 3 < reference_seconds
