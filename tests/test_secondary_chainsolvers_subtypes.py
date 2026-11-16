@@ -1703,3 +1703,53 @@ def test_other_decider_counts_a_leg_without_an_estimated_cell(monkeypatch):
     decide("car", 700.0)   # the estimated (car, 600-1200 s) cell
     decide("walk", 700.0)  # no walk cell -> marginal
     assert (decide.n_legs, decide.n_marginal_fallback) == (2, 1)
+
+
+@pytest.mark.parametrize("weekday_only, escort_purpose, pinned_shop_share", [
+    (True, False, None), (False, False, None), (True, True, None), (True, False, 0.4)])
+def test_shared_mid_wege_loader_reads_once_and_deciders_are_identical(
+        monkeypatch, weekday_only, escort_purpose, pinned_shop_share):
+    """Audit 2026-11 package H (P5a-F7): the stage hands ONE lazy loader to the shop, leisure
+    and other builders. The CSV is loaded once, every decider draws the same sequence as with
+    a fresh load per builder (the pre-change behaviour), and no builder mutates the shared frame."""
+    from braunschweig.popsim.mid import donor as mid_donor
+
+    wege = pd.concat([_shop_weekday_vs_weekend_wege(), _leisure_weekday_vs_weekend_wege(),
+                      _other_weekday_vs_rbw_wege()], ignore_index=True)
+    overrides = {"secondary_shop_daily_split": True, "secondary_leisure_subtype_split": True,
+                 "secondary_other_subtype_split": True, "escort_purpose": escort_purpose,
+                 "secondary_shop_daily_share": pinned_shop_share,
+                 **_weekday_flag(weekday_only)}
+    builders = (sc._build_shop_subtype_decider, sc._build_leisure_subtype_decider,
+                sc._build_other_subtype_decider)
+
+    # Reference: each builder loads its own fresh copy.
+    monkeypatch.setattr(mid_donor, "load_mid_wege", lambda mid_dir: wege.copy())
+    ctx = _FakeContext({**overrides, "secondary_distance_min_obs": 30,
+                        "braunschweig.population.popsim.mid_dir": "unused_dummy_dir"})
+    reference = [[decide(mode, tt) for mode, tt in _DECIDER_CALLS]
+                 for decide in (build(ctx, random_seed=7) for build in builders)]
+
+    loads = []
+    shared_frame = wege.copy()
+    before = pd.util.hash_pandas_object(shared_frame, index=True).to_numpy().copy()
+    columns_before = list(shared_frame.columns)
+
+    def _counting_load(mid_dir):
+        loads.append(mid_dir)
+        return shared_frame
+    monkeypatch.setattr(mid_donor, "load_mid_wege", _counting_load)
+    ctx = _FakeContext({**overrides, "secondary_distance_min_obs": 30,
+                        "braunschweig.population.popsim.mid_dir": "unused_dummy_dir"})
+    loader = sc._shared_mid_wege_loader()
+    shared = [[decide(mode, tt) for mode, tt in _DECIDER_CALLS]
+              for decide in (build(ctx, random_seed=7, mid_wege_loader=loader)
+                             for build in builders)]
+
+    assert loads == ["unused_dummy_dir"]
+    assert shared == reference
+    # Each decider drew more than one outcome kind somewhere, so equality is not vacuous.
+    assert len({o for seq in reference for o in seq}) >= 3
+    assert list(shared_frame.columns) == columns_before
+    np.testing.assert_array_equal(
+        pd.util.hash_pandas_object(shared_frame, index=True).to_numpy(), before)

@@ -249,6 +249,7 @@ from .deciders import (  # noqa: F401  (re-exports)
     _build_leisure_subtype_decider,
     _build_other_subtype_decider,
     _build_shop_subtype_decider,
+    _shared_mid_wege_loader,
 )
 from .inverse_cdf import (  # noqa: F401  (re-exports)
     _inverse_cdf_choice,
@@ -1519,13 +1520,20 @@ def _build_shared_solve_state(context, crs):
     # Tier 2 / Task 4: shop / leisure / other subtype deciders (each None when
     # its flag is OFF, so the leg loop and the candidate build stay
     # byte-identical). Built before solving so their MiD load /
-    # probability-estimation logging happens exactly once, up front.
+    # probability-estimation logging happens exactly once, up front. The three share one
+    # lazy MiD Wege loader, so the CSV is read once, not once per builder (audit 2026-11
+    # package H, finding P5a-F7).
+    mid_wege_loader = _shared_mid_wege_loader()
     shop_daily_split = bool(context.config("secondary_shop_daily_split"))
-    shop_subtype_decider = _build_shop_subtype_decider(context, random_seed)
+    shop_subtype_decider = _build_shop_subtype_decider(
+        context, random_seed, mid_wege_loader=mid_wege_loader)
     leisure_subtype_split = bool(context.config("secondary_leisure_subtype_split"))
-    leisure_subtype_decider = _build_leisure_subtype_decider(context, random_seed)
+    leisure_subtype_decider = _build_leisure_subtype_decider(
+        context, random_seed, mid_wege_loader=mid_wege_loader)
     other_subtype_split = bool(context.config("secondary_other_subtype_split"))
-    other_subtype_decider = _build_other_subtype_decider(context, random_seed)
+    other_subtype_decider = _build_other_subtype_decider(
+        context, random_seed, mid_wege_loader=mid_wege_loader)
+    del mid_wege_loader  # release the MiD frame before the solve
     escort_purpose_on = bool(context.config("escort_purpose"))
     escort_location_decider = _build_escort_location_decider(context, random_seed)
     leisure_visit_building_potential = bool(context.config("leisure_visit_building_potential"))

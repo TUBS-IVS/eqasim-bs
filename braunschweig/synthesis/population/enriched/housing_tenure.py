@@ -68,6 +68,7 @@ def _apply_housing_tenure(df_persons, df_tenure_bund, df_tenure_raum,
         TENURE_CATEGORIES,
         RS7_TO_RAUMTYP_KEY,
         tenure_probabilities_given_income,
+        reset_fallback_rates,
     )
     from braunschweig.data.bbsr.regiostar import ars_to_ags8
 
@@ -122,6 +123,12 @@ def _apply_housing_tenure(df_persons, df_tenure_bund, df_tenure_raum,
             "unavailable (income_by_tenure bundesland table missing Niedersachsen); "
             "cannot synthesise the tenure attribute."
         )
+    # Report only this build's per-raumtyp lookups: reset AFTER the eager fallback
+    # build above, which always asks for raumtyp None and would otherwise count one
+    # spurious raumtyp_missing unit per run. Households that really miss their
+    # raumtyp reuse the cached matrix and are counted by this stage's own
+    # primary/fallback line below, not by the table tally.
+    reset_fallback_rates()
 
     hh_tenure = np.empty(n_hh, dtype=object)
     n_primary = 0
@@ -149,6 +156,10 @@ def _apply_housing_tenure(df_persons, df_tenure_bund, df_tenure_raum,
             pmf = matrix[hh_bracket[r]]
             c = int(np.searchsorted(np.cumsum(pmf), u[r], side="right"))
             hh_tenure[r] = tenure_arr[min(max(c, 0), n_tenure - 1)]
+
+    # One rate line per build for the MiD tenure-table fallbacks (CLAUDE.md fallback rule).
+    from braunschweig.data.mid.tenure_by_income import report_fallback_rates
+    report_fallback_rates()
 
     tenure_by_hh = dict(zip(hh_ids, hh_tenure))
     df_persons["housing_tenure"] = pd.Categorical(
