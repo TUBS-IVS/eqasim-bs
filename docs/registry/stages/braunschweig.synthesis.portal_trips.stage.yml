@@ -36,6 +36,7 @@ code:
 - braunschweig/synthesis/portal_trips/no_connection.py
 - braunschweig/data/transit/schedule.py
 - braunschweig/data/transit/connections.py
+- braunschweig/data/transit/router_cache.py
 pipelines:
   popsim_mid: active
   popsim_open: not_used
@@ -54,6 +55,7 @@ decisions:
 - ADR-0183
 - ADR-0185
 - ADR-0186
+- ADR-0196
 notes: >-
   Reads braunschweig.synthesis.commute_day.trips_day_stage (the reporting-day trips),
   synthesis.population.enriched (persons with the availability columns the mode check needs),

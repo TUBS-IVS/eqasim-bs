@@ -53,6 +53,7 @@ code:
 - braunschweig/synthesis/outside_tour_modes/tours.py
 - braunschweig/synthesis/outside_tour_modes/rule.py
 - braunschweig/synthesis/outside_tour_modes/stage.py
+- braunschweig/data/transit/router_cache.py
 pipelines:
   popsim_mid: active
   popsim_open: not_used
@@ -70,6 +71,7 @@ decisions:
 - ADR-0159
 - ADR-0185
 - ADR-0187
+- ADR-0196
 notes: >-
   Consumers: matsim.scenario.population (braunschweig/matsim/scenario/population.py, DAY_TRIPS_STAGE) and
   synthesis.output (braunschweig/synthesis/commute_day/output_day.py, DAY_TRIPS_STAGE, declared through the

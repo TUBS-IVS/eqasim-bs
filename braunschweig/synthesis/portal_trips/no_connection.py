@@ -32,11 +32,14 @@ home-based tour (its modes row changes; ``choose_gates`` later places it at a ro
 current mode, so that the modes table and the legs of the tour agree; such a stay is counted under the
 switch label even when it had a gate, so ``gate_found`` counts only the stays whose tour was NOT switched.
 Invalid shift parameters raise ``ValueError`` (a non-positive step would silently disable the shift path).
-The probe is called once per grid step for all unresolved stays, never per stay.
+The probe is called once per grid step for all unresolved stays, never per stay. With a ``prefetch`` (ADR-0196)
+the requests every grid step can make are handed over once before each of the two grid walks, so the router is
+started once per walk instead of once per step; the walks and their decisions are unchanged.
 All actions are logged as rates over the pt stays.
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Callable
 
@@ -91,7 +94,10 @@ def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.Da
                           probe: Callable[[np.ndarray, np.ndarray, np.ndarray], pd.DataFrame], *,
                           fallback_gates: pd.DataFrame, shift_window_s: float, shift_step_s: float,
                           min_stay_s: float, bound_s: float, return_earlier: bool = False,
-                          last_resort: str = LAST_RESORT_KEEP) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+                          last_resort: str = LAST_RESORT_KEEP,
+                          prefetch: Callable[[np.ndarray, np.ndarray, np.ndarray],
+                                             contextlib.AbstractContextManager] | None = None,
+                          ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Resolve the pt stays without a gate; return ``(modes_out, trips_out, pt_gates_out)``.
 
     ``pt_gates`` and ``fallback_gates`` hold one row per pt stay (``modes["mode"] == "pt"``) in stays order
@@ -101,6 +107,12 @@ def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.Da
     without a return leg) and returns ``PT_GATE_COLUMNS`` rows in that order. ``modes_out`` is ``modes``
     plus ``no_connection_action`` (None for stays that are not pt); ``pt_gates_out`` has one row per stay
     that is still pt.
+
+    ``prefetch(stay_positions, outbound_departure_s, return_departure_s)`` (optional, ADR-0196) takes requests of
+    the ``probe`` form and returns a context manager inside which the probe answers them without a further router
+    start. Before each grid walk it gets every request the walk can make: each still unresolved stay at each step
+    and variant its OWN legs allow (the bound against the person's next trip, which earlier shifts move, is left to
+    the walk, so the requests are a superset). A request the walk makes beyond them is routed as before.
     """
     if last_resort not in LAST_RESORTS:
         raise ValueError(f"[portal_trips] invalid last_resort {last_resort!r}; allowed: {list(LAST_RESORTS)}")
@@ -201,72 +213,99 @@ def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.Da
             if action[k] is None and bool(availability.at[pt_persons[k], flag]):
                 switch_tour(int(pt_rows[k]), new_mode, label)
 
+    def scope(requests):
+        """The prefetch context for ``requests`` = [(stay position, outbound departure, return departure)]."""
+        if prefetch is None or not requests:
+            return contextlib.nullcontext()
+        positions, out_d, ret_d = zip(*requests)
+        return prefetch(np.array(positions, dtype=int), np.array(out_d, dtype=float), np.array(ret_d, dtype=float))
+
     # Time shifts: the grid is walked once, one probe call per step for all unresolved stays.
     shifted = {}  # pt stay position -> (variant, shift in s, probe row)
     unresolved = [k for k in range(n_pt) if action[k] is None]
     n_steps = int(np.floor(shift_window_s / shift_step_s + 1e-9)) if shift_step_s > 0 else 0
+    later_requests = []  # every request of the walk below that the stay's own legs allow (a superset)
     for step in range(1, n_steps + 1):
-        if not unresolved:
-            break
         d = step * shift_step_s
-        positions, out_d, ret_d, variants = [], [], [], []
         for k in unresolved:
             o_dep, o_arr = dep[out_pos[k]], arr[out_pos[k]]
             if has_ret[k]:
                 r_dep, r_arr = dep[ret_pos[k]], arr[ret_pos[k]]
-                out_ok = o_arr + d + min_stay_s <= r_dep
-                next_dep = dep[nxt_pos[k]] if nxt_pos[k] >= 0 else np.inf  # current, incl. earlier shifts
-                ret_ok = r_arr + d <= min(bound_s, next_dep)
+                out_ok, ret_ok = o_arr + d + min_stay_s <= r_dep, r_arr + d <= bound_s
                 options = [("out", out_ok), ("ret", ret_ok), ("both", out_ok and ret_ok)]
             else:
                 r_dep = np.nan
                 options = [("out", o_arr + d <= bound_s)]
-            for variant, allowed in options:
-                if allowed:
-                    positions.append(k)
-                    out_d.append(o_dep + d if variant in ("out", "both") else o_dep)
-                    ret_d.append(r_dep + d if variant in ("ret", "both") else r_dep)
-                    variants.append(variant)
-        if not positions:
-            continue
-        result = probe(np.array(positions, dtype=int), np.array(out_d, dtype=float), np.array(ret_d, dtype=float))
-        if len(result) != len(positions):
-            raise ValueError(f"[portal_trips] probe returned {len(result)} rows for {len(positions)} requests")
-        result = result.reset_index(drop=True)
-        for row, (k, variant) in enumerate(zip(positions, variants)):
-            if action[k] is None and pd.notna(result["gate_id"].iat[row]):
-                action[k] = ACTION_DEPARTURE_SHIFTED
-                shifted[k] = (variant, d, result.iloc[row])
-                for leg in (
-                    ([out_pos[k]] if variant in ("out", "both") else [])
-                    + ([ret_pos[k]] if variant in ("ret", "both") else [])
-                ):
-                    dep[leg] += d  # later steps and later stays bound against the shifted trip
-                    arr[leg] += d
-        unresolved = [k for k in unresolved if action[k] is None]
-
-    # Earlier returns (#465): a second walk over the grid for the stays still unresolved; only the return moves.
-    if return_earlier:
+            later_requests += [(k, o_dep + d if variant in ("out", "both") else o_dep,
+                                r_dep + d if variant in ("ret", "both") else r_dep)
+                               for variant, allowed in options if allowed]
+    with scope(later_requests):
         for step in range(1, n_steps + 1):
             if not unresolved:
                 break
             d = step * shift_step_s
-            positions = [k for k in unresolved
-                         if has_ret[k] and dep[ret_pos[k]] - d >= arr[out_pos[k]] + min_stay_s]
+            positions, out_d, ret_d, variants = [], [], [], []
+            for k in unresolved:
+                o_dep, o_arr = dep[out_pos[k]], arr[out_pos[k]]
+                if has_ret[k]:
+                    r_dep, r_arr = dep[ret_pos[k]], arr[ret_pos[k]]
+                    out_ok = o_arr + d + min_stay_s <= r_dep
+                    next_dep = dep[nxt_pos[k]] if nxt_pos[k] >= 0 else np.inf  # current, incl. earlier shifts
+                    ret_ok = r_arr + d <= min(bound_s, next_dep)
+                    options = [("out", out_ok), ("ret", ret_ok), ("both", out_ok and ret_ok)]
+                else:
+                    r_dep = np.nan
+                    options = [("out", o_arr + d <= bound_s)]
+                for variant, allowed in options:
+                    if allowed:
+                        positions.append(k)
+                        out_d.append(o_dep + d if variant in ("out", "both") else o_dep)
+                        ret_d.append(r_dep + d if variant in ("ret", "both") else r_dep)
+                        variants.append(variant)
             if not positions:
                 continue
-            result = probe(np.array(positions, dtype=int), np.array([dep[out_pos[k]] for k in positions], dtype=float),
-                           np.array([dep[ret_pos[k]] - d for k in positions], dtype=float))
+            result = probe(np.array(positions, dtype=int), np.array(out_d, dtype=float), np.array(ret_d, dtype=float))
             if len(result) != len(positions):
                 raise ValueError(f"[portal_trips] probe returned {len(result)} rows for {len(positions)} requests")
             result = result.reset_index(drop=True)
-            for row, k in enumerate(positions):
+            for row, (k, variant) in enumerate(zip(positions, variants)):
                 if action[k] is None and pd.notna(result["gate_id"].iat[row]):
                     action[k] = ACTION_DEPARTURE_SHIFTED
-                    shifted[k] = ("ret", -d, result.iloc[row])
-                    dep[ret_pos[k]] -= d
-                    arr[ret_pos[k]] -= d
+                    shifted[k] = (variant, d, result.iloc[row])
+                    for leg in (
+                        ([out_pos[k]] if variant in ("out", "both") else [])
+                        + ([ret_pos[k]] if variant in ("ret", "both") else [])
+                    ):
+                        dep[leg] += d  # later steps and later stays bound against the shifted trip
+                        arr[leg] += d
             unresolved = [k for k in unresolved if action[k] is None]
+
+    # Earlier returns (#465): a second walk over the grid for the stays still unresolved; only the return moves.
+    if return_earlier:
+        earlier_requests = [(k, dep[out_pos[k]], dep[ret_pos[k]] - step * shift_step_s)
+                            for step in range(1, n_steps + 1) for k in unresolved
+                            if has_ret[k] and dep[ret_pos[k]] - step * shift_step_s >= arr[out_pos[k]] + min_stay_s]
+        with scope(earlier_requests):
+            for step in range(1, n_steps + 1):
+                if not unresolved:
+                    break
+                d = step * shift_step_s
+                positions = [k for k in unresolved
+                             if has_ret[k] and dep[ret_pos[k]] - d >= arr[out_pos[k]] + min_stay_s]
+                if not positions:
+                    continue
+                result = probe(np.array(positions, dtype=int), np.array([dep[out_pos[k]] for k in positions], dtype=float),
+                               np.array([dep[ret_pos[k]] - d for k in positions], dtype=float))
+                if len(result) != len(positions):
+                    raise ValueError(f"[portal_trips] probe returned {len(result)} rows for {len(positions)} requests")
+                result = result.reset_index(drop=True)
+                for row, k in enumerate(positions):
+                    if action[k] is None and pd.notna(result["gate_id"].iat[row]):
+                        action[k] = ACTION_DEPARTURE_SHIFTED
+                        shifted[k] = ("ret", -d, result.iloc[row])
+                        dep[ret_pos[k]] -= d
+                        arr[ret_pos[k]] -= d
+                unresolved = [k for k in unresolved if action[k] is None]
 
     # Last resort (#465): a lift instead of a walk; the tour switch also takes the other stays of the tour along.
     if last_resort == LAST_RESORT_LIFT:
