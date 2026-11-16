@@ -524,9 +524,12 @@ def test_household_base_pmf_matrix_reports_only_its_own_income_table_cells(caplo
     import pandas as pd
 
     from braunschweig.data.mid import income_by_size as ibs
+    from braunschweig.data.mid import income_by_status as ibst
 
     tables = _toy_income_tables()
     ibs.income_bracket_probabilities(tables["size_bl"], tables["size_rt"], "1", None)
+    ibst.income_bracket_probabilities_by_status(
+        tables["status_bl"], tables["status_rt"], "very_low", None)
     hh = pd.DataFrame({
         "household_id": [1, 2],
         "household_size": ["1", "2"],
@@ -540,4 +543,8 @@ def test_household_base_pmf_matrix_reports_only_its_own_income_table_cells(caplo
     status_lines = [r.getMessage() for r in caplog.records
                     if r.getMessage().startswith("income_by_status: primary")]
     assert len(size_lines) == 1 and len(status_lines) == 1
+    # Both resets drop the seeded counts; the lines cover only this build.
     assert "raumtyp_missing" not in size_lines[0]
+    assert "raumtyp_missing" not in status_lines[0]
+    # Two unique (size, status, raumtyp) cells -> two size-table units.
+    assert "/2 (" in size_lines[0]

@@ -287,7 +287,7 @@ def household_base_pmf_matrix(
     rts = (households_df[raumtyp_col].map(_raumtyp_key).to_numpy()
            if raumtyp_col in households_df.columns else np.array([None] * n))
 
-    # The MiD income tables count their own degenerate-input fallbacks per built cell
+    # The MiD income tables count their own degenerate-input fallbacks per helper call
     # (docs/codebase/notes/mid-fallback-tally.md): report exactly this matrix build,
     # so neither earlier callers' counts nor ours leak into another stage's line.
     _income_by_size.reset_fallback_rates()
@@ -295,13 +295,18 @@ def household_base_pmf_matrix(
 
     # Cache one (pmf, is_fallback) per unique cell; count fallback PER HOUSEHOLD below.
     cache: dict[tuple, tuple[np.ndarray, bool]] = {}
+    # The status-side helpers are pure: cache them per (status, raumtyp) / raumtyp so
+    # each is built (and tallied) once, not once per (size, status, raumtyp) cell.
+    status_cache: dict[tuple, object] = {}
+    overall_cache: dict[object, object] = {}
     n_fallback = 0
     mat = np.empty((n, n_brackets), dtype=float)
     for i in range(n):
         key = (sizes[i], statuses[i] if method == "combined" else None, rts[i])
         entry = cache.get(key)
         if entry is None:
-            pmf = _cell_pmf(size_bl, size_rt, status_bl, status_rt, key[0], key[1], key[2], method)
+            pmf = _cell_pmf(size_bl, size_rt, status_bl, status_rt, key[0], key[1], key[2], method,
+                            status_cache=status_cache, overall_cache=overall_cache)
             is_fallback = pmf is None
             if is_fallback:
                 pmf = uniform
@@ -317,14 +322,26 @@ def household_base_pmf_matrix(
                  "fallback_count": n_fallback}
 
 
-def _cell_pmf(size_bl, size_rt, status_bl, status_rt, size_key, status_key, rt_key, method):
+def _cell_pmf(size_bl, size_rt, status_bl, status_rt, size_key, status_key, rt_key, method,
+              status_cache=None, overall_cache=None):
     p_size = income_bracket_probabilities(size_bl, size_rt, size_key, rt_key)
     if p_size is None:
         return None
     if method != "combined" or status_key is None:
         return p_size
-    p_status = income_bracket_probabilities_by_status(status_bl, status_rt, status_key, rt_key)
-    p_overall = overall_bracket_pmf(status_bl, status_rt, rt_key)
+    if status_cache is None or (status_key, rt_key) not in status_cache:
+        p_status = income_bracket_probabilities_by_status(
+            status_bl, status_rt, status_key, rt_key)
+        if status_cache is not None:
+            status_cache[(status_key, rt_key)] = p_status
+    else:
+        p_status = status_cache[(status_key, rt_key)]
+    if overall_cache is None or rt_key not in overall_cache:
+        p_overall = overall_bracket_pmf(status_bl, status_rt, rt_key)
+        if overall_cache is not None:
+            overall_cache[rt_key] = p_overall
+    else:
+        p_overall = overall_cache[rt_key]
     if p_status is None or p_overall is None:
         return p_size
     return combine_size_status_bracket_pmf(p_size, p_status, p_overall)

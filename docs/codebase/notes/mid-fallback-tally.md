@@ -16,7 +16,10 @@ import would widen their synpp helper-hash closure. A test keeps the two constan
   first, so counts from other callers (tests, other stages) are dropped.
 - **Report at stage end.** The same stage calls `report_fallback_rates()` once; it logs one
   line per build and resets. The reporting stages are the enriched-population stages
-  `income_distribution`, `economic_status` and `housing_tenure`.
+  `income_distribution`, `economic_status` and `housing_tenure`; on the popsim path the
+  helper `popsim.income_kreis_control.household_base_pmf_matrix` resets and reports the two
+  income tallies around its own matrix build. Never call a reporter inside another
+  reporter's reset-to-report window: its reset would wipe the outer counts.
 - **A caller that never reports loses its counts.** They stay in the module tally until the
   next reset. Any new caller of these tables must either report or accept being silent.
 - **One unit name per denominator.** `aux_check(unit_name, ...)` counts one unit per call
