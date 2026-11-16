@@ -48,6 +48,7 @@ validation:
   runs:
   - synth-100pct-2.2.0-2026-07-23
   - popsim-batch-diagnostics-prod100-20261031-2026-11-16
+  - popsim-ladder-baseline-2026-11-16
   metric: 'control-fit vs committed controls (category shares): census-scale families mean ~0.25pp,
     KREIS/SrV families mean ~1.1pp, car/bike ~3.6-4.7pp urban-concentrated'
   note: Control fit against committed control tables; NOT a behavioural validation.
