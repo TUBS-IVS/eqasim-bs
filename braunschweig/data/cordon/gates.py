@@ -125,12 +125,18 @@ def select_major_gates(gates: gpd.GeoDataFrame, allowed_classes=None,
             min_capacity, top_n)
         out = ranked.head(1)
     else:
-        class_filter = (sorted(allowed_classes)
-                        if allowed_classes is not None and "road_class" in ranked.columns
-                        else "not applied")
-        logger.info("[cordon.gates] select_major_gates: primary %d/%d crossing gates "
-                    "kept (classes=%s, min_capacity=%s, top_n=%s), fallback 0",
-                    len(out), len(ranked), class_filter, min_capacity, top_n)
+        if allowed_classes is not None and "road_class" in ranked.columns:
+            logger.info("[cordon.gates] select_major_gates: primary %d/%d crossing gates "
+                        "kept (classes=%s, min_capacity=%s, top_n=%s), fallback 0",
+                        len(out), len(ranked), sorted(allowed_classes), min_capacity,
+                        top_n)
+        else:
+            # No class filter ran, so there is no primary-vs-fallback split to report
+            # here; a caller that dropped a requested filter warns itself
+            # (cordon_gates.build_gates_with_volume).
+            logger.info("[cordon.gates] select_major_gates: no road-class filter applied; "
+                        "%d/%d crossing gates kept (min_capacity=%s, top_n=%s)",
+                        len(out), len(ranked), min_capacity, top_n)
     return out.reset_index(drop=True)
 
 
