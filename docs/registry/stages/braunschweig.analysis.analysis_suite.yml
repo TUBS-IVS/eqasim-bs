@@ -17,7 +17,7 @@ description: 'Post-run analysis driver: dashboard, MiD validation, population va
   analysis is recorded there as available false with its reason. The sub-analysis warns when more than the
   configurable share analysis_stuck_warn_share (default 0.01 = stuck_agents.STUCK_WARN_SHARE, an ASSUMPTION,
   ADR-0146) of the residents is stuck; it has no reference value. The stage''s validate() token hashes the
-  whole import closure of its sub-analyses (ADR-0147).'
+  whole import closure of its sub-analyses (ADR-0147) and the VG250 archive.'
 lineage:
   type: braunschweig_new
   upstream: null
@@ -33,6 +33,9 @@ pipelines:
   popsim_open: not_used
   simple_ipf_open: not_used
 production: true
+inputs:
+- regiostar
+- vg250_ew
 features:
 - freight_analysis_exclusion
 - plan_feasibility_check

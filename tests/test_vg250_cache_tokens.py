@@ -29,6 +29,10 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 VG250_ARCHIVE = "germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip"
 #: Dataset id of the archive: the key of its digest in the ``files`` part of a structured source token.
 DATASET_ID = "vg250_ew"
+#: The RegioStaR workbook the analysis loader ``braunschweig.analysis.spatial`` reads from the repository
+#: root, and its dataset id (the second repository-anchored input of the analysis readers).
+REGIOSTAR_SHEET = "regiostar/regiostar_referenzdateien_2024.xlsx"
+REGIOSTAR_DATASET_ID = "regiostar"
 #: Key of the digest in the plain dict tokens of the stages that hash no module source.
 DIGEST_KEY = "vg250_sha256"
 
@@ -79,6 +83,12 @@ class Reader:
     path_keys: tuple = ()
     #: True for a stage whose token is a structured source token (module digests under ``modules``).
     hashes_source: bool = False
+    #: True for the analysis stages that read the archive through ``braunschweig.analysis.spatial``,
+    #: whose path is anchored at the repository root (``spatial.VG250_ZIP``), not at ``data_path``.
+    repo_anchored: bool = False
+    #: True where ``execute`` tolerates a missing archive (it renders without the per-Kreis parts):
+    #: validate must then warn and carry no digest instead of failing.
+    tolerant: bool = False
 
 
 _CORDON_ON = {"cordon_enabled": True}
@@ -102,16 +112,35 @@ READERS = (
            hashes_source=True),
     Reader("braunschweig.synthesis.student_incommuters", _CORDON_ON, off=({"cordon_enabled": False},),
            hashes_source=True),
+    Reader("braunschweig.analysis.synthesis.commute_distance_by_kreis", hashes_source=True, repo_anchored=True),
+    Reader("braunschweig.analysis.synthesis.work_participation_by_kreis", hashes_source=True,
+           repo_anchored=True),
+    Reader("braunschweig.analysis.synthesis.plan_structure_vs_srv", hashes_source=True, repo_anchored=True),
+    Reader("braunschweig.analysis.analysis_suite", {"analysis_suite_enabled": True},
+           off=({"analysis_suite_enabled": False},), hashes_source=True, repo_anchored=True, tolerant=True),
+    Reader("braunschweig.analysis.simwrapper_export", {"simwrapper_export_enabled": True},
+           off=({"simwrapper_export_enabled": False},), hashes_source=True, repo_anchored=True,
+           tolerant=True),
 )
 SOURCE_TOKEN_READERS = tuple(reader for reader in READERS if reader.hashes_source)
 
 
-def _prepare(module_name, config, data_path):
-    """Validate context of ``module`` under ``config``, with the files its validate() checks."""
+def _prepare(reader, config, data_path, monkeypatch):
+    """Validate context of the reader's module under ``config``, with the files its validate() checks.
+
+    A repository-anchored reader is pointed at the archive under ``data_path`` (as the analysis
+    tests of ``braunschweig.analysis.spatial`` do), so one test layout serves every reader and the
+    real archive in the checkout is never read. The same holds for the RegioStaR sheet that module
+    reads from the repository root (absent unless a test creates it)."""
+    if reader.repo_anchored:
+        from braunschweig.analysis import spatial
+        monkeypatch.setattr(spatial, "VG250_ZIP", pathlib.Path(data_path) / VG250_ARCHIVE)
+        monkeypatch.setattr(spatial, "REGIOSTAR_XLSX", pathlib.Path(data_path) / REGIOSTAR_SHEET)
+    module_name = reader.module
     common = {
         "data_path": str(data_path), "random_seed": 0, "sampling_rate": 1.0,
         "braunschweig.political_prefix": ["03101"], "cordon_network_source_buffer_m": 45000.0,
-        "processes": 1,
+        "processes": 1, "output_path": str(pathlib.Path(data_path) / "output"),
     }
     recorder = _ConfigureRecorder({**common, **config})
     module = importlib.import_module(module_name)
@@ -147,8 +176,8 @@ def _vg250_part(token):
 
 @pytest.mark.usefixtures("stub_module_digests")
 @pytest.mark.parametrize("reader", READERS, ids=lambda reader: reader.module)
-def test_token_follows_the_vg250_archive_content(reader, tmp_path):
-    module, values = _prepare(reader.module, reader.on, tmp_path)
+def test_token_follows_the_vg250_archive_content(reader, tmp_path, monkeypatch):
+    module, values = _prepare(reader, reader.on, tmp_path, monkeypatch)
     for key in reader.path_keys:
         _create(tmp_path, values[key])
     context = _ValidateContext(values)
@@ -176,7 +205,7 @@ def test_a_helper_edit_still_names_the_edited_module(reader, tmp_path, monkeypat
 
     Real module digests, on purpose: the proof is that an edit of a real helper reaches the token of
     the real stage as a module name. That costs a few seconds for the stages with long helper lists."""
-    module, values = _prepare(reader.module, reader.on, tmp_path)
+    module, values = _prepare(reader, reader.on, tmp_path, monkeypatch)
     _create(tmp_path, VG250_ARCHIVE, b"VG250 edition 2023")
     context = _ValidateContext(values)
     before = module.validate(context)
@@ -189,22 +218,62 @@ def test_a_helper_edit_still_names_the_edited_module(reader, tmp_path, monkeypat
 
 @pytest.mark.usefixtures("stub_module_digests")
 @pytest.mark.parametrize("reader", [r for r in READERS if r.off], ids=lambda reader: reader.module)
-def test_vg250_digest_is_skipped_where_execute_never_opens_the_archive(reader, tmp_path):
+def test_vg250_digest_is_skipped_where_execute_never_opens_the_archive(reader, tmp_path, monkeypatch):
     """No archive on disk: validate must neither fail nor carry a digest (the archive is optional)."""
     for off_config in reader.off:
-        module, values = _prepare(reader.module, off_config, tmp_path)
+        module, values = _prepare(reader, off_config, tmp_path, monkeypatch)
         token = module.validate(_ValidateContext(values))
         assert isinstance(token, dict) and _vg250_part(token) is None, (reader.module, off_config)
 
 
 @pytest.mark.usefixtures("stub_module_digests")
-@pytest.mark.parametrize("reader", READERS, ids=lambda reader: reader.module)
-def test_a_missing_vg250_archive_fails_validate_where_execute_needs_it(reader, tmp_path):
-    module, values = _prepare(reader.module, reader.on, tmp_path)
+@pytest.mark.parametrize("reader", [r for r in READERS if not r.tolerant], ids=lambda reader: reader.module)
+def test_a_missing_vg250_archive_fails_validate_where_execute_needs_it(reader, tmp_path, monkeypatch):
+    module, values = _prepare(reader, reader.on, tmp_path, monkeypatch)
     for key in reader.path_keys:
         _create(tmp_path, values[key])
     with pytest.raises(RuntimeError, match="VG250 archive"):
         module.validate(_ValidateContext(values))
+
+
+@pytest.mark.usefixtures("stub_module_digests")
+@pytest.mark.parametrize("reader", [r for r in READERS if r.tolerant], ids=lambda reader: reader.module)
+def test_a_missing_vg250_archive_is_reported_where_execute_tolerates_it(reader, tmp_path, monkeypatch,
+                                                                        caplog):
+    """The tolerant stages run on without the archive, so validate must not fail; but the missing
+    archive must be observable (a WARNING naming its path), never a silent ``None``."""
+    module, values = _prepare(reader, reader.on, tmp_path, monkeypatch)
+    with caplog.at_level("WARNING"):
+        token = module.validate(_ValidateContext(values))
+    assert _vg250_part(token) is None
+    expected_path = str(pathlib.Path(tmp_path) / VG250_ARCHIVE)
+    assert any(record.levelname == "WARNING" and expected_path in record.getMessage()
+               for record in caplog.records), f"{reader.module}: a missing archive passed validate silently"
+
+
+@pytest.mark.usefixtures("stub_module_digests")
+@pytest.mark.parametrize("reader", [r for r in READERS if r.repo_anchored], ids=lambda reader: reader.module)
+def test_token_follows_the_regiostar_sheet_the_analysis_loader_reads(reader, tmp_path, monkeypatch, caplog):
+    """``spatial.load_regiostar`` reads the sheet from the repository root and tolerates its absence
+    (RS7 columns stay NA): the token must change when the sheet appears or is replaced, and a missing
+    sheet must be a WARNING naming its path, not a silent ``None``."""
+    module, values = _prepare(reader, reader.on, tmp_path, monkeypatch)
+    _create(tmp_path, VG250_ARCHIVE, b"VG250 edition 2023")
+    context = _ValidateContext(values)
+
+    with caplog.at_level("WARNING"):
+        missing = module.validate(context)
+    sheet = _create(tmp_path, REGIOSTAR_SHEET, b"RegioStaR 2023")
+    present = module.validate(context)
+    _create(tmp_path, REGIOSTAR_SHEET, b"RegioStaR 2024")
+    replaced = module.validate(context)
+
+    assert missing["files"][REGIOSTAR_DATASET_ID] is None
+    assert any(record.levelname == "WARNING" and str(pathlib.Path(tmp_path) / REGIOSTAR_SHEET)
+               in record.getMessage() for record in caplog.records), "a missing RegioStaR sheet passed silently"
+    _create(tmp_path, REGIOSTAR_SHEET, b"RegioStaR 2023")
+    assert present["files"][REGIOSTAR_DATASET_ID] == synpp_tokens.file_sha256(sheet)
+    assert present != replaced and token_difference(replaced, present) == ["files"]
 
 
 # ---------------------------------------------------------------------------- name scan
@@ -218,17 +287,6 @@ _NAMES_ARCHIVE_WITHOUT_READING_IT = {
     "braunschweig.data.alkis": "prints the archive path in the 'run the preprocessing script' hint; reads the "
                                "preprocessed ALKIS file",
 }
-#: Analysis stages that read the archive through ``braunschweig.analysis.spatial`` (a path anchored at the
-#: repository root, not at ``data_path``; their tests call ``validate(None)``). Recorded as repository-audit
-#: finding M-LEAD-F3, not yet hashed. Remove an entry when the stage's token carries the digest and add the
-#: stage to ``READERS``.
-KNOWN_GAP = (
-    "braunschweig.analysis.synthesis.commute_distance_by_kreis",
-    "braunschweig.analysis.synthesis.work_participation_by_kreis",
-    "braunschweig.analysis.synthesis.plan_structure_vs_srv",
-    "braunschweig.analysis.analysis_suite",
-    "braunschweig.analysis.simwrapper_export",
-)
 
 
 def _stage_modules_naming_the_vg250_archive():
@@ -250,9 +308,9 @@ def test_the_scan_finds_the_reference_reader():
     assert "braunschweig.data.bbsr.regiostar" in _stage_modules_naming_the_vg250_archive()
 
 
-def test_every_stage_naming_the_vg250_archive_is_covered_or_a_recorded_gap():
+def test_every_stage_naming_the_vg250_archive_is_covered_or_allowlisted():
     found = _stage_modules_naming_the_vg250_archive()
-    allowlisted = set(_NAMES_ARCHIVE_WITHOUT_READING_IT) | set(KNOWN_GAP)
+    allowlisted = set(_NAMES_ARCHIVE_WITHOUT_READING_IT)
     assert allowlisted <= found, \
         f"an allowlisted module no longer names the archive: drop it from the allowlist ({allowlisted - found})"
     assert found - allowlisted == {reader.module for reader in READERS}

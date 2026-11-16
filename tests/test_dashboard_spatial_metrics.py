@@ -71,3 +71,11 @@ def test_dashboard_and_analysis_paths_share_one_refreshing_cache(monkeypatch, tm
     os.utime(archive, (kept_mtime + 100, kept_mtime + 100))
     spatial._resolve_vg250_gpkg(strict=True)
     assert cache.read_bytes() == b"second"
+
+    # A replaced archive that keeps an OLDER mtime (a copy that preserves timestamps) is extracted
+    # again too: the cache follows the archive's content, as the stages' cache tokens do.
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr(spatial.VG250_INNER, b"third")
+    os.utime(archive, (kept_mtime - 100, kept_mtime - 100))
+    spatial._resolve_vg250_gpkg(strict=True)
+    assert cache.read_bytes() == b"third"

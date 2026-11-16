@@ -255,11 +255,17 @@ def validate(context):
     (same mechanism as ``braunschweig.synthesis.locations.secondary_chainsolvers.validate``).
 
     Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
-    digest per helper module (docstrings, comments and formatting do not change it).
+    digest per helper module (docstrings, comments and formatting do not change it), plus
+    ``files``: the digest of the VG250 archive (dataset id ``vg250_ew``) that ``execute`` reads
+    through ``braunschweig.analysis.spatial`` and its RegioStaR sheet (``spatial.input_file_digests``;
+    a missing archive fails, a missing sheet is a warning and ``None``).
     """
-    return synpp_tokens.source_token(
+    token = synpp_tokens.source_token(
         _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
         stage_label=__name__ + ".validate()")
+    from braunschweig.analysis import spatial  # a deferred helper, so source_token imported it already
+    token["files"] = spatial.input_file_digests(strict=True)
+    return token
 
 
 def configure(context):

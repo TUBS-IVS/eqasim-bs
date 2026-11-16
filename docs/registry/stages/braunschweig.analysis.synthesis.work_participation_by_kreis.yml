@@ -48,6 +48,7 @@ pipelines:
 production: true
 inputs:
 - srv2023_work_participation
+- regiostar
 - vg250_ew
 features:
 - commute_day_state_measurement

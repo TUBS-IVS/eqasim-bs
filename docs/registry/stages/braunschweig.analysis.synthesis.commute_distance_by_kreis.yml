@@ -33,6 +33,7 @@ pipelines:
   simple_ipf_open: supported
 production: true
 inputs:
+- regiostar
 - vg250_ew
 features:
 - srv_primary_distance_validation
