@@ -457,3 +457,51 @@ def test_missing_solver_log_is_refused(work_dir):
     (work_dir / "batch_000" / "output" / "populationsim.log").unlink()
     with pytest.raises(FileNotFoundError):
         solver_path_table(work_dir)
+
+
+def _warnings(caplog):
+    return [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+
+
+def test_failed_parent_without_outcome_line_is_warned(work_dir, caplog):
+    _write_log(work_dir, ["failed for ZENSUS1km_K1 status INFEASIBLE. "])
+    with caplog.at_level("WARNING"):
+        solver_path_table(work_dir)
+    assert any("1 failed first attempts but 0 outcomes" in m for m in _warnings(caplog))
+
+
+def test_longest_geography_prefix_decides_the_level(work_dir):
+    settings = work_dir / "batch_000" / "configs" / "settings.yaml"
+    settings.write_text("geographies: [A, A_B, C]\n", encoding="utf-8")
+    _write_log(work_dir, ["succeeded for A_B_7 status OPTIMAL. ",
+                          "succeeded for A_1 status OPTIMAL. "])
+    table = solver_path_table(work_dir).set_index("level")
+    assert table["n_parents"].to_dict() == {"C": 1, "A_B": 1}
+
+
+def test_unrecognised_line_is_counted_and_warned_not_raised(work_dir, caplog):
+    _write_log(work_dir, ["succeeded for ZENSUS1km_K1 status OPTIMAL. ",
+                          "something new happened for ZENSUS1km_K1"])
+    with caplog.at_level("WARNING"):
+        table = solver_path_table(work_dir)
+    assert table["n_parents"].tolist() == [1]
+    messages = _warnings(caplog)
+    assert any("something new happened" in m for m in messages)
+    assert any("1 unrecognised solver line(s)" in m for m in messages)
+
+
+def test_outcome_lines_without_first_attempt_are_warned(work_dir, caplog):
+    _write_log(work_dir, ["retry succeeded for ZENSUS1km_K1 status OPTIMAL. "])
+    with caplog.at_level("WARNING"):
+        solver_path_table(work_dir)
+    assert any("no first attempt" in m for m in _warnings(caplog))
+
+
+def test_duplicate_no_infeasible_label_is_warned_and_counted_per_occurrence(work_dir, caplog):
+    _write_log(work_dir, ["failed for ZENSUS1km_K1 status INFEASIBLE. ",
+                          "failed but found no infeasible sub zones ZENSUS1km_K1. ",
+                          "failed but found no infeasible sub zones ZENSUS1km_K1. "])
+    with caplog.at_level("WARNING"):
+        row = solver_path_table(work_dir).set_index("level").loc["ZENSUS100m"]
+    assert row["single_feasible_subzone"] == 2
+    assert any("more than one" in m for m in _warnings(caplog))

@@ -85,7 +85,7 @@ def _batch_counts(batch_dir: Path) -> dict:
         raise FileNotFoundError(f"batch {batch_dir.name}: solver log missing: {log_file}")
     geographies = _geographies(batch_dir)
     counts: dict = {}
-    no_infeasible_labels: set = set()
+    no_infeasible_labels: list = []   # one (level, label) per occurrence
     fallback_labels: set = set()
     failed_first = {}      # level -> failed first attempts
     unknown_lines = 0
@@ -121,15 +121,24 @@ def _batch_counts(batch_dir: Path) -> dict:
             fallback_labels.add(label)
         elif kind == "no_infeasible":
             row["no_infeasible_subzones"] += 1
-            no_infeasible_labels.add((level, label))
+            no_infeasible_labels.append((level, label))
         elif kind == "smart":
             row["all_subzones_infeasible"] += 1
         else:
             row["infeasible_subzones"] += int(match.group(1))
+    seen_labels: set = set()
     for level, label in no_infeasible_labels:
+        if (level, label) in seen_labels:
+            logger.warning("[popsim_batch_diagnostics] %s: label %s has more than one 'found no "
+                           "infeasible sub zones' line (duplicate parent in one log)",
+                           batch_dir.name, label)
+        seen_labels.add((level, label))
         if label not in fallback_labels:
             counts[level]["single_feasible_subzone"] += 1
     for level, row in counts.items():
+        if row["n_parents"] == 0 and any(row[c] for c in _COUNTERS):
+            logger.warning("[popsim_batch_diagnostics] %s level %s: outcome lines but no first "
+                           "attempt (truncated or appended log?)", batch_dir.name, level)
         row["non_simultaneous"] = (row["sequential_fallback"] + row["single_feasible_subzone"]
                                    + row["all_subzones_infeasible"])
         ended = (sum(row[f"retry_{s}"] for s in _KNOWN_STATUSES.values())
