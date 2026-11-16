@@ -107,7 +107,13 @@ def run(ns) -> dict:
     geo = homes_geo[["household_id", "ars5", "commune_id"]].drop_duplicates("household_id")
 
     registry = C.build_registry(DATA_PATH)
-    long = CV.evaluate_all(registry, frames, geo, DATA_PATH)
+    try:
+        long = CV.evaluate_all(registry, frames, geo, DATA_PATH)
+    finally:
+        # The target loaders share one in-process copy of the national cells parquet
+        # (controls._load_cells); release it so the rest of the analysis suite does not
+        # carry it in memory.
+        C.clear_cells_cache()
     summary = CV.summarize(long)
     quality = QA.assess(long)
     fam = QA.family_scores(quality)

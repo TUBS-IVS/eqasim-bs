@@ -506,3 +506,129 @@ def test_employed_rate_extractors_keep_ars_leading_zero():
     assert not any(k.startswith("3101") for k, _ in by_group), (
         "found an un-padded Kreis key -- zfill(12) missing before the [:5] slice"
     )
+
+
+# ---------------------------------------------------------------------------
+# 10. _load_cells in-process cache (audit 2026-11 package H, finding A2-F3)
+# ---------------------------------------------------------------------------
+
+def _write_synthetic_cells_parquet(data_root):
+    """Write a small prepared-cells parquet with every column the cells-based target
+    loaders read (raw, pre-clean names where the loader cleans them) under data_root."""
+    from braunschweig.popsim.control_spec import (
+        build_aggregation_map, controls_for_seed, full_catalog)
+
+    rng = np.random.default_rng(7)
+    n = 12
+    columns = {
+        "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m-Gitter_adj",
+        "Insgesamt_Haushalte_Typ_priv_HH_Familie_100m-Gitter",
+        "EinpersHH_SingleHH_Typ_priv_HH_Familie_100m-Gitter",
+        "Paare_ohneKind_Typ_priv_HH_Familie_100m-Gitter",
+        "Paare_mitKind_Typ_priv_HH_Familie_100m-Gitter",
+        "Alleinerziehende_Typ_priv_HH_Familie_100m-Gitter",
+        "MehrpersHHohneKernfam_Typ_priv_HH_Familie_100m-Gitter",
+        "EigentuemerHH_Tenure_100m-Gitter",
+        "MieterHH_Tenure_100m-Gitter",
+        "HH_ohneSenioren_Seniorenstatus_eines_privaten_Haushalts_100m-Gitter",
+        "HH_mitSenioren_Seniorenstatus_eines_privaten_Haushalts_100m-Gitter",
+        "HH_nurSenioren_Seniorenstatus_eines_privaten_Haushalts_100m-Gitter",
+        "Insgesamt_Haushalte_Seniorenstatus_eines_privaten_Haushalts_100m-Gitter_adj",
+    }
+    columns |= {f"{k}_Groesse_des_privaten_Haushalts_100m-Gitter"
+                for k in ("1_Person", "2_Personen", "3_Personen", "4_Personen",
+                          "5_Personen", "6_Personen_und_mehr")}
+    for prefix in ("M", "F"):
+        columns.add(f"{prefix}_TOTAL")
+        columns |= {f"{prefix}_AGE_{band}_agg" for band in
+                    ("0_9", "10_19", "20_29", "30_39", "40_49", "50_59", "60_69",
+                     "70_79", "80_plus")}
+    agg_map = build_aggregation_map(
+        controls_for_seed(full_catalog(include_tiers=("tier2",)), "mid"))
+    for sources in agg_map.values():
+        columns |= set(sources)
+    frame = pd.DataFrame({col: rng.integers(0, 50, size=n).astype(float)
+                          for col in sorted(columns)})
+    frame["RegionalSchlüssel_ARS"] = ["031010000000"] * 6 + ["031020000000"] * 6
+    parquet = data_root / C._PARQUET_SUBPATH
+    parquet.parent.mkdir(parents=True)
+    frame.to_parquet(parquet)
+    return parquet
+
+
+_CELLS_TARGET_LOADERS = (
+    C.household_size_target,
+    C.household_type_target,
+    C.tenure_target,
+    C.building_type_target,
+    lambda dp: C.age_sex_target(dp, sex="male"),
+    lambda dp: C.age_sex_target(dp, sex="female"),
+    C.seniorenstatus_target,
+)
+
+
+def test_load_cells_cache_reads_once_and_targets_are_byte_identical(tmp_path, monkeypatch):
+    """The cached _load_cells reads the parquet once, every cells-based target table is
+    identical to the uncached read, and no target loader mutates the shared frame."""
+    parquet = _write_synthetic_cells_parquet(tmp_path)
+    data_path = str(tmp_path)
+    C.clear_cells_cache()
+
+    # Reference: every loader on its own fresh, uncached read (the pre-cache behaviour).
+    def _uncached(dp):
+        return C._read_and_clean_cells(tmp_path / C._PARQUET_SUBPATH)
+    with monkeypatch.context() as patch:
+        patch.setattr(C, "_load_cells", _uncached)
+        reference = [loader(data_path) for loader in _CELLS_TARGET_LOADERS]
+    # Primary path: the synthetic parquet carries every target column, so each table has
+    # rows for both Kreise (an empty table would make the identity check vacuous).
+    for ref in reference:
+        assert set(ref["geo_id"]) == {"03101", "03102"}
+
+    reads = []
+    real_read_parquet = pd.read_parquet
+
+    def _counting_read_parquet(path, *args, **kwargs):
+        reads.append(path)
+        return real_read_parquet(path, *args, **kwargs)
+    monkeypatch.setattr(pd, "read_parquet", _counting_read_parquet)
+
+    try:
+        shared = C._load_cells(data_path)
+        before = pd.util.hash_pandas_object(shared, index=True).to_numpy().copy()
+        columns_before = list(shared.columns)
+        cached = [loader(data_path) for loader in _CELLS_TARGET_LOADERS]
+
+        assert len(reads) == 1, f"parquet read {len(reads)} times, expected once"
+        assert C._load_cells(data_path) is shared
+        for ref, out in zip(reference, cached):
+            pd.testing.assert_frame_equal(out, ref, check_exact=True)
+        # No target loader mutated the shared frame (values, index or columns).
+        assert list(shared.columns) == columns_before
+        np.testing.assert_array_equal(
+            pd.util.hash_pandas_object(shared, index=True).to_numpy(), before)
+    finally:
+        C.clear_cells_cache()
+    assert parquet.exists()
+
+
+def test_load_cells_cache_rereads_after_clear_and_on_file_change(tmp_path, monkeypatch):
+    """clear_cells_cache forces a fresh read, and a rewritten parquet is not served stale."""
+    parquet = _write_synthetic_cells_parquet(tmp_path)
+    data_path = str(tmp_path)
+    C.clear_cells_cache()
+    try:
+        first = C._load_cells(data_path)
+        C.clear_cells_cache()
+        second = C._load_cells(data_path)
+        assert second is not first
+        pd.testing.assert_frame_equal(first, second)
+
+        # Rewrite the file with one more row: the key (mtime_ns, size) changes.
+        frame = pd.read_parquet(parquet)
+        pd.concat([frame, frame.iloc[[0]]], ignore_index=True).to_parquet(parquet)
+        third = C._load_cells(data_path)
+        assert len(third) == len(first) + 1
+        assert len(C._CELLS_CACHE) == 1
+    finally:
+        C.clear_cells_cache()
