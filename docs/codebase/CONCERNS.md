@@ -77,8 +77,6 @@ long wall times (README: 25 % run ~10 h).
 ## Production code TODOs (from scan, source only)
 
 - `braunschweig/synthesis/population/enriched/` — a `# TODO` on the `sex` filter of `df_persons`
-- `eqasim_common/data/census/employment.py`, `population.py` — "Can this be
-  replaced by a Germany-wide GENESIS extract?" (inherited).
 - (All other scanned TODOs are inside the **cached Java** checkouts under
   `eqasim-data/cache_*`, which are third-party read-only sources, not this repo's code.)
 
@@ -235,7 +233,6 @@ ENTD→MiD labels) are documented approximations.
   default, not counted/logged per occurrence.
 - `data/hts/entd/cleaned.py`: unmapped ENTD purpose -> `other`, unmapped mode ->
   `pt` — silent in the legacy path too (inherited upstream behaviour).
-- `braunschweig/popsim/seed.py` TODO: day-filter values hardcoded (1,2,3).
 
 ### Validation status (as of 2026-06-10)
 

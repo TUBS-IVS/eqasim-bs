@@ -21,10 +21,10 @@ Output schema
 
 Behaviour
 ---------
-- When the configured path is missing on disk the stage returns an
-  empty GeoDataFrame and prints a notice (so default pipelines stay
-  runnable). Downstream consumers must guard via the
-  ``braunschweig.use_landuse_prior`` flag.
+- With ``braunschweig.use_landuse_prior`` off (the default) the stage
+  returns an empty GeoDataFrame without reading the tile.
+- With the flag on and the tile missing, ``validate`` and ``execute``
+  raise ``RuntimeError`` (no silent fallback to an empty prior).
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ def execute(context) -> gpd.GeoDataFrame:
         raise RuntimeError(
             "[braunschweig.data.inspire.landuse] use_landuse_prior is ON but the "
             "Copernicus 100 m tile is missing: {}. Provide it at "
-            "braunschweig.inspire_landuse_path (see this module's docstring), or set braunschweig.use_landuse_prior=False "
+            "braunschweig.inspire_landuse_path (Data Registry record copernicus_landuse_100m), or set braunschweig.use_landuse_prior=False "
             "to run without the spatial prior.".format(path)
         )
 

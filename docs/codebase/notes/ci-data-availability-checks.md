@@ -77,12 +77,13 @@ they should be `optional=True`. Per section A of the former `DOWNLOAD_CHECKLIST_
 > A3 is the upstream travel-pattern donor; the BS pipeline does not yet have a
 > German HTS replacement.
 
-The checklist states A1 and A2 "is required" in the same paragraph and does **not**
-label A3 reference-pipeline-only, so the flags were left alone: ENTD is documented
-as still in use, and downgrading it on inference would make the catalog *less*
+Today the owner of that decision is the data record `docs/registry/data/entd_2008.yml`
+(`synthesis: required`, `production: not_needed`): ENTD is still the donor of the
+`simple_ipf_open` and `popsim_open` workflows, so the A3 flags stay required, and downgrading it on inference would make the catalog *less*
 truthful. The amplification problem is solved by the per-URL dedupe above, which
 collapses the six entries onto one probe. If ENTD is genuinely retired from the
-production path, correct the checklist sentence and the flags together.
+workflows that still use it, change the data record `entd_2008` and the verifier
+entries A3 together.
 
 ### Local runs can show false UNREACHABLE (verified 2026-08-23)
 

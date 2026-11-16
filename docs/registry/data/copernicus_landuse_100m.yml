@@ -1,17 +1,18 @@
 dataset: copernicus_landuse_100m
-title: Copernicus 100 m land-use tile (spatial prior for secondary locations)
+title: Reclassified 100 m land-use tile (spatial prior for secondary locations), derived from clc_backbone
 inventory_id: null
-provider: Copernicus Land Monitoring Service
+provider: derived (raw input and its provider and licence are the record clc_backbone)
 vintage: unknown
 geography: Lower Saxony bounding box, 100 m raster cells
-crs: unknown
+crs: EPSG:3035
 roles:
-- spatial_input
+- derived_input
 used_by: []
 acquisition:
-  method: manual_download
-  source: Copernicus Land Monitoring Service (registered download; CLC+ Backbone or CLC 2018, reclassified and
-    converted to GeoParquet by hand; no preprocessing script exists in the repository)
+  method: derived
+  source: Reclassified by hand from the raster of the data record clc_backbone into the classes
+    braunschweig.data.inspire.landuse.VALID_CLASSES and written as GeoParquet; no preprocessing script exists
+    in the repository.
   script: null
 storage:
   expected_path: eqasim-data/data/braunschweig/preprocessed/inspire_landuse.parquet
@@ -24,11 +25,12 @@ requirements:
   matsim: not_needed
   production: not_needed
 licensing:
-  license: CC-BY 4.0
+  license: derived (source terms of clc_backbone apply)
   restricted: false
   redistribution: allowed
 limitations: Read only when braunschweig.use_landuse_prior is true (default false); the stage is in no workflow
-  DAG, so no committed configuration reads the tile. Vintage, CRS and the exact reclassification are unknown.
+  DAG, so no committed configuration reads the tile. Vintage and the exact reclassification are unknown. The
+  CRS is the one braunschweig.data.inspire.landuse expects (it reprojects other CRSs to EPSG:3035).
 notes: Read by the module braunschweig.data.inspire.landuse, which has no Stage Registry record because no
-  workflow DAG contains it (so used_by stays empty). The path is the default of braunschweig.inspire_landuse_path. The licence is taken from the module
-  docstring of braunschweig.data.inspire.landuse, not verified against the provider's terms.
+  workflow DAG contains it (so used_by stays empty). The path is the default of
+  braunschweig.inspire_landuse_path.

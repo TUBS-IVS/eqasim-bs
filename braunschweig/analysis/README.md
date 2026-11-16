@@ -27,17 +27,26 @@ braunschweig/analysis/
 & "$env:LOCALAPPDATA\miniforge3\shell\condabin\conda-hook.ps1"
 conda activate eqasim
 
-# 1. Generate / refresh the synthesis with the canonical composed config
-#    (base + scale overlay, README "Running the model"; there is no 10 % overlay,
-#    so a 10 % run needs a local overlay setting sampling_rate / output_path)
+# The notebook compares results/10pct with results/25pct, so refresh BOTH rates
+# from the same workflow and code state; refreshing only one rate mixes workflows
+# and shows workflow differences as rate effects. The committed artefacts come from
+# the legacy IPF fixtures (configs/fixtures/config_local_braunschweig_10pct.yml and
+# _25pct.yml, the legacy layout of scripts/run_bs_validation.py).
+
+# 1. Generate / refresh the synthesis at both rates. Either the legacy fixtures, or the
+#    canonical composed config (base + scale overlay, README "Running the model"); the
+#    composed set has no committed 10 % overlay, so that route needs a local overlay
+#    setting sampling_rate / output_path for 10 %.
 python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml
 
-# 2. Run the validation harness for the rate (see its --help for --layout / --out)
+# 2. Run the validation harness for each rate (see its --help for --layout / --out)
+python -m scripts.run_bs_validation --rate 10
 python -m scripts.run_bs_validation --rate 25
 
-# 3. Copy the validation outputs of that run into this folder
-#    (<output_path> = the output_path of the config used in step 1)
-Copy-Item <output_path>\validation\* braunschweig\analysis\results\25pct\ -Force
+# 3. Copy the validation outputs of each run into this folder
+#    (<output_path> = the output_path of the config used for that rate in step 1)
+Copy-Item <output_path_10pct>\validation\* braunschweig\analysis\results\10pct\ -Force
+Copy-Item <output_path_25pct>\validation\* braunschweig\analysis\results\25pct\ -Force
 
 # 4. Re-execute the notebook (writes outputs in-place)
 jupyter nbconvert --to notebook --execute braunschweig\analysis\population_fit.ipynb --inplace
