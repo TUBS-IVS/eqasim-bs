@@ -1,0 +1,122 @@
+id: i487-i466-fix-evidence-rerun2-1pct-2026-10-31
+date: '2026-10-31'
+repository:
+  commit: unknown
+  branch: runs/i487-i466-rerun2-evidence
+  notes: >-
+    A MEASUREMENT over an existing run, not a new pipeline run. The scripts walk_stamp_match_i487.py and
+    pt_removals_i466.py are committed with this manifest in its artifact directory; they ran on felix
+    (~/scratch_i466) on 2026-10-31, the stamp match with ~/miniforge3/envs/eqasim/bin/python -I (it imports the plan
+    check of the measured checkout), the removal count with the system python3 -I. Measured run: the 1 % rerun2 of
+    the #465 fixes on felix (~/wt-i487-rerun2, launched 2026-10-23 11:18, run log logs/run_20261023T111828.log).
+    Its code: eqasim-bs a154c42e (local integration branch of the #465 fix branches, reached felix as a git bundle,
+    never pushed; the before-arm of the gate-facility-links measurement and one of the three populations of
+    student-incommuter-pt-walks-2026-10-30) and eqasim-java-bs ad3f7e2 (integration/i465-rerun, a merge of
+    fix/i487-keep-walk-fallback-stamp = TUBS-IVS/eqasim-java-bs#39 and fix/i465-transit-boarding =
+    TUBS-IVS/eqasim-java-bs#40; both later merged to eqasim-java-bs main on 2026-10-23). The jar was built by
+    matsim.runtime.eqasim from that tree (cache matsim.runtime.eqasim__1c974c0f...). The jar does NOT contain
+    TUBS-IVS/eqasim-java-bs#44 (stop-pair boarding, ADR-0161; no transitStopPairFallback in its source), so this
+    run measures the zero-slack tolerance and the same-line fallback of #40 only. No run on current main was made.
+    Correction (PR #630 review): the docstring of pt_removals_i466.py says memory stays bounded; it does not, because
+    the cleared events stay attached to the root element, so memory grows with the number of events. The script is
+    kept verbatim as it ran (the 1 % counts are unaffected); before re-running it on a 25 % or 100 % events file,
+    clear the root as braunschweig.matsim.simulation.plan_check.iter_person_plans does.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - felix:~/wt-i487-rerun2/i465_rerun2.yml (the rerun's throwaway overlay; not committed)
+  notes: >-
+    The rerun's configuration: sampling_rate 0.01, matsim_last_iteration 100, cordon on, freight on,
+    plan_check.fail_on_threshold false (production value). The measurement itself has no configuration; the removal
+    count takes the end of the simulated day as 108000 s (30 h, ADR-0146).
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: ZGB-8, full region, cordon on
+  notes: >-
+    Sample counts at sampling_rate 0.01, never expanded. Plan check of the prepared population: 1,497 residents with
+    a frozen tour, 10,598 in the region, 521 freight agents. Baseline of the removal count: arm 2 of
+    i453-i443-ab-1pct-2026-10-16 (felix ~/wt-i453-ab/output_arm2), the run issue #466 was written from; it is another
+    draw of the population and code state, so the comparison is before/after, not a controlled A/B.
+pipeline:
+  targets:
+  - matsim.simulation.prepare
+  - matsim.simulation.run
+  notes: >-
+    Inputs of the stamp match: the scenario population before prepare
+    (cache_rerun2/braunschweig.matsim.scenario.population__51cb1018.../population.xml.gz) and the prepared population
+    MATSim read (cache_rerun2/braunschweig.matsim.simulation.prepare__feada469.../braunschweig_1pct_i465_rerun2_population.xml.gz),
+    sha256 in input_sha256.txt. Input of the removal count: output_events.xml.gz of the final iteration 48 (the
+    eqasim mode-share termination criterion stopped MATSim: convergence, not validation), sha256
+    d2e8388eadb09480008a2791e8f010a1dfae5963860208e605d5aeaa287c2b27; baseline arm 2 sha256
+    4e6db2a37bc7e254d330b6162827cf756efaf8bc0df2e11aa87685592ceb215d.
+classification:
+- smoke
+status:
+  execution: completed
+  notes: >-
+    Structural checks of one 1 % draw: whether the plan check counts every planned-pt walk (#487), and whether pt
+    passengers are still removed at the stop during the day (#466). No observed reference is involved; this is not a
+    validation of behaviour.
+validation:
+- metric: 'plan check pt-as-walk count vs an independent count of planned-pt trips realised as walk (#487), residents in the region'
+  reference: >-
+    none (internal consistency). Independent count: every walk-only trip of the prepared plan matched to the
+    scenario-population trip of the same person whose preceding activity ends at the same second; its planned mode
+    is read without the walkFallbackFrom stamp.
+  result: >-
+    8,969 walk-only trips, all matched exactly; 803 planned as pt, 803 of them stamped; 0 stamped trips that were not
+    planned as pt. The plan check counted 803 of 2,981 pt-intended trips.
+  artifact: docs/runs/artifacts/i487-i466-fix-evidence-rerun2-1pct-2026-10-31/walk_stamp_match_rerun2.txt
+- metric: 'the same comparison for residents with a frozen tour (the class the #487 threshold judges)'
+  reference: none (internal consistency), as above
+  result: >-
+    241 walk-only trips, 44 stamped (= the plan check's 44 of 428 pt-intended trips, 10.28 %, above the 2 %
+    ASSUMPTION of max_frozen_pt_as_walk_share). 148 matched exactly: 21 planned pt, all 21 stamped, 0 stamped without
+    planned pt. 93 have no exact match because they leave an outside activity the cordon cutter created; for these
+    the scenario trip with the same destination type and the nearest departure was read as a diagnostic: all 23
+    stamped ones sit next to a planned pt trip, all 70 unstamped ones next to a planned car (53) or car-passenger (17)
+    trip; none of the unstamped sits next to a planned pt trip. 25 of the 93 nearest matches are more than 1 h away,
+    so this part is an approximate match, not a proof.
+  artifact: docs/runs/artifacts/i487-i466-fix-evidence-rerun2-1pct-2026-10-31/walk_stamp_match_rerun2.txt
+  notes: >-
+    Before the fix (i465-wpe-smoke-1pct-2026-10-23) 4 of 17 stuck walkers planned as pt carried the stamp and the plan
+    check of the cut population counted 33 trips although the first routing pass had replaced 852. Here the eqasim
+    PlanRouter log counts 822 replacements before the cut, 821 kept through the cutter and 26 new ones inside the
+    cut (847), and the plan check counts 44 + 803 = 847. The one trip of the first pass not kept was not examined.
+- metric: 'residents removed from the simulation during the day with legMode pt (stuckAndAbort before 30 h), final iteration (#466)'
+  reference: 'baseline arm 2 of i453-i443-ab-1pct-2026-10-16, the same script on both runs; no observed reference'
+  result: >-
+    Baseline 21 (reproduces the 21 of issue #466, 06:42 to 23:37); this run 0. Every stuckAndAbort of this run is at
+    the simulation end (30 h): 3 car, 6 walk.
+  artifact: 'docs/runs/artifacts/i487-i466-fix-evidence-rerun2-1pct-2026-10-31/removals_i453_arm2.txt, removals_rerun2.txt'
+  notes: >-
+    The two runs differ in everything merged between their code states, not only in TUBS-IVS/eqasim-java-bs#40, so
+    the fall is not attributed to #40 alone; the boarding statistics below show which rule took the late passengers.
+- metric: 'pt boardings by rule of the schedule-based transit engine, final iteration (#466 cause classes)'
+  reference: none (counts of the engine's own end-of-iteration line)
+  result: >-
+    4,849 pt departures: 62 (1.28 %) boarded within the 1.0 s tolerance (the "1 s late" class of #466), 4 (0.08 %) on
+    a later departure of the planned route, 2 (0.04 %) on another route of the planned line (the line fallback,
+    covering stale planned routes), 0 without a departure (agent stuck).
+  artifact: docs/runs/artifacts/i487-i466-fix-evidence-rerun2-1pct-2026-10-31/rerun2_log_extract.txt
+  notes: >-
+    The stop-pair rule of ADR-0161 (eqasim-java-bs#44, any line to the egress stop) is not in this jar and remains
+    unmeasured in a simulation run; it covers a passenger whose planned line has no departure left (one resident in
+    the first rerun ~/wt-i487-rerun, waiting at the end of the day, not removed during it).
+issues:
+- '#487'
+- '#466'
+decisions:
+- ADR-0146
+- ADR-0161
+artifacts:
+- docs/runs/artifacts/i487-i466-fix-evidence-rerun2-1pct-2026-10-31/walk_stamp_match_i487.py
+- docs/runs/artifacts/i487-i466-fix-evidence-rerun2-1pct-2026-10-31/walk_stamp_match_rerun2.txt
+- docs/runs/artifacts/i487-i466-fix-evidence-rerun2-1pct-2026-10-31/pt_removals_i466.py
+- docs/runs/artifacts/i487-i466-fix-evidence-rerun2-1pct-2026-10-31/removals_i453_arm2.txt
+- docs/runs/artifacts/i487-i466-fix-evidence-rerun2-1pct-2026-10-31/removals_rerun2.txt
+- docs/runs/artifacts/i487-i466-fix-evidence-rerun2-1pct-2026-10-31/rerun2_log_extract.txt
+- docs/runs/artifacts/i487-i466-fix-evidence-rerun2-1pct-2026-10-31/input_sha256.txt
+source: >-
+  felix:~/scratch_i466 (scripts and printed outputs, copied verbatim into the artifact directory);
+  felix:~/wt-i487-rerun2 (the measured run: cache_rerun2, output_rerun2, logs/run_20261023T111828.log).
