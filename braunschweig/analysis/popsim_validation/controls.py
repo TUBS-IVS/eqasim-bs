@@ -104,8 +104,49 @@ def _load_kreis_control_table(data_path: str) -> pd.DataFrame:
     return load_kreis_control_table(str(kreis_dir))
 
 
+# In-process cache of the cleaned cells frame (audit 2026-11 package H, finding A2-F3).
+# Every cells-based target loader below calls _load_cells; without the cache each call
+# re-read the national 100 m parquet. One entry at most, so a second data_path replaces
+# the first instead of holding two national frames. Key: (resolved parquet path,
+# mtime_ns, size), so a file rewritten in the same process is read again.
+_CELLS_CACHE: dict[tuple[str, int, int], pd.DataFrame] = {}
+
+
+def clear_cells_cache() -> None:
+    """Drop the cached cells frame (frees its memory once the control evaluation is done)."""
+    _CELLS_CACHE.clear()
+
+
 def _load_cells(data_path: str) -> pd.DataFrame:
-    """Load and clean the prepared 100 m cell parquet (cached per data_path call).
+    """Load and clean the prepared 100 m cell parquet, cached per parquet file in-process.
+
+    The first call per parquet reads and cleans it (``_read_and_clean_cells``); later calls
+    return the SAME frame object from ``_CELLS_CACHE`` until ``clear_cells_cache`` runs.
+    Callers must treat the frame as READ-ONLY: every target loader in this module only
+    reads it (``_multi_col_kreis_target`` groups and sums; ``seniorenstatus_target`` takes
+    a ``copy()`` before adding its merged column). ``tests/test_popsim_validation_controls.py``
+    pins that the cached frame is unchanged after all target loaders ran.
+
+    The cached frame lives until ``clear_cells_cache`` runs. ``run_popsim_control_validation``
+    clears it after the evaluation; any other code that calls the target loaders directly (a
+    notebook, a script) keeps the national frame in memory until it calls
+    ``clear_cells_cache`` itself.
+    """
+    parquet = Path(data_path) / _PARQUET_SUBPATH
+    stat = parquet.stat()
+    key = (str(parquet.resolve()), stat.st_mtime_ns, stat.st_size)
+    cached = _CELLS_CACHE.get(key)
+    if cached is not None:
+        LOGGER.info("[popsim_validation] prepared cells: reusing the in-process copy of %s", parquet)
+        return cached
+    df = _read_and_clean_cells(parquet)
+    _CELLS_CACHE.clear()
+    _CELLS_CACHE[key] = df
+    return df
+
+
+def _read_and_clean_cells(parquet: Path) -> pd.DataFrame:
+    """Read and clean the prepared 100 m cell parquet (uncached; see ``_load_cells``).
 
     Returns the cells frame with cleaned column names and ``ars5`` (5-digit
     Kreis prefix) derived from the ``RegionalSchlussel_ARS`` column.
@@ -113,7 +154,7 @@ def _load_cells(data_path: str) -> pd.DataFrame:
     from braunschweig.popsim.prepared_cells import clean_col_name, add_aggregated_controls
     from braunschweig.popsim.control_spec import build_aggregation_map, full_catalog, controls_for_seed
 
-    parquet = Path(data_path) / _PARQUET_SUBPATH
+    LOGGER.info("[popsim_validation] prepared cells: reading %s", parquet)
     df = pd.read_parquet(parquet)
     df.columns = [clean_col_name(c) for c in df.columns]
 
