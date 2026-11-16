@@ -549,16 +549,17 @@ class PowertrainModel:
                 "Kreis-mean denominator (pure relative tilt, no EV level shift).",
                 len(gem_priv)
             )
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             df_gem_fz27 = ft.load_gemeinde_private_bev(data_path)
             require_unique_gemeinde_keys(df_gem_fz27)
             gem_priv = cls._gemeinde_private_electric_share(df_gem_fz27)
             kreis_priv = kreis_priv_fz2715
-            logger.info(
+            logger.warning(
                 "[fleet_de] gemeinde EV tilt: FZ27.17 fallback "
                 "(kba_gemeinde_ev.csv absent); %d Gemeinden loaded; "
-                "same-vintage (2025/2025) FZ27.15 Kreis denominator.",
-                len(gem_priv)
+                "same-vintage (2025/2025) FZ27.15 Kreis denominator. "
+                "Missing input: %s.",
+                len(gem_priv), exc
             )
 
         return cls(

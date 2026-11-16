@@ -1,0 +1,6 @@
+residents/frozen: walk_only_trips 241, stamped 44, planned_pt 21, planned_pt_stamped 21, stamped_not_planned_pt 0, no_exact_match 93, no_exact_match_stamped 23
+residents/in_region: walk_only_trips 8969, stamped 803, planned_pt 803, planned_pt_stamped 803, stamped_not_planned_pt 0, no_exact_match 0, no_exact_match_stamped 0
+mismatches (planned pt != stamped), exact matches only: 0
+unmatched walk-only trips (no exact departure match): from->to, planned mode of nearest same-destination trip
+  by (from, to, nearest planned, stamped): {('frozen', 'outside', 'outside', 'car', False): 30, ('frozen', 'outside', 'other', 'pt', True): 1, ('frozen', 'outside', 'outside', 'car_passenger', False): 16, ('frozen', 'outside', 'work', 'car', False): 1, ('frozen', 'outside', 'home', 'pt', True): 15, ('frozen', 'outside', 'leisure', 'car_passenger', False): 1, ('frozen', 'outside', 'home', 'car', False): 22, ('frozen', 'outside', 'work', 'pt', True): 3, ('frozen', 'outside', 'outside', 'pt', True): 3, ('frozen', 'outside', 'leisure', 'pt', True): 1}
+  nearest match more than 1 h away: 25
