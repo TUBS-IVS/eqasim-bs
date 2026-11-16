@@ -41,24 +41,26 @@ from .vehicle_ownership import _binarise_availability, _sample_cars_income_aware
 FALLBACK_WARN_RATE = 0.05
 
 
-def _report_kreis_fallback_rates(label, forced_label, person_kreis, eligible):
+def _report_kreis_fallback_rates(label, forced_label, person_kreis, rule_eligible):
     """Print primary / forced-by-rule / Kreis-missing-fallback person counts.
 
-    * primary: eligible persons, drawn from the IPF-derived MiD distribution;
-    * forced by rule: persons without a Kreis-independent claim to the MiD
-      distribution (below the age cut-off, unknown sex or no age band); the
-      deterministic category is the documented rule, not a fallback;
-    * fallback: persons with no Kreis (``person_kreis < 0``), forced to the same
-      category because the Kreis-conditional MiD marginal cannot be applied.
+    ``rule_eligible`` is the eligibility mask WITHOUT the Kreis condition (age cut-off,
+    known sex, age band). Each person lands in exactly one bucket:
+
+    * forced by rule: not rule-eligible, whatever the Kreis (not applicable, neither
+      primary nor fallback; docs/codebase/notes/fallback-counter-states.md);
+    * fallback: rule-eligible but no Kreis (``person_kreis < 0``), forced to the same
+      category because the Kreis-conditional MiD marginal cannot be applied;
+    * primary: rule-eligible with a Kreis, drawn from the IPF-derived MiD distribution.
 
     Prints only; the category assignment is done by the caller. Returns the
     ``(n_primary, n_forced_by_rule, n_kreis_missing)`` counts.
     """
     n_total = len(person_kreis)
     kreis_missing = person_kreis < 0
-    n_kreis_missing = int(kreis_missing.sum())
-    n_primary = int(eligible.sum())
-    n_forced = int((~eligible & ~kreis_missing).sum())
+    n_kreis_missing = int((kreis_missing & rule_eligible).sum())
+    n_primary = int((~kreis_missing & rule_eligible).sum())
+    n_forced = int((~rule_eligible).sum())
     denom = max(n_total, 1)
     kreis_rate = n_kreis_missing / denom
     level = "WARNING: " if kreis_rate > FALLBACK_WARN_RATE else ""
@@ -446,14 +448,14 @@ def _step_impute_driving_licence(context, df_persons):
             lic_person_age[f_band] = ai
 
     # Eligible = has Kreis, sex, age band, AND age >= legal minimum.
-    lic_eligible = (
-        (lic_person_kreis >= 0)
-        & (lic_person_sex >= 0)
+    lic_rule_eligible = (
+        (lic_person_sex >= 0)
         & (lic_person_age >= 0)
         & (lic_age_arr >= LICENSE_MIN_AGE)
     )
+    lic_eligible = (lic_person_kreis >= 0) & lic_rule_eligible
     _report_kreis_fallback_rates(
-        "license_type", "nein", lic_person_kreis, lic_eligible
+        "license_type", "nein", lic_person_kreis, lic_rule_eligible
     )
     n_lic_kreise = len(lic_ars5_list)
     n_lic_sex = 2
@@ -945,14 +947,14 @@ def _step_sample_pt_subscription(context, df_persons):
 
     # Persons eligible for IPF: have valid Kreis, sex and age band, and are
     # at or above the MiD survey age cut-off.
-    f_eligible = (
-        (person_kreis >= 0)
-        & (person_sex >= 0)
+    f_rule_eligible = (
+        (person_sex >= 0)
         & (person_age >= 0)
         & (age_arr >= max(pt_min_age, 14))
     )
+    f_eligible = (person_kreis >= 0) & f_rule_eligible
     _report_kreis_fallback_rates(
-        "pt_subscription_type", PT_TICKET_NEVER, person_kreis, f_eligible
+        "pt_subscription_type", PT_TICKET_NEVER, person_kreis, f_rule_eligible
     )
     n_kreise = len(ars5_list)
     n_sex = 2

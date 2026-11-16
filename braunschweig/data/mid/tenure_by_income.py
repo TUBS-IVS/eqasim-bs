@@ -210,18 +210,21 @@ def _tilted_bracket_given_tenure(
     tenure: str,
     raumtyp_region: str | None,
     include_brackets: Iterable[str],
-) -> np.ndarray | None:
-    """``P(bracket | tenure, NDS)`` with the within-NDS raumtyp tilt applied.
+) -> tuple[np.ndarray | None, bool]:
+    """``(P(bracket | tenure, NDS), tilt_applied)`` with the within-NDS raumtyp tilt applied.
 
     Mirror of the income_by_size / income_by_status tilt: NDS base scaled by
     ``P_raum,region(bracket|tenure) / P_raum,national(bracket|tenure)``.
+    ``tilt_applied`` is False whenever the returned pmf is the untilted NDS base (no raumtyp
+    requested, or the raumtyp / national cell for this tenure is absent) or the base is
+    unavailable; the probabilities themselves are unaffected by the flag.
     """
     brackets = list(include_brackets)
     base = _bracket_given_tenure_pmf(df_bundesland, BUNDESLAND_NIEDERSACHSEN, tenure, brackets)
     if base is None:
-        return None
+        return None, False
     if raumtyp_region is None:
-        return base.copy()
+        return base.copy(), False
 
     region_pmf = _bracket_given_tenure_pmf(df_raumtyp, raumtyp_region, tenure, brackets)
     # National raumtyp pool (base-weighted) for this tenure.
@@ -243,8 +246,8 @@ def _tilted_bracket_given_tenure(
     national_pmf = (acc / base_total) if base_total > 0 else None
 
     if _TALLY.aux_check("tenure bracket pmf", "untilted_base", region_pmf is None or national_pmf is None):
-        return base.copy()
-    return tilt_toward_region(base, region_pmf, national_pmf)
+        return base.copy(), False
+    return tilt_toward_region(base, region_pmf, national_pmf), True
 
 
 def tenure_probabilities_given_income(
@@ -252,7 +255,8 @@ def tenure_probabilities_given_income(
     df_raumtyp: pd.DataFrame,
     raumtyp_region: str | None,
     include_brackets: Iterable[str] = INCOME_BRACKET_CATEGORIES,
-) -> np.ndarray | None:
+    return_tilt_status: bool = False,
+) -> np.ndarray | None | tuple[np.ndarray | None, bool]:
     r"""Return ``P(tenure | income_bracket, region)`` as a ``(n_brackets, 3)`` matrix.
 
     For each income bracket the row is the pmf over ``TENURE_CATEGORIES``
@@ -270,24 +274,31 @@ def tenure_probabilities_given_income(
     Returns ``None`` (caller logs a FALLBACK -- no silent fallback) when the NDS
     base is unavailable. With ``raumtyp_region is None`` the untilted NDS Bayes
     inversion is returned and counted as the FALLBACK ``raumtyp_missing``.
+
+    With ``return_tilt_status=True`` a ``(matrix, tilt_applied)`` tuple is returned
+    (the matrix is identical): ``tilt_applied`` is True only when every tenure's bracket
+    pmf was raumtyp-tilted, so a caller can count an untilted NDS result for a requested
+    raumtyp as a fallback.
     """
     brackets = list(include_brackets)
     n_brackets = len(brackets)
     p_tenure = _tenure_marginal(df_bundesland, BUNDESLAND_NIEDERSACHSEN)
     _TALLY.unit()
     if _TALLY.check("nds_marginal_absent_none", p_tenure is None):
-        return None
+        return (None, False) if return_tilt_status else None
     # A missing raumtyp (failed AGS-8 -> RegioStaR-7 lookup) is a missing reference:
     # the untilted NDS inversion is returned below, as before, but counted.
     _TALLY.check("raumtyp_missing", raumtyp_region is None)
+    tilt_applied = True
 
     # Build the joint P(bracket, tenure) = P(bracket | tenure) * P(tenure), then
     # normalise per bracket to get P(tenure | bracket).
     joint = np.zeros((n_brackets, len(TENURE_CATEGORIES)), dtype=float)
     for ti, tenure in enumerate(TENURE_CATEGORIES):
-        cond = _tilted_bracket_given_tenure(
+        cond, tenure_tilted = _tilted_bracket_given_tenure(
             df_bundesland, df_raumtyp, tenure, raumtyp_region, brackets
         )
+        tilt_applied = tilt_applied and tenure_tilted
         if _TALLY.aux_check("tenure bracket cond", "tenure_cond_absent_zero", cond is None):
             cond = np.zeros(n_brackets, dtype=float)
         joint[:, ti] = cond * p_tenure[ti]
@@ -303,4 +314,4 @@ def tenure_probabilities_given_income(
         _TALLY.aux_check("bracket row", "empty_bracket_row_tenure_marginal", bool(is_empty))
     if empty.any():
         out[empty, :] = p_tenure
-    return out
+    return (out, tilt_applied) if return_tilt_status else out

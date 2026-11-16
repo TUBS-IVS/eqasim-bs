@@ -44,7 +44,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.matsim.scenario.day_end_margin import late_day_shift_s
-from braunschweig.synthesis.incommuter_pt_connections import shift_offsets_s
+from braunschweig.synthesis.incommuter_pt_connections import Prefetch, prefetch_scope, shift_offsets_s
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +93,8 @@ class PtCheck:
     #: Apply the writer's day-end rule before probing; False when ``braunschweig.day_end_margin.enabled`` is false,
     #: because the writer then moves no day either.
     day_end_shift: bool = True
+    #: routes the superset of the shift loop in one router call before the loop (ADR-0196); None = no prefetch.
+    prefetch: Prefetch | None = None
 
 
 @dataclasses.dataclass
@@ -123,9 +125,16 @@ def _connected(probe: Probe, tasks: pd.DataFrame) -> dict:
 def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.ndarray, portal_tour: np.ndarray,
                      endpoints: pd.DataFrame, availability: pd.DataFrame, probe: Probe, shift_window_s: float,
                      shift_step_s: float, bound_s: float, last_resort: str = LAST_RESORT_LIFT,
-                     day_end_shift: bool = True, portal_leg: np.ndarray | None = None) -> Resolution:
+                     day_end_shift: bool = True, portal_leg: np.ndarray | None = None,
+                     prefetch: Prefetch | None = None) -> Resolution:
     """Check and resolve the pt legs of outside tours and portal tours; see the module docstring. Pure apart from
     the probe.
+
+    ``prefetch`` (ADR-0196): before the offset loop, the pt legs of EVERY tour still unresolved at EVERY offset that
+    keeps the tour's last arrival within ``bound_s`` are handed to ``prefetch`` (one router call) and the loop runs
+    inside the returned context. A superset: the loop's own ``fits`` test also bounds against the neighbours' CURRENT
+    times, which earlier shifts change, so it is left to the loop; an unresolved tour's own times never change, so
+    its tasks at an offset are the same when the loop asks them.
 
     ``trips`` must be sorted by ``person_id, trip_index`` (``tours.require_sorted``); ``tour_ids``, ``outside``
     (leg belongs to an outside tour), ``portal_tour`` (leg belongs to a tour with a portal leg), ``portal_leg`` (the
@@ -220,22 +229,29 @@ def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.n
         return new_arrival <= bound_s
 
     unresolved = [k for k in range(len(checked)) if actions[k] is None]
+    superset = []
     for offset in offsets:
-        if not unresolved:
-            break
-        candidates = [k for k in unresolved if fits(checked[k], offset)]
-        if not candidates:
-            continue
-        positions = np.concatenate([checked[k]["pt_legs"] for k in candidates])
-        served = _connected(probe, _tasks(positions, xy, departure, offset))
-        for k in candidates:
-            if all(served[int(p)] for p in checked[k]["pt_legs"]):
-                actions[k] = ACTION_TOUR_SHIFTED
-                applied[k] = offset
-                legs = checked[k]["legs"]
-                departure[legs] += offset  # later offsets bound the person's other tours against the moved tour
-                arrival[legs] += offset
-        unresolved = [k for k in unresolved if actions[k] is None]
+        within = [k for k in unresolved if arrival[int(checked[k]["legs"][-1])] + offset <= bound_s]
+        if within:
+            superset.append(_tasks(np.concatenate([checked[k]["pt_legs"] for k in within]), xy, departure, offset))
+    superset = pd.concat(superset, ignore_index=True) if superset else pd.DataFrame()
+    with prefetch_scope(prefetch, superset):
+        for offset in offsets:
+            if not unresolved:
+                break
+            candidates = [k for k in unresolved if fits(checked[k], offset)]
+            if not candidates:
+                continue
+            positions = np.concatenate([checked[k]["pt_legs"] for k in candidates])
+            served = _connected(probe, _tasks(positions, xy, departure, offset))
+            for k in candidates:
+                if all(served[int(p)] for p in checked[k]["pt_legs"]):
+                    actions[k] = ACTION_TOUR_SHIFTED
+                    applied[k] = offset
+                    legs = checked[k]["legs"]
+                    departure[legs] += offset  # later offsets bound the person's other tours against the moved tour
+                    arrival[legs] += offset
+            unresolved = [k for k in unresolved if actions[k] is None]
 
     for k in unresolved:
         person_id = checked[k]["person_id"]

@@ -1,0 +1,5 @@
+events: /home/felix/wt-i487-rerun2/output_rerun2/matsim_output/output_events.xml.gz
+simulation end: 108000 s
+stuckAndAbort group persons legMode car end: 3
+stuckAndAbort group persons legMode walk end: 6
+persons removed during the day with legMode pt: 0

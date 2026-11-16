@@ -166,9 +166,16 @@ def test_from_data_path_fallback_when_ev_absent(tmp_path, caplog):
 
     assert isinstance(model, fs.PowertrainModel)
 
-    # The fallback line itself, not just any message containing "fallback".
-    combined = " ".join(r.message for r in caplog.records).lower()
-    assert "fz27.17 fallback (kba_gemeinde_ev.csv absent)" in combined, combined
+    # The fallback line itself, not just any message containing "fallback": a
+    # WARNING (a committed table is missing) that carries the caught exception.
+    fallback = [
+        r for r in caplog.records
+        if "fz27.17 fallback (kba_gemeinde_ev.csv absent)" in r.getMessage().lower()
+    ]
+    assert fallback, " ".join(r.getMessage() for r in caplog.records)
+    assert all(r.levelno == logging.WARNING for r in fallback)
+    # The format text alone says "Missing input"; the caught exception must be an argument.
+    assert isinstance(fallback[0].args[-1], FileNotFoundError), fallback[0].args
 
     kreis = ft.ZGB_KREISE_AGS5[0]
     probs = model.powertrain_probabilities("kompaktklasse", kreis, None)

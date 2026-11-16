@@ -1,0 +1,29 @@
+events: /home/felix/wt-i453-ab/output_arm2/matsim_output/output_events.xml.gz
+simulation end: 108000 s
+stuckAndAbort group persons legMode car end: 16
+stuckAndAbort group persons legMode car_passenger end: 3
+stuckAndAbort group persons legMode pt day: 21
+stuckAndAbort group persons legMode unknown end: 3
+stuckAndAbort group persons legMode walk end: 61
+persons removed during the day with legMode pt: 21
+  person 142527 time_h 6.70 link 155418
+  person 1057177 time_h 7.83 link 167937
+  person 542399 time_h 9.00 link 291534
+  person 213512 time_h 9.03 link 168036
+  person 890737 time_h 13.72 link 5308
+  person 453208 time_h 14.10 link 444083
+  person 636706 time_h 14.90 link 673709
+  person 447795 time_h 14.90 link 673709
+  person 842434 time_h 15.28 link 510654
+  person 1049111 time_h 15.53 link 409452
+  person 351022 time_h 15.62 link 653784
+  person 684854 time_h 16.33 link 284122
+  person 938428 time_h 16.60 link 374847
+  person 684859 time_h 18.24 link 429144
+  person 459641 time_h 18.70 link 215075
+  person 1046005 time_h 19.90 link 18573
+  person 517953 time_h 20.60 link 643897
+  person 318067 time_h 20.74 link 477050
+  person 514453 time_h 20.84 link 578522
+  person 30080 time_h 23.45 link 153621
+  person 662876 time_h 23.62 link pt_509974

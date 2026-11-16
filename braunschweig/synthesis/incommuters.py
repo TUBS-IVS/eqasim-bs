@@ -61,6 +61,12 @@ from braunschweig.data.cordon import pt_reachability as _pt_reachability
 
 logger = logging.getLogger(__name__)
 
+#: Work directory of the batch pt router under the stage's cache directory (employee and student stage alike).
+INCOMMUTER_ROUTER_WORK_DIR = "incommuter_pt_router"
+#: ADR-0196 decision 1: the router's work files hold the LAST call's tasks and results, their row order depends on
+#: the Java threads' timing, so they are left out of the stage output hash.
+_OUTPUT_HASH_EXCLUDE = (f"{INCOMMUTER_ROUTER_WORK_DIR}/router_*.csv",)
+
 # Transit modes that count as regional rail for in-commuter boarding-stop selection; the
 # definition and its rationale live with the rail entry-station logic in
 # braunschweig.data.cordon.pt_reachability, re-exported here for this module's callers.
@@ -1009,7 +1015,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                 work_xy=np.column_stack([work_x, work_y]), depart_home_s=cand_depart_home,
                 arrive_work_s=arrive_work, depart_work_s=depart_work, arrive_home_s=arrive_home,
                 probe=counting_probe, shift_window_s=pt_check.shift_window_s, shift_step_s=pt_check.shift_step_s,
-                bound_s=pt_check.bound_s, car_allowed=False, station_candidates=candidates)
+                bound_s=pt_check.bound_s, car_allowed=False, station_candidates=candidates,
+                prefetch=pt_check.prefetch)
             connected = np.isin(attempt.actions[indices], connected_actions)
             round_calls = probe_calls["calls"] - calls_before
             round_tasks = probe_calls["tasks"] - tasks_before
@@ -1614,6 +1621,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # its connection rule, the schedule reader, the walk limit (plan_check) and the end of the simulated day
     # (plan_validation, with its own imports).
     "braunschweig.data.transit.connections",
+    "braunschweig.data.transit.router_cache",
     "braunschweig.data.transit.schedule",
     "braunschweig.matsim.simulation.plan_check",
     "braunschweig.popsim.plan_validation",
@@ -1928,10 +1936,12 @@ def _pt_check(context):
         os.path.join(context.path(), "incommuter_pt_router_config.xml"),
         network_path=os.path.join(supply_dir, supply["network_path"]), schedule_path=schedule_path,
         vehicles_path=vehicles_path)
-    router = functools.partial(
+    from braunschweig.data.transit.router_cache import PrefetchRouter  # noqa: PLC0415
+    # ADR-0196: one router start per shift loop; the loop's rounds are answered from the prefetched superset.
+    router = PrefetchRouter(functools.partial(
         connections.route_batch, context, config_path=config_path,
         threads=int(context.config("matsim_threads") or context.config("processes")),
-        work_dir=os.path.join(context.path(), "incommuter_pt_router"))
+        work_dir=os.path.join(context.path(), INCOMMUTER_ROUTER_WORK_DIR)), label="incommuter pt check")
     all_stop_ids = set(read_schedule(schedule_path).stops)
     walk_max_m = float(plan_check.DEFAULT_WALK_MAX_DISTANCE_M)
 
@@ -1948,4 +1958,4 @@ def _pt_check(context):
         probe=probe, shift_window_s=float(context.config(_pt_connections.KEY_SHIFT_WINDOW_S)),
         shift_step_s=float(context.config(_pt_connections.KEY_SHIFT_STEP_S)), bound_s=bound_s,
         warn_share=float(context.config(_pt_connections.KEY_WARN_SHARE)),
-        station_candidates=int(context.config(_pt_connections.KEY_STATION_CANDIDATES)))
+        station_candidates=int(context.config(_pt_connections.KEY_STATION_CANDIDATES)), prefetch=router.prefetched)

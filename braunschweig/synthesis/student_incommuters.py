@@ -46,6 +46,9 @@ import pandas as pd
 from braunschweig import synpp_tokens
 
 _log = logging.getLogger(__name__)
+#: ADR-0196 decision 1: the pt router's work files (``incommuters._pt_check`` writes them under this stage's cache
+#: directory) have a thread-timing row order, so they are left out of the stage output hash.
+_OUTPUT_HASH_EXCLUDE = ("incommuter_pt_router/router_*.csv",)
 _SENTINEL = object()
 CRS_METRIC = "EPSG:25832"
 # Fixed RNG offset so student in-commuters never share a substream with residents
@@ -185,6 +188,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # the schedule reader, the walk limit and the end of the simulated day, plus the rest of the shared module's
     # import closure (ADR-0136).
     "braunschweig.data.transit.connections",
+    "braunschweig.data.transit.router_cache",
     "braunschweig.data.transit.schedule",
     "braunschweig.matsim.scenario.day_end_margin",
     "braunschweig.matsim.simulation.plan_check",

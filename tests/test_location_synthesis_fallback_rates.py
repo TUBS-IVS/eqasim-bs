@@ -44,6 +44,10 @@ def test_osm_locations_count_dropped_municipality_chunks_and_default_floors(monk
         def get_buildings(self, osm_filter):
             if self.chunk == "B":
                 raise KeyError("building")  # pyrosm finds no matching feature in this chunk
+            if self.chunk == "C":
+                return None  # no exception, but nothing found
+            if self.chunk == "D":
+                return gpd.GeoDataFrame({"building": []}, geometry=[], crs=CRS)  # empty result
             return gpd.GeoDataFrame({"building": ["school"]}, geometry=[_square(10.0)], crs=CRS)
 
     monkeypatch.setitem(sys.modules, "pyrosm", types.SimpleNamespace(OSM=_FakeOSM))
@@ -54,8 +58,9 @@ def test_osm_locations_count_dropped_municipality_chunks_and_default_floors(monk
     module = importlib.import_module("eqasim_common.data.osm.locations")
 
     zones = gpd.GeoDataFrame(
-        {"commune_id": ["A", "B"], "iris_id": ["A0", "B0"]}, geometry=[_square(0.0), _square(1000.0)], crs=CRS)
-    context = _Context({"data.spatial.iris": zones, "eqasim_common.data.osm.chunked": ["A", "B"],
+        {"commune_id": ["A", "B", "C", "D"], "iris_id": ["A0", "B0", "C0", "D0"]},
+        geometry=[_square(0.0), _square(1000.0), _square(2000.0), _square(3000.0)], crs=CRS)
+    context = _Context({"data.spatial.iris": zones, "eqasim_common.data.osm.chunked": ["A", "B", "C", "D"],
                         "data.spatial.municipalities": zones})
 
     result = module.execute(context)
@@ -65,7 +70,7 @@ def test_osm_locations_count_dropped_municipality_chunks_and_default_floors(monk
     assert len(result) == n_filters  # primary path: one POI of municipality A per location type
     assert set(result["commune_id"]) == {"A"}
     assert set(result["floors"]) == {module.DEFAULT_FLOORS}
-    assert "chunks with POIs %d/%d" % (n_filters, 2 * n_filters) in output
+    assert "chunks with POIs %d/%d" % (n_filters, 4 * n_filters) in output
     # every POI lacks building:levels -> the floors default is the reported fallback
     assert "WARNING: 100.0% of POIs use the default floors" in output
     assert "chunks dropped" not in output  # no-POI chunks are not-applicable, never warned
