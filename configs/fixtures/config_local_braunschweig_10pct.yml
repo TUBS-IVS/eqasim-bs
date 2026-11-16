@@ -155,7 +155,7 @@ config:
   osmconvert_binary: C:/Users/bienzeisler/tools/osmconvert/osmconvert.exe
 
 # --- Aliases ------------------------------------------------------------------
-# Same pattern as config_local_bavaria.yml but with three census loaders and the
+# Same pattern as the upstream eqasim-bavaria config but with three census loaders and the
 # buildings loader redirected to the forked Braunschweig implementations.
 aliases:
   # Top-level overrides (identical to Bavaria — reuse the bavaria.* stages)

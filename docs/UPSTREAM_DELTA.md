@@ -2,7 +2,7 @@
 
 > What `TUBS-IVS/eqasim-bs` adds on top of its upstream parent
 > `eqasim-org/eqasim-bavaria`. This anchors the project history (and `ADR-0000` in
-> [DECISIONS.md](DECISIONS.md)) at the fork point, so every later change is traceable
+> [ADR-0000](decisions/ADR-0000-eqasim-bavaria-baseline-fork-point.md)) at the fork point, so every later change is traceable
 > as a delta on a known baseline.
 
 ## Fork point (pinned)
@@ -49,7 +49,7 @@ Bavaria/Munich scenario configs. eqasim-bs inherits this entire scientific machi
 A new region (**Zweckverband Großraum Braunschweig, ZGB-8, Niedersachsen**) plus a large
 body of data-driven realism and tracking infrastructure, almost all flag-gated with a
 byte-identical OFF path. The substantive areas (each detailed in `docs/features/*` and
-recorded as an ADR in [DECISIONS.md](DECISIONS.md)):
+recorded as an ADR in [`decisions/`](decisions/)):
 
 - **`braunschweig/` Python module** — the entire ZGB adaptation: MiD 2023 / Zensus 2022 /
   KBA / INKAR / BA Pendleratlas / Destatis reference data layer, population synthesis
@@ -58,9 +58,11 @@ recorded as an ADR in [DECISIONS.md](DECISIONS.md)):
 - **`eqasim-java-bs` fork** — our own editable Java project (`braunschweig` module), wired
   via `eqasim_source_path`, MATSim `2025.0-PR3568` (parking, freight injection,
   mode-availability, SimWrapper contrib).
-- **PM / tracking layer** — `PROJECT_STATUS.md`, `PROJECT_BACKLOG.md`, `RUNS.md`,
-  `docs/DECISIONS.md`, `docs/features/*`, `CONTRIBUTING.md`, `.github/` templates,
-  `docs/codebase/`.
+- **PM / tracking layer** — the registries (`docs/registry/`), ADRs (`docs/decisions/`),
+  run manifests (`docs/runs/`), `docs/features/*`, `CONTRIBUTING.md`, `.github/` templates,
+  `docs/codebase/`. (The former `PROJECT_STATUS.md`, `PROJECT_BACKLOG.md`, `RUNS.md` and
+  monolithic `DECISIONS.md` are retired; their last content is in `docs/archive/*_2026-08-13.md`.)
 
-> The full feature inventory with status lives in [../PROJECT_STATUS.md](../PROJECT_STATUS.md);
-> the per-decision history (with commit/PR links) in [DECISIONS.md](DECISIONS.md).
+> The feature inventory lives in the Feature Registry (`docs/registry/features/`, view
+> `docs/generated/FEATURES.md`); the per-decision history in
+> [`decisions/`](decisions/); open work in the GitHub issues.

@@ -3,10 +3,10 @@
 > **Refreshed 2026-07-18.** Stack essentials: Python 3.10.10 (conda env `eqasim`),
 > `synpp 1.6.2`, pandas 1.5.3 / numpy 1.23.5 / scipy 1.10.1, geopandas 1.0.1 /
 > shapely 2.0.6 / fiona 1.10.1 / pyrosm 0.6.2, `carla` chainsolvers pinned to git
-> `d8d8ae7`, PopulationSim. Java MATSim/eqasim side upgraded to **eqasim-java 2.2.0**
-> (branch `main`) via the `eqasim-java-bs` fork; **building it now requires JDK 25**
-> (upstream bumped `maven.compiler` 21 -> 25). Current feature state: see
-> ARCHITECTURE.md banner.
+> `d8d8ae7`, PopulationSim. The Java MATSim/eqasim side comes from the
+> `eqasim-java-bs` fork; its version is owned by the Java pom (see "Java / MATSim
+> side"); **building it requires JDK 25**. Current feature state: see the
+> ARCHITECTURE.md banner (generated views under `docs/generated/`).
 
 Technology stack for `eqasim-bs`, the synthetic-population pipeline for the
 Großraum Braunschweig (ZGB-8) region. Verified from `environment.yml`, the
@@ -31,7 +31,7 @@ external, cached toolchain (see "Java / MATSim side" below).
 - **synpp 1.6.2** (`environment.yml` pip section) — content-hashed DAG runner.
   Pipeline stages are dotted Python module paths with `configure(context)` /
   `execute(context)` functions (verified in
-  `braunschweig/synthesis/locations/education_gravity.py`, lines 239/310).
+  `braunschweig/synthesis/locations/education_gravity.py`).
 
 ## Key Python libraries (pinned in `environment.yml`)
 
@@ -82,19 +82,22 @@ unpinned import in a `scripts/` geocoder).
   Java** toolchain. synpp downloads and caches the Java sources under
   `eqasim-data/cache_*/matsim.runtime.eqasim*` and `…pt2matsim*` (these are
   nested git checkouts, gitignored — AGENTS.md, `.gitignore`).
-- **eqasim-java 2.2.0** (branch `main`, commit `ab938aaac`) via the
-  `eqasim-java-bs` fork (`matsim/runtime/eqasim.py:8-10` DEFAULT_EQASIM_VERSION /
-  BRANCH / COMMIT). Upstream v2.2.0 bumped `maven.compiler` source/target 21 -> 25,
-  so **building the jar now requires JDK 25** (Temurin 25 installed on felix and
-  locally; the felix + local run configs point `java_home` / `java_binary` at it).
+- **eqasim-java** comes from the `eqasim-java-bs` fork. The jar version is owned
+  by the Java pom, not by a Python constant: see
+  [ADR-0098](../decisions/ADR-0098-the-java-pom-owns-the-jar-version-not-a-python-constant.md).
+  `DEFAULT_EQASIM_VERSION` / `DEFAULT_EQASIM_BRANCH` / `DEFAULT_EQASIM_COMMIT` in
+  `matsim/runtime/eqasim.py` are the fallback when the pom cannot be
+  read (logged), and also the defaults of the prebuilt-jar and legacy-clone paths and of the
+  `eqasim_branch` / `eqasim_commit` config keys, so an edit is not log-only; do not copy a version number into prose. The Java build needs **JDK 25**
+  (the run configs point `java_home` / `java_binary` at it).
   The Maven runtime honours a new `java_home` config key
   (`matsim/runtime/maven.py`) that exports JAVA_HOME for the build subprocess.
 - The Python regression CI does not install Java/Maven or run real-data pipeline
   tests. Explicit pipeline checks require JDK 25, Maven and the input preflight;
   they are separate from the regression gate.
 - The Java MATSim package is `org.eqasim.braunschweig.*` in the fork (renamed from
-  `bavaria`), though several config files and `matsim/simulation/prepare.py` still
-  reference `org.eqasim.bavaria.*` entry-point class paths (see CONCERNS.md).
+  `bavaria`); the entry-point class paths in `matsim/simulation/run.py` and
+  `matsim/simulation/prepare.py` use it.
 - External binaries configured per-machine in the config:
   `osmosis_binary`, `osmconvert_binary` (Windows paths in
   `configs/fixtures/config_local_braunschweig.yml`; Linux paths in
@@ -134,7 +137,7 @@ a sibling `popsimprep` checkout (`../popsimprep`).
   1.5.3), numpy<3 (vs 1.23.5), pyarrow≥18 (vs 16.1), geopandas≥1.0 (matches),
   scipy≥1.14 (vs 1.10), unidecode, python-dotenv. A merged env must satisfy both.
 - `populationsim` is invoked as a **CLI subprocess** (`uv run populationsim -w <folder>`),
-  not as a library — see `popsimprep/batch_run_popsim.py:285`.
+  not as a library — see `popsimprep/batch_run_popsim.py`.
 
 ### Implication for the merged stack
 

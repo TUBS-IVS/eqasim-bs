@@ -68,7 +68,7 @@ OBSERVED SvB-am-Arbeitsort counts — the attraction vector IS that observation,
 so the tilt can only distort it. PARKED; do not enable in run configs. The
 underlying concern is covered by building work potentials (within-Gemeinde)
 and, if ever needed, WZ-sectoral friction (issue #128 phase 2, deferred).
-See ADR-0065 in docs/DECISIONS.md. Entry point:
+See ADR-0065 in `docs/decisions/`. Entry point:
 `build_destination_attraction` in `braunschweig/gravity/model.py`; tests in
 `tests/test_work_sector_aware.py`.
 
@@ -140,8 +140,7 @@ a study-area-truncation artifact; both variants share the truncation, so
 only the A/B deltas are interpreted. Artefacts:
 `~/wt/verbindungen-anchor/holdout_out_seed*/`
 on the run server (verdict.md, coverage, censored-bound, intra-Kreis, P38
-tables). Spec/plan: docs/superpowers/{specs,plans}/2026-07-16-verbindungen-
-calibration-anchor-*.md (local); issue #193. Entry points:
+tables). Design notes: local, gitignored (not in the repo); issue #193. Entry points:
 `braunschweig/gravity/verbindungen_anchor.py` (anchor + diagnostics),
 `braunschweig/calibration/anchor_holdout.py` + `scripts/run_anchor_holdout.py`
 (CV/verdict); tests in `tests/test_verbindungen_anchor.py`.

@@ -1,10 +1,10 @@
 # Region scope: ZGB-8 (Großraum Braunschweig)
 
-> Single source of truth for the Kreis (NUTS-3 / "Landkreis") codes that
-> define the modelled region.  Every Python module that needs the list MUST
-> import :data:`braunschweig.region.ZGB_KREIS_IDS` rather than redefining
-> the literal — diverging definitions have caused silent scope mismatches
-> in past refactors.
+> The Kreis (NUTS-3 / "Landkreis") codes that define the modelled region.
+> The machine-readable owner is the `braunschweig.political_prefix` list in
+> [`configs/base_bs.yml`](../configs/base_bs.yml) (section "Braunschweig region
+> scope (ZGB-8)"); this file only explains it. There is no
+> `braunschweig.region` module with a shared constant.
 
 ## Member Kreise (ARS-5)
 
@@ -29,30 +29,26 @@ data sources scoped to this list.
 
 ARS codes for Niedersachsen begin with `03`.  Casting to integer drops the
 leading zero (`3101` instead of `03101`) and silently breaks every join
-against Zensus, BA Pendleratlas, INKAR or BBSR data.  See
-[`docs/codebase/CONCERNS.md`](../docs/codebase/CONCERNS.md) BUG-003 for the
-recurring failure mode.  Always store ARS values as strings.
+against Zensus, BA Pendleratlas, INKAR or BBSR data.  Always store ARS values as strings.
 
 ## Where this list is consumed
 
-* IPF scoping in [`braunschweig/data/census/`](data/census/) — every loader
-  filters its DataFrame to `kreis_id ∈ ZGB_KREIS_IDS` before aggregation.
-* Gravity calibration in [`braunschweig/gravity/model.py`](gravity/model.py)
-  — the OD matrix is restricted to intra-ZGB pairs plus the explicit
-  external-commuter injection.
-* Validation harness in [`scripts/validate_bs_10pct/`](../scripts/validate_bs_10pct/)
-  — the report KPIs are computed per Kreis and aggregated with this list.
+Keep consumers pointed at the config key; the modules below are examples, not
+an exhaustive or checked list.
+
+* IPF scoping in [`braunschweig/data/census/`](data/census/).
+* Gravity calibration in [`braunschweig/gravity/model.py`](gravity/model.py).
+* Validation harness `scripts/validate_bs_10pct/` and the analysis code in
+  [`braunschweig/analysis/`](analysis/); some of it still carries its own
+  Kreis-name table (for example `analysis/dashboard/mid_reference.py`).
 
 ## How to extend
 
 1. Add the new ARS-5 row to the table above.
-2. Update `ZGB_KREIS_IDS` in [`braunschweig/region.py`](region.py) (created
-   in Phase 2.6 once the IPF code lands).
+2. Update `braunschweig.political_prefix` in `configs/base_bs.yml`.
 3. Re-download the Zensus / BA / INKAR slices that cover the new Kreis;
-   record them under the data download checklist in `README.md`.
-4. Re-run the 1 % smoke pipeline; expect baseline counts to change — update
-   [`plan/baselines/`](../plan/baselines/) accordingly **after** user
-   confirmation (see Hard Rule 6 in [`AGENTS.md`](../AGENTS.md)).
+   record them in the Data Registry (`docs/registry/`) and README.
+4. Re-run the smoke pipeline; expect baseline counts to change.
 
 Adding or removing a Kreis is a **breaking** scope change; never do it
-silently.  Record the rationale in `plan/`.
+silently. Record the rationale in an ADR (`docs/decisions/`).

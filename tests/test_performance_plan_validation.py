@@ -254,6 +254,73 @@ def test_vectorized_repair_preserves_every_pass_and_global_rng_state():
         assert after[2:] == state_before[2:]
 
 
+class _RecordingDwellModel:
+    """Empirical-kind dwell model stub that records every draw and returns scripted dwells."""
+
+    def __init__(self, dwells_s):
+        self._dwells_s = list(dwells_s)
+        self.calls = []
+        self.report = {"kind": "empirical", "n_capped": 0}
+
+    def draw(self, purpose, arrival_time_s):
+        self.calls.append((purpose, arrival_time_s))
+        return self._dwells_s[len(self.calls) - 1]
+
+
+@pytest.mark.parametrize("id_dtype", ["int32", "int64"])
+def test_append_return_home_draws_in_person_order_and_builds_each_closure(id_dtype):
+    """Closure contract of the vectorised repair (audit H, P1-F2).
+
+    The draws consume RNG, so their order and arguments are part of the contract:
+    ascending person_id, one draw per person whose diary-last trip does not end at
+    home, with that trip's purpose and arrival. Expected values are hand-computed.
+    """
+    nan = np.nan
+    trips = pd.DataFrame({
+        # Unsorted on purpose; person 2 has a departure tie (diary order decides).
+        "person_id": np.array([3, 1, 2, 4, 3, 1, 2], dtype=id_dtype),
+        "trip_id": [1.0, 0.0, 0.0, nan, 0.0, 1.0, 1.0],
+        "departure_time": [61200.0, 28800.0, 36000.0, 86400.0, 7200.0, 61200.0, 36000.0],
+        "arrival_time": [63000.0, 30600.0, 36000.0, 90000.0, 9000.0, 63000.0, 38400.0],
+        "trip_duration": [nan, 1800.0, 0.0, 3600.0, 1800.0, 1800.0, 2400.0],
+        "preceding_purpose": ["work", "home", "home", "home", "home", "work", "errand"],
+        "following_purpose": ["shop", "work", "errand", "work", "work", "home", "leisure"],
+        "mode": ["pt", "car", "walk", nan, "pt", "car", "bike"],
+        "is_first_trip": False,
+        "is_last_trip": False,
+    })
+    # Dwell for person 4 pushes its arrival past the bound and is capped:
+    # 90000 + 20000 + 3600 = 113600 > 108000 -> dwell 108000 - 3600 - 90000 = 14400.
+    model = _RecordingDwellModel([5000.0, 6000.0, 20000.0])
+
+    out = plan_validation._append_return_home(
+        trips, plan_validation.HOME_CLOSURE_DWELL_S, dwell_model=model,
+        max_plan_time_seconds=108000.0,
+    )
+
+    assert model.calls == [("leisure", 38400.0), ("shop", 63000.0), ("work", 90000.0)]
+    assert model.report["n_capped"] == 1
+    assert out["person_id"].dtype == np.dtype(id_dtype)
+
+    closures = out[out["is_synthetic_closure"]].reset_index(drop=True)
+    assert closures["person_id"].tolist() == [2, 3, 4]
+    assert closures["departure_time"].tolist() == [43400.0, 69000.0, 104400.0]
+    # Person 3's travel time falls back to arrival - departure (trip_duration NaN).
+    assert closures["arrival_time"].tolist() == [45800.0, 70800.0, 108000.0]
+    assert closures["preceding_purpose"].tolist() == ["leisure", "shop", "work"]
+    assert (closures["following_purpose"] == "home").all()
+    assert closures["mode"].tolist() == ["bike", "pt", "car"]  # person 4: car fill
+    # Placeholder trip_id = per-person maximum + 1; NaN when the person has none.
+    assert closures["trip_id"].tolist()[:2] == [2.0, 2.0]
+    assert np.isnan(closures["trip_id"].iloc[2])
+
+    # Exactly one last trip per person, and it is the closure where one was added.
+    last = out[out["is_last_trip"] == True]  # noqa: E712 - object column after concat
+    assert sorted(last["person_id"].tolist()) == [2, 3, 4]
+    assert len(out) == len(trips) + 3
+    assert out.equals(out.sort_values(["person_id", "departure_time"], ignore_index=True))
+
+
 def _trip_build_fixture() -> tuple[pd.DataFrame, pd.DataFrame]:
     persons = pd.DataFrame({
         "person_id": ["person"], "H_ID": [1], "P_ID": [1],

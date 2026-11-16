@@ -4,7 +4,7 @@ The Linux runtime is a captured, audited production-server snapshot, not a new
 solver result. `environments/server-linux-64.lock` lists the 312 installed
 conda artifacts as exact URLs, MD5 checksums, SHA-256 checksums, versions, and
 builds. `environments/requirements-server-linux-64.txt` records the
-effective pip installations and their exact PyPI artifact URLs and SHA-256
+effective pip installations (the file owns the list) and their exact PyPI artifact URLs and SHA-256
 hashes. It is the canonical environment for WSL2 and the Linux production
 server.
 

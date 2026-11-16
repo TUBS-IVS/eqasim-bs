@@ -1,5 +1,7 @@
 # HTS statistical-matching optimization (steps 1, 2, 4)
 
+> Historical snapshot, not maintained. Archived 2026-11 (audit register 2026-11-11); do not read it as current state.
+
 **Date:** 2026-06-08 · **Scope:** `synthesis/population/matched.py`,
 `braunschweig/ipf/attributed.py`, `braunschweig/data/bbsr/regiostar.py`,
 `braunschweig/analysis/population_validation/`.

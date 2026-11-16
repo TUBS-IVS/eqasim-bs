@@ -2,7 +2,7 @@
 
 The project rule is that flag-gated model features default ON in run configs so
 they are not forgotten. The reference feature set is
-config_local_braunschweig_25pct_allfeat.yml (validated all-features 25% run).
+configs/base_bs.yml (the all-features production config).
 These tests pin the parity flags in configs/fixtures/config_popsim_mid_braunschweig.yml and
 configs/fixtures/config_popsim_open_braunschweig.yml:
 

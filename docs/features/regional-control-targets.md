@@ -36,7 +36,7 @@ aggregate (every `total` and per-Kreis row, and per-municipality rows within
 the two "kleinstaedtisch-doerflich" strata) weights strata by SAMPLE share
 instead of population share, while the true expansion factor varies 18x-70x
 across strata. This was discovered and fixed 2026-07-08, after the initial
-tables shipped with the Standard weights (see `docs/DECISIONS.md`). Both
+tables shipped with the Standard weights (recorded in the ADRs under `docs/decisions/`). Both
 ZENSUS columns carry zero negative/NaN values in this delivery; the
 missing-code filter and drop-rate logging are kept as a defensive guard per
 CLAUDE.md "No silent fallbacks".
@@ -154,8 +154,7 @@ mirror-imputed household member inherits the mirror donor's diary trip count.
 household total, the `trip_class` count table partitions the per-Kreis PERSON total (the sum
 of the 18 age-x-sex 100m band census columns for that Kreis).
 
-*Three documented decisions* (from `docs/superpowers/plans/2026-07-08-trip-class-kreis-control.md`,
-Global Constraints -- also recorded verbatim in the target CSV header):
+*Three documented decisions* (from a local, gitignored plan, Global Constraints -- also recorded verbatim in the target CSV header):
 1. **ASSUMPTION (universe).** The target is built from the SrV Di-Do mittlerer Werktag
    universe, while the MiD seed universe is `kernwo` (1,2,3) = Mo-Fr. The measured difference
    between MiD trip-class shares Mo-Fr vs. Di-Do is <= 0.63 pp per class (2026-07-08,
@@ -222,8 +221,7 @@ mean more exactly (+0.8%/+0.5%) while placement only approaches it
 (+4.7%/-3.1%, 52% of households have no signature-preserving freedom to move).
 Entry points: `braunschweig/popsim/placement_income.py`, `popsim/stage/`;
 gate harness `scripts/gate_placement_income.py`. See ADR-0069 in
-`docs/DECISIONS.md` and spec `docs/superpowers/specs/2026-07-04-income-
-weighted-household-placement-design.md`.
+`docs/decisions/` (the design spec was local and gitignored).
 
 ## SrV-anchored trip-participation controls (#224, MERGED — PR #225)
 
