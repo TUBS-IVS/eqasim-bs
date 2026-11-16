@@ -25,6 +25,7 @@ Replaces the in-notebook folder generation of popsimprep's Step 2/3.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence, Union
 
@@ -108,6 +109,93 @@ def validate_settings_geographies(settings_yaml: str, controls_df) -> None:
             "braunschweig.population.popsim.settings_path at a settings file whose "
             "'geographies' list contains them (the KREIS level is required whenever any "
             "per-Kreis attribute control or tier3 is active -- all of them default ON).")
+
+
+# Name of PopulationSim's diagnostic step that writes output/data_dict.csv and
+# output/data_dict.txt (a column dictionary of the pipeline tables). No code in this
+# repository reads those files.
+DATA_DICTIONARY_STEP = "write_data_dictionary"
+
+_DATA_DICTIONARY_LINE = re.compile(
+    r"^[ \t]*-[ \t]*" + re.escape(DATA_DICTIONARY_STEP) + r"[ \t]*(#[^\r\n]*)?\r?\n?$")
+
+
+def drop_data_dictionary_step(settings_yaml: str) -> str:
+    """Remove the ``write_data_dictionary`` step from the ``models:`` list of a settings text.
+
+    The removal is textual: exactly one block-list line ``- write_data_dictionary`` is cut
+    and every other byte of the settings text stays as it was (comments, key order and
+    quoting included), so the batch ``settings.yaml`` differs from the server-local source
+    file by that one line only. The result is then parsed and checked: its ``models`` list
+    must equal the original list without the step, and every other top-level key must be
+    unchanged.
+
+    Parameters
+    ----------
+    settings_yaml:
+        Raw text of the PopulationSim ``settings.yaml`` (the file named by
+        ``braunschweig.population.popsim.settings_path``).
+
+    Returns
+    -------
+    str
+        The settings text without the step's line.
+
+    Raises
+    ------
+    ValueError
+        If ``models`` does not list the step exactly once, if the step is not written as
+        exactly one block-list line (e.g. a flow list ``models: [a, b]``), or if the
+        textual removal changed anything besides that one list entry. Dropping is asked
+        for explicitly, so a settings file that does not match is a configuration error,
+        not something to skip quietly.
+    """
+    original = yaml.safe_load(settings_yaml) or {}
+    models = original.get("models") if isinstance(original, Mapping) else None
+    if not isinstance(models, list) or models.count(DATA_DICTIONARY_STEP) != 1:
+        raise ValueError(
+            f"Cannot drop the PopulationSim step '{DATA_DICTIONARY_STEP}': the settings "
+            f"'models' list must contain it exactly once, got {models!r}. Set "
+            "braunschweig.population.popsim.write_data_dictionary to true, or point "
+            "braunschweig.population.popsim.settings_path at a settings file that runs "
+            "the step.")
+    lines = settings_yaml.splitlines(keepends=True)
+    hits = [i for i, line in enumerate(lines) if _DATA_DICTIONARY_LINE.match(line)]
+    if len(hits) != 1:
+        raise ValueError(
+            f"Cannot drop the PopulationSim step '{DATA_DICTIONARY_STEP}': expected exactly "
+            f"one block-list line '- {DATA_DICTIONARY_STEP}' in the settings text, found "
+            f"{len(hits)}. Write 'models:' as a block list (one '- step' per line).")
+    result = "".join(lines[:hits[0]] + lines[hits[0] + 1:])
+    parsed = yaml.safe_load(result) or {}
+    expected = dict(original)
+    expected["models"] = [step for step in models if step != DATA_DICTIONARY_STEP]
+    if parsed != expected:
+        raise ValueError(
+            f"Removing the line '- {DATA_DICTIONARY_STEP}' changed more than the 'models' "
+            "list entry of the PopulationSim settings; refusing to write altered settings.")
+    return result
+
+
+def resolve_batch_settings_yaml(settings_yaml: str, write_data_dictionary: bool) -> str:
+    """Return the settings text that is written into every PopulationSim batch folder.
+
+    ``write_data_dictionary=True`` returns the source text unchanged. ``False`` drops the
+    diagnostic ``write_data_dictionary`` step via :func:`drop_data_dictionary_step`. Why
+    that leaves the synthetic population unchanged, and how far that is checked: the
+    comment of ``braunschweig.popsim.stage.config_keys.KEY_WRITE_DATA_DICTIONARY``. The
+    decision is logged either way.
+    """
+    if write_data_dictionary:
+        logger.info("[popsim] batch settings keep PopulationSim step '%s' "
+                    "(braunschweig.population.popsim.write_data_dictionary=true)",
+                    DATA_DICTIONARY_STEP)
+        return settings_yaml
+    result = drop_data_dictionary_step(settings_yaml)
+    logger.info("[popsim] batch settings drop PopulationSim step '%s' "
+                "(braunschweig.population.popsim.write_data_dictionary=false); "
+                "data_dict.csv/.txt are not written", DATA_DICTIONARY_STEP)
+    return result
 
 
 def _resolve_parent_kreis(

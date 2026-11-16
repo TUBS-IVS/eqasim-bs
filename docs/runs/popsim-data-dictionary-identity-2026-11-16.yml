@@ -1,0 +1,55 @@
+id: popsim-data-dictionary-identity-2026-11-16
+date: '2026-11-16'
+repository:
+  commit: 549964ce
+  branch: chore/audit-h-popsim-data-dictionary
+  notes: The "off" settings were produced by braunschweig.popsim.folders.resolve_batch_settings_yaml(text,
+    False) at this commit, run locally on the production settings file copied from the run server;
+    the result differs from the source file by the single line "- write_data_dictionary".
+configuration:
+  config: /home/felix/popsimprep/popsim/configs/settings_tier3_mef100_intseed_numba.yaml (production
+    braunschweig.population.popsim.settings_path; sha256 f585ea36..., equal to the batch copy)
+  notes: '"on" = that settings file verbatim; "off" = the same file without the write_data_dictionary
+    step (sha256 d34ecb93...). Batch inputs (configs/, data/) copied unchanged from batch_033 of
+    production run prod100_20261031.'
+sampling:
+  rate: 1.0
+  scope: One PopulationSim batch (batch_033 of the 100 % production run prod100_20261031, its smallest
+    by summed step time); not the full population.
+pipeline:
+  targets: []
+  notes: PopulationSim 0.10.0 run directly ("uv run --no-sync populationsim -w <batch>", cwd = the
+    popsimprep checkout, one BLAS/OpenMP thread), the same command the popsim stage's batch runner
+    uses; the two variants ran one after the other. No synpp stage was executed.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: 'Both variants exit 0. Wall time: on 1824 s, off 1687 s. Summed PopulationSim step time (timing_log.csv):
+    on 1817.4 s, off 1682.1 s; the write_data_dictionary step took 107.6 s in "on" and is absent from
+    "off". Single observations on a shared server, not a controlled benchmark.'
+environment: Run server (Linux), PopulationSim 0.10.0 in the popsimprep virtual environment.
+validation:
+- metric: Byte identity of the synthetic population with and without write_data_dictionary
+  reference: The same batch with the step ("on") and the production run's own batch_033 output
+  result: 'synthetic_households.csv, synthetic_persons.csv and final_expanded_household_ids.csv are
+    byte-identical across on, off and production (cmp; sha256 af912816..., 9ea667e3..., 8ae602c2...).
+    "off" writes no data_dict.csv / data_dict.txt; every other output file name is the same.'
+  artifact: 'Run server: /home/felix/audit_h_i_datadict (compare.txt, status.txt, hashes_settings.txt,
+    on/ and off/ batch folders).'
+  notes: 'Supports the assumption stated at braunschweig.popsim.stage.config_keys.KEY_WRITE_DATA_DICTIONARY
+    for one batch. The PopulationSim source (populationsim/steps/output.py, write_data_dictionary)
+    only reads checkpointed pipeline tables and writes the two files, and no later step reads them,
+    which is why one batch is taken as representative.'
+- metric: Production cost of write_data_dictionary (the reason for the switch)
+  reference: PopulationSim timing_log.csv of all 60 batches of production run prod100_20261031
+  result: 'write_data_dictionary summed 68.7 min of step time over the 60 batches (present in all 60),
+    4.5 % of the 1519.2 min summed over all PopulationSim steps; at 2 workers about 34 min of wall
+    time. Recomputed 2026-11-16 with awk (LC_ALL=C) over column "seconds".'
+  artifact: 'Run server: /home/felix/prod100_20261031/popsim_work/batch_*/output/timing_log.csv'
+  notes: Observed step times of one production run; the saving at other scales or on other machines
+    is not measured.
+features:
+- popsim_data_dictionary
+source: Run-server folder /home/felix/audit_h_i_datadict (compare.txt and status.txt written by run_proof.sh
+  of this session); production batch from /home/felix/prod100_20261031/popsim_work/batch_033.
