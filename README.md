@@ -34,8 +34,11 @@ Start with [`docs/MODEL_OVERVIEW.md`](docs/MODEL_OVERVIEW.md) for the 10-minute
 scientific mental model, and [`docs/generated/STATUS.md`](docs/generated/STATUS.md)
 for what is actually active in the current production configuration.
 
-**Honesty note:** `mode_choice` is `false` in every committed configuration —
-no calibrated modal split exists yet, so simulated mode shares are **not
+**Honesty note:** the eqasim `mode_choice` key is `false` in the committed
+configurations; the production configuration instead assigns each agent's modes
+once before iteration 0 (`braunschweig.initial_mode_choice`, ADR-0155 and
+ADR-0178) and the simulation then replans with the discrete mode choice. No
+calibrated modal split exists yet, so simulated mode shares are **not
 behaviourally validated**, and mode-share convergence (the eqasim termination
 criterion) is stability, not validation. Validation evidence lives in the run
 manifests ([`docs/generated/RUNS.md`](docs/generated/RUNS.md)).
@@ -81,7 +84,7 @@ flowchart LR
     ATTR --> FLEET["Household fleet"]
     FLEET --> LOC["Location choice<br/>(gravity + building potentials +<br/>secondary chains + SrV location types)"]
     LOC --> BUILD["MATSim scenario build<br/>(+ cordon in-commuters, freight,<br/>urban parking, carless re-mode)"]
-    BUILD --> SIM["MATSim simulation<br/>(mode choice OFF)"]
+    BUILD --> SIM["MATSim simulation<br/>(initial mode choice, then DMC replanning)"]
     SIM --> AN["Analysis & validation<br/>(MiD / controls / SimWrapper)"]
     SYN -.->|population validation<br/>before simulation| AN
 ```
@@ -110,13 +113,14 @@ and Bavaria lineage live in the Stage Registry
   [pip layer](environments/requirements-server-linux-64.txt); native Windows uses
   [its platform lock](environments/conda-lock.yml). The pipeline AND the test
   suite run in the `eqasim` environment. See installation below.
-- **Java**: eqasim-java 2.2.0 targets **JDK 25**; point `java_home` /
+- **Java**: the eqasim-java fork (version owned by its `pom.xml`, ADR-0098) targets **JDK 25**; point `java_home` /
   `java_binary` at it (see `configs/base_bs.yml`). Maven is resolved by the
   pipeline.
 - **osmosis** and **osmconvert** for network extracts (`osmosis_binary`,
   `osmconvert_binary` config keys).
-- ~64 GB RAM for 25 % runs; the 100 % all-features run is sized for a
-  64-core / 128 GB machine.
+- Memory and core budgets are machine-adaptive (see the resource note at the top of
+  `configs/base_bs.yml`); measured figures live in the run manifests under
+  [`docs/runs/`](docs/runs/), not here.
 - Disk: ~13 GB input data + caches (tens of GB at scale).
 
 With `mid_passenger_availability: true` (the `popsim_mid` default), the MiD
@@ -421,7 +425,7 @@ per-scale overlay; every feature flag lives exactly once in the base
 ```powershell
 # canonical production target (100 %, all features, popsim_mid):
 python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_100pct.yml
-# current validated scale (25 %):
+# 25 % scale (stability-checked only, not behaviourally validated):
 python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml
 # 1-Kreis smoke of the composed set:
 python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test.yml
@@ -559,9 +563,9 @@ ADR-0105) before synpp builds the stage graph; a plain `python -m synpp` run nam
 entries nondeterministically (synpp 1.6.2 propagates implicit config keys in a
 `PYTHONHASHSEED`-dependent order) and therefore misses caches at random.
 
-A 0.1 % CI dry run is `configs/fixtures/config_dryrun_braunschweig.yml`. The
+`configs/fixtures/config_dryrun_braunschweig.yml` is a 0.1 % dry-run fixture (used by tests such as the determinism test; no CI workflow runs it as a pipeline). The
 random seed is fixed at `1234` and the gravity slope at `-0.065` across all
-configs. Production runs execute on a 64c/128GB Linux server (`scripts/
+configs. Production runs execute on a Linux server (`scripts/
 run_pipeline.sh`, `scripts/sync_data_to_server.ps1`); the preflight verifier
 gates `run_pipeline.sh` (skip with `EQASIM_SKIP_VERIFY=1`).
 
@@ -742,7 +746,7 @@ region. https://github.com/TUBS-IVS/eqasim-bs
 
 ## License
 
-Code: GPL-3.0 (inherited from upstream eqasim). Generated synthetic population
+Code: GPL-2.0, as in [`LICENSE`](LICENSE) (inherited from upstream eqasim). Generated synthetic population
 data: see the individual input licences in the
 [Data Registry](docs/generated/DATA.md); the most restrictive input licence
 requires non-commercial use of any output that depends on it. The MiD 2023 B1

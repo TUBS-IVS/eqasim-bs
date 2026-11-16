@@ -224,10 +224,12 @@ ADR-0140 decision 14), where the commuter decay and the Wolfsburg check count pa
   stated in the table header. The universes are samples whose sizes the table states, and the independent Wolfsburg check is
   a number without a bound that differs from the SrV row (ADR-0140 decisions 12 and 14; the cause is not established).
 - Most committed rows rest on at least one assumption; the counts per assumption and the warning share are in the data record `parking_garages_2026` (one fact, one file), and the loader warns at every load for the first share.
-- The effect of the garage options on exposure and expected cost per town is not reported yet (no v2 run exists; task 5b of
-  issue #436).
+- The effect of the garage options on exposure and expected cost per town is not reported in this note; the 25 % runs
+  are recorded in the run manifests `parking-v2-plans-25pct-2026-10-12` and `parking-v3-arms-2026-10-15` under
+  `docs/runs/`, which own their results (task 5b of issue #436).
 - Monthly products (Amendment F): Tarif A of the Steinstrasse is limited to Mo-Fr 06:30-21:00 and the limit is not modelled;
   the imputed products rest on the published products of their own municipality (counts in the data record `parking_garages_2026`) and no capacity of monthly places is modelled (the sold-out
   garages Magni and Packhof, and the Eiermarkt, whose operator offers no monthly product at all (Contipark capture of
   2026-10-08), still carry the imputed product); the Braunschweig P13 median mixes a Mo-Fr 06:30-21:00 product (Steinstrasse Tarif A, 100.00 EUR) with 24/7 products (Wallstrasse, Eves, Fichtengrund), so the imputed product prices a regular's access window that not every garage offers; the sensitivity arm `zones_v2_published_monthly_only` (imputation false) bounds the
-  effect, and no v2 run exists yet, so the effect on the commuter garage share is an expectation (ADR-0140, decision 10).
+  effect; the measured effect on the commuter garage share is owned by the run manifests named above, not by this
+  note (ADR-0140, decision 10).
