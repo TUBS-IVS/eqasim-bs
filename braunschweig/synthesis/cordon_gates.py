@@ -43,6 +43,13 @@ def build_gates_with_volume(municipalities, links, gemeinden, flows, zgb_kreise,
     gates = dedupe_gates(gates, tolerance_m=100.0)
     allowed = road_classes if ("road_class" in gates.columns
                                and gates["road_class"].notna().any()) else None
+    if allowed is None and road_classes is not None and len(gates):
+        # The network carries no road class for any crossing gate, so the
+        # cordon_gate_road_classes filter cannot apply: every crossing link
+        # stays a candidate (CLAUDE.md "Fallback transparency").
+        print(f"[braunschweig.synthesis.cordon_gates] WARNING: road-class filter "
+              f"{tuple(road_classes)} dropped: 0/{len(gates)} crossing gates carry a "
+              f"road_class; all {len(gates)} gates stay candidates")
     major = select_major_gates(gates, allowed_classes=allowed).reset_index(drop=True)
     major["gate_id"] = [f"gate_{i:04d}" for i in range(len(major))]
     volume = commuter_volume_by_kreis(flows, zgb_kreise)

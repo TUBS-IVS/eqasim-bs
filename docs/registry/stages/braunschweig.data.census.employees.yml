@@ -16,3 +16,4 @@ pipelines:
 production: true
 inputs:
 - genesis_svb_workplace
+notes: 'Two deliberate fail-fast raises (RuntimeError), the only value-affecting behaviour of the data-loader fallback instrumentation: (1) _coerce_int raises when the share of non-numeric cells that are not a GENESIS_SUPPRESSION_MARKERS entry reaches EMPLOYMENT_COERCE_RAISE_FRACTION (a warning from EMPLOYMENT_COERCE_WARN_FRACTION), mirroring braunschweig.data.census.employment; (2) execute raises on zero total input SvB weight over the in-scope rows, instead of returning an empty attraction vector.'
