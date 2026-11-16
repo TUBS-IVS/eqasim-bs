@@ -527,6 +527,15 @@ def test_household_base_pmf_matrix_reports_only_its_own_income_table_cells(caplo
     from braunschweig.data.mid import income_by_status as ibst
 
     tables = _toy_income_tables()
+    # Raumtyp rows for the households' region (RegioStaR7 73) so the build takes the
+    # tilted PRIMARY path instead of the untilted NDS base.
+    region = ibs.RS7_TO_RAUMTYP_KEY[73]
+    for key, col, cats in (("size_rt", "hh_size", ("1", "2")),
+                           ("status_rt", "status", ("very_low", "very_high"))):
+        bl = tables[key.replace("_rt", "_bl")]
+        rt = bl[bl[col].isin(cats)].copy()
+        rt["region"] = region
+        tables[key] = rt.reset_index(drop=True)
     ibs.income_bracket_probabilities(tables["size_bl"], tables["size_rt"], "1", None)
     ibst.income_bracket_probabilities_by_status(
         tables["status_bl"], tables["status_rt"], "very_low", None)
@@ -546,5 +555,11 @@ def test_household_base_pmf_matrix_reports_only_its_own_income_table_cells(caplo
     # Both resets drop the seeded counts; the lines cover only this build.
     assert "raumtyp_missing" not in size_lines[0]
     assert "raumtyp_missing" not in status_lines[0]
-    # Two unique (size, status, raumtyp) cells -> two size-table units.
-    assert "/2 (" in size_lines[0]
+    # Two unique (size, status, raumtyp) cells, both on the tilted primary path.
+    assert size_lines[0].startswith("income_by_size: primary 2/2 (100.0%)")
+    assert status_lines[0].startswith("income_by_status: primary ")
+    assert "(100.0%)" in status_lines[0].split(",")[0]
+    levels = {r.levelno for r in caplog.records
+              if r.getMessage().startswith(("income_by_size: primary",
+                                            "income_by_status: primary"))}
+    assert levels == {logging.INFO}
