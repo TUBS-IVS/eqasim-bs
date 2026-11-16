@@ -198,8 +198,8 @@ lambda without the surface lots as a sensitivity number (the table records the f
   the column and the curation command). Only `allow_legacy_columns=True` (the test fixtures; `zones_stage` only when every row
   carries the test-set marker) reads it with the column empty and a warning; the committed dataset always has it.
 - The curation step and the tariff export warn per municipality when more than `garages.MONTHLY_IMPUTATION_WARNING_SHARE` (50 %)
-  of its priced garages carry an imputed instead of a published product (`garages.monthly_imputation_warnings`; Braunschweig
-  the counts are in the data record `parking_garages_2026`).
+  of its priced garages carry an imputed instead of a published product (`garages.monthly_imputation_warnings`; the counts
+  are in the data record `parking_garages_2026`).
 
 ## Large surface lots (spec Amendment I, Task 4j)
 

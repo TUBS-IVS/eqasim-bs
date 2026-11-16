@@ -4,7 +4,8 @@
 > the readiness-register findings #251–#255 (flags OFF despite ON-claims,
 > simple_ipf_open-only enrichment features, simwrapper default contradiction,
 > ADR path errors, uninstrumented employment-margin fallback). This file keeps
-> fragile-area notes and dated audit narratives for context; treat every dated
+> fragile-area notes and dated audit narratives for context (the 2026-07-10 feature-wiring audit moved to
+> `docs/archive/CONCERNS_feature_wiring_audit_2026-07-10.md`); treat every dated
 > claim below as a snapshot, not current state. The ranked backlog is the open
 > GitHub issues on `TUBS-IVS/eqasim-bs`; decisions are the ADRs in
 > `docs/decisions/` (generated index `docs/generated/DECISIONS.md`). The retired
@@ -19,12 +20,12 @@ re-derived here; this file records what the current branch actually shows.
 ## Data / provenance risks
 
 - **`eqasim-data/` is gitignored with force-added exceptions.** `.gitignore` has
-  `eqasim-data/*` and whitelists only `DOWNLOAD_CHECKLIST*.md`. 38 files are
-  currently tracked under `eqasim-data/` (`git ls-files`) — the MiD/Mikrozensus
+  `eqasim-data/*` and whitelists only `DOWNLOAD_CHECKLIST*.md`. the files
+  tracked under `eqasim-data/` are listed by `git ls-files eqasim-data` — the MiD/Mikrozensus
   reference CSVs, school/kita/hochschule CSVs, and education-calibration outputs.
   These are committed reference data. Provenance/licence care is required: **MiD
   2023 is BMDV non-commercial**, and the extracted CSVs are derivative works that
-  inherit those terms (DOWNLOAD_CHECKLIST_BS.md). Anything committed must respect
+  inherit those terms (licence per dataset: the Data Registry, `docs/registry/data/`). Anything committed must respect
   re-distribution rules; urbistat shares are explicitly non-redistributable.
 - ~~**Legacy dead-config keys.**~~ **RESOLVED (issue #251).** Five keys were set across the
   committed configs while no live code could read them and have been DELETED, not documented:
@@ -90,9 +91,9 @@ long wall times (README: 25 % run ~10 h).
 
 ## Evidence
 
-- `.gitignore` (`eqasim-data/*` + force-added exceptions); `git ls-files eqasim-data` (38 files)
+- `.gitignore` (`eqasim-data/*` + force-added exceptions); `git ls-files eqasim-data`
 - `configs/fixtures/config_local_braunschweig.yml` (legacy keys, binary paths)
-- `eqasim-data/DOWNLOAD_CHECKLIST_BS.md` ("Legacy dead-config keys", MiD non-commercial)
+- `docs/registry/data/*.yml` (per-dataset licence and restrictions)
 - `docs/codebase/.codebase-scan.txt` (CODE METRICS, production TODOs, high-churn files)
 - user-memory `eqasim-env-lapack-broken.md`
 

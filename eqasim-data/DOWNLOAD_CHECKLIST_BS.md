@@ -43,6 +43,6 @@ and in `python scripts/build_vrb_stations_json.py --help`.
 
 ## Bounding box (eight ZGB Kreise)
 
-- AGS prefixes: `03101, 03102, 03103, 03151, 03153, 03154, 03157, 03158`
-- WGS84, as used by `scripts/build_vrb_stations_json.py` (`ZGB_BBOX_WGS84`):
-  9.6 - 11.4 deg E, 51.4 - 52.7 deg N. Use it when pre-filtering GTFS.
+The eight Kreise are owned by the config key `braunschweig.political_prefix`; the
+rough WGS84 box for pre-filtering GTFS is `ZGB_BBOX_WGS84` in
+`scripts/build_vrb_stations_json.py`.

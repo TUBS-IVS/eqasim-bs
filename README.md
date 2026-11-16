@@ -36,8 +36,8 @@ for what is actually active in the current production configuration.
 
 **Honesty note:** the eqasim `mode_choice` key is `false` in the committed
 configurations; the production configuration instead assigns each agent's modes
-once before iteration 0 (`braunschweig.initial_mode_choice`, ADR-0155 and
-ADR-0178) and the simulation then replans with the discrete mode choice. No
+once before iteration 0 (`braunschweig.initial_mode_choice`, ADR-0178, which replaces
+ADR-0155's first-replanning strategy) and the simulation then replans with the discrete mode choice. No
 calibrated modal split exists yet, so simulated mode shares are **not
 behaviourally validated**, and mode-share convergence (the eqasim termination
 criterion) is stability, not validation. Validation evidence lives in the run
@@ -395,7 +395,7 @@ length and whose paid share is a comparison quantity only; the paid-only garage 
 `parking_garages_2026`, `srv2023_commute_parking_by_workplace_class` and `srv2023_city_center_parking`; acquisition
 notes: the data records named above and the Data Registry.
 
-The exhaustive acquisition companion (with every note and edge case) is
+A short signpost to these owners (preprocessing scripts, VRB zone build) is
 [`eqasim-data/DOWNLOAD_CHECKLIST_BS.md`](eqasim-data/DOWNLOAD_CHECKLIST_BS.md).
 
 ## Verify your setup
@@ -425,7 +425,7 @@ per-scale overlay; every feature flag lives exactly once in the base
 ```powershell
 # canonical production target (100 %, all features, popsim_mid):
 python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_100pct.yml
-# 25 % scale (stability-checked only, not behaviourally validated):
+# 25 % scale (a convergence run, not a validated one; see docs/runs/ for manifests):
 python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml
 # 1-Kreis smoke of the composed set:
 python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test.yml

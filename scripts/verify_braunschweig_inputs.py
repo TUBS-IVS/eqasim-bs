@@ -7,9 +7,9 @@ Two modes over the same ``INPUTS`` catalog:
 
     Prints a checklist of expected files with status (OK/MISSING) and download
     source URLs for each missing dataset. The grouping mirrors
-    ``eqasim-data/DOWNLOAD_CHECKLIST_BS.md`` (a signpost): federal datasets (A), Lower-Saxony
-    statistical inputs (B), preprocessed ALKIS/ATKIS/OSM (C), and MATSim-only
-    inputs (D, optional).
+    the data records in ``docs/registry/data/``: federal datasets (A),
+    Lower-Saxony statistical inputs (B), preprocessed ALKIS/ATKIS/OSM (C), and
+    MATSim-only inputs (D, optional).
 
 *Source reachability* (``--check-urls``) --
     ``python scripts/verify_braunschweig_inputs.py --check-urls``
@@ -681,7 +681,7 @@ def check_url(inp: Input, cache: Optional[dict] = None) -> dict:
     url = url_from_source(inp.source)
     if url is None:
         return {"input": inp, "status": "SKIPPED", "url": "", "saw_http_status": False,
-                "detail": "not-a-URL (prose source; acquire by hand per DOWNLOAD_CHECKLIST_BS.md)"}
+                "detail": "not-a-URL (prose source; acquire by hand per the data record in docs/registry/data/)"}
 
     probe = probe_url(url, cache if cache is not None else {})
     return {

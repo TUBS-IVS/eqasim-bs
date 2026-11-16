@@ -86,8 +86,9 @@ unpinned import in a `scripts/` geocoder).
   by the Java pom, not by a Python constant: see
   [ADR-0098](../decisions/ADR-0098-the-java-pom-owns-the-jar-version-not-a-python-constant.md).
   `DEFAULT_EQASIM_VERSION` / `DEFAULT_EQASIM_BRANCH` / `DEFAULT_EQASIM_COMMIT` in
-  `matsim/runtime/eqasim.py` are only the logged fallback when the pom cannot be
-  read; do not copy a version number into prose. The Java build needs **JDK 25**
+  `matsim/runtime/eqasim.py` are the fallback when the pom cannot be
+  read (logged), and also the defaults of the prebuilt-jar and legacy-clone paths and of the
+  `eqasim_branch` / `eqasim_commit` config keys, so an edit is not log-only; do not copy a version number into prose. The Java build needs **JDK 25**
   (the run configs point `java_home` / `java_binary` at it).
   The Maven runtime honours a new `java_home` config key
   (`matsim/runtime/maven.py`) that exports JAVA_HOME for the build subprocess.
