@@ -65,3 +65,7 @@ def test_no_route_at_all_is_strict_over_the_whole_request_outside_a_block_only()
         assert trips.empty
     with pytest.raises(ValueError, match="no trips row at all"):
         cached(_tasks("c", 3, offset=20.0))                     # outside a block, all cached, no route: strict
+    # a superset whose new part has no route but whose cached part has one is not broken (judged as a whole)
+    cached.prefetch(_tasks("w", 1, offset=0.0))                 # departure 0: a route
+    cached.prefetch(pd.concat([_tasks("w", 1, offset=0.0), _tasks("n", 3, offset=40.0)], ignore_index=True))
+    assert fake.kwargs[-1] == {"allow_no_route_at_all": True}

@@ -104,4 +104,7 @@
 - Byte-identical decisions and the router starts per loop: `tests/test_pt_router_prefetch.py`
   (one test per item F, G, H) and `tests/test_pt_router_cache.py` (cache, fallback, strict check).
 - The re-executed stages (helper hash, `scripts/audit_synpp_helper_hash.py`): the four router
-  stages of Decision 3, no other stage.
+  stages of Decision 3 re-execute for their changed code. Their output digest also changes once,
+  because Decision 3 drops the work files from it, so the first run after this change also
+  re-executes their whole downstream DAG (`parent_output_changed`); the early cutoff applies
+  again from the run after.

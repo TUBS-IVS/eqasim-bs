@@ -246,3 +246,11 @@ def test_a_return_shift_freed_by_the_next_stays_outbound_shift_is_in_the_portal_
     assert direct[1]["departure_time"].tolist() == [30000.0, 40000.0 + 3600.0, 42800.0 + 1800.0, 60000.0]
     assert cached_fake.calls == 1 < direct_fake.calls == 2
     assert router.fallback_tasks == 0
+
+
+def test_the_student_stage_excludes_the_same_router_work_files_as_the_employee_stage():
+    """The student stage keeps its import of ``incommuters`` deferred and so spells the exclusion out; a renamed
+    work directory would silently put thread-ordered router files back into its output digest (ADR-0196)."""
+    from braunschweig.synthesis import incommuters, student_incommuters
+
+    assert student_incommuters._OUTPUT_HASH_EXCLUDE == incommuters._OUTPUT_HASH_EXCLUDE

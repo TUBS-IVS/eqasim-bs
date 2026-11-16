@@ -101,12 +101,25 @@ class PrefetchRouter:
     def prefetch(self, tasks: pd.DataFrame, **kwargs) -> int:
         """Route every task of ``tasks`` whose key is not cached yet in ONE real call; return the number routed.
 
-        The identifiers of ``tasks`` are not used (duplicates allowed): the superset is keyed by content."""
+        The identifiers of ``tasks`` are not used (duplicates allowed): the superset is keyed by content.
+
+        The "no route at all = broken run" check (unless ``allow_no_route_at_all``) judges the WHOLE superset,
+        cached tasks included (ADR-0196 decision 2): when part of it is cached, the real router routes only the new
+        part leniently and the check runs here over all of it."""
         missing = [c for c in TASK_COLUMNS if c not in tasks.columns]
         if missing:
             raise ValueError(f"[pt-router cache] {self.label}: prefetch tasks lack columns {missing}")
         before_calls, before_routed = self.calls, self.routed
-        self._route_new(task_keys(tasks), tasks, **kwargs)
+        keys = task_keys(tasks)
+        if not any(key in self._ids for key in keys):
+            self._route_new(keys, tasks, **kwargs)
+        else:
+            self._route_new(keys, tasks, **dict(kwargs, allow_no_route_at_all=True))
+            if len(tasks) and not kwargs.get("allow_no_route_at_all", False):
+                routed_ids = set(self._frames()[0]["identifier"].astype(str))
+                if not any(self._ids[key] in routed_ids for key in keys):
+                    raise ValueError(f"route_batch: router output has missing {len(set(keys))} of {len(set(keys))} "
+                                     f"prefetched tasks, i.e. no trips row at all; the run is broken ({self.label})")
         n_routed = self.routed - before_routed
         self.prefetch_calls += self.calls - before_calls
         logger.info("[pt-router cache] %s: prefetch of %d task(s), %d distinct new, routed in %d router call(s)",
