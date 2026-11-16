@@ -31,7 +31,7 @@ def test_performance_defaults_and_explicit_off(overlay, tmp_path):
         key: value for key, value in config.items() if key not in FLAGS}
 
 
-def test_cache_reuse_keeps_scientifically_distinct_profiles_separate():
+def test_importance_profile_is_the_same_on_every_scale_and_work_dir_is_shared_by_1_and_25pct():
     configs = [compose(str(ROOT / "configs/base_bs.yml"),
                        str(ROOT / "configs/overlays" / name))["config"]
                for name in ("test_1pct.yml", "test_25pct.yml", "test_100pct.yml")]

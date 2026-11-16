@@ -40,7 +40,7 @@ config:
 
   data_path: eqasim-data/data
   # Own output directory and prefix: this fixture used to share eqasim-data/output_bs and
-  # braunschweig_1pct_ with config_local_braunschweig.yml, so the two overwrote each other (CFG-F4).
+  # braunschweig_1pct_ with config_local_braunschweig.yml, so the two overwrote each other.
   output_path: eqasim-data/output_smoke_ipf
   output_prefix: braunschweig_smoke_ipf_1pct_
 
@@ -207,7 +207,7 @@ config:
   education_university_max_radius_km: 150.0
 
 # --- Aliases ------------------------------------------------------------------
-# Same pattern as config_local_bavaria.yml but with three census loaders and the
+# Same pattern as the upstream eqasim-bavaria config but with three census loaders and the
 # buildings loader redirected to the forked Braunschweig implementations.
 aliases:
   # Top-level overrides (identical to Bavaria — reuse the bavaria.* stages)

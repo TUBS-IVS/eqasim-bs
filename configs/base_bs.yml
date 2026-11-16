@@ -51,8 +51,8 @@ config:
   # reported and warned about. Both sites read it NON-volatile, so a change recomputes
   # their caches. Which sites run depends on the pipeline: matched.py is not in the
   # popsim_mid DAG (docs/registry/stages/synthesis.population.matched.yml); in the
-  # production config the secondary solver is braunschweig.chainsolvers, which falls
-  # back to `processes` only when braunschweig.chainsolvers.processes is unset (it is set below).
+  # production config the secondary solver is braunschweig.synthesis.locations.secondary_chainsolvers, which falls
+  # back to `processes` only when braunschweig.chainsolvers.processes is unset or null (it is set below, 0 = auto).
   #
   # EXPECTED WARNING, do not act on it: 32 sits below 75 % of the 62-core budget on
   # the run server, so every production run logs "[resources] processes is pinned to
@@ -503,7 +503,7 @@ config:
   mode_choice: false
   # matching_attributes and the braunschweig.ipf.* margin keys are legacy-IPF-only (stages not in the
   # popsim_mid DAG, docs/registry/stages/synthesis.population.matched.yml); they live in the IPF
-  # fixtures under configs/fixtures/, not here (CFG-F6).
+  # fixtures under configs/fixtures/, not here.
 
   # --- Run resource recorder (issue #350) ---------------------------------
   # scripts/run_synpp.py samples this run's whole process tree every
@@ -574,7 +574,7 @@ config:
   # (issue #153). true is the code default; stated explicitly for traceability.
   braunschweig.population.popsim.cleanup_batch_pipeline: true
   # OPTIMIZED per-control importance weights (control_spec.IMPORTANCE_PROFILES): lowered the
-  # count-weighted Gesamtabweichung 3.365% -> 2.868% on batch_020. Owner decision A5 (2026-11-11):
+  # count-weighted Gesamtabweichung 3.365% -> 2.868% on batch_020. Owner decision A5, ADR-0195:
   # in the base, so every scale uses it; before, only the 100 % overlay did and 1 % / 25 % ran
   # "uniform" (the code default). Comparisons with earlier 1 % / 25 % runs must account for this.
   braunschweig.population.popsim.importance_profile: optimized_2026_06_30
@@ -639,7 +639,7 @@ config:
   braunschweig.inkar_year: latest
   # Read only by braunschweig/locations/home.py. Whether that stage shapes popsim_mid output is unverified:
   # its registry record docs/registry/stages/synthesis.locations.home.locations.yml says production false
-  # while this config aliases it (audit P5b-F22, DOC-F2). Left true; no behaviour change.
+  # while this config aliases it. Left true; no behaviour change.
   braunschweig.home_density_weighting: true
 
   # WORK gravity at TAZ (sub-commune) resolution: fixes intra-city commute

@@ -80,7 +80,7 @@ config:
   java_memory: 32G
 
   mode_choice: false
-  # matching_attributes and braunschweig.ipf.* are legacy-IPF-only: not read under popsim (CFG-F6).
+  # matching_attributes and braunschweig.ipf.* are legacy-IPF-only: not read under popsim.
 
   # --- Population method: popsim_open ----------------------------------------
   # Selects the PopulationSim + ENTD producer (braunschweig.popsim.stage with

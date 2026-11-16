@@ -90,7 +90,7 @@ config:
   java_memory: 32G
 
   mode_choice: false
-  # matching_attributes and braunschweig.ipf.* are legacy-IPF-only: not read under popsim (CFG-F6).
+  # matching_attributes and braunschweig.ipf.* are legacy-IPF-only: not read under popsim.
 
   # --- Population method: popsim_open ----------------------------------------
   # Selects the PopulationSim + ENTD producer (braunschweig.popsim.stage with
@@ -156,7 +156,7 @@ config:
     77: -0.0667   # Kleinstadt / doerfl. (laendlich)
 
   # Germany-wide GTFS (de_full), cut to the enlarged cordon extent (required with
-  # cordon_enabled; same value as config_local_braunschweig_25pct_allfeat.yml).
+  # cordon_enabled; same value as configs/base_bs.yml).
   gtfs_path: gtfs_cordon
   osm_path: osm
 
@@ -193,8 +193,8 @@ config:
 
   # --- Feature flags --------------------------------------------------------
   # Education gravity over the real NDS school/Kita/Hochschule registers
-  # (ON per the default-ON rule; calibrated slopes below are copied from
-  # config_local_braunschweig_25pct_allfeat.yml).
+  # (ON per the default-ON rule; calibrated slopes below are this fixture's own;
+  # compare configs/base_bs.yml).
   education_gravity_enabled: true
 
   education_gravity_slope_by_level_rs7:
@@ -214,7 +214,7 @@ config:
   # are not forgotten. The flags follow the all-features production run; the values are this
   # fixture's OWN and are not a 1:1 copy: the reference file this comment used to name does not
   # exist, and some values differ from configs/base_bs.yml (e.g. fleet_electric_calibration,
-  # cordon_network_source_buffer_m). The base is canonical for production (CFG-F12).
+  # cordon_network_source_buffer_m). The base is canonical for production.
 
   # Household vehicle fleet (real NDS fleet sampling + HSN/TSN attributes).
   vehicles_method: household
