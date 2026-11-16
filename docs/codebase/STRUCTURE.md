@@ -63,17 +63,13 @@ scripts/             One-off CLIs: preprocessing, calibration, seeding, verifica
 tests/               pytest suite (see TESTING.md)
 eqasim-data/         Data root — gitignored except force-added reference CSVs and checklists
 docs/                Project docs (this docs/codebase set + population.md / simulation.md)
-plan/ quality/       Refactor plan + quality playbooks
-config_*.yml         synpp run + alias configs
+configs/             synpp run configs: base_bs.yml, overlays/, fixtures/
 environment.yml      Pinned conda environment
 README.md AGENTS.md CLAUDE.md   Intent / bootstrap / module guide
 ```
 
-Note: the `bavaria/` directory described in README.md, AGENTS.md and CLAUDE.md
-**does not exist on the current branch** (`feature/education-gravity-bs`).
-Verified by `ls bavaria` -> "No such file or directory" and by `git ls-files`.
-The config aliases that those docs describe as `bavaria.*` overrides now point to
-`eqasim_common.*` and `braunschweig.*` instead. See CONCERNS.md (Intent-vs-Reality).
+There is no `bavaria/` package (`git ls-files bavaria` is empty); the stage
+aliases point to `eqasim_common.*` and `braunschweig.*`.
 
 ## `braunschweig/` (the regional fork)
 
@@ -150,8 +146,7 @@ upstream terminal stages aliased/extended by the fork.
 
 - `docs/codebase/.codebase-scan.txt` (DIRECTORY TREE)
 - `configs/fixtures/config_local_braunschweig.yml` (`run:`, `aliases:`)
-- `git rev-parse --abbrev-ref HEAD` -> `feature/education-gravity-bs`
-- `ls bavaria` -> absent; `git ls-files eqasim-data` -> 38 tracked files
+- `git ls-files bavaria` -> empty
 - `braunschweig/REGION.md`, `CLAUDE.md`, `eqasim-data/DOWNLOAD_CHECKLIST_BS.md`
 
 ---
@@ -162,9 +157,13 @@ Added 2026-06-08. The refactor adds two PopulationSim-based population workflows
 beside the existing IPF one. Source material lives in a second repo,
 a sibling `popsimprep` checkout (`../popsimprep`).
 
-### The current population stage in eqasim-bs (= the `simple_ipf_open` baseline)
+### The legacy IPF population stage (the `simple_ipf_open` baseline, NOT the production pipeline)
 
-The existing IPF workflow is the chain (alias targets, from
+> The production path is popsim_mid (`configs/base_bs.yml`); the actual DAG is
+> `docs/generated/PIPELINE.md` and `docs/MODEL_OVERVIEW.md`. The chain below is the
+> legacy IPF + ENTD fixture (`configs/fixtures/config_local_braunschweig.yml`).
+
+The IPF workflow is the chain (alias targets, from
 `configs/fixtures/config_local_braunschweig.yml`):
 
 ```
@@ -186,8 +185,8 @@ braunschweig.ipf.attributed   -> stochastic-rounds weights, FORMS households
 
 Spatial anchor = **Gemeinde (ARS-12)** for household formation; control margins at
 **Kreis (ARS-5)**; home points sampled from ALKIS buildings density-weighted by the
-Zensus **100 m** grid (`braunschweig/data/zensus_grid/population.py`). The current
-pipeline does **not** synthesise at the 100 m grid level — the 100 m grid is only a
+Zensus **100 m** grid (`braunschweig/data/zensus_grid/population.py`). The IPF
+path does **not** synthesise at the 100 m grid level — the 100 m grid is only a
 density weight for home-point sampling.
 
 ### popsimprep layout (the `popsim_open` / `popsim_mid` source)
@@ -306,9 +305,7 @@ braunschweig/popsim/       PopulationSim workflow (27 modules)
   missing.py stratum.py enriched_adapter.py
 ```
 
-New configs (worktree): `config_popsim_mid_braunschweig.yml`,
-`config_popsim_open_braunschweig.yml`, `config_smoke_{simple_ipf,popsim_mid,
-popsim_open}[_mini].yml`, helper `make_smoke_configs.py`, `validate_three_cases.py`.
+The popsim configs live under `configs/` (`base_bs.yml`, `overlays/`, `fixtures/`).
 
 ### New packages on main (cordon, merged)
 

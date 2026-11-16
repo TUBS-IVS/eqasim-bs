@@ -72,7 +72,14 @@ Work/education attraction is a **two-level system**:
 
 ---
 
-How the `eqasim-bs` pipeline is wired. Verified from `configs/fixtures/config_local_braunschweig.yml`
+> **Legacy fixture, not the production pipeline.** The sections from here to
+> "Reproducibility controls" (terminal stages, alias table, data flow,
+> calibrated subsystems) describe the legacy IPF + ENTD fixture
+> `configs/fixtures/config_local_braunschweig.yml`. The production path is
+> popsim_mid (`configs/base_bs.yml`); read `docs/generated/PIPELINE.md` and
+> `docs/MODEL_OVERVIEW.md` for it.
+
+How the legacy `eqasim-bs` fixture pipeline is wired. Verified from `configs/fixtures/config_local_braunschweig.yml`
 (the synpp run + alias map), `CLAUDE.md`, and the stage source files.
 
 ## synpp content-hashed DAG
@@ -86,7 +93,7 @@ a Python module exposing:
 - (optionally) `validate(...)` — cache-invalidation hook.
 
 Verified signature in `braunschweig/synthesis/locations/education_gravity.py`
-(`def configure(context)` line 239, `def execute(context)` line 310). synpp
+(`def configure(context)`, `def execute(context)`). synpp
 caches every stage under the `working_directory` (`eqasim-data/cache_bs*`), so a
 rerun only re-executes stages whose hashed inputs changed.
 

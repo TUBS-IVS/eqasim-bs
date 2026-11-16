@@ -5,143 +5,16 @@
 > simple_ipf_open-only enrichment features, simwrapper default contradiction,
 > ADR path errors, uninstrumented employment-margin fallback). This file keeps
 > fragile-area notes and dated audit narratives for context; treat every dated
-> claim below as a snapshot, not current state.
-
-## Feature-wiring audit vs. the active popsim run config (2026-07-10)
-
-Full front-to-back check: every implemented feature vs. `config_server_braunschweig_100pct_allfeat_popsim.yml`
-on `origin/main` (`b6ba420`) AND the actually-running untracked server config
-`~/wt-kreis-run/config_run_kreis5_100pct.yml` (fetched from felix; semantically identical except
-output paths `*_kreis5`, `settings_tier3_mef100_intseed_numba.yaml`, `num_workers 4`,
-`cache_share_recompute: completed_donor`).
-
-**GAP (very likely forgotten, affects the running kreis5 run):**
-- `secondary_other_smart_potential` + its whole 5-key block (`secondary_other_broad_share 0.54`,
-  `_errand_share 0.46`, `_min_volume_m3 50.0`, `_cap_percentile 0.99`, plus
-  `secondary_scorer_attr_transform: linear`, `secondary_scorer_selection: top_n`) is `true` in
-  ALL other real-data configs since `2732c18` (2026-06-28) but MISSING from the 100pct popsim
-  config (created 2026-06-30, `3703292`, without the block) → runs with default **False**.
-  Effect: `other` activities fall back to the generic (VW-plant-dominated) potential.
-  Cheap fix: add the block; popsim caches stay valid, only secondary-location stages recompute.
-  RESOLVED differently: ADR-0190 removed the derived `other` potential and its five keys; `other` now
-  uses the delivered errand value of the redistribution release.
-
-**Built but never activated in ANY config, absent from PROJECT_STATUS/BACKLOG/DECISIONS (decide: wire or document as parked):**
-- `braunschweig.gravity.sector_aware_enabled` (default False; `a0ecee3` 2026-06-04) — establishment-density
-  sub-Kreis attraction tilt, `braunschweig/gravity/model.py`.
-- ~~`braunschweig.census.use_zensus_gemeinde_shares`~~ — **RESOLVED (issue #251).** Now `true` in all
-  five committed `simple_ipf_open` configs, so the open Zensus 1000A-3082 Gemeinde shares replace the
-  scraped non-redistributable urbistat table; pinned by `tests/test_census_gemeinde_shares_wired.py`.
-  Correctly absent from the popsim configs, where the stage is off the DAG.
-- `braunschweig.use_landuse_prior` (default False) — `braunschweig/data/inspire/landuse.py` has NO pipeline
-  consumer (orphaned stage; only tests reference it).
-- `education_bbs_share_by_age` (default None) — optional age-resolved BBS share; scalar 0.681 active instead.
-
-**Verified WIRED in the running kreis5 config (no action):** popsim_mid tier0-3 + employment_grid +
-`optimized_2026_06_30` importance profile; all five KREIS attribute controls (economic_status, cars,
-bicycles, has_ebike, trip_class) default `"on"` in `braunschweig/popsim/stage/`; W_ZWD #127 splits
-(`secondary_leisure_subtype_split`, `secondary_other_subtype_split`, `leisure_visit_building_potential`) true;
-income tilt + income_kreis_control; education gravity; building potentials (work/secondary/edu);
-purpose-resolved distances; fleet (household/brands/HSN-TSN/BEV); cordon; freight; urban parking;
-remode_carless; per-RS7 gravity; enrichment flags default-True (PT-Abo, licence, cars-income, tenure,
-status, income-EUR — consumed by `braunschweig/synthesis/population/enriched.py` + `popsim/stage/`,
-i.e. active on the popsim path).
-
-**Deliberately OFF (documented, no action):** `taz_work_location_choice` (Phase-3 validation open, #83),
-`gravity_friction_factors` (ADR-0050), circuity `mode=curve`, `simwrapper_dashboards` (Java Layer-1),
-`matching_similarity` (step 3 deferred), `mode_choice` (no modal-split target),
-`stratify_regiostar: false` (changed on main).
-
-**Config drift:** the live run config `config_run_kreis5_100pct.yml` is untracked on felix — commit it
-(or a copy) for traceability/RUNS.md. Note: local branch `docs/status-presentation` is BEHIND
-`origin/main` (misses PRs #144/#145/#146 + TAZ code); IPF chunking/joint-margin flags in the popsim
-configs are inert (simple_ipf path only).
-
-Evidence: `config_server_braunschweig_100pct_allfeat_popsim.yml`, `config_server_braunschweig_25pct_allfeat_popsim.yml`,
-`braunschweig/popsim/stage/__init__.py:252-320` (pre-split line numbers, not reverified
-against the post-#267 package layout), `braunschweig/gravity/model.py:646`,
-`braunschweig/data/census/population.py:118-123`, commits `2732c18`, `3703292`, `a0ecee3`, `1f55fc2`.
-
----
-
-> **LIVE BACKLOG MOVED (2026-06-27).** The ranked open-work backlog now lives in
-> [PROJECT_BACKLOG.md](../../PROJECT_BACKLOG.md); the at-a-glance feature/status dashboard
-> in [PROJECT_STATUS.md](../../PROJECT_STATUS.md). To avoid two competing backlogs, treat
-> those as **canonical**. This file keeps the **structural/historical concerns** below.
->
-> **Resolved since the 2026-06-26 backlog (for the record):**
-> - **Calibration corner LANDED** — the bulk merged via **PR #18 + #19** on `main`
->   (`031aefc`); the remainder (leisure-correction fix, `_load_stage` alias, scorer-sweep,
->   income-scaling skip) is open **PR #20** (`reconcile/calibration-remainder`).
-> - **Secondary ON-validation: RUN at 100 %** — the leisure double-count bug was fixed
->   (W12 leisure EMD 0.131 → 0.050); scorer `pot_weight=1.0` confirmed optimal (a sweep
->   showed higher values *worsen* the building-capacity fit).
-> - **Building-potential FIT report: now EXISTS** (`braunschweig/calibration/run_building_fit_secondary.py`
->   + a work fit report) — the "tool does not exist" item is closed.
-> - **Branch hygiene done** — 3 feature-superseded prototype branches deleted (local+origin:
->   `secondary-external-candidates`, `cordon-supply`, `cordon-incommuters`); the
->   `feature/calibration-corner` divergence is resolved by PR #18/#19/#20.
-> - **LoD2 height/volume typing** and **real `potential_work` work-gravity**: verified DONE
->   (not partial — earlier "PARTIAL" verdicts were from a stale tree).
->
-> **Still open** (detail in PROJECT_BACKLOG.md): merge PR #20 (after a server test run);
-> 100 % production run on newest code; mode-choice ASC calibration; German MiD Wege donor;
-> update `SESSION_LOG.md`; the pre-existing local test failure
-> `test_employed_valid_codes_map_to_existing_semantics` (fails on `main` too).
->
-> **Open data question (unchanged):** `potential_work` is a zone-controlled (GENESIS SvB)
-> × volume×class within-zone proxy; whether it rests on observed per-building headcount
-> depends on the upstream `TUBS-IVS/Activities-and-Potentials-Calculation-Pipeline`.
-> `[ASK USER]` whether to inspect that repo to confirm the redistribution base.
-
-## Calibration validation status — at a glance (the user's two questions)
-
-| Question | Status | What's needed |
-|---|---|---|
-| Werden die Gebaeude-Potentiale gut getroffen? | **No tool exists** (work/secondary) | Build a realised-vs-potential fit report (P0.2) |
-| Funktionieren die purpose/distance-differenzierten Reiseweiten + sichtbare Ergebnisse? | Code DONE (Tier 1+2), **never run ON** | Secondary ON-validation run (P0.1) |
-
----
+> claim below as a snapshot, not current state. The ranked backlog is the open
+> GitHub issues on `TUBS-IVS/eqasim-bs`; decisions are the ADRs in
+> `docs/decisions/` (generated index `docs/generated/DECISIONS.md`). The retired
+> `PROJECT_STATUS.md`, `PROJECT_BACKLOG.md`, `RUNS.md` and monolithic
+> `DECISIONS.md` are pointer stubs (content in `docs/archive/`), never canonical.
 
 Tech debt, risks, and divergences for `eqasim-bs` that are **verifiable from the
 repository**. Bugs inherited from the upstream Bavaria/IDF pipeline (referred to
 as BUG-001..011 in README/AGENTS.md) are tracked by the team but are not
 re-derived here; this file records what the current branch actually shows.
-
-## Intent-vs-Reality divergences (highest priority)
-
-1. **Branch.** README says "active refactor on branch
-   `refactor/braunschweig-clean-fork`" and AGENTS.md says "current branch
-   `refactor/braunschweig-clean-fork`". The actual current branch is
-   **`feature/education-gravity-bs`** (`git rev-parse --abbrev-ref HEAD`). The
-   recent git history is entirely education-gravity/kita/university work on this
-   branch, not the documented refactor phases.
-
-2. **`bavaria/` package is gone.** README, AGENTS.md and CLAUDE.md repeatedly
-   describe a `bavaria/` directory of inherited stages, fenced inherited blocks,
-   and Decisions D-1/D-3 about deleting it "after Phase 2". On this branch
-   `bavaria/` **does not exist** (`ls bavaria` -> "No such file or directory").
-   The config aliases that those docs call `bavaria.*` overrides now resolve to
-   `eqasim_common.*` / `braunschweig.*`. Several config comments still say
-   "reuse the bavaria.* stages" and reference `bavaria/data/mid/data.py`,
-   `bavaria/data/buildings.py` etc. — these are **stale comments**. `[ASK USER]`
-   whether the docs/comments should be updated to drop all `bavaria/` references.
-
-3. **`docs/codebase/*` were not pre-existing.** README and AGENTS.md link to
-   `docs/codebase/STACK.md`, `ARCHITECTURE.md`, `CONCERNS.md` (incl. "11 documented
-   bugs in CONCERNS.md") as if populated. Before this task only
-   `docs/codebase/.codebase-scan.txt` existed; these seven docs are newly created.
-
-4. **Conda env name mismatch — RESOLVED (ADR-0123).** The project environment
-   is `eqasim`; Linux uses the captured server snapshot and Windows its lock.
-
-5. **Java version — RESOLVED (ADR-0123).** Pipeline checks require JDK 25 and
-   validate configured Java paths. Python regression CI does not install an
-   unused Java toolchain.
-
-6. **CI trigger branches — RESOLVED (ADR-0123).** Regression CI targets `main`
-   pushes and PRs with Linux/Windows jobs using the shared runner. The inherited
-   Travis configuration is retired. See [the verification process](TESTING.md#required-agent-verification-gate).
 
 ## Data / provenance risks
 
@@ -202,8 +75,8 @@ long wall times (README: 25 % run ~10 h).
 
 ## Production code TODOs (from scan, source only)
 
-- `braunschweig/synthesis/population/enriched.py:579` — `f &= df_persons["sex"] == sex  # TODO`
-- `eqasim_common/data/census/employment.py:8`, `population.py:8` — "Can this be
+- `braunschweig/synthesis/population/enriched/` — a `# TODO` on the `sex` filter of `df_persons`
+- `eqasim_common/data/census/employment.py`, `population.py` — "Can this be
   replaced by a Germany-wide GENESIS extract?" (inherited).
 - (All other scanned TODOs are inside the **cached Java** checkouts under
   `eqasim-data/cache_*`, which are third-party read-only sources, not this repo's code.)
@@ -217,13 +90,10 @@ long wall times (README: 25 % run ~10 h).
 
 ## Evidence
 
-- `git rev-parse --abbrev-ref HEAD` -> `feature/education-gravity-bs`; `ls bavaria` absent
 - `.gitignore` (`eqasim-data/*` + force-added exceptions); `git ls-files eqasim-data` (38 files)
-- `environment.yml` (`name: eqasim`); `.github/workflows/tests.yml` (locked Linux/Windows regression on `main`; ADR-0123)
 - `configs/fixtures/config_local_braunschweig.yml` (legacy keys, binary paths)
 - `eqasim-data/DOWNLOAD_CHECKLIST_BS.md` ("Legacy dead-config keys", MiD non-commercial)
 - `docs/codebase/.codebase-scan.txt` (CODE METRICS, production TODOs, high-churn files)
-- `README.md` / `AGENTS.md` (documented branch, bavaria/, bug tracking)
 - user-memory `eqasim-env-lapack-broken.md`
 
 ---
@@ -364,7 +234,7 @@ ENTD→MiD labels) are documented approximations.
   default, not counted/logged per occurrence.
 - `data/hts/entd/cleaned.py`: unmapped ENTD purpose -> `other`, unmapped mode ->
   `pt` — silent in the legacy path too (inherited upstream behaviour).
-- `braunschweig/popsim/seed.py:81` TODO: day-filter values hardcoded (1,2,3).
+- `braunschweig/popsim/seed.py` TODO: day-filter values hardcoded (1,2,3).
 
 ### Validation status (as of 2026-06-10)
 
@@ -382,55 +252,54 @@ vs `config_local_braunschweig_25pct_allfeat.yml`; `braunschweig/popsim/assembly.
 ### Code-review findings 2026-06-10 (popsim branch diff a9fd530..e6806b2, verified)
 
 Confirmed by adversarial verification against code + the real local MiD raw data
-(file:line references are in the popsim-g5 worktree):
+(references are by file; line numbers were dropped, CLAUDE.md shape rule):
 
-1. `braunschweig/gravity/model.py:565/456/774` stages `braunschweig.ipf.attributed`
+1. `braunschweig/gravity/model.py` stages `braunschweig.ipf.attributed`
    DIRECTLY (not via the `data.census.filtered` alias) — every popsim run also
    executes the full legacy IPF synthesis, and gravity OD weights are calibrated
    on the IPF population while demand comes from popsim (smoke logs show 25
    `braunschweig.ipf` stage executions in the popsim_mid run).
-2. `braunschweig/popsim/trips.py:224` converts raw `W_SZS/W_SZM/W_AZS/W_AZM` with
+2. `braunschweig/popsim/trips.py` converts raw `W_SZS/W_SZM/W_AZS/W_AZM` with
    no missing-code filtering: codes 99 (8,224 Wege) and 701 (107,368 Wege ≈ 9.9 %)
    become departure times up to ~29 days; no absolute time bound exists anywhere
    downstream (fix_trip_times/PlanValidator only check relative consistency).
-3. `braunschweig/popsim/missing.py:64` + `attributes.py:136/147/215`: codes not
+3. `braunschweig/popsim/missing.py` + `attributes.py`: codes not
    enumerated in value_map/structural/NONRESPONSE are "valid" -> NaN ->
    `.astype(bool)` -> **True**. Real hit: `P_TAET=17` (4,043 persons) silently
    becomes `employed=True`.
-4. `braunschweig/popsim/seed.py:218`: "complete household" checks day-filter
+4. `braunschweig/popsim/seed.py`: "complete household" checks day-filter
    completeness only, not member completeness — 16.9 % of kept seed households
    have fewer person rows than `H_GR` (verified on raw data) -> household size/
    composition biased low, unlogged.
-5. `braunschweig/popsim/stage/__init__.py:256` (pre-split line number, not
-   reverified against the post-#267 package layout) calls `assembly.build_persons`
+5. `braunschweig/popsim/stage/` calls `assembly.build_persons`
    without `rng` -> all attribute imputation runs on hard-coded `RandomState(0)`;
    `random_seed` is not even declared in configure(), so seed changes neither
    change imputation nor invalidate the synpp cache.
-6. `braunschweig/popsim/trips.py:48`: raw `hvm` used instead of the
+6. `braunschweig/popsim/trips.py`: raw `hvm` used instead of the
    handbook-mandated `hvm_imp`; `hvm=9` -> walk silently (4,041 Wege, no rate log).
-7. `braunschweig/popsim/trips.py:29` + `commute_distance.py:39`: `W_ZWECK=2`
+7. `braunschweig/popsim/trips.py` + `commute_distance.py`: `W_ZWECK=2`
    (dienstlich) maps to "work" and commute distance takes the per-person MAX ->
    one long business trip (wegkm_imp caps at 950 km) becomes the commute distance;
    legacy uses first home<->work trip only.
-8. `braunschweig/popsim/expand.py:110`: HP_SEX 3 (614) / 9 (127 persons) ->
+8. `braunschweig/popsim/expand.py`: HP_SEX 3 (614) / 9 (127 persons) ->
    `sex="unknown"` -> MATSim attribute `"u"`; code 9 should be imputed per the
    missing policy; legacy paths emit only male/female.
-9. `braunschweig/popsim/mid/seed_loading.py:121` (`hhgr_gr`) / `:190` (`alter_gr1`)
-   [path updated for the #267 package split; was `mid.py:330`] (content not
+9. `braunschweig/popsim/mid/seed_loading.py` (`hhgr_gr`, `alter_gr1`)
+   [path updated for the #267 package split; was `mid.py`] (content not
    re-verified; #267 path-only update): the conditioning columns (`alter_gr1`,
    `hhgr_gr`) for group-conditioned imputation are never loaded, so the
    documented within-age-band imputation silently degrades to the global pool.
-10. `braunschweig/popsim/mid/seed_loading.py:240` [path updated for the #267
-    package split; was `mid.py:322`] (content not re-verified; #267 path-only
+10. `braunschweig/popsim/mid/seed_loading.py` [path updated for the #267
+    package split; was `mid.py`] (content not re-verified; #267 path-only
     update): `day_filter_values or default` — the day filter cannot be
     disabled (None and () both fall back to (1,2,3)), contract inconsistent
     with `filter_complete_households`.
-11. `matsim/writers.py:25` `long_or_string_type` decides the Java type PER VALUE:
+11. `matsim/writers.py` `long_or_string_type` decides the Java type PER VALUE:
     mixed Long/String for the same attribute in one file is possible; float
     contamination writes "123.0" as java.lang.Long (Java parse failure); legacy
     path is provably unaffected (inner merges, arange ids) — popsim-only risk.
     `tests/test_matsim_id_types.py` misses float/NaN/leading-zero cases.
-12. `braunschweig/popsim/expand.py:83`: donor-person join `how="left"` with no
+12. `braunschweig/popsim/expand.py`: donor-person join `how="left"` with no
     validation — an unmatched H_ID yields a silent all-NaN ghost person whose
     attributes become True via finding 3.
 

@@ -90,8 +90,8 @@ AGENTS.md). Regression CI uses locked Python environments and does not provision
 the Java pipeline toolchain. Real pipeline runs require JDK 25, Maven,
 `osmosis_binary` and
 `osmconvert_binary` (configured per-machine in the run config). The Java package
-namespace stays `org.eqasim.bavaria.*` and is read-only from this repo (AGENTS.md
-D-1c).
+namespace is `org.eqasim.braunschweig.*` (fork `eqasim-java-bs`; same as in
+STACK.md) and is developed in that fork, not in this repo.
 
 ## Licences (re-distribution constraints)
 
@@ -124,7 +124,7 @@ and three new input datasets.
   (`data/ configs/ output/`) and writes `output/final_expanded_household_ids.csv`
   + synthetic_households/persons. Mirrors eqasim-bs's existing pattern of shelling
   out to an external toolchain (Java/osmosis). Evidence:
-  `popsimprep/batch_run_popsim.py:285`, `popsimprep/popsim/configs/settings.yaml`.
+  `popsimprep/batch_run_popsim.py`, `popsimprep/popsim/configs/settings.yaml`.
 
 ### New input datasets
 
