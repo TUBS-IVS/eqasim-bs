@@ -21,6 +21,11 @@ Output schema:
 import os
 import pandas as pd
 
+# Kept equal to braunschweig.data.census.employment; same GENESIS policy.
+GENESIS_SUPPRESSION_MARKERS = {".", "-"}
+EMPLOYMENT_COERCE_WARN_FRACTION: float = 0.05
+EMPLOYMENT_COERCE_RAISE_FRACTION: float = 0.50
+
 
 COLUMN_NAMES = [
     "ags", "name",
@@ -46,10 +51,41 @@ def configure(context):
     context.stage("eqasim_common.spatial.codes")
 
 
-def _coerce_int(series: pd.Series) -> pd.Series:
-    return (pd.to_numeric(series, errors="coerce")
-              .fillna(0)
-              .astype(int))
+def _coerce_int(series: pd.Series, column_name: str = "") -> pd.Series:
+    """Coerce a GENESIS column to int, counting unexplained non-numeric cells.
+
+    Mirrors ``braunschweig.data.census.employment._coerce_int``: "." and "-"
+    are documented GENESIS suppression markers (coerce to 0 silently); any
+    other non-numeric, non-empty cell is a parse failure that is counted,
+    printed, warned about and, above the raise fraction, fatal.
+    """
+    numeric = pd.to_numeric(series, errors="coerce")
+    unexplained_mask = numeric.isna() & ~series.astype(str).str.strip().isin(
+        GENESIS_SUPPRESSION_MARKERS | {"", "nan", "None"}
+    )
+    unexplained_count = int(unexplained_mask.sum())
+    total = len(series)
+    if unexplained_count:
+        fraction = unexplained_count / total if total else 0.0
+        label = f" in column '{column_name}'" if column_name else ""
+        print(f"[braunschweig.employees] _coerce_int{label}: {unexplained_count}/{total} "
+              f"({100.0 * fraction:.1f}%) cells were non-numeric and NOT a recognised "
+              f"GENESIS suppression marker ({sorted(GENESIS_SUPPRESSION_MARKERS)}); "
+              f"coerced to 0 anyway, which silently masks a genuine parse failure.")
+        if fraction >= EMPLOYMENT_COERCE_RAISE_FRACTION:
+            raise RuntimeError(
+                f"_coerce_int{label} coerced {100.0 * fraction:.1f}% of cells to 0 for "
+                f"reasons other than the recognised GENESIS suppression markers (limit "
+                f"{100.0 * EMPLOYMENT_COERCE_RAISE_FRACTION:.0f}%). This almost certainly "
+                f"means the table format/column offsets changed -- refusing to continue "
+                f"with a corrupted attraction vector."
+            )
+        if fraction >= EMPLOYMENT_COERCE_WARN_FRACTION:
+            print(f"[braunschweig.employees] WARNING: _coerce_int{label} unexplained-zero "
+                  f"rate {100.0 * fraction:.1f}% exceeds the "
+                  f"{100.0 * EMPLOYMENT_COERCE_WARN_FRACTION:.0f}% threshold; verify the "
+                  f"input table still matches the documented column layout.")
+    return numeric.fillna(0).astype(int)
 
 
 def execute(context):
@@ -88,7 +124,7 @@ def execute(context):
         & df["ags"].str[:5].isin(scope_kreise)
     ].copy()
 
-    df["weight"] = _coerce_int(df["all_total"])
+    df["weight"] = _coerce_int(df["all_total"], column_name="all_total")
 
     # Map AGS (8-digit) -> ARS/commune_id (12-digit) via the codes table.
     df_codes_scope = df_codes[df_codes["departement_id"].astype(str).isin(scope_kreise)]
@@ -103,7 +139,15 @@ def execute(context):
     ags_unmatched = sorted(ags_before - set(df["ags"].unique()))
     weight_after = df["weight"].sum()
     lost_weight = weight_before - weight_after
-    lost_fraction = lost_weight / weight_before if weight_before else 0.0
+    if weight_before == 0:
+        # An all-zero (or empty) input would make the loss fraction 0/0 and
+        # pass every check below with an empty attraction vector.
+        raise RuntimeError(
+            f"Employees input has zero total SvB Arbeitsort weight over {rows_before} "
+            f"in-scope rows -- the file is empty, mis-parsed or outside the ZGB scope; "
+            f"refusing to continue with an empty attraction vector."
+        )
+    lost_fraction = lost_weight / weight_before
     print(f"[braunschweig.employees] AGS->commune_id merge: {len(df)}/{rows_before} rows "
           f"matched, {len(ags_unmatched)} AGS unmatched, lost SvB Arbeitsort = "
           f"{lost_weight:,.0f} ({100.0 * lost_fraction:.2f}%)")

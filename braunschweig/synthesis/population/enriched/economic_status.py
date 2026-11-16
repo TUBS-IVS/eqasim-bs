@@ -159,11 +159,14 @@ def _derive_economic_status_from_hhtype(df_persons, data_path, df_regiostar,
         load_status_by_hhtype_raumtyp,
         map_households_to_hhtype,
         region_status_probabilities,
+        reset_fallback_rates,
     )
     from braunschweig.data.bbsr.regiostar import ars_to_ags8
 
     assert tuple(STATUS_CATEGORIES) == ECONOMIC_STATUS_CATEGORIES
 
+    # Report only this build: other callers of the Bayes helpers also feed the tally.
+    reset_fallback_rates()
     df_bund = load_status_by_hhtype_bundesland(data_path)
     df_raum = load_status_by_hhtype_raumtyp(data_path)
 
@@ -221,6 +224,10 @@ def _derive_economic_status_from_hhtype(df_persons, data_path, df_regiostar,
             fallback_mask[rows] = True
             continue
         probs[rows, :] = vec
+
+    # One rate line per build for the MiD Bayes-table fallbacks (CLAUDE.md fallback rule).
+    from braunschweig.data.mid.status_by_hhtype import report_fallback_rates
+    report_fallback_rates()
 
     n_fallback = int(fallback_mask.sum())
     n_primary = n - n_fallback

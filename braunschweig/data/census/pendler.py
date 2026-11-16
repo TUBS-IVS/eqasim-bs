@@ -49,6 +49,11 @@ import pandas as pd
 # Data columns following the 4 ID columns (unit: persons).
 NUMERIC_COLUMNS = ["total", "male", "female", "de", "foreign", "apprentice"]
 
+# Share of rows dropped as suppressed ("." / "-" / unparsable total) above
+# which the rate line is prefixed ``WARNING`` (audit D, P9-F5). Aggregate rows
+# are expected in every export and are reported but never warned about.
+FALLBACK_WARN_FRACTION: float = 0.05
+
 
 def _read_one(path: str, orientation: str) -> pd.DataFrame:
     """Read one BA Pendler CSV.
@@ -93,6 +98,8 @@ def _read_one(path: str, orientation: str) -> pd.DataFrame:
         & raw["dest_ars"].str.fullmatch(r"\d{5}", na=False)
     )
     df = raw[kreis_mask].copy()
+    n_raw = len(raw)
+    n_aggregate = int((~kreis_mask).sum())
 
     # Numeric conversion. German format: "68.380" means 68380 (thousand sep).
     for col in NUMERIC_COLUMNS:
@@ -101,8 +108,23 @@ def _read_one(path: str, orientation: str) -> pd.DataFrame:
             errors="coerce",
         )
 
+    n_before_suppressed = len(df)
     df = df.dropna(subset=["total"])
+    n_suppressed = n_before_suppressed - len(df)
     df["total"] = df["total"].astype(int)
+
+    # Fallback transparency (audit D, P9-F5): rows kept (primary) versus rows
+    # dropped as BA aggregates or as suppressed / unparsable totals.
+    suppressed_fraction = n_suppressed / n_before_suppressed if n_before_suppressed else 0.0
+    tag = "WARNING " if suppressed_fraction > FALLBACK_WARN_FRACTION else ""
+    print(
+        "[braunschweig.data.census.pendler] {}{} ({}): kept {}/{} rows, "
+        "dropped {} aggregate rows, dropped {} suppressed rows ({:.1f}% of "
+        "Kreis rows)".format(
+            tag, os.path.basename(path), orientation, len(df), n_raw,
+            n_aggregate, n_suppressed, 100.0 * suppressed_fraction,
+        )
+    )
 
     df["source"] = orientation
     return df[["orig_ars", "dest_ars", "total", "source"]].rename(
@@ -145,9 +167,44 @@ def execute(context) -> pd.DataFrame:
     # safety against zero rows that the BA emits when the count falls
     # below the suppression threshold in only one of the two views).
     df = pd.concat([df_ein, df_aus], ignore_index=True)
+    n_before_dedup = len(df)
+    # A 0 in one view is the expected BA suppression artefact (see above); only two
+    # different POSITIVE values for one pair are a genuine disagreement.
+    n_differing_any = int(
+        (df.groupby(["orig_ars", "dest_ars"])["flow"].nunique() > 1).sum()
+    )
+    n_conflicting = int(
+        (df[df["flow"] > 0].groupby(["orig_ars", "dest_ars"])["flow"].nunique() > 1).sum()
+    )
+    n_zero_vs_positive = n_differing_any - n_conflicting
+    # Only pairs present in BOTH exports (ZGB<->ZGB) can conflict; they are the
+    # denominator of the conflict rate (a share of all pairs could never exceed the
+    # warn threshold on real exports, where most pairs appear in one file only).
+    n_in_both = int((df.groupby(["orig_ars", "dest_ars"]).size() > 1).sum())
     df = (
         df.groupby(["orig_ars", "dest_ars"], as_index=False)
           .agg(flow=("flow", "max"))
+    )
+    # Fallback transparency (audit D, P9-F5): the max-dedup is silent about how
+    # many pairs it collapsed and how many of them disagreed between the files.
+    n_collapsed = n_before_dedup - len(df)
+    conflict_fraction = n_conflicting / n_in_both if n_in_both else 0.0
+    # The two views should be identical (module docstring): ANY both-positive
+    # disagreement is a warning, the rate only sizes it.
+    tag = "WARNING " if n_conflicting > 0 else ""
+    print(
+        "[braunschweig.data.census.pendler] {}dedup: {} rows -> {} pairs "
+        "({} collapsed by max, {} pairs with differing flows = {:.1f}% of the {} "
+        "pairs present in both files)".format(
+            tag, n_before_dedup, len(df), n_collapsed, n_conflicting,
+            100.0 * conflict_fraction, n_in_both,
+        )
+    )
+    print(
+        "[braunschweig.data.census.pendler] dedup info: {} pairs with a zero in "
+        "one view and a positive flow in the other (expected, not warned)".format(
+            n_zero_vs_positive
+        )
     )
 
     # Drop self-loops; they are always zero in the BA exports.
