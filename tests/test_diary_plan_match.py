@@ -285,3 +285,49 @@ def test_reassign_fine_child_bands_off_is_byte_identical_to_today():
     assert off_state[0] == on_state[0]
     assert (off_state[1] == on_state[1]).all()
     assert off_state[2:] == on_state[2:]
+
+
+def _donors_with_immobile_realisable():
+    """``_donors()`` plus H_ID 8: an immobile (anzwege1 0, mobil 0) realisable diary, which is in
+    the "any" pool but not in the "mobile" pool, so the pool choice becomes observable."""
+    donors = _donors()
+    extra = donors.iloc[[4]].copy()
+    extra[["H_ID", "source_H_ID", "anzwege1", "mobil", "mobil_diff"]] = [8, 8, 0, 0, 1]
+    return pd.concat([donors, extra], ignore_index=True)
+
+
+@pytest.mark.parametrize("anzwege1_dtype", [int, float])
+def test_reassign_holiday_source_pool_does_not_depend_on_anzwege1_dtype(caplog, anzwege1_dtype):
+    """Regression (audit P2-F21): a mobile holiday source (anzwege1 2) takes the "mobile" pool.
+
+    The check used to be ``isinstance(src_anz, (int, np.integer))``, so a float-typed column (what
+    pandas makes of an integer column with one missing value) sent every holiday source to the
+    "any" pool, where it could inherit an immobile day.
+    """
+    donors = _donors_with_immobile_realisable()
+    donors["anzwege1"] = donors["anzwege1"].astype(anzwege1_dtype)
+    facts = dfm.compute_diary_facts(_wege())
+    holiday_row = donors.index[donors["H_ID"] == 6][0]
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.diary_plan_match"):
+        for seed in range(30):
+            out, _, _ = dpm.reassign_diaryless_plan_sources(
+                donors, donors, facts, rng=np.random.RandomState(seed),
+                hard_employment=True, fine_child_age_bands=False, **FLAGS)
+            assert out.at[holiday_row, "source_H_ID"] != 8, f"seed {seed}: immobile donor for a mobile source"
+    rate_lines = [r for r in caplog.records
+                  if r.getMessage().startswith("[diary_plan_match.holiday_source_anzwege1] primary 1/1")]
+    assert len(rate_lines) == 30 and all(r.levelno == logging.INFO for r in rate_lines), caplog.text
+
+
+def test_reassign_holiday_source_with_unknown_anzwege1_counts_as_fallback(caplog):
+    """A missing donor count cannot say whether the source was mobile: pool "any", counted."""
+    donors = _donors_with_immobile_realisable()
+    donors["anzwege1"] = donors["anzwege1"].astype(float)
+    donors.loc[donors["H_ID"] == 6, "anzwege1"] = np.nan
+    facts = dfm.compute_diary_facts(_wege())
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.diary_plan_match"):
+        dpm.reassign_diaryless_plan_sources(donors, donors, facts, rng=np.random.RandomState(0),
+                                            hard_employment=True, fine_child_age_bands=False, **FLAGS)
+    rate_lines = [r for r in caplog.records
+                  if r.getMessage().startswith("[diary_plan_match.holiday_source_anzwege1] primary 0/1")]
+    assert len(rate_lines) == 1 and rate_lines[0].levelno == logging.WARNING, caplog.text

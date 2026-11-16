@@ -197,3 +197,26 @@ def test_fine_child_bands_do_not_move_the_member_completion_rng_stream():
     assert coarse_state[0] == fine_state[0]
     assert (coarse_state[1] == fine_state[1]).all()
     assert coarse_state[2:] == fine_state[2:]
+
+
+def test_day_type_mirror_rate_logged_primary_when_hosts_have_a_day_type(caplog):
+    import logging
+    households = pd.DataFrame({
+        "H_ID": ["A", "B", "C"], "H_GR": [2, 2, 2], "hhgr_gr": [2, 2, 2],
+        "oek_status": [3, 3, 3], "RegioStaR7": [73, 73, 73], "H_GEW": [1.0, 1.0, 1.0],
+    })
+    persons = pd.DataFrame({
+        "H_ID":     ["A", "B", "B", "C", "C"],
+        "P_ID":     [1, 1, 2, 1, 2],
+        "HP_ALTER": [40, 41, 39, 42, 40],
+        "HP_SEX":   [1, 1, 2, 1, 2],
+        "kernwo":   [1, 1, 1, 6, 6],  # A and B weekday, C weekend: kernwo-aware mode is active
+    })
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.member_completion"):
+        _, filled, report = member_completion.complete_members(
+            households, persons, rng=np.random.RandomState(0),
+        )
+    assert report.n_households_filled == 1
+    recs = [r for r in caplog.records
+            if "[popsim.member_completion.day_type_mirror] primary 1/1" in r.message]
+    assert len(recs) == 1 and recs[0].levelno == logging.INFO

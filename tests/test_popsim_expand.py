@@ -105,3 +105,33 @@ def test_map_demographics_imputes_sex_and_keeps_raw():
     out = expand.map_demographics(df, rng=np.random.RandomState(0))
     assert set(out["sex"].unique()) <= {"male", "female"}        # binary, no "unknown"
     assert out["sex_raw"].tolist() == ["male", "female", "diverse", "not_specified"]
+
+
+def test_map_demographics_sex_rate_logged_primary_dominates(caplog):
+    import logging
+    import numpy as np
+    n = 40  # 1 non-binary of 40 = 2.5 %, clearly below the 5 % warn threshold
+    df = pd.DataFrame({"HP_ALTER": [30] * n, "HP_SEX": [1, 2] * 19 + [3, 1],
+                       "alter_gr1": [5] * n})
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.expand"):
+        out = expand.map_demographics(df, rng=np.random.RandomState(0))
+    recs = [r for r in caplog.records if "[popsim.expand.sex] primary 39/40" in r.message]
+    assert len(recs) == 1 and recs[0].levelno == logging.INFO
+    const = [r for r in caplog.records if "[popsim.expand.sex_constant]" in r.message]
+    assert len(const) == 1 and const[0].levelno == logging.INFO
+    assert "fallback 0 " in const[0].message  # the age band had a pool: no constant "male"
+    assert out["sex"].notna().all()
+
+
+def test_map_demographics_imputes_sex_when_the_age_band_is_missing():
+    """Regression: a non-binary person whose alter_gr1 is NaN was skipped by the band loop
+    (groupby drops NaN keys) and kept a missing sex, which MATSim cannot take. Such a person
+    draws from the global pool; persons with a band keep their seeded band draws."""
+    import numpy as np
+    df = pd.DataFrame({"HP_ALTER": [30, 31, 32, 33], "HP_SEX": [1, 2, 3, 9],
+                       "alter_gr1": [5, 5, 5, np.nan]})
+    out = expand.map_demographics(df, rng=np.random.RandomState(0))
+    assert out["sex"].isin(["male", "female"]).all()
+    with_band = df.iloc[:3]
+    assert (expand.map_demographics(with_band, rng=np.random.RandomState(0))["sex"].tolist()
+            == out["sex"].iloc[:3].tolist())
