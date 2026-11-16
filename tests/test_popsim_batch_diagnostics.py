@@ -3,6 +3,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 sys.path.append(str(Path(__file__).parent))
@@ -11,6 +12,9 @@ from popsim_batch_fixture import TOTAL, build_work_dir  # noqa: E402
 
 from braunschweig.analysis.popsim_batch_diagnostics.batch_folder import (  # noqa: E402
     control_totals, household_incidence, list_batch_folders, load_batch_folder)
+from braunschweig.analysis.popsim_batch_diagnostics.coverage import (  # noqa: E402
+    coverage_table, universe_table)
+from braunschweig.popsim.control_groups import unmatched_controls  # noqa: E402
 
 
 @pytest.fixture
@@ -82,3 +86,42 @@ def test_malformed_person_household_id_is_refused(work_dir, bad_id):
                     encoding="utf-8")
     with pytest.raises(ValueError, match="batch_000"):
         load_batch_folder(work_dir / "batch_000")
+
+
+def test_coverage_finds_records_no_category_counts(work_dir):
+    batch = load_batch_folder(work_dir / "batch_000")
+    usage = pd.Series({2: 1, 3: 1, 4: 3})
+    table = coverage_table(batch, usage).set_index("group")
+    assert table.loc["age_sex", ["n_universe", "n_uncovered", "n_multi_hit"]].tolist() == [6, 1, 0]
+    assert table.loc["age_sex", "seed_weight_share"] == pytest.approx(2.0 / 13.5)
+    assert table.loc["age_sex", "synthetic_share"] == pytest.approx(1 / 9)
+    assert table.loc["age_sex", "ratio"] == pytest.approx(0.75)
+    assert table.loc["tenure", ["n_uncovered", "ratio"]].tolist() == pytest.approx([1, 0.8])
+    assert table.loc["building_type", ["n_uncovered", "ratio"]].tolist() == pytest.approx([1, 1.2])
+    assert "household_size" not in table.index          # no such control in this batch
+
+
+def test_universe_compares_group_targets_with_household_total(work_dir):
+    batch = load_batch_folder(work_dir / "batch_000")
+    table = universe_table(batch).set_index("group")
+    assert table.loc["tenure", ["target_sum", "household_total", "ratio"]].tolist() == [5, 5, 1.0]
+    assert table.loc["building_type", "ratio"] == pytest.approx(7 / 5)
+
+
+def test_control_outside_every_group_is_reported(tmp_path):
+    work = build_work_dir(tmp_path, extra_controls=[dict(
+        target="odd_thing_ZENSUS100m_target", seed_table="households", importance=1,
+        expression="(households.H_GR == 1)")])
+    batch = load_batch_folder(work / "batch_000")
+    assert unmatched_controls(batch.control_spec, batch.total_hh_control) == ["odd_thing_ZENSUS100m_target"]
+
+
+def test_every_production_control_belongs_to_exactly_one_group():
+    from braunschweig.popsim import kreis_attribute_control
+    from braunschweig.popsim.stage import build_controls_df
+    spec = build_controls_df(
+        controls_source="catalog", seed="mid", tiers=("tier0", "tier1", "tier2", "tier3"),
+        employment_grid=True, ownership_grid=True,
+        kreis_control_names=tuple(c.name for c in kreis_attribute_control.REGISTRY))
+    total = spec.loc[spec["target"].str.contains("Insgesamt_Haushalte"), "target"].iloc[0]
+    assert unmatched_controls(spec, total) == []

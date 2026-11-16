@@ -66,7 +66,8 @@ def _controls_frame(extra_controls: Sequence[dict]) -> pd.DataFrame:
              "importance": importance, "control_field": target[: -len("_target")],
              "expression": expression}
             for target, table, importance, expression in CONTROLS]
-    rows.extend(dict(row) for row in extra_controls)
+    for row in extra_controls:  # control_field defaults to the target without "_target"
+        rows.append({"control_field": row["target"][: -len("_target")], **row})
     return pd.DataFrame(rows, columns=["target", "geography", "seed_table", "importance",
                                        "control_field", "expression"])
 
@@ -110,8 +111,8 @@ def build_work_dir(root: Path, *, with_store: bool = True,
     totals = pd.DataFrame(
         [[cell] + values for cell, values in TOTALS_100M.items()],
         columns=["ZENSUS100m"] + [t[: -len("_target")] for t, *_ in CONTROLS])
-    for row in pd.DataFrame(list(extra_controls)).itertuples() if extra_controls else ():
-        totals[row.control_field] = 0
+    for field in controls["control_field"].iloc[len(CONTROLS):]:
+        totals[field] = 0
     totals.to_csv(batch / "data" / "control_totals_ZENSUS100m.csv", index=False)
 
     controls.to_csv(batch / "configs" / "controls.csv", index=False)
