@@ -16,3 +16,4 @@ pipelines:
 production: true
 inputs:
 - ba_pendleratlas
+- vg250_ew

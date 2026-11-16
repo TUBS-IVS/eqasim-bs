@@ -13,9 +13,10 @@
 ## .control_fit_smoke) run in seconds without PopulationSim and cover partitioning, source
 ## columns and target normalisation; this overlay covers the numerical half.
 ##
-## Target `data.census.filtered` = the population-synthesis producer only. No location
-## synthesis, no trips, no MATSim: those are unaffected by a control change and dominate the
-## runtime.
+## Target `braunschweig.popsim.stage` = the population-synthesis producer only (the stage the
+## alias `data.census.filtered` names; a run target must be the module itself, not an alias:
+## tests/test_config_run_targets.py). No location synthesis, no trips, no MATSim: those are
+## unaffected by a control change and dominate the runtime.
 ##
 ## Machine paths (popsimprep_dir / uv_path / settings_path / controls_path) are deliberately
 ## NOT set here -- they come from configs/base_bs.yml, which carries the run-server values.
@@ -31,7 +32,7 @@
 working_directory: eqasim-data/cache_smoke_control_fit
 
 run:
-  - data.census.filtered
+  - braunschweig.popsim.stage
 
 config:
   # The rate is irrelevant to the balancing (see the note above); kept low so that anything

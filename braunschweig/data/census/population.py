@@ -31,6 +31,8 @@ import zipfile
 import geopandas as gpd
 import pandas as pd
 
+from braunschweig import synpp_tokens
+
 
 # DESTATIS 12411-0018 age class lower bounds (17 classes).
 DESTATIS_AGES: list[int] = [0, 3, 6, 10, 15, 18, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 75]
@@ -124,6 +126,9 @@ def load_population_by_kreis(path: str, kreise) -> pd.Series:
 
 def configure(context):
     context.config("data_path")
+    # The VG250 archive, declared with the same default as eqasim_common.data.population.raw so both
+    # stages read (execute) and hash (validate) the same archive.
+    context.config("germany.population_path", "germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip")
     context.config("braunschweig.destatis_population_path",
                    DEFAULT_DESTATIS_POPULATION_PATH)
     context.config("braunschweig.urbistat_gemeinden_path",
@@ -375,8 +380,7 @@ def execute(context):
     if "municipality_code" in df_vg.columns:
         df_vg = df_vg.rename(columns={"municipality_code": "ARS", "population": "EWZ"})
     if "GEN" not in df_vg.columns:
-        pop_zip = os.path.join(data_path,
-                               "germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip")
+        pop_zip = os.path.join(data_path, context.config("germany.population_path"))
         inner = ("vg250-ew_12-31.utm32s.gpkg.ebenen/"
                  "vg250-ew_ebenen_1231/DE_VG250.gpkg")
         with zipfile.ZipFile(pop_zip) as z, z.open(inner) as f:
@@ -460,4 +464,11 @@ def validate(context):
     for p in required:
         if not os.path.exists(p):
             raise RuntimeError(f"Missing input: {p}")
-    return sum(os.path.getsize(p) for p in required)
+    # ``execute`` opens the VG250 archive whenever the raw VG250 frame lacks ``GEN``, which is
+    # always the case for eqasim_common.data.population.raw (it returns only ARS, EWZ and the
+    # geometry). That condition depends on a stage result, which validate() cannot see, so the
+    # archive is hashed unconditionally: a replaced archive changes the Gemeinde names.
+    vg250_sha256 = synpp_tokens.input_file_sha256(
+        os.path.join(data_path, context.config("germany.population_path")), "VG250 archive")
+    return {"input_size_bytes": sum(os.path.getsize(p) for p in required),
+            "vg250_sha256": vg250_sha256}

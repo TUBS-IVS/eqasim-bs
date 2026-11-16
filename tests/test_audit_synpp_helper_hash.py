@@ -535,3 +535,18 @@ def test_the_token_builder_is_exempt_through_the_ordinary_marker():
     repo = Path(__file__).resolve().parents[1]
     assert not hasattr(audit, "TOKEN_MECHANISM_EXEMPTIONS")
     assert "braunschweig.synpp_tokens" in audit.exemption_reasons(repo)
+
+
+def test_the_scan_roots_cover_every_package_a_stage_of_the_dag_snapshots_lives_in():
+    """A stage outside ``ROOTS`` is invisible to the audit and to the closure gate, so a helper
+    edit there would serve a stale cache unseen. ``documentation.meta_output`` was such a stage
+    until 2026-11-16 (repository audit package M)."""
+    import json
+
+    repo = Path(__file__).resolve().parents[1]
+    snapshots = sorted((repo / "docs" / "registry" / "dag").glob("*.json"))
+    assert snapshots, "no DAG snapshot found; the check would pass vacuously"
+    packages = {node.split(".")[0]
+                for snapshot in snapshots
+                for node in json.loads(snapshot.read_text(encoding="utf-8"))["nodes"]}
+    assert packages - set(audit.ROOTS) == set()

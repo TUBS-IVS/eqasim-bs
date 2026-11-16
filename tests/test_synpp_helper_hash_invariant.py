@@ -112,9 +112,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# The five first-party roots audited by #290; a synpp stage outside these is
-# not currently known to exist in this repo (see that audit's "Method" step 1).
-FIRST_PARTY_ROOTS = ("braunschweig", "data", "eqasim_common", "matsim", "synthesis")
+from scripts.audit_synpp_helper_hash import ROOTS as FIRST_PARTY_ROOTS  # one owner of the root list
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +142,8 @@ def _is_stage_tree(tree: ast.Module) -> bool:
     Matches the #290 audit's stage-detection rule exactly (``ast.FunctionDef``
     nodes directly in ``ast.Module.body``): that audit also checked there is no
     factory-assignment stage pattern (``configure = ...`` at module level)
-    anywhere in the five roots, so this ``def``-only rule is not a guess.
+    anywhere in ``ROOTS`` (the roots of ``scripts/audit_synpp_helper_hash.py``), so this ``def``-only
+    rule is not a guess.
     """
     names = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
     return "configure" in names and "execute" in names

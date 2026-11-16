@@ -264,11 +264,25 @@ def configure(context):
         context.config("cordon_pt_max_station_distance_km", 150.0)
 
 
+def _vg250_path(context) -> str:
+    """The VG250 archive: the one path ``execute`` reads and ``validate`` hashes."""
+    return os.path.join(context.config("data_path"), context.config("cordon_vg250_path"))
+
+
 def validate(context):
-    """Include the helper modules' source in synpp's stage cache identity (ADR-0136)."""
-    return synpp_tokens.source_token(
+    """Cache token: the structured source token of the helper modules (ADR-0136) plus ``files``, the
+    content digest of the VG250 archive keyed by its dataset id ``vg250_ew``.
+
+    ``execute`` reads the archive (Kreise and external Gemeinden) only when ``cordon_enabled`` is
+    on; with the cordon off the archive may be absent, so it is not touched and the digest is
+    ``None``. A replaced archive must not serve a stale cached entry-station table.
+    """
+    token = synpp_tokens.source_token(
         _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
         stage_label=__name__ + ".validate()")
+    token["files"] = {"vg250_ew": (synpp_tokens.input_file_sha256(_vg250_path(context), "VG250 archive")
+                                   if context.config("cordon_enabled") else None)}
+    return token
 
 
 def execute(context):
@@ -280,7 +294,7 @@ def execute(context):
                                supply["schedule_path"])
     stops, routes = read_transit_stops_routes(schedule_path)
 
-    vg250 = os.path.join(context.config("data_path"), context.config("cordon_vg250_path"))
+    vg250 = _vg250_path(context)
     crs = "EPSG:25832"
     kreise = read_kreise(vg250, crs=crs)
     gemeinden = read_external_gemeinden(vg250, crs=crs,

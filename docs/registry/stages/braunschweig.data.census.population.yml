@@ -21,6 +21,7 @@ production: false
 inputs:
 - destatis_population_kreis
 - urbistat_gemeinde_age
+- vg250_ew
 - zensus2022_age_sex_size
 decisions:
 - ADR-0078

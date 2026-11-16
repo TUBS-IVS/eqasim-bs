@@ -1,7 +1,8 @@
-import os
 import geopandas as gpd
 import zipfile
 import numpy as np
+
+from braunschweig import synpp_tokens
 
 """
 This stages loads a file containing population data for Germany including the adminstrative codes.
@@ -44,7 +45,7 @@ def execute(context):
     return df_population
 
 def validate(context):
-    if not os.path.exists("%s/%s" % (context.config("data_path"), context.config("germany.population_path"))):
-        raise RuntimeError("German population data is not available")
-
-    return os.path.getsize("%s/%s" % (context.config("data_path"), context.config("germany.population_path")))
+    # The content digest, not the size: a replaced archive of equal size must invalidate too.
+    return synpp_tokens.input_file_sha256(
+        "%s/%s" % (context.config("data_path"), context.config("germany.population_path")),
+        "German population data (VG250 archive)")

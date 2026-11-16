@@ -44,6 +44,8 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import box
 
+from braunschweig import synpp_tokens
+
 
 CELL_SIZE_M = 100
 EPSG_GRID = 3035
@@ -155,10 +157,18 @@ def execute(context) -> gpd.GeoDataFrame:
 
 
 def validate(context):
+    """Cache token: the parquet size plus the content digest of the VG250 archive.
+
+    ``execute`` reads two inputs: the Zensus parquet and the VG250 Kreis polygons whose bounding
+    box clips it. A replaced archive moves the bounding box, so it must be in the token.
+    """
     path = _resolve_path(context)
     if not os.path.exists(path):
         raise RuntimeError(
             f"Zensus 2022 100 m population parquet not found: {path}\n"
             "Run scripts/download_zensus_grid.py to fetch it."
         )
-    return os.path.getsize(path)
+    vg250_sha256 = synpp_tokens.input_file_sha256(
+        os.path.join(context.config("data_path"), context.config("germany.population_path")),
+        "VG250 archive (ZGB Kreis polygons of the grid bounding box)")
+    return {"population_parquet_size": os.path.getsize(path), "vg250_sha256": vg250_sha256}

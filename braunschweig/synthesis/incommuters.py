@@ -22,6 +22,7 @@ Region-neutral; the synpp stage wires the data sources.
 from __future__ import annotations
 
 import logging
+import os
 
 import geopandas as gpd
 import numpy as np
@@ -1639,17 +1640,28 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 
 
 def validate(context):
-    """Include shared plan repairs in synpp's stage cache identity.
+    """Include shared plan repairs and the VG250 archive in synpp's stage cache identity.
 
     A deferred module that fails to import raises rather than being skipped: skipping it
     would keep the stale cached in-commuters alive exactly when the helper is broken.
 
     Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
-    digest per helper module (docstrings, comments and formatting do not change it).
+    digest per helper module (docstrings, comments and formatting do not change it), plus
+    ``files``: the content digest of the VG250-EW archive keyed by its dataset id ``vg250_ew``.
+    ``execute`` loads the archive (``external_workplaces._load_gemeinden``) only on the real-origin
+    path, i.e. with ``cordon_enabled`` AND ``cordon_incommuter_real_origin``; otherwise the archive
+    is not touched (it may be absent) and the digest is ``None``. The real-origin key is declared
+    by ``configure`` only while the cordon is on, hence the order of the reads.
     """
-    return synpp_tokens.source_token(
+    reads_vg250 = bool(context.config("cordon_enabled")) and bool(
+        context.config("cordon_incommuter_real_origin"))
+    token = synpp_tokens.source_token(
         _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
         stage_label=__name__ + ".validate()")
+    token["files"] = {"vg250_ew": (synpp_tokens.input_file_sha256(
+        os.path.join(context.config("data_path"), context.config("germany.population_path")),
+        "VG250 archive") if reads_vg250 else None)}
+    return token
 
 
 def configure(context):

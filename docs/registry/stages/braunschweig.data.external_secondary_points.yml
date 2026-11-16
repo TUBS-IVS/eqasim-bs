@@ -14,5 +14,7 @@ pipelines:
   popsim_open: not_used
   simple_ipf_open: not_used
 production: true
+inputs:
+- vg250_ew
 features:
 - secondary_srv_location_types

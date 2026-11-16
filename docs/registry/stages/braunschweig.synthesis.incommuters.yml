@@ -41,6 +41,7 @@ production: true
 inputs:
 - ba_pendleratlas
 - mikrozensus_pendler_modes
+- vg250_ew
 features:
 - cordon_mode_balancer
 - einpendler_injection

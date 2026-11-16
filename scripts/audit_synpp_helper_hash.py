@@ -44,7 +44,10 @@ import os
 import sys
 from pathlib import Path
 
-ROOTS = ("braunschweig", "data", "eqasim_common", "matsim", "synthesis")
+#: First-party packages that hold synpp stages or their helpers. Every package a node of the DAG
+#: snapshots (docs/registry/dag/*.json) lives in must be here, or its stages escape the audit
+#: (tests/test_audit_synpp_helper_hash.py guards this).
+ROOTS = ("braunschweig", "data", "documentation", "eqasim_common", "matsim", "synthesis")
 
 #: Module-level string a first-party module sets to state why no stage token needs to hash it:
 #: the module never changes a value a stage returns (progress output, terminal colours, process
