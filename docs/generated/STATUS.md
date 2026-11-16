@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 112 | stages: 133 | datasets: 107 | ADRs: 191 | run manifests: 97
+- Features: 113 | stages: 133 | datasets: 107 | ADRs: 191 | run manifests: 98
 
 ## Population synthesis
 
@@ -27,6 +27,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [IPF synthesis (legacy default)](../registry/features/ipf_synthesis_legacy.yml) | supported | off | -/-/A | unvalidated |  |
 | [Joint age×size margin (#3)](../registry/features/joint_age_size_margin.yml) | supported | off | -/-/A | unvalidated |  |
 | [1 km car/bike ownership shape controls (MiD-conditional, raked to the blended Kreis anchors)](../registry/features/ownership_grid_1km.yml) | active | ON | A/-/- | unvalidated (`smoke-ownership-grid-03101-2026-08-19`, `100pct-allfeat-i240-2026-08-20`) | [#240](https://github.com/TUBS-IVS/eqasim-bs/issues/240) |
+| [PopulationSim diagnostic data dictionary step (write_data_dictionary), switchable](../registry/features/popsim_data_dictionary.yml) | active | off | A/s/- | not_applicable (`popsim-data-dictionary-identity-2026-11-16`) |  |
 | [popsim_open / popsim_mid](../registry/features/popsim_method.yml) | active | ON | A/A/- | measured_vs_reference (`synth-100pct-2.2.0-2026-07-23`) |  |
 | [Sex-aware couples (~1.1%)](../registry/features/sex_aware_couples.yml) | supported | off | -/-/A | unvalidated |  |
 
