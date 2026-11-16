@@ -14,6 +14,8 @@ from braunschweig.analysis.popsim_batch_diagnostics.batch_folder import (  # noq
     control_totals, household_incidence, list_batch_folders, load_batch_folder)
 from braunschweig.analysis.popsim_batch_diagnostics.coverage import (  # noqa: E402
     coverage_table, universe_table)
+from braunschweig.analysis.popsim_batch_diagnostics.reuse import (  # noqa: E402
+    reuse_by_zone, reuse_summary, shares_by_attribute, usage_counts, weight_class_shares)
 from braunschweig.popsim.control_groups import unmatched_controls  # noqa: E402
 
 
@@ -148,3 +150,36 @@ def test_ratio_is_nan_when_no_record_is_uncovered(tmp_path):
     row = coverage_table(batch, pd.Series({2: 1, 3: 1, 4: 3})).set_index("group").loc["tenure"]
     assert row["n_uncovered"] == 0 and row["seed_weight_share"] == 0
     assert pd.isna(row["ratio"])
+
+
+def test_reuse_and_weight_class_shares(work_dir):
+    batch = load_batch_folder(work_dir / "batch_000")
+    usage = usage_counts(batch.expanded)
+    assert usage.to_dict() == {2: 1, 3: 1, 4: 3}
+    summary = reuse_summary(usage, n_seed_households=4)
+    assert summary["n_synthetic_households"] == 5 and summary["n_distinct_used"] == 3
+    assert summary["distinct_share_of_seed"] == 0.75
+    assert summary["kish_n_eff"] == pytest.approx(25 / 11)
+    assert summary["max_copies"] == 3 and summary["top100_share"] == 1.0
+    shares = weight_class_shares(batch.seed_households, usage).set_index("weight_class")
+    assert shares["seed_weight_share"].tolist() == pytest.approx([0.0625, 0.1875, 0.25, 0.5, 0.0, 0.0])
+    assert shares["synthetic_share"].tolist() == pytest.approx([0.0, 0.2, 0.2, 0.6, 0.0, 0.0])
+    assert shares.loc["<1", "difference_pp"] == pytest.approx(-6.25)
+    by_size = shares_by_attribute(batch.seed_households, usage, "H_GR").set_index("value")
+    assert by_size.loc[2, ["seed_weight_share", "synthetic_share"]].tolist() == pytest.approx([0.6875, 0.8])
+
+
+def test_reuse_by_zone_and_fail_fast_inputs(work_dir):
+    batch = load_batch_folder(work_dir / "batch_000")
+    zones = reuse_by_zone(batch.expanded, "ZENSUS100m").set_index("zone")
+    assert zones.loc["A", ["n_synthetic_households", "n_distinct_used"]].tolist() == [3, 2]
+    assert zones.loc["A", "kish_n_eff"] == pytest.approx(9 / 5)
+    assert zones.loc["B", "kish_n_eff"] == pytest.approx(2.0)
+    with pytest.raises(KeyError, match="nope"):
+        reuse_by_zone(batch.expanded, "nope")
+    usage = usage_counts(batch.expanded)
+    negative = batch.seed_households.assign(H_GEW=[0.5, -1.0, 2.0, 4.0])
+    with pytest.raises(ValueError, match="negative"):
+        weight_class_shares(negative, usage)
+    with pytest.raises(ValueError, match="not in the seed"):
+        weight_class_shares(batch.seed_households, pd.Series({9: 1}))
