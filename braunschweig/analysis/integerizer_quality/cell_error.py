@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 _CELL = "ZENSUS100m"
 
 
-def _evaluate(expr: str, frame: pd.DataFrame) -> np.ndarray:
+def evaluate_expression(expr: str, frame: pd.DataFrame) -> np.ndarray:
     """Evaluate a control_spec prefixed boolean expression against ``frame``.
 
     The expression uses the seed table name as a namespace prefix
@@ -89,7 +89,7 @@ def realised_counts(
         else:
             frame = hh.merge(donor_hh_unique, on="H_ID", how="left")
         try:
-            mask = _evaluate(expr, frame)
+            mask = evaluate_expression(expr, frame)
         except Exception as error:  # surface, never silently swallow
             n_skipped += 1
             logger.warning(
