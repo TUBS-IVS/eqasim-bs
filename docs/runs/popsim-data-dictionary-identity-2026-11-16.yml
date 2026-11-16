@@ -41,6 +41,14 @@ validation:
     for one batch. The PopulationSim source (populationsim/steps/output.py, write_data_dictionary)
     only reads checkpointed pipeline tables and writes the two files, and no later step reads them,
     which is why one batch is taken as representative.'
+- metric: Production cost of write_data_dictionary (the reason for the switch)
+  reference: PopulationSim timing_log.csv of all 60 batches of production run prod100_20261031
+  result: 'write_data_dictionary summed 68.7 min of step time over the 60 batches (present in all 60),
+    4.5 % of the 1519.2 min summed over all PopulationSim steps; at 2 workers about 34 min of wall
+    time. Recomputed 2026-11-16 with awk (LC_ALL=C) over column "seconds".'
+  artifact: 'Run server: /home/felix/prod100_20261031/popsim_work/batch_*/output/timing_log.csv'
+  notes: Observed step times of one production run; the saving at other scales or on other machines
+    is not measured.
 features:
 - popsim_data_dictionary
 source: Run-server folder /home/felix/audit_h_i_datadict (compare.txt and status.txt written by run_proof.sh

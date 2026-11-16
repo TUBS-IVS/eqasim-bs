@@ -5,7 +5,8 @@ description: PopulationSim's diagnostic step write_data_dictionary writes only
   output/data_dict.csv and data_dict.txt per batch, which nothing in this repository reads.
   The key braunschweig.population.popsim.write_data_dictionary keeps it (true, code default)
   or drops it from the batch settings.yaml (false, production since audit package H, item I)
-  to save its step time; the synthetic population does not depend on it.
+  to save its step time (the measured production cost is in run manifest
+  popsim-data-dictionary-identity-2026-11-16); the synthetic population does not depend on it.
 stages:
 - data.census.filtered
 pipelines:
