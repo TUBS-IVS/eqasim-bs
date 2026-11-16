@@ -58,13 +58,14 @@ hard-coding percentages in Python is prohibited (see CLAUDE.md).
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Iterable
 
 import numpy as np
 import pandas as pd
 
-from braunschweig.data.mid.raumtyp_tilt import tilt_toward_region
+from braunschweig.data.mid.raumtyp_tilt import FallbackTally, tilt_toward_region
 from braunschweig.data.mid.status_by_hhtype import (
     HHTYPE_CATEGORIES,
     HHTYPE_LABEL_TO_KEY,
@@ -107,6 +108,23 @@ __all__ = [
     "cars_probabilities",
     "apply_raumtyp_tilt",
 ]
+
+
+logger = logging.getLogger(__name__)
+
+# Counts the degenerate-input branches of this module; the table build reports the
+# rate once (CLAUDE.md "Fallback transparency").
+_TALLY = FallbackTally("cars_by_status", logger)
+
+
+def reset_fallback_rates() -> None:
+    """Discard the counts accumulated so far (a reporting stage calls this first)."""
+    _TALLY.reset()
+
+
+def report_fallback_rates() -> None:
+    """Log the primary/fallback rate of the cells built since the last report."""
+    _TALLY.report()
 
 
 def _path(data_path: str, filename: str) -> str:
@@ -194,7 +212,8 @@ def _base_cars_given_hhtype_status(
             .reindex(cars).fillna(0.0)
         )
         base_sum = base.sum()
-        p_cars = (base / base_sum) if base_sum > 0 else pd.Series(
+        _TALLY.unit()
+        p_cars = (base / base_sum) if not _TALLY.check("status_uniform_cars_prior", not (base_sum > 0)) else pd.Series(
             np.ones(len(cars)) / len(cars), index=cars
         )
         for hhtype in sub["hhtype"].unique():
@@ -205,7 +224,8 @@ def _base_cars_given_hhtype_status(
             )
             joint = row.to_numpy(dtype=float) * p_cars.to_numpy(dtype=float)
             total = joint.sum()
-            if total > 0:
+            _TALLY.unit()
+            if not _TALLY.check("hhtype_status_prior_cars", not (total > 0)):
                 out[(hhtype, status)] = joint / total
             else:
                 out[(hhtype, status)] = p_cars.to_numpy(dtype=float).copy()
@@ -233,11 +253,13 @@ def _raumtyp_cars_distribution(
         )
         national += vec
         total = vec.sum()
-        by_region[region] = (vec / total) if total > 0 else (
+        _TALLY.unit()
+        by_region[region] = (vec / total) if not _TALLY.check("region_uniform_cars", not (total > 0)) else (
             np.ones(len(cars)) / len(cars)
         )
     nat_total = national.sum()
-    national = (national / nat_total) if nat_total > 0 else (
+    _TALLY.unit()
+    national = (national / nat_total) if not _TALLY.check("national_uniform_cars", not (nat_total > 0)) else (
         np.ones(len(cars)) / len(cars)
     )
     return by_region, national
@@ -257,8 +279,9 @@ def cars_probabilities(
     (see the module docstring). The returned vector is ordered like
     :data:`CAR_COUNT_CATEGORIES` and sums to 1.
 
-    Returns ``None`` (caller logs a FALLBACK -- no silent fallback) when the
-    ``(hhtype, status)`` cell is absent from the base table; the caller then
+    Returns ``None`` when the
+    ``(hhtype, status)`` cell is absent from the base table (the table build
+    :func:`cars_probabilities_table` logs the zero-mass prior/uniform rates); the caller then
     falls back to the per-Kreis MiD H7 draw. With ``raumtyp_region is None`` or
     absent from the raumtyp table the base is returned untilted.
     """
@@ -318,6 +341,9 @@ def cars_probabilities_table(
     distinct combination. Mirrors the ``prob_cache`` pattern used by
     ``_derive_economic_status_from_hhtype``.
     """
+    # Report only this build: drop counts left by other callers of the helpers.
+    reset_fallback_rates()
     base_map = _base_cars_given_hhtype_status(df_hhtype, include_cars)
     by_region, national = _raumtyp_cars_distribution(df_raumtyp, include_cars)
+    report_fallback_rates()
     return base_map, by_region, national

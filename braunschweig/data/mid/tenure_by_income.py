@@ -52,13 +52,14 @@ hard-coding percentages in Python is prohibited (see CLAUDE.md).
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Iterable
 
 import numpy as np
 import pandas as pd
 
-from braunschweig.data.mid.raumtyp_tilt import tilt_toward_region
+from braunschweig.data.mid.raumtyp_tilt import FallbackTally, tilt_toward_region
 
 from braunschweig.data.mid.income_by_size import (
     INCOME_BRACKET_CATEGORIES,
@@ -95,6 +96,23 @@ __all__ = [
     "load_tenure_by_income_raumtyp",
     "tenure_probabilities_given_income",
 ]
+
+
+logger = logging.getLogger(__name__)
+
+# Counts the degenerate-input branches of this module; the caller logs the rate once
+# per build via report_fallback_rates() (CLAUDE.md "Fallback transparency").
+_TALLY = FallbackTally("tenure_by_income", logger)
+
+
+def reset_fallback_rates() -> None:
+    """Discard the counts accumulated so far (a reporting stage calls this first)."""
+    _TALLY.reset()
+
+
+def report_fallback_rates() -> None:
+    """Log the primary/fallback rate of the cells built since the last report."""
+    _TALLY.report()
 
 
 def _path(data_path: str, filename: str) -> str:
@@ -221,13 +239,13 @@ def _tilted_bracket_given_tenure(
             & (df_raumtyp["tenure"].astype(str) == str(tenure))
         ]
         b = float(sub["base_weighted"].drop_duplicates().sum())
-        if b <= 0:
+        if _TALLY.aux_check("raumtyp base cell", "zero_base_equal_weight", b <= 0):
             b = 1.0
         acc += b * pmf
         base_total += b
     national_pmf = (acc / base_total) if base_total > 0 else None
 
-    if region_pmf is None or national_pmf is None:
+    if _TALLY.aux_check("tenure bracket pmf", "untilted_base", region_pmf is None or national_pmf is None):
         return base.copy(), False
     return tilt_toward_region(base, region_pmf, national_pmf), True
 
@@ -255,7 +273,7 @@ def tenure_probabilities_given_income(
 
     Returns ``None`` (caller logs a FALLBACK -- no silent fallback) when the NDS
     base is unavailable. With ``raumtyp_region is None`` the untilted NDS Bayes
-    inversion is returned.
+    inversion is returned and counted as the FALLBACK ``raumtyp_missing``.
 
     With ``return_tilt_status=True`` a ``(matrix, tilt_applied)`` tuple is returned
     (the matrix is identical): ``tilt_applied`` is True only when every tenure's bracket
@@ -265,8 +283,12 @@ def tenure_probabilities_given_income(
     brackets = list(include_brackets)
     n_brackets = len(brackets)
     p_tenure = _tenure_marginal(df_bundesland, BUNDESLAND_NIEDERSACHSEN)
-    if p_tenure is None:
+    _TALLY.unit()
+    if _TALLY.check("nds_marginal_absent_none", p_tenure is None):
         return (None, False) if return_tilt_status else None
+    # A missing raumtyp (failed AGS-8 -> RegioStaR-7 lookup) is a missing reference:
+    # the untilted NDS inversion is returned below, as before, but counted.
+    _TALLY.check("raumtyp_missing", raumtyp_region is None)
     tilt_applied = True
 
     # Build the joint P(bracket, tenure) = P(bracket | tenure) * P(tenure), then
@@ -277,7 +299,7 @@ def tenure_probabilities_given_income(
             df_bundesland, df_raumtyp, tenure, raumtyp_region, brackets
         )
         tilt_applied = tilt_applied and tenure_tilted
-        if cond is None:
+        if _TALLY.aux_check("tenure bracket cond", "tenure_cond_absent_zero", cond is None):
             cond = np.zeros(n_brackets, dtype=float)
         joint[:, ti] = cond * p_tenure[ti]
 
@@ -288,6 +310,8 @@ def tenure_probabilities_given_income(
     # A bracket with zero joint mass across all tenures (no data) -> fall back to
     # the unconditional tenure marginal so every bracket row is a valid pmf.
     empty = (row_sums[:, 0] <= 0)
+    for is_empty in empty:
+        _TALLY.aux_check("bracket row", "empty_bracket_row_tenure_marginal", bool(is_empty))
     if empty.any():
         out[empty, :] = p_tenure
     return (out, tilt_applied) if return_tilt_status else out
