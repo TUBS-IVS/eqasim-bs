@@ -44,19 +44,18 @@ module's own `resolve_budget()`, exactly like every other key.
 resource-sensitive key this module deliberately left CORE-bound only ("no
 per-worker footprint has ever been measured for that stage, and inventing one
 is forbidden", per the original design spec's Non-goals). That is no longer
-the case: the run resource recorder (issue #350) recorded seven deduplicated
-100% ZGB-8 executions of the chainsolver stage on the felix server
-(2026-09-05 to 2026-09-09), and a post-hoc measurement over those recorder
-series (`docs/runs/chainsolver-worker-private-memory-2026-09-17.yml`)
-established the pool's MAXIMUM measured private per-worker memory footprint
-at 0.86 GB (`DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB`), computed as
-(available-memory drop during the stage, minus driver RSS growth, which was
-0.0 GB in every run) divided by the 62 live workers.
+the case: the run resource recorder (issue #350) recorded 100% ZGB-8 chainsolver
+executions, and a post-hoc measurement over those series establishes the pool's
+maximum private per-worker memory footprint
+(`DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB`). The recorded runs, the figures and the
+computation (available-memory drop minus driver RSS growth, divided by the live
+workers) are owned by
+`docs/runs/chainsolver-worker-private-memory-2026-09-17.yml`.
 
-**Per-worker RSS itself is NOT usable for this bound.** On the 125.78 GB
-machine the summed worker RSS reads 1200-1860 GB across these runs, because
-more than 95% of each forked worker's RSS is copy-on-write pages inherited
-from the driver process at fork time, not memory the pool actually needs.
+**Per-worker RSS itself is NOT usable for this bound.** The summed worker RSS
+exceeds the machine's memory many times over (figures in the run manifest above),
+because most of each forked worker's RSS is copy-on-write pages inherited from the
+driver process at fork time, not memory the pool actually needs.
 The available-memory DELTA is the only quantity that isolates the pool's real
 private footprint, which is why the rule below subtracts a live measurement
 rather than summing `ps`/`/proc` RSS across the pool.
@@ -78,18 +77,19 @@ consistent with this module's "scale off the total allocation, not free
 capacity" rule (ADR-0126), not an exception to it. The config key
 `braunschweig.chainsolvers.worker_memory_gb` (OPERATIONAL, `volatile=True`)
 carries the measured constant; it sizes the pool, never the partition, so it
-has no influence on any result. `configs/base_bs.yml` sets **1.09** (ADR-0135,
-the maximum measured by `docs/runs/chainsolver-pool-memory-2026-09-28.yml`);
-the code default here is still 0.86 because editing this module re-runs
-PopulationSim (see the cache paragraph below).
+has no influence on any result. `configs/base_bs.yml` sets the measured maximum
+(value: the config; evidence: ADR-0135 and
+`docs/runs/chainsolver-pool-memory-2026-09-28.yml`); the code default here is
+still the older, lower value because editing this module re-runs PopulationSim
+(see the cache paragraph below).
 
-**Where the bound bites.** The 100 % production run of 2026-09-25/28 logged
-the driver's RSS at the sizing point as 37.55 and 36.37 GB
-(`docs/runs/chainsolver-pool-memory-2026-09-28.yml`), so on the 94.28 GB server
-the MEMORY term decides the worker count, not the 62 cores: with 1.09 GB/worker
-a 36.4 GB driver gets floor((86.28 - 36.4) / 1.09) = 45 workers. With the old
-0.86 the same driver got 58, and 56 workers exhausted the machine -- the kernel
-killed the driver (ADR-0135 records the three protections added since). See
+**Where the bound bites.** In the 100 % production run of 2026-09-25/28 the
+driver's RSS at the sizing point was so large that on the 94 GB server the
+MEMORY term decides the worker count, not the core count, and the old lower
+per-worker value let the pool exhaust the machine (the kernel killed the
+driver). The measured driver sizes, the resulting worker counts and the three
+protections added since are in
+`docs/runs/chainsolver-pool-memory-2026-09-28.yml` and ADR-0135. See
 ADR-0126's point 5 amendment for
 the full decision and its Consequences for the permanent cache-dependency
 cost this adds to the chainsolver stage (`resources.py` is now a helper

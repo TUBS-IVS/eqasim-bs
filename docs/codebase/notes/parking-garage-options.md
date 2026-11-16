@@ -129,7 +129,7 @@ off-street (share 1). The beta of the table is pinned by tests to `PARKING_DEFAU
 `--sensitivity-visitors-in-window` the in-window visitor lambda and `--commuter-target-respondents` with
 `--sensitivity-commuter-target-se` lambda_c at shifted targets. The values, the old values, the sensitivities and the limitations
 (no `parkingEvExempt` in the reference plans, the arrival is the activity start) are in the data record. Targets, all READ from the
-committed SrV tables and never typed: lambda against the SrV garage share `0.708 / (0.708 + 0.2537)` of
+committed SrV tables and never typed: lambda against the SrV garage share of
 `srv2023_city_center_parking` (E5, the destination universe outside home, work and education in Ia and Ib), lambda_c against the
 PAID-only commuter garage share `share_garage_large_lot_paid / (share_garage_large_lot_paid + share_street_paid)` of the row
 `bs_zentrum` of `srv2023_commute_parking_by_workplace_class` (H2 as revised by ruling R-4h-1: the work and education activities in
@@ -139,8 +139,8 @@ reader `count_zone_exposure.read_main_activities` provides the attribute as the 
 and no validation. The independent check the table reports (H3b) is the paid-only Wolfsburg commuter garage share: the mean garage
 share at lambda_c of the work and education activities without `parkingFree` in the Wolfsburg zones (every zone of the tariff table
 with `municipality_ags` 03103000) against the row `03103`, a number with its universe size and never validation. The script is
-tested on a synthetic fixture (`tests/fixtures/parking/calibration_plans_fixture.xml`) and was run on 2026-10-09 on the plans of the
-1 % server run of 2026-10-08 and again, on the 25 % reference plans and the enlarged option set, on 2026-10-14 (the table is
+tested on a synthetic fixture (`tests/fixtures/parking/calibration_plans_fixture.xml`) and was run on server plans (which runs and when:
+the data record `parking_garage_decay_calibration_2026`; the table is
 committed and the two config keys equal its rows `decay_length_m` and `decay_commute_length_m` in
 `configs/base_bs.yml` and the two popsim fixture configs; `tests/test_parking_garage_decay_config.py` requires both
 equalities and that the header pins of the garage dataset, the zone file and the two SrV tables are the pins of their data
@@ -187,7 +187,7 @@ lambda without the surface lots as a sensitivity number (the table records the f
   in `regional_garage_specs.BS_MONTHLY_SPECS`, checked to be the cheapest) and the Wallstrasse price from the 'weitere Monate
   ... Brutto' line of the Contipark configurator capture; every Braunschweig garage has a status row in the QA table (no_price,
   sold_out, price_on_request, period_unconfirmed) with the package's sentence, and `BS_RECORDED_SPECS` lists the facilities that
-  are no garage of the dataset (Eves and Fichtengrund count for P13; the DB BahnPark lots, whose products are USED products of their zones since spec Amendment G1 (`decision` used, `zone_ids`), and the APCOA lots never do). The Wolfsburg Parkdeck Hauptbahnhof is a garage since Amendment G2 (`GARAGE_SPECS`, its monthly product 100.00 EUR is one of the five Wolfsburg values of P13).
+  are no garage of the dataset (Eves and Fichtengrund count for P13; the DB BahnPark lots, whose products are USED products of their zones since spec Amendment G1 (`decision` used, `zone_ids`), and the APCOA lots never do). The Wolfsburg Parkdeck Hauptbahnhof is a garage since Amendment G2 (`GARAGE_SPECS`, its monthly product is one of the Wolfsburg values of P13; amount in the data record).
 - ASSUMPTION P13 is computed once, by `regional_garages.apply_monthly_imputation`, with the single implementation
   `garage_qa.expected_imputed_monthly` (median in integer cents, half up) that `validate_garage_qa` checks the committed
   table against: a withdrawn or added published product makes the committed imputed values fail the validator until the
@@ -199,7 +199,7 @@ lambda without the surface lots as a sensitivity number (the table records the f
   carries the test-set marker) reads it with the column empty and a warning; the committed dataset always has it.
 - The curation step and the tariff export warn per municipality when more than `garages.MONTHLY_IMPUTATION_WARNING_SHARE` (50 %)
   of its priced garages carry an imputed instead of a published product (`garages.monthly_imputation_warnings`; Braunschweig
-  10 of 12 and Wolfsburg 5 of 9 do).
+  the counts are in the data record `parking_garages_2026`).
 
 ## Large surface lots (spec Amendment I, Task 4j)
 
@@ -230,6 +230,6 @@ ADR-0140 decision 14), where the commuter decay and the Wolfsburg check count pa
 - Monthly products (Amendment F): Tarif A of the Steinstrasse is limited to Mo-Fr 06:30-21:00 and the limit is not modelled;
   the imputed products rest on the published products of their own municipality (counts in the data record `parking_garages_2026`) and no capacity of monthly places is modelled (the sold-out
   garages Magni and Packhof, and the Eiermarkt, whose operator offers no monthly product at all (Contipark capture of
-  2026-10-08), still carry the imputed product); the Braunschweig P13 median mixes a Mo-Fr 06:30-21:00 product (Steinstrasse Tarif A, 100.00 EUR) with 24/7 products (Wallstrasse, Eves, Fichtengrund), so the imputed product prices a regular's access window that not every garage offers; the sensitivity arm `zones_v2_published_monthly_only` (imputation false) bounds the
+  2026-10-08), still carry the imputed product); the Braunschweig P13 median mixes a Mo-Fr 06:30-21:00 product (Steinstrasse Tarif A) with 24/7 products (Wallstrasse, Eves, Fichtengrund), so the imputed product prices a regular's access window that not every garage offers; the sensitivity arm `zones_v2_published_monthly_only` (imputation false) bounds the
   effect; the measured effect on the commuter garage share is owned by the run manifests named above, not by this
   note (ADR-0140, decision 10).

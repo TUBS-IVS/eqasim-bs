@@ -18,7 +18,9 @@ border, the incoming crossing lies on the walk, so the whole inside piece, the c
 became one `walk` leg; the same on the way back with the egress walk. The router then teleported a
 walk across the inside part.
 
-Evidence, 1 % rerun on felix (`~/wt-i487-rerun`, prepare cache
+Evidence (UNRECORDED: no run manifest in `docs/runs/` holds this rerun, so the figures below
+cannot be traced or reproduced from the repo; the rerun needs a manifest before it counts as
+evidence), 1 % rerun on felix (`~/wt-i487-rerun`, prepare cache
 `braunschweig.matsim.simulation.prepare__b4c75863700204be34f47ab4ffba9947`, compared with the
 synthesis population `braunschweig.matsim.scenario.population__7d6576a723c2726c47aacde2d01fc277`):
 

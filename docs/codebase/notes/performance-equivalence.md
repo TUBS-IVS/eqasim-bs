@@ -66,12 +66,10 @@ Donor comparisons default to the production fine child age bands;
 `--donor-age-bands coarse` checks the older band definition explicitly. The same
 edges are passed to the original matcher, OFF matcher and prepared ON matcher.
 
-The bounded CLI evidence is complemented by a production-size typed-home replay:
-558,279 households, 310,512 buildings and 38,483 used cells. The projected path
-completed in 547.419 s; adding array slot construction and matching reduced that
-to 410.853 s (24.95%, 1.332x). Values, dtypes, row/column order, geometry WKB,
-CRS, `TypedHomeReport`, random-call counts and final RNG state were exact. This
-is full-input evidence for the typed-home public function, not a full synpp or
+The bounded CLI evidence is complemented by a production-size typed-home replay.
+Its input sizes, timings and exactness checks are owned by the
+[run manifest](../../runs/performance-equivalence-2026-09-15.yml). It is
+full-input evidence for the typed-home public function, not a full synpp or
 MATSim replay and not behavioural validation.
 
 ## Shared cache correctness

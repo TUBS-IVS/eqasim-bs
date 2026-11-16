@@ -27,22 +27,19 @@ braunschweig/analysis/
 & "$env:LOCALAPPDATA\miniforge3\shell\condabin\conda-hook.ps1"
 conda activate eqasim
 
-# 1. Generate / refresh the 10 % synthesis (already cached if present)
-python scripts/run_synpp.py configs/fixtures/config_local_braunschweig_10pct.yml
+# 1. Generate / refresh the synthesis with the canonical composed config
+#    (base + scale overlay, README "Running the model"; there is no 10 % overlay,
+#    so a 10 % run needs a local overlay setting sampling_rate / output_path)
+python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml
 
-# 2. Generate / refresh the 25 % synthesis
-python scripts/run_synpp.py configs/fixtures/config_local_braunschweig_25pct.yml
+# 2. Run the validation harness for the rate (see its --help for --layout / --out)
+python -m scripts.run_bs_validation --rate 25
 
-# 3. Run the validation harness against each rate
-python -m scripts.validate_bs_10pct                       # 10 % (legacy entry)
-python -m scripts.run_bs_validation --rate 10
-python -m scripts.run_bs_validation --rate 25 --layout legacy  # the fixture writes output_bs_25pct
+# 3. Copy the validation outputs of that run into this folder
+#    (<output_path> = the output_path of the config used in step 1)
+Copy-Item <output_path>\validation\* braunschweig\analysis\results\25pct\ -Force
 
-# 4. Copy the validation outputs into this folder
-Copy-Item eqasim-data\output_bs_10pct\validation\* braunschweig\analysis\results\10pct\ -Force
-Copy-Item eqasim-data\output_bs_25pct\validation\* braunschweig\analysis\results\25pct\ -Force
-
-# 5. Re-execute the notebook (writes outputs in-place)
+# 4. Re-execute the notebook (writes outputs in-place)
 jupyter nbconvert --to notebook --execute braunschweig\analysis\population_fit.ipynb --inplace
 ```
 
@@ -63,10 +60,8 @@ and 25 % runs.
 8. **Regression guard** — pass / fail per the harness thresholds.
 9. **Headline KPIs** as plain-text summary.
 
-## Reference notebook in `bavaria/analysis/`
+## Upstream Bavaria notebooks
 
-The upstream Bavaria fork ships three notebooks
-(`Calibration.ipynb`, `MiD Comparison.ipynb`, `Transit Comparison.ipynb`)
-that operate on Bavaria-specific data. They are kept under
-[`bavaria/analysis/`](../../bavaria/analysis/) for traceability but are
-**not** part of the BS validation flow.
+The upstream Bavaria fork's notebooks (`Calibration.ipynb`, `MiD Comparison.ipynb`,
+`Transit Comparison.ipynb`) are not part of this repository and not part of the BS
+validation flow.

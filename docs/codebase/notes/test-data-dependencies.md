@@ -71,7 +71,7 @@ input.
   `strict=False` for the dashboard panel and a logged warning, while the
   analysis/validation path raises).
 - Only two local-only inputs actually surface in the suite:
-  `braunschweig/kba/hsn_tsn_lookup.csv` and the VG250 archive.
+  `eqasim-data/braunschweig/kba/hsn_tsn_lookup.csv` (under the gitignored `eqasim-data/`) and the VG250 archive.
 
 **One honest residual, not fixable by a guard.** OFF-arm flag tests whose ON arm is
 data-guarded (`test_hsn_tsn_attributes_off_*`) are strictly weaker where the data is

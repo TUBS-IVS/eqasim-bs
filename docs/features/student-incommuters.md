@@ -240,7 +240,7 @@ yet run end-to-end on a data-complete environment (the LSN/OSM/DESTATIS inputs
 above require the server data tree) -- a 1% cordon dry-run with
 `education_gravity_enabled=True` confirming the per-commune count log, injected
 `education` activities, the in-ring/gate fallback rate, and the written
-`student_commuter_od.csv` is the remaining verification step (see
-`PROJECT_STATUS.md`). No validation against a real observed student-commute
+`student_commuter_od.csv` is the remaining verification step (open work is
+tracked in the GitHub issues). No validation against a real observed student-commute
 dataset has been performed or claimed -- see "Reverse-decay origin model"
 above.
