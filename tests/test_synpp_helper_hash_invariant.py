@@ -478,6 +478,11 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
     "braunschweig.ipf.prepare": (
         "braunschweig.ipf.joint_age_size",
     ),
+    # Logging only: fallback_rates declares a _SYNPP_TOKEN_EXEMPTION (it never shapes a stage
+    # result), which scripts/audit_synpp_helper_hash.py honours and this gate does not read.
+    "braunschweig.popsim.commute_distance": (
+        "braunschweig.popsim.fallback_rates",
+    ),
     # Declared stage imported as a library. Not run in production: configs alias it to
     # braunschweig.locations.synthesis.replacement_education_gravity; out of scope (ADR-0194).
     "synthesis.population.spatial.primary.locations": (
