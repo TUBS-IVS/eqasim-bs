@@ -39,6 +39,11 @@ evidence:
     log_marker: eligible rail entry stations
     note: |
       cordon_pt_gates.py logs a PRIMARY-containment-vs-population-catchment-fallback rate for rail entry stations, with a hard warning when ALL stations use the nearest-Gemeinde fallback.
+      Road gates (audit package D): gates.select_major_gates logs the gates kept by the
+      class/capacity filters ("[cordon.gates] select_major_gates: primary") and warns when
+      the filters empty the selection and only the strongest gate is kept; the stage warns
+      when no crossing gate carries a road_class, so the cordon_gate_road_classes filter
+      is dropped ("road-class filter").
   reference:
     kind: none
     note: |
