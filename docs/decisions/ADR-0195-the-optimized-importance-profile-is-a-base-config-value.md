@@ -19,14 +19,19 @@
 
 `importance_profile: optimized_2026_06_30` lives in `configs/base_bs.yml`; the 100 % overlay no longer
 sets it. The key is no longer a per-scale key (`SCALE_ONLY_KEYS` in `braunschweig/documentation/checks.py`
-and the leak test). The two reuse overlays no longer repeat it.
+and the leak test). The two reuse overlays no longer repeat it. The four standalone popsim fixtures
+(`config_popsim_{mid,open}_braunschweig.yml`, `config_smoke_popsim_{mid,open}_mini.yml`) set the same
+profile, so no popsim config silently runs another one.
 
 ## Consequences
 
-- **Outputs change for the 1 % and 25 % popsim runs** composed from the base plus an overlay. The 100 % run
-  is unchanged. A smoke of the 1 % or 25 % run is still due; results of such runs from before this change
-  were drawn with `uniform` and must not be compared to later ones without saying so.
-- The work directory shared by the 1 % and 25 % overlays holds batches built with `uniform`. Whether the
-  batch config signature (`_purge_stale_batches_for_changed_config`) takes the profile in through the
-  control set and so recomputes on the next run is expected but not verified here.
-- The standalone popsim fixtures under `configs/fixtures/` set no profile and stay on `uniform`.
+- **Outputs change for the 1 % and 25 % popsim runs** composed from the base plus an overlay, and for the
+  four popsim fixtures. The 100 % run is unchanged. A smoke of the 1 % or 25 % run is still due; results of
+  such runs from before this change were drawn with `uniform` and must not be compared to later ones
+  without saying so.
+- No stale `uniform` batch is reused. The profile rewrites the `importance` column of the controls frame
+  (`braunschweig.popsim.control_spec.apply_importance_profile`), and that frame is part of the work-dir
+  batch signature (`braunschweig.popsim.stage.batch_cache.compute_batch_config_signature`), so the first
+  run in an existing work directory purges its completed batches and recomputes PopulationSim in full.
+  Checked on 2026-11-16 with the catalog controls of the base (tiers 0 to 3, MiD seed): the profile changes
+  the importance of 36 of 46 controls. The stage also declares the key to synpp, so its cache recomputes too.
