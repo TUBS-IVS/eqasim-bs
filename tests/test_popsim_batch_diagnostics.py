@@ -21,6 +21,8 @@ from braunschweig.analysis.popsim_batch_diagnostics.fit import (  # noqa: E402
     control_fit, misfit_split, read_weight_table, rounding_shift)
 from braunschweig.analysis.popsim_batch_diagnostics.reuse import (  # noqa: E402
     reuse_by_zone, reuse_summary, shares_by_attribute, usage_counts, weight_class_shares)
+from braunschweig.analysis.popsim_batch_diagnostics.solver_paths import (  # noqa: E402
+    solver_path_table)
 from braunschweig.popsim.control_groups import unmatched_controls  # noqa: E402
 
 
@@ -74,7 +76,7 @@ def test_seed_fingerprint_and_no_store(tmp_path):
     batch = load_batch_folder(build_work_dir(tmp_path, with_store=False) / "batch_000")
     assert not batch.has_store
     assert len(batch.seed_fingerprint) == 64
-    assert batch.geographies == ("STAAT", "ZENSUS1km", "ZENSUS100m")
+    assert batch.geographies == ("STAAT", "KREIS", "ZENSUS1km", "ZENSUS100m")
 
 
 def test_duplicate_seed_household_ids_are_refused(work_dir):
@@ -402,3 +404,56 @@ def test_weights_of_a_household_missing_from_the_incidence_are_refused(work_dir)
     _write_keys(work_dir, {_FIRST_KEY: weights})
     with pytest.raises(ValueError, match="99"):
         misfit_split(load_batch_folder(work_dir / "batch_000"), levels=("ZENSUS100m",))
+
+
+_WRAP = "INFO - populationsim.integerizing.wrappers - do_simul_integerizing "
+
+
+def _write_log(work_dir, lines):
+    (work_dir / "batch_000" / "output" / "populationsim.log").write_text(
+        "\n".join(_WRAP + line for line in lines) + "\n", encoding="utf-8")
+
+
+def test_solver_paths_per_level(work_dir):
+    table = solver_path_table(work_dir).set_index("level")
+    assert table.loc["KREIS", ["n_parents", "first_optimal"]].tolist() == [1, 1]
+    assert table.loc["ZENSUS1km", ["n_parents", "first_infeasible", "retry_not_solved",
+                                   "sequential_fallback", "infeasible_subzones",
+                                   "non_simultaneous"]].tolist() == [1, 1, 1, 1, 1, 1]
+    assert table.loc["ZENSUS100m", ["n_parents", "first_optimal", "first_infeasible",
+                                    "first_not_solved", "retry_optimal", "sequential_fallback",
+                                    "single_feasible_subzone", "infeasible_subzones",
+                                    "non_simultaneous"]].tolist() == [3, 1, 1, 1, 1, 0, 1, 2, 1]
+
+
+def test_no_infeasible_with_fallback_line_is_a_sequential_fallback(work_dir):
+    _write_log(work_dir, ["failed for ZENSUS1km_K1 status INFEASIBLE. ",
+                          "failed but found no infeasible sub zones ZENSUS1km_K1. ",
+                          "falling back to sequential integerizing for ZENSUS1km_K1."])
+    row = solver_path_table(work_dir).set_index("level").loc["ZENSUS100m"]
+    assert row[["sequential_fallback", "single_feasible_subzone", "no_infeasible_subzones",
+                "non_simultaneous"]].tolist() == [1, 0, 1, 1]
+
+
+def test_smart_rounded_outcome_is_non_simultaneous(work_dir):
+    _write_log(work_dir, ["failed for ZENSUS1km_K1 status INFEASIBLE. ",
+                          "returning smart rounded weights for ZENSUS1km_K1."])
+    row = solver_path_table(work_dir).set_index("level").loc["ZENSUS100m"]
+    assert row[["all_subzones_infeasible", "non_simultaneous"]].tolist() == [1, 1]
+
+
+@pytest.mark.parametrize("line, message", [
+    ("succeeded for ZENSUS1km_K1 status WEIRD. ", "WEIRD"),
+    ("failed for GEMEINDE_7 status INFEASIBLE. ", "GEMEINDE_7"),
+    ("failed for ZENSUS100m_A status INFEASIBLE. ", "ZENSUS100m_A"),
+])
+def test_unknown_status_or_unmatched_label_is_refused(work_dir, line, message):
+    _write_log(work_dir, [line])
+    with pytest.raises(ValueError, match=message):
+        solver_path_table(work_dir)
+
+
+def test_missing_solver_log_is_refused(work_dir):
+    (work_dir / "batch_000" / "output" / "populationsim.log").unlink()
+    with pytest.raises(FileNotFoundError):
+        solver_path_table(work_dir)

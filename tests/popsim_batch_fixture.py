@@ -46,17 +46,21 @@ WEIGHTS_100M = [("A", 1, 0.4, 0), ("A", 2, 0.9, 1), ("A", 3, 0.3, 0), ("A", 4, 1
 LOG_LINES = [
     "INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for STAAT_1 status OPTIMAL. ",
     "WARNING - populationsim.integerizing.wrappers - do_simul_integerizing failed for KREIS_3153 status INFEASIBLE. ",
+    "INFO - populationsim.integerizing.wrappers - do_simul_integerizing 1 infeasable subzones for KREIS_3153. ",
     "ERROR - populationsim.integerizing.wrappers - do_simul_integerizing retry failed for KREIS_3153 status NOT_SOLVED.",
     "INFO - populationsim.integerizing.wrappers - do_simul_integerizing falling back to sequential integerizing for KREIS_3153.",
-    "INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for KREIS_3153_ZENSUS1km_K1 status OPTIMAL. ",
-    "WARNING - populationsim.integerizing.wrappers - do_simul_integerizing failed for KREIS_3153_ZENSUS1km_K2 status INFEASIBLE. ",
-    "INFO - populationsim.integerizing.wrappers - do_simul_integerizing retry succeeded for KREIS_3153_ZENSUS1km_K2 status OPTIMAL. ",
+    "INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_K1 status OPTIMAL. ",
+    "WARNING - populationsim.integerizing.wrappers - do_simul_integerizing failed for ZENSUS1km_K2 status INFEASIBLE. ",
+    "INFO - populationsim.integerizing.wrappers - do_simul_integerizing 2 infeasable subzones for ZENSUS1km_K2. ",
+    "INFO - populationsim.integerizing.wrappers - do_simul_integerizing retry succeeded for ZENSUS1km_K2 status OPTIMAL. ",
+    "WARNING - populationsim.integerizing.wrappers - do_simul_integerizing failed for ZENSUS1km_K3 status NOT_SOLVED. ",
+    "WARNING - populationsim.integerizing.wrappers - do_simul_integerizing failed but found no infeasible sub zones ZENSUS1km_K3. ",
 ]
 
 _SETTINGS = """total_hh_control: HH_TOTAL_ZENSUS100m_target
 household_id_col: H_ID
 household_weight_col: H_GEW
-geographies: [STAAT, ZENSUS1km, ZENSUS100m]
+geographies: [STAAT, KREIS, ZENSUS1km, ZENSUS100m]
 seed_geography: STAAT
 """
 
@@ -111,7 +115,7 @@ def build_work_dir(root: Path, *, with_store: bool = True,
 
     SEED_HOUSEHOLDS.to_csv(batch / "data" / "seed_households.csv", index=False)
     SEED_PERSONS.to_csv(batch / "data" / "seed_persons.csv", index=False)
-    pd.DataFrame({"STAAT": 1, "ZENSUS1km": "K1", "ZENSUS100m": ["A", "B"]}).to_csv(
+    pd.DataFrame({"STAAT": 1, "KREIS": 3153, "ZENSUS1km": "K1", "ZENSUS100m": ["A", "B"]}).to_csv(
         batch / "data" / "geo_cross_walk.csv", index=False)
 
     totals = pd.DataFrame(
@@ -124,8 +128,8 @@ def build_work_dir(root: Path, *, with_store: bool = True,
     controls.to_csv(batch / "configs" / "controls.csv", index=False)
     (batch / "configs" / "settings.yaml").write_text(_SETTINGS, encoding="utf-8")
 
-    pd.DataFrame([("1", "K1", cell, hid) for cell, hid in EXPANDED],
-                 columns=["STAAT", "ZENSUS1km", "ZENSUS100m", "H_ID"]).to_csv(
+    pd.DataFrame([("1", 3153, "K1", cell, hid) for cell, hid in EXPANDED],
+                 columns=["STAAT", "KREIS", "ZENSUS1km", "ZENSUS100m", "H_ID"]).to_csv(
         batch / "output" / "final_expanded_household_ids.csv", index=False)
     (batch / "output" / "populationsim.log").write_text(
         "\n".join(LOG_LINES) + "\n", encoding="utf-8")
