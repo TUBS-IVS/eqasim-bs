@@ -184,3 +184,25 @@ def test_all_zero_input_raises_instead_of_passing(tmp_path, monkeypatch):
     )
     with pytest.raises(RuntimeError, match="zero total"):
         employees.execute(ctx)
+
+
+def test_coerce_int_raises_at_the_raise_fraction_but_only_warns_below(capsys):
+    # 2 of 4 unexplained cells = exactly the raise fraction -> fatal (>= not >).
+    with pytest.raises(RuntimeError, match="_coerce_int"):
+        employees._coerce_int(pd.Series(["5", "N/A", "N/A", "7"]), column_name="all_total")
+    # 1 of 4 = 25 %: above the warn fraction, below the raise fraction -> warns, returns 0.
+    out = employees._coerce_int(pd.Series(["5", "N/A", "6", "7"]), column_name="all_total")
+    assert out.tolist() == [5, 0, 6, 7]
+    printed = capsys.readouterr().out
+    assert "WARNING" in printed
+    # Documented suppression markers are silent.
+    employees._coerce_int(pd.Series(["5", ".", "-", "7"]))
+    assert capsys.readouterr().out == ""
+
+
+def test_employees_policy_constants_equal_employment():
+    from braunschweig.data.census import employment
+
+    assert employees.GENESIS_SUPPRESSION_MARKERS == employment.GENESIS_SUPPRESSION_MARKERS
+    assert employees.EMPLOYMENT_COERCE_WARN_FRACTION == employment.EMPLOYMENT_COERCE_WARN_FRACTION
+    assert employees.EMPLOYMENT_COERCE_RAISE_FRACTION == employment.EMPLOYMENT_COERCE_RAISE_FRACTION

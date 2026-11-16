@@ -30,6 +30,9 @@ _DEFERRED_HELPER_MODULE_NAMES = ()
 
 CRS_METRIC = "EPSG:25832"
 
+# Share of skipped units above which the rate line is prefixed WARNING.
+FALLBACK_WARN_FRACTION = 0.05
+
 # Ostfalia is one enrollment row but spans three ZGB campus communes; its students
 # are distributed across these communes' OSM university buildings by area.
 OSTFALIA_COMMUNES = ["03158", "03102", "03103"]
@@ -83,6 +86,9 @@ def build_university_facilities(df_hochschulen, df_osm_uni, weight_column="weigh
     def _distribute(enrollment, communes):
         sub = osm[osm["ars5"].isin(communes)]
         if sub.empty:
+            # No building in the communes: the enrollment is not placed (counted).
+            unit_counts[0] += 1
+            unit_counts[1] += 1
             return
         if area_weight_column is None:
             weights = sub[weight_column].to_numpy(float)
@@ -116,12 +122,13 @@ def build_university_facilities(df_hochschulen, df_osm_uni, weight_column="weigh
 
     if area_weight_column is not None:
         log_unit_basis("university", sum(unit_basis), len(unit_basis) - sum(unit_basis))
-    if unit_counts[0]:
-        print("[university_facilities] units with OSM buildings: placed %d/%d (%.1f%%), "
-              "zero-weight units skipped (enrollment not placed) %d (%.1f%%)" % (
-                  unit_counts[0] - unit_counts[1], unit_counts[0],
-                  100.0 * (unit_counts[0] - unit_counts[1]) / unit_counts[0],
-                  unit_counts[1], 100.0 * unit_counts[1] / unit_counts[0]))
+    skipped_fraction = unit_counts[1] / unit_counts[0] if unit_counts[0] else 0.0
+    print("[university_facilities] %sunits with OSM buildings: placed %d/%d (%.1f%%), "
+          "zero-weight or building-less units skipped (enrollment not placed) %d (%.1f%%)" % (
+              "WARNING " if skipped_fraction > FALLBACK_WARN_FRACTION else "",
+              unit_counts[0] - unit_counts[1], unit_counts[0],
+              100.0 * (1.0 - skipped_fraction) if unit_counts[0] else 0.0,
+              unit_counts[1], 100.0 * skipped_fraction))
 
     gdf = gpd.GeoDataFrame(
         {"location_id": rows_id, "capacity": rows_cap},

@@ -448,3 +448,16 @@ def test_popsim_stage_wires_housing_tenure():
     assert 'context.config("synthesise_housing_tenure", True)' in src
     assert "_apply_housing_tenure" in src
     assert "regiostar_tenure" in src
+
+
+def test_stage_reports_the_tenure_table_rate_line(caplog):
+    """The stage wiring: deleting report_fallback_rates() from _apply_housing_tenure
+    leaves the tenure table fallbacks unreported (the module tally is never printed)."""
+    import logging
+
+    from braunschweig.data.mid import tenure_by_income as mod
+
+    df = _make_population_with_income(n_households=50)
+    with caplog.at_level(logging.INFO, logger=mod.logger.name):
+        _run_tenure(df)
+    assert [r for r in caplog.records if r.getMessage().startswith("tenure_by_income: primary")]

@@ -184,7 +184,7 @@ class _Tally:
         ) or "fallback 0 (0.0%)"
         msg = (f"status_by_hhtype: primary {max(n - n_fb, 0)}/{n} "
                f"({100.0 * max(n - n_fb, 0) / n:.1f}%), {parts}")
-        logger.warning(msg) if n_fb / n > _FALLBACK_WARN_FRACTION else logger.info(msg)
+        logger.log(logging.WARNING if n_fb / n > _FALLBACK_WARN_FRACTION else logging.INFO, msg)
 
 
 _TALLY = _Tally()

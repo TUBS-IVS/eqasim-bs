@@ -200,7 +200,7 @@ def test_kita_zero_weight_unit_is_counted_in_print(capsys):
     assert len(gdf) == 2  # unchanged: the zero-weight unit is skipped
     assert gdf["capacity"].sum() == pytest.approx(100.0)
     out = capsys.readouterr().out
-    assert "[kita_facilities] units with OSM POIs: placed 1/2 (50.0%)" in out
+    assert "[kita_facilities] WARNING units with OSM POIs: placed 1/2 (50.0%)" in out
     assert "zero-weight units skipped (Plaetze not placed) 1 (50.0%)" in out
 
 
@@ -221,7 +221,8 @@ def test_university_primary_path_prints_no_zero_weight_units(capsys):
     assert sorted(gdf["capacity"]) == pytest.approx([250.0, 750.0])
     out = capsys.readouterr().out
     assert "[university_facilities] units with OSM buildings: placed 1/1 (100.0%)" in out
-    assert "zero-weight units skipped (enrollment not placed) 0 (0.0%)" in out
+    assert "units skipped (enrollment not placed) 0 (0.0%)" in out
+    assert "WARNING" not in out
 
 
 # ---------------------------------------------------------------------------
@@ -274,3 +275,60 @@ def test_loop_branch_is_reported_against_its_own_unit(caplog):
                for m in msgs)
     (line,) = _rate_lines(caplog, "income_by_size")
     assert "primary 1/1 (100.0%)" in line.getMessage()  # the call itself was primary
+
+
+def test_university_commune_without_buildings_counts_as_skipped_and_warns(capsys):
+    import geopandas as gpd
+    from shapely.geometry import Point
+    from braunschweig.data.schools.university_facilities import build_university_facilities
+
+    hoch = pd.DataFrame({
+        "institution": ["TU BS", "Elsewhere"], "scope": ["local", "local"],
+        "ars5": ["03101", "03999"], "enrollment": [1000.0, 500.0],
+        "lon": [float("nan")] * 2, "lat": [float("nan")] * 2,
+    })
+    osm = gpd.GeoDataFrame({
+        "commune_id": ["031010000000"], "weight": [300.0],
+        "geometry": [Point(605000, 5790000)],
+    }, crs="EPSG:25832")
+    gdf = build_university_facilities(hoch, osm)
+    assert gdf["capacity"].sum() == pytest.approx(1000.0)  # values unchanged
+    out = capsys.readouterr().out
+    assert "[university_facilities] WARNING units with OSM buildings: placed 1/2 (50.0%)" in out
+    assert "(enrollment not placed) 1 (50.0%)" in out
+
+
+def test_tenure_unknown_region_counts_each_tenure_once_and_warns(caplog):
+    from braunschweig.data.mid import tenure_by_income as mod
+    from braunschweig.data.mid.income_by_size import INCOME_BRACKET_CATEGORIES
+
+    def make(regions):
+        return pd.DataFrame([
+            {"region": r, "tenure": t, "income_bracket": b, "share_pct": 10.0,
+             "base_weighted": 100.0}
+            for r in regions for t in mod.TENURE_CATEGORIES for b in INCOME_BRACKET_CATEGORIES
+        ])
+
+    mod.reset_fallback_rates()
+    with caplog.at_level(logging.INFO, logger=mod.logger.name):
+        mat = mod.tenure_probabilities_given_income(
+            make(["niedersachsen"]), make(["r1"]), "unknown_region")
+        mod.report_fallback_rates()
+    assert mat.shape == (10, 3)  # untilted NDS base, values unchanged
+    lines = [r for r in caplog.records
+             if "per tenure bracket pmf (n=3): fallback untilted_base 3 (100.0%)" in r.getMessage()]
+    assert len(lines) == 1  # 3 of 3 tenures, not 3 of 6
+    assert lines[0].levelno == logging.WARNING
+
+
+@pytest.mark.parametrize("nan_stays_nan", [False, True])
+def test_normalise_or_uniform_nan_row_is_counted_separately(nan_stays_nan):
+    from braunschweig.data.mid.reference_tables import _normalise_or_uniform
+
+    counter = [0, 0, 0]
+    out = _normalise_or_uniform(np.array([np.nan, 1.0]), counter, nan_stays_nan=nan_stays_nan)
+    if nan_stays_nan:
+        assert np.isnan(out).all()  # breakdown loaders: NaN is divided through
+    else:
+        assert out.tolist() == [0.5, 0.5]  # margin loaders: uniform
+    assert counter == [0, 1, 1]  # not a zero-sum row, not a normalised row

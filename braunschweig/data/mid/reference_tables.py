@@ -38,8 +38,10 @@ def _normalise_or_uniform(
 ) -> np.ndarray:
     """Normalise ``vec`` to sum 1; a zero-sum row becomes uniform and is counted.
 
-    ``counter`` is a ``[zero_rows, total_rows]`` pair updated in place so a
-    loader can report its fallback rate via :func:`_report_zero_sum_rows`.
+    ``counter`` is a ``[zero_rows, total_rows, nan_rows]`` triple updated in place so
+    a loader can report its fallback rate via :func:`_report_zero_sum_rows`. A NaN-sum
+    row is counted in ``nan_rows`` only (never as a normalised row, never as a
+    zero-sum row), whichever way the loader handles it.
 
     A NaN row sum is handled as in the original loaders: the margin loaders test
     ``sum > 0`` (NaN -> uniform, counted); the two breakdown loaders test
@@ -47,6 +49,10 @@ def _normalise_or_uniform(
     """
     counter[1] += 1
     total = vec.sum()
+    if np.isnan(total):
+        counter[2] += 1
+        # Unchanged values: margin loaders -> uniform, breakdown loaders -> NaN.
+        return vec / total if nan_stays_nan else np.ones(len(vec)) / len(vec)
     zero_sum = (total <= 0) if nan_stays_nan else (not total > 0)
     if not zero_sum:
         return vec / total
@@ -56,14 +62,16 @@ def _normalise_or_uniform(
 
 def _report_zero_sum_rows(loader: str, counter: list[int]) -> None:
     """Log primary (normalised) versus fallback (uniform) rows of one loader."""
-    zero_rows, total_rows = counter
-    fraction = zero_rows / total_rows if total_rows else 0.0
+    zero_rows, total_rows, nan_rows = counter
+    fraction = (zero_rows + nan_rows) / total_rows if total_rows else 0.0
     level = logging.WARNING if fraction > FALLBACK_WARN_FRACTION else logging.INFO
     logger.log(
         level,
         "[reference_tables] %s: primary %d/%d rows normalised, fallback %d "
-        "zero-sum rows replaced by a uniform vector (%.1f%%)",
-        loader, total_rows - zero_rows, total_rows, zero_rows, 100.0 * fraction,
+        "zero-sum rows replaced by a uniform vector, %d NaN-sum rows (uniform or left "
+        "NaN, per loader) (%.1f%% fallback)",
+        loader, total_rows - zero_rows - nan_rows, total_rows, zero_rows, nan_rows,
+        100.0 * fraction,
     )
 
 # Subdirectory inside the synpp ``data_path`` where the seed CSVs live.
@@ -300,7 +308,7 @@ def load_pt_subscription_breakdown(
     cols = list(PT_TICKET_CATEGORIES)
     by_kreis: dict[str, np.ndarray] = {}
     region: np.ndarray | None = None
-    zero_rows = [0, 0]
+    zero_rows = [0, 0, 0]
     for _, row in df.iterrows():
         ars5 = str(row["ars5"])
         vec = np.asarray(
@@ -338,7 +346,7 @@ def load_pt_subscription_margins(
     cols = list(PT_TICKET_CATEGORIES)
     df_sex = _read_csv(_path(data_path, "mid2023_P24_1_by_sex.csv"))
     by_sex: dict[str, np.ndarray] = {}
-    zero_rows = [0, 0]
+    zero_rows = [0, 0, 0]
     for _, row in df_sex.iterrows():
         vec = np.asarray(
             [float(row[P24_RAW_COLUMN_BY_CATEGORY[c]]) for c in cols], dtype=float
@@ -428,7 +436,7 @@ def load_pt_subscription_by_car_availability(
         )
 
     by_car_availability: dict[str, np.ndarray] = {}
-    zero_rows = [0, 0]
+    zero_rows = [0, 0, 0]
     for _, row in df.iterrows():
         key = str(row["car_availability"])
         if key not in PT_BY_CAR_AVAILABILITY_KEYS:
@@ -500,7 +508,7 @@ def load_license_breakdown(
     cols = list(LICENSE_CATEGORIES)
     by_kreis: dict[str, np.ndarray] = {}
     region: np.ndarray | None = None
-    zero_rows = [0, 0]
+    zero_rows = [0, 0, 0]
     for _, row in df.iterrows():
         ars5 = str(row["ars5"])
         vec = np.asarray([float(row[c]) for c in cols], dtype=float)
@@ -535,7 +543,7 @@ def load_license_margins(
     cols = list(LICENSE_CATEGORIES)
     df_sex = _read_csv(_path(data_path, "mid2023_P17_1_by_sex.csv"))
     by_sex: dict[str, np.ndarray] = {}
-    zero_rows = [0, 0]
+    zero_rows = [0, 0, 0]
     for _, row in df_sex.iterrows():
         vec = np.asarray([float(row[c]) for c in cols], dtype=float)
         by_sex[str(row["sex"])] = _normalise_or_uniform(vec, zero_rows)

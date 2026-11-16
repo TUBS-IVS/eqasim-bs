@@ -13,6 +13,7 @@ ONE rate line per build. A unit is one decision of the table build; each unit is
 expected to fire at most one branch, primary = units - fired branches (clamped at 0).
 Counting never changes a returned value. It sits in this already-hashed module so no
 new helper module has to be added to every stage's synpp hash list.
+The reset/report contract is in ``docs/codebase/notes/mid-fallback-tally.md``.
 """
 from __future__ import annotations
 

@@ -29,6 +29,9 @@ _DEFERRED_HELPER_MODULE_NAMES = ()
 
 CRS_METRIC = "EPSG:25832"
 
+# Share of skipped units above which the rate line is prefixed WARNING.
+FALLBACK_WARN_FRACTION = 0.05
+
 
 def lsn_unit(commune_id):
     """LSN Einheits-/Samtgemeinde code from a 12-digit ARS: Kreis(3)+Verband(last 3)."""
@@ -94,12 +97,13 @@ def build_kita_facilities(df_kitas, df_osm_kg, weight_column="weight",
             rows_geom.append(geom)
     if area_weight_column is not None:
         log_unit_basis("kita", n_potential_units, n_area_units)
-    if n_units:
-        print("[kita_facilities] units with OSM POIs: placed %d/%d (%.1f%%), zero-weight "
-              "units skipped (Plaetze not placed) %d (%.1f%%)" % (
-                  n_units - n_zero_weight, n_units,
-                  100.0 * (n_units - n_zero_weight) / n_units,
-                  n_zero_weight, 100.0 * n_zero_weight / n_units))
+    skipped_fraction = n_zero_weight / n_units if n_units else 0.0
+    print("[kita_facilities] %sunits with OSM POIs: placed %d/%d (%.1f%%), zero-weight "
+          "units skipped (Plaetze not placed) %d (%.1f%%)" % (
+              "WARNING " if skipped_fraction > FALLBACK_WARN_FRACTION else "",
+              n_units - n_zero_weight, n_units,
+              100.0 * (1.0 - skipped_fraction) if n_units else 0.0,
+              n_zero_weight, 100.0 * skipped_fraction))
 
     gdf = gpd.GeoDataFrame({"location_id": rows_id, "capacity": rows_cap},
                            geometry=rows_geom, crs=CRS_METRIC)

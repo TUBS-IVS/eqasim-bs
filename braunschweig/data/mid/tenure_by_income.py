@@ -285,7 +285,7 @@ def tenure_probabilities_given_income(
         cond = _tilted_bracket_given_tenure(
             df_bundesland, df_raumtyp, tenure, raumtyp_region, brackets
         )
-        if _TALLY.aux_check("tenure bracket pmf", "tenure_cond_absent_zero", cond is None):
+        if _TALLY.aux_check("tenure bracket cond", "tenure_cond_absent_zero", cond is None):
             cond = np.zeros(n_brackets, dtype=float)
         joint[:, ti] = cond * p_tenure[ti]
 
