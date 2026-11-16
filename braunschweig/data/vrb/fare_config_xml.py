@@ -42,17 +42,26 @@ def read_vrb_fare_module(config_path) -> dict[str, str] | None:
     return None
 
 
-def write_vrb_fare_module(config_path, params: Mapping[str, str]) -> Path:
+def write_vrb_fare_module(config_path, params: Mapping[str, object]) -> Path:
+    """Insert the vrbFare module with ``params`` before ``</config>``; return the path.
+
+    Each value is written as ``str(value)``, so an int or a float is accepted. An existing vrbFare module is
+    identical when its parameter texts equal the texts this call writes (nothing is written) and conflicting
+    otherwise (``ValueError``). The caller's values are not compared themselves: the module read back holds
+    text, so a re-run with an int or a float would refuse the module it had written. Side effect: rewrites
+    ``config_path`` when it has no vrbFare module.
+    """
     path = Path(config_path)
+    param_texts = {name: str(value) for name, value in params.items()}
     existing = read_vrb_fare_module(path)
     if existing is not None:
-        if existing == dict(params):
+        if existing == param_texts:
             return path
         raise ValueError(f"{path}: conflicting {MODULE_NAME} configuration; refusing to overwrite "
-                         f"{existing} with {dict(params)}")
+                         f"{existing} with {param_texts}")
     lines = [f'\t<module name="{MODULE_NAME}">']
-    for name, value in params.items():
-        lines.append(f"\t\t<param name={quoteattr(name)} value={quoteattr(str(value))} />")
+    for name, value in param_texts.items():
+        lines.append(f"\t\t<param name={quoteattr(name)} value={quoteattr(value)} />")
     lines.append("\t</module>")
     text = path.read_text(encoding="utf-8")
     marker = text.rfind("</config>")
