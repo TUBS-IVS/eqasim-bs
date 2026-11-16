@@ -47,6 +47,39 @@ OTHER_SUBTYPE_SEED_OFFSET = 90213    # SHOP_SUBTYPE_SEED_OFFSET + 2
 ESCORT_LOCATION_SEED_OFFSET = 90214  # SHOP_SUBTYPE_SEED_OFFSET + 3
 
 
+def _load_mid_wege(mid_dir: str):
+    """Load the full MiD Wege table (``braunschweig.popsim.mid.donor.load_mid_wege``).
+
+    The default ``mid_wege_loader`` of the three subtype builders below. The donor module is
+    resolved at call time, so a test's monkeypatch of ``donor.load_mid_wege`` still applies.
+    """
+    from braunschweig.popsim.mid import donor as mid_donor
+    return mid_donor.load_mid_wege(mid_dir)
+
+
+def _shared_mid_wege_loader():
+    """A ``mid_wege_loader`` that loads the MiD Wege table at most once per ``mid_dir``.
+
+    The stage passes ONE such loader to the shop, leisure and other subtype builders, so a
+    run with all three splits ON reads the CSV once instead of three times (audit 2026-11
+    package H, finding P5a-F7). Loading stays lazy: a run whose builders need no MiD frame
+    (all OFF, or a pinned shop share) reads nothing. Every builder hands the same frame
+    object on, so they must not mutate it: each one derives a new frame before touching
+    columns (``trips.restrict_to_weekday_diary_legs`` filters by mask, ``trips.map_mode``
+    copies, ``DataFrame.assign`` returns a new frame), and the estimators only see those
+    derived frames. ``tests/test_secondary_chainsolvers_subtypes.py`` pins that the shared
+    frame is unchanged after all three builds.
+    """
+    frames: Dict[str, Any] = {}
+
+    def load(mid_dir: str):
+        if mid_dir not in frames:
+            frames[mid_dir] = _load_mid_wege(mid_dir)
+        return frames[mid_dir]
+
+    return load
+
+
 class _CountedDecider:
     """A per-leg subtype decider that counts its legs and its marginal fallbacks.
 
@@ -70,7 +103,8 @@ class _CountedDecider:
         return outcome
 
 
-def _build_shop_subtype_decider(context, random_seed: int):
+def _build_shop_subtype_decider(context, random_seed: int,
+                                mid_wege_loader=_load_mid_wege):
     """Build the per-leg shop daily/non-daily decider, or return None when OFF.
 
     Returns a callable ``(mode: str, travel_time_s: float) -> "shop_daily" |
@@ -98,7 +132,6 @@ def _build_shop_subtype_decider(context, random_seed: int):
     if not context.config("secondary_shop_daily_split"):
         return None
 
-    from braunschweig.popsim.mid import donor as mid_donor
     from braunschweig.popsim.shop_subtype import (
         SHOP_DAILY_W_ZWD,
         SHOP_NONDAILY_W_ZWD,
@@ -127,7 +160,7 @@ def _build_shop_subtype_decider(context, random_seed: int):
     else:
         # Estimate the conditional P(daily | mode, tt_band) from MiD Wege.
         mid_dir = context.config("braunschweig.population.popsim.mid_dir")
-        mid_wege = mid_donor.load_mid_wege(mid_dir)
+        mid_wege = mid_wege_loader(mid_dir)
         # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116); one-argument
         # execute-context read of the key declared in configure(). Applied BEFORE map_mode /
         # the time derivation / the estimation, so every downstream count is on that universe.
@@ -180,7 +213,8 @@ def _build_shop_subtype_decider(context, random_seed: int):
 # Task 4 (issue #127): leisure / other subtype imputation deciders
 # ---------------------------------------------------------------------------
 
-def _build_leisure_subtype_decider(context, random_seed: int):
+def _build_leisure_subtype_decider(context, random_seed: int,
+                                   mid_wege_loader=_load_mid_wege):
     """Build the per-leg leisure subtype decider, or return None when OFF.
 
     Sibling to ``_build_shop_subtype_decider``. Returns a callable
@@ -242,7 +276,6 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     if not context.config("secondary_leisure_subtype_split"):
         return None
 
-    from braunschweig.popsim.mid import donor as mid_donor
     from braunschweig.popsim.purpose_subtype import (
         code_coverage_guard,
         estimate_group_probabilities,
@@ -266,7 +299,7 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     # fifth leisure group (issue #373, ADR-0115).
     unspecified_subtype = bool(context.config(KEY_LEISURE_UNSPECIFIED_SUBTYPE))
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
-    mid_wege = mid_donor.load_mid_wege(mid_dir)
+    mid_wege = mid_wege_loader(mid_dir)
     # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116); same one-argument
     # execute-context form and same imported-key rule as the two flags above. Applied BEFORE
     # map_mode / the time derivation / the coverage guard / the estimation, so the labelled
@@ -314,7 +347,8 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     return _CountedDecider(decide)
 
 
-def _build_other_subtype_decider(context, random_seed: int):
+def _build_other_subtype_decider(context, random_seed: int,
+                                 mid_wege_loader=_load_mid_wege):
     """Build the per-leg "other" errand/escort/rest subtype decider, or None
     when OFF.
 
@@ -388,7 +422,6 @@ def _build_other_subtype_decider(context, random_seed: int):
 
     escort_purpose_on = bool(context.config("escort_purpose"))  # one-arg: execute-context read; key declared in configure()
 
-    from braunschweig.popsim.mid import donor as mid_donor
     from braunschweig.popsim.purpose_subtype import (
         OTHER_ERRAND_ZWECK,
         OTHER_ESCORT_ZWECK,
@@ -414,7 +447,7 @@ def _build_other_subtype_decider(context, random_seed: int):
 
     min_obs = int(context.config("secondary_distance_min_obs"))
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
-    mid_wege = mid_donor.load_mid_wege(mid_dir)
+    mid_wege = mid_wege_loader(mid_dir)
     # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116); one-argument
     # execute-context read of the key declared in configure(). Applied BEFORE map_mode / the
     # time derivation, so BOTH composed estimation stages below (the coarse W_ZWECK split and
