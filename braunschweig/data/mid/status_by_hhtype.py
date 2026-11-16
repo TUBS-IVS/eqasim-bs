@@ -293,13 +293,18 @@ def region_status_probabilities(
 
     and the result is ``P_NDS(status | hhtype) * tilt``, renormalised over
     status. With ``raumtyp_region is None`` (no RS7 available) the raw NDS base
-    is returned (tilt = 1). This keeps the strong, NDS-specific signal while
+    is returned (tilt = 1) and counted as the FALLBACK ``raumtyp_missing``. This keeps the strong, NDS-specific signal while
     letting urban/rural differences modulate it -- the documented choice over a
     pure raumtyp model (the raumtyp table is national, not NDS-specific).
     """
     statuses = list(include_status)
     base = bayes_status_given_hhtype(df_bundesland, base_region, statuses)
     if raumtyp_region is None:
+        # Missing raumtyp (failed AGS-8 -> RegioStaR-7 lookup) = missing reference:
+        # the raw base is returned unchanged, one counted unit per hhtype.
+        for _ in base:
+            _TALLY.unit()
+            _TALLY.check("raumtyp_missing", True)
         return base
 
     region_b = bayes_status_given_hhtype(df_raumtyp, raumtyp_region, statuses)

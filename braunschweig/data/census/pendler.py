@@ -177,6 +177,10 @@ def execute(context) -> pd.DataFrame:
         (df[df["flow"] > 0].groupby(["orig_ars", "dest_ars"])["flow"].nunique() > 1).sum()
     )
     n_zero_vs_positive = n_differing_any - n_conflicting
+    # Only pairs present in BOTH exports (ZGB<->ZGB) can conflict; they are the
+    # denominator of the conflict rate (a share of all pairs could never exceed the
+    # warn threshold on real exports, where most pairs appear in one file only).
+    n_in_both = int((df.groupby(["orig_ars", "dest_ars"]).size() > 1).sum())
     df = (
         df.groupby(["orig_ars", "dest_ars"], as_index=False)
           .agg(flow=("flow", "max"))
@@ -184,13 +188,16 @@ def execute(context) -> pd.DataFrame:
     # Fallback transparency (audit D, P9-F5): the max-dedup is silent about how
     # many pairs it collapsed and how many of them disagreed between the files.
     n_collapsed = n_before_dedup - len(df)
-    conflict_fraction = n_conflicting / len(df) if len(df) else 0.0
-    tag = "WARNING " if conflict_fraction > FALLBACK_WARN_FRACTION else ""
+    conflict_fraction = n_conflicting / n_in_both if n_in_both else 0.0
+    # The two views should be identical (module docstring): ANY both-positive
+    # disagreement is a warning, the rate only sizes it.
+    tag = "WARNING " if n_conflicting > 0 else ""
     print(
         "[braunschweig.data.census.pendler] {}dedup: {} rows -> {} pairs "
-        "({} collapsed by max, {} pairs with differing flows = {:.1f}%)".format(
+        "({} collapsed by max, {} pairs with differing flows = {:.1f}% of the {} "
+        "pairs present in both files)".format(
             tag, n_before_dedup, len(df), n_collapsed, n_conflicting,
-            100.0 * conflict_fraction,
+            100.0 * conflict_fraction, n_in_both,
         )
     )
     print(

@@ -334,9 +334,10 @@ def income_bracket_probabilities(
     vector is ordered like :data:`INCOME_BRACKET_CATEGORIES` and sums to 1.
 
     Returns ``None`` when the NDS base cell for ``hh_size`` is absent. With
-    ``raumtyp_region is None`` the untilted NDS base is the primary result; with a
-    raumtyp region absent from the raumtyp table it is a FALLBACK. Each call is one
-    unit of the module tally: the ``None`` return, the untilted-base return and a
+    ``raumtyp_region is None`` (failed RegioStaR-7 lookup) or a raumtyp region absent
+    from the raumtyp table the untilted NDS base is returned and counted as a FALLBACK
+    (``raumtyp_missing`` / ``untilted_base``). Each call is one
+    unit of the module tally: the ``None`` return, the untilted-base returns and a
     zero ``base_weighted`` replaced by equal weight are counted by branch, and the
     caller logs the rate once via :func:`report_fallback_rates`.
     """
@@ -348,7 +349,8 @@ def income_bracket_probabilities(
     if _TALLY.check("nds_base_absent_none", base is None):
         return None
 
-    if raumtyp_region is None:
+    # A missing raumtyp (failed AGS-8 -> RegioStaR-7 lookup) is a missing reference.
+    if _TALLY.check("raumtyp_missing", raumtyp_region is None):
         return base.copy()
 
     region_pmf = _bracket_pmf_for_region_size(df_raumtyp, raumtyp_region, hh_size, brackets)

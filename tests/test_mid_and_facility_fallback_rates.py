@@ -103,19 +103,68 @@ def test_status_by_hhtype_primary_path_reports_no_fallback(caplog):
     from braunschweig.data.mid import status_by_hhtype as mod
 
     df = pd.DataFrame([
-        {"region": "niedersachsen", "status": s, "hhtype": "h1", "share_pct": 50.0,
+        {"region": reg, "status": s, "hhtype": "h1", "share_pct": 50.0,
          "base_weighted": 100.0}
-        for s in mod.STATUS_CATEGORIES
+        for reg in ("niedersachsen", "r1", "r2") for s in mod.STATUS_CATEGORIES
     ])
     mod.report_fallback_rates()
     with caplog.at_level(logging.INFO, logger=mod.logger.name):
-        out = mod.region_status_probabilities(df, df, "niedersachsen", None)
+        out = mod.region_status_probabilities(df, df, "niedersachsen", "r1")  # real region
         mod.report_fallback_rates()
     n = len(mod.STATUS_CATEGORIES)
     assert out["h1"].tolist() == pytest.approx([1.0 / n] * n)
     (line,) = _rate_lines(caplog, "status_by_hhtype")
     assert "fallback 0 (0.0%)" in line.getMessage()
     assert line.levelno == logging.INFO
+
+
+def test_missing_raumtyp_is_a_counted_fallback_in_every_coupling(caplog):
+    """A failed RegioStaR-7 lookup (``raumtyp_region is None``) is no primary result."""
+    from braunschweig.data.mid import income_by_size, income_by_status
+    from braunschweig.data.mid import status_by_hhtype, tenure_by_income
+    from braunschweig.data.mid.income_by_size import INCOME_BRACKET_CATEGORIES
+
+    status = income_by_status.STATUS_CATEGORIES[0]
+    tenure_df = pd.DataFrame([
+        {"region": r, "tenure": t, "income_bracket": b, "share_pct": 10.0, "base_weighted": 100.0}
+        for r in ("niedersachsen", "r1") for t in tenure_by_income.TENURE_CATEGORIES
+        for b in INCOME_BRACKET_CATEGORIES
+    ])
+    hh_df = pd.DataFrame([
+        {"region": r, "status": s, "hhtype": "h1", "share_pct": 50.0, "base_weighted": 100.0}
+        for r in ("niedersachsen", "r1") for s in status_by_hhtype.STATUS_CATEGORIES
+    ])
+    n_status = len(status_by_hhtype.STATUS_CATEGORIES)
+    calls = {
+        "income_by_size": (income_by_size, lambda: income_by_size.income_bracket_probabilities(
+            _income_df("1", "hh_size", ["niedersachsen"]), _income_df("1", "hh_size", ["r1"]),
+            "1", None), np.full(10, 0.1)),
+        "income_by_status": (income_by_status, lambda: income_by_status.income_bracket_probabilities_by_status(
+            _income_df(status, "status", ["niedersachsen"]), _income_df(status, "status", ["r1"]),
+            status, None), np.full(10, 0.1)),
+        "status_by_hhtype": (status_by_hhtype, lambda: status_by_hhtype.region_status_probabilities(
+            hh_df, hh_df, "niedersachsen", None)["h1"], np.full(n_status, 1.0 / n_status)),
+        "tenure_by_income": (tenure_by_income, lambda: tenure_by_income.tenure_probabilities_given_income(
+            tenure_df, tenure_df, None)[0], np.full(3, 1 / 3)),
+    }
+    for table, (mod, call, expected) in calls.items():
+        mod.reset_fallback_rates()
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger=mod.logger.name):
+            value = call()
+            mod.report_fallback_rates()
+        assert value == pytest.approx(expected)  # behaviour unchanged: untilted base
+        (line,) = _rate_lines(caplog, table)
+        assert "fallback raumtyp_missing" in line.getMessage()
+        assert line.levelno == logging.WARNING  # every unit missed it
+
+
+def test_status_by_hhtype_warn_fraction_equals_the_shared_constant():
+    # status_by_hhtype keeps a separate tally copy (synpp helper-hash closure); the
+    # warn level must not drift from the shared one.
+    from braunschweig.data.mid import raumtyp_tilt, status_by_hhtype
+
+    assert status_by_hhtype._FALLBACK_WARN_FRACTION == raumtyp_tilt.FALLBACK_WARN_FRACTION
 
 
 def test_tenure_by_income_primary_path_reports_no_fallback(caplog):

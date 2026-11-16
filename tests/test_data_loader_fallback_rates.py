@@ -138,3 +138,17 @@ def test_pendler_dedup_zero_vs_positive_is_info_but_two_positives_warn(tmp_path,
     text = capsys.readouterr().out
     assert out["flow"].tolist() == [300]  # max, unchanged
     assert "WARNING" in text and "1 pairs with differing flows" in text
+
+    # Real exports: many pairs in one file only plus ONE both-positive disagreement.
+    # The conflict share of ALL pairs is tiny, yet any disagreement must warn, and the
+    # rate is printed against the pairs present in both files.
+    ein = ["Braunschweig;03101;Wolfsburg;03103;100;1;1;1;1;1"] + [
+        "Braunschweig;03101;Ort{};03{:03d};5;1;1;1;1;1".format(i, 200 + i) for i in range(40)
+    ]
+    aus = ["Wolfsburg;03103;Braunschweig;03101;300;1;1;1;1;1"] + [
+        "Ort{};03{:03d};Wolfsburg;03103;7;1;1;1;1;1".format(i, 300 + i) for i in range(40)
+    ]
+    _run_pendler(tmp_path, ein, aus)
+    text = capsys.readouterr().out
+    assert "WARNING" in text
+    assert "1 pairs with differing flows = 100.0% of the 1 pairs present in both files" in text

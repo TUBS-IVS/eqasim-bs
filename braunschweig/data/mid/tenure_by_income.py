@@ -269,7 +269,7 @@ def tenure_probabilities_given_income(
 
     Returns ``None`` (caller logs a FALLBACK -- no silent fallback) when the NDS
     base is unavailable. With ``raumtyp_region is None`` the untilted NDS Bayes
-    inversion is returned.
+    inversion is returned and counted as the FALLBACK ``raumtyp_missing``.
     """
     brackets = list(include_brackets)
     n_brackets = len(brackets)
@@ -277,6 +277,9 @@ def tenure_probabilities_given_income(
     _TALLY.unit()
     if _TALLY.check("nds_marginal_absent_none", p_tenure is None):
         return None
+    # A missing raumtyp (failed AGS-8 -> RegioStaR-7 lookup) is a missing reference:
+    # the untilted NDS inversion is returned below, as before, but counted.
+    _TALLY.check("raumtyp_missing", raumtyp_region is None)
 
     # Build the joint P(bracket, tenure) = P(bracket | tenure) * P(tenure), then
     # normalise per bracket to get P(tenure | bracket).

@@ -6,10 +6,11 @@ the base is multiplied by ``P(category | region) / P(category | national raumtyp
 and renormalised. :func:`tilt_toward_region` is the one implementation of that step;
 each coupling module still derives its own base, region and national pmfs.
 
-:class:`FallbackTally` (CLAUDE.md "Fallback transparency") lives here as well: the five
-coupling modules (income_by_size, income_by_status, cars_by_status, status_by_hhtype,
-tenure_by_income) count their degenerate-input branches with it and the caller logs
-ONE rate line per build. A unit is one decision of the table build; each unit is
+:class:`FallbackTally` (CLAUDE.md "Fallback transparency") lives here as well: four
+coupling modules (income_by_size, income_by_status, cars_by_status, tenure_by_income)
+count their degenerate-input branches with it and the caller logs ONE rate line per
+build. ``status_by_hhtype`` keeps its own copy (``_Tally``, ``_FALLBACK_WARN_FRACTION``)
+because importing this module would widen the synpp helper-hash closure of its stages. A unit is one decision of the table build; each unit is
 expected to fire at most one branch, primary = units - fired branches (clamped at 0).
 Counting never changes a returned value. It sits in this already-hashed module so no
 new helper module has to be added to every stage's synpp hash list.

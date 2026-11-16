@@ -4,8 +4,9 @@
 tables (`income_by_size`, `income_by_status`, `cars_by_status`, `tenure_by_income`) use to
 satisfy CLAUDE.md "Fallback transparency". The rule itself (what counts as primary,
 fallback, not applicable) is `fallback-counter-states.md`; this note is only the
-mechanism's contract. `status_by_hhtype` keeps its own small local tally for the same
-purpose (no new import edge).
+mechanism's contract. `status_by_hhtype` keeps its own small copy, `status_by_hhtype._Tally`
+with its own constant `_FALLBACK_WARN_FRACTION`: its stages do not reach `raumtyp_tilt`, so an
+import would widen their synpp helper-hash closure. A test keeps the two constants equal.
 
 ## Contract
 
@@ -24,4 +25,7 @@ purpose (no new import edge).
   conditional used to share one name).
 - **Counting never changes a returned value.** `check` and `aux_check` return their
   `fired` argument unchanged.
-- **Warning level** is `FALLBACK_WARN_FRACTION` in the same module.
+- **Warning level** is `FALLBACK_WARN_FRACTION` in the same module (`status_by_hhtype`:
+  `_FALLBACK_WARN_FRACTION`).
+- **A missing raumtyp is a fallback.** `raumtyp_region is None` (failed AGS-8 to RegioStaR-7
+  lookup) counts as branch `raumtyp_missing`, per `fallback-counter-states.md`.
