@@ -8,7 +8,6 @@ from braunschweig.config_compose import compose
 
 ROOT = Path(__file__).resolve().parents[1]
 FLAGS = (
-    "braunschweig.performance.fleet_home_lookup",
     "braunschweig.performance.home_coordinates",
     "braunschweig.performance.plan_validation",
     "braunschweig.performance.donor_matching",

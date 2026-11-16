@@ -98,9 +98,10 @@ def kernel(case, mode, fixture, *, donor_age_bands="fine"):
     original = mode == "original"
     if case == "fleet":
         from braunschweig.synthesis.vehicles.cars.household import build_household_car_frame
-        kwargs = {} if original else {"indexed_home_lookup": on}
+        # The fleet switch is retired (ADR-0122 amendment 2026-11-16): "off" and "on"
+        # run the same vectorised code, still compared with the reference checkout.
         return build_household_car_frame(
-            fixture["persons"], fixture["homes"], fixture["regiostar"], **kwargs)
+            fixture["persons"], fixture["homes"], fixture["regiostar"])
     if case == "home":
         from braunschweig.synthesis.locations.home_cell import assign_homes_typed
         kwargs = {} if original else {"batch_coordinates": on}

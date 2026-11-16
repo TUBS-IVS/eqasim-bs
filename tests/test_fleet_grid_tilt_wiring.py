@@ -463,7 +463,7 @@ def test_missing_ev_grid_csv_logs_exactly_one_warning(monkeypatch, caplog):
     monkeypatch.setattr(household.fleet, "sample_fleet", _stop)
 
     config = {"data_path": "unused", "random_seed": 0, "hbefa_segment_size_map": None,
-              "braunschweig.performance.fleet_home_lookup": True, "fleet_model_enabled": True,
+              "fleet_model_enabled": True,
               "fleet_model_brands": True, "fleet_hsn_tsn_attributes": True,
               "fleet_consistency_v2": True, "fleet_age_income_coupling": True,
               "fleet_ev_income_tilt": True, "fleet_euro6_substage": True,

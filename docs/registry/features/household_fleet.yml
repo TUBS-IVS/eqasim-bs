@@ -32,9 +32,9 @@ evidence:
       test_default_method_is_legacy_byte_identical confirms vehicles_method:"default" reproduces the legacy one-car-per-person frame byte-identically via legacy_one_car_per_person().
   fallback_rate:
     instrumented: true
-    log_marker: '[vehicles.household] %d household(s) with cars but no licensed'
+    log_marker: '[vehicles.household.owner] fallback tiers'
     note: |
-      Logs a no-licensed-adult fallback (cars assigned to the oldest adult) and a separate fleet-vs-routing-default-car coverage rate.
+      Logs the licensed-adult (primary) vs fallback owner rate over car households and over cars (shared popsim threshold, WARNING above it), the two fallback tiers (no licensed adult -> oldest adult; no adult -> oldest person), and a separate fleet-vs-routing-default-car coverage rate.
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/mid/mid2023_H7_cars_by_kreis.csv

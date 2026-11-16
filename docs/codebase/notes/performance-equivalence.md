@@ -12,11 +12,13 @@ All switches live in `configs/base_bs.yml` and default to true.
 
 | Switch | Optimized operation | OFF behavior |
 |---|---|---|
-| `braunschweig.performance.fleet_home_lookup` | Index the first joined home row per household | Original household-by-household frame filter |
 | `braunschweig.performance.home_coordinates` | Project signals to household cells, build/match slots with arrays, and batch coordinate transforms | Original full cell loader, scalar slot/matcher kernels and scalar CRS round trip |
 | `braunschweig.performance.plan_validation` | Check trip arrays grouped at person boundaries | Original per-person validator |
 | `braunschweig.performance.donor_matching` | Prepare invariant donor features and candidates; cache each candidate cell's sorted draw (`PreparedPersonPool.cell_choice`); check the pool content once before and after a caller's loop, not per call | Original feature extraction per match |
 | `cache_share_metadata` | Transfer coherent native synpp metadata | Original artifact-only cache copy |
+
+The fleet kernel has no switch: its former `fleet_home_lookup` key is retired
+([ADR-0122 amendment 2026-11-16](../../decisions/ADR-0122-result-preserving-performance-kernels.md#amendment-2026-11-16--the-fleet-switch-is-retired)).
 
 To disable a switch, copy the desired scale overlay outside tracked configuration
 and add that key with `false` to its `config` mapping. Run the unchanged base
