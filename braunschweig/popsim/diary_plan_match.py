@@ -40,10 +40,11 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim.attributes import EMPLOYED_TAET
+from braunschweig.popsim.fallback_rates import log_fallback_rate
 from braunschweig.popsim.seed import WEEKDAY_KERNWO
 from braunschweig.popsim.weekend_plan_match import (
-    AGE_BAND_EDGES, DONOR_LIFT_COLUMN, FINE_CHILD_AGE_BAND_EDGES, age_band_index, match_person,
-    passenger_never_class, prepare_person_pool,
+    AGE_BAND_EDGES, DONOR_LIFT_COLUMN, FINE_CHILD_AGE_BAND_EDGES, SPLIT_CHILD_AGE_RANGE, age_band_index,
+    match_person, passenger_never_class, prepare_person_pool,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,28 +79,16 @@ EXPECTED_SHARE_REMAPPED = (0.05, 0.30)
 HARD_EMPLOYMENT_KEYS = frozenset({"employed"})
 
 
-def _split_child_age_range():
-    """Inclusive age range of the coarse band the fine edges split, from the edges themselves.
+def _is_known_trip_count(value) -> bool:
+    """True when a donor ``anzwege1`` is a real number (int or float dtype alike), not NaN.
 
-    ``pd.cut`` bins are right-closed, so a coarse band ``(lower, upper]`` covers the ages
-    ``lower + 1 .. upper``. The split band is the coarse band that contains the edge(s) the
-    fine set adds (here: 9, inside the coarse ``(5, 13]`` band -> ages 6-13).
+    ``bool`` is excluded: it is an ``int`` subclass but never a trip count.
     """
-    added = sorted(set(FINE_CHILD_AGE_BAND_EDGES) - set(AGE_BAND_EDGES))
-    if not added:
-        raise ValueError("FINE_CHILD_AGE_BAND_EDGES adds no edge to AGE_BAND_EDGES")
-    lower = max(edge for edge in AGE_BAND_EDGES if edge < added[0])
-    upper = min(edge for edge in AGE_BAND_EDGES if edge >= added[-1])
-    return lower + 1, upper
-
-
-#: The ONE coarse band (:data:`weekend_plan_match.AGE_BAND_EDGES`) that
-#: :data:`weekend_plan_match.FINE_CHILD_AGE_BAND_EDGES` splits, as the inclusive age range
-#: ``(6, 13)``. The crossing counter below reports over exactly the persons inside it -- the
-#: only ones the fine bands can move -- so the rate is not diluted by adults, for whom the
-#: two edge sets are identical. Derived from the two edge tuples rather than typed as
-#: literals, so it cannot drift away from them.
-SPLIT_CHILD_AGE_RANGE = _split_child_age_range()
+    if isinstance(value, (bool, np.bool_)):
+        return False
+    if not isinstance(value, (int, float, np.integer, np.floating)):
+        return False
+    return not np.isnan(value)
 
 
 @dataclass(frozen=True)
@@ -362,14 +351,26 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     # sequence independent of row order on its own, which matters here because the
     # completed-donor frame this consumes is built in a fixed order upstream
     # (member_completion / seed) that this function must not rely on for reproducibility.
+    n_holiday_sources = 0
+    n_unknown_holiday_sources = 0
     for ridx in sorted(to_remap.tolist()):
         reason = reasons.loc[ridx]
         pool = pools["mobile"] if reason in for_mobile else pools["any"]
         if reason == "holiday":
             # keep the source's own mobility state: mobile source -> mobile pool
             src_anz = donor_anzwege1.get(
-                (persons.at[ridx, "source_H_ID"], persons.at[ridx, "source_P_ID"]), 0)
-            pool = pools["mobile"] if (isinstance(src_anz, (int, np.integer)) and 0 < src_anz < 800) else pools["any"]
+                (persons.at[ridx, "source_H_ID"], persons.at[ridx, "source_P_ID"]), None)
+            # A source absent from the donor lookup has an unknown count: same pool "any" as the
+            # former default 0, but now counted as fallback instead of passing as a known count.
+            # The pool follows the VALUE of the count, never its dtype (audit P2-F21): pandas stores an
+            # integer column with one missing value as float64, and an isinstance(int) test used to
+            # send every such source to pool "any". A count that is unknown (NaN or not numeric)
+            # cannot say whether the source was mobile; it goes to "any" and is counted as fallback.
+            n_holiday_sources += 1
+            known_count = _is_known_trip_count(src_anz)
+            if not known_count:
+                n_unknown_holiday_sources += 1
+            pool = pools["mobile"] if (known_count and 0 < src_anz < 800) else pools["any"]
         sh, sp, level = match_person(persons.loc[ridx], pool, rng=rng, hard_keys=hard_keys,
                                      age_band_edges=age_band_edges,
                                      prepared_pool=prepared_pools.get(
@@ -381,6 +382,9 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     counts = reasons.value_counts().to_dict()
     n_remapped = int(reasons.isin(REASONS_REMAP).sum())
     share = n_remapped / max(len(persons), 1)
+    log_fallback_rate(
+        logger, "diary_plan_match.holiday_source_anzwege1", n_unknown_holiday_sources, n_holiday_sources,
+        what='holiday sources whose donor anzwege1 is unknown (NaN or not numeric) go to pool "any"')
     crossed = _count_employment_boundary_crossings(persons, pools["any"], to_remap)
     n_split_band, crossed_band = _count_fine_child_band_crossings(persons, pools["any"], to_remap)
     crossed_passenger = _count_passenger_class_crossings(persons, pools["any"], to_remap)

@@ -442,3 +442,24 @@ def test_tilt_shields_nan_income_no_crash() -> None:
     inc = out.set_index("household_id")["household_income_eur"]
     assert inc[1] < 2000.0, f"Renter in cheap cell should be tilted down, got {inc[1]}"
     assert inc[2] > 2000.0, f"Renter in expensive cell should be tilted up, got {inc[2]}"
+
+
+def test_apply_tilt_logs_index_coverage_on_primary_path(caplog: pytest.LogCaptureFixture) -> None:
+    cell_index = pd.DataFrame({
+        "cell_id": ["a", "b"],
+        "renter_income_index": [0.9, 1.1], "owner_income_index": [0.95, 1.05],
+    })
+    hh = pd.DataFrame({
+        "cell_id": ["a", "a", "b", "b"],
+        "ars5": ["03101"] * 4,
+        "tenure": ["renter", "owner", "renter", "owner"],
+        "household_income_eur": [2000.0] * 4,
+    })
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.income_spatial_tilt"):
+        ist.apply_spatial_income_tilt(
+            hh, cell_index, cell_col="cell_id", kreis_col="ars5", tenure_col="tenure",
+        )
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(m.startswith("[income_spatial_tilt.renter_index] primary 2/2") for m in messages)
+    assert any(m.startswith("[income_spatial_tilt.owner_index] primary 2/2") for m in messages)
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
