@@ -90,7 +90,16 @@ def load_batch_folder(path) -> BatchFolder:
     households = pd.read_csv(households_file)
     persons = pd.read_csv(persons_file)
     # Persons carry the household id as float text ("2.0"); cast to the households' dtype.
-    persons[id_col] = persons[id_col].astype(float).astype(households[id_col].dtype)
+    duplicated = households.loc[households[id_col].duplicated(), id_col].unique()
+    if len(duplicated):
+        raise ValueError(f"batch {name}: duplicate household id(s) "
+                         f"{sorted(duplicated.tolist())[:10]} in {_SEED_HOUSEHOLDS.as_posix()}")
+    numeric_ids = pd.to_numeric(persons[id_col], errors="coerce")
+    if numeric_ids.isna().any():
+        raise ValueError(
+            f"batch {name}: {int(numeric_ids.isna().sum())} seed person(s) have a missing or "
+            f"non-numeric household id '{id_col}' in {_SEED_PERSONS.as_posix()}")
+    persons[id_col] = numeric_ids.astype(households[id_col].dtype)
     control_spec = pd.read_csv(controls_file, comment="#")
     expanded = pd.read_csv(path / _EXPANDED)
 

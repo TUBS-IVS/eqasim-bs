@@ -7,11 +7,13 @@ must select control columns by name.
 """
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import Sequence
 
 import numpy as np
 import pandas as pd
+import tables
 
 TOTAL = "HH_TOTAL_ZENSUS100m_target"
 SEED_HOUSEHOLDS = pd.DataFrame({
@@ -127,7 +129,11 @@ def build_work_dir(root: Path, *, with_store: bool = True,
         weights = weights[["H_ID", "ZENSUS100m", "balanced_weight", "integer_weight"]]
         cell_controls = totals.set_index("ZENSUS100m")
         cell_controls.columns = [c + "_target" for c in cell_controls.columns]
-        with pd.HDFStore(str(batch / "output" / "pipeline.h5"), mode="w") as store:
+        # The key 'sub_balancing.geography=...' is the one PopulationSim itself writes;
+        # PyTables warns that it is not a natural name, which is expected here.
+        with warnings.catch_warnings(), \
+                pd.HDFStore(str(batch / "output" / "pipeline.h5"), mode="w") as store:
+            warnings.filterwarnings("ignore", category=tables.NaturalNameWarning)
             store.put("/incidence_table/setup_data_structures", _incidence(controls),
                       format="fixed")
             store.put("/control_spec/setup_data_structures", controls, format="fixed")
