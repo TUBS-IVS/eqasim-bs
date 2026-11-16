@@ -1056,3 +1056,55 @@ def test_fine_child_bands_leave_the_rng_stream_untouched_on_a_randomised_populat
     differing = (coarse_out["source_P_ID"].to_numpy() != fine_out["source_P_ID"].to_numpy()) | (
         coarse_out["source_H_ID"].to_numpy() != fine_out["source_H_ID"].to_numpy())
     assert differing.any()
+
+
+def test_plan_source_resolution_primary_path_is_logged_with_no_unresolved_source(caplog):
+    # Every plan source points at a real donor person, so the PRIMARY path must dominate:
+    # the rate line is logged at INFO (below the warn threshold) and the unresolved-source
+    # warning stays silent.
+    households, persons = _school_child_households()
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.weekend_plan_match"):
+        wpm.reassign_weekend_plan_sources(households, persons, rng=np.random.RandomState(0))
+    rate_lines = [r for r in caplog.records
+                  if r.getMessage().startswith("[weekend_plan_match.plan_source_resolution] primary")]
+    assert len(rate_lines) == 1, caplog.text
+    assert rate_lines[0].levelno == logging.INFO
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING], caplog.text
+
+
+@pytest.mark.parametrize(
+    "target_child_ages, donor_child_ages, fine_bands, expected_fine, expected_coarse, expected_any_free", [
+        # Each child finds a same-fine-band donor: the primary path, no crossing.
+        ((7, 13), (13, 7), True, 0, 0, 0),
+        # Only one primary-school donor for two primary-school children: exactly one forced crossing
+        # (the second child takes the any-age tier and gets the 13-year-old's day).
+        ((7, 8), (13, 7), True, 1, 0, 1),
+        # A donor of another COARSE band (3 vs 8) is a crossing of every counter.
+        ((7, 8), (7, 3), True, 1, 1, 1),
+        # Flag off: the coarse bands are active, so no any_free pair, but the fine crossing (7 gets
+        # the 13-year-old's day) is still measured.
+        ((7, 8), (13, 7), False, 1, 0, 0),
+    ])
+def test_weekend_match_report_counts_fine_band_crossings(
+        target_child_ages, donor_child_ages, fine_bands, expected_fine, expected_coarse,
+        expected_any_free):
+    households, persons = _school_child_households()
+    is_child = (persons["P_ID"] >= 3).to_numpy()
+    persons.loc[(persons["H_ID"] == 2).to_numpy() & is_child, "HP_ALTER"] = list(target_child_ages)
+    persons.loc[(persons["H_ID"] == 1).to_numpy() & is_child, "HP_ALTER"] = list(donor_child_ages)
+    _out, _trace, report = wpm.reassign_weekend_plan_sources(
+        households, persons, rng=np.random.RandomState(0), fine_child_age_bands=fine_bands)
+    assert report.n_paired_members == 4
+    assert report.n_paired_in_split_child_band == 2
+    assert report.n_crossed_fine_child_age_band == expected_fine
+    # The adults pair with adults, so only the children can cross a coarse band.
+    assert report.n_crossed_coarse_age_band == expected_coarse
+    assert report.n_any_free_pairs == expected_any_free
+
+
+def test_count_pair_band_crossings_tolerates_a_missing_age():
+    # A nullable Int64 age with pd.NA must not raise (align_members does not): NaN is no split-band age.
+    target = pd.DataFrame({"HP_ALTER": pd.array([7, pd.NA], dtype="Int64")})
+    donor = pd.DataFrame({"HP_ALTER": pd.array([7, 30], dtype="Int64")})
+    counts = wpm.count_pair_band_crossings(target, donor, [(0, 0), (1, 1)])
+    assert counts[:3] == (2, 1, 1)

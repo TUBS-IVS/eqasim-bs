@@ -937,3 +937,21 @@ def test_enforce_purpose_chain_consistency_raises_on_stale_first_last_flags():
     df.loc[3, "is_first_trip"] = False
     with pytest.raises(ValueError, match="is_first_trip"):
         pv.enforce_purpose_chain_consistency(df, log_tag="[test]")
+
+
+def test_return_home_mode_rate_logged_primary_dominates(caplog):
+    import logging
+    persons = [f"p{i}" for i in range(20)]
+    trips = pd.DataFrame({
+        "person_id": persons, "departure_time": [8 * 3600] * 20,
+        "arrival_time": [8 * 3600 + 1800] * 20,
+        "preceding_purpose": ["home"] * 20, "following_purpose": ["work"] * 20,
+        "mode": ["pt"] * 19 + [None],
+        "is_first_trip": [True] * 20, "is_last_trip": [True] * 20,
+    })
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.plan_validation"):
+        out = pv._append_return_home(trips, pv.HOME_CLOSURE_DWELL_S)
+    recs = [r for r in caplog.records if "[plan_validation.return_home_mode] primary 19/20" in r.message]
+    assert len(recs) == 1 and recs[0].levelno == logging.INFO
+    closures = out[out["is_synthetic_closure"]]
+    assert (closures["mode"] == "car").sum() == 1
