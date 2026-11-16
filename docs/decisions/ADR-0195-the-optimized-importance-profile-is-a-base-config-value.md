@@ -25,8 +25,11 @@ profile, so no popsim config silently runs another one.
 
 ## Consequences
 
-- **Outputs change for the 1 % and 25 % popsim runs** composed from the base plus an overlay, and for the
-  four popsim fixtures. The 100 % run is unchanged. A smoke of the 1 % or 25 % run is still due; results of
+- **Outputs change for every popsim run composed from the base whose overlay sets no profile**: the 1 % and
+  25 % scale overlays and also `test.yml`, `test_matsim.yml` and `smoke_kreis_control_fit.yml`, plus the
+  four popsim fixtures. The 100 % run is unchanged. The control-fit, ownership-grid and pt-never-group smoke
+  manifests of 2026-08-19/21 under `docs/runs/` (base + `smoke_kreis_control_fit.yml`) were produced with
+  `uniform`; a re-run of that smoke differs by the profile, not only by whatever else changed. A smoke of the 1 % or 25 % run is still due; results of
   such runs from before this change were drawn with `uniform` and must not be compared to later ones
   without saying so.
 - No stale `uniform` batch is reused. The profile rewrites the `importance` column of the controls frame

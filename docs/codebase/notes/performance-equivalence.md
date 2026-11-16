@@ -113,6 +113,6 @@ This guard prevents newly shared Windows results being reused on Linux when
 native integer dtypes differ. It does not redesign native synpp's assumptions
 about valid local caches or configured external tools.
 
-The 1% and 25% overlays retain their shared PopulationSim working directory and
-uniform importance weights. The 100% overlay keeps its distinct working directory
-and `optimized_2026_06_30` weights. These are different scientific computations.
+The 1% and 25% overlays share one PopulationSim working directory; the 100% overlay
+keeps its own. All scales use the same importance profile
+([ADR-0195](../../decisions/ADR-0195-the-optimized-importance-profile-is-a-base-config-value.md)).
