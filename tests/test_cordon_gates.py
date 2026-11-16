@@ -3,6 +3,7 @@ and external-Kreis -> nearest-gate mapping. Pure geometry, EPSG:25832.
 """
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -100,11 +101,15 @@ def test_derive_carries_road_class_when_present():
     assert set(gates["road_class"]) == {"motorway", "trunk", "primary", "residential"}
 
 
-def test_select_major_gates_filters_by_class():
+def test_select_major_gates_filters_by_class(caplog):
     gates = derive_road_gates(_classed_links(), CORDON)
-    major = select_major_gates(gates, allowed_classes={"motorway", "trunk", "primary"})
+    with caplog.at_level(logging.INFO, logger="braunschweig.data.cordon.gates"):
+        major = select_major_gates(gates, allowed_classes={"motorway", "trunk", "primary"})
     assert set(major["road_class"]) == {"motorway", "trunk", "primary"}
     assert "residential" not in set(major["road_class"])
+    # Primary path: the class filter selects, the strongest-gate fallback stays off.
+    assert "primary 3/4 crossing gates kept, fallback 0" in caplog.text
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
 def test_select_major_gates_top_n_by_capacity():
@@ -113,11 +118,14 @@ def test_select_major_gates_top_n_by_capacity():
     assert list(top2["link_id"]) == ["a", "b"]  # highest capacity first
 
 
-def test_select_major_gates_fallback_keeps_strongest_when_filter_empties():
+def test_select_major_gates_fallback_keeps_strongest_when_filter_empties(caplog):
     gates = derive_road_gates(_classed_links(), CORDON)
     # No link is a motorway-only-allowed match in a region of just 'residential'
     res_only = gates[gates["road_class"] == "residential"].reset_index(drop=True)
-    out = select_major_gates(res_only, allowed_classes={"motorway"})
+    with caplog.at_level(logging.INFO, logger="braunschweig.data.cordon.gates"):
+        out = select_major_gates(res_only, allowed_classes={"motorway"})
     # Filter would empty it -> fall back to the single strongest gate, never zero.
     assert len(out) == 1
     assert out.iloc[0]["link_id"] == "d"
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1 and "primary 0/1" in warnings[0].getMessage()

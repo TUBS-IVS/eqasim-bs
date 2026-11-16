@@ -11,9 +11,13 @@ Part of the cross-cordon external-demand module; see
 """
 from __future__ import annotations
 
+import logging
+
 import geopandas as gpd
 from shapely.geometry import Point
 from shapely.geometry.base import BaseGeometry
+
+logger = logging.getLogger(__name__)
 
 
 def derive_road_gates(links: gpd.GeoDataFrame, cordon: BaseGeometry) -> gpd.GeoDataFrame:
@@ -111,7 +115,18 @@ def select_major_gates(gates: gpd.GeoDataFrame, allowed_classes=None,
         out = out.head(top_n)
     if len(out) == 0:
         # Never leave a region without a gate when links did cross the boundary.
+        # This replaces the whole selection, so it is always a WARNING
+        # (CLAUDE.md "Fallback transparency").
+        logger.warning(
+            "[cordon.gates] select_major_gates: primary 0/%d crossing gates match the "
+            "filters (classes=%s, min_capacity=%s, top_n=%s); fallback: kept only "
+            "the strongest gate", len(ranked),
+            sorted(allowed_classes) if allowed_classes is not None else None,
+            min_capacity, top_n)
         out = ranked.head(1)
+    else:
+        logger.info("[cordon.gates] select_major_gates: primary %d/%d crossing gates "
+                    "kept, fallback 0", len(out), len(ranked))
     return out.reset_index(drop=True)
 
 
