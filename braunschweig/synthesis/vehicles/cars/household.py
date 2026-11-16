@@ -146,10 +146,11 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
     df_homes : home zones with ``household_id`` and ``commune_id`` (12-digit ARS).
     df_regiostar : RegioStaR reference with ``commune_id`` (8-digit AGS),
         ``name`` (Gemeinde name) and ``regiostar7`` (RS7 code).
-    indexed_home_lookup : whether to build a first-occurrence home-row index.
-        True avoids filtering the complete home frame once for each car-owning
-        household. False retains the original filtered-frame lookup for
-        equivalence checks.
+    indexed_home_lookup : kept for the ``braunschweig.performance.fleet_home_lookup``
+        config key and its equivalence checks. Both values meant "first home row
+        of the household after the RegioStaR merge"; since the vectorised build
+        (audit H) one first-occurrence index serves both, so the value no longer
+        changes the computation.
 
     Returns
     -------
@@ -186,65 +187,44 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
     rs.loc[has_name, "gemeinde"] = (
         rs.loc[has_name, "gemeinde"].astype(str).str.strip().str.upper())
     homes = homes.merge(rs[["ags8", "gemeinde", "raumtyp"]], on="ags8", how="left")
-    home_rows_by_household = None
-    if indexed_home_lookup:
-        # ``merge`` may duplicate a home when RegioStaR has duplicate AGS rows.
-        # Keep the first row so the indexed path exactly matches the historical
-        # ``homes[homes["household_id"] == household_id].iloc[0]`` behaviour.
-        home_rows_by_household = (
-            homes.drop_duplicates("household_id", keep="first")
-            .set_index("household_id", drop=False)
+
+    # Vectorised over all households (audit H: the former per-household groupby
+    # loop took 36 of the stage's 49 min at 100 %). The grouping below is the one
+    # the loop iterated: same keys, same ascending key order, NaN keys dropped.
+    grouped = df_persons.groupby("household_id", sort=True)
+    household_cars = grouped["number_of_cars"].max()
+    household_ids = household_cars.index
+    # Household position (0..n-1 in ascending household_id order) of every person;
+    # -1 marks a missing household_id, which the loop never visited.
+    household_code = grouped.ngroup().to_numpy()
+
+    # ``int(max)`` per household: truncation toward zero; a NaN/inf max raised there.
+    cars_float = household_cars.to_numpy(dtype=np.float64)
+    finite = np.isfinite(cars_float)
+    number_of_cars = np.zeros(len(household_ids), dtype=np.int64)
+    number_of_cars[finite] = np.trunc(cars_float[finite]).astype(np.int64)
+    has_cars = finite & (number_of_cars > 0)
+
+    # First-occurrence home row per household. ``merge`` duplicates a home when
+    # RegioStaR has duplicate AGS rows; both lookup modes always selected the first
+    # merged row (the filtered path took ``home.iloc[0]``), so one index serves both
+    # and ``indexed_home_lookup`` no longer changes the computation.
+    home_first = homes.drop_duplicates("household_id", keep="first")
+    home_position = pd.Index(home_first["household_id"]).get_indexer(household_ids)
+
+    # Raise for the first household (ascending id) the loop would have failed on.
+    bad = ~finite | (has_cars & (home_position < 0))
+    if bad.any():
+        first_bad = int(np.flatnonzero(bad)[0])
+        if not finite[first_bad]:
+            int(household_cars.iloc[first_bad])  # raises the same ValueError/OverflowError
+        raise ValueError(
+            f"build_household_car_frame: no home commune for household "
+            f"{household_ids[first_bad]}"
         )
 
-    # One car-need-ordered record list per household.
-    rows: list[dict] = []
-    n_zero_licensed_households = 0
-    n_zero_licensed_cars = 0
-
-    # Group once; iterate households deterministically by household_id.
-    for household_id, group in df_persons.groupby("household_id", sort=True):
-        number_of_cars = int(group["number_of_cars"].max())
-        if number_of_cars <= 0:
-            continue
-
-        if indexed_home_lookup:
-            try:
-                home_row = home_rows_by_household.loc[household_id]
-            except KeyError:
-                raise ValueError(
-                    f"build_household_car_frame: no home commune for household "
-                    f"{household_id}"
-                ) from None
-        else:
-            home = homes[homes["household_id"] == household_id]
-            if home.empty:
-                raise ValueError(
-                    f"build_household_car_frame: no home commune for household "
-                    f"{household_id}"
-                )
-            home_row = home.iloc[0]
-        economic_status = str(group["economic_status"].iloc[0])
-
-        owners = _assign_owners(group, number_of_cars)
-        if owners is None:
-            # No licensed adult: assign to the oldest adult (logged fallback).
-            n_zero_licensed_households += 1
-            n_zero_licensed_cars += number_of_cars
-            owners = _fallback_owners(group, number_of_cars)
-
-        age_by_person = dict(zip(group["person_id"], group["age"]))
-        for owner_id in owners:
-            rows.append({
-                "household_id": household_id,
-                "owner_id": owner_id,
-                "economic_status": economic_status,
-                "kreis_ags5": home_row["kreis_ags5"],
-                "gemeinde": home_row["gemeinde"],
-                "raumtyp": home_row["raumtyp"],
-                # Issue #315: the assigned owner's age feeds the wohnmobile
-                # holder-age tilt (input-only column, dropped before the writer).
-                "owner_age": float(age_by_person[owner_id]),
-            })
+    owner_rows, n_zero_licensed_households, n_zero_licensed_cars = _assign_owners(
+        df_persons, household_code, number_of_cars, has_cars)
 
     if n_zero_licensed_households:
         logger.warning(
@@ -253,10 +233,40 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
             n_zero_licensed_households, n_zero_licensed_cars,
         )
 
+    cars_per_owning_household = number_of_cars[has_cars]
+    car_household = np.repeat(np.flatnonzero(has_cars), cars_per_owning_household)
+    car_home = home_position[car_household]
+    # economic_status of the household's first person row in input order.
+    valid_rows = np.flatnonzero(household_code >= 0)
+    present_codes, first_index = np.unique(household_code[valid_rows], return_index=True)
+    first_person_row = np.full(len(household_ids), -1, dtype=np.int64)
+    first_person_row[present_codes] = valid_rows[first_index]
+    status_values = df_persons["economic_status"].to_numpy()
+    economic_status = np.repeat(
+        np.array([str(value) for value in status_values[first_person_row[has_cars]]],
+                 dtype=object),
+        cars_per_owning_household)
+    owner_age = _owner_ages(df_persons, household_code, owner_rows)
+
+    column_values = {
+        "household_id": household_ids.to_numpy()[car_household],
+        "owner_id": df_persons["person_id"].to_numpy()[owner_rows],
+        "economic_status": economic_status,
+        "kreis_ags5": home_first["kreis_ags5"].to_numpy()[car_home],
+        "gemeinde": home_first["gemeinde"].to_numpy()[car_home],
+        "raumtyp": home_first["raumtyp"].to_numpy()[car_home],
+        # Issue #315: the assigned owner's age feeds the wohnmobile holder-age
+        # tilt (input-only column, dropped before the writer).
+        "owner_age": owner_age,
+    }
+    columns = list(column_values)
+    # Built from row tuples on purpose: ``from_records`` infers each column's dtype
+    # from the emitted values only (e.g. int64 when every car household has an
+    # integer id even if the input column is object), exactly as the former
+    # per-car record construction did, including the all-object empty frame.
     df_cars = pd.DataFrame.from_records(
-        rows,
-        columns=["household_id", "owner_id", "economic_status",
-                 "kreis_ags5", "gemeinde", "raumtyp", "owner_age"],
+        list(zip(*(values.tolist() for values in column_values.values()))),
+        columns=columns,
     )
     # Fallback transparency: cars whose home Gemeinde has no name (home code absent
     # from the RegioStaR reference, or a reference row without a name) get no
@@ -276,35 +286,108 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
     return df_cars
 
 
-def _assign_owners(group: pd.DataFrame, number_of_cars: int):
-    """Return the owner ``person_id`` list (length ``number_of_cars``) or ``None``.
+def _assign_owners(df_persons: pd.DataFrame, household_code: np.ndarray,
+                   number_of_cars: np.ndarray, has_cars: np.ndarray):
+    """Return the owner row of every car plus the fallback counts.
 
-    Licensed adults are ordered highest-need-first (descending age, tie-broken by
-    ascending ``person_id``). The first ``number_of_cars`` cars go one-each to the
-    leading adults; any surplus is assigned round-robin over the licensed adults.
-    Returns ``None`` when the household has no licensed adult (caller handles the
-    fallback).
+    Parameters
+    ----------
+    df_persons : persons frame (``age``, ``person_id``, ``has_license``).
+    household_code : per person row, the household's position in ascending
+        ``household_id`` order (``-1`` = no household id; such rows are ignored).
+    number_of_cars : per household, the truncated ``number_of_cars`` maximum.
+    has_cars : per household, whether it emits cars (finite count > 0).
+
+    Returns
+    -------
+    ``(owner_rows, n_fallback_households, n_fallback_cars)``: ``owner_rows`` are
+    positional row indices into ``df_persons``, one per car, households in
+    ascending ``household_id`` order and cars in emission order within each.
+
+    Within a household the persons are ordered highest-need first: descending age
+    (missing age last), tie-broken by ascending ``person_id``, remaining ties in
+    input order (stable sort). Licensed adults (``has_license`` and ``age >=
+    ADULT_AGE``) receive car ``k`` as ``ordered[k % n_licensed]``: one each to the
+    leading adults, surplus cars round-robin. A household with cars but no
+    licensed adult gives every car to its first adult in that order, or to its
+    first person when it has no adult (zero-licensed-adult fallback, counted so the
+    caller can log it; no car is ever dropped).
     """
-    licensed = group[group["has_license"].fillna(False) & (group["age"] >= ADULT_AGE)]
-    if licensed.empty:
-        return None
-    ordered = licensed.sort_values(
-        ["age", "person_id"], ascending=[False, True])["person_id"].tolist()
-    owners = [ordered[i % len(ordered)] for i in range(number_of_cars)]
-    return owners
+    n_households = len(number_of_cars)
+    valid_rows = np.flatnonzero(household_code >= 0)
+    work = pd.DataFrame({
+        "_household": household_code[valid_rows],
+        "age": df_persons["age"].to_numpy()[valid_rows],
+        "person_id": df_persons["person_id"].to_numpy()[valid_rows],
+        "_row": valid_rows,
+    })
+    # One multi-key lexsort; stable, so it reproduces the former per-household
+    # ``sort_values(["age", "person_id"], ascending=[False, True])`` of each group.
+    work = work.sort_values(["_household", "age", "person_id"],
+                            ascending=[True, False, True])
+    sorted_household = work["_household"].to_numpy()
+    sorted_row = work["_row"].to_numpy()
+    sorted_age = work["age"]
+
+    licensed_flag = (
+        df_persons["has_license"].fillna(False) & (df_persons["age"] >= ADULT_AGE)
+    ).to_numpy(dtype=bool)
+    is_licensed = licensed_flag[sorted_row]
+    is_adult = (sorted_age >= ADULT_AGE).to_numpy(dtype=bool)
+
+    # Licensed adults are contiguous per household in sorted order.
+    licensed_rows = sorted_row[is_licensed]
+    n_licensed = np.bincount(sorted_household[is_licensed], minlength=n_households)
+    licensed_start = np.cumsum(n_licensed) - n_licensed
+
+    # Fallback owner: first adult in sorted order, else first person.
+    fallback_row = np.full(n_households, -1, dtype=np.int64)
+    first_codes, first_index = np.unique(sorted_household, return_index=True)
+    fallback_row[first_codes] = sorted_row[first_index]
+    adult_codes, adult_index = np.unique(sorted_household[is_adult], return_index=True)
+    fallback_row[adult_codes] = sorted_row[is_adult][adult_index]
+
+    owning = np.flatnonzero(has_cars)
+    cars = number_of_cars[owning]
+    car_household = np.repeat(owning, cars)
+    car_rank = np.arange(len(car_household)) - np.repeat(np.cumsum(cars) - cars, cars)
+    car_n_licensed = n_licensed[car_household]
+    licensed_car = car_n_licensed > 0
+    owner_rows = np.empty(len(car_household), dtype=np.int64)
+    owner_rows[licensed_car] = licensed_rows[
+        licensed_start[car_household[licensed_car]]
+        + car_rank[licensed_car] % car_n_licensed[licensed_car]]
+    owner_rows[~licensed_car] = fallback_row[car_household[~licensed_car]]
+
+    fallback_households = n_licensed[owning] == 0
+    return (owner_rows, int(fallback_households.sum()),
+            int(cars[fallback_households].sum()))
 
 
-def _fallback_owners(group: pd.DataFrame, number_of_cars: int) -> list:
-    """Assign every car to the oldest adult (zero-licensed-adult fallback).
+def _owner_ages(df_persons: pd.DataFrame, household_code: np.ndarray,
+                owner_rows: np.ndarray) -> np.ndarray:
+    """``float`` age of each owner, keyed by (household, ``person_id``).
 
-    Picks the oldest adult (``age >= ADULT_AGE``); if the household has no adult
-    at all, the oldest person overall is used so a car is never dropped.
+    The age is the one of the LAST row of the household carrying the owner's
+    ``person_id`` (input order), matching the former per-household
+    ``dict(zip(person_id, age))`` lookup when a household repeats a person_id.
     """
-    adults = group[group["age"] >= ADULT_AGE]
-    pool = adults if not adults.empty else group
-    oldest = pool.sort_values(
-        ["age", "person_id"], ascending=[False, True])["person_id"].iloc[0]
-    return [oldest] * number_of_cars
+    valid_rows = np.flatnonzero(household_code >= 0)
+    keys = pd.DataFrame({
+        "_household": household_code[valid_rows],
+        "person_id": df_persons["person_id"].to_numpy()[valid_rows],
+    })
+    valid_key = keys.groupby(
+        ["_household", "person_id"], sort=False, dropna=False).ngroup().to_numpy()
+    key_code = np.full(len(df_persons), -1, dtype=np.int64)
+    key_code[valid_rows] = valid_key
+    # Last occurrence of each key = first occurrence in the reversed row order.
+    unique_keys, reversed_index = np.unique(valid_key[::-1], return_index=True)
+    last_row = np.full(len(unique_keys), -1, dtype=np.int64)
+    last_row[unique_keys] = valid_rows[::-1][reversed_index]
+    ages = df_persons["age"].to_numpy()
+    return np.array([float(age) for age in ages[last_row[key_code[owner_rows]]]],
+                    dtype=np.float64)
 
 
 def assign_vehicle_ids(df_cars: pd.DataFrame) -> pd.DataFrame:

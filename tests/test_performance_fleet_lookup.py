@@ -89,7 +89,11 @@ def test_indexed_home_lookup_preserves_missing_home_error():
 
 
 def test_indexed_home_lookup_eliminates_per_household_home_filters(monkeypatch):
-    """The indexed path performs no repeated ``household_id == id`` filters."""
+    """Neither lookup mode performs repeated ``household_id == id`` filters.
+
+    Since the vectorised build (audit H) both modes share one first-occurrence
+    home index; their output identity is pinned by the equivalence test above.
+    """
     persons, homes, regiostar = _lookup_fixture()
     calls = 0
     original_eq: Callable = pd.Series.__eq__
@@ -107,7 +111,7 @@ def test_indexed_home_lookup_eliminates_per_household_home_filters(monkeypatch):
     assert calls == 0
     household_module.build_household_car_frame(
         persons, homes, regiostar, indexed_home_lookup=False)
-    assert calls == 4  # one filter for each car-owning household in this fixture
+    assert calls == 0
 
 
 def test_configure_registers_default_on_fleet_home_lookup():
