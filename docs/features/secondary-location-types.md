@@ -5,8 +5,8 @@ escort feature's SrV-grounded location refinement (type draw -> type-specific
 candidate universe -> type-specific distance coherence) to the two remaining
 undifferentiated secondary purposes, `leisure` and `other`, behind
 `secondary_srv_location_types` (code default OFF = byte-identical; ON in
-`configs/base_bs.yml`). Design record:
-`docs/superpowers/specs/2026-08-12-srv-location-types-design.md`.
+`configs/base_bs.yml`). The design
+record was a local, gitignored spec.
 
 ## Data sources
 
@@ -284,7 +284,7 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
   exists for this feature, matching the escort family's precedent (the
   escort A/B runs toggled the flag on a scratch copy of
   `configs/overlays/escort_reuse_5pct.yml` rather than committing a second
-  overlay file, see `RUNS.md` `escort-AB-5pct-2026-08-11`). To reproduce the
+  overlay file, see run manifest `docs/runs/escort-AB-5pct-2026-08-11.yml`). To reproduce the
   same recipe for this feature: compose `configs/base_bs.yml` +
   `configs/overlays/escort_reuse_5pct.yml` (or an equivalent 5% reuse
   overlay) twice, once as committed (`secondary_srv_location_types: true`)
@@ -294,7 +294,7 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
   undifferentiated `pot_leisure`/`pot_other` placements. **A/B run: PENDING**
   — no server run has been executed for this feature yet; do not read any
   number in this document as a validated realised-output result until that
-  run exists and is recorded in `RUNS.md`.
+  run exists and is recorded as a run manifest in `docs/runs/`.
 - **Expected, intended result change** (by construction, not yet measured):
   the `leisure_outdoor` share of leisure placements
   (`srv2023_secondary_type_shares.csv`) moves from generic buildings to

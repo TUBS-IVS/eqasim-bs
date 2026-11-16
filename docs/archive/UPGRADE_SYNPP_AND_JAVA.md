@@ -1,5 +1,7 @@
 # Upgrade prep: synpp 1.5.1 -> 1.6.2 (#205) and eqasim-java 1.5.0 -> 2.2.x (#204)
 
+> Historical snapshot, not maintained. Archived 2026-11 (audit register 2026-11-11); do not read it as current state.
+
 > Investigation-only, 2026-07-17. Neither upgrade is executed here: both are multi-step
 > infra changes (env recreation / Maven build + server smoke) that must be run
 > deliberately with a green light. This doc records the decisive findings so the actual

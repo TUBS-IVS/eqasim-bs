@@ -1,3 +1,5 @@
+> Historical snapshot, not maintained. Moved from docs/population/ (audit package L, 2026-11): no file in the repository referenced it.
+
 Baseline production control set captured 2026-06-14 from popsimprep `_prep3_controls.csv`; the `catalog` renderer must reproduce these rows byte-for-byte (modulo row order).
 
 | target | geography | seed_table | importance | control_field | expression |

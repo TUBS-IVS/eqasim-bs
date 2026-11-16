@@ -74,12 +74,10 @@ Donor comparisons default to the production fine child age bands;
 `--donor-age-bands coarse` checks the older band definition explicitly. The same
 edges are passed to the original matcher, OFF matcher and prepared ON matcher.
 
-The bounded CLI evidence is complemented by a production-size typed-home replay:
-558,279 households, 310,512 buildings and 38,483 used cells. The projected path
-completed in 547.419 s; adding array slot construction and matching reduced that
-to 410.853 s (24.95%, 1.332x). Values, dtypes, row/column order, geometry WKB,
-CRS, `TypedHomeReport`, random-call counts and final RNG state were exact. This
-is full-input evidence for the typed-home public function, not a full synpp or
+The bounded CLI evidence is complemented by a production-size typed-home replay.
+Its input sizes, timings and exactness checks are owned by the
+[run manifest](../../runs/performance-equivalence-2026-09-15.yml). It is
+full-input evidence for the typed-home public function, not a full synpp or
 MATSim replay and not behavioural validation.
 
 ## Shared cache correctness
@@ -121,6 +119,6 @@ This guard prevents newly shared Windows results being reused on Linux when
 native integer dtypes differ. It does not redesign native synpp's assumptions
 about valid local caches or configured external tools.
 
-The 1% and 25% overlays retain their shared PopulationSim working directory and
-uniform importance weights. The 100% overlay keeps its distinct working directory
-and `optimized_2026_06_30` weights. These are different scientific computations.
+The 1% and 25% overlays share one PopulationSim working directory; the 100% overlay
+keeps its own. All scales use the same importance profile
+([ADR-0195](../../decisions/ADR-0195-the-optimized-importance-profile-is-a-base-config-value.md)).

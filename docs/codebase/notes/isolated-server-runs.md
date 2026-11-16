@@ -125,8 +125,8 @@ reads them, they only steer `scripts/run_synpp.py`'s prime and export of
 `RUN_DIR/eqasim-bs` and keeps it in `RUN_DIR/logs`. The `STALE` stages (stale for their own
 reasons, run targets included) become `config.synpp_expected_stale_stages`, which
 `scripts/run_synpp.py` (`explain_before_run`) enforces before any stage runs. The parser
-refuses a report whose summary counts do not match the lines it read; it reads all seven
-committed explain reports under `docs/runs/artifacts/`, and from the WP-E smoke's first launch
+refuses a report whose summary counts do not match the lines it read; it reads the
+committed explain report under `docs/runs/artifacts/` (the test uses `explain_first_launch.txt`), and from the WP-E smoke's first launch
 it derives exactly the 35-stage list that session built by hand. `--write` refuses an empty
 list, because an empty list means "no gate" to the launcher, and `gate` refuses a run.yml that
 switches the launcher's explain step off (`synpp_explain_before_run: false` or `dryrun: true`).
