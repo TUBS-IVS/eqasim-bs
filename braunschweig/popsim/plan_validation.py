@@ -239,7 +239,37 @@ def _append_return_home(
     # return the FIRST tied row instead and anchor the closure on a trip that is not the
     # last one, breaking the purpose chain (issue #258).
     last_rows = df.drop_duplicates("person_id", keep="last")
-    last_idx = pd.Series(last_rows.index, index=last_rows["person_id"].to_numpy())
+
+    # Performance (audit H, P1-F2): only the persons that do NOT end at home need a
+    # closure, so the loop below visits just those last rows, in the same ascending
+    # person_id order as before. The order matters: dwell_model.draw consumes RNG, so
+    # draw calls must happen in exactly the former sequence with the same arguments.
+    # The row values are read from per-column numpy arrays instead of one df.loc row
+    # Series per person; both return the same scalar objects for each cell.
+    needs_closure = (last_rows["following_purpose"] != "home").to_numpy()
+    closure_rows = last_rows.loc[needs_closure]
+    # The person ids go through a pandas Index exactly as before (a Series keyed by
+    # person_id, iterated with .items()): the Index normalises the key type (an int32
+    # person_id column yields int64 keys), and that type reaches the appended rows and
+    # thus the result's person_id dtype.
+    closure_last_idx = pd.Series(closure_rows.index, index=closure_rows["person_id"].to_numpy())
+    closure_purposes = closure_rows["following_purpose"].to_numpy()
+    closure_departures = closure_rows["departure_time"].to_numpy()
+    closure_arrivals = closure_rows["arrival_time"].to_numpy()
+    has_trip_duration = "trip_duration" in df.columns
+    closure_trip_durations = closure_rows["trip_duration"].to_numpy() if has_trip_duration else None
+    has_mode = "mode" in df.columns
+    closure_modes = closure_rows["mode"].to_numpy() if has_mode else None
+    has_trip_key = "trip_key" in df.columns
+    # Per-person trip_id maximum computed once (a groupby, NaN skipped exactly like
+    # Series.max) instead of one full-frame scan per closure. The value is only a
+    # placeholder that keeps the sort stable; it is renumbered downstream.
+    has_trip_id = "trip_id" in df.columns
+    if has_trip_id:
+        max_trip_id_by_person = df.groupby("person_id", sort=False)["trip_id"].max()
+        closure_max_trip_ids = max_trip_id_by_person.reindex(closure_rows["person_id"].to_numpy()).to_numpy()
+    else:
+        closure_max_trip_ids = None
 
     rows_to_append = []
     idx_to_flip = []  # old last-trip indices that need is_last_trip -> False
@@ -250,25 +280,24 @@ def _append_return_home(
     # not have; capping the constant path would change the pre-#367 behaviour.
     cap_applies = dwell_model is not None and dwell_model.report.get("kind") == "empirical"
 
-    for person_id, idx in last_idx.items():
-        last = df.loc[idx]
-        if last["following_purpose"] == "home":
-            continue  # already ends at home; nothing to do
+    for i, (person_id, idx) in enumerate(closure_last_idx.items()):
+        purpose = closure_purposes[i]
+        last_arrival = float(closure_arrivals[i])
 
         # Symmetric travel-time estimate: same duration as the outbound trip.
         # Prefer explicit trip_duration if available and non-NaN; otherwise use
         # the difference of times recorded in the row.
-        if "trip_duration" in df.columns and not pd.isna(last.get("trip_duration", np.nan)):
-            travel_time = float(last["trip_duration"])
+        if has_trip_duration and not pd.isna(closure_trip_durations[i]):
+            travel_time = float(closure_trip_durations[i])
         else:
-            travel_time = max(0.0, float(last["arrival_time"]) - float(last["departure_time"]))
+            travel_time = max(0.0, last_arrival - float(closure_departures[i]))
 
         if dwell_model is not None:
-            dwell = dwell_model.draw(last["following_purpose"], float(last["arrival_time"]))
+            dwell = dwell_model.draw(purpose, last_arrival)
         else:
             dwell = dwell_s
 
-        dep = float(last["arrival_time"]) + dwell
+        dep = last_arrival + dwell
         arr = dep + travel_time
 
         if cap_applies and arr > max_plan_time_seconds:
@@ -278,18 +307,18 @@ def _append_return_home(
             # HOME_CLOSURE_DWELL_S; when the bound cannot accommodate even that floor,
             # the row is left UNCAPPED for the post-repair bound validation (which
             # resamples the person), exactly as on the constant path.
-            capped_dwell = max_plan_time_seconds - travel_time - float(last["arrival_time"])
+            capped_dwell = max_plan_time_seconds - travel_time - last_arrival
             if capped_dwell >= HOME_CLOSURE_DWELL_S:
                 dwell = capped_dwell
-                dep = float(last["arrival_time"]) + dwell
+                dep = last_arrival + dwell
                 arr = dep + travel_time
                 n_capped += 1
                 dwell_model.report["n_capped"] = dwell_model.report.get("n_capped", 0) + 1
             else:
                 n_cap_impossible += 1
 
-        if "mode" in df.columns and not pd.isna(last.get("mode")):
-            mode = last["mode"]
+        if has_mode and not pd.isna(closure_modes[i]):
+            mode = closure_modes[i]
         else:
             mode = "car"
             n_mode_filled += 1
@@ -299,20 +328,19 @@ def _append_return_home(
             "person_id": person_id,
             "departure_time": dep,
             "arrival_time": arr,
-            "preceding_purpose": last["following_purpose"],
+            "preceding_purpose": purpose,
             "following_purpose": "home",
             "mode": mode,
             "is_first_trip": False,
             "is_last_trip": True,
             "is_synthetic_closure": True,
         })
-        if "trip_key" in df.columns:
+        if has_trip_key:
             new_row["trip_key"] = f"{person_id}_closure"
         # Carry over trip_id as a placeholder so sort remains stable; will be
         # re-derived by compute_first_last after appending.
-        if "trip_id" in df.columns:
-            max_trip_id = df[df["person_id"] == person_id]["trip_id"].max()
-            new_row["trip_id"] = max_trip_id + 1
+        if has_trip_id:
+            new_row["trip_id"] = closure_max_trip_ids[i] + 1
 
         rows_to_append.append(new_row)
         idx_to_flip.append(idx)
