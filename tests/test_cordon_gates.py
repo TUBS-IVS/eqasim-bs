@@ -108,7 +108,8 @@ def test_select_major_gates_filters_by_class(caplog):
     assert set(major["road_class"]) == {"motorway", "trunk", "primary"}
     assert "residential" not in set(major["road_class"])
     # Primary path: the class filter selects, the strongest-gate fallback stays off.
-    assert "primary 3/4 crossing gates kept, fallback 0" in caplog.text
+    # The registry-quoted marker (cordon_gates record) plus the counts.
+    assert "[cordon.gates] select_major_gates: primary 3/4" in caplog.text
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 

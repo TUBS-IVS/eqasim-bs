@@ -43,7 +43,7 @@ def build_gates_with_volume(municipalities, links, gemeinden, flows, zgb_kreise,
     gates = dedupe_gates(gates, tolerance_m=100.0)
     allowed = road_classes if ("road_class" in gates.columns
                                and gates["road_class"].notna().any()) else None
-    if allowed is None and len(gates):
+    if allowed is None and road_classes is not None and len(gates):
         # The network carries no road class for any crossing gate, so the
         # cordon_gate_road_classes filter cannot apply: every crossing link
         # stays a candidate (CLAUDE.md "Fallback transparency").
