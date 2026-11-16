@@ -1,0 +1,34 @@
+dataset: copernicus_landuse_100m
+title: Copernicus 100 m land-use tile (spatial prior for secondary locations)
+inventory_id: null
+provider: Copernicus Land Monitoring Service
+vintage: unknown
+geography: Lower Saxony bounding box, 100 m raster cells
+crs: unknown
+roles:
+- spatial_input
+used_by:
+- braunschweig.data.inspire.landuse
+acquisition:
+  method: manual_download
+  source: Copernicus Land Monitoring Service (registered download; CLC+ Backbone or CLC 2018, reclassified and
+    converted to GeoParquet by hand; no preprocessing script exists in the repository)
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/preprocessed/inspire_landuse.parquet
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: CC-BY 4.0
+  restricted: false
+  redistribution: allowed
+limitations: Read only when braunschweig.use_landuse_prior is true (default false); the stage is in no workflow
+  DAG, so no committed configuration reads the tile. Vintage, CRS and the exact reclassification are unknown.
+notes: The path is the default of braunschweig.inspire_landuse_path. The licence is taken from the module
+  docstring of braunschweig.data.inspire.landuse, not verified against the provider's terms.

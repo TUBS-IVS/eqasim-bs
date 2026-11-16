@@ -9,7 +9,7 @@ that the secondary-location sampler can use as a spatial prior.
 The Copernicus product itself requires a registered download (CC-BY 4.0
 with attribution); we therefore expect the user to fetch the tile
 manually and place the resulting parquet at
-``braunschweig.inspire_landuse_path``. The tile has no Data Registry record yet.
+``braunschweig.inspire_landuse_path``. Data Registry record: ``copernicus_landuse_100m``.
 
 Output schema
 -------------

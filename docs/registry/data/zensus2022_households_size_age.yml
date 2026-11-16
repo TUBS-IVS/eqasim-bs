@@ -1,0 +1,33 @@
+dataset: zensus2022_households_size_age
+title: Zensus 2022 1000A-3082 persons by Gemeinde, age, sex and household size
+inventory_id: null
+provider: Statistische Aemter
+vintage: '2022-05-15'
+geography: Germany, Gemeinde
+crs: null
+roles:
+- control
+used_by:
+- braunschweig.data.census.households_size_age
+acquisition:
+  method: manual_download
+  source: https://ergebnisse.zensus2022.de (table 1000A-3082, flat-file export)
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/1000A-3082_de_flat.zip
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Fifth IPF margin of the simple_ipf_open workflow (consumed by braunschweig.ipf.prepare); not in the
+  production DAG. The path is the default of braunschweig.households_size_age_path. The licence is assumed
+  from the sibling Zensus 2022 records of the same provider, not read from the table's own terms.
