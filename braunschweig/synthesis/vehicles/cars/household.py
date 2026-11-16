@@ -85,6 +85,7 @@ from braunschweig import synpp_tokens
 from braunschweig.data.bbsr import regiostar as _regiostar
 from braunschweig.data.bbsr.regiostar import ars_to_ags8
 from braunschweig.data.kba import hsn_tsn
+from braunschweig.popsim.fallback_rates import FALLBACK_WARN_THRESHOLD, log_fallback_rate
 from braunschweig.synthesis.vehicles import fleet_sampling_de as fleet
 
 # Helpers whose code this stage runs: synpp hashes only this module's source, so their
@@ -235,15 +236,10 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
             f"{household_ids[first_bad]}"
         )
 
-    owner_rows, n_zero_licensed_households, n_zero_licensed_cars = _assign_owners(
+    owner_rows, owner_fallback = _assign_owners(
         df_persons, household_code, number_of_cars, has_cars)
-
-    if n_zero_licensed_households:
-        logger.warning(
-            "[vehicles.household] %d household(s) with cars but no licensed "
-            "adult (%d car(s)): assigned to the oldest adult as a fallback.",
-            n_zero_licensed_households, n_zero_licensed_cars,
-        )
+    _log_owner_fallback_rates(owner_fallback, n_car_households=int(has_cars.sum()),
+                              n_cars=int(number_of_cars[has_cars].sum()))
 
     cars_per_owning_household = number_of_cars[has_cars]
     car_household = np.repeat(np.flatnonzero(has_cars), cars_per_owning_household)
@@ -312,9 +308,13 @@ def _assign_owners(df_persons: pd.DataFrame, household_code: np.ndarray,
 
     Returns
     -------
-    ``(owner_rows, n_fallback_households, n_fallback_cars)``: ``owner_rows`` are
-    positional row indices into ``df_persons``, one per car, households in
-    ascending ``household_id`` order and cars in emission order within each.
+    ``(owner_rows, fallback_counts)``: ``owner_rows`` are positional row indices
+    into ``df_persons``, one per car, households in ascending ``household_id``
+    order and cars in emission order within each. ``fallback_counts`` holds the
+    car households and cars of the two fallback tiers: ``adult_households`` /
+    ``adult_cars`` (no licensed adult, cars to the first adult) and
+    ``minor_households`` / ``minor_cars`` (no adult at all, cars to the first
+    person: a minor or a person of unknown age).
 
     Within a household the persons are ordered highest-need first: descending age
     (missing age last), tie-broken by ascending ``person_id``, remaining ties in
@@ -374,9 +374,47 @@ def _assign_owners(df_persons: pd.DataFrame, household_code: np.ndarray,
         + car_rank[licensed_car] % car_n_licensed[licensed_car]]
     owner_rows[~licensed_car] = fallback_row[car_household[~licensed_car]]
 
+    has_adult = np.zeros(n_households, dtype=bool)
+    has_adult[adult_codes] = True
     fallback_households = n_licensed[owning] == 0
-    return (owner_rows, int(fallback_households.sum()),
-            int(cars[fallback_households].sum()))
+    adult_tier = fallback_households & has_adult[owning]
+    minor_tier = fallback_households & ~has_adult[owning]
+    fallback_counts = {
+        "adult_households": int(adult_tier.sum()),
+        "adult_cars": int(cars[adult_tier].sum()),
+        "minor_households": int(minor_tier.sum()),
+        "minor_cars": int(cars[minor_tier].sum()),
+    }
+    return owner_rows, fallback_counts
+
+
+def _log_owner_fallback_rates(fallback_counts: dict, *, n_car_households: int,
+                              n_cars: int) -> None:
+    """Log the licensed-adult (primary) vs fallback owner rate (CLAUDE.md "Fallback
+    transparency"), over car households and over cars, with the shared threshold.
+
+    Log only: a high rate is a WARNING, never an error, and no output changes.
+    """
+    n_fallback_households = (fallback_counts["adult_households"]
+                             + fallback_counts["minor_households"])
+    n_fallback_cars = fallback_counts["adult_cars"] + fallback_counts["minor_cars"]
+    household_share = log_fallback_rate(
+        logger, "vehicles.household.owner_households", n_fallback_households,
+        n_car_households, what="car households without a licensed adult")
+    car_share = log_fallback_rate(
+        logger, "vehicles.household.owner_cars", n_fallback_cars, n_cars,
+        what="cars of households without a licensed adult")
+    if n_fallback_households:
+        level = (logging.WARNING
+                 if max(household_share, car_share) > FALLBACK_WARN_THRESHOLD
+                 else logging.INFO)
+        logger.log(
+            level,
+            "[vehicles.household.owner] fallback tiers: no licensed adult, cars to "
+            "the oldest adult: %d household(s), %d car(s); no adult at all, cars to "
+            "the oldest person (a minor or of unknown age): %d household(s), %d car(s)",
+            fallback_counts["adult_households"], fallback_counts["adult_cars"],
+            fallback_counts["minor_households"], fallback_counts["minor_cars"])
 
 
 def _owner_ages(df_persons: pd.DataFrame, household_code: np.ndarray,

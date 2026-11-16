@@ -11,7 +11,7 @@ warning log lines; error cases must raise the same exception and message.
 from __future__ import annotations
 
 import logging
-import time
+import re
 
 import numpy as np
 import pandas as pd
@@ -262,10 +262,66 @@ def _run_both(persons, homes, regiostar, caplog, *, reference_indexed_lookup=Tru
             persons, homes, regiostar, indexed_home_lookup=reference_indexed_lookup)
     expected_logs = [(r.name, r.levelno, r.getMessage()) for r in caplog.records]
     caplog.clear()
-    with caplog.at_level(logging.WARNING, logger=household_module.__name__):
+    with caplog.at_level(logging.INFO, logger=household_module.__name__):
         actual = household_module.build_household_car_frame(persons, homes, regiostar)
     actual_logs = [(r.name, r.levelno, r.getMessage()) for r in caplog.records]
-    return expected, actual, expected_logs, actual_logs
+    # The owner-fallback lines were reworded on purpose (audit H, finding 6): their
+    # counts are asserted as a property, every other line must match the reference.
+    assert _owner_fallback_counts_logged(actual_logs) == _expected_owner_fallback_counts(
+        persons)
+    return (expected, actual, _without_owner_lines(expected_logs),
+            _without_owner_lines([log for log in actual_logs if log[1] >= logging.WARNING]))
+
+
+def _without_owner_lines(logs):
+    return [log for log in logs
+            if "licensed adult" not in log[2] and "[vehicles.household.owner" not in log[2]]
+
+
+def _expected_owner_fallback_counts(persons: pd.DataFrame) -> dict:
+    """Fallback tiers computed directly from the persons (independent of both codes)."""
+    persons = persons[persons["household_id"].notna()]
+    age = persons["age"].astype("float64")
+    adult = (age >= ADULT_AGE).to_numpy()
+    licensed_adult = adult & persons["has_license"].fillna(False).astype(bool).to_numpy()
+    per_household = pd.DataFrame({
+        "household_id": persons["household_id"].to_numpy(),
+        "cars": persons["number_of_cars"].astype("float64").to_numpy(),
+        "adult": adult, "licensed_adult": licensed_adult,
+    }).groupby("household_id").agg(cars=("cars", "max"), adult=("adult", "any"),
+                                   licensed_adult=("licensed_adult", "any"))
+    cars = np.trunc(per_household["cars"])
+    owning = per_household[cars > 0].assign(cars=cars[cars > 0].astype(int))
+    adult_tier = owning[~owning["licensed_adult"] & owning["adult"]]
+    minor_tier = owning[~owning["adult"]]
+    return {
+        "car_households": len(owning), "cars": int(owning["cars"].sum()),
+        "adult_tier": (len(adult_tier), int(adult_tier["cars"].sum())),
+        "minor_tier": (len(minor_tier), int(minor_tier["cars"].sum())),
+    }
+
+
+_RATE_LINE = re.compile(
+    r"\[vehicles\.household\.owner_(households|cars)\] primary (\d+)/(\d+) .*fallback (\d+)")
+_TIER_COUNTS = re.compile(r"(\d+) household\(s\), (\d+) car\(s\)")
+
+
+def _owner_fallback_counts_logged(logs) -> dict:
+    """Read the counts (not the wording) of the production owner-fallback lines."""
+    rates = {}
+    tiers = [(0, 0), (0, 0)]
+    for _, _, message in logs:
+        match = _RATE_LINE.search(message)
+        if match:
+            rates[match.group(1)] = (int(match.group(3)), int(match.group(4)))
+        elif message.startswith("[vehicles.household.owner] fallback tiers"):
+            tiers = [(int(h), int(c)) for h, c in _TIER_COUNTS.findall(message)]
+    assert rates["households"][1] == tiers[0][0] + tiers[1][0]
+    assert rates["cars"][1] == tiers[0][1] + tiers[1][1]
+    return {
+        "car_households": rates["households"][0], "cars": rates["cars"][0],
+        "adult_tier": tiers[0], "minor_tier": tiers[1],
+    }
 
 
 def _assert_identical(expected: pd.DataFrame, actual: pd.DataFrame) -> None:
@@ -365,7 +421,8 @@ def test_random_fixture_exercises_every_edge_case(caplog):
     _, actual, _, actual_logs = _run_both(
         persons, homes, _regiostar(), caplog)
     messages = [message for _, _, message in actual_logs]
-    assert any("no licensed adult" in m for m in messages)
+    owner_counts = _expected_owner_fallback_counts(persons)  # _run_both checked the log
+    assert owner_counts["adult_tier"][0] > 0 and owner_counts["minor_tier"][0] > 0
     assert any("no Gemeinde name" in m for m in messages)
     assert actual["gemeinde"].isna().any() and actual["gemeinde"].notna().any()
 
@@ -498,23 +555,18 @@ def test_nan_car_count_raises_same_error():
     assert str(actual.value) == str(expected.value)
 
 
-def test_timing_against_reference(capsys):
-    """Report old vs new seconds on a mid-size input; no assertion on absolute time.
-
-    The production-size check (about 300k persons) is reported in the audit-H
-    hand-back (the reference loop needs minutes there); here about 3k persons keep
-    the test near five seconds while still printing both
-    timings and proving identity at scale.
-    """
-    persons, homes = _random_population(1_000, 99)
-    regiostar = _regiostar()
-    start = time.perf_counter()
-    expected = _reference_build_household_car_frame(persons, homes, regiostar)
-    reference_seconds = time.perf_counter() - start
-    start = time.perf_counter()
-    actual = household_module.build_household_car_frame(persons, homes, regiostar)
-    vectorised_seconds = time.perf_counter() - start
+def test_no_licence_anywhere_reports_full_fallback_rate_at_warning(caplog):
+    """A broken licence column (all False) puts every car on the fallback: both rate
+    lines must say 100 % and be WARNINGs, not INFO (CLAUDE.md "Fallback transparency")."""
+    persons, homes = _random_population(60, 8)
+    persons["has_license"] = False
+    expected, actual, _, _ = _run_both(persons, homes, _regiostar(), caplog)
     _assert_identical(expected, actual)
-    with capsys.disabled():
-        print(f"\n[timing] build_household_car_frame on {len(persons)} persons: "
-              f"reference {reference_seconds:.2f} s, vectorised {vectorised_seconds:.2f} s")
+    rate_records = [r for r in caplog.records
+                    if _RATE_LINE.search(r.getMessage())]
+    assert len(rate_records) == 2
+    for record in rate_records:
+        match = _RATE_LINE.search(record.getMessage())
+        n_total, n_fallback = int(match.group(3)), int(match.group(4))
+        assert n_total > 0 and n_fallback == n_total
+        assert record.levelno == logging.WARNING
