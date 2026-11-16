@@ -1,0 +1,61 @@
+feature: popsim_data_dictionary
+title: PopulationSim diagnostic data dictionary step (write_data_dictionary), switchable
+area: population
+description: PopulationSim's diagnostic step write_data_dictionary writes only
+  output/data_dict.csv and data_dict.txt per batch, which nothing in this repository reads.
+  The key braunschweig.population.popsim.write_data_dictionary keeps it (true, code default)
+  or drops it from the batch settings.yaml (false, production since audit package H, item I)
+  to save its step time; the synthetic population does not depend on it.
+stages:
+- data.census.filtered
+pipelines:
+  popsim_mid: active
+  popsim_open: supported
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: false
+  flags:
+  - braunschweig.population.popsim.write_data_dictionary
+introduced:
+  issue: null
+  pr: null
+  adr: null
+detail_doc: null
+code_paths:
+- braunschweig/popsim/folders.py
+- braunschweig/popsim/stage/config_keys.py
+- braunschweig/popsim/stage/__init__.py
+evidence:
+  tests:
+  - tests/test_popsim_data_dictionary_switch.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      The step predates the switch, so there is no pre-feature state to compare with. What
+      matters is that switching the step off leaves the synthetic population unchanged: the
+      batch settings then differ from the source file by the one step line (tested), and the
+      synthetic households and persons of one production batch are byte-identical with and
+      without the step (run manifest popsim-data-dictionary-identity-2026-11-16).
+  fallback_rate:
+    instrumented: false
+    note: |
+      No fallback: with the key false the stage raises when the settings file does not list
+      the step exactly once as a block-list item; the keep/drop decision is logged per run.
+  reference:
+    kind: none
+    note: A pipeline-runtime switch; no external reference applies.
+validation:
+  state: not_applicable
+  runs:
+  - popsim-data-dictionary-identity-2026-11-16
+  metric: null
+  note: |
+    No behaviour to validate; the run manifest records the byte-for-byte output comparison.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Owner approved switching the step off on 2026-11-16 (audit package H, item I); PR review pending.
+  source: Audit package H, item I (owner decision 2026-11-16)

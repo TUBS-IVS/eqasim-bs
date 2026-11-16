@@ -325,6 +325,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_WORK_PARTICIPATION_CONTROL,
     KEY_WORKER_MEMORY_GB,
     KEY_WORKERS,
+    KEY_WRITE_DATA_DICTIONARY,
     KEY_W_ZWECK_10_AS_LEISURE,
     _KREIS_CONTROL_DEFAULT,
     _KREIS_CONTROL_TOGGLE_KEY,
@@ -754,6 +755,9 @@ def configure(context):
     # that (e.g. Salzgitter's mobility character is rural-like despite its statistical
     # urban class). Set True to opt back into the Phase 4B stratified path.
     context.config(KEY_STRATIFY, False)
+    # Diagnostic PopulationSim step on/off (meaning and identity proof: KEY_WRITE_DATA_DICTIONARY
+    # in config_keys). Volatile: it changes no synthetic household or person.
+    context.config(KEY_WRITE_DATA_DICTIONARY, True, volatile = True)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
     context.config(KEY_COMPLETE_MEMBERS, True)
     context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
@@ -1990,7 +1994,12 @@ def _run_populationsim_batches(context, cells: pd.DataFrame, base_cols, controls
     merge_report = mid.run_popsim_mid(
         cells, base_cols, controls_df, seed_households, seed_persons,
         work_dir=Path(work_dir),
-        settings_yaml=Path(settings_path).read_text(encoding="utf-8"),
+        # The batch config signature (_purge_stale_batches_for_changed_config) hashes the
+        # raw source file, not this resolved text, on purpose: the switch changes no
+        # synthetic output, so flipping it must not purge completed batches.
+        settings_yaml=folders.resolve_batch_settings_yaml(
+            Path(settings_path).read_text(encoding="utf-8"),
+            bool(context.config(KEY_WRITE_DATA_DICTIONARY))),
         logging_yaml=Path(logging_path).read_text(encoding="utf-8"),
         max_cells=max_cells,
         run_one=run_one,

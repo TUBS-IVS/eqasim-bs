@@ -46,6 +46,7 @@ features:
 - escort_passive_from_adult
 - participation_universe_controls
 - placement_income_l2
+- popsim_data_dictionary
 - popsim_method
 - purpose_main_fold_code_10
 - sex_aware_couples
