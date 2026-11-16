@@ -1,8 +1,7 @@
 # The `braunschweig/synpp_fork` package: explainer, vendored synpp functions and cache migration
 
 One note for the whole package (ADR-0149, issue #468; design spec
-`docs/superpowers/specs/2026-10-16-content-addressed-stage-cache-design.md`, local and
-gitignored). It describes the package after Phase 4: the explainer (Phase 1), the semantic
+local and gitignored, not in the repo). It describes the package after Phase 4: the explainer (Phase 1), the semantic
 tokens, the output hash, the fork skeleton and the cache migration (Phase 3), and the content-addressed
 validity of Phase 4: early cutoff in the fork's `run()` (child validity by parent output hash) and
 `cache_share` coherence by output hash. `staleness.EARLY_CUTOFF_ACTIVE` is `True`. The server
