@@ -80,7 +80,7 @@ config:
   java_memory: 32G
 
   mode_choice: false
-  matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
+  # matching_attributes and braunschweig.ipf.* are legacy-IPF-only: not read under popsim.
 
   # --- Population method: popsim_open ----------------------------------------
   # Selects the PopulationSim + ENTD producer (braunschweig.popsim.stage with
@@ -130,6 +130,9 @@ config:
   # and number of parallel PopulationSim subprocesses (default 3).
   braunschweig.population.popsim.max_cells: 3000
   braunschweig.population.popsim.num_workers: 3
+  # Same PopulationSim importance profile as configs/base_bs.yml (ADR-0195), so these
+  # fixtures do not silently run another profile than the composed runs.
+  braunschweig.population.popsim.importance_profile: optimized_2026_06_30
 
   # --- R-A: Gravity calibration (TASK-001).
   gravity_slope: -0.065
@@ -144,15 +147,6 @@ config:
     75: -0.0704   # Zentrale Stadt (laendlich)
     76: -0.0719   # Mittelstadt (laendlich)
     77: -0.0667   # Kleinstadt / doerfl. (laendlich)
-
-  # --- IPF: per-commune household-size margin (Zensus 2022 1000A-2081)
-  braunschweig.ipf.use_household_size_margin: true
-
-  # --- IPF: post-formation hh_type assignment (Zensus 2022 1000A-2081)
-  braunschweig.ipf.use_household_type_margin: true
-
-  # --- Phase 2 IPF (TASK-011, 2026-04-26)
-  braunschweig.ipf.dirichlet_prior_strength: 0.5
 
   gtfs_path: gtfs
   osm_path: osm

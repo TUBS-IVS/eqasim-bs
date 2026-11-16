@@ -7,9 +7,9 @@ Two modes over the same ``INPUTS`` catalog:
 
     Prints a checklist of expected files with status (OK/MISSING) and download
     source URLs for each missing dataset. The grouping mirrors
-    ``eqasim-data/DOWNLOAD_CHECKLIST_BS.md``: federal datasets (A), Lower-Saxony
-    statistical inputs (B), preprocessed ALKIS/ATKIS/OSM (C), and MATSim-only
-    inputs (D, optional).
+    the data records in ``docs/registry/data/``: federal datasets (A),
+    Lower-Saxony statistical inputs (B), preprocessed ALKIS/ATKIS/OSM (C), and
+    MATSim-only inputs (D, optional).
 
 *Source reachability* (``--check-urls``) --
     ``python scripts/verify_braunschweig_inputs.py --check-urls``
@@ -19,7 +19,7 @@ Two modes over the same ``INPUTS`` catalog:
     cannot be asked on a runner that has no data, but "did a portal move or rename
     our source" can. See ``docs/codebase/notes/ci-data-availability-checks.md``.
 
-Always update this file *and* ``DOWNLOAD_CHECKLIST_BS.md`` together when
+Always update this file *and* the data record (``docs/registry/data/``) together when
 adding or replacing pipeline inputs.
 """
 
@@ -681,7 +681,7 @@ def check_url(inp: Input, cache: Optional[dict] = None) -> dict:
     url = url_from_source(inp.source)
     if url is None:
         return {"input": inp, "status": "SKIPPED", "url": "", "saw_http_status": False,
-                "detail": "not-a-URL (prose source; acquire by hand per DOWNLOAD_CHECKLIST_BS.md)"}
+                "detail": "not-a-URL (prose source; acquire by hand per the data record in docs/registry/data/)"}
 
     probe = probe_url(url, cache if cache is not None else {})
     return {
@@ -751,7 +751,7 @@ def run_url_check() -> int:
         if any(r["saw_http_status"] for r in dead_required):
             print("Some failures returned an HTTP status: for those, the source likely moved "
                   "or was renamed -- fix the URL here AND in "
-                  "eqasim-data/DOWNLOAD_CHECKLIST_BS.md.")
+                  "docs/registry/data/<dataset>.yml.")
         if any(not r["saw_http_status"] for r in dead_required):
             print("Some failures produced NO HTTP status at all: transport error "
                   "(TLS/DNS/timeout), not an HTTP 4xx/5xx -- see "

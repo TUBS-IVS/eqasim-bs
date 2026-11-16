@@ -60,7 +60,7 @@ The registry loaders and checker are also exercised by the test suite
 |---|---|
 | add/rename/remove a synpp stage | update `docs/registry/stages/`, re-run `dag`, `build` |
 | add a feature / flip a default | add/update `docs/registry/features/` (lifecycle × production × pipelines explicitly), keep the OFF-path test pinned |
-| add/replace a dataset | add/update `docs/registry/data/`, `scripts/verify_braunschweig_inputs.py`, the README data setup, `eqasim-data/DOWNLOAD_CHECKLIST_BS.md` |
+| add/replace a dataset | add/update `docs/registry/data/`, `scripts/verify_braunschweig_inputs.py`, the README data setup |
 | make a substantive decision (incl. rejecting an approach) | add `docs/decisions/ADR-NNNN-*.md` (next free number; see `docs/decisions/README.md`) |
 | complete a significant run | add `docs/runs/<run_id>.yml`; point feature `validation.runs` at it — **no validation claim without a manifest + committed reference** |
 | discover open work | quick fix: fix it now (no issue); larger work: open a GitHub issue on the fork after proposing it (fix-now-or-issue triage, CLAUDE.md; no parallel backlog files) |
