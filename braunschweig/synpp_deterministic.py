@@ -136,8 +136,9 @@ def propagate_implicit_config(hashed_stages: dict) -> None:
 def process_stages(definitions, global_config, externals={}, aliases={}):  # noqa: B006 - synpp signature
     """synpp 1.6.2 ``process_stages`` with deterministic implicit-config propagation.
 
-    Verbatim copy of the pinned upstream function except for the marked block; see the module
-    docstring. Helpers are imported from ``synpp.pipeline`` so their behaviour stays upstream's.
+    Verbatim copy of the pinned upstream function except for the marked blocks: the deterministic
+    propagation (see the module docstring) and ``# PATCH run-target-aliases``. Helpers are imported
+    from ``synpp.pipeline`` so their behaviour stays upstream's.
     """
     from synpp.pipeline import (ConfigurationContext, PipelineError, calculate_identification_hash,
                                 flatten, hash_name, resolve_stage)
@@ -176,7 +177,9 @@ def process_stages(definitions, global_config, externals={}, aliases={}):  # noq
             config.update(definition["config"])
 
         # Obtain configuration information through configuration context
-        context = ConfigurationContext(config, [d['descriptor'] for d in definitions], externals)
+        # PATCH run-target-aliases: pass the config's aliases, which upstream omits here, so the run
+        # targets resolve like every other descriptor (an alias-only target was None and crashed).
+        context = ConfigurationContext(config, [d['descriptor'] for d in definitions], externals, aliases)
         wrapper.configure(context)
         required_config = flatten(context.required_config)
         definition = copy.copy(definition)

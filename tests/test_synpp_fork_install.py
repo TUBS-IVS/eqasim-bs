@@ -56,8 +56,10 @@ def test_install_is_silent_when_the_upstream_file_matches_the_pin(caplog):
 
 def test_patches_are_named_and_marked_in_the_source():
     from braunschweig import synpp_fork
+    from braunschweig import synpp_deterministic
     from braunschweig.synpp_fork import pipeline as fork
-    source = inspect.getsource(fork)
+    # process_stages, the patched copy that run() calls, lives in synpp_deterministic.
+    source = inspect.getsource(fork) + inspect.getsource(synpp_deterministic)
     for name in synpp_fork.PATCHES:
         assert ("# PATCH " + name) in source
 

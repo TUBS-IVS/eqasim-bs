@@ -1,14 +1,11 @@
 """Every ``run:`` target of every committed config names a stage module that exists on disk.
 
-synpp 1.6.2 builds its ``ConfigurationContext`` from the run targets WITHOUT the config's
-``aliases:`` (``synpp.pipeline.ConfigurationContext.__init__`` resolves them with an empty alias map,
-and ``braunschweig.synpp_deterministic.process_stages`` passes none either). A run target that
-exists only as an alias key therefore resolves to ``None`` and the run, or its dry run, aborts with
-``AttributeError: 'NoneType' object has no attribute 'instance'``. Package G of the 2026-11-11
-repository audit deleted the inherited ``data/census/filtered.py``; the overlay
+A style guard. Since the fork patch ``run-target-aliases`` (tests/test_synpp_run_target_aliases.py)
+an alias-only run target no longer crashes the graph build, but a module name stays unambiguous:
+an alias key can be shadowed by, or silently lose, a module of the same name. Package G of the
+2026-11-11 repository audit deleted the inherited ``data/census/filtered.py`` while the overlay
 ``smoke_kreis_control_fit.yml`` still named ``data.census.filtered`` (an alias of
-``braunschweig.popsim.stage``) and broke exactly this way. A run target must be the stage module
-itself.
+``braunschweig.popsim.stage``); before the patch that broke the run.
 """
 from pathlib import Path
 

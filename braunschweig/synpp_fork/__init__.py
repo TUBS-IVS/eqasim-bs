@@ -31,6 +31,7 @@ PATCHES = (
     "order-after",                 # run(): execution order honours the stages' _ORDER_AFTER_STAGES
                                    # (ordering only, not a dependency; ADR-0177)
     "atomic-metadata",             # run(): pipeline.json through metadata.write_meta, not update_json
+    "run-target-aliases",          # process_stages: the run targets resolve through the config's aliases
 )
 
 

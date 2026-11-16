@@ -223,7 +223,8 @@ path whose directory name is itself assembled from other strings.
    upstream's code except at the `# PATCH` hunks).
 2. Re-copy `run()` and `get_stage_hash()` from the new file and re-apply every patch listed in
    `braunschweig.synpp_fork.PATCHES`. Re-check that `braunschweig.synpp_deterministic` still
-   matches the new `process_stages`.
+   matches the new `process_stages`, whose copy carries its own `# PATCH` hunks (the marker test
+   in `tests/test_synpp_fork_install.py` reads both files).
 3. Update `UPSTREAM_PIPELINE_SHA256` (`upstream_pipeline_sha256()` computes it) and the version
    check in `braunschweig.synpp_deterministic`. Run `tests/test_synpp_fork_install.py`,
    `tests/test_synpp_fork_staleness.py` (differential test against the installed synpp) and the
