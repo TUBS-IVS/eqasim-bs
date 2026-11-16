@@ -185,7 +185,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Analysis
 
-4 stage(s), 4 in the production DAG. Datasets: `srv2023_activity_duration_reference`, `srv2023_departure_time_reference`, `srv2023_plan_structure_reference`
+4 stage(s), 4 in the production DAG. Datasets: `regiostar`, `srv2023_activity_duration_reference`, `srv2023_departure_time_reference`, `srv2023_plan_structure_reference`, `vg250_ew`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -196,7 +196,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Validation
 
-7 stage(s), 6 in the production DAG. Datasets: `mid2023_reference_tables`, `srv2023_primary_distance_targets`, `srv2023_work_participation`, `verbindungen`, `vg250_ew`
+7 stage(s), 6 in the production DAG. Datasets: `mid2023_reference_tables`, `regiostar`, `srv2023_primary_distance_targets`, `srv2023_work_participation`, `verbindungen`, `vg250_ew`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
