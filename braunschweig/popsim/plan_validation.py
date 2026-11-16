@@ -245,7 +245,11 @@ def _append_return_home(
     # person_id order as before. The order matters: dwell_model.draw consumes RNG, so
     # draw calls must happen in exactly the former sequence with the same arguments.
     # The row values are read from per-column numpy arrays instead of one df.loc row
-    # Series per person; both return the same scalar objects for each cell.
+    # Series per person. Both give equal values (a scalar may differ in Python type,
+    # e.g. int vs np.int64), and pd.DataFrame(rows_to_append) infers the column types
+    # again, so the result is unchanged. Known exception outside production: a nullable
+    # Int64 trip_id with a person whose trip_ids are all <NA> yields an object column
+    # holding Python int instead of np.int64 (equal values); no stage builds one.
     needs_closure = (last_rows["following_purpose"] != "home").to_numpy()
     closure_rows = last_rows.loc[needs_closure]
     # The person ids go through a pandas Index exactly as before (a Series keyed by

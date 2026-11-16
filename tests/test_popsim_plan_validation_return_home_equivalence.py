@@ -157,7 +157,7 @@ def _random_trips(seed: int, n_persons: int, *, late: bool = False, variant: int
     departure = np.round(start + step, 0)
     travel = rng.choice([0.0, 300.0, 1200.0, 3600.0], size=len(person_numbers))
     frame = pd.DataFrame({
-        "person_id": person_numbers if variant % 2 == 0 else np.array([f"p{n:05d}" for n in person_numbers], dtype=object),
+        "person_id": person_numbers if variant not in (1, 3) else np.array([f"p{n:05d}" for n in person_numbers], dtype=object),
         "departure_time": departure,
         "arrival_time": departure + travel,
         "preceding_purpose": rng.choice(_PURPOSES, size=len(person_numbers)),
@@ -184,6 +184,16 @@ def _random_trips(seed: int, n_persons: int, *, late: bool = False, variant: int
         flag = pd.Series(rng.rand(len(frame)) < 0.05, dtype=object)
         flag[rng.rand(len(frame)) < 0.05] = np.nan
         frame["is_synthetic_closure"] = flag.to_numpy()
+    if variant == 4:
+        # int32 ids and none of the optional columns: the former Series-index iteration
+        # turned int32 keys into int64, which the rewrite must reproduce.
+        frame["person_id"] = frame["person_id"].astype(np.int32)
+    if variant == 5:
+        # Float ids with some missing ones (sorted last, grouped as one key).
+        person = frame["person_id"].astype(float)
+        person[person % 17 == 0] = np.nan
+        frame["person_id"] = person
+        frame["trip_id"] = np.arange(len(frame))
     return frame
 
 
@@ -221,7 +231,7 @@ def _run(function, trips, model, max_plan_time_seconds, caplog):
     return out, messages
 
 
-@pytest.mark.parametrize("variant", [0, 1, 2, 3])
+@pytest.mark.parametrize("variant", [0, 1, 2, 3, 4, 5])
 @pytest.mark.parametrize("kind,late,bound", [
     ("empirical", False, pv.MAX_PLAN_TIME_SECONDS),  # uncapped empirical draws
     ("empirical", True, 26 * 3600),  # capped and cap-impossible draws
