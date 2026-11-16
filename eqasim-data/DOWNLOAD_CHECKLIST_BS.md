@@ -1,338 +1,48 @@
 # Download checklist — Braunschweig (ARS 031, Niedersachsen)
 
-> All paths are relative to `eqasim-data/data/`. The authoritative
-> verifier is [`scripts/verify_braunschweig_inputs.py`](../scripts/verify_braunschweig_inputs.py).
-> This checklist is the human-readable companion: if you change inputs
-> in the config or in `verify_braunschweig_inputs.py`, update this file
-> in the same commit.
->
-> **Data-protection policy:** this repository hosts **no** third-party
-> statistical data. The **only** committed data files are the small derived
-> **MiD 2023 aggregate tables** (`mid/mid2023_*.csv`) and the project's own
-> calibration-evaluation outputs (`mid/education_calibration/*`) — see
-> [Section F](#f-committed-reference-data-on-github). Everything else listed
-> below (incl. the DESTATIS Mikrozensus tables and the derived NDS school /
-> Hochschule / Kita facility tables) must be downloaded / regenerated locally
-> and is **never** committed.
+This file is a **signpost, not an inventory**. It used to hold full dataset tables
+(sources, paths, licences, lists of committed files). Those tables duplicated
+their owners and drifted from the tree (audit findings CFG-F20, CFG-F27, 2026-11), so
+they were removed. A fact about a dataset lives in exactly one place:
 
-## How to verify
+| You need | Owner |
+|---|---|
+| Which files to obtain, exact target path under `eqasim-data/data/`, source, licence, restrictions, whether a file is committed or local-only | the Data Registry, [`docs/registry/data/*.yml`](../docs/registry/data/), rendered as [`docs/generated/DATA.md`](../docs/generated/DATA.md) (build it with `python -m braunschweig.documentation build`; never commit it on a branch) |
+| The setup-oriented summary, the data-protection policy and the downloader scripts | README, section "Data setup" |
+| An automated check of what is present, missing, optional, restricted or generated, with the source of each | `python scripts/verify_braunschweig_inputs.py` (`--matsim` adds the MATSim-only inputs; `--check-urls` probes the public sources; see its `--help`) |
+| The dataset entry tags (`A1`, `B1b`, `D5`, ...) | the `name=` of each entry of `INPUTS` in `scripts/verify_braunschweig_inputs.py`; a registry record names its entry in `verification.verifier_entry` |
 
-```powershell
-python scripts/verify_braunschweig_inputs.py            # synthesis.output only
-python scripts/verify_braunschweig_inputs.py --matsim   # add MATSim inputs
-```
+All data paths are relative to `eqasim-data/data/`. `eqasim-data/` is gitignored;
+the only tracked exceptions are the small derived reference tables and provenance
+documents allowed by `.gitignore`. Do not `git add -f` any other data file.
 
-The script prints `[OK]` / `[--]` per dataset and writes a remediation
-list for missing files.
+When you add or replace a pipeline input, update the registry record, the verifier
+entry and the README "Data setup" (the duty table of
+[`docs/DOCUMENTATION_GOVERNANCE.md`](../docs/DOCUMENTATION_GOVERNANCE.md)); this file needs no change.
 
----
+## Preprocessing of the large raw inputs
 
-## A. Federal datasets (shared across regions)
+ALKIS buildings, ATKIS landuse and the OSM Niedersachsen extract are processed once
+into GeoParquet; the synpp stages read only the preprocessed files. Entries C1 to C3
+of the verifier name the raw input and the output of each. The scripts and their
+current arguments:
 
-| # | Dataset | Source | Target path | Licence |
-|---|---------|--------|-------------|---------|
-| A1 | **VG250-EW 31.12.** (administrative boundaries with population) | https://gdz.bkg.bund.de/index.php/default/digitale-geodaten/verwaltungsgebiete/verwaltungsgebiete-1-250-000-mit-einwohnerzahlen-stand-31-12-vg250-ew-31-12.html | `germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip` | dl-de/by-2-0 (BKG) |
-| A2 | **KBA Fahrerlaubnisbestand FE4** (driving licences by Bundesland) | https://www.kba.de/DE/Statistik/Kraftfahrer/Fahrerlaubnisse/Fahrerlaubnisbestand/fahrerlaubnisbestand_node.html | `germany/fe4_2024.xlsx` | KBA terms (free download) |
-| A3 | **ENTD 2008** (French HTS — reused as travel-pattern donor) | https://www.statistiques.developpement-durable.gouv.fr/enquete-nationale-transports-et-deplacements-entd-2008 | `entd_2008/{Q_individu,Q_tcm_individu,Q_menage,Q_tcm_menage_0,K_deploc}.csv` | INSEE/SDES open data |
+- `scripts/preprocess_alkis_landuse.py` (ALKIS buildings and ATKIS landuse)
+- `scripts/preprocess_osm_pois.py` (OSM POIs)
 
-A1 is required for the spatial pipeline (VG250 zones + landuse clipping).
-A2 is required for the licence-attribution stage (FE4.2 / FE4.3 / FE4.4
-sheets, NDS filter applied automatically). A3 is the upstream travel-
-pattern donor; the BS pipeline does not yet have a German HTS replacement.
+Run `python scripts/<script> --help`; the arguments are not repeated here.
 
-## B. Lower-Saxony statistical inputs (synthesis.output)
+## VRB tariff-zone mapping (entry D3)
 
-| # | Dataset | Source | Target path | Licence |
-|---|---------|--------|-------------|---------|
-| B1 | **DESTATIS 12411-0018 population** (Kreis × sex × age class) | https://www-genesis.destatis.de/genesis/online?operation=statistic&code=12411 (Flat-CSV export) | `braunschweig/12411-0018_de.csv` | dl-de/by-2-0 (Statistische Ämter) |
-| B1b | **urbistat Gemeinde-level population shares** (11 age classes, scraped) | https://urbistat.com — Gemeinde-level age table (project archive) | `braunschweig/urbistat_age_gemeinden.csv` | urbistat terms (non-redistributable) |
-| B2 | **Employees by residence — GENESIS 13111-06-02-4** (Wohnort × Alter × Sex) | https://www.regionalstatistik.de/genesis/online?operation=statistic&code=13111 | `braunschweig/13111-06-02-4.xlsx` | dl-de/by-2-0 |
-| B3 | **Employees at workplace — GENESIS 13111-01-03-5** (SvB Arbeitsort, Gemeinde) | https://www.regionalstatistik.de/genesis/online?operation=statistic&code=13111 | `braunschweig/13111-01-03-5.xlsx` | dl-de/by-2-0 |
-| B4 | **BA Beschäftigtenstatistik gemband-dlk** (employees by Wirtschaftsabteilung × Gemeinde) | https://statistik.arbeitsagentur.de — Beschäftigung / sozialversicherungspflichtig / Gemeindeband | `braunschweig/gemband-dlk-0-202506-xlsx.xlsx` | BA terms |
-| B5a | **BA Pendleratlas — Einpendler** (Arbeitsort ZGB, CSV) | https://statistik.arbeitsagentur.de/SiteGlobals/Forms/Suche/Einzelheftsuche_Formular.html?topic_f=beschaeftigung-sozbe-krpend | `braunschweig/statistik_pendler_2026042493412.csv` | BA terms |
-| B5b | **BA Pendleratlas — Auspendler** (Wohnort ZGB, CSV) | (same Pendleratlas explorer) | `braunschweig/statistik_pendler_2026042493430.csv` | BA terms |
-| B7 | **Zensus 2022 — Households (5000H-2001 flat-CSV)** Gemeinde × HH-size × HH-type | https://ergebnisse.zensus2022.de (Tabelle `5000H-2001`, Flat-File) | `braunschweig/5000H-2001_de_flat.csv` | dl-de/by-2-0 (Statistische Ämter) |
-| B8 | **BBSR INKAR — household income** (Kreis × year, Haushaltseinkommen €/EW/Monat) | https://www.inkar.de (Indikatorenexport `E_Haushaltseinkommen.xls`) | `braunschweig/E_Haushaltseinkommen.xls` | dl-de/by-2-0 (BBSR) |
-| B9 | **BBSR INKAR — full panel (optional)** other indicator exports `E_*.xls` (population density, unemployment, education, healthcare) | https://www.inkar.de | `braunschweig/E_Bevoelkerungsdichte.xls`, `E_Arbeitslosenquote.xls`, `E_HochschulabsolventenQuote.xls`, `E_AerzteJeEinwohner.xls` | dl-de/by-2-0 |
-| B10 | **Additional reference tables** (numbered tables; needed only to *regenerate* the committed CSVs) | result-table volume provided to the project | `braunschweig/mid/mid2023_result_tables.pdf` (any local filename) | see source terms |
-| B10a | **MiD 2023 — extracted reference CSVs** (the numbered tables P9 / P12.1 / P13 / P17.1 / P24.1 / Tabelle 43 etc.) | **committed to the repo** (see Section F); regenerate from B10 via `scripts/extract_mid_tables.py` / the seed scripts | `braunschweig/mid/mid2023_*.csv` | aggregate reference values |
-| B11 | **BMV/BBSR RegioStaR-7 reference** (Gemeinde-level RegioStaR class) | https://mobilithek.info/mdp-api/files/aux/689522949364838400/2024%20RegioStaR-Referenzdateien_Mobilthek.xlsx (mobilithek, BMV) — auto-downloaded by `python scripts/download_regiostar.py` | `regiostar/regiostar_referenzdateien_2024.xlsx` | dl-de/by-2-0 (BMV) |
-| B12 | **Zensus 2022 100 m population grid (parquet)** | `https://github.com/JsLth/z22data` (BKG GeoGitter + Statistische Ämter) — auto-downloaded by `python scripts/download_zensus_grid.py` | `zensus_grid/population_100m.parquet`, `zensus_grid/grid_100m.parquet` | dl-de/by-2-0 (BKG / Statistische Ämter) |
-| B13 | **Zensus 2022 — employed by age × sex per Kreis** (Regionaltabelle "Bildung und Erwerbstätigkeit", sheet `CSV-ET_Alter`; employment-grid age shape, ADR-0137) | https://www.zensus2022.de (Regionaltabelle xlsx; the cleancensus repo keeps a copy under `data/raw/regionaltabellen/`) — processed by `python scripts/extract_zensus2022_employed_by_age.py` | `braunschweig/popsim/zensus2022_employed_by_age_kreis.csv` | dl-de/by-2-0 (Statistische Ämter) |
+`braunschweig.data.vrb.zones` reads `vrb/stations.json`, built once by
+`scripts/build_vrb_stations_json.py` from the GTFS feed and the tariff zones, either
+from the official zone polygons (preferred) or from the public VRB tariff-zone page
+(legacy name matching). The polygon download, its licence status and the build
+arguments are in the data records `vrb_tariff_zone_polygons` and `vrb_tariff_zones`
+and in `python scripts/build_vrb_stations_json.py --help`.
 
-Notes:
-
-- **B1 / B1b**: the BS pipeline derives Gemeinde × age × sex by combining the authoritative DESTATIS 12411-0018 Kreis totals (B1) with the urbistat Gemeinde-level shares (B1b). See [`braunschweig/data/census/population.py`](../braunschweig/data/census/population.py).
-- **Legacy dead-config keys** in `config_local_braunschweig.yml`: `bavaria.population_path: braunschweig/12111-0001_population_ni.xlsx` and `bavaria.work_flow_path: braunschweig/pendler_ni.xlsx`. Both are read only by upstream `bavaria/data/census/{population,employees}.py` modules, which are aliased to the `braunschweig.*` forks on the active DAG. The two filenames do **not** need to exist on disk for the BS pipeline to run; they remain only because the bavaria stages still resolve those config keys at import time.
-- **B5a/B5b** filenames carry the Pendleratlas export timestamp; rename in `config_local_braunschweig.yml` if you re-export. `braunschweig.data.census.pendler` parses both files via the `r"\d{5}"` ARS regex.
-- **B7** is required by [`braunschweig/data/census/household_size.py`](../braunschweig/data/census/household_size.py), [`households_size_age.py`](../braunschweig/data/census/households_size_age.py), and [`households_type.py`](../braunschweig/data/census/households_type.py). All three loaders raise with a download hint to https://ergebnisse.zensus2022.de if missing.
-- **B10 / B10a**: the numbered MiD 2023 reference tables (e.g. P13 for the BS-specific commute-distance CDFs) are **committed as small aggregate CSVs** (Section F), so the raw B10 volume is needed only to regenerate them. If a CSV is absent the consuming stage falls back to its documented default (e.g. [`commute_distance.py`](../braunschweig/synthesis/spatial/commute_distance.py) falls back to the ZGB aggregate row).
-- **B11 / B12** are auto-downloaded — do not commit them; they live in user-local `eqasim-data/`.
-
-## C. ALKIS / ATKIS / OSM raw inputs (preprocessed once)
-
-These are large raw files that are processed into compact GeoParquet by
-the scripts under `scripts/`. The synpp pipeline reads only the
-preprocessed parquet — the raw zips are not loaded by stages.
-
-| # | Raw input | Source | Target path | Preprocessor → output |
-|---|-----------|--------|-------------|-----------------------|
-| C1 | **ALKIS Hausumringe Niedersachsen** (`gebaeude-ni.shp` inside ZIP, ~1.7 GB) | https://opengeodata.lgln.niedersachsen.de — "Hausumringe Niedersachsen" (Shapefile) | `braunschweig/buildings/gebaeude-ni.zip` | `scripts/preprocess_alkis_landuse.py` → `braunschweig/preprocessed/alkis_buildings.parquet` |
-| C2 | **ATKIS Basis-DLM landuse Niedersachsen** (`FS_LN_03_NI_*.zip`, ~3.2 GB GPKG inside) | https://opengeodata.lgln.niedersachsen.de — "ATKIS Basis-DLM" (GeoPackage / Shape) | `braunschweig/landuse/FS_LN_03_NI_260101.zip` | `scripts/preprocess_alkis_landuse.py` → `braunschweig/preprocessed/landuse.parquet` |
-| C3 | **OSM Niedersachsen PBF** (~470 MB) | https://download.geofabrik.de/europe/germany/niedersachsen-latest.osm.pbf | `osm/niedersachsen-latest.osm.pbf` | `scripts/preprocess_osm_pois.py` → `braunschweig/preprocessed/osm_pois.parquet` (also reused directly by MATSim output) |
-
-Preprocessing commands:
-
-```powershell
-# C1 + C2 → ALKIS + landuse parquet (one-off, ~10 min)
-python scripts/preprocess_alkis_landuse.py `
-    --raw-root eqasim-data/data/braunschweig `
-    --vg250 eqasim-data/data/germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip `
-    --prefix 03101,03102,03103,03151,03153,03154,03157,03158 `
-    --out-root eqasim-data/data/braunschweig/preprocessed
-
-# C3 → OSM POIs parquet (one-off, ~5 min)
-python scripts/preprocess_osm_pois.py `
-    --pbf eqasim-data/data/osm/niedersachsen-latest.osm.pbf `
-    --vg250 eqasim-data/data/germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip `
-    --prefix 03101,03102,03103,03151,03153,03154,03157,03158 `
-    --out eqasim-data/data/braunschweig/preprocessed/osm_pois.parquet
-```
-
-Licences:
-
-- ALKIS / ATKIS (LGLN): dl-de/zero-2-0 (open data, no attribution required as of LGLN 2023 release).
-- OSM (Geofabrik export): ODbL 1.0, © OpenStreetMap contributors.
-
-The `bavaria.buildings_path: braunschweig/buildings` line in
-`config_local_braunschweig.yml` is **legacy** — only `bavaria/data/buildings.py`
-reads it, and that stage is not on the active BS DAG. Kept for the cached
-`bavaria.*` graph but not required by the BS pipeline. Leaving the directory
-empty is harmless.
-
-## D. MATSim-only inputs (optional)
-
-Required only when running `matsim.output` (Java MATSim scenario build).
-None of these are required for `synthesis.output`.
-
-| # | Dataset | Source | Target path | Licence |
-|---|---------|--------|-------------|---------|
-| D1 | **OSM Niedersachsen PBF** (same file as C3) | https://download.geofabrik.de/europe/germany/niedersachsen-latest.osm.pbf | `osm/niedersachsen-latest.osm.pbf` | ODbL 1.0 |
-| D2 | **GTFS Deutschland (Delfi) or ZGB feeds** (zip) | https://www.opendata-oepnv.de/ht/de/organisation/delfi/startseite or `https://www.zgb.de` | `gtfs/<any>.zip` | DELFI / ZGB terms |
-| D3 | **VRB tariff-zone mapping** for `braunschweig.data.vrb.zones` (consumed by Java `AddTransitZoneInformation` → ÖV-fare module). Built from the public VRB website (legacy name matching) or from the D4 polygon layer (preferred) | https://www.vrb-online.de/de/tickets/tarifzonen-preisstufen (HTML) — alt: D4 polygons | `vrb/tarifzonen.html` → `vrb/stations.json` via `scripts/build_vrb_stations_json.py` (or D4 → same script, `--waben`) | VRB terms |
-| D4 | **VRB tariff zone polygons** (official, 46 polygons, EPSG:25832, field `Tarifzone`; zones 55/56 in Region Hannover missing) | https://webgis.regionalverband-braunschweig.de/server/rest/services/Verkehr/Tarifzonen/MapServer/0 — REST `query` export (`where=1=1`, `outFields=*`, `outSR=25832`, `f=geojson`) | `vrb/vrb_tarifzonen_rgb_25832.geojson` | **unknown** — no licence text on the service; confirmation pending (`docs/data/vrb-tariff-zone-polygons-provider-notes.md`); do not commit or redistribute |
-| D5 | **Parking cost zone polygons 2026** (zone-based parking costs, ADR-0139; required because `parking_zones_enabled` is on) | **not distributed** (restricted source licences, ADR-0140) - available on request: open an issue in TUBS-IVS/eqasim-bs; place it at the path and verify the SHA-256 in the data record (Section F) | `braunschweig/parking/parking_zones_2026.geojson` | OSM-derived polygons: ODbL 1.0; Braunschweig 1a/1b and the Wolfsburg zones: their own terms, see the data record `parking_zones_2026` |
-| D6 | **Parking tariffs 2026** (one sourced row per zone) | committed (Section F) | `braunschweig/parking/parking_tariffs_2026.csv` | public tariff facts (data record `parking_tariffs_2026`) |
-| D7 | **Parking coverage register 2026** (status of every ZGB municipality) | committed (Section F) | `braunschweig/parking/parking_coverage_register_2026.csv` | own compilation (data record `parking_coverage_register_2026`) |
-| D8 | **SrV 2023 commute parking by workplace class** (free-parking shares of the draw) | committed (Section F) | `braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv` | derived aggregate, no microdata (data record `srv2023_commute_parking_by_workplace_class`) |
-| D9 | **Paid-parking share per 25 m cell 2026** (optional: the classified cells of the majority rule over the parking supply, parking cost zones v2 spec Amendment B7; no stage reads it yet) | committed (Section F) | `braunschweig/parking/parking_paid_share_2026.csv.gz` | ODbL 1.0, derived from OpenStreetMap (data record `parking_paid_share_2026`) |
-| D10 | **Parking resident districts 2026** (resident parking districts of Braunschweig, Goslar, Wolfsburg, Peine, Helmstedt and Wolfenbuettel: 29 districts, a second layer next to the zones, parking cost zones v2 spec Amendment C3 and v3 B3; required because `parking_zones_enabled` is on) | **not distributed** (restricted source licences, ADR-0140) - available on request: open an issue in TUBS-IVS/eqasim-bs; place it at the path and verify the SHA-256 in the data record (Section F) | `braunschweig/parking/parking_resident_districts_2026.geojson` | per source: Braunschweig with an Open GeoData dl-de/by-2-0 base map, Goslar with the open reuse licence not verified (owner decision), the four towns of spec v3 B3 from city lists and maps with OpenStreetMap street geometry (ODbL 1.0), see the data record `parking_resident_districts_2026` |
-| D11 | **Parking garages 2026** (required because `parking_zones_enabled` is on: 96 rows of ten ZGB towns with their own tariff, all priced (37 garages and 59 surface lots, column `facility_kind`; the counts per town, per tariff basis and per assumption are in the data record `parking_garages_2026`), parking cost zones v2 spec Amendments E1, E12, E13, F and I and v3 B1, B4 and B7 (column `max_stay_min`, three free lots, the documented options of Bad Harzburg and Seesen); the sixth input of `braunschweig.parking.zones_stage`) | **not distributed** (restricted source licences, ADR-0140) - available on request: open an issue in TUBS-IVS/eqasim-bs; place it at the path and verify the SHA-256 in the data record (Section F) | `braunschweig/parking/parking_garages_2026.geojson` (+ the QA table `parking_garages_2026_qa.csv`, committed) | facts of public operator and city pages, licences not verified; the six OpenStreetMap-derived garage positions and the positions of the surface lots that lie inside an OpenStreetMap parking area under the ODbL 1.0, keep the attribution (data record `parking_garages_2026`) |
-| D12 | **Parking research package Nachrecherche 2026-10-14** (`Parkdaten_Nachrecherche_2026-10-14.zip`, optional, curation only: the resident street lists and maps of Wolfsburg, Peine, Helmstedt and Wolfenbuettel and the sources of the v3 tariff corrections; no stage and no run needs it) | **not distributed** (owner research package with archived third-party documents) - available on request: open an issue in TUBS-IVS/eqasim-bs; verify the SHA-256 in the data record `parking_package_nachrecherche_2026_10_14` | `braunschweig/parking/raw_sources/municipal_2026-10-14/Parkdaten_Nachrecherche_2026-10-14.zip` | owner research product; the archived originals keep the terms of their publishers (data record `parking_package_nachrecherche_2026_10_14`) |
-| D13 | **Parking research package Restluecken 2026-10-14** (`Parkdaten_Restluecken_2026-10-14.zip`, optional, curation only: the archived pages of the free Wolfsburg car parks, the Bad Harzburg fee windows and the resident-map findings; read in place with `regional_garages.py --wob-evidence-zip`) | **not distributed** (owner research package with archived third-party pages) - available on request: open an issue in TUBS-IVS/eqasim-bs; verify the SHA-256 in the data record `parking_package_restluecken_2026_10_14` | `braunschweig/parking/raw_sources/municipal_2026-10-14/Parkdaten_Restluecken_2026-10-14.zip` | owner research product; the archived pages keep the terms of their publishers (data record `parking_package_restluecken_2026_10_14`) |
-| D14 | **Parking research package Wolfsburg_Parkdaten 2026-10-01** (`Wolfsburg_Parkdaten.zip`, optional, curation only: the 73 mobile-parking areas of the City of Wolfsburg, 15 with a recorded maximum stay, the source of the Wolfsburg zones and the 15 area zones) | **not distributed** (open reuse licence of the city service not verified) - available on request: open an issue in TUBS-IVS/eqasim-bs; verify the SHA-256 in the data record `parking_package_wolfsburg_parkdaten_2026_10_01` | `braunschweig/parking/raw_sources/municipal_2026-10-01/Wolfsburg_Parkdaten.zip` | data of the City of Wolfsburg geoviewer as exported by the owner; licence not verified (data record `parking_package_wolfsburg_parkdaten_2026_10_01`) |
-| D15 | **Parking owner transcriptions 2026-10-15** (`municipal_2026-10-15/`, three text files, optional, curation only: the city page "Parken in Seesen" is read by `regional_garages.py --owner-transcriptions-dir` for the free Seesen garage Bahnhofstrasse, the Goslar GALERIA directory entry is cited as secondary evidence, the Northeim Q-Park tariff is archived and unused) | **not distributed** (transcriptions of third-party pages) - available on request: open an issue in TUBS-IVS/eqasim-bs; verify the SHA-256 values in the data record `parking_owner_transcriptions_2026_10_15` | `braunschweig/parking/raw_sources/municipal_2026-10-15/seesen_parken_in_seesen_city_page.txt` (+ two more files in the folder) | owner transcriptions; the pages keep the terms of their publishers (data record `parking_owner_transcriptions_2026_10_15`) |
-
-GTFS should be pre-clipped to the ZGB bounding box (see below).
-
-D3 preprocessing (build `vrb/stations.json` once, in MVG schema):
-
-**Recommended — scrape the public VRB tariff-zone page** (no licence
-delivery required; ~9 000 / 25 000 GTFS stops in the ZGB bbox match):
-
-```powershell
-Invoke-WebRequest "https://www.vrb-online.de/de/tickets/tarifzonen-preisstufen" `
-    -OutFile eqasim-data/data/vrb/tarifzonen.html
-
-python scripts/build_vrb_stations_json.py `
-    --vrb-html eqasim-data/data/vrb/tarifzonen.html `
-    --gtfs eqasim-data/data/gtfs/latest.zip `
-    --out eqasim-data/data/vrb/stations.json
-```
-
-**Preferred since 2026-09-24 — spatial join against the official D4 polygons**
-(download D4 first with the `curl` command in `docs/registry/data/vrb_tariff_zone_polygons.yml`):
-
-```powershell
-python scripts/build_vrb_stations_json.py `
-    --waben eqasim-data/data/vrb/vrb_tarifzonen_rgb_25832.geojson `
-    --waben-zone-column Tarifzone `
-    --gtfs eqasim-data/data/gtfs/latest.zip `
-    --out eqasim-data/data/vrb/stations.json
-```
-
-The output JSON mirrors the MVG REST schema (`name`, `latitude`,
-`longitude`, `tariffZones`) so `braunschweig.data.vrb.zones` reuses the
-MVG algorithm bit-for-bit (400 m buffered MultiPoint per zone, EPSG:25832).
-
-## E. Education facility inputs (real-data gravity models)
-
-The education location assignment (`education_gravity_enabled: true`) places
-**school pupils, kindergarten children, and university students on real
-facilities**. The derived facility CSVs are **not committed** (data-protection):
-you must download the raw LSN registers below and regenerate the CSVs with the
-listed scripts before running with the flag on. With the flag off (default) the
-legacy OSM education sampler runs and none of this is consulted.
-
-### Raw sources (download, then regenerate the local CSV)
-
-| # | Dataset | Source | Local path (any name) | Produces (local CSV) |
-|---|---------|--------|-----------------------|--------------------------|
-| E1 | **LSN Schulverzeichnis — allgemeinbildende Schulen** (per school: Schulgliederung + Schülerzahlen + address) | https://www.statistik.niedersachsen.de — Verzeichnisse, `Schulverzeichnis_ABS_2025.xlsx` | `Schulen NDS/Schulverzeichnis_ABS_2025.xlsx` | `schools/nds_schools_zgb.csv` via `scripts/extract_nds_schools.py` (geocodes + OSM-validates) |
-| E2 | **LSN Verzeichnis der berufsbildenden Schulen (BBS)** (per school: Schulform + Schülerzahlen + address) | same — `Verzeichnis_der_BBS_2024.xlsx` | `Schulen NDS/Verzeichnis_der_BBS_2024.xlsx` | same `nds_schools_zgb.csv` (BBS rows) |
-| E3 | **LSN Studierende nach Hochschule** (enrollment per Hochschule, SS2025) | https://www.statistik.niedersachsen.de/hochschulen-studierende-hochschulfinanzen-niedersachsen/ — `VOE_Stud._1.HS_SS25_HSArt_HS_*.xlsx` | `Hochschulen NDS/VOE_Stud._1.HS_SS25_HSArt_HS_Barrierefrei.xlsx` | `schools/nds_hochschulen.csv` via `scripts/seed_nds_hochschulen.py` (LSN enrollment + curated surrounding/cross-border campus points) |
-| E4 | **LSN Kindertageseinrichtungen — Plätze** (places per Einheits-/Samtgemeinde, table K2300112) | https://www1.nls.niedersachsen.de/statistik/ — Kinder- und Jugendhilfestatistik 22544 (Excel-2003 SpreadsheetML, in a ZIP) | `Kitas NDS/K2300112_Kindertageseinrichtungen_Plaetze_2025.xml` | `schools/nds_kitas_zgb.csv` via `scripts/extract_nds_kitas.py` |
-| E5 | **DESTATIS Mikrozensus 2024 — school-trip distance by school type** (ABS / BBS / Hochschule distance bands) | https://www.destatis.de/.../Erwerbstaetigkeit/Tabellen/pendler2.html | (values pinned in seed script) | `mikrozensus/mikrozensus2024_school_distance_by_type.csv` via `scripts/seed_mikrozensus_school_distance.py` |
-| E6 | **MiD 2023 Tabelle 43** — Kita-/Schulweglängen by RegioStaR-7 + age group (school distance calibration target) | MiD 2023 (values pinned in seed script) | (values pinned in seed script) | `mid/mid2023_T43_school_distance_by_rs7.csv` via `scripts/seed_mid_t43_school_distance.py` |
-
-E1/E2 feed the capacity-constrained school gravity (grundschule / sekundar_1 /
-oberstufe / bbs); E4 the Kita gravity (kindergarten); E3 the university decay
-model; E5/E6 are the distance-calibration targets. OSM kindergarten/university POIs
-come from `preprocessed/osm_pois.parquet` (C3) — no separate download. Regenerate
-commands and the full SGL/Schulform→level and ARS→Samtgemeinde rules are in
-`eqasim-data/data/braunschweig/schools/README.md` + `.../schools/DATA_FLOW.md`
-and in `CLAUDE.md` (sections "Education gravity model (NDS school data)").
-
-## F. What is committed vs. local-only (data-protection)
-
-`eqasim-data/` is `.gitignore`-d. Only the files below are deliberately
-`git add -f`-committed; **everything else stays local on your machine** and must
-be downloaded / regenerated from the sources in Sections A–E. Do not hand-edit
-the committed CSVs — change the seed script / raw source and re-run (see
-CLAUDE.md). Do **not** `git add -f` any other data file.
-
-**Committed (on GitHub):**
-
-| File (under `eqasim-data/data/braunschweig/`) | Content | Regenerate with |
-|---|---|---|
-| `mid/mid2023_*.csv` | MiD 2023 numbered reference tables (P9/P12.1/P13/P17.1/P24.1/H4/H7/H12.3/P36.1/W1/W2/Tabelle 43 + margins + class-midpoint) — small aggregate tables, a few rows each | `scripts/seed_mid_constraint_tables.py`, `scripts/extract_mid_tables.py`, `scripts/seed_mid_t43_school_distance.py` |
-| `mid/education_calibration/*` | the project's own calibration-evaluation outputs (results CSV, figures, summary) — model diagnostics, no third-party data | `scripts/calibrate_education_slopes.py --output-dir ...` |
-| `parking/parking_tariffs_2026.csv`, `parking/parking_coverage_register_2026.csv` (and the curation QA tables `parking_zones_2026*_qa.csv`) | the curated parking cost zone release (ADR-0139): one sourced tariff row per zone, the status of every ZGB municipality. The zone polygons `parking/parking_zones_2026.geojson` are NOT committed (see the licence note below). OSM-derived polygons: ODbL 1.0, keep the attribution "(c) OpenStreetMap contributors" and the share-alike terms; Braunschweig 1a/1b and the Wolfsburg zones: their own terms, see the data record `parking_zones_2026` | hand curation (not one command; data records `parking_zones_2026`, `parking_tariffs_2026`, `parking_coverage_register_2026`); OSM outlines via `scripts/build_parking_zones_from_osm.py`; the three Braunschweig Hauptbahnhof station car parks (spec Amendment G1) are added to the finished release last: `scripts/curation/parking_zones_2026/station_lots.py --station-dir <parking/raw_sources/municipal_2026-10-08> --zones <release> --zones-out <a directory>/parking_zones_2026.geojson (the file must carry this name: the GeoJSON 'name' member follows it) --tariffs <parking/parking_tariffs_2026.csv> --municipal-qa <parking/parking_zones_2026_municipal_qa.csv>`, which needs the owner's package `Braunschweig_Monatstarife_2026-10-08.zip` (SHA-256 `72fec30d...`) and the Overpass response `osm_braunschweig_hbf_station_lots_geometry_2026-10-08.json` (SHA-256 `fe433293...`, OSM ways 25411279, 7874165, 236421384 and 26163572; ODbL 1.0, keep the attribution) in `parking/raw_sources/municipal_2026-10-08/` (not distributed); check with `scripts/validate_parking_zones.py --data-path eqasim-data/data` |
-| _(not committed)_ `parking/parking_resident_districts_2026.geojson` | the resident parking districts (parking cost zones v2, spec Amendment C3, and v3 B3): Braunschweig A, B, C, Goslar A, B, C, F, G, H, J, Wolfsburg A-G, K, VO, FA, Peine A-G, Helmstedt HE_RING and Wolfenbuettel WF_CENTRE (29 districts) as polygons with their source, EPSG:25832 after loading, stored as WGS84 GeoJSON. Licence per source: Braunschweig with an Open GeoData dl-de/by-2-0 base map (keep the attribution), Goslar with the open reuse licence not verified, the four towns of v3 B3 from city lists and maps with OpenStreetMap street geometry (ODbL 1.0, keep the attribution) | `scripts/curation/parking_zones_2026/resident_districts.py --municipal-dir <parking/raw_sources/municipal_2026-10-01> --research-package <parking/raw_sources/municipal_2026-10-14>/Parkdaten_Nachrecherche_2026-10-14.zip --osm-extract <parking/raw_osm>/niedersachsen-260929.osm.pbf` from the owner's municipal packages (data record `parking_resident_districts_2026`; reading the Peine list needs `pdfplumber`, a curation-time dependency that `environment.yml` does not pin); check with `scripts/validate_parking_zones.py --data-path eqasim-data/data` |
-| `parking/parking_garages_2026_qa.csv` (the dataset `parking/parking_garages_2026.geojson` is NOT committed) | the garage dataset (parking cost zones v2, spec Amendments E1, E12, E13, F and I, and v3 B1, B4 and B7): 96 rows of ten ZGB towns as points (WGS84 GeoJSON, EPSG:25832 after loading), 37 garages and 59 surface lots (column `facility_kind`; the large public surface lots of the research package `Grossparkplaetze_ZGB8_2026-10-12.zip` at the size threshold of 50 spaces, a free garage of Seesen and a free car park of Bad Harzburg located in the OpenStreetMap extract), every one priced: with the published structure where it maps exactly to the garage columns, to time-of-day tiers or to duration bands, under named assumptions (P10 grace period, P11 best secondary evidence, P14 the median tariff of the priced lots of the same zone where a lot's tariff is not stated; ASSUMPTION P12, the municipal free default, is WITHDRAWN and no row rests on it) where an operator publishes less, published monthly products at garages (among them Braunschweig Steinstrasse and Wallstrasse and the Wolfsburg Parkdeck Hauptbahnhof (spec Amendment G2), read from the owner's monthly package `Braunschweig_Monatstarife_2026-10-08.zip` and the Contipark evidence directory `contipark_configurator_2026-10-08/`, both in `parking/raw_sources/municipal_2026-10-08/`, not distributed) and imputed ones (column `monthly_imputed_eur`, ASSUMPTION P13: the median of the published products of the same municipality; the counts are in the data record), plus the QA table that accounts for every garage, every surface lot, every monthly product and every package or directory entry that is no row. Facts of public operator and city pages (licences not verified); the six OpenStreetMap-derived garage positions and the positions of the surface lots inside an OpenStreetMap parking area: ODbL 1.0, keep the attribution | `scripts/curation/parking_zones_2026/regional_garages.py --regional-dir <parking/raw_sources/municipal_2026-10-07> --supplement-zip <...>/Parkhaus_Ergaenzungen_2026-10-07.zip --followup-zip <...>/Parkhaus_Nachrecherche_2026-10-07.zip --large-lots-zip <parking/raw_sources/municipal_2026-10-13>/Grossparkplaetze_ZGB8_2026-10-12.zip --lot-threshold 50 --wob-free-evidence-dir <parking/raw_sources/municipal_2026-10-13>/wob_free_lots_evidence --wob-evidence-zip <parking/raw_sources/municipal_2026-10-14>/Parkdaten_Restluecken_2026-10-14.zip --osm-extract <parking/raw_osm>/niedersachsen-260929.osm.pbf --owner-transcriptions-dir <parking/raw_sources/municipal_2026-10-15> --bs-monthly-zip <parking/raw_sources/municipal_2026-10-08>/Braunschweig_Monatstarife_2026-10-08.zip --contipark-evidence-dir <parking/raw_sources/municipal_2026-10-08>/contipark_configurator_2026-10-08 --directory <parking/raw_sources/bs_plan_parkplaetze.geojson> --municipalities <pickle of the 123 municipalities of the eight ZGB counties, built as the data record describes> --zones <parking/parking_zones_2026.geojson> --out ... --qa-out ... --tariffs <parking/parking_tariffs_2026.csv>` (the exact command with its relative paths is in the data record `parking_garages_2026`) from the owner's regional evidence package and the owner's supplement, follow-up, monthly and large-lot research packages (the earlier Wolfsburg car-park package is superseded and no longer read; `--large-lots-zip` needs `--zones` and `--tariffs`); check with `scripts/validate_parking_zones.py --data-path eqasim-data/data` |
-| `parking/parking_paid_share_2026.csv.gz` | the classified 25 m cells of the majority rule over the parking supply (parking cost zones v2, spec Amendment B7): paid share and usable spaces within 250 m, EPSG:25832, gzip CSV; derived from OpenStreetMap: ODbL 1.0 | `scripts/build_parking_zones_from_osm.py --supply-share` on the pinned Geofabrik extract, then `scripts/curation/parking_zones_2026/assemble_parking_zones.py --supply-share-dir ... --paid-share-out ...` (data record `parking_paid_share_2026`) |
-| `srv/srv2023_commute_parking_by_workplace_class.csv`, `srv/srv2023_city_center_parking.csv` | SrV 2023 parking place and payment shares: car commuters by workplace class (model input of the free-parking draw) and usual Braunschweig city-centre parking (a comparison quantity only) | `scripts/extract_srv_commute_parking.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (one run writes both) |
-
-**Local-only — NEVER committed (download / regenerate yourself):**
-
-| File (under `eqasim-data/data/braunschweig/`) | Content | Regenerate with |
-|---|---|---|
-| `schools/nds_schools_zgb.csv` | NDS schools (ABS+BBS) typed by level + geocoded + capacity | `scripts/extract_nds_schools.py` (E1+E2) |
-| `schools/nds_hochschulen.csv` | Hochschule enrollment + campus coords (local + surrounding) | `scripts/seed_nds_hochschulen.py` (E3) |
-| `schools/nds_kitas_zgb.csv` | Kita Plätze per Einheits-/Samtgemeinde | `scripts/extract_nds_kitas.py` (E4) |
-| `mikrozensus/mikrozensus2024_*.csv` | DESTATIS Mikrozensus 2024 commute time/mode/distance + school distance by type | `scripts/seed_mikrozensus_school_distance.py` (+ the mikrozensus extractors) |
-| `srv/srv2023_raw/SrV2023_Personen_Zusatz_{Braunschweig,RGB}.csv`, `SrV2023_Personen.csv`, `SrV2023_Wege.csv` | SrV 2023 scientific-use microdata (the two P2 add-on person modules, the person and the trip file); restricted, never redistributed | needed only to regenerate the two SrV parking tables above (delivery under the SrV usage agreement, data record `srv2023_raw`) |
-| `parking/raw_overpass/`, `parking/raw_sources/` | Overpass responses and the retrieved tariff pages and documents behind the parking release, among them the three owner research packages D12 to D14 (data records `parking_package_*`) and the four earlier delivery folders D16 to D19 (data records `parking_packages_municipal_*`) | needed only to re-curate the zones; `scripts/build_parking_zones_from_osm.py --out-dir .../parking/raw_overpass` writes the Overpass part |
-| `parking/raw_osm/niedersachsen-260929.osm.pbf` (+ `.md5`), `parking/raw_osm/derived_supply_share*/` | the pinned Geofabrik extract behind the majority rule over the parking supply (MD5, SHA-256 and snapshot in the data record `parking_zones_2026`) and the derived per-town files (`derived_supply_share_task_1c/` holds the inputs of the committed QA table and release; the older folders are superseded evidence) | needed only to re-derive `parking_paid_share_2026.csv.gz` and its QA table: download `https://download.geofabrik.de/europe/germany/niedersachsen-260929.osm.pbf` with its `.md5`, then `scripts/build_parking_zones_from_osm.py --supply-share` |
-| all Section A–D inputs except the committed D6–D9 | population/employment/commuting/household/income registers, ALKIS/ATKIS, OSM, GTFS, ... | download per Sections A–D |
-
-Licence note: the committed tables are small derived aggregate reference values, except the
-parking cost zone release tables, which hold curated public tariff facts under the terms of
-their sources; all other inputs are kept local. The three parking geometry files
-(`parking/parking_zones_2026.geojson`, `parking/parking_resident_districts_2026.geojson`,
-`parking/parking_garages_2026.geojson`) rest on sources that are not cleared for redistribution
-(OSM-derived parts: ODbL 1.0, keep the OpenStreetMap attribution and share-alike terms;
-Braunschweig 1a/1b, the Wolfsburg and Goslar parts, the TU campus zones: their own terms, see the
-data records `parking_zones_2026`, `parking_resident_districts_2026`, `parking_garages_2026`).
-They are NOT in the repository (owner decision 2026-10-08, issue #436): they stay local like the other raw
-data and are available on request - open an issue in TUBS-IVS/eqasim-bs; each data record states the
-SHA-256 (LF line endings) to verify a received copy. Check each dataset's own terms before reuse.
-
----
-
-## H. Long-haul freight inputs (only with `freight_enabled: true`, default on)
-
-Adds heavy-goods-vehicle traffic from the open VSP **german-wide-freight v3**
-model. Both files are large and **local-only** (gitignored); fetch them with the
-committed download script (writes a provenance README + sha256 log next to them):
-
-```bash
-python scripts/download_german_wide_freight.py
-```
-
-| # | Dataset | Source | Target path | Licence |
-|---|---------|--------|-------------|---------|
-| H1 | **german_freight.100pct.plans.xml.gz** (~72 MB; one agent per long-haul freight trip per average workday) | [VSP public SVN `matsim/scenarios/countries/de/german-wide-freight/v3`](https://svn.vsp.tu-berlin.de/repos/public-svn/matsim/scenarios/countries/de/german-wide-freight/v3/) | `braunschweig/freight/german-wide-freight-v3/german_freight.100pct.plans.xml.gz` | VSP/MATSim open data (see SVN) |
-| H2 | **germany-europe-network.xml.gz** (~61 MB; German-European routing network, EPSG:25832) | same SVN directory | `braunschweig/freight/german-wide-freight-v3/germany-europe-network.xml.gz` | VSP/MATSim open data |
-
-Provenance: **Lu, C., Martins-Turner, K., Nagel, K. (2022): _Creating an
-agent-based long-haul freight transport model for Germany_. Procedia Computer
-Science 201, 614–620, [doi:10.1016/j.procs.2022.03.080](https://doi.org/10.1016/j.procs.2022.03.080)**
-(CC BY-NC-ND). Demand = BMVI _Verkehrsprognose 2030_ NUTS-3 goods flows → daily
-truck trips (≈13 t average load), calibrated against BASt HGV counts. The data
-never enters the synthetic-resident model; it is routed + classified
-(internal / incoming / outgoing / transit) by the published matsim
-application-contrib tool and injected as a `truck` `freight` subpopulation. See
-[`CLAUDE.md`](../CLAUDE.md) ("Long-haul freight injection") for the pipeline.
-
----
-
-## Bounding box (ARS 031xx, eight ZGB Kreise)
+## Bounding box (eight ZGB Kreise)
 
 - AGS prefixes: `03101, 03102, 03103, 03151, 03153, 03154, 03157, 03158`
-- UTM 32N (EPSG:25832): 542 000 – 691 000 E, 5 700 000 – 5 900 000 N
-- WGS84 (rough): 9.6° – 11.4° E, 51.4° – 52.7° N
-
-Use these bounds when pre-filtering OSM (C3 / D1) and GTFS (D2).
-
-## Notes
-
-- **No raw KBA download per region.** A2 (`fe4_2024.xlsx`) covers all of Germany; the BS pipeline reads it with a `Niedersachsen` filter on sheet FE4.3.
-- **Household sizes / income are required for the BS pipeline** (B7, B8) — unlike the upstream Bavaria setup, which derived those from MiD. Do not reuse the Bavaria value here.
-- **z22data and RegioStaR scripts** write into `eqasim-data/`; that directory is `.gitignore`-d at the repo root. Re-run the download scripts after any clean checkout.
-- **Status tracking** is intentionally not part of this file — use `python scripts/verify_braunschweig_inputs.py` for an automated check rather than manual checkboxes.
-
-## Cordon in-commuter mode reference (Mikrozensus / MiD)
-
-The fixed travel mode of cordon in-commuter (Einpendler) agents is drawn from a
-German commute mode-by-distance reference, anchored **per source Bundesland**.
-Modes modelled: `walk`, `bicycle`, `car`, `pt`. The committed clean CSVs live
-under `eqasim-data/data/braunschweig/mikrozensus/` (gitignored like all raw data;
-copied to the server by `sync_data_to_server.ps1`). Full provenance:
-`braunschweig/mikrozensus/README.md`; flow: `.../DATA_FLOW.md`.
-
-| # | Source | How to obtain | CSV(s) produced | Extraction script |
-|---|--------|---------------|-----------------|-------------------|
-| G1 | **MiT 2023** national mode x distance for commute trips (rbW; Hauptverkehrsmittel imputed; Wegelaenge groups; row-%). | mobilitaet-in-deutschland.de (free account) | `mid2023_commute_mode_by_distance_de.csv`, `mid2023_commute_distance_de.csv` | `scripts/extract_mit_commute_mode_by_distance.py` |
-| G2a | **GENESIS 12251-0105** Verkehrsmittel x Bundesland (Mikrozensus 2024). | www-genesis.destatis.de (free account), code 12251 | `mid_mode_margin_by_bundesland.csv` | `scripts/extract_mikrozensus_bundesland_margins.py` |
-| G2b | **GENESIS 12251-0106** Entfernung x Bundesland (Mikrozensus 2024). | www-genesis.destatis.de (free account), code 12251 | `mid_distance_margin_by_bundesland.csv` | `scripts/extract_mikrozensus_bundesland_margins.py` |
-| G3 | **LSN PM 096/2025** Anlagen (NDS twins of G2, provenance only). | statistik.niedersachsen.de (PM 096/2025, public) | `lsn_pm096-2025_*.pdf`, `Anlage_{1..4}_*.xlsx` (not extracted) | — |
-| G4 | **MiD 2023 Grossraum Braunschweig** (infas 7555) regional tables P38.4/P38.2/W12. **NON-PUBLIC** — sanity cross-check only, **NOT used in the reference**. | infas 7555 (via ZGB/BMDV); not redistributable | `mid2023zgb_*.csv` | `scripts/extract_mid_zgb_commute_tables.py` (needs `pdfplumber`) |
-
-Notes:
-- G1/G2 exports are login-gated; export with the exact filters, file the raw
-  `.xlsx`/`.csv`, then run the extraction scripts to produce the clean CSVs.
-- **G4 is NON-PUBLIC** — only the extracted CSVs exist locally; the raw report must
-  not be redistributed, and it never enters the mode model (cross-check only).
-- The reference itself uses **G1 + G2** only. Regenerate:
-  ```powershell
-  python scripts/extract_mit_commute_mode_by_distance.py
-  python scripts/extract_mikrozensus_bundesland_margins.py
-  ```
-
-## VerBindungen (mobilithek, #124)
-
-Sub-Kreis commuter OD validation reference (VerBindungen research project,
-BMDV FuE 97.421/2019) at Verkehrszelle resolution, for #124. All files are
-local-only (gitignored) and fetched with the committed download script
-(writes a `PROVENANCE.md` + sha256 log next to them):
-
-```bash
-python scripts/download_verbindungen.py
-```
-
-| # | Dataset | Target path | Licence |
-|---|---------|-------------|---------|
-| V1 | `Shapefiles_VerBindungen_Zellen.zip` (Verkehrszelle cell geometry, EPSG:4326, + AGS) | `verbindungen/Shapefiles_VerBindungen_Zellen.zip` | LICENSE_FREE_USE_OPEN_DATA |
-| V2 | `QZM-Berufspendler-VerBindungen-Verkehrszellen.csv` (primary commuter OD reference) | `verbindungen/QZM-Berufspendler-VerBindungen-Verkehrszellen.csv` | LICENSE_FREE_USE_OPEN_DATA |
-| V3 | `SvBaGeB_Statisch_WO_Verkehrszellen.csv` (workers at home per cell) | `verbindungen/SvBaGeB_Statisch_WO_Verkehrszellen.csv` | LICENSE_FREE_USE_OPEN_DATA |
-| V4 | `SvBaGeB_Statisch_AO_Verkehrszellen.csv` (workers at workplace per cell) | `verbindungen/SvBaGeB_Statisch_AO_Verkehrszellen.csv` | LICENSE_FREE_USE_OPEN_DATA |
-| V5 | `SvBaGeB_Relationen_WO_AO_Verkehrszellen.csv` (OD with breakdowns; not consumed by the pipeline yet) | `verbindungen/SvBaGeB_Relationen_WO_AO_Verkehrszellen.csv` | LICENSE_FREE_USE_OPEN_DATA |
-| V6 | `QZM-Berufspendler-VerBindungen-Verkehrszellen-Einpendler-Ausland.csv` (foreign in-commuters; not consumed yet) | `verbindungen/QZM-Berufspendler-VerBindungen-Verkehrszellen-Einpendler-Ausland.csv` | LICENSE_FREE_USE_OPEN_DATA |
-
-Provenance: VerBindungen Abschlussbericht v1.3 (Dec 2024), data products
-chapter 6. Publisher: Bundesministerium fuer Digitales und Verkehr (BMDV) via
-mobilithek.info. Reference date of all tables: 31.12.2019 (Gebietsstand
-31.12.2019). Direct URL pattern:
-`https://mobilithek.info/mdp-api/files/aux/<offer_id>/<filename>`. See
-[`CLAUDE.md`](../CLAUDE.md) for the consuming loaders once they land.
+- WGS84, as used by `scripts/build_vrb_stations_json.py` (`ZGB_BBOX_WGS84`):
+  9.6 - 11.4 deg E, 51.4 - 52.7 deg N. Use it when pre-filtering GTFS.

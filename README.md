@@ -393,7 +393,7 @@ length and whose paid share is a comparison quantity only; the paid-only garage 
 (restricted, see above). Provenance, licences and limitations: data records `parking_zones_2026`,
 `parking_tariffs_2026`, `parking_coverage_register_2026`, `parking_resident_districts_2026`, `parking_paid_share_2026`,
 `parking_garages_2026`, `srv2023_commute_parking_by_workplace_class` and `srv2023_city_center_parking`; acquisition
-notes: section F of the checklist below.
+notes: the data records named above and the Data Registry.
 
 The exhaustive acquisition companion (with every note and edge case) is
 [`eqasim-data/DOWNLOAD_CHECKLIST_BS.md`](eqasim-data/DOWNLOAD_CHECKLIST_BS.md).

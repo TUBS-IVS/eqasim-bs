@@ -10,7 +10,7 @@ there are no live application APIs or databases at runtime. Integrations are
 (1) statistical/geospatial **input datasets** downloaded once into
 `eqasim-data/data/`, and (2) the **eqasim/MATSim Java toolchain** invoked for the
 `matsim.output` stage. The authoritative inventory with target paths, source URLs
-and licences is `eqasim-data/DOWNLOAD_CHECKLIST_BS.md`; this file summarises it.
+and licences is the Data Registry (`docs/registry/data/*.yml`, `docs/generated/DATA.md`); this file summarises it.
 
 ## Subprocess toolchains
 
@@ -34,7 +34,7 @@ and licences is `eqasim-data/DOWNLOAD_CHECKLIST_BS.md`; this file summarises it.
   `eqasim-data/data/braunschweig/schools/README.md`. These run during one-off
   preprocessing, not in the synpp DAG.
 
-## Input data sources (from DOWNLOAD_CHECKLIST_BS.md)
+## Input data sources (summary; owner: the Data Registry)
 
 ### A. Federal (shared)
 - **BKG VG250-EW** administrative boundaries with population (dl-de/by-2-0).
@@ -98,11 +98,11 @@ D-1c).
 dl-de/by-2-0, dl-de/zero-2-0 (LGLN), ODbL 1.0 (OSM), BA terms, urbistat terms
 (non-redistributable), and **BMDV non-commercial** for MiD 2023 — the most
 restrictive: any output depending on MiD 2023 inherits non-commercial use
-(README "License"; DOWNLOAD_CHECKLIST_BS.md notes).
+(README "License"; Data Registry licence fields).
 
 ## Evidence
 
-- `eqasim-data/DOWNLOAD_CHECKLIST_BS.md` (sections A–E, bounding box, licence notes)
+- `docs/registry/data/*.yml` and `eqasim-data/DOWNLOAD_CHECKLIST_BS.md` (signpost, bounding box)
 - `configs/fixtures/config_local_braunschweig.yml` (input paths, `vrb_stations_path`, `osmosis_binary`)
 - `environment.yml` (no DB/HTTP-service client libs)
 - `.github/workflows/tests.yml` (locked Linux/Windows Python regression gate)

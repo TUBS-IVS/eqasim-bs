@@ -63,7 +63,7 @@ can never disagree about what an input is.
 - **A transport failure and a dead URL get different remediation.** Only the
   exception shape tells them apart, so the failure detail keeps a truncated
   `str(exc)` next to the class name, and the exit block prints "the source likely
-  moved or was renamed — fix the URL here AND in `DOWNLOAD_CHECKLIST_BS.md`" only
+  moved or was renamed — fix the URL in the verifier catalog AND in the data record" only
   for failures that actually returned an HTTP status. A failure that produced *no*
   HTTP status is reported as a transport error (TLS/DNS/timeout) pointing back at
   this note — telling someone to edit a URL that is perfectly fine is the wrong
@@ -72,7 +72,7 @@ can never disagree about what an input is.
 ### A3 / ENTD stays required (checked 2026-08-23)
 
 The six ENTD entries share one French URL, which raised the question of whether
-they should be `optional=True`. Per `DOWNLOAD_CHECKLIST_BS.md`'s own section A:
+they should be `optional=True`. Per section A of the former `DOWNLOAD_CHECKLIST_BS.md` (a signpost since 2026-11; the sentence below is no longer stated there, the German-HTS claim was stale):
 
 > A3 is the upstream travel-pattern donor; the BS pipeline does not yet have a
 > German HTS replacement.
@@ -99,7 +99,7 @@ insecure or external client — that would be a silent fallback.
 ## Rule for a new pipeline input
 
 Add it to `scripts/verify_braunschweig_inputs.py` **and**
-`eqasim-data/DOWNLOAD_CHECKLIST_BS.md` in the same change — the script's own
+its data record `docs/registry/data/<dataset>.yml` in the same change — the script's own
 module docstring states this requirement; it is not restated here. Adding it to
 the catalog is what puts it into both the local presence check and the weekly CI
 reachability check, so there is nothing else to wire up.

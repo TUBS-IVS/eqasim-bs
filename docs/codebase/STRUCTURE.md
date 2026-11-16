@@ -144,7 +144,7 @@ upstream terminal stages aliased/extended by the fork.
   other fixtures mirror it); `configs/base_bs.yml` is the composed-run equivalent.
 - `CLAUDE.md` — authoritative description of the MiD/gravity/education subsystems.
 - `braunschweig/REGION.md` — the eight ZGB Kreis ARS-5 codes; "always store as strings".
-- `eqasim-data/DOWNLOAD_CHECKLIST_BS.md` — input inventory with paths + licences.
+- `eqasim-data/DOWNLOAD_CHECKLIST_BS.md` — signpost to the Data Registry, the verifier and the README data setup.
 
 ## Evidence
 
