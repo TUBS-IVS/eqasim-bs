@@ -183,3 +183,45 @@ def test_reuse_by_zone_and_fail_fast_inputs(work_dir):
         weight_class_shares(negative, usage)
     with pytest.raises(ValueError, match="not in the seed"):
         weight_class_shares(batch.seed_households, pd.Series({9: 1}))
+
+
+def test_nan_attribute_is_its_own_row_and_zero_weight_value_has_nan_ratio(work_dir):
+    batch = load_batch_folder(work_dir / "batch_000")
+    seed = batch.seed_households.assign(
+        grp=["a", None, "b", "b"], H_GEW=[0.0, 1.5, 2.0, 4.0])
+    rows = shares_by_attribute(seed, usage_counts(batch.expanded), "grp")
+    nan_row = rows[rows["value"].isna()].iloc[0]
+    assert nan_row["n_seed"] == 1 and nan_row["seed_weight_share"] == pytest.approx(0.2)
+    assert nan_row["synthetic_share"] == pytest.approx(0.2)
+    zero_row = rows[rows["value"] == "a"].iloc[0]
+    assert zero_row["seed_weight_share"] == 0 and pd.isna(zero_row["ratio"])
+
+
+def test_weights_exactly_on_class_edges_fall_into_the_right_left_closed_class(work_dir):
+    batch = load_batch_folder(work_dir / "batch_000")
+    seed = batch.seed_households.assign(H_GEW=[1.0, 2.0, 2.0, 4.0])
+    shares = weight_class_shares(seed, usage_counts(batch.expanded)).set_index("weight_class")
+    assert shares["n_seed"].tolist() == [0, 1, 2, 1, 0, 0]
+
+
+def test_empty_usage_is_refused(work_dir):
+    batch = load_batch_folder(work_dir / "batch_000")
+    empty = usage_counts(batch.expanded).iloc[:0]
+    with pytest.raises(ValueError, match="empty"):
+        weight_class_shares(batch.seed_households, empty)
+    with pytest.raises(ValueError, match="empty"):
+        shares_by_attribute(batch.seed_households, empty, "H_GR")
+
+
+def test_missing_household_id_and_custom_id_column(work_dir):
+    batch = load_batch_folder(work_dir / "batch_000")
+    expanded = batch.expanded.astype({"H_ID": float})
+    expanded.loc[0, "H_ID"] = float("nan")
+    with pytest.raises(ValueError, match="missing"):
+        usage_counts(expanded)
+    renamed = batch.expanded.rename(columns={"H_ID": "HH"})
+    zones = reuse_by_zone(renamed, "ZENSUS100m", household_id_col="HH").set_index("zone")
+    assert zones.loc["A", "kish_n_eff"] == pytest.approx(9 / 5)
+    summary = reuse_summary(usage_counts(batch.expanded), n_seed_households=4,
+                            household_id_col="HH")
+    assert summary["kish_n_eff"] == pytest.approx(25 / 11)

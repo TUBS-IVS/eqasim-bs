@@ -24,14 +24,22 @@ _DEFAULT_HOUSEHOLD_ID = "H_ID"
 
 
 def usage_counts(expanded: pd.DataFrame, household_id_col: str = _DEFAULT_HOUSEHOLD_ID) -> pd.Series:
-    """Number of synthetic copies per seed household, indexed by seed household id."""
+    """Number of synthetic copies per seed household, indexed by seed household id.
+
+    A missing household id raises ``ValueError``; ``value_counts`` would drop it silently.
+    """
+    missing = int(expanded[household_id_col].isna().sum())
+    if missing:
+        raise ValueError(f"usage_counts: {missing} expanded row(s) have a missing "
+                         f"{household_id_col}")
     counts = expanded[household_id_col].value_counts().sort_index()
     counts.index.name = household_id_col
     counts.name = "copies"
     return counts
 
 
-def reuse_summary(usage: pd.Series, n_seed_households: int) -> dict:
+def reuse_summary(usage: pd.Series, n_seed_households: int,
+                  household_id_col: str = _DEFAULT_HOUSEHOLD_ID) -> dict:
     """Reuse statistics of one batch.
 
     ``top<N>_share`` is the share of synthetic households that are copies of the N most
@@ -44,13 +52,13 @@ def reuse_summary(usage: pd.Series, n_seed_households: int) -> dict:
         raise ValueError("reuse_summary: n_seed_households must be positive")
     n_synthetic = int(usage.sum())
     # One row per synthetic household, so that donor_neff counts copies correctly.
-    one_row_per_copy = pd.DataFrame({_DEFAULT_HOUSEHOLD_ID: usage.index.repeat(usage.to_numpy())})
+    one_row_per_copy = pd.DataFrame({household_id_col: usage.index.repeat(usage.to_numpy())})
     summary = {
         "n_synthetic_households": n_synthetic,
         "n_seed_households": int(n_seed_households),
         "n_distinct_used": int(len(usage)),
         "distinct_share_of_seed": len(usage) / n_seed_households,
-        "kish_n_eff": donor_neff(one_row_per_copy, _DEFAULT_HOUSEHOLD_ID)["n_eff"],
+        "kish_n_eff": donor_neff(one_row_per_copy, household_id_col)["n_eff"],
         "max_copies": int(usage.max()),
     }
     for top_n in TOP_N_SHARES:
@@ -68,6 +76,8 @@ def _seed_with_copies(seed_households: pd.DataFrame, usage: pd.Series, weight_co
     Raises ``ValueError`` for a missing, non-finite or negative seed weight and for a usage
     id that is not a seed household; nothing is dropped silently.
     """
+    if usage.empty:
+        raise ValueError("no synthetic households (usage is empty); weight shares are undefined")
     weights = seed_households[weight_col].to_numpy(dtype=float)
     invalid = ~np.isfinite(weights) | (weights < 0)
     if invalid.any():
@@ -140,7 +150,8 @@ def shares_by_attribute(seed_households: pd.DataFrame, usage: pd.Series, column:
                                        "synthetic_share", "ratio"])
 
 
-def reuse_by_zone(expanded: pd.DataFrame, zone_col: str) -> pd.DataFrame:
+def reuse_by_zone(expanded: pd.DataFrame, zone_col: str,
+                  household_id_col: str = _DEFAULT_HOUSEHOLD_ID) -> pd.DataFrame:
     """Reuse statistics per zone value (e.g. the placement Kreis) of the expanded output.
 
     A missing ``zone_col`` raises ``KeyError``; NaN zones form their own group.
@@ -149,9 +160,9 @@ def reuse_by_zone(expanded: pd.DataFrame, zone_col: str) -> pd.DataFrame:
         raise KeyError(f"reuse_by_zone: zone column {zone_col!r} is absent from the expanded output")
     rows = []
     for zone, group in expanded.groupby(zone_col, dropna=False, sort=True):
-        ids = group[[_DEFAULT_HOUSEHOLD_ID]]
+        ids = group[[household_id_col]]
         rows.append({"zone": zone, "n_synthetic_households": len(group),
-                     "n_distinct_used": int(group[_DEFAULT_HOUSEHOLD_ID].nunique()),
-                     "kish_n_eff": donor_neff(ids, _DEFAULT_HOUSEHOLD_ID)["n_eff"]})
+                     "n_distinct_used": int(group[household_id_col].nunique()),
+                     "kish_n_eff": donor_neff(ids, household_id_col)["n_eff"]})
     return pd.DataFrame(rows, columns=["zone", "n_synthetic_households", "n_distinct_used",
                                        "kish_n_eff"])
