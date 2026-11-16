@@ -37,6 +37,7 @@ pipelines:
 production: true
 inputs:
 - srv2023_plan_structure_reference
+- regiostar
 - vg250_ew
 features:
 - home_closure_model

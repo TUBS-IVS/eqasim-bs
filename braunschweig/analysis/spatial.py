@@ -196,6 +196,31 @@ def vg250_archive_digest(*, strict: bool) -> str | None:
     return synpp_tokens.file_sha256(VG250_ZIP)
 
 
+def regiostar_sheet_digest() -> str | None:
+    """Content digest (sha256) of :data:`REGIOSTAR_XLSX`, the workbook :func:`load_regiostar` reads
+    from the repository root; ``None`` with a logged ``warning`` when it is missing, because the
+    loader tolerates that (the RS7 columns stay NA) and the token must change once it appears."""
+    if not REGIOSTAR_XLSX.is_file():
+        LOGGER.warning(
+            "RegioStaR reference missing (%s); the stage's cache token carries no digest for it "
+            "and its RS7 breakdowns will be skipped.", REGIOSTAR_XLSX)
+        return None
+    return synpp_tokens.file_sha256(REGIOSTAR_XLSX)
+
+
+#: Dataset ids (``docs/registry/data``) of the repository-anchored files this module reads; the keys
+#: of :func:`input_file_digests`.
+INPUT_DATASET_IDS = ("vg250_ew", "regiostar")
+
+
+def input_file_digests(*, strict: bool) -> dict:
+    """The ``files`` part of the ``validate()`` token of a stage that reads through this module:
+    one content digest per dataset id of :data:`INPUT_DATASET_IDS`. ``strict`` is the VG250 contract
+    of :func:`vg250_archive_digest`; the RegioStaR sheet is always optional
+    (:func:`regiostar_sheet_digest`)."""
+    return {"vg250_ew": vg250_archive_digest(strict=strict), "regiostar": regiostar_sheet_digest()}
+
+
 def load_vg250_layer(layer: str, *, strict: bool = True) -> gpd.GeoDataFrame | None:
     """Read one VG250 layer (e.g. ``"vg250_gem"``, ``"vg250_krs"``) through
     the shared extract-once cache.

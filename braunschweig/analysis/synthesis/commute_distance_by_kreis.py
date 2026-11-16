@@ -169,12 +169,13 @@ def configure(context):
 def validate(context):
     """Include the helper modules' source in synpp's stage cache identity (ADR-0136), plus ``files``:
     the digest of the VG250 archive (dataset id ``vg250_ew``) that ``execute`` reads through
-    ``braunschweig.analysis.spatial`` (``spatial.vg250_archive_digest``; a missing archive fails)."""
+    ``braunschweig.analysis.spatial``, and of its RegioStaR sheet (``spatial.input_file_digests``; a
+    missing archive fails)."""
     token = synpp_tokens.source_token(
         _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
         stage_label=__name__ + ".validate()")
     from braunschweig.analysis import spatial  # a deferred helper, so source_token imported it already
-    token["files"] = {"vg250_ew": spatial.vg250_archive_digest(strict=True)}
+    token["files"] = spatial.input_file_digests(strict=True)
     return token
 
 

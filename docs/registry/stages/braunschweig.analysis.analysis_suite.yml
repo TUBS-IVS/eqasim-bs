@@ -34,6 +34,7 @@ pipelines:
   simple_ipf_open: not_used
 production: true
 inputs:
+- regiostar
 - vg250_ew
 features:
 - freight_analysis_exclusion

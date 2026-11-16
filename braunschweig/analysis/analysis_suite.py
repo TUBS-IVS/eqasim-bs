@@ -153,7 +153,8 @@ def validate(context):
 
     Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
     digest per helper module (docstrings, comments and formatting do not change it), plus
-    ``files``: the digest of the VG250 archive (dataset id ``vg250_ew``) that the sub-analyses read
+    ``files``: the digests of the VG250 archive (dataset id ``vg250_ew``) and of the RegioStaR
+    sheet (``regiostar``) that the sub-analyses read
     through ``braunschweig.analysis.spatial``. Without the archive the sub-analyses that need it are
     recorded FAILED and the suite runs on, so a missing one is a logged warning and ``None`` (``spatial.vg250_archive_digest(strict=False)``); with the
     suite disabled the archive is never read and the digest is ``None``.
@@ -162,8 +163,8 @@ def validate(context):
         (), _DEFERRED_HELPER_MODULE_NAMES,
         stage_label=__name__ + ".validate()")
     from braunschweig.analysis import spatial  # a deferred helper, so source_token imported it already
-    token["files"] = {"vg250_ew": (spatial.vg250_archive_digest(strict=False)
-                                   if context.config(KEY_ENABLED) else None)}
+    token["files"] = (spatial.input_file_digests(strict=False) if context.config(KEY_ENABLED)
+                      else dict.fromkeys(spatial.INPUT_DATASET_IDS))
     return token
 
 

@@ -29,6 +29,10 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 VG250_ARCHIVE = "germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip"
 #: Dataset id of the archive: the key of its digest in the ``files`` part of a structured source token.
 DATASET_ID = "vg250_ew"
+#: The RegioStaR workbook the analysis loader ``braunschweig.analysis.spatial`` reads from the repository
+#: root, and its dataset id (the second repository-anchored input of the analysis readers).
+REGIOSTAR_SHEET = "regiostar/regiostar_referenzdateien_2024.xlsx"
+REGIOSTAR_DATASET_ID = "regiostar"
 #: Key of the digest in the plain dict tokens of the stages that hash no module source.
 DIGEST_KEY = "vg250_sha256"
 
@@ -126,10 +130,12 @@ def _prepare(reader, config, data_path, monkeypatch):
 
     A repository-anchored reader is pointed at the archive under ``data_path`` (as the analysis
     tests of ``braunschweig.analysis.spatial`` do), so one test layout serves every reader and the
-    real archive in the checkout is never read."""
+    real archive in the checkout is never read. The same holds for the RegioStaR sheet that module
+    reads from the repository root (absent unless a test creates it)."""
     if reader.repo_anchored:
         from braunschweig.analysis import spatial
         monkeypatch.setattr(spatial, "VG250_ZIP", pathlib.Path(data_path) / VG250_ARCHIVE)
+        monkeypatch.setattr(spatial, "REGIOSTAR_XLSX", pathlib.Path(data_path) / REGIOSTAR_SHEET)
     module_name = reader.module
     common = {
         "data_path": str(data_path), "random_seed": 0, "sampling_rate": 1.0,
@@ -243,6 +249,31 @@ def test_a_missing_vg250_archive_is_reported_where_execute_tolerates_it(reader, 
     expected_path = str(pathlib.Path(tmp_path) / VG250_ARCHIVE)
     assert any(record.levelname == "WARNING" and expected_path in record.getMessage()
                for record in caplog.records), f"{reader.module}: a missing archive passed validate silently"
+
+
+@pytest.mark.usefixtures("stub_module_digests")
+@pytest.mark.parametrize("reader", [r for r in READERS if r.repo_anchored], ids=lambda reader: reader.module)
+def test_token_follows_the_regiostar_sheet_the_analysis_loader_reads(reader, tmp_path, monkeypatch, caplog):
+    """``spatial.load_regiostar`` reads the sheet from the repository root and tolerates its absence
+    (RS7 columns stay NA): the token must change when the sheet appears or is replaced, and a missing
+    sheet must be a WARNING naming its path, not a silent ``None``."""
+    module, values = _prepare(reader, reader.on, tmp_path, monkeypatch)
+    _create(tmp_path, VG250_ARCHIVE, b"VG250 edition 2023")
+    context = _ValidateContext(values)
+
+    with caplog.at_level("WARNING"):
+        missing = module.validate(context)
+    sheet = _create(tmp_path, REGIOSTAR_SHEET, b"RegioStaR 2023")
+    present = module.validate(context)
+    _create(tmp_path, REGIOSTAR_SHEET, b"RegioStaR 2024")
+    replaced = module.validate(context)
+
+    assert missing["files"][REGIOSTAR_DATASET_ID] is None
+    assert any(record.levelname == "WARNING" and str(pathlib.Path(tmp_path) / REGIOSTAR_SHEET)
+               in record.getMessage() for record in caplog.records), "a missing RegioStaR sheet passed silently"
+    _create(tmp_path, REGIOSTAR_SHEET, b"RegioStaR 2023")
+    assert present["files"][REGIOSTAR_DATASET_ID] == synpp_tokens.file_sha256(sheet)
+    assert present != replaced and token_difference(replaced, present) == ["files"]
 
 
 # ---------------------------------------------------------------------------- name scan

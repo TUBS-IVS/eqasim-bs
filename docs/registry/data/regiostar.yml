@@ -9,6 +9,11 @@ roles:
 - spatial_input
 - reference_table
 used_by:
+- braunschweig.analysis.analysis_suite
+- braunschweig.analysis.simwrapper_export
+- braunschweig.analysis.synthesis.commute_distance_by_kreis
+- braunschweig.analysis.synthesis.plan_structure_vs_srv
+- braunschweig.analysis.synthesis.work_participation_by_kreis
 - braunschweig.data.bbsr.regiostar
 acquisition:
   method: auto_script
