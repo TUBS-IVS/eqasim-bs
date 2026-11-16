@@ -1705,8 +1705,10 @@ def test_other_decider_counts_a_leg_without_an_estimated_cell(monkeypatch):
     assert (decide.n_legs, decide.n_marginal_fallback) == (2, 1)
 
 
-@pytest.mark.parametrize("weekday_only", [True, False])
-def test_shared_mid_wege_loader_reads_once_and_deciders_are_identical(monkeypatch, weekday_only):
+@pytest.mark.parametrize("weekday_only, escort_purpose, pinned_shop_share", [
+    (True, False, None), (False, False, None), (True, True, None), (True, False, 0.4)])
+def test_shared_mid_wege_loader_reads_once_and_deciders_are_identical(
+        monkeypatch, weekday_only, escort_purpose, pinned_shop_share):
     """Audit 2026-11 package H (P5a-F7): the stage hands ONE lazy loader to the shop, leisure
     and other builders. The CSV is loaded once, every decider draws the same sequence as with
     a fresh load per builder (the pre-change behaviour), and no builder mutates the shared frame."""
@@ -1715,7 +1717,9 @@ def test_shared_mid_wege_loader_reads_once_and_deciders_are_identical(monkeypatc
     wege = pd.concat([_shop_weekday_vs_weekend_wege(), _leisure_weekday_vs_weekend_wege(),
                       _other_weekday_vs_rbw_wege()], ignore_index=True)
     overrides = {"secondary_shop_daily_split": True, "secondary_leisure_subtype_split": True,
-                 "secondary_other_subtype_split": True, **_weekday_flag(weekday_only)}
+                 "secondary_other_subtype_split": True, "escort_purpose": escort_purpose,
+                 "secondary_shop_daily_share": pinned_shop_share,
+                 **_weekday_flag(weekday_only)}
     builders = (sc._build_shop_subtype_decider, sc._build_leisure_subtype_decider,
                 sc._build_other_subtype_decider)
 

@@ -126,6 +126,11 @@ def _load_cells(data_path: str) -> pd.DataFrame:
     reads it (``_multi_col_kreis_target`` groups and sums; ``seniorenstatus_target`` takes
     a ``copy()`` before adding its merged column). ``tests/test_popsim_validation_controls.py``
     pins that the cached frame is unchanged after all target loaders ran.
+
+    The cached frame lives until ``clear_cells_cache`` runs. ``run_popsim_control_validation``
+    clears it after the evaluation; any other code that calls the target loaders directly (a
+    notebook, a script) keeps the national frame in memory until it calls
+    ``clear_cells_cache`` itself.
     """
     parquet = Path(data_path) / _PARQUET_SUBPATH
     stat = parquet.stat()
