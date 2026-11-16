@@ -131,20 +131,20 @@ def household_incidence(batch: BatchFolder) -> pd.DataFrame:
             f"batch {batch.name}: seed persons reference household id(s) {orphans[:10]} "
             "that are not in the seed households")
     index = pd.Index(households[id_col], name=id_col)
-    out = pd.DataFrame(index=index)
+    columns = {}  # built in one go: one insert per control fragments the frame
     for control in batch.control_spec.itertuples():
         if control.seed_table == "households":
             mask = evaluate_expression(control.expression, households)
-            out[control.target] = mask.astype(int)
+            columns[control.target] = mask.astype(int)
         elif control.seed_table == "persons":
             mask = evaluate_expression(control.expression, persons)
             per_household = pd.Series(mask.astype(int), index=persons[id_col]).groupby(
                 level=0).sum()
-            out[control.target] = per_household.reindex(index, fill_value=0).to_numpy()
+            columns[control.target] = per_household.reindex(index, fill_value=0).to_numpy()
         else:
             raise ValueError(f"batch {batch.name}: control {control.target} has unknown "
                              f"seed_table {control.seed_table!r}")
-    return out
+    return pd.DataFrame(columns, index=index)
 
 
 def control_totals(batch: BatchFolder, geography: str) -> pd.DataFrame:

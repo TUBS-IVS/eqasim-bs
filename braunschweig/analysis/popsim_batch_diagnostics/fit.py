@@ -47,14 +47,27 @@ def _ratio(numerator: np.ndarray, denominator: np.ndarray) -> np.ndarray:
     return numerator / safe
 
 
-def _check_overlap(label: str, n_matched: int, n_total: int, what: str) -> None:
-    """Refuse a join in which nothing matched: almost surely a key or dtype mismatch."""
-    if n_total > 0 and n_matched == 0:
-        raise ValueError(f"{label}: none of the {n_total} {what} matches; the zone ids of the "
-                         "two tables differ in value or dtype")
+def _check_unmatched_zones(label: str, n_unmatched: int, n_zones: int, mass_share: float,
+                           max_unmatched_zone_share: float) -> None:
+    """Log the zones of one table that the other table lacks; refuse a high share.
+
+    ``mass_share`` is the share of the rows' weight (households) in the unmatched zones.  A
+    high share of unmatched zones almost surely means a key or dtype mismatch between the two
+    tables (the primary join is broken), so it raises instead of continuing on the remainder.
+    """
+    if n_unmatched == 0:
+        return
+    zone_share = n_unmatched / n_zones
+    message = (f"{label}: {n_unmatched} of {n_zones} zone(s) ({100.0 * zone_share:.2f}%, "
+               f"{100.0 * mass_share:.2f}% of the weight) have no counterpart in the other table")
+    if zone_share > max_unmatched_zone_share:
+        raise ValueError(f"{message}; share exceeds max_unmatched_zone_share="
+                         f"{max_unmatched_zone_share}: the zone ids differ in value or dtype")
+    logger.warning("%s %s (below max_unmatched_zone_share=%g)", _TAG, message,
+                   max_unmatched_zone_share)
 
 
-def control_fit(batch: BatchFolder) -> pd.DataFrame:
+def control_fit(batch: BatchFolder, *, max_unmatched_zone_share: float = 0.01) -> pd.DataFrame:
     """Fit of the expanded synthetic population to the control totals, per control.
 
     Synthetic totals come from the expanded household ids and the household incidence, per
@@ -64,6 +77,8 @@ def control_fit(batch: BatchFolder) -> pd.DataFrame:
     has synthetic households but no target row counts with target 0; a zone with targets and
     no synthetic household counts with synthetic 0; both are logged.
     A geography without a ``control_totals_<geography>.csv`` raises ``FileNotFoundError``.
+    The share of expanded zones without a target row is logged (zones and households); above
+    ``max_unmatched_zone_share`` it raises ``ValueError`` (zone-id mismatch).
     """
     spec = batch.control_spec
     incidence = household_incidence(batch)
@@ -91,8 +106,11 @@ def control_fit(batch: BatchFolder) -> pd.DataFrame:
             raise ValueError(f"{label}: control totals contain missing values")
 
         zones = targets.index.union(pd.Index(expanded[geography].unique()))
-        _check_overlap(label, int(expanded[geography].isin(targets.index).sum()),
-                       len(expanded), "expanded households")
+        expanded_zones = pd.Index(expanded[geography].unique())
+        unmatched_rows = ~expanded[geography].isin(targets.index).to_numpy()
+        _check_unmatched_zones(
+            f"control_fit {label}", int((~expanded_zones.isin(targets.index)).sum()),
+            len(expanded_zones), float(unmatched_rows.mean()), max_unmatched_zone_share)
         zone_pos = zones.get_indexer(expanded[geography])
         counts = sparse.csr_matrix(
             (np.ones(len(expanded)), (zone_pos, household_pos)),
@@ -101,14 +119,10 @@ def control_fit(batch: BatchFolder) -> pd.DataFrame:
         target = targets.reindex(zones).fillna(0.0).to_numpy(dtype=float)
 
         zones_without_target = int((~zones.isin(targets.index)).sum())
-        zones_without_rows = int((~zones.isin(pd.Index(expanded[geography].unique()))).sum())
+        zones_without_rows = int((~zones.isin(expanded_zones)).sum())
         logger.info("%s control_fit %s: %d zones, %d without targets, %d without synthetic "
                     "households", _TAG, label, len(zones), zones_without_target,
                     zones_without_rows)
-        if zones_without_target:
-            logger.warning("%s control_fit %s: %d zone(s) have synthetic households but no "
-                           "control totals (counted with target 0)", _TAG, label,
-                           zones_without_target)
 
         target_sum = target.sum(axis=0)
         synthetic_sum = synthetic.sum(axis=0)
@@ -155,6 +169,9 @@ def _current_key(store: pd.HDFStore, table: str) -> str:
                                      f"last version of '{table}', but the store has only {keys}")
                 return key
     if len(keys) == 1:
+        if _CHECKPOINTS_KEY in store:
+            logger.warning("%s '%s' does not name the last version of '%s'; using its only "
+                           "version %s", _TAG, _CHECKPOINTS_KEY, table, keys[0])
         return keys[0]
     raise ValueError(f"the store has {len(keys)} versions of '{table}' ({keys}) and "
                      f"'{_CHECKPOINTS_KEY}' does not say which one is the last")
@@ -205,7 +222,7 @@ def read_weight_table(store_path, level: str, *, chunk_rows: int = 5_000_000) ->
 
 
 def _level_split(store: pd.HDFStore, level: str, incidence: pd.DataFrame, geography_of: dict,
-                 chunk_rows: int) -> pd.DataFrame:
+                 chunk_rows: int, max_unmatched_zone_share: float) -> pd.DataFrame:
     """Misfit split of one level (see ``misfit_split``)."""
     controls = store.get(_current_key(store, f"{level}_controls"))
     if not controls.index.is_unique:
@@ -230,12 +247,16 @@ def _level_split(store: pd.HDFStore, level: str, incidence: pd.DataFrame, geogra
                          "table of the store")
     zone_pos = controls.index.get_indexer(weights[level])
     in_controls = zone_pos >= 0
-    _check_overlap(f"{level}_weights", int(in_controls.sum()), len(weights), "weight rows")
     if not in_controls.all():
         orphan_zones = weights.loc[~in_controls, level].unique()
+        mass = weights["balanced_weight"].to_numpy(dtype=float)
+        mass_share = float(mass[~in_controls].sum() / mass.sum()) if mass.sum() > 0 else 1.0
         logger.warning("%s %s: %d weight row(s) in %d zone(s) not in %s_controls are left out "
                        "(e.g. %s)", _TAG, level, int((~in_controls).sum()), len(orphan_zones),
                        level, orphan_zones[:3].tolist())
+        _check_unmatched_zones(f"{level}_weights", len(orphan_zones),
+                               int(weights[level].nunique()), mass_share,
+                               max_unmatched_zone_share)
 
     shape = (len(controls), len(incidence))
     rows, cols = zone_pos[in_controls], household_pos[in_controls]
@@ -270,8 +291,8 @@ def _level_split(store: pd.HDFStore, level: str, incidence: pd.DataFrame, geogra
         "bias_int": _ratio(integer_sum, target_sum) - 1.0})[_SPLIT_COLUMNS]
 
 
-def misfit_split(batch: BatchFolder, levels=DEFAULT_LEVELS, *,
-                 chunk_rows: int = 5_000_000) -> pd.DataFrame:
+def misfit_split(batch: BatchFolder, levels=DEFAULT_LEVELS, *, chunk_rows: int = 5_000_000,
+                 max_unmatched_zone_share: float = 0.01) -> pd.DataFrame:
     """Split the control misfit of a batch into the balancing and the rounding part.
 
     For each level present in the checkpoint store, per control column of ``/<level>_controls``
@@ -282,7 +303,9 @@ def misfit_split(batch: BatchFolder, levels=DEFAULT_LEVELS, *,
     ``sum / target_sum - 1``.  Incidence, targets and weights all come from the store (last
     checkpoint of each table); weights join the store's incidence by household group id.
     A level missing from the store is skipped and logged; a batch without a store raises
-    ``FileNotFoundError``.
+    ``FileNotFoundError``.  Weight zones that are not in ``/<level>_controls`` are logged with
+    their share of zones and of weight; above ``max_unmatched_zone_share`` (share of the
+    level's weight zones) ``ValueError`` is raised (zone-id mismatch).
     """
     store_path = batch.path / _STORE
     if not store_path.is_file():
@@ -299,7 +322,8 @@ def misfit_split(batch: BatchFolder, levels=DEFAULT_LEVELS, *,
                     not _table_keys(store, f"{level}_controls"):
                 skipped.append(level)
                 continue
-            parts.append(_level_split(store, level, incidence, geography_of, chunk_rows))
+            parts.append(_level_split(store, level, incidence, geography_of, chunk_rows,
+                                       max_unmatched_zone_share))
     logger.info("%s batch %s misfit_split: %d of %d level(s) computed, %d skipped (not in the "
                 "store): %s", _TAG, batch.name, len(parts), len(levels), len(skipped), skipped)
     if not parts:
@@ -315,6 +339,9 @@ def rounding_shift(split: pd.DataFrame, total_hh_control: str, *, level: str = "
     Rows of ``split`` at ``level`` whose ``control_geography`` is that level, without the
     household-total control and with ``target_sum >= min_target``.
     ``shift = |integer_sum - float_sum| / target_sum`` and ``within_bound = shift <= bound``.
+    This is the NET per-control shift ``|I_c - F_c| / T_c`` over the batch's cells (the
+    definition of design goal G4): rounding errors of opposite sign in different zones cancel.
+    The non-cancelling per-zone measure is ``round_wape`` of ``misfit_split``.
     """
     rows = split[(split["level"] == level) & (split["control_geography"] == level)
                  & (split["control"] != total_hh_control)

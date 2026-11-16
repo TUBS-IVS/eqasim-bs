@@ -298,6 +298,41 @@ def test_misfit_split_separates_balancing_from_rounding(work_dir, chunk_rows):
     assert shift.loc["building_type_mfh_ZENSUS100m_target", "shift"] == pytest.approx(0.15)
 
 
+def test_weight_table_is_the_same_whether_read_in_one_chunk_or_several(work_dir):
+    one = read_weight_table(_store_path(work_dir), "ZENSUS100m", chunk_rows=5_000_000)
+    several = read_weight_table(_store_path(work_dir), "ZENSUS100m", chunk_rows=3)
+    assert len(one) > 3          # chunk_rows=3 really reads several chunks
+    pd.testing.assert_frame_equal(several, one)
+
+
+def test_misfit_split_of_an_all_zero_control_is_nan_without_warnings(work_dir):
+    batch = load_batch_folder(work_dir / "batch_000")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")      # a division warning would fail the test
+        split = misfit_split(batch, levels=("ZENSUS100m",)).set_index("control")
+    zero = split.loc["F_AGE_0_17_ZENSUS100m_target"]
+    assert zero["target_sum"] == 0
+    assert zero[["balance_wape", "round_wape", "total_wape", "bias_float", "bias_int"]].isna().all()
+
+
+def test_zone_id_mismatch_above_the_unmatched_share_is_refused(work_dir):
+    batch = load_batch_folder(work_dir / "batch_000")
+    totals_file = work_dir / "batch_000" / "data" / "control_totals_ZENSUS100m.csv"
+    totals = pd.read_csv(totals_file)
+    totals[totals["ZENSUS100m"] != "B"].to_csv(totals_file, index=False)      # zone B: no targets
+    with pytest.raises(ValueError, match="max_unmatched_zone_share"):
+        control_fit(batch)
+    assert len(control_fit(batch, max_unmatched_zone_share=0.6)) == len(batch.control_spec)
+
+    weights = pd.read_hdf(_store_path(work_dir), _FIRST_KEY)
+    extra = weights.iloc[:2].assign(ZENSUS100m="C")      # zone C is not in /ZENSUS100m_controls
+    _write_keys(work_dir, {_FIRST_KEY: pd.concat([weights, extra], ignore_index=True)})
+    with pytest.raises(ValueError, match="max_unmatched_zone_share"):
+        misfit_split(batch, levels=("ZENSUS100m",))
+    split = misfit_split(batch, levels=("ZENSUS100m",), max_unmatched_zone_share=0.5)
+    assert set(split["level"]) == {"ZENSUS100m"}
+
+
 def test_misfit_split_needs_the_checkpoint_store(tmp_path):
     work = build_work_dir(tmp_path, with_store=False)
     with pytest.raises(FileNotFoundError, match="batch_000"):
