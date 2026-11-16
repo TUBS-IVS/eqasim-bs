@@ -166,7 +166,6 @@ def validate(context):
     if not os.path.exists(path):
         raise RuntimeError(
             f"Missing Zensus 2022 1000A-3082 ZIP at {path}. "
-            "Download from https://ergebnisse.zensus2022.de "
-            "(DOWNLOAD_CHECKLIST_BS.md)."
+            "Download table 1000A-3082 from https://ergebnisse.zensus2022.de."
         )
     return os.path.getsize(path)
