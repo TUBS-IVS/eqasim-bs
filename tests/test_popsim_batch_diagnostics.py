@@ -2,6 +2,7 @@
 import json
 import logging
 import shutil
+import subprocess
 import sys
 import warnings
 from dataclasses import replace
@@ -534,7 +535,7 @@ def test_run_writes_all_tables_and_flags_breaches(work_dir, tmp_path):
     coverage = result["tables"]["control_coverage"].set_index("group")
     assert coverage.loc["age_sex", "n_uncovered"] == 1     # not doubled by the second batch
     raised = {(w["check"], w["subject"]) for w in result["warnings"]}
-    assert ("universe_ratio", "building_type") in raised   # targets 7 against 5 households
+    assert ("universe_ratio", "building_type/ZENSUS100m") in raised   # targets 7 against 5 households
     assert ("weight_class_gap", "<1") in raised            # 6.25 points short
     assert ("sequential_fallback_rate", "ZENSUS1km") in raised
     assert ("coverage_ratio", "tenure") not in raised      # ratio 0.8 is inside 0.5 to 2.0
@@ -549,6 +550,13 @@ def test_run_keeps_different_seeds_apart(work_dir, tmp_path):
     result = run_diagnostics(work_dir, tmp_path / "out")
     reuse = result["tables"]["reuse"]
     assert sorted(reuse.loc[reuse["scope"] == "region", "n_seed_households"]) == [3, 4]
+    tables = result["tables"]
+    for name in ("weight_class_shares", "attribute_shares", "control_coverage"):
+        assert tables[name]["seed_group"].nunique() == 2
+    labels = set(tables["control_coverage"]["seed_group"])
+    subjects = [w["subject"] for w in result["warnings"]
+                if w["check"] in ("weight_class_gap", "coverage_ratio")]
+    assert subjects and all(subject.split("/")[0] in labels for subject in subjects)
 
 
 def test_fallback_rate_uses_all_non_simultaneous_parents(work_dir, tmp_path):
@@ -644,3 +652,66 @@ def test_provenance_commit_falls_back_to_environment(work_dir, tmp_path, monkeyp
     assert provenance["repository_commit"] == "abc123"
     assert provenance["batches"] == ["batch_000"]
     assert provenance["thresholds"]["weight_class_gap_pp"] == 5.0
+
+
+def test_kreis_reuse_rows_exist(work_dir, tmp_path):
+    reuse = run_diagnostics(work_dir, tmp_path / "out")["tables"]["reuse"]
+    kreis = reuse[reuse["scope"] == "kreis"]
+    assert kreis["subject"].tolist() == ["3153"]
+    assert kreis.iloc[0]["n_synthetic_households"] == 5
+
+
+def test_rounding_shift_warnings_name_batch_and_control(work_dir, tmp_path):
+    result = run_diagnostics(work_dir, tmp_path / "out", misfit=True,
+                             thresholds=Thresholds(rounding_min_target=2.0,
+                                                   rounding_shift_bound=0.0))
+    subjects = [w["subject"] for w in result["warnings"] if w["check"] == "rounding_shift"]
+    assert subjects and all(s.startswith("batch_000/") for s in subjects)
+
+
+def test_universe_warning_subject_names_geography(work_dir, tmp_path):
+    result = run_diagnostics(work_dir, tmp_path / "out")
+    raised = {w["subject"] for w in result["warnings"] if w["check"] == "universe_ratio"}
+    assert "building_type/ZENSUS100m" in raised
+
+
+def test_mid_dataframe_provenance_and_threshold_option(work_dir, tmp_path):
+    run_diagnostics(work_dir, tmp_path / "out", mid_households=_mid([1, 2, 3, 4]))
+    mid = json.loads((tmp_path / "out" / "provenance.json").read_text(
+        encoding="utf-8"))["mid_households"]
+    assert mid == {"path": None, "source": "dataframe", "rows": 4,
+                   "columns": ["H_ID", "BASISAUF"]}
+    main(["--work-dir", str(work_dir), "--out-dir", str(tmp_path / "o2"),
+          "--threshold", "weight_class_gap_pp=50"])
+    assert "thresholds" in (tmp_path / "o2" / "provenance.json").read_text(encoding="utf-8")
+    assert json.loads((tmp_path / "o2" / "provenance.json").read_text(
+        encoding="utf-8"))["thresholds"]["weight_class_gap_pp"] == 50.0
+    with pytest.raises(SystemExit):
+        main(["--work-dir", str(work_dir), "--out-dir", str(tmp_path / "o3"),
+              "--threshold", "nonsense=1"])
+
+
+def test_cli_reads_mid_file_with_comma_separator(work_dir, tmp_path):
+    mid = pd.DataFrame({"H_ID": [1, 2, 3, 4], "BASISAUF": 1, "BLAND": 3, "MODE": 1,
+                        "TEILSTP": 2, "EXTRA": 9})
+    path = tmp_path / "mid.csv"
+    mid.to_csv(path, index=False)
+    assert main(["--work-dir", str(work_dir), "--out-dir", str(tmp_path / "out"),
+                 "--mid-households", str(path)]) == 0
+    attributes = pd.read_csv(tmp_path / "out" / "attribute_shares.csv")
+    assert {"BASISAUF", "BLAND", "MODE", "TEILSTP"} <= set(attributes["attribute"])
+    assert "EXTRA" not in set(attributes["attribute"])
+
+
+def test_provenance_commit_is_marked_dirty(work_dir, tmp_path, monkeypatch):
+    from braunschweig.analysis.popsim_batch_diagnostics import run as run_module
+    root = Path(run_module.__file__).resolve().parents[3]
+
+    def fake_git(command, **kwargs):
+        answers = {"--show-toplevel": str(root), "HEAD": "deadbeef", "--porcelain": " M x.py"}
+        return subprocess.CompletedProcess(command, 0, stdout=answers[command[-1]])
+
+    monkeypatch.setattr(run_module.subprocess, "run", fake_git)
+    run_diagnostics(work_dir, tmp_path / "out")
+    provenance = json.loads((tmp_path / "out" / "provenance.json").read_text(encoding="utf-8"))
+    assert provenance["repository_commit"] == "deadbeef-dirty"

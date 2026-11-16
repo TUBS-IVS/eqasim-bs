@@ -16,13 +16,17 @@ python -m braunschweig.analysis.popsim_batch_diagnostics.run --work-dir <dir wit
 
 - `--out-dir` must not exist or be empty (`FileExistsError`); nothing is overwritten.
 - `--mid-households` loads `H_ID, BASISAUF, BLAND, MODE, TEILSTP` (separator `--mid-separator`,
-  default `;`) and joins them to the seed households on the household id. The join rate is
+  default `,`) and joins them to the seed households on the household id. The join rate is
   logged; below 99 % it warns, below 50 % it raises (id mismatch).
 - `--misfit` needs a kept checkpoint store `output/pipeline.h5` in every batch; a batch without one
   raises. Without it the run needs only the CSV inputs and the log.
+- `--threshold NAME=VALUE` (repeatable) overrides a `Thresholds` field; an unknown name is an
+  error. `--max-unmatched-zone-share` (default 0.01) is the share of expanded zones without a
+  target row above which `control_fit` raises (zone-id mismatch).
 - Warnings never change the exit code; exceptions do. `provenance.json` records the work
   directory, batches, seed groups, thresholds, the MiD file hash, a UTC timestamp and the
-  repository commit (`git rev-parse HEAD`, else the environment variable `EQASIM_BS_COMMIT`, else
+  repository commit (`git rev-parse HEAD`, only when git's top level is the package's own repository, `-dirty`
+  appended with a warning when the tree has uncommitted changes; else the environment variable `EQASIM_BS_COMMIT`, else
   `unknown` with a warning).
 
 ## Seed groups
@@ -69,5 +73,10 @@ misses the last two kinds. `solver_paths.csv` keeps every counter.
 | `universe_ratio_tolerance` | group targets do not add up to the household total (inconsistent control tables) |
 | `sequential_fallback_rate` | the simultaneous integerizer often failed at a level |
 | `rounding_shift_bound`, `rounding_min_target` | integerizing moves a control by more than the bound (only controls with at least `rounding_min_target` in target sum are judged) |
+
+Warning subjects: `universe_ratio` is `<group>/<geography>`, rounding shift is `<batch>/<control>`;
+with several seed groups the weight-class and coverage subjects get a `<seed_group>/` prefix.
+An `unmatched_control` warning (one per control name) has NaN value and threshold by design.
+`control_fit` `region_geography` rows leave out controls whose target sum is 0 (count logged).
 
 Defaults are in the dataclass; they are screening values, not scientific targets.

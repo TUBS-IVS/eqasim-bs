@@ -141,11 +141,27 @@ def _md_table(frame: pd.DataFrame) -> str:
 
 
 def _repository_commit() -> str:
-    """``git rev-parse HEAD`` of the package's repository, else ``EQASIM_BS_COMMIT``, else unknown."""
+    """Commit of the repository that contains this package, else ``EQASIM_BS_COMMIT``, else unknown.
+
+    Git is used only when its top-level directory is the package's own repository root (the code
+    may run from an unpacked archive inside some other repository).  A non-empty
+    ``git status --porcelain`` gives ``<sha>-dirty`` and a WARNING.
+    """
+    root = Path(__file__).resolve().parents[3]
+
+    def git(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True,
+                              check=True, timeout=30).stdout.strip()
+
     try:
-        result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parent,
-                                capture_output=True, text=True, check=True, timeout=30)
-        return result.stdout.strip()
+        if Path(git("rev-parse", "--show-toplevel")).resolve() != root:
+            raise OSError(f"git top level is not the package repository {root}")
+        commit = git("rev-parse", "HEAD")
+        if git("status", "--porcelain"):
+            logger.warning("%s the working tree of %s has uncommitted changes; the commit is "
+                           "recorded as '-dirty'", _TAG, root)
+            commit += "-dirty"
+        return commit
     except (OSError, subprocess.SubprocessError) as error:
         fallback = os.environ.get("EQASIM_BS_COMMIT")
         if fallback:
@@ -154,6 +170,15 @@ def _repository_commit() -> str:
         logger.warning("%s repository commit unknown: git failed (%s) and EQASIM_BS_COMMIT is "
                        "not set", _TAG, error)
         return "unknown"
+
+
+def _mid_provenance(mid: pd.DataFrame | None, path) -> dict | None:
+    if path is not None:
+        return {"path": str(path), "sha256": _sha256(Path(path))}
+    if mid is not None:
+        return {"path": None, "source": "dataframe", "rows": len(mid),
+                "columns": list(mid.columns)}
+    return None
 
 
 def _sha256(path: Path) -> str:
@@ -174,6 +199,8 @@ def _region_fit(per_batch: pd.DataFrame) -> pd.DataFrame:
     sums["wape"] = _ratio(sums["abs_error"], sums["target_sum"])
     sums.insert(0, "scope", "region")
     kept = sums[sums["target_sum"] > 0]
+    logger.info("%s control_fit region_geography: %d of %d controls excluded (target_sum 0)",
+                _TAG, len(sums) - len(kept), len(sums))
     geography = kept.groupby("geography", sort=False)[
         ["target_sum", "synthetic_sum", "abs_error"]].sum().reset_index()
     geography["bias"] = _ratio(geography["synthetic_sum"], geography["target_sum"]) - 1.0
@@ -333,7 +360,7 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
             logger.info("%s universe ratio of group %s in %s is undefined (NaN)", _TAG,
                         item.group, item.geography)
         elif abs(item.ratio - 1.0) > thresholds.universe_ratio_tolerance:
-            warnings.add("universe_ratio", item.group, item.ratio,
+            warnings.add("universe_ratio", f"{item.group}/{item.geography}", item.ratio,
                          thresholds.universe_ratio_tolerance)
 
     per_batch_fit = pd.concat(fit_parts, ignore_index=True)
@@ -374,8 +401,7 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
         "seed_groups": {g.fingerprint: g.names for g in groups.values()},
         "repository_commit": commit, "thresholds": dataclasses.asdict(thresholds),
         "misfit": misfit, "chunk_rows": chunk_rows,
-        "mid_households": None if mid_households_path is None else {
-            "path": str(mid_households_path), "sha256": _sha256(Path(mid_households_path))},
+        "mid_households": _mid_provenance(mid_households, mid_households_path),
         "utc_timestamp": datetime.now(timezone.utc).isoformat()}
     (out_dir / "provenance.json").write_text(json.dumps(provenance, indent=2), encoding="utf-8")
     logger.info("%s wrote %d tables and %d warning(s) to %s", _TAG, len(tables), len(warnings),
@@ -408,6 +434,21 @@ def _write_summary(out_dir: Path, work_dir: Path, folders, groups, commit: str, 
     (out_dir / "popsim_batch_diagnostics.md").write_text("\n".join(lines), encoding="utf-8")
 
 
+def _parse_thresholds(parser: argparse.ArgumentParser, items: Sequence[str]) -> Thresholds:
+    fields = {f.name for f in dataclasses.fields(Thresholds)}
+    values = {}
+    for item in items:
+        name, separator, text = item.partition("=")
+        if not separator or name not in fields:
+            parser.error(f"--threshold {item!r}: expected NAME=VALUE with NAME one of "
+                         f"{sorted(fields)}")
+        try:
+            values[name] = float(text)
+        except ValueError:
+            parser.error(f"--threshold {item!r}: value is not a number")
+    return Thresholds(**values)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Command line entry point; returns 0 on success (warnings do not change the exit code)."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -416,17 +457,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--batches", nargs="+", default=None)
     parser.add_argument("--mid-households", default=None,
                         help="MiD2023_Haushalte.csv; columns " + ", ".join(MID_COLUMNS))
-    parser.add_argument("--mid-separator", default=";", help="field separator of that file")
+    parser.add_argument("--mid-separator", default=",", help="field separator of that file")
     parser.add_argument("--misfit", action="store_true")
     parser.add_argument("--chunk-rows", type=int, default=5_000_000)
+    parser.add_argument("--threshold", action="append", default=[], metavar="NAME=VALUE",
+                        help="override a Thresholds field (repeatable)")
     parser.add_argument("--max-unmatched-zone-share", type=float, default=0.01)
     args = parser.parse_args(argv)
+    thresholds = _parse_thresholds(parser, args.threshold)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     mid = None
     if args.mid_households:
         mid = pd.read_csv(args.mid_households, usecols=list(MID_COLUMNS), sep=args.mid_separator)
     run_diagnostics(args.work_dir, args.out_dir, batches=args.batches, mid_households=mid,
-                    misfit=args.misfit, chunk_rows=args.chunk_rows,
+                    misfit=args.misfit, thresholds=thresholds, chunk_rows=args.chunk_rows,
                     max_unmatched_zone_share=args.max_unmatched_zone_share,
                     mid_households_path=args.mid_households)
     return 0
