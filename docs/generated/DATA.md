@@ -22,6 +22,7 @@ Restricted datasets are never committed or redistributed.
 | [buildings_with_households](../registry/data/buildings_with_households.yml) | derived_input | derived | `data/braunschweig/popsim/buildings/buildings_with_households_zgb.parquet` | o/-/r | no |
 | [clc_backbone](../registry/data/clc_backbone.yml) | spatial_input | manual_download | `data/ (user-provided)` | o/-/o | no |
 | [cleancensus_kreis_controls](../registry/data/cleancensus_kreis_controls.yml) | control | derived | `data/braunschweig/popsim/kreis_controls/` | o/-/r | no |
+| [copernicus_landuse_100m](../registry/data/copernicus_landuse_100m.yml) | derived_input | derived | `data/braunschweig/preprocessed/inspire_landuse.parquet` | -/-/- | no |
 | [destatis_population_kreis](../registry/data/destatis_population_kreis.yml) | control | manual_download | `data/braunschweig/12411-0018_de.csv` | r/-/o | no |
 | [detour_circuity_params](../registry/data/detour_circuity_params.yml) | calibration_target | committed | `data/braunschweig/calibration/detour_circuity_params.csv` | o/-/o | no |
 | [entd_2008](../registry/data/entd_2008.yml) | donor | manual_download | `data/entd_2008/{Q_individu,Q_tcm_individu,Q_menage,Q_tcm_menage_0,K_deploc}.csv` | r/-/- | no |
