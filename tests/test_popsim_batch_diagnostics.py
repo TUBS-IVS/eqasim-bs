@@ -1,10 +1,13 @@
 """Tests for braunschweig.analysis.popsim_batch_diagnostics (batch folder + incidence)."""
 import sys
+import warnings
 from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
+import tables
 
 sys.path.append(str(Path(__file__).parent))
 
@@ -14,6 +17,8 @@ from braunschweig.analysis.popsim_batch_diagnostics.batch_folder import (  # noq
     control_totals, household_incidence, list_batch_folders, load_batch_folder)
 from braunschweig.analysis.popsim_batch_diagnostics.coverage import (  # noqa: E402
     coverage_table, universe_table)
+from braunschweig.analysis.popsim_batch_diagnostics.fit import (  # noqa: E402
+    control_fit, misfit_split, read_weight_table, rounding_shift)
 from braunschweig.analysis.popsim_batch_diagnostics.reuse import (  # noqa: E402
     reuse_by_zone, reuse_summary, shares_by_attribute, usage_counts, weight_class_shares)
 from braunschweig.popsim.control_groups import unmatched_controls  # noqa: E402
@@ -225,3 +230,140 @@ def test_missing_household_id_and_custom_id_column(work_dir):
     summary = reuse_summary(usage_counts(batch.expanded), n_seed_households=4,
                             household_id_col="HH")
     assert summary["kish_n_eff"] == pytest.approx(25 / 11)
+
+
+# --- Task 4: control fit, misfit split, rounding shift -------------------------------
+
+_FIRST_KEY = "/ZENSUS100m_weights/sub_balancing.geography=ZENSUS100m"
+_SECOND_KEY = "/ZENSUS100m_weights/final"
+
+
+def _store_path(work_dir):
+    return work_dir / "batch_000" / "output" / "pipeline.h5"
+
+
+def _write_keys(work_dir, frames):
+    """Add (or replace) fixed-format tables in the fixture's checkpoint store."""
+    with warnings.catch_warnings(), pd.HDFStore(str(_store_path(work_dir)), mode="a") as store:
+        warnings.filterwarnings("ignore", category=tables.NaturalNameWarning)
+        for key, frame in frames.items():
+            store.put(key, frame, format="fixed")
+
+
+def _checkpoints(weights_checkpoints):
+    """A ``/checkpoints`` frame: one row per checkpoint, one column per table name."""
+    rows = []
+    for i, weights_checkpoint in enumerate(weights_checkpoints):
+        rows.append({"checkpoint_name": f"step_{i}", "timestamp": f"2026-11-16 10:0{i}",
+                     "incidence_table": "setup_data_structures",
+                     "control_spec": "setup_data_structures",
+                     "ZENSUS100m_controls": "setup_data_structures",
+                     "ZENSUS100m_weights": weights_checkpoint})
+    return pd.DataFrame(rows)
+
+
+def test_control_fit_against_targets(work_dir):
+    fit = control_fit(load_batch_folder(work_dir / "batch_000")).set_index("control")
+    assert fit.loc[TOTAL, "wape"] == 0.0
+    assert fit.loc["M_AGE_18_plus_ZENSUS100m_target", ["wape", "bias"]].tolist() == pytest.approx([2 / 3, 0.0])
+    assert fit.loc["F_AGE_18_plus_ZENSUS100m_target", ["wape", "bias"]].tolist() == pytest.approx([1 / 3, 1 / 3])
+    assert fit.loc["EigentuemerHH_Tenure_ZENSUS100m_target", ["wape", "bias"]].tolist() == pytest.approx([0.5, -0.5])
+    assert fit.loc["building_type_mfh_ZENSUS100m_target", ["wape", "bias"]].tolist() == pytest.approx([1.0, -1.0])
+    zero = fit.loc["F_AGE_0_17_ZENSUS100m_target"]          # targets sum to zero
+    assert zero["target_sum"] == 0 and np.isnan(zero["wape"]) and np.isnan(zero["bias"])
+
+
+def test_control_fit_names_a_geography_without_control_totals(work_dir):
+    (work_dir / "batch_000" / "data" / "control_totals_ZENSUS100m.csv").unlink()
+    with pytest.raises(FileNotFoundError, match="control_totals_ZENSUS100m"):
+        control_fit(load_batch_folder(work_dir / "batch_000"))
+
+
+@pytest.mark.parametrize("chunk_rows", [3, 5_000_000])
+def test_misfit_split_separates_balancing_from_rounding(work_dir, chunk_rows):
+    batch = load_batch_folder(work_dir / "batch_000")
+    split = misfit_split(batch, levels=("ZENSUS100m",), chunk_rows=chunk_rows).set_index("control")
+    m = split.loc["M_AGE_18_plus_ZENSUS100m_target"]
+    assert [m["float_sum"], m["integer_sum"]] == pytest.approx([3.0, 3.0])
+    assert [m["balance_wape"], m["round_wape"], m["total_wape"]] == pytest.approx([1.6 / 3, 0.4 / 3, 2 / 3])
+    f = split.loc["F_AGE_18_plus_ZENSUS100m_target"]
+    assert [f["float_sum"], f["integer_sum"]] == pytest.approx([3.4, 4.0])
+    assert [f["bias_float"], f["bias_int"]] == pytest.approx([0.4 / 3, 1 / 3])
+    shift = rounding_shift(split.reset_index(), batch.total_hh_control, min_target=2.0).set_index("control")
+    assert shift["within_bound"].to_dict() == {
+        "M_AGE_18_plus_ZENSUS100m_target": True, "F_AGE_18_plus_ZENSUS100m_target": False,
+        "MieterHH_Tenure_ZENSUS100m_target": True, "EigentuemerHH_Tenure_ZENSUS100m_target": True,
+        "building_type_efh_ZENSUS100m_target": True, "building_type_mfh_ZENSUS100m_target": False}
+    assert shift.loc["F_AGE_18_plus_ZENSUS100m_target", "shift"] == pytest.approx(0.2)
+    assert shift.loc["building_type_mfh_ZENSUS100m_target", "shift"] == pytest.approx(0.15)
+
+
+def test_misfit_split_needs_the_checkpoint_store(tmp_path):
+    work = build_work_dir(tmp_path, with_store=False)
+    with pytest.raises(FileNotFoundError, match="batch_000"):
+        misfit_split(load_batch_folder(work / "batch_000"))
+
+
+def test_default_levels_skip_levels_absent_from_the_store_and_ignore_non_targets(work_dir):
+    batch = load_batch_folder(work_dir / "batch_000")
+    split = misfit_split(batch)      # default levels name STAAT, KREIS, ZENSUS1km: not in the store
+    assert set(split["level"]) == {"ZENSUS100m"}
+    # Only control targets: the incidence's STAAT/WELT/sample_weight/group_* columns are not controls.
+    assert set(split["control"]) == set(batch.control_spec["target"])
+    assert set(split["control_geography"]) == {"ZENSUS100m"}
+
+
+@pytest.mark.parametrize("last_row_names, extra_integer", [("second", 8), ("first", 0)])
+def test_last_checkpoint_of_the_checkpoints_frame_is_read(work_dir, last_row_names, extra_integer):
+    first = pd.read_hdf(_store_path(work_dir), _FIRST_KEY)
+    second = first.assign(integer_weight=first["integer_weight"] + 1)
+    order = ["first", "second"] if last_row_names == "second" else ["second", "first"]
+    names = {"first": "sub_balancing.geography=ZENSUS100m", "second": "final"}
+    _write_keys(work_dir, {_SECOND_KEY: second,
+                           "/checkpoints": _checkpoints([names[o] for o in order])})
+    table = read_weight_table(_store_path(work_dir), "ZENSUS100m")
+    assert table.columns.tolist() == ["H_ID", "ZENSUS100m", "balanced_weight", "integer_weight"]
+    assert table.index.tolist() == list(range(len(table)))
+    assert table["integer_weight"].sum() == first["integer_weight"].sum() + extra_integer
+
+
+def test_several_weight_checkpoints_without_checkpoints_frame_are_refused(work_dir):
+    first = pd.read_hdf(_store_path(work_dir), _FIRST_KEY)
+    _write_keys(work_dir, {_SECOND_KEY: first})
+    with pytest.raises(ValueError, match="ZENSUS100m_weights"):
+        read_weight_table(_store_path(work_dir), "ZENSUS100m")
+    with pytest.raises(ValueError, match="ZENSUS100m_weights"):
+        misfit_split(load_batch_folder(work_dir / "batch_000"), levels=("ZENSUS100m",))
+
+
+def test_staat_style_weights_with_h_id_as_index_and_column(work_dir):
+    # Real STAAT weights carry H_ID as index name AND as a column, plus seed-level columns.
+    ids = pd.Index([1, 2, 3, 4], name="H_ID")
+    staat = pd.DataFrame({
+        "STAAT": 1, "preliminary_balanced_weight": [0.4, 1.0, 2.0, 3.0],
+        "sample_weight": [0.5, 1.5, 2.0, 4.0], "H_ID": ids.to_numpy(),
+        "balanced_weight": [0.5, 1.5, 2.0, 4.0], "integer_weight": [1, 1, 2, 4]}, index=ids)
+    totals = pd.read_csv(work_dir / "batch_000" / "data" / "control_totals_ZENSUS100m.csv")
+    spec = load_batch_folder(work_dir / "batch_000").control_spec
+    controls = totals.drop(columns="ZENSUS100m").sum().to_frame().T
+    controls.columns = [c + "_target" for c in controls.columns]
+    controls = controls[spec["target"]]
+    controls.index = pd.Index([1], name="STAAT")
+    _write_keys(work_dir, {"/STAAT_weights/final_seed_balancing": staat,
+                           "/STAAT_controls/setup_data_structures": controls})
+    table = read_weight_table(_store_path(work_dir), "STAAT")
+    assert table.columns.tolist() == ["H_ID", "STAAT", "balanced_weight", "integer_weight"]
+    assert table.index.tolist() == [0, 1, 2, 3] and table["H_ID"].tolist() == [1, 2, 3, 4]
+    split = misfit_split(load_batch_folder(work_dir / "batch_000"),
+                         levels=("STAAT", "ZENSUS100m")).set_index(["level", "control"])
+    m = split.loc[("STAAT", "M_AGE_18_plus_ZENSUS100m_target")]      # incidence [1, 0, 0, 1]
+    assert [m["target_sum"], m["float_sum"], m["integer_sum"]] == pytest.approx([3.0, 4.5, 5.0])
+    assert [m["balance_wape"], m["round_wape"], m["total_wape"]] == pytest.approx([0.5, 1 / 6, 2 / 3])
+
+
+def test_weights_of_a_household_missing_from_the_incidence_are_refused(work_dir):
+    weights = pd.read_hdf(_store_path(work_dir), _FIRST_KEY)
+    weights.loc[0, "H_ID"] = 99
+    _write_keys(work_dir, {_FIRST_KEY: weights})
+    with pytest.raises(ValueError, match="99"):
+        misfit_split(load_batch_folder(work_dir / "batch_000"), levels=("ZENSUS100m",))
