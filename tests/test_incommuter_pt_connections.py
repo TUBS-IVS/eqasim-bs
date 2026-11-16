@@ -308,7 +308,9 @@ def test_pt_check_passes_the_latest_arrival_bound_and_its_label_to_the_connectio
     from braunschweig.synthesis import incommuters
 
     monkeypatch.setattr(schedule_module, "read_schedule", lambda path: type("Schedule", (), {"stops": {"a": None}})())
-    monkeypatch.setattr(connections, "route_batch", lambda *args, **kwargs: (None, None))
+    # the stages wrap route_batch in the prefetch cache (ADR-0196), which needs real (empty) frames back
+    monkeypatch.setattr(connections, "route_batch",
+                        lambda *args, **kwargs: (pd.DataFrame({"identifier": []}), pd.DataFrame({"identifier": []})))
     seen = []
     monkeypatch.setattr(connections, "connection_mask", lambda trips, legs, **kwargs: seen.append(kwargs))
     pc = incommuters._pt_connections
@@ -329,7 +331,7 @@ def test_pt_check_passes_the_latest_arrival_bound_and_its_label_to_the_connectio
         def path(self, name=None):
             return str(tmp_path)
 
-    tasks = pd.DataFrame({"identifier": ["t0"]})
+    tasks = pd.DataFrame([("t0", 0.0, 0.0, 1.0, 1.0, 3600.0)], columns=connections.TASK_COLUMNS)
     incommuters._pt_check(_Context()).probe(tasks)
     incommuters._pt_check(_Context(**{connections.KEY_LATEST_ARRIVAL_CHECK: False})).probe(tasks)
     assert [(k["latest_arrival_s"], k["label"]) for k in seen] == [(29 * H, "incommuter pt check"),

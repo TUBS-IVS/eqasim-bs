@@ -68,6 +68,7 @@ _HELPER_MODULES = (_classification, _config_keys, _gates, _modes, _no_connection
 #: Cross-package modules imported inside execute() (hashed by dotted name).
 _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon", "braunschweig.data.cordon.network",
                                  "braunschweig.data.transit.schedule", "braunschweig.data.transit.connections",
+                                 "braunschweig.data.transit.router_cache",
                                  "braunschweig.matsim.scenario.day_end_margin",
                                  "braunschweig.popsim.closure_dwell", "data.hts.hts",
                                  # Declared stages this stage runs as libraries, and their imports (ADR-0194): the
@@ -79,6 +80,9 @@ _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon", "braunschwe
 #: Router work files live in a subdirectory of the stage directory.
 ROUTER_WORK_DIR_NAME = "pt_router"
 ROUTER_CONFIG_NAME = "pt_router_config.xml"
+#: ADR-0196 decision 1: the router's work files hold the LAST call only and their row order depends on the Java
+#: threads' timing, so they are left out of the stage output hash.
+_OUTPUT_HASH_EXCLUDE = (f"{ROUTER_WORK_DIR_NAME}/router_*.csv",)
 
 #: Report entries of a run without any outside stay (the stay-level counts are all zero).
 _EMPTY_STAY_REPORT = {
@@ -552,29 +556,44 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
     ret_arr = np.where(has_return, arr_all[ret_pos], np.nan)
     pt_origin, pt_point = origin_xy[pt_rows], point_xy[pt_rows]
 
+    candidate_settings = dict(n_candidates=gate_settings["n_candidates"],
+                              max_extra_detour_m=gate_settings["max_extra_detour_m"],
+                              service_window_s=gate_settings["service_window_s"])
+
     def choose(positions, o_dep, o_arr, r_dep, r_arr):
         return _gates.choose_pt_gates(
             pt_origin[positions], pt_point[positions], o_dep, o_arr, r_dep, r_arr, has_return[positions], exits,
-            schedule, router, n_candidates=gate_settings["n_candidates"],
-            max_extra_detour_m=gate_settings["max_extra_detour_m"],
-            service_window_s=gate_settings["service_window_s"], inside_stop_ids=inside_stop_ids,
-            walk_max_m=walk_max_m, latest_arrival_s=gate_settings["latest_arrival_s"])
+            schedule, router, inside_stop_ids=inside_stop_ids, walk_max_m=walk_max_m,
+            latest_arrival_s=gate_settings["latest_arrival_s"], **candidate_settings)
 
     pt_gates = choose(np.arange(n_pt), out_dep, out_arr, ret_dep, ret_arr)
 
-    def probe(positions, shifted_out_dep, shifted_ret_dep):
+    def shifted_times(positions, shifted_out_dep, shifted_ret_dep):
         # The arrivals move by the same amount as the departures (the trip durations are unchanged).
         positions = np.asarray(positions, dtype=int)
         ret_here = has_return[positions]
-        return choose(positions, shifted_out_dep, out_arr[positions] + (shifted_out_dep - out_dep[positions]),
-                      np.where(ret_here, shifted_ret_dep, np.nan),
-                      np.where(ret_here, ret_arr[positions] + (shifted_ret_dep - ret_dep[positions]), np.nan))
+        return (positions, shifted_out_dep, out_arr[positions] + (shifted_out_dep - out_dep[positions]),
+                np.where(ret_here, shifted_ret_dep, np.nan),
+                np.where(ret_here, ret_arr[positions] + (shifted_ret_dep - ret_dep[positions]), np.nan))
+
+    def probe(positions, shifted_out_dep, shifted_ret_dep):
+        return choose(*shifted_times(positions, shifted_out_dep, shifted_ret_dep))
+
+    from braunschweig.data.transit.router_cache import PrefetchRouter  # noqa: PLC0415
+    prefetch = None
+    if isinstance(router, PrefetchRouter):
+        # ADR-0196: every router task the probe requests of one grid walk can ask, routed in one call before it.
+        def prefetch(positions, shifted_out_dep, shifted_ret_dep):
+            positions, o_dep, o_arr, r_dep, r_arr = shifted_times(positions, shifted_out_dep, shifted_ret_dep)
+            return router.prefetched(_gates.pt_gate_router_tasks(
+                pt_origin[positions], pt_point[positions], o_dep, o_arr, r_dep, r_arr, has_return[positions], exits,
+                schedule, **candidate_settings))
 
     # Only stays without a gate at the planned times can end up kept, so only they need a fallback gate.
     fallback_gates, all_stops = _stay_fallback_gates(pt_origin, pt_point, exits,
                                                      pt_gates["gate_id"].isna().to_numpy())
     out_modes, out_trips, out_gates = _no_connection.resolve_no_connection(
-        stays, trips, modes, availability, pt_gates, probe, fallback_gates=fallback_gates, **chain)
+        stays, trips, modes, availability, pt_gates, probe, fallback_gates=fallback_gates, prefetch=prefetch, **chain)
 
     actions = out_modes["no_connection_action"].to_numpy()[pt_rows]
     kept = actions == _no_connection.ACTION_KEPT
@@ -671,6 +690,7 @@ def execute(context):
         logger.info("%s disabled: trips.final passed through unchanged", _LOG_TAG)
         return {"trips": trips, "anchors": rewrite.empty_anchors(None), "report": {"enabled": False}}
     from braunschweig.data.transit.connections import latest_arrival_s, route_batch, write_router_config
+    from braunschweig.data.transit.router_cache import PrefetchRouter
     from braunschweig.data.transit.schedule import read_schedule
     from braunschweig.data.spatial.cordon import build_cordon_polygon, buffer_m_from_fraction
 
@@ -700,10 +720,11 @@ def execute(context):
     config_path = write_router_config(
         os.path.join(context.path(), ROUTER_CONFIG_NAME), network_path=os.path.join(supply_dir, supply["network_path"]),
         schedule_path=cut_schedule_path, vehicles_path=vehicles_path)
-    router = functools.partial(
+    # ADR-0196: one router start per grid walk of the no-connection chain, answered from the prefetched superset.
+    router = PrefetchRouter(functools.partial(
         route_batch, context, config_path=config_path,
         threads=int(context.config("matsim_threads") or context.config("processes")),
-        work_dir=os.path.join(context.path(), ROUTER_WORK_DIR_NAME))
+        work_dir=os.path.join(context.path(), ROUTER_WORK_DIR_NAME)), label="portal pt gates")
     df_work, df_education = context.stage("synthesis.population.spatial.primary.locations")
     out = build_portal_trips(
         trips=trips, persons=context.stage(PERSONS_STAGE), df_home=df_home, df_work=df_work,

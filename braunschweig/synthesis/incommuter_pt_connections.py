@@ -34,6 +34,7 @@ resolved by a counted chain, in this order (owner decision for #488: the departu
 """
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import logging
 from collections.abc import Callable
@@ -75,6 +76,16 @@ DEFAULT_WARN_SHARE = 0.05
 #: A probe maps a task frame (``braunschweig.data.transit.connections.TASK_COLUMNS``) to a boolean Series indexed by
 #: the task identifier: is the routed trip a connection?
 Probe = Callable[[pd.DataFrame], pd.Series]
+#: A prefetch maps the superset of the tasks a search loop can ask to a context manager inside which the probe
+#: answers those tasks without a further router start (``braunschweig.data.transit.router_cache``, ADR-0196).
+Prefetch = Callable[[pd.DataFrame], contextlib.AbstractContextManager]
+
+
+def prefetch_scope(prefetch: Prefetch | None, tasks: pd.DataFrame):
+    """``prefetch(tasks)``, or a no-op context without a prefetch or without tasks."""
+    if prefetch is None or tasks.empty:
+        return contextlib.nullcontext()
+    return prefetch(tasks)
 
 
 def validate_station_candidates(value) -> int:
@@ -107,6 +118,8 @@ class PtCheck:
     warn_share: float = DEFAULT_WARN_SHARE
     #: entry stations a pt in-commuter may try in total (drawn + alternatives); see KEY_STATION_CANDIDATES.
     station_candidates: int = DEFAULT_STATION_CANDIDATES
+    #: routes the superset of a shift loop in one router call before the loop (ADR-0196); None = no prefetch.
+    prefetch: Prefetch | None = None
 
     def __post_init__(self):
         validate_station_candidates(self.station_candidates)
@@ -199,12 +212,18 @@ def _redraw_stations(probe: Probe, person_ids, positions, work_xy, depart_work_s
 
 def resolve_pt_days(*, person_ids, is_pt, home_xy, work_xy, depart_home_s, arrive_work_s, depart_work_s,
                     arrive_home_s, probe: Probe, shift_window_s: float, shift_step_s: float, bound_s: float,
-                    car_allowed: bool = True, station_candidates: dict | None = None) -> Resolution:
+                    car_allowed: bool = True, station_candidates: dict | None = None,
+                    prefetch: Prefetch | None = None) -> Resolution:
     """Check and resolve the pt days; see the module docstring. Pure apart from the probe calls.
 
     ``station_candidates`` maps an agent position to its alternative stations (:class:`StationCandidate`, in
     descending selection weight); a position without an entry (an in-ring origin, a Kreis without another station,
     or ``None`` for all) skips the station step.
+
+    ``prefetch`` (ADR-0196): before the offset loop, the tasks of EVERY day still unresolved at EVERY offset its
+    bounds allow are handed to ``prefetch`` (one router call) and the loop runs inside the returned context, so its
+    per-offset probe calls are answered from that batch. The loop and its decisions are unchanged: a day's tasks at
+    an offset do not depend on other days, so the superset holds every task the loop can ask.
     """
     person_ids = np.asarray(person_ids)
     is_pt = np.asarray(is_pt, dtype=bool)
@@ -222,20 +241,27 @@ def resolve_pt_days(*, person_ids, is_pt, home_xy, work_xy, depart_home_s, arriv
                                        0.0), person_ids, pt_positions)
         actions[pt_positions[served]] = ACTION_CONNECTION_FOUND
     unresolved = [int(i) for i in pt_positions if actions[i] is None]
-    for offset in offsets:
-        if not unresolved:
-            break
-        candidates = [i for i in unresolved
-                      if depart_home_s[i] + offset >= 0.0 and arrive_home_s[i] + offset <= bound_s]
-        if not candidates:
-            continue
-        served = _served(probe, _tasks(person_ids, candidates, home_xy, work_xy, depart_home_s, depart_work_s,
-                                       offset), person_ids, candidates)
-        for i, ok in zip(candidates, served):
-            if ok:
-                actions[i] = ACTION_DAY_SHIFTED
-                applied[i] = offset
-        unresolved = [i for i in unresolved if actions[i] is None]
+
+    def offset_candidates(positions, offset):
+        return [i for i in positions if depart_home_s[i] + offset >= 0.0 and arrive_home_s[i] + offset <= bound_s]
+
+    superset = [_tasks(person_ids, offset_candidates(unresolved, offset), home_xy, work_xy, depart_home_s,
+                       depart_work_s, offset) for offset in offsets]
+    superset = pd.concat(superset, ignore_index=True) if superset else pd.DataFrame()
+    with prefetch_scope(prefetch, superset):
+        for offset in offsets:
+            if not unresolved:
+                break
+            candidates = offset_candidates(unresolved, offset)
+            if not candidates:
+                continue
+            served = _served(probe, _tasks(person_ids, candidates, home_xy, work_xy, depart_home_s, depart_work_s,
+                                           offset), person_ids, candidates)
+            for i, ok in zip(candidates, served):
+                if ok:
+                    actions[i] = ACTION_DAY_SHIFTED
+                    applied[i] = offset
+            unresolved = [i for i in unresolved if actions[i] is None]
     stations = np.full(n, None, dtype=object)
     station_candidates = station_candidates or {}
     redraw_positions = [i for i in unresolved if station_candidates.get(i)]
@@ -290,7 +316,7 @@ def check_pt_days(pt_check: PtCheck, *, person_ids, modes, home_xy, mid_xy, depa
         arrive_work_s=arrive_mid_s, depart_work_s=depart_mid_s, arrive_home_s=arrive_home_s,
         probe=pt_check.probe if probe is None else probe, shift_window_s=pt_check.shift_window_s,
         shift_step_s=pt_check.shift_step_s, bound_s=pt_check.bound_s, car_allowed=car_allowed,
-        station_candidates=station_candidates)
+        station_candidates=station_candidates, prefetch=pt_check.prefetch)
     offset = resolution.offsets_s
     report = dict(resolution.report, **(report_extra or {}))
     log_report(report, warn_share=pt_check.warn_share, subject=subject)
