@@ -77,17 +77,18 @@ runtime improvement.
 README impact: existing installation, data acquisition and run commands remain
 applicable. Benchmark usage and cache migration are documented in the linked note.
 
-## Amendment 2026-11-16 · the fleet switch no longer has a distinct OFF path
+## Amendment 2026-11-16 · the fleet switch is retired
 
 Decision 1 and "each kernel has an executable OFF path" no longer hold for the
 fleet kernel. The per-household loop of `build_household_car_frame`
 (`braunschweig.synthesis.vehicles.cars.household`) was replaced by one vectorised
-pass (audit H, branch `perf/audit-h-cars-owner-frame`). Both values of
-`braunschweig.performance.fleet_home_lookup` (`indexed_home_lookup`) now run that
-same pass with one first-occurrence home index: they always selected the same home
-row, so the OFF value had no distinct output to preserve. The key is kept only for
-config compatibility. Retiring it needs a config edit owned by another session and
-is open.
+pass (audit H, branch `perf/audit-h-cars-owner-frame`) with one first-occurrence
+home index. Both former lookup modes always selected that same home row, so the
+OFF value had no distinct output to preserve. The owner therefore retired the
+switch: the config key `braunschweig.performance.fleet_home_lookup` is no longer
+declared by the stage nor set in `configs/base_bs.yml`, and the
+`indexed_home_lookup` parameter is removed. Older resolved configs and run
+artifacts that still carry the key stay unchanged as historical records.
 
 The output stays identical to the former loop (values, column order, dtypes, row
 order, warnings, error messages). `tests/test_household_car_frame_vectorised.py`
@@ -101,6 +102,7 @@ missing `person_id` is now refused with a clear `ValueError`. The loop failed (b
 - [Feature registry](../registry/features/performance_equivalence.yml)
 - [Run manifest](../runs/performance-equivalence-2026-09-15.yml)
 - Real synpp cache tests: `tests/test_cache_share_synpp.py`.
-- The four `tests/test_performance_*.py` kernel modules and
-  `tests/test_home_matching_arrays.py` pin OFF/ON equivalence;
+- The three switched kernels' `tests/test_performance_*.py` modules and
+  `tests/test_home_matching_arrays.py` pin OFF/ON equivalence; the fleet kernel's
+  identity with the former loop is pinned by `tests/test_household_car_frame_vectorised.py`;
   `scripts/benchmark_performance_equivalence.py` compares against original code.

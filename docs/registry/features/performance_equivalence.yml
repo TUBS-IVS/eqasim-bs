@@ -7,8 +7,8 @@ description: >
   extraction, and validate ordered trip arrays without constructing one mixed-type
   row frame per person. Preserve model choices, row order, geometry, diagnostics and
   random streams; each kernel retains its original OFF path, except the fleet
-  kernel: since the vectorised car frame both fleet_home_lookup values run the same
-  pass and the key is kept for config compatibility (ADR-0122 amendment 2026-11-16).
+  kernel, whose switch is retired since the vectorised car frame (ADR-0122
+  amendment 2026-11-16).
 stages:
 - braunschweig.synthesis.vehicles.cars.household
 - synthesis.population.spatial.home.locations
@@ -23,7 +23,6 @@ lifecycle: active
 production:
   enabled: true
   flags:
-  - braunschweig.performance.fleet_home_lookup
   - braunschweig.performance.home_coordinates
   - braunschweig.performance.plan_validation
   - braunschweig.performance.donor_matching
@@ -52,7 +51,7 @@ code_paths:
 - scripts/benchmark_performance_equivalence.py
 evidence:
   tests:
-  - tests/test_performance_fleet_lookup.py
+  - tests/test_household_car_frame_vectorised.py
   - tests/test_performance_home_coordinates.py
   - tests/test_home_matching_arrays.py
   - tests/test_performance_plan_validation.py
@@ -61,10 +60,12 @@ evidence:
   - tests/test_performance_benchmark.py
   off_path_byte_identical:
     claimed: true
-    test: tests/test_performance_fleet_lookup.py::test_indexed_home_lookup_is_exactly_equivalent_for_lookup_edge_cases
+    test: tests/test_performance_home_coordinates.py::test_typed_home_signal_projection_preserves_off_results_rng_and_report
     note: >
-      The named test pins the fleet frame; the companion kernel test modules pin
+      The named test pins the typed-home OFF path; the companion kernel test modules pin
       exact values/dtypes/order, geometry WKB, validation reports and donor draws/RNG.
+      The fleet kernel has no OFF path any more; tests/test_household_car_frame_vectorised.py
+      pins its identity with the former per-household loop.
       The benchmark CLI additionally compares original commit, OFF and ON in separate
       processes on identical fixtures. The production-size typed-home comparison also
       pins 558,279 output rows, geometry WKB, report and RNG state. This does not claim

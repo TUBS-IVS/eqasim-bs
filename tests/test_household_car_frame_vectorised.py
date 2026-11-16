@@ -254,16 +254,16 @@ def _random_population(n_households: int, seed: int, *, string_ids: bool = False
     return persons, homes
 
 
-def _run_both(persons, homes, regiostar, caplog, *, indexed_home_lookup):
+def _run_both(persons, homes, regiostar, caplog, *, reference_indexed_lookup=True):
+    """Run the reference (in the given lookup mode) and the production function."""
     caplog.clear()
     with caplog.at_level(logging.WARNING, logger=household_module.__name__):
         expected = _reference_build_household_car_frame(
-            persons, homes, regiostar, indexed_home_lookup=indexed_home_lookup)
+            persons, homes, regiostar, indexed_home_lookup=reference_indexed_lookup)
     expected_logs = [(r.name, r.levelno, r.getMessage()) for r in caplog.records]
     caplog.clear()
     with caplog.at_level(logging.WARNING, logger=household_module.__name__):
-        actual = household_module.build_household_car_frame(
-            persons, homes, regiostar, indexed_home_lookup=indexed_home_lookup)
+        actual = household_module.build_household_car_frame(persons, homes, regiostar)
     actual_logs = [(r.name, r.levelno, r.getMessage()) for r in caplog.records]
     return expected, actual, expected_logs, actual_logs
 
@@ -278,13 +278,15 @@ def _assert_identical(expected: pd.DataFrame, actual: pd.DataFrame) -> None:
         assert [type(v) for v in actual[column]] == [type(v) for v in expected[column]]
 
 
-@pytest.mark.parametrize("indexed_home_lookup", [True, False])
+@pytest.mark.parametrize("reference_indexed_lookup", [True, False])
 @pytest.mark.parametrize("n_households,seed", [(1, 1), (7, 2), (60, 3), (400, 4)])
-def test_vectorised_frame_matches_reference(n_households, seed, indexed_home_lookup,
+def test_vectorised_frame_matches_reference(n_households, seed, reference_indexed_lookup,
                                             caplog):
+    """Identical to the old loop in both of its former home-lookup modes."""
     persons, homes = _random_population(n_households, seed)
     expected, actual, expected_logs, actual_logs = _run_both(
-        persons, homes, _regiostar(), caplog, indexed_home_lookup=indexed_home_lookup)
+        persons, homes, _regiostar(), caplog,
+        reference_indexed_lookup=reference_indexed_lookup)
     _assert_identical(expected, actual)
     assert actual_logs == expected_logs
 
@@ -292,9 +294,52 @@ def test_vectorised_frame_matches_reference(n_households, seed, indexed_home_loo
 def test_vectorised_frame_matches_reference_with_string_ids(caplog):
     persons, homes = _random_population(150, 11, string_ids=True)
     expected, actual, expected_logs, actual_logs = _run_both(
-        persons, homes, _regiostar(), caplog, indexed_home_lookup=True)
+        persons, homes, _regiostar(), caplog)
     _assert_identical(expected, actual)
     assert actual_logs == expected_logs
+
+
+@pytest.mark.parametrize("reference_indexed_lookup", [True, False])
+def test_hand_built_edge_cases_match_reference_and_hand_computed_values(
+        reference_indexed_lookup, caplog):
+    """Owner tie, no-licence and no-adult fallbacks, duplicate RegioStaR AGS, and a
+    mixed int/str household id, against the reference AND hand-computed values."""
+    persons = pd.DataFrame.from_records([
+        {"household_id": 1, "person_id": 11, "age": 44, "has_license": True,
+         "number_of_cars": 0, "economic_status": "low"},
+        {"household_id": 2, "person_id": 22, "age": 50, "has_license": True,
+         "number_of_cars": 2, "economic_status": "high"},
+        {"household_id": 2, "person_id": 21, "age": 50, "has_license": True,
+         "number_of_cars": 2, "economic_status": "high"},
+        {"household_id": 3, "person_id": 31, "age": 65, "has_license": False,
+         "number_of_cars": 1, "economic_status": "medium"},
+        {"household_id": 3, "person_id": 32, "age": 60, "has_license": False,
+         "number_of_cars": 1, "economic_status": "medium"},
+        {"household_id": 4, "person_id": 42, "age": 16, "has_license": False,
+         "number_of_cars": 1, "economic_status": "very_low"},
+        {"household_id": 4, "person_id": 41, "age": 17, "has_license": False,
+         "number_of_cars": 1, "economic_status": "very_low"},
+        {"household_id": "five", "person_id": 51, "age": 30, "has_license": True,
+         "number_of_cars": 1, "economic_status": "very_high"},
+    ])
+    homes = pd.DataFrame({
+        "household_id": [1, 2, 3, 4, "five"],
+        "commune_id": ["031010000000", "031020000000", "031530000000",
+                       "031540000000", "031010000000"],
+    })
+    expected, actual, expected_logs, actual_logs = _run_both(
+        persons, homes, _regiostar(), caplog,
+        reference_indexed_lookup=reference_indexed_lookup)
+    _assert_identical(expected, actual)
+    assert actual_logs == expected_logs
+    by_household = actual.groupby("household_id", sort=False)["owner_id"].apply(list)
+    assert 1 not in set(actual["household_id"])  # 0 cars: no row
+    assert by_household[2] == [21, 22]  # age tie broken by person_id
+    assert by_household[3] == [31]  # no licensed adult: oldest adult
+    assert by_household[4] == [41]  # no adult: oldest person
+    assert by_household["five"] == [51]
+    household_two = actual.loc[actual["household_id"] == 2]
+    assert household_two["gemeinde"].tolist() == ["SALZGITTER FIRST"] * 2
 
 
 def test_random_fixture_exercises_every_edge_case(caplog):
@@ -318,7 +363,7 @@ def test_random_fixture_exercises_every_edge_case(caplog):
     adults = persons[licensed & (persons["age"] >= ADULT_AGE)]
     assert adults.duplicated(["household_id", "age"]).any()
     _, actual, _, actual_logs = _run_both(
-        persons, homes, _regiostar(), caplog, indexed_home_lookup=True)
+        persons, homes, _regiostar(), caplog)
     messages = [message for _, _, message in actual_logs]
     assert any("no licensed adult" in m for m in messages)
     assert any("no Gemeinde name" in m for m in messages)
@@ -335,7 +380,7 @@ def test_duplicate_person_id_within_household_uses_last_age(caplog):
     ])
     homes = pd.DataFrame({"household_id": [1], "commune_id": ["031010000000"]})
     expected, actual, expected_logs, actual_logs = _run_both(
-        persons, homes, _regiostar(), caplog, indexed_home_lookup=True)
+        persons, homes, _regiostar(), caplog)
     _assert_identical(expected, actual)
     assert actual["owner_age"].tolist() == [33.0, 33.0]
     assert actual_logs == expected_logs
@@ -345,7 +390,7 @@ def test_no_cars_gives_identical_empty_frame(caplog):
     persons, homes = _random_population(30, 5)
     persons["number_of_cars"] = 0
     expected, actual, expected_logs, actual_logs = _run_both(
-        persons, homes, _regiostar(), caplog, indexed_home_lookup=True)
+        persons, homes, _regiostar(), caplog)
     assert len(actual) == 0
     _assert_identical(expected, actual)
     assert actual_logs == expected_logs == []
@@ -362,13 +407,13 @@ def test_integer_ids_in_object_column_infer_like_reference(caplog):
     homes = pd.DataFrame({"household_id": [1, "zero"],
                           "commune_id": ["031010000000", "031550000000"]})
     expected, actual, expected_logs, actual_logs = _run_both(
-        persons, homes, _regiostar(), caplog, indexed_home_lookup=True)
+        persons, homes, _regiostar(), caplog)
     _assert_identical(expected, actual)
     assert actual_logs == expected_logs
 
 
-@pytest.mark.parametrize("indexed_home_lookup", [True, False])
-def test_missing_home_raises_same_error(indexed_home_lookup):
+@pytest.mark.parametrize("reference_indexed_lookup", [True, False])
+def test_missing_home_raises_same_error(reference_indexed_lookup):
     persons, homes = _random_population(80, 6)
     cars = persons.groupby("household_id", sort=True)["number_of_cars"].max()
     car_households = cars[cars > 0].index
@@ -377,10 +422,9 @@ def test_missing_home_raises_same_error(indexed_home_lookup):
     homes = homes[~homes["household_id"].isin(dropped)]
     with pytest.raises(ValueError) as expected:
         _reference_build_household_car_frame(
-            persons, homes, _regiostar(), indexed_home_lookup=indexed_home_lookup)
+            persons, homes, _regiostar(), indexed_home_lookup=reference_indexed_lookup)
     with pytest.raises(ValueError) as actual:
-        household_module.build_household_car_frame(
-            persons, homes, _regiostar(), indexed_home_lookup=indexed_home_lookup)
+        household_module.build_household_car_frame(persons, homes, _regiostar())
     assert str(actual.value) == str(expected.value)
     assert str(car_households[1]) in str(actual.value)
 
@@ -418,7 +462,7 @@ def test_missing_household_id_rows_are_skipped_like_reference(caplog):
     homes = pd.DataFrame({"household_id": [1.0, 2.0],
                           "commune_id": ["031010000000", "031020000000"]})
     expected, actual, expected_logs, actual_logs = _run_both(
-        persons, homes, _regiostar(), caplog, indexed_home_lookup=True)
+        persons, homes, _regiostar(), caplog)
     assert len(expected) == 3
     _assert_identical(expected, actual)
     assert actual_logs == expected_logs
@@ -437,7 +481,7 @@ def test_nullable_age_with_missing_values_matches_reference(caplog):
     homes = pd.DataFrame({"household_id": [1, 2, 3],
                           "commune_id": ["031010000000"] * 3})
     expected, actual, expected_logs, actual_logs = _run_both(
-        persons, homes, _regiostar(), caplog, indexed_home_lookup=True)
+        persons, homes, _regiostar(), caplog)
     _assert_identical(expected, actual)
     assert actual_logs == expected_logs
 

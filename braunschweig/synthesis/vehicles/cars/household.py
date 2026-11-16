@@ -134,8 +134,7 @@ def _kreis_ags5_from_ars(commune_id: str) -> str:
 
 
 def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
-                              df_regiostar: pd.DataFrame, *,
-                              indexed_home_lookup: bool = True) -> pd.DataFrame:
+                              df_regiostar: pd.DataFrame) -> pd.DataFrame:
     """Build the one-row-per-household-car frame F4 consumes.
 
     Parameters
@@ -146,9 +145,6 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
     df_homes : home zones with ``household_id`` and ``commune_id`` (12-digit ARS).
     df_regiostar : RegioStaR reference with ``commune_id`` (8-digit AGS),
         ``name`` (Gemeinde name) and ``regiostar7`` (RS7 code).
-    indexed_home_lookup : kept for the ``braunschweig.performance.fleet_home_lookup``
-        config key; the value no longer changes the computation (ADR-0122
-        amendment 2026-11-16).
 
     Returns
     -------
@@ -214,9 +210,10 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
     has_cars = finite & (number_of_cars > 0)
 
     # First-occurrence home row per household. ``merge`` duplicates a home when
-    # RegioStaR has duplicate AGS rows; both lookup modes always selected the first
-    # merged row (the filtered path took ``home.iloc[0]``), so one index serves both
-    # and ``indexed_home_lookup`` no longer changes the computation.
+    # RegioStaR has duplicate AGS rows; the former per-household loop selected the
+    # first merged row in both of its lookup modes (the filtered path took
+    # ``home.iloc[0]``), so one first-occurrence index reproduces it (the retired
+    # ``fleet_home_lookup`` switch: ADR-0122 amendment 2026-11-16).
     home_first = homes.drop_duplicates("household_id", keep="first")
     home_position = pd.Index(home_first["household_id"]).get_indexer(household_ids)
 
@@ -601,10 +598,6 @@ def configure(context):
     context.config("data_path")
     context.config("random_seed")
     context.config("hbefa_segment_size_map", None)
-    # Default-ON indexed home lookup removes the repeated household-frame
-    # filtering in build_household_car_frame. False is an executable baseline
-    # path for output-equivalence checks.
-    context.config("braunschweig.performance.fleet_home_lookup", True)
     # Fleet model switches (Task F7). All flag-gated with the spec defaults; with
     # the German fleet disabled the stage reproduces the legacy one-car-per-person
     # default_car fleet byte-identically (OFF-equivalence).
@@ -692,8 +685,6 @@ def execute(context):
     data_path = context.config("data_path")
     random_seed = context.config("random_seed")
     size_map = context.config("hbefa_segment_size_map")
-    indexed_home_lookup = bool(
-        context.config("braunschweig.performance.fleet_home_lookup"))
     fleet_model_enabled = bool(context.config("fleet_model_enabled"))
     model_brands = bool(context.config("fleet_model_brands"))
     hsn_tsn_attributes = bool(context.config("fleet_hsn_tsn_attributes"))
@@ -725,9 +716,7 @@ def execute(context):
             f"(supported: {FLEET_ELECTRIC_CALIBRATIONS})"
         )
 
-    df_cars = build_household_car_frame(
-        df_persons, df_homes, df_regiostar,
-        indexed_home_lookup=indexed_home_lookup)
+    df_cars = build_household_car_frame(df_persons, df_homes, df_regiostar)
     df_cars = assign_vehicle_ids(df_cars)
 
     # T9b: grid EV tilt -- attach per-household grid_ev_share + gemeinde_grid_mean
