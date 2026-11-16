@@ -45,6 +45,7 @@ from typing import Any
 import geopandas as gpd
 import pandas as pd
 
+from braunschweig import synpp_tokens
 from braunschweig.data.bbsr import regiostar as _regiostar_stage
 
 LOGGER = logging.getLogger("braunschweig.analysis.spatial")
@@ -157,6 +158,29 @@ def _resolve_vg250_gpkg(*, strict: bool) -> Path | None:
         finally:
             temporary_path.unlink(missing_ok=True)
     return VG250_CACHE
+
+
+def vg250_archive_digest(*, strict: bool) -> str | None:
+    """Content digest (sha256) of :data:`VG250_ZIP` for the ``validate()`` token of a stage that
+    reads the archive through this module, so a replaced archive invalidates its cached result.
+
+    It hashes the exact file :func:`_resolve_vg250_gpkg` extracts (anchored at the repository
+    root, not at the run's ``data_path``) and mirrors that function's ``strict`` contract:
+
+    ``True``: a missing archive raises ``RuntimeError`` naming the path, so the run stops when the
+    stage graph is built instead of deep inside the stage.
+
+    ``False`` (stages whose ``execute`` renders without the per-Kreis parts): log a ``warning``
+    naming the path and return ``None``; the token then changes once the archive appears.
+    """
+    if strict:
+        return synpp_tokens.input_file_sha256(VG250_ZIP, "VG250 archive")
+    if not VG250_ZIP.is_file():
+        LOGGER.warning(
+            "VG250 archive not found at %s; the stage's cache token carries no archive digest "
+            "and its per-Kreis outputs will be omitted.", VG250_ZIP)
+        return None
+    return synpp_tokens.file_sha256(VG250_ZIP)
 
 
 def load_vg250_layer(layer: str, *, strict: bool = True) -> gpd.GeoDataFrame | None:

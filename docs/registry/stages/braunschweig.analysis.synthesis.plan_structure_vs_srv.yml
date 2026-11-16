@@ -37,6 +37,7 @@ pipelines:
 production: true
 inputs:
 - srv2023_plan_structure_reference
+- vg250_ew
 features:
 - home_closure_model
 - diary_plan_match

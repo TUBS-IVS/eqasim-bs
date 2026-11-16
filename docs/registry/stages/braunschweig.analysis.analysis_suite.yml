@@ -33,6 +33,8 @@ pipelines:
   popsim_open: not_used
   simple_ipf_open: not_used
 production: true
+inputs:
+- vg250_ew
 features:
 - freight_analysis_exclusion
 - plan_feasibility_check

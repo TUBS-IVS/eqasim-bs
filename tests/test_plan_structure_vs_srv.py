@@ -398,7 +398,7 @@ def _stage_context(tmp_path, data_path=DATA_PATH, subdir="analysis/plan_structur
     )
 
 
-def test_validate_hashes_the_metric_helpers_and_the_spatial_module():
+def test_validate_hashes_the_metric_helpers_and_the_spatial_module(tmp_path, monkeypatch):
     """The cache token must cover every module that shapes the comparison.
 
     synpp hashes only the stage module's own source; ``plan_structure`` and
@@ -424,6 +424,11 @@ def test_validate_hashes_the_metric_helpers_and_the_spatial_module():
     # its import closure, gated in tests/test_audit_synpp_helper_hash.py.
     assert S._DEFERRED_HELPER_MODULE_NAMES[0] == "braunschweig.analysis.spatial"
 
+    # The VG250 archive part of the token is covered by tests/test_vg250_cache_tokens.py; point it at a
+    # placeholder so this test does not depend on the gitignored archive of the checkout.
+    archive = tmp_path / "vg250.zip"
+    archive.write_bytes(b"placeholder")
+    monkeypatch.setattr(spatial, "VG250_ZIP", archive)
     token = S.validate(None)
     assert token["format"] == 2
     assert token == S.validate(None)                       # deterministic
