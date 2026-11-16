@@ -167,6 +167,7 @@ def test_portal_gates_and_both_grid_walks_are_identical_with_four_router_starts(
         back = start + rng.uniform(2.5, 9.0) * 3600.0
         rows += [(person, 0, "home", "leisure", "car", 120000.0, start, start + 7200.0, False),
                  (person, 1, "leisure", "home", "car", 120000.0, back, back + 7200.0, False)]
+    # (one stay per person: the bound against the next trip is covered by the deterministic test below)
     trips = pd.DataFrame(rows, columns=["person_id", "trip_index", "preceding_purpose", "following_purpose", "mode",
                                         "euclidean_distance", "departure_time", "arrival_time",
                                         "is_synthetic_closure"])
@@ -191,4 +192,57 @@ def test_portal_gates_and_both_grid_walks_are_identical_with_four_router_starts(
     assert actions.get("tour_to_car_passenger_lift", 0) > 0, actions
     # out + ret of the planned gate choice, then one prefetch per grid walk
     assert cached_fake.calls <= 4 < direct_fake.calls
+    assert router.fallback_tasks == 0
+
+
+def test_a_return_shift_freed_by_the_next_stays_outbound_shift_is_in_the_portal_superset():
+    """H, the grid walk's bound against the person's NEXT trip (``next_dep``), which an earlier step's shift moves:
+    stay 1's outbound moves +30 min at step 1, which frees stay 0's +1 h return at step 2. A superset filtered by
+    the next trip's planned time misses that task (fallback > 0); the result must still equal direct routing."""
+    from braunschweig.synthesis.portal_trips import no_connection as nc
+    from braunschweig.synthesis.portal_trips.gates import PT_GATE_COLUMNS
+    from tests.test_portal_trips_no_connection import KW, _fallback, _gates, _modes, _stay, _trips
+
+    trips = _trips(1, [("home", "out", "pt", 30000, 31000), ("out", "home", "pt", 40000, 41000),
+                       ("home", "out", "pt", 42800, 43800), ("out", "home", "pt", 60000, 61000)])
+    stays = pd.DataFrame([_stay(1, 0, 1), _stay(1, 2, 3)])
+    availability = pd.DataFrame({"can_car": [False], "can_car_passenger": [False]},
+                                index=pd.Index([1], name="person_id"))
+
+    def answer(key):  # key = (stay position, outbound departure, return departure, 0, 0)
+        position, out_s, ret_s = key[0], key[1], key[2]
+        served = (position == 1 and out_s == 42800 + 1800) or (position == 0 and ret_s == 40000 + 3600)
+        return "walk" if served else None
+
+    def run(prefetch: bool):
+        fake = FakeRouter(STOPS, answer=answer)
+        router = PrefetchRouter(fake, label="test") if prefetch else fake
+
+        def tasks(positions, out_s, ret_s):
+            return pd.DataFrame({"identifier": [str(i) for i in range(len(positions))], "origin_x": positions,
+                                 "origin_y": out_s, "destination_x": np.nan_to_num(ret_s, nan=-1.0),
+                                 "destination_y": 0.0, "departure_time": 0.0})
+
+        def probe(positions, out_s, ret_s):
+            frame = tasks(positions, out_s, ret_s)
+            trips_rows, legs = router(frame, allow_no_route_at_all=True)
+            ok = connections.connection_mask(trips_rows, legs, inside_stop_ids=set(STOPS), walk_max_m=5000.0,
+                                             task_ids=frame["identifier"])
+            return pd.DataFrame({"gate_id": ["g" if v else None for v in ok], "x": 1.0, "y": 2.0,
+                                 "reason": "gate_found", "n_in_direction": 1, "n_served": 1, "n_connected": 1},
+                                columns=PT_GATE_COLUMNS)
+
+        out = nc.resolve_no_connection(
+            stays, trips, _modes(2), availability, _gates([None, None]), probe, fallback_gates=_fallback(2),
+            prefetch=(lambda p, o, r: router.prefetched(tasks(p, o, r), allow_no_route_at_all=True))
+            if prefetch else None, **KW)
+        return out, fake, router
+
+    direct, direct_fake, _ = run(prefetch=False)
+    cached, cached_fake, router = run(prefetch=True)
+    for left, right in zip(direct, cached):
+        pd.testing.assert_frame_equal(left, right)
+    assert direct[0]["no_connection_action"].tolist() == [nc.ACTION_DEPARTURE_SHIFTED] * 2
+    assert direct[1]["departure_time"].tolist() == [30000.0, 40000.0 + 3600.0, 42800.0 + 1800.0, 60000.0]
+    assert cached_fake.calls == 1 < direct_fake.calls == 2
     assert router.fallback_tasks == 0

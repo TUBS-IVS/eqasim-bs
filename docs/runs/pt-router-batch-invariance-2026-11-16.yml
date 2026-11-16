@@ -2,7 +2,7 @@ id: pt-router-batch-invariance-2026-11-16
 date: '2026-11-16'
 repository:
   commit: a46968a4
-  branch: claude/audit-h-pt-router-prefetch-33d59a
+  branch: fix/audit-h-pt-router-prefetch
   notes: 'No pipeline code ran. The batch pt router (RunBatchPublicTransportRouter) was started by hand six times
     on felix in a scratch directory (~/audit_h_prefetch_premise), with the eqasim jar and the router config of
     production run prod100_20261031: jar

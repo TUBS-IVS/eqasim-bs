@@ -12,8 +12,10 @@
 
 - `braunschweig.data.transit.connections.route_batch` starts the Java tool
   `RunBatchPublicTransportRouter` once per call. Every start loads network, schedule, vehicles and
-  the eqasim injector before it routes, so a call with a handful of tasks costs about as much as
-  one with thousands.
+  the eqasim injector before it routes. ASSUMPTION: this fixed load dominates the calls of the
+  search loops, so fewer, larger calls are faster. It rests on the stage timing of production run
+  prod100_20261031 taken for audit package H, which is not yet recorded in a run manifest; no
+  wall time was measured for this change.
 - Four production stages search for a timetable connection in sequential loops and called the
   router once per round: `incommuter_pt_connections.resolve_pt_days` (employee and student
   in-commuters; the employees run it once more per pt re-balancing round) once at the planned
@@ -21,8 +23,8 @@
   `outside_tour_modes.pt_connections.resolve_pt_tours` once at the planned times and once per
   offset; the portal stage once per direction for the planned gate choice
   (`gates.choose_pt_gates`) and once per direction and grid step in the two grid walks of
-  `no_connection.resolve_no_connection`. With the production shift window and step (2 h, 30 min)
-  that is up to 8 offset rounds per loop.
+  `no_connection.resolve_no_connection`. The number of rounds per loop follows from the shift
+  window and step config keys of each stage (`incommuter_pt_connections.shift_offsets_s`).
 - None of these loops draws random numbers between rounds, and the Java worker
   (`BatchPublicTransportRouter.Worker.run`) routes each task from its origin, destination and
   departure time alone (no person, no random numbers; the identifier is only copied). Routing
@@ -76,11 +78,19 @@
   read answer was never routed. Expected router starts per loop drop from one per round to two
   (planned times + superset) or three (+ station re-draw); the portal stage to four.
 - Larger batches: the superset holds tasks a round-by-round search would have skipped once an item
-  was resolved; they cost routing time but no start.
+  was resolved (up to every unresolved item at every offset); they cost routing time but no start.
+  Whether the saved starts outweigh that is the ASSUMPTION above; the next production run's
+  `[pt-router cache]` lines and stage durations measure it.
 - Exception to byte-identity: a run in which a narrowed round found no route at all used to abort
-  with "the run is broken" and now continues (decision 2). The portal stage's check that no routed
-  leg uses a stop outside the cut timetable now also sees the return tasks of candidates that miss
-  outbound; it is a wiring guard and fires on a wrongly configured router only.
+  with "the run is broken" and now continues (decision 2). Conversely, the strictly routed superset
+  of the in-commuters and the portal walks also holds tasks a walk would filter out against its
+  neighbours' current times: a run in which no superset task has a route and the walk would have
+  asked none of them now stops as broken, where it ran on before (not seen; it needs a router
+  without any route for every shifted task of a stage).
+- The portal stage's guard that no routed leg uses a stop outside the cut timetable still checks
+  the legs each round reads; the prefetched batch is not checked as a whole.
+- A fallback (a task outside the superset) changes no answer, it only costs a router start: it is
+  logged with its count and rate, but not added to the stage reports and has no threshold.
 - The `pt_rebalance` report of the in-commuters keeps counting probe calls per round
   (`router_probe_calls`, ADR-0172); with the prefetch they are no longer router starts. The router
   starts are logged by `PrefetchRouter` (`[pt-router cache]` lines, a running stage total).
