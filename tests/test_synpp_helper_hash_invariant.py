@@ -112,9 +112,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# The five first-party roots audited by #290; a synpp stage outside these is
-# not currently known to exist in this repo (see that audit's "Method" step 1).
-FIRST_PARTY_ROOTS = ("braunschweig", "data", "eqasim_common", "matsim", "synthesis")
+from scripts.audit_synpp_helper_hash import ROOTS as FIRST_PARTY_ROOTS  # one owner of the root list
 
 
 # ---------------------------------------------------------------------------
