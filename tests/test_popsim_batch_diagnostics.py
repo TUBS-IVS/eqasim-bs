@@ -1,4 +1,7 @@
 """Tests for braunschweig.analysis.popsim_batch_diagnostics (batch folder + incidence)."""
+import json
+import logging
+import shutil
 import sys
 import warnings
 from dataclasses import replace
@@ -21,6 +24,8 @@ from braunschweig.analysis.popsim_batch_diagnostics.fit import (  # noqa: E402
     control_fit, misfit_split, read_weight_table, rounding_shift)
 from braunschweig.analysis.popsim_batch_diagnostics.reuse import (  # noqa: E402
     reuse_by_zone, reuse_summary, shares_by_attribute, usage_counts, weight_class_shares)
+from braunschweig.analysis.popsim_batch_diagnostics.run import (  # noqa: E402
+    Thresholds, main, run_diagnostics)
 from braunschweig.analysis.popsim_batch_diagnostics.solver_paths import (  # noqa: E402
     solver_path_table)
 from braunschweig.popsim.control_groups import unmatched_controls  # noqa: E402
@@ -505,3 +510,137 @@ def test_duplicate_no_infeasible_label_is_warned_and_counted_per_occurrence(work
         row = solver_path_table(work_dir).set_index("level").loc["ZENSUS100m"]
     assert row["single_feasible_subzone"] == 2
     assert any("more than one" in m for m in _warnings(caplog))
+
+
+def _copy_batch(work_dir):
+    shutil.copytree(work_dir / "batch_000", work_dir / "batch_001")
+    return work_dir / "batch_001"
+
+
+def test_run_writes_all_tables_and_flags_breaches(work_dir, tmp_path):
+    _copy_batch(work_dir)                                  # same seed, same content
+    result = run_diagnostics(work_dir, tmp_path / "out", misfit=True,
+                             thresholds=Thresholds(rounding_min_target=2.0))
+    out = tmp_path / "out"
+    for name in ("reuse", "weight_class_shares", "attribute_shares", "control_coverage",
+                 "control_universe", "control_fit", "solver_paths", "misfit_split",
+                 "rounding_shift"):
+        assert (out / f"{name}.csv").is_file()
+    assert (out / "popsim_batch_diagnostics.md").is_file() and (out / "provenance.json").is_file()
+    reuse = result["tables"]["reuse"]
+    region = reuse[reuse["scope"] == "region"].iloc[0]
+    assert region["n_synthetic_households"] == 10 and region["n_distinct_used"] == 3
+    assert region["n_seed_households"] == 4               # one seed group, counted once
+    coverage = result["tables"]["control_coverage"].set_index("group")
+    assert coverage.loc["age_sex", "n_uncovered"] == 1     # not doubled by the second batch
+    raised = {(w["check"], w["subject"]) for w in result["warnings"]}
+    assert ("universe_ratio", "building_type") in raised   # targets 7 against 5 households
+    assert ("weight_class_gap", "<1") in raised            # 6.25 points short
+    assert ("sequential_fallback_rate", "ZENSUS1km") in raised
+    assert ("coverage_ratio", "tenure") not in raised      # ratio 0.8 is inside 0.5 to 2.0
+
+
+def test_run_keeps_different_seeds_apart(work_dir, tmp_path):
+    second = _copy_batch(work_dir)
+    seed = pd.read_csv(second / "data" / "seed_households.csv").iloc[1:]      # drop household 1
+    seed.to_csv(second / "data" / "seed_households.csv", index=False)
+    persons = pd.read_csv(second / "data" / "seed_persons.csv", dtype=str)
+    persons[persons["H_ID"] != "1.0"].to_csv(second / "data" / "seed_persons.csv", index=False)
+    result = run_diagnostics(work_dir, tmp_path / "out")
+    reuse = result["tables"]["reuse"]
+    assert sorted(reuse.loc[reuse["scope"] == "region", "n_seed_households"]) == [3, 4]
+
+
+def test_fallback_rate_uses_all_non_simultaneous_parents(work_dir, tmp_path):
+    result = run_diagnostics(work_dir, tmp_path / "out")
+    solver = pd.read_csv(tmp_path / "out" / "solver_paths.csv").set_index("level")
+    level = solver.loc["ZENSUS1km"]
+    rate = level["non_simultaneous"] / level["n_parents"]
+    warning = [w for w in result["warnings"]
+               if (w["check"], w["subject"]) == ("sequential_fallback_rate", "ZENSUS1km")][0]
+    assert warning["value"] == pytest.approx(rate)
+    assert warning["threshold"] == 0.05
+    assert "non_simultaneous" in (tmp_path / "out" / "popsim_batch_diagnostics.md").read_text(
+        encoding="utf-8")
+
+
+def test_region_geography_fit_rows_sum_controls(work_dir, tmp_path):
+    _copy_batch(work_dir)
+    fit = run_diagnostics(work_dir, tmp_path / "out")["tables"]["control_fit"]
+    per_batch = fit[(fit["scope"] == "batch") & (fit["batch"] == "batch_000")]
+    row = fit[(fit["scope"] == "region_geography") & (fit["geography"] == "ZENSUS100m")]
+    assert len(row) == 1
+    row = row.iloc[0]
+    kept = per_batch[per_batch["target_sum"] > 0]
+    assert row["abs_error"] == pytest.approx(2 * kept["abs_error"].sum())
+    assert row["target_sum"] == pytest.approx(2 * kept["target_sum"].sum())
+    assert row["wape"] == pytest.approx(kept["abs_error"].sum() / kept["target_sum"].sum())
+    region = fit[fit["scope"] == "region"].set_index("control")
+    control = per_batch.iloc[1]["control"]
+    assert region.loc[control, "target_sum"] == pytest.approx(2 * per_batch.iloc[1]["target_sum"])
+
+
+def test_seed_group_with_different_control_specs_raises(work_dir, tmp_path):
+    second = _copy_batch(work_dir)
+    path = second / "configs" / "controls.csv"
+    controls = pd.read_csv(path)
+    controls.loc[1, "importance"] = 7
+    controls.to_csv(path, index=False)
+    with pytest.raises(ValueError, match="batch_000.*batch_001"):
+        run_diagnostics(work_dir, tmp_path / "out")
+
+
+def _mid(ids):
+    return pd.DataFrame({"H_ID": ids, "BASISAUF": [1] * len(ids)})
+
+
+def test_mid_households_join_rate_is_logged_and_columns_added(work_dir, tmp_path, caplog):
+    with caplog.at_level(logging.INFO):
+        result = run_diagnostics(work_dir, tmp_path / "out", mid_households=_mid([1, 2, 3, 4]))
+    attributes = result["tables"]["attribute_shares"]
+    assert "BASISAUF" in set(attributes["attribute"])
+    assert any("100.0%" in r.getMessage() and "mid_households" in r.getMessage()
+               for r in caplog.records)
+
+
+def test_mid_households_join_below_half_raises(work_dir, tmp_path):
+    with pytest.raises(ValueError, match="mid_households"):
+        run_diagnostics(work_dir, tmp_path / "out", mid_households=_mid([1, 99, 98, 97]))
+
+
+def test_mid_households_join_below_99_percent_warns(work_dir, tmp_path, caplog):
+    with caplog.at_level(logging.WARNING):
+        run_diagnostics(work_dir, tmp_path / "out", mid_households=_mid([1, 2, 3, 98]))
+    assert any(r.levelno == logging.WARNING and "mid_households" in r.getMessage()
+               for r in caplog.records)
+
+
+def test_main_writes_files_and_exits_zero(work_dir, tmp_path):
+    out = tmp_path / "out"
+    code = main(["--work-dir", str(work_dir), "--out-dir", str(out), "--batches", "batch_000",
+                 "--misfit", "--chunk-rows", "100"])
+    assert code == 0
+    assert (out / "reuse.csv").is_file() and (out / "misfit_split.csv").is_file()
+
+
+def test_existing_non_empty_out_dir_raises(work_dir, tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "old.txt").write_text("x", encoding="utf-8")
+    with pytest.raises(FileExistsError):
+        run_diagnostics(work_dir, out)
+
+
+def test_provenance_commit_falls_back_to_environment(work_dir, tmp_path, monkeypatch):
+    from braunschweig.analysis.popsim_batch_diagnostics import run as run_module
+
+    def no_git(*args, **kwargs):
+        raise OSError("git not available")
+
+    monkeypatch.setattr(run_module.subprocess, "run", no_git)
+    monkeypatch.setenv("EQASIM_BS_COMMIT", "abc123")
+    run_diagnostics(work_dir, tmp_path / "out")
+    provenance = json.loads((tmp_path / "out" / "provenance.json").read_text(encoding="utf-8"))
+    assert provenance["repository_commit"] == "abc123"
+    assert provenance["batches"] == ["batch_000"]
+    assert provenance["thresholds"]["weight_class_gap_pp"] == 5.0
