@@ -29,7 +29,8 @@ from braunschweig.analysis.popsim_batch_diagnostics.run import (  # noqa: E402
     Thresholds, main, run_diagnostics)
 from braunschweig.analysis.popsim_batch_diagnostics.solver_paths import (  # noqa: E402
     solver_path_table)
-from braunschweig.popsim.control_groups import unmatched_controls  # noqa: E402
+from braunschweig.popsim.control_groups import (  # noqa: E402
+    CONTROL_GROUPS, group_targets, unmatched_controls)
 
 
 @pytest.fixture
@@ -116,6 +117,12 @@ def test_coverage_finds_records_no_category_counts(work_dir):
     assert "household_size" not in table.index          # no such control in this batch
 
 
+def test_usage_of_a_household_outside_the_seed_is_refused(work_dir):
+    batch = load_batch_folder(work_dir / "batch_000")
+    with pytest.raises(ValueError, match="not in the seed households.*99"):
+        coverage_table(batch, pd.Series({2: 1, 99: 1}))
+
+
 def test_universe_compares_group_targets_with_household_total(work_dir):
     batch = load_batch_folder(work_dir / "batch_000")
     table = universe_table(batch).set_index("group")
@@ -140,6 +147,48 @@ def test_every_production_control_belongs_to_exactly_one_group():
         kreis_control_names=tuple(c.name for c in kreis_attribute_control.REGISTRY))
     total = spec.loc[spec["target"].str.contains("Insgesamt_Haushalte"), "target"].iloc[0]
     assert unmatched_controls(spec, total) == []
+    # The two education families are separate partitions and both are rendered here.
+    from braunschweig.popsim.kreis_attribute_control import EDUCATION_AGE_BOUNDS
+    groups = {g.name: g for g in CONTROL_GROUPS}
+    assert "education_flag" not in groups
+    participation = group_targets(groups["education_participation"], spec, total)
+    bands = group_targets(groups["education_band"], spec, total)
+    assert len(participation) == 2 and len(bands) == 2 * len(EDUCATION_AGE_BOUNDS)
+    assert not set(participation) & set(bands)
+    assert all(t.startswith("education_participation_") for t in participation)
+
+
+def _production_spec():
+    from braunschweig.popsim import kreis_attribute_control
+    from braunschweig.popsim.stage import build_controls_df
+    return build_controls_df(
+        controls_source="catalog", seed="mid", tiers=("tier0", "tier1", "tier2", "tier3"),
+        employment_grid=True, ownership_grid=True,
+        kreis_control_names=tuple(c.name for c in kreis_attribute_control.REGISTRY))
+
+
+def test_hand_copied_universes_agree_with_their_owners():
+    from braunschweig.popsim import kreis_attribute_control
+    spec = _production_spec()
+    total = spec.loc[spec["target"].str.contains("Insgesamt_Haushalte"), "target"].iloc[0]
+    groups = {g.name: g for g in CONTROL_GROUPS}
+    registry = {c.name: c for c in kreis_attribute_control.REGISTRY}
+    # Owner 1: the registry min_age, rendered by the catalog as "& (persons.HP_ALTER >= <min_age>)".
+    for name in ("employment_status", "pt_ticket_group", "pt_ticket_group4", "work_by_employment"):
+        min_age = registry[name].min_age
+        assert min_age is not None
+        assert groups[name].universe == f"(persons.HP_ALTER >= {min_age})"
+        for target in group_targets(groups[name], spec, total):
+            expression = spec.loc[spec["target"] == target, "expression"].iloc[0]
+            assert expression.endswith(f"& (persons.HP_ALTER >= {min_age})"), target
+    # Owner 2: the catalog's employment grid; its universe is the common employed clause plus the
+    # lower age bound of the youngest band (the other bands start above it).
+    universe_clauses = groups["employed_grid"].universe.split("&")
+    expressions = [spec.loc[spec["target"] == t, "expression"].iloc[0]
+                   for t in group_targets(groups["employed_grid"], spec, total)]
+    assert len(expressions) == 10
+    assert all(universe_clauses[0] in e for e in expressions)
+    assert sum(universe_clauses[1] in e for e in expressions) == 2     # youngest band, M and F
 
 
 def _extra_tenure(target, expression):
@@ -308,6 +357,9 @@ def test_misfit_split_separates_balancing_from_rounding(work_dir, chunk_rows):
 
 def test_weight_table_is_the_same_whether_read_in_one_chunk_or_several(work_dir):
     one = read_weight_table(_store_path(work_dir), "ZENSUS100m", chunk_rows=5_000_000)
+    stored = pd.read_hdf(_store_path(work_dir), _FIRST_KEY)
+    assert len(stored) == len(one) + 1          # the fixture's all-zero row (household 5) ...
+    assert 5 not in one["H_ID"].tolist()        # ... is dropped by the reader
     several = read_weight_table(_store_path(work_dir), "ZENSUS100m", chunk_rows=3)
     assert len(one) > 3          # chunk_rows=3 really reads several chunks
     pd.testing.assert_frame_equal(several, one)
@@ -359,7 +411,8 @@ def test_default_levels_skip_levels_absent_from_the_store_and_ignore_non_targets
 @pytest.mark.parametrize("last_row_names, extra_integer", [("second", 8), ("first", 0)])
 def test_last_checkpoint_of_the_checkpoints_frame_is_read(work_dir, last_row_names, extra_integer):
     first = pd.read_hdf(_store_path(work_dir), _FIRST_KEY)
-    second = first.assign(integer_weight=first["integer_weight"] + 1)
+    kept = (first["balanced_weight"] > 0) | (first["integer_weight"] > 0)   # not the all-zero row
+    second = first.assign(integer_weight=first["integer_weight"] + kept.astype(int))
     order = ["first", "second"] if last_row_names == "second" else ["second", "first"]
     names = {"first": "sub_balancing.geography=ZENSUS100m", "second": "final"}
     _write_keys(work_dir, {_SECOND_KEY: second,
@@ -496,11 +549,24 @@ def test_unrecognised_line_is_counted_and_warned_not_raised(work_dir, caplog):
     assert any("1 unrecognised solver line(s)" in m for m in messages)
 
 
-def test_outcome_lines_without_first_attempt_are_warned(work_dir, caplog):
+def test_batch_without_any_first_attempt_is_refused_and_named(work_dir, caplog):
+    # An unparsed log must not read as "0 fallbacks": outcome lines alone, or no line at all.
+    shutil.copytree(work_dir / "batch_000", work_dir / "batch_001")
+    (work_dir / "batch_001" / "output" / "populationsim.log").write_text(
+        "nothing about the integerizer\n", encoding="utf-8")
     _write_log(work_dir, ["retry succeeded for ZENSUS1km_K1 status OPTIMAL. "])
-    with caplog.at_level("WARNING"):
+    with caplog.at_level("INFO"), pytest.raises(ValueError, match="batch_000.*batch_001"):
         solver_path_table(work_dir)
     assert any("no first attempt" in m for m in _warnings(caplog))
+    assert any("parsed 0 of 2 batches" in r.getMessage() for r in caplog.records)
+
+
+def test_one_unparsed_batch_among_parsed_ones_is_refused(work_dir):
+    shutil.copytree(work_dir / "batch_000", work_dir / "batch_001")
+    (work_dir / "batch_001" / "output" / "populationsim.log").write_text("", encoding="utf-8")
+    with pytest.raises(ValueError, match="batch_001") as error:
+        solver_path_table(work_dir)
+    assert "batch_000" not in str(error.value)
 
 
 def test_duplicate_no_infeasible_label_is_warned_and_counted_per_occurrence(work_dir, caplog):
@@ -538,6 +604,14 @@ def test_run_writes_all_tables_and_flags_breaches(work_dir, tmp_path):
     assert ("universe_ratio", "building_type/ZENSUS100m") in raised   # targets 7 against 5 households
     assert ("weight_class_gap", "<1") in raised            # 6.25 points short
     assert ("sequential_fallback_rate", "ZENSUS1km") in raised
+    # ZENSUS100m: 3 parents, 1 non-simultaneous (single feasible sub zone), 0 sequential fallbacks
+    # in every batch; the rate is non_simultaneous / n_parents, not sequential_fallback / n_parents.
+    rate_100m = [w for w in result["warnings"]
+                 if (w["check"], w["subject"]) == ("sequential_fallback_rate", "ZENSUS100m")]
+    assert [w["value"] for w in rate_100m] == pytest.approx([1 / 3])
+    assert result["tables"]["solver_paths"].set_index("level").loc[
+        "ZENSUS100m", "sequential_fallback"].sum() == 0
+    assert not [w for w in result["warnings"] if w["check"] == "coverage_multi_hit"]
     assert ("coverage_ratio", "tenure") not in raised      # ratio 0.8 is inside 0.5 to 2.0
 
 
@@ -568,6 +642,10 @@ def test_fallback_rate_uses_all_non_simultaneous_parents(work_dir, tmp_path):
                if (w["check"], w["subject"]) == ("sequential_fallback_rate", "ZENSUS1km")][0]
     assert warning["value"] == pytest.approx(rate)
     assert warning["threshold"] == 0.05
+    zensus100m = [w for w in result["warnings"]
+                  if (w["check"], w["subject"]) == ("sequential_fallback_rate", "ZENSUS100m")]
+    assert solver.loc["ZENSUS100m", "sequential_fallback"] == 0
+    assert [w["value"] for w in zensus100m] == pytest.approx([1 / 3])   # 1 of 3 non-simultaneous
     assert "non_simultaneous" in (tmp_path / "out" / "popsim_batch_diagnostics.md").read_text(
         encoding="utf-8")
 
@@ -588,6 +666,33 @@ def test_region_geography_fit_rows_sum_controls(work_dir, tmp_path):
     assert region.loc[control, "target_sum"] == pytest.approx(2 * per_batch.iloc[1]["target_sum"])
 
 
+def test_region_rows_are_ratios_of_sums_not_means_of_batch_ratios(work_dir, tmp_path):
+    second = _copy_batch(work_dir)
+    totals_file = second / "data" / "control_totals_ZENSUS100m.csv"
+    totals = pd.read_csv(totals_file)
+    counts = totals.columns.drop("ZENSUS100m")
+    totals[counts] = totals[counts] * 3                    # batch_001 apportions three times more
+    totals.to_csv(totals_file, index=False)
+    expanded_file = second / "output" / "final_expanded_household_ids.csv"
+    expanded = pd.read_csv(expanded_file)
+    expanded["H_ID"] = [1, 1, 1, 1, 1]                     # other households, 3 + 2 per cell
+    expanded["ZENSUS100m"] = ["A", "A", "A", "B", "B"]
+    expanded.to_csv(expanded_file, index=False)
+    fit = run_diagnostics(work_dir, tmp_path / "out")["tables"]["control_fit"]
+    control = "M_AGE_18_plus_ZENSUS100m_target"            # incidence [1, 0, 0, 1]; targets A 1, B 2
+    rows = fit[fit["control"] == control]
+    batch_wape = rows[rows["scope"] == "batch"].set_index("batch")["wape"]
+    # batch_000: synthetic A 2, B 1: abs error 2, target 3.  batch_001: synthetic A 3, B 2 against
+    # targets 3 and 6: abs error 0 + 4 = 4, target 9.
+    assert batch_wape["batch_000"] == pytest.approx(2 / 3)
+    assert batch_wape["batch_001"] == pytest.approx(4 / 9)
+    region = rows[rows["scope"] == "region"].iloc[0]
+    assert [region["target_sum"], region["synthetic_sum"], region["abs_error"]] == pytest.approx(
+        [12, 8, 6])
+    assert region["wape"] == pytest.approx(0.5)            # a mean of batch ratios would be 5/9
+    assert region["bias"] == pytest.approx(-1 / 3)         # a mean of batch biases would be -2/9
+
+
 def test_seed_group_with_different_control_specs_raises(work_dir, tmp_path):
     second = _copy_batch(work_dir)
     path = second / "configs" / "controls.csv"
@@ -595,6 +700,30 @@ def test_seed_group_with_different_control_specs_raises(work_dir, tmp_path):
     controls.loc[1, "importance"] = 7
     controls.to_csv(path, index=False)
     with pytest.raises(ValueError, match="batch_000.*batch_001"):
+        run_diagnostics(work_dir, tmp_path / "out")
+
+
+def test_equal_households_with_different_persons_are_different_seeds(work_dir, tmp_path):
+    second = _copy_batch(work_dir)
+    path = second / "data" / "seed_persons.csv"
+    persons = pd.read_csv(path, dtype=str)
+    persons.loc[0, "HP_ALTER"] = "31"
+    persons.to_csv(path, index=False)
+    result = run_diagnostics(work_dir, tmp_path / "out")
+    reuse = result["tables"]["reuse"]
+    assert len(reuse.loc[reuse["scope"] == "region", "seed_group"].unique()) == 2
+    provenance = json.loads((tmp_path / "out" / "provenance.json").read_text(encoding="utf-8"))
+    assert sorted(sum(provenance["seed_groups"].values(), [])) == ["batch_000", "batch_001"]
+    assert len(provenance["seed_groups"]) == 2
+
+
+def test_seed_group_with_different_settings_raises(work_dir, tmp_path):
+    second = _copy_batch(work_dir)
+    path = second / "configs" / "settings.yaml"
+    path.write_text(path.read_text(encoding="utf-8").replace(
+        "total_hh_control: HH_TOTAL_ZENSUS100m_target",
+        "total_hh_control: MieterHH_Tenure_ZENSUS100m_target"), encoding="utf-8")
+    with pytest.raises(ValueError, match="batch_000.*batch_001.*total_hh_control"):
         run_diagnostics(work_dir, tmp_path / "out")
 
 
@@ -669,6 +798,15 @@ def test_rounding_shift_warnings_name_batch_and_control(work_dir, tmp_path):
     assert subjects and all(s.startswith("batch_000/") for s in subjects)
 
 
+def test_overlapping_exhaustive_group_raises_a_coverage_multi_hit_warning(tmp_path):
+    extra = [dict(row, geography="ZENSUS100m") for row in _extra_tenure(
+        "X_Tenure_ZENSUS100m_target", "(households.H_MIETE == 1)")]
+    work = build_work_dir(tmp_path, extra_controls=extra)
+    result = run_diagnostics(work, tmp_path / "out")
+    hits = [w for w in result["warnings"] if w["check"] == "coverage_multi_hit"]
+    assert [(w["subject"], w["value"], w["threshold"]) for w in hits] == [("tenure", 2, 0)]
+
+
 def test_universe_warning_subject_names_geography(work_dir, tmp_path):
     result = run_diagnostics(work_dir, tmp_path / "out")
     raised = {w["subject"] for w in result["warnings"] if w["check"] == "universe_ratio"}
@@ -701,6 +839,22 @@ def test_cli_reads_mid_file_with_comma_separator(work_dir, tmp_path):
     attributes = pd.read_csv(tmp_path / "out" / "attribute_shares.csv")
     assert {"BASISAUF", "BLAND", "MODE", "TEILSTP"} <= set(attributes["attribute"])
     assert "EXTRA" not in set(attributes["attribute"])
+
+
+def test_missing_judged_level_in_the_split_is_refused(work_dir, tmp_path, monkeypatch):
+    from braunschweig.analysis.popsim_batch_diagnostics import run as run_module
+    real = run_module.misfit_split
+    seen = {}
+
+    def without_last_level(batch, **kwargs):
+        seen["levels"] = kwargs.get("levels")
+        split = real(batch, **kwargs)
+        return split[split["level"] != batch.geographies[-1]]
+
+    monkeypatch.setattr(run_module, "misfit_split", without_last_level)
+    with pytest.raises(ValueError, match="ZENSUS100m"):
+        run_diagnostics(work_dir, tmp_path / "out", misfit=True)
+    assert tuple(seen["levels"]) == ("STAAT", "KREIS", "ZENSUS1km", "ZENSUS100m")
 
 
 def test_provenance_commit_is_marked_dirty(work_dir, tmp_path, monkeypatch):

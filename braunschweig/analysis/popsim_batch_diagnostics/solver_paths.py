@@ -160,12 +160,15 @@ def solver_path_table(work_dir, names: Sequence[str] | None = None) -> pd.DataFr
     ``n_parents`` counts first attempts; ``non_simultaneous`` counts parents whose final
     weights did not come from a successful simultaneous solve (sequential fallback, single
     feasible sub zone, all sub zones infeasible).  A batch without a log raises
-    ``FileNotFoundError``; an unknown status or a label matching no geography raises
-    ``ValueError``.
+    ``FileNotFoundError``; an unknown status, a label matching no geography, or a batch whose
+    log yields no first attempt at any level raises ``ValueError`` (naming the batches).
     """
-    rows = []
-    for batch_dir in list_batch_folders(work_dir, names):
-        for level, row in _batch_counts(batch_dir).items():
+    rows, folders, unparsed = [], list_batch_folders(work_dir, names), []
+    for batch_dir in folders:
+        counts = _batch_counts(batch_dir)
+        if not any(row["n_parents"] for row in counts.values()):
+            unparsed.append(batch_dir.name)
+        for level, row in counts.items():
             rows.append({"batch": batch_dir.name, "level": level, **row})
             logger.info(
                 "[popsim_batch_diagnostics] solver paths %s %s: non-simultaneous %d/%d (%.1f%%), "
@@ -173,4 +176,12 @@ def solver_path_table(work_dir, names: Sequence[str] | None = None) -> pd.DataFr
                 row["non_simultaneous"], row["n_parents"],
                 100.0 * row["non_simultaneous"] / row["n_parents"] if row["n_parents"] else 0.0,
                 row["sequential_fallback"], row["infeasible_subzones"])
+    logger.info("[popsim_batch_diagnostics] solver paths: parsed %d of %d batches (a first "
+                "attempt found)", len(folders) - len(unparsed), len(folders))
+    if unparsed:
+        raise ValueError(
+            f"{len(unparsed)} of {len(folders)} batch(es) have no first attempt in "
+            f"{_LOG.as_posix()} (no '{_PREFIX} succeeded/failed for' line at any level): "
+            f"{unparsed}; an unparsed log would read as '0 fallbacks'.  Check the log "
+            "(truncated, empty, other PopulationSim version?)")
     return pd.DataFrame(rows, columns=COLUMNS)

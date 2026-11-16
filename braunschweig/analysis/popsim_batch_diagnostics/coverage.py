@@ -28,6 +28,10 @@ def _record_weights(batch: BatchFolder, table: str, usage: pd.Series):
     """Seed weight and synthetic copies per record of ``table`` (persons inherit)."""
     id_col = batch.household_id_col
     weight = batch.seed_households.set_index(id_col)[batch.weight_col]
+    unknown = usage.index.difference(weight.index)
+    if len(unknown):
+        raise ValueError(f"batch {batch.name}: usage has {len(unknown)} household id(s) not in "
+                         f"the seed households (first: {unknown[:10].tolist()})")
     copies = usage.reindex(weight.index).fillna(0)
     if table == "households":
         return weight.to_numpy(float), copies.to_numpy(float)

@@ -42,7 +42,8 @@ TOTALS_100M = {  # cell -> values in CONTROLS order
 EXPANDED = [("A", 2), ("A", 4), ("A", 4), ("B", 3), ("B", 4)]   # (ZENSUS100m, H_ID)
 # Checkpoint store, 100 m level: (cell, H_ID, balanced_weight, integer_weight)
 WEIGHTS_100M = [("A", 1, 0.4, 0), ("A", 2, 0.9, 1), ("A", 3, 0.3, 0), ("A", 4, 1.4, 2),
-                ("B", 1, 0.2, 0), ("B", 2, 0.1, 0), ("B", 3, 0.7, 1), ("B", 4, 1.0, 1)]
+                ("B", 1, 0.2, 0), ("B", 2, 0.1, 0), ("B", 3, 0.7, 1), ("B", 4, 1.0, 1),
+                ("B", 5, 0.0, 0)]   # household 5 has both weights 0: readers must drop the row
 LOG_LINES = [
     "INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for STAAT_1 status OPTIMAL. ",
     "WARNING - populationsim.integerizing.wrappers - do_simul_integerizing failed for KREIS_3153 status INFEASIBLE. ",

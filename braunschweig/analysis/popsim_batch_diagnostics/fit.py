@@ -73,7 +73,10 @@ def control_fit(batch: BatchFolder, *, max_unmatched_zone_share: float = 0.01) -
     Synthetic totals come from the expanded household ids and the household incidence, per
     zone of the control's geography.  ``abs_error`` is the sum over zones of
     ``|synthetic - target|``; ``wape = abs_error / target_sum`` and
-    ``bias = synthetic_sum / target_sum - 1`` (both NaN for ``target_sum == 0``).  A zone that
+    ``bias = synthetic_sum / target_sum - 1`` (both NaN for ``target_sum == 0``).  For a control
+    coarser than a batch (e.g. KREIS) the batch holds an apportioned target, so a ``region``
+    aggregate of these rows is an upper bound of the Kreis-level WAPE (see ``run._region_fit``).
+    A zone that
     has synthetic households but no target row counts with target 0; a zone with targets and
     no synthetic household counts with synthetic 0; both are logged.
     A geography without a ``control_totals_<geography>.csv`` raises ``FileNotFoundError``.

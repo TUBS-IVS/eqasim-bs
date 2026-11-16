@@ -30,7 +30,14 @@ class ControlGroup:
     exhaustive: bool
 
 
+# Owner: ``KreisAttributeControl.min_age`` (14 for the four groups below), rendered by
+# ``control_spec`` as "(persons.HP_ALTER >= <min_age>)"; a test ties this copy to the registry.
 _AGE14 = "(persons.HP_ALTER >= 14)"
+# ASSUMPTION (no owner): the non-exhaustive schulabschluss/beruflabschluss groups are judged
+# on persons aged 15 and over.  The controls carry no age clause; control_spec notes that the
+# MiD bildung1 code 1 mixes "no school-leaving certificate" with all children under 15, so a
+# person under 15 is not expected to fall in a certificate category.  Only the group's
+# non-exhaustive coverage numbers depend on it; it changes no control and no target.
 _AGE15 = "(persons.HP_ALTER >= 15)"
 
 CONTROL_GROUPS: tuple = (
@@ -45,7 +52,11 @@ CONTROL_GROUPS: tuple = (
     ControlGroup("leisure_participation", "persons", r"^leisure_participation_", None, True),
     ControlGroup("escort_participation", "persons", r"^escort_participation_", None, True),
     ControlGroup("work_by_employment", "persons", r"^work_by_employment_", _AGE14, True),
-    ControlGroup("education_flag", "persons", r"^education_", None, True),
+    # Two partitions: the all-ages participation flag (yes/no) and the three age bands, each
+    # with its own edu/noedu pair.  The band controls carry the age range in their own
+    # expression, so together they cover every person once (universe None).
+    ControlGroup("education_participation", "persons", r"^education_participation_", None, True),
+    ControlGroup("education_band", "persons", r"^education_\d", None, True),
     ControlGroup("schulabschluss", "persons", r"^schulabschluss_", _AGE15, False),
     ControlGroup("beruflabschluss", "persons", r"^beruflabschluss_", _AGE15, False),
     ControlGroup("employed", "persons", r"^employed_", None, False),

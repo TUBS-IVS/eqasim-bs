@@ -21,8 +21,8 @@ python -m braunschweig.analysis.popsim_batch_diagnostics.run --work-dir <dir wit
 - `--misfit` needs a kept checkpoint store `output/pipeline.h5` in every batch; a batch without one
   raises. Without it the run needs only the CSV inputs and the log.
 - `--threshold NAME=VALUE` (repeatable) overrides a `Thresholds` field; an unknown name is an
-  error. `--max-unmatched-zone-share` (default 0.01) is the share of expanded zones without a
-  target row above which `control_fit` raises (zone-id mismatch).
+  error. `--max-unmatched-zone-share` (default 0.01) is the share of zones without a target
+  row above which `control_fit` and `misfit_split` raise (zone-id mismatch).
 - Warnings never change the exit code; exceptions do. `provenance.json` records the work
   directory, batches, seed groups, thresholds, the MiD file hash, a UTC timestamp and the
   repository commit (`git rev-parse HEAD`, only when git's top level is the package's own repository, `-dirty`
@@ -31,11 +31,12 @@ python -m braunschweig.analysis.popsim_batch_diagnostics.run --work-dir <dir wit
 
 ## Seed groups
 
-Batches with the same `data/seed_households.csv` (sha256) form one seed group. Reuse, weight
+Batches with the same `data/seed_households.csv` and `data/seed_persons.csv` (sha256 of both)
+form one seed group. Reuse, weight
 shares, attribute shares and coverage are computed once per group from the group's summed usage,
 so the shared seed is not counted once per batch; they carry a `seed_group` column (first 12 hex
-characters). Batches of one group must have identical `configs/controls.csv` (`ValueError`
-otherwise). Ratios are always recomputed from sums.
+characters). Batches of one group must have identical `configs/controls.csv`, household-total control,
+weight column, household id column and geographies (`ValueError` otherwise). Ratios are always recomputed from sums.
 
 ## Tables
 
@@ -62,7 +63,9 @@ sub zones infeasible (smart rounding), or a retry that fails again. `non_simulta
 parents whose final weights did not come from the simultaneous solution (sequential, single
 feasible sub zone, all-smart-rounded). The `sequential_fallback_rate` warning uses
 `non_simultaneous / n_parents` summed over batches per level, because `sequential_fallback` alone
-misses the last two kinds. `solver_paths.csv` keeps every counter.
+misses the last two kinds. `solver_paths.csv` keeps every counter. A batch whose log has no
+first attempt at any level raises `ValueError` naming it (an unparsed log would read as "0
+fallbacks"); the number of parsed batches is logged.
 
 ## Thresholds (`Thresholds`, all warnings)
 
@@ -71,6 +74,7 @@ misses the last two kinds. `solver_paths.csv` keeps every counter.
 | `weight_class_gap_pp` | the synthetic copies over- or under-represent a weight class of the seed |
 | `coverage_ratio_low` / `_high` | records outside every category are over- or under-used (control group not exhaustive for the seed) |
 | `universe_ratio_tolerance` | group targets do not add up to the household total (inconsistent control tables) |
+| `coverage_multi_hit_max` | a record counted by two categories of an exhaustive control group (overlapping controls; value = records, threshold 0) |
 | `sequential_fallback_rate` | the simultaneous integerizer often failed at a level |
 | `rounding_shift_bound`, `rounding_min_target` | integerizing moves a control by more than the bound (only controls with at least `rounding_min_target` in target sum are judged) |
 
@@ -78,5 +82,8 @@ Warning subjects: `universe_ratio` is `<group>/<geography>`, rounding shift is `
 with several seed groups the weight-class and coverage subjects get a `<seed_group>/` prefix.
 An `unmatched_control` warning (one per control name) has NaN value and threshold by design.
 `control_fit` `region_geography` rows leave out controls whose target sum is 0 (count logged).
+For a control coarser than a batch (e.g. KREIS) the `region` and `region_geography` rows sum
+per-batch absolute errors against per-batch apportioned targets: they are an upper bound of the
+Kreis-level WAPE, because errors of opposite sign in different batches of one Kreis do not cancel.
 
 Defaults are in the dataclass; they are screening values, not scientific targets.

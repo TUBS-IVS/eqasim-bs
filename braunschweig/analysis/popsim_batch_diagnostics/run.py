@@ -3,7 +3,7 @@
 Aggregates the per-batch tables of ``batch_folder``, ``reuse``, ``coverage``, ``fit`` and
 ``solver_paths`` into one set of CSV tables, applies warning thresholds, and writes a Markdown
 summary and a provenance file.  The batches of one seed group (same ``seed_households.csv``
-fingerprint) share one seed, so seed-level tables (reuse, weight shares, attribute shares,
+and ``seed_persons.csv`` fingerprint) share one seed, so seed-level tables (reuse, weight shares, attribute shares,
 coverage) are computed once per group with the group's summed usage; the seed is never counted
 once per batch.  Ratios are always recomputed from sums, never averaged.
 
@@ -62,6 +62,7 @@ class Thresholds:
     coverage_ratio_high: float = 2.0
     universe_ratio_tolerance: float = 0.02    # |group target sum / household total - 1|
     sequential_fallback_rate: float = 0.05    # non_simultaneous / n_parents per level
+    coverage_multi_hit_max: float = 0.0       # records hit by 2+ categories of an exhaustive group
     rounding_shift_bound: float = 0.10        # |integer - float| / target per control
     rounding_min_target: float = 40.0         # controls with a smaller target sum are not judged
 
@@ -79,7 +80,7 @@ class _Warnings(list):
 class _SeedGroup:
     """Accumulator of the batches that share one seed."""
 
-    fingerprint: str
+    fingerprint: str               # sha256 over the households and the persons file
     first_batch: object            # BatchFolder without its expanded output
     usage: pd.Series
     kreis_ids: list
@@ -189,8 +190,38 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _seed_fingerprint(batch) -> str:
+    """Fingerprint of the seed: the households hash combined with the sha256 of the persons file.
+
+    Two batches with equal households but different persons are different seeds.
+    """
+    persons_hash = _sha256(batch.path / "data" / "seed_persons.csv")
+    return hashlib.sha256(f"{batch.seed_fingerprint}:{persons_hash}".encode()).hexdigest()
+
+
+def _check_group_member(group: "_SeedGroup", batch) -> None:
+    """Raise unless ``batch`` agrees with the group's first batch on everything a group shares."""
+    first = group.first_batch
+    differences = []
+    if not batch.control_spec.equals(first.control_spec):
+        differences.append("control specifications")
+    for field in ("total_hh_control", "weight_col", "household_id_col", "geographies"):
+        if getattr(batch, field) != getattr(first, field):
+            differences.append(field)
+    if differences:
+        raise ValueError(
+            f"batches {group.names[0]} and {batch.name} share one seed but their "
+            f"{', '.join(differences)} differ; they cannot be aggregated as one group")
+
+
 def _region_fit(per_batch: pd.DataFrame) -> pd.DataFrame:
-    """Per control sums over batches, then per geography sums over controls with a target."""
+    """Per control sums over batches, then per geography sums over controls with a target.
+
+    For a control whose geography is coarser than a batch (e.g. KREIS), every batch holds its
+    own apportioned target, so the ``region`` and ``region_geography`` rows sum per-batch
+    absolute errors against per-batch targets.  They are an UPPER BOUND of the Kreis-level
+    WAPE: errors of opposite sign in different batches of one Kreis do not cancel.
+    """
     sums = per_batch.groupby("control", sort=False).agg(
         geography=("geography", "first"), importance=("importance", "first"),
         target_sum=("target_sum", "sum"), synthetic_sum=("synthetic_sum", "sum"),
@@ -210,8 +241,17 @@ def _region_fit(per_batch: pd.DataFrame) -> pd.DataFrame:
     return pd.concat([sums, geography], ignore_index=True)
 
 
-def _solver_level_table(solver: pd.DataFrame) -> pd.DataFrame:
-    counters = [c for c in solver.columns if c not in ("batch", "level")]
+def _solver_level_table(solver: pd.DataFrame, batch_names: Sequence[str]) -> pd.DataFrame:
+    """Solver counters summed over batches per level; every batch must have a first attempt."""
+    if solver.empty:
+        raise ValueError("no solver path rows: no batch log has a first integerizer attempt")
+    parents = solver.groupby("batch")["n_parents"].sum().reindex(list(batch_names)).fillna(0)
+    silent = parents[parents == 0].index.tolist()
+    logger.info("%s solver paths: parsed %d of %d batches", _TAG, len(batch_names) - len(silent),
+                len(batch_names))
+    if silent:
+        raise ValueError(f"batch(es) without any first attempt in the solver log: {silent}")
+    counters = [c for c in solver.select_dtypes(include="number").columns]
     levels = solver.groupby("level", sort=False)[counters].sum().reset_index()
     levels["non_simultaneous_rate"] = _ratio(levels["non_simultaneous"], levels["n_parents"])
     return levels
@@ -229,7 +269,9 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
     the same seed fingerprint must have identical control specifications (``ValueError``).
     The sequential-fallback rate uses ``non_simultaneous / n_parents`` summed over batches per
     level: ``sequential_fallback`` alone would miss parents that ended in sequential+rounded
-    or all-smart-rounded weights.  ``mid_households_path`` is recorded in the provenance only.
+    or all-smart-rounded weights.  A batch whose log has no first integerizer attempt, or a
+    batch that differs from its seed group in control specification, household-total control,
+    weight or household id column or geographies, raises ``ValueError``.  ``mid_households_path`` is recorded in the provenance only.
     """
     work_dir, out_dir = Path(work_dir), Path(out_dir)
     _check_empty_out_dir(out_dir)
@@ -245,16 +287,14 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
         batch = load_batch_folder(folder)
         id_col = batch.household_id_col
         usage = usage_counts(batch.expanded, id_col)
-        group = groups.get(batch.seed_fingerprint)
+        fingerprint = _seed_fingerprint(batch)
+        group = groups.get(fingerprint)
         if group is None:
-            group = groups[batch.seed_fingerprint] = _SeedGroup(
-                batch.seed_fingerprint, replace(batch, expanded=batch.expanded.iloc[0:0]),
+            group = groups[fingerprint] = _SeedGroup(
+                fingerprint, replace(batch, expanded=batch.expanded.iloc[0:0]),
                 pd.Series(dtype="int64"), [], [])
         else:
-            if not batch.control_spec.equals(group.first_batch.control_spec):
-                raise ValueError(
-                    f"batches {group.names[0]} and {batch.name} share one seed but their "
-                    "control specifications differ; they cannot be aggregated as one group")
+            _check_group_member(group, batch)
         group.names.append(batch.name)
         group.usage = group.usage.add(usage, fill_value=0)
         if _KREIS_COLUMN in batch.expanded.columns:
@@ -268,10 +308,16 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
         fit_parts.append(fit)
         universe_parts.append(universe_table(batch))
         if misfit:
-            split = misfit_split(batch, chunk_rows=chunk_rows,
+            split = misfit_split(batch, levels=batch.geographies, chunk_rows=chunk_rows,
                                  max_unmatched_zone_share=max_unmatched_zone_share)
+            judged_level = batch.geographies[-1]
+            if judged_level not in set(split["level"]):
+                raise ValueError(
+                    f"batch {batch.name}: the misfit split has no rows for the judged level "
+                    f"{judged_level!r} (levels present: {sorted(set(split['level']))}); the "
+                    "rounding shift cannot be judged")
             shift = rounding_shift(
-                split, batch.total_hh_control, level=batch.geographies[-1],
+                split, batch.total_hh_control, level=judged_level,
                 min_target=thresholds.rounding_min_target, bound=thresholds.rounding_shift_bound)
             split.insert(0, "batch", batch.name)
             shift.insert(0, "batch", batch.name)
@@ -334,6 +380,10 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
         coverage.insert(0, "seed_group", label)
         coverage_parts.append(coverage)
         for item in coverage.itertuples():
+            if item.exhaustive and item.n_multi_hit > thresholds.coverage_multi_hit_max:
+                warnings.add("coverage_multi_hit", f"{prefix}{item.group}", item.n_multi_hit,
+                             thresholds.coverage_multi_hit_max)
+        for item in coverage.itertuples():
             if pd.isna(item.ratio):
                 logger.info("%s coverage ratio of group %s%s is undefined (NaN)", _TAG, prefix,
                             item.group)
@@ -368,7 +418,7 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
     fit_table = pd.concat([per_batch_fit, _region_fit(per_batch_fit)], ignore_index=True)
 
     solver = solver_path_table(work_dir, [f.name for f in folders])
-    solver_levels = _solver_level_table(solver)
+    solver_levels = _solver_level_table(solver, [f.name for f in folders])
     for item in solver_levels.itertuples():
         if item.n_parents == 0:
             logger.info("%s solver level %s has no parents; fallback rate undefined", _TAG,
