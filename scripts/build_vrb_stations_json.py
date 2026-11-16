@@ -71,7 +71,7 @@ from pathlib import Path
 import pandas as pd
 
 
-# ZGB-8 rough bounding box in WGS84 (mirrors DOWNLOAD_CHECKLIST_BS.md).
+# ZGB-8 rough bounding box in WGS84 (a rough pre-filter box for the eight ZGB Kreise; the Kreise are owned by braunschweig.political_prefix).
 ZGB_BBOX_WGS84 = (9.6, 51.4, 11.4, 52.7)  # minlon, minlat, maxlon, maxlat
 
 

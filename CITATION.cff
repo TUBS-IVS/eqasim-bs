@@ -3,8 +3,8 @@ message: "If you use eqasim-bs (the synthetic population for Großraum Braunschw
 title: "eqasim-bs — synthetic population for Großraum Braunschweig"
 version: 0.1.0-bs
 date-released: 2026-04-27
-url: "https://github.com/eqasim-org/eqasim-bs"
-license: GPL-3.0
+url: "https://github.com/TUBS-IVS/eqasim-bs"
+license: GPL-2.0-only
 type: software
 authors:
   - name: "eqasim-bs contributors"

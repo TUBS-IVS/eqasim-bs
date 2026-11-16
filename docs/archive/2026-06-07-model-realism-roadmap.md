@@ -1,5 +1,7 @@
 # Model realism roadmap (beyond MiD calibration) — 2026-06-07
 
+> Historical snapshot, not maintained. Archived 2026-11 (audit register 2026-11-11); do not read it as current state.
+
 Methodical audit of the eqasim-bs demand/supply model to find **structural and
 content improvements that make the model more realistic**, explicitly EXCLUDING
 "recalibrate against MiD" (that is covered separately). Produced by a 6-agent
