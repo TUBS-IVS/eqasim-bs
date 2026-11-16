@@ -68,8 +68,14 @@ def _controls_frame(extra_controls: Sequence[dict]) -> pd.DataFrame:
             for target, table, importance, expression in CONTROLS]
     for row in extra_controls:  # control_field defaults to the target without "_target"
         rows.append({"control_field": row["target"][: -len("_target")], **row})
-    return pd.DataFrame(rows, columns=["target", "geography", "seed_table", "importance",
-                                       "control_field", "expression"])
+    frame = pd.DataFrame(rows, columns=["target", "geography", "seed_table", "importance",
+                                        "control_field", "expression"])
+    # Clean dtypes: an int importance column and an all-str object block, so the
+    # PyTables store write does not pickle a mixed object block (PerformanceWarning).
+    frame["importance"] = frame["importance"].astype(int)
+    for column in ("target", "geography", "seed_table", "control_field", "expression"):
+        frame[column] = frame[column].astype(str)
+    return frame
 
 
 def _incidence(controls: pd.DataFrame) -> pd.DataFrame:
