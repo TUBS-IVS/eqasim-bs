@@ -1,0 +1,57 @@
+id: pt-router-batch-invariance-2026-11-16
+date: '2026-11-16'
+repository:
+  commit: a46968a4
+  branch: fix/audit-h-pt-router-prefetch
+  notes: 'No pipeline code ran. The batch pt router (RunBatchPublicTransportRouter) was started by hand six times
+    on felix in a scratch directory (~/audit_h_prefetch_premise), with the eqasim jar and the router config of
+    production run prod100_20261031: jar
+    ~/prod100_20261031/cache/matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f.cache/eqasim-java/braunschweig/target/braunschweig-2.3.1.jar
+    (sha256 3a03142be2d5b7755de42903a5e98b29bef956c2b2157652ad2523db91938e35), config = the outside-tour router
+    config of that run (outside_tour_pt_router_config.xml of cache entry
+    braunschweig.synthesis.outside_tour_modes.stage__e4615b77..., sha256
+    43505497604e644e440195b5c13202c0734ca8ddaaba6957df0d2e872f3a1423; pre-cut network and schedule of
+    matsim.scenario.supply.processed__4dce13c6...). JDK 25.0.3+9, -Xmx16G.'
+configuration:
+  base: none (hand-started Java tool)
+  overlays: []
+  notes: 'Scripts committed under docs/runs/artifacts/pt-router-batch-invariance-2026-11-16/: premise_build.py
+    builds the task sets, premise_run.sh starts the six router runs, premise_compare.py compares them.'
+sampling:
+  rate: unknown
+  scope: 'Real production router tasks: the router_tasks.csv files (last call of each stage) of
+    outside_tour_modes.stage (1600 tasks), portal_trips.stage (119), incommuters (30) and student_incommuters (40)
+    in the prod100_20261031 cache, each task also at departure -1800 s and +3600 s: 5367 tasks.'
+pipeline:
+  targets: []
+  notes: No synpp stage executed.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: 'Runs: all 5367 tasks in one batch with 16 threads; the same tasks shuffled (seed 7) and split into four
+    batches of 1341-1342 tasks with 8 threads each; one batch of 5 tasks with 8 threads.'
+environment: server
+validation:
+- metric: Router answer independent of the batch (premise of ADR-0196)
+  reference: The one-batch run of the same tasks (not an external reference)
+  result: 'Per task identifier, the trips row (all 26 columns as text) and the multiset of legs rows (all 10
+    columns as text, access and egress stop ids included) are identical between the one-batch run and each of
+    the four split batches and the 5-task batch: 0 differing trips, 0 differing legs. The one-batch run had 2087
+    trips rows (tasks with a route) and 7503 legs rows; the 5-task batch had no route for any task (identical
+    by absence).'
+  artifact: felix:~/audit_h_prefetch_premise/
+  notes: 'sha256 all.csv f217a9e71ebfdee9839e6565a844352e1d125db85e00c075fc372c2b6da74467, all.trips.csv
+    764e160975a2193757ba551078223a51e493ba2b40da269f186e01dab82347cd, all.legs.csv
+    ca2d74f0018dea4aa8069716045c822012383e37813d5da516c24c235f4d54cc. This shows that the batch composition and
+    the thread count do not change a task''s answer on this jar and config; it is no statement about the
+    connection rule or the timetable.'
+artifacts:
+- docs/runs/artifacts/pt-router-batch-invariance-2026-11-16/premise_build.py
+- docs/runs/artifacts/pt-router-batch-invariance-2026-11-16/premise_run.sh
+- docs/runs/artifacts/pt-router-batch-invariance-2026-11-16/premise_compare.py
+decisions:
+- ADR-0196
+source: Hand-started router runs on felix, 2026-11-16 (repository audit package H, items F-H)
+notes: The cut-timetable router config of the portal stage was not run; it is the same Java code on another
+  schedule file.

@@ -363,45 +363,13 @@ def _connected(router, tasks, *, inside_stop_ids, walk_max_m, latest_arrival_s=N
     return set(mask.index[mask.to_numpy()].astype(str))
 
 
-def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_s, return_departure_s,
-                    return_arrival_s, has_return, exits: gpd.GeoDataFrame, schedule, router, *,
-                    n_candidates: int, max_extra_detour_m: float, service_window_s: float, inside_stop_ids: set,
-                    walk_max_m: float, latest_arrival_s: float | None = None) -> pd.DataFrame:
-    """The pt gate of each pt stay: direction -> extra-detour cap -> served -> n smallest detours -> router.
-
-    All arguments are per pt stay (row ``i`` of the arrays is stay ``i``; coordinates metric, times in
-    seconds). Per stay (ADR-0152 decision 2, amended for #572): the directional exit stops within
-    ``max_extra_detour_m`` of the smallest directional detour are taken (``pt_gate_candidates``); of those the
-    SERVED ones are kept, i.e. a route heading toward the stay's external point departs at the stop in
-    ``[t, t + service_window_s]`` at the planned gate arrival (outbound) and, when the stay has a return leg, at
-    the planned re-entry (the outward departures near the re-entry time are a PROXY for the return service: the
-    inbound service is not read from the timetable here, the router checks it); a hub stop (a hub row in ``exits``)
-    is always served (design R10); the ``n_candidates`` served
-    stops with the smallest detour are routed exactly: the router must connect each from the in-region
-    end to the gate at the planned trip departure (outbound) and from the gate to the in-region end at
-    the re-entry (return; ``connection_mask`` rule with ``inside_stop_ids`` and ``walk_max_m``).
-    The gate arrival and the re-entry depend on the candidate and use the distance split of
-    ``timing._split_share``. The routed candidate with the smallest detour that connects wins.
-
-    The router gets ONE batch per direction (identifiers ``"<stay>:<stop_id>:out"`` / ``":ret"``). The
-    return batch holds only the candidates already connected outbound, and is not sent for
-    stays without a return leg. Result: ``PT_GATE_COLUMNS``, one row per stay, ``gate_id`` None with a
-    ``reason`` when no candidate is admissible (``no_gate_in_direction``: no directional stop;
-    ``no_gate_served``: none within the cap is served; ``no_connection``: the router connects none).
-    ``n_in_direction`` is the number of directional stops within the cap; ``n_served`` those among them served
-    in EVERY checked direction (outbound, plus return when ``has_return``), BEFORE the ``n_candidates`` cut;
-    ``n_connected`` the routed ones that also connect in every checked direction. Non-finite coordinates or
-    times raise ``ValueError`` (return times are only checked for stays with a return leg), as does a
-    ``max_extra_detour_m`` that is negative or not finite.
-
-    Logged as rates (info): the reasons (the stage surfaces a high ``no_connection`` share) and the two
-    #572 effects, the stays whose gate lies beyond the ``n_candidates`` smallest-detour directional stops
-    (rank among ALL directional stops, cap ignored) and the stays with no served stop within the cap although
-    one is served beyond it (the service of the beyond-cap stops is only evaluated for stays without a served
-    stop within the cap). Neither has a warn threshold: no share bound is defined for them. Both counts are
-    also returned in ``frame.attrs`` (``n_gate_beyond_top_n``, ``n_no_served_within_cap``) so that the stage
-    can put them in its per-run report.
-    """
+def _gate_plan(origin_xy, point_xy, outbound_departure_s, outbound_arrival_s, return_departure_s, return_arrival_s,
+               has_return, exits: gpd.GeoDataFrame, schedule, *, n_candidates: int, max_extra_detour_m: float,
+               service_window_s: float, with_diagnostics: bool = True) -> dict:
+    """Everything :func:`choose_pt_gates` decides BEFORE it asks the router: the directional stops, the served ones
+    within the cap, the ``n_candidates`` routed per stay (``routed_keys``) and the router task of a (stay, stop,
+    direction) (``task``). Pure (no router); see :func:`choose_pt_gates` for the rules and the input checks.
+    ``with_diagnostics`` also counts the #572 "served only beyond the cap" stays (``capped``)."""
     from braunschweig.synthesis.portal_trips.timing import _split_share
 
     if not (math.isfinite(max_extra_detour_m) and max_extra_detour_m >= 0.0):
@@ -480,9 +448,11 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
 
     # #572 diagnostic: stays without a served stop within the cap, checked against the stops beyond it (cheap:
     # only these stays, and only their beyond-cap stops).
-    probe = [beyond[i] if directional[i] and not served_within[i] else [] for i in range(n)]
-    _, _, served_beyond = service(probe)
-    capped = sum(1 for i in range(n) if any(served_beyond[i, s] for s in probe[i]))
+    capped = None
+    if with_diagnostics:
+        probe = [beyond[i] if directional[i] and not served_within[i] else [] for i in range(n)]
+        _, _, served_beyond = service(probe)
+        capped = sum(1 for i in range(n) if any(served_beyond[i, s] for s in probe[i]))
 
     def task(i, stop, direction):
         gx, gy = xy[stop]
@@ -491,8 +461,78 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
             return (f"{i}:{stop}:{_OUT}", ox, oy, gx, gy, float(out_dep[i]))
         return (f"{i}:{stop}:{_RET}", gx, gy, ox, oy, ret_time[i, stop])
 
-    kwargs = dict(inside_stop_ids=inside_stop_ids, walk_max_m=walk_max_m, latest_arrival_s=latest_arrival_s)
     routed_keys = [(i, s) for i in range(n) for s in routed[i]]
+    return dict(n=n, xy=xy, directional=directional, within=within, served_within=served_within, routed=routed,
+                routed_keys=routed_keys, has_return=has_return, capped=capped, task=task)
+
+
+def pt_gate_router_tasks(origin_xy, point_xy, outbound_departure_s, outbound_arrival_s, return_departure_s,
+                         return_arrival_s, has_return, exits: gpd.GeoDataFrame, schedule, *, n_candidates: int,
+                         max_extra_detour_m: float, service_window_s: float) -> pd.DataFrame:
+    """Every router task :func:`choose_pt_gates` can ask for these stays (``TASK_COLUMNS``; ADR-0196 prefetch).
+
+    The outbound task of each routed (stay, stop) and, for a stay with a return leg, its return task. The return
+    batch of :func:`choose_pt_gates` holds only the candidates connected outbound, so this is a superset of what it
+    routes; identifiers are ``<stay>:<stop>:out`` / ``:ret`` as there."""
+    from braunschweig.data.transit.connections import TASK_COLUMNS
+
+    plan = _gate_plan(origin_xy, point_xy, outbound_departure_s, outbound_arrival_s, return_departure_s,
+                      return_arrival_s, has_return, exits, schedule, n_candidates=n_candidates,
+                      max_extra_detour_m=max_extra_detour_m, service_window_s=service_window_s,
+                      with_diagnostics=False)
+    task, has_return = plan["task"], plan["has_return"]
+    rows = [task(i, s, _OUT) for i, s in plan["routed_keys"]]
+    rows += [task(i, s, _RET) for i, s in plan["routed_keys"] if has_return[i]]
+    return pd.DataFrame(rows, columns=TASK_COLUMNS)
+
+
+def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_s, return_departure_s,
+                    return_arrival_s, has_return, exits: gpd.GeoDataFrame, schedule, router, *,
+                    n_candidates: int, max_extra_detour_m: float, service_window_s: float, inside_stop_ids: set,
+                    walk_max_m: float, latest_arrival_s: float | None = None) -> pd.DataFrame:
+    """The pt gate of each pt stay: direction -> extra-detour cap -> served -> n smallest detours -> router.
+
+    All arguments are per pt stay (row ``i`` of the arrays is stay ``i``; coordinates metric, times in
+    seconds). Per stay (ADR-0152 decision 2, amended for #572): the directional exit stops within
+    ``max_extra_detour_m`` of the smallest directional detour are taken (``pt_gate_candidates``); of those the
+    SERVED ones are kept, i.e. a route heading toward the stay's external point departs at the stop in
+    ``[t, t + service_window_s]`` at the planned gate arrival (outbound) and, when the stay has a return leg, at
+    the planned re-entry (the outward departures near the re-entry time are a PROXY for the return service: the
+    inbound service is not read from the timetable here, the router checks it); a hub stop (a hub row in ``exits``)
+    is always served (design R10); the ``n_candidates`` served
+    stops with the smallest detour are routed exactly: the router must connect each from the in-region
+    end to the gate at the planned trip departure (outbound) and from the gate to the in-region end at
+    the re-entry (return; ``connection_mask`` rule with ``inside_stop_ids`` and ``walk_max_m``).
+    The gate arrival and the re-entry depend on the candidate and use the distance split of
+    ``timing._split_share``. The routed candidate with the smallest detour that connects wins.
+
+    The router gets ONE batch per direction (identifiers ``"<stay>:<stop_id>:out"`` / ``":ret"``). The
+    return batch holds only the candidates already connected outbound, and is not sent for
+    stays without a return leg. Result: ``PT_GATE_COLUMNS``, one row per stay, ``gate_id`` None with a
+    ``reason`` when no candidate is admissible (``no_gate_in_direction``: no directional stop;
+    ``no_gate_served``: none within the cap is served; ``no_connection``: the router connects none).
+    ``n_in_direction`` is the number of directional stops within the cap; ``n_served`` those among them served
+    in EVERY checked direction (outbound, plus return when ``has_return``), BEFORE the ``n_candidates`` cut;
+    ``n_connected`` the routed ones that also connect in every checked direction. Non-finite coordinates or
+    times raise ``ValueError`` (return times are only checked for stays with a return leg), as does a
+    ``max_extra_detour_m`` that is negative or not finite.
+
+    Logged as rates (info): the reasons (the stage surfaces a high ``no_connection`` share) and the two
+    #572 effects, the stays whose gate lies beyond the ``n_candidates`` smallest-detour directional stops
+    (rank among ALL directional stops, cap ignored) and the stays with no served stop within the cap although
+    one is served beyond it (the service of the beyond-cap stops is only evaluated for stays without a served
+    stop within the cap). Neither has a warn threshold: no share bound is defined for them. Both counts are
+    also returned in ``frame.attrs`` (``n_gate_beyond_top_n``, ``n_no_served_within_cap``) so that the stage
+    can put them in its per-run report.
+    """
+    plan = _gate_plan(origin_xy, point_xy, outbound_departure_s, outbound_arrival_s, return_departure_s,
+                      return_arrival_s, has_return, exits, schedule, n_candidates=n_candidates,
+                      max_extra_detour_m=max_extra_detour_m, service_window_s=service_window_s)
+    n, xy, directional, within = plan["n"], plan["xy"], plan["directional"], plan["within"]
+    served_within, routed, routed_keys = plan["served_within"], plan["routed"], plan["routed_keys"]
+    has_return, capped, task = plan["has_return"], plan["capped"], plan["task"]
+
+    kwargs = dict(inside_stop_ids=inside_stop_ids, walk_max_m=walk_max_m, latest_arrival_s=latest_arrival_s)
     out_ok = _connected(router, [task(i, s, _OUT) for i, s in routed_keys], **kwargs)
     out_pass = [(i, s) for i, s in routed_keys if f"{i}:{s}:{_OUT}" in out_ok]
     ret_pairs = [(i, s) for i, s in out_pass if has_return[i]]
