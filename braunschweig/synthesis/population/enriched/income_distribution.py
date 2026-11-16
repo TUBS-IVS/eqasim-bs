@@ -165,6 +165,13 @@ def _apply_distribution_income(df_persons, df_inkar, df_bundesland, df_raumtyp,
         combine_size_status_bracket_pmf,
     )
     from braunschweig.data.bbsr.regiostar import ars_to_ags8
+    from braunschweig.data.mid import income_by_size as _income_by_size
+    from braunschweig.data.mid import income_by_status as _income_by_status
+
+    # The module tallies also collect counts from other callers of the same functions;
+    # start from zero so the report below covers exactly this build.
+    _income_by_size.reset_fallback_rates()
+    _income_by_status.reset_fallback_rates()
 
     # The empirical income x status conditioning is the PRIMARY method; it needs
     # both status tables. When they are absent (caller passed None) the function
@@ -349,6 +356,13 @@ def _apply_distribution_income(df_persons, df_inkar, df_bundesland, df_raumtyp,
         bracket_sorted = np.sort(drawn_fb, kind="stable")
         hh_bracket[rows[hh_order]] = bracket_sorted
         n_fallback += m
+
+    # One rate line per build for the MiD income derivation fallbacks. The tallies count
+    # calls of the MiD table functions; every such call sits behind a per-build cache
+    # (size, status, overall, combined), so a unit is one distinct cell, not one
+    # household.
+    _income_by_size.report_fallback_rates()
+    _income_by_status.report_fallback_rates()
 
     # Draw a continuous EUR value within each household's bracket.
     hh_low = bracket_low[hh_bracket]

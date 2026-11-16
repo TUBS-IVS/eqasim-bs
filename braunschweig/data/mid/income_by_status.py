@@ -40,13 +40,14 @@ hard-coding percentages in Python is prohibited (see CLAUDE.md).
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Iterable
 
 import numpy as np
 import pandas as pd
 
-from braunschweig.data.mid.raumtyp_tilt import tilt_toward_region
+from braunschweig.data.mid.raumtyp_tilt import FallbackTally, tilt_toward_region
 
 # Re-use the canonical bracket + region vocabularies + the tilt-denominator pool
 # from income_by_size so the two income conditionals share one source of truth.
@@ -64,6 +65,23 @@ from braunschweig.data.mid.status_by_hhtype import (
     STATUS_CATEGORIES,
     STATUS_LABEL_TO_KEY,
 )
+
+logger = logging.getLogger(__name__)
+
+# Counts the degenerate-input branches of this module; the caller logs the rate
+# once per build via report_fallback_rates() (CLAUDE.md "Fallback transparency").
+_TALLY = FallbackTally("income_by_status", logger)
+
+
+def reset_fallback_rates() -> None:
+    """Discard the counts accumulated so far (a reporting stage calls this first)."""
+    _TALLY.reset()
+
+
+def report_fallback_rates() -> None:
+    """Log the primary/fallback rate of the cells built since the last report."""
+    _TALLY.report()
+
 
 MID_SUBDIR = os.path.join("braunschweig", "mid")
 
@@ -189,7 +207,7 @@ def _national_raumtyp_pmf(
             & (df_raumtyp["status"].astype(str) == str(status))
         ]
         base = float(sub["base_weighted"].drop_duplicates().sum())
-        if base <= 0:
+        if _TALLY.aux_check("raumtyp base cell", "zero_base_equal_weight", base <= 0):
             base = 1.0  # degenerate base -> equal weight (does not zero a region)
         acc += base * pmf
         base_total += base
@@ -211,23 +229,29 @@ def income_bracket_probabilities_by_status(
     within-NDS multiplicative tilt (see the module docstring). The returned
     vector is ordered like :data:`INCOME_BRACKET_CATEGORIES` and sums to 1.
 
-    Returns ``None`` (caller logs a FALLBACK -- no silent fallback) when the NDS
-    base cell for ``status`` is absent. With ``raumtyp_region is None`` or absent
-    from the raumtyp table, the untilted NDS base is returned.
+    Returns ``None`` when the NDS base cell for ``status`` is absent. With
+    ``raumtyp_region is None`` (failed RegioStaR-7 lookup) or a raumtyp region absent
+    from the raumtyp table the untilted NDS base is returned and counted as a FALLBACK
+    (``raumtyp_missing`` / ``untilted_base``). Each call is one
+    unit of the module tally (``None`` return, untilted-base returns and a zero
+    ``base_weighted`` replaced by equal weight are counted by branch); the caller
+    logs the rate once via :func:`report_fallback_rates`.
     """
     brackets = list(include_brackets)
+    _TALLY.unit()
     base = _bracket_pmf_for_region_status(
         df_bundesland, BUNDESLAND_NIEDERSACHSEN, status, brackets
     )
-    if base is None:
+    if _TALLY.check("nds_base_absent_none", base is None):
         return None
 
-    if raumtyp_region is None:
+    # A missing raumtyp (failed AGS-8 -> RegioStaR-7 lookup) is a missing reference.
+    if _TALLY.check("raumtyp_missing", raumtyp_region is None):
         return base.copy()
 
     region_pmf = _bracket_pmf_for_region_status(df_raumtyp, raumtyp_region, status, brackets)
     national_pmf = _national_raumtyp_pmf(df_raumtyp, status, brackets)
-    if region_pmf is None or national_pmf is None:
+    if _TALLY.check("untilted_base", region_pmf is None or national_pmf is None):
         return base.copy()
 
     return tilt_toward_region(base, region_pmf, national_pmf)
@@ -262,7 +286,7 @@ def overall_bracket_pmf(
             continue
         sub = nds[nds["status"].astype(str) == status]
         base = float(sub["base_weighted"].drop_duplicates().sum())
-        if base <= 0:
+        if _TALLY.aux_check("nds base cell", "zero_base_equal_weight", base <= 0):
             base = 1.0
         acc += base * pmf
         base_total += base
@@ -321,7 +345,8 @@ def combine_size_status_bracket_pmf(
 
     combined = size * status / overall
     total = combined.sum()
-    if total <= 0:
+    _TALLY.unit()
+    if _TALLY.check("combine_disjoint_size_only", total <= 0):
         # Both conditionals disjoint on the bracket support (degenerate); fall
         # back to the size conditional so the caller still gets a valid pmf.
         s_total = size.sum()
