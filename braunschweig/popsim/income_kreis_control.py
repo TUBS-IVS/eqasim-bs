@@ -27,6 +27,7 @@ from braunschweig.data.mid.income_by_status import (
     overall_bracket_pmf,
     combine_size_status_bracket_pmf,
 )
+from braunschweig.popsim.fallback_rates import log_fallback_rate
 from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
 # The popsim income-class vocabulary (label) + its EUR midpoints, so the re-derived
 # household_income label stays in the SAME vocabulary the donor mappers use. No
@@ -519,6 +520,15 @@ def apply_kreis_income_control(
         "open_top_pareto": open_top_pareto,
         "pareto_alpha": pareto_alpha,
     }
+    # Primary = the household's size-cell pmf exists; fallback = uniform pmf. WARNING above
+    # FALLBACK_WARN_THRESHOLD (a high rate means the cell keys do not match the tables).
+    log_fallback_rate(
+        logger,
+        "income_kreis_control.pmf",
+        pmf_diag["fallback_count"],
+        n_hh,
+        what="households with no size-cell pmf use a uniform pmf",
+    )
     logger.info("[income_kreis_control] applied: region_mean=%.0f, kreise=%d, "
                 "pmf_fallback=%.1f%%, clamped=%s",
                 region_mean, len(in_scope), 100 * pmf_diag["fallback_rate"],
