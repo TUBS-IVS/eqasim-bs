@@ -16,17 +16,29 @@ existing data structure into the file layout expected by simwrapper.app.
 python -m braunschweig.analysis.simwrapper.export `
     --output-dir <out>   `
     --sim-cache  <cache> `
-    --label      <label>
+    --label      <label> `
+    --sample-rate <rate> `
+    --out-subdir <name>
 ```
 
-`--output-dir` and `--sim-cache` are required; `--label` is optional and
-defaults to the output-directory name. `<out>` is the eqasim CSV output
+Only `--output-dir` is required. `--sim-cache` is optional: without it the export
+is synthesis-only and the MATSim-dependent tabs skip (fleet, socio and commuter
+tabs are still written). `--label` defaults to the output-directory name,
+`--sample-rate` is an optional float handed to the run record, and `--out-subdir`
+(default `simwrapper`) names the subfolder of `<out>` that receives the
+dashboard. `<out>` is the eqasim CSV output
 directory; `<cache>` is either the `<output_path>/matsim_output` archive
 written by `matsim.output` (preferred, ADR-0101) or a synpp cache folder
 containing `matsim.simulation.run__*.cache/simulation_output/`. The dashboard
-is written into `<out>/simwrapper/`.
+is written into `<out>/<out-subdir>/`.
 
 ### Dashboard tabs
+
+Up to 14 tabs; a tab without data, or one that errors, is skipped with a log
+line. The eight core tabs (`export.py`, `_REGISTRY`) are listed below; six spatial
+tabs follow (`spatial_export.py`, `_SPATIAL_REGISTRY`): fleet, spatial-demand,
+socio, behaviour, commuters, student-commuters (the last needs the live
+student_incommuters stage frames).
 
 1. Overview      -- headline KPI tiles + full KPI table
 2. Mode share    -- final all-trip shares, commute vs MiD P12_1, evolution

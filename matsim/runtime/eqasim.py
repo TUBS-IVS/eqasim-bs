@@ -39,7 +39,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 # still overrides everything.
 #
 # The fork targets Java 25 (upstream bumped maven.compiler source/target 21 -> 25);
-# ensure the build environment provides a JDK 25 (see docs/UPGRADE_SYNPP_AND_JAVA.md).
+# ensure the build environment provides a JDK 25 (see docs/archive/UPGRADE_SYNPP_AND_JAVA.md).
 DEFAULT_EQASIM_VERSION = "2.3.1"
 DEFAULT_EQASIM_BRANCH = "main"
 # Only used by the legacy upstream-clone path below, which builds upstream's bavaria

@@ -44,7 +44,7 @@ machine-variable config (e.g. an auto worker count `num_workers: 0` ->
 cross-machine reuse. `cache_share_enabled: false` makes the launcher a pure no-op for cache
 sharing: the run still goes through `scripts/run_synpp.py`, so the deterministic stage-hash
 patch (ADR-0105) stays installed, unlike a plain, unsupported `python -m synpp` run. Design:
-`docs/superpowers/specs/2026-06-22-shared-stage-cache-design.md`. Tests:
+a local, gitignored spec (not in the repo). Tests:
 `tests/test_cache_share.py`, `tests/test_cache_share_cli.py`,
 `tests/test_run_synpp_prime.py`, `tests/test_cache_share_synpp.py`.
 
@@ -65,7 +65,7 @@ on the MiD data, random seed and declared donor-construction options and helper
 sources; it is independent of controls / sampling / work_dir. A compatible
 snapshot can therefore be reused across scales. Export a completed run's stages to
 the store with `python scripts/cache_share.py export ...`; future runs prime them.
-Design: `docs/superpowers/specs/2026-06-22-tier-a-b-caching-design.md`.
+Design: a local, gitignored spec (not in the repo).
 
 **Output hashes, migration and coherence by output hash (ADR-0149, issue #468, Phase 3 and 4).**
 `scripts/migrate_cache_metadata.py` records, for every cache entry it can prove, a content hash
