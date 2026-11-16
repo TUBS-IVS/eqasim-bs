@@ -460,4 +460,10 @@ def test_stage_reports_the_tenure_table_rate_line(caplog):
     df = _make_population_with_income(n_households=50)
     with caplog.at_level(logging.INFO, logger=mod.logger.name):
         _run_tenure(df)
-    assert [r for r in caplog.records if r.getMessage().startswith("tenure_by_income: primary")]
+    lines = [r for r in caplog.records
+             if r.getMessage().startswith("tenure_by_income: primary")]
+    assert lines
+    # Every household has a raumtyp: the stage's eager fallback-matrix build must
+    # not show up as a raumtyp_missing fallback (it would WARN on every run).
+    assert "raumtyp_missing" not in lines[-1].getMessage()
+    assert lines[-1].levelno < logging.WARNING

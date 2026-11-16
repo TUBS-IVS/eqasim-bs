@@ -72,9 +72,6 @@ def _apply_housing_tenure(df_persons, df_tenure_bund, df_tenure_raum,
     )
     from braunschweig.data.bbsr.regiostar import ars_to_ags8
 
-    # Report only this build: other callers of the tenure helpers also feed the tally.
-    reset_fallback_rates()
-
     tenure_arr = np.asarray(TENURE_CATEGORIES, dtype=object)
     n_tenure = len(TENURE_CATEGORIES)
 
@@ -126,6 +123,12 @@ def _apply_housing_tenure(df_persons, df_tenure_bund, df_tenure_raum,
             "unavailable (income_by_tenure bundesland table missing Niedersachsen); "
             "cannot synthesise the tenure attribute."
         )
+    # Report only this build's per-raumtyp lookups: reset AFTER the eager fallback
+    # build above, which always asks for raumtyp None and would otherwise count one
+    # spurious raumtyp_missing unit per run. Households that really miss their
+    # raumtyp reuse the cached matrix and are counted by this stage's own
+    # primary/fallback line below, not by the table tally.
+    reset_fallback_rates()
 
     hh_tenure = np.empty(n_hh, dtype=object)
     n_primary = 0
