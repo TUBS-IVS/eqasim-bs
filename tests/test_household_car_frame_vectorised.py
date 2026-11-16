@@ -5,7 +5,9 @@ the vectorised rewrite is kept below VERBATIM (function body and its two owner
 helpers, renamed with a ``_reference`` prefix) as the reference implementation.
 Randomised inputs with a fixed seed must produce a frame identical to the
 reference in values, column order, dtypes, index and row order, and the same
-warning log lines; error cases must raise the same exception and message.
+warning log lines apart from the owner-fallback logging, which was deliberately
+replaced by per-tier rate lines (checked here as counts); error cases must raise
+the same exception and message.
 """
 
 from __future__ import annotations

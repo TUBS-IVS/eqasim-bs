@@ -91,10 +91,14 @@ declared by the stage nor set in `configs/base_bs.yml`, and the
 artifacts that still carry the key stay unchanged as historical records.
 
 The output stays identical to the former loop (values, column order, dtypes, row
-order, warnings, error messages). `tests/test_household_car_frame_vectorised.py`
-pins this against a verbatim copy of the loop. One deliberate difference: any
-missing `person_id` is now refused with a clear `ValueError`. The loop failed (bare
-`KeyError`) only when such a person became a car owner.
+order, error messages). `tests/test_household_car_frame_vectorised.py` pins this
+against a verbatim copy of the loop. Two deliberate differences, neither in the
+car frame: (1) any missing `person_id` is now refused with a clear `ValueError`;
+the loop failed (bare `KeyError`) only when such a person became a car owner.
+(2) The single owner-fallback WARNING ("assigned to the oldest adult") is replaced
+by per-tier logging (no licensed adult / no adult at all) with a primary-vs-fallback
+rate over car households and over cars (CLAUDE.md "Fallback transparency"); its
+log marker is the one the `household_fleet` feature record names.
 
 ## Evidence
 
