@@ -4,7 +4,7 @@ inventory_id: null
 provider: derived (raw input and its provider and licence are the record clc_backbone)
 vintage: unknown
 geography: Lower Saxony bounding box, 100 m raster cells
-crs: EPSG:3035
+crs: unknown
 roles:
 - derived_input
 used_by: []
@@ -29,8 +29,8 @@ licensing:
   restricted: false
   redistribution: allowed
 limitations: Read only when braunschweig.use_landuse_prior is true (default false); the stage is in no workflow
-  DAG, so no committed configuration reads the tile. Vintage and the exact reclassification are unknown. The
-  CRS is the one braunschweig.data.inspire.landuse expects (it reprojects other CRSs to EPSG:3035).
+  DAG, so no committed configuration reads the tile. Vintage, CRS and the exact reclassification are unknown;
+  braunschweig.data.inspire.landuse reprojects the tile to EPSG:3035 (or assumes EPSG:3035 when the file names no CRS).
 notes: Read by the module braunschweig.data.inspire.landuse, which has no Stage Registry record because no
   workflow DAG contains it (so used_by stays empty). The path is the default of
   braunschweig.inspire_landuse_path.

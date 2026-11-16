@@ -30,23 +30,22 @@ conda activate eqasim
 # The notebook compares results/10pct with results/25pct, so refresh BOTH rates
 # from the same workflow and code state; refreshing only one rate mixes workflows
 # and shows workflow differences as rate effects. The committed artefacts come from
-# the legacy IPF fixtures (configs/fixtures/config_local_braunschweig_10pct.yml and
-# _25pct.yml, the legacy layout of scripts/run_bs_validation.py).
+# the legacy IPF fixtures, and the validation harness can read a 10 % run only in
+# the legacy layout (rate_layout in scripts/run_bs_validation.py; there is no
+# canonical 10 % overlay), so the recipe uses the legacy fixtures for both rates.
 
-# 1. Generate / refresh the synthesis at both rates. Either the legacy fixtures, or the
-#    canonical composed config (base + scale overlay, README "Running the model"); the
-#    composed set has no committed 10 % overlay, so that route needs a local overlay
-#    setting sampling_rate / output_path for 10 %.
-python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml
+# 1. Generate / refresh the synthesis at both rates with the legacy fixtures
+python scripts/run_synpp.py configs/fixtures/config_local_braunschweig_10pct.yml
+python scripts/run_synpp.py configs/fixtures/config_local_braunschweig_25pct.yml
 
-# 2. Run the validation harness for each rate (see its --help for --layout / --out)
-python -m scripts.run_bs_validation --rate 10
-python -m scripts.run_bs_validation --rate 25
+# 2. Validate both runs; --layout legacy pins the fixture directories (with the
+#    default --layout auto, rate 25 would read the canonical popsim_mid run instead)
+python -m scripts.run_bs_validation --rate 10 --layout legacy
+python -m scripts.run_bs_validation --rate 25 --layout legacy
 
-# 3. Copy the validation outputs of each run into this folder
-#    (<output_path> = the output_path of the config used for that rate in step 1)
-Copy-Item <output_path_10pct>\validation\* braunschweig\analysis\results\10pct\ -Force
-Copy-Item <output_path_25pct>\validation\* braunschweig\analysis\results\25pct\ -Force
+# 3. Copy the validation outputs (the output_path of each fixture + \validation)
+Copy-Item eqasim-data\output_bs_10pct\validation\* braunschweig\analysis\results\10pct\ -Force
+Copy-Item eqasim-data\output_bs_25pct\validation\* braunschweig\analysis\results\25pct\ -Force
 
 # 4. Re-execute the notebook (writes outputs in-place)
 jupyter nbconvert --to notebook --execute braunschweig\analysis\population_fit.ipynb --inplace
