@@ -277,6 +277,13 @@ def _count_fine_child_band_crossings(persons, donor_pool, remapped_index):
     return int(in_split_band.sum()), int(crossed.sum())
 
 
+def _validate_prepared_pools(prepared_pools, pools, age_band_edges, passenger_key, lift_free_never):
+    """Full content check of every prepared pool against its source pool (before and after the loop);
+    ``match_person`` itself checks only the O(1) binding per call."""
+    for name, prepared in prepared_pools.items():
+        prepared.validate(pools[name], age_band_edges, passenger_key, lift_free_never)
+
+
 def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclude_rbw_legs,
                                     exclude_holidays, drop_leading_arrive_home_leg,
                                     hard_employment, fine_child_age_bands,
@@ -347,6 +354,9 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
                                       lift_free_never=lift_free_never)
             for name, pool in pools.items()
         }
+    # "Before" check of the owner's before/after rule (docs/codebase/notes/performance-equivalence.md);
+    # it cannot fail right after preparation but states the contract the after-loop check enforces.
+    _validate_prepared_pools(prepared_pools, pools, age_band_edges, passenger_key, lift_free_never)
     # Iterate in SORTED index order, not the frame's row order: this fixes the RNG draw
     # sequence independent of row order on its own, which matters here because the
     # completed-donor frame this consumes is built in a fixed order upstream
@@ -379,6 +389,7 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
         persons.at[ridx, "source_H_ID"] = sh
         persons.at[ridx, "source_P_ID"] = sp
         match_level.at[ridx] = level
+    _validate_prepared_pools(prepared_pools, pools, age_band_edges, passenger_key, lift_free_never)
     counts = reasons.value_counts().to_dict()
     n_remapped = int(reasons.isin(REASONS_REMAP).sum())
     share = n_remapped / max(len(persons), 1)

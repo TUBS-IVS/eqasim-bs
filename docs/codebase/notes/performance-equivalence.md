@@ -15,7 +15,7 @@ All switches live in `configs/base_bs.yml` and default to true.
 | `braunschweig.performance.fleet_home_lookup` | Index the first joined home row per household | Original household-by-household frame filter |
 | `braunschweig.performance.home_coordinates` | Project signals to household cells, build/match slots with arrays, and batch coordinate transforms | Original full cell loader, scalar slot/matcher kernels and scalar CRS round trip |
 | `braunschweig.performance.plan_validation` | Check trip arrays grouped at person boundaries | Original per-person validator |
-| `braunschweig.performance.donor_matching` | Prepare invariant donor features and candidates | Original feature extraction per match |
+| `braunschweig.performance.donor_matching` | Prepare invariant donor features and candidates; cache each candidate cell's sorted draw (`PreparedPersonPool.cell_choice`); check the pool content once before and after a caller's loop, not per call | Original feature extraction per match |
 | `cache_share_metadata` | Transfer coherent native synpp metadata | Original artifact-only cache copy |
 
 To disable a switch, copy the desired scale overlay outside tracked configuration
@@ -36,6 +36,14 @@ The plan-validation switch reaches both the main MiD trip stage and the home-off
 donor trip builder. The common source interface accepts it for ENTD, whose separate
 trip builder does not use `PlanValidator`. All existing validation and repair passes
 remain in place; only each validation pass's grouped checks use arrays.
+
+Prepared donor pools (`weekend_plan_match.PreparedPersonPool`): `match_person` checks per
+call only that it was handed the same pool object with the same age bands and passenger
+settings (O(1)). The O(pool) check that the pool content is unchanged
+(`PreparedPersonPool.validate`) is the caller's duty, once before and once after its loop
+of calls (owner decision 2026-11-16, audit package H: repeated per call it was a large
+share of the matching time). A pool changed between calls therefore fails the pass at the end of the
+loop, not at the next call. No caller changes its pool during the loop.
 
 Coordinate batches finish before the next cell's matching or any random fallback.
 On a batch error, deterministic scalar replay reproduces the original first input
