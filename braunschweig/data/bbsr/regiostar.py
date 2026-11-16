@@ -306,6 +306,11 @@ def validate(context):
             f"RegioStaR reference file not found: {path}\n"
             "Run scripts/download_regiostar.py to fetch it."
         )
-    vg250_sha256 = synpp_tokens.input_file_sha256(
-        _vg250_path(context), "VG250 archive (Gemeinde universe and centroids of the RegioStaR stage)")
-    return {"workbook_size": os.path.getsize(path), "vg250_sha256": vg250_sha256}
+    vg250 = _vg250_path(context)
+    if not os.path.exists(vg250):
+        raise RuntimeError(
+            f"VG250 archive not found: {vg250}; the RegioStaR stage reads the Gemeinde "
+            "universe and centroids from it."
+        )
+    return {"workbook_size": os.path.getsize(path),
+            "vg250_sha256": synpp_tokens.file_sha256(vg250)}
