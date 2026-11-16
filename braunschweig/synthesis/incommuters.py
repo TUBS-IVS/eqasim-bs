@@ -1637,24 +1637,23 @@ def validate(context):
     A deferred module that fails to import raises rather than being skipped: skipping it
     would keep the stale cached in-commuters alive exactly when the helper is broken.
 
-    Returns ``{"helpers": <token>, "vg250_sha256": <hex or None>}``. ``helpers`` is the structured
-    token of ``braunschweig.synpp_tokens.source_token``: one semantic digest per helper module
-    (docstrings, comments and formatting do not change it). ``vg250_sha256`` is the content digest
-    of the VG250-EW archive, which ``execute`` loads (``external_workplaces._load_gemeinden``) only
-    on the real-origin path, i.e. with ``cordon_enabled`` AND ``cordon_incommuter_real_origin``;
-    otherwise the archive is not touched (it may be absent) and the digest is ``None``. The
-    real-origin key is declared by ``configure`` only while the cordon is on, hence the order.
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it), plus
+    ``files``: the content digest of the VG250-EW archive keyed by its dataset id ``vg250_ew``.
+    ``execute`` loads the archive (``external_workplaces._load_gemeinden``) only on the real-origin
+    path, i.e. with ``cordon_enabled`` AND ``cordon_incommuter_real_origin``; otherwise the archive
+    is not touched (it may be absent) and the digest is ``None``. The real-origin key is declared
+    by ``configure`` only while the cordon is on, hence the order of the reads.
     """
     reads_vg250 = bool(context.config("cordon_enabled")) and bool(
         context.config("cordon_incommuter_real_origin"))
-    return {
-        "helpers": synpp_tokens.source_token(
-            _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
-            stage_label=__name__ + ".validate()"),
-        "vg250_sha256": (synpp_tokens.file_sha256(os.path.join(
-            context.config("data_path"), context.config("germany.population_path")))
-            if reads_vg250 else None),
-    }
+    token = synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
+    token["files"] = {"vg250_ew": (synpp_tokens.input_file_sha256(
+        os.path.join(context.config("data_path"), context.config("germany.population_path")),
+        "VG250 archive") if reads_vg250 else None)}
+    return token
 
 
 def configure(context):

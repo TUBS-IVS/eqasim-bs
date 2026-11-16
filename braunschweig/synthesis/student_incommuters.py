@@ -251,23 +251,22 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 def validate(context):
     """Include the shared assembly and time-repair helpers and the VG250 archive in the cache token.
 
-    Returns ``{"helpers": <token>, "vg250_sha256": <hex or None>}``. ``helpers`` is the structured
-    token of ``braunschweig.synpp_tokens.source_token``: one semantic digest per helper module
-    (docstrings, comments and formatting do not change it). ``vg250_sha256`` is the content digest
-    of the VG250-EW archive that ``_inject`` loads through ``external_workplaces._load_gemeinden``.
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it), plus
+    ``files``: the content digest of the VG250-EW archive that ``_inject`` loads through
+    ``external_workplaces._load_gemeinden``, keyed by its dataset id ``vg250_ew``.
     It is taken whenever ``cordon_enabled`` is on, not only when ``_active`` lets ``_inject`` run:
     ``_active`` warns and can raise, which validate() must not repeat, and a cordon run with the
     injection switched off caches an empty frame, so the wider condition costs nothing. With the
     cordon off the archive is not touched (it may be absent) and the digest is ``None``.
     """
-    return {
-        "helpers": synpp_tokens.source_token(
-            (), _DEFERRED_HELPER_MODULE_NAMES,
-            stage_label=__name__ + ".validate()"),
-        "vg250_sha256": (synpp_tokens.file_sha256(os.path.join(
-            context.config("data_path"), context.config("germany.population_path")))
-            if context.config("cordon_enabled") else None),
-    }
+    token = synpp_tokens.source_token(
+        (), _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
+    token["files"] = {"vg250_ew": (synpp_tokens.input_file_sha256(
+        os.path.join(context.config("data_path"), context.config("germany.population_path")),
+        "VG250 archive") if context.config("cordon_enabled") else None)}
+    return token
 
 
 def configure(context):

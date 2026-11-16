@@ -92,12 +92,9 @@ def validate(context):
         context.config("data_path"),
         context.config("germany.population_path"),
     )
-    if not os.path.exists(path):
-        raise RuntimeError(f"VG250 archive not found: {path}")
-    return {
-        # The content digest, not the size: a replaced archive of equal size must invalidate too.
-        "vg250_sha256": synpp_tokens.file_sha256(path),
-        "helpers": synpp_tokens.source_token(
-            _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
-            stage_label=__name__ + ".validate()"),
-    }
+    token = synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
+    # The content digest, not the size: a replaced archive of equal size must invalidate too.
+    token["files"] = {"vg250_ew": synpp_tokens.input_file_sha256(path, "VG250 archive")}
+    return token

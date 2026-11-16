@@ -168,11 +168,7 @@ def validate(context):
             f"Zensus 2022 100 m population parquet not found: {path}\n"
             "Run scripts/download_zensus_grid.py to fetch it."
         )
-    vg250 = os.path.join(context.config("data_path"), context.config("germany.population_path"))
-    if not os.path.exists(vg250):
-        raise RuntimeError(
-            f"VG250 archive not found: {vg250}; the Zensus grid stage reads the ZGB Kreis "
-            "polygons from it."
-        )
-    return {"population_parquet_size": os.path.getsize(path),
-            "vg250_sha256": synpp_tokens.file_sha256(vg250)}
+    vg250_sha256 = synpp_tokens.input_file_sha256(
+        os.path.join(context.config("data_path"), context.config("germany.population_path")),
+        "VG250 archive (ZGB Kreis polygons of the grid bounding box)")
+    return {"population_parquet_size": os.path.getsize(path), "vg250_sha256": vg250_sha256}

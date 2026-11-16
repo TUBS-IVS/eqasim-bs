@@ -34,19 +34,19 @@ def _vg250_path(context) -> str:
 
 
 def validate(context):
-    """Cache token: the helper modules' source (ADR-0136) plus the VG250 archive's content digest.
+    """Cache token: the structured source token of the helper modules (ADR-0136) plus ``files``, the
+    content digest of the VG250 archive keyed by its dataset id ``vg250_ew``.
 
     ``execute`` reads the archive only when ``cordon_enabled`` is on; with the cordon off the
     archive may be absent, so it is not touched and the digest is ``None``. A replaced archive
     must not serve a stale cached Gemeinde table.
     """
-    return {
-        "helpers": synpp_tokens.source_token(
-            _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
-            stage_label=__name__ + ".validate()"),
-        "vg250_sha256": (synpp_tokens.file_sha256(_vg250_path(context))
-                         if context.config("cordon_enabled") else None),
-    }
+    token = synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
+    token["files"] = {"vg250_ew": (synpp_tokens.input_file_sha256(_vg250_path(context), "VG250 archive")
+                                   if context.config("cordon_enabled") else None)}
+    return token
 
 
 def execute(context):

@@ -142,7 +142,8 @@ def _is_stage_tree(tree: ast.Module) -> bool:
     Matches the #290 audit's stage-detection rule exactly (``ast.FunctionDef``
     nodes directly in ``ast.Module.body``): that audit also checked there is no
     factory-assignment stage pattern (``configure = ...`` at module level)
-    anywhere in the five roots, so this ``def``-only rule is not a guess.
+    anywhere in ``ROOTS`` (the roots of ``scripts/audit_synpp_helper_hash.py``), so this ``def``-only
+    rule is not a guess.
     """
     names = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
     return "configure" in names and "execute" in names

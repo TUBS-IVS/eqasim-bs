@@ -111,7 +111,10 @@ stale, or say nothing at all.
 - **Data files are invisible.** The check covers Python source only. An input file a stage reads
   must be in its `validate()` by hand (a content digest via `synpp_tokens.file_sha256`, or
   `synpp_tokens.text_file_sha256` for a committed text file, which normalises CRLF so a Windows
-  and a Linux checkout give one token). No scan finds a file read that `validate()` misses.
+  and a Linux checkout give one token). No scan covers file reads in general. The one input that
+  is scanned is the VG250-EW archive: `tests/test_vg250_cache_tokens.py` checks the token of each
+  listed reader and scans the first-party `ROOTS` for stage modules that name the archive; it finds
+  only the names it looks for.
 - **Computed import names.** A module loaded through `importlib` with a name that is not in a
   helper tuple is invisible to the walk. The registry pattern is covered only because its module
   names are listed in `_DEFERRED_HELPER_MODULE_NAMES` (step 5).

@@ -37,6 +37,11 @@ def run_targets_without_module(document: dict) -> list:
     return [target for target in targets if not _module_exists(target)]
 
 
+def test_the_run_target_checks_have_configs_to_check():
+    """A moved config directory would make both globs empty and the parametrized checks vanish."""
+    assert OVERLAYS and FIXTURES
+
+
 def test_the_check_flags_a_run_target_that_exists_only_as_an_alias():
     """Positive control: the overlay's former target is an alias key whose module is gone."""
     document = {"run": ["data.census.filtered", {"braunschweig.popsim.stage": {}}],

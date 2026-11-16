@@ -15,6 +15,7 @@ import ast
 import hashlib
 import importlib
 import inspect
+import os
 import sys
 import textwrap
 
@@ -103,6 +104,20 @@ def file_sha256(path) -> str:
         for chunk in iter(lambda: handle.read(_FILE_CHUNK_BYTES), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def input_file_sha256(path, input_label: str) -> str:
+    """``file_sha256`` of a REQUIRED input file; a missing file raises ``RuntimeError``.
+
+    The one message for a missing input in a ``validate()`` token: it names the input
+    (``input_label``, e.g. ``"VG250 archive"``) and the path that was looked up, so a run that
+    lacks a download stops at DAG time with that message instead of a bare ``FileNotFoundError``
+    from deep inside a stage. It joins no path: the caller passes the one path its ``execute``
+    reads.
+    """
+    if not os.path.isfile(path):
+        raise RuntimeError(f"{input_label} not found: {path}")
+    return file_sha256(path)
 
 
 def text_file_sha256(path) -> str:

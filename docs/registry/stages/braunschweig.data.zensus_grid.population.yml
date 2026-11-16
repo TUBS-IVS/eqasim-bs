@@ -15,4 +15,5 @@ pipelines:
   simple_ipf_open: active
 production: false
 inputs:
+- vg250_ew
 - zensus2022_grid_open

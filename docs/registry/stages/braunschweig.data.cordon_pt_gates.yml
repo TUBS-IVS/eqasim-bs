@@ -16,5 +16,6 @@ pipelines:
 production: true
 inputs:
 - gtfs_feed
+- vg250_ew
 features:
 - cordon_gates
