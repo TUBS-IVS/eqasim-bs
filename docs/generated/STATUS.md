@@ -15,7 +15,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Population synthesis
 
-11 stage(s), 5 in the production DAG. Datasets: `cleancensus_kreis_controls`, `destatis_population_kreis`, `mid2023_b1`, `mid2023_bikes_by_rs7_haustyp`, `mid2023_cars_by_rs7_haustyp`, `srv2023_reference_tables`, `urbistat_gemeinde_age`, `zensus2022_age_sex_size`, `zensus2022_employed_by_age_kreis`, `zensus2022_grid_cells`, `zensus2022_households_size`, `zensus2022_households_type`
+11 stage(s), 5 in the production DAG. Datasets: `cleancensus_kreis_controls`, `destatis_population_kreis`, `mid2023_b1`, `mid2023_bikes_by_rs7_haustyp`, `mid2023_cars_by_rs7_haustyp`, `srv2023_reference_tables`, `urbistat_gemeinde_age`, `vg250_ew`, `zensus2022_age_sex_size`, `zensus2022_employed_by_age_kreis`, `zensus2022_grid_cells`, `zensus2022_households_size`, `zensus2022_households_type`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -90,7 +90,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Home locations
 
-5 stage(s), 3 in the production DAG. Datasets: `alkis_buildings`, `lod2_heights`, `zensus2022_grid_cells`, `zensus2022_grid_open`
+5 stage(s), 3 in the production DAG. Datasets: `alkis_buildings`, `lod2_heights`, `vg250_ew`, `zensus2022_grid_cells`, `zensus2022_grid_open`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -100,7 +100,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Work locations
 
-11 stage(s), 9 in the production DAG. Datasets: `ba_pendleratlas`, `building_potentials_redistribution`, `genesis_svb_workplace`, `mid2023_reference_tables`, `verbindungen`
+11 stage(s), 9 in the production DAG. Datasets: `ba_pendleratlas`, `building_potentials_redistribution`, `genesis_svb_workplace`, `mid2023_reference_tables`, `verbindungen`, `vg250_ew`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -125,7 +125,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Secondary locations
 
-10 stage(s), 9 in the production DAG. Datasets: `bosserhof_mappings`
+10 stage(s), 9 in the production DAG. Datasets: `bosserhof_mappings`, `vg250_ew`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
