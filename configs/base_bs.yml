@@ -425,7 +425,6 @@ config:
 
   # Result-preserving kernels; each false value selects its original scalar path.
   # See docs/codebase/notes/performance-equivalence.md (ADR-0122).
-  braunschweig.performance.fleet_home_lookup: true
   braunschweig.performance.home_coordinates: true
   braunschweig.performance.plan_validation: true
   braunschweig.performance.donor_matching: true
@@ -574,6 +573,10 @@ config:
   # Delete each batch's dead pipeline.h5 checkpoint store after verified completion
   # (issue #153). true is the code default; stated explicitly for traceability.
   braunschweig.population.popsim.cleanup_batch_pipeline: true
+  # Drop PopulationSim's diagnostic write_data_dictionary step from the batch settings
+  # (meaning, assumption and identity proof: KEY_WRITE_DATA_DICTIONARY in
+  # braunschweig/popsim/stage/config_keys.py). Owner decision 2026-11-16 (audit H, item I).
+  braunschweig.population.popsim.write_data_dictionary: false
   # OPTIMIZED per-control importance weights (control_spec.IMPORTANCE_PROFILES): lowered the
   # count-weighted Gesamtabweichung 3.365% -> 2.868% on batch_020. Owner decision A5, ADR-0195:
   # in the base, so every scale uses it; before, only the 100 % overlay did and 1 % / 25 % ran

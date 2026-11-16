@@ -62,7 +62,7 @@ CODE_DEFAULT_TRUE = {
     "freight_enabled": "braunschweig/matsim/simulation/prepare.py",
     "braunschweig.population.popsim.placement_income":
         "braunschweig/popsim/stage/__init__.py (ADR-0069, default ON)",
-    "fleet_consistency_v2": "braunschweig/synthesis/vehicles/cars/household.py:299",
+    "fleet_consistency_v2": "braunschweig/synthesis/vehicles/cars/household.py configure()",
     "simwrapper_export_enabled": "braunschweig/analysis/simwrapper_export.py:26",
     "braunschweig.population.popsim.leisure_participation_kreis_control":
         "braunschweig/popsim/stage/config_keys.py _KREIS_CONTROL_DEFAULT ('on', #224)",

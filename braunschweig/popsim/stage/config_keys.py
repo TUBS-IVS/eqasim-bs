@@ -78,6 +78,21 @@ KEY_SOURCE = "braunschweig.population.popsim.source"
 # RegioStaR donor stratification. Default False (configure() in braunschweig.popsim.stage):
 # the full seed is used per batch. Set True to opt into the stratified path.
 KEY_STRATIFY = "braunschweig.population.popsim.stratify_regiostar"
+# Keep (True, default) or drop (False) PopulationSim's diagnostic step
+# ``write_data_dictionary`` in the batch settings.yaml (bool). The step only writes
+# output/data_dict.csv and data_dict.txt, which nothing in this repository reads.
+# ASSUMPTION, checked on one batch: no later PopulationSim step reads the dictionary,
+# so the synthetic households/persons are byte-identical either way
+# (docs/runs/popsim-data-dictionary-identity-2026-11-16.yml; feature record
+# docs/registry/features/popsim_data_dictionary.yml). False saves its step time
+# (braunschweig.popsim.folders.resolve_batch_settings_yaml; audit package H, item I).
+# Declared volatile in configure(): flipping it never invalidates the popsim stage cache.
+# It does change the batch settings.yaml, which the per-batch input fingerprint
+# (braunschweig.popsim.batch.input_fingerprint, ADR-0193) covers: when the stage next
+# runs against an existing work_dir, the completed batches written with the other
+# setting are re-run once. With False the settings file must list the step exactly once as a block-list item,
+# else the stage raises.
+KEY_WRITE_DATA_DICTIONARY = "braunschweig.population.popsim.write_data_dictionary"
 # Member completion (decision D3, mid source only): fill member-incomplete MiD
 # donor households by mirror-household sampling, in ONE pass on the attribute
 # donor tables that feeds BOTH the PopulationSim seed and the expansion.

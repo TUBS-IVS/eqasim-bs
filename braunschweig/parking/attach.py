@@ -621,7 +621,8 @@ def attach_ev_exemption(persons: pd.DataFrame, vehicles: pd.DataFrame, enabled: 
 
     SEVERAL CARS (limitation, not silently resolved): a person can own several car vehicles (the household fleet
     gives the cars beyond the number of licensed adults round-robin to the licensed adults, and all cars of a
-    household without a licensed adult to its oldest adult: ``_assign_owners`` and ``_fallback_owners`` of
+    household without a licensed adult to its oldest adult, or to its oldest person when it has no adult:
+    ``_assign_owners`` of
     ``braunschweig.synthesis.vehicles.cars.household``) and the plans do not tie a leg to one vehicle: the
     MATSim ``vehicles`` person attribute maps the mode ``car`` to a single id, and routing resolves the car by mode.
     The rule here is therefore "ANY owned car vehicle is a BEV/PHEV", which can over-assign the exemption to a
