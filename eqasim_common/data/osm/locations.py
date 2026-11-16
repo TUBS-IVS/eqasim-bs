@@ -48,7 +48,7 @@ def report_fallback_rates(chunk_attempts, chunks_dropped, poi_total, floors_defa
     """
     chunk_rate = chunks_dropped / max(chunk_attempts, 1)
     print("[osm.locations] chunks with POIs {}/{}, without POIs of this type "
-          "(pyrosm KeyError/AttributeError) {} ({:.1f}%)".format(
+          "(pyrosm KeyError/AttributeError, None or empty result) {} ({:.1f}%)".format(
         chunk_attempts - chunks_dropped, chunk_attempts, chunks_dropped, 100 * chunk_rate))
 
     floors_rate = floors_defaulted / max(poi_total, 1)
@@ -93,9 +93,11 @@ def execute(context):
             except (AttributeError, KeyError):
                 # The municipality's POIs of this location type are dropped; counted below
                 df_selection = None
-                chunks_dropped += 1
 
             chunk_attempts += 1
+            # No POIs of this type: pyrosm raised, or returned None or an empty frame
+            if df_selection is None or len(df_selection) == 0:
+                chunks_dropped += 1
 
             if df_selection is not None and len(df_selection) > 0:
                 columns = ["geometry"] + [

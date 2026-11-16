@@ -58,11 +58,10 @@ def _apply_housing_tenure(df_persons, df_tenure_bund, df_tenure_raum,
     every member. A dedicated RNG offset (+83947) is used so all other streams are
     untouched.
 
-    Fallback transparency (CLAUDE.md): a household whose raumtyp Bayes matrix is
-    unavailable (status/tenure cell absent) OR whose raumtyp cannot be resolved
-    (missing raumtyp) falls back to the unconditional NDS
-    tenure marginal (raumtyp_region=None); the primary/fallback rate is logged and
-    stored on ``df_persons.attrs``.
+    Fallback transparency (CLAUDE.md): a household whose raumtyp tilt could not be
+    applied (a raumtyp/tenure cell absent, so the untilted NDS matrix is used) OR whose
+    raumtyp cannot be resolved (missing raumtyp, raumtyp_region=None) is counted as
+    fallback; the primary/fallback rate is logged and stored on ``df_persons.attrs``.
     """
     from braunschweig.data.mid.tenure_by_income import (
         TENURE_CATEGORIES,
@@ -106,14 +105,18 @@ def _apply_housing_tenure(df_persons, df_tenure_bund, df_tenure_raum,
     rng = np.random.RandomState(random_seed + 83947)
 
     # Per-raumtyp Bayes matrix cache: P(tenure | bracket) of shape (10, 3).
-    bayes_cache: dict[object, np.ndarray | None] = {}
+    bayes_cache: dict[object, tuple[np.ndarray | None, bool]] = {}
 
     def _bayes_for(raumtyp_key):
         if raumtyp_key not in bayes_cache:
             bayes_cache[raumtyp_key] = tenure_probabilities_given_income(
-                df_tenure_bund, df_tenure_raum, raumtyp_key
+                df_tenure_bund, df_tenure_raum, raumtyp_key, return_tilt_status=True
             )
-        return bayes_cache[raumtyp_key]
+        return bayes_cache[raumtyp_key][0]
+
+    def _tilt_applied_for(raumtyp_key):
+        _bayes_for(raumtyp_key)
+        return bayes_cache[raumtyp_key][1]
 
     # Unconditional NDS tenure marginal (raumtyp None) is the documented fallback.
     fallback_matrix = _bayes_for(None)
@@ -144,10 +147,11 @@ def _apply_housing_tenure(df_persons, df_tenure_bund, df_tenure_raum,
         rows = grp["row"].to_numpy()
         rk = raumtyp_key if raumtyp_key is not None else None
         matrix = _bayes_for(rk)
-        # A missing raumtyp (None/NaN) reuses the unconditional matrix: that is a
-        # FALLBACK (the conditional P(tenure|bracket,raumtyp) was not applied),
-        # even though _bayes_for(None) itself returns a matrix.
-        if matrix is None or pd.isna(raumtyp_key):
+        # A missing raumtyp (None/NaN) reuses the unconditional matrix, and a raumtyp
+        # whose tilt cells are absent yields the untilted NDS matrix: both are a
+        # FALLBACK (the conditional P(tenure|bracket,raumtyp) was not applied), even
+        # though _bayes_for returns a matrix. The drawn matrix is the same either way.
+        if matrix is None or pd.isna(raumtyp_key) or not _tilt_applied_for(rk):
             matrix = fallback_matrix if matrix is None else matrix
             n_fallback += len(rows)
         else:
@@ -182,7 +186,7 @@ def _apply_housing_tenure(df_persons, df_tenure_bund, df_tenure_raum,
         f"[braunschweig.enriched] {level}housing_tenure (completeness attribute, "
         f"not consumed by the simulation): MiD Bayes P(tenure|bracket,raumtyp) "
         f"primary {n_primary}/{n_hh} households ({1 - fallback_rate:.2%}), fallback "
-        f"(unconditional NDS tenure marginal; raumtyp cell absent or raumtyp missing) {n_fallback} "
+        f"(untilted NDS tenure marginal; raumtyp tilt cell absent or raumtyp missing) {n_fallback} "
         f"({fallback_rate:.2%}). realised household shares: "
         + ", ".join(f"{k}={v:.1%}" for k, v in shares.items())
     )

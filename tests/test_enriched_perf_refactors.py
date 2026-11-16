@@ -163,19 +163,20 @@ def test_kreis_missing_fallback_rate_split_and_warned(capsys):
     from braunschweig.synthesis.population.enriched.base import (
         FALLBACK_WARN_RATE, _report_kreis_fallback_rates)
 
-    # 10 persons: 6 eligible with a Kreis, 1 child with a Kreis (rule), 3 no Kreis.
+    # 10 persons: 6 rule-eligible with a Kreis, 1 child with a Kreis (rule),
+    # 2 rule-eligible without a Kreis (fallback), 1 child without a Kreis (rule, NOT fallback).
     person_kreis = np.array([0, 0, 1, 1, 2, 2, 0, -1, -1, -1])
-    eligible = np.array([True] * 6 + [False] * 4)
-    counts = _report_kreis_fallback_rates("license_type", "nein", person_kreis, eligible)
+    rule_eligible = np.array([True] * 6 + [False, True, True, False])
+    counts = _report_kreis_fallback_rates("license_type", "nein", person_kreis, rule_eligible)
     out = capsys.readouterr().out
-    assert counts == (6, 1, 3)
-    assert 3 / 10 > FALLBACK_WARN_RATE and "WARNING: license_type" in out
+    assert counts == (6, 2, 2)
+    assert 2 / 10 > FALLBACK_WARN_RATE and "WARNING: license_type" in out
 
     # No missing Kreis -> no warning, zero fallback.
     counts = _report_kreis_fallback_rates(
-        "pt_subscription_type", "never_pt", np.zeros(10, dtype=int), eligible)
+        "pt_subscription_type", "never_pt", np.zeros(10, dtype=int), rule_eligible)
     out = capsys.readouterr().out
-    assert counts == (6, 4, 0) and "WARNING" not in out
+    assert counts == (8, 2, 0) and "WARNING" not in out
 
 
 class _Stop(Exception):
@@ -219,4 +220,4 @@ def test_imputation_steps_report_kreis_fallback_rates(monkeypatch):
             step(_Context(), persons.copy())
         except _Stop:
             pass
-        assert calls == [(label, [0, 0, 0, -1], [True, True, False, False])]
+        assert calls == [(label, [0, 0, 0, -1], [True, True, False, True])]
