@@ -72,7 +72,7 @@ config:
   java_memory: 32G
 
   mode_choice: false
-  matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
+  # matching_attributes and braunschweig.ipf.* are legacy-IPF-only: not read under popsim.
 
   # --- Population method: popsim_mid ----------------------------------------
   # Selects the PopulationSim + MiD 2023 producer (braunschweig.popsim.stage).
@@ -100,7 +100,7 @@ config:
   # hand-edited CSV cannot express them (build_controls_df fail-fasts on csv + active
   # kreis controls). tier0-2 backbone + the default-on kreis attribute controls run from
   # committed data; tier3 + employment_grid are intentionally omitted here (they need the
-  # local cleancensus kreis_controls_dir -- see config_server_*_allfeat_popsim.yml).
+  # local cleancensus kreis_controls_dir -- see configs/base_bs.yml).
   braunschweig.population.popsim.controls_source: catalog
   braunschweig.population.popsim.control_tiers: tier0,tier1,tier2
 
@@ -134,6 +134,9 @@ config:
   # and number of parallel PopulationSim subprocesses (default 3).
   braunschweig.population.popsim.max_cells: 3000
   braunschweig.population.popsim.num_workers: 3
+  # Same PopulationSim importance profile as configs/base_bs.yml (ADR-0195), so these
+  # fixtures do not silently run another profile than the composed runs.
+  braunschweig.population.popsim.importance_profile: optimized_2026_06_30
 
   # --- R-A: Gravity calibration (TASK-001).
   gravity_slope: -0.065
@@ -149,17 +152,8 @@ config:
     76: -0.0719   # Mittelstadt (laendlich)
     77: -0.0667   # Kleinstadt / doerfl. (laendlich)
 
-  # --- IPF: per-commune household-size margin (Zensus 2022 1000A-2081)
-  braunschweig.ipf.use_household_size_margin: true
-
-  # --- IPF: post-formation hh_type assignment (Zensus 2022 1000A-2081)
-  braunschweig.ipf.use_household_type_margin: true
-
-  # --- Phase 2 IPF (TASK-011, 2026-04-26)
-  braunschweig.ipf.dirichlet_prior_strength: 0.5
-
   # Germany-wide GTFS (de_full), cut to the enlarged cordon extent (required with
-  # cordon_enabled; same value as config_local_braunschweig_25pct_allfeat.yml).
+  # cordon_enabled; same value as configs/base_bs.yml).
   gtfs_path: gtfs_cordon
   osm_path: osm
 
@@ -202,8 +196,8 @@ config:
   taz_work_location_choice: false
 
   # Education gravity over the real NDS school/Kita/Hochschule registers
-  # (ON per the default-ON rule; calibrated slopes below are copied from
-  # config_local_braunschweig_25pct_allfeat.yml).
+  # (ON per the default-ON rule; calibrated slopes below are this fixture's own;
+  # compare configs/base_bs.yml).
   education_gravity_enabled: true
 
   education_gravity_slope_by_level_rs7:
@@ -218,9 +212,12 @@ config:
   education_university_slope: -0.1415
   education_university_max_radius_km: 150.0
 
-  # --- Feature parity with config_local_braunschweig_25pct_allfeat.yml -------
+  # --- Feature parity (flags pinned by tests/test_popsim_config_parity.py) --------
   # Project rule: flag-gated model features default ON in run configs so they
-  # are not forgotten. Values copied 1:1 from the validated all-features run.
+  # are not forgotten. The flags follow the all-features production run; the values are this
+  # fixture's OWN and are not a 1:1 copy: the reference file this comment used to name does not
+  # exist, and some values differ from configs/base_bs.yml (e.g. fleet_electric_calibration,
+  # cordon_network_source_buffer_m). The base is canonical for production.
 
   # Household vehicle fleet (real NDS fleet sampling + HSN/TSN attributes).
   vehicles_method: household

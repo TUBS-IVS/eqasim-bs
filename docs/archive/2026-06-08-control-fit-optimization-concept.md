@@ -1,5 +1,7 @@
 # Konzept: Control-Fit-Optimierung der Braunschweig-Synthese
 
+> Historical snapshot, not maintained. Archived 2026-11 (audit register 2026-11-11); do not read it as current state.
+
 **Datum:** 2026-06-08 · **Grundlage:** All-Features-25 %-Validierung (`output_bs_25pct_allfeat/analysis/population_validation/`)
 **Ziel:** Die zwei verbesserungswürdigen Controls (`household_size`, `employment`) und den
 „Rest" (`driving_license_type`) systematisch in den Griff bekommen — **datengetrieben, ohne Overfitting**.

@@ -8,9 +8,8 @@ that the secondary-location sampler can use as a spatial prior.
 
 The Copernicus product itself requires a registered download (CC-BY 4.0
 with attribution); we therefore expect the user to fetch the tile
-manually following the instructions in
-``eqasim-data/DOWNLOAD_CHECKLIST_BS.md`` and place the resulting
-parquet at ``braunschweig.inspire_landuse_path``.
+manually and place the resulting parquet at
+``braunschweig.inspire_landuse_path``. Data Registry record: ``copernicus_landuse_100m``.
 
 Output schema
 -------------
@@ -22,10 +21,10 @@ Output schema
 
 Behaviour
 ---------
-- When the configured path is missing on disk the stage returns an
-  empty GeoDataFrame and prints a notice (so default pipelines stay
-  runnable). Downstream consumers must guard via the
-  ``braunschweig.use_landuse_prior`` flag.
+- With ``braunschweig.use_landuse_prior`` off (the default) the stage
+  returns an empty GeoDataFrame without reading the tile.
+- With the flag on and the tile missing, ``validate`` and ``execute``
+  raise ``RuntimeError`` (no silent fallback to an empty prior).
 """
 
 from __future__ import annotations
@@ -76,8 +75,8 @@ def execute(context) -> gpd.GeoDataFrame:
         # path (use_landuse_prior=False) is the intended way to run without it.
         raise RuntimeError(
             "[braunschweig.data.inspire.landuse] use_landuse_prior is ON but the "
-            "Copernicus 100 m tile is missing: {}. Provide it per "
-            "DOWNLOAD_CHECKLIST_BS.md, or set braunschweig.use_landuse_prior=False "
+            "Copernicus 100 m tile is missing: {}. Provide it at "
+            "braunschweig.inspire_landuse_path (Data Registry record copernicus_landuse_100m), or set braunschweig.use_landuse_prior=False "
             "to run without the spatial prior.".format(path)
         )
 

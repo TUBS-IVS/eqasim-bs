@@ -92,7 +92,6 @@ SCALE_ONLY_KEYS = {
     "braunschweig.population.popsim.work_dir",
     "braunschweig.population.popsim.max_cells",
     "braunschweig.population.popsim.num_workers",
-    "braunschweig.population.popsim.importance_profile",
     "cache_share_export", "cache_share_recompute",
 }
 

@@ -133,7 +133,10 @@ worktree.
 ## Pushes and pull requests
 
 Every push needs the user's explicit confirmation, each time; a prior "yes" does
-not authorise the next push. Pull requests are opened with
+not authorise the next push. The one standing exception is Auto-fix on a PR
+(CLAUDE.md, "Git and version control"): the fix for what Auto-fix reports is pushed
+to that PR's branch without asking, never a force-push and never another branch.
+Pull requests are opened with
 `gh pr create --repo TUBS-IVS/eqasim-bs --base main`, which pins the
 base to the fork `TUBS-IVS/eqasim-bs` — the GitHub web UI defaults to the
 `eqasim-org/eqasim-bavaria` upstream, which is never the intended target.
