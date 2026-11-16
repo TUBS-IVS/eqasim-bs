@@ -1,5 +1,7 @@
 # Pipeline optimization opportunities — prioritized impact analysis
 
+> Historical snapshot, not maintained. Archived 2026-11 (audit register 2026-11-11); do not read it as current state.
+
 Generated 2026-06-06 from a parallel module-by-module scan (7 read-only agents over
 IPF/households, gravity/OD, secondary locations, education gravity, cordon demand,
 population enrichment, MATSim+Java). Each item is evidence-backed (file:line). Two

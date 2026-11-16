@@ -1,8 +1,8 @@
 name: Braunschweig input sources are still reachable
 
 # Weekly reachability check of the DOWNLOAD SOURCE URLs documented in
-# scripts/verify_braunschweig_inputs.py (and mirrored in
-# eqasim-data/DOWNLOAD_CHECKLIST_BS.md). It answers the only data question a
+# scripts/verify_braunschweig_inputs.py (and in the data records
+# under docs/registry/data/). It answers the only data question a
 # runner can answer: did a statistical portal move, rename or retire a source we
 # depend on. Local file presence -- the script's default mode -- cannot be checked
 # here because CI has no data.

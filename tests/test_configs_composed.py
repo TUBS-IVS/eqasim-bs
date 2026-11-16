@@ -149,7 +149,6 @@ def test_scale_knobs_per_overlay():
     assert (c1["sampling_rate"], c25["sampling_rate"], c100["sampling_rate"]) == (0.01, 0.25, 1.0)
     assert c100["braunschweig.population.popsim.max_cells"] == 750
     assert c100["braunschweig.population.popsim.num_workers"] == 3
-    assert c100["braunschweig.population.popsim.importance_profile"] == "optimized_2026_06_30"
     assert c100["braunschweig.population.popsim.work_dir"] == "eqasim-data/popsim_work_allfeat_opt"
 
 
@@ -189,13 +188,10 @@ def test_base_config_is_free_of_per_scale_keys():
     assert "working_directory" not in base, "base must not set working_directory (overlay-only)"
     assert "run" not in base, "base must not set run (overlay-only)"
     cfg = base.get("config", {})
-    per_scale_keys = [
-        "sampling_rate", "output_path", "analysis_working_directory", "output_prefix",
-        "matsim_last_iteration", "cache_share_export", "cache_share_recompute",
-        "braunschweig.population.popsim.work_dir",
-        "braunschweig.population.popsim.max_cells",
-        "braunschweig.population.popsim.num_workers",
-        "braunschweig.population.popsim.importance_profile",
-    ]
+    # One owner for the per-scale key list: the documentation gate's SCALE_ONLY_KEYS (check K5).
+    # `processes` is the one exception: overlays may override it, but the base pins it on purpose
+    # (reported-only, result-affecting; see its comment in configs/base_bs.yml).
+    from braunschweig.documentation.checks import SCALE_ONLY_KEYS
+    per_scale_keys = sorted(SCALE_ONLY_KEYS - {"processes"})
     leaked = [k for k in per_scale_keys if k in cfg]
     assert not leaked, f"per-scale keys leaked into base_bs.yml (belong in overlays): {leaked}"

@@ -122,10 +122,11 @@ def test_only_docs_workflow_tests_read_the_excluded_paths():
 
 #: Tests that import the documentation package but, as reviewed for ADR-0165, never read the excluded paths
 #: of the real repository: the gate-evidence tests replace CheckContext and run_all_checks with fakes, the DAG
-#: tests use only braunschweig.documentation.dag, and the other two name the package in prose.
+#: tests use only braunschweig.documentation.dag, the other two name the package in prose, and
+#: test_configs_composed imports only the constant SCALE_ONLY_KEYS from braunschweig.documentation.checks.
 IMPORTS_DOCUMENTATION_WITHOUT_READING = {
-    "test_documentation_dag.py", "test_gate_evidence.py", "test_ipf_config_parity.py",
-    "test_simwrapper_dashboards_default.py",
+    "test_configs_composed.py", "test_documentation_dag.py", "test_gate_evidence.py",
+    "test_ipf_config_parity.py", "test_simwrapper_dashboards_default.py",
 }
 
 
