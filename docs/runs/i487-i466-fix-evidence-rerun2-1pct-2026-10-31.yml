@@ -17,6 +17,10 @@ repository:
     matsim.runtime.eqasim from that tree (cache matsim.runtime.eqasim__1c974c0f...). The jar does NOT contain
     TUBS-IVS/eqasim-java-bs#44 (stop-pair boarding, ADR-0161; no transitStopPairFallback in its source), so this
     run measures the zero-slack tolerance and the same-line fallback of #40 only. No run on current main was made.
+    Correction (PR #630 review): the docstring of pt_removals_i466.py says memory stays bounded; it does not, because
+    the cleared events stay attached to the root element, so memory grows with the number of events. The script is
+    kept verbatim as it ran (the 1 % counts are unaffected); before re-running it on a 25 % or 100 % events file,
+    clear the root as braunschweig.matsim.simulation.plan_check.iter_person_plans does.
 configuration:
   base: configs/base_bs.yml
   overlays:
