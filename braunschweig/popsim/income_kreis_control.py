@@ -16,6 +16,8 @@ import logging
 import numpy as np
 import pandas as pd
 
+from braunschweig.data.mid import income_by_size as _income_by_size
+from braunschweig.data.mid import income_by_status as _income_by_status
 from braunschweig.data.mid.income_by_size import (
     INCOME_BRACKET_CATEGORIES,
     INCOME_BRACKET_BOUNDS_EUR,
@@ -285,6 +287,12 @@ def household_base_pmf_matrix(
     rts = (households_df[raumtyp_col].map(_raumtyp_key).to_numpy()
            if raumtyp_col in households_df.columns else np.array([None] * n))
 
+    # The MiD income tables count their own degenerate-input fallbacks per built cell
+    # (docs/codebase/notes/mid-fallback-tally.md): report exactly this matrix build,
+    # so neither earlier callers' counts nor ours leak into another stage's line.
+    _income_by_size.reset_fallback_rates()
+    _income_by_status.reset_fallback_rates()
+
     # Cache one (pmf, is_fallback) per unique cell; count fallback PER HOUSEHOLD below.
     cache: dict[tuple, tuple[np.ndarray, bool]] = {}
     n_fallback = 0
@@ -303,6 +311,8 @@ def household_base_pmf_matrix(
         if is_fallback:
             n_fallback += 1
         mat[i] = pmf
+    _income_by_size.report_fallback_rates()
+    _income_by_status.report_fallback_rates()
     return mat, {"fallback_rate": (n_fallback / n) if n else 0.0,
                  "fallback_count": n_fallback}
 

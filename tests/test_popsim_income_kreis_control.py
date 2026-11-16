@@ -514,3 +514,30 @@ def test_apply_on_path_logs_pmf_rate_as_primary(caplog):
     lines = [r for r in caplog.records
              if r.getMessage().startswith("[income_kreis_control.pmf] primary ")]
     assert len(lines) == 1 and lines[0].levelno == logging.INFO
+
+
+def test_household_base_pmf_matrix_reports_only_its_own_income_table_cells(caplog):
+    """The popsim path reports the MiD income-table tallies itself: a count left by
+    an earlier caller (here a missing-raumtyp lookup) must not leak into its line."""
+    import logging
+
+    import pandas as pd
+
+    from braunschweig.data.mid import income_by_size as ibs
+
+    tables = _toy_income_tables()
+    ibs.income_bracket_probabilities(tables["size_bl"], tables["size_rt"], "1", None)
+    hh = pd.DataFrame({
+        "household_id": [1, 2],
+        "household_size": ["1", "2"],
+        "economic_status": ["very_low", "very_high"],
+        "RegioStaR7": [73, 73],
+    })
+    with caplog.at_level(logging.INFO, logger="braunschweig.data.mid"):
+        kic.household_base_pmf_matrix(hh, tables, method="combined")
+    size_lines = [r.getMessage() for r in caplog.records
+                  if r.getMessage().startswith("income_by_size: primary")]
+    status_lines = [r.getMessage() for r in caplog.records
+                    if r.getMessage().startswith("income_by_status: primary")]
+    assert len(size_lines) == 1 and len(status_lines) == 1
+    assert "raumtyp_missing" not in size_lines[0]
