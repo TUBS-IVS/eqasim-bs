@@ -267,7 +267,8 @@ def validate(context):
     if not os.path.exists(path):
         raise RuntimeError(f"VG250 archive not found: {path}")
     return {
-        "vg250_size": os.path.getsize(path),
+        # The content digest, not the size: a replaced archive of equal size must invalidate too.
+        "vg250_sha256": synpp_tokens.file_sha256(path),
         "helpers": synpp_tokens.source_token(
             _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
             stage_label=__name__ + ".validate()"),

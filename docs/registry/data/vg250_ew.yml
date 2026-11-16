@@ -9,8 +9,15 @@ roles:
 - spatial_input
 used_by:
 - braunschweig.data.bbsr.regiostar
+- braunschweig.data.census.population
 - braunschweig.data.cordon_gemeinden
-- data.spatial.municipalities
+- braunschweig.data.cordon_pt_gates
+- braunschweig.data.external_secondary_points
+- braunschweig.data.external_workplaces
+- braunschweig.data.zensus_grid.population
+- braunschweig.synthesis.incommuters
+- braunschweig.synthesis.student_incommuters
+- eqasim_common.data.population.raw
 acquisition:
   method: manual_download
   source: https://gdz.bkg.bund.de/index.php/default/digitale-geodaten/verwaltungsgebiete/

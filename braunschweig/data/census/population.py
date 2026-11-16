@@ -31,6 +31,8 @@ import zipfile
 import geopandas as gpd
 import pandas as pd
 
+from braunschweig import synpp_tokens
+
 
 # DESTATIS 12411-0018 age class lower bounds (17 classes).
 DESTATIS_AGES: list[int] = [0, 3, 6, 10, 15, 18, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 75]
@@ -120,6 +122,13 @@ def load_population_by_kreis(path: str, kreise) -> pd.Series:
         print(f"[braunschweig.population] WARNING: {len(incomplete)} Kreise have dropped DESTATIS "
               f"cells, so their population total is too small: {incomplete[:10]}")
     return counts.groupby("kreis")["weight"].sum()
+
+
+#: The VG250 archive ``execute`` opens for the Gemeinde names, relative to ``data_path``. It is a
+#: constant, not a config key: the eqasim_common raw stage reads the same archive through
+#: ``germany.population_path`` and this stage has always assumed that default. ``validate`` hashes
+#: this one path.
+VG250_ARCHIVE_PATH = "germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip"
 
 
 def configure(context):
@@ -375,8 +384,7 @@ def execute(context):
     if "municipality_code" in df_vg.columns:
         df_vg = df_vg.rename(columns={"municipality_code": "ARS", "population": "EWZ"})
     if "GEN" not in df_vg.columns:
-        pop_zip = os.path.join(data_path,
-                               "germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip")
+        pop_zip = os.path.join(data_path, VG250_ARCHIVE_PATH)
         inner = ("vg250-ew_12-31.utm32s.gpkg.ebenen/"
                  "vg250-ew_ebenen_1231/DE_VG250.gpkg")
         with zipfile.ZipFile(pop_zip) as z, z.open(inner) as f:
@@ -460,4 +468,12 @@ def validate(context):
     for p in required:
         if not os.path.exists(p):
             raise RuntimeError(f"Missing input: {p}")
-    return sum(os.path.getsize(p) for p in required)
+    # ``execute`` opens the VG250 archive whenever the raw VG250 frame lacks ``GEN``, which is
+    # always the case for eqasim_common.data.population.raw (it returns only ARS, EWZ and the
+    # geometry). That condition depends on a stage result, which validate() cannot see, so the
+    # archive is hashed unconditionally: a replaced archive changes the Gemeinde names.
+    vg250 = os.path.join(data_path, VG250_ARCHIVE_PATH)
+    if not os.path.exists(vg250):
+        raise RuntimeError(f"Missing input: {vg250}")
+    return {"input_size_bytes": sum(os.path.getsize(p) for p in required),
+            "vg250_sha256": synpp_tokens.file_sha256(vg250)}

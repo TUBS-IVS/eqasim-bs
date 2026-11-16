@@ -28,17 +28,31 @@ def configure(context):
     context.config("braunschweig.political_prefix")
 
 
+def _vg250_path(context) -> str:
+    """The VG250 archive: the one path ``execute`` reads and ``validate`` hashes."""
+    return os.path.join(context.config("data_path"), context.config("cordon_vg250_path"))
+
+
 def validate(context):
-    """Include the helper modules' source in synpp's stage cache identity (ADR-0136)."""
-    return synpp_tokens.source_token(
-        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
-        stage_label=__name__ + ".validate()")
+    """Cache token: the helper modules' source (ADR-0136) plus the VG250 archive's content digest.
+
+    ``execute`` reads the archive only when ``cordon_enabled`` is on; with the cordon off the
+    archive may be absent, so it is not touched and the digest is ``None``. A replaced archive
+    must not serve a stale cached Gemeinde table.
+    """
+    return {
+        "helpers": synpp_tokens.source_token(
+            _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+            stage_label=__name__ + ".validate()"),
+        "vg250_sha256": (synpp_tokens.file_sha256(_vg250_path(context))
+                         if context.config("cordon_enabled") else None),
+    }
 
 
 def execute(context):
     if not context.config("cordon_enabled"):
         return gpd.GeoDataFrame({"ars5": [], "ewz": []}, geometry=[], crs="EPSG:25832")
-    path = os.path.join(context.config("data_path"), context.config("cordon_vg250_path"))
+    path = _vg250_path(context)
     # Pass the RUN's scope instead of read_external_gemeinden's hardcoded ZGB-8
     # default: on a subset-scope run (e.g. political_prefix=["03101"]) the flow
     # side treats the other ZGB Kreise as external, so they need Gemeinde rows

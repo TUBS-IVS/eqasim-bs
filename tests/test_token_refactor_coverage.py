@@ -44,6 +44,11 @@ _COMPOSITE_STAGES = {
     "braunschweig.synthesis.outside_tour_modes.stage",
     "braunschweig.data.external_secondary_points",
     "braunschweig.data.external_workplaces",
+    # Hold the VG250 archive's content digest next to the module digests (None while the cordon is off).
+    "braunschweig.data.cordon_gemeinden",
+    "braunschweig.data.cordon_pt_gates",
+    "braunschweig.synthesis.incommuters",
+    "braunschweig.synthesis.student_incommuters",
     "braunschweig.data.schools.facilities",
     "braunschweig.data.schools.kita_facilities",
     "braunschweig.data.schools.university_facilities",

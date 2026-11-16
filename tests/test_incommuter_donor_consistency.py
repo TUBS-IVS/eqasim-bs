@@ -274,11 +274,20 @@ def test_student_execute_forwards_time_flag(monkeypatch, enabled):
 ])
 def test_helper_source_changes_invalidate_stage_cache(monkeypatch, stage, helper):
     import inspect
-    before = stage.validate(None)
+
+    class _CordonOffContext:
+        """The two in-commuter stages read ``cordon_enabled`` in validate() (the VG250 digest part
+        of their token); with the cordon off the archive is not touched. synpp's one-argument read."""
+
+        def config(self, key):
+            return {"cordon_enabled": False}[key]
+
+    context = _CordonOffContext()
+    before = stage.validate(context)
     getsource = inspect.getsource
     monkeypatch.setattr(inspect, "getsource", lambda module: getsource(module) +
                         ("\nZ_PROBE = 1\n" if module.__name__ == helper else ""))
-    assert stage.validate(None) != before
+    assert stage.validate(context) != before
 
 
 @pytest.mark.parametrize("enabled", [True, False])
