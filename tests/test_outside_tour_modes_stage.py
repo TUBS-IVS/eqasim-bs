@@ -454,10 +454,12 @@ def test_pt_check_passes_the_latest_arrival_bound_and_its_label_to_the_connectio
     from braunschweig.data.transit import connections, schedule as schedule_module
 
     monkeypatch.setattr(schedule_module, "read_schedule", lambda path: type("Schedule", (), {"stops": {"a": None}})())
-    monkeypatch.setattr(connections, "route_batch", lambda *args, **kwargs: (None, None))
+    # the stages wrap route_batch in the prefetch cache (ADR-0196), which needs real (empty) frames back
+    monkeypatch.setattr(connections, "route_batch",
+                        lambda *args, **kwargs: (pd.DataFrame({"identifier": []}), pd.DataFrame({"identifier": []})))
     seen = []
     monkeypatch.setattr(connections, "connection_mask", lambda trips, legs, **kwargs: seen.append(kwargs))
-    tasks = pd.DataFrame({"identifier": ["t0"]})
+    tasks = pd.DataFrame([("t0", 0.0, 0.0, 1.0, 1.0, 3600.0)], columns=connections.TASK_COLUMNS)
 
     class _Context:
         def __init__(self, **values):

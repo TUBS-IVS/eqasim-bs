@@ -48,12 +48,16 @@ GTFS_STAGE = "matsim.scenario.supply.gtfs"
 #: Work files of the batch pt router in the stage directory.
 ROUTER_CONFIG_NAME = "outside_tour_pt_router_config.xml"
 ROUTER_WORK_DIR_NAME = "outside_tour_pt_router"
+#: ADR-0196 decision 1: the router's work files hold the LAST call only and their row order depends on the Java
+#: threads' timing, so they are left out of the stage output hash.
+_OUTPUT_HASH_EXCLUDE = (f"{ROUTER_WORK_DIR_NAME}/router_*.csv",)
 
 #: Own-package helpers and the shared modules whose source shapes this stage's output (hashed by validate()).
 _HELPER_MODULES = (_config_keys, _rule, _srv_table, _tours, _srv_table_module, _portal_modes, _portal_rewrite,
                    _portal_config_keys, _pt_connections, _incommuter_pt_connections, _day_end_margin)
 #: Cross-package modules imported inside execute() (hashed by dotted name).
 _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon", "braunschweig.data.transit.connections",
+                                 "braunschweig.data.transit.router_cache",
                                  "braunschweig.data.transit.schedule", "braunschweig.matsim.simulation.plan_check",
                                  "braunschweig.popsim.plan_validation",
                                  # reached through the plan check's imports (the closure gate of ADR-0136)
@@ -161,10 +165,12 @@ def _pt_check(context) -> _pt_connections.PtCheck:
     config_path = connections.write_router_config(
         os.path.join(context.path(), ROUTER_CONFIG_NAME), network_path=os.path.join(supply_dir, supply["network_path"]),
         schedule_path=schedule_path, vehicles_path=vehicles_path)
-    router = functools.partial(
+    from braunschweig.data.transit.router_cache import PrefetchRouter  # noqa: PLC0415
+    # ADR-0196: one router start per shift loop; the loop's rounds are answered from the prefetched superset.
+    router = PrefetchRouter(functools.partial(
         connections.route_batch, context, config_path=config_path,
         threads=int(context.config("matsim_threads") or context.config("processes")),
-        work_dir=os.path.join(context.path(), ROUTER_WORK_DIR_NAME))
+        work_dir=os.path.join(context.path(), ROUTER_WORK_DIR_NAME)), label="outside tour pt check")
     all_stop_ids = set(read_schedule(schedule_path).stops)
     walk_max_m = float(plan_check.DEFAULT_WALK_MAX_DISTANCE_M)
 
@@ -183,7 +189,9 @@ def _pt_check(context) -> _pt_connections.PtCheck:
         probe=probe, shift_window_s=float(context.config(_config_keys.KEY_PT_SHIFT_WINDOW_S)),
         shift_step_s=float(context.config(_config_keys.KEY_PT_SHIFT_STEP_S)), bound_s=bound_s,
         warn_share=float(context.config(_config_keys.KEY_PT_NO_CONNECTION_WARN_SHARE)),
-        day_end_shift=bool(context.config(_day_end_margin.KEY_ENABLED)))
+        day_end_shift=bool(context.config(_day_end_margin.KEY_ENABLED)),
+        # the superset follows the first call, so it may hold no route at all like the narrowed rounds (PR #505)
+        prefetch=functools.partial(router.prefetched, allow_no_route_at_all=True))
 
 
 def _load_table(srv_dir) -> ModeShareTable:
@@ -264,7 +272,8 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
             trips=remoded, tour_ids=tour_ids, outside=outside, portal_tour=portal_tour.to_numpy(dtype=bool),
             endpoints=endpoints, availability=_portal_modes.mode_availability(persons), probe=pt_check.probe,
             shift_window_s=pt_check.shift_window_s, shift_step_s=pt_check.shift_step_s, bound_s=pt_check.bound_s,
-            last_resort=last_resort, day_end_shift=pt_check.day_end_shift, portal_leg=portal_leg)
+            last_resort=last_resort, day_end_shift=pt_check.day_end_shift, portal_leg=portal_leg,
+            prefetch=pt_check.prefetch)
         remoded = resolution.trips
         pt_report = resolution.report
         _pt_connections.log_report(pt_report, warn_share=pt_check.warn_share)
