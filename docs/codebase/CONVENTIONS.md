@@ -18,8 +18,8 @@ Coding and data conventions in force for `eqasim-bs`. Verified from `CLAUDE.md`,
 - Source should be ASCII where possible; avoid non-ASCII in identifiers and string
   constants (`.claude/rules/coding-standards.md` "MATSim and eqasim style").
 - Chat responses to the user are in German (CLAUDE.md "Language policy"). Note the
-  config files contain German prose in comments (e.g. `configs/fixtures/config_local_braunschweig.yml`
-  lines 100–124); this is the inherited fork state, not the stated target.
+  config files contain German prose in comments (e.g. in `configs/fixtures/config_local_braunschweig.yml`);
+  this is the inherited fork state, not the stated target.
 
 ## Naming
 
@@ -74,7 +74,7 @@ hand-edit; re-run the calibration script and paste its YAML".
 In files mixing Bavaria-inherited and Braunschweig-specific code, blocks are
 fenced with `# --- Inherited from eqasim-bavaria ---` / `# --- Braunschweig-specific ---`
 (AGENTS.md). Note: on the current branch the standalone `bavaria/` package has
-already been removed (see STRUCTURE.md / CONCERNS.md), so this convention now
+already been removed (see STRUCTURE.md), so this convention now
 applies mainly to inline inherited blocks.
 
 ## Provenance and traceability
