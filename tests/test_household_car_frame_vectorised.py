@@ -202,7 +202,9 @@ def _random_population(n_households: int, seed: int, *, string_ids: bool = False
     NaN, minors may be licensed, households may lack adults, car counts exceed the
     licensed adults, 0-car households occur, and person rows are shuffled so a
     household's rows are not contiguous. ``economic_status`` varies within a
-    household so "first row in input order" is tested.
+    household so "first row in input order" is tested. Some ages are NaN (sorted
+    last), car counts include non-integer and negative floats (``int()``
+    truncation toward zero), and one person row has no household_id (skipped).
     """
     rng = np.random.default_rng(seed)
     records = []
@@ -210,10 +212,12 @@ def _random_population(n_households: int, seed: int, *, string_ids: bool = False
         household_id = int(rng.integers(0, 10 * n_households + 10)) * 7 + household % 7
         size = int(rng.integers(1, 6))
         no_adults = rng.random() < 0.1
-        cars = int(rng.choice([0, 0, 1, 1, 2, 3, 3, 4]))
+        cars = float(rng.choice([0, 0, 1, 1, 2, 3, 3, 4, 1.5, 2.7, -0.5, -1.2]))
         for member in range(size):
             age = int(rng.integers(5, 17)) if no_adults else int(rng.choice(
                 [12, 16, 17, 18, 18, 30, 30, 45, 45, 70]))
+            if rng.random() < 0.05:
+                age = np.nan
             license_draw = rng.random()
             has_license = True if license_draw < 0.55 else (
                 False if license_draw < 0.85 else np.nan)
@@ -222,7 +226,7 @@ def _random_population(n_households: int, seed: int, *, string_ids: bool = False
                 "person_id": int(rng.integers(0, 50 * n_households + 50)),
                 "age": age,
                 "has_license": has_license,
-                "number_of_cars": cars if rng.random() < 0.8 else max(cars - 1, 0),
+                "number_of_cars": cars if rng.random() < 0.8 else cars - 1,
                 "economic_status": str(rng.choice(["low", "medium", "high"])),
             })
     persons = pd.DataFrame.from_records(records)
@@ -233,6 +237,11 @@ def _random_population(n_households: int, seed: int, *, string_ids: bool = False
     if string_ids:
         persons["household_id"] = "hh" + persons["household_id"].astype(str)
         persons["person_id"] = "p" + persons["person_id"].astype(str)
+    # One person without a household id, in the middle of the frame: never visited.
+    orphan = persons.iloc[[0]].assign(household_id=np.nan, number_of_cars=3.0)
+    middle = len(persons) // 2
+    persons = pd.concat([persons.iloc[:middle], orphan, persons.iloc[middle:]],
+                        ignore_index=True)
     household_ids = persons["household_id"].drop_duplicates().tolist()
     commune_index = rng.integers(0, len(_COMMUNES), size=len(household_ids))
     homes = pd.DataFrame({
@@ -297,6 +306,8 @@ def test_random_fixture_exercises_every_edge_case(caplog):
     assert (licensed & (persons["age"] < ADULT_AGE)).any()  # licensed minors
     assert (persons.groupby("household_id")["age"].max() < ADULT_AGE).any()
     assert (cars == 0).any()
+    assert ((cars % 1 != 0) & (cars > 0)).any() and (cars < 0).any()  # int() truncation
+    assert persons["age"].isna().any() and persons["household_id"].isna().any()
     n_licensed_adults = (licensed & (persons["age"] >= ADULT_AGE)).groupby(
         persons["household_id"]).sum()
     assert ((cars > n_licensed_adults) & (n_licensed_adults > 0)).any()
@@ -372,6 +383,63 @@ def test_missing_home_raises_same_error(indexed_home_lookup):
             persons, homes, _regiostar(), indexed_home_lookup=indexed_home_lookup)
     assert str(actual.value) == str(expected.value)
     assert str(car_households[1]) in str(actual.value)
+
+
+def test_missing_person_id_is_refused_with_a_clear_message():
+    """ANY NaN person_id is refused, even one that would own no car.
+
+    Deliberately stricter than the former loop, which raised a bare KeyError only
+    when an id-less person became an owner: here the id-less person lives in a
+    0-car household, where the old loop would have returned a frame.
+    """
+    persons = pd.DataFrame.from_records([
+        {"household_id": 1, "person_id": 11.0, "age": 44, "has_license": True,
+         "number_of_cars": 1, "economic_status": "low"},
+        {"household_id": 2, "person_id": np.nan, "age": 30, "has_license": True,
+         "number_of_cars": 0, "economic_status": "high"},
+    ])
+    homes = pd.DataFrame({"household_id": [1, 2],
+                          "commune_id": ["031010000000", "031010000000"]})
+    assert len(_reference_build_household_car_frame(persons, homes, _regiostar())) == 1
+    with pytest.raises(ValueError, match="1 person row\\(s\\) have no person_id"):
+        household_module.build_household_car_frame(persons, homes, _regiostar())
+
+
+def test_missing_household_id_rows_are_skipped_like_reference(caplog):
+    """Persons without a household_id are never visited (float ids [1, 1, 2, NaN])."""
+    persons = pd.DataFrame({
+        "household_id": [1.0, 1.0, 2.0, np.nan],
+        "person_id": [11, 12, 21, 99],
+        "age": [44, 40, 30, 50],
+        "has_license": [True, True, True, True],
+        "number_of_cars": [2, 2, 1, 4],
+        "economic_status": ["low", "low", "high", "medium"],
+    })
+    homes = pd.DataFrame({"household_id": [1.0, 2.0],
+                          "commune_id": ["031010000000", "031020000000"]})
+    expected, actual, expected_logs, actual_logs = _run_both(
+        persons, homes, _regiostar(), caplog, indexed_home_lookup=True)
+    assert len(expected) == 3
+    _assert_identical(expected, actual)
+    assert actual_logs == expected_logs
+
+
+def test_nullable_age_with_missing_values_matches_reference(caplog):
+    """Int64 ages with pd.NA: NA is neither adult nor licensed and sorts last."""
+    persons = pd.DataFrame({
+        "household_id": [1, 1, 1, 2, 2, 3, 3],
+        "person_id": [11, 12, 13, 21, 22, 31, 32],
+        "age": pd.array([pd.NA, 45, 45, pd.NA, 16, 30, pd.NA], dtype="Int64"),
+        "has_license": [True, True, True, True, False, False, True],
+        "number_of_cars": [3, 3, 3, 1, 1, 2, 2],
+        "economic_status": ["low"] * 7,
+    })
+    homes = pd.DataFrame({"household_id": [1, 2, 3],
+                          "commune_id": ["031010000000"] * 3})
+    expected, actual, expected_logs, actual_logs = _run_both(
+        persons, homes, _regiostar(), caplog, indexed_home_lookup=True)
+    _assert_identical(expected, actual)
+    assert actual_logs == expected_logs
 
 
 def test_nan_car_count_raises_same_error():

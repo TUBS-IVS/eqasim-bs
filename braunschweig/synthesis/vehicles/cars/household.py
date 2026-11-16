@@ -147,10 +147,8 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
     df_regiostar : RegioStaR reference with ``commune_id`` (8-digit AGS),
         ``name`` (Gemeinde name) and ``regiostar7`` (RS7 code).
     indexed_home_lookup : kept for the ``braunschweig.performance.fleet_home_lookup``
-        config key and its equivalence checks. Both values meant "first home row
-        of the household after the RegioStaR merge"; since the vectorised build
-        (audit H) one first-occurrence index serves both, so the value no longer
-        changes the computation.
+        config key; the value no longer changes the computation (ADR-0122
+        amendment 2026-11-16).
 
     Returns
     -------
@@ -166,6 +164,14 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
             "build_household_car_frame: df_persons is missing required columns "
             f"{sorted(missing)}"
         )
+    # Any missing person_id is refused, owner or not. This is stricter than the former
+    # per-household loop, which failed (with a bare KeyError from a NaN dict key) only
+    # when such a person became a car owner; an id-less person is invalid input either way.
+    n_missing_person_ids = int(df_persons["person_id"].isna().sum())
+    if n_missing_person_ids:
+        raise ValueError(
+            f"build_household_car_frame: {n_missing_person_ids} person row(s) have no "
+            "person_id; every person needs an id before cars are assigned")
 
     # Home commune (12-digit ARS) per household -> Kreis AGS-5 + AGS-8 join key.
     homes = df_homes[["household_id", "commune_id"]].drop_duplicates("household_id").copy()
@@ -196,10 +202,12 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
     household_ids = household_cars.index
     # Household position (0..n-1 in ascending household_id order) of every person;
     # -1 marks a missing household_id, which the loop never visited.
-    household_code = grouped.ngroup().to_numpy()
+    # (``ngroup`` returns NaN for those rows, so the codes are converted explicitly.)
+    household_code = grouped.ngroup().fillna(-1).to_numpy(dtype=np.int64)
 
-    # ``int(max)`` per household: truncation toward zero; a NaN/inf max raised there.
-    cars_float = household_cars.to_numpy(dtype=np.float64)
+    # ``int(max)`` per household: truncation toward zero. A missing (NaN, pd.NA) or
+    # infinite max made ``int()`` raise there; it is re-raised below.
+    cars_float = household_cars.to_numpy(dtype=np.float64, na_value=np.nan)
     finite = np.isfinite(cars_float)
     number_of_cars = np.zeros(len(household_ids), dtype=np.int64)
     number_of_cars[finite] = np.trunc(cars_float[finite]).astype(np.int64)
@@ -217,7 +225,14 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
     if bad.any():
         first_bad = int(np.flatnonzero(bad)[0])
         if not finite[first_bad]:
-            int(household_cars.iloc[first_bad])  # raises the same ValueError/OverflowError
+            # The same ``int()`` call on the same value as the former loop, so the
+            # exception is whatever it raised for that type (e.g. ValueError for a
+            # float NaN, OverflowError for inf, TypeError for a nullable pd.NA).
+            int(household_cars.iloc[first_bad])
+            raise ValueError(
+                f"build_household_car_frame: non-finite number_of_cars "
+                f"{household_cars.iloc[first_bad]!r} for household "
+                f"{household_ids[first_bad]}")
         raise ValueError(
             f"build_household_car_frame: no home commune for household "
             f"{household_ids[first_bad]}"
@@ -317,8 +332,9 @@ def _assign_owners(df_persons: pd.DataFrame, household_code: np.ndarray,
     valid_rows = np.flatnonzero(household_code >= 0)
     work = pd.DataFrame({
         "_household": household_code[valid_rows],
-        "age": df_persons["age"].to_numpy()[valid_rows],
-        "person_id": df_persons["person_id"].to_numpy()[valid_rows],
+        # ``.array`` keeps nullable dtypes (Int64 with pd.NA sorts like NaN: last).
+        "age": df_persons["age"].array[valid_rows],
+        "person_id": df_persons["person_id"].array[valid_rows],
         "_row": valid_rows,
     })
     # One multi-key lexsort; stable, so it reproduces the former per-household
@@ -329,11 +345,13 @@ def _assign_owners(df_persons: pd.DataFrame, household_code: np.ndarray,
     sorted_row = work["_row"].to_numpy()
     sorted_age = work["age"]
 
+    # A pd.NA in a mask (nullable age) counts as False, as in the former boolean
+    # row selection ``group[mask]``.
     licensed_flag = (
         df_persons["has_license"].fillna(False) & (df_persons["age"] >= ADULT_AGE)
-    ).to_numpy(dtype=bool)
+    ).fillna(False).to_numpy(dtype=bool)
     is_licensed = licensed_flag[sorted_row]
-    is_adult = (sorted_age >= ADULT_AGE).to_numpy(dtype=bool)
+    is_adult = (sorted_age >= ADULT_AGE).fillna(False).to_numpy(dtype=bool)
 
     # Licensed adults are contiguous per household in sorted order.
     licensed_rows = sorted_row[is_licensed]

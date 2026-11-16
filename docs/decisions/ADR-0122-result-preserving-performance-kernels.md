@@ -77,6 +77,24 @@ runtime improvement.
 README impact: existing installation, data acquisition and run commands remain
 applicable. Benchmark usage and cache migration are documented in the linked note.
 
+## Amendment 2026-11-16 · the fleet switch no longer has a distinct OFF path
+
+Decision 1 and "each kernel has an executable OFF path" no longer hold for the
+fleet kernel. The per-household loop of `build_household_car_frame`
+(`braunschweig.synthesis.vehicles.cars.household`) was replaced by one vectorised
+pass (audit H, branch `perf/audit-h-cars-owner-frame`). Both values of
+`braunschweig.performance.fleet_home_lookup` (`indexed_home_lookup`) now run that
+same pass with one first-occurrence home index: they always selected the same home
+row, so the OFF value had no distinct output to preserve. The key is kept only for
+config compatibility. Retiring it needs a config edit owned by another session and
+is open.
+
+The output stays identical to the former loop (values, column order, dtypes, row
+order, warnings, error messages). `tests/test_household_car_frame_vectorised.py`
+pins this against a verbatim copy of the loop. One deliberate difference: any
+missing `person_id` is now refused with a clear `ValueError`. The loop failed (bare
+`KeyError`) only when such a person became a car owner.
+
 ## Evidence
 
 - [Implementation and reproduction](../codebase/notes/performance-equivalence.md)

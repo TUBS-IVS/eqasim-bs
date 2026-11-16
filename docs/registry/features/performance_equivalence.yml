@@ -6,7 +6,9 @@ description: >
   slot/matcher frame churn, scalar CRS transformations and invariant donor feature
   extraction, and validate ordered trip arrays without constructing one mixed-type
   row frame per person. Preserve model choices, row order, geometry, diagnostics and
-  random streams; each kernel retains its original OFF path.
+  random streams; each kernel retains its original OFF path, except the fleet
+  kernel: since the vectorised car frame both fleet_home_lookup values run the same
+  pass and the key is kept for config compatibility (ADR-0122 amendment 2026-11-16).
 stages:
 - braunschweig.synthesis.vehicles.cars.household
 - synthesis.population.spatial.home.locations

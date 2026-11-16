@@ -12,7 +12,7 @@ All switches live in `configs/base_bs.yml` and default to true.
 
 | Switch | Optimized operation | OFF behavior |
 |---|---|---|
-| `braunschweig.performance.fleet_home_lookup` | Index the first joined home row per household | Original household-by-household frame filter |
+| `braunschweig.performance.fleet_home_lookup` | Index the first joined home row per household | None since audit H: both values run the same vectorised pass; key kept for config compatibility ([ADR-0122 amendment 2026-11-16](../../decisions/ADR-0122-result-preserving-performance-kernels.md#amendment-2026-11-16--the-fleet-switch-no-longer-has-a-distinct-off-path)) |
 | `braunschweig.performance.home_coordinates` | Project signals to household cells, build/match slots with arrays, and batch coordinate transforms | Original full cell loader, scalar slot/matcher kernels and scalar CRS round trip |
 | `braunschweig.performance.plan_validation` | Check trip arrays grouped at person boundaries | Original per-person validator |
 | `braunschweig.performance.donor_matching` | Prepare invariant donor features and candidates | Original feature extraction per match |
