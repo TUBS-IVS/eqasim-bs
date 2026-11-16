@@ -1,8 +1,9 @@
 """Every ``run:`` target of every committed config names a stage module that exists on disk.
 
 A style guard. Since the fork patch ``run-target-aliases`` (tests/test_synpp_run_target_aliases.py)
-an alias-only run target no longer crashes the graph build, but a module name stays unambiguous:
-an alias key can be shadowed by, or silently lose, a module of the same name. Package G of the
+an alias-only run target no longer crashes the graph build, but a target that names the stage
+module reads the same in every config, whatever its ``aliases:`` say. The guard does not flag an
+alias key that is also a module on disk (``synthesis.output``): there the alias wins. Package G of the
 2026-11-11 repository audit deleted the inherited ``data/census/filtered.py`` while the overlay
 ``smoke_kreis_control_fit.yml`` still named ``data.census.filtered`` (an alias of
 ``braunschweig.popsim.stage``); before the patch that broke the run.

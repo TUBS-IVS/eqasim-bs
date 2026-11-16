@@ -81,8 +81,8 @@ def validate(context):
     Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
     digest per helper module (docstrings, comments and formatting do not change it), plus
     ``files``: the digest of the VG250 archive (dataset id ``vg250_ew``) that the tabs read
-    through ``braunschweig.analysis.spatial``. Each tab renders without it, so a missing archive
-    is a logged warning and ``None`` (``spatial.vg250_archive_digest(strict=False)``); with the
+    through ``braunschweig.analysis.spatial``. Without it the tabs that need it are skipped (logged)
+    and the export runs on, so a missing archive is a logged warning and ``None`` (``spatial.vg250_archive_digest(strict=False)``); with the
     export disabled the archive is never read and the digest is ``None``.
     """
     token = synpp_tokens.source_token(

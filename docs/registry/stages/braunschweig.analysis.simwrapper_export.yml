@@ -6,7 +6,7 @@ description: Writes the multi-tab SimWrapper dashboard bundle from a run output 
   via a matsim.simulation.run stage edge. It declares _ORDER_AFTER_STAGES = (matsim.output,), so when
   matsim.output is part of the same synpp invocation the stage executes after it and the MATSim tabs
   read the archive of this run; ordering only, not a dependency (ADR-0177). Its validate() token hashes the whole
-  import closure of the export modules (ADR-0147).
+  import closure of the export modules (ADR-0147) and the VG250 archive.
 lineage:
   type: braunschweig_new
   upstream: null
@@ -19,6 +19,8 @@ pipelines:
   popsim_open: not_used
   simple_ipf_open: not_used
 production: true
+inputs:
+- vg250_ew
 features:
 - simwrapper_export
 decisions:

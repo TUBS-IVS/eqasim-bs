@@ -27,10 +27,10 @@ go through :func:`load_vg250_layer` / :func:`_resolve_vg250_gpkg` below:
   or absent, not a per-item primary/fallback split.
 
 Both callers also now share one caching decision: the archive is extracted
-once into :data:`VG250_CACHE` and re-extracted only if the cache is older
-than the source zip (so a data refresh in ``eqasim-data`` can not silently
-keep serving stale cached content, which was a risk of the dashboard's
-former extract-once-forever cache).
+once into :data:`VG250_CACHE` and re-extracted whenever the archive's content
+digest changes (so a data refresh in ``eqasim-data`` can not silently keep
+serving stale cached content, which was a risk of the dashboard's former
+extract-once-forever cache).
 """
 
 from __future__ import annotations
@@ -109,9 +109,11 @@ def _resolve_vg250_gpkg(*, strict: bool) -> Path | None:
     place that decides what a missing VG250 archive means.
 
     Extracts the archive into :data:`VG250_CACHE` once and re-uses that copy
-    on subsequent calls, re-extracting only if the cache predates the source
-    zip's modification time (so a data refresh is picked up automatically
-    instead of requiring a manual cache clear).
+    on subsequent calls. A marker file next to the cache records the sha256 of
+    the archive it was extracted from; the archive is extracted again whenever
+    that digest differs, so a replaced archive is picked up even when the copy
+    kept an older modification time, and the extracted file always matches the
+    digest the stages put into their cache tokens (:func:`vg250_archive_digest`).
 
     Parameters
     ----------
@@ -140,23 +142,32 @@ def _resolve_vg250_gpkg(*, strict: bool) -> Path | None:
             VG250_ZIP,
         )
         return None
-    if not VG250_CACHE.exists() or VG250_CACHE.stat().st_mtime < VG250_ZIP.stat().st_mtime:
+    archive_digest = synpp_tokens.file_sha256(VG250_ZIP)
+    marker = VG250_CACHE.with_name(f"{VG250_CACHE.name}.source-sha256")
+    cached_digest = marker.read_text(encoding="ascii").strip() if marker.is_file() else None
+    if not VG250_CACHE.exists() or cached_digest != archive_digest:
         VG250_CACHE.parent.mkdir(parents=True, exist_ok=True)
         # Extract to a unique temporary file in the SAME directory and then
         # os.replace() it into place: that call is atomic on one filesystem, so
         # a concurrent reader either sees the previous complete copy or the new
-        # complete one, never a half-written gpkg. Writing VG250_CACHE directly
-        # would also leave a truncated file with a NEWER mtime than the zip if
-        # the process died mid-write -- the freshness check below would then
-        # accept the corrupt cache forever instead of re-extracting it.
-        temporary_path = VG250_CACHE.with_name(f"{VG250_CACHE.name}.{os.getpid()}.part")
+        # complete one, never a half-written gpkg. The marker is written only
+        # after the gpkg is in place, so a process that dies in between leaves
+        # a marker that does not match and the next call extracts again.
+        pid = os.getpid()
+        temporary_path = VG250_CACHE.with_name(f"{VG250_CACHE.name}.{pid}.part")
+        temporary_marker = marker.with_name(f"{marker.name}.{pid}.part")
         try:
             with zipfile.ZipFile(VG250_ZIP) as z, z.open(VG250_INNER) as src:
                 with open(temporary_path, "wb") as dst:
                     shutil.copyfileobj(src, dst)
             os.replace(temporary_path, VG250_CACHE)
+            temporary_marker.write_text(archive_digest, encoding="ascii")
+            os.replace(temporary_marker, marker)
         finally:
             temporary_path.unlink(missing_ok=True)
+            temporary_marker.unlink(missing_ok=True)
+        LOGGER.info("Extracted %s from %s (sha256 %s) into %s", VG250_INNER, VG250_ZIP,
+                    archive_digest, VG250_CACHE)
     return VG250_CACHE
 
 
@@ -170,15 +181,17 @@ def vg250_archive_digest(*, strict: bool) -> str | None:
     ``True``: a missing archive raises ``RuntimeError`` naming the path, so the run stops when the
     stage graph is built instead of deep inside the stage.
 
-    ``False`` (stages whose ``execute`` renders without the per-Kreis parts): log a ``warning``
-    naming the path and return ``None``; the token then changes once the archive appears.
+    ``False`` (stages whose ``execute`` does not raise without the archive: the parts that need it
+    are skipped or recorded as failed): log a ``warning`` naming the path and return ``None``;
+    the token then changes once the archive appears.
     """
     if strict:
         return synpp_tokens.input_file_sha256(VG250_ZIP, "VG250 archive")
     if not VG250_ZIP.is_file():
         LOGGER.warning(
             "VG250 archive not found at %s; the stage's cache token carries no archive digest "
-            "and its per-Kreis outputs will be omitted.", VG250_ZIP)
+            "and every part of it that needs the Kreis/Gemeinde geography will be skipped or "
+            "recorded as failed.", VG250_ZIP)
         return None
     return synpp_tokens.file_sha256(VG250_ZIP)
 

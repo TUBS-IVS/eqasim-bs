@@ -18,7 +18,8 @@ and five of ``replacement_education_gravity`` with byte-identical payloads.
 
 What the patch does
 -------------------
-:func:`process_stages` is a verbatim copy of synpp 1.6.2's function except for the block marked
+:func:`process_stages` is a verbatim copy of synpp 1.6.2's function except for the fork patch
+``run-target-aliases`` (see its docstring) and the block marked
 ``# --- deterministic propagation ---``, which is replaced by :func:`propagate_implicit_config`:
 upstream stages are processed before downstream stages (Kahn's topological order with sorted
 tie-breaks), every downstream edge is followed, and conflicting propagated values raise instead
@@ -137,7 +138,8 @@ def process_stages(definitions, global_config, externals={}, aliases={}):  # noq
     """synpp 1.6.2 ``process_stages`` with deterministic implicit-config propagation.
 
     Verbatim copy of the pinned upstream function except for the marked blocks: the deterministic
-    propagation (see the module docstring) and ``# PATCH run-target-aliases``. Helpers are imported
+    propagation (see the module docstring) and the patch ``run-target-aliases`` (the run targets
+    resolve through the config's aliases; braunschweig.synpp_fork.PATCHES). Helpers are imported
     from ``synpp.pipeline`` so their behaviour stays upstream's.
     """
     from synpp.pipeline import (ConfigurationContext, PipelineError, calculate_identification_hash,
