@@ -62,6 +62,7 @@ def coverage_table(batch: BatchFolder, usage: pd.Series, groups=CONTROL_GROUPS) 
         else:
             in_universe = np.asarray(evaluate_expression(group.universe, frame)).astype(bool)
         weight, copies = _record_weights(batch, group.seed_table, usage)
+        # n_uncovered and n_multi_hit are counted inside the universe only.
         uncovered = in_universe & (hits == 0)
         weight_total, copies_total = weight[in_universe].sum(), copies[in_universe].sum()
         seed_share = weight[uncovered].sum() / weight_total if weight_total else np.nan
@@ -86,9 +87,12 @@ def coverage_table(batch: BatchFolder, usage: pd.Series, groups=CONTROL_GROUPS) 
 def universe_table(batch: BatchFolder, groups=CONTROL_GROUPS) -> pd.DataFrame:
     """Household group targets versus the household total, per geography.
 
-    Covers household-table groups that are exhaustive and have no universe filter;
-    ``household_total`` is the sum of the ``total_hh_control`` targets over the
-    batch's 100 m cells.
+    Covers household-table groups that are exhaustive and have no universe filter.
+    ``household_total`` is the batch's ``total_hh_control`` sum over its cells; it is
+    compared with each group's target sum in the group's own geography.  This assumes
+    the batch's zone targets are apportioned to the same households (true for the
+    stage's batch apportionment).  Covered groups without a target (in a geography) are
+    counted and logged.
     """
     spec = batch.control_spec
     total_row = spec[spec["target"] == batch.total_hh_control]
@@ -99,19 +103,28 @@ def universe_table(batch: BatchFolder, groups=CONTROL_GROUPS) -> pd.DataFrame:
     household_total = float(control_totals(batch, total_geography)[
         batch.total_hh_control].sum())
     geography_of = dict(zip(spec["target"], spec["geography"]))
-    rows = []
+    rows, skipped, checked = [], [], 0
     for group in groups:
         if group.seed_table != "households" or not group.exhaustive \
                 or group.universe is not None:
             continue
+        checked += 1
         targets = group_targets(group, spec, batch.total_hh_control)
+        if not targets:
+            skipped.append(group.name)
+            continue
         for geography in batch.geographies:
             in_geography = [t for t in targets if geography_of[t] == geography]
             if not in_geography:
+                logger.info("[popsim_batch_diagnostics] universe: group %s has no control "
+                            "in geography %s of %s", group.name, geography, batch.name)
                 continue
             target_sum = float(control_totals(batch, geography)[in_geography].to_numpy().sum())
             ratio = target_sum / household_total if household_total else np.nan
             rows.append({"group": group.name, "geography": geography,
                          "target_sum": target_sum, "household_total": household_total,
                          "ratio": ratio})
+    logger.info("[popsim_batch_diagnostics] universe: %d of %d checkable groups have no "
+                "control in %s%s", len(skipped), checked, batch.name,
+                f": {', '.join(skipped)}" if skipped else "")
     return pd.DataFrame(rows, columns=UNIVERSE_COLUMNS)

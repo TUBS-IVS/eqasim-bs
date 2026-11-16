@@ -125,3 +125,26 @@ def test_every_production_control_belongs_to_exactly_one_group():
         kreis_control_names=tuple(c.name for c in kreis_attribute_control.REGISTRY))
     total = spec.loc[spec["target"].str.contains("Insgesamt_Haushalte"), "target"].iloc[0]
     assert unmatched_controls(spec, total) == []
+
+
+def _extra_tenure(target, expression):
+    return [dict(target=target, seed_table="households", importance=1, expression=expression)]
+
+
+def test_overlapping_category_is_counted_as_multi_hit(tmp_path):
+    # Households 1 and 4 have H_MIETE == 1, so the extra control doubles the Mieter category.
+    work = build_work_dir(tmp_path, extra_controls=_extra_tenure(
+        "X_Tenure_ZENSUS100m_target", "(households.H_MIETE == 1)"))
+    batch = load_batch_folder(work / "batch_000")
+    row = coverage_table(batch, pd.Series({2: 1, 3: 1, 4: 3})).set_index("group").loc["tenure"]
+    assert row[["n_universe", "n_uncovered", "n_multi_hit"]].tolist() == [4, 1, 2]
+
+
+def test_ratio_is_nan_when_no_record_is_uncovered(tmp_path):
+    # H_MIETE == 9 (household 3) is the only uncovered tenure record; cover it.
+    work = build_work_dir(tmp_path, extra_controls=_extra_tenure(
+        "Y_Tenure_ZENSUS100m_target", "(households.H_MIETE == 9)"))
+    batch = load_batch_folder(work / "batch_000")
+    row = coverage_table(batch, pd.Series({2: 1, 3: 1, 4: 3})).set_index("group").loc["tenure"]
+    assert row["n_uncovered"] == 0 and row["seed_weight_share"] == 0
+    assert pd.isna(row["ratio"])
