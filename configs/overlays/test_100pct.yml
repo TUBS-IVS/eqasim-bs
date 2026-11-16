@@ -35,8 +35,5 @@ config:
   braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat_opt
   braunschweig.population.popsim.max_cells: 750
   braunschweig.population.popsim.num_workers: 3
-  # OPTIMIZED per-control importance weights (control_spec.IMPORTANCE_PROFILES):
-  # lowered the count-weighted Gesamtabweichung 3.365% -> 2.868% on batch_020.
-  braunschweig.population.popsim.importance_profile: optimized_2026_06_30
   cache_share_export: true
   cache_share_recompute: []

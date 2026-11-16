@@ -55,7 +55,7 @@ config:
   java_memory: 32G
 
   mode_choice: false
-  matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
+  # matching_attributes and braunschweig.ipf.* are legacy-IPF-only: not read under popsim (CFG-F6).
 
   # --- Population method: popsim_mid ----------------------------------------
   # Selects the PopulationSim + MiD 2023 producer (braunschweig.popsim.stage).
@@ -141,15 +141,6 @@ config:
     75: -0.0704   # Zentrale Stadt (laendlich)
     76: -0.0719   # Mittelstadt (laendlich)
     77: -0.0667   # Kleinstadt / doerfl. (laendlich)
-
-  # --- IPF: per-commune household-size margin (Zensus 2022 1000A-2081)
-  braunschweig.ipf.use_household_size_margin: true
-
-  # --- IPF: post-formation hh_type assignment (Zensus 2022 1000A-2081)
-  braunschweig.ipf.use_household_type_margin: true
-
-  # --- Phase 2 IPF (TASK-011, 2026-04-26)
-  braunschweig.ipf.dirichlet_prior_strength: 0.5
 
   gtfs_path: gtfs
   osm_path: osm

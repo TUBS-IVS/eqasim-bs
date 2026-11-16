@@ -39,5 +39,5 @@ def test_cache_reuse_keeps_scientifically_distinct_profiles_separate():
     importance = "braunschweig.population.popsim.importance_profile"
     assert configs[0][work] == configs[1][work]
     assert configs[2][work] != configs[0][work]
-    assert configs[0].get(importance, "uniform") == configs[1].get(importance, "uniform") == "uniform"
-    assert configs[2][importance] == "optimized_2026_06_30"
+    # Owner decision A5: the optimized profile lives in the base, so every scale uses it.
+    assert [c[importance] for c in configs] == ["optimized_2026_06_30"] * 3

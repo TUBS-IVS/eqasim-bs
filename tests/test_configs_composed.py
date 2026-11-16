@@ -149,7 +149,6 @@ def test_scale_knobs_per_overlay():
     assert (c1["sampling_rate"], c25["sampling_rate"], c100["sampling_rate"]) == (0.01, 0.25, 1.0)
     assert c100["braunschweig.population.popsim.max_cells"] == 750
     assert c100["braunschweig.population.popsim.num_workers"] == 3
-    assert c100["braunschweig.population.popsim.importance_profile"] == "optimized_2026_06_30"
     assert c100["braunschweig.population.popsim.work_dir"] == "eqasim-data/popsim_work_allfeat_opt"
 
 
@@ -195,7 +194,6 @@ def test_base_config_is_free_of_per_scale_keys():
         "braunschweig.population.popsim.work_dir",
         "braunschweig.population.popsim.max_cells",
         "braunschweig.population.popsim.num_workers",
-        "braunschweig.population.popsim.importance_profile",
     ]
     leaked = [k for k in per_scale_keys if k in cfg]
     assert not leaked, f"per-scale keys leaked into base_bs.yml (belong in overlays): {leaked}"
