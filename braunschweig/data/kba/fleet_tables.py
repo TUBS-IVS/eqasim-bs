@@ -755,6 +755,15 @@ def load_ev_grid(data_path: str) -> pd.DataFrame:
     df["suppressed"] = df["suppressed"].map(
         {"True": True, "False": False, True: True, False: False}
     )
+    # Blank or unknown values stay NaN after the map (behaviour unchanged); make them
+    # observable (CLAUDE.md "Fallback transparency").
+    n_unmapped = int(df["suppressed"].isna().sum())
+    if n_unmapped > 0:
+        logger.warning(
+            "load_ev_grid(%s): suppressed flag unmapped (NaN) for %d/%d cells (%.1f%%); "
+            "values other than True/False are left as NaN",
+            filename, n_unmapped, len(df), 100.0 * n_unmapped / len(df),
+        )
     return df
 
 
