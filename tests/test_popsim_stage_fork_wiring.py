@@ -86,16 +86,22 @@ def _stub_early_steps(monkeypatch, calls):
     monkeypatch.setattr(stage.tool_version, "check_populationsim_environment", check)
 
 
-def test_execute_validates_the_integerizer_settings_before_the_seed_build(monkeypatch):
+@pytest.mark.parametrize("key, bad_value, error_match", [
+    (stage.KEY_INTEGERIZER_DRAW, "banana", "INTEGERIZER_DRAW"),
+    # The gate only runs after all batches (hours); a typo must fail before the seed build.
+    (stage.KEY_SOLVER_FALLBACK_ERROR_RATE, 2.0, "solver_fallback_error_rate"),
+])
+def test_execute_validates_the_integerizer_and_gate_settings_before_the_seed_build(
+        monkeypatch, key, bad_value, error_match):
     calls = []
     _stub_early_steps(monkeypatch, calls)
 
     def must_not_run(context):
-        raise AssertionError("execute() went on after an invalid integerizer setting")
+        raise AssertionError("execute() went on after an invalid setting")
 
     monkeypatch.setattr(stage, "_read_batching_and_scope_config", must_not_run)
-    context = _context(_values(**{stage.KEY_INTEGERIZER_DRAW: "banana"}))
-    with pytest.raises(ValueError, match="INTEGERIZER_DRAW"):
+    context = _context(_values(**{key: bad_value}))
+    with pytest.raises(ValueError, match=error_match):
         stage.execute(context)
     assert calls == ["environment check"]
 

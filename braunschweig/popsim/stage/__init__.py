@@ -2638,9 +2638,11 @@ def execute(context) -> pd.DataFrame:
     populationsim_version = context.config(KEY_POPSIM_VERSION)
     tool_report = tool_version.check_populationsim_environment(
         context, uv_path, popsimprep_dir, populationsim_version)
-    # Second action: validate the integerizer options before any seed is built, so an invalid
-    # value costs seconds, not the seed build (ValueError names the key).
+    # Second action: validate the integerizer options and the solver-path gate threshold before
+    # any seed is built, so an invalid value costs seconds, not the seed build or, for the gate
+    # (which only runs after all batches), the whole batch run (ValueError names the key).
     settings_overrides, integerizer_seed_base = _read_integerizer_settings(context)
+    solver_path_gate.validate_error_rate(context.config(KEY_SOLVER_FALLBACK_ERROR_RATE))
     (
         max_cells, num_workers, work_dir, kreise, source_name, stratify_regiostar,
         complete_members,
