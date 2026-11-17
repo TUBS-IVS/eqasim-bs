@@ -1338,6 +1338,8 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         popsim_stage, "_read_integerizer_settings", lambda ctx: ({}, None))
     # Validated at stage start too (tests/test_popsim_stage_fork_wiring.py); null = warn only.
     values[popsim_stage.KEY_SOLVER_FALLBACK_ERROR_RATE] = None
+    # The batch settings text is resolved early as a conflict check; no settings file here.
+    monkeypatch.setattr(popsim_stage, "_batch_settings_yaml", lambda *args: "")
     monkeypatch.setattr(
         popsim_stage, "_read_control_config",
         lambda ctx, source_name: ((), (), "csv", False, False, (), set(), 30, None, "default", False))

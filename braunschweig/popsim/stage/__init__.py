@@ -2643,6 +2643,9 @@ def execute(context) -> pd.DataFrame:
     # (which only runs after all batches), the whole batch run (ValueError names the key).
     settings_overrides, integerizer_seed_base = _read_integerizer_settings(context)
     solver_path_gate.validate_error_rate(context.config(KEY_SOLVER_FALLBACK_ERROR_RATE))
+    # The server-local settings file must not contradict the tracked options (it is checked
+    # again when the batch folders are written); resolving it here makes a conflict cost seconds.
+    _batch_settings_yaml(context, settings_path, settings_overrides)
     (
         max_cells, num_workers, work_dir, kreise, source_name, stratify_regiostar,
         complete_members,

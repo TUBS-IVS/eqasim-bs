@@ -74,10 +74,15 @@ def test_resolve_project_dir_rejects_an_empty_value():
 
 # --- execute: order of the early actions -------------------------------------------------
 
-def _stub_early_steps(monkeypatch, calls):
+_SETTINGS_TEXT = "models:\n- setup_data_structures\n- write_data_dictionary\n"
+
+
+def _stub_early_steps(monkeypatch, calls, settings_path):
+    if not Path(settings_path).exists():
+        Path(settings_path).write_text(_SETTINGS_TEXT, encoding="utf-8")
     monkeypatch.setattr(
         stage, "_read_stage_paths",
-        lambda ctx: ("cells", "mid", "controls", "settings", "logging", "popsimprep", "uv"))
+        lambda ctx: ("cells", "mid", "controls", str(settings_path), "logging", "popsimprep", "uv"))
 
     def check(context, uv_path, project_dir, expected):
         calls.append("environment check")
@@ -86,21 +91,26 @@ def _stub_early_steps(monkeypatch, calls):
     monkeypatch.setattr(stage.tool_version, "check_populationsim_environment", check)
 
 
-@pytest.mark.parametrize("key, bad_value, error_match", [
-    (stage.KEY_INTEGERIZER_DRAW, "banana", "INTEGERIZER_DRAW"),
+@pytest.mark.parametrize("key, bad_value, settings_text, error_match", [
+    (stage.KEY_INTEGERIZER_DRAW, "banana", None, "INTEGERIZER_DRAW"),
     # The gate only runs after all batches (hours); a typo must fail before the seed build.
-    (stage.KEY_SOLVER_FALLBACK_ERROR_RATE, 2.0, "solver_fallback_error_rate"),
+    (stage.KEY_SOLVER_FALLBACK_ERROR_RATE, 2.0, None, "solver_fallback_error_rate"),
+    # A server-local settings file contradicting the tracked timeout (0.10.0's key name).
+    (None, None, _SETTINGS_TEXT + "INTEGIZER_TIMEOUT: 60\n", "INTEGIZER_TIMEOUT"),
 ])
 def test_execute_validates_the_integerizer_and_gate_settings_before_the_seed_build(
-        monkeypatch, key, bad_value, error_match):
+        monkeypatch, tmp_path, key, bad_value, settings_text, error_match):
     calls = []
-    _stub_early_steps(monkeypatch, calls)
+    settings_path = tmp_path / "settings.yaml"
+    if settings_text is not None:
+        settings_path.write_text(settings_text, encoding="utf-8")
+    _stub_early_steps(monkeypatch, calls, settings_path)
 
     def must_not_run(context):
         raise AssertionError("execute() went on after an invalid setting")
 
     monkeypatch.setattr(stage, "_read_batching_and_scope_config", must_not_run)
-    context = _context(_values(**{key: bad_value}))
+    context = _context(_values(**({key: bad_value} if key else {})))
     with pytest.raises(ValueError, match=error_match):
         stage.execute(context)
     assert calls == ["environment check"]
@@ -111,9 +121,9 @@ def test_execute_validates_the_integerizer_and_gate_settings_before_the_seed_bui
 def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
         monkeypatch, tmp_path):
     calls = []
-    _stub_early_steps(monkeypatch, calls)
+    _stub_early_steps(monkeypatch, calls, tmp_path / "settings.yaml")
     settings = tmp_path / "settings.yaml"
-    settings.write_text("geographies: [ZENSUS100m]\n", encoding="utf-8")
+    settings.write_text(_SETTINGS_TEXT + "geographies: [ZENSUS100m]\n", encoding="utf-8")
     monkeypatch.setattr(
         stage, "_read_stage_paths",
         lambda ctx: ("cells", "mid", "controls", str(settings), "logging", "popsimprep", "uv"))
