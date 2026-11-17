@@ -26,6 +26,7 @@
 | [#291](https://github.com/eqasim-org/eqasim-france/pull/291) (partial) | `synthesis/output.py` | `trips.parquet` was written with `to_csv` (CSV bytes in a `.parquet` file); now `to_parquet`. The education-weight part of #291 is French external-education data — N/A. |
 | [#414](https://github.com/eqasim-org/eqasim-france/pull/414) | `synthesis/population/matched.py` | Statistical-matching sort gets identifier/weight tie-breakers, making the assignment invariant to donor input row order. **Behaviour change:** tie-break order differs from before, so matched donors (and downstream results) can differ between pipeline versions. |
 | [#438](https://github.com/eqasim-org/eqasim-france/pull/438) | `matched.py`, `secondary/locations.py`, `supply/processed.py`, `simulation/prepare.py` | `processes` declared `volatile = True`: changing the process count no longer devalidates cached stages. Mirrors upstream's four files; our own stages (e.g. `matsim/simulation/run.py`, `braunschweig/`) can adopt the same pattern incrementally. |
+| [#569](https://github.com/eqasim-org/eqasim-france/pull/569) (ported 2026-11-17, outside a sweep; tests in `tests/test_gtfs_flex_filter.py`) | `data/gtfs/utils.py`, `data/gtfs/cleaned.py` | On-demand trips encoded as GTFS-Flex (booking windows in `stop_times`) are dropped before the name-based Flexo exclusion (#200). Deviations from upstream are in the `filter_flex_trips` docstring. |
 
 ## Already fixed independently / already present in our tree
 

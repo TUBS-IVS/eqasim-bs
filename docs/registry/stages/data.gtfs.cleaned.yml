@@ -1,7 +1,9 @@
 stage: data.gtfs.cleaned
 title: GTFS cleaning
 layer: matsim
-description: Upstream GTFS cleaning, pointed at the regional/Delfi cordon feed via gtfs_path.
+description: Upstream GTFS cleaning, pointed at the regional/Delfi cordon feed via gtfs_path. Drops
+  on-demand service before the cut, first GTFS-Flex trips (data.gtfs.utils.filter_flex_trips), then
+  the configured routes such as Flexo (data.gtfs.utils.filter_routes, issue #200).
 lineage:
   type: configured
   upstream: null

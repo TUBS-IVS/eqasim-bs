@@ -1,5 +1,5 @@
 import data.gtfs.utils as gtfs
-import os, pathlib
+import json, os, pathlib
 
 from braunschweig import synpp_tokens
 
@@ -7,6 +7,11 @@ from braunschweig import synpp_tokens
 # source goes into the stage token (audit C2, ADR-0136). ``network_clip`` is imported inside
 # ``execute`` and ``spatial.cordon`` is reached through it, so both are hashed by name.
 _HELPER_MODULES = (gtfs,)
+
+# Stage report (written into context.path()): per feed, the counts of every step that drops,
+# filters or replaces records, plus the identifier renames of the merge.
+REPORT_FILE_NAME = "gtfs_cleaned_report.json"
+
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.cordon.network_clip",
     "braunschweig.data.spatial.cordon",
@@ -55,14 +60,32 @@ def execute(context):
             context.config("cordon_network_source_buffer_m"))
 
     # Route exclusion rules (demand-responsive / placeholder services, issue #200)
-    excluded_route_patterns = context.config("gtfs_excluded_route_short_name_patterns")
-    excluded_agency_ids = context.config("gtfs_excluded_agency_ids")
-    excluded_agency_name_patterns = context.config("gtfs_excluded_agency_name_patterns")
+    # A key set to null disables its rule, like an empty list (filter_routes accepts None).
+    excluded_route_patterns = list(context.config("gtfs_excluded_route_short_name_patterns") or [])
+    excluded_agency_ids = list(context.config("gtfs_excluded_agency_ids") or [])
+    excluded_agency_name_patterns = list(context.config("gtfs_excluded_agency_name_patterns") or [])
+
+    # Counts of every step that drops, filters or replaces records, persisted next to the
+    # output so each run records what was removed (not only the log).
+    report = dict(
+        excluded_route_short_name_patterns = excluded_route_patterns,
+        excluded_agency_ids = excluded_agency_ids,
+        excluded_agency_name_patterns = excluded_agency_name_patterns,
+        feeds = [])
 
     # Load and cut feeds
     feeds = []
     for path in input_files:
-        feed = gtfs.read_feed(path)
+        feed_report = dict(feed = os.path.basename(path), read = {}, gtfs_flex_filter = {},
+                           route_filter = {}, routes_without_trips = {}, spatial_cut = {}, despace = {})
+        report["feeds"].append(feed_report)
+
+        feed = gtfs.read_feed(path, stats = feed_report["read"])
+
+        # Drop on-demand trips encoded as GTFS-Flex (booking windows in stop_times,
+        # upstream eqasim-france #569). Runs first so on-demand services the name-based
+        # rule below does not list are caught too; that rule stays as a second net.
+        feed = gtfs.filter_flex_trips(feed, stats = feed_report["gtfs_flex_filter"])
 
         # Drop demand-responsive / placeholder services (e.g. ZGB "Flexo") so they are
         # not imported as scheduled PT. Applied before the spatial cut so the logged
@@ -71,17 +94,29 @@ def execute(context):
             feed,
             excluded_route_short_name_patterns = excluded_route_patterns,
             excluded_agency_ids = excluded_agency_ids,
-            excluded_agency_name_patterns = excluded_agency_name_patterns)
+            excluded_agency_name_patterns = excluded_agency_name_patterns,
+            stats = feed_report["route_filter"])
 
+        # Routes whose trips were all removed above would stay in routes.txt with no trips
+        # (cut_feed does not touch routes).
+        feed = gtfs.drop_routes_without_trips(feed, stats = feed_report["routes_without_trips"])
+
+        rows_before_cut = {slot: len(feed[slot]) for slot in feed}
         feed = gtfs.cut_feed(feed, df_area)
+        feed_report["spatial_cut"] = {
+            slot: dict(before = count, after = len(feed[slot]) if slot in feed else 0)
+            for slot, count in rows_before_cut.items()}
 
         # This was fixed in pt2matsim, so we can remove one a new release (> 20.7) is available.
-        feed = gtfs.despace_stop_ids(feed) # Necessary as MATSim does not like stops/links with spaces
+        # Necessary as MATSim does not like stops/links with spaces
+        feed = gtfs.despace_stop_ids(feed, stats = feed_report["despace"])
 
         feeds.append(feed)
 
     # Merge feeds
-    merged_feed = gtfs.merge_feeds(feeds) if len(feeds) > 1 else feeds[0]
+    merge_stats = dict(renamed_identifiers = {}, duplicate_rows_removed = {})
+    merged_feed = gtfs.merge_feeds(feeds, stats = merge_stats) if len(feeds) > 1 else feeds[0]
+    report["merge"] = merge_stats
 
     # Fix for pt2matsim (will be fixed after PR #173)
     # Order of week days must be fixed
@@ -93,6 +128,9 @@ def execute(context):
 
     # Write feed (not as a ZIP, but as files, for pt2matsim)
     gtfs.write_feed(merged_feed, "%s/output" % context.path())
+
+    with open(os.path.join(context.path(), REPORT_FILE_NAME), "w", encoding = "utf-8") as handle:
+        json.dump(report, handle, indent = 2)
 
     return "gtfs"
 
