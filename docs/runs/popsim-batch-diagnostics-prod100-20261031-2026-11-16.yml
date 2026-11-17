@@ -1,0 +1,151 @@
+id: popsim-batch-diagnostics-prod100-20261031-2026-11-16
+date: '2026-11-16'
+repository:
+  commit: b1e4a5a53a08cc253528224c2061b4b4361d8588
+  branch: analysis/i138-popsim-batch-diagnostics
+  notes: >-
+    The diagnostics package braunschweig.analysis.popsim_batch_diagnostics at b1e4a5a5 (the commit of the final
+    whole-branch review), shipped to the run server as a git archive of that commit and run from the unpacked tree
+    (~/i138_ladder/code_b1e4a5a); provenance.json records the commit through EQASIM_BS_COMMIT because the unpacked
+    tree is not a git checkout. The MEASURED run prod100_20261031 was built from eqasim-bs 7a41f0ba57bb9abdb862c59bcc14c73653e8510a
+    and eqasim-java-bs 8eab197e744aa2c7e5ba16462bedce2e57edb4b1 (its run.json), with PopulationSim 0.10.0.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - the run overlay of prod100_20261031 (server-local ~/prod100_20261031/run.yml), only as the configuration that produced the measured batch folders
+  notes: >-
+    No pipeline configuration is read by the diagnostics: every batch folder carries its own controls.csv,
+    settings.yaml, seed and control totals, and the tool evaluates the control expressions on the batch's own seed.
+    Diagnostics options: all 60 batches, --mid-households MiD2023_Haushalte.csv (sha256 in provenance.json), no
+    --misfit (the production checkpoint stores were deleted by the stage), default thresholds (provenance.json).
+    No random draw is involved.
+sampling:
+  rate: 1.0
+  scope: >-
+    all 60 PopulationSim batch folders of prod100_20261031 (~/prod100_20261031/popsim_work/batch_000..batch_059),
+    558,274 synthetic households drawn from one seed of 218,097 MiD 2023 households and 485,709 persons.
+  notes: The rate is the share of the run's batches measured, not a population sampling rate.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run and no model change. python -m braunschweig.analysis.popsim_batch_diagnostics.run read the
+    finished batch folders of prod100_20261031 (seed, control spec, control totals, final_expanded_household_ids.csv,
+    populationsim.log).
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Completed on 2026-11-16 in 9:48 min wall time with 0.85 GB peak RSS on the run server, exit 0. A MEASUREMENT of an
+    existing production run and the first real use of the tool (#138, WP1 of the PopulationSim repair design); not a
+    validation, and the warnings below are threshold breaches of a diagnostic, not a verdict on the model.
+source: >-
+  Server output ~/popsim_diag_prod100_20261031 (log ~/i138_ladder/baseline.log); committed copy of every output file in
+  docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/.
+environment: 'run server (Linux), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10, pandas 1.5.3, numpy 1.23.5)'
+validation:
+- metric: donor reuse over the region (558,274 synthetic households, one seed group)
+  reference: none (a reuse measure has no observed reference; it describes the draw)
+  result: >-
+    15,248 of 218,097 seed households used (6.99 %); Kish effective sample size 1,293.2; most-copied seed household
+    3,796 copies; the 100 / 1,000 / 5,000 most-used seed households carry 20.7 % / 57.0 % / 89.1 % of the synthetic
+    households. Per batch 851 (batch_059) to 3,995 (batch_025) distinct seed households; the two ladder batches
+    use 1,646 (batch_000) and 3,367 (batch_032); per-batch and per-Kreis rows in reuse.csv.
+  artifact: docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/reuse.csv
+  notes: Measurement of the draw, NOT a behavioural validation.
+- metric: >-
+    share of synthetic households per seed-weight class (H_GEW, left-closed classes <1, 1-2, 2-3, 3-5, 5-8, 8+)
+    against the class's share of the seed weight (design goal G2 of the repair design, bound 5 percentage points)
+  reference: >-
+    the seed's own weight shares (MiD 2023 H_GEW, survey data); the 5-point bound is an ASSUMPTION-grade design bound
+    set in the repair design, not an observed reference
+  result: >-
+    G2 NOT met. Differences (synthetic minus seed weight share, percentage points): <1 -26.97 (0.62 % against
+    27.59 %), 1-2 -13.63, 2-3 -2.49, 3-5 +6.61, 5-8 +12.36, 8+ +24.12. Five of six classes breach the 5-point
+    warning. By survey sub-sample (BASISAUF): base sample 65.8 % of the synthetic households against 38.7 % of the
+    weight, increase sample 34.2 % against 61.3 %. By federal state (BLAND) in attribute_shares.csv.
+  artifact: docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/weight_class_shares.csv
+  notes: Representativeness of the draw against the survey weights; NOT a behavioural validation.
+- metric: >-
+    control coverage: per control group the seed records inside the group's universe that no category counts, their
+    share of the seed weight and of the synthetic copies (ratio = synthetic / seed weight share); groups declared in
+    braunschweig/popsim/control_groups.py
+  reference: none (internal consistency of the control set; design goal G6 asks for zero uncovered records)
+  result: >-
+    G6 NOT met for four exhaustive groups. age_sex: 880 of 485,709 persons without a binary sex, 0.20 % of the
+    person weight, 1.47 % of the synthetic persons (ratio 7.21); employed_grid: 371 of 230,762 (ratio 4.30); tenure:
+    5,320 of 218,097 households (3.50 % of the weight, 0.35 % synthetic, ratio 0.100); building_type: 8,322
+    households (6.18 % of the weight, 0.004 % synthetic, ratio 0.0006). Non-exhaustive schulabschluss ratio 2.29,
+    beruflabschluss 0.53. No multi-hit in any group. Every other active exhaustive group covers every record.
+  artifact: docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/control_coverage.csv
+  notes: Consistency of seed and controls; NOT a behavioural validation.
+- metric: control universe, per household-level group the sum of its targets over the 60 batches against the household-total target sum (558,151)
+  reference: the run's own control targets (census-derived controls); internal consistency check, not observed-vs-model
+  result: >-
+    building_type 609,816 against 558,151 (ratio 1.0926, breaches the 0.02 tolerance); household_size 0.99965,
+    tenure 1.00002, own_cars 0.99991, own_bikes 1.00020, the four KREIS attribute groups 1.00004.
+  artifact: docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/control_universe.csv
+- metric: >-
+    integer control fit, WAPE = sum over zones |synthetic - target| / sum of targets, pooled over all controls of a
+    geography and all 60 batches (zero-target controls left out); KREIS rows are an UPPER BOUND of the Kreis-level
+    WAPE because per-batch errors against apportioned targets do not cancel across batches of one Kreis
+  reference: the run's own control targets (model inputs), NOT observed behaviour
+  result: >-
+    ZENSUS100m 0.1975 (bias -0.0172), ZENSUS1km 0.0398 (bias +0.0002), KREIS 0.0136 (bias +0.0006). Household total:
+    558,274 synthetic households against a target of 558,151 (+123); four of 60 batches miss it, batch_000 by +95
+    (6,724 against 6,629). Per control and batch in control_fit.csv. The targets come from the batches'
+    control_totals CSVs, which also hold ZENSUS100m cells that cannot hold a household (household total 0, other
+    targets non-zero); PopulationSim's ZENSUS100m control table leaves them out while its seed and parent levels
+    keep their mass, so their targets count fully as error and these WAPEs are upper bounds of the reachable fit
+    (batch_000 ZENSUS100m: M_AGE_0_9 target_sum 294 here against 288 in PopulationSim's ZENSUS100m table, ein- und
+    zweifamilienhaus 3,095 against 2,945; ladder manifest arm_0a/rounding_shift.csv, whose output is byte-identical to
+    production).
+  artifact: docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/control_fit.csv
+  notes: Control fit, NOT a behavioural validation. The reference for design goal G3 in later arms is arm 0a of the ladder (popsim-ladder-baseline-2026-11-16; ADR-0197), not these rows.
+- metric: >-
+    solver paths of the simultaneous integerizer per integerized level, from the 60 batch logs (PopulationSim 0.10.0,
+    60 s solver limit); non-simultaneous = parents whose final weights did not come from a successful simultaneous
+    solve (sequential fallback, sequential plus rounded for a single feasible sub zone, or all sub zones smart-rounded)
+  reference: none (design goal G5 asks that every path is recorded and counted)
+  result: >-
+    KREIS level 0 of 60 parents non-simultaneous; ZENSUS1km 26 of 172 (15.1 %): 38 first attempts INFEASIBLE and 11
+    NOT_SOLVED, 23 retries OPTIMAL, 2 INFEASIBLE, 7 NOT_SOLVED, 44 sub zones smart-rounded; ZENSUS100m 756 of 2,233
+    (33.9 %): 631 sequential fallbacks, 114 single feasible sub zone, 11 all sub zones smart-rounded, 1,675 sub zones
+    smart-rounded; 23 + 11 NOT_SOLVED. Both lower levels breach the 5 % warning.
+  artifact: docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/solver_paths.csv
+features:
+  note: >-
+    Evidence for popsim_method: the committed measurement of donor reuse, weight representativeness, control
+    coverage, control universes, control fit and solver paths of the production PopulationSim method, the "before"
+    state of the repair work packages #645, #646, #647 and #648.
+artifacts:
+- docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/popsim_batch_diagnostics.md
+- docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/provenance.json
+- docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/reuse.csv
+- docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/weight_class_shares.csv
+- docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/attribute_shares.csv
+- docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/control_coverage.csv
+- docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/control_universe.csv
+- docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/control_fit.csv
+- docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/solver_paths.csv
+- felix:~/popsim_diag_prod100_20261031 (the same files, about 1 MB)
+issues:
+- '#138'
+- '#645'
+- '#646'
+- '#647'
+- '#648'
+notes: >-
+  Comparison with the scratch probes behind the repair design and issues #645 to #647 (those figures were never
+  evidence; these are). Reproduced exactly: 15,248 of 218,097 seed households used, Kish size 1,293, top 1,000 carry
+  57 %; weight below 1 at 0.6 % synthetic against 27.6 % of the weight; base sample 65.8 % against 38.7 %; persons
+  without a binary sex 7.2 times over-selected; building-type targets 609,816 against 558,151 households (ratio
+  1.093); 26 of 172 parents fell back at the level below KREIS (the probe called them "KREIS-level parents": the
+  parent label is KREIS_<id>, the level integerized is ZENSUS1km); the probe's 18 parents at the 60 s limit are the
+  11 first attempts plus 7 retries ending NOT_SOLVED at that level. Differences by definition: the probe's
+  "households without tenure or building type, 9.5 % of the weight, 0.35 % synthetic" is the union of two groups;
+  this tool reports each group (tenure 3.50 % / 0.35 %, building type 6.18 % / 0.004 %) and not the union. The
+  design's "batch_000 with 6,629 households" is the batch's household target; the batch's output has 6,724
+  households. Not measured here: the share of seed groups entering PopulationSim at weight 0 (needs the checkpoint
+  store; goal G1 belongs to WP2) and the rounding shift of goal G4 (needs the store; measured on the re-run arms in
+  popsim-ladder-baseline-2026-11-16).

@@ -1,0 +1,152 @@
+id: popsim-ladder-baseline-2026-11-16
+date: '2026-11-16'
+repository:
+  commit: b1e4a5a53a08cc253528224c2061b4b4361d8588
+  branch: analysis/i138-popsim-batch-diagnostics
+  notes: >-
+    Diagnostics code b1e4a5a5 (git archive, unpacked on the run server; commit recorded through EQASIM_BS_COMMIT).
+    The arms re-ran PopulationSim, not eqasim-bs code: arm 0a with PopulationSim 0.10.0 from the production
+    environment (~/popsimprep, Python 3.12, numpy 1.26.4, ortools 9.14.6206, uv 0.11.21); arm 0b with upstream
+    ActivitySim/populationsim master at 64449c8a0c345d654a1f30fa4cd237abea67656f (four commits after tag v0.10.0 =
+    7826bbfa9cd2801cdbed9af0492a7308672c0ef2), installed by `uv sync --frozen --python 3.10` from its uv.lock
+    (sha256 ddfa4e1be91ed1bc78ca4874189796a685de5e8e78842fa7975809c19516bb4b) with a private uv 0.13.8, giving
+    Python 3.10.22, numpy 2.2.6, pandas 2.3.3, scipy 1.15.3, ortools 9.15.6755.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - the run overlay of prod100_20261031 (server-local ~/prod100_20261031/run.yml), only as the configuration that produced the two batch folders
+  notes: >-
+    Batches batch_000 (Kreis 03153) and batch_032 (Kreis 03101) of prod100_20261031: their configs/ and data/ were
+    copied unchanged (seed, controls, control totals, settings), and one line was appended to configs/settings.yaml
+    to raise the solver time limit from the default 60 s to 7200 s: `INTEGIZER_TIMEOUT: 7200` for arm 0a (the name
+    0.10.0 reads) and `INTEGERIZER_TIMEOUT: 7200` for arm 0b (the corrected name upstream master reads). Every
+    other setting as in production (GROUP_BY_INCIDENCE_SIGNATURE, USE_SIMUL_INTEGERIZER and
+    INTEGERIZE_WITH_BACKSTOPPED_CONTROLS true, SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS and USE_CVXPY false); upstream
+    master's new INTEGERIZER_QUANTUM keeps its default. PopulationSim ran as the stage runs it (`uv run --no-sync
+    populationsim -w <folder>`, OPENBLAS/OMP/MKL/NUMEXPR threads pinned to 1), the two batches of an arm in
+    parallel. Arm P is the October output of the same two batches as kept on the server. Script:
+    scripts/run_arm.sh in the artifact directory.
+sampling:
+  rate: 1.0
+  scope: >-
+    two of the 60 batches of prod100_20261031: batch_000 (rural, Kreis 03153, household target 6,629) and batch_032
+    (urban, Kreis 03101, household target 13,464), with their full seed pool of 218,097 MiD 2023 households.
+  notes: The rate is the share of each batch's cells simulated (all of them), not a population sampling rate.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. PopulationSim ran standalone on the copied batch folders (~/i138_ladder/arm0a,
+    ~/i138_ladder/arm0b); the batch diagnostics then ran on arm P (no --misfit, its stores were deleted in
+    production) and on arms 0a and 0b with --misfit on the kept checkpoint stores, which were deleted afterwards as
+    planned. Tool environment for all three recorded diagnostics: the arm-0b virtual environment, because the
+    arm-0b stores were written with numpy 2 and cannot be read under numpy 1.23 (the conda eqasim env failed on
+    them with "No module named numpy._core"); the arm-0a diagnostic was run in both environments and every numeric
+    cell of control_fit, misfit_split, rounding_shift, solver_paths and reuse agrees exactly (crosscheck.py).
+classification:
+- ab_test
+status:
+  execution: completed
+  notes: >-
+    Completed on 2026-11-16. PopulationSim wall time and peak RSS (GNU time): arm 0a batch_000 34:02 min, 28.9 GB;
+    batch_032 47:25 min, 33.0 GB; arm 0b batch_000 52:05 min, 29.1 GB; batch_032 66:18 min, 32.5 GB (two batches in
+    parallel per arm on a 64-core server, other jobs light). All four PopulationSim runs exit 0. Diagnostics with
+    --misfit 27:40 min and 11.6 GB per arm.
+source: >-
+  Server outputs ~/i138_ladder/ladder_armP, ladder_arm0a, ladder_arm0b, ladder_compare (logs next to them); committed
+  copy in docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/ (per-arm diagnostics tables, ladder_comparison.csv,
+  ladder_verdict.json, and the scripts that ran: run_arm.sh, run_diag_v2.sh, compare_ladder.py, crosscheck.py).
+environment: >-
+  run server (Linux, KVM guest whose CPU reports no SSE4.2/POPCNT, i.e. not x86-64-v2); PopulationSim environments
+  as in repository.notes; diagnostics in the arm-0b virtual environment (Python 3.10.22, numpy 2.2.6, pandas 2.3.3).
+validation:
+- metric: >-
+    design goal G3 for arm 0b against arm 0a per batch: integer control fit WAPE per geography (sum over the
+    geography's controls and zones of |synthetic - target| / sum of targets, zero-target controls left out, from the
+    batch rows of control_fit.csv); bound 0b <= 0a + 0.02 (ZENSUS100m), + 0.02 (ZENSUS1km), + 0.01 (KREIS)
+  reference: >-
+    arm 0a of the same batch (model output, NOT observed data); the bounds are the design's ASSUMPTION-grade bounds
+    fixed before this comparison
+  result: >-
+    G3 MET on both batches and all three geographies. batch_000: ZENSUS100m 0.3677 (0a) / 0.3616 (0b), ZENSUS1km
+    0.0782 / 0.0745, KREIS 0.0179 / 0.0177. batch_032: ZENSUS100m 0.1494 / 0.1552, ZENSUS1km 0.0224 / 0.0231, KREIS
+    0.0124 / 0.0121. Both arms read the same control_totals CSVs, so ZENSUS100m cells that cannot hold a household
+    (household total 0, other targets non-zero) add the same unreachable target mass to both WAPEs; the levels are upper bounds
+    of the reachable fit, the 0a/0b difference is unaffected.
+  artifact: docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/ladder_verdict.json
+  notes: Control fit against the model's own targets; NOT a behavioural validation.
+- metric: >-
+    fallbacks of arm 0b against arm 0a per batch: integerizer parents whose final weights did not come from a
+    successful simultaneous solve (non_simultaneous of solver_paths.csv), per integerized level
+  reference: arm 0a of the same batch (model output)
+  result: >-
+    KREIS and ZENSUS1km: 0 in every arm and batch. ZENSUS100m: batch_000 15 of 40 parents (0a) against 14 (0b);
+    batch_032 11 of 26 (0a) against 12 (0b), so arm 0b falls back once more in batch_032 and once less in batch_000
+    (26 against 26 over both). No parent ended NOT_SOLVED in arm 0a or 0b at the 7200 s limit (arm P: one NOT_SOLVED
+    first attempt at ZENSUS100m in batch_032).
+  artifact: docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/ladder_comparison.csv
+- metric: arm 0a against arm P (what the raised solver time limit alone changes in these two batches)
+  reference: arm P (the production output of the same batches)
+  result: >-
+    No change: final_expanded_household_ids.csv of arm 0a is byte-identical to production for both batches (same
+    sha256 prefix fe906cb27099a4cf for batch_000 and 7d553e8f3711ec80 for batch_032), so reuse, weight shares and fit
+    are identical; the one NOT_SOLVED first attempt of production batch_032 (ZENSUS100m) ended INFEASIBLE within the
+    raised limit instead of timing out and took the same sequential-fallback path (solver_paths.csv: first_not_solved
+    1 -> 0, first_infeasible 13 -> 14, all retry and fallback counts equal), hence the same weights. A longer limit
+    did not let that simultaneous attempt succeed.
+  artifact: docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/ladder_comparison.csv
+- metric: >-
+    design goal G4 baseline (rounding shift |I_c - F_c| / T_c per ZENSUS100m control with T_c >= 40, household
+    total left out; bound 0.10) and the misfit split at ZENSUS100m, arms 0a and 0b
+  reference: none (the float weights of the same run; later arms are evaluated against arm 0a, ADR-0197)
+  result: >-
+    G4 NOT met in either arm. batch_000: 10 of 47 controls outside the bound in 0a and in 0b, largest shift 0.532
+    (0a) / 0.511 (0b), for households with 6 or more persons (target 47; float sum 49 / 48, integer 24: float bias
+    +4.3 % / +2.1 %, integer bias -48.9 % in both). batch_032: 3 (0a) / 4 (0b) of 47 outside, largest 0.407 / 0.390.
+    Pooled ZENSUS100m split (0a): batch_000 balancing 0.360, rounding 0.213, total 0.354; batch_032 0.107, 0.115,
+    0.145 (0b within 0.007 of these).
+  artifact: docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/arm_0a/rounding_shift.csv
+- metric: donor reuse and weight representativeness per batch (G2 baseline)
+  reference: the seed's own H_GEW weight shares (survey data); the 5-point G2 bound is an ASSUMPTION-grade design bound
+  result: >-
+    G2 NOT met in any arm. Lowest weight class (H_GEW < 1): batch_000 -27.04 (P, 0a) / -27.03 (0b) percentage points,
+    batch_032 -26.93 / -26.89. Distinct seed households used: batch_000 1,646 (P, 0a) / 1,650 (0b), Kish size 573 /
+    586; batch_032 3,367 / 3,426, Kish 933 / 966. Household total: batch_000 6,724 (P, 0a) and 6,752 (0b) against a
+    target of 6,629; batch_032 13,464 in every arm (target 13,464).
+  artifact: docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/ladder_comparison.csv
+features:
+  note: >-
+    Evidence for popsim_method (the comparison baseline of the repair design's ladder): arm 0b reproduces arm 0a
+    within the G3 bounds; on this evidence the owner chose v0.10.0 as the fork base, so arm 0a is the reference
+    for later arms (ADR-0197).
+artifacts:
+- docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/ladder_comparison.csv
+- docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/ladder_verdict.json
+- docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/arm_P/popsim_batch_diagnostics.md
+- docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/arm_0a/popsim_batch_diagnostics.md
+- docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/arm_0a/misfit_split.csv
+- docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/arm_0a/rounding_shift.csv
+- docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/arm_0b/popsim_batch_diagnostics.md
+- docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/arm_0b/misfit_split.csv
+- docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/arm_0b/rounding_shift.csv
+- docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/scripts/run_arm.sh
+- docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/scripts/run_diag_v2.sh
+- docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/scripts/compare_ladder.py
+- docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/scripts/crosscheck.py
+- felix:~/i138_ladder/arm0a, arm0b (batch folders with outputs and logs; checkpoint stores of about 8.1 and 9.8 GB per arm deleted after the diagnostics)
+- felix:~/i138_ladder/populationsim_master (the arm-0b PopulationSim checkout and its virtual environment)
+issues:
+- '#138'
+- '#645'
+- '#646'
+notes: >-
+  The owner's decision taken from this comparison (fork base v0.10.0) is ADR-0197. Decision input, stated without
+  a recommendation: by the design's fallback rule the fork is based on tag v0.10.0
+  if arm 0b misses G3 against arm 0a OR falls back more often. G3 is met; "falls back more often" holds for batch_032
+  (12 against 11 non-simultaneous ZENSUS100m parents of 26) but not for batch_000 (14 against 15) or for both batches
+  together (26 against 26). A second finding for that decision: upstream master's uv.lock installs numpy 2.4.6 for
+  Python >= 3.11, whose wheels need x86-64-v2 CPU features that the run server does not report, so numpy refuses to
+  import there; only the lock's Python 3.10 branch (numpy 2.2.6) runs, and the shared uv (0.11.21) is older than
+  the uv >= 0.13.4 upstream master requires. Checkpoint stores written by arm 0b need numpy 2 to be read. Against
+  the scratch probes: the design's "households with 6 or more persons +4 % before rounding, -47 % after" (one
+  batch_000 probe variant) is +4.3 % / -48.9 % in arm 0a here (integer 24 of target 47); the probe's G4 "up to
+  0.51" is 0.532 (0a) and 0.511 (0b) here.

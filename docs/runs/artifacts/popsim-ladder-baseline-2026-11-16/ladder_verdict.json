@@ -1,0 +1,81 @@
+{
+  "g3_bounds": {
+    "ZENSUS100m": 0.02,
+    "ZENSUS1km": 0.02,
+    "KREIS": 0.01
+  },
+  "batches": {
+    "batch_000": {
+      "g3_ZENSUS100m": {
+        "wape_0a": 0.36766230658797255,
+        "wape_0b": 0.361620673153613,
+        "limit": 0.38766230658797257,
+        "met": true
+      },
+      "g3_ZENSUS1km": {
+        "wape_0a": 0.0781603417944207,
+        "wape_0b": 0.07454134204574013,
+        "limit": 0.09816034179442071,
+        "met": true
+      },
+      "g3_KREIS": {
+        "wape_0a": 0.01789034709099668,
+        "wape_0b": 0.0176607128218731,
+        "limit": 0.02789034709099668,
+        "met": true
+      },
+      "fallback_KREIS": {
+        "non_simultaneous_0a": 0.0,
+        "non_simultaneous_0b": 0.0,
+        "more_in_0b": false
+      },
+      "fallback_ZENSUS1km": {
+        "non_simultaneous_0a": 0.0,
+        "non_simultaneous_0b": 0.0,
+        "more_in_0b": false
+      },
+      "fallback_ZENSUS100m": {
+        "non_simultaneous_0a": 15.0,
+        "non_simultaneous_0b": 14.0,
+        "more_in_0b": false
+      }
+    },
+    "batch_032": {
+      "g3_ZENSUS100m": {
+        "wape_0a": 0.14942837260165026,
+        "wape_0b": 0.1551943533154389,
+        "limit": 0.16942837260165025,
+        "met": true
+      },
+      "g3_ZENSUS1km": {
+        "wape_0a": 0.02242796316466977,
+        "wape_0b": 0.023071591246658085,
+        "limit": 0.04242796316466977,
+        "met": true
+      },
+      "g3_KREIS": {
+        "wape_0a": 0.012364671222803712,
+        "wape_0b": 0.012072606403076691,
+        "limit": 0.022364671222803712,
+        "met": true
+      },
+      "fallback_KREIS": {
+        "non_simultaneous_0a": 0.0,
+        "non_simultaneous_0b": 0.0,
+        "more_in_0b": false
+      },
+      "fallback_ZENSUS1km": {
+        "non_simultaneous_0a": 0.0,
+        "non_simultaneous_0b": 0.0,
+        "more_in_0b": false
+      },
+      "fallback_ZENSUS100m": {
+        "non_simultaneous_0a": 11.0,
+        "non_simultaneous_0b": 12.0,
+        "more_in_0b": true
+      }
+    }
+  },
+  "g3_met_all": true,
+  "fallback_more_in_0b_any": true
+}
