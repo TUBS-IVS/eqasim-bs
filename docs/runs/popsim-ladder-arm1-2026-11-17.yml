@@ -1,0 +1,101 @@
+id: popsim-ladder-arm1-2026-11-17
+date: '2026-11-17'
+repository:
+  commit: 33ae6975d6ee0d49f240816f9d15a042fc19c27c
+  branch: fix/i645-populationsim-fork-core
+  notes: >-
+    PRE-REGISTRATION, written and committed before any arm-1 run started (2026-11-17). The bounds and the
+    method rule below are fixed here and are not changed after the results exist. Arm settings are written
+    by the eqasim-bs functions the popsim stage uses (braunschweig.popsim.folders), through the script
+    scripts/prepare_arm.py of the artifact directory; PopulationSim runs from the tracked project
+    environments/populationsim (fork TUBS-IVS/populationsim bs/main 3d70f73c00fb47696b56552540c2d858d93ed356,
+    version 0.10.0+bs.1, all other packages pinned to the versions of the production environment).
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - the run overlay of prod100_20261031 (server-local), only as the configuration that produced the batch folders
+  notes: >-
+    Batches batch_000 (Kreis 03153) and batch_032 (Kreis 03101) of prod100_20261031, configs/ and data/ copied
+    unchanged; the batch settings.yaml gets the tracked PopulationSim options appended (INTEGERIZER_TIMEOUT
+    7200, INTEGERIZER_PATH_RECORD true, KEEP_FRACTIONAL_SAMPLE_WEIGHTS and INTEGERIZER_DRAW per run) and,
+    when the draw is on, INTEGERIZER_RANDOM_SEED = batch_integerizer_seed(random_seed, batch folder name).
+    Runs, each pair of batches in parallel:
+    R1 neutral (fork, every new option at its default, timeout 7200; batch_000 only);
+    1p-A (fractional weights on, draw pareto, random_seed 1234);
+    1g-A (fractional weights on, draw gumbel, random_seed 1234);
+    1x-B (the chosen method, random_seed 1235);
+    1x-A repeat (the chosen A run repeated on batch_000).
+sampling:
+  rate: 1.0
+  scope: >-
+    two of the 60 batches of prod100_20261031 with their full seed pool of 218,097 MiD 2023 households
+    (scope as in popsim-ladder-baseline-2026-11-16).
+  notes: The rate is the share of each batch's cells simulated (all of them), not a population sampling rate.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run: PopulationSim standalone on copied batch folders, evaluated with
+    braunschweig.analysis.popsim_batch_diagnostics (the WP1 tool, on main since PR #649).
+classification:
+- ab_test
+status:
+  execution: running
+  notes: Pre-registered 2026-11-17; runs start after this commit.
+source: felix run server, ~/i645 (arm folders, logs, scripts).
+environment: >-
+  run server (Linux KVM guest, not x86-64-v2); PopulationSim environment environments/populationsim synced
+  with uv 0.11.21 and Python 3.12.4.
+validation:
+- metric: >-
+    R1 neutral equivalence: final_expanded_household_ids.csv of the fork with every new option at its
+    default equals arm 0a of popsim-ladder-baseline-2026-11-16 for batch_000 byte for byte
+  reference: arm 0a output of the same batch (model output)
+  result: pending
+- metric: >-
+    G1: no seed group with positive survey weight starts at weight 0 (fork log line of
+    KEEP_FRACTIONAL_SAMPLE_WEIGHTS and the seed-level integerizer call row of integerizer_paths.csv)
+  reference: none (property of the run)
+  result: pending
+- metric: >-
+    G2: per H_GEW weight class (<1, 1-2, 2-3, 3-5, 5-8, 8+) the synthetic household share minus the class's
+    seed weight share, per batch; bound |gap| <= 5 percentage points in every class
+  reference: >-
+    the seed's own H_GEW shares (survey data); the 5-point bound is an ASSUMPTION-grade design bound
+    (design goal G2), fixed before the runs
+  result: pending
+- metric: >-
+    G3: integer control fit WAPE per geography against arm 0a of the same batch; bound arm 1 <= arm 0a +
+    0.02 (ZENSUS100m), + 0.02 (ZENSUS1km), + 0.01 (KREIS). Arm 0a values quoted from
+    popsim-ladder-baseline-2026-11-16: batch_000 0.3677 / 0.0782 / 0.0179, batch_032 0.1494 / 0.0224 / 0.0124
+  reference: arm 0a (model output, NOT observed data); ASSUMPTION-grade design bounds
+  result: pending
+- metric: >-
+    G5: integerizer_paths.csv present in every batch; its per-level outcome counts equal the WP1 log parse
+    (solver_paths.csv) of the same batch
+  reference: the WP1 log parser on the same run
+  result: pending
+- metric: >-
+    G7: installed tool recorded (version 0.10.0+bs.1 and fork commit, from the environment itself)
+  reference: none
+  result: pending
+- metric: >-
+    Method rule (owner decision D1, 2026-11-17): arm 1 is the draw method with the smaller maximum |G2 class
+    gap| over both batches among the methods that meet G3 on both batches; if both are within 0.5 percentage
+    points of each other, Pareto. Reproducibility: the repeat run is byte-identical to its A run.
+  reference: none
+  result: pending
+- metric: >-
+    Reported without a bound, against arm 0a: distinct seed households and Kish effective size per batch,
+    the share of batch_000's donors that also occur in batch_032, shares by survey sub-sample and federal
+    state, household totals, G4 rounding shift (expected unchanged; WP4), the spread between seeds 1234 and
+    1235 for every metric above, wall time and peak RSS
+  reference: arm 0a (model output)
+  result: pending
+features:
+  note: Evidence for popsim_method (WP2 of the PopulationSim repair, issue #645).
+artifacts: []
+issues:
+- '#645'
+- '#138'
+notes: >-
+  Convergence or fit against the model's own targets is not validation against observed behaviour.
