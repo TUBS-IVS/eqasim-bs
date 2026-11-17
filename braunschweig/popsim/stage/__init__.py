@@ -148,6 +148,7 @@ from braunschweig.data.census import household_size as _census_household_size
 from braunschweig.popsim import assembly
 from braunschweig.popsim import attributes
 from braunschweig.popsim import folders
+from braunschweig.popsim.fallback_rates import log_fallback_rate
 from braunschweig.popsim import batch
 from braunschweig.popsim import income as _income
 from braunschweig.popsim import income_kreis_control as _kic
@@ -1450,6 +1451,11 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
     return cells
 
 
+# Columns besides the ARS that ``mid.resolved_kreis_per_cell`` reads (grid keys and the
+# population weight of the dominant-Kreis resolution).
+_KREIS_RESOLUTION_COLUMNS = ("ZENSUS100m", "ZENSUS1km", "POP_TOTAL_100m_adj")
+
+
 def _check_seed_contract(seed_households: pd.DataFrame, seed_persons: pd.DataFrame,
                          controls_df: pd.DataFrame, total_hh_control: str,
                          cells: pd.DataFrame, *, kreis_col: str, mode: str,
@@ -1492,16 +1498,43 @@ def _check_seed_contract(seed_households: pd.DataFrame, seed_persons: pd.DataFra
             raise ValueError(message)
         logger.warning("%s: skipped (1 of 2 contract checks not run)", message)
         return
+    resolve_from_ars = ars_col is not None and ars_col in cells.columns
+    if resolve_from_ars:
+        # The resolution reads these columns besides the ARS; without them the per-Kreis part
+        # cannot run, which must stay advisory in warn mode (same pattern as the skip above).
+        absent = [c for c in _KREIS_RESOLUTION_COLUMNS if c not in cells.columns]
+        if absent:
+            message = (f"[popsim.seed_contract] cells frame lacks the column(s) {absent} that "
+                       f"the resolved-Kreis grouping reads besides {ars_col!r}; the per-Kreis "
+                       "household-total check cannot run")
+            if effective == "error":
+                raise ValueError(message)
+            logger.warning("%s: skipped (1 of 2 contract checks not run)", message)
+            return
     # Absent group columns are skipped and counted inside the check (INFO); an absent
     # household-total column raises there.
     narrow = cells[[c for c in needed if c in cells.columns]].copy()
-    if ars_col is not None and ars_col in cells.columns:
+    if resolve_from_ars:
         # The RESOLVED Kreis (dominant Kreis per 1 km parent), exactly as the ownership-grid
         # injection rakes its targets, so a border cell is checked in the Kreis its targets
         # were raked to. A KREIS column already on the cells (raw ARS[:5], left by the
         # employment grid) is deliberately not used.
-        narrow[kreis_col] = mid.resolved_kreis_per_cell(cells, ars_col=ars_col).to_numpy()
+        resolved = mid.resolved_kreis_per_cell(cells, ars_col=ars_col)
+        narrow[kreis_col] = resolved.to_numpy()
         basis = f"resolved Kreis from {ars_col!r} (dominant Kreis per 1 km parent)"
+        # Cells without a resolved Kreis fall out of the per-Kreis grouping; count them. They
+        # stay in the overall (ALL) ratio, which sums every cell.
+        unresolved = resolved.isna().to_numpy()
+        # needed[0] is the household-total column (an absent one raises in the check below).
+        household_total = pd.to_numeric(
+            narrow[needed[0]] if needed[0] in narrow.columns else pd.Series(0.0, index=cells.index),
+            errors="coerce").fillna(0.0)
+        log_fallback_rate(
+            logger, "seed_contract.unresolved_kreis", int(unresolved.sum()), len(cells),
+            what=("cells without a resolved Kreis are left out of the per-Kreis totals check "
+                  f"(household total {float(household_total[unresolved].sum()):.1f} of "
+                  f"{float(household_total.sum()):.1f}); they stay in the overall ratio"),
+            threshold=0.0)
     else:
         narrow[kreis_col] = cells[kreis_col].to_numpy()
         basis = f"the cells column {kreis_col!r} as given (no ARS column to resolve)"

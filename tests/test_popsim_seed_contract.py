@@ -253,6 +253,60 @@ def test_border_cell_is_grouped_with_its_resolved_kreis():
             ars_col="ARS", mode="error", complete_members=True, source_name="mid")
 
 
+def _ars_cells():
+    cells = _cells().drop(columns=["KREIS"])
+    cells["ARS"] = ["031010000000", "031010000000", "031020000000"]
+    cells["ZENSUS100m"] = ["a", "b", "c"]
+    cells["ZENSUS1km"] = ["P1", "P1", "P2"]
+    cells["POP_TOTAL_100m_adj"] = [1.0, 1.0, 1.0]
+    return cells
+
+
+def test_missing_resolution_columns_keep_warn_mode_advisory_and_raise_in_error_mode(caplog):
+    """ARS present but a Kreis-resolution column missing: warn skips, error raises by name.
+
+    Defect caught: ``mid.resolved_kreis_per_cell`` raising a bare KeyError inside a check
+    that is advisory in warn mode.
+    """
+    from braunschweig.popsim import stage as popsim_stage
+    households, persons = _resolved()
+    cells = _ars_cells().drop(columns=["ZENSUS1km", "POP_TOTAL_100m_adj"])
+    kwargs = dict(kreis_col="KREIS", ars_col="ARS", source_name="mid")
+    with caplog.at_level(logging.WARNING):
+        popsim_stage._check_seed_contract(
+            households, persons, _controls_df(), TOTAL, cells, mode="warn",
+            complete_members=False, **kwargs)
+    warnings = [r.message for r in caplog.records if r.levelno == logging.WARNING
+                and "ZENSUS1km" in r.message and "POP_TOTAL_100m_adj" in r.message]
+    assert len(warnings) == 1
+    with pytest.raises(ValueError, match=r"ZENSUS1km.*POP_TOTAL_100m_adj"):
+        popsim_stage._check_seed_contract(
+            households, persons, _controls_df(), TOTAL, cells, mode="error",
+            complete_members=True, **kwargs)
+
+
+def test_cells_without_resolved_kreis_are_counted_and_the_rest_still_checked(
+        caplog, monkeypatch):
+    """A NaN resolved Kreis is counted and logged, stays in the ALL ratio, and the check runs.
+
+    Defect caught: the per-Kreis groupby silently dropping the unresolved cell.
+    """
+    from braunschweig.popsim import stage as popsim_stage
+    households, persons = _resolved()
+    cells = _ars_cells()
+    cells.loc[:1, ["building_type_efh", "building_type_mfh"]] *= 1.2   # k 03101 imbalanced
+    monkeypatch.setattr(
+        popsim_stage.mid, "resolved_kreis_per_cell",
+        lambda frame, **kw: pd.Series(["03101", "03101", np.nan], index=frame.index))
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(ValueError, match=r"building_type, Kreis 03101.*ratio 1\.2000"):
+            popsim_stage._check_seed_contract(
+                households, persons, _controls_df(), TOTAL, cells, kreis_col="KREIS",
+                ars_col="ARS", mode="error", complete_members=True, source_name="mid")
+    assert any("seed_contract.unresolved_kreis" in r.message and "primary 2/3" in r.message
+               for r in caplog.records)
+
+
 def test_group_selection_is_shared_between_column_list_and_check():
     """The columns handed to the check are exactly the columns it reads.
 
