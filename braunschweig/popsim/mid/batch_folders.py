@@ -366,8 +366,8 @@ def _batch_settings_text(settings_yaml: str, seed_base: int | None, folder: Path
 def _log_integerizer_seeds(seeds: Mapping[str, int], n_batches: int) -> None:
     """Log how many distinct per-batch integerizer seeds were written; raise on a clash.
 
-    Two batches with the same seed would draw the same integerizer noise (the trace labels
-    repeat across batches). With 32-bit seeds that is a rare accident, so it is an error
+    Two batches with the same seed would draw the same integerizer noise (reason:
+    ADR-0199, decision 3). With 32-bit seeds that is a rare accident, so it is an error
     here, not a warning: change ``random_seed`` and the clash is gone.
     """
     if not seeds:
@@ -461,9 +461,16 @@ def run_popsim_mid(
         ``None`` (default): every batch folder gets ``settings_yaml`` unchanged. An int
         (the pipeline ``random_seed``): each batch folder's ``settings.yaml`` gains its own
         ``INTEGERIZER_RANDOM_SEED``, derived from this base and the folder name
-        (:func:`braunschweig.popsim.folders.batch_integerizer_seed`), because the batches
-        share byte-identical seed files and repeat the integerizer trace labels.
+        (:func:`braunschweig.popsim.folders.batch_integerizer_seed`; why: ADR-0199,
+        decision 3). Required (``ValueError``) when ``settings_yaml`` switches the
+        integerizer draw on.
     """
+    draw = folders.integerizer_draw_in_settings(settings_yaml)
+    if draw != "off" and integerizer_seed_base is None:
+        raise ValueError(
+            f"The batch settings set {folders.INTEGERIZER_DRAW_SETTING}: {draw!r} but "
+            "integerizer_seed_base is None: every batch would draw the same noise "
+            "(ADR-0199, decision 3). Pass the pipeline random_seed as integerizer_seed_base.")
     # Resolve to an ABSOLUTE path: PopulationSim is launched with cwd set to the
     # popsimprep repo (not the synpp working directory), so a relative batch
     # folder path (e.g. "eqasim-data/.../batch_000") would resolve against

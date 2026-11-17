@@ -33,7 +33,7 @@ from braunschweig.popsim.fallback_rates import log_fallback_rate
 logger = logging.getLogger(__name__)
 
 STAGE_TAG = "popsim.solver_paths"
-RECORD_RELATIVE_PATH = "output/integerizer_paths.csv"
+RECORD_RELATIVE_PATH = batch.INTEGERIZER_PATH_RECORD
 PRIMARY_OUTCOMES = ("simultaneous", "retry_simultaneous")
 SEQUENTIAL_OUTCOMES = (
     "sequential_no_infeasible_subzones",
@@ -126,7 +126,9 @@ def summarize_call_totals(records: pd.DataFrame) -> dict:
 
     Call rows carry no reliable geography (the single integerizer does not know it), so these
     are never grouped by geography. Returns ``{"not_solved_calls", "single_failed_smart_round",
-    "per_batch": {batch: {"not_solved_calls", "single_failed_smart_round"}}}``.
+    "call_rows", "single_call_rows", "per_batch": {batch: {"not_solved_calls",
+    "single_failed_smart_round"}}}``; the two row counts are the denominators of the rates
+    :func:`check_solver_paths` logs.
     """
     per_batch = {}
     for name, group in records.groupby("batch"):
@@ -139,6 +141,9 @@ def summarize_call_totals(records: pd.DataFrame) -> dict:
     return {
         "not_solved_calls": sum(v["not_solved_calls"] for v in per_batch.values()),
         SINGLE_FAILED_OUTCOME: sum(v[SINGLE_FAILED_OUTCOME] for v in per_batch.values()),
+        "call_rows": int((records["row_type"] == "call").sum()),
+        "single_call_rows": int(((records["row_type"] == "call")
+                                 & (records["kind"] == "single")).sum()),
         "per_batch": per_batch,
     }
 
@@ -173,6 +178,10 @@ def summarize_solver_paths(records: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns)
 
 
+def _percent(count: int, total: int) -> float:
+    return 100.0 * count / total if total else 0.0
+
+
 def check_solver_paths(work_dir, error_rate: Optional[float]) -> tuple:
     """Log one rate line per geography and fail above ``error_rate`` (``None``: warn only).
 
@@ -197,10 +206,16 @@ def check_solver_paths(work_dir, error_rate: Optional[float]) -> tuple:
             logger, STAGE_TAG, row.non_simultaneous, row.parents, what=what)
         if error_rate is not None and share > error_rate:
             exceeded.append(f"{row.geography} {100.0 * share:.1f}%")
-    logger.info(
-        "[%s] NOT_SOLVED integerizer calls: %d; single_failed_smart_round "
-        "(single integerizer ended without success): %d", STAGE_TAG, totals["not_solved_calls"],
-        totals[SINGLE_FAILED_OUTCOME])
+    # Fallback transparency: a call that ended NOT_SOLVED or a single integerizer that ended
+    # in smart rounding is a degraded result; any occurrence is a WARNING with its rate.
+    not_solved, single_failed = totals["not_solved_calls"], totals[SINGLE_FAILED_OUTCOME]
+    logger.log(
+        logging.WARNING if (not_solved or single_failed) else logging.INFO,
+        "[%s] NOT_SOLVED integerizer calls: %d/%d call rows (%.1f%%); single_failed_smart_round "
+        "(single integerizer ended without success): %d/%d single call rows (%.1f%%)",
+        STAGE_TAG, not_solved, totals["call_rows"],
+        _percent(not_solved, totals["call_rows"]), single_failed, totals["single_call_rows"],
+        _percent(single_failed, totals["single_call_rows"]))
     if exceeded:
         raise RuntimeError(
             f"[{STAGE_TAG}] non-simultaneous share above solver_fallback_error_rate "

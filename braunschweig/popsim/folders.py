@@ -338,12 +338,20 @@ def apply_populationsim_overrides(
     return result
 
 
+def integerizer_draw_in_settings(settings_yaml: str) -> str:
+    """Return the ``INTEGERIZER_DRAW`` value of a settings text (``"off"`` when absent).
+
+    A bare YAML ``off`` parses as boolean False; it is returned as ``"off"``.
+    """
+    value = _parse_settings_mapping(settings_yaml).get(INTEGERIZER_DRAW_SETTING)
+    return "off" if value is None or value is False else str(value)
+
+
 def batch_integerizer_seed(random_seed: int, batch_name: str) -> int:
     """Derive the integerizer seed of one batch from the pipeline seed and the folder name.
 
-    All batches share byte-identical seed files and repeat the integerizer trace labels,
-    so one common ``INTEGERIZER_RANDOM_SEED`` would give every batch the same draw noise.
-    The folder name (e.g. ``batch_000``) is stable across runs and machines.
+    Why one seed per batch: ADR-0199, decision 3. The folder name (e.g. ``batch_000``) is
+    stable across runs and machines.
 
     Returns
     -------

@@ -181,3 +181,42 @@ def test_duplicate_outcome_key_raises(tmp_path):
                                 _outcome("ZENSUS1km", "simultaneous", label="p1")])
     _batch(other, "batch_002", [_outcome("KREIS", "simultaneous", label="p1")])
     assert len(solver_path_gate.read_records(other)) == 3
+
+
+def test_not_solved_and_single_failures_warn_as_a_rate_with_denominators(tmp_path, caplog):
+    _two_batches(tmp_path)  # 3 call rows, 2 NOT_SOLVED; 3 single call rows, 1 single failure
+    with caplog.at_level(logging.INFO):
+        _, totals = solver_path_gate.check_solver_paths(tmp_path, None)
+    assert totals["call_rows"] == 3 and totals["single_call_rows"] == 3
+    lines = [r for r in caplog.records if "NOT_SOLVED" in r.getMessage()]
+    assert len(lines) == 1 and lines[0].levelno == logging.WARNING
+    assert "2/3 call rows (66.7%)" in lines[0].getMessage()
+    assert "1/3 single call rows (33.3%)" in lines[0].getMessage()
+
+
+def test_clean_call_rows_stay_at_info(tmp_path, caplog):
+    _batch(tmp_path, "batch_001", [_outcome("KREIS", "simultaneous"), _call("OPTIMAL")])
+    with caplog.at_level(logging.INFO):
+        solver_path_gate.check_solver_paths(tmp_path, None)
+    lines = [r for r in caplog.records if "NOT_SOLVED" in r.getMessage()]
+    assert len(lines) == 1 and lines[0].levelno == logging.INFO
+    assert "0/1 call rows" in lines[0].getMessage()
+
+
+# A real record of one batch of a ladder run with the fork (arm 1, draw "gumbel"): the
+# hand-written records above cannot show a drift of the fork's file format.
+REAL_RECORD = Path(__file__).parent / "fixtures" / "popsim" / "integerizer_paths_real.csv"
+
+
+def test_real_fork_record_is_accepted_with_the_expected_counts(tmp_path):
+    folder = _batch(tmp_path, "batch_000", [], record=False)
+    (folder / "output" / "integerizer_paths.csv").write_bytes(REAL_RECORD.read_bytes())
+    records = solver_path_gate.read_records(tmp_path)
+    assert records["row_type"].value_counts().to_dict() == {"call": 504, "outcome": 31}
+    summary, totals = solver_path_gate.check_solver_paths(tmp_path, None)
+    by_geography = summary.set_index("geography")
+    assert by_geography["parents"].to_dict() == {"KREIS": 1, "ZENSUS100m": 26, "ZENSUS1km": 4}
+    assert by_geography["non_simultaneous"].to_dict() == {
+        "KREIS": 0, "ZENSUS100m": 9, "ZENSUS1km": 0}
+    assert totals["not_solved_calls"] == 0 and totals["single_failed_smart_round"] == 0
+    assert totals["call_rows"] == 504 and totals["single_call_rows"] == 466

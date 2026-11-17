@@ -209,6 +209,19 @@ def test_no_seed_line_when_draw_off(tmp_path):
         assert "INTEGERIZER_RANDOM_SEED" not in path.read_text(encoding="utf-8")
 
 
+def test_draw_on_without_seed_base_raises_before_any_folder_is_written(tmp_path):
+    # A drawing integerizer without per-batch seeds would give every batch the same noise.
+    cells, base_cols, controls_df, seed_hh, seed_p = _orchestration_inputs()
+    drawing = folders.apply_populationsim_overrides(SETTINGS, _overrides(INTEGERIZER_DRAW="pareto"))
+    with pytest.raises(ValueError, match="INTEGERIZER_DRAW") as error:
+        mid.run_popsim_mid(
+            cells, base_cols, controls_df, seed_hh, seed_p,
+            work_dir=tmp_path, settings_yaml=drawing, logging_yaml="version: 1\n",
+            max_cells=2, run_one=_fake_run_one, num_workers=1, integerizer_seed_base=None)
+    assert "pareto" in str(error.value)
+    assert not list(tmp_path.glob("batch_*"))
+
+
 def test_seed_clash_between_batches_raises_naming_folders_and_seed(tmp_path, monkeypatch):
     # A 32-bit clash is a rare accident; forced here. Two batches with one seed would draw
     # the same integerizer noise, so the run stops and names who collides on which seed.
