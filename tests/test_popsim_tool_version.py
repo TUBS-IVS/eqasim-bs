@@ -80,21 +80,6 @@ def test_report_failure_raises_with_sync_hint(outcome):
         assert "ModuleNotFoundError" in str(excinfo.value)
 
 
-def test_unknown_commit_is_warned(caplog):
-    report = dict(_REPORT, commit="unknown")
-
-    def fake_run(command, **kwargs):
-        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(report), stderr="")
-
-    context = SimpleNamespace(info={})
-    context.set_info = context.info.__setitem__
-    with caplog.at_level("WARNING"):
-        tool_version.check_populationsim_environment(
-            context, "/opt/uv", "/opt/popsimprep", "0.10.0+bs.1", subprocess_run=fake_run)
-    assert any(r.levelname == "WARNING" and "commit" in r.getMessage() for r in caplog.records)
-    assert context.info["populationsim_tool_report"] == report
-
-
 def test_check_refuses_an_environment_without_the_fork():
     def fake_run(command, **kwargs):
         return subprocess.CompletedProcess(
@@ -128,7 +113,7 @@ def test_execute_checks_the_environment_before_anything_else(monkeypatch):
         stage.execute(context)
 
 
-def _signature(populationsim_version):
+def _signature(populationsim_version, commit="c0ffee"):
     return stage.compute_batch_config_signature(
         controls_df=pd.DataFrame({"target": ["total_households"], "importance": [1000]}),
         settings_text="geographies: [ZENSUS100m]\n",
@@ -142,6 +127,7 @@ def _signature(populationsim_version):
         seed_persons=pd.DataFrame({"H_ID": [1], "P_ID": [1]}),
         kreis_table=pd.DataFrame({"ARS_kreis": ["03101"]}),
         populationsim_version=populationsim_version,
+        populationsim_commit=commit,
         settings_overrides={},
         integerizer_seed_base=None,
     )
@@ -159,3 +145,93 @@ def test_provenance_records_version(tmp_path):
     config.write_text(yaml.safe_dump({"config": {key: "0.10.0+bs.1"}}), encoding="utf-8")
     record = provenance.collect_run_provenance(str(config))
     assert record[key] == "0.10.0+bs.1"
+
+
+# --- expected commit from the tracked lock file (review finding 1) ----------------------
+
+_SHA = "3d70f73c00fb47696b56552540c2d858d93ed356"
+_OTHER_SHA = "0123456789abcdef0123456789abcdef01234567"
+
+_LOCK_EXCERPT = f'''\
+[[package]]
+name = "idna"
+version = "3.11"
+source = {{ registry = "https://pypi.org/simple" }}
+
+[[package]]
+name = "populationsim"
+version = "0.10.0+bs.1"
+source = {{ git = "https://github.com/TUBS-IVS/populationsim?rev={_SHA}#{_SHA}" }}
+dependencies = [
+    {{ name = "numba" }},
+]
+
+[[package]]
+name = "pytz"
+version = "2025.2"
+source = {{ registry = "https://pypi.org/simple" }}
+'''
+
+
+def _project(tmp_path, lock_text=_LOCK_EXCERPT):
+    if lock_text is not None:
+        (tmp_path / "uv.lock").write_text(lock_text, encoding="utf-8")
+    return tmp_path
+
+
+def test_expected_commit_is_parsed_from_the_lock(tmp_path):
+    assert tool_version.expected_populationsim_commit(_project(tmp_path)) == _SHA
+
+
+@pytest.mark.parametrize("lock_text", [
+    None,  # no uv.lock at all
+    '[[package]]\nname = "idna"\nversion = "3.11"\n',  # no populationsim entry
+    '[[package]]\nname = "populationsim"\nversion = "0.10.0"\n'
+    'source = { registry = "https://pypi.org/simple" }\n',  # not a git source
+], ids=["no-lock", "no-entry", "no-git-source"])
+def test_expected_commit_unparsable_lock_raises(tmp_path, lock_text):
+    with pytest.raises(RuntimeError, match="uv.lock"):
+        tool_version.expected_populationsim_commit(_project(tmp_path, lock_text))
+
+
+def _run_with_commit(commit):
+    def fake_run(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command, 0, stdout=json.dumps(dict(_REPORT, commit=commit)), stderr="")
+    return fake_run
+
+
+def test_check_accepts_the_locked_commit(tmp_path):
+    context = SimpleNamespace(info={})
+    context.set_info = context.info.__setitem__
+    report = tool_version.check_populationsim_environment(
+        context, "/opt/uv", str(_project(tmp_path)), "0.10.0+bs.1",
+        subprocess_run=_run_with_commit(_SHA))
+    assert report["commit"] == _SHA
+
+
+@pytest.mark.parametrize("installed", [_OTHER_SHA, "unknown"])
+def test_check_refuses_a_commit_other_than_the_lock(tmp_path, installed):
+    # Same version string, other commit: a moved branch or a local build must not pass.
+    context = SimpleNamespace(set_info=lambda key, value: None)
+    with pytest.raises(RuntimeError) as excinfo:
+        tool_version.check_populationsim_environment(
+            context, "/opt/uv", str(_project(tmp_path)), "0.10.0+bs.1",
+            subprocess_run=_run_with_commit(installed))
+    message = str(excinfo.value)
+    assert _SHA in message and installed in message
+    assert "uv sync --frozen" in message and repr(str(tmp_path)) in message
+
+
+def test_check_refuses_a_missing_lock(tmp_path):
+    context = SimpleNamespace(set_info=lambda key, value: None)
+    with pytest.raises(RuntimeError, match="uv.lock"):
+        tool_version.check_populationsim_environment(
+            context, "/opt/uv", str(tmp_path), "0.10.0+bs.1",
+            subprocess_run=_run_with_commit(_SHA))
+
+
+def test_signature_changes_with_the_commit():
+    # A batch finished by another commit of the same version must be purged, never reused.
+    assert _signature("0.10.0+bs.1", commit=_SHA) != _signature("0.10.0+bs.1", commit=_OTHER_SHA)
+    assert _signature("0.10.0+bs.1", commit=_SHA) == _signature("0.10.0+bs.1", commit=_SHA)

@@ -15,7 +15,7 @@ The fork is the public repository `TUBS-IVS/populationsim`. `master` is an untou
 
 ## The tracked environment
 
-`environments/populationsim/` is a uv project; the stage runs `uv run --no-sync populationsim -w <batch folder>` with `popsimprep_dir` (the project directory) as cwd. Its constraints are the production freeze: the fork changes PopulationSim only, so every other package keeps the version of the environment the baseline runs used. Install once per checkout on the server: `uv sync --frozen --python /usr/bin/python3.12` (see its README). The stage checks the installed version against `populationsim_version` at start and fails with a message naming the asked environment (`braunschweig/popsim/tool_version.py`).
+`environments/populationsim/` is a uv project; the stage runs `uv run --no-sync populationsim -w <batch folder>` with `popsimprep_dir` (the project directory) as cwd. Its constraints are the production freeze: the fork changes PopulationSim only, so every other package keeps the version of the environment the baseline runs used. Install once per checkout on the server: `uv sync --frozen --python /usr/bin/python3.12` (see its README). The stage checks the installed version against `populationsim_version` and the installed git commit against the one `uv.lock` pins at start (a relative `popsimprep_dir` is resolved against the repository root), and fails with a message naming the asked environment (`braunschweig/popsim/tool_version.py`).
 
 ## Neutral-mode guarantee
 

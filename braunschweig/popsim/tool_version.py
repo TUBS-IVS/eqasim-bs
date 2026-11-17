@@ -12,12 +12,29 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 #: Wall-clock limit of the one version-report subprocess (seconds).
 REPORT_TIMEOUT_S = 120
+
+#: Repository root: a relative ``popsimprep_dir`` is resolved against it, never against the
+#: process working directory (the stage may be started from anywhere).
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+#: Lock file of the popsimprep project that pins the PopulationSim commit.
+LOCK_FILE_NAME = "uv.lock"
+
+# The ``[[package]] name = "populationsim"`` block of a uv lock file, up to the next package.
+_LOCK_BLOCK = re.compile(
+    r'^\[\[package\]\]\s*\nname = "populationsim"\s*\n(?P<body>.*?)(?=^\[\[package\]\]|\Z)',
+    re.DOTALL | re.MULTILINE)
+# ``source = { git = "<url>?rev=<sha>#<sha>" }``: the commit uv resolved is the part after '#'.
+_LOCK_GIT_SOURCE = re.compile(r'^source = \{ git = "[^"#]*#(?P<commit>[0-9a-f]{40})" \}',
+                              re.MULTILINE)
 
 #: Keys of the report, in the order they are logged.
 REPORT_KEYS = ("populationsim", "commit", "ortools", "numpy", "pandas", "python")
@@ -28,6 +45,53 @@ def _sync_hint(project_dir) -> str:
     return (
         f"Run `uv sync --frozen` in {str(project_dir)!r} (the popsimprep environment the "
         "stage launches; the tracked project is environments/populationsim).")
+
+
+def resolve_project_dir(configured, *, key: str) -> Path:
+    """Return the popsimprep project directory as an absolute, existing directory.
+
+    A relative ``configured`` path is resolved against the repository root (the tracked
+    default ``environments/populationsim`` is repository-relative), not against the process
+    working directory. ``key`` names the config key in the error message.
+
+    Raises:
+        RuntimeError: ``configured`` is empty or no directory.
+    """
+    if not configured:
+        raise RuntimeError(f"config key {key!r} is empty: set the popsimprep project directory")
+    path = Path(str(configured))
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    if not path.is_dir():
+        raise RuntimeError(
+            f"config key {key!r} = {str(configured)!r} resolves to {str(path)!r}, which is "
+            "not a directory (a relative path is resolved against the repository root)")
+    return path
+
+
+def expected_populationsim_commit(project_dir) -> str:
+    """Return the PopulationSim git commit that ``<project_dir>/uv.lock`` pins.
+
+    Reads the ``populationsim`` package entry of the lock file; its
+    ``source = { git = "...?rev=<sha>#<sha>" }`` carries the resolved commit after ``#``.
+
+    Raises:
+        RuntimeError: no lock file, no ``populationsim`` entry, or an entry without a git
+            source with a 40-character commit.
+    """
+    lock_path = Path(project_dir) / LOCK_FILE_NAME
+    if not lock_path.is_file():
+        raise RuntimeError(
+            f"no {LOCK_FILE_NAME} in {str(project_dir)!r}: the expected PopulationSim commit "
+            "is read from it")
+    block = _LOCK_BLOCK.search(lock_path.read_text(encoding="utf-8"))
+    match = _LOCK_GIT_SOURCE.search(block.group("body")) if block else None
+    if match is None:
+        raise RuntimeError(
+            f"{str(lock_path)!r} has no [[package]] entry 'populationsim' with a git source "
+            "pinned to a commit (source = { git = \"...#<40-hex commit>\" }); the project must "
+            "install the group's fork by commit")
+    return match.group("commit")
 
 
 # Runs INSIDE the popsimprep environment and prints one JSON object. A package that is not
@@ -121,21 +185,28 @@ def check_populationsim_environment(context, uv_path: str, project_dir: str, exp
                                     subprocess_run=subprocess.run) -> dict:
     """Verify the environment, log the report and store it as stage info.
 
-    Always runs (no switch to bypass it). Logs the report at INFO, warns when the install
-    carries no VCS commit, and stores the report as ``context.set_info(
-    "populationsim_tool_report", report)``.
+    Always runs (no switch to bypass it). Two checks: the installed version equals the
+    configured one, and the installed git commit equals the commit ``<project_dir>/uv.lock``
+    pins (:func:`expected_populationsim_commit`): the version string alone cannot tell two
+    builds of the fork apart. Logs the report at INFO and stores it as
+    ``context.set_info("populationsim_tool_report", report)``.
+
+    Returns: the report; after this returns, ``report["commit"]`` is the locked commit.
 
     Raises:
-        RuntimeError: from :func:`installed_tool_report` or
-            :func:`require_populationsim_version`.
+        RuntimeError: from :func:`installed_tool_report`,
+            :func:`require_populationsim_version` or :func:`expected_populationsim_commit`,
+            or when the installed commit is unknown or differs from the locked one.
     """
     report = installed_tool_report(uv_path, project_dir, subprocess_run=subprocess_run)
-    if report["commit"] == "unknown":
-        logger.warning(
-            "[popsim.tool] the PopulationSim commit is unknown (no VCS entry in its "
-            "direct_url.json); the run records only version %s.", report["populationsim"])
     logger.info("[popsim.tool] installed PopulationSim stack: %s",
                 ", ".join(f"{key}={report[key]}" for key in REPORT_KEYS))
     require_populationsim_version(report["populationsim"], expected, project_dir=project_dir)
+    expected_commit = expected_populationsim_commit(project_dir)
+    if report["commit"] != expected_commit:
+        raise RuntimeError(
+            f"PopulationSim in the popsimprep environment is commit {report['commit']!r} "
+            f"('unknown' = not installed from a git URL), but {LOCK_FILE_NAME} pins "
+            f"{expected_commit!r}. {_sync_hint(project_dir)}")
     context.set_info("populationsim_tool_report", report)
     return report

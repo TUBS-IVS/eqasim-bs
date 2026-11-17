@@ -54,9 +54,11 @@ KEY_UV = "braunschweig.population.popsim.uv_path"
 # group's fork of PopulationSim 0.10.0). The stage asks the popsimprep environment for its
 # installed version before any seed is built and refuses a different one
 # (braunschweig.popsim.tool_version, always on): a run on upstream or an older fork would
-# otherwise silently produce a different population (design goal G7, issue #645). The value
-# also enters the work-dir batch signature (batch_cache.compute_batch_config_signature) and
-# the run provenance record (braunschweig.provenance), which records the CONFIGURED version.
+# otherwise silently produce a different population (design goal G7, issue #645). It also
+# refuses an installed git commit other than the one the project's uv.lock pins (the
+# version string alone cannot tell two builds of the fork apart). The version and that
+# commit also enter the work-dir batch signature (batch_cache.compute_batch_config_signature);
+# the run provenance record (braunschweig.provenance) records the CONFIGURED version.
 KEY_POPSIM_VERSION = "braunschweig.population.popsim.populationsim_version"
 KEY_MAX_CELLS = "braunschweig.population.popsim.max_cells"
 KEY_WORKERS = "braunschweig.population.popsim.num_workers"

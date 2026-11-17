@@ -1332,6 +1332,10 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
     monkeypatch.setattr(
         popsim_stage.tool_version, "check_populationsim_environment",
         lambda *args, **kwargs: {})
+    # The integerizer options are validated right after the environment check; their own
+    # tests are in tests/test_popsim_settings_overrides.py.
+    monkeypatch.setattr(
+        popsim_stage, "_read_integerizer_settings", lambda ctx: ({}, None))
     monkeypatch.setattr(
         popsim_stage, "_read_control_config",
         lambda ctx, source_name: ((), (), "csv", False, False, (), set(), 30, None, "default", False))

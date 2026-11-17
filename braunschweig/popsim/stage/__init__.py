@@ -1057,7 +1057,10 @@ def _read_stage_paths(context):
     """Read the popsim input/output path config keys.
 
     Returns: ``(cells_path, mid_dir, controls_path, settings_path, logging_path,
-    popsimprep_dir, uv_path)``.
+    popsimprep_dir, uv_path)``; ``popsimprep_dir`` is an absolute existing directory (a
+    relative configured path is resolved against the repository root, not the process
+    working directory).
+    Raises: ``RuntimeError`` when ``popsimprep_dir`` is no directory.
     Mutates: nothing.
     """
     cells_path = context.config(KEY_CELLS)
@@ -1065,7 +1068,8 @@ def _read_stage_paths(context):
     controls_path = context.config(KEY_CONTROLS)
     settings_path = context.config(KEY_SETTINGS)
     logging_path = context.config(KEY_LOGGING)
-    popsimprep_dir = context.config(KEY_POPSIMPREP)
+    popsimprep_dir = str(tool_version.resolve_project_dir(
+        context.config(KEY_POPSIMPREP), key=KEY_POPSIMPREP))
     uv_path = context.config(KEY_UV)
     return cells_path, mid_dir, controls_path, settings_path, logging_path, popsimprep_dir, uv_path
 
@@ -1963,7 +1967,7 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
         kreis_controls_map, seed_day_filter, seed_households: pd.DataFrame,
         seed_persons: pd.DataFrame, kreis_table, active_entries,
         status_prior_n: float, work_dir, populationsim_version: str,
-        settings_overrides, integerizer_seed_base) -> None:
+        populationsim_commit: str, settings_overrides, integerizer_seed_base) -> None:
     """Purge work-dir batch folders whose batch inputs changed since the last run.
 
     Purge stale batch folders if the popsim config/control set changed since the last
@@ -1995,6 +1999,7 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
         active_entries=active_entries,
         status_prior_n=status_prior_n,
         populationsim_version=populationsim_version,
+        populationsim_commit=populationsim_commit,
         settings_overrides=settings_overrides,
         integerizer_seed_base=integerizer_seed_base,
     )
@@ -2618,8 +2623,11 @@ def execute(context) -> pd.DataFrame:
     ) = _read_stage_paths(context)
     # First action: refuse an environment without the configured PopulationSim (G7).
     populationsim_version = context.config(KEY_POPSIM_VERSION)
-    tool_version.check_populationsim_environment(
+    tool_report = tool_version.check_populationsim_environment(
         context, uv_path, popsimprep_dir, populationsim_version)
+    # Second action: validate the integerizer options before any seed is built, so an invalid
+    # value costs seconds, not the seed build (ValueError names the key).
+    settings_overrides, integerizer_seed_base = _read_integerizer_settings(context)
     (
         max_cells, num_workers, work_dir, kreise, source_name, stratify_regiostar,
         complete_members,
@@ -2743,12 +2751,12 @@ def execute(context) -> pd.DataFrame:
     # settings file lacks.
     folders.validate_settings_geographies(
         Path(settings_path).read_text(encoding="utf-8"), controls_df)
-    settings_overrides, integerizer_seed_base = _read_integerizer_settings(context)
     _purge_stale_batches_for_changed_config(
         controls_df, settings_path, max_cells, stratify_regiostar, source_name,
         employment_grid_on, kreis_controls_map, seed_day_filter, seed_households,
         seed_persons, kreis_table, active_entries, status_prior_n, work_dir,
-        populationsim_version, settings_overrides, integerizer_seed_base,
+        populationsim_version, tool_report["commit"], settings_overrides,
+        integerizer_seed_base,
     )
     merge_report = _run_populationsim_batches(
         context, cells, base_cols, controls_df, seed_households, seed_persons,
