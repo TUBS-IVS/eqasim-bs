@@ -565,7 +565,11 @@ config:
   # non-converging sub-balancing; #155) must never be wired into a run config again.
   braunschweig.population.popsim.settings_path: /home/felix/popsimprep/popsim/configs/settings_tier3_mef100_intseed_numba.yaml
   braunschweig.population.popsim.logging_path: /home/felix/popsimprep/popsim/configs/logging.yaml
-  braunschweig.population.popsim.popsimprep_dir: /home/felix/popsimprep
+  # The uv project whose environment runs PopulationSim (cwd of `uv run --no-sync populationsim`):
+  # the tracked project that pins the PopulationSim fork (environments/populationsim/README.md;
+  # `uv sync --frozen` there once per checkout). Relative to the repository root like the other
+  # relative paths of this file; the settings, controls and logging files above stay server-local.
+  braunschweig.population.popsim.popsimprep_dir: environments/populationsim
   braunschweig.population.popsim.uv_path: /home/felix/.local/bin/uv
   # Required PopulationSim version (meaning and format: KEY_POPSIM_VERSION in config_keys.py).
   braunschweig.population.popsim.populationsim_version: "0.10.0+bs.1"
