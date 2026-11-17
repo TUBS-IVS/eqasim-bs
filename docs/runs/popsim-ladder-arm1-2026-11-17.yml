@@ -45,8 +45,9 @@ status:
   execution: completed
   notes: >-
     Pre-registered 2026-11-17 (3262a0d9); all eight PopulationSim runs exit 0 the same day (wall time and peak
-    RSS per run in run_times_and_hashes.txt: 36 to 49 min, 28.5 to 32.9 GB, as in arm 0a). Diagnostics
-    with --misfit 21 to 22 min, 10.0 GB per arm; checkpoint stores deleted after the diagnostics.
+    RSS per run in run_times_and_hashes.txt: 36 to 49 min, 28.5 to 32.9 GB; arm 0a in
+    popsim-ladder-baseline-2026-11-16: 34 to 47 min, 28.9 to 33.0 GB). Diagnostics with --misfit 21 to 22 min,
+    10.0 GB per arm (r1_and_diagnostics_checks.txt); checkpoint stores deleted after the diagnostics.
 source: >-
   felix run server, ~/i645 (arm folders, logs); committed copy in
   docs/runs/artifacts/popsim-ladder-arm1-2026-11-17/ (per-arm diagnostics tables, arm settings, tool
@@ -61,14 +62,14 @@ validation:
   reference: arm 0a output of the same batch (model output)
   result: >-
     MET. sha256 fe906cb27099a4cfdb09fcd2ce7e17b58ab77989f3bf01de6e12f60ddb140938 for both (cmp: no difference).
-  artifact: docs/runs/artifacts/popsim-ladder-arm1-2026-11-17/run_times_and_hashes.txt
+  artifact: docs/runs/artifacts/popsim-ladder-arm1-2026-11-17/r1_and_diagnostics_checks.txt
 - metric: >-
     G1: no seed group with positive survey weight starts at weight 0 (fork log line of
     KEEP_FRACTIONAL_SAMPLE_WEIGHTS and the seed-level integerizer call row of integerizer_paths.csv)
   reference: none (property of the run)
   result: >-
     MET in every arm-1 run and batch: 208,781 seed groups, 150,273 of them with 0 < weight < 1 kept fractional
-    (the int64 cast would have set them to 0); the seed-level single integerizer received all 208,781 groups.
+    (an int64 cast truncates such weights to 0); the seed-level single integerizer received all 208,781 groups.
   artifact: docs/runs/artifacts/popsim-ladder-arm1-2026-11-17/arm1_verdict.json
 - metric: >-
     G2: per H_GEW weight class (<1, 1-2, 2-3, 3-5, 5-8, 8+) the synthetic household share minus the class's
@@ -78,8 +79,9 @@ validation:
     (design goal G2), fixed before the runs
   result: >-
     MET in every run. Maximum |gap| over the six classes, batch_000 / batch_032: arm 0a 27.63 / 26.93 pp;
-    Pareto seed 1234 3.22 / 2.06; Gumbel seed 1234 2.14 / 2.12; Gumbel seed 1235 2.07 / 3.19. The largest
-    remaining gap is in the class H_GEW < 1 in every run (arm 0a -27.0 pp there).
+    Pareto seed 1234 3.22 / 2.06; Gumbel seed 1234 2.14 / 2.12; Gumbel seed 1235 2.07 / 3.19. In every arm-1
+    run the largest remaining gap is in the class H_GEW < 1 (arm 0a there: -27.04 / -26.93 pp; arm 0a's largest
+    gap in batch_000 is the class 8+, +27.63 pp).
   artifact: docs/runs/artifacts/popsim-ladder-arm1-2026-11-17/arm1_comparison.csv
 - metric: >-
     G3: integer control fit WAPE per geography against arm 0a of the same batch; bound arm 1 <= arm 0a +
@@ -115,8 +117,8 @@ validation:
     Gumbel chosen by the rule: both methods meet G3; maximum gap over both batches Gumbel 2.14 pp, Pareto
     3.22 pp, difference 1.08 pp > 0.5. Limitation: the rule compares ONE draw per method (seed 1234); the
     second Gumbel seed moved the same statistic to 3.19 pp, a spread of 1.05 pp, as large as the difference
-    between the methods, so the choice is not a demonstrated superiority of Gumbel over Pareto (the
-    idealised scratch probe without controls had favoured Pareto). Reproducibility MET: the repeat of the
+    between the methods, so the choice is not a demonstrated superiority of Gumbel over Pareto.
+    Reproducibility MET: the repeat of the
     Gumbel seed-1234 run on batch_000 is byte-identical (sha256 100e44f8b052e773...).
   artifact: docs/runs/artifacts/popsim-ladder-arm1-2026-11-17/arm1_verdict.json
 - metric: >-
@@ -130,7 +132,8 @@ validation:
     1235 3,131 / 5,925; Pareto 3,099 / 6,079. Kish effective size: arm 0a 573 / 933; Gumbel 1,659 / 3,330;
     Gumbel seed 1235 1,968 / 3,051; Pareto 1,674 / 3,460. Share of batch_000's donors also used in batch_032:
     arm 0a 0.375; Gumbel 0.165 / 0.167 (seeds 1234 / 1235); Pareto 0.184. Synthetic share against survey
-    weight share (ratio), both batches together: base sample BASISAUF 1 arm 0a 1.74, Gumbel 0.97; federal
+    weight share (ratio), both batches together (attribute_shares.csv per arm; arm 0a from the ladder
+    diagnostics, copied as arm_0a_attribute_shares.csv): base sample BASISAUF 1 arm 0a 1.74, Gumbel 0.97; federal
     state BLAND 14 arm 0a 3.15, Gumbel 1.13 / 1.07, Pareto 1.20; across the 16 states the Gumbel ratios (both
     seeds) lie between 0.83 and 1.44 (arm 0a 0.07 to 3.15). Household totals: batch_032 13,464 in every run (target
     13,464); batch_000 6,702 to 6,710 (arm 0a 6,724; target 6,629). G4 rounding shift unchanged in kind
@@ -142,13 +145,17 @@ validation:
 features:
   note: >-
     Evidence for popsim_method (WP2 of the PopulationSim repair, issue #645): the fork's fractional weights
-    and the Gumbel draw meet G1, G2, G3, G5 and G7 on both batches; configs/base_bs.yml switches
-    keep_fractional_sample_weights on and integerizer_draw to gumbel on this evidence. Single-batch evidence;
-    the verdict for the full population is the full rerun (#648).
+    and the Gumbel draw meet G1, G2, G3, G5 and G7 on both batches, against ASSUMPTION-grade design bounds,
+    the model's own control targets and the survey's own weight shares; this is not validation against
+    observed behaviour. configs/base_bs.yml switches keep_fractional_sample_weights on and integerizer_draw
+    to gumbel on this evidence. Single batches and one draw per method in the method rule; the verdict for
+    the full population is the full rerun (#648).
 artifacts:
 - docs/runs/artifacts/popsim-ladder-arm1-2026-11-17/arm1_comparison.csv
 - docs/runs/artifacts/popsim-ladder-arm1-2026-11-17/arm1_verdict.json
 - docs/runs/artifacts/popsim-ladder-arm1-2026-11-17/run_times_and_hashes.txt
+- docs/runs/artifacts/popsim-ladder-arm1-2026-11-17/r1_and_diagnostics_checks.txt
+- docs/runs/artifacts/popsim-ladder-arm1-2026-11-17/arm_0a_attribute_shares.csv
 - docs/runs/artifacts/popsim-ladder-arm1-2026-11-17/arm_1g_A/popsim_batch_diagnostics.md
 - docs/runs/artifacts/popsim-ladder-arm1-2026-11-17/arm_1g_B/popsim_batch_diagnostics.md
 - docs/runs/artifacts/popsim-ladder-arm1-2026-11-17/arm_1p_A/popsim_batch_diagnostics.md

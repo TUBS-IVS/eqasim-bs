@@ -1,0 +1,9 @@
+# R1 neutral equivalence: full sha256 of final_expanded_household_ids.csv and cmp result
+fe906cb27099a4cfdb09fcd2ce7e17b58ab77989f3bf01de6e12f60ddb140938  r1_neutral/batch_000/output/final_expanded_household_ids.csv
+fe906cb27099a4cfdb09fcd2ce7e17b58ab77989f3bf01de6e12f60ddb140938  i138_ladder/arm0a/batch_000/output/final_expanded_household_ids.csv
+cmp: no difference
+
+# diagnostics (python -m braunschweig.analysis.popsim_batch_diagnostics.run --misfit): wall time, peak RSS kB
+diag_arm1p_A 22:17.05 9980196
+diag_arm1g_A 21:45.18 9959740
+diag_arm1g_B 21:17.24 9934040
