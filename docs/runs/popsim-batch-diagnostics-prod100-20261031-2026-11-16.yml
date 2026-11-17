@@ -49,8 +49,8 @@ validation:
   result: >-
     15,248 of 218,097 seed households used (6.99 %); Kish effective sample size 1,293.2; most-copied seed household
     3,796 copies; the 100 / 1,000 / 5,000 most-used seed households carry 20.7 % / 57.0 % / 89.1 % of the synthetic
-    households. Per batch 1,646 (batch_000) to 3,367 (batch_032) distinct seed households; per-batch and per-Kreis
-    rows in reuse.csv.
+    households. Per batch 851 (batch_059) to 3,995 (batch_025) distinct seed households; the two ladder batches
+    use 1,646 (batch_000) and 3,367 (batch_032); per-batch and per-Kreis rows in reuse.csv.
   artifact: docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/reuse.csv
   notes: Measurement of the draw, NOT a behavioural validation.
 - metric: >-
@@ -93,7 +93,12 @@ validation:
   result: >-
     ZENSUS100m 0.1975 (bias -0.0172), ZENSUS1km 0.0398 (bias +0.0002), KREIS 0.0136 (bias +0.0006). Household total:
     558,274 synthetic households against a target of 558,151 (+123); four of 60 batches miss it, batch_000 by +95
-    (6,724 against 6,629). Per control and batch in control_fit.csv.
+    (6,724 against 6,629). Per control and batch in control_fit.csv. The targets come from the batches'
+    control_totals CSVs, which also hold cells PopulationSim never balances (household total 0, other targets
+    non-zero); their targets count fully as error, so these WAPEs are upper bounds of the reachable fit (batch_000
+    ZENSUS100m: M_AGE_0_9 target_sum 294 here against 288 in PopulationSim's own control table, ein- und
+    zweifamilienhaus 3,095 against 2,945; ladder manifest arm_0a/rounding_shift.csv, whose output is byte-identical to
+    production).
   artifact: docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/control_fit.csv
   notes: Control fit, NOT a behavioural validation. The baseline for design goal G3 is set by arm 0b of the ladder (popsim-ladder-baseline-2026-11-16), not by these rows.
 - metric: >-

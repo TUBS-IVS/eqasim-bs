@@ -15,13 +15,13 @@ python -m braunschweig.analysis.popsim_batch_diagnostics.run --work-dir <dir wit
 ```
 
 - `--out-dir` must not exist or be empty (`FileExistsError`); nothing is overwritten.
-- `--mid-households` loads `H_ID, BASISAUF, BLAND, MODE, TEILSTP` (separator `--mid-separator`,
-  default `,`) and joins them to the seed households on the household id. The join rate is
-  logged; below 99 % it warns, below 50 % it raises (id mismatch).
+- `--mid-households` loads the columns `run.MID_COLUMNS` (separator `--mid-separator`) and joins
+  them to the seed households on the household id. The join rate is logged; below
+  `run.MID_JOIN_WARN_RATE` it warns, below `run.MID_JOIN_FAIL_RATE` it raises (id mismatch).
 - `--misfit` needs a kept checkpoint store `output/pipeline.h5` in every batch; a batch without one
   raises. Without it the run needs only the CSV inputs and the log.
 - `--threshold NAME=VALUE` (repeatable) overrides a `Thresholds` field; an unknown name is an
-  error. `--max-unmatched-zone-share` (default 0.01) is the share of zones without a target
+  error. `--max-unmatched-zone-share` (default in the argparse setup of `run.main`) is the share of zones without a target
   row above which `control_fit` and `misfit_split` raise (zone-id mismatch).
 - Warnings never change the exit code; exceptions do. `provenance.json` records the work
   directory, batches, seed groups, thresholds, the MiD file hash, a UTC timestamp and the
@@ -34,8 +34,7 @@ python -m braunschweig.analysis.popsim_batch_diagnostics.run --work-dir <dir wit
 Batches with the same `data/seed_households.csv` and `data/seed_persons.csv` (sha256 of both)
 form one seed group. Reuse, weight
 shares, attribute shares and coverage are computed once per group from the group's summed usage,
-so the shared seed is not counted once per batch; they carry a `seed_group` column (first 12 hex
-characters). Batches of one group must have identical `configs/controls.csv`, household-total control,
+so the shared seed is not counted once per batch; they carry a `seed_group` column (a sha256 prefix of length `run._SEED_GROUP_CHARS`). Batches of one group must have identical `configs/controls.csv`, household-total control,
 weight column, household id column and geographies (`ValueError` otherwise). Ratios are always recomputed from sums.
 
 ## Tables
@@ -85,5 +84,10 @@ An `unmatched_control` warning (one per control name) has NaN value and threshol
 For a control coarser than a batch (e.g. KREIS) the `region` and `region_geography` rows sum
 per-batch absolute errors against per-batch apportioned targets: they are an upper bound of the
 Kreis-level WAPE, because errors of opposite sign in different batches of one Kreis do not cancel.
+`control_fit` takes its targets from `control_totals_<geography>.csv`, which also holds cells
+PopulationSim never balances (household total 0, other targets non-zero); their targets count fully
+as error, so its WAPE is an upper bound of the reachable fit and its `target_sum` can exceed the
+store-based target of `rounding_shift` and `misfit_split` for the same control. Arms compared on the
+same batch carry the same unreachable mass, so a WAPE difference between them is not affected.
 
 Defaults are in the dataclass; they are screening values, not scientific targets.

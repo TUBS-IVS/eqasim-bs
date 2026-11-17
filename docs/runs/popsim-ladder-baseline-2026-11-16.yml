@@ -69,7 +69,9 @@ validation:
   result: >-
     G3 MET on both batches and all three geographies. batch_000: ZENSUS100m 0.3677 (0a) / 0.3616 (0b), ZENSUS1km
     0.0782 / 0.0745, KREIS 0.0179 / 0.0177. batch_032: ZENSUS100m 0.1494 / 0.1552, ZENSUS1km 0.0224 / 0.0231, KREIS
-    0.0124 / 0.0121.
+    0.0124 / 0.0121. Both arms read the same control_totals CSVs, so cells PopulationSim never balances (household
+    total 0, other targets non-zero) add the same unreachable target mass to both WAPEs; the levels are upper bounds
+    of the reachable fit, the 0a/0b difference is unaffected.
   artifact: docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/ladder_verdict.json
   notes: Control fit against the model's own targets; NOT a behavioural validation.
 - metric: >-
@@ -87,8 +89,10 @@ validation:
   result: >-
     No change: final_expanded_household_ids.csv of arm 0a is byte-identical to production for both batches (same
     sha256 prefix fe906cb27099a4cf for batch_000 and 7d553e8f3711ec80 for batch_032), so reuse, weight shares and fit
-    are identical; the one NOT_SOLVED attempt of production batch_032 solved within the raised limit and led to the
-    same weights.
+    are identical; the one NOT_SOLVED first attempt of production batch_032 (ZENSUS100m) ended INFEASIBLE within the
+    raised limit instead of timing out and took the same sequential-fallback path (solver_paths.csv: first_not_solved
+    1 -> 0, first_infeasible 13 -> 14, all retry and fallback counts equal), hence the same weights. A longer limit
+    did not let that simultaneous attempt succeed.
   artifact: docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/ladder_comparison.csv
 - metric: >-
     design goal G4 baseline (rounding shift |I_c - F_c| / T_c per ZENSUS100m control with T_c >= 40, household

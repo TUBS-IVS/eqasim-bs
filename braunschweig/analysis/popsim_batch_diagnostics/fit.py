@@ -79,6 +79,12 @@ def control_fit(batch: BatchFolder, *, max_unmatched_zone_share: float = 0.01) -
     A zone that
     has synthetic households but no target row counts with target 0; a zone with targets and
     no synthetic household counts with synthetic 0; both are logged.
+    The targets come from the batch's ``control_totals_<geography>.csv``, which also carries
+    cells PopulationSim never balances (a zero household total with non-zero person or building
+    targets).  No household can be placed there, so their targets count fully as error and
+    ``target_sum`` can exceed the store-based target of ``rounding_shift`` / ``misfit_split``
+    for the same control; the WAPE is therefore an upper bound of the fit PopulationSim could
+    reach.  Arms compared on the same batch carry the same unreachable mass.
     A geography without a ``control_totals_<geography>.csv`` raises ``FileNotFoundError``.
     The share of expanded zones without a target row is logged (zones and households); above
     ``max_unmatched_zone_share`` it raises ``ValueError`` (zone-id mismatch).
