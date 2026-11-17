@@ -162,10 +162,75 @@ def write_feed(feed, path):
                     print("  Writing %s.txt ..." % slot)
                     feed[slot].to_csv(f, index = None, lineterminator='\n')
 
+# GTFS-Flex columns that carry a booking window instead of a fixed arrival/departure time.
+FLEX_WINDOW_COLUMNS = ["start_pickup_drop_off_window", "end_pickup_drop_off_window"]
+
+def filter_flex_trips(feed, stats = None):
+    """Remove on-demand trips encoded as GTFS-Flex (booking windows in stop_times).
+
+    A stop_times row with a value in any FLEX_WINDOW_COLUMNS column describes a booking
+    window of an on-demand service (Rufbus, AST, ...), not a departure every agent could
+    board, so it must not be imported as scheduled public transport.
+
+    Port of upstream eqasim-france #569 with two deliberate deviations:
+      - the WHOLE trip is removed as soon as one of its rows has a window (upstream drops
+        only the rows, which can leave a mixed trip with a truncated stop sequence);
+      - the removed trips and stop_times are counted and logged (no silent filter).
+
+    Trips are cascaded to stop_times and frequencies. Routes are left in place: cut_feed
+    removes unreferenced entries, and the name-based exclusion in filter_routes (issue
+    #200) still sees its routes and stays a second safety net.
+
+    The input feed is not mutated. A feed without window columns is returned unchanged.
+    When a dict is passed as ``stats``, the counts are also written into it so the stage
+    can persist them in its report.
+    """
+    df_times = feed["stop_times"]
+    window_columns = [c for c in FLEX_WINDOW_COLUMNS if c in df_times.columns]
+
+    if stats is not None:
+        stats.update(window_columns = window_columns, trips_before = len(feed["trips"]),
+                     trips_removed = 0, stop_times_before = len(df_times), stop_times_removed = 0,
+                     window_rows = 0)
+
+    if len(window_columns) == 0:
+        print("[gtfs-flex-filter] no GTFS-Flex booking-window columns in stop_times; feed unchanged")
+        return feed
+
+    flex_row_mask = df_times[window_columns].notna().any(axis = 1)
+    flex_trip_ids = set(df_times.loc[flex_row_mask, "trip_id"].astype(str))
+
+    feed = copy_feed(feed)
+    n_trips_before = len(feed["trips"])
+    n_stop_times_before = len(df_times)
+
+    keep_trips = ~feed["trips"]["trip_id"].astype(str).isin(flex_trip_ids)
+    feed["trips"] = feed["trips"][keep_trips].copy()
+
+    keep_times = ~df_times["trip_id"].astype(str).isin(flex_trip_ids)
+    feed["stop_times"] = df_times[keep_times].copy()
+
+    if "frequencies" in feed:
+        df_freq = feed["frequencies"]
+        feed["frequencies"] = df_freq[~df_freq["trip_id"].astype(str).isin(flex_trip_ids)].copy()
+
+    if stats is not None:
+        stats.update(trips_removed = int((~keep_trips).sum()), stop_times_removed = int((~keep_times).sum()),
+                     window_rows = int(flex_row_mask.sum()))
+
+    print("[gtfs-flex-filter] removed %d/%d trips and %d/%d stop_times with GTFS-Flex booking windows "
+          "(%d stop_times rows carried a window)" % (
+              int((~keep_trips).sum()), n_trips_before,
+              int((~keep_times).sum()), n_stop_times_before,
+              int(flex_row_mask.sum())))
+
+    return feed
+
 def filter_routes(feed,
                   excluded_route_short_name_patterns = None,
                   excluded_agency_ids = None,
-                  excluded_agency_name_patterns = None):
+                  excluded_agency_name_patterns = None,
+                  stats = None):
     """Remove configured routes (and their trips, stop_times, frequencies) from a feed.
 
     This drops demand-responsive / placeholder services that must NOT be imported as
@@ -189,7 +254,8 @@ def filter_routes(feed,
     visible instead of silently doing nothing.
 
     The input feed is not mutated; a filtered copy is returned. Returns the feed
-    unchanged when no exclusion rules are configured.
+    unchanged when no exclusion rules are configured. When a dict is passed as ``stats``,
+    the per-rule matches and removed counts are also written into it for the stage report.
     """
     excluded_route_short_name_patterns = excluded_route_short_name_patterns or []
     excluded_agency_ids = [str(a) for a in (excluded_agency_ids or [])]
@@ -202,6 +268,11 @@ def filter_routes(feed,
     feed = copy_feed(feed)
     df_routes = feed["routes"]
 
+    if stats is None:
+        stats = {}
+    stats.update(rule_matches = {}, routes_before = len(df_routes), routes_removed = 0,
+                 trips_before = len(feed["trips"]), trips_removed = 0, stop_times_removed = 0)
+
     # Resolve agency-name patterns to concrete agency_ids via the agency table.
     if excluded_agency_name_patterns and "agency" in feed:
         agency_names = feed["agency"]["agency_name"].astype(str)
@@ -209,6 +280,7 @@ def filter_routes(feed,
         for pattern in excluded_agency_name_patterns:
             hits = agency_names.str.contains(pattern, case = False, regex = True, na = False)
             print("[gtfs-filter] agency_name /%s/ matched %d agencies" % (pattern, int(hits.sum())))
+            stats["rule_matches"]["agency_name /%s/ (agencies)" % pattern] = int(hits.sum())
             name_mask |= hits
         excluded_agency_ids = list(
             set(excluded_agency_ids)
@@ -227,11 +299,13 @@ def filter_routes(feed,
     for pattern in excluded_route_short_name_patterns:
         hits = route_short.str.contains(pattern, case = False, regex = True, na = False)
         print("[gtfs-filter] route_short_name /%s/ matched %d routes" % (pattern, int(hits.sum())))
+        stats["rule_matches"]["route_short_name /%s/" % pattern] = int(hits.sum())
         remove_mask |= hits
 
     if excluded_agency_ids:
         hits = route_agency.isin(excluded_agency_ids)
         print("[gtfs-filter] agency_id in %s matched %d routes" % (excluded_agency_ids, int(hits.sum())))
+        stats["rule_matches"]["agency_id in %s" % sorted(excluded_agency_ids)] = int(hits.sum())
         remove_mask |= hits
 
     removed_route_ids = set(df_routes.loc[remove_mask, "route_id"].astype(str))
@@ -263,6 +337,9 @@ def filter_routes(feed,
         feed["frequencies"] = df_freq[
             ~df_freq["trip_id"].astype(str).isin(removed_trip_ids)
         ].copy()
+
+    stats.update(routes_removed = len(removed_route_ids), trips_removed = len(removed_trip_ids),
+                 stop_times_removed = n_stop_times_removed)
 
     print("[gtfs-filter] removed %d/%d routes, %d/%d trips, %d stop_times "
           "(demand-responsive / excluded services)" % (

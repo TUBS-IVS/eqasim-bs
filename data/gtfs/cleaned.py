@@ -1,5 +1,5 @@
 import data.gtfs.utils as gtfs
-import os, pathlib
+import json, os, pathlib
 
 from braunschweig import synpp_tokens
 
@@ -7,6 +7,9 @@ from braunschweig import synpp_tokens
 # source goes into the stage token (audit C2, ADR-0136). ``network_clip`` is imported inside
 # ``execute`` and ``spatial.cordon`` is reached through it, so both are hashed by name.
 _HELPER_MODULES = (gtfs,)
+
+# Stage report with the per-feed counts of the on-demand filters (written into context.path()).
+FILTER_REPORT_FILE_NAME = "gtfs_filter_report.json"
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.cordon.network_clip",
     "braunschweig.data.spatial.cordon",
@@ -59,10 +62,24 @@ def execute(context):
     excluded_agency_ids = context.config("gtfs_excluded_agency_ids")
     excluded_agency_name_patterns = context.config("gtfs_excluded_agency_name_patterns")
 
+    # Per-feed counts of the on-demand filters, persisted next to the output so every run
+    # records what was removed (not only the log).
+    filter_report = dict(
+        excluded_route_short_name_patterns = list(excluded_route_patterns),
+        excluded_agency_ids = list(excluded_agency_ids),
+        excluded_agency_name_patterns = list(excluded_agency_name_patterns),
+        feeds = [])
+
     # Load and cut feeds
     feeds = []
     for path in input_files:
         feed = gtfs.read_feed(path)
+
+        # Drop on-demand trips encoded as GTFS-Flex (booking windows in stop_times,
+        # upstream eqasim-france #569). Runs first so on-demand services the name-based
+        # rule below does not list are caught too; that rule stays as a second net.
+        flex_stats, route_stats = {}, {}
+        feed = gtfs.filter_flex_trips(feed, stats = flex_stats)
 
         # Drop demand-responsive / placeholder services (e.g. ZGB "Flexo") so they are
         # not imported as scheduled PT. Applied before the spatial cut so the logged
@@ -71,7 +88,11 @@ def execute(context):
             feed,
             excluded_route_short_name_patterns = excluded_route_patterns,
             excluded_agency_ids = excluded_agency_ids,
-            excluded_agency_name_patterns = excluded_agency_name_patterns)
+            excluded_agency_name_patterns = excluded_agency_name_patterns,
+            stats = route_stats)
+
+        filter_report["feeds"].append(dict(
+            feed = os.path.basename(path), gtfs_flex_filter = flex_stats, route_filter = route_stats))
 
         feed = gtfs.cut_feed(feed, df_area)
 
@@ -93,6 +114,9 @@ def execute(context):
 
     # Write feed (not as a ZIP, but as files, for pt2matsim)
     gtfs.write_feed(merged_feed, "%s/output" % context.path())
+
+    with open(os.path.join(context.path(), FILTER_REPORT_FILE_NAME), "w", encoding = "utf-8") as handle:
+        json.dump(filter_report, handle, indent = 2)
 
     return "gtfs"
 
