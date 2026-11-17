@@ -1134,8 +1134,10 @@ def _create_seeded_rngs(context):
     the steps below (``kreis_seed_rng`` in the seed build, ``rng`` in the persons
     expansion), so no draw moves across a step boundary. ``seed_fill_rng`` is a
     dedicated stream for the donor-person fills of issue #647 (sex first); no
-    other consumer draws from it, so every existing draw stays as it was whether
-    the fills are on or off.
+    other consumer draws from it, so ``kreis_seed_rng`` is untouched by the fills.
+    ``rng`` is not: with the sex resolution on, ``expand.map_demographics`` finds no
+    sex left to impute and no longer draws from ``rng``, so every later ``rng`` draw
+    shifts relative to a run with the resolution off.
     Mutates: nothing.
     """
     random_seed = int(context.config("random_seed"))
@@ -1459,6 +1461,10 @@ def _check_seed_contract(seed_households: pd.DataFrame, seed_persons: pd.DataFra
     MiD source. The legacy path and the ENTD source build their seed differently and always run
     in "warn" mode; one INFO line says so.
 
+    The per-Kreis household totals are grouped by the RESOLVED Kreis
+    (``mid.resolved_kreis_per_cell`` on ``ars_col``, the grouping the OWN_* targets are raked
+    by) whenever ``ars_col`` is on the cells; only without it is ``kreis_col`` used as given.
+
     Returns: nothing. Raises ``ValueError`` in "error" mode when the contract is violated.
     Mutates: nothing.
     """
@@ -1489,10 +1495,17 @@ def _check_seed_contract(seed_households: pd.DataFrame, seed_persons: pd.DataFra
     # Absent group columns are skipped and counted inside the check (INFO); an absent
     # household-total column raises there.
     narrow = cells[[c for c in needed if c in cells.columns]].copy()
-    if kreis_col in cells.columns:
-        narrow[kreis_col] = cells[kreis_col].to_numpy()
+    if ars_col is not None and ars_col in cells.columns:
+        # The RESOLVED Kreis (dominant Kreis per 1 km parent), exactly as the ownership-grid
+        # injection rakes its targets, so a border cell is checked in the Kreis its targets
+        # were raked to. A KREIS column already on the cells (raw ARS[:5], left by the
+        # employment grid) is deliberately not used.
+        narrow[kreis_col] = mid.resolved_kreis_per_cell(cells, ars_col=ars_col).to_numpy()
+        basis = f"resolved Kreis from {ars_col!r} (dominant Kreis per 1 km parent)"
     else:
-        narrow[kreis_col] = derive_geo_kreis_from_ars(cells[ars_col]).to_numpy()
+        narrow[kreis_col] = cells[kreis_col].to_numpy()
+        basis = f"the cells column {kreis_col!r} as given (no ARS column to resolve)"
+    logger.info("[popsim.seed_contract] household totals grouped by %s", basis)
     _seed_contract.check_household_group_totals(
         narrow, controls_df, total_hh_control, kreis_col=kreis_col, mode=effective)
 

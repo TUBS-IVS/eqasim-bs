@@ -213,8 +213,41 @@ def test_kreis_derived_from_ars_when_kreis_column_is_absent():
     households, persons = _resolved()
     cells = _cells().drop(columns=["KREIS"])
     cells["ARS"] = ["031010000000", "031010000000", "031020000000"]
+    # The grid keys and weight the Kreis resolution reads (one 1 km parent per Kreis here).
+    cells["ZENSUS100m"] = ["a", "b", "c"]
+    cells["ZENSUS1km"] = ["P1", "P1", "P2"]
+    cells["POP_TOTAL_100m_adj"] = [1.0, 1.0, 1.0]
     cells.loc[:1, ["building_type_efh", "building_type_mfh"]] *= 1.2   # dwellings > households
     with pytest.raises(ValueError, match=r"building_type, Kreis 03101.*ratio 1\.2000"):
+        popsim_stage._check_seed_contract(
+            households, persons, _controls_df(), TOTAL, cells, kreis_col="KREIS",
+            ars_col="ARS", mode="error", complete_members=True, source_name="mid")
+
+
+def test_border_cell_is_grouped_with_its_resolved_kreis():
+    """A border cell counts toward its 1 km parent's dominant Kreis, not its raw ARS[:5].
+
+    Defect caught: grouping by the raw ARS Kreis while the targets are raked per RESOLVED
+    Kreis (``mid.resolved_kreis_per_cell``) compares two different Kreis universes. Here the
+    raw grouping balances (03102: 12 + 8 = 20 of 20 households) and hides the resolved
+    imbalance (03101: 32 of 30, 03102: 8 of 10).
+    """
+    from braunschweig.popsim import stage as popsim_stage
+    households, persons = _resolved()
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["a", "b", "c", "d"],
+        "ZENSUS1km": ["P1", "P1", "P1", "P2"],
+        "ARS": ["031010000000", "031010000000", "031020000000", "031020000000"],
+        "POP_TOTAL_100m_adj": [100.0, 100.0, 1.0, 50.0],
+        "HH_TOTAL": [10.0, 10.0, 10.0, 10.0],
+        "MieterHH_Tenure": [5.0, 5.0, 5.0, 5.0],
+        "EigentuemerHH_Tenure": [5.0, 5.0, 5.0, 5.0],
+        "building_type_efh": [5.0, 5.0, 6.0, 4.0],
+        "building_type_mfh": [5.0, 5.0, 6.0, 4.0],
+        # A raw ARS[:5] column, as the employment grid leaves it on the stage's cells.
+        "KREIS": ["03101", "03101", "03102", "03102"],
+    })
+    with pytest.raises(ValueError, match=r"building_type, Kreis 03101.*ratio 1\.0667"):
         popsim_stage._check_seed_contract(
             households, persons, _controls_df(), TOTAL, cells, kreis_col="KREIS",
             ars_col="ARS", mode="error", complete_members=True, source_name="mid")

@@ -24,6 +24,10 @@ Fallback tiers (primary first), counted and logged per cell and per household (r
 
 A cell with households and no share at any level raises; a cell without households gets 0.
 The raw dwelling source columns are never modified (``ownership_grid`` reads them).
+
+The two ASSUMPTIONS of this rescale (share rule, NaN class count) are stated in ADR-0198,
+decision 5. Cells whose class vector is partly NaN are counted and logged
+(``partial_nan_*`` rate lines).
 """
 
 from __future__ import annotations
@@ -144,6 +148,21 @@ def rescale_building_type_to_households(
     )
     log_fallback_rate(
         logger, f"{LOG_TAG}.households", n_fallback_households, int(round(household_total)),
+        what="households in those cells",
+    )
+    # Partly suppressed class vectors (some classes NaN, some reported) take the own-share
+    # tier with NaN read as 0 (ASSUMPTION, ADR-0198 decision 5); counted so that this
+    # assumption is never silent.
+    class_nan = np.isnan(
+        cells[building_type_cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype="float64"))
+    partly_nan = has_households & class_nan.any(axis=1) & ~class_nan.all(axis=1)
+    log_fallback_rate(
+        logger, f"{LOG_TAG}.partial_nan_cells", int(partly_nan.sum()), n_with_households,
+        what="cells with households whose building-type vector is partly NaN (NaN read as 0)",
+    )
+    log_fallback_rate(
+        logger, f"{LOG_TAG}.partial_nan_households", int(round(float(households[partly_nan].sum()))),
+        int(round(household_total)),
         what="households in those cells",
     )
     tier_text = ", ".join(

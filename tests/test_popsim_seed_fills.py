@@ -33,6 +33,8 @@ def test_resolve_binary_sex_draws_from_band_pool():
     out = attributes.resolve_binary_sex(_persons(sex, band), rng=np.random.RandomState(0))
     assert out["HP_SEX"].tolist() == [2, 2, 2, 2, 2, 1, 1, 1, 1]
     assert out["HP_SEX_raw"].tolist() == sex
+    # Explicit dtype: a platform int (int32 on Windows) would differ between CI platforms.
+    assert out["HP_SEX"].dtype == np.dtype("int64")
 
 
 def test_resolve_binary_sex_without_band_uses_global_pool(caplog):
@@ -64,11 +66,15 @@ def test_resolve_binary_sex_no_valid_person_raises():
         attributes.resolve_binary_sex(_persons([3, 9], [1, 1]), rng=np.random.RandomState(0))
 
 
-def test_resolve_binary_sex_is_idempotent():
+def test_resolve_binary_sex_is_idempotent(caplog):
     once = attributes.resolve_binary_sex(
         _persons([1, 2, 3], [1, 1, 1]), rng=np.random.RandomState(0))
-    twice = attributes.resolve_binary_sex(once, rng=np.random.RandomState(99))
+    with caplog.at_level(logging.INFO):
+        twice = attributes.resolve_binary_sex(once, rng=np.random.RandomState(99))
     pd.testing.assert_frame_equal(once, twice)
+    # The early return is visible in the log, not silent.
+    assert any("popsim.seed.sex" in r.getMessage() and "already" in r.getMessage()
+               for r in caplog.records)
 
 
 class _NoDrawRng:

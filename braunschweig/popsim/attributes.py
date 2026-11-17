@@ -1120,6 +1120,9 @@ def resolve_binary_sex(
 
     raw_col = f"{sex_col}_raw"
     if raw_col in persons.columns:
+        logger.info(
+            "[popsim.seed.sex] %s already present: the persons were resolved before; "
+            "returned unchanged (no draw).", raw_col)
         return persons.copy()
     out = persons.copy()
     out[raw_col] = out[sex_col]
@@ -1132,7 +1135,7 @@ def resolve_binary_sex(
             f"[popsim.seed.sex] {n_missing} persons have no binary sex (codes other than 1/2) "
             f"and the donor persons hold no observed male/female person to draw from."
         )
-    out[sex_col] = filled.astype(int)
+    out[sex_col] = filled.astype("int64")
     n_total = len(out)
     log_fallback_rate(
         logger, "popsim.seed.sex", n_missing, n_total,

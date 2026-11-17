@@ -176,35 +176,35 @@ def _read_and_clean_cells(parquet: Path) -> pd.DataFrame:
     catalog = full_catalog(include_tiers=("tier2",))
     agg_map = build_aggregation_map(controls_for_seed(catalog, "mid"))
     df = add_aggregated_controls(df, agg_map)
+    # The derived building_type_* columns stay census DWELLING counts here; the household
+    # rescale of issue #647 is applied by ``building_type_target`` on its own working frame.
+    return df
 
-    # The derived building_type_* columns are census DWELLING counts; PopulationSim is fitted
-    # to the household-based targets of the stage (issue #647), so the validation target must
-    # be the same rescaled quantity, with the same 1 km / Kreis share fallback. The parent
-    # columns are derived on a working copy and only the building_type_* columns are copied
-    # back, so the cached frame keeps its columns.
+
+def _building_type_household_targets(cells: pd.DataFrame, col_cat: dict) -> pd.DataFrame:
+    """Narrow working frame whose ``building_type_*`` columns count HOUSEHOLDS (issue #647).
+
+    PopulationSim is fitted to the household-based targets of the stage, so the validation
+    target is the same rescaled quantity, with the same 1 km / Kreis share fallback
+    (``braunschweig.popsim.building_type_targets``). Only the columns the target reads are
+    copied; the cached cells frame is not modified.
+    """
     from braunschweig.popsim import building_type_targets as btt
     from braunschweig.popsim import cells as cellmod
     from braunschweig.popsim import folders
-    from braunschweig.popsim.control_spec import (
-        _TIER2_BUILDING_TYPE_ENTRIES,
-        HH_TOTAL_CENSUS_COLUMN as _HH_TOTAL_CLEAN,
-    )
+    from braunschweig.popsim.control_spec import HH_TOTAL_CENSUS_COLUMN as _HH_TOTAL_CLEAN
 
-    building_type_cols = [name for name, _, _ in _TIER2_BUILDING_TYPE_ENTRIES if name in agg_map]
-    if building_type_cols:
-        work = df[[*building_type_cols,
-                   *[c for c in (_HH_TOTAL_CLEAN, _CELL_ID_CLEAN) if c in df.columns],
-                   "ars5"]].copy()
-        work[folders.GEO_KREIS] = work["ars5"]
-        if _CELL_ID_CLEAN in work.columns:
-            work[folders.GEO_1KM] = work[_CELL_ID_CLEAN].map(cellmod.derive_1km_parent_id)
-        work = btt.rescale_building_type_to_households(
-            work, building_type_cols, household_total_col=_HH_TOTAL_CLEAN)
-        df = df.copy()
-        for column in building_type_cols:
-            df[column] = work[column]
-
-    return df
+    building_type_cols = [c for c in col_cat if c in cells.columns]
+    work = cells[[*building_type_cols,
+                  *[c for c in (_HH_TOTAL_CLEAN, _CELL_ID_CLEAN) if c in cells.columns],
+                  "ars5"]].copy()
+    if not building_type_cols:
+        return work
+    work[folders.GEO_KREIS] = work["ars5"]
+    if _CELL_ID_CLEAN in work.columns:
+        work[folders.GEO_1KM] = work[_CELL_ID_CLEAN].map(cellmod.derive_1km_parent_id)
+    return btt.rescale_building_type_to_households(
+        work, building_type_cols, household_total_col=_HH_TOTAL_CLEAN)
 
 
 def _multi_col_kreis_target(
@@ -352,11 +352,24 @@ def tenure_target(data_path: str) -> pd.DataFrame:
     return _multi_col_kreis_target(cells, col_cat)
 
 
-def building_type_target(data_path: str) -> pd.DataFrame:
+def building_type_target(data_path: str, *,
+                         building_type_targets_to_households: bool = True) -> pd.DataFrame:
     """Per-Kreis building-type (3-class) target from prepared cells (Tier-2).
 
     The derived columns ``building_type_ein_zweifamilienhaus`` etc. are produced
-    by ``_load_cells`` via ``add_aggregated_controls``.
+    by ``_load_cells`` via ``add_aggregated_controls`` as census DWELLING counts.
+
+    ``building_type_targets_to_households`` mirrors the stage key of the same name
+    (``braunschweig.population.popsim.building_type_targets_to_households``): True rescales
+    the counts to households per cell before the Kreis aggregation, False keeps the dwelling
+    counts. The control registry calls this loader with ``data_path`` only and has no access
+    to the run config, so the default True matches the stage default; a run with the key off
+    is validated against household targets unless the caller passes False.
+
+    Limitation: the loader does not know the run's Kreise, so the rescale runs on all cells
+    of the prepared parquet. The per-cell own-share result does not depend on other cells;
+    only the 1 km / Kreis share fallback of a cell without dwellings can read cells of a
+    1 km parent that straddles the region boundary.
     """
     cells = _load_cells(data_path)
     col_cat = {
@@ -364,6 +377,13 @@ def building_type_target(data_path: str) -> pd.DataFrame:
         "building_type_mehrfamilienhaus":     "mehrfamilienhaus",
         "building_type_sonstiges":            "sonstiges",
     }
+    if building_type_targets_to_households:
+        LOGGER.info("[popsim_validation] building_type target basis: households "
+                    "(dwelling counts rescaled per cell, issue #647)")
+        cells = _building_type_household_targets(cells, col_cat)
+    else:
+        LOGGER.info("[popsim_validation] building_type target basis: dwellings "
+                    "(census dwelling counts, building_type_targets_to_households off)")
     return _multi_col_kreis_target(cells, col_cat)
 
 

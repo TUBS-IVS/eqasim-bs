@@ -55,6 +55,26 @@ def test_cell_without_dwellings_takes_1km_shares(caplog):
     assert "primary 14/18" in text and "fallback 4" in text
 
 
+def test_partly_suppressed_class_vector_is_counted(caplog):
+    """A cell with some classes NaN and some reported reads NaN as 0 and is counted.
+
+    Defect caught: such a cell takes the own-share (primary) tier silently although one of
+    its shares rests on the NaN-as-0 assumption.
+    """
+    cells = _frame([
+        ("c1", "k1", "01", 10.0, 6.0, np.nan, 4.0),       # partly suppressed
+        ("c2", "k1", "01", 5.0, 5.0, 5.0, 0.0),           # fully reported
+        ("c3", "k1", "01", 3.0, np.nan, np.nan, np.nan),  # fully suppressed: 1 km tier
+    ])
+    with caplog.at_level(logging.INFO):
+        out = btt.rescale_building_type_to_households(cells, BT_COLS)
+    assert out.loc[0, BT_COLS].tolist() == pytest.approx([6.0, 0.0, 4.0])
+    text = "\n".join(r.getMessage() for r in caplog.records if "partial_nan" in r.getMessage())
+    # 1 of the 3 cells with households (10 of 18 households) has a partly NaN class vector.
+    assert "primary 2/3" in text and "fallback 1" in text
+    assert "primary 8/18" in text and "fallback 10" in text
+
+
 def test_cell_and_1km_without_dwellings_take_kreis_shares(caplog):
     cells = _frame([
         ("c1", "k1", "01", 6.0, 0.0, 0.0, 0.0),
@@ -164,7 +184,8 @@ def test_integerised_targets_sum_to_household_total_per_1km_parent():
             assert int(group[f"{col}_ZENSUS100m"].sum()) == expected
         together = int(sum(group[f"{col}_ZENSUS100m"].sum() for col in BT_COLS))
         # Each column is rounded separately within its parent.
-        assert abs(together - household_parent) <= len(BT_COLS)
+        # Each column equals round(parent sum), so the gap is at most 3 x 0.5 + 0.5 = 2.
+        assert abs(together - household_parent) <= 2
 
 
 def test_key_is_declared_in_configure_with_default_on():
@@ -210,11 +231,17 @@ def test_validation_target_is_household_based(tmp_path):
     C.clear_cells_cache()
     try:
         out = C.building_type_target(str(tmp_path)).set_index("category")["target_share"]
+        # Key off: the dwelling sums are kept (10 / 90), as on the stage's OFF path.
+        dwellings = C.building_type_target(
+            str(tmp_path), building_type_targets_to_households=False,
+        ).set_index("category")["target_share"]
     finally:
         C.clear_cells_cache()
     assert out["ein_zweifamilienhaus"] == pytest.approx(0.5)
     assert out["mehrfamilienhaus"] == pytest.approx(0.5)
     assert out["sonstiges"] == pytest.approx(0.0)
+    assert dwellings["ein_zweifamilienhaus"] == pytest.approx(0.1)
+    assert dwellings["mehrfamilienhaus"] == pytest.approx(0.9)
 
 
 # --------------------------------------------------------------------------- fixtures

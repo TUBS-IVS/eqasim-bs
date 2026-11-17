@@ -38,29 +38,40 @@
      to 1 (renter class) WITHOUT a draw (owner decision 2026-11-17; ASSUMPTION: "anderes" is
      not owner-occupation). Code 9 is drawn by an `H_GEW`-weighted hot deck
      (`missing.weighted_hot_deck`) whose donor pool includes the re-coded households, since
-     they belong to the census renter class (controller ruling).
+     they belong to the census renter class (`MieterHH` is "not owner-occupied", see Context 2).
   3. **Building type:** haustyp 95 is drawn by the same hot deck (raw code 1-4). ASSUMPTION:
      missing at random within the cell (RegioStaR7, `hhgr_gr`, `hh_type5`), with the tier
      fallbacks of `HOUSEHOLD_FILL_TIERS`, each counted and logged. The attribute describes the
      settlement block, not the dwelling.
   4. **Flags:** `housing_tenure_imputed` and `building_type_imputed` are true for every
      non-reported code (re-coded and drawn). The income spatial tilt keeps
-     imputed-tenure households neutral exactly as "unknown" households were before (controller
-     ruling: this work does not change the income tilt).
+     imputed-tenure households neutral exactly as "unknown" households were before (the income
+     tilt is out of this issue's scope; changing it would move income results beyond the seed
+     resolution).
   5. **Building-type targets** (`braunschweig.popsim.building_type_targets.
      rescale_building_type_to_households`): per 100 m cell the float target is
      `household_total * dwellings_k / sum(dwellings)`, before the existing per-column 1 km
      integerisation. Cells with households but no dwellings take the shares of their 1 km
      cell, then of their Kreis. The popsim validation targets call the same function.
+     ASSUMPTION: within a cell, households spread over the building types like the
+     dwellings, i.e. vacancy and second-home rates are equal across the types. ASSUMPTION: a
+     NaN class count (Zensus suppression) is 0; cells whose class vector is only partly NaN
+     are counted and logged by the module.
   6. **Contract check** (`braunschweig.popsim.seed_contract`, mode key
      `braunschweig.population.popsim.seed_contract_mode`): before any PopulationSim batch it
      checks that each seed record of an exhaustive control group matches exactly one category
      and that the household group targets sum to the household total, per Kreis, within the
      tolerance shared with the WP1 batch-diagnostics tool (`control_groups`). `error` raises,
      `warn` logs. The legacy path (`complete_members` False) and the ENTD source run in
-     `warn` only. The per-Kreis ratios on the real cells are NOT yet measured; they are to be
-     measured before the arm-2 run.
-  7. **Legacy path** (`complete_members` False) is unchanged.
+     `warn` only. The Kreis grouping is the resolved Kreis (dominant Kreis per 1 km parent,
+     `mid.resolved_kreis_per_cell`), the one the OWN_* targets are raked by. KREIS-level
+     household groups are NOT checked before the run; the WP1 batch-diagnostics tool reports
+     them after it. Goal G6's per-cell wording is checked per Kreis within the shared
+     tolerance, since the per-column 1 km integerisation leaves per-cell gaps by design. The
+     per-Kreis ratios on the real cells are NOT yet measured; they are to be measured before
+     the arm-2 run.
+  7. **Legacy path** (`complete_members` False): the seed fills do not run on it; the
+     building-type rescale and the warn-mode contract check do.
   8. **Order:** member completion and the weekend plan match run (in the cached
      `completed_donor` stage) BEFORE the resolution and still match on the reported sex code.
   9. **Keys** (base config, all four on): `seed_resolve_binary_sex`,
@@ -79,8 +90,11 @@
   made: the arm-2 run manifest will hold the measurement. The building-type importances were
   tuned against the infeasible dwelling targets and are NOT retuned here. The stage
   validation tokens now cover the new helper modules (the tuples are in code), so edits to
-  them invalidate those caches (intended). `home_match_validation` type matches now include drawn haustyp-95 types (open,
-  split by `building_type_imputed` is a possible follow-up).
+  them invalidate those caches (intended). The upstream cached stages that hash these helpers
+  (`braunschweig.data.hts.mid_donor`, `braunschweig.popsim.completed_donor`) recompute once
+  too. With the sex resolution on, `expand.map_demographics` no longer draws from the
+  assembly `rng`, so later draws on that stream shift. `home_match_validation` type matches
+  now include drawn haustyp-95 types.
 - **Regression tests:** `tests/test_popsim_seed_fills.py`, `tests/test_building_type_targets.py`,
   `tests/test_popsim_seed_contract.py`, `tests/test_popsim_income_spatial_tilt.py`,
   `tests/test_participation_universe_controls.py`.

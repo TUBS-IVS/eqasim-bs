@@ -166,5 +166,7 @@ notes: >-
   _DEFERRED_HELPER_MODULE_NAMES (the third second-level exception validate() names, with the same
   standard of evidence as the other two) so an edit to the pairing rule cannot be served from a
   stale seed cache.
-  SEED RESOLUTION AND HOUSEHOLD-BASED BUILDING-TYPE TARGETS: rules, keys and log tags are in
-  ADR-0198 (keys in configs/base_bs.yml and braunschweig/popsim/stage/config_keys.py).
+  SEED RESOLUTION AND HOUSEHOLD-BASED BUILDING-TYPE TARGETS: rules and keys are in ADR-0198
+  (keys in configs/base_bs.yml and braunschweig/popsim/stage/config_keys.py); the log tags are
+  in the code that logs them (braunschweig.popsim.attributes, building_type_targets,
+  seed_contract).

@@ -96,8 +96,9 @@ KEY_WRITE_DATA_DICTIONARY = "braunschweig.population.popsim.write_data_dictionar
 # Member completion (decision D3, mid source only): fill member-incomplete MiD
 # donor households by mirror-household sampling, in ONE pass on the attribute
 # donor tables that feeds BOTH the PopulationSim seed and the expansion.
-# Default ON (project rule: new features default on); False reproduces the
-# legacy load_mid_seed + load_donor path byte-identically.
+# Default ON (project rule: new features default on); with False the seed fills
+# of issue #647 do not run (legacy load_mid_seed + load_donor seed), but the
+# building-type rescale and the warn-mode contract check do (ADR-0198).
 KEY_COMPLETE_MEMBERS = "braunschweig.population.popsim.complete_members"
 # Resolve MiD sex codes 3 (diverse) / 9 (no entry) to male/female ONCE per donor person
 # before PopulationSim, so the seed and every clone carry the same value (issue #647; rule in

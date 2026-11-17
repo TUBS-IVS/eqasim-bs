@@ -36,6 +36,11 @@ TOTALS_COLUMNS = ["group", "kreis", "target_sum", "household_total", "ratio"]
 ALL_CELLS = "ALL"
 _GRID_GEOGRAPHIES = ("ZENSUS100m", "ZENSUS1km")
 _MAX_IDS = 5
+_REMEDY = ("Remedy: switch on the seed fills (braunschweig.population.popsim."
+           "seed_resolve_binary_sex / seed_resolve_tenure_building_type) and the household "
+           "rescale (braunschweig.population.popsim.building_type_targets_to_households), or "
+           "fix the seed or control source; braunschweig.population.popsim.seed_contract_mode "
+           "'warn' only downgrades this to a WARNING")
 
 
 def validate_mode(mode: str) -> str:
@@ -51,9 +56,9 @@ def _report(failures: list, mode: str) -> None:
         return
     if mode == "error":
         raise ValueError(f"{_TAG} contract violated in {len(failures)} group(s): "
-                         + " | ".join(failures))
+                         + " | ".join(failures) + ". " + _REMEDY)
     for message in failures:
-        logger.warning("%s %s", _TAG, message)
+        logger.warning("%s %s. %s", _TAG, message, _REMEDY)
 
 
 def _record_ids(frame: pd.DataFrame, table: str, mask: np.ndarray) -> list:
