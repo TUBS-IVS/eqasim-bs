@@ -244,6 +244,36 @@ def test_validation_target_is_household_based(tmp_path):
     assert dwellings["mehrfamilienhaus"] == pytest.approx(0.9)
 
 
+def test_validation_cli_basis_flag_reaches_the_target_and_the_output(monkeypatch):
+    """--building-type-target-basis reaches building_type_target and is written to the table.
+
+    Defect caught: a run with the stage key off validated against household targets, with no
+    trace of the basis in the output.
+    """
+    from braunschweig.analysis.popsim_validation import controls as C
+    from braunschweig.analysis.popsim_validation import run_popsim_control_validation as RV
+
+    assert RV._parse_args(["--sim-cache", "x"]).building_type_target_basis == "households"
+    ns = RV._parse_args(["--sim-cache", "x", "--building-type-target-basis", "dwellings"])
+    assert ns.building_type_target_basis == "dwellings"
+
+    seen = []
+    monkeypatch.setattr(C, "building_type_target",
+                        lambda dp, **kw: seen.append(kw) or pd.DataFrame())
+    registry = C.build_registry("/fake", building_type_target_basis="dwellings")
+    next(c for c in registry if c.name == "building_type").target("/fake")
+    assert seen == [{"building_type_targets_to_households": False}]
+    seen.clear()
+    next(c for c in C.build_registry("/fake") if c.name == "building_type").target("/fake")
+    assert seen == [{"building_type_targets_to_households": True}]
+
+    long = pd.DataFrame({"control": ["building_type", "tenure"]})
+    out = RV._annotate_target_basis(long, "dwellings")
+    assert out["target_basis"].tolist() == ["dwellings", ""]
+    with pytest.raises(ValueError):
+        C.build_registry("/fake", building_type_target_basis="bogus")
+
+
 # --------------------------------------------------------------------------- fixtures
 
 _EFH_SOURCES = list(control_spec._TIER2_BUILDING_TYPE_ENTRIES[0][1])

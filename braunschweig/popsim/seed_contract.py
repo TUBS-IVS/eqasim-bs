@@ -158,6 +158,10 @@ def check_household_group_totals(cells: pd.DataFrame, controls_df: pd.DataFrame,
     total_column = _base_column(controls_df, total_hh_control)
     if total_column not in cells.columns:
         raise ValueError(f"{_TAG} household-total column {total_column!r} is not in the cells")
+    # Cells without a resolved Kreis (NaN key) are left out of the per-Kreis groups, as the
+    # caller logs, and stay in the overall (ALL) row. astype(str) would turn NaN into the
+    # pseudo-Kreis "nan" and check it against the tolerance.
+    resolved = cells[kreis_col].notna().to_numpy()
     kreis = cells[kreis_col].astype(str).to_numpy()
     total = pd.to_numeric(cells[total_column], errors="coerce").fillna(0.0).to_numpy(float)
     rows, failures, skipped, checked = [], [], [], 0
@@ -175,7 +179,7 @@ def check_household_group_totals(cells: pd.DataFrame, controls_df: pd.DataFrame,
         values = cells[columns].apply(pd.to_numeric, errors="coerce").fillna(0.0)
         per_cell = values.to_numpy(float).sum(axis=1)
         frame = pd.DataFrame({"kreis": kreis, "target_sum": per_cell, "household_total": total})
-        sums = frame.groupby("kreis", sort=True)[["target_sum", "household_total"]].sum()
+        sums = frame[resolved].groupby("kreis", sort=True)[["target_sum", "household_total"]].sum()
         sums.loc[ALL_CELLS] = [per_cell.sum(), total.sum()]
         for label, item in sums.iterrows():
             ratio = item["target_sum"] / item["household_total"] \

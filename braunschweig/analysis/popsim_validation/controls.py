@@ -735,8 +735,16 @@ def employed_by_age_group(persons):
 # Registry builder
 # ---------------------------------------------------------------------------
 
-def build_registry(data_path: str) -> list[Control]:
+BUILDING_TYPE_TARGET_BASES = ("households", "dwellings")
+
+
+def build_registry(data_path: str, *,
+                   building_type_target_basis: str = "households") -> list[Control]:
     """Build the popsim control-fit validation registry.
+
+    ``building_type_target_basis`` ("households" or "dwellings") must match the run's
+    ``braunschweig.population.popsim.building_type_targets_to_households`` (True = households)
+    and is threaded to ``building_type_target``.
 
     Returns a list of Controls for:
     - household_size (Tier-1, 6 categories, geography=kreis)
@@ -750,6 +758,10 @@ def build_registry(data_path: str) -> list[Control]:
     in the prepared parquet). This allows the same geo frame from
     spatial.assign_geographies to be reused.
     """
+    if building_type_target_basis not in BUILDING_TYPE_TARGET_BASES:
+        raise ValueError(f"building_type_target_basis must be one of "
+                         f"{BUILDING_TYPE_TARGET_BASES}, got {building_type_target_basis!r}")
+    to_households = building_type_target_basis == "households"
     reg: list[Control] = []
 
     # --- Tier-1: household_size (bucket control on household_size column) ---
@@ -794,7 +806,8 @@ def build_registry(data_path: str) -> list[Control]:
         geography="kreis",
         categories=("ein_zweifamilienhaus", "mehrfamilienhaus", "sonstiges"),
         realized=_realized_building_type,
-        target=building_type_target,
+        target=lambda dp: building_type_target(
+            dp, building_type_targets_to_households=to_households),
     ))
 
     # --- Tier-0 backbone: age x sex ---

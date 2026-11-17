@@ -307,6 +307,38 @@ def test_cells_without_resolved_kreis_are_counted_and_the_rest_still_checked(
                for r in caplog.records)
 
 
+def test_unbalanced_unresolved_cell_is_no_pseudo_kreis(caplog, monkeypatch):
+    """An UNBALANCED cell without a resolved Kreis stays in ALL only, never in a 'nan' Kreis.
+
+    Defect caught: astype(str) turning a NaN Kreis key into the group "nan", which was
+    then checked against the tolerance although the log says such cells are left out.
+    """
+    from braunschweig.popsim import stage as popsim_stage
+    households, persons = _resolved()
+    cells = _ars_cells()
+    cells.loc[2, ["building_type_efh", "building_type_mfh"]] *= 1.03   # unresolved cell only: 3 % off, ALL stays within tolerance
+    monkeypatch.setattr(
+        popsim_stage.mid, "resolved_kreis_per_cell",
+        lambda frame, **kw: pd.Series(["03101", "03101", np.nan], index=frame.index))
+    with caplog.at_level(logging.INFO):
+        popsim_stage._check_seed_contract(
+            households, persons, _controls_df(), TOTAL, cells, kreis_col="KREIS",
+            ars_col="ARS", mode="error", complete_members=True, source_name="mid")
+    assert not any(r.levelno >= logging.WARNING and "Kreis nan" in r.message
+                   for r in caplog.records)
+
+
+def test_household_group_totals_skip_nan_kreis_keys_but_keep_them_in_all():
+    from braunschweig.popsim.seed_contract import check_household_group_totals
+    cells = _ars_cells()
+    cells["KREIS"] = ["03101", "03101", np.nan]
+    cells.loc[2, ["building_type_efh", "building_type_mfh"]] *= 1.5
+    table = check_household_group_totals(cells, _controls_df(), TOTAL, kreis_col="KREIS",
+                                         mode="warn")
+    assert "nan" not in set(table["kreis"].astype(str))
+    assert "ALL" in set(table["kreis"])
+
+
 def test_group_selection_is_shared_between_column_list_and_check():
     """The columns handed to the check are exactly the columns it reads.
 
