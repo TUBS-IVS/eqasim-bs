@@ -97,7 +97,7 @@ def expected_populationsim_commit(project_dir) -> str:
 # Runs INSIDE the popsimprep environment and prints one JSON object. A package that is not
 # installed raises (-> non-zero exit -> RuntimeError in the caller): nothing is guessed.
 # The commit comes from the PEP 610 ``direct_url.json`` of a VCS install; "unknown" when the
-# distribution was not installed from a VCS URL (the caller warns).
+# distribution was not installed from a VCS URL (the caller refuses it).
 _REPORT_SCRIPT = """\
 import json, platform
 from importlib import metadata
