@@ -1679,8 +1679,9 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     and the remaining control columns). So the stream every later consumer sees
     differs from the pre-ADR-0192 one even when no count or person control is
     active. The sex resolution (when on) draws from ``seed_fill_rng`` only. On the
-    legacy path the draws stay inside ``mid.load_mid_seed`` (active controls only). Also reports the seed completeness rate plus the
-    member-completion counts via ``context.set_info``.
+    legacy path the draws stay inside ``mid.load_mid_seed`` (active controls only).
+    Also reports the seed completeness rate plus the member-completion counts via
+    ``context.set_info``.
     """
     completed_donor_households = None
     completed_donor_persons = None

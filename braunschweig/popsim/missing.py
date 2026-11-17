@@ -196,14 +196,20 @@ def impute_binary_sex(binary, band, *, rng, constant=None):
     the frame has no band column). Tiers: same-band pool, then the global pool (persons
     whose band is NaN are drawn AFTER every banded person, so banded draws keep their
     stream position), then ``constant`` (``None`` leaves them missing for the caller).
-    Draws are unweighted, one ``rng.randint`` per imputed person.
+    Draws are unweighted, one ``rng.randint`` per imputed person. The work runs on a
+    positional (RangeIndex) copy, so a frame with duplicate index labels (a concatenated
+    donor table) gets one draw per row; the original index is restored on the result.
 
     Returns: ``(filled, n_band, n_global, n_constant)``; ``filled`` is a copy.
     """
-    binary = binary.copy()
+    original_index = binary.index
+    binary = binary.reset_index(drop=True)
+    if band is not None:
+        band = band.reset_index(drop=True)
     missing_mask = binary.isna()
     n_band = n_global = n_constant = 0
     if not missing_mask.any():
+        binary.index = original_index
         return binary, n_band, n_global, n_constant
     global_pool = binary[~missing_mask]
 
@@ -243,4 +249,5 @@ def impute_binary_sex(binary, band, *, rng, constant=None):
             n_global += n_missing
         else:
             fallback(missing_mask, n_missing)
+    binary.index = original_index
     return binary, n_band, n_global, n_constant

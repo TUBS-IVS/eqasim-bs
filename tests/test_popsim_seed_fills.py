@@ -154,3 +154,41 @@ def test_sex_key_off_is_byte_identical_and_silent(caplog):
     assert (fill_rng.get_state()[1] == state_before).all()
     # No log line (any level) mentions the feature.
     assert not [r for r in caplog.records if "popsim.seed.sex" in r.getMessage()]
+
+
+def test_sex_key_on_without_fill_rng_raises():
+    donor, _ = _donor()
+    with pytest.raises(ValueError, match="seed_fill_rng"):
+        _build(donor, resolve_binary_sex=True)
+
+
+def test_configure_declares_the_sex_key_default_on():
+    declared = {}
+
+    class _Recorder:
+        def config(self, key, default=None, **kwargs):
+            declared.setdefault(key, default)
+            return default
+
+        def stage(self, *args, **kwargs):
+            return None
+
+    popsim_stage.configure(_Recorder())
+    assert declared[popsim_stage.KEY_SEED_RESOLVE_BINARY_SEX] is True
+
+
+def test_resolve_binary_sex_gives_each_row_its_own_draw_on_a_duplicated_index():
+    # One band of 4 observed men and 4 observed women; 40 unresolved rows. The index repeats
+    # every label twice (a concatenated donor table). Label-based assignment would hand
+    # both rows of a label the same list of draws or raise; positional assignment resolves
+    # every row from its own draw, identically to the same frame with a unique index.
+    sex = [1, 1, 1, 1, 2, 2, 2, 2] + [3] * 40
+    unique = _persons(sex, [1] * len(sex))
+    dup = unique.copy()
+    dup.index = [i % 24 for i in range(len(dup))]
+    out_unique = attributes.resolve_binary_sex(unique, rng=np.random.RandomState(4))
+    out_dup = attributes.resolve_binary_sex(dup, rng=np.random.RandomState(4))
+    assert out_dup.index.tolist() == dup.index.tolist()
+    assert set(out_dup["HP_SEX"]) <= {1, 2}
+    assert out_dup["HP_SEX"].tolist() == out_unique["HP_SEX"].tolist()
+    assert out_dup["HP_SEX_raw"].tolist() == sex
