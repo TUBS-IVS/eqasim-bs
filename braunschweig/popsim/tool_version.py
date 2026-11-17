@@ -22,9 +22,13 @@ REPORT_TIMEOUT_S = 120
 #: Keys of the report, in the order they are logged.
 REPORT_KEYS = ("populationsim", "commit", "ortools", "numpy", "pandas", "python")
 
-_SYNC_HINT = (
-    "Run `uv sync --frozen` in `environments/populationsim` (the popsimprep "
-    "environment) to install the configured PopulationSim.")
+
+def _sync_hint(project_dir) -> str:
+    """The fix for a wrong or broken environment, naming the directory that was asked."""
+    return (
+        f"Run `uv sync --frozen` in {str(project_dir)!r} (the popsimprep environment the "
+        "stage launches; the tracked project is environments/populationsim).")
+
 
 # Runs INSIDE the popsimprep environment and prints one JSON object. A package that is not
 # installed raises (-> non-zero exit -> RuntimeError in the caller): nothing is guessed.
@@ -72,34 +76,37 @@ def installed_tool_report(uv_path: str, project_dir: str, *,
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(
             f"PopulationSim version check timed out after {REPORT_TIMEOUT_S} s in "
-            f"{project_dir!r}. {_SYNC_HINT}") from exc
+            f"{project_dir!r}. {_sync_hint(project_dir)}") from exc
     except OSError as exc:
         raise RuntimeError(
             f"PopulationSim version check could not start {str(uv_path)!r} ({exc}). "
-            f"Check the uv_path config key. {_SYNC_HINT}") from exc
+            f"Check the uv_path config key. {_sync_hint(project_dir)}") from exc
     if completed.returncode != 0:
         stderr = (completed.stderr or "").strip()[-1000:]
         raise RuntimeError(
             f"PopulationSim version check failed (exit {completed.returncode}) in "
-            f"{project_dir!r}: {stderr}. {_SYNC_HINT}")
+            f"{project_dir!r}: {stderr}. {_sync_hint(project_dir)}")
     try:
         report = json.loads(completed.stdout)
         missing = [key for key in REPORT_KEYS if key not in report]
     except (ValueError, TypeError) as exc:
         raise RuntimeError(
             f"PopulationSim version check printed unparsable output "
-            f"({(completed.stdout or '')[:200]!r}). {_SYNC_HINT}") from exc
+            f"({(completed.stdout or '')[:200]!r}). {_sync_hint(project_dir)}") from exc
     if missing:
         raise RuntimeError(
-            f"PopulationSim version check output lacks {missing}. {_SYNC_HINT}")
+            f"PopulationSim version check output lacks {missing}. {_sync_hint(project_dir)}")
     return {key: report[key] for key in REPORT_KEYS}
 
 
-def require_populationsim_version(installed: str, expected: str) -> None:
+def require_populationsim_version(installed: str, expected: str, *,
+                                  project_dir) -> None:
     """Raise unless the installed PopulationSim version equals the configured one.
 
     Compared as exact strings: the fork's local version ``0.10.0+bs.1`` must not be
     satisfied by the upstream ``0.10.0``.
+
+    ``project_dir`` is the environment that was asked; it names the directory to sync.
 
     Raises:
         RuntimeError: naming both versions and how to sync the environment.
@@ -107,7 +114,7 @@ def require_populationsim_version(installed: str, expected: str) -> None:
     if installed != expected:
         raise RuntimeError(
             f"PopulationSim in the popsimprep environment is version {installed!r}, but the "
-            f"config requires {expected!r}. {_SYNC_HINT}")
+            f"config requires {expected!r}. {_sync_hint(project_dir)}")
 
 
 def check_populationsim_environment(context, uv_path: str, project_dir: str, expected: str, *,
@@ -129,6 +136,6 @@ def check_populationsim_environment(context, uv_path: str, project_dir: str, exp
             "direct_url.json); the run records only version %s.", report["populationsim"])
     logger.info("[popsim.tool] installed PopulationSim stack: %s",
                 ", ".join(f"{key}={report[key]}" for key in REPORT_KEYS))
-    require_populationsim_version(report["populationsim"], expected)
+    require_populationsim_version(report["populationsim"], expected, project_dir=project_dir)
     context.set_info("populationsim_tool_report", report)
     return report

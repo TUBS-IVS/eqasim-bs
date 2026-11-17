@@ -19,16 +19,19 @@ from braunschweig.popsim import stage, tool_version
 
 
 def test_require_equal_passes():
-    tool_version.require_populationsim_version("0.10.0+bs.1", "0.10.0+bs.1")
+    tool_version.require_populationsim_version(
+        "0.10.0+bs.1", "0.10.0+bs.1", project_dir="/opt/popsimprep")
 
 
 def test_require_mismatch_raises():
     # The upstream release the fork is based on must NOT satisfy the fork's version.
     with pytest.raises(RuntimeError) as excinfo:
-        tool_version.require_populationsim_version("0.10.0", "0.10.0+bs.1")
+        tool_version.require_populationsim_version(
+            "0.10.0", "0.10.0+bs.1", project_dir="/opt/popsimprep")
     message = str(excinfo.value)
     assert "0.10.0+bs.1" in message and "0.10.0" in message
-    assert "uv sync --frozen" in message and "environments/populationsim" in message
+    # The hint names the directory that was actually asked, not a fixed one.
+    assert "uv sync --frozen" in message and "/opt/popsimprep" in message
 
 
 _REPORT = {
@@ -72,6 +75,7 @@ def test_report_failure_raises_with_sync_hint(outcome):
     with pytest.raises(RuntimeError) as excinfo:
         tool_version.installed_tool_report("/opt/uv", "/opt/popsimprep", subprocess_run=fake_run)
     assert "uv sync --frozen" in str(excinfo.value)
+    assert "/opt/popsimprep" in str(excinfo.value)
     if outcome == "exit":
         assert "ModuleNotFoundError" in str(excinfo.value)
 
