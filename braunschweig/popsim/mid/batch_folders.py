@@ -349,6 +349,46 @@ def cell_groups(cells_subset: pd.DataFrame) -> dict[str, list[str]]:
     }
 
 
+def _batch_settings_text(settings_yaml: str, seed_base: int | None, folder: Path,
+                         seeds: dict[str, int]) -> str:
+    """Settings text of one batch folder: with its own integerizer seed when a base is given.
+
+    Records the seed under the folder name in ``seeds`` (read by
+    :func:`_log_integerizer_seeds`). ``seed_base=None`` returns the text unchanged.
+    """
+    if seed_base is None:
+        return settings_yaml
+    seed = folders.batch_integerizer_seed(seed_base, folder.name)
+    seeds[folder.name] = seed
+    return folders.with_integerizer_seed(settings_yaml, seed)
+
+
+def _log_integerizer_seeds(seeds: Mapping[str, int], n_batches: int) -> None:
+    """Log how many distinct per-batch integerizer seeds were written; raise on a clash.
+
+    Two batches with the same seed would draw the same integerizer noise (reason:
+    ADR-0199, decision 3). With 32-bit seeds that is a rare accident, so it is an error
+    here, not a warning: change ``random_seed`` and the clash is gone.
+    """
+    if not seeds:
+        return
+    distinct = len(set(seeds.values()))
+    logger.info(
+        "[popsim.mid] integerizer seeds: %d distinct for %d batch folder(s), range %d..%d",
+        distinct, n_batches, min(seeds.values()), max(seeds.values()))
+    if distinct != n_batches:
+        by_seed: dict[int, list[str]] = {}
+        for name, seed in seeds.items():
+            by_seed.setdefault(seed, []).append(name)
+        clashes = "; ".join(
+            f"seed {seed}: {', '.join(names)}"
+            for seed, names in sorted(by_seed.items()) if len(names) > 1)
+        raise ValueError(
+            f"Only {distinct} distinct integerizer seeds for {n_batches} batch folders; "
+            f"batches with one seed would draw identical integerizer noise. Colliding "
+            f"batch folders ({clashes}). Change the pipeline random_seed.")
+
+
 def run_popsim_mid(
     cells: pd.DataFrame,
     base_cols: Sequence[str],
@@ -367,6 +407,7 @@ def run_popsim_mid(
     kreis_table: pd.DataFrame | None = None,
     kreis_controls_map: Mapping[str, Sequence[str]] | None = None,
     household_control_names: Iterable[str] | None = None,
+    integerizer_seed_base: int | None = None,
 ) -> mergemod.MergeReport:
     """Batch the cells into PopulationSim runs, execute them, and merge the output.
 
@@ -416,7 +457,20 @@ def run_popsim_mid(
         Required when ``stratify_regiostar=True``; ignored when False.
     stratify_regiostar:
         Flag-gate.  Default False (OFF path is byte-identical).
+    integerizer_seed_base:
+        ``None`` (default): every batch folder gets ``settings_yaml`` unchanged. An int
+        (the pipeline ``random_seed``): each batch folder's ``settings.yaml`` gains its own
+        ``INTEGERIZER_RANDOM_SEED``, derived from this base and the folder name
+        (:func:`braunschweig.popsim.folders.batch_integerizer_seed`; why: ADR-0199,
+        decision 3). Required (``ValueError``) when ``settings_yaml`` switches the
+        integerizer draw on.
     """
+    draw = folders.integerizer_draw_in_settings(settings_yaml)
+    if draw != "off" and integerizer_seed_base is None:
+        raise ValueError(
+            f"The batch settings set {folders.INTEGERIZER_DRAW_SETTING}: {draw!r} but "
+            "integerizer_seed_base is None: every batch would draw the same noise "
+            "(ADR-0199, decision 3). Pass the pipeline random_seed as integerizer_seed_base.")
     # Resolve to an ABSOLUTE path: PopulationSim is launched with cwd set to the
     # popsimprep repo (not the synpp working directory), so a relative batch
     # folder path (e.g. "eqasim-data/.../batch_000") would resolve against
@@ -473,13 +527,16 @@ def run_popsim_mid(
         partitions = batch.partition_by_1km(groups, max_cells)
         batch_folders: list[str] = []
         batch_inputs: dict[str, dict[str, Path]] = {}
+        batch_seeds: dict[str, int] = {}
         for index, km_cells in enumerate(partitions):
             subset = cells[cells["ZENSUS1km"].isin(km_cells)].copy()
             folder = work_dir / f"batch_{index:03d}"
             batch_inputs[str(folder)] = assemble_batch_folder(
                 folder, subset, base_cols, controls_df,
                 seed_households, seed_persons,
-                settings_yaml=settings_yaml, logging_yaml=logging_yaml,
+                settings_yaml=_batch_settings_text(
+                    settings_yaml, integerizer_seed_base, folder, batch_seeds),
+                logging_yaml=logging_yaml,
                 kreis_table=kreis_table, kreis_controls_map=kreis_controls_map,
                 kreis_total_pop=kreis_total_pop,
                 kreis_total_hh=kreis_total_hh,
@@ -487,6 +544,7 @@ def run_popsim_mid(
             )
             batch_folders.append(str(folder))
 
+        _log_integerizer_seeds(batch_seeds, len(batch_folders))
         _reconcile_run_batch_folders(work_dir, batch_inputs)
         return _run_batches_and_merge(
             batch_folders, run_one, num_workers=num_workers
@@ -522,6 +580,7 @@ def run_popsim_mid(
     # (3) Partition WITHIN each stratum + filter seed per batch.
     batch_folders_stratified: list[str] = []
     batch_inputs_stratified: dict[str, dict[str, Path]] = {}
+    batch_seeds_stratified: dict[str, int] = {}
     global_batch_index = 0
     for stratum, km_ids in sorted(stratum_to_km_ids.items(), key=lambda x: str(x[0])):
         # Build the per-stratum cell_groups (only 1km parents in this stratum).
@@ -543,7 +602,9 @@ def run_popsim_mid(
             batch_inputs_stratified[str(folder)] = assemble_batch_folder(
                 folder, subset, base_cols, controls_df,
                 hh_stratum, p_stratum,
-                settings_yaml=settings_yaml, logging_yaml=logging_yaml,
+                settings_yaml=_batch_settings_text(
+                    settings_yaml, integerizer_seed_base, folder, batch_seeds_stratified),
+                logging_yaml=logging_yaml,
                 kreis_table=kreis_table, kreis_controls_map=kreis_controls_map,
                 kreis_total_pop=kreis_total_pop,
                 kreis_total_hh=kreis_total_hh,
@@ -552,6 +613,7 @@ def run_popsim_mid(
             batch_folders_stratified.append(str(folder))
             global_batch_index += 1
 
+    _log_integerizer_seeds(batch_seeds_stratified, len(batch_folders_stratified))
     _reconcile_run_batch_folders(work_dir, batch_inputs_stratified)
     return _run_batches_and_merge(
         batch_folders_stratified, run_one, num_workers=num_workers

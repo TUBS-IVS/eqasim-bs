@@ -102,8 +102,9 @@ def _frame_content_signature(df):
 def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
                                    stratify_regiostar, source_name, employment_grid_on,
                                    kreis_controls_map, seed_day_filter, seed_households,
-                                   seed_persons, kreis_table, active_entries=None,
-                                   status_prior_n=0.0) -> str:
+                                   seed_persons, kreis_table, populationsim_version: str,
+                                   populationsim_commit: str, populationsim_lock_hash: str, settings_overrides, integerizer_seed_base,
+                                   active_entries=None, status_prior_n=0.0) -> str:
     """Compute the work-dir batch-input signature (sha256 hex).
 
     The signature covers the batch inputs listed in ``payload`` below, so that a change to
@@ -143,6 +144,25 @@ def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
         "seed_households": _frame_content_signature(seed_households),
         "seed_persons": _frame_content_signature(seed_persons),
         "kreis_targets": _frame_content_signature(kreis_table),
+        # A batch finished by another PopulationSim version must never be reused (G7,
+        # issue #645). NOTE (one-time signature change): adding this key purges the
+        # completed batches of an existing work_dir once, on the first run after it.
+        "populationsim_version": populationsim_version,
+        # The commit of that version (checked against uv.lock by braunschweig.popsim.
+        # tool_version): two builds of the fork can carry the same version string.
+        # NOTE (one-time signature change): same purge-once consequence as above.
+        "populationsim_commit": populationsim_commit,
+        # Content hash of the whole uv.lock (tool_version.lock_content_hash): the rest of the
+        # solver stack (ortools, numpy, pandas, ...) also shapes the result.
+        # NOTE (one-time signature change): same purge-once consequence as above.
+        "populationsim_lock_hash": populationsim_lock_hash,
+        # The tracked PopulationSim settings that are APPENDED to the raw settings text
+        # hashed above (braunschweig.popsim.folders.apply_populationsim_overrides) and the
+        # base of the per-batch integerizer seeds (None while the draw is off). Both
+        # change the synthetic population. NOTE (one-time signature change): adding these
+        # keys purges the completed batches of an existing work_dir once.
+        "settings_overrides": dict(settings_overrides),
+        "integerizer_seed_base": integerizer_seed_base,
     }
     if active_entries:
         payload["kreis_attribute_controls"] = {

@@ -88,7 +88,9 @@ def test_stage_writes_batch_settings_per_switch_and_logs(tmp_path, caplog, switc
     settings_path.write_bytes(SETTINGS.encode("utf-8"))
     context = _ExecuteContext({config_keys.KEY_WRITE_DATA_DICTIONARY: switch})
     with caplog.at_level(logging.INFO, logger=folders.__name__):
-        assert stage._batch_settings_yaml(context, settings_path) == expected
+        # No overrides: this file tests the switch only (the overrides are covered by
+        # tests/test_popsim_settings_overrides.py).
+        assert stage._batch_settings_yaml(context, settings_path, {}) == expected
     assert "write_data_dictionary" in caplog.text
 
 

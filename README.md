@@ -102,7 +102,7 @@ and Bavaria lineage live in the Stage Registry
 | **[eqasim-bs](https://github.com/TUBS-IVS/eqasim-bs)** (this repo) | Python synpp pipeline: synthesis, locations, scenario export, analysis | anywhere |
 | **[eqasim-java-bs](https://github.com/TUBS-IVS/eqasim-java-bs)** | own editable Java/MATSim fork (`braunschweig` module; parking, freight, SimWrapper contrib) — built by the pipeline via `eqasim_source_path` | sibling directory `../eqasim-java-bs` |
 | **[cleancensus](https://github.com/TUBS-IVS/cleancensus)** | produces the prepared Zensus-2022 grid parquets (the PopulationSim control totals) | run separately; outputs copied under `eqasim-data/data/braunschweig/popsim/cells/` |
-| **popsimprep** | PopulationSim environment (run as a `uv` subprocess in its own env) | path set via `braunschweig.population.popsim.popsimprep_dir` |
+| **popsimprep** | PopulationSim environment (run as a `uv` subprocess in its own env) | tracked uv project `environments/populationsim` via `braunschweig.population.popsim.popsimprep_dir`; required key `braunschweig.population.popsim.populationsim_version` (checked at stage start); see [populationsim-fork.md](docs/codebase/notes/populationsim-fork.md) |
 | [eqasim-org/eqasim-bavaria](https://github.com/eqasim-org/eqasim-bavaria) | upstream baseline (remote `upstream`) — read-only reference | — |
 | [eqasim-org/eqasim-france](https://github.com/eqasim-org/eqasim-france) | active upstream development; fix sweeps are ported periodically (`docs/UPSTREAM_FIX_SWEEP.md`) | — |
 

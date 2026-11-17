@@ -1,0 +1,16 @@
+{
+  "src": "/home/felix/prod100_20261031/popsim_work",
+  "batches": {
+    "batch_000": {
+      "integerizer_seed": 2541077060
+    },
+    "batch_032": {
+      "integerizer_seed": 3729427116
+    }
+  },
+  "draw": "gumbel",
+  "keep_fractional": true,
+  "timeout": 7200,
+  "random_seed": 1234,
+  "neutral": false
+}

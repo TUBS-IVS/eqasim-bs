@@ -103,3 +103,5 @@ uvx --from conda-lock==4.0.2 conda-lock render --platform win-64 --kind explicit
 - Pin a new pip package's own wheel dependencies in `environment.yml` to the
   versions of `environments/requirements-server-linux-64.txt`; otherwise the
   Windows lock picks the newest releases and the platforms diverge.
+
+The PopulationSim runtime of the popsim stage is a separate uv project, `environments/populationsim/`; see [populationsim-fork.md](populationsim-fork.md).

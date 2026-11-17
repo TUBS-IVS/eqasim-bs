@@ -156,6 +156,7 @@ from braunschweig.popsim import plausibility as _plausibility
 from braunschweig.popsim import passenger_availability as _passenger_availability
 from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
+from braunschweig.popsim import tool_version
 from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
 
 # The eight submodules of the braunschweig.popsim.mid helper package, imported
@@ -298,6 +299,9 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_INCOME_TILT,
     KEY_INCOME_TILT_BETA,
     KEY_INCOME_TILT_CLIP,
+    KEY_INTEGERIZER_DRAW,
+    KEY_INTEGERIZER_TIMEOUT_S,
+    KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS,
     KEY_KREIS_CONTROLS,
     KEY_KREISE,
     KEY_LEISURE_PARTICIPATION_CONTROL,
@@ -308,10 +312,12 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
     KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
     KEY_PLACEMENT_INCOME,
+    KEY_POPSIM_VERSION,
     KEY_POPSIMPREP,
     KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
     KEY_SEED_DAY_FILTER,
     KEY_SETTINGS,
+    KEY_SOLVER_FALLBACK_ERROR_RATE,
     KEY_SOURCE,
     KEY_STATUS_KREIS_CONTROL,
     KEY_STATUS_KREIS_SHRINKAGE_N,
@@ -330,6 +336,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     _KREIS_CONTROL_DEFAULT,
     _KREIS_CONTROL_TOGGLE_KEY,
 )
+from . import solver_path_gate
 from . import controls_builder
 from .controls_builder import (  # noqa: F401  (re-exports)
     _grid_geography_controls,
@@ -390,6 +397,7 @@ _HELPER_MODULES = (
     cell_attributes,
     config_keys,
     controls_builder,
+    solver_path_gate,
     source_resolution,
     tilt_columns,
     # the braunschweig.popsim.mid helper package: __init__ + its submodules
@@ -427,6 +435,7 @@ _HELPER_MODULES = (
     _plausibility,
     _passenger_availability,
     prepared_cells,
+    tool_version,
     # the one synpp stage imported at MODULE level and used here as a plain
     # function library whose dependency this stage does NOT declare, so its own
     # stage hash never reaches this stage (see the import comment above).
@@ -691,20 +700,36 @@ def validate(context):
     Both tuples are iterated in the order written -- not a set, not ``dir()``
     output -- and ``_HELPER_MODULES`` always before
     ``_DEFERRED_HELPER_MODULE_NAMES``, so the digest is reproducible across
-    processes and platforms. ``context`` is unused: the token depends on source
-    text only.
+    processes and platforms.
+
+    TWO NON-SOURCE INPUTS are part of the token: the PopulationSim fork commit that
+    ``<popsimprep_dir>/uv.lock`` pins (``tool_version.expected_populationsim_commit``) and a
+    content hash of that whole lock file (``tool_version.lock_content_hash``: the rest of the
+    solver stack, e.g. ortools, is locked there too).
+    ``execute()`` refuses an environment that does not match it, but synpp serves the
+    cached output without running ``execute()`` while the token is unchanged, so a
+    re-lock to another fork commit under the same version string would otherwise reuse
+    the output of the old solver. ``KEY_POPSIMPREP`` is declared in ``configure()``.
 
     Raises:
         RuntimeError: if a module named in ``_DEFERRED_HELPER_MODULE_NAMES``
-            cannot be imported or has no retrievable source; the original error
-            is chained.
+            cannot be imported or has no retrievable source (the original error
+            is chained), or if the project directory or its lock file does not yield
+            a locked commit (no silent fallback: a token without it would let a stale
+            cache through).
 
     Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
-    digest per helper module (docstrings, comments and formatting do not change it).
+    digest per helper module (docstrings, comments and formatting do not change it), plus
+    ``"populationsim_commit"`` and ``"populationsim_lock_hash"``.
     """
-    return synpp_tokens.source_token(
+    token = synpp_tokens.source_token(
         _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
         stage_label=__name__ + ".validate()")
+    project_dir = tool_version.resolve_project_dir(
+        context.config(KEY_POPSIMPREP), key=KEY_POPSIMPREP)
+    token["populationsim_commit"] = tool_version.expected_populationsim_commit(project_dir)
+    token["populationsim_lock_hash"] = tool_version.lock_content_hash(project_dir)
+    return token
 
 
 def configure(context):
@@ -727,6 +752,7 @@ def configure(context):
     context.config(KEY_LOGGING)
     context.config(KEY_POPSIMPREP)
     context.config(KEY_UV)
+    context.config(KEY_POPSIM_VERSION)  # required PopulationSim version (G7, issue #645)
     context.config(KEY_MAX_CELLS, 3000)
     context.config(KEY_WORKERS, 3)
     # Assumed peak memory of ONE PopulationSim batch worker (25-30 GB per worker,
@@ -758,6 +784,14 @@ def configure(context):
     # Diagnostic PopulationSim step on/off (meaning and identity proof: KEY_WRITE_DATA_DICTIONARY
     # in config_keys). Volatile: it changes no synthetic household or person.
     context.config(KEY_WRITE_DATA_DICTIONARY, True, volatile = True)
+    # Tracked PopulationSim integerizer options (meaning: KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS,
+    # KEY_INTEGERIZER_DRAW, KEY_INTEGERIZER_TIMEOUT_S in config_keys). The code defaults are
+    # upstream PopulationSim's behaviour; none is volatile (each can change the population).
+    context.config(KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS, False)
+    context.config(KEY_INTEGERIZER_DRAW, "off")
+    context.config(KEY_INTEGERIZER_TIMEOUT_S, 60)
+    # Solver-path gate threshold (meaning: KEY_SOLVER_FALLBACK_ERROR_RATE in config_keys).
+    context.config(KEY_SOLVER_FALLBACK_ERROR_RATE, None, volatile = True)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
     context.config(KEY_COMPLETE_MEMBERS, True)
     context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
@@ -1039,7 +1073,10 @@ def _read_stage_paths(context):
     """Read the popsim input/output path config keys.
 
     Returns: ``(cells_path, mid_dir, controls_path, settings_path, logging_path,
-    popsimprep_dir, uv_path)``.
+    popsimprep_dir, uv_path)``; ``popsimprep_dir`` is an absolute existing directory (a
+    relative configured path is resolved against the repository root, not the process
+    working directory).
+    Raises: ``RuntimeError`` when ``popsimprep_dir`` is no directory.
     Mutates: nothing.
     """
     cells_path = context.config(KEY_CELLS)
@@ -1047,7 +1084,8 @@ def _read_stage_paths(context):
     controls_path = context.config(KEY_CONTROLS)
     settings_path = context.config(KEY_SETTINGS)
     logging_path = context.config(KEY_LOGGING)
-    popsimprep_dir = context.config(KEY_POPSIMPREP)
+    popsimprep_dir = str(tool_version.resolve_project_dir(
+        context.config(KEY_POPSIMPREP), key=KEY_POPSIMPREP))
     uv_path = context.config(KEY_UV)
     return cells_path, mid_dir, controls_path, settings_path, logging_path, popsimprep_dir, uv_path
 
@@ -1944,7 +1982,9 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
         stratify_regiostar: bool, source_name: str, employment_grid_on: bool,
         kreis_controls_map, seed_day_filter, seed_households: pd.DataFrame,
         seed_persons: pd.DataFrame, kreis_table, active_entries,
-        status_prior_n: float, work_dir) -> None:
+        status_prior_n: float, work_dir, populationsim_version: str,
+        populationsim_commit: str, populationsim_lock_hash: str, settings_overrides,
+        integerizer_seed_base) -> None:
     """Purge work-dir batch folders whose batch inputs changed since the last run.
 
     Purge stale batch folders if the popsim config/control set changed since the last
@@ -1975,29 +2015,57 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
         kreis_table=kreis_table,
         active_entries=active_entries,
         status_prior_n=status_prior_n,
+        populationsim_version=populationsim_version,
+        populationsim_commit=populationsim_commit,
+        populationsim_lock_hash=populationsim_lock_hash,
+        settings_overrides=settings_overrides,
+        integerizer_seed_base=integerizer_seed_base,
     )
     purge_stale_batches_on_config_change(work_dir, _config_signature)
 
 
-def _batch_settings_yaml(context, settings_path) -> str:
+def _read_integerizer_settings(context):
+    """Read and validate the tracked PopulationSim integerizer options.
+
+    Returns: ``(settings_overrides, integerizer_seed_base)``. ``settings_overrides`` is
+    the dict of PopulationSim settings appended to every batch ``settings.yaml``
+    (``folders.populationsim_overrides_from_config``); ``integerizer_seed_base`` is the
+    pipeline ``random_seed`` when the draw is on (each batch then gets its own
+    ``INTEGERIZER_RANDOM_SEED``) and ``None`` when it is off. Meaning of the keys:
+    ``config_keys.KEY_INTEGERIZER_DRAW`` and its neighbours.
+    Raises: ``ValueError`` for an invalid value.
+    """
+    overrides = folders.populationsim_overrides_from_config(
+        keep_fractional_sample_weights=context.config(KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS),
+        integerizer_draw=context.config(KEY_INTEGERIZER_DRAW),
+        integerizer_timeout_s=context.config(KEY_INTEGERIZER_TIMEOUT_S))
+    draw_on = overrides[folders.INTEGERIZER_DRAW_SETTING] != "off"
+    seed_base = int(context.config("random_seed")) if draw_on else None
+    return overrides, seed_base
+
+
+def _batch_settings_yaml(context, settings_path, settings_overrides) -> str:
     """Return the PopulationSim settings text written into every batch folder.
 
-    Reads the server-local settings file and applies the
+    Reads the server-local settings file, applies the
     ``braunschweig.population.popsim.write_data_dictionary`` switch
-    (meaning: ``config_keys.KEY_WRITE_DATA_DICTIONARY``). The stage-level config
-    signature (``_purge_stale_batches_for_changed_config``) hashes the raw file; the
-    per-batch input fingerprint hashes this resolved text.
+    (meaning: ``config_keys.KEY_WRITE_DATA_DICTIONARY``) and appends the tracked
+    ``settings_overrides`` (``_read_integerizer_settings``). The stage-level config
+    signature (``_purge_stale_batches_for_changed_config``) hashes the raw file plus the
+    overrides and the seed base; the per-batch input fingerprint hashes this resolved
+    text plus the per-batch seed line.
     """
     return folders.resolve_batch_settings_yaml(
         Path(settings_path).read_text(encoding="utf-8"),
-        bool(context.config(KEY_WRITE_DATA_DICTIONARY)))
+        bool(context.config(KEY_WRITE_DATA_DICTIONARY)),
+        settings_overrides)
 
 
 def _run_populationsim_batches(context, cells: pd.DataFrame, base_cols, controls_df: pd.DataFrame,
         seed_households: pd.DataFrame, seed_persons: pd.DataFrame, work_dir,
         settings_path, logging_path, max_cells: int, run_one, num_workers: int,
         source, stratify_regiostar: bool, kreis_table, kreis_controls_map,
-        household_control_names: set):
+        household_control_names: set, settings_overrides, integerizer_seed_base):
     """Run PopulationSim per 1 km batch and merge the expanded households.
 
     Returns: ``merge_report`` (its ``combined`` frame is the merged expanded
@@ -2008,7 +2076,8 @@ def _run_populationsim_batches(context, cells: pd.DataFrame, base_cols, controls
     merge_report = mid.run_popsim_mid(
         cells, base_cols, controls_df, seed_households, seed_persons,
         work_dir=Path(work_dir),
-        settings_yaml=_batch_settings_yaml(context, settings_path),
+        settings_yaml=_batch_settings_yaml(context, settings_path, settings_overrides),
+        integerizer_seed_base=integerizer_seed_base,
         logging_yaml=Path(logging_path).read_text(encoding="utf-8"),
         max_cells=max_cells,
         run_one=run_one,
@@ -2570,6 +2639,21 @@ def execute(context) -> pd.DataFrame:
         cells_path, mid_dir, controls_path, settings_path, logging_path,
         popsimprep_dir, uv_path,
     ) = _read_stage_paths(context)
+    # First action: refuse an environment without the configured PopulationSim (G7).
+    populationsim_version = context.config(KEY_POPSIM_VERSION)
+    tool_report = tool_version.check_populationsim_environment(
+        context, uv_path, popsimprep_dir, populationsim_version)
+    # Second action: validate the integerizer options and the solver-path gate threshold before
+    # any seed is built, so an invalid value costs seconds, not the seed build or, for the gate
+    # (which only runs after all batches), the whole batch run (ValueError names the key).
+    settings_overrides, integerizer_seed_base = _read_integerizer_settings(context)
+    solver_path_gate.validate_error_rate(context.config(KEY_SOLVER_FALLBACK_ERROR_RATE))
+    # The server-local settings file must not contradict the tracked options (it is checked
+    # again when the batch folders are written); resolving it here makes a conflict cost seconds.
+    early_settings_text = _batch_settings_yaml(context, settings_path, settings_overrides)
+    if integerizer_seed_base is not None:
+        # Same refusal as per batch (a settings file that sets the seed itself), without the wait.
+        folders.with_integerizer_seed(early_settings_text, 0)
     (
         max_cells, num_workers, work_dir, kreise, source_name, stratify_regiostar,
         complete_members,
@@ -2697,14 +2781,21 @@ def execute(context) -> pd.DataFrame:
         controls_df, settings_path, max_cells, stratify_regiostar, source_name,
         employment_grid_on, kreis_controls_map, seed_day_filter, seed_households,
         seed_persons, kreis_table, active_entries, status_prior_n, work_dir,
+        populationsim_version, tool_report["commit"],
+        tool_version.lock_content_hash(popsimprep_dir), settings_overrides,
+        integerizer_seed_base,
     )
     merge_report = _run_populationsim_batches(
         context, cells, base_cols, controls_df, seed_households, seed_persons,
         work_dir, settings_path, logging_path, max_cells, run_one, num_workers,
         source, stratify_regiostar, kreis_table, kreis_controls_map,
-        household_control_names,
+        household_control_names, settings_overrides, integerizer_seed_base,
     )
     _log_integerizer_feasibility(context, work_dir)
+    solver_paths, solver_path_totals = solver_path_gate.check_solver_paths(
+        work_dir, context.config(KEY_SOLVER_FALLBACK_ERROR_RATE))
+    context.set_info("popsim_solver_paths", solver_paths.to_dict("records"))
+    context.set_info("popsim_solver_path_totals", solver_path_totals)
     inkar_income = _load_inkar_income_scale(context)
     combined = _join_cell_attributes_onto_merged_output(merge_report, cells)
     donor_households, donor_persons = _load_donor_tables(

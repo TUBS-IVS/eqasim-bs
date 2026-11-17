@@ -1,0 +1,368 @@
+{
+  "g2_bound_pp": 5.0,
+  "g3_bounds": {
+    "ZENSUS100m": 0.02,
+    "ZENSUS1km": 0.02,
+    "KREIS": 0.01
+  },
+  "arms": {
+    "1p": {
+      "g2_batch_000": {
+        "max_abs_gap_pp": 3.216361921198491,
+        "met": true
+      },
+      "g3_batch_000_ZENSUS100m": {
+        "wape_0a": 0.36766230658797255,
+        "wape": 0.3619596426862339,
+        "limit": 0.38766230658797257,
+        "met": true
+      },
+      "g3_batch_000_ZENSUS1km": {
+        "wape_0a": 0.0781603417944207,
+        "wape": 0.0686604674541342,
+        "limit": 0.09816034179442071,
+        "met": true
+      },
+      "g3_batch_000_KREIS": {
+        "wape_0a": 0.01789034709099668,
+        "wape": 0.017305987161953924,
+        "limit": 0.02789034709099668,
+        "met": true
+      },
+      "g2_batch_032": {
+        "max_abs_gap_pp": 2.0629847958691325,
+        "met": true
+      },
+      "g3_batch_032_ZENSUS100m": {
+        "wape_0a": 0.14942837260165026,
+        "wape": 0.14572025052192067,
+        "limit": 0.16942837260165025,
+        "met": true
+      },
+      "g3_batch_032_ZENSUS1km": {
+        "wape_0a": 0.02242796316466977,
+        "wape": 0.024655906525398553,
+        "limit": 0.04242796316466977,
+        "met": true
+      },
+      "g3_batch_032_KREIS": {
+        "wape_0a": 0.012364671222803712,
+        "wape": 0.013085259195103323,
+        "limit": 0.022364671222803712,
+        "met": true
+      },
+      "g2_met": true,
+      "g3_met": true,
+      "max_gap_both_batches_pp": 3.216361921198491
+    },
+    "1g": {
+      "g2_batch_000": {
+        "max_abs_gap_pp": 2.1393324946834547,
+        "met": true
+      },
+      "g3_batch_000_ZENSUS100m": {
+        "wape_0a": 0.36766230658797255,
+        "wape": 0.3651100654011804,
+        "limit": 0.38766230658797257,
+        "met": true
+      },
+      "g3_batch_000_ZENSUS1km": {
+        "wape_0a": 0.0781603417944207,
+        "wape": 0.07393817542096004,
+        "limit": 0.09816034179442071,
+        "met": true
+      },
+      "g3_batch_000_KREIS": {
+        "wape_0a": 0.01789034709099668,
+        "wape": 0.020431239246988194,
+        "limit": 0.02789034709099668,
+        "met": true
+      },
+      "g2_batch_032": {
+        "max_abs_gap_pp": 2.1224025023456603,
+        "met": true
+      },
+      "g3_batch_032_ZENSUS100m": {
+        "wape_0a": 0.14942837260165026,
+        "wape": 0.1436226265036286,
+        "limit": 0.16942837260165025,
+        "met": true
+      },
+      "g3_batch_032_ZENSUS1km": {
+        "wape_0a": 0.02242796316466977,
+        "wape": 0.024160808000792157,
+        "limit": 0.04242796316466977,
+        "met": true
+      },
+      "g3_batch_032_KREIS": {
+        "wape_0a": 0.012364671222803712,
+        "wape": 0.011180727469016756,
+        "limit": 0.022364671222803712,
+        "met": true
+      },
+      "g2_met": true,
+      "g3_met": true,
+      "max_gap_both_batches_pp": 2.1393324946834547
+    },
+    "1x-B": {
+      "g2_batch_000": {
+        "max_abs_gap_pp": 2.0689092784643206,
+        "met": true
+      },
+      "g3_batch_000_ZENSUS100m": {
+        "wape_0a": 0.36766230658797255,
+        "wape": 0.35948715903652895,
+        "limit": 0.38766230658797257,
+        "met": true
+      },
+      "g3_batch_000_ZENSUS1km": {
+        "wape_0a": 0.0781603417944207,
+        "wape": 0.07725559185725056,
+        "limit": 0.09816034179442071,
+        "met": true
+      },
+      "g3_batch_000_KREIS": {
+        "wape_0a": 0.01789034709099668,
+        "wape": 0.020842830536428228,
+        "limit": 0.02789034709099668,
+        "met": true
+      },
+      "g2_batch_032": {
+        "max_abs_gap_pp": 3.1919212189232047,
+        "met": true
+      },
+      "g3_batch_032_ZENSUS100m": {
+        "wape_0a": 0.14942837260165026,
+        "wape": 0.13922855154587932,
+        "limit": 0.16942837260165025,
+        "met": true
+      },
+      "g3_batch_032_ZENSUS1km": {
+        "wape_0a": 0.02242796316466977,
+        "wape": 0.025646103574611348,
+        "limit": 0.04242796316466977,
+        "met": true
+      },
+      "g3_batch_032_KREIS": {
+        "wape_0a": 0.012364671222803712,
+        "wape": 0.011818619228812456,
+        "limit": 0.022364671222803712,
+        "met": true
+      },
+      "g2_met": true,
+      "g3_met": true,
+      "max_gap_both_batches_pp": 3.1919212189232047
+    }
+  },
+  "g5": {
+    "1p/batch_000": {
+      "KREIS": {
+        "record_parents": 1,
+        "log_parents": 1,
+        "record_non_simultaneous": 0,
+        "log_non_simultaneous": 0,
+        "agree": true
+      },
+      "ZENSUS100m": {
+        "record_parents": 40,
+        "log_parents": 40,
+        "record_non_simultaneous": 18,
+        "log_non_simultaneous": 18,
+        "agree": true
+      },
+      "ZENSUS1km": {
+        "record_parents": 1,
+        "log_parents": 1,
+        "record_non_simultaneous": 0,
+        "log_non_simultaneous": 0,
+        "agree": true
+      }
+    },
+    "1p/batch_032": {
+      "KREIS": {
+        "record_parents": 1,
+        "log_parents": 1,
+        "record_non_simultaneous": 0,
+        "log_non_simultaneous": 0,
+        "agree": true
+      },
+      "ZENSUS100m": {
+        "record_parents": 26,
+        "log_parents": 26,
+        "record_non_simultaneous": 13,
+        "log_non_simultaneous": 13,
+        "agree": true
+      },
+      "ZENSUS1km": {
+        "record_parents": 4,
+        "log_parents": 4,
+        "record_non_simultaneous": 0,
+        "log_non_simultaneous": 0,
+        "agree": true
+      }
+    },
+    "1g/batch_000": {
+      "KREIS": {
+        "record_parents": 1,
+        "log_parents": 1,
+        "record_non_simultaneous": 0,
+        "log_non_simultaneous": 0,
+        "agree": true
+      },
+      "ZENSUS100m": {
+        "record_parents": 40,
+        "log_parents": 40,
+        "record_non_simultaneous": 16,
+        "log_non_simultaneous": 16,
+        "agree": true
+      },
+      "ZENSUS1km": {
+        "record_parents": 1,
+        "log_parents": 1,
+        "record_non_simultaneous": 0,
+        "log_non_simultaneous": 0,
+        "agree": true
+      }
+    },
+    "1g/batch_032": {
+      "KREIS": {
+        "record_parents": 1,
+        "log_parents": 1,
+        "record_non_simultaneous": 0,
+        "log_non_simultaneous": 0,
+        "agree": true
+      },
+      "ZENSUS100m": {
+        "record_parents": 26,
+        "log_parents": 26,
+        "record_non_simultaneous": 9,
+        "log_non_simultaneous": 9,
+        "agree": true
+      },
+      "ZENSUS1km": {
+        "record_parents": 4,
+        "log_parents": 4,
+        "record_non_simultaneous": 0,
+        "log_non_simultaneous": 0,
+        "agree": true
+      }
+    },
+    "1x-B/batch_000": {
+      "KREIS": {
+        "record_parents": 1,
+        "log_parents": 1,
+        "record_non_simultaneous": 0,
+        "log_non_simultaneous": 0,
+        "agree": true
+      },
+      "ZENSUS100m": {
+        "record_parents": 40,
+        "log_parents": 40,
+        "record_non_simultaneous": 18,
+        "log_non_simultaneous": 18,
+        "agree": true
+      },
+      "ZENSUS1km": {
+        "record_parents": 1,
+        "log_parents": 1,
+        "record_non_simultaneous": 1,
+        "log_non_simultaneous": 1,
+        "agree": true
+      }
+    },
+    "1x-B/batch_032": {
+      "KREIS": {
+        "record_parents": 1,
+        "log_parents": 1,
+        "record_non_simultaneous": 0,
+        "log_non_simultaneous": 0,
+        "agree": true
+      },
+      "ZENSUS100m": {
+        "record_parents": 26,
+        "log_parents": 26,
+        "record_non_simultaneous": 9,
+        "log_non_simultaneous": 9,
+        "agree": true
+      },
+      "ZENSUS1km": {
+        "record_parents": 4,
+        "log_parents": 4,
+        "record_non_simultaneous": 0,
+        "log_non_simultaneous": 0,
+        "agree": true
+      }
+    }
+  },
+  "g1": {
+    "1p/batch_000": {
+      "groups": 208781,
+      "groups_below_one_kept": 150273,
+      "seed_level_call_rows": [
+        5510,
+        208781
+      ],
+      "met": true
+    },
+    "1p/batch_032": {
+      "groups": 208781,
+      "groups_below_one_kept": 150273,
+      "seed_level_call_rows": [
+        11535,
+        208781
+      ],
+      "met": true
+    },
+    "1g/batch_000": {
+      "groups": 208781,
+      "groups_below_one_kept": 150273,
+      "seed_level_call_rows": [
+        5514,
+        208781
+      ],
+      "met": true
+    },
+    "1g/batch_032": {
+      "groups": 208781,
+      "groups_below_one_kept": 150273,
+      "seed_level_call_rows": [
+        11563,
+        208781
+      ],
+      "met": true
+    },
+    "1x-B/batch_000": {
+      "groups": 208781,
+      "groups_below_one_kept": 150273,
+      "seed_level_call_rows": [
+        5535,
+        208781
+      ],
+      "met": true
+    },
+    "1x-B/batch_032": {
+      "groups": 208781,
+      "groups_below_one_kept": 150273,
+      "seed_level_call_rows": [
+        11534,
+        208781
+      ],
+      "met": true
+    }
+  },
+  "method_rule": {
+    "chosen": "gumbel",
+    "candidates": [
+      "1g",
+      "1p"
+    ]
+  },
+  "reproducibility": {
+    "batch": "batch_000",
+    "sha256": [
+      "100e44f8b052e773ba2c24c4fc2af7fb380bacddea853a0f46ff6ff5fb3116ed",
+      "100e44f8b052e773ba2c24c4fc2af7fb380bacddea853a0f46ff6ff5fb3116ed"
+    ],
+    "identical": true
+  }
+}

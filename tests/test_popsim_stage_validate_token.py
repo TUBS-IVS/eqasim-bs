@@ -42,10 +42,11 @@ from __future__ import annotations
 import importlib
 import inspect
 import pkgutil
+from types import SimpleNamespace
 
 import pytest
 
-from braunschweig.popsim import stage
+from braunschweig.popsim import stage, tool_version
 
 # The eight submodules of the mid package plus its ``__init__``. Written out
 # literally (not derived from _HELPER_MODULES) so this list is an independent
@@ -159,6 +160,10 @@ DYNAMICALLY_ENUMERATED_PACKAGE_NAMES = (
 
 HEX_DIGITS = set("0123456789abcdef")
 
+# validate() reads the project directory (the tracked default, repository-relative) to pin the
+# locked PopulationSim commit; the helper-source tests below do not vary it.
+_CONTEXT = SimpleNamespace(config=lambda key: {stage.KEY_POPSIMPREP: "environments/populationsim"}[key])
+
 
 def _discovered_submodule_names(package_name: str) -> list[str]:
     """Dotted names of every direct submodule of ``package_name``.
@@ -201,8 +206,8 @@ def test_validate_returns_a_stable_structured_token():
     An unstable token would devalidate the cached stage output on every run,
     which is as wrong as never devalidating it.
     """
-    first = stage.validate(None)
-    second = stage.validate(None)
+    first = stage.validate(_CONTEXT)
+    second = stage.validate(_CONTEXT)
 
     assert first == second
     assert first["format"] == 2
@@ -221,7 +226,7 @@ def test_validate_covers_exactly_the_listed_modules():
     expected = {module.__name__ for module in stage._HELPER_MODULES} | {
         importlib.import_module(name).__name__ for name in stage._DEFERRED_HELPER_MODULE_NAMES}
 
-    assert set(stage.validate(None)["modules"]) == expected
+    assert set(stage.validate(_CONTEXT)["modules"]) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +247,7 @@ def test_validate_token_changes_when_a_listed_helper_source_changes(
     delegates to the real implementation for all others, so this simulates an
     edit to that helper without touching any file on disk.
     """
-    baseline_token = stage.validate(None)
+    baseline_token = stage.validate(_CONTEXT)
     target_module = next(
         module for module in stage._HELPER_MODULES
         if module.__name__ == target_module_name
@@ -256,7 +261,7 @@ def test_validate_token_changes_when_a_listed_helper_source_changes(
         return real_getsource(object_)
 
     monkeypatch.setattr(inspect, "getsource", fake_getsource)
-    changed_token = stage.validate(None)
+    changed_token = stage.validate(_CONTEXT)
 
     assert changed_token != baseline_token
     differing = {name for name in baseline_token["modules"]
@@ -264,12 +269,45 @@ def test_validate_token_changes_when_a_listed_helper_source_changes(
     assert differing == {target_module_name}
 
     monkeypatch.undo()
-    assert stage.validate(None) == baseline_token
+    assert stage.validate(_CONTEXT) == baseline_token
+
+
+def _project_with_locked_commit(tmp_path, commit):
+    lock_text = (tool_version.REPO_ROOT / "environments" / "populationsim" / "uv.lock").read_text(
+        encoding="utf-8")
+    old_commit = tool_version.expected_populationsim_commit(
+        tool_version.REPO_ROOT / "environments" / "populationsim")
+    (tmp_path / "uv.lock").write_text(lock_text.replace(old_commit, commit), encoding="utf-8")
+    return SimpleNamespace(config=lambda key: str(tmp_path))
+
+
+def test_validate_token_changes_when_the_locked_populationsim_commit_changes(tmp_path):
+    """A re-lock to another fork commit under the same version string must devalidate the cache.
+
+    synpp serves a cached stage output without running ``execute`` (and its environment
+    check) while the token is unchanged, so the locked commit has to be part of the token.
+    """
+    first = tmp_path / "a"
+    second = tmp_path / "b"
+    first.mkdir()
+    second.mkdir()
+
+    token_a = stage.validate(_project_with_locked_commit(first, "a" * 40))
+    token_b = stage.validate(_project_with_locked_commit(second, "b" * 40))
+
+    assert token_a != token_b
+    assert stage.validate(_project_with_locked_commit(first, "a" * 40)) == token_a
+
+
+def test_validate_raises_when_the_project_has_no_usable_lock(tmp_path):
+    # No silent fallback: a token without the commit would let a stale cache through.
+    with pytest.raises(RuntimeError, match="uv.lock"):
+        stage.validate(SimpleNamespace(config=lambda key: str(tmp_path)))
 
 
 def test_a_comment_edit_to_a_helper_keeps_the_token(monkeypatch):
     """A comment-only edit of a listed helper must NOT devalidate the stage (the point of #344)."""
-    baseline_token = stage.validate(None)
+    baseline_token = stage.validate(_CONTEXT)
     target_module = stage._HELPER_MODULES[0]
     real_getsource = inspect.getsource
 
@@ -280,7 +318,7 @@ def test_a_comment_edit_to_a_helper_keeps_the_token(monkeypatch):
 
     monkeypatch.setattr(inspect, "getsource", fake_getsource)
 
-    assert stage.validate(None) == baseline_token
+    assert stage.validate(_CONTEXT) == baseline_token
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +349,7 @@ def test_validate_token_changes_when_a_deferred_helper_source_changes(
     controls without changing this file. One name per kind of entry; that no name
     falls out of the hashed loop is pinned by the order test above.
     """
-    baseline_token = stage.validate(None)
+    baseline_token = stage.validate(_CONTEXT)
     target_module = importlib.import_module(target_module_name)
 
     real_getsource = inspect.getsource
@@ -322,7 +360,7 @@ def test_validate_token_changes_when_a_deferred_helper_source_changes(
         return real_getsource(object_)
 
     monkeypatch.setattr(inspect, "getsource", fake_getsource)
-    changed_token = stage.validate(None)
+    changed_token = stage.validate(_CONTEXT)
 
     assert changed_token != baseline_token
     differing = {name for name in baseline_token["modules"]
@@ -330,7 +368,7 @@ def test_validate_token_changes_when_a_deferred_helper_source_changes(
     assert differing == {target_module_name}
 
     monkeypatch.undo()
-    assert stage.validate(None) == baseline_token
+    assert stage.validate(_CONTEXT) == baseline_token
 
 
 def test_deferred_names_do_not_duplicate_the_module_level_helpers():
@@ -370,7 +408,7 @@ def test_validate_raises_naming_the_module_when_a_deferred_import_fails(monkeypa
     monkeypatch.setattr(importlib, "import_module", fake_import_module)
 
     with pytest.raises(RuntimeError) as error_info:
-        stage.validate(None)
+        stage.validate(_CONTEXT)
 
     assert target_module_name in str(error_info.value)
     assert isinstance(error_info.value.__cause__, ImportError)
@@ -545,3 +583,25 @@ def test_helper_modules_has_no_duplicates():
     listed = [module.__name__ for module in stage._HELPER_MODULES]
 
     assert len(listed) == len(set(listed)), f"duplicate entries in _HELPER_MODULES: {listed}"
+
+
+def test_validate_token_follows_the_lock_text_not_its_line_endings(tmp_path):
+    """The whole lock (ortools, numpy, ...) is part of the token, a CRLF checkout is not a change."""
+    lock_text = (tool_version.REPO_ROOT / "environments" / "populationsim" / "uv.lock").read_text(
+        encoding="utf-8")
+    assert 'name = "ortools"' in lock_text
+    variants = {
+        "lf": lock_text,
+        "crlf": lock_text.replace("\n", "\r\n"),
+        "other_ortools": lock_text.replace(
+            'name = "ortools"\nversion = "', 'name = "ortools"\nversion = "0.0.'),
+    }
+    tokens = {}
+    for name, text in variants.items():
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / "uv.lock").write_bytes(text.encode("utf-8"))
+        tokens[name] = stage.validate(SimpleNamespace(config=lambda key, d=directory: str(d)))
+
+    assert tokens["lf"] == tokens["crlf"]
+    assert tokens["lf"] != tokens["other_ortools"]

@@ -1,0 +1,9 @@
+# run wall_time(h:mm:ss) peak_rss_kB sha256_prefix_of_final_expanded_household_ids.csv (GNU time -v; felix, two batches in parallel)
+r1_neutral/batch_000 36:08.41 28820568 fe906cb27099a4cf
+arm1p_A/batch_000 36:24.39 28919276 aedb1de5932dc783
+arm1p_A/batch_032 48:52.15 32071020 59f3a2dbc2845c98
+arm1g_A/batch_000 36:51.17 29243356 100e44f8b052e773
+arm1g_A/batch_032 45:04.76 32211212 c6c9954104adb8f5
+arm1g_B/batch_000 37:29.57 28517044 a91dde6951bc1243
+arm1g_B/batch_032 46:44.94 32875404 8233041a799d2f8c
+arm1g_A_repeat/batch_000 35:46.73 28874548 100e44f8b052e773
