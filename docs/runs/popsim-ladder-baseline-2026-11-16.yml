@@ -69,8 +69,8 @@ validation:
   result: >-
     G3 MET on both batches and all three geographies. batch_000: ZENSUS100m 0.3677 (0a) / 0.3616 (0b), ZENSUS1km
     0.0782 / 0.0745, KREIS 0.0179 / 0.0177. batch_032: ZENSUS100m 0.1494 / 0.1552, ZENSUS1km 0.0224 / 0.0231, KREIS
-    0.0124 / 0.0121. Both arms read the same control_totals CSVs, so cells PopulationSim never balances (household
-    total 0, other targets non-zero) add the same unreachable target mass to both WAPEs; the levels are upper bounds
+    0.0124 / 0.0121. Both arms read the same control_totals CSVs, so ZENSUS100m cells that cannot hold a household
+    (household total 0, other targets non-zero) add the same unreachable target mass to both WAPEs; the levels are upper bounds
     of the reachable fit, the 0a/0b difference is unaffected.
   artifact: docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/ladder_verdict.json
   notes: Control fit against the model's own targets; NOT a behavioural validation.
@@ -138,7 +138,8 @@ issues:
 - '#645'
 - '#646'
 notes: >-
-  Decision input, stated without a recommendation: by the design's fallback rule the fork is based on tag v0.10.0
+  The owner's decision taken from this comparison (fork base v0.10.0) is ADR-0197. Decision input, stated without
+  a recommendation: by the design's fallback rule the fork is based on tag v0.10.0
   if arm 0b misses G3 against arm 0a OR falls back more often. G3 is met; "falls back more often" holds for batch_032
   (12 against 11 non-simultaneous ZENSUS100m parents of 26) but not for batch_000 (14 against 15) or for both batches
   together (26 against 26). A second finding for that decision: upstream master's uv.lock installs numpy 2.4.6 for

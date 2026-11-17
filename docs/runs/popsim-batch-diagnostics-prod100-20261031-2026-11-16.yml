@@ -94,9 +94,10 @@ validation:
     ZENSUS100m 0.1975 (bias -0.0172), ZENSUS1km 0.0398 (bias +0.0002), KREIS 0.0136 (bias +0.0006). Household total:
     558,274 synthetic households against a target of 558,151 (+123); four of 60 batches miss it, batch_000 by +95
     (6,724 against 6,629). Per control and batch in control_fit.csv. The targets come from the batches'
-    control_totals CSVs, which also hold cells PopulationSim never balances (household total 0, other targets
-    non-zero); their targets count fully as error, so these WAPEs are upper bounds of the reachable fit (batch_000
-    ZENSUS100m: M_AGE_0_9 target_sum 294 here against 288 in PopulationSim's own control table, ein- und
+    control_totals CSVs, which also hold ZENSUS100m cells that cannot hold a household (household total 0, other
+    targets non-zero); PopulationSim's ZENSUS100m control table leaves them out while its seed and parent levels
+    keep their mass, so their targets count fully as error and these WAPEs are upper bounds of the reachable fit
+    (batch_000 ZENSUS100m: M_AGE_0_9 target_sum 294 here against 288 in PopulationSim's ZENSUS100m table, ein- und
     zweifamilienhaus 3,095 against 2,945; ladder manifest arm_0a/rounding_shift.csv, whose output is byte-identical to
     production).
   artifact: docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/control_fit.csv

@@ -56,9 +56,10 @@ two is reported as `unmatched_control`.
 
 ## Solver outcomes (PopulationSim 0.10.0)
 
-A failed simultaneous integerizing attempt ends in one of five ways: a successful retry, a fall
-back to sequential integerizing, "found no infeasible sub zones" (single feasible sub zone), all
-sub zones infeasible (smart rounding), or a retry that fails again. `non_simultaneous` counts the
+How a failed simultaneous integerizing attempt ends, and which counter each outcome increments,
+is stated once in the `solver_paths` module docstring; a failed retry and a "no infeasible sub
+zones" parent are also counted in `sequential_fallback` when the fallback line follows.
+`non_simultaneous` counts the
 parents whose final weights did not come from the simultaneous solution (sequential, single
 feasible sub zone, all-smart-rounded). The `sequential_fallback_rate` warning uses
 `non_simultaneous / n_parents` summed over batches per level, because `sequential_fallback` alone
@@ -84,10 +85,9 @@ An `unmatched_control` warning (one per control name) has NaN value and threshol
 For a control coarser than a batch (e.g. KREIS) the `region` and `region_geography` rows sum
 per-batch absolute errors against per-batch apportioned targets: they are an upper bound of the
 Kreis-level WAPE, because errors of opposite sign in different batches of one Kreis do not cancel.
-`control_fit` takes its targets from `control_totals_<geography>.csv`, which also holds cells
-PopulationSim never balances (household total 0, other targets non-zero); their targets count fully
-as error, so its WAPE is an upper bound of the reachable fit and its `target_sum` can exceed the
-store-based target of `rounding_shift` and `misfit_split` for the same control. Arms compared on the
-same batch carry the same unreachable mass, so a WAPE difference between them is not affected.
+`control_fit` counts the targets of lowest-level cells that cannot hold a household (household total
+0, other targets non-zero) fully as error; its WAPE is therefore an upper bound of the reachable fit.
+The full statement, including how these cells enter the parent levels of PopulationSim's own control
+tables, is in the `control_fit` docstring (`fit.py`).
 
 Defaults are in the dataclass; they are screening values, not scientific targets.
