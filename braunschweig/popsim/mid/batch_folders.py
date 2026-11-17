@@ -377,10 +377,16 @@ def _log_integerizer_seeds(seeds: Mapping[str, int], n_batches: int) -> None:
         "[popsim.mid] integerizer seeds: %d distinct for %d batch folder(s), range %d..%d",
         distinct, n_batches, min(seeds.values()), max(seeds.values()))
     if distinct != n_batches:
+        by_seed: dict[int, list[str]] = {}
+        for name, seed in seeds.items():
+            by_seed.setdefault(seed, []).append(name)
+        clashes = "; ".join(
+            f"seed {seed}: {', '.join(names)}"
+            for seed, names in sorted(by_seed.items()) if len(names) > 1)
         raise ValueError(
-            f"Only {distinct} distinct integerizer seeds for {n_batches} batch folders: "
-            "batches with one seed would draw identical integerizer noise. Change the "
-            "pipeline random_seed.")
+            f"Only {distinct} distinct integerizer seeds for {n_batches} batch folders; "
+            f"batches with one seed would draw identical integerizer noise. Colliding "
+            f"batch folders ({clashes}). Change the pipeline random_seed.")
 
 
 def run_popsim_mid(

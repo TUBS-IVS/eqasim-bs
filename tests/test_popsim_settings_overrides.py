@@ -209,6 +209,17 @@ def test_no_seed_line_when_draw_off(tmp_path):
         assert "INTEGERIZER_RANDOM_SEED" not in path.read_text(encoding="utf-8")
 
 
+def test_seed_clash_between_batches_raises_naming_folders_and_seed(tmp_path, monkeypatch):
+    # A 32-bit clash is a rare accident; forced here. Two batches with one seed would draw
+    # the same integerizer noise, so the run stops and names who collides on which seed.
+    monkeypatch.setattr(folders, "batch_integerizer_seed", lambda base, name: 12345)
+    with pytest.raises(ValueError) as error:
+        _run(tmp_path, 4711)
+    message = str(error.value)
+    assert "12345" in message
+    assert "batch_000" in message and "batch_001" in message
+
+
 def test_seed_base_is_stable_across_runs(tmp_path):
     first = {p.parent.parent.name: p.read_text(encoding="utf-8") for p in _run(tmp_path / "a", 99)}
     second = {p.parent.parent.name: p.read_text(encoding="utf-8") for p in _run(tmp_path / "b", 99)}
