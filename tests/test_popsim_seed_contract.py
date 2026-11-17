@@ -328,15 +328,26 @@ def test_unbalanced_unresolved_cell_is_no_pseudo_kreis(caplog, monkeypatch):
                    for r in caplog.records)
 
 
-def test_household_group_totals_skip_nan_kreis_keys_but_keep_them_in_all():
+def test_household_group_totals_skip_nan_kreis_keys_but_keep_them_in_all(caplog):
+    """The NaN-Kreis cell is out of the per-Kreis rows, counted in the log, and in ALL.
+
+    Hand-computed from the fixture: household total 10 + 10 + 20 = 40; building_type target
+    sum 10 + 10 + 30 (the unresolved cell scaled by 1.5) = 50, so the ALL ratio is 1.25.
+    """
     from braunschweig.popsim.seed_contract import check_household_group_totals
     cells = _ars_cells()
     cells["KREIS"] = ["03101", "03101", np.nan]
     cells.loc[2, ["building_type_efh", "building_type_mfh"]] *= 1.5
-    table = check_household_group_totals(cells, _controls_df(), TOTAL, kreis_col="KREIS",
-                                         mode="warn")
+    with caplog.at_level(logging.INFO):
+        table = check_household_group_totals(cells, _controls_df(), TOTAL, kreis_col="KREIS",
+                                             mode="warn")
     assert "nan" not in set(table["kreis"].astype(str))
-    assert "ALL" in set(table["kreis"])
+    all_row = table[(table["group"] == "building_type") & (table["kreis"] == "ALL")].iloc[0]
+    assert all_row["household_total"] == pytest.approx(40.0)
+    assert all_row["target_sum"] == pytest.approx(50.0)
+    assert all_row["ratio"] == pytest.approx(1.25)
+    assert any("seed_contract.unresolved_kreis" in r.message and "primary 2/3" in r.message
+               and "household total 20.0 of 40.0" in r.message for r in caplog.records)
 
 
 def test_group_selection_is_shared_between_column_list_and_check():

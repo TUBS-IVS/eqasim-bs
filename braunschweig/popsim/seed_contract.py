@@ -26,6 +26,7 @@ import pandas as pd
 
 from braunschweig.popsim.control_groups import (
     CONTROL_GROUPS, UNIVERSE_RATIO_TOLERANCE, group_targets, seed_group_hits)
+from braunschweig.popsim.fallback_rates import log_fallback_rate
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +165,12 @@ def check_household_group_totals(cells: pd.DataFrame, controls_df: pd.DataFrame,
     resolved = cells[kreis_col].notna().to_numpy()
     kreis = cells[kreis_col].astype(str).to_numpy()
     total = pd.to_numeric(cells[total_column], errors="coerce").fillna(0.0).to_numpy(float)
+    log_fallback_rate(
+        logger, "seed_contract.unresolved_kreis", int((~resolved).sum()), len(cells),
+        what=("cells without a resolved Kreis are left out of the per-Kreis totals check "
+              f"(household total {float(total[~resolved].sum()):.1f} of {float(total.sum()):.1f}); "
+              "they stay in the overall (ALL) row"),
+        threshold=0.0)
     rows, failures, skipped, checked = [], [], [], 0
     for group in _household_total_groups(groups):
         targets = group_targets(group, controls_df, total_hh_control)

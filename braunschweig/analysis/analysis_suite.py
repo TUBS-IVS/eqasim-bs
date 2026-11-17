@@ -43,6 +43,9 @@ KEY_STUCK_AGENTS = "analysis_stuck_agents"
 KEY_STUCK_WARN_SHARE = "analysis_stuck_warn_share"
 KEY_WORK_DIR = "braunschweig.population.popsim.work_dir"
 KEY_METHOD = "braunschweig.population.method"
+# True -> the building_type target is validated on the household basis, False -> dwellings
+# (mirrors the popsim stage key; default as in the stage).
+KEY_BUILDING_TYPE_TO_HOUSEHOLDS = "braunschweig.population.popsim.building_type_targets_to_households"
 # Issue #96 minor-employment plausibility guard (population_validation). The
 # default bound is single-sourced from controls.DEFAULT_MINOR_EMPLOYMENT_MAX_RATE
 # (imported lazily where needed to keep stage import light).
@@ -187,6 +190,7 @@ def configure(context):
     context.config(KEY_INCLUDE_MATSIM, False)
     context.config(KEY_WORK_DIR, None)
     context.config(KEY_METHOD, None)
+    context.config(KEY_BUILDING_TYPE_TO_HOUSEHOLDS, True)
     context.config("analysis_working_directory", None)
     from braunschweig.analysis.population_validation.controls import (
         DEFAULT_MINOR_EMPLOYMENT_MAX_RATE,
@@ -296,7 +300,9 @@ def execute(context):
 
     def _popsim():
         from braunschweig.analysis.popsim_validation import run_popsim_control_validation as R
-        R.run(R._parse_args(["--run-output-dir", str(output_path), "--prefix", prefix]))
+        basis = "households" if context.config(KEY_BUILDING_TYPE_TO_HOUSEHOLDS) else "dwellings"
+        R.run(R._parse_args(["--run-output-dir", str(output_path), "--prefix", prefix,
+                             "--building-type-target-basis", basis]))
     _run(summary, "popsim_validation",
          context.config(KEY_POPSIM_VALIDATION), is_popsim, "not a popsim run", _popsim)
 

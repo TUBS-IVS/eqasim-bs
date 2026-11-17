@@ -148,7 +148,6 @@ from braunschweig.data.census import household_size as _census_household_size
 from braunschweig.popsim import assembly
 from braunschweig.popsim import attributes
 from braunschweig.popsim import folders
-from braunschweig.popsim.fallback_rates import log_fallback_rate
 from braunschweig.popsim import batch
 from braunschweig.popsim import income as _income
 from braunschweig.popsim import income_kreis_control as _kic
@@ -1522,19 +1521,7 @@ def _check_seed_contract(seed_households: pd.DataFrame, seed_persons: pd.DataFra
         resolved = mid.resolved_kreis_per_cell(cells, ars_col=ars_col)
         narrow[kreis_col] = resolved.to_numpy()
         basis = f"resolved Kreis from {ars_col!r} (dominant Kreis per 1 km parent)"
-        # Cells without a resolved Kreis fall out of the per-Kreis grouping; count them. They
-        # stay in the overall (ALL) ratio, which sums every cell.
-        unresolved = resolved.isna().to_numpy()
-        # needed[0] is the household-total column (an absent one raises in the check below).
-        household_total = pd.to_numeric(
-            narrow[needed[0]] if needed[0] in narrow.columns else pd.Series(0.0, index=cells.index),
-            errors="coerce").fillna(0.0)
-        log_fallback_rate(
-            logger, "seed_contract.unresolved_kreis", int(unresolved.sum()), len(cells),
-            what=("cells without a resolved Kreis are left out of the per-Kreis totals check "
-                  f"(household total {float(household_total[unresolved].sum()):.1f} of "
-                  f"{float(household_total.sum()):.1f}); they stay in the overall ratio"),
-            threshold=0.0)
+        # Cells without a resolved Kreis (NaN) are counted and logged inside the check.
     else:
         narrow[kreis_col] = cells[kreis_col].to_numpy()
         basis = f"the cells column {kreis_col!r} as given (no ARS column to resolve)"
