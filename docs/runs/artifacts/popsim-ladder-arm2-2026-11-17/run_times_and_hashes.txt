@@ -1,0 +1,13 @@
+== batch_000
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 34:16.47
+	Maximum resident set size (kbytes): 28784012
+exit 0
+== batch_032
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 44:43.02
+	Maximum resident set size (kbytes): 32345272
+exit 0
+fb808110f8e051b8cea7cc62e09448fa73be9c29a7909bab4689fe609824c601  /home/felix/i647/arm2_A/batch_000/output/final_expanded_household_ids.csv
+1f482bf13ad15a557cdda6bdb3e87e0a7ef593e76e4fddd26dd2f5d7b03d19a7  /home/felix/i647/arm2_A/batch_032/output/final_expanded_household_ids.csv
+== diagnostics
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 16:45.65
+	Maximum resident set size (kbytes): 9891988

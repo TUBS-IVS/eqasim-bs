@@ -1300,6 +1300,10 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         popsim_stage.KEY_DROP_LEADING_ARRIVE_HOME_LEG: False,
         popsim_stage.KEY_ESCORT_PASSIVE_EDUCATION: False,
         popsim_stage.KEY_EXCLUDE_RBW_LEGS: False,
+        popsim_stage.KEY_SEED_RESOLVE_BINARY_SEX: True,
+        popsim_stage.KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE: True,
+        popsim_stage.KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS: True,
+        popsim_stage.KEY_SEED_CONTRACT_MODE: "warn",  # NON-default (default is "error")
         # The four flags under test -- all NON-DEFAULT (the pure function's own keyword
         # defaults are False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES=15.0 /
         # DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS=18), so a
@@ -1324,7 +1328,8 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         lambda ctx: (10, 1, "work_dir", [], "mid", False, False))
     monkeypatch.setattr(
         popsim_stage, "_create_seeded_rngs",
-        lambda ctx: (1, np.random.RandomState(1), np.random.RandomState(2)))
+        lambda ctx: (1, np.random.RandomState(1), np.random.RandomState(2),
+                     np.random.RandomState(3)))
     monkeypatch.setattr(popsim_stage, "_resolve_source", lambda source_name: _Source())
     # The PopulationSim environment check needs a uv environment; it has its own tests
     # (tests/test_popsim_tool_version.py).
@@ -1353,8 +1358,14 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         popsim_stage, "_resolve_cell_load_columns", lambda *args, **kwargs: [])
     monkeypatch.setattr(popsim_stage.mid, "load_control_cells", lambda *args, **kwargs: pd.DataFrame())
     monkeypatch.setattr(popsim_stage.mid, "filter_zgb_cells", lambda cells, kreise: cells)
+    aggregated_kwargs = {}
+
+    def capturing_add_aggregated_control_columns(cells, *args, **kwargs):
+        aggregated_kwargs.update(kwargs)
+        return cells
+
     monkeypatch.setattr(
-        popsim_stage, "_add_aggregated_control_columns", lambda cells, *args, **kwargs: cells)
+        popsim_stage, "_add_aggregated_control_columns", capturing_add_aggregated_control_columns)
     monkeypatch.setattr(
         popsim_stage, "_inject_employment_grid_columns", lambda ctx, cells, *args, **kwargs: cells)
     monkeypatch.setattr(
@@ -1368,9 +1379,21 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         captured["passive_pair_max_gap_minutes"] = kwargs.get("passive_pair_max_gap_minutes")
         captured["passive_pair_adult_min_age_years"] = kwargs.get(
             "passive_pair_adult_min_age_years")
-        raise _StopAtSeedBuild()
+        captured["resolve_binary_sex"] = kwargs.get("resolve_binary_sex")
+        captured["seed_fill_rng"] = kwargs.get("seed_fill_rng")
+        captured["resolve_tenure_building_type"] = kwargs.get("resolve_tenure_building_type")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     monkeypatch.setattr(popsim_stage, "_build_populationsim_seed", capturing_build_populationsim_seed)
+
+    contract_kwargs = {}
+
+    def capturing_check_seed_contract(*args, **kwargs):
+        contract_kwargs.update(kwargs)
+        raise _StopAtSeedBuild()
+
+    monkeypatch.setattr(popsim_stage, "_check_seed_contract", capturing_check_seed_contract)
+    monkeypatch.setattr(popsim_stage, "_read_total_hh_control", lambda path: "TOTAL_target")
 
     with pytest.raises(_StopAtSeedBuild):
         popsim_stage.execute(context)
@@ -1379,3 +1402,12 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
     assert captured["escort_passive_from_adult"] is True
     assert captured["passive_pair_max_gap_minutes"] == 22.0
     assert captured["passive_pair_adult_min_age_years"] == 16
+    # The sex-resolution key and the dedicated fill stream (4th value of _create_seeded_rngs)
+    # reach the seed build, so the complete_members wiring is live under execute().
+    assert captured["resolve_binary_sex"] is True
+    assert captured["resolve_tenure_building_type"] is True
+    # The building-type targets key reaches the cell-target helper.
+    assert aggregated_kwargs["building_type_targets_to_households"] is True
+    assert isinstance(captured["seed_fill_rng"], np.random.RandomState)
+    # The contract mode reaches the check (the call site after the seed build is live).
+    assert contract_kwargs["mode"] == "warn"

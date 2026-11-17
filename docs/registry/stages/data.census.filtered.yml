@@ -15,6 +15,8 @@ code:
 - braunschweig/popsim/ownership_grid.py
 - braunschweig/popsim/employment_grid.py
 - braunschweig/popsim/zensus_employment_age.py
+- braunschweig/popsim/building_type_targets.py
+- braunschweig/popsim/seed_contract.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -65,6 +67,7 @@ decisions:
 - ADR-0137
 - ADR-0192
 - ADR-0193
+- ADR-0198
 - ADR-0199
 notes: >-
   DONOR RESOLUTION ONCE (ADR-0192): donor household counts and donor person attributes with
@@ -174,3 +177,7 @@ notes: >-
   (braunschweig.popsim.stage.solver_path_gate; null = warn only). Key meanings: config_keys.py.
   The batch signature includes the tool version and the options, so the first run after this change
   recomputes existing work dirs.
+  SEED RESOLUTION AND HOUSEHOLD-BASED BUILDING-TYPE TARGETS: rules and keys are in ADR-0198
+  (keys in configs/base_bs.yml and braunschweig/popsim/stage/config_keys.py); the log tags are
+  in the code that logs them (braunschweig.popsim.attributes, building_type_targets,
+  seed_contract).

@@ -3,14 +3,33 @@
 A control group collects the controls whose categories are meant to be mutually
 exclusive and (if ``exhaustive``) to cover every seed record of the group's universe.
 The group table is the single owner of this classification; consumers are the
-popsim batch diagnostics (``braunschweig.analysis.popsim_batch_diagnostics``).
+popsim batch diagnostics (``braunschweig.analysis.popsim_batch_diagnostics``, after the run)
+and the stage's contract check (``braunschweig.popsim.seed_contract``, before the run).
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
+
+# Largest accepted |group target sum / household total - 1|.  One owner for the WP1 tool
+# (``Thresholds.universe_ratio_tolerance``) and the stage's contract check.
+UNIVERSE_RATIO_TOLERANCE = 0.02
+
+
+def evaluate_expression(expr: str, frame: pd.DataFrame) -> np.ndarray:
+    """Evaluate a control_spec prefixed boolean expression against ``frame``.
+
+    The expression uses the seed table name as a namespace prefix
+    (``persons.<col>`` / ``households.<col>``).  Both names are bound to
+    ``frame`` (only the control's own table is actually referenced) plus
+    numpy, and Python ``eval`` is used (expressions are trusted, from
+    control_spec).  Returns a boolean numpy array aligned to ``frame``.
+    """
+    env = {"np": np, "persons": frame, "households": frame, "__builtins__": {}}
+    return np.asarray(eval(expr, env)).astype(bool)  # noqa: S307 (trusted source)
 
 
 @dataclass(frozen=True)
@@ -101,6 +120,37 @@ def group_targets(group: ControlGroup, control_spec: pd.DataFrame,
     spec = spec[spec["seed_table"] == group.seed_table]
     pattern = re.compile(group.target_pattern)
     return [t for t in spec["target"] if pattern.search(t)]
+
+
+def seed_group_hits(group: ControlGroup, control_spec: pd.DataFrame, frame: pd.DataFrame,
+                    total_hh_control: str) -> tuple:
+    """Per seed record: how many of the group's controls count it, and the universe mask.
+
+    Returns ``(hits, in_universe)`` aligned to ``frame`` (``hits`` int64, ``in_universe``
+    bool).  ``frame`` is the group's seed table.  A group without a control gives all-zero
+    hits; callers decide whether to skip it.
+    """
+    expressions = dict(zip(control_spec["target"], control_spec["expression"]))
+
+    def evaluate(expression: str, what: str) -> np.ndarray:
+        # A column the seed table lacks is a wiring defect, not a coverage finding: name it.
+        try:
+            return evaluate_expression(expression, frame)
+        except (AttributeError, KeyError) as error:
+            raise ValueError(
+                f"control group {group.name!r} (seed table {group.seed_table!r}): {what} "
+                f"{expression!r} references a column the seed table lacks "
+                f"({type(error).__name__}: {error}); seed columns: {sorted(frame.columns)[:30]}"
+            ) from error
+
+    hits = np.zeros(len(frame), dtype=np.int64)
+    for target in group_targets(group, control_spec, total_hh_control):
+        hits += evaluate(expressions[target], f"control {target!r} expression").astype(np.int64)
+    if group.universe is None:
+        in_universe = np.ones(len(frame), dtype=bool)
+    else:
+        in_universe = evaluate(group.universe, "universe")
+    return hits, in_universe
 
 
 def unmatched_controls(control_spec: pd.DataFrame, total_hh_control: str,

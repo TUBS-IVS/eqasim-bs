@@ -786,7 +786,9 @@ def tier1_controls() -> List[CatalogControl]:
 # Tier-2 tenure census column bases.
 # Each entry is (census_base, mid_expression) where mid_expression is the
 # pandas-style boolean string for the MiD households seed table.
-# H_MIETE coding: 1 = renter (Mieter), 2 = owner (Eigentuemer); 3/9/309 excluded.
+# H_MIETE coding: 1 Miete, 2 Eigentum, 3 anderes, 9 keine Angabe, 309 kein Privat-HH.
+# On the member-completion path the stage resolves 3 / 9 / 309 to 1 or 2 before the
+# seed is built (attributes.resolve_tenure_and_building_type, issue #647).
 _TIER2_TENURE_ENTRIES: Sequence[tuple] = (
     ("EigentuemerHH_Tenure_100m_Gitter", "(households.H_MIETE == 2)"),
     ("MieterHH_Tenure_100m_Gitter",      "(households.H_MIETE == 1)"),
@@ -804,8 +806,8 @@ _TIER2_TENURE_ENTRIES: Sequence[tuple] = (
 #   2 = Mehrfamilienhaus (3-12 Wohnungen)
 #   3 = Geschosswohnungsbau (13+ Wohnungen) -> grouped with MFH
 #   4 = Sonstiges
-#  95 = nicht zutreffend (excluded: controls_for_seed drops entd=None;
-#       haustyp==95 households do not match any expression)
+#  95 = nicht zuzuordnen (matches no expression; on the member-completion path the
+#       stage draws a code 1-4 first, attributes.resolve_tenure_and_building_type)
 #
 # MiD-only: ENTD does not carry a building-type flag; entd=None causes
 # controls_for_seed to drop all 6 building_type controls for ENTD with WARNING.
@@ -860,7 +862,9 @@ def tier2_controls() -> List[CatalogControl]:
 
     - H_MIETE == 2 -> Eigentuemer (owner)
     - H_MIETE == 1 -> Mieter      (renter)
-    - H_MIETE in {3, 9, 309}     -> excluded (neither owner nor renter)
+    - H_MIETE in {3, 9, 309}     -> no match (3 anderes, 9 keine Angabe, 309 kein
+      Privat-HH); resolved to 1 / 2 before the seed on the member-completion path
+      (``attributes.resolve_tenure_and_building_type``)
 
     Building type: 3 classes (Ein-/Zweifamilienhaus, Mehrfamilienhaus, Sonstiges) ×
     1 geography (100m) = 3 controls.  MiD-only (ENTD has no building-type flag).
@@ -875,7 +879,8 @@ def tier2_controls() -> List[CatalogControl]:
     - 1  -> ein_zweifamilienhaus
     - 2,3 -> mehrfamilienhaus
     - 4  -> sonstiges
-    - 95 -> n.z. (excluded; does not match any expression)
+    - 95 -> nicht zuzuordnen (matches no expression; drawn to 1-4 before the seed on the
+      member-completion path)
 
     Returns
     -------

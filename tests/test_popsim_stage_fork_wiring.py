@@ -146,7 +146,8 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
         lambda ctx: (10, 1, str(tmp_path / "work"), [], "mid", False, False))
     monkeypatch.setattr(
         stage, "_create_seeded_rngs",
-        lambda ctx: (1, np.random.RandomState(1), np.random.RandomState(2)))
+        lambda ctx: (1, np.random.RandomState(1), np.random.RandomState(2),
+                     np.random.RandomState(3)))
     monkeypatch.setattr(stage, "_resolve_source", lambda name: _Source())
     monkeypatch.setattr(
         stage, "_read_control_config",
@@ -169,6 +170,10 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
         stage, "_derive_kreis_attribute_control_targets",
         lambda context, cells, active, prior, table, cmap, names, *a, **k: (table, cmap))
     monkeypatch.setattr(stage.folders, "validate_settings_geographies", lambda *a, **k: None)
+    # The WP3 seed contract check (tested in tests/test_popsim_seed_contract.py) runs before the
+    # purge; this test only pins its place in the order.
+    monkeypatch.setattr(stage, "_read_total_hh_control", lambda path: "HH_TOTAL")
+    monkeypatch.setattr(stage, "_check_seed_contract", lambda *a, **k: calls.append("contract"))
 
     seen = {}
 
@@ -194,7 +199,7 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     with pytest.raises(_Stop):
         stage.execute(_context(_values()))
 
-    assert calls == ["environment check", "purge", "batches", "log", "gate"]
+    assert calls == ["environment check", "contract", "purge", "batches", "log", "gate"]
     expected_overrides = {
         "KEEP_FRACTIONAL_SAMPLE_WEIGHTS": True, "INTEGERIZER_DRAW": "pareto",
         "INTEGERIZER_TIMEOUT": 600, "INTEGERIZER_PATH_RECORD": True,

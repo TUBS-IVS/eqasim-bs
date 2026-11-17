@@ -1,0 +1,2 @@
+batch_000: seed persons 3/9 880 in 782 households; used households 11; synthetic person copies 36; top household copies [12, 5, 4, 3, 2]
+batch_032: seed persons 3/9 880 in 782 households; used households 28; synthetic person copies 152; top household copies [43, 10, 5, 4, 4]

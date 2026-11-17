@@ -303,6 +303,13 @@ config:
   # number_of_cars + number_of_bicycles KREIS controls (default on). "off" is
   # byte-identical to today's control set.
   braunschweig.population.popsim.ownership_grid_1km: "on"
+  # Seed resolution and household-based building-type targets (issue #647, ADR-0198; rules
+  # live there). Each key defaults to the value below in code too; False / "warn" restores
+  # the previous behaviour.
+  braunschweig.population.popsim.seed_resolve_binary_sex: true
+  braunschweig.population.popsim.seed_resolve_tenure_building_type: true
+  braunschweig.population.popsim.building_type_targets_to_households: true
+  braunschweig.population.popsim.seed_contract_mode: error
   # Fine teen age bands in the tier0 backbone (issue #320): replaces the ten-year 10-19
   # age x sex controls with 10-15 / 16-17 / 18-19 (22 instead of 18 controls at 100m).
   # The ten-year band leaves the composition INSIDE it unconstrained, which produced a

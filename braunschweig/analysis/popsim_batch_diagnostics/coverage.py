@@ -11,16 +11,21 @@ import logging
 import numpy as np
 import pandas as pd
 
-from braunschweig.analysis.integerizer_quality.cell_error import evaluate_expression
 from braunschweig.analysis.popsim_batch_diagnostics.batch_folder import (
     BatchFolder, control_totals)
-from braunschweig.popsim.control_groups import CONTROL_GROUPS, group_targets
+from braunschweig.popsim.control_groups import CONTROL_GROUPS, group_targets, seed_group_hits
 
 logger = logging.getLogger(__name__)
 
 COVERAGE_COLUMNS = ["group", "seed_table", "exhaustive", "n_categories", "n_universe",
                     "n_uncovered", "n_multi_hit", "seed_weight_share", "synthetic_share",
                     "ratio"]
+RESOLVED_COLUMNS = ["attribute", "raw_codes", "seed_table", "n_records", "seed_weight_share",
+                    "synthetic_share", "ratio"]
+# (raw column, seed table, codes, True when the rows are those NOT in ``codes``)
+RESOLVED_RECORDS = (("HP_SEX_raw", "persons", (3, 9), False),
+                    ("H_MIETE_raw", "households", (1, 2), True),
+                    ("haustyp_raw", "households", (95,), False))
 UNIVERSE_COLUMNS = ["group", "geography", "target_sum", "household_total", "ratio"]
 
 
@@ -50,7 +55,6 @@ def coverage_table(batch: BatchFolder, usage: pd.Series, groups=CONTROL_GROUPS) 
     """
     frames = {"households": batch.seed_households, "persons": batch.seed_persons}
     spec = batch.control_spec
-    expressions = dict(zip(spec["target"], spec["expression"]))
     rows, skipped = [], []
     for group in groups:
         targets = group_targets(group, spec, batch.total_hh_control)
@@ -58,13 +62,7 @@ def coverage_table(batch: BatchFolder, usage: pd.Series, groups=CONTROL_GROUPS) 
             skipped.append(group.name)
             continue
         frame = frames[group.seed_table]
-        hits = np.zeros(len(frame), dtype=int)
-        for target in targets:
-            hits += np.asarray(evaluate_expression(expressions[target], frame)).astype(bool)
-        if group.universe is None:
-            in_universe = np.ones(len(frame), dtype=bool)
-        else:
-            in_universe = np.asarray(evaluate_expression(group.universe, frame)).astype(bool)
+        hits, in_universe = seed_group_hits(group, spec, frame, batch.total_hh_control)
         weight, copies = _record_weights(batch, group.seed_table, usage)
         # n_uncovered and n_multi_hit are counted inside the universe only.
         uncovered = in_universe & (hits == 0)
@@ -86,6 +84,48 @@ def coverage_table(batch: BatchFolder, usage: pd.Series, groups=CONTROL_GROUPS) 
                 "%s%s", len(skipped), len(groups), batch.name,
                 f": {', '.join(skipped)}" if skipped else "")
     return pd.DataFrame(rows, columns=COVERAGE_COLUMNS)
+
+
+def resolved_record_shares(batch: BatchFolder, usage: pd.Series) -> pd.DataFrame:
+    """Seed and synthetic shares of the seed records the stage resolution changed, by raw code.
+
+    A record is selected by its raw MiD code (``HP_SEX_raw``, ``H_MIETE_raw``,
+    ``haustyp_raw``) before the resolution; ``raw_codes`` is the comma-separated code list,
+    prefixed ``not `` when the complement is selected.  The denominator is the whole seed
+    table, weighted as in ``coverage_table`` (same ``_record_weights``); that equals the
+    universe of ``coverage_table`` for the age_sex, tenure and building_type groups (universe
+    None), so the rows compare like for like with the baseline ``control_coverage.csv``.
+    NaN raw values are excluded from the ``not`` rows (a missing raw code is not "other").
+    Descriptive only.  A seed without a raw column gets no row; the skipped columns are
+    logged once.
+    """
+    frames = {"households": batch.seed_households, "persons": batch.seed_persons}
+    rows, skipped = [], []
+    for column, table, codes, complement in RESOLVED_RECORDS:
+        frame = frames[table]
+        if column not in frame.columns:
+            skipped.append(column)
+            continue
+        raw = frame[column]
+        if complement:
+            selected = (raw.notna() & ~raw.isin(codes)).to_numpy()
+        else:
+            selected = raw.isin(codes).to_numpy()
+        weight, copies = _record_weights(batch, table, usage)
+        weight_total, copies_total = weight.sum(), copies.sum()
+        seed_share = weight[selected].sum() / weight_total if weight_total else np.nan
+        synthetic_share = copies[selected].sum() / copies_total if copies_total else np.nan
+        ratio = np.nan if np.isnan(seed_share) or seed_share == 0 else synthetic_share / seed_share
+        rows.append({
+            "attribute": column,
+            "raw_codes": ("not " if complement else "") + ",".join(str(c) for c in codes),
+            "seed_table": table, "n_records": int(selected.sum()),
+            "seed_weight_share": seed_share, "synthetic_share": synthetic_share,
+            "ratio": ratio})
+    logger.info("[popsim_batch_diagnostics] resolved_record_shares: %d of %d raw columns absent "
+                "in %s%s", len(skipped), len(RESOLVED_RECORDS), batch.name,
+                f": {', '.join(skipped)}" if skipped else "")
+    return pd.DataFrame(rows, columns=RESOLVED_COLUMNS)
 
 
 def universe_table(batch: BatchFolder, groups=CONTROL_GROUPS) -> pd.DataFrame:

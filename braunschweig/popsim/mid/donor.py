@@ -108,8 +108,10 @@ MID_HOUSEHOLD_ATTR_COLS = (
     # Tier-2 popsim control attributes: carried from the MiD donor table onto the
     # synthetic persons frame so the popsim control-fit validation can compare
     # realized vs. target distributions.
-    # H_MIETE: tenure flag (1=renter/Mieter, 2=owner/Eigentuemer; 3/9/309=excluded).
-    # haustyp: building type (1=EFH/ZFH, 2=MFH 3-12Wohn., 3=Geschosswohn. 13+, 4=sonstiges, 95=n.z.).
+    # H_MIETE: tenure (1 Miete, 2 Eigentum, 3 anderes, 9 keine Angabe, 309 kein Privat-HH).
+    # haustyp: building type (1=EFH/ZFH, 2=MFH 3-12Wohn., 3=Geschosswohn. 13+, 4=sonstiges,
+    # 95=nicht zuzuordnen). Codes outside the controls are resolved by the popsim stage
+    # (attributes.resolve_tenure_and_building_type, issue #647).
     "H_MIETE", "haustyp",
 )
 

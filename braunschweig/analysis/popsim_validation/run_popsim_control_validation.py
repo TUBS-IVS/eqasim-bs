@@ -48,10 +48,24 @@ def _parse_args(argv):
     ap.add_argument("--prefix", default=None)
     ap.add_argument("--analysis-out", default=None)
     ap.add_argument("--label", default=None)
+    ap.add_argument(
+        "--building-type-target-basis", choices=C.BUILDING_TYPE_TARGET_BASES,
+        default="households",
+        help="basis of the building_type target; pass 'dwellings' for a run with "
+             "braunschweig.population.popsim.building_type_targets_to_households off")
     ns = ap.parse_args(argv)
     if (ns.run_output_dir is None) == (ns.sim_cache is None):
         ap.error("pass exactly ONE of --run-output-dir / --sim-cache")
     return ns
+
+
+def _annotate_target_basis(long: pd.DataFrame, basis: str) -> pd.DataFrame:
+    """Add a ``target_basis`` column: the building_type basis on its rows, empty elsewhere."""
+    if long.empty:
+        return long
+    long = long.copy()
+    long["target_basis"] = ["" if c != "building_type" else basis for c in long["control"]]
+    return long
 
 
 def _git_commit() -> str:
@@ -106,9 +120,11 @@ def run(ns) -> dict:
     homes_geo = spatial.assign_geographies(frames.homes, kreise=kreise)
     geo = homes_geo[["household_id", "ars5", "commune_id"]].drop_duplicates("household_id")
 
-    registry = C.build_registry(DATA_PATH)
+    basis = ns.building_type_target_basis
+    LOGGER.info("building_type target basis: %s", basis)
+    registry = C.build_registry(DATA_PATH, building_type_target_basis=basis)
     try:
-        long = CV.evaluate_all(registry, frames, geo, DATA_PATH)
+        long = _annotate_target_basis(CV.evaluate_all(registry, frames, geo, DATA_PATH), basis)
     finally:
         # The target loaders share one in-process copy of the national cells parquet
         # (controls._load_cells); release it so the rest of the analysis suite does not
@@ -129,6 +145,7 @@ def run(ns) -> dict:
         "source_path": frames.source_path,
         "prefix": frames.prefix,
         "git_commit": _git_commit(),
+        "building_type_target_basis": basis,
         "n_persons": int(len(frames.persons)),
         "n_households": int(len(frames.households)),
         "family_scores": fam.to_dict(orient="records"),
@@ -142,6 +159,7 @@ def run(ns) -> dict:
         f"# Popsim control-fit validation - {label}", "",
         f"- Source: `{frames.source_path}` ({frames.source_kind})",
         f"- Git commit: `{report['git_commit']}`",
+        f"- building_type target basis: {basis}",
         f"- Persons: {report['n_persons']:,} | Households: {report['n_households']:,}", "",
         "## Headline quality by family", "",
         fam.to_string(index=False) if not fam.empty else "_no targets_", "",

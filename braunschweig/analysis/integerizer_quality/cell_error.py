@@ -14,22 +14,13 @@ from typing import Iterable, Tuple, Union
 import numpy as np
 import pandas as pd
 
+# Moved to braunschweig.popsim.control_groups (second consumer: the stage's contract check);
+# re-exported so callers of this module do not change.
+from braunschweig.popsim.control_groups import evaluate_expression  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 _CELL = "ZENSUS100m"
-
-
-def evaluate_expression(expr: str, frame: pd.DataFrame) -> np.ndarray:
-    """Evaluate a control_spec prefixed boolean expression against ``frame``.
-
-    The expression uses the seed table name as a namespace prefix
-    (``persons.<col>`` / ``households.<col>``).  Both names are bound to
-    ``frame`` (only the control's own table is actually referenced) plus
-    numpy, and Python ``eval`` is used (expressions are trusted, from
-    control_spec).  Returns a boolean numpy array aligned to ``frame``.
-    """
-    env = {"np": np, "persons": frame, "households": frame, "__builtins__": {}}
-    return np.asarray(eval(expr, env)).astype(bool)  # noqa: S307 (trusted source)
 
 
 def realised_counts(

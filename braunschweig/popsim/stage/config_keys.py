@@ -131,9 +131,33 @@ KEY_SOLVER_FALLBACK_ERROR_RATE = "braunschweig.population.popsim.solver_fallback
 # Member completion (decision D3, mid source only): fill member-incomplete MiD
 # donor households by mirror-household sampling, in ONE pass on the attribute
 # donor tables that feeds BOTH the PopulationSim seed and the expansion.
-# Default ON (project rule: new features default on); False reproduces the
-# legacy load_mid_seed + load_donor path byte-identically.
+# Default ON (project rule: new features default on); with False the seed fills
+# of issue #647 do not run (legacy load_mid_seed + load_donor seed), but the
+# building-type rescale and the warn-mode contract check do (ADR-0198).
 KEY_COMPLETE_MEMBERS = "braunschweig.population.popsim.complete_members"
+# Resolve MiD sex codes 3 (diverse) / 9 (no entry) to male/female ONCE per donor person
+# before PopulationSim, so the seed and every clone carry the same value (issue #647; rule in
+# ``attributes.resolve_binary_sex``). Member-completion path only; default ON in code, False
+# reproduces the previous seed byte-identically.
+KEY_SEED_RESOLVE_BINARY_SEX = "braunschweig.population.popsim.seed_resolve_binary_sex"
+# Resolve MiD tenure (H_MIETE 3 / 9 / 309) and building type (haustyp 95) ONCE per donor
+# household before PopulationSim, so the seed and every clone carry the same value (issue
+# #647; rule in ``attributes.resolve_tenure_and_building_type``). Member-completion path
+# only; default ON in code, False reproduces the previous seed byte-identically.
+KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE = (
+    "braunschweig.population.popsim.seed_resolve_tenure_building_type")
+# Rescale the per-100m building-type targets from census DWELLING counts to the cell's
+# household total before the 1 km integerisation (issue #647; rule in
+# ``braunschweig.popsim.building_type_targets``). Default ON in code, False keeps the
+# dwelling sums byte-identically.
+KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS = (
+    "braunschweig.population.popsim.building_type_targets_to_households")
+# Contract check before PopulationSim (issue #647, rule in ``braunschweig.popsim.seed_contract``):
+# "error" raises when a seed record of an exhaustive control group matches no / several
+# categories or a household group target misses the household total; "warn" only logs. The
+# legacy path (complete_members False) and the ENTD source always run in "warn". Any other
+# value raises at configure time.
+KEY_SEED_CONTRACT_MODE = "braunschweig.population.popsim.seed_contract_mode"
 # MiD P_VAUTO-based passenger availability. The intentionally short public key
 # is shared with the MATSim preparation gate; it is effective only for popsim_mid.
 KEY_MID_PASSENGER_AVAILABILITY = "mid_passenger_availability"

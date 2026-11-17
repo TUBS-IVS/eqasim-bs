@@ -323,6 +323,82 @@ def test_apply_tilt_unknown_tenure_neutral_when_unknown_neutral_true() -> None:
     )
 
 
+def _imputed_tenure_frame():
+    cell_index = pd.DataFrame({
+        "cell_id": ["x"], "ars5": ["03101"],
+        "renter_income_index": [0.7], "owner_income_index": [1.3],
+    })
+    hh = pd.DataFrame({
+        "household_id": [1, 2, 3, 4],
+        "cell_id": ["x"] * 4, "ars5": ["03101"] * 4,
+        "tenure": ["renter", "owner", "owner", "renter"],
+        "tenure_imputed": [False, False, True, True],
+        "household_income_eur": [2000.0] * 4,
+    })
+    return cell_index, hh
+
+
+def test_apply_tilt_imputed_tenure_stays_neutral() -> None:
+    """A tenure resolved before PopulationSim (issue #647) is shielded like 'unknown' was.
+
+    Defect caught: once the stage resolves H_MIETE 3 / 9 / 309 to owner / renter, those
+    households would silently start receiving a tenure-specific income tilt.
+    """
+    cell_index, hh = _imputed_tenure_frame()
+    out, _diag = ist.maybe_apply_income_tilt(
+        hh, cell_index, enabled=True, cell_col="cell_id", kreis_col="ars5",
+        tenure_col="tenure", unknown_neutral=True,
+    )
+    inc = out.set_index("household_id")["household_income_eur"]
+    assert inc[1] < 2000.0 and inc[2] > 2000.0     # reported renter / owner still tilted
+    assert inc[3] == 2000.0 and inc[4] == 2000.0   # imputed owner / renter neutral
+
+
+def test_resolved_tenure_pipeline_keeps_imputed_households_neutral() -> None:
+    """End to end with the real column names: resolve -> map -> tilt (issue #647).
+
+    Defect caught: a rename of ``housing_tenure_imputed`` or a changed hand-off between the
+    resolution, the tenure mapping and the tilt would tilt re-coded / drawn households.
+    """
+    from braunschweig.popsim import attributes
+
+    households = pd.DataFrame({
+        "H_ID": ["h0", "h1", "h2", "h3"], "H_GEW": 1.0, "H_MIETE": [1, 2, 3, 309],
+        "haustyp": 1, "RegioStaR7": 71, "hhgr_gr": 1, "cell_id": "x", "ars5": "03101",
+        "household_income_eur": 2000.0,
+    })
+    persons = pd.DataFrame({"H_ID": households["H_ID"], "HP_ALTER": 40})
+    resolved = attributes.resolve_tenure_and_building_type(
+        households, persons, rng=np.random.RandomState(0))
+    mapped = attributes.map_housing_tenure(resolved)
+    cell_index = pd.DataFrame({
+        "cell_id": ["x"], "ars5": ["03101"],
+        "renter_income_index": [0.7], "owner_income_index": [1.3],
+    })
+    out, _diag = ist.maybe_apply_income_tilt(
+        mapped, cell_index, enabled=True, cell_col="cell_id", kreis_col="ars5",
+        tenure_col="housing_tenure", unknown_neutral=True,
+    )
+    inc = out.set_index("H_ID")["household_income_eur"]
+    assert inc["h0"] < 2000.0 and inc["h1"] > 2000.0     # reported renter / owner tilted
+    assert inc["h2"] == 2000.0 and inc["h3"] == 2000.0   # re-coded households neutral
+
+
+def test_apply_tilt_without_imputed_column_is_unchanged() -> None:
+    """Without the flag column every known-tenure row is tilted, exactly as before."""
+    cell_index, hh = _imputed_tenure_frame()
+    hh = hh.drop(columns="tenure_imputed")
+    out, _diag = ist.maybe_apply_income_tilt(
+        hh, cell_index, enabled=True, cell_col="cell_id", kreis_col="ars5",
+        tenure_col="tenure", unknown_neutral=True,
+    )
+    expected, _ = ist.apply_spatial_income_tilt(
+        hh.copy(), cell_index, cell_col="cell_id", kreis_col="ars5", tenure_col="tenure",
+        income_col="household_income_eur", clip=ist.DEFAULT_CLIP,
+    )
+    pd.testing.assert_frame_equal(out, expected)
+
+
 def test_tilt_off_path_returns_income_unchanged() -> None:
     """When enabled=False, maybe_apply_income_tilt returns the frame BYTE-IDENTICAL."""
     hh = pd.DataFrame({

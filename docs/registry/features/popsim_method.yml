@@ -3,7 +3,8 @@ title: popsim_open / popsim_mid
 area: population
 description: PopulationSim-based synthesis at the Zensus-2022 100m/1km grid from complete donor
   households -- popsim_mid seeds with restricted MiD 2023 B1 microdata (donors carry their own
-  travel-day chains), popsim_open with the open ENTD seed (ADR-0002).
+  travel-day chains), popsim_open with the open ENTD seed (ADR-0002). Seed resolution and household-based
+  building-type targets are described in ADR-0198.
 stages:
 - data.census.filtered
 - braunschweig.popsim.completed_donor
@@ -50,6 +51,7 @@ validation:
   - popsim-batch-diagnostics-prod100-20261031-2026-11-16
   - popsim-ladder-baseline-2026-11-16
   - popsim-ladder-arm1-2026-11-17
+  - popsim-ladder-arm2-2026-11-17
   metric: 'control-fit vs committed controls (category shares): census-scale families mean ~0.25pp,
     KREIS/SrV families mean ~1.1pp, car/bike ~3.6-4.7pp urban-concentrated'
   note: Control fit against committed control tables; NOT a behavioural validation.

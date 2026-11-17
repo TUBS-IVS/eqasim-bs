@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Sequence
 
+import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -185,3 +187,167 @@ def resolve(df: pd.DataFrame, spec: AttributeSpec, *, rng) -> tuple[pd.Series, M
         n_group_fallback, n_nonresp, 100.0 * report.group_fallback_share,
     )
     return out, report
+
+
+def impute_binary_sex(binary, band, *, rng, constant=None):
+    """Fill the missing entries of ``binary`` from the observed pool of the same band.
+
+    Shared by ``expand.map_demographics`` (labels male/female) and
+    ``attributes.resolve_binary_sex`` (codes 1/2) so the tier rule exists once. ``binary``
+    holds the observed binary value or NaN; ``band`` is the age-band Series, POSITIONALLY aligned
+    with ``binary`` (row i of both is the same person; labels are ignored), or ``None`` when
+    the frame has no band column. Tiers: same-band pool, then the global pool (persons
+    whose band is NaN are drawn AFTER every banded person, so banded draws keep their
+    stream position), then ``constant`` (``None`` leaves them missing for the caller).
+    Draws are unweighted, one ``rng.randint`` per imputed person. The work runs on a
+    positional (RangeIndex) copy, so a frame with duplicate index labels (a concatenated
+    donor table) gets one draw per row; the original index is restored on the result.
+
+    Returns: ``(filled, n_band, n_global, n_constant)``; ``filled`` is a copy.
+    """
+    original_index = binary.index
+    binary = binary.reset_index(drop=True)
+    if band is not None:
+        band = band.reset_index(drop=True)
+    missing_mask = binary.isna()
+    n_band = n_global = n_constant = 0
+    if not missing_mask.any():
+        binary.index = original_index
+        return binary, n_band, n_global, n_constant
+    global_pool = binary[~missing_mask]
+
+    def fallback(idx_or_mask, count):
+        nonlocal n_constant
+        if constant is not None:
+            binary.loc[idx_or_mask] = constant
+        n_constant += count
+
+    if band is not None:
+        for b, idx in band[missing_mask].groupby(band[missing_mask]).groups.items():
+            band_pool = binary[(~missing_mask) & (band == b)]
+            draw_pool = band_pool if len(band_pool) else global_pool
+            if len(draw_pool):
+                binary.loc[idx] = [draw_pool.iloc[rng.randint(len(draw_pool))] for _ in idx]
+                if len(band_pool):
+                    n_band += len(idx)
+                else:
+                    n_global += len(idx)
+            else:
+                fallback(idx, len(idx))
+        # groupby drops a NaN band, so those persons are not visited above. They draw
+        # from the global pool AFTER the band loop, so every banded person keeps its draw.
+        no_band = missing_mask & band.isna()
+        n_no_band = int(no_band.sum())
+        if n_no_band and len(global_pool):
+            binary.loc[no_band] = [global_pool.iloc[rng.randint(len(global_pool))]
+                                   for _ in range(n_no_band)]
+            n_global += n_no_band
+        elif n_no_band:
+            fallback(no_band, n_no_band)
+    else:
+        n_missing = int(missing_mask.sum())
+        if len(global_pool):
+            binary.loc[missing_mask] = [global_pool.iloc[rng.randint(len(global_pool))]
+                                        for _ in range(n_missing)]
+            n_global += n_missing
+        else:
+            fallback(missing_mask, n_missing)
+    binary.index = original_index
+    return binary, n_band, n_global, n_constant
+
+
+def _tier_key(tier: Sequence[str]) -> str:
+    return "+".join(tier) if tier else "all"
+
+
+def weighted_hot_deck(
+    df: pd.DataFrame, *, value_col: str, missing_mask, weight_col: str,
+    tiers: Sequence[Sequence[str]], rng, name: str,
+) -> tuple[pd.Series, dict[str, int]]:
+    """Fill the ``missing_mask`` rows of ``value_col`` by a weighted hot-deck draw.
+
+    Every row in ``missing_mask`` receives the ``value_col`` of one donor row drawn from the
+    non-missing rows (``~missing_mask`` with a non-NaN value) of the first tier whose pool
+    has a positive total weight. A tier is a tuple of grouping columns: the pool is the
+    donors sharing the row's values in those columns; ``()`` is the pool of all donors. A
+    row with NaN in a tier's grouping column cannot use that tier and goes to the next.
+    The draw probability is proportional to ``weight_col``; NaN weights count as 0, so a
+    pool whose donors all carry weight 0 or NaN is skipped (no division by zero). One
+    ``rng.choice`` per filled row, rows visited in positional order, so the result is
+    reproducible for a given ``rng`` state; no row to fill means no draw.
+
+    The work runs on a positional (RangeIndex) copy, so a frame with duplicate index
+    labels gets one draw per row; the original index is restored on the result.
+
+    Returns: ``(filled, counts)``: ``filled`` is a copy of ``value_col`` with the missing
+    rows filled; ``counts`` maps each tier (``"+".join(tier)``, ``"all"`` for ``()``) to the
+    number of rows it filled. Raises ``ValueError`` when no tier can fill a row or a weight
+    is negative.
+    """
+    original_index = df.index
+    work = df.reset_index(drop=True)
+    mask = np.asarray(missing_mask, dtype=bool)
+    if len(mask) != len(work):
+        raise ValueError(
+            f"[{name}] missing_mask has {len(mask)} entries for a frame of {len(work)} rows.")
+    values = work[value_col].copy()
+    counts = {_tier_key(tier): 0 for tier in tiers}
+    rows_to_fill = np.flatnonzero(mask)
+    if len(rows_to_fill) == 0:
+        values.index = original_index
+        return values, counts
+
+    weights = pd.to_numeric(work[weight_col], errors="coerce").to_numpy(dtype=float)
+    if (weights < 0).any():
+        raise ValueError(
+            f"[{name}] {int((weights < 0).sum())} rows carry a negative {weight_col!r}; "
+            "a hot-deck weight must be >= 0.")
+    weights = np.nan_to_num(weights, nan=0.0)
+    is_donor = ~mask & values.notna().to_numpy()
+
+    # Pools per tier, keyed by the tuple of grouping values; only pools with a positive
+    # total weight are kept, so a key that is absent means "fall to the next tier".
+    donor_positions = np.flatnonzero(is_donor)
+    value_array = values.to_numpy()
+    pools: list[dict] = []
+    for tier in tiers:
+        tier_cols = list(tier)
+        tier_pools: dict = {}
+        if tier_cols:
+            keys = work.loc[donor_positions, tier_cols]
+            grouper = tier_cols[0] if len(tier_cols) == 1 else tier_cols
+            for key, group in keys.groupby(grouper, sort=False, dropna=True):
+                key_tuple = key if isinstance(key, tuple) else (key,)
+                tier_pools[key_tuple] = group.index.to_numpy()
+        else:
+            tier_pools[()] = donor_positions
+        kept = {}
+        for key, positions in tier_pools.items():
+            w = weights[positions]
+            total = w.sum()
+            if total > 0:
+                kept[key] = (value_array[positions], w / total)
+        pools.append(kept)
+
+    for position in rows_to_fill:
+        for tier, tier_pools in zip(tiers, pools):
+            if tier:
+                key = tuple(work.at[position, col] for col in tier)
+                if any(pd.isna(k) for k in key):
+                    continue
+            else:
+                key = ()
+            pool = tier_pools.get(key)
+            if pool is None:
+                continue
+            pool_values, probabilities = pool
+            values.iat[position] = pool_values[rng.choice(len(pool_values), p=probabilities)]
+            counts[_tier_key(tier)] += 1
+            break
+        else:
+            raise ValueError(
+                f"[{name}] row {original_index[position]!r} could not be filled: no tier "
+                f"{[_tier_key(t) for t in tiers]} offers a donor pool with positive "
+                f"{weight_col!r}.")
+    values.index = original_index
+    return values, counts

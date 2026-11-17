@@ -197,6 +197,29 @@ def test_popsim_and_integerizer_run_when_ready(tmp_path, monkeypatch):
     assert len(iq_calls) == 1 and "--work-dir" in iq_calls[0] and "--mid-dir" in iq_calls[0]
 
 
+@pytest.mark.parametrize("to_households, expected", [(True, "households"), (False, "dwellings")])
+def test_popsim_validation_receives_the_runs_building_type_basis(
+        tmp_path, monkeypatch, to_households, expected):
+    """The run's building_type_targets_to_households key reaches the validation as its basis.
+
+    Defect caught: an in-pipeline run with the key off validated building_type against the
+    household basis, because the suite never passed the basis on.
+    """
+    PV = pytest.importorskip("braunschweig.analysis.popsim_validation.run_popsim_control_validation")
+    _write_min_output(tmp_path)
+    _install_pop_spy(monkeypatch, [])
+    work = tmp_path / "work"; work.mkdir()
+    seen = []
+    monkeypatch.setattr(PV, "run", lambda ns: seen.append(ns.building_type_target_basis))
+    ctx = _execute_context(
+        tmp_path,
+        **{"braunschweig.population.method": "popsim_mid",
+           "braunschweig.population.popsim.work_dir": str(work),
+           "braunschweig.population.popsim.building_type_targets_to_households": to_households})
+    AS.execute(ctx)
+    assert seen == [expected]
+
+
 def test_dashboard_and_education_skip_without_inputs(tmp_path, monkeypatch):
     DASH = pytest.importorskip("braunschweig.analysis.dashboard.build_dashboard")
     EDU = pytest.importorskip("braunschweig.analysis.run_education_validation")

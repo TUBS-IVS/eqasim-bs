@@ -1,0 +1,31 @@
+{
+  "work_dir": "/home/felix/i647/arm2_A",
+  "batches": [
+    "batch_000",
+    "batch_032"
+  ],
+  "seed_groups": {
+    "0031c7e0b140a7d1f5bec317a5fc51c0eaf2e2e711285cdefa61ad8c9710d71b": [
+      "batch_000",
+      "batch_032"
+    ]
+  },
+  "repository_commit": "81e41c9b316295a22e4b4ee4004757aa650cc5e3",
+  "thresholds": {
+    "weight_class_gap_pp": 5.0,
+    "coverage_ratio_low": 0.5,
+    "coverage_ratio_high": 2.0,
+    "universe_ratio_tolerance": 0.02,
+    "sequential_fallback_rate": 0.05,
+    "coverage_multi_hit_max": 0.0,
+    "rounding_shift_bound": 0.1,
+    "rounding_min_target": 40.0
+  },
+  "misfit": true,
+  "chunk_rows": 5000000,
+  "mid_households": {
+    "path": "/home/felix/eqasim-bs/eqasim-data/data/braunschweig/popsim/mid2023_raw/MiD2023_Haushalte.csv",
+    "sha256": "a40b41b26654831b4296d8f34c709bda40f8a7d323fcf4e25106be6acde0f3c3"
+  },
+  "utc_timestamp": "2026-11-17T17:37:08.441371+00:00"
+}

@@ -156,6 +156,7 @@ from braunschweig.popsim import plausibility as _plausibility
 from braunschweig.popsim import passenger_availability as _passenger_availability
 from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
+from braunschweig.popsim import seed_contract as _seed_contract
 from braunschweig.popsim import tool_version
 from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
 
@@ -256,6 +257,10 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_CELLS,
     KEY_CLEANUP_H5,
     KEY_COMPLETE_MEMBERS,
+    KEY_SEED_RESOLVE_BINARY_SEX,
+    KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE,
+    KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS,
+    KEY_SEED_CONTRACT_MODE,
     KEY_MID_PASSENGER_AVAILABILITY,
     KEY_CONTROL_TIERS,
     KEY_CONTROLS,
@@ -435,6 +440,7 @@ _HELPER_MODULES = (
     _plausibility,
     _passenger_availability,
     prepared_cells,
+    _seed_contract,
     tool_version,
     # the one synpp stage imported at MODULE level and used here as a plain
     # function library whose dependency this stage does NOT declare, so its own
@@ -528,6 +534,10 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # validate() docstring's boundary statement for why they are explicit exceptions to the
     # one-level rule (the first two were added after the 2026-08-19 hazard).
     "braunschweig.popsim.attributes",
+    # Imported inside _add_aggregated_control_columns (building-type targets per household, #647).
+    "braunschweig.popsim.building_type_targets",
+    # Reached through seed_contract (the contract check before PopulationSim, #647).
+    "braunschweig.popsim.control_groups",
     "braunschweig.popsim.control_spec",
     "braunschweig.popsim.employment_grid",
     # escort_pairing: the THIRD second-level exception (reached via mid.participation, whose
@@ -794,6 +804,14 @@ def configure(context):
     context.config(KEY_SOLVER_FALLBACK_ERROR_RATE, None, volatile = True)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
     context.config(KEY_COMPLETE_MEMBERS, True)
+    # Sex codes 3 / 9 resolved once per donor person (issue #647). Default True.
+    context.config(KEY_SEED_RESOLVE_BINARY_SEX, True)
+    # Tenure 3 / 9 / 309 and building type 95 resolved once per donor household (#647).
+    context.config(KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE, True)
+    # Building-type targets rescaled from dwellings to households per cell (#647). Default True.
+    context.config(KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS, True)
+    # Contract check before PopulationSim: "error" | "warn" (#647). Default "error".
+    _seed_contract.validate_mode(context.config(KEY_SEED_CONTRACT_MODE, "error"))
     context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
     # Controls source (Task 5). Default "csv" = byte-identical to today's behaviour.
     context.config(KEY_CONTROLS_SOURCE, "csv")
@@ -1144,15 +1162,20 @@ def _read_batching_and_scope_config(context):
 
 
 def _create_seeded_rngs(context):
-    """Create the two seeded RNG streams this stage draws from.
+    """Create the seeded RNG streams this stage draws from.
 
     Seeded RNG for the stochastic attribute imputation in build_persons
     (offset +74511 keeps the stream disjoint from the enriched-stage offsets).
 
-    Returns: ``(random_seed, rng, kreis_seed_rng)``. Both ``RandomState``
-    objects are created here and consumed IN THE ORIGINAL ORDER by the steps
-    below (``kreis_seed_rng`` in the seed build, ``rng`` in the persons
-    expansion), so no draw moves across a step boundary.
+    Returns: ``(random_seed, rng, kreis_seed_rng, seed_fill_rng)``. The
+    ``RandomState`` objects are created here and consumed IN THE ORIGINAL ORDER by
+    the steps below (``kreis_seed_rng`` in the seed build, ``rng`` in the persons
+    expansion), so no draw moves across a step boundary. ``seed_fill_rng`` is a
+    dedicated stream for the donor-person fills of issue #647 (sex first); no
+    other consumer draws from it, so ``kreis_seed_rng`` is untouched by the fills.
+    ``rng`` is not: with the sex resolution on, ``expand.map_demographics`` finds no
+    sex left to impute and no longer draws from ``rng``, so every later ``rng`` draw
+    shifts relative to a run with the resolution off.
     Mutates: nothing.
     """
     random_seed = int(context.config("random_seed"))
@@ -1162,7 +1185,9 @@ def _create_seeded_rngs(context):
     # load_mid_seed). Offset +24680 keeps the stream disjoint from the +74511 imputation
     # stream above; derived from the pipeline random_seed so the seed is reproducible.
     kreis_seed_rng = np.random.RandomState(random_seed + 24680)
-    return random_seed, rng, kreis_seed_rng
+    # Offset +97531 is disjoint from the other offsets in use (74511, 24680, 74513).
+    seed_fill_rng = np.random.RandomState(random_seed + 97531)
+    return random_seed, rng, kreis_seed_rng, seed_fill_rng
 
 
 def _read_control_config(context, source_name: str):
@@ -1411,12 +1436,19 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
 
 
 def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source_name: str, control_tiers,
-        fine_teen_age_bands: bool = True) -> pd.DataFrame:
+        fine_teen_age_bands: bool = True,
+        building_type_targets_to_households: bool = False) -> pd.DataFrame:
     """Derive the multi-column aggregated control columns on the cells frame.
 
     Derive the multi-column aggregated control columns (e.g. building_type_*).
     For tier0-only: agg_map is empty -> add_aggregated_controls returns cells
     unchanged -> byte-identical.
+
+    ``building_type_targets_to_households`` (config key ``building_type_targets_to_households``,
+    issue #647): the derived ``building_type_*`` columns are census DWELLING counts; when True
+    they are rescaled per cell to the household total (rule, fallback tiers and log in
+    ``braunschweig.popsim.building_type_targets``). The raw dwelling source columns stay
+    unchanged. False keeps the dwelling sums byte-identically and logs nothing.
 
     Returns: the cells frame with the aggregated control columns (MUST be
     reassigned).
@@ -1429,7 +1461,121 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
         fine_teen_age_bands=fine_teen_age_bands,
     )
     cells = prepared_cells.add_aggregated_controls(cells, agg_map)
+    if building_type_targets_to_households:
+        from braunschweig.popsim import building_type_targets as _btt
+        from braunschweig.popsim import control_spec as _cs
+        from braunschweig.popsim import folders as _folders
+
+        building_type_cols = [
+            name for name, _, _ in _cs._TIER2_BUILDING_TYPE_ENTRIES if name in agg_map]
+        if not building_type_cols:
+            logger.info(
+                "[popsim.stage] building_type_targets_to_households is on but no building_type "
+                "control is active (tiers %s); nothing to rescale.", tuple(control_tiers))
+            return cells
+        # The Kreis level of the share fallback comes from the cell ARS, derived on a copy
+        # so the cells frame the stage carries on is not widened by an extra column.
+        if mid._ARS_COLUMN not in cells.columns:
+            raise ValueError(
+                "[popsim.stage] building_type_targets_to_households is on but the cells frame "
+                f"carries no {mid._ARS_COLUMN!r} column; cannot derive the Kreis shares.")
+        work = cells.copy()
+        work[_folders.GEO_KREIS] = derive_geo_kreis_from_ars(work[mid._ARS_COLUMN])
+        work = _btt.rescale_building_type_to_households(work, building_type_cols)
+        cells = cells.copy()
+        for column in building_type_cols:
+            cells[column] = work[column]
     return cells
+
+
+# Columns besides the ARS that ``mid.resolved_kreis_per_cell`` reads (grid keys and the
+# population weight of the dominant-Kreis resolution).
+_KREIS_RESOLUTION_COLUMNS = ("ZENSUS100m", "ZENSUS1km", "POP_TOTAL_100m_adj")
+
+
+def _check_seed_contract(seed_households: pd.DataFrame, seed_persons: pd.DataFrame,
+                         controls_df: pd.DataFrame, total_hh_control: str,
+                         cells: pd.DataFrame, *, kreis_col: str, mode: str,
+                         complete_members: bool, source_name: str,
+                         ars_col: str | None = None) -> None:
+    """Contract check before PopulationSim (issue #647, G6; rule in ``seed_contract``).
+
+    The configured ``mode`` ("error" | "warn") applies on the complete_members path with the
+    MiD source. The legacy path and the ENTD source build their seed differently and always run
+    in "warn" mode; one INFO line says so.
+
+    The per-Kreis household totals are grouped by the RESOLVED Kreis
+    (``mid.resolved_kreis_per_cell`` on ``ars_col``, the grouping the OWN_* targets are raked
+    by) whenever ``ars_col`` is on the cells; only without it is ``kreis_col`` used as given.
+
+    Returns: nothing. Raises ``ValueError`` in "error" mode when the contract is violated.
+    Mutates: nothing.
+    """
+    _seed_contract.validate_mode(mode)
+    effective = mode
+    if not complete_members or source_name != "mid":
+        if mode != "warn":
+            logger.info(
+                "[popsim.seed_contract] seed_contract_mode %r is not applied on the %s path: "
+                "its seed is not resolved by the #647 fills, so the check only warns.",
+                mode, "legacy (complete_members off)" if not complete_members
+                else f"{source_name} source")
+        effective = "warn"
+    _seed_contract.check_seed_coverage(
+        seed_households, seed_persons, controls_df, total_hh_control, mode=effective)
+    # Narrow input: only the columns the totals check reads, plus the Kreis key.
+    needed = _seed_contract.household_group_columns(controls_df, total_hh_control)
+    missing_key = kreis_col not in cells.columns and (
+        ars_col is None or ars_col not in cells.columns)
+    if missing_key:
+        message = (f"[popsim.seed_contract] cells frame has neither the Kreis column "
+                   f"{kreis_col!r} nor the ARS column {ars_col!r}; the per-Kreis household-total "
+                   "check cannot run")
+        if effective == "error":
+            raise ValueError(message)
+        logger.warning("%s: skipped (1 of 2 contract checks not run)", message)
+        return
+    resolve_from_ars = ars_col is not None and ars_col in cells.columns
+    if resolve_from_ars:
+        # The resolution reads these columns besides the ARS; without them the per-Kreis part
+        # cannot run, which must stay advisory in warn mode (same pattern as the skip above).
+        absent = [c for c in _KREIS_RESOLUTION_COLUMNS if c not in cells.columns]
+        if absent:
+            message = (f"[popsim.seed_contract] cells frame lacks the column(s) {absent} that "
+                       f"the resolved-Kreis grouping reads besides {ars_col!r}; the per-Kreis "
+                       "household-total check cannot run")
+            if effective == "error":
+                raise ValueError(message)
+            logger.warning("%s: skipped (1 of 2 contract checks not run)", message)
+            return
+    # Absent group columns are skipped and counted inside the check (INFO); an absent
+    # household-total column raises there.
+    narrow = cells[[c for c in needed if c in cells.columns]].copy()
+    if resolve_from_ars:
+        # The RESOLVED Kreis (dominant Kreis per 1 km parent), exactly as the ownership-grid
+        # injection rakes its targets, so a border cell is checked in the Kreis its targets
+        # were raked to. A KREIS column already on the cells (raw ARS[:5], left by the
+        # employment grid) is deliberately not used.
+        resolved = mid.resolved_kreis_per_cell(cells, ars_col=ars_col)
+        narrow[kreis_col] = resolved.to_numpy()
+        basis = f"resolved Kreis from {ars_col!r} (dominant Kreis per 1 km parent)"
+        # Cells without a resolved Kreis (NaN) are counted and logged inside the check.
+    else:
+        narrow[kreis_col] = cells[kreis_col].to_numpy()
+        basis = f"the cells column {kreis_col!r} as given (no ARS column to resolve)"
+    logger.info("[popsim.seed_contract] household totals grouped by %s", basis)
+    _seed_contract.check_household_group_totals(
+        narrow, controls_df, total_hh_control, kreis_col=kreis_col, mode=effective)
+
+
+def _read_total_hh_control(settings_path) -> str:
+    """The ``total_hh_control`` target name of the PopulationSim settings file."""
+    import yaml
+
+    settings = yaml.safe_load(Path(settings_path).read_text(encoding="utf-8"))
+    if not isinstance(settings, dict) or "total_hh_control" not in settings:
+        raise ValueError(f"[popsim.seed_contract] {settings_path} declares no total_hh_control")
+    return str(settings["total_hh_control"])
 
 
 def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_grid_on: bool) -> pd.DataFrame:
@@ -1645,8 +1791,21 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
         escort_passive_education: bool = False, exclude_rbw_legs: bool = True,
         w_zweck_10_as_leisure: bool = False, escort_passive_from_adult: bool = False,
         passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
-        passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS):
+        passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        seed_fill_rng=None, resolve_binary_sex: bool = False,
+        resolve_tenure_building_type: bool = False):
     """Build the PopulationSim seed through the active donor source.
+
+    ``resolve_binary_sex`` (config key ``seed_resolve_binary_sex``, issue #647) applies to the
+    ``complete_members`` branch ONLY: the completed donor persons get their MiD sex codes 3 / 9
+    resolved to male/female once (``attributes.resolve_binary_sex``, drawing from
+    ``seed_fill_rng``, which is required then), after ``resolve_person_attributes``. The legacy
+    branch stays byte-identical. The function default is False so direct callers keep the old
+    behaviour; ``execute`` passes the config value (default True).
+    ``resolve_tenure_building_type`` (config key ``seed_resolve_tenure_building_type``, issue
+    #647) works the same way for the completed donor households
+    (``attributes.resolve_tenure_and_building_type``), drawing from ``seed_fill_rng`` AFTER the
+    sex resolution.
 
     ``trip_class_counts_closure`` / ``forbid_no_diary_sources`` /
     ``drop_leading_arrive_home_leg`` (issues #367 / #365 / #366, plan-structure-fix
@@ -1700,9 +1859,11 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     derivations inside ``mid.project_completed_seed`` (trip_class, participation
     and the remaining control columns). So the stream every later consumer sees
     differs from the pre-ADR-0192 one even when no count or person control is
-    active. On the legacy path the draws stay inside ``mid.load_mid_seed`` (active
-    controls only). Also reports the seed completeness rate plus the
-    member-completion counts via ``context.set_info``.
+    active. The sex resolution and then the tenure / building-type resolution (when
+    on) draw from ``seed_fill_rng`` only. On the
+    legacy path the draws stay inside ``mid.load_mid_seed`` (active controls only).
+    Also reports the seed completeness rate plus the member-completion counts via
+    ``context.set_info``.
     """
     completed_donor_households = None
     completed_donor_persons = None
@@ -1735,6 +1896,31 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
         completed_donor_persons = attributes.resolve_person_attributes(
             donor.persons, rng=kreis_seed_rng, households=donor.households,
             household_id_col=source.seed_columns().household_id)
+        if resolve_binary_sex:
+            if seed_fill_rng is None:
+                raise ValueError(
+                    "[popsim.stage] seed_resolve_binary_sex is on but no seed_fill_rng was "
+                    "given (seeded randomness rule: no random process without an explicit seed).")
+            # Sex codes 3 / 9 are in no PopulationSim sex control; resolved ONCE per donor
+            # person here, so the seed and every clone carry the same value (issue #647).
+            completed_donor_persons = attributes.resolve_binary_sex(
+                completed_donor_persons, rng=seed_fill_rng,
+                sex_col=source.seed_columns().sex)
+        if resolve_tenure_building_type:
+            if seed_fill_rng is None:
+                raise ValueError(
+                    "[popsim.stage] seed_resolve_tenure_building_type is on but no "
+                    "seed_fill_rng was given (seeded randomness rule: no random process "
+                    "without an explicit seed).")
+            # Tenure 3 / 9 / 309 and building type 95 are in no PopulationSim control;
+            # resolved ONCE per donor household here, from the same fill stream AFTER the
+            # sex draws, so the seed and every clone carry the same value (issue #647).
+            _cols = source.seed_columns()
+            completed_donor_households = attributes.resolve_tenure_and_building_type(
+                completed_donor_households, completed_donor_persons, rng=seed_fill_rng,
+                household_id_col=_cols.household_id,
+                person_household_id_col=_cols.person_household_id,
+                age_col=_cols.age, weight_col=_cols.household_weight)
         report = donor.completeness_report
         completion_report = donor.completion_report
         seed_columns = source.seed_columns()
@@ -2658,7 +2844,7 @@ def execute(context) -> pd.DataFrame:
         max_cells, num_workers, work_dir, kreise, source_name, stratify_regiostar,
         complete_members,
     ) = _read_batching_and_scope_config(context)
-    random_seed, rng, kreis_seed_rng = _create_seeded_rngs(context)
+    random_seed, rng, kreis_seed_rng, seed_fill_rng = _create_seeded_rngs(context)
 
     source = _resolve_source(source_name)
     logger.info("[popsim.stage] active donor source: %s", source.name)
@@ -2709,6 +2895,8 @@ def execute(context) -> pd.DataFrame:
     cells = _add_aggregated_control_columns(
         cells, controls_source, source_name, control_tiers,
         fine_teen_age_bands=fine_teen_bands_on,
+        building_type_targets_to_households=bool(
+            context.config(KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS)),
     )
     cells = _inject_employment_grid_columns(context, cells, employment_grid_on)
     cells = _inject_ownership_grid_columns(
@@ -2759,7 +2947,18 @@ def execute(context) -> pd.DataFrame:
         escort_passive_from_adult=escort_passive_from_adult_on,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes_cfg,
         passive_pair_adult_min_age_years=passive_pair_adult_min_age_years_cfg,
+        seed_fill_rng=seed_fill_rng,
+        resolve_binary_sex=bool(context.config(KEY_SEED_RESOLVE_BINARY_SEX)),
+        resolve_tenure_building_type=bool(
+            context.config(KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE)),
     )
+
+    # Contract check (#647, G6) on the final controls and cells, before any batch is written.
+    _check_seed_contract(
+        seed_households, seed_persons, controls_df, _read_total_hh_control(settings_path),
+        cells, kreis_col=folders.GEO_KREIS, ars_col=mid._ARS_COLUMN,
+        mode=str(context.config(KEY_SEED_CONTRACT_MODE)),
+        complete_members=complete_members, source_name=source_name)
 
     run_one = _prepare_batch_runner(
         context, uv_path, popsimprep_dir, stratify_regiostar,
