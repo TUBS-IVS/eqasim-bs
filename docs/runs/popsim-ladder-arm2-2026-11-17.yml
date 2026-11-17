@@ -41,11 +41,13 @@ pipeline:
 classification:
 - ab_test
 status:
-  execution: running
+  execution: completed
   notes: >-
-    Pre-registered 2026-11-17 before the runs. Already done before the runs (inputs, not results):
-    real_cells_check.py on the prepared 100 m cells of the eight ZGB Kreise and prepare_arm2.py; their
-    outputs are artifacts of this record.
+    Pre-registered 2026-11-17 (f56e189f) before the runs. Already done before the runs (inputs, not
+    results): real_cells_check.py on the prepared 100 m cells of the eight ZGB Kreise and prepare_arm2.py.
+    Both arm-2 PopulationSim runs exit 0 the same day; diagnostics with --misfit exit 0; checkpoint stores
+    deleted afterwards. Verdict: G6 (both checks), G3 and G2 met; the use of the resolved records met in five
+    of six cases and missed for sex codes 3/9 in batch_032 (ratio 2.86 against the bound 2.0).
 source: >-
   felix run server, ~/i647 (arm folder arm2_A, logs, real_cells_check); committed copy in
   docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/.
@@ -57,14 +59,30 @@ validation:
     G6 seed coverage: every seed record in the universe of an exhaustive control group matches exactly one
     category (seed_contract.check_seed_coverage, error mode, on the arm-2 seed and the batch controls.csv)
   reference: none (property of the inputs)
-  result: pending
+  result: >-
+    MET on both batches (one shared seed): every exhaustive group has 0 uncovered and 0 multi-hit records,
+    among them age_sex (485,709 persons), employed_grid, tenure and building_type (218,097 households each).
+    The non-exhaustive education and employed groups keep their uncovered records by design. Fills applied
+    (prepare_arm2_log.txt): sex 880 persons, all from the same alter_gr1 band; tenure 4,707 households re-coded
+    (codes 3 and 309) and 613 drawn (code 9), all in the first hot-deck tier; building type 8,322 households
+    drawn (code 95), 8,321 in the first tier and 1 in the second.
   artifact: docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/batch_000_seed_coverage.csv
 - metric: >-
     G6 household totals on the real prepared 100 m cells of the eight ZGB Kreise: per resolved Kreis,
     household_size, tenure and building_type (rescale on) target sums against the household total; bound
     |ratio - 1| <= 0.02 (seed_contract.UNIVERSE_RATIO_TOLERANCE, the WP1 universe threshold)
   reference: none (property of the control targets); the 0.02 bound is an ASSUMPTION-grade design bound
-  result: pending
+  result: >-
+    MET: all 27 group x Kreis rows (three groups, eight Kreise and the overall row) have a ratio of 1.0000 at
+    four decimals; 43,598 cells, none without a resolved Kreis. The building-type rescale moved the target
+    sum from 1.0928 to 1.0000 of the household total; 115 of 38,485 cells with households (346 of 558,171
+    households) took parent shares (112 cells from the 1 km parent, 3 from the Kreis); no cell had a partly
+    missing class vector (real_cells_check_summary.txt). The ownership-grid groups were not checked here
+    (the raked 1 km grid is not injected by the script); their batch-level ratios are in
+    arm_2_A/control_universe.csv (1.0003 at ZENSUS1km over both batches).
+    Batch-level check of the INTEGER arm-2 targets per crosswalk Kreis (warn mode, informational): one small
+    Kreis slice of batch_032 (03154, 8 households) misses by rounding alone (household_size 6 of 8, own_bikes
+    7 of 8), a pre-existing rounding property of the batch targets, not a WP3 change.
   artifact: docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/real_cells_household_group_totals.csv
 - metric: >-
     G3: integer control fit WAPE per geography (as in popsim-ladder-baseline-2026-11-16) against arm 1
@@ -74,7 +92,13 @@ validation:
     bound applies to the second
   reference: >-
     arm 1 of popsim-ladder-arm1-2026-11-17 (model output, NOT observed data); ASSUMPTION-grade design bounds
-  result: pending
+  result: >-
+    MET on both batches and all three geographies (controls without building_type_*, arm 1 / arm 2 /
+    limit): batch_000 ZENSUS100m 0.3120 / 0.3052 / 0.3320, ZENSUS1km 0.0739 / 0.0658 / 0.0939, KREIS 0.0204 /
+    0.0213 / 0.0304; batch_032 ZENSUS100m 0.1520 / 0.1574 / 0.1720, ZENSUS1km 0.0242 / 0.0275 / 0.0442, KREIS
+    0.0112 / 0.0116 / 0.0212. Over all controls (not like for like): batch_000 ZENSUS100m 0.3651 / 0.2930,
+    batch_032 0.1436 / 0.1415. (Arm 1 here is recomputed from its diagnostics with the same script; its
+    all-controls values equal those of popsim-ladder-arm1-2026-11-17.)
   artifact: docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/arm2_comparison.csv
 - metric: >-
     Use of the resolved records: per batch, the synthetic share of the seed records with HP_SEX_raw 3 or 9,
@@ -83,27 +107,60 @@ validation:
   reference: >-
     the seed's own H_GEW-weighted shares (survey data); the bounds are the WP1 coverage warning thresholds
     coverage_ratio_low / coverage_ratio_high, ASSUMPTION-grade
-  result: pending
+  result: >-
+    NOT MET in one of six cases. Ratio arm 1 -> arm 2: batch_000 sex 3/9 11.31 -> 1.62, tenure not 1/2
+    0.13 -> 0.77, building type 95 0.00 -> 1.14; batch_032 sex 3/9 6.26 -> 2.86 (outside the bound 2.0),
+    tenure 0.08 -> 0.82, building type 0.00 -> 0.97. Descriptive context for the miss
+    (resolved_sex_concentration_arm2.txt): the 880 persons sit in 782 seed households; batch_032 uses 28 of
+    them for 152 synthetic person copies, one household alone with 43 copies, so the ratio rests on a few
+    donors. The bound is not changed after the run.
   artifact: docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/arm_2_A/resolved_record_shares.csv
 - metric: >-
     G2 kept: per H_GEW weight class the synthetic household share minus the class's seed weight share,
     per batch; bound |gap| <= 5 percentage points in every class (as for arm 1)
   reference: the seed's own H_GEW shares (survey data); ASSUMPTION-grade design bound
-  result: pending
+  result: >-
+    MET: maximum |gap| over the six classes, arm 1 / arm 2: batch_000 2.14 / 2.24 pp, batch_032 2.12 /
+    2.35 pp.
   artifact: docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/arm2_comparison.csv
 - metric: >-
     Reported without a bound, against arm 1: building-type control fit, distinct seed households and Kish
     effective size, household totals, non-simultaneous integerizer parents per level, wall time and peak RSS
   reference: arm 1 (model output)
-  result: pending
+  result: >-
+    Building-type fit (WAPE over the three building-type controls, against each arm's own targets): batch_000
+    0.549 -> 0.221, batch_032 0.092 -> 0.040; target sum batch_000 11,233 -> 6,632 against 6,629 households,
+    batch_032 14,181 -> 13,464 against 13,464. Distinct seed households used: batch_000 3,068 -> 3,198,
+    batch_032 5,968 -> 6,172; Kish effective size 1,659 -> 1,886 and 3,330 -> 3,591. Synthetic households:
+    batch_000 6,710 -> 6,689 (target 6,629), batch_032 13,464 in both. Non-simultaneous ZENSUS100m parents
+    16 -> 14 (batch_000) and 9 -> 10 (batch_032); none at ZENSUS1km or KREIS. Arm 2 PopulationSim wall time
+    and peak RSS: batch_000 34:16 min, 28.8 GB; batch_032 44:43 min, 32.3 GB; diagnostics with --misfit
+    16:46 min, 9.9 GB (run_times_and_hashes.txt). Arm 2 is one draw (random_seed 1234); the arm-1 manifest
+    shows that a second seed moves the reuse and G2 statistics by about as much as these differences, so the
+    reuse changes are not shown to be WP3 effects.
   artifact: docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/arm2_comparison.csv
 features:
   note: >-
     Evidence for popsim_method (WP3 of the PopulationSim repair, issue #647, ADR-0198). Single-batch
     evidence on two batches; the verdict for the full population is the full rerun (#648).
 artifacts:
+- docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/arm2_comparison.csv
+- docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/arm2_verdict.json
+- docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/arm_settings.json
+- docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/prepare_arm2_log.txt
+- docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/real_cells_household_group_totals.csv
+- docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/real_cells_check_summary.txt
+- docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/resolved_sex_concentration_arm2.txt
+- docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/run_times_and_hashes.txt
+- docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/arm_2_A/popsim_batch_diagnostics.md
+- docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/arm_2_A/resolved_record_shares.csv
+- docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/arm_2_A/control_coverage.csv
 - docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/scripts/prepare_arm2.py
 - docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/scripts/real_cells_check.py
+- docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/scripts/compare_arm2.py
+- docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/scripts/resolved_sex_concentration.py
+- docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/scripts/run_arm.sh
+- docs/runs/artifacts/popsim-ladder-arm2-2026-11-17/scripts/run_diag.sh
 issues:
 - '#647'
 - '#645'

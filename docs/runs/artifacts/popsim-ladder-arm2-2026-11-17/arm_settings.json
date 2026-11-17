@@ -1,0 +1,29 @@
+{
+  "src": "/home/felix/i645/arm1g_A",
+  "random_seed": 1234,
+  "fill_stream_offset": 97531,
+  "batches": {
+    "batch_000": {
+      "building_type_target_sum_before": 11233,
+      "building_type_target_sum_after": 6632,
+      "household_total": 6629.0,
+      "ratio_before": 1.6945240609443355,
+      "ratio_after": 1.000452556946749
+    },
+    "batch_032": {
+      "building_type_target_sum_before": 14181,
+      "building_type_target_sum_after": 13464,
+      "household_total": 13464.0,
+      "ratio_before": 1.05325311942959,
+      "ratio_after": 1.0
+    }
+  },
+  "resolved_records": {
+    "HP_SEX_raw_3_9": 880,
+    "H_MIETE_raw_3_309": 4707,
+    "H_MIETE_raw_9": 613,
+    "haustyp_raw_95": 8322,
+    "seed_persons": 485709,
+    "seed_households": 218097
+  }
+}

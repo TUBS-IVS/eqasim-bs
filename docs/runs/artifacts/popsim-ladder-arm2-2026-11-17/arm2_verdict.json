@@ -1,0 +1,89 @@
+{
+  "g2_bound_pp": 5.0,
+  "g3_bounds": {
+    "ZENSUS100m": 0.02,
+    "ZENSUS1km": 0.02,
+    "KREIS": 0.01
+  },
+  "ratio_bounds": [
+    0.5,
+    2.0
+  ],
+  "checks": {
+    "g3_batch_000_ZENSUS100m": {
+      "wape_arm1": 0.3119812944834143,
+      "wape_arm2": 0.30519797528199594,
+      "limit": 0.3319812944834143,
+      "met": true
+    },
+    "g3_batch_000_ZENSUS1km": {
+      "wape_arm1": 0.07393817542096004,
+      "wape_arm2": 0.0658456898718271,
+      "limit": 0.09393817542096004,
+      "met": true
+    },
+    "g3_batch_000_KREIS": {
+      "wape_arm1": 0.020431239246988194,
+      "wape_arm2": 0.021289195482503496,
+      "limit": 0.030431239246988193,
+      "met": true
+    },
+    "g2_batch_000": {
+      "max_abs_gap_pp": 2.237909601367477,
+      "met": true
+    },
+    "resolved_ratio_HP_SEX_raw[3,9]_batch_000": {
+      "ratio_arm1": 11.312023238744096,
+      "ratio_arm2": 1.6190314947350146,
+      "met": true
+    },
+    "resolved_ratio_H_MIETE_raw[not 1,2]_batch_000": {
+      "ratio_arm1": 0.1318491331320353,
+      "ratio_arm2": 0.772245673832282,
+      "met": true
+    },
+    "resolved_ratio_haustyp_raw[95]_batch_000": {
+      "ratio_arm1": 0.0,
+      "ratio_arm2": 1.143308871424877,
+      "met": true
+    },
+    "g3_batch_032_ZENSUS100m": {
+      "wape_arm1": 0.15204434723234847,
+      "wape_arm2": 0.1574141582474048,
+      "limit": 0.17204434723234846,
+      "met": true
+    },
+    "g3_batch_032_ZENSUS1km": {
+      "wape_arm1": 0.024160808000792157,
+      "wape_arm2": 0.027477968115655015,
+      "limit": 0.044160808000792154,
+      "met": true
+    },
+    "g3_batch_032_KREIS": {
+      "wape_arm1": 0.011180727469016756,
+      "wape_arm2": 0.011641892500771833,
+      "limit": 0.021180727469016756,
+      "met": true
+    },
+    "g2_batch_032": {
+      "max_abs_gap_pp": 2.352646114942214,
+      "met": true
+    },
+    "resolved_ratio_HP_SEX_raw[3,9]_batch_032": {
+      "ratio_arm1": 6.2603777996804375,
+      "ratio_arm2": 2.862182831749604,
+      "met": false
+    },
+    "resolved_ratio_H_MIETE_raw[not 1,2]_batch_032": {
+      "ratio_arm1": 0.08266632082044907,
+      "ratio_arm2": 0.8245435589526843,
+      "met": true
+    },
+    "resolved_ratio_haustyp_raw[95]_batch_032": {
+      "ratio_arm1": 0.0,
+      "ratio_arm2": 0.9738910615009964,
+      "met": true
+    }
+  },
+  "all_met": false
+}
