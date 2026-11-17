@@ -61,4 +61,4 @@ assessment:
     ADR-0002 documents all three methods; configs/base_bs.yml:155 confirms popsim_mid is the active production method. No owner verdict on realised popsim_mid fit quality has been recorded in this register (see also placement_income_l2.yml and srv_participation_controls.yml, which layer on top of this method).
   source: ADR-0002
 notes: |
-  WP2 state (issue #645): the PopulationSim fork core is implemented; its opt-in options (fractional weights, integerizer draw) stay OFF in production until the run manifest popsim-ladder-arm1-2026-11-17 decides. Decision: ADR-0199; wiring: docs/codebase/notes/populationsim-fork.md.
+  WP2 state (issue #645): the PopulationSim fork core is implemented and switched on in configs/base_bs.yml (fractional seed weights, integerizer draw gumbel) on the evidence of run manifest popsim-ladder-arm1-2026-11-17 (single batches; the full-population verdict is #648). Decision: ADR-0199; wiring: docs/codebase/notes/populationsim-fork.md.

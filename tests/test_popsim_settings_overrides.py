@@ -340,6 +340,7 @@ def test_base_config_states_the_tracked_values():
     config = yaml.safe_load(
         (Path(__file__).resolve().parents[1] / "configs" / "base_bs.yml")
         .read_text(encoding="utf-8"))["config"]
-    assert config[config_keys.KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS] is False
-    assert config[config_keys.KEY_INTEGERIZER_DRAW] == "off"
+    # Production values set from run manifest popsim-ladder-arm1-2026-11-17 (issue #645).
+    assert config[config_keys.KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS] is True
+    assert config[config_keys.KEY_INTEGERIZER_DRAW] == "gumbel"
     assert config[config_keys.KEY_INTEGERIZER_TIMEOUT_S] == 7200

@@ -1,6 +1,6 @@
 # ADR-0199 · 2026-11-17 · The PopulationSim fork carries fractional seed weights and a proportional integerizer draw as opt-in settings
 
-- **Status:** accepted (owner, 2026-11-17: own fork instead of runtime patches; decision D1 on the key type, taken through the pre-registered rule of the arm-1 manifest). The production values of the two new options are NOT decided here: the arm-1 manifest owns that outcome.
+- **Status:** accepted (owner, 2026-11-17: own fork instead of runtime patches; decision D1 on the key type, taken through the pre-registered rule of the arm-1 manifest). The production values of the two new options are not argued here: the arm-1 manifest owns that outcome.
 - **Numbering:** ADR-0199 is the next free id; checked on 2026-11-17 across all local and remote branches and the open pull requests (0197 is on main, 0198 is taken by the parallel WP3 branch).
 - **Issue:** #645 (WP2, fork core). Fork base: [ADR-0197](ADR-0197-the-populationsim-fork-branches-from-tag-v0-10-0.md).
 
@@ -41,12 +41,12 @@ ADR-0056 keeps integer sub-balance seeds (`SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS` 
 ## Consequences
 
 - **One-time recompute.** The batch signature of the stage now includes the tool version, its commit and the options, so the first run after the merge purges and recomputes the existing work dirs.
-- The production base config (`configs/base_bs.yml`) keeps the draw and the fractional weights OFF until the arm-1 manifest decides; the manifest owns the outcome.
+- The production base config (`configs/base_bs.yml`) switches the fractional weights on and the draw to `gumbel` on the evidence of the arm-1 manifest, which owns the outcome and its limits (single batches; one draw per method in the method rule).
 - `populationsim_version` is a new required key of the popsim stage config.
 - The tag `v0.10.0+bs.1` is cut only after arm 1 passes (procedure in the note).
 
 ## Evidence
 
 - Neutral equivalence (decision 2): the fork's differential test compares one PopulationSim example against the upstream tag after sorting the rows; R1 of `popsim-ladder-arm1-2026-11-17` compares one real batch. Two cases, not a proof for every input.
-- Run manifest `popsim-ladder-arm1-2026-11-17` (pre-registration; results are appended there).
+- Run manifest `popsim-ladder-arm1-2026-11-17` (pre-registered bounds and method rule, results).
 - Run manifests `popsim-batch-diagnostics-prod100-20261031-2026-11-16` and `popsim-ladder-baseline-2026-11-16`.
