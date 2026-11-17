@@ -238,7 +238,10 @@ def maybe_apply_income_tilt(
         When ``True`` (default), rows whose ``tenure_col`` is ``"unknown"`` are
         shielded from the tilt: they receive factor 1.0 and are excluded from the
         per-Kreis re-normalization sums.  This prevents "unknown" (no information)
-        from silently inheriting the renter downward tilt.
+        from silently inheriting the renter downward tilt. Rows flagged True in
+        ``f"{tenure_col}_imputed"`` (when the frame carries that column) are shielded the
+        same way: their tenure was re-coded or drawn, not reported. Without the column the
+        behaviour is unchanged.
 
         NaN-income rows are ALWAYS shielded regardless of this flag: their income
         is left unchanged (NaN) and they are excluded from the per-Kreis
@@ -252,12 +255,14 @@ def maybe_apply_income_tilt(
 
     Policy rationale (unknown_neutral=True default)
     -----------------------------------------------
-    ``map_housing_tenure`` emits ``"unknown"`` for MiD ``H_MIETE`` codes 3 / 9 / 309
-    (ambiguous / no answer). We have no spatial signal for these households. Assigning
-    them the renter index would impose a downward tilt on households that might
-    actually be owners. The honest policy is NEUTRAL (factor = 1.0): the household's
-    INKAR-scaled income is unchanged, and only "owner" / "renter" households are
-    redistributed within the Kreis. For well-calibrated data (small "unknown" fraction)
+    MiD ``H_MIETE`` codes 3 / 9 / 309 (anderes / keine Angabe / kein Privat-HH) carry no
+    reported tenure. Without the pre-PopulationSim resolution ``map_housing_tenure`` emits
+    ``"unknown"`` for them; with it (``attributes.resolve_tenure_and_building_type``,
+    issue #647) they get owner / renter plus ``housing_tenure_imputed=True``. Either way
+    we have no reported tenure for these households, and assigning them a tenure index
+    would tilt households whose tenure is an assumption or a draw. The honest policy is
+    NEUTRAL (factor = 1.0): the household's INKAR-scaled income is unchanged, and only
+    reported "owner" / "renter" households are redistributed within the Kreis. For well-calibrated data (small "unknown" fraction)
     the per-Kreis mean deviation from neutrality is negligible.
 
     Returns
@@ -287,7 +292,6 @@ def maybe_apply_income_tilt(
 
     if unknown_neutral and tenure_col in frame.columns:
         known_tenure = frame[tenure_col].astype(str).isin(("owner", "renter"))
-        active_mask = has_income & known_tenure
         n_unknown = int((has_income & ~known_tenure).sum())
         if n_unknown > 0:
             logger.info(
@@ -296,6 +300,19 @@ def maybe_apply_income_tilt(
                 "tilt applied only to 'owner' / 'renter' rows.",
                 n_unknown, len(frame),
             )
+        # A tenure resolved before PopulationSim (re-coded or drawn, issue #647) carries no
+        # more spatial signal than the "unknown" it replaced, so it stays neutral too.
+        imputed_col = f"{tenure_col}_imputed"
+        if imputed_col in frame.columns:
+            imputed = frame[imputed_col].fillna(False).astype(bool)
+            n_imputed = int((has_income & known_tenure & imputed).sum())
+            known_tenure = known_tenure & ~imputed
+            logger.info(
+                "[income_spatial_tilt] unknown_neutral=True: shielding %d/%d rows with "
+                "%s=True (tenure resolved before PopulationSim) from the spatial tilt "
+                "(factor=1.0).", n_imputed, len(frame), imputed_col,
+            )
+        active_mask = has_income & known_tenure
     else:
         active_mask = has_income
 
@@ -311,7 +328,7 @@ def maybe_apply_income_tilt(
         out.loc[active_mask, income_col] = tilted_active[income_col].values
         return out, diag
     else:
-        # All rows are shielded (all NaN income or all unknown tenure):
+        # All rows are shielded (all NaN income or all unknown / imputed tenure):
         # tilt has no effect; return unchanged with an empty diag.
         logger.info(
             "[income_spatial_tilt] no active rows to tilt (all rows shielded); "

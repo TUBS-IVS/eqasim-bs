@@ -323,6 +323,52 @@ def test_apply_tilt_unknown_tenure_neutral_when_unknown_neutral_true() -> None:
     )
 
 
+def _imputed_tenure_frame():
+    cell_index = pd.DataFrame({
+        "cell_id": ["x"], "ars5": ["03101"],
+        "renter_income_index": [0.7], "owner_income_index": [1.3],
+    })
+    hh = pd.DataFrame({
+        "household_id": [1, 2, 3, 4],
+        "cell_id": ["x"] * 4, "ars5": ["03101"] * 4,
+        "tenure": ["renter", "owner", "owner", "renter"],
+        "tenure_imputed": [False, False, True, True],
+        "household_income_eur": [2000.0] * 4,
+    })
+    return cell_index, hh
+
+
+def test_apply_tilt_imputed_tenure_stays_neutral() -> None:
+    """A tenure resolved before PopulationSim (issue #647) is shielded like 'unknown' was.
+
+    Defect caught: once the stage resolves H_MIETE 3 / 9 / 309 to owner / renter, those
+    households would silently start receiving a tenure-specific income tilt.
+    """
+    cell_index, hh = _imputed_tenure_frame()
+    out, _diag = ist.maybe_apply_income_tilt(
+        hh, cell_index, enabled=True, cell_col="cell_id", kreis_col="ars5",
+        tenure_col="tenure", unknown_neutral=True,
+    )
+    inc = out.set_index("household_id")["household_income_eur"]
+    assert inc[1] < 2000.0 and inc[2] > 2000.0     # reported renter / owner still tilted
+    assert inc[3] == 2000.0 and inc[4] == 2000.0   # imputed owner / renter neutral
+
+
+def test_apply_tilt_without_imputed_column_is_unchanged() -> None:
+    """Without the flag column every known-tenure row is tilted, exactly as before."""
+    cell_index, hh = _imputed_tenure_frame()
+    hh = hh.drop(columns="tenure_imputed")
+    out, _diag = ist.maybe_apply_income_tilt(
+        hh, cell_index, enabled=True, cell_col="cell_id", kreis_col="ars5",
+        tenure_col="tenure", unknown_neutral=True,
+    )
+    expected, _ = ist.apply_spatial_income_tilt(
+        hh.copy(), cell_index, cell_col="cell_id", kreis_col="ars5", tenure_col="tenure",
+        income_col="household_income_eur", clip=ist.DEFAULT_CLIP,
+    )
+    pd.testing.assert_frame_equal(out, expected)
+
+
 def test_tilt_off_path_returns_income_unchanged() -> None:
     """When enabled=False, maybe_apply_income_tilt returns the frame BYTE-IDENTICAL."""
     hh = pd.DataFrame({

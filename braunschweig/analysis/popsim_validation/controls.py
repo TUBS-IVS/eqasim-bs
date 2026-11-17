@@ -518,7 +518,9 @@ def _realized_housing_tenure(frames: "PopulationFrames", geo: pd.DataFrame) -> p
     """Realized tenure (owner/renter) extractor from synthetic persons.
 
     Reads ``housing_tenure`` from ``frames.persons``. Only "owner" and "renter"
-    categories are counted; "unknown" (H_MIETE not in {1,2}) is excluded.
+    categories are counted; "unknown" (H_MIETE not in {1,2}) is excluded. With the
+    pre-PopulationSim resolution (``attributes.resolve_tenure_and_building_type``, issue
+    #647) no household is "unknown"; resolved ones count in their resolved class.
     """
     persons = frames.persons
     if "housing_tenure" not in persons.columns:
@@ -552,7 +554,8 @@ def _realized_building_type(frames: "PopulationFrames", geo: pd.DataFrame) -> pd
     hh = persons.drop_duplicates("household_id")[["household_id", "building_type_3class"]].copy()
     hh = hh.merge(geo[["household_id", "ars5"]], on="household_id", how="left")
     hh = hh.dropna(subset=["ars5"]).copy()
-    hh = hh.dropna(subset=["building_type_3class"]).copy()  # drop haustyp=95 (n.z.)
+    # Drop haustyp=95 (nicht zuzuordnen); none is left once the stage resolved it (#647).
+    hh = hh.dropna(subset=["building_type_3class"]).copy()
     hh["category"] = hh["building_type_3class"].astype(str)
     out = (hh.groupby(["ars5", "category"]).size()
               .rename("synthetic_count").reset_index())

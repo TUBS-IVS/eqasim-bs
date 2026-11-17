@@ -1238,7 +1238,8 @@ def resolve_tenure_and_building_type(
     tenure, tenure_tiers = missing.weighted_hot_deck(
         work, value_col="H_MIETE", missing_mask=out["H_MIETE_raw"] == TENURE_NO_ANSWER_CODE,
         weight_col=weight_col, tiers=HOUSEHOLD_FILL_TIERS, rng=rng, name="popsim.seed.tenure")
-    out["H_MIETE"] = tenure.astype(int).to_numpy()
+    # int64 explicitly: a bare int is int32 on Windows (numpy 1.x) and int64 on Linux.
+    out["H_MIETE"] = tenure.astype("int64").to_numpy()
     _log_household_fill(
         "popsim.seed.tenure", "H_MIETE", n_total,
         int(out["H_MIETE_raw"].isin(TENURE_REPORTED_CODES).sum()), int(recoded.sum()),
@@ -1248,7 +1249,7 @@ def resolve_tenure_and_building_type(
         work, value_col="haustyp", missing_mask=out["haustyp_raw"] == HAUSTYP_NOT_ASSIGNABLE_CODE,
         weight_col=weight_col, tiers=HOUSEHOLD_FILL_TIERS, rng=rng,
         name="popsim.seed.building_type")
-    out["haustyp"] = building.astype(int).to_numpy()
+    out["haustyp"] = building.astype("int64").to_numpy()
     _log_household_fill(
         "popsim.seed.building_type", "haustyp", n_total,
         int(out["haustyp_raw"].isin(HAUSTYP_REPORTED_CODES).sum()), 0, building_tiers)

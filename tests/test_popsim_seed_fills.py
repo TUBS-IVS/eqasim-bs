@@ -275,6 +275,24 @@ def _resolve(households, persons, rng):
     return attributes.map_building_type_3class(attributes.map_housing_tenure(out))
 
 
+@pytest.fixture
+def deck_counts(monkeypatch):
+    """Record the per-tier counts every weighted_hot_deck call returns, keyed by its name."""
+    recorded = {}
+    real = missing.weighted_hot_deck
+
+    def spy(*args, **kwargs):
+        filled, counts = real(*args, **kwargs)
+        recorded[kwargs["name"]] = counts
+        return filled, counts
+
+    monkeypatch.setattr(missing, "weighted_hot_deck", spy)
+    return recorded
+
+
+_FIRST_TIER = "RegioStaR7+hhgr_gr+hh_type5"
+
+
 def test_tenure_other_and_non_private_recoded_to_non_owner():
     households, persons = _housing([1, 2, 3, 309], [1, 1, 1, 1])
     rng = np.random.RandomState(0)
@@ -288,12 +306,16 @@ def test_tenure_other_and_non_private_recoded_to_non_owner():
     assert "hh_type5" not in out.columns
 
 
-def test_tenure_no_answer_drawn(caplog):
+def test_tenure_no_answer_drawn(caplog, deck_counts):
     # The no-answer household sits in RegioStaR7 71, whose donors are all owners; the
     # RegioStaR7 77 donors are all renters. A same-cell (primary) draw gives an owner.
     households, persons = _housing([2, 2, 1, 1, 9], [1] * 5, rs7=[71, 71, 77, 77, 71])
     with caplog.at_level(logging.INFO):
         out = _resolve(households, persons, np.random.RandomState(0))
+    # The draw used the full cell (a broken hh_type5 join would push it to a coarser tier).
+    assert deck_counts["popsim.seed.tenure"][_FIRST_TIER] == 1
+    assert sum(deck_counts["popsim.seed.tenure"].values()) == 1
+    assert out["H_MIETE"].dtype == "int64" and out["haustyp"].dtype == "int64"
     assert out["H_MIETE"].tolist() == [2, 2, 1, 1, 2]
     assert out["H_MIETE_raw"].iloc[4] == 9
     assert out["housing_tenure"].iloc[4] == "owner"
@@ -301,9 +323,11 @@ def test_tenure_no_answer_drawn(caplog):
     assert any("popsim.seed.tenure" in r.getMessage() for r in caplog.records)
 
 
-def test_building_type_95_drawn_and_flagged():
+def test_building_type_95_drawn_and_flagged(deck_counts):
     households, persons = _housing([1] * 5, [3, 3, 1, 1, 95], rs7=[71, 71, 77, 77, 71])
     out = _resolve(households, persons, np.random.RandomState(0))
+    assert deck_counts["popsim.seed.building_type"][_FIRST_TIER] == 1
+    assert sum(deck_counts["popsim.seed.building_type"].values()) == 1
     assert out["haustyp"].tolist() == [3, 3, 1, 1, 3]     # raw detail kept (3, not 2)
     assert out["haustyp_raw"].tolist() == [3, 3, 1, 1, 95]
     assert out["building_type_3class"].notna().all()
