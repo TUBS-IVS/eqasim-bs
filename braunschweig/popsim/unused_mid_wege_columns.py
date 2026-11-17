@@ -39,7 +39,7 @@ _BYTES_PER_MEBIBYTE = 1024.0 * 1024.0
 #: MiD 2023 Wege columns that no first-party code or configuration reads (2026-09 B1 delivery,
 #: in the delivery's column order). See the module docstring for the claim and its enforcement.
 UNUSED_MID_WEGE_COLUMNS = (
-    "W_HOCH", "W_GEW_PKM", "W_HOCH_PKM", "MODE_HH", "PROXY_01", "PAPVERS", "INT_TYP",
+    "W_HOCH", "W_GEW_PKM", "W_HOCH_PKM", "MODE_HH", "BASISAUF", "PROXY_01", "PAPVERS", "INT_TYP",
     "M_ETAP", "W_ET_IN", "ST_MONAT", "ST_JAHR", "ST_WOCHE", "saison", "quartal", "P_STWETTER",
     "W_SO2", "sz_gr1", "sz_gr2", "az_gr1", "az_gr2", "W_FOLGETAG", "wegmin_gr", "wegmin_imp1_gr",
     "wegmin_imp2", "wegmin_imp2_gr", "hwzweck2", "zweck_mop", "W_ZWDE", "W_ZWDP", "W_ZWDF",

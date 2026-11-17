@@ -40,6 +40,13 @@ SCAN_MAX_FILE_BYTES = 5_000_000
 #: the code base uses (``_weg`` in the trip build, ``_hh``, ``_person``, ``_child``, ``_seed``,
 #: ``_school``, ``_home``).
 MERGE_SUFFIXES = ("_weg", "_x", "_y", "_hh", "_person", "_child", "_seed", "_school", "_home")
+#: Files that name a listed column for a read of ANOTHER MiD file, never of the Wege table: the
+#: Wege copy stays unread, so the column stays on the drop list. Exact file and column only; any
+#: other listed column in these files is still a hit.
+OTHER_MID_FILE_READS = {
+    # run.MID_COLUMNS reads BASISAUF from the MiD households file (MiD2023_Haushalte.csv).
+    Path("braunschweig", "analysis", "popsim_batch_diagnostics", "run.py"): frozenset({"BASISAUF"}),
+}
 
 
 def _is_scanned_file(path, relative):
@@ -185,8 +192,11 @@ def test_no_listed_column_is_read_by_first_party_code():
     for relative, path in _first_party_files():
         scanned_python_files += path.suffix == ".py"
         text = path.read_text(encoding="utf-8", errors="replace")
+        exempt = OTHER_MID_FILE_READS.get(relative, frozenset())
         for number, line in enumerate(text.splitlines(), 1):
             for match in token.finditer(line):
+                if match.group(1) in exempt:
+                    continue
                 hits.append(f"{relative}:{number}: {match.group(1)!r} in {line.strip()[:100]!r}")
 
     # A scan that silently found nothing (wrong root, everything excluded) would pass vacuously.

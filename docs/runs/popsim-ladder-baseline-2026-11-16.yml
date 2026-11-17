@@ -97,7 +97,7 @@ validation:
 - metric: >-
     design goal G4 baseline (rounding shift |I_c - F_c| / T_c per ZENSUS100m control with T_c >= 40, household
     total left out; bound 0.10) and the misfit split at ZENSUS100m, arms 0a and 0b
-  reference: none (the float weights of the same run; G4 is evaluated against arm 0b in later arms)
+  reference: none (the float weights of the same run; later arms are evaluated against arm 0a, ADR-0197)
   result: >-
     G4 NOT met in either arm. batch_000: 10 of 47 controls outside the bound in 0a and in 0b, largest shift 0.532
     (0a) / 0.511 (0b), for households with 6 or more persons (target 47; float sum 49 / 48, integer 24: float bias
@@ -116,7 +116,8 @@ validation:
 features:
   note: >-
     Evidence for popsim_method (the comparison baseline of the repair design's ladder): arm 0b reproduces arm 0a
-    within the G3 bounds; the choice of the fork base is the owner's decision on this evidence (#645).
+    within the G3 bounds; on this evidence the owner chose v0.10.0 as the fork base, so arm 0a is the reference
+    for later arms (ADR-0197).
 artifacts:
 - docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/ladder_comparison.csv
 - docs/runs/artifacts/popsim-ladder-baseline-2026-11-16/ladder_verdict.json

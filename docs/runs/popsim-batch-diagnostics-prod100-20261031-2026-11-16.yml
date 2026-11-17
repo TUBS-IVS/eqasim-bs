@@ -101,7 +101,7 @@ validation:
     zweifamilienhaus 3,095 against 2,945; ladder manifest arm_0a/rounding_shift.csv, whose output is byte-identical to
     production).
   artifact: docs/runs/artifacts/popsim-batch-diagnostics-prod100-20261031-2026-11-16/control_fit.csv
-  notes: Control fit, NOT a behavioural validation. The baseline for design goal G3 is set by arm 0b of the ladder (popsim-ladder-baseline-2026-11-16), not by these rows.
+  notes: Control fit, NOT a behavioural validation. The reference for design goal G3 in later arms is arm 0a of the ladder (popsim-ladder-baseline-2026-11-16; ADR-0197), not these rows.
 - metric: >-
     solver paths of the simultaneous integerizer per integerized level, from the 60 batch logs (PopulationSim 0.10.0,
     60 s solver limit); non-simultaneous = parents whose final weights did not come from a successful simultaneous
