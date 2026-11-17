@@ -1097,6 +1097,59 @@ def resolve_person_attributes(
     return out
 
 
+def resolve_binary_sex(
+    persons: pd.DataFrame, *, rng, sex_col: str = "HP_SEX", age_band_col: str = "alter_gr1",
+) -> pd.DataFrame:
+    """Resolve MiD sex codes 3 (diverse) and 9 (no entry) to male/female ONCE per donor person.
+
+    PopulationSim counts only codes 1 and 2 in its sex controls, so a seed person with
+    another code is in no control (issue #647). Called by the popsim stage on the completed
+    donor persons (ADR-0192 pattern); the seed and every expanded clone reuse the result,
+    so the clones carry the value the donor was balanced on (``expand.map_demographics``
+    then finds nothing to impute). The original code is kept in ``f"{sex_col}_raw"``.
+
+    Rule (shared with ``expand.map_demographics`` via ``missing.impute_binary_sex``): an
+    unweighted draw from the observed male/female persons of the same ``age_band_col``,
+    else from all observed persons (also for a NaN band); no observed person at all raises.
+    Idempotent: a frame that already has ``f"{sex_col}_raw"`` is returned as an unchanged copy.
+
+    Fallback transparency: reported (primary), band-pool and global-pool counts are logged
+    with ``popsim.seed.sex`` tags.
+    """
+    from braunschweig.popsim.fallback_rates import log_fallback_rate
+
+    raw_col = f"{sex_col}_raw"
+    if raw_col in persons.columns:
+        return persons.copy()
+    out = persons.copy()
+    out[raw_col] = out[sex_col]
+    observed = out[sex_col].where(out[sex_col].isin([1, 2]))
+    n_missing = int(observed.isna().sum())
+    band = out[age_band_col] if age_band_col in out.columns else None
+    filled, n_band, n_global, n_constant = missing.impute_binary_sex(observed, band, rng=rng)
+    if n_constant or filled.isna().any():
+        raise ValueError(
+            f"[popsim.seed.sex] {n_missing} persons have no binary sex (codes other than 1/2) "
+            f"and the donor persons hold no observed male/female person to draw from."
+        )
+    out[sex_col] = filled.astype(int)
+    n_total = len(out)
+    log_fallback_rate(
+        logger, "popsim.seed.sex", n_missing, n_total,
+        what=f"persons with {sex_col} code 3 (diverse) / 9 (no entry), resolved to male/female",
+    )
+    if n_missing:
+        logger.info(
+            "[popsim.seed.sex] resolution tiers for %d persons: band pool %d, global pool %d "
+            "(incl. persons without %s).", n_missing, n_band, n_global, age_band_col,
+        )
+        log_fallback_rate(
+            logger, "popsim.seed.sex_global_pool", n_global, n_missing,
+            what=f"resolved persons that found no same-{age_band_col} pool",
+        )
+    return out
+
+
 def carry_seed_household_counts(
     donor_households: pd.DataFrame, seed_households: pd.DataFrame, *, id_col: str, rng,
     ebike_col: str = "H_ANZPED",

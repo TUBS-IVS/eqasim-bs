@@ -1240,6 +1240,9 @@ def project_completed_seed(
         households, persons, columns,
         extra_household_cols=_hh_extra,
         extra_person_cols=tuple(
-            c for c in ("P_TAET", "bildung1", "bildung2") if c in persons.columns
+            # HP_SEX_raw exists only after attributes.resolve_binary_sex (issue #647): the
+            # seed then carries the original MiD sex code next to the resolved one.
+            c for c in ("P_TAET", "bildung1", "bildung2", "HP_SEX_raw")
+            if c in persons.columns
         ) + _person_extra,
     )

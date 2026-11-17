@@ -255,6 +255,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_CELLS,
     KEY_CLEANUP_H5,
     KEY_COMPLETE_MEMBERS,
+    KEY_SEED_RESOLVE_BINARY_SEX,
     KEY_MID_PASSENGER_AVAILABILITY,
     KEY_CONTROL_TIERS,
     KEY_CONTROLS,
@@ -760,6 +761,8 @@ def configure(context):
     context.config(KEY_WRITE_DATA_DICTIONARY, True, volatile = True)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
     context.config(KEY_COMPLETE_MEMBERS, True)
+    # Sex codes 3 / 9 resolved once per donor person (issue #647). Default True.
+    context.config(KEY_SEED_RESOLVE_BINARY_SEX, True)
     context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
     # Controls source (Task 5). Default "csv" = byte-identical to today's behaviour.
     context.config(KEY_CONTROLS_SOURCE, "csv")
@@ -1106,15 +1109,18 @@ def _read_batching_and_scope_config(context):
 
 
 def _create_seeded_rngs(context):
-    """Create the two seeded RNG streams this stage draws from.
+    """Create the seeded RNG streams this stage draws from.
 
     Seeded RNG for the stochastic attribute imputation in build_persons
     (offset +74511 keeps the stream disjoint from the enriched-stage offsets).
 
-    Returns: ``(random_seed, rng, kreis_seed_rng)``. Both ``RandomState``
-    objects are created here and consumed IN THE ORIGINAL ORDER by the steps
-    below (``kreis_seed_rng`` in the seed build, ``rng`` in the persons
-    expansion), so no draw moves across a step boundary.
+    Returns: ``(random_seed, rng, kreis_seed_rng, seed_fill_rng)``. The
+    ``RandomState`` objects are created here and consumed IN THE ORIGINAL ORDER by
+    the steps below (``kreis_seed_rng`` in the seed build, ``rng`` in the persons
+    expansion), so no draw moves across a step boundary. ``seed_fill_rng`` is a
+    dedicated stream for the donor-person fills of issue #647 (sex first); no
+    other consumer draws from it, so every existing draw stays as it was whether
+    the fills are on or off.
     Mutates: nothing.
     """
     random_seed = int(context.config("random_seed"))
@@ -1124,7 +1130,9 @@ def _create_seeded_rngs(context):
     # load_mid_seed). Offset +24680 keeps the stream disjoint from the +74511 imputation
     # stream above; derived from the pipeline random_seed so the seed is reproducible.
     kreis_seed_rng = np.random.RandomState(random_seed + 24680)
-    return random_seed, rng, kreis_seed_rng
+    # Offset +97531 is disjoint from the other offsets in use (74511, 24680, 74513).
+    seed_fill_rng = np.random.RandomState(random_seed + 97531)
+    return random_seed, rng, kreis_seed_rng, seed_fill_rng
 
 
 def _read_control_config(context, source_name: str):
@@ -1607,8 +1615,16 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
         escort_passive_education: bool = False, exclude_rbw_legs: bool = True,
         w_zweck_10_as_leisure: bool = False, escort_passive_from_adult: bool = False,
         passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
-        passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS):
+        passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        seed_fill_rng=None, resolve_binary_sex: bool = False):
     """Build the PopulationSim seed through the active donor source.
+
+    ``resolve_binary_sex`` (config key ``seed_resolve_binary_sex``, issue #647) applies to the
+    ``complete_members`` branch ONLY: the completed donor persons get their MiD sex codes 3 / 9
+    resolved to male/female once (``attributes.resolve_binary_sex``, drawing from
+    ``seed_fill_rng``, which is required then), after ``resolve_person_attributes``. The legacy
+    branch stays byte-identical. The function default is False so direct callers keep the old
+    behaviour; ``execute`` passes the config value (default True).
 
     ``trip_class_counts_closure`` / ``forbid_no_diary_sources`` /
     ``drop_leading_arrive_home_leg`` (issues #367 / #365 / #366, plan-structure-fix
@@ -1662,8 +1678,8 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     derivations inside ``mid.project_completed_seed`` (trip_class, participation
     and the remaining control columns). So the stream every later consumer sees
     differs from the pre-ADR-0192 one even when no count or person control is
-    active. On the legacy path the draws stay inside ``mid.load_mid_seed`` (active
-    controls only). Also reports the seed completeness rate plus the
+    active. The sex resolution (when on) draws from ``seed_fill_rng`` only. On the
+    legacy path the draws stay inside ``mid.load_mid_seed`` (active controls only). Also reports the seed completeness rate plus the
     member-completion counts via ``context.set_info``.
     """
     completed_donor_households = None
@@ -1697,6 +1713,16 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
         completed_donor_persons = attributes.resolve_person_attributes(
             donor.persons, rng=kreis_seed_rng, households=donor.households,
             household_id_col=source.seed_columns().household_id)
+        if resolve_binary_sex:
+            if seed_fill_rng is None:
+                raise ValueError(
+                    "[popsim.stage] seed_resolve_binary_sex is on but no seed_fill_rng was "
+                    "given (seeded randomness rule: no random process without an explicit seed).")
+            # Sex codes 3 / 9 are in no PopulationSim sex control; resolved ONCE per donor
+            # person here, so the seed and every clone carry the same value (issue #647).
+            completed_donor_persons = attributes.resolve_binary_sex(
+                completed_donor_persons, rng=seed_fill_rng,
+                sex_col=source.seed_columns().sex)
         report = donor.completeness_report
         completion_report = donor.completion_report
         seed_columns = source.seed_columns()
@@ -2574,7 +2600,7 @@ def execute(context) -> pd.DataFrame:
         max_cells, num_workers, work_dir, kreise, source_name, stratify_regiostar,
         complete_members,
     ) = _read_batching_and_scope_config(context)
-    random_seed, rng, kreis_seed_rng = _create_seeded_rngs(context)
+    random_seed, rng, kreis_seed_rng, seed_fill_rng = _create_seeded_rngs(context)
 
     source = _resolve_source(source_name)
     logger.info("[popsim.stage] active donor source: %s", source.name)
@@ -2675,6 +2701,8 @@ def execute(context) -> pd.DataFrame:
         escort_passive_from_adult=escort_passive_from_adult_on,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes_cfg,
         passive_pair_adult_min_age_years=passive_pair_adult_min_age_years_cfg,
+        seed_fill_rng=seed_fill_rng,
+        resolve_binary_sex=bool(context.config(KEY_SEED_RESOLVE_BINARY_SEX)),
     )
 
     run_one = _prepare_batch_runner(

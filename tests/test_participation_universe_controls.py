@@ -1300,6 +1300,7 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         popsim_stage.KEY_DROP_LEADING_ARRIVE_HOME_LEG: False,
         popsim_stage.KEY_ESCORT_PASSIVE_EDUCATION: False,
         popsim_stage.KEY_EXCLUDE_RBW_LEGS: False,
+        popsim_stage.KEY_SEED_RESOLVE_BINARY_SEX: True,
         # The four flags under test -- all NON-DEFAULT (the pure function's own keyword
         # defaults are False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES=15.0 /
         # DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS=18), so a
@@ -1324,7 +1325,8 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         lambda ctx: (10, 1, "work_dir", [], "mid", False, False))
     monkeypatch.setattr(
         popsim_stage, "_create_seeded_rngs",
-        lambda ctx: (1, np.random.RandomState(1), np.random.RandomState(2)))
+        lambda ctx: (1, np.random.RandomState(1), np.random.RandomState(2),
+                     np.random.RandomState(3)))
     monkeypatch.setattr(popsim_stage, "_resolve_source", lambda source_name: _Source())
     monkeypatch.setattr(
         popsim_stage, "_read_control_config",

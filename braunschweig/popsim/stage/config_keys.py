@@ -99,6 +99,11 @@ KEY_WRITE_DATA_DICTIONARY = "braunschweig.population.popsim.write_data_dictionar
 # Default ON (project rule: new features default on); False reproduces the
 # legacy load_mid_seed + load_donor path byte-identically.
 KEY_COMPLETE_MEMBERS = "braunschweig.population.popsim.complete_members"
+# Resolve MiD sex codes 3 (diverse) / 9 (no entry) to male/female ONCE per donor person
+# before PopulationSim, so the seed and every clone carry the same value (issue #647; rule in
+# ``attributes.resolve_binary_sex``). Member-completion path only; default ON in code, False
+# reproduces the previous seed byte-identically.
+KEY_SEED_RESOLVE_BINARY_SEX = "braunschweig.population.popsim.seed_resolve_binary_sex"
 # MiD P_VAUTO-based passenger availability. The intentionally short public key
 # is shared with the MATSim preparation gate; it is effective only for popsim_mid.
 KEY_MID_PASSENGER_AVAILABILITY = "mid_passenger_availability"

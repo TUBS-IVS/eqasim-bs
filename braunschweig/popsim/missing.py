@@ -185,3 +185,62 @@ def resolve(df: pd.DataFrame, spec: AttributeSpec, *, rng) -> tuple[pd.Series, M
         n_group_fallback, n_nonresp, 100.0 * report.group_fallback_share,
     )
     return out, report
+
+
+def impute_binary_sex(binary, band, *, rng, constant=None):
+    """Fill the missing entries of ``binary`` from the observed pool of the same band.
+
+    Shared by ``expand.map_demographics`` (labels male/female) and
+    ``attributes.resolve_binary_sex`` (codes 1/2) so the tier rule exists once. ``binary``
+    holds the observed binary value or NaN; ``band`` is the age-band Series (``None`` when
+    the frame has no band column). Tiers: same-band pool, then the global pool (persons
+    whose band is NaN are drawn AFTER every banded person, so banded draws keep their
+    stream position), then ``constant`` (``None`` leaves them missing for the caller).
+    Draws are unweighted, one ``rng.randint`` per imputed person.
+
+    Returns: ``(filled, n_band, n_global, n_constant)``; ``filled`` is a copy.
+    """
+    binary = binary.copy()
+    missing_mask = binary.isna()
+    n_band = n_global = n_constant = 0
+    if not missing_mask.any():
+        return binary, n_band, n_global, n_constant
+    global_pool = binary[~missing_mask]
+
+    def fallback(idx_or_mask, count):
+        nonlocal n_constant
+        if constant is not None:
+            binary.loc[idx_or_mask] = constant
+        n_constant += count
+
+    if band is not None:
+        for b, idx in band[missing_mask].groupby(band[missing_mask]).groups.items():
+            band_pool = binary[(~missing_mask) & (band == b)]
+            draw_pool = band_pool if len(band_pool) else global_pool
+            if len(draw_pool):
+                binary.loc[idx] = [draw_pool.iloc[rng.randint(len(draw_pool))] for _ in idx]
+                if len(band_pool):
+                    n_band += len(idx)
+                else:
+                    n_global += len(idx)
+            else:
+                fallback(idx, len(idx))
+        # groupby drops a NaN band, so those persons are not visited above. They draw
+        # from the global pool AFTER the band loop, so every banded person keeps its draw.
+        no_band = missing_mask & band.isna()
+        n_no_band = int(no_band.sum())
+        if n_no_band and len(global_pool):
+            binary.loc[no_band] = [global_pool.iloc[rng.randint(len(global_pool))]
+                                   for _ in range(n_no_band)]
+            n_global += n_no_band
+        elif n_no_band:
+            fallback(no_band, n_no_band)
+    else:
+        n_missing = int(missing_mask.sum())
+        if len(global_pool):
+            binary.loc[missing_mask] = [global_pool.iloc[rng.randint(len(global_pool))]
+                                        for _ in range(n_missing)]
+            n_global += n_missing
+        else:
+            fallback(missing_mask, n_missing)
+    return binary, n_band, n_global, n_constant
