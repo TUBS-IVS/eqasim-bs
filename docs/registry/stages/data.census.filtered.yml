@@ -65,6 +65,7 @@ decisions:
 - ADR-0137
 - ADR-0192
 - ADR-0193
+- ADR-0199
 notes: >-
   DONOR RESOLUTION ONCE (ADR-0192): donor household counts and donor person attributes with
   imputed codes are resolved once, before the seed, and inherited by the clones.
@@ -163,3 +164,13 @@ notes: >-
   _DEFERRED_HELPER_MODULE_NAMES (the third second-level exception validate() names, with the same
   standard of evidence as the other two) so an edit to the pairing rule cannot be served from a
   stale seed cache.
+
+  POPULATIONSIM FORK AND SOLVER PATH (#645, ADR-0199, note populationsim-fork.md): the stage runs
+  PopulationSim from the tracked uv project environments/populationsim and requires the key
+  braunschweig.population.popsim.populationsim_version (checked by braunschweig.popsim.tool_version).
+  It sets the fork's integerizer options from braunschweig.population.popsim.keep_fractional_sample_weights,
+  .integerizer_draw and .integerizer_timeout_s (one seed per batch, braunschweig.popsim.folders), and
+  gates the fork's solver-path record with .solver_fallback_error_rate
+  (braunschweig.popsim.stage.solver_path_gate; null = warn only). Key meanings: config_keys.py.
+  The batch signature includes the tool version and the options, so the first run after this change
+  recomputes existing work dirs.
