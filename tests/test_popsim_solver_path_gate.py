@@ -224,3 +224,99 @@ def test_real_fork_record_is_accepted_with_the_expected_counts(tmp_path):
         "KREIS": 0, "ZENSUS100m": 9, "ZENSUS1km": 0}
     assert totals["not_solved_calls"] == 0 and totals["single_failed_smart_round"] == 0
     assert totals["call_rows"] == 504 and totals["single_failed_trace_labels"] == []
+
+
+# --- controlled rounding (fork release 0.10.0+bs.2, issue #646) ---------------------------------
+
+CONTROLLED_COLUMNS = ("rounding,x_count,fractional_x,slack_cell,slack_parent_sub,slack_parent,"
+                      "slack_conserve,hh_unreachable,hh_excess")
+
+
+def _simul_call(status, rounding, x_count="", fractional_x="", slack_conserve="",
+                hh_unreachable="", hh_excess="", label="p"):
+    # A bs.2 record in controlled mode: the bs.1 columns, then the nine extra ones.
+    return (f"call,simul,KREIS,{label},{status},2,10,0.1,0.2,,,off,1,"
+            f"{rounding},{x_count},{fractional_x},0,0,0,{slack_conserve},{hh_unreachable},"
+            f"{hh_excess}")
+
+
+def _controlled_batch(work_dir, name, lines):
+    folder = work_dir / name
+    out = folder / "output"
+    out.mkdir(parents=True)
+    (folder / batch.COMPLETION_MARKER).write_text("x", encoding="utf-8")
+    header = f"{HEADER},{CONTROLLED_COLUMNS}"
+    outcome = _outcome("KREIS", "simultaneous") + "," * 9
+    (out / "integerizer_paths.csv").write_text(
+        "\n".join([header, outcome, *lines]) + "\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize("rounding", ["", "round"])
+def test_controlled_expected_raises_when_a_simul_call_is_not_controlled(tmp_path, rounding):
+    _controlled_batch(tmp_path, "batch_001", [
+        _simul_call("OPTIMAL", "controlled", 10, 2, 0, 0, 0, label="a"),
+        _simul_call("OPTIMAL", rounding, label="b"),
+    ])
+    with pytest.raises(RuntimeError, match="rounding"):
+        solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="controlled")
+    # The same record is fine when "round" is what the run asked for.
+    solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="round")
+
+
+def test_controlled_expected_raises_for_a_record_without_the_extra_columns(tmp_path):
+    # bs.1 shape: the build is too old, or the setting never arrived.
+    _batch(tmp_path, "batch_001", [_outcome("KREIS", "simultaneous"),
+                                   "call,simul,KREIS,p,OPTIMAL,2,10,0.1,0.2,,,off,1"])
+    with pytest.raises(RuntimeError, match="rounding"):
+        solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="controlled")
+
+
+def test_round_expected_accepts_a_bs1_record_unchanged(tmp_path):
+    _two_batches(tmp_path)
+    explicit = solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="round")
+    default = solver_path_gate.check_solver_paths(tmp_path, None)
+    assert explicit[0].equals(default[0])
+    assert explicit[1]["controlled_simul_calls"] == 0
+    assert explicit[1]["not_solved_calls"] == 2
+
+
+def test_controlled_totals_and_rate_line(tmp_path, caplog):
+    _controlled_batch(tmp_path, "batch_001", [
+        _simul_call("OPTIMAL", "controlled", 10, 2, 1, 0, 2, label="a"),
+        _simul_call("FEASIBLE", "controlled", 30, 3, 3, 0, 0, label="b"),
+        _call("OPTIMAL"),  # a single call is no controlled call and needs no rounding value
+    ])
+    with caplog.at_level(logging.INFO):
+        _, totals = solver_path_gate.check_solver_paths(
+            tmp_path, None, expected_rounding="controlled")
+    assert totals["controlled_simul_calls"] == 2
+    assert totals["controlled_non_success_calls"] == 0
+    assert totals["fractional_share"] == pytest.approx(5 / 40)
+    assert totals["conserve_slack_share"] == pytest.approx(4 / 40)
+    assert totals["hh_unreachable"] == 0 and totals["hh_excess"] == 2
+    lines = [r for r in caplog.records if "controlled" in r.getMessage()
+             and r.name == solver_path_gate.logger.name]
+    assert len(lines) == 1 and lines[0].levelno == logging.INFO
+    assert "12.5%" in lines[0].getMessage() and "10.0%" in lines[0].getMessage()
+
+
+@pytest.mark.parametrize("bad_call", [
+    _simul_call("INFEASIBLE", "controlled", 10, 0, 0, 0, 0, label="x"),
+    _simul_call("OPTIMAL", "controlled", 10, 0, 0, 4, 0, label="x"),
+], ids=["non-success-status", "hh-unreachable"])
+def test_controlled_degraded_call_is_a_warning(tmp_path, caplog, bad_call):
+    _controlled_batch(tmp_path, "batch_001", [
+        _simul_call("OPTIMAL", "controlled", 10, 2, 0, 0, 0, label="a"), bad_call])
+    with caplog.at_level(logging.INFO):
+        _, totals = solver_path_gate.check_solver_paths(
+            tmp_path, None, expected_rounding="controlled")
+    lines = [r for r in caplog.records if "controlled" in r.getMessage()
+             and r.name == solver_path_gate.logger.name]
+    assert len(lines) == 1 and lines[0].levelno == logging.WARNING
+    assert totals["controlled_non_success_calls"] + totals["hh_unreachable"] >= 1
+
+
+def test_unknown_expected_rounding_is_rejected(tmp_path):
+    _two_batches(tmp_path)
+    with pytest.raises(ValueError, match="expected_rounding"):
+        solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="banana")

@@ -15,6 +15,9 @@ status not a success) is counted separately and not part of the rate. It counts 
 single-integerizer failures: the fork does not write it for sub-zone failures inside the
 simultaneous fallback, those are in ``rounded_zones``.
 
+With ``integerizer_rounding: "controlled"`` (issue #646) the gate also proves that the controlled
+path ran and reports its slack counts (:func:`check_solver_paths`).
+
 Reads files only and may raise; the config key is volatile (a changed threshold takes effect
 only when the stage executes).
 """
@@ -49,6 +52,18 @@ _COLUMNS = (
     "row_type", "kind", "geography", "trace_label", "status", "zones", "rows", "build_s",
     "solve_s", "outcome", "rounded_zones", "draw", "random_seed",
 )
+# Controlled rounding (fork release 0.10.0+bs.2, issue #646). The fork adds these columns to the
+# record only in controlled mode: the rounding mode of a call and, per simultaneous call, the
+# counts the controlled LP reports. A ``simul`` call row of a controlled run carries
+# ``rounding == "controlled"``; the counts are summed in :func:`summarize_controlled_calls`.
+CONTROLLED = "controlled"
+ROUNDINGS = ("round", CONTROLLED)
+CONTROLLED_COLUMNS = (
+    "rounding", "x_count", "fractional_x", "slack_cell", "slack_parent_sub", "slack_parent",
+    "slack_conserve", "hh_unreachable", "hh_excess",
+)
+SUCCESS_STATUSES = ("OPTIMAL", "FEASIBLE")
+SIMUL_KIND = "simul"
 
 
 def validate_error_rate(error_rate) -> Optional[float]:
@@ -187,18 +202,112 @@ def _percent(count: int, total: int) -> float:
     return 100.0 * count / total if total else 0.0
 
 
-def check_solver_paths(work_dir, error_rate: Optional[float]) -> tuple:
+def validate_expected_rounding(expected_rounding) -> str:
+    """Return ``expected_rounding`` when it is ``"round"`` or ``"controlled"``, else ``ValueError``."""
+    if expected_rounding not in ROUNDINGS:
+        raise ValueError(
+            f"expected_rounding must be one of {list(ROUNDINGS)}, got {expected_rounding!r}")
+    return expected_rounding
+
+
+def summarize_controlled_calls(records: pd.DataFrame, expected_rounding: str = "round") -> dict:
+    """Totals of the controlled simultaneous calls; fail when a controlled run was not controlled.
+
+    With ``expected_rounding == "controlled"`` every ``simul`` call row must carry
+    ``rounding == "controlled"``: ``RuntimeError`` otherwise, also when the record lacks the
+    controlled columns altogether (the installed PopulationSim is older than the controlled
+    release, or the setting never reached it). With ``"round"`` nothing is required; calls
+    marked ``controlled`` are summed all the same, a record without the columns gives zeros.
+
+    Returns ``{"controlled_simul_calls", "controlled_non_success_calls", "x_count",
+    "fractional_x", "slack_conserve", "fractional_share", "conserve_slack_share",
+    "hh_unreachable", "hh_excess"}``; the shares are sums over the controlled calls divided
+    by the summed ``x_count`` (0.0 when that is 0).
+    """
+    expected_rounding = validate_expected_rounding(expected_rounding)
+    totals = {"controlled_simul_calls": 0, "controlled_non_success_calls": 0, "x_count": 0.0,
+              "fractional_x": 0.0, "slack_conserve": 0.0, "fractional_share": 0.0,
+              "conserve_slack_share": 0.0, "hh_unreachable": 0, "hh_excess": 0}
+    missing = [c for c in CONTROLLED_COLUMNS if c not in records.columns]
+    if expected_rounding == CONTROLLED and missing:
+        raise RuntimeError(
+            f"[{STAGE_TAG}] integerizer_rounding is 'controlled' but the integerizer record lacks "
+            f"the columns {missing}: the installed PopulationSim is not a build with controlled "
+            "rounding (fork release 0.10.0+bs.2 or later) or INTEGERIZER_ROUNDING never reached it")
+    if missing:
+        return totals
+    simul = records[(records["row_type"] == "call") & (records["kind"] == SIMUL_KIND)]
+    rounding = simul["rounding"].fillna("")
+    if expected_rounding == CONTROLLED and simul.empty:
+        raise RuntimeError(
+            f"[{STAGE_TAG}] integerizer_rounding is 'controlled' but the integerizer record has no "
+            "simultaneous call row: the controlled path did not run")
+    if expected_rounding == CONTROLLED and (rounding != CONTROLLED).any():
+        bad = simul[rounding != CONTROLLED]
+        raise RuntimeError(
+            f"[{STAGE_TAG}] integerizer_rounding is 'controlled' but {len(bad)} of {len(simul)} "
+            f"simultaneous integerizer calls were not recorded as controlled (first: batch "
+            f"{bad.iloc[0]['batch']!r}, trace_label {bad.iloc[0]['trace_label']!r}, rounding "
+            f"{bad.iloc[0]['rounding']!r}): the controlled path did not run")
+    controlled = simul[rounding == CONTROLLED]
+    if controlled.empty:
+        return totals
+    numbers = controlled[["x_count", "fractional_x", "slack_conserve", "hh_unreachable",
+                          "hh_excess"]].apply(pd.to_numeric, errors="coerce")
+    if numbers.isna().any().any():
+        column = str(numbers.columns[numbers.isna().any()][0])
+        raise RuntimeError(
+            f"[{STAGE_TAG}] controlled call rows with a missing or non-numeric {column!r} in "
+            f"{RECORD_RELATIVE_PATH}: the fork's controlled record changed or is damaged")
+    x_count = float(numbers["x_count"].sum())
+    totals.update({
+        "controlled_simul_calls": len(controlled),
+        "controlled_non_success_calls": int((~controlled["status"].isin(SUCCESS_STATUSES)).sum()),
+        "x_count": x_count,
+        "fractional_x": float(numbers["fractional_x"].sum()),
+        "slack_conserve": float(numbers["slack_conserve"].sum()),
+        "hh_unreachable": int(numbers["hh_unreachable"].sum()),
+        "hh_excess": int(numbers["hh_excess"].sum()),
+    })
+    if x_count > 0:
+        totals["fractional_share"] = totals["fractional_x"] / x_count
+        totals["conserve_slack_share"] = totals["slack_conserve"] / x_count
+    return totals
+
+
+def check_solver_paths(work_dir, error_rate: Optional[float],
+                       expected_rounding: str = "round") -> tuple:
     """Log one rate line per geography and fail above ``error_rate`` (``None``: warn only).
 
     Returns ``(summary, call_totals)``: the :func:`summarize_solver_paths` frame and the
-    :func:`summarize_call_totals` dict. Raises ``RuntimeError`` when a geography's
-    non-simultaneous share exceeds ``error_rate`` or a completed batch has no usable record,
-    ``ValueError`` for an ``error_rate`` outside (0, 1].
+    :func:`summarize_call_totals` dict extended by the :func:`summarize_controlled_calls`
+    totals. With ``expected_rounding="controlled"`` it also logs one line with the controlled
+    calls, their non-success count, the fractional share, the conservation-slack share and the
+    household counts the LP could not place (WARNING when a controlled call is neither OPTIMAL
+    nor FEASIBLE or ``hh_unreachable > 0``, else INFO). Raises ``RuntimeError`` when a
+    geography's non-simultaneous share exceeds ``error_rate``, a completed batch has no usable
+    record, or a controlled run has a simultaneous call that was not controlled;
+    ``ValueError`` for an ``error_rate`` outside (0, 1] or an unknown ``expected_rounding``.
     """
     error_rate = validate_error_rate(error_rate)
+    expected_rounding = validate_expected_rounding(expected_rounding)
     records = read_records(Path(work_dir))
     summary = summarize_solver_paths(records)
     totals = summarize_call_totals(records)
+    controlled = summarize_controlled_calls(records, expected_rounding)
+    totals.update(controlled)
+    if expected_rounding == CONTROLLED or controlled["controlled_simul_calls"]:
+        logger.log(
+            logging.WARNING if (controlled["controlled_non_success_calls"]
+                                or controlled["hh_unreachable"]) else logging.INFO,
+            "[%s] controlled rounding: %d controlled simultaneous calls, %d not OPTIMAL/FEASIBLE; "
+            "fractional share %.1f%% (%g of %g x variables); conservation slack %.1f%% (%g); "
+            "hh_unreachable %d; hh_excess %d",
+            STAGE_TAG, controlled["controlled_simul_calls"],
+            controlled["controlled_non_success_calls"], 100.0 * controlled["fractional_share"],
+            controlled["fractional_x"], controlled["x_count"],
+            100.0 * controlled["conserve_slack_share"], controlled["slack_conserve"],
+            controlled["hh_unreachable"], controlled["hh_excess"])
     exceeded = []
     for row in summary.itertuples(index=False):
         if row.parents == 0:

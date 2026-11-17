@@ -122,6 +122,26 @@ KEY_INTEGERIZER_DRAW = "braunschweig.population.popsim.integerizer_draw"
 # Time limit of one integerizer solve, positive integer seconds (-> INTEGERIZER_TIMEOUT;
 # upstream 0.10.0 calls it INTEGIZER_TIMEOUT and defaults to 60).
 KEY_INTEGERIZER_TIMEOUT_S = "braunschweig.population.popsim.integerizer_timeout_s"
+# Controlled-rounding options of the simultaneous integerizer (fork release 0.10.0+bs.2, issue
+# #646; the fork's WP4 design owns the formulation). Same handling as the three keys above:
+# written into every batch settings.yaml, never volatile, each enters the batch signature.
+# integerizer_rounding (-> INTEGERIZER_ROUNDING): "round" (upstream, default) or "controlled".
+# With "controlled" the stage fails when a simultaneous integerizer call was not recorded as
+# controlled (braunschweig.popsim.stage.solver_path_gate.check_solver_paths).
+KEY_INTEGERIZER_ROUNDING = "braunschweig.population.popsim.integerizer_rounding"
+# The control importances are clipped into [floor, cap] to give the per-control penalty of the
+# controlled LP. Floor: number > 0 (-> INTEGERIZER_PENALTY_FLOOR; only read with "controlled").
+KEY_INTEGERIZER_PENALTY_FLOOR = "braunschweig.population.popsim.integerizer_penalty_floor"
+# Cap: number >= the floor (-> INTEGERIZER_PENALTY_CAP; the cross-check is in
+# braunschweig.popsim.folders.populationsim_overrides_from_config).
+KEY_INTEGERIZER_PENALTY_CAP = "braunschweig.population.popsim.integerizer_penalty_cap"
+# Multiplier of that penalty for the parent-zone totals (itself capped at the cap), number >= 1
+# (-> INTEGERIZER_PARENT_TOTAL_FACTOR).
+KEY_INTEGERIZER_PARENT_TOTAL_FACTOR = (
+    "braunschweig.population.popsim.integerizer_parent_total_factor")
+# Penalty per unit of household-conservation slack, number >= 0
+# (-> INTEGERIZER_CONSERVE_PENALTY).
+KEY_INTEGERIZER_CONSERVE_PENALTY = "braunschweig.population.popsim.integerizer_conserve_penalty"
 # Solver-path gate (braunschweig.popsim.stage.solver_path_gate, design goal G5, issue #645):
 # float in (0, 1] or null. Above this share of parent zones NOT integerized simultaneously
 # (per geography) the stage raises; null = warn only. Volatile: it only gates, no result, so a

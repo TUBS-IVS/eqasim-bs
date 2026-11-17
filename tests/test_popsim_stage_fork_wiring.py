@@ -31,6 +31,11 @@ def _values(**overrides):
         stage.KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS: True,
         stage.KEY_INTEGERIZER_DRAW: "pareto",
         stage.KEY_INTEGERIZER_TIMEOUT_S: 600,
+        stage.KEY_INTEGERIZER_ROUNDING: "controlled",
+        stage.KEY_INTEGERIZER_PENALTY_FLOOR: 100.0,
+        stage.KEY_INTEGERIZER_PENALTY_CAP: 100000.0,
+        stage.KEY_INTEGERIZER_PARENT_TOTAL_FACTOR: 10.0,
+        stage.KEY_INTEGERIZER_CONSERVE_PENALTY: 100000.0,
         stage.KEY_SOLVER_FALLBACK_ERROR_RATE: 0.2,
         "random_seed": 4711,
     }
@@ -95,6 +100,7 @@ def _stub_early_steps(monkeypatch, calls, settings_path):
 
 @pytest.mark.parametrize("key, bad_value, settings_text, error_match", [
     (stage.KEY_INTEGERIZER_DRAW, "banana", None, "INTEGERIZER_DRAW"),
+    (stage.KEY_INTEGERIZER_ROUNDING, "banana", None, "INTEGERIZER_ROUNDING"),
     # The gate only runs after all batches (hours); a typo must fail before the seed build.
     (stage.KEY_SOLVER_FALLBACK_ERROR_RATE, 2.0, None, "solver_fallback_error_rate"),
     # A server-local settings file contradicting the tracked timeout (0.10.0's key name).
@@ -186,9 +192,9 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
         seen["batches_args"] = args
         return "merge_report"
 
-    def gate(work_dir, error_rate):
+    def gate(work_dir, error_rate, expected_rounding="round"):
         calls.append("gate")
-        seen["gate"] = (work_dir, error_rate)
+        seen["gate"] = (work_dir, error_rate, expected_rounding)
         raise _Stop
 
     monkeypatch.setattr(stage, "_purge_stale_batches_for_changed_config", purge)
@@ -203,6 +209,9 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     expected_overrides = {
         "KEEP_FRACTIONAL_SAMPLE_WEIGHTS": True, "INTEGERIZER_DRAW": "pareto",
         "INTEGERIZER_TIMEOUT": 600, "INTEGERIZER_PATH_RECORD": True,
+        "INTEGERIZER_ROUNDING": "controlled", "INTEGERIZER_PENALTY_FLOOR": 100.0,
+        "INTEGERIZER_PENALTY_CAP": 100000.0, "INTEGERIZER_PARENT_TOTAL_FACTOR": 10.0,
+        "INTEGERIZER_CONSERVE_PENALTY": 100000.0,
     }
     # The last two positional arguments of the batch runner are the overrides and the seed base.
     assert seen["batches_args"][-2:] == (expected_overrides, 4711)
@@ -210,4 +219,5 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     # overrides and seed base.
     assert seen["purge_args"][-5:] == (
         "0.10.0+bs.1", _COMMIT, _LOCK_HASH, expected_overrides, 4711)
-    assert seen["gate"] == (str(tmp_path / "work"), 0.2)
+    # The configured rounding mode is what the gate must find in the record.
+    assert seen["gate"] == (str(tmp_path / "work"), 0.2, "controlled")

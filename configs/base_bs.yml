@@ -589,6 +589,14 @@ config:
   braunschweig.population.popsim.keep_fractional_sample_weights: true
   braunschweig.population.popsim.integerizer_draw: "gumbel"
   braunschweig.population.popsim.integerizer_timeout_s: 7200
+  # Controlled rounding of the simultaneous integerizer (issue #646; meaning: KEY_INTEGERIZER_ROUNDING
+  # and its neighbours in config_keys.py). Stays "round" (upstream) until the arm-3 run manifest
+  # meets its gate; the penalty values are the code defaults and only read with "controlled".
+  braunschweig.population.popsim.integerizer_rounding: "round"
+  braunschweig.population.popsim.integerizer_penalty_floor: 100.0
+  braunschweig.population.popsim.integerizer_penalty_cap: 100000.0
+  braunschweig.population.popsim.integerizer_parent_total_factor: 10.0
+  braunschweig.population.popsim.integerizer_conserve_penalty: 100000.0
   # Solver-path gate (meaning: KEY_SOLVER_FALLBACK_ERROR_RATE in config_keys.py): null = warn
   # only. ASSUMPTION-grade threshold, to be set from the first full run (design, issue #645).
   braunschweig.population.popsim.solver_fallback_error_rate: null
