@@ -1336,6 +1336,8 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
     # tests are in tests/test_popsim_settings_overrides.py.
     monkeypatch.setattr(
         popsim_stage, "_read_integerizer_settings", lambda ctx: ({}, None))
+    # Validated at stage start too (tests/test_popsim_stage_fork_wiring.py); null = warn only.
+    values[popsim_stage.KEY_SOLVER_FALLBACK_ERROR_RATE] = None
     monkeypatch.setattr(
         popsim_stage, "_read_control_config",
         lambda ctx, source_name: ((), (), "csv", False, False, (), set(), 30, None, "default", False))
