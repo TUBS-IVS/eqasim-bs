@@ -33,6 +33,7 @@ import pandas as pd
 
 from braunschweig.analysis.popsim_batch_diagnostics.batch_folder import (
     list_batch_folders, load_batch_folder)
+from braunschweig.analysis.popsim_batch_diagnostics.conservation import household_conservation
 from braunschweig.analysis.popsim_batch_diagnostics.coverage import (
     coverage_table, resolved_record_shares, universe_table)
 from braunschweig.analysis.popsim_batch_diagnostics.fit import (
@@ -281,6 +282,7 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
     warnings = _Warnings()
     groups: dict = {}
     reuse_rows, fit_parts, universe_parts, split_parts, shift_parts = [], [], [], [], []
+    conservation_parts = []
 
     for position, folder in enumerate(folders, start=1):
         logger.info("%s batch %d/%d: %s", _TAG, position, len(folders), folder.name)
@@ -323,6 +325,10 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
             shift.insert(0, "batch", batch.name)
             split_parts.append(split)
             shift_parts.append(shift)
+            conservation = household_conservation(batch, levels=batch.geographies,
+                                                  chunk_rows=chunk_rows)
+            conservation.insert(0, "batch", batch.name)
+            conservation_parts.append(conservation)
             for row in shift.itertuples():
                 if row.shift > thresholds.rounding_shift_bound:
                     warnings.add("rounding_shift", f"{batch.name}/{row.control}", row.shift,
@@ -444,6 +450,7 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
     if misfit:
         tables["misfit_split"] = pd.concat(split_parts, ignore_index=True)
         tables["rounding_shift"] = pd.concat(shift_parts, ignore_index=True)
+        tables["household_conservation"] = pd.concat(conservation_parts, ignore_index=True)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, table in tables.items():
@@ -485,9 +492,26 @@ def _write_summary(out_dir: Path, work_dir: Path, folders, groups, commit: str, 
         "`non_simultaneous_rate` = `non_simultaneous / n_parents`: parents whose final weights did "
         "not come from the simultaneous solution (sequential, single feasible sub zone, or "
         "all-smart-rounded).", "", _md_table(solver_levels),
+        *_conservation_section(tables),
         "## Warnings", "", _md_table(pd.DataFrame(
             warnings, columns=["check", "subject", "value", "threshold"]))]
     (out_dir / "popsim_batch_diagnostics.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _conservation_section(tables: dict) -> list:
+    """Summary lines of the household conservation table (only present with ``--misfit``)."""
+    if "household_conservation" not in tables:
+        return []
+    conservation = tables["household_conservation"]
+    totals = conservation.groupby(["level", "parent_level"], sort=False)[
+        ["n_pairs", "parent_weight_sum", "sub_weight_sum", "abs_deviation_sum"]].sum()
+    totals = totals.reset_index()
+    totals["abs_deviation_share"] = _ratio(totals["abs_deviation_sum"],
+                                           totals["parent_weight_sum"])
+    return ["## Household conservation per level (summed over batches)", "",
+            "`abs_deviation_share` = sum over (household group, parent zone) pairs of "
+            "`|sub integer weight sum - parent integer weight|`, divided by the parent weight "
+            "sum; 0 means every sub level adds up to its parent.", "", _md_table(totals)]
 
 
 def _parse_thresholds(parser: argparse.ArgumentParser, items: Sequence[str]) -> Thresholds:
