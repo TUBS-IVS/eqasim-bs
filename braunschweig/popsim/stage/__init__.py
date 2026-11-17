@@ -700,20 +700,33 @@ def validate(context):
     Both tuples are iterated in the order written -- not a set, not ``dir()``
     output -- and ``_HELPER_MODULES`` always before
     ``_DEFERRED_HELPER_MODULE_NAMES``, so the digest is reproducible across
-    processes and platforms. ``context`` is unused: the token depends on source
-    text only.
+    processes and platforms.
+
+    ONE NON-SOURCE INPUT is part of the token: the PopulationSim fork commit that
+    ``<popsimprep_dir>/uv.lock`` pins (``tool_version.expected_populationsim_commit``).
+    ``execute()`` refuses an environment that does not match it, but synpp serves the
+    cached output without running ``execute()`` while the token is unchanged, so a
+    re-lock to another fork commit under the same version string would otherwise reuse
+    the output of the old solver. ``KEY_POPSIMPREP`` is declared in ``configure()``.
 
     Raises:
         RuntimeError: if a module named in ``_DEFERRED_HELPER_MODULE_NAMES``
-            cannot be imported or has no retrievable source; the original error
-            is chained.
+            cannot be imported or has no retrievable source (the original error
+            is chained), or if the project directory or its lock file does not yield
+            a locked commit (no silent fallback: a token without it would let a stale
+            cache through).
 
     Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
-    digest per helper module (docstrings, comments and formatting do not change it).
+    digest per helper module (docstrings, comments and formatting do not change it), plus
+    ``"populationsim_commit"``.
     """
-    return synpp_tokens.source_token(
+    token = synpp_tokens.source_token(
         _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
         stage_label=__name__ + ".validate()")
+    project_dir = tool_version.resolve_project_dir(
+        context.config(KEY_POPSIMPREP), key=KEY_POPSIMPREP)
+    token["populationsim_commit"] = tool_version.expected_populationsim_commit(project_dir)
+    return token
 
 
 def configure(context):
