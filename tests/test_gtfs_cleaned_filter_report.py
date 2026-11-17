@@ -87,6 +87,9 @@ def test_stage_drops_flex_then_flexo_and_writes_report(tmp_path):
     assert feed_report["route_filter"]["trips_removed"] == 1
     assert feed_report["routes_without_trips"] == {"routes_before": 2, "routes_removed": 1}
     assert feed_report["spatial_cut"]["trips"] == {"before": 1, "after": 1}
+    # Every slot of the feed is counted around the cut, not a fixed subset.
+    assert set(feed_report["spatial_cut"]) == {
+        "agency", "stops", "routes", "trips", "stop_times", "calendar"}
     assert feed_report["despace"]["stop_ids_replaced"] == 0
 
 

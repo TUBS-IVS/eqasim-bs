@@ -34,7 +34,8 @@ def read_feed(path, stats = None):
     """Read a GTFS zip into a dict of DataFrames and apply the basic cleanup.
 
     When a dict is passed as ``stats``, the rows dropped for an empty service_id are
-    recorded per slot under ``empty_service_id_removed`` (for the stage report).
+    recorded per slot under ``empty_service_id_removed`` and the transfers dropped for a
+    missing min_transfer_time under ``transfers_without_min_transfer_time_removed``.
     """
     feed = {}
     if stats is not None:
@@ -112,6 +113,8 @@ def read_feed(path, stats = None):
             df_transfers["min_transfer_time"] = 0
 
         f = df_transfers["min_transfer_time"].isna()
+        if stats is not None:
+            stats["transfers_without_min_transfer_time_removed"] = int(np.count_nonzero(f))
         if np.any(f):
             print("WARNING NaN numbers for min_transfer_time in transfers")
             df_transfers = df_transfers[~f]
@@ -513,7 +516,8 @@ def copy_feed(feed):
 
 def merge_feeds(feeds, stats = None):
     """Merge feeds pairwise. When a dict is passed as ``stats``, the number of identifiers
-    renamed per slot to resolve collisions is accumulated under ``renamed_identifiers``."""
+    renamed per slot to resolve collisions is accumulated under ``renamed_identifiers`` and
+    the identical rows dropped per slot under ``duplicate_rows_removed``."""
     result = {}
 
     for k, feed in enumerate(feeds):
@@ -566,7 +570,12 @@ def merge_two_feeds(first, second, suffix = "_merged", stats = None):
 
     for slot in REQUIRED_SLOTS + OPTIONAL_SLOTS:
         if slot in first and slot in second:
-            feed[slot] = pd.concat([first[slot], second[slot]], sort = True).drop_duplicates()
+            df_concat = pd.concat([first[slot], second[slot]], sort = True)
+            feed[slot] = df_concat.drop_duplicates()
+
+            if stats is not None:
+                duplicates = stats.setdefault("duplicate_rows_removed", {})
+                duplicates[slot] = duplicates.get(slot, 0) + len(df_concat) - len(feed[slot])
         elif slot in first:
             feed[slot] = first[slot].copy()
         elif slot in second:

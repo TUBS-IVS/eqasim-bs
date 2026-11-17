@@ -11,8 +11,7 @@ _HELPER_MODULES = (gtfs,)
 # Stage report (written into context.path()): per feed, the counts of every step that drops,
 # filters or replaces records, plus the identifier renames of the merge.
 REPORT_FILE_NAME = "gtfs_cleaned_report.json"
-# Slots whose row counts are recorded before and after the spatial cut.
-_CUT_REPORT_SLOTS = ("stops", "routes", "trips", "stop_times", "frequencies", "transfers")
+
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.cordon.network_clip",
     "braunschweig.data.spatial.cordon",
@@ -102,7 +101,7 @@ def execute(context):
         # (cut_feed does not touch routes).
         feed = gtfs.drop_routes_without_trips(feed, stats = feed_report["routes_without_trips"])
 
-        rows_before_cut = {slot: len(feed[slot]) for slot in _CUT_REPORT_SLOTS if slot in feed}
+        rows_before_cut = {slot: len(feed[slot]) for slot in feed}
         feed = gtfs.cut_feed(feed, df_area)
         feed_report["spatial_cut"] = {
             slot: dict(before = count, after = len(feed[slot]) if slot in feed else 0)
@@ -115,7 +114,7 @@ def execute(context):
         feeds.append(feed)
 
     # Merge feeds
-    merge_stats = dict(renamed_identifiers = {})
+    merge_stats = dict(renamed_identifiers = {}, duplicate_rows_removed = {})
     merged_feed = gtfs.merge_feeds(feeds, stats = merge_stats) if len(feeds) > 1 else feeds[0]
     report["merge"] = merge_stats
 
