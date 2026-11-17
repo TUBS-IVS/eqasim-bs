@@ -1451,7 +1451,8 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
 def _check_seed_contract(seed_households: pd.DataFrame, seed_persons: pd.DataFrame,
                          controls_df: pd.DataFrame, total_hh_control: str,
                          cells: pd.DataFrame, *, kreis_col: str, mode: str,
-                         complete_members: bool, source_name: str) -> None:
+                         complete_members: bool, source_name: str,
+                         ars_col: str | None = None) -> None:
     """Contract check before PopulationSim (issue #647, G6; rule in ``seed_contract``).
 
     The configured ``mode`` ("error" | "warn") applies on the complete_members path with the
@@ -1473,8 +1474,27 @@ def _check_seed_contract(seed_households: pd.DataFrame, seed_persons: pd.DataFra
         effective = "warn"
     _seed_contract.check_seed_coverage(
         seed_households, seed_persons, controls_df, total_hh_control, mode=effective)
+    # Narrow input: only the columns the totals check reads, plus the Kreis key.
+    needed = _seed_contract.household_group_columns(controls_df, total_hh_control)
+    missing_key = kreis_col not in cells.columns and (
+        ars_col is None or ars_col not in cells.columns)
+    if missing_key:
+        message = (f"[popsim.seed_contract] cells frame has neither the Kreis column "
+                   f"{kreis_col!r} nor the ARS column {ars_col!r}; the per-Kreis household-total "
+                   "check cannot run")
+        if effective == "error":
+            raise ValueError(message)
+        logger.warning("%s: skipped (1 of 2 contract checks not run)", message)
+        return
+    # Absent group columns are skipped and counted inside the check (INFO); an absent
+    # household-total column raises there.
+    narrow = cells[[c for c in needed if c in cells.columns]].copy()
+    if kreis_col in cells.columns:
+        narrow[kreis_col] = cells[kreis_col].to_numpy()
+    else:
+        narrow[kreis_col] = derive_geo_kreis_from_ars(cells[ars_col]).to_numpy()
     _seed_contract.check_household_group_totals(
-        cells, controls_df, total_hh_control, kreis_col=kreis_col, mode=effective)
+        narrow, controls_df, total_hh_control, kreis_col=kreis_col, mode=effective)
 
 
 def _read_total_hh_control(settings_path) -> str:
@@ -2817,15 +2837,11 @@ def execute(context) -> pd.DataFrame:
     )
 
     # Contract check (#647, G6) on the final controls and cells, before any batch is written.
-    contract_cells = cells.copy()
-    contract_cells[folders.GEO_KREIS] = derive_geo_kreis_from_ars(
-        contract_cells[mid._ARS_COLUMN])
     _check_seed_contract(
         seed_households, seed_persons, controls_df, _read_total_hh_control(settings_path),
-        contract_cells, kreis_col=folders.GEO_KREIS,
+        cells, kreis_col=folders.GEO_KREIS, ars_col=mid._ARS_COLUMN,
         mode=str(context.config(KEY_SEED_CONTRACT_MODE)),
         complete_members=complete_members, source_name=source_name)
-    del contract_cells
 
     run_one = _prepare_batch_runner(
         context, uv_path, popsimprep_dir, stratify_regiostar,

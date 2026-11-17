@@ -131,13 +131,25 @@ def seed_group_hits(group: ControlGroup, control_spec: pd.DataFrame, frame: pd.D
     hits; callers decide whether to skip it.
     """
     expressions = dict(zip(control_spec["target"], control_spec["expression"]))
+
+    def evaluate(expression: str, what: str) -> np.ndarray:
+        # A column the seed table lacks is a wiring defect, not a coverage finding: name it.
+        try:
+            return evaluate_expression(expression, frame)
+        except (AttributeError, KeyError) as error:
+            raise ValueError(
+                f"control group {group.name!r} (seed table {group.seed_table!r}): {what} "
+                f"{expression!r} references a column the seed table lacks "
+                f"({type(error).__name__}: {error}); seed columns: {sorted(frame.columns)[:30]}"
+            ) from error
+
     hits = np.zeros(len(frame), dtype=np.int64)
     for target in group_targets(group, control_spec, total_hh_control):
-        hits += evaluate_expression(expressions[target], frame).astype(np.int64)
+        hits += evaluate(expressions[target], f"control {target!r} expression").astype(np.int64)
     if group.universe is None:
         in_universe = np.ones(len(frame), dtype=bool)
     else:
-        in_universe = evaluate_expression(group.universe, frame)
+        in_universe = evaluate(group.universe, "universe")
     return hits, in_universe
 
 

@@ -112,6 +112,24 @@ def _base_column(controls_df: pd.DataFrame, target: str) -> str:
     return field[: -len(suffix)] if field.endswith(suffix) else field
 
 
+def household_group_columns(controls_df: pd.DataFrame, total_hh_control: str,
+                            groups=CONTROL_GROUPS) -> list:
+    """Cells columns :func:`check_household_group_totals` reads (total first, no duplicates).
+
+    Lets the caller hand over a narrow frame instead of copying every cells column.
+    """
+    columns = [_base_column(controls_df, total_hh_control)]
+    geography = dict(zip(controls_df["target"], controls_df["geography"]))
+    for group in groups:
+        if group.seed_table != "households" or not group.exhaustive \
+                or group.universe is not None:
+            continue
+        for target in group_targets(group, controls_df, total_hh_control):
+            if geography[target] in _GRID_GEOGRAPHIES:
+                columns.append(_base_column(controls_df, target))
+    return list(dict.fromkeys(columns))
+
+
 def check_household_group_totals(cells: pd.DataFrame, controls_df: pd.DataFrame,
                                  total_hh_control: str, *, kreis_col: str,
                                  tolerance: float = UNIVERSE_RATIO_TOLERANCE,

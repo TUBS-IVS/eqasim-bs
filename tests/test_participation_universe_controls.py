@@ -1303,6 +1303,7 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         popsim_stage.KEY_SEED_RESOLVE_BINARY_SEX: True,
         popsim_stage.KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE: True,
         popsim_stage.KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS: True,
+        popsim_stage.KEY_SEED_CONTRACT_MODE: "warn",  # NON-default (default is "error")
         # The four flags under test -- all NON-DEFAULT (the pure function's own keyword
         # defaults are False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES=15.0 /
         # DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS=18), so a
@@ -1367,9 +1368,18 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         captured["resolve_binary_sex"] = kwargs.get("resolve_binary_sex")
         captured["seed_fill_rng"] = kwargs.get("seed_fill_rng")
         captured["resolve_tenure_building_type"] = kwargs.get("resolve_tenure_building_type")
-        raise _StopAtSeedBuild()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     monkeypatch.setattr(popsim_stage, "_build_populationsim_seed", capturing_build_populationsim_seed)
+
+    contract_kwargs = {}
+
+    def capturing_check_seed_contract(*args, **kwargs):
+        contract_kwargs.update(kwargs)
+        raise _StopAtSeedBuild()
+
+    monkeypatch.setattr(popsim_stage, "_check_seed_contract", capturing_check_seed_contract)
+    monkeypatch.setattr(popsim_stage, "_read_total_hh_control", lambda path: "TOTAL_target")
 
     with pytest.raises(_StopAtSeedBuild):
         popsim_stage.execute(context)
@@ -1385,3 +1395,5 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
     # The building-type targets key reaches the cell-target helper.
     assert aggregated_kwargs["building_type_targets_to_households"] is True
     assert isinstance(captured["seed_fill_rng"], np.random.RandomState)
+    # The contract mode reaches the check (the call site after the seed build is live).
+    assert contract_kwargs["mode"] == "warn"

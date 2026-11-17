@@ -175,3 +175,42 @@ def test_configure_declares_contract_mode_error_and_rejects_other_values():
     assert values[popsim_stage.KEY_SEED_CONTRACT_MODE] == "error"
     with pytest.raises(ValueError, match="seed_contract_mode"):
         popsim_stage.configure(_Recorder("ignore"))
+
+
+def test_error_mode_raises_on_complete_members_path():
+    from braunschweig.popsim import stage as popsim_stage
+    households, persons = _resolved()
+    persons["HP_SEX"] = SEED_PERSONS["HP_SEX"]       # one unresolved sex
+    with pytest.raises(ValueError, match="age_sex"):
+        popsim_stage._check_seed_contract(
+            households, persons, _controls_df(), TOTAL, _cells(), kreis_col="KREIS",
+            mode="error", complete_members=True, source_name="mid")
+
+
+def test_missing_kreis_and_ars_column_warns_or_raises(caplog):
+    from braunschweig.popsim import stage as popsim_stage
+    households, persons = _resolved()
+    cells = _cells().drop(columns=["KREIS"])
+    kwargs = dict(kreis_col="KREIS", ars_col="ARS", source_name="mid")
+    with caplog.at_level(logging.WARNING):
+        popsim_stage._check_seed_contract(
+            households, persons, _controls_df(), TOTAL, cells, mode="warn",
+            complete_members=False, **kwargs)
+    assert any("skipped" in r.message and "ARS" in r.message for r in caplog.records)
+    with pytest.raises(ValueError, match="neither the Kreis column"):
+        popsim_stage._check_seed_contract(
+            households, persons, _controls_df(), TOTAL, cells, mode="error",
+            complete_members=True, **kwargs)
+
+
+def test_missing_seed_column_names_group_table_and_column():
+    households, persons = _resolved()
+    households = households.drop(columns=["haustyp"])
+    for mode in ("error", "warn"):               # a wiring defect raises in both modes
+        with pytest.raises(ValueError, match=r"building_type.*households.*haustyp"):
+            check_seed_coverage(households, persons, SPEC, TOTAL, mode=mode)
+
+
+def test_wp1_threshold_default_is_the_shared_constant():
+    from braunschweig.analysis.popsim_batch_diagnostics.run import Thresholds
+    assert Thresholds().universe_ratio_tolerance == UNIVERSE_RATIO_TOLERANCE
