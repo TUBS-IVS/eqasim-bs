@@ -110,6 +110,12 @@ KEY_SEED_RESOLVE_BINARY_SEX = "braunschweig.population.popsim.seed_resolve_binar
 # only; default ON in code, False reproduces the previous seed byte-identically.
 KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE = (
     "braunschweig.population.popsim.seed_resolve_tenure_building_type")
+# Rescale the per-100m building-type targets from census DWELLING counts to the cell's
+# household total before the 1 km integerisation (issue #647; rule in
+# ``braunschweig.popsim.building_type_targets``). Default ON in code, False keeps the
+# dwelling sums byte-identically.
+KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS = (
+    "braunschweig.population.popsim.building_type_targets_to_households")
 # MiD P_VAUTO-based passenger availability. The intentionally short public key
 # is shared with the MATSim preparation gate; it is effective only for popsim_mid.
 KEY_MID_PASSENGER_AVAILABILITY = "mid_passenger_availability"

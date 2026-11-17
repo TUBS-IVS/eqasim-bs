@@ -107,6 +107,8 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.gravity.friction",
     "braunschweig.matsim.simulation.plan_check",
     "braunschweig.popsim.attributes",
+    # popsim_validation.controls rescales the building-type targets with it (#647).
+    "braunschweig.popsim.building_type_targets",
     "braunschweig.popsim.cells",
     "braunschweig.popsim.chain_matching",
     "braunschweig.popsim.closure_dwell",

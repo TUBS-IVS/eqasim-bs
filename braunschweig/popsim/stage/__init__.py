@@ -257,6 +257,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_COMPLETE_MEMBERS,
     KEY_SEED_RESOLVE_BINARY_SEX,
     KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE,
+    KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS,
     KEY_MID_PASSENGER_AVAILABILITY,
     KEY_CONTROL_TIERS,
     KEY_CONTROLS,
@@ -521,6 +522,8 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # validate() docstring's boundary statement for why they are explicit exceptions to the
     # one-level rule (the first two were added after the 2026-08-19 hazard).
     "braunschweig.popsim.attributes",
+    # Imported inside _add_aggregated_control_columns (building-type targets per household, #647).
+    "braunschweig.popsim.building_type_targets",
     "braunschweig.popsim.control_spec",
     "braunschweig.popsim.employment_grid",
     # escort_pairing: the THIRD second-level exception (reached via mid.participation, whose
@@ -766,6 +769,8 @@ def configure(context):
     context.config(KEY_SEED_RESOLVE_BINARY_SEX, True)
     # Tenure 3 / 9 / 309 and building type 95 resolved once per donor household (#647).
     context.config(KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE, True)
+    # Building-type targets rescaled from dwellings to households per cell (#647). Default True.
+    context.config(KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS, True)
     context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
     # Controls source (Task 5). Default "csv" = byte-identical to today's behaviour.
     context.config(KEY_CONTROLS_SOURCE, "csv")
@@ -1384,12 +1389,19 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
 
 
 def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source_name: str, control_tiers,
-        fine_teen_age_bands: bool = True) -> pd.DataFrame:
+        fine_teen_age_bands: bool = True,
+        building_type_targets_to_households: bool = False) -> pd.DataFrame:
     """Derive the multi-column aggregated control columns on the cells frame.
 
     Derive the multi-column aggregated control columns (e.g. building_type_*).
     For tier0-only: agg_map is empty -> add_aggregated_controls returns cells
     unchanged -> byte-identical.
+
+    ``building_type_targets_to_households`` (config key ``building_type_targets_to_households``,
+    issue #647): the derived ``building_type_*`` columns are census DWELLING counts; when True
+    they are rescaled per cell to the household total (rule, fallback tiers and log in
+    ``braunschweig.popsim.building_type_targets``). The raw dwelling source columns stay
+    unchanged. False keeps the dwelling sums byte-identically and logs nothing.
 
     Returns: the cells frame with the aggregated control columns (MUST be
     reassigned).
@@ -1402,6 +1414,30 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
         fine_teen_age_bands=fine_teen_age_bands,
     )
     cells = prepared_cells.add_aggregated_controls(cells, agg_map)
+    if building_type_targets_to_households:
+        from braunschweig.popsim import building_type_targets as _btt
+        from braunschweig.popsim import control_spec as _cs
+        from braunschweig.popsim import folders as _folders
+
+        building_type_cols = [
+            name for name, _, _ in _cs._TIER2_BUILDING_TYPE_ENTRIES if name in agg_map]
+        if not building_type_cols:
+            logger.info(
+                "[popsim.stage] building_type_targets_to_households is on but no building_type "
+                "control is active (tiers %s); nothing to rescale.", tuple(control_tiers))
+            return cells
+        # The Kreis level of the share fallback comes from the cell ARS, derived on a copy
+        # so the cells frame the stage carries on is not widened by an extra column.
+        if mid._ARS_COLUMN not in cells.columns:
+            raise ValueError(
+                "[popsim.stage] building_type_targets_to_households is on but the cells frame "
+                f"carries no {mid._ARS_COLUMN!r} column; cannot derive the Kreis shares.")
+        work = cells.copy()
+        work[_folders.GEO_KREIS] = derive_geo_kreis_from_ars(work[mid._ARS_COLUMN])
+        work = _btt.rescale_building_type_to_households(work, building_type_cols)
+        cells = cells.copy()
+        for column in building_type_cols:
+            cells[column] = work[column]
     return cells
 
 
@@ -2676,6 +2712,8 @@ def execute(context) -> pd.DataFrame:
     cells = _add_aggregated_control_columns(
         cells, controls_source, source_name, control_tiers,
         fine_teen_age_bands=fine_teen_bands_on,
+        building_type_targets_to_households=bool(
+            context.config(KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS)),
     )
     cells = _inject_employment_grid_columns(context, cells, employment_grid_on)
     cells = _inject_ownership_grid_columns(

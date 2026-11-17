@@ -68,6 +68,9 @@ _PARQUET_SUBPATH = "braunschweig/popsim/cells/zensus2022_grid_100m_de_prepared.p
 # ARS column name in the prepared parquet (after clean_col_name transliteration of ü→u).
 _ARS_COLUMN_CLEAN = "RegionalSchlussel_ARS"
 
+# 100 m cell id (first column of the prepared parquet; the 1 km parent derives from it).
+_CELL_ID_CLEAN = "GITTER_ID_100m"
+
 # --- Tier-3 (employment + education) constants ---------------------------------
 # Kreis controls dir (GENESIS per-Kreis marginals) relative to the data root.
 _KREIS_CONTROLS_SUBPATH = "braunschweig/popsim/kreis_controls"
@@ -173,6 +176,33 @@ def _read_and_clean_cells(parquet: Path) -> pd.DataFrame:
     catalog = full_catalog(include_tiers=("tier2",))
     agg_map = build_aggregation_map(controls_for_seed(catalog, "mid"))
     df = add_aggregated_controls(df, agg_map)
+
+    # The derived building_type_* columns are census DWELLING counts; PopulationSim is fitted
+    # to the household-based targets of the stage (issue #647), so the validation target must
+    # be the same rescaled quantity, with the same 1 km / Kreis share fallback. The parent
+    # columns are derived on a working copy and only the building_type_* columns are copied
+    # back, so the cached frame keeps its columns.
+    from braunschweig.popsim import building_type_targets as btt
+    from braunschweig.popsim import cells as cellmod
+    from braunschweig.popsim import folders
+    from braunschweig.popsim.control_spec import (
+        _TIER2_BUILDING_TYPE_ENTRIES,
+        HH_TOTAL_CENSUS_COLUMN as _HH_TOTAL_CLEAN,
+    )
+
+    building_type_cols = [name for name, _, _ in _TIER2_BUILDING_TYPE_ENTRIES if name in agg_map]
+    if building_type_cols:
+        work = df[[*building_type_cols,
+                   *[c for c in (_HH_TOTAL_CLEAN, _CELL_ID_CLEAN) if c in df.columns],
+                   "ars5"]].copy()
+        work[folders.GEO_KREIS] = work["ars5"]
+        if _CELL_ID_CLEAN in work.columns:
+            work[folders.GEO_1KM] = work[_CELL_ID_CLEAN].map(cellmod.derive_1km_parent_id)
+        work = btt.rescale_building_type_to_households(
+            work, building_type_cols, household_total_col=_HH_TOTAL_CLEAN)
+        df = df.copy()
+        for column in building_type_cols:
+            df[column] = work[column]
 
     return df
 
