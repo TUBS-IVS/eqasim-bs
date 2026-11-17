@@ -53,7 +53,7 @@ def _two_batches(work_dir):
     _batch(work_dir, "batch_002", [
         _outcome("ZENSUS1km", "sequential_retry_failed", 2),
         _outcome("ZENSUS1km", "simultaneous"),
-        _outcome("ZENSUS100m", "single_failed_smart_round"),
+        _outcome("ZENSUS100m", "single_failed_smart_round", label="seed_level_x"),
         _call("NOT_SOLVED", "retry_x"),
     ])
     # an incomplete batch is ignored, even without a record
@@ -183,15 +183,19 @@ def test_duplicate_outcome_key_raises(tmp_path):
     assert len(solver_path_gate.read_records(other)) == 3
 
 
-def test_not_solved_and_single_failures_warn_as_a_rate_with_denominators(tmp_path, caplog):
-    _two_batches(tmp_path)  # 3 call rows, 2 NOT_SOLVED; 3 single call rows, 1 single failure
+def test_not_solved_warns_as_a_rate_and_single_failures_as_labelled_count(tmp_path, caplog):
+    _two_batches(tmp_path)  # 3 call rows, 2 NOT_SOLVED; 1 single failure
     with caplog.at_level(logging.INFO):
         _, totals = solver_path_gate.check_solver_paths(tmp_path, None)
-    assert totals["call_rows"] == 3 and totals["single_call_rows"] == 3
+    assert totals["call_rows"] == 3
+    assert totals["single_failed_trace_labels"] == ["batch_002/seed_level_x"]
     lines = [r for r in caplog.records if "NOT_SOLVED" in r.getMessage()]
     assert len(lines) == 1 and lines[0].levelno == logging.WARNING
     assert "2/3 call rows (66.7%)" in lines[0].getMessage()
-    assert "1/3 single call rows (33.3%)" in lines[0].getMessage()
+    # No rate for the single failures: the single call rows include the backstopped
+    # sub-zone calls of the simultaneous fallback, so a denominator would understate them.
+    assert "batch_002/seed_level_x" in lines[0].getMessage()
+    assert "single call rows" not in lines[0].getMessage()
 
 
 def test_clean_call_rows_stay_at_info(tmp_path, caplog):
@@ -219,4 +223,4 @@ def test_real_fork_record_is_accepted_with_the_expected_counts(tmp_path):
     assert by_geography["non_simultaneous"].to_dict() == {
         "KREIS": 0, "ZENSUS100m": 9, "ZENSUS1km": 0}
     assert totals["not_solved_calls"] == 0 and totals["single_failed_smart_round"] == 0
-    assert totals["call_rows"] == 504 and totals["single_call_rows"] == 466
+    assert totals["call_rows"] == 504 and totals["single_failed_trace_labels"] == []

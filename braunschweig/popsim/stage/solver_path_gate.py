@@ -126,9 +126,12 @@ def summarize_call_totals(records: pd.DataFrame) -> dict:
 
     Call rows carry no reliable geography (the single integerizer does not know it), so these
     are never grouped by geography. Returns ``{"not_solved_calls", "single_failed_smart_round",
-    "call_rows", "single_call_rows", "per_batch": {batch: {"not_solved_calls",
-    "single_failed_smart_round"}}}``; the two row counts are the denominators of the rates
-    :func:`check_solver_paths` logs.
+    "single_failed_trace_labels", "call_rows", "per_batch": {batch: {"not_solved_calls",
+    "single_failed_smart_round"}}}``; ``call_rows`` is the denominator of the NOT_SOLVED rate
+    :func:`check_solver_paths` logs and ``single_failed_trace_labels`` the sorted
+    ``<batch>/<trace_label>`` of every single failure. The single failures get no rate: the
+    ``single`` call rows include the backstopped sub-zone calls of the simultaneous fallback,
+    so they are no denominator of seed-level integerizations.
     """
     per_batch = {}
     for name, group in records.groupby("batch"):
@@ -141,9 +144,11 @@ def summarize_call_totals(records: pd.DataFrame) -> dict:
     return {
         "not_solved_calls": sum(v["not_solved_calls"] for v in per_batch.values()),
         SINGLE_FAILED_OUTCOME: sum(v[SINGLE_FAILED_OUTCOME] for v in per_batch.values()),
+        "single_failed_trace_labels": sorted(
+            f"{row.batch}/{row.trace_label}" for row in records[
+                (records["row_type"] == "outcome")
+                & (records["outcome"] == SINGLE_FAILED_OUTCOME)].itertuples()),
         "call_rows": int((records["row_type"] == "call").sum()),
-        "single_call_rows": int(((records["row_type"] == "call")
-                                 & (records["kind"] == "single")).sum()),
         "per_batch": per_batch,
     }
 
@@ -212,10 +217,10 @@ def check_solver_paths(work_dir, error_rate: Optional[float]) -> tuple:
     logger.log(
         logging.WARNING if (not_solved or single_failed) else logging.INFO,
         "[%s] NOT_SOLVED integerizer calls: %d/%d call rows (%.1f%%); single_failed_smart_round "
-        "(single integerizer ended without success): %d/%d single call rows (%.1f%%)",
+        "(single integerizer ended without success; a count, no rate): %d %s",
         STAGE_TAG, not_solved, totals["call_rows"],
-        _percent(not_solved, totals["call_rows"]), single_failed, totals["single_call_rows"],
-        _percent(single_failed, totals["single_call_rows"]))
+        _percent(not_solved, totals["call_rows"]), single_failed,
+        totals["single_failed_trace_labels"])
     if exceeded:
         raise RuntimeError(
             f"[{STAGE_TAG}] non-simultaneous share above solver_fallback_error_rate "
