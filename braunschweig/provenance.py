@@ -48,6 +48,12 @@ PROVENANCE_CONFIG_KEYS = (
     "braunschweig.population.popsim.keep_fractional_sample_weights",
     "braunschweig.population.popsim.integerizer_draw",
     "braunschweig.population.popsim.integerizer_timeout_s",
+    # The controlled-rounding options (same KEY_* comments in config_keys).
+    "braunschweig.population.popsim.integerizer_rounding",
+    "braunschweig.population.popsim.integerizer_penalty_floor",
+    "braunschweig.population.popsim.integerizer_penalty_cap",
+    "braunschweig.population.popsim.integerizer_parent_total_factor",
+    "braunschweig.population.popsim.integerizer_conserve_penalty",
 )
 
 
