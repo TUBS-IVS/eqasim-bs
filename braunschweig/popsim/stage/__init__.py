@@ -2760,6 +2760,7 @@ def execute(context) -> pd.DataFrame:
     solver_paths = solver_path_gate.check_solver_paths(
         work_dir, context.config(KEY_SOLVER_FALLBACK_ERROR_RATE))
     context.set_info("popsim_solver_paths", solver_paths.to_dict("records"))
+    context.set_info("popsim_solver_path_totals", solver_paths.attrs["call_totals"])
     inkar_income = _load_inkar_income_scale(context)
     combined = _join_cell_attributes_onto_merged_output(merge_report, cells)
     donor_households, donor_persons = _load_donor_tables(

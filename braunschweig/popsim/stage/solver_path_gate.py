@@ -88,10 +88,34 @@ def _read_records(work_dir: Path) -> pd.DataFrame:
             raise RuntimeError(
                 f"[{STAGE_TAG}] completed batch {folder.name} has an empty {RECORD_RELATIVE_PATH}: "
                 "no integerizer call was recorded")
+        frame["batch"] = folder.name
         frames.append(frame)
     if not frames:
         return pd.DataFrame(columns=list(_COLUMNS))
     return pd.concat(frames, ignore_index=True)
+
+
+def summarize_call_totals(work_dir) -> dict:
+    """Run totals and per-batch counts of NOT_SOLVED call rows and single integerizer failures.
+
+    Call rows carry no reliable geography (the single integerizer does not know it), so these
+    are never grouped by geography. Returns ``{"not_solved_calls", "single_failed_smart_round",
+    "per_batch": {batch: {"not_solved_calls", "single_failed_smart_round"}}}``.
+    """
+    records = _read_records(Path(work_dir))
+    per_batch = {}
+    for name, group in records.groupby("batch"):
+        per_batch[name] = {
+            "not_solved_calls": int(((group["row_type"] == "call")
+                                     & (group["status"] == NOT_SOLVED_STATUS)).sum()),
+            SINGLE_FAILED_OUTCOME: int(((group["row_type"] == "outcome")
+                                        & (group["outcome"] == SINGLE_FAILED_OUTCOME)).sum()),
+        }
+    return {
+        "not_solved_calls": sum(v["not_solved_calls"] for v in per_batch.values()),
+        SINGLE_FAILED_OUTCOME: sum(v[SINGLE_FAILED_OUTCOME] for v in per_batch.values()),
+        "per_batch": per_batch,
+    }
 
 
 def summarize_solver_paths(work_dir) -> pd.DataFrame:
@@ -99,29 +123,26 @@ def summarize_solver_paths(work_dir) -> pd.DataFrame:
 
     Columns: ``geography``, ``parents`` (outcome rows of the simultaneous integerizer), one
     count column per outcome (incl. ``single_failed_smart_round``), ``rounded_zones``,
-    ``non_simultaneous`` and ``not_solved_calls`` (call rows with status NOT_SOLVED).
+    and ``non_simultaneous``; call-row counts are run totals (:func:`summarize_call_totals`).
     Raises ``RuntimeError`` for a completed batch without a usable record.
     """
     records = _read_records(Path(work_dir))
     outcome_rows = records[records["row_type"] == "outcome"]
-    call_rows = records[records["row_type"] == "call"]
-    geographies = sorted(set(outcome_rows["geography"]) | set(call_rows["geography"]))
+    # Per-geography table from OUTCOME rows only; call rows have no reliable geography.
+    geographies = sorted(set(outcome_rows["geography"]))
     rows = []
     for geography in geographies:
         outcomes = outcome_rows[outcome_rows["geography"] == geography]
         counts = {name: int((outcomes["outcome"] == name).sum()) for name in ALL_OUTCOMES}
         rounded = pd.to_numeric(outcomes["rounded_zones"], errors="coerce").fillna(0)
-        calls = call_rows[call_rows["geography"] == geography]
         rows.append({
             "geography": geography,
             "parents": sum(counts[n] for n in PRIMARY_OUTCOMES + FALLBACK_OUTCOMES),
             **counts,
             "rounded_zones": int(rounded.sum()),
             "non_simultaneous": sum(counts[n] for n in FALLBACK_OUTCOMES),
-            "not_solved_calls": int((calls["status"] == NOT_SOLVED_STATUS).sum()),
         })
-    columns = ["geography", "parents", *ALL_OUTCOMES, "rounded_zones", "non_simultaneous",
-               "not_solved_calls"]
+    columns = ["geography", "parents", *ALL_OUTCOMES, "rounded_zones", "non_simultaneous"]
     return pd.DataFrame(rows, columns=columns)
 
 
@@ -134,6 +155,8 @@ def check_solver_paths(work_dir, error_rate: Optional[float]) -> pd.DataFrame:
     """
     error_rate = validate_error_rate(error_rate)
     summary = summarize_solver_paths(work_dir)
+    totals = summarize_call_totals(work_dir)
+    summary.attrs["call_totals"] = totals
     exceeded = []
     for row in summary.itertuples(index=False):
         share = log_fallback_rate(
@@ -144,8 +167,8 @@ def check_solver_paths(work_dir, error_rate: Optional[float]) -> pd.DataFrame:
             exceeded.append(f"{row.geography} {100.0 * share:.1f}%")
     logger.info(
         "[%s] NOT_SOLVED integerizer calls: %d; single_failed_smart_round "
-        "(single integerizer ended without success): %d", STAGE_TAG, int(summary["not_solved_calls"].sum()),
-        int(summary[SINGLE_FAILED_OUTCOME].sum()))
+        "(single integerizer ended without success): %d", STAGE_TAG, totals["not_solved_calls"],
+        totals[SINGLE_FAILED_OUTCOME])
     if exceeded:
         raise RuntimeError(
             f"[{STAGE_TAG}] non-simultaneous share above solver_fallback_error_rate "

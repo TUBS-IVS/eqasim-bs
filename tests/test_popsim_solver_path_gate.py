@@ -68,7 +68,13 @@ def test_counts_per_geography(tmp_path):
     assert z["non_simultaneous"] == 2
     assert z["rounded_zones"] == 5
     assert df.loc["ZENSUS100m", "single_failed_smart_round"] == 1
-    assert df["not_solved_calls"].sum() == 2
+    assert df.loc["ZENSUS100m", "parents"] == 0
+    assert "not_solved_calls" not in df.columns
+    totals = solver_path_gate.summarize_call_totals(tmp_path)
+    assert totals["not_solved_calls"] == 2
+    assert totals["single_failed_smart_round"] == 1
+    assert totals["per_batch"]["batch_001"]["not_solved_calls"] == 1
+    assert totals["per_batch"]["batch_002"]["single_failed_smart_round"] == 1
 
 
 def test_rate_logged_with_helper_format(tmp_path, caplog):
