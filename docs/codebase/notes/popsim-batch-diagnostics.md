@@ -51,7 +51,7 @@ weight column, household id column and geographies (`ValueError` otherwise). Rat
 | `solver_paths.csv` | which solver path each parent zone took, per level | `output/populationsim.log` |
 | `misfit_split.csv`, `rounding_shift.csv` | balancing vs rounding part of the misfit (`--misfit`) | checkpoint store |
 
-`resolved_record_shares.csv` is descriptive (no thresholds) and keeps the before/after comparison on the same records once the coverage table shows none uncovered; a seed without the raw columns gets no row.
+`resolved_record_shares.csv` is descriptive (no thresholds). After the WP3 resolution no seed record is uncovered, so the coverage table shows nothing; this table follows the same records by their raw code. A seed without the raw columns gets no row.
 
 The group declaration (which control belongs to which group, universe, exhaustive) lives in
 `braunschweig/popsim/control_groups.py` and nowhere else; a control that falls in no group or in

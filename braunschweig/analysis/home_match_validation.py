@@ -39,6 +39,15 @@ _OCCUPIED_COL = "BewohntWhg_Leerstand_100m_Gitter"
 
 
 def home_match_metrics(placed: pd.DataFrame, buildings_btype: pd.DataFrame) -> dict:
+    """Return ``type_match_share``, ``size_assortativity`` and ``n_households``.
+
+    ``type_match_share`` is the share of matched households whose building type equals the
+    type of the building they were placed in. Households whose MiD building type was
+    "not assignable" (haustyp 95) used to count as mismatches; since the seed resolution of
+    issue #647 they carry a drawn type, so the share is unchanged in definition but now
+    includes them. When ``building_type_imputed`` is present, the number of such households
+    among the matched set is logged so the share can be read with that in mind.
+    """
     df = placed.merge(buildings_btype, left_on="home_location_id", right_on="building_id", how="inner")
     # Join-coverage transparency (CLAUDE.md no-silent-fallback): households
     # whose home_location_id is pd.NA (zero-building-cell fallback) or matches
@@ -50,6 +59,12 @@ def home_match_metrics(placed: pd.DataFrame, buildings_btype: pd.DataFrame) -> d
         "unmatched are excluded from type_match_share/size_assortativity.",
         n_matched, n_total, 100.0 * n_matched / n_total if n_total else 0.0,
     )
+    if "building_type_imputed" in df.columns:
+        n_imputed = int(df["building_type_imputed"].fillna(False).astype(bool).sum())
+        logging.getLogger(__name__).info(
+            "[home_match] %d/%d matched households carry a drawn building type "
+            "(building_type_imputed).", n_imputed, n_matched,
+        )
     if n_total > 0 and n_matched == 0:
         # Zero overlap between home_location_id and buildings_btype.building_id is
         # never a legitimate placement outcome (a real run matches almost every

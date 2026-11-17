@@ -91,9 +91,13 @@ def resolved_record_shares(batch: BatchFolder, usage: pd.Series) -> pd.DataFrame
 
     A record is selected by its raw MiD code (``HP_SEX_raw``, ``H_MIETE_raw``,
     ``haustyp_raw``) before the resolution; ``raw_codes`` is the comma-separated code list,
-    prefixed ``not `` when the complement is selected.  Shares are over all records of the
-    table, weighted exactly as in ``coverage_table`` (same ``_record_weights``).  Descriptive
-    only.  A seed without a raw column gets no row; the skipped columns are logged once.
+    prefixed ``not `` when the complement is selected.  The denominator is the whole seed
+    table, weighted as in ``coverage_table`` (same ``_record_weights``); that equals the
+    universe of ``coverage_table`` for the age_sex, tenure and building_type groups (universe
+    None), so the rows compare like for like with the baseline ``control_coverage.csv``.
+    NaN raw values are excluded from the ``not`` rows (a missing raw code is not "other").
+    Descriptive only.  A seed without a raw column gets no row; the skipped columns are
+    logged once.
     """
     frames = {"households": batch.seed_households, "persons": batch.seed_persons}
     rows, skipped = [], []

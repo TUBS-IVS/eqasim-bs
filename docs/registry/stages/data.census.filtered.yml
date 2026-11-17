@@ -166,12 +166,5 @@ notes: >-
   _DEFERRED_HELPER_MODULE_NAMES (the third second-level exception validate() names, with the same
   standard of evidence as the other two) so an edit to the pairing rule cannot be served from a
   stale seed cache.
-
-
-  SEED RESOLUTION AND HOUSEHOLD-BASED BUILDING-TYPE TARGETS (ADR-0198, issue #647; rules live in the
-  ADR): four keys are declared here, braunschweig.population.popsim.seed_resolve_binary_sex,
-  .seed_resolve_tenure_building_type, .building_type_targets_to_households and .seed_contract_mode
-  (all on / "error" in configs/base_bs.yml). Fallback and draw rates are logged under the tags
-  popsim.seed.sex (+ popsim.seed.sex_global_pool), popsim.seed.tenure and popsim.seed.building_type
-  (each with a _coarse_tier rate), popsim.building_type_targets (.cells, .households) and
-  popsim.seed_contract.
+  SEED RESOLUTION AND HOUSEHOLD-BASED BUILDING-TYPE TARGETS: rules, keys and log tags are in
+  ADR-0198 (keys in configs/base_bs.yml and braunschweig/popsim/stage/config_keys.py).

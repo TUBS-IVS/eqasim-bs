@@ -156,6 +156,17 @@ def test_resolved_record_shares_skips_seed_without_raw_columns(work_dir, caplog)
     assert len(skipped) == 1
 
 
+def test_resolved_record_shares_excludes_nan_raw_values_from_the_complement_row(work_dir):
+    """A missing raw tenure code is not "other": the 'not 1,2' row must not count it."""
+    batch = _with_raw_columns(load_batch_folder(work_dir / "batch_000"))
+    households = batch.seed_households.assign(H_MIETE_raw=[1, 2, np.nan, 5])
+    batch = replace(batch, seed_households=households)
+    table = resolved_record_shares(
+        batch, pd.Series({2: 1, 3: 1, 4: 3})).set_index("attribute")
+    assert table.loc["H_MIETE_raw", "n_records"] == 1      # only code 5; NaN excluded
+    assert table.loc["H_MIETE_raw", "seed_weight_share"] == pytest.approx(4 / 8)
+
+
 def test_usage_of_a_household_outside_the_seed_is_refused(work_dir):
     batch = load_batch_folder(work_dir / "batch_000")
     with pytest.raises(ValueError, match="not in the seed households.*99"):
@@ -653,6 +664,27 @@ def test_run_writes_all_tables_and_flags_breaches(work_dir, tmp_path):
         "ZENSUS100m", "sequential_fallback"].sum() == 0
     assert not [w for w in result["warnings"] if w["check"] == "coverage_multi_hit"]
     assert ("coverage_ratio", "tenure") not in raised      # ratio 0.8 is inside 0.5 to 2.0
+
+
+def test_run_reports_resolved_record_shares_when_the_seed_has_raw_columns(work_dir, tmp_path):
+    """Primary path of the resolved-record table through ``run_diagnostics``.
+
+    Defect caught: the table silently empty in the run (seed_group column or the report
+    section lost) although the seed carries the raw columns.
+    """
+    data = work_dir / "batch_000" / "data"
+    households = pd.read_csv(data / "seed_households.csv").assign(
+        H_MIETE_raw=[1, 2, 9, 5], haustyp_raw=[2, 1, 1, 95])
+    persons = pd.read_csv(data / "seed_persons.csv").assign(HP_SEX_raw=[1, 2, 1, 3, 9, 2])
+    households.to_csv(data / "seed_households.csv", index=False)
+    persons.to_csv(data / "seed_persons.csv", index=False)
+    result = run_diagnostics(work_dir, tmp_path / "out", misfit=False)
+    table = result["tables"]["resolved_record_shares"]
+    assert len(table) == 3 and "seed_group" in table.columns
+    assert table["n_records"].tolist() == [2, 2, 1]
+    report = (tmp_path / "out" / "popsim_batch_diagnostics.md").read_text(encoding="utf-8")
+    section = report.split("## Resolved seed records by raw code")[1].split("## Control universe")[0]
+    assert "H_MIETE_raw" in section and "not 1,2" in section
 
 
 def test_run_keeps_different_seeds_apart(work_dir, tmp_path):

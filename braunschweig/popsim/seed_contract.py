@@ -112,6 +112,13 @@ def _base_column(controls_df: pd.DataFrame, target: str) -> str:
     return field[: -len(suffix)] if field.endswith(suffix) else field
 
 
+def _household_total_groups(groups) -> list:
+    """The groups the household-total check covers; one owner for the selection rule."""
+    return [group for group in groups
+            if group.seed_table == "households" and group.exhaustive
+            and group.universe is None]
+
+
 def household_group_columns(controls_df: pd.DataFrame, total_hh_control: str,
                             groups=CONTROL_GROUPS) -> list:
     """Cells columns :func:`check_household_group_totals` reads (total first, no duplicates).
@@ -120,10 +127,7 @@ def household_group_columns(controls_df: pd.DataFrame, total_hh_control: str,
     """
     columns = [_base_column(controls_df, total_hh_control)]
     geography = dict(zip(controls_df["target"], controls_df["geography"]))
-    for group in groups:
-        if group.seed_table != "households" or not group.exhaustive \
-                or group.universe is not None:
-            continue
+    for group in _household_total_groups(groups):
         for target in group_targets(group, controls_df, total_hh_control):
             if geography[target] in _GRID_GEOGRAPHIES:
                 columns.append(_base_column(controls_df, target))
@@ -152,10 +156,7 @@ def check_household_group_totals(cells: pd.DataFrame, controls_df: pd.DataFrame,
     kreis = cells[kreis_col].astype(str).to_numpy()
     total = pd.to_numeric(cells[total_column], errors="coerce").fillna(0.0).to_numpy(float)
     rows, failures, skipped, checked = [], [], [], 0
-    for group in groups:
-        if group.seed_table != "households" or not group.exhaustive \
-                or group.universe is not None:
-            continue
+    for group in _household_total_groups(groups):
         targets = group_targets(group, controls_df, total_hh_control)
         if not targets:
             continue

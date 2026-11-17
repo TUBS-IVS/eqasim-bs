@@ -11,8 +11,9 @@
   2. **Tenure and building type.** MiD `H_MIETE` (codeplan: MiD 2023 Codepläne B1 v1.1,
      sheet Haushalte) is 1 Miete, 2 Eigentum, 3 anderes, 9 keine Angabe, 309 kein Privat-HH
      (CATI/CAWI). The census renter target `MieterHH` is the household total minus the owner
-     households (the census preparation; external private repository, not cited by file), so
-     renters are "not owner-occupied". `haustyp` is "Gebäudetyp (Raumbezug: Siedlungsblock)"
+     households (the census preparation; external private repository, not cited by file; the
+     definition was checked against that code on 2026-11-17), so renters are
+     "not owner-occupied". `haustyp` is "Gebäudetyp (Raumbezug: Siedlungsblock)"
      with 95 "nicht zuzuordnen" (same codeplan).
   3. **Building-type targets.** The per-100 m building-type targets were census DWELLING
      counts, whose sum exceeds the household total of the same cell, so the target set was
@@ -76,10 +77,9 @@
   - Re-tuning the control importances: out of scope here.
 - **Consequences:** every stage downstream of PopulationSim recomputes. No result claims are
   made: the arm-2 run manifest will hold the measurement. The building-type importances were
-  tuned against the infeasible dwelling targets and are NOT retuned here. Helper-hash tuples
-  grew: the seed module in the enriched stage's token, `building_type_targets` and
-  `control_groups` in the `analysis_suite` token, so edits to them invalidate those caches
-  (intended). `home_match_validation` type matches now include drawn haustyp-95 types (open,
+  tuned against the infeasible dwelling targets and are NOT retuned here. The stage
+  validation tokens now cover the new helper modules (the tuples are in code), so edits to
+  them invalidate those caches (intended). `home_match_validation` type matches now include drawn haustyp-95 types (open,
   split by `building_type_imputed` is a possible follow-up).
 - **Regression tests:** `tests/test_popsim_seed_fills.py`, `tests/test_building_type_targets.py`,
   `tests/test_popsim_seed_contract.py`, `tests/test_popsim_income_spatial_tilt.py`,

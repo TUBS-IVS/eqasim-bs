@@ -308,11 +308,12 @@ def maybe_apply_income_tilt(
             imputed = frame[imputed_col].fillna(False).astype(bool)
             n_imputed = int((has_income & known_tenure & imputed).sum())
             known_tenure = known_tenure & ~imputed
-            logger.info(
-                "[income_spatial_tilt] unknown_neutral=True: shielding %d/%d rows with "
-                "%s=True (tenure resolved before PopulationSim) from the spatial tilt "
-                "(factor=1.0).", n_imputed, len(frame), imputed_col,
-            )
+            if n_imputed > 0:
+                logger.info(
+                    "[income_spatial_tilt] unknown_neutral=True: shielding %d/%d rows with "
+                    "%s=True (tenure resolved before PopulationSim) from the spatial tilt "
+                    "(factor=1.0).", n_imputed, len(frame), imputed_col,
+                )
         active_mask = has_income & known_tenure
     else:
         active_mask = has_income

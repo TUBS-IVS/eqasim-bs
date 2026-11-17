@@ -55,15 +55,36 @@ def test_cell_without_dwellings_takes_1km_shares(caplog):
     assert "primary 14/18" in text and "fallback 4" in text
 
 
-def test_cell_and_1km_without_dwellings_take_kreis_shares():
+def test_cell_and_1km_without_dwellings_take_kreis_shares(caplog):
     cells = _frame([
         ("c1", "k1", "01", 6.0, 0.0, 0.0, 0.0),
         ("c2", "k2", "01", 8.0, 3.0, 1.0, 0.0),
         ("c3", "k3", "02", 8.0, 0.0, 4.0, 4.0),
     ])
-    out = btt.rescale_building_type_to_households(cells, BT_COLS)
+    with caplog.at_level(logging.INFO):
+        out = btt.rescale_building_type_to_households(cells, BT_COLS)
     # c1 and its 1 km parent have no dwellings: Kreis 01 shares are 3/4 EFH and 1/4 MFH.
     assert out.loc[0, BT_COLS].tolist() == pytest.approx([4.5, 1.5, 0.0])
+    # The Kreis-tier fallback is counted: 1 of 3 cells (6 of 22 households).
+    text = "\n".join(r.getMessage() for r in caplog.records if LOG_NAME in r.getMessage())
+    assert "primary 2/3" in text and "fallback 1" in text
+    assert "primary 16/22" in text and "fallback 6" in text
+
+
+def test_validation_and_stage_rescale_the_same_building_type_columns():
+    """The validation tool (tier2-only map) and the stage (production tiers) must rescale
+    the same building-type columns, or the validation target silently diverges."""
+    from braunschweig.popsim.control_spec import (
+        build_aggregation_map, controls_for_seed, full_catalog)
+
+    tier2_map = build_aggregation_map(
+        controls_for_seed(full_catalog(include_tiers=("tier2",)), "mid"))
+    production_map = build_aggregation_map(controls_for_seed(
+        full_catalog(include_tiers=("tier0", "tier1", "tier2", "tier3")), "mid"))
+    entries = [name for name, _, _ in control_spec._TIER2_BUILDING_TYPE_ENTRIES]
+    validation_cols = [n for n in entries if n in tier2_map]
+    stage_cols = [n for n in entries if n in production_map]
+    assert validation_cols and validation_cols == stage_cols
 
 
 def test_no_share_at_any_level_raises():

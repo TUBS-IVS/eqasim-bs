@@ -203,6 +203,40 @@ def test_missing_kreis_and_ars_column_warns_or_raises(caplog):
             complete_members=True, **kwargs)
 
 
+def test_kreis_derived_from_ars_when_kreis_column_is_absent():
+    """No KREIS column but an ARS column: the Kreis comes from the ARS and the check runs.
+
+    Defect caught: the ARS branch skipping the check (or mislabelling the Kreis) would let
+    dwelling-based targets through on a cells frame that only carries the ARS.
+    """
+    from braunschweig.popsim import stage as popsim_stage
+    households, persons = _resolved()
+    cells = _cells().drop(columns=["KREIS"])
+    cells["ARS"] = ["031010000000", "031010000000", "031020000000"]
+    cells.loc[:1, ["building_type_efh", "building_type_mfh"]] *= 1.2   # dwellings > households
+    with pytest.raises(ValueError, match=r"building_type, Kreis 03101.*ratio 1\.2000"):
+        popsim_stage._check_seed_contract(
+            households, persons, _controls_df(), TOTAL, cells, kreis_col="KREIS",
+            ars_col="ARS", mode="error", complete_members=True, source_name="mid")
+
+
+def test_group_selection_is_shared_between_column_list_and_check():
+    """The columns handed to the check are exactly the columns it reads.
+
+    Defect caught: a group the check covers whose columns the caller's narrow frame drops
+    would be skipped silently (counted as 'absent column').
+    """
+    from braunschweig.popsim.seed_contract import household_group_columns
+    controls = _controls_df()
+    needed = household_group_columns(controls, TOTAL)
+    cells = _cells()
+    narrow = cells[[c for c in needed if c in cells.columns] + ["KREIS"]]
+    full = check_household_group_totals(cells, controls, TOTAL, kreis_col="KREIS")
+    reduced = check_household_group_totals(narrow, controls, TOTAL, kreis_col="KREIS")
+    pd.testing.assert_frame_equal(full, reduced)
+    assert set(full["group"])      # something was checked
+
+
 def test_missing_seed_column_names_group_table_and_column():
     households, persons = _resolved()
     households = households.drop(columns=["haustyp"])
