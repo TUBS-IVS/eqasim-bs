@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Sequence
 
+import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -251,3 +253,100 @@ def impute_binary_sex(binary, band, *, rng, constant=None):
             fallback(missing_mask, n_missing)
     binary.index = original_index
     return binary, n_band, n_global, n_constant
+
+
+def _tier_key(tier: Sequence[str]) -> str:
+    return "+".join(tier) if tier else "all"
+
+
+def weighted_hot_deck(
+    df: pd.DataFrame, *, value_col: str, missing_mask, weight_col: str,
+    tiers: Sequence[Sequence[str]], rng, name: str,
+) -> tuple[pd.Series, dict[str, int]]:
+    """Fill the ``missing_mask`` rows of ``value_col`` by a weighted hot-deck draw.
+
+    Every row in ``missing_mask`` receives the ``value_col`` of one donor row drawn from the
+    non-missing rows (``~missing_mask`` with a non-NaN value) of the first tier whose pool
+    has a positive total weight. A tier is a tuple of grouping columns: the pool is the
+    donors sharing the row's values in those columns; ``()`` is the pool of all donors. A
+    row with NaN in a tier's grouping column cannot use that tier and goes to the next.
+    The draw probability is proportional to ``weight_col``; NaN weights count as 0, so a
+    pool whose donors all carry weight 0 or NaN is skipped (no division by zero). One
+    ``rng.choice`` per filled row, rows visited in positional order, so the result is
+    reproducible for a given ``rng`` state; no row to fill means no draw.
+
+    The work runs on a positional (RangeIndex) copy, so a frame with duplicate index
+    labels gets one draw per row; the original index is restored on the result.
+
+    Returns: ``(filled, counts)``: ``filled`` is a copy of ``value_col`` with the missing
+    rows filled; ``counts`` maps each tier (``"+".join(tier)``, ``"all"`` for ``()``) to the
+    number of rows it filled. Raises ``ValueError`` when no tier can fill a row or a weight
+    is negative.
+    """
+    original_index = df.index
+    work = df.reset_index(drop=True)
+    mask = np.asarray(missing_mask, dtype=bool)
+    if len(mask) != len(work):
+        raise ValueError(
+            f"[{name}] missing_mask has {len(mask)} entries for a frame of {len(work)} rows.")
+    values = work[value_col].copy()
+    counts = {_tier_key(tier): 0 for tier in tiers}
+    rows_to_fill = np.flatnonzero(mask)
+    if len(rows_to_fill) == 0:
+        values.index = original_index
+        return values, counts
+
+    weights = pd.to_numeric(work[weight_col], errors="coerce").to_numpy(dtype=float)
+    if (weights < 0).any():
+        raise ValueError(
+            f"[{name}] {int((weights < 0).sum())} rows carry a negative {weight_col!r}; "
+            "a hot-deck weight must be >= 0.")
+    weights = np.nan_to_num(weights, nan=0.0)
+    is_donor = ~mask & values.notna().to_numpy()
+
+    # Pools per tier, keyed by the tuple of grouping values; only pools with a positive
+    # total weight are kept, so a key that is absent means "fall to the next tier".
+    donor_positions = np.flatnonzero(is_donor)
+    value_array = values.to_numpy()
+    pools: list[dict] = []
+    for tier in tiers:
+        tier_cols = list(tier)
+        tier_pools: dict = {}
+        if tier_cols:
+            keys = work.loc[donor_positions, tier_cols]
+            grouper = tier_cols[0] if len(tier_cols) == 1 else tier_cols
+            for key, group in keys.groupby(grouper, sort=False, dropna=True):
+                key_tuple = key if isinstance(key, tuple) else (key,)
+                tier_pools[key_tuple] = group.index.to_numpy()
+        else:
+            tier_pools[()] = donor_positions
+        kept = {}
+        for key, positions in tier_pools.items():
+            w = weights[positions]
+            total = w.sum()
+            if total > 0:
+                kept[key] = (value_array[positions], w / total)
+        pools.append(kept)
+
+    for position in rows_to_fill:
+        for tier, tier_pools in zip(tiers, pools):
+            if tier:
+                key = tuple(work.at[position, col] for col in tier)
+                if any(pd.isna(k) for k in key):
+                    continue
+            else:
+                key = ()
+            pool = tier_pools.get(key)
+            if pool is None:
+                continue
+            pool_values, probabilities = pool
+            values.iat[position] = pool_values[rng.choice(len(pool_values), p=probabilities)]
+            counts[_tier_key(tier)] += 1
+            break
+        else:
+            raise ValueError(
+                f"[{name}] row {original_index[position]!r} could not be filled: no tier "
+                f"{[_tier_key(t) for t in tiers]} offers a donor pool with positive "
+                f"{weight_col!r}.")
+    values.index = original_index
+    return values, counts

@@ -245,6 +245,9 @@ _HOUSEHOLD_ATTRS = [
     # Absent when the donor lacks the column (ENTD path); the categorical_household_control
     # extractor logs a WARNING and skips the control when the column is absent.
     "housing_tenure", "building_type_3class",
+    # True where the donor's raw H_MIETE / haustyp code was resolved before PopulationSim
+    # (attributes.resolve_tenure_and_building_type, issue #647); present only then.
+    "housing_tenure_imputed", "building_type_imputed",
 ]
 
 

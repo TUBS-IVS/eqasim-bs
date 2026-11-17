@@ -1301,6 +1301,7 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         popsim_stage.KEY_ESCORT_PASSIVE_EDUCATION: False,
         popsim_stage.KEY_EXCLUDE_RBW_LEGS: False,
         popsim_stage.KEY_SEED_RESOLVE_BINARY_SEX: True,
+        popsim_stage.KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE: True,
         # The four flags under test -- all NON-DEFAULT (the pure function's own keyword
         # defaults are False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES=15.0 /
         # DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS=18), so a
@@ -1358,6 +1359,7 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
             "passive_pair_adult_min_age_years")
         captured["resolve_binary_sex"] = kwargs.get("resolve_binary_sex")
         captured["seed_fill_rng"] = kwargs.get("seed_fill_rng")
+        captured["resolve_tenure_building_type"] = kwargs.get("resolve_tenure_building_type")
         raise _StopAtSeedBuild()
 
     monkeypatch.setattr(popsim_stage, "_build_populationsim_seed", capturing_build_populationsim_seed)
@@ -1372,4 +1374,5 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
     # The sex-resolution key and the dedicated fill stream (4th value of _create_seeded_rngs)
     # reach the seed build, so the complete_members wiring is live under execute().
     assert captured["resolve_binary_sex"] is True
+    assert captured["resolve_tenure_building_type"] is True
     assert isinstance(captured["seed_fill_rng"], np.random.RandomState)

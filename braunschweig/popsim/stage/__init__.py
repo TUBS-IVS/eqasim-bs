@@ -256,6 +256,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_CLEANUP_H5,
     KEY_COMPLETE_MEMBERS,
     KEY_SEED_RESOLVE_BINARY_SEX,
+    KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE,
     KEY_MID_PASSENGER_AVAILABILITY,
     KEY_CONTROL_TIERS,
     KEY_CONTROLS,
@@ -763,6 +764,8 @@ def configure(context):
     context.config(KEY_COMPLETE_MEMBERS, True)
     # Sex codes 3 / 9 resolved once per donor person (issue #647). Default True.
     context.config(KEY_SEED_RESOLVE_BINARY_SEX, True)
+    # Tenure 3 / 9 / 309 and building type 95 resolved once per donor household (#647).
+    context.config(KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE, True)
     context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
     # Controls source (Task 5). Default "csv" = byte-identical to today's behaviour.
     context.config(KEY_CONTROLS_SOURCE, "csv")
@@ -1616,7 +1619,8 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
         w_zweck_10_as_leisure: bool = False, escort_passive_from_adult: bool = False,
         passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
         passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
-        seed_fill_rng=None, resolve_binary_sex: bool = False):
+        seed_fill_rng=None, resolve_binary_sex: bool = False,
+        resolve_tenure_building_type: bool = False):
     """Build the PopulationSim seed through the active donor source.
 
     ``resolve_binary_sex`` (config key ``seed_resolve_binary_sex``, issue #647) applies to the
@@ -1625,6 +1629,10 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     ``seed_fill_rng``, which is required then), after ``resolve_person_attributes``. The legacy
     branch stays byte-identical. The function default is False so direct callers keep the old
     behaviour; ``execute`` passes the config value (default True).
+    ``resolve_tenure_building_type`` (config key ``seed_resolve_tenure_building_type``, issue
+    #647) works the same way for the completed donor households
+    (``attributes.resolve_tenure_and_building_type``), drawing from ``seed_fill_rng`` AFTER the
+    sex resolution.
 
     ``trip_class_counts_closure`` / ``forbid_no_diary_sources`` /
     ``drop_leading_arrive_home_leg`` (issues #367 / #365 / #366, plan-structure-fix
@@ -1678,7 +1686,8 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     derivations inside ``mid.project_completed_seed`` (trip_class, participation
     and the remaining control columns). So the stream every later consumer sees
     differs from the pre-ADR-0192 one even when no count or person control is
-    active. The sex resolution (when on) draws from ``seed_fill_rng`` only. On the
+    active. The sex resolution and then the tenure / building-type resolution (when
+    on) draw from ``seed_fill_rng`` only. On the
     legacy path the draws stay inside ``mid.load_mid_seed`` (active controls only).
     Also reports the seed completeness rate plus the member-completion counts via
     ``context.set_info``.
@@ -1724,6 +1733,21 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             completed_donor_persons = attributes.resolve_binary_sex(
                 completed_donor_persons, rng=seed_fill_rng,
                 sex_col=source.seed_columns().sex)
+        if resolve_tenure_building_type:
+            if seed_fill_rng is None:
+                raise ValueError(
+                    "[popsim.stage] seed_resolve_tenure_building_type is on but no "
+                    "seed_fill_rng was given (seeded randomness rule: no random process "
+                    "without an explicit seed).")
+            # Tenure 3 / 9 / 309 and building type 95 are in no PopulationSim control;
+            # resolved ONCE per donor household here, from the same fill stream AFTER the
+            # sex draws, so the seed and every clone carry the same value (issue #647).
+            _cols = source.seed_columns()
+            completed_donor_households = attributes.resolve_tenure_and_building_type(
+                completed_donor_households, completed_donor_persons, rng=seed_fill_rng,
+                household_id_col=_cols.household_id,
+                person_household_id_col=_cols.person_household_id,
+                age_col=_cols.age, weight_col=_cols.household_weight)
         report = donor.completeness_report
         completion_report = donor.completion_report
         seed_columns = source.seed_columns()
@@ -2704,6 +2728,8 @@ def execute(context) -> pd.DataFrame:
         passive_pair_adult_min_age_years=passive_pair_adult_min_age_years_cfg,
         seed_fill_rng=seed_fill_rng,
         resolve_binary_sex=bool(context.config(KEY_SEED_RESOLVE_BINARY_SEX)),
+        resolve_tenure_building_type=bool(
+            context.config(KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE)),
     )
 
     run_one = _prepare_batch_runner(

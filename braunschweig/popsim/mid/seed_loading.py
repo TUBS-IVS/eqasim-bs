@@ -1238,7 +1238,10 @@ def project_completed_seed(
     _hh_extra, _person_extra = _split_projected_kreis_entries_by_level(effective_kreis_entries)
     return seedmod.select_seed_columns(
         households, persons, columns,
-        extra_household_cols=_hh_extra,
+        # H_MIETE_raw / haustyp_raw exist only after attributes.resolve_tenure_and_building_type
+        # (issue #647): the seed then carries the original MiD codes next to the resolved ones.
+        extra_household_cols=_hh_extra + tuple(
+            c for c in ("H_MIETE_raw", "haustyp_raw") if c in households.columns),
         extra_person_cols=tuple(
             # HP_SEX_raw exists only after attributes.resolve_binary_sex (issue #647): the
             # seed then carries the original MiD sex code next to the resolved one.

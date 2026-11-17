@@ -1150,6 +1150,111 @@ def resolve_binary_sex(
     return out
 
 
+# MiD H_MIETE codes (MiD 2023 Codeplan B1, Haushalte): 1 Miete, 2 Eigentum, 3 anderes,
+# 9 keine Angabe, 309 kein Privat-HH (CATI/CAWI). Only 1 and 2 are counted by the tenure
+# controls (control_spec._TIER2_TENURE_ENTRIES).
+TENURE_REPORTED_CODES = (1, 2)
+# 3 and 309 are re-coded to 1, the non-owner class, without a draw (owner decision
+# 2026-11-17, issue #647). ASSUMPTION: "anderes" and "kein Privat-HH" are not owner
+# occupation; the census renter target is household total minus owner households.
+TENURE_RECODED_TO_NON_OWNER = (3, 309)
+TENURE_NO_ANSWER_CODE = 9
+# MiD haustyp codes 1-4 are building classes; 95 is "nicht zuzuordnen" (no block geocode).
+HAUSTYP_REPORTED_CODES = (1, 2, 3, 4)
+HAUSTYP_NOT_ASSIGNABLE_CODE = 95
+# Hot-deck tiers for both household draws: same RegioStaR7 x household size group x
+# household type, then coarser cells, then all households.
+HOUSEHOLD_FILL_TIERS = (
+    ("RegioStaR7", "hhgr_gr", "hh_type5"), ("RegioStaR7", "hhgr_gr"), ("RegioStaR7",), (),
+)
+
+
+def _log_household_fill(tag, column, n_total, n_reported, n_recoded, tier_counts):
+    """Log one household fill: reported (primary) vs re-coded + drawn, and the draw tiers."""
+    from braunschweig.popsim.fallback_rates import log_fallback_rate
+
+    n_drawn = sum(tier_counts.values())
+    log_fallback_rate(
+        logger, tag, n_recoded + n_drawn, n_total,
+        what=f"households whose {column} code is in no control: re-coded {n_recoded}, "
+             f"drawn {n_drawn} (weighted hot deck)")
+    if n_drawn:
+        first_tier = next(iter(tier_counts))
+        logger.info("[%s] draws per tier: %s (reported %d).", tag, tier_counts, n_reported)
+        log_fallback_rate(
+            logger, f"{tag}_coarse_tier", n_drawn - tier_counts[first_tier], n_drawn,
+            what=f"drawn households that found no {first_tier} pool")
+
+
+def resolve_tenure_and_building_type(
+    households: pd.DataFrame, persons: pd.DataFrame, *, rng,
+    household_id_col: str = "H_ID", person_household_id_col: str = "H_ID",
+    age_col: str = "HP_ALTER", weight_col: str = "H_GEW",
+) -> pd.DataFrame:
+    """Resolve MiD tenure and building-type codes outside every control ONCE per donor household.
+
+    PopulationSim counts ``H_MIETE`` 1 / 2 and ``haustyp`` 1-4 only, so a seed household
+    with another code is in no tenure or building-type control (issue #647). Called by the
+    popsim stage on the completed donor households (ADR-0192 pattern); the seed and every
+    expanded clone reuse the result. The original codes stay in ``H_MIETE_raw`` and
+    ``haustyp_raw``; ``map_housing_tenure`` / ``map_building_type_3class`` derive the
+    ``*_imputed`` flags from them.
+
+    Rules: ``H_MIETE`` 1 and 2 are reported; 3 and 309 are re-coded to 1 without a draw
+    (``TENURE_RECODED_TO_NON_OWNER``); 9 is drawn. ``haustyp`` 95 is drawn (a raw code 1-4,
+    so the detail survives). Both draws are a ``missing.weighted_hot_deck`` weighted by
+    ``weight_col`` over ``HOUSEHOLD_FILL_TIERS``, tenure first, then building type, both
+    from ``rng``; the donor pool of the tenure draw holds the reported AND the re-coded
+    households (ASSUMPTION: a no-answer household is missing at random among all answers).
+    ``hh_type5`` comes from ``seed.derive_hh_type5`` on a working copy; the returned frame
+    does not gain it. Any other code (NaN included) raises.
+
+    Fallback transparency: reported / re-coded / drawn counts and the draws per tier are
+    logged with ``popsim.seed.tenure`` and ``popsim.seed.building_type`` tags.
+    """
+    from braunschweig.popsim import seed as seedmod
+
+    out = households.copy()
+    tenure_codes = (*TENURE_REPORTED_CODES, *TENURE_RECODED_TO_NON_OWNER, TENURE_NO_ANSWER_CODE)
+    haustyp_codes = (*HAUSTYP_REPORTED_CODES, HAUSTYP_NOT_ASSIGNABLE_CODE)
+    for column, codes in (("H_MIETE", tenure_codes), ("haustyp", haustyp_codes)):
+        unknown = ~out[column].isin(codes)
+        if unknown.any():
+            bad = out.loc[unknown, column].value_counts(dropna=False).to_dict()
+            raise ValueError(
+                f"[popsim.seed] {int(unknown.sum())} households carry {column} codes outside "
+                f"{list(codes)} (unenumerated): {bad}. Map them explicitly.")
+    out["H_MIETE_raw"] = out["H_MIETE"]
+    out["haustyp_raw"] = out["haustyp"]
+
+    work = out.copy()
+    hh_type5 = seedmod.derive_hh_type5(
+        persons, household_id_col=person_household_id_col, age_col=age_col)
+    work["hh_type5"] = work[household_id_col].map(hh_type5)
+    n_total = len(out)
+
+    recoded = out["H_MIETE_raw"].isin(TENURE_RECODED_TO_NON_OWNER)
+    work.loc[recoded, "H_MIETE"] = TENURE_REPORTED_CODES[0]
+    tenure, tenure_tiers = missing.weighted_hot_deck(
+        work, value_col="H_MIETE", missing_mask=out["H_MIETE_raw"] == TENURE_NO_ANSWER_CODE,
+        weight_col=weight_col, tiers=HOUSEHOLD_FILL_TIERS, rng=rng, name="popsim.seed.tenure")
+    out["H_MIETE"] = tenure.astype(int).to_numpy()
+    _log_household_fill(
+        "popsim.seed.tenure", "H_MIETE", n_total,
+        int(out["H_MIETE_raw"].isin(TENURE_REPORTED_CODES).sum()), int(recoded.sum()),
+        tenure_tiers)
+
+    building, building_tiers = missing.weighted_hot_deck(
+        work, value_col="haustyp", missing_mask=out["haustyp_raw"] == HAUSTYP_NOT_ASSIGNABLE_CODE,
+        weight_col=weight_col, tiers=HOUSEHOLD_FILL_TIERS, rng=rng,
+        name="popsim.seed.building_type")
+    out["haustyp"] = building.astype(int).to_numpy()
+    _log_household_fill(
+        "popsim.seed.building_type", "haustyp", n_total,
+        int(out["haustyp_raw"].isin(HAUSTYP_REPORTED_CODES).sum()), 0, building_tiers)
+    return out
+
+
 def carry_seed_household_counts(
     donor_households: pd.DataFrame, seed_households: pd.DataFrame, *, id_col: str, rng,
     ebike_col: str = "H_ANZPED",
@@ -1391,11 +1496,15 @@ def map_housing_tenure(
     """Add ``housing_tenure`` (owner/renter/unknown) from MiD ``H_MIETE``.
 
     MiD H_MIETE codebook (MiD 2023, Codeplan B1, Haushalte):
-      1 -> Mieter   (renter, incl. Untermiete, genossenschaftliches Wohnen)
-      2 -> Eigentuemer (owner-occupier)
-      3, 9, 309 -> ambiguous / keine Angabe -> "unknown" (not assigned to either
-                   control; consistent with the Tier-2 control expressions which
-                   match only H_MIETE == 1 and H_MIETE == 2)
+      1 -> Mieter   (Miete; renter, incl. Untermiete, genossenschaftliches Wohnen)
+      2 -> Eigentuemer (Eigentum; owner-occupier)
+      3 anderes, 9 keine Angabe, 309 kein Privat-HH -> "unknown" (not assigned to
+                   either control; consistent with the Tier-2 control expressions
+                   which match only H_MIETE == 1 and H_MIETE == 2)
+    On the member-completion path ``resolve_tenure_and_building_type`` has already
+    resolved 3 / 9 / 309 to 1 or 2, so no household is "unknown" there; the frame then
+    carries ``H_MIETE_raw`` and this function adds ``housing_tenure_imputed`` (True where
+    the raw code is not 1 or 2). Without ``H_MIETE_raw`` no flag is added.
     The column is absent for ENTD frames (no tenure flag); the function then
     skips derivation and returns the frame unchanged with no column added.
     Missing rate is logged for transparency (no silent fallback).
@@ -1429,6 +1538,9 @@ def map_housing_tenure(
     tenure[val == 2] = "owner"
     tenure[val == 1] = "renter"
     out["housing_tenure"] = tenure
+    raw_col = f"{miete_col}_raw"
+    if raw_col in out.columns:
+        out["housing_tenure_imputed"] = ~out[raw_col].isin(TENURE_REPORTED_CODES)
 
     n_unknown = int((tenure == "unknown").sum())
     n_total = len(out)
@@ -1448,7 +1560,8 @@ def map_housing_tenure(
 #   2  Mehrfamilienhaus (3-12 Wohnungen)                            -> mehrfamilienhaus
 #   3  Geschosswohnungsbau (13+ Wohnungen, grouped with MFH)        -> mehrfamilienhaus
 #   4  Sonstiges / gemischte Nutzung                                -> sonstiges
-#  95  nicht zutreffend (n.z.)                                      -> None/NaN (excluded)
+#  95  nicht zuzuordnen                                             -> None/NaN (excluded;
+#      resolved to 1-4 first on the member-completion path, resolve_tenure_and_building_type)
 BUILDING_TYPE_3CLASS_BY_HAUSTYP = {
     1: "ein_zweifamilienhaus",
     2: "mehrfamilienhaus",
@@ -1465,9 +1578,13 @@ def map_building_type_3class(
 
     Collapses the MiD 4-code building-type flag to the 3 popsim control classes:
       ein_zweifamilienhaus, mehrfamilienhaus, sonstiges.
-    Code 95 (nicht zutreffend) yields NaN and is excluded from all three classes
+    Code 95 (nicht zuzuordnen) yields NaN and is excluded from all three classes
     (consistent with the Tier-2 control expressions: no haustyp==95 row matches
-    any building_type expression).
+    any building_type expression). On the member-completion path
+    ``resolve_tenure_and_building_type`` has already drawn a code 1-4 for it, so no
+    household is NaN there; the frame then carries ``haustyp_raw`` and this function adds
+    ``building_type_imputed`` (True where the raw code is 95). Without ``haustyp_raw`` no
+    flag is added.
     Missing rate is logged for transparency (no silent fallback).
     The column is absent for ENTD frames; the function then returns the frame
     unchanged.
@@ -1497,12 +1614,15 @@ def map_building_type_3class(
         return out
 
     out["building_type_3class"] = out[haustyp_col].map(BUILDING_TYPE_3CLASS_BY_HAUSTYP)
+    raw_col = f"{haustyp_col}_raw"
+    if raw_col in out.columns:
+        out["building_type_imputed"] = out[raw_col] == HAUSTYP_NOT_ASSIGNABLE_CODE
     n_nan = int(out["building_type_3class"].isna().sum())
     n_total = len(out)
     if n_nan:
         logger.info(
             "[popsim.attributes] map_building_type_3class: %d/%d households have "
-            "building_type_3class=NaN (haustyp=95 'nicht zutreffend'; excluded from "
+            "building_type_3class=NaN (haustyp=95 'nicht zuzuordnen'; excluded from "
             "all three building_type control classes).",
             n_nan, n_total,
         )
