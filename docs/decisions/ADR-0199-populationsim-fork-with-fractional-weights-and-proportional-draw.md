@@ -43,7 +43,7 @@ ADR-0056 keeps integer sub-balance seeds (`SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS` 
 - **One-time recompute.** The batch signature of the stage now includes the tool version, its commit and the options, so the first run after the merge purges and recomputes the existing work dirs.
 - The production base config (`configs/base_bs.yml`) switches the fractional weights on and the draw to `gumbel` on the evidence of the arm-1 manifest, which owns the outcome and its limits (single batches; one draw per method in the method rule).
 - `populationsim_version` is a new required key of the popsim stage config.
-- The tag `v0.10.0+bs.1` is cut only after arm 1 passes (procedure in the note).
+- The tag `v0.10.0+bs.1` was cut on the commit arm 1 ran with, after arm 1 passed; `environments/populationsim` pins that tag (procedure in the note).
 
 ## Evidence
 
