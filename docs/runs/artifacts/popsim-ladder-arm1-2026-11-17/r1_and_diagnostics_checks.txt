@@ -7,3 +7,10 @@ cmp: no difference
 diag_arm1p_A 22:17.05 9980196
 diag_arm1g_A 21:45.18 9959740
 diag_arm1g_B 21:17.24 9934040
+
+# R1b (added after review of PR #653, not pre-registered): the stage's own neutral settings
+# (prepare_arm.py --draw off --timeout 7200: KEEP_FRACTIONAL_SAMPLE_WEIGHTS false, INTEGERIZER_DRAW 'off',
+# INTEGERIZER_TIMEOUT 7200, INTEGERIZER_PATH_RECORD true), batch_000, run while one other batch ran
+fe906cb27099a4cfdb09fcd2ce7e17b58ab77989f3bf01de6e12f60ddb140938  r1b_stage_off/batch_000/output/final_expanded_household_ids.csv
+cmp against i138_ladder/arm0a/batch_000/output/final_expanded_household_ids.csv: no difference
+wall 26:47.37, peak RSS 28937516 kB, integerizer_paths.csv 622 lines

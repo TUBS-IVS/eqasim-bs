@@ -62,6 +62,9 @@ validation:
   reference: arm 0a output of the same batch (model output)
   result: >-
     MET. sha256 fe906cb27099a4cfdb09fcd2ce7e17b58ab77989f3bf01de6e12f60ddb140938 for both (cmp: no difference).
+    R1 set only the timeout; the stage additionally writes the two options at their neutral values and
+    switches the path record on. Added after the PR review (not pre-registered), R1b ran batch_000 with
+    exactly those settings: byte-identical as well (same sha256, cmp clean).
   artifact: docs/runs/artifacts/popsim-ladder-arm1-2026-11-17/r1_and_diagnostics_checks.txt
 - metric: >-
     G1: no seed group with positive survey weight starts at weight 0 (fork log line of
