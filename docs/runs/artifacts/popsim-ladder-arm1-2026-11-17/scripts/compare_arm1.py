@@ -110,14 +110,16 @@ for arm, (diag, work) in arms.items():
             calls = rec[(rec["row_type"] == "call") & rec["trace_label"].str.endswith("STAAT_1")]
             groups = int(m.group(1)) if m else None
             seed_rows = sorted({int(x) for x in calls["rows"] if x})
-            # G1: the fork logs the grouped seed weights it kept fractional (0 < w < 1 groups would be 0
-            # after upstream's int64 cast). Info: rows the seed-level integerizer received (do_integerizing
-            # drops groups whose BALANCED weight is 0, so rows < groups means balancing zeroed some).
+            # G1 (pre-registered): no seed group with positive survey weight starts at weight 0. The fork logs
+            # the grouped weights it kept fractional; do_integerizing drops groups whose weight is 0 before
+            # the seed-level single integerizer, so that call receiving every group shows that none started
+            # at 0. (The simultaneous STAAT_1 call row has fewer rows: it sees only groups with a positive
+            # integer seed weight.)
             g1[f"{arm}/{batch}"] = {
                 "groups": groups,
                 "groups_below_one_kept": int(m.group(2)) if m else None,
                 "seed_level_call_rows": seed_rows,
-                "met": groups is not None,
+                "met": groups is not None and groups in seed_rows,
             }
 
 for arm in arms:
