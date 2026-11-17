@@ -17,6 +17,10 @@ The fork is the public repository `TUBS-IVS/populationsim`. `master` is an untou
 
 `environments/populationsim/` is a uv project; the stage runs `uv run --no-sync populationsim -w <batch folder>` with `popsimprep_dir` (the project directory) as cwd. Its constraints are the production freeze: the fork changes PopulationSim only, so every other package keeps the version of the environment the baseline runs used. Install once per checkout on the server: `uv sync --frozen --python /usr/bin/python3.12` (see its README). The stage checks the installed version against `populationsim_version` and the installed git commit against the one `uv.lock` pins at start (a relative `popsimprep_dir` is resolved against the repository root), and fails with a message naming the asked environment (`braunschweig/popsim/tool_version.py`).
 
+## Open at the next fork release
+
+The fork README says the draw is "weight-proportional in both integerizers"; that holds for the single integerizer only (ADR-0199, decision 5). Soften the README wording when the next release is cut.
+
 ## Neutral-mode guarantee
 
 With `keep_fractional_sample_weights` false and `integerizer_draw` "off" the fork behaves like v0.10.0 (differential test in the fork; run R1 of the arm-1 manifest). The stage always sets the timeout and switches the path record on.

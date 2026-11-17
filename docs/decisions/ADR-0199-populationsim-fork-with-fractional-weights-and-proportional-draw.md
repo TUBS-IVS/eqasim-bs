@@ -12,17 +12,19 @@
 ## Decision
 
 1. **Own fork, no runtime patches.** The changes live in the group's fork (`bs/main`, base per ADR-0197), not in a patch layer applied to an installed PopulationSim (owner decision). Releases are tags `v0.10.0+bs.N` with the same package version; the pipeline pins the version it expects.
-2. **Fractional weights and the draw are opt-in fork settings; with them off the fork behaves like v0.10.0.** Proof: a differential test against the upstream tag in the fork, and run R1 (neutral) of the arm-1 manifest. Settings, defaults and the path-record contract are documented in the [fork README](https://github.com/TUBS-IVS/populationsim/tree/bs/main) and in `populationsim/integerizing/path_record.py` there, not here.
-3. **One integerizer seed per batch**, derived from the pipeline `random_seed` and the batch folder name (`braunschweig.popsim.folders.batch_integerizer_seed`). The batch seed files are byte-identical and the integerizer trace labels repeat in every batch, so one shared seed would repeat the same noise in all 60 batches. A collision of two batch seeds fails the run and names the folders.
+2. **Fractional weights and the draw are opt-in fork settings; with them off the fork behaves like v0.10.0.** Evidence (see "Evidence" below): one differential test in the fork (one example, output rows sorted before the comparison against the upstream tag) and run R1 (neutral) of the arm-1 manifest (one real batch). Settings, defaults and the path-record contract are documented in the [fork README](https://github.com/TUBS-IVS/populationsim/tree/bs/main) and in `populationsim/integerizing/path_record.py` there, not here.
+3. **One integerizer seed per batch**, derived from the pipeline `random_seed` and the batch folder name (`braunschweig.popsim.folders.batch_integerizer_seed`). The batch seed files are byte-identical and the integerizer trace labels repeat in every batch, so one shared seed would repeat the same noise in every batch. This is the one place that states the reason; the code points here. A collision of two batch seeds fails the run and names the folders.
 4. **Draw method (fork):**
    - The call kind enters the noise hash: seed-level and KREIS-level calls share a trace label.
    - Upstream's `1e-6 * row` tie-break is omitted when the draw is on: it is a row-position bias.
    - The rounding after the LP follows the draw keys; otherwise `smart_round` undoes the draw.
-   - Two key types are implemented: Pareto (logit plus logistic noise; the inclusion probability stays close to the residual in the single integerizer) and Gumbel (under-selects large residuals). The key type is chosen by the pre-registered rule of the arm-1 manifest [`popsim-ladder-arm1-2026-11-17`](../runs/popsim-ladder-arm1-2026-11-17.yml) (owner decision D1).
+   - Two key types are implemented: Pareto (logit plus logistic noise; the inclusion probability stays close to the residual in the single integerizer) and Gumbel (under-selects large residuals). Literature (cited from bibliographic records; full text not checked): Pareto order sampling is Rosen, B. (1997), On sampling with probability proportional to size, Journal of Statistical Planning and Inference 62(2), 159-191 (Pareto pips order sampling, independently Saavedra 1995); the exponential/Gumbel keys are Efraimidis, P. S. and Spirakis, P. G. (2006), Weighted random sampling with a reservoir, Information Processing Letters 97, 181-185, doi:10.1016/j.ipl.2005.11.003 (ranking by u^(1/w) is equivalent to ranking by ln w plus Gumbel noise). The key type is chosen by the pre-registered rule of the arm-1 manifest [`popsim-ladder-arm1-2026-11-17`](../runs/popsim-ladder-arm1-2026-11-17.yml) (owner decision D1).
    - In the simultaneous integerizer, upstream's parent term `ln(sum of residuals over sub-zones)` stays.
-5. **Known limitation:** when the simultaneous LP fails, sub-zones are rounded per zone (the keys still decide inside each zone's single integerizer).
+5. **Known limitations:**
+   - When the simultaneous LP fails, sub-zones are rounded per zone (the keys still decide inside each zone's single integerizer).
+   - The simultaneous integerizer keeps upstream's `ln(sum of residuals over sub-zones)` parent term, so inclusion there is tilted toward households that are heavy at the parent level. The weight-proportionality statement holds for the single integerizer only; reasoning in the docstring of [`populationsim/integerizing/draw.py`](https://github.com/TUBS-IVS/populationsim/blob/bs/main/populationsim/integerizing/draw.py) in the fork. The fork README's wording "weight-proportional in both integerizers" is softened at the next fork release (tracked in [populationsim-fork.md](../codebase/notes/populationsim-fork.md)).
 6. **Solver-path record and stage gate.** The stage switches the fork's path record on and reads it after the batches (`braunschweig.popsim.stage.solver_path_gate`). The rate of parent zones not integerized simultaneously is logged per geography through the shared fallback helper. `solver_fallback_error_rate` (null = warn only) is an ASSUMPTION-grade threshold, to be set from the first full run.
-7. **Tracked environment and version check.** The stage runs PopulationSim from the tracked uv project `environments/populationsim` and checks the installed version against the required key `populationsim_version` (`braunschweig/popsim/tool_version.py`). Details: [populationsim-fork.md](../codebase/notes/populationsim-fork.md).
+7. **Tracked environment and version check.** The stage runs PopulationSim from the tracked uv project `environments/populationsim` and checks the installed version against the required key `populationsim_version` and the installed git commit against the one `uv.lock` pins (`braunschweig/popsim/tool_version.py`). Details: [populationsim-fork.md](../codebase/notes/populationsim-fork.md).
 
 ## Rejected options (design section 4, issue #645)
 
@@ -38,12 +40,13 @@ ADR-0056 keeps integer sub-balance seeds (`SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS` 
 
 ## Consequences
 
-- **One-time recompute.** The batch signature of the stage now includes the tool version and the options, so the first run after the merge purges and recomputes the existing work dirs.
+- **One-time recompute.** The batch signature of the stage now includes the tool version, its commit and the options, so the first run after the merge purges and recomputes the existing work dirs.
 - The production base config (`configs/base_bs.yml`) keeps the draw and the fractional weights OFF until the arm-1 manifest decides; the manifest owns the outcome.
 - `populationsim_version` is a new required key of the popsim stage config.
 - The tag `v0.10.0+bs.1` is cut only after arm 1 passes (procedure in the note).
 
 ## Evidence
 
+- Neutral equivalence (decision 2): the fork's differential test compares one PopulationSim example against the upstream tag after sorting the rows; R1 of `popsim-ladder-arm1-2026-11-17` compares one real batch. Two cases, not a proof for every input.
 - Run manifest `popsim-ladder-arm1-2026-11-17` (pre-registration; results are appended there).
 - Run manifests `popsim-batch-diagnostics-prod100-20261031-2026-11-16` and `popsim-ladder-baseline-2026-11-16`.
