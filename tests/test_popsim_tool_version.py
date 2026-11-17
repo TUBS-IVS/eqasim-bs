@@ -142,6 +142,8 @@ def _signature(populationsim_version):
         seed_persons=pd.DataFrame({"H_ID": [1], "P_ID": [1]}),
         kreis_table=pd.DataFrame({"ARS_kreis": ["03101"]}),
         populationsim_version=populationsim_version,
+        settings_overrides={},
+        integerizer_seed_base=None,
     )
 
 

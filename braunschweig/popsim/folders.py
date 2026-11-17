@@ -24,6 +24,7 @@ Replaces the in-notebook folder generation of popsimprep's Step 2/3.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from pathlib import Path
@@ -177,24 +178,230 @@ def drop_data_dictionary_step(settings_yaml: str) -> str:
     return result
 
 
-def resolve_batch_settings_yaml(settings_yaml: str, write_data_dictionary: bool) -> str:
+# PopulationSim settings that braunschweig.population.popsim.* config keys decide (the
+# group's PopulationSim fork, version 0.10.0+bs.1; each defaults to upstream behaviour
+# inside the fork). Meaning of each: the matching KEY_* comment in
+# braunschweig.popsim.stage.config_keys.
+KEEP_FRACTIONAL_SETTING = "KEEP_FRACTIONAL_SAMPLE_WEIGHTS"
+INTEGERIZER_DRAW_SETTING = "INTEGERIZER_DRAW"
+INTEGERIZER_TIMEOUT_SETTING = "INTEGERIZER_TIMEOUT"
+# The name PopulationSim 0.10.0 used for the timeout; the fork still reads it and raises
+# when both names carry different values.
+INTEGERIZER_TIMEOUT_ALIAS = "INTEGIZER_TIMEOUT"
+INTEGERIZER_PATH_RECORD_SETTING = "INTEGERIZER_PATH_RECORD"
+INTEGERIZER_SEED_SETTING = "INTEGERIZER_RANDOM_SEED"
+INTEGERIZER_DRAWS = ("off", "pareto", "gumbel")
+_MAX_INTEGERIZER_SEED = 2 ** 32
+
+
+def _is_bool(value: object) -> bool:
+    return isinstance(value, bool)
+
+
+def _is_positive_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _is_known_draw(value: object) -> bool:
+    return isinstance(value, str) and value in INTEGERIZER_DRAWS
+
+
+# setting name -> (validator, what a valid value is)
+_OVERRIDE_RULES = {
+    KEEP_FRACTIONAL_SETTING: (_is_bool, "a boolean"),
+    INTEGERIZER_DRAW_SETTING: (_is_known_draw, f"one of {list(INTEGERIZER_DRAWS)}"),
+    INTEGERIZER_TIMEOUT_SETTING: (_is_positive_int, "a positive integer (seconds)"),
+    INTEGERIZER_PATH_RECORD_SETTING: (_is_bool, "a boolean"),
+}
+
+
+def _same_value(left: object, right: object) -> bool:
+    """Equality that lets neither ``True == 1`` nor ``False`` (bare ``off``) vs ``'off'`` pass."""
+    return type(left) is type(right) and left == right
+
+
+def populationsim_overrides_from_config(
+    *, keep_fractional_sample_weights: object, integerizer_draw: object,
+    integerizer_timeout_s: object,
+) -> dict[str, object]:
+    """Build the PopulationSim settings that the tracked config decides, validated.
+
+    ``INTEGERIZER_PATH_RECORD`` is always ``true``: the per-call path record is the
+    evidence the integerizer gate of the batch check reads. Meaning of the three
+    configurable values: the matching ``KEY_*`` comments in
+    ``braunschweig.popsim.stage.config_keys``.
+
+    Raises
+    ------
+    ValueError
+        If a value is not valid for its setting (names the setting).
+    """
+    overrides = {
+        KEEP_FRACTIONAL_SETTING: keep_fractional_sample_weights,
+        INTEGERIZER_DRAW_SETTING: integerizer_draw,
+        INTEGERIZER_TIMEOUT_SETTING: integerizer_timeout_s,
+        INTEGERIZER_PATH_RECORD_SETTING: True,
+    }
+    _validate_overrides(overrides)
+    return overrides
+
+
+def _validate_overrides(overrides: Mapping[str, object]) -> None:
+    for key, value in overrides.items():
+        if key not in _OVERRIDE_RULES:
+            raise ValueError(
+                f"Unknown PopulationSim setting override {key!r}; known: "
+                f"{sorted(_OVERRIDE_RULES)}.")
+        is_valid, expected = _OVERRIDE_RULES[key]
+        if not is_valid(value):
+            raise ValueError(
+                f"PopulationSim setting {key} must be {expected}, got {value!r}.")
+
+
+def _format_setting_value(value: object) -> str:
+    """YAML text of one validated override value (strings quoted: bare ``off`` is False)."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return f"'{value}'"
+    return str(value)
+
+
+def _line_ending(text: str) -> str:
+    return "\r\n" if "\r\n" in text else "\n"
+
+
+def _append_settings_lines(settings_yaml: str, lines: Sequence[str]) -> str:
+    eol = _line_ending(settings_yaml)
+    separator = "" if (not settings_yaml or settings_yaml.endswith("\n")) else eol
+    return settings_yaml + separator + "".join(line + eol for line in lines)
+
+
+def _parse_settings_mapping(settings_yaml: str) -> dict:
+    parsed = yaml.safe_load(settings_yaml)
+    if parsed is None:
+        return {}
+    if not isinstance(parsed, dict):
+        raise ValueError("The PopulationSim settings text is not a YAML mapping.")
+    return parsed
+
+
+def apply_populationsim_overrides(
+    settings_yaml: str, overrides: Mapping[str, object],
+) -> str:
+    """Append the tracked PopulationSim settings to a settings text.
+
+    One ``KEY: value`` line per override is added at the end, under one comment line;
+    every byte of the source text stays as it was. A key the raw text already sets to the
+    same value is not repeated. The result is parsed again and must equal the source
+    mapping plus the overrides. One INFO line names the applied overrides.
+
+    Raises
+    ------
+    ValueError
+        If a value is invalid for its setting; if the raw text already sets an override
+        key, or the alias ``INTEGIZER_TIMEOUT`` for the timeout, to another value (the
+        error names the key: the tracked config would silently lose against the
+        server-local file otherwise); or if the textual append changed any other key.
+    """
+    _validate_overrides(overrides)
+    original = _parse_settings_mapping(settings_yaml)
+    pending: list[str] = []
+    for key, value in overrides.items():
+        names = [key]
+        if key == INTEGERIZER_TIMEOUT_SETTING:
+            names.append(INTEGERIZER_TIMEOUT_ALIAS)
+        for name in names:
+            if name in original and not _same_value(original[name], value):
+                raise ValueError(
+                    f"The PopulationSim settings file already sets {name}: "
+                    f"{original[name]!r}, but the tracked config requires {key}: {value!r}. "
+                    "Remove the line from the settings file (braunschweig.population."
+                    "popsim.settings_path) or change the config key; the tracked config "
+                    "decides this setting.")
+        if key not in original:
+            pending.append(f"{key}: {_format_setting_value(value)}")
+    result = settings_yaml
+    if pending:
+        result = _append_settings_lines(
+            settings_yaml,
+            ["# Set by the tracked config (braunschweig.population.popsim.*), not by this "
+             "file:"] + pending)
+        expected = dict(original)
+        expected.update({key: value for key, value in overrides.items() if key not in original})
+        if _parse_settings_mapping(result) != expected:
+            raise ValueError(
+                "Appending the tracked PopulationSim settings changed more than the "
+                "appended keys; refusing to write altered settings.")
+    logger.info("[popsim] batch settings carry the tracked PopulationSim options: %s",
+                ", ".join(f"{key}={value!r}" for key, value in overrides.items()))
+    return result
+
+
+def batch_integerizer_seed(random_seed: int, batch_name: str) -> int:
+    """Derive the integerizer seed of one batch from the pipeline seed and the folder name.
+
+    All batches share byte-identical seed files and repeat the integerizer trace labels,
+    so one common ``INTEGERIZER_RANDOM_SEED`` would give every batch the same draw noise.
+    The folder name (e.g. ``batch_000``) is stable across runs and machines.
+
+    Returns
+    -------
+    int
+        A value in ``[0, 2**32)``: the first four bytes of the SHA-256 of
+        ``populationsim-integerizer|<random_seed>|<batch_name>``, little endian.
+    """
+    digest = hashlib.sha256(
+        f"populationsim-integerizer|{random_seed}|{batch_name}".encode()).digest()
+    return int.from_bytes(digest[:4], "little")
+
+
+def with_integerizer_seed(settings_yaml: str, seed: int) -> str:
+    """Append ``INTEGERIZER_RANDOM_SEED: <seed>`` to a batch settings text.
+
+    Raises
+    ------
+    ValueError
+        If ``seed`` is not an integer in ``[0, 2**32)`` or the text already sets the key.
+    """
+    if (not isinstance(seed, int) or isinstance(seed, bool)
+            or not 0 <= seed < _MAX_INTEGERIZER_SEED):
+        raise ValueError(
+            f"{INTEGERIZER_SEED_SETTING} must be an integer in [0, 2**32), got {seed!r}.")
+    if INTEGERIZER_SEED_SETTING in _parse_settings_mapping(settings_yaml):
+        raise ValueError(
+            f"The batch settings already set {INTEGERIZER_SEED_SETTING}; the seed of each "
+            "batch is derived by the pipeline (braunschweig.popsim.folders."
+            "batch_integerizer_seed), remove the line from the settings file.")
+    return _append_settings_lines(settings_yaml, [f"{INTEGERIZER_SEED_SETTING}: {seed}"])
+
+
+def resolve_batch_settings_yaml(
+    settings_yaml: str, write_data_dictionary: bool,
+    overrides: Mapping[str, object] | None = None,
+) -> str:
     """Return the settings text that is written into every PopulationSim batch folder.
 
-    ``write_data_dictionary=True`` returns the source text unchanged. ``False`` drops the
+    ``write_data_dictionary=True`` keeps the source text. ``False`` drops the
     diagnostic ``write_data_dictionary`` step via :func:`drop_data_dictionary_step`. Why
     that leaves the synthetic population unchanged, and how far that is checked: the
     comment of ``braunschweig.popsim.stage.config_keys.KEY_WRITE_DATA_DICTIONARY``. The
-    decision is logged either way.
+    decision is logged either way. ``overrides`` (not None) are then appended by
+    :func:`apply_populationsim_overrides`; the per-batch integerizer seed is added later,
+    per folder, by :func:`with_integerizer_seed`.
     """
     if write_data_dictionary:
         logger.info("[popsim] batch settings keep PopulationSim step '%s' "
                     "(braunschweig.population.popsim.write_data_dictionary=true)",
                     DATA_DICTIONARY_STEP)
-        return settings_yaml
-    result = drop_data_dictionary_step(settings_yaml)
-    logger.info("[popsim] batch settings drop PopulationSim step '%s' "
-                "(braunschweig.population.popsim.write_data_dictionary=false); "
-                "data_dict.csv/.txt are not written", DATA_DICTIONARY_STEP)
+        result = settings_yaml
+    else:
+        result = drop_data_dictionary_step(settings_yaml)
+        logger.info("[popsim] batch settings drop PopulationSim step '%s' "
+                    "(braunschweig.population.popsim.write_data_dictionary=false); "
+                    "data_dict.csv/.txt are not written", DATA_DICTIONARY_STEP)
+    if overrides is not None:
+        result = apply_populationsim_overrides(result, overrides)
     return result
 
 

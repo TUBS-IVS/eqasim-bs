@@ -569,6 +569,16 @@ config:
   braunschweig.population.popsim.uv_path: /home/felix/.local/bin/uv
   # Required PopulationSim version (meaning and format: KEY_POPSIM_VERSION in config_keys.py).
   braunschweig.population.popsim.populationsim_version: "0.10.0+bs.1"
+  # Tracked PopulationSim integerizer options (meaning: KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS,
+  # KEY_INTEGERIZER_DRAW, KEY_INTEGERIZER_TIMEOUT_S in config_keys.py); written into every
+  # batch settings.yaml, so the server-local settings file must not set them. The first two
+  # are the upstream behaviour for now: the arm-1 run manifest decides their production
+  # values (issue #645). keep_fractional_sample_weights is NOT the float-seed sub-balancing
+  # regime SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS of ADR-0056, which stays false.
+  # Timeout 7200 s: owner decision 2026-11-16 (raised limit; the baseline arms used 7200).
+  braunschweig.population.popsim.keep_fractional_sample_weights: false
+  braunschweig.population.popsim.integerizer_draw: "off"
+  braunschweig.population.popsim.integerizer_timeout_s: 7200
   # No per-batch timeout: heavy control sets converge slowly; batches must run to
   # completion no matter how long (0 -> timeout disabled, see batch.make_populationsim_run_one).
   braunschweig.population.popsim.batch_timeout_s: 0

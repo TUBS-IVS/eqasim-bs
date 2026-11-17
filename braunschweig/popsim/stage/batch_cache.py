@@ -103,6 +103,7 @@ def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
                                    stratify_regiostar, source_name, employment_grid_on,
                                    kreis_controls_map, seed_day_filter, seed_households,
                                    seed_persons, kreis_table, populationsim_version: str,
+                                   settings_overrides, integerizer_seed_base,
                                    active_entries=None, status_prior_n=0.0) -> str:
     """Compute the work-dir batch-input signature (sha256 hex).
 
@@ -147,6 +148,13 @@ def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
         # issue #645). NOTE (one-time signature change): adding this key purges the
         # completed batches of an existing work_dir once, on the first run after it.
         "populationsim_version": populationsim_version,
+        # The tracked PopulationSim settings that are APPENDED to the raw settings text
+        # hashed above (braunschweig.popsim.folders.apply_populationsim_overrides) and the
+        # base of the per-batch integerizer seeds (None while the draw is off). Both
+        # change the synthetic population. NOTE (one-time signature change): adding these
+        # keys purges the completed batches of an existing work_dir once.
+        "settings_overrides": dict(settings_overrides),
+        "integerizer_seed_base": integerizer_seed_base,
     }
     if active_entries:
         payload["kreis_attribute_controls"] = {

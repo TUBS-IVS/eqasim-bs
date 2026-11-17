@@ -299,6 +299,9 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_INCOME_TILT,
     KEY_INCOME_TILT_BETA,
     KEY_INCOME_TILT_CLIP,
+    KEY_INTEGERIZER_DRAW,
+    KEY_INTEGERIZER_TIMEOUT_S,
+    KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS,
     KEY_KREIS_CONTROLS,
     KEY_KREISE,
     KEY_LEISURE_PARTICIPATION_CONTROL,
@@ -762,6 +765,12 @@ def configure(context):
     # Diagnostic PopulationSim step on/off (meaning and identity proof: KEY_WRITE_DATA_DICTIONARY
     # in config_keys). Volatile: it changes no synthetic household or person.
     context.config(KEY_WRITE_DATA_DICTIONARY, True, volatile = True)
+    # Tracked PopulationSim integerizer options (meaning: KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS,
+    # KEY_INTEGERIZER_DRAW, KEY_INTEGERIZER_TIMEOUT_S in config_keys). The code defaults are
+    # upstream PopulationSim's behaviour; none is volatile (each can change the population).
+    context.config(KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS, False)
+    context.config(KEY_INTEGERIZER_DRAW, "off")
+    context.config(KEY_INTEGERIZER_TIMEOUT_S, 60)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
     context.config(KEY_COMPLETE_MEMBERS, True)
     context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
@@ -1948,7 +1957,8 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
         stratify_regiostar: bool, source_name: str, employment_grid_on: bool,
         kreis_controls_map, seed_day_filter, seed_households: pd.DataFrame,
         seed_persons: pd.DataFrame, kreis_table, active_entries,
-        status_prior_n: float, work_dir, populationsim_version: str) -> None:
+        status_prior_n: float, work_dir, populationsim_version: str,
+        settings_overrides, integerizer_seed_base) -> None:
     """Purge work-dir batch folders whose batch inputs changed since the last run.
 
     Purge stale batch folders if the popsim config/control set changed since the last
@@ -1980,29 +1990,54 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
         active_entries=active_entries,
         status_prior_n=status_prior_n,
         populationsim_version=populationsim_version,
+        settings_overrides=settings_overrides,
+        integerizer_seed_base=integerizer_seed_base,
     )
     purge_stale_batches_on_config_change(work_dir, _config_signature)
 
 
-def _batch_settings_yaml(context, settings_path) -> str:
+def _read_integerizer_settings(context):
+    """Read and validate the tracked PopulationSim integerizer options.
+
+    Returns: ``(settings_overrides, integerizer_seed_base)``. ``settings_overrides`` is
+    the dict of PopulationSim settings appended to every batch ``settings.yaml``
+    (``folders.populationsim_overrides_from_config``); ``integerizer_seed_base`` is the
+    pipeline ``random_seed`` when the draw is on (each batch then gets its own
+    ``INTEGERIZER_RANDOM_SEED``) and ``None`` when it is off. Meaning of the keys:
+    ``config_keys.KEY_INTEGERIZER_DRAW`` and its neighbours.
+    Raises: ``ValueError`` for an invalid value.
+    """
+    overrides = folders.populationsim_overrides_from_config(
+        keep_fractional_sample_weights=context.config(KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS),
+        integerizer_draw=context.config(KEY_INTEGERIZER_DRAW),
+        integerizer_timeout_s=context.config(KEY_INTEGERIZER_TIMEOUT_S))
+    draw_on = overrides[folders.INTEGERIZER_DRAW_SETTING] != "off"
+    seed_base = int(context.config("random_seed")) if draw_on else None
+    return overrides, seed_base
+
+
+def _batch_settings_yaml(context, settings_path, settings_overrides) -> str:
     """Return the PopulationSim settings text written into every batch folder.
 
-    Reads the server-local settings file and applies the
+    Reads the server-local settings file, applies the
     ``braunschweig.population.popsim.write_data_dictionary`` switch
-    (meaning: ``config_keys.KEY_WRITE_DATA_DICTIONARY``). The stage-level config
-    signature (``_purge_stale_batches_for_changed_config``) hashes the raw file; the
-    per-batch input fingerprint hashes this resolved text.
+    (meaning: ``config_keys.KEY_WRITE_DATA_DICTIONARY``) and appends the tracked
+    ``settings_overrides`` (``_read_integerizer_settings``). The stage-level config
+    signature (``_purge_stale_batches_for_changed_config``) hashes the raw file plus the
+    overrides and the seed base; the per-batch input fingerprint hashes this resolved
+    text plus the per-batch seed line.
     """
     return folders.resolve_batch_settings_yaml(
         Path(settings_path).read_text(encoding="utf-8"),
-        bool(context.config(KEY_WRITE_DATA_DICTIONARY)))
+        bool(context.config(KEY_WRITE_DATA_DICTIONARY)),
+        settings_overrides)
 
 
 def _run_populationsim_batches(context, cells: pd.DataFrame, base_cols, controls_df: pd.DataFrame,
         seed_households: pd.DataFrame, seed_persons: pd.DataFrame, work_dir,
         settings_path, logging_path, max_cells: int, run_one, num_workers: int,
         source, stratify_regiostar: bool, kreis_table, kreis_controls_map,
-        household_control_names: set):
+        household_control_names: set, settings_overrides, integerizer_seed_base):
     """Run PopulationSim per 1 km batch and merge the expanded households.
 
     Returns: ``merge_report`` (its ``combined`` frame is the merged expanded
@@ -2013,7 +2048,8 @@ def _run_populationsim_batches(context, cells: pd.DataFrame, base_cols, controls
     merge_report = mid.run_popsim_mid(
         cells, base_cols, controls_df, seed_households, seed_persons,
         work_dir=Path(work_dir),
-        settings_yaml=_batch_settings_yaml(context, settings_path),
+        settings_yaml=_batch_settings_yaml(context, settings_path, settings_overrides),
+        integerizer_seed_base=integerizer_seed_base,
         logging_yaml=Path(logging_path).read_text(encoding="utf-8"),
         max_cells=max_cells,
         run_one=run_one,
@@ -2702,17 +2738,18 @@ def execute(context) -> pd.DataFrame:
     # settings file lacks.
     folders.validate_settings_geographies(
         Path(settings_path).read_text(encoding="utf-8"), controls_df)
+    settings_overrides, integerizer_seed_base = _read_integerizer_settings(context)
     _purge_stale_batches_for_changed_config(
         controls_df, settings_path, max_cells, stratify_regiostar, source_name,
         employment_grid_on, kreis_controls_map, seed_day_filter, seed_households,
         seed_persons, kreis_table, active_entries, status_prior_n, work_dir,
-        populationsim_version,
+        populationsim_version, settings_overrides, integerizer_seed_base,
     )
     merge_report = _run_populationsim_batches(
         context, cells, base_cols, controls_df, seed_households, seed_persons,
         work_dir, settings_path, logging_path, max_cells, run_one, num_workers,
         source, stratify_regiostar, kreis_table, kreis_controls_map,
-        household_control_names,
+        household_control_names, settings_overrides, integerizer_seed_base,
     )
     _log_integerizer_feasibility(context, work_dir)
     inkar_income = _load_inkar_income_scale(context)
