@@ -103,7 +103,7 @@ def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
                                    stratify_regiostar, source_name, employment_grid_on,
                                    kreis_controls_map, seed_day_filter, seed_households,
                                    seed_persons, kreis_table, populationsim_version: str,
-                                   populationsim_commit: str, settings_overrides, integerizer_seed_base,
+                                   populationsim_commit: str, populationsim_lock_hash: str, settings_overrides, integerizer_seed_base,
                                    active_entries=None, status_prior_n=0.0) -> str:
     """Compute the work-dir batch-input signature (sha256 hex).
 
@@ -152,6 +152,10 @@ def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
         # tool_version): two builds of the fork can carry the same version string.
         # NOTE (one-time signature change): same purge-once consequence as above.
         "populationsim_commit": populationsim_commit,
+        # Content hash of the whole uv.lock (tool_version.lock_content_hash): the rest of the
+        # solver stack (ortools, numpy, pandas, ...) also shapes the result.
+        # NOTE (one-time signature change): same purge-once consequence as above.
+        "populationsim_lock_hash": populationsim_lock_hash,
         # The tracked PopulationSim settings that are APPENDED to the raw settings text
         # hashed above (braunschweig.popsim.folders.apply_populationsim_overrides) and the
         # base of the per-batch integerizer seeds (None while the draw is off). Both

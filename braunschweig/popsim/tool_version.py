@@ -10,6 +10,7 @@ Meaning and format of the configured version: ``KEY_POPSIM_VERSION`` in
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -35,6 +36,9 @@ _LOCK_BLOCK = re.compile(
 # ``source = { git = "<url>?rev=<sha>#<sha>" }``: the commit uv resolved is the part after '#'.
 _LOCK_GIT_SOURCE = re.compile(r'^source = \{ git = "[^"#]*#(?P<commit>[0-9a-f]{40})" \}',
                               re.MULTILINE)
+
+#: Solver-stack packages whose installed version must equal the lock (besides PopulationSim).
+_LOCKED_STACK = ("ortools", "numpy", "pandas")
 
 #: Keys of the report, in the order they are logged.
 REPORT_KEYS = ("populationsim", "commit", "ortools", "numpy", "pandas", "python")
@@ -92,6 +96,51 @@ def expected_populationsim_commit(project_dir) -> str:
             "pinned to a commit (source = { git = \"...#<40-hex commit>\" }); the project must "
             "install the group's fork by commit")
     return match.group("commit")
+
+
+def _read_lock_text(project_dir) -> str:
+    """Return the text of ``<project_dir>/uv.lock`` (universal newlines: CRLF reads as LF)."""
+    lock_path = Path(project_dir) / LOCK_FILE_NAME
+    if not lock_path.is_file():
+        raise RuntimeError(
+            f"no {LOCK_FILE_NAME} in {str(project_dir)!r}: the locked PopulationSim stack is "
+            "read from it")
+    with open(lock_path, encoding="utf-8", newline=None) as handle:
+        return handle.read()
+
+
+def lock_content_hash(project_dir) -> str:
+    """Return the sha256 (hex) of ``<project_dir>/uv.lock`` with LF line endings.
+
+    The lock pins the whole solver stack (PopulationSim commit, ortools, numpy, pandas,
+    ...). A CRLF checkout of the same lock hashes the same as an LF one.
+
+    Raises:
+        RuntimeError: no lock file.
+    """
+    return hashlib.sha256(_read_lock_text(project_dir).encode("utf-8")).hexdigest()
+
+
+def locked_package_versions(project_dir, names) -> dict[str, str]:
+    """Return ``{name: version}`` of the ``[[package]]`` entries of ``<project_dir>/uv.lock``.
+
+    Raises:
+        RuntimeError: no lock file, or a package of ``names`` has no entry with a version.
+    """
+    text = _read_lock_text(project_dir)
+    versions = {}
+    for name in names:
+        block = re.search(
+            r'^\[\[package\]\]\s*\nname = "' + re.escape(name) + r'"\s*\n(?P<body>.*?)'
+            r'(?=^\[\[package\]\]|\Z)', text, re.DOTALL | re.MULTILINE)
+        match = (re.search(r'^version = "(?P<v>[^"]+)"', block.group("body"), re.MULTILINE)
+                 if block else None)
+        if match is None:
+            raise RuntimeError(
+                f"{LOCK_FILE_NAME} in {str(project_dir)!r} has no [[package]] entry {name!r} "
+                "with a version")
+        versions[name] = match.group("v")
+    return versions
 
 
 # Runs INSIDE the popsimprep environment and prints one JSON object. A package that is not
@@ -196,7 +245,8 @@ def check_populationsim_environment(context, uv_path: str, project_dir: str, exp
     Raises:
         RuntimeError: from :func:`installed_tool_report`,
             :func:`require_populationsim_version` or :func:`expected_populationsim_commit`,
-            or when the installed commit is unknown or differs from the locked one.
+            or when the installed commit is unknown or differs from the locked one, or when the
+            installed ortools, numpy or pandas version differs from the lock.
     """
     report = installed_tool_report(uv_path, project_dir, subprocess_run=subprocess_run)
     logger.info("[popsim.tool] installed PopulationSim stack: %s",
@@ -208,5 +258,11 @@ def check_populationsim_environment(context, uv_path: str, project_dir: str, exp
             f"PopulationSim in the popsimprep environment is commit {report['commit']!r} "
             f"('unknown' = not installed from a git URL), but {LOCK_FILE_NAME} pins "
             f"{expected_commit!r}. {_sync_hint(project_dir)}")
+    locked = locked_package_versions(project_dir, _LOCKED_STACK)
+    for name in _LOCKED_STACK:
+        if report[name] != locked[name]:
+            raise RuntimeError(
+                f"{name} in the popsimprep environment is version {report[name]!r}, but "
+                f"{LOCK_FILE_NAME} pins {locked[name]!r}. {_sync_hint(project_dir)}")
     context.set_info("populationsim_tool_report", report)
     return report

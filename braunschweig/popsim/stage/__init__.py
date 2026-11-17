@@ -702,8 +702,10 @@ def validate(context):
     ``_DEFERRED_HELPER_MODULE_NAMES``, so the digest is reproducible across
     processes and platforms.
 
-    ONE NON-SOURCE INPUT is part of the token: the PopulationSim fork commit that
-    ``<popsimprep_dir>/uv.lock`` pins (``tool_version.expected_populationsim_commit``).
+    TWO NON-SOURCE INPUTS are part of the token: the PopulationSim fork commit that
+    ``<popsimprep_dir>/uv.lock`` pins (``tool_version.expected_populationsim_commit``) and a
+    content hash of that whole lock file (``tool_version.lock_content_hash``: the rest of the
+    solver stack, e.g. ortools, is locked there too).
     ``execute()`` refuses an environment that does not match it, but synpp serves the
     cached output without running ``execute()`` while the token is unchanged, so a
     re-lock to another fork commit under the same version string would otherwise reuse
@@ -718,7 +720,7 @@ def validate(context):
 
     Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
     digest per helper module (docstrings, comments and formatting do not change it), plus
-    ``"populationsim_commit"``.
+    ``"populationsim_commit"`` and ``"populationsim_lock_hash"``.
     """
     token = synpp_tokens.source_token(
         _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
@@ -726,6 +728,7 @@ def validate(context):
     project_dir = tool_version.resolve_project_dir(
         context.config(KEY_POPSIMPREP), key=KEY_POPSIMPREP)
     token["populationsim_commit"] = tool_version.expected_populationsim_commit(project_dir)
+    token["populationsim_lock_hash"] = tool_version.lock_content_hash(project_dir)
     return token
 
 
@@ -1980,7 +1983,8 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
         kreis_controls_map, seed_day_filter, seed_households: pd.DataFrame,
         seed_persons: pd.DataFrame, kreis_table, active_entries,
         status_prior_n: float, work_dir, populationsim_version: str,
-        populationsim_commit: str, settings_overrides, integerizer_seed_base) -> None:
+        populationsim_commit: str, populationsim_lock_hash: str, settings_overrides,
+        integerizer_seed_base) -> None:
     """Purge work-dir batch folders whose batch inputs changed since the last run.
 
     Purge stale batch folders if the popsim config/control set changed since the last
@@ -2013,6 +2017,7 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
         status_prior_n=status_prior_n,
         populationsim_version=populationsim_version,
         populationsim_commit=populationsim_commit,
+        populationsim_lock_hash=populationsim_lock_hash,
         settings_overrides=settings_overrides,
         integerizer_seed_base=integerizer_seed_base,
     )
@@ -2645,7 +2650,10 @@ def execute(context) -> pd.DataFrame:
     solver_path_gate.validate_error_rate(context.config(KEY_SOLVER_FALLBACK_ERROR_RATE))
     # The server-local settings file must not contradict the tracked options (it is checked
     # again when the batch folders are written); resolving it here makes a conflict cost seconds.
-    _batch_settings_yaml(context, settings_path, settings_overrides)
+    early_settings_text = _batch_settings_yaml(context, settings_path, settings_overrides)
+    if integerizer_seed_base is not None:
+        # Same refusal as per batch (a settings file that sets the seed itself), without the wait.
+        folders.with_integerizer_seed(early_settings_text, 0)
     (
         max_cells, num_workers, work_dir, kreise, source_name, stratify_regiostar,
         complete_members,
@@ -2773,7 +2781,8 @@ def execute(context) -> pd.DataFrame:
         controls_df, settings_path, max_cells, stratify_regiostar, source_name,
         employment_grid_on, kreis_controls_map, seed_day_filter, seed_households,
         seed_persons, kreis_table, active_entries, status_prior_n, work_dir,
-        populationsim_version, tool_report["commit"], settings_overrides,
+        populationsim_version, tool_report["commit"],
+        tool_version.lock_content_hash(popsimprep_dir), settings_overrides,
         integerizer_seed_base,
     )
     merge_report = _run_populationsim_batches(

@@ -40,6 +40,7 @@ def _sig(**overrides):
         kreis_table=pd.DataFrame({"ARS_kreis": ["03101"], "economic_status_very_low_KREIS": [100]}),
         populationsim_version="0.10.0+bs.1",
         populationsim_commit="c0ffee",
+        populationsim_lock_hash="lockhash",
         settings_overrides={"INTEGERIZER_DRAW": "off"},
         integerizer_seed_base=None,
         active_entries=None,

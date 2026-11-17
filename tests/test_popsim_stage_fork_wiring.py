@@ -22,6 +22,7 @@ class _Stop(Exception):
 
 
 _COMMIT = "3d70f73c00fb47696b56552540c2d858d93ed356"
+_LOCK_HASH = "lockhash"
 
 
 def _values(**overrides):
@@ -89,6 +90,7 @@ def _stub_early_steps(monkeypatch, calls, settings_path):
         return {"commit": _COMMIT}
 
     monkeypatch.setattr(stage.tool_version, "check_populationsim_environment", check)
+    monkeypatch.setattr(stage.tool_version, "lock_content_hash", lambda project_dir: _LOCK_HASH)
 
 
 @pytest.mark.parametrize("key, bad_value, settings_text, error_match", [
@@ -97,6 +99,10 @@ def _stub_early_steps(monkeypatch, calls, settings_path):
     (stage.KEY_SOLVER_FALLBACK_ERROR_RATE, 2.0, None, "solver_fallback_error_rate"),
     # A server-local settings file contradicting the tracked timeout (0.10.0's key name).
     (None, None, _SETTINGS_TEXT + "INTEGIZER_TIMEOUT: 60\n", "INTEGIZER_TIMEOUT"),
+    # The per-batch seed is derived by the pipeline: a settings file that sets it is refused
+    # up front too, not only per batch after the seed build and the work-dir purge.
+    (None, None, _SETTINGS_TEXT + "INTEGERIZER_RANDOM_SEED: 2541077060\n",
+     "INTEGERIZER_RANDOM_SEED"),
 ])
 def test_execute_validates_the_integerizer_and_gate_settings_before_the_seed_build(
         monkeypatch, tmp_path, key, bad_value, settings_text, error_match):
@@ -195,6 +201,8 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     }
     # The last two positional arguments of the batch runner are the overrides and the seed base.
     assert seen["batches_args"][-2:] == (expected_overrides, 4711)
-    # The purge (batch signature) gets the version, the verified commit, overrides and seed base.
-    assert seen["purge_args"][-4:] == ("0.10.0+bs.1", _COMMIT, expected_overrides, 4711)
+    # The purge (batch signature) gets the version, the verified commit, the lock hash,
+    # overrides and seed base.
+    assert seen["purge_args"][-5:] == (
+        "0.10.0+bs.1", _COMMIT, _LOCK_HASH, expected_overrides, 4711)
     assert seen["gate"] == (str(tmp_path / "work"), 0.2)

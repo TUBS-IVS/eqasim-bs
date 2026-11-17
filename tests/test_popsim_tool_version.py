@@ -113,7 +113,7 @@ def test_execute_checks_the_environment_before_anything_else(monkeypatch):
         stage.execute(context)
 
 
-def _signature(populationsim_version, commit="c0ffee"):
+def _signature(populationsim_version, commit="c0ffee", lock_hash="lockhash"):
     return stage.compute_batch_config_signature(
         controls_df=pd.DataFrame({"target": ["total_households"], "importance": [1000]}),
         settings_text="geographies: [ZENSUS100m]\n",
@@ -128,6 +128,7 @@ def _signature(populationsim_version, commit="c0ffee"):
         kreis_table=pd.DataFrame({"ARS_kreis": ["03101"]}),
         populationsim_version=populationsim_version,
         populationsim_commit=commit,
+        populationsim_lock_hash=lock_hash,
         settings_overrides={},
         integerizer_seed_base=None,
     )
@@ -165,6 +166,21 @@ source = {{ git = "https://github.com/TUBS-IVS/populationsim?rev={_SHA}#{_SHA}" 
 dependencies = [
     {{ name = "numba" }},
 ]
+
+[[package]]
+name = "ortools"
+version = "9.9.3963"
+source = {{ registry = "https://pypi.org/simple" }}
+
+[[package]]
+name = "numpy"
+version = "1.26.4"
+source = {{ registry = "https://pypi.org/simple" }}
+
+[[package]]
+name = "pandas"
+version = "2.2.2"
+source = {{ registry = "https://pypi.org/simple" }}
 
 [[package]]
 name = "pytz"
@@ -235,3 +251,46 @@ def test_signature_changes_with_the_commit():
     # A batch finished by another commit of the same version must be purged, never reused.
     assert _signature("0.10.0+bs.1", commit=_SHA) != _signature("0.10.0+bs.1", commit=_OTHER_SHA)
     assert _signature("0.10.0+bs.1", commit=_SHA) == _signature("0.10.0+bs.1", commit=_SHA)
+
+
+# --- the rest of the locked solver stack (review round 3, finding 2) ---------------------
+
+def test_check_refuses_an_ortools_version_other_than_the_lock(tmp_path):
+    # Same PopulationSim commit, other solver backend: the results are not the locked ones.
+    def fake_run(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command, 0, stdout=json.dumps(dict(_REPORT, commit=_SHA, ortools="9.10.4067")),
+            stderr="")
+
+    context = SimpleNamespace(set_info=lambda key, value: None)
+    with pytest.raises(RuntimeError) as excinfo:
+        tool_version.check_populationsim_environment(
+            context, "/opt/uv", str(_project(tmp_path)), "0.10.0+bs.1", subprocess_run=fake_run)
+    message = str(excinfo.value)
+    assert "ortools" in message and "9.10.4067" in message and "9.9.3963" in message
+    assert "uv sync --frozen" in message
+
+
+def test_locked_package_versions_reads_the_lock_and_names_a_missing_package(tmp_path):
+    project = _project(tmp_path)
+    assert tool_version.locked_package_versions(project, ("ortools", "numpy")) == {
+        "ortools": "9.9.3963", "numpy": "1.26.4"}
+    with pytest.raises(RuntimeError, match="'scipy'"):
+        tool_version.locked_package_versions(project, ("scipy",))
+
+
+def test_signature_changes_with_the_lock_hash():
+    assert _signature("0.10.0+bs.1", lock_hash="a") != _signature("0.10.0+bs.1", lock_hash="b")
+    assert _signature("0.10.0+bs.1", lock_hash="a") == _signature("0.10.0+bs.1", lock_hash="a")
+
+
+def test_lock_content_hash_follows_the_text_not_the_line_endings(tmp_path):
+    lf, crlf, other = tmp_path / "lf", tmp_path / "crlf", tmp_path / "other"
+    for directory in (lf, crlf, other):
+        directory.mkdir()
+    (lf / "uv.lock").write_bytes(_LOCK_EXCERPT.encode("utf-8"))
+    (crlf / "uv.lock").write_bytes(_LOCK_EXCERPT.replace("\n", "\r\n").encode("utf-8"))
+    (other / "uv.lock").write_bytes(
+        _LOCK_EXCERPT.replace("9.9.3963", "9.10.4067").encode("utf-8"))
+    assert tool_version.lock_content_hash(lf) == tool_version.lock_content_hash(crlf)
+    assert tool_version.lock_content_hash(lf) != tool_version.lock_content_hash(other)

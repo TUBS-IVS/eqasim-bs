@@ -583,3 +583,25 @@ def test_helper_modules_has_no_duplicates():
     listed = [module.__name__ for module in stage._HELPER_MODULES]
 
     assert len(listed) == len(set(listed)), f"duplicate entries in _HELPER_MODULES: {listed}"
+
+
+def test_validate_token_follows_the_lock_text_not_its_line_endings(tmp_path):
+    """The whole lock (ortools, numpy, ...) is part of the token, a CRLF checkout is not a change."""
+    lock_text = (tool_version.REPO_ROOT / "environments" / "populationsim" / "uv.lock").read_text(
+        encoding="utf-8")
+    assert 'name = "ortools"' in lock_text
+    variants = {
+        "lf": lock_text,
+        "crlf": lock_text.replace("\n", "\r\n"),
+        "other_ortools": lock_text.replace(
+            'name = "ortools"\nversion = "', 'name = "ortools"\nversion = "0.0.'),
+    }
+    tokens = {}
+    for name, text in variants.items():
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / "uv.lock").write_bytes(text.encode("utf-8"))
+        tokens[name] = stage.validate(SimpleNamespace(config=lambda key, d=directory: str(d)))
+
+    assert tokens["lf"] == tokens["crlf"]
+    assert tokens["lf"] != tokens["other_ortools"]
