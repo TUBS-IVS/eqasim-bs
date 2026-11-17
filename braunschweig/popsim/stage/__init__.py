@@ -156,6 +156,7 @@ from braunschweig.popsim import plausibility as _plausibility
 from braunschweig.popsim import passenger_availability as _passenger_availability
 from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
+from braunschweig.popsim import tool_version
 from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
 
 # The eight submodules of the braunschweig.popsim.mid helper package, imported
@@ -308,6 +309,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
     KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
     KEY_PLACEMENT_INCOME,
+    KEY_POPSIM_VERSION,
     KEY_POPSIMPREP,
     KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
     KEY_SEED_DAY_FILTER,
@@ -427,6 +429,7 @@ _HELPER_MODULES = (
     _plausibility,
     _passenger_availability,
     prepared_cells,
+    tool_version,
     # the one synpp stage imported at MODULE level and used here as a plain
     # function library whose dependency this stage does NOT declare, so its own
     # stage hash never reaches this stage (see the import comment above).
@@ -727,6 +730,7 @@ def configure(context):
     context.config(KEY_LOGGING)
     context.config(KEY_POPSIMPREP)
     context.config(KEY_UV)
+    context.config(KEY_POPSIM_VERSION)  # required PopulationSim version (G7, issue #645)
     context.config(KEY_MAX_CELLS, 3000)
     context.config(KEY_WORKERS, 3)
     # Assumed peak memory of ONE PopulationSim batch worker (25-30 GB per worker,
@@ -1944,7 +1948,7 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
         stratify_regiostar: bool, source_name: str, employment_grid_on: bool,
         kreis_controls_map, seed_day_filter, seed_households: pd.DataFrame,
         seed_persons: pd.DataFrame, kreis_table, active_entries,
-        status_prior_n: float, work_dir) -> None:
+        status_prior_n: float, work_dir, populationsim_version: str) -> None:
     """Purge work-dir batch folders whose batch inputs changed since the last run.
 
     Purge stale batch folders if the popsim config/control set changed since the last
@@ -1975,6 +1979,7 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
         kreis_table=kreis_table,
         active_entries=active_entries,
         status_prior_n=status_prior_n,
+        populationsim_version=populationsim_version,
     )
     purge_stale_batches_on_config_change(work_dir, _config_signature)
 
@@ -2570,6 +2575,10 @@ def execute(context) -> pd.DataFrame:
         cells_path, mid_dir, controls_path, settings_path, logging_path,
         popsimprep_dir, uv_path,
     ) = _read_stage_paths(context)
+    # First action: refuse an environment without the configured PopulationSim (G7).
+    populationsim_version = context.config(KEY_POPSIM_VERSION)
+    tool_version.check_populationsim_environment(
+        context, uv_path, popsimprep_dir, populationsim_version)
     (
         max_cells, num_workers, work_dir, kreise, source_name, stratify_regiostar,
         complete_members,
@@ -2697,6 +2706,7 @@ def execute(context) -> pd.DataFrame:
         controls_df, settings_path, max_cells, stratify_regiostar, source_name,
         employment_grid_on, kreis_controls_map, seed_day_filter, seed_households,
         seed_persons, kreis_table, active_entries, status_prior_n, work_dir,
+        populationsim_version,
     )
     merge_report = _run_populationsim_batches(
         context, cells, base_cols, controls_df, seed_households, seed_persons,

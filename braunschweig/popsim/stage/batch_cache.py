@@ -102,8 +102,8 @@ def _frame_content_signature(df):
 def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
                                    stratify_regiostar, source_name, employment_grid_on,
                                    kreis_controls_map, seed_day_filter, seed_households,
-                                   seed_persons, kreis_table, active_entries=None,
-                                   status_prior_n=0.0) -> str:
+                                   seed_persons, kreis_table, populationsim_version: str,
+                                   active_entries=None, status_prior_n=0.0) -> str:
     """Compute the work-dir batch-input signature (sha256 hex).
 
     The signature covers the batch inputs listed in ``payload`` below, so that a change to
@@ -143,6 +143,10 @@ def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
         "seed_households": _frame_content_signature(seed_households),
         "seed_persons": _frame_content_signature(seed_persons),
         "kreis_targets": _frame_content_signature(kreis_table),
+        # A batch finished by another PopulationSim version must never be reused (G7,
+        # issue #645). NOTE (one-time signature change): adding this key purges the
+        # completed batches of an existing work_dir once, on the first run after it.
+        "populationsim_version": populationsim_version,
     }
     if active_entries:
         payload["kreis_attribute_controls"] = {

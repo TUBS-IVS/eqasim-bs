@@ -567,6 +567,8 @@ config:
   braunschweig.population.popsim.logging_path: /home/felix/popsimprep/popsim/configs/logging.yaml
   braunschweig.population.popsim.popsimprep_dir: /home/felix/popsimprep
   braunschweig.population.popsim.uv_path: /home/felix/.local/bin/uv
+  # Required PopulationSim version (meaning and format: KEY_POPSIM_VERSION in config_keys.py).
+  braunschweig.population.popsim.populationsim_version: "0.10.0+bs.1"
   # No per-batch timeout: heavy control sets converge slowly; batches must run to
   # completion no matter how long (0 -> timeout disabled, see batch.make_populationsim_run_one).
   braunschweig.population.popsim.batch_timeout_s: 0

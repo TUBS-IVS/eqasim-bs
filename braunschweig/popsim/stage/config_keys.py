@@ -50,6 +50,14 @@ KEY_SETTINGS = "braunschweig.population.popsim.settings_path"
 KEY_LOGGING = "braunschweig.population.popsim.logging_path"
 KEY_POPSIMPREP = "braunschweig.population.popsim.popsimprep_dir"
 KEY_UV = "braunschweig.population.popsim.uv_path"
+# PopulationSim version the run requires, a PEP 440 version string (e.g. "0.10.0+bs.1", the
+# group's fork of PopulationSim 0.10.0). The stage asks the popsimprep environment for its
+# installed version before any seed is built and refuses a different one
+# (braunschweig.popsim.tool_version, always on): a run on upstream or an older fork would
+# otherwise silently produce a different population (design goal G7, issue #645). The value
+# also enters the work-dir batch signature (batch_cache.compute_batch_config_signature) and
+# the run provenance record (braunschweig.provenance), which records the CONFIGURED version.
+KEY_POPSIM_VERSION = "braunschweig.population.popsim.populationsim_version"
 KEY_MAX_CELLS = "braunschweig.population.popsim.max_cells"
 KEY_WORKERS = "braunschweig.population.popsim.num_workers"
 # Assumed peak memory of ONE PopulationSim batch worker, in gigabytes. Bounds

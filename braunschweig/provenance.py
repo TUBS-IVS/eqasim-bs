@@ -40,6 +40,9 @@ PROVENANCE_CONFIG_KEYS = (
     "hts",
     "random_seed",
     "braunschweig.population.method",
+    # The CONFIGURED PopulationSim version; the installed one is checked by the popsim stage
+    # (meaning: KEY_POPSIM_VERSION in braunschweig.popsim.stage.config_keys).
+    "braunschweig.population.popsim.populationsim_version",
 )
 
 

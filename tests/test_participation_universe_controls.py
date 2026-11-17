@@ -1326,6 +1326,12 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         popsim_stage, "_create_seeded_rngs",
         lambda ctx: (1, np.random.RandomState(1), np.random.RandomState(2)))
     monkeypatch.setattr(popsim_stage, "_resolve_source", lambda source_name: _Source())
+    # The PopulationSim environment check needs a uv environment; it has its own tests
+    # (tests/test_popsim_tool_version.py).
+    values[popsim_stage.KEY_POPSIM_VERSION] = "0.10.0+bs.1"
+    monkeypatch.setattr(
+        popsim_stage.tool_version, "check_populationsim_environment",
+        lambda *args, **kwargs: {})
     monkeypatch.setattr(
         popsim_stage, "_read_control_config",
         lambda ctx, source_name: ((), (), "csv", False, False, (), set(), 30, None, "default", False))

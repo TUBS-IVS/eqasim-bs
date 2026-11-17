@@ -38,6 +38,7 @@ def _sig(**overrides):
         seed_households=pd.DataFrame({"H_ID": [1, 2], "H_GEW": [1.0, 2.0]}),
         seed_persons=pd.DataFrame({"H_ID": [1, 2], "P_ID": [1, 2], "trip_class": [0, 3]}),
         kreis_table=pd.DataFrame({"ARS_kreis": ["03101"], "economic_status_very_low_KREIS": [100]}),
+        populationsim_version="0.10.0+bs.1",
         active_entries=None,
         status_prior_n=0.0,
     )
