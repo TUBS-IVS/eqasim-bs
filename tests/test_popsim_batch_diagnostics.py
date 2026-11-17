@@ -20,7 +20,7 @@ from popsim_batch_fixture import TOTAL, build_work_dir  # noqa: E402
 from braunschweig.analysis.popsim_batch_diagnostics.batch_folder import (  # noqa: E402
     control_totals, household_incidence, list_batch_folders, load_batch_folder)
 from braunschweig.analysis.popsim_batch_diagnostics.coverage import (  # noqa: E402
-    coverage_table, universe_table)
+    coverage_table, resolved_record_shares, universe_table)
 from braunschweig.analysis.popsim_batch_diagnostics.fit import (  # noqa: E402
     control_fit, misfit_split, read_weight_table, rounding_shift)
 from braunschweig.analysis.popsim_batch_diagnostics.reuse import (  # noqa: E402
@@ -115,6 +115,45 @@ def test_coverage_finds_records_no_category_counts(work_dir):
     assert table.loc["tenure", ["n_uncovered", "ratio"]].tolist() == pytest.approx([1, 0.8])
     assert table.loc["building_type", ["n_uncovered", "ratio"]].tolist() == pytest.approx([1, 1.2])
     assert "household_size" not in table.index          # no such control in this batch
+
+
+def _with_raw_columns(batch):
+    """Batch whose seed carries the raw MiD codes the stage resolution keeps."""
+    households = batch.seed_households.assign(
+        H_MIETE_raw=[1, 2, 9, 5], haustyp_raw=[2, 1, 1, 95])
+    persons = batch.seed_persons.assign(HP_SEX_raw=[1, 2, 1, 3, 9, 2])
+    return replace(batch, seed_households=households, seed_persons=persons)
+
+
+def test_resolved_record_shares_matches_hand_count(work_dir):
+    batch = _with_raw_columns(load_batch_folder(work_dir / "batch_000"))
+    usage = pd.Series({2: 1, 3: 1, 4: 3})
+    table = resolved_record_shares(batch, usage).set_index("attribute")
+    assert table.loc["HP_SEX_raw", "raw_codes"] == "3,9"
+    assert table.loc["H_MIETE_raw", "raw_codes"] == "not 1,2"
+    assert table.loc["haustyp_raw", "raw_codes"] == "95"
+    assert table.loc["HP_SEX_raw", "seed_table"] == "persons"
+    assert table["n_records"].to_dict() == {"HP_SEX_raw": 2, "H_MIETE_raw": 2, "haustyp_raw": 1}
+    # persons inherit the household weight (0.5, 1.5, 1.5, 2, 4, 4 = 13.5) and copies (9)
+    assert table.loc["HP_SEX_raw", "seed_weight_share"] == pytest.approx(6.0 / 13.5)
+    assert table.loc["HP_SEX_raw", "synthetic_share"] == pytest.approx(4 / 9)
+    assert table.loc["HP_SEX_raw", "ratio"] == pytest.approx((4 / 9) / (6.0 / 13.5))
+    # households: weights 0.5, 1.5, 2, 4 = 8; copies 0, 1, 1, 3 = 5
+    assert table.loc["H_MIETE_raw", "seed_weight_share"] == pytest.approx(6.0 / 8)
+    assert table.loc["H_MIETE_raw", "synthetic_share"] == pytest.approx(4 / 5)
+    assert table.loc["haustyp_raw", "seed_weight_share"] == pytest.approx(0.5)
+    assert table.loc["haustyp_raw", "synthetic_share"] == pytest.approx(0.6)
+    assert table.loc["haustyp_raw", "ratio"] == pytest.approx(1.2)
+
+
+def test_resolved_record_shares_skips_seed_without_raw_columns(work_dir, caplog):
+    batch = load_batch_folder(work_dir / "batch_000")
+    with caplog.at_level(logging.INFO):
+        table = resolved_record_shares(batch, pd.Series({2: 1, 3: 1, 4: 3}))
+    assert table.empty and "ratio" in table.columns
+    skipped = [r for r in caplog.records if r.levelno == logging.INFO
+               and "resolved_record_shares" in r.getMessage()]
+    assert len(skipped) == 1
 
 
 def test_usage_of_a_household_outside_the_seed_is_refused(work_dir):
@@ -591,6 +630,7 @@ def test_run_writes_all_tables_and_flags_breaches(work_dir, tmp_path):
     out = tmp_path / "out"
     for name in ("reuse", "weight_class_shares", "attribute_shares", "control_coverage",
                  "control_universe", "control_fit", "solver_paths", "misfit_split",
+                 "resolved_record_shares",
                  "rounding_shift"):
         assert (out / f"{name}.csv").is_file()
     assert (out / "popsim_batch_diagnostics.md").is_file() and (out / "provenance.json").is_file()

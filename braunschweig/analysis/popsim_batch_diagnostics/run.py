@@ -34,7 +34,7 @@ import pandas as pd
 from braunschweig.analysis.popsim_batch_diagnostics.batch_folder import (
     list_batch_folders, load_batch_folder)
 from braunschweig.analysis.popsim_batch_diagnostics.coverage import (
-    coverage_table, universe_table)
+    coverage_table, resolved_record_shares, universe_table)
 from braunschweig.analysis.popsim_batch_diagnostics.fit import (
     control_fit, misfit_split, rounding_shift)
 from braunschweig.analysis.popsim_batch_diagnostics.reuse import (
@@ -330,7 +330,7 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
         del batch
 
     many = len(groups) > 1
-    weight_parts, attribute_parts, coverage_parts = [], [], []
+    weight_parts, attribute_parts, coverage_parts, resolved_parts = [], [], [], []
     for group in groups.values():
         batch = group.first_batch
         id_col = batch.household_id_col
@@ -379,6 +379,9 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
         coverage = coverage_table(batch, usage)
         coverage.insert(0, "seed_group", label)
         coverage_parts.append(coverage)
+        resolved = resolved_record_shares(batch, usage)
+        resolved.insert(0, "seed_group", label)
+        resolved_parts.append(resolved)
         for item in coverage.itertuples():
             if item.exhaustive and item.n_multi_hit > thresholds.coverage_multi_hit_max:
                 warnings.add("coverage_multi_hit", f"{prefix}{item.group}", item.n_multi_hit,
@@ -433,6 +436,7 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
         "attribute_shares": pd.concat(attribute_parts, ignore_index=True)
         if attribute_parts else pd.DataFrame(),
         "control_coverage": pd.concat(coverage_parts, ignore_index=True),
+        "resolved_record_shares": pd.concat(resolved_parts, ignore_index=True),
         "control_universe": universe,
         "control_fit": fit_table,
         "solver_paths": solver,
@@ -472,6 +476,8 @@ def _write_summary(out_dir: Path, work_dir: Path, folders, groups, commit: str, 
         "## Reuse (region rows)", "", _md_table(reuse[reuse["scope"] == "region"]),
         "## Weight classes", "", _md_table(tables["weight_class_shares"]),
         "## Control coverage", "", _md_table(tables["control_coverage"]),
+        "## Resolved seed records by raw code", "",
+        _md_table(tables["resolved_record_shares"]),
         "## Control universe", "", _md_table(tables["control_universe"]),
         "## Control fit per geography (region)", "",
         _md_table(fit[fit["scope"] == "region_geography"].drop(columns=["batch"])),

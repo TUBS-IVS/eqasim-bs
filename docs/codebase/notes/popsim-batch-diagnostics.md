@@ -45,10 +45,13 @@ weight column, household id column and geographies (`ValueError` otherwise). Rat
 | `weight_class_shares.csv` | seed weight share vs synthetic share per weight class | seed weights, expanded ids |
 | `attribute_shares.csv` | the same per seed attribute and per MiD column | seed, optional MiD file |
 | `control_coverage.csv` | seed records that no category of a control group counts | seed, controls |
+| `resolved_record_shares.csv` | seed and synthetic shares of the records the stage resolution changed, selected by raw code (`raw_codes`: `3,9`, `not 1,2`, `95`) | seed `*_raw` columns, expanded ids |
 | `control_universe.csv` | household group targets vs the household total | control totals |
 | `control_fit.csv` | WAPE and bias per control; scopes `batch`, `region`, `region_geography` | totals, expanded ids |
 | `solver_paths.csv` | which solver path each parent zone took, per level | `output/populationsim.log` |
 | `misfit_split.csv`, `rounding_shift.csv` | balancing vs rounding part of the misfit (`--misfit`) | checkpoint store |
+
+`resolved_record_shares.csv` is descriptive (no thresholds) and keeps the before/after comparison on the same records once the coverage table shows none uncovered; a seed without the raw columns gets no row.
 
 The group declaration (which control belongs to which group, universe, exhaustive) lives in
 `braunschweig/popsim/control_groups.py` and nowhere else; a control that falls in no group or in
