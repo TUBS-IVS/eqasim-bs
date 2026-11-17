@@ -11,10 +11,9 @@ import logging
 import numpy as np
 import pandas as pd
 
-from braunschweig.analysis.integerizer_quality.cell_error import evaluate_expression
 from braunschweig.analysis.popsim_batch_diagnostics.batch_folder import (
     BatchFolder, control_totals)
-from braunschweig.popsim.control_groups import CONTROL_GROUPS, group_targets
+from braunschweig.popsim.control_groups import CONTROL_GROUPS, group_targets, seed_group_hits
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +49,6 @@ def coverage_table(batch: BatchFolder, usage: pd.Series, groups=CONTROL_GROUPS) 
     """
     frames = {"households": batch.seed_households, "persons": batch.seed_persons}
     spec = batch.control_spec
-    expressions = dict(zip(spec["target"], spec["expression"]))
     rows, skipped = [], []
     for group in groups:
         targets = group_targets(group, spec, batch.total_hh_control)
@@ -58,13 +56,7 @@ def coverage_table(batch: BatchFolder, usage: pd.Series, groups=CONTROL_GROUPS) 
             skipped.append(group.name)
             continue
         frame = frames[group.seed_table]
-        hits = np.zeros(len(frame), dtype=int)
-        for target in targets:
-            hits += np.asarray(evaluate_expression(expressions[target], frame)).astype(bool)
-        if group.universe is None:
-            in_universe = np.ones(len(frame), dtype=bool)
-        else:
-            in_universe = np.asarray(evaluate_expression(group.universe, frame)).astype(bool)
+        hits, in_universe = seed_group_hits(group, spec, frame, batch.total_hh_control)
         weight, copies = _record_weights(batch, group.seed_table, usage)
         # n_uncovered and n_multi_hit are counted inside the universe only.
         uncovered = in_universe & (hits == 0)

@@ -40,7 +40,7 @@ from braunschweig.analysis.popsim_batch_diagnostics.fit import (
 from braunschweig.analysis.popsim_batch_diagnostics.reuse import (
     reuse_by_zone, reuse_summary, shares_by_attribute, usage_counts, weight_class_shares)
 from braunschweig.analysis.popsim_batch_diagnostics.solver_paths import solver_path_table
-from braunschweig.popsim.control_groups import unmatched_controls
+from braunschweig.popsim.control_groups import UNIVERSE_RATIO_TOLERANCE, unmatched_controls
 
 logger = logging.getLogger(__name__)
 _TAG = "[popsim_batch_diagnostics]"
@@ -60,7 +60,7 @@ class Thresholds:
     weight_class_gap_pp: float = 5.0          # |synthetic - seed weight share| in percentage points
     coverage_ratio_low: float = 0.5           # uncovered-record share, synthetic / seed
     coverage_ratio_high: float = 2.0
-    universe_ratio_tolerance: float = 0.02    # |group target sum / household total - 1|
+    universe_ratio_tolerance: float = UNIVERSE_RATIO_TOLERANCE    # |group target sum / household total - 1|
     sequential_fallback_rate: float = 0.05    # non_simultaneous / n_parents per level
     coverage_multi_hit_max: float = 0.0       # records hit by 2+ categories of an exhaustive group
     rounding_shift_bound: float = 0.10        # |integer - float| / target per control

@@ -116,6 +116,12 @@ KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE = (
 # dwelling sums byte-identically.
 KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS = (
     "braunschweig.population.popsim.building_type_targets_to_households")
+# Contract check before PopulationSim (issue #647, rule in ``braunschweig.popsim.seed_contract``):
+# "error" raises when a seed record of an exhaustive control group matches no / several
+# categories or a household group target misses the household total; "warn" only logs. The
+# legacy path (complete_members False) and the ENTD source always run in "warn". Any other
+# value raises at configure time.
+KEY_SEED_CONTRACT_MODE = "braunschweig.population.popsim.seed_contract_mode"
 # MiD P_VAUTO-based passenger availability. The intentionally short public key
 # is shared with the MATSim preparation gate; it is effective only for popsim_mid.
 KEY_MID_PASSENGER_AVAILABILITY = "mid_passenger_availability"

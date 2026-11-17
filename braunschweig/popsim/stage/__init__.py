@@ -156,6 +156,7 @@ from braunschweig.popsim import plausibility as _plausibility
 from braunschweig.popsim import passenger_availability as _passenger_availability
 from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
+from braunschweig.popsim import seed_contract as _seed_contract
 from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
 
 # The eight submodules of the braunschweig.popsim.mid helper package, imported
@@ -258,6 +259,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_SEED_RESOLVE_BINARY_SEX,
     KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE,
     KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS,
+    KEY_SEED_CONTRACT_MODE,
     KEY_MID_PASSENGER_AVAILABILITY,
     KEY_CONTROL_TIERS,
     KEY_CONTROLS,
@@ -430,6 +432,7 @@ _HELPER_MODULES = (
     _plausibility,
     _passenger_availability,
     prepared_cells,
+    _seed_contract,
     # the one synpp stage imported at MODULE level and used here as a plain
     # function library whose dependency this stage does NOT declare, so its own
     # stage hash never reaches this stage (see the import comment above).
@@ -524,6 +527,8 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.attributes",
     # Imported inside _add_aggregated_control_columns (building-type targets per household, #647).
     "braunschweig.popsim.building_type_targets",
+    # Reached through seed_contract (the contract check before PopulationSim, #647).
+    "braunschweig.popsim.control_groups",
     "braunschweig.popsim.control_spec",
     "braunschweig.popsim.employment_grid",
     # escort_pairing: the THIRD second-level exception (reached via mid.participation, whose
@@ -771,6 +776,8 @@ def configure(context):
     context.config(KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE, True)
     # Building-type targets rescaled from dwellings to households per cell (#647). Default True.
     context.config(KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS, True)
+    # Contract check before PopulationSim: "error" | "warn" (#647). Default "error".
+    _seed_contract.validate_mode(context.config(KEY_SEED_CONTRACT_MODE, "error"))
     context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
     # Controls source (Task 5). Default "csv" = byte-identical to today's behaviour.
     context.config(KEY_CONTROLS_SOURCE, "csv")
@@ -1439,6 +1446,45 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
         for column in building_type_cols:
             cells[column] = work[column]
     return cells
+
+
+def _check_seed_contract(seed_households: pd.DataFrame, seed_persons: pd.DataFrame,
+                         controls_df: pd.DataFrame, total_hh_control: str,
+                         cells: pd.DataFrame, *, kreis_col: str, mode: str,
+                         complete_members: bool, source_name: str) -> None:
+    """Contract check before PopulationSim (issue #647, G6; rule in ``seed_contract``).
+
+    The configured ``mode`` ("error" | "warn") applies on the complete_members path with the
+    MiD source. The legacy path and the ENTD source build their seed differently and always run
+    in "warn" mode; one INFO line says so.
+
+    Returns: nothing. Raises ``ValueError`` in "error" mode when the contract is violated.
+    Mutates: nothing.
+    """
+    _seed_contract.validate_mode(mode)
+    effective = mode
+    if not complete_members or source_name != "mid":
+        if mode != "warn":
+            logger.info(
+                "[popsim.seed_contract] seed_contract_mode %r is not applied on the %s path: "
+                "its seed is not resolved by the #647 fills, so the check only warns.",
+                mode, "legacy (complete_members off)" if not complete_members
+                else f"{source_name} source")
+        effective = "warn"
+    _seed_contract.check_seed_coverage(
+        seed_households, seed_persons, controls_df, total_hh_control, mode=effective)
+    _seed_contract.check_household_group_totals(
+        cells, controls_df, total_hh_control, kreis_col=kreis_col, mode=effective)
+
+
+def _read_total_hh_control(settings_path) -> str:
+    """The ``total_hh_control`` target name of the PopulationSim settings file."""
+    import yaml
+
+    settings = yaml.safe_load(Path(settings_path).read_text(encoding="utf-8"))
+    if not isinstance(settings, dict) or "total_hh_control" not in settings:
+        raise ValueError(f"[popsim.seed_contract] {settings_path} declares no total_hh_control")
+    return str(settings["total_hh_control"])
 
 
 def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_grid_on: bool) -> pd.DataFrame:
@@ -2769,6 +2815,17 @@ def execute(context) -> pd.DataFrame:
         resolve_tenure_building_type=bool(
             context.config(KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE)),
     )
+
+    # Contract check (#647, G6) on the final controls and cells, before any batch is written.
+    contract_cells = cells.copy()
+    contract_cells[folders.GEO_KREIS] = derive_geo_kreis_from_ars(
+        contract_cells[mid._ARS_COLUMN])
+    _check_seed_contract(
+        seed_households, seed_persons, controls_df, _read_total_hh_control(settings_path),
+        contract_cells, kreis_col=folders.GEO_KREIS,
+        mode=str(context.config(KEY_SEED_CONTRACT_MODE)),
+        complete_members=complete_members, source_name=source_name)
+    del contract_cells
 
     run_one = _prepare_batch_runner(
         context, uv_path, popsimprep_dir, stratify_regiostar,

@@ -112,6 +112,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.cells",
     "braunschweig.popsim.chain_matching",
     "braunschweig.popsim.closure_dwell",
+    "braunschweig.popsim.control_groups",
     "braunschweig.popsim.control_spec",
     "braunschweig.popsim.controls",
     "braunschweig.popsim.day_type",
