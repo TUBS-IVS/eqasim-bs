@@ -233,11 +233,12 @@ CONTROLLED_COLUMNS = ("rounding,x_count,fractional_x,slack_cell,slack_parent_sub
 
 
 def _simul_call(status, rounding, x_count="", fractional_x="", slack_conserve="",
-                hh_unreachable="", hh_excess="", label="p"):
+                hh_unreachable="", hh_excess="", label="p", slack_cell=0, slack_parent_sub=0,
+                slack_parent=0):
     # A bs.2 record in controlled mode: the bs.1 columns, then the nine extra ones.
     return (f"call,simul,KREIS,{label},{status},2,10,0.1,0.2,,,off,1,"
-            f"{rounding},{x_count},{fractional_x},0,0,0,{slack_conserve},{hh_unreachable},"
-            f"{hh_excess}")
+            f"{rounding},{x_count},{fractional_x},{slack_cell},{slack_parent_sub},{slack_parent},"
+            f"{slack_conserve},{hh_unreachable},{hh_excess}")
 
 
 def _controlled_batch(work_dir, name, lines):
@@ -259,8 +260,67 @@ def test_controlled_expected_raises_when_a_simul_call_is_not_controlled(tmp_path
     ])
     with pytest.raises(RuntimeError, match="rounding"):
         solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="controlled")
-    # The same record is fine when "round" is what the run asked for.
-    solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="round")
+
+
+def _good_controlled_batch(work_dir, name="batch_001"):
+    _controlled_batch(work_dir, name, [_simul_call("OPTIMAL", "controlled", 10, 2, 0, 0, 0)])
+
+
+def _bs1_batch(work_dir, name):
+    _batch(work_dir, name, [_outcome("KREIS", "simultaneous"),
+                            "call,simul,KREIS,p,OPTIMAL,2,10,0.1,0.2,,,off,1"])
+
+
+def test_controlled_proof_is_per_batch_a_bs1_batch_among_controlled_ones_raises(tmp_path):
+    _good_controlled_batch(tmp_path)
+    _bs1_batch(tmp_path, "batch_002")  # lacks the nine extra columns
+    with pytest.raises(RuntimeError, match="batch_002"):
+        solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="controlled")
+
+
+def test_controlled_proof_is_per_batch_a_non_controlled_simul_call_raises(tmp_path):
+    _good_controlled_batch(tmp_path)
+    _controlled_batch(tmp_path, "batch_002", [
+        _simul_call("OPTIMAL", "controlled", 10, 2, 0, 0, 0, label="a"),
+        _simul_call("OPTIMAL", "round", label="b")])
+    with pytest.raises(RuntimeError, match="batch_002"):
+        solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="controlled")
+
+
+def test_controlled_proof_is_per_batch_parent_outcomes_without_a_controlled_call_raise(tmp_path):
+    _good_controlled_batch(tmp_path)
+    # batch_002 has a parent outcome (written by _controlled_batch) but only a single call row
+    _controlled_batch(tmp_path, "batch_002", [_call("OPTIMAL")])
+    with pytest.raises(RuntimeError, match="batch_002"):
+        solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="controlled")
+
+
+def test_round_expected_refuses_a_record_that_ran_controlled(tmp_path):
+    # The tracked config says "round" but the tool ran controlled: a mode mismatch.
+    _bs1_batch(tmp_path, "batch_001")
+    _controlled_batch(tmp_path, "batch_002", [_simul_call("OPTIMAL", "controlled", 10, 2, 0, 0, 0)])
+    with pytest.raises(RuntimeError, match="batch_002"):
+        solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="round")
+
+
+def test_round_expected_accepts_a_bs2_record_that_ran_round(tmp_path):
+    _controlled_batch(tmp_path, "batch_001", [_simul_call("OPTIMAL", "round", label="a")])
+    _, totals = solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="round")
+    assert totals["controlled_simul_calls"] == 0
+
+
+@pytest.mark.parametrize("count", ["", "n/a"])
+def test_controlled_call_with_a_missing_or_non_numeric_count_is_a_damaged_record(tmp_path, count):
+    _controlled_batch(tmp_path, "batch_001", [_simul_call("OPTIMAL", "controlled", count, 0, 0, 0, 0)])
+    with pytest.raises(RuntimeError, match="damaged"):
+        solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="controlled")
+
+
+def test_controlled_call_with_a_non_numeric_slack_is_a_damaged_record(tmp_path):
+    _controlled_batch(tmp_path, "batch_001", [
+        _simul_call("OPTIMAL", "controlled", 10, 0, 0, 0, 0, slack_parent="oops")])
+    with pytest.raises(RuntimeError, match="damaged"):
+        solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="controlled")
 
 
 def test_controlled_expected_raises_for_a_record_without_the_extra_columns(tmp_path):
@@ -282,8 +342,10 @@ def test_round_expected_accepts_a_bs1_record_unchanged(tmp_path):
 
 def test_controlled_totals_and_rate_line(tmp_path, caplog):
     _controlled_batch(tmp_path, "batch_001", [
-        _simul_call("OPTIMAL", "controlled", 10, 2, 1, 0, 2, label="a"),
-        _simul_call("FEASIBLE", "controlled", 30, 3, 3, 0, 0, label="b"),
+        _simul_call("OPTIMAL", "controlled", 10, 2, 1, 0, 2, label="a",
+                    slack_cell=1, slack_parent_sub=2, slack_parent=3),
+        _simul_call("FEASIBLE", "controlled", 30, 3, 3, 0, 0, label="b",
+                    slack_cell=10, slack_parent_sub=20, slack_parent=30),
         _call("OPTIMAL"),  # a single call is no controlled call and needs no rounding value
     ])
     with caplog.at_level(logging.INFO):
@@ -291,13 +353,16 @@ def test_controlled_totals_and_rate_line(tmp_path, caplog):
             tmp_path, None, expected_rounding="controlled")
     assert totals["controlled_simul_calls"] == 2
     assert totals["controlled_non_success_calls"] == 0
+    assert totals["x_count"] == 40 and totals["fractional_x"] == 5
     assert totals["fractional_share"] == pytest.approx(5 / 40)
     assert totals["conserve_slack_share"] == pytest.approx(4 / 40)
     assert totals["hh_unreachable"] == 0 and totals["hh_excess"] == 2
-    lines = [r for r in caplog.records if "controlled" in r.getMessage()
-             and r.name == solver_path_gate.logger.name]
-    assert len(lines) == 1 and lines[0].levelno == logging.INFO
-    assert "12.5%" in lines[0].getMessage() and "10.0%" in lines[0].getMessage()
+    assert totals["slack_cell"] == 11
+    assert totals["slack_parent_sub"] == 22
+    assert totals["slack_parent"] == 33
+    # A clean run logs every stage line at INFO (the degraded case is the WARNING test below).
+    stage_lines = [r for r in caplog.records if r.getMessage().startswith(f"[{solver_path_gate.STAGE_TAG}]")]
+    assert stage_lines and all(r.levelno == logging.INFO for r in stage_lines)
 
 
 @pytest.mark.parametrize("bad_call", [
