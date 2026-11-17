@@ -120,6 +120,11 @@ KEY_INTEGERIZER_DRAW = "braunschweig.population.popsim.integerizer_draw"
 # Time limit of one integerizer solve, positive integer seconds (-> INTEGERIZER_TIMEOUT;
 # upstream 0.10.0 calls it INTEGIZER_TIMEOUT and defaults to 60).
 KEY_INTEGERIZER_TIMEOUT_S = "braunschweig.population.popsim.integerizer_timeout_s"
+# Solver-path gate (braunschweig.popsim.stage.solver_path_gate, design goal G5, issue #645):
+# float in (0, 1] or null. Above this share of parent zones NOT integerized simultaneously
+# (per geography) the stage raises; null = warn only. Volatile: it only gates, no result.
+# ASSUMPTION-grade threshold, to be set from the first full run (design, issue #645).
+KEY_SOLVER_FALLBACK_ERROR_RATE = "braunschweig.population.popsim.solver_fallback_error_rate"
 # Member completion (decision D3, mid source only): fill member-incomplete MiD
 # donor households by mirror-household sampling, in ONE pass on the attribute
 # donor tables that feeds BOTH the PopulationSim seed and the expansion.

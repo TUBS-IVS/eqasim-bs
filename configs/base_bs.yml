@@ -579,6 +579,9 @@ config:
   braunschweig.population.popsim.keep_fractional_sample_weights: false
   braunschweig.population.popsim.integerizer_draw: "off"
   braunschweig.population.popsim.integerizer_timeout_s: 7200
+  # Solver-path gate (meaning: KEY_SOLVER_FALLBACK_ERROR_RATE in config_keys.py): null = warn
+  # only. ASSUMPTION-grade threshold, to be set from the first full run (design, issue #645).
+  braunschweig.population.popsim.solver_fallback_error_rate: null
   # No per-batch timeout: heavy control sets converge slowly; batches must run to
   # completion no matter how long (0 -> timeout disabled, see batch.make_populationsim_run_one).
   braunschweig.population.popsim.batch_timeout_s: 0

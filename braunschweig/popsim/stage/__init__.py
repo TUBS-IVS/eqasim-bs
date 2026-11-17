@@ -301,6 +301,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_INCOME_TILT_CLIP,
     KEY_INTEGERIZER_DRAW,
     KEY_INTEGERIZER_TIMEOUT_S,
+    KEY_SOLVER_FALLBACK_ERROR_RATE,
     KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS,
     KEY_KREIS_CONTROLS,
     KEY_KREISE,
@@ -335,6 +336,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     _KREIS_CONTROL_DEFAULT,
     _KREIS_CONTROL_TOGGLE_KEY,
 )
+from . import solver_path_gate
 from . import controls_builder
 from .controls_builder import (  # noqa: F401  (re-exports)
     _grid_geography_controls,
@@ -395,6 +397,7 @@ _HELPER_MODULES = (
     cell_attributes,
     config_keys,
     controls_builder,
+    solver_path_gate,
     source_resolution,
     tilt_columns,
     # the braunschweig.popsim.mid helper package: __init__ + its submodules
@@ -771,6 +774,8 @@ def configure(context):
     context.config(KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS, False)
     context.config(KEY_INTEGERIZER_DRAW, "off")
     context.config(KEY_INTEGERIZER_TIMEOUT_S, 60)
+    # Solver-path gate threshold (meaning: KEY_SOLVER_FALLBACK_ERROR_RATE in config_keys).
+    context.config(KEY_SOLVER_FALLBACK_ERROR_RATE, None, volatile = True)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
     context.config(KEY_COMPLETE_MEMBERS, True)
     context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
@@ -2752,6 +2757,9 @@ def execute(context) -> pd.DataFrame:
         household_control_names, settings_overrides, integerizer_seed_base,
     )
     _log_integerizer_feasibility(context, work_dir)
+    solver_paths = solver_path_gate.check_solver_paths(
+        work_dir, context.config(KEY_SOLVER_FALLBACK_ERROR_RATE))
+    context.set_info("popsim_solver_paths", solver_paths.to_dict("records"))
     inkar_income = _load_inkar_income_scale(context)
     combined = _join_cell_attributes_onto_merged_output(merge_report, cells)
     donor_households, donor_persons = _load_donor_tables(
