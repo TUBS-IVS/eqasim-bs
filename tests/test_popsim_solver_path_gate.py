@@ -19,8 +19,13 @@ HEADER = ("row_type,kind,geography,trace_label,status,zones,rows,build_s,solve_s
           "outcome,rounded_zones,draw,random_seed")
 
 
-def _outcome(geography, outcome, rounded=""):
-    return f"outcome,simul,{geography},t,,,,,,{outcome},{rounded},off,1"
+_PARENT_COUNTER = iter(range(10**6))
+
+
+def _outcome(geography, outcome, rounded="", label=None):
+    # one outcome per parent zone: a fresh trace_label unless the test asks for a repeat
+    label = label if label is not None else f"{geography}_{next(_PARENT_COUNTER)}"
+    return f"outcome,simul,{geography},{label},,,,,,{outcome},{rounded},off,1"
 
 
 def _call(status, label="t"):
@@ -161,3 +166,18 @@ def test_record_missing_column_raises(tmp_path):
         "row_type,kind,geography\noutcome,simul,KREIS\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="batch_004.*outcome"):
         solver_path_gate.read_records(tmp_path)
+
+
+def test_duplicate_outcome_key_raises(tmp_path):
+    # a repeated PopulationSim run appends the same parent again
+    _batch(tmp_path, "batch_001", [_outcome("KREIS", "simultaneous", label="p1")])
+    _batch(tmp_path, "batch_002", [_outcome("KREIS", "simultaneous", label="p1"),
+                                   _outcome("KREIS", "simultaneous", label="p1")])
+    with pytest.raises(RuntimeError, match="batch_002.*more than once"):
+        solver_path_gate.read_records(tmp_path)
+    # same label in another geography, or in another batch, is a different parent
+    other = tmp_path / "o"
+    _batch(other, "batch_001", [_outcome("KREIS", "simultaneous", label="p1"),
+                                _outcome("ZENSUS1km", "simultaneous", label="p1")])
+    _batch(other, "batch_002", [_outcome("KREIS", "simultaneous", label="p1")])
+    assert len(solver_path_gate.read_records(other)) == 3

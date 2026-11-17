@@ -11,7 +11,9 @@ stays as it is; this gate adds the solver PATH (which fallback, per geography).
 Definitions (the WP1 definition): PRIMARY = ``simultaneous`` + ``retry_simultaneous``;
 FALLBACK (``non_simultaneous``) = the three ``sequential_*`` outcomes +
 ``smart_round_all_subzones``. ``single_failed_smart_round`` (single integerizer, final
-status not a success) is counted separately and not part of the rate.
+status not a success) is counted separately and not part of the rate. It counts only plain
+single-integerizer failures: the fork does not write it for sub-zone failures inside the
+simultaneous fallback, those are in ``rounded_zones``.
 
 Reads files only and may raise; the config key is volatile (a changed threshold takes effect
 only when the stage executes).
@@ -96,6 +98,22 @@ def read_records(work_dir: Path) -> pd.DataFrame:
             raise RuntimeError(
                 f"[{STAGE_TAG}] {folder.name}/{RECORD_RELATIVE_PATH} has unknown outcome "
                 f"{bad_outcome}: expected one of {list(ALL_OUTCOMES)} (fork record changed?)")
+        outcomes = frame[frame["row_type"] == "outcome"]
+        # Each parent zone has exactly one outcome per run (single failures: keyed by trace_label
+        # alone, no geography). The fork appends to the file, so a repeated or resumed run into
+        # a non-empty output dir shows up as a duplicate key.
+        key_geography = outcomes["geography"].where(
+            outcomes["outcome"] != SINGLE_FAILED_OUTCOME, "")
+        duplicated = outcomes.assign(_geo=key_geography).duplicated(
+            subset=["_geo", "trace_label"], keep=False)
+        if duplicated.any():
+            first = outcomes[duplicated].iloc[0]
+            raise RuntimeError(
+                f"[{STAGE_TAG}] {folder.name}/{RECORD_RELATIVE_PATH} has {int(duplicated.sum())} "
+                f"outcome rows sharing a (geography, trace_label) key, e.g. "
+                f"({first['geography']!r}, {first['trace_label']!r}): the fork appends to the file, "
+                "so PopulationSim ran more than once into this output dir; delete the batch "
+                "output and re-run it")
         frame["batch"] = folder.name
         frames.append(frame)
     if not frames:
