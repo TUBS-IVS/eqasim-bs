@@ -187,12 +187,12 @@ def check_solver_paths(work_dir, error_rate: Optional[float]) -> tuple:
     totals = summarize_call_totals(records)
     exceeded = []
     for row in summary.itertuples(index=False):
-        what = (f"{row.geography}: parent zones not integerized simultaneously "
-                f"(sequential or smart-rounded; {row.rounded_zones} sub zones smart-rounded)")
         if row.parents == 0:
             logger.warning("[%s] %s: no parent zone recorded (only single-integerizer outcomes)",
                            STAGE_TAG, row.geography)
             continue
+        what = (f"{row.geography}: parent zones not integerized simultaneously "
+                f"(sequential or smart-rounded; {row.rounded_zones} sub zones smart-rounded)")
         share = log_fallback_rate(
             logger, STAGE_TAG, row.non_simultaneous, row.parents, what=what)
         if error_rate is not None and share > error_rate:
