@@ -2,7 +2,7 @@
 
 Catches a wiring defect the unit tests in ``test_gtfs_flex_filter.py`` cannot: the stage
 not calling a filter, calling them in the wrong order, or not persisting the counts in
-``gtfs_filter_report.json`` (the run would then only have them in the log).
+``gtfs_cleaned_report.json`` (the run would then only have them in the log).
 """
 from __future__ import annotations
 
@@ -36,12 +36,12 @@ FILES = {
 
 
 class _Context:
-    def __init__(self, data_path, out_path):
+    def __init__(self, data_path, out_path, route_patterns = ("^Flexo$",)):
         self._config = {
             "data_path": str(data_path), "gtfs_path": "gtfs", "cordon_enabled": False,
             "cordon_network_source_buffer_m": 0.0,
-            "gtfs_excluded_route_short_name_patterns": ["^Flexo$"],
-            "gtfs_excluded_agency_ids": [], "gtfs_excluded_agency_name_patterns": [],
+            "gtfs_excluded_route_short_name_patterns": None if route_patterns is None else list(route_patterns),
+            "gtfs_excluded_agency_ids": [], "gtfs_excluded_agency_name_patterns": None,
         }
         self._out = out_path
 
@@ -56,7 +56,7 @@ class _Context:
         return str(self._out)
 
 
-def test_stage_drops_flex_then_flexo_and_writes_report(tmp_path):
+def _run(tmp_path, **context_kwargs):
     (tmp_path / "gtfs").mkdir()
     with zipfile.ZipFile(tmp_path / "gtfs" / "feed.zip", "w") as archive:
         for name, content in FILES.items():
@@ -64,15 +64,36 @@ def test_stage_drops_flex_then_flexo_and_writes_report(tmp_path):
     out = tmp_path / "stage"
     out.mkdir()
 
-    stage.execute(_Context(tmp_path, out))
+    stage.execute(_Context(tmp_path, out, **context_kwargs))
+
+    report = json.loads((out / stage.REPORT_FILE_NAME).read_text(encoding = "utf-8"))
+    (feed_report,) = report["feeds"]
+    return out, feed_report
+
+
+def test_stage_drops_flex_then_flexo_and_writes_report(tmp_path):
+    out, feed_report = _run(tmp_path)
 
     trips = (out / "output" / "trips.txt").read_text(encoding = "utf-8")
     assert "t_sched" in trips and "t_flex" not in trips and "t_flexo" not in trips
+    # Route 2 lost all its trips to the flex filter and is not written without trips.
+    routes = (out / "output" / "routes.txt").read_text(encoding = "utf-8").splitlines()
+    assert [line.split(",")[0] for line in routes[1:]] == ["1"]
 
-    report = json.loads((out / stage.FILTER_REPORT_FILE_NAME).read_text(encoding = "utf-8"))
-    (feed_report,) = report["feeds"]
     assert feed_report["feed"] == "feed.zip"
     assert feed_report["gtfs_flex_filter"]["trips_removed"] == 1
     assert feed_report["gtfs_flex_filter"]["trips_before"] == 3
     assert feed_report["route_filter"]["rule_matches"] == {"route_short_name /^Flexo$/": 1}
     assert feed_report["route_filter"]["trips_removed"] == 1
+    assert feed_report["routes_without_trips"] == {"routes_before": 2, "routes_removed": 1}
+    assert feed_report["spatial_cut"]["trips"] == {"before": 1, "after": 1}
+    assert feed_report["despace"]["stop_ids_replaced"] == 0
+
+
+def test_null_exclusion_keys_disable_the_name_rule(tmp_path):
+    """A key set to null must act like an empty list, not crash the stage."""
+    out, feed_report = _run(tmp_path, route_patterns = None)
+
+    trips = (out / "output" / "trips.txt").read_text(encoding = "utf-8")
+    assert "t_flexo" in trips and "t_flex," not in trips
+    assert feed_report["route_filter"]["routes_removed"] == 0

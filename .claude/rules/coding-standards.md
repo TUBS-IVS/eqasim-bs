@@ -64,10 +64,11 @@ Fail early when input data is invalid. Use clear exception messages that explain
 Every relevant processing step should include plausibility checks. Add validation for: missing files, empty datasets, invalid coordinates, invalid CRS definitions, negative travel times/distances/demand values, invalid mode names/activity types/vehicle capacities, invalid carrier or shipment identifiers, inconsistent totals after aggregation, and unexpected changes in population size or demand totals. For scientific workflows, report validation results in a dedicated summary file where appropriate.
 
 **Every stage that drops, filters or replaces records writes its counts to a report file**
-(`<stage>_report.json` in `context.path()`), not only to the log: per rule or source, how many
-items it saw and removed or replaced. If the stage has no report yet, create one; a log line alone
-is lost with the run's console. One test asserts the report's counts on a small input (example:
-`data.gtfs.cleaned` and `tests/test_gtfs_cleaned_filter_report.py`).
+in `context.path()`, named after the stage (`<name>_report.json`, e.g. `gtfs_cleaned_report.json`
+for `data.gtfs.cleaned`), not only to the log: for every step that drops, filters or replaces
+records (its own and the helpers' it calls), how many items it saw and removed or replaced. If the
+stage has no report yet, create one; a log line alone is lost with the run's console. One test
+asserts the report's counts on a small input (example: `tests/test_gtfs_cleaned_filter_report.py`).
 
 ## Performance
 

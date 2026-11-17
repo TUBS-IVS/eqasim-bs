@@ -30,8 +30,15 @@ DTYPES = {
     }
 }
 
-def read_feed(path):
+def read_feed(path, stats = None):
+    """Read a GTFS zip into a dict of DataFrames and apply the basic cleanup.
+
+    When a dict is passed as ``stats``, the rows dropped for an empty service_id are
+    recorded per slot under ``empty_service_id_removed`` (for the stage report).
+    """
     feed = {}
+    if stats is not None:
+        stats["empty_service_id_removed"] = {}
 
     with zipfile.ZipFile(path, "r") as zip:
         available_slots = zip.namelist()
@@ -74,6 +81,9 @@ def read_feed(path):
             initial_count = len(feed[slot])
             feed[slot] = feed[slot][feed[slot]["service_id"].str.len() > 0]
             final_count = len(feed[slot])
+
+            if stats is not None:
+                stats["empty_service_id_removed"][slot] = initial_count - final_count
 
             if final_count != initial_count:
                 print("WARNING Removed %d/%d entries from %s with empty service_id" % (
@@ -177,9 +187,10 @@ def filter_flex_trips(feed, stats = None):
         only the rows, which can leave a mixed trip with a truncated stop sequence);
       - the removed trips and stop_times are counted and logged (no silent filter).
 
-    Trips are cascaded to stop_times and frequencies. Routes are left in place: cut_feed
-    removes unreferenced entries, and the name-based exclusion in filter_routes (issue
-    #200) still sees its routes and stays a second safety net.
+    Trips are cascaded to stop_times and frequencies. Routes are left in place so the
+    name-based exclusion in filter_routes (issue #200) still sees its routes and stays a
+    second safety net; drop_routes_without_trips removes the routes emptied here afterwards
+    (cut_feed does not touch routes).
 
     The input feed is not mutated. A feed without window columns is returned unchanged.
     When a dict is passed as ``stats``, the counts are also written into it so the stage
@@ -226,6 +237,29 @@ def filter_flex_trips(feed, stats = None):
 
     return feed
 
+def drop_routes_without_trips(feed, stats = None):
+    """Remove routes that no trip references any more (e.g. after filter_flex_trips).
+
+    A route without trips would be written to routes.txt and counted as a line downstream.
+    The count is logged and, when a dict is passed as ``stats``, recorded in it. The input
+    feed is not mutated.
+    """
+    df_routes = feed["routes"]
+    keep = df_routes["route_id"].astype(str).isin(set(feed["trips"]["route_id"].astype(str)))
+    n_removed = int((~keep).sum())
+
+    if stats is not None:
+        stats.update(routes_before = len(df_routes), routes_removed = n_removed)
+
+    print("[gtfs-route-cleanup] removed %d/%d routes without trips" % (n_removed, len(df_routes)))
+
+    if n_removed == 0:
+        return feed
+
+    feed = copy_feed(feed)
+    feed["routes"] = df_routes[keep].copy()
+    return feed
+
 def filter_routes(feed,
                   excluded_route_short_name_patterns = None,
                   excluded_agency_ids = None,
@@ -261,17 +295,17 @@ def filter_routes(feed,
     excluded_agency_ids = [str(a) for a in (excluded_agency_ids or [])]
     excluded_agency_name_patterns = excluded_agency_name_patterns or []
 
+    if stats is None:
+        stats = {}
+    stats.update(rule_matches = {}, routes_before = len(feed["routes"]), routes_removed = 0,
+                 trips_before = len(feed["trips"]), trips_removed = 0, stop_times_removed = 0)
+
     if (not excluded_route_short_name_patterns and not excluded_agency_ids
             and not excluded_agency_name_patterns):
         return feed
 
     feed = copy_feed(feed)
     df_routes = feed["routes"]
-
-    if stats is None:
-        stats = {}
-    stats.update(rule_matches = {}, routes_before = len(df_routes), routes_removed = 0,
-                 trips_before = len(feed["trips"]), trips_removed = 0, stop_times_removed = 0)
 
     # Resolve agency-name patterns to concrete agency_ids via the agency table.
     if excluded_agency_name_patterns and "agency" in feed:
@@ -477,15 +511,17 @@ def copy_feed(feed):
         slot: feed[slot].copy() for slot in feed
     }
 
-def merge_feeds(feeds):
+def merge_feeds(feeds, stats = None):
+    """Merge feeds pairwise. When a dict is passed as ``stats``, the number of identifiers
+    renamed per slot to resolve collisions is accumulated under ``renamed_identifiers``."""
     result = {}
 
     for k, feed in enumerate(feeds):
-        result = merge_two_feeds(result, feed, "_m{}".format(k + 1))
+        result = merge_two_feeds(result, feed, "_m{}".format(k + 1), stats = stats)
 
     return result
 
-def merge_two_feeds(first, second, suffix = "_merged"):
+def merge_two_feeds(first, second, suffix = "_merged", stats = None):
     feed = {}
 
     print("Merging GTFS data ...")
@@ -512,6 +548,10 @@ def merge_two_feeds(first, second, suffix = "_merged"):
 
                     replacement_ids = [str(id) + suffix for id in duplicate_ids]
 
+                    if stats is not None:
+                        renamed = stats.setdefault("renamed_identifiers", {})
+                        renamed[collision["slot"]] = renamed.get(collision["slot"], 0) + len(duplicate_ids)
+
                     df_second[collision["identifier"]] = df_second[collision["identifier"]].replace(
                         duplicate_ids, replacement_ids
                     )
@@ -534,7 +574,9 @@ def merge_two_feeds(first, second, suffix = "_merged"):
 
     return feed
 
-def despace_stop_ids(feed, replacement = ":::"):
+def despace_stop_ids(feed, replacement = ":::", stats = None):
+    """Replace spaces in stop ids (MATSim rejects them). When a dict is passed as ``stats``,
+    the number of replaced stop ids is recorded under ``stop_ids_replaced``."""
     feed = copy_feed(feed)
 
     references = None
@@ -554,6 +596,9 @@ def despace_stop_ids(feed, replacement = ":::"):
     for reference_slot, reference_field in references:
         if reference_slot in feed:
             feed[reference_slot][reference_field] = feed[reference_slot][reference_field].astype(str).replace(search_ids, replacement_ids)
+
+    if stats is not None:
+        stats.update(stops = len(df_stops), stop_ids_replaced = len(search_ids))
 
     print("De-spaced %d/%d stops" % (len(search_ids), len(df_stops)))
 

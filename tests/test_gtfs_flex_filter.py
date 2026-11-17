@@ -54,7 +54,7 @@ def test_flex_and_mixed_trips_are_removed_whole_and_counted(capsys):
     assert set(filtered["trips"]["trip_id"]) == {"t_sched"}
     assert list(filtered["stop_times"]["arrival_time"]) == ["08:00:00", "08:10:00"]
     assert set(filtered["frequencies"]["trip_id"]) == {"t_sched"}
-    # Routes stay for the reference cleanup in cut_feed.
+    # Routes stay so the name filter still sees them; drop_routes_without_trips runs later.
     assert set(filtered["routes"]["route_id"]) == {"1", "2"}
     # The removal is logged with counts (no silent filter): 2 of 3 trips, 4 of 6 stop_times.
     out = capsys.readouterr().out
