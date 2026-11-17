@@ -550,7 +550,8 @@ def _realized_housing_tenure(frames: "PopulationFrames", geo: pd.DataFrame) -> p
     Reads ``housing_tenure`` from ``frames.persons``. Only "owner" and "renter"
     categories are counted; "unknown" (H_MIETE not in {1,2}) is excluded. With the
     pre-PopulationSim resolution (``attributes.resolve_tenure_and_building_type``, issue
-    #647) no household is "unknown"; resolved ones count in their resolved class.
+    #647) no household is "unknown" when the stage resolution runs; resolved ones count in
+    their resolved class.
     """
     persons = frames.persons
     if "housing_tenure" not in persons.columns:

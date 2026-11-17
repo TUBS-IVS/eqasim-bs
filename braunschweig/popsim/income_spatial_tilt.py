@@ -262,8 +262,9 @@ def maybe_apply_income_tilt(
     we have no reported tenure for these households, and assigning them a tenure index
     would tilt households whose tenure is an assumption or a draw. The honest policy is
     NEUTRAL (factor = 1.0): the household's INKAR-scaled income is unchanged, and only
-    reported "owner" / "renter" households are redistributed within the Kreis. For well-calibrated data (small "unknown" fraction)
-    the per-Kreis mean deviation from neutrality is negligible.
+    reported "owner" / "renter" households are redistributed within the Kreis. For
+    well-calibrated data (small "unknown" fraction) the per-Kreis mean deviation from
+    neutrality is negligible.
 
     Returns
     -------

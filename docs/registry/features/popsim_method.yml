@@ -3,7 +3,7 @@ title: popsim_open / popsim_mid
 area: population
 description: PopulationSim-based synthesis at the Zensus-2022 100m/1km grid from complete donor
   households -- popsim_mid seeds with restricted MiD 2023 B1 microdata (donors carry their own
-  travel-day chains), popsim_open with the open ENTD seed (ADR-0002).
+  travel-day chains), popsim_open with the open ENTD seed (ADR-0002). Seed records are resolved into the census control categories and building-type targets count households (ADR-0198).
 stages:
 - data.census.filtered
 - braunschweig.popsim.completed_donor

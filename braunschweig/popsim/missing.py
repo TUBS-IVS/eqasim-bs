@@ -194,8 +194,9 @@ def impute_binary_sex(binary, band, *, rng, constant=None):
 
     Shared by ``expand.map_demographics`` (labels male/female) and
     ``attributes.resolve_binary_sex`` (codes 1/2) so the tier rule exists once. ``binary``
-    holds the observed binary value or NaN; ``band`` is the age-band Series (``None`` when
-    the frame has no band column). Tiers: same-band pool, then the global pool (persons
+    holds the observed binary value or NaN; ``band`` is the age-band Series, POSITIONALLY aligned
+    with ``binary`` (row i of both is the same person; labels are ignored), or ``None`` when
+    the frame has no band column. Tiers: same-band pool, then the global pool (persons
     whose band is NaN are drawn AFTER every banded person, so banded draws keep their
     stream position), then ``constant`` (``None`` leaves them missing for the caller).
     Draws are unweighted, one ``rng.randint`` per imputed person. The work runs on a
