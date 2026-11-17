@@ -50,6 +50,7 @@ validation:
   - synth-100pct-2.2.0-2026-07-23
   - popsim-batch-diagnostics-prod100-20261031-2026-11-16
   - popsim-ladder-baseline-2026-11-16
+  - popsim-ladder-arm1-2026-11-17
   - popsim-ladder-arm2-2026-11-17
   metric: 'control-fit vs committed controls (category shares): census-scale families mean ~0.25pp,
     KREIS/SrV families mean ~1.1pp, car/bike ~3.6-4.7pp urban-concentrated'
@@ -61,3 +62,5 @@ assessment:
   pending_reason: |
     ADR-0002 documents all three methods; configs/base_bs.yml:155 confirms popsim_mid is the active production method. No owner verdict on realised popsim_mid fit quality has been recorded in this register (see also placement_income_l2.yml and srv_participation_controls.yml, which layer on top of this method).
   source: ADR-0002
+notes: |
+  WP2 state (issue #645): the PopulationSim fork core is implemented; production values in configs/base_bs.yml, evidence in run manifest popsim-ladder-arm1-2026-11-17. Decision: ADR-0199; wiring: docs/codebase/notes/populationsim-fork.md.

@@ -50,6 +50,16 @@ KEY_SETTINGS = "braunschweig.population.popsim.settings_path"
 KEY_LOGGING = "braunschweig.population.popsim.logging_path"
 KEY_POPSIMPREP = "braunschweig.population.popsim.popsimprep_dir"
 KEY_UV = "braunschweig.population.popsim.uv_path"
+# PopulationSim version the run requires, a PEP 440 version string (e.g. "0.10.0+bs.1", the
+# group's fork of PopulationSim 0.10.0). The stage asks the popsimprep environment for its
+# installed version before any seed is built and refuses a different one
+# (braunschweig.popsim.tool_version, always on): a run on upstream or an older fork would
+# otherwise silently produce a different population (design goal G7, issue #645). It also
+# refuses an installed git commit other than the one the project's uv.lock pins (the
+# version string alone cannot tell two builds of the fork apart). The version and that
+# commit also enter the work-dir batch signature (batch_cache.compute_batch_config_signature);
+# the run provenance record (braunschweig.provenance) records the CONFIGURED version.
+KEY_POPSIM_VERSION = "braunschweig.population.popsim.populationsim_version"
 KEY_MAX_CELLS = "braunschweig.population.popsim.max_cells"
 KEY_WORKERS = "braunschweig.population.popsim.num_workers"
 # Assumed peak memory of ONE PopulationSim batch worker, in gigabytes. Bounds
@@ -93,6 +103,31 @@ KEY_STRATIFY = "braunschweig.population.popsim.stratify_regiostar"
 # setting are re-run once. With False the settings file must list the step exactly once as a block-list item,
 # else the stage raises.
 KEY_WRITE_DATA_DICTIONARY = "braunschweig.population.popsim.write_data_dictionary"
+# Tracked PopulationSim integerizer options (the group's fork, version 0.10.0+bs.1, issue
+# #645). Each is written into every batch settings.yaml as a PopulationSim setting
+# (braunschweig.popsim.folders.apply_populationsim_overrides, always, also with the
+# neutral value) and fails the run when the server-local settings file already sets the
+# same key to another value. The code defaults are the upstream behaviour; configs/base_bs.yml
+# states the production values. None is volatile: each can change the synthetic
+# population, and each enters the work-dir batch signature (batch_cache).
+# KEEP_FRACTIONAL_SAMPLE_WEIGHTS (bool, -> KEEP_FRACTIONAL_SAMPLE_WEIGHTS): keep the
+# fractional weights of the final seed instead of rounding them first. NOT the float-seed
+# sub-balancing regime SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS of ADR-0056, which stays false.
+KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS = "braunschweig.population.popsim.keep_fractional_sample_weights"
+# Randomised draw of the integerizer: "off" (deterministic, upstream), "pareto" or "gumbel"
+# (-> INTEGERIZER_DRAW). With a draw on, each batch gets its own INTEGERIZER_RANDOM_SEED,
+# derived from the pipeline random_seed and the batch folder name
+# (braunschweig.popsim.folders.batch_integerizer_seed).
+KEY_INTEGERIZER_DRAW = "braunschweig.population.popsim.integerizer_draw"
+# Time limit of one integerizer solve, positive integer seconds (-> INTEGERIZER_TIMEOUT;
+# upstream 0.10.0 calls it INTEGIZER_TIMEOUT and defaults to 60).
+KEY_INTEGERIZER_TIMEOUT_S = "braunschweig.population.popsim.integerizer_timeout_s"
+# Solver-path gate (braunschweig.popsim.stage.solver_path_gate, design goal G5, issue #645):
+# float in (0, 1] or null. Above this share of parent zones NOT integerized simultaneously
+# (per geography) the stage raises; null = warn only. Volatile: it only gates, no result, so a
+# changed threshold takes effect only when the stage executes.
+# ASSUMPTION-grade threshold, to be set from the first full run (design, issue #645).
+KEY_SOLVER_FALLBACK_ERROR_RATE = "braunschweig.population.popsim.solver_fallback_error_rate"
 # Member completion (decision D3, mid source only): fill member-incomplete MiD
 # donor households by mirror-household sampling, in ONE pass on the attribute
 # donor tables that feeds BOTH the PopulationSim seed and the expansion.

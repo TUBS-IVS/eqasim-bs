@@ -40,6 +40,14 @@ PROVENANCE_CONFIG_KEYS = (
     "hts",
     "random_seed",
     "braunschweig.population.method",
+    # The CONFIGURED PopulationSim version; the installed one is checked by the popsim stage
+    # (meaning: KEY_POPSIM_VERSION in braunschweig.popsim.stage.config_keys).
+    "braunschweig.population.popsim.populationsim_version",
+    # The tracked PopulationSim integerizer options (meaning: the KEY_* comments in
+    # braunschweig.popsim.stage.config_keys); the seed base is random_seed above.
+    "braunschweig.population.popsim.keep_fractional_sample_weights",
+    "braunschweig.population.popsim.integerizer_draw",
+    "braunschweig.population.popsim.integerizer_timeout_s",
 )
 
 

@@ -24,3 +24,5 @@ live in one place (CLAUDE.md "Fallback transparency"; audit package D, 2026-11-1
 `tests/test_synpp_helper_hash_invariant.py` does not read exemptions, so a popsim STAGE module
 (one with `configure` and `execute`) that imports the helper needs an `ALLOWED_VIOLATIONS` entry
 there. Adding a log line still edits the calling module and re-executes every stage that hashes it.
+
+The solver PATH of each batch (primary vs fallback integerizer, per geography) is gated by `braunschweig/popsim/stage/solver_path_gate.py`: see [populationsim-fork.md](populationsim-fork.md).

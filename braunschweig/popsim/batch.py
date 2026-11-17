@@ -51,6 +51,11 @@ _OUTPUT_DIR = "output"
 # The output file PopulationSim writes; its presence marks a finished batch.
 COMPLETION_MARKER = f"{_OUTPUT_DIR}/final_expanded_household_ids.csv"
 
+# Per-batch solver-path record of the group's PopulationSim fork (read by
+# braunschweig.popsim.stage.solver_path_gate). The fork APPENDS to it, so a batch that is
+# launched again must start without the file (see make_populationsim_run_one).
+INTEGERIZER_PATH_RECORD = f"{_OUTPUT_DIR}/integerizer_paths.csv"
+
 # PopulationSim's per-batch checkpoint store. Once the completion marker exists it is
 # dead weight: the merge stage reads only the marker CSV, no repo code reads the h5,
 # and PopulationSim itself reopens it only to RESUME an *aborted* batch. At full donor
@@ -527,6 +532,9 @@ def make_populationsim_run_one(
     ~15 GB of dead weight per batch at full donor pool. Applied to fresh successes AND
     to skipped already-completed batches (leftovers from runs without cleanup). A
     failed or incomplete batch always keeps the store so PopulationSim can resume it.
+
+    A batch that is NOT completed and is launched loses a left-over
+    :data:`INTEGERIZER_PATH_RECORD` first (logged at WARNING with the batch name).
     """
     effective_timeout = timeout_s if (timeout_s is None or timeout_s > 0) else None
 
@@ -542,6 +550,16 @@ def make_populationsim_run_one(
         if dry_run:
             return BatchResult(str(folder), "succeeded", "dry run",
                                time.monotonic() - start)
+
+        stale_record = folder_path / INTEGERIZER_PATH_RECORD
+        if stale_record.is_file():
+            # The fork appends to the record: a partial one from an earlier attempt would
+            # make every key of the new run a duplicate and fail the solver-path gate.
+            stale_record.unlink()
+            logger.warning(
+                "[popsim.batch] %s was not completed but holds %s from an earlier attempt "
+                "(partial record); deleted it before the re-run.",
+                folder_path.name, INTEGERIZER_PATH_RECORD)
 
         command = [*command_prefix, "-w", str(folder)]
         run_cwd = str(cwd) if cwd is not None else str(folder_path.parent)

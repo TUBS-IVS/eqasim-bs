@@ -383,3 +383,34 @@ def test_subprocess_run_one_builds_expected_command_and_cwd(tmp_path):
     assert str(folder) in captured["cmd"]
     # Default cwd is the folder's parent (matches batch_run_popsim.py).
     assert captured["cwd"] == str(folder.parent)
+
+
+def test_subprocess_run_one_removes_a_stale_path_record_before_a_rerun(tmp_path, caplog):
+    # The fork APPENDS to output/integerizer_paths.csv: a record left by an earlier attempt
+    # that did not complete would duplicate every key after the re-run.
+    folder = _completed_folder(tmp_path, "batch_007")
+    record = folder / "output" / "integerizer_paths.csv"
+    record.write_text("partial", encoding="utf-8")
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["record_present_at_launch"] = record.exists()
+        (folder / "output" / "final_expanded_household_ids.csv").write_text("x")
+        return _FakeCompleted(0)
+
+    run_one = batch.make_populationsim_run_one(subprocess_run=fake_run)
+    with caplog.at_level("WARNING"):
+        assert run_one(str(folder)).status == "succeeded"
+    assert seen["record_present_at_launch"] is False
+    warning = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any("batch_007" in text and "integerizer_paths.csv" in text for text in warning)
+
+
+def test_subprocess_run_one_keeps_the_path_record_of_a_completed_batch(tmp_path):
+    folder = _completed_folder(tmp_path)
+    (folder / "output" / "final_expanded_household_ids.csv").write_text("x")
+    record = folder / "output" / "integerizer_paths.csv"
+    record.write_text("kept", encoding="utf-8")
+    batch.make_populationsim_run_one(
+        subprocess_run=lambda cmd, **kwargs: _FakeCompleted(0))(str(folder))
+    assert record.read_text(encoding="utf-8") == "kept"
