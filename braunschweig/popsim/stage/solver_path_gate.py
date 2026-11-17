@@ -13,7 +13,8 @@ FALLBACK (``non_simultaneous``) = the three ``sequential_*`` outcomes +
 ``smart_round_all_subzones``. ``single_failed_smart_round`` (single integerizer, final
 status not a success) is counted separately and not part of the rate.
 
-Reads files only; it changes no value the stage returns, so the config key is volatile.
+Reads files only and may raise; the config key is volatile (a changed threshold takes effect
+only when the stage executes).
 """
 
 from __future__ import annotations
@@ -29,11 +30,6 @@ from braunschweig.popsim.fallback_rates import log_fallback_rate
 
 logger = logging.getLogger(__name__)
 
-_SYNPP_TOKEN_EXEMPTION = (
-    "reads the per-batch integerizer path records after all batches completed, logs rates and "
-    "may raise; it never changes a frame or file the stage returns"
-)
-
 STAGE_TAG = "popsim.solver_paths"
 RECORD_RELATIVE_PATH = "output/integerizer_paths.csv"
 PRIMARY_OUTCOMES = ("simultaneous", "retry_simultaneous")
@@ -46,6 +42,7 @@ FALLBACK_OUTCOMES = SEQUENTIAL_OUTCOMES + ("smart_round_all_subzones",)
 SINGLE_FAILED_OUTCOME = "single_failed_smart_round"
 ALL_OUTCOMES = PRIMARY_OUTCOMES + FALLBACK_OUTCOMES + (SINGLE_FAILED_OUTCOME,)
 NOT_SOLVED_STATUS = "NOT_SOLVED"
+ROW_TYPES = ("call", "outcome")
 _COLUMNS = (
     "row_type", "kind", "geography", "trace_label", "status", "zones", "rows", "build_s",
     "solve_s", "outcome", "rounded_zones", "draw", "random_seed",
@@ -67,7 +64,7 @@ def validate_error_rate(error_rate) -> Optional[float]:
     return value
 
 
-def _read_records(work_dir: Path) -> pd.DataFrame:
+def read_records(work_dir: Path) -> pd.DataFrame:
     """Concatenate the records of all completed batches; raise when one is missing or empty."""
     frames = []
     for folder in sorted(Path(work_dir).glob("batch_*")):
@@ -88,6 +85,17 @@ def _read_records(work_dir: Path) -> pd.DataFrame:
             raise RuntimeError(
                 f"[{STAGE_TAG}] completed batch {folder.name} has an empty {RECORD_RELATIVE_PATH}: "
                 "no integerizer call was recorded")
+        bad_type = sorted(set(frame["row_type"]) - set(ROW_TYPES))
+        if bad_type:
+            raise RuntimeError(
+                f"[{STAGE_TAG}] {folder.name}/{RECORD_RELATIVE_PATH} has unknown row_type "
+                f"{bad_type}: expected one of {list(ROW_TYPES)}")
+        bad_outcome = sorted(set(frame.loc[frame["row_type"] == "outcome", "outcome"])
+                             - set(ALL_OUTCOMES))
+        if bad_outcome:
+            raise RuntimeError(
+                f"[{STAGE_TAG}] {folder.name}/{RECORD_RELATIVE_PATH} has unknown outcome "
+                f"{bad_outcome}: expected one of {list(ALL_OUTCOMES)} (fork record changed?)")
         frame["batch"] = folder.name
         frames.append(frame)
     if not frames:
@@ -95,14 +103,13 @@ def _read_records(work_dir: Path) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
-def summarize_call_totals(work_dir) -> dict:
+def summarize_call_totals(records: pd.DataFrame) -> dict:
     """Run totals and per-batch counts of NOT_SOLVED call rows and single integerizer failures.
 
     Call rows carry no reliable geography (the single integerizer does not know it), so these
     are never grouped by geography. Returns ``{"not_solved_calls", "single_failed_smart_round",
     "per_batch": {batch: {"not_solved_calls", "single_failed_smart_round"}}}``.
     """
-    records = _read_records(Path(work_dir))
     per_batch = {}
     for name, group in records.groupby("batch"):
         per_batch[name] = {
@@ -118,20 +125,22 @@ def summarize_call_totals(work_dir) -> dict:
     }
 
 
-def summarize_solver_paths(work_dir) -> pd.DataFrame:
-    """One row per ``geography`` aggregated over the completed batches' path records.
+def summarize_solver_paths(records: pd.DataFrame) -> pd.DataFrame:
+    """One row per ``geography`` from the OUTCOME rows of ``records`` (see :func:`read_records`).
 
     Columns: ``geography``, ``parents`` (outcome rows of the simultaneous integerizer), one
-    count column per outcome (incl. ``single_failed_smart_round``), ``rounded_zones``,
-    and ``non_simultaneous``; call-row counts are run totals (:func:`summarize_call_totals`).
-    Raises ``RuntimeError`` for a completed batch without a usable record.
+    count column per outcome (incl. ``single_failed_smart_round``), ``rounded_zones`` and
+    ``non_simultaneous``. Raises ``RuntimeError`` when there is no outcome row at all: production
+    always runs the simultaneous integerizer, so none means a wrong PopulationSim build or
+    USE_SIMUL_INTEGERIZER off, indistinguishable from a broken record.
     """
-    records = _read_records(Path(work_dir))
     outcome_rows = records[records["row_type"] == "outcome"]
-    # Per-geography table from OUTCOME rows only; call rows have no reliable geography.
-    geographies = sorted(set(outcome_rows["geography"]))
+    if outcome_rows.empty:
+        raise RuntimeError(
+            f"[{STAGE_TAG}] the simultaneous integerizer wrote no parent outcome in any completed "
+            "batch: wrong PopulationSim build or USE_SIMUL_INTEGERIZER off")
     rows = []
-    for geography in geographies:
+    for geography in sorted(set(outcome_rows["geography"])):
         outcomes = outcome_rows[outcome_rows["geography"] == geography]
         counts = {name: int((outcomes["outcome"] == name).sum()) for name in ALL_OUTCOMES}
         rounded = pd.to_numeric(outcomes["rounded_zones"], errors="coerce").fillna(0)
@@ -146,23 +155,28 @@ def summarize_solver_paths(work_dir) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns)
 
 
-def check_solver_paths(work_dir, error_rate: Optional[float]) -> pd.DataFrame:
+def check_solver_paths(work_dir, error_rate: Optional[float]) -> tuple:
     """Log one rate line per geography and fail above ``error_rate`` (``None``: warn only).
 
-    Returns the :func:`summarize_solver_paths` frame. Raises ``RuntimeError`` when a geography's
+    Returns ``(summary, call_totals)``: the :func:`summarize_solver_paths` frame and the
+    :func:`summarize_call_totals` dict. Raises ``RuntimeError`` when a geography's
     non-simultaneous share exceeds ``error_rate`` or a completed batch has no usable record,
     ``ValueError`` for an ``error_rate`` outside (0, 1].
     """
     error_rate = validate_error_rate(error_rate)
-    summary = summarize_solver_paths(work_dir)
-    totals = summarize_call_totals(work_dir)
-    summary.attrs["call_totals"] = totals
+    records = read_records(Path(work_dir))
+    summary = summarize_solver_paths(records)
+    totals = summarize_call_totals(records)
     exceeded = []
     for row in summary.itertuples(index=False):
+        what = (f"{row.geography}: parent zones not integerized simultaneously "
+                f"(sequential or smart-rounded; {row.rounded_zones} sub zones smart-rounded)")
+        if row.parents == 0:
+            logger.warning("[%s] %s: no parent zone recorded (only single-integerizer outcomes)",
+                           STAGE_TAG, row.geography)
+            continue
         share = log_fallback_rate(
-            logger, STAGE_TAG, row.non_simultaneous, row.parents,
-            what=f"{row.geography}: parent zones not integerized simultaneously "
-                 f"(sequential or smart-rounded; {row.rounded_zones} sub zones smart-rounded)")
+            logger, STAGE_TAG, row.non_simultaneous, row.parents, what=what)
         if error_rate is not None and share > error_rate:
             exceeded.append(f"{row.geography} {100.0 * share:.1f}%")
     logger.info(
@@ -174,4 +188,4 @@ def check_solver_paths(work_dir, error_rate: Optional[float]) -> pd.DataFrame:
             f"[{STAGE_TAG}] non-simultaneous share above solver_fallback_error_rate "
             f"{100.0 * error_rate:.1f}%: {', '.join(exceeded)} -- the simultaneous integerizer "
             "is not the path most zones took; inspect <batch>/output/integerizer_paths.csv")
-    return summary
+    return summary, totals

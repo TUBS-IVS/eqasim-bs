@@ -57,7 +57,8 @@ def _two_batches(work_dir):
 
 def test_counts_per_geography(tmp_path):
     _two_batches(tmp_path)
-    df = solver_path_gate.summarize_solver_paths(tmp_path).set_index("geography")
+    records = solver_path_gate.read_records(tmp_path)
+    df = solver_path_gate.summarize_solver_paths(records).set_index("geography")
     assert df.loc["KREIS", "parents"] == 2
     assert df.loc["KREIS", "non_simultaneous"] == 0
     z = df.loc["ZENSUS1km"]
@@ -70,7 +71,7 @@ def test_counts_per_geography(tmp_path):
     assert df.loc["ZENSUS100m", "single_failed_smart_round"] == 1
     assert df.loc["ZENSUS100m", "parents"] == 0
     assert "not_solved_calls" not in df.columns
-    totals = solver_path_gate.summarize_call_totals(tmp_path)
+    totals = solver_path_gate.summarize_call_totals(records)
     assert totals["not_solved_calls"] == 2
     assert totals["single_failed_smart_round"] == 1
     assert totals["per_batch"]["batch_001"]["not_solved_calls"] == 1
@@ -92,7 +93,7 @@ def test_rate_logged_with_helper_format(tmp_path, caplog):
 
 def test_error_rate_raises(tmp_path):
     _two_batches(tmp_path)
-    with pytest.raises(RuntimeError, match="ZENSUS1km"):
+    with pytest.raises(RuntimeError, match=r"ZENSUS1km 50\.0%.*40\.0%|40\.0%.*ZENSUS1km 50\.0%"):
         solver_path_gate.check_solver_paths(tmp_path, 0.4)
     solver_path_gate.check_solver_paths(tmp_path, 0.5)  # equal to the limit passes
 
@@ -100,7 +101,7 @@ def test_error_rate_raises(tmp_path):
 def test_error_rate_none_only_warns(tmp_path, caplog):
     _two_batches(tmp_path)
     with caplog.at_level(logging.INFO):
-        df = solver_path_gate.check_solver_paths(tmp_path, None)
+        df, _ = solver_path_gate.check_solver_paths(tmp_path, None)
     assert len(df) == 3
     assert any(r.levelno == logging.WARNING for r in caplog.records)
 
@@ -113,7 +114,7 @@ def test_missing_or_empty_record_raises(tmp_path):
     empty = tmp_path / "e"
     _batch(empty, "batch_007", [])
     with pytest.raises(RuntimeError, match="batch_007"):
-        solver_path_gate.summarize_solver_paths(empty)
+        solver_path_gate.read_records(empty)
 
 
 @pytest.mark.parametrize("bad", [0, 0.0, -0.1, 1.5])
@@ -126,3 +127,37 @@ def test_error_rate_validated(tmp_path, bad):
     assert solver_path_gate.validate_error_rate(None) is None
     assert solver_path_gate.validate_error_rate(1) == 1.0
     assert config_keys.KEY_SOLVER_FALLBACK_ERROR_RATE.endswith(".solver_fallback_error_rate")
+
+
+def test_unknown_outcome_or_row_type_raises(tmp_path):
+    _batch(tmp_path, "batch_001", [_outcome("KREIS", "simultaneous")])
+    _batch(tmp_path, "batch_002", [_outcome("KREIS", "teleported")])
+    with pytest.raises(RuntimeError, match="batch_002.*teleported"):
+        solver_path_gate.read_records(tmp_path)
+    other = tmp_path / "o"
+    _batch(other, "batch_005", ["mystery,simul,KREIS,t,,,,,,simultaneous,,off,1"])
+    with pytest.raises(RuntimeError, match="batch_005.*mystery"):
+        solver_path_gate.read_records(other)
+
+
+def test_no_outcome_rows_at_all_raises(tmp_path):
+    _batch(tmp_path, "batch_001", [_call("OPTIMAL"), _call("NOT_SOLVED")])
+    with pytest.raises(RuntimeError, match="no parent outcome"):
+        solver_path_gate.check_solver_paths(tmp_path, None)
+
+
+def test_geography_without_parents_warns(tmp_path, caplog):
+    _batch(tmp_path, "batch_001", [_outcome("KREIS", "simultaneous"),
+                                   _outcome("ZENSUS100m", "single_failed_smart_round")])
+    with caplog.at_level(logging.INFO):
+        solver_path_gate.check_solver_paths(tmp_path, 0.1)
+    assert any(r.levelno == logging.WARNING and "ZENSUS100m" in r.getMessage()
+               for r in caplog.records)
+
+
+def test_record_missing_column_raises(tmp_path):
+    folder = _batch(tmp_path, "batch_004", [])
+    (folder / "output" / "integerizer_paths.csv").write_text(
+        "row_type,kind,geography\noutcome,simul,KREIS\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="batch_004.*outcome"):
+        solver_path_gate.read_records(tmp_path)

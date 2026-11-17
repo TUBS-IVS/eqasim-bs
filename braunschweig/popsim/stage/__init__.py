@@ -301,7 +301,6 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_INCOME_TILT_CLIP,
     KEY_INTEGERIZER_DRAW,
     KEY_INTEGERIZER_TIMEOUT_S,
-    KEY_SOLVER_FALLBACK_ERROR_RATE,
     KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS,
     KEY_KREIS_CONTROLS,
     KEY_KREISE,
@@ -318,6 +317,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
     KEY_SEED_DAY_FILTER,
     KEY_SETTINGS,
+    KEY_SOLVER_FALLBACK_ERROR_RATE,
     KEY_SOURCE,
     KEY_STATUS_KREIS_CONTROL,
     KEY_STATUS_KREIS_SHRINKAGE_N,
@@ -2757,10 +2757,10 @@ def execute(context) -> pd.DataFrame:
         household_control_names, settings_overrides, integerizer_seed_base,
     )
     _log_integerizer_feasibility(context, work_dir)
-    solver_paths = solver_path_gate.check_solver_paths(
+    solver_paths, solver_path_totals = solver_path_gate.check_solver_paths(
         work_dir, context.config(KEY_SOLVER_FALLBACK_ERROR_RATE))
     context.set_info("popsim_solver_paths", solver_paths.to_dict("records"))
-    context.set_info("popsim_solver_path_totals", solver_paths.attrs["call_totals"])
+    context.set_info("popsim_solver_path_totals", solver_path_totals)
     inkar_income = _load_inkar_income_scale(context)
     combined = _join_cell_attributes_onto_merged_output(merge_report, cells)
     donor_households, donor_persons = _load_donor_tables(

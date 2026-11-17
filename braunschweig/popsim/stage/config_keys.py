@@ -122,7 +122,8 @@ KEY_INTEGERIZER_DRAW = "braunschweig.population.popsim.integerizer_draw"
 KEY_INTEGERIZER_TIMEOUT_S = "braunschweig.population.popsim.integerizer_timeout_s"
 # Solver-path gate (braunschweig.popsim.stage.solver_path_gate, design goal G5, issue #645):
 # float in (0, 1] or null. Above this share of parent zones NOT integerized simultaneously
-# (per geography) the stage raises; null = warn only. Volatile: it only gates, no result.
+# (per geography) the stage raises; null = warn only. Volatile: it only gates, no result, so a
+# changed threshold takes effect only when the stage executes.
 # ASSUMPTION-grade threshold, to be set from the first full run (design, issue #645).
 KEY_SOLVER_FALLBACK_ERROR_RATE = "braunschweig.population.popsim.solver_fallback_error_rate"
 # Member completion (decision D3, mid source only): fill member-incomplete MiD
