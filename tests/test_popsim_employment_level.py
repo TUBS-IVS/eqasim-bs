@@ -12,7 +12,7 @@ import logging
 import pandas as pd
 import pytest
 
-from braunschweig.popsim import control_spec, employment_level
+from braunschweig.popsim import control_spec, employment_grid, employment_level
 from braunschweig.popsim import kreis_attribute_control as kac
 from braunschweig.popsim.mid import batch_folders
 from braunschweig.popsim.stage import controls_builder
@@ -44,27 +44,36 @@ def _persons(extra_age: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
 def test_reconcile_keeps_total_and_inner_proportions():
     values = {"employed_work": 60.0, "employed_nowork": 40.0,
               "nonemployed_work": 80.0, "nonemployed_nowork": 20.0}
-    out, capped = employment_level.reconcile_employed_level(
+    result = employment_level.reconcile_employed_level(
         values, ["employed_work", "employed_nowork"], ["nonemployed_work", "nonemployed_nowork"], 110.0)
-    assert out == pytest.approx({"employed_work": 66.0, "employed_nowork": 44.0,
-                                 "nonemployed_work": 72.0, "nonemployed_nowork": 18.0})
-    assert capped is False
+    assert result.values == pytest.approx({"employed_work": 66.0, "employed_nowork": 44.0,
+                                           "nonemployed_work": 72.0, "nonemployed_nowork": 18.0})
+    assert result.capped is False and result.unchanged_reason is None
 
 
 def test_reconcile_caps_at_the_universe_and_reports_it():
     values = {"employed_work": 60.0, "employed_nowork": 40.0,
               "nonemployed_work": 80.0, "nonemployed_nowork": 20.0}
-    out, capped = employment_level.reconcile_employed_level(
+    result = employment_level.reconcile_employed_level(
         values, ["employed_work", "employed_nowork"], ["nonemployed_work", "nonemployed_nowork"], 250.0)
-    assert out == pytest.approx({"employed_work": 120.0, "employed_nowork": 80.0,
-                                 "nonemployed_work": 0.0, "nonemployed_nowork": 0.0})
-    assert capped is True
+    assert result.values == pytest.approx({"employed_work": 120.0, "employed_nowork": 80.0,
+                                           "nonemployed_work": 0.0, "nonemployed_nowork": 0.0})
+    assert result.capped is True and result.unchanged_reason is None
 
 
-def test_reconcile_raises_when_a_group_must_carry_mass_but_is_empty():
-    with pytest.raises(ValueError, match="employed"):
-        employment_level.reconcile_employed_level(
-            {"e": 0.0, "n": 10.0}, ["e"], ["n"], 4.0)
+@pytest.mark.parametrize("values, target, reason", [
+    ({"e": 0.0, "n": 10.0}, 4.0, employment_level.EMPLOYED_GROUP_ZERO),
+    ({"e": 10.0, "n": 0.0}, 4.0, employment_level.OTHER_GROUP_ZERO),
+])
+def test_reconcile_leaves_a_part_unchanged_when_a_group_must_carry_mass_but_is_empty(values, target, reason):
+    result = employment_level.reconcile_employed_level(values, ["e"], ["n"], target)
+    assert result.values == values and result.unchanged_reason == reason and result.capped is False
+
+
+def test_reconcile_zero_total_is_empty_not_capped():
+    result = employment_level.reconcile_employed_level({"e": 0.0, "n": 0.0}, ["e"], ["n"], 30.0)
+    assert result.values == {"e": 0.0, "n": 0.0}
+    assert result.capped is False and result.unchanged_reason == employment_level.EMPTY_TOTAL
 
 
 def test_bridge_is_the_weighted_ratio():
@@ -78,6 +87,52 @@ def test_bridge_ignores_persons_below_min_age():
     # Without the age bound the weight-7 child is employed by P_TAET only: 3 / 11.
     assert employment_level.employed_definition_bridge(persons, households, min_age=0) == \
         pytest.approx(3 / 11)
+
+
+def test_bridge_works_on_an_employment_status_only_seed(caplog):
+    persons, households = _persons()
+    persons = persons.drop(columns="work_by_employment")
+    persons["employment_status"] = ["vollzeit", "nicht_erwerbstaetig", "in_ausbildung", "nicht_erwerbstaetig"]
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.employment_level"):
+        report = employment_level.employed_bridge_report(
+            persons, households, grid_min_age=16, family_min_age=14)
+    assert report.bridge == 0.75 and report.source == "employment_status"
+    assert "employment_status" in caplog.text  # the source used is logged
+
+
+def test_grid_universe_is_the_employed_grids_lower_age_and_the_report_compares_it(caplog):
+    # The grid's lowest band starts at 16: the band table, the grid builder and the rendered control agree.
+    expression = next(c for c in control_spec.employment_grid_controls() if c.name == "EMPLOYED_M_16_29_agg")
+    assert employment_level.employed_grid_min_age() == employment_grid.MIN_EMPLOYMENT_AGE == 16
+    assert "HP_ALTER>15" in expression.seed_expressions["mid"]
+    persons, households = _persons()
+    # A 15-year-old apprentice (weight 2) is employed by P_TAET and in an employed class.
+    persons = pd.concat([persons, pd.DataFrame({
+        "H_ID": [5], "HP_ALTER": [15], "P_TAET": [8], "work_by_employment": ["employed_work"]})],
+        ignore_index=True)
+    households = pd.concat([households, pd.DataFrame({"H_ID": [5], "H_GEW": [2.0]})], ignore_index=True)
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.employment_level"):
+        report = employment_level.employed_bridge_report(
+            persons, households, grid_min_age=employment_level.employed_grid_min_age(), family_min_age=14)
+    assert report.bridge == 0.75                      # persons aged 16+: 3 / 4
+    assert report.bridge_family_universe == pytest.approx(5 / 6)   # persons aged 14+: 5 / 6
+    assert report.below_grid_share == pytest.approx(2 / 5)         # weight 2 of employed-class weight 5
+    lines = [r.getMessage() for r in caplog.records if "bridge" in r.getMessage()]
+    assert len(lines) == 1 and "0.7500" in lines[0] and "0.8333" in lines[0] and "40.00%" in lines[0]
+
+
+def test_family_labels_must_equal_the_registry_categories_both_ways(monkeypatch):
+    import dataclasses
+    # Today's families partition their registry entries.
+    for family, (employed, other) in employment_level.EMPLOYMENT_FAMILIES.items():
+        entry = next(e for e in kac.REGISTRY if e.name == family)
+        assert set(employed) | set(other) == {label for label, _ in entry.categories}
+    # A new registry category that nobody classified must fail, not land in "other".
+    entry = next(e for e in kac.REGISTRY if e.name == "employment_status")
+    grown = dataclasses.replace(entry, categories=entry.categories + (("neu", "== 'neu'"),))
+    monkeypatch.setattr(kac, "REGISTRY", tuple(grown if e is entry else e for e in kac.REGISTRY))
+    with pytest.raises(ValueError, match="neu"):
+        employment_level.build_employment_families()
 
 
 def test_bridge_raises_without_any_employed_person():
@@ -109,7 +164,7 @@ def _controls_df(*, grid: bool = True, families=("work_by_employment", "employme
     return control_spec.render_catalog_csv(catalog, "mid")
 
 
-def _kreis_inputs(controls_df):
+def _kreis_inputs(controls_df, overrides=None):
     names = set(controls_df["control_field"])
     catalog = [c for c in control_spec.tier3_controls() if c.name == "employed"]
     catalog += control_spec.attribute_kreis_controls(
@@ -118,12 +173,15 @@ def _kreis_inputs(controls_df):
         [c for c in catalog if f"{c.name}_{c.geography}" in names])
     sources = sorted({c for cols in controls_map.values() for c in cols})
     table = pd.DataFrame({"ARS_kreis": ["03101", "03158"], **{c: [100.0, 100.0] for c in sources}})
+    for column, pair in (overrides or {}).items():
+        assert column in table.columns, column
+        table[column] = pair
     return table, controls_map
 
 
-def _assemble(tmp_path, controls_df, base_cols=EMPLOYED, **kwargs) -> pd.DataFrame:
+def _assemble(tmp_path, controls_df, base_cols=EMPLOYED, overrides=None, **kwargs) -> pd.DataFrame:
     """One batch holding all three parents; its KREIS control table indexed by Kreis."""
-    table, controls_map = _kreis_inputs(controls_df)
+    table, controls_map = _kreis_inputs(controls_df, overrides)
     cells = _cells()
     batch_folders.assemble_batch_folder(
         tmp_path / "b", cells, base_cols, controls_df,
@@ -154,6 +212,47 @@ def test_batch_employed_classes_get_the_zensus_level_of_the_grid(tmp_path):
             assert row[employed].tolist() == pytest.approx([target / len(employed)] * len(employed))
 
 
+_UNEQUAL = {  # one value per Kreis (03101, 03158), the same in both Kreise
+    "work_by_employment_employed_work": 60.0, "work_by_employment_employed_nowork": 40.0,
+    "work_by_employment_nonemployed_work": 80.0, "work_by_employment_nonemployed_nowork": 20.0,
+    "employment_status_vollzeit": 50.0, "employment_status_teilzeit": 30.0,
+    "employment_status_geringfuegig": 10.0, "employment_status_in_ausbildung": 10.0,
+    "employment_status_sonstiges": 40.0, "employment_status_erwerbstaetig_unspec": 10.0,
+    "employment_status_nicht_erwerbstaetig": 150.0}
+
+
+def test_batch_keeps_the_proportions_inside_each_group_and_writes_no_scratch_column(tmp_path):
+    overrides = {col: [v, v] for col, v in _UNEQUAL.items()}
+    out = _assemble(tmp_path, _controls_df(), overrides=overrides, employed_bridge=0.8)
+    assert "employed_grid_sum_KREIS" not in out.columns
+    for kreis in ("03101", "03158"):
+        row, target = out.loc[kreis], 0.8 * _GRID_SUM[kreis]
+        for family, (employed, other) in employment_level.EMPLOYMENT_FAMILIES.items():
+            for group, mass in ((employed, target), (other, None)):
+                cols = [f"{family}_{label}_KREIS" for label in group]
+                old = [_UNEQUAL[f"{family}_{label}"] for label in group]
+                assert row[cols].tolist() == pytest.approx(
+                    [v * (row[cols].sum() / sum(old)) for v in old])  # same inner proportions
+                if mass is not None:
+                    assert row[cols].sum() == pytest.approx(mass)
+            family_cols = [c for c in out.columns if c.startswith(family + "_")]
+            assert row[family_cols].sum() == pytest.approx(sum(
+                v for k, v in _UNEQUAL.items() if k.startswith(family + "_")))
+
+
+def test_batch_leaves_a_part_with_an_empty_group_unchanged_and_logs_the_fallback(tmp_path, caplog):
+    zero = {f"work_by_employment_{label}": [100.0, 0.0] for label in ("employed_work", "employed_nowork")}
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.employment_level"):
+        out = _assemble(tmp_path, _controls_df(), overrides=zero, employed_bridge=0.8)
+    # Kreis 03158: the employed classes are 0 but must carry the target -> unchanged; 03101 is reconciled.
+    assert out.loc["03158", _employed_columns("work_by_employment")].tolist() == [0, 0]
+    assert out.loc["03101", _employed_columns("work_by_employment")].sum() == pytest.approx(0.8 * 30)
+    warnings = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("03158" in m and "work_by_employment" in m and employment_level.EMPLOYED_GROUP_ZERO in m
+               for m in warnings), warnings
+    assert any("unchanged_part" in r.getMessage() and "primary" in r.getMessage() for r in caplog.records)
+
+
 def test_batch_legacy_without_bridge_keeps_the_survey_values(tmp_path):
     out = _assemble(tmp_path, _controls_df())
     assert set(out["work_by_employment_employed_work_KREIS"]) == {100}
@@ -168,7 +267,7 @@ def test_batch_caps_a_part_whose_target_exceeds_the_universe(tmp_path, caplog):
     assert row["work_by_employment_employed_work_KREIS"] == pytest.approx(200.0)
     assert row["work_by_employment_nonemployed_work_KREIS"] == pytest.approx(0.0)
     assert (out.drop(columns=[c for c in out.columns if not c.endswith("_KREIS")]) >= 0).all().all()
-    lines = [r.getMessage() for r in caplog.records if "employment_level" in r.getMessage()]
+    lines = [r.getMessage() for r in caplog.records if "Zensus employment level on" in r.getMessage()]
     assert len(lines) == 1, lines
     assert "bridge" in lines[0] and "capped" in lines[0]
 

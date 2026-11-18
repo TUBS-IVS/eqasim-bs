@@ -651,7 +651,7 @@ def run_popsim_mid(
     employment_level_source:
         ``"survey"`` (default): the employed classes of the KREIS families keep the level of their
         survey margin (legacy). ``"zensus"`` (#658, Task A5, D-emp): the bridge
-        (:func:`employment_level.employed_definition_bridge`) is computed once from the seed and
+        (:func:`employment_level.employed_bridge_report`) is computed once from the seed and
         passed to every batch (``employed_bridge``), which rescales those classes to the Zensus
         employment level; needs the Tier-3 KREIS geography and the employed grid. Any other value
         is a ``ValueError``.
@@ -691,8 +691,9 @@ def run_popsim_mid(
                 "kreis_controls_map); there is no KREIS employment control without it.")
         # The seed is the same for every batch (the stratified path only filters donors), so the
         # bridge is a property of the whole seed and is computed once.
-        employed_bridge = employment_level.employed_definition_bridge(
-            seed_persons, seed_households, min_age=WORK_BY_EMPLOYMENT_MIN_AGE_YEARS)
+        employed_bridge = employment_level.employed_bridge_report(
+            seed_persons, seed_households, grid_min_age=employment_level.employed_grid_min_age(),
+            family_min_age=WORK_BY_EMPLOYMENT_MIN_AGE_YEARS).bridge
     kreis_total_pop: dict[str, float] | None = None
     kreis_total_hh: dict[str, float] | None = None
     kreis_totals_by_weight_col: dict[str, dict[str, float]] | None = None
