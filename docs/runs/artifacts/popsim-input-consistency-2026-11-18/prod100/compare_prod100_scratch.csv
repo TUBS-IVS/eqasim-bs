@@ -1,0 +1,11 @@
+figure,scratch,committed,difference
+persons_below_size_minimum_amount,106792,101921.0,-4871.0
+persons_below_size_minimum_cells,19341,18299.0,-1042.0
+persons_without_households_amount,20070,20070.0,0.0
+persons_without_households_cells,3387,3387.0,0.0
+households_without_persons_amount,3376,3376.0,0.0
+households_without_persons_cells,1057,1057.0,0.0
+kreis_persons_0_17_abs_diff,16371,16376.389215083083,5.3892150830834
+kreis_employed_abs_diff,14418,14417.744365926006,-0.2556340739938605
+kreis_cars_abs_diff,41082,41082.354528597265,0.3545285972650163
+kreis_bicycles_abs_diff,26420,26419.631699789585,-0.36830021041532746
