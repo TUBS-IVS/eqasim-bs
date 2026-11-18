@@ -1,7 +1,7 @@
 id: popsim-run-performance-2026-11-18
 date: '2026-11-18'
 repository:
-  commit: cb39a0448023ca40e5c1260dd4bb0d4cef5f7de2
+  commit: f796f625a90f4e117a2984955fa8c23a05226d79
   branch: chore/i656-popsim-batch-memory
   notes: >-
     PRE-REGISTRATION: this file was committed with the checks below before the PopulationSim runs
@@ -9,8 +9,10 @@ repository:
     run_evidence.sh of popsim-ladder-arm3-2026-11-18 starts (one PopulationSim build, the release candidate
     of 0.10.0+bs.2 of the group's fork at commit d9a2e2810139e822ff2870a1845c30a509461462, one
     environment); this record owns the comparison of the fork's two run-time options off against on. The
-    commit is the eqasim-bs code on the run server (git archive) that writes the batch settings. Script:
-    scripts/compare_run_performance.py of the artifact directory.
+    commit is the eqasim-bs code on the run server (git archive without docs/ and tests/) that writes the
+    batch settings; this line was corrected before any run started (a rebase of this branch had replaced
+    the commit named first by one with the same code). Script: scripts/compare_run_performance.py of the
+    artifact directory.
 configuration:
   base: configs/base_bs.yml
   overlays:
