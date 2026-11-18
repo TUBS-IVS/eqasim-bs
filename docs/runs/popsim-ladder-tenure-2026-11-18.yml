@@ -1,7 +1,7 @@
 id: popsim-ladder-tenure-2026-11-18
 date: '2026-11-18'
 repository:
-  commit: 26171e091d11b3e20a2dd60fcedfde97ef37e1b3
+  commit: 26171e09036581e9a255557a428ab828f5bde457
   branch: fix/i657-popsim-tenure-dwellings
   notes: >-
     PRE-REGISTRATION: this file was committed with the checks and bounds below before any arm-4 PopulationSim
@@ -12,6 +12,8 @@ repository:
     unmerged branches of issues #646 and #656 (chore/i656-popsim-batch-memory). PopulationSim is the
     release-candidate build used for ladder arm 3 (popsim-ladder-arm3-2026-11-18: fork 0.10.0+bs.2 candidate,
     commit d9a2e2810139e822ff2870a1845c30a509461462, its environment on the run server, used read-only).
+    The full commit id above was corrected before any PopulationSim run of arm 4 started (the first
+    pre-registration commit carried a mistyped id after the correct short id 26171e09).
 configuration:
   base: configs/base_bs.yml
   overlays:
