@@ -1,0 +1,15 @@
+== py312
+fork commit: d9a2e2810139e822ff2870a1845c30a509461462
+3.12.4 ortools 9.7.2996 scipy 1.15.2 numba 0.61.2 numpy 1.26.4 pandas 2.2.3
+694 passed, 8 warnings in 646.54s (0:10:46)
+exit 0
+== py39
+fork commit: d9a2e2810139e822ff2870a1845c30a509461462
+3.9.25 ortools 9.7.2996 scipy 1.13.1 numba 0.60.0 numpy 1.26.4 pandas 2.2.3
+694 passed, 8 warnings in 686.69s (0:11:26)
+exit 0
+== prod
+fork commit: d9a2e2810139e822ff2870a1845c30a509461462
+/home/felix/i646/suite_clone_prod/populationsim/__init__.py 3.12.4 ortools 9.14.6206 scipy 1.17.0 numba 0.63.1 numpy 1.26.4 pandas 2.3.3
+694 passed, 11 warnings in 650.86s (0:10:50)
+exit 0
