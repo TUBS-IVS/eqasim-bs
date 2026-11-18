@@ -72,7 +72,11 @@ CONTROLLED_COLUMNS = (
     "slack_cell", "slack_parent_sub", "slack_parent", "slack_conserve", "hh_unreachable",
     "hh_outside_lp", "hh_excess", "objective_lp", "objective_repaired",
 )
-# The numeric columns each method produces (``solver`` is text and not read).
+# The numeric columns the gate requires of a call that ended OPTIMAL or FEASIBLE, per method
+# (``solver`` is text and not read). The fork leaves a value it could not compute empty (its
+# ``populationsim.integerizing.path_record`` module says which): the two LP objectives can be
+# empty after a solved LP, so they are not required and never read, and the numbers of a call
+# that did not succeed are not read at all (:func:`summarize_controlled_calls`).
 _METHOD_NUMERIC_COLUMNS = {
     METHOD_SEARCH: (
         "x_count", "swaps", "sweeps", "converged", "distance_start", "distance_final",
@@ -81,7 +85,7 @@ _METHOD_NUMERIC_COLUMNS = {
     METHOD_LP: (
         "attempts", "x_count", "fractional_x", "repaired_x", "fractional_after_repair",
         "repair_failed", "slack_cell", "slack_parent_sub", "slack_parent", "slack_conserve",
-        "hh_unreachable", "hh_outside_lp", "hh_excess", "objective_lp", "objective_repaired"),
+        "hh_unreachable", "hh_outside_lp", "hh_excess"),
 }
 # Totals of summarize_controlled_calls whose positive value makes the rate line a WARNING
 # (together with any non-success call): parent weight not placed, round-ups a zone still needed,
@@ -279,16 +283,21 @@ def summarize_controlled_calls(records: pd.DataFrame, expected_rounding: str = "
     the batch otherwise): it carries the controlled columns, every ``simul`` call row has
     ``rounding == "controlled"``, and it has at least one controlled ``simul`` call when it has a
     parent outcome row (an older PopulationSim build, or a setting that never arrived, fails here).
-    Each controlled call row must name a known ``method`` and carry a number in every column that
-    method produces (``converged`` is 0 or 1); a column the method does not produce is empty and
-    never read. A violation is a damaged record (``RuntimeError``).
+    Each controlled call row must name a known ``method``. A call that ended OPTIMAL or FEASIBLE
+    (a "successful" call) must carry a number in every column of ``_METHOD_NUMERIC_COLUMNS`` for
+    its method (``converged`` is 0 or 1); a column the method does not produce is empty and never
+    read. A violation is a damaged record (``RuntimeError``). A call with any other status is
+    counted and nothing else: PopulationSim does not use its result (the sequential path
+    integerizes that parent, which the outcome rows show), so its numbers are not read and enter
+    no sum and no share.
     With ``"round"`` a row marked ``controlled`` is a mode mismatch (the tracked config says round,
     the tool ran controlled) and raises, naming the batch; a record without the columns (bs.1
     shape) gives zeros.
 
-    Returns the keys of :func:`_empty_controlled_totals`: the call counts (``controlled_simul_calls``,
-    ``search_calls``, ``lp_calls``, ``controlled_non_success_calls`` = status neither OPTIMAL nor
-    FEASIBLE, ``search_not_converged_calls``), the sums over the ``search`` calls (``swaps``,
+    Returns the keys of :func:`_empty_controlled_totals`. Counts over all controlled calls:
+    ``controlled_simul_calls``, ``search_calls``, ``lp_calls`` and
+    ``controlled_non_success_calls`` (status neither OPTIMAL nor FEASIBLE). Over the successful
+    calls only: ``search_not_converged_calls``, the sums over the ``search`` calls (``swaps``,
     ``flow_wanted``, ``flow_achieved``, ``zone_shortfall``, ``row_shortfall``, ``distance_start``,
     ``distance_final``), the sums over the ``lp`` calls (``x_count``, ``fractional_x``,
     ``fractional_after_repair``, ``repair_failed``, ``slack_cell``, ``slack_parent_sub``,
@@ -296,8 +305,8 @@ def summarize_controlled_calls(records: pd.DataFrame, expected_rounding: str = "
     the sums over both (``hh_unreachable``, ``hh_outside_lp``, ``hh_excess``) and three shares:
     ``conservation_loss_share`` = ``row_shortfall`` / ``flow_wanted`` (search calls, parent weight
     that could not be placed), ``lp_conserve_slack_share`` = ``slack_conserve`` / ``x_count`` (lp
-    calls) and ``not_converged_share`` = not converged / search calls; each is 0.0 when its
-    denominator is 0.
+    calls) and ``not_converged_share`` = not converged / successful search calls; each is 0.0
+    when its denominator is 0.
     """
     expected_rounding = validate_expected_rounding(expected_rounding)
     totals = _empty_controlled_totals()
@@ -327,18 +336,20 @@ def summarize_controlled_calls(records: pd.DataFrame, expected_rounding: str = "
             f"(first: batch {unknown.iloc[0]['batch']}, trace_label "
             f"{unknown.iloc[0]['trace_label']!r}, method {unknown.iloc[0]['method']!r}; expected "
             f"one of {list(CONTROLLED_METHODS)}): the fork's controlled record changed or is damaged")
+    # Only a successful call has a result PopulationSim used; the numbers of the others are not
+    # read (the fork leaves some of them empty) and the call is counted as a non-success.
+    succeeded = controlled["status"].isin(SUCCESS_STATUSES)
     numbers = {
-        name: _parse_method_numbers(controlled[method == name], name)
+        name: _parse_method_numbers(controlled[succeeded & (method == name)], name)
         for name in CONTROLLED_METHODS}
     search, lp = numbers[METHOD_SEARCH], numbers[METHOD_LP]
-    controlled_status = controlled["status"]
     searched = len(search)
     not_converged = int((search["converged"] == 0).sum())
     totals.update({
         "controlled_simul_calls": len(controlled),
-        "search_calls": searched,
-        "lp_calls": len(lp),
-        "controlled_non_success_calls": int((~controlled_status.isin(SUCCESS_STATUSES)).sum()),
+        "search_calls": int((method == METHOD_SEARCH).sum()),
+        "lp_calls": int((method == METHOD_LP).sum()),
+        "controlled_non_success_calls": int((~succeeded).sum()),
         "search_not_converged_calls": not_converged,
         "swaps": int(search["swaps"].sum()),
         "flow_wanted": float(search["flow_wanted"].sum()),
@@ -385,11 +396,12 @@ def _empty_controlled_totals() -> dict:
 
 
 def _parse_method_numbers(rows: pd.DataFrame, method: str) -> pd.DataFrame:
-    """Numeric columns of the controlled call rows of one ``method``; damaged -> ``RuntimeError``.
+    """Numeric columns of the successful controlled call rows of one ``method``.
 
-    Only the columns that ``method`` produces are read (the others are empty by contract). An
-    empty or non-numeric value in a produced column, or a ``converged`` that is not 0 or 1, is a
-    damaged record. ``rows`` may be empty.
+    Only the columns of ``_METHOD_NUMERIC_COLUMNS`` for ``method`` are read (the others are empty
+    by contract or not required). An empty or non-numeric value in one of them, or a
+    ``converged`` that is not 0 or 1, is a damaged record (``RuntimeError``). ``rows`` holds only
+    calls that ended OPTIMAL or FEASIBLE and may be empty.
     """
     columns = _METHOD_NUMERIC_COLUMNS[method]
     numbers = pd.DataFrame(
@@ -438,7 +450,8 @@ def check_solver_paths(work_dir, error_rate: Optional[float],
         logger.log(
             logging.WARNING if degraded else logging.INFO,
             "[%s] controlled rounding: %d controlled simultaneous calls (search %d, lp %d), "
-            "%d not OPTIMAL/FEASIBLE; search not converged %d (%.1f%%); conservation loss "
+            "%d not OPTIMAL/FEASIBLE (counted only, the sums are over the successful calls); "
+            "search not converged %d (%.1f%% of the successful search calls); conservation loss "
             "%.2f%% (row_shortfall %g of flow_wanted %g); zone_shortfall %g; swaps %d; "
             "distance %g -> %g; flow achieved %g; lp: x %g, fractional %g, after repair %g, "
             "repair_failed %g, attempts>1 %d, conserve slack %.1f%% (%g), slack cell %g, "

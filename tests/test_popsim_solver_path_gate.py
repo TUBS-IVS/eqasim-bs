@@ -348,21 +348,26 @@ def test_round_expected_accepts_a_bs1_record_unchanged(tmp_path):
     assert explicit[1]["not_solved_calls"] == 2
 
 
-# A damaged record: a column that the method of the call produces is empty or not a number, the
-# method is unknown, or `converged` is neither 0 nor 1.
+# A damaged record: a call that succeeded has an empty or non-numeric value in a column the gate
+# requires of its method or a `converged` that is neither 0 nor 1, or the method of a call (of any
+# status) is unknown.
 @pytest.mark.parametrize("call", [
     _simul_call("OPTIMAL", x_count=""),
     _simul_call("OPTIMAL", x_count="n/a"),
     _simul_call("OPTIMAL", swaps=""),
     _simul_call("OPTIMAL", row_shortfall=""),
     _simul_call("OPTIMAL", converged=2),
+    _simul_call("FEASIBLE", distance_start=""),
+    _simul_call("FEASIBLE", distance_final=""),
     _simul_call("OPTIMAL", "lp", slack_parent="oops"),
     _simul_call("OPTIMAL", "lp", attempts=""),
     _simul_call("OPTIMAL", "teleport"),
     _simul_call("OPTIMAL", ""),
+    _simul_call("ABNORMAL", "teleport"),
 ], ids=["search-x-empty", "search-x-text", "search-swaps-empty", "search-row-shortfall-empty",
-        "search-converged-2", "lp-slack-text", "lp-attempts-empty", "unknown-method",
-        "empty-method"])
+        "search-converged-2", "search-distance-start-empty", "search-distance-final-empty",
+        "lp-slack-text", "lp-attempts-empty", "unknown-method", "empty-method",
+        "unknown-method-of-a-failed-call"])
 def test_controlled_call_with_a_damaged_value_or_method_is_a_damaged_record(tmp_path, call):
     # the empty-method row still says rounding "controlled", so only the method is damaged
     _controlled_batch(tmp_path, "batch_001", [call])
@@ -472,11 +477,43 @@ def test_not_converged_and_row_shortfall_give_the_shares(tmp_path):
     assert totals["row_shortfall"] == 10
 
 
-def test_a_search_call_that_failed_is_counted_as_non_success(tmp_path):
+def test_a_failed_search_call_is_counted_and_its_numbers_are_not_read(tmp_path):
+    # A network start that failed, as the fork records it: both distances empty, the round-ups it
+    # wanted to place, none placed.
+    failed = _simul_call(
+        "ABNORMAL", label="a", swaps=0, sweeps=0, converged=0, distance_start="",
+        distance_final="", flow_wanted=120, flow_achieved=0)
     _controlled_batch(tmp_path, "batch_001", [
-        _simul_call("ABNORMAL", label="a"), _simul_call("OPTIMAL", label="b")])
+        failed,
+        _simul_call("FEASIBLE", label="b", converged=0, flow_wanted=100, flow_achieved=90,
+                    row_shortfall=10),
+        _simul_call("FEASIBLE", label="c", flow_wanted=100, flow_achieved=100),
+    ])
     _, totals = _check_controlled(tmp_path)
+    assert totals["controlled_simul_calls"] == 3 and totals["search_calls"] == 3
     assert totals["controlled_non_success_calls"] == 1
+    # The result of the failed call is not used (the wrapper's sequential path ran): it is no
+    # "not converged" call and enters no sum and no denominator.
+    assert totals["search_not_converged_calls"] == 1
+    assert totals["not_converged_share"] == pytest.approx(1 / 2)
+    assert totals["flow_wanted"] == 200 and totals["flow_achieved"] == 190
+    assert totals["conservation_loss_share"] == pytest.approx(10 / 200)
+
+
+def test_a_failed_lp_call_is_counted_and_a_solved_one_needs_no_objective(tmp_path):
+    # The fork leaves both objectives empty when no attempt solved the LP, and objective_repaired
+    # when the repair failed; the gate reads no objective.
+    _controlled_batch(tmp_path, "batch_001", [
+        _simul_call("INFEASIBLE", "lp", label="a", attempts=2, x_count=50, objective_lp="",
+                    objective_repaired=""),
+        _simul_call("OPTIMAL", "lp", label="b", x_count=10, repair_failed=1,
+                    fractional_after_repair=2, objective_repaired=""),
+    ])
+    _, totals = _check_controlled(tmp_path)
+    assert totals["controlled_simul_calls"] == 2 and totals["lp_calls"] == 2
+    assert totals["controlled_non_success_calls"] == 1
+    assert totals["x_count"] == 10 and totals["lp_calls_with_retries"] == 0
+    assert totals["repair_failed"] == 1 and totals["fractional_after_repair"] == 2
 
 
 def test_unknown_expected_rounding_is_rejected(tmp_path):
