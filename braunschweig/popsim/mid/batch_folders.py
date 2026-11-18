@@ -77,6 +77,7 @@ from braunschweig.popsim import control_spec
 from braunschweig.popsim import employment_level
 from braunschweig.popsim import folders
 from braunschweig.popsim import merge as mergemod
+from braunschweig.popsim.input_consistency_guard import ConsistencyRecorder
 
 from braunschweig.popsim.fallback_rates import log_fallback_rate
 from braunschweig.popsim.kreis_attribute_control import WORK_BY_EMPLOYMENT_MIN_AGE_YEARS
@@ -294,7 +295,8 @@ def universe_apportion_weights(
         n_empty_part += sum(1 for k, share in weights[col].items()
                             if share == 0.0 and k not in empty_region)
         if empty_region:
-            logger.warning(
+            # DEBUG per batch: log_empty_region_universes warns once per run with the dropped mass.
+            logger.debug(
                 "[popsim.kreis_universe_apportion] %s: %d Kreis part(s) in this batch with a "
                 "region total of 0 persons of the universe (Kreis %s): control value 0",
                 col, len(empty_region), empty_region)
@@ -362,6 +364,7 @@ def assemble_batch_folder(
     kreis_totals_by_weight_col: Mapping[str, Mapping[str, float]] | None = None,
     kreis_follow_grids: bool = False,
     employed_bridge: float | None = None,
+    consistency_recorder: ConsistencyRecorder | None = None,
 ) -> dict[str, Path]:
     """Assemble one PopulationSim run folder for a subset of cells.
 
@@ -410,7 +413,18 @@ def assemble_batch_folder(
     (:func:`employment_level.reconcile_kreis_employment_levels`); their row totals are unchanged.
     Needs the Tier-3 KREIS geography and the employed grid (``ValueError`` otherwise). Default
     ``None`` -> unchanged.
+
+    Input consistency (#658, Task A6): with a ``consistency_recorder`` (one per run, created by the
+    stage) the batch's in-memory control tables are summarized after the folder is written, appended
+    to the recorder's CSV and judged by its guard (``ValueError`` naming batch, Kreis and pair),
+    and the counts of the three steps above are added to its report. The folder name is the batch
+    name. Needs the Tier-3 KREIS geography (there is no KREIS table to compare without it).
+    Default ``None`` -> nothing is measured.
     """
+    if consistency_recorder is not None and not (kreis_table is not None and bool(kreis_controls_map)):
+        raise ValueError(
+            "consistency_recorder needs the Tier-3 KREIS geography (kreis_table and "
+            "kreis_controls_map); there is no KREIS table to compare without it.")
     if employed_bridge is not None and not (kreis_table is not None and bool(kreis_controls_map)):
         raise ValueError(
             "employed_bridge needs the Tier-3 KREIS geography (kreis_table and "
@@ -462,11 +476,16 @@ def assemble_batch_folder(
             )
         weights_by_control = None
         if apportion_weight_col_by_control:
-            by_col = universe_apportion_weights(
+            apportioned = universe_apportion_weights(
                 cells_subset, geo_crosswalk, kreis_totals_by_weight_col,
-                apportion_weight_col_by_control.values()).weights
+                apportion_weight_col_by_control.values())
+            by_col = apportioned.weights
             weights_by_control = {
                 control: by_col[col] for control, col in apportion_weight_col_by_control.items()}
+            if consistency_recorder is not None:
+                consistency_recorder.add(
+                    "universe_apportionment", kreis_parts=apportioned.n_parts,
+                    empty_parts=apportioned.n_empty_part, empty_regions=apportioned.n_empty_region)
         control_totals[folders.GEO_KREIS] = folders.build_kreis_control_totals(
             kreis_table, geo_crosswalk, controls_map=kreis_controls_map,
             apportion_weights=apportion_weights,
@@ -476,12 +495,15 @@ def assemble_batch_folder(
         )
         if kreis_follow_grids:
             control_totals[folders.GEO_KREIS] = _follow_grids(
-                control_totals, geo_crosswalk, controls_df)
+                control_totals, geo_crosswalk, controls_df, consistency_recorder)
         if employed_bridge is not None:
+            level_stats: dict = {}
             control_totals[folders.GEO_KREIS] = employment_level.reconcile_kreis_employment_levels(
                 control_totals[folders.GEO_KREIS], control_totals, geo_crosswalk,
-                bridge=employed_bridge)
-    return folders.write_popsim_folder(
+                bridge=employed_bridge, stats=level_stats)
+            if consistency_recorder is not None:
+                consistency_recorder.add("employment_level", **level_stats)
+    written = folders.write_popsim_folder(
         folder,
         geo_crosswalk=geo_crosswalk,
         control_totals=control_totals,
@@ -491,23 +513,45 @@ def assemble_batch_folder(
         settings_yaml=settings_yaml,
         logging_yaml=logging_yaml,
     )
+    if consistency_recorder is not None:
+        consistency_recorder.record_batch(Path(folder).name, control_totals, geo_crosswalk)
+    return written
 
 
 def _follow_grids(
     control_totals: Mapping[str, pd.DataFrame],
     geo_crosswalk: pd.DataFrame,
     controls_df: pd.DataFrame,
+    consistency_recorder: ConsistencyRecorder | None = None,
 ) -> pd.DataFrame:
-    """The KREIS table of a batch with its grid-following controls set to the grid sums (#658, A4)."""
+    """The KREIS table of a batch with its grid-following controls set to the grid sums (#658, A4).
+
+    The "keep their apportioned value" INFO is logged once per run when a recorder is given (the
+    answer is the same in every batch), else per call; the counts go to the recorder.
+    """
     mapping = control_spec.kreis_controls_following_grids(controls_df)
     fields = set(controls_df["control_field"])
     unpaired = sorted(k for k in control_spec.kreis_grid_pairs() if k in fields and k not in mapping)
-    if unpaired:
+    if unpaired and (consistency_recorder is None
+                     or consistency_recorder.first_time("kreis_follow_grids.unpaired")):
         logger.info(
             "[popsim.kreis_follow_grids] %d KREIS control(s) keep their apportioned value, their "
             "grid control is not active in this run: %s", len(unpaired), unpaired)
-    return folders.set_kreis_controls_from_fine_sums(
-        control_totals[folders.GEO_KREIS], control_totals, geo_crosswalk, mapping)
+    stats: dict = {}
+    out = folders.set_kreis_controls_from_fine_sums(
+        control_totals[folders.GEO_KREIS], control_totals, geo_crosswalk, mapping, stats=stats)
+    if consistency_recorder is not None:
+        section = "kreis_follow_grids"
+        consistency_recorder.add(
+            section, controls_changed_over_batches=stats["n_changed"],
+            controls_set_over_batches=stats["n_controls"], kreis_parts=stats["n_kreis_parts"])
+        previous = consistency_recorder.sections[section].get("largest_relative_change", -1.0)
+        if stats["largest_relative_change"] > previous:
+            consistency_recorder.set(
+                section, largest_relative_change=stats["largest_relative_change"],
+                largest_relative_change_control=stats["largest_relative_change_control"])
+        consistency_recorder.set(section, controls_without_grid=unpaired)
+    return out
 
 
 def cell_groups(cells_subset: pd.DataFrame) -> dict[str, list[str]]:
@@ -580,6 +624,7 @@ def run_popsim_mid(
     apportion_weight_col_by_control: Mapping[str, str] | None = None,
     kreis_follow_grids: bool = False,
     employment_level_source: str = "survey",
+    consistency_recorder: ConsistencyRecorder | None = None,
 ) -> mergemod.MergeReport:
     """Batch the cells into PopulationSim runs, execute them, and merge the output.
 
@@ -655,6 +700,12 @@ def run_popsim_mid(
         passed to every batch (``employed_bridge``), which rescales those classes to the Zensus
         employment level; needs the Tier-3 KREIS geography and the employed grid. Any other value
         is a ``ValueError``.
+    consistency_recorder:
+        ``None`` (default): nothing is measured. A :class:`ConsistencyRecorder` (#658, Task A6):
+        every batch folder's tables are summarized into its CSV and judged by its guard right
+        after the folder is written, i.e. before any PopulationSim process starts (the folders of
+        all batches are assembled before the first ``run_one`` call); the bridge and the dropped
+        target mass of empty universes are stored in its report. Needs the Tier-3 KREIS geography.
     """
     if employment_level_source not in EMPLOYMENT_LEVEL_SOURCES:
         raise ValueError(f"employment_level_source must be one of {EMPLOYMENT_LEVEL_SOURCES}, "
@@ -691,9 +742,15 @@ def run_popsim_mid(
                 "kreis_controls_map); there is no KREIS employment control without it.")
         # The seed is the same for every batch (the stratified path only filters donors), so the
         # bridge is a property of the whole seed and is computed once.
-        employed_bridge = employment_level.employed_bridge_report(
+        bridge_report = employment_level.employed_bridge_report(
             seed_persons, seed_households, grid_min_age=employment_level.employed_grid_min_age(),
-            family_min_age=WORK_BY_EMPLOYMENT_MIN_AGE_YEARS).bridge
+            family_min_age=WORK_BY_EMPLOYMENT_MIN_AGE_YEARS)
+        employed_bridge = bridge_report.bridge
+        if consistency_recorder is not None:
+            consistency_recorder.set(
+                "employment_level", bridge=bridge_report.bridge,
+                bridge_family_universe=bridge_report.bridge_family_universe,
+                below_grid_share=bridge_report.below_grid_share, bridge_source=bridge_report.source)
     kreis_total_pop: dict[str, float] | None = None
     kreis_total_hh: dict[str, float] | None = None
     kreis_totals_by_weight_col: dict[str, dict[str, float]] | None = None
@@ -727,9 +784,15 @@ def run_popsim_mid(
             kreis_totals_by_weight_col = {
                 col: _kreis_pop_from_crosswalk(cells, full_xwalk, weight_col=col)
                 for col in sorted(set(apportion_weight_col_by_control.values()))}
-            log_empty_region_universes(
+            dropped = log_empty_region_universes(
                 kreis_totals_by_weight_col, apportion_weight_col_by_control, kreis_table,
                 kreis_controls_map)
+            if consistency_recorder is not None:
+                consistency_recorder.set(
+                    "universe_apportionment",
+                    dropped_target_mass_by_universe_column={
+                        col: {"total": sum(mass.values()), "by_kreis": mass}
+                        for col, mass in dropped.items()})
         # Household-level KREIS controls need the region-wide HOUSEHOLD total per
         # resolved Kreis so each batch can be apportioned by its household share, not
         # its population share (issue #148). Only computed when such controls are
@@ -769,6 +832,7 @@ def run_popsim_mid(
                 kreis_totals_by_weight_col=kreis_totals_by_weight_col,
                 kreis_follow_grids=kreis_follow_grids,
                 employed_bridge=employed_bridge,
+                consistency_recorder=consistency_recorder,
             )
             batch_folders.append(str(folder))
 
@@ -841,6 +905,7 @@ def run_popsim_mid(
                 kreis_totals_by_weight_col=kreis_totals_by_weight_col,
                 kreis_follow_grids=kreis_follow_grids,
                 employed_bridge=employed_bridge,
+                consistency_recorder=consistency_recorder,
             )
             batch_folders_stratified.append(str(folder))
             global_batch_index += 1

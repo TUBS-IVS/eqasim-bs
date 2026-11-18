@@ -202,6 +202,29 @@ KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE = (
 # dwelling sums byte-identically.
 KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS = (
     "braunschweig.population.popsim.building_type_targets_to_households")
+# Input consistency of the KREIS control table against the grid tables (issue #658, Part A). The
+# code defaults are the LEGACY values: every key at its default reproduces the control tables
+# byte-identically (tests/test_popsim_input_consistency_guard.py).
+#   kreis_batch_apportionment: "population" (legacy: every KREIS person control is split over the
+#       batches by the batch's population share of the Kreis) | "universe" (each control with an
+#       age universe by the batch's share of ITS universe, controls_builder.apportion_weight_columns).
+#   kreis_controls_follow_grids: false (legacy) | true: the KREIS car / bicycle / employed controls
+#       of a batch are set to the batch sum of their grid control (folders.set_kreis_controls_from_fine_sums).
+#   employment_level_source: "survey" (legacy: the employed classes of work_by_employment /
+#       employment_status keep their survey level) | "zensus" (rescaled to the Zensus employment level,
+#       braunschweig.popsim.employment_level).
+#   kreis_fine_tolerance / kreis_fine_min_persons: the guard (input_consistency.guard_violations)
+#       raises when an age-universe pair differs by more than this relative share in a Kreis part
+#       whose grid sum is at least this many persons. Used only with kreis_batch_apportionment
+#       "universe"; with "population" the table is written and nothing raises. The 0.05 lies above
+#       the rounding residual of the facts (at most 1.7 %) and far below the defect it guards
+#       against (up to 39 %).
+KEY_KREIS_BATCH_APPORTIONMENT = "braunschweig.population.popsim.kreis_batch_apportionment"
+KEY_KREIS_CONTROLS_FOLLOW_GRIDS = "braunschweig.population.popsim.kreis_controls_follow_grids"
+KEY_EMPLOYMENT_LEVEL_SOURCE = "braunschweig.population.popsim.employment_level_source"
+KEY_KREIS_FINE_TOLERANCE = "braunschweig.population.popsim.kreis_fine_tolerance"
+KEY_KREIS_FINE_MIN_PERSONS = "braunschweig.population.popsim.kreis_fine_min_persons"
+KREIS_BATCH_APPORTIONMENTS = ("population", "universe")
 # Contract check before PopulationSim (issue #647, rule in ``braunschweig.popsim.seed_contract``):
 # "error" raises when a seed record of an exhaustive control group matches no / several
 # categories or a household group target misses the household total; "warn" only logs. The
@@ -825,3 +848,35 @@ _KREIS_CONTROL_DEFAULT = {
     "education_6_17": _EDUCATION_BY_AGE_DEFAULT,
     "education_18plus": _EDUCATION_BY_AGE_DEFAULT,
 }
+
+
+def validate_kreis_consistency_keys(
+        apportionment, follow_grids, employment_level_source, fine_tolerance, fine_min_persons,
+        employment_level_sources) -> None:
+    """Reject an invalid value of the five #658 input-consistency keys, naming the key.
+
+    ``employment_level_sources`` is the accepted set of ``employment_level_source`` (owned by
+    ``braunschweig.popsim.mid.batch_folders.EMPLOYMENT_LEVEL_SOURCES``; passed in because this
+    module is a leaf).
+
+    Raises:
+        ValueError: ``kreis_batch_apportionment`` or ``employment_level_source`` is not one of its
+            allowed strings, ``kreis_controls_follow_grids`` is not a bool, ``kreis_fine_tolerance``
+            is not a number >= 0, or ``kreis_fine_min_persons`` is not an integer >= 0.
+    """
+    if apportionment not in KREIS_BATCH_APPORTIONMENTS:
+        raise ValueError(f"{KEY_KREIS_BATCH_APPORTIONMENT} must be one of "
+                         f"{KREIS_BATCH_APPORTIONMENTS}, got {apportionment!r}")
+    if not isinstance(follow_grids, bool):
+        raise ValueError(f"{KEY_KREIS_CONTROLS_FOLLOW_GRIDS} must be true or false, "
+                         f"got {follow_grids!r}")
+    if employment_level_source not in tuple(employment_level_sources):
+        raise ValueError(f"{KEY_EMPLOYMENT_LEVEL_SOURCE} must be one of "
+                         f"{tuple(employment_level_sources)}, got {employment_level_source!r}")
+    if (isinstance(fine_tolerance, bool) or not isinstance(fine_tolerance, (int, float))
+            or not fine_tolerance >= 0):
+        raise ValueError(f"{KEY_KREIS_FINE_TOLERANCE} must be a number >= 0, got {fine_tolerance!r}")
+    if (isinstance(fine_min_persons, bool) or not isinstance(fine_min_persons, int)
+            or fine_min_persons < 0):
+        raise ValueError(f"{KEY_KREIS_FINE_MIN_PERSONS} must be an integer >= 0, "
+                         f"got {fine_min_persons!r}")

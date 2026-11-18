@@ -149,6 +149,7 @@ from braunschweig.popsim import assembly
 from braunschweig.popsim import attributes
 from braunschweig.popsim import folders
 from braunschweig.popsim import batch
+from braunschweig.popsim import input_consistency_guard as _icg
 from braunschweig.popsim import income as _income
 from braunschweig.popsim import income_kreis_control as _kic
 from braunschweig.popsim import income_spatial_tilt as _ist
@@ -260,6 +261,12 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_SEED_RESOLVE_BINARY_SEX,
     KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE,
     KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS,
+    KEY_KREIS_BATCH_APPORTIONMENT,
+    KEY_KREIS_CONTROLS_FOLLOW_GRIDS,
+    KEY_EMPLOYMENT_LEVEL_SOURCE,
+    KEY_KREIS_FINE_TOLERANCE,
+    KEY_KREIS_FINE_MIN_PERSONS,
+    validate_kreis_consistency_keys,
     KEY_SEED_CONTRACT_MODE,
     KEY_MID_PASSENGER_AVAILABILITY,
     KEY_CONTROL_TIERS,
@@ -453,6 +460,7 @@ _HELPER_MODULES = (
     _passenger_availability,
     prepared_cells,
     _seed_contract,
+    _icg,
     tool_version,
     # the one synpp stage imported at MODULE level and used here as a plain
     # function library whose dependency this stage does NOT declare, so its own
@@ -552,6 +560,10 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.control_groups",
     "braunschweig.popsim.control_spec",
     "braunschweig.popsim.employment_grid",
+    # The KREIS input-consistency steps of Part A (#658) that mid.batch_folders runs for this stage:
+    # the employment-level rescaling and the measurement the guard judges.
+    "braunschweig.popsim.employment_level",
+    "braunschweig.popsim.input_consistency",
     # escort_pairing: the THIRD second-level exception (reached via mid.participation, whose
     # education_flag seed drops the code-13 legs the pairing does NOT resolve to education).
     # Same evidence standard as the two above: it carries BEHAVIOUR this stage's seed depends
@@ -837,6 +849,8 @@ def configure(context):
     context.config(KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE, True)
     # Building-type targets rescaled from dwellings to households per cell (#647). Default True.
     context.config(KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS, True)
+    # KREIS input consistency (#658, Part A; meaning: config_keys). Code defaults = legacy values.
+    _declare_kreis_consistency_config(context)
     # Contract check before PopulationSim: "error" | "warn" (#647). Default "error".
     _seed_contract.validate_mode(context.config(KEY_SEED_CONTRACT_MODE, "error"))
     context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
@@ -1351,9 +1365,143 @@ def _load_tier3_kreis_controls(context, control_tiers, controls_source, source_n
     return kreis_table, kreis_controls_map, household_control_names
 
 
+class KreisConsistencySettings:
+    """The five #658 input-consistency keys of a run, with the objects built from them (Task A6).
+
+    ``apportion_map`` ({KREIS control: universe weight column}, ``None`` for the legacy population
+    share) and ``recorder`` are filled by :meth:`prepare_cells` / :meth:`open_recorder`.
+    Meaning of the keys: ``config_keys.KEY_KREIS_BATCH_APPORTIONMENT`` and its neighbours.
+    """
+
+    def __init__(self, apportionment, follow_grids, employment_level_source, fine_tolerance,
+                 fine_min_persons):
+        self.apportionment = apportionment
+        self.follow_grids = follow_grids
+        self.employment_level_source = employment_level_source
+        self.fine_tolerance = fine_tolerance
+        self.fine_min_persons = fine_min_persons
+        self.apportion_map = None
+        self.recorder = None
+
+    def key_values(self) -> dict:
+        """``{config key: value used}`` of the five keys (the report file and the signature)."""
+        return {
+            KEY_KREIS_BATCH_APPORTIONMENT: self.apportionment,
+            KEY_KREIS_CONTROLS_FOLLOW_GRIDS: self.follow_grids,
+            KEY_EMPLOYMENT_LEVEL_SOURCE: self.employment_level_source,
+            KEY_KREIS_FINE_TOLERANCE: self.fine_tolerance,
+            KEY_KREIS_FINE_MIN_PERSONS: self.fine_min_persons,
+        }
+
+    def is_legacy(self) -> bool:
+        """True when the three keys that shape the control tables are at their legacy values."""
+        return (self.apportionment == "population" and not self.follow_grids
+                and self.employment_level_source == "survey")
+
+    def signature_payload(self):
+        """Batch-signature entry: ``None`` at the legacy values (their signatures stay as they were).
+
+        The tolerance and the minimum persons only steer the guard, not a batch input, so they
+        are part of the payload but never move a legacy signature.
+        """
+        return None if self.is_legacy() else self.key_values()
+
+    def prepare_cells(self, cells, active_entries, tier3_control_names):
+        """The cells frame for ``run_popsim_mid``: with the universe weight columns when needed.
+
+        Fills ``apportion_map`` (``None`` for ``"population"``: legacy split). The returned frame
+        is a copy with the extra columns; the caller's ``cells`` is untouched, so the columns never
+        reach the cell attributes joined onto the output.
+        """
+        if self.apportionment != "universe":
+            return cells
+        universes = controls_builder.apportion_universes(active_entries, tier3_control_names)
+        batch_cells, column_of = controls_builder.add_universe_weight_columns(cells, universes)
+        self.apportion_map = controls_builder.apportion_weight_columns(
+            active_entries, tier3_control_names, column_of)
+        logger.info("[popsim.stage] kreis_batch_apportionment=universe: %d KREIS control(s) split "
+                    "by the batch share of their own age universe (%d universe column(s))",
+                    len(self.apportion_map), len(set(self.apportion_map.values())))
+        return batch_cells
+
+    def open_recorder(self, work_dir):
+        """Create the per-run recorder writing ``<work_dir>/popsim_input_consistency.csv``."""
+        self.recorder = _icg.ConsistencyRecorder(
+            Path(work_dir) / _icg.TABLE_FILE_NAME,
+            check_grid_pairs=self.follow_grids, check_age_pairs=self.apportionment == "universe",
+            age_tolerance=self.fine_tolerance, min_persons=self.fine_min_persons)
+        return self.recorder
+
+    def run_popsim_mid_kwargs(self) -> dict:
+        """The keyword arguments of ``mid.run_popsim_mid`` that carry the five keys."""
+        return {
+            "apportion_weight_col_by_control": self.apportion_map or None,
+            "kreis_follow_grids": self.follow_grids,
+            "employment_level_source": self.employment_level_source,
+            "consistency_recorder": self.recorder,
+        }
+
+    def report(self) -> dict:
+        """The counts of the run for ``<stage name>_report.json`` (keys used + the recorder counts)."""
+        out = {"keys": self.key_values(), "table": None, "guard": None}
+        if self.recorder is not None:
+            out.update(self.recorder.report())
+            out["table"] = str(self.recorder.csv_path)
+        return out
+
+
+#: Name of the stage whose report file :func:`_write_consistency_report` writes.
+STAGE_REPORT_NAME = "data.census.filtered"
+
+
+def _declare_kreis_consistency_config(context) -> None:
+    """Declare the five #658 keys with their legacy defaults in ``configure()`` and validate them.
+
+    A bad value fails at DAG-build time, naming the key and its allowed values (ValueError).
+    """
+    validate_kreis_consistency_keys(
+        context.config(KEY_KREIS_BATCH_APPORTIONMENT, "population"),
+        context.config(KEY_KREIS_CONTROLS_FOLLOW_GRIDS, False),
+        context.config(KEY_EMPLOYMENT_LEVEL_SOURCE, "survey"),
+        context.config(KEY_KREIS_FINE_TOLERANCE, 0.05),
+        context.config(KEY_KREIS_FINE_MIN_PERSONS, 1000),
+        _mid_batch_folders.EMPLOYMENT_LEVEL_SOURCES)
+
+
+def _read_kreis_consistency_config(context) -> KreisConsistencySettings:
+    """Read the five #658 keys in ``execute()`` (one-argument ``context.config``; declared in configure)."""
+    values = (
+        context.config(KEY_KREIS_BATCH_APPORTIONMENT),
+        context.config(KEY_KREIS_CONTROLS_FOLLOW_GRIDS),
+        context.config(KEY_EMPLOYMENT_LEVEL_SOURCE),
+        context.config(KEY_KREIS_FINE_TOLERANCE),
+        context.config(KEY_KREIS_FINE_MIN_PERSONS),
+    )
+    validate_kreis_consistency_keys(*values, _mid_batch_folders.EMPLOYMENT_LEVEL_SOURCES)
+    return KreisConsistencySettings(*values)
+
+
+def _write_consistency_report(context, consistency: KreisConsistencySettings) -> Path:
+    """Write ``<context.path()>/data.census.filtered_report.json`` and set the run info.
+
+    Counts of the Part A steps (#658): per key the value used, the universe apportionment's empty
+    parts / regions and dropped target mass, the grid-following changes, the employment level
+    bridge and its capped / unchanged parts, and the guard's largest relative difference and rows.
+    """
+    report = consistency.report()
+    path = Path(context.path()) / f"{STAGE_REPORT_NAME}_report.json"
+    path.write_text(json.dumps(report, indent=2, sort_keys=True, default=str), encoding="utf-8")
+    if consistency.recorder is not None:
+        consistency.recorder.log_run_summary()
+        context.set_info("popsim_input_consistency_max_rel", consistency.recorder.max_rel)
+    logger.info("[popsim.stage] input-consistency report written to %s", path)
+    return path
+
+
 def _resolve_cell_load_columns(context, controls_source, source_name: str, control_tiers, base_cols,
         employment_grid_on: bool, cells_path, active_entries, fine_teen_age_bands: bool = True,
-        ownership_grid_on: bool = False):
+        ownership_grid_on: bool = False, kreis_batch_apportionment: str = "population",
+        tier3_control_names=()):
     """Resolve the column set loaded from the prepared-cells parquet.
 
     For catalog-based controls with multi-column census sources (e.g. building_type),
@@ -1365,6 +1513,11 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
     ``_derive_kreis_attribute_control_targets`` iterates); it is a REQUIRED argument, not a
     defaulted one, because an omitted list would silently reproduce the very defect this
     parameter exists to close (see the universe block below).
+
+    ``kreis_batch_apportionment="universe"`` (#658, Task A6) adds the single-year age columns of every
+    universe of ``controls_builder.apportion_universes(active_entries, tier3_control_names)``
+    (``tier3_control_names``: the keys of the Tier-3 controls map before the attribute controls are
+    merged in), because the batch share of each universe is summed over exactly those years.
 
     Returns: ``load_cols`` (rebound by the employment-grid, ownership-grid,
     universe-denominator and income-tilt blocks, so the caller MUST reassign it).
@@ -1451,6 +1604,18 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
             [f"{entry.name} ({lower}-{upper})"
              for entry, lower, upper in age_universe_entries(active_entries)],
             len(_universe_new), len(_universe_cols) - len(_universe_new))
+
+    if kreis_batch_apportionment == "universe":
+        _apportion_years = sorted({
+            year for lower, upper in controls_builder.apportion_universes(active_entries, tier3_control_names)
+            for year in range(int(lower), (controls_builder.SINGLE_YEAR_MAX_AGE if upper is None else int(upper)) + 1)})
+        _apportion_cols = [f"{sex}_AGE_{year}" for sex in ("M", "F") for year in _apportion_years]
+        _apportion_new = [c for c in _apportion_cols if c not in set(load_cols)]
+        load_cols = [*load_cols, *_apportion_new]
+        logger.info(
+            "[popsim.stage] kreis_batch_apportionment=universe: %d single-year age column(s) of the "
+            "apportionment universes, %d added to the parquet load set",
+            len(_apportion_cols), len(_apportion_new))
 
     # Income spatial tilt (issue #136): fetch the tilt cell columns (rent /
     # Eigentuemerquote / HH weight) in this SINGLE read instead of re-scanning
@@ -2197,7 +2362,7 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
         seed_persons: pd.DataFrame, kreis_table, active_entries,
         status_prior_n: float, work_dir, populationsim_version: str,
         populationsim_commit: str, populationsim_lock_hash: str, settings_overrides,
-        integerizer_seed_base) -> None:
+        integerizer_seed_base, kreis_consistency=None) -> None:
     """Purge work-dir batch folders whose batch inputs changed since the last run.
 
     Purge stale batch folders if the popsim config/control set changed since the last
@@ -2233,6 +2398,7 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
         populationsim_lock_hash=populationsim_lock_hash,
         settings_overrides=settings_overrides,
         integerizer_seed_base=integerizer_seed_base,
+        kreis_consistency=kreis_consistency,
     )
     purge_stale_batches_on_config_change(work_dir, _config_signature)
 
@@ -2288,8 +2454,12 @@ def _run_populationsim_batches(context, cells: pd.DataFrame, base_cols, controls
         seed_households: pd.DataFrame, seed_persons: pd.DataFrame, work_dir,
         settings_path, logging_path, max_cells: int, run_one, num_workers: int,
         source, stratify_regiostar: bool, kreis_table, kreis_controls_map,
-        household_control_names: set, settings_overrides, integerizer_seed_base):
+        household_control_names: set, settings_overrides, integerizer_seed_base,
+        consistency=None):
     """Run PopulationSim per 1 km batch and merge the expanded households.
+
+    ``consistency`` (#658, Task A6): a ``KreisConsistencySettings`` with its recorder; ``None``
+    keeps the legacy call (nothing measured, the population share, no following, survey level).
 
     Returns: ``merge_report`` (its ``combined`` frame is the merged expanded
     household table).
@@ -2310,6 +2480,7 @@ def _run_populationsim_batches(context, cells: pd.DataFrame, base_cols, controls
         kreis_table=kreis_table,
         kreis_controls_map=kreis_controls_map,
         household_control_names=household_control_names,
+        **({} if consistency is None else consistency.run_popsim_mid_kwargs()),
     )
     context.set_info("popsim_n_households", merge_report.n_rows)
     context.set_info("popsim_n_cells", merge_report.n_cells)
@@ -2923,11 +3094,17 @@ def execute(context) -> pd.DataFrame:
     kreis_table, kreis_controls_map, household_control_names = _load_tier3_kreis_controls(
         context, control_tiers, controls_source, source_name, kreise,
     )
+    consistency = _read_kreis_consistency_config(context)
+    # The Tier-3 control names BEFORE the attribute controls are merged in: the universe of the
+    # Tier-3 person controls (age 15+) is part of the apportionment universes.
+    tier3_control_names = list(kreis_controls_map or ())
     load_cols = _resolve_cell_load_columns(
         context, controls_source, source_name, control_tiers, base_cols,
         employment_grid_on, cells_path, active_entries,
         fine_teen_age_bands=fine_teen_bands_on,
         ownership_grid_on=ownership_grid_on,
+        kreis_batch_apportionment=consistency.apportionment,
+        tier3_control_names=tier3_control_names,
     )
 
     cells = mid.load_control_cells(cells_path, load_cols)
@@ -3022,14 +3199,27 @@ def execute(context) -> pd.DataFrame:
         seed_persons, kreis_table, active_entries, status_prior_n, work_dir,
         populationsim_version, tool_report["commit"],
         tool_version.lock_content_hash(popsimprep_dir), settings_overrides,
-        integerizer_seed_base,
+        integerizer_seed_base, consistency.signature_payload(),
     )
-    merge_report = _run_populationsim_batches(
-        context, cells, base_cols, controls_df, seed_households, seed_persons,
-        work_dir, settings_path, logging_path, max_cells, run_one, num_workers,
-        source, stratify_regiostar, kreis_table, kreis_controls_map,
-        household_control_names, settings_overrides, integerizer_seed_base,
-    )
+    # The universe weight columns live on a copy: the plain ``cells`` below feeds the cell
+    # attributes joined onto the output and must not gain them.
+    batch_cells = consistency.prepare_cells(cells, active_entries, tier3_control_names)
+    if kreis_table is not None:
+        consistency.open_recorder(work_dir)
+    else:
+        logger.info("[popsim.stage] no KREIS table in this run: the KREIS input consistency is "
+                    "not measured")
+    try:
+        merge_report = _run_populationsim_batches(
+            context, batch_cells, base_cols, controls_df, seed_households, seed_persons,
+            work_dir, settings_path, logging_path, max_cells, run_one, num_workers,
+            source, stratify_regiostar, kreis_table, kreis_controls_map,
+            household_control_names, settings_overrides, integerizer_seed_base,
+            consistency=consistency,
+        )
+    finally:
+        # Also after a guard failure: the counts up to the failing batch are the diagnosis.
+        _write_consistency_report(context, consistency)
     _log_integerizer_feasibility(context, work_dir)
     # Reported before the gate, which may stop the stage: with fast_paths on, how many balancer
     # calls the fork's fast kernels answered (no silent fallback to the original kernels).

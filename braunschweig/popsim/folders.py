@@ -872,6 +872,7 @@ def set_kreis_controls_from_fine_sums(
     fine_totals: Mapping[str, pd.DataFrame],
     geo_crosswalk: pd.DataFrame,
     mapping: Mapping[str, Sequence[str]],
+    stats: dict | None = None,
 ) -> pd.DataFrame:
     """Set each mapped KREIS control of a batch to the sum of its finer-level control (#658, A4).
 
@@ -894,7 +895,9 @@ def set_kreis_controls_from_fine_sums(
 
     Logs one summary line per call (controls changed, largest relative change against the value
     replaced and its control) and a WARNING per control whose largest relative change exceeds
-    :data:`KREIS_FOLLOW_GRIDS_WARN_RELATIVE_CHANGE`.
+    :data:`KREIS_FOLLOW_GRIDS_WARN_RELATIVE_CHANGE`. When ``stats`` is a dict, it receives the same
+    counts (``n_controls``, ``n_changed``, ``n_kreis_parts``, ``largest_relative_change``,
+    ``largest_relative_change_control``) for the stage report file.
 
     Raises:
         ValueError: a mapped KREIS column or a grid column is missing, the columns of one control
@@ -960,6 +963,10 @@ def set_kreis_controls_from_fine_sums(
         "[popsim.kreis_follow_grids] %d of %d KREIS control(s) set to their grid sums over %d Kreis "
         "part(s); largest relative change against the apportioned value %.2f%% (%s)",
         n_changed, len(mapping), len(out), 100.0 * worst_change, worst_control)
+    if stats is not None:
+        stats.update(n_controls=len(mapping), n_changed=n_changed, n_kreis_parts=len(out),
+                     largest_relative_change=worst_change,
+                     largest_relative_change_control=worst_control)
     return out
 
 

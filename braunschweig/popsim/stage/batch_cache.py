@@ -104,7 +104,8 @@ def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
                                    kreis_controls_map, seed_day_filter, seed_households,
                                    seed_persons, kreis_table, populationsim_version: str,
                                    populationsim_commit: str, populationsim_lock_hash: str, settings_overrides, integerizer_seed_base,
-                                   active_entries=None, status_prior_n=0.0) -> str:
+                                   active_entries=None, status_prior_n=0.0,
+                                   kreis_consistency=None) -> str:
     """Compute the work-dir batch-input signature (sha256 hex).
 
     The signature covers the batch inputs listed in ``payload`` below, so that a change to
@@ -169,4 +170,9 @@ def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
             c.name: (status_prior_n if c.name == "economic_status" else 0.0)
             for c in active_entries
         }
+    if kreis_consistency is not None:
+        # The #658 input-consistency keys (stage.KreisConsistencySettings.key_values), present only
+        # when one of the three table-shaping keys is off its legacy value, so a legacy run keeps
+        # the signature (and its completed batches) it had before the keys existed.
+        payload["kreis_consistency"] = dict(kreis_consistency)
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()

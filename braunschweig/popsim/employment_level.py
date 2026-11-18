@@ -251,6 +251,7 @@ def reconcile_kreis_employment_levels(
     geo_crosswalk: pd.DataFrame,
     *,
     bridge: float,
+    stats: dict | None = None,
 ) -> pd.DataFrame:
     """Give the employed classes of every active employment family the Zensus level of their Kreis part.
 
@@ -270,7 +271,9 @@ def reconcile_kreis_employment_levels(
     total is capped (never a negative class) and counted. A part with a zero total is skipped and
     counted as empty. A part whose employed or other group sums to 0 although it must carry mass
     stays unchanged; that is a fallback, logged as a WARNING with Kreis id, family and reason and
-    as a rate over the reconciled parts. One INFO line per batch reports the bridge, per family the
+    as a rate over the reconciled parts. When ``stats`` is a dict it receives the counts over all
+    families for the stage report file: ``parts_reconciled``, ``parts_capped``, ``capped_persons``,
+    ``parts_empty``, ``parts_unchanged`` (Kreis part x family pairs). One INFO line per batch reports the bridge, per family the
     mean relative change of the employed level, the capped parts and their persons, and the empty
     and unchanged parts. Returns a copy.
 
@@ -295,6 +298,8 @@ def reconcile_kreis_employment_levels(
     out = kreis_totals.copy()
     summary, skipped = [], []
     n_reconciled = n_unchanged = 0
+    n_done = n_capped = n_empty_total = 0
+    capped_persons_total = 0.0
     for family, (employed, other) in EMPLOYMENT_FAMILIES.items():
         columns = {label: f"{family}_{label}_{folders.GEO_KREIS}" for label in (*employed, *other)}
         present = [c for c in columns.values() if c in out.columns]
@@ -332,6 +337,10 @@ def reconcile_kreis_employment_levels(
         change = (float(np.mean(np.abs(after - before)[positive] / before[positive]))
                   if positive.any() else float("nan"))
         persons = float(old.sum(axis=1)[capped].sum())
+        n_done += int(done.sum())
+        n_capped += int(capped.sum())
+        n_empty_total += n_empty
+        capped_persons_total += persons
         summary.append(f"{family}: mean relative change of the employed level {100.0 * change:.2f}% over "
                        f"{int(done.sum())} part(s), capped {int(capped.sum())} part(s) ({persons:.0f} "
                        f"persons), empty {n_empty}, unchanged {len(unchanged_parts)}")
@@ -342,4 +351,7 @@ def reconcile_kreis_employment_levels(
         log_fallback_rate(logger, "popsim.employment_level.unchanged_part", n_unchanged, n_reconciled,
                           what="rate over Kreis-part x family pairs; a pair whose employed or other group is "
                                "empty keeps its apportioned values")
+    if stats is not None:
+        stats.update(parts_reconciled=n_done, parts_capped=n_capped, capped_persons=capped_persons_total,
+                     parts_empty=n_empty_total, parts_unchanged=n_unchanged)
     return out

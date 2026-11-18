@@ -149,17 +149,20 @@ def test_single_batch_kreis_keeps_the_full_target(tmp_path):
         assert tables["B"].loc["03158", control] == pytest.approx(_full_target(control)), control
 
 
-def test_empty_region_universe_gives_zero_and_warns_with_the_kreis(tmp_path, caplog):
+def test_empty_region_universe_gives_zero_and_names_the_kreis_per_batch_at_debug(tmp_path, caplog):
     # Kreis 03101 has nobody aged 6-17 at all (region total 0): its target vanishes in both batches.
-    caplog.set_level(logging.INFO, logger=batch_folders.logger.name)
+    # Per batch the line is DEBUG (the once-per-run WARNING is log_empty_region_universes, tested
+    # through run_popsim_mid below), so a many-batch run does not repeat it.
+    caplog.set_level(logging.DEBUG, logger=batch_folders.logger.name)
     cells, mapping = _universe_cells(_cells(young={"P1": 0.0, "P2": 0.0}))
     tables = _assemble(tmp_path, cells, mapping)
     for batch in ("A", "B"):
         value = tables[batch].loc["03101", "education_6_17_edu_KREIS"]
         assert np.isfinite(value) and value == 0.0
         assert not tables[batch].isna().any().any()
-    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
-    assert any("03101" in m and "region total of 0" in m for m in warnings)
+    messages = [r for r in caplog.records if "region total of 0" in r.getMessage()]
+    assert messages and all(r.levelno == logging.DEBUG for r in messages)
+    assert any("03101" in r.getMessage() for r in messages)
     # the other Kreis of batch B is unaffected
     assert tables["B"].loc["03158", "education_6_17_edu_KREIS"] == pytest.approx(EDU_TARGET)
 

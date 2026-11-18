@@ -148,8 +148,15 @@ def _kreis_tables(cells: pd.DataFrame, active_entries: list) -> tuple[pd.DataFra
     return kreis_table, kreis_controls_map, household_control_names
 
 
-def build_batch_folders(work_dir: Path) -> dict[str, Path]:
-    """Assemble the two batch folders under ``work_dir`` and return ``{batch: data directory}``."""
+def build_batch_folders(work_dir: Path, settings=None, recorder=None,
+                        employed_bridge: float | None = None) -> dict[str, Path]:
+    """Assemble the two batch folders under ``work_dir`` and return ``{batch: data directory}``.
+
+    ``settings`` (a ``stage.KreisConsistencySettings``, #658 Task A6) and ``recorder`` (its
+    ``ConsistencyRecorder``) switch on the Part A options the way the stage hands them to
+    ``run_popsim_mid``; ``employed_bridge`` is passed to every batch as given (the bridge itself
+    needs a real seed). All ``None`` (default) -> the legacy folders of the golden tables.
+    """
     work_dir = Path(work_dir)
     cells = make_cells()
     controls_df, base_cols, active_entries = _controls_and_base_columns()
@@ -167,6 +174,22 @@ def build_batch_folders(work_dir: Path) -> dict[str, Path]:
     kreis_total_hh = mid._kreis_pop_from_crosswalk(
         cells, full_xwalk, weight_col=control_spec.HH_TOTAL_CENSUS_COLUMN)
 
+    extra: dict[str, Any] = {}
+    if settings is not None:
+        tier3 = [c for c in control_spec.tier3_controls()
+                 if c.expression_for(base_fixture.SEED_NAME) is not None]
+        batch_cells = settings.prepare_cells(
+            cells, active_entries, list(controls_builder._kreis_controls_map(tier3)))
+        extra = settings.run_popsim_mid_kwargs()
+        extra.pop("employment_level_source")
+        extra["consistency_recorder"] = recorder
+        if extra["apportion_weight_col_by_control"]:
+            extra["kreis_totals_by_weight_col"] = {
+                col: mid._kreis_pop_from_crosswalk(batch_cells, full_xwalk, weight_col=col)
+                for col in sorted(set(extra["apportion_weight_col_by_control"].values()))}
+        cells = batch_cells
+        extra["employed_bridge"] = employed_bridge
+
     seed_households = pd.DataFrame({"H_ID": [1], "H_GEW": [2.0], "STAAT": [1]})
     seed_persons = pd.DataFrame({"H_ID": [1], "P_ID": [1], "STAAT": [1]})
     data_dirs: dict[str, Path] = {}
@@ -178,7 +201,7 @@ def build_batch_folders(work_dir: Path) -> dict[str, Path]:
             settings_yaml="x: 1\n", logging_yaml="version: 1\n",
             kreis_table=kreis_table, kreis_controls_map=kreis_controls_map,
             kreis_total_pop=kreis_total_pop, kreis_total_hh=kreis_total_hh,
-            household_control_names=household_control_names)
+            household_control_names=household_control_names, **extra)
         data_dirs[name] = folder / "data"
     return data_dirs
 
