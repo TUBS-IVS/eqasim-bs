@@ -16,11 +16,13 @@ ASSUMPTIONS
 * The bridge is computed over the age universe of the employed grid (its lowest age band starts at
   16, :func:`employed_grid_min_age`), because the Zensus count it multiplies covers only that
   universe. Both KREIS families have a 14+ universe (``WORK_BY_EMPLOYMENT_MIN_AGE_YEARS`` and the
-  ``min_age`` of the ``employment_status`` registry entry, both 14), so employed persons aged 14-15
-  get no Zensus level: the target applies to the employed classes of the family as a whole and
-  those persons are not given a level of their own. Their weighted seed share among the employed
-  persons of the family universe, and the bridge over the family's own 14+ universe for comparison,
-  are logged with the bridge (:func:`employed_bridge_report`).
+  ``min_age`` of the ``employment_status`` registry entry, both 14). The WHOLE employed group of a
+  family, including its employed persons aged 14-15, is scaled to ``bridge x`` the Zensus count of
+  the 16+ universe: those younger employed persons are INSIDE that level, neither on top of it nor
+  left as apportioned. The employed persons aged 16+ of a family therefore come out lower than
+  ``bridge x`` Zensus by about their below-grid share (the weighted seed share of the family's
+  employed persons that are younger than the grid's lower age). That share, and the bridge over the
+  family's own universe for comparison, are logged with the bridge (:func:`employed_bridge_report`).
 
 Everything here is opt-in: :func:`reconcile_kreis_employment_levels` only runs when the caller
 passes a bridge (``assemble_batch_folder(employed_bridge=...)``); without it the tables are
@@ -175,8 +177,9 @@ def employed_bridge_report(
     ``bridge`` (the value to apply) is :func:`employed_definition_bridge` at ``grid_min_age``;
     ``bridge_family_universe`` is the same at ``family_min_age``; ``below_grid_share`` is the
     weighted share of the persons in a survey employed class aged ``family_min_age`` or more that
-    are younger than ``grid_min_age`` (they get no Zensus level, module ASSUMPTIONS). One INFO line
-    names the seed column used.
+    are younger than ``grid_min_age`` (they are inside the scaled employed group, so the persons
+    aged ``grid_min_age``+ come out lower than ``bridge x`` Zensus by about this share; module
+    ASSUMPTIONS). One INFO line names the seed column used.
     """
     employed_class, by_taet, age, weight, source = _bridge_inputs(seed_persons, seed_households)
     bridge = _bridge_at(employed_class, by_taet, age, weight, grid_min_age)
@@ -188,8 +191,9 @@ def employed_bridge_report(
         "[popsim.employment_level] bridge %.4f over persons aged %d+ (the employed grid's universe) = "
         "persons in an employed class of %s / persons with %s in EMPLOYED_TAET, household-weighted MiD "
         "seed; %.4f over the families' own %d+ universe; %.2f%% of the weighted employed persons aged "
-        "%d+ are younger than %d and get no Zensus level", bridge, grid_min_age, source, _TAET,
-        comparison, family_min_age, 100.0 * share, family_min_age, grid_min_age)
+        "%d+ are younger than %d: they sit inside the scaled employed group, so the employed persons "
+        "aged %d+ end up lower than bridge x Zensus by about that share", bridge, grid_min_age, source,
+        _TAET, comparison, family_min_age, 100.0 * share, family_min_age, grid_min_age, grid_min_age)
     return BridgeReport(bridge, comparison, share, source)
 
 
@@ -336,5 +340,6 @@ def reconcile_kreis_employment_levels(
                 f"; skipped (not an active control): {skipped}" if skipped else "")
     if summary:
         log_fallback_rate(logger, "popsim.employment_level.unchanged_part", n_unchanged, n_reconciled,
-                          what="Kreis parts whose employed or other group is empty keep their apportioned values")
+                          what="rate over Kreis-part x family pairs; a pair whose employed or other group is "
+                               "empty keeps its apportioned values")
     return out
