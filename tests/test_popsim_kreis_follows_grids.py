@@ -132,6 +132,32 @@ def test_follow_grids_skips_an_inactive_grid(tmp_path, caplog):
     assert skipped, "a skipped pair must be logged"
 
 
+def test_follow_grids_skips_the_employed_control_when_the_employment_grid_is_off(tmp_path):
+    controls_df = _controls_df(employment=False)
+    assert "employed_KREIS" not in control_spec.kreis_controls_following_grids(controls_df)
+    out = _assemble(tmp_path, controls_df, batches=("AB",), kreis_follow_grids=True)["AB"]
+    assert out["employed_KREIS"].tolist() == [100, 100]
+    assert out["number_of_cars_0_KREIS"].tolist() == [5, 4]
+
+
+def test_an_entd_seed_has_no_pair_to_follow():
+    """ENTD cannot express the grid or the KREIS ownership controls (expression None), so
+    controls_for_seed drops both sides and no pair exists; a grid expression of None never
+    reaches the mapping as a half-active pair."""
+    catalog = [c for c in control_spec.tier3_controls() if c.name == "employed"]
+    catalog += control_spec.attribute_kreis_controls([ENTRY["number_of_cars"]])
+    catalog += control_spec.ownership_grid_controls() + control_spec.employment_grid_controls()
+    controls_df = control_spec.render_catalog_csv(control_spec.controls_for_seed(catalog, "entd"), "entd")
+    assert control_spec.kreis_controls_following_grids(controls_df) == {}
+
+
+def test_a_partly_present_grid_is_an_error():
+    controls_df = _controls_df()
+    controls_df = controls_df[controls_df["control_field"] != "EMPLOYED_F_60plus_agg_ZENSUS100m"]
+    with pytest.raises(ValueError, match="EMPLOYED_F_60plus_agg_ZENSUS100m"):
+        control_spec.kreis_controls_following_grids(controls_df)
+
+
 def test_follow_grids_raises_on_a_missing_active_column():
     controls_df = _controls_df()
     mapping = control_spec.kreis_controls_following_grids(controls_df)
@@ -144,17 +170,80 @@ def test_follow_grids_raises_on_a_missing_active_column():
             kreis_totals, fine, xwalk, {"employed_KREIS": mapping["employed_KREIS"]})
 
 
-def test_kreis_part_without_a_grid_cell_gets_zero_and_a_warning(caplog):
+def _inputs():
+    """A valid minimal input of set_kreis_controls_from_fine_sums (two Kreise, one 100 m cell each)."""
     kreis_totals = pd.DataFrame({"KREIS": ["03101", "03158"], "employed_KREIS": [100.0, 100.0]})
     xwalk = pd.DataFrame({"ZENSUS100m": ["c1", "c2"], "ZENSUS1km": ["P1", "P2"],
                           "KREIS": ["03101", "03158"]})
-    fine = {"ZENSUS100m": pd.DataFrame({"ZENSUS100m": ["c1"], "E_ZENSUS100m": [7]})}
-    with caplog.at_level(logging.WARNING, logger="braunschweig.popsim.folders"):
-        out = folders.set_kreis_controls_from_fine_sums(
-            kreis_totals, fine, xwalk, {"employed_KREIS": ("E_ZENSUS100m",)})
-    assert out["employed_KREIS"].tolist() == [7, 0]
-    assert "03158" in caplog.text
-    assert kreis_totals["employed_KREIS"].tolist() == [100.0, 100.0]  # input not mutated
+    fine = {"ZENSUS100m": pd.DataFrame({"ZENSUS100m": ["c1", "c2"], "E_ZENSUS100m": [7, 9]}),
+            "ZENSUS1km": pd.DataFrame({"ZENSUS1km": ["P1", "P2"], "O_ZENSUS1km": [7, 9]})}
+    return kreis_totals, fine, xwalk, {"employed_KREIS": ("E_ZENSUS100m",)}
+
+
+def test_the_valid_minimal_input_sums_per_kreis():
+    out = folders.set_kreis_controls_from_fine_sums(*_inputs())
+    assert out["employed_KREIS"].tolist() == [7, 9]
+
+
+def _mixed_geography(kreis_totals, fine, xwalk, mapping):
+    return kreis_totals, fine, xwalk, {"employed_KREIS": ("E_ZENSUS100m", "O_ZENSUS1km")}
+
+
+def _cell_absent_from_crosswalk(kreis_totals, fine, xwalk, mapping):
+    return kreis_totals, fine, xwalk.iloc[:1], mapping
+
+
+def _nan_grid_value(kreis_totals, fine, xwalk, mapping):
+    fine["ZENSUS100m"] = fine["ZENSUS100m"].assign(E_ZENSUS100m=[7.0, float("nan")])
+    return kreis_totals, fine, xwalk, mapping
+
+
+def _kreis_column_missing(kreis_totals, fine, xwalk, mapping):
+    return kreis_totals.drop(columns=["employed_KREIS"]), fine, xwalk, mapping
+
+
+def _cell_with_two_kreise(kreis_totals, fine, xwalk, mapping):
+    return kreis_totals, fine, pd.concat([xwalk, xwalk.iloc[:1].assign(KREIS="03158")]), mapping
+
+
+def _kreis_without_a_grid_cell(kreis_totals, fine, xwalk, mapping):
+    fine["ZENSUS100m"] = fine["ZENSUS100m"].iloc[:1]
+    return kreis_totals, fine, xwalk, mapping
+
+
+@pytest.mark.parametrize("damage, match", [
+    (_mixed_geography, "one geography suffix"),
+    (_cell_absent_from_crosswalk, "absent from the crosswalk"),
+    (_nan_grid_value, "NaN"),
+    (_kreis_column_missing, "not a column of the KREIS table"),
+    (_cell_with_two_kreise, "more than one Kreis"),
+    (_kreis_without_a_grid_cell, "03158"),
+])
+def test_set_kreis_controls_raises_on_inconsistent_input(damage, match):
+    with pytest.raises(ValueError, match=match):
+        folders.set_kreis_controls_from_fine_sums(*damage(*_inputs()))
+
+
+def test_the_overwritten_column_keeps_its_dtype_in_the_written_table(tmp_path):
+    out = _assemble(tmp_path, _controls_df(), batches=("AB",), kreis_follow_grids=True)["AB"]
+    legacy = _assemble(tmp_path / "legacy", _controls_df(), batches=("AB",))["AB"]
+    assert out["number_of_cars_0_KREIS"].dtype == legacy["number_of_cars_0_KREIS"].dtype
+    assert out["number_of_cars_0_KREIS"].tolist() == [5.0, 4.0]
+
+
+def test_a_large_change_warns_and_one_summary_line_is_logged(caplog):
+    kreis_totals, fine, xwalk, mapping = _inputs()
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.folders"):
+        folders.set_kreis_controls_from_fine_sums(kreis_totals, fine, xwalk, mapping)
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    infos = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert len(warnings) == 1 and "employed_KREIS" in warnings[0].getMessage()  # 100 -> 7 / 9
+    assert len(infos) == 1 and "employed_KREIS" in infos[0].getMessage()
+    caplog.clear()
+    near = kreis_totals.assign(employed_KREIS=[8.0, 10.0])  # within the threshold of 7 / 9
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.folders"):
+        folders.set_kreis_controls_from_fine_sums(near, fine, xwalk, mapping)
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
 
 
 class _Stop(Exception):

@@ -37,7 +37,6 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim import cells, controls
-from braunschweig.popsim.fallback_rates import log_fallback_rate
 
 logger = logging.getLogger(__name__)
 
@@ -861,6 +860,13 @@ def build_kreis_control_totals(
     return pd.DataFrame(out)
 
 
+#: Relative change of a KREIS control (grid sum against the apportioned census value) above which
+#: :func:`set_kreis_controls_from_fine_sums` logs a WARNING for that control. ASSUMPTION: a
+#: diagnostic threshold chosen as a review trigger (a quarter of the value), not a measured
+#: tolerance and not a model parameter; it changes no value.
+KREIS_FOLLOW_GRIDS_WARN_RELATIVE_CHANGE = 0.25
+
+
 def set_kreis_controls_from_fine_sums(
     kreis_totals: pd.DataFrame,
     fine_totals: Mapping[str, pd.DataFrame],
@@ -874,21 +880,32 @@ def set_kreis_controls_from_fine_sums(
     the KREIS target and the grid targets of one variable agree exactly. ``fine_totals`` is the
     control-totals dict of the batch (:func:`braunschweig.popsim.mid.control_cells.build_control_totals`):
     a grid column belongs to the table of the geography its name ends with (``_ZENSUS1km`` or
-    ``_ZENSUS100m``), and a cell belongs to the Kreis ``geo_crosswalk`` gives it (one Kreis per
-    1 km parent once the crosswalk is resolved). Returns a copy; ``kreis_totals`` is not changed.
+    ``_ZENSUS100m``). The ``_ZENSUS1km`` column is by construction the exact sum of the integerized
+    100 m children of that parent, so summing the 1 km table equals summing the 100 m children; the
+    level summed is the one at which the grid is a PopulationSim control (the 1 km table for the
+    ownership grid, the 100 m table for the employed grid), because the KREIS table must agree with
+    the control PopulationSim balances it against. Returns a copy; ``kreis_totals`` is not changed,
+    and each overwritten column keeps its dtype.
 
-    No silent fallback: a Kreis part without any grid cell gets 0 and is logged as a WARNING with
-    its id, the primary/fallback count is logged, and per control the largest relative change
-    against the value it replaces is logged.
+    Each fine cell belongs to the one Kreis ``geo_crosswalk`` assigns it (the resolved crosswalk:
+    one Kreis per 1 km parent). That is intended: PopulationSim balances the KREIS controls against
+    exactly this assignment, so consistency is defined under it. The drift of the region-wide Kreis
+    anchor this can cause is reported by the consistency tables, not corrected here.
+
+    Logs one summary line per call (controls changed, largest relative change against the value
+    replaced and its control) and a WARNING per control whose largest relative change exceeds
+    :data:`KREIS_FOLLOW_GRIDS_WARN_RELATIVE_CHANGE`.
 
     Raises:
         ValueError: a mapped KREIS column or a grid column is missing, the columns of one control
-            sit at two geographies, a grid cell is absent from the crosswalk, or a grid value is NaN.
+            sit at two geographies, a grid cell is absent from the crosswalk or has two Kreise,
+            a grid value is NaN, or a Kreis row has no grid cell (the KREIS rows are built from the
+            same crosswalk, so that is an inconsistent input, not a zero).
     """
     out = kreis_totals.copy()
     kreise = out[GEO_KREIS].astype(str)
     suffixes = {GEO_1KM: "_" + GEO_1KM, GEO_100M: "_" + GEO_100M}
-    n_parts = n_empty = 0
+    worst_control, worst_change, n_changed = None, 0.0, 0
     for control, columns in mapping.items():
         columns = list(columns)
         if control not in out.columns:
@@ -919,31 +936,30 @@ def set_kreis_controls_from_fine_sums(
         if values.isna().any().any():
             raise ValueError(f"KREIS control {control!r}: NaN in grid column(s) "
                              f"{[c for c in columns if values[c].isna().any()]}")
-        per_cell = values.sum(axis=1)
-        sums = per_cell.groupby(cell_kreis.to_numpy()).sum().reindex(kreise.to_numpy())
-        n_cells = cell_kreis.groupby(cell_kreis.to_numpy()).size().reindex(kreise.to_numpy())
-        empty = n_cells.isna().to_numpy()
-        new_values = sums.fillna(0).to_numpy().round().astype("int64")
+        sums = values.sum(axis=1).groupby(cell_kreis.to_numpy()).sum()
+        empty = sorted(set(kreise) - set(sums.index))
+        if empty:
+            raise ValueError(f"KREIS control {control!r}: Kreis {empty[:5]} has no {geo} grid cell in "
+                             "this batch although the KREIS table lists it; the KREIS rows and the "
+                             "crosswalk disagree")
+        new_values = sums.reindex(kreise.to_numpy()).to_numpy().round().astype("int64")
         old_values = out[control].to_numpy(dtype=float)
         base = np.where(old_values > 0, old_values, np.nan)
         relative = np.abs(new_values - old_values) / base
-        worst = int(np.nanargmax(relative)) if np.isfinite(relative).any() else None
-        logger.info(
-            "[popsim.kreis_follow_grids] %s := batch sum of %d %s column(s): largest relative "
-            "change against the apportioned value %s over %d Kreis part(s)", control, len(columns), geo,
-            "n/a (no positive value)" if worst is None
-            else f"{100.0 * relative[worst]:.2f}% (Kreis {kreise.iloc[worst]}, "
-                 f"{old_values[worst]:.1f} -> {new_values[worst]})", len(kreise))
-        if empty.any():
+        change = float(np.nanmax(relative)) if np.isfinite(relative).any() else 0.0
+        if change > KREIS_FOLLOW_GRIDS_WARN_RELATIVE_CHANGE:
             logger.warning(
-                "[popsim.kreis_follow_grids] %s: %d Kreis part(s) without any %s grid cell in this "
-                "batch (Kreis %s): control value 0", control, int(empty.sum()), geo,
-                kreise[empty].tolist())
-        n_parts += len(kreise)
-        n_empty += int(empty.sum())
-        out[control] = new_values
-    log_fallback_rate(logger, "popsim.kreis_follow_grids.empty_part", n_empty, n_parts,
-                      what="Kreis parts with no grid cell get the control value 0")
+                "[popsim.kreis_follow_grids] %s: the grid sum differs from the apportioned value by "
+                "up to %.1f%% (above the %.0f%% review threshold, an assumption-grade diagnostic)",
+                control, 100.0 * change, 100.0 * KREIS_FOLLOW_GRIDS_WARN_RELATIVE_CHANGE)
+        n_changed += int((new_values != old_values).any())
+        if change >= worst_change:
+            worst_control, worst_change = control, change
+        out[control] = new_values.astype(out[control].dtype)
+    logger.info(
+        "[popsim.kreis_follow_grids] %d of %d KREIS control(s) set to their grid sums over %d Kreis "
+        "part(s); largest relative change against the apportioned value %.2f%% (%s)",
+        n_changed, len(mapping), len(out), 100.0 * worst_change, worst_control)
     return out
 
 
