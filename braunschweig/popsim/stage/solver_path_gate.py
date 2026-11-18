@@ -89,10 +89,14 @@ _METHOD_NUMERIC_COLUMNS = {
 }
 # Totals of summarize_controlled_calls whose positive value makes the rate line a WARNING
 # (together with any non-success call): parent weight not placed, round-ups a zone still needed,
-# households that no cell can take, and an LP whose repair step failed or left fractional values.
+# households that no row of the parent can supply, households the final rounding places on rows
+# without a residual in that zone (beyond their parent weight), and an LP whose repair step failed
+# or left fractional values. ``hh_excess`` is reported only: it is a property of the controls (the
+# integer parts already exceed a household control), not of the rounding.
 _DEGRADED_CONTROLLED_TOTALS = (
     "controlled_non_success_calls", "search_not_converged_calls", "row_shortfall",
-    "zone_shortfall", "hh_unreachable", "repair_failed", "fractional_after_repair")
+    "zone_shortfall", "hh_unreachable", "hh_outside_lp", "repair_failed",
+    "fractional_after_repair")
 SUCCESS_STATUSES = ("OPTIMAL", "FEASIBLE")
 SIMUL_KIND = "simul"
 
@@ -431,12 +435,12 @@ def check_solver_paths(work_dir, error_rate: Optional[float],
     calls by method, the non-success and non-converged counts, the conservation loss, the sums of
     the search and of the LP method and the household counts the method could not place (WARNING
     when a controlled call is neither OPTIMAL nor FEASIBLE, a ``search`` call did not converge, or
-    ``row_shortfall``, ``zone_shortfall``, ``hh_unreachable``, ``repair_failed`` or
-    ``fractional_after_repair`` is positive, else INFO). Raises ``RuntimeError`` when a
-    geography's non-simultaneous share exceeds ``error_rate``, a completed batch has no usable
-    record, a batch of a controlled run cannot prove the controlled path, or a ``round`` run has a record
-    marked controlled;
-    ``ValueError`` for an ``error_rate`` outside (0, 1] or an unknown ``expected_rounding``.
+    ``row_shortfall``, ``zone_shortfall``, ``hh_unreachable``, ``hh_outside_lp``,
+    ``repair_failed`` or ``fractional_after_repair`` is positive, else INFO). Raises
+    ``RuntimeError`` when a geography's non-simultaneous share exceeds ``error_rate``, a completed
+    batch has no usable record, a batch of a controlled run cannot prove the controlled path, or a
+    ``round`` run has a record marked controlled; ``ValueError`` for an ``error_rate`` outside
+    (0, 1] or an unknown ``expected_rounding``.
     """
     error_rate = validate_error_rate(error_rate)
     expected_rounding = validate_expected_rounding(expected_rounding)
