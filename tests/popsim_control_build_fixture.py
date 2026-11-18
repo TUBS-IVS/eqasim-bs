@@ -34,7 +34,8 @@ GOLDEN_NAMES = ("ZENSUS100m", "ZENSUS1km", "STAAT", "WELT")
 # shape the control columns (``configs/base_bs.yml``: ``fine_teen_age_bands``,
 # ``building_type_targets_to_households``); the control tiers are the production tiers whose
 # controls reach the 100 m and 1 km tables (tier3 only builds KREIS controls, which
-# ``build_control_totals`` does not write). A later task that adds a keyword to ``_add_aggregated_control_columns`` adds it here.
+# ``build_control_totals`` does not write). A later task that adds a keyword to
+# ``_add_aggregated_control_columns`` adds it here.
 CONTROL_SOURCE = "catalog"
 SEED_NAME = "mid"
 CONTROL_TIERS = ("tier0", "tier1", "tier2")
@@ -131,8 +132,10 @@ def required_cell_columns() -> list[str]:
 def base_columns() -> list[str]:
     """The control base columns of ``stage._build_control_frame`` (100 m and 1 km geographies)."""
     _, base_cols = stage._build_control_frame(
-        CONTROL_SOURCE, None, SEED_NAME, CONTROL_TIERS, False, [], IMPORTANCE_PROFILE,
-        fine_teen_age_bands=FINE_TEEN_AGE_BANDS, ownership_grid_on=False)
+        controls_source=CONTROL_SOURCE, controls_path=None, source_name=SEED_NAME,
+        control_tiers=CONTROL_TIERS, employment_grid_on=False, active_entry_names=[],
+        importance_profile=IMPORTANCE_PROFILE, fine_teen_age_bands=FINE_TEEN_AGE_BANDS,
+        ownership_grid_on=False)
     return base_cols
 
 

@@ -8,6 +8,10 @@ into these tables). The values are test data, not Zensus figures. They were froz
 #657, so that a later config key at its legacy value can be proven to reproduce today's tables
 value for value (`tests/test_popsim_control_build_golden.py`).
 
+The employment grid and the 1 km ownership grid are OFF in the fixture (production has them
+on). They add columns the tenure rule never touches; a later part extends the fixture if it
+needs them.
+
 Regenerate (only for a deliberate, documented change of the expected tables), from the
 repository root, in the `eqasim` environment:
 
