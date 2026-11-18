@@ -393,3 +393,33 @@ def test_no_sequential_fallback_reports_the_base_arm_ungated(compare, tmp_path):
     assert rc == 0
     assert rows[rows["arm"] == "base"]["met"].isna().all()
     assert rows[rows["arm"] == "new"]["met"].notna().all()
+
+
+@pytest.mark.parametrize("new_outside, drop_new_file, expected_met", [
+    (1, False, True),    # equal counts (base has one control outside, too)
+    (2, False, False),   # one more control outside than the base
+    (1, True, False),    # rounding_shift.csv absent in the new arm
+])
+def test_rounding_shift_vs_base_compares_the_outside_counts(
+        compare, tmp_path, new_outside, drop_new_file, expected_met):
+    base, new = _diag_tables(tmp_path)
+
+    def shift_rows(n_outside):
+        # the first n_outside of three controls lie outside the bound
+        return pd.DataFrame({"batch": "batch_000", "control": ["c1", "c2", "c3"],
+                             "target_sum": 100.0, "shift": [0.3, 0.2, 0.01],
+                             "within_bound": [i >= n_outside for i in range(3)]})
+
+    shift_rows(1).to_csv(base / "rounding_shift.csv", index=False)
+    if not drop_new_file:
+        shift_rows(new_outside).to_csv(new / "rounding_shift.csv", index=False)
+    rc, verdict, out = _run_compare(compare, tmp_path, base, new, {"checks": [
+        {"id": "G4", "kind": "rounding_shift_vs_base", "max_extra_outside": 0}]})
+    assert rc == 0 and verdict["checks"]["G4"]["met"] is expected_met
+    if drop_new_file:
+        assert str(new / "rounding_shift.csv") in verdict["checks"]["G4"]["absent_files"]["new"]
+    else:
+        rows = pd.read_csv(out / "comparison.csv")
+        n_out = rows[rows["metric"] == "n_outside"].set_index("arm")["value"]
+        assert (n_out["base"], n_out["new"]) == (1, new_outside)
+        assert rows[rows["arm"] == "base"]["met"].isna().all()

@@ -44,6 +44,12 @@ Check kinds (``met`` is judged on the new arm; the base arm is reported next to 
 * ``no_sequential_fallback`` (gate N): per batch, met if ``non_simultaneous`` is 0 at every level
   (``levels`` optional) of ``solver_paths.csv`` of the new arm; a batch without rows fails.
 
+* ``rounding_shift_vs_base`` (gate G4 as in arm 3, judged against the base arm): reads
+  ``rounding_shift.csv`` (columns ``batch, control, target_sum, shift, within_bound``) of both arms;
+  per batch n_outside = rows with ``within_bound`` false, max_shift = max ``shift``; met if new
+  n_outside <= base n_outside + ``max_extra_outside`` (integer, required). Rows per arm: n_controls,
+  n_outside, max_shift (base ungated). A missing file in either arm fails the check.
+
 A listed control absent from ``control_fit.csv`` of a batch fails the check (``missing_controls``).
 ``batches`` at the top level (optional, default: the batches of the new arm) must all be present in
 both arms' ``control_fit.csv``; otherwise the script names them and exits 1.
@@ -67,7 +73,8 @@ Example (the plan's gates; control names illustrative)::
        "exclude_regex": "^(number_of_cars|number_of_bicycles|employed|education)_"},
       {"id": "N-conservation", "kind": "conservation_vs_base", "abs_deviation_share_delta": 0.0,
        "conserved_pair_share_delta": 0.0},
-      {"id": "N-solver", "kind": "no_sequential_fallback"}]}
+      {"id": "N-solver", "kind": "no_sequential_fallback"},
+      {"id": "G4-rounding", "kind": "rounding_shift_vs_base", "max_extra_outside": 0}]}
 
 Usage:
     python compare_input_arms.py --base-diag <dir> --new-diag <dir> --checks <json> --out <dir>
@@ -84,7 +91,7 @@ from pathlib import Path
 import pandas as pd
 
 KINDS = ("input_pairs", "fit_ratio", "fit_gap", "wape_vs_base", "conservation_vs_base",
-         "no_sequential_fallback")
+         "no_sequential_fallback", "rounding_shift_vs_base")
 
 
 def read_fit(diag: Path) -> pd.DataFrame:
@@ -308,7 +315,40 @@ def eval_no_sequential_fallback(check, ctx, emit):
     return out
 
 
+def eval_rounding_shift_vs_base(check, ctx, emit):
+    """Gate G4 judged against the base arm (``compare_arm3.py`` counts the same way)."""
+    absent = _absent_files(ctx, "rounding_shift.csv")
+    if absent:
+        for arm in absent:
+            emit(check["id"], "ALL", arm, "file_absent", math.nan, None, False)
+        return _absent_result(check, absent, "rounding_shift.csv")
+    max_extra = int(check["max_extra_outside"])
+    tables = {arm: pd.read_csv(diag / "rounding_shift.csv") for arm, diag in ctx["arms"].items()}
+    out = {"max_extra_outside": max_extra, "values": {}}
+    met = True
+    for batch in ctx["batches"]:
+        stats = {}
+        for arm, table in tables.items():
+            rows = table[table["batch"] == batch]
+            stats[arm] = {"n_controls": len(rows),
+                          "n_outside": int((~rows["within_bound"].astype(bool)).sum()),
+                          "max_shift": float(rows["shift"].max()) if len(rows) else math.nan}
+        # A batch without rows in the new arm has nothing to judge and fails.
+        limit = stats["base"]["n_outside"] + max_extra
+        ok = stats["new"]["n_controls"] > 0 and stats["new"]["n_outside"] <= limit
+        for arm, s in stats.items():
+            emit(check["id"], batch, arm, "n_controls", s["n_controls"], None, None)
+            emit(check["id"], batch, arm, "n_outside", s["n_outside"], limit,
+                 ok if arm == "new" else None)
+            emit(check["id"], batch, arm, "max_shift", s["max_shift"], None, None)
+        out["values"][batch] = {**stats, "limit": limit, "met": bool(ok)}
+        met = met and ok
+    out["met"] = bool(met)
+    return out
+
+
 EVALUATORS = {"input_pairs": eval_input_pairs, "fit_ratio": eval_fit_ratio,
+              "rounding_shift_vs_base": eval_rounding_shift_vs_base,
               "fit_gap": eval_fit_gap, "wape_vs_base": eval_wape_vs_base,
               "conservation_vs_base": eval_conservation_vs_base,
               "no_sequential_fallback": eval_no_sequential_fallback}
