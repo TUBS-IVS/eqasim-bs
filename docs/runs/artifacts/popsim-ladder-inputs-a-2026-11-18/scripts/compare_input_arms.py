@@ -1,11 +1,12 @@
 """Compare an input-consistency ladder arm with its base arm (issue #658, Part A, Task A7).
 
 Reads two diagnostics directories written by
-``python -m braunschweig.analysis.popsim_batch_diagnostics.run`` (``run_diag.sh`` of
+``python -m braunschweig.analysis.popsim_batch_diagnostics.run --misfit`` (``run_diag.sh`` of
 ``popsim-ladder-arm3-2026-11-18``), evaluates the gate checks of a checks JSON and writes into
 ``--out``: ``comparison.csv`` (long table: ``check, batch, arm, metric, value, limit, met``; one row
-per check, batch and arm, ``batch`` = ``ALL`` for pooled checks) and ``verdict.json``
-(``{"checks": {id: {"met": bool, ...}}, "all_met": bool}``). Pattern: ``compare_arm3.py``.
+per check, batch and arm, ``batch`` = ``ALL`` for pooled checks, ``met`` empty for a row that is
+reported but not gated) and ``verdict.json`` (``{"checks": {id: {"met": bool, ...}}, "all_met":
+bool}``). Pattern: ``compare_arm3.py``.
 
 Every bound comes from the checks JSON; the script holds no reference value. Tables read:
 
@@ -15,25 +16,37 @@ Every bound comes from the checks JSON; the script holds no reference value. Tab
   stage's ``popsim_input_consistency.csv`` placed in the diagnostics directory; both have the
   columns ``batch, scope, key, check, cells, amount, base, share`` of
   ``input_consistency.summarize``, ``check`` = pair label, ``amount`` = size of the
-  contradiction, ``share = amount / base``).
+  contradiction, ``share = amount / base``);
+* ``household_conservation.csv`` (``conservation.household_conservation`` per batch and level,
+  read as ``compare_arm3.py`` reads it) and ``solver_paths.csv`` (``solver_paths.solver_path_table``:
+  ``non_simultaneous`` = parents of a level whose final path was not simultaneous, the count
+  ``compare_arm3.py`` gates on).
 
 Check kinds (``met`` is judged on the new arm; the base arm is reported next to it):
 
 * ``input_pairs`` (gate I): over the ``scope == "kreis"`` rows of ``file`` whose ``check`` is in
-  ``pairs`` (optionally only ``batches``): value = max ``share`` (a row with ``base`` 0 and
-  ``amount`` > 0 counts as infinite); met if value <= ``bound``. A pair with no row fails the check.
+  ``pairs``: value = max ``share`` (a row with ``base`` 0 and ``amount`` > 0 counts as infinite);
+  met if value <= ``bound``. With ``min_base`` only rows with ``base >= min_base`` are gated; the
+  smaller ones are reported as an ungated row. A pair with no gated row fails the check.
 * ``fit_ratio`` (gates O-age, O-emp): per batch, value = sum ``synthetic_sum`` / sum ``target_sum``
   over the ``controls`` at ``geography``; met if ``|value - 1| <= bound``.
 * ``fit_gap`` (gate O-own): per batch and control, value = gap / households, gap =
   ``|synthetic_sum - target_sum|`` (``measure: "net"``) or ``abs_error`` (``measure:
-  "abs_error"``, the sum over zones), households = ``target_sum`` of ``households_control``
-  (summed over its geographies in the batch); met if value <= ``bound``.
+  "abs_error"``, the sum over zones), households = ``target_sum`` of ``households_control`` at
+  ``households_geography`` (exactly one row); met if value <= ``bound``.
 * ``wape_vs_base`` (gate N): per geography of ``deltas``, pooled over the batches, value =
   sum ``abs_error`` / sum ``target_sum`` over the controls with ``target_sum > 0`` that are not in
-  ``exclude_controls`` and do not match ``exclude_regex``; met if new <= base + delta.
+  ``exclude_controls`` and do not match ``exclude_regex``; met if new <= base + delta and both arms
+  carry the same controls at that geography after the exclusions (else the difference is named).
+* ``conservation_vs_base`` (gate N): per batch and level (``levels`` optional), met if new
+  ``abs_deviation_share`` <= base + ``abs_deviation_share_delta`` and new ``conserved_pair_share``
+  >= base - ``conserved_pair_share_delta`` (a level with NaN in one arm only fails).
+* ``no_sequential_fallback`` (gate N): per batch, met if ``non_simultaneous`` is 0 at every level
+  (``levels`` optional) of ``solver_paths.csv`` of the new arm; a batch without rows fails.
 
 A listed control absent from ``control_fit.csv`` of a batch fails the check (``missing_controls``).
-``batches`` at the top level (optional) restricts every check; default: the batches of the new arm.
+``batches`` at the top level (optional, default: the batches of the new arm) must all be present in
+both arms' ``control_fit.csv``; otherwise the script names them and exits 1.
 
 Example (the plan's gates; control names illustrative)::
 
@@ -41,15 +54,20 @@ Example (the plan's gates; control names illustrative)::
      "checks": [
       {"id": "I-grid", "kind": "input_pairs", "file": "input_consistency.csv",
        "pairs": ["cars_0", "cars_1", "cars_2", "cars_3plus", "employed"], "bound": 1e-6},
+      {"id": "I-age", "kind": "input_pairs", "file": "input_consistency.csv",
+       "pairs": ["persons_0_17", "persons_18plus"], "bound": 0.05, "min_base": 1000},
       {"id": "O-age-0-17", "kind": "fit_ratio", "geography": "ZENSUS100m",
        "controls": ["M_AGE_0_9_agg_ZENSUS100m_target", "F_AGE_0_9_agg_ZENSUS100m_target"], "bound": 0.02},
       {"id": "O-own-cars", "kind": "fit_gap", "geography": "ZENSUS1km", "measure": "net",
-       "controls": ["OWN_CARS_0_agg_ZENSUS1km_target"],
+       "controls": ["OWN_CARS_0_agg_ZENSUS1km_target"], "households_geography": "ZENSUS100m",
        "households_control": "Insgesamt_Haushalte_..._ZENSUS100m_target", "bound": 0.01},
       {"id": "O-emp", "kind": "fit_ratio", "geography": "ZENSUS100m",
        "controls": ["EMPLOYED_M_16_29_agg_ZENSUS100m_target"], "bound": 0.02},
-      {"id": "N", "kind": "wape_vs_base", "deltas": {"ZENSUS100m": 0.02, "ZENSUS1km": 0.02, "KREIS": 0.01},
-       "exclude_regex": "^(number_of_cars|number_of_bicycles|employed|education)_"}]}
+      {"id": "N-wape", "kind": "wape_vs_base", "deltas": {"ZENSUS100m": 0.02, "KREIS": 0.01},
+       "exclude_regex": "^(number_of_cars|number_of_bicycles|employed|education)_"},
+      {"id": "N-conservation", "kind": "conservation_vs_base", "abs_deviation_share_delta": 0.0,
+       "conserved_pair_share_delta": 0.0},
+      {"id": "N-solver", "kind": "no_sequential_fallback"}]}
 
 Usage:
     python compare_input_arms.py --base-diag <dir> --new-diag <dir> --checks <json> --out <dir>
@@ -65,7 +83,8 @@ from pathlib import Path
 
 import pandas as pd
 
-KINDS = ("input_pairs", "fit_ratio", "fit_gap", "wape_vs_base")
+KINDS = ("input_pairs", "fit_ratio", "fit_gap", "wape_vs_base", "conservation_vs_base",
+         "no_sequential_fallback")
 
 
 def read_fit(diag: Path) -> pd.DataFrame:
@@ -82,34 +101,46 @@ def _missing(rows, controls):
     return sorted(set(controls) - set(rows["control"]))
 
 
-def eval_input_pairs(check, arms, batches, emit):
+def _max_share(rows) -> float:
+    if rows.empty:
+        return math.nan
+    zero_base = (rows["base"].astype(float) == 0) & (rows["amount"].astype(float) > 0)
+    return math.inf if zero_base.any() else float(rows["share"].astype(float).max())
+
+
+def eval_input_pairs(check, ctx, emit):
+    min_base = float(check.get("min_base", 0.0))
     values = {}
-    for arm, diag in arms.items():
+    for arm, diag in ctx["arms"].items():
         path = diag / check["file"]
         if not path.is_file():
             values[arm] = None
             continue
         table = pd.read_csv(path, dtype={"key": str})
         rows = table[(table["scope"] == "kreis") & table["check"].isin(check["pairs"])
-                     & table["batch"].isin(batches)]
-        absent = sorted(set(check["pairs"]) - set(rows["check"]))
-        share = rows["share"].astype(float)
-        zero_base = (rows["base"].astype(float) == 0) & (rows["amount"].astype(float) > 0)
-        value = math.inf if zero_base.any() else (float(share.max()) if len(rows) else math.nan)
-        values[arm] = {"value": value, "absent_pairs": absent}
+                     & table["batch"].isin(ctx["batches"])]
+        gated = rows[rows["base"].astype(float) >= min_base]
+        ungated = rows[rows["base"].astype(float) < min_base]
+        absent = sorted(set(check["pairs"]) - set(gated["check"]))
+        value = _max_share(gated)
+        values[arm] = {"value": value, "absent_pairs": absent, "n_gated_rows": len(gated),
+                       "n_ungated_rows": len(ungated), "max_share_ungated": _max_share(ungated)}
         emit(check["id"], "ALL", arm, "max_share", value, check["bound"],
              not absent and value <= check["bound"])
+        if len(ungated):
+            emit(check["id"], "ALL", arm, f"max_share_ungated_base_below_{min_base:g}",
+                 _max_share(ungated), check["bound"], None)
     new = values.get("new")
     met = bool(new is not None and not new["absent_pairs"] and new["value"] <= check["bound"])
-    return {"met": met, "bound": check["bound"], "values": values,
+    return {"met": met, "bound": check["bound"], "min_base": min_base, "values": values,
             "error": None if new is not None else f"{check['file']} absent in the new arm"}
 
 
-def eval_fit_ratio(check, fits, batches, emit):
+def eval_fit_ratio(check, ctx, emit):
     out = {"bound": check["bound"], "values": {}, "missing_controls": {}}
     met = True
-    for batch in batches:
-        for arm, fit in fits.items():
+    for batch in ctx["batches"]:
+        for arm, fit in ctx["fits"].items():
             rows = _batch_fit(fit, batch, check["geography"])
             missing = _missing(rows, check["controls"])
             rows = rows[rows["control"].isin(check["controls"])]
@@ -126,21 +157,21 @@ def eval_fit_ratio(check, fits, batches, emit):
     return out
 
 
-def eval_fit_gap(check, fits, batches, emit):
+def eval_fit_gap(check, ctx, emit):
     measure = check["measure"]
     if measure not in ("net", "abs_error"):
         raise ValueError(f"check {check['id']}: measure must be 'net' or 'abs_error', got {measure!r}")
     out = {"bound": check["bound"], "measure": measure, "values": {}, "missing_controls": {}}
     met = True
-    for batch in batches:
-        for arm, fit in fits.items():
-            batch_rows = _batch_fit(fit, batch)
-            households = float(batch_rows.loc[batch_rows["control"] == check["households_control"],
-                                              "target_sum"].sum())
-            rows = batch_rows[batch_rows["geography"] == check["geography"]]
+    for batch in ctx["batches"]:
+        for arm, fit in ctx["fits"].items():
+            hh_rows = _batch_fit(fit, batch, check["households_geography"])
+            hh_rows = hh_rows[hh_rows["control"] == check["households_control"]]
+            households = float(hh_rows["target_sum"].iloc[0]) if len(hh_rows) == 1 else math.nan
+            rows = _batch_fit(fit, batch, check["geography"])
             missing = _missing(rows, check["controls"])
-            if check["households_control"] not in set(batch_rows["control"]):
-                missing.append(check["households_control"])
+            if len(hh_rows) != 1:
+                missing.append(f"{check['households_control']}@{check['households_geography']}")
             for control in check["controls"]:
                 row = rows[rows["control"] == control]
                 if row.empty or not households > 0:
@@ -161,29 +192,97 @@ def eval_fit_gap(check, fits, batches, emit):
     return out
 
 
-def eval_wape_vs_base(check, fits, batches, emit):
+def eval_wape_vs_base(check, ctx, emit):
     pattern = re.compile(check["exclude_regex"]) if check.get("exclude_regex") else None
     excluded = set(check.get("exclude_controls", ()))
     out = {"deltas": check["deltas"], "values": {}}
     met = True
     for geography, delta in check["deltas"].items():
-        wape = {}
-        for arm, fit in fits.items():
-            rows = fit[fit["batch"].isin(batches) & (fit["geography"] == geography)
-                       & (fit["target_sum"] > 0) & ~fit["control"].isin(excluded)]
+        wape, controls = {}, {}
+        for arm, fit in ctx["fits"].items():
+            rows = fit[fit["batch"].isin(ctx["batches"]) & (fit["geography"] == geography)
+                       & ~fit["control"].isin(excluded)]
             if pattern is not None:
                 rows = rows[~rows["control"].astype(str).str.contains(pattern)]
+            controls[arm] = set(rows["control"])
+            rows = rows[rows["target_sum"] > 0]
             target = float(rows["target_sum"].sum())
             wape[arm] = float(rows["abs_error"].sum()) / target if target > 0 else math.nan
+        only_base = sorted(controls["base"] - controls["new"])
+        only_new = sorted(controls["new"] - controls["base"])
         limit = wape["base"] + delta
-        ok = wape["new"] <= limit
-        for arm in fits:
+        ok = not only_base and not only_new and wape["new"] <= limit
+        for arm in ctx["fits"]:
             emit(check["id"], "ALL", arm, f"wape_{geography}", wape[arm], limit, ok)
         out["values"][geography] = {"wape_base": wape["base"], "wape_new": wape["new"],
-                                    "limit": limit, "met": bool(ok)}
+                                    "limit": limit, "met": bool(ok),
+                                    "controls_only_in_base": only_base,
+                                    "controls_only_in_new": only_new}
         met = met and ok
     out["met"] = bool(met)
     return out
+
+
+def _levels(table, check):
+    return table if not check.get("levels") else table[table["level"].isin(check["levels"])]
+
+
+def eval_conservation_vs_base(check, ctx, emit):
+    tables = {arm: _levels(pd.read_csv(diag / "household_conservation.csv"), check)
+              for arm, diag in ctx["arms"].items()}
+    deltas = {"abs_deviation_share": check["abs_deviation_share_delta"],
+              "conserved_pair_share": check["conserved_pair_share_delta"]}
+    out = {"deltas": deltas, "values": {}}
+    met = True
+    for batch in ctx["batches"]:
+        rows = {arm: t[t["batch"] == batch].set_index("level") for arm, t in tables.items()}
+        levels = sorted(set(rows["base"].index) | set(rows["new"].index))
+        if not levels:
+            met = False
+            out["values"][batch] = "no conservation rows"
+        for level in levels:
+            for metric, delta in deltas.items():
+                base = float(rows["base"][metric].get(level, math.nan))
+                new = float(rows["new"][metric].get(level, math.nan))
+                if metric == "abs_deviation_share":
+                    limit, ok = base + delta, new <= base + delta
+                else:
+                    limit, ok = base - delta, new >= base - delta
+                if math.isnan(base) and math.isnan(new) and level in rows["base"].index \
+                        and level in rows["new"].index:
+                    ok = True  # both undefined (parent weight 0 / no pairs): not worse
+                emit(check["id"], batch, "base", f"{metric}_{level}", base, limit, None)
+                emit(check["id"], batch, "new", f"{metric}_{level}", new, limit, ok)
+                out["values"][f"{batch}/{level}/{metric}"] = {"base": base, "new": new,
+                                                              "limit": limit, "met": bool(ok)}
+                met = met and ok
+    out["met"] = bool(met)
+    return out
+
+
+def eval_no_sequential_fallback(check, ctx, emit):
+    tables = {arm: _levels(pd.read_csv(diag / "solver_paths.csv"), check)
+              for arm, diag in ctx["arms"].items()}
+    out = {"levels": check.get("levels"), "values": {}}
+    met = True
+    for batch in ctx["batches"]:
+        for arm, table in tables.items():
+            rows = table[table["batch"] == batch]
+            value = float(rows["non_simultaneous"].sum()) if len(rows) else math.nan
+            ok = len(rows) > 0 and value == 0
+            emit(check["id"], batch, arm, "non_simultaneous_parents", value, 0, ok)
+            out["values"][f"{arm}/{batch}"] = {
+                str(r.level): int(r.non_simultaneous) for r in rows.itertuples()}
+            if arm == "new":
+                met = met and ok
+    out["met"] = bool(met)
+    return out
+
+
+EVALUATORS = {"input_pairs": eval_input_pairs, "fit_ratio": eval_fit_ratio,
+              "fit_gap": eval_fit_gap, "wape_vs_base": eval_wape_vs_base,
+              "conservation_vs_base": eval_conservation_vs_base,
+              "no_sequential_fallback": eval_no_sequential_fallback}
 
 
 def main(argv=None) -> int:
@@ -198,30 +297,28 @@ def main(argv=None) -> int:
     arms = {"base": args.base_diag, "new": args.new_diag}
     fits = {arm: read_fit(diag) for arm, diag in arms.items()}
     batches = list(spec.get("batches") or sorted(fits["new"]["batch"].unique()))
+    absent = {arm: sorted(set(batches) - set(fit["batch"])) for arm, fit in fits.items()}
+    if any(absent.values()):
+        print(f"FAIL: requested batches absent from control_fit.csv: {absent}", file=sys.stderr)
+        return 1
     ids = [c["id"] for c in spec["checks"]]
     if len(set(ids)) != len(ids):
         raise ValueError(f"check ids must be unique: {ids}")
+    unknown = [c["kind"] for c in spec["checks"] if c["kind"] not in EVALUATORS]
+    if unknown:
+        raise ValueError(f"unknown check kind(s) {unknown}; known: {list(KINDS)}")
 
     rows = []
 
     def emit(check, batch, arm, metric, value, limit, met):
         rows.append({"check": check, "batch": batch, "arm": arm, "metric": metric,
-                     "value": value, "limit": limit, "met": bool(met)})
+                     "value": value, "limit": limit, "met": None if met is None else bool(met)})
 
+    ctx = {"arms": arms, "fits": fits, "batches": batches}
     checks = {}
     for check in spec["checks"]:
-        kind = check["kind"]
-        if kind == "input_pairs":
-            checks[check["id"]] = eval_input_pairs(check, arms, batches, emit)
-        elif kind == "fit_ratio":
-            checks[check["id"]] = eval_fit_ratio(check, fits, batches, emit)
-        elif kind == "fit_gap":
-            checks[check["id"]] = eval_fit_gap(check, fits, batches, emit)
-        elif kind == "wape_vs_base":
-            checks[check["id"]] = eval_wape_vs_base(check, fits, batches, emit)
-        else:
-            raise ValueError(f"check {check['id']}: unknown kind {kind!r}; known: {KINDS}")
-        checks[check["id"]]["kind"] = kind
+        checks[check["id"]] = EVALUATORS[check["kind"]](check, ctx, emit)
+        checks[check["id"]]["kind"] = check["kind"]
 
     args.out.mkdir(parents=True, exist_ok=True)
     table = pd.DataFrame(rows, columns=["check", "batch", "arm", "metric", "value", "limit", "met"])

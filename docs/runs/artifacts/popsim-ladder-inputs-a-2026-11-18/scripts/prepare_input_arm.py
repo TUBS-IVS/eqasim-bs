@@ -24,6 +24,11 @@ the branch's library functions, in the order ``mid.assemble_batch_folder`` appli
 3. ``employment_level`` (A5): ``employment_level.reconcile_kreis_employment_levels`` with the bridge
    of ``employment_level.employed_bridge_report`` computed from the batch's seed tables
    (``data/seed_persons.csv``, ``data/seed_households.csv``) as ``run_popsim_mid`` computes it.
+   The step reads the batch's OWN seed; that equals the pipeline's whole seed only while
+   ``stratify_regiostar`` is false (production), because the stratified path filters the seed per
+   stratum. A batch folder does not record that key, so the step needs ``--prod-work-dir`` and
+   fails unless every production batch carries the same seed files (sha256), which is what an
+   unstratified run writes. Whether the base seed equals the production seed is logged.
 
 Writes ``<out>/prepare_log.json``: the arguments, the steps, the library commit (``--commit``; the
 archive has no git metadata on the run server), the bridge, the counts each library step returns
@@ -33,17 +38,20 @@ per KREIS column whether it changed and by how much at most. Exit 1 when any fil
 
 Assertions for the production run (arguments, so the two-Kreis test fixture can pass its own):
 ``--expected-kreise`` (default 8), ``--expected-batches`` (default 60) and
-``--trip-class-tolerance-persons`` (default 1.0; the persons of a Kreis are the sum of the
-single-year ``M_AGE_<y>`` / ``F_AGE_<y>`` columns of its model cells, ages 0 to
-``controls_builder.SINGLE_YEAR_MAX_AGE``).
+``--trip-class-tolerance-persons`` (default 1.0). The persons of a Kreis are the pipeline's
+definition, ``controls_builder.person_total_by_kreis`` over the age x sex band columns of its model
+cells; the band set depends on ``fine_teen_age_bands``, which is read from the batch's
+``controls.csv`` (the variant whose 100 m person backbone controls it carries) unless
+``--fine-teen-age-bands on|off`` is given.
 
-The cell parquet (Germany-wide on the server) is read with pyarrow, with only the grid id and the
-single-year age columns the universes need, filtered to the model cells.
+The cell parquet (Germany-wide on the server) is read with pyarrow, with only the grid id, the
+single-year age columns the universes need and the band columns, filtered to the model cells.
 
 Usage (eqasim-bs code on PYTHONPATH, eqasim environment):
   python prepare_input_arm.py --base <arm-4 dir>/batch_000 --out <arm dir>/batch_000 \
       --steps kreis_universe,kreis_follow_grids --prod-work-dir <production popsim work dir> \
       --cells-100m <zensus2022_grid_100m_de_prepared.parquet> --commit <eqasim-bs sha>
+  (--commit is required)
 """
 from __future__ import annotations
 
@@ -71,7 +79,7 @@ KREIS_FILE = "data/control_totals_KREIS.csv"
 ARS_KREIS = "ARS_kreis"
 ID_COLUMNS = (folders.GEO_100M, folders.GEO_1KM, folders.GEO_KREIS)
 TRIP_CLASS_ENTRY = "trip_class"
-ALL_AGES_UNIVERSE = (0, None)
+SEED_FILES = ("data/seed_persons.csv", "data/seed_households.csv")
 
 
 def _sha256(path: Path) -> str:
@@ -139,6 +147,46 @@ def check_trip_class_partition(targets: pd.DataFrame, persons_by_kreis: dict, *,
     return {"active": True, "deviation_persons_by_kreis": deviation, "max_abs_deviation_persons": worst}
 
 
+def fine_teen_age_bands_of(controls_df: pd.DataFrame) -> bool:
+    """``fine_teen_age_bands`` of the run that wrote ``controls.csv``.
+
+    The variant whose 100 m person backbone controls are all in ``controls.csv``; ``ValueError``
+    when both or neither match (then give ``--fine-teen-age-bands``).
+    """
+    fields = set(controls_df["control_field"])
+    matches = []
+    for fine in (True, False):
+        names = {f"{c.name}_{c.geography}"
+                 for c in control_spec.tier0_backbone_catalog(fine_teen_age_bands=fine)
+                 if c.geography == control_spec.GEO_100M
+                 and c.seed_table == control_spec.SEED_TABLE_PERSONS}
+        if names <= fields:
+            matches.append(fine)
+    if len(matches) != 1:
+        raise ValueError(f"controls.csv matches the person backbone of fine_teen_age_bands {matches}; "
+                         "give --fine-teen-age-bands on|off")
+    return matches[0]
+
+
+def check_unstratified_seed(prod_batches: list[Path], base: Path) -> dict:
+    """``ValueError`` unless all production batches carry the same seed files (module docstring)."""
+    record = {}
+    for name in SEED_FILES:
+        digests = {b.name: _sha256(b / name) for b in prod_batches}
+        if len(set(digests.values())) != 1:
+            raise ValueError(f"{name} differs between the production batches: the run looks "
+                             "stratified (stratify_regiostar on), so a batch seed is not the whole "
+                             "seed and the employment bridge would not be the pipeline's")
+        production = next(iter(digests.values()))
+        base_digest = _sha256(base / name)
+        if base_digest != production:
+            logger.warning("%s of the base batch differs from the production seed; the bridge is "
+                           "computed from the base batch's seed", name)
+        record[name] = {"production_sha256": production, "base_sha256": base_digest,
+                        "base_equals_production": base_digest == production}
+    return record
+
+
 def universe_years(universes) -> list[int]:
     """The single-year ages the universes need (the stage's parquet load rule)."""
     return sorted({year for lower, upper in universes
@@ -197,19 +245,23 @@ def universe_step(kreis: pd.DataFrame, crosswalk: pd.DataFrame, controls_df: pd.
     active = active_entries_of(controls_df)
     tier3 = tier3_names_of(kreis.columns)
     universes = controls_builder.apportion_universes(active, tier3)
-    cells = load_model_cells(
-        args.cells_100m, full_xwalk[folders.GEO_100M],
-        [f"{sex}_AGE_{y}" for sex in ("M", "F")
-         for y in universe_years([*universes, ALL_AGES_UNIVERSE])])
-    cells, column_of = controls_builder.add_universe_weight_columns(
-        cells, [*universes, ALL_AGES_UNIVERSE])
-    persons = mid._kreis_pop_from_crosswalk(cells, full_xwalk, weight_col=column_of[ALL_AGES_UNIVERSE])
+    fine_teen = (fine_teen_age_bands_of(controls_df) if args.fine_teen_age_bands is None
+                 else args.fine_teen_age_bands == "on")
+    band_columns = list(controls_builder.person_band_census_columns(fine_teen_age_bands=fine_teen))
+    year_columns = [f"{sex}_AGE_{y}" for sex in ("M", "F") for y in universe_years(universes)]
+    cells = load_model_cells(args.cells_100m, full_xwalk[folders.GEO_100M],
+                             list(dict.fromkeys([*year_columns, *band_columns])))
+    cells, column_of = controls_builder.add_universe_weight_columns(cells, universes)
+    kreis_by_row = cells[folders.GEO_100M].map(
+        full_xwalk.set_index(folders.GEO_100M)[folders.GEO_KREIS])
+    persons = controls_builder.person_total_by_kreis(cells, kreis_by_row,
+                                                     fine_teen_age_bands=fine_teen)
     log["kreis_targets"] = {
         "n_batches": len(batches), "kreise": targets[ARS_KREIS].tolist(),
+        "fine_teen_age_bands": fine_teen,
         "trip_class_partition": check_trip_class_partition(
             targets, persons, tolerance_persons=args.trip_class_tolerance_persons)}
-    apportion_map = controls_builder.apportion_weight_columns(
-        active, tier3, {u: column_of[u] for u in universes})
+    apportion_map = controls_builder.apportion_weight_columns(active, tier3, column_of)
     by_col = {col: mid._kreis_pop_from_crosswalk(cells, full_xwalk, weight_col=col)
               for col in sorted(set(apportion_map.values()))}
     controls_map = {name: (name,) for name in apportion_map}
@@ -245,8 +297,10 @@ def follow_grids_step(kreis, fine, crosswalk, controls_df, log) -> pd.DataFrame:
     return out
 
 
-def employment_step(kreis, fine, crosswalk, folder: Path, log) -> pd.DataFrame:
+def employment_step(kreis, fine, crosswalk, folder: Path, args, log) -> pd.DataFrame:
     """A5: the employed classes of the KREIS employment families at the Zensus level."""
+    prod = production_batches(args.prod_work_dir, expected_batches=args.expected_batches)
+    log["seed_check"] = check_unstratified_seed(prod, args.base)
     seed_persons = pd.read_csv(folder / "data" / "seed_persons.csv")
     seed_households = pd.read_csv(folder / "data" / "seed_households.csv")
     report = employment_level.employed_bridge_report(
@@ -297,7 +351,9 @@ def parse_args(argv=None):
     parser.add_argument("--steps", required=True, help=f"comma list of {', '.join(STEPS)}")
     parser.add_argument("--prod-work-dir", type=Path, help="production work dir (kreis_universe)")
     parser.add_argument("--cells-100m", type=Path, help="prepared 100 m cell parquet (kreis_universe)")
-    parser.add_argument("--commit", default="unknown", help="eqasim-bs commit of the library code")
+    parser.add_argument("--commit", required=True, help="eqasim-bs commit of the library code")
+    parser.add_argument("--fine-teen-age-bands", choices=("on", "off"),
+                        help="band set of the trip_class person total (default: read from controls.csv)")
     parser.add_argument("--expected-kreise", type=int, default=8)
     parser.add_argument("--expected-batches", type=int, default=60)
     parser.add_argument("--trip-class-tolerance-persons", type=float, default=1.0)
@@ -308,6 +364,8 @@ def parse_args(argv=None):
         parser.error(f"--steps: give distinct names of {list(STEPS)}, got {steps}")
     if "kreis_universe" in steps and (args.prod_work_dir is None or args.cells_100m is None):
         parser.error("kreis_universe needs --prod-work-dir and --cells-100m")
+    if "employment_level" in steps and args.prod_work_dir is None:
+        parser.error("employment_level needs --prod-work-dir (the unstratified-seed check)")
     args.steps = [s for s in STEPS if s in steps]  # the library order, whatever the given order
     return args
 
@@ -341,7 +399,7 @@ def main(argv=None) -> int:
     if "kreis_follow_grids" in args.steps:
         kreis = follow_grids_step(kreis, fine, crosswalk, controls_df, log)
     if "employment_level" in args.steps:
-        kreis = employment_step(kreis, fine, crosswalk, out, log)
+        kreis = employment_step(kreis, fine, crosswalk, out, args, log)
     write_kreis_table(out, kreis)
 
     log["kreis_columns"] = column_changes(before, read_table(data / "control_totals_KREIS.csv"))
