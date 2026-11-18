@@ -204,6 +204,14 @@ INTEGERIZER_SEARCH_MAX_SWEEPS_SETTING = "INTEGERIZER_SEARCH_MAX_SWEEPS"
 INTEGERIZER_SEARCH_SHORTLIST_SETTING = "INTEGERIZER_SEARCH_SHORTLIST"
 INTEGERIZER_ROUNDINGS = ("round", "controlled")
 INTEGERIZER_CONTROLLED_METHODS = ("search", "lp")
+# Run-time and memory options (fork release 0.10.0+bs.2, issue #656); meaning of each: the
+# matching KEY_* comments in config_keys.
+STORE_POSITIVE_WEIGHT_ROWS_ONLY_SETTING = "STORE_POSITIVE_WEIGHT_ROWS_ONLY"
+FAST_PATHS_SETTING = "FAST_PATHS"
+RUN_TIME_OPTION_SETTINGS = (STORE_POSITIVE_WEIGHT_ROWS_ONLY_SETTING, FAST_PATHS_SETTING)
+# The fork release that reads the run-time options: 0.10.0+bs.N with N >= this number.
+_RUN_TIME_OPTIONS_FORK_VERSION = re.compile(r"^0\.10\.0\+bs\.(\d+)$")
+_RUN_TIME_OPTIONS_MIN_BS_NUMBER = 2
 _MAX_INTEGERIZER_SEED = 2 ** 32
 
 
@@ -260,6 +268,8 @@ _OVERRIDE_RULES = {
         _is_known_controlled_method, f"one of {list(INTEGERIZER_CONTROLLED_METHODS)}"),
     INTEGERIZER_SEARCH_MAX_SWEEPS_SETTING: (_is_positive_int, "a positive integer (sweeps)"),
     INTEGERIZER_SEARCH_SHORTLIST_SETTING: (_is_positive_int, "an integer >= 1"),
+    STORE_POSITIVE_WEIGHT_ROWS_ONLY_SETTING: (_is_bool, "a boolean"),
+    FAST_PATHS_SETTING: (_is_bool, "a boolean"),
 }
 
 
@@ -274,14 +284,16 @@ def populationsim_overrides_from_config(
     integerizer_penalty_floor: object, integerizer_penalty_cap: object,
     integerizer_parent_total_factor: object, integerizer_conserve_penalty: object,
     integerizer_controlled_method: object, integerizer_search_max_sweeps: object,
-    integerizer_search_shortlist: object,
+    integerizer_search_shortlist: object, store_positive_weight_rows_only: object,
+    fast_paths: object,
 ) -> dict[str, object]:
     """Build the PopulationSim settings that the tracked config decides, validated.
 
     ``INTEGERIZER_PATH_RECORD`` is always ``true``: the per-call path record is the
     evidence the integerizer gate of the batch check reads. The controlled-rounding
-    penalty values, the controlled method, the two search options and the rounding mode are
-    always written too, also with the neutral ``round``. Meaning of the configurable values:
+    penalty values, the controlled method, the two search options, the two run-time options
+    and the rounding mode are always written too, also with the neutral values. Meaning of
+    the configurable values:
     the matching ``KEY_*`` comments in ``braunschweig.popsim.stage.config_keys``.
 
     Raises
@@ -303,6 +315,8 @@ def populationsim_overrides_from_config(
         INTEGERIZER_CONTROLLED_METHOD_SETTING: integerizer_controlled_method,
         INTEGERIZER_SEARCH_MAX_SWEEPS_SETTING: integerizer_search_max_sweeps,
         INTEGERIZER_SEARCH_SHORTLIST_SETTING: integerizer_search_shortlist,
+        STORE_POSITIVE_WEIGHT_ROWS_ONLY_SETTING: store_positive_weight_rows_only,
+        FAST_PATHS_SETTING: fast_paths,
     }
     _validate_overrides(overrides)
     if integerizer_penalty_cap < integerizer_penalty_floor:
@@ -311,6 +325,36 @@ def populationsim_overrides_from_config(
             f"{INTEGERIZER_PENALTY_FLOOR_SETTING}, got cap {integerizer_penalty_cap!r} < "
             f"floor {integerizer_penalty_floor!r}.")
     return overrides
+
+
+def require_fork_version_for_run_time_options(
+    overrides: Mapping[str, object], populationsim_version: object,
+) -> None:
+    """Refuse a run-time option (``STORE_POSITIVE_WEIGHT_ROWS_ONLY``, ``FAST_PATHS``) that is
+    on while the configured PopulationSim version is older than fork ``0.10.0+bs.2``.
+
+    An older fork ignores a setting it does not know, so the run would go on with the option
+    off while the tracked config says on: a silent fallback. The version must match
+    ``0.10.0+bs.N`` with ``N >= 2`` (``N`` compared as an integer); anything else, upstream
+    ``0.10.0`` included, is refused. With both options off nothing is checked. ``overrides``
+    is read with ``.get``: a missing entry counts as off (some test doubles return ``{}``).
+
+    Raises
+    ------
+    ValueError
+        Naming the config key and the version.
+    """
+    match = _RUN_TIME_OPTIONS_FORK_VERSION.match(str(populationsim_version))
+    supported = match is not None and int(match.group(1)) >= _RUN_TIME_OPTIONS_MIN_BS_NUMBER
+    for setting in RUN_TIME_OPTION_SETTINGS:
+        if overrides.get(setting) is True and not supported:
+            # The config key is the setting name in lower case under the popsim prefix.
+            raise ValueError(
+                f"braunschweig.population.popsim.{setting.lower()} is true, but the configured "
+                f"PopulationSim version is {populationsim_version!r}: the option needs the "
+                f"group's fork 0.10.0+bs.{_RUN_TIME_OPTIONS_MIN_BS_NUMBER} or later (an older "
+                "fork ignores the setting silently). Set the option to false or require a "
+                "newer fork in braunschweig.population.popsim.populationsim_version.")
 
 
 def _validate_overrides(overrides: Mapping[str, object]) -> None:

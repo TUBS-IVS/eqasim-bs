@@ -156,6 +156,22 @@ KEY_INTEGERIZER_SEARCH_MAX_SWEEPS = "braunschweig.population.popsim.integerizer_
 # Number of candidate swaps the "search" method keeps per step, integer >= 1
 # (-> INTEGERIZER_SEARCH_SHORTLIST).
 KEY_INTEGERIZER_SEARCH_SHORTLIST = "braunschweig.population.popsim.integerizer_search_shortlist"
+# Run-time and memory options of the group's fork (release 0.10.0+bs.2, issue #656). Each is a
+# boolean (code default False), written into every batch settings.yaml (-> the PopulationSim
+# setting of the same name in capitals) and part of the work-dir batch signature, never volatile.
+# Both need fork 0.10.0+bs.2 or later: an older fork ignores a setting it does not know, so the
+# stage refuses either option with an older configured version
+# (braunschweig.popsim.folders.require_fork_version_for_run_time_options). The expectation that
+# the synthetic population is byte-identical with them on is an ASSUMPTION until the run manifest
+# of issue #656 holds the evidence.
+# store_positive_weight_rows_only (-> STORE_POSITIVE_WEIGHT_ROWS_ONLY): the weight tables of the
+# sub-geographies keep only the rows with a positive weight; this cuts the peak memory of a batch
+# run.
+KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY = (
+    "braunschweig.population.popsim.store_positive_weight_rows_only")
+# fast_paths (-> FAST_PATHS): the fork's faster implementations of hot steps, with bit-identical
+# results (same expectation and same evidence owed as above).
+KEY_FAST_PATHS = "braunschweig.population.popsim.fast_paths"
 # Solver-path gate (braunschweig.popsim.stage.solver_path_gate, design goal G5, issue #645):
 # float in (0, 1] or null. Above this share of parent zones NOT integerized simultaneously
 # (per geography) the stage raises; null = warn only. Volatile: it only gates, no result, so a

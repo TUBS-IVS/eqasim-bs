@@ -31,12 +31,15 @@ def test_controlled_rounding_keys_are_recorded(tmp_path) -> None:
     prefix = "braunschweig.population.popsim.integerizer_"
     names = ("rounding", "penalty_floor", "penalty_cap", "parent_total_factor", "conserve_penalty",
              "controlled_method", "search_max_sweeps", "search_shortlist")
-    doc = {"config": {prefix + name: f"v_{name}" for name in names}}
+    # The run-time options are not integerizer options, so they have another prefix.
+    keys = {prefix + name: f"v_{name}" for name in names}
+    for name in ("store_positive_weight_rows_only", "fast_paths"):
+        keys["braunschweig.population.popsim." + name] = f"v_{name}"
     config = tmp_path / "config_rounding.yml"
-    config.write_text(yaml.safe_dump(doc), encoding="utf-8")
+    config.write_text(yaml.safe_dump({"config": keys}), encoding="utf-8")
     record = provenance.collect_run_provenance(str(config))
-    for name in names:
-        assert record[prefix + name] == f"v_{name}"
+    for key, value in keys.items():
+        assert record[key] == value
 
 
 def test_collect_records_config_keys_and_pipeline_commit(tmp_path) -> None:

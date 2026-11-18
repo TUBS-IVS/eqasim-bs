@@ -602,6 +602,11 @@ config:
   braunschweig.population.popsim.integerizer_controlled_method: "search"
   braunschweig.population.popsim.integerizer_search_max_sweeps: 200
   braunschweig.population.popsim.integerizer_search_shortlist: 24
+  # Run-time and memory options of fork 0.10.0+bs.2 or later (meaning: KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY
+  # and KEY_FAST_PATHS in config_keys.py); off until the run manifest of issue #656 shows the
+  # identity of the population. Turning one on needs populationsim_version 0.10.0+bs.2 or later.
+  braunschweig.population.popsim.store_positive_weight_rows_only: false
+  braunschweig.population.popsim.fast_paths: false
   # Solver-path gate (meaning: KEY_SOLVER_FALLBACK_ERROR_RATE in config_keys.py): null = warn
   # only. ASSUMPTION-grade threshold, to be set from the first full run (design, issue #645).
   braunschweig.population.popsim.solver_fallback_error_rate: null

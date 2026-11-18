@@ -39,6 +39,8 @@ def _values(**overrides):
         stage.KEY_INTEGERIZER_CONTROLLED_METHOD: "search",
         stage.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS: 200,
         stage.KEY_INTEGERIZER_SEARCH_SHORTLIST: 24,
+        stage.KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY: False,
+        stage.KEY_FAST_PATHS: False,
         stage.KEY_SOLVER_FALLBACK_ERROR_RATE: 0.2,
         "random_seed": 4711,
     }
@@ -104,6 +106,10 @@ def _stub_early_steps(monkeypatch, calls, settings_path):
 @pytest.mark.parametrize("key, bad_value, settings_text, error_match", [
     (stage.KEY_INTEGERIZER_DRAW, "banana", None, "INTEGERIZER_DRAW"),
     (stage.KEY_INTEGERIZER_ROUNDING, "banana", None, "INTEGERIZER_ROUNDING"),
+    # The run-time options need fork 0.10.0+bs.2 (the configured version here is bs.1): refused
+    # up front, before any seed is built, instead of being ignored silently by the older fork.
+    (stage.KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY, True, None, "store_positive_weight_rows_only"),
+    (stage.KEY_FAST_PATHS, True, None, "fast_paths"),
     # The gate only runs after all batches (hours); a typo must fail before the seed build.
     (stage.KEY_SOLVER_FALLBACK_ERROR_RATE, 2.0, None, "solver_fallback_error_rate"),
     # A server-local settings file contradicting the tracked timeout (0.10.0's key name).
@@ -216,6 +222,7 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
         "INTEGERIZER_PENALTY_CAP": 100000.0, "INTEGERIZER_PARENT_TOTAL_FACTOR": 10.0,
         "INTEGERIZER_CONSERVE_PENALTY": 100000.0, "INTEGERIZER_CONTROLLED_METHOD": "search",
         "INTEGERIZER_SEARCH_MAX_SWEEPS": 200, "INTEGERIZER_SEARCH_SHORTLIST": 24,
+        "STORE_POSITIVE_WEIGHT_ROWS_ONLY": False, "FAST_PATHS": False,
     }
     # The last two positional arguments of the batch runner are the overrides and the seed base.
     assert seen["batches_args"][-2:] == (expected_overrides, 4711)

@@ -37,6 +37,8 @@ NEUTRAL = {
     "INTEGERIZER_CONTROLLED_METHOD": "search",
     "INTEGERIZER_SEARCH_MAX_SWEEPS": 200,
     "INTEGERIZER_SEARCH_SHORTLIST": 24,
+    "STORE_POSITIVE_WEIGHT_ROWS_ONLY": False,
+    "FAST_PATHS": False,
 }
 
 
@@ -129,6 +131,10 @@ def test_override_equal_raw_value_is_accepted_without_a_duplicate_key():
     ({"INTEGERIZER_SEARCH_SHORTLIST": 0}, "INTEGERIZER_SEARCH_SHORTLIST"),
     ({"INTEGERIZER_SEARCH_SHORTLIST": "24"}, "INTEGERIZER_SEARCH_SHORTLIST"),
     ({"INTEGERIZER_SEARCH_SHORTLIST": True}, "INTEGERIZER_SEARCH_SHORTLIST"),
+    ({"STORE_POSITIVE_WEIGHT_ROWS_ONLY": "true"}, "STORE_POSITIVE_WEIGHT_ROWS_ONLY"),
+    ({"STORE_POSITIVE_WEIGHT_ROWS_ONLY": 1}, "STORE_POSITIVE_WEIGHT_ROWS_ONLY"),
+    ({"FAST_PATHS": "yes"}, "FAST_PATHS"),
+    ({"FAST_PATHS": 0}, "FAST_PATHS"),
 ])
 def test_override_type_validation(changes, key):
     with pytest.raises(ValueError, match=key):
@@ -141,7 +147,8 @@ def _from_config(**changes):
         integerizer_rounding="round", integerizer_penalty_floor=100.0,
         integerizer_penalty_cap=100000.0, integerizer_parent_total_factor=10.0,
         integerizer_conserve_penalty=100000.0, integerizer_controlled_method="search",
-        integerizer_search_max_sweeps=200, integerizer_search_shortlist=24)
+        integerizer_search_max_sweeps=200, integerizer_search_shortlist=24,
+        store_positive_weight_rows_only=False, fast_paths=False)
     values.update(changes)
     return folders.populationsim_overrides_from_config(**values)
 
@@ -158,6 +165,11 @@ def test_overrides_from_config_carries_all_settings_and_validates():
     assert search["INTEGERIZER_SEARCH_SHORTLIST"] == 8
     with pytest.raises(ValueError, match="INTEGERIZER_CONTROLLED_METHOD"):
         _from_config(integerizer_controlled_method="banana")
+    run_time = _from_config(store_positive_weight_rows_only=True, fast_paths=True)
+    assert run_time["STORE_POSITIVE_WEIGHT_ROWS_ONLY"] is True
+    assert run_time["FAST_PATHS"] is True
+    with pytest.raises(ValueError, match="FAST_PATHS"):
+        _from_config(fast_paths="yes")
     with pytest.raises(ValueError, match="INTEGERIZER_DRAW"):
         _from_config(integerizer_draw="yes")
     with pytest.raises(ValueError, match="INTEGERIZER_ROUNDING"):
@@ -320,6 +332,8 @@ def test_signature_changes_with_each_override_and_seed_base():
         {"INTEGERIZER_CONTROLLED_METHOD": "lp"},
         {"INTEGERIZER_SEARCH_MAX_SWEEPS": 100},
         {"INTEGERIZER_SEARCH_SHORTLIST": 12},
+        {"STORE_POSITIVE_WEIGHT_ROWS_ONLY": True},
+        {"FAST_PATHS": True},
     ):
         signature = _base_signature(
             settings_overrides=_overrides(**changes), integerizer_seed_base=None)
@@ -358,6 +372,8 @@ def _values(**changes):
         config_keys.KEY_INTEGERIZER_CONTROLLED_METHOD: "search",
         config_keys.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS: 200,
         config_keys.KEY_INTEGERIZER_SEARCH_SHORTLIST: 24,
+        config_keys.KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY: False,
+        config_keys.KEY_FAST_PATHS: False,
         "random_seed": 4711,
     }
     values.update(changes)
@@ -388,6 +404,14 @@ def test_stage_passes_the_controlled_rounding_settings_on():
     assert overrides["INTEGERIZER_CONTROLLED_METHOD"] == "lp"
     assert overrides["INTEGERIZER_SEARCH_MAX_SWEEPS"] == 50
     assert overrides["INTEGERIZER_SEARCH_SHORTLIST"] == 8
+
+
+def test_stage_passes_the_run_time_options_on():
+    overrides, _ = stage._read_integerizer_settings(_ExecuteContext(_values(**{
+        config_keys.KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY: True,
+        config_keys.KEY_FAST_PATHS: True})))
+    assert overrides["STORE_POSITIVE_WEIGHT_ROWS_ONLY"] is True
+    assert overrides["FAST_PATHS"] is True
 
 
 def test_stage_rejects_an_unknown_draw():
@@ -427,6 +451,8 @@ def test_stage_declares_neutral_defaults_non_volatile():
         (config_keys.KEY_INTEGERIZER_CONTROLLED_METHOD, "search"),
         (config_keys.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS, 200),
         (config_keys.KEY_INTEGERIZER_SEARCH_SHORTLIST, 24),
+        (config_keys.KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY, False),
+        (config_keys.KEY_FAST_PATHS, False),
     ):
         declared_default, kwargs = context.declared[key]
         assert declared_default == default
@@ -447,3 +473,35 @@ def test_base_config_states_the_tracked_values():
     assert config[config_keys.KEY_INTEGERIZER_CONTROLLED_METHOD] == "search"
     assert config[config_keys.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS] == 200
     assert config[config_keys.KEY_INTEGERIZER_SEARCH_SHORTLIST] == 24
+    # Both run-time options stay off until the run manifest of issue #656 shows the identity.
+    assert config[config_keys.KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY] is False
+    assert config[config_keys.KEY_FAST_PATHS] is False
+
+
+# ---------------------------------------------------------------------------
+# fork version guard of the run-time options
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("key, setting", [
+    ("store_positive_weight_rows_only", "STORE_POSITIVE_WEIGHT_ROWS_ONLY"),
+    ("fast_paths", "FAST_PATHS"),
+])
+@pytest.mark.parametrize("version", ["0.10.0+bs.1", "0.10.0", "0.9.0+bs.5", "garbage"])
+def test_run_time_option_on_with_a_fork_that_ignores_it_raises(key, setting, version):
+    # An older fork drops an unknown setting silently: a silent fallback to the old behaviour.
+    overrides = _overrides(**{setting: True})
+    with pytest.raises(ValueError, match=key) as error:
+        folders.require_fork_version_for_run_time_options(overrides, version)
+    assert repr(version) in str(error.value)
+
+
+@pytest.mark.parametrize("setting", ["STORE_POSITIVE_WEIGHT_ROWS_ONLY", "FAST_PATHS"])
+@pytest.mark.parametrize("version", ["0.10.0+bs.2", "0.10.0+bs.10"])
+def test_run_time_option_on_with_a_fork_that_reads_it_passes(setting, version):
+    # bs.10 > bs.2 only as an integer, not as a string.
+    folders.require_fork_version_for_run_time_options(_overrides(**{setting: True}), version)
+
+
+@pytest.mark.parametrize("overrides", [NEUTRAL, {}], ids=["both-off", "test-double-empty"])
+def test_run_time_options_off_pass_with_any_version(overrides):
+    folders.require_fork_version_for_run_time_options(overrides, "0.10.0+bs.1")
