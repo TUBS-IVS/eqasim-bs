@@ -1,0 +1,109 @@
+{
+  "src": "/home/felix/i647/arm2_A",
+  "random_seed": 1234,
+  "populationsim_version": "0.10.0+bs.2",
+  "overrides": {
+    "KEEP_FRACTIONAL_SAMPLE_WEIGHTS": true,
+    "INTEGERIZER_DRAW": "gumbel",
+    "INTEGERIZER_TIMEOUT": 7200,
+    "INTEGERIZER_PATH_RECORD": true,
+    "INTEGERIZER_ROUNDING": "round",
+    "INTEGERIZER_PENALTY_FLOOR": 100.0,
+    "INTEGERIZER_PENALTY_CAP": 100000.0,
+    "INTEGERIZER_PARENT_TOTAL_FACTOR": 10.0,
+    "INTEGERIZER_CONSERVE_PENALTY": 100000.0,
+    "INTEGERIZER_CONTROLLED_METHOD": "search",
+    "INTEGERIZER_SEARCH_MAX_SWEEPS": 200,
+    "INTEGERIZER_SEARCH_SHORTLIST": 24,
+    "STORE_POSITIVE_WEIGHT_ROWS_ONLY": true,
+    "FAST_PATHS": true
+  },
+  "batches": {
+    "batch_000": {
+      "integerizer_seed": 2541077060,
+      "files_sha256_before_settings_rewrite": {
+        "configs/controls.csv": "0786907b0346d3dd353e6cda173fb8ff0d55dad1a924e37531be2044170628da",
+        "configs/logging.yaml": "863e60c0683d8232c8418428867df29687f04204daa90adb19a3378da6b208c4",
+        "configs/settings.yaml": "681957f2a5ec4c8b106e1984561b832fbbcd640aeafdf59662995072b4b09046",
+        "data/control_totals_KREIS.csv": "bac4aa79792c5e2bbf089512fc83f4f219c3bf686d13e08c7a18ebb0f68b63c4",
+        "data/control_totals_STAAT.csv": "ab346622a3997159f6d15c53c5323aab2c12469b119ce3ded61447cacaa0a531",
+        "data/control_totals_WELT.csv": "f4512bfcc01d6376ef90e0d2099dfbeb6c336c59fadc793d084b999ddd1b5571",
+        "data/control_totals_ZENSUS100m.csv": "e2e4cab4466a5630c7a40e3b94dcc2d9adfcf2085963fdb40033481d37091723",
+        "data/control_totals_ZENSUS1km.csv": "6e8d447a469ea59e78f72e635b26d49096a40d4875f14f7ef95ebfeb034059f8",
+        "data/geo_cross_walk.csv": "773102853d7e2f56fcfad7bf1cbc1cb1ca31ceaaaf4aae0131dc5ab9e4abd79e",
+        "data/seed_households.csv": "c331557d04da3726bcb1ac2899bcca5dc507628882e0db63d48391a25fa95ece",
+        "data/seed_persons.csv": "76890fcc886343a85b808de64d56875863947401c60d816dbd7f37572ffd2091"
+      },
+      "settings_sha256": "a427527b0288ef7b4c5427e9b4b333dac0ce29d86149089f212900b49be324a0",
+      "removed_lines": [
+        "# Set by the tracked config (braunschweig.population.popsim.*), not by this file:",
+        "KEEP_FRACTIONAL_SAMPLE_WEIGHTS: true",
+        "INTEGERIZER_DRAW: 'gumbel'",
+        "INTEGERIZER_TIMEOUT: 7200",
+        "INTEGERIZER_PATH_RECORD: true",
+        "INTEGERIZER_RANDOM_SEED: 2541077060"
+      ],
+      "appended_lines": [
+        "# Set by the tracked config (braunschweig.population.popsim.*), not by this file:",
+        "KEEP_FRACTIONAL_SAMPLE_WEIGHTS: true",
+        "INTEGERIZER_DRAW: 'gumbel'",
+        "INTEGERIZER_TIMEOUT: 7200",
+        "INTEGERIZER_PATH_RECORD: true",
+        "INTEGERIZER_ROUNDING: 'round'",
+        "INTEGERIZER_PENALTY_FLOOR: 100.0",
+        "INTEGERIZER_PENALTY_CAP: 100000.0",
+        "INTEGERIZER_PARENT_TOTAL_FACTOR: 10.0",
+        "INTEGERIZER_CONSERVE_PENALTY: 100000.0",
+        "INTEGERIZER_CONTROLLED_METHOD: 'search'",
+        "INTEGERIZER_SEARCH_MAX_SWEEPS: 200",
+        "INTEGERIZER_SEARCH_SHORTLIST: 24",
+        "STORE_POSITIVE_WEIGHT_ROWS_ONLY: true",
+        "FAST_PATHS: true",
+        "INTEGERIZER_RANDOM_SEED: 2541077060"
+      ]
+    },
+    "batch_032": {
+      "integerizer_seed": 3729427116,
+      "files_sha256_before_settings_rewrite": {
+        "configs/controls.csv": "0786907b0346d3dd353e6cda173fb8ff0d55dad1a924e37531be2044170628da",
+        "configs/logging.yaml": "863e60c0683d8232c8418428867df29687f04204daa90adb19a3378da6b208c4",
+        "configs/settings.yaml": "3f2fdd9999779f33d5630ce80adcd7b3df83fc4acaa282e274ac64c5ddb3d1e7",
+        "data/control_totals_KREIS.csv": "c8d51130fbb7818fa2a4ba360cedcb7ea0dd3eafcf822ca2c7426a47e5044998",
+        "data/control_totals_STAAT.csv": "ab346622a3997159f6d15c53c5323aab2c12469b119ce3ded61447cacaa0a531",
+        "data/control_totals_WELT.csv": "f4512bfcc01d6376ef90e0d2099dfbeb6c336c59fadc793d084b999ddd1b5571",
+        "data/control_totals_ZENSUS100m.csv": "9951ff89ebb29e6cb5be5c7b63d77267c304ab86bdcd7f43c4ad07de6116b606",
+        "data/control_totals_ZENSUS1km.csv": "993b7ff07414d5ae88a37dc79f764b7245f6c85e28fea2279fc5c223abffd6da",
+        "data/geo_cross_walk.csv": "13e64a216feaf3bd78e67624d0029e7a101ef7f2ec114d149e5af756feb44485",
+        "data/seed_households.csv": "c331557d04da3726bcb1ac2899bcca5dc507628882e0db63d48391a25fa95ece",
+        "data/seed_persons.csv": "76890fcc886343a85b808de64d56875863947401c60d816dbd7f37572ffd2091"
+      },
+      "settings_sha256": "1ad51633ac95c7f112efe49357fd4f277b3d0bc8d9b0aab76ea0c3cf505bd719",
+      "removed_lines": [
+        "# Set by the tracked config (braunschweig.population.popsim.*), not by this file:",
+        "KEEP_FRACTIONAL_SAMPLE_WEIGHTS: true",
+        "INTEGERIZER_DRAW: 'gumbel'",
+        "INTEGERIZER_TIMEOUT: 7200",
+        "INTEGERIZER_PATH_RECORD: true",
+        "INTEGERIZER_RANDOM_SEED: 3729427116"
+      ],
+      "appended_lines": [
+        "# Set by the tracked config (braunschweig.population.popsim.*), not by this file:",
+        "KEEP_FRACTIONAL_SAMPLE_WEIGHTS: true",
+        "INTEGERIZER_DRAW: 'gumbel'",
+        "INTEGERIZER_TIMEOUT: 7200",
+        "INTEGERIZER_PATH_RECORD: true",
+        "INTEGERIZER_ROUNDING: 'round'",
+        "INTEGERIZER_PENALTY_FLOOR: 100.0",
+        "INTEGERIZER_PENALTY_CAP: 100000.0",
+        "INTEGERIZER_PARENT_TOTAL_FACTOR: 10.0",
+        "INTEGERIZER_CONSERVE_PENALTY: 100000.0",
+        "INTEGERIZER_CONTROLLED_METHOD: 'search'",
+        "INTEGERIZER_SEARCH_MAX_SWEEPS: 200",
+        "INTEGERIZER_SEARCH_SHORTLIST: 24",
+        "STORE_POSITIVE_WEIGHT_ROWS_ONLY: true",
+        "FAST_PATHS: true",
+        "INTEGERIZER_RANDOM_SEED: 3729427116"
+      ]
+    }
+  }
+}

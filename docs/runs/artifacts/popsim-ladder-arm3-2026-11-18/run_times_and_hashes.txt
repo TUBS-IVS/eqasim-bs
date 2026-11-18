@@ -1,0 +1,124 @@
+== round_off batch_000
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 18:34.54
+	Maximum resident set size (kbytes): 28649972
+exit 0
+checkpoint store bytes: 8096399701
+== round_off batch_032
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 24:22.85
+	Maximum resident set size (kbytes): 32269716
+exit 0
+checkpoint store bytes: 9816172708
+fb808110f8e051b8cea7cc62e09448fa73be9c29a7909bab4689fe609824c601  /home/felix/i646/ev/round_off/batch_000/output/final_expanded_household_ids.csv
+d2a81d767965c266666e1b7c3005e359ab9284a3573f5993b4ca2ddf13304852  /home/felix/i646/ev/round_off/batch_000/output/synthetic_households.csv
+b52c4037827f3ea805406b6829db5e00dfa7c8516328b597411743176c1080ae  /home/felix/i646/ev/round_off/batch_000/output/synthetic_persons.csv
+1f482bf13ad15a557cdda6bdb3e87e0a7ef593e76e4fddd26dd2f5d7b03d19a7  /home/felix/i646/ev/round_off/batch_032/output/final_expanded_household_ids.csv
+ca009f7d29c3decb3c41a9fe98cb130c895c5e36aa949b3adfa50dd7c21fb0a1  /home/felix/i646/ev/round_off/batch_032/output/synthetic_households.csv
+2846f0e3238148831d66fdd5dd018ed262bbc04832dc88bc0292fb0ad3c2b2d7  /home/felix/i646/ev/round_off/batch_032/output/synthetic_persons.csv
+== round_on batch_000
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 9:56.60
+	Maximum resident set size (kbytes): 2810252
+exit 0
+checkpoint store bytes: 438592165
+== round_on batch_032
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 13:00.40
+	Maximum resident set size (kbytes): 2809312
+exit 0
+checkpoint store bytes: 464064812
+fb808110f8e051b8cea7cc62e09448fa73be9c29a7909bab4689fe609824c601  /home/felix/i646/ev/round_on/batch_000/output/final_expanded_household_ids.csv
+d2a81d767965c266666e1b7c3005e359ab9284a3573f5993b4ca2ddf13304852  /home/felix/i646/ev/round_on/batch_000/output/synthetic_households.csv
+b52c4037827f3ea805406b6829db5e00dfa7c8516328b597411743176c1080ae  /home/felix/i646/ev/round_on/batch_000/output/synthetic_persons.csv
+1f482bf13ad15a557cdda6bdb3e87e0a7ef593e76e4fddd26dd2f5d7b03d19a7  /home/felix/i646/ev/round_on/batch_032/output/final_expanded_household_ids.csv
+ca009f7d29c3decb3c41a9fe98cb130c895c5e36aa949b3adfa50dd7c21fb0a1  /home/felix/i646/ev/round_on/batch_032/output/synthetic_households.csv
+2846f0e3238148831d66fdd5dd018ed262bbc04832dc88bc0292fb0ad3c2b2d7  /home/felix/i646/ev/round_on/batch_032/output/synthetic_persons.csv
+== controlled_off batch_000
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 11:53.56
+	Maximum resident set size (kbytes): 27412684
+exit 0
+checkpoint store bytes: 8096399997
+== controlled_off batch_032
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 15:10.88
+	Maximum resident set size (kbytes): 32590964
+exit 0
+checkpoint store bytes: 9816174540
+19f721ce45cd66778c6b3a5cb989d2549ce1703e4b4417875c0bd79c65aa13a4  /home/felix/i646/ev/controlled_off/batch_000/output/final_expanded_household_ids.csv
+ba25e5d6dfa273f9ceb89579394338a539f421fe03a902df682519c05b5e3425  /home/felix/i646/ev/controlled_off/batch_000/output/synthetic_households.csv
+41225fff76f546b0a09836bf7ddf6a485a6ed58536b28b2d9245fd1e187fd09e  /home/felix/i646/ev/controlled_off/batch_000/output/synthetic_persons.csv
+51699a50e1ad37dd08581a3ef26b36ef1beb7896552bfa64b1dadea5851cf5ed  /home/felix/i646/ev/controlled_off/batch_032/output/final_expanded_household_ids.csv
+5c5f157568cdb4b69fe87e746e1e8e3ea5cb4321b7c8dfb7091efa6876ca9742  /home/felix/i646/ev/controlled_off/batch_032/output/synthetic_households.csv
+b3de0e979bc2a255e7d37b340800a3b40d966b6e1f7cdfebb1693ac6cc4a8d07  /home/felix/i646/ev/controlled_off/batch_032/output/synthetic_persons.csv
+== controlled_on batch_000
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 3:55.33
+	Maximum resident set size (kbytes): 2773708
+exit 0
+checkpoint store bytes: 437991453
+== controlled_on batch_032
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 4:51.28
+	Maximum resident set size (kbytes): 2776076
+exit 0
+checkpoint store bytes: 464197204
+19f721ce45cd66778c6b3a5cb989d2549ce1703e4b4417875c0bd79c65aa13a4  /home/felix/i646/ev/controlled_on/batch_000/output/final_expanded_household_ids.csv
+ba25e5d6dfa273f9ceb89579394338a539f421fe03a902df682519c05b5e3425  /home/felix/i646/ev/controlled_on/batch_000/output/synthetic_households.csv
+41225fff76f546b0a09836bf7ddf6a485a6ed58536b28b2d9245fd1e187fd09e  /home/felix/i646/ev/controlled_on/batch_000/output/synthetic_persons.csv
+51699a50e1ad37dd08581a3ef26b36ef1beb7896552bfa64b1dadea5851cf5ed  /home/felix/i646/ev/controlled_on/batch_032/output/final_expanded_household_ids.csv
+5c5f157568cdb4b69fe87e746e1e8e3ea5cb4321b7c8dfb7091efa6876ca9742  /home/felix/i646/ev/controlled_on/batch_032/output/synthetic_households.csv
+b3de0e979bc2a255e7d37b340800a3b40d966b6e1f7cdfebb1693ac6cc4a8d07  /home/felix/i646/ev/controlled_on/batch_032/output/synthetic_persons.csv
+== controlled_off_repeat batch_000
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 11:13.95
+	Maximum resident set size (kbytes): 27528504
+exit 0
+checkpoint store bytes: 8096399997
+19f721ce45cd66778c6b3a5cb989d2549ce1703e4b4417875c0bd79c65aa13a4  /home/felix/i646/ev/controlled_off_repeat/batch_000/output/final_expanded_household_ids.csv
+ba25e5d6dfa273f9ceb89579394338a539f421fe03a902df682519c05b5e3425  /home/felix/i646/ev/controlled_off_repeat/batch_000/output/synthetic_households.csv
+41225fff76f546b0a09836bf7ddf6a485a6ed58536b28b2d9245fd1e187fd09e  /home/felix/i646/ev/controlled_off_repeat/batch_000/output/synthetic_persons.csv
+== round_off_b028 batch_028
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 46:42.09
+	Maximum resident set size (kbytes): 33663972
+exit 0
+checkpoint store bytes: 10069930307
+5bf59db199e92baac76f7ee6260470feb08aad109c4a695b2b88e0563d55fe4b  /home/felix/i646/ev/round_off_b028/batch_028/output/final_expanded_household_ids.csv
+736baac5d27a4dacd140e5fa7435b8a68f815e461f9cc75aca9e87f921cd4672  /home/felix/i646/ev/round_off_b028/batch_028/output/synthetic_households.csv
+537f53f740d068256adb082c7d060c203fdb3724d9d21a2995a1087f530255cf  /home/felix/i646/ev/round_off_b028/batch_028/output/synthetic_persons.csv
+== round_on_b028 batch_028
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 28:59.25
+	Maximum resident set size (kbytes): 3994664
+exit 0
+checkpoint store bytes: 540997323
+5bf59db199e92baac76f7ee6260470feb08aad109c4a695b2b88e0563d55fe4b  /home/felix/i646/ev/round_on_b028/batch_028/output/final_expanded_household_ids.csv
+736baac5d27a4dacd140e5fa7435b8a68f815e461f9cc75aca9e87f921cd4672  /home/felix/i646/ev/round_on_b028/batch_028/output/synthetic_households.csv
+537f53f740d068256adb082c7d060c203fdb3724d9d21a2995a1087f530255cf  /home/felix/i646/ev/round_on_b028/batch_028/output/synthetic_persons.csv
+== controlled_off_b028 batch_028
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 22:08.72
+	Maximum resident set size (kbytes): 33480380
+exit 0
+checkpoint store bytes: 10069944523
+9070153915d3f668611e5c54c5828a60ceed4b67d933cd0fcef27fef5f017ce2  /home/felix/i646/ev/controlled_off_b028/batch_028/output/final_expanded_household_ids.csv
+c75a0c03ee095b85515489e07e1c98c38589fd0a5ccc398521b5372fa6ae99ee  /home/felix/i646/ev/controlled_off_b028/batch_028/output/synthetic_households.csv
+f3cc74e9ae2ac1ce4b6a96c0034aec36433ab80c44494dc0533b48b28810b4ad  /home/felix/i646/ev/controlled_off_b028/batch_028/output/synthetic_persons.csv
+== controlled_on_b028 batch_028
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 7:19.49
+	Maximum resident set size (kbytes): 2775836
+exit 0
+checkpoint store bytes: 542132627
+9070153915d3f668611e5c54c5828a60ceed4b67d933cd0fcef27fef5f017ce2  /home/felix/i646/ev/controlled_on_b028/batch_028/output/final_expanded_household_ids.csv
+c75a0c03ee095b85515489e07e1c98c38589fd0a5ccc398521b5372fa6ae99ee  /home/felix/i646/ev/controlled_on_b028/batch_028/output/synthetic_households.csv
+f3cc74e9ae2ac1ce4b6a96c0034aec36433ab80c44494dc0533b48b28810b4ad  /home/felix/i646/ev/controlled_on_b028/batch_028/output/synthetic_persons.csv
+== arm 2 (popsim-ladder-arm2-2026-11-17) batch_000
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 34:16.47
+	Maximum resident set size (kbytes): 28784012
+fb808110f8e051b8cea7cc62e09448fa73be9c29a7909bab4689fe609824c601  /home/felix/i647/arm2_A/batch_000/output/final_expanded_household_ids.csv
+== arm 2 (popsim-ladder-arm2-2026-11-17) batch_032
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 44:43.02
+	Maximum resident set size (kbytes): 32345272
+1f482bf13ad15a557cdda6bdb3e87e0a7ef593e76e4fddd26dd2f5d7b03d19a7  /home/felix/i647/arm2_A/batch_032/output/final_expanded_household_ids.csv
+== diag_round_off
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 28:12.93
+	Maximum resident set size (kbytes): 9932444
+exit 0
+== diag_controlled_off
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 28:09.68
+	Maximum resident set size (kbytes): 9949552
+exit 0
+== diag_controlled_on
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:27.34
+	Maximum resident set size (kbytes): 1045376
+exit 0
