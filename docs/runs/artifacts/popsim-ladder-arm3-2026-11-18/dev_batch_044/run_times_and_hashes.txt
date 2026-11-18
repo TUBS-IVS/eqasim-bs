@@ -1,0 +1,30 @@
+== cap_arm2 batch_044
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 19:30.71
+	Maximum resident set size (kbytes): 31157412
+exit 0
+tool: {"populationsim": "0.10.0+bs.1", "direct_url": "{\"url\":\"https://github.com/TUBS-IVS/populationsim\",\"vcs_info\":{\"vcs\":\"git\",\"commit_id\":\"3d70f73c00fb47696b56552540c2d858d93ed356\",\"requested_revision\":\"3d70f73c00fb47696b56552540c2d858d93ed356\"}}"}
+== dev_c_off batch_044
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 12:02.64
+	Maximum resident set size (kbytes): 31110816
+exit 0
+tool: {"populationsim_file": "/home/felix/i646/populationsim_rcbs2/populationsim/__init__.py", "python": "3.12.4", "ortools": "9.14.6206", "scipy": "1.17.0", "numpy": "1.26.4", "pandas": "2.3.3", "numba": "0.63.1"}
+candidate commit: bb329f9148902edfebaa9a85e260060f3f14c269
+== dev_c_on batch_044
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 4:50.03
+	Maximum resident set size (kbytes): 2808844
+exit 0
+tool: {"populationsim_file": "/home/felix/i646/populationsim_rcbs2/populationsim/__init__.py", "python": "3.12.4", "ortools": "9.14.6206", "scipy": "1.17.0", "numpy": "1.26.4", "pandas": "2.3.3", "numba": "0.63.1"}
+candidate commit: bb329f9148902edfebaa9a85e260060f3f14c269
+== sha256 of the outputs
+bc94cddd3eace62f662e13bdccf7d70447139a6fea86ee2972582520e9bb76cd  /home/felix/i646/cap_arm2/batch_044/output/final_expanded_household_ids.csv
+53771cc80af39b31b5c09c5585ee28f6ff6570ebebed78f775b66eeaf3a8de5f  /home/felix/i646/cap_arm2/batch_044/output/synthetic_households.csv
+35f928ca2b5cce3d13f9d3c9192f4fcccbac184fe8542e966e53e1ca791d2cc9  /home/felix/i646/cap_arm2/batch_044/output/synthetic_persons.csv
+0a4c0e9241fe97ca86e6fa390c29dc51011e0ce36dbb2669f5a3c7b9b7ee3ddf  /home/felix/i646/dev_c_off/batch_044/output/final_expanded_household_ids.csv
+49c3630288b7c0615005e456ba6161d9f2e7c638a7e5ccc61db02e1cdaf24eb1  /home/felix/i646/dev_c_off/batch_044/output/synthetic_households.csv
+16f55a8c929579468aa088dd0f59afc2f17006626fb1b6b33c35411ddc32d117  /home/felix/i646/dev_c_off/batch_044/output/synthetic_persons.csv
+0a4c0e9241fe97ca86e6fa390c29dc51011e0ce36dbb2669f5a3c7b9b7ee3ddf  /home/felix/i646/dev_c_on/batch_044/output/final_expanded_household_ids.csv
+49c3630288b7c0615005e456ba6161d9f2e7c638a7e5ccc61db02e1cdaf24eb1  /home/felix/i646/dev_c_on/batch_044/output/synthetic_households.csv
+16f55a8c929579468aa088dd0f59afc2f17006626fb1b6b33c35411ddc32d117  /home/felix/i646/dev_c_on/batch_044/output/synthetic_persons.csv
+== diagnostics
+diag_cap_arm2_044: 	Elapsed (wall clock) time (h:mm:ss or m:ss): 14:37.88 	Maximum resident set size (kbytes): 9322000 
+diag_dev_c_on: 	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:12.43 	Maximum resident set size (kbytes): 958832 

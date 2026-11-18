@@ -1,0 +1,197 @@
+id: popsim-ladder-arm3-2026-11-18
+date: '2026-11-18'
+repository:
+  commit: cb39a0448023ca40e5c1260dd4bb0d4cef5f7de2
+  branch: fix/i646-popsim-fair-rounding
+  notes: >-
+    PRE-REGISTRATION: this file was committed with the checks and bounds below before the arm-3
+    PopulationSim runs started; only results, artifacts and execution notes are added afterwards. The
+    commit is the eqasim-bs code on the run server (git archive) that writes the batch settings, runs the
+    diagnostics and reads the solver-path record; it is the tip of the stacked branch
+    chore/i656-popsim-batch-memory, i.e. this branch plus the option keys of issue #656, which
+    prepare_variant.py needs (the two options stay false in every arm of this record). PopulationSim is the
+    release candidate of 0.10.0+bs.2 of the group's fork at commit
+    d9a2e2810139e822ff2870a1845c30a509461462 (untagged at run time), installed from a clone of that commit
+    into a fresh copy of environments/populationsim (uv sync --frozen, then the fork package replaced:
+    scripts/install_candidate.sh). Scripts: scripts/prepare_variant.py, install_candidate.sh, run_arm.sh,
+    run_diag.sh, run_evidence.sh and compare_arm3.py of the artifact directory.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - the run overlay of prod100_20261031 (server-local), only as the configuration that produced the batch folders
+  notes: >-
+    Arm 3 = arm 2 of popsim-ladder-arm2-2026-11-17 (WP3, #647: fork 0.10.0+bs.1, fractional seed weights,
+    Gumbel draw, random_seed 1234, timeout 7200 s, resolved seed codes, rescaled building-type targets) plus
+    WP4 (#646): integerizer_rounding "controlled" with integerizer_controlled_method "search" and the code
+    defaults of the other controlled-rounding keys. The arm-2 folders of batch_000 and batch_032 are copied
+    (configs/ and data/ only); prepare_variant.py removes the block of tracked options at the end of
+    settings.yaml and writes it again with the stage's own functions
+    (braunschweig.popsim.folders.populationsim_overrides_from_config, apply_populationsim_overrides,
+    batch_integerizer_seed, with_integerizer_seed), so nothing else changes (check G6 below). Arm 2r = the
+    same folders with integerizer_rounding "round", run with the same PopulationSim build: it must
+    reproduce arm 2 (neutral equivalence) and gives the household conservation of the round mode, which the
+    arm-2 diagnostics of 2026-11-17 did not hold yet. Arm 3 repeat = batch_000 of arm 3 run a second time.
+sampling:
+  rate: 1.0
+  scope: >-
+    two of the 60 batches of prod100_20261031 with their full seed pool of 218,097 MiD 2023 households
+    (scope as in popsim-ladder-baseline-2026-11-16).
+  notes: The rate is the share of each batch's cells simulated (all of them), not a population sampling rate.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run: PopulationSim standalone on the prepared batch folders (run_arm.sh), evaluated
+    with braunschweig.analysis.popsim_batch_diagnostics (with --misfit, which now includes the household
+    conservation table) and compare_arm3.py, which reads the solver-path record with the stage's own gate
+    (braunschweig.popsim.stage.solver_path_gate.summarize_controlled_calls).
+classification:
+- ab_test
+status:
+  execution: running
+  notes: >-
+    Pre-registered 2026-11-18 before the runs. Done before the pre-registration, on other batches and not
+    part of the gate: one development batch (batch_044) and the method replay on the captured integerizer
+    inputs of batch_044 and batch_028; both are reported below as development and engineering records.
+source: >-
+  felix run server, ~/i646 (arm folders, logs, diagnostics); committed copy in
+  docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/.
+environment: >-
+  run server (Linux KVM guest, not x86-64-v2); PopulationSim environment environments/populationsim of this
+  branch (still pinned to 0.10.0+bs.1) with the fork package replaced by the release candidate; checks and
+  diagnostics in the conda eqasim environment.
+validation:
+- metric: >-
+    G4: net rounding shift per control |I - F| / T at ZENSUS100m over the batch's cells (I integer, F float
+    weighted sum at that level, T target sum; fit.rounding_shift) for every ZENSUS100m control with
+    T >= 40, household total left out; bound: no control above 0.10 in arm 3, on both batches
+  reference: >-
+    none (property of the run); the 0.10 bound and the 40 threshold are the ASSUMPTION-grade design bound of
+    goal G4, fixed in the WP4 design before any run. The arm-2 counts are reported next to it
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/arm3_verdict.json
+- metric: >-
+    G3: integer control fit WAPE per geography (as in popsim-ladder-baseline-2026-11-16) against arm 2 of
+    the same batch, over the controls without building_type_* as in arm 2; bound arm 3 <= arm 2 + 0.02
+    (ZENSUS100m), + 0.02 (ZENSUS1km), + 0.01 (KREIS). The all-controls WAPE is reported too
+  reference: >-
+    arm 2 of popsim-ladder-arm2-2026-11-17 (model output, NOT observed data), recomputed from its committed
+    diagnostics by compare_arm3.py; ASSUMPTION-grade design bounds
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/arm3_comparison.csv
+- metric: >-
+    Solver path of arm 3 (the primary method ran everywhere): no non-simultaneous parent at KREIS,
+    ZENSUS1km or ZENSUS100m; every simultaneous integerizer call is recorded as controlled with the method
+    search, ended OPTIMAL or FEASIBLE and converged (integerizer_paths.csv read with
+    solver_path_gate.summarize_controlled_calls); bound: 0 exceptions on both batches
+  reference: none (property of the run)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/arm3_verdict.json
+- metric: >-
+    Neutral equivalence of the release candidate: arm 2r (rounding "round", every new option at its
+    default) gives the sha256 of final_expanded_household_ids.csv that arm 2 gave with 0.10.0+bs.1, for
+    batch_000 and batch_032
+  reference: >-
+    the committed hashes of arm 2 (run_times_and_hashes.txt of popsim-ladder-arm2-2026-11-17; model output)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/arm3_verdict.json
+- metric: >-
+    G1 kept: no seed group with positive survey weight starts at weight 0 (as in
+    popsim-ladder-arm1-2026-11-17: the fork's log line of the fractional weights and the seed-level call
+    row of the path record)
+  reference: none (property of the run)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/arm3_verdict.json
+- metric: >-
+    G2 kept: per H_GEW weight class the synthetic household share minus the class's seed weight share, per
+    batch; bound |gap| <= 5 percentage points in every class (as for arms 1 and 2)
+  reference: the seed's own H_GEW shares (survey data); ASSUMPTION-grade design bound
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/arm3_comparison.csv
+- metric: >-
+    G5 kept: integerizer_paths.csv present in both batches; its parents and non-simultaneous outcomes per
+    level equal the log parse of the diagnostics (solver_paths.csv)
+  reference: the WP1 log parser on the same run
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/arm3_verdict.json
+- metric: >-
+    G6 kept: the inputs of arm 3 are those of arm 2: every file under configs/ and data/ of a batch has the
+    sha256 of the arm-2 file, except configs/settings.yaml
+  reference: the arm-2 batch folders
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/arm3_verdict.json
+- metric: >-
+    G7 kept: installed tool recorded from the environment itself: version 0.10.0+bs.2 and fork commit
+    d9a2e2810139e822ff2870a1845c30a509461462 in tool.json of arm 3
+  reference: none
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/arm_3_A/tool.json
+- metric: >-
+    Reproducibility: the repeat of batch_000 (arm 3 repeat) gives the sha256 of
+    final_expanded_household_ids.csv of arm 3
+  reference: none
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/arm3_verdict.json
+- metric: >-
+    Reported without a bound, arm 2 (and arm 2r where arm 2 has no table) against arm 3: the status of every
+    integerizer call (the arm-2 path records are committed here); household conservation per level (share
+    of the parent weight that the sub level does not return to the same row, conserved pairs, distinct rows
+    at the parent and the sub level); the rare-group table (target T, float sum F, integer sum I at
+    ZENSUS100m for households of 5 and of 6 or more persons, single parents, ages 18-19 by sex); the
+    rounding WAPE per level; the search totals (swaps, distance before and after, row_shortfall,
+    zone_shortfall, hh_unreachable, hh_outside_lp, hh_excess); distinct seed households, Kish effective
+    size and the largest number of copies; the shares of the resolved seed records (the sex 3/9 ratio of
+    batch_032 missed its bound in arm 2); household totals; wall time and peak RSS (GNU time, in GiB)
+  reference: arm 2 (model output); survey shares are the seed's own H_GEW-weighted shares (survey data)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/arm3_comparison.csv
+- metric: >-
+    Development record, NOT gate evidence and known before this pre-registration: batch_044 (not a ladder
+    batch; its folder was prepared like arm 2) with rounding "round" (fork 0.10.0+bs.1) and with rounding
+    "controlled" (an earlier commit of the release candidate, bb329f9), compared with compare_arm3.py to
+    find defects before the gate; the controlled run was made with the two run-time options off and on
+  reference: the round run of the same batch (model output)
+  result: >-
+    Recorded as it was before the pre-registration in dev_batch_044/ (comparison table, verdict of the
+    script, rare groups, call statuses, run times and hashes). Its G7 entry is not met by construction:
+    the development runs took the fork code from a source tree, not from an installed package.
+  artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/dev_batch_044/arm3_comparison.csv
+- metric: >-
+    Engineering record, NOT gate evidence: the inputs of every simultaneous integerizer call of batch_044
+    and batch_028, captured from runs with fork 0.10.0+bs.1 (method_replay/scripts/capture_simul_instances.py),
+    are integerized again by the release candidate with rounding "round", with "controlled" and the method
+    search, and with "controlled" and the method lp, each from the same float weights
+    (method_replay/scripts/replay_methods.py): wall time, parents on a fallback path, household conservation
+    and the distance of the integer cell totals to the float cell totals and to the targets, per method
+  reference: the round method on the same inputs (model output)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/method_replay/method_summary.csv
+features:
+  note: >-
+    Evidence for popsim_method (WP4 of the PopulationSim repair, issue #646). Single-batch evidence on two
+    batches and one draw (random_seed 1234); the verdict for the full population is the full rerun (#648).
+artifacts:
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/dev_batch_044/arm3_comparison.csv
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/dev_batch_044/arm3_verdict.json
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/dev_batch_044/arm3_rare_groups.csv
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/dev_batch_044/arm3_call_status_counts.csv
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/dev_batch_044/run_times_and_hashes.txt
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/dev_batch_044/prepare_variant_controlled_off.json
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/dev_batch_044/prepare_variant_controlled_on.json
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/method_replay/scripts/capture_simul_instances.py
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/method_replay/scripts/run_capture.sh
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/method_replay/scripts/run_replay.sh
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/method_replay/scripts/replay_methods.py
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/method_replay/scripts/summarise_methods.py
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/scripts/prepare_variant.py
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/scripts/install_candidate.sh
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/scripts/run_arm.sh
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/scripts/run_diag.sh
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/scripts/run_evidence.sh
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/scripts/compare_arm3.py
+issues:
+- '#646'
+- '#647'
+- '#645'
+- '#138'
+notes: >-
+  Control fit against the model's own targets is not validation against observed behaviour.
