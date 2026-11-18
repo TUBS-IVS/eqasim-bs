@@ -152,3 +152,68 @@ def test_summarize_long_frame():
     row = employed[employed["key"] == "3101"].iloc[0]
     assert (row["amount"], row["base"], row["share"], row["cells"]) == (2, 10, 0.2, 1)
     assert (long["scope"] == "cell").any()
+
+
+def test_summarize_reports_a_ratio_pair_but_scores_no_contradiction():
+    cells = _cells(**{ic.EMPLOYED_COLUMNS[0]: {"A": 6, "B": 4}})
+    kreis = _kreis(work_by_employment_employed_work_KREIS={3101: 6.0, 3153: 0},
+                   work_by_employment_employed_nowork_KREIS={3101: 3.5, 3153: 0})
+    long = ic.summarize(kreis, cells, CROSSWALK)
+    assert "employed_survey" not in set(long["check"])
+    row = long[(long["check"] == "ratio_reported") & (long["key"] == "3101")].iloc[0]
+    assert (row["amount"], row["base"], row["cells"]) == (-0.5, 10, 0)
+    assert row["share"] == pytest.approx(0.95)
+    assert ic.violation("ratio", -0.5) == 0
+
+
+def test_summarize_writes_a_row_per_skipped_pair_and_check():
+    cells = pd.DataFrame({HH_TOTAL: [1.0]}, index=["A"])                 # no band, size ... columns
+    kreis = _kreis(employed_KREIS={3101: 1})
+    long = ic.summarize(kreis, cells, CROSSWALK)
+    skipped = long[long["check"] == "skipped"]
+    assert {"persons_all", "employed"} <= set(skipped[skipped["scope"] == "kreis"]["key"])
+    assert "persons_without_households" in set(skipped[skipped["scope"] == "cell"]["key"])
+    assert skipped["amount"].isna().all()
+    assert set(skipped["key"]) == set(long.attrs["skipped"])             # pairs and cell checks
+
+
+def test_kreis_without_grid_and_grid_without_kreis_are_counted(caplog):
+    cells = _cells(**{ic.EMPLOYED_COLUMNS[0]: {"A": 6, "D": 2}})
+    kreis = _kreis(employed_KREIS={3101: 6, 9999: 4})                    # 9999: no zone; 3153 absent
+    with caplog.at_level(logging.WARNING):
+        table = ic.kreis_vs_fine(kreis, cells, CROSSWALK, pairs=_pairs("employed"))
+    assert table.attrs["kreis_without_grid"] == ["9999"]
+    assert table.attrs["grid_without_kreis"] == ["3153"]
+    assert "9999" in caplog.text and "3153" in caplog.text
+    assert _row(table, "9999", "employed")["fine_sum"] == 0
+
+
+def test_missing_value_in_a_cell_is_not_read_as_zero_persons():
+    cells = _cells(**{HH_TOTAL: {"A": 2}})
+    cells.loc["A", ic.UNDER_18_COLUMNS[0]] = float("nan")               # household, persons unknown
+    table = ic.cell_contradictions(cells)
+    by = table.set_index("check")
+    assert by.loc["households_without_persons", "cells"] == 0           # not judged, not "no person"
+    assert table.attrs["nan_cells"]["households_without_persons"] == 1
+
+
+def test_pair_mixing_geographies_is_refused():
+    mixed = ic.KreisFinePair("mixed", ("employed_KREIS",),
+                             (ic.EMPLOYED_COLUMNS[0], "OWN_CARS_0_agg_ZENSUS1km"), "equal")
+    with pytest.raises(ValueError, match="mixed"):
+        ic.kreis_vs_fine(_kreis(employed_KREIS={3101: 1}), _cells(), CROSSWALK, pairs=(mixed,))
+
+
+def test_one_km_and_100m_zone_ids_may_collide_when_kept_apart():
+    crosswalk = pd.DataFrame({"ZENSUS100m": ["X1", "Y"], "ZENSUS1km": ["X1", "X2"],
+                              "KREIS": [3101, 3153]})
+    cells = pd.DataFrame(0.0, index=["X1", "Y"], columns=list(ic.EMPLOYED_COLUMNS))
+    cells[ic.EMPLOYED_COLUMNS[0]] = [5.0, 1.0]
+    cells_1km = pd.DataFrame({"OWN_CARS_0_agg_ZENSUS1km": {"X1": 7.0, "X2": 2.0}})
+    kreis = _kreis(employed_KREIS={3101: 5, 3153: 1}, number_of_cars_0_KREIS={3101: 7, 3153: 2})
+    table = ic.kreis_vs_fine(kreis, cells, crosswalk, pairs=_pairs("employed", "cars_0"),
+                             cells_1km=cells_1km)
+    assert _row(table, "3101", "employed")["fine_sum"] == 5
+    assert _row(table, "3101", "cars_0")["fine_sum"] == 7
+    with pytest.raises(ValueError, match="duplicate"):
+        ic.kreis_vs_fine(kreis, pd.concat([cells, cells_1km]), crosswalk, pairs=_pairs("cars_0"))
