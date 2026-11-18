@@ -19,7 +19,12 @@ ASSUMPTIONS
 * ``AGE_UNIVERSE_PAIRS`` are the pairs between a KREIS family on an age universe and the Zensus age
   x sex bands of that universe. They carry a rounding residual of the apportioned targets, so the
   bound is the configurable relative tolerance, applied only to Kreis parts with enough persons
-  (a small part has a large relative rounding residual and no statistical weight).
+  (a small part has a large relative rounding residual and no statistical weight). The default
+  bound 0.05 is an ASSUMPTION-grade design bound, not a measured tolerance. ``persons_all`` is
+  special: its KREIS side (``trip_class``) is split over the batches by the population share
+  (``POP_TOTAL`` of the cells) in the legacy AND the ``universe`` mode, so it holds only as far as
+  ``POP_TOTAL`` agrees with the sum of the age x sex bands per cell. Its measured size on the
+  production tables is in ``docs/runs/popsim-input-consistency-2026-11-18.yml``. It stays guarded.
 * The pairs ``households``, ``persons_14plus_low`` / ``persons_14plus_high`` (bounds, not
   equalities) and the ``ratio`` pair ``employed_survey`` are measured and written, never guarded.
 """
@@ -66,19 +71,33 @@ def guard_violations(summary: pd.DataFrame, *, check_grid_pairs: bool, check_age
     """
     kreis = summary[summary["scope"] == "kreis"]
     amount, base, share = kreis["amount"], kreis["base"], kreis["share"]
+    # A grid sum of 0 has no relative difference (NaN share): any difference against it counts.
+    broken_against_zero = (base == 0) & (amount > ic.TOLERANCE)
     grid = kreis["check"].isin(GRID_EQUAL_PAIRS) & check_grid_pairs & (
-        (share > GRID_EQUAL_TOLERANCE) | ((base == 0) & (amount > ic.TOLERANCE)))
-    age = kreis["check"].isin(AGE_UNIVERSE_PAIRS) & check_age_pairs & (
-        (share > age_tolerance) & (base >= min_persons))
+        (share > GRID_EQUAL_TOLERANCE) | broken_against_zero)
+    age = kreis["check"].isin(AGE_UNIVERSE_PAIRS) & check_age_pairs & (base >= min_persons) & (
+        (share > age_tolerance) | broken_against_zero)
     return kreis[grid | age]
 
 
-def max_guarded_relative_difference(summary: pd.DataFrame) -> float:
-    """Largest relative difference over the guarded pairs of ``summary`` (0.0 when there are none)."""
-    kreis = summary[(summary["scope"] == "kreis")
-                    & summary["check"].isin(GRID_EQUAL_PAIRS + AGE_UNIVERSE_PAIRS)]
-    values = kreis["share"].to_numpy(dtype=float)
-    return float(np.nanmax(values)) if np.isfinite(values).any() else 0.0
+def max_relative_differences(summary: pd.DataFrame, *, check_grid_pairs: bool, check_age_pairs: bool,
+                             min_persons: float) -> tuple:
+    """``(measured, guarded)``: largest relative difference of the KREIS pairs of ``summary``.
+
+    ``measured``: over every grid-following and age-universe pair row, enforced or not.
+    ``guarded``: over the rows the guard judges (their group is enforced; an age-universe row also
+    needs a grid sum of at least ``min_persons``). 0.0 when there is no finite value.
+    """
+    kreis = summary[summary["scope"] == "kreis"]
+    grid = kreis["check"].isin(GRID_EQUAL_PAIRS)
+    age = kreis["check"].isin(AGE_UNIVERSE_PAIRS)
+
+    def largest(mask) -> float:
+        values = kreis.loc[mask, "share"].to_numpy(dtype=float)
+        return float(np.nanmax(values)) if np.isfinite(values).any() else 0.0
+
+    judged = (grid & check_grid_pairs) | (age & check_age_pairs & (kreis["base"] >= min_persons))
+    return largest(grid | age), largest(judged)
 
 
 class ConsistencyRecorder:
@@ -98,7 +117,8 @@ class ConsistencyRecorder:
         self.check_age_pairs = bool(check_age_pairs)
         self.age_tolerance = float(age_tolerance)
         self.min_persons = float(min_persons)
-        self.max_rel = 0.0
+        self.max_rel_measured = 0.0
+        self.max_rel_guarded = 0.0
         self.n_rows = 0
         self.n_batches = 0
         self.n_violations = 0
@@ -156,7 +176,11 @@ class ConsistencyRecorder:
         out.to_csv(self.csv_path, mode="a", header=not self.csv_path.exists(), index=False)
         self.n_batches += 1
         self.n_rows += len(out)
-        self.max_rel = max(self.max_rel, max_guarded_relative_difference(summary))
+        measured, guarded = max_relative_differences(
+            summary, check_grid_pairs=self.check_grid_pairs, check_age_pairs=self.check_age_pairs,
+            min_persons=self.min_persons)
+        self.max_rel_measured = max(self.max_rel_measured, measured)
+        self.max_rel_guarded = max(self.max_rel_guarded, guarded)
         bad = guard_violations(
             summary, check_grid_pairs=self.check_grid_pairs, check_age_pairs=self.check_age_pairs,
             age_tolerance=self.age_tolerance, min_persons=self.min_persons)
@@ -177,10 +201,11 @@ class ConsistencyRecorder:
         return summary
 
     def log_run_summary(self) -> None:
-        """One INFO line over the run: batches, rows, largest guarded difference, skipped pairs."""
-        logger.info("%s %d batch(es), %d row(s) in %s; largest relative difference over the guarded "
-                    "pairs %.4g; %d guarded row(s) above their bound; pairs skipped for absent "
-                    "columns: %s", _TAG, self.n_batches, self.n_rows, self.csv_path, self.max_rel,
+        """One INFO line over the run: batches, rows, both largest differences, skipped pairs."""
+        logger.info("%s %d batch(es), %d row(s) in %s; largest relative difference: %.4g over all "
+                    "measured pairs, %.4g over the pairs the guard judges; %d judged row(s) above "
+                    "their bound; pairs skipped for absent columns: %s", _TAG, self.n_batches,
+                    self.n_rows, self.csv_path, self.max_rel_measured, self.max_rel_guarded,
                     self.n_violations, sorted(self._skipped) or "none")
 
     def report(self) -> dict:
@@ -190,7 +215,8 @@ class ConsistencyRecorder:
                 "table": str(self.csv_path),
                 "batches": self.n_batches,
                 "rows": self.n_rows,
-                "max_relative_difference": self.max_rel,
+                "max_relative_difference_measured": self.max_rel_measured,
+                "max_relative_difference_guarded": self.max_rel_guarded,
                 "rows_above_bound": self.n_violations,
                 "grid_pairs_enforced": self.check_grid_pairs,
                 "age_pairs_enforced": self.check_age_pairs,

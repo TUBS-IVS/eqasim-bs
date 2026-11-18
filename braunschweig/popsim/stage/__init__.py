@@ -1401,8 +1401,11 @@ class KreisConsistencySettings:
     def signature_payload(self):
         """Batch-signature entry: ``None`` at the legacy values (their signatures stay as they were).
 
-        The tolerance and the minimum persons only steer the guard, not a batch input, so they
-        are part of the payload but never move a legacy signature.
+        The tolerance and the minimum persons only steer the guard, not a batch input, so at the
+        legacy values they never move the signature. Off legacy they are part of the payload, so
+        changing only one of them then purges the completed batches although their inputs are
+        unchanged: deliberate over-invalidation, the safe direction (a reused batch can never be
+        stale), and cheap against the guard changing what a run accepts.
         """
         return None if self.is_legacy() else self.key_values()
 
@@ -1450,8 +1453,11 @@ class KreisConsistencySettings:
         return out
 
 
-#: Name of the stage whose report file :func:`_write_consistency_report` writes.
-STAGE_REPORT_NAME = "data.census.filtered"
+#: File name of the stage report, following the rule ``<name>_report.json`` with dots of the stage
+#: name turned into underscores (``gtfs_cleaned_report.json`` for ``data.gtfs.cleaned``): the stage
+#: module is registered as ``data.census.filtered`` only through a run alias, so the name is fixed
+#: here, not derived from the alias.
+REPORT_FILE_NAME = "census_filtered_report.json"
 
 
 def _declare_kreis_consistency_config(context) -> None:
@@ -1481,21 +1487,46 @@ def _read_kreis_consistency_config(context) -> KreisConsistencySettings:
     return KreisConsistencySettings(*values)
 
 
+def _json_safe(value):
+    """``value`` with every NaN / infinity replaced by ``None`` (strict JSON has no such number)."""
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, (float, np.floating)) and not np.isfinite(value):
+        return None
+    return value
+
+
 def _write_consistency_report(context, consistency: KreisConsistencySettings) -> Path:
-    """Write ``<context.path()>/data.census.filtered_report.json`` and set the run info.
+    """Write ``<context.path()>/census_filtered_report.json`` and set the run info.
 
     Counts of the Part A steps (#658): per key the value used, the universe apportionment's empty
     parts / regions and dropped target mass, the grid-following changes, the employment level
     bridge and its capped / unchanged parts, and the guard's largest relative difference and rows.
     """
-    report = consistency.report()
-    path = Path(context.path()) / f"{STAGE_REPORT_NAME}_report.json"
-    path.write_text(json.dumps(report, indent=2, sort_keys=True, default=str), encoding="utf-8")
+    report = _json_safe(consistency.report())
+    path = Path(context.path()) / REPORT_FILE_NAME
+    path.write_text(json.dumps(report, indent=2, sort_keys=True, default=str, allow_nan=False),
+                    encoding="utf-8")
     if consistency.recorder is not None:
         consistency.recorder.log_run_summary()
-        context.set_info("popsim_input_consistency_max_rel", consistency.recorder.max_rel)
+        # the measured one: the largest difference over all pairs, enforced or not
+        context.set_info("popsim_input_consistency_max_rel", consistency.recorder.max_rel_measured)
     logger.info("[popsim.stage] input-consistency report written to %s", path)
     return path
+
+
+def _write_consistency_report_without_masking(context, consistency: KreisConsistencySettings) -> None:
+    """:func:`_write_consistency_report` for a ``finally`` block: a failure is logged as an ERROR.
+
+    The report is a diagnosis aid; its failure must never replace the exception already in flight
+    (e.g. the guard's ValueError), so it is logged with its traceback instead of raised.
+    """
+    try:
+        _write_consistency_report(context, consistency)
+    except Exception:
+        logger.exception("[popsim.stage] the input-consistency report could not be written")
 
 
 def _resolve_cell_load_columns(context, controls_source, source_name: str, control_tiers, base_cols,
@@ -3219,7 +3250,7 @@ def execute(context) -> pd.DataFrame:
         )
     finally:
         # Also after a guard failure: the counts up to the failing batch are the diagnosis.
-        _write_consistency_report(context, consistency)
+        _write_consistency_report_without_masking(context, consistency)
     _log_integerizer_feasibility(context, work_dir)
     # Reported before the gate, which may stop the stage: with fast_paths on, how many balancer
     # calls the fork's fast kernels answered (no silent fallback to the original kernels).

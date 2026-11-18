@@ -276,8 +276,11 @@ def universe_apportion_weights(
       Kreis has some elsewhere (a legitimate zero; its rate is logged and warns above the
       fallback threshold, because a mis-built universe column empties every part);
     * ``n_empty_region``: the Kreis has no person of the universe at all, so its whole target
-      vanishes in every batch. Always a WARNING here; :func:`log_empty_region_universes` adds the
-      dropped target mass once per run.
+      vanishes in every batch. The per-batch line is DEBUG; :func:`log_empty_region_universes` warns
+      once per run with the dropped target mass.
+
+    Direct callers of :func:`assemble_batch_folder` get only the DEBUG line: the once-per-run WARNING
+    and the counts of the stage report come from :func:`run_popsim_mid`.
     """
     weights: dict[str, dict[str, float]] = {}
     n_parts = n_empty_part = n_empty_region = 0

@@ -199,7 +199,34 @@ def test_legacy_values_write_the_table_but_never_raise(tmp_path, monkeypatch):
     folders_ = fixture.build_batch_folders(tmp_path / "batches", settings=settings, recorder=recorder)
     assert tuple(folders_) == fixture.BATCH_NAMES
     # the legacy KREIS table does contradict its grids (that is what Part A repairs): measured only
-    assert recorder.max_rel > guard.GRID_EQUAL_TOLERANCE
+    assert recorder.max_rel_measured > guard.GRID_EQUAL_TOLERANCE
+    assert recorder.max_rel_guarded == 0.0  # nothing is judged at the legacy values
+
+
+def test_the_guard_flags_a_part_against_a_zero_grid_sum_only_when_judged():
+    rows = [("kreis", "Z", "persons_all", 1, 3.0, 0.0, float("nan"))]
+    judged = guard.guard_violations(
+        _summary(rows), check_grid_pairs=False, check_age_pairs=True, age_tolerance=0.05,
+        min_persons=0)
+    assert list(judged["key"]) == ["Z"]
+    exempt = guard.guard_violations(
+        _summary(rows), check_grid_pairs=False, check_age_pairs=True, age_tolerance=0.05,
+        min_persons=1000)
+    assert exempt.empty
+
+
+def test_measured_and_guarded_differences_differ_by_what_is_judged():
+    rows = [
+        ("kreis", "A", "cars_1", 1, 3.0, 1000.0, 0.003),
+        ("kreis", "B", "persons_all", 1, 40.0, 100.0, 0.4),     # a small part: measured, not judged
+        ("kreis", "C", "persons_0_17", 1, 20.0, 1000.0, 0.02),
+    ]
+    measured, guarded = guard.max_relative_differences(
+        _summary(rows), check_grid_pairs=True, check_age_pairs=True, min_persons=1000)
+    assert (measured, guarded) == (0.4, 0.02)
+    measured, guarded = guard.max_relative_differences(
+        _summary(rows), check_grid_pairs=False, check_age_pairs=False, min_persons=1000)
+    assert (measured, guarded) == (0.4, 0.0)
 
 
 def _summary(rows):
@@ -288,7 +315,7 @@ def test_new_keys_fill_the_report(tmp_path):
     report = settings.report()
     assert report["keys"][config_keys.KEY_KREIS_BATCH_APPORTIONMENT] == "universe"
     assert report["guard"]["batches"] == 2
-    assert report["guard"]["max_relative_difference"] == recorder.max_rel
+    assert report["guard"]["max_relative_difference_measured"] == recorder.max_rel_measured
     assert report["guard"]["rows"] > 0 and report["guard"]["rows_above_bound"] == 0
     universe = report["universe_apportionment"]
     assert universe["kreis_parts"] > 0
@@ -317,7 +344,80 @@ def test_the_stage_report_file_and_run_info(tmp_path):
     context = _Context()
     path = stage._write_consistency_report(context, settings)
 
-    assert path.name == "data.census.filtered_report.json"
+    assert path.name == "census_filtered_report.json"
     written = json.loads(path.read_text(encoding="utf-8"))
-    assert written["guard"]["max_relative_difference"] == recorder.max_rel
-    assert context.info == {"popsim_input_consistency_max_rel": recorder.max_rel}
+    assert written["guard"]["max_relative_difference_measured"] == recorder.max_rel_measured
+    assert written["guard"]["max_relative_difference_guarded"] == recorder.max_rel_guarded
+    # the info value is the MEASURED one (all pairs); the guarded one covers the judged rows only
+    assert context.info == {"popsim_input_consistency_max_rel": recorder.max_rel_measured}
+    assert recorder.max_rel_guarded <= recorder.max_rel_measured
+
+
+def test_the_report_is_strict_json_with_null_for_nan_and_infinity(tmp_path):
+    settings = stage.KreisConsistencySettings(*LEGACY)
+    recorder = settings.open_recorder(tmp_path / "work")
+    recorder.set("employment_level", below_grid_share=float("nan"), bridge=float("inf"), ok=0.5)
+
+    class _Context:
+        def path(self):
+            return str(tmp_path)
+
+        def set_info(self, key, value):
+            pass
+
+    path = stage._write_consistency_report(_Context(), settings)
+
+    # a strict parser (no NaN / Infinity literals) reads it
+    def refuse(constant):
+        raise AssertionError(f"non-strict JSON constant {constant}")
+
+    written = json.loads(path.read_text(encoding="utf-8"), parse_constant=refuse)
+    assert written["employment_level"] == {"below_grid_share": None, "bridge": None, "ok": 0.5}
+
+
+def test_a_failing_report_never_masks_the_guard_error(tmp_path, caplog):
+    settings = stage.KreisConsistencySettings(*LEGACY)
+
+    class _BrokenContext:
+        def path(self):
+            raise OSError("disk full")
+
+    with pytest.raises(ValueError, match="guard failed"):
+        try:
+            raise ValueError("guard failed")
+        finally:
+            stage._write_consistency_report_without_masking(_BrokenContext(), settings)
+    assert any(r.levelname == "ERROR" and "could not be written" in r.getMessage()
+               for r in caplog.records)
+
+
+def test_run_popsim_mid_puts_the_bridge_of_the_seed_into_the_recorder(tmp_path, monkeypatch):
+    # PRIMARY bridge path: run_popsim_mid computes the bridge from the seed (not a hand-passed
+    # value) and records it; the spy stops the run at the first batch, after the bridge is set.
+    # (test_popsim_employment_level covers that the bridge reaches assemble_batch_folder, not
+    # that it reaches the recorder.)
+    import test_popsim_employment_level as emp
+
+    class _Stop(Exception):
+        pass
+
+    def spy(*args, **kwargs):
+        raise _Stop
+
+    monkeypatch.setattr(batch_folders, "assemble_batch_folder", spy)
+    controls_df = emp._controls_df()
+    table, controls_map = emp._kreis_inputs(controls_df)
+    persons, households = emp._persons()
+    persons["P_ID"] = 1
+    settings, _recorder = _settings(("population", False, "zensus", 0.05, 1000), tmp_path / "work")
+
+    with pytest.raises(_Stop):
+        batch_folders.run_popsim_mid(
+            emp._cells()[:1], emp.EMPLOYED, controls_df, households, persons,
+            work_dir=tmp_path / "batches", settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+            max_cells=10, run_one=None, kreis_table=table, kreis_controls_map=controls_map,
+            **settings.run_popsim_mid_kwargs())
+
+    level = settings.report()["employment_level"]
+    assert level["bridge"] == pytest.approx(0.75)  # the value test_popsim_employment_level pins
+    assert {"bridge_family_universe", "below_grid_share", "bridge_source"} <= set(level)
