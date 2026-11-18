@@ -351,6 +351,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     _KREIS_CONTROL_DEFAULT,
     _KREIS_CONTROL_TOGGLE_KEY,
 )
+from . import fast_path_rate
 from . import solver_path_gate
 from . import controls_builder
 from .controls_builder import (  # noqa: F401  (re-exports)
@@ -412,6 +413,7 @@ _HELPER_MODULES = (
     cell_attributes,
     config_keys,
     controls_builder,
+    fast_path_rate,
     solver_path_gate,
     source_resolution,
     tilt_columns,
@@ -3029,6 +3031,10 @@ def execute(context) -> pd.DataFrame:
         household_control_names, settings_overrides, integerizer_seed_base,
     )
     _log_integerizer_feasibility(context, work_dir)
+    # Reported before the gate, which may stop the stage: with fast_paths on, how many balancer
+    # calls the fork's fast kernels answered (no silent fallback to the original kernels).
+    context.set_info("popsim_fast_path_totals", fast_path_rate.check_fast_path(
+        work_dir, settings_overrides[folders.FAST_PATHS_SETTING]))
     solver_paths, solver_path_totals = solver_path_gate.check_solver_paths(
         work_dir, context.config(KEY_SOLVER_FALLBACK_ERROR_RATE),
         expected_rounding=settings_overrides[folders.INTEGERIZER_ROUNDING_SETTING])

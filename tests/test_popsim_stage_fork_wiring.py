@@ -208,13 +208,22 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
 
     monkeypatch.setattr(stage, "_purge_stale_batches_for_changed_config", purge)
     monkeypatch.setattr(stage, "_run_populationsim_batches", batches)
+    def fast_paths(work_dir, enabled):
+        calls.append("fast paths")
+        seen["fast_paths"] = (work_dir, enabled)
+        return {}
+
     monkeypatch.setattr(stage, "_log_integerizer_feasibility", lambda *a, **k: calls.append("log"))
+    monkeypatch.setattr(stage.fast_path_rate, "check_fast_path", fast_paths)
     monkeypatch.setattr(stage.solver_path_gate, "check_solver_paths", gate)
 
     with pytest.raises(_Stop):
         stage.execute(_context(_values()))
 
-    assert calls == ["environment check", "contract", "purge", "batches", "log", "gate"]
+    # The fast-path rate is reported before the gate, which may stop the stage.
+    assert calls == [
+        "environment check", "contract", "purge", "batches", "log", "fast paths", "gate"]
+    assert seen["fast_paths"] == (str(tmp_path / "work"), False)
     expected_overrides = {
         "KEEP_FRACTIONAL_SAMPLE_WEIGHTS": True, "INTEGERIZER_DRAW": "pareto",
         "INTEGERIZER_TIMEOUT": 600, "INTEGERIZER_PATH_RECORD": True,
