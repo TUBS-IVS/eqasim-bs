@@ -278,6 +278,9 @@ def test_batch_skips_an_inactive_family_and_raises_without_the_grid(tmp_path, ca
         out = _assemble(tmp_path, only_work, employed_bridge=0.8)
     assert out.loc["03101", _employed_columns("work_by_employment")].sum() == pytest.approx(0.8 * 30)
     assert "employment_status" in caplog.text  # the skipped family is logged
+    rate = [r.getMessage() for r in caplog.records if "unchanged_part" in r.getMessage()]
+    # the absent family is counted and named in the rate line, not silently left out of it
+    assert len(rate) == 1 and "not active" in rate[0] and "employment_status" in rate[0]
     with pytest.raises(ValueError, match="EMPLOYED_M_16_29_agg"):
         _assemble(tmp_path / "nogrid", _controls_df(grid=False), base_cols=[], employed_bridge=0.8)
 

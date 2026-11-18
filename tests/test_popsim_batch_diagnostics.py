@@ -1053,3 +1053,17 @@ def test_input_consistency_measures_one_km_pairs_and_names_skipped_ones(work_dir
     assert sum("pairs/checks skipped" in r.message for r in caplog.records) == 1   # one line, not per pair
     assert "Skipped for absent columns" in (tmp_path / "out" / "popsim_batch_diagnostics.md"
                                             ).read_text(encoding="utf-8")
+
+
+def test_input_consistency_without_crosswalk_is_not_measured_and_named(work_dir, tmp_path, caplog):
+    data = work_dir / "batch_000" / "data"
+    pd.DataFrame({"KREIS": [3153], "employed_KREIS": [5]}).to_csv(
+        data / "control_totals_KREIS.csv", index=False)
+    (data / "geo_cross_walk.csv").unlink(missing_ok=True)
+    with caplog.at_level(logging.WARNING):
+        result = run_diagnostics(work_dir, tmp_path / "out")
+    assert result["tables"]["input_consistency"].empty
+    assert "input consistency not measured for 1 of 1 batches" in caplog.text
+    assert "geo_cross_walk" in caplog.text
+    assert "not measured" in (tmp_path / "out" / "popsim_batch_diagnostics.md").read_text(
+        encoding="utf-8")

@@ -108,32 +108,54 @@ def _max_share(rows) -> float:
     return math.inf if zero_base.any() else float(rows["share"].astype(float).max())
 
 
+def _absent_files(ctx, filename):
+    """``{arm: path}`` of the arms whose diagnostics directory lacks ``filename``."""
+    return {arm: str(diag / filename) for arm, diag in ctx["arms"].items()
+            if not (diag / filename).is_file()}
+
+
+def _absent_result(check, absent, filename):
+    """A failed check entry naming the absent file(s); nothing is read, nothing raises."""
+    return {"met": False, "error": f"{filename} absent: {absent}", "absent_files": absent}
+
+
 def eval_input_pairs(check, ctx, emit):
     min_base = float(check.get("min_base", 0.0))
     values = {}
+    absent = _absent_files(ctx, check["file"])
+    if absent:
+        for arm in absent:
+            emit(check["id"], "ALL", arm, "file_absent", math.nan, None, False)
+        return _absent_result(check, absent, check["file"])
     for arm, diag in ctx["arms"].items():
         path = diag / check["file"]
-        if not path.is_file():
-            values[arm] = None
-            continue
         table = pd.read_csv(path, dtype={"key": str})
         rows = table[(table["scope"] == "kreis") & table["check"].isin(check["pairs"])
                      & table["batch"].isin(ctx["batches"])]
+        # A NaN base compares False both ways and would drop out of the gated and the ungated
+        # rows alike; it is counted, reported, and fails the new arm instead.
+        nan_base = rows["base"].astype(float).isna()
+        n_nan_base = int(nan_base.sum())
+        rows = rows[~nan_base]
         gated = rows[rows["base"].astype(float) >= min_base]
         ungated = rows[rows["base"].astype(float) < min_base]
-        absent = sorted(set(check["pairs"]) - set(gated["check"]))
+        absent_pairs = sorted(set(check["pairs"]) - set(gated["check"]))
         value = _max_share(gated)
-        values[arm] = {"value": value, "absent_pairs": absent, "n_gated_rows": len(gated),
-                       "n_ungated_rows": len(ungated), "max_share_ungated": _max_share(ungated)}
+        values[arm] = {"value": value, "absent_pairs": absent_pairs, "n_gated_rows": len(gated),
+                       "n_ungated_rows": len(ungated), "max_share_ungated": _max_share(ungated),
+                       "rows_with_nan_base": n_nan_base}
         emit(check["id"], "ALL", arm, "max_share", value, check["bound"],
-             not absent and value <= check["bound"])
+             not absent_pairs and not n_nan_base and value <= check["bound"])
+        emit(check["id"], "ALL", arm, "rows_with_nan_base", n_nan_base, 0,
+             (n_nan_base == 0) if arm == "new" else None)
         if len(ungated):
             emit(check["id"], "ALL", arm, f"max_share_ungated_base_below_{min_base:g}",
                  _max_share(ungated), check["bound"], None)
     new = values.get("new")
-    met = bool(new is not None and not new["absent_pairs"] and new["value"] <= check["bound"])
+    met = bool(not new["absent_pairs"] and not new["rows_with_nan_base"]
+               and new["value"] <= check["bound"])
     return {"met": met, "bound": check["bound"], "min_base": min_base, "values": values,
-            "error": None if new is not None else f"{check['file']} absent in the new arm"}
+            "error": None}
 
 
 def eval_fit_ratio(check, ctx, emit):
@@ -228,6 +250,9 @@ def _levels(table, check):
 
 
 def eval_conservation_vs_base(check, ctx, emit):
+    absent = _absent_files(ctx, "household_conservation.csv")
+    if absent:
+        return _absent_result(check, absent, "household_conservation.csv")
     tables = {arm: _levels(pd.read_csv(diag / "household_conservation.csv"), check)
               for arm, diag in ctx["arms"].items()}
     deltas = {"abs_deviation_share": check["abs_deviation_share_delta"],
@@ -261,6 +286,9 @@ def eval_conservation_vs_base(check, ctx, emit):
 
 
 def eval_no_sequential_fallback(check, ctx, emit):
+    absent = _absent_files(ctx, "solver_paths.csv")
+    if absent:
+        return _absent_result(check, absent, "solver_paths.csv")
     tables = {arm: _levels(pd.read_csv(diag / "solver_paths.csv"), check)
               for arm, diag in ctx["arms"].items()}
     out = {"levels": check.get("levels"), "values": {}}
@@ -270,7 +298,8 @@ def eval_no_sequential_fallback(check, ctx, emit):
             rows = table[table["batch"] == batch]
             value = float(rows["non_simultaneous"].sum()) if len(rows) else math.nan
             ok = len(rows) > 0 and value == 0
-            emit(check["id"], batch, arm, "non_simultaneous_parents", value, 0, ok)
+            emit(check["id"], batch, arm, "non_simultaneous_parents", value, 0,
+                 ok if arm == "new" else None)
             out["values"][f"{arm}/{batch}"] = {
                 str(r.level): int(r.non_simultaneous) for r in rows.itertuples()}
             if arm == "new":

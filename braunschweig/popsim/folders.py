@@ -959,10 +959,14 @@ def set_kreis_controls_from_fine_sums(
         if change >= worst_change:
             worst_control, worst_change = control, change
         out[control] = new_values.astype(out[control].dtype)
-    logger.info(
-        "[popsim.kreis_follow_grids] %d of %d KREIS control(s) set to their grid sums over %d Kreis "
-        "part(s); largest relative change against the apportioned value %.2f%% (%s)",
-        n_changed, len(mapping), len(out), 100.0 * worst_change, worst_control)
+    if mapping:
+        logger.info(
+            "[popsim.kreis_follow_grids] %d of %d KREIS control(s) set to their grid sums over %d "
+            "Kreis part(s); largest relative change against the apportioned value %.2f%% (%s)",
+            n_changed, len(mapping), len(out), 100.0 * worst_change, worst_control)
+    else:
+        logger.info("[popsim.kreis_follow_grids] no control follows a grid (empty mapping); %d "
+                    "Kreis part(s) left unchanged", len(out))
     if stats is not None:
         stats.update(n_controls=len(mapping), n_changed=n_changed, n_kreis_parts=len(out),
                      largest_relative_change=worst_change,

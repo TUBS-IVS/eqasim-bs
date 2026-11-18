@@ -584,7 +584,9 @@ def _input_consistency_section(tables: dict) -> list:
     if table.empty:
         return ["## Input consistency", "", "not measured (see the log)", ""]
     skipped = table[table["check"] == "skipped"]
-    judged = table[~table["check"].isin(["skipped", "ratio_reported"])]
+    noted = ["skipped", "ratio_reported", "kreis_without_grid", "grid_without_kreis",
+             "nan_cells_excluded"]
+    judged = table[~table["check"].isin(noted)]
     worst = judged.sort_values("share", ascending=False).head(20)
     lines = ["## Input consistency (20 largest shares)", "",
              "`share` = contradiction `amount` / `base` of the check; Kreis rows compare the "
@@ -594,6 +596,11 @@ def _input_consistency_section(tables: dict) -> list:
     if len(skipped):
         names = skipped.groupby(["scope", "key"])["batch"].nunique().reset_index(name="batches")
         lines += ["Skipped for absent columns (not measured):", "", _md_table(names)]
+    unmatched = table[table["check"].isin(noted[2:])]
+    if len(unmatched):
+        counts = unmatched.groupby(["check", "key"])["batch"].nunique().reset_index(name="batches")
+        lines += ["Kreis ids without a partner table and cells excluded for missing values "
+                  "(not judged):", "", _md_table(counts)]
     return lines
 
 

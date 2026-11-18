@@ -170,6 +170,12 @@ def _fine_sum_by_kreis(cells: pd.DataFrame, columns: tuple, kreis_map: pd.Series
 
 
 def _string_index(frame: pd.DataFrame, name: str) -> pd.DataFrame:
+    """Copy of ``frame`` with string zone ids; duplicate ids raise.
+
+    Real control tables have unique zone ids by construction (one row per zone, built in
+    ``braunschweig.popsim.folders.build_control_totals``), so a duplicate means the caller
+    mixed two geographies in one frame and no sum would be right.
+    """
     frame = frame.copy()
     frame.index = frame.index.astype(str)
     if frame.index.has_duplicates:
@@ -187,16 +193,18 @@ def kreis_vs_fine(kreis: pd.DataFrame, cells: pd.DataFrame, crosswalk: pd.DataFr
     ``_ZENSUS1km`` columns are read from ``cells_1km`` when it is given (so 1 km and 100 m zone
     ids can never collide), else from ``cells``.  A pair with an absent column is left out and
     named in ``.attrs["skipped"]`` (logged at ``skip_log_level``).  Kreis ids present in only one
-    of the two sides are counted and logged at WARNING and kept in ``.attrs["kreis_without_grid"]``
-    (a Kreis of the KREIS table without grid zones: ``fine_sum`` 0) and
-    ``.attrs["grid_without_kreis"]`` (grid zones of a Kreis missing from the KREIS table: dropped).
+    of the two sides are counted and logged at WARNING and kept, per geography suffix (1 km and
+    100 m apart), in ``.attrs["kreis_without_grid"]`` (a Kreis of the KREIS table without grid
+    zones: ``fine_sum`` 0) and ``.attrs["grid_without_kreis"]`` (grid zones of a Kreis missing
+    from the KREIS table: dropped); both are ``{suffix: [Kreis ids]}``.
     """
     kreis = _string_index(kreis, "kreis table")
     cells = _string_index(cells, "cells")
     cells_1km = cells if cells_1km is None else _string_index(cells_1km, "cells_1km")
     maps = _crosswalk_maps(crosswalk)
     parts, skipped = [], []
-    no_grid, no_kreis = set(), set()
+    no_grid = {SUFFIX_1KM: set(), SUFFIX_100M: set()}
+    no_kreis = {SUFFIX_1KM: set(), SUFFIX_100M: set()}
     for pair in pairs:
         suffix = _pair_suffix(pair)
         fine_frame = cells_1km if suffix == SUFFIX_1KM else cells
@@ -208,8 +216,8 @@ def kreis_vs_fine(kreis: pd.DataFrame, cells: pd.DataFrame, crosswalk: pd.DataFr
             continue
         kreis_sum = kreis[list(pair.kreis_controls)].sum(axis=1)
         fine_by_kreis = _fine_sum_by_kreis(fine_frame, pair.fine_controls, maps[suffix])
-        no_grid |= set(kreis_sum.index) - set(fine_by_kreis.index)
-        no_kreis |= set(fine_by_kreis.index) - set(kreis_sum.index)
+        no_grid[suffix] |= set(kreis_sum.index) - set(fine_by_kreis.index)
+        no_kreis[suffix] |= set(fine_by_kreis.index) - set(kreis_sum.index)
         fine_sum = fine_by_kreis.reindex(kreis_sum.index).fillna(0.0)
         diff = kreis_sum - fine_sum
         denominator = fine_sum.where(fine_sum != 0)
@@ -221,17 +229,20 @@ def kreis_vs_fine(kreis: pd.DataFrame, cells: pd.DataFrame, crosswalk: pd.DataFr
     table = (pd.concat(parts, ignore_index=True) if parts
              else pd.DataFrame(columns=PAIR_COLUMNS))
     table.attrs["skipped"] = skipped
-    table.attrs["kreis_without_grid"] = sorted(no_grid)
-    table.attrs["grid_without_kreis"] = sorted(no_kreis)
+    table.attrs["kreis_without_grid"] = {s: sorted(ids) for s, ids in no_grid.items()}
+    table.attrs["grid_without_kreis"] = {s: sorted(ids) for s, ids in no_kreis.items()}
     if skipped:
         logger.log(skip_log_level, "%s kreis_vs_fine: %d of %d pairs skipped (absent columns): %s",
                    _TAG, len(skipped), len(list(pairs)), skipped)
-    if no_grid:
-        logger.warning("%s kreis_vs_fine: %d Kreis of the KREIS table have no grid zone in the "
-                       "crosswalk (grid sum counted as 0): %s", _TAG, len(no_grid), sorted(no_grid))
-    if no_kreis:
-        logger.warning("%s kreis_vs_fine: grid zones of %d Kreis are missing from the KREIS "
-                       "table and are not compared: %s", _TAG, len(no_kreis), sorted(no_kreis))
+    for suffix, ids in no_grid.items():
+        if ids:
+            logger.warning("%s kreis_vs_fine: %d Kreis of the KREIS table have no %s zone in the "
+                           "crosswalk (grid sum counted as 0): %s", _TAG, len(ids), suffix[1:],
+                           sorted(ids))
+    for suffix, ids in no_kreis.items():
+        if ids:
+            logger.warning("%s kreis_vs_fine: %s zones of %d Kreis are missing from the KREIS "
+                           "table and are not compared: %s", _TAG, suffix[1:], len(ids), sorted(ids))
     return table
 
 
@@ -332,7 +343,10 @@ def summarize(kreis: pd.DataFrame, cells: pd.DataFrame, crosswalk: pd.DataFrame,
     size of the contradiction (``violation``), ``cells`` is 1 if it exceeds the tolerance,
     ``base`` the grid sum.  A ``ratio`` pair is no contradiction: its rows are written with
     check ``ratio_reported``, ``amount = kreis_sum - fine_sum``, ``share`` = the ratio and
-    ``cells`` 0.  ``scope="cell"``: one row per cell check (``key="all"``).
+    ``cells`` 0.  ``scope="cell"``: one row per cell check (``key="all"``).  A Kreis id
+    without grid zones or without a KREIS row gets a row with check ``kreis_without_grid`` /
+    ``grid_without_kreis`` (key = Kreis id, NaN amount), a check with NaN-excluded cells a row
+    ``nan_cells_excluded`` (key = check name, ``cells`` = their count).
     ``share = amount / base`` (NaN for a zero base).  Every skipped pair or check gets a row
     with check ``skipped``, ``key`` = its name and NaN amount, base and share; the names are
     also in ``.attrs["skipped"]``.
@@ -362,7 +376,17 @@ def summarize(kreis: pd.DataFrame, cells: pd.DataFrame, crosswalk: pd.DataFrame,
           "base": np.nan, "share": np.nan} for name in skipped_pairs]
         + [{"scope": "cell", "key": name, "check": "skipped", "cells": 0, "amount": np.nan,
             "base": np.nan, "share": np.nan} for name in skipped_checks])
-    long = pd.concat([long, skipped_rows], ignore_index=True)[SUMMARY_COLUMNS]
+    unmatched = sorted({k for ids in pairs.attrs["kreis_without_grid"].values() for k in ids})
+    unmatched_grid = sorted({k for ids in pairs.attrs["grid_without_kreis"].values() for k in ids})
+    extra_rows = pd.DataFrame(
+        [{"scope": "kreis", "key": k, "check": "kreis_without_grid", "cells": 0, "amount": np.nan,
+          "base": np.nan, "share": np.nan} for k in unmatched]
+        + [{"scope": "kreis", "key": k, "check": "grid_without_kreis", "cells": 0, "amount": np.nan,
+            "base": np.nan, "share": np.nan} for k in unmatched_grid]
+        + [{"scope": "cell", "key": name, "check": "nan_cells_excluded", "cells": count,
+            "amount": np.nan, "base": np.nan, "share": np.nan}
+           for name, count in cell_rows.attrs["nan_cells"].items()])
+    long = pd.concat([long, skipped_rows, extra_rows], ignore_index=True)[SUMMARY_COLUMNS]
     long["cells"] = long["cells"].fillna(0).astype(int)
     long.attrs["skipped"] = skipped_pairs + skipped_checks
     return long

@@ -349,8 +349,9 @@ def reconcile_kreis_employment_levels(
                 f"; skipped (not an active control): {skipped}" if skipped else "")
     if summary:
         log_fallback_rate(logger, "popsim.employment_level.unchanged_part", n_unchanged, n_reconciled,
-                          what="rate over Kreis-part x family pairs; a pair whose employed or other group is "
-                               "empty keeps its apportioned values")
+                          what="rate over Kreis-part x family pairs of the ACTIVE families "
+                               f"(families not active, outside this rate: {len(skipped)} {skipped}); a pair "
+                               "whose employed or other group is empty keeps its apportioned values")
     if stats is not None:
         stats.update(parts_reconciled=n_done, parts_capped=n_capped, capped_persons=capped_persons_total,
                      parts_empty=n_empty_total, parts_unchanged=n_unchanged)

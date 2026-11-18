@@ -149,6 +149,34 @@ def test_an_entd_seed_has_no_pair_to_follow():
     catalog += control_spec.ownership_grid_controls() + control_spec.employment_grid_controls()
     controls_df = control_spec.render_catalog_csv(control_spec.controls_for_seed(catalog, "entd"), "entd")
     assert control_spec.kreis_controls_following_grids(controls_df) == {}
+    # positive control: the same catalog on the MiD seed does yield pairs, so the empty result
+    # above is the ENTD seed's doing and not an empty catalog
+    mid_df = control_spec.render_catalog_csv(control_spec.controls_for_seed(catalog, "mid"), "mid")
+    assert control_spec.kreis_controls_following_grids(mid_df)
+
+
+def test_the_one_km_ownership_column_is_the_sum_of_the_integer_100m_children():
+    """The follow-grids sum reads the 1 km table instead of the 100 m children; that is only the
+    same number if build_control_totals aggregates the INTEGER children."""
+    column = CARS_COLUMNS[0]
+    crosswalk = pd.DataFrame({"ZENSUS100m": ["a", "b", "c", "d"],
+                              "ZENSUS1km": ["P1", "P1", "P2", "P2"]})
+    per_cell = pd.DataFrame({"ZENSUS100m": ["a", "b", "c", "d"], column: [1.4, 2.4, 0.5, 0.6]})
+    tables = folders.build_control_totals(per_cell, crosswalk, target_cols=[column])
+    fine = tables["ZENSUS100m"].merge(crosswalk, on="ZENSUS100m")
+    assert (fine[column] == fine[column].round()).all()
+    expected = fine.groupby("ZENSUS1km")[column].sum()
+    got = tables["ZENSUS1km"].set_index("ZENSUS1km")[column]
+    assert got.to_dict() == expected.to_dict()
+
+
+def test_an_empty_mapping_logs_that_no_control_follows_a_grid(caplog):
+    kreis = pd.DataFrame({"KREIS": ["03101"], "employed": [5]})
+    with caplog.at_level(logging.INFO):
+        out = folders.set_kreis_controls_from_fine_sums(kreis, {}, pd.DataFrame(), {})
+    assert out.equals(kreis)
+    text = caplog.text
+    assert "no control follows a grid" in text and "(None)" not in text
 
 
 def test_a_partly_present_grid_is_an_error():

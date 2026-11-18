@@ -230,7 +230,8 @@ def _run_inputs(universe_weights=(30.0, 10.0)):
     return cells, controls_df, seeds, kreis
 
 
-def _run(tmp_path, *, mapping, stratify=False, universe_weights=(30.0, 10.0), with_kreis=True):
+def _run(tmp_path, *, mapping, stratify=False, universe_weights=(30.0, 10.0), with_kreis=True,
+         recorder=None):
     """Run run_popsim_mid with a fake PopulationSim; return (employed target per batch, calls)."""
     cells, controls_df, (seed_hh, seed_p), kreis = _run_inputs(universe_weights)
     targets: list[float] = []
@@ -250,7 +251,7 @@ def _run(tmp_path, *, mapping, stratify=False, universe_weights=(30.0, 10.0), wi
         cells, ["POP"], controls_df, seed_hh, seed_p, work_dir=tmp_path,
         settings_yaml="x: 1\n", logging_yaml="version: 1\n", max_cells=1,
         run_one=fake_run_one, num_workers=1, apportion_weight_col_by_control=mapping,
-        **(kreis if with_kreis else {}), **extra)
+        consistency_recorder=recorder, **(kreis if with_kreis else {}), **extra)
     return targets
 
 
@@ -299,3 +300,15 @@ def test_run_popsim_mid_warns_once_for_a_universe_empty_in_the_whole_region(tmp_
     warnings = [r.getMessage() for r in caplog.records
                 if r.levelno == logging.WARNING and "1000.0" in r.getMessage()]
     assert len(warnings) == 1 and "03101" in warnings[0]
+
+
+def test_run_popsim_mid_reports_the_empty_region_counts_and_the_dropped_target(tmp_path):
+    from braunschweig.popsim.input_consistency_guard import ConsistencyRecorder
+    recorder = ConsistencyRecorder(
+        tmp_path / "ic.csv", check_grid_pairs=False, check_age_pairs=False,
+        age_tolerance=0.05, min_persons=1000)
+    _run(tmp_path, mapping={"employed": "W"}, universe_weights=(0.0, 0.0), recorder=recorder)
+    section = recorder.report()["universe_apportionment"]
+    # one Kreis with an empty universe, seen in both batches; its whole target is dropped once
+    assert section["empty_regions"] == 2
+    assert section["dropped_target_mass_by_universe_column"]["W"]["by_kreis"] == {"03101": 1000.0}

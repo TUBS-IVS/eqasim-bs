@@ -351,3 +351,45 @@ def test_compare_input_arms_fails_incomplete_or_incomparable_inputs(compare, tmp
         "batches": ["batch_000", "batch_001"],
         "checks": [{"id": "S", "kind": "no_sequential_fallback"}]})
     assert rc == 1 and verdict is None
+
+
+def test_compare_input_arms_never_passes_a_nan_base_silently(compare, tmp_path):
+    base, new = _diag_tables(tmp_path)
+    table = pd.read_csv(new / "input_consistency.csv", dtype={"key": str})
+    table.loc[(table["check"] == "cars_0"), "base"] = np.nan     # the only cars_0 row of the new arm
+    table.to_csv(new / "input_consistency.csv", index=False)
+    rc, verdict, out = _run_compare(compare, tmp_path, base, new, {"checks": [
+        {"id": "I-cars", "kind": "input_pairs", "file": "input_consistency.csv",
+         "pairs": ["cars_0"], "bound": 1e-6}]})
+    assert rc == 0 and verdict["checks"]["I-cars"]["met"] is False
+    assert verdict["checks"]["I-cars"]["values"]["new"]["rows_with_nan_base"] == 1
+    rows = pd.read_csv(out / "comparison.csv")
+    nan_row = rows[(rows["metric"] == "rows_with_nan_base") & (rows["arm"] == "new")]
+    assert nan_row["value"].tolist() == [1] and nan_row["met"].tolist() == [False]
+
+
+def test_compare_input_arms_names_an_absent_base_file_instead_of_a_traceback(compare, tmp_path):
+    base, new = _diag_tables(tmp_path)
+    for name in ("household_conservation.csv", "solver_paths.csv", "input_consistency.csv"):
+        (base / name).unlink()
+    rc, verdict, _out = _run_compare(compare, tmp_path, base, new, {"checks": [
+        {"id": "C", "kind": "conservation_vs_base", "abs_deviation_share_delta": 0.0,
+         "conserved_pair_share_delta": 0.0},
+        {"id": "S", "kind": "no_sequential_fallback"},
+        {"id": "I", "kind": "input_pairs", "file": "input_consistency.csv",
+         "pairs": ["cars_0"], "bound": 1e-6}]})
+    assert rc == 0 and verdict["all_met"] is False
+    for check, name in (("C", "household_conservation.csv"), ("S", "solver_paths.csv"),
+                        ("I", "input_consistency.csv")):
+        entry = verdict["checks"][check]
+        assert entry["met"] is False and str(base / name) in entry["absent_files"]["base"]
+
+
+def test_no_sequential_fallback_reports_the_base_arm_ungated(compare, tmp_path):
+    base, new = _diag_tables(tmp_path)
+    rc, _verdict, out = _run_compare(compare, tmp_path, base, new, {"checks": [
+        {"id": "S", "kind": "no_sequential_fallback"}]})
+    rows = pd.read_csv(out / "comparison.csv")
+    assert rc == 0
+    assert rows[rows["arm"] == "base"]["met"].isna().all()
+    assert rows[rows["arm"] == "new"]["met"].notna().all()

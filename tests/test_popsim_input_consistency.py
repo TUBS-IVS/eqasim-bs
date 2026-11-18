@@ -182,8 +182,8 @@ def test_kreis_without_grid_and_grid_without_kreis_are_counted(caplog):
     kreis = _kreis(employed_KREIS={3101: 6, 9999: 4})                    # 9999: no zone; 3153 absent
     with caplog.at_level(logging.WARNING):
         table = ic.kreis_vs_fine(kreis, cells, CROSSWALK, pairs=_pairs("employed"))
-    assert table.attrs["kreis_without_grid"] == ["9999"]
-    assert table.attrs["grid_without_kreis"] == ["3153"]
+    assert table.attrs["kreis_without_grid"] == {ic.SUFFIX_1KM: [], ic.SUFFIX_100M: ["9999"]}
+    assert table.attrs["grid_without_kreis"] == {ic.SUFFIX_1KM: [], ic.SUFFIX_100M: ["3153"]}
     assert "9999" in caplog.text and "3153" in caplog.text
     assert _row(table, "9999", "employed")["fine_sum"] == 0
 
@@ -217,3 +217,17 @@ def test_one_km_and_100m_zone_ids_may_collide_when_kept_apart():
     assert _row(table, "3101", "cars_0")["fine_sum"] == 7
     with pytest.raises(ValueError, match="duplicate"):
         ic.kreis_vs_fine(kreis, pd.concat([cells, cells_1km]), crosswalk, pairs=_pairs("cars_0"))
+
+
+def test_summarize_writes_unmatched_kreis_and_nan_excluded_cells_as_rows():
+    cells = _cells(**{ic.EMPLOYED_COLUMNS[0]: {"A": 6, "D": 2}, HH_TOTAL: {"A": 2}})
+    cells.loc["A", ic.UNDER_18_COLUMNS[0]] = float("nan")
+    kreis = _kreis(employed_KREIS={3101: 6, 9999: 4})
+    long = ic.summarize(kreis, cells, CROSSWALK)
+    by_check = lambda name: long[long["check"] == name]
+    assert by_check("kreis_without_grid")["key"].tolist() == ["9999"]
+    assert by_check("grid_without_kreis")["key"].tolist() == ["3153"]
+    nan_rows = by_check("nan_cells_excluded").set_index("key")["cells"]
+    assert nan_rows["households_without_persons"] == 1
+    assert long.loc[long["check"].isin(["kreis_without_grid", "grid_without_kreis"]),
+                    "amount"].isna().all()

@@ -217,8 +217,8 @@ KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS = (
 #       raises when an age-universe pair differs by more than this relative share in a Kreis part
 #       whose grid sum is at least this many persons. Used only with kreis_batch_apportionment
 #       "universe"; with "population" the table is written and nothing raises. The 0.05 is an
-#       ASSUMPTION-grade design bound: above the rounding residual of the facts (at most 1.7 %)
-#       and far below the defect it guards against (up to 39 %). The pair persons_all depends on
+#       ASSUMPTION-grade design bound: above the rounding residual and below the defect size
+#       measured in docs/runs/popsim-input-consistency-2026-11-18.yml. The pair persons_all depends on
 #       POP_TOTAL agreeing with the age x sex band sums per cell (population-share split in both
 #       modes); its measured size on the production tables is in
 #       docs/runs/popsim-input-consistency-2026-11-18.yml.
