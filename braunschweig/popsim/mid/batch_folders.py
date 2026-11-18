@@ -68,7 +68,7 @@ import logging
 import shutil
 from collections import Counter
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence, Union
+from typing import Iterable, Mapping, NamedTuple, Sequence, Union
 
 import pandas as pd
 
@@ -247,38 +247,91 @@ def _reconcile_run_batch_folders(
 # --------------------------------------------------------------------------- #
 
 
+class UniverseApportionment(NamedTuple):
+    """Result of :func:`universe_apportion_weights` (counts are over (weight column, Kreis) parts)."""
+
+    weights: dict
+    n_parts: int
+    n_empty_part: int
+    n_empty_region: int
+
+
 def universe_apportion_weights(
     cells_subset: pd.DataFrame,
     geo_crosswalk: pd.DataFrame,
     kreis_totals_by_weight_col: Mapping[str, Mapping[str, float]],
     weight_cols: Iterable[str],
-) -> tuple[dict[str, dict[str, float]], int]:
+) -> UniverseApportionment:
     """This batch's share of each Kreis per age-universe weight column (#658).
 
-    ``{weight column: {kreis: share}}`` with the shares of
+    ``weights`` is ``{weight column: {kreis: share}}`` with the shares of
     :func:`_batch_kreis_apportion_weights` (``kreis_totals_by_weight_col[col]`` holds the region
     totals of the column, computed once by the caller with :func:`_kreis_pop_from_crosswalk`).
-    A Kreis part with no person of the universe, or a Kreis whose region total of the universe is
-    0, gets share 0 (control 0, never NaN/inf). Those parts are the empty-universe cases: they
-    are counted and logged as a rate, and the count is returned as the second element.
+    Two empty-universe cases get share 0 (control 0, never NaN/inf) and are counted separately:
+
+    * ``n_empty_part``: the batch's part of the Kreis has no person of the universe although the
+      Kreis has some elsewhere (a legitimate zero; its rate is logged and warns above the
+      fallback threshold, because a mis-built universe column empties every part);
+    * ``n_empty_region``: the Kreis has no person of the universe at all, so its whole target
+      vanishes in every batch. Always a WARNING here; :func:`log_empty_region_universes` adds the
+      dropped target mass once per run.
     """
     weights: dict[str, dict[str, float]] = {}
-    n_parts = n_empty = 0
+    n_parts = n_empty_part = n_empty_region = 0
     for col in sorted(set(weight_cols)):
         if col not in kreis_totals_by_weight_col:
             raise ValueError(
                 f"No region totals for the universe weight column {col!r}; pass "
                 "kreis_totals_by_weight_col for every column of apportion_weight_col_by_control.")
+        region = kreis_totals_by_weight_col[col]
         weights[col] = _batch_kreis_apportion_weights(
-            cells_subset, geo_crosswalk, kreis_totals_by_weight_col[col], weight_col=col)
+            cells_subset, geo_crosswalk, region, weight_col=col)
+        empty_region = sorted(k for k in weights[col] if not float(region.get(k, 0.0)) > 0)
         n_parts += len(weights[col])
-        n_empty += sum(1 for share in weights[col].values() if share == 0.0)
+        n_empty_region += len(empty_region)
+        n_empty_part += sum(1 for k, share in weights[col].items()
+                            if share == 0.0 and k not in empty_region)
+        if empty_region:
+            logger.warning(
+                "[popsim.kreis_universe_apportion] %s: %d Kreis part(s) in this batch with a "
+                "region total of 0 persons of the universe (Kreis %s): control value 0",
+                col, len(empty_region), empty_region)
     log_fallback_rate(
-        logger, "popsim.kreis_universe_apportion.empty_universe", n_empty, n_parts,
-        what="Kreis parts with no person of the control's age universe (or a region total of 0) "
-             "get the control value 0",
-        threshold=1.0)
-    return weights, n_empty
+        logger, "popsim.kreis_universe_apportion.empty_part", n_empty_part, n_parts,
+        what="Kreis parts with no person of the control's age universe get the control value 0")
+    return UniverseApportionment(weights, n_parts, n_empty_part, n_empty_region)
+
+
+def log_empty_region_universes(
+    kreis_totals_by_weight_col: Mapping[str, Mapping[str, float]],
+    apportion_weight_col_by_control: Mapping[str, str],
+    kreis_table: pd.DataFrame,
+    kreis_controls_map: Mapping[str, Sequence[str]],
+    *,
+    ars_col: str = "ARS_kreis",
+) -> dict[str, dict[str, float]]:
+    """One WARNING per universe column whose Kreis have a region total of 0 (#658).
+
+    Such a Kreis gets share 0 in every batch, so the targets of all controls on that universe
+    vanish. Returns ``{weight column: {kreis: dropped target mass}}`` (persons, the row-sum of the
+    census source columns of the controls on the column, NaN as 0); empty when nothing is dropped.
+    """
+    table = kreis_table.assign(**{ars_col: kreis_table[ars_col].astype(str)}).set_index(ars_col)
+    dropped: dict[str, dict[str, float]] = {}
+    for col, region in sorted(kreis_totals_by_weight_col.items()):
+        controls = sorted(c for c, w in apportion_weight_col_by_control.items() if w == col)
+        empty = sorted(k for k, total in region.items() if not float(total) > 0)
+        if not empty:
+            continue
+        sources = [s for c in controls for s in kreis_controls_map.get(c, ())]
+        mass = {k: (float(table.loc[k, sources].fillna(0.0).sum())
+                    if k in table.index and sources else 0.0) for k in empty}
+        dropped[col] = mass
+        logger.warning(
+            "[popsim.kreis_universe_apportion] %s: region total of 0 persons of the universe in "
+            "Kreis %s; their targets (%.1f in total, %d control(s)) get share 0 in every batch "
+            "and are dropped", col, empty, sum(mass.values()), len(controls))
+    return dropped
 
 
 def assemble_batch_folder(
@@ -340,6 +393,10 @@ def assemble_batch_folder(
             "apportion_weight_col_by_control needs kreis_totals_by_weight_col (the region "
             "totals of each weight column).")
     tier3 = kreis_table is not None and bool(kreis_controls_map)
+    if apportion_weight_col_by_control and not tier3:
+        raise ValueError(
+            "apportion_weight_col_by_control needs the Tier-3 KREIS geography (kreis_table and "
+            "kreis_controls_map); there is no KREIS control to apportion without it.")
     if tier3 and ars_col not in cells_subset.columns:
         raise ValueError(
             f"Tier-3 KREIS controls requested but cells carry no ARS column "
@@ -374,9 +431,9 @@ def assemble_batch_folder(
             )
         weights_by_control = None
         if apportion_weight_col_by_control:
-            by_col, _n_empty = universe_apportion_weights(
+            by_col = universe_apportion_weights(
                 cells_subset, geo_crosswalk, kreis_totals_by_weight_col,
-                apportion_weight_col_by_control.values())
+                apportion_weight_col_by_control.values()).weights
             weights_by_control = {
                 control: by_col[col] for control, col in apportion_weight_col_by_control.items()}
         control_totals[folders.GEO_KREIS] = folders.build_kreis_control_totals(
@@ -587,6 +644,9 @@ def run_popsim_mid(
             kreis_totals_by_weight_col = {
                 col: _kreis_pop_from_crosswalk(cells, full_xwalk, weight_col=col)
                 for col in sorted(set(apportion_weight_col_by_control.values()))}
+            log_empty_region_universes(
+                kreis_totals_by_weight_col, apportion_weight_col_by_control, kreis_table,
+                kreis_controls_map)
         # Household-level KREIS controls need the region-wide HOUSEHOLD total per
         # resolved Kreis so each batch can be apportioned by its household share, not
         # its population share (issue #148). Only computed when such controls are

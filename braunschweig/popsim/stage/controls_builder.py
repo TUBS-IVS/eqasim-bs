@@ -410,6 +410,10 @@ def apportion_universes(active_entries, tier3_control_names):
 
     One per age-universe registry entry (:func:`age_universe_entries`) plus
     ``(TIER3_PERSON_MIN_AGE, None)`` when ``tier3_control_names`` is non-empty; sorted.
+
+    Kept for the stage wiring (Task A6): the stage passes this list to
+    :func:`add_universe_weight_columns` (and to the parquet load set), then the result to
+    :func:`apportion_weight_columns`, so the universes loaded and the universes mapped are one set.
     """
     from braunschweig.popsim import control_spec as cs
     universes = {_universe_key(c) for c, _lo, _hi in age_universe_entries(active_entries)}
