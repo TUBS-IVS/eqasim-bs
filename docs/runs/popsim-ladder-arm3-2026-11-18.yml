@@ -1,15 +1,17 @@
 id: popsim-ladder-arm3-2026-11-18
 date: '2026-11-18'
 repository:
-  commit: cb39a0448023ca40e5c1260dd4bb0d4cef5f7de2
+  commit: f796f625a90f4e117a2984955fa8c23a05226d79
   branch: fix/i646-popsim-fair-rounding
   notes: >-
     PRE-REGISTRATION: this file was committed with the checks and bounds below before the arm-3
     PopulationSim runs started; only results, artifacts and execution notes are added afterwards. The
-    commit is the eqasim-bs code on the run server (git archive) that writes the batch settings, runs the
-    diagnostics and reads the solver-path record; it is the tip of the stacked branch
-    chore/i656-popsim-batch-memory, i.e. this branch plus the option keys of issue #656, which
-    prepare_variant.py needs (the two options stay false in every arm of this record). PopulationSim is the
+    commit is the eqasim-bs code on the run server (git archive without docs/ and tests/) that writes the
+    batch settings, runs the diagnostics and reads the solver-path record; it is a commit of the stacked
+    branch chore/i656-popsim-batch-memory, i.e. this branch as pre-registered plus the option keys of issue
+    #656, which prepare_variant.py needs (the two options stay false in every arm of this record). This line
+    was corrected before any run started: a rebase of that branch had replaced the commit named first by
+    one with the same code. PopulationSim is the
     release candidate of 0.10.0+bs.2 of the group's fork at commit
     d9a2e2810139e822ff2870a1845c30a509461462 (untagged at run time), installed from a clone of that commit
     into a fresh copy of environments/populationsim (uv sync --frozen, then the fork package replaced:
