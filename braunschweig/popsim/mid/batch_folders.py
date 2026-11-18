@@ -77,6 +77,8 @@ from braunschweig.popsim import control_spec
 from braunschweig.popsim import folders
 from braunschweig.popsim import merge as mergemod
 
+from braunschweig.popsim.fallback_rates import log_fallback_rate
+
 from .control_cells import _ARS_COLUMN, build_control_totals
 from .kreis_controls import _batch_kreis_apportion_weights, _kreis_pop_from_crosswalk
 from .donor_stratification import dominant_stratum_for_1km, filter_seed_to_stratum
@@ -245,6 +247,40 @@ def _reconcile_run_batch_folders(
 # --------------------------------------------------------------------------- #
 
 
+def universe_apportion_weights(
+    cells_subset: pd.DataFrame,
+    geo_crosswalk: pd.DataFrame,
+    kreis_totals_by_weight_col: Mapping[str, Mapping[str, float]],
+    weight_cols: Iterable[str],
+) -> tuple[dict[str, dict[str, float]], int]:
+    """This batch's share of each Kreis per age-universe weight column (#658).
+
+    ``{weight column: {kreis: share}}`` with the shares of
+    :func:`_batch_kreis_apportion_weights` (``kreis_totals_by_weight_col[col]`` holds the region
+    totals of the column, computed once by the caller with :func:`_kreis_pop_from_crosswalk`).
+    A Kreis part with no person of the universe, or a Kreis whose region total of the universe is
+    0, gets share 0 (control 0, never NaN/inf). Those parts are the empty-universe cases: they
+    are counted and logged as a rate, and the count is returned as the second element.
+    """
+    weights: dict[str, dict[str, float]] = {}
+    n_parts = n_empty = 0
+    for col in sorted(set(weight_cols)):
+        if col not in kreis_totals_by_weight_col:
+            raise ValueError(
+                f"No region totals for the universe weight column {col!r}; pass "
+                "kreis_totals_by_weight_col for every column of apportion_weight_col_by_control.")
+        weights[col] = _batch_kreis_apportion_weights(
+            cells_subset, geo_crosswalk, kreis_totals_by_weight_col[col], weight_col=col)
+        n_parts += len(weights[col])
+        n_empty += sum(1 for share in weights[col].values() if share == 0.0)
+    log_fallback_rate(
+        logger, "popsim.kreis_universe_apportion.empty_universe", n_empty, n_parts,
+        what="Kreis parts with no person of the control's age universe (or a region total of 0) "
+             "get the control value 0",
+        threshold=1.0)
+    return weights, n_empty
+
+
 def assemble_batch_folder(
     folder: Union[str, Path],
     cells_subset: pd.DataFrame,
@@ -263,6 +299,8 @@ def assemble_batch_folder(
     kreis_total_hh: Mapping[str, float] | None = None,
     hh_weight_col: str = control_spec.HH_TOTAL_CENSUS_COLUMN,
     household_control_names: Iterable[str] | None = None,
+    apportion_weight_col_by_control: Mapping[str, str] | None = None,
+    kreis_totals_by_weight_col: Mapping[str, Mapping[str, float]] | None = None,
 ) -> dict[str, Path]:
     """Assemble one PopulationSim run folder for a subset of cells.
 
@@ -289,7 +327,18 @@ def assemble_batch_folder(
     batches, so the apportioned marginals reproduce the full Kreis marginal. When
     ``kreis_total_pop`` is None (single-batch / legacy), no apportionment is applied
     (full marginal).
+
+    Own-universe apportionment (#658): ``apportion_weight_col_by_control`` maps a KREIS control
+    name to a cell column holding the persons of its age universe
+    (``controls_builder.apportion_weight_columns``); ``kreis_totals_by_weight_col`` holds the
+    region-wide per-Kreis total of each such column. A control in the map is then split by this
+    batch's share of ITS universe (:func:`universe_apportion_weights`) instead of the population
+    share. Both ``None`` (default) -> the legacy split, unchanged.
     """
+    if apportion_weight_col_by_control and kreis_totals_by_weight_col is None:
+        raise ValueError(
+            "apportion_weight_col_by_control needs kreis_totals_by_weight_col (the region "
+            "totals of each weight column).")
     tier3 = kreis_table is not None and bool(kreis_controls_map)
     if tier3 and ars_col not in cells_subset.columns:
         raise ValueError(
@@ -323,11 +372,19 @@ def assemble_batch_folder(
                 cells_subset, geo_crosswalk, kreis_total_hh,
                 weight_col=hh_weight_col,
             )
+        weights_by_control = None
+        if apportion_weight_col_by_control:
+            by_col, _n_empty = universe_apportion_weights(
+                cells_subset, geo_crosswalk, kreis_totals_by_weight_col,
+                apportion_weight_col_by_control.values())
+            weights_by_control = {
+                control: by_col[col] for control, col in apportion_weight_col_by_control.items()}
         control_totals[folders.GEO_KREIS] = folders.build_kreis_control_totals(
             kreis_table, geo_crosswalk, controls_map=kreis_controls_map,
             apportion_weights=apportion_weights,
             household_apportion_weights=household_apportion_weights,
             household_control_names=household_control_names,
+            apportion_weights_by_control=weights_by_control,
         )
     return folders.write_popsim_folder(
         folder,
@@ -408,6 +465,7 @@ def run_popsim_mid(
     kreis_controls_map: Mapping[str, Sequence[str]] | None = None,
     household_control_names: Iterable[str] | None = None,
     integerizer_seed_base: int | None = None,
+    apportion_weight_col_by_control: Mapping[str, str] | None = None,
 ) -> mergemod.MergeReport:
     """Batch the cells into PopulationSim runs, execute them, and merge the output.
 
@@ -464,6 +522,13 @@ def run_popsim_mid(
         (:func:`braunschweig.popsim.folders.batch_integerizer_seed`; why: ADR-0199,
         decision 3). Required (``ValueError``) when ``settings_yaml`` switches the
         integerizer draw on.
+    apportion_weight_col_by_control:
+        ``None`` (default): every KREIS person control is split over the batches by the batch's
+        population share of the Kreis (legacy). A ``{KREIS control name: cell column}`` map
+        (``controls_builder.apportion_weight_columns`` + ``add_universe_weight_columns``): those
+        controls are split by the batch's share of the persons of their own age universe
+        (#658); the region total of each column is summed once here. Needs the Tier-3 KREIS
+        geography (``ValueError`` otherwise).
     """
     draw = folders.integerizer_draw_in_settings(settings_yaml)
     if draw != "off" and integerizer_seed_base is None:
@@ -491,6 +556,11 @@ def run_popsim_mid(
     tier3 = kreis_table is not None and bool(kreis_controls_map)
     kreis_total_pop: dict[str, float] | None = None
     kreis_total_hh: dict[str, float] | None = None
+    kreis_totals_by_weight_col: dict[str, dict[str, float]] | None = None
+    if apportion_weight_col_by_control and not tier3:
+        raise ValueError(
+            "apportion_weight_col_by_control needs the Tier-3 KREIS geography (kreis_table and "
+            "kreis_controls_map); there is no KREIS control to apportion without it.")
     if tier3:
         if _ARS_COLUMN not in cells.columns:
             raise ValueError(
@@ -506,6 +576,17 @@ def run_popsim_mid(
             kreis_weight_col="POP_TOTAL_100m_adj",
         )
         kreis_total_pop = _kreis_pop_from_crosswalk(cells, full_xwalk)
+        if apportion_weight_col_by_control:
+            absent = sorted({c for c in apportion_weight_col_by_control.values()
+                             if c not in cells.columns})
+            if absent:
+                raise ValueError(
+                    f"Universe weight column(s) {absent} are absent from the cells frame; add "
+                    "them with controls_builder.add_universe_weight_columns (no silent fall-back "
+                    "to the population share).")
+            kreis_totals_by_weight_col = {
+                col: _kreis_pop_from_crosswalk(cells, full_xwalk, weight_col=col)
+                for col in sorted(set(apportion_weight_col_by_control.values()))}
         # Household-level KREIS controls need the region-wide HOUSEHOLD total per
         # resolved Kreis so each batch can be apportioned by its household share, not
         # its population share (issue #148). Only computed when such controls are
@@ -541,6 +622,8 @@ def run_popsim_mid(
                 kreis_total_pop=kreis_total_pop,
                 kreis_total_hh=kreis_total_hh,
                 household_control_names=household_control_names,
+                apportion_weight_col_by_control=apportion_weight_col_by_control,
+                kreis_totals_by_weight_col=kreis_totals_by_weight_col,
             )
             batch_folders.append(str(folder))
 
@@ -609,6 +692,8 @@ def run_popsim_mid(
                 kreis_total_pop=kreis_total_pop,
                 kreis_total_hh=kreis_total_hh,
                 household_control_names=household_control_names,
+                apportion_weight_col_by_control=apportion_weight_col_by_control,
+                kreis_totals_by_weight_col=kreis_totals_by_weight_col,
             )
             batch_folders_stratified.append(str(folder))
             global_batch_index += 1

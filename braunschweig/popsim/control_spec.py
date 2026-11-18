@@ -958,6 +958,15 @@ _TIER3_ENTRIES: Sequence[tuple] = (
 )
 
 
+# ASSUMPTION (#658 Task A3): the Tier-3 person controls (employed, schulabschluss_*,
+# beruflabschluss_*) are counted over persons aged 15 and over. Only the batch split of their
+# KREIS targets reads it (controls_builder.apportion_weight_columns); it changes no target.
+# Not stated in ADR-0015 or in a repo loader; consistent with the employed age classes of the
+# Zensus regional table (zensus_employment_age.KREIS_AGE_CLASSES start at 15-19) and with
+# control_groups._AGE15.
+TIER3_PERSON_MIN_AGE = 15
+
+
 def tier3_controls() -> List[CatalogControl]:
     """Tier-3: employment + education controls at KREIS geography (MiD-only).
 

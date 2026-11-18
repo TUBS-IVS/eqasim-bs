@@ -730,6 +730,7 @@ def build_kreis_control_totals(
     apportion_weights: Mapping[str, float] | None = None,
     household_apportion_weights: Mapping[str, float] | None = None,
     household_control_names: Iterable[str] | None = None,
+    apportion_weights_by_control: Mapping[str, Mapping[str, float]] | None = None,
 ) -> pd.DataFrame:
     """Build the KREIS control-totals table from an imported per-Kreis census table.
 
@@ -787,6 +788,12 @@ def build_kreis_control_totals(
         and must use ``household_apportion_weights``. Controls not listed here keep
         ``apportion_weights``. ``None`` (default) -> every control uses
         ``apportion_weights`` (legacy).
+    apportion_weights_by_control:
+        Optional ``{control_name: {kreis: share}}``: a control named here uses its OWN share
+        (the batch's share of the persons of the control's age universe, #658) instead of
+        ``apportion_weights`` / ``household_apportion_weights``. Every other control behaves
+        as before. ``None`` (default) -> legacy. A Kreis of the crosswalk missing from a
+        control's map is an error (no silent full-marginal weight for a per-control share).
 
     Returns
     -------
@@ -836,7 +843,15 @@ def build_kreis_control_totals(
         # share (issue #148). A Kreis missing from the chosen map keeps weight 1.0.
         use_household = name in household_names and household_apportion_weights is not None
         weight_map = household_apportion_weights if use_household else apportion_weights
-        if weight_map is not None:
+        own_map = (apportion_weights_by_control or {}).get(name)
+        if own_map is not None:
+            absent = [k for k in kreise if k not in own_map]
+            if absent:
+                raise ValueError(
+                    f"apportion_weights_by_control[{name!r}] has no share for Kreis {absent[:5]}; "
+                    "a per-control share must cover every Kreis of the crosswalk.")
+            values = values * np.array([float(own_map[k]) for k in kreise], dtype=float)
+        elif weight_map is not None:
             weights = np.array(
                 [float(weight_map.get(k, 1.0)) for k in kreise], dtype=float
             )
