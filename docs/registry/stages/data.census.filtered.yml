@@ -69,6 +69,7 @@ decisions:
 - ADR-0193
 - ADR-0198
 - ADR-0199
+- ADR-0200
 notes: >-
   DONOR RESOLUTION ONCE (ADR-0192): donor household counts and donor person attributes with
   imputed codes are resolved once, before the seed, and inherited by the clones.
@@ -177,6 +178,11 @@ notes: >-
   (braunschweig.popsim.stage.solver_path_gate; null = warn only). Key meanings: config_keys.py.
   The batch signature includes the tool version and the options, so the first run after this change
   recomputes existing work dirs.
+  RUN TIME AND MEMORY OF A BATCH (#656, ADR-0200, note populationsim-fork.md): the keys
+  braunschweig.population.popsim.store_positive_weight_rows_only and .fast_paths switch on two fork
+  settings that leave the synthetic population unchanged (evidence: run manifest
+  popsim-run-performance-2026-11-18); the stage refuses them against a fork older than 0.10.0+bs.2 and
+  reports the rate of balancer calls the fast kernels answered (braunschweig.popsim.stage.fast_path_rate).
   SEED RESOLUTION AND HOUSEHOLD-BASED BUILDING-TYPE TARGETS: rules and keys are in ADR-0198
   (keys in configs/base_bs.yml and braunschweig/popsim/stage/config_keys.py); the log tags are
   in the code that logs them (braunschweig.popsim.attributes, building_type_targets,

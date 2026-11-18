@@ -25,6 +25,12 @@ The fork README says the draw is "weight-proportional in both integerizers"; tha
 
 With `keep_fractional_sample_weights` false and `integerizer_draw` "off" the fork behaves like v0.10.0 (differential test in the fork; run R1 of the arm-1 manifest). The stage always sets the timeout and switches the path record on.
 
+## Run-time options and the environment rule (issue #656)
+
+`store_positive_weight_rows_only` and `fast_paths` switch on two settings of fork release `0.10.0+bs.2`; decision and acceptance rule: [ADR-0200](../../decisions/ADR-0200-populationsim-keeps-only-positive-weight-rows-and-takes-bit-identical-fast-paths.md).
+
+Rule: before a run with `fast_paths` on in a changed environment (another numba or LLVM version in `environments/populationsim`, or another run machine), run the fork's balancer test file in that environment. The reason is decision 5 of ADR-0200. How: in a clone of the fork at the pinned tag, with the clone first on `PYTHONPATH`, `uv run --project <path to environments/populationsim> --no-sync --with pytest python -m pytest tests/test_bs_balancer_fast_path.py`. A failure means the option must stay off in that environment.
+
 ## Where each fact lives
 
 | Fact | Owner |
@@ -33,5 +39,7 @@ With `keep_fractional_sample_weights` false and `integerizer_draw` "off" the for
 | Config keys of the stage (meaning) | `braunschweig/popsim/stage/config_keys.py`; values in `configs/base_bs.yml` |
 | Per-batch integerizer seed, settings overrides | `braunschweig/popsim/folders.py` (`batch_integerizer_seed`) |
 | Solver-path gate | `braunschweig/popsim/stage/solver_path_gate.py` |
+| Rate of balancer calls on the fast kernels | `braunschweig/popsim/stage/fast_path_rate.py` |
 | Production value of draw and fractional weights | outcome of the arm-1 manifest |
-| Why | ADR-0197, ADR-0199 |
+| Production value of the run-time options, worker memory | outcome of the manifest `popsim-run-performance-2026-11-18`; values in `configs/base_bs.yml` and `configs/overlays/test_100pct.yml` |
+| Why | ADR-0197, ADR-0199, ADR-0200 |
