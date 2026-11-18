@@ -181,24 +181,42 @@ def make_cells() -> pd.DataFrame:
     return cells
 
 
-def build_control_tables(
-        cells: pd.DataFrame | None = None, **extra_aggregate_kwargs: Any,
-) -> dict[str, pd.DataFrame]:
-    """Run the control-total path of the stage on ``cells`` and return its four tables.
+def build_control_tables_and_report(
+        cells: pd.DataFrame | None = None, *,
+        tenure_owner_limited_to_dwellings: bool = False,
+        tenure_min_households_outside: float = 10.0,
+        **extra_aggregate_kwargs: Any,
+) -> tuple[dict[str, pd.DataFrame], dict | None]:
+    """Run the control-total path of the stage on ``cells``: its four tables and the owner-limit report.
 
     The same calls, in the same order, as the stage: derive the aggregated control columns
-    (``_add_aggregated_control_columns``), then ``mid.build_control_totals`` with the base
-    columns of ``_build_control_frame`` and the 100 m -> 1 km crosswalk.
+    (``_add_aggregated_control_columns``), limit the owner targets to the dwellings of the cell
+    (``_limit_owner_targets_to_dwellings``, the config key ``tenure_owner_limited_to_dwellings``
+    and its threshold; off by default, like the code default), then
+    ``mid.build_control_totals`` with the base columns of ``_build_control_frame`` and the
+    100 m -> 1 km crosswalk.
 
     ``extra_aggregate_kwargs`` extend or override ``AGGREGATE_KWARGS`` (for a later keyword).
+    Returns ``(tables, report)``; ``report`` is ``None`` while the owner limit is off.
     """
     if cells is None:
         cells = make_cells()
     aggregate_kwargs = {**AGGREGATE_KWARGS, **extra_aggregate_kwargs}
     prepared = stage._add_aggregated_control_columns(
         cells, CONTROL_SOURCE, SEED_NAME, CONTROL_TIERS, **aggregate_kwargs)
+    prepared, report = stage._limit_owner_targets_to_dwellings(
+        prepared, CONTROL_SOURCE, SEED_NAME, CONTROL_TIERS,
+        enabled=tenure_owner_limited_to_dwellings,
+        min_households_outside=tenure_min_households_outside)
     crosswalk = prepared[["ZENSUS100m", "ZENSUS1km"]]
-    return mid.build_control_totals(prepared, crosswalk, base_columns())
+    return mid.build_control_totals(prepared, crosswalk, base_columns()), report
+
+
+def build_control_tables(
+        cells: pd.DataFrame | None = None, **extra_kwargs: Any,
+) -> dict[str, pd.DataFrame]:
+    """The four control-total tables of ``build_control_tables_and_report`` (same arguments)."""
+    return build_control_tables_and_report(cells, **extra_kwargs)[0]
 
 
 def golden_path(name: str, directory: Path = GOLDEN_DIR) -> Path:

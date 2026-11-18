@@ -46,6 +46,11 @@ KEY_METHOD = "braunschweig.population.method"
 # True -> the building_type target is validated on the household basis, False -> dwellings
 # (mirrors the popsim stage key; default as in the stage).
 KEY_BUILDING_TYPE_TO_HOUSEHOLDS = "braunschweig.population.popsim.building_type_targets_to_households"
+# The tenure target is validated with the owner households limited to the dwellings of the cell
+# when the run limited them (issue #657; mirrors the two popsim stage keys, same defaults).
+KEY_TENURE_OWNER_LIMITED = "braunschweig.population.popsim.tenure_owner_limited_to_dwellings"
+KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE = (
+    "braunschweig.population.popsim.tenure_min_households_outside_dwellings")
 # Issue #96 minor-employment plausibility guard (population_validation). The
 # default bound is single-sourced from controls.DEFAULT_MINOR_EMPLOYMENT_MAX_RATE
 # (imported lazily where needed to keep stage import light).
@@ -137,6 +142,8 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.prepared_cells",
     "braunschweig.popsim.sampling",
     "braunschweig.popsim.seed",
+    # popsim_validation.controls limits the owner targets with it (#657).
+    "braunschweig.popsim.tenure_targets",
     "braunschweig.popsim.time_imputation",
     "braunschweig.popsim.trips",
     "braunschweig.popsim.weekend_plan_match",
@@ -191,6 +198,9 @@ def configure(context):
     context.config(KEY_WORK_DIR, None)
     context.config(KEY_METHOD, None)
     context.config(KEY_BUILDING_TYPE_TO_HOUSEHOLDS, True)
+    from braunschweig.popsim.tenure_targets import DEFAULT_MIN_HOUSEHOLDS_OUTSIDE
+    context.config(KEY_TENURE_OWNER_LIMITED, False)
+    context.config(KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE, DEFAULT_MIN_HOUSEHOLDS_OUTSIDE)
     context.config("analysis_working_directory", None)
     from braunschweig.analysis.population_validation.controls import (
         DEFAULT_MINOR_EMPLOYMENT_MAX_RATE,
@@ -301,8 +311,13 @@ def execute(context):
     def _popsim():
         from braunschweig.analysis.popsim_validation import run_popsim_control_validation as R
         basis = "households" if context.config(KEY_BUILDING_TYPE_TO_HOUSEHOLDS) else "dwellings"
-        R.run(R._parse_args(["--run-output-dir", str(output_path), "--prefix", prefix,
-                             "--building-type-target-basis", basis]))
+        argv = ["--run-output-dir", str(output_path), "--prefix", prefix,
+                "--building-type-target-basis", basis,
+                "--tenure-min-households-outside",
+                str(context.config(KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE))]
+        if context.config(KEY_TENURE_OWNER_LIMITED):
+            argv.append("--tenure-owner-limited-to-dwellings")
+        R.run(R._parse_args(argv))
     _run(summary, "popsim_validation",
          context.config(KEY_POPSIM_VALIDATION), is_popsim, "not a popsim run", _popsim)
 

@@ -202,6 +202,21 @@ KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE = (
 # dwelling sums byte-identically.
 KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS = (
     "braunschweig.population.popsim.building_type_targets_to_households")
+# Limit the per-100m owner-household targets to the dwellings of the cell (issue #657; rule in
+# ``braunschweig.popsim.tenure_targets``): the Zensus owner quote covers only dwellings, so the
+# households of a dormitory or a home in a cell must not become owner targets. Needs the tier2
+# tenure control and the catalog controls source; with neither it logs one line and changes
+# nothing. Default False in code (the production switch follows the evidence run of the
+# issue); False keeps today's tenure targets byte-identically.
+KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS = (
+    "braunschweig.population.popsim.tenure_owner_limited_to_dwellings")
+# Households outside any dwelling (cell households minus rooms-table dwellings) a cell needs
+# before the owner limit changes it. Unit: households. Valid range: > 0 (a non-positive value
+# raises at configure time). Inert while KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS is off. The
+# default is single-sourced from ``tenure_targets.DEFAULT_MIN_HOUSEHOLDS_OUTSIDE`` (where the
+# reason for a threshold is documented), imported where the key is declared.
+KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE_DWELLINGS = (
+    "braunschweig.population.popsim.tenure_min_households_outside_dwellings")
 # Contract check before PopulationSim (issue #647, rule in ``braunschweig.popsim.seed_contract``):
 # "error" raises when a seed record of an exhaustive control group matches no / several
 # categories or a household group target misses the household total; "warn" only logs. The

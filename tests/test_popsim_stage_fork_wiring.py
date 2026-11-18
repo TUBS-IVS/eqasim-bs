@@ -7,6 +7,7 @@ in between are stubbed; ``execute`` stops with ``_Stop`` once the spied call was
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -48,10 +49,12 @@ def _values(**overrides):
     return values
 
 
-def _context(values):
+def _context(values, stage_path=None):
     # Unlisted keys are the boolean/numeric feature flags the stubbed steps never use.
+    # ``stage_path`` is the directory ``context.path()`` returns (the stage report file goes there).
     return SimpleNamespace(
-        config=lambda key: values.get(key, False), set_info=lambda key, value: None)
+        config=lambda key: values.get(key, False), set_info=lambda key, value: None,
+        path=lambda: str(stage_path))
 
 
 # --- read_stage_paths: relative project dir ----------------------------------------------
@@ -218,8 +221,12 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     monkeypatch.setattr(stage.solver_path_gate, "check_solver_paths", gate)
 
     with pytest.raises(_Stop):
-        stage.execute(_context(_values()))
+        stage.execute(_context(_values(), stage_path=tmp_path))
 
+    # The stage always leaves its report file, also with the owner limit off.
+    report = json.loads((tmp_path / stage.CENSUS_FILTERED_REPORT_FILE).read_text(encoding="utf-8"))
+    assert report["tenure_owner_limited_to_dwellings"]["enabled"] is False
+    assert report["tenure_owner_limited_to_dwellings"]["report"] is None
     # The fast-path rate is reported before the gate, which may stop the stage.
     assert calls == [
         "environment check", "contract", "purge", "batches", "log", "fast paths", "gate"]
