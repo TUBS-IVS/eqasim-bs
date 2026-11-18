@@ -597,6 +597,11 @@ config:
   braunschweig.population.popsim.integerizer_penalty_cap: 100000.0
   braunschweig.population.popsim.integerizer_parent_total_factor: 10.0
   braunschweig.population.popsim.integerizer_conserve_penalty: 100000.0
+  # Method of the controlled rounding and its search options (meaning: KEY_INTEGERIZER_CONTROLLED_METHOD
+  # in config_keys.py); the fork's defaults, only read with integerizer_rounding "controlled".
+  braunschweig.population.popsim.integerizer_controlled_method: "search"
+  braunschweig.population.popsim.integerizer_search_max_sweeps: 200
+  braunschweig.population.popsim.integerizer_search_shortlist: 24
   # Solver-path gate (meaning: KEY_SOLVER_FALLBACK_ERROR_RATE in config_keys.py): null = warn
   # only. ASSUMPTION-grade threshold, to be set from the first full run (design, issue #645).
   braunschweig.population.popsim.solver_fallback_error_rate: null

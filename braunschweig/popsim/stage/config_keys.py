@@ -142,6 +142,20 @@ KEY_INTEGERIZER_PARENT_TOTAL_FACTOR = (
 # Penalty per unit of household-conservation slack, number >= 0
 # (-> INTEGERIZER_CONSERVE_PENALTY).
 KEY_INTEGERIZER_CONSERVE_PENALTY = "braunschweig.population.popsim.integerizer_conserve_penalty"
+# Method of the controlled rounding (-> INTEGERIZER_CONTROLLED_METHOD; fork release 0.10.0+bs.2):
+# "search" (code default = the fork's default: a network start plus a deterministic swap search,
+# no LP) or "lp" (an LP with a repair step, kept for comparison). Only read with
+# integerizer_rounding "controlled". The penalty floor and cap price the cell distances of BOTH
+# methods; integerizer_parent_total_factor and integerizer_conserve_penalty are read by the "lp"
+# method only. The LP solver choice of the "lp" method is left at the fork's defaults.
+KEY_INTEGERIZER_CONTROLLED_METHOD = "braunschweig.population.popsim.integerizer_controlled_method"
+# Upper bound of the swap sweeps of one "search" call, positive integer
+# (-> INTEGERIZER_SEARCH_MAX_SWEEPS). A call that stops at the bound without a local optimum is
+# recorded as not converged (braunschweig.popsim.stage.solver_path_gate).
+KEY_INTEGERIZER_SEARCH_MAX_SWEEPS = "braunschweig.population.popsim.integerizer_search_max_sweeps"
+# Number of candidate swaps the "search" method keeps per step, integer >= 1
+# (-> INTEGERIZER_SEARCH_SHORTLIST).
+KEY_INTEGERIZER_SEARCH_SHORTLIST = "braunschweig.population.popsim.integerizer_search_shortlist"
 # Solver-path gate (braunschweig.popsim.stage.solver_path_gate, design goal G5, issue #645):
 # float in (0, 1] or null. Above this share of parent zones NOT integerized simultaneously
 # (per geography) the stage raises; null = warn only. Volatile: it only gates, no result, so a

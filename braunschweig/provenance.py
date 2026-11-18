@@ -54,6 +54,9 @@ PROVENANCE_CONFIG_KEYS = (
     "braunschweig.population.popsim.integerizer_penalty_cap",
     "braunschweig.population.popsim.integerizer_parent_total_factor",
     "braunschweig.population.popsim.integerizer_conserve_penalty",
+    "braunschweig.population.popsim.integerizer_controlled_method",
+    "braunschweig.population.popsim.integerizer_search_max_sweeps",
+    "braunschweig.population.popsim.integerizer_search_shortlist",
 )
 
 

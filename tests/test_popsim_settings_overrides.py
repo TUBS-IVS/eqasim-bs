@@ -34,6 +34,9 @@ NEUTRAL = {
     "INTEGERIZER_PENALTY_CAP": 100000.0,
     "INTEGERIZER_PARENT_TOTAL_FACTOR": 10.0,
     "INTEGERIZER_CONSERVE_PENALTY": 100000.0,
+    "INTEGERIZER_CONTROLLED_METHOD": "search",
+    "INTEGERIZER_SEARCH_MAX_SWEEPS": 200,
+    "INTEGERIZER_SEARCH_SHORTLIST": 24,
 }
 
 
@@ -118,6 +121,14 @@ def test_override_equal_raw_value_is_accepted_without_a_duplicate_key():
     ({"INTEGERIZER_PARENT_TOTAL_FACTOR": 0.5}, "INTEGERIZER_PARENT_TOTAL_FACTOR"),
     ({"INTEGERIZER_PARENT_TOTAL_FACTOR": float("nan")}, "INTEGERIZER_PARENT_TOTAL_FACTOR"),
     ({"INTEGERIZER_CONSERVE_PENALTY": -1.0}, "INTEGERIZER_CONSERVE_PENALTY"),
+    ({"INTEGERIZER_CONTROLLED_METHOD": "banana"}, "INTEGERIZER_CONTROLLED_METHOD"),
+    ({"INTEGERIZER_CONTROLLED_METHOD": False}, "INTEGERIZER_CONTROLLED_METHOD"),
+    ({"INTEGERIZER_SEARCH_MAX_SWEEPS": 0}, "INTEGERIZER_SEARCH_MAX_SWEEPS"),
+    ({"INTEGERIZER_SEARCH_MAX_SWEEPS": True}, "INTEGERIZER_SEARCH_MAX_SWEEPS"),
+    ({"INTEGERIZER_SEARCH_MAX_SWEEPS": 1.5}, "INTEGERIZER_SEARCH_MAX_SWEEPS"),
+    ({"INTEGERIZER_SEARCH_SHORTLIST": 0}, "INTEGERIZER_SEARCH_SHORTLIST"),
+    ({"INTEGERIZER_SEARCH_SHORTLIST": "24"}, "INTEGERIZER_SEARCH_SHORTLIST"),
+    ({"INTEGERIZER_SEARCH_SHORTLIST": True}, "INTEGERIZER_SEARCH_SHORTLIST"),
 ])
 def test_override_type_validation(changes, key):
     with pytest.raises(ValueError, match=key):
@@ -129,7 +140,8 @@ def _from_config(**changes):
         keep_fractional_sample_weights=False, integerizer_draw="off", integerizer_timeout_s=7200,
         integerizer_rounding="round", integerizer_penalty_floor=100.0,
         integerizer_penalty_cap=100000.0, integerizer_parent_total_factor=10.0,
-        integerizer_conserve_penalty=100000.0)
+        integerizer_conserve_penalty=100000.0, integerizer_controlled_method="search",
+        integerizer_search_max_sweeps=200, integerizer_search_shortlist=24)
     values.update(changes)
     return folders.populationsim_overrides_from_config(**values)
 
@@ -139,6 +151,13 @@ def test_overrides_from_config_carries_all_settings_and_validates():
     controlled = _from_config(integerizer_rounding="controlled", integerizer_penalty_floor=50)
     assert controlled["INTEGERIZER_ROUNDING"] == "controlled"
     assert controlled["INTEGERIZER_PENALTY_FLOOR"] == 50
+    search = _from_config(integerizer_controlled_method="lp", integerizer_search_max_sweeps=50,
+                          integerizer_search_shortlist=8)
+    assert search["INTEGERIZER_CONTROLLED_METHOD"] == "lp"
+    assert search["INTEGERIZER_SEARCH_MAX_SWEEPS"] == 50
+    assert search["INTEGERIZER_SEARCH_SHORTLIST"] == 8
+    with pytest.raises(ValueError, match="INTEGERIZER_CONTROLLED_METHOD"):
+        _from_config(integerizer_controlled_method="banana")
     with pytest.raises(ValueError, match="INTEGERIZER_DRAW"):
         _from_config(integerizer_draw="yes")
     with pytest.raises(ValueError, match="INTEGERIZER_ROUNDING"):
@@ -298,6 +317,9 @@ def test_signature_changes_with_each_override_and_seed_base():
         {"INTEGERIZER_PENALTY_CAP": 5000.0},
         {"INTEGERIZER_PARENT_TOTAL_FACTOR": 20.0},
         {"INTEGERIZER_CONSERVE_PENALTY": 500.0},
+        {"INTEGERIZER_CONTROLLED_METHOD": "lp"},
+        {"INTEGERIZER_SEARCH_MAX_SWEEPS": 100},
+        {"INTEGERIZER_SEARCH_SHORTLIST": 12},
     ):
         signature = _base_signature(
             settings_overrides=_overrides(**changes), integerizer_seed_base=None)
@@ -333,6 +355,9 @@ def _values(**changes):
         config_keys.KEY_INTEGERIZER_PENALTY_CAP: 100000.0,
         config_keys.KEY_INTEGERIZER_PARENT_TOTAL_FACTOR: 10.0,
         config_keys.KEY_INTEGERIZER_CONSERVE_PENALTY: 100000.0,
+        config_keys.KEY_INTEGERIZER_CONTROLLED_METHOD: "search",
+        config_keys.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS: 200,
+        config_keys.KEY_INTEGERIZER_SEARCH_SHORTLIST: 24,
         "random_seed": 4711,
     }
     values.update(changes)
@@ -354,9 +379,15 @@ def test_stage_reads_overrides_and_seed_base_only_when_draw_is_on():
 def test_stage_passes_the_controlled_rounding_settings_on():
     overrides, _ = stage._read_integerizer_settings(_ExecuteContext(_values(**{
         config_keys.KEY_INTEGERIZER_ROUNDING: "controlled",
-        config_keys.KEY_INTEGERIZER_PENALTY_FLOOR: 50.0})))
+        config_keys.KEY_INTEGERIZER_PENALTY_FLOOR: 50.0,
+        config_keys.KEY_INTEGERIZER_CONTROLLED_METHOD: "lp",
+        config_keys.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS: 50,
+        config_keys.KEY_INTEGERIZER_SEARCH_SHORTLIST: 8})))
     assert overrides["INTEGERIZER_ROUNDING"] == "controlled"
     assert overrides["INTEGERIZER_PENALTY_FLOOR"] == 50.0
+    assert overrides["INTEGERIZER_CONTROLLED_METHOD"] == "lp"
+    assert overrides["INTEGERIZER_SEARCH_MAX_SWEEPS"] == 50
+    assert overrides["INTEGERIZER_SEARCH_SHORTLIST"] == 8
 
 
 def test_stage_rejects_an_unknown_draw():
@@ -393,6 +424,9 @@ def test_stage_declares_neutral_defaults_non_volatile():
         (config_keys.KEY_INTEGERIZER_PENALTY_CAP, 100000.0),
         (config_keys.KEY_INTEGERIZER_PARENT_TOTAL_FACTOR, 10.0),
         (config_keys.KEY_INTEGERIZER_CONSERVE_PENALTY, 100000.0),
+        (config_keys.KEY_INTEGERIZER_CONTROLLED_METHOD, "search"),
+        (config_keys.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS, 200),
+        (config_keys.KEY_INTEGERIZER_SEARCH_SHORTLIST, 24),
     ):
         declared_default, kwargs = context.declared[key]
         assert declared_default == default
@@ -409,3 +443,7 @@ def test_base_config_states_the_tracked_values():
     assert config[config_keys.KEY_INTEGERIZER_TIMEOUT_S] == 7200
     # Stays "round" until the arm-3 run manifest of issue #646 meets its gate.
     assert config[config_keys.KEY_INTEGERIZER_ROUNDING] == "round"
+    # The search method's options state the fork's defaults.
+    assert config[config_keys.KEY_INTEGERIZER_CONTROLLED_METHOD] == "search"
+    assert config[config_keys.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS] == 200
+    assert config[config_keys.KEY_INTEGERIZER_SEARCH_SHORTLIST] == 24

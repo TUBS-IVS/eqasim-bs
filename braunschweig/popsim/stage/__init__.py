@@ -305,11 +305,14 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_INCOME_TILT_BETA,
     KEY_INCOME_TILT_CLIP,
     KEY_INTEGERIZER_CONSERVE_PENALTY,
+    KEY_INTEGERIZER_CONTROLLED_METHOD,
     KEY_INTEGERIZER_DRAW,
     KEY_INTEGERIZER_PARENT_TOTAL_FACTOR,
     KEY_INTEGERIZER_PENALTY_CAP,
     KEY_INTEGERIZER_PENALTY_FLOOR,
     KEY_INTEGERIZER_ROUNDING,
+    KEY_INTEGERIZER_SEARCH_MAX_SWEEPS,
+    KEY_INTEGERIZER_SEARCH_SHORTLIST,
     KEY_INTEGERIZER_TIMEOUT_S,
     KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS,
     KEY_KREIS_CONTROLS,
@@ -812,6 +815,10 @@ def configure(context):
     context.config(KEY_INTEGERIZER_PENALTY_CAP, 100000.0)
     context.config(KEY_INTEGERIZER_PARENT_TOTAL_FACTOR, 10.0)
     context.config(KEY_INTEGERIZER_CONSERVE_PENALTY, 100000.0)
+    # The method of the controlled rounding and its search options (the fork's defaults).
+    context.config(KEY_INTEGERIZER_CONTROLLED_METHOD, "search")
+    context.config(KEY_INTEGERIZER_SEARCH_MAX_SWEEPS, 200)
+    context.config(KEY_INTEGERIZER_SEARCH_SHORTLIST, 24)
     # Solver-path gate threshold (meaning: KEY_SOLVER_FALLBACK_ERROR_RATE in config_keys).
     context.config(KEY_SOLVER_FALLBACK_ERROR_RATE, None, volatile = True)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
@@ -2241,7 +2248,10 @@ def _read_integerizer_settings(context):
         integerizer_penalty_floor=context.config(KEY_INTEGERIZER_PENALTY_FLOOR),
         integerizer_penalty_cap=context.config(KEY_INTEGERIZER_PENALTY_CAP),
         integerizer_parent_total_factor=context.config(KEY_INTEGERIZER_PARENT_TOTAL_FACTOR),
-        integerizer_conserve_penalty=context.config(KEY_INTEGERIZER_CONSERVE_PENALTY))
+        integerizer_conserve_penalty=context.config(KEY_INTEGERIZER_CONSERVE_PENALTY),
+        integerizer_controlled_method=context.config(KEY_INTEGERIZER_CONTROLLED_METHOD),
+        integerizer_search_max_sweeps=context.config(KEY_INTEGERIZER_SEARCH_MAX_SWEEPS),
+        integerizer_search_shortlist=context.config(KEY_INTEGERIZER_SEARCH_SHORTLIST))
     draw_on = overrides[folders.INTEGERIZER_DRAW_SETTING] != "off"
     seed_base = int(context.config("random_seed")) if draw_on else None
     return overrides, seed_base
@@ -3013,9 +3023,11 @@ def execute(context) -> pd.DataFrame:
         expected_rounding=settings_overrides[folders.INTEGERIZER_ROUNDING_SETTING])
     context.set_info("popsim_solver_paths", solver_paths.to_dict("records"))
     context.set_info("popsim_solver_path_totals", solver_path_totals)
-    context.set_info("popsim_integerizer_fractional_share", solver_path_totals["fractional_share"])
     context.set_info(
-        "popsim_integerizer_conserve_slack_share", solver_path_totals["conserve_slack_share"])
+        "popsim_integerizer_conservation_loss_share",
+        solver_path_totals["conservation_loss_share"])
+    context.set_info(
+        "popsim_integerizer_not_converged_share", solver_path_totals["not_converged_share"])
     inkar_income = _load_inkar_income_scale(context)
     combined = _join_cell_attributes_onto_merged_output(merge_report, cells)
     donor_households, donor_persons = _load_donor_tables(

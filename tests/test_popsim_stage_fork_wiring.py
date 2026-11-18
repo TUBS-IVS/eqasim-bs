@@ -36,6 +36,9 @@ def _values(**overrides):
         stage.KEY_INTEGERIZER_PENALTY_CAP: 100000.0,
         stage.KEY_INTEGERIZER_PARENT_TOTAL_FACTOR: 10.0,
         stage.KEY_INTEGERIZER_CONSERVE_PENALTY: 100000.0,
+        stage.KEY_INTEGERIZER_CONTROLLED_METHOD: "search",
+        stage.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS: 200,
+        stage.KEY_INTEGERIZER_SEARCH_SHORTLIST: 24,
         stage.KEY_SOLVER_FALLBACK_ERROR_RATE: 0.2,
         "random_seed": 4711,
     }
@@ -211,7 +214,8 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
         "INTEGERIZER_TIMEOUT": 600, "INTEGERIZER_PATH_RECORD": True,
         "INTEGERIZER_ROUNDING": "controlled", "INTEGERIZER_PENALTY_FLOOR": 100.0,
         "INTEGERIZER_PENALTY_CAP": 100000.0, "INTEGERIZER_PARENT_TOTAL_FACTOR": 10.0,
-        "INTEGERIZER_CONSERVE_PENALTY": 100000.0,
+        "INTEGERIZER_CONSERVE_PENALTY": 100000.0, "INTEGERIZER_CONTROLLED_METHOD": "search",
+        "INTEGERIZER_SEARCH_MAX_SWEEPS": 200, "INTEGERIZER_SEARCH_SHORTLIST": 24,
     }
     # The last two positional arguments of the batch runner are the overrides and the seed base.
     assert seen["batches_args"][-2:] == (expected_overrides, 4711)

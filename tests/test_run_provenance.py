@@ -29,7 +29,8 @@ def _write_config(tmp_path: Path, working_directory: str | None) -> Path:
 def test_controlled_rounding_keys_are_recorded(tmp_path) -> None:
     """The controlled-rounding options change the integer population, so they are provenance."""
     prefix = "braunschweig.population.popsim.integerizer_"
-    names = ("rounding", "penalty_floor", "penalty_cap", "parent_total_factor", "conserve_penalty")
+    names = ("rounding", "penalty_floor", "penalty_cap", "parent_total_factor", "conserve_penalty",
+             "controlled_method", "search_max_sweeps", "search_shortlist")
     doc = {"config": {prefix + name: f"v_{name}" for name in names}}
     config = tmp_path / "config_rounding.yml"
     config.write_text(yaml.safe_dump(doc), encoding="utf-8")

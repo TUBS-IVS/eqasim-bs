@@ -199,7 +199,11 @@ INTEGERIZER_PENALTY_FLOOR_SETTING = "INTEGERIZER_PENALTY_FLOOR"
 INTEGERIZER_PENALTY_CAP_SETTING = "INTEGERIZER_PENALTY_CAP"
 INTEGERIZER_PARENT_TOTAL_FACTOR_SETTING = "INTEGERIZER_PARENT_TOTAL_FACTOR"
 INTEGERIZER_CONSERVE_PENALTY_SETTING = "INTEGERIZER_CONSERVE_PENALTY"
+INTEGERIZER_CONTROLLED_METHOD_SETTING = "INTEGERIZER_CONTROLLED_METHOD"
+INTEGERIZER_SEARCH_MAX_SWEEPS_SETTING = "INTEGERIZER_SEARCH_MAX_SWEEPS"
+INTEGERIZER_SEARCH_SHORTLIST_SETTING = "INTEGERIZER_SEARCH_SHORTLIST"
 INTEGERIZER_ROUNDINGS = ("round", "controlled")
+INTEGERIZER_CONTROLLED_METHODS = ("search", "lp")
 _MAX_INTEGERIZER_SEED = 2 ** 32
 
 
@@ -217,6 +221,10 @@ def _is_known_draw(value: object) -> bool:
 
 def _is_known_rounding(value: object) -> bool:
     return isinstance(value, str) and value in INTEGERIZER_ROUNDINGS
+
+
+def _is_known_controlled_method(value: object) -> bool:
+    return isinstance(value, str) and value in INTEGERIZER_CONTROLLED_METHODS
 
 
 def _is_finite_number(value: object) -> bool:
@@ -248,6 +256,10 @@ _OVERRIDE_RULES = {
     INTEGERIZER_PARENT_TOTAL_FACTOR_SETTING: (
         _is_factor_of_at_least_one, "a finite number >= 1"),
     INTEGERIZER_CONSERVE_PENALTY_SETTING: (_is_non_negative_number, "a finite number >= 0"),
+    INTEGERIZER_CONTROLLED_METHOD_SETTING: (
+        _is_known_controlled_method, f"one of {list(INTEGERIZER_CONTROLLED_METHODS)}"),
+    INTEGERIZER_SEARCH_MAX_SWEEPS_SETTING: (_is_positive_int, "a positive integer (sweeps)"),
+    INTEGERIZER_SEARCH_SHORTLIST_SETTING: (_is_positive_int, "an integer >= 1"),
 }
 
 
@@ -261,14 +273,16 @@ def populationsim_overrides_from_config(
     integerizer_timeout_s: object, integerizer_rounding: object,
     integerizer_penalty_floor: object, integerizer_penalty_cap: object,
     integerizer_parent_total_factor: object, integerizer_conserve_penalty: object,
+    integerizer_controlled_method: object, integerizer_search_max_sweeps: object,
+    integerizer_search_shortlist: object,
 ) -> dict[str, object]:
     """Build the PopulationSim settings that the tracked config decides, validated.
 
     ``INTEGERIZER_PATH_RECORD`` is always ``true``: the per-call path record is the
-    evidence the integerizer gate of the batch check reads. The three controlled-rounding
-    penalty values and the rounding mode are always written too, also with the neutral
-    ``round``. Meaning of the configurable values: the matching ``KEY_*`` comments in
-    ``braunschweig.popsim.stage.config_keys``.
+    evidence the integerizer gate of the batch check reads. The controlled-rounding
+    penalty values, the controlled method, the two search options and the rounding mode are
+    always written too, also with the neutral ``round``. Meaning of the configurable values:
+    the matching ``KEY_*`` comments in ``braunschweig.popsim.stage.config_keys``.
 
     Raises
     ------
@@ -286,6 +300,9 @@ def populationsim_overrides_from_config(
         INTEGERIZER_PENALTY_CAP_SETTING: integerizer_penalty_cap,
         INTEGERIZER_PARENT_TOTAL_FACTOR_SETTING: integerizer_parent_total_factor,
         INTEGERIZER_CONSERVE_PENALTY_SETTING: integerizer_conserve_penalty,
+        INTEGERIZER_CONTROLLED_METHOD_SETTING: integerizer_controlled_method,
+        INTEGERIZER_SEARCH_MAX_SWEEPS_SETTING: integerizer_search_max_sweeps,
+        INTEGERIZER_SEARCH_SHORTLIST_SETTING: integerizer_search_shortlist,
     }
     _validate_overrides(overrides)
     if integerizer_penalty_cap < integerizer_penalty_floor:
