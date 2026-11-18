@@ -74,10 +74,12 @@ import pandas as pd
 
 from braunschweig.popsim import batch
 from braunschweig.popsim import control_spec
+from braunschweig.popsim import employment_level
 from braunschweig.popsim import folders
 from braunschweig.popsim import merge as mergemod
 
 from braunschweig.popsim.fallback_rates import log_fallback_rate
+from braunschweig.popsim.kreis_attribute_control import WORK_BY_EMPLOYMENT_MIN_AGE_YEARS
 
 from .control_cells import _ARS_COLUMN, build_control_totals
 from .kreis_controls import _batch_kreis_apportion_weights, _kreis_pop_from_crosswalk
@@ -334,6 +336,10 @@ def log_empty_region_universes(
     return dropped
 
 
+#: Accepted values of ``run_popsim_mid(employment_level_source=...)`` (config key ``employment_level_source``).
+EMPLOYMENT_LEVEL_SOURCES = ("survey", "zensus")
+
+
 def assemble_batch_folder(
     folder: Union[str, Path],
     cells_subset: pd.DataFrame,
@@ -355,6 +361,7 @@ def assemble_batch_folder(
     apportion_weight_col_by_control: Mapping[str, str] | None = None,
     kreis_totals_by_weight_col: Mapping[str, Mapping[str, float]] | None = None,
     kreis_follow_grids: bool = False,
+    employed_bridge: float | None = None,
 ) -> dict[str, Path]:
     """Assemble one PopulationSim run folder for a subset of cells.
 
@@ -394,7 +401,20 @@ def assemble_batch_folder(
     (:func:`folders.set_kreis_controls_from_fine_sums`), so the KREIS target and the grid targets
     of one variable agree exactly. A pair needs both sides in ``controls_df``; a KREIS control
     whose grid is off keeps its apportioned value and is logged. Default ``False`` -> unchanged.
+
+    One employment level (#658, Task A5, D-emp): with ``employed_bridge`` (the share of the persons
+    employed by ``P_TAET`` that are in a survey employed class,
+    :func:`employment_level.employed_definition_bridge`) the employed classes of the KREIS families
+    ``work_by_employment`` / ``employment_status`` are rescaled, after the step above, to
+    ``employed_bridge`` x the batch sum of the employed grid per Kreis part
+    (:func:`employment_level.reconcile_kreis_employment_levels`); their row totals are unchanged.
+    Needs the Tier-3 KREIS geography and the employed grid (``ValueError`` otherwise). Default
+    ``None`` -> unchanged.
     """
+    if employed_bridge is not None and not (kreis_table is not None and bool(kreis_controls_map)):
+        raise ValueError(
+            "employed_bridge needs the Tier-3 KREIS geography (kreis_table and "
+            "kreis_controls_map); there is no KREIS employment control to reconcile without it.")
     if kreis_follow_grids and not (kreis_table is not None and bool(kreis_controls_map)):
         raise ValueError(
             "kreis_follow_grids needs the Tier-3 KREIS geography (kreis_table and "
@@ -457,6 +477,10 @@ def assemble_batch_folder(
         if kreis_follow_grids:
             control_totals[folders.GEO_KREIS] = _follow_grids(
                 control_totals, geo_crosswalk, controls_df)
+        if employed_bridge is not None:
+            control_totals[folders.GEO_KREIS] = employment_level.reconcile_kreis_employment_levels(
+                control_totals[folders.GEO_KREIS], control_totals, geo_crosswalk,
+                bridge=employed_bridge)
     return folders.write_popsim_folder(
         folder,
         geo_crosswalk=geo_crosswalk,
@@ -555,6 +579,7 @@ def run_popsim_mid(
     integerizer_seed_base: int | None = None,
     apportion_weight_col_by_control: Mapping[str, str] | None = None,
     kreis_follow_grids: bool = False,
+    employment_level_source: str = "survey",
 ) -> mergemod.MergeReport:
     """Batch the cells into PopulationSim runs, execute them, and merge the output.
 
@@ -623,7 +648,17 @@ def run_popsim_mid(
         Kreis census table (apportioned). ``True``: each is set to its batch's sum of the grid
         control of the same variable (:func:`folders.set_kreis_controls_from_fine_sums`, #658);
         needs the Tier-3 KREIS geography (``ValueError`` otherwise).
+    employment_level_source:
+        ``"survey"`` (default): the employed classes of the KREIS families keep the level of their
+        survey margin (legacy). ``"zensus"`` (#658, Task A5, D-emp): the bridge
+        (:func:`employment_level.employed_definition_bridge`) is computed once from the seed and
+        passed to every batch (``employed_bridge``), which rescales those classes to the Zensus
+        employment level; needs the Tier-3 KREIS geography and the employed grid. Any other value
+        is a ``ValueError``.
     """
+    if employment_level_source not in EMPLOYMENT_LEVEL_SOURCES:
+        raise ValueError(f"employment_level_source must be one of {EMPLOYMENT_LEVEL_SOURCES}, "
+                         f"got {employment_level_source!r}")
     draw = folders.integerizer_draw_in_settings(settings_yaml)
     if draw != "off" and integerizer_seed_base is None:
         raise ValueError(
@@ -648,6 +683,16 @@ def run_popsim_mid(
     # crosswalk exactly (dominant Kreis is per-1km-parent; parents are atomic to a
     # batch, so the batch pops partition this total). None for tier0-2 (no KREIS).
     tier3 = kreis_table is not None and bool(kreis_controls_map)
+    employed_bridge: float | None = None
+    if employment_level_source == "zensus":
+        if not tier3:
+            raise ValueError(
+                "employment_level_source='zensus' needs the Tier-3 KREIS geography (kreis_table and "
+                "kreis_controls_map); there is no KREIS employment control without it.")
+        # The seed is the same for every batch (the stratified path only filters donors), so the
+        # bridge is a property of the whole seed and is computed once.
+        employed_bridge = employment_level.employed_definition_bridge(
+            seed_persons, seed_households, min_age=WORK_BY_EMPLOYMENT_MIN_AGE_YEARS)
     kreis_total_pop: dict[str, float] | None = None
     kreis_total_hh: dict[str, float] | None = None
     kreis_totals_by_weight_col: dict[str, dict[str, float]] | None = None
@@ -722,6 +767,7 @@ def run_popsim_mid(
                 apportion_weight_col_by_control=apportion_weight_col_by_control,
                 kreis_totals_by_weight_col=kreis_totals_by_weight_col,
                 kreis_follow_grids=kreis_follow_grids,
+                employed_bridge=employed_bridge,
             )
             batch_folders.append(str(folder))
 
@@ -793,6 +839,7 @@ def run_popsim_mid(
                 apportion_weight_col_by_control=apportion_weight_col_by_control,
                 kreis_totals_by_weight_col=kreis_totals_by_weight_col,
                 kreis_follow_grids=kreis_follow_grids,
+                employed_bridge=employed_bridge,
             )
             batch_folders_stratified.append(str(folder))
             global_batch_index += 1
