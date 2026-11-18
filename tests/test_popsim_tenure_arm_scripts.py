@@ -79,41 +79,55 @@ def tenure_by_id(folder: Path, table: str, key: str, suffix: str) -> dict:
     return {"owner": frame[f"{OWNER}{suffix}"].to_dict(), "renter": frame[f"{RENTER}{suffix}"].to_dict()}
 
 
-@pytest.mark.parametrize("rule, corrupt, exit_code, owner_100m, renter_100m, owner_1km, renter_1km", [
+@pytest.mark.parametrize("rule, tamper, exit_code, owner_100m, renter_100m, owner_1km, renter_1km", [
     # Rule on: owners P1 [8, 8] (a1 unchanged 8, a2 limited to 8), P2 [10.4, 2] (12.4 -> 12, floors
     # 10 + 2); renters P1 [2, 22], P2 [9.6, 13] (22.6 -> 23, floors 9 + 13 = 22, remainder .6 -> b1 10).
-    ("on", False, 0, {A1: 8, A2: 8, B1: 10, B2: 2}, {A1: 2, A2: 22, B1: 10, B2: 13},
+    ("on", None, 0, {A1: 8, A2: 8, B1: 10, B2: 2}, {A1: 2, A2: 22, B1: 10, B2: 13},
      {PARENT_1: 16, PARENT_2: 12}, {PARENT_1: 24, PARENT_2: 23}),
     # Rule off reproduces the base folder exactly.
-    ("off", False, 0, {A1: 8, A2: 24, B1: 10, B2: 6}, {A1: 2, A2: 6, B1: 10, B2: 9},
+    ("off", None, 0, {A1: 8, A2: 24, B1: 10, B2: 6}, {A1: 2, A2: 6, B1: 10, B2: 9},
      {PARENT_1: 32, PARENT_2: 16}, {PARENT_1: 8, PARENT_2: 19}),
     # A change outside the two tenure columns (here a config file) makes the driver exit 1 and say so.
-    ("on", True, 1, None, None, None, None),
+    ("on", "config", 1, None, None, None, None),
+    # A pure format change (bytes differ, no value differs) of a control table is unexpected too.
+    ("off", "format", 1, None, None, None, None),
+    # Any library error ends in exit 1 and a log with the error text, not a folder without a log.
+    ("on", "error", 1, None, None, None, None),
 ])
 def test_prepare_tenure_arm_changes_only_the_tenure_columns(
-        tmp_path, monkeypatch, rule, corrupt, exit_code, owner_100m, renter_100m, owner_1km, renter_1km):
+        tmp_path, monkeypatch, rule, tamper, exit_code, owner_100m, renter_100m, owner_1km, renter_1km):
     prepare = load_script("prepare_tenure_arm")
     base, out, grid = tmp_path / "arm3" / "batch_000", tmp_path / "arm4" / "batch_000", tmp_path / "grid.parquet"
     write_batch_folder(base)
     write_grid(grid)
-    if corrupt:
+    if tamper in ("config", "format"):
         real = prepare.rewrite_control_tables
 
         def rewrite_and_tamper(folder, new_100m, new_1km):
             real(folder, new_100m, new_1km)
-            (folder / "configs" / "controls.csv").write_text("tampered\n")
+            if tamper == "config":
+                (folder / "configs" / "controls.csv").write_text("tampered\n")
+            else:  # a trailing blank line: another byte, the same table
+                table = folder / "data" / "control_totals_ZENSUS100m.csv"
+                table.write_bytes(table.read_bytes() + b"\n")
 
         monkeypatch.setattr(prepare, "rewrite_control_tables", rewrite_and_tamper)
+    if tamper == "error":
+        def fail(*args, **kwargs):
+            raise KeyError("boom")
+
+        monkeypatch.setattr(prepare, "compute_tenure_tables", fail)
 
     code = prepare.main(["--base", str(base), "--out", str(out), "--cells-100m", str(grid), "--rule", rule,
                          "--library-commit", "abc123"])
 
     log = json.loads((out / "prepare_log.json").read_text(encoding="utf-8"))
     assert code == exit_code
-    assert (out / "output").is_dir() and not any((out / "output").iterdir())
-    if corrupt:
-        assert log["ok"] is False and any("configs/controls.csv" in p for p in log["problems"])
+    if tamper:
+        expected = {"config": "configs/controls.csv", "format": "format change", "error": "KeyError"}[tamper]
+        assert log["ok"] is False and any(expected in p for p in log["problems"])
         return
+    assert (out / "output").is_dir() and not any((out / "output").iterdir())
     assert log["ok"] is True and log["library_commit"] == "abc123"
     changed = {name: entry["columns_changed"] for name, entry in log["files"].items() if entry["changed"]}
     if rule == "off":
@@ -138,13 +152,15 @@ HH_CONTROL = f"{HH_TOTAL}_ZENSUS100m_target"
 OWNER_CONTROL, RENTER_CONTROL = f"{OWNER}_ZENSUS100m_target", f"{RENTER}_ZENSUS100m_target"
 
 
-def fit_rows(batch: str, arm: int) -> list:
-    """Batch rows of control_fit.csv. Arm 3 -> arm 4 by hand:
+def fit_rows(batch: str, arm: int, at_bounds: bool) -> list:
+    """Batch rows of control_fit.csv. Arm 3 -> arm 4 by hand (``at_bounds`` False / True):
 
-    ZENSUS100m, other controls: (household total abs 10 / 5, control X abs 20 / 28) over targets 100 + 100:
-    WAPE 0.15 -> 0.165 (the building-type control, abs 0 / 50, and the zero-target control are ignored).
-    ZENSUS1km control Y: abs 10 / 13 over 100: 0.10 -> 0.13. KREIS control Z: abs 5 / 5 over 100.
+    ZENSUS100m, other controls: (household total abs 10 / 5, control X abs 20 / 28 or 29) over targets
+    100 + 100: WAPE 0.15 -> 0.165 or exactly 0.17 = its bound (the building-type control, abs 0 / 50, and the
+    zero-target control are ignored). ZENSUS1km control Y: abs 10 / 13 or 12 over 100: 0.10 -> 0.13 (above its
+    bound 0.12) or exactly 0.12. KREIS control Z: abs 5 / 5 over 100.
     Tenure controls (pooled): (10 + 10) / (60 + 40) = 0.20 -> (5 + 9) / (60 + 40) = 0.14.
+    Household excess (synthetic - target of the household total): 10 -> 5 or exactly 10.
     """
     new = arm == 4
 
@@ -153,34 +169,45 @@ def fit_rows(batch: str, arm: int) -> list:
                 "target_sum": target, "synthetic_sum": synthetic, "abs_error": abs_error}
 
     return [
-        row(HH_CONTROL, "ZENSUS100m", 100.0, 105.0 if new else 110.0, 5.0 if new else 10.0),
-        row("X_ZENSUS100m_target", "ZENSUS100m", 100.0, 100.0, 28.0 if new else 20.0),
+        row(HH_CONTROL, "ZENSUS100m", 100.0, 110.0 if (at_bounds or not new) else 105.0, 5.0 if new else 10.0),
+        row("X_ZENSUS100m_target", "ZENSUS100m", 100.0, 100.0, (29.0 if at_bounds else 28.0) if new else 20.0),
         row("building_type_x_ZENSUS100m_target", "ZENSUS100m", 50.0, 50.0, 50.0 if new else 0.0),
         row("W_ZENSUS100m_target", "ZENSUS100m", 0.0, 3.0, 3.0),
         row(OWNER_CONTROL, "ZENSUS100m", 60.0, 60.0, 5.0 if new else 10.0),
         row(RENTER_CONTROL, "ZENSUS100m", 40.0, 40.0, 9.0 if new else 10.0),
-        row("Y_ZENSUS1km_target", "ZENSUS1km", 100.0, 100.0, 13.0 if new else 10.0),
+        row("Y_ZENSUS1km_target", "ZENSUS1km", 100.0, 100.0, (12.0 if at_bounds else 13.0) if new else 10.0),
         row("Z_KREIS_target", "KREIS", 100.0, 100.0, 5.0),
     ]
 
 
-def write_diag(diag: Path, work: Path, arm: int) -> None:
+def write_diag(diag: Path, work: Path, arm: int, *, at_bounds: bool = False, drop=None) -> None:
+    """Diagnostics of one arm. ``at_bounds``: every arm-4 value meets its check, several exactly at the bound.
+    ``drop`` = ``(table, key)`` leaves one input out: ``("shift", batch)``, ``("conservation", level)`` or
+    ``("solver", level)``."""
     diag.mkdir(parents=True)
     batches = ("batch_000", "batch_032")
-    pd.DataFrame([r for b in batches for r in fit_rows(b, arm)]).to_csv(diag / "control_fit.csv", index=False)
-    # G4: batch_000 misses in both arms (control B); batch_032 meets it in arm 3 and misses it in arm 4.
-    shift = [("batch_000", "A", True), ("batch_000", "B", False), ("batch_032", "A", True),
-             ("batch_032", "B", arm == 3)]
+    levels = ("KREIS", "ZENSUS1km", "ZENSUS100m")
+    pd.DataFrame([r for b in batches for r in fit_rows(b, arm, at_bounds)]).to_csv(
+        diag / "control_fit.csv", index=False)
+    # G4: batch_000 misses in both arms (control B); batch_032 meets it in arm 3 and (unless at_bounds)
+    # misses it in arm 4.
+    shift = [("batch_000", "A", True), ("batch_000", "B", at_bounds), ("batch_032", "A", True),
+             ("batch_032", "B", arm == 3 or at_bounds)]
+    if arm == 3:
+        shift[1] = ("batch_000", "B", False)
     pd.DataFrame([{"batch": b, "control": c, "target_sum": 100.0, "shift": 0.0, "within_bound": ok}
-                  for b, c, ok in shift]).to_csv(diag / "rounding_shift.csv", index=False)
-    # Solver paths: batch_032 of arm 4 has one non-simultaneous parent at ZENSUS100m.
+                  for b, c, ok in shift if drop != ("shift", b)]).to_csv(diag / "rounding_shift.csv", index=False)
+    # Solver paths: unless at_bounds, batch_032 of arm 4 has one non-simultaneous parent at ZENSUS100m.
     pd.DataFrame([{"batch": b, "level": level, "n_parents": 1,
-                   "non_simultaneous": 1 if (arm == 4 and b == "batch_032" and level == "ZENSUS100m") else 0}
-                  for b in batches for level in ("KREIS", "ZENSUS1km", "ZENSUS100m")]).to_csv(
+                   "non_simultaneous": 1 if (arm == 4 and not at_bounds and b == "batch_032"
+                                             and level == "ZENSUS100m") else 0}
+                  for b in batches for level in levels if drop != ("solver", level)]).to_csv(
         diag / "solver_paths.csv", index=False)
-    pd.DataFrame([{"batch": b, "level": level, "abs_deviation_sum": 300.0 if (arm == 4 and level == "ZENSUS100m")
-                   else (331.0 if level == "ZENSUS100m" else 0.0)}
-                  for b in batches for level in ("KREIS", "ZENSUS1km", "ZENSUS100m")]).to_csv(
+    # Conservation: ZENSUS100m 331 in arm 3; arm 4 is 300 (better) or, at_bounds, exactly 331.
+    pd.DataFrame([{"batch": b, "level": level,
+                   "abs_deviation_sum": (331.0 if at_bounds or arm == 3 else 300.0) if level == "ZENSUS100m"
+                   else 0.0}
+                  for b in batches for level in levels if drop != ("conservation", level)]).to_csv(
         diag / "household_conservation.csv", index=False)
     columns = [*solver_path_gate._COLUMNS, *solver_path_gate.CONTROLLED_COLUMNS]
     base_row = {c: "" for c in columns}
@@ -196,19 +223,20 @@ def write_diag(diag: Path, work: Path, arm: int) -> None:
                                                               index=False)
 
 
-def test_compare_tenure_arm_gives_the_hand_computed_verdict(tmp_path):
+def run_compare(tmp_path, *, at_bounds=False, drop3=None, drop4=None, off_log=None):
+    """Write both arms' diagnostics and the prepare logs, run the comparison: ``(code, table, verdict)``."""
     compare = load_script("compare_tenure_arm")
-    write_diag(tmp_path / "diag3", tmp_path / "work3", 3)
-    write_diag(tmp_path / "diag4", tmp_path / "work4", 4)
+    write_diag(tmp_path / "diag3", tmp_path / "work3", 3, at_bounds=at_bounds, drop=drop3)
+    write_diag(tmp_path / "diag4", tmp_path / "work4", 4, at_bounds=at_bounds, drop=drop4)
     logs = tmp_path / "logs"
     logs.mkdir()
     for b in ("batch_000", "batch_032"):
         (logs / f"{b}.rule_on.json").write_text(json.dumps(
-            {"files": {"data/control_totals_ZENSUS100m.csv": {"changed": True}}, "problems": [],
-             "rule_report": {"cells_changed": 2}}))
+            {"files": {"data/control_totals_ZENSUS100m.csv": {"changed": True}}, "problems": [], "ok": True,
+             "library_commit": "abc123", "rule_report": {"cells_changed": 2}}))
         (logs / f"{b}.rule_off.json").write_text(json.dumps(
-            {"files": {"data/control_totals_ZENSUS100m.csv": {"changed": False}}, "problems": [],
-             "rule_report": None}))
+            off_log or {"files": {"data/control_totals_ZENSUS100m.csv": {"changed": False}}, "problems": [],
+                        "ok": True, "library_commit": "abc123", "rule_report": None}))
 
     code = compare.main(["--base-diag", str(tmp_path / "diag3"), "--new-diag", str(tmp_path / "diag4"),
                          "--base-work", str(tmp_path / "work3"), "--new-work", str(tmp_path / "work4"),
@@ -217,6 +245,45 @@ def test_compare_tenure_arm_gives_the_hand_computed_verdict(tmp_path):
 
     table = pd.read_csv(tmp_path / "out" / "comparison.csv").set_index(["batch", "check"])
     verdict = json.loads((tmp_path / "out" / "verdict.json").read_text(encoding="utf-8"))
+    return code, table, verdict
+
+
+def test_compare_tenure_arm_values_exactly_at_their_bounds_are_met(tmp_path):
+    code, table, verdict = run_compare(tmp_path, at_bounds=True)
+
+    # N-a at 0.17 = 0.15 + 0.02 and 0.12 = 0.10 + 0.02, household excess 10 = 10, conservation 331 = 331.
+    assert table.loc[("batch_000", "N-a_ZENSUS100m"), "arm4_value"] == pytest.approx(0.17)
+    assert table.loc[("batch_000", "N-a_ZENSUS1km"), "arm4_value"] == pytest.approx(0.12)
+    assert code == 0 and verdict["overall_met"] is True and verdict["missing_inputs"] == []
+    assert table["met"].all()
+    assert verdict["inputs"]["library_commits_in_prepare_logs"] == ["abc123"]
+    assert all(verdict["inputs"]["files_sha256"].values())  # every input read has a digest
+
+
+@pytest.mark.parametrize("kwargs, check, named", [
+    # I1: a batch without a row in rounding_shift.csv (either arm) must not pass N-b by an empty dict.
+    ({"drop4": ("shift", "batch_032")}, "batch_032/N-b", "rounding_shift.csv of arm4"),
+    ({"drop3": ("shift", "batch_000")}, "batch_000/N-b", "rounding_shift.csv of arm3"),
+    # I2: the full level set is required in both arms, for N-d and for N-c.
+    ({"drop4": ("conservation", "ZENSUS1km")}, "batch_000/N-d_ZENSUS1km", "household_conservation.csv of arm4"),
+    ({"drop3": ("conservation", "KREIS")}, "batch_032/N-d_KREIS", "household_conservation.csv of arm3"),
+    ({"drop4": ("solver", "KREIS")}, "batch_000/N-c", "solver_paths.csv of arm4"),
+    # I3: a rule-off log with a problem but no changed file is not clean.
+    ({"off_log": {"files": {}, "problems": ["x: boom"], "ok": False, "library_commit": "abc123",
+                  "rule_report": None}}, "batch_000/O-ten-a", None),
+])
+def test_compare_tenure_arm_fails_on_missing_or_unclean_inputs(tmp_path, kwargs, check, named):
+    code, table, verdict = run_compare(tmp_path, at_bounds=True, **kwargs)
+
+    assert code == 1 and verdict["overall_met"] is False
+    assert verdict["checks"][check]["met"] is False
+    if named:
+        assert any(named in m for m in verdict["missing_inputs"])
+
+
+def test_compare_tenure_arm_gives_the_hand_computed_verdict(tmp_path):
+    code, table, verdict = run_compare(tmp_path)
+
     assert code == 1 and verdict["overall_met"] is False
     # batch_000: only the 1 km WAPE rises beyond its bound (0.10 -> 0.13 > 0.12).
     met = table.loc["batch_000"]["met"].to_dict()

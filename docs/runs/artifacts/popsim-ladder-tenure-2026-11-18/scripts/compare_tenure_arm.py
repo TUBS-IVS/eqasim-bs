@@ -14,10 +14,17 @@ arm4_value, bound, met) and ``verdict.json`` (per check met / not met, ``overall
 met, and the reported figures in the block ``reported``). Needs the eqasim-bs code on PYTHONPATH.
 Exit code 0 when ``overall_met``, else 1. Issue #657.
 
+An input that is missing for a gated check (a batch absent from ``rounding_shift.csv`` of either arm, a
+level absent from ``household_conservation.csv`` or ``solver_paths.csv``) makes that check not met and is
+named in ``missing_inputs`` of ``verdict.json``; a check never passes on an empty input. A missing file
+raises. ``verdict.json`` also records the input paths as given, the sha256 of every input read and the
+library commit(s) named in the prepare logs.
+
 Checks (gated unless noted):
 
 * O-ten-a: the rule-on prepare log changed only the two tenure columns of the two control tables, and the
-  rule-off log changed nothing. Value = number of unexpected changes (rule-on) + changed files (rule-off).
+  rule-off log changed nothing; both logs have no ``problems`` and no ``ok: false``. Value = number of
+  problems and not-ok logs (both logs) + changed files (rule-off).
 * O-ten-b (``HH_EXCESS_BATCHES``): household excess (synthetic minus target of the household-total control
   at ZENSUS100m, ``control_fit.csv`` scope batch) of arm 4 <= arm 3.
 * O-ten-c: pooled ZENSUS100m WAPE of the two tenure controls = sum(abs_error) / sum(target_sum) over their
@@ -37,6 +44,7 @@ Reported without a bound: ``hh_excess``, ``zone_shortfall`` and ``row_shortfall`
 both arms, the 100 m tenure targets and synthetic sums, G4 per control.
 """
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -62,6 +70,10 @@ HOUSEHOLD_TOTAL_PREFIX = "Insgesamt_Haushalte"
 BUILDING_TYPE_PREFIX = "building_type_"
 TENURE_BASES = tuple(name for name, _ in control_spec._TIER2_TENURE_ENTRIES)
 SOLVER_LEVELS = ("KREIS", "ZENSUS1km", "ZENSUS100m")
+# Float noise allowance of every "<= bound" test, so that a value exactly at its bound (0.15 + 0.02 against
+# 0.17) is met whatever the last binary digit says. Far below the resolution of any figure compared.
+BOUND_TOLERANCE = 1e-9
+ARMS = ("arm3", "arm4")
 
 
 def is_tenure(control: pd.Series) -> pd.Series:
@@ -101,17 +113,35 @@ def household_excess(fit: pd.DataFrame) -> float:
 
 
 def tenure_rows(fit: pd.DataFrame) -> pd.DataFrame:
+    """The two tenure rows at ZENSUS100m, WITHOUT the ``target_sum > 0`` filter of the G3 reading.
+
+    O-ten-c is pre-registered as the plain pooled ratio over exactly these two rows. A tenure control with
+    a zero target keeps its error in the numerator: the rule moves owners into renters, and error on a
+    control without a target is what the check has to see, not hide. Both rows must exist.
+    """
     rows = fit[(fit["geography"] == LEVEL_100M) & is_tenure(fit["control"])]
     if len(rows) != len(TENURE_BASES):
         raise ValueError(f"expected {len(TENURE_BASES)} tenure controls at {LEVEL_100M}, found {len(rows)}")
     return rows
 
 
-def g4_per_control(diag: Path, batch: str) -> dict:
-    """``{control: met}`` from ``rounding_shift.csv`` (``within_bound`` as ``compare_arm3.py`` G4 reads it)."""
+def g4_per_control(diag: Path, batch: str):
+    """``{control: met}`` from ``rounding_shift.csv`` (``within_bound`` as ``compare_arm3.py`` G4 reads it).
+
+    ``None`` when the batch has no row at all: an empty table would read as "no miss" and pass N-b.
+    """
     shift = pd.read_csv(diag / "rounding_shift.csv")
     shift = shift[shift["batch"] == batch]
+    if shift.empty:
+        return None
     return {r["control"]: bool(r["within_bound"]) for _, r in shift.iterrows()}
+
+
+def conservation_deviation(diag: Path, batch: str, level: str):
+    """``abs_deviation_sum`` of one batch and level in ``household_conservation.csv``; ``None`` if absent."""
+    table = pd.read_csv(diag / "household_conservation.csv")
+    rows = table[(table["batch"] == batch) & (table["level"] == level)]
+    return float(rows["abs_deviation_sum"].iloc[0]) if len(rows) else None
 
 
 def solver_path_figures(diag: Path, work: Path, batch: str) -> dict:
@@ -124,6 +154,7 @@ def solver_path_figures(diag: Path, work: Path, batch: str) -> dict:
     solver = solver[(solver["batch"] == batch) & solver["level"].isin(SOLVER_LEVELS)]
     figures = {"non_simultaneous": {r["level"]: int(r["non_simultaneous"]) for _, r in solver.iterrows()},
                "proof_error": None, "totals": None}
+    figures["missing_levels"] = [level for level in SOLVER_LEVELS if level not in figures["non_simultaneous"]]
     path = work / batch / "output" / "integerizer_paths.csv"
     if not path.is_file():
         figures["proof_error"] = f"{path} is missing"
@@ -138,13 +169,17 @@ def solver_path_figures(diag: Path, work: Path, batch: str) -> dict:
 
 
 def solver_violations(figures: dict) -> int:
-    """Number of violations of N-c in one batch (a record that does not prove controlled counts once)."""
+    """Number of violations of N-c in one batch.
+
+    A record that does not prove a controlled run counts once; so does every level of ``SOLVER_LEVELS``
+    that ``solver_paths.csv`` has no row for.
+    """
     if figures["proof_error"] is not None or figures["totals"] is None:
-        return 1
+        return 1 + len(figures["missing_levels"])
     totals = figures["totals"]
     simultaneous = figures["non_simultaneous"]
     calls = totals["controlled_simul_calls"]
-    return (sum(simultaneous.values()) + (0 if simultaneous else 1) + (1 if calls == 0 else 0)
+    return (sum(simultaneous.values()) + len(figures["missing_levels"]) + (1 if calls == 0 else 0)
             + abs(calls - totals["search_calls"]) + totals["controlled_non_success_calls"]
             + totals["search_not_converged_calls"])
 
@@ -164,9 +199,19 @@ def clean(value):
     return None if isinstance(value, float) and math.isnan(value) else value
 
 
+def at_most(value: float, bound: float) -> bool:
+    """``value <= bound`` within ``BOUND_TOLERANCE``; NaN (no value) is never within a bound."""
+    return bool(value <= bound + BOUND_TOLERANCE)
+
+
+def log_problem_count(log: dict) -> int:
+    """Problems named in a prepare log, plus one for ``ok: false``; a log without ``problems`` raises."""
+    return len(log["problems"]) + (0 if log.get("ok", True) else 1)
+
+
 def evaluate(args) -> tuple:
-    """``(rows, reported)``: the comparison rows and the reported figures."""
-    rows, reported = [], {}
+    """``(rows, reported, missing)``: the comparison rows, the reported figures, the missing inputs."""
+    rows, reported, missing = [], {}, []
 
     def add(batch, check, gated, arm3, arm4, bound, met):
         rows.append({"batch": batch, "check": check, "gated": gated, "arm3_value": arm3,
@@ -177,34 +222,52 @@ def evaluate(args) -> tuple:
         log_on = read_prepare_log(args.prepare_logs, batch, "on")
         log_off = read_prepare_log(args.prepare_logs, batch, "off")
         off_changed = sum(1 for entry in log_off["files"].values() if entry["changed"])
-        n_bad = len(log_on["problems"]) + off_changed
+        # Both logs must be clean: no problems and no ok:false, not only "no file changed".
+        n_bad = log_problem_count(log_on) + log_problem_count(log_off) + off_changed
         add(batch, "O-ten-a", True, math.nan, n_bad, 0, n_bad == 0)
 
         if batch in HH_EXCESS_BATCHES:
             e3, e4 = household_excess(fit3), household_excess(fit4)
-            add(batch, "O-ten-b", True, e3, e4, e3, e4 <= e3)
+            add(batch, "O-ten-b", True, e3, e4, e3, at_most(e4, e3))
         t3, t4 = wape(tenure_rows(fit3)), wape(tenure_rows(fit4))
-        add(batch, "O-ten-c", True, t3, t4, t3 + TENURE_WAPE_SLACK, t4 <= t3 + TENURE_WAPE_SLACK)
+        add(batch, "O-ten-c", True, t3, t4, t3 + TENURE_WAPE_SLACK, at_most(t4, t3 + TENURE_WAPE_SLACK))
         for geography, slack in WAPE_SLACK.items():
             w3, w4 = other_controls_wape(fit3, geography), other_controls_wape(fit4, geography)
-            add(batch, f"N-a_{geography}", True, w3, w4, w3 + slack, w4 <= w3 + slack)
+            add(batch, f"N-a_{geography}", True, w3, w4, w3 + slack, at_most(w4, w3 + slack))
 
         g4_3, g4_4 = g4_per_control(args.base_diag, batch), g4_per_control(args.new_diag, batch)
-        miss3, miss4 = sum(not v for v in g4_3.values()), sum(not v for v in g4_4.values())
-        gated = miss3 == 0
-        add(batch, "N-b", gated, miss3, miss4, 0 if gated else math.nan, miss4 == 0 or not gated)
+        if g4_3 is None or g4_4 is None:
+            for arm, g4 in zip(ARMS, (g4_3, g4_4)):
+                if g4 is None:
+                    missing.append(f"{batch}: no rows in rounding_shift.csv of {arm}")
+            add(batch, "N-b", True, math.nan if g4_3 is None else sum(not v for v in g4_3.values()),
+                math.nan if g4_4 is None else sum(not v for v in g4_4.values()), 0, False)
+            g4_3, g4_4 = g4_3 or {}, g4_4 or {}
+        else:
+            miss3, miss4 = sum(not v for v in g4_3.values()), sum(not v for v in g4_4.values())
+            gated = miss3 == 0
+            add(batch, "N-b", gated, miss3, miss4, 0 if gated else math.nan, miss4 == 0 or not gated)
 
         paths3 = solver_path_figures(args.base_diag, args.base_work, batch)
         paths4 = solver_path_figures(args.new_diag, args.new_work, batch)
+        for arm, paths in zip(ARMS, (paths3, paths4)):
+            missing.extend(f"{batch}: no row of level {level} in solver_paths.csv of {arm}"
+                           for level in paths["missing_levels"])
         v4 = solver_violations(paths4)
         add(batch, "N-c", True, solver_violations(paths3), v4, 0, v4 == 0)
 
-        cons3 = pd.read_csv(args.base_diag / "household_conservation.csv")
-        cons4 = pd.read_csv(args.new_diag / "household_conservation.csv")
-        for level in cons4[cons4["batch"] == batch]["level"]:
-            d3 = float(cons3[(cons3["batch"] == batch) & (cons3["level"] == level)]["abs_deviation_sum"].iloc[0])
-            d4 = float(cons4[(cons4["batch"] == batch) & (cons4["level"] == level)]["abs_deviation_sum"].iloc[0])
-            add(batch, f"N-d_{level}", True, d3, d4, d3, d4 <= d3)
+        # The full level set must be present in BOTH arms; a missing level is not met and named.
+        for level in SOLVER_LEVELS:
+            d3 = conservation_deviation(args.base_diag, batch, level)
+            d4 = conservation_deviation(args.new_diag, batch, level)
+            for arm, d in zip(ARMS, (d3, d4)):
+                if d is None:
+                    missing.append(f"{batch}: no row of level {level} in household_conservation.csv of {arm}")
+            if d3 is None or d4 is None:
+                add(batch, f"N-d_{level}", True, math.nan if d3 is None else d3,
+                    math.nan if d4 is None else d4, math.nan, False)
+            else:
+                add(batch, f"N-d_{level}", True, d3, d4, d3, at_most(d4, d3))
 
         def tenure_sums(fit):
             return {r["control"]: {"target_sum": r["target_sum"], "synthetic_sum": r["synthetic_sum"]}
@@ -220,7 +283,37 @@ def evaluate(args) -> tuple:
             "solver_path_proof_error_arm4": paths4["proof_error"],
             "g4_per_control_arm3": g4_3, "g4_per_control_arm4": g4_4,
             "rule_report": log_on["rule_report"]}
-    return rows, reported
+    return rows, reported, missing
+
+
+def sha256(path: Path):
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def input_record(args) -> dict:
+    """The inputs of the comparison: the paths as given and the sha256 of every file read."""
+    files = {}
+    for diag in (args.base_diag, args.new_diag):
+        for name in ("control_fit.csv", "rounding_shift.csv", "solver_paths.csv", "household_conservation.csv"):
+            files[str(diag / name)] = diag / name
+    for work in (args.base_work, args.new_work):
+        for batch in args.batches:
+            path = work / batch / "output" / "integerizer_paths.csv"
+            files[str(path)] = path
+    for batch in args.batches:
+        for rule in ("on", "off"):
+            path = args.prepare_logs / f"{batch}.rule_{rule}.json"
+            files[str(path)] = path
+    commits = sorted({read_prepare_log(args.prepare_logs, b, r).get("library_commit")
+                      for b in args.batches for r in ("on", "off")}, key=str)
+    return {"paths": {key: str(getattr(args, key.replace("-", "_"))) for key in
+                      ("base-diag", "new-diag", "base-work", "new-work", "prepare-logs", "out")},
+            "files_sha256": {name: sha256(path) if path.is_file() else None for name, path in files.items()},
+            "library_commits_in_prepare_logs": commits}
 
 
 def main(argv=None) -> int:
@@ -235,16 +328,18 @@ def main(argv=None) -> int:
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args(argv)
 
-    rows, reported = evaluate(args)
+    rows, reported, missing = evaluate(args)
     args.out.mkdir(parents=True, exist_ok=True)
     table = pd.DataFrame(rows, columns=["batch", "check", "gated", "arm3_value", "arm4_value", "bound", "met"])
     table.to_csv(args.out / "comparison.csv", index=False)
-    overall = bool(table[table["gated"]]["met"].all())
+    overall = bool(table[table["gated"]]["met"].all()) and not missing
     verdict = {
         "bounds": {"tenure_wape_slack": TENURE_WAPE_SLACK, "wape_slack": WAPE_SLACK, "g4_bound": G4_BOUND,
-                   "g4_min_target": G4_MIN_TARGET, "hh_excess_batches": list(HH_EXCESS_BATCHES)},
+                   "g4_min_target": G4_MIN_TARGET, "hh_excess_batches": list(HH_EXCESS_BATCHES),
+                   "bound_tolerance": BOUND_TOLERANCE},
         "checks": {f"{r['batch']}/{r['check']}": {"gated": r["gated"], "met": r["met"]} for r in rows},
-        "overall_met": overall, "reported": reported}
+        "missing_inputs": missing, "overall_met": overall, "inputs": input_record(args),
+        "reported": reported}
     (args.out / "verdict.json").write_text(json.dumps(clean(verdict), indent=2), encoding="utf-8")
     pd.set_option("display.width", 200)
     print(table.to_string(index=False))

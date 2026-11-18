@@ -207,28 +207,33 @@ def main(argv=None) -> int:
             print(f"refuse: {args.base / sub} is not a directory", file=sys.stderr)
             return EXIT_BAD_ARGUMENTS
     rule_on = args.rule == "on"
-    log_path = args.log or args.out / "prepare_log.json"
 
     problems = []
     report = None
-    args.out.mkdir(parents=True)
-    shutil.copytree(args.base / "configs", args.out / "configs")
-    shutil.copytree(args.base / "data", args.out / "data")
-    (args.out / "output").mkdir()
+    files = {}
+    # Any failure (a library KeyError, a full disk, a missing grid column) ends in a log with the error
+    # text and exit 1; a half-built folder never stays without a log.
     try:
+        args.out.mkdir(parents=True)
+        shutil.copytree(args.base / "configs", args.out / "configs")
+        shutil.copytree(args.base / "data", args.out / "data")
+        (args.out / "output").mkdir()
         new_100m, new_1km, report = compute_tenure_tables(
             args.base, args.cells_100m, rule_on=rule_on,
             min_households_outside=args.min_households_outside)
         rewrite_control_tables(args.out, new_100m, new_1km)
-    except ValueError as error:
-        problems.append(f"cells: {error}")
-    files, unexpected = compare_folders(args.base, args.out)
-    problems.extend(unexpected)
-    if any((args.out / "output").iterdir()):
-        problems.append("output/: not empty")
-    if not rule_on:
-        problems.extend(f"{name}: changed with --rule off (the self-check needs an exact reproduction)"
-                        for name, entry in files.items() if entry["changed"])
+        files, unexpected = compare_folders(args.base, args.out)
+        problems.extend(unexpected)
+        if any((args.out / "output").iterdir()):
+            problems.append("output/: not empty")
+        if not rule_on:
+            problems.extend(f"{name}: changed with --rule off (the self-check needs an exact reproduction)"
+                            for name, entry in files.items() if entry["changed"])
+    except Exception as error:  # noqa: BLE001 - recorded in the log, then exit 1
+        problems.append(f"{type(error).__name__}: {error}")
+    # Inside --out when it exists, else next to it.
+    log_path = args.log or (args.out / "prepare_log.json" if args.out.is_dir()
+                            else args.out.with_name(args.out.name + ".prepare_log.json"))
     record = {
         "arguments": {"base": str(args.base), "out": str(args.out), "cells_100m": str(args.cells_100m),
                       "rule": args.rule, "min_households_outside": args.min_households_outside},
