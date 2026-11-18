@@ -1,0 +1,149 @@
+id: popsim-ladder-inputs-a-2026-11-18
+date: '2026-11-18'
+repository:
+  commit: 4067e1ea70dbc80ae42030fad51cd35e8b216915
+  branch: fix/i658-popsim-kreis-consistency
+  notes: >-
+    PRE-REGISTRATION: this file was committed with the checks and bounds below before any PopulationSim run
+    of arm 5 or arm 6 started; only results, artifacts and execution notes are added afterwards. The commit
+    is the eqasim-bs code archived on the run server (git archive) that prepares the arm folders
+    (scripts/prepare_input_arm.py), writes the input-consistency tables and runs the diagnostics. It is the
+    merge of Part T (fix/i657-popsim-tenure-dwellings, 1bdab670) into this branch; both are stacked on the
+    unmerged branches of issues #646 and #656. The comparison script used for the verdict is
+    scripts/compare_input_arms.py of the commit that adds this file (its rounding-shift check was added
+    after 4067e1ea; it reads tables only). PopulationSim is the release-candidate build of the arm-3 record
+    (popsim-ladder-arm3-2026-11-18: fork 0.10.0+bs.2 candidate, commit d9a2e2810139e822ff2870a1845c30a509461462,
+    its environment on the run server, read-only).
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - the run overlay of prod100_20261031 (server-local), only as the configuration that produced the batch folders
+  notes: >-
+    Arm 4 (baseline) = arm 3 plus the tenure rule of #657 (popsim-ladder-tenure-2026-11-18). Arm 5 = arm 4
+    plus the KREIS consistency of #658: KREIS person controls apportioned by the batch's share of their own
+    age universe (Task A3) and the KREIS car, bicycle and employed targets set to the batch sums of their grid
+    targets (Task A4). Arm 6 = arm 5 plus the Zensus employment level of every employment control (Task A5,
+    owner decision D-emp of 2026-11-18). prepare_input_arm.py copies the arm-4 folder of a batch and rewrites
+    only data/control_totals_KREIS.csv with the branch's library functions (arm 5: steps
+    kreis_universe,kreis_follow_grids; arm 6: the same plus employment_level, both from the arm-4 folder),
+    and proves file by file that nothing else changed. The Kreis-wide targets are the sums of the KREIS tables
+    of the 60 production batch folders. The bridge of the employment step is computed from the arm folder's
+    own seed (the resolved seed of the earlier arms, which differs from the production seed; the driver logs
+    this). Difference to a pipeline run: the other control tables, the seed and the settings are those of
+    arm 4, not rebuilt by data.census.filtered; the pipeline path of the three keys
+    (braunschweig.population.popsim.kreis_batch_apportionment, kreis_controls_follow_grids,
+    employment_level_source) is covered by the unit and stage tests of the branch and by the full rerun (#648).
+    The keys stay at their legacy values in configs/base_bs.yml until this record meets its checks.
+sampling:
+  rate: 1.0
+  scope: >-
+    four of the 60 batches of prod100_20261031 with their full seed pool: batch_000 and batch_032 (the ladder
+    batches), batch_028 (largest batch) and batch_013 (its KREIS child target is the strongest negative case).
+  notes: The rate is the share of each batch's cells simulated (all of them), not a population sampling rate.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. Baseline: arm 4 of batch_000 and batch_032 is that of popsim-ladder-tenure-2026-11-18;
+    arm 4 of batch_013 and batch_028 was prepared and run for this record (scripts/run_baseline_arm4.sh: the
+    committed preparation scripts of arms 1, 2 and 3, each with the code of its record, then
+    prepare_tenure_arm.py of Part T; PopulationSim; diagnostics with --misfit). The chain reproduced the recorded
+    arm-3 folder of batch_028 (popsim-run-performance-2026-11-18) file for file before it was used for batch_013.
+    The four arm-4 diagnostics are combined into one directory (scripts/combine_diagnostics.py; the per-batch
+    rows only) with the input-consistency table of the two Part T folders written by the diagnostics' reader.
+    Arms 5 and 6: scripts/run_input_arms.sh (prepare, then run: PopulationSim with two processes at a time,
+    as one batch peaks at 26-32 GiB with the run-time options of #656 off; diagnostics with --misfit), then
+    scripts/compare_input_arms.py with checks/arm5_vs_arm4.json and checks/arm6_vs_arm5.json.
+classification:
+- ab_test
+status:
+  execution: running
+  notes: >-
+    Pre-registered 2026-11-18 before the arm-5 and arm-6 runs. Done before the pre-registration, without a
+    PopulationSim run of arm 5 or 6: the arm-4 baseline runs of batch_013 and batch_028 (both exit 0,
+    diagnostics exit 0), the preparation of the arm-5 and arm-6 folders of all four batches (deterministic;
+    only control_totals_KREIS.csv changed, 36 of its 52 control columns, in every batch) and the evaluation of
+    both check files on arm 4 against itself (baseline_eval/), which fixes the baseline values below.
+source: >-
+  run server, ~/i658_a (code archives, baseline, arms, diagnostics, comparisons); committed copy in
+  docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/.
+environment: >-
+  run server (Linux); PopulationSim environment of the arm-3 record (fork release candidate d9a2e28), used
+  read-only; preparation, diagnostics and comparison in the conda eqasim environment with PYTHONPATH set to
+  the code archive of the commit above.
+validation:
+- metric: >-
+    I (inputs, arms 5 and 6): in the input-consistency table of the arm's diagnostics, the KREIS car, bicycle
+    and employed targets of every Kreis part equal the batch sums of their grid targets (max share <= 1e-6);
+    the KREIS persons 0-17 and 18+ targets differ from the 100 m age bands of the part by at most 3 % in every
+    Kreis part with at least 1,000 persons of the universe (smaller parts reported, not gated)
+  reference: >-
+    none (property of the inputs). Denominator: the grid sum of the part. Blind spot: the 100 m bands are
+    integers rounded inside each 1 km square while the KREIS share comes from float age counts, so a residual
+    remains (its size is in popsim-input-consistency-2026-11-18); 3 % is an ASSUMPTION-grade bound above it.
+    Arm 4: max share 0.365 over the gated age rows (baseline_eval/)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/checks/arm5_vs_arm4.json
+- metric: >-
+    O-age (arm 5): per batch, synthetic over target persons aged 0-17 (six 100 m age x sex bands) and aged
+    18+ (sixteen bands), summed over the batch (the control_fit estimator); bound |ratio - 1| <= 0.03
+  reference: >-
+    the batch's own 100 m targets (model input from Zensus 2022, not a validation reference). Arm 4:
+    0-17 batch_000 1.325, batch_013 0.861, batch_028 1.124, batch_032 1.007; 18+ 0.968, 1.036, 0.979, 0.998.
+    Blind spot: a batch-level sum can hide offsetting cell errors; the cell fit is in N
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/checks/arm5_vs_arm4.json
+- metric: >-
+    O-own (arm 5): per batch and car class, |synthetic - target| of the 1 km ownership grid summed over the
+    batch, divided by the batch's household target (100 m household total); bound <= 0.01
+  reference: >-
+    the 1 km ownership grid of ADR-0092 (model target, raked to the Kreis anchors; not observed data).
+    Arm 4: 0.004 to 0.022, above 0.01 in 10 of 16 batch-class pairs (baseline_eval/). Blind spot: net per
+    batch, cell errors inside the batch are in N
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/checks/arm5_vs_arm4.json
+- metric: >-
+    O-emp (arm 6): per batch, synthetic over target of the two employed classes of work_by_employment
+    (KREIS, summed) with bound |ratio - 1| <= 0.015, and of the ten 100 m employed-grid controls (summed)
+    with bound |ratio - 1| <= 0.01
+  reference: >-
+    the batch's own targets (model inputs: Zensus employed grid; the survey classes rescaled to the Zensus
+    level in arm 6, so arm 5 and arm 6 are fitted to different employed-class targets). Arm 4: survey classes
+    1.022, 0.995, 1.051, 1.024; grid 0.974, 1.010, 0.934, 0.996 (batch_000, 013, 028, 032)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/checks/arm6_vs_arm5.json
+- metric: >-
+    N (no harm, each arm against its base: arm 5 vs arm 4, arm 6 vs arm 5): pooled WAPE over the four
+    batches per geography, over the controls whose targets the arm did not change (target above 0;
+    building_type_* left out as in G3), bound base + 0.02 (ZENSUS100m), + 0.02 (ZENSUS1km), + 0.01 (KREIS);
+    household conservation per batch and level not worse than the base (abs_deviation_share, conserved_pair_share,
+    delta 0); no sequential fallback (non_simultaneous 0 at every level); G4 judged against the base: no
+    batch with more ZENSUS100m controls outside the rounding-shift bound than in the base arm
+  reference: >-
+    the base arm (model output); ASSUMPTION-grade design bounds of the ladder. Arm 4 pooled WAPE over the
+    arm-5 control set: ZENSUS100m 0.1433, ZENSUS1km 0.0303, KREIS 0.0014
+  result: pending
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/checks/arm5_vs_arm4.json
+features:
+  note: >-
+    Evidence for the KREIS consistency of issue #658 (features tier3_kreis_controls, ownership_grid_1km,
+    employment_grid_control): four batches, one draw (random_seed of the arm folders). The full population
+    is the full rerun (#648).
+artifacts:
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/scripts/prepare_input_arm.py
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/scripts/compare_input_arms.py
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/scripts/run_baseline_arm4.sh
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/scripts/run_input_arms.sh
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/scripts/combine_diagnostics.py
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/scripts/kreis_changed_columns.py
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/checks/arm5_vs_arm4.json
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/checks/arm6_vs_arm5.json
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/baseline_eval/arm4_on_arm5_checks.csv
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/baseline_eval/arm4_on_arm6_checks.csv
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/dry_run_batch_000/README.md
+issues:
+- '#658'
+- '#657'
+- '#646'
+notes: >-
+  Control fit against the model's own targets is not validation against observed behaviour. A missed check
+  stops Part A and goes to the owner; no tuning, no bound changed after a run.
