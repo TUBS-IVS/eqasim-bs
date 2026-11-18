@@ -1,0 +1,417 @@
+{
+  "bounds": {
+    "tenure_wape_slack": 0.02,
+    "wape_slack": {
+      "ZENSUS100m": 0.02,
+      "ZENSUS1km": 0.02,
+      "KREIS": 0.01
+    },
+    "g4_bound": 0.1,
+    "g4_min_target": 40.0,
+    "hh_excess_batches": [
+      "batch_000"
+    ],
+    "bound_tolerance": 1e-09
+  },
+  "checks": {
+    "batch_000/O-ten-a": {
+      "gated": true,
+      "met": true
+    },
+    "batch_000/O-ten-b": {
+      "gated": true,
+      "met": true
+    },
+    "batch_000/O-ten-c": {
+      "gated": true,
+      "met": false
+    },
+    "batch_000/N-a_ZENSUS100m": {
+      "gated": true,
+      "met": true
+    },
+    "batch_000/N-a_ZENSUS1km": {
+      "gated": true,
+      "met": true
+    },
+    "batch_000/N-a_KREIS": {
+      "gated": true,
+      "met": true
+    },
+    "batch_000/N-b": {
+      "gated": false,
+      "met": true
+    },
+    "batch_000/N-c": {
+      "gated": true,
+      "met": true
+    },
+    "batch_000/N-d_KREIS": {
+      "gated": true,
+      "met": true
+    },
+    "batch_000/N-d_ZENSUS1km": {
+      "gated": true,
+      "met": true
+    },
+    "batch_000/N-d_ZENSUS100m": {
+      "gated": true,
+      "met": true
+    },
+    "batch_032/O-ten-a": {
+      "gated": true,
+      "met": true
+    },
+    "batch_032/O-ten-c": {
+      "gated": true,
+      "met": true
+    },
+    "batch_032/N-a_ZENSUS100m": {
+      "gated": true,
+      "met": true
+    },
+    "batch_032/N-a_ZENSUS1km": {
+      "gated": true,
+      "met": true
+    },
+    "batch_032/N-a_KREIS": {
+      "gated": true,
+      "met": true
+    },
+    "batch_032/N-b": {
+      "gated": true,
+      "met": true
+    },
+    "batch_032/N-c": {
+      "gated": true,
+      "met": true
+    },
+    "batch_032/N-d_KREIS": {
+      "gated": true,
+      "met": true
+    },
+    "batch_032/N-d_ZENSUS1km": {
+      "gated": true,
+      "met": true
+    },
+    "batch_032/N-d_ZENSUS100m": {
+      "gated": true,
+      "met": true
+    }
+  },
+  "missing_inputs": [],
+  "overall_met": false,
+  "inputs": {
+    "paths": {
+      "base-diag": "/home/felix/i646/ev/diag_controlled_off",
+      "new-diag": "/home/felix/i657/arm4/diag_arm_4",
+      "base-work": "/home/felix/i646/ev/controlled_off",
+      "new-work": "/home/felix/i657/arm4/arm_4",
+      "prepare-logs": "/home/felix/i657/arm4/prepare_logs",
+      "out": "/home/felix/i657/arm4/comparison"
+    },
+    "files_sha256": {
+      "/home/felix/i646/ev/diag_controlled_off/control_fit.csv": "016f4bf2c17b886d2703e7049ee501e0f71558d1adfc6aa83ee149725e64490b",
+      "/home/felix/i646/ev/diag_controlled_off/rounding_shift.csv": "ccc371a6544e997b491b28348c074b309ddce9caa0e3dae321320dc772fa55db",
+      "/home/felix/i646/ev/diag_controlled_off/solver_paths.csv": "197637656225a4edb89244a160c1bc06c0c25293cee97dd2317209d8bdd2657b",
+      "/home/felix/i646/ev/diag_controlled_off/household_conservation.csv": "b6fb73f23ac10ee26040e074175e1c3904ca98ba2ce8662cfab3a8ad0bd66609",
+      "/home/felix/i657/arm4/diag_arm_4/control_fit.csv": "6151df436ddeecc849ac6e0d51c8ce5b729de51534c02bed8213ec6e6fd7fdc6",
+      "/home/felix/i657/arm4/diag_arm_4/rounding_shift.csv": "94b160995e5c2d859c49ada9c0de41382c2666f7ec6ab6a4a5dafe0900f4f072",
+      "/home/felix/i657/arm4/diag_arm_4/solver_paths.csv": "f8cefe82e330b5c07811600e6b80d98cfd6696edf43f42e574516e17fa93baba",
+      "/home/felix/i657/arm4/diag_arm_4/household_conservation.csv": "5066372f8c792bb7caca5584a942e7f858416cdc96e608c0feee07118356240c",
+      "/home/felix/i646/ev/controlled_off/batch_000/output/integerizer_paths.csv": "ab98d262587d3335f3141b6c54b8381349618386ab426bba9b2fb48450b6e900",
+      "/home/felix/i646/ev/controlled_off/batch_032/output/integerizer_paths.csv": "4525579d698a5cd43253121889219675452e71c40e3d5ae436d529ba227cfad7",
+      "/home/felix/i657/arm4/arm_4/batch_000/output/integerizer_paths.csv": "e8cd6c00fa4c0ff7f4f301ae0c67690eb98c597c734a845504822c6533949f66",
+      "/home/felix/i657/arm4/arm_4/batch_032/output/integerizer_paths.csv": "6ffff4a5cc2948bcb7dfa6929c827552fcd34cb9cc69f9200234bfa78b184612",
+      "/home/felix/i657/arm4/prepare_logs/batch_000.rule_on.json": "c0b5560d7404f68493b6b2318d0f5fb6a9ddbaa65e29590ec25aa266a1ee3ac9",
+      "/home/felix/i657/arm4/prepare_logs/batch_000.rule_off.json": "768bd911c836fc4d72f3e6d93d748db782f689a7455f3782dfde9d2d9e2b54c6",
+      "/home/felix/i657/arm4/prepare_logs/batch_032.rule_on.json": "35bc6827e3ecd925d6317cb26021fd69dcb3277260ffb56116d44a1d150e6e20",
+      "/home/felix/i657/arm4/prepare_logs/batch_032.rule_off.json": "8d3336990c7983a0f1e4144e536c3bc360fa709ada96d6b04c09a5270f50dc41"
+    },
+    "library_commits_in_prepare_logs": [
+      "7b194d41849cdbd3b616c6ec57f00fb42b1f5669"
+    ]
+  },
+  "reported": {
+    "batch_000": {
+      "tenure_100m_arm3": {
+        "EigentuemerHH_Tenure_100m_Gitter_ZENSUS100m_target": {
+          "target_sum": 3644.0,
+          "synthetic_sum": 3703.0
+        },
+        "MieterHH_Tenure_100m_Gitter_ZENSUS100m_target": {
+          "target_sum": 2985.0,
+          "synthetic_sum": 2987.0
+        }
+      },
+      "tenure_100m_arm4": {
+        "EigentuemerHH_Tenure_100m_Gitter_ZENSUS100m_target": {
+          "target_sum": 2955.0,
+          "synthetic_sum": 2910.0
+        },
+        "MieterHH_Tenure_100m_Gitter_ZENSUS100m_target": {
+          "target_sum": 3674.0,
+          "synthetic_sum": 3733.0
+        }
+      },
+      "solver_path_sums_arm3": {
+        "hh_excess": 61,
+        "zone_shortfall": 196.0,
+        "row_shortfall": 135.0
+      },
+      "solver_path_sums_arm4": {
+        "hh_excess": 14,
+        "zone_shortfall": 65.0,
+        "row_shortfall": 51.0
+      },
+      "solver_path_proof_error_arm4": null,
+      "g4_per_control_arm3": {
+        "M_AGE_0_9_agg_ZENSUS100m_target": true,
+        "M_AGE_10_14_agg_ZENSUS100m_target": true,
+        "M_AGE_15_17_agg_ZENSUS100m_target": true,
+        "M_AGE_18_19_agg_ZENSUS100m_target": true,
+        "M_AGE_20_29_agg_ZENSUS100m_target": true,
+        "M_AGE_30_39_agg_ZENSUS100m_target": true,
+        "M_AGE_40_49_agg_ZENSUS100m_target": true,
+        "M_AGE_50_59_agg_ZENSUS100m_target": true,
+        "M_AGE_60_69_agg_ZENSUS100m_target": true,
+        "M_AGE_70_79_agg_ZENSUS100m_target": true,
+        "M_AGE_80_plus_agg_ZENSUS100m_target": true,
+        "F_AGE_0_9_agg_ZENSUS100m_target": true,
+        "F_AGE_10_14_agg_ZENSUS100m_target": true,
+        "F_AGE_15_17_agg_ZENSUS100m_target": true,
+        "F_AGE_18_19_agg_ZENSUS100m_target": true,
+        "F_AGE_20_29_agg_ZENSUS100m_target": true,
+        "F_AGE_30_39_agg_ZENSUS100m_target": true,
+        "F_AGE_40_49_agg_ZENSUS100m_target": true,
+        "F_AGE_50_59_agg_ZENSUS100m_target": true,
+        "F_AGE_60_69_agg_ZENSUS100m_target": true,
+        "F_AGE_70_79_agg_ZENSUS100m_target": true,
+        "F_AGE_80_plus_agg_ZENSUS100m_target": true,
+        "1_Person_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "Paare_ohneKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "Paare_mitKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "Alleinerziehende_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "MehrpersHHohneKernfam_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "EigentuemerHH_Tenure_100m_Gitter_ZENSUS100m_target": true,
+        "MieterHH_Tenure_100m_Gitter_ZENSUS100m_target": true,
+        "building_type_ein_zweifamilienhaus_ZENSUS100m_target": true,
+        "building_type_mehrfamilienhaus_ZENSUS100m_target": true,
+        "building_type_sonstiges_ZENSUS100m_target": false,
+        "EMPLOYED_M_16_29_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_30_39_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_40_49_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_50_59_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_60plus_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_16_29_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_30_39_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_40_49_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_50_59_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_60plus_agg_ZENSUS100m_target": true
+      },
+      "g4_per_control_arm4": {
+        "M_AGE_0_9_agg_ZENSUS100m_target": true,
+        "M_AGE_10_14_agg_ZENSUS100m_target": true,
+        "M_AGE_15_17_agg_ZENSUS100m_target": true,
+        "M_AGE_18_19_agg_ZENSUS100m_target": true,
+        "M_AGE_20_29_agg_ZENSUS100m_target": true,
+        "M_AGE_30_39_agg_ZENSUS100m_target": true,
+        "M_AGE_40_49_agg_ZENSUS100m_target": true,
+        "M_AGE_50_59_agg_ZENSUS100m_target": true,
+        "M_AGE_60_69_agg_ZENSUS100m_target": true,
+        "M_AGE_70_79_agg_ZENSUS100m_target": true,
+        "M_AGE_80_plus_agg_ZENSUS100m_target": true,
+        "F_AGE_0_9_agg_ZENSUS100m_target": true,
+        "F_AGE_10_14_agg_ZENSUS100m_target": true,
+        "F_AGE_15_17_agg_ZENSUS100m_target": true,
+        "F_AGE_18_19_agg_ZENSUS100m_target": true,
+        "F_AGE_20_29_agg_ZENSUS100m_target": true,
+        "F_AGE_30_39_agg_ZENSUS100m_target": true,
+        "F_AGE_40_49_agg_ZENSUS100m_target": true,
+        "F_AGE_50_59_agg_ZENSUS100m_target": true,
+        "F_AGE_60_69_agg_ZENSUS100m_target": true,
+        "F_AGE_70_79_agg_ZENSUS100m_target": true,
+        "F_AGE_80_plus_agg_ZENSUS100m_target": true,
+        "1_Person_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "Paare_ohneKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "Paare_mitKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "Alleinerziehende_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "MehrpersHHohneKernfam_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "EigentuemerHH_Tenure_100m_Gitter_ZENSUS100m_target": true,
+        "MieterHH_Tenure_100m_Gitter_ZENSUS100m_target": true,
+        "building_type_ein_zweifamilienhaus_ZENSUS100m_target": true,
+        "building_type_mehrfamilienhaus_ZENSUS100m_target": true,
+        "building_type_sonstiges_ZENSUS100m_target": true,
+        "EMPLOYED_M_16_29_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_30_39_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_40_49_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_50_59_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_60plus_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_16_29_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_30_39_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_40_49_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_50_59_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_60plus_agg_ZENSUS100m_target": true
+      },
+      "rule_report": {
+        "cells_seen": 679,
+        "cells_changed": 7,
+        "households_moved_owner_to_renter": 688.6025045512145,
+        "cells_with_nan_dwelling_count": 0,
+        "cells_with_nan_tenure_count": 0,
+        "cells_with_owner_above_household_total": 0,
+        "min_households_outside": 10.0
+      }
+    },
+    "batch_032": {
+      "tenure_100m_arm3": {
+        "EigentuemerHH_Tenure_100m_Gitter_ZENSUS100m_target": {
+          "target_sum": 5726.0,
+          "synthetic_sum": 5727.0
+        },
+        "MieterHH_Tenure_100m_Gitter_ZENSUS100m_target": {
+          "target_sum": 7737.0,
+          "synthetic_sum": 7737.0
+        }
+      },
+      "tenure_100m_arm4": {
+        "EigentuemerHH_Tenure_100m_Gitter_ZENSUS100m_target": {
+          "target_sum": 5695.0,
+          "synthetic_sum": 5693.0
+        },
+        "MieterHH_Tenure_100m_Gitter_ZENSUS100m_target": {
+          "target_sum": 7768.0,
+          "synthetic_sum": 7771.0
+        }
+      },
+      "solver_path_sums_arm3": {
+        "hh_excess": 0,
+        "zone_shortfall": 0.0,
+        "row_shortfall": 0.0
+      },
+      "solver_path_sums_arm4": {
+        "hh_excess": 0,
+        "zone_shortfall": 0.0,
+        "row_shortfall": 0.0
+      },
+      "solver_path_proof_error_arm4": null,
+      "g4_per_control_arm3": {
+        "M_AGE_0_9_agg_ZENSUS100m_target": true,
+        "M_AGE_10_14_agg_ZENSUS100m_target": true,
+        "M_AGE_15_17_agg_ZENSUS100m_target": true,
+        "M_AGE_18_19_agg_ZENSUS100m_target": true,
+        "M_AGE_20_29_agg_ZENSUS100m_target": true,
+        "M_AGE_30_39_agg_ZENSUS100m_target": true,
+        "M_AGE_40_49_agg_ZENSUS100m_target": true,
+        "M_AGE_50_59_agg_ZENSUS100m_target": true,
+        "M_AGE_60_69_agg_ZENSUS100m_target": true,
+        "M_AGE_70_79_agg_ZENSUS100m_target": true,
+        "M_AGE_80_plus_agg_ZENSUS100m_target": true,
+        "F_AGE_0_9_agg_ZENSUS100m_target": true,
+        "F_AGE_10_14_agg_ZENSUS100m_target": true,
+        "F_AGE_15_17_agg_ZENSUS100m_target": true,
+        "F_AGE_18_19_agg_ZENSUS100m_target": true,
+        "F_AGE_20_29_agg_ZENSUS100m_target": true,
+        "F_AGE_30_39_agg_ZENSUS100m_target": true,
+        "F_AGE_40_49_agg_ZENSUS100m_target": true,
+        "F_AGE_50_59_agg_ZENSUS100m_target": true,
+        "F_AGE_60_69_agg_ZENSUS100m_target": true,
+        "F_AGE_70_79_agg_ZENSUS100m_target": true,
+        "F_AGE_80_plus_agg_ZENSUS100m_target": true,
+        "1_Person_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "Paare_ohneKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "Paare_mitKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "Alleinerziehende_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "MehrpersHHohneKernfam_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "EigentuemerHH_Tenure_100m_Gitter_ZENSUS100m_target": true,
+        "MieterHH_Tenure_100m_Gitter_ZENSUS100m_target": true,
+        "building_type_ein_zweifamilienhaus_ZENSUS100m_target": true,
+        "building_type_mehrfamilienhaus_ZENSUS100m_target": true,
+        "building_type_sonstiges_ZENSUS100m_target": true,
+        "EMPLOYED_M_16_29_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_30_39_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_40_49_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_50_59_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_60plus_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_16_29_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_30_39_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_40_49_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_50_59_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_60plus_agg_ZENSUS100m_target": true
+      },
+      "g4_per_control_arm4": {
+        "M_AGE_0_9_agg_ZENSUS100m_target": true,
+        "M_AGE_10_14_agg_ZENSUS100m_target": true,
+        "M_AGE_15_17_agg_ZENSUS100m_target": true,
+        "M_AGE_18_19_agg_ZENSUS100m_target": true,
+        "M_AGE_20_29_agg_ZENSUS100m_target": true,
+        "M_AGE_30_39_agg_ZENSUS100m_target": true,
+        "M_AGE_40_49_agg_ZENSUS100m_target": true,
+        "M_AGE_50_59_agg_ZENSUS100m_target": true,
+        "M_AGE_60_69_agg_ZENSUS100m_target": true,
+        "M_AGE_70_79_agg_ZENSUS100m_target": true,
+        "M_AGE_80_plus_agg_ZENSUS100m_target": true,
+        "F_AGE_0_9_agg_ZENSUS100m_target": true,
+        "F_AGE_10_14_agg_ZENSUS100m_target": true,
+        "F_AGE_15_17_agg_ZENSUS100m_target": true,
+        "F_AGE_18_19_agg_ZENSUS100m_target": true,
+        "F_AGE_20_29_agg_ZENSUS100m_target": true,
+        "F_AGE_30_39_agg_ZENSUS100m_target": true,
+        "F_AGE_40_49_agg_ZENSUS100m_target": true,
+        "F_AGE_50_59_agg_ZENSUS100m_target": true,
+        "F_AGE_60_69_agg_ZENSUS100m_target": true,
+        "F_AGE_70_79_agg_ZENSUS100m_target": true,
+        "F_AGE_80_plus_agg_ZENSUS100m_target": true,
+        "1_Person_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target": true,
+        "Paare_ohneKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "Paare_mitKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "Alleinerziehende_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "MehrpersHHohneKernfam_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target": true,
+        "EigentuemerHH_Tenure_100m_Gitter_ZENSUS100m_target": true,
+        "MieterHH_Tenure_100m_Gitter_ZENSUS100m_target": true,
+        "building_type_ein_zweifamilienhaus_ZENSUS100m_target": true,
+        "building_type_mehrfamilienhaus_ZENSUS100m_target": true,
+        "building_type_sonstiges_ZENSUS100m_target": true,
+        "EMPLOYED_M_16_29_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_30_39_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_40_49_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_50_59_agg_ZENSUS100m_target": true,
+        "EMPLOYED_M_60plus_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_16_29_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_30_39_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_40_49_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_50_59_agg_ZENSUS100m_target": true,
+        "EMPLOYED_F_60plus_agg_ZENSUS100m_target": true
+      },
+      "rule_report": {
+        "cells_seen": 743,
+        "cells_changed": 2,
+        "households_moved_owner_to_renter": 31.671347978479485,
+        "cells_with_nan_dwelling_count": 0,
+        "cells_with_nan_tenure_count": 0,
+        "cells_with_owner_above_household_total": 0,
+        "min_households_outside": 10.0
+      }
+    }
+  }
+}

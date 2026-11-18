@@ -2,7 +2,7 @@
 
 Importable helper (not a test file) behind ``tests/test_popsim_control_build_golden.py``. It
 runs the control-total path of the ``data.census.filtered`` stage (``mid`` seed, catalog
-controls, tiers 0 and 2) on a small synthetic cell frame, so the four control-total tables of
+controls, tiers 0 to 2) on a small synthetic cell frame, so the four control-total tables of
 that path can be frozen as golden CSVs (``tests/data/popsim_input_consistency/``) and any
 later change to the path can be proven to reproduce them at its legacy setting.
 
@@ -32,11 +32,13 @@ GOLDEN_NAMES = ("ZENSUS100m", "ZENSUS1km", "STAAT", "WELT")
 
 # The stage-call arguments, in ONE place. They are the production values of the keys that
 # shape the control columns (``configs/base_bs.yml``: ``fine_teen_age_bands``,
-# ``building_type_targets_to_households``); the control tiers are the two tiers this fixture
-# covers. A later task that adds a keyword to ``_add_aggregated_control_columns`` adds it here.
+# ``building_type_targets_to_households``); the control tiers are the production tiers whose
+# controls reach the 100 m and 1 km tables (tier3 only builds KREIS controls, which
+# ``build_control_totals`` does not write). A later task that adds a keyword to
+# ``_add_aggregated_control_columns`` adds it here.
 CONTROL_SOURCE = "catalog"
 SEED_NAME = "mid"
-CONTROL_TIERS = ("tier0", "tier2")
+CONTROL_TIERS = ("tier0", "tier1", "tier2")
 FINE_TEEN_AGE_BANDS = True
 AGGREGATE_KWARGS: dict[str, Any] = {
     "fine_teen_age_bands": FINE_TEEN_AGE_BANDS,
@@ -72,6 +74,23 @@ _AGE_SHARES = {
 # The 80+ share is the remainder so the shares sum to 1 exactly.
 _AGE_SHARES["80_plus"] = 1.0 - sum(v for k, v in _AGE_SHARES.items() if k != "80_plus")
 _FEMALE_FACTOR = 1.04  # slightly more women than men in the cell population
+
+# Tier-1 household census columns (household size, family type): counts of the cell households
+# split by these fixed shares (each set sums to 1).
+_HOUSEHOLD_SIZE_SHARES = {
+    "1_Person_Groesse_des_privaten_Haushalts_100m_Gitter": 0.35,
+    "2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter": 0.30,
+    "3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter": 0.15,
+    "4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter": 0.12,
+    "5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter": 0.06,
+    "6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter": 0.02,
+}
+_FAMILY_TYPE_SHARES = {
+    "Paare_ohneKind_Typ_priv_HH_Familie_100m_Gitter": 0.25,
+    "Paare_mitKind_Typ_priv_HH_Familie_100m_Gitter": 0.30,
+    "Alleinerziehende_Typ_priv_HH_Familie_100m_Gitter": 0.10,
+    "MehrpersHHohneKernfam_Typ_priv_HH_Familie_100m_Gitter": 0.35,
+}
 
 # (north, east, ARS, households, owner households, renter households,
 #  dwellings by building class (one-/two-family, multi-family, other), rooms-table dwellings,
@@ -113,8 +132,10 @@ def required_cell_columns() -> list[str]:
 def base_columns() -> list[str]:
     """The control base columns of ``stage._build_control_frame`` (100 m and 1 km geographies)."""
     _, base_cols = stage._build_control_frame(
-        CONTROL_SOURCE, None, SEED_NAME, CONTROL_TIERS, False, [], IMPORTANCE_PROFILE,
-        fine_teen_age_bands=FINE_TEEN_AGE_BANDS, ownership_grid_on=False)
+        controls_source=CONTROL_SOURCE, controls_path=None, source_name=SEED_NAME,
+        control_tiers=CONTROL_TIERS, employment_grid_on=False, active_entry_names=[],
+        importance_profile=IMPORTANCE_PROFILE, fine_teen_age_bands=FINE_TEEN_AGE_BANDS,
+        ownership_grid_on=False)
     return base_cols
 
 
@@ -140,6 +161,8 @@ def make_cells() -> pd.DataFrame:
         for (class_index, shares), columns in zip(_CLASS_SHARES, building_type_sources):
             for share, column in zip(shares, columns):
                 row[column] = dwellings[class_index] * share
+        for column, share in {**_HOUSEHOLD_SIZE_SHARES, **_FAMILY_TYPE_SHARES}.items():
+            row[column] = households * share
         per_sex = persons / (1.0 + _FEMALE_FACTOR)
         for sex, factor in (("M", 1.0), ("F", _FEMALE_FACTOR)):
             for label, share in _AGE_SHARES.items():
@@ -158,24 +181,42 @@ def make_cells() -> pd.DataFrame:
     return cells
 
 
-def build_control_tables(
-        cells: pd.DataFrame | None = None, **extra_aggregate_kwargs: Any,
-) -> dict[str, pd.DataFrame]:
-    """Run the control-total path of the stage on ``cells`` and return its four tables.
+def build_control_tables_and_report(
+        cells: pd.DataFrame | None = None, *,
+        tenure_owner_limited_to_dwellings: bool = False,
+        tenure_min_households_outside: float = 10.0,
+        **extra_aggregate_kwargs: Any,
+) -> tuple[dict[str, pd.DataFrame], dict | None]:
+    """Run the control-total path of the stage on ``cells``: its four tables and the owner-limit report.
 
     The same calls, in the same order, as the stage: derive the aggregated control columns
-    (``_add_aggregated_control_columns``), then ``mid.build_control_totals`` with the base
-    columns of ``_build_control_frame`` and the 100 m -> 1 km crosswalk.
+    (``_add_aggregated_control_columns``), limit the owner targets to the dwellings of the cell
+    (``_limit_owner_targets_to_dwellings``, the config key ``tenure_owner_limited_to_dwellings``
+    and its threshold; off by default, like the code default), then
+    ``mid.build_control_totals`` with the base columns of ``_build_control_frame`` and the
+    100 m -> 1 km crosswalk.
 
     ``extra_aggregate_kwargs`` extend or override ``AGGREGATE_KWARGS`` (for a later keyword).
+    Returns ``(tables, report)``; ``report`` is ``None`` while the owner limit is off.
     """
     if cells is None:
         cells = make_cells()
     aggregate_kwargs = {**AGGREGATE_KWARGS, **extra_aggregate_kwargs}
     prepared = stage._add_aggregated_control_columns(
         cells, CONTROL_SOURCE, SEED_NAME, CONTROL_TIERS, **aggregate_kwargs)
+    prepared, report = stage._limit_owner_targets_to_dwellings(
+        prepared, CONTROL_SOURCE, SEED_NAME, CONTROL_TIERS,
+        enabled=tenure_owner_limited_to_dwellings,
+        min_households_outside=tenure_min_households_outside)
     crosswalk = prepared[["ZENSUS100m", "ZENSUS1km"]]
-    return mid.build_control_totals(prepared, crosswalk, base_columns())
+    return mid.build_control_totals(prepared, crosswalk, base_columns()), report
+
+
+def build_control_tables(
+        cells: pd.DataFrame | None = None, **extra_kwargs: Any,
+) -> dict[str, pd.DataFrame]:
+    """The four control-total tables of ``build_control_tables_and_report`` (same arguments)."""
+    return build_control_tables_and_report(cells, **extra_kwargs)[0]
 
 
 def golden_path(name: str, directory: Path = GOLDEN_DIR) -> Path:

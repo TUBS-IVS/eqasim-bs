@@ -220,6 +220,32 @@ def test_popsim_validation_receives_the_runs_building_type_basis(
     assert seen == [expected]
 
 
+@pytest.mark.parametrize("limited, threshold", [(False, 10.0), (True, 25.0)])
+def test_popsim_validation_receives_the_runs_tenure_limit(tmp_path, monkeypatch, limited, threshold):
+    """The run's two tenure-limit keys (#657) reach the validation as its owner-target rule.
+
+    Defect caught: a run with the owner limit on would be validated against the unlimited
+    owner targets, which PopulationSim was never fitted to.
+    """
+    PV = pytest.importorskip("braunschweig.analysis.popsim_validation.run_popsim_control_validation")
+    _write_min_output(tmp_path)
+    _install_pop_spy(monkeypatch, [])
+    work = tmp_path / "work"; work.mkdir()
+    seen = []
+    monkeypatch.setattr(
+        PV, "run",
+        lambda ns: seen.append((ns.tenure_owner_limited_to_dwellings,
+                                ns.tenure_min_households_outside)))
+    ctx = _execute_context(
+        tmp_path,
+        **{"braunschweig.population.method": "popsim_mid",
+           "braunschweig.population.popsim.work_dir": str(work),
+           "braunschweig.population.popsim.tenure_owner_limited_to_dwellings": limited,
+           "braunschweig.population.popsim.tenure_min_households_outside_dwellings": threshold})
+    AS.execute(ctx)
+    assert seen == [(limited, threshold)]
+
+
 def test_dashboard_and_education_skip_without_inputs(tmp_path, monkeypatch):
     DASH = pytest.importorskip("braunschweig.analysis.dashboard.build_dashboard")
     EDU = pytest.importorskip("braunschweig.analysis.run_education_validation")

@@ -1,0 +1,75 @@
+{
+  "arguments": {
+    "base": "/home/felix/i646/ev/controlled_off/batch_000",
+    "out": "/home/felix/i657/run_26171e09/selfcheck/batch_000",
+    "cells_100m": "/home/felix/eqasim-bs/eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_100m_de_prepared.parquet",
+    "rule": "off",
+    "min_households_outside": 10.0
+  },
+  "rule_on": false,
+  "rule_report": null,
+  "library_commit": "26171e09036581e9a255557a428ab828f5bde457",
+  "files": {
+    "configs/controls.csv": {
+      "sha256_base": "0786907b0346d3dd353e6cda173fb8ff0d55dad1a924e37531be2044170628da",
+      "sha256_out": "0786907b0346d3dd353e6cda173fb8ff0d55dad1a924e37531be2044170628da",
+      "changed": false
+    },
+    "configs/logging.yaml": {
+      "sha256_base": "863e60c0683d8232c8418428867df29687f04204daa90adb19a3378da6b208c4",
+      "sha256_out": "863e60c0683d8232c8418428867df29687f04204daa90adb19a3378da6b208c4",
+      "changed": false
+    },
+    "configs/settings.yaml": {
+      "sha256_base": "4ce89783de4fcc1aad482d9c72d111802a1c15ef8e275c985d337a85c00c1fc4",
+      "sha256_out": "4ce89783de4fcc1aad482d9c72d111802a1c15ef8e275c985d337a85c00c1fc4",
+      "changed": false
+    },
+    "data/control_totals_KREIS.csv": {
+      "sha256_base": "bac4aa79792c5e2bbf089512fc83f4f219c3bf686d13e08c7a18ebb0f68b63c4",
+      "sha256_out": "bac4aa79792c5e2bbf089512fc83f4f219c3bf686d13e08c7a18ebb0f68b63c4",
+      "changed": false
+    },
+    "data/control_totals_STAAT.csv": {
+      "sha256_base": "ab346622a3997159f6d15c53c5323aab2c12469b119ce3ded61447cacaa0a531",
+      "sha256_out": "ab346622a3997159f6d15c53c5323aab2c12469b119ce3ded61447cacaa0a531",
+      "changed": false
+    },
+    "data/control_totals_WELT.csv": {
+      "sha256_base": "f4512bfcc01d6376ef90e0d2099dfbeb6c336c59fadc793d084b999ddd1b5571",
+      "sha256_out": "f4512bfcc01d6376ef90e0d2099dfbeb6c336c59fadc793d084b999ddd1b5571",
+      "changed": false
+    },
+    "data/control_totals_ZENSUS100m.csv": {
+      "sha256_base": "e2e4cab4466a5630c7a40e3b94dcc2d9adfcf2085963fdb40033481d37091723",
+      "sha256_out": "e2e4cab4466a5630c7a40e3b94dcc2d9adfcf2085963fdb40033481d37091723",
+      "changed": false,
+      "structure_changed": false,
+      "columns_changed": []
+    },
+    "data/control_totals_ZENSUS1km.csv": {
+      "sha256_base": "6e8d447a469ea59e78f72e635b26d49096a40d4875f14f7ef95ebfeb034059f8",
+      "sha256_out": "6e8d447a469ea59e78f72e635b26d49096a40d4875f14f7ef95ebfeb034059f8",
+      "changed": false,
+      "structure_changed": false,
+      "columns_changed": []
+    },
+    "data/geo_cross_walk.csv": {
+      "sha256_base": "773102853d7e2f56fcfad7bf1cbc1cb1ca31ceaaaf4aae0131dc5ab9e4abd79e",
+      "sha256_out": "773102853d7e2f56fcfad7bf1cbc1cb1ca31ceaaaf4aae0131dc5ab9e4abd79e",
+      "changed": false
+    },
+    "data/seed_households.csv": {
+      "sha256_base": "c331557d04da3726bcb1ac2899bcca5dc507628882e0db63d48391a25fa95ece",
+      "sha256_out": "c331557d04da3726bcb1ac2899bcca5dc507628882e0db63d48391a25fa95ece",
+      "changed": false
+    },
+    "data/seed_persons.csv": {
+      "sha256_base": "76890fcc886343a85b808de64d56875863947401c60d816dbd7f37572ffd2091",
+      "sha256_out": "76890fcc886343a85b808de64d56875863947401c60d816dbd7f37572ffd2091",
+      "changed": false
+    }
+  },
+  "problems": [],
+  "ok": true
+}

@@ -1258,7 +1258,7 @@ class _StopAtSeedBuild(Exception):
     that follows the seed build."""
 
 
-def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_seed(monkeypatch):
+def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_seed(monkeypatch, tmp_path):
     """Issue #373 cleanup wave fix round, IMPORTANT 3: the two tests above pin the PRIVATE
     _build_populationsim_seed function directly, which proves nothing about whether
     braunschweig.popsim.stage.execute() itself actually resolves the three config keys and
@@ -1293,6 +1293,13 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
                     "meant to mock away was not mocked, or the stub is missing a key")
             return self._values[key]
 
+        # The stage writes its report file (#657 tenure entry) before the seed build.
+        def path(self):
+            return str(tmp_path)
+
+        def set_info(self, key, value):
+            pass
+
     values = {
         popsim_stage.KEY_MID_PASSENGER_AVAILABILITY: False,
         popsim_stage.KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE: False,
@@ -1319,6 +1326,9 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         popsim_stage.KEY_EMPLOYMENT_LEVEL_SOURCE: "survey",
         popsim_stage.KEY_KREIS_FINE_TOLERANCE: 0.05,
         popsim_stage.KEY_KREIS_FINE_MIN_PERSONS: 1000,
+        # The #657 tenure keys, at their legacy values (execute reads both).
+        popsim_stage.KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS: False,
+        popsim_stage.KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE_DWELLINGS: 10.0,
     }
     context = _StrictExecuteContext(values)
 

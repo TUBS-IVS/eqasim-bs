@@ -1,0 +1,26 @@
+exit 0
+exit 0
+batch_000 	Elapsed (wall clock) time (h:mm:ss or m:ss): 11:52.94
+batch_000 	Maximum resident set size (kbytes): 27462796
+batch_032 	Elapsed (wall clock) time (h:mm:ss or m:ss): 15:11.26
+batch_032 	Maximum resident set size (kbytes): 32590020
+ec9c7d18d2aa4d0ed3973eb39daaddd28179a0d9bc0b9b00ce7ce3e31ad2ed0c  ~/i657/arm4/arm_4/batch_000/output/final_expanded_household_ids.csv
+de98807eba24703498f6a561e02d30d36a5b7bbf6200b229effa82ec18a05fcf  ~/i657/arm4/arm_4/batch_000/output/synthetic_households.csv
+f8821563be3dbc6e09dda280810fcdadc0ac9d306d5667c22dccee60bbc5f2cb  ~/i657/arm4/arm_4/batch_000/output/synthetic_persons.csv
+0ebf50bec8e2960ce579bccb3e828689729fe850cf44b0325ff89f15790415e1  ~/i657/arm4/arm_4/batch_032/output/final_expanded_household_ids.csv
+e545c090c66786a156e1198eaf7679b90bd6387ac7ae010178ece245a01a625f  ~/i657/arm4/arm_4/batch_032/output/synthetic_households.csv
+88d6c5c076a63135c1050e5bed7148656f361d955171b67276acb972a91a61d0  ~/i657/arm4/arm_4/batch_032/output/synthetic_persons.csv
+{"populationsim": "0.10.0+bs.2", "direct_url": "{\"url\":\"file://~/i646/populationsim_C\",\"vcs_info\":{\"vcs\":\"git\",\"commit_id\":\"d9a2e2810139e822ff2870a1845c30a509461462\",\"requested_revision\":\"d9a2e2810139e822ff2870a1845c30a509461462\"}}"}
+attribute_shares.csv
+control_coverage.csv
+control_fit.csv
+control_universe.csv
+household_conservation.csv
+misfit_split.csv
+popsim_batch_diagnostics.md
+provenance.json
+resolved_record_shares.csv
+reuse.csv
+rounding_shift.csv
+solver_paths.csv
+weight_class_shares.csv

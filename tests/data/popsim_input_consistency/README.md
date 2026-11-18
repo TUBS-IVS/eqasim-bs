@@ -2,10 +2,15 @@
 
 `control_totals_{ZENSUS100m,ZENSUS1km,STAAT,WELT}.csv` are the four control-total tables
 that the control-total path of the `data.census.filtered` stage produces for the SYNTHETIC
-cell frame of `tests/popsim_control_build_fixture.py` (mid seed, catalog controls, tiers 0 and
-2). The values are test data, not Zensus figures. They were frozen BEFORE any change of issue
+cell frame of `tests/popsim_control_build_fixture.py` (mid seed, catalog controls, tiers 0, 1
+and 2: tier 3 only builds the per-Kreis controls, which `build_control_totals` does not write
+into these tables). The values are test data, not Zensus figures. They were frozen BEFORE any change of issue
 #657, so that a later config key at its legacy value can be proven to reproduce today's tables
 value for value (`tests/test_popsim_control_build_golden.py`).
+
+The employment grid and the 1 km ownership grid are OFF in the fixture (production has them
+on). They add columns the tenure rule never touches; a later part extends the fixture if it
+needs them.
 
 Regenerate (only for a deliberate, documented change of the expected tables), from the
 repository root, in the `eqasim` environment:

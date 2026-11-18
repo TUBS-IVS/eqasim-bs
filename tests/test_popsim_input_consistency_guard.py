@@ -342,14 +342,20 @@ def test_the_stage_report_file_and_run_info(tmp_path):
             self.info[key] = value
 
     context = _Context()
+    # The stage report is ONE file shared with the #657 tenure entry, written earlier in execute():
+    # the #658 writer must keep that entry (regression: it once overwrote the whole file).
+    tenure_entry = stage._write_tenure_limit_report(
+        context, enabled=False, min_households_outside=10.0, report=None)
     path = stage._write_consistency_report(context, settings)
 
-    assert path.name == "census_filtered_report.json"
-    written = json.loads(path.read_text(encoding="utf-8"))
+    assert path.name == stage.CENSUS_FILTERED_REPORT_FILE
+    content = json.loads(path.read_text(encoding="utf-8"))
+    assert content["tenure_owner_limited_to_dwellings"] == tenure_entry
+    written = content[stage.KREIS_INPUT_CONSISTENCY_REPORT_KEY]
     assert written["guard"]["max_relative_difference_measured"] == recorder.max_rel_measured
     assert written["guard"]["max_relative_difference_guarded"] == recorder.max_rel_guarded
     # the info value is the MEASURED one (all pairs); the guarded one covers the judged rows only
-    assert context.info == {"popsim_input_consistency_max_rel": recorder.max_rel_measured}
+    assert context.info["popsim_input_consistency_max_rel"] == recorder.max_rel_measured
     assert recorder.max_rel_guarded <= recorder.max_rel_measured
 
 
@@ -371,7 +377,8 @@ def test_the_report_is_strict_json_with_null_for_nan_and_infinity(tmp_path):
     def refuse(constant):
         raise AssertionError(f"non-strict JSON constant {constant}")
 
-    written = json.loads(path.read_text(encoding="utf-8"), parse_constant=refuse)
+    written = json.loads(path.read_text(encoding="utf-8"),
+                         parse_constant=refuse)[stage.KREIS_INPUT_CONSISTENCY_REPORT_KEY]
     assert written["employment_level"] == {"below_grid_share": None, "bridge": None, "ok": 0.5}
 
 
