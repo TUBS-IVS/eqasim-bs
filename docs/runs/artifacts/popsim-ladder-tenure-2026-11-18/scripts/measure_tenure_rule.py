@@ -16,9 +16,10 @@ For each dwelling column and each threshold (5, 10, 20 households outside any dw
 function is called on the model cells (never re-implemented) and one row of ``rule_sensitivity.csv`` is
 written. The dwelling columns are the rule's own (``control_spec.OWNER_QUOTE_DWELLING_COLUMN``, the harmonised
 rooms table), the raw rooms table, and the occupied dwellings derived from the vacancy table; a candidate
-that the grid lacks is skipped and named in the log and ``measure_log.json``. Which cells the function
-changed is read from the values it wrote (owner or renter differs from its input); the function's own count
-is the figure reported, and a mismatch of the two is named in ``measure_log.json`` (``changed_mask``).
+that the grid lacks is skipped and named in the log and ``measure_log.json``. "Changed" in every column and
+table means SELECTED BY THE RULE (households minus dwellings at least the threshold), whether or not a
+count moved: the mask is ``tenure_targets.cells_outside_dwellings``, the selection the rule itself uses. If
+its count differs from ``cells_changed`` of the rule's report, the run ends with exit 1.
 
 Inputs: ``--cells-100m`` the prepared 100 m cell parquet, ``--work-dir`` a directory with ``batch_*`` folders.
 Outputs in ``--out`` (must not exist): ``rule_sensitivity.csv``; for the configured rule (harmonised rooms
@@ -107,7 +108,10 @@ def load_model_cells(cells_path: Path, batches: pd.Series):
 
 
 def measure_one(cells: pd.DataFrame, dwelling_column: str, threshold: float):
-    """Run the library rule once; return ``(row, result_frame, changed_mask, mask_ok, report)``."""
+    """Run the library rule once; return ``(row, result_frame, changed_mask, report)``.
+
+    ``changed_mask`` is the rule's own selection; ``ValueError`` if its count is not the report's.
+    """
     result, report = tenure_targets.limit_owner_households_to_dwellings(
         cells, owner_col=OWNER_BASE, renter_col=RENTER_BASE,
         household_total_col=control_spec.HH_TOTAL_CENSUS_COLUMN, dwelling_col=dwelling_column,
@@ -116,7 +120,12 @@ def measure_one(cells: pd.DataFrame, dwelling_column: str, threshold: float):
     dwellings = counts(cells[dwelling_column])
     owner_before, owner_after = counts(cells[OWNER_BASE]), counts(result[OWNER_BASE])
     renter_before, renter_after = counts(cells[RENTER_BASE]), counts(result[RENTER_BASE])
-    changed = (owner_before != owner_after) | (renter_before != renter_after)
+    changed = tenure_targets.cells_outside_dwellings(
+        cells, household_total_col=control_spec.HH_TOTAL_CENSUS_COLUMN, dwelling_col=dwelling_column,
+        min_households_outside=threshold)
+    if int(changed.sum()) != report["cells_changed"]:
+        raise ValueError(f"{dwelling_column}@{threshold}: the selection has {int(changed.sum())} cells, "
+                         f"the rule reported {report['cells_changed']}")
     high = changed & (owner_before >= HIGH_OWNER_SHARE * households)
     total_households = float(households.sum())
     row = {
@@ -135,7 +144,7 @@ def measure_one(cells: pd.DataFrame, dwelling_column: str, threshold: float):
         "cells_with_nan_tenure_count": report["cells_with_nan_tenure_count"],
         "cells_with_owner_above_household_total": report["cells_with_owner_above_household_total"],
     }
-    return row, result, changed, int(changed.sum()) == report["cells_changed"], report
+    return row, result, changed, report
 
 
 def by_batch_table(cells: pd.DataFrame, result: pd.DataFrame, changed: pd.Series) -> pd.DataFrame:
@@ -181,14 +190,11 @@ def main(argv=None) -> int:
         batches = model_cells(args.work_dir)
         cells, skipped = load_model_cells(args.cells_100m, batches)
         used = [c for c in DWELLING_COLUMNS if c not in skipped]
-        rows, mask_checks, configured = [], {}, None
+        rows, configured = [], None
         for column in used:
             for threshold in THRESHOLDS:
-                row, result, changed, mask_ok, report = measure_one(cells, column, threshold)
+                row, result, changed, report = measure_one(cells, column, threshold)
                 rows.append(row)
-                if not mask_ok:
-                    mask_checks[f"{column}@{threshold}"] = {"report_cells_changed": report["cells_changed"],
-                                                           "cells_with_changed_values": int(changed.sum())}
                 if row["is_configured_rule"]:
                     configured = (result, changed, report)
         paths = {"rule_sensitivity.csv": args.out / "rule_sensitivity.csv",
@@ -205,7 +211,7 @@ def main(argv=None) -> int:
                        "owner_households_before": float(counts(cells[OWNER_BASE]).sum()),
                        "owner_households_after_configured_rule": float(counts(result[OWNER_BASE]).sum()),
                        "dwellings_by_column": {c: float(counts(cells[c]).sum()) for c in used}},
-            "configured_rule_report": report, "changed_mask": {"mismatches": mask_checks},
+            "configured_rule_report": report,
             "files_sha256": {name: sha256(path) for name, path in paths.items()}})
     except Exception as error:  # noqa: BLE001 - recorded in the log, then exit 1
         log["error"] = f"{type(error).__name__}: {error}"

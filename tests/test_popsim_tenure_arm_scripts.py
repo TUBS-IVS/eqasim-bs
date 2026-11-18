@@ -308,24 +308,26 @@ def test_compare_tenure_arm_gives_the_hand_computed_verdict(tmp_path):
 # measure_tenure_rule
 # ---------------------------------------------------------------------------------------------------------
 RAW_DWELLINGS = "Insgesamt_Wohnungen_Wohnungen_nach_Zahl_der_Raeume_100m_Gitter"
+A3 = "CRS3035RES100mN2689300E4337000"  # parent PARENT_1, like a1 and a2
 
 
 @pytest.mark.parametrize("extra_cell, exit_code", [(False, 0), (True, 1)])
 def test_measure_tenure_rule_reports_the_rule_on_all_model_cells(tmp_path, extra_cell, exit_code):
     measure = load_script("measure_tenure_rule")
     work, grid, out = tmp_path / "work", tmp_path / "grid.parquet", tmp_path / "measure"
-    # Two batches of two cells; a model cell that the grid lacks ends the run.
-    cells_of = {"batch_000": [A1, A2], "batch_001": [B1, B2 + "x" if extra_cell else B2]}
+    # Two batches; a3 is selected by the rule (12 households, 2 dwellings) but already has no owners, so no count
+    # moves in it. A model cell that the grid lacks ends the run.
+    cells_of = {"batch_000": [A1, A2, A3], "batch_001": [B1, B2 + "x" if extra_cell else B2]}
     for batch, ids in cells_of.items():
         (work / batch / "data").mkdir(parents=True)
         pd.DataFrame({"ZENSUS100m": ids}).to_csv(work / batch / "data" / "geo_cross_walk.csv", index=False)
     pd.DataFrame({
-        "GITTER_ID_100m": [A1, A2, B1, B2],
-        HH_TOTAL: [10.0, 30.0, 20.0, 15.0],
-        OWNER: [9.0, 24.0, 10.4, 6.0],
-        RENTER: [1.0, 6.0, 9.6, 9.0],
-        DWELLINGS: [4.0, 10.0, 20.0, 5.0],
-        RAW_DWELLINGS: [4.0, 10.0, 2.0, 5.0],
+        "GITTER_ID_100m": [A1, A2, A3, B1, B2],
+        HH_TOTAL: [10.0, 30.0, 12.0, 20.0, 15.0],
+        OWNER: [9.0, 24.0, 0.0, 10.4, 6.0],
+        RENTER: [1.0, 6.0, 12.0, 9.6, 9.0],
+        DWELLINGS: [4.0, 10.0, 2.0, 20.0, 5.0],
+        RAW_DWELLINGS: [4.0, 10.0, 2.0, 2.0, 5.0],
     }).to_parquet(grid)
 
     code = measure.main(["--cells-100m", str(grid), "--work-dir", str(work), "--out", str(out),
@@ -342,34 +344,35 @@ def test_measure_tenure_rule_reports_the_rule_on_all_model_cells(tmp_path, extra
     table = pd.read_csv(out / "rule_sensitivity.csv")
     assert len(table) == 6  # two dwelling columns x three thresholds
     row = table[(table["dwelling_column"] == DWELLINGS) & (table["min_households_outside"] == 10.0)].iloc[0]
-    # Harmonised dwellings (4, 10, 20, 5), threshold 10: a2 (30 households, 10 dwellings, owners 24 -> 8) and
-    # b2 (15, 5, owners 6 -> 2) change; 75 households in all.
-    assert bool(row["is_configured_rule"]) and row["cells_seen"] == 4 and row["cells_changed"] == 2
-    assert row["households_in_changed_cells"] == 45 and row["households_outside_dwellings"] == 30
+    # Harmonised dwellings (4, 10, 2, 20, 5), threshold 10: a2 (30 households, 10 dwellings, owners 24 -> 8), a3
+    # (12 households, 2 dwellings, selected although it has no owners: no count moves) and b2 (15, 5, owners
+    # 6 -> 2) are selected; 87 households in all.
+    assert bool(row["is_configured_rule"]) and row["cells_seen"] == 5 and row["cells_changed"] == 3
+    assert row["households_in_changed_cells"] == 57 and row["households_outside_dwellings"] == 40
     assert row["households_moved_owner_to_renter"] == pytest.approx(20.0)  # 16 + 4
-    assert row["moved_share_of_all_households"] == pytest.approx(20.0 / 75.0)
+    assert row["moved_share_of_all_households"] == pytest.approx(20.0 / 87.0)
     assert row["high_owner_cells_changed"] == 0 and row["batches_touched"] == 2
-    # Threshold 5 also changes a1 (6 households outside; owners 9 = 90 % of 10 households: a high-owner cell).
+    # Threshold 5 also selects a1 (6 households outside; owners 9 = 90 % of 10 households: a high-owner cell).
     low = table[(table["dwelling_column"] == DWELLINGS) & (table["min_households_outside"] == 5.0)].iloc[0]
-    assert low["cells_changed"] == 3 and low["high_owner_cells_changed"] == 1
+    assert low["cells_changed"] == 4 and low["high_owner_cells_changed"] == 1
     assert low["households_in_high_owner_cells_changed"] == 10
     assert low["households_moved_owner_to_renter"] == pytest.approx(25.4)  # 9 - 0.9 * 4 = 5.4, plus 16 + 4
-    # Threshold 20 changes only a2 (exactly 20 households outside).
+    # Threshold 20 selects only a2 (exactly 20 households outside; a3 has 10).
     high = table[(table["dwelling_column"] == DWELLINGS) & (table["min_households_outside"] == 20.0)].iloc[0]
     assert high["cells_changed"] == 1 and high["batches_touched"] == 1
-    # Raw dwellings (4, 10, 2, 5), threshold 10: b1 (20 households, 2 dwellings, owners 10.4 -> 1.04) joins.
+    # Raw dwellings (4, 10, 2, 2, 5), threshold 10: b1 (20 households, 2 dwellings, owners 10.4 -> 1.04) joins.
     raw = table[(table["dwelling_column"] == RAW_DWELLINGS) & (table["min_households_outside"] == 10.0)].iloc[0]
-    assert not bool(raw["is_configured_rule"]) and raw["cells_changed"] == 3
+    assert not bool(raw["is_configured_rule"]) and raw["cells_changed"] == 4
     assert raw["households_moved_owner_to_renter"] == pytest.approx(16.0 + 9.36 + 4.0)
     # Configured rule by batch and the changed cells.
     by_batch = pd.read_csv(out / "rule_by_batch.csv").set_index("batch")
-    assert by_batch.loc["batch_000"].to_dict() == {"cells": 2, "cells_changed": 1, "households": 40.0,
+    assert by_batch.loc["batch_000"].to_dict() == {"cells": 3, "cells_changed": 2, "households": 52.0,
                                                    "owner_before": 33.0, "owner_after": 17.0,
                                                    "households_moved": 16.0}
     assert by_batch.loc["batch_001", "households_moved"] == pytest.approx(4.0)
     changed = pd.read_csv(out / "changed_cells.csv").set_index("cell")
-    assert list(changed.index) == [A2, B2]
+    assert list(changed.index) == [A2, A3, B2]
     assert changed.loc[A2, ["households", "dwellings", "owner_before", "owner_after", "renter_before",
                             "renter_after"]].tolist() == [30, 10, 24, 8, 6, 22]
-    assert log["totals"]["cells"] == 4 and log["totals"]["owner_households_before"] == pytest.approx(49.4)
+    assert log["totals"]["cells"] == 5 and log["totals"]["owner_households_before"] == pytest.approx(49.4)
     assert set(log["files_sha256"]) == {"rule_sensitivity.csv", "rule_by_batch.csv", "changed_cells.csv"}

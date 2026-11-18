@@ -61,6 +61,37 @@ def _count_column(frame: pd.DataFrame, column: str) -> np.ndarray:
     return values
 
 
+def cells_outside_dwellings(
+    cells: pd.DataFrame,
+    *,
+    household_total_col: str,
+    dwelling_col: str,
+    min_households_outside: float = DEFAULT_MIN_HOUSEHOLDS_OUTSIDE,
+) -> pd.Series:
+    """The cells the rule selects: ``households - dwellings >= min_households_outside``.
+
+    The one place that defines the selection; ``limit_owner_households_to_dwellings`` uses it, and
+    measurements of the rule take their changed-cell mask from it. NaN counts are read as 0 (as the rule
+    reads them).
+
+    Returns:
+        A bool Series on ``cells.index``.
+
+    Raises:
+        ValueError: ``min_households_outside`` is not positive, or a count is negative.
+        KeyError: a required column is absent.
+    """
+    if not min_households_outside > 0:
+        raise ValueError(
+            f"[{LOG_TAG}] min_households_outside must be > 0, got {min_households_outside!r}")
+    missing = [c for c in (household_total_col, dwelling_col) if c not in cells.columns]
+    if missing:
+        raise KeyError(f"[{LOG_TAG}] required column(s) absent from the cells frame: {missing}")
+    households = _count_column(cells, household_total_col)
+    dwellings = _count_column(cells, dwelling_col)
+    return pd.Series((households - dwellings) >= min_households_outside, index=cells.index)
+
+
 def limit_owner_households_to_dwellings(
     cells: pd.DataFrame,
     *,
@@ -109,7 +140,9 @@ def limit_owner_households_to_dwellings(
     nan_dwellings = pd.to_numeric(cells[dwelling_col], errors="coerce").isna().to_numpy()
     nan_tenure = np.isnan(owner_input) | np.isnan(renter_input)
 
-    changed = (households - dwellings) >= min_households_outside
+    changed = cells_outside_dwellings(
+        cells, household_total_col=household_total_col, dwelling_col=dwelling_col,
+        min_households_outside=min_households_outside).to_numpy()
     # ``changed`` implies households > 0 because min_households_outside > 0 and dwellings >= 0.
     safe_households = np.where(changed, households, 1.0)
     # The upstream owner count can exceed the harmonised household total by rounding; the owner
