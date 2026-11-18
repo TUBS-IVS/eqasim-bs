@@ -59,6 +59,8 @@ status:
     G5, G6, G7 and the reproducibility are met on both batches; G4 is met on batch_032 and MISSED on
     batch_000 by one of 47 controls (shift 0.149 against the bound 0.10). The gate as pre-registered is
     therefore not passed; integerizer_rounding stays "round" in configs/base_bs.yml until the owner decides.
+    Post hoc, after this verdict and without changing it: batch_000 was run once more the same day with its
+    store kept, to locate the miss (last validation entry, g4_miss_location/).
 source: >-
   felix run server, ~/i646 (arm folders, logs, diagnostics); committed copy in
   docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/.
@@ -84,8 +86,8 @@ validation:
     196, row_shortfall 135, all 0 in batch_032; balance WAPE of the household total at ZENSUS100m 0.10
     against 0.001 in batch_032, misfit_split.csv), so the final rounding fills cells up to their household
     control with households the float weights did not place there, and the float weights of this control
-    already miss its cell targets (balance WAPE 0.885). Where the inputs of the batch disagree is not
-    analysed in this record.
+    already miss its cell targets (balance WAPE 0.885). Where in the batch this happens is located post hoc
+    in the last validation entry of this record.
   artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/arm3_verdict.json
 - metric: >-
     G3: integer control fit WAPE per geography (as in popsim-ladder-baseline-2026-11-16) against arm 2 of
@@ -236,6 +238,35 @@ validation:
     79,892. The lp method reached OPTIMAL in all 61 calls and is the slowest and the farthest from the float
     totals after its repair step; the search is a local optimum, not a proven one.
   artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/method_replay/method_summary.csv
+- metric: >-
+    POST HOC, added after the verdict: not a pre-registered check, without a bound, and it changes no result
+    above. Where the household excess of batch_000 and the rounding shift of the control that missed G4
+    arise. batch_000 of arm 3 was run again with its checkpoint store kept (scripts/run_locate.sh, committed
+    before the run; both run-time options of issue #656 on), and scripts/locate_rounding_shift.py split the
+    household sums and the float and integer sums of building_type_sonstiges_ZENSUS100m_target by 1 km parent
+  reference: >-
+    none (property of the run). The three output files of the re-run have the sha256 of the evidence run
+    (summary.json against controlled_off batch_000 in run_times_and_hashes.txt); the controls are model input
+  result: >-
+    One 1 km parent of 57 (40 with a simultaneous call), CRS3035RES1000mN3187000E4345000, carries all of it:
+    the whole household excess (706 expanded households against a control of 645; no difference in any other
+    parent), every defect of the path record (hh_excess 61, zone_shortfall 196, row_shortfall 135) and the
+    whole shift of the control (integer minus float 127 = 425 - 298 in this parent; the absolute differences
+    of all other parents sum to less than 1e-14). G4 terms from the store of the re-run: T 850, F 849, I 976,
+    as in the evidence run. The 1 km pool of this parent holds 298 households of building type sonstiges
+    against 629 asked for by its cells; the pools of the batch hold 849 against 850, so the others sit in
+    other parents, where pool, float sum and integer sum agree. Controls of the parent
+    (cells_of_flagged_parents.csv): four cells with 118, 174, 246 and 90 households, each asked for as owner
+    households only (the renter control is 0 in all ten cells), as building type sonstiges only and as
+    one-person households (114, 170, 247, 90). Their float household sums are 86, 78, 95 and 118, while five
+    cells with a household control of 3 or 4 have float sums of 23 to 77 and integer parts of 6 to 22. The
+    rounding fills the four cells up to their household control and cannot take the integer parts out of
+    the five small ones: that is the excess of 61 and, mostly through the rows drawn into the four cells, the
+    net 127 additional households of building type sonstiges. The miss therefore follows from float weights
+    that contradict the cell controls of this one parent; in the other 39 parents with a call the rounding
+    returns the float sum of this control. Why the controls of these cells combine as they do is not
+    analysed in this record.
+  artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/g4_miss_location/summary.json
 features:
   note: >-
     Evidence for popsim_method (WP4 of the PopulationSim repair, issue #646). Single-batch evidence on two
@@ -286,6 +317,15 @@ artifacts:
 - docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/scripts/run_diag.sh
 - docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/scripts/run_evidence.sh
 - docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/scripts/compare_arm3.py
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/scripts/run_locate.sh
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/scripts/locate_rounding_shift.py
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/g4_miss_location/summary.json
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/g4_miss_location/parents.csv
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/g4_miss_location/cells_of_flagged_parents.csv
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/g4_miss_location/progress.log
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/g4_miss_location/prepare_variant.json
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/g4_miss_location/tool.json
+- docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/g4_miss_location/batch_000.time
 issues:
 - '#646'
 - '#647'

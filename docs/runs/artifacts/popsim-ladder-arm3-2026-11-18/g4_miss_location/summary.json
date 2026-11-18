@@ -1,0 +1,65 @@
+{
+  "batch": "batch_000",
+  "control": "building_type_sonstiges_ZENSUS100m_target",
+  "level": "ZENSUS100m",
+  "g4_terms_of_the_control": {
+    "target_sum_T": 850.0,
+    "float_sum_F": 849.0,
+    "integer_sum_I": 976.0,
+    "shift": 0.14941176470588236
+  },
+  "parents": {
+    "in_crosswalk": 57,
+    "with_simultaneous_call": 40,
+    "flagged": [
+      "CRS3035RES1000mN3187000E4345000"
+    ]
+  },
+  "control_integer_minus_float": {
+    "all_parents": 127.0,
+    "flagged_parents": 127.0,
+    "other_parents": 6.661338147750939e-16,
+    "sum_of_absolute_values_other_parents": 1.5543122344752192e-15
+  },
+  "households_expanded_minus_control": {
+    "all_parents": 61.0,
+    "flagged_parents": 61.0,
+    "sum_of_absolute_values_other_parents": 0.0
+  },
+  "path_record_totals": {
+    "hh_excess": {
+      "all_simultaneous_calls": 61.0,
+      "calls_of_flagged_parents": 61.0
+    },
+    "zone_shortfall": {
+      "all_simultaneous_calls": 196.0,
+      "calls_of_flagged_parents": 196.0
+    },
+    "row_shortfall": {
+      "all_simultaneous_calls": 135.0,
+      "calls_of_flagged_parents": 135.0
+    },
+    "hh_unreachable": {
+      "all_simultaneous_calls": 0.0,
+      "calls_of_flagged_parents": 0.0
+    },
+    "hh_outside_lp": {
+      "all_simultaneous_calls": 0.0,
+      "calls_of_flagged_parents": 0.0
+    }
+  },
+  "checks": {
+    "integer_weights_reproduce_the_expanded_cell_totals": true,
+    "largest_absolute_difference_pool_minus_float_per_parent": {
+      "households": 4.440892098500626e-16,
+      "control": 8.881784197001252e-16
+    }
+  },
+  "outputs_sha256": {
+    "final_expanded_household_ids.csv": "19f721ce45cd66778c6b3a5cb989d2549ce1703e4b4417875c0bd79c65aa13a4",
+    "synthetic_households.csv": "ba25e5d6dfa273f9ceb89579394338a539f421fe03a902df682519c05b5e3425",
+    "synthetic_persons.csv": "41225fff76f546b0a09836bf7ddf6a485a6ed58536b28b2d9245fd1e187fd09e"
+  },
+  "store_bytes": 437991453,
+  "eqasim_bs_commit": "f796f625a90f4e117a2984955fa8c23a05226d79"
+}

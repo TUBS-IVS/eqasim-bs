@@ -1,0 +1,5 @@
+2026-11-18_13:25:00 prepare (code f796f625a90f4e117a2984955fa8c23a05226d79, version 0.10.0+bs.2)
+2026-11-18_13:25:01 start run batch_000
+2026-11-18_13:28:43 end run: exit 0
+2026-11-18_13:28:43 outputs byte-identical to /home/felix/i646/ev/controlled_off/batch_000
+2026-11-18_13:28:51 located; store deleted
