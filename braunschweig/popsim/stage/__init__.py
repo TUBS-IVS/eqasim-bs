@@ -1549,19 +1549,35 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
 CENSUS_FILTERED_REPORT_FILE = "census_filtered_report.json"
 
 
-def _tenure_control_active(controls_source, source_name: str, control_tiers) -> bool:
-    """Whether the active controls include the tenure (owner / renter) 100 m controls.
+#: ``status`` values of the owner-limit entry of the report file (stable, read by people and scripts).
+TENURE_LIMIT_STATUS_DISABLED = "disabled"
+TENURE_LIMIT_STATUS_NO_TENURE_CONTROL = "no_tenure_control"
+TENURE_LIMIT_STATUS_APPLIED = "applied"
+
+
+def _tenure_control_inactive_reason(controls_source, source_name: str, control_tiers):
+    """Why the tenure (owner / renter) 100 m controls are not active, or ``None`` when they are.
 
     Only the catalog source knows its controls; with the CSV source the tenure control is
-    not detectable here and the owner limit does not run (the caller logs it).
+    not detectable here and the owner limit does not run.
     """
     from braunschweig.popsim import control_spec as _cs
 
-    source_columns = build_source_columns(
-        controls_source=controls_source, seed=source_name, tiers=control_tiers)
-    if source_columns is None:
-        return False
-    return all(base in set(source_columns) for base, _ in _cs._TIER2_TENURE_ENTRIES)
+    if controls_source != "catalog":
+        return (f"controls_source is {controls_source!r}, not 'catalog': the tenure control "
+                "is not detectable")
+    if "tier2" not in tuple(control_tiers):
+        return f"tier2 is not among the control tiers {tuple(control_tiers)}"
+    source_columns = set(build_source_columns(
+        controls_source=controls_source, seed=source_name, tiers=control_tiers))
+    if not all(base in source_columns for base, _ in _cs._TIER2_TENURE_ENTRIES):
+        return f"the seed source {source_name!r} has no tenure control"
+    return None
+
+
+def _tenure_control_active(controls_source, source_name: str, control_tiers) -> bool:
+    """Whether the active controls include the tenure controls (see ``_tenure_control_inactive_reason``)."""
+    return _tenure_control_inactive_reason(controls_source, source_name, control_tiers) is None
 
 
 def _limit_owner_targets_to_dwellings(cells: pd.DataFrame, controls_source, source_name: str,
@@ -1580,11 +1596,11 @@ def _limit_owner_targets_to_dwellings(cells: pd.DataFrame, controls_source, sour
     """
     if not enabled:
         return cells, None
-    if not _tenure_control_active(controls_source, source_name, control_tiers):
+    reason = _tenure_control_inactive_reason(controls_source, source_name, control_tiers)
+    if reason is not None:
         logger.info(
             "[popsim.stage] tenure_owner_limited_to_dwellings is on but no tenure control is "
-            "active (controls source %r, seed %r, tiers %s); nothing limited.",
-            controls_source, source_name, tuple(control_tiers))
+            "active (%s); nothing limited.", reason)
         return cells, None
     from braunschweig.popsim import control_spec as _cs
     from braunschweig.popsim import tenure_targets as _tenure_targets
@@ -1599,18 +1615,33 @@ def _limit_owner_targets_to_dwellings(cells: pd.DataFrame, controls_source, sour
 
 
 def _write_tenure_limit_report(context, *, enabled: bool, min_households_outside: float,
-        report) -> dict:
+        report, no_tenure_control_reason: str | None = None) -> dict:
     """Write ``census_filtered_report.json`` and publish the same dict with ``set_info``.
 
-    ``report`` is the count dict of ``_limit_owner_targets_to_dwellings`` or ``None``; the file
-    is written in both cases, so ``enabled`` False (or True with ``report`` None: no tenure
-    control active) is visible in the run output instead of only in the log.
+    ``report`` is the count dict of ``_limit_owner_targets_to_dwellings`` or ``None``. The file
+    is always written, with a ``status`` that tells the three cases apart: ``disabled`` (key
+    off), ``no_tenure_control`` (key on, report ``None``; ``reason`` says which condition failed,
+    ``no_tenure_control_reason`` is then required) and ``applied`` (the rule ran, ``report`` holds
+    its counts).
 
     Returns: the dict under the key ``tenure_owner_limited_to_dwellings`` of the file.
     Mutates: writes ``CENSUS_FILTERED_REPORT_FILE`` into ``context.path()``.
     """
+    if not enabled:
+        status = TENURE_LIMIT_STATUS_DISABLED
+    elif report is None:
+        if no_tenure_control_reason is None:
+            raise ValueError(
+                "[popsim.stage] the owner limit is on and produced no report, but no reason "
+                "was given; the report file would not say why nothing was limited")
+        status = TENURE_LIMIT_STATUS_NO_TENURE_CONTROL
+    else:
+        status = TENURE_LIMIT_STATUS_APPLIED
     entry = {
         "enabled": bool(enabled),
+        "status": status,
+        "reason": no_tenure_control_reason if status == TENURE_LIMIT_STATUS_NO_TENURE_CONTROL
+        else None,
         "min_households_outside": float(min_households_outside),
         "report": report,
     }
@@ -1618,9 +1649,9 @@ def _write_tenure_limit_report(context, *, enabled: bool, min_households_outside
     path.write_text(
         json.dumps({"tenure_owner_limited_to_dwellings": entry}, indent=2), encoding="utf-8")
     context.set_info("popsim_tenure_owner_limit", entry)
-    logger.info("[popsim.stage] tenure owner limit: enabled %s, %s; report written to %s",
-                bool(enabled),
-                "no cells limited (off, or no tenure control active)" if report is None
+    logger.info("[popsim.stage] tenure owner limit: status %s, %s; report written to %s",
+                status,
+                "no cells limited" if report is None
                 else f"{report['cells_changed']} of {report['cells_seen']} cells limited",
                 path)
     return entry
@@ -3058,7 +3089,10 @@ def execute(context) -> pd.DataFrame:
         enabled=tenure_owner_limited, min_households_outside=tenure_min_households_outside)
     _write_tenure_limit_report(
         context, enabled=tenure_owner_limited,
-        min_households_outside=tenure_min_households_outside, report=tenure_limit_report)
+        min_households_outside=tenure_min_households_outside, report=tenure_limit_report,
+        no_tenure_control_reason=(
+            _tenure_control_inactive_reason(controls_source, source_name, control_tiers)
+            if tenure_owner_limited else None))
     cells = _inject_employment_grid_columns(context, cells, employment_grid_on)
     cells = _inject_ownership_grid_columns(
         context, cells, ownership_grid_on, active_entry_names, kreise)

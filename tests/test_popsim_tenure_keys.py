@@ -132,34 +132,61 @@ def test_report_lists_cells_and_households(tmp_path):
         def set_info(self, key, value):
             self.info[key] = value
 
+    def written():
+        text = (tmp_path / stage.CENSUS_FILTERED_REPORT_FILE).read_text(encoding="utf-8")
+        return json.loads(text)["tenure_owner_limited_to_dwellings"]
+
     context = _Context()
+    # applied: the rule ran, its counts are in the file and in set_info.
     stage._write_tenure_limit_report(
         context, enabled=True, min_households_outside=10.0, report=report)
-    on = json.loads((tmp_path / stage.CENSUS_FILTERED_REPORT_FILE).read_text(encoding="utf-8"))
-    assert on == {"tenure_owner_limited_to_dwellings": {
-        "enabled": True, "min_households_outside": 10.0, "report": report}}
-    assert context.info["popsim_tenure_owner_limit"] == on["tenure_owner_limited_to_dwellings"]
+    assert written() == {"enabled": True, "status": "applied", "reason": None,
+                         "min_households_outside": 10.0, "report": report}
+    assert context.info["popsim_tenure_owner_limit"] == written()
 
+    # disabled: key off, nothing ran.
     stage._write_tenure_limit_report(
         context, enabled=False, min_households_outside=10.0, report=None)
-    off = json.loads((tmp_path / stage.CENSUS_FILTERED_REPORT_FILE).read_text(encoding="utf-8"))
-    assert off == {"tenure_owner_limited_to_dwellings": {
-        "enabled": False, "min_households_outside": 10.0, "report": None}}
+    assert written() == {"enabled": False, "status": "disabled", "reason": None,
+                         "min_households_outside": 10.0, "report": None}
+
+    # no_tenure_control: key on, nothing to limit; the reason says why, and a missing reason is refused.
+    stage._write_tenure_limit_report(
+        context, enabled=True, min_households_outside=10.0, report=None,
+        no_tenure_control_reason="tier2 is not among the control tiers")
+    assert written() == {"enabled": True, "status": "no_tenure_control",
+                         "reason": "tier2 is not among the control tiers",
+                         "min_households_outside": 10.0, "report": None}
+    with pytest.raises(ValueError, match="no reason"):
+        stage._write_tenure_limit_report(
+            context, enabled=True, min_households_outside=10.0, report=None)
 
 
-def test_key_on_without_a_tenure_control_changes_nothing(caplog):
-    """On, but the tiers carry no tenure control: one INFO line, cells and report untouched."""
+@pytest.mark.parametrize("controls_source, seed, tiers, reason_part", [
+    ("csv", "mid", fixture.CONTROL_TIERS, "controls_source"),
+    ("catalog", "mid", ("tier0", "tier1"), "tier2"),
+    ("catalog", "entd", fixture.CONTROL_TIERS, "seed source"),
+], ids=["csv_source", "tier2_missing", "seed_without_tenure_control"])
+def test_key_on_without_a_tenure_control_changes_nothing(
+        caplog, controls_source, seed, tiers, reason_part):
+    """On, but no tenure control is active: one INFO line, cells and report untouched, reason named."""
     cells = fixture.make_cells()
     caplog.set_level(logging.INFO)
 
     result, report = stage._limit_owner_targets_to_dwellings(
-        cells, fixture.CONTROL_SOURCE, fixture.SEED_NAME, ("tier0", "tier1"),
-        enabled=True, min_households_outside=10.0)
+        cells, controls_source, seed, tiers, enabled=True, min_households_outside=10.0)
 
     pd.testing.assert_frame_equal(result, cells, check_exact=True)
     assert report is None
     assert len([r for r in caplog.records if "no tenure control" in r.getMessage()]) == 1
-    assert _tenure_warnings(caplog) == []
+    # No warning from the stage or the rule (control_spec itself warns when it drops the ENTD
+    # tenure control; that is not this switch).
+    assert [r for r in _tenure_warnings(caplog) if r.name != "braunschweig.popsim.control_spec"] == []
+    # The reason the report file carries names the failed condition.
+    reason = stage._tenure_control_inactive_reason(controls_source, seed, tiers)
+    assert reason is not None and reason_part in reason
+    assert stage._tenure_control_inactive_reason(
+        fixture.CONTROL_SOURCE, fixture.SEED_NAME, fixture.CONTROL_TIERS) is None
 
 
 def test_owner_quote_dwelling_column_is_loaded_only_when_the_rule_can_run():
