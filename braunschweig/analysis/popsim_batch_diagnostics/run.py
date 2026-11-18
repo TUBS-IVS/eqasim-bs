@@ -42,6 +42,7 @@ from braunschweig.analysis.popsim_batch_diagnostics.reuse import (
     reuse_by_zone, reuse_summary, shares_by_attribute, usage_counts, weight_class_shares)
 from braunschweig.analysis.popsim_batch_diagnostics.solver_paths import solver_path_table
 from braunschweig.popsim.control_groups import UNIVERSE_RATIO_TOLERANCE, unmatched_controls
+from braunschweig.popsim.input_consistency import summarize as summarize_input_consistency
 
 logger = logging.getLogger(__name__)
 _TAG = "[popsim_batch_diagnostics]"
@@ -282,7 +283,7 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
     warnings = _Warnings()
     groups: dict = {}
     reuse_rows, fit_parts, universe_parts, split_parts, shift_parts = [], [], [], [], []
-    conservation_parts = []
+    conservation_parts, consistency_parts = [], []
 
     for position, folder in enumerate(folders, start=1):
         logger.info("%s batch %d/%d: %s", _TAG, position, len(folders), folder.name)
@@ -309,6 +310,10 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
         fit.insert(0, "batch", batch.name)
         fit_parts.append(fit)
         universe_parts.append(universe_table(batch))
+        consistency = _input_consistency(batch)
+        if consistency is not None:
+            consistency.insert(0, "batch", batch.name)
+            consistency_parts.append(consistency)
         if misfit:
             split = misfit_split(batch, levels=batch.geographies, chunk_rows=chunk_rows,
                                  max_unmatched_zone_share=max_unmatched_zone_share)
@@ -446,6 +451,8 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
         "control_universe": universe,
         "control_fit": fit_table,
         "solver_paths": solver,
+        "input_consistency": pd.concat(consistency_parts, ignore_index=True)
+        if consistency_parts else pd.DataFrame(),
     }
     if misfit:
         tables["misfit_split"] = pd.concat(split_parts, ignore_index=True)
@@ -493,9 +500,57 @@ def _write_summary(out_dir: Path, work_dir: Path, folders, groups, commit: str, 
         "not come from the simultaneous solution (sequential, single feasible sub zone, or "
         "all-smart-rounded).", "", _md_table(solver_levels),
         *_conservation_section(tables),
+        *_input_consistency_section(tables),
         "## Warnings", "", _md_table(pd.DataFrame(
             warnings, columns=["check", "subject", "value", "threshold"]))]
     (out_dir / "popsim_batch_diagnostics.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _read_zone_table(path: Path, geography: str) -> pd.DataFrame:
+    """A ``control_totals_<geography>.csv`` as PopulationSim reads it, indexed by the zone id string."""
+    table = pd.read_csv(path, dtype={geography: str}).set_index(geography)
+    table.index = table.index.astype(str)
+    return table
+
+
+def _input_consistency(batch) -> pd.DataFrame | None:
+    """``summarize`` of the KREIS, 1 km and 100 m control tables of one batch folder.
+
+    The tables are read from ``data/`` directly, so a table the batch does not carry only
+    removes the pairs that need it (named in the log by ``summarize``); a batch without KREIS
+    table or crosswalk has nothing to compare and yields ``None`` with a WARNING.
+    """
+    data = batch.path / "data"
+    names = {"KREIS": "control_totals_KREIS.csv", "ZENSUS1km": "control_totals_ZENSUS1km.csv",
+             "ZENSUS100m": "control_totals_ZENSUS100m.csv"}
+    present = {geo: data / name for geo, name in names.items() if (data / name).is_file()}
+    crosswalk_path = data / "geo_cross_walk.csv"
+    if "KREIS" not in present or not crosswalk_path.is_file():
+        logger.warning("%s %s: input consistency not measured (KREIS table present: %s, "
+                       "geo_cross_walk.csv present: %s)", _TAG, batch.name, "KREIS" in present,
+                       crosswalk_path.is_file())
+        return None
+    absent = [geo for geo in ("ZENSUS1km", "ZENSUS100m") if geo not in present]
+    if absent:
+        logger.warning("%s %s: no control table for %s; the pairs that need it are skipped",
+                       _TAG, batch.name, absent)
+    cells = pd.concat([_read_zone_table(present[g], g) for g in ("ZENSUS1km", "ZENSUS100m")
+                       if g in present])
+    crosswalk = pd.read_csv(crosswalk_path, dtype=str)
+    return summarize_input_consistency(_read_zone_table(present["KREIS"], "KREIS"), cells,
+                                       crosswalk)
+
+
+def _input_consistency_section(tables: dict) -> list:
+    """Summary lines: the largest contradictions of the input-consistency table."""
+    table = tables["input_consistency"]
+    if table.empty:
+        return ["## Input consistency", "", "not measured (see the log)", ""]
+    worst = table.sort_values("share", ascending=False).head(20)
+    return ["## Input consistency (20 largest shares)", "",
+            "`share` = contradiction `amount` / `base` of the check; Kreis rows compare the "
+            "KREIS control table with the grid tables, cell rows are contradictions inside "
+            "the 100 m cells (`braunschweig.popsim.input_consistency`).", "", _md_table(worst)]
 
 
 def _conservation_section(tables: dict) -> list:

@@ -1007,3 +1007,23 @@ def test_conservation_table_only_with_misfit(work_dir, tmp_path):
     table = pd.read_csv(tmp_path / "misfit" / "household_conservation.csv")
     assert table["batch"].tolist() == ["batch_000"]
     assert table["abs_deviation_sum"].tolist() == [0]
+
+
+def test_diagnostics_write_input_consistency(work_dir, tmp_path):
+    """The table reads the grid and KREIS control tables of the batch folder and names the rest."""
+    from braunschweig.popsim.input_consistency import EMPLOYED_COLUMNS
+    data = work_dir / "batch_000" / "data"
+    grid = pd.read_csv(data / "control_totals_ZENSUS100m.csv")
+    grid[list(EMPLOYED_COLUMNS)] = 0
+    grid.loc[0, EMPLOYED_COLUMNS[0]] = 4
+    grid.to_csv(data / "control_totals_ZENSUS100m.csv", index=False)
+    pd.DataFrame({"KREIS": [3153], "employed_KREIS": [5]}).to_csv(
+        data / "control_totals_KREIS.csv", index=False)
+    result = run_diagnostics(work_dir, tmp_path / "out")
+    table = result["tables"]["input_consistency"]
+    assert (tmp_path / "out" / "input_consistency.csv").exists()
+    employed = table[(table["scope"] == "kreis") & (table["check"] == "employed")]
+    assert employed[["batch", "key", "amount", "base"]].values.tolist() == [
+        ["batch_000", "3153", 1.0, 4.0]]
+    assert "## Input consistency" in (tmp_path / "out" / "popsim_batch_diagnostics.md").read_text(
+        encoding="utf-8")
