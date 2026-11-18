@@ -1,0 +1,266 @@
+{
+  "checks": {
+    "diagnostics_read_both_stores_alike": {
+      "tables": [
+        "attribute_shares.csv",
+        "control_coverage.csv",
+        "control_fit.csv",
+        "control_universe.csv",
+        "household_conservation.csv",
+        "misfit_split.csv",
+        "resolved_record_shares.csv",
+        "reuse.csv",
+        "rounding_shift.csv",
+        "solver_paths.csv",
+        "weight_class_shares.csv"
+      ],
+      "differing": [],
+      "largest_absolute_difference": 0.0,
+      "tolerance": 1e-09,
+      "met": true
+    },
+    "tool_round_off": {
+      "tool": {
+        "populationsim": "0.10.0+bs.2",
+        "direct_url": "{\"url\":\"file:///home/felix/i646/populationsim_C\",\"vcs_info\":{\"vcs\":\"git\",\"commit_id\":\"d9a2e2810139e822ff2870a1845c30a509461462\",\"requested_revision\":\"d9a2e2810139e822ff2870a1845c30a509461462\"}}"
+      },
+      "met": true
+    },
+    "tool_round_on": {
+      "tool": {
+        "populationsim": "0.10.0+bs.2",
+        "direct_url": "{\"url\":\"file:///home/felix/i646/populationsim_C\",\"vcs_info\":{\"vcs\":\"git\",\"commit_id\":\"d9a2e2810139e822ff2870a1845c30a509461462\",\"requested_revision\":\"d9a2e2810139e822ff2870a1845c30a509461462\"}}"
+      },
+      "met": true
+    },
+    "exit_round_off_batch_000": {
+      "exit": "exit 0",
+      "met": true
+    },
+    "exit_round_on_batch_000": {
+      "exit": "exit 0",
+      "met": true
+    },
+    "fast_path_reported_round_batch_000": {
+      "summary_line_found": true,
+      "met": true
+    },
+    "identity_round_batch_000": {
+      "sha256_off": {
+        "final_expanded_household_ids.csv": "fb808110f8e051b8cea7cc62e09448fa73be9c29a7909bab4689fe609824c601",
+        "synthetic_households.csv": "d2a81d767965c266666e1b7c3005e359ab9284a3573f5993b4ca2ddf13304852",
+        "synthetic_persons.csv": "b52c4037827f3ea805406b6829db5e00dfa7c8516328b597411743176c1080ae"
+      },
+      "sha256_on": {
+        "final_expanded_household_ids.csv": "fb808110f8e051b8cea7cc62e09448fa73be9c29a7909bab4689fe609824c601",
+        "synthetic_households.csv": "d2a81d767965c266666e1b7c3005e359ab9284a3573f5993b4ca2ddf13304852",
+        "synthetic_persons.csv": "b52c4037827f3ea805406b6829db5e00dfa7c8516328b597411743176c1080ae"
+      },
+      "met": true
+    },
+    "path_record_round_batch_000": {
+      "rows": 608,
+      "met": true
+    },
+    "reference_batch_000": {
+      "reference_sha256": "fb808110f8e051b8cea7cc62e09448fa73be9c29a7909bab4689fe609824c601",
+      "sha256_off": "fb808110f8e051b8cea7cc62e09448fa73be9c29a7909bab4689fe609824c601",
+      "sha256_on": "fb808110f8e051b8cea7cc62e09448fa73be9c29a7909bab4689fe609824c601",
+      "met": true
+    },
+    "exit_round_off_batch_032": {
+      "exit": "exit 0",
+      "met": true
+    },
+    "exit_round_on_batch_032": {
+      "exit": "exit 0",
+      "met": true
+    },
+    "fast_path_reported_round_batch_032": {
+      "summary_line_found": true,
+      "met": true
+    },
+    "identity_round_batch_032": {
+      "sha256_off": {
+        "final_expanded_household_ids.csv": "1f482bf13ad15a557cdda6bdb3e87e0a7ef593e76e4fddd26dd2f5d7b03d19a7",
+        "synthetic_households.csv": "ca009f7d29c3decb3c41a9fe98cb130c895c5e36aa949b3adfa50dd7c21fb0a1",
+        "synthetic_persons.csv": "2846f0e3238148831d66fdd5dd018ed262bbc04832dc88bc0292fb0ad3c2b2d7"
+      },
+      "sha256_on": {
+        "final_expanded_household_ids.csv": "1f482bf13ad15a557cdda6bdb3e87e0a7ef593e76e4fddd26dd2f5d7b03d19a7",
+        "synthetic_households.csv": "ca009f7d29c3decb3c41a9fe98cb130c895c5e36aa949b3adfa50dd7c21fb0a1",
+        "synthetic_persons.csv": "2846f0e3238148831d66fdd5dd018ed262bbc04832dc88bc0292fb0ad3c2b2d7"
+      },
+      "met": true
+    },
+    "path_record_round_batch_032": {
+      "rows": 656,
+      "met": true
+    },
+    "reference_batch_032": {
+      "reference_sha256": "1f482bf13ad15a557cdda6bdb3e87e0a7ef593e76e4fddd26dd2f5d7b03d19a7",
+      "sha256_off": "1f482bf13ad15a557cdda6bdb3e87e0a7ef593e76e4fddd26dd2f5d7b03d19a7",
+      "sha256_on": "1f482bf13ad15a557cdda6bdb3e87e0a7ef593e76e4fddd26dd2f5d7b03d19a7",
+      "met": true
+    },
+    "tool_round_off_b028": {
+      "tool": {
+        "populationsim": "0.10.0+bs.2",
+        "direct_url": "{\"url\":\"file:///home/felix/i646/populationsim_C\",\"vcs_info\":{\"vcs\":\"git\",\"commit_id\":\"d9a2e2810139e822ff2870a1845c30a509461462\",\"requested_revision\":\"d9a2e2810139e822ff2870a1845c30a509461462\"}}"
+      },
+      "met": true
+    },
+    "tool_round_on_b028": {
+      "tool": {
+        "populationsim": "0.10.0+bs.2",
+        "direct_url": "{\"url\":\"file:///home/felix/i646/populationsim_C\",\"vcs_info\":{\"vcs\":\"git\",\"commit_id\":\"d9a2e2810139e822ff2870a1845c30a509461462\",\"requested_revision\":\"d9a2e2810139e822ff2870a1845c30a509461462\"}}"
+      },
+      "met": true
+    },
+    "exit_round_off_b028_batch_028": {
+      "exit": "exit 0",
+      "met": true
+    },
+    "exit_round_on_b028_batch_028": {
+      "exit": "exit 0",
+      "met": true
+    },
+    "fast_path_reported_round_batch_028": {
+      "summary_line_found": true,
+      "met": true
+    },
+    "identity_round_batch_028": {
+      "sha256_off": {
+        "final_expanded_household_ids.csv": "5bf59db199e92baac76f7ee6260470feb08aad109c4a695b2b88e0563d55fe4b",
+        "synthetic_households.csv": "736baac5d27a4dacd140e5fa7435b8a68f815e461f9cc75aca9e87f921cd4672",
+        "synthetic_persons.csv": "537f53f740d068256adb082c7d060c203fdb3724d9d21a2995a1087f530255cf"
+      },
+      "sha256_on": {
+        "final_expanded_household_ids.csv": "5bf59db199e92baac76f7ee6260470feb08aad109c4a695b2b88e0563d55fe4b",
+        "synthetic_households.csv": "736baac5d27a4dacd140e5fa7435b8a68f815e461f9cc75aca9e87f921cd4672",
+        "synthetic_persons.csv": "537f53f740d068256adb082c7d060c203fdb3724d9d21a2995a1087f530255cf"
+      },
+      "met": true
+    },
+    "path_record_round_batch_028": {
+      "rows": 553,
+      "met": true
+    },
+    "tool_controlled_off": {
+      "tool": {
+        "populationsim": "0.10.0+bs.2",
+        "direct_url": "{\"url\":\"file:///home/felix/i646/populationsim_C\",\"vcs_info\":{\"vcs\":\"git\",\"commit_id\":\"d9a2e2810139e822ff2870a1845c30a509461462\",\"requested_revision\":\"d9a2e2810139e822ff2870a1845c30a509461462\"}}"
+      },
+      "met": true
+    },
+    "tool_controlled_on": {
+      "tool": {
+        "populationsim": "0.10.0+bs.2",
+        "direct_url": "{\"url\":\"file:///home/felix/i646/populationsim_C\",\"vcs_info\":{\"vcs\":\"git\",\"commit_id\":\"d9a2e2810139e822ff2870a1845c30a509461462\",\"requested_revision\":\"d9a2e2810139e822ff2870a1845c30a509461462\"}}"
+      },
+      "met": true
+    },
+    "exit_controlled_off_batch_000": {
+      "exit": "exit 0",
+      "met": true
+    },
+    "exit_controlled_on_batch_000": {
+      "exit": "exit 0",
+      "met": true
+    },
+    "fast_path_reported_controlled_batch_000": {
+      "summary_line_found": true,
+      "met": true
+    },
+    "identity_controlled_batch_000": {
+      "sha256_off": {
+        "final_expanded_household_ids.csv": "19f721ce45cd66778c6b3a5cb989d2549ce1703e4b4417875c0bd79c65aa13a4",
+        "synthetic_households.csv": "ba25e5d6dfa273f9ceb89579394338a539f421fe03a902df682519c05b5e3425",
+        "synthetic_persons.csv": "41225fff76f546b0a09836bf7ddf6a485a6ed58536b28b2d9245fd1e187fd09e"
+      },
+      "sha256_on": {
+        "final_expanded_household_ids.csv": "19f721ce45cd66778c6b3a5cb989d2549ce1703e4b4417875c0bd79c65aa13a4",
+        "synthetic_households.csv": "ba25e5d6dfa273f9ceb89579394338a539f421fe03a902df682519c05b5e3425",
+        "synthetic_persons.csv": "41225fff76f546b0a09836bf7ddf6a485a6ed58536b28b2d9245fd1e187fd09e"
+      },
+      "met": true
+    },
+    "path_record_controlled_batch_000": {
+      "rows": 85,
+      "met": true
+    },
+    "exit_controlled_off_batch_032": {
+      "exit": "exit 0",
+      "met": true
+    },
+    "exit_controlled_on_batch_032": {
+      "exit": "exit 0",
+      "met": true
+    },
+    "fast_path_reported_controlled_batch_032": {
+      "summary_line_found": true,
+      "met": true
+    },
+    "identity_controlled_batch_032": {
+      "sha256_off": {
+        "final_expanded_household_ids.csv": "51699a50e1ad37dd08581a3ef26b36ef1beb7896552bfa64b1dadea5851cf5ed",
+        "synthetic_households.csv": "5c5f157568cdb4b69fe87e746e1e8e3ea5cb4321b7c8dfb7091efa6876ca9742",
+        "synthetic_persons.csv": "b3de0e979bc2a255e7d37b340800a3b40d966b6e1f7cdfebb1693ac6cc4a8d07"
+      },
+      "sha256_on": {
+        "final_expanded_household_ids.csv": "51699a50e1ad37dd08581a3ef26b36ef1beb7896552bfa64b1dadea5851cf5ed",
+        "synthetic_households.csv": "5c5f157568cdb4b69fe87e746e1e8e3ea5cb4321b7c8dfb7091efa6876ca9742",
+        "synthetic_persons.csv": "b3de0e979bc2a255e7d37b340800a3b40d966b6e1f7cdfebb1693ac6cc4a8d07"
+      },
+      "met": true
+    },
+    "path_record_controlled_batch_032": {
+      "rows": 63,
+      "met": true
+    },
+    "tool_controlled_off_b028": {
+      "tool": {
+        "populationsim": "0.10.0+bs.2",
+        "direct_url": "{\"url\":\"file:///home/felix/i646/populationsim_C\",\"vcs_info\":{\"vcs\":\"git\",\"commit_id\":\"d9a2e2810139e822ff2870a1845c30a509461462\",\"requested_revision\":\"d9a2e2810139e822ff2870a1845c30a509461462\"}}"
+      },
+      "met": true
+    },
+    "tool_controlled_on_b028": {
+      "tool": {
+        "populationsim": "0.10.0+bs.2",
+        "direct_url": "{\"url\":\"file:///home/felix/i646/populationsim_C\",\"vcs_info\":{\"vcs\":\"git\",\"commit_id\":\"d9a2e2810139e822ff2870a1845c30a509461462\",\"requested_revision\":\"d9a2e2810139e822ff2870a1845c30a509461462\"}}"
+      },
+      "met": true
+    },
+    "exit_controlled_off_b028_batch_028": {
+      "exit": "exit 0",
+      "met": true
+    },
+    "exit_controlled_on_b028_batch_028": {
+      "exit": "exit 0",
+      "met": true
+    },
+    "fast_path_reported_controlled_batch_028": {
+      "summary_line_found": true,
+      "met": true
+    },
+    "identity_controlled_batch_028": {
+      "sha256_off": {
+        "final_expanded_household_ids.csv": "9070153915d3f668611e5c54c5828a60ceed4b67d933cd0fcef27fef5f017ce2",
+        "synthetic_households.csv": "c75a0c03ee095b85515489e07e1c98c38589fd0a5ccc398521b5372fa6ae99ee",
+        "synthetic_persons.csv": "f3cc74e9ae2ac1ce4b6a96c0034aec36433ab80c44494dc0533b48b28810b4ad"
+      },
+      "sha256_on": {
+        "final_expanded_household_ids.csv": "9070153915d3f668611e5c54c5828a60ceed4b67d933cd0fcef27fef5f017ce2",
+        "synthetic_households.csv": "c75a0c03ee095b85515489e07e1c98c38589fd0a5ccc398521b5372fa6ae99ee",
+        "synthetic_persons.csv": "f3cc74e9ae2ac1ce4b6a96c0034aec36433ab80c44494dc0533b48b28810b4ad"
+      },
+      "met": true
+    },
+    "path_record_controlled_batch_028": {
+      "rows": 61,
+      "met": true
+    }
+  },
+  "all_met": true
+}
