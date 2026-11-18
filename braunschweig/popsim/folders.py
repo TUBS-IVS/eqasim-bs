@@ -37,6 +37,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim import cells, controls
+from braunschweig.popsim.fallback_rates import log_fallback_rate
 
 logger = logging.getLogger(__name__)
 
@@ -858,6 +859,92 @@ def build_kreis_control_totals(
             values = values * weights
         out[name] = values
     return pd.DataFrame(out)
+
+
+def set_kreis_controls_from_fine_sums(
+    kreis_totals: pd.DataFrame,
+    fine_totals: Mapping[str, pd.DataFrame],
+    geo_crosswalk: pd.DataFrame,
+    mapping: Mapping[str, Sequence[str]],
+) -> pd.DataFrame:
+    """Set each mapped KREIS control of a batch to the sum of its finer-level control (#658, A4).
+
+    For each ``{KREIS control column: grid control columns}`` of ``mapping``, the value of a Kreis
+    row becomes the sum of the INTEGER grid columns over the cells of that Kreis in this batch, so
+    the KREIS target and the grid targets of one variable agree exactly. ``fine_totals`` is the
+    control-totals dict of the batch (:func:`braunschweig.popsim.mid.control_cells.build_control_totals`):
+    a grid column belongs to the table of the geography its name ends with (``_ZENSUS1km`` or
+    ``_ZENSUS100m``), and a cell belongs to the Kreis ``geo_crosswalk`` gives it (one Kreis per
+    1 km parent once the crosswalk is resolved). Returns a copy; ``kreis_totals`` is not changed.
+
+    No silent fallback: a Kreis part without any grid cell gets 0 and is logged as a WARNING with
+    its id, the primary/fallback count is logged, and per control the largest relative change
+    against the value it replaces is logged.
+
+    Raises:
+        ValueError: a mapped KREIS column or a grid column is missing, the columns of one control
+            sit at two geographies, a grid cell is absent from the crosswalk, or a grid value is NaN.
+    """
+    out = kreis_totals.copy()
+    kreise = out[GEO_KREIS].astype(str)
+    suffixes = {GEO_1KM: "_" + GEO_1KM, GEO_100M: "_" + GEO_100M}
+    n_parts = n_empty = 0
+    for control, columns in mapping.items():
+        columns = list(columns)
+        if control not in out.columns:
+            raise ValueError(f"KREIS control {control!r} is not a column of the KREIS table "
+                             f"{list(out.columns)}")
+        geos = {g for c in columns for g, suffix in suffixes.items() if c.endswith(suffix)}
+        if len(geos) != 1 or not all(any(c.endswith(s) for s in suffixes.values()) for c in columns):
+            raise ValueError(f"KREIS control {control!r}: grid columns {columns} must all end in one "
+                             f"geography suffix {sorted(suffixes.values())}")
+        geo = next(iter(geos))
+        table = fine_totals.get(geo)
+        absent = [c for c in columns if table is None or c not in table.columns]
+        if absent:
+            raise ValueError(f"KREIS control {control!r} follows grid column(s) {absent}, which the "
+                             f"{geo} control table of this batch does not carry (grid active but "
+                             "its target missing)")
+        kreis_of = (geo_crosswalk.assign(**{geo: geo_crosswalk[geo].astype(str),
+                                            GEO_KREIS: geo_crosswalk[GEO_KREIS].astype(str)})
+                    [[geo, GEO_KREIS]].drop_duplicates())
+        if kreis_of[geo].duplicated().any():
+            raise ValueError(f"geo_crosswalk gives some {geo} cell more than one Kreis; resolve the "
+                             "crosswalk (resolve_parent_kreis) before following a grid")
+        cell_kreis = table[geo].astype(str).map(kreis_of.set_index(geo)[GEO_KREIS])
+        if cell_kreis.isna().any():
+            raise ValueError(f"{geo} cells absent from the crosswalk: "
+                             f"{table.loc[cell_kreis.isna(), geo].astype(str).tolist()[:5]}")
+        values = table[columns]
+        if values.isna().any().any():
+            raise ValueError(f"KREIS control {control!r}: NaN in grid column(s) "
+                             f"{[c for c in columns if values[c].isna().any()]}")
+        per_cell = values.sum(axis=1)
+        sums = per_cell.groupby(cell_kreis.to_numpy()).sum().reindex(kreise.to_numpy())
+        n_cells = cell_kreis.groupby(cell_kreis.to_numpy()).size().reindex(kreise.to_numpy())
+        empty = n_cells.isna().to_numpy()
+        new_values = sums.fillna(0).to_numpy().round().astype("int64")
+        old_values = out[control].to_numpy(dtype=float)
+        base = np.where(old_values > 0, old_values, np.nan)
+        relative = np.abs(new_values - old_values) / base
+        worst = int(np.nanargmax(relative)) if np.isfinite(relative).any() else None
+        logger.info(
+            "[popsim.kreis_follow_grids] %s := batch sum of %d %s column(s): largest relative "
+            "change against the apportioned value %s over %d Kreis part(s)", control, len(columns), geo,
+            "n/a (no positive value)" if worst is None
+            else f"{100.0 * relative[worst]:.2f}% (Kreis {kreise.iloc[worst]}, "
+                 f"{old_values[worst]:.1f} -> {new_values[worst]})", len(kreise))
+        if empty.any():
+            logger.warning(
+                "[popsim.kreis_follow_grids] %s: %d Kreis part(s) without any %s grid cell in this "
+                "batch (Kreis %s): control value 0", control, int(empty.sum()), geo,
+                kreise[empty].tolist())
+        n_parts += len(kreise)
+        n_empty += int(empty.sum())
+        out[control] = new_values
+    log_fallback_rate(logger, "popsim.kreis_follow_grids.empty_part", n_empty, n_parts,
+                      what="Kreis parts with no grid cell get the control value 0")
+    return out
 
 
 def write_popsim_folder(

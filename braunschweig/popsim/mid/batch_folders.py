@@ -354,6 +354,7 @@ def assemble_batch_folder(
     household_control_names: Iterable[str] | None = None,
     apportion_weight_col_by_control: Mapping[str, str] | None = None,
     kreis_totals_by_weight_col: Mapping[str, Mapping[str, float]] | None = None,
+    kreis_follow_grids: bool = False,
 ) -> dict[str, Path]:
     """Assemble one PopulationSim run folder for a subset of cells.
 
@@ -387,7 +388,17 @@ def assemble_batch_folder(
     region-wide per-Kreis total of each such column. A control in the map is then split by this
     batch's share of ITS universe (:func:`universe_apportion_weights`) instead of the population
     share. Both ``None`` (default) -> the legacy split, unchanged.
+
+    Follow the grids (#658, Task A4): with ``kreis_follow_grids`` the KREIS car / bicycle ownership
+    and employed controls of this batch are set to the batch sum of their finer-level control
+    (:func:`folders.set_kreis_controls_from_fine_sums`), so the KREIS target and the grid targets
+    of one variable agree exactly. A pair needs both sides in ``controls_df``; a KREIS control
+    whose grid is off keeps its apportioned value and is logged. Default ``False`` -> unchanged.
     """
+    if kreis_follow_grids and not (kreis_table is not None and bool(kreis_controls_map)):
+        raise ValueError(
+            "kreis_follow_grids needs the Tier-3 KREIS geography (kreis_table and "
+            "kreis_controls_map); there is no KREIS control to set without it.")
     if apportion_weight_col_by_control and kreis_totals_by_weight_col is None:
         raise ValueError(
             "apportion_weight_col_by_control needs kreis_totals_by_weight_col (the region "
@@ -443,6 +454,9 @@ def assemble_batch_folder(
             household_control_names=household_control_names,
             apportion_weights_by_control=weights_by_control,
         )
+        if kreis_follow_grids:
+            control_totals[folders.GEO_KREIS] = _follow_grids(
+                control_totals, geo_crosswalk, controls_df)
     return folders.write_popsim_folder(
         folder,
         geo_crosswalk=geo_crosswalk,
@@ -453,6 +467,23 @@ def assemble_batch_folder(
         settings_yaml=settings_yaml,
         logging_yaml=logging_yaml,
     )
+
+
+def _follow_grids(
+    control_totals: Mapping[str, pd.DataFrame],
+    geo_crosswalk: pd.DataFrame,
+    controls_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """The KREIS table of a batch with its grid-following controls set to the grid sums (#658, A4)."""
+    mapping = control_spec.kreis_controls_following_grids(controls_df)
+    fields = set(controls_df["control_field"])
+    unpaired = sorted(k for k in control_spec.kreis_grid_pairs() if k in fields and k not in mapping)
+    if unpaired:
+        logger.info(
+            "[popsim.kreis_follow_grids] %d KREIS control(s) keep their apportioned value, their "
+            "grid control is not active in this run: %s", len(unpaired), unpaired)
+    return folders.set_kreis_controls_from_fine_sums(
+        control_totals[folders.GEO_KREIS], control_totals, geo_crosswalk, mapping)
 
 
 def cell_groups(cells_subset: pd.DataFrame) -> dict[str, list[str]]:
@@ -523,6 +554,7 @@ def run_popsim_mid(
     household_control_names: Iterable[str] | None = None,
     integerizer_seed_base: int | None = None,
     apportion_weight_col_by_control: Mapping[str, str] | None = None,
+    kreis_follow_grids: bool = False,
 ) -> mergemod.MergeReport:
     """Batch the cells into PopulationSim runs, execute them, and merge the output.
 
@@ -586,6 +618,11 @@ def run_popsim_mid(
         controls are split by the batch's share of the persons of their own age universe
         (#658); the region total of each column is summed once here. Needs the Tier-3 KREIS
         geography (``ValueError`` otherwise).
+    kreis_follow_grids:
+        ``False`` (default): the KREIS car / bicycle and employed controls keep the value of the
+        Kreis census table (apportioned). ``True``: each is set to its batch's sum of the grid
+        control of the same variable (:func:`folders.set_kreis_controls_from_fine_sums`, #658);
+        needs the Tier-3 KREIS geography (``ValueError`` otherwise).
     """
     draw = folders.integerizer_draw_in_settings(settings_yaml)
     if draw != "off" and integerizer_seed_base is None:
@@ -684,6 +721,7 @@ def run_popsim_mid(
                 household_control_names=household_control_names,
                 apportion_weight_col_by_control=apportion_weight_col_by_control,
                 kreis_totals_by_weight_col=kreis_totals_by_weight_col,
+                kreis_follow_grids=kreis_follow_grids,
             )
             batch_folders.append(str(folder))
 
@@ -754,6 +792,7 @@ def run_popsim_mid(
                 household_control_names=household_control_names,
                 apportion_weight_col_by_control=apportion_weight_col_by_control,
                 kreis_totals_by_weight_col=kreis_totals_by_weight_col,
+                kreis_follow_grids=kreis_follow_grids,
             )
             batch_folders_stratified.append(str(folder))
             global_batch_index += 1

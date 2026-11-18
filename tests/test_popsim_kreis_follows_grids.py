@@ -1,0 +1,194 @@
+"""A KREIS control follows the finer-level control of the same variable (#658, Task A4).
+
+All values are SYNTHETIC test data. Three 1 km parents, one 100 m cell each: P1 and P2 lie in Kreis
+03101, P3 in Kreis 03158. The grid columns carry values unrelated to the Kreis census table (every
+census source column is 100), so a KREIS value can only equal a grid sum if the step ran.
+"""
+
+from __future__ import annotations
+
+import logging
+
+import pandas as pd
+import pytest
+
+from braunschweig.popsim import control_spec, folders
+from braunschweig.popsim import kreis_attribute_control as kac
+from braunschweig.popsim.mid import batch_folders
+from braunschweig.popsim.ownership_grid import BIKES_COLUMNS, CARS_COLUMNS
+from braunschweig.popsim.stage import controls_builder
+
+ARS = "RegionalSchlussel_ARS"
+ENTRY = {e.name: e for e in kac.REGISTRY}
+EMPLOYED = [c.name for c in control_spec.employment_grid_controls()]
+GRID_COLUMNS = list(CARS_COLUMNS) + list(BIKES_COLUMNS) + EMPLOYED
+#            parent  Kreis    batch
+_PARENTS = (("P1", "03101", "A"), ("P2", "03101", "B"), ("P3", "03158", "B"))
+# Per-parent value of OWN_CARS_0_agg (cells [3, 2 | 4]); every other grid column is value * (index + 1).
+_CARS_0 = {"P1": 3.0, "P2": 2.0, "P3": 4.0}
+
+
+def _cells() -> pd.DataFrame:
+    rows = []
+    for parent, kreis, _batch in _PARENTS:
+        row = {"ZENSUS100m": f"c_{parent}", "ZENSUS1km": parent, ARS: kreis + "0000000",
+               "POP_TOTAL_100m_adj": 100.0}
+        for index, col in enumerate(GRID_COLUMNS):
+            row[col] = _CARS_0[parent] * (index + 1)
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _controls_df(*, ownership: bool = True, employment: bool = True) -> pd.DataFrame:
+    catalog = [c for c in control_spec.tier3_controls() if c.name == "employed"]
+    for name in ("number_of_cars", "number_of_bicycles"):
+        catalog += control_spec.attribute_kreis_controls([ENTRY[name]])
+    if ownership:
+        catalog += control_spec.ownership_grid_controls()
+    if employment:
+        catalog += control_spec.employment_grid_controls()
+    return control_spec.render_catalog_csv(catalog, "mid")
+
+
+def _kreis_inputs(controls_df: pd.DataFrame):
+    """Kreis census table (every source column 100) and the KREIS controls map of ``controls_df``."""
+    names = set(controls_df["control_field"])
+    catalog = [c for c in control_spec.tier3_controls() if c.name == "employed"]
+    for name in ("number_of_cars", "number_of_bicycles"):
+        catalog += control_spec.attribute_kreis_controls([ENTRY[name]])
+    controls_map = controls_builder._kreis_controls_map(
+        [c for c in catalog if f"{c.name}_{c.geography}" in names])
+    sources = sorted({c for cols in controls_map.values() for c in cols})
+    table = pd.DataFrame({"ARS_kreis": ["03101", "03158"], **{c: [100.0, 100.0] for c in sources}})
+    return table, controls_map
+
+
+def _assemble(tmp_path, controls_df, batches=("A", "B"), **kwargs) -> dict[str, pd.DataFrame]:
+    """Assemble the batches; return each batch's KREIS control table indexed by Kreis."""
+    cells = _cells()
+    table, controls_map = _kreis_inputs(controls_df)
+    out = {}
+    for batch in batches:
+        parents = [p for p, _k, b in _PARENTS if b in batch]
+        subset = cells[cells["ZENSUS1km"].isin(parents)].copy()
+        folder = tmp_path / batch
+        batch_folders.assemble_batch_folder(
+            folder, subset, GRID_COLUMNS, controls_df,
+            pd.DataFrame({"H_ID": [1]}), pd.DataFrame({"H_ID": [1], "P_ID": [1]}),
+            settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+            kreis_table=table, kreis_controls_map=controls_map, **kwargs)
+        frame = pd.read_csv(folder / "data" / "control_totals_KREIS.csv", dtype={"KREIS": str})
+        out[batch] = frame.set_index("KREIS")
+    return out
+
+
+def test_kreis_car_classes_equal_the_grid_sums_of_the_batch(tmp_path):
+    # One batch holding all parents: Kreis 03101 has cells [3, 2], Kreis 03158 has [4].
+    out = _assemble(tmp_path, _controls_df(), batches=("AB",), kreis_follow_grids=True)["AB"]
+    assert out["number_of_cars_0_KREIS"].tolist() == [5, 4]
+    # Every category follows its own grid column (OWN_CARS_<c>_agg, OWN_BIKES_<c>_agg).
+    for position, col in enumerate(CARS_COLUMNS):
+        factor = GRID_COLUMNS.index(col) + 1
+        label = col[len("OWN_CARS_"):-len("_agg")]
+        assert out[f"number_of_cars_{label}_KREIS"].tolist() == [5 * factor, 4 * factor], position
+    for col in BIKES_COLUMNS:
+        factor = GRID_COLUMNS.index(col) + 1
+        label = col[len("OWN_BIKES_"):-len("_agg")]
+        assert out[f"number_of_bicycles_{label}_KREIS"].tolist() == [5 * factor, 4 * factor]
+
+
+def test_employed_equals_the_employed_grid(tmp_path):
+    out = _assemble(tmp_path, _controls_df(), batches=("AB",), kreis_follow_grids=True)["AB"]
+    factors = sum(GRID_COLUMNS.index(c) + 1 for c in EMPLOYED)
+    assert out["employed_KREIS"].tolist() == [5 * factors, 4 * factors]
+
+
+def test_region_total_stays_the_kreis_anchor(tmp_path):
+    """Kreis 03101 lies in both batches: its two parts add up to the sum of its grid cells."""
+    out = _assemble(tmp_path, _controls_df(), kreis_follow_grids=True)
+    assert out["A"].loc["03101", "number_of_cars_0_KREIS"] == 3
+    assert out["B"].loc["03101", "number_of_cars_0_KREIS"] == 2
+    assert out["A"].loc["03101", "number_of_cars_0_KREIS"] + out["B"].loc[
+        "03101", "number_of_cars_0_KREIS"] == 5
+
+
+def test_follow_grids_is_off_by_default(tmp_path):
+    """Without the argument the KREIS values are the census value (legacy, byte-identical)."""
+    out = _assemble(tmp_path, _controls_df())["A"]
+    assert set(out["number_of_cars_0_KREIS"]) == {100}
+    assert set(out["employed_KREIS"]) == {100}
+
+
+def test_follow_grids_skips_an_inactive_grid(tmp_path, caplog):
+    """Ownership grid off: car and bicycle controls keep their value; the employed pair still follows."""
+    controls_df = _controls_df(ownership=False)
+    assert control_spec.kreis_controls_following_grids(controls_df).keys() == {"employed_KREIS"}
+    with caplog.at_level(logging.INFO):
+        out = _assemble(tmp_path, controls_df, batches=("AB",), kreis_follow_grids=True)["AB"]
+    assert out["number_of_cars_0_KREIS"].tolist() == [100, 100]
+    assert out["employed_KREIS"].iloc[1] == 4 * sum(GRID_COLUMNS.index(c) + 1 for c in EMPLOYED)
+    skipped = [r for r in caplog.records if "kreis_follow_grids" in r.getMessage()
+               and "number_of_cars_0_KREIS" in r.getMessage()]
+    assert skipped, "a skipped pair must be logged"
+
+
+def test_follow_grids_raises_on_a_missing_active_column():
+    controls_df = _controls_df()
+    mapping = control_spec.kreis_controls_following_grids(controls_df)
+    kreis_totals = pd.DataFrame({"KREIS": ["03101"], "employed_KREIS": [100.0]})
+    xwalk = pd.DataFrame({"ZENSUS100m": ["c1"], "ZENSUS1km": ["P1"], "KREIS": ["03101"]})
+    fine = {"ZENSUS100m": pd.DataFrame({"ZENSUS100m": ["c1"]}),
+            "ZENSUS1km": pd.DataFrame({"ZENSUS1km": ["P1"]})}
+    with pytest.raises(ValueError, match="EMPLOYED_M_16_29_agg_ZENSUS100m"):
+        folders.set_kreis_controls_from_fine_sums(
+            kreis_totals, fine, xwalk, {"employed_KREIS": mapping["employed_KREIS"]})
+
+
+def test_kreis_part_without_a_grid_cell_gets_zero_and_a_warning(caplog):
+    kreis_totals = pd.DataFrame({"KREIS": ["03101", "03158"], "employed_KREIS": [100.0, 100.0]})
+    xwalk = pd.DataFrame({"ZENSUS100m": ["c1", "c2"], "ZENSUS1km": ["P1", "P2"],
+                          "KREIS": ["03101", "03158"]})
+    fine = {"ZENSUS100m": pd.DataFrame({"ZENSUS100m": ["c1"], "E_ZENSUS100m": [7]})}
+    with caplog.at_level(logging.WARNING, logger="braunschweig.popsim.folders"):
+        out = folders.set_kreis_controls_from_fine_sums(
+            kreis_totals, fine, xwalk, {"employed_KREIS": ("E_ZENSUS100m",)})
+    assert out["employed_KREIS"].tolist() == [7, 0]
+    assert "03158" in caplog.text
+    assert kreis_totals["employed_KREIS"].tolist() == [100.0, 100.0]  # input not mutated
+
+
+class _Stop(Exception):
+    """Raised by the spy once it has seen the arguments of the first assemble call."""
+
+
+@pytest.mark.parametrize("stratify", [False, True])
+def test_run_popsim_mid_hands_the_switch_to_both_assemble_paths(monkeypatch, tmp_path, stratify):
+    seen: list[dict] = []
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs)
+        raise _Stop
+
+    monkeypatch.setattr(batch_folders, "assemble_batch_folder", spy)
+    monkeypatch.setattr(batch_folders, "dominant_stratum_for_1km", lambda cells, source: ({"P1": "s"}, 0.0))
+    monkeypatch.setattr(batch_folders, "filter_seed_to_stratum", lambda hh, p, stratum, source: (hh, p))
+    cells = _cells()[:1]
+    table, controls_map = _kreis_inputs(_controls_df())
+    extra = dict(source=object(), stratify_regiostar=True) if stratify else {}
+    for flag in (True, False):
+        with pytest.raises(_Stop):
+            batch_folders.run_popsim_mid(
+                cells, GRID_COLUMNS, _controls_df(), pd.DataFrame({"H_ID": [1]}),
+                pd.DataFrame({"H_ID": [1], "P_ID": [1]}), work_dir=tmp_path,
+                settings_yaml="x: 1\n", logging_yaml="version: 1\n", max_cells=10,
+                run_one=None, kreis_table=table, kreis_controls_map=controls_map,
+                kreis_follow_grids=flag, **extra)
+        assert seen[-1]["kreis_follow_grids"] is flag
+
+
+def test_follow_grids_needs_the_kreis_geography(tmp_path):
+    with pytest.raises(ValueError, match="Tier-3"):
+        batch_folders.assemble_batch_folder(
+            tmp_path / "x", _cells(), GRID_COLUMNS, _controls_df(),
+            pd.DataFrame({"H_ID": [1]}), pd.DataFrame({"H_ID": [1], "P_ID": [1]}),
+            settings_yaml="x: 1\n", logging_yaml="version: 1\n", kreis_follow_grids=True)
