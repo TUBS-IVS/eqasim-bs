@@ -451,11 +451,12 @@ def test_clean_controlled_record_logs_no_warning(tmp_path, caplog):
     _simul_call("FEASIBLE", zone_shortfall=1, label="x"),
     _simul_call("OPTIMAL", hh_unreachable=4, label="x"),
     _simul_call("FEASIBLE", hh_outside_lp=2, label="x"),
+    _simul_call("FEASIBLE", hh_excess=3, label="x"),
     _simul_call("OPTIMAL", "lp", repair_failed=1, label="x"),
     _simul_call("OPTIMAL", "lp", fractional_after_repair=2, label="x"),
     _simul_call("ABNORMAL", "lp", label="x"),
 ], ids=["search-non-success", "search-not-converged", "row-shortfall", "zone-shortfall",
-        "hh-unreachable", "hh-outside-the-method", "lp-repair-failed",
+        "hh-unreachable", "hh-outside-the-method", "hh-excess", "lp-repair-failed",
         "lp-fractional-after-repair", "lp-non-success"])
 def test_controlled_degraded_call_is_a_warning(tmp_path, caplog, bad_call):
     _controlled_batch(tmp_path, "batch_001", [_simul_call("OPTIMAL", label="a"), bad_call])
