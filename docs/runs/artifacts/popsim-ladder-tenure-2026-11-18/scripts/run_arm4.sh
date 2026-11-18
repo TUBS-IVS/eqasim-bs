@@ -41,10 +41,10 @@ for b in "${BATCHES[@]}"; do
     || { say "PREPARE FAILED $b"; exit 1; }
 done
 say "start PopulationSim ${BATCHES[*]}"
-"$ARM3_SCRIPTS/run_arm.sh" "$ROOT/arm_4" "$PROJECT" "${BATCHES[@]}" > "$ROOT/arm_4.run.log" 2>&1
+bash "$ARM3_SCRIPTS/run_arm.sh" "$ROOT/arm_4" "$PROJECT" "${BATCHES[@]}" > "$ROOT/arm_4.run.log" 2>&1
 say "end PopulationSim: $(cat "$ROOT"/arm_4/*.exit 2>/dev/null | tr '\n' ' ')"
 say "start diagnostics"
-"$ARM3_SCRIPTS/run_diag.sh" "$ROOT/arm_4" "$ROOT/diag_arm_4" "$CODE" "$COMMIT" "$MID" "${BATCHES[@]}" \
+bash "$ARM3_SCRIPTS/run_diag.sh" "$ROOT/arm_4" "$ROOT/diag_arm_4" "$CODE" "$COMMIT" "$MID" "${BATCHES[@]}" \
   > "$ROOT/diag_arm_4.launch.log" 2>&1
 say "end diagnostics: $(cat "$ROOT/diag_arm_4.DONE" 2>/dev/null)"
 "$PYTHON" "$HERE/compare_tenure_arm.py" --base-diag "$ARM3_DIAG" --new-diag "$ROOT/diag_arm_4" \
