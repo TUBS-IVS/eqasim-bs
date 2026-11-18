@@ -1,0 +1,10 @@
+arm_5 batch_000 exit 0 	Elapsed (wall clock) time (h:mm:ss or m:ss): 11:43.01;	Maximum resident set size (kbytes): 27522288;
+arm_5 batch_013 exit 0 	Elapsed (wall clock) time (h:mm:ss or m:ss): 12:41.10;	Maximum resident set size (kbytes): 33898460;
+arm_5 batch_028 exit 0 	Elapsed (wall clock) time (h:mm:ss or m:ss): 21:34.16;	Maximum resident set size (kbytes): 33307896;
+arm_5 batch_032 exit 0 	Elapsed (wall clock) time (h:mm:ss or m:ss): 15:37.96;	Maximum resident set size (kbytes): 32587032;
+arm_6 batch_000 exit 0 	Elapsed (wall clock) time (h:mm:ss or m:ss): 11:35.10;	Maximum resident set size (kbytes): 27465436;
+arm_6 batch_013 exit 0 	Elapsed (wall clock) time (h:mm:ss or m:ss): 12:31.95;	Maximum resident set size (kbytes): 33949280;
+arm_6 batch_028 exit 0 	Elapsed (wall clock) time (h:mm:ss or m:ss): 21:24.86;	Maximum resident set size (kbytes): 33315980;
+arm_6 batch_032 exit 0 	Elapsed (wall clock) time (h:mm:ss or m:ss): 15:27.72;	Maximum resident set size (kbytes): 32591232;
+arm_4 batch_013 exit 0 	Elapsed (wall clock) time (h:mm:ss or m:ss): 11:59.15;	Maximum resident set size (kbytes): 33948064;
+arm_4 batch_028 exit 0 	Elapsed (wall clock) time (h:mm:ss or m:ss): 21:47.47;	Maximum resident set size (kbytes): 32852308;

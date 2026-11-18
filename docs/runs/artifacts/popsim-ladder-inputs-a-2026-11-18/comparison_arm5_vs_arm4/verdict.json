@@ -1,0 +1,436 @@
+{
+  "base_diag": "arms/diag_arm_4",
+  "new_diag": "arms/diag_arm_5",
+  "checks_file": "arm5_vs_arm4.json",
+  "batches": [
+    "batch_000",
+    "batch_013",
+    "batch_028",
+    "batch_032"
+  ],
+  "checks": {
+    "I-grid": {
+      "met": true,
+      "bound": 1e-06,
+      "min_base": 0.0,
+      "values": {
+        "base": {
+          "value": 0.5477637683832348,
+          "absent_pairs": [],
+          "n_gated_rows": 110,
+          "n_ungated_rows": 0,
+          "max_share_ungated": NaN,
+          "rows_with_nan_base": 0
+        },
+        "new": {
+          "value": 0.0,
+          "absent_pairs": [],
+          "n_gated_rows": 110,
+          "n_ungated_rows": 0,
+          "max_share_ungated": NaN,
+          "rows_with_nan_base": 0
+        }
+      },
+      "error": null,
+      "kind": "input_pairs"
+    },
+    "I-age": {
+      "met": true,
+      "bound": 0.03,
+      "min_base": 1000.0,
+      "values": {
+        "base": {
+          "value": 0.3652740904861728,
+          "absent_pairs": [],
+          "n_gated_rows": 11,
+          "n_ungated_rows": 11,
+          "max_share_ungated": 0.4064203739457241,
+          "rows_with_nan_base": 0
+        },
+        "new": {
+          "value": 0.0114190050433445,
+          "absent_pairs": [],
+          "n_gated_rows": 11,
+          "n_ungated_rows": 11,
+          "max_share_ungated": 0.2031062259771834,
+          "rows_with_nan_base": 0
+        }
+      },
+      "error": null,
+      "kind": "input_pairs"
+    },
+    "O-age-0-17": {
+      "bound": 0.03,
+      "values": {
+        "base/batch_000": 1.32486388384755,
+        "new/batch_000": 1.0081669691470054,
+        "base/batch_013": 0.8610544713078939,
+        "new/batch_013": 1.0032041945819983,
+        "base/batch_028": 1.123608017817372,
+        "new/batch_028": 0.9996818326439707,
+        "base/batch_032": 1.0072283150548356,
+        "new/batch_032": 1.0032402791625126
+      },
+      "missing_controls": {},
+      "met": true,
+      "kind": "fit_ratio"
+    },
+    "O-age-18plus": {
+      "bound": 0.03,
+      "values": {
+        "base/batch_000": 0.9679376959643977,
+        "new/batch_000": 1.0013148578942046,
+        "base/batch_013": 1.0363720073664826,
+        "new/batch_013": 0.999462860650706,
+        "base/batch_028": 0.9793057737627652,
+        "new/batch_028": 0.9992635506677141,
+        "base/batch_032": 0.9984618168657257,
+        "new/batch_032": 0.9982356134636265
+      },
+      "missing_controls": {},
+      "met": true,
+      "kind": "fit_ratio"
+    },
+    "O-own": {
+      "bound": 0.01,
+      "measure": "net",
+      "values": {
+        "base/batch_000/OWN_CARS_0_agg_ZENSUS1km_target": 0.010559662090813094,
+        "base/batch_000/OWN_CARS_1_agg_ZENSUS1km_target": 0.01146477598431136,
+        "base/batch_000/OWN_CARS_2_agg_ZENSUS1km_target": 0.01795142555438226,
+        "base/batch_000/OWN_CARS_3plus_agg_ZENSUS1km_target": 0.005430683360989591,
+        "new/batch_000/OWN_CARS_0_agg_ZENSUS1km_target": 0.0034696032584100164,
+        "new/batch_000/OWN_CARS_1_agg_ZENSUS1km_target": 0.0004525569467491326,
+        "new/batch_000/OWN_CARS_2_agg_ZENSUS1km_target": 0.0016593754714134862,
+        "new/batch_000/OWN_CARS_3plus_agg_ZENSUS1km_target": 0.0,
+        "base/batch_013/OWN_CARS_0_agg_ZENSUS1km_target": 0.015339150014072614,
+        "base/batch_013/OWN_CARS_1_agg_ZENSUS1km_target": 0.013087531663383056,
+        "base/batch_013/OWN_CARS_2_agg_ZENSUS1km_target": 0.01942020827469744,
+        "base/batch_013/OWN_CARS_3plus_agg_ZENSUS1km_target": 0.007599211933577259,
+        "new/batch_013/OWN_CARS_0_agg_ZENSUS1km_target": 0.00028145229383619476,
+        "new/batch_013/OWN_CARS_1_agg_ZENSUS1km_target": 0.0008443568815085843,
+        "new/batch_013/OWN_CARS_2_agg_ZENSUS1km_target": 0.00014072614691809738,
+        "new/batch_013/OWN_CARS_3plus_agg_ZENSUS1km_target": 0.00014072614691809738,
+        "base/batch_028/OWN_CARS_0_agg_ZENSUS1km_target": 0.01910354567754404,
+        "base/batch_028/OWN_CARS_1_agg_ZENSUS1km_target": 0.007990782725042741,
+        "base/batch_028/OWN_CARS_2_agg_ZENSUS1km_target": 0.02177952872965138,
+        "base/batch_028/OWN_CARS_3plus_agg_ZENSUS1km_target": 0.005277633241656136,
+        "new/batch_028/OWN_CARS_0_agg_ZENSUS1km_target": 7.433286255853713e-05,
+        "new/batch_028/OWN_CARS_1_agg_ZENSUS1km_target": 3.716643127926857e-05,
+        "new/batch_028/OWN_CARS_2_agg_ZENSUS1km_target": 0.00011149929383780569,
+        "new/batch_028/OWN_CARS_3plus_agg_ZENSUS1km_target": 3.716643127926857e-05,
+        "base/batch_032/OWN_CARS_0_agg_ZENSUS1km_target": 0.012254901960784314,
+        "base/batch_032/OWN_CARS_1_agg_ZENSUS1km_target": 0.0071301247771836,
+        "base/batch_032/OWN_CARS_2_agg_ZENSUS1km_target": 0.015448603683897801,
+        "base/batch_032/OWN_CARS_3plus_agg_ZENSUS1km_target": 0.004010695187165776,
+        "new/batch_032/OWN_CARS_0_agg_ZENSUS1km_target": 0.0,
+        "new/batch_032/OWN_CARS_1_agg_ZENSUS1km_target": 7.427213309566251e-05,
+        "new/batch_032/OWN_CARS_2_agg_ZENSUS1km_target": 7.427213309566251e-05,
+        "new/batch_032/OWN_CARS_3plus_agg_ZENSUS1km_target": 7.427213309566251e-05
+      },
+      "missing_controls": {},
+      "met": true,
+      "kind": "fit_gap"
+    },
+    "N-wape": {
+      "deltas": {
+        "ZENSUS100m": 0.02,
+        "ZENSUS1km": 0.02,
+        "KREIS": 0.01
+      },
+      "values": {
+        "ZENSUS100m": {
+          "wape_base": 0.14326183015514135,
+          "wape_new": 0.1397097621440931,
+          "limit": 0.16326183015514134,
+          "met": true,
+          "controls_only_in_base": [],
+          "controls_only_in_new": []
+        },
+        "ZENSUS1km": {
+          "wape_base": 0.030253933442578516,
+          "wape_new": 0.009739659697152644,
+          "limit": 0.050253933442578516,
+          "met": true,
+          "controls_only_in_base": [],
+          "controls_only_in_new": []
+        },
+        "KREIS": {
+          "wape_base": 0.0014190063836491172,
+          "wape_new": 0.0019032729655674785,
+          "limit": 0.011419006383649118,
+          "met": true,
+          "controls_only_in_base": [],
+          "controls_only_in_new": []
+        }
+      },
+      "met": true,
+      "kind": "wape_vs_base"
+    },
+    "N-conservation": {
+      "deltas": {
+        "abs_deviation_share": 0.0,
+        "conserved_pair_share": 0.0
+      },
+      "values": {
+        "batch_000/KREIS/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_000/KREIS/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_000/ZENSUS100m/abs_deviation_share": {
+          "base": 0.0174988686076331,
+          "new": 0.0214210288127922,
+          "limit": 0.0174988686076331,
+          "met": false
+        },
+        "batch_000/ZENSUS100m/conserved_pair_share": {
+          "base": 0.9823835784313726,
+          "new": 0.9783808647654094,
+          "limit": 0.9823835784313726,
+          "met": false
+        },
+        "batch_000/ZENSUS1km/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_000/ZENSUS1km/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_013/KREIS/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_013/KREIS/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_013/ZENSUS100m/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_013/ZENSUS100m/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_013/ZENSUS1km/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_013/ZENSUS1km/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_028/KREIS/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_028/KREIS/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_028/ZENSUS100m/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_028/ZENSUS100m/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_028/ZENSUS1km/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_028/ZENSUS1km/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_032/KREIS/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_032/KREIS/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_032/ZENSUS100m/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_032/ZENSUS100m/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_032/ZENSUS1km/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_032/ZENSUS1km/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        }
+      },
+      "met": false,
+      "kind": "conservation_vs_base"
+    },
+    "N-solver": {
+      "levels": null,
+      "values": {
+        "base/batch_000": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "new/batch_000": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "base/batch_013": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "new/batch_013": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "base/batch_028": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "new/batch_028": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "base/batch_032": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "new/batch_032": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        }
+      },
+      "met": true,
+      "kind": "no_sequential_fallback"
+    },
+    "N-G4": {
+      "max_extra_outside": 0,
+      "values": {
+        "batch_000": {
+          "base": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 0.0176470588235295
+          },
+          "new": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 0.0259999999999998
+          },
+          "limit": 0,
+          "met": true
+        },
+        "batch_013": {
+          "base": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 1.5386188563827733e-15
+          },
+          "new": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 1.461848556262125e-15
+          },
+          "limit": 0,
+          "met": true
+        },
+        "batch_028": {
+          "base": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 2.4257504492521204e-15
+          },
+          "new": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 2.1094973202155402e-15
+          },
+          "limit": 0,
+          "met": true
+        },
+        "batch_032": {
+          "base": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 1.9241777893644464e-15
+          },
+          "new": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 1.994505924940632e-15
+          },
+          "limit": 0,
+          "met": true
+        }
+      },
+      "met": true,
+      "kind": "rounding_shift_vs_base"
+    }
+  },
+  "all_met": false
+}

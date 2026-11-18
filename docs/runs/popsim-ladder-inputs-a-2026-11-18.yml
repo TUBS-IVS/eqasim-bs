@@ -56,8 +56,22 @@ pipeline:
 classification:
 - ab_test
 status:
-  execution: running
+  execution: completed
   notes: >-
+    Verdict: arm 6 against arm 5 meets every check; arm 5 against arm 4 meets every check except
+    N-conservation on batch_000 (household conservation at ZENSUS100m: abs_deviation_share 0.0214 against
+    0.0175 in arm 4, conserved_pair_share 0.9784 against 0.9824; delta 0 pre-registered). The record as
+    pre-registered is therefore NOT passed; the three keys stay at their legacy values in configs/base_bs.yml
+    until the owner decides. No tuning, no change of a bound. Execution: the first "run" of
+    scripts/run_input_arms.sh (18:35) ran batch_000, batch_013 and batch_028 of both arms to exit 0, but the
+    server disk filled (786 GB, about 744 GB used by other work plus the kept checkpoint stores of this
+    record): both batch_032 runs stopped in the checkpoint write and the diagnostics wrote nothing. The
+    failed batch_032 outputs were deleted (their logs kept on the server), the diagnostics of the three
+    finished batches ran first (deleting their stores), then batch_032 of both arms ran again from its
+    unchanged prepared folders (exit 0) with its own diagnostics; the two diagnostics directories per arm
+    were combined with scripts/combine_diagnostics.py (phases popsim and diag of the runner were added for
+    this). All eight PopulationSim runs of arms 5 and 6 and both arm-4 baseline runs exit 0
+    (run_records/run_times.txt); peak RSS 27-34 GB per process.
     Pre-registered 2026-11-18 before the arm-5 and arm-6 runs. Done before the pre-registration, without a
     PopulationSim run of arm 5 or 6: the arm-4 baseline runs of batch_013 and batch_028 (both exit 0,
     diagnostics exit 0), the preparation of the arm-5 and arm-6 folders of all four batches (deterministic;
@@ -81,8 +95,9 @@ validation:
     integers rounded inside each 1 km square while the KREIS share comes from float age counts, so a residual
     remains (its size is in popsim-input-consistency-2026-11-18); 3 % is an ASSUMPTION-grade bound above it.
     Arm 4: max share 0.365 over the gated age rows (baseline_eval/)
-  result: pending
-  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/checks/arm5_vs_arm4.json
+  result: >-
+    MET in both arms. Arm 5 and arm 6: max share 0 for the car, bicycle and employed pairs (arm 4: 0.548); age pairs max share 0.0114 over the parts with at least 1,000 persons (arm 4: 0.365); reported, not gated: 0.203 in the smaller parts (arm 4: 0.406).
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/comparison_arm5_vs_arm4/comparison.csv
 - metric: >-
     O-age (arm 5): per batch, synthetic over target persons aged 0-17 (six 100 m age x sex bands) and aged
     18+ (sixteen bands), summed over the batch (the control_fit estimator); bound |ratio - 1| <= 0.03
@@ -90,8 +105,9 @@ validation:
     the batch's own 100 m targets (model input from Zensus 2022, not a validation reference). Arm 4:
     0-17 batch_000 1.325, batch_013 0.861, batch_028 1.124, batch_032 1.007; 18+ 0.968, 1.036, 0.979, 0.998.
     Blind spot: a batch-level sum can hide offsetting cell errors; the cell fit is in N
-  result: pending
-  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/checks/arm5_vs_arm4.json
+  result: >-
+    MET on all four batches (arm 4 -> arm 5): 0-17 batch_000 1.325 -> 1.008, batch_013 0.861 -> 1.003, batch_028 1.124 -> 1.000, batch_032 1.007 -> 1.003; 18+ 0.968 -> 1.001, 1.036 -> 0.999, 0.979 -> 0.999, 0.998 -> 0.998.
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/comparison_arm5_vs_arm4/comparison.csv
 - metric: >-
     O-own (arm 5): per batch and car class, |synthetic - target| of the 1 km ownership grid summed over the
     batch, divided by the batch's household target (100 m household total); bound <= 0.01
@@ -99,8 +115,9 @@ validation:
     the 1 km ownership grid of ADR-0092 (model target, raked to the Kreis anchors; not observed data).
     Arm 4: 0.004 to 0.022, above 0.01 in 10 of 16 batch-class pairs (baseline_eval/). Blind spot: net per
     batch, cell errors inside the batch are in N
-  result: pending
-  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/checks/arm5_vs_arm4.json
+  result: >-
+    MET on all 16 batch-class pairs: at most 0.0035 in arm 5 (batch_000, no car) against up to 0.0218 in arm 4 (10 of 16 above 0.01).
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/comparison_arm5_vs_arm4/comparison.csv
 - metric: >-
     O-emp (arm 6): per batch, synthetic over target of the two employed classes of work_by_employment
     (KREIS, summed) with bound |ratio - 1| <= 0.015, and of the ten 100 m employed-grid controls (summed)
@@ -109,8 +126,9 @@ validation:
     the batch's own targets (model inputs: Zensus employed grid; the survey classes rescaled to the Zensus
     level in arm 6, so arm 5 and arm 6 are fitted to different employed-class targets). Arm 4: survey classes
     1.022, 0.995, 1.051, 1.024; grid 0.974, 1.010, 0.934, 0.996 (batch_000, 013, 028, 032)
-  result: pending
-  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/checks/arm6_vs_arm5.json
+  result: >-
+    MET on all four batches (arm 5 -> arm 6): survey classes batch_000 1.012 -> 1.006, batch_013 0.994 -> 0.997, batch_028 1.056 -> 1.002, batch_032 1.012 -> 1.000; employed grid 0.996 -> 1.008, 1.004 -> 1.002, 0.953 -> 0.999, 0.990 -> 1.001.
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/comparison_arm6_vs_arm5/comparison.csv
 - metric: >-
     N (no harm, each arm against its base: arm 5 vs arm 4, arm 6 vs arm 5): pooled WAPE over the four
     batches per geography, over the controls whose targets the arm did not change (target above 0;
@@ -121,8 +139,9 @@ validation:
   reference: >-
     the base arm (model output); ASSUMPTION-grade design bounds of the ladder. Arm 4 pooled WAPE over the
     arm-5 control set: ZENSUS100m 0.1433, ZENSUS1km 0.0303, KREIS 0.0014
-  result: pending
-  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/checks/arm5_vs_arm4.json
+  result: >-
+    Arm 5 vs arm 4: WAPE MET (ZENSUS100m 0.1433 -> 0.1397, ZENSUS1km 0.0303 -> 0.0097, KREIS 0.0014 -> 0.0019); no sequential fallback MET; G4 MET (0 controls outside on every batch in both arms); household conservation NOT MET on batch_000 at ZENSUS100m (abs_deviation_share 0.0175 -> 0.0214, conserved_pair_share 0.9824 -> 0.9784), MET at every other batch and level. Arm 6 vs arm 5: every N check MET (WAPE 0.1397 -> 0.1374, 0.0097 -> 0.0095, KREIS 0.0054 -> 0.0018 over the arm-6 control set; batch_000 conservation 0.0214 -> 0.0199). Descriptive, not a gate: batch_000 conservation in arm 6 (0.0199) is still above arm 4 (0.0175); batch_000 is the batch with the household excess of the arm-3 record, the other three batches conserve exactly in every arm.
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/comparison_arm5_vs_arm4/comparison.csv
 features:
   note: >-
     Evidence for the KREIS consistency of issue #658 (features tier3_kreis_controls, ownership_grid_1km,
@@ -140,6 +159,25 @@ artifacts:
 - docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/baseline_eval/arm4_on_arm5_checks.csv
 - docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/baseline_eval/arm4_on_arm6_checks.csv
 - docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/dry_run_batch_000/README.md
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/comparison_arm5_vs_arm4/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/comparison_arm5_vs_arm4/verdict.json
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/comparison_arm6_vs_arm5/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/comparison_arm6_vs_arm5/verdict.json
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/run_records/run_times.txt
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/run_records/arm_5_outputs_sha256.txt
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/run_records/arm_6_outputs_sha256.txt
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/run_records/arms_progress.log
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/run_records/baseline_progress.log
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/run_records/b028_reproduction.diff
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/run_records/combine_arm_4.json
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/prepare_logs/arm_5_batch_000.json
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/prepare_logs/arm_5_batch_013.json
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/prepare_logs/arm_5_batch_028.json
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/prepare_logs/arm_5_batch_032.json
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/prepare_logs/arm_6_batch_000.json
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/prepare_logs/arm_6_batch_013.json
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/prepare_logs/arm_6_batch_028.json
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/prepare_logs/arm_6_batch_032.json
 issues:
 - '#658'
 - '#657'

@@ -1,0 +1,75 @@
+{
+  "sources": [
+    "~/i657/arm4/diag_arm_4",
+    "~/i658_a/baseline/diag_arm_4",
+    "~/i658_a/arms/ic_arm4_t"
+  ],
+  "tables": {
+    "control_fit.csv": {
+      "absent_in": [
+        "~/i658_a/arms/ic_arm4_t"
+      ],
+      "rows": 440,
+      "batches": [
+        "batch_000",
+        "batch_013",
+        "batch_028",
+        "batch_032"
+      ]
+    },
+    "household_conservation.csv": {
+      "absent_in": [
+        "~/i658_a/arms/ic_arm4_t"
+      ],
+      "rows": 12,
+      "batches": [
+        "batch_000",
+        "batch_013",
+        "batch_028",
+        "batch_032"
+      ]
+    },
+    "solver_paths.csv": {
+      "absent_in": [
+        "~/i658_a/arms/ic_arm4_t"
+      ],
+      "rows": 12,
+      "batches": [
+        "batch_000",
+        "batch_013",
+        "batch_028",
+        "batch_032"
+      ]
+    },
+    "rounding_shift.csv": {
+      "absent_in": [
+        "~/i658_a/arms/ic_arm4_t"
+      ],
+      "rows": 188,
+      "batches": [
+        "batch_000",
+        "batch_013",
+        "batch_028",
+        "batch_032"
+      ]
+    },
+    "input_consistency.csv": {
+      "absent_in": [
+        "~/i657/arm4/diag_arm_4"
+      ],
+      "rows": 215,
+      "batches": [
+        "batch_000",
+        "batch_013",
+        "batch_028",
+        "batch_032"
+      ]
+    }
+  },
+  "dropped_pooled_rows": {
+    "control_fit.csv": {
+      "~/i657/arm4/diag_arm_4": 113,
+      "~/i658_a/baseline/diag_arm_4": 113
+    }
+  }
+}

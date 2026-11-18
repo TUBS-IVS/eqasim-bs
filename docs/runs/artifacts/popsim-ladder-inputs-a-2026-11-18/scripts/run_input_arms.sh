@@ -60,6 +60,31 @@ elif [ "$PHASE" = "run" ]; then
   wait
   say "end diagnostics: arm 5 $(cat "$ROOT/diag_arm_5.DONE" 2>/dev/null); arm 6 $(cat "$ROOT/diag_arm_6.DONE" 2>/dev/null)"
   echo done > "$ROOT/RUN_DONE"
+elif [ "$PHASE" = "popsim" ]; then
+  # PopulationSim only, arms 5 and 6 of the named batches (two processes at a time), no diagnostics.
+  # Added after the first "run" filled the server disk (execution notes of the manifest).
+  PROJECT="$1"; shift
+  RUN="$ART/popsim-ladder-arm3-2026-11-18/scripts/run_arm.sh"
+  for b in "$@"; do
+    say "start PopulationSim arms 5 and 6: $b"
+    bash "$RUN" "$ROOT/arm_5" "$PROJECT" "$b" > "$ROOT/logs/arm_5.$b.run.log" 2>&1 &
+    bash "$RUN" "$ROOT/arm_6" "$PROJECT" "$b" > "$ROOT/logs/arm_6.$b.run.log" 2>&1 &
+    wait
+    say "end PopulationSim $b: arm 5 $(cat "$ROOT/arm_5/$b.exit" 2>/dev/null); arm 6 $(cat "$ROOT/arm_6/$b.exit" 2>/dev/null)"
+  done
+elif [ "$PHASE" = "diag" ]; then
+  # Diagnostics only, arms 5 and 6 of the named batches, into diag_arm_<arm><suffix> (run_diag.sh
+  # deletes the batches' stores after a successful run); the per-arm directories are combined with
+  # combine_diagnostics.py.
+  MID="$1"; SUFFIX="$2"; shift 2
+  DIAG="$ART/popsim-ladder-arm3-2026-11-18/scripts/run_diag.sh"
+  say "start diagnostics$SUFFIX: $*"
+  for arm in 5 6; do
+    bash "$DIAG" "$ROOT/arm_$arm" "$ROOT/diag_arm_$arm$SUFFIX" "$CODE" "$COMMIT" "$MID" "$@" \
+      > "$ROOT/logs/diag_arm_$arm$SUFFIX.launch.log" 2>&1 &
+  done
+  wait
+  say "end diagnostics$SUFFIX: arm 5 $(cat "$ROOT/diag_arm_5$SUFFIX.DONE" 2>/dev/null); arm 6 $(cat "$ROOT/diag_arm_6$SUFFIX.DONE" 2>/dev/null)"
 else
   echo "unknown phase $PHASE" >&2; exit 2
 fi
