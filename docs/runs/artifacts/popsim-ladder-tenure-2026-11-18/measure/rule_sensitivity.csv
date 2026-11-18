@@ -1,0 +1,10 @@
+dwelling_column,min_households_outside,is_configured_rule,cells_seen,cells_changed,households_in_changed_cells,households_outside_dwellings,households_moved_owner_to_renter,moved_share_of_all_households,high_owner_cells_changed,households_in_high_owner_cells_changed,batches_touched,cells_with_nan_dwelling_count,cells_with_nan_tenure_count,cells_with_owner_above_household_total
+Insgesamt_Wohnungen_Wohnungen_nach_Zahl_der_Raeume_100m_Gitter_adj,5.0,False,43598,368,12806.205078125,6750.48779296875,2610.2766669819653,0.0046764841528904285,46,1455.059326171875,59,0,0,0
+Insgesamt_Wohnungen_Wohnungen_nach_Zahl_der_Raeume_100m_Gitter_adj,10.0,True,43598,119,7760.7744140625,5144.2890625,1903.5492879927233,0.003410335077559552,12,1053.935546875,37,0,0,0
+Insgesamt_Wohnungen_Wohnungen_nach_Zahl_der_Raeume_100m_Gitter_adj,20.0,False,43598,68,5739.59375,4460.5048828125,1715.6195645774637,0.0030736464864514375,10,1021.9710693359375,27,0,0,0
+Insgesamt_Wohnungen_Wohnungen_nach_Zahl_der_Raeume_100m_Gitter,5.0,False,43598,413,13869.5390625,7050.53817653656,2776.6290031690833,0.004974515420539474,56,1576.8291015625,59,0,0,0
+Insgesamt_Wohnungen_Wohnungen_nach_Zahl_der_Raeume_100m_Gitter,10.0,False,43598,123,7923.73583984375,5193.736041069031,1917.985273949305,0.0034361981059546835,12,1053.935546875,37,0,0,0
+Insgesamt_Wohnungen_Wohnungen_nach_Zahl_der_Raeume_100m_Gitter,20.0,False,43598,68,5739.59375,4463.594053268433,1716.5537786653692,0.003075320193086738,10,1021.9710693359375,27,0,0,0
+BewohntWhg_Leerstand_100m_Gitter,5.0,False,43598,524,19531.953125,7991.51318359375,2951.9233404982583,0.005288566877605569,53,1546.7421875,59,0,0,0
+BewohntWhg_Leerstand_100m_Gitter,10.0,False,43598,144,9093.345703125,5554.92431640625,1983.2642285462684,0.0035531496921798007,12,1053.935546875,40,0,0,0
+BewohntWhg_Leerstand_100m_Gitter,20.0,False,43598,70,5902.4853515625,4572.78955078125,1736.0661724861943,0.0031102779435973568,10,1021.9710693359375,27,0,0,0
