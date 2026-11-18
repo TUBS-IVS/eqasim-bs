@@ -423,3 +423,35 @@ def test_rounding_shift_vs_base_compares_the_outside_counts(
         n_out = rows[rows["metric"] == "n_outside"].set_index("arm")["value"]
         assert (n_out["base"], n_out["new"]) == (1, new_outside)
         assert rows[rows["arm"] == "base"]["met"].isna().all()
+
+
+def test_conservation_split_by_parent_adds_up_to_the_batch_total():
+    """Two 1 km parents, three household groups; group 3 is placed twice in one 100 m cell.
+
+    Hand-computed pairs (group, parent): parent weight -> sum of the 100 m weights, deviation:
+    (1, P1) 2 -> 1+1 = 2, 0 | (2, P1) 1 -> none, 1 | (3, P2) 1 -> 1+1 (same cell twice), 1 |
+    (1, P2) none (its zero-weight parent row does not count) -> 1, 1.
+    """
+    locate = _load("locate_conservation")
+    parent_weights = pd.DataFrame({
+        "H_ID": [1, 2, 3, 1], "ZENSUS1km": ["P1", "P1", "P2", "P2"], "integer_weight": [2, 1, 1, 0]})
+    sub_weights = pd.DataFrame({
+        "H_ID": [1, 1, 3, 3, 1],
+        "ZENSUS100m": ["c1", "c2", "c3", "c3", "c3"], "integer_weight": [1, 1, 1, 1, 1]})
+    parent_of = pd.Series({"c1": "P1", "c2": "P1", "c3": "P2"})
+
+    split = locate.split_by_parent(parent_weights, sub_weights, parent_of, "ZENSUS1km", "ZENSUS100m")
+
+    assert split["n_pairs"].to_dict() == {"P1": 2, "P2": 2}
+    assert split["parent_weight_sum"].to_dict() == {"P1": 3.0, "P2": 1.0}
+    assert split["abs_deviation_sum"].to_dict() == {"P1": 1.0, "P2": 2.0}
+    assert split["conserved_pair_share"].to_dict() == {"P1": 0.5, "P2": 0.0}
+    # the batch totals of the same weights (hand-computed above)
+    assert (split["n_pairs"].sum(), split["abs_deviation_sum"].sum()) == (4, 3.0)
+    row = pd.Series({"n_pairs": 4, "parent_weight_sum": 4.0, "abs_deviation_sum": 3.0,
+                     "conserved_pair_share": 0.25})
+    assert locate.check_against_batch_row(split, row)["abs_deviation_sum"]["equal"]
+    wrong = row.copy()
+    wrong["abs_deviation_sum"] = 2.0
+    with pytest.raises(ValueError, match="abs_deviation_sum"):
+        locate.check_against_batch_row(split, wrong)
