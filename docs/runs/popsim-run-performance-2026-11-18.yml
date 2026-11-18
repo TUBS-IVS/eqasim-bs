@@ -1,0 +1,109 @@
+id: popsim-run-performance-2026-11-18
+date: '2026-11-18'
+repository:
+  commit: cb39a0448023ca40e5c1260dd4bb0d4cef5f7de2
+  branch: chore/i656-popsim-batch-memory
+  notes: >-
+    PRE-REGISTRATION: this file was committed with the checks below before the PopulationSim runs
+    started; only results, artifacts and execution notes are added afterwards. The runs are those that
+    run_evidence.sh of popsim-ladder-arm3-2026-11-18 starts (one PopulationSim build, the release candidate
+    of 0.10.0+bs.2 of the group's fork at commit d9a2e2810139e822ff2870a1845c30a509461462, one
+    environment); this record owns the comparison of the fork's two run-time options off against on. The
+    commit is the eqasim-bs code on the run server (git archive) that writes the batch settings. Script:
+    scripts/compare_run_performance.py of the artifact directory.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - the run overlay of prod100_20261031 (server-local), only as the configuration that produced the batch folders
+  notes: >-
+    Twelve arms: rounding "round" and "controlled", each with store_positive_weight_rows_only and fast_paths
+    both false ("off") and both true ("on"), on batch_000 and batch_032 (the arm-2 folders of
+    popsim-ladder-arm2-2026-11-17) and on batch_028 (the batch with the largest household target of the 60,
+    control_fit.csv of popsim-batch-diagnostics-prod100-20261031-2026-11-16; its folder was prepared like
+    arm 2 with the recorded commands of the arm-1 and arm-2 manifests). Within one
+    rounding mode and batch the two arms differ only in the two option lines of settings.yaml
+    (prepare_variant.py of popsim-ladder-arm3-2026-11-18 writes both from the same source folder). The
+    "off" and "on" arms of one rounding mode and batch run at the same time, so their wall times are
+    comparable on the loaded machine.
+sampling:
+  rate: 1.0
+  scope: >-
+    three of the 60 batches of prod100_20261031 with their full seed pool of 218,097 MiD 2023 households.
+  notes: The rate is the share of each batch's cells simulated (all of them), not a population sampling rate.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run: PopulationSim standalone on the prepared batch folders (run_arm.sh of
+    popsim-ladder-arm3-2026-11-18), compared with compare_run_performance.py.
+classification:
+- ab_test
+status:
+  execution: running
+  notes: Pre-registered 2026-11-18 before the runs.
+source: >-
+  felix run server, ~/i646 (arm folders, logs); committed copy in
+  docs/runs/artifacts/popsim-run-performance-2026-11-18/.
+environment: >-
+  as in popsim-ladder-arm3-2026-11-18 (the same runs).
+validation:
+- metric: >-
+    Identity of the synthetic population: for each rounding mode (round, controlled) and each of batch_000,
+    batch_032 and batch_028, the sha256 of final_expanded_household_ids.csv, synthetic_households.csv and
+    synthetic_persons.csv is the same with the two options off and on; bound: equal in all six pairs
+  reference: the run with the options off (model output)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-run-performance-2026-11-18/run_performance_verdict.json
+- metric: >-
+    Identity of the solver path: integerizer_paths.csv of the two runs of a pair is equal apart from its two
+    timing columns; bound: equal in all six pairs
+  reference: the run with the options off (model output)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-run-performance-2026-11-18/run_performance_verdict.json
+- metric: >-
+    Reference to the released tool: the "round" runs of batch_000 and batch_032, off and on, give the sha256
+    of final_expanded_household_ids.csv that arm 2 gave with 0.10.0+bs.1
+  reference: >-
+    the committed hashes of arm 2 (run_times_and_hashes.txt of popsim-ladder-arm2-2026-11-17; model output)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-run-performance-2026-11-18/run_performance_verdict.json
+- metric: >-
+    No silent fallback: every run with fast_paths on logs the balancer fast-path summary (calls on the fast
+    kernel of all calls, and each counted fallback); bound: the line is present in all six runs. The counts
+    are reported; a counted fallback runs the original kernel and is not a failed check
+  reference: none (property of the run)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-run-performance-2026-11-18/run_performance.csv
+- metric: >-
+    The batch diagnostics read both kinds of checkpoint store alike: the tables of
+    braunschweig.analysis.popsim_batch_diagnostics (with --misfit) computed from the stores of the
+    "controlled" runs of batch_000 and batch_032 with the options off (all rows stored) and on (positive
+    rows only) agree; bound: text columns equal, numeric columns within 1e-9 absolute plus 1e-9 relative
+    (float sums over fewer rows can differ in the last bits)
+  reference: the diagnostics of the run with the options off (model output)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-run-performance-2026-11-18/run_performance_verdict.json
+- metric: >-
+    Every run exits 0 and every arm reports version 0.10.0+bs.2 and fork commit
+    d9a2e2810139e822ff2870a1845c30a509461462 in tool.json
+  reference: none
+  result: pending
+  artifact: docs/runs/artifacts/popsim-run-performance-2026-11-18/run_performance_verdict.json
+- metric: >-
+    Reported without a bound, off against on, per rounding mode and batch: wall time and peak RSS (GNU time),
+    seconds per pipeline step, RSS at the end of every step, the size of the checkpoint store (memory and
+    size in GiB, the unit of the pipeline's memory gate) and the rows the sub-geography weight tables keep
+  reference: the run with the options off (model output); an engineering measurement on one machine
+  result: pending
+  artifact: docs/runs/artifacts/popsim-run-performance-2026-11-18/run_performance.csv
+features:
+  note: >-
+    Evidence for the run-time options of data.census.filtered (issue #656): an engineering measurement of
+    identity, time and memory on three batches; it says nothing about the quality of the population.
+artifacts:
+- docs/runs/artifacts/popsim-run-performance-2026-11-18/scripts/compare_run_performance.py
+issues:
+- '#656'
+- '#646'
+- '#281'
+notes: >-
+  Identity of two runs of the same model is not validation against observed behaviour.
