@@ -8,21 +8,26 @@ number of dwellings of the cell::
 
     D = dwellings of the cell (NaN read as 0)
     if households - D >= min_households_outside:
-        owner  = owner * min(households, D) / households
+        owner  = min(owner / households, 1) * min(households, D)
         renter = households - owner
 
+The owner share is clipped at 1 because the household total is the harmonised ``_adj`` column
+and the upstream owner count is not, so the owner count can exceed the total by rounding (exactly
+in dormitory cells); such cells are counted (``cells_with_owner_above_household_total``).
 Every other cell is returned unchanged. ``households - D >= min_households_outside`` means that
 at least that many households live outside any dwelling; the threshold keeps small, suppressed
 or rounded cells (where ``households - D`` is noise) out of the rule.
 
-ASSUMPTION (owner decision 2026-11-18): ``D`` is the rooms-table dwelling count
+ASSUMPTION (issue #657): ``D`` is the rooms-table dwelling count
 (``control_spec.OWNER_QUOTE_DWELLING_COLUMN``), a SUPERSET of the dwellings of the owner quote
 (all dwellings in buildings with living space, vacant ones included), so the rule can only
 under-correct, never over-correct. The full reasoning is in the ADR of issue #657.
 
 The result is float; the integerisation within the 1 km parent runs on it afterwards. Cells
-whose dwelling count is NaN are counted as 0 and reported (``cells_with_nan_dwelling_count``);
-a negative count raises. Only ``owner_col`` and ``renter_col`` of changed cells differ from the
+whose dwelling count is NaN are counted as 0 and reported (``cells_with_nan_dwelling_count``,
+a fallback rate: primary = cells with a published dwelling count); cells with a NaN owner or
+renter count are read as 0 and reported the same way (``cells_with_nan_tenure_count``); a
+negative count raises. Only ``owner_col`` and ``renter_col`` of changed cells differ from the
 input, which is never mutated.
 """
 
@@ -98,44 +103,49 @@ def limit_owner_households_to_dwellings(
     owners = _count_column(cells, owner_col)
     renters = _count_column(cells, renter_col)
     dwellings = _count_column(cells, dwelling_col)
+    # Unchanged cells keep their input values exactly (a NaN stays NaN); only changed cells differ.
+    owner_input = pd.to_numeric(cells[owner_col], errors="coerce").to_numpy(dtype="float64")
+    renter_input = pd.to_numeric(cells[renter_col], errors="coerce").to_numpy(dtype="float64")
     nan_dwellings = pd.to_numeric(cells[dwelling_col], errors="coerce").isna().to_numpy()
+    nan_tenure = np.isnan(owner_input) | np.isnan(renter_input)
 
     changed = (households - dwellings) >= min_households_outside
     # ``changed`` implies households > 0 because min_households_outside > 0 and dwellings >= 0.
     safe_households = np.where(changed, households, 1.0)
-    # Unchanged cells keep their input values exactly (a NaN stays NaN); only changed cells differ.
-    owner_input = pd.to_numeric(cells[owner_col], errors="coerce").to_numpy(dtype="float64")
-    renter_input = pd.to_numeric(cells[renter_col], errors="coerce").to_numpy(dtype="float64")
-    new_owners = np.where(
-        changed, owners * np.minimum(households, dwellings) / safe_households, owner_input)
+    # The upstream owner count can exceed the harmonised household total by rounding; the owner
+    # share is clipped at 1 so that owner + renter stays the household total.
+    owner_above_total = changed & (owners > households)
+    owner_share = np.minimum(owners / safe_households, 1.0)
+    new_owners = np.where(changed, owner_share * np.minimum(households, dwellings), owner_input)
     new_renters = np.where(changed, households - new_owners, renter_input)
 
     moved = float((owners[changed] - new_owners[changed]).sum())
     n_cells = len(cells)
     n_changed = int(changed.sum())
-    n_nan = int(nan_dwellings.sum())
+    n_nan_dwelling = int(nan_dwellings.sum())
+    n_nan_tenure = int(nan_tenure.sum())
+    n_clipped = int(owner_above_total.sum())
     total_households = float(households.sum())
 
-    # Rate of the rule: the primary path is the owner quote as given, the changed cells are the
-    # corrected ones (rate rule: docs/codebase/notes/popsim-fallback-rates.md).
-    log_fallback_rate(
-        logger, f"{LOG_TAG}.cells", n_changed, n_cells,
-        what="cells whose owner households were limited to the dwellings of the cell",
-    )
+    # The changed cells are the intended effect of the rule, not a fallback: plain INFO line.
     logger.info(
         "[%s] changed %d of %d cells (%.2f%%); moved %.0f of %.0f households from owner to "
-        "renter (%.2f%%); cells with a NaN dwelling count (read as 0): %d; threshold %.1f "
-        "households outside any dwelling",
+        "renter (%.2f%%); owner count above the household total (clipped) in %d changed cell(s); "
+        "threshold %.1f households outside any dwelling",
         LOG_TAG, n_changed, n_cells, 100.0 * n_changed / n_cells if n_cells else 0.0,
         moved, total_households, 100.0 * moved / total_households if total_households else 0.0,
-        n_nan, min_households_outside,
+        n_clipped, min_households_outside,
     )
-    if n_nan:
-        logger.warning(
-            "[%s] %d cell(s) have a NaN dwelling count, read as 0 dwellings (the rule applies to "
-            "them when they carry at least %.1f households)",
-            LOG_TAG, n_nan, min_households_outside,
-        )
+    # The real fallbacks: a NaN count is read as 0 (rate rule:
+    # docs/codebase/notes/popsim-fallback-rates.md). Primary = the cell has a published count.
+    log_fallback_rate(
+        logger, f"{LOG_TAG}.dwelling_count", n_nan_dwelling, n_cells,
+        what="cells without a published dwelling count (read as 0 dwellings)",
+    )
+    log_fallback_rate(
+        logger, f"{LOG_TAG}.tenure_count", n_nan_tenure, n_cells,
+        what="cells with a NaN owner or renter count (read as 0)",
+    )
 
     result = cells.copy()
     result[owner_col] = new_owners.astype("float64")
@@ -144,7 +154,9 @@ def limit_owner_households_to_dwellings(
         "cells_seen": n_cells,
         "cells_changed": n_changed,
         "households_moved_owner_to_renter": moved,
-        "cells_with_nan_dwelling_count": n_nan,
+        "cells_with_nan_dwelling_count": n_nan_dwelling,
+        "cells_with_nan_tenure_count": n_nan_tenure,
+        "cells_with_owner_above_household_total": n_clipped,
         "min_households_outside": float(min_households_outside),
     }
     return result, report

@@ -75,8 +75,40 @@ def test_report_counts():
         "cells_changed": 2,
         "households_moved_owner_to_renter": 213.0,
         "cells_with_nan_dwelling_count": 0,
+        "cells_with_nan_tenure_count": 0,
+        "cells_with_owner_above_household_total": 0,
         "min_households_outside": 10.0,
     }
+
+
+@pytest.mark.parametrize(
+    ("households", "owner", "dwellings", "expected_owner", "expected_renter"),
+    [
+        # owner 200 > 100 households: share clipped at 1; min(100, 0) = 0 dwellings -> owner 0.
+        (100.0, 200.0, 0.0, 0.0, 100.0),
+        # owner 120 > 100 households: share clipped at 1; min(100, 50) = 50 -> owner 50.
+        (100.0, 120.0, 50.0, 50.0, 50.0),
+    ],
+)
+def test_owner_above_household_total_is_clipped_and_reported(
+        households, owner, dwellings, expected_owner, expected_renter):
+    cells = pd.DataFrame({
+        HOUSEHOLDS: [households], OWNER: [owner], RENTER: [0.0], DWELLINGS: [dwellings]})
+    result, report = limit_owner_households_to_dwellings(cells, **KWARGS)
+    assert result[OWNER].iloc[0] == pytest.approx(expected_owner)
+    assert result[RENTER].iloc[0] == pytest.approx(expected_renter)
+    assert report["cells_with_owner_above_household_total"] == 1
+    assert report["cells_changed"] == 1
+
+
+@pytest.mark.parametrize("column", [OWNER, RENTER])
+def test_nan_tenure_count_is_reported_and_unchanged_cell_keeps_nan(column):
+    cells = _cells()
+    cells.loc["ordinary", column] = np.nan  # unchanged cell: the NaN must survive
+    cells.loc["small", column] = np.nan
+    result, report = limit_owner_households_to_dwellings(cells, **KWARGS)
+    assert report["cells_with_nan_tenure_count"] == 2
+    assert result.loc[["ordinary", "small"], column].isna().all()
 
 
 def test_owner_plus_renter_stays_the_household_total_and_nothing_else_changes():
@@ -122,7 +154,7 @@ def test_missing_column_is_named():
         limit_owner_households_to_dwellings(_cells().drop(columns=[DWELLINGS]), **KWARGS)
 
 
-@pytest.mark.parametrize("column", [HOUSEHOLDS, OWNER, DWELLINGS])
+@pytest.mark.parametrize("column", [HOUSEHOLDS, OWNER, RENTER, DWELLINGS])
 def test_negative_count_raises(column):
     cells = _cells()
     cells.loc["home", column] = -1.0
