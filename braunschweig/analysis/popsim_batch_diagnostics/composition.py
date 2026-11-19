@@ -60,7 +60,8 @@ CENSUS_SOURCE = (
 _BAND_0_9 = (0, 9)
 _BAND_10_14 = (10, 14)
 _AGE_COLUMN = "HP_ALTER"
-_BAND_COLUMN = re.compile(r"^[MF]_AGE_(\d+)_(\d+)_ZENSUS100m$")
+# The production 100 m bands carry the aggregation suffix (``M_AGE_0_9_agg_ZENSUS100m``).
+_BAND_COLUMN = re.compile(r"^[MF]_AGE_(\d+)_(\d+)(?:_agg)?_ZENSUS100m$")
 
 
 def _persons_per_household(batch) -> pd.DataFrame:

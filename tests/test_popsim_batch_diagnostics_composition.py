@@ -187,3 +187,13 @@ def test_zero_denominator_gives_nan_and_a_warning(batch, caplog):
     assert np.isnan(row["one_adult_share_among_minor_households"])
     assert np.isnan(row["share_persons_0_9_with_one_adult"])
     assert sum("zero denominator" in r.getMessage() for r in caplog.records) >= 2
+
+
+def test_band_pattern_accepts_the_production_column_names():
+    """The production 100 m bands carry ``_agg`` (``M_AGE_0_9_agg_ZENSUS100m``); both forms match."""
+    from braunschweig.analysis.popsim_batch_diagnostics import composition
+    for name, band in (("M_AGE_0_9_agg_ZENSUS100m", ("0", "9")), ("F_AGE_15_17_agg_ZENSUS100m", ("15", "17")),
+                       ("M_AGE_0_17_ZENSUS100m", ("0", "17"))):
+        match = composition._BAND_COLUMN.match(name)
+        assert match is not None and match.groups() == band
+    assert composition._BAND_COLUMN.match("EMPLOYED_M_16_29_agg_ZENSUS100m") is None
