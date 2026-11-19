@@ -28,6 +28,7 @@ import pyarrow.parquet as pq
 from braunschweig.popsim import cells as cellmod
 from braunschweig.popsim import controls as ctrl
 from braunschweig.popsim import prepared_cells
+from braunschweig.popsim.household_less_cells import move_persons_to_household_cells
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,27 @@ def filter_zgb_cells(
 # Control totals (notebook-faithful: per-geography suffix, integerized)
 # --------------------------------------------------------------------------- #
 
+def _log_household_less_report(move_report: dict) -> None:
+    """Log the household-less-cell move as rates; warn when most such persons stay (no silent fallback)."""
+    left = (move_report["large_cell_persons"]
+            + move_report["persons_in_parents_without_households"])
+    household_less = move_report["persons_moved"] + left
+    message = (
+        "[popsim.controls] household-less cells: moved %.0f persons from %d cells; left: "
+        "%d large cells (%.0f persons), %d cells in squares without households (%.0f persons)")
+    args = (
+        move_report["persons_moved"], move_report["donor_cells"],
+        move_report["large_cells"], move_report["large_cell_persons"],
+        move_report["parents_without_households"],
+        move_report["persons_in_parents_without_households"])
+    if household_less > 0 and left > 0.5 * household_less:
+        logger.warning(
+            message + ". More than 50%% of the household-less persons (%.0f of %.0f) stay "
+            "in place -- check the household column.", *args, left, household_less)
+    else:
+        logger.info(message, *args)
+
+
 def build_control_totals(
     per_cell_targets: pd.DataFrame,
     geo_crosswalk: pd.DataFrame,
@@ -139,6 +161,11 @@ def build_control_totals(
     *,
     cell_col: str = "ZENSUS100m",
     parent_col: str = "ZENSUS1km",
+    household_total_col: str | None = None,
+    person_cols: Sequence[str] = (),
+    threshold_cols: Sequence[str] | None = None,
+    move_persons_max: float | None = None,
+    report: dict | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Build the four control-total tables with per-geography suffixed columns.
 
@@ -146,7 +173,26 @@ def build_control_totals(
     the integer 100 m values sum exactly to the 1 km total; the 100 m columns are
     suffixed ``_ZENSUS100m`` and the 1 km totals ``_ZENSUS1km``. STAAT / WELT carry
     only the geography key (no controls), matching the notebook + control spec.
+
+    Household-less cells (#659): with ``move_persons_max`` set (a person count, e.g. 20), the
+    persons of a cell without households and with fewer than ``move_persons_max`` persons over
+    ``threshold_cols`` (default ``person_cols``) move to the household cells of the same 1 km
+    parent before the person columns are integerized
+    (``household_less_cells.move_persons_to_household_cells``). The household total column
+    ``household_total_col`` is integerized first and its integer values drive the move; both it
+    and ``person_cols`` must be base columns. The stage passes the 22 age x sex bands plus the
+    ten ``EMPLOYED_*_agg`` columns as ``person_cols`` and the 22 age bands as
+    ``threshold_cols``. The move report is written into ``report`` (updated in place) when given.
+    With ``move_persons_max`` None the output is exactly that of the plain build.
     """
+    move_persons = move_persons_max is not None
+    if move_persons:
+        not_base = [c for c in (household_total_col, *person_cols) if c not in base_cols]
+        if household_total_col is None or not_base:
+            raise ValueError(
+                "move_persons_max needs household_total_col and person_cols among the base "
+                f"columns; got household_total_col={household_total_col!r}, "
+                f"not in base columns: {not_base}")
     parent_of = geo_crosswalk.set_index(cell_col)[parent_col]
     work = per_cell_targets.copy()
     work[parent_col] = work[cell_col].map(parent_of)
@@ -175,6 +221,21 @@ def build_control_totals(
             else:
                 logger.info(message, col, n_nan, n_cells, 100.0 * rate)
             work[col] = work[col].fillna(0)
+
+    if move_persons:
+        # The integer households decide who is household-less; the float persons keep their
+        # 1 km sums through the move, so the integerisation below rounds the same parent totals.
+        households_int = ctrl.integerize_within_parents(
+            work, value_col=household_total_col, parent_col=parent_col)
+        work[household_total_col] = households_int
+        moved, move_report = move_persons_to_household_cells(
+            work, parent_col=parent_col, households=households_int,
+            person_cols=list(person_cols), threshold_cols=threshold_cols,
+            max_persons=move_persons_max)
+        work = moved
+        _log_household_less_report(move_report)
+        if report is not None:
+            report.update(move_report)
 
     df_100m = pd.DataFrame({cell_col: work[cell_col].to_numpy()})
     for col in base_cols:
