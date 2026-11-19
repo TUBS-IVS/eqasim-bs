@@ -449,3 +449,46 @@ def test_base_config_states_the_tracked_values():
     assert config[config_keys.KEY_INTEGERIZER_CONTROLLED_METHOD] == "search"
     assert config[config_keys.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS] == 200
     assert config[config_keys.KEY_INTEGERIZER_SEARCH_SHORTLIST] == 24
+
+
+# --- the fork release that carries controlled rounding (issue #646) -----------------------
+
+@pytest.mark.parametrize("version, expected", [
+    ("0.10.0+bs.2", True),
+    ("0.10.0+bs.3", True),
+    ("0.10.0+bs.10", True),
+    ("0.10.1+bs.1", True),
+    ("0.11.0+bs.1", True),
+    ("0.10.0+bs.1", False),
+    ("0.10.0", False),
+    ("0.10.1", False),
+])
+def test_fork_version_at_least_compares_fork_releases(version, expected):
+    assert folders.fork_version_at_least(version, "0.10.0+bs.2") is expected
+
+
+def test_fork_version_at_least_rejects_a_version_that_does_not_parse():
+    with pytest.raises(ValueError, match="populationsim_version.*not-a-version"):
+        folders.fork_version_at_least("not-a-version", "0.10.0+bs.2")
+
+
+def test_controlled_rounding_needs_the_minimum_fork_release():
+    overrides = {folders.INTEGERIZER_ROUNDING_SETTING: "controlled"}
+    with pytest.raises(ValueError) as error:
+        folders.require_fork_version_for_controlled_rounding(overrides, "0.10.0+bs.1")
+    message = str(error.value)
+    assert "braunschweig.population.popsim.integerizer_rounding" in message
+    assert "0.10.0+bs.1" in message
+    assert folders.CONTROLLED_ROUNDING_MIN_FORK_VERSION == "0.10.0+bs.2"
+    assert "0.10.0+bs.2" in message
+    assert "ignores" in message
+    # The minimum release and newer ones pass.
+    folders.require_fork_version_for_controlled_rounding(overrides, "0.10.0+bs.2")
+    folders.require_fork_version_for_controlled_rounding(overrides, "0.10.0+bs.4")
+
+
+def test_round_does_not_look_at_the_fork_version():
+    overrides = {folders.INTEGERIZER_ROUNDING_SETTING: "round"}
+    # Not even an unparsable version is looked at: nothing needs the fork's new feature.
+    folders.require_fork_version_for_controlled_rounding(overrides, "0.10.0+bs.1")
+    folders.require_fork_version_for_controlled_rounding(overrides, "not-a-version")

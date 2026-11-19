@@ -27,7 +27,7 @@ _LOCK_HASH = "lockhash"
 
 def _values(**overrides):
     values = {
-        stage.KEY_POPSIM_VERSION: "0.10.0+bs.1",
+        stage.KEY_POPSIM_VERSION: "0.10.0+bs.2",
         stage.KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS: True,
         stage.KEY_INTEGERIZER_DRAW: "pareto",
         stage.KEY_INTEGERIZER_TIMEOUT_S: 600,
@@ -222,6 +222,26 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     # The purge (batch signature) gets the version, the verified commit, the lock hash,
     # overrides and seed base.
     assert seen["purge_args"][-5:] == (
-        "0.10.0+bs.1", _COMMIT, _LOCK_HASH, expected_overrides, 4711)
+        "0.10.0+bs.2", _COMMIT, _LOCK_HASH, expected_overrides, 4711)
     # The configured rounding mode is what the gate must find in the record.
     assert seen["gate"] == (str(tmp_path / "work"), 0.2, "controlled")
+
+
+# --- execute: controlled rounding needs a fork release that has it (issue #646) -----------
+
+def test_execute_refuses_controlled_rounding_for_an_old_fork_before_any_batch(
+        monkeypatch, tmp_path):
+    calls = []
+    _stub_early_steps(monkeypatch, calls, tmp_path / "settings.yaml")
+
+    def must_not_run(*args, **kwargs):
+        raise AssertionError("execute() went on although the fork ignores controlled rounding")
+
+    monkeypatch.setattr(stage, "_read_batching_and_scope_config", must_not_run)
+    monkeypatch.setattr(stage, "_run_populationsim_batches", must_not_run)
+    context = _context(_values(**{
+        stage.KEY_POPSIM_VERSION: "0.10.0+bs.1",
+        stage.KEY_INTEGERIZER_ROUNDING: "controlled"}))
+    with pytest.raises(ValueError, match="integerizer_rounding.*0.10.0\\+bs.1.*0.10.0\\+bs.2"):
+        stage.execute(context)
+    assert calls == ["environment check"]

@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Iterable, Mapping, Sequence, Union
 
 import yaml
+from packaging.version import InvalidVersion, Version
 
 import numpy as np
 import pandas as pd
@@ -261,6 +262,60 @@ _OVERRIDE_RULES = {
     INTEGERIZER_SEARCH_MAX_SWEEPS_SETTING: (_is_positive_int, "a positive integer (sweeps)"),
     INTEGERIZER_SEARCH_SHORTLIST_SETTING: (_is_positive_int, "an integer >= 1"),
 }
+
+
+# The first release of the group's PopulationSim fork that reads INTEGERIZER_ROUNDING; an
+# older release ignores the setting and rounds plainly (issue #646).
+CONTROLLED_ROUNDING_MIN_FORK_VERSION = "0.10.0+bs.2"
+_POPSIM_VERSION_KEY = "braunschweig.population.popsim.populationsim_version"
+_INTEGERIZER_ROUNDING_KEY = "braunschweig.population.popsim.integerizer_rounding"
+
+
+def fork_version_at_least(version: str, minimum: str) -> bool:
+    """True when ``version`` is a release of the group's fork (``X.Y.Z+bs.N``) >= ``minimum``.
+
+    A version without a local segment starting with ``bs`` (upstream PopulationSim) is never
+    a fork release, so it is not "at least" any fork version.
+
+    Raises
+    ------
+    ValueError
+        If ``version`` is no valid PEP 440 version (names the config key and the value).
+    """
+    try:
+        parsed = Version(str(version))
+    except InvalidVersion as error:
+        raise ValueError(
+            f"{_POPSIM_VERSION_KEY} must be a PEP 440 version such as '0.10.0+bs.2', "
+            f"got {version!r}.") from error
+    if parsed.local is None or not parsed.local.startswith("bs"):
+        return False
+    return parsed >= Version(minimum)
+
+
+def require_fork_version_for_controlled_rounding(
+    overrides: Mapping[str, object], populationsim_version: str,
+) -> None:
+    """Refuse ``controlled`` rounding against a fork release that does not have it.
+
+    An older release ignores ``INTEGERIZER_ROUNDING`` and every batch would run with plain
+    rounding; only the solver-path gate after all batches would notice. With ``round`` the
+    version is not looked at.
+
+    Raises
+    ------
+    ValueError
+        If the rounding is ``controlled`` and ``populationsim_version`` is below
+        ``CONTROLLED_ROUNDING_MIN_FORK_VERSION`` (or no fork release, or unparsable).
+    """
+    if overrides.get(INTEGERIZER_ROUNDING_SETTING) != "controlled":
+        return
+    if not fork_version_at_least(populationsim_version, CONTROLLED_ROUNDING_MIN_FORK_VERSION):
+        raise ValueError(
+            f"{_INTEGERIZER_ROUNDING_KEY} is 'controlled', but {_POPSIM_VERSION_KEY} is "
+            f"{populationsim_version!r}; controlled rounding needs the fork release "
+            f"{CONTROLLED_ROUNDING_MIN_FORK_VERSION} or newer. An older fork ignores the "
+            "setting and would round plainly in every batch.")
 
 
 def _same_value(left: object, right: object) -> bool:

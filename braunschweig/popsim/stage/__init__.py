@@ -2860,6 +2860,9 @@ def execute(context) -> pd.DataFrame:
     # any seed is built, so an invalid value costs seconds, not the seed build or, for the gate
     # (which only runs after all batches), the whole batch run (ValueError names the key).
     settings_overrides, integerizer_seed_base = _read_integerizer_settings(context)
+    # An older fork ignores controlled rounding: refuse it now, not after all batches.
+    folders.require_fork_version_for_controlled_rounding(
+        settings_overrides, populationsim_version)
     solver_path_gate.validate_error_rate(context.config(KEY_SOLVER_FALLBACK_ERROR_RATE))
     # The server-local settings file must not contradict the tracked options (it is checked
     # again when the batch folders are written); resolving it here makes a conflict cost seconds.
