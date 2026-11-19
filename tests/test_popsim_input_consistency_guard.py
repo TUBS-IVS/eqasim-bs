@@ -363,15 +363,17 @@ def test_the_stage_report_file_and_run_info(tmp_path):
             self.info[key] = value
 
     context = _Context()
-    # The stage report is ONE file shared with the #657 tenure entry, written earlier in execute():
-    # the #658 writer must keep that entry (regression: it once overwrote the whole file).
-    tenure_entry = stage._write_tenure_limit_report(
-        context, enabled=False, min_households_outside=10.0, report=None)
+    # The stage report is ONE file shared with the entries of _write_census_filtered_report, written
+    # earlier in execute(): the #658 writer must keep them (regression: it once overwrote the file).
+    tenure_entry = stage._write_census_filtered_report(
+        context, zgb_cell_filter={"cells_seen": 1}, building_type_enabled=False,
+        building_type_report=None, enabled=False, min_households_outside=10.0, report=None)
     path = stage._write_consistency_report(context, settings)
 
     assert path.name == stage.CENSUS_FILTERED_REPORT_FILE
     content = json.loads(path.read_text(encoding="utf-8"))
     assert content["tenure_owner_limited_to_dwellings"] == tenure_entry
+    assert content["zgb_cell_filter"] == {"cells_seen": 1}
     written = content[stage.KREIS_INPUT_CONSISTENCY_REPORT_KEY]
     assert written["guard"]["max_relative_difference_measured"] == recorder.max_rel_measured
     assert written["guard"]["max_relative_difference_guarded"] == recorder.max_rel_guarded

@@ -357,6 +357,11 @@ def tenure_target(data_path: str, *, owner_limited_to_dwellings: bool = False,
     (unlimited) targets. The rule needs the household-total and rooms-table dwelling columns
     of the prepared cells and raises ``KeyError`` when one is absent.
 
+    ASSUMPTION: the validated run used a seed source WITH a tenure control (the MiD source of the
+    popsim registry). The stage applies the rule only then (``_tenure_control_active`` of
+    ``braunschweig.popsim.stage``); this loader receives no seed source or control tiers, so it
+    cannot check that and applies the rule whenever ``owner_limited_to_dwellings`` is True.
+
     Limitation: like ``building_type_target``, the rule runs on all cells of the prepared
     parquet, not only the run's Kreise; it works per cell, so the Kreis result is unaffected.
     """

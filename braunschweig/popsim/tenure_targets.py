@@ -12,8 +12,9 @@ number of dwellings of the cell::
         renter = households - owner
 
 The owner share is clipped at 1 because the household total is the harmonised ``_adj`` column
-and the upstream owner count is not, so the owner count can exceed the total by rounding (exactly
-in dormitory cells); such cells are counted (``cells_with_owner_above_household_total``).
+and the upstream owner count is not, so the owner count can exceed the total where the two
+harmonisations differ (the clip guards that case); such changed cells are counted
+(``cells_with_owner_above_household_total``).
 Every other cell is returned unchanged. ``households - D >= min_households_outside`` means that
 at least that many households live outside any dwelling; the threshold keeps small, suppressed
 or rounded cells (where ``households - D`` is noise) out of the rule.
@@ -115,8 +116,11 @@ def limit_owner_households_to_dwellings(
     Returns:
         ``(result, report)``: ``result`` is a copy of ``cells`` with FLOAT ``owner_col`` and
         ``renter_col``; ``report`` holds ``cells_seen``, ``cells_changed``,
-        ``households_moved_owner_to_renter``, ``cells_with_nan_dwelling_count`` and
-        ``min_households_outside``.
+        ``households_moved_owner_to_renter`` (per changed cell the owner count clipped at the
+        household total minus the new owner count), ``cells_with_nan_dwelling_count`` (all cells),
+        ``cells_changed_with_nan_dwelling_count`` (changed cells whose NaN dwelling count was read
+        as 0, i.e. the rule fired because of the fallback), ``cells_with_nan_tenure_count``,
+        ``cells_with_owner_above_household_total`` (changed cells) and ``min_households_outside``.
 
     Raises:
         ValueError: ``min_households_outside`` is not positive, or a count is negative.
@@ -152,10 +156,13 @@ def limit_owner_households_to_dwellings(
     new_owners = np.where(changed, owner_share * np.minimum(households, dwellings), owner_input)
     new_renters = np.where(changed, households - new_owners, renter_input)
 
-    moved = float((owners[changed] - new_owners[changed]).sum())
+    # The clipped owner count (<= households) is what the new count is derived from, so a clipped
+    # cell never reports more moved households than it has.
+    moved = float((np.minimum(owners, households)[changed] - new_owners[changed]).sum())
     n_cells = len(cells)
     n_changed = int(changed.sum())
     n_nan_dwelling = int(nan_dwellings.sum())
+    n_changed_nan_dwelling = int((changed & nan_dwellings).sum())
     n_nan_tenure = int(nan_tenure.sum())
     n_clipped = int(owner_above_total.sum())
     total_households = float(households.sum())
@@ -188,6 +195,7 @@ def limit_owner_households_to_dwellings(
         "cells_changed": n_changed,
         "households_moved_owner_to_renter": moved,
         "cells_with_nan_dwelling_count": n_nan_dwelling,
+        "cells_changed_with_nan_dwelling_count": n_changed_nan_dwelling,
         "cells_with_nan_tenure_count": n_nan_tenure,
         "cells_with_owner_above_household_total": n_clipped,
         "min_households_outside": float(min_households_outside),

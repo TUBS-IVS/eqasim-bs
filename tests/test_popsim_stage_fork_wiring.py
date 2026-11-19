@@ -200,8 +200,10 @@ def _stub_execute_steps(monkeypatch, tmp_path, calls, *, tiers=(), controls_sour
         return cells
 
     monkeypatch.setattr(stage.mid, "load_control_cells", load_control_cells)
-    monkeypatch.setattr(stage.mid, "filter_zgb_cells", lambda cells, kreise: cells)
-    monkeypatch.setattr(stage, "_add_aggregated_control_columns", lambda cells, *a, **k: cells)
+    monkeypatch.setattr(
+        stage.mid, "filter_zgb_cells_with_report",
+        lambda cells, kreise: (cells, {"cells_seen": 0, "cells_kept": 0, "cells_dropped": 0}))
+    monkeypatch.setattr(stage, "_add_aggregated_control_columns", lambda cells, *a, **k: (cells, None))
     monkeypatch.setattr(stage, "_inject_employment_grid_columns", lambda c, cells, *a, **k: cells)
     monkeypatch.setattr(stage, "_inject_ownership_grid_columns", lambda c, cells, *a, **k: cells)
     monkeypatch.setattr(

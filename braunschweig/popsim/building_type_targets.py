@@ -68,6 +68,22 @@ def rescale_building_type_to_households(
     household_total_col: str = control_spec.HH_TOTAL_CENSUS_COLUMN,
     parent_cols: Sequence[str] = DEFAULT_PARENT_COLS,
 ) -> pd.DataFrame:
+    """Rescale the building-type columns to the household total; see the ``_with_report`` variant.
+
+    Returns:
+        A copy of ``cells`` with FLOAT ``building_type_cols`` (the first value of
+        ``rescale_building_type_to_households_with_report``).
+    """
+    return rescale_building_type_to_households_with_report(
+        cells, building_type_cols, household_total_col, parent_cols)[0]
+
+
+def rescale_building_type_to_households_with_report(
+    cells: pd.DataFrame,
+    building_type_cols: Sequence[str],
+    household_total_col: str = control_spec.HH_TOTAL_CENSUS_COLUMN,
+    parent_cols: Sequence[str] = DEFAULT_PARENT_COLS,
+) -> tuple[pd.DataFrame, dict]:
     """Rescale the dwelling-based building-type columns of ``cells`` to the household total.
 
     Args:
@@ -80,9 +96,14 @@ def rescale_building_type_to_households(
             dwelling count; a level absent from ``cells`` is skipped and named in the log.
 
     Returns:
-        A copy of ``cells`` whose ``building_type_cols`` are FLOAT targets
-        ``household_total * dwellings_k / sum_k(dwellings)``; cells with a household total
-        of 0 or NaN get 0.
+        ``(result, report)``. ``result`` is a copy of ``cells`` whose ``building_type_cols`` are
+        FLOAT targets ``household_total * dwellings_k / sum_k(dwellings)``; cells with a household
+        total of 0 or NaN get 0. ``report`` (JSON-safe) holds ``cells_seen``,
+        ``cells_with_households``, ``share_tiers`` (per tier ``own`` and per parent level used:
+        ``cells`` and ``households``), ``fallback_cells`` and ``fallback_households`` (everything
+        not on the ``own`` tier), ``partial_nan_cells`` and ``partial_nan_households`` (cells whose
+        class vector is partly NaN, read as 0), ``target_sum_over_household_total_before`` and
+        ``..._after`` (``None`` when the frame has no households) and ``levels_unavailable``.
 
     Raises:
         ValueError: a required column is absent, a count is negative, or a cell with
@@ -181,4 +202,19 @@ def rescale_building_type_to_households(
     result = cells.copy()
     for position, column in enumerate(building_type_cols):
         result[column] = targets[:, position].astype("float64")
-    return result
+    report = {
+        "cells_seen": int(len(cells)),
+        "cells_with_households": n_with_households,
+        "share_tiers": {
+            name: {"cells": tier_counts[name], "households": tier_households[name]}
+            for name in tier_counts
+        },
+        "fallback_cells": n_fallback_cells,
+        "fallback_households": n_fallback_households,
+        "partial_nan_cells": int(partly_nan.sum()),
+        "partial_nan_households": int(round(float(households[partly_nan].sum()))),
+        "target_sum_over_household_total_before": None if not all_households else ratio_before,
+        "target_sum_over_household_total_after": None if not all_households else ratio_after,
+        "levels_unavailable": list(unavailable),
+    }
+    return result, report

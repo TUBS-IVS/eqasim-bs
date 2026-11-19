@@ -1542,8 +1542,10 @@ def _json_safe(value):
 def _update_stage_report(context, key: str, entry) -> Path:
     """Set ``key`` to ``entry`` in ``<context.path()>/CENSUS_FILTERED_REPORT_FILE``, keeping the other keys.
 
-    The stage report is ONE file with one top-level entry per repair (``tenure_owner_limited_to_dwellings``
-    of #657, ``kreis_input_consistency`` of #658); each writer replaces only its own entry, so the
+    The stage report is ONE file with one top-level entry per step (``zgb_cell_filter``,
+    ``building_type_rescale`` and ``tenure_owner_limited_to_dwellings`` written by
+    ``_write_census_filtered_report``, ``kreis_input_consistency`` of #658); each writer replaces only
+    its own entries, so the
     order in which they run does not matter. Both writers run in every execution, so no entry of
     an earlier run survives. Written as strict JSON (NaN / infinity become null).
     """
@@ -1751,7 +1753,7 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
 
 def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source_name: str, control_tiers,
         fine_teen_age_bands: bool = True,
-        building_type_targets_to_households: bool = False) -> pd.DataFrame:
+        building_type_targets_to_households: bool = False, return_report: bool = False):
     """Derive the multi-column aggregated control columns on the cells frame.
 
     Derive the multi-column aggregated control columns (e.g. building_type_*).
@@ -1764,8 +1766,12 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
     ``braunschweig.popsim.building_type_targets``). The raw dwelling source columns stay
     unchanged. False keeps the dwelling sums byte-identically and logs nothing.
 
+    ``return_report``: also return the count dict of the rescale (the one of
+    ``braunschweig.popsim.building_type_targets.rescale_building_type_to_households_with_report``),
+    or ``None`` when nothing was rescaled (key off, or no building_type control active).
+
     Returns: the cells frame with the aggregated control columns (MUST be
-    reassigned).
+    reassigned); with ``return_report`` the tuple ``(cells, rescale_report)``.
     Mutates: nothing in place.
     """
     agg_map = build_aggregation_map(
@@ -1775,6 +1781,7 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
         fine_teen_age_bands=fine_teen_age_bands,
     )
     cells = prepared_cells.add_aggregated_controls(cells, agg_map)
+    rescale_report = None
     if building_type_targets_to_households:
         from braunschweig.popsim import building_type_targets as _btt
         from braunschweig.popsim import control_spec as _cs
@@ -1786,7 +1793,7 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
             logger.info(
                 "[popsim.stage] building_type_targets_to_households is on but no building_type "
                 "control is active (tiers %s); nothing to rescale.", tuple(control_tiers))
-            return cells
+            return (cells, None) if return_report else cells
         # The Kreis level of the share fallback comes from the cell ARS, derived on a copy
         # so the cells frame the stage carries on is not widened by an extra column.
         if mid._ARS_COLUMN not in cells.columns:
@@ -1795,15 +1802,16 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
                 f"carries no {mid._ARS_COLUMN!r} column; cannot derive the Kreis shares.")
         work = cells.copy()
         work[_folders.GEO_KREIS] = derive_geo_kreis_from_ars(work[mid._ARS_COLUMN])
-        work = _btt.rescale_building_type_to_households(work, building_type_cols)
+        work, rescale_report = _btt.rescale_building_type_to_households_with_report(
+            work, building_type_cols)
         cells = cells.copy()
         for column in building_type_cols:
             cells[column] = work[column]
-    return cells
+    return (cells, rescale_report) if return_report else cells
 
 
-#: Report file of this stage (written into ``context.path()``): what the owner limit of issue
-#: #657 did, or that it was off.
+#: Report file of this stage (written into ``context.path()`` on every run): the counts of the ZGB
+#: cell filter, the building-type rescale (#647) and the owner limit (#657), each with its status.
 CENSUS_FILTERED_REPORT_FILE = "census_filtered_report.json"
 
 
@@ -1811,6 +1819,10 @@ CENSUS_FILTERED_REPORT_FILE = "census_filtered_report.json"
 TENURE_LIMIT_STATUS_DISABLED = "disabled"
 TENURE_LIMIT_STATUS_NO_TENURE_CONTROL = "no_tenure_control"
 TENURE_LIMIT_STATUS_APPLIED = "applied"
+
+#: ``status`` values of the ``building_type_rescale`` section (``applied`` is shared).
+BUILDING_TYPE_STATUS_DISABLED = "disabled"
+BUILDING_TYPE_STATUS_NO_CONTROL = "no_building_type_control"
 
 
 def _tenure_control_inactive_reason(controls_source, source_name: str, control_tiers):
@@ -1872,19 +1884,32 @@ def _limit_owner_targets_to_dwellings(cells: pd.DataFrame, controls_source, sour
         min_households_outside=min_households_outside)
 
 
-def _write_tenure_limit_report(context, *, enabled: bool, min_households_outside: float,
-        report, no_tenure_control_reason: str | None = None) -> dict:
-    """Write ``census_filtered_report.json`` and publish the same dict with ``set_info``.
+def _write_census_filtered_report(context, *, zgb_cell_filter: dict,
+        building_type_enabled: bool, building_type_report, enabled: bool,
+        min_households_outside: float, report, no_tenure_control_reason: str | None = None) -> dict:
+    """Write ``census_filtered_report.json`` (every step that drops, filters or replaces records).
 
-    ``report`` is the count dict of ``_limit_owner_targets_to_dwellings`` or ``None``. The file
-    is always written, with a ``status`` that tells the three cases apart: ``disabled`` (key
-    off), ``no_tenure_control`` (key on, report ``None``; ``reason`` says which condition failed,
-    ``no_tenure_control_reason`` is then required) and ``applied`` (the rule ran, ``report`` holds
-    its counts).
+    The file always has three sections, written on every run:
 
-    Returns: the dict under the key ``tenure_owner_limited_to_dwellings`` of the file.
+    * ``zgb_cell_filter``: the cell counts of ``mid.filter_zgb_cells_with_report`` (given).
+    * ``building_type_rescale`` (ADR-0198): ``enabled``, ``status`` (``disabled``, ``applied`` or
+      ``no_building_type_control`` for key on without a building_type control) and ``report``
+      (``building_type_report``, the count dict of the rescale, or ``None``).
+    * ``tenure_owner_limited_to_dwellings`` (ADR-0202): ``report`` is the count dict of
+      ``_limit_owner_targets_to_dwellings`` or ``None``, with a ``status`` that tells the three
+      cases apart: ``disabled`` (key off), ``no_tenure_control`` (key on, report ``None``;
+      ``reason`` says which condition failed, ``no_tenure_control_reason`` is then required) and
+      ``applied`` (the rule ran, ``report`` holds its counts).
+
+    Returns: the tenure entry, also published with ``set_info``.
     Mutates: writes ``CENSUS_FILTERED_REPORT_FILE`` into ``context.path()``.
     """
+    if not building_type_enabled:
+        building_type_status = BUILDING_TYPE_STATUS_DISABLED
+    elif building_type_report is None:
+        building_type_status = BUILDING_TYPE_STATUS_NO_CONTROL
+    else:
+        building_type_status = TENURE_LIMIT_STATUS_APPLIED
     if not enabled:
         status = TENURE_LIMIT_STATUS_DISABLED
     elif report is None:
@@ -1903,7 +1928,17 @@ def _write_tenure_limit_report(context, *, enabled: bool, min_households_outside
         "min_households_outside": float(min_households_outside),
         "report": report,
     }
-    path = _update_stage_report(context, "tenure_owner_limited_to_dwellings", entry)
+    sections = {
+        "zgb_cell_filter": zgb_cell_filter,
+        "building_type_rescale": {
+            "enabled": bool(building_type_enabled),
+            "status": building_type_status,
+            "report": building_type_report,
+        },
+        "tenure_owner_limited_to_dwellings": entry,
+    }
+    for key, section in sections.items():
+        path = _update_stage_report(context, key, section)
     context.set_info("popsim_tenure_owner_limit", entry)
     logger.info("[popsim.stage] tenure owner limit: status %s, %s; report written to %s",
                 status,
@@ -3351,18 +3386,21 @@ def execute(context) -> pd.DataFrame:
     )
 
     cells = mid.load_control_cells(cells_path, load_cols)
-    cells = mid.filter_zgb_cells(cells, kreise)
-    cells = _add_aggregated_control_columns(
+    cells, zgb_cell_filter_report = mid.filter_zgb_cells_with_report(cells, kreise)
+    building_type_rescaled = bool(context.config(KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS))
+    cells, building_type_report = _add_aggregated_control_columns(
         cells, controls_source, source_name, control_tiers,
         fine_teen_age_bands=fine_teen_bands_on,
-        building_type_targets_to_households=bool(
-            context.config(KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS)),
+        building_type_targets_to_households=building_type_rescaled,
+        return_report=True,
     )
     cells, tenure_limit_report = _limit_owner_targets_to_dwellings(
         cells, controls_source, source_name, control_tiers,
         enabled=tenure_owner_limited, min_households_outside=tenure_min_households_outside)
-    _write_tenure_limit_report(
-        context, enabled=tenure_owner_limited,
+    _write_census_filtered_report(
+        context, zgb_cell_filter=zgb_cell_filter_report,
+        building_type_enabled=building_type_rescaled, building_type_report=building_type_report,
+        enabled=tenure_owner_limited,
         min_households_outside=tenure_min_households_outside, report=tenure_limit_report,
         no_tenure_control_reason=(
             _tenure_control_inactive_reason(controls_source, source_name, control_tiers)

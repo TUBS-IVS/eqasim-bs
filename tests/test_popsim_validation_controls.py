@@ -657,10 +657,10 @@ def test_validation_tenure_target_uses_the_same_rule(monkeypatch):
     """The Kreis owner share of the validation equals the share of the limited cells.
 
     Hand computation on the fixture cells (owner / renter households per cell). Kreis 03101
-    holds cells 0-4: owners 11.3 + 12.1 + 30 + 118 + 20.9 = 192.3, renters 13.3 + 5.2 + 0 + 0 +
-    20.9 = 39.4, total 231.7. The rule limits cell 2 (30 households, 2 dwellings: owners 30 ->
+    holds cells 0-4: owners 11.3 + 12.1 + 30 + 118 + 20.9 = 192.3, renters 13.2 + 5.2 + 0 + 0 +
+    20.9 = 39.3, total 231.6. The rule limits cell 2 (30 households, 2 dwellings: owners 30 ->
     2) and cell 3 (118 households, 0 dwellings: owners 118 -> 0), so the owners fall to
-    11.3 + 12.1 + 2 + 0 + 20.9 = 46.3 of the same 231.7 households. Kreis 03158 (cells 5-7) has
+    11.3 + 12.1 + 2 + 0 + 20.9 = 46.3 of the same 231.6 households. Kreis 03158 (cells 5-7) has
     no cell with 10 or more households outside its dwellings: 21.2 owners of 49.0.
     """
     _fixture_cells_with_kreis(monkeypatch)
@@ -676,7 +676,7 @@ def test_validation_tenure_target_uses_the_same_rule(monkeypatch):
     off = owner_share(owner_limited_to_dwellings=False)
     on = owner_share(owner_limited_to_dwellings=True, min_households_outside=10.0)
 
-    assert default["03101"] == pytest.approx(192.3 / 231.7)
-    assert off["03101"] == pytest.approx(192.3 / 231.7)
-    assert on["03101"] == pytest.approx(46.3 / 231.7)
+    assert default["03101"] == pytest.approx(192.3 / 231.6)
+    assert off["03101"] == pytest.approx(192.3 / 231.6)
+    assert on["03101"] == pytest.approx(46.3 / 231.6)
     assert on["03158"] == off["03158"] == pytest.approx(21.2 / 49.0)
