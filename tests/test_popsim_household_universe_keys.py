@@ -282,9 +282,16 @@ def test_invalid_family_controls_value_raises(key, value):
 
 def test_minor_child_controls_refuse_the_entd_source():
     # The ENTD seed has no hh_minor_class: fail at DAG-build time, not after the seed build.
-    with pytest.raises(ValueError, match="entd"):
+    with pytest.raises(ValueError, match="is 'minor_child_1km' but .* is 'entd'"):
         stage.configure(_ConfigureContext({
             config_keys.KEY_FAMILY_CONTROLS: "minor_child_1km", config_keys.KEY_SOURCE: "entd"}))
+
+
+def test_entd_source_with_the_legacy_family_controls_is_accepted():
+    # Positive control of the refusal above: only the minor-child mode needs the MiD seed.
+    stage._require_family_controls_source("zensus_family5", "entd")
+    stage._require_family_controls_source("none", "entd")
+    stage._require_family_controls_source("minor_child_1km", "mid")
 
 
 # --- the legacy seed and batch signature are those of the commit before #659 Part B ---------

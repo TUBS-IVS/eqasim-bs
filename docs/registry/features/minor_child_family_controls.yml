@@ -56,7 +56,7 @@ evidence:
   reference:
     kind: none
     note: |
-      Control fit against census family shares, met by construction of the targets; not a
+      Control fit against census family shares; the check is not independent of the targets (both use the same census share); not a
       behavioural validation. The census 1 km family table is the target source, not an
       independent reference (data record zensus2022_grid_cells).
 validation:
@@ -66,7 +66,7 @@ validation:
   metric: null
   note: 'Arm 7b of the pre-registered run record popsim-ladder-inputs-b-2026-11-19 was chosen;
     verdict and checks: that run record and ADR-0204 "Evidence". Control fit against census
-    family shares, met by construction of the targets; not a behavioural validation.'
+    family shares; the check is not independent of the targets (both use the same census share); not a behavioural validation.'
 assessment:
   status: pending
   by: null
