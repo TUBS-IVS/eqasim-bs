@@ -475,9 +475,10 @@ def test_base_config_states_the_tracked_values():
     assert config[config_keys.KEY_INTEGERIZER_CONTROLLED_METHOD] == "search"
     assert config[config_keys.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS] == 200
     assert config[config_keys.KEY_INTEGERIZER_SEARCH_SHORTLIST] == 24
-    # Both run-time options stay off until the run manifest of issue #656 shows the identity.
-    assert config[config_keys.KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY] is False
-    assert config[config_keys.KEY_FAST_PATHS] is False
+    # Both run-time options are on since run manifest popsim-run-performance-2026-11-18 showed
+    # the identity of the output (ADR-0200, issue #656).
+    assert config[config_keys.KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY] is True
+    assert config[config_keys.KEY_FAST_PATHS] is True
 
 
 # ---------------------------------------------------------------------------

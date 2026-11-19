@@ -236,6 +236,13 @@ validation:
     represents), the run proceeding, and the resources block landing in
     run_provenance_<stamp>.json, as the outstanding evidence before this feature can
     be called production-proven; it has not been executed as of this record.
+    SINCE ISSUE #656 (2026-11-19) the PopulationSim clamp line above is no longer what
+    the tracked config gives: configs/base_bs.yml sets
+    braunschweig.population.popsim.worker_memory_gb for runs with
+    store_positive_weight_rows_only on (value and reasoning there, measured basis:
+    docs/runs/popsim-run-performance-2026-11-18.yml), and the overlay values of 3 and 4
+    workers fit that figure unclamped. The clamp to 2 remains what the code default of
+    30 GB per worker gives.
     EXPECTED, NOT A DEFECT, in that same smoke: "[resources] processes is pinned to
     32 but 62 cores are budgeted ..." -- configs/base_bs.yml pins processes: 32 below
     the 75% under-use threshold on purpose, and the key is result-affecting, so this

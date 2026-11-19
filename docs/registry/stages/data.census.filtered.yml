@@ -96,7 +96,9 @@ notes: >-
   ADR-0126 (94 GB -> 86 GB budget, 30 GB/worker), every overlay pinning num_workers: 3
   clamps to 2 and smoke_kreis_control_fit.yml's num_workers: 4 clamps to 2 as well -- a
   material, expected drop in parallelism on this stage, not yet exercised in a
-  real-machine smoke (see the Feature Registry's validation.note).
+  real-machine smoke (see the Feature Registry's validation.note). These clamps are those of
+  the code default of 30 GB per worker; since issue #656 configs/base_bs.yml sets a smaller
+  worker_memory_gb (see RUN TIME AND MEMORY OF A BATCH below), with which these overlay values fit.
 
 
   SETTINGS/GEOGRAPHY FAIL-FAST: before any batch folder is written or any PopulationSim
@@ -190,7 +192,9 @@ notes: >-
   settings that left the synthetic population unchanged in the evidence runs (three batches on one
   machine: run manifest popsim-run-performance-2026-11-18); the stage refuses them against a fork
   older than 0.10.0+bs.2 and reports the rate of balancer calls the fast kernels answered
-  (braunschweig.popsim.stage.fast_path_rate).
+  (braunschweig.popsim.stage.fast_path_rate). Both are on in production; with them the config sets
+  .worker_memory_gb and the 100 % overlay a higher num_workers ceiling (values and their reasoning:
+  configs/base_bs.yml and configs/overlays/test_100pct.yml).
   SEED RESOLUTION AND HOUSEHOLD-BASED BUILDING-TYPE TARGETS: rules and keys are in ADR-0198
   (keys in configs/base_bs.yml and braunschweig/popsim/stage/config_keys.py); the log tags are
   in the code that logs them (braunschweig.popsim.attributes, building_type_targets,
