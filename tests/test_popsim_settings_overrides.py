@@ -488,7 +488,7 @@ def test_base_config_states_the_tracked_values():
     ("store_positive_weight_rows_only", "STORE_POSITIVE_WEIGHT_ROWS_ONLY"),
     ("fast_paths", "FAST_PATHS"),
 ])
-@pytest.mark.parametrize("version", ["0.10.0+bs.1", "0.10.0", "0.9.0+bs.5", "garbage"])
+@pytest.mark.parametrize("version", ["0.10.0+bs.1", "0.10.0", "0.9.0+bs.5"])
 def test_run_time_option_on_with_a_fork_that_ignores_it_raises(key, setting, version):
     # An older fork drops an unknown setting silently: a silent fallback to the old behaviour.
     overrides = _overrides(**{setting: True})
@@ -498,10 +498,18 @@ def test_run_time_option_on_with_a_fork_that_ignores_it_raises(key, setting, ver
 
 
 @pytest.mark.parametrize("setting", ["STORE_POSITIVE_WEIGHT_ROWS_ONLY", "FAST_PATHS"])
-@pytest.mark.parametrize("version", ["0.10.0+bs.2", "0.10.0+bs.10"])
+@pytest.mark.parametrize(
+    "version", ["0.10.0+bs.2", "0.10.0+bs.10", "0.10.1+bs.1", "0.11.0+bs.1"])
 def test_run_time_option_on_with_a_fork_that_reads_it_passes(setting, version):
-    # bs.10 > bs.2 only as an integer, not as a string.
+    # bs.10 > bs.2 only as a number, not as a string; a later fork on a newer upstream base
+    # (0.10.1, 0.11.0) has the options too.
     folders.require_fork_version_for_run_time_options(_overrides(**{setting: True}), version)
+
+
+@pytest.mark.parametrize("setting", ["STORE_POSITIVE_WEIGHT_ROWS_ONLY", "FAST_PATHS"])
+def test_run_time_option_on_with_an_unparsable_version_raises_the_version_error(setting):
+    with pytest.raises(ValueError, match="populationsim_version.*garbage"):
+        folders.require_fork_version_for_run_time_options(_overrides(**{setting: True}), "garbage")
 
 
 @pytest.mark.parametrize("overrides", [NEUTRAL, {}], ids=["both-off", "test-double-empty"])

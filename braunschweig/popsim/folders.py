@@ -210,9 +210,9 @@ INTEGERIZER_CONTROLLED_METHODS = ("search", "lp")
 STORE_POSITIVE_WEIGHT_ROWS_ONLY_SETTING = "STORE_POSITIVE_WEIGHT_ROWS_ONLY"
 FAST_PATHS_SETTING = "FAST_PATHS"
 RUN_TIME_OPTION_SETTINGS = (STORE_POSITIVE_WEIGHT_ROWS_ONLY_SETTING, FAST_PATHS_SETTING)
-# The fork release that reads the run-time options: 0.10.0+bs.N with N >= this number.
-_RUN_TIME_OPTIONS_FORK_VERSION = re.compile(r"^0\.10\.0\+bs\.(\d+)$")
-_RUN_TIME_OPTIONS_MIN_BS_NUMBER = 2
+# The first fork release that reads the run-time options; a later release, also on a newer
+# upstream base, has them too (compared with ``fork_version_at_least``).
+RUN_TIME_OPTIONS_MIN_FORK_VERSION = "0.10.0+bs.2"
 _MAX_INTEGERIZER_SEED = 2 ** 32
 
 
@@ -389,25 +389,27 @@ def require_fork_version_for_run_time_options(
     on while the configured PopulationSim version is older than fork ``0.10.0+bs.2``.
 
     An older fork ignores a setting it does not know, so the run would go on with the option
-    off while the tracked config says on: a silent fallback. The version must match
-    ``0.10.0+bs.N`` with ``N >= 2`` (``N`` compared as an integer); anything else, upstream
-    ``0.10.0`` included, is refused. With both options off nothing is checked. ``overrides``
-    is read with ``.get``: a missing entry counts as off (some test doubles return ``{}``).
+    off while the tracked config says on: a silent fallback. The version must be a fork release
+    (``X.Y.Z+bs.N``) at least ``RUN_TIME_OPTIONS_MIN_FORK_VERSION``
+    (:func:`fork_version_at_least`, which compares PEP 440 versions, so ``0.10.1+bs.1`` and
+    ``0.11.0+bs.1`` pass); anything else, upstream ``0.10.0`` included, is refused. With both
+    options off nothing is checked, the version included. ``overrides`` is read with ``.get``:
+    a missing entry counts as off (some test doubles return ``{}``).
 
     Raises
     ------
     ValueError
-        Naming the config key and the version.
+        Naming the config key and the version; for an unparsable version the error of
+        :func:`fork_version_at_least`, which names ``populationsim_version``.
     """
-    match = _RUN_TIME_OPTIONS_FORK_VERSION.match(str(populationsim_version))
-    supported = match is not None and int(match.group(1)) >= _RUN_TIME_OPTIONS_MIN_BS_NUMBER
     for setting in RUN_TIME_OPTION_SETTINGS:
-        if overrides.get(setting) is True and not supported:
+        if overrides.get(setting) is True and not fork_version_at_least(
+                str(populationsim_version), RUN_TIME_OPTIONS_MIN_FORK_VERSION):
             # The config key is the setting name in lower case under the popsim prefix.
             raise ValueError(
                 f"braunschweig.population.popsim.{setting.lower()} is true, but the configured "
                 f"PopulationSim version is {populationsim_version!r}: the option needs the "
-                f"group's fork 0.10.0+bs.{_RUN_TIME_OPTIONS_MIN_BS_NUMBER} or later (an older "
+                f"group's fork {RUN_TIME_OPTIONS_MIN_FORK_VERSION} or later (an older "
                 "fork ignores the setting silently). Set the option to false or require a "
                 "newer fork in braunschweig.population.popsim.populationsim_version.")
 
