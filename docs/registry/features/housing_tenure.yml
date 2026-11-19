@@ -23,6 +23,7 @@ detail_doc: docs/features/mid-reference-tables.md
 code_paths:
 - braunschweig/synthesis/population/enriched/housing_tenure.py
 - braunschweig/popsim/stage/
+- braunschweig/popsim/tenure_targets.py
 evidence:
   tests:
   - tests/test_housing_tenure.py
@@ -40,10 +41,12 @@ evidence:
     path: eqasim-data/data/braunschweig/mid/mid2023_income_by_tenure_bundesland.csv
     note: Also draws on the committed mid2023_income_by_tenure_raumtyp.csv.
 validation:
-  state: unvalidated
-  runs: []
+  state: measured_vs_reference
+  runs:
+  - popsim-ladder-tenure-2026-11-18
   metric: null
-  note: No scalar KPI currently attributed to a recorded run.
+  note: |
+    Tenure-target limit (issue #657, rule and key: ADR-0202, production on): evidence is the control fit of two batches against the committed controls, in the run record above. One pre-registered check of that record was missed and the owner accepted the miss (ADR-0202). This is NOT a behavioural validation. The MiD tenure distribution itself (ADR-0017) has no recorded run.
 assessment:
   status: pending
   by: null
