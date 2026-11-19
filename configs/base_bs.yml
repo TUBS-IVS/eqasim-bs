@@ -315,14 +315,14 @@ config:
   braunschweig.population.popsim.tenure_owner_limited_to_dwellings: true
   braunschweig.population.popsim.tenure_min_households_outside_dwellings: 10.0
   braunschweig.population.popsim.seed_contract_mode: error
-  # KREIS input consistency (issue #658, Part A; meaning: popsim/stage/config_keys.py). All five
-  # keys sit at their LEGACY values here; the switch to the new values is a later task (A10).
+  # KREIS input consistency (issue #658, Part A; meaning: popsim/stage/config_keys.py; decision: ADR-0203,
+  # evidence: docs/runs/popsim-ladder-inputs-a-2026-11-18.yml). The code defaults are the legacy values.
   # "population" = KREIS person controls split over the batches by the population share; "universe" = by the share of their own age universe.
-  braunschweig.population.popsim.kreis_batch_apportionment: "population"
+  braunschweig.population.popsim.kreis_batch_apportionment: "universe"
   # false = KREIS cars / bicycles / employed keep the apportioned Kreis census value; true = they follow the grid sum of the batch.
-  braunschweig.population.popsim.kreis_controls_follow_grids: false
+  braunschweig.population.popsim.kreis_controls_follow_grids: true
   # "survey" = employed classes of the KREIS survey families keep their survey level; "zensus" = rescaled to the Zensus employment level.
-  braunschweig.population.popsim.employment_level_source: "survey"
+  braunschweig.population.popsim.employment_level_source: "zensus"
   # Guard: relative tolerance of an age-universe pair between the KREIS and the grid table (only with "universe").
   braunschweig.population.popsim.kreis_fine_tolerance: 0.05
   # Guard: smallest grid sum (persons) of a Kreis part that the age-universe tolerance is judged on.

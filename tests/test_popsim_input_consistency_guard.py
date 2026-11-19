@@ -104,13 +104,15 @@ def test_execute_reads_the_declared_keys_with_a_one_argument_config():
     assert settings.key_values() == values
 
 
-def test_base_config_carries_the_five_keys_at_their_legacy_values():
+def test_base_config_carries_the_five_keys_at_their_production_values():
+    # Switched by the owner's decision after popsim-ladder-inputs-a-2026-11-18 (ADR-0203); the
+    # code defaults stay the legacy values (test_legacy_keys_reproduce_the_control_tables).
     text = (REPO_ROOT / "configs" / "base_bs.yml").read_text(encoding="utf-8")
     for key, value in zip(
             (config_keys.KEY_KREIS_BATCH_APPORTIONMENT, config_keys.KEY_KREIS_CONTROLS_FOLLOW_GRIDS,
              config_keys.KEY_EMPLOYMENT_LEVEL_SOURCE, config_keys.KEY_KREIS_FINE_TOLERANCE,
              config_keys.KEY_KREIS_FINE_MIN_PERSONS),
-            ('"population"', "false", '"survey"', "0.05", "1000")):
+            ('"universe"', "true", '"zensus"', "0.05", "1000")):
         assert f"  {key}: {value}\n" in text.replace("\r\n", "\n")
 
 

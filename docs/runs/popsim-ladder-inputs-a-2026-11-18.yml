@@ -62,7 +62,11 @@ status:
     N-conservation on batch_000 (household conservation at ZENSUS100m: abs_deviation_share 0.0214 against
     0.0175 in arm 4, conserved_pair_share 0.9784 against 0.9824; delta 0 pre-registered). The record as
     pre-registered is therefore NOT passed; the three keys stay at their legacy values in configs/base_bs.yml
-    until the owner decides. No tuning, no change of a bound. Execution: the first "run" of
+    until the owner decides. No tuning, no change of a bound. Owner decisions after the verdict (in the #658
+    work session): first locate the loss in batch_000 (2026-11-18; post hoc entry at the end of the
+    validation list), then, with that finding, switch the three keys to "universe", true and "zensus" with
+    this documented deviation from the gate (2026-11-19, ADR-0203); the bound and the result above stay as
+    they are. Execution: the first "run" of
     scripts/run_input_arms.sh (18:35) ran batch_000, batch_013 and batch_028 of both arms to exit 0, but the
     server disk filled (786 GB, about 744 GB used by other work plus the kept checkpoint stores of this
     record): both batch_032 runs stopped in the checkpoint write and the diagnostics wrote nothing. The
