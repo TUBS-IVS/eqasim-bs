@@ -9,7 +9,11 @@ repository:
     commit is the eqasim-bs code on the run server (git archive without docs/ and tests/) that writes the
     batch settings, runs the diagnostics and reads the solver-path record; it is a commit of the stacked
     branch chore/i656-popsim-batch-memory, i.e. this branch as pre-registered plus the option keys of issue
-    #656, which prepare_variant.py needs (the two options stay false in every arm of this record). This line
+    #656, which prepare_variant.py needs (the two options stay false in every arm of this record). That
+    commit is not an ancestor of this branch: it becomes part of main with the pull request of issue #656.
+    Until then the scripts of this record cannot be re-run from main (prepare_variant.py passes the two
+    option keys and calls their fork-version guard; run_locate.sh names the run-performance record of that
+    issue, while its own check of the outputs is against the evidence run of this record). This line
     was corrected before any run started: a rebase of that branch had replaced the commit named first by
     one with the same code. PopulationSim is the
     release candidate of 0.10.0+bs.2 of the group's fork at commit

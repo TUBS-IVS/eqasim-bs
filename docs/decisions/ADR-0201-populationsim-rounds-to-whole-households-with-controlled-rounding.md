@@ -18,12 +18,12 @@
 5. **Production value `"controlled"`, as a documented deviation from the gate.** Ladder arm 3 met every pre-registered check except one: design goal G4 on one of the two batches, by one control (verdict and figures: the run manifest). The bound and the verdict stay as recorded; nothing was tuned. The owner switches the rounding on for these reasons:
    - The miss is located. One 1 km parent of that batch carries the whole rounding shift of the control, every defect of the solver-path record and the batch's whole household excess, and the float weights of its cells contradict their controls; in every other parent the rounding returns the float sums of the control (post-hoc entry of the run manifest).
    - Upstream's rounding misses the same check on the same batch by more controls (run manifest), so keeping `round` does not meet the bound either.
-   - The control targets of that parent are repaired by issue #657. Its run record `popsim-ladder-tenure-2026-11-18` repeats the check on the repaired targets and lands with that issue's pull request; the owner decided after that record showed the check met on both batches. This ADR states no figure from it.
+   - The control targets of that parent are the subject of issue #657. The repeat of the check on repaired targets is owed by that issue and comes with its own pull request; this ADR draws no conclusion from it.
 
 ## Rejected options
 
 - **`lp` as the default method:** on the replayed parents it is slower and, after its repair step, farther from the float totals than the search (run manifest).
-- **Keeping `round` in production until the input repairs are merged:** the repairs of issues #657 to #659 were measured with the controlled rounding only; with `round`, the production configuration after their merge would be a combination no ladder arm ran.
+- **Keeping `round` in production until the input repair of issue #657 is merged:** rejected by the owner on 2026-11-19. The miss is located, and upstream's rounding does not meet the bound on that batch either (run manifest), so waiting would keep the rounding with the larger shift and the sequential fallbacks without removing the miss.
 - **Changing the bound, or leaving the control out of the check, after the run:** excluded by the pre-registration (no tuning).
 
 ## Consequences
@@ -38,4 +38,4 @@
 
 - Run manifest [`popsim-ladder-arm3-2026-11-18`](../runs/popsim-ladder-arm3-2026-11-18.yml): pre-registered checks and verdict, post-hoc location of the miss, method replay, development record. Two batches and one draw; the verdict for the full population is the full rerun (#648).
 - The fork's test suite at the release commit in three environments: `fork_test_suites.txt` of that manifest.
-- The repeat of the missed check on repaired targets: run record `popsim-ladder-tenure-2026-11-18` of issue #657 (not on this branch).
+- Owed by issue #657: the repeat of the missed check on repaired targets. Until that record is on main, the committed evidence for this check on that batch is the miss recorded in the manifest above.
