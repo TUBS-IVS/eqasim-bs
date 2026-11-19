@@ -310,8 +310,9 @@ config:
   braunschweig.population.popsim.seed_resolve_tenure_building_type: true
   braunschweig.population.popsim.building_type_targets_to_households: true
   # Owner-household targets limited to the dwellings of the cell (issue #657; meaning and valid
-  # range: config_keys.py). OFF until the evidence run of the issue has passed its gate.
-  braunschweig.population.popsim.tenure_owner_limited_to_dwellings: false
+  # range: config_keys.py). ON by owner decision after ladder arm 4 (ADR-0202; run record
+  # docs/runs/popsim-ladder-tenure-2026-11-18.yml). False restores the previous targets.
+  braunschweig.population.popsim.tenure_owner_limited_to_dwellings: true
   braunschweig.population.popsim.tenure_min_households_outside_dwellings: 10.0
   braunschweig.population.popsim.seed_contract_mode: error
   # KREIS input consistency (issue #658, Part A; meaning: popsim/stage/config_keys.py). All five
