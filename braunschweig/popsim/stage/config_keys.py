@@ -164,16 +164,17 @@ KEY_INTEGERIZER_SEARCH_SHORTLIST = "braunschweig.population.popsim.integerizer_s
 # setting of the same name in capitals) and part of the work-dir batch signature, never volatile.
 # Both need fork 0.10.0+bs.2 or later: an older fork ignores a setting it does not know, so the
 # stage refuses either option with an older configured version
-# (braunschweig.popsim.folders.require_fork_version_for_run_time_options). The expectation that
-# the synthetic population is byte-identical with them on is an ASSUMPTION until the run manifest
-# of issue #656 holds the evidence.
+# (braunschweig.popsim.folders.require_fork_version_for_run_time_options). Why they may be on
+# (the population is identical with them on) and the limit of that evidence (three batches on one
+# machine; the identity of the fast kernels is a tested property of an environment): run manifest
+# popsim-run-performance-2026-11-18 and ADR-0200, decisions 2 and 5.
 # store_positive_weight_rows_only (-> STORE_POSITIVE_WEIGHT_ROWS_ONLY): the weight tables of the
 # sub-geographies keep only the rows with a positive weight; this cuts the peak memory of a batch
 # run.
 KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY = (
     "braunschweig.population.popsim.store_positive_weight_rows_only")
 # fast_paths (-> FAST_PATHS): the fork's faster implementations of hot steps, with bit-identical
-# results (same expectation and same evidence owed as above).
+# results (evidence and its limit: see above).
 KEY_FAST_PATHS = "braunschweig.population.popsim.fast_paths"
 # Solver-path gate (braunschweig.popsim.stage.solver_path_gate, design goal G5, issue #645):
 # float in (0, 1] or null. Above this share of parent zones NOT integerized simultaneously
