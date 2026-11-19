@@ -184,3 +184,39 @@ def test_float_step_self_check_fails_on_a_mismatch(tmp_path, monkeypatch):
     assert rc == 1
     assert any("household_size" in p and f"{SIZE[2]}_ZENSUS100m" in p for p in log["problems"])
     assert not [n for n, e in log["files"].items() if e["changed"]]
+
+
+def test_arm2_building_type_floats_round_to_the_arm2_integers():
+    """The basis ``arm2_integer_dwellings`` must reproduce what prepare_arm2.rescale_targets wrote.
+
+    Defect caught: other parents, order or dwelling basis in the rebuild, which would make arm 10 differ
+    from arm 8 by more than the rounding.
+    """
+    import pytest
+    from braunschweig.popsim import controls as ctrl
+
+    prepare = load_script("prepare_method_arm")
+    arm2_path = SCRIPTS.parents[1] / "popsim-ladder-arm2-2026-11-17" / "scripts" / "prepare_arm2.py"
+    arm2 = importlib.util.module_from_spec(importlib.util.spec_from_file_location("prepare_arm2", arm2_path))
+    arm2.__spec__.loader.exec_module(arm2)
+    columns = [name for name, _, _ in control_spec._TIER2_BUILDING_TYPE_ENTRIES]
+    dwellings = {columns[0]: [6.4, 0.2, 2.5, 1.0], columns[1]: [4.9, 0.0, 3.4, 4.6], columns[2]: [0.0, 0.3, 0.0, 0.0]}
+    batch = pd.DataFrame({"ZENSUS100m": CELLS, **dwellings})
+    crosswalk = pd.DataFrame({"ZENSUS100m": CELLS, "ZENSUS1km": [PARENT_1, PARENT_1, PARENT_2, PARENT_2],
+                              "KREIS": "03101", "STAAT": "1", "WELT": "1"})
+    hh_field = f"{HH}_ZENSUS100m"
+    base = pd.DataFrame({"ZENSUS100m": [A2, B1, A1, B2], hh_field: [0, 5, 10, 5]})
+    frame, report = prepare.building_type_arm2_floats(batch, crosswalk, base, columns)
+    fields = [f"{c}_ZENSUS100m" for c in columns]
+    # The integer dwelling targets the production run wrote, then arm 2's rescale and rounding.
+    integer_dwellings = mid.build_control_totals(batch, crosswalk, columns)["ZENSUS100m"].set_index("ZENSUS100m")
+    arm1_totals = base.copy()
+    for field in fields:
+        arm1_totals[field] = integer_dwellings[field].reindex(base["ZENSUS100m"]).to_numpy()
+    expected = arm2.rescale_targets(arm1_totals, crosswalk)
+    for field in fields:
+        rounded = ctrl.integerize_within_parents(frame, value_col=field, parent_col="ZENSUS1km").to_numpy()
+        assert list(rounded) == list(expected[field].astype(int)), field
+    sums = frame.set_index("ZENSUS100m")[fields].sum(axis=1)
+    assert sums.reindex(base["ZENSUS100m"]).tolist() == pytest.approx([0, 5, 10, 5], abs=1e-9)
+

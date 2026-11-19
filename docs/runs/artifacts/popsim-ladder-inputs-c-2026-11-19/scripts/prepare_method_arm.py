@@ -24,8 +24,9 @@ against the base):
   The float values are computed as the stage computes them before the integerisation
   (``build_float_cells``): census sources of all model cells of ``--kreise`` (the Kreis-level
   fallbacks pool all cells of a Kreis), aggregated by ``prepared_cells.add_aggregated_controls``;
-  building type rescaled to the households per ADR-0198 as ``stage._add_aggregated_control_columns``
-  does; tenure limited by ``stage._limit_owner_targets_to_dwellings``; restricted to the batch's cells
+  building type on the basis ``--building-type-basis`` (default ``arm2_integer_dwellings``, the
+  construction the ladder folders carry since arm 2, see ``BASIS_ARM2``; ``float_dwellings`` is the
+  household rescale of ADR-0198 as ``stage._add_aggregated_control_columns`` does it); tenure limited by ``stage._limit_owner_targets_to_dwellings``; restricted to the batch's cells
   in loader order. The age bands then get the household-less-cell move on floats
   (``household_less_cells.move_persons_to_household_cells`` with the integer household total
   integerised within the 1 km parents, as ``mid.build_control_totals`` does). Each household group
@@ -89,6 +90,18 @@ HOUSEHOLD_GROUPS = (GROUP_SIZE, GROUP_TENURE, GROUP_BUILDING)
 STAGE_CONTROL_TIERS = ("tier0", "tier1", "tier2", "tier3")
 # A rescale fallback rate above this share of the cells with households is logged as a WARNING.
 RESCALE_FALLBACK_WARN_RATE = 0.01
+# Basis of the unrounded building-type values (--building-type-basis):
+# * float_dwellings: the pipeline's rule (ADR-0198): the FLOAT census dwelling counts of all model cells
+#   rescaled to the households, then integerised;
+# * arm2_integer_dwellings: the construction the ladder folders carry since arm 2
+#   (popsim-ladder-arm2-2026-11-17, prepare_arm2.rescale_targets, a recorded deviation from the
+#   pipeline): the dwelling counts integerised within the 1 km parents of the batch (as the production
+#   run wrote them), then rescaled on the batch's cells to the integer household total of the folder
+#   (parents 1 km, then Kreis of the crosswalk). Its floats are what the folders' building-type
+#   integers were rounded from, so a measurement on top of those folders changes only the rounding.
+BASIS_FLOAT_DWELLINGS = "float_dwellings"
+BASIS_ARM2 = "arm2_integer_dwellings"
+BUILDING_TYPE_BASES = (BASIS_ARM2, BASIS_FLOAT_DWELLINGS)
 
 
 # --------------------------------------------------------------------------- controls
@@ -172,8 +185,9 @@ def build_float_cells(args, batch_ids, active: dict) -> tuple:
         load.append(cs.OWNER_QUOTE_DWELLING_COLUMN)
     cells, filter_report = part_b.load_kreis_cells(args.cells_100m, args.kreise, list(dict.fromkeys(load)))
     cells = prepared_cells.add_aggregated_controls(cells, cs.build_aggregation_map(catalog))
-    report = {"zgb_cell_filter": filter_report}
-    if GROUP_BUILDING in active:
+    report = {"zgb_cell_filter": filter_report,
+              "building_type_basis": getattr(args, "building_type_basis", BASIS_FLOAT_DWELLINGS)}
+    if GROUP_BUILDING in active and report["building_type_basis"] == BASIS_FLOAT_DWELLINGS:
         # As stage._add_aggregated_control_columns: the Kreis level of the share fallback from the ARS,
         # on a copy.
         columns = [c.name for c in active[GROUP_BUILDING]]
@@ -193,6 +207,54 @@ def build_float_cells(args, batch_ids, active: dict) -> tuple:
     batch = part_b.batch_cells_in_loader_order(cells, batch_ids)
     keep = [CELL_ID, cs.HH_TOTAL_CENSUS_COLUMN, *dict.fromkeys(c.name for c in catalog)]
     return batch[keep], report
+
+
+def building_type_arm2_floats(batch: pd.DataFrame, crosswalk: pd.DataFrame, base_100m: pd.DataFrame,
+                              columns) -> tuple:
+    """``(frame, report)``: unrounded building-type values of the basis ``arm2_integer_dwellings``.
+
+    ``batch`` carries the FLOAT dwelling sums of ``columns`` (no household rescale) in loader order.
+    Step 1 integerises them within the 1 km parents of the batch (``mid.build_control_totals``, as the
+    production run wrote the folders); step 2 rescales those integers on the batch's cells in the
+    order of the base 100 m table to its integer household total with
+    ``building_type_targets.rescale_building_type_to_households`` (parents ``ZENSUS1km``, ``KREIS`` of
+    the crosswalk), exactly as ``prepare_arm2.rescale_targets`` of popsim-ladder-arm2-2026-11-17 did
+    before it integerised. Returns the frame in base-table order with ``ZENSUS100m``, ``ZENSUS1km`` and
+    the float columns (suffixed ``_ZENSUS100m``); the report holds the integer dwelling and float sums.
+    """
+    dwellings = mid.build_control_totals(batch, crosswalk, list(columns))[CELL_ID].set_index(CELL_ID)
+    household_field = f"{cs.HH_TOTAL_CENSUS_COLUMN}{mid.SUFFIX_100M}"
+    fields = [f"{c}{mid.SUFFIX_100M}" for c in columns]
+    frame = pd.DataFrame({CELL_ID: base_100m[CELL_ID].to_numpy(),
+                          household_field: pd.to_numeric(base_100m[household_field]).to_numpy()})
+    for column, field in zip(columns, fields):
+        values = dwellings[field].reindex(frame[CELL_ID])
+        if values.isna().any():
+            raise ValueError(f"{int(values.isna().sum())} cell(s) of {TABLE_100M} have no dwelling value for {field}")
+        frame[field] = values.to_numpy()
+    geo = crosswalk[[CELL_ID, PARENT_ID, folders.GEO_KREIS]].drop_duplicates(CELL_ID)
+    frame = frame.merge(geo, on=CELL_ID, how="left", validate="one_to_one")
+    if frame[PARENT_ID].isna().any():
+        raise ValueError(f"{TABLE_100M} holds 100 m cells that are not in {CROSSWALK}")
+    dwelling_sum = float(frame[fields].to_numpy(dtype="float64").sum())
+    frame = building_type_targets.rescale_building_type_to_households(
+        frame, fields, household_total_col=household_field, parent_cols=(PARENT_ID, folders.GEO_KREIS))
+    report = {"integer_dwelling_sum_100m": dwelling_sum,
+              "float_sum_after_rescale_100m": float(frame[fields].to_numpy(dtype="float64").sum()),
+              "household_total_100m": float(frame[household_field].sum())}
+    return frame, report
+
+
+def apply_arm2_building_type(batch: pd.DataFrame, frame: pd.DataFrame, columns) -> pd.DataFrame:
+    """``batch`` with the building-type columns replaced by the floats of ``frame`` (matched by cell id)."""
+    out = batch.copy()
+    lookup = frame.set_index(CELL_ID)
+    for column in columns:
+        values = lookup[f"{column}{mid.SUFFIX_100M}"].reindex(out[CELL_ID])
+        if values.isna().any():
+            raise ValueError(f"{int(values.isna().sum())} batch cell(s) without an arm-2 building-type value")
+        out[column] = values.to_numpy()
+    return out
 
 
 def rescale_to_households(values: pd.DataFrame, households, base_integers: pd.DataFrame, *, group: str) -> tuple:
@@ -261,13 +323,25 @@ def move_age_floats(batch: pd.DataFrame, crosswalk: pd.DataFrame, age_cols, move
 
 
 def self_check(batch: pd.DataFrame, crosswalk: pd.DataFrame, base_100m: pd.DataFrame, active: dict,
-               move_persons_max: float) -> dict:
-    """Integerise the float values as the pipeline did and count the cells that differ from the base."""
+               move_persons_max: float, building_type_frame: pd.DataFrame | None = None) -> dict:
+    """Integerise the float values as the pipeline did and count the cells that differ from the base.
+
+    With ``building_type_frame`` (basis ``arm2_integer_dwellings``) the building-type floats are
+    integerised in that frame's row order (the base table's) with ``controls.integerize_within_parents``,
+    as ``prepare_arm2.rescale_targets`` did.
+    """
     base = base_100m.set_index(CELL_ID)
     record = {"groups": {}, "problems": []}
     for group, members in active.items():
         columns = [c.name for c in members]
-        if group == GROUP_AGE:
+        if group == GROUP_BUILDING and building_type_frame is not None:
+            built_frame = pd.DataFrame({CELL_ID: building_type_frame[CELL_ID].to_numpy()})
+            for column in columns:
+                field = f"{column}{mid.SUFFIX_100M}"
+                built_frame[field] = ctrl.integerize_within_parents(
+                    building_type_frame, value_col=field, parent_col=PARENT_ID).to_numpy()
+            tables = {CELL_ID: built_frame}
+        elif group == GROUP_AGE:
             # The move and the integerisation run per column, so the age bands come out the same
             # without the employed columns the stage moves with them.
             tables, _ = part_b.rebuild_person_tables(batch, crosswalk, age_cols=columns, employed_cols=[],
@@ -337,7 +411,14 @@ def step_float(state: dict, args, log: dict) -> None:
     if not active:
         raise ValueError(f"no group to replace: {skipped}")
     batch, build_report = build_float_cells(args, t100[CELL_ID], active)
-    check = self_check(batch, state["crosswalk"], t100, active, args.move_persons_max)
+    building_type_frame = None
+    if GROUP_BUILDING in active and args.building_type_basis == BASIS_ARM2:
+        columns = [c.name for c in active[GROUP_BUILDING]]
+        building_type_frame, build_report["building_type_arm2"] = building_type_arm2_floats(
+            batch, state["crosswalk"], t100, columns)
+        batch = apply_arm2_building_type(batch, building_type_frame, columns)
+    check = self_check(batch, state["crosswalk"], t100, active, args.move_persons_max,
+                       building_type_frame=building_type_frame)
     record = {"groups": {g: [c.name for c in m] for g, m in active.items()}, "groups_skipped": skipped,
               "build_report": build_report, "self_check": check, "move_persons_max": args.move_persons_max}
     log["step_report"] = record
@@ -373,6 +454,9 @@ def parse_args(argv=None):
     parser.add_argument("--tenure-min-households-outside", type=float,
                         default=tenure_targets.DEFAULT_MIN_HOUSEHOLDS_OUTSIDE,
                         help="households outside dwellings before the owner limit acts (default: the stage's)")
+    parser.add_argument("--building-type-basis", choices=BUILDING_TYPE_BASES, default=BASIS_ARM2,
+                        help="basis of the unrounded building-type values (see BASIS_* in the module); "
+                        f"default {BASIS_ARM2}, the construction of the ladder folders")
     parser.add_argument("--commit", required=True, help="eqasim-bs commit of the library code")
     return parser.parse_args(argv)
 
