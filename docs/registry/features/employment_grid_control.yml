@@ -66,10 +66,12 @@ evidence:
       convergence, not validation.
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - popsim-input-consistency-2026-11-18
+  - popsim-ladder-inputs-a-2026-11-18
   metric: null
   note: No run has yet compared the synthetic population's employed persons by Kreis, sex and age
-    group with the census after ADR-0137; the next PopulationSim run is the first with the new shape.
+    group with the census after ADR-0137; the next PopulationSim run is the first with the new shape. Since ADR-0203 the KREIS employed target of a batch is the sum of these ten controls (key braunschweig.population.popsim.kreis_controls_follow_grids) and the Zensus count is the level of the employment families of the KREIS table too (key braunschweig.population.popsim.employment_level_source); the run records above check the table consistency on four batches of one draw, one pre-registered check missed and accepted (ADR-0203). Table consistency, not a comparison with the census result of a synthetic population.
 assessment:
   status: pending
   by: null

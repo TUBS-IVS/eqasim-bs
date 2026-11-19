@@ -93,6 +93,8 @@ validation:
   runs:
   - smoke-ownership-grid-03101-2026-08-19
   - 100pct-allfeat-i240-2026-08-20
+  - popsim-input-consistency-2026-11-18
+  - popsim-ladder-inputs-a-2026-11-18
   metric: null
   note: 'One-Kreis smoke (03101) ran 2026-08-19: balancer converged (8/8 batches, integerizer
     97.0% OPTIMAL), the injected priors used the primary dwelling-mixed method for 100% of the
@@ -115,7 +117,12 @@ validation:
     wanted. Two honest limits therefore stand: every August flag was ON together, so no per-flag
     attribution exists, and household_size degraded from 1.56 to 1.82pp mean |delta| in the same
     run -- plausibly displacement by the nine new controls, unattributable without that A/B and
-    tracked in #276.'
+    tracked in #276.
+
+    Since ADR-0203 the KREIS car and bicycle classes of a batch are set to the batch sum of these
+    1 km controls (key braunschweig.population.popsim.kreis_controls_follow_grids), so the two layers no
+    longer contradict each other inside a batch; checked on four batches of one draw (the two run
+    records above, one pre-registered check missed and accepted), control consistency, not validation.'
 assessment:
   status: pending
   by: null
