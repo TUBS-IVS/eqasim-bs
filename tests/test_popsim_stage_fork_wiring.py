@@ -193,8 +193,10 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
         return fixture.make_cells() if tenure_limit else pd.DataFrame()
 
     monkeypatch.setattr(stage.mid, "load_control_cells", load_control_cells)
-    monkeypatch.setattr(stage.mid, "filter_zgb_cells", lambda cells, kreise: cells)
-    monkeypatch.setattr(stage, "_add_aggregated_control_columns", lambda cells, *a, **k: cells)
+    monkeypatch.setattr(
+        stage.mid, "filter_zgb_cells_with_report",
+        lambda cells, kreise: (cells, {"cells_seen": 0, "cells_kept": 0, "cells_dropped": 0}))
+    monkeypatch.setattr(stage, "_add_aggregated_control_columns", lambda cells, *a, **k: (cells, None))
     monkeypatch.setattr(stage, "_inject_employment_grid_columns", lambda c, cells, *a, **k: cells)
     monkeypatch.setattr(stage, "_inject_ownership_grid_columns", lambda c, cells, *a, **k: cells)
     monkeypatch.setattr(

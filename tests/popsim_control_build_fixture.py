@@ -98,7 +98,9 @@ _FAMILY_TYPE_SHARES = {
 #  5-7 -> N2900000E4401000.
 _CELLS = (
     # ordinary cells: households about equal to dwellings, owners and renters both > 0
-    (2900100, 4400200, "031010000000", 24.6, 11.3, 13.3, (6.2, 18.4, 0.9), 25.5, 51.7),
+    # (renter 13.2, not a value that makes a 1 km renter total an exact .5: with the owner limit
+    # on, the parent total 13.2 + 5.2 + 28 = 46.4 rounds unambiguously.)
+    (2900100, 4400200, "031010000000", 24.6, 11.3, 13.2, (6.2, 18.4, 0.9), 25.5, 51.7),
     (2900500, 4400700, "031010000000", 17.3, 12.1, 5.2, (12.4, 5.6, 0.4), 18.4, 38.1),
     # dormitory-like cell: 30 owner households, 2 dwellings
     (2900300, 4400900, "031010000000", 30.0, 30.0, 0.0, (0.0, 2.0, 0.0), 2.0, 105.0),
