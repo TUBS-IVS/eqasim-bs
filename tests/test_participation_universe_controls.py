@@ -1339,8 +1339,17 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         lambda *args, **kwargs: {})
     # The integerizer options are validated right after the environment check; their own
     # tests are in tests/test_popsim_settings_overrides.py.
+    # The double hands out the real settings (the neutral ones: plain rounding, both run-time
+    # options off), so the version guards of ``execute`` index real keys.
+    neutral_settings = popsim_stage.folders.populationsim_overrides_from_config(
+        keep_fractional_sample_weights=False, integerizer_draw="off", integerizer_timeout_s=60,
+        integerizer_rounding="round", integerizer_penalty_floor=100.0,
+        integerizer_penalty_cap=100000.0, integerizer_parent_total_factor=10.0,
+        integerizer_conserve_penalty=100000.0, integerizer_controlled_method="search",
+        integerizer_search_max_sweeps=200, integerizer_search_shortlist=24,
+        store_positive_weight_rows_only=False, fast_paths=False)
     monkeypatch.setattr(
-        popsim_stage, "_read_integerizer_settings", lambda ctx: ({}, None))
+        popsim_stage, "_read_integerizer_settings", lambda ctx: (dict(neutral_settings), None))
     # Validated at stage start too (tests/test_popsim_stage_fork_wiring.py); null = warn only.
     values[popsim_stage.KEY_SOLVER_FALLBACK_ERROR_RATE] = None
     # The batch settings text is resolved early as a conflict check; no settings file here.

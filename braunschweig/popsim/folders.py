@@ -310,15 +310,17 @@ def require_fork_version_for_controlled_rounding(
 
     An older release ignores ``INTEGERIZER_ROUNDING`` and every batch would run with plain
     rounding; only the solver-path gate after all batches would notice. With ``round`` the
-    version is not looked at.
+    version is not looked at. ``overrides`` must hold ``INTEGERIZER_ROUNDING``.
 
     Raises
     ------
+    KeyError
+        If ``overrides`` lacks ``INTEGERIZER_ROUNDING``.
     ValueError
         If the rounding is ``controlled`` and ``populationsim_version`` is below
         ``CONTROLLED_ROUNDING_MIN_FORK_VERSION`` (or no fork release, or unparsable).
     """
-    if overrides.get(INTEGERIZER_ROUNDING_SETTING) != "controlled":
+    if overrides[INTEGERIZER_ROUNDING_SETTING] != "controlled":
         return
     if not fork_version_at_least(populationsim_version, CONTROLLED_ROUNDING_MIN_FORK_VERSION):
         raise ValueError(
@@ -393,8 +395,9 @@ def require_fork_version_for_run_time_options(
     (``X.Y.Z+bs.N``) at least ``RUN_TIME_OPTIONS_MIN_FORK_VERSION``
     (:func:`fork_version_at_least`, which compares PEP 440 versions, so ``0.10.1+bs.1`` and
     ``0.11.0+bs.1`` pass); anything else, upstream ``0.10.0`` included, is refused. With both
-    options off nothing is checked, the version included. ``overrides`` is read with ``.get``:
-    a missing entry counts as off (some test doubles return ``{}``).
+    options off nothing is checked, the version included. Every setting of
+    ``RUN_TIME_OPTION_SETTINGS`` must be in ``overrides`` (``KeyError`` otherwise: a renamed
+    setting must not let this guard pass silently).
 
     Raises
     ------
@@ -403,7 +406,7 @@ def require_fork_version_for_run_time_options(
         :func:`fork_version_at_least`, which names ``populationsim_version``.
     """
     for setting in RUN_TIME_OPTION_SETTINGS:
-        if overrides.get(setting) is True and not fork_version_at_least(
+        if overrides[setting] is True and not fork_version_at_least(
                 str(populationsim_version), RUN_TIME_OPTIONS_MIN_FORK_VERSION):
             # The config key is the setting name in lower case under the popsim prefix.
             raise ValueError(

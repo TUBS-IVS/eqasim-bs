@@ -512,9 +512,22 @@ def test_run_time_option_on_with_an_unparsable_version_raises_the_version_error(
         folders.require_fork_version_for_run_time_options(_overrides(**{setting: True}), "garbage")
 
 
-@pytest.mark.parametrize("overrides", [NEUTRAL, {}], ids=["both-off", "test-double-empty"])
-def test_run_time_options_off_pass_with_any_version(overrides):
-    folders.require_fork_version_for_run_time_options(overrides, "0.10.0+bs.1")
+def test_run_time_options_off_pass_with_any_version():
+    folders.require_fork_version_for_run_time_options(NEUTRAL, "0.10.0+bs.1")
+
+
+def test_the_fork_version_guards_need_their_settings_in_the_overrides():
+    # A renamed or dropped setting constant must not let a guard pass silently.
+    with pytest.raises(KeyError):
+        folders.require_fork_version_for_controlled_rounding({}, "0.10.0+bs.2")
+    without_rounding = {k: v for k, v in NEUTRAL.items() if k != "INTEGERIZER_ROUNDING"}
+    with pytest.raises(KeyError, match="INTEGERIZER_ROUNDING"):
+        folders.require_fork_version_for_controlled_rounding(without_rounding, "0.10.0+bs.2")
+    without_fast_paths = {k: v for k, v in NEUTRAL.items() if k != "FAST_PATHS"}
+    with pytest.raises(KeyError, match="FAST_PATHS"):
+        folders.require_fork_version_for_run_time_options(without_fast_paths, "0.10.0+bs.2")
+    with pytest.raises(KeyError):
+        folders.require_fork_version_for_run_time_options({}, "0.10.0+bs.2")
 
 
 # --- the fork release that carries controlled rounding (issue #646) -----------------------

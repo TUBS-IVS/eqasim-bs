@@ -2875,7 +2875,7 @@ def execute(context) -> pd.DataFrame:
     folders.require_fork_version_for_controlled_rounding(
         settings_overrides, populationsim_version)
     # An older fork ignores the run-time options silently: refuse them against the configured
-    # version now (".get": some test doubles return an empty dict).
+    # version now. Both guards index the overrides, so a missing setting is a KeyError.
     folders.require_fork_version_for_run_time_options(settings_overrides, populationsim_version)
     solver_path_gate.validate_error_rate(context.config(KEY_SOLVER_FALLBACK_ERROR_RATE))
     # The server-local settings file must not contradict the tracked options (it is checked
