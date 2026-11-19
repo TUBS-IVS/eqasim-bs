@@ -1,0 +1,31 @@
+{
+  "base_diag": "diag_views/arm_8@int100",
+  "new_diag": "diag_views/arm_8@int100",
+  "checks_file": "code_14c5f293/docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/checks/r_household_100m.json",
+  "batches": [
+    "batch_000",
+    "batch_013",
+    "batch_028",
+    "batch_032"
+  ],
+  "checks": {
+    "R-household-100m": {
+      "deltas": {
+        "ZENSUS100m": -0.02
+      },
+      "values": {
+        "ZENSUS100m": {
+          "wape_base": 0.060602886262524185,
+          "wape_new": 0.060602886262524185,
+          "limit": 0.04060288626252419,
+          "met": false,
+          "controls_only_in_base": [],
+          "controls_only_in_new": []
+        }
+      },
+      "met": false,
+      "kind": "wape_vs_base"
+    }
+  },
+  "all_met": false
+}

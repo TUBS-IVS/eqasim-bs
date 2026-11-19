@@ -1,0 +1,457 @@
+{
+  "arguments": {
+    "base": "/home/felix/i660_c/arm_8/batch_028",
+    "out": "/home/felix/i660_c/arm_9/batch_028",
+    "step": "age_sex_at_1km",
+    "kreise": null,
+    "cells_100m": null,
+    "move_persons_max": 20.0,
+    "tenure_min_households_outside": 10.0,
+    "building_type_basis": "arm2_integer_dwellings",
+    "commit": "14c5f293"
+  },
+  "step": "age_sex_at_1km",
+  "commit": "14c5f293",
+  "step_report": {
+    "moved_control_fields": [
+      "M_AGE_0_9_agg_ZENSUS1km",
+      "M_AGE_10_14_agg_ZENSUS1km",
+      "M_AGE_15_17_agg_ZENSUS1km",
+      "M_AGE_18_19_agg_ZENSUS1km",
+      "M_AGE_20_29_agg_ZENSUS1km",
+      "M_AGE_30_39_agg_ZENSUS1km",
+      "M_AGE_40_49_agg_ZENSUS1km",
+      "M_AGE_50_59_agg_ZENSUS1km",
+      "M_AGE_60_69_agg_ZENSUS1km",
+      "M_AGE_70_79_agg_ZENSUS1km",
+      "M_AGE_80_plus_agg_ZENSUS1km",
+      "F_AGE_0_9_agg_ZENSUS1km",
+      "F_AGE_10_14_agg_ZENSUS1km",
+      "F_AGE_15_17_agg_ZENSUS1km",
+      "F_AGE_18_19_agg_ZENSUS1km",
+      "F_AGE_20_29_agg_ZENSUS1km",
+      "F_AGE_30_39_agg_ZENSUS1km",
+      "F_AGE_40_49_agg_ZENSUS1km",
+      "F_AGE_50_59_agg_ZENSUS1km",
+      "F_AGE_60_69_agg_ZENSUS1km",
+      "F_AGE_70_79_agg_ZENSUS1km",
+      "F_AGE_80_plus_agg_ZENSUS1km"
+    ]
+  },
+  "inputs": {},
+  "files": {
+    "configs/controls.csv": {
+      "sha256_base": "c9507e40c410f7f7fb16da44383fadc19d9aa984f11c317d15362dd2cb92f3ee",
+      "sha256_out": "d3790612bca568e52ece439a7d8dbfd206b1a3be135584562c223a766054d144",
+      "changed": true,
+      "removed_rows": [
+        [
+          "F_AGE_0_9_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "F_AGE_0_9_agg_ZENSUS100m",
+          "(persons.HP_ALTER < 10)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_10_14_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "F_AGE_10_14_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 9)&(persons.HP_ALTER < 15)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_15_17_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "F_AGE_15_17_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 14)&(persons.HP_ALTER < 18)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_18_19_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "F_AGE_18_19_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 17)&(persons.HP_ALTER < 20)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_20_29_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "F_AGE_20_29_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 19)&(persons.HP_ALTER < 30)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_30_39_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "F_AGE_30_39_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 29)&(persons.HP_ALTER < 40)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_40_49_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "F_AGE_40_49_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 39)&(persons.HP_ALTER < 50)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_50_59_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "F_AGE_50_59_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 49)&(persons.HP_ALTER < 60)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_60_69_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "F_AGE_60_69_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 59)&(persons.HP_ALTER < 70)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_70_79_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "F_AGE_70_79_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 69)&(persons.HP_ALTER < 80)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_80_plus_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "F_AGE_80_plus_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 79)&(persons.HP_SEX==2)"
+        ],
+        [
+          "M_AGE_0_9_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "M_AGE_0_9_agg_ZENSUS100m",
+          "(persons.HP_ALTER < 10)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_10_14_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "M_AGE_10_14_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 9)&(persons.HP_ALTER < 15)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_15_17_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "M_AGE_15_17_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 14)&(persons.HP_ALTER < 18)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_18_19_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "M_AGE_18_19_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 17)&(persons.HP_ALTER < 20)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_20_29_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "M_AGE_20_29_agg_ZENSUS100m",
+          "(persons.HP_ALTER >19)&(persons.HP_ALTER < 30)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_30_39_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "M_AGE_30_39_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 29)&(persons.HP_ALTER < 40)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_40_49_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "M_AGE_40_49_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 39)&(persons.HP_ALTER < 50)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_50_59_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "M_AGE_50_59_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 49)&(persons.HP_ALTER < 60)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_60_69_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "M_AGE_60_69_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 59)&(persons.HP_ALTER < 70)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_70_79_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "M_AGE_70_79_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 69)&(persons.HP_ALTER < 80)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_80_plus_agg_ZENSUS100m_target",
+          "ZENSUS100m",
+          "persons",
+          "200",
+          "M_AGE_80_plus_agg_ZENSUS100m",
+          "(persons.HP_ALTER > 79)&(persons.HP_SEX==1)"
+        ]
+      ],
+      "added_rows": [
+        [
+          "F_AGE_0_9_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "F_AGE_0_9_agg_ZENSUS1km",
+          "(persons.HP_ALTER < 10)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_10_14_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "F_AGE_10_14_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 9)&(persons.HP_ALTER < 15)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_15_17_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "F_AGE_15_17_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 14)&(persons.HP_ALTER < 18)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_18_19_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "F_AGE_18_19_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 17)&(persons.HP_ALTER < 20)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_20_29_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "F_AGE_20_29_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 19)&(persons.HP_ALTER < 30)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_30_39_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "F_AGE_30_39_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 29)&(persons.HP_ALTER < 40)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_40_49_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "F_AGE_40_49_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 39)&(persons.HP_ALTER < 50)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_50_59_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "F_AGE_50_59_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 49)&(persons.HP_ALTER < 60)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_60_69_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "F_AGE_60_69_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 59)&(persons.HP_ALTER < 70)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_70_79_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "F_AGE_70_79_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 69)&(persons.HP_ALTER < 80)&(persons.HP_SEX==2)"
+        ],
+        [
+          "F_AGE_80_plus_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "F_AGE_80_plus_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 79)&(persons.HP_SEX==2)"
+        ],
+        [
+          "M_AGE_0_9_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "M_AGE_0_9_agg_ZENSUS1km",
+          "(persons.HP_ALTER < 10)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_10_14_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "M_AGE_10_14_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 9)&(persons.HP_ALTER < 15)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_15_17_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "M_AGE_15_17_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 14)&(persons.HP_ALTER < 18)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_18_19_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "M_AGE_18_19_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 17)&(persons.HP_ALTER < 20)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_20_29_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "M_AGE_20_29_agg_ZENSUS1km",
+          "(persons.HP_ALTER >19)&(persons.HP_ALTER < 30)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_30_39_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "M_AGE_30_39_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 29)&(persons.HP_ALTER < 40)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_40_49_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "M_AGE_40_49_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 39)&(persons.HP_ALTER < 50)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_50_59_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "M_AGE_50_59_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 49)&(persons.HP_ALTER < 60)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_60_69_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "M_AGE_60_69_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 59)&(persons.HP_ALTER < 70)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_70_79_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "M_AGE_70_79_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 69)&(persons.HP_ALTER < 80)&(persons.HP_SEX==1)"
+        ],
+        [
+          "M_AGE_80_plus_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "persons",
+          "200",
+          "M_AGE_80_plus_agg_ZENSUS1km",
+          "(persons.HP_ALTER > 79)&(persons.HP_SEX==1)"
+        ]
+      ]
+    },
+    "configs/logging.yaml": {
+      "sha256_base": "863e60c0683d8232c8418428867df29687f04204daa90adb19a3378da6b208c4",
+      "sha256_out": "863e60c0683d8232c8418428867df29687f04204daa90adb19a3378da6b208c4",
+      "changed": false
+    },
+    "configs/settings.yaml": {
+      "sha256_base": "7098e8528d6853e60d04d8681548657940d1edf7766c13dea34fda9025e932fd",
+      "sha256_out": "7098e8528d6853e60d04d8681548657940d1edf7766c13dea34fda9025e932fd",
+      "changed": false
+    },
+    "data/control_totals_KREIS.csv": {
+      "sha256_base": "ccc0117167f8211128a24b416e599b7137b5cadde8b5e9dbd0a469775eba07fc",
+      "sha256_out": "ccc0117167f8211128a24b416e599b7137b5cadde8b5e9dbd0a469775eba07fc",
+      "changed": false
+    },
+    "data/control_totals_STAAT.csv": {
+      "sha256_base": "ab346622a3997159f6d15c53c5323aab2c12469b119ce3ded61447cacaa0a531",
+      "sha256_out": "ab346622a3997159f6d15c53c5323aab2c12469b119ce3ded61447cacaa0a531",
+      "changed": false
+    },
+    "data/control_totals_WELT.csv": {
+      "sha256_base": "f4512bfcc01d6376ef90e0d2099dfbeb6c336c59fadc793d084b999ddd1b5571",
+      "sha256_out": "f4512bfcc01d6376ef90e0d2099dfbeb6c336c59fadc793d084b999ddd1b5571",
+      "changed": false
+    },
+    "data/control_totals_ZENSUS100m.csv": {
+      "sha256_base": "a5064bf409b46099318760c491505d76f2bfefa1837e7fbcddd0c9aaad0ae340",
+      "sha256_out": "a5064bf409b46099318760c491505d76f2bfefa1837e7fbcddd0c9aaad0ae340",
+      "changed": false
+    },
+    "data/control_totals_ZENSUS1km.csv": {
+      "sha256_base": "acac8166200aea088ff3f9af96620b8464224470834894d640216523439ed3d9",
+      "sha256_out": "acac8166200aea088ff3f9af96620b8464224470834894d640216523439ed3d9",
+      "changed": false
+    },
+    "data/geo_cross_walk.csv": {
+      "sha256_base": "f87fcd9e4486e91a9d19477319445243b8fc02463574745f8d75f33e826fee4c",
+      "sha256_out": "f87fcd9e4486e91a9d19477319445243b8fc02463574745f8d75f33e826fee4c",
+      "changed": false
+    },
+    "data/seed_households.csv": {
+      "sha256_base": "90af3bde2e3d8aaa9995a3d01590ca738ce2d4ba41d4145da7cc8b41e739a62a",
+      "sha256_out": "90af3bde2e3d8aaa9995a3d01590ca738ce2d4ba41d4145da7cc8b41e739a62a",
+      "changed": false
+    },
+    "data/seed_persons.csv": {
+      "sha256_base": "76890fcc886343a85b808de64d56875863947401c60d816dbd7f37572ffd2091",
+      "sha256_out": "76890fcc886343a85b808de64d56875863947401c60d816dbd7f37572ffd2091",
+      "changed": false
+    }
+  },
+  "problems": [],
+  "ok": true
+}

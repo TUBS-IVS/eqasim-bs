@@ -1,0 +1,425 @@
+{
+  "arguments": {
+    "base": "/home/felix/i660_c/arm_8/batch_028",
+    "out": "/home/felix/i660_c/arm_10/batch_028",
+    "step": "float_census_controls",
+    "kreise": [
+      "03101",
+      "03102",
+      "03103",
+      "03151",
+      "03153",
+      "03154",
+      "03157",
+      "03158"
+    ],
+    "cells_100m": "/home/felix/prod100_20261031/eqasim-bs/eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_100m_de_prepared.parquet",
+    "move_persons_max": 20.0,
+    "tenure_min_households_outside": 10.0,
+    "building_type_basis": "arm2_integer_dwellings",
+    "commit": "14c5f293"
+  },
+  "step": "float_census_controls",
+  "commit": "14c5f293",
+  "step_report": {
+    "groups": {
+      "household_size": [
+        "1_Person_Groesse_des_privaten_Haushalts_100m_Gitter",
+        "2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter",
+        "3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter",
+        "4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter",
+        "5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter",
+        "6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter"
+      ],
+      "tenure": [
+        "EigentuemerHH_Tenure_100m_Gitter",
+        "MieterHH_Tenure_100m_Gitter"
+      ],
+      "building_type": [
+        "building_type_ein_zweifamilienhaus",
+        "building_type_mehrfamilienhaus",
+        "building_type_sonstiges"
+      ],
+      "age_sex": [
+        "M_AGE_0_9_agg",
+        "M_AGE_10_14_agg",
+        "M_AGE_15_17_agg",
+        "M_AGE_18_19_agg",
+        "M_AGE_20_29_agg",
+        "M_AGE_30_39_agg",
+        "M_AGE_40_49_agg",
+        "M_AGE_50_59_agg",
+        "M_AGE_60_69_agg",
+        "M_AGE_70_79_agg",
+        "M_AGE_80_plus_agg",
+        "F_AGE_0_9_agg",
+        "F_AGE_10_14_agg",
+        "F_AGE_15_17_agg",
+        "F_AGE_18_19_agg",
+        "F_AGE_20_29_agg",
+        "F_AGE_30_39_agg",
+        "F_AGE_40_49_agg",
+        "F_AGE_50_59_agg",
+        "F_AGE_60_69_agg",
+        "F_AGE_70_79_agg",
+        "F_AGE_80_plus_agg"
+      ]
+    },
+    "groups_skipped": {},
+    "build_report": {
+      "zgb_cell_filter": {
+        "cells_seen": 3148482,
+        "cells_kept": 43598,
+        "cells_dropped": 3104884,
+        "kreise_in_scope": 8
+      },
+      "building_type_basis": "arm2_integer_dwellings",
+      "tenure_owner_limit": {
+        "cells_seen": 43598,
+        "cells_changed": 119,
+        "households_moved_owner_to_renter": 1903.5492879927233,
+        "cells_with_nan_dwelling_count": 0,
+        "cells_changed_with_nan_dwelling_count": 0,
+        "cells_with_nan_tenure_count": 0,
+        "cells_with_owner_above_household_total": 0,
+        "min_households_outside": 10.0
+      },
+      "building_type_arm2": {
+        "integer_dwelling_sum_100m": 28774.0,
+        "float_sum_after_rescale_100m": 26906.0,
+        "household_total_100m": 26906.0
+      }
+    },
+    "self_check": {
+      "groups": {
+        "household_size": {
+          "columns_checked": 6,
+          "differing_cells": {}
+        },
+        "tenure": {
+          "columns_checked": 2,
+          "differing_cells": {}
+        },
+        "building_type": {
+          "columns_checked": 3,
+          "differing_cells": {}
+        },
+        "age_sex": {
+          "columns_checked": 22,
+          "differing_cells": {}
+        }
+      },
+      "problems": [],
+      "ok": true
+    },
+    "move_persons_max": 20.0,
+    "group_reports": {
+      "household_size": {
+        "rescale": {
+          "cells_seen": 739,
+          "cells_with_households": 701,
+          "primary_cells": 701,
+          "fallback_cells": 0,
+          "fallback_households": 0.0,
+          "fallback_rate": 0.0,
+          "cells_without_households_zeroed": 0,
+          "float_sum_dropped_without_households": 0.0,
+          "nan_values_read_as_zero": 0
+        },
+        "float_sum_100m": 26906.0,
+        "integer_sum_100m_base": 26903.0
+      },
+      "tenure": {
+        "rescale": {
+          "cells_seen": 739,
+          "cells_with_households": 701,
+          "primary_cells": 701,
+          "fallback_cells": 0,
+          "fallback_households": 0.0,
+          "fallback_rate": 0.0,
+          "cells_without_households_zeroed": 0,
+          "float_sum_dropped_without_households": 0.0,
+          "nan_values_read_as_zero": 0
+        },
+        "float_sum_100m": 26906.0,
+        "integer_sum_100m_base": 26906.0
+      },
+      "building_type": {
+        "rescale": {
+          "cells_seen": 739,
+          "cells_with_households": 701,
+          "primary_cells": 701,
+          "fallback_cells": 0,
+          "fallback_households": 0.0,
+          "fallback_rate": 0.0,
+          "cells_without_households_zeroed": 0,
+          "float_sum_dropped_without_households": 0.0,
+          "nan_values_read_as_zero": 0
+        },
+        "float_sum_100m": 26906.0,
+        "integer_sum_100m_base": 26907.0
+      },
+      "age_sex": {
+        "move": {
+          "donor_cells": 31,
+          "persons_moved": 162.2742794946603,
+          "large_cells": 2,
+          "large_cell_persons": 147.8124100342393,
+          "stuck_cells": 1,
+          "parents_without_households": 1,
+          "persons_in_parents_without_households": 7.997694368794328,
+          "donor_cells_published_zero": 31,
+          "donor_cells_rounded_to_zero": 0,
+          "nan_values_read_as_zero": {}
+        },
+        "float_sum_100m": 47034.993276964335,
+        "integer_sum_100m_base": 47022.0
+      }
+    },
+    "max_abs_1km_change_against_base": {
+      "1_Person_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km": 1.3741085677115734,
+      "2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km": 0.8498298306811307,
+      "3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km": 0.5386801597002204,
+      "4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km": 1.0979757696488264,
+      "5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km": 0.6728074797773331,
+      "6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km": 0.4993147144082428,
+      "EigentuemerHH_Tenure_100m_Gitter_ZENSUS1km": 1.9732450679634894,
+      "MieterHH_Tenure_100m_Gitter_ZENSUS1km": 1.9732450679634894,
+      "building_type_ein_zweifamilienhaus_ZENSUS1km": 32.786634480213365,
+      "building_type_mehrfamilienhaus_ZENSUS1km": 441.2002948854033,
+      "building_type_sonstiges_ZENSUS1km": 113.444394588465,
+      "M_AGE_0_9_agg_ZENSUS1km": 0.4590305099263787,
+      "M_AGE_10_14_agg_ZENSUS1km": 0.4786108899861574,
+      "M_AGE_15_17_agg_ZENSUS1km": 0.46825010543034296,
+      "M_AGE_18_19_agg_ZENSUS1km": 0.493479207107157,
+      "M_AGE_20_29_agg_ZENSUS1km": 0.48049375461414456,
+      "M_AGE_30_39_agg_ZENSUS1km": 0.45685869827866554,
+      "M_AGE_40_49_agg_ZENSUS1km": 0.49902993300929666,
+      "M_AGE_50_59_agg_ZENSUS1km": 0.47550538554787636,
+      "M_AGE_60_69_agg_ZENSUS1km": 0.48931487426187914,
+      "M_AGE_70_79_agg_ZENSUS1km": 0.4843688940163702,
+      "M_AGE_80_plus_agg_ZENSUS1km": 0.4907604721956887,
+      "F_AGE_0_9_agg_ZENSUS1km": 0.4903919487260282,
+      "F_AGE_10_14_agg_ZENSUS1km": 0.4343634410761297,
+      "F_AGE_15_17_agg_ZENSUS1km": 0.4533674593787822,
+      "F_AGE_18_19_agg_ZENSUS1km": 0.4980254896886436,
+      "F_AGE_20_29_agg_ZENSUS1km": 0.4726901026442647,
+      "F_AGE_30_39_agg_ZENSUS1km": 0.4600113667547703,
+      "F_AGE_40_49_agg_ZENSUS1km": 0.4955108277499676,
+      "F_AGE_50_59_agg_ZENSUS1km": 0.4755374360829592,
+      "F_AGE_60_69_agg_ZENSUS1km": 0.4892210625112057,
+      "F_AGE_70_79_agg_ZENSUS1km": 0.49865863332524896,
+      "F_AGE_80_plus_agg_ZENSUS1km": 0.4984860096592456
+    },
+    "age_parents_off_by_one_or_more": {}
+  },
+  "inputs": {
+    "cells_100m": {
+      "path": "/home/felix/prod100_20261031/eqasim-bs/eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_100m_de_prepared.parquet",
+      "sha256": "31857326c85d11288a9143caa8c7cfbe36e3582e64bffb9ec18f232865643177"
+    }
+  },
+  "files": {
+    "configs/controls.csv": {
+      "sha256_base": "c9507e40c410f7f7fb16da44383fadc19d9aa984f11c317d15362dd2cb92f3ee",
+      "sha256_out": "c9507e40c410f7f7fb16da44383fadc19d9aa984f11c317d15362dd2cb92f3ee",
+      "changed": false
+    },
+    "configs/logging.yaml": {
+      "sha256_base": "863e60c0683d8232c8418428867df29687f04204daa90adb19a3378da6b208c4",
+      "sha256_out": "863e60c0683d8232c8418428867df29687f04204daa90adb19a3378da6b208c4",
+      "changed": false
+    },
+    "configs/settings.yaml": {
+      "sha256_base": "7098e8528d6853e60d04d8681548657940d1edf7766c13dea34fda9025e932fd",
+      "sha256_out": "7098e8528d6853e60d04d8681548657940d1edf7766c13dea34fda9025e932fd",
+      "changed": false
+    },
+    "data/control_totals_KREIS.csv": {
+      "sha256_base": "ccc0117167f8211128a24b416e599b7137b5cadde8b5e9dbd0a469775eba07fc",
+      "sha256_out": "ccc0117167f8211128a24b416e599b7137b5cadde8b5e9dbd0a469775eba07fc",
+      "changed": false
+    },
+    "data/control_totals_STAAT.csv": {
+      "sha256_base": "ab346622a3997159f6d15c53c5323aab2c12469b119ce3ded61447cacaa0a531",
+      "sha256_out": "ab346622a3997159f6d15c53c5323aab2c12469b119ce3ded61447cacaa0a531",
+      "changed": false
+    },
+    "data/control_totals_WELT.csv": {
+      "sha256_base": "f4512bfcc01d6376ef90e0d2099dfbeb6c336c59fadc793d084b999ddd1b5571",
+      "sha256_out": "f4512bfcc01d6376ef90e0d2099dfbeb6c336c59fadc793d084b999ddd1b5571",
+      "changed": false
+    },
+    "data/control_totals_ZENSUS100m.csv": {
+      "sha256_base": "a5064bf409b46099318760c491505d76f2bfefa1837e7fbcddd0c9aaad0ae340",
+      "sha256_out": "af715ece9c94a397140882ef27105bf382c58dc931c907e6c8bd4d575c34e3ac",
+      "changed": true,
+      "columns_removed": [],
+      "columns_added": [],
+      "columns_changed": [
+        "M_AGE_0_9_agg_ZENSUS100m",
+        "M_AGE_10_14_agg_ZENSUS100m",
+        "M_AGE_15_17_agg_ZENSUS100m",
+        "M_AGE_18_19_agg_ZENSUS100m",
+        "M_AGE_20_29_agg_ZENSUS100m",
+        "M_AGE_30_39_agg_ZENSUS100m",
+        "M_AGE_40_49_agg_ZENSUS100m",
+        "M_AGE_50_59_agg_ZENSUS100m",
+        "M_AGE_60_69_agg_ZENSUS100m",
+        "M_AGE_70_79_agg_ZENSUS100m",
+        "M_AGE_80_plus_agg_ZENSUS100m",
+        "F_AGE_0_9_agg_ZENSUS100m",
+        "F_AGE_10_14_agg_ZENSUS100m",
+        "F_AGE_15_17_agg_ZENSUS100m",
+        "F_AGE_18_19_agg_ZENSUS100m",
+        "F_AGE_20_29_agg_ZENSUS100m",
+        "F_AGE_30_39_agg_ZENSUS100m",
+        "F_AGE_40_49_agg_ZENSUS100m",
+        "F_AGE_50_59_agg_ZENSUS100m",
+        "F_AGE_60_69_agg_ZENSUS100m",
+        "F_AGE_70_79_agg_ZENSUS100m",
+        "F_AGE_80_plus_agg_ZENSUS100m",
+        "1_Person_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m",
+        "2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m",
+        "3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m",
+        "4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m",
+        "5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m",
+        "6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m",
+        "EigentuemerHH_Tenure_100m_Gitter_ZENSUS100m",
+        "MieterHH_Tenure_100m_Gitter_ZENSUS100m",
+        "building_type_ein_zweifamilienhaus_ZENSUS100m",
+        "building_type_mehrfamilienhaus_ZENSUS100m",
+        "building_type_sonstiges_ZENSUS100m"
+      ],
+      "max_abs_change": {
+        "M_AGE_0_9_agg_ZENSUS100m": 0.598408844096887,
+        "M_AGE_10_14_agg_ZENSUS100m": 0.638299698010087,
+        "M_AGE_15_17_agg_ZENSUS100m": 0.6493633987707278,
+        "M_AGE_18_19_agg_ZENSUS100m": 0.7860587164759636,
+        "M_AGE_20_29_agg_ZENSUS100m": 0.6688476262184291,
+        "M_AGE_30_39_agg_ZENSUS100m": 0.6995432111434639,
+        "M_AGE_40_49_agg_ZENSUS100m": 0.7331259289684777,
+        "M_AGE_50_59_agg_ZENSUS100m": 0.616029394521016,
+        "M_AGE_60_69_agg_ZENSUS100m": 0.665178543485776,
+        "M_AGE_70_79_agg_ZENSUS100m": 0.7788666286041594,
+        "M_AGE_80_plus_agg_ZENSUS100m": 0.8291621826829156,
+        "F_AGE_0_9_agg_ZENSUS100m": 0.5810227754368515,
+        "F_AGE_10_14_agg_ZENSUS100m": 0.6449604250629929,
+        "F_AGE_15_17_agg_ZENSUS100m": 0.6749520596099373,
+        "F_AGE_18_19_agg_ZENSUS100m": 0.7871706411242485,
+        "F_AGE_20_29_agg_ZENSUS100m": 0.7344962963417394,
+        "F_AGE_30_39_agg_ZENSUS100m": 0.6953979568400731,
+        "F_AGE_40_49_agg_ZENSUS100m": 0.7355472367877761,
+        "F_AGE_50_59_agg_ZENSUS100m": 0.6127004361946449,
+        "F_AGE_60_69_agg_ZENSUS100m": 0.6479429072922878,
+        "F_AGE_70_79_agg_ZENSUS100m": 0.713863475275169,
+        "F_AGE_80_plus_agg_ZENSUS100m": 0.7438015353920573,
+        "1_Person_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m": 0.9850547829627345,
+        "2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m": 0.7590211888771794,
+        "3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m": 0.6786205368028548,
+        "4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m": 0.9128068416775719,
+        "5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m": 0.8514953799136612,
+        "6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m": 0.8293182909964067,
+        "EigentuemerHH_Tenure_100m_Gitter_ZENSUS100m": 1.000000000005663,
+        "MieterHH_Tenure_100m_Gitter_ZENSUS100m": 1.2931690959136404,
+        "building_type_ein_zweifamilienhaus_ZENSUS100m": 0.7368421052631593,
+        "building_type_mehrfamilienhaus_ZENSUS100m": 0.7368421052631575,
+        "building_type_sonstiges_ZENSUS100m": 0.6666666666666661
+      }
+    },
+    "data/control_totals_ZENSUS1km.csv": {
+      "sha256_base": "acac8166200aea088ff3f9af96620b8464224470834894d640216523439ed3d9",
+      "sha256_out": "06fa56923aafd2745f238c59bbbf814c63aa25362ffbeb4a764c55c36691c527",
+      "changed": true,
+      "columns_removed": [],
+      "columns_added": [],
+      "columns_changed": [
+        "M_AGE_0_9_agg_ZENSUS1km",
+        "M_AGE_10_14_agg_ZENSUS1km",
+        "M_AGE_15_17_agg_ZENSUS1km",
+        "M_AGE_18_19_agg_ZENSUS1km",
+        "M_AGE_20_29_agg_ZENSUS1km",
+        "M_AGE_30_39_agg_ZENSUS1km",
+        "M_AGE_40_49_agg_ZENSUS1km",
+        "M_AGE_50_59_agg_ZENSUS1km",
+        "M_AGE_60_69_agg_ZENSUS1km",
+        "M_AGE_70_79_agg_ZENSUS1km",
+        "M_AGE_80_plus_agg_ZENSUS1km",
+        "F_AGE_0_9_agg_ZENSUS1km",
+        "F_AGE_10_14_agg_ZENSUS1km",
+        "F_AGE_15_17_agg_ZENSUS1km",
+        "F_AGE_18_19_agg_ZENSUS1km",
+        "F_AGE_20_29_agg_ZENSUS1km",
+        "F_AGE_30_39_agg_ZENSUS1km",
+        "F_AGE_40_49_agg_ZENSUS1km",
+        "F_AGE_50_59_agg_ZENSUS1km",
+        "F_AGE_60_69_agg_ZENSUS1km",
+        "F_AGE_70_79_agg_ZENSUS1km",
+        "F_AGE_80_plus_agg_ZENSUS1km",
+        "1_Person_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km",
+        "2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km",
+        "3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km",
+        "4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km",
+        "5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km",
+        "6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km",
+        "EigentuemerHH_Tenure_100m_Gitter_ZENSUS1km",
+        "MieterHH_Tenure_100m_Gitter_ZENSUS1km",
+        "building_type_ein_zweifamilienhaus_ZENSUS1km",
+        "building_type_mehrfamilienhaus_ZENSUS1km",
+        "building_type_sonstiges_ZENSUS1km"
+      ],
+      "max_abs_change": {
+        "M_AGE_0_9_agg_ZENSUS1km": 0.4590305099263787,
+        "M_AGE_10_14_agg_ZENSUS1km": 0.47861088998616097,
+        "M_AGE_15_17_agg_ZENSUS1km": 0.46825010543034296,
+        "M_AGE_18_19_agg_ZENSUS1km": 0.493479207107157,
+        "M_AGE_20_29_agg_ZENSUS1km": 0.48049375461414456,
+        "M_AGE_30_39_agg_ZENSUS1km": 0.4568586982786691,
+        "M_AGE_40_49_agg_ZENSUS1km": 0.49902993300929666,
+        "M_AGE_50_59_agg_ZENSUS1km": 0.47550538554787636,
+        "M_AGE_60_69_agg_ZENSUS1km": 0.48931487426187914,
+        "M_AGE_70_79_agg_ZENSUS1km": 0.4843688940163702,
+        "M_AGE_80_plus_agg_ZENSUS1km": 0.4907604721956887,
+        "F_AGE_0_9_agg_ZENSUS1km": 0.4903919487260282,
+        "F_AGE_10_14_agg_ZENSUS1km": 0.4343634410761297,
+        "F_AGE_15_17_agg_ZENSUS1km": 0.4533674593787822,
+        "F_AGE_18_19_agg_ZENSUS1km": 0.4980254896886436,
+        "F_AGE_20_29_agg_ZENSUS1km": 0.4726901026442647,
+        "F_AGE_30_39_agg_ZENSUS1km": 0.4600113667547703,
+        "F_AGE_40_49_agg_ZENSUS1km": 0.4955108277499676,
+        "F_AGE_50_59_agg_ZENSUS1km": 0.4755374360829592,
+        "F_AGE_60_69_agg_ZENSUS1km": 0.48922106251119857,
+        "F_AGE_70_79_agg_ZENSUS1km": 0.4986586333252472,
+        "F_AGE_80_plus_agg_ZENSUS1km": 0.4984860096592456,
+        "1_Person_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km": 1.3741085677115734,
+        "2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km": 0.8498298306811591,
+        "3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km": 0.5386801597002204,
+        "4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km": 1.0979757696488264,
+        "5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km": 0.6728074797773331,
+        "6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km": 0.4993147144082428,
+        "EigentuemerHH_Tenure_100m_Gitter_ZENSUS1km": 1.9732450679634894,
+        "MieterHH_Tenure_100m_Gitter_ZENSUS1km": 1.9732450679634894,
+        "building_type_ein_zweifamilienhaus_ZENSUS1km": 32.78663448021342,
+        "building_type_mehrfamilienhaus_ZENSUS1km": 441.2002948854033,
+        "building_type_sonstiges_ZENSUS1km": 113.444394588465
+      }
+    },
+    "data/geo_cross_walk.csv": {
+      "sha256_base": "f87fcd9e4486e91a9d19477319445243b8fc02463574745f8d75f33e826fee4c",
+      "sha256_out": "f87fcd9e4486e91a9d19477319445243b8fc02463574745f8d75f33e826fee4c",
+      "changed": false
+    },
+    "data/seed_households.csv": {
+      "sha256_base": "90af3bde2e3d8aaa9995a3d01590ca738ce2d4ba41d4145da7cc8b41e739a62a",
+      "sha256_out": "90af3bde2e3d8aaa9995a3d01590ca738ce2d4ba41d4145da7cc8b41e739a62a",
+      "changed": false
+    },
+    "data/seed_persons.csv": {
+      "sha256_base": "76890fcc886343a85b808de64d56875863947401c60d816dbd7f37572ffd2091",
+      "sha256_out": "76890fcc886343a85b808de64d56875863947401c60d816dbd7f37572ffd2091",
+      "changed": false
+    }
+  },
+  "problems": [],
+  "ok": true
+}
