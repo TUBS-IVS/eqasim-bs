@@ -109,6 +109,44 @@ def load_control_cells(
     return df
 
 
+def filter_zgb_cells_with_report(
+    cells: pd.DataFrame,
+    kreis_ars5: Iterable[str],
+    *,
+    ars_col: str = _ARS_COLUMN,
+) -> tuple[pd.DataFrame, dict]:
+    """Restrict the national grid to the cells whose Kreis (ARS-5) is in scope, with counts.
+
+    The cell ARS is the 12-digit Regionalschluessel; the Kreis is its first five
+    digits.
+
+    Returns:
+        ``(filtered, report)``: ``filtered`` is a copy of the in-scope cells; ``report`` holds
+        ``cells_seen``, ``cells_kept``, ``cells_dropped`` (out-of-scope cells) and
+        ``kreise_in_scope`` (the number of distinct Kreis codes asked for).
+
+    Raises:
+        ValueError: ``ars_col`` is absent from ``cells``.
+    """
+    if ars_col not in cells.columns:
+        raise ValueError(
+            f"cells frame has no ARS column {ars_col!r}; cannot filter to ZGB Kreise."
+        )
+    kreise = {str(k) for k in kreis_ars5}
+    ars = cells[ars_col].astype(str).str.zfill(12)
+    filtered = cells[ars.str[:5].isin(kreise)].copy()
+    report = {
+        "cells_seen": int(len(cells)),
+        "cells_kept": int(len(filtered)),
+        "cells_dropped": int(len(cells) - len(filtered)),
+        "kreise_in_scope": len(kreise),
+    }
+    logger.info(
+        "[popsim.mid] ZGB cell filter: kept %d of %d cells, dropped %d (outside %d Kreise)",
+        report["cells_kept"], report["cells_seen"], report["cells_dropped"], len(kreise))
+    return filtered, report
+
+
 def filter_zgb_cells(
     cells: pd.DataFrame,
     kreis_ars5: Iterable[str],
@@ -117,16 +155,9 @@ def filter_zgb_cells(
 ) -> pd.DataFrame:
     """Restrict the national grid to the cells whose Kreis (ARS-5) is in scope.
 
-    The cell ARS is the 12-digit Regionalschluessel; the Kreis is its first five
-    digits.
+    Same filter as ``filter_zgb_cells_with_report``, which also returns the counts.
     """
-    if ars_col not in cells.columns:
-        raise ValueError(
-            f"cells frame has no ARS column {ars_col!r}; cannot filter to ZGB Kreise."
-        )
-    kreise = {str(k) for k in kreis_ars5}
-    ars = cells[ars_col].astype(str).str.zfill(12)
-    return cells[ars.str[:5].isin(kreise)].copy()
+    return filter_zgb_cells_with_report(cells, kreis_ars5, ars_col=ars_col)[0]
 
 
 # --------------------------------------------------------------------------- #

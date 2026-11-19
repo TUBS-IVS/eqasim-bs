@@ -75,6 +75,7 @@ def test_report_counts():
         "cells_changed": 2,
         "households_moved_owner_to_renter": 213.0,
         "cells_with_nan_dwelling_count": 0,
+        "cells_changed_with_nan_dwelling_count": 0,
         "cells_with_nan_tenure_count": 0,
         "cells_with_owner_above_household_total": 0,
         "min_households_outside": 10.0,
@@ -82,16 +83,18 @@ def test_report_counts():
 
 
 @pytest.mark.parametrize(
-    ("households", "owner", "dwellings", "expected_owner", "expected_renter"),
+    ("households", "owner", "dwellings", "expected_owner", "expected_renter", "expected_moved"),
     [
         # owner 200 > 100 households: share clipped at 1; min(100, 0) = 0 dwellings -> owner 0.
-        (100.0, 200.0, 0.0, 0.0, 100.0),
+        # Moved: the clipped owner count 100 minus 0 (never 200 - 0, more than the cell has).
+        (100.0, 200.0, 0.0, 0.0, 100.0, 100.0),
         # owner 120 > 100 households: share clipped at 1; min(100, 50) = 50 -> owner 50.
-        (100.0, 120.0, 50.0, 50.0, 50.0),
+        # Moved: 100 - 50 = 50 (not 120 - 50).
+        (100.0, 120.0, 50.0, 50.0, 50.0, 50.0),
     ],
 )
 def test_owner_above_household_total_is_clipped_and_reported(
-        households, owner, dwellings, expected_owner, expected_renter):
+        households, owner, dwellings, expected_owner, expected_renter, expected_moved):
     cells = pd.DataFrame({
         HOUSEHOLDS: [households], OWNER: [owner], RENTER: [0.0], DWELLINGS: [dwellings]})
     result, report = limit_owner_households_to_dwellings(cells, **KWARGS)
@@ -99,6 +102,7 @@ def test_owner_above_household_total_is_clipped_and_reported(
     assert result[RENTER].iloc[0] == pytest.approx(expected_renter)
     assert report["cells_with_owner_above_household_total"] == 1
     assert report["cells_changed"] == 1
+    assert report["households_moved_owner_to_renter"] == pytest.approx(expected_moved)
 
 
 @pytest.mark.parametrize("column", [OWNER, RENTER])
@@ -131,6 +135,8 @@ def test_nan_dwelling_count_is_read_as_zero_and_reported():
     assert result.loc["dormitory", OWNER] == 0.0
     assert result.loc["dormitory", RENTER] == 118.0
     assert report["cells_with_nan_dwelling_count"] == 1
+    # The NaN dwelling count is what put the dormitory cell under the rule: one selected cell.
+    assert report["cells_changed_with_nan_dwelling_count"] == 1
 
 
 def test_threshold_is_configurable():

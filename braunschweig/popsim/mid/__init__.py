@@ -130,6 +130,7 @@ from .control_cells import (  # noqa: F401  (re-exports)
     control_base_columns,
     ctrl,
     filter_zgb_cells,
+    filter_zgb_cells_with_report,
     load_control_cells,
     pq,
     prepared_cells,
