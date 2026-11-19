@@ -104,6 +104,21 @@ status:
     progress.log lines (run_records/progress.txt); checkpoint stores were deleted after the diagnostics.
     (3) summarize_method_arms.py prints a pandas UserWarning about match groups in its group patterns;
     str.contains is unaffected by it (it tests for a match only), so the tables are as intended.
+    Post hoc entries (2026-11-19, written after the results; exploratory, not part of the pre-registered
+    checks or of the rule; checks, bounds and results above unchanged): (a)
+    scripts/posthoc_age_error_by_group.py judges the as-run outputs of arms 8, 9 and 10 against the integer
+    100 m age x sex targets of arm 8 at coarser aggregations of the 22 bands
+    (posthoc/age_error_by_group.csv). Its 22-band row reproduces the pooled WAPE of the diagnostics (0.2265,
+    0.4403, 0.2455). Arm 8 -> arm 9: four age groups with the sexes summed 0.1760 -> 0.2551 (0-17 0.2854 ->
+    0.4510, 18-29 0.1645 -> 0.2527, 30-59 0.1048 -> 0.1209, 60+ 0.2265 -> 0.3445); persons per cell 0.1233
+    -> 0.1380. The 100 m age error that arm 9 adds sits mainly in the persons under 30 and over 59. Reading
+    (HYPOTHESIS, not tested): the employed grid at 100 m keeps the working-age persons in their cells. (b)
+    posthoc/input_consistency_arm_8.csv and posthoc/input_consistency_arm_10.csv are the input-consistency
+    tables of the as-run diagnostics of the two arms (integer and unrounded targets). Persons below the
+    minimum the household sizes of their cell need: 4.2 to 10.9 % of the persons of a batch with the integer
+    targets, 3.8 to 8.8 % with the unrounded ones; persons above the maximum (cells without a household of
+    six or more): 5.2 to 10.3 % and 0.1 to 2.7 %. So the shortfall of persons against the household sizes
+    is in the unrounded census values, not made by the rounding.
 source: >-
   run server, ~/i660_c (code archive, arm folders, diagnostics, target views, comparisons); committed copy in
   docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/.
@@ -220,6 +235,10 @@ artifacts:
 - docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/run_records/outputs_sha256.txt
 - docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/run_records/tool_versions.txt
 - docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/run_records/progress.txt
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/scripts/posthoc_age_error_by_group.py
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/posthoc/age_error_by_group.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/posthoc/input_consistency_arm_8.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/posthoc/input_consistency_arm_10.csv
 issues:
 - '#660'
 - '#659'
