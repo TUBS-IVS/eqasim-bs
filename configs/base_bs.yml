@@ -328,6 +328,12 @@ config:
   braunschweig.population.popsim.kreis_fine_tolerance: 0.05
   # Guard: smallest grid sum (persons) of a Kreis part that the age-universe tolerance is judged on.
   braunschweig.population.popsim.kreis_fine_min_persons: 1000
+  # Household universes (issue #659, Part B; meaning and valid ranges: popsim/stage/config_keys.py). Set at their
+  # LEGACY values: they are switched on only after the ladder arms of #659 meet their gates.
+  braunschweig.population.popsim.move_persons_of_household_less_cells: false
+  braunschweig.population.popsim.household_less_cell_max_persons: 20.0
+  # "zensus_family5" = the four 100 m census family types; "none"; "minor_child_1km" = two 1 km controls of households with a minor.
+  braunschweig.population.popsim.family_controls: "zensus_family5"
   # Fine teen age bands in the tier0 backbone (issue #320): replaces the ten-year 10-19
   # age x sex controls with 10-15 / 16-17 / 18-19 (22 instead of 18 controls at 100m).
   # The ten-year band leaves the composition INSIDE it unconstrained, which produced a

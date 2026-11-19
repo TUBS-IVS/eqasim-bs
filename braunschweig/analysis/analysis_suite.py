@@ -127,8 +127,12 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.diary_plan_match",
     "braunschweig.popsim.escort_pairing",
     "braunschweig.popsim.folders",
+    # Reached through popsim.mid.control_cells (household-less move, #659).
+    "braunschweig.popsim.household_less_cells",
     "braunschweig.popsim.kreis_attribute_control",
     "braunschweig.popsim.member_completion",
+    # Reached through popsim.control_spec (the minor-child controls, #659).
+    "braunschweig.popsim.minor_child_targets",
     "braunschweig.popsim.mid.control_cells",
     "braunschweig.popsim.mid.csv_format",
     "braunschweig.popsim.mid.donor",

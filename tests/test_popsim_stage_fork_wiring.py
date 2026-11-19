@@ -55,6 +55,10 @@ def _values(**overrides):
         stage.KEY_EMPLOYMENT_LEVEL_SOURCE: "survey",
         stage.KEY_KREIS_FINE_TOLERANCE: 0.05,
         stage.KEY_KREIS_FINE_MIN_PERSONS: 1000,
+        # The #659 household-universe keys at their legacy values.
+        stage.KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS: False,
+        stage.KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS: 20.0,
+        stage.KEY_FAMILY_CONTROLS: "zensus_family5",
         "random_seed": 4711,
     }
     values.update(overrides)

@@ -43,7 +43,7 @@ SINGLE_YEAR_MAX_AGE = 100
 def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",),
                       employment_grid=False, ownership_grid=False, kreis_control_names=(),
                       status_kreis=False, importance_profile="uniform",
-                      fine_teen_age_bands=True):
+                      fine_teen_age_bands=True, family_controls="zensus_family5"):
     """Return the PopulationSim controls.csv frame.
 
     controls_source="csv": read the external hand-edited file at controls_path (today's
@@ -81,6 +81,11 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
     importance_profile: a key of control_spec.IMPORTANCE_PROFILES selecting per-group
     PopulationSim importance weights. Default "uniform" leaves every control's importance
     untouched (byte-identical). Applied to BOTH sources after the frame is built.
+
+    family_controls: one of control_spec.FAMILY_CONTROLS_MODES (issue #659, config key
+    family_controls). The default "zensus_family5" keeps the catalog unchanged; the other modes
+    need the catalog source (the hand-edited CSV cannot drop or add the family controls, so
+    csv + another mode is a fail-fast error).
     """
     from braunschweig.popsim import control_spec as cs
     # status_kreis is the historical alias for the economic_status entry.
@@ -96,12 +101,17 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
             raise ValueError(
                 "ownership_grid_1km requires controls_source='catalog'; the hand-edited "
                 "controls.csv cannot express the ZENSUS1km ownership controls.")
+        if family_controls != cs.FAMILY_CONTROLS_ZENSUS_FAMILY5:
+            raise ValueError(
+                f"family_controls={family_controls!r} requires controls_source='catalog'; the "
+                "hand-edited controls.csv cannot change its family controls.")
         df = pd.read_csv(controls_path, sep=";")
     elif controls_source == "catalog":
         catalog = cs.full_catalog(include_tiers=tiers, include_employment_grid=employment_grid,
                                   include_ownership_grid=ownership_grid,
                                   kreis_control_names=effective_kreis_names,
-                                  fine_teen_age_bands=fine_teen_age_bands)
+                                  fine_teen_age_bands=fine_teen_age_bands,
+                                  family_controls=family_controls)
         df = cs.render_catalog_csv(cs.controls_for_seed(catalog, seed), seed)
     else:
         raise ValueError(f"unknown controls_source {controls_source!r}")

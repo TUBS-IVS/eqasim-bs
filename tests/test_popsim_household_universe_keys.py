@@ -1,0 +1,218 @@
+"""The household-universe keys of ``data.census.filtered`` (issue #659, Task B4).
+
+Three keys (meaning: ``braunschweig/popsim/stage/config_keys.py``):
+``move_persons_of_household_less_cells``, ``household_less_cell_max_persons`` and
+``family_controls``. The tests pin what a wrong wiring would break: the catalog of each
+``family_controls`` mode, the seed contract over the two minor-child controls, the legacy
+tables value for value, the move reaching ``build_control_totals`` through the batch run, the
+1 km minor-child targets reaching the 1 km control table, and the fail-fast validation.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pandas as pd
+import pytest
+from pandas.testing import assert_frame_equal
+
+from braunschweig.popsim import batch as popsim_batch
+from braunschweig.popsim import control_spec, mid, minor_child_targets, seed_contract, stage
+from braunschweig.popsim.stage import config_keys, controls_builder
+from tests import popsim_control_build_fixture as fixture
+
+FAMILY5_TARGETS = {
+    f"{base}_ZENSUS100m_target" for base, _ in control_spec._TIER1_HH_TYPE_ENTRIES}
+MINOR_TARGETS = {
+    f"{minor_child_targets.ONE_ADULT_TARGET}_ZENSUS1km_target",
+    f"{minor_child_targets.MULTI_ADULT_TARGET}_ZENSUS1km_target",
+}
+HH_TOTAL_1KM_TARGET = f"{control_spec.HH_TOTAL_CENSUS_COLUMN}_ZENSUS1km_target"
+
+
+def _controls(family_controls: str, tiers=("tier0", "tier1")) -> pd.DataFrame:
+    return controls_builder.build_controls_df(
+        controls_source="catalog", seed="mid", tiers=tiers, family_controls=family_controls,
+        importance_profile="optimized_2026_06_30")
+
+
+@pytest.mark.parametrize("mode, expected_family5, expected_minor", [
+    ("zensus_family5", FAMILY5_TARGETS, set()),
+    ("none", set(), set()),
+    ("minor_child_1km", set(), MINOR_TARGETS),
+])
+def test_family_controls_modes_select_the_controls(mode, expected_family5, expected_minor):
+    controls = _controls(mode)
+    targets = set(controls["target"])
+    assert {t for t in targets if "Typ_priv_HH_Familie" in t} == expected_family5
+    assert {t for t in targets if t.startswith("HH_MINOR_")} == expected_minor
+    minor = controls[controls["target"].isin(MINOR_TARGETS)]
+    assert set(minor["geography"]) <= {"ZENSUS1km"}
+    assert set(minor["seed_table"]) <= {"households"}
+    # Same importance treatment as the census family-type controls (group "hhtype").
+    assert set(minor["importance"]) <= {control_spec.IMPORTANCE_PROFILES[
+        "optimized_2026_06_30"]["hhtype"]}
+
+
+def _seed(minor_classes):
+    households = pd.DataFrame({
+        "H_ID": range(1, len(minor_classes) + 1), "H_GR": 2,
+        "hh_type5": "paar_mit_kind", "hh_minor_class": list(minor_classes)})
+    persons = pd.DataFrame({"H_ID": [1], "P_ID": [1], "HP_ALTER": [40], "HP_SEX": [1]})
+    return households, persons
+
+
+def test_minor_child_controls_need_the_seed_column():
+    households, persons = _seed(["one_adult"])
+    with pytest.raises(ValueError, match="hh_minor_class"):
+        seed_contract.check_seed_coverage(
+            households.drop(columns="hh_minor_class"), persons,
+            _controls("minor_child_1km", tiers=("tier0",)), HH_TOTAL_1KM_TARGET, mode="error",
+            groups=[g for g in stage._seed_contract.CONTROL_GROUPS
+                    if g.seed_table == "households"])
+
+
+def test_seed_contract_accepts_the_minor_class():
+    households, persons = _seed(["one_adult", "multi_adult", "no_minor", "no_minor"])
+    table = seed_contract.check_seed_coverage(
+        households, persons, _controls("minor_child_1km", tiers=("tier0",)),
+        HH_TOTAL_1KM_TARGET, mode="error",
+        groups=[g for g in stage._seed_contract.CONTROL_GROUPS if g.seed_table == "households"])
+    row = table.set_index("group").loc["household_minor"]
+    # The two classes are not exhaustive: the households without a minor match no control.
+    assert (row["n_universe"], row["n_uncovered"], row["n_multi_hit"]) == (4, 2, 0)
+
+
+def test_legacy_keys_reproduce_the_control_tables():
+    tables = fixture.build_control_tables(
+        family_controls=config_keys.FAMILY_CONTROLS_DEFAULT, move_persons_max=None)
+    for name in fixture.GOLDEN_NAMES:
+        assert_frame_equal(tables[name], fixture.read_golden(name), check_exact=True)
+
+
+class _ReportContext:
+    """The two ``ExecuteContext`` methods the report writer uses."""
+
+    def __init__(self, path):
+        self._path = Path(path)
+        self.info = {}
+
+    def path(self):
+        return str(self._path)
+
+    def set_info(self, key, value):
+        self.info[key] = value
+
+
+def _fake_run_one(folder):
+    xwalk = pd.read_csv(Path(folder) / "data" / "geo_cross_walk.csv", dtype=str)
+    out_dir = Path(folder) / "output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    xwalk.assign(H_ID=1).to_csv(out_dir / "final_expanded_household_ids.csv", index=False)
+    return popsim_batch.BatchResult(str(folder), "succeeded", "ok", 0.0)
+
+
+def _run_batches(tmp_path, cells, settings, family_controls="zensus_family5"):
+    prepared = stage._add_aggregated_control_columns(
+        cells, fixture.CONTROL_SOURCE, fixture.SEED_NAME, fixture.CONTROL_TIERS,
+        **fixture.AGGREGATE_KWARGS)
+    controls_df, base_cols = stage._build_control_frame(
+        fixture.CONTROL_SOURCE, None, fixture.SEED_NAME, fixture.CONTROL_TIERS, False, [],
+        fixture.IMPORTANCE_PROFILE, fine_teen_age_bands=fixture.FINE_TEEN_AGE_BANDS,
+        family_controls=family_controls)
+    households, persons = _seed(["one_adult"])
+    work_dir = tmp_path / "work"
+    mid.run_popsim_mid(
+        prepared, base_cols, controls_df, households, persons, work_dir=work_dir,
+        settings_yaml="x: 1\n", logging_yaml="version: 1\n", max_cells=100,
+        run_one=_fake_run_one, num_workers=1,
+        **settings.run_popsim_mid_kwargs(base_cols, fine_teen_age_bands=True))
+    data = work_dir / "batch_000" / "data"
+    return {geo: pd.read_csv(data / f"control_totals_{geo}.csv")
+            for geo in ("ZENSUS100m", "ZENSUS1km")}, base_cols
+
+
+def test_move_option_reaches_build_control_totals(tmp_path):
+    cells = fixture.make_cells()
+    # The small cell (6 persons) becomes household-less: a donor under the 20-person bound.
+    donor = cells["ZENSUS100m"] == "CRS3035RES100mN2900700E4401400"
+    cells.loc[donor, control_spec.HH_TOTAL_CENSUS_COLUMN] = 0.0
+    legacy, _ = _run_batches(tmp_path / "legacy", cells, stage.HouseholdUniverseSettings(
+        False, 20.0, "zensus_family5"))
+    settings = stage.HouseholdUniverseSettings(True, 20.0, "zensus_family5")
+    moved, base_cols = _run_batches(tmp_path / "moved", cells, settings)
+
+    age_cols = [f"{c}_ZENSUS100m" for c in base_cols if "_AGE_" in c]
+    assert len(age_cols) == 22
+    donor_row = moved["ZENSUS100m"]["ZENSUS100m"] == "CRS3035RES100mN2900700E4401400"
+    assert legacy["ZENSUS100m"].loc[donor_row, age_cols].to_numpy().sum() > 0
+    assert moved["ZENSUS100m"].loc[donor_row, age_cols].to_numpy().sum() == 0
+    assert_frame_equal(moved["ZENSUS1km"], legacy["ZENSUS1km"], check_exact=True)
+
+    context = _ReportContext(tmp_path)
+    stage._write_household_universe_report(context, settings)
+    report = json.loads((tmp_path / stage.CENSUS_FILTERED_REPORT_FILE).read_text("utf-8"))
+    section = report["household_less_cells"]
+    assert section["enabled"] is True and section["max_persons"] == 20.0
+    assert section["totals"]["donor_cells"] == 1
+    assert [b["batch"] for b in section["batches"]] == ["batch_000"]
+    assert report["family_controls"]["mode"] == "zensus_family5"
+    assert context.info["popsim_household_less_cells"] == section
+
+
+def test_minor_child_mode_writes_the_1km_targets(tmp_path):
+    cells = fixture.make_cells()
+    squares = sorted(cells["ZENSUS1km"].unique())
+    # One lone parent and two couples with a minor per 10 family-table households in every
+    # square: shares 0.1 (one adult) and 0.2 (multi adult).
+    raw = pd.DataFrame({minor_child_targets.SQUARE_ID_COLUMN: squares})
+    for column in minor_child_targets.LONE_PARENT_SOURCES:
+        raw[column] = 0.5
+    for column in minor_child_targets.COUPLE_SOURCES:
+        raw[column] = 2.0 / 3.0
+    raw[minor_child_targets.FAMILY_TABLE_HOUSEHOLDS] = 10.0
+    raw = raw.rename(columns=lambda c: c.replace("_1km_Gitter", "_1km-Gitter"))
+    path = tmp_path / "grid_1km.parquet"
+    raw.to_parquet(path, index=False)
+
+    with_targets, targets_report = stage._add_minor_child_targets(cells, path)
+    settings = stage.HouseholdUniverseSettings(False, 20.0, "minor_child_1km")
+    settings.targets_report = targets_report
+    tables, _ = _run_batches(tmp_path, with_targets, settings, family_controls="minor_child_1km")
+
+    km = tables["ZENSUS1km"].set_index("ZENSUS1km")
+    one = km[f"{minor_child_targets.ONE_ADULT_TARGET}_ZENSUS1km"]
+    multi = km[f"{minor_child_targets.MULTI_ADULT_TARGET}_ZENSUS1km"]
+    # Square N2900000E4400000 holds 24.6 + 17.3 + 30.0 = 71.9 households (fixture).
+    assert one["CRS3035RES1000mN2900000E4400000"] == 7      # round(7.19)
+    assert multi["CRS3035RES1000mN2900000E4400000"] == 14   # round(14.38)
+    assert targets_report["squares_on_kreis_fallback"] == 0
+
+    stage._write_household_universe_report(_ReportContext(tmp_path), settings)
+    report = json.loads((tmp_path / stage.CENSUS_FILTERED_REPORT_FILE).read_text("utf-8"))
+    assert report["family_controls"] == {"mode": "minor_child_1km", "report": targets_report}
+    assert report["household_less_cells"]["enabled"] is False
+
+
+class _ConfigureContext:
+    """``configure()`` double: answers the overridden keys, else the declared default."""
+
+    def __init__(self, overrides):
+        self.overrides = overrides
+
+    def config(self, key, default=None, **_):
+        return self.overrides.get(key, default)
+
+    def stage(self, *_, **__):
+        return None
+
+
+@pytest.mark.parametrize("key, value", [
+    (config_keys.KEY_FAMILY_CONTROLS, "zensus_family_5"),
+    (config_keys.KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS, "yes"),
+    (config_keys.KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS, 0.0),
+])
+def test_invalid_family_controls_value_raises(key, value):
+    with pytest.raises(ValueError, match=key.replace(".", r"\.")):
+        stage.configure(_ConfigureContext({key: value}))

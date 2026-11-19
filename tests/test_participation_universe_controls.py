@@ -1332,6 +1332,10 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         # The #657 tenure keys, at their legacy values (execute reads both).
         popsim_stage.KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS: False,
         popsim_stage.KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE_DWELLINGS: 10.0,
+        # The #659 household-universe keys, at their legacy values (execute reads all three).
+        popsim_stage.KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS: False,
+        popsim_stage.KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS: 20.0,
+        popsim_stage.KEY_FAMILY_CONTROLS: "zensus_family5",
     }
     context = _StrictExecuteContext(values)
 

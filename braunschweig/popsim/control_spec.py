@@ -642,7 +642,10 @@ def importance_group_for_field(control_field: str) -> str:
         return "son"
     if "_AGE_" in s:
         return "age"
-    if s.startswith(("Paare_ohneKind", "Paare_mitKind", "Alleinerziehende", "MehrpersHHohneKernfam")):
+    # The minor-child household controls (#659) replace the census family types and take
+    # their importance group.
+    if s.startswith(("Paare_ohneKind", "Paare_mitKind", "Alleinerziehende", "MehrpersHHohneKernfam",
+                     "HH_MINOR_")):
         return "hhtype"
     if s.startswith(("EigentuemerHH", "MieterHH")):
         return "tenure"
@@ -787,6 +790,60 @@ def tier1_controls() -> List[CatalogControl]:
             )
 
     return catalog
+
+
+# Family controls of the catalog (issue #659; config key
+# braunschweig.population.popsim.family_controls, meaning in stage/config_keys.py):
+#   "zensus_family5"  -- the four tier1 census family-type controls (legacy);
+#   "none"            -- neither the family types nor the minor-child controls;
+#   "minor_child_1km" -- the two 1 km minor-child household controls instead of the family types.
+FAMILY_CONTROLS_ZENSUS_FAMILY5 = "zensus_family5"
+FAMILY_CONTROLS_NONE = "none"
+FAMILY_CONTROLS_MINOR_CHILD_1KM = "minor_child_1km"
+FAMILY_CONTROLS_MODES = (
+    FAMILY_CONTROLS_ZENSUS_FAMILY5, FAMILY_CONTROLS_NONE, FAMILY_CONTROLS_MINOR_CHILD_1KM)
+
+
+def minor_child_controls() -> List[CatalogControl]:
+    """The two ZENSUS1km household controls of households with a minor (issue #659). MiD-only.
+
+    census_source is the per-cell target column that
+    ``braunschweig.popsim.minor_child_targets.per_cell_targets`` writes onto the cells; the
+    seed column ``hh_minor_class`` comes from ``braunschweig.popsim.seed.derive_hh_minor_class``.
+    The two classes are not exhaustive (households without a minor match neither).
+    """
+    from braunschweig.popsim.minor_child_targets import MULTI_ADULT_TARGET, ONE_ADULT_TARGET
+
+    return [
+        CatalogControl(
+            name=name, geography=GEO_1KM, seed_table=SEED_TABLE_HOUSEHOLDS, importance=1000,
+            census_source=(name,),
+            seed_expressions={"mid": f"(households.hh_minor_class == '{seed_class}')",
+                              "entd": None})
+        for name, seed_class in ((ONE_ADULT_TARGET, "one_adult"),
+                                 (MULTI_ADULT_TARGET, "multi_adult"))
+    ]
+
+
+def apply_family_controls(catalog: List[CatalogControl], family_controls: str) -> List[CatalogControl]:
+    """Return ``catalog`` with the family controls of ``family_controls`` (see FAMILY_CONTROLS_MODES).
+
+    ``"zensus_family5"`` returns the catalog unchanged; the other two modes drop the four tier1
+    family-type controls, and ``"minor_child_1km"`` appends :func:`minor_child_controls`.
+
+    Raises:
+        ValueError: ``family_controls`` is not one of :data:`FAMILY_CONTROLS_MODES`.
+    """
+    if family_controls not in FAMILY_CONTROLS_MODES:
+        raise ValueError(f"family_controls must be one of {FAMILY_CONTROLS_MODES}, "
+                         f"got {family_controls!r}")
+    if family_controls == FAMILY_CONTROLS_ZENSUS_FAMILY5:
+        return catalog
+    family_types = {base for base, _ in _TIER1_HH_TYPE_ENTRIES}
+    out = [c for c in catalog if c.name not in family_types]
+    if family_controls == FAMILY_CONTROLS_MINOR_CHILD_1KM:
+        out.extend(minor_child_controls())
+    return out
 
 
 # Tier-2 tenure census column bases.
@@ -1191,7 +1248,8 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employmen
                  include_ownership_grid: bool = False,
                  include_status_kreis: bool = False,
                  kreis_control_names: Sequence[str] = (),
-                 fine_teen_age_bands: bool = True) -> List[CatalogControl]:
+                 fine_teen_age_bands: bool = True,
+                 family_controls: str = FAMILY_CONTROLS_ZENSUS_FAMILY5) -> List[CatalogControl]:
     """Build the combined catalog for the requested tier set.
 
     Parameters
@@ -1224,6 +1282,9 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employmen
     fine_teen_age_bands:
         Forwarded to :func:`tier0_backbone_catalog`; ``True`` (default) splits the
         10-19 band into 10_14 / 15_17 / 18_19 per sex.
+    family_controls:
+        One of :data:`FAMILY_CONTROLS_MODES` (issue #659), applied by
+        :func:`apply_family_controls` after the tiers; the default keeps the catalog unchanged.
 
     Returns
     -------
@@ -1239,6 +1300,7 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employmen
         catalog.extend(tier2_controls())
     if "tier3" in include_tiers:
         catalog.extend(tier3_controls())
+    catalog = apply_family_controls(catalog, family_controls)
     if include_employment_grid:
         catalog.extend(employment_grid_controls())
     if include_ownership_grid:
