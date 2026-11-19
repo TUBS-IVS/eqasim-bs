@@ -571,3 +571,32 @@ def test_controlled_log_line_gives_the_share_of_failed_calls(tmp_path, caplog):
     with caplog.at_level(logging.INFO):
         _check_controlled(tmp_path)
     assert "1 not OPTIMAL/FEASIBLE (25.0% of the controlled simultaneous calls" in caplog.text
+
+
+# A real record of one batch of ladder arm 3 (fork release 0.10.0+bs.2, rounding "controlled",
+# method "search"; batch_032 of run manifest popsim-ladder-arm3-2026-11-18): the hand-written
+# controlled records above cannot show a drift of the fork's controlled file format.
+REAL_CONTROLLED_RECORD = (
+    Path(__file__).parent / "fixtures" / "popsim" / "integerizer_paths_real_controlled.csv")
+
+
+def test_real_controlled_fork_record_proves_the_rounding_and_the_method(tmp_path):
+    folder = _batch(tmp_path, "batch_032", [], record=False)
+    (folder / "output" / "integerizer_paths.csv").write_bytes(
+        REAL_CONTROLLED_RECORD.read_bytes())
+    summary, totals = solver_path_gate.check_solver_paths(
+        tmp_path, None, expected_rounding="controlled", expected_method="search")
+    assert summary.set_index("geography")["non_simultaneous"].to_dict() == {
+        "KREIS": 0, "ZENSUS100m": 0, "ZENSUS1km": 0}
+    assert (totals["controlled_simul_calls"], totals["search_calls"], totals["lp_calls"]) == (
+        31, 31, 0)
+    assert totals["controlled_non_success_calls"] == 0
+    assert totals["search_not_converged_calls"] == 0
+    assert totals["swaps"] == 15111  # the figure the run manifest reports for this batch
+    assert totals["row_shortfall"] == 0 and totals["hh_excess"] == 0
+    # The same record is refused when the config asks for the other method or for "round".
+    with pytest.raises(RuntimeError, match="batch_032"):
+        solver_path_gate.check_solver_paths(
+            tmp_path, None, expected_rounding="controlled", expected_method="lp")
+    with pytest.raises(RuntimeError, match="batch_032"):
+        solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="round")

@@ -295,7 +295,7 @@ def _prove_controlled_method(name: str, calls: pd.DataFrame, expected_method: st
     other = calls[calls["method"].fillna("") != expected_method]
     if not other.empty:
         raise RuntimeError(
-            f"[{STAGE_TAG}] controlled_method is {expected_method!r} but {len(other)} of "
+            f"[{STAGE_TAG}] integerizer_controlled_method is {expected_method!r} but {len(other)} of "
             f"{len(calls)} controlled simultaneous integerizer calls of batch {name} recorded "
             f"another method (first: trace_label {other.iloc[0]['trace_label']!r}, method "
             f"{other.iloc[0]['method']!r}, expected {expected_method!r}): the configured method "
