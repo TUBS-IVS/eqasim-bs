@@ -441,8 +441,10 @@ def test_base_config_states_the_tracked_values():
     assert config[config_keys.KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS] is True
     assert config[config_keys.KEY_INTEGERIZER_DRAW] == "gumbel"
     assert config[config_keys.KEY_INTEGERIZER_TIMEOUT_S] == 7200
-    # Stays "round" until the arm-3 run manifest of issue #646 meets its gate.
-    assert config[config_keys.KEY_INTEGERIZER_ROUNDING] == "round"
+    # Production value by owner decision of 2026-11-19 (ADR-0201, issue #646); it needs the fork
+    # release that has the controlled rounding.
+    assert config[config_keys.KEY_INTEGERIZER_ROUNDING] == "controlled"
+    assert config[config_keys.KEY_POPSIM_VERSION] == "0.10.0+bs.2"
     # The search method's options state the fork's defaults.
     assert config[config_keys.KEY_INTEGERIZER_CONTROLLED_METHOD] == "search"
     assert config[config_keys.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS] == 200

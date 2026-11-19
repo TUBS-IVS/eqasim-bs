@@ -203,7 +203,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "populationsim", git = "https://github.com/TUBS-IVS/populationsim?tag=v0.10.0%2Bbs.1" }]
+requires-dist = [{ name = "populationsim", git = "https://github.com/TUBS-IVS/populationsim?tag=v0.10.0%2Bbs.2" }]
 
 [[package]]
 name = "idna"
@@ -456,8 +456,8 @@ wheels = [
 
 [[package]]
 name = "populationsim"
-version = "0.10.0+bs.1"
-source = { git = "https://github.com/TUBS-IVS/populationsim?tag=v0.10.0%2Bbs.1#3d70f73c00fb47696b56552540c2d858d93ed356" }
+version = "0.10.0+bs.2"
+source = { git = "https://github.com/TUBS-IVS/populationsim?tag=v0.10.0%2Bbs.2#d9a2e2810139e822ff2870a1845c30a509461462" }
 dependencies = [
     { name = "blosc2" },
     { name = "cvxpy", extra = ["glpk"] },
@@ -470,6 +470,7 @@ dependencies = [
     { name = "pyarrow" },
     { name = "pyinstrument" },
     { name = "pyyaml" },
+    { name = "scipy" },
     { name = "tables" },
 ]
 
