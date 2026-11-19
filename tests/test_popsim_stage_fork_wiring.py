@@ -226,6 +226,7 @@ def _stub_execute_steps(monkeypatch, tmp_path, calls, *, tiers=(), controls_sour
     def purge(*args, **kwargs):
         calls.append("purge")
         seen["purge_args"] = args
+        seen["purge_kwargs"] = kwargs
 
     def batches(*args, **kwargs):
         calls.append("batches")
@@ -361,3 +362,77 @@ def test_execute_refuses_production_kreis_keys_without_a_kreis_table_before_the_
     with pytest.raises(ValueError, match=stage.KEY_KREIS_BATCH_APPORTIONMENT.replace(".", r"\.")):
         stage.execute(_context(_values(**_PRODUCTION_KREIS_KEYS), stage_path=tmp_path))
     assert "load_columns" not in seen and calls == ["environment check"]
+
+
+# --- execute: the #659 household-universe keys ---------------------------------------------
+
+_CELLS_1KM = "grid_1km.parquet"
+
+
+@pytest.mark.parametrize("keys", [
+    (False, 20.0, "zensus_family5"), (True, 25.0, "zensus_family5"), (False, 20.0, "none"),
+    (False, 20.0, "minor_child_1km")], ids=["legacy", "move", "none", "minor_child_1km"])
+def test_execute_hands_the_household_universe_keys_on(monkeypatch, tmp_path, keys):
+    move, max_persons, family = keys
+    calls = []
+    # The move needs the tier0 age x sex bands and the household total among the base columns
+    # (fine teen bands, as in fixture.base_columns(); read before the stubs replace the build).
+    base_cols = fixture.base_columns()
+    seen = _stub_execute_steps(monkeypatch, tmp_path, calls)
+    monkeypatch.setattr(stage, "_build_control_frame", lambda *a, **k: (pd.DataFrame(), base_cols))
+    monkeypatch.setattr(
+        stage, "_read_control_config",
+        lambda ctx, name: ((), (), "csv", False, False, (), set(), 30, None, "default", True))
+    # The seed build always derives hh_minor_class (the analysis tools read it too).
+    seed = pd.DataFrame({"H_ID": [1, 2], "hh_type5": ["einpersonen", "paar_mit_kind"],
+                         "hh_minor_class": ["no_minor", "multi_adult"]})
+    monkeypatch.setattr(stage, "_build_populationsim_seed",
+                        lambda *a, **k: (None, None, seed, pd.DataFrame({"H_ID": [1, 2]})))
+
+    def minor_targets(cells, path):
+        seen["minor_targets_path"] = path
+        return cells, {"squares_on_kreis_fallback": 0}
+
+    monkeypatch.setattr(stage, "_add_minor_child_targets", minor_targets)
+    with pytest.raises(_Stop):
+        stage.execute(_context(_values(**{
+            stage.KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS: move,
+            stage.KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS: max_persons,
+            stage.KEY_FAMILY_CONTROLS: family,
+            "braunschweig.population.popsim.cells_1km_path": _CELLS_1KM}), stage_path=tmp_path))
+
+    payload = seen["purge_kwargs"]["household_universes"]
+    if keys == (False, 20.0, "zensus_family5"):
+        assert payload is None
+    else:
+        assert payload == {stage.KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS: move,
+                           stage.KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS: max_persons,
+                           stage.KEY_FAMILY_CONTROLS: family}
+    # The seed of the signature and of the batches: hh_minor_class only where a control reads it.
+    for seed_households in (seen["purge_args"][8], seen["batches_args"][4]):
+        assert ("hh_minor_class" in seed_households.columns) == (family == "minor_child_1km")
+    move_kwargs = seen["batches_kwargs"]["household_less_kwargs"]
+    assert (move_kwargs.get("move_persons_max") if move_kwargs else None) == (
+        max_persons if move else None)
+    assert seen.get("minor_targets_path") == (_CELLS_1KM if family == "minor_child_1km" else None)
+
+
+def test_run_populationsim_batches_passes_the_move_to_run_popsim_mid(monkeypatch, tmp_path):
+    captured = {}
+
+    def run_popsim_mid(*args, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(n_rows=0, n_cells=0, n_missing=0)
+
+    monkeypatch.setattr(stage.mid, "run_popsim_mid", run_popsim_mid)
+    monkeypatch.setattr(stage, "_batch_settings_yaml", lambda *a, **k: "x: 1\n")
+    logging_path = tmp_path / "logging.yaml"
+    logging_path.write_text("version: 1\n", encoding="utf-8")
+    move = {"household_total_col": "HH_TOTAL", "person_cols": ["M_AGE_0"],
+            "threshold_cols": ["M_AGE_0"], "move_persons_max": 20.0,
+            "household_less_reports": []}
+    stage._run_populationsim_batches(
+        _context(_values()), pd.DataFrame(), [], pd.DataFrame(), pd.DataFrame(), pd.DataFrame(),
+        tmp_path, "settings.yaml", logging_path, 10, "run_one", 1, None, False, None, None,
+        set(), {}, None, household_less_kwargs=move)
+    assert {key: captured[key] for key in move} == move

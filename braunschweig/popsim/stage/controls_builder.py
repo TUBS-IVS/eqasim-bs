@@ -503,7 +503,7 @@ def _grid_geography_controls(controls, cs):
 
 
 def build_aggregation_map(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",),
-                          fine_teen_age_bands=True):
+                          fine_teen_age_bands=True, family_controls="zensus_family5"):
     """Return the multi-column aggregation map for the active controls.
 
     For ``controls_source="catalog"``: derives the aggregation map from the typed
@@ -517,17 +517,21 @@ def build_aggregation_map(*, controls_source="csv", controls_path=None, seed="mi
 
     The returned map is consumed by
     :func:`braunschweig.popsim.prepared_cells.add_aggregated_controls`.
+
+    ``family_controls`` (#659): the family controls of the catalog, as in
+    :func:`build_controls_df`; the default is the legacy set.
     """
     if controls_source != "catalog":
         return {}
     from braunschweig.popsim import control_spec as cs
-    catalog = cs.full_catalog(include_tiers=tiers, fine_teen_age_bands=fine_teen_age_bands)
+    catalog = cs.full_catalog(include_tiers=tiers, fine_teen_age_bands=fine_teen_age_bands,
+                              family_controls=family_controls)
     active = _grid_geography_controls(cs.controls_for_seed(catalog, seed), cs)
     return cs.build_aggregation_map(active)
 
 
 def build_source_columns(*, controls_source="csv", controls_df=None, seed="mid", tiers=("tier0",),
-                         fine_teen_age_bands=True):
+                         fine_teen_age_bands=True, family_controls="zensus_family5"):
     """Return the RAW census parquet columns to load for the active controls.
 
     For ``controls_source="catalog"``: returns the union of all census_source columns
@@ -536,10 +540,18 @@ def build_source_columns(*, controls_source="csv", controls_df=None, seed="mid",
 
     For ``controls_source="csv"``: returns None (caller uses control_base_columns as
     today).
+
+    ``family_controls`` (#659): the family controls of the catalog, as in
+    :func:`build_controls_df`. Outside the legacy set the four census family-type columns are not
+    loaded; the minor-child targets are never loaded (the stage computes them per cell,
+    ``stage._add_minor_child_targets``, they are not stored in the parquet).
     """
     if controls_source != "catalog":
         return None
     from braunschweig.popsim import control_spec as cs
-    catalog = cs.full_catalog(include_tiers=tiers, fine_teen_age_bands=fine_teen_age_bands)
-    active = _grid_geography_controls(cs.controls_for_seed(catalog, seed), cs)
+    catalog = cs.full_catalog(include_tiers=tiers, fine_teen_age_bands=fine_teen_age_bands,
+                              family_controls=family_controls)
+    computed = {c.name for c in cs.minor_child_controls()}
+    active = [c for c in _grid_geography_controls(cs.controls_for_seed(catalog, seed), cs)
+              if c.name not in computed]
     return cs.source_columns_union(active)

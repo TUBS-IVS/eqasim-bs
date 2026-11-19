@@ -18,7 +18,8 @@ import pytest
 from pandas.testing import assert_frame_equal
 
 from braunschweig.popsim import batch as popsim_batch
-from braunschweig.popsim import control_spec, mid, minor_child_targets, seed_contract, stage
+from braunschweig.popsim import control_spec, mid, minor_child_targets, seed_contract, sources, stage
+from braunschweig.popsim.sources.mid import MidSource
 from braunschweig.popsim.stage import config_keys, controls_builder
 from tests import popsim_control_build_fixture as fixture
 
@@ -53,12 +54,20 @@ def test_family_controls_modes_select_the_controls(mode, expected_family5, expec
     # Same importance treatment as the census family-type controls (group "hhtype").
     assert set(minor["importance"]) <= {control_spec.IMPORTANCE_PROFILES[
         "optimized_2026_06_30"]["hhtype"]}
+    # The parquet load set holds the family-type columns only where a control reads them, and
+    # never the minor-child targets (computed by the stage, not stored in the parquet).
+    load = set(controls_builder.build_source_columns(
+        controls_source="catalog", seed="mid", tiers=("tier0", "tier1"),
+        family_controls=mode))
+    family5_sources = {base for base, _ in control_spec._TIER1_HH_TYPE_ENTRIES}
+    assert load & family5_sources == (family5_sources if mode == "zensus_family5" else set())
+    assert not {t for t in load if t.startswith("HH_MINOR_")}
 
 
 def _seed(minor_classes):
     households = pd.DataFrame({
         "H_ID": range(1, len(minor_classes) + 1), "H_GR": 2,
-        "hh_type5": "paar_mit_kind", "hh_minor_class": list(minor_classes)})
+        "hh_type5": "paar_mit_kind", "hh_minor_class": list(minor_classes), "RegioStaR7": 73})
     persons = pd.DataFrame({"H_ID": [1], "P_ID": [1], "HP_ALTER": [40], "HP_SEX": [1]})
     return households, persons
 
@@ -113,7 +122,7 @@ def _fake_run_one(folder):
     return popsim_batch.BatchResult(str(folder), "succeeded", "ok", 0.0)
 
 
-def _run_batches(tmp_path, cells, settings, family_controls="zensus_family5"):
+def _run_batches(tmp_path, cells, settings, family_controls="zensus_family5", stratify=False):
     prepared = stage._add_aggregated_control_columns(
         cells, fixture.CONTROL_SOURCE, fixture.SEED_NAME, fixture.CONTROL_TIERS,
         **fixture.AGGREGATE_KWARGS)
@@ -127,21 +136,25 @@ def _run_batches(tmp_path, cells, settings, family_controls="zensus_family5"):
         prepared, base_cols, controls_df, households, persons, work_dir=work_dir,
         settings_yaml="x: 1\n", logging_yaml="version: 1\n", max_cells=100,
         run_one=_fake_run_one, num_workers=1,
+        **({"stratify_regiostar": True, "source": MidSource()} if stratify else {}),
         **settings.run_popsim_mid_kwargs(base_cols, fine_teen_age_bands=True))
     data = work_dir / "batch_000" / "data"
     return {geo: pd.read_csv(data / f"control_totals_{geo}.csv")
             for geo in ("ZENSUS100m", "ZENSUS1km")}, base_cols
 
 
-def test_move_option_reaches_build_control_totals(tmp_path):
+# Both assemble_batch_folder call sites of run_popsim_mid (plain and RegioStaR-stratified)
+# must pass the move on; the fixture cells and the seed are all RegioStaR7 73 (one stratum).
+@pytest.mark.parametrize("stratify", [False, True], ids=["plain", "stratified"])
+def test_move_option_reaches_build_control_totals(tmp_path, stratify):
     cells = fixture.make_cells()
     # The small cell (6 persons) becomes household-less: a donor under the 20-person bound.
     donor = cells["ZENSUS100m"] == "CRS3035RES100mN2900700E4401400"
     cells.loc[donor, control_spec.HH_TOTAL_CENSUS_COLUMN] = 0.0
     legacy, _ = _run_batches(tmp_path / "legacy", cells, stage.HouseholdUniverseSettings(
-        False, 20.0, "zensus_family5"))
+        False, 20.0, "zensus_family5"), stratify=stratify)
     settings = stage.HouseholdUniverseSettings(True, 20.0, "zensus_family5")
-    moved, base_cols = _run_batches(tmp_path / "moved", cells, settings)
+    moved, base_cols = _run_batches(tmp_path / "moved", cells, settings, stratify=stratify)
 
     age_cols = [f"{c}_ZENSUS100m" for c in base_cols if "_AGE_" in c]
     assert len(age_cols) == 22
@@ -212,7 +225,60 @@ class _ConfigureContext:
     (config_keys.KEY_FAMILY_CONTROLS, "zensus_family_5"),
     (config_keys.KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS, "yes"),
     (config_keys.KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS, 0.0),
+    (config_keys.KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS, float("inf")),
 ])
 def test_invalid_family_controls_value_raises(key, value):
     with pytest.raises(ValueError, match=key.replace(".", r"\.")):
         stage.configure(_ConfigureContext({key: value}))
+
+
+# --- the legacy seed and batch signature are those of the commit before #659 Part B ---------
+
+# compute_batch_config_signature of the seed below at the legacy keys, computed on the base
+# commit bc5e5b54 (before hh_minor_class existed): a detached `git worktree add` of bc5e5b54 and
+# a script building these frames with mid.project_completed_seed and the other arguments of
+# _legacy_signature. A legacy run must keep its signature, or it purges its completed batches.
+_BASE_COMMIT_LEGACY_SIGNATURE = "a02528dc1a399fd1f3eb1ea9742843259da7fa14b89ff4ac565429bcb5ccc901"
+
+
+def _legacy_signature(settings):
+    cols = sources.get_source("mid").seed_columns()
+    households = pd.DataFrame({
+        cols.household_id: ["h1", "h2", "h3"],
+        cols.household_weight: [1.0, 2.0, 0.5],
+        "H_GR": [1, 3, 2], "H_MIETE": [1, 2, 1], "haustyp": [2, 1, 4],
+        "RegioStaR7": [71, 73, 73],
+    })
+    persons = pd.DataFrame({
+        cols.person_household_id: ["h1", "h2", "h2", "h2", "h3", "h3"],
+        cols.person_id: ["p1", "p2", "p3", "p4", "p5", "p6"],
+        cols.person_weight: [1.0, 2.0, 2.0, 2.0, 0.5, 0.5],
+        cols.age: [34, 41, 39, 9, 45, 16],
+        cols.sex: [2, 1, 2, 1, 2, 1],
+    })
+    seed_hh, seed_p = mid.project_completed_seed(households, persons, cols)
+    seed_hh = settings.seed_households_for_run(seed_hh)
+    signature = stage.compute_batch_config_signature(
+        controls_df=pd.DataFrame({"target": ["total_households"], "importance": [1000]}),
+        settings_text="geographies: [ZENSUS100m]\n", max_cells=1500, stratify_regiostar=False,
+        source_name="mid", employment_grid_on=False, kreis_controls_map=None,
+        seed_day_filter=None, seed_households=seed_hh, seed_persons=seed_p, kreis_table=None,
+        populationsim_version="0.10.0+bs.1", populationsim_commit="c0ffee",
+        populationsim_lock_hash="lockhash", settings_overrides={"INTEGERIZER_DRAW": "off"},
+        integerizer_seed_base=None, household_universes=settings.signature_payload())
+    return seed_hh, signature
+
+
+@pytest.mark.parametrize("keys, legacy", [
+    ((False, 20.0, "zensus_family5"), True),
+    # The bound alone, with the move off, leaves the tables as they were: still legacy.
+    ((False, 35.0, "zensus_family5"), True),
+    ((True, 20.0, "zensus_family5"), False),
+    ((False, 20.0, "none"), False),
+    ((False, 20.0, "minor_child_1km"), False),
+])
+def test_legacy_keys_keep_the_seed_and_signature_of_the_base_commit(keys, legacy):
+    seed_hh, signature = _legacy_signature(stage.HouseholdUniverseSettings(*keys))
+    # Only the minor-child controls read hh_minor_class; every other mode seeds without it.
+    assert ("hh_minor_class" in seed_hh.columns) == (keys[2] == "minor_child_1km")
+    assert (signature == _BASE_COMMIT_LEGACY_SIGNATURE) == legacy

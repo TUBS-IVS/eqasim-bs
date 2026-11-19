@@ -841,8 +841,18 @@ def apply_family_controls(catalog: List[CatalogControl], family_controls: str) -
         return catalog
     family_types = {base for base, _ in _TIER1_HH_TYPE_ENTRIES}
     out = [c for c in catalog if c.name not in family_types]
-    if family_controls == FAMILY_CONTROLS_MINOR_CHILD_1KM:
-        out.extend(minor_child_controls())
+    dropped = [c.name for c in catalog if c.name in family_types]
+    added = minor_child_controls() if family_controls == FAMILY_CONTROLS_MINOR_CHILD_1KM else []
+    out.extend(added)
+    if dropped:
+        logger.info("[control_spec] family_controls=%r: dropped the census family-type controls %s",
+                    family_controls, dropped)
+    else:
+        logger.info("[control_spec] family_controls=%r: no census family-type control to drop "
+                    "(tier1 is not among the catalog tiers)", family_controls)
+    if added:
+        logger.info("[control_spec] family_controls=%r: added the controls %s",
+                    family_controls, [c.name for c in added])
     return out
 
 

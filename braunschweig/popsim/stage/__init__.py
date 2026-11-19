@@ -1613,6 +1613,24 @@ class HouseholdUniverseSettings:
         """
         return None if self.is_legacy() else self.key_values()
 
+    def seed_households_for_run(self, seed_households: pd.DataFrame) -> pd.DataFrame:
+        """The PopulationSim seed households of this run: ``hh_minor_class`` only where a control reads it.
+
+        The seed build always derives ``hh_minor_class`` (``mid.seed_loading._join_hh_type5_column``).
+        Only the "minor_child_1km" controls read it; every other mode drops it here, so the seed
+        written per batch and the content hash of the batch signature
+        (``batch_cache.compute_batch_config_signature``) stay those of the runs before #659.
+
+        Returns: ``seed_households`` itself in "minor_child_1km" mode, else a frame without the column.
+        Mutates: nothing in place.
+        """
+        from braunschweig.popsim import control_spec as _cs
+
+        if (self.family_controls == _cs.FAMILY_CONTROLS_MINOR_CHILD_1KM
+                or "hh_minor_class" not in seed_households.columns):
+            return seed_households
+        return seed_households.drop(columns="hh_minor_class")
+
     def run_popsim_mid_kwargs(self, base_cols, *, fine_teen_age_bands: bool) -> dict:
         """The keyword arguments of ``mid.run_popsim_mid`` that carry the move; ``{}`` while it is off."""
         if not self.move_persons:
@@ -1850,8 +1868,12 @@ def _run_with_consistency_report(context, consistency: KreisConsistencySettings,
 def _resolve_cell_load_columns(context, controls_source, source_name: str, control_tiers, base_cols,
         employment_grid_on: bool, cells_path, active_entries, fine_teen_age_bands: bool = True,
         ownership_grid_on: bool = False, kreis_batch_apportionment: str = "population",
-        tier3_control_names=(), tenure_owner_limited_to_dwellings: bool = False):
+        tier3_control_names=(), tenure_owner_limited_to_dwellings: bool = False,
+        family_controls: str = FAMILY_CONTROLS_DEFAULT):
     """Resolve the column set loaded from the prepared-cells parquet.
+
+    ``family_controls`` (#659): passed to ``build_source_columns`` (the census family-type columns
+    are loaded only in the legacy mode).
 
     ``tenure_owner_limited_to_dwellings`` (issue #657): with the key on and a tenure control
     active (``_tenure_control_active``) the rooms-table dwelling column the owner limit reads
@@ -1882,6 +1904,7 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
         seed=source_name,
         tiers=control_tiers,
         fine_teen_age_bands=fine_teen_age_bands,
+        family_controls=family_controls,
     )
     load_cols = source_cols_override if source_cols_override is not None else base_cols
 
@@ -1992,8 +2015,11 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
 
 def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source_name: str, control_tiers,
         fine_teen_age_bands: bool = True,
-        building_type_targets_to_households: bool = False, return_report: bool = False):
+        building_type_targets_to_households: bool = False, return_report: bool = False,
+        family_controls: str = FAMILY_CONTROLS_DEFAULT):
     """Derive the multi-column aggregated control columns on the cells frame.
+
+    ``family_controls`` (#659): passed to ``build_aggregation_map``; the default is the legacy set.
 
     Derive the multi-column aggregated control columns (e.g. building_type_*).
     For tier0-only: agg_map is empty -> add_aggregated_controls returns cells
@@ -2018,6 +2044,7 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
         seed=source_name,
         tiers=control_tiers,
         fine_teen_age_bands=fine_teen_age_bands,
+        family_controls=family_controls,
     )
     cells = prepared_cells.add_aggregated_controls(cells, agg_map)
     rescale_report = None
@@ -3630,6 +3657,7 @@ def execute(context) -> pd.DataFrame:
         kreis_batch_apportionment=consistency.apportionment,
         tier3_control_names=tier3_control_names,
         tenure_owner_limited_to_dwellings=tenure_owner_limited,
+        family_controls=household_universes.family_controls,
     )
 
     cells = mid.load_control_cells(cells_path, load_cols)
@@ -3640,6 +3668,7 @@ def execute(context) -> pd.DataFrame:
         fine_teen_age_bands=fine_teen_bands_on,
         building_type_targets_to_households=building_type_rescaled,
         return_report=True,
+        family_controls=household_universes.family_controls,
     )
     cells, tenure_limit_report = _limit_owner_targets_to_dwellings(
         cells, controls_source, source_name, control_tiers,
@@ -3713,6 +3742,7 @@ def execute(context) -> pd.DataFrame:
         resolve_tenure_building_type=bool(
             context.config(KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE)),
     )
+    seed_households = household_universes.seed_households_for_run(seed_households)
 
     # Contract check (#647, G6) on the final controls and cells, before any batch is written.
     _check_seed_contract(

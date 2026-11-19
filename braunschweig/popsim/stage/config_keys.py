@@ -9,6 +9,8 @@ so any other submodule may import these names directly without risking a
 partial-initialisation ordering problem.
 """
 
+import math
+
 
 def require_positive(key: str, value):
     """Validate that a config value is strictly positive, at DAG-build (``configure()``) time.
@@ -933,15 +935,15 @@ def validate_household_universe_keys(move_persons, max_persons, family_controls,
 
     Raises:
         ValueError: ``move_persons_of_household_less_cells`` is not a bool,
-            ``household_less_cell_max_persons`` is not a number > 0, or ``family_controls`` is not
+            ``household_less_cell_max_persons`` is not a finite number > 0, or ``family_controls`` is not
             one of its allowed strings.
     """
     if not isinstance(move_persons, bool):
         raise ValueError(f"{KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS} must be true or false, "
                          f"got {move_persons!r}")
     if (isinstance(max_persons, bool) or not isinstance(max_persons, (int, float))
-            or not max_persons > 0):
-        raise ValueError(f"{KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS} must be a number > 0, "
+            or not math.isfinite(max_persons) or not max_persons > 0):
+        raise ValueError(f"{KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS} must be a finite number > 0, "
                          f"got {max_persons!r}")
     if family_controls not in tuple(family_controls_modes):
         raise ValueError(f"{KEY_FAMILY_CONTROLS} must be one of {tuple(family_controls_modes)}, "
