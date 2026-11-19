@@ -815,7 +815,8 @@ def configure(context):
     context.config(KEY_INTEGERIZER_PENALTY_CAP, 100000.0)
     context.config(KEY_INTEGERIZER_PARENT_TOTAL_FACTOR, 10.0)
     context.config(KEY_INTEGERIZER_CONSERVE_PENALTY, 100000.0)
-    # The method of the controlled rounding and its search options (the fork's defaults).
+    # The method of the controlled rounding and its search options (the fork's defaults, whose
+    # source is named at the controlled-rounding options in config_keys).
     context.config(KEY_INTEGERIZER_CONTROLLED_METHOD, "search")
     context.config(KEY_INTEGERIZER_SEARCH_MAX_SWEEPS, 200)
     context.config(KEY_INTEGERIZER_SEARCH_SHORTLIST, 24)
@@ -3027,11 +3028,13 @@ def execute(context) -> pd.DataFrame:
         expected_method=settings_overrides[folders.INTEGERIZER_CONTROLLED_METHOD_SETTING])
     context.set_info("popsim_solver_paths", solver_paths.to_dict("records"))
     context.set_info("popsim_solver_path_totals", solver_path_totals)
-    context.set_info(
-        "popsim_integerizer_conservation_loss_share",
-        solver_path_totals["conservation_loss_share"])
-    context.set_info(
-        "popsim_integerizer_not_converged_share", solver_path_totals["not_converged_share"])
+    # Only a controlled run measures these shares; with "round" the totals are placeholders.
+    if settings_overrides[folders.INTEGERIZER_ROUNDING_SETTING] == solver_path_gate.CONTROLLED:
+        context.set_info(
+            "popsim_integerizer_conservation_loss_share",
+            solver_path_totals["conservation_loss_share"])
+        context.set_info(
+            "popsim_integerizer_not_converged_share", solver_path_totals["not_converged_share"])
     inkar_income = _load_inkar_income_scale(context)
     combined = _join_cell_attributes_onto_merged_output(merge_report, cells)
     donor_households, donor_persons = _load_donor_tables(

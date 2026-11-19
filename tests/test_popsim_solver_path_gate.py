@@ -562,3 +562,12 @@ def test_unknown_expected_method_is_rejected(tmp_path):
     _good_controlled_batch(tmp_path)
     with pytest.raises(ValueError, match="expected_method"):
         _check_method(tmp_path, "banana")
+
+
+def test_controlled_log_line_gives_the_share_of_failed_calls(tmp_path, caplog):
+    _controlled_batch(tmp_path, "batch_001", [
+        _simul_call("OPTIMAL", label="a"), _simul_call("OPTIMAL", label="b"),
+        _simul_call("OPTIMAL", label="c"), _simul_call("ABNORMAL", label="d")])
+    with caplog.at_level(logging.INFO):
+        _check_controlled(tmp_path)
+    assert "1 not OPTIMAL/FEASIBLE (25.0% of the controlled simultaneous calls" in caplog.text

@@ -125,6 +125,8 @@ KEY_INTEGERIZER_TIMEOUT_S = "braunschweig.population.popsim.integerizer_timeout_
 # Controlled-rounding options of the simultaneous integerizer (fork release 0.10.0+bs.2, issue
 # #646; the fork's WP4 design owns the formulation). Same handling as the three keys above:
 # written into every batch settings.yaml, never volatile, each enters the batch signature.
+# "The fork's defaults" below are the defaults of the table in the section "Controlled rounding"
+# of the fork README on its branch bs/main.
 # integerizer_rounding (-> INTEGERIZER_ROUNDING): "round" (upstream, default) or "controlled".
 # With "controlled" the stage fails when a simultaneous integerizer call was not recorded as
 # controlled (braunschweig.popsim.stage.solver_path_gate.check_solver_paths).
@@ -150,11 +152,12 @@ KEY_INTEGERIZER_CONSERVE_PENALTY = "braunschweig.population.popsim.integerizer_c
 # method only. The LP solver choice of the "lp" method is left at the fork's defaults.
 KEY_INTEGERIZER_CONTROLLED_METHOD = "braunschweig.population.popsim.integerizer_controlled_method"
 # Upper bound of the swap sweeps of one "search" call, positive integer
-# (-> INTEGERIZER_SEARCH_MAX_SWEEPS). A call that stops at the bound without a local optimum is
-# recorded as not converged (braunschweig.popsim.stage.solver_path_gate).
+# (-> INTEGERIZER_SEARCH_MAX_SWEEPS; code default = the fork's default). A call that stops at
+# the bound without a local optimum is recorded as not converged
+# (braunschweig.popsim.stage.solver_path_gate).
 KEY_INTEGERIZER_SEARCH_MAX_SWEEPS = "braunschweig.population.popsim.integerizer_search_max_sweeps"
 # Number of candidate swaps the "search" method keeps per step, integer >= 1
-# (-> INTEGERIZER_SEARCH_SHORTLIST).
+# (-> INTEGERIZER_SEARCH_SHORTLIST; code default = the fork's default).
 KEY_INTEGERIZER_SEARCH_SHORTLIST = "braunschweig.population.popsim.integerizer_search_shortlist"
 # Solver-path gate (braunschweig.popsim.stage.solver_path_gate, design goal G5, issue #645):
 # float in (0, 1] or null. Above this share of parent zones NOT integerized simultaneously

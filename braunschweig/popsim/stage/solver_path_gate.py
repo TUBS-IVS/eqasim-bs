@@ -490,7 +490,8 @@ def check_solver_paths(work_dir, error_rate: Optional[float],
         logger.log(
             logging.WARNING if degraded else logging.INFO,
             "[%s] controlled rounding: %d controlled simultaneous calls (search %d, lp %d), "
-            "%d not OPTIMAL/FEASIBLE (counted only, the sums are over the successful calls); "
+            "%d not OPTIMAL/FEASIBLE (%.1f%% of the controlled simultaneous calls; counted only, "
+            "the sums are over the successful calls); "
             "search not converged %d (%.1f%% of the successful search calls); conservation loss "
             "%.2f%% (row_shortfall %g of flow_wanted %g); zone_shortfall %g; swaps %d; "
             "distance %g -> %g; flow achieved %g; lp: x %g, fractional %g, after repair %g, "
@@ -498,6 +499,8 @@ def check_solver_paths(work_dir, error_rate: Optional[float],
             "parent_sub %g, parent %g; hh_unreachable %d, hh_outside_lp %d, hh_excess %d",
             STAGE_TAG, controlled["controlled_simul_calls"], controlled["search_calls"],
             controlled["lp_calls"], controlled["controlled_non_success_calls"],
+            _percent(controlled["controlled_non_success_calls"],
+                     controlled["controlled_simul_calls"]),
             controlled["search_not_converged_calls"], 100.0 * controlled["not_converged_share"],
             100.0 * controlled["conservation_loss_share"], controlled["row_shortfall"],
             controlled["flow_wanted"], controlled["zone_shortfall"], controlled["swaps"],

@@ -133,9 +133,8 @@ def test_execute_validates_the_integerizer_and_gate_settings_before_the_seed_bui
 
 # --- execute: batches, then the solver-path gate -----------------------------------------
 
-def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
-        monkeypatch, tmp_path):
-    calls = []
+def _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls):
+    """Stub every step of ``execute`` before the purge and the batches (see the module doc)."""
     _stub_early_steps(monkeypatch, calls, tmp_path / "settings.yaml")
     settings = tmp_path / "settings.yaml"
     settings.write_text(_SETTINGS_TEXT + "geographies: [ZENSUS100m]\n", encoding="utf-8")
@@ -183,6 +182,12 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     # purge; this test only pins its place in the order.
     monkeypatch.setattr(stage, "_read_total_hh_control", lambda path: "HH_TOTAL")
     monkeypatch.setattr(stage, "_check_seed_contract", lambda *a, **k: calls.append("contract"))
+
+
+def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
+        monkeypatch, tmp_path):
+    calls = []
+    _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls)
 
     seen = {}
 
@@ -245,3 +250,39 @@ def test_execute_refuses_controlled_rounding_for_an_old_fork_before_any_batch(
     with pytest.raises(ValueError, match="integerizer_rounding.*0.10.0\\+bs.1.*0.10.0\\+bs.2"):
         stage.execute(context)
     assert calls == ["environment check"]
+
+
+# --- execute: the rounding shares are reported only when they were measured ----------------
+
+@pytest.mark.parametrize("rounding, reported", [("controlled", True), ("round", False)])
+def test_execute_reports_the_controlled_rounding_shares_only_for_a_controlled_run(
+        monkeypatch, tmp_path, rounding, reported):
+    calls = []
+    _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls)
+    monkeypatch.setattr(stage, "_purge_stale_batches_for_changed_config", lambda *a, **k: None)
+    monkeypatch.setattr(stage, "_run_populationsim_batches", lambda *a, **k: "merge_report")
+    monkeypatch.setattr(stage, "_log_integerizer_feasibility", lambda *a, **k: None)
+    totals = {"conservation_loss_share": 0.05, "not_converged_share": 0.1}
+    monkeypatch.setattr(
+        stage.solver_path_gate, "check_solver_paths",
+        lambda *a, **k: (pd.DataFrame(), totals))
+
+    def stop(context):
+        raise _Stop
+
+    monkeypatch.setattr(stage, "_load_inkar_income_scale", stop)
+    infos = {}
+    context = SimpleNamespace(
+        config=_context(_values(**{stage.KEY_INTEGERIZER_ROUNDING: rounding})).config,
+        set_info=lambda key, value: infos.__setitem__(key, value))
+    with pytest.raises(_Stop):
+        stage.execute(context)
+    # The totals of the gate and the solver-path table are always reported.
+    assert infos["popsim_solver_path_totals"] == totals
+    shares = {key: infos.get(key) for key in (
+        "popsim_integerizer_conservation_loss_share", "popsim_integerizer_not_converged_share")}
+    if reported:
+        assert shares == {"popsim_integerizer_conservation_loss_share": 0.05,
+                          "popsim_integerizer_not_converged_share": 0.1}
+    else:
+        assert not [key for key in shares if key in infos]
