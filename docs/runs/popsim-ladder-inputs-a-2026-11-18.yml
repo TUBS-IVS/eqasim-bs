@@ -165,9 +165,25 @@ validation:
     CRS3035RES1000mN3187000E4345000 (Kreis 03153, 10 cells), the parent that carries the G4 miss of the
     arm-3 record. Its abs_deviation_sum is 116 (arm 4), 142 (arm 5) and 132 (arm 6) households, i.e. the
     whole batch difference. Its 100 m targets ask for 645 households but only 642 persons (one cell with
-    households and no persons, one with persons and no households): no integer population can meet both,
-    so the parent's household groups cannot be conserved exactly whatever the KREIS targets are.
+    households and no persons, one with persons and no households; the four large cells are a dormitory
+    complex of about 628 one-person households). Whether this contradiction is the CAUSE of the loss is NOT
+    established: such cells are common (see the measurement below) and batch_013, which has them too,
+    conserves exactly. The cause was not tested (no run with the contradiction removed).
   artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/conservation_location_b000/summary.json
+- metric: >-
+    Post hoc, for context of the entry above (owner question of 2026-11-19, no run): how often the integer
+    100 m targets of the 60 production batches ask for more households than persons, per 100 m cell and per
+    1 km square (scripts/households_exceed_persons.py)
+  reference: none (property of the control tables of prod100_20261031)
+  result: >-
+    Per 100 m cell: 3,282 of 43,598 cells, excess 7,495 households (1.3 % of 558,151), in all 60 batches
+    (2,225 cells with persons, 1,057 cells without any). Per 1 km square: 111 of 2,410 squares, excess 262
+    households, in 41 batches. So the contradiction is frequent between neighbouring cells and rare inside
+    a square, and the square that loses conservation in batch_000 is not typical of it. The raw census values
+    of the ten cells of that square (persons 639, households 646 before the harmonisation) are whole numbers
+    in the prepared grid, which suggests that the two published tables already disagree; this was not
+    checked against the original Destatis downloads.
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/households_exceed_persons.txt
 features:
   note: >-
     Evidence for the KREIS consistency of issue #658 (features tier3_kreis_controls, ownership_grid_1km,
@@ -205,6 +221,8 @@ artifacts:
 - docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/prepare_logs/arm_6_batch_028.json
 - docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/prepare_logs/arm_6_batch_032.json
 - docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/scripts/locate_conservation.py
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/scripts/households_exceed_persons.py
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/households_exceed_persons.txt
 - docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/scripts/run_locate_conservation.sh
 - docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/conservation_location_b000/summary.json
 - docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/conservation_location_b000/parents_compare.csv
