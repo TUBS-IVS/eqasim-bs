@@ -35,7 +35,7 @@ the stage record is `docs/registry/stages/data.census.filtered.yml`. No figures 
   (reader `run._input_consistency`, measurement `input_consistency.summarize`), readable on any existing
   batch folder, also those made before the keys.
 
-## Household universes (issue #659, ADR pending (issue #659))
+## Household universes (issue #659, [ADR-0204](../../decisions/ADR-0204-household-targets-use-the-universes-and-definitions-the-seed-can-match.md))
 
 The household-level controls must count the same households the seed holds. Two repairs, both switched by keys
 read in `braunschweig/popsim/stage/config_keys.py` (the owner of their meaning; production values in

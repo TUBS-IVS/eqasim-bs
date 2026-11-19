@@ -329,9 +329,9 @@ config:
   # Guard: smallest grid sum (persons) of a Kreis part that the age-universe tolerance is judged on.
   braunschweig.population.popsim.kreis_fine_min_persons: 1000
   # Household universes (issue #659, Part B; meaning and valid ranges: popsim/stage/config_keys.py; evidence:
-  # docs/runs/popsim-ladder-inputs-b-2026-11-19.yml). The move of household-less persons stays at its LEGACY
-  # value: its arm missed one pre-registered check and waits for the owner's decision.
-  braunschweig.population.popsim.move_persons_of_household_less_cells: false
+  # docs/runs/popsim-ladder-inputs-b-2026-11-19.yml). The move of household-less persons is on by owner decision
+  # (2026-11-19) with a documented deviation from one pre-registered check (ADR-0204).
+  braunschweig.population.popsim.move_persons_of_household_less_cells: true
   braunschweig.population.popsim.household_less_cell_max_persons: 20.0
   # "zensus_family5" = the four 100 m census family types; "none"; "minor_child_1km" = two 1 km controls of households
   # with a minor. "minor_child_1km" is on: its arm met every pre-registered check (the rule chose it over "none").

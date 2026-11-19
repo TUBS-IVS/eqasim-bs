@@ -76,6 +76,9 @@ status:
     except N-conservation on batch_000 at ZENSUS100m (abs_deviation_sum 114 against 113 households of arm
     7b; bound delta 0). The record as pre-registered is therefore NOT passed for arm 8: the move keys stay
     at their legacy values and Part B stops there for the owner's decision. No tuning, no bound changed.
+    Owner decision after the verdict (2026-11-19, in the #659 work session): switch the move on with this
+    documented deviation (move_persons_of_household_less_cells = true, ADR-0204); the bound and the result
+    above stay as they are.
     Execution notes (added after the runs): (1) DEVIATION from the plan's global constraint that the arms
     run with the run-time options of #656 (STORE_POSITIVE_WEIGHT_ROWS_ONLY, FAST_PATHS) and from the
     statement above that the settings are those of arm 6: arm 6 (and Parts T and A) ran with both options

@@ -76,6 +76,7 @@ decisions:
 - ADR-0200
 - ADR-0202
 - ADR-0203
+- ADR-0204
 notes: >-
   DONOR RESOLUTION ONCE (ADR-0192): donor household counts and donor person attributes with
   imputed codes are resolved once, before the seed, and inherited by the clones.
@@ -212,7 +213,7 @@ notes: >-
   On every run it writes the report file census_filtered_report.json (CENSUS_FILTERED_REPORT_FILE): the
   counts of the ZGB cell filter, the building-type rescale and the tenure rule, each with a status
   (disabled when its key is off). Rule, evidence and the accepted check miss: ADR-0202 and its run record.
-  HOUSEHOLD UNIVERSES (#659, ADR pending (issue #659), note popsim-input-consistency.md; feature popsim_method):
+  HOUSEHOLD UNIVERSES (#659, ADR-0204, note popsim-input-consistency.md; feature popsim_method):
   the keys braunschweig.population.popsim.move_persons_of_household_less_cells,
   .household_less_cell_max_persons and .family_controls (values: configs/base_bs.yml; meaning and valid
   values: braunschweig/popsim/stage/config_keys.py) move the persons of household-less 100 m cells to the
