@@ -96,6 +96,9 @@ status:
     Both meet every N check and the 1 km age check; both miss the household-level check (100 m WAPE falls
     by 0.0099 in arm 9 and by 0.0086 in arm 10, the rule asks for 0.02). Nothing is switched on; the
     decision stays with the owner (summary/recommendation.json).
+    Owner decision (2026-11-19, in the #660 work session, after the verdict and the post hoc entries
+    below): both changes are rejected; nothing is switched on and the controls stay as they are. The
+    rejection is recorded in ADR-0204 (section "Considered afterwards and rejected").
     Execution notes (added after the runs): (1) Every PopulationSim run exits 0 and reports fork
     0.10.0+bs.2, commit d9a2e28 (run_records/tool_versions.txt); the eight runs of arms 9 and 10 ran at
     once, 3.7 to 6.7 min each, peak RSS 2.6 GB (run_records/run_times.txt); the run-time options of #656

@@ -30,6 +30,10 @@
 - Dropping the family controls without a replacement (`"none"`): its arm missed the pre-registered composition check (too few one-adult households with a minor) and household conservation in batch_000.
 - Moving the persons of every household-less cell, institutions included, or removing them from the person controls: changes who is in the model and needs an official count of the population outside private households (follow-up, not decided here).
 
+## Considered afterwards and rejected (issue #660)
+
+- Owner decision 2026-11-19: two ways of handing the census targets to PopulationSim were measured on top of this ADR's state and are NOT adopted: the 22 age x sex controls at the 1 km level instead of 100 m, and unrounded census targets per 100 m cell (household size, tenure, building type, age x sex). Neither met the pre-registered recommendation rule of the run record [`popsim-ladder-inputs-c-2026-11-19`](../runs/popsim-ladder-inputs-c-2026-11-19.yml), which holds the measures, the rule and the results. The controls keep their levels and their rounding; the age x sex bands stay at 100 m as [ADR-0088](ADR-0088-fine-teen-age-bands-in-the-tier0-backbone.md) decided. A variant with coarse age groups per 100 m cell and the fine bands at 1 km was proposed after the results and withdrawn without a run: it is a milder form of the layered design ADR-0088 rejected.
+
 ## Evidence
 
 - Pre-registered run record [`popsim-ladder-inputs-b-2026-11-19`](../runs/popsim-ladder-inputs-b-2026-11-19.yml) (four batches, one draw): the `"minor_child_1km"` arm meets every check; its family-composition check (O-fam) is control fit that is not independent of the targets (target = households x the census share the check uses), not a behavioural validation; the `"none"` arm does not. The move arm meets its own checks and every no-harm check except household conservation in batch_000 at 100 m, where the deviation grows by one household. Owner decision 2026-11-19: switch the move on with this one pre-registered no-harm check not met; the bound and the result stay as recorded. Part A located the batch_000 conservation loss in one 1 km square whose 100 m targets ask for more households than persons ([`popsim-ladder-inputs-a-2026-11-18`](../runs/popsim-ladder-inputs-a-2026-11-18.yml), post hoc entry); the move keeps square sums and cannot remove such a contradiction. Whether the extra household of the move arm comes from that square is not measured.
@@ -37,7 +41,7 @@
 
 ## Open
 
-- Persons-vs-household-size noise per 100 m cell, institutional residents, and cells that ask for more households than persons stay (measured in the run records of #658; not repaired here).
+- Persons-vs-household-size noise per 100 m cell, institutional residents, and cells that ask for more households than persons stay (measured in the run records of #658; not repaired here). Whether that noise limits the 100 m fit is compared, post hoc and observationally, in the run record of #660 (fit of consistent and contradictory cells by cell size); the cause of the shortfall of persons is not known.
 - The six-member cap of the seed (ADR-0059, #278).
 - The synthetic population does not carry `hh_minor_class` (`assembly.py` unchanged); the control-fit validation derives it from the members' ages (`popsim_validation.controls`, row `household_minor`) and keeps `household_type` as a reference row only.
 - The full rerun (#648) is the region-wide evidence.
