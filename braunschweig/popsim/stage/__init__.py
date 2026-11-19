@@ -3023,7 +3023,8 @@ def execute(context) -> pd.DataFrame:
     _log_integerizer_feasibility(context, work_dir)
     solver_paths, solver_path_totals = solver_path_gate.check_solver_paths(
         work_dir, context.config(KEY_SOLVER_FALLBACK_ERROR_RATE),
-        expected_rounding=settings_overrides[folders.INTEGERIZER_ROUNDING_SETTING])
+        expected_rounding=settings_overrides[folders.INTEGERIZER_ROUNDING_SETTING],
+        expected_method=settings_overrides[folders.INTEGERIZER_CONTROLLED_METHOD_SETTING])
     context.set_info("popsim_solver_paths", solver_paths.to_dict("records"))
     context.set_info("popsim_solver_path_totals", solver_path_totals)
     context.set_info(

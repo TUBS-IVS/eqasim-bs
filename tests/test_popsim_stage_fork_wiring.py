@@ -195,9 +195,9 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
         seen["batches_args"] = args
         return "merge_report"
 
-    def gate(work_dir, error_rate, expected_rounding="round"):
+    def gate(work_dir, error_rate, expected_rounding="round", expected_method=None):
         calls.append("gate")
-        seen["gate"] = (work_dir, error_rate, expected_rounding)
+        seen["gate"] = (work_dir, error_rate, expected_rounding, expected_method)
         raise _Stop
 
     monkeypatch.setattr(stage, "_purge_stale_batches_for_changed_config", purge)
@@ -223,8 +223,8 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     # overrides and seed base.
     assert seen["purge_args"][-5:] == (
         "0.10.0+bs.2", _COMMIT, _LOCK_HASH, expected_overrides, 4711)
-    # The configured rounding mode is what the gate must find in the record.
-    assert seen["gate"] == (str(tmp_path / "work"), 0.2, "controlled")
+    # The configured rounding mode and controlled method are what the gate must find in the record.
+    assert seen["gate"] == (str(tmp_path / "work"), 0.2, "controlled", "search")
 
 
 # --- execute: controlled rounding needs a fork release that has it (issue #646) -----------

@@ -523,3 +523,42 @@ def test_unknown_expected_rounding_is_rejected(tmp_path):
     _two_batches(tmp_path)
     with pytest.raises(ValueError, match="expected_rounding"):
         solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="banana")
+
+
+# --- the configured controlled method must be the one that ran (issue #646) ---------------
+
+def _check_method(work_dir, expected_method):
+    return solver_path_gate.check_solver_paths(
+        work_dir, None, expected_rounding="controlled", expected_method=expected_method)
+
+
+def test_expected_method_matching_the_record_passes(tmp_path):
+    _controlled_batch(tmp_path, "batch_001", [
+        _simul_call("OPTIMAL", label="a"), _simul_call("FEASIBLE", label="b")])
+    _, totals = _check_method(tmp_path, "search")
+    assert totals["search_calls"] == 2 and totals["lp_calls"] == 0
+
+
+def test_expected_method_other_than_the_recorded_one_raises_naming_the_batch(tmp_path):
+    _good_controlled_batch(tmp_path)
+    _controlled_batch(tmp_path, "batch_002", [
+        _simul_call("OPTIMAL", label="a"), _simul_call("OPTIMAL", "lp", label="lp-call")])
+    with pytest.raises(RuntimeError) as error:
+        _check_method(tmp_path, "search")
+    message = str(error.value)
+    assert "batch_002" in message and "1 of 2" in message
+    assert "lp-call" in message and "'lp'" in message and "'search'" in message
+    assert "did not run" in message
+
+
+def test_expected_method_none_keeps_the_behaviour_without_the_method_check(tmp_path):
+    _controlled_batch(tmp_path, "batch_001", [_simul_call("OPTIMAL", "lp", label="a")])
+    _, totals = solver_path_gate.check_solver_paths(
+        tmp_path, None, expected_rounding="controlled", expected_method=None)
+    assert totals["lp_calls"] == 1
+
+
+def test_unknown_expected_method_is_rejected(tmp_path):
+    _good_controlled_batch(tmp_path)
+    with pytest.raises(ValueError, match="expected_method"):
+        _check_method(tmp_path, "banana")
