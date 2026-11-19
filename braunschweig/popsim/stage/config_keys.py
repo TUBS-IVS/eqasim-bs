@@ -204,7 +204,7 @@ KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS = (
     "braunschweig.population.popsim.building_type_targets_to_households")
 # Input consistency of the KREIS control table against the grid tables (issue #658, Part A). The
 # code defaults are the LEGACY values: every key at its default reproduces the control tables
-# byte-identically (tests/test_popsim_input_consistency_guard.py).
+# value for value (tests/test_popsim_input_consistency_guard.py compares the parsed values).
 #   kreis_batch_apportionment: "population" (legacy: every KREIS person control is split over the
 #       batches by the batch's population share of the Kreis) | "universe" (each control with an
 #       age universe by the batch's share of ITS universe, controls_builder.apportion_weight_columns).
@@ -217,8 +217,10 @@ KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS = (
 #       raises when an age-universe pair differs by more than this relative share in a Kreis part
 #       whose grid sum is at least this many persons. Used only with kreis_batch_apportionment
 #       "universe"; with "population" the table is written and nothing raises. The 0.05 is an
-#       ASSUMPTION-grade design bound: above the rounding residual and below the defect size
-#       measured in docs/runs/popsim-input-consistency-2026-11-18.yml. The pair persons_all depends on
+#       ASSUMPTION-grade design bound: above the rounding residual under the new split (measured on all
+#       60 production batches in docs/runs/popsim-input-consistency-new-keys-2026-11-19.yml) and below
+#       the defect size of the legacy tables (docs/runs/popsim-input-consistency-2026-11-18.yml). The
+#       pair persons_all depends on
 #       POP_TOTAL agreeing with the age x sex band sums per cell (population-share split in both
 #       modes); its measured size on the production tables is in
 #       docs/runs/popsim-input-consistency-2026-11-18.yml.

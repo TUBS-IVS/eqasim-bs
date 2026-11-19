@@ -59,9 +59,6 @@ WORK_BY_EMPLOYMENT_OTHER_LABELS = ("nonemployed_work", "nonemployed_nowork")
 #: The ``employment_status`` classes outside ``attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES``.
 EMPLOYMENT_STATUS_OTHER_LABELS = ("sonstiges", "erwerbstaetig_unspec", "nicht_erwerbstaetig")
 
-#: Name of the scratch column that carries the batch sum of the employed grid per Kreis part.
-_GRID_SUM_COLUMN = "employed_grid_sum_" + folders.GEO_KREIS
-
 #: Reasons a Kreis part's family is left unchanged (see :class:`Reconciled`).
 EMPTY_TOTAL = "empty_total"
 EMPLOYED_GROUP_ZERO = "employed_group_zero"
@@ -256,8 +253,8 @@ def reconcile_kreis_employment_levels(
     """Give the employed classes of every active employment family the Zensus level of their Kreis part.
 
     Per Kreis row: ``employed_target = bridge x`` the batch sum of the ten employed-grid columns
-    over the cells of the Kreis part (the crosswalk summing of
-    :func:`folders.set_kreis_controls_from_fine_sums`, reused); each family of
+    over the cells of the Kreis part (:func:`folders.sum_fine_controls_by_kreis`, the quiet
+    crosswalk summing shared with the grid-following step); each family of
     :data:`EMPLOYMENT_FAMILIES` that is an active control (all its columns in ``kreis_totals``)
     is then reconciled with :func:`reconcile_employed_level`, so its employed classes sum to the
     target and its row total is unchanged.
@@ -290,10 +287,10 @@ def reconcile_kreis_employment_levels(
         raise ValueError(f"employed_bridge is set but the employed grid is not active in this batch: "
                          f"{len(absent)} column(s) missing ({absent[:3]} ...); the Zensus employment level "
                          "is the sum of the ten EMPLOYED_*_agg targets")
-    scratch = kreis_totals[[folders.GEO_KREIS]].assign(**{_GRID_SUM_COLUMN: 0.0})
-    grid_sum = folders.set_kreis_controls_from_fine_sums(
-        scratch, fine_totals, geo_crosswalk, {_GRID_SUM_COLUMN: grid_columns})[_GRID_SUM_COLUMN]
-    target = bridge * grid_sum.to_numpy(dtype=float)
+    grid_sum = folders.sum_fine_controls_by_kreis(
+        kreis_totals[folders.GEO_KREIS], fine_totals, geo_crosswalk,
+        "Zensus employment level (employed grid sum per Kreis part)", grid_columns)
+    target = bridge * grid_sum.astype(float)
     kreise = kreis_totals[folders.GEO_KREIS].astype(str).tolist()
     out = kreis_totals.copy()
     summary, skipped = [], []

@@ -793,7 +793,9 @@ def build_kreis_control_totals(
         (the batch's share of the persons of the control's age universe, #658) instead of
         ``apportion_weights`` / ``household_apportion_weights``. Every other control behaves
         as before. ``None`` (default) -> legacy. A Kreis of the crosswalk missing from a
-        control's map is an error (no silent full-marginal weight for a per-control share).
+        control's map is an error (no silent full-marginal weight for a per-control share), and
+        so is a key that is not a control of ``controls_map`` (it would be ignored silently).
+        One INFO line per call lists which controls use which share kind.
 
     Returns
     -------
@@ -803,8 +805,9 @@ def build_kreis_control_totals(
     Raises
     ------
     ValueError
-        If a crosswalk Kreis is absent from ``kreis_table`` or a source column is
-        missing (fail-fast: no silently under-constrained control).
+        If a crosswalk Kreis is absent from ``kreis_table``, a source column is
+        missing (fail-fast: no silently under-constrained control), or
+        ``apportion_weights_by_control`` names a control outside ``controls_map``.
     """
     kreise = sorted(pd.Series(geo_crosswalk[GEO_KREIS].astype(str).unique()))
     table = kreis_table.copy()
@@ -831,6 +834,13 @@ def build_kreis_control_totals(
             "[popsim.folders] household controls %s apportioned by POPULATION share "
             "(no household_apportion_weights supplied).", sorted(household_names),
         )
+    unknown = sorted(set(apportion_weights_by_control or {}) - set(controls_map))
+    if unknown:
+        raise ValueError(
+            f"apportion_weights_by_control names control(s) {unknown} that are not in controls_map; "
+            "a per-control share for an inactive or misspelt control would be ignored silently")
+    share_kind: dict[str, list[str]] = {"universe": [], "population": [], "household": [],
+                                        "none": []}
     out: dict[str, object] = {GEO_KREIS: kreise}
     for name, source_cols in controls_map.items():
         # skipna suppression (NaN -> 0) in the multi-source row-sum is made
@@ -851,12 +861,23 @@ def build_kreis_control_totals(
                     f"apportion_weights_by_control[{name!r}] has no share for Kreis {absent[:5]}; "
                     "a per-control share must cover every Kreis of the crosswalk.")
             values = values * np.array([float(own_map[k]) for k in kreise], dtype=float)
+            share_kind["universe"].append(name)
         elif weight_map is not None:
             weights = np.array(
                 [float(weight_map.get(k, 1.0)) for k in kreise], dtype=float
             )
             values = values * weights
+            share_kind["household" if use_household else "population"].append(name)
+        else:
+            share_kind["none"].append(name)
         out[name] = values
+    # One line per call: which KREIS controls are split by their own universe share, by the
+    # population share, by the household share, or not at all (full Kreis marginal).
+    logger.info(
+        "[popsim.folders] KREIS control split over %d Kreis part(s): universe share %d %s; "
+        "population share %d %s; household share %d %s; full marginal (no share) %d %s",
+        len(kreise), *(item for kind in ("universe", "population", "household", "none")
+                       for item in (len(share_kind[kind]), sorted(share_kind[kind]))))
     return pd.DataFrame(out)
 
 
@@ -865,6 +886,74 @@ def build_kreis_control_totals(
 #: diagnostic threshold chosen as a review trigger (a quarter of the value), not a measured
 #: tolerance and not a model parameter; it changes no value.
 KREIS_FOLLOW_GRIDS_WARN_RELATIVE_CHANGE = 0.25
+
+
+def sum_fine_controls_by_kreis(
+    kreise: Sequence[str],
+    fine_totals: Mapping[str, pd.DataFrame],
+    geo_crosswalk: pd.DataFrame,
+    label: str,
+    columns: Sequence[str],
+) -> np.ndarray:
+    """Sum integer grid control columns of a batch per Kreis part, validating the inputs (#658).
+
+    The shared, QUIET core of :func:`set_kreis_controls_from_fine_sums` and
+    :func:`braunschweig.popsim.employment_level.reconcile_kreis_employment_levels`: it logs
+    nothing, so the ``[popsim.kreis_follow_grids]`` lines come only from the grid-following step.
+    ``columns`` must all end in one geography suffix (``_ZENSUS1km`` or ``_ZENSUS100m``) and are
+    read from that table of ``fine_totals``; each cell is assigned the one Kreis ``geo_crosswalk``
+    gives it, and the row sums of ``columns`` are summed per Kreis.
+
+    Args:
+        kreise: The Kreis keys of the KREIS rows, in output order.
+        fine_totals: The control-totals dict of the batch, keyed by geography.
+        geo_crosswalk: The resolved crosswalk (one Kreis per fine cell).
+        label: Names the quantity in error messages (e.g. ``"KREIS control 'employed_KREIS'"``).
+        columns: The grid control columns to sum.
+
+    Returns:
+        ``int64`` array aligned with ``kreise``: the rounded batch sums per Kreis part.
+
+    Raises:
+        ValueError: the columns sit at no or two geographies, a column is missing from its
+            table, a grid cell is absent from the crosswalk or has two Kreise, a grid value is
+            NaN, or a Kreis has no grid cell in this batch.
+    """
+    columns = list(columns)
+    kreise = pd.Series(kreise).astype(str)
+    suffixes = {GEO_1KM: "_" + GEO_1KM, GEO_100M: "_" + GEO_100M}
+    geos = {g for c in columns for g, suffix in suffixes.items() if c.endswith(suffix)}
+    if len(geos) != 1 or not all(any(c.endswith(s) for s in suffixes.values()) for c in columns):
+        raise ValueError(f"{label}: grid columns {columns} must all end in one "
+                         f"geography suffix {sorted(suffixes.values())}")
+    geo = next(iter(geos))
+    table = fine_totals.get(geo)
+    absent = [c for c in columns if table is None or c not in table.columns]
+    if absent:
+        raise ValueError(f"{label} follows grid column(s) {absent}, which the "
+                         f"{geo} control table of this batch does not carry (grid active but "
+                         "its target missing)")
+    kreis_of = (geo_crosswalk.assign(**{geo: geo_crosswalk[geo].astype(str),
+                                        GEO_KREIS: geo_crosswalk[GEO_KREIS].astype(str)})
+                [[geo, GEO_KREIS]].drop_duplicates())
+    if kreis_of[geo].duplicated().any():
+        raise ValueError(f"geo_crosswalk gives some {geo} cell more than one Kreis; resolve the "
+                         "crosswalk (resolve_parent_kreis) before following a grid")
+    cell_kreis = table[geo].astype(str).map(kreis_of.set_index(geo)[GEO_KREIS])
+    if cell_kreis.isna().any():
+        raise ValueError(f"{geo} cells absent from the crosswalk: "
+                         f"{table.loc[cell_kreis.isna(), geo].astype(str).tolist()[:5]}")
+    values = table[columns]
+    if values.isna().any().any():
+        raise ValueError(f"{label}: NaN in grid column(s) "
+                         f"{[c for c in columns if values[c].isna().any()]}")
+    sums = values.sum(axis=1).groupby(cell_kreis.to_numpy()).sum()
+    empty = sorted(set(kreise) - set(sums.index))
+    if empty:
+        raise ValueError(f"{label}: Kreis {empty[:5]} has no {geo} grid cell in "
+                         "this batch although the KREIS table lists it; the KREIS rows and the "
+                         "crosswalk disagree")
+    return sums.reindex(kreise.to_numpy()).to_numpy().round().astype("int64")
 
 
 def set_kreis_controls_from_fine_sums(
@@ -907,45 +996,13 @@ def set_kreis_controls_from_fine_sums(
     """
     out = kreis_totals.copy()
     kreise = out[GEO_KREIS].astype(str)
-    suffixes = {GEO_1KM: "_" + GEO_1KM, GEO_100M: "_" + GEO_100M}
     worst_control, worst_change, n_changed = None, 0.0, 0
     for control, columns in mapping.items():
-        columns = list(columns)
         if control not in out.columns:
             raise ValueError(f"KREIS control {control!r} is not a column of the KREIS table "
                              f"{list(out.columns)}")
-        geos = {g for c in columns for g, suffix in suffixes.items() if c.endswith(suffix)}
-        if len(geos) != 1 or not all(any(c.endswith(s) for s in suffixes.values()) for c in columns):
-            raise ValueError(f"KREIS control {control!r}: grid columns {columns} must all end in one "
-                             f"geography suffix {sorted(suffixes.values())}")
-        geo = next(iter(geos))
-        table = fine_totals.get(geo)
-        absent = [c for c in columns if table is None or c not in table.columns]
-        if absent:
-            raise ValueError(f"KREIS control {control!r} follows grid column(s) {absent}, which the "
-                             f"{geo} control table of this batch does not carry (grid active but "
-                             "its target missing)")
-        kreis_of = (geo_crosswalk.assign(**{geo: geo_crosswalk[geo].astype(str),
-                                            GEO_KREIS: geo_crosswalk[GEO_KREIS].astype(str)})
-                    [[geo, GEO_KREIS]].drop_duplicates())
-        if kreis_of[geo].duplicated().any():
-            raise ValueError(f"geo_crosswalk gives some {geo} cell more than one Kreis; resolve the "
-                             "crosswalk (resolve_parent_kreis) before following a grid")
-        cell_kreis = table[geo].astype(str).map(kreis_of.set_index(geo)[GEO_KREIS])
-        if cell_kreis.isna().any():
-            raise ValueError(f"{geo} cells absent from the crosswalk: "
-                             f"{table.loc[cell_kreis.isna(), geo].astype(str).tolist()[:5]}")
-        values = table[columns]
-        if values.isna().any().any():
-            raise ValueError(f"KREIS control {control!r}: NaN in grid column(s) "
-                             f"{[c for c in columns if values[c].isna().any()]}")
-        sums = values.sum(axis=1).groupby(cell_kreis.to_numpy()).sum()
-        empty = sorted(set(kreise) - set(sums.index))
-        if empty:
-            raise ValueError(f"KREIS control {control!r}: Kreis {empty[:5]} has no {geo} grid cell in "
-                             "this batch although the KREIS table lists it; the KREIS rows and the "
-                             "crosswalk disagree")
-        new_values = sums.reindex(kreise.to_numpy()).to_numpy().round().astype("int64")
+        new_values = sum_fine_controls_by_kreis(kreise, fine_totals, geo_crosswalk,
+                                                f"KREIS control {control!r}", columns)
         old_values = out[control].to_numpy(dtype=float)
         base = np.where(old_values > 0, old_values, np.nan)
         relative = np.abs(new_values - old_values) / base

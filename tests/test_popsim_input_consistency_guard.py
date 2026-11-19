@@ -33,8 +33,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 LEGACY = ("population", False, "survey", 0.05, 1000)
 # The synthetic fixture cells inflate the children of one batch (x2.5) without touching POP_TOTAL, so
 # its population-share pair persons_all differs by up to ~19 %: the new-value runs below widen the
-# age tolerance to 0.5 to build the folders; the rule itself is tested with the real 0.05 in
-# test_guard_rules_per_pair_group_and_size and test_the_age_universe_pairs_are_guarded_end_to_end.
+# age tolerance to 0.5 to build the folders (and min persons 0, so every one of its tiny Kreis parts
+# is judged; the unsplit Kreis 03158 alone carries a rounding residual of 0.1 on 20 children); the
+# rule itself is tested with the real 0.05 in test_guard_rules_per_pair_group_and_size and
+# test_the_age_universe_pairs_are_guarded_end_to_end.
 NEW = ("universe", True, "zensus", 0.5, 0)
 
 
@@ -309,6 +311,16 @@ def test_new_keys_change_only_the_kreis_table(tmp_path):
         for b in fixture.BATCH_NAMES]
     assert all(kreis_changed)
     assert recorder.n_violations == 0  # the guard passed with the new values
+    # The defect the split repairs: Kreis 03101 is split over both batches and batch_001 holds 2.5x
+    # the children per cell. Split by population share, its KREIS persons 0-17 target missed the
+    # 100 m bands by more than 20 % in both parts (legacy keys on this fixture); split by the share of
+    # the 0-17 universe it equals the batch's float child count, so only the rounding of the 100 m
+    # bands remains (well below 1 %).
+    table = pd.read_csv(recorder.csv_path, dtype={"key": str})
+    split = table[(table["scope"] == "kreis") & (table["key"] == "03101")
+                  & (table["check"] == "persons_0_17")]
+    assert sorted(split["batch"]) == list(fixture.BATCH_NAMES)
+    assert (split["share"] < 0.01).all()
 
 
 def test_new_keys_fill_the_report(tmp_path):
@@ -319,15 +331,22 @@ def test_new_keys_fill_the_report(tmp_path):
     assert report["guard"]["batches"] == 2
     assert report["guard"]["max_relative_difference_measured"] == recorder.max_rel_measured
     assert report["guard"]["rows"] > 0 and report["guard"]["rows_above_bound"] == 0
+    # Hand count on the fixture: 3 Kreis parts (batch_000: 03101 and 03158; batch_001: 03101).
+    # Mapped age-universe controls: 7 Tier-3 controls (15+), the 18 KREIS columns of the 14+
+    # employment entries, and 2 each for education 0-5, 6-17 and 18+ = 31 over 5 universe columns.
+    assert len(settings.apportion_map) == 31
+    assert len(set(settings.apportion_map.values())) == 5
     universe = report["universe_apportionment"]
-    assert universe["kreis_parts"] > 0
-    assert universe["empty_parts"] >= 0 and universe["empty_regions"] == 0
+    assert universe == {"kreis_parts": 3 * 5, "empty_parts": 0, "empty_regions": 0}
     follow = report["kreis_follow_grids"]
-    assert follow["controls_set_over_batches"] > 0
-    assert follow["largest_relative_change"] >= 0 and follow["largest_relative_change_control"]
+    # 4 car classes + 5 bicycle classes + employed = 10 controls per batch, 2 batches.
+    assert follow["controls_set_over_batches"] == 20
+    assert follow["controls_changed_over_batches"] == 20 and follow["controls_without_grid"] == []
+    assert follow["largest_relative_change"] > 0 and follow["largest_relative_change_control"]
     level = report["employment_level"]
-    assert level["parts_reconciled"] + level["parts_empty"] + level["parts_unchanged"] > 0
-    assert {"parts_capped", "capped_persons"} <= set(level)
+    # 3 Kreis parts x 2 families (work_by_employment, employment_status), all reconciled.
+    assert level == {"parts_reconciled": 6, "parts_capped": 0, "capped_persons": 0.0,
+                     "parts_empty": 0, "parts_unchanged": 0}
 
 
 def test_the_stage_report_file_and_run_info(tmp_path):
@@ -384,20 +403,46 @@ def test_the_report_is_strict_json_with_null_for_nan_and_infinity(tmp_path):
     assert written["employment_level"] == {"below_grid_share": None, "bridge": None, "ok": 0.5}
 
 
-def test_a_failing_report_never_masks_the_guard_error(tmp_path, caplog):
+class _BrokenReportContext:
+    def path(self):
+        raise OSError("disk full")
+
+
+def test_a_failing_report_never_masks_the_guard_error(caplog):
     settings = stage.KreisConsistencySettings(*LEGACY)
 
-    class _BrokenContext:
-        def path(self):
-            raise OSError("disk full")
+    def guard_fails():
+        raise ValueError("guard failed")
 
     with pytest.raises(ValueError, match="guard failed"):
-        try:
-            raise ValueError("guard failed")
-        finally:
-            stage._write_consistency_report_without_masking(_BrokenContext(), settings)
+        stage._run_with_consistency_report(_BrokenReportContext(), settings, guard_fails)
     assert any(r.levelname == "ERROR" and "could not be written" in r.getMessage()
                for r in caplog.records)
+
+
+def test_a_failing_report_after_a_successful_run_raises(caplog):
+    # Success path: no exception in flight, so a report that cannot be written is an error of the
+    # run, not swallowed into a log line.
+    settings = stage.KreisConsistencySettings(*LEGACY)
+
+    with pytest.raises(OSError, match="disk full"):
+        stage._run_with_consistency_report(_BrokenReportContext(), settings, lambda: "merged")
+    assert not any(r.levelname == "ERROR" for r in caplog.records)
+
+
+def test_production_keys_without_a_kreis_table_or_employment_grid_fail_early():
+    production = stage.KreisConsistencySettings("universe", True, "zensus", 0.05, 1000)
+    with pytest.raises(ValueError) as error:
+        production.require_run_support(has_kreis_table=False, employment_grid_on=True)
+    for key in (config_keys.KEY_KREIS_BATCH_APPORTIONMENT,
+                config_keys.KEY_KREIS_CONTROLS_FOLLOW_GRIDS, config_keys.KEY_EMPLOYMENT_LEVEL_SOURCE):
+        assert key in str(error.value)
+    with pytest.raises(ValueError, match=config_keys.KEY_EMPLOYMENT_GRID.replace(".", r"\.")):
+        production.require_run_support(has_kreis_table=True, employment_grid_on=False)
+    production.require_run_support(has_kreis_table=True, employment_grid_on=True)
+    # The legacy values need neither (a tier0-2 run keeps working).
+    stage.KreisConsistencySettings(*LEGACY).require_run_support(
+        has_kreis_table=False, employment_grid_on=False)
 
 
 def test_run_popsim_mid_puts_the_bridge_of_the_seed_into_the_recorder(tmp_path, monkeypatch):

@@ -135,14 +135,6 @@ class ConsistencyRecorder:
         for name, value in numbers.items():
             target[name] = target.get(name, 0) + value
 
-    def maximum(self, section: str, **numbers) -> None:
-        """Keep the largest value per name of ``section`` (NaN is ignored)."""
-        target = self.sections.setdefault(section, {})
-        for name, value in numbers.items():
-            if value is None or (isinstance(value, float) and np.isnan(value)):
-                continue
-            target[name] = max(target.get(name, value), value)
-
     def set(self, section: str, **values) -> None:
         """Store run-wide ``values`` (replacing earlier ones) in ``section``."""
         self.sections.setdefault(section, {}).update(values)

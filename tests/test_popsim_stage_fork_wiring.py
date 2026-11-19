@@ -154,12 +154,15 @@ def test_execute_validates_the_integerizer_and_gate_settings_before_the_seed_bui
 
 # --- execute: batches, then the solver-path gate -----------------------------------------
 
-@pytest.mark.parametrize("tenure_limit", [False, True], ids=["owner_limit_off", "owner_limit_on"])
-def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
-        monkeypatch, tmp_path, tenure_limit):
-    # With the owner limit (#657) on, the run uses the catalog controls of tiers 0-2 and the
-    # fixture cells; execute must request the dwelling column, apply the rule and report it.
-    calls = []
+def _stub_execute_steps(monkeypatch, tmp_path, calls, *, tiers=(), controls_source="csv",
+                        employment_grid_on=False, cells=None, tier3_kreis=(None, None, set())):
+    """Stub every step of ``execute`` between the early actions and the gate; returns ``seen``.
+
+    ``seen`` collects the arguments of the purge (``purge_args``), the batch runner
+    (``batches_args`` / ``batches_kwargs``), the fast-path check and the gate, and the parquet
+    load set (``load_columns``). ``cells`` is what the cell load returns (an empty frame by default).
+    """
+    cells = pd.DataFrame() if cells is None else cells
     _stub_early_steps(monkeypatch, calls, tmp_path / "settings.yaml")
     settings = tmp_path / "settings.yaml"
     settings.write_text(_SETTINGS_TEXT + "geographies: [ZENSUS100m]\n", encoding="utf-8")
@@ -182,21 +185,19 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
         lambda ctx: (1, np.random.RandomState(1), np.random.RandomState(2),
                      np.random.RandomState(3)))
     monkeypatch.setattr(stage, "_resolve_source", lambda name: _Source())
-    tiers, controls_source = (fixture.CONTROL_TIERS, "catalog") if tenure_limit else ((), "csv")
     monkeypatch.setattr(
         stage, "_read_control_config",
-        lambda ctx, name: (tiers, (), controls_source, False, False, (), set(), 30, None,
-                           "default", False))
+        lambda ctx, name: (tiers, (), controls_source, employment_grid_on, False, (), set(), 30,
+                           None, "default", False))
     monkeypatch.setattr(
         stage, "_build_control_frame", lambda *a, **k: (pd.DataFrame(), []))
-    monkeypatch.setattr(
-        stage, "_load_tier3_kreis_controls", lambda *a, **k: (None, None, set()))
+    monkeypatch.setattr(stage, "_load_tier3_kreis_controls", lambda *a, **k: tier3_kreis)
     # _resolve_cell_load_columns runs for real: the test checks which columns execute asks for.
-    loaded_columns = {}
+    seen = {}
 
     def load_control_cells(cells_path, load_cols):
-        loaded_columns["columns"] = list(load_cols)
-        return fixture.make_cells() if tenure_limit else pd.DataFrame()
+        seen["load_columns"] = list(load_cols)
+        return cells
 
     monkeypatch.setattr(stage.mid, "load_control_cells", load_control_cells)
     monkeypatch.setattr(stage.mid, "filter_zgb_cells", lambda cells, kreise: cells)
@@ -216,8 +217,6 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     monkeypatch.setattr(stage, "_read_total_hh_control", lambda path: "HH_TOTAL")
     monkeypatch.setattr(stage, "_check_seed_contract", lambda *a, **k: calls.append("contract"))
 
-    seen = {}
-
     def purge(*args, **kwargs):
         calls.append("purge")
         seen["purge_args"] = args
@@ -225,6 +224,7 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     def batches(*args, **kwargs):
         calls.append("batches")
         seen["batches_args"] = args
+        seen["batches_kwargs"] = kwargs
         return "merge_report"
 
     def gate(work_dir, error_rate, expected_rounding="round"):
@@ -243,6 +243,20 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     monkeypatch.setattr(stage.fast_path_rate, "check_fast_path", fast_paths)
     monkeypatch.setattr(stage.solver_path_gate, "check_solver_paths", gate)
 
+    return seen
+
+
+@pytest.mark.parametrize("tenure_limit", [False, True], ids=["owner_limit_off", "owner_limit_on"])
+def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
+        monkeypatch, tmp_path, tenure_limit):
+    # With the owner limit (#657) on, the run uses the catalog controls of tiers 0-2 and the
+    # fixture cells; execute must request the dwelling column, apply the rule and report it.
+    calls = []
+    seen = _stub_execute_steps(
+        monkeypatch, tmp_path, calls,
+        **({"tiers": fixture.CONTROL_TIERS, "controls_source": "catalog",
+            "cells": fixture.make_cells()} if tenure_limit else {}))
+
     with pytest.raises(_Stop):
         stage.execute(_context(
             _values(**({stage.KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS: True,
@@ -259,12 +273,12 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     )["tenure_owner_limited_to_dwellings"]
     dwelling_column = control_spec.OWNER_QUOTE_DWELLING_COLUMN
     if tenure_limit:
-        assert dwelling_column in loaded_columns["columns"]
+        assert dwelling_column in seen["load_columns"]
         assert entry["enabled"] is True and entry["status"] == "applied"
         assert entry["report"]["cells_changed"] == 2
         assert entry["report"]["households_moved_owner_to_renter"] == pytest.approx(146.0)
     else:
-        assert dwelling_column not in loaded_columns["columns"]
+        assert dwelling_column not in seen["load_columns"]
         assert entry["enabled"] is False and entry["status"] == "disabled"
         assert entry["report"] is None
     # The fast-path rate is reported before the gate, which may stop the stage.
@@ -289,3 +303,55 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
         "0.10.0+bs.1", _COMMIT, _LOCK_HASH, expected_overrides, 4711, None)
     # The configured rounding mode is what the gate must find in the record.
     assert seen["gate"] == (str(tmp_path / "work"), 0.2, "controlled")
+
+
+# --- execute: the #658 input-consistency keys at their production values -----------------
+
+_PRODUCTION_KREIS_KEYS = {
+    stage.KEY_KREIS_BATCH_APPORTIONMENT: "universe",
+    stage.KEY_KREIS_CONTROLS_FOLLOW_GRIDS: True,
+    stage.KEY_EMPLOYMENT_LEVEL_SOURCE: "zensus",
+}
+
+
+def test_execute_hands_the_production_kreis_keys_to_the_batch_runner(monkeypatch, tmp_path):
+    import popsim_kreis_batch_fixture as kreis_fixture
+
+    calls = []
+    # One Tier-3 KREIS control (universe: persons 15+) and the employment grid on; the cells carry
+    # the single-year age columns the universe weight column is summed from.
+    tier3_kreis = (pd.DataFrame({"ARS_kreis": ["03101", "03158"]}),
+                   {"employed_KREIS": ["employed_source"]}, set())
+    seen = _stub_execute_steps(
+        monkeypatch, tmp_path, calls, employment_grid_on=True, cells=kreis_fixture.make_cells(),
+        tier3_kreis=tier3_kreis)
+    # The load set with the employment grid on reads the parquet schema; it is tested elsewhere.
+    monkeypatch.setattr(stage, "_resolve_cell_load_columns", lambda *a, **k: [])
+
+    with pytest.raises(_Stop):
+        stage.execute(_context(_values(**_PRODUCTION_KREIS_KEYS), stage_path=tmp_path))
+
+    consistency = seen["batches_kwargs"]["consistency"]
+    kwargs = consistency.run_popsim_mid_kwargs()
+    assert kwargs["apportion_weight_col_by_control"] == {"employed_KREIS": "_universe_persons_15_plus"}
+    assert "_universe_persons_15_plus" in seen["batches_args"][1].columns  # the batch cells
+    assert kwargs["kreis_follow_grids"] is True
+    assert kwargs["employment_level_source"] == "zensus"
+    assert kwargs["consistency_recorder"] is not None
+    # The signature payload is the last purge argument: off legacy it carries the keys.
+    assert seen["purge_args"][-1] == consistency.signature_payload() is not None
+    assert seen["purge_args"][-1][stage.KEY_KREIS_BATCH_APPORTIONMENT] == "universe"
+
+
+def test_execute_refuses_production_kreis_keys_without_a_kreis_table_before_the_cell_load(
+        monkeypatch, tmp_path):
+    calls = []
+    seen = _stub_execute_steps(monkeypatch, tmp_path, calls, employment_grid_on=True)
+
+    def must_not_load(*args, **kwargs):
+        raise AssertionError("execute() loaded the cells although the keys cannot be honoured")
+
+    monkeypatch.setattr(stage.mid, "load_control_cells", must_not_load)
+    with pytest.raises(ValueError, match=stage.KEY_KREIS_BATCH_APPORTIONMENT.replace(".", r"\.")):
+        stage.execute(_context(_values(**_PRODUCTION_KREIS_KEYS), stage_path=tmp_path))
+    assert "load_columns" not in seen and calls == ["environment check"]

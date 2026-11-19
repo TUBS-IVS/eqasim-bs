@@ -1412,6 +1412,36 @@ class KreisConsistencySettings:
         return (self.apportionment == "population" and not self.follow_grids
                 and self.employment_level_source == "survey")
 
+    def require_run_support(self, *, has_kreis_table: bool, employment_grid_on: bool) -> None:
+        """Raise when a table-shaping key is off its legacy value but the run cannot honour it.
+
+        Called at the start of ``execute()`` so the mismatch costs seconds, not the cell load and
+        the seed build before ``mid.run_popsim_mid`` raises the same contradiction per batch.
+
+        Raises:
+            ValueError: naming the key to reset, when ``kreis_batch_apportionment`` "universe",
+                ``kreis_controls_follow_grids`` true or ``employment_level_source`` "zensus" is set
+                in a run without a KREIS table (no Tier-3 KREIS controls and no active KREIS
+                attribute control), or ``employment_level_source`` "zensus" with the employment
+                grid off (the Zensus level is the sum of the employed-grid targets).
+        """
+        if not has_kreis_table:
+            wrong = [f"{key} ({value!r}, legacy {legacy!r})" for key, value, legacy in (
+                (KEY_KREIS_BATCH_APPORTIONMENT, self.apportionment, "population"),
+                (KEY_KREIS_CONTROLS_FOLLOW_GRIDS, self.follow_grids, False),
+                (KEY_EMPLOYMENT_LEVEL_SOURCE, self.employment_level_source, "survey"),
+            ) if value != legacy]
+            if wrong:
+                raise ValueError(
+                    "This run has no KREIS control table (no Tier-3 KREIS controls and no active "
+                    "KREIS attribute control), so these keys have nothing to act on; reset them to "
+                    f"their legacy value or activate the KREIS controls: {'; '.join(wrong)}")
+        if self.employment_level_source == "zensus" and not employment_grid_on:
+            raise ValueError(
+                f"{KEY_EMPLOYMENT_LEVEL_SOURCE} is 'zensus' but {KEY_EMPLOYMENT_GRID} is off: the "
+                "Zensus employment level is the batch sum of the employed-grid targets. Reset "
+                f"{KEY_EMPLOYMENT_LEVEL_SOURCE} to 'survey' or switch {KEY_EMPLOYMENT_GRID} on.")
+
     def signature_payload(self):
         """Batch-signature entry: ``None`` at the legacy values (their signatures stay as they were).
 
@@ -1542,15 +1572,38 @@ def _write_consistency_report(context, consistency: KreisConsistencySettings) ->
 
 
 def _write_consistency_report_without_masking(context, consistency: KreisConsistencySettings) -> None:
-    """:func:`_write_consistency_report` for a ``finally`` block: a failure is logged as an ERROR.
+    """:func:`_write_consistency_report` while an exception is in flight: a failure is logged as an ERROR.
 
-    The report is a diagnosis aid; its failure must never replace the exception already in flight
-    (e.g. the guard's ValueError), so it is logged with its traceback instead of raised.
+    Only for the failure path of :func:`_run_with_consistency_report`. The report is a diagnosis
+    aid there; its failure must never replace the exception already in flight (e.g. the guard's
+    ValueError), so it is logged with its traceback instead of raised.
     """
     try:
         _write_consistency_report(context, consistency)
     except Exception:
-        logger.exception("[popsim.stage] the input-consistency report could not be written")
+        logger.exception("[popsim.stage] the input-consistency report could not be written "
+                         "(not raised: another exception is in flight)")
+
+
+def _run_with_consistency_report(context, consistency: KreisConsistencySettings, run):
+    """Call ``run()`` and write the input-consistency report afterwards, on success and on failure.
+
+    Success path: the report is written normally, so a write failure raises (a completed run
+    without its report would be an untraceable run). Failure path (e.g. the guard stopped a batch):
+    the counts up to the failing batch are the diagnosis, so the report is still written, but a
+    write failure is only logged (:func:`_write_consistency_report_without_masking`) and the
+    original exception propagates.
+
+    Returns:
+        What ``run()`` returns.
+    """
+    try:
+        result = run()
+    except BaseException:
+        _write_consistency_report_without_masking(context, consistency)
+        raise
+    _write_consistency_report(context, consistency)
+    return result
 
 
 def _resolve_cell_load_columns(context, controls_source, source_name: str, control_tiers, base_cols,
@@ -3275,6 +3328,12 @@ def execute(context) -> pd.DataFrame:
         context, control_tiers, controls_source, source_name, kreise,
     )
     consistency = _read_kreis_consistency_config(context)
+    # Refuse keys this run cannot honour now, before the cell load and the seed build: a KREIS table
+    # exists when the Tier-3 KREIS controls are loaded or a KREIS attribute control is active
+    # (_derive_kreis_attribute_control_targets merges one table per active entry).
+    consistency.require_run_support(
+        has_kreis_table=(kreis_table is not None and bool(kreis_controls_map)) or bool(active_entries),
+        employment_grid_on=employment_grid_on)
     # The Tier-3 control names BEFORE the attribute controls are merged in: the universe of the
     # Tier-3 person controls (age 15+) is part of the apportionment universes.
     tier3_control_names = list(kreis_controls_map or ())
@@ -3402,17 +3461,14 @@ def execute(context) -> pd.DataFrame:
     else:
         logger.info("[popsim.stage] no KREIS table in this run: the KREIS input consistency is "
                     "not measured")
-    try:
-        merge_report = _run_populationsim_batches(
+    merge_report = _run_with_consistency_report(
+        context, consistency, lambda: _run_populationsim_batches(
             context, batch_cells, base_cols, controls_df, seed_households, seed_persons,
             work_dir, settings_path, logging_path, max_cells, run_one, num_workers,
             source, stratify_regiostar, kreis_table, kreis_controls_map,
             household_control_names, settings_overrides, integerizer_seed_base,
             consistency=consistency,
-        )
-    finally:
-        # Also after a guard failure: the counts up to the failing batch are the diagnosis.
-        _write_consistency_report_without_masking(context, consistency)
+        ))
     _log_integerizer_feasibility(context, work_dir)
     # Reported before the gate, which may stop the stage: with fast_paths on, how many balancer
     # calls the fork's fast kernels answered (no silent fallback to the original kernels).

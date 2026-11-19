@@ -317,6 +317,7 @@ config:
   braunschweig.population.popsim.seed_contract_mode: error
   # KREIS input consistency (issue #658, Part A; meaning: popsim/stage/config_keys.py; decision: ADR-0203,
   # evidence: docs/runs/popsim-ladder-inputs-a-2026-11-18.yml). The code defaults are the legacy values.
+  # The three non-legacy values need a KREIS table (Tier-3 or a KREIS attribute control) and "zensus" the employment grid; execute() refuses them early otherwise.
   # "population" = KREIS person controls split over the batches by the population share; "universe" = by the share of their own age universe.
   braunschweig.population.popsim.kreis_batch_apportionment: "universe"
   # false = KREIS cars / bicycles / employed keep the apportioned Kreis census value; true = they follow the grid sum of the batch.
