@@ -196,8 +196,10 @@ def _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls):
     monkeypatch.setattr(stage, "_check_seed_contract", lambda *a, **k: calls.append("contract"))
 
 
+@pytest.mark.parametrize("fast_paths_on", [False, True])
 def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
-        monkeypatch, tmp_path):
+        monkeypatch, tmp_path, fast_paths_on):
+    # With the option on (fork 0.10.0+bs.2, the version of _values) the rate check must be told so.
     calls = []
     _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls)
 
@@ -229,12 +231,12 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     monkeypatch.setattr(stage.solver_path_gate, "check_solver_paths", gate)
 
     with pytest.raises(_Stop):
-        stage.execute(_context(_values()))
+        stage.execute(_context(_values(**{stage.KEY_FAST_PATHS: fast_paths_on})))
 
     # The fast-path rate is reported before the gate, which may stop the stage.
     assert calls == [
         "environment check", "contract", "purge", "batches", "log", "fast paths", "gate"]
-    assert seen["fast_paths"] == (str(tmp_path / "work"), False)
+    assert seen["fast_paths"] == (str(tmp_path / "work"), fast_paths_on)
     expected_overrides = {
         "KEEP_FRACTIONAL_SAMPLE_WEIGHTS": True, "INTEGERIZER_DRAW": "pareto",
         "INTEGERIZER_TIMEOUT": 600, "INTEGERIZER_PATH_RECORD": True,
@@ -242,7 +244,7 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
         "INTEGERIZER_PENALTY_CAP": 100000.0, "INTEGERIZER_PARENT_TOTAL_FACTOR": 10.0,
         "INTEGERIZER_CONSERVE_PENALTY": 100000.0, "INTEGERIZER_CONTROLLED_METHOD": "search",
         "INTEGERIZER_SEARCH_MAX_SWEEPS": 200, "INTEGERIZER_SEARCH_SHORTLIST": 24,
-        "STORE_POSITIVE_WEIGHT_ROWS_ONLY": False, "FAST_PATHS": False,
+        "STORE_POSITIVE_WEIGHT_ROWS_ONLY": False, "FAST_PATHS": fast_paths_on,
     }
     # The last two positional arguments of the batch runner are the overrides and the seed base.
     assert seen["batches_args"][-2:] == (expected_overrides, 4711)
