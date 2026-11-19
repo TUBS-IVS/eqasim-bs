@@ -41,12 +41,12 @@ evidence:
     path: eqasim-data/data/braunschweig/mid/mid2023_income_by_tenure_bundesland.csv
     note: Also draws on the committed mid2023_income_by_tenure_raumtyp.csv.
 validation:
-  state: measured_vs_reference
+  state: unvalidated
   runs:
   - popsim-ladder-tenure-2026-11-18
   metric: null
   note: |
-    Tenure-target limit (issue #657, rule and key: ADR-0202, production on): evidence is the control fit of two batches against the committed controls, in the run record above. One pre-registered check of that record was missed and the owner accepted the miss (ADR-0202). This is NOT a behavioural validation. The MiD tenure distribution itself (ADR-0017) has no recorded run.
+    Tenure-target limit (issue #657, rule and key: ADR-0202; the key's state is in configs/base_bs.yml): evidence is the control fit of two batches against the committed controls, in the run record above. One pre-registered check of that record was missed and the owner accepted the miss (ADR-0202). This is NOT a behavioural validation. The MiD tenure distribution itself (ADR-0017) has no recorded run.
 assessment:
   status: pending
   by: null

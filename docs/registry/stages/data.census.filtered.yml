@@ -190,9 +190,10 @@ notes: >-
   in the code that logs them (braunschweig.popsim.attributes, building_type_targets,
   seed_contract).
   TENURE RULE (#657, ADR-0202, feature housing_tenure): the keys
-  braunschweig.population.popsim.tenure_owner_limited_to_dwellings (production true) and
-  .tenure_min_households_outside_dwellings (production 10.0) switch on and parameterise the limit of the
-  owner targets to the dwellings of the rooms table (braunschweig.popsim.tenure_targets). While the key is
-  on, the stage reads one more cell column, control_spec.OWNER_QUOTE_DWELLING_COLUMN, and writes the
-  report file census_filtered_report.json (CENSUS_FILTERED_REPORT_FILE). Rule, evidence and the accepted
-  check miss: ADR-0202 and its run record.
+  braunschweig.population.popsim.tenure_owner_limited_to_dwellings and
+  .tenure_min_households_outside_dwellings (values: configs/base_bs.yml) switch on and parameterise the
+  limit of the owner targets to the dwellings of the rooms table (braunschweig.popsim.tenure_targets).
+  While the key is on, the stage reads one more cell column, control_spec.OWNER_QUOTE_DWELLING_COLUMN.
+  On every run it writes the report file census_filtered_report.json (CENSUS_FILTERED_REPORT_FILE): the
+  counts of the ZGB cell filter, the building-type rescale and the tenure rule, each with a status
+  (disabled when its key is off). Rule, evidence and the accepted check miss: ADR-0202 and its run record.
