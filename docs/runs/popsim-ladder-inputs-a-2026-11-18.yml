@@ -81,6 +81,13 @@ status:
     diagnostics exit 0), the preparation of the arm-5 and arm-6 folders of all four batches (deterministic;
     only control_totals_KREIS.csv changed, 36 of its 52 control columns, in every batch) and the evaluation of
     both check files on arm 4 against itself (baseline_eval/), which fixes the baseline values below.
+    Execution notes added 2026-11-19 after the whole-branch review (the pre-registered text above and below is
+    unchanged): the count "36 of its 52 control columns" holds at an absolute tolerance of 1e-9; the prepare
+    log of batch_013 (prepare_logs/arm_5_batch_013.json and arm_6_batch_013.json) flags a 37th column,
+    trip_class_5plus_KREIS, whose largest change is below 1e-12 and comes from the CSV round trip, not from a
+    step. The reference sentence of check I points to the wrong record for the size of the residual: the
+    record popsim-input-consistency-2026-11-18 holds only the legacy tables (the defect size); the residual
+    under the new split is measured in popsim-input-consistency-new-keys-2026-11-19 (all 60 batches).
 source: >-
   run server, ~/i658_a (code archives, baseline, arms, diagnostics, comparisons); committed copy in
   docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/.

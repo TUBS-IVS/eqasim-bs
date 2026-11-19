@@ -1,0 +1,57 @@
+{
+  "batches": 60,
+  "kreis_parts": 173,
+  "grid_pairs": {
+    "rows": 1730,
+    "max_share": 0.0,
+    "rows_above_1e-6": 0
+  },
+  "age_pairs_gated": {
+    "rows": 301,
+    "tolerance": 0.02,
+    "min_persons": 200.0,
+    "max_share": 0.026607726987348,
+    "share_quantiles": {
+      "0.5": 0.0015806664031481,
+      "0.9": 0.0076921592202992,
+      "0.99": 0.016756300795536,
+      "1.0": 0.026607726987348
+    },
+    "rows_above_tolerance": 3,
+    "above": [
+      {
+        "batch": "batch_028",
+        "key": "03158",
+        "check": "persons_18plus",
+        "amount": 7.476771283444805,
+        "base": 281.0,
+        "share": 0.026607726987348
+      },
+      {
+        "batch": "batch_037",
+        "key": "03154",
+        "check": "persons_0_17",
+        "amount": 6.127202975320699,
+        "base": 282.0,
+        "share": 0.0217276701252507
+      },
+      {
+        "batch": "batch_040",
+        "key": "03151",
+        "check": "persons_18plus",
+        "amount": 12.94944013689451,
+        "base": 596.0,
+        "share": 0.0217272485518364
+      }
+    ]
+  },
+  "age_pairs_small_parts_reported": {
+    "rows": 45,
+    "max_share": 1.1184620467486353,
+    "rows_above_tolerance": 18
+  },
+  "persons_all_reported": {
+    "max_share": 1.502571876620758,
+    "max_share_parts_ge_min": 0.0313674544195499
+  }
+}

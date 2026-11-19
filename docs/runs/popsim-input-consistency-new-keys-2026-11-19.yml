@@ -62,12 +62,26 @@ validation:
     persons_all (population-share split in both modes) max 0.0132 in the parts with at least 1,000 persons.
     Employment level: 346 Kreis-part x family pairs reconciled, 0 capped, 0 left unchanged; bridge 0.9827.
   artifact: docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/guard_summary.json
+- metric: >-
+    Sensitivity of the guard bounds (added 2026-11-19 after the whole-branch review, computed from the
+    committed table with scripts/guard_summary.py --tolerance 0.02 --min-persons 200, no new server run): the
+    age pairs of the same 60 batches judged with a 2 % bound in Kreis parts with at least 200 persons of the
+    universe, the stricter bound ADR-0203 rejects
+  reference: >-
+    none (property of the inputs). Under the new split the age residual is the rounding residual described in
+    the entry above, so every row above a bound here is a rounding row, not a defect
+  result: >-
+    Reported, not gated: 3 of the 301 gated age rows exceed 0.02 (max share 0.0266; batch_028 Kreis
+    03158 persons_18plus, batch_037 Kreis 03154 persons_0_17, batch_040 Kreis 03151 persons_18plus), so a 2 %
+    guard from 200 persons would stop three production batches on the rounding residual alone.
+  artifact: docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/guard_summary_tolerance_0.02_min_persons_200.json
 artifacts:
 - docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/scripts/run_all_batches.sh
 - docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/scripts/guard_summary.py
 - docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/input_consistency_new_keys.csv
 - docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/input_consistency_new_keys.json
 - docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/guard_summary.json
+- docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/guard_summary_tolerance_0.02_min_persons_200.json
 - docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/prepare_summary.txt
 issues:
 - '#658'

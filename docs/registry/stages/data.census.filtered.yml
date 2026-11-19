@@ -20,6 +20,7 @@ code:
 - braunschweig/popsim/seed_contract.py
 - braunschweig/popsim/input_consistency.py
 - braunschweig/popsim/input_consistency_guard.py
+- braunschweig/popsim/employment_level.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -200,7 +201,7 @@ notes: >-
   (production values: configs/base_bs.yml; meaning and valid values: braunschweig/popsim/stage/config_keys.py).
   The guard braunschweig.popsim.input_consistency_guard raises before any PopulationSim process starts when a
   pair differs by more than the bounds of the last two keys, and writes <work_dir>/popsim_input_consistency.csv
-  (one row per batch and check); the report file census_filtered_report.json carries the entry
+  (one row per batch, Kreis part and pair/check); the report file census_filtered_report.json carries the entry
   kreis_input_consistency. Evidence and the accepted check miss: ADR-0203 and the run records
   popsim-input-consistency-2026-11-18 and popsim-ladder-inputs-a-2026-11-18.
   TENURE RULE (#657, ADR-0202, feature housing_tenure): the keys
