@@ -492,3 +492,27 @@ def test_round_does_not_look_at_the_fork_version():
     # Not even an unparsable version is looked at: nothing needs the fork's new feature.
     folders.require_fork_version_for_controlled_rounding(overrides, "0.10.0+bs.1")
     folders.require_fork_version_for_controlled_rounding(overrides, "not-a-version")
+
+
+# --- floats in exponent form (issue #646) --------------------------------------------------
+
+@pytest.mark.parametrize("key, value", [
+    (folders.INTEGERIZER_PENALTY_FLOOR_SETTING, 0.00001),
+    (folders.INTEGERIZER_PENALTY_CAP_SETTING, 1.0e+16),
+    (folders.INTEGERIZER_PENALTY_FLOOR_SETTING, 2.5e-07),
+])
+def test_float_in_exponent_form_is_read_back_as_the_same_float(key, value):
+    # PyYAML reads ``1e-05`` and ``1e+16`` (no decimal point in the mantissa) as strings.
+    overrides = _overrides(**{key: value})
+    result = folders.apply_populationsim_overrides(SETTINGS, overrides)
+    read_back = yaml.safe_load(result)[key]
+    assert isinstance(read_back, float) and read_back == value
+
+
+def test_ordinary_float_and_integer_lines_are_written_as_before():
+    result = folders.apply_populationsim_overrides(SETTINGS, NEUTRAL)
+    lines = result.splitlines()
+    assert "INTEGERIZER_PENALTY_FLOOR: 100.0" in lines
+    assert "INTEGERIZER_PENALTY_CAP: 100000.0" in lines
+    assert "INTEGERIZER_TIMEOUT: 7200" in lines
+    assert "INTEGERIZER_PATH_RECORD: true" in lines

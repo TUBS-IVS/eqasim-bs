@@ -386,7 +386,23 @@ def _format_setting_value(value: object) -> str:
         return "true" if value else "false"
     if isinstance(value, str):
         return f"'{value}'"
+    if isinstance(value, float):
+        return _format_float(value)
     return str(value)
+
+
+def _format_float(value: float) -> str:
+    """Shortest round-trip text of a float that PyYAML reads back as a float.
+
+    ``repr`` gives ``1e-05`` or ``1e+16`` for some values; PyYAML (YAML 1.1) needs a decimal
+    point in the mantissa and reads those as strings, so ``1.0e-05`` / ``1.0e+16`` is written.
+    Python writes the exponent with a sign, which PyYAML also needs.
+    """
+    text = repr(float(value))
+    mantissa, marker, exponent = text.partition("e")
+    if marker and "." not in mantissa:
+        mantissa += ".0"
+    return mantissa + marker + exponent
 
 
 def _line_ending(text: str) -> str:
