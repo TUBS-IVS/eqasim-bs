@@ -10,7 +10,7 @@ once per batch.  Ratios are always recomputed from sums, never averaged.
 Command line::
 
     python -m braunschweig.analysis.popsim_batch_diagnostics.run --work-dir <dir> \\
-        --out-dir <dir> [--batches batch_000 batch_032] [--mid-households <csv>] [--misfit]
+        --out-dir <dir> [--batches batch_000 batch_032] [--mid-households <csv>] [--cells-1km <parquet>] [--misfit]
 
 Nothing here assumes a reference population; every number is derived from the batch folders.
 """
@@ -33,6 +33,8 @@ import pandas as pd
 
 from braunschweig.analysis.popsim_batch_diagnostics.batch_folder import (
     list_batch_folders, load_batch_folder)
+from braunschweig.analysis.popsim_batch_diagnostics.composition import (
+    CENSUS_SQUARE_COLUMNS, household_composition)
 from braunschweig.analysis.popsim_batch_diagnostics.conservation import household_conservation
 from braunschweig.analysis.popsim_batch_diagnostics.coverage import (
     coverage_table, resolved_record_shares, universe_table)
@@ -43,6 +45,7 @@ from braunschweig.analysis.popsim_batch_diagnostics.reuse import (
 from braunschweig.analysis.popsim_batch_diagnostics.solver_paths import solver_path_table
 from braunschweig.popsim.control_groups import UNIVERSE_RATIO_TOLERANCE, unmatched_controls
 from braunschweig.popsim.input_consistency import summarize as summarize_input_consistency
+from braunschweig.popsim.prepared_cells import clean_col_name
 
 logger = logging.getLogger(__name__)
 _TAG = "[popsim_batch_diagnostics]"
@@ -263,7 +266,7 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
                     mid_households: pd.DataFrame | None = None, misfit: bool = False,
                     thresholds: Thresholds = Thresholds(), chunk_rows: int = 5_000_000,
                     max_unmatched_zone_share: float = 0.01,
-                    mid_households_path=None) -> dict:
+                    mid_households_path=None, squares: pd.DataFrame | None = None) -> dict:
     """Compute, write and return all diagnostics tables and warnings of a work directory.
 
     Returns ``{"tables": {name: DataFrame}, "warnings": [{"check", "subject", "value",
@@ -274,6 +277,8 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
     or all-smart-rounded weights.  A batch whose log has no first integerizer attempt, or a
     batch that differs from its seed group in control specification, household-total control,
     weight or household id column or geographies, raises ``ValueError``.  ``mid_households_path`` is recorded in the provenance only.
+    ``squares`` (census columns per 1 km square, ``composition.CENSUS_SQUARE_COLUMNS``) adds the
+    census columns to the ``household_composition`` table; without it they are absent.
     """
     work_dir, out_dir = Path(work_dir), Path(out_dir)
     _check_empty_out_dir(out_dir)
@@ -284,6 +289,10 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
     groups: dict = {}
     reuse_rows, fit_parts, universe_parts, split_parts, shift_parts = [], [], [], [], []
     conservation_parts, consistency_parts, consistency_notes_all = [], [], []
+    composition_parts = []
+    if squares is None:
+        logger.info("%s no 1 km census squares given: census columns of household_composition "
+                    "skipped", _TAG)
 
     for position, folder in enumerate(folders, start=1):
         logger.info("%s batch %d/%d: %s", _TAG, position, len(folders), folder.name)
@@ -310,6 +319,7 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
         fit.insert(0, "batch", batch.name)
         fit_parts.append(fit)
         universe_parts.append(universe_table(batch))
+        composition_parts.append(household_composition(batch, squares))
         consistency, consistency_notes = _input_consistency(batch)
         consistency_notes_all.append(consistency_notes)
         if consistency is not None:
@@ -456,6 +466,7 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
         "solver_paths": solver,
         "input_consistency": pd.concat(consistency_parts, ignore_index=True)
         if consistency_parts else pd.DataFrame(),
+        "household_composition": pd.concat(composition_parts, ignore_index=True),
     }
     if misfit:
         tables["misfit_split"] = pd.concat(split_parts, ignore_index=True)
@@ -504,6 +515,10 @@ def _write_summary(out_dir: Path, work_dir: Path, folders, groups, commit: str, 
         "all-smart-rounded).", "", _md_table(solver_levels),
         *_conservation_section(tables),
         *_input_consistency_section(tables),
+        "## Household composition", "",
+        "Synthetic households with the members of their seed household; adult = age >= 18. "
+        "Definitions: `braunschweig.analysis.popsim_batch_diagnostics.composition`.", "",
+        _md_table(tables["household_composition"]),
         "## Warnings", "", _md_table(pd.DataFrame(
             warnings, columns=["check", "subject", "value", "threshold"]))]
     (out_dir / "popsim_batch_diagnostics.md").write_text("\n".join(lines), encoding="utf-8")
@@ -635,6 +650,18 @@ def _parse_thresholds(parser: argparse.ArgumentParser, items: Sequence[str]) -> 
     return Thresholds(**values)
 
 
+def _read_squares(path) -> pd.DataFrame:
+    """The census columns of ``composition`` from a 1 km cell parquet, under their cleaned names."""
+    import pyarrow.parquet as pq
+    raw_by_clean = {clean_col_name(name): name for name in pq.ParquetFile(path).schema.names}
+    absent = [c for c in CENSUS_SQUARE_COLUMNS if c not in raw_by_clean]
+    if absent:
+        raise ValueError(f"{path} lacks column(s) {absent} (after clean_col_name)")
+    frame = pd.read_parquet(path, columns=[raw_by_clean[c] for c in CENSUS_SQUARE_COLUMNS])
+    frame.columns = list(CENSUS_SQUARE_COLUMNS)
+    return frame
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Command line entry point; returns 0 on success (warnings do not change the exit code)."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -644,6 +671,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--mid-households", default=None,
                         help="MiD2023_Haushalte.csv; columns " + ", ".join(MID_COLUMNS))
     parser.add_argument("--mid-separator", default=",", help="field separator of that file")
+    parser.add_argument("--cells-1km", default=None,
+                        help="1 km census cell parquet (family-type columns); adds the census "
+                             "columns to household_composition")
     parser.add_argument("--misfit", action="store_true")
     parser.add_argument("--chunk-rows", type=int, default=5_000_000)
     parser.add_argument("--threshold", action="append", default=[], metavar="NAME=VALUE",
@@ -655,10 +685,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     mid = None
     if args.mid_households:
         mid = pd.read_csv(args.mid_households, usecols=list(MID_COLUMNS), sep=args.mid_separator)
+    squares = None
+    if args.cells_1km:
+        squares = _read_squares(args.cells_1km)
     run_diagnostics(args.work_dir, args.out_dir, batches=args.batches, mid_households=mid,
                     misfit=args.misfit, thresholds=thresholds, chunk_rows=args.chunk_rows,
                     max_unmatched_zone_share=args.max_unmatched_zone_share,
-                    mid_households_path=args.mid_households)
+                    mid_households_path=args.mid_households, squares=squares)
     return 0
 
 
