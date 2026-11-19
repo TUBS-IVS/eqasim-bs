@@ -1,0 +1,530 @@
+{
+  "level": "ZENSUS100m",
+  "parent_level": "ZENSUS1km",
+  "first_arm": "arm4",
+  "arms": {
+    "arm4": {
+      "batch_dir": "~/i658_a/locate_b000/arm4/batch_000",
+      "parents": 57,
+      "parents_with_a_pair": 40,
+      "parents_with_deviation": 1,
+      "n_pairs": 6528,
+      "parent_weight_sum": 6629.0,
+      "abs_deviation_sum": 116.0,
+      "abs_deviation_share": 0.01749886860763313,
+      "conserved_pair_share": 0.9823835784313726,
+      "household_conservation_row": {
+        "level": "ZENSUS100m",
+        "parent_level": "ZENSUS1km",
+        "n_pairs": 6528,
+        "parent_weight_sum": 6629.0,
+        "sub_weight_sum": 6643.0,
+        "abs_deviation_sum": 116.0,
+        "abs_deviation_share": 0.01749886860763313,
+        "conserved_pair_share": 0.9823835784313726,
+        "distinct_rows_parent": 6010,
+        "distinct_rows_sub": 5963
+      },
+      "sum_of_parents_equals_batch_row": {
+        "n_pairs": {
+          "sum_of_parents": 6528.0,
+          "batch_row": 6528.0,
+          "equal": true
+        },
+        "parent_weight_sum": {
+          "sum_of_parents": 6629.0,
+          "batch_row": 6629.0,
+          "equal": true
+        },
+        "abs_deviation_sum": {
+          "sum_of_parents": 116.0,
+          "batch_row": 116.0,
+          "equal": true
+        },
+        "conserved_pair_share": {
+          "sum_of_parents": 0.9823835784313726,
+          "batch_row": 0.9823835784313726,
+          "equal": true
+        }
+      }
+    },
+    "arm5": {
+      "batch_dir": "~/i658_a/locate_b000/arm5/batch_000",
+      "parents": 57,
+      "parents_with_a_pair": 40,
+      "parents_with_deviation": 1,
+      "n_pairs": 6522,
+      "parent_weight_sum": 6629.0,
+      "abs_deviation_sum": 142.0,
+      "abs_deviation_share": 0.021421028812792276,
+      "conserved_pair_share": 0.9783808647654094,
+      "household_conservation_row": {
+        "level": "ZENSUS100m",
+        "parent_level": "ZENSUS1km",
+        "n_pairs": 6522,
+        "parent_weight_sum": 6629.0,
+        "sub_weight_sum": 6643.0,
+        "abs_deviation_sum": 142.0,
+        "abs_deviation_share": 0.021421028812792276,
+        "conserved_pair_share": 0.9783808647654094,
+        "distinct_rows_parent": 6004,
+        "distinct_rows_sub": 5943
+      },
+      "sum_of_parents_equals_batch_row": {
+        "n_pairs": {
+          "sum_of_parents": 6522.0,
+          "batch_row": 6522.0,
+          "equal": true
+        },
+        "parent_weight_sum": {
+          "sum_of_parents": 6629.0,
+          "batch_row": 6629.0,
+          "equal": true
+        },
+        "abs_deviation_sum": {
+          "sum_of_parents": 142.0,
+          "batch_row": 142.0,
+          "equal": true
+        },
+        "conserved_pair_share": {
+          "sum_of_parents": 0.9783808647654094,
+          "batch_row": 0.9783808647654094,
+          "equal": true
+        }
+      }
+    },
+    "arm6": {
+      "batch_dir": "~/i658_a/locate_b000/arm6/batch_000",
+      "parents": 57,
+      "parents_with_a_pair": 40,
+      "parents_with_deviation": 1,
+      "n_pairs": 6516,
+      "parent_weight_sum": 6629.0,
+      "abs_deviation_sum": 132.0,
+      "abs_deviation_share": 0.019912505656961833,
+      "conserved_pair_share": 0.9803560466543892,
+      "household_conservation_row": {
+        "level": "ZENSUS100m",
+        "parent_level": "ZENSUS1km",
+        "n_pairs": 6516,
+        "parent_weight_sum": 6629.0,
+        "sub_weight_sum": 6643.0,
+        "abs_deviation_sum": 132.0,
+        "abs_deviation_share": 0.019912505656961833,
+        "conserved_pair_share": 0.9803560466543892,
+        "distinct_rows_parent": 5997,
+        "distinct_rows_sub": 5943
+      },
+      "sum_of_parents_equals_batch_row": {
+        "n_pairs": {
+          "sum_of_parents": 6516.0,
+          "batch_row": 6516.0,
+          "equal": true
+        },
+        "parent_weight_sum": {
+          "sum_of_parents": 6629.0,
+          "batch_row": 6629.0,
+          "equal": true
+        },
+        "abs_deviation_sum": {
+          "sum_of_parents": 132.0,
+          "batch_row": 132.0,
+          "equal": true
+        },
+        "conserved_pair_share": {
+          "sum_of_parents": 0.9803560466543892,
+          "batch_row": 0.9803560466543892,
+          "equal": true
+        }
+      }
+    }
+  },
+  "attributes_equal_to_first_arm": {
+    "arm5": true,
+    "arm6": true
+  },
+  "comparisons": {
+    "arm5": {
+      "arm": "arm5",
+      "against": "arm4",
+      "net_increase_of_abs_deviation_sum": 26.0,
+      "sum_of_increases": 26.0,
+      "sum_of_decreases": 0.0,
+      "parents_with_increase": 1,
+      "parents_with_decrease": 0,
+      "parents_unchanged": 56,
+      "parents_needed_for_half_of_the_sum_of_increases": 1,
+      "carried_by_top_parents": {
+        "top_1": {
+          "increase": 26.0,
+          "share_of_net_increase": 1.0,
+          "share_of_sum_of_increases": 1.0
+        },
+        "top_3": {
+          "increase": 26.0,
+          "share_of_net_increase": 1.0,
+          "share_of_sum_of_increases": 1.0
+        },
+        "top_10": {
+          "increase": 26.0,
+          "share_of_net_increase": 1.0,
+          "share_of_sum_of_increases": 1.0
+        }
+      },
+      "top_10_parents_by_increase": [
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3187000E4345000",
+          "KREIS": "3153",
+          "cells_100m": 10,
+          "hh_target_100m": 645,
+          "persons_target_100m": 642,
+          "hh_target_1km": 645,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 1,
+          "cells_persons_no_hh": 1,
+          "abs_deviation_sum_arm4": 116.0,
+          "abs_deviation_sum_arm5": 142.0,
+          "abs_deviation_diff_arm5_minus_arm4": 26.0,
+          "n_pairs_arm4": 588,
+          "n_pairs_arm5": 598
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3171000E4366000",
+          "KREIS": "3153",
+          "cells_100m": 2,
+          "hh_target_100m": 4,
+          "persons_target_100m": 6,
+          "hh_target_1km": 4,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 0,
+          "cells_persons_no_hh": 0,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm5": 0.0,
+          "abs_deviation_diff_arm5_minus_arm4": 0.0,
+          "n_pairs_arm4": 4,
+          "n_pairs_arm5": 4
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3172000E4366000",
+          "KREIS": "3153",
+          "cells_100m": 17,
+          "hh_target_100m": 50,
+          "persons_target_100m": 155,
+          "hh_target_1km": 50,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 1,
+          "cells_persons_no_hh": 6,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm5": 0.0,
+          "abs_deviation_diff_arm5_minus_arm4": 0.0,
+          "n_pairs_arm4": 50,
+          "n_pairs_arm5": 50
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3172000E4367000",
+          "KREIS": "3153",
+          "cells_100m": 34,
+          "hh_target_100m": 183,
+          "persons_target_100m": 344,
+          "hh_target_1km": 183,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 3,
+          "cells_persons_no_hh": 1,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm5": 0.0,
+          "abs_deviation_diff_arm5_minus_arm4": 0.0,
+          "n_pairs_arm4": 183,
+          "n_pairs_arm5": 183
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3173000E4366000",
+          "KREIS": "3153",
+          "cells_100m": 9,
+          "hh_target_100m": 91,
+          "persons_target_100m": 116,
+          "hh_target_1km": 91,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 1,
+          "cells_persons_no_hh": 0,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm5": 0.0,
+          "abs_deviation_diff_arm5_minus_arm4": 0.0,
+          "n_pairs_arm4": 91,
+          "n_pairs_arm5": 91
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3173000E4367000",
+          "KREIS": "3153",
+          "cells_100m": 18,
+          "hh_target_100m": 104,
+          "persons_target_100m": 188,
+          "hh_target_1km": 104,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 0,
+          "cells_persons_no_hh": 1,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm5": 0.0,
+          "abs_deviation_diff_arm5_minus_arm4": 0.0,
+          "n_pairs_arm4": 104,
+          "n_pairs_arm5": 104
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3176000E4354000",
+          "KREIS": "3153",
+          "cells_100m": 1,
+          "hh_target_100m": 0,
+          "persons_target_100m": 0,
+          "hh_target_1km": 0,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 0,
+          "cells_persons_no_hh": 0,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm5": 0.0,
+          "abs_deviation_diff_arm5_minus_arm4": 0.0,
+          "n_pairs_arm4": 0,
+          "n_pairs_arm5": 0
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3176000E4355000",
+          "KREIS": "3153",
+          "cells_100m": 4,
+          "hh_target_100m": 5,
+          "persons_target_100m": 19,
+          "hh_target_1km": 5,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 0,
+          "cells_persons_no_hh": 2,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm5": 0.0,
+          "abs_deviation_diff_arm5_minus_arm4": 0.0,
+          "n_pairs_arm4": 5,
+          "n_pairs_arm5": 5
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3176000E4356000",
+          "KREIS": "3153",
+          "cells_100m": 2,
+          "hh_target_100m": 4,
+          "persons_target_100m": 14,
+          "hh_target_1km": 4,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 0,
+          "cells_persons_no_hh": 0,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm5": 0.0,
+          "abs_deviation_diff_arm5_minus_arm4": 0.0,
+          "n_pairs_arm4": 4,
+          "n_pairs_arm5": 4
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3176000E4360000",
+          "KREIS": "3153",
+          "cells_100m": 2,
+          "hh_target_100m": 3,
+          "persons_target_100m": 9,
+          "hh_target_1km": 3,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 1,
+          "cells_persons_no_hh": 0,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm5": 0.0,
+          "abs_deviation_diff_arm5_minus_arm4": 0.0,
+          "n_pairs_arm4": 3,
+          "n_pairs_arm5": 3
+        }
+      ]
+    },
+    "arm6": {
+      "arm": "arm6",
+      "against": "arm4",
+      "net_increase_of_abs_deviation_sum": 16.0,
+      "sum_of_increases": 16.0,
+      "sum_of_decreases": 0.0,
+      "parents_with_increase": 1,
+      "parents_with_decrease": 0,
+      "parents_unchanged": 56,
+      "parents_needed_for_half_of_the_sum_of_increases": 1,
+      "carried_by_top_parents": {
+        "top_1": {
+          "increase": 16.0,
+          "share_of_net_increase": 1.0,
+          "share_of_sum_of_increases": 1.0
+        },
+        "top_3": {
+          "increase": 16.0,
+          "share_of_net_increase": 1.0,
+          "share_of_sum_of_increases": 1.0
+        },
+        "top_10": {
+          "increase": 16.0,
+          "share_of_net_increase": 1.0,
+          "share_of_sum_of_increases": 1.0
+        }
+      },
+      "top_10_parents_by_increase": [
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3187000E4345000",
+          "KREIS": "3153",
+          "cells_100m": 10,
+          "hh_target_100m": 645,
+          "persons_target_100m": 642,
+          "hh_target_1km": 645,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 1,
+          "cells_persons_no_hh": 1,
+          "abs_deviation_sum_arm4": 116.0,
+          "abs_deviation_sum_arm6": 132.0,
+          "abs_deviation_diff_arm6_minus_arm4": 16.0,
+          "n_pairs_arm4": 588,
+          "n_pairs_arm6": 596
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3171000E4366000",
+          "KREIS": "3153",
+          "cells_100m": 2,
+          "hh_target_100m": 4,
+          "persons_target_100m": 6,
+          "hh_target_1km": 4,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 0,
+          "cells_persons_no_hh": 0,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm6": 0.0,
+          "abs_deviation_diff_arm6_minus_arm4": 0.0,
+          "n_pairs_arm4": 4,
+          "n_pairs_arm6": 4
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3172000E4366000",
+          "KREIS": "3153",
+          "cells_100m": 17,
+          "hh_target_100m": 50,
+          "persons_target_100m": 155,
+          "hh_target_1km": 50,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 1,
+          "cells_persons_no_hh": 6,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm6": 0.0,
+          "abs_deviation_diff_arm6_minus_arm4": 0.0,
+          "n_pairs_arm4": 50,
+          "n_pairs_arm6": 50
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3172000E4367000",
+          "KREIS": "3153",
+          "cells_100m": 34,
+          "hh_target_100m": 183,
+          "persons_target_100m": 344,
+          "hh_target_1km": 183,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 3,
+          "cells_persons_no_hh": 1,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm6": 0.0,
+          "abs_deviation_diff_arm6_minus_arm4": 0.0,
+          "n_pairs_arm4": 183,
+          "n_pairs_arm6": 183
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3173000E4366000",
+          "KREIS": "3153",
+          "cells_100m": 9,
+          "hh_target_100m": 91,
+          "persons_target_100m": 116,
+          "hh_target_1km": 91,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 1,
+          "cells_persons_no_hh": 0,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm6": 0.0,
+          "abs_deviation_diff_arm6_minus_arm4": 0.0,
+          "n_pairs_arm4": 91,
+          "n_pairs_arm6": 91
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3173000E4367000",
+          "KREIS": "3153",
+          "cells_100m": 18,
+          "hh_target_100m": 104,
+          "persons_target_100m": 188,
+          "hh_target_1km": 104,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 0,
+          "cells_persons_no_hh": 1,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm6": 0.0,
+          "abs_deviation_diff_arm6_minus_arm4": 0.0,
+          "n_pairs_arm4": 104,
+          "n_pairs_arm6": 104
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3176000E4354000",
+          "KREIS": "3153",
+          "cells_100m": 1,
+          "hh_target_100m": 0,
+          "persons_target_100m": 0,
+          "hh_target_1km": 0,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 0,
+          "cells_persons_no_hh": 0,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm6": 0.0,
+          "abs_deviation_diff_arm6_minus_arm4": 0.0,
+          "n_pairs_arm4": 0,
+          "n_pairs_arm6": 0
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3176000E4355000",
+          "KREIS": "3153",
+          "cells_100m": 4,
+          "hh_target_100m": 5,
+          "persons_target_100m": 19,
+          "hh_target_1km": 5,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 0,
+          "cells_persons_no_hh": 2,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm6": 0.0,
+          "abs_deviation_diff_arm6_minus_arm4": 0.0,
+          "n_pairs_arm4": 5,
+          "n_pairs_arm6": 5
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3176000E4356000",
+          "KREIS": "3153",
+          "cells_100m": 2,
+          "hh_target_100m": 4,
+          "persons_target_100m": 14,
+          "hh_target_1km": 4,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 0,
+          "cells_persons_no_hh": 0,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm6": 0.0,
+          "abs_deviation_diff_arm6_minus_arm4": 0.0,
+          "n_pairs_arm4": 4,
+          "n_pairs_arm6": 4
+        },
+        {
+          "ZENSUS1km": "CRS3035RES1000mN3176000E4360000",
+          "KREIS": "3153",
+          "cells_100m": 2,
+          "hh_target_100m": 3,
+          "persons_target_100m": 9,
+          "hh_target_1km": 3,
+          "hh_target_100m_minus_1km": 0,
+          "cells_hh_no_persons": 1,
+          "cells_persons_no_hh": 0,
+          "abs_deviation_sum_arm4": 0.0,
+          "abs_deviation_sum_arm6": 0.0,
+          "abs_deviation_diff_arm6_minus_arm4": 0.0,
+          "n_pairs_arm4": 3,
+          "n_pairs_arm6": 3
+        }
+      ]
+    }
+  },
+  "sort_of_parents_compare_csv": "abs_deviation_diff_arm5_minus_arm4, descending",
+  "eqasim_bs_commit": "556c610c"
+}

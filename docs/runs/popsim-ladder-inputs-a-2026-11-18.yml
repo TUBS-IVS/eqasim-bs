@@ -142,6 +142,21 @@ validation:
   result: >-
     Arm 5 vs arm 4: WAPE MET (ZENSUS100m 0.1433 -> 0.1397, ZENSUS1km 0.0303 -> 0.0097, KREIS 0.0014 -> 0.0019); no sequential fallback MET; G4 MET (0 controls outside on every batch in both arms); household conservation NOT MET on batch_000 at ZENSUS100m (abs_deviation_share 0.0175 -> 0.0214, conserved_pair_share 0.9824 -> 0.9784), MET at every other batch and level. Arm 6 vs arm 5: every N check MET (WAPE 0.1397 -> 0.1374, 0.0097 -> 0.0095, KREIS 0.0054 -> 0.0018 over the arm-6 control set; batch_000 conservation 0.0214 -> 0.0199). Descriptive, not a gate: batch_000 conservation in arm 6 (0.0199) is still above arm 4 (0.0175); batch_000 is the batch with the household excess of the arm-3 record, the other three batches conserve exactly in every arm.
   artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/comparison_arm5_vs_arm4/comparison.csv
+- metric: >-
+    Post hoc, after the verdict and without changing it (owner request of 2026-11-18): where in batch_000
+    the household conservation at ZENSUS100m is lost, split by 1 km parent. batch_000 of arms 4, 5 and 6 was
+    run again with the checkpoint store kept (scripts/run_locate_conservation.sh); the three outputs of every
+    rerun are byte-identical to the evidence runs (identity_check.txt); scripts/locate_conservation.py sums
+    the deviation per parent and checks that the parents add up to the batch row of household_conservation
+  reference: none (property of the runs)
+  result: >-
+    In every arm one 1 km parent of 57 carries the whole deviation and the other 56 conserve exactly:
+    CRS3035RES1000mN3187000E4345000 (Kreis 03153, 10 cells), the parent that carries the G4 miss of the
+    arm-3 record. Its abs_deviation_sum is 116 (arm 4), 142 (arm 5) and 132 (arm 6) households, i.e. the
+    whole batch difference. Its 100 m targets ask for 645 households but only 642 persons (one cell with
+    households and no persons, one with persons and no households): no integer population can meet both,
+    so the parent's household groups cannot be conserved exactly whatever the KREIS targets are.
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/conservation_location_b000/summary.json
 features:
   note: >-
     Evidence for the KREIS consistency of issue #658 (features tier3_kreis_controls, ownership_grid_1km,
@@ -178,6 +193,15 @@ artifacts:
 - docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/prepare_logs/arm_6_batch_013.json
 - docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/prepare_logs/arm_6_batch_028.json
 - docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/prepare_logs/arm_6_batch_032.json
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/scripts/locate_conservation.py
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/scripts/run_locate_conservation.sh
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/conservation_location_b000/summary.json
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/conservation_location_b000/parents_compare.csv
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/conservation_location_b000/parents_arm4.csv
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/conservation_location_b000/parents_arm5.csv
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/conservation_location_b000/parents_arm6.csv
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/conservation_location_b000/identity_check.txt
+- docs/runs/artifacts/popsim-ladder-inputs-a-2026-11-18/conservation_location_b000/progress.log
 issues:
 - '#658'
 - '#657'
