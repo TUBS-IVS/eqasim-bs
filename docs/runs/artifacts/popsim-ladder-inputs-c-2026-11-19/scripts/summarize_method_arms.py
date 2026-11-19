@@ -22,7 +22,7 @@ and writes into ``--out``:
 
 Usage:
   python summarize_method_arms.py --root <server root> --comparisons <dir> --out <dir> \
-      --arms arm_8 arm_9 arm_10 --tested arm_9 arm_10
+      --arms arm_8 arm_9 arm_10 --tested arm_9 arm_10       --batches batch_000 batch_013 batch_028 batch_032
   ``--comparisons`` holds ``<check>_<arm>/verdict.json`` for check in ``n``, ``r_household_100m``,
   ``r_age_1km``.
 """
@@ -46,6 +46,10 @@ GROUPS = {
     "all": r".",
 }
 RULE_CHECKS = ("n", "r_household_100m", "r_age_1km")
+RULE_TEXT = ("recommended only if every N check is met (n), the pooled 100 m WAPE of the household-level "
+             "targets falls by at least 0.02 against arm 8 (r_household_100m) and the pooled 1 km WAPE of the "
+             "age x sex targets is not above arm 8 + 0.02 (r_age_1km); the same rule for every tested arm, "
+             "as pre-registered in docs/runs/popsim-ladder-inputs-c-2026-11-19.yml")
 
 
 def pooled_wape(rows: pd.DataFrame) -> tuple:
@@ -71,17 +75,24 @@ def wape_rows(fit: pd.DataFrame, arm: str, view: str) -> list:
     return out
 
 
-def wape_matrix(root: Path, arms) -> pd.DataFrame:
+def _read_fit(path: Path, batches) -> pd.DataFrame:
+    fit = pd.read_csv(path)
+    return fit[fit["batch"].isin(batches)]
+
+
+def wape_matrix(root: Path, arms, batches) -> pd.DataFrame:
     rows = []
     for arm in arms:
         fit = root / f"diag_{arm}" / "control_fit.csv"
         if fit.is_file():
-            rows += wape_rows(pd.read_csv(fit), arm, "as_run")
+            rows += wape_rows(_read_fit(fit, batches), arm, "as_run")
+        else:
+            print(f"WARNING: no as-run diagnostics for {arm}: {fit}", file=sys.stderr)
     views = root / "diag_views"
     for diag in sorted(views.glob("*@*")) if views.is_dir() else []:
         arm, view = diag.name.split("@", 1)
         if arm in arms and (diag / "control_fit.csv").is_file():
-            rows += wape_rows(pd.read_csv(diag / "control_fit.csv"), arm, view)
+            rows += wape_rows(_read_fit(diag / "control_fit.csv", batches), arm, view)
     return pd.DataFrame(rows)
 
 
@@ -100,14 +111,14 @@ def _time_file(path: Path) -> dict:
     return {"wall_minutes": minutes, "peak_rss_gb": int(rss.group(1)) / 1024 ** 2 if rss else math.nan}
 
 
-def key_figures(root: Path, arms) -> pd.DataFrame:
+def key_figures(root: Path, arms, batches) -> pd.DataFrame:
     rows = []
     for arm in arms:
         diag = root / f"diag_{arm}"
         if not (diag / "reuse.csv").is_file():
             continue
         reuse = pd.read_csv(diag / "reuse.csv")
-        reuse = reuse[reuse["scope"] == "batch"].set_index("subject")
+        reuse = reuse[(reuse["scope"] == "batch") & reuse["subject"].isin(batches)].set_index("subject")
         solver = pd.read_csv(diag / "solver_paths.csv").groupby("batch")["non_simultaneous"].sum()
         shift = pd.read_csv(diag / "rounding_shift.csv")
         conservation = pd.read_csv(diag / "household_conservation.csv")
@@ -135,7 +146,7 @@ def key_figures(root: Path, arms) -> pd.DataFrame:
 
 
 def recommendation(comparisons: Path, tested) -> dict:
-    out = {}
+    out = {"rule": RULE_TEXT}
     for arm in tested:
         verdicts, missing = {}, []
         for check in RULE_CHECKS:
@@ -158,11 +169,12 @@ def main(argv=None) -> int:
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--arms", nargs="+", required=True)
     parser.add_argument("--tested", nargs="+", required=True)
+    parser.add_argument("--batches", nargs="+", required=True, help="the batches of the record (as in the checks files)")
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
-    matrix = wape_matrix(args.root, args.arms)
+    matrix = wape_matrix(args.root, args.arms, args.batches)
     matrix.to_csv(args.out / "wape_matrix.csv", index=False)
-    figures = key_figures(args.root, args.arms)
+    figures = key_figures(args.root, args.arms, args.batches)
     figures.to_csv(args.out / "key_figures.csv", index=False)
     rec = recommendation(args.comparisons, args.tested)
     (args.out / "recommendation.json").write_text(json.dumps(rec, indent=2), encoding="utf-8")
@@ -170,8 +182,9 @@ def main(argv=None) -> int:
     pooled = matrix[matrix["batch"] == "ALL"].pivot_table(
         index=["geography", "group"], columns=["arm", "view"], values="wape") if len(matrix) else matrix
     print(pooled.to_string())
-    print(json.dumps({a: r["recommended"] for a, r in rec.items()}, indent=2))
-    return 0 if all(not r["missing"] for r in rec.values()) else 1
+    arms_rec = {a: r for a, r in rec.items() if a != "rule"}
+    print(json.dumps({a: r["recommended"] for a, r in arms_rec.items()}, indent=2))
+    return 0 if all(not r["missing"] for r in arms_rec.values()) else 1
 
 
 if __name__ == "__main__":

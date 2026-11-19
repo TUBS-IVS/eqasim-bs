@@ -35,12 +35,13 @@ P="$ART/popsim-ladder-inputs-c-2026-11-19/scripts/prepare_method_arm.py"
 PYTHON="${PYTHON:-$HOME/miniforge3/envs/eqasim/bin/python}"
 mkdir -p "$ROOT/logs"
 say() { echo "$(date +%F_%T) $*" >> "$ROOT/progress.log"; }
+case "$ROOT" in /*) ;; *) echo "root must be an absolute path: $ROOT" >&2; exit 2;; esac
 export PYTHONPATH="$CODE" EQASIM_BS_COMMIT="$COMMIT" OPENBLAS_NUM_THREADS=2
 cd "$HOME"
 
 run_diagnostics() {  # <work_dir> <out_dir> <batches...>; extra flags in DIAG_FLAGS
   local work="$1" out="$2"; shift 2
-  [ ! -e "$out" ] || { say "refuse: $out exists"; return 1; }
+  [ ! -e "$out" ] || { say "refuse: $out exists"; echo "done rc=1 (refused: $out exists)" > "$out.DONE"; return 1; }
   (
     export OPENBLAS_NUM_THREADS=4 OMP_NUM_THREADS=4
     cd "$CODE" || exit 1
@@ -72,7 +73,13 @@ elif [ "$PHASE" = "popsim" ]; then
   RUN="$ART/popsim-ladder-arm3-2026-11-18/scripts/run_arm.sh"
   say "start PopulationSim $ARM: $*"
   bash "$RUN" "$ROOT/$ARM" "$PROJECT" "$@" > "$ROOT/logs/$ARM.run.log" 2>&1
-  for b in "$@"; do say "end PopulationSim $ARM $b: $(cat "$ROOT/$ARM/$b.exit" 2>/dev/null)"; done
+  FAILED=0
+  for b in "$@"; do
+    EXIT_LINE="$(cat "$ROOT/$ARM/$b.exit" 2>/dev/null || echo "no exit file")"
+    say "end PopulationSim $ARM $b: $EXIT_LINE"
+    [ "$EXIT_LINE" = "exit 0" ] || FAILED=1
+  done
+  exit "$FAILED"
 elif [ "$PHASE" = "diag" ]; then
   MID="$1"; CELLS_1KM_DIAG="$2"; shift 2
   OUT="$ROOT/diag_$ARM"
@@ -88,6 +95,11 @@ elif [ "$PHASE" = "view" ]; then
   VIEW="$1"; CONFIGS_ARM="$2"; DATA_ARM="$3"; shift 3
   VDIR="$ROOT/views/$ARM@$VIEW"
   [ ! -e "$VDIR" ] || { say "refuse: $VDIR exists"; exit 1; }
+  for b in "$@"; do
+    for src in "$ROOT/$CONFIGS_ARM/$b/configs" "$ROOT/$DATA_ARM/$b/data" "$ROOT/$ARM/$b/output"; do
+      [ -d "$src" ] || { say "refuse view $ARM@$VIEW: $src is not a directory"; exit 1; }
+    done
+  done
   for b in "$@"; do
     mkdir -p "$VDIR/$b"
     ln -s "$ROOT/$CONFIGS_ARM/$b/configs" "$VDIR/$b/configs"

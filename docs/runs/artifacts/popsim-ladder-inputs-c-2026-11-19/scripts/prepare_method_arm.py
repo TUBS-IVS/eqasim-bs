@@ -427,8 +427,32 @@ def step_float(state: dict, args, log: dict) -> None:
         return  # nothing is written: the floats are not the values the pipeline rounded
     values, record["group_reports"] = float_group_values(batch, state["crosswalk"], t100, active,
                                                          args.move_persons_max)
+    for group, report in record["group_reports"].items():
+        rate = report.get("rescale", {}).get("fallback_rate", 0.0)
+        if rate > RESCALE_FALLBACK_WARN_RATE:
+            state["problems"].append(f"{group}: rescale fallback rate {rate:.4f} above {RESCALE_FALLBACK_WARN_RATE}")
     parent_of = state["crosswalk"].set_index(CELL_ID)[PARENT_ID]
     parent_sums = values.groupby(values.index.map(parent_of)).sum()
+    # 1 km sums against the base 1 km integers. The age bands are not rescaled, so their float parent
+    # sums must stay within rounding of the base (a parent with cells outside the batch, or floats that
+    # are not what was rounded, would break that): 1 or more is a problem. The household groups are
+    # rescaled to the integer household total by design, so their 1 km sums move; the largest change is
+    # reported.
+    base_1km = t1km.set_index(PARENT_ID)
+    age_columns = {c.name for c in active.get(GROUP_AGE, [])}
+    far, max_change = {}, {}
+    for column in values.columns:
+        name = f"{column}{mid.SUFFIX_1KM}"
+        old = pd.to_numeric(base_1km[name]).reindex(parent_sums.index).to_numpy(dtype="float64")
+        diff = np.abs(parent_sums[column].to_numpy() - old)
+        max_change[name] = float(diff.max()) if len(diff) else 0.0
+        if column in age_columns and int((diff >= 1.0).sum()):
+            far[name] = int((diff >= 1.0).sum())
+    record["max_abs_1km_change_against_base"] = max_change
+    record["age_parents_off_by_one_or_more"] = far
+    if far:
+        state["problems"].append(f"1 km sums of the float age bands differ from the base 1 km integers by 1 or more: {far}")
+        return
     for table, (key, suffix) in GRID_TABLES.items():
         frame = state["tables"][table]
         source = values if key == CELL_ID else parent_sums
