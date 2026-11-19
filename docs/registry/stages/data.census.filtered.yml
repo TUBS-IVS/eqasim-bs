@@ -16,6 +16,7 @@ code:
 - braunschweig/popsim/employment_grid.py
 - braunschweig/popsim/zensus_employment_age.py
 - braunschweig/popsim/building_type_targets.py
+- braunschweig/popsim/tenure_targets.py
 - braunschweig/popsim/seed_contract.py
 - braunschweig/popsim/input_consistency.py
 - braunschweig/popsim/input_consistency_guard.py
@@ -72,6 +73,7 @@ decisions:
 - ADR-0198
 - ADR-0199
 - ADR-0200
+- ADR-0202
 - ADR-0203
 notes: >-
   DONOR RESOLUTION ONCE (ADR-0192): donor household counts and donor person attributes with
@@ -201,3 +203,10 @@ notes: >-
   (one row per batch and check); the report file census_filtered_report.json carries the entry
   kreis_input_consistency. Evidence and the accepted check miss: ADR-0203 and the run records
   popsim-input-consistency-2026-11-18 and popsim-ladder-inputs-a-2026-11-18.
+  TENURE RULE (#657, ADR-0202, feature housing_tenure): the keys
+  braunschweig.population.popsim.tenure_owner_limited_to_dwellings (production true) and
+  .tenure_min_households_outside_dwellings (production 10.0) switch on and parameterise the limit of the
+  owner targets to the dwellings of the rooms table (braunschweig.popsim.tenure_targets). While the key is
+  on, the stage reads one more cell column, control_spec.OWNER_QUOTE_DWELLING_COLUMN, and writes the
+  report file census_filtered_report.json (CENSUS_FILTERED_REPORT_FILE). Rule, evidence and the accepted
+  check miss: ADR-0202 and its run record.
