@@ -871,9 +871,10 @@ def build_kreis_control_totals(
         else:
             share_kind["none"].append(name)
         out[name] = values
-    # One line per call: which KREIS controls are split by their own universe share, by the
-    # population share, by the household share, or not at all (full Kreis marginal).
-    logger.info(
+    # One line per call (one per batch, so DEBUG; the run-level counts are in the stage report):
+    # which KREIS controls are split by their own universe share, by the population share, by the
+    # household share, or not at all (full Kreis marginal).
+    logger.debug(
         "[popsim.folders] KREIS control split over %d Kreis part(s): universe share %d %s; "
         "population share %d %s; household share %d %s; full marginal (no share) %d %s",
         len(kreise), *(item for kind in ("universe", "population", "household", "none")

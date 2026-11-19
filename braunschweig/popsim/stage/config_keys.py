@@ -220,10 +220,9 @@ KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS = (
 #       ASSUMPTION-grade design bound: above the rounding residual under the new split (measured on all
 #       60 production batches in docs/runs/popsim-input-consistency-new-keys-2026-11-19.yml) and below
 #       the defect size of the legacy tables (docs/runs/popsim-input-consistency-2026-11-18.yml). The
-#       pair persons_all depends on
-#       POP_TOTAL agreeing with the age x sex band sums per cell (population-share split in both
-#       modes); its measured size on the production tables is in
-#       docs/runs/popsim-input-consistency-2026-11-18.yml.
+#       pair persons_all depends on POP_TOTAL agreeing with the age x sex band sums per cell
+#       (population-share split in both modes); its measured size on the production tables is in
+#       docs/runs/popsim-input-consistency-new-keys-2026-11-19.yml.
 KEY_KREIS_BATCH_APPORTIONMENT = "braunschweig.population.popsim.kreis_batch_apportionment"
 KEY_KREIS_CONTROLS_FOLLOW_GRIDS = "braunschweig.population.popsim.kreis_controls_follow_grids"
 KEY_EMPLOYMENT_LEVEL_SOURCE = "braunschweig.population.popsim.employment_level_source"
