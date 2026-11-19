@@ -579,7 +579,7 @@ config:
   braunschweig.population.popsim.popsimprep_dir: environments/populationsim
   braunschweig.population.popsim.uv_path: /home/felix/.local/bin/uv
   # Required PopulationSim version (meaning and format: KEY_POPSIM_VERSION in config_keys.py).
-  braunschweig.population.popsim.populationsim_version: "0.10.0+bs.1"
+  braunschweig.population.popsim.populationsim_version: "0.10.0+bs.2"
   # Tracked PopulationSim integerizer options (meaning: KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS,
   # KEY_INTEGERIZER_DRAW, KEY_INTEGERIZER_TIMEOUT_S in config_keys.py); written into every
   # batch settings.yaml, so the server-local settings file must not set them. Evidence for the
@@ -590,9 +590,11 @@ config:
   braunschweig.population.popsim.integerizer_draw: "gumbel"
   braunschweig.population.popsim.integerizer_timeout_s: 7200
   # Controlled rounding of the simultaneous integerizer (issue #646; meaning: KEY_INTEGERIZER_ROUNDING
-  # and its neighbours in config_keys.py). Stays "round" (upstream) until the arm-3 run manifest
-  # meets its gate; the penalty values are the code defaults and only read with "controlled".
-  braunschweig.population.popsim.integerizer_rounding: "round"
+  # and its neighbours in config_keys.py). "controlled" by owner decision of 2026-11-19, although
+  # one pre-registered check of the arm-3 run manifest was missed (reasons: ADR-0201); needs
+  # populationsim_version 0.10.0+bs.2 or later. The penalty values are the code defaults and only
+  # read with "controlled".
+  braunschweig.population.popsim.integerizer_rounding: "controlled"
   braunschweig.population.popsim.integerizer_penalty_floor: 100.0
   braunschweig.population.popsim.integerizer_penalty_cap: 100000.0
   braunschweig.population.popsim.integerizer_parent_total_factor: 10.0
