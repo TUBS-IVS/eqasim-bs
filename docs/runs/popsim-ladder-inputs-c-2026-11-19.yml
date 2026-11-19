@@ -118,7 +118,25 @@ status:
     minimum the household sizes of their cell need: 4.2 to 10.9 % of the persons of a batch with the integer
     targets, 3.8 to 8.8 % with the unrounded ones; persons above the maximum (cells without a household of
     six or more): 5.2 to 10.3 % and 0.1 to 2.7 %. So the shortfall of persons against the household sizes
-    is in the unrounded census values, not made by the rounding.
+    is in the unrounded census values, not made by the rounding. (c)
+    scripts/posthoc_fit_by_cell_consistency.py classes every 100 m cell by whether its person targets (sum
+    of the age bands) agree with the persons its household-size targets need (gap of at most 0.5 persons:
+    consistent; else persons short or persons over) and judges the as-run outputs per class and cell size
+    (posthoc/fit_by_cell_consistency_integer_targets.csv: targets of arm 8, outputs of arms 8 and 9;
+    posthoc/fit_by_cell_consistency_unrounded_targets.csv: targets and output of arm 10). With the integer
+    targets 9.2 % of the households are in consistent cells, 50.7 % in cells short of persons, 39.8 % in
+    cells with persons over. Within a cell-size bin the fit of arm 8 hardly differs between the classes
+    (consistent / short / over): household-size WAPE 0.286 / 0.286 / 0.284 in cells with 1-10 households,
+    0.137 / 0.133 / 0.127 with 11-30, 0.064 / 0.038 / 0.045 with 31 and more; 22-band age WAPE 0.477 /
+    0.552 / 0.453, 0.249 / 0.281 / 0.238, 0.120 / 0.110 / 0.124; only the persons per cell fit better in
+    consistent cells (0.176 / 0.325 / 0.258, 0.078 / 0.148 / 0.108, 0.057 / 0.066 / 0.059). The cell size
+    carries the error: cells with 1-10 households hold 13.7 % of the households and 39.3 % of the
+    household-size error (WAPE 0.296; 11-30: 0.131; 31 and more: 0.043; 22-band age 0.529 / 0.257 /
+    0.116). The shift from arm 8 to arm 9 is the same in consistent cells (11-30 households: household size
+    0.137 -> 0.108, 22-band age 0.249 -> 0.459). Reading (observational, no run with reconciled targets;
+    the consistent class is small, 225 cells): the contradiction between persons and household sizes is
+    not what limits the household-size and age fit at 100 m; the small number of households per cell is.
+    The unrounded targets give the same picture.
 source: >-
   run server, ~/i660_c (code archive, arm folders, diagnostics, target views, comparisons); committed copy in
   docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/.
@@ -239,6 +257,9 @@ artifacts:
 - docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/posthoc/age_error_by_group.csv
 - docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/posthoc/input_consistency_arm_8.csv
 - docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/posthoc/input_consistency_arm_10.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/scripts/posthoc_fit_by_cell_consistency.py
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/posthoc/fit_by_cell_consistency_integer_targets.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/posthoc/fit_by_cell_consistency_unrounded_targets.csv
 issues:
 - '#660'
 - '#659'
