@@ -53,7 +53,9 @@ status:
     Verdict: every gated check is met except O-ten-c on batch_000 (pooled tenure WAPE 0.0902 against the
     bound 0.0898, missed by 0.0004); the record as pre-registered is therefore NOT passed and the key
     braunschweig.population.popsim.tenure_owner_limited_to_dwellings stays false in configs/base_bs.yml until
-    the owner decides. No tuning, no change of a bound. Runs: the first launch of scripts/run_arm4.sh stopped
+    the owner decides. No tuning, no change of a bound. Owner decision after the verdict (2026-11-19, in the
+    #657 work session): switch the key on with this documented deviation from the gate (ADR-0202); the bound
+    and the result above stay as they are. Runs: the first launch of scripts/run_arm4.sh stopped
     after the preparation, before any PopulationSim run, because run_arm.sh and run_diag.sh of the arm-3
     record are committed without the executable bit; the runner was fixed to call them through bash (commit
     7b194d41849cdbd3b616c6ec57f00fb42b1f5669; library code identical to the commit above, only run_arm4.sh
