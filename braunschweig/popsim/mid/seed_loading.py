@@ -689,8 +689,12 @@ def _join_hh_type5_column(
     This must happen BEFORE select_seed_columns so hh_type5 can be retained as
     an extra_household_col; it uses the raw MiD column names (H_ID / HP_ALTER).
 
-    Returns: the households frame with the joined ``hh_type5`` column (MUST be
-    reassigned).
+    The same members also give ``hh_minor_class`` (households with a minor, by
+    adult count; :func:`seed.derive_hh_minor_class`, issue #659), joined alongside
+    so every seed path that carries hh_type5 carries it too.
+
+    Returns: the households frame with the joined ``hh_type5`` and
+    ``hh_minor_class`` columns (MUST be reassigned).
     Mutates: nothing in place.
     """
     hh_type5_series = seedmod.derive_hh_type5(
@@ -698,8 +702,16 @@ def _join_hh_type5_column(
         household_id_col=columns.person_household_id,
         age_col=columns.age,
     )
+    hh_minor_class_series = seedmod.derive_hh_minor_class(
+        persons,
+        household_id_col=columns.person_household_id,
+        age_col=columns.age,
+    )
     households = households.join(
         hh_type5_series.rename("hh_type5"),
+        on=columns.household_id,
+    ).join(
+        hh_minor_class_series.rename("hh_minor_class"),
         on=columns.household_id,
     )
     return households
@@ -723,7 +735,7 @@ def _split_kreis_entries_by_level(
     Returns: ``(_hh_extra, _person_extra)`` for ``select_seed_columns``.
     Mutates: nothing.
     """
-    _hh_extra = ("RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp")
+    _hh_extra = ("RegioStaR7", "H_GR", "hh_type5", "hh_minor_class", "H_MIETE", "haustyp")
     _person_extra: tuple[str, ...] = ()
     for _entry in effective_kreis_entries:
         if _entry.level == "household":
@@ -863,7 +875,7 @@ def _split_projected_kreis_entries_by_level(
     Returns: ``(_hh_extra, _person_extra)`` for ``select_seed_columns``.
     Mutates: nothing.
     """
-    _hh_extra = ("RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp")
+    _hh_extra = ("RegioStaR7", "H_GR", "hh_type5", "hh_minor_class", "H_MIETE", "haustyp")
     _person_extra: tuple[str, ...] = ()
     for _entry in effective_kreis_entries:
         if _entry.level == "household":

@@ -105,9 +105,10 @@ def test_load_mid_seed_with_completion_fills_and_keeps_traceability(tmp_path):
     assert (regular["source_H_ID"] == regular["H_ID"]).all()
     assert (regular["source_P_ID"] == regular["P_ID"]).all()
     # Household frame keeps the output schema (no completion columns).
-    # H_GR, hh_type5, H_MIETE, haustyp are now unconditionally included in the seed.
+    # H_GR, hh_type5, hh_minor_class, H_MIETE, haustyp are now unconditionally included in the seed.
     assert list(households.columns) == [
-        "H_ID", "H_GEW", "RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp", "STAAT",
+        "H_ID", "H_GEW", "RegioStaR7", "H_GR", "hh_type5", "hh_minor_class", "H_MIETE", "haustyp",
+        "STAAT",
     ]
 
 
@@ -121,9 +122,10 @@ def test_load_mid_seed_default_is_unchanged(tmp_path):
     _write_mid_fixture(tmp_path)
     households, persons, report = mid.load_mid_seed(tmp_path)
     # Default OFF path (complete_members=False): no completion columns on persons.
-    # H_GR, hh_type5, H_MIETE, haustyp are now unconditionally included in households.
+    # H_GR, hh_type5, hh_minor_class, H_MIETE, haustyp are now unconditionally included in households.
     assert list(households.columns) == [
-        "H_ID", "H_GEW", "RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp", "STAAT",
+        "H_ID", "H_GEW", "RegioStaR7", "H_GR", "hh_type5", "hh_minor_class", "H_MIETE", "haustyp",
+        "STAAT",
     ]
     assert list(persons.columns) == [
         "H_ID", "P_ID", "P_GEW", "HP_ALTER", "HP_SEX", "STAAT",

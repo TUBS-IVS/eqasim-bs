@@ -535,3 +535,97 @@ def derive_hh_type5(
     per_hh_type5 = per_hh_mid11.map(_MID11_TO_HH_TYPE5)
     per_hh_type5.name = "hh_type5"
     return per_hh_type5
+
+
+# ---------------------------------------------------------------------------
+# hh_minor_class: households with a minor, by adult count (issue #659, D-fam)
+# ---------------------------------------------------------------------------
+
+#: Labels of :func:`derive_hh_minor_class`, in the order of the census classes they
+#: are compared with (see :mod:`braunschweig.popsim.minor_child_targets`).
+HH_MINOR_CLASSES = ("none", "one_adult", "multi_adult")
+
+
+def derive_hh_minor_class(
+    df_persons: "pd.DataFrame",
+    household_id_col: str = "household_id",
+    age_col: str = "HP_ALTER",
+) -> "pd.Series":
+    """Classify each seed household by whether it has a minor and how many adults.
+
+    A minor is a member younger than
+    :data:`braunschweig.data.mid.status_by_hhtype.ADULT_MIN_AGE` (18), the same cut
+    :func:`derive_hh_type5` uses; MiD 2023 has no kinship variable, so a minor is not
+    necessarily the child of an adult in the household.
+
+    - ``"none"``: no member under 18;
+    - ``"one_adult"``: at least one minor and exactly one adult;
+    - ``"multi_adult"``: at least one minor and two or more adults.
+
+    A household with minors and no adult fits no class (the census family table
+    counts families, which need a parent); it yields NaN, so PopulationSim leaves it
+    out of the minor-child controls, and its count and rate are logged (warning when
+    any occur). Downstream there is no fallback class for it: it is simply excluded.
+
+    Missing ages are handled exactly as :func:`derive_hh_type5` handles them (via
+    ``map_households_to_hhtype``): the age is coerced to numeric, and a missing age
+    fails the ``age >= ADULT_MIN_AGE`` test, so the person counts as a minor. This
+    keeps ``hh_minor_class`` consistent with ``hh_type5`` on the same household. The
+    number of such persons is logged (warning when any occur).
+
+    Parameters
+    ----------
+    df_persons:
+        Person frame with at least ``household_id_col`` and ``age_col``.
+    household_id_col:
+        Household identifier column (default ``"household_id"``).
+    age_col:
+        Age column in completed years (default ``"HP_ALTER"``, the raw MiD name).
+
+    Returns
+    -------
+    pd.Series
+        Object Series named ``hh_minor_class``, one label per household (index =
+        household id values, sorted), NaN for minors-only households.
+    """
+    from braunschweig.data.mid.status_by_hhtype import ADULT_MIN_AGE
+
+    missing = [c for c in (household_id_col, age_col) if c not in df_persons.columns]
+    if missing:
+        raise ValueError(
+            f"derive_hh_minor_class: person frame lacks column(s) {missing}; "
+            f"available: {list(df_persons.columns)}"
+        )
+
+    ages = pd.to_numeric(df_persons[age_col], errors="coerce")
+    n_missing_age = int(ages.isna().sum())
+    # NaN >= 18 is False: a missing age counts as a minor, as in derive_hh_type5.
+    is_adult = (ages >= ADULT_MIN_AGE).astype(int)
+    grouped = pd.DataFrame({
+        household_id_col: df_persons[household_id_col].to_numpy(),
+        "_adult": is_adult.to_numpy(),
+    }).groupby(household_id_col)["_adult"]
+    n_adults = grouped.sum()
+    n_minors = grouped.size() - n_adults
+
+    # Missing label = None, as hh_type5 has for not_classifiable (never the string 'nan').
+    result = pd.Series(None, index=n_adults.index, dtype=object, name="hh_minor_class")
+    result[n_minors == 0] = "none"
+    result[(n_minors > 0) & (n_adults == 1)] = "one_adult"
+    result[(n_minors > 0) & (n_adults >= 2)] = "multi_adult"
+
+    n_households = len(result)
+    n_unclassified = int(result.isna().sum())
+    rate = n_unclassified / n_households if n_households else 0.0
+    message = (
+        "[seed.hh_minor_class] classified %d/%d households (%.1f%%); minors without an "
+        "adult %d (%.1f%%) -> NaN, outside the minor-child controls; persons with a "
+        "missing age counted as minors: %d"
+    )
+    args = (n_households - n_unclassified, n_households, 100.0 * (1.0 - rate),
+            n_unclassified, 100.0 * rate, n_missing_age)
+    if n_unclassified or n_missing_age:
+        logger.warning(message, *args)
+    else:
+        logger.info(message, *args)
+    return result
