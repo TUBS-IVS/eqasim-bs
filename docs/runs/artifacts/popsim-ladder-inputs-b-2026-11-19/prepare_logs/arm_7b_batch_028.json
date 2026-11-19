@@ -1,0 +1,244 @@
+{
+  "arguments": {
+    "base": "~/i658_a/arms/arm_6/batch_028",
+    "out": "~/i659_b/arm_7b/batch_028",
+    "steps": [
+      "family_minor_child"
+    ],
+    "kreise": [
+      "03101",
+      "03102",
+      "03103",
+      "03151",
+      "03153",
+      "03154",
+      "03157",
+      "03158"
+    ],
+    "cells_100m": "~/prod100_20261031/eqasim-bs/eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_100m_de_prepared.parquet",
+    "cells_1km": "~/prod100_20261031/eqasim-bs/eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_1km_de_binned.parquet",
+    "kreis_controls_dir": null,
+    "data_path": null,
+    "employment_age_shape_source": null,
+    "move_persons_max": 20.0,
+    "commit": "6633c522",
+    "self_check": false
+  },
+  "steps": [
+    "family_minor_child"
+  ],
+  "commit": "6633c522",
+  "steps_done": [
+    {
+      "step": "family_minor_child",
+      "removed_control_fields": [
+        "Paare_ohneKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m",
+        "Paare_mitKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m",
+        "Alleinerziehende_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m",
+        "MehrpersHHohneKernfam_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m"
+      ],
+      "added_rows": [
+        {
+          "target": "HH_MINOR_ONE_ADULT_agg_ZENSUS1km_target",
+          "geography": "ZENSUS1km",
+          "seed_table": "households",
+          "importance": "200",
+          "control_field": "HH_MINOR_ONE_ADULT_agg_ZENSUS1km",
+          "expression": "(households.hh_minor_class == 'one_adult')"
+        },
+        {
+          "target": "HH_MINOR_MULTI_ADULT_agg_ZENSUS1km_target",
+          "geography": "ZENSUS1km",
+          "seed_table": "households",
+          "importance": "200",
+          "control_field": "HH_MINOR_MULTI_ADULT_agg_ZENSUS1km",
+          "expression": "(households.hh_minor_class == 'multi_adult')"
+        }
+      ],
+      "hhtype_importance": "200",
+      "zgb_cell_filter": {
+        "cells_seen": 3148482,
+        "cells_kept": 43598,
+        "cells_dropped": 3104884,
+        "kreise_in_scope": 8
+      },
+      "targets_report": {
+        "squares_total": 2233,
+        "squares_primary": 2233,
+        "squares_on_kreis_fallback": 0,
+        "squares_fallback_absent_from_table": 0,
+        "squares_fallback_zero_table_households": 0,
+        "households_total": 558170.7037998438,
+        "households_on_kreis_fallback": 0.0,
+        "kreis_fallback_household_rate": 0.0,
+        "squares_scaled_to_share_sum_1": 3,
+        "households_in_scaled_squares": 9.996895551681519,
+        "squares_in_table": 2409,
+        "cells_with_missing_households": 0
+      },
+      "target_sums": {
+        "HH_MINOR_ONE_ADULT_agg": {
+          "sum_100m": 886.0,
+          "sum_1km": 886.0,
+          "float_sum_batch": 885.9481408321378
+        },
+        "HH_MINOR_MULTI_ADULT_agg": {
+          "sum_100m": 2945.0,
+          "sum_1km": 2945.0,
+          "float_sum_batch": 2944.8304302583992
+        }
+      },
+      "seed_class": {
+        "households": 218097,
+        "by_class": {
+          "none": 169853,
+          "multi_adult": 44246,
+          "one_adult": 3982
+        },
+        "households_without_class": 16,
+        "of_which_without_persons": 0
+      }
+    }
+  ],
+  "inputs": {
+    "cells_100m": {
+      "path": "~/prod100_20261031/eqasim-bs/eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_100m_de_prepared.parquet",
+      "sha256": "31857326c85d11288a9143caa8c7cfbe36e3582e64bffb9ec18f232865643177"
+    },
+    "cells_1km": {
+      "path": "~/prod100_20261031/eqasim-bs/eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_1km_de_binned.parquet",
+      "sha256": "07063407b2665617e92bbb5506b3c0a24655a97f9b0664054168104f307258d1"
+    }
+  },
+  "files": {
+    "configs/controls.csv": {
+      "sha256_base": "0786907b0346d3dd353e6cda173fb8ff0d55dad1a924e37531be2044170628da",
+      "sha256_out": "c9507e40c410f7f7fb16da44383fadc19d9aa984f11c317d15362dd2cb92f3ee",
+      "changed": true,
+      "removed_rows": [
+        [
+          "Alleinerziehende_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target",
+          "ZENSUS100m",
+          "households",
+          "200",
+          "Alleinerziehende_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m",
+          "(households.hh_type5 == 'alleinerziehend')"
+        ],
+        [
+          "MehrpersHHohneKernfam_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target",
+          "ZENSUS100m",
+          "households",
+          "200",
+          "MehrpersHHohneKernfam_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m",
+          "(households.hh_type5 == 'mehrpers_ohne_kernfamilie')"
+        ],
+        [
+          "Paare_mitKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target",
+          "ZENSUS100m",
+          "households",
+          "200",
+          "Paare_mitKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m",
+          "(households.hh_type5 == 'paar_mit_kind')"
+        ],
+        [
+          "Paare_ohneKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target",
+          "ZENSUS100m",
+          "households",
+          "200",
+          "Paare_ohneKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m",
+          "(households.hh_type5 == 'paar_ohne_kind')"
+        ]
+      ],
+      "added_rows": [
+        [
+          "HH_MINOR_MULTI_ADULT_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "households",
+          "200",
+          "HH_MINOR_MULTI_ADULT_agg_ZENSUS1km",
+          "(households.hh_minor_class == 'multi_adult')"
+        ],
+        [
+          "HH_MINOR_ONE_ADULT_agg_ZENSUS1km_target",
+          "ZENSUS1km",
+          "households",
+          "200",
+          "HH_MINOR_ONE_ADULT_agg_ZENSUS1km",
+          "(households.hh_minor_class == 'one_adult')"
+        ]
+      ]
+    },
+    "configs/logging.yaml": {
+      "sha256_base": "863e60c0683d8232c8418428867df29687f04204daa90adb19a3378da6b208c4",
+      "sha256_out": "863e60c0683d8232c8418428867df29687f04204daa90adb19a3378da6b208c4",
+      "changed": false
+    },
+    "configs/settings.yaml": {
+      "sha256_base": "1f3c26e3fb666e1bfe92e712831e1e05eb7a459f4fce71fa088cfdd98978042a",
+      "sha256_out": "1f3c26e3fb666e1bfe92e712831e1e05eb7a459f4fce71fa088cfdd98978042a",
+      "changed": false
+    },
+    "data/control_totals_KREIS.csv": {
+      "sha256_base": "ccc0117167f8211128a24b416e599b7137b5cadde8b5e9dbd0a469775eba07fc",
+      "sha256_out": "ccc0117167f8211128a24b416e599b7137b5cadde8b5e9dbd0a469775eba07fc",
+      "changed": false
+    },
+    "data/control_totals_STAAT.csv": {
+      "sha256_base": "ab346622a3997159f6d15c53c5323aab2c12469b119ce3ded61447cacaa0a531",
+      "sha256_out": "ab346622a3997159f6d15c53c5323aab2c12469b119ce3ded61447cacaa0a531",
+      "changed": false
+    },
+    "data/control_totals_WELT.csv": {
+      "sha256_base": "f4512bfcc01d6376ef90e0d2099dfbeb6c336c59fadc793d084b999ddd1b5571",
+      "sha256_out": "f4512bfcc01d6376ef90e0d2099dfbeb6c336c59fadc793d084b999ddd1b5571",
+      "changed": false
+    },
+    "data/control_totals_ZENSUS100m.csv": {
+      "sha256_base": "4cde07ea034c864a5df2c9ee13a2d320230e8e0315a58f5a33775a1a48884fbe",
+      "sha256_out": "9e3dd449cf8e01caf747627b066d2799e82cdf536a834d75c4d7c84b8d7e8044",
+      "changed": true,
+      "columns_removed": [],
+      "columns_added": [
+        "HH_MINOR_ONE_ADULT_agg_ZENSUS100m",
+        "HH_MINOR_MULTI_ADULT_agg_ZENSUS100m"
+      ],
+      "columns_changed": [],
+      "max_abs_change": {}
+    },
+    "data/control_totals_ZENSUS1km.csv": {
+      "sha256_base": "590fbc11306787be0ef87dc3fc2ae50bf11636e0a3512017345bdfc8b28dcbaf",
+      "sha256_out": "acac8166200aea088ff3f9af96620b8464224470834894d640216523439ed3d9",
+      "changed": true,
+      "columns_removed": [],
+      "columns_added": [
+        "HH_MINOR_ONE_ADULT_agg_ZENSUS1km",
+        "HH_MINOR_MULTI_ADULT_agg_ZENSUS1km"
+      ],
+      "columns_changed": [],
+      "max_abs_change": {}
+    },
+    "data/geo_cross_walk.csv": {
+      "sha256_base": "f87fcd9e4486e91a9d19477319445243b8fc02463574745f8d75f33e826fee4c",
+      "sha256_out": "f87fcd9e4486e91a9d19477319445243b8fc02463574745f8d75f33e826fee4c",
+      "changed": false
+    },
+    "data/seed_households.csv": {
+      "sha256_base": "c331557d04da3726bcb1ac2899bcca5dc507628882e0db63d48391a25fa95ece",
+      "sha256_out": "90af3bde2e3d8aaa9995a3d01590ca738ce2d4ba41d4145da7cc8b41e739a62a",
+      "changed": true,
+      "columns_removed": [],
+      "columns_added": [
+        "hh_minor_class"
+      ],
+      "columns_changed": [],
+      "max_abs_change": {}
+    },
+    "data/seed_persons.csv": {
+      "sha256_base": "76890fcc886343a85b808de64d56875863947401c60d816dbd7f37572ffd2091",
+      "sha256_out": "76890fcc886343a85b808de64d56875863947401c60d816dbd7f37572ffd2091",
+      "changed": false
+    }
+  },
+  "problems": [],
+  "ok": true
+}

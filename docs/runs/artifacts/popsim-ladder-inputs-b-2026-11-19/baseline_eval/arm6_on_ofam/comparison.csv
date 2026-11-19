@@ -1,0 +1,9 @@
+check,batch,arm,metric,value,limit,met
+O-fam,batch_000,new,abs_gap_share_with_minor,0.0500302025580642,0.01,False
+O-fam,batch_000,new,one_adult_ratio_to_census,1.0820701963117194,"[0.75, 1.05]",False
+O-fam,batch_013,new,abs_gap_share_with_minor,0.10864058542077118,0.01,False
+O-fam,batch_013,new,one_adult_ratio_to_census,1.1698048761714164,"[0.75, 1.05]",False
+O-fam,batch_028,new,abs_gap_share_with_minor,0.04873577447522209,0.01,False
+O-fam,batch_028,new,one_adult_ratio_to_census,1.1772654358871704,"[0.75, 1.05]",False
+O-fam,batch_032,new,abs_gap_share_with_minor,0.07419786096256689,0.01,False
+O-fam,batch_032,new,one_adult_ratio_to_census,1.1950073914091905,"[0.75, 1.05]",False

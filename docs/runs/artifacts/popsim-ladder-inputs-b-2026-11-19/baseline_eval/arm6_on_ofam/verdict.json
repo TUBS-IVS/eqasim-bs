@@ -1,0 +1,43 @@
+{
+  "base_diag": "baseline_arm6_composition",
+  "new_diag": "baseline_arm6_composition",
+  "checks_file": "fam_only.json",
+  "batches": [
+    "batch_000",
+    "batch_013",
+    "batch_028",
+    "batch_032"
+  ],
+  "checks": {
+    "O-fam": {
+      "bound_pp": 1.0,
+      "ratio_lo": 0.75,
+      "ratio_hi": 1.05,
+      "values": {
+        "batch_000": {
+          "abs_gap": 0.0500302025580642,
+          "one_adult_ratio": 1.0820701963117194,
+          "met": false
+        },
+        "batch_013": {
+          "abs_gap": 0.10864058542077118,
+          "one_adult_ratio": 1.1698048761714164,
+          "met": false
+        },
+        "batch_028": {
+          "abs_gap": 0.04873577447522209,
+          "one_adult_ratio": 1.1772654358871704,
+          "met": false
+        },
+        "batch_032": {
+          "abs_gap": 0.07419786096256689,
+          "one_adult_ratio": 1.1950073914091905,
+          "met": false
+        }
+      },
+      "met": false,
+      "kind": "composition"
+    }
+  },
+  "all_met": false
+}
