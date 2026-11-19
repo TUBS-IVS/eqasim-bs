@@ -1,0 +1,13 @@
+arm_7a/batch_000.time 10:50.50 27527452  exit 0
+arm_7a/batch_013.time 11:03.57 33889952  exit 0
+arm_7a/batch_028.time 6:39.09 2704072  exit 0
+arm_7a/batch_032.time 4:40.54 2705036  exit 0
+arm_7b/batch_000.time 3:48.86 2737192  exit 0
+arm_7b/batch_013.time 3:57.55 2734108  exit 0
+arm_7b/batch_028.time 6:42.50 2734244  exit 0
+arm_7b/batch_032.time 4:40.55 2735184  exit 0
+arm_8/batch_000.time 3:43.95 2736788  exit 0
+arm_8/batch_013.time 3:37.63 2736100  exit 0
+arm_8/batch_028.time 6:35.70 2732720  exit 0
+arm_8/batch_032.time 4:36.82 2736688  exit 0
+idcheck_arm/batch_000.time 3:53.86 2708260  exit 0

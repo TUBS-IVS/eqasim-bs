@@ -59,7 +59,7 @@ pipeline:
 classification:
 - ab_test
 status:
-  execution: running
+  execution: completed
   notes: >-
     Pre-registered 2026-11-19 before the arm-7 and arm-8 runs. Done before the pre-registration, without a
     PopulationSim run of arm 7 or 8: the self-check of the arm-8 rebuild on all four batches, the
@@ -69,6 +69,32 @@ status:
     Choice rule (D-fam): arm 7a is chosen if it meets O-fam and every N check; else arm 7b if it does; else
     Part B stops before arm 8 and goes to the owner. A missed check stops the part and goes to the owner;
     no tuning, no bound changed after a run.
+    Verdict (filled after the runs; the text above is unchanged): arm 7a misses O-fam (one-adult ratio in all
+    four batches, the share gap in batch_013) and N-conservation (batch_000); arm 7b meets every check, so
+    the rule chooses arm 7b and family_controls = "minor_child_1km" is switched on in configs/base_bs.yml in
+    the commit that adds these results. Arm 8 (on arm 7b) meets O-cells, its age-WAPE part and every N check
+    except N-conservation on batch_000 at ZENSUS100m (abs_deviation_sum 114 against 113 households of arm
+    7b; bound delta 0). The record as pre-registered is therefore NOT passed for arm 8: the move keys stay
+    at their legacy values and Part B stops there for the owner's decision. No tuning, no bound changed.
+    Execution notes (added after the runs): (1) DEVIATION from the plan's global constraint that the arms
+    run with the run-time options of #656 (STORE_POSITIVE_WEIGHT_ROWS_ONLY, FAST_PATHS) and from the
+    statement above that the settings are those of arm 6: arm 6 (and Parts T and A) ran with both options
+    off, for comparability with the earlier arms. Arm 7a batch_000 and batch_013 ran with the options off;
+    after an owner question during the runs (2026-11-19: why not use the optimisation) the lead switched
+    both options on in configs/settings.yaml of every folder not yet run (arm 7a batch_028 and batch_032,
+    all of arm 7b and, prepared from arm 7b, all of arm 8). The options are designed and recorded to leave
+    the synthetic population unchanged (popsim-run-performance-2026-11-18: identical hashes in six pairs).
+    Identity check for this record: arm 7a batch_000 run again with both options on (idcheck_arm) gives
+    the same sha256 of final_expanded_household_ids.csv, synthetic_households.csv and synthetic_persons.csv
+    as its run with the options off (run_records/outputs_sha256.txt). Effect: peak RSS 2.7 GB instead of
+    27-34 GB, wall time 3.6-6.7 min instead of 10.8-11.1 min (run_records/run_times.txt). (2) The first
+    PopulationSim start used a wrong project directory and exited at once without output; the first
+    diagnostics start fired on that start's completion marker and exited rc 1 at once without output; arm
+    7a batch_028 and batch_032 were stopped after one minute (options off) for the switch in (1). All three
+    are logged in run_records/progress.log; their partial files were removed and the runs restarted from
+    the unchanged prepared folders. (3) Every PopulationSim run of the record exits 0 and reports fork
+    0.10.0+bs.2, commit d9a2e28 (run_records/tool_versions.txt). Checkpoint stores were deleted after the
+    diagnostics.
 source: >-
   run server, ~/i659_b (code archives, self-check, arms, diagnostics, comparisons); committed copy in
   docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/.
@@ -92,8 +118,11 @@ validation:
     numerator only; (2) is one-sided: a lone parent living with a further adult is a two-adult household in
     the seed (the bound is therefore asymmetric, ASSUMPTION-grade). Arm 6: (1) 0.050, 0.109, 0.049, 0.074;
     (2) 1.082, 1.170, 1.177, 1.195 (batch_000, 013, 028, 032; baseline_eval/arm6_on_ofam)
-  result: pending
-  artifact: docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/baseline_eval/arm6_on_ofam/comparison.csv
+  result: >-
+    MET for arm 7b on all four batches: |share gap| 0.0008, 0.0008, 0.0002, 0.0003; one-adult ratio 0.998,
+    0.997, 0.995, 0.996 (batch_000, 013, 028, 032). NOT MET for arm 7a: share gap 0.0047, 0.0194, 0.0015,
+    0.0022 (batch_013 above 0.01); one-adult ratio 0.611, 0.675, 0.553, 0.564 (all below 0.75).
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/comparison_arm7b_vs_arm6/comparison.csv
 - metric: >-
     O-cells (arm 8, from the prepare step): per batch, no 100 m cell with 0 integer households and a float
     age-band sum above 0 and below 20 keeps a person target after the move (cells in a 1 km square without
@@ -105,8 +134,12 @@ validation:
     folder); the third compares with the chosen arm 7 (model output). Blind spot: the arm-8 age targets
     differ from the arm-7 targets in the donor and receiving cells, so the WAPE compares fits to different
     100 m targets with the same 1 km sums
-  result: pending
-  artifact: docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/checks/arm8_vs_arm7.json
+  result: >-
+    MET on all four batches (arm 7b -> arm 8): cells_left 0 in every batch (household-less cells below 20
+    persons before the move: 96, 94, 32, 57; reported, not gated, cells left in squares without any
+    household cell: 8, 0, 1, 0); max change of a 1 km sum 0; pooled 100 m WAPE of the 22 age x sex controls
+    0.2336 -> 0.2265. Move reports (persons moved, large cells kept) in prepare_logs/arm_8_*.json.
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/comparison_arm8_vs_arm7b/comparison.csv
 - metric: >-
     N (no harm, each arm against its base: 7a and 7b vs arm 6, arm 8 vs the chosen arm 7): pooled WAPE over
     the four batches per geography, over the controls whose targets the arm did not change (target above 0;
@@ -121,8 +154,16 @@ validation:
     WAPE over the arm-7 control set: ZENSUS100m 0.1258, ZENSUS1km 0.0095, KREIS 0.0018
     (baseline_eval/arm6_on_arm7_checks). Arm 6 household conservation: batch_000 at ZENSUS100m is above
     zero (popsim-ladder-inputs-a-2026-11-18, post hoc entry); the other batches conserve exactly
-  result: pending
-  artifact: docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/baseline_eval/arm6_on_arm7_checks/comparison.csv
+  result: >-
+    Arms 7a and 7b vs arm 6: WAPE MET (ZENSUS100m 0.1258 -> 0.1119 (7a) / 0.1107 (7b); ZENSUS1km 0.0095 ->
+    0.0093 / 0.0092; KREIS 0.0018 -> 0.0017 / 0.0015); no sequential fallback MET; G4 MET (0 controls
+    outside in every batch); household conservation: arm 7b MET (batch_000 at ZENSUS100m abs_deviation_sum
+    132 -> 113 households, the other batches exact), arm 7a NOT MET (batch_000 132 -> 143). Arm 8 vs arm 7b:
+    WAPE MET (ZENSUS100m 0.0475 -> 0.0471, ZENSUS1km 0.0111 -> 0.0111, KREIS 0.0015 -> 0.0015 over the
+    arm-8 control set); no sequential fallback MET; G4 MET; household conservation NOT MET on batch_000 at
+    ZENSUS100m (abs_deviation_sum 113 -> 114 households, abs_deviation_share 0.01705 -> 0.01720), MET on
+    every other batch and level (exact).
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/comparison_arm8_vs_arm7b/comparison.csv
 features:
   note: >-
     Evidence for the household-universe repairs of issue #659 (D-fam, D-cells): four batches, one draw
@@ -139,6 +180,22 @@ artifacts:
 - docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/prepare_logs/selfcheck_batch_000.json
 - docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/prepare_logs/arm_7a_batch_000.json
 - docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/prepare_logs/arm_7b_batch_000.json
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/comparison_arm7a_vs_arm6/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/comparison_arm7a_vs_arm6/verdict.json
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/comparison_arm7b_vs_arm6/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/comparison_arm7b_vs_arm6/verdict.json
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/comparison_arm8_vs_arm7b/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/comparison_arm8_vs_arm7b/verdict.json
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/diag/arm_7a/household_composition.csv
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/diag/arm_7b/household_composition.csv
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/diag/arm_8/household_composition.csv
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/diag/arm_8/household_conservation.csv
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/prepare_logs/arm_8_batch_000.json
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/prepare_logs/arm_8_batch_000_cells_check.json
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/run_records/run_times.txt
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/run_records/outputs_sha256.txt
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/run_records/tool_versions.txt
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/run_records/progress.log
 issues:
 - '#659'
 - '#658'
