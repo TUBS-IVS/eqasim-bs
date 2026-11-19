@@ -143,3 +143,56 @@ def test_build_control_totals_moves_before_rounding():
     assert (totals["P1_ZENSUS1km"], totals["P2_ZENSUS1km"]) == (12, 4)
     assert report["donor_cells"] == 1
     assert report["persons_moved"] == pytest.approx(4.0)
+
+
+def test_build_control_totals_uses_the_integer_household_rule():
+    # Parent k1: the float households 0.3 and 0.1 integerise to 0 (5.4 households in total
+    # -> [0, 0, 5]), so both cells are donors although their float households are positive.
+    # Parent k2: one plain donor next to two equal household cells.
+    targets = pd.DataFrame({
+        "ZENSUS100m": ["a0", "a1", "a2", "b0", "b1", "b2"],
+        "HH": [0.3, 0.1, 5.0, 0.0, 2.0, 2.0],
+        "P1": [4.0, 3.0, 10.0, 6.0, 1.0, 1.0],
+    })
+    crosswalk = pd.DataFrame({
+        "ZENSUS100m": targets["ZENSUS100m"], "ZENSUS1km": ["k1"] * 3 + ["k2"] * 3})
+    report: dict = {}
+
+    built = mid.build_control_totals(
+        targets, crosswalk, ["HH", "P1"], household_total_col="HH", person_cols=["P1"],
+        move_persons_max=20.0, report=report)
+
+    cells = built["ZENSUS100m"].set_index("ZENSUS100m")
+    assert cells["HH_ZENSUS100m"].tolist() == [0, 0, 5, 0, 2, 2]
+    assert cells["P1_ZENSUS100m"].tolist() == [0, 0, 17, 0, 4, 4]
+    assert report["donor_cells"] == 3
+    assert report["persons_moved"] == pytest.approx(4.0 + 3.0 + 6.0)
+    assert report["parents_without_households"] == 0
+
+
+def test_two_donors_in_one_parent_and_two_parents():
+    frame = _frame(["a", "a", "a", "b", "b", "b"], age=[2.0, 3.0, 5.0, 4.0, 1.0, 1.0])
+
+    moved, report = move_persons_to_household_cells(
+        frame, parent_col="parent", households=pd.Series([0, 0, 5, 0, 1, 3]),
+        person_cols=["age"])
+
+    assert moved["age"].tolist() == pytest.approx([0.0, 0.0, 10.0, 0.0, 2.0, 4.0])
+    assert report["donor_cells"] == 3
+    assert report["persons_moved"] == pytest.approx(9.0)
+
+
+@pytest.mark.parametrize("kwargs, match", [
+    (dict(person_cols=[]), "person_cols"),
+    (dict(person_cols=["P1"], threshold_cols=["P9"]), "P9"),
+    (dict(person_cols=["P1"], move_persons_max=0.0), "move_persons_max"),
+    (dict(person_cols=["P1"], move_persons_max=-5.0), "move_persons_max"),
+])
+def test_build_control_totals_rejects_a_bad_move_setup(kwargs, match):
+    targets = pd.DataFrame({"ZENSUS100m": ["c0", "c1"], "HH": [0.0, 2.0], "P1": [1.0, 2.0]})
+    crosswalk = pd.DataFrame({"ZENSUS100m": ["c0", "c1"], "ZENSUS1km": ["k"] * 2})
+    kwargs = {"move_persons_max": 20.0, **kwargs}
+
+    with pytest.raises(ValueError, match=match):
+        mid.build_control_totals(
+            targets, crosswalk, ["HH", "P1"], household_total_col="HH", **kwargs)

@@ -491,6 +491,14 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
     return {"tables": tables, "warnings": list(warnings)}
 
 
+def _composition_source_note(composition: pd.DataFrame) -> list:
+    """The ``census_source`` text once, as a note above the composition table (CSV keeps the column)."""
+    if "census_source" not in composition.columns:
+        return []
+    return [f"Census columns: {text}" for text in composition["census_source"].dropna().unique()
+            ] + [""]
+
+
 def _write_summary(out_dir: Path, work_dir: Path, folders, groups, commit: str, tables: dict,
                    solver_levels: pd.DataFrame, warnings: list) -> None:
     reuse = tables["reuse"]
@@ -518,7 +526,9 @@ def _write_summary(out_dir: Path, work_dir: Path, folders, groups, commit: str, 
         "## Household composition", "",
         "Synthetic households with the members of their seed household; adult = age >= 18. "
         "Definitions: `braunschweig.analysis.popsim_batch_diagnostics.composition`.", "",
-        _md_table(tables["household_composition"]),
+        *_composition_source_note(tables["household_composition"]),
+        _md_table(tables["household_composition"].drop(columns=["census_source"],
+                                                       errors="ignore")),
         "## Warnings", "", _md_table(pd.DataFrame(
             warnings, columns=["check", "subject", "value", "threshold"]))]
     (out_dir / "popsim_batch_diagnostics.md").write_text("\n".join(lines), encoding="utf-8")
@@ -651,9 +661,20 @@ def _parse_thresholds(parser: argparse.ArgumentParser, items: Sequence[str]) -> 
 
 
 def _read_squares(path) -> pd.DataFrame:
-    """The census columns of ``composition`` from a 1 km cell parquet, under their cleaned names."""
+    """The census columns of ``composition`` from a 1 km cell parquet, under their cleaned names.
+
+    Raises ``ValueError`` when a column is absent, or when two raw names of the parquet clean to
+    the same census column name (the choice between them would be arbitrary).
+    """
     import pyarrow.parquet as pq
-    raw_by_clean = {clean_col_name(name): name for name in pq.ParquetFile(path).schema.names}
+    raw_by_clean: dict = {}
+    for name in pq.ParquetFile(path).schema.names:
+        raw_by_clean.setdefault(clean_col_name(name), []).append(name)
+    ambiguous = {c: raw_by_clean[c] for c in CENSUS_SQUARE_COLUMNS if len(raw_by_clean.get(c, ())) > 1}
+    if ambiguous:
+        raise ValueError(f"{path}: several raw columns clean to the same census column: "
+                         f"{ambiguous}")
+    raw_by_clean = {clean: names[0] for clean, names in raw_by_clean.items()}
     absent = [c for c in CENSUS_SQUARE_COLUMNS if c not in raw_by_clean]
     if absent:
         raise ValueError(f"{path} lacks column(s) {absent} (after clean_col_name)")

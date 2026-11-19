@@ -573,6 +573,16 @@ def derive_hh_minor_class(
     keeps ``hh_minor_class`` consistent with ``hh_type5`` on the same household. The
     number of such persons is logged (warning when any occur).
 
+    Real divergences from :func:`derive_hh_type5` (behaviour is not aligned on purpose here;
+    these are the cases where the two labels of one household disagree):
+
+    - a household of minors only: ``hh_type5`` can say ``'alleinerziehend'``, here the class is
+      missing (NaN);
+    - a missing age next to two adults: ``derive_hh_type5`` raises, here the person counts as a
+      minor and the household is ``multi_adult``;
+    - a household that ``derive_hh_type5`` upstream marks as single parent but that holds two
+      or more adults is ``multi_adult`` here (the class counts adults, not the parent label).
+
     Parameters
     ----------
     df_persons:

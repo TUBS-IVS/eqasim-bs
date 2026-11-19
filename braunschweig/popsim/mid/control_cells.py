@@ -213,17 +213,31 @@ def build_control_totals(
     ``household_total_col`` is integerized first and its integer values drive the move; both it
     and ``person_cols`` must be base columns. The stage passes the 22 age x sex bands plus the
     ten ``EMPLOYED_*_agg`` columns as ``person_cols`` and the 22 age bands as
-    ``threshold_cols``. The move report is written into ``report`` (updated in place) when given.
+    ``threshold_cols``. A base column that is not in ``person_cols`` is NOT moved: it stays in
+    the donor cell, so the caller must pass EVERY person-count column as ``person_cols`` (the
+    stage passes the age bands and the employed grid). Raises ``ValueError`` when
+    ``move_persons_max`` is not positive, ``person_cols`` is empty or a ``threshold_cols`` entry
+    is not a base column. The move report is written into ``report`` (updated in place) when given.
     With ``move_persons_max`` None the output is exactly that of the plain build.
     """
     move_persons = move_persons_max is not None
     if move_persons:
+        if move_persons_max <= 0:
+            raise ValueError(f"move_persons_max must be positive, got {move_persons_max}")
+        if not len(person_cols):
+            raise ValueError(
+                "move_persons_max needs person_cols (every person-count column to move); "
+                "got none")
         not_base = [c for c in (household_total_col, *person_cols) if c not in base_cols]
         if household_total_col is None or not_base:
             raise ValueError(
                 "move_persons_max needs household_total_col and person_cols among the base "
                 f"columns; got household_total_col={household_total_col!r}, "
                 f"not in base columns: {not_base}")
+        bad_threshold = [c for c in (threshold_cols or ()) if c not in base_cols]
+        if bad_threshold:
+            raise ValueError(
+                f"threshold_cols {bad_threshold} are not among the base columns / person_cols")
     parent_of = geo_crosswalk.set_index(cell_col)[parent_col]
     work = per_cell_targets.copy()
     work[parent_col] = work[cell_col].map(parent_of)

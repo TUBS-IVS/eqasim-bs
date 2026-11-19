@@ -1,8 +1,10 @@
 """Tests for the household-composition table of the PopulationSim batch diagnostics."""
+import logging
 import sys
 from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -13,9 +15,11 @@ from popsim_batch_fixture import build_work_dir  # noqa: E402
 from braunschweig.analysis.popsim_batch_diagnostics.batch_folder import (  # noqa: E402
     load_batch_folder)
 from braunschweig.analysis.popsim_batch_diagnostics.composition import (  # noqa: E402
-    COUPLE_FAMILY_COLUMNS, FAMILY_HOUSEHOLDS_COLUMN, LONE_PARENT_COLUMNS, SQUARE_ID_COLUMN,
-    household_composition)
-from braunschweig.analysis.popsim_batch_diagnostics.run import main, run_diagnostics  # noqa: E402
+    CENSUS_SOURCE, COUPLE_FAMILY_COLUMNS, FAMILY_HOUSEHOLDS_COLUMN, LONE_PARENT_COLUMNS,
+    SQUARE_ID_COLUMN, household_composition)
+from braunschweig.analysis.popsim_batch_diagnostics.run import (  # noqa: E402
+    _read_squares, main, run_diagnostics)
+from braunschweig.data.mid.status_by_hhtype import ADULT_MIN_AGE  # noqa: E402
 
 
 @pytest.fixture
@@ -90,3 +94,96 @@ def test_run_diagnostics_and_cli_write_the_table(tmp_path):
                  "--cells-1km", str(cells)]) == 0
     table = pd.read_csv(tmp_path / "out2" / "household_composition.csv")
     assert table.loc[0, "census_families_with_minor"] == 5
+
+
+def test_summary_prints_the_census_source_once_and_the_csv_keeps_the_column(tmp_path):
+    work = build_work_dir(tmp_path)
+    cells = tmp_path / "cells.parquet"
+    pd.DataFrame({SQUARE_ID_COLUMN: ["K1"],
+                  **{c: [1] for c in (FAMILY_HOUSEHOLDS_COLUMN, *LONE_PARENT_COLUMNS,
+                                      *COUPLE_FAMILY_COLUMNS)}}).to_parquet(cells)
+
+    assert main(["--work-dir", str(work), "--out-dir", str(tmp_path / "out"),
+                 "--cells-1km", str(cells)]) == 0
+
+    table = pd.read_csv(tmp_path / "out" / "household_composition.csv")
+    report = (tmp_path / "out" / "popsim_batch_diagnostics.md").read_text(encoding="utf-8")
+    assert report.count(CENSUS_SOURCE) == 1
+    assert (table["census_source"] == CENSUS_SOURCE).all()
+
+
+def test_two_raw_columns_cleaning_to_the_same_name_raise(tmp_path):
+    cells = tmp_path / "cells.parquet"
+    pd.DataFrame({SQUARE_ID_COLUMN: ["K1"],
+                  FAMILY_HOUSEHOLDS_COLUMN: [10],
+                  FAMILY_HOUSEHOLDS_COLUMN.replace("_Gitter", "-Gitter"): [11],
+                  **{c: [1] for c in (*LONE_PARENT_COLUMNS, *COUPLE_FAMILY_COLUMNS)}}
+                 ).to_parquet(cells)
+
+    with pytest.raises(ValueError, match="clean to the same"):
+        _read_squares(cells)
+
+
+def test_age_boundary_is_adult_min_age(batch):
+    adult, minor = ADULT_MIN_AGE, ADULT_MIN_AGE - 1
+    persons = pd.DataFrame({"H_ID": [1, 1, 2, 2, 2, 3],
+                            "HP_ALTER": [adult, minor, adult, adult, minor, minor]})
+
+    row = household_composition(replace(batch, seed_persons=persons), None).iloc[0]
+
+    assert row["households_with_minor"] == 3
+    assert row["one_adult_share_among_minor_households"] == pytest.approx(1 / 3)  # only H1
+    assert row["minor_households_without_adult"] == 1                            # H3
+    assert row["persons_0_17_per_minor_household"] == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("bad_age", [float("nan"), -1])
+def test_missing_or_negative_age_in_a_used_household_raises(batch, bad_age):
+    persons = batch.seed_persons.copy()
+    persons.loc[0, "HP_ALTER"] = bad_age
+
+    with pytest.raises(ValueError, match="1 person"):
+        household_composition(replace(batch, seed_persons=persons), None)
+
+
+def test_census_nan_in_a_used_square_raises_but_not_in_an_unused_one(batch):
+    squares = _squares().astype({FAMILY_HOUSEHOLDS_COLUMN: float})
+    squares.loc[2, FAMILY_HOUSEHOLDS_COLUMN] = float("nan")             # K3 is not in the batch
+    assert household_composition(batch, squares).iloc[0]["census_family_households"] == 30
+    squares.loc[1, FAMILY_HOUSEHOLDS_COLUMN] = float("nan")             # K2 is
+    with pytest.raises(ValueError, match="missing"):
+        household_composition(batch, squares)
+
+
+def test_duplicate_square_raises_when_values_differ_and_is_kept_once_when_identical(batch):
+    identical = pd.concat([_squares(), _squares().iloc[[0]]], ignore_index=True)
+    assert household_composition(batch, identical).iloc[0]["census_family_households"] == 30
+
+    differing = identical.copy()
+    differing.loc[3, FAMILY_HOUSEHOLDS_COLUMN] = 11
+    with pytest.raises(ValueError, match="K1"):
+        household_composition(batch, differing)
+
+
+def test_absent_100m_targets_give_nan_and_a_warning(batch, caplog):
+    (batch.path / "data" / "control_totals_ZENSUS100m.csv").unlink()
+
+    with caplog.at_level(logging.WARNING):
+        row = household_composition(batch, _squares()).iloc[0]
+
+    assert np.isnan(row["census_persons_0_17_per_family_with_minor"])
+    assert row["census_families_with_minor"] == 11
+    assert any("not derived" in r.getMessage() for r in caplog.records)
+
+
+def test_zero_denominator_gives_nan_and_a_warning(batch, caplog):
+    persons = batch.seed_persons.copy()
+    persons["HP_ALTER"] = 40                                             # nobody is a minor
+
+    with caplog.at_level(logging.WARNING):
+        row = household_composition(replace(batch, seed_persons=persons), None).iloc[0]
+
+    assert row["households_with_minor"] == 0
+    assert np.isnan(row["one_adult_share_among_minor_households"])
+    assert np.isnan(row["share_persons_0_9_with_one_adult"])
+    assert sum("zero denominator" in r.getMessage() for r in caplog.records) >= 2

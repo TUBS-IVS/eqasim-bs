@@ -26,9 +26,16 @@ in the cells), divided by their family-table households. Each square belongs to 
 Kreis, the Kreis holding most of its cell households (ties: the smallest Kreis code),
 because 1 km squares straddle Kreis borders while the census table is per square. The
 report counts the fallback squares and their households; above
-``fallback_warn_household_rate`` of all cell households the rate is logged as a warning.
-A square with family-table households but no family with a minor is a true 0, not a
-fallback.
+``fallback_warn_household_rate`` of all cell households the rate is logged as a warning, and
+above ``fallback_raise_household_rate`` the call raises (the Kreis shares would then carry most
+of the targets and the census would no longer supply the composition per square). A square with
+family-table households but no family with a minor is a true 0, not a fallback.
+
+ASSUMPTION (share sum above 1): a square can count more families with a minor than the
+family table has households (a household holding two families is counted twice). Its two class
+shares then sum above 1, and the two targets would exceed the cell's households. Both shares of
+such a square are scaled down proportionally to sum 1 (the one-adult/multi-adult ratio is kept);
+the squares and their households are counted in the report and logged as a warning.
 
 ASSUMPTION: one family with a child under 18 = one household with a minor, and a lone
 parent = the household's one adult. Known blind spots of this mapping:
@@ -82,6 +89,8 @@ SQUARE_COLUMNS = (SQUARE_ID_COLUMN,) + LONE_PARENT_SOURCES + COUPLE_SOURCES + (
 
 #: Default warning bound: share of all cell households whose square takes the Kreis share.
 DEFAULT_FALLBACK_WARN_HOUSEHOLD_RATE = 0.05
+#: Default error bound for the same share: above it the Kreis fallback carries most targets.
+DEFAULT_FALLBACK_RAISE_HOUSEHOLD_RATE = 0.5
 
 
 def _require_columns(frame: pd.DataFrame, required, frame_name: str) -> None:
@@ -132,6 +141,7 @@ def per_cell_targets(
     kreis_col: str,
     household_total_col: str,
     fallback_warn_household_rate: float = DEFAULT_FALLBACK_WARN_HOUSEHOLD_RATE,
+    fallback_raise_household_rate: float = DEFAULT_FALLBACK_RAISE_HOUSEHOLD_RATE,
 ) -> tuple[pd.DataFrame, dict]:
     """Return the cells with the two minor-child household targets and a report.
 
@@ -146,6 +156,9 @@ def per_cell_targets(
     fallback_warn_household_rate:
         Share (0..1) of all cell households on the Kreis fallback above which the rate
         is logged as a warning.
+    fallback_raise_household_rate:
+        Share (0..1) of all cell households on the Kreis fallback above which the call
+        raises.
 
     Returns
     -------
@@ -155,18 +168,26 @@ def per_cell_targets(
         (squares with cell households), ``squares_primary``,
         ``squares_on_kreis_fallback`` (of which ``squares_fallback_absent_from_table``
         and ``squares_fallback_zero_table_households``), ``households_total``,
-        ``households_on_kreis_fallback``, ``kreis_fallback_household_rate`` and
-        ``squares_with_class_sum_above_households``.
+        ``households_on_kreis_fallback``, ``kreis_fallback_household_rate`` and, for the
+        squares whose two shares summed above 1 and were scaled to sum 1 (see the module
+        ASSUMPTION), ``squares_scaled_to_share_sum_1`` and ``households_in_scaled_squares``.
 
     Raises
     ------
     ValueError
         On a missing column, NaN or negative counts, duplicated square ids, negative or
-        NaN cell households, or a fallback square whose Kreis has no square with
-        family-table households (no defensible share).
+        NaN cell households, NaN in ``parent_col`` or ``kreis_col``, a fallback square whose
+        Kreis has no square with family-table households (no defensible share), or a
+        fallback household rate above ``fallback_raise_household_rate``.
     """
     _require_columns(cells, (parent_col, kreis_col, household_total_col), "cells")
     _validate_squares(squares)
+    for key_col in (parent_col, kreis_col):
+        if cells[key_col].isna().any():
+            raise ValueError(
+                f"minor_child_targets: cells column {key_col!r} holds "
+                f"{int(cells[key_col].isna().sum())} missing value(s); every cell needs its "
+                "1 km square and Kreis")
     cell_households = pd.to_numeric(cells[household_total_col], errors="coerce")
     if cell_households.isna().any() or (cell_households < 0).any():
         raise ValueError(
@@ -212,6 +233,12 @@ def per_cell_targets(
         one_share.loc[fallback] = kreis_one_share.loc[fallback_kreis].to_numpy()
         multi_share.loc[fallback] = kreis_multi_share.loc[fallback_kreis].to_numpy()
 
+    # ASSUMPTION (module docstring): shares summing above 1 are scaled down to sum 1.
+    share_sum = one_share + multi_share
+    scaled = share_sum > 1.0 + 1e-12
+    one_share[scaled] = one_share[scaled] / share_sum[scaled]
+    multi_share[scaled] = multi_share[scaled] / share_sum[scaled]
+
     targets = cells.copy()
     targets[ONE_ADULT_TARGET] = (
         work["_households"] * work[parent_col].map(one_share)).astype(float)
@@ -221,8 +248,8 @@ def per_cell_targets(
     households_total = float(square_households.sum())
     households_fallback = float(square_households[fallback].sum())
     rate = households_fallback / households_total if households_total else 0.0
-    above_households = int(((lone_parents + couples) > table_households)[
-        table_households.index.intersection(primary)].sum())
+    squares_scaled = int(scaled.sum())
+    households_scaled = float(square_households[scaled].sum())
     report = {
         "squares_total": int(len(occupied)),
         "squares_primary": int(len(primary)),
@@ -232,7 +259,8 @@ def per_cell_targets(
         "households_total": households_total,
         "households_on_kreis_fallback": households_fallback,
         "kreis_fallback_household_rate": rate,
-        "squares_with_class_sum_above_households": above_households,
+        "squares_scaled_to_share_sum_1": squares_scaled,
+        "households_in_scaled_squares": households_scaled,
     }
 
     message = (
@@ -241,15 +269,19 @@ def per_cell_targets(
     )
     args = (len(primary), len(occupied), len(fallback), households_fallback,
             households_total, 100.0 * rate)
+    if rate > fallback_raise_household_rate:
+        raise ValueError(
+            message % args + f"; above the {100.0 * fallback_raise_household_rate:.1f}% error "
+            "bound: the Kreis shares would carry most of the targets, check the square ids "
+            "of the family table against the cells")
     if rate > fallback_warn_household_rate:
         logger.warning(message + "; above the %.1f%% warning bound", *args,
                        100.0 * fallback_warn_household_rate)
     else:
         logger.info(message, *args)
-    if above_households:
-        # Families with a minor outnumber the table's households: the share exceeds 1
-        # and a cell target exceeds the cell's households. Kept (census counts), but loud.
+    if squares_scaled:
         logger.warning(
-            "[minor_child_targets] %d squares count more families with a minor than "
-            "family-table households", above_households)
+            "[minor_child_targets] %d squares (%.0f households) count more families with a "
+            "minor than family-table households; both class shares scaled down to sum 1",
+            squares_scaled, households_scaled)
     return targets, report

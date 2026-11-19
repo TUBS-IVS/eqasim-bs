@@ -154,3 +154,79 @@ def test_missing_source_column_raises(defect, expected):
 
     with pytest.raises(ValueError, match=expected):
         _targets(cells, squares)
+
+
+def test_straddling_fallback_square_belongs_to_the_smallest_kreis_code_on_a_tie():
+    # PA (Kreis A): lone share 0.1; PB (Kreis B): lone share 0.3. F holds 5 households in each
+    # Kreis and is not in the table: the tie goes to A, so F takes A's share, not B's.
+    squares = _squares([("PA", 100, 5, 5, 0, 0, 0), ("PB", 100, 15, 15, 0, 0, 0)])
+    cells = _cells([("a", "PA", "A", 50), ("b", "PB", "B", 50),
+                    ("f1", "F", "B", 5), ("f2", "F", "A", 5)])
+
+    out, report = _targets(cells, squares)
+
+    fallback = out.set_index("cell").loc[["f1", "f2"], mct.ONE_ADULT_TARGET]
+    np.testing.assert_allclose(fallback, [0.5, 0.5])  # 0.1 x 5 households each
+    assert report["squares_on_kreis_fallback"] == 1
+
+
+def test_fallback_square_in_a_kreis_without_a_primary_square_raises():
+    squares = _squares([("P", 100, 2, 3, 15, 1, 4)])
+    cells = _cells([("a", "P", "A", 50), ("c", "F", "C", 2)])
+
+    with pytest.raises(ValueError, match="C"):
+        _targets(cells, squares)
+
+
+def test_report_separates_absent_from_zero_table_squares():
+    squares = _squares([("P", 100, 2, 3, 15, 1, 4), ("Z", 0, 0, 0, 0, 0, 0)])
+    cells = _cells([("a", "P", "A", 100), ("z", "Z", "A", 6), ("x", "X", "A", 4)])
+
+    _, report = _targets(cells, squares)
+
+    assert report["squares_on_kreis_fallback"] == 2
+    assert report["squares_fallback_zero_table_households"] == 1
+    assert report["squares_fallback_absent_from_table"] == 1
+    assert report["households_on_kreis_fallback"] == 10
+
+
+@pytest.mark.parametrize("column", ["parent", "kreis"])
+def test_missing_parent_or_kreis_raises(column):
+    squares = _squares([("P", 100, 2, 3, 15, 1, 4)])
+    cells = _cells([("a", "P", "A", 50), ("b", "P", "A", 5)])
+    cells[column] = cells[column].astype(object)
+    cells.loc[1, column] = np.nan
+
+    with pytest.raises(ValueError, match=column):
+        _targets(cells, squares)
+
+
+def test_share_sum_above_one_is_scaled_to_one_and_counted(caplog):
+    # 6 lone parents and 8 couples with a minor in a square of 10 table households.
+    squares = _squares([("S", 10, 3, 3, 8, 0, 0), ("T", 100, 5, 5, 20, 0, 0)])
+    cells = _cells([("s1", "S", "A", 14), ("s2", "S", "A", 6), ("t", "T", "A", 100)])
+
+    with caplog.at_level(logging.WARNING, logger=mct.__name__):
+        out, report = _targets(cells, squares)
+
+    scaled = out.set_index("cell").loc[["s1", "s2"]]
+    one, multi = scaled[mct.ONE_ADULT_TARGET], scaled[mct.MULTI_ADULT_TARGET]
+    np.testing.assert_allclose(one + multi, [14.0, 6.0])        # never more than the households
+    np.testing.assert_allclose(one / multi, [6 / 8, 6 / 8])     # the class ratio is kept
+    assert out.loc[out["cell"] == "t", [mct.ONE_ADULT_TARGET, mct.MULTI_ADULT_TARGET]
+                   ].sum(axis=1).item() == pytest.approx(30.0)  # an ordinary square is untouched
+    assert report["squares_scaled_to_share_sum_1"] == 1
+    assert report["households_in_scaled_squares"] == 20
+    assert any(r.levelno >= logging.WARNING for r in caplog.records)
+
+
+def test_fallback_above_the_raise_rate_raises():
+    squares = _squares([("P", 100, 2, 3, 15, 1, 4)])
+    cells = _cells([("a", "P", "A", 10), ("x", "X", "A", 90)])  # 90 % on the fallback
+
+    with pytest.raises(ValueError, match="error bound"):
+        _targets(cells, squares)
+    _, report = mct.per_cell_targets(
+        cells, squares, parent_col="parent", kreis_col="kreis", household_total_col="households",
+        fallback_raise_household_rate=0.95)
+    assert report["kreis_fallback_household_rate"] == pytest.approx(0.9)
