@@ -68,6 +68,7 @@ notes: |
   zensus_family5 (legacy), none, and minor_child_1km (two 1 km controls of households with a minor, seed column
   hh_minor_class); household-less 100 m cells can hand their persons to their square
   (move_persons_of_household_less_cells). Meaning: braunschweig/popsim/stage/config_keys.py; production values:
-  configs/base_bs.yml; method: braunschweig/popsim/minor_child_targets.py. No feature record yet: it depends on
-  the verdict of the run record popsim-ladder-inputs-b-2026-11-19 (results pending).
+  configs/base_bs.yml; method: braunschweig/popsim/minor_child_targets.py. Feature record:
+  minor_child_family_controls; decision and current state of both keys: ADR-0204, run record
+  popsim-ladder-inputs-b-2026-11-19.
   WP2 state (issue #645): the PopulationSim fork core is implemented; production values in configs/base_bs.yml, evidence in run manifest popsim-ladder-arm1-2026-11-17. Decision: ADR-0199; wiring: docs/codebase/notes/populationsim-fork.md.

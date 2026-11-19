@@ -230,3 +230,13 @@ def test_fallback_above_the_raise_rate_raises():
         cells, squares, parent_col="parent", kreis_col="kreis", household_total_col="households",
         fallback_raise_household_rate=0.95)
     assert report["kreis_fallback_household_rate"] == pytest.approx(0.9)
+
+
+def test_report_counts_the_squares_assumed_without_minor_families():
+    squares = _squares([("S1", 50, 0, 0, 0, 0, 0), ("S2", 100, 2, 3, 15, 1, 4)])
+    cells = _cells([("c1", "S1", "A", 25), ("c2", "S1", "A", 5), ("c3", "S2", "A", 10)])
+
+    _, report = _targets(cells, squares)
+
+    assert report["squares_primary_without_minor_family"] == 1
+    assert report["households_in_squares_primary_without_minor_family"] == 30

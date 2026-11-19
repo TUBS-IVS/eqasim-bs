@@ -35,6 +35,7 @@ from braunschweig.analysis.population_validation import (
     population_source as PS,
 )
 from braunschweig.analysis.popsim_validation import controls as C
+from braunschweig.popsim.control_spec import FAMILY_CONTROLS_MODES
 from braunschweig.popsim.tenure_targets import DEFAULT_MIN_HOUSEHOLDS_OUTSIDE
 
 LOGGER = logging.getLogger("braunschweig.analysis.popsim_validation")
@@ -65,6 +66,10 @@ def _parse_args(argv):
         help="households outside any dwelling a cell needs before the owner limit changes it "
              "(the run's ...tenure_min_households_outside_dwellings); read only with "
              "--tenure-owner-limited-to-dwellings")
+    ap.add_argument(
+        "--family-controls", choices=FAMILY_CONTROLS_MODES, default="zensus_family5",
+        help="the run's braunschweig.population.popsim.family_controls; decides which family rows "
+             "are scored as PopulationSim controls")
     ns = ap.parse_args(argv)
     if (ns.run_output_dir is None) == (ns.sim_cache is None):
         ap.error("pass exactly ONE of --run-output-dir / --sim-cache")
@@ -139,7 +144,8 @@ def run(ns) -> dict:
     registry = C.build_registry(
         DATA_PATH, building_type_target_basis=basis,
         tenure_owner_limited_to_dwellings=tenure_limited,
-        tenure_min_households_outside=ns.tenure_min_households_outside)
+        tenure_min_households_outside=ns.tenure_min_households_outside,
+        family_controls=ns.family_controls)
     try:
         long = _annotate_target_basis(CV.evaluate_all(registry, frames, geo, DATA_PATH), basis)
     finally:
@@ -165,6 +171,7 @@ def run(ns) -> dict:
         "building_type_target_basis": basis,
         "tenure_owner_limited_to_dwellings": tenure_limited,
         "tenure_min_households_outside": float(ns.tenure_min_households_outside),
+        "family_controls": ns.family_controls,
         "n_persons": int(len(frames.persons)),
         "n_households": int(len(frames.households)),
         "family_scores": fam.to_dict(orient="records"),

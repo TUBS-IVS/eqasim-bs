@@ -680,3 +680,56 @@ def test_validation_tenure_target_uses_the_same_rule(monkeypatch):
     assert off["03101"] == pytest.approx(192.3 / 231.6)
     assert on["03101"] == pytest.approx(46.3 / 231.6)
     assert on["03158"] == off["03158"] == pytest.approx(21.2 / 49.0)
+
+
+@pytest.mark.parametrize("mode", ["zensus_family5", "none", "minor_child_1km"])
+def test_family_controls_mode_shapes_the_household_registry(monkeypatch, tmp_path, mode):
+    """The run's family_controls (#659) decides which family rows are scored as controls.
+
+    Defect caught: a run without the census family-type controls scored against them as if
+    PopulationSim had fitted them, and the minor-child controls it did fit left unvalidated.
+    Hand computation: every fixture square has the shares 0.1 (one adult) and 0.2 (multi adult)
+    of its households, so each Kreis has the same shares and 0.7 without a minor.
+    """
+    from braunschweig.popsim import minor_child_targets as mct
+    from braunschweig.popsim.seed import HH_MINOR_CLASSES
+
+    cells = _fixture_cells_with_kreis(monkeypatch)
+    cells["GITTER_ID_100m"] = cells["ZENSUS100m"]
+    squares = pd.DataFrame({mct.SQUARE_ID_COLUMN: sorted(cells["ZENSUS1km"].unique())})
+    for column in mct.LONE_PARENT_SOURCES:
+        squares[column] = 0.5
+    for column in mct.COUPLE_SOURCES:
+        squares[column] = 2.0 / 3.0
+    squares[mct.FAMILY_TABLE_HOUSEHOLDS] = 10.0
+    parquet_1km = tmp_path / C.PARQUET_1KM_SUBPATH
+    parquet_1km.parent.mkdir(parents=True)
+    squares.to_parquet(parquet_1km, index=False)
+
+    registry = {c.name: c for c in C.build_registry(str(tmp_path), family_controls=mode)}
+
+    assert registry["household_type"].family == (
+        "popsim_hh" if mode == "zensus_family5" else "popsim_reference")
+    assert ("household_minor" in registry) == (mode == "minor_child_1km")
+    if mode != "minor_child_1km":
+        return
+    control = registry["household_minor"]
+    assert control.family == "popsim_hh"
+    none, one_adult, multi_adult = HH_MINOR_CLASSES
+    target = control.target(str(tmp_path)).set_index(["geo_id", "category"])["target_share"]
+    for kreis in ("03101", "03158"):
+        assert target[(kreis, one_adult)] == pytest.approx(0.1)
+        assert target[(kreis, multi_adult)] == pytest.approx(0.2)
+        assert target[(kreis, none)] == pytest.approx(0.7)
+
+    persons = pd.DataFrame({
+        "person_id": ["a1", "a2", "b1", "b2", "b3", "c1"],
+        "household_id": ["a", "a", "b", "b", "b", "c"],
+        "age": [40, 10, 40, 38, 5, 30]})
+    homes = gpd.GeoDataFrame({"household_id": ["a", "b", "c"]},
+                             geometry=[Point(605000, 5790000)] * 3, crs="EPSG:25832")
+    frames = PopulationFrames(persons, pd.DataFrame({"household_id": ["a", "b", "c"]}), homes,
+                              None, "run_output", "/tmp", "test_")
+    geo = pd.DataFrame({"household_id": ["a", "b", "c"], "ars5": ["03101"] * 3})
+    realized = control.realized(frames, geo).set_index("category")["synthetic_count"]
+    assert realized.to_dict() == {none: 1, one_adult: 1, multi_adult: 1}

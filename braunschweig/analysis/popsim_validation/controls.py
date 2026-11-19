@@ -12,8 +12,11 @@ used by the baseline population_validation.
 Control families
 ----------------
 popsim_backbone   -- age x sex (Tier-0), the structural backbone controls
-popsim_hh         -- household_size, household_type, tenure, building_type (Tier-1/2)
-popsim_reference  -- seniorenstatus (census-only reference, NOT a popsim control)
+popsim_hh         -- household_size, household_type, tenure, building_type (Tier-1/2);
+                     household_minor instead of household_type with the run's
+                     family_controls "minor_child_1km" (#659)
+popsim_reference  -- seniorenstatus (census-only reference, NOT a popsim control); also
+                     household_type when the run did not fit the census family-type controls
 
 Geography
 ---------
@@ -65,6 +68,10 @@ BACKBONE_AGE_BOUNDS: tuple[int, ...] = (10, 20, 30, 40, 50, 60, 70, 80)
 
 # Prepared parquet path relative to data root.
 _PARQUET_SUBPATH = "braunschweig/popsim/cells/zensus2022_grid_100m_de_prepared.parquet"
+# 1 km census grid relative to the data root: the file of the production key
+# braunschweig.population.popsim.cells_1km_path (configs/base_bs.yml); read for the minor-child
+# family targets (#659).
+PARQUET_1KM_SUBPATH = "braunschweig/popsim/cells/zensus2022_grid_1km_de_binned.parquet"
 
 # ARS column name in the prepared parquet (after clean_col_name transliteration of ü→u).
 _ARS_COLUMN_CLEAN = "RegionalSchlussel_ARS"
@@ -343,6 +350,48 @@ def household_type_target(data_path: str) -> pd.DataFrame:
     return _multi_col_kreis_target(cells, col_cat, total_col=total_col)
 
 
+def household_minor_target(data_path: str) -> pd.DataFrame:
+    """Per-Kreis shares of households by minor class, the targets of the "minor_child_1km" controls (#659).
+
+    Recomputes the stage's per-cell targets (``braunschweig.popsim.minor_child_targets.
+    per_cell_targets``: cell households times the square's census share) from the prepared 100 m
+    cells and the 1 km family table (:data:`PARQUET_1KM_SUBPATH`) and sums them per Kreis; the
+    class without a minor is the rest of the households. Categories:
+    ``braunschweig.popsim.seed.HH_MINOR_CLASSES``.
+
+    Limitation: the stage computes the targets on the run's ZGB cells after the building-type
+    rescale and the owner limit, which leave the household total unchanged; this loader works on
+    all cells of the prepared parquet, so the Kreis fallback shares of squares without
+    family-table households may differ from the run's where a Kreis lies partly outside the ZGB.
+    """
+    from braunschweig.popsim import cells as cellmod
+    from braunschweig.popsim import minor_child_targets as _mct
+    from braunschweig.popsim.control_spec import HH_TOTAL_CENSUS_COLUMN as _HH_TOTAL
+    from braunschweig.popsim.prepared_cells import read_columns_by_clean_name
+    from braunschweig.popsim.seed import HH_MINOR_CLASSES
+
+    cells = _load_cells(data_path)
+    households = pd.to_numeric(cells[_HH_TOTAL], errors="coerce").fillna(0.0)
+    work = pd.DataFrame({
+        "parent": cells[_CELL_ID_CLEAN].map(cellmod.derive_1km_parent_id).to_numpy(),
+        "ars5": cells["ars5"].to_numpy(),
+        "households": households.to_numpy()})
+    work = work[work["ars5"].notna()].reset_index(drop=True)
+    squares = read_columns_by_clean_name(Path(data_path) / PARQUET_1KM_SUBPATH, _mct.SQUARE_COLUMNS)
+    squares = squares[squares[_mct.SQUARE_ID_COLUMN].isin(set(work["parent"]))]
+    targets, report = _mct.per_cell_targets(
+        work, squares, parent_col="parent", kreis_col="ars5", household_total_col="households")
+    LOGGER.info("[popsim_validation] household_minor target: Kreis fallback for %d of %d squares",
+                report["squares_on_kreis_fallback"], report["squares_total"])
+    none, one_adult, multi_adult = HH_MINOR_CLASSES
+    targets[none] = (targets["households"] - targets[_mct.ONE_ADULT_TARGET]
+                     - targets[_mct.MULTI_ADULT_TARGET])
+    return _multi_col_kreis_target(
+        targets.rename(columns={_mct.ONE_ADULT_TARGET: one_adult,
+                                _mct.MULTI_ADULT_TARGET: multi_adult}),
+        {none: none, one_adult: one_adult, multi_adult: multi_adult}, total_col="households")
+
+
 def tenure_target(data_path: str, *, owner_limited_to_dwellings: bool = False,
                   min_households_outside: float = DEFAULT_MIN_HOUSEHOLDS_OUTSIDE) -> pd.DataFrame:
     """Per-Kreis tenure (owner/renter) target from prepared cells (Tier-2).
@@ -600,6 +649,28 @@ def _realized_hh_type5(frames: "PopulationFrames", geo: pd.DataFrame) -> pd.Data
     return out.rename(columns={"ars5": "geo_id"})
 
 
+def _realized_hh_minor_class(frames: "PopulationFrames", geo: pd.DataFrame) -> pd.DataFrame:
+    """Realized minor class per synthetic household, derived from the members' ages (#659).
+
+    The synthetic persons do not carry ``hh_minor_class``; it is derived here with the seed's
+    own rule (``braunschweig.popsim.seed.derive_hh_minor_class``) from ``age`` grouped by
+    ``household_id``. A household of minors only has no class (NaN) and is not counted, as in the
+    seed; the rule logs their number.
+    """
+    from braunschweig.popsim.seed import derive_hh_minor_class
+
+    persons = frames.persons
+    if "age" not in persons.columns:
+        LOGGER.warning("age absent from persons; household_minor control skipped.")
+        return pd.DataFrame(columns=["geo_id", "category", "synthetic_count"])
+    classes = derive_hh_minor_class(persons, household_id_col="household_id", age_col="age")
+    hh = classes.rename("category").rename_axis("household_id").reset_index()
+    hh = hh.merge(geo[["household_id", "ars5"]], on="household_id", how="left")
+    hh = hh.dropna(subset=["ars5", "category"])
+    out = hh.groupby(["ars5", "category"]).size().rename("synthetic_count").reset_index()
+    return out.rename(columns={"ars5": "geo_id"})
+
+
 def _realized_housing_tenure(frames: "PopulationFrames", geo: pd.DataFrame) -> pd.DataFrame:
     """Realized tenure (owner/renter) extractor from synthetic persons.
 
@@ -778,6 +849,7 @@ def build_registry(data_path: str, *,
                    building_type_target_basis: str = "households",
                    tenure_owner_limited_to_dwellings: bool = False,
                    tenure_min_households_outside: float = DEFAULT_MIN_HOUSEHOLDS_OUTSIDE,
+                   family_controls: str = "zensus_family5",
                    ) -> list[Control]:
     """Build the popsim control-fit validation registry.
 
@@ -785,7 +857,12 @@ def build_registry(data_path: str, *,
     ``braunschweig.population.popsim.building_type_targets_to_households`` (True = households)
     and is threaded to ``building_type_target``. ``tenure_owner_limited_to_dwellings`` and
     ``tenure_min_households_outside`` must match the run's keys of the same names (issue #657)
-    and are threaded to ``tenure_target``.
+    and are threaded to ``tenure_target``. ``family_controls`` must match the run's
+    ``braunschweig.population.popsim.family_controls`` (#659; modes:
+    ``braunschweig.popsim.control_spec.FAMILY_CONTROLS_MODES``): with "zensus_family5" the
+    registry is unchanged; otherwise ``household_type`` is kept as a reference row (family
+    ``popsim_reference``: PopulationSim did not fit it), and with "minor_child_1km" the control
+    ``household_minor`` (``household_minor_target``, ``_realized_hh_minor_class``) is added.
 
     Returns a list of Controls for:
     - household_size (Tier-1, 6 categories, geography=kreis)
@@ -803,6 +880,15 @@ def build_registry(data_path: str, *,
         raise ValueError(f"building_type_target_basis must be one of "
                          f"{BUILDING_TYPE_TARGET_BASES}, got {building_type_target_basis!r}")
     to_households = building_type_target_basis == "households"
+    from braunschweig.popsim.control_spec import (
+        FAMILY_CONTROLS_MINOR_CHILD_1KM, FAMILY_CONTROLS_MODES, FAMILY_CONTROLS_ZENSUS_FAMILY5)
+    if family_controls not in FAMILY_CONTROLS_MODES:
+        raise ValueError(f"family_controls must be one of {FAMILY_CONTROLS_MODES}, "
+                         f"got {family_controls!r}")
+    family_type_fitted = family_controls == FAMILY_CONTROLS_ZENSUS_FAMILY5
+    if not family_type_fitted:
+        LOGGER.info("[popsim_validation] family_controls=%r: household_type is a reference row "
+                    "(family popsim_reference), not a PopulationSim control", family_controls)
     reg: list[Control] = []
 
     # --- Tier-1: household_size (bucket control on household_size column) ---
@@ -819,16 +905,26 @@ def build_registry(data_path: str, *,
         target=household_size_target,
     ))
 
-    # --- Tier-1: household_type / hh_type5 ---
+    # --- Tier-1: household_type / hh_type5 (a control only with the census family-type set) ---
     reg.append(Control(
         name="household_type",
-        family="popsim_hh",
+        family="popsim_hh" if family_type_fitted else "popsim_reference",
         geography="kreis",
         categories=("einpersonen", "paar_ohne_kind", "paar_mit_kind",
                     "alleinerziehend", "mehrpers_ohne_kernfamilie"),
         realized=_realized_hh_type5,
         target=household_type_target,
     ))
+    if family_controls == FAMILY_CONTROLS_MINOR_CHILD_1KM:
+        from braunschweig.popsim.seed import HH_MINOR_CLASSES
+        reg.append(Control(
+            name="household_minor",
+            family="popsim_hh",
+            geography="kreis",
+            categories=tuple(HH_MINOR_CLASSES),
+            realized=_realized_hh_minor_class,
+            target=household_minor_target,
+        ))
 
     # --- Tier-2: tenure ---
     reg.append(Control(

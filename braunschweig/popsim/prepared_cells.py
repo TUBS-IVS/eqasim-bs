@@ -132,6 +132,33 @@ def clean_col_name(name: str) -> str:
     )
 
 
+def read_columns_by_clean_name(parquet_path: Union[str, Path], columns: Sequence[str]) -> pd.DataFrame:
+    """Read ``columns`` (cleaned names) from a parquet whose raw names may differ, under the clean names.
+
+    Used for the census 1 km family table (issue #659), read by the popsim stage and the batch
+    diagnostics. Reads only the requested columns.
+
+    Raises:
+        ValueError: a requested column is absent after :func:`clean_col_name`, or two raw names of
+            the file clean to the same requested name (the choice between them would be arbitrary).
+    """
+    import pyarrow.parquet as pq
+
+    raw_by_clean: Dict[str, list] = {}
+    for name in pq.ParquetFile(parquet_path).schema.names:
+        raw_by_clean.setdefault(clean_col_name(name), []).append(name)
+    ambiguous = {c: raw_by_clean[c] for c in columns if len(raw_by_clean.get(c, ())) > 1}
+    if ambiguous:
+        raise ValueError(f"{parquet_path}: several raw columns clean to the same column name: "
+                         f"{ambiguous}")
+    absent = [c for c in columns if c not in raw_by_clean]
+    if absent:
+        raise ValueError(f"{parquet_path} lacks column(s) {absent} (after clean_col_name)")
+    frame = pd.read_parquet(parquet_path, columns=[raw_by_clean[c][0] for c in columns])
+    frame.columns = list(columns)
+    return frame
+
+
 def load_prepared_cells(
     parquet_path: Union[str, Path],
     *,

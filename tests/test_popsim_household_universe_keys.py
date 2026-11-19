@@ -18,11 +18,12 @@ import pytest
 from pandas.testing import assert_frame_equal
 
 from braunschweig.popsim import batch as popsim_batch
-from braunschweig.popsim import control_spec, mid, minor_child_targets, seed_contract, sources, stage
+from braunschweig.popsim import control_spec, mid, minor_child_targets, seed, seed_contract, sources, stage
 from braunschweig.popsim.sources.mid import MidSource
 from braunschweig.popsim.stage import config_keys, controls_builder
 from tests import popsim_control_build_fixture as fixture
 
+NO_MINOR, ONE_ADULT, MULTI_ADULT = seed.HH_MINOR_CLASSES
 FAMILY5_TARGETS = {
     f"{base}_ZENSUS100m_target" for base, _ in control_spec._TIER1_HH_TYPE_ENTRIES}
 MINOR_TARGETS = {
@@ -83,7 +84,7 @@ def test_minor_child_controls_need_the_seed_column():
 
 
 def test_seed_contract_accepts_the_minor_class():
-    households, persons = _seed(["one_adult", "multi_adult", "no_minor", "no_minor"])
+    households, persons = _seed([ONE_ADULT, MULTI_ADULT, NO_MINOR, NO_MINOR])
     table = seed_contract.check_seed_coverage(
         households, persons, _controls("minor_child_1km", tiers=("tier0",)),
         HH_TOTAL_1KM_TARGET, mode="error",
@@ -174,11 +175,12 @@ def test_move_option_reaches_build_control_totals(tmp_path, stratify):
     assert context.info["popsim_household_less_cells"] == section
 
 
-def test_minor_child_mode_writes_the_1km_targets(tmp_path):
-    cells = fixture.make_cells()
-    squares = sorted(cells["ZENSUS1km"].unique())
-    # One lone parent and two couples with a minor per 10 family-table households in every
-    # square: shares 0.1 (one adult) and 0.2 (multi adult).
+def _write_family_table(tmp_path, squares, *, duplicate=False) -> Path:
+    """A 1 km family table with the raw ('-') names: shares 0.1 (one adult), 0.2 (multi adult).
+
+    One lone parent and two couples with a minor per 10 family-table households in every square.
+    ``duplicate`` adds a second raw column that cleans to the household column's name.
+    """
     raw = pd.DataFrame({minor_child_targets.SQUARE_ID_COLUMN: squares})
     for column in minor_child_targets.LONE_PARENT_SOURCES:
         raw[column] = 0.5
@@ -186,8 +188,16 @@ def test_minor_child_mode_writes_the_1km_targets(tmp_path):
         raw[column] = 2.0 / 3.0
     raw[minor_child_targets.FAMILY_TABLE_HOUSEHOLDS] = 10.0
     raw = raw.rename(columns=lambda c: c.replace("_1km_Gitter", "_1km-Gitter"))
+    if duplicate:
+        raw[minor_child_targets.FAMILY_TABLE_HOUSEHOLDS] = 99.0
     path = tmp_path / "grid_1km.parquet"
     raw.to_parquet(path, index=False)
+    return path
+
+
+def test_minor_child_mode_writes_the_1km_targets(tmp_path):
+    cells = fixture.make_cells()
+    path = _write_family_table(tmp_path, sorted(cells["ZENSUS1km"].unique()))
 
     with_targets, targets_report = stage._add_minor_child_targets(cells, path)
     settings = stage.HouseholdUniverseSettings(False, 20.0, "minor_child_1km")
@@ -206,6 +216,44 @@ def test_minor_child_mode_writes_the_1km_targets(tmp_path):
     report = json.loads((tmp_path / stage.CENSUS_FILTERED_REPORT_FILE).read_text("utf-8"))
     assert report["family_controls"] == {"mode": "minor_child_1km", "report": targets_report}
     assert report["household_less_cells"]["enabled"] is False
+
+
+def test_minor_child_targets_in_production_order_from_the_catalog_load(tmp_path):
+    """Load set -> parquet load -> aggregation -> targets, as in ``execute()`` (catalog source)."""
+    fixture_cells = fixture.make_cells()
+    cells_path = tmp_path / "grid_100m.parquet"
+    fixture_cells.drop(columns=["ZENSUS1km"]).rename(columns={"ZENSUS100m": "GITTER_ID_100m"}).to_parquet(
+        cells_path, index=False)
+    family_path = _write_family_table(tmp_path, sorted(fixture_cells["ZENSUS1km"].unique()))
+    base_cols = fixture.base_columns(family_controls="minor_child_1km")
+
+    load_cols = stage._resolve_cell_load_columns(
+        _ConfigureContext({}), fixture.CONTROL_SOURCE, fixture.SEED_NAME, fixture.CONTROL_TIERS,
+        base_cols, False,
+        cells_path, [], fine_teen_age_bands=fixture.FINE_TEEN_AGE_BANDS,
+        family_controls="minor_child_1km")
+    cells = mid.load_control_cells(cells_path, load_cols)
+    cells = stage._add_aggregated_control_columns(
+        cells, fixture.CONTROL_SOURCE, fixture.SEED_NAME, fixture.CONTROL_TIERS,
+        family_controls="minor_child_1km", **fixture.AGGREGATE_KWARGS)
+    out, report = stage._add_minor_child_targets(cells, family_path)
+
+    households = out.groupby("ZENSUS1km")[control_spec.HH_TOTAL_CENSUS_COLUMN].sum()
+    one = out.groupby("ZENSUS1km")[minor_child_targets.ONE_ADULT_TARGET].sum()
+    multi = out.groupby("ZENSUS1km")[minor_child_targets.MULTI_ADULT_TARGET].sum()
+    assert households["CRS3035RES1000mN2900000E4400000"] == pytest.approx(71.9)
+    assert one.to_numpy() == pytest.approx(0.1 * households.to_numpy())
+    assert multi.to_numpy() == pytest.approx(0.2 * households.to_numpy())
+    assert report["squares_on_kreis_fallback"] == 0
+    assert report["cells_with_missing_households"] == 0
+
+
+def test_minor_child_targets_refuse_two_raw_columns_with_one_clean_name(tmp_path):
+    cells = fixture.make_cells()
+    path = _write_family_table(tmp_path, sorted(cells["ZENSUS1km"].unique()), duplicate=True)
+
+    with pytest.raises(ValueError, match="clean to the same column name"):
+        stage._add_minor_child_targets(cells, path)
 
 
 class _ConfigureContext:
@@ -230,6 +278,13 @@ class _ConfigureContext:
 def test_invalid_family_controls_value_raises(key, value):
     with pytest.raises(ValueError, match=key.replace(".", r"\.")):
         stage.configure(_ConfigureContext({key: value}))
+
+
+def test_minor_child_controls_refuse_the_entd_source():
+    # The ENTD seed has no hh_minor_class: fail at DAG-build time, not after the seed build.
+    with pytest.raises(ValueError, match="entd"):
+        stage.configure(_ConfigureContext({
+            config_keys.KEY_FAMILY_CONTROLS: "minor_child_1km", config_keys.KEY_SOURCE: "entd"}))
 
 
 # --- the legacy seed and batch signature are those of the commit before #659 Part B ---------

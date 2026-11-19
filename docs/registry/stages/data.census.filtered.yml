@@ -224,4 +224,5 @@ notes: >-
   census_filtered_report.json carries the sections household_less_cells and family_controls (counts,
   fallback squares and rates are written there, not repeated here). The batch diagnostics table
   household_composition.csv (braunschweig.analysis.popsim_batch_diagnostics.composition) reads the result.
-  Evidence: the pre-registered run record popsim-ladder-inputs-b-2026-11-19 (results pending).
+  Decision and current state: ADR-0204 (feature minor_child_family_controls); evidence: the
+  pre-registered run record popsim-ladder-inputs-b-2026-11-19.

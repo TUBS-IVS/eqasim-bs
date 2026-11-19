@@ -28,8 +28,20 @@ because 1 km squares straddle Kreis borders while the census table is per square
 report counts the fallback squares and their households; above
 ``fallback_warn_household_rate`` of all cell households the rate is logged as a warning, and
 above ``fallback_raise_household_rate`` the call raises (the Kreis shares would then carry most
-of the targets and the census would no longer supply the composition per square). A square with
-family-table households but no family with a minor is a true 0, not a fallback.
+of the targets and the census would no longer supply the composition per square).
+
+The two bounds are ASSUMPTION-grade judgements, not measured limits, and are deliberately not
+config keys: they guard the primary method (per-square shares) against a broken load, not a
+modelling choice. 5 % (warning): a few suppressed or absent squares are expected from census
+secrecy, so a share of households on the fallback well above a few percent points to a key or
+load problem worth a look. 50 % (error): above it the Kreis shares, not the squares, would
+supply most targets, so the method the targets claim would no longer be the one used.
+
+ASSUMPTION (true 0): a square with family-table households but no family with a minor gets
+targets of 0, not a fallback share. Census secrecy could also blank small family counts while
+keeping the household total, which this rule cannot tell apart from a real 0; the report counts
+such squares and their cell households (``squares_primary_without_minor_family``,
+``households_in_squares_primary_without_minor_family``).
 
 ASSUMPTION (share sum above 1): a square can count more families with a minor than the
 family table has households (a household holding two families is counted twice). Its two class
@@ -38,16 +50,9 @@ such a square are scaled down proportionally to sum 1 (the one-adult/multi-adult
 the squares and their households are counted in the report and logged as a warning.
 
 ASSUMPTION: one family with a child under 18 = one household with a minor, and a lone
-parent = the household's one adult. Known blind spots of this mapping:
-
-- a household holding two families (e.g. a lone parent living with her parents) is
-  counted twice by the family table and once by the seed;
-- minors living without a parent (with grandparents, in foster care) are in a seed
-  household with a minor but in no census family with a child;
-- a lone parent living with a further adult (a lodger, an adult child, a grandparent) is
-  ``one_adult`` in the census and ``multi_adult`` in the seed; this error is one-sided,
-  so the one-adult target is an upper bound of the seed class and the multi-adult
-  target a lower bound.
+parent = the household's one adult; its blind spots are listed once in ADR-0204
+(``docs/decisions/ADR-0204-household-targets-use-the-universes-and-definitions-the-seed-can-match.md``,
+"Assumptions").
 
 Pure module: no I/O. The caller loads the prepared 1 km parquet (columns
 :data:`SQUARE_COLUMNS`, cleaned by :func:`braunschweig.popsim.prepared_cells.clean_col_name`,
@@ -170,7 +175,10 @@ def per_cell_targets(
         and ``squares_fallback_zero_table_households``), ``households_total``,
         ``households_on_kreis_fallback``, ``kreis_fallback_household_rate`` and, for the
         squares whose two shares summed above 1 and were scaled to sum 1 (see the module
-        ASSUMPTION), ``squares_scaled_to_share_sum_1`` and ``households_in_scaled_squares``.
+        ASSUMPTION), ``squares_scaled_to_share_sum_1`` and ``households_in_scaled_squares``,
+        and for the primary squares without any family with a minor (the true-0 ASSUMPTION)
+        ``squares_primary_without_minor_family`` and
+        ``households_in_squares_primary_without_minor_family``.
 
     Raises
     ------
@@ -248,6 +256,7 @@ def per_cell_targets(
     households_total = float(square_households.sum())
     households_fallback = float(square_households[fallback].sum())
     rate = households_fallback / households_total if households_total else 0.0
+    true_zero = primary[(lone_parents[primary] + couples[primary]).to_numpy() == 0]
     squares_scaled = int(scaled.sum())
     households_scaled = float(square_households[scaled].sum())
     report = {
@@ -261,6 +270,9 @@ def per_cell_targets(
         "kreis_fallback_household_rate": rate,
         "squares_scaled_to_share_sum_1": squares_scaled,
         "households_in_scaled_squares": households_scaled,
+        "squares_primary_without_minor_family": int(len(true_zero)),
+        "households_in_squares_primary_without_minor_family": float(
+            square_households[true_zero].sum()),
     }
 
     message = (

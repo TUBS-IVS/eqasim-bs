@@ -196,3 +196,42 @@ def test_build_control_totals_rejects_a_bad_move_setup(kwargs, match):
     with pytest.raises(ValueError, match=match):
         mid.build_control_totals(
             targets, crosswalk, ["HH", "P1"], household_total_col="HH", **kwargs)
+
+
+def test_report_separates_donor_kinds_and_counts_stuck_cells():
+    # Square a: cell 0 has 0 published households, cell 2 has 0.4 that round to 0; both move to
+    # cell 1. Square b has no household cell: its two household-less cells are stuck.
+    frame = _frame(["a", "a", "a", "b", "b"], age=[4.0, 6.0, 2.0, 3.0, 1.0])
+
+    _, report = move_persons_to_household_cells(
+        frame, parent_col="parent", households=pd.Series([0, 3, 0, 0, 0]),
+        published_households=pd.Series([0.0, 3.0, 0.4, 0.0, 0.0]), person_cols=["age"])
+
+    assert report["donor_cells"] == 2
+    assert report["donor_cells_published_zero"] == 1
+    assert report["donor_cells_rounded_to_zero"] == 1
+    assert report["stuck_cells"] == 2
+    assert report["parents_without_households"] == 1
+    assert report["persons_in_parents_without_households"] == pytest.approx(4.0)
+
+
+def test_build_control_totals_keeps_the_rounded_parent_totals_despite_float_drift():
+    # The person column sums to 11.5 before the move (rounds to 12) but to 11.499999999999998
+    # after it in float arithmetic (would round to 11): the pre-move totals must be kept.
+    targets = pd.DataFrame({
+        "ZENSUS100m": ["c0", "c1", "c2", "c3"],
+        "HH": [0.0, 1.0, 1.0, 1.0],
+        "P": [3.3, 0.29999999999999927, 4.4, 3.5],
+    })
+    crosswalk = pd.DataFrame({"ZENSUS100m": list(targets["ZENSUS100m"]), "ZENSUS1km": ["k"] * 4})
+    plain = mid.build_control_totals(targets, crosswalk, ["HH", "P"])
+    report: dict = {}
+
+    moved = mid.build_control_totals(
+        targets, crosswalk, ["HH", "P"], household_total_col="HH", person_cols=["P"],
+        move_persons_max=20.0, report=report)
+
+    assert plain["ZENSUS1km"]["P_ZENSUS1km"].tolist() == [12]
+    assert moved["ZENSUS1km"]["P_ZENSUS1km"].tolist() == [12]
+    assert moved["ZENSUS100m"]["P_ZENSUS100m"].iloc[0] == 0
+    assert report["max_parent_sum_change"] == 0

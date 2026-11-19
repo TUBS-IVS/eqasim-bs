@@ -870,7 +870,7 @@ def configure(context):
     # KREIS input consistency (#658, Part A; meaning: config_keys). Code defaults = legacy values.
     _configure_kreis_consistency_keys(context)
     # Household universes (#659, Part B; meaning: config_keys). Code defaults = legacy values.
-    _configure_household_universe_keys(context)
+    family_controls = _configure_household_universe_keys(context)
     # Owner-household targets limited to the dwellings of the cell (#657; meaning:
     # KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS in config_keys). Default False in code: the production
     # switch follows the evidence run. The threshold's default is single-sourced from the rule
@@ -1114,6 +1114,7 @@ def configure(context):
         context.stage("braunschweig.data.bbsr.regiostar", alias="regiostar_tenure")
 
     source_name = context.config(KEY_SOURCE, "mid")
+    _require_family_controls_source(family_controls, source_name)
     # Member completion (D3) runs for the MiD source only. When active, the donor
     # build (member completion + weekend-plan match) is delegated to the cached
     # braunschweig.popsim.completed_donor stage so it runs ONCE across all runs
@@ -1660,7 +1661,9 @@ class HouseholdUniverseSettings:
             totals = {}
             for batch_report in self.batch_reports:
                 for key, value in batch_report.items():
-                    if key != "batch":
+                    if key == "max_parent_sum_change":
+                        totals[key] = max(totals.get(key, 0), value)
+                    elif key != "batch":
                         totals[key] = totals.get(key, 0) + value
         household_less = {
             "enabled": bool(self.move_persons),
@@ -1672,11 +1675,13 @@ class HouseholdUniverseSettings:
         return household_less, family
 
 
-def _configure_household_universe_keys(context) -> None:
+def _configure_household_universe_keys(context) -> str:
     """Declare the three #659 keys with their legacy defaults in ``configure()`` and validate them.
 
     With ``family_controls`` "minor_child_1km" the 1 km cell file key is declared too (read in
     ``execute()``). A bad value fails at DAG-build time, naming the key (ValueError).
+    Returns the ``family_controls`` value (checked against the seed source by
+    :func:`_require_family_controls_source`).
     """
     from braunschweig.popsim import control_spec as _cs
 
@@ -1690,6 +1695,26 @@ def _configure_household_universe_keys(context) -> None:
         from braunschweig.population.config import KEY_CELLS_1KM
 
         context.config(KEY_CELLS_1KM)
+    return family_controls
+
+
+def _require_family_controls_source(family_controls: str, source_name: str) -> None:
+    """Refuse "minor_child_1km" for a seed source other than MiD, at DAG-build time (#659).
+
+    The two minor-child controls read the seed column ``hh_minor_class``, which only the MiD seed
+    build derives (``mid.seed_loading``); an ENTD run would otherwise fail in the seed contract
+    after the seed build.
+
+    Raises:
+        ValueError: ``family_controls`` is "minor_child_1km" and ``source_name`` is not "mid".
+    """
+    from braunschweig.popsim import control_spec as _cs
+
+    if family_controls == _cs.FAMILY_CONTROLS_MINOR_CHILD_1KM and source_name != "mid":
+        raise ValueError(
+            f"{KEY_FAMILY_CONTROLS} is 'minor_child_1km' but {KEY_SOURCE} is {source_name!r}: the "
+            "minor-child controls read the seed column hh_minor_class, which only the 'mid' seed "
+            "carries. Use family_controls 'zensus_family5' or 'none' with this source.")
 
 
 def _read_household_universe_config(context) -> HouseholdUniverseSettings:
@@ -1718,12 +1743,11 @@ def _add_minor_child_targets(cells: pd.DataFrame, cells_1km_path):
 
     Raises:
         FileNotFoundError: the 1 km parquet is missing.
-        ValueError: a column of ``SQUARE_COLUMNS`` or a cell column is missing (and the errors of
-            ``per_cell_targets``).
+        ValueError: a column of ``SQUARE_COLUMNS`` or a cell column is missing, two raw columns
+            of the 1 km file clean to one name (``prepared_cells.read_columns_by_clean_name``),
+            and the errors of ``per_cell_targets``.
     Mutates: nothing in place; the cells frame MUST be reassigned.
     """
-    import pyarrow.parquet as _pq
-
     from braunschweig.popsim import control_spec as _cs
     from braunschweig.popsim import minor_child_targets as _mct
 
@@ -1732,19 +1756,11 @@ def _add_minor_child_targets(cells: pd.DataFrame, cells_1km_path):
         raise FileNotFoundError(
             f"[popsim.stage] {KEY_FAMILY_CONTROLS} is 'minor_child_1km' but the 1 km cell file "
             f"{path} does not exist (config key braunschweig.population.popsim.cells_1km_path).")
-    clean_to_raw: dict[str, str] = {}
-    for raw in _pq.ParquetFile(path).schema.names:
-        clean_to_raw.setdefault(prepared_cells.clean_col_name(raw), raw)
-    missing = [c for c in _mct.SQUARE_COLUMNS if c not in clean_to_raw]
-    if missing:
-        raise ValueError(f"[popsim.stage] the 1 km cell file {path} lacks the column(s) {missing} "
-                         "of the census family table that the minor-child targets read.")
     for column in ("ZENSUS1km", mid._ARS_COLUMN, _cs.HH_TOTAL_CENSUS_COLUMN):
         if column not in cells.columns:
             raise ValueError(f"[popsim.stage] the cells frame lacks {column!r}; the minor-child "
                              "targets need the 1 km parent, the ARS and the household total.")
-    squares = pd.read_parquet(path, columns=[clean_to_raw[c] for c in _mct.SQUARE_COLUMNS])
-    squares.columns = [prepared_cells.clean_col_name(c) for c in squares.columns]
+    squares = prepared_cells.read_columns_by_clean_name(path, _mct.SQUARE_COLUMNS)
     squares = squares[squares[_mct.SQUARE_ID_COLUMN].isin(set(cells["ZENSUS1km"]))]
 
     households = pd.to_numeric(cells[_cs.HH_TOTAL_CENSUS_COLUMN], errors="coerce")
@@ -1776,12 +1792,21 @@ def _write_household_universe_report(context, settings: HouseholdUniverseSetting
     context.set_info("popsim_household_less_cells", household_less)
     context.set_info("popsim_family_controls", family)
     totals = household_less["totals"]
-    logger.info("[popsim.stage] household universes: move %s%s, family controls %s; report %s",
-                "on" if settings.move_persons else "off",
-                "" if totals is None else
-                f" ({totals.get('persons_moved', 0.0):.0f} persons from "
-                f"{totals.get('donor_cells', 0)} cells over {len(household_less['batches'])} batches)",
-                settings.family_controls, path)
+    logger.info("[popsim.stage] household universes: move %s, family controls %s; report %s",
+                "on" if settings.move_persons else "off", settings.family_controls, path)
+    if totals is not None:
+        moved = float(totals.get("persons_moved", 0.0))
+        left = (float(totals.get("large_cell_persons", 0.0))
+                + float(totals.get("persons_in_parents_without_households", 0.0)))
+        household_less_persons = moved + left
+        rate = moved / household_less_persons if household_less_persons else 0.0
+        logger.info(
+            "[popsim.stage] household-less cells over %d batches: moved %.0f/%.0f persons "
+            "(%.1f%%) from %d cells, left %.0f (%.1f%%: %d large cells, %d stuck cells)",
+            len(household_less["batches"]), moved, household_less_persons, 100.0 * rate,
+            int(totals.get("donor_cells", 0)), left,
+            100.0 * (1.0 - rate) if household_less_persons else 0.0,
+            int(totals.get("large_cells", 0)), int(totals.get("stuck_cells", 0)))
     return path
 
 

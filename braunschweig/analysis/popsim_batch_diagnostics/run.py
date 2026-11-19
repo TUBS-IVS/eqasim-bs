@@ -45,7 +45,7 @@ from braunschweig.analysis.popsim_batch_diagnostics.reuse import (
 from braunschweig.analysis.popsim_batch_diagnostics.solver_paths import solver_path_table
 from braunschweig.popsim.control_groups import UNIVERSE_RATIO_TOLERANCE, unmatched_controls
 from braunschweig.popsim.input_consistency import summarize as summarize_input_consistency
-from braunschweig.popsim.prepared_cells import clean_col_name
+from braunschweig.popsim.prepared_cells import read_columns_by_clean_name
 
 logger = logging.getLogger(__name__)
 _TAG = "[popsim_batch_diagnostics]"
@@ -666,21 +666,7 @@ def _read_squares(path) -> pd.DataFrame:
     Raises ``ValueError`` when a column is absent, or when two raw names of the parquet clean to
     the same census column name (the choice between them would be arbitrary).
     """
-    import pyarrow.parquet as pq
-    raw_by_clean: dict = {}
-    for name in pq.ParquetFile(path).schema.names:
-        raw_by_clean.setdefault(clean_col_name(name), []).append(name)
-    ambiguous = {c: raw_by_clean[c] for c in CENSUS_SQUARE_COLUMNS if len(raw_by_clean.get(c, ())) > 1}
-    if ambiguous:
-        raise ValueError(f"{path}: several raw columns clean to the same census column: "
-                         f"{ambiguous}")
-    raw_by_clean = {clean: names[0] for clean, names in raw_by_clean.items()}
-    absent = [c for c in CENSUS_SQUARE_COLUMNS if c not in raw_by_clean]
-    if absent:
-        raise ValueError(f"{path} lacks column(s) {absent} (after clean_col_name)")
-    frame = pd.read_parquet(path, columns=[raw_by_clean[c] for c in CENSUS_SQUARE_COLUMNS])
-    frame.columns = list(CENSUS_SQUARE_COLUMNS)
-    return frame
+    return read_columns_by_clean_name(path, CENSUS_SQUARE_COLUMNS)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

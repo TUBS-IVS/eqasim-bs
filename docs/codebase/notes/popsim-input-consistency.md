@@ -54,7 +54,8 @@ the seed), otherwise target and seed contradict each other as before. Data limit
 Where the measurement appears: the report sections `household_less_cells` and `family_controls` of
 `census_filtered_report.json`, and the diagnostics table `household_composition.csv`
 (`braunschweig/analysis/popsim_batch_diagnostics/composition.py`). The pre-registered arms are in the run record
-`docs/runs/popsim-ladder-inputs-b-2026-11-19.yml` (results pending).
+`docs/runs/popsim-ladder-inputs-b-2026-11-19.yml`; the decision and the current production state are in
+ADR-0204 (`docs/decisions/ADR-0204-household-targets-use-the-universes-and-definitions-the-seed-can-match.md`).
 
 Consistent tables are a precondition of a fit, not a validation: the realised population is judged only
 against committed observed references, never against these tables.

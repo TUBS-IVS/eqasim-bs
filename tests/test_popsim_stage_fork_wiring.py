@@ -22,6 +22,9 @@ sys.path.append(str(Path(__file__).resolve().parent))
 import popsim_control_build_fixture as fixture  # noqa: E402
 
 from braunschweig.popsim import control_spec, stage, tool_version  # noqa: E402
+from braunschweig.popsim.seed import HH_MINOR_CLASSES  # noqa: E402
+
+HH_MINOR_NONE = HH_MINOR_CLASSES[0]
 
 
 class _Stop(Exception):
@@ -385,7 +388,7 @@ def test_execute_hands_the_household_universe_keys_on(monkeypatch, tmp_path, key
         lambda ctx, name: ((), (), "csv", False, False, (), set(), 30, None, "default", True))
     # The seed build always derives hh_minor_class (the analysis tools read it too).
     seed = pd.DataFrame({"H_ID": [1, 2], "hh_type5": ["einpersonen", "paar_mit_kind"],
-                         "hh_minor_class": ["no_minor", "multi_adult"]})
+                         "hh_minor_class": [HH_MINOR_NONE, "multi_adult"]})
     monkeypatch.setattr(stage, "_build_populationsim_seed",
                         lambda *a, **k: (None, None, seed, pd.DataFrame({"H_ID": [1, 2]})))
 

@@ -36,17 +36,17 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.data.mid.status_by_hhtype import ADULT_MIN_AGE
+from braunschweig.popsim.minor_child_targets import (
+    COUPLE_SOURCES as COUPLE_FAMILY_COLUMNS,
+    FAMILY_TABLE_HOUSEHOLDS as FAMILY_HOUSEHOLDS_COLUMN,
+    LONE_PARENT_SOURCES as LONE_PARENT_COLUMNS,
+    SQUARE_ID_COLUMN,
+)
 
 logger = logging.getLogger(__name__)
 _TAG = "[popsim_batch_diagnostics]"
 
-# The same cleaned column names are held by braunschweig.popsim.minor_child_targets (added on
-# another branch); that module is deliberately not imported here.
-SQUARE_ID_COLUMN = "GITTER_ID_1km"
-FAMILY_HOUSEHOLDS_COLUMN = "Insgesamt_Haushalte_Typ_priv_HH_Familie_1km_Gitter"
-_MINOR_SUFFIX = "_mind_1Kind_unter18_Typ_der_Kernfamilie_nach_Kindern_1km_Gitter"
-LONE_PARENT_COLUMNS = tuple(f"{p}{_MINOR_SUFFIX}" for p in ("Vater", "Mutter"))
-COUPLE_FAMILY_COLUMNS = tuple(f"{p}{_MINOR_SUFFIX}" for p in ("Ehep", "EingetrLP", "NichtehelLG"))
+# The census column names are owned by braunschweig.popsim.minor_child_targets (imported above).
 CENSUS_SQUARE_COLUMNS = (SQUARE_ID_COLUMN, FAMILY_HOUSEHOLDS_COLUMN, *LONE_PARENT_COLUMNS,
                          *COUPLE_FAMILY_COLUMNS)
 
@@ -54,8 +54,7 @@ CENSUS_SOURCE = (
     "observed census data (Zensus 2022 family-type table, 1 km); the household denominator is "
     "ALL private households of that table, the same universe as all synthetic households; "
     "census_persons_0_17_per_family_with_minor is an upper bound (minors outside families are "
-    "in the numerator only); blind spots: households with two families; minors living without "
-    "a parent; a lone parent living with a further adult counts as two adults in the model")
+    "in the numerator only); family-to-household blind spots: see ADR-0204")
 
 _BAND_0_9 = (0, 9)
 _BAND_10_14 = (10, 14)

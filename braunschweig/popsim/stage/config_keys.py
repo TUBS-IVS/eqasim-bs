@@ -233,8 +233,8 @@ KEY_KREIS_FINE_MIN_PERSONS = "braunschweig.population.popsim.kreis_fine_min_pers
 KREIS_BATCH_APPORTIONMENTS = ("population", "universe")
 # Household universes of the control tables (issue #659, Part B). The code defaults are the LEGACY
 # values: all three at their default reproduce the control tables value for value
-# (tests/test_popsim_household_universe_keys.py). Production switches them on only after the ladder
-# arms of #659 meet their gates.
+# (tests/test_popsim_household_universe_keys.py). Production values: configs/base_bs.yml; why each
+# is on (the move by owner decision with one pre-registered no-harm check not met): ADR-0204.
 #   move_persons_of_household_less_cells: false (legacy) | true: before the integerisation, the
 #       persons (age x sex bands and active EMPLOYED_* columns) of a 100 m cell with 0 households move
 #       to the household cells of the same 1 km square, in proportion to their households (rule and

@@ -77,10 +77,7 @@ def load_donor(mid_dir: str, random_seed: int, weekend: bool):
     hh_type5 = seedmod.derive_hh_type5(donor_p, household_id_col="H_ID", age_col="HP_ALTER")
     donor_hh = donor_hh.copy()
     donor_hh["hh_type5"] = donor_hh["H_ID"].map(hh_type5)
-    # The minor-child controls (HH_MINOR_*, #659) read ``households.hh_minor_class``.
-    hh_minor_class = seedmod.derive_hh_minor_class(
-        donor_p, household_id_col="H_ID", age_col="HP_ALTER")
-    donor_hh["hh_minor_class"] = donor_hh["H_ID"].map(hh_minor_class)
+    # No hh_minor_class here: the 1 km HH_MINOR_* controls (#659) are not evaluated at 100 m.
     logger.info("donor loaded: %d households, %d persons", len(donor_hh), len(donor_p))
     return donor_hh, donor_p
 

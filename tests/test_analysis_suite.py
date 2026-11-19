@@ -220,12 +220,15 @@ def test_popsim_validation_receives_the_runs_building_type_basis(
     assert seen == [expected]
 
 
-@pytest.mark.parametrize("limited, threshold", [(False, 10.0), (True, 25.0)])
-def test_popsim_validation_receives_the_runs_tenure_limit(tmp_path, monkeypatch, limited, threshold):
-    """The run's two tenure-limit keys (#657) reach the validation as its owner-target rule.
+@pytest.mark.parametrize("limited, threshold, family", [
+    (False, 10.0, "zensus_family5"), (True, 25.0, "minor_child_1km")])
+def test_popsim_validation_receives_the_runs_tenure_limit(
+        tmp_path, monkeypatch, limited, threshold, family):
+    """The run's two tenure-limit keys (#657) and its family_controls (#659) reach the validation.
 
     Defect caught: a run with the owner limit on would be validated against the unlimited
-    owner targets, which PopulationSim was never fitted to.
+    owner targets, which PopulationSim was never fitted to; likewise a run with the minor-child
+    family controls against the census family-type controls.
     """
     PV = pytest.importorskip("braunschweig.analysis.popsim_validation.run_popsim_control_validation")
     _write_min_output(tmp_path)
@@ -235,15 +238,16 @@ def test_popsim_validation_receives_the_runs_tenure_limit(tmp_path, monkeypatch,
     monkeypatch.setattr(
         PV, "run",
         lambda ns: seen.append((ns.tenure_owner_limited_to_dwellings,
-                                ns.tenure_min_households_outside)))
+                                ns.tenure_min_households_outside, ns.family_controls)))
     ctx = _execute_context(
         tmp_path,
         **{"braunschweig.population.method": "popsim_mid",
            "braunschweig.population.popsim.work_dir": str(work),
            "braunschweig.population.popsim.tenure_owner_limited_to_dwellings": limited,
-           "braunschweig.population.popsim.tenure_min_households_outside_dwellings": threshold})
+           "braunschweig.population.popsim.tenure_min_households_outside_dwellings": threshold,
+           "braunschweig.population.popsim.family_controls": family})
     AS.execute(ctx)
-    assert seen == [(limited, threshold)]
+    assert seen == [(limited, threshold, family)]
 
 
 def test_dashboard_and_education_skip_without_inputs(tmp_path, monkeypatch):
