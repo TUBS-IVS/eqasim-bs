@@ -35,5 +35,26 @@ the stage record is `docs/registry/stages/data.census.filtered.yml`. No figures 
   (reader `run._input_consistency`, measurement `input_consistency.summarize`), readable on any existing
   batch folder, also those made before the keys.
 
+## Household universes (issue #659, ADR pending (issue #659))
+
+The household-level controls must count the same households the seed holds. Two repairs, both switched by keys
+read in `braunschweig/popsim/stage/config_keys.py` (the owner of their meaning; production values in
+`configs/base_bs.yml`):
+
+- **Household-less 100 m cells** keep their persons out of reach of PopulationSim; the persons move to the household
+  cells of their square: `braunschweig/popsim/household_less_cells.py`.
+- **Family-type controls** count a child of any age, the seed sees only age: the under-18 definition of
+  `braunschweig/popsim/minor_child_targets.py` and the seed column `hh_minor_class`
+  (`braunschweig/popsim/seed.py::derive_hh_minor_class`) replace them in mode `minor_child_1km`.
+
+Rule: **a new household-level control must use a definition the seed can observe** (an age, a count, a code of
+the seed), otherwise target and seed contradict each other as before. Data limits of the two tables are in
+`docs/registry/data/zensus2022_grid_cells.yml`.
+
+Where the measurement appears: the report sections `household_less_cells` and `family_controls` of
+`census_filtered_report.json`, and the diagnostics table `household_composition.csv`
+(`braunschweig/analysis/popsim_batch_diagnostics/composition.py`). The pre-registered arms are in the run record
+`docs/runs/popsim-ladder-inputs-b-2026-11-19.yml` (results pending).
+
 Consistent tables are a precondition of a fit, not a validation: the realised population is judged only
 against committed observed references, never against these tables.

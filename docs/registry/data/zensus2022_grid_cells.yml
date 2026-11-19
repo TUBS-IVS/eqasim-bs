@@ -43,7 +43,14 @@ limitations: 'The per-cell single-year age columns (M_AGE_0..100 / F_AGE_*) are 
   carry a second limitation: the owner quote behind them covers occupied dwellings in
   residential buildings without dormitories, while the upstream columns apply it to ALL
   households; the repair downstream is ADR-0202, which makes the stage read the rooms-table
-  dwelling column of this grid (control_spec.OWNER_QUOTE_DWELLING_COLUMN).'
+  dwelling column of this grid (control_spec.OWNER_QUOTE_DWELLING_COLUMN). The household
+  counts carry a third limitation: in populated 100 m cells they can be suppressed and then read
+  as 0 (ASSUMPTION that the households are counted in neighbouring cells; repair and its switch:
+  braunschweig.popsim.household_less_cells, issue #659, ADR pending (issue #659)). The two family-type
+  tables differ in their child definition: Typ_priv_HH_Familie (100 m, the four family-type controls
+  of control_spec) counts a child of ANY age, Typ_der_Kernfamilie_nach_Kindern (1 km, read by
+  braunschweig.popsim.minor_child_targets, columns listed there) counts children under 18; the seed
+  can observe only age, so only the 1 km table matches a seed definition.'
 notes: 'Source repository: https://github.com/TUBS-IVS/cleancensus. THE PopulationSim control totals: the _adj-reconciled cell marginals are the targets every
   synthetic household/person is fitted to. Regenerate with the cleancensus pipeline (separate
   repository).'
