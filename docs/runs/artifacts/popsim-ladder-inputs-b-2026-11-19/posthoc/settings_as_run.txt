@@ -1,0 +1,72 @@
+arm_7a/batch_000 settings.yaml sha256 as run: 4ce89783de4fcc1aad482d9c72d111802a1c15ef8e275c985d337a85c00c1fc4
+arm_7a/batch_013 settings.yaml sha256 as run: 5f931a5001fcf6874de9ae5a7d8e62e12e03573bd76bdd5f87bb148fd563c950
+arm_7a/batch_028 settings.yaml sha256 as run: 7098e8528d6853e60d04d8681548657940d1edf7766c13dea34fda9025e932fd
+    93,94c93,94
+    < STORE_POSITIVE_WEIGHT_ROWS_ONLY: false
+    < FAST_PATHS: false
+    ---
+    > STORE_POSITIVE_WEIGHT_ROWS_ONLY: true
+    > FAST_PATHS: true
+arm_7a/batch_032 settings.yaml sha256 as run: 27932d609a5061f8ddd7536eac2b58edd9fadc893677be2b8d61491f278076e2
+    93,94c93,94
+    < STORE_POSITIVE_WEIGHT_ROWS_ONLY: false
+    < FAST_PATHS: false
+    ---
+    > STORE_POSITIVE_WEIGHT_ROWS_ONLY: true
+    > FAST_PATHS: true
+arm_7b/batch_000 settings.yaml sha256 as run: 90c1c0bca722786e9387f5dbed31638b6dac8610458b5b6cd4b8316e2d5ff930
+    93,94c93,94
+    < STORE_POSITIVE_WEIGHT_ROWS_ONLY: false
+    < FAST_PATHS: false
+    ---
+    > STORE_POSITIVE_WEIGHT_ROWS_ONLY: true
+    > FAST_PATHS: true
+arm_7b/batch_013 settings.yaml sha256 as run: 1db1009acb13bd780f7280d78a6f436d9727f5c853b54bab7cda75f14a03600f
+    93,94c93,94
+    < STORE_POSITIVE_WEIGHT_ROWS_ONLY: false
+    < FAST_PATHS: false
+    ---
+    > STORE_POSITIVE_WEIGHT_ROWS_ONLY: true
+    > FAST_PATHS: true
+arm_7b/batch_028 settings.yaml sha256 as run: 7098e8528d6853e60d04d8681548657940d1edf7766c13dea34fda9025e932fd
+    93,94c93,94
+    < STORE_POSITIVE_WEIGHT_ROWS_ONLY: false
+    < FAST_PATHS: false
+    ---
+    > STORE_POSITIVE_WEIGHT_ROWS_ONLY: true
+    > FAST_PATHS: true
+arm_7b/batch_032 settings.yaml sha256 as run: 27932d609a5061f8ddd7536eac2b58edd9fadc893677be2b8d61491f278076e2
+    93,94c93,94
+    < STORE_POSITIVE_WEIGHT_ROWS_ONLY: false
+    < FAST_PATHS: false
+    ---
+    > STORE_POSITIVE_WEIGHT_ROWS_ONLY: true
+    > FAST_PATHS: true
+arm_8/batch_000 settings.yaml sha256 as run: 90c1c0bca722786e9387f5dbed31638b6dac8610458b5b6cd4b8316e2d5ff930
+    93,94c93,94
+    < STORE_POSITIVE_WEIGHT_ROWS_ONLY: false
+    < FAST_PATHS: false
+    ---
+    > STORE_POSITIVE_WEIGHT_ROWS_ONLY: true
+    > FAST_PATHS: true
+arm_8/batch_013 settings.yaml sha256 as run: 1db1009acb13bd780f7280d78a6f436d9727f5c853b54bab7cda75f14a03600f
+    93,94c93,94
+    < STORE_POSITIVE_WEIGHT_ROWS_ONLY: false
+    < FAST_PATHS: false
+    ---
+    > STORE_POSITIVE_WEIGHT_ROWS_ONLY: true
+    > FAST_PATHS: true
+arm_8/batch_028 settings.yaml sha256 as run: 7098e8528d6853e60d04d8681548657940d1edf7766c13dea34fda9025e932fd
+    93,94c93,94
+    < STORE_POSITIVE_WEIGHT_ROWS_ONLY: false
+    < FAST_PATHS: false
+    ---
+    > STORE_POSITIVE_WEIGHT_ROWS_ONLY: true
+    > FAST_PATHS: true
+arm_8/batch_032 settings.yaml sha256 as run: 27932d609a5061f8ddd7536eac2b58edd9fadc893677be2b8d61491f278076e2
+    93,94c93,94
+    < STORE_POSITIVE_WEIGHT_ROWS_ONLY: false
+    < FAST_PATHS: false
+    ---
+    > STORE_POSITIVE_WEIGHT_ROWS_ONLY: true
+    > FAST_PATHS: true

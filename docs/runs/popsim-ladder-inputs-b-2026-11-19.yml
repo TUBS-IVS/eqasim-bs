@@ -90,14 +90,28 @@ status:
     Identity check for this record: arm 7a batch_000 run again with both options on (idcheck_arm) gives
     the same sha256 of final_expanded_household_ids.csv, synthetic_households.csv and synthetic_persons.csv
     as its run with the options off (run_records/outputs_sha256.txt). Effect: peak RSS 2.7 GB instead of
-    27-34 GB, wall time 3.6-6.7 min instead of 10.8-11.1 min (run_records/run_times.txt). (2) The first
+    27-34 GB; wall time like for like (arm 7a batch_000 and batch_013 off against arm 7b on) 3.8-4.0 min
+    instead of 10.8-11.1 min (run_records/run_times.txt). The as-run settings.yaml of every folder, its
+    sha256 and its diff against the arm-6 folder (the two option lines only) are in
+    posthoc/settings_as_run.txt; the prepare logs of arms 7a/7b hold the sha256 before the edit. (2) The first
     PopulationSim start used a wrong project directory and exited at once without output; the first
     diagnostics start fired on that start's completion marker and exited rc 1 at once without output; arm
     7a batch_028 and batch_032 were stopped after one minute (options off) for the switch in (1). All three
-    are logged in run_records/progress.log; their partial files were removed and the runs restarted from
+    are logged in run_records/progress.txt (the server's progress.log, renamed so it is tracked); their partial files were removed and the runs restarted from
     the unchanged prepared folders. (3) Every PopulationSim run of the record exits 0 and reports fork
     0.10.0+bs.2, commit d9a2e28 (run_records/tool_versions.txt). Checkpoint stores were deleted after the
     diagnostics.
+    Post hoc entries after the whole-branch review (2026-11-19; checks, bounds and results above unchanged):
+    (a) the arm-6 household composition of baseline_eval/ was computed with commit 8ea2beb0, not with the
+    commit above: its census_persons_0_17_per_family_with_minor is empty because that commit's band pattern
+    missed the _agg suffix (fixed in 6633c522). Recomputed with 6633c522 from the same folders:
+    posthoc/arm6_household_composition_6633c522.csv; every other column equals the committed baseline.
+    (b) The cell check of arm 8 is judged on the driver's rebuilt integer household column; PopulationSim
+    reads the column of the folder's control_totals_ZENSUS100m.csv. scripts/check_household_column.py
+    shows the two equal cell for cell in all four arm-8 and arm-7b folders, and counts on the folder's
+    column the household-less cells with a person target: in arm 8 none below 20 persons in a square with
+    households (arm 7b: 60, 71, 21, 34); the rest are the counted large cells and the donors in squares
+    without households (posthoc/posthoc_household_column.json).
 source: >-
   run server, ~/i659_b (code archives, self-check, arms, diagnostics, comparisons); committed copy in
   docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/.
@@ -198,7 +212,11 @@ artifacts:
 - docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/run_records/run_times.txt
 - docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/run_records/outputs_sha256.txt
 - docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/run_records/tool_versions.txt
-- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/run_records/progress.log
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/run_records/progress.txt
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/scripts/check_household_column.py
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/posthoc/posthoc_household_column.json
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/posthoc/settings_as_run.txt
+- docs/runs/artifacts/popsim-ladder-inputs-b-2026-11-19/posthoc/arm6_household_composition_6633c522.csv
 issues:
 - '#659'
 - '#658'
