@@ -1,0 +1,3 @@
+check,batch,arm,metric,value,limit,met
+R-household-100m,ALL,base,wape_ZENSUS100m,0.07708241474662096,0.05708241474662096,False
+R-household-100m,ALL,new,wape_ZENSUS100m,0.06852365934660118,0.05708241474662096,False

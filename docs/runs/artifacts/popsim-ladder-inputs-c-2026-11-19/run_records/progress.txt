@@ -1,0 +1,48 @@
+2026-11-19_14:04:27 prepared arm_9 batch_000 from /home/felix/i660_c/arm_8/batch_000 (step age_sex_at_1km)
+2026-11-19_14:04:29 prepared arm_9 batch_013 from /home/felix/i660_c/arm_8/batch_013 (step age_sex_at_1km)
+2026-11-19_14:04:30 prepared arm_9 batch_028 from /home/felix/i660_c/arm_8/batch_028 (step age_sex_at_1km)
+2026-11-19_14:04:32 prepared arm_9 batch_032 from /home/felix/i660_c/arm_8/batch_032 (step age_sex_at_1km)
+2026-11-19_14:04:32 prepare arm_9 done
+2026-11-19_14:05:09 prepared arm_10 batch_000 from /home/felix/i660_c/arm_8/batch_000 (step float_census_controls)
+2026-11-19_14:05:44 prepared arm_10 batch_013 from /home/felix/i660_c/arm_8/batch_013 (step float_census_controls)
+2026-11-19_14:06:18 prepared arm_10 batch_028 from /home/felix/i660_c/arm_8/batch_028 (step float_census_controls)
+2026-11-19_14:06:53 prepared arm_10 batch_032 from /home/felix/i660_c/arm_8/batch_032 (step float_census_controls)
+2026-11-19_14:06:53 prepare arm_10 done
+2026-11-19_14:07:45 start view diagnostics arm_8@int100 (configs arm_8, data arm_8): batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:08:07 end view diagnostics arm_8@int100: rc=0
+2026-11-19_14:08:07 start view diagnostics arm_8@int1km (configs arm_9, data arm_8): batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:08:29 end view diagnostics arm_8@int1km: rc=0
+2026-11-19_14:08:29 start view diagnostics arm_8@flt100 (configs arm_10, data arm_10): batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:08:51 end view diagnostics arm_8@flt100: rc=0
+2026-11-19_14:08:51 start view diagnostics arm_8@flt1km (configs arm_9, data arm_10): batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:09:12 end view diagnostics arm_8@flt1km: rc=0
+2026-11-19_14:12:20 start PopulationSim arm_9: batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:12:20 start PopulationSim arm_10: batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:17:55 end PopulationSim arm_9 batch_000: exit 0
+2026-11-19_14:17:55 end PopulationSim arm_9 batch_013: exit 0
+2026-11-19_14:17:55 end PopulationSim arm_9 batch_028: exit 0
+2026-11-19_14:17:55 end PopulationSim arm_9 batch_032: exit 0
+2026-11-19_14:17:55 start diagnostics arm_9: batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:18:34 end diagnostics arm_9: rc=0
+2026-11-19_14:19:02 end PopulationSim arm_10 batch_000: exit 0
+2026-11-19_14:19:02 end PopulationSim arm_10 batch_013: exit 0
+2026-11-19_14:19:02 end PopulationSim arm_10 batch_028: exit 0
+2026-11-19_14:19:02 end PopulationSim arm_10 batch_032: exit 0
+2026-11-19_14:19:02 start diagnostics arm_10: batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:19:41 end diagnostics arm_10: rc=0
+2026-11-19_14:20:09 start view diagnostics arm_9@int100 (configs arm_8, data arm_8): batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:20:31 end view diagnostics arm_9@int100: rc=0
+2026-11-19_14:20:31 start view diagnostics arm_9@int1km (configs arm_9, data arm_8): batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:20:52 end view diagnostics arm_9@int1km: rc=0
+2026-11-19_14:20:53 start view diagnostics arm_9@flt100 (configs arm_10, data arm_10): batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:21:15 end view diagnostics arm_9@flt100: rc=0
+2026-11-19_14:21:15 start view diagnostics arm_9@flt1km (configs arm_9, data arm_10): batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:21:37 end view diagnostics arm_9@flt1km: rc=0
+2026-11-19_14:21:37 start view diagnostics arm_10@int100 (configs arm_8, data arm_8): batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:21:59 end view diagnostics arm_10@int100: rc=0
+2026-11-19_14:21:59 start view diagnostics arm_10@int1km (configs arm_9, data arm_8): batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:22:21 end view diagnostics arm_10@int1km: rc=0
+2026-11-19_14:22:21 start view diagnostics arm_10@flt100 (configs arm_10, data arm_10): batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:22:43 end view diagnostics arm_10@flt100: rc=0
+2026-11-19_14:22:43 start view diagnostics arm_10@flt1km (configs arm_9, data arm_10): batch_000 batch_013 batch_028 batch_032
+2026-11-19_14:23:05 end view diagnostics arm_10@flt1km: rc=0
