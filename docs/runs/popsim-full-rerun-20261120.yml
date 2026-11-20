@@ -171,15 +171,20 @@ validation:
     October 0.0024, a fit check); the later trips are the holdout check, EMD 0.0124 (October 0.0140). Commute
     distance EMD for trips to other municipalities: Goslar 0.130 (0.129), Peine 0.099 (0.100), Wolfsburg 0.086
     (0.083), Wolfenbüttel 0.082 (0.082) above the stage's gap bound 0.08; within the municipality every Kreis below it.
-    Participation per Kreis in the finished plans against the SrV targets: mobility -4.4 to -5.2 percentage points
-    (October -4.6 to -5.1), leisure -1.5 to -2.1, work -0.1 to -2.7.
+    Participation per Kreis in the finished plans against the SrV targets, as the check reports it: mobility -4.4 to
+    -5.2 percentage points (October -4.6 to -5.1; a universe mismatch, see notes), leisure -1.5 to -2.1, work -0.1 to
+    -2.7.
   artifact: docs/runs/artifacts/popsim-full-rerun-20261120/srv/new/plan_structure_headline.csv
   notes: >-
     The differences to October mix the new population with every location change on main since 2026-10-31, the new
-    building potentials included. PopulationSim meets the SrV trip-class target per Kreis within WAPE 0.002
-    (comparison/fit_by_group_geography.csv); INFERENCE, not measured here: the mobility gap of the finished plans
-    therefore opens in the later day-plan steps; it is unchanged from October. The plan-structure analysis and the
-    participation targets use different SrV mobility shares (84.4 % against about 89 % per Kreis); not resolved here.
+    building potentials included. The mobility gap of the participation check is a universe mismatch of that
+    check, not a model deficit: its target (1 - trips_0 of target2026_trip_class_by_kreis.csv) holds for the SrV
+    "computable" universe, which excludes the persons away from home the whole day (E_ANZ_WEGE = -7; ASSUMPTION note
+    in scripts/build_trip_class_target.py), while the realised rate counts every person, including the 56,830 persons
+    (5.03 %) the day-absence stage (feature general_day_absence) makes absent. Among present persons the new run is
+    88.24 % mobile against the population-weighted target 88.59 %; over all persons 83.89 % against the plan-structure
+    SrV share 84.37 %, which includes the absent persons. PopulationSim meets the trip-class target per Kreis within
+    WAPE 0.002 (comparison/fit_by_group_geography.csv).
 - metric: activities and work locations per 500 m cell (EPSG:25832) against the building potentials
   reference: >-
     building potentials 08_redistribution.gpkg (modelled weights of the producer, not observed counts); pattern
