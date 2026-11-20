@@ -120,7 +120,11 @@ validation:
   reference: the run's own control targets (census, MiD and SrV derived), NOT observed behaviour
   result: >-
     All controls: ZENSUS100m 0.122 (October 0.197), ZENSUS1km 0.0056 (0.040), KREIS 0.0021 (0.014). The control sets
-    differ between the runs (household targets of #657, #659), so the pooled values are not like for like; per group,
+    differ between the runs (household targets of #657, #659), and several targets were redefined: building type
+    counted dwellings in October (609,816 against 558,151 households; ADR-0198 made it count households), so
+    October's building-type WAPE has an unreachable floor of 0.085 of its 0.154; the tenure targets (ADR-0202) and
+    the Kreis employment targets (employment_status, work_by_employment, employed; ADR-0203) changed as well. The
+    pooled values and these groups are therefore not like for like; per group,
     every group present in both runs has a lower WAPE in the new run (age x sex 100 m 0.279 / 0.325, household size
     0.139 / 0.230, employed by age 0.074 / 0.205, building type 0.043 / 0.154, tenure 0.038 / 0.066, cars 1 km
     0.0045 / 0.069, bikes 1 km 0.0054 / 0.050, every Kreis family 0.0005 to 0.0032 / 0.0052 to 0.027). Households:
@@ -130,10 +134,14 @@ validation:
     Per control in comparison/fit_by_control.csv; per 1 km cell in zones/*/cells_1km.csv. Not every control improved
     inside its cells: the 100 m WAPE rose for persons 10-14 (women 0.450 to 0.539, men 0.463 to 0.553), 15-17
     (0.493 to 0.753, 0.484 to 0.690), 18-19 (0.622 to 0.835, 0.578 to 0.875), men 80+ (0.407 to 0.420), households
-    of 5 persons (0.447 to 0.558) and of 6+ persons (0.515 to 0.651), while their region totals now meet the
-    targets. These targets and cells are the same in both runs, so the small numbers per cell explain the level of
-    the error, not its rise; the cause of the rise is not established (a trade-off with the new household-type
-    targets is a candidate, untested).
+    of 5 persons (0.447 to 0.558) and of 6+ persons (0.515 to 0.651). The region totals of these age bands now meet
+    their targets within 0.6 % (October 4 to 27 % short) and 6+ households within 1.6 %; households of 5 persons
+    overshoot region-wide by 5.2 % (16,030 against 15,233; October -1.7 %), which alone sets a floor of 0.052 under
+    their cell WAPE (October 0.017), about a third of their rise. Household-size totals, new (October): 1 person
+    -1.4 % (-4.7 %), 2 +0.1 % (+4.5 %), 3 +1.6 % (+3.0 %), 4 +3.2 % (+9.1 %), 5 +5.2 % (-1.7 %), 6+ +1.6 % (-32.9 %).
+    These targets and cells are the same in both runs, so the small numbers per cell explain the level of the
+    error, not its rise; the cause of the rise is not established (a trade-off with the new household-type targets
+    is a candidate, untested).
 - metric: 100 m fit by cell size (households targeted in the 100 m cell)
   reference: the run's own control targets
   result: >-
