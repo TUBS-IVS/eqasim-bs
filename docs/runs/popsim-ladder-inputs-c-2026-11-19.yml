@@ -135,7 +135,12 @@ status:
     consistent cells (0.176 / 0.325 / 0.258, 0.078 / 0.148 / 0.108, 0.057 / 0.066 / 0.059). The cell size
     carries the error: cells with 1-10 households hold 13.7 % of the households and 39.3 % of the
     household-size error (WAPE 0.296; 11-30: 0.131; 31 and more: 0.043; 22-band age 0.529 / 0.257 /
-    0.116). The shift from arm 8 to arm 9 is the same in consistent cells (11-30 households: household size
+    0.116). Correction after review (2026-11-20, no figure of the tables changed): the script's first
+    size bin is "10 households or fewer" and also holds the 399 cells of class not_judged (cells whose
+    persons cannot be placed, 778 target persons, age error 1,043); the "1-10" figures above include them.
+    Without them, from the same committed table: 13.3 % of the households, 36.9 % of the household-size
+    error, household-size WAPE 0.285, 22-band age WAPE 0.488; the reading below does not change. The
+    shift from arm 8 to arm 9 is the same in consistent cells (11-30 households: household size
     0.137 -> 0.108, 22-band age 0.249 -> 0.459). Reading (observational, no run with reconciled targets;
     the consistent class is small, 225 cells): the contradiction between persons and household sizes is
     not what limits the household-size and age fit at 100 m; the small number of households per cell is.
