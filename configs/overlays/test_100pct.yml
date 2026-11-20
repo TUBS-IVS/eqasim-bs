@@ -5,13 +5,17 @@
 ## recorded in a run manifest under docs/runs/, not here. For prod100_20261031 it is in
 ## docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml; prod100_20260925 has no manifest
 ## of its own (see docs/runs/freight-boundary-links-prod100-2026-10-15.yml).
-## Memory-bound scale. num_workers 3 is a ceiling: the resource gate (ADR-0126,
-## braunschweig/resources.py) clamps it at run start to what the machine's memory
-## budget allows (all figures in GiB, the gate's unit). The run server has 94.28 GiB total
-## memory (recorder value, see docs/runs/chainsolver-worker-private-memory-2026-09-17.yml).
-## The gate sizes each worker at its 30 GiB default (DEFAULT_POPSIM_WORKER_MEMORY_GB), so
-## run prod100_20261031 (2026-10-31) was clamped from 3 to 2 workers. The per-worker peak
-## sampled on that run is recorded in docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml.
+## Memory-bound scale. num_workers "auto": the resource gate (ADR-0126,
+## braunschweig/resources.py) sizes the PopulationSim batch workers at the stage start from the
+## machine's memory budget minus the driver's live resident memory, divided by worker_memory_gb
+## (configs/base_bs.yml; the 30 GiB default unless both run-time options of issue #656 are on),
+## and at most the core budget (braunschweig.resources.effective_popsim_workers, all figures in
+## GiB). Until issue #656 this overlay pinned 3, which the 30 GiB default clamped to 2 on the run
+## server (run prod100_20261031; per-worker peak: docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml).
+## Owner decision 2026-11-20: let the gate fill the machine. ASSUMPTION: other jobs on the shared
+## run server leave the budget free (override with EQASIM_MEM_BUDGET). The worker count cannot
+## change results (braunschweig.resources.resolve_popsim_workers); issue #281 tunes it on the
+## full rerun.
 working_directory: eqasim-data/cache_bs_100pct_allfeat_popsim
 
 run:
@@ -34,6 +38,6 @@ config:
   matsim_last_iteration: 0
   braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat_opt
   braunschweig.population.popsim.max_cells: 750
-  braunschweig.population.popsim.num_workers: 3
+  braunschweig.population.popsim.num_workers: "auto"
   cache_share_export: true
   cache_share_recompute: []

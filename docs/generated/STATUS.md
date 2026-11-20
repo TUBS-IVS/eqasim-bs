@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 113 | stages: 133 | datasets: 107 | ADRs: 194 | run manifests: 102
+- Features: 113 | stages: 133 | datasets: 107 | ADRs: 197 | run manifests: 105
 
 ## Population synthesis
 
@@ -28,7 +28,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Joint age×size margin (#3)](../registry/features/joint_age_size_margin.yml) | supported | off | -/-/A | unvalidated |  |
 | [1 km car/bike ownership shape controls (MiD-conditional, raked to the blended Kreis anchors)](../registry/features/ownership_grid_1km.yml) | active | ON | A/-/- | unvalidated (`smoke-ownership-grid-03101-2026-08-19`, `100pct-allfeat-i240-2026-08-20`) | [#240](https://github.com/TUBS-IVS/eqasim-bs/issues/240) |
 | [PopulationSim diagnostic data dictionary step (write_data_dictionary), switchable](../registry/features/popsim_data_dictionary.yml) | active | off | A/s/- | not_applicable (`popsim-data-dictionary-identity-2026-11-16`) |  |
-| [popsim_open / popsim_mid](../registry/features/popsim_method.yml) | active | ON | A/A/- | measured_vs_reference (`synth-100pct-2.2.0-2026-07-23`, `popsim-batch-diagnostics-prod100-20261031-2026-11-16`, `popsim-ladder-baseline-2026-11-16`, `popsim-ladder-arm1-2026-11-17`, `popsim-ladder-arm2-2026-11-17`) |  |
+| [popsim_open / popsim_mid](../registry/features/popsim_method.yml) | active | ON | A/A/- | measured_vs_reference (`synth-100pct-2.2.0-2026-07-23`, `popsim-batch-diagnostics-prod100-20261031-2026-11-16`, `popsim-ladder-baseline-2026-11-16`, `popsim-ladder-arm1-2026-11-17`, `popsim-ladder-arm2-2026-11-17`, `popsim-ladder-arm3-2026-11-18`) |  |
 | [Sex-aware couples (~1.1%)](../registry/features/sex_aware_couples.yml) | supported | off | -/-/A | unvalidated |  |
 
 ## Person & household attributes
@@ -43,7 +43,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [100m employment grid control (employed persons per cell by sex and age group)](../registry/features/employment_grid_control.yml) | active | ON | A/s/- | unvalidated |  |
 | [Employment margin (IPF)](../registry/features/employment_margin.yml) | PARKED | off | -/-/i | unvalidated |  |
 | [Household income € + distribution](../registry/features/household_income_distribution.yml) | active | off | -/-/A | unvalidated |  |
-| [Housing tenure (completeness)](../registry/features/housing_tenure.yml) | active | ON | A/A/A | unvalidated |  |
+| [Housing tenure (completeness)](../registry/features/housing_tenure.yml) | active | ON | A/A/A | unvalidated (`popsim-ladder-tenure-2026-11-18`) |  |
 | [Income-aware #cars](../registry/features/income_aware_cars.yml) | active | off | -/-/A | unvalidated |  |
 | [Kreis income control (popsim)](../registry/features/kreis_income_control.yml) | active | off | i/i/- | unvalidated |  |
 | [MiD passenger access independent of driver access](../registry/features/mid_passenger_availability.yml) | active | ON | A/-/- | unvalidated (`smoke-mid-passenger-availability-2026-09-15`) | [#398](https://github.com/TUBS-IVS/eqasim-bs/issues/398) |

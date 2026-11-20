@@ -597,7 +597,7 @@ config:
   braunschweig.population.popsim.popsimprep_dir: environments/populationsim
   braunschweig.population.popsim.uv_path: /home/felix/.local/bin/uv
   # Required PopulationSim version (meaning and format: KEY_POPSIM_VERSION in config_keys.py).
-  braunschweig.population.popsim.populationsim_version: "0.10.0+bs.1"
+  braunschweig.population.popsim.populationsim_version: "0.10.0+bs.2"
   # Tracked PopulationSim integerizer options (meaning: KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS,
   # KEY_INTEGERIZER_DRAW, KEY_INTEGERIZER_TIMEOUT_S in config_keys.py); written into every
   # batch settings.yaml, so the server-local settings file must not set them. Evidence for the
@@ -608,9 +608,11 @@ config:
   braunschweig.population.popsim.integerizer_draw: "gumbel"
   braunschweig.population.popsim.integerizer_timeout_s: 7200
   # Controlled rounding of the simultaneous integerizer (issue #646; meaning: KEY_INTEGERIZER_ROUNDING
-  # and its neighbours in config_keys.py). Stays "round" (upstream) until the arm-3 run manifest
-  # meets its gate; the penalty values are the code defaults and only read with "controlled".
-  braunschweig.population.popsim.integerizer_rounding: "round"
+  # and its neighbours in config_keys.py). "controlled" by owner decision of 2026-11-19, although
+  # one pre-registered check of the arm-3 run manifest was missed (reasons: ADR-0201); needs
+  # populationsim_version 0.10.0+bs.2 or later. The penalty values are the code defaults and only
+  # read with "controlled".
+  braunschweig.population.popsim.integerizer_rounding: "controlled"
   braunschweig.population.popsim.integerizer_penalty_floor: 100.0
   braunschweig.population.popsim.integerizer_penalty_cap: 100000.0
   braunschweig.population.popsim.integerizer_parent_total_factor: 10.0
@@ -621,10 +623,21 @@ config:
   braunschweig.population.popsim.integerizer_search_max_sweeps: 200
   braunschweig.population.popsim.integerizer_search_shortlist: 24
   # Run-time and memory options of fork 0.10.0+bs.2 or later (meaning: KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY
-  # and KEY_FAST_PATHS in config_keys.py); off until the run manifest of issue #656 shows the
-  # identity of the population. Turning one on needs populationsim_version 0.10.0+bs.2 or later.
-  braunschweig.population.popsim.store_positive_weight_rows_only: false
-  braunschweig.population.popsim.fast_paths: false
+  # and KEY_FAST_PATHS in config_keys.py). On: the run manifest popsim-run-performance-2026-11-18
+  # shows byte-identical output with both on (three batches, both rounding modes, one machine;
+  # decision and acceptance rule: ADR-0200). Before a run in a changed PopulationSim environment or
+  # on another machine: the rule in docs/codebase/notes/populationsim-fork.md, section "Run-time
+  # options and the environment rule". Both need populationsim_version 0.10.0+bs.2 or later.
+  braunschweig.population.popsim.store_positive_weight_rows_only: true
+  braunschweig.population.popsim.fast_paths: true
+  # Memory the resource gate assumes per PopulationSim batch worker, in GiB (KEY_WORKER_MEMORY_GB
+  # in braunschweig/resources.py; code default 30, which a run without the two options above
+  # still needs: with them not both true the gate uses 30 instead of this value,
+  # braunschweig.resources.popsim_worker_memory_gb). 6 is about one and a half times the largest
+  # per-batch peak the same manifest measured with both options on. ASSUMPTION: no batch that was
+  # not measured needs more; the worker memory of every run is sampled (monitoring_* keys below),
+  # and issue #281 tunes the value on the full rerun.
+  braunschweig.population.popsim.worker_memory_gb: 6.0
   # Solver-path gate (meaning: KEY_SOLVER_FALLBACK_ERROR_RATE in config_keys.py): null = warn
   # only. ASSUMPTION-grade threshold, to be set from the first full run (design, issue #645).
   braunschweig.population.popsim.solver_fallback_error_rate: null

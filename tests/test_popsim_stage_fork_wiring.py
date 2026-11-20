@@ -34,7 +34,7 @@ _LOCK_HASH = "lockhash"
 
 def _values(**overrides):
     values = {
-        stage.KEY_POPSIM_VERSION: "0.10.0+bs.1",
+        stage.KEY_POPSIM_VERSION: "0.10.0+bs.2",
         stage.KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS: True,
         stage.KEY_INTEGERIZER_DRAW: "pareto",
         stage.KEY_INTEGERIZER_TIMEOUT_S: 600,
@@ -118,24 +118,30 @@ def _stub_early_steps(monkeypatch, calls, settings_path):
     monkeypatch.setattr(stage.tool_version, "lock_content_hash", lambda project_dir: _LOCK_HASH)
 
 
-@pytest.mark.parametrize("key, bad_value, settings_text, error_match", [
-    (stage.KEY_INTEGERIZER_DRAW, "banana", None, "INTEGERIZER_DRAW"),
-    (stage.KEY_INTEGERIZER_ROUNDING, "banana", None, "INTEGERIZER_ROUNDING"),
-    # The run-time options need fork 0.10.0+bs.2 (the configured version here is bs.1): refused
-    # up front, before any seed is built, instead of being ignored silently by the older fork.
-    (stage.KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY, True, None, "store_positive_weight_rows_only"),
-    (stage.KEY_FAST_PATHS, True, None, "fast_paths"),
+# An OLD fork (bs.1) with the plain rounding: the controlled-rounding guard would raise first
+# otherwise, and the run-time options are refused against the old fork only.
+_OLD_FORK_PLAIN_ROUNDING = {
+    stage.KEY_POPSIM_VERSION: "0.10.0+bs.1", stage.KEY_INTEGERIZER_ROUNDING: "round"}
+
+
+@pytest.mark.parametrize("config_overrides, settings_text, error_match", [
+    ({stage.KEY_INTEGERIZER_DRAW: "banana"}, None, "INTEGERIZER_DRAW"),
+    ({stage.KEY_INTEGERIZER_ROUNDING: "banana"}, None, "INTEGERIZER_ROUNDING"),
+    # The run-time options need fork 0.10.0+bs.2: refused up front, before any seed is built,
+    # instead of being ignored silently by the older fork.
+    ({**_OLD_FORK_PLAIN_ROUNDING, stage.KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY: True}, None,
+     "store_positive_weight_rows_only"),
+    ({**_OLD_FORK_PLAIN_ROUNDING, stage.KEY_FAST_PATHS: True}, None, "fast_paths"),
     # The gate only runs after all batches (hours); a typo must fail before the seed build.
-    (stage.KEY_SOLVER_FALLBACK_ERROR_RATE, 2.0, None, "solver_fallback_error_rate"),
+    ({stage.KEY_SOLVER_FALLBACK_ERROR_RATE: 2.0}, None, "solver_fallback_error_rate"),
     # A server-local settings file contradicting the tracked timeout (0.10.0's key name).
-    (None, None, _SETTINGS_TEXT + "INTEGIZER_TIMEOUT: 60\n", "INTEGIZER_TIMEOUT"),
+    ({}, _SETTINGS_TEXT + "INTEGIZER_TIMEOUT: 60\n", "INTEGIZER_TIMEOUT"),
     # The per-batch seed is derived by the pipeline: a settings file that sets it is refused
     # up front too, not only per batch after the seed build and the work-dir purge.
-    (None, None, _SETTINGS_TEXT + "INTEGERIZER_RANDOM_SEED: 2541077060\n",
-     "INTEGERIZER_RANDOM_SEED"),
+    ({}, _SETTINGS_TEXT + "INTEGERIZER_RANDOM_SEED: 2541077060\n", "INTEGERIZER_RANDOM_SEED"),
 ])
 def test_execute_validates_the_integerizer_and_gate_settings_before_the_seed_build(
-        monkeypatch, tmp_path, key, bad_value, settings_text, error_match):
+        monkeypatch, tmp_path, config_overrides, settings_text, error_match):
     calls = []
     settings_path = tmp_path / "settings.yaml"
     if settings_text is not None:
@@ -146,7 +152,7 @@ def test_execute_validates_the_integerizer_and_gate_settings_before_the_seed_bui
         raise AssertionError("execute() went on after an invalid setting")
 
     monkeypatch.setattr(stage, "_read_batching_and_scope_config", must_not_run)
-    context = _context(_values(**({key: bad_value} if key else {})))
+    context = _context(_values(**config_overrides))
     with pytest.raises(ValueError, match=error_match):
         stage.execute(context)
     assert calls == ["environment check"]
@@ -154,15 +160,18 @@ def test_execute_validates_the_integerizer_and_gate_settings_before_the_seed_bui
 
 # --- execute: batches, then the solver-path gate -----------------------------------------
 
-def _stub_execute_steps(monkeypatch, tmp_path, calls, *, tiers=(), controls_source="csv",
-                        employment_grid_on=False, cells=None, tier3_kreis=(None, None, set())):
-    """Stub every step of ``execute`` between the early actions and the gate; returns ``seen``.
+def _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls, tenure_limit=False, *,
+                                    employment_grid_on=False, cells=None,
+                                    tier3_kreis=(None, None, set()), real_load_columns=True):
+    """Stub every step of ``execute`` before the purge and the batches (see the module doc).
 
-    ``seen`` collects the arguments of the purge (``purge_args``), the batch runner
-    (``batches_args`` / ``batches_kwargs``), the fast-path check and the gate, and the parquet
-    load set (``load_columns``). ``cells`` is what the cell load returns (an empty frame by default).
+    With ``tenure_limit`` (#657) the run uses the catalog controls of tiers 0-2 and the fixture
+    cells. ``_resolve_cell_load_columns`` runs for real; the returned dict records the columns
+    ``execute`` asked the parquet loader for. The keyword arguments serve the #658 tests: the
+    employment grid on, the cells the loader returns (default: the fixture cells with
+    ``tenure_limit``, else an empty frame), the Tier-3 KREIS table, and ``real_load_columns=False``
+    to stub the load-set resolution (it reads the parquet schema with the employment grid on).
     """
-    cells = pd.DataFrame() if cells is None else cells
     _stub_early_steps(monkeypatch, calls, tmp_path / "settings.yaml")
     settings = tmp_path / "settings.yaml"
     settings.write_text(_SETTINGS_TEXT + "geographies: [ZENSUS100m]\n", encoding="utf-8")
@@ -185,6 +194,7 @@ def _stub_execute_steps(monkeypatch, tmp_path, calls, *, tiers=(), controls_sour
         lambda ctx: (1, np.random.RandomState(1), np.random.RandomState(2),
                      np.random.RandomState(3)))
     monkeypatch.setattr(stage, "_resolve_source", lambda name: _Source())
+    tiers, controls_source = (fixture.CONTROL_TIERS, "catalog") if tenure_limit else ((), "csv")
     monkeypatch.setattr(
         stage, "_read_control_config",
         lambda ctx, name: (tiers, (), controls_source, employment_grid_on, False, (), set(), 30,
@@ -192,12 +202,15 @@ def _stub_execute_steps(monkeypatch, tmp_path, calls, *, tiers=(), controls_sour
     monkeypatch.setattr(
         stage, "_build_control_frame", lambda *a, **k: (pd.DataFrame(), []))
     monkeypatch.setattr(stage, "_load_tier3_kreis_controls", lambda *a, **k: tier3_kreis)
-    # _resolve_cell_load_columns runs for real: the test checks which columns execute asks for.
-    seen = {}
+    if not real_load_columns:
+        monkeypatch.setattr(stage, "_resolve_cell_load_columns", lambda *a, **k: [])
+    loaded_columns = {}
+    loaded_cells = (cells if cells is not None
+                    else fixture.make_cells() if tenure_limit else pd.DataFrame())
 
     def load_control_cells(cells_path, load_cols):
-        seen["load_columns"] = list(load_cols)
-        return cells
+        loaded_columns["columns"] = list(load_cols)
+        return loaded_cells
 
     monkeypatch.setattr(stage.mid, "load_control_cells", load_control_cells)
     monkeypatch.setattr(
@@ -218,6 +231,19 @@ def _stub_execute_steps(monkeypatch, tmp_path, calls, *, tiers=(), controls_sour
     # purge; this test only pins its place in the order.
     monkeypatch.setattr(stage, "_read_total_hh_control", lambda path: "HH_TOTAL")
     monkeypatch.setattr(stage, "_check_seed_contract", lambda *a, **k: calls.append("contract"))
+    return loaded_columns
+
+
+@pytest.mark.parametrize("fast_paths_on, tenure_limit", [
+    (False, False), (True, False), (False, True)],
+    ids=["plain", "fast_paths_on", "owner_limit_on"])
+def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
+        monkeypatch, tmp_path, fast_paths_on, tenure_limit):
+    # With the option on (fork 0.10.0+bs.2, the version of _values) the rate check must be told so.
+    calls = []
+    loaded_columns = _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls, tenure_limit)
+
+    seen = {}
 
     def purge(*args, **kwargs):
         calls.append("purge")
@@ -226,12 +252,11 @@ def _stub_execute_steps(monkeypatch, tmp_path, calls, *, tiers=(), controls_sour
     def batches(*args, **kwargs):
         calls.append("batches")
         seen["batches_args"] = args
-        seen["batches_kwargs"] = kwargs
         return "merge_report"
 
-    def gate(work_dir, error_rate, expected_rounding="round"):
+    def gate(work_dir, error_rate, expected_rounding="round", expected_method=None):
         calls.append("gate")
-        seen["gate"] = (work_dir, error_rate, expected_rounding)
+        seen["gate"] = (work_dir, error_rate, expected_rounding, expected_method)
         raise _Stop
 
     monkeypatch.setattr(stage, "_purge_stale_batches_for_changed_config", purge)
@@ -245,25 +270,12 @@ def _stub_execute_steps(monkeypatch, tmp_path, calls, *, tiers=(), controls_sour
     monkeypatch.setattr(stage.fast_path_rate, "check_fast_path", fast_paths)
     monkeypatch.setattr(stage.solver_path_gate, "check_solver_paths", gate)
 
-    return seen
-
-
-@pytest.mark.parametrize("tenure_limit", [False, True], ids=["owner_limit_off", "owner_limit_on"])
-def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
-        monkeypatch, tmp_path, tenure_limit):
-    # With the owner limit (#657) on, the run uses the catalog controls of tiers 0-2 and the
-    # fixture cells; execute must request the dwelling column, apply the rule and report it.
-    calls = []
-    seen = _stub_execute_steps(
-        monkeypatch, tmp_path, calls,
-        **({"tiers": fixture.CONTROL_TIERS, "controls_source": "catalog",
-            "cells": fixture.make_cells()} if tenure_limit else {}))
-
     with pytest.raises(_Stop):
         stage.execute(_context(
-            _values(**({stage.KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS: True,
-                        stage.KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE_DWELLINGS: 10.0}
-                       if tenure_limit else {})),
+            _values(**{stage.KEY_FAST_PATHS: fast_paths_on,
+                       **({stage.KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS: True,
+                           stage.KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE_DWELLINGS: 10.0}
+                          if tenure_limit else {})}),
             stage_path=tmp_path))
 
     # The stage always leaves its report file. Off: status disabled, the OFF path loads no
@@ -275,18 +287,19 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     )["tenure_owner_limited_to_dwellings"]
     dwelling_column = control_spec.OWNER_QUOTE_DWELLING_COLUMN
     if tenure_limit:
-        assert dwelling_column in seen["load_columns"]
+        assert dwelling_column in loaded_columns["columns"]
         assert entry["enabled"] is True and entry["status"] == "applied"
         assert entry["report"]["cells_changed"] == 2
         assert entry["report"]["households_moved_owner_to_renter"] == pytest.approx(146.0)
     else:
-        assert dwelling_column not in seen["load_columns"]
+        assert dwelling_column not in loaded_columns["columns"]
         assert entry["enabled"] is False and entry["status"] == "disabled"
         assert entry["report"] is None
+
     # The fast-path rate is reported before the gate, which may stop the stage.
     assert calls == [
         "environment check", "contract", "purge", "batches", "log", "fast paths", "gate"]
-    assert seen["fast_paths"] == (str(tmp_path / "work"), False)
+    assert seen["fast_paths"] == (str(tmp_path / "work"), fast_paths_on)
     expected_overrides = {
         "KEEP_FRACTIONAL_SAMPLE_WEIGHTS": True, "INTEGERIZER_DRAW": "pareto",
         "INTEGERIZER_TIMEOUT": 600, "INTEGERIZER_PATH_RECORD": True,
@@ -294,17 +307,73 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
         "INTEGERIZER_PENALTY_CAP": 100000.0, "INTEGERIZER_PARENT_TOTAL_FACTOR": 10.0,
         "INTEGERIZER_CONSERVE_PENALTY": 100000.0, "INTEGERIZER_CONTROLLED_METHOD": "search",
         "INTEGERIZER_SEARCH_MAX_SWEEPS": 200, "INTEGERIZER_SEARCH_SHORTLIST": 24,
-        "STORE_POSITIVE_WEIGHT_ROWS_ONLY": False, "FAST_PATHS": False,
+        "STORE_POSITIVE_WEIGHT_ROWS_ONLY": False, "FAST_PATHS": fast_paths_on,
     }
     # The last two positional arguments of the batch runner are the overrides and the seed base.
     assert seen["batches_args"][-2:] == (expected_overrides, 4711)
-    # The purge (batch signature) gets the version, the verified commit, the lock hash,
-    # overrides, seed base and the #658 consistency payload (None while every key is at its legacy
-    # value, so legacy work dirs keep their signature).
+    # The purge (batch signature) gets the version, the verified commit, the lock hash, overrides,
+    # seed base and the #658 consistency payload (None while every key is at its legacy value, so
+    # legacy work dirs keep their signature).
     assert seen["purge_args"][-6:] == (
-        "0.10.0+bs.1", _COMMIT, _LOCK_HASH, expected_overrides, 4711, None)
-    # The configured rounding mode is what the gate must find in the record.
-    assert seen["gate"] == (str(tmp_path / "work"), 0.2, "controlled")
+        "0.10.0+bs.2", _COMMIT, _LOCK_HASH, expected_overrides, 4711, None)
+    # The configured rounding mode and controlled method are what the gate must find in the record.
+    assert seen["gate"] == (str(tmp_path / "work"), 0.2, "controlled", "search")
+
+
+# --- execute: controlled rounding needs a fork release that has it (issue #646) -----------
+
+def test_execute_refuses_controlled_rounding_for_an_old_fork_before_any_batch(
+        monkeypatch, tmp_path):
+    calls = []
+    _stub_early_steps(monkeypatch, calls, tmp_path / "settings.yaml")
+
+    def must_not_run(*args, **kwargs):
+        raise AssertionError("execute() went on although the fork ignores controlled rounding")
+
+    monkeypatch.setattr(stage, "_read_batching_and_scope_config", must_not_run)
+    monkeypatch.setattr(stage, "_run_populationsim_batches", must_not_run)
+    context = _context(_values(**{
+        stage.KEY_POPSIM_VERSION: "0.10.0+bs.1",
+        stage.KEY_INTEGERIZER_ROUNDING: "controlled"}))
+    with pytest.raises(ValueError, match="integerizer_rounding.*0.10.0\\+bs.1.*0.10.0\\+bs.2"):
+        stage.execute(context)
+    assert calls == ["environment check"]
+
+
+# --- execute: the rounding shares are reported only when they were measured ----------------
+
+@pytest.mark.parametrize("rounding, reported", [("controlled", True), ("round", False)])
+def test_execute_reports_the_controlled_rounding_shares_only_for_a_controlled_run(
+        monkeypatch, tmp_path, rounding, reported):
+    calls = []
+    _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls)
+    monkeypatch.setattr(stage, "_purge_stale_batches_for_changed_config", lambda *a, **k: None)
+    monkeypatch.setattr(stage, "_run_populationsim_batches", lambda *a, **k: "merge_report")
+    monkeypatch.setattr(stage, "_log_integerizer_feasibility", lambda *a, **k: None)
+    totals = {"conservation_loss_share": 0.05, "not_converged_share": 0.1}
+    monkeypatch.setattr(
+        stage.solver_path_gate, "check_solver_paths",
+        lambda *a, **k: (pd.DataFrame(), totals))
+
+    def stop(context):
+        raise _Stop
+
+    monkeypatch.setattr(stage, "_load_inkar_income_scale", stop)
+    infos = {}
+    context = SimpleNamespace(
+        config=_context(_values(**{stage.KEY_INTEGERIZER_ROUNDING: rounding})).config,
+        set_info=lambda key, value: infos.__setitem__(key, value), path=lambda: str(tmp_path))
+    with pytest.raises(_Stop):
+        stage.execute(context)
+    # The totals of the gate and the solver-path table are always reported.
+    assert infos["popsim_solver_path_totals"] == totals
+    shares = {key: infos.get(key) for key in (
+        "popsim_integerizer_conservation_loss_share", "popsim_integerizer_not_converged_share")}
+    if reported:
+        assert shares == {"popsim_integerizer_conservation_loss_share": 0.05,
+                          "popsim_integerizer_not_converged_share": 0.1}
+    else:
+        assert not [key for key in shares if key in infos]
 
 
 # --- execute: the #658 input-consistency keys at their production values -----------------
@@ -316,6 +385,31 @@ _PRODUCTION_KREIS_KEYS = {
 }
 
 
+def _stub_batches_and_gate(monkeypatch, calls):
+    """Stub the purge, the batch runner and the gate; returns what they were called with."""
+    seen = {}
+
+    def purge(*args, **kwargs):
+        calls.append("purge")
+        seen["purge_args"] = args
+
+    def batches(*args, **kwargs):
+        calls.append("batches")
+        seen["batches_args"] = args
+        seen["batches_kwargs"] = kwargs
+        return "merge_report"
+
+    def gate(*args, **kwargs):
+        raise _Stop
+
+    monkeypatch.setattr(stage, "_purge_stale_batches_for_changed_config", purge)
+    monkeypatch.setattr(stage, "_run_populationsim_batches", batches)
+    monkeypatch.setattr(stage, "_log_integerizer_feasibility", lambda *a, **k: None)
+    monkeypatch.setattr(stage.fast_path_rate, "check_fast_path", lambda *a, **k: {})
+    monkeypatch.setattr(stage.solver_path_gate, "check_solver_paths", gate)
+    return seen
+
+
 def test_execute_hands_the_production_kreis_keys_to_the_batch_runner(monkeypatch, tmp_path):
     import popsim_kreis_batch_fixture as kreis_fixture
 
@@ -324,11 +418,10 @@ def test_execute_hands_the_production_kreis_keys_to_the_batch_runner(monkeypatch
     # the single-year age columns the universe weight column is summed from.
     tier3_kreis = (pd.DataFrame({"ARS_kreis": ["03101", "03158"]}),
                    {"employed_KREIS": ["employed_source"]}, set())
-    seen = _stub_execute_steps(
+    _stub_execute_up_to_the_batches(
         monkeypatch, tmp_path, calls, employment_grid_on=True, cells=kreis_fixture.make_cells(),
-        tier3_kreis=tier3_kreis)
-    # The load set with the employment grid on reads the parquet schema; it is tested elsewhere.
-    monkeypatch.setattr(stage, "_resolve_cell_load_columns", lambda *a, **k: [])
+        tier3_kreis=tier3_kreis, real_load_columns=False)
+    seen = _stub_batches_and_gate(monkeypatch, calls)
 
     with pytest.raises(_Stop):
         stage.execute(_context(_values(**_PRODUCTION_KREIS_KEYS), stage_path=tmp_path))
@@ -348,7 +441,8 @@ def test_execute_hands_the_production_kreis_keys_to_the_batch_runner(monkeypatch
 def test_execute_refuses_production_kreis_keys_without_a_kreis_table_before_the_cell_load(
         monkeypatch, tmp_path):
     calls = []
-    seen = _stub_execute_steps(monkeypatch, tmp_path, calls, employment_grid_on=True)
+    loaded = _stub_execute_up_to_the_batches(
+        monkeypatch, tmp_path, calls, employment_grid_on=True)
 
     def must_not_load(*args, **kwargs):
         raise AssertionError("execute() loaded the cells although the keys cannot be honoured")
@@ -356,4 +450,4 @@ def test_execute_refuses_production_kreis_keys_without_a_kreis_table_before_the_
     monkeypatch.setattr(stage.mid, "load_control_cells", must_not_load)
     with pytest.raises(ValueError, match=stage.KEY_KREIS_BATCH_APPORTIONMENT.replace(".", r"\.")):
         stage.execute(_context(_values(**_PRODUCTION_KREIS_KEYS), stage_path=tmp_path))
-    assert "load_columns" not in seen and calls == ["environment check"]
+    assert "columns" not in loaded and calls == ["environment check"]

@@ -281,7 +281,31 @@ def _prove_controlled_batch(name: str, group: pd.DataFrame) -> None:
             "the controlled path did not run")
 
 
-def summarize_controlled_calls(records: pd.DataFrame, expected_rounding: str = "round") -> dict:
+def validate_expected_method(expected_method) -> Optional[str]:
+    """Return ``expected_method`` when it is ``None`` or a controlled method, else ``ValueError``."""
+    if expected_method is not None and expected_method not in CONTROLLED_METHODS:
+        raise ValueError(
+            f"expected_method must be None or one of {list(CONTROLLED_METHODS)}, "
+            f"got {expected_method!r}")
+    return expected_method
+
+
+def _prove_controlled_method(name: str, calls: pd.DataFrame, expected_method: str) -> None:
+    """Raise ``RuntimeError`` naming batch ``name`` when a controlled call recorded another method."""
+    other = calls[calls["method"].fillna("") != expected_method]
+    if not other.empty:
+        raise RuntimeError(
+            f"[{STAGE_TAG}] integerizer_controlled_method is {expected_method!r} but {len(other)} of "
+            f"{len(calls)} controlled simultaneous integerizer calls of batch {name} recorded "
+            f"another method (first: trace_label {other.iloc[0]['trace_label']!r}, method "
+            f"{other.iloc[0]['method']!r}, expected {expected_method!r}): the configured method "
+            "did not run")
+
+
+def summarize_controlled_calls(
+    records: pd.DataFrame, expected_rounding: str = "round",
+    expected_method: Optional[str] = None,
+) -> dict:
     """Totals of the controlled simultaneous calls; fail when the mode and the record disagree.
 
     With ``expected_rounding == "controlled"`` EVERY batch must prove it (``RuntimeError`` naming
@@ -298,6 +322,10 @@ def summarize_controlled_calls(records: pd.DataFrame, expected_rounding: str = "
     With ``"round"`` a row marked ``controlled`` is a mode mismatch (the tracked config says round,
     the tool ran controlled) and raises, naming the batch; a record without the columns (bs.1
     shape) gives zeros.
+    With ``expected_rounding == "controlled"`` and an ``expected_method`` (``"search"`` or
+    ``"lp"``), every controlled simultaneous call row of every batch must record that method
+    (``RuntimeError`` naming the batch otherwise); ``None`` does not check the method. An
+    ``expected_method`` that is neither raises ``ValueError``.
 
     Returns the keys of :func:`_empty_controlled_totals`. Counts over all controlled calls:
     ``controlled_simul_calls``, ``search_calls``, ``lp_calls`` and
@@ -314,6 +342,7 @@ def summarize_controlled_calls(records: pd.DataFrame, expected_rounding: str = "
     when its denominator is 0.
     """
     expected_rounding = validate_expected_rounding(expected_rounding)
+    expected_method = validate_expected_method(expected_method)
     totals = _empty_controlled_totals()
     if expected_rounding != CONTROLLED:
         if "rounding" in records.columns:
@@ -341,6 +370,9 @@ def summarize_controlled_calls(records: pd.DataFrame, expected_rounding: str = "
             f"(first: batch {unknown.iloc[0]['batch']}, trace_label "
             f"{unknown.iloc[0]['trace_label']!r}, method {unknown.iloc[0]['method']!r}; expected "
             f"one of {list(CONTROLLED_METHODS)}): the fork's controlled record changed or is damaged")
+    if expected_method is not None:
+        for name, calls in controlled.groupby("batch", sort=True):
+            _prove_controlled_method(name, calls, expected_method)
     # Only a successful call has a result PopulationSim used; the numbers of the others are not
     # read (the fork leaves some of them empty) and the call is counted as a non-success.
     succeeded = controlled["status"].isin(SUCCESS_STATUSES)
@@ -427,7 +459,8 @@ def _parse_method_numbers(rows: pd.DataFrame, method: str) -> pd.DataFrame:
 
 
 def check_solver_paths(work_dir, error_rate: Optional[float],
-                       expected_rounding: str = "round") -> tuple:
+                       expected_rounding: str = "round",
+                       expected_method: Optional[str] = None) -> tuple:
     """Log one rate line per geography and fail above ``error_rate`` (``None``: warn only).
 
     Returns ``(summary, call_totals)``: the :func:`summarize_solver_paths` frame and the
@@ -439,23 +472,26 @@ def check_solver_paths(work_dir, error_rate: Optional[float],
     ``row_shortfall``, ``zone_shortfall``, ``hh_unreachable``, ``hh_outside_lp``, ``hh_excess``,
     ``repair_failed`` or ``fractional_after_repair`` is positive, else INFO). Raises
     ``RuntimeError`` when a geography's non-simultaneous share exceeds ``error_rate``, a completed
-    batch has no usable record, a batch of a controlled run cannot prove the controlled path, or a
+    batch has no usable record, a batch of a controlled run cannot prove the controlled path, a
+    controlled call recorded another method than ``expected_method`` (``None``: not checked), or a
     ``round`` run has a record marked controlled; ``ValueError`` for an ``error_rate`` outside
-    (0, 1] or an unknown ``expected_rounding``.
+    (0, 1], an unknown ``expected_rounding`` or an unknown ``expected_method``.
     """
     error_rate = validate_error_rate(error_rate)
     expected_rounding = validate_expected_rounding(expected_rounding)
+    expected_method = validate_expected_method(expected_method)
     records = read_records(Path(work_dir))
     summary = summarize_solver_paths(records)
     totals = summarize_call_totals(records)
-    controlled = summarize_controlled_calls(records, expected_rounding)
+    controlled = summarize_controlled_calls(records, expected_rounding, expected_method)
     totals.update(controlled)
     if expected_rounding == CONTROLLED:
         degraded = any(controlled[name] for name in _DEGRADED_CONTROLLED_TOTALS)
         logger.log(
             logging.WARNING if degraded else logging.INFO,
             "[%s] controlled rounding: %d controlled simultaneous calls (search %d, lp %d), "
-            "%d not OPTIMAL/FEASIBLE (counted only, the sums are over the successful calls); "
+            "%d not OPTIMAL/FEASIBLE (%.1f%% of the controlled simultaneous calls; counted only, "
+            "the sums are over the successful calls); "
             "search not converged %d (%.1f%% of the successful search calls); conservation loss "
             "%.2f%% (row_shortfall %g of flow_wanted %g); zone_shortfall %g; swaps %d; "
             "distance %g -> %g; flow achieved %g; lp: x %g, fractional %g, after repair %g, "
@@ -463,6 +499,8 @@ def check_solver_paths(work_dir, error_rate: Optional[float],
             "parent_sub %g, parent %g; hh_unreachable %d, hh_outside_lp %d, hh_excess %d",
             STAGE_TAG, controlled["controlled_simul_calls"], controlled["search_calls"],
             controlled["lp_calls"], controlled["controlled_non_success_calls"],
+            _percent(controlled["controlled_non_success_calls"],
+                     controlled["controlled_simul_calls"]),
             controlled["search_not_converged_calls"], 100.0 * controlled["not_converged_share"],
             100.0 * controlled["conservation_loss_share"], controlled["row_shortfall"],
             controlled["flow_wanted"], controlled["zone_shortfall"], controlled["swaps"],

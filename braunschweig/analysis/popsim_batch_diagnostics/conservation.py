@@ -6,16 +6,20 @@ up to the integer weight that the parent level gave the same household group in 
 household group placed in two sub zones of a parent with weight 1 (sum 2) or dropped from all of
 them (sum 0) both count as a deviation of its own size.
 
-Weights come from ``fit.read_weight_table`` (positive rows only, chunked: the 100 m table has
-about 25 million rows before the filter).  The map from a sub zone to its parent zone is the
-store's own ``geo_cross_walk`` table when the store holds one; otherwise the batch folder's
-``data/geo_cross_walk.csv`` (the file PopulationSim loads it from), and the log says which source
-was used.  Zone ids are compared as text, so an integer id in one table and a text id in the other
+Weights come from the private helpers of ``fit`` (``_read_weights`` reads one level's weight
+table from the open store in chunks and keeps the positive rows; ``_table_keys`` and
+``_current_key`` find the current checkpoint of a table).  The map from a sub zone to its parent
+zone is the store's own ``geo_cross_walk`` table when the store holds one (the primary source);
+otherwise the batch folder's ``data/geo_cross_walk.csv`` (the file PopulationSim loads it from;
+the fallback).  The log says which source each batch used, ``household_conservation`` records it
+in ``.attrs["crosswalk_source"]`` of its result and ``log_crosswalk_sources`` reports the rate
+over all batches.  Zone ids are compared as text, so an integer id in one table and a text id in the other
 (a CSV round trip) still match.
 """
 from __future__ import annotations
 
 import logging
+from typing import Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -28,6 +32,8 @@ logger = logging.getLogger(__name__)
 _TAG = "[popsim_batch_diagnostics]"
 _CROSSWALK_TABLE = "geo_cross_walk"
 _CROSSWALK_CSV = "geo_cross_walk.csv"
+SOURCE_STORE = "store"
+SOURCE_CSV = "csv"
 CONSERVATION_COLUMNS = [
     "level", "parent_level", "n_pairs", "parent_weight_sum", "sub_weight_sum",
     "abs_deviation_sum", "abs_deviation_share", "conserved_pair_share",
@@ -35,14 +41,42 @@ CONSERVATION_COLUMNS = [
 
 
 def _crosswalk(store: pd.HDFStore, batch: BatchFolder) -> tuple:
-    """The batch's geography crosswalk and a label of its source (store table or CSV)."""
+    """The batch's geography crosswalk, its source kind and a label of the source.
+
+    The kind is ``SOURCE_STORE`` (the store table, primary) or ``SOURCE_CSV`` (the batch's
+    ``data/geo_cross_walk.csv``, fallback); the label names the source in messages.
+    """
     if fit._table_keys(store, _CROSSWALK_TABLE):
-        return store.get(fit._current_key(store, _CROSSWALK_TABLE)), "store table"
+        return (store.get(fit._current_key(store, _CROSSWALK_TABLE)), SOURCE_STORE,
+                "store table")
     path = batch.path / "data" / _CROSSWALK_CSV
     if not path.is_file():
         raise FileNotFoundError(f"batch {batch.name}: neither the store nor {path} has the "
                                 "geography crosswalk")
-    return pd.read_csv(path), str(path)
+    return pd.read_csv(path), SOURCE_CSV, str(path)
+
+
+def log_crosswalk_sources(sources: Sequence[Optional[str]]) -> None:
+    """Log how many batches took the crosswalk from the store (primary) or from the CSV (fallback).
+
+    ``sources`` holds one ``crosswalk_source`` attribute of ``household_conservation`` per batch
+    (``None``: the batch had no level pair to compute and read no crosswalk; those batches are
+    named but not in the rate).  A WARNING when no batch used the store and some used the CSV:
+    the primary source never worked.
+    """
+    used = [source for source in sources if source is not None]
+    from_store = sum(source == SOURCE_STORE for source in used)
+    from_csv = sum(source == SOURCE_CSV for source in used)
+    unused = len(sources) - len(used)
+    if not used:
+        logger.info("%s crosswalk not needed: no batch had a level pair to compute", _TAG)
+        return
+    message = (f"{_TAG} crosswalk from the store {from_store}/{len(used)} batches "
+               f"({100.0 * from_store / len(used):.1f}%), from data/{_CROSSWALK_CSV} "
+               f"{from_csv} ({100.0 * from_csv / len(used):.1f}%)")
+    if unused:
+        message += f"; no crosswalk needed {unused}"
+    (logger.warning if from_store == 0 and from_csv else logger.info)(message)
 
 
 def _zone_to_parent(crosswalk: pd.DataFrame, level: str, parent: str, label: str) -> pd.Series:
@@ -109,7 +143,9 @@ def household_conservation(batch: BatchFolder, levels=fit.DEFAULT_LEVELS, *,
     of ``|sub sum - parent|``), ``abs_deviation_share`` (that over ``parent_weight_sum``; NaN
     for 0), ``conserved_pair_share`` (pairs with equal weights over ``n_pairs``) and the number
     of household groups with a positive integer weight at the parent and at the sub level.
-    The zone-to-parent map is described in the module docstring.  A pair with a table missing
+    The zone-to-parent map is described in the module docstring; its source (``"store"`` or
+    ``"csv"``, ``None`` when no pair was computed) is in ``result.attrs["crosswalk_source"]``.
+    A pair with a table missing
     from the store is skipped and logged; a batch without a store raises ``FileNotFoundError``;
     a sub zone with a positive weight that the crosswalk cannot map raises ``ValueError``.
     """
@@ -118,14 +154,14 @@ def household_conservation(batch: BatchFolder, levels=fit.DEFAULT_LEVELS, *,
         raise FileNotFoundError(f"batch {batch.name}: checkpoint store not found: {store_path}")
     rows, skipped = [], []
     with pd.HDFStore(str(store_path), mode="r") as store:
-        crosswalk, source = None, None
+        crosswalk, kind, source = None, None, None
         for parent, level in zip(levels[:-1], levels[1:]):
             if not fit._table_keys(store, f"{parent}_weights") or \
                     not fit._table_keys(store, f"{level}_weights"):
                 skipped.append(f"{parent}>{level}")
                 continue
             if crosswalk is None:
-                crosswalk, source = _crosswalk(store, batch)
+                crosswalk, kind, source = _crosswalk(store, batch)
                 logger.info("%s batch %s household_conservation: crosswalk from %s", _TAG,
                             batch.name, source)
             rows.append(_pair_conservation(store, crosswalk, source, parent, level, chunk_rows))
@@ -134,6 +170,9 @@ def household_conservation(batch: BatchFolder, levels=fit.DEFAULT_LEVELS, *,
                 len(skipped), skipped)
     table = pd.DataFrame(rows, columns=CONSERVATION_COLUMNS)
     # An empty table must keep numeric dtypes so that sums over batches still work.
-    return table.astype({c: float for c in CONSERVATION_COLUMNS[2:]}
-                        | {"n_pairs": "int64", "distinct_rows_parent": "int64",
-                           "distinct_rows_sub": "int64"})
+    table = table.astype({c: float for c in CONSERVATION_COLUMNS[2:]}
+                         | {"n_pairs": "int64", "distinct_rows_parent": "int64",
+                            "distinct_rows_sub": "int64"})
+    # ``None``: no level pair was computed, so no crosswalk was read.
+    table.attrs["crosswalk_source"] = kind
+    return table

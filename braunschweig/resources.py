@@ -544,7 +544,7 @@ def resolve_java_memory(configured, budget: ResourceBudget) -> Resolution:
 
 
 def resolve_popsim_workers(configured, budget: ResourceBudget,
-                           worker_memory_gb: float) -> Resolution:
+                           worker_memory_gb: float, driver_rss_gb: float = 0.0) -> Resolution:
     """Resolve the PopulationSim batch worker count against the MEMORY budget.
 
     This key is memory-bound, not core-bound: each worker drives its own
@@ -570,7 +570,13 @@ def resolve_popsim_workers(configured, budget: ResourceBudget,
         raise ValueError(
             f"worker_memory_gb must be a positive number of gigabytes, got "
             f"{worker_memory_gb!r}.")
-    memory_bound = max(1, int(math.floor(budget.memory_gb / worker_memory_gb)))
+    if driver_rss_gb < 0:
+        raise ValueError(f"driver_rss_gb must not be negative, got {driver_rss_gb!r}.")
+    # The batch workers share the memory budget with the driver process that starts them
+    # (``driver_rss_gb``, measured by :func:`effective_popsim_workers` at the point of use;
+    # 0.0 in the start-up report, which runs before the driver has grown).
+    memory_bound = max(1, int(math.floor(
+        max(0.0, budget.memory_gb - driver_rss_gb) / worker_memory_gb)))
     ceiling = max(1, min(memory_bound, budget.cores))
     return _resolve_ceiling(
         "braunschweig.population.popsim.num_workers", configured, ceiling,
@@ -658,6 +664,40 @@ DEFAULT_POPSIM_WORKER_MEMORY_GB = 30.0
 MEASURED_POPSIM_WORKER_MEMORY_SAMPLING_RATE = 1.0
 
 KEY_WORKER_MEMORY_GB = "braunschweig.population.popsim.worker_memory_gb"
+
+#: The two run-time options of fork release 0.10.0+bs.2 (issue #656). A per-worker figure below
+#: :data:`DEFAULT_POPSIM_WORKER_MEMORY_GB` was measured only with BOTH on (run manifest
+#: popsim-run-performance-2026-11-18); see :func:`popsim_worker_memory_gb`.
+KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY = "braunschweig.population.popsim.store_positive_weight_rows_only"
+KEY_FAST_PATHS = "braunschweig.population.popsim.fast_paths"
+
+
+def popsim_worker_memory_gb(configured: float, store_positive_weight_rows_only: bool,
+                            fast_paths: bool) -> float:
+    """Per-worker memory the gate may assume for a PopulationSim batch, in GB.
+
+    A configured figure below :data:`DEFAULT_POPSIM_WORKER_MEMORY_GB` holds only for runs with
+    both run-time options on: without them a batch keeps its dense weight tables and peaks at
+    the default's order (run manifest popsim-run-performance-2026-11-18), and the peak with only
+    one option on was never measured. In that case the default is used instead and a WARNING
+    names the keys, so a run with the options off is clamped rather than OOM-killed.
+
+    Raises ``ValueError`` for a non-positive ``configured`` (whatever the options), naming the key.
+    """
+    if configured <= 0:
+        raise ValueError(
+            f"{KEY_WORKER_MEMORY_GB} must be a positive number of gigabytes per worker, "
+            f"got {configured!r}.")
+    if configured < DEFAULT_POPSIM_WORKER_MEMORY_GB and not (
+            store_positive_weight_rows_only is True and fast_paths is True):
+        logger.warning(
+            "[resources] %s is %g GB, but that figure holds only with %s and %s both true "
+            "(here %r and %r): using the default %g GB per PopulationSim worker instead",
+            KEY_WORKER_MEMORY_GB, configured, KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY,
+            KEY_FAST_PATHS, store_positive_weight_rows_only, fast_paths,
+            DEFAULT_POPSIM_WORKER_MEMORY_GB)
+        return DEFAULT_POPSIM_WORKER_MEMORY_GB
+    return configured
 
 #: Config key carrying the run's sampling rate. Read only to decide the SEVERITY
 #: of a PopulationSim memory mismatch (see above); this module never resolves or
@@ -887,9 +927,18 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
                 f"{key} must be a number of gigabytes per worker, got {raw!r}.") from None
 
     worker_memory_gb = None
+    # True only when the figure in use is the operator's own value, not the default that
+    # popsim_worker_memory_gb substitutes when the run-time options are not both on.
+    worker_memory_is_configured = False
     try:
-        worker_memory_gb = _memory_setting(KEY_WORKER_MEMORY_GB,
-                                           DEFAULT_POPSIM_WORKER_MEMORY_GB)
+        configured_worker_memory_gb = _memory_setting(
+            KEY_WORKER_MEMORY_GB, DEFAULT_POPSIM_WORKER_MEMORY_GB)
+        worker_memory_gb = popsim_worker_memory_gb(
+            configured_worker_memory_gb,
+            config.get(KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY, False),
+            config.get(KEY_FAST_PATHS, False))
+        worker_memory_is_configured = (KEY_WORKER_MEMORY_GB in config
+                                       and worker_memory_gb == configured_worker_memory_gb)
     except ValueError as exc:
         _add_violation(Violation(key=KEY_WORKER_MEMORY_GB, severity="error",
                                  message=str(exc)))
@@ -985,7 +1034,9 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
                 and float(sampling_rate) >= MEASURED_POPSIM_WORKER_MEMORY_SAMPLING_RATE)
         except (TypeError, ValueError):
             at_measured_scale = False
-        operator_asserted_figure = KEY_WORKER_MEMORY_GB in config
+        # The default substituted for a configured figure (options not both on) is not the
+        # operator's assertion: it keeps the scale rule of point 2.
+        operator_asserted_figure = worker_memory_is_configured
         severity = ("error" if popsim_selected
                     and (at_measured_scale or operator_asserted_figure) else "warning")
         message = (
@@ -1122,7 +1173,8 @@ def effective_java_memory(configured, machine: Optional[MachineResources] = None
 
 def effective_popsim_workers(configured, worker_memory_gb: float,
                              machine: Optional[MachineResources] = None,
-                             env: Optional[dict] = None) -> int:
+                             env: Optional[dict] = None,
+                             driver_rss_gb: Optional[float] = None) -> int:
     """Effective PopulationSim batch worker count for this machine, logged.
 
     Called at the point of use rather than resolved into the config, for the
@@ -1130,10 +1182,26 @@ def effective_popsim_workers(configured, worker_memory_gb: float,
     of the popsim stage's cache key, so writing a machine-dependent number
     back into it would give every machine a different hash and destroy the
     shared Tier-B PopulationSim cache. Clamping here changes nothing any stage
-    hashes.
+    hashes. Like :func:`effective_chainsolver_workers`, the memory bound subtracts THIS
+    process's live RSS (``driver_rss_gb``; measured when not injected, with a WARNING and
+    no subtraction when it cannot be measured), so ``"auto"`` fills the machine without
+    over-committing it.
     """
-    resolution = resolve_popsim_workers(
-        configured, resolve_budget(machine=machine, env=env), worker_memory_gb)
+    budget = resolve_budget(machine=machine, env=env)
+    if driver_rss_gb is None:
+        driver_rss_gb = current_process_rss_gb()
+        if driver_rss_gb is None:
+            logger.warning(
+                "[resources] braunschweig.population.popsim.num_workers: this process's RSS "
+                "could not be measured (psutil not installed and /proc/self/status "
+                "unavailable) -- the driver's memory is NOT subtracted for this run.")
+            driver_rss_gb = 0.0
+    resolution = resolve_popsim_workers(configured, budget, worker_memory_gb, driver_rss_gb)
+    logger.info(
+        "[resources] braunschweig.population.popsim.num_workers: budget %d cores / %.1f GB "
+        "memory, driver RSS %.2f GB, worker_memory_gb %.2f GB -> %s workers (configured %r)",
+        budget.cores, budget.memory_gb, driver_rss_gb, worker_memory_gb, resolution.effective,
+        configured)
     _log_resolution_deviation(resolution)
     return int(resolution.effective)
 
