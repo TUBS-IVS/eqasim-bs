@@ -244,6 +244,8 @@ def test_popsim_validation_receives_the_runs_tenure_limit(tmp_path, monkeypatch,
            "braunschweig.population.popsim.tenure_min_households_outside_dwellings": threshold})
     AS.execute(ctx)
     assert seen == [(limited, threshold)]
+    # Called by hand without the option, the CLI follows the production value (limit on).
+    assert PV._parse_args(["--sim-cache", "x"]).tenure_owner_limited_to_dwellings is True
 
 
 def test_dashboard_and_education_skip_without_inputs(tmp_path, monkeypatch):

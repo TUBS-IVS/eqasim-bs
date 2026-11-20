@@ -315,8 +315,9 @@ def execute(context):
                 "--building-type-target-basis", basis,
                 "--tenure-min-households-outside",
                 str(context.config(KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE))]
-        if context.config(KEY_TENURE_OWNER_LIMITED):
-            argv.append("--tenure-owner-limited-to-dwellings")
+        argv.append("--tenure-owner-limited-to-dwellings"
+                    if context.config(KEY_TENURE_OWNER_LIMITED)
+                    else "--no-tenure-owner-limited-to-dwellings")
         R.run(R._parse_args(argv))
     _run(summary, "popsim_validation",
          context.config(KEY_POPSIM_VALIDATION), is_popsim, "not a popsim run", _popsim)
