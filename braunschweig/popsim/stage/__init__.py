@@ -855,7 +855,7 @@ def configure(context):
     # Building-type targets rescaled from dwellings to households per cell (#647). Default True.
     context.config(KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS, True)
     # KREIS input consistency (#658, Part A; meaning: config_keys). Code defaults = legacy values.
-    _declare_kreis_consistency_config(context)
+    _configure_kreis_consistency_keys(context)
     # Owner-household targets limited to the dwellings of the cell (#657; meaning:
     # KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS in config_keys). Default False in code: the production
     # switch follows the evidence run. The threshold's default is single-sourced from the rule
@@ -1505,7 +1505,7 @@ class KreisConsistencySettings:
 KREIS_INPUT_CONSISTENCY_REPORT_KEY = "kreis_input_consistency"
 
 
-def _declare_kreis_consistency_config(context) -> None:
+def _configure_kreis_consistency_keys(context) -> None:
     """Declare the five #658 keys with their legacy defaults in ``configure()`` and validate them.
 
     A bad value fails at DAG-build time, naming the key and its allowed values (ValueError).

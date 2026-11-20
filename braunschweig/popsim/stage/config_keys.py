@@ -217,7 +217,7 @@ KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS = (
 #   employment_level_source: "survey" (legacy: the employed classes of work_by_employment /
 #       employment_status keep their survey level) | "zensus" (rescaled to the Zensus employment level,
 #       braunschweig.popsim.employment_level).
-#   kreis_fine_tolerance / kreis_fine_min_persons: the guard (input_consistency.guard_violations)
+#   kreis_fine_tolerance / kreis_fine_min_persons: the guard (input_consistency_guard.guard_violations)
 #       raises when an age-universe pair differs by more than this relative share in a Kreis part
 #       whose grid sum is at least this many persons. Used only with kreis_batch_apportionment
 #       "universe"; with "population" the table is written and nothing raises. The 0.05 is an
