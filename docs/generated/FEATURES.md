@@ -60,7 +60,7 @@ may only name run manifests (no run, no claim).
 | [household_fleet](../registry/features/household_fleet.yml) | fleet | active | ON | A/A/A | 1 | proven | marker | committed | unvalidated | pending |
 | [household_income_distribution](../registry/features/household_income_distribution.yml) | attributes | active | off | -/-/A | 1 | proven | marker | committed | unvalidated | pending |
 | [household_size_margin](../registry/features/household_size_margin.yml) | population | active | off | -/-/A | 1 | -- | none | none | unvalidated | pending |
-| [housing_tenure](../registry/features/housing_tenure.yml) | attributes | active | ON | A/A/A | 1 | -- | marker | committed | unvalidated | pending |
+| [housing_tenure](../registry/features/housing_tenure.yml) | attributes | active | ON | A/A/A | 1 | -- | marker | committed | unvalidated (`popsim-ladder-tenure-2026-11-18`) | pending |
 | [income_aware_cars](../registry/features/income_aware_cars.yml) | attributes | active | off | -/-/A | 1 | proven | marker | committed | unvalidated | pending |
 | [income_spatial_tilt](../registry/features/income_spatial_tilt.yml) | population | active | off | i/i/- | 3 | proven | marker | none | unvalidated | pending |
 | [incommuter_donor_demographics](../registry/features/incommuter_donor_demographics.yml) | cordon | active | ON | A/A/- | 2 | not claimed | marker | none | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | pending |
