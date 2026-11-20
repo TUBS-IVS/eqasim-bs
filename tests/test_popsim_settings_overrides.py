@@ -29,6 +29,14 @@ NEUTRAL = {
     "INTEGERIZER_DRAW": "off",
     "INTEGERIZER_TIMEOUT": 7200,
     "INTEGERIZER_PATH_RECORD": True,
+    "INTEGERIZER_ROUNDING": "round",
+    "INTEGERIZER_PENALTY_FLOOR": 100.0,
+    "INTEGERIZER_PENALTY_CAP": 100000.0,
+    "INTEGERIZER_PARENT_TOTAL_FACTOR": 10.0,
+    "INTEGERIZER_CONSERVE_PENALTY": 100000.0,
+    "INTEGERIZER_CONTROLLED_METHOD": "search",
+    "INTEGERIZER_SEARCH_MAX_SWEEPS": 200,
+    "INTEGERIZER_SEARCH_SHORTLIST": 24,
 }
 
 
@@ -104,20 +112,71 @@ def test_override_equal_raw_value_is_accepted_without_a_duplicate_key():
     ({"KEEP_FRACTIONAL_SAMPLE_WEIGHTS": "true"}, "KEEP_FRACTIONAL_SAMPLE_WEIGHTS"),
     ({"INTEGERIZER_PATH_RECORD": 1}, "INTEGERIZER_PATH_RECORD"),
     ({"SOME_OTHER_KEY": 1}, "SOME_OTHER_KEY"),
+    ({"INTEGERIZER_ROUNDING": "banana"}, "INTEGERIZER_ROUNDING"),
+    ({"INTEGERIZER_ROUNDING": False}, "INTEGERIZER_ROUNDING"),
+    ({"INTEGERIZER_PENALTY_FLOOR": 0}, "INTEGERIZER_PENALTY_FLOOR"),
+    ({"INTEGERIZER_PENALTY_FLOOR": True}, "INTEGERIZER_PENALTY_FLOOR"),
+    ({"INTEGERIZER_PENALTY_CAP": float("inf")}, "INTEGERIZER_PENALTY_CAP"),
+    ({"INTEGERIZER_PENALTY_CAP": "100"}, "INTEGERIZER_PENALTY_CAP"),
+    ({"INTEGERIZER_PARENT_TOTAL_FACTOR": 0.5}, "INTEGERIZER_PARENT_TOTAL_FACTOR"),
+    ({"INTEGERIZER_PARENT_TOTAL_FACTOR": float("nan")}, "INTEGERIZER_PARENT_TOTAL_FACTOR"),
+    ({"INTEGERIZER_CONSERVE_PENALTY": -1.0}, "INTEGERIZER_CONSERVE_PENALTY"),
+    ({"INTEGERIZER_CONTROLLED_METHOD": "banana"}, "INTEGERIZER_CONTROLLED_METHOD"),
+    ({"INTEGERIZER_CONTROLLED_METHOD": False}, "INTEGERIZER_CONTROLLED_METHOD"),
+    ({"INTEGERIZER_SEARCH_MAX_SWEEPS": 0}, "INTEGERIZER_SEARCH_MAX_SWEEPS"),
+    ({"INTEGERIZER_SEARCH_MAX_SWEEPS": True}, "INTEGERIZER_SEARCH_MAX_SWEEPS"),
+    ({"INTEGERIZER_SEARCH_MAX_SWEEPS": 1.5}, "INTEGERIZER_SEARCH_MAX_SWEEPS"),
+    ({"INTEGERIZER_SEARCH_SHORTLIST": 0}, "INTEGERIZER_SEARCH_SHORTLIST"),
+    ({"INTEGERIZER_SEARCH_SHORTLIST": "24"}, "INTEGERIZER_SEARCH_SHORTLIST"),
+    ({"INTEGERIZER_SEARCH_SHORTLIST": True}, "INTEGERIZER_SEARCH_SHORTLIST"),
 ])
 def test_override_type_validation(changes, key):
     with pytest.raises(ValueError, match=key):
         folders.apply_populationsim_overrides(SETTINGS, _overrides(**changes))
 
 
-def test_overrides_from_config_validates_and_orders():
-    assert folders.populationsim_overrides_from_config(
-        keep_fractional_sample_weights=False, integerizer_draw="off",
-        integerizer_timeout_s=7200) == NEUTRAL
+def _from_config(**changes):
+    values = dict(
+        keep_fractional_sample_weights=False, integerizer_draw="off", integerizer_timeout_s=7200,
+        integerizer_rounding="round", integerizer_penalty_floor=100.0,
+        integerizer_penalty_cap=100000.0, integerizer_parent_total_factor=10.0,
+        integerizer_conserve_penalty=100000.0, integerizer_controlled_method="search",
+        integerizer_search_max_sweeps=200, integerizer_search_shortlist=24)
+    values.update(changes)
+    return folders.populationsim_overrides_from_config(**values)
+
+
+def test_overrides_from_config_carries_all_settings_and_validates():
+    assert _from_config() == NEUTRAL
+    controlled = _from_config(integerizer_rounding="controlled", integerizer_penalty_floor=50)
+    assert controlled["INTEGERIZER_ROUNDING"] == "controlled"
+    assert controlled["INTEGERIZER_PENALTY_FLOOR"] == 50
+    search = _from_config(integerizer_controlled_method="lp", integerizer_search_max_sweeps=50,
+                          integerizer_search_shortlist=8)
+    assert search["INTEGERIZER_CONTROLLED_METHOD"] == "lp"
+    assert search["INTEGERIZER_SEARCH_MAX_SWEEPS"] == 50
+    assert search["INTEGERIZER_SEARCH_SHORTLIST"] == 8
+    with pytest.raises(ValueError, match="INTEGERIZER_CONTROLLED_METHOD"):
+        _from_config(integerizer_controlled_method="banana")
     with pytest.raises(ValueError, match="INTEGERIZER_DRAW"):
-        folders.populationsim_overrides_from_config(
-            keep_fractional_sample_weights=False, integerizer_draw="yes",
-            integerizer_timeout_s=7200)
+        _from_config(integerizer_draw="yes")
+    with pytest.raises(ValueError, match="INTEGERIZER_ROUNDING"):
+        _from_config(integerizer_rounding="banana")
+
+
+def test_penalty_cap_below_floor_is_rejected_naming_the_setting():
+    with pytest.raises(ValueError, match="INTEGERIZER_PENALTY_CAP"):
+        _from_config(integerizer_penalty_floor=500.0, integerizer_penalty_cap=100.0)
+    # equal is allowed: the cap only has to leave room for the floor
+    _from_config(integerizer_penalty_floor=500.0, integerizer_penalty_cap=500.0)
+
+
+def test_controlled_rounding_settings_are_written_quoted_into_the_batch_settings():
+    result = folders.apply_populationsim_overrides(
+        SETTINGS, _overrides(INTEGERIZER_ROUNDING="controlled"))
+    parsed = yaml.safe_load(result)
+    assert parsed["INTEGERIZER_ROUNDING"] == "controlled"
+    assert parsed["INTEGERIZER_PENALTY_CAP"] == 100000.0
 
 
 def test_batch_seed_is_stable_distinct_and_32bit():
@@ -253,6 +312,14 @@ def test_signature_changes_with_each_override_and_seed_base():
         {"INTEGERIZER_DRAW": "gumbel"},
         {"INTEGERIZER_TIMEOUT": 3600},
         {"INTEGERIZER_PATH_RECORD": False},
+        {"INTEGERIZER_ROUNDING": "controlled"},
+        {"INTEGERIZER_PENALTY_FLOOR": 50.0},
+        {"INTEGERIZER_PENALTY_CAP": 5000.0},
+        {"INTEGERIZER_PARENT_TOTAL_FACTOR": 20.0},
+        {"INTEGERIZER_CONSERVE_PENALTY": 500.0},
+        {"INTEGERIZER_CONTROLLED_METHOD": "lp"},
+        {"INTEGERIZER_SEARCH_MAX_SWEEPS": 100},
+        {"INTEGERIZER_SEARCH_SHORTLIST": 12},
     ):
         signature = _base_signature(
             settings_overrides=_overrides(**changes), integerizer_seed_base=None)
@@ -283,6 +350,14 @@ def _values(**changes):
         config_keys.KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS: False,
         config_keys.KEY_INTEGERIZER_DRAW: "off",
         config_keys.KEY_INTEGERIZER_TIMEOUT_S: 7200,
+        config_keys.KEY_INTEGERIZER_ROUNDING: "round",
+        config_keys.KEY_INTEGERIZER_PENALTY_FLOOR: 100.0,
+        config_keys.KEY_INTEGERIZER_PENALTY_CAP: 100000.0,
+        config_keys.KEY_INTEGERIZER_PARENT_TOTAL_FACTOR: 10.0,
+        config_keys.KEY_INTEGERIZER_CONSERVE_PENALTY: 100000.0,
+        config_keys.KEY_INTEGERIZER_CONTROLLED_METHOD: "search",
+        config_keys.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS: 200,
+        config_keys.KEY_INTEGERIZER_SEARCH_SHORTLIST: 24,
         "random_seed": 4711,
     }
     values.update(changes)
@@ -299,6 +374,20 @@ def test_stage_reads_overrides_and_seed_base_only_when_draw_is_on():
     assert overrides["INTEGERIZER_DRAW"] == "gumbel"
     assert overrides["KEEP_FRACTIONAL_SAMPLE_WEIGHTS"] is True
     assert seed_base == 4711
+
+
+def test_stage_passes_the_controlled_rounding_settings_on():
+    overrides, _ = stage._read_integerizer_settings(_ExecuteContext(_values(**{
+        config_keys.KEY_INTEGERIZER_ROUNDING: "controlled",
+        config_keys.KEY_INTEGERIZER_PENALTY_FLOOR: 50.0,
+        config_keys.KEY_INTEGERIZER_CONTROLLED_METHOD: "lp",
+        config_keys.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS: 50,
+        config_keys.KEY_INTEGERIZER_SEARCH_SHORTLIST: 8})))
+    assert overrides["INTEGERIZER_ROUNDING"] == "controlled"
+    assert overrides["INTEGERIZER_PENALTY_FLOOR"] == 50.0
+    assert overrides["INTEGERIZER_CONTROLLED_METHOD"] == "lp"
+    assert overrides["INTEGERIZER_SEARCH_MAX_SWEEPS"] == 50
+    assert overrides["INTEGERIZER_SEARCH_SHORTLIST"] == 8
 
 
 def test_stage_rejects_an_unknown_draw():
@@ -330,6 +419,14 @@ def test_stage_declares_neutral_defaults_non_volatile():
         (config_keys.KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS, False),
         (config_keys.KEY_INTEGERIZER_DRAW, "off"),
         (config_keys.KEY_INTEGERIZER_TIMEOUT_S, 60),
+        (config_keys.KEY_INTEGERIZER_ROUNDING, "round"),
+        (config_keys.KEY_INTEGERIZER_PENALTY_FLOOR, 100.0),
+        (config_keys.KEY_INTEGERIZER_PENALTY_CAP, 100000.0),
+        (config_keys.KEY_INTEGERIZER_PARENT_TOTAL_FACTOR, 10.0),
+        (config_keys.KEY_INTEGERIZER_CONSERVE_PENALTY, 100000.0),
+        (config_keys.KEY_INTEGERIZER_CONTROLLED_METHOD, "search"),
+        (config_keys.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS, 200),
+        (config_keys.KEY_INTEGERIZER_SEARCH_SHORTLIST, 24),
     ):
         declared_default, kwargs = context.declared[key]
         assert declared_default == default
@@ -344,3 +441,78 @@ def test_base_config_states_the_tracked_values():
     assert config[config_keys.KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS] is True
     assert config[config_keys.KEY_INTEGERIZER_DRAW] == "gumbel"
     assert config[config_keys.KEY_INTEGERIZER_TIMEOUT_S] == 7200
+    # Production value by owner decision of 2026-11-19 (ADR-0201, issue #646); it needs the fork
+    # release that has the controlled rounding.
+    assert config[config_keys.KEY_INTEGERIZER_ROUNDING] == "controlled"
+    assert config[config_keys.KEY_POPSIM_VERSION] == "0.10.0+bs.2"
+    # The search method's options state the fork's defaults.
+    assert config[config_keys.KEY_INTEGERIZER_CONTROLLED_METHOD] == "search"
+    assert config[config_keys.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS] == 200
+    assert config[config_keys.KEY_INTEGERIZER_SEARCH_SHORTLIST] == 24
+
+
+# --- the fork release that carries controlled rounding (issue #646) -----------------------
+
+@pytest.mark.parametrize("version, expected", [
+    ("0.10.0+bs.2", True),
+    ("0.10.0+bs.3", True),
+    ("0.10.0+bs.10", True),
+    ("0.10.1+bs.1", True),
+    ("0.11.0+bs.1", True),
+    ("0.10.0+bs.1", False),
+    ("0.10.0", False),
+    ("0.10.1", False),
+])
+def test_fork_version_at_least_compares_fork_releases(version, expected):
+    assert folders.fork_version_at_least(version, "0.10.0+bs.2") is expected
+
+
+def test_fork_version_at_least_rejects_a_version_that_does_not_parse():
+    with pytest.raises(ValueError, match="populationsim_version.*not-a-version"):
+        folders.fork_version_at_least("not-a-version", "0.10.0+bs.2")
+
+
+def test_controlled_rounding_needs_the_minimum_fork_release():
+    overrides = {folders.INTEGERIZER_ROUNDING_SETTING: "controlled"}
+    with pytest.raises(ValueError) as error:
+        folders.require_fork_version_for_controlled_rounding(overrides, "0.10.0+bs.1")
+    message = str(error.value)
+    assert "braunschweig.population.popsim.integerizer_rounding" in message
+    assert "0.10.0+bs.1" in message
+    assert folders.CONTROLLED_ROUNDING_MIN_FORK_VERSION == "0.10.0+bs.2"
+    assert "0.10.0+bs.2" in message
+    assert "ignores" in message
+    # The minimum release and newer ones pass.
+    folders.require_fork_version_for_controlled_rounding(overrides, "0.10.0+bs.2")
+    folders.require_fork_version_for_controlled_rounding(overrides, "0.10.0+bs.4")
+
+
+def test_round_does_not_look_at_the_fork_version():
+    overrides = {folders.INTEGERIZER_ROUNDING_SETTING: "round"}
+    # Not even an unparsable version is looked at: nothing needs the fork's new feature.
+    folders.require_fork_version_for_controlled_rounding(overrides, "0.10.0+bs.1")
+    folders.require_fork_version_for_controlled_rounding(overrides, "not-a-version")
+
+
+# --- floats in exponent form (issue #646) --------------------------------------------------
+
+@pytest.mark.parametrize("key, value", [
+    (folders.INTEGERIZER_PENALTY_FLOOR_SETTING, 0.00001),
+    (folders.INTEGERIZER_PENALTY_CAP_SETTING, 1.0e+16),
+    (folders.INTEGERIZER_PENALTY_FLOOR_SETTING, 2.5e-07),
+])
+def test_float_in_exponent_form_is_read_back_as_the_same_float(key, value):
+    # PyYAML reads ``1e-05`` and ``1e+16`` (no decimal point in the mantissa) as strings.
+    overrides = _overrides(**{key: value})
+    result = folders.apply_populationsim_overrides(SETTINGS, overrides)
+    read_back = yaml.safe_load(result)[key]
+    assert isinstance(read_back, float) and read_back == value
+
+
+def test_ordinary_float_and_integer_lines_are_written_as_before():
+    result = folders.apply_populationsim_overrides(SETTINGS, NEUTRAL)
+    lines = result.splitlines()
+    assert "INTEGERIZER_PENALTY_FLOOR: 100.0" in lines
+    assert "INTEGERIZER_PENALTY_CAP: 100000.0" in lines
+    assert "INTEGERIZER_TIMEOUT: 7200" in lines
+    assert "INTEGERIZER_PATH_RECORD: true" in lines

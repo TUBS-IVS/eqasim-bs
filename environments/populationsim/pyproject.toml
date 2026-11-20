@@ -60,4 +60,4 @@ constraint-dependencies = [
 ]
 
 [tool.uv.sources]
-populationsim = { git = "https://github.com/TUBS-IVS/populationsim", tag = "v0.10.0+bs.1" }
+populationsim = { git = "https://github.com/TUBS-IVS/populationsim", tag = "v0.10.0+bs.2" }

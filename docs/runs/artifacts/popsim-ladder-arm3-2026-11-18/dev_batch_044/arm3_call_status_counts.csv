@@ -1,0 +1,7 @@
+batch,arm,kind,status,n,rounding,method
+batch_044,2,simul,INFEASIBLE,26,,
+batch_044,2,simul,OPTIMAL,19,,
+batch_044,2,single,INFEASIBLE,61,,
+batch_044,2,single,OPTIMAL,531,,
+batch_044,3,simul,FEASIBLE,31,controlled,search
+batch_044,3,single,OPTIMAL,1,round,

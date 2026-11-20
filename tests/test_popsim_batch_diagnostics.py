@@ -19,6 +19,8 @@ from popsim_batch_fixture import TOTAL, build_work_dir  # noqa: E402
 
 from braunschweig.analysis.popsim_batch_diagnostics.batch_folder import (  # noqa: E402
     control_totals, household_incidence, list_batch_folders, load_batch_folder)
+from braunschweig.analysis.popsim_batch_diagnostics.conservation import (  # noqa: E402
+    household_conservation, log_crosswalk_sources)
 from braunschweig.analysis.popsim_batch_diagnostics.coverage import (  # noqa: E402
     coverage_table, resolved_record_shares, universe_table)
 from braunschweig.analysis.popsim_batch_diagnostics.fit import (  # noqa: E402
@@ -941,3 +943,110 @@ def test_provenance_commit_is_marked_dirty(work_dir, tmp_path, monkeypatch):
     run_diagnostics(work_dir, tmp_path / "out")
     provenance = json.loads((tmp_path / "out" / "provenance.json").read_text(encoding="utf-8"))
     assert provenance["repository_commit"] == "deadbeef-dirty"
+
+
+# --- Task 7: household conservation per level -----------------------------------------
+
+_PAIR = ("ZENSUS1km", "ZENSUS100m")
+
+
+def _two_level_store(work_dir, parent_rows, sub_rows):
+    """Replace the fixture's weights by a parent (1 km) and a sub (100 m) table.
+
+    Rows are ``(H_ID, zone, integer_weight)``; the balanced weight is irrelevant here.
+    """
+    def frame(level, rows):
+        return pd.DataFrame({"H_ID": [r[0] for r in rows], level: [r[1] for r in rows],
+                             "balanced_weight": [float(r[2]) for r in rows],
+                             "integer_weight": [r[2] for r in rows]})
+    _write_keys(work_dir, {_FIRST_KEY: frame("ZENSUS100m", sub_rows),
+                           "/ZENSUS1km_weights/final": frame("ZENSUS1km", parent_rows)})
+    return load_batch_folder(work_dir / "batch_000")
+
+
+def test_conserving_sub_weights_have_no_deviation(work_dir):
+    batch = _two_level_store(
+        work_dir, [(1, "K1", 2), (2, "K1", 1)],
+        [(1, "A", 1), (1, "B", 1), (2, "A", 1), (2, "B", 0)])
+    row = household_conservation(batch, levels=_PAIR).iloc[0]
+    assert (row["level"], row["parent_level"]) == ("ZENSUS100m", "ZENSUS1km")
+    assert row["abs_deviation_sum"] == 0 and row["conserved_pair_share"] == 1.0
+    assert [row["n_pairs"], row["parent_weight_sum"], row["sub_weight_sum"]] == [2, 3, 3]
+
+
+def test_duplicated_and_dropped_rows_are_measured(work_dir):
+    # Household 1 sits in two sub zones (sum 2 against 1), household 2 in none (0 against 1),
+    # household 3 conserves its weight.
+    batch = _two_level_store(
+        work_dir, [(1, "K1", 1), (2, "K1", 1), (3, "K1", 1)],
+        [(1, "A", 1), (1, "B", 1), (3, "A", 1)])
+    row = household_conservation(batch, levels=_PAIR).iloc[0]
+    assert row["abs_deviation_sum"] == 2
+    assert [row["n_pairs"], row["parent_weight_sum"], row["sub_weight_sum"]] == [3, 3, 3]
+    assert row["abs_deviation_share"] == pytest.approx(2 / 3)
+    assert row["conserved_pair_share"] == pytest.approx(1 / 3)
+    assert [row["distinct_rows_parent"], row["distinct_rows_sub"]] == [3, 2]
+
+
+def test_level_without_parent_table_is_skipped_and_unmapped_zone_is_refused(work_dir, caplog):
+    batch = load_batch_folder(work_dir / "batch_000")      # the store holds only ZENSUS100m
+    with caplog.at_level(logging.INFO):
+        result = household_conservation(batch, levels=_PAIR)
+    assert result.empty and "abs_deviation_sum" in result.columns
+    assert "ZENSUS1km" in caplog.text
+    batch = _two_level_store(work_dir, [(1, "K1", 1)], [(1, "A", 1), (1, "Z9", 1)])
+    with pytest.raises(ValueError, match="ZENSUS100m.*1 zone"):
+        household_conservation(batch, levels=_PAIR)
+
+
+def test_conservation_table_only_with_misfit(work_dir, tmp_path):
+    main(["--work-dir", str(work_dir), "--out-dir", str(tmp_path / "plain")])
+    assert not (tmp_path / "plain" / "household_conservation.csv").exists()
+    _two_level_store(work_dir, [(1, "K1", 1)], [(1, "A", 1)])
+    main(["--work-dir", str(work_dir), "--out-dir", str(tmp_path / "misfit"), "--misfit"])
+    table = pd.read_csv(tmp_path / "misfit" / "household_conservation.csv")
+    assert table["batch"].tolist() == ["batch_000"]
+    assert table["abs_deviation_sum"].tolist() == [0]
+
+
+# --- the crosswalk of the conservation table: store first, CSV as the fallback ------------
+
+def test_conservation_uses_the_store_crosswalk_first_and_equals_the_csv_result(tmp_path):
+    parent_rows = [(1, "K1", 2), (2, "K1", 1)]
+    sub_rows = [(1, "A", 1), (1, "B", 1), (2, "A", 1)]
+    csv_work = build_work_dir(tmp_path / "csv")
+    from_csv = household_conservation(
+        _two_level_store(csv_work, parent_rows, sub_rows), levels=_PAIR)
+    store_work = build_work_dir(tmp_path / "store", crosswalk_in_store=True)
+    batch = _two_level_store(store_work, parent_rows, sub_rows)
+    # Without the CSV only the store table can have supplied the map.
+    (store_work / "batch_000" / "data" / "geo_cross_walk.csv").unlink()
+    from_store = household_conservation(batch, levels=_PAIR)
+    assert from_store.attrs["crosswalk_source"] == "store"
+    assert from_csv.attrs["crosswalk_source"] == "csv"
+    pd.testing.assert_frame_equal(from_store, from_csv)
+
+
+def test_crosswalk_source_rate_line_over_mixed_batches(caplog):
+    with caplog.at_level(logging.INFO):
+        log_crosswalk_sources(["store", "store", "csv"])
+    assert ("[popsim_batch_diagnostics] crosswalk from the store 2/3 batches (66.7%), "
+            "from data/geo_cross_walk.csv 1 (33.3%)") in caplog.text
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_crosswalk_never_from_the_store_is_a_warning_and_unneeded_batches_are_named(caplog):
+    with caplog.at_level(logging.INFO):
+        log_crosswalk_sources(["csv", "csv", None])
+    warned = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert len(warned) == 1
+    assert "from the store 0/2 batches (0.0%)" in warned[0].getMessage()
+    assert "no crosswalk needed 1" in warned[0].getMessage()
+
+
+def test_run_reports_the_crosswalk_source_rate_with_misfit(work_dir, tmp_path, caplog):
+    _two_level_store(work_dir, [(1, "K1", 1)], [(1, "A", 1)])
+    with caplog.at_level(logging.INFO):
+        main(["--work-dir", str(work_dir), "--out-dir", str(tmp_path / "misfit"), "--misfit"])
+    assert ("crosswalk from the store 0/1 batches (0.0%), from data/geo_cross_walk.csv 1 "
+            "(100.0%)") in caplog.text

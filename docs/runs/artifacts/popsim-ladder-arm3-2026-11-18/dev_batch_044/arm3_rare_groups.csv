@@ -1,0 +1,11 @@
+batch,arm,control,T,F,I
+batch_044,2,M_AGE_18_19_agg_ZENSUS100m_target,159.0,161.99999999999991,126.0
+batch_044,2,F_AGE_18_19_agg_ZENSUS100m_target,166.0,167.0,127.0
+batch_044,2,5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target,272.0,269.00000000000017,257.0
+batch_044,2,6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target,107.0,107.99999999999991,57.0
+batch_044,2,Alleinerziehende_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target,602.0,593.0000000000005,528.0
+batch_044,3,M_AGE_18_19_agg_ZENSUS100m_target,159.0,160.0000000000001,160.0
+batch_044,3,F_AGE_18_19_agg_ZENSUS100m_target,166.0,167.00000000000014,167.0
+batch_044,3,5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target,272.0,266.99999999999983,267.0
+batch_044,3,6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target,107.0,104.99999999999989,105.0
+batch_044,3,Alleinerziehende_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m_target,602.0,595.0000000000003,595.0

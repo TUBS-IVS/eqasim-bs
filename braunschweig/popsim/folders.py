@@ -26,11 +26,13 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import re
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence, Union
 
 import yaml
+from packaging.version import InvalidVersion, Version
 
 import numpy as np
 import pandas as pd
@@ -191,6 +193,18 @@ INTEGERIZER_TIMEOUT_ALIAS = "INTEGIZER_TIMEOUT"
 INTEGERIZER_PATH_RECORD_SETTING = "INTEGERIZER_PATH_RECORD"
 INTEGERIZER_SEED_SETTING = "INTEGERIZER_RANDOM_SEED"
 INTEGERIZER_DRAWS = ("off", "pareto", "gumbel")
+# Controlled rounding (fork release 0.10.0+bs.2, issue #646); meaning of each: the matching
+# KEY_INTEGERIZER_* comments in config_keys.
+INTEGERIZER_ROUNDING_SETTING = "INTEGERIZER_ROUNDING"
+INTEGERIZER_PENALTY_FLOOR_SETTING = "INTEGERIZER_PENALTY_FLOOR"
+INTEGERIZER_PENALTY_CAP_SETTING = "INTEGERIZER_PENALTY_CAP"
+INTEGERIZER_PARENT_TOTAL_FACTOR_SETTING = "INTEGERIZER_PARENT_TOTAL_FACTOR"
+INTEGERIZER_CONSERVE_PENALTY_SETTING = "INTEGERIZER_CONSERVE_PENALTY"
+INTEGERIZER_CONTROLLED_METHOD_SETTING = "INTEGERIZER_CONTROLLED_METHOD"
+INTEGERIZER_SEARCH_MAX_SWEEPS_SETTING = "INTEGERIZER_SEARCH_MAX_SWEEPS"
+INTEGERIZER_SEARCH_SHORTLIST_SETTING = "INTEGERIZER_SEARCH_SHORTLIST"
+INTEGERIZER_ROUNDINGS = ("round", "controlled")
+INTEGERIZER_CONTROLLED_METHODS = ("search", "lp")
 _MAX_INTEGERIZER_SEED = 2 ** 32
 
 
@@ -206,13 +220,102 @@ def _is_known_draw(value: object) -> bool:
     return isinstance(value, str) and value in INTEGERIZER_DRAWS
 
 
+def _is_known_rounding(value: object) -> bool:
+    return isinstance(value, str) and value in INTEGERIZER_ROUNDINGS
+
+
+def _is_known_controlled_method(value: object) -> bool:
+    return isinstance(value, str) and value in INTEGERIZER_CONTROLLED_METHODS
+
+
+def _is_finite_number(value: object) -> bool:
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value))
+
+
+def _is_positive_number(value: object) -> bool:
+    return _is_finite_number(value) and value > 0
+
+
+def _is_factor_of_at_least_one(value: object) -> bool:
+    return _is_finite_number(value) and value >= 1
+
+
+def _is_non_negative_number(value: object) -> bool:
+    return _is_finite_number(value) and value >= 0
+
+
 # setting name -> (validator, what a valid value is)
 _OVERRIDE_RULES = {
     KEEP_FRACTIONAL_SETTING: (_is_bool, "a boolean"),
     INTEGERIZER_DRAW_SETTING: (_is_known_draw, f"one of {list(INTEGERIZER_DRAWS)}"),
     INTEGERIZER_TIMEOUT_SETTING: (_is_positive_int, "a positive integer (seconds)"),
     INTEGERIZER_PATH_RECORD_SETTING: (_is_bool, "a boolean"),
+    INTEGERIZER_ROUNDING_SETTING: (_is_known_rounding, f"one of {list(INTEGERIZER_ROUNDINGS)}"),
+    INTEGERIZER_PENALTY_FLOOR_SETTING: (_is_positive_number, "a finite number > 0"),
+    INTEGERIZER_PENALTY_CAP_SETTING: (_is_finite_number, "a finite number"),
+    INTEGERIZER_PARENT_TOTAL_FACTOR_SETTING: (
+        _is_factor_of_at_least_one, "a finite number >= 1"),
+    INTEGERIZER_CONSERVE_PENALTY_SETTING: (_is_non_negative_number, "a finite number >= 0"),
+    INTEGERIZER_CONTROLLED_METHOD_SETTING: (
+        _is_known_controlled_method, f"one of {list(INTEGERIZER_CONTROLLED_METHODS)}"),
+    INTEGERIZER_SEARCH_MAX_SWEEPS_SETTING: (_is_positive_int, "a positive integer (sweeps)"),
+    INTEGERIZER_SEARCH_SHORTLIST_SETTING: (_is_positive_int, "an integer >= 1"),
 }
+
+
+# The first release of the group's PopulationSim fork that reads INTEGERIZER_ROUNDING; an
+# older release ignores the setting and rounds plainly (issue #646).
+CONTROLLED_ROUNDING_MIN_FORK_VERSION = "0.10.0+bs.2"
+_POPSIM_VERSION_KEY = "braunschweig.population.popsim.populationsim_version"
+_INTEGERIZER_ROUNDING_KEY = "braunschweig.population.popsim.integerizer_rounding"
+
+
+def fork_version_at_least(version: str, minimum: str) -> bool:
+    """True when ``version`` is a release of the group's fork (``X.Y.Z+bs.N``) >= ``minimum``.
+
+    A version without a local segment starting with ``bs`` (upstream PopulationSim) is never
+    a fork release, so it is not "at least" any fork version.
+
+    Raises
+    ------
+    ValueError
+        If ``version`` is no valid PEP 440 version (names the config key and the value).
+    """
+    try:
+        parsed = Version(str(version))
+    except InvalidVersion as error:
+        raise ValueError(
+            f"{_POPSIM_VERSION_KEY} must be a PEP 440 version such as '0.10.0+bs.2', "
+            f"got {version!r}.") from error
+    if parsed.local is None or not parsed.local.startswith("bs"):
+        return False
+    return parsed >= Version(minimum)
+
+
+def require_fork_version_for_controlled_rounding(
+    overrides: Mapping[str, object], populationsim_version: str,
+) -> None:
+    """Refuse ``controlled`` rounding against a fork release that does not have it.
+
+    An older release ignores ``INTEGERIZER_ROUNDING`` and every batch would run with plain
+    rounding; only the solver-path gate after all batches would notice. With ``round`` the
+    version is not looked at.
+
+    Raises
+    ------
+    ValueError
+        If the rounding is ``controlled`` and ``populationsim_version`` is below
+        ``CONTROLLED_ROUNDING_MIN_FORK_VERSION`` (or no fork release, or unparsable).
+    """
+    if overrides.get(INTEGERIZER_ROUNDING_SETTING) != "controlled":
+        return
+    if not fork_version_at_least(populationsim_version, CONTROLLED_ROUNDING_MIN_FORK_VERSION):
+        raise ValueError(
+            f"{_INTEGERIZER_ROUNDING_KEY} is 'controlled', but {_POPSIM_VERSION_KEY} is "
+            f"{populationsim_version!r}; controlled rounding needs the fork release "
+            f"{CONTROLLED_ROUNDING_MIN_FORK_VERSION} or newer. An older fork ignores the "
+            "setting and would round plainly in every batch.")
 
 
 def _same_value(left: object, right: object) -> bool:
@@ -222,27 +325,46 @@ def _same_value(left: object, right: object) -> bool:
 
 def populationsim_overrides_from_config(
     *, keep_fractional_sample_weights: object, integerizer_draw: object,
-    integerizer_timeout_s: object,
+    integerizer_timeout_s: object, integerizer_rounding: object,
+    integerizer_penalty_floor: object, integerizer_penalty_cap: object,
+    integerizer_parent_total_factor: object, integerizer_conserve_penalty: object,
+    integerizer_controlled_method: object, integerizer_search_max_sweeps: object,
+    integerizer_search_shortlist: object,
 ) -> dict[str, object]:
     """Build the PopulationSim settings that the tracked config decides, validated.
 
     ``INTEGERIZER_PATH_RECORD`` is always ``true``: the per-call path record is the
-    evidence the integerizer gate of the batch check reads. Meaning of the three
-    configurable values: the matching ``KEY_*`` comments in
-    ``braunschweig.popsim.stage.config_keys``.
+    evidence the integerizer gate of the batch check reads. The controlled-rounding
+    penalty values, the controlled method, the two search options and the rounding mode are
+    always written too, also with the neutral ``round``. Meaning of the configurable values:
+    the matching ``KEY_*`` comments in ``braunschweig.popsim.stage.config_keys``.
 
     Raises
     ------
     ValueError
-        If a value is not valid for its setting (names the setting).
+        If a value is not valid for its setting, or the penalty cap is below the penalty
+        floor (names the setting).
     """
     overrides = {
         KEEP_FRACTIONAL_SETTING: keep_fractional_sample_weights,
         INTEGERIZER_DRAW_SETTING: integerizer_draw,
         INTEGERIZER_TIMEOUT_SETTING: integerizer_timeout_s,
         INTEGERIZER_PATH_RECORD_SETTING: True,
+        INTEGERIZER_ROUNDING_SETTING: integerizer_rounding,
+        INTEGERIZER_PENALTY_FLOOR_SETTING: integerizer_penalty_floor,
+        INTEGERIZER_PENALTY_CAP_SETTING: integerizer_penalty_cap,
+        INTEGERIZER_PARENT_TOTAL_FACTOR_SETTING: integerizer_parent_total_factor,
+        INTEGERIZER_CONSERVE_PENALTY_SETTING: integerizer_conserve_penalty,
+        INTEGERIZER_CONTROLLED_METHOD_SETTING: integerizer_controlled_method,
+        INTEGERIZER_SEARCH_MAX_SWEEPS_SETTING: integerizer_search_max_sweeps,
+        INTEGERIZER_SEARCH_SHORTLIST_SETTING: integerizer_search_shortlist,
     }
     _validate_overrides(overrides)
+    if integerizer_penalty_cap < integerizer_penalty_floor:
+        raise ValueError(
+            f"PopulationSim setting {INTEGERIZER_PENALTY_CAP_SETTING} must be >= "
+            f"{INTEGERIZER_PENALTY_FLOOR_SETTING}, got cap {integerizer_penalty_cap!r} < "
+            f"floor {integerizer_penalty_floor!r}.")
     return overrides
 
 
@@ -264,7 +386,23 @@ def _format_setting_value(value: object) -> str:
         return "true" if value else "false"
     if isinstance(value, str):
         return f"'{value}'"
+    if isinstance(value, float):
+        return _format_float(value)
     return str(value)
+
+
+def _format_float(value: float) -> str:
+    """Shortest round-trip text of a float that PyYAML reads back as a float.
+
+    ``repr`` gives ``1e-05`` or ``1e+16`` for some values; PyYAML (YAML 1.1) needs a decimal
+    point in the mantissa and reads those as strings, so ``1.0e-05`` / ``1.0e+16`` is written.
+    Python writes the exponent with a sign, which PyYAML also needs.
+    """
+    text = repr(float(value))
+    mantissa, marker, exponent = text.partition("e")
+    if marker and "." not in mantissa:
+        mantissa += ".0"
+    return mantissa + marker + exponent
 
 
 def _line_ending(text: str) -> str:

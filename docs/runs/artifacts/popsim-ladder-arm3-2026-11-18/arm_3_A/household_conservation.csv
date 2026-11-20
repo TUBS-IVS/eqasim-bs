@@ -1,0 +1,7 @@
+batch,level,parent_level,n_pairs,parent_weight_sum,sub_weight_sum,abs_deviation_sum,abs_deviation_share,conserved_pair_share,distinct_rows_parent,distinct_rows_sub
+batch_000,KREIS,STAAT,5937,6629.0,6629.0,0.0,0.0,1.0,5937,5937
+batch_000,ZENSUS1km,KREIS,5937,6629.0,6629.0,0.0,0.0,1.0,5937,5937
+batch_000,ZENSUS100m,ZENSUS1km,6492,6629.0,6690.0,331.0,0.04993211645798763,0.9551756007393716,5937,5804
+batch_032,KREIS,STAAT,11659,13464.0,13464.0,0.0,0.0,1.0,11659,11659
+batch_032,ZENSUS1km,KREIS,11867,13464.0,13464.0,0.0,0.0,1.0,11659,11659
+batch_032,ZENSUS100m,ZENSUS1km,13184,13464.0,13464.0,0.0,0.0,1.0,11659,11659

@@ -1,0 +1,26 @@
+2026-11-18_08:49:52 prepare (code f796f625a90f4e117a2984955fa8c23a05226d79, version 0.10.0+bs.2)
+2026-11-18_08:50:05 start round_off batch_000 batch_032
+2026-11-18_08:50:05 start round_on batch_000 batch_032
+2026-11-18_09:03:06 end round_on rc=0 exit 0 exit 0 
+2026-11-18_09:14:28 end round_off rc=0 exit 0 exit 0 
+2026-11-18_09:14:28 start controlled_off batch_000 batch_032
+2026-11-18_09:14:28 start controlled_on batch_000 batch_032
+2026-11-18_09:19:20 end controlled_on rc=0 exit 0 exit 0 
+2026-11-18_09:29:39 end controlled_off rc=0 exit 0 exit 0 
+2026-11-18_09:29:39 start round_on_b028 batch_028
+2026-11-18_09:29:39 start round_off_b028 batch_028
+2026-11-18_09:29:39 start controlled_on_b028 batch_028
+2026-11-18_09:29:39 start diagnostics round_off
+2026-11-18_09:29:39 start diagnostics controlled_off
+2026-11-18_09:29:39 start diagnostics controlled_on
+2026-11-18_09:30:07 end diagnostics controlled_on: done rc=0
+2026-11-18_09:36:59 end controlled_on_b028 rc=0 exit 0 
+2026-11-18_09:57:52 end diagnostics controlled_off: done rc=0
+2026-11-18_09:57:54 end diagnostics round_off: done rc=0
+2026-11-18_09:57:54 start controlled_off_b028 batch_028
+2026-11-18_09:58:39 end round_on_b028 rc=0 exit 0 
+2026-11-18_10:16:23 end round_off_b028 rc=0 exit 0 
+2026-11-18_10:20:05 end controlled_off_b028 rc=0 exit 0 
+2026-11-18_10:20:05 start controlled_off_repeat batch_000
+2026-11-18_10:31:20 end controlled_off_repeat rc=0 exit 0 
+2026-11-18_10:31:20 all runs ended

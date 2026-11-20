@@ -122,6 +122,43 @@ KEY_INTEGERIZER_DRAW = "braunschweig.population.popsim.integerizer_draw"
 # Time limit of one integerizer solve, positive integer seconds (-> INTEGERIZER_TIMEOUT;
 # upstream 0.10.0 calls it INTEGIZER_TIMEOUT and defaults to 60).
 KEY_INTEGERIZER_TIMEOUT_S = "braunschweig.population.popsim.integerizer_timeout_s"
+# Controlled-rounding options of the simultaneous integerizer (fork release 0.10.0+bs.2, issue
+# #646; the fork's WP4 design owns the formulation). Same handling as the three keys above:
+# written into every batch settings.yaml, never volatile, each enters the batch signature.
+# "The fork's defaults" below are the defaults of the table in the section "Controlled rounding"
+# of the fork README on its branch bs/main.
+# integerizer_rounding (-> INTEGERIZER_ROUNDING): "round" (upstream, default) or "controlled".
+# With "controlled" the stage fails when a simultaneous integerizer call was not recorded as
+# controlled (braunschweig.popsim.stage.solver_path_gate.check_solver_paths).
+KEY_INTEGERIZER_ROUNDING = "braunschweig.population.popsim.integerizer_rounding"
+# The control importances are clipped into [floor, cap] to give the per-control penalty of the
+# controlled LP. Floor: number > 0 (-> INTEGERIZER_PENALTY_FLOOR; only read with "controlled").
+KEY_INTEGERIZER_PENALTY_FLOOR = "braunschweig.population.popsim.integerizer_penalty_floor"
+# Cap: number >= the floor (-> INTEGERIZER_PENALTY_CAP; the cross-check is in
+# braunschweig.popsim.folders.populationsim_overrides_from_config).
+KEY_INTEGERIZER_PENALTY_CAP = "braunschweig.population.popsim.integerizer_penalty_cap"
+# Multiplier of that penalty for the parent-zone totals (itself capped at the cap), number >= 1
+# (-> INTEGERIZER_PARENT_TOTAL_FACTOR).
+KEY_INTEGERIZER_PARENT_TOTAL_FACTOR = (
+    "braunschweig.population.popsim.integerizer_parent_total_factor")
+# Penalty per unit of household-conservation slack, number >= 0
+# (-> INTEGERIZER_CONSERVE_PENALTY).
+KEY_INTEGERIZER_CONSERVE_PENALTY = "braunschweig.population.popsim.integerizer_conserve_penalty"
+# Method of the controlled rounding (-> INTEGERIZER_CONTROLLED_METHOD; fork release 0.10.0+bs.2):
+# "search" (code default = the fork's default: a network start plus a deterministic swap search,
+# no LP) or "lp" (an LP with a repair step, kept for comparison). Only read with
+# integerizer_rounding "controlled". The penalty floor and cap price the cell distances of BOTH
+# methods; integerizer_parent_total_factor and integerizer_conserve_penalty are read by the "lp"
+# method only. The LP solver choice of the "lp" method is left at the fork's defaults.
+KEY_INTEGERIZER_CONTROLLED_METHOD = "braunschweig.population.popsim.integerizer_controlled_method"
+# Upper bound of the swap sweeps of one "search" call, positive integer
+# (-> INTEGERIZER_SEARCH_MAX_SWEEPS; code default = the fork's default). A call that stops at
+# the bound without a local optimum is recorded as not converged
+# (braunschweig.popsim.stage.solver_path_gate).
+KEY_INTEGERIZER_SEARCH_MAX_SWEEPS = "braunschweig.population.popsim.integerizer_search_max_sweeps"
+# Number of candidate swaps the "search" method keeps per step, integer >= 1
+# (-> INTEGERIZER_SEARCH_SHORTLIST; code default = the fork's default).
+KEY_INTEGERIZER_SEARCH_SHORTLIST = "braunschweig.population.popsim.integerizer_search_shortlist"
 # Solver-path gate (braunschweig.popsim.stage.solver_path_gate, design goal G5, issue #645):
 # float in (0, 1] or null. Above this share of parent zones NOT integerized simultaneously
 # (per geography) the stage raises; null = warn only. Volatile: it only gates, no result, so a

@@ -1,0 +1,218 @@
+{
+  "g2_bound_pp": 5.0,
+  "g3_bounds": {
+    "ZENSUS100m": 0.02,
+    "ZENSUS1km": 0.02,
+    "KREIS": 0.01
+  },
+  "g4_bound": 0.1,
+  "g4_min_target": 40.0,
+  "expanded_sha256": {
+    "2/batch_000": "fb808110f8e051b8cea7cc62e09448fa73be9c29a7909bab4689fe609824c601",
+    "2/batch_032": "1f482bf13ad15a557cdda6bdb3e87e0a7ef593e76e4fddd26dd2f5d7b03d19a7",
+    "2r/batch_000": "fb808110f8e051b8cea7cc62e09448fa73be9c29a7909bab4689fe609824c601",
+    "2r/batch_032": "1f482bf13ad15a557cdda6bdb3e87e0a7ef593e76e4fddd26dd2f5d7b03d19a7",
+    "3/batch_000": "19f721ce45cd66778c6b3a5cb989d2549ce1703e4b4417875c0bd79c65aa13a4",
+    "3/batch_032": "51699a50e1ad37dd08581a3ef26b36ef1beb7896552bfa64b1dadea5851cf5ed"
+  },
+  "checks": {
+    "g4_batch_000": {
+      "n_controls": 47.0,
+      "n_outside_arm2": 12.0,
+      "n_outside_arm3": 1.0,
+      "max_shift_arm2": 0.5106382978723398,
+      "max_shift_arm3": 0.1494117647058827,
+      "met": false
+    },
+    "g3_batch_000_ZENSUS100m": {
+      "wape_arm2": 0.30519797528199594,
+      "wape_arm3": 0.2717695727022791,
+      "limit": 0.32519797528199595,
+      "met": true
+    },
+    "g3_batch_000_ZENSUS1km": {
+      "wape_arm2": 0.0658456898718271,
+      "wape_arm3": 0.0597637597386278,
+      "limit": 0.0858456898718271,
+      "met": true
+    },
+    "g3_batch_000_KREIS": {
+      "wape_arm2": 0.021289195482503496,
+      "wape_arm3": 0.015453936517756424,
+      "limit": 0.031289195482503494,
+      "met": true
+    },
+    "solver_paths_batch_000": {
+      "non_simultaneous_parents": {
+        "KREIS": 0.0,
+        "ZENSUS100m": 0.0,
+        "ZENSUS1km": 0.0
+      },
+      "controlled_simul_calls": 42.0,
+      "search_calls": 42.0,
+      "non_success_calls": 0.0,
+      "not_converged_calls": 0.0,
+      "controlled_proof_error": null,
+      "met": true
+    },
+    "g1_batch_000": {
+      "groups": 207793,
+      "groups_below_one_kept": 149574,
+      "seed_level_call_rows": [
+        5937,
+        207793
+      ],
+      "met": true
+    },
+    "g2_batch_000": {
+      "max_abs_gap_pp_arm2": 2.237909601367477,
+      "max_abs_gap_pp_arm3": 0.5661749258727435,
+      "met": true
+    },
+    "g5_batch_000": {
+      "levels": {
+        "KREIS": {
+          "record_parents": 1,
+          "log_parents": 1,
+          "record_non_simultaneous": 0,
+          "log_non_simultaneous": 0,
+          "agree": true
+        },
+        "ZENSUS100m": {
+          "record_parents": 40,
+          "log_parents": 40,
+          "record_non_simultaneous": 0,
+          "log_non_simultaneous": 0,
+          "agree": true
+        },
+        "ZENSUS1km": {
+          "record_parents": 1,
+          "log_parents": 1,
+          "record_non_simultaneous": 0,
+          "log_non_simultaneous": 0,
+          "agree": true
+        }
+      },
+      "met": true
+    },
+    "g6_batch_000": {
+      "differing_input_files": [
+        "configs/settings.yaml"
+      ],
+      "met": true
+    },
+    "neutral_equivalence_batch_000": {
+      "sha256_arm2": "fb808110f8e051b8cea7cc62e09448fa73be9c29a7909bab4689fe609824c601",
+      "sha256_arm2r": "fb808110f8e051b8cea7cc62e09448fa73be9c29a7909bab4689fe609824c601",
+      "met": true
+    },
+    "g4_batch_032": {
+      "n_controls": 47.0,
+      "n_outside_arm2": 3.0,
+      "n_outside_arm3": 0.0,
+      "max_shift_arm2": 0.373983739837398,
+      "max_shift_arm3": 1.2493059090287477e-15,
+      "met": true
+    },
+    "g3_batch_032_ZENSUS100m": {
+      "wape_arm2": 0.1574141582474048,
+      "wape_arm3": 0.12810008216736682,
+      "limit": 0.17741415824740478,
+      "met": true
+    },
+    "g3_batch_032_ZENSUS1km": {
+      "wape_arm2": 0.027477968115655015,
+      "wape_arm3": 0.019704921279334587,
+      "limit": 0.047477968115655016,
+      "met": true
+    },
+    "g3_batch_032_KREIS": {
+      "wape_arm2": 0.011641892500771833,
+      "wape_arm3": 0.007657015842729068,
+      "limit": 0.021641892500771833,
+      "met": true
+    },
+    "solver_paths_batch_032": {
+      "non_simultaneous_parents": {
+        "KREIS": 0.0,
+        "ZENSUS100m": 0.0,
+        "ZENSUS1km": 0.0
+      },
+      "controlled_simul_calls": 31.0,
+      "search_calls": 31.0,
+      "non_success_calls": 0.0,
+      "not_converged_calls": 0.0,
+      "controlled_proof_error": null,
+      "met": true
+    },
+    "g1_batch_032": {
+      "groups": 207793,
+      "groups_below_one_kept": 149574,
+      "seed_level_call_rows": [
+        11659,
+        207793
+      ],
+      "met": true
+    },
+    "g2_batch_032": {
+      "max_abs_gap_pp_arm2": 2.352646114942214,
+      "max_abs_gap_pp_arm3": 3.4295920448293216,
+      "met": true
+    },
+    "g5_batch_032": {
+      "levels": {
+        "KREIS": {
+          "record_parents": 1,
+          "log_parents": 1,
+          "record_non_simultaneous": 0,
+          "log_non_simultaneous": 0,
+          "agree": true
+        },
+        "ZENSUS100m": {
+          "record_parents": 26,
+          "log_parents": 26,
+          "record_non_simultaneous": 0,
+          "log_non_simultaneous": 0,
+          "agree": true
+        },
+        "ZENSUS1km": {
+          "record_parents": 4,
+          "log_parents": 4,
+          "record_non_simultaneous": 0,
+          "log_non_simultaneous": 0,
+          "agree": true
+        }
+      },
+      "met": true
+    },
+    "g6_batch_032": {
+      "differing_input_files": [
+        "configs/settings.yaml"
+      ],
+      "met": true
+    },
+    "neutral_equivalence_batch_032": {
+      "sha256_arm2": "1f482bf13ad15a557cdda6bdb3e87e0a7ef593e76e4fddd26dd2f5d7b03d19a7",
+      "sha256_arm2r": "1f482bf13ad15a557cdda6bdb3e87e0a7ef593e76e4fddd26dd2f5d7b03d19a7",
+      "met": true
+    },
+    "g7": {
+      "tool": {
+        "populationsim": "0.10.0+bs.2",
+        "direct_url": "{\"url\":\"file:///home/felix/i646/populationsim_C\",\"vcs_info\":{\"vcs\":\"git\",\"commit_id\":\"d9a2e2810139e822ff2870a1845c30a509461462\",\"requested_revision\":\"d9a2e2810139e822ff2870a1845c30a509461462\"}}"
+      },
+      "expected_version": "0.10.0+bs.2",
+      "expected_commit": "d9a2e2810139e822ff2870a1845c30a509461462",
+      "met": true
+    },
+    "reproducibility": {
+      "batch": "batch_000",
+      "sha256": [
+        "19f721ce45cd66778c6b3a5cb989d2549ce1703e4b4417875c0bd79c65aa13a4",
+        "19f721ce45cd66778c6b3a5cb989d2549ce1703e4b4417875c0bd79c65aa13a4"
+      ],
+      "met": true
+    }
+  },
+  "all_met": false
+}

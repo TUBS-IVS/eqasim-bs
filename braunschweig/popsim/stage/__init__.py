@@ -304,7 +304,15 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_INCOME_TILT,
     KEY_INCOME_TILT_BETA,
     KEY_INCOME_TILT_CLIP,
+    KEY_INTEGERIZER_CONSERVE_PENALTY,
+    KEY_INTEGERIZER_CONTROLLED_METHOD,
     KEY_INTEGERIZER_DRAW,
+    KEY_INTEGERIZER_PARENT_TOTAL_FACTOR,
+    KEY_INTEGERIZER_PENALTY_CAP,
+    KEY_INTEGERIZER_PENALTY_FLOOR,
+    KEY_INTEGERIZER_ROUNDING,
+    KEY_INTEGERIZER_SEARCH_MAX_SWEEPS,
+    KEY_INTEGERIZER_SEARCH_SHORTLIST,
     KEY_INTEGERIZER_TIMEOUT_S,
     KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS,
     KEY_KREIS_CONTROLS,
@@ -800,6 +808,18 @@ def configure(context):
     context.config(KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS, False)
     context.config(KEY_INTEGERIZER_DRAW, "off")
     context.config(KEY_INTEGERIZER_TIMEOUT_S, 60)
+    # Controlled-rounding options (meaning: KEY_INTEGERIZER_ROUNDING and its neighbours in
+    # config_keys); the code default "round" is upstream behaviour, none is volatile.
+    context.config(KEY_INTEGERIZER_ROUNDING, "round")
+    context.config(KEY_INTEGERIZER_PENALTY_FLOOR, 100.0)
+    context.config(KEY_INTEGERIZER_PENALTY_CAP, 100000.0)
+    context.config(KEY_INTEGERIZER_PARENT_TOTAL_FACTOR, 10.0)
+    context.config(KEY_INTEGERIZER_CONSERVE_PENALTY, 100000.0)
+    # The method of the controlled rounding and its search options (the fork's defaults, whose
+    # source is named at the controlled-rounding options in config_keys).
+    context.config(KEY_INTEGERIZER_CONTROLLED_METHOD, "search")
+    context.config(KEY_INTEGERIZER_SEARCH_MAX_SWEEPS, 200)
+    context.config(KEY_INTEGERIZER_SEARCH_SHORTLIST, 24)
     # Solver-path gate threshold (meaning: KEY_SOLVER_FALLBACK_ERROR_RATE in config_keys).
     context.config(KEY_SOLVER_FALLBACK_ERROR_RATE, None, volatile = True)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
@@ -2224,7 +2244,15 @@ def _read_integerizer_settings(context):
     overrides = folders.populationsim_overrides_from_config(
         keep_fractional_sample_weights=context.config(KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS),
         integerizer_draw=context.config(KEY_INTEGERIZER_DRAW),
-        integerizer_timeout_s=context.config(KEY_INTEGERIZER_TIMEOUT_S))
+        integerizer_timeout_s=context.config(KEY_INTEGERIZER_TIMEOUT_S),
+        integerizer_rounding=context.config(KEY_INTEGERIZER_ROUNDING),
+        integerizer_penalty_floor=context.config(KEY_INTEGERIZER_PENALTY_FLOOR),
+        integerizer_penalty_cap=context.config(KEY_INTEGERIZER_PENALTY_CAP),
+        integerizer_parent_total_factor=context.config(KEY_INTEGERIZER_PARENT_TOTAL_FACTOR),
+        integerizer_conserve_penalty=context.config(KEY_INTEGERIZER_CONSERVE_PENALTY),
+        integerizer_controlled_method=context.config(KEY_INTEGERIZER_CONTROLLED_METHOD),
+        integerizer_search_max_sweeps=context.config(KEY_INTEGERIZER_SEARCH_MAX_SWEEPS),
+        integerizer_search_shortlist=context.config(KEY_INTEGERIZER_SEARCH_SHORTLIST))
     draw_on = overrides[folders.INTEGERIZER_DRAW_SETTING] != "off"
     seed_base = int(context.config("random_seed")) if draw_on else None
     return overrides, seed_base
@@ -2833,6 +2861,9 @@ def execute(context) -> pd.DataFrame:
     # any seed is built, so an invalid value costs seconds, not the seed build or, for the gate
     # (which only runs after all batches), the whole batch run (ValueError names the key).
     settings_overrides, integerizer_seed_base = _read_integerizer_settings(context)
+    # An older fork ignores controlled rounding: refuse it now, not after all batches.
+    folders.require_fork_version_for_controlled_rounding(
+        settings_overrides, populationsim_version)
     solver_path_gate.validate_error_rate(context.config(KEY_SOLVER_FALLBACK_ERROR_RATE))
     # The server-local settings file must not contradict the tracked options (it is checked
     # again when the batch folders are written); resolving it here makes a conflict cost seconds.
@@ -2992,9 +3023,18 @@ def execute(context) -> pd.DataFrame:
     )
     _log_integerizer_feasibility(context, work_dir)
     solver_paths, solver_path_totals = solver_path_gate.check_solver_paths(
-        work_dir, context.config(KEY_SOLVER_FALLBACK_ERROR_RATE))
+        work_dir, context.config(KEY_SOLVER_FALLBACK_ERROR_RATE),
+        expected_rounding=settings_overrides[folders.INTEGERIZER_ROUNDING_SETTING],
+        expected_method=settings_overrides[folders.INTEGERIZER_CONTROLLED_METHOD_SETTING])
     context.set_info("popsim_solver_paths", solver_paths.to_dict("records"))
     context.set_info("popsim_solver_path_totals", solver_path_totals)
+    # Only a controlled run measures these shares; with "round" the totals are placeholders.
+    if settings_overrides[folders.INTEGERIZER_ROUNDING_SETTING] == solver_path_gate.CONTROLLED:
+        context.set_info(
+            "popsim_integerizer_conservation_loss_share",
+            solver_path_totals["conservation_loss_share"])
+        context.set_info(
+            "popsim_integerizer_not_converged_share", solver_path_totals["not_converged_share"])
     inkar_income = _load_inkar_income_scale(context)
     combined = _join_cell_attributes_onto_merged_output(merge_report, cells)
     donor_households, donor_persons = _load_donor_tables(

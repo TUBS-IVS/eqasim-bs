@@ -1,0 +1,116 @@
+{
+  "g2_bound_pp": 5.0,
+  "g3_bounds": {
+    "ZENSUS100m": 0.02,
+    "ZENSUS1km": 0.02,
+    "KREIS": 0.01
+  },
+  "g4_bound": 0.1,
+  "g4_min_target": 40.0,
+  "expanded_sha256": {
+    "2/batch_044": "bc94cddd3eace62f662e13bdccf7d70447139a6fea86ee2972582520e9bb76cd",
+    "3/batch_044": "0a4c0e9241fe97ca86e6fa390c29dc51011e0ce36dbb2669f5a3c7b9b7ee3ddf"
+  },
+  "checks": {
+    "g4_batch_044": {
+      "n_controls": 47.0,
+      "n_outside_arm2": 5.0,
+      "n_outside_arm3": 0.0,
+      "max_shift_arm2": 0.4766355140186908,
+      "max_shift_arm3": 1.6873742147920749e-15,
+      "met": true
+    },
+    "g3_batch_044_ZENSUS100m": {
+      "wape_arm2": 0.2073326901149022,
+      "wape_arm3": 0.17623015524953953,
+      "limit": 0.2273326901149022,
+      "met": true
+    },
+    "g3_batch_044_ZENSUS1km": {
+      "wape_arm2": 0.02161092573911694,
+      "wape_arm3": 0.009428105843097695,
+      "limit": 0.04161092573911694,
+      "met": true
+    },
+    "g3_batch_044_KREIS": {
+      "wape_arm2": 0.017981584780347473,
+      "wape_arm3": 0.014201975729224227,
+      "limit": 0.02798158478034747,
+      "met": true
+    },
+    "solver_paths_batch_044": {
+      "non_simultaneous_parents": {
+        "KREIS": 0.0,
+        "ZENSUS100m": 0.0,
+        "ZENSUS1km": 0.0
+      },
+      "controlled_simul_calls": 31.0,
+      "search_calls": 31.0,
+      "non_success_calls": 0.0,
+      "not_converged_calls": 0.0,
+      "controlled_proof_error": null,
+      "met": true
+    },
+    "g1_batch_044": {
+      "groups": 207793,
+      "groups_below_one_kept": 149574,
+      "seed_level_call_rows": [
+        7707,
+        207793
+      ],
+      "met": true
+    },
+    "g2_batch_044": {
+      "max_abs_gap_pp_arm2": 3.4779246808188056,
+      "max_abs_gap_pp_arm3": 2.814594062873965,
+      "met": true
+    },
+    "g5_batch_044": {
+      "levels": {
+        "KREIS": {
+          "record_parents": 1,
+          "log_parents": 1,
+          "record_non_simultaneous": 0,
+          "log_non_simultaneous": 0,
+          "agree": true
+        },
+        "ZENSUS100m": {
+          "record_parents": 26,
+          "log_parents": 26,
+          "record_non_simultaneous": 0,
+          "log_non_simultaneous": 0,
+          "agree": true
+        },
+        "ZENSUS1km": {
+          "record_parents": 4,
+          "log_parents": 4,
+          "record_non_simultaneous": 0,
+          "log_non_simultaneous": 0,
+          "agree": true
+        }
+      },
+      "met": true
+    },
+    "g6_batch_044": {
+      "differing_input_files": [
+        "configs/settings.yaml"
+      ],
+      "met": true
+    },
+    "g7": {
+      "tool": {
+        "populationsim_file": "/home/felix/i646/populationsim_rcbs2/populationsim/__init__.py",
+        "python": "3.12.4",
+        "ortools": "9.14.6206",
+        "scipy": "1.17.0",
+        "numpy": "1.26.4",
+        "pandas": "2.3.3",
+        "numba": "0.63.1"
+      },
+      "expected_version": "0.10.0+bs.2",
+      "expected_commit": "bb329f9148902edfebaa9a85e260060f3f14c269",
+      "met": false
+    }
+  },
+  "all_met": false
+}
