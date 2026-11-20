@@ -1,0 +1,877 @@
+id,section,item,sub,label,old,new,reference,unit,note,source
+kpi|reuse.n_synthetic_households|,kpi,reuse.n_synthetic_households,,Haushalte gesamt,558274.0,558179.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|reuse.n_distinct_used|,kpi,reuse.n_distinct_used,,Genutzte MiD-Haushalte,15248.0,107940.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|reuse.distinct_share_of_seed|,kpi,reuse.distinct_share_of_seed,,Anteil genutzter MiD-Haushalte,0.0699138456741725,0.4949173991389152,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|reuse.kish_n_eff|,kpi,reuse.kish_n_eff,,Effektive Stichprobengröße (Kish),1293.2238990374206,16015.936579853733,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|reuse.max_copies|,kpi,reuse.max_copies,,Kopien des häufigsten Haushalts,3796.0,624.0,,Kopien,,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|reuse.top100_share|,kpi,reuse.top100_share,,Anteil der 100 häufigsten Vorlagen,0.2065544875813668,0.0478359092692487,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|reuse.top1000_share|,kpi,reuse.top1000_share,,Anteil der 1.000 häufigsten Vorlagen,0.5701931309715301,0.1664716873977702,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|reuse.top5000_share|,kpi,reuse.top5000_share,,Anteil der 5.000 häufigsten Vorlagen,0.8906468866542235,0.359327384226207,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|weight_class.max_abs_gap_pp|,kpi,weight_class.max_abs_gap_pp,,Größte Abweichung einer Gewichtsklasse,26.97106549512931,2.956716035854734,,Prozentpunkte,,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|solver.non_simultaneous_rate.KREIS|,kpi,solver.non_simultaneous_rate.KREIS,,"Notlösung beim Runden, Kreis",0.0,0.0,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|solver.non_simultaneous_rate.ZENSUS1km|,kpi,solver.non_simultaneous_rate.ZENSUS1km,,"Notlösung beim Runden, 1 km",0.1511627906976744,0.0,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|solver.non_simultaneous_rate.ZENSUS100m|,kpi,solver.non_simultaneous_rate.ZENSUS100m,,"Notlösung beim Runden, 100 m",0.3385579937304075,0.0,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|solver.not_solved_calls|,kpi,solver.not_solved_calls,,Rundungen ohne Lösung,52.0,0.0,,Aufrufe,,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|n_seed_households|,kpi,n_seed_households,,MiD-Haushalte in der Stichprobe,218097.0,218097.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kpi|divers_ratio|,kpi,divers_ratio,,Überrepräsentation „divers/keine Angabe“,7.210421507956857,1.7854015509484913,2.0,Faktor,old: coverage age_sex (uncovered records); new: resolved HP_SEX 3/9; bound 2 = ASSUMPTION of the diagnostics (coverage_ratio_high),popsim_batch_diagnostics (diag_old / diag_new)
+kpi|wape.ZENSUS100m|,kpi,wape.ZENSUS100m,,"Abweichung aller Vorgaben, 100 m",0.1974604112187676,0.1221862868117043,,WAPE,pooled over all controls of the level; KREIS is an upper bound,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|wape.ZENSUS1km|,kpi,wape.ZENSUS1km,,"Abweichung aller Vorgaben, 1 km",0.0398133904086683,0.0056171952205552,,WAPE,pooled over all controls of the level; KREIS is an upper bound,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|wape.KREIS|,kpi,wape.KREIS,,"Abweichung aller Vorgaben, Kreis",0.0136279046013461,0.0020867353107382,,WAPE,pooled over all controls of the level; KREIS is an upper bound,popsim_batch_diagnostics (diag_old / diag_new)
+kpi|households_with_minor|,kpi,households_with_minor,,Haushalte mit Minderjährigen,0.28194936536539406,0.1916213257754233,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new) household_composition.csv
+kpi|batches_off_target|,kpi,batches_off_target,,Teilgebiete mit falscher Haushaltszahl,4.0,1.0,,von 60,,compare_runs household_totals_per_batch.csv
+kpi|household_total_target|,kpi,household_total_target,,Haushalte laut Vorgabe,558151.0,558151.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_000|hh_diff,batch,batch_000,hh_diff,Haushalte minus Vorgabe,95.0,28.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_001|hh_diff,batch,batch_001,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_002|hh_diff,batch,batch_002,hh_diff,Haushalte minus Vorgabe,15.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_003|hh_diff,batch,batch_003,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_004|hh_diff,batch,batch_004,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_005|hh_diff,batch,batch_005,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_006|hh_diff,batch,batch_006,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_007|hh_diff,batch,batch_007,hh_diff,Haushalte minus Vorgabe,1.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_008|hh_diff,batch,batch_008,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_009|hh_diff,batch,batch_009,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_010|hh_diff,batch,batch_010,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_011|hh_diff,batch,batch_011,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_012|hh_diff,batch,batch_012,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_013|hh_diff,batch,batch_013,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_014|hh_diff,batch,batch_014,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_015|hh_diff,batch,batch_015,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_016|hh_diff,batch,batch_016,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_017|hh_diff,batch,batch_017,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_018|hh_diff,batch,batch_018,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_019|hh_diff,batch,batch_019,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_020|hh_diff,batch,batch_020,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_021|hh_diff,batch,batch_021,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_022|hh_diff,batch,batch_022,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_023|hh_diff,batch,batch_023,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_024|hh_diff,batch,batch_024,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_025|hh_diff,batch,batch_025,hh_diff,Haushalte minus Vorgabe,12.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_026|hh_diff,batch,batch_026,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_027|hh_diff,batch,batch_027,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_028|hh_diff,batch,batch_028,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_029|hh_diff,batch,batch_029,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_030|hh_diff,batch,batch_030,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_031|hh_diff,batch,batch_031,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_032|hh_diff,batch,batch_032,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_033|hh_diff,batch,batch_033,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_034|hh_diff,batch,batch_034,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_035|hh_diff,batch,batch_035,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_036|hh_diff,batch,batch_036,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_037|hh_diff,batch,batch_037,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_038|hh_diff,batch,batch_038,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_039|hh_diff,batch,batch_039,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_040|hh_diff,batch,batch_040,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_041|hh_diff,batch,batch_041,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_042|hh_diff,batch,batch_042,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_043|hh_diff,batch,batch_043,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_044|hh_diff,batch,batch_044,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_045|hh_diff,batch,batch_045,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_046|hh_diff,batch,batch_046,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_047|hh_diff,batch,batch_047,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_048|hh_diff,batch,batch_048,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_049|hh_diff,batch,batch_049,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_050|hh_diff,batch,batch_050,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_051|hh_diff,batch,batch_051,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_052|hh_diff,batch,batch_052,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_053|hh_diff,batch,batch_053,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_054|hh_diff,batch,batch_054,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_055|hh_diff,batch,batch_055,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_056|hh_diff,batch,batch_056,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_057|hh_diff,batch,batch_057,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_058|hh_diff,batch,batch_058,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+batch|batch_059|hh_diff,batch,batch_059,hh_diff,Haushalte minus Vorgabe,0.0,0.0,,Haushalte,,compare_runs household_totals_per_batch.csv
+group_fit|kreis:beruflabschluss|KREIS,group_fit,kreis:beruflabschluss,KREIS,Berufsabschluss · Kreis,0.0122177903612901,0.0024064833330509,,WAPE,controls old 3 / new 3,compare_runs fit_by_group_geography.csv
+group_fit|kreis:economic_status|KREIS,group_fit,kreis:economic_status,KREIS,Ökonomischer Status · Kreis,0.0103208367744801,0.0010248784023643,,WAPE,controls old 5 / new 5,compare_runs fit_by_group_geography.csv
+group_fit|kreis:education|KREIS,group_fit,kreis:education,KREIS,Bildungseinrichtung besucht · Kreis,0.0111475326311622,0.0026755264653958,,WAPE,controls old 6 / new 6,compare_runs fit_by_group_geography.csv
+group_fit|kreis:employed|KREIS,group_fit,kreis:employed,KREIS,Erwerbstätige gesamt · Kreis,0.0269295754658703,0.0028582545469297,,WAPE,controls old 1 / new 1,compare_runs fit_by_group_geography.csv
+group_fit|kreis:employment_status|KREIS,group_fit,kreis:employment_status,KREIS,Erwerbsstatus · Kreis,0.0226828676683443,0.0032229092919558,,WAPE,controls old 6 / new 6,compare_runs fit_by_group_geography.csv
+group_fit|kreis:escort_participation|KREIS,group_fit,kreis:escort_participation,KREIS,Begleitweg am Tag (SrV) · Kreis,0.0068029249176382,0.0019069255575998,,WAPE,controls old 2 / new 2,compare_runs fit_by_group_geography.csv
+group_fit|kreis:has_ebike|KREIS,group_fit,kreis:has_ebike,KREIS,E-Bike im Haushalt · Kreis,0.0052350593246699,0.000502426866725,,WAPE,controls old 2 / new 2,compare_runs fit_by_group_geography.csv
+group_fit|kreis:leisure_participation|KREIS,group_fit,kreis:leisure_participation,KREIS,Freizeitweg am Tag (SrV) · Kreis,0.0067834901200885,0.0018799923011503,,WAPE,controls old 2 / new 2,compare_runs fit_by_group_geography.csv
+group_fit|kreis:number_of_bicycles|KREIS,group_fit,kreis:number_of_bicycles,KREIS,Fahrräder (Kreis) · Kreis,0.0219174509712047,0.0015673644274552,,WAPE,controls old 5 / new 5,compare_runs fit_by_group_geography.csv
+group_fit|kreis:number_of_cars|KREIS,group_fit,kreis:number_of_cars,KREIS,Autos (Kreis) · Kreis,0.0180023024609978,0.0010464093288108,,WAPE,controls old 4 / new 4,compare_runs fit_by_group_geography.csv
+group_fit|kreis:pt_ticket_group4|KREIS,group_fit,kreis:pt_ticket_group4,KREIS,ÖV-Ticket · Kreis,0.0178168333265169,0.0022830153480416,,WAPE,controls old 4 / new 4,compare_runs fit_by_group_geography.csv
+group_fit|kreis:schulabschluss|KREIS,group_fit,kreis:schulabschluss,KREIS,Schulabschluss · Kreis,0.0092808194730908,0.0020408378206325,,WAPE,controls old 3 / new 3,compare_runs fit_by_group_geography.csv
+group_fit|kreis:trip_class|KREIS,group_fit,kreis:trip_class,KREIS,Wege am Werktag (SrV) · Kreis,0.0092620168060345,0.0019654409020692,,WAPE,controls old 4 / new 4,compare_runs fit_by_group_geography.csv
+group_fit|kreis:work_by_employment|KREIS,group_fit,kreis:work_by_employment,KREIS,Arbeitsweg am Tag (SrV) · Kreis,0.0211586157248442,0.0023495172852033,,WAPE,controls old 4 / new 4,compare_runs fit_by_group_geography.csv
+group_fit|age_sex|ZENSUS100m,group_fit,age_sex,ZENSUS100m,Alter × Geschlecht · 100 m,0.3244678826230024,0.278667234423787,,WAPE,controls old 22 / new 22,compare_runs fit_by_group_geography.csv
+group_fit|building_type|ZENSUS100m,group_fit,building_type,ZENSUS100m,Gebäudetyp · 100 m,0.1537021003056659,0.0425532677390395,,WAPE,controls old 3 / new 3,compare_runs fit_by_group_geography.csv
+group_fit|employed_grid|ZENSUS100m,group_fit,employed_grid,ZENSUS100m,Erwerbstätige nach Alter · 100 m,0.2049294748740985,0.0739384350410943,,WAPE,controls old 10 / new 10,compare_runs fit_by_group_geography.csv
+group_fit|household_size|ZENSUS100m,group_fit,household_size,ZENSUS100m,Haushaltsgröße · 100 m,0.2302403773774276,0.1385718587128734,,WAPE,controls old 6 / new 6,compare_runs fit_by_group_geography.csv
+group_fit|household_total|ZENSUS100m,group_fit,household_total,ZENSUS100m,Haushalte insgesamt · 100 m,0.0002203704732231,5.016563618089012e-05,,WAPE,controls old 1 / new 1,compare_runs fit_by_group_geography.csv
+group_fit|household_type|ZENSUS100m,group_fit,household_type,ZENSUS100m,Haushaltstyp / Kinder · 100 m,0.3372060752850943,,,WAPE,only in the October run,compare_runs fit_by_group_geography.csv
+group_fit|tenure|ZENSUS100m,group_fit,tenure,ZENSUS100m,Eigentum / Miete · 100 m,0.0660577644881513,0.0377559960083344,,WAPE,controls old 2 / new 2,compare_runs fit_by_group_geography.csv
+group_fit|household_total|ZENSUS1km,group_fit,household_total,ZENSUS1km,Haushalte insgesamt · 1 km,0.0002203704732231,5.016563618089012e-05,,WAPE,controls old 1 / new 1,compare_runs fit_by_group_geography.csv
+group_fit|household_type|ZENSUS1km,group_fit,household_type,ZENSUS1km,Haushaltstyp / Kinder · 1 km,,0.0419641515105967,,WAPE,only in the new run,compare_runs fit_by_group_geography.csv
+group_fit|own_bikes|ZENSUS1km,group_fit,own_bikes,ZENSUS1km,Fahrräder je Haushalt · 1 km,0.0502953810218141,0.0054042725458655,,WAPE,controls old 5 / new 5,compare_runs fit_by_group_geography.csv
+group_fit|own_cars|ZENSUS1km,group_fit,own_cars,ZENSUS1km,Autos je Haushalt · 1 km,0.0689250473482303,0.0044651576154051,,WAPE,controls old 4 / new 4,compare_runs fit_by_group_geography.csv
+rare|Haushalte mit 6+ Personen|target,rare,Haushalte mit 6+ Personen,target,Vorgabe,7773.0,7773.0,,Personen/Haushalte,Zensus household size 6+ (same in both runs),compare_runs rare_groups.csv
+rare|Haushalte mit 6+ Personen|synthetic,rare,Haushalte mit 6+ Personen,synthetic,Ergebnis,5212.0,7901.0,,Personen/Haushalte,Zensus household size 6+ (same in both runs),compare_runs rare_groups.csv
+rare|Haushalte mit 6+ Personen|relative_error,rare,Haushalte mit 6+ Personen,relative_error,regionsweit,-0.3294738196320597,0.0164672584587675,,Anteil,Zensus household size 6+ (same in both runs),compare_runs rare_groups.csv
+rare|Haushalte mit 6+ Personen|wape,rare,Haushalte mit 6+ Personen,wape,in den Zellen,0.5149877782066127,0.6509713109481539,,WAPE,Zensus household size 6+ (same in both runs),compare_runs rare_groups.csv
+rare|Personen 18–19 Jahre|target,rare,Personen 18–19 Jahre,target,Vorgabe,20706.0,20706.0,,Personen/Haushalte,"Zensus age x sex 18-19, F + M (same in both runs)",compare_runs rare_groups.csv
+rare|Personen 18–19 Jahre|synthetic,rare,Personen 18–19 Jahre,synthetic,Ergebnis,15487.0,20780.0,,Personen/Haushalte,"Zensus age x sex 18-19, F + M (same in both runs)",compare_runs rare_groups.csv
+rare|Personen 18–19 Jahre|relative_error,rare,Personen 18–19 Jahre,relative_error,regionsweit,-0.2520525451559934,0.0035738433304356,,Anteil,"Zensus age x sex 18-19, F + M (same in both runs)",compare_runs rare_groups.csv
+rare|Personen 18–19 Jahre|wape,rare,Personen 18–19 Jahre,wape,in den Zellen,0.5994880710905052,0.8553076402974983,,WAPE,"Zensus age x sex 18-19, F + M (same in both runs)",compare_runs rare_groups.csv
+rare|Alleinerziehende*|target,rare,Alleinerziehende*,target,Vorgabe,40013.0,23093.0,,Personen/Haushalte,"old: Zensus family type single parent (children of any age, 100 m); new: one adult with minors (1 km)",compare_runs rare_groups.csv
+rare|Alleinerziehende*|synthetic,rare,Alleinerziehende*,synthetic,Ergebnis,34982.0,23056.0,,Personen/Haushalte,"old: Zensus family type single parent (children of any age, 100 m); new: one adult with minors (1 km)",compare_runs rare_groups.csv
+rare|Alleinerziehende*|relative_error,rare,Alleinerziehende*,relative_error,regionsweit,-0.1257341364056681,-0.0016022171220716,,Anteil,"old: Zensus family type single parent (children of any age, 100 m); new: one adult with minors (1 km)",compare_runs rare_groups.csv
+rare|Alleinerziehende*|wape,rare,Alleinerziehende*,wape,in den Zellen,0.3601079649114038,0.0695015805655393,,WAPE,"old: Zensus family type single parent (children of any age, 100 m); new: one adult with minors (1 km)",compare_runs rare_groups.csv
+weight_class|<1|seed_weight_share,weight_class,<1,seed_weight_share,Anteil am MiD-Gewicht,0.275938779492289,0.275938779492289,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new) weight_class_shares.csv
+weight_class|<1|synthetic_share,weight_class,<1,synthetic_share,Anteil der Kopien,0.0062281245409959,0.3055059398508364,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new) weight_class_shares.csv
+weight_class|1-2|seed_weight_share,weight_class,1-2,seed_weight_share,Anteil am MiD-Gewicht,0.2138663268172029,0.2138663268172029,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new) weight_class_shares.csv
+weight_class|1-2|synthetic_share,weight_class,1-2,synthetic_share,Anteil der Kopien,0.077533612527182,0.2161421336166355,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new) weight_class_shares.csv
+weight_class|2-3|seed_weight_share,weight_class,2-3,seed_weight_share,Anteil am MiD-Gewicht,0.1295656257768508,0.1295656257768508,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new) weight_class_shares.csv
+weight_class|2-3|synthetic_share,weight_class,2-3,synthetic_share,Anteil der Kopien,0.1047066494230431,0.1240211473380403,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new) weight_class_shares.csv
+weight_class|3-5|seed_weight_share,weight_class,3-5,seed_weight_share,Anteil am MiD-Gewicht,0.1534929611297529,0.1534929611297529,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new) weight_class_shares.csv
+weight_class|3-5|synthetic_share,weight_class,3-5,synthetic_share,Anteil der Kopien,0.2196090091962011,0.1491403295358657,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new) weight_class_shares.csv
+weight_class|5-8|seed_weight_share,weight_class,5-8,seed_weight_share,Anteil am MiD-Gewicht,0.1143681461074908,0.1143681461074908,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new) weight_class_shares.csv
+weight_class|5-8|synthetic_share,weight_class,5-8,synthetic_share,Anteil der Kopien,0.2379423007340481,0.1049681195458804,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new) weight_class_shares.csv
+weight_class|8+|seed_weight_share,weight_class,8+,seed_weight_share,Anteil am MiD-Gewicht,0.1127681606764134,0.1127681606764134,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new) weight_class_shares.csv
+weight_class|8+|synthetic_share,weight_class,8+,synthetic_share,Anteil der Kopien,0.3539803035785295,0.1002223301127416,,Anteil,,popsim_batch_diagnostics (diag_old / diag_new) weight_class_shares.csv
+attribute|RegioStaR7|71,attribute,RegioStaR7,71,RegioStaR7 = 71,0.146155830291219,0.1817248588714373,0.1863806673869908,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|RegioStaR7|72,attribute,RegioStaR7,72,RegioStaR7 = 72,0.1691911140407756,0.1788404794877628,0.1558744553490656,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|RegioStaR7|73,attribute,RegioStaR7,73,RegioStaR7 = 73,0.1912877905831186,0.2324541052243097,0.2495829668163331,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|RegioStaR7|74,attribute,RegioStaR7,74,RegioStaR7 = 74,0.0637088598071914,0.0527608527013735,0.0589634657379065,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|RegioStaR7|75,attribute,RegioStaR7,75,RegioStaR7 = 75,0.0565600404102644,0.0737791998624097,0.0642618948363969,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|RegioStaR7|76,attribute,RegioStaR7,76,RegioStaR7 = 76,0.1382797694322143,0.1418756348769839,0.1407612725173426,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|RegioStaR7|77,attribute,RegioStaR7,77,RegioStaR7 = 77,0.2348165954352164,0.1385648689757228,0.1441752773559643,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|H_GR|1,attribute,H_GR,1,H_GR = 1,0.4111690675188169,0.4254835814317629,0.4334524812959492,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|H_GR|2,attribute,H_GR,2,H_GR = 2,0.3296177145989245,0.3155511045739807,0.3052219400828052,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|H_GR|3,attribute,H_GR,3,H_GR = 3,0.1279049355692724,0.1261190406661662,0.1244792413498041,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|H_GR|4,attribute,H_GR,4,H_GR = 4,0.095145036308336,0.0899729298307532,0.0912809925419059,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|H_GR|5,attribute,H_GR,5,H_GR = 5,0.0268273285161049,0.0287183860374539,0.0362923455120719,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|H_GR|6,attribute,H_GR,6,H_GR = 6,0.009335917488545,0.0141549574598829,0.0092729992174634,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|hh_type5|alleinerziehend,attribute,hh_type5,alleinerziehend,hh_type5 = alleinerziehend,0.0626609872571533,0.0413559091259255,0.0237964150810873,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|hh_type5|einpersonen,attribute,hh_type5,einpersonen,hh_type5 = einpersonen,0.4111636938134321,0.4254799983517832,0.4334256501486815,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|hh_type5|mehrpers_ohne_kernfamilie,attribute,hh_type5,mehrpers_ohne_kernfamilie,hh_type5 = mehrpers_ohne_kernfamilie,0.0207854924284491,0.0862733997516925,0.0504785496131347,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|hh_type5|paar_mit_kind,attribute,hh_type5,paar_mit_kind,hh_type5 = paar_mit_kind,0.2192883781082407,0.1502654166494977,0.1990476590858485,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|hh_type5|paar_ohne_kind,attribute,hh_type5,paar_ohne_kind,hh_type5 = paar_ohne_kind,0.2861014483927247,0.2966252761211009,0.2932517260712479,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|oek_status|1,attribute,oek_status,1,oek_status = 1,0.1219365401218756,0.1214467043726116,0.0990763177184299,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|oek_status|2,attribute,oek_status,2,oek_status = 2,0.1433991194288109,0.1436367186870161,0.1140015742834891,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|oek_status|3,attribute,oek_status,3,oek_status = 3,0.3037755654033682,0.3032181432837853,0.3039671565297067,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|oek_status|4,attribute,oek_status,4,oek_status = 4,0.309770829377689,0.3100600345050602,0.3553526807243492,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|oek_status|5,attribute,oek_status,5,oek_status = 5,0.1211179456682561,0.1216383991515266,0.1276022707440249,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|number_of_cars|0,attribute,number_of_cars,0,number_of_cars = 0,0.1450578031575893,0.1466680043498591,0.19767029390496,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|number_of_cars|1,attribute,number_of_cars,1,number_of_cars = 1,0.5335516251876319,0.5332017148620783,0.5174225833249821,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|number_of_cars|2,attribute,number_of_cars,2,number_of_cars = 2,0.2630733295836811,0.2618102794981538,0.241047840827289,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|number_of_cars|3,attribute,number_of_cars,3,number_of_cars = 3,0.0583172420710977,0.0583200012899087,0.0438592819427688,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|MODE|2,attribute,MODE,2,MODE = 2,0.1308801771173295,0.0890735767558435,0.1010421610968619,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|MODE|3,attribute,MODE,3,MODE = 3,0.3744218788623507,0.4032398209176626,0.36928024221016,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|MODE|4,attribute,MODE,4,MODE = 4,0.4946979440203197,0.5076866023264939,0.529677596692978,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BASISAUF|1,attribute,BASISAUF,1,BASISAUF = 1,0.6582126339396067,0.371972073474638,0.3868966967062016,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BASISAUF|2,attribute,BASISAUF,2,BASISAUF = 2,0.3417873660603933,0.628027926525362,0.6131033032937984,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|TEILSTP|1,attribute,TEILSTP,1,TEILSTP = 1,0.0817806310163109,0.0570605486770373,0.0653991918848845,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|TEILSTP|2,attribute,TEILSTP,2,TEILSTP = 2,0.0369621368718586,0.0218263316964629,0.0247416067173699,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|TEILSTP|3,attribute,TEILSTP,3,TEILSTP = 3,0.8812572321118304,0.9211131196264998,0.9098592013977456,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|1,attribute,BLAND,1,BLAND = 1,0.0557808531294668,0.03337101539112,0.0358406136731195,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|2,attribute,BLAND,2,BLAND = 2,0.0015691219723648,0.0202426103454268,0.0241020719034581,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|3,attribute,BLAND,3,BLAND = 3,0.1170321383406714,0.0946918461640441,0.0946778801134222,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|4,attribute,BLAND,4,BLAND = 4,0.0065111396912627,0.0096689413252737,0.0087300669085606,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|5,attribute,BLAND,5,BLAND = 5,0.1659650995747607,0.2246358247085612,0.2150699705519641,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|6,attribute,BLAND,6,BLAND = 6,0.0277121986694705,0.0729855476469018,0.0735392011658717,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|7,attribute,BLAND,7,BLAND = 7,0.0602714795960406,0.0443997355686974,0.0482619038656916,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|8,attribute,BLAND,8,BLAND = 8,0.1171073702160587,0.1291843655888165,0.1274903101023863,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|9,attribute,BLAND,9,BLAND = 9,0.1075779993336605,0.1630677614170364,0.1539245306397838,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|10,attribute,BLAND,10,BLAND = 10,0.0007361976377191,0.012057064131757,0.0120904291028967,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|11,attribute,BLAND,11,BLAND = 11,0.0751727646281216,0.0398133931946561,0.0492073673883536,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|12,attribute,BLAND,12,BLAND = 12,0.0208087784851166,0.0316403877609154,0.0315037495001633,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|13,attribute,BLAND,13,BLAND = 13,0.0215951307064273,0.0207979877422833,0.0205301058780944,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|14,attribute,BLAND,14,BLAND = 14,0.1516585046052655,0.050184618195955,0.0516107039692216,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|15,attribute,BLAND,15,BLAND = 15,0.0497963365659156,0.0270773354067422,0.0275436744752998,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+attribute|BLAND|16,attribute,BLAND,16,BLAND = 16,0.0207048868476769,0.0261815654118123,0.0258774207617123,Anteil,reference = share of the MiD weight,popsim_batch_diagnostics (diag_old / diag_new) attribute_shares.csv
+concentration|1|cum_share,concentration,1,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.00679952854691424,0.0011179209536725675,,Anteil,,zone_views donor_usage.csv
+concentration|2|cum_share,concentration,2,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.012603130362510165,0.0022215095874262556,,Anteil,,zone_views donor_usage.csv
+concentration|3|cum_share,concentration,3,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.018231191135535597,0.0032373127616768097,,Anteil,,zone_views donor_usage.csv
+concentration|4|cum_share,concentration,4,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.023785811268301944,0.004240575155998344,,Anteil,,zone_views donor_usage.csv
+concentration|5|cum_share,concentration,5,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.028439440131548307,0.00523667139036044,,Anteil,,zone_views donor_usage.csv
+concentration|6|cum_share,concentration,6,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.03307515664351197,0.0062291845447428155,,Anteil,,zone_views donor_usage.csv
+concentration|7|cum_share,concentration,7,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.03735979107033464,0.0070962898998349995,,Anteil,,zone_views donor_usage.csv
+concentration|8|cum_share,concentration,8,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.04163188685125942,0.007920398295170546,,Anteil,,zone_views donor_usage.csv
+concentration|9|cum_share,concentration,9,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.04520002722677395,0.008692552030800155,,Anteil,,zone_views donor_usage.csv
+concentration|10|cum_share,concentration,10,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.04870010066741421,0.009455748066480465,,Anteil,,zone_views donor_usage.csv
+concentration|11|cum_share,concentration,11,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.051789981263680555,0.010202820242252037,,Anteil,,zone_views donor_usage.csv
+concentration|13|cum_share,concentration,13,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.05792137910774996,0.01168621535385602,,Anteil,,zone_views donor_usage.csv
+concentration|14|cum_share,concentration,14,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.06094677523939857,0.012413580589739135,,Anteil,,zone_views donor_usage.csv
+concentration|15|cum_share,concentration,15,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.06389693949565983,0.013128405045693228,,Anteil,,zone_views donor_usage.csv
+concentration|17|cum_share,concentration,17,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.06970591501664057,0.014502516217915758,,Anteil,,zone_views donor_usage.csv
+concentration|19|cum_share,concentration,19,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.07516918215786514,0.015796008090594595,,Anteil,,zone_views donor_usage.csv
+concentration|20|cum_share,concentration,20,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.07770557109949594,0.016430213247004992,,Anteil,,zone_views donor_usage.csv
+concentration|23|cum_share,concentration,23,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.08513561441156135,0.01831670485632745,,Anteil,,zone_views donor_usage.csv
+concentration|25|cum_share,concentration,25,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.08998627913891745,0.01952420280949301,,Anteil,,zone_views donor_usage.csv
+concentration|27|cum_share,concentration,27,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.09475454705037312,0.020704827662810676,,Anteil,,zone_views donor_usage.csv
+concentration|30|cum_share,concentration,30,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.10148779989754135,0.022447996072944343,,Anteil,,zone_views donor_usage.csv
+concentration|33|cum_share,concentration,33,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.10794878500521249,0.024081880543696556,,Anteil,,zone_views donor_usage.csv
+concentration|37|cum_share,concentration,37,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.11619742277089744,0.026115278432187524,,Anteil,,zone_views donor_usage.csv
+concentration|40|cum_share,concentration,40,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.12216940068855078,0.02755746812402473,,Anteil,,zone_views donor_usage.csv
+concentration|45|cum_share,concentration,45,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.1314300863017085,0.029813016971258325,,Anteil,,zone_views donor_usage.csv
+concentration|49|cum_share,concentration,49,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.13824931843503369,0.031477357621838155,,Anteil,,zone_views donor_usage.csv
+concentration|54|cum_share,concentration,54,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.14633316256891776,0.03341759543085641,,Anteil,,zone_views donor_usage.csv
+concentration|60|cum_share,concentration,60,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.15552219877694465,0.03559073343855645,,Anteil,,zone_views donor_usage.csv
+concentration|66|cum_share,concentration,66,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.16414162221418158,0.03767429444676349,,Anteil,,zone_views donor_usage.csv
+concentration|73|cum_share,concentration,73,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.17356531022401187,0.03997104871376386,,Anteil,,zone_views donor_usage.csv
+concentration|80|cum_share,concentration,80,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.18262179503254675,0.0421621021213625,,Anteil,,zone_views donor_usage.csv
+concentration|88|cum_share,concentration,88,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.1925810623457299,0.044523351827997826,,Anteil,,zone_views donor_usage.csv
+concentration|97|cum_share,concentration,97,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.20318338306996206,0.04702434165384223,,Anteil,,zone_views donor_usage.csv
+concentration|107|cum_share,concentration,107,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.2140848400606154,0.04967761237882471,,Anteil,,zone_views donor_usage.csv
+concentration|118|cum_share,concentration,118,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.22546455683051692,0.052461665523066976,,Anteil,,zone_views donor_usage.csv
+concentration|130|cum_share,concentration,130,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.23709683775350454,0.05534604490674139,,Anteil,,zone_views donor_usage.csv
+concentration|144|cum_share,concentration,144,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.24977161752114552,0.058569025348499316,,Anteil,,zone_views donor_usage.csv
+concentration|158|cum_share,concentration,158,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.2612462697528454,0.06163255873115972,,Anteil,,zone_views donor_usage.csv
+concentration|174|cum_share,concentration,174,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.2738207403533032,0.06500065391209629,,Anteil,,zone_views donor_usage.csv
+concentration|192|cum_share,concentration,192,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.2871708157643021,0.06864106317149159,,Anteil,,zone_views donor_usage.csv
+concentration|212|cum_share,concentration,212,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.30113349358916947,0.07250183184963963,,Anteil,,zone_views donor_usage.csv
+concentration|234|cum_share,concentration,234,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.31559055230943944,0.07654533760675339,,Anteil,,zone_views donor_usage.csv
+concentration|258|cum_share,concentration,258,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.3304166054661331,0.08071783424313705,,Anteil,,zone_views donor_usage.csv
+concentration|284|cum_share,concentration,284,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.3452999781469314,0.0850121555988312,,Anteil,,zone_views donor_usage.csv
+concentration|313|cum_share,concentration,313,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.3608425253549332,0.08957879103298404,,Anteil,,zone_views donor_usage.csv
+concentration|345|cum_share,concentration,345,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.3769063219852617,0.09439086744574769,,Anteil,,zone_views donor_usage.csv
+concentration|380|cum_share,concentration,380,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.3934430046894536,0.09942151173727425,,Anteil,,zone_views donor_usage.csv
+concentration|419|cum_share,concentration,419,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.4102035917846792,0.10482121326671193,,Anteil,,zone_views donor_usage.csv
+concentration|462|cum_share,concentration,462,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.427395866545818,0.11049322887460833,,Anteil,,zone_views donor_usage.csv
+concentration|509|cum_share,concentration,509,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.4444555899074648,0.11645547396086202,,Anteil,,zone_views donor_usage.csv
+concentration|561|cum_share,concentration,561,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.46156367661757486,0.12274377932527021,,Anteil,,zone_views donor_usage.csv
+concentration|619|cum_share,concentration,619,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.4793488502061712,0.12940830808754897,,Anteil,,zone_views donor_usage.csv
+concentration|682|cum_share,concentration,682,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.4971555186163067,0.13631827782843856,,Anteil,,zone_views donor_usage.csv
+concentration|752|cum_share,concentration,752,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.5153562587546617,0.14358476402731024,,Anteil,,zone_views donor_usage.csv
+concentration|829|cum_share,concentration,829,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.5338059805758463,0.15108952504483328,,Anteil,,zone_views donor_usage.csv
+concentration|913|cum_share,concentration,913,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.5524527382611406,0.15884868474091646,,Anteil,,zone_views donor_usage.csv
+concentration|1007|cum_share,concentration,1007,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.5715687995500417,0.16706468713441386,,Anteil,,zone_views donor_usage.csv
+concentration|1110|cum_share,concentration,1110,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.5909266775812594,0.17555300360637,,Anteil,,zone_views donor_usage.csv
+concentration|1223|cum_share,concentration,1223,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.6104045683660712,0.18430288491684568,,Anteil,,zone_views donor_usage.csv
+concentration|1349|cum_share,concentration,1349,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.6304072910434662,0.19347736120491812,,Anteil,,zone_views donor_usage.csv
+concentration|1487|cum_share,concentration,1487,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.6504243436018873,0.20293848389136818,,Anteil,,zone_views donor_usage.csv
+concentration|1639|cum_share,concentration,1639,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.6704628909818476,0.21278120459565839,,Anteil,,zone_views donor_usage.csv
+concentration|1806|cum_share,concentration,1806,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.6903670957271877,0.22297327559797125,,Anteil,,zone_views donor_usage.csv
+concentration|1991|cum_share,concentration,1991,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.7102963777643236,0.23365802009749562,,Anteil,,zone_views donor_usage.csv
+concentration|2195|cum_share,concentration,2195,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.7302041649799202,0.24476735957461673,,Anteil,,zone_views donor_usage.csv
+concentration|2419|cum_share,concentration,2419,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.7500456764957709,0.25629233632938536,,Anteil,,zone_views donor_usage.csv
+concentration|2667|cum_share,concentration,2667,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.7698889792467498,0.2684121043607875,,Anteil,,zone_views donor_usage.csv
+concentration|2939|cum_share,concentration,2939,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.7894600142582316,0.28087226499026297,,Anteil,,zone_views donor_usage.csv
+concentration|3240|cum_share,concentration,3240,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.8090131369184307,0.29398454617604747,,Anteil,,zone_views donor_usage.csv
+concentration|3571|cum_share,concentration,3571,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.8282312986096433,0.30761458241890144,,Anteil,,zone_views donor_usage.csv
+concentration|3937|cum_share,concentration,3937,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.8470356849862254,0.321864491498247,,Anteil,,zone_views donor_usage.csv
+concentration|4339|cum_share,concentration,4339,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.8652507550056066,0.33665723719452006,,Anteil,,zone_views donor_usage.csv
+concentration|4783|cum_share,concentration,4783,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.8828317277895801,0.3520877711271832,,Anteil,,zone_views donor_usage.csv
+concentration|5273|cum_share,concentration,5273,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.8997445698707086,0.36813101173637847,,Anteil,,zone_views donor_usage.csv
+concentration|5812|cum_share,concentration,5812,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.9156955186879561,0.38477979286214636,,Anteil,,zone_views donor_usage.csv
+concentration|6406|cum_share,concentration,6406,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.9305305280202911,0.4020341145044869,,Anteil,,zone_views donor_usage.csv
+concentration|7062|cum_share,concentration,7062,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.944126002643863,0.419856354323613,,Anteil,,zone_views donor_usage.csv
+concentration|7784|cum_share,concentration,7784,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.9562401258163554,0.4381981407397985,,Anteil,,zone_views donor_usage.csv
+concentration|8580|cum_share,concentration,8580,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.9669606680590535,0.4570953045528406,,Anteil,,zone_views donor_usage.csv
+concentration|9458|cum_share,concentration,9458,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.976027900278358,0.47661771582234375,,Anteil,,zone_views donor_usage.csv
+concentration|10425|cum_share,concentration,10425,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.9835958686953001,0.49677074916827757,,Anteil,,zone_views donor_usage.csv
+concentration|11492|cum_share,concentration,11492,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.9897362227150109,0.5176601054500438,,Anteil,,zone_views donor_usage.csv
+concentration|12667|cum_share,concentration,12667,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.9943808954026159,0.5387107003308974,,Anteil,,zone_views donor_usage.csv
+concentration|13963|cum_share,concentration,13963,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,0.9976982628601726,0.5602181379091653,,Anteil,,zone_views donor_usage.csv
+concentration|15391|cum_share,concentration,15391,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.5824708561232149,,Anteil,,zone_views donor_usage.csv
+concentration|16965|cum_share,concentration,16965,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.6050299276755307,,Anteil,,zone_views donor_usage.csv
+concentration|18701|cum_share,concentration,18701,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.6275083799283026,,Anteil,,zone_views donor_usage.csv
+concentration|20614|cum_share,concentration,20614,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.6512229947740779,,Anteil,,zone_views donor_usage.csv
+concentration|22722|cum_share,concentration,22722,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.6738823925658256,,Anteil,,zone_views donor_usage.csv
+concentration|25047|cum_share,concentration,25047,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.6980484754890456,,Anteil,,zone_views donor_usage.csv
+concentration|27609|cum_share,concentration,27609,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.7209981027591508,,Anteil,,zone_views donor_usage.csv
+concentration|30433|cum_share,concentration,30433,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.7455941552799371,,Anteil,,zone_views donor_usage.csv
+concentration|33546|cum_share,concentration,33546,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.7679024112336723,,Anteil,,zone_views donor_usage.csv
+concentration|36977|cum_share,concentration,36977,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.7924895060545094,,Anteil,,zone_views donor_usage.csv
+concentration|40759|cum_share,concentration,40759,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.8141904299516821,,Anteil,,zone_views donor_usage.csv
+concentration|44928|cum_share,concentration,44928,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.8365972206048597,,Anteil,,zone_views donor_usage.csv
+concentration|49524|cum_share,concentration,49524,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.860772261228029,,Anteil,,zone_views donor_usage.csv
+concentration|54590|cum_share,concentration,54590,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.8789241444052893,,Anteil,,zone_views donor_usage.csv
+concentration|60174|cum_share,concentration,60174,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.8989320630120445,,Anteil,,zone_views donor_usage.csv
+concentration|66329|cum_share,concentration,66329,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.9209859202872197,,Anteil,,zone_views donor_usage.csv
+concentration|73114|cum_share,concentration,73114,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.9376078283131397,,Anteil,,zone_views donor_usage.csv
+concentration|80593|cum_share,concentration,80593,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.9510067558973018,,Anteil,,zone_views donor_usage.csv
+concentration|88836|cum_share,concentration,88836,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.9657744200337168,,Anteil,,zone_views donor_usage.csv
+concentration|97923|cum_share,concentration,97923,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,0.9820541439215735,,Anteil,,zone_views donor_usage.csv
+concentration|107940|cum_share,concentration,107940,cum_share,Anteil der Kopien aus den k häufigsten Vorlagen,1.0,1.0,,Anteil,,zone_views donor_usage.csv
+copies|1|n_donors,copies,1,n_donors,genutzte Vorlagen mit so vielen Kopien,2025.0,39118.0,,Haushalte,,zone_views donor_usage.csv
+copies|1|copy_share,copies,1,copy_share,Anteil an allen Kopien,0.003627251134747454,0.07008146132333892,,Anteil,,zone_views donor_usage.csv
+copies|2|n_donors,copies,2,n_donors,genutzte Vorlagen mit so vielen Kopien,1488.0,19592.0,,Haushalte,,zone_views donor_usage.csv
+copies|2|copy_share,copies,2,copy_share,Anteil an allen Kopien,0.0053307157417325545,0.07019970296266968,,Anteil,,zone_views donor_usage.csv
+copies|3–5|n_donors,copies,3–5,n_donors,genutzte Vorlagen mit so vielen Kopien,2561.0,24644.0,,Haushalte,,zone_views donor_usage.csv
+copies|3–5|copy_share,copies,3–5,copy_share,Anteil an allen Kopien,0.017557686727305948,0.16579985990157278,,Anteil,,zone_views donor_usage.csv
+copies|6–10|n_donors,copies,6–10,n_donors,genutzte Vorlagen mit so vielen Kopien,2139.0,13171.0,,Haushalte,,zone_views donor_usage.csv
+copies|6–10|copy_share,copies,6–10,copy_share,Anteil an allen Kopien,0.02984197723698399,0.1776383561545669,,Anteil,,zone_views donor_usage.csv
+copies|11–50|n_donors,copies,11–50,n_donors,genutzte Vorlagen mit so vielen Kopien,4771.0,10511.0,,Haushalte,,zone_views donor_usage.csv
+copies|11–50|copy_share,copies,11–50,copy_share,Anteil an allen Kopien,0.20708648441446315,0.3582381279123722,,Anteil,,zone_views donor_usage.csv
+copies|51–100|n_donors,copies,51–100,n_donors,genutzte Vorlagen mit so vielen Kopien,1155.0,672.0,,Haushalte,,zone_views donor_usage.csv
+copies|51–100|copy_share,copies,51–100,copy_share,Anteil an allen Kopien,0.14580833067633456,0.08185367059670823,,Anteil,,zone_views donor_usage.csv
+copies|101–500|n_donors,copies,101–500,n_donors,genutzte Vorlagen mit so vielen Kopien,970.0,226.0,,Haushalte,,zone_views donor_usage.csv
+copies|101–500|copy_share,copies,101–500,copy_share,Anteil an allen Kopien,0.3453787924925753,0.06995963660402846,,Anteil,,zone_views donor_usage.csv
+copies|501+|n_donors,copies,501+,n_donors,genutzte Vorlagen mit so vielen Kopien,139.0,6.0,,Haushalte,,zone_views donor_usage.csv
+copies|501+|copy_share,copies,501+,copy_share,Anteil an allen Kopien,0.24536876157585702,0.0062291845447428155,,Anteil,,zone_views donor_usage.csv
+batch|batch_000|n_distinct_used,batch,batch_000,n_distinct_used,genutzte Vorlagen,1646.0,6057.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_000|kish_n_eff,batch,batch_000,kish_n_eff,Kish-Größe,572.9732853449586,4800.741956451088,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_000|n_synthetic_households,batch,batch_000,n_synthetic_households,Haushalte,6724.0,6657.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_001|n_distinct_used,batch,batch_001,n_distinct_used,genutzte Vorlagen,1682.0,5979.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_001|kish_n_eff,batch,batch_001,kish_n_eff,Kish-Größe,598.2512541375505,5080.091068082448,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_001|n_synthetic_households,batch,batch_001,n_synthetic_households,Haushalte,6377.0,6377.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_002|n_distinct_used,batch,batch_002,n_distinct_used,genutzte Vorlagen,1759.0,7823.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_002|kish_n_eff,batch,batch_002,kish_n_eff,Kish-Größe,487.1702499293622,5886.710659503231,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_002|n_synthetic_households,batch,batch_002,n_synthetic_households,Haushalte,8710.0,8695.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_003|n_distinct_used,batch,batch_003,n_distinct_used,genutzte Vorlagen,1773.0,8560.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_003|kish_n_eff,batch,batch_003,kish_n_eff,Kish-Größe,533.2931381894086,6732.490784463062,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_003|n_synthetic_households,batch,batch_003,n_synthetic_households,Haushalte,9402.0,9402.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_004|n_distinct_used,batch,batch_004,n_distinct_used,genutzte Vorlagen,1925.0,9708.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_004|kish_n_eff,batch,batch_004,kish_n_eff,Kish-Größe,487.5942591155935,7064.418733273863,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_004|n_synthetic_households,batch,batch_004,n_synthetic_households,Haushalte,10899.0,10899.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_005|n_distinct_used,batch,batch_005,n_distinct_used,genutzte Vorlagen,2211.0,9432.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_005|kish_n_eff,batch,batch_005,kish_n_eff,Kish-Größe,675.0720701810707,7306.97287003007,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_005|n_synthetic_households,batch,batch_005,n_synthetic_households,Haushalte,10457.0,10457.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_006|n_distinct_used,batch,batch_006,n_distinct_used,genutzte Vorlagen,1364.0,6406.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_006|kish_n_eff,batch,batch_006,kish_n_eff,Kish-Größe,568.3128696639133,5735.569428535065,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_006|n_synthetic_households,batch,batch_006,n_synthetic_households,Haushalte,6713.0,6713.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_007|n_distinct_used,batch,batch_007,n_distinct_used,genutzte Vorlagen,1110.0,5520.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_007|kish_n_eff,batch,batch_007,kish_n_eff,Kish-Größe,394.90404497593977,4981.669773034721,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_007|n_synthetic_households,batch,batch_007,n_synthetic_households,Haushalte,5758.0,5757.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_008|n_distinct_used,batch,batch_008,n_distinct_used,genutzte Vorlagen,1868.0,6165.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_008|kish_n_eff,batch,batch_008,kish_n_eff,Kish-Größe,623.7907324364724,5521.5136279439,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_008|n_synthetic_households,batch,batch_008,n_synthetic_households,Haushalte,6460.0,6460.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_009|n_distinct_used,batch,batch_009,n_distinct_used,genutzte Vorlagen,2112.0,8812.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_009|kish_n_eff,batch,batch_009,kish_n_eff,Kish-Größe,473.4882261227736,5616.992156447082,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_009|n_synthetic_households,batch,batch_009,n_synthetic_households,Haushalte,10295.0,10295.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_010|n_distinct_used,batch,batch_010,n_distinct_used,genutzte Vorlagen,2000.0,6309.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_010|kish_n_eff,batch,batch_010,kish_n_eff,Kish-Größe,680.0009433962264,5217.288396290432,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_010|n_synthetic_households,batch,batch_010,n_synthetic_households,Haushalte,6792.0,6792.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_011|n_distinct_used,batch,batch_011,n_distinct_used,genutzte Vorlagen,1217.0,4542.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_011|kish_n_eff,batch,batch_011,kish_n_eff,Kish-Größe,379.353947866809,4229.104798464491,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_011|n_synthetic_households,batch,batch_011,n_synthetic_households,Haushalte,4694.0,4694.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_012|n_distinct_used,batch,batch_012,n_distinct_used,genutzte Vorlagen,1927.0,6774.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_012|kish_n_eff,batch,batch_012,kish_n_eff,Kish-Größe,566.0579396193717,5523.018971027941,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_012|n_synthetic_households,batch,batch_012,n_synthetic_households,Haushalte,7319.0,7319.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_013|n_distinct_used,batch,batch_013,n_distinct_used,genutzte Vorlagen,1931.0,6526.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_013|kish_n_eff,batch,batch_013,kish_n_eff,Kish-Größe,598.4691492639913,5251.16846921797,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_013|n_synthetic_households,batch,batch_013,n_synthetic_households,Haushalte,7106.0,7106.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_014|n_distinct_used,batch,batch_014,n_distinct_used,genutzte Vorlagen,2699.0,9502.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_014|kish_n_eff,batch,batch_014,kish_n_eff,Kish-Größe,683.0591595290613,6264.755451631549,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_014|n_synthetic_households,batch,batch_014,n_synthetic_households,Haushalte,10919.0,10919.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_015|n_distinct_used,batch,batch_015,n_distinct_used,genutzte Vorlagen,3437.0,10585.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_015|kish_n_eff,batch,batch_015,kish_n_eff,Kish-Größe,814.542059724644,7027.217814264699,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_015|n_synthetic_households,batch,batch_015,n_synthetic_households,Haushalte,12169.0,12169.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_016|n_distinct_used,batch,batch_016,n_distinct_used,genutzte Vorlagen,2541.0,9898.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_016|kish_n_eff,batch,batch_016,kish_n_eff,Kish-Größe,551.3141123913358,6924.535668965517,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_016|n_synthetic_households,batch,batch_016,n_synthetic_households,Haushalte,11203.0,11203.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_017|n_distinct_used,batch,batch_017,n_distinct_used,genutzte Vorlagen,2728.0,12557.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_017|kish_n_eff,batch,batch_017,kish_n_eff,Kish-Größe,363.7477268383976,5598.778151942388,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_017|n_synthetic_households,batch,batch_017,n_synthetic_households,Haushalte,16613.0,16613.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_018|n_distinct_used,batch,batch_018,n_distinct_used,genutzte Vorlagen,2969.0,9697.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_018|kish_n_eff,batch,batch_018,kish_n_eff,Kish-Größe,895.524279940984,7389.349212650522,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_018|n_synthetic_households,batch,batch_018,n_synthetic_households,Haushalte,10568.0,10568.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_019|n_distinct_used,batch,batch_019,n_distinct_used,genutzte Vorlagen,2558.0,7589.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_019|kish_n_eff,batch,batch_019,kish_n_eff,Kish-Größe,727.5221257765296,6065.351188364668,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_019|n_synthetic_households,batch,batch_019,n_synthetic_households,Haushalte,8270.0,8270.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_020|n_distinct_used,batch,batch_020,n_distinct_used,genutzte Vorlagen,2201.0,7170.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_020|kish_n_eff,batch,batch_020,kish_n_eff,Kish-Größe,790.4957091809459,6455.654411764706,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_020|n_synthetic_households,batch,batch_020,n_synthetic_households,Haushalte,7496.0,7496.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_021|n_distinct_used,batch,batch_021,n_distinct_used,genutzte Vorlagen,3223.0,8246.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_021|kish_n_eff,batch,batch_021,kish_n_eff,Kish-Größe,1197.8667257635586,7187.084517938304,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_021|n_synthetic_households,batch,batch_021,n_synthetic_households,Haushalte,8621.0,8621.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_022|n_distinct_used,batch,batch_022,n_distinct_used,genutzte Vorlagen,2868.0,10434.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_022|kish_n_eff,batch,batch_022,kish_n_eff,Kish-Größe,883.9630126739788,8423.824195589901,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_022|n_synthetic_households,batch,batch_022,n_synthetic_households,Haushalte,11245.0,11245.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_023|n_distinct_used,batch,batch_023,n_distinct_used,genutzte Vorlagen,3145.0,10731.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_023|kish_n_eff,batch,batch_023,kish_n_eff,Kish-Größe,862.0253721585194,8409.425978167546,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_023|n_synthetic_households,batch,batch_023,n_synthetic_households,Haushalte,11710.0,11710.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_024|n_distinct_used,batch,batch_024,n_distinct_used,genutzte Vorlagen,2841.0,9386.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_024|kish_n_eff,batch,batch_024,kish_n_eff,Kish-Größe,755.3894854148156,7598.868050295409,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_024|n_synthetic_households,batch,batch_024,n_synthetic_households,Haushalte,10016.0,10016.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_025|n_distinct_used,batch,batch_025,n_distinct_used,genutzte Vorlagen,3995.0,14150.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_025|kish_n_eff,batch,batch_025,kish_n_eff,Kish-Größe,860.0917510692024,9261.601667950565,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_025|n_synthetic_households,batch,batch_025,n_synthetic_households,Haushalte,16641.0,16629.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_026|n_distinct_used,batch,batch_026,n_distinct_used,genutzte Vorlagen,2772.0,11836.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_026|kish_n_eff,batch,batch_026,kish_n_eff,Kish-Größe,837.6690115398865,8254.477351602289,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_026|n_synthetic_households,batch,batch_026,n_synthetic_households,Haushalte,13533.0,13533.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_027|n_distinct_used,batch,batch_027,n_distinct_used,genutzte Vorlagen,3173.0,9458.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_027|kish_n_eff,batch,batch_027,kish_n_eff,Kish-Größe,910.203618713718,7616.07024397435,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_027|n_synthetic_households,batch,batch_027,n_synthetic_households,Haushalte,10165.0,10165.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_028|n_distinct_used,batch,batch_028,n_distinct_used,genutzte Vorlagen,3689.0,17550.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_028|kish_n_eff,batch,batch_028,kish_n_eff,Kish-Größe,376.9957297627206,6439.537769080235,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_028|n_synthetic_households,batch,batch_028,n_synthetic_households,Haushalte,26906.0,26906.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_029|n_distinct_used,batch,batch_029,n_distinct_used,genutzte Vorlagen,2004.0,6695.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_029|kish_n_eff,batch,batch_029,kish_n_eff,Kish-Größe,667.0859918674781,5980.922926351847,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_029|n_synthetic_households,batch,batch_029,n_synthetic_households,Haushalte,6992.0,6992.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_030|n_distinct_used,batch,batch_030,n_distinct_used,genutzte Vorlagen,3649.0,16914.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_030|kish_n_eff,batch,batch_030,kish_n_eff,Kish-Größe,412.4545543458839,6180.386124289539,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_030|n_synthetic_households,batch,batch_030,n_synthetic_households,Haushalte,25649.0,25649.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_031|n_distinct_used,batch,batch_031,n_distinct_used,genutzte Vorlagen,3164.0,11889.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_031|kish_n_eff,batch,batch_031,kish_n_eff,Kish-Größe,939.6583666677004,8625.972862700446,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_031|n_synthetic_households,batch,batch_031,n_synthetic_households,Haushalte,13484.0,13484.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_032|n_distinct_used,batch,batch_032,n_distinct_used,genutzte Vorlagen,3367.0,12068.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_032|kish_n_eff,batch,batch_032,kish_n_eff,Kish-Größe,932.573827333244,9050.389216175736,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_032|n_synthetic_households,batch,batch_032,n_synthetic_households,Haushalte,13464.0,13464.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_033|n_distinct_used,batch,batch_033,n_distinct_used,genutzte Vorlagen,2831.0,6809.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_033|kish_n_eff,batch,batch_033,kish_n_eff,Kish-Größe,1051.5042220053465,6240.443213296399,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_033|n_synthetic_households,batch,batch_033,n_synthetic_households,Haushalte,7040.0,7040.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_034|n_distinct_used,batch,batch_034,n_distinct_used,genutzte Vorlagen,2721.0,8818.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_034|kish_n_eff,batch,batch_034,kish_n_eff,Kish-Größe,925.369827267445,7427.362079199525,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_034|n_synthetic_households,batch,batch_034,n_synthetic_households,Haushalte,9359.0,9359.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_035|n_distinct_used,batch,batch_035,n_distinct_used,genutzte Vorlagen,3315.0,9125.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_035|kish_n_eff,batch,batch_035,kish_n_eff,Kish-Größe,1262.5021966131744,7192.371407352395,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_035|n_synthetic_households,batch,batch_035,n_synthetic_households,Haushalte,9841.0,9841.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_036|n_distinct_used,batch,batch_036,n_distinct_used,genutzte Vorlagen,2808.0,10971.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_036|kish_n_eff,batch,batch_036,kish_n_eff,Kish-Größe,602.0354191021145,8159.054144199233,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_036|n_synthetic_households,batch,batch_036,n_synthetic_households,Haushalte,12115.0,12115.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_037|n_distinct_used,batch,batch_037,n_distinct_used,genutzte Vorlagen,2130.0,6918.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_037|kish_n_eff,batch,batch_037,kish_n_eff,Kish-Größe,818.1115103456821,5888.94358974359,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_037|n_synthetic_households,batch,batch_037,n_synthetic_households,Haushalte,7268.0,7268.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_038|n_distinct_used,batch,batch_038,n_distinct_used,genutzte Vorlagen,2179.0,6320.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_038|kish_n_eff,batch,batch_038,kish_n_eff,Kish-Größe,852.3734729493892,5507.00325732899,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_038|n_synthetic_households,batch,batch_038,n_synthetic_households,Haushalte,6630.0,6630.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_039|n_distinct_used,batch,batch_039,n_distinct_used,genutzte Vorlagen,1839.0,5869.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_039|kish_n_eff,batch,batch_039,kish_n_eff,Kish-Größe,597.1004204013643,5177.909616178292,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_039|n_synthetic_households,batch,batch_039,n_synthetic_households,Haushalte,6135.0,6135.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_040|n_distinct_used,batch,batch_040,n_distinct_used,genutzte Vorlagen,1538.0,5204.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_040|kish_n_eff,batch,batch_040,kish_n_eff,Kish-Größe,536.0377179196666,4648.661806656101,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_040|n_synthetic_households,batch,batch_040,n_synthetic_households,Haushalte,5416.0,5416.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_041|n_distinct_used,batch,batch_041,n_distinct_used,genutzte Vorlagen,1630.0,5258.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_041|kish_n_eff,batch,batch_041,kish_n_eff,Kish-Größe,563.5240476101638,4591.975676497415,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_041|n_synthetic_households,batch,batch_041,n_synthetic_households,Haushalte,5496.0,5496.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_042|n_distinct_used,batch,batch_042,n_distinct_used,genutzte Vorlagen,2339.0,6771.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_042|kish_n_eff,batch,batch_042,kish_n_eff,Kish-Größe,834.2109545350994,5697.443876416982,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_042|n_synthetic_households,batch,batch_042,n_synthetic_households,Haushalte,7160.0,7160.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_043|n_distinct_used,batch,batch_043,n_distinct_used,genutzte Vorlagen,2423.0,9754.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_043|kish_n_eff,batch,batch_043,kish_n_eff,Kish-Größe,676.6078270757325,6400.164398226028,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_043|n_synthetic_households,batch,batch_043,n_synthetic_households,Haushalte,11205.0,11205.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_044|n_distinct_used,batch,batch_044,n_distinct_used,genutzte Vorlagen,3199.0,8028.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_044|kish_n_eff,batch,batch_044,kish_n_eff,Kish-Größe,1227.4898013465215,6681.716496244684,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_044|n_synthetic_households,batch,batch_044,n_synthetic_households,Haushalte,8593.0,8593.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_045|n_distinct_used,batch,batch_045,n_distinct_used,genutzte Vorlagen,2657.0,11794.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_045|kish_n_eff,batch,batch_045,kish_n_eff,Kish-Größe,556.1799874532793,6570.488758796787,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_045|n_synthetic_households,batch,batch_045,n_synthetic_households,Haushalte,14526.0,14526.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_046|n_distinct_used,batch,batch_046,n_distinct_used,genutzte Vorlagen,3032.0,11972.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_046|kish_n_eff,batch,batch_046,kish_n_eff,Kish-Größe,537.6415851005981,6330.720443631374,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_046|n_synthetic_households,batch,batch_046,n_synthetic_households,Haushalte,14882.0,14882.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_047|n_distinct_used,batch,batch_047,n_distinct_used,genutzte Vorlagen,2074.0,6312.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_047|kish_n_eff,batch,batch_047,kish_n_eff,Kish-Größe,762.6387899428333,5509.0529684950425,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_047|n_synthetic_households,batch,batch_047,n_synthetic_households,Haushalte,6625.0,6625.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_048|n_distinct_used,batch,batch_048,n_distinct_used,genutzte Vorlagen,2478.0,9183.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_048|kish_n_eff,batch,batch_048,kish_n_eff,Kish-Größe,734.8324617788273,6919.865703728586,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_048|n_synthetic_households,batch,batch_048,n_synthetic_households,Haushalte,10149.0,10149.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_049|n_distinct_used,batch,batch_049,n_distinct_used,genutzte Vorlagen,2695.0,7552.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_049|kish_n_eff,batch,batch_049,kish_n_eff,Kish-Größe,991.1548447060646,6472.837733940313,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_049|n_synthetic_households,batch,batch_049,n_synthetic_households,Haushalte,7999.0,7999.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_050|n_distinct_used,batch,batch_050,n_distinct_used,genutzte Vorlagen,2097.0,8176.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_050|kish_n_eff,batch,batch_050,kish_n_eff,Kish-Größe,636.5683962072853,6177.2436835891385,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_050|n_synthetic_households,batch,batch_050,n_synthetic_households,Haushalte,8859.0,8859.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_051|n_distinct_used,batch,batch_051,n_distinct_used,genutzte Vorlagen,1934.0,8233.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_051|kish_n_eff,batch,batch_051,kish_n_eff,Kish-Größe,506.7278901456759,5622.601428865838,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_051|n_synthetic_households,batch,batch_051,n_synthetic_households,Haushalte,9047.0,9047.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_052|n_distinct_used,batch,batch_052,n_distinct_used,genutzte Vorlagen,1207.0,5890.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_052|kish_n_eff,batch,batch_052,kish_n_eff,Kish-Größe,410.4506897090209,4803.928475691483,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_052|n_synthetic_households,batch,batch_052,n_synthetic_households,Haushalte,6279.0,6279.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_053|n_distinct_used,batch,batch_053,n_distinct_used,genutzte Vorlagen,1037.0,5289.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_053|kish_n_eff,batch,batch_053,kish_n_eff,Kish-Größe,392.2316276503705,4445.310359528208,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_053|n_synthetic_households,batch,batch_053,n_synthetic_households,Haushalte,5593.0,5593.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_054|n_distinct_used,batch,batch_054,n_distinct_used,genutzte Vorlagen,1183.0,4675.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_054|kish_n_eff,batch,batch_054,kish_n_eff,Kish-Größe,405.5372769825656,4117.097107438017,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_054|n_synthetic_households,batch,batch_054,n_synthetic_households,Haushalte,4890.0,4890.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_055|n_distinct_used,batch,batch_055,n_distinct_used,genutzte Vorlagen,893.0,4123.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_055|kish_n_eff,batch,batch_055,kish_n_eff,Kish-Größe,311.58510815585106,3594.1899269511728,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_055|n_synthetic_households,batch,batch_055,n_synthetic_households,Haushalte,4324.0,4324.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_056|n_distinct_used,batch,batch_056,n_distinct_used,genutzte Vorlagen,1100.0,4702.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_056|kish_n_eff,batch,batch_056,kish_n_eff,Kish-Größe,428.4844736796067,4000.098154499428,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_056|n_synthetic_households,batch,batch_056,n_synthetic_households,Haushalte,4949.0,4949.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_057|n_distinct_used,batch,batch_057,n_distinct_used,genutzte Vorlagen,892.0,3424.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_057|kish_n_eff,batch,batch_057,kish_n_eff,Kish-Größe,313.3552064231551,2982.3433962264157,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_057|n_synthetic_households,batch,batch_057,n_synthetic_households,Haushalte,3556.0,3556.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_058|n_distinct_used,batch,batch_058,n_distinct_used,genutzte Vorlagen,1112.0,4170.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_058|kish_n_eff,batch,batch_058,kish_n_eff,Kish-Größe,417.29290678433534,3621.252345395367,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_058|n_synthetic_households,batch,batch_058,n_synthetic_households,Haushalte,4349.0,4349.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_059|n_distinct_used,batch,batch_059,n_distinct_used,genutzte Vorlagen,851.0,2560.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_059|kish_n_eff,batch,batch_059,kish_n_eff,Kish-Größe,278.9524177477734,2438.3793103448274,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+batch|batch_059|n_synthetic_households,batch,batch_059,n_synthetic_households,Haushalte,2619.0,2619.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03101|n_distinct_used,kreis_reuse,03101,n_distinct_used,genutzte Vorlagen,9269.0,49409.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03101|kish_n_eff,kreis_reuse,03101,kish_n_eff,Kish-Größe,815.1751055822219,10444.51217023162,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03102|n_distinct_used,kreis_reuse,03102,n_distinct_used,genutzte Vorlagen,5602.0,24510.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03102|kish_n_eff,kreis_reuse,03102,kish_n_eff,Kish-Größe,578.6356507375527,5975.597713583863,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03103|n_distinct_used,kreis_reuse,03103,n_distinct_used,genutzte Vorlagen,6718.0,32958.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03103|kish_n_eff,kreis_reuse,03103,kish_n_eff,Kish-Größe,870.8357166118639,9129.224414702923,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03151|n_distinct_used,kreis_reuse,03151,n_distinct_used,genutzte Vorlagen,5672.0,38726.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03151|kish_n_eff,kreis_reuse,03151,kish_n_eff,Kish-Größe,707.4123221389274,10587.492477855863,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03153|n_distinct_used,kreis_reuse,03153,n_distinct_used,genutzte Vorlagen,5639.0,36077.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03153|kish_n_eff,kreis_reuse,03153,kish_n_eff,Kish-Größe,853.76353371959,12533.456962842767,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03154|n_distinct_used,kreis_reuse,03154,n_distinct_used,genutzte Vorlagen,6393.0,27407.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03154|kish_n_eff,kreis_reuse,03154,kish_n_eff,Kish-Größe,1150.4652085713396,11928.948271580412,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03157|n_distinct_used,kreis_reuse,03157,n_distinct_used,genutzte Vorlagen,6915.0,34013.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03157|kish_n_eff,kreis_reuse,03157,kish_n_eff,Kish-Größe,986.0107144963292,11512.96755494214,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03158|n_distinct_used,kreis_reuse,03158,n_distinct_used,genutzte Vorlagen,6687.0,33721.0,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+kreis_reuse|03158|kish_n_eff,kreis_reuse,03158,kish_n_eff,Kish-Größe,947.4345816461442,13090.804873660967,,Haushalte,,popsim_batch_diagnostics (diag_old / diag_new) reuse.csv
+cellsize|0|age_sex,cellsize,0,age_sex,Alter × Geschlecht,1.0,1.0,,WAPE,cells new 5115,zone_views cellsize_bins.csv
+cellsize|1-5|age_sex,cellsize,1-5,age_sex,Alter × Geschlecht,0.6992560256597947,0.6863953321035624,,WAPE,cells new 9979,zone_views cellsize_bins.csv
+cellsize|101+|age_sex,cellsize,101+,age_sex,Alter × Geschlecht,0.1345467594346205,0.100274397518492,,WAPE,cells new 252,zone_views cellsize_bins.csv
+cellsize|11-20|age_sex,cellsize,11-20,age_sex,Alter × Geschlecht,0.3306361470847688,0.2791859441968721,,WAPE,cells new 11076,zone_views cellsize_bins.csv
+cellsize|21-30|age_sex,cellsize,21-30,age_sex,Alter × Geschlecht,0.2423618388749239,0.2000261738232685,,WAPE,cells new 2837,zone_views cellsize_bins.csv
+cellsize|31-50|age_sex,cellsize,31-50,age_sex,Alter × Geschlecht,0.1870128775856984,0.1526171414212624,,WAPE,cells new 2048,zone_views cellsize_bins.csv
+cellsize|51-100|age_sex,cellsize,51-100,age_sex,Alter × Geschlecht,0.1387453362912171,0.1100660521887636,,WAPE,cells new 1386,zone_views cellsize_bins.csv
+cellsize|6-10|age_sex,cellsize,6-10,age_sex,Alter × Geschlecht,0.4548909459738351,0.4152237008371505,,WAPE,cells new 10905,zone_views cellsize_bins.csv
+cellsize|0|building_type,cellsize,0,building_type,Gebäudetyp,1.0,,,WAPE,cells new 5115,zone_views cellsize_bins.csv
+cellsize|1-5|building_type,cellsize,1-5,building_type,Gebäudetyp,0.293279653143388,0.1213983864771417,,WAPE,cells new 9979,zone_views cellsize_bins.csv
+cellsize|101+|building_type,cellsize,101+,building_type,Gebäudetyp,0.1028815848716794,0.0356457946485647,,WAPE,cells new 252,zone_views cellsize_bins.csv
+cellsize|11-20|building_type,cellsize,11-20,building_type,Gebäudetyp,0.1569083214472286,0.0436158320544155,,WAPE,cells new 11076,zone_views cellsize_bins.csv
+cellsize|21-30|building_type,cellsize,21-30,building_type,Gebäudetyp,0.141635301752109,0.0338076282431326,,WAPE,cells new 2837,zone_views cellsize_bins.csv
+cellsize|31-50|building_type,cellsize,31-50,building_type,Gebäudetyp,0.1131349765529349,0.0245386433348418,,WAPE,cells new 2048,zone_views cellsize_bins.csv
+cellsize|51-100|building_type,cellsize,51-100,building_type,Gebäudetyp,0.0832297638616044,0.0176183127572016,,WAPE,cells new 1386,zone_views cellsize_bins.csv
+cellsize|6-10|building_type,cellsize,6-10,building_type,Gebäudetyp,0.1955317247542448,0.0605913885526543,,WAPE,cells new 10905,zone_views cellsize_bins.csv
+cellsize|0|employed_grid,cellsize,0,employed_grid,Erwerbstätige nach Alter,1.0,1.0,,WAPE,cells new 5115,zone_views cellsize_bins.csv
+cellsize|1-5|employed_grid,cellsize,1-5,employed_grid,Erwerbstätige nach Alter,0.5058688477543406,0.3252453267724329,,WAPE,cells new 9979,zone_views cellsize_bins.csv
+cellsize|101+|employed_grid,cellsize,101+,employed_grid,Erwerbstätige nach Alter,0.1074532331713065,0.0388756200624655,,WAPE,cells new 252,zone_views cellsize_bins.csv
+cellsize|11-20|employed_grid,cellsize,11-20,employed_grid,Erwerbstätige nach Alter,0.2003278332871313,0.0493855853923076,,WAPE,cells new 11076,zone_views cellsize_bins.csv
+cellsize|21-30|employed_grid,cellsize,21-30,employed_grid,Erwerbstätige nach Alter,0.127762066072039,0.0279432186390989,,WAPE,cells new 2837,zone_views cellsize_bins.csv
+cellsize|31-50|employed_grid,cellsize,31-50,employed_grid,Erwerbstätige nach Alter,0.1005577476488563,0.0238288454444854,,WAPE,cells new 2048,zone_views cellsize_bins.csv
+cellsize|51-100|employed_grid,cellsize,51-100,employed_grid,Erwerbstätige nach Alter,0.0876111898929998,0.0225500147763629,,WAPE,cells new 1386,zone_views cellsize_bins.csv
+cellsize|6-10|employed_grid,cellsize,6-10,employed_grid,Erwerbstätige nach Alter,0.2819932401004682,0.1122325680574312,,WAPE,cells new 10905,zone_views cellsize_bins.csv
+cellsize|0|household_size,cellsize,0,household_size,Haushaltsgröße,,,,WAPE,cells new 5115,zone_views cellsize_bins.csv
+cellsize_cells|0|n_cells,cellsize_cells,0,n_cells,Zellen in der Klasse,5115.0,5115.0,,Zellen,,zone_views cellsize_bins.csv
+cellsize|1-5|household_size,cellsize,1-5,household_size,Haushaltsgröße,0.6351612810072482,0.4584307949984117,,WAPE,cells new 9979,zone_views cellsize_bins.csv
+cellsize_cells|1-5|n_cells,cellsize_cells,1-5,n_cells,Zellen in der Klasse,9979.0,9979.0,,Zellen,,zone_views cellsize_bins.csv
+cellsize|101+|household_size,cellsize,101+,household_size,Haushaltsgröße,0.0605913128117775,0.0397858620270105,,WAPE,cells new 252,zone_views cellsize_bins.csv
+cellsize_cells|101+|n_cells,cellsize_cells,101+,n_cells,Zellen in der Klasse,252.0,252.0,,Zellen,,zone_views cellsize_bins.csv
+cellsize|11-20|household_size,cellsize,11-20,household_size,Haushaltsgröße,0.2588310532057632,0.1435853386334282,,WAPE,cells new 11076,zone_views cellsize_bins.csv
+cellsize_cells|11-20|n_cells,cellsize_cells,11-20,n_cells,Zellen in der Klasse,11076.0,11076.0,,Zellen,,zone_views cellsize_bins.csv
+cellsize|21-30|household_size,cellsize,21-30,household_size,Haushaltsgröße,0.1592562997631346,0.0891384378299706,,WAPE,cells new 2837,zone_views cellsize_bins.csv
+cellsize_cells|21-30|n_cells,cellsize_cells,21-30,n_cells,Zellen in der Klasse,2837.0,2837.0,,Zellen,,zone_views cellsize_bins.csv
+cellsize|31-50|household_size,cellsize,31-50,household_size,Haushaltsgröße,0.1080691823111701,0.066214134532293,,WAPE,cells new 2048,zone_views cellsize_bins.csv
+cellsize_cells|31-50|n_cells,cellsize_cells,31-50,n_cells,Zellen in der Klasse,2048.0,2048.0,,Zellen,,zone_views cellsize_bins.csv
+cellsize|51-100|household_size,cellsize,51-100,household_size,Haushaltsgröße,0.0787428546960971,0.0429895737438181,,WAPE,cells new 1386,zone_views cellsize_bins.csv
+cellsize_cells|51-100|n_cells,cellsize_cells,51-100,n_cells,Zellen in der Klasse,1386.0,1386.0,,Zellen,,zone_views cellsize_bins.csv
+cellsize|6-10|household_size,cellsize,6-10,household_size,Haushaltsgröße,0.4114712932313663,0.2474945782444926,,WAPE,cells new 10905,zone_views cellsize_bins.csv
+cellsize_cells|6-10|n_cells,cellsize_cells,6-10,n_cells,Zellen in der Klasse,10905.0,10905.0,,Zellen,,zone_views cellsize_bins.csv
+cellsize|0|household_total,cellsize,0,household_total,Haushalte insgesamt,,,,WAPE,cells new 5115,zone_views cellsize_bins.csv
+cellsize|1-5|household_total,cellsize,1-5,household_total,Haushalte insgesamt,0.0025817555938037,0.0007530120481927,,WAPE,cells new 9979,zone_views cellsize_bins.csv
+cellsize|101+|household_total,cellsize,101+,household_total,Haushalte insgesamt,0.0,0.0,,WAPE,cells new 252,zone_views cellsize_bins.csv
+cellsize|11-20|household_total,cellsize,11-20,household_total,Haushalte insgesamt,0.0001711276041501,0.0,,WAPE,cells new 11076,zone_views cellsize_bins.csv
+cellsize|21-30|household_total,cellsize,21-30,household_total,Haushalte insgesamt,0.0,0.0,,WAPE,cells new 2837,zone_views cellsize_bins.csv
+cellsize|31-50|household_total,cellsize,31-50,household_total,Haushalte insgesamt,0.0,0.0,,WAPE,cells new 2048,zone_views cellsize_bins.csv
+cellsize|51-100|household_total,cellsize,51-100,household_total,Haushalte insgesamt,0.0,0.0,,WAPE,cells new 1386,zone_views cellsize_bins.csv
+cellsize|6-10|household_total,cellsize,6-10,household_total,Haushalte insgesamt,0.0,0.0,,WAPE,cells new 10905,zone_views cellsize_bins.csv
+cellsize|0|tenure,cellsize,0,tenure,Eigentum / Miete,,,,WAPE,cells new 5115,zone_views cellsize_bins.csv
+cellsize|1-5|tenure,cellsize,1-5,tenure,Eigentum / Miete,0.188015873015873,0.1005053043731315,,WAPE,cells new 9979,zone_views cellsize_bins.csv
+cellsize|101+|tenure,cellsize,101+,tenure,Eigentum / Miete,0.0272303615485364,0.0246710526315789,,WAPE,cells new 252,zone_views cellsize_bins.csv
+cellsize|11-20|tenure,cellsize,11-20,tenure,Eigentum / Miete,0.0680768913246416,0.0372009728899021,,WAPE,cells new 11076,zone_views cellsize_bins.csv
+cellsize|21-30|tenure,cellsize,21-30,tenure,Eigentum / Miete,0.052207064312844,0.0235558526905733,,WAPE,cells new 2837,zone_views cellsize_bins.csv
+cellsize|31-50|tenure,cellsize,31-50,tenure,Eigentum / Miete,0.038422877820777,0.0198901830700993,,WAPE,cells new 2048,zone_views cellsize_bins.csv
+cellsize|51-100|tenure,cellsize,51-100,tenure,Eigentum / Miete,0.0341040710394234,0.0205167254748447,,WAPE,cells new 1386,zone_views cellsize_bins.csv
+cellsize|6-10|tenure,cellsize,6-10,tenure,Eigentum / Miete,0.0948075551567856,0.062748751926749,,WAPE,cells new 10905,zone_views cellsize_bins.csv
+popval|bev_share|mean_abs_delta_pp,popval,bev_share,mean_abs_delta_pp,Bevölkerungsanteil je Kreis,0.1318413249205567,0.1207198384903858,,Prozentpunkte,DESTATIS 12411-0018 (Bevölkerung je Kreis) · fit_check,population_validation quality_summary.csv
+popval|bev_share|srmse,popval,bev_share,srmse,Bevölkerungsanteil je Kreis,0.0042351778052892,0.0042944750011107,,SRMSE,DESTATIS 12411-0018 (Bevölkerung je Kreis) · fit_check,population_validation quality_summary.csv
+popval|sex|mean_abs_delta_pp,popval,sex,mean_abs_delta_pp,Geschlecht,0.1839627406406259,0.2189227576648513,,Prozentpunkte,DESTATIS 12411-0018 · independent,population_validation quality_summary.csv
+popval|sex|srmse,popval,sex,srmse,Geschlecht,0.0039284849329343,0.0043104993097636,,SRMSE,DESTATIS 12411-0018 · independent,population_validation quality_summary.csv
+popval|age_group|mean_abs_delta_pp,popval,age_group,mean_abs_delta_pp,Altersgruppen,0.7991289928674595,0.5107322290190172,,Prozentpunkte,DESTATIS 12411-0018 · independent,population_validation quality_summary.csv
+popval|age_group|srmse,popval,age_group,srmse,Altersgruppen,0.0678587077298905,0.043366023344706,,SRMSE,DESTATIS 12411-0018 · independent,population_validation quality_summary.csv
+popval|household_size|mean_abs_delta_pp,popval,household_size,mean_abs_delta_pp,Haushaltsgröße (Gemeinde),1.9186982589747408,0.8683409160170444,,Prozentpunkte,"Zensus 2022, 1000A-2081 · fit_check",population_validation quality_summary.csv
+popval|household_size|srmse,popval,household_size,srmse,Haushaltsgröße (Gemeinde),0.1896899997299555,0.0771609801880136,,SRMSE,"Zensus 2022, 1000A-2081 · fit_check",population_validation quality_summary.csv
+popval|bicycles_per_hh|mean_abs_delta_pp,popval,bicycles_per_hh,mean_abs_delta_pp,Fahrräder je Haushalt,1.1036876286059534,0.9831610709860452,,Prozentpunkte,MiD 2023 H12.3 je Kreis · partially_independent,population_validation quality_summary.csv
+popval|bicycles_per_hh|srmse,popval,bicycles_per_hh,srmse,Fahrräder je Haushalt,0.090006605347761,0.0798411762553411,,SRMSE,MiD 2023 H12.3 je Kreis · partially_independent,population_validation quality_summary.csv
+popval|cars_per_hh|mean_abs_delta_pp,popval,cars_per_hh,mean_abs_delta_pp,Autos je Haushalt,0.9963202805710798,0.9869668443593232,,Prozentpunkte,MiD 2023 H7 je Kreis · partially_independent,population_validation quality_summary.csv
+popval|cars_per_hh|srmse,popval,cars_per_hh,srmse,Autos je Haushalt,0.0678762316734979,0.0668801641945437,,SRMSE,MiD 2023 H7 je Kreis · partially_independent,population_validation quality_summary.csv
+popval|employment_status|mean_abs_delta_pp,popval,employment_status,mean_abs_delta_pp,Erwerbsstatus,0.8371723247171984,1.413947848640851,,Prozentpunkte,MiD 2023 P9 · partially_independent,population_validation quality_summary.csv
+popval|employment_status|srmse,popval,employment_status,srmse,Erwerbsstatus,0.0842497222506421,0.1607591003871186,,SRMSE,MiD 2023 P9 · partially_independent,population_validation quality_summary.csv
+popval|pt_ticket_type|mean_abs_delta_pp,popval,pt_ticket_type,mean_abs_delta_pp,ÖV-Ticket,1.465875700727076,1.6471376573636358,,Prozentpunkte,MiD 2023 P24.1 · partially_independent,population_validation quality_summary.csv
+popval|pt_ticket_type|srmse,popval,pt_ticket_type,srmse,ÖV-Ticket,0.197019688459964,0.2010298592784236,,SRMSE,MiD 2023 P24.1 · partially_independent,population_validation quality_summary.csv
+popval|driving_license_type|mean_abs_delta_pp,popval,driving_license_type,mean_abs_delta_pp,Führerschein,2.283576164772226,2.82812645689188,,Prozentpunkte,MiD 2023 P17.1 · fit_check,population_validation quality_summary.csv
+popval|driving_license_type|srmse,popval,driving_license_type,srmse,Führerschein,0.0966441189618205,0.118990473000527,,SRMSE,MiD 2023 P17.1 · fit_check,population_validation quality_summary.csv
+popval|employment|mean_abs_delta_pp,popval,employment,mean_abs_delta_pp,erwerbstätig ja/nein,2.094319901100967,4.2393719812850925,,Prozentpunkte,MiD 2023 P9 · independent,population_validation quality_summary.csv
+popval|employment|srmse,popval,employment,srmse,erwerbstätig ja/nein,0.0452026478125061,0.0950263336373975,,SRMSE,MiD 2023 P9 · independent,population_validation quality_summary.csv
+purpose|arbeit|share,purpose,arbeit,share,arbeit,0.2638772668699848,0.2608585280472008,0.1805555555555555,Anteil,reference: MiD 2023 W1,population_validation trip_coherence_purpose.csv
+purpose|ausbildung|share,purpose,ausbildung,share,ausbildung,0.1313274689202241,0.1299661816569539,0.0833333333333333,Anteil,reference: MiD 2023 W1,population_validation trip_coherence_purpose.csv
+purpose|einkauf|share,purpose,einkauf,share,einkauf,0.1776169136681858,0.1751842331755916,0.2222222222222222,Anteil,reference: MiD 2023 W1,population_validation trip_coherence_purpose.csv
+purpose|freizeit|share,purpose,freizeit,share,freizeit,0.3272407060347669,0.330402603461816,0.4027777777777778,Anteil,reference: MiD 2023 W1,population_validation trip_coherence_purpose.csv
+purpose|begleitung|share,purpose,begleitung,share,begleitung,0.0999376445068383,0.1035884536584376,0.1111111111111111,Anteil,reference: MiD 2023 W1,population_validation trip_coherence_purpose.csv
+participation|03101|work,participation,03101,work,Braunschweig,0.3297053589084437,0.3390029906319938,0.3444,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03101|leisure,participation,03101,leisure,Braunschweig,0.3951235910618944,0.396458774831158,0.4178,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03101|education,participation,03101,education,Braunschweig,0.1672572671544394,0.1676774078548652,0.1758,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03101|escort,participation,03101,escort,Braunschweig,0.0719794344473007,0.0732130478699174,0.0751,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03101|mobility,participation,03101,mobility,Braunschweig,0.8496341704567926,0.8486740211126735,0.9003,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03102|work,participation,03102,work,Salzgitter,0.3181665369948803,0.3029003346539985,0.3302,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03102|leisure,participation,03102,leisure,Salzgitter,0.3256106580603022,0.3271050505827595,0.3422,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03102|education,participation,03102,education,Salzgitter,0.1832118260669106,0.184655921837135,0.193,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03102|escort,participation,03102,escort,Salzgitter,0.0958610686876254,0.0977324306650767,0.1005,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03102|mobility,participation,03102,mobility,Salzgitter,0.8334918210721456,0.8355098665230604,0.8801,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03103|work,participation,03103,work,Wolfsburg,0.2949099918459512,0.3175991317614861,0.3316,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03103|leisure,participation,03103,leisure,Wolfsburg,0.369339208430032,0.3654938106547965,0.3832,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03103|education,participation,03103,education,Wolfsburg,0.1779934767609609,0.1786652405744215,0.1761,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03103|escort,participation,03103,escort,Wolfsburg,0.0963353822994417,0.0962533620648976,0.0992,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03103|mobility,participation,03103,mobility,Wolfsburg,0.8301527316063476,0.8306305739496987,0.8761,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03151|work,participation,03151,work,Gifhorn,0.3197994037258517,0.3168189090158435,0.3239,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03151|leisure,participation,03151,leisure,Gifhorn,0.3630608739609722,0.3650203849925169,0.3821,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03151|education,participation,03151,education,Gifhorn,0.1867291663076384,0.1873756400772966,0.1826,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03151|escort,participation,03151,escort,Gifhorn,0.1099143502162786,0.1121260601056235,0.1151,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03151|mobility,participation,03151,mobility,Gifhorn,0.8323194375032312,0.8335082256741957,0.878,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03153|work,participation,03153,work,Goslar,0.3068417794425332,0.3109361027877571,0.3285,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03153|leisure,participation,03153,leisure,Goslar,0.3313220439923832,0.3327110427811681,0.3479,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03153|education,participation,03153,education,Goslar,0.1355817980926708,0.1367365828404687,0.1456,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03153|escort,participation,03153,escort,Goslar,0.1144789323971695,0.1162872786031407,0.12,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03153|mobility,participation,03153,mobility,Goslar,0.8280190889642904,0.8289616114710635,0.8789,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03154|work,participation,03154,work,Helmstedt,0.3021803064812153,0.3111052160360779,0.3214,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03154|leisure,participation,03154,leisure,Helmstedt,0.3653450677752471,0.3662389052845663,0.3833,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03154|education,participation,03154,education,Helmstedt,0.1499789929902925,0.1507444374440428,0.1566,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03154|escort,participation,03154,escort,Helmstedt,0.1013532936779957,0.103524886427695,0.1066,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03154|mobility,participation,03154,mobility,Helmstedt,0.8387435596930766,0.8379149119607388,0.8854,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03157|work,participation,03157,work,Peine,0.3007483526712745,0.3074134533368629,0.3164,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03157|leisure,participation,03157,leisure,Peine,0.3549727705173968,0.3561060619429983,0.3723,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03157|education,participation,03157,education,Peine,0.1899906914016403,0.1899320568252007,0.1901,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03157|escort,participation,03157,escort,Peine,0.1013977556749466,0.1031133268625547,0.1064,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03157|mobility,participation,03157,mobility,Peine,0.827996159286976,0.82934056884026,0.8776,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03158|work,participation,03158,work,Wolfenbüttel,0.3400259067357513,0.3328707172535931,0.3337,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03158|leisure,participation,03158,leisure,Wolfenbüttel,0.3679097354785928,0.367073087664328,0.3852,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03158|education,participation,03158,education,Wolfenbüttel,0.1635703572402508,0.1631956270008855,0.1783,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03158|escort,participation,03158,escort,Wolfenbüttel,0.1101291928006544,0.1115557523329473,0.1155,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+participation|03158|mobility,participation,03158,mobility,Wolfenbüttel,0.8523656940278157,0.8515853824671344,0.8999,Anteil,reference: SrV 2023 target per Kreis,population_validation participation_fit.csv
+plan|mobility_rate|,plan,mobility_rate,,Anteil mobiler Personen,0.8385961973364603,0.8389083619942189,0.8437201354,,reference: SrV 2023 (n persons 18223),plan_structure_vs_srv headline.csv
+plan|trips_per_person|,plan,trips_per_person,,Wege je Person,3.043419126591921,3.052853766125178,3.186498892,,reference: SrV 2023 (n persons 18223),plan_structure_vs_srv headline.csv
+plan|trips_per_mobile_person|,plan,trips_per_mobile_person,,Wege je mobiler Person,3.6291830755474384,3.6390789559756658,3.776724957,,reference: SrV 2023 (n persons 18223),plan_structure_vs_srv headline.csv
+plan|nonhome_acts_per_mobile|,plan,nonhome_acts_per_mobile,,Aktivitäten außer Haus je mobiler Person,2.1025519376747903,2.107683890649809,2.181590299,,reference: SrV 2023 (n persons 18223),plan_structure_vs_srv headline.csv
+plan|tours_per_mobile|,plan,tours_per_mobile,,Touren je mobiler Person,1.526631137872648,1.531395065325856,1.595134658,,reference: SrV 2023 (n persons 18223),plan_structure_vs_srv headline.csv
+plan|share_trips_home_based|,plan,share_trips_home_based,,Anteil Wege ab/zu Hause,0.8117104802743751,0.8150448919054687,0.8448585244,,reference: SrV 2023 (n persons 18223),plan_structure_vs_srv headline.csv
+plan|share_mobile_odd_trip_count|,plan,share_mobile_odd_trip_count,,ungerade Wegezahl (mobile),0.3105511481460343,0.2996568682838062,0.2325256214,,reference: SrV 2023 (n persons 18223),plan_structure_vs_srv headline.csv
+plan|share_trips_followed_by_same_purpose|,plan,share_trips_followed_by_same_purpose,,Folgeweg mit gleichem Zweck,0.1125837600240091,0.1047889601635202,0.0453464843,,reference: SrV 2023 (n persons 18223),plan_structure_vs_srv headline.csv
+commute_emd|03101|all,commute_emd,03101,all,Braunschweig,0.0423949011407325,0.031036031019458,0.0205243945,EMD,reference = noise floor; class new ok; SrV persons 1272,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|all|0_5,commute_band,03101|all,0_5,0–5 km,0.3267985692941549,0.3543528322884185,0.3881481567,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|all|5_10,commute_band,03101|all,5_10,5–10 km,0.3127971204781093,0.292175810130348,0.2593157621,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|all|10_20,commute_band,03101|all,10_20,10–20 km,0.1059559922126137,0.1026807849532267,0.1455889301,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|all|20_30,commute_band,03101|all,20_30,20–30 km,0.0903359442205822,0.1083552783807309,0.068792527,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|all|30_50,commute_band,03101|all,30_50,30–50 km,0.0738443428260968,0.0563813259583282,0.1094932435,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|all|50_100,commute_band,03101|all,50_100,50–100 km,0.0401820075157332,0.0400850623092433,0.02866138058,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|all|100_plus,commute_band,03101|all,100_plus,100+ km,0.0500860234527097,0.045968905979704,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03102|all,commute_emd,03102,all,Salzgitter,0.0291811170053044,0.0358925687441979,0.03668688844,EMD,reference = noise floor; class new ok; SrV persons 387,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|all|0_5,commute_band,03102|all,0_5,0–5 km,0.2063360566759984,0.1923702766226722,0.2420791645,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|all|5_10,commute_band,03102|all,5_10,5–10 km,0.2433868479689196,0.2567950340505032,0.1960881711,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|all|10_20,commute_band,03102|all,10_20,10–20 km,0.2673827343883905,0.2937684565780751,0.2388806633,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|all|20_30,commute_band,03102|all,20_30,20–30 km,0.134062732103068,0.1141143855842825,0.1513205222,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|all|30_50,commute_band,03102|all,30_50,30–50 km,0.0530480489059018,0.0497498945338395,0.104070441,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|all|50_100,commute_band,03102|all,50_100,50–100 km,0.0590755870422213,0.0587597179533538,0.06756103792,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|all|100_plus,commute_band,03102|all,100_plus,100+ km,0.0367079929155002,0.0344422346772735,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03103|all,commute_emd,03103,all,Wolfsburg,0.0753233378297399,0.0750005545029452,0.01850190425,EMD,reference = noise floor; class new ok; SrV persons 1659,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|all|0_5,commute_band,03103|all,0_5,0–5 km,0.4300297424005646,0.43431384038439,0.3445961845,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|all|5_10,commute_band,03103|all,5_10,5–10 km,0.3386600796491405,0.3286300246103363,0.2406791422,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|all|10_20,commute_band,03103|all,10_20,10–20 km,0.0617784947320663,0.0702683698581975,0.1732895054,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|all|20_30,commute_band,03103|all,20_30,20–30 km,0.0697182033573625,0.0637524903316535,0.09338358686,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|all|30_50,commute_band,03103|all,30_50,30–50 km,0.0350859504965468,0.0393530997304582,0.1077353459,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|all|50_100,commute_band,03103|all,50_100,50–100 km,0.0261884357513736,0.0240946911988749,0.04031623517,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|all|100_plus,commute_band,03103|all,100_plus,100+ km,0.0385390936129455,0.0395874838860893,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03151|all,commute_emd,03151,all,Gifhorn,0.0264456656762033,0.0271534051104172,0.03980889124,EMD,reference = noise floor; class new ok; SrV persons 849,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|all|0_5,commute_band,03151|all,0_5,0–5 km,0.2074403696315619,0.1983465392482081,0.2070008298,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|all|5_10,commute_band,03151|all,5_10,5–10 km,0.1230457095118749,0.1331878104535845,0.1316545098,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|all|10_20,commute_band,03151|all,10_20,10–20 km,0.2340204252126916,0.232790773620254,0.2427067773,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|all|20_30,commute_band,03151|all,20_30,20–30 km,0.1589177024193135,0.1618741513552534,0.1789914892,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|all|30_50,commute_band,03151|all,30_50,30–50 km,0.1722674032018822,0.1701070796308073,0.1960701319,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|all|50_100,commute_band,03151|all,50_100,50–100 km,0.0687603362146863,0.0678572042419346,0.04357626207,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|all|100_plus,commute_band,03151|all,100_plus,100+ km,0.0355480538079893,0.0358364414499578,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03153|all,commute_emd,03153,all,Goslar,0.0751938249552098,0.0743286394457912,0.02438933836,EMD,reference = noise floor; class new ok; SrV persons 570,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|all|0_5,commute_band,03153|all,0_5,0–5 km,0.3083736689254598,0.3136433291830284,0.3316375467,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|all|5_10,commute_band,03153|all,5_10,5–10 km,0.1492013552758954,0.1390671391629154,0.1796093276,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|all|10_20,commute_band,03153|all,10_20,10–20 km,0.198596321393998,0.2092950866775213,0.2089333313,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|all|20_30,commute_band,03153|all,20_30,20–30 km,0.0672797676669893,0.0631644478498228,0.1233332484,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|all|30_50,commute_band,03153|all,30_50,30–50 km,0.0947725072604065,0.0909156211090891,0.1136803213,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|all|50_100,commute_band,03153|all,50_100,50–100 km,0.1305905130687318,0.1320994157647735,0.04280622463,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|all|100_plus,commute_band,03153|all,100_plus,100+ km,0.0511858664085188,0.0518149602528493,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03154|all,commute_emd,03154,all,Helmstedt,0.0425362364165347,0.0434834586277209,0.0392377993,EMD,reference = noise floor; class new ok; SrV persons 430,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|all|0_5,commute_band,03154|all,0_5,0–5 km,0.2606007987497829,0.2574024226110363,0.2607791772,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|all|5_10,commute_band,03154|all,5_10,5–10 km,0.0573710713665566,0.055921938088829,0.09572935623,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|all|10_20,commute_band,03154|all,10_20,10–20 km,0.2403889564160444,0.2404777927321668,0.3004776613,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|all|20_30,commute_band,03154|all,20_30,20–30 km,0.1403021357874631,0.1504037685060565,0.09685208392,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|all|30_50,commute_band,03154|all,30_50,30–50 km,0.2113561382184407,0.2076043068640646,0.180195242,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|all|50_100,commute_band,03154|all,50_100,50–100 km,0.0512936273658621,0.0488896366083445,0.06596647935,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|all|100_plus,commute_band,03154|all,100_plus,100+ km,0.0386872720958499,0.039300134589502,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03157|all,commute_emd,03157,all,Peine,0.0804379263616241,0.0789280663099531,0.02727412364,EMD,reference = noise floor; class new ok; SrV persons 581,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|all|0_5,commute_band,03157|all,0_5,0–5 km,0.2147137457361482,0.2179353493222106,0.2251170145,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|all|5_10,commute_band,03157|all,5_10,5–10 km,0.1199179496635014,0.1207553157727705,0.1767456386,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|all|10_20,commute_band,03157|all,10_20,10–20 km,0.1899834055499216,0.1875595049190733,0.2481387529,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|all|20_30,commute_band,03157|all,20_30,20–30 km,0.1417442610860145,0.1398195584168291,0.1627214493,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|all|30_50,commute_band,03157|all,30_50,30–50 km,0.187793860053471,0.188624926327243,0.1316666172,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|all|50_100,commute_band,03157|all,50_100,50–100 km,0.1028394947911865,0.1021897810218978,0.05561052736,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|all|100_plus,commute_band,03157|all,100_plus,100+ km,0.0430072831197566,0.0431155642199755,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03158|all,commute_emd,03158,all,Wolfenbüttel,0.0909527062144854,0.0914886298531818,0.02938841415,EMD,reference = noise floor; class new gap; SrV persons 454,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|all|0_5,commute_band,03158|all,0_5,0–5 km,0.2392900420557416,0.2373818181818182,0.3039450785,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|all|5_10,commute_band,03158|all,5_10,5–10 km,0.0884120987478318,0.0872,0.09864754296,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|all|10_20,commute_band,03158|all,10_20,10–20 km,0.2485328011024782,0.2543030303030303,0.3337553416,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|all|20_30,commute_band,03158|all,20_30,20–30 km,0.1687219331384988,0.1655272727272727,0.1532184829,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|all|30_50,commute_band,03158|all,30_50,30–50 km,0.1576496305272411,0.1589575757575757,0.07920413334,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|all|50_100,commute_band,03158|all,50_100,50–100 km,0.0621094399695868,0.060290909090909,0.03122942063,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|all|100_plus,commute_band,03158|all,100_plus,100+ km,0.0352840544586214,0.0363393939393939,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|zgb|all,commute_emd,zgb,all,Großraum (ZGB),0.0394497818244114,0.035207220222111,0.01226836262,EMD,reference = noise floor; class new ok; SrV persons 4543,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|all|0_5,commute_band,zgb|all,0_5,0–5 km,0.2781979001831575,0.2850056860165916,0.2966296485,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|all|5_10,commute_band,zgb|all,5_10,5–10 km,0.1949500491688998,0.1918126601648682,0.1862941235,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|all|10_20,commute_band,zgb|all,10_20,10–20 km,0.1821740870620853,0.1841064044985038,0.221929825,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|all|20_30,commute_band,zgb|all,20_30,20–30 km,0.1188323512806444,0.1201740916785016,0.1229061517,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|all|30_50,commute_band,zgb|all,30_50,30–50 km,0.1183817468079974,0.1131700721626253,0.1279752106,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|all|50_100,commute_band,zgb|all,50_100,50–100 km,0.0653084917738177,0.0642729497586718,0.04426504057,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|all|100_plus,commute_band,zgb|all,100_plus,100+ km,0.0421553737233977,0.0414581357202375,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03101|inter,commute_emd,03101,inter,Braunschweig,0.0564206370668544,0.062638151843602,0.02451641707,EMD,reference = noise floor; class new ok; SrV persons 353,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|inter|0_5,commute_band,03101|inter,0_5,0–5 km,0.0057895449620801,0.0039683863007303,0.001275663318,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|inter|5_10,commute_band,03101|inter,5_10,5–10 km,0.0243093174431202,0.0277453563210724,0.02758289348,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|inter|10_20,commute_band,03101|inter,10_20,10–20 km,0.2089314734561213,0.209357388201554,0.2264300229,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|inter|20_30,commute_band,03101|inter,20_30,20–30 km,0.2700771939328277,0.3278420648947877,0.2505086529,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|inter|30_50,commute_band,03101|inter,30_50,30–50 km,0.2208829902491874,0.1706406109314036,0.3875772093,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|inter|50_100,commute_band,03101|inter,50_100,50–100 km,0.1201923076923077,0.1213192383366125,0.1066255581,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|inter|100_plus,commute_band,03101|inter,100_plus,100+ km,0.1498171722643553,0.1391269550138393,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03102|inter,commute_emd,03102,inter,Salzgitter,0.0564638538749654,0.0651477063557287,0.04072753385,EMD,reference = noise floor; class new ok; SrV persons 156,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|inter|0_5,commute_band,03102|inter,0_5,0–5 km,0.00544920054492,0.0102118003025718,0.009459511748,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|inter|5_10,commute_band,03102|inter,5_10,5–10 km,0.0276045027604502,0.0324508320726172,0.07817186132,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|inter|10_20,commute_band,03102|inter,10_20,10–20 km,0.2677995267799526,0.3205748865355522,0.1656090263,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|inter|20_30,commute_band,03102|inter,20_30,20–30 km,0.3255897325589733,0.2779122541603631,0.3202972658,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|inter|30_50,commute_band,03102|inter,30_50,30–50 km,0.1331469133146913,0.1248865355521936,0.2735947157,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|inter|50_100,commute_band,03102|inter,50_100,50–100 km,0.1482756148275615,0.1475037821482602,0.1528676191,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|inter|100_plus,commute_band,03102|inter,100_plus,100+ km,0.0921345092134509,0.0864599092284417,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03103|inter,commute_emd,03103,inter,Wolfsburg,0.0834285695561398,0.0855147998664263,0.022091915,EMD,reference = noise floor; class new gap; SrV persons 509,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|inter|0_5,commute_band,03103|inter,0_5,0–5 km,0.0012403870007442,0.0008104665971981,0.004364929093,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|inter|5_10,commute_band,03103|inter,5_10,5–10 km,0.03225006201935,0.0306819497510709,0.04736560304,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|inter|10_20,commute_band,03103|inter,10_20,10–20 km,0.1330935251798561,0.1447261780710895,0.1944354116,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|inter|20_30,commute_band,03103|inter,20_30,20–30 km,0.3422227735053336,0.3148083825402338,0.2824442224,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|inter|30_50,commute_band,03103|inter,30_50,30–50 km,0.1726618705035971,0.1943962023850874,0.3430246839,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|inter|50_100,commute_band,03103|inter,50_100,50–100 km,0.1288762093773257,0.119022808845664,0.1283651499,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|inter|100_plus,commute_band,03103|inter,100_plus,100+ km,0.1896551724137931,0.1955540118096561,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03151|inter,commute_emd,03151,inter,Gifhorn,0.041801545706106,0.0400823637766106,0.03561568431,EMD,reference = noise floor; class new ok; SrV persons 670,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|inter|0_5,commute_band,03151|inter,0_5,0–5 km,0.0152730315921612,0.0136098964057713,0.01684070026,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|inter|5_10,commute_band,03151|inter,5_10,5–10 km,0.0802705906967013,0.087435399761476,0.1156646133,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|inter|10_20,commute_band,03151|inter,10_20,10–20 km,0.3106678754910849,0.3061992844281271,0.3014311128,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|inter|20_30,commute_band,03151|inter,20_30,20–30 km,0.2166817769718948,0.2202371208755232,0.2428024721,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|inter|30_50,commute_band,03151|inter,30_50,30–50 km,0.2348838831159774,0.2314383930032972,0.2632784115,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|inter|50_100,commute_band,03151|inter,50_100,50–100 km,0.0937536322849106,0.0923228024226551,0.05998269011,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|inter|100_plus,commute_band,03151|inter,100_plus,100+ km,0.0484692098472696,0.0487571031031499,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03153|inter,commute_emd,03153,inter,Goslar,0.1290731480583611,0.129696130459104,0.02809066918,EMD,reference = noise floor; class new gap; SrV persons 295,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|inter|0_5,commute_band,03153|inter,0_5,0–5 km,0.0205946337926033,0.0154364029814859,0.01178081311,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|inter|5_10,commute_band,03153|inter,5_10,5–10 km,0.0746918056562726,0.0706900697283,0.1037581265,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|inter|10_20,commute_band,03153|inter,10_20,10–20 km,0.2180807348320038,0.2351045924501082,0.3282285904,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|inter|20_30,commute_band,03153|inter,20_30,20–30 km,0.134203529127387,0.1268093291656648,0.2393917416,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|inter|30_50,commute_band,03153|inter,30_50,30–50 km,0.1893159294174522,0.182591969223371,0.2308629991,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|inter|50_100,commute_band,03153|inter,50_100,50–100 km,0.2608653613729756,0.2653041596537629,0.08597772918,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|inter|100_plus,commute_band,03153|inter,100_plus,100+ km,0.1022480058013052,0.104063476797307,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03154|inter,commute_emd,03154,inter,Helmstedt,0.0540950732317516,0.0530494973275303,0.03771698515,EMD,reference = noise floor; class new ok; SrV persons 348,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|inter|0_5,commute_band,03154|inter,0_5,0–5 km,0.0042596944770857,0.0037345182944124,0.01220358434,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|inter|5_10,commute_band,03154|inter,5_10,5–10 km,0.0420583627105366,0.0423087832088493,0.06674362902,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|inter|10_20,commute_band,03154|inter,10_20,10–20 km,0.331668625146886,0.3274558003214522,0.4221665716,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|inter|20_30,commute_band,03154|inter,20_30,20–30 km,0.1971699960830395,0.2109293750590904,0.1475951279,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|inter|30_50,commute_band,03154|inter,30_50,30–50 km,0.2979827653740697,0.2916706060319561,0.2572049131,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|inter|50_100,commute_band,03154|inter,50_100,50–100 km,0.0723168820994907,0.068686773187104,0.09408617405,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|inter|100_plus,commute_band,03154|inter,100_plus,100+ km,0.0545436741088915,0.0552141438971353,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03157|inter,commute_emd,03157,inter,Peine,0.0997681711347144,0.0990527808724628,0.02443105485,EMD,reference = noise floor; class new gap; SrV persons 430,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|inter|0_5,commute_band,03157|inter,0_5,0–5 km,0.0102820211515863,0.0094318437008758,0.01927492018,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|inter|5_10,commute_band,03157|inter,5_10,5–10 km,0.0622143883013448,0.0646754996631484,0.1090314758,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|inter|10_20,commute_band,03157|inter,10_20,10–20 km,0.2542433738085912,0.2554297263482082,0.3524068788,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|inter|20_30,commute_band,03157|inter,20_30,20–30 km,0.2007442224833529,0.1978762311122517,0.2411194173,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|inter|30_50,commute_band,03157|inter,30_50,30–50 km,0.2659616137877007,0.2669468416156042,0.196188156,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|inter|50_100,commute_band,03157|inter,50_100,50–100 km,0.1456456456456456,0.1446216034134291,0.08197915195,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|inter|100_plus,commute_band,03157|inter,100_plus,100+ km,0.0609087348217783,0.0610182541464823,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03158|inter,commute_emd,03158,inter,Wolfenbüttel,0.0818955350147826,0.08200171053353,0.02947068998,EMD,reference = noise floor; class new gap; SrV persons 341,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|inter|0_5,commute_band,03158|inter,0_5,0–5 km,0.0103173566671019,0.0087512062023758,0.01755973285,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|inter|5_10,commute_band,03158|inter,5_10,5–10 km,0.0663771712158809,0.0651182910191994,0.0819741979,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|inter|10_20,commute_band,03158|inter,10_20,10–20 km,0.3409951678202951,0.3481183242937477,0.4789347435,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|inter|20_30,commute_band,03158|inter,20_30,20–30 km,0.2318466762439597,0.2271986157787908,0.2401867898,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|inter|30_50,commute_band,03158|inter,30_50,30–50 km,0.2166318401462713,0.2181812131900309,0.130421062,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|inter|50_100,commute_band,03158|inter,50_100,50–100 km,0.0853467415436855,0.082753801617143,0.05092347402,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|inter|100_plus,commute_band,03158|inter,100_plus,100+ km,0.0484850463628052,0.0498785478987122,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|zgb|inter,commute_emd,zgb,inter,Großraum (ZGB),0.0666104835342586,0.0636225502143639,0.01291498992,EMD,reference = noise floor; class new ok; SrV persons 2593,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|inter|0_5,commute_band,zgb|inter,0_5,0–5 km,0.0104501485261634,0.0091009753211885,0.01297512784,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|inter|5_10,commute_band,zgb|inter,5_10,5–10 km,0.0566633660852565,0.0586658981398617,0.08635072146,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|inter|10_20,commute_band,zgb|inter,10_20,10–20 km,0.2734963312768172,0.2785909667763839,0.3179402772,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|inter|20_30,commute_band,zgb|inter,20_30,20–30 km,0.2267347094218904,0.2312507268140013,0.2398419824,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|inter|30_50,commute_band,zgb|inter,30_50,30–50 km,0.2267854875974306,0.2183728467345194,0.2547700766,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|inter|50_100,commute_band,zgb|inter,50_100,50–100 km,0.1251123467133826,0.1240210131407971,0.08812181453,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|inter|100_plus,commute_band,zgb|inter,100_plus,100+ km,0.080757610379059,0.0799975730732476,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03101|intra,commute_emd,03101,intra,Braunschweig,0.0185178614375953,0.0126843862186278,0.009741062428,EMD,reference = noise floor; class new ok; SrV persons 919,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|intra|0_5,commute_band,03101|intra,0_5,0–5 km,0.488012650479494,0.5272502879710383,0.5344007369,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|intra|5_10,commute_band,03101|intra,5_10,5–10 km,0.4576787050261851,0.4226592068454829,0.3481089295,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|intra|10_20,commute_band,03101|intra,10_20,10–20 km,0.054240631163708,0.050041138719763,0.1158849272,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|intra|20_30,commute_band,03101|intra,20_30,20–30 km,6.80133306128001e-05,4.9366463715649167e-05,0.00160540641,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|intra|30_50,commute_band,03101|intra,30_50,30–50 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|intra|50_100,commute_band,03101|intra,50_100,50–100 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03101|intra|100_plus,commute_band,03101|intra,100_plus,100+ km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03102|intra,commute_emd,03102,intra,Salzgitter,0.02059868470279,0.0240322890556041,0.02455276119,EMD,reference = noise floor; class new ok; SrV persons 231,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|intra|0_5,commute_band,03102|intra,0_5,0–5 km,0.3393798375991262,0.3129820695181809,0.4123645676,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|intra|5_10,commute_band,03102|intra,5_10,5–10 km,0.3862956455672159,0.4053390764299309,0.2762679732,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|intra|10_20,commute_band,03102|intra,10_20,10–20 km,0.2671067002231825,0.2760192326955825,0.2905852068,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|intra|20_30,commute_band,03102|intra,20_30,20–30 km,0.0072178166104753,0.0056596213563057,0.02078225238,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|intra|30_50,commute_band,03102|intra,30_50,30–50 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|intra|50_100,commute_band,03102|intra,50_100,50–100 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03102|intra|100_plus,commute_band,03102|intra,100_plus,100+ km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03103|intra,commute_emd,03103,intra,Wolfsburg,0.0287009126623434,0.0282955343513056,0.01025585314,EMD,reference = noise floor; class new ok; SrV persons 1150,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|intra|0_5,commute_band,03103|intra,0_5,0–5 km,0.5393837783120334,0.5443458328435407,0.50038281,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|intra|5_10,commute_band,03103|intra,5_10,5–10 km,0.4168037454131342,0.4042553191489361,0.3291944195,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|intra|10_20,commute_band,03103|intra,10_20,10–20 km,0.0435910413766924,0.0513694604443399,0.1636071223,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|intra|20_30,commute_band,03103|intra,20_30,20–30 km,0.0002214348981399,2.9387563183260845e-05,0.006815648245,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|intra|30_50,commute_band,03103|intra,30_50,30–50 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|intra|50_100,commute_band,03103|intra,50_100,50–100 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03103|intra|100_plus,commute_band,03103|intra,100_plus,100+ km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03151|intra,commute_emd,03151,intra,Gifhorn,0.0104430432415956,0.0118894406658915,0.02115289206,EMD,reference = noise floor; class new ok; SrV persons 179,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|intra|0_5,commute_band,03151|intra,0_5,0–5 km,0.7361217702737273,0.7107277208457647,0.7307814197,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|intra|5_10,commute_band,03151|intra,5_10,5–10 km,0.2407265285239191,0.2600856142171487,0.1891404094,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|intra|10_20,commute_band,03151|intra,10_20,10–20 km,0.0231517012023535,0.0291866649370865,0.07968673175,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|intra|20_30,commute_band,03151|intra,20_30,20–30 km,0.0,0.0,0.0003914391406,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|intra|30_50,commute_band,03151|intra,30_50,30–50 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|intra|50_100,commute_band,03151|intra,50_100,50–100 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03151|intra|100_plus,commute_band,03151|intra,100_plus,100+ km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03153|intra,commute_emd,03153,intra,Goslar,0.0232088111962795,0.0218936975810558,0.01492002055,EMD,reference = noise floor; class new ok; SrV persons 275,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|intra|0_5,commute_band,03153|intra,0_5,0–5 km,0.5968500121153381,0.6093757451475988,0.6471725905,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|intra|5_10,commute_band,03153|intra,5_10,5–10 km,0.2238914465713593,0.2068768181601411,0.2576438694,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|intra|10_20,commute_band,03153|intra,10_20,10–20 km,0.1790646959050157,0.1836997472459344,0.09013440713,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|intra|20_30,commute_band,03153|intra,20_30,20–30 km,0.0001938454082868,4.768944632552816e-05,0.005049132976,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|intra|30_50,commute_band,03153|intra,30_50,30–50 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|intra|50_100,commute_band,03153|intra,50_100,50–100 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03153|intra|100_plus,commute_band,03153|intra,100_plus,100+ km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03154|intra,commute_emd,03154,intra,Helmstedt,0.0220635406591186,0.0203643961367446,0.01500290048,EMD,reference = noise floor; class new ok; SrV persons 82,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|intra|0_5,commute_band,03154|intra,0_5,0–5 km,0.8860351212519412,0.8838431006303993,0.7700957449,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|intra|5_10,commute_band,03154|intra,5_10,5–10 km,0.0947318122088161,0.0895400420266168,0.1951822383,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|intra|10_20,commute_band,03154|intra,10_20,10–20 km,0.0176800860112292,0.0256829325239318,0.03412195353,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|intra|20_30,commute_band,03154|intra,20_30,20–30 km,0.0015529805280133,0.000933924819052,0.000600063298,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|intra|30_50,commute_band,03154|intra,30_50,30–50 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|intra|50_100,commute_band,03154|intra,50_100,50–100 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03154|intra|100_plus,commute_band,03154|intra,100_plus,100+ km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03157|intra,commute_emd,03157,intra,Peine,0.0076045211385162,0.011892330113576,0.01524699319,EMD,reference = noise floor; class new ok; SrV persons 151,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|intra|0_5,commute_band,03157|intra,0_5,0–5 km,0.7058500627352572,0.7200803523139921,0.6646521859,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|intra|5_10,commute_band,03157|intra,5_10,5–10 km,0.258547678795483,0.2558139534883721,0.2957514113,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|intra|10_20,commute_band,03157|intra,10_20,10–20 km,0.0356022584692597,0.0241056941976357,0.03916129714,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|intra|20_30,commute_band,03157|intra,20_30,20–30 km,0.0,0.0,0.0004351056583,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|intra|30_50,commute_band,03157|intra,30_50,30–50 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|intra|50_100,commute_band,03157|intra,50_100,50–100 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03157|intra|100_plus,commute_band,03157|intra,100_plus,100+ km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|03158|intra,commute_emd,03158,intra,Wolfenbüttel,0.0233222286127725,0.0230940976589023,0.02212522461,EMD,reference = noise floor; class new ok; SrV persons 113,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|intra|0_5,commute_band,03158|intra,0_5,0–5 km,0.8512959246007505,0.851031526301688,0.7719563868,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|intra|5_10,commute_band,03158|intra,5_10,5–10 km,0.1473077930011344,0.1464678038760382,0.1665662271,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|intra|10_20,commute_band,03158|intra,10_20,10–20 km,0.001396282398115,0.0025006698222738,0.06096465595,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|intra|20_30,commute_band,03158|intra,20_30,20–30 km,0.0,0.0,0.000512730142,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|intra|30_50,commute_band,03158|intra,30_50,30–50 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|intra|50_100,commute_band,03158|intra,50_100,50–100 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|03158|intra|100_plus,commute_band,03158|intra,100_plus,100+ km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_emd|zgb|intra,commute_emd,zgb,intra,Großraum (ZGB),0.0104468366707196,0.0086785879647662,0.007827294659,EMD,reference = noise floor; class new ok; SrV persons 1950,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|intra|0_5,commute_band,zgb|intra,0_5,0–5 km,0.5705904533759205,0.5818054248682399,0.5829247345,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|intra|5_10,commute_band,zgb|intra,5_10,5–10 km,0.3459653092006033,0.3350429953714027,0.2871679075,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|intra|10_20,commute_band,zgb|intra,10_20,10–20 km,0.0824461006121905,0.0824662645425521,0.125025603,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|intra|20_30,commute_band,zgb|intra,20_30,20–30 km,0.0009981368112856,0.0006853152178051,0.004881754955,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|intra|30_50,commute_band,zgb|intra,30_50,30–50 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|intra|50_100,commute_band,zgb|intra,50_100,50–100 km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+commute_band|zgb|intra|100_plus,commute_band,zgb|intra,100_plus,100+ km,0.0,0.0,0.0,Anteil,reference: SrV 2023,srv_distance_validation commute_by_kreis.csv
+departure_emd|all|first,departure_emd,all,first,all,0.0024321893975144,0.0021480772602793,,EMD,vs SrV de-rounded; calibrated,departure_time_vs_srv emd.csv
+departure_emd|all|later,departure_emd,all,later,all,0.0140314849406648,0.0123535875199565,,EMD,vs SrV de-rounded; holdout,departure_time_vs_srv emd.csv
+departure_emd|all|all,departure_emd,all,all,all,0.0094826026470434,0.0083146056039749,,EMD,vs SrV de-rounded; holdout,departure_time_vs_srv emd.csv
+departure_emd|employed|first,departure_emd,employed,first,employed,0.0039699341639206,0.0053763499274203,,EMD,vs SrV de-rounded; calibrated,departure_time_vs_srv emd.csv
+departure_emd|employed|later,departure_emd,employed,later,employed,0.0100785507956228,0.0098033312068099,,EMD,vs SrV de-rounded; holdout,departure_time_vs_srv emd.csv
+departure_emd|employed|all,departure_emd,employed,all,employed,0.0077985928855024,0.0074729438963461,,EMD,vs SrV de-rounded; holdout,departure_time_vs_srv emd.csv
+departure_emd|child_0_5|first,departure_emd,child_0_5,first,child_0_5,0.0051695069108407,0.0036418690936625,,EMD,vs SrV de-rounded; calibrated,departure_time_vs_srv emd.csv
+departure_emd|child_0_5|later,departure_emd,child_0_5,later,child_0_5,0.0176939838847676,0.0138521145470882,,EMD,vs SrV de-rounded; holdout,departure_time_vs_srv emd.csv
+departure_emd|child_0_5|all,departure_emd,child_0_5,all,child_0_5,0.0137487880541647,0.0120954839001036,,EMD,vs SrV de-rounded; holdout,departure_time_vs_srv emd.csv
+departure_emd|school_age_6_17_not_employed|first,departure_emd,school_age_6_17_not_employed,first,school_age_6_17_not_employed,0.0022252505858221,0.0022676535397614,,EMD,vs SrV de-rounded; calibrated,departure_time_vs_srv emd.csv
+departure_emd|school_age_6_17_not_employed|later,departure_emd,school_age_6_17_not_employed,later,school_age_6_17_not_employed,0.0130553040784171,0.0106885336340368,,EMD,vs SrV de-rounded; holdout,departure_time_vs_srv emd.csv
+departure_emd|school_age_6_17_not_employed|all,departure_emd,school_age_6_17_not_employed,all,school_age_6_17_not_employed,0.006361663531095,0.0056951916838709,,EMD,vs SrV de-rounded; holdout,departure_time_vs_srv emd.csv
+departure_emd|adult_18_64_not_employed|first,departure_emd,adult_18_64_not_employed,first,adult_18_64_not_employed,0.0092631267292632,0.0061525917236343,,EMD,vs SrV de-rounded; calibrated,departure_time_vs_srv emd.csv
+departure_emd|adult_18_64_not_employed|later,departure_emd,adult_18_64_not_employed,later,adult_18_64_not_employed,0.0082182497932183,0.01276554955768,,EMD,vs SrV de-rounded; holdout,departure_time_vs_srv emd.csv
+departure_emd|adult_18_64_not_employed|all,departure_emd,adult_18_64_not_employed,all,adult_18_64_not_employed,0.0054777592983116,0.0075323088435037,,EMD,vs SrV de-rounded; holdout,departure_time_vs_srv emd.csv
+departure_emd|senior_65plus_not_employed|first,departure_emd,senior_65plus_not_employed,first,senior_65plus_not_employed,0.0047070334513029,0.0046558895571829,,EMD,vs SrV de-rounded; calibrated,departure_time_vs_srv emd.csv
+departure_emd|senior_65plus_not_employed|later,departure_emd,senior_65plus_not_employed,later,senior_65plus_not_employed,0.0310003456192006,0.0223892486057595,,EMD,vs SrV de-rounded; holdout,departure_time_vs_srv emd.csv
+departure_emd|senior_65plus_not_employed|all,departure_emd,senior_65plus_not_employed,all,senior_65plus_not_employed,0.0173905665773138,0.0124671515871138,,EMD,vs SrV de-rounded; holdout,departure_time_vs_srv emd.csv
+work_trip|03101|share,work_trip,03101,share,Braunschweig,0.6323453316516283,0.6293044238394055,0.6275275302,Anteil,employed persons with a work trip; reference SrV 2023,commute_day_state_phase_a work_participation_by_kreis.csv
+work_trip|03102|share,work_trip,03102,share,Salzgitter,0.7006089013492203,0.6902180116425065,0.7138834791,Anteil,employed persons with a work trip; reference SrV 2023,commute_day_state_phase_a work_participation_by_kreis.csv
+work_trip|03103|share,work_trip,03103,share,Wolfsburg,0.6546002455448492,0.6529112492933861,,Anteil,employed persons with a work trip; reference SrV 2023,commute_day_state_phase_a work_participation_by_kreis.csv
+work_trip|03151|share,work_trip,03151,share,Gifhorn,0.6141580174660509,0.6105438056007477,0.6441429156,Anteil,employed persons with a work trip; reference SrV 2023,commute_day_state_phase_a work_participation_by_kreis.csv
+work_trip|03153|share,work_trip,03153,share,Goslar,0.6537903239578531,0.6505802577423926,0.6923515291,Anteil,employed persons with a work trip; reference SrV 2023,commute_day_state_phase_a work_participation_by_kreis.csv
+work_trip|03154|share,work_trip,03154,share,Helmstedt,0.6266803562474631,0.6244313589654774,0.6670583375,Anteil,employed persons with a work trip; reference SrV 2023,commute_day_state_phase_a work_participation_by_kreis.csv
+work_trip|03157|share,work_trip,03157,share,Peine,0.5976530394812943,0.6004896071128198,0.6118816927,Anteil,employed persons with a work trip; reference SrV 2023,commute_day_state_phase_a work_participation_by_kreis.csv
+work_trip|03158|share,work_trip,03158,share,Wolfenbüttel,0.6519421042738256,0.6472079895788102,0.6603275151,Anteil,employed persons with a work trip; reference SrV 2023,commute_day_state_phase_a work_participation_by_kreis.csv
+work_trip|zgb|share,work_trip,zgb,share,Großraum (ZGB),0.6372176271997101,0.6340549656901242,0.6511223931,Anteil,employed persons with a work trip; reference SrV 2023,commute_day_state_phase_a work_participation_by_kreis.csv
+run|popsim_wall_minutes|,run,popsim_wall_minutes,,Laufzeit PopulationSim,776.0,34.9,,Minuten,"old: launch 1, 08:02:08-20:58:02",old: docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml; new: cache/monitoring/resource_series_20261120T140008.summary.md
+run|popsim_workers|,run,popsim_workers,,Parallele PopulationSim-Prozesse,2.0,13.0,,Prozesse,"old: configured 3, clamped to 2 by the 30 GiB default; new: auto (6 GiB per worker)",old: docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml; new: run log [resources] line 14:19:37
+run|popsim_worker_peak_gib|,run,popsim_worker_peak_gib,,Größter Speicher je PopulationSim-Prozess,,2.07,,GiB,private memory per worker; pool total peak 26.9 GiB,new: cache/monitoring/resource_series_20261120T140008.summary.md
+run|run_wall_hours|,run,run_wall_hours,,Laufzeit bis zu den fertigen Personen,,2.53,,Stunden,"13:59:39-16:31:14, 67 stages recomputed; the October run also ran MATSim, so no comparable value",new: logs/run_20261120T135939.log (isolated-run end line)
+run|system_memory_peak_gib|,run,system_memory_peak_gib,,Höchste Speicherbelegung des Servers,,93.8,,GiB,"during the pt2matsim stage (one Java process 77.2 GiB), not during PopulationSim",new: cache/monitoring/resource_series_20261120T140008.summary.md
+run|fast_path_primary_share|,run,fast_path_primary_share,,Schneller Rechenweg genutzt,,1.0,,Anteil,2525 of 2525 balancer calls,new: run log [popsim.fast_paths] line 14:51:14

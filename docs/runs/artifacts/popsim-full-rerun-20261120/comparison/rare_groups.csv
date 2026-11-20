@@ -1,0 +1,4 @@
+rare_group,definition,target_old,synthetic_old,relative_error_old,wape_old,target_new,synthetic_new,relative_error_new,wape_new
+households with 6+ persons,Zensus household size 6+ (same in both runs),7773.0,5212.0,-0.3294738196320597,0.5149877782066127,7773.0,7901.0,0.01646725845876753,0.6509713109481539
+persons aged 18-19,"Zensus age x sex 18-19, F + M (same in both runs)",20706.0,15487.0,-0.25205254515599346,0.5994880710905052,20706.0,20780.0,0.0035738433304356226,0.8553076402974983
+single-adult households with minors,"old: Zensus family type single parent (children of any age, 100 m); new: one adult with minors (1 km)",40013.0,34982.0,-0.12573413640566816,0.3601079649114038,23093.0,23056.0,-0.0016022171220716234,0.06950158056553934

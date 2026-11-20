@@ -1,0 +1,392 @@
+<meta name="dash-one-writer">
+<style>
+  .pr { --pr-old: var(--cds-chart-muted); --pr-gap: var(--cds-gap-lg); display: grid; gap: var(--cds-gap-xl); font-family: var(--font-anthropic-sans); color: var(--color-fg); }
+  .pr h1 { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); line-height: 1.15; margin: 0; text-wrap: balance; }
+  .pr h2 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); margin: 0; text-wrap: balance; }
+  .pr h3 { font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); margin: 0; }
+  .pr p { margin: 0; max-width: 72ch; line-height: 1.5; }
+  .pr-muted { color: var(--color-fg-muted); }
+  .pr-small { font-size: var(--cds-font-size-caption); }
+  .pr-eyebrow { font-size: var(--cds-font-size-caption); letter-spacing: .06em; text-transform: uppercase; color: var(--color-fg-muted); }
+  .pr-head { display: grid; gap: var(--cds-gap-md); }
+  .pr-lede { font-size: 1.1em; }
+  .pr-lede b, .pr-num { font-variant-numeric: tabular-nums; }
+  .pr-nav { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xs) var(--cds-gap-sm); }
+  .pr-nav a { font-size: var(--cds-font-size-caption); color: var(--color-fg); text-decoration: none; border: 1px solid var(--color-border-line); border-radius: 999px; padding: 2px 10px; }
+  .pr-nav a:hover, .pr-nav a:focus-visible { border-color: var(--color-fg-muted); }
+  .pr-key { display: flex; flex-wrap: wrap; gap: var(--cds-gap-md); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); align-items: center; }
+  .pr-key span { display: inline-flex; align-items: center; gap: 6px; }
+  .pr-sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; background: var(--pr-old); }
+  .pr-sw.ref { background: transparent; border: 2px solid var(--cds-chart-reference); width: 10px; height: 10px; }
+  .pr-section { display: grid; gap: var(--cds-gap-lg); scroll-margin-top: 12px; }
+  .pr-section > header { display: grid; gap: var(--cds-gap-xs); }
+  .pr-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--cds-gap-md); }
+  .pr-tile { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-md) var(--cds-pad-lg); display: grid; gap: 4px; align-content: start; min-width: 0; }
+  .pr-tile .pr-k { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .pr-tile .pr-v { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: 1.9em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .pr-tile .pr-o { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); font-variant-numeric: tabular-nums; }
+  .pr-tile.is-better { box-shadow: inset 3px 0 0 var(--color-ok); }
+  .pr-tile.is-worse { box-shadow: inset 3px 0 0 var(--color-warn); }
+  .pr-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(320px, 40%)), 1fr)); gap: var(--cds-gap-lg); }
+  .pr-card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: grid; gap: var(--cds-gap-sm); align-content: start; min-width: 0; }
+  .pr-chart { position: relative; min-height: 220px; min-width: 0; }
+  .pr-chart.tall { min-height: 420px; }
+  .pr-chart svg { display: block; overflow: visible; }
+  .pr-chart text { fill: var(--cds-text-secondary); font-size: var(--cds-font-size-caption); font-family: var(--font-anthropic-sans); }
+  .pr-chart .pr-strong { fill: var(--color-fg); }
+  .pr-chart .domain { stroke: var(--cds-chart-axis); }
+  .pr-chart .tick line { stroke: var(--cds-chart-grid); }
+  .pr-tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); box-shadow: var(--cds-shadow-popover); border-radius: var(--cds-radius); padding: 6px 9px; font-size: var(--cds-font-size-caption); line-height: 1.45; max-width: 260px; z-index: 2; font-variant-numeric: tabular-nums; }
+  .pr-tip b { font-weight: var(--cds-font-weight-medium); }
+  .pr-controls { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: center; }
+  .pr-controls label { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); display: inline-flex; gap: 6px; align-items: center; }
+  .pr-seg { display: inline-flex; border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); overflow: hidden; }
+  .pr-seg button { font: inherit; font-size: var(--cds-font-size-caption); background: transparent; color: var(--color-fg); border: 0; padding: 5px 10px; cursor: pointer; }
+  .pr-seg button[aria-pressed="true"] { background: var(--color-fg); color: var(--color-bg); }
+  .pr-seg button:focus-visible { outline: 2px solid var(--color-fg-muted); outline-offset: -2px; }
+  .pr-tablewrap { overflow-x: auto; max-width: 100%; }
+  .pr-table { border-collapse: collapse; width: 100%; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+  .pr-table th, .pr-table td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--color-border-line); white-space: nowrap; }
+  .pr-table th { color: var(--color-fg-muted); font-weight: var(--cds-font-weight-medium); position: sticky; top: 0; background: var(--color-bg); }
+  .pr-table th.pr-sortable { cursor: pointer; }
+  .pr-table th[aria-sort="ascending"]::after { content: " ▲"; }
+  .pr-table th[aria-sort="descending"]::after { content: " ▼"; }
+  .pr-table th:first-child, .pr-table td:first-child, .pr-table .pr-left { text-align: left; }
+  .pr-table td.pr-good { color: var(--color-ok); }
+  .pr-table td.pr-bad { color: var(--color-warn); }
+  .pr-scroll { max-height: 560px; overflow: auto; }
+  .pr-badge { display: inline-block; font-size: 11px; border-radius: 999px; padding: 0 7px; border: 1px solid var(--color-border-line); color: var(--color-fg-muted); }
+  .pr-verdict { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--cds-gap-md); }
+  .pr-verdict .pr-card { border-top: 3px solid var(--color-border-line); }
+  .pr-verdict .ok { border-top-color: var(--color-ok); }
+  .pr-verdict .warn { border-top-color: var(--color-warn); }
+  .pr-verdict ul { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; line-height: 1.45; }
+  .pr-map { position: relative; min-height: 360px; }
+  .pr-map canvas { display: block; max-width: 100%; }
+  .pr-play { font: inherit; font-size: var(--cds-font-size-caption); background: transparent; color: var(--color-fg); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: 5px 10px; cursor: pointer; }
+  .pr-play[aria-pressed="true"] { background: var(--color-fg); color: var(--color-bg); }
+  .pr-heat-title { font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); margin-bottom: 6px; }
+  .pr-legend { display: flex; align-items: center; gap: 8px; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); flex-wrap: wrap; }
+  .pr-legend canvas { border-radius: 2px; }
+  .pr details { border-top: 1px solid var(--color-border-line); padding-top: var(--cds-pad-md); }
+  .pr details summary { cursor: pointer; font-weight: var(--cds-font-weight-medium); }
+  .pr details > div { display: grid; gap: var(--cds-gap-sm); margin-top: var(--cds-gap-sm); }
+  .pr dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; font-size: var(--cds-font-size-caption); }
+  .pr dt { color: var(--color-fg-muted); }
+  .pr dd { margin: 0; }
+  @media (max-width: 520px) { .pr-tile .pr-v { font-size: 1.5em; } }
+  @media print { .pr-controls, .pr-nav { display: none; } .pr-scroll { max-height: none; } }
+</style>
+
+<div class="pr" lang="de" data-read>
+
+  <header class="pr-head" id="kopf">
+    <p class="pr-eyebrow">eqasim-bs · Issue #648 · Neulauf popsim100_20261120 gegen Produktionslauf prod100_20261031</p>
+    <h1>Synthetische Bevölkerung: Neulauf vom 20. November 2026</h1>
+    <p class="pr-lede">Die neue Bevölkerung nutzt <b data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|reuse.n_distinct_used|" data-fmt="int">—</b> der <b data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|n_seed_households|" data-fmt="int">—</b> MiD-Haushalte als Vorlage (Oktober: <b data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|reuse.n_distinct_used|" data-fmt="int">—</b>). Über alle Vorgaben weicht sie auf 100-m-Ebene um <b data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|wape.ZENSUS100m|" data-fmt="dec3">—</b> ab (Oktober <b data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|wape.ZENSUS100m|" data-fmt="dec3">—</b>), auf 1-km-Ebene um <b data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|wape.ZENSUS1km|" data-fmt="dec3">—</b> (Oktober <b data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|wape.ZENSUS1km|" data-fmt="dec3">—</b>).</p>
+    <p class="pr-muted pr-small">Abweichung = WAPE: Summe der absoluten Abweichungen über alle Zellen geteilt durch die Summe der Vorgaben (0 = exakt getroffen). Treffer der Vorgaben zeigen, dass der Zensus reproduziert wird; sie sind keine Validierung des Verhaltens. Das leisten erst die Vergleiche mit MiD und SrV weiter unten.</p>
+    <div class="pr-key" aria-label="Farben der Läufe">
+      <span><i class="pr-sw" data-swatch="old"></i>Oktober (prod100_20261031)</span>
+      <span><i class="pr-sw" data-swatch="new"></i>Neu (popsim100_20261120)</span>
+      <span><i class="pr-sw ref"></i>Referenz (Zensus, MiD oder SrV)</span>
+    </div>
+    <nav class="pr-nav" aria-label="Abschnitte">
+      <a href="#ueberblick">Überblick</a><a href="#vielfalt">Vielfalt der Vorlagen</a><a href="#vorgaben">Treffer der Vorgaben</a><a href="#karte">Karte</a><a href="#aktivitaeten">Heatmap Aktivitäten</a><a href="#alle">Alle Vorgaben</a><a href="#selten">Seltene Gruppen</a><a href="#plausibel">Personen und Haushalte</a><a href="#verhalten">Verhalten gegen SrV</a><a href="#lauf">Lauf</a><a href="#urteil">Urteil</a>
+    </nav>
+  </header>
+
+  <section class="pr-section" id="ueberblick">
+    <header><h2>Überblick</h2><p class="pr-muted">Großer Wert: neuer Lauf. Darunter der Oktober-Lauf. Der Rand links zeigt, ob sich der Wert verbessert (grün) oder verschlechtert (gelb) hat.</p></header>
+    <div class="pr-tiles">
+      <div class="pr-tile" data-tile="kpi|reuse.n_distinct_used|" data-better="higher"><span class="pr-k">Genutzte MiD-Haushalte</span><span class="pr-v" data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|reuse.n_distinct_used|" data-fmt="int">—</span><span class="pr-o">Oktober <span data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|reuse.n_distinct_used|" data-fmt="int">—</span> · Anteil neu <span data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|reuse.distinct_share_of_seed|" data-fmt="pct1">—</span></span></div>
+      <div class="pr-tile" data-tile="kpi|reuse.kish_n_eff|" data-better="higher"><span class="pr-k">Effektive Stichprobengröße (Kish)</span><span class="pr-v" data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|reuse.kish_n_eff|" data-fmt="int">—</span><span class="pr-o">Oktober <span data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|reuse.kish_n_eff|" data-fmt="int">—</span></span></div>
+      <div class="pr-tile" data-tile="kpi|reuse.top1000_share|" data-better="lower"><span class="pr-k">Kopien aus den 1.000 häufigsten Vorlagen</span><span class="pr-v" data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|reuse.top1000_share|" data-fmt="pct0">—</span><span class="pr-o">Oktober <span data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|reuse.top1000_share|" data-fmt="pct0">—</span></span></div>
+      <div class="pr-tile" data-tile="kpi|reuse.max_copies|" data-better="lower"><span class="pr-k">Kopien des häufigsten Haushalts</span><span class="pr-v" data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|reuse.max_copies|" data-fmt="int">—</span><span class="pr-o">Oktober <span data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|reuse.max_copies|" data-fmt="int">—</span></span></div>
+      <div class="pr-tile" data-tile="kpi|wape.ZENSUS100m|" data-better="lower"><span class="pr-k">Abweichung 100-m-Zellen</span><span class="pr-v" data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|wape.ZENSUS100m|" data-fmt="dec3">—</span><span class="pr-o">Oktober <span data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|wape.ZENSUS100m|" data-fmt="dec3">—</span></span></div>
+      <div class="pr-tile" data-tile="kpi|wape.ZENSUS1km|" data-better="lower"><span class="pr-k">Abweichung 1-km-Zellen</span><span class="pr-v" data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|wape.ZENSUS1km|" data-fmt="dec3">—</span><span class="pr-o">Oktober <span data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|wape.ZENSUS1km|" data-fmt="dec3">—</span></span></div>
+      <div class="pr-tile" data-tile="kpi|wape.KREIS|" data-better="lower"><span class="pr-k">Abweichung Kreise (Obergrenze)</span><span class="pr-v" data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|wape.KREIS|" data-fmt="dec3">—</span><span class="pr-o">Oktober <span data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|wape.KREIS|" data-fmt="dec3">—</span></span></div>
+      <div class="pr-tile" data-tile="kpi|weight_class.max_abs_gap_pp|" data-better="lower"><span class="pr-k">Größte Abweichung einer MiD-Gewichtsklasse</span><span class="pr-v" data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|weight_class.max_abs_gap_pp|" data-fmt="pp1">—</span><span class="pr-o">Oktober <span data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|weight_class.max_abs_gap_pp|" data-fmt="pp1">—</span></span></div>
+      <div class="pr-tile" data-tile="kpi|solver.non_simultaneous_rate.ZENSUS100m|" data-better="lower"><span class="pr-k">Rundung per Notlösung, 100 m</span><span class="pr-v" data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|solver.non_simultaneous_rate.ZENSUS100m|" data-fmt="pct1">—</span><span class="pr-o">Oktober <span data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|solver.non_simultaneous_rate.ZENSUS100m|" data-fmt="pct1">—</span></span></div>
+      <div class="pr-tile" data-tile="kpi|divers_ratio|" data-better="lower"><span class="pr-k">„divers/keine Angabe“ überrepräsentiert</span><span class="pr-v" data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|divers_ratio|" data-fmt="x1">—</span><span class="pr-o">Oktober <span data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|divers_ratio|" data-fmt="x1">—</span> · Prüfgrenze <span data-draw="fact" data-source="facts" data-field="reference" data-where="id=kpi|divers_ratio|" data-fmt="x1">—</span></span></div>
+      <div class="pr-tile" data-tile="run|popsim_wall_minutes|" data-better="lower"><span class="pr-k">Laufzeit PopulationSim</span><span class="pr-v" data-draw="fact" data-source="facts" data-field="new" data-where="id=run|popsim_wall_minutes|" data-fmt="min">—</span><span class="pr-o">Oktober <span data-draw="fact" data-source="facts" data-field="old" data-where="id=run|popsim_wall_minutes|" data-fmt="min">—</span></span></div>
+      <div class="pr-tile" data-tile="kpi|households_with_minor|" data-better="none"><span class="pr-k">Haushalte mit Minderjährigen</span><span class="pr-v" data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|households_with_minor|" data-fmt="pct1">—</span><span class="pr-o">Oktober <span data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|households_with_minor|" data-fmt="pct1">—</span> · neue Vorgabe zählt nur Minderjährige</span></div>
+    </div>
+  </section>
+
+  <section class="pr-section" id="vielfalt">
+    <header><h2>Vielfalt der Vorlagen</h2><p>Jeder künstliche Haushalt ist die Kopie eines MiD-Haushalts. Je mehr verschiedene Vorlagen und je gleichmäßiger sie genutzt werden, desto mehr Vielfalt an Haushaltsformen und Tagesabläufen trägt die Bevölkerung.</p></header>
+    <div class="pr-grid2">
+      <div class="pr-card" id="konzentration">
+        <h3>Wie stark wenige Vorlagen dominieren</h3>
+        <p class="pr-muted pr-small">Anteil aller Kopien, der aus den k häufigsten Vorlagen stammt (k logarithmisch). Je flacher die Kurve, desto gleichmäßiger.</p>
+        <div class="pr-chart" data-draw="concentration" data-source="facts"></div>
+      </div>
+      <div class="pr-card" id="kopien">
+        <h3>Wie oft eine Vorlage kopiert wird</h3>
+        <p class="pr-muted pr-small">Anteil aller künstlichen Haushalte nach der Kopienzahl ihrer Vorlage.</p>
+        <div class="pr-chart" data-draw="copies" data-source="facts"></div>
+      </div>
+      <div class="pr-card" id="gewichte">
+        <h3>Gewichtsklassen der MiD</h3>
+        <p class="pr-muted pr-small">Anteil der Kopien je Klasse des MiD-Hochrechnungsgewichts (H_GEW) gegen den Anteil dieser Klasse am Gewicht. Gleich hohe Balken heißt: proportional zum Gewicht gezogen.</p>
+        <div class="pr-chart" data-draw="weights" data-source="facts"></div>
+      </div>
+      <div class="pr-card" id="merkmale">
+        <h3>Vertretung nach Merkmalen der Stichprobe</h3>
+        <div class="pr-controls"><label for="pr-attr">Merkmal <select id="pr-attr" class="dash-select" data-draw="attrselect" data-source="facts" aria-label="Merkmal der MiD-Stichprobe"></select></label></div>
+        <p class="pr-muted pr-small">Anteil der Kopien geteilt durch den Anteil am MiD-Gewicht (1 = proportional vertreten).</p>
+        <div class="pr-chart" data-draw="attributes" data-source="facts"></div>
+      </div>
+    </div>
+    <div class="pr-card" id="kreisvielfalt">
+      <h3>Vielfalt je Kreis</h3>
+      <div class="pr-tablewrap"><table class="pr-table" data-source="facts" data-row-key="id">
+        <thead><tr><th class="pr-left" data-field="label">Kreis</th><th data-field="old">Genutzte Vorlagen Oktober</th><th data-field="new">Genutzte Vorlagen neu</th></tr></thead>
+        <tbody data-draw="kreisreuse"></tbody>
+      </table></div>
+      <div class="pr-tablewrap"><table class="pr-table" data-source="facts" data-row-key="id">
+        <thead><tr><th class="pr-left" data-field="label">Kreis</th><th data-field="old">Kish-Größe Oktober</th><th data-field="new">Kish-Größe neu</th></tr></thead>
+        <tbody data-draw="kreiskish"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section class="pr-section" id="vorgaben">
+    <header><h2>Treffer der Vorgaben</h2><p>Abweichung je Gruppe von Vorgaben und Ebene, Oktober gegen neu. Die Achse ist logarithmisch, damit 100-m- und Kreiswerte nebeneinander lesbar sind. Kreiswerte sind eine Obergrenze, weil sich Fehler der Teilgebiete eines Kreises in der Messung nicht ausgleichen.</p></header>
+    <div class="pr-card" id="gruppen">
+      <div class="pr-chart tall" data-draw="groupfit" data-source="facts"></div>
+    </div>
+    <div class="pr-card" id="zellgroesse">
+      <h3>Warum die 100-m-Werte hoch bleiben: kleine Zellen</h3>
+      <p class="pr-muted pr-small">Abweichung nach der Zahl der Haushalte, die der Zensus für die 100-m-Zelle vorgibt. In kleinen Zellen sind es 0 bis 2 Personen je Alters- und Geschlechtsklasse, und eingesetzt werden nur ganze Haushalte. Zellen ohne Haushaltsvorgabe (Klasse 0) haben Personenvorgaben, die nicht erreichbar sind; sie tragen etwa 2,5 % des neuen Alters-Fehlers.</p>
+      <div class="pr-chart" data-draw="cellsize" data-source="facts"></div>
+    </div>
+  </section>
+
+  <section class="pr-section" id="karte">
+    <header><h2>Karte der 1-km-Zellen</h2><p>Jedes Quadrat ist eine 1-km-Zelle des Zensus-Gitters (EPSG:3035). Die Abweichung je Zelle wird aus ihren 100-m-Zellen summiert. Bei „Änderung“ ist blau eine Verbesserung.</p></header>
+    <div class="pr-card">
+      <div class="pr-controls">
+        <label for="pr-map-metric">Größe <select id="pr-map-metric" class="dash-select" aria-label="Größe auf der Karte">
+          <option value="household_size_100m_wape">Abweichung Haushaltsgröße (100 m)</option>
+          <option value="age_sex_100m_wape">Abweichung Alter × Geschlecht (100 m)</option>
+          <option value="employed_grid_100m_wape">Abweichung Erwerbstätige (100 m)</option>
+          <option value="building_type_100m_wape">Abweichung Gebäudetyp (100 m)</option>
+          <option value="tenure_100m_wape">Abweichung Eigentum/Miete (100 m)</option>
+          <option value="own_cars_1km_wape">Abweichung Autos je Haushalt (1 km)</option>
+          <option value="own_bikes_1km_wape">Abweichung Fahrräder je Haushalt (1 km)</option>
+          <option value="donors">Genutzte Vorlagen</option>
+          <option value="kish">Kish-Größe</option>
+          <option value="households">Haushalte</option>
+        </select></label>
+        <div class="pr-seg" role="group" aria-label="Lauf auf der Karte">
+          <button type="button" data-maprun="old" aria-pressed="false">Oktober</button>
+          <button type="button" data-maprun="new" aria-pressed="true">Neu</button>
+          <button type="button" data-maprun="diff" aria-pressed="false">Änderung</button>
+        </div>
+      </div>
+      <div class="pr-map" data-draw="map" data-source="cells"></div>
+    </div>
+  </section>
+
+  <section class="pr-section" id="aktivitaeten">
+    <header><h2>Wo Arbeit und Aktivitäten stattfinden</h2><p>Heatmap auf einem 500-m-Gitter (EPSG:25832) aus den fertigen Tagesplänen. „Arbeitsplätze“ zählt Personen je Arbeitsort, die anderen Ebenen zählen Aktivitäten. „Potenzial“ zeigt die Gebäude-Potenziale aus 08_redistribution.gpkg: modellierte Gewichte, keine Zählung. „Neu gegen Potenzial“ vergleicht Anteile, also das Muster, nicht die Menge.</p></header>
+    <div class="pr-card">
+      <div class="pr-controls">
+        <label for="pr-heat-layer">Ebene <select id="pr-heat-layer" class="dash-select" aria-label="Ebene der Heatmap">
+          <option value="workplace">Arbeitsplätze (Personen je Arbeitsort)</option>
+          <option value="work">Arbeit (Aktivitäten)</option>
+          <option value="education">Ausbildung</option>
+          <option value="shop">Einkauf</option>
+          <option value="leisure">Freizeit</option>
+          <option value="other">Erledigung / Sonstiges</option>
+          <option value="escort">Begleitung</option>
+          <option value="nonhome">alle Aktivitäten außer Zuhause</option>
+          <option value="home">Zuhause (Aktivitäten zu Hause)</option>
+        </select></label>
+        <div class="pr-seg" role="group" aria-label="Ansicht der Heatmap">
+          <button type="button" data-heatview="old" aria-pressed="false">Oktober</button>
+          <button type="button" data-heatview="new" aria-pressed="true">Neu</button>
+          <button type="button" data-heatview="diff" aria-pressed="false">Änderung</button>
+          <button type="button" data-heatview="pot" aria-pressed="false">Potenzial</button>
+          <button type="button" data-heatview="vspot" aria-pressed="false">Neu gegen Potenzial</button>
+        </div>
+        <div class="pr-seg" role="group" aria-label="Darstellung">
+          <button type="button" data-heatsmooth="1" aria-pressed="true">weich</button>
+          <button type="button" data-heatsmooth="0" aria-pressed="false">Raster</button>
+        </div>
+        <button type="button" class="pr-play" id="pr-heat-play" aria-pressed="false">▶ Ebenen durchlaufen</button>
+      </div>
+      <div class="pr-map" id="pr-heat" data-draw="heat" data-source="grid"></div>
+    </div>
+  </section>
+
+  <section class="pr-section" id="alle">
+    <header><h2>Alle Vorgaben einzeln</h2><p>Jede Vorgabe mit Gesamtsumme, regionsweitem Fehler und Abweichung in den Zellen. Spaltenköpfe sortieren.</p></header>
+    <div class="pr-card">
+      <div class="pr-controls">
+        <label for="pr-ctl-group">Gruppe <select id="pr-ctl-group" class="dash-select" data-draw="ctlgroup" data-source="controls" aria-label="Gruppe der Vorgaben"></select></label>
+        <label for="pr-ctl-level">Ebene <select id="pr-ctl-level" class="dash-select" aria-label="Ebene">
+          <option value="">alle Ebenen</option><option value="ZENSUS100m">100 m</option><option value="ZENSUS1km">1 km</option><option value="KREIS">Kreis</option>
+        </select></label>
+      </div>
+      <div class="pr-tablewrap pr-scroll"><table class="pr-table" id="pr-ctl-table" data-source="controls" data-row-key="control,geography">
+        <thead><tr>
+          <th class="pr-left pr-sortable" data-field="label" data-sort="label">Vorgabe</th>
+          <th class="pr-left pr-sortable" data-field="group_label" data-sort="group_label">Gruppe</th>
+          <th class="pr-left pr-sortable" data-field="level" data-sort="level">Ebene</th>
+          <th class="pr-sortable" data-field="target_sum_new" data-sort="target_sum_new">Vorgabe (neu)</th>
+          <th class="pr-sortable" data-field="synthetic_sum_new" data-sort="synthetic_sum_new">Ergebnis (neu)</th>
+          <th class="pr-sortable" data-field="relative_error_new" data-sort="relative_error_new">regionsweit (neu)</th>
+          <th class="pr-sortable" data-field="wape_old" data-sort="wape_old">Abweichung Oktober</th>
+          <th class="pr-sortable" data-field="wape_new" data-sort="wape_new" aria-sort="descending">Abweichung neu</th>
+          <th class="pr-sortable" data-field="wape_change" data-sort="wape_change">Änderung</th>
+        </tr></thead>
+        <tbody data-draw="ctlrows"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section class="pr-section" id="selten">
+    <header><h2>Seltene Gruppen</h2><p>Gruppen, die beim Runden auf ganze Haushalte am ehesten verloren gehen.</p></header>
+    <div class="pr-card">
+      <div class="pr-tablewrap"><table class="pr-table" data-source="facts" data-row-key="id">
+        <thead><tr><th class="pr-left" data-field="item">Gruppe</th><th class="pr-left" data-field="label">Maß</th><th data-field="old">Oktober</th><th data-field="new">Neu</th></tr></thead>
+        <tbody data-draw="rare"></tbody>
+      </table></div>
+      <p class="pr-muted pr-small">„regionsweit“ = Ergebnis geteilt durch Vorgabe minus 1. „in den Zellen“ = Abweichung (WAPE) in den Zellen der Vorgabe. * Andere Definition: Oktober Zensus-Familientyp „Alleinerziehende“ mit Kindern jeden Alters (100 m), neu „ein Erwachsener mit Minderjährigen“ (1 km).</p>
+    </div>
+  </section>
+
+  <section class="pr-section" id="plausibel">
+    <header><h2>Personen und Haushalte gegen Zensus und MiD</h2><p>Mittlere Abweichung der Anteile in Prozentpunkten je Kreis (bei Haushaltsgröße je Gemeinde) gegen Tabellen, die im Repository liegen. „Unabhängig“ heißt: nicht gesteuert, echte Gegenprobe. „Abgleich“ heißt: die Synthese steuert genau darauf hin.</p></header>
+    <div class="pr-card" id="pr-popval">
+      <div class="pr-chart" data-draw="popval" data-source="facts"></div>
+      <p class="pr-small">Erwerbstätig ja/nein: Gesteuert wird auf den Zensus (Konzept der ILO, schon eine Stunde Arbeit zählt). Die MiD fragt nach Selbsteinschätzung. Im Oktober lag der Lauf 1 bis 5 % unter der Zensus-Vorgabe und damit zufällig näher an der MiD; jetzt trifft er den Zensus. Maßstab bleibt der Zensus (Entscheidung vom 20.11.2026).</p>
+    </div>
+    <div class="pr-card" id="pr-plaus">
+      <h3>Verteilung im Detail</h3>
+      <div class="pr-controls">
+        <label for="pr-plaus-control">Merkmal <select id="pr-plaus-control" class="dash-select" data-draw="plauscontrol" data-source="plausibility" aria-label="Merkmal"></select></label>
+        <label for="pr-plaus-kreis">Gebiet <select id="pr-plaus-kreis" class="dash-select" data-draw="plauskreis" data-source="plausibility" aria-label="Gebiet"></select></label>
+      </div>
+      <div class="pr-chart" data-draw="plaus" data-source="plausibility"></div>
+    </div>
+  </section>
+
+  <section class="pr-section" id="verhalten">
+    <header><h2>Verhalten gegen SrV 2023</h2><p>Diese Vergleiche prüfen die fertigen Tagespläne und Arbeitsorte, also das, was MATSim später simuliert. Unterschiede zum Oktober kommen nicht nur von der neuen Bevölkerung: Der neue Lauf nutzt auch die neuen Gebäude-Potenziale (Lieferung vom 5. November 2026, Datei 08_redistribution.gpkg) und alle weiteren Änderungen der Ortswahl seit Oktober.</p></header>
+    <div class="pr-grid2">
+      <div class="pr-card" id="pr-plan">
+        <h3>Struktur der Tagespläne</h3>
+        <div class="pr-tablewrap"><table class="pr-table" data-source="facts" data-row-key="id">
+          <thead><tr><th class="pr-left" data-field="label">Kennzahl</th><th data-field="reference">SrV</th><th data-field="old">Oktober</th><th data-field="new">Neu</th></tr></thead>
+          <tbody data-draw="plan"></tbody>
+        </table></div>
+      </div>
+      <div class="pr-card" id="pr-purpose">
+        <h3>Wegezwecke gegen MiD W1</h3>
+        <p class="pr-muted pr-small">Anteile über fünf eindeutige Zwecke. Die Abweichung stammt aus den Werktags-Tagebüchern der Vorlagen, nicht aus PopulationSim.</p>
+        <div class="pr-chart" data-draw="purpose" data-source="facts"></div>
+      </div>
+    </div>
+    <div class="pr-card" id="pr-participation">
+      <h3>Teilnahme je Kreis: Anteil der Personen mit mindestens einem Weg dieses Zwecks</h3>
+      <div class="pr-chart" data-draw="participation" data-source="facts"></div>
+    </div>
+    <div class="pr-grid2">
+      <div class="pr-card" id="pr-commute">
+        <h3>Pendeldistanzen: Abstand zu SrV je Kreis</h3>
+        <p class="pr-muted pr-small">Earth Mover's Distance zwischen den Distanzverteilungen. Ab 0,08 und über dem Rauschen der SrV-Stichprobe gilt ein Kreis als Lücke. Offenes Thema: Issue #359.</p>
+        <div class="pr-chart tall" data-draw="commute" data-source="facts"></div>
+      </div>
+      <div class="pr-card" id="pr-commute-bands">
+        <h3>Distanzverteilung eines Kreises</h3>
+        <p class="pr-muted pr-small">Anteil der Pendelwege je Distanzklasse in km.</p>
+        <div class="pr-controls">
+          <label for="pr-commute-kreis">Kreis <select id="pr-commute-kreis" class="dash-select" data-draw="commutekreis" data-source="facts" aria-label="Kreis"></select></label>
+          <label for="pr-commute-scope">Pendeln <select id="pr-commute-scope" class="dash-select" aria-label="Art des Pendelns">
+            <option value="inter">in andere Gemeinden</option><option value="intra">innerhalb der Gemeinde</option><option value="all">alle</option>
+          </select></label>
+        </div>
+        <div class="pr-chart" data-draw="commutebands" data-source="facts"></div>
+      </div>
+    </div>
+    <div class="pr-grid2">
+      <div class="pr-card" id="pr-worktrip">
+        <h3>Erwerbstätige mit Arbeitsweg am Tag</h3>
+        <div class="pr-chart" data-draw="worktrip" data-source="facts"></div>
+      </div>
+      <div class="pr-card" id="pr-departure">
+        <h3>Abfahrtszeiten: Abstand zu SrV</h3>
+        <p class="pr-muted pr-small">Earth Mover's Distance der Abfahrtszeiten (kleiner ist besser), erster und spätere Wege des Tages.</p>
+        <div class="pr-tablewrap"><table class="pr-table" data-source="facts" data-row-key="id">
+          <thead><tr><th class="pr-left" data-field="item">Gruppe</th><th class="pr-left" data-field="sub">Weg</th><th data-field="old">Oktober</th><th data-field="new">Neu</th></tr></thead>
+          <tbody data-draw="departure"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="pr-section" id="lauf">
+    <header><h2>Rundung und Lauf</h2></header>
+    <div class="pr-grid2">
+      <div class="pr-card" id="pr-batchdiff">
+        <h3>Haushalte minus Vorgabe je Teilgebiet</h3>
+        <p class="pr-muted pr-small">60 Teilgebiete. Gesamt neu <b data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|reuse.n_synthetic_households|" data-fmt="int">—</b> Haushalte bei einer Vorgabe von <b data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|household_total_target|" data-fmt="int">—</b>.</p>
+        <div class="pr-chart" data-draw="batchdiff" data-source="facts"></div>
+      </div>
+      <div class="pr-card" id="pr-run">
+        <h3>Laufdaten</h3>
+        <div class="pr-tablewrap"><table class="pr-table" data-source="facts" data-row-key="id">
+          <thead><tr><th class="pr-left" data-field="label">Kennzahl</th><th data-field="old">Oktober</th><th data-field="new">Neu</th><th class="pr-left" data-field="unit">Einheit</th></tr></thead>
+          <tbody data-draw="runfacts"></tbody>
+        </table></div>
+        <p class="pr-muted pr-small">Rundungen per Notlösung: 1 km <b data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|solver.non_simultaneous_rate.ZENSUS1km|" data-fmt="pct1">—</b> → <b data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|solver.non_simultaneous_rate.ZENSUS1km|" data-fmt="pct1">—</b>, 100 m <b data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|solver.non_simultaneous_rate.ZENSUS100m|" data-fmt="pct1">—</b> → <b data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|solver.non_simultaneous_rate.ZENSUS100m|" data-fmt="pct1">—</b>; Rundungen ohne Lösung <b data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|solver.not_solved_calls|" data-fmt="int">—</b> → <b data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|solver.not_solved_calls|" data-fmt="int">—</b>. Der höchste Speicherstand des Servers fiel beim Bau des ÖV-Netzes an, nicht in PopulationSim.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="pr-section" id="urteil">
+    <header><h2>Urteil</h2></header>
+    <div class="pr-verdict">
+      <div class="pr-card ok"><h3>Gut</h3><ul>
+        <li>Vielfalt: <span data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|reuse.distinct_share_of_seed|" data-fmt="pct0">—</span> der MiD-Haushalte genutzt statt <span data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|reuse.distinct_share_of_seed|" data-fmt="pct0">—</span>; Kish-Größe <span data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|reuse.kish_n_eff|" data-fmt="int">—</span> statt <span data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|reuse.kish_n_eff|" data-fmt="int">—</span>.</li>
+        <li>Gezogen wird fast proportional zum MiD-Gewicht: größte Klassenabweichung <span data-draw="fact" data-source="facts" data-field="new" data-where="id=kpi|weight_class.max_abs_gap_pp|" data-fmt="pp1">—</span> statt <span data-draw="fact" data-source="facts" data-field="old" data-where="id=kpi|weight_class.max_abs_gap_pp|" data-fmt="pp1">—</span>.</li>
+        <li>Jede Vorgabengruppe, die es in beiden Läufen gibt, wird besser getroffen; Kreis- und 1-km-Vorgaben fast exakt.</li>
+        <li>Rundung ohne Notlösung und ohne ungelöste Fälle; PopulationSim in <span data-draw="fact" data-source="facts" data-field="new" data-where="id=run|popsim_wall_minutes|" data-fmt="min">—</span> statt <span data-draw="fact" data-source="facts" data-field="old" data-where="id=run|popsim_wall_minutes|" data-fmt="min">—</span>.</li>
+        <li>Seltene Gruppen sind regionsweit wieder vollständig da; „divers/keine Angabe“ unter der Prüfgrenze.</li>
+        <li>Tagespläne gegen SrV etwa so gut wie im Oktober; Wege- und Tourenzahlen minimal näher an SrV.</li>
+      </ul></div>
+      <div class="pr-card warn"><h3>Noch nicht gut</h3><ul>
+        <li>Seltene Gruppen sitzen in den 100-m-Zellen öfter falsch (18–19-Jährige, 6+-Personen-Haushalte). Ursache sind die kleinen Zahlen je Zelle; eine Altersvorgabe auf 1 km hat das im Test nicht verbessert.</li>
+        <li>Erwerbsquote liegt über der MiD, weil jetzt der Zensus getroffen wird (Definitionsunterschied, vor allem Wolfsburg).</li>
+        <li>Pendeln in andere Gemeinden weicht in vier Kreisen von SrV ab (Goslar, Peine, Wolfsburg, Wolfenbüttel), wie im Oktober. Das betrifft die Arbeitsortwahl, nicht die Bevölkerung (Issue #359).</li>
+        <li>Wegezwecke weichen von MiD W1 ab (Arbeit zu hoch, Freizeit zu niedrig), unverändert; das kommt aus den Werktags-Tagebüchern.</li>
+        <li>In den fertigen Tagesplänen liegt der Anteil mobiler Personen in jedem Kreis unter dem SrV-Zielwert, Freizeit leicht darunter (Grafik „Teilnahme je Kreis“), in beiden Läufen gleich. PopulationSim trifft die Vorgabe; der Abstand entsteht in den späteren Schritten der Tagespläne.</li>
+      </ul></div>
+      <div class="pr-card"><h3>Für das Modell heißt das</h3><ul>
+        <li>Die Bevölkerung ist eine bessere Grundlage für Aktivitätenketten und MATSim: mehr verschiedene Tagesabläufe, weniger Klon-Effekte, Kreis- und SrV-Vorgaben in PopulationSim fast exakt getroffen.</li>
+        <li>Gute Treffer der Vorgaben sind keine Validierung des Verhaltens. Ob Verkehrsmengen und Moduswahl stimmen, zeigt erst ein MATSim-Lauf gegen Zählstellen und MiD/SrV.</li>
+        <li>Annahme: Wolfsburg liegt nicht im SrV-Gebiet und bekommt die SrV-Regionswerte.</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <details id="herkunft">
+    <summary>Herkunft der Zahlen und Begriffe</summary>
+    <div>
+      <dl>
+        <dt>Neuer Lauf</dt><dd>popsim100_20261120, eqasim-bs 1041849c, eqasim-java-bs cb7e81fa, PopulationSim-Fork 0.10.0+bs.2 (d9a2e28), 100 %, bis zu den fertigen Personen (ohne MATSim)</dd>
+        <dt>Vergleichslauf</dt><dd>prod100_20261031, eqasim-bs 7a41f0ba, PopulationSim 0.10.0</dd>
+        <dt>Messung</dt><dd>beide Läufe mit demselben Messcode (popsim_batch_diagnostics, eqasim-bs 1041849c); Skripte und Tabellen im Repository unter docs/runs/artifacts/popsim-full-rerun-20261120/</dd>
+        <dt>Run-Manifest</dt><dd>docs/runs/popsim-full-rerun-20261120.yml</dd>
+        <dt>WAPE</dt><dd>Summe über Zellen von |Ergebnis − Vorgabe| geteilt durch die Summe der Vorgaben</dd>
+        <dt>Kish-Größe</dt><dd>effektive Zahl verschiedener Vorlagen: (Σ Kopien)² / Σ Kopien²</dd>
+        <dt>EMD</dt><dd>Earth Mover's Distance zwischen zwei Verteilungen (0 = gleich)</dd>
+        <dt>Referenzen</dt><dd>DESTATIS 12411-0018, Zensus 2022 (Gitter und 1000A-2081), MiD 2023 (H7, H12.3, P9, P17.1, P24.1, W1), SrV 2023 Braunschweig und Region; alle als Dateien im Repository</dd>
+      </dl>
+    </div>
+  </details>
+</div>
+<script src="report.js"></script>

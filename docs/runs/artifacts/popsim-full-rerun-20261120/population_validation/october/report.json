@@ -1,0 +1,1506 @@
+{
+  "label": "old",
+  "source_kind": "run_output",
+  "source_path": "/home/felix/prod100_20261031/output",
+  "prefix": "braunschweig_100pct_prod20261031_",
+  "git_commit": "1041849c243c71859c95275447a24363ee1aa358",
+  "n_persons": 1130422,
+  "n_households": 558274,
+  "n_vehicles": 2311830,
+  "family_scores": [
+    {
+      "family": "census",
+      "mean_srmse": 0.08715906413092682,
+      "mean_abs_delta_pp": 0.9672633308276088,
+      "n_controls": 3
+    },
+    {
+      "family": "distribution",
+      "mean_srmse": 0.004235177805289241,
+      "mean_abs_delta_pp": 0.13184132492055672,
+      "n_controls": 1
+    },
+    {
+      "family": "mid_household",
+      "mean_srmse": 0.0789414185106295,
+      "mean_abs_delta_pp": 1.0500039545885165,
+      "n_controls": 2
+    },
+    {
+      "family": "mid_person",
+      "mean_srmse": 0.10577904437123326,
+      "mean_abs_delta_pp": 1.670236022829367,
+      "n_controls": 4
+    }
+  ],
+  "quality": [
+    {
+      "control": "bev_share",
+      "family": "distribution",
+      "independence": "fit_check",
+      "n_cells": 16,
+      "srmse": 0.004235177805289241,
+      "tae": 1623.3122290143963,
+      "rae": 0.002356619009618319,
+      "coverage_5pp": 1.0,
+      "coverage_10pp": 1.0,
+      "r2": 0.9999825903315469,
+      "mean_abs_delta_pp": 0.13184132492055672,
+      "grade": "very good",
+      "cause_hint": ""
+    },
+    {
+      "control": "sex",
+      "family": "census",
+      "independence": "independent",
+      "n_cells": 16,
+      "srmse": 0.003928484932934352,
+      "tae": 3879.0711244536433,
+      "rae": 0.0034315308685741964,
+      "coverage_5pp": 1.0,
+      "coverage_10pp": 1.0,
+      "r2": 0.9998665766003824,
+      "mean_abs_delta_pp": 0.1839627406406259,
+      "grade": "very good",
+      "cause_hint": ""
+    },
+    {
+      "control": "age_group",
+      "family": "census",
+      "independence": "independent",
+      "n_cells": 48,
+      "srmse": 0.06785870772989055,
+      "tae": 54347.09546390199,
+      "rae": 0.04807690545452309,
+      "coverage_5pp": 1.0,
+      "coverage_10pp": 1.0,
+      "r2": 0.9725345220681095,
+      "mean_abs_delta_pp": 0.7991289928674595,
+      "grade": "very good",
+      "cause_hint": ""
+    },
+    {
+      "control": "employment_status",
+      "family": "mid_person",
+      "independence": "partially_independent",
+      "n_cells": 56,
+      "srmse": 0.08424972225064219,
+      "tae": 54762.375555555554,
+      "rae": 0.05504348262130255,
+      "coverage_5pp": 1.0,
+      "coverage_10pp": 1.0,
+      "r2": 0.996068836986773,
+      "mean_abs_delta_pp": 0.8371723247171984,
+      "grade": "very good",
+      "cause_hint": ""
+    },
+    {
+      "control": "cars_per_hh",
+      "family": "mid_household",
+      "independence": "partially_independent",
+      "n_cells": 32,
+      "srmse": 0.06787623167349792,
+      "tae": 24438.633535353525,
+      "rae": 0.0437754956998623,
+      "coverage_5pp": 1.0,
+      "coverage_10pp": 1.0,
+      "r2": 0.9941430596730291,
+      "mean_abs_delta_pp": 0.9963202805710798,
+      "grade": "very good",
+      "cause_hint": ""
+    },
+    {
+      "control": "bicycles_per_hh",
+      "family": "mid_household",
+      "independence": "partially_independent",
+      "n_cells": 40,
+      "srmse": 0.09000660534776106,
+      "tae": 33485.62546454645,
+      "rae": 0.05998084350378749,
+      "coverage_5pp": 1.0,
+      "coverage_10pp": 1.0,
+      "r2": 0.9687747186727014,
+      "mean_abs_delta_pp": 1.1036876286059534,
+      "grade": "good",
+      "cause_hint": ""
+    },
+    {
+      "control": "pt_ticket_type",
+      "family": "mid_person",
+      "independence": "partially_independent",
+      "n_cells": 64,
+      "srmse": 0.19701968845996404,
+      "tae": 128807.8389194838,
+      "rae": 0.12946903729293882,
+      "coverage_5pp": 0.96875,
+      "coverage_10pp": 1.0,
+      "r2": 0.9756020165136964,
+      "mean_abs_delta_pp": 1.465875700727076,
+      "grade": "good",
+      "cause_hint": "popsim_mid does not rake the nine-category composition; only the ticket GROUP totals are controlled per Kreis (blended MiD x SrV target). Within-group composition is steered only where a group control pins it (never_pt since issue #329); 'no_answer' is excluded from scoring (structurally unproducible). NOTE the two tables are not the same reference: the control is steered toward the blended MiD x SrV target (target2026_pt_ticket_group4_by_kreis.csv, 03101 never_pt 12.32%) while this metric scores against renormalized MiD P24.1 alone (03101 never_pt 14.00%), so a residual delta of roughly that 1.7pp gap on never_pt is EXPECTED by construction -- it is neither an error nor drift, but the distance between the blend and its MiD half (ADR-0099)."
+    },
+    {
+      "control": "household_size",
+      "family": "census",
+      "independence": "fit_check",
+      "n_cells": 678,
+      "srmse": 0.18968999972995557,
+      "tae": 76272.55231391496,
+      "rae": 0.06749807283735071,
+      "coverage_5pp": 0.9513274336283186,
+      "coverage_10pp": 0.9926253687315634,
+      "r2": 0.9968546381815753,
+      "mean_abs_delta_pp": 1.9186982589747412,
+      "grade": "good",
+      "cause_hint": ""
+    },
+    {
+      "control": "employment",
+      "family": "mid_person",
+      "independence": "independent",
+      "n_cells": 16,
+      "srmse": 0.045202647812506165,
+      "tae": 41337.702222222164,
+      "rae": 0.041549897549004934,
+      "coverage_5pp": 1.0,
+      "coverage_10pp": 1.0,
+      "r2": 0.9853487988991556,
+      "mean_abs_delta_pp": 2.094319901100967,
+      "grade": "good",
+      "cause_hint": "The synthetic employment rate is anchored to OFFICIAL statistics, not to MiD P9 (popsim_mid: Zensus 2022 kreis_erwerbsstatus levels + the employment_grid age shape; simple_ipf: GENESIS 13111). P9 is an INDEPENDENT cross-check with two known caveats: its per-Kreis rate is survey-noisy (MiD sample is a few hundred to ~2000 per Kreis), and the census anchor follows the Zensus ILO employment concept while P9 is self-reported employment extent, so a small definitional offset is expected. (P9's former 'in_ausbildung'-counted-as-not-employed mismatch no longer applies: since issue #169 the employment_target loader counts apprentices as employed, matching the realized flag.) Raking to P9 would overfit survey noise and is intentionally avoided."
+    },
+    {
+      "control": "driving_license_type",
+      "family": "mid_person",
+      "independence": "fit_check",
+      "n_cells": 24,
+      "srmse": 0.09664411896182058,
+      "tae": 67537.0852525253,
+      "rae": 0.06788376765393395,
+      "coverage_5pp": 0.9166666666666666,
+      "coverage_10pp": 1.0,
+      "r2": 0.9939506899025998,
+      "mean_abs_delta_pp": 2.283576164772226,
+      "grade": "good",
+      "cause_hint": "FIT CHECK: the synthesis rakes the licence flag to this very MiD P17.1 table, so agreement is convergence, not independent validation. Two structural caveats (direction, not magnitude -- the exact pp figures are not committed anywhere and are deliberately not stated): P17.1's base is age 14+ and includes BF17 (accompanied driving from 17) while the synthesis assigns licences from 18, and the boolean has_driving_license fallback cannot represent the 'keine_angabe' category, so that target cell is scored against a structural 0."
+    }
+  ],
+  "trip_coherence": {
+    "n_trips": 3437976,
+    "mobility": {
+      "overall_rate": 0.8376420487216278,
+      "target_rate": 0.8080808080808081,
+      "abs_delta": 0.029561240640819775
+    },
+    "purpose": {
+      "realized": {
+        "arbeit": 0.2638772668699848,
+        "ausbildung": 0.13132746892022418,
+        "einkauf": 0.1776169136681858,
+        "freizeit": 0.32724070603476696,
+        "begleitung": 0.09993764450683836
+      },
+      "target": {
+        "arbeit": 0.18055555555555555,
+        "ausbildung": 0.08333333333333333,
+        "einkauf": 0.2222222222222222,
+        "freizeit": 0.4027777777777778,
+        "begleitung": 0.1111111111111111
+      },
+      "abs_delta_pp": {
+        "arbeit": 8.332171131442925,
+        "ausbildung": 4.799413558689085,
+        "einkauf": 4.460530855403641,
+        "freizeit": 7.553707174301083,
+        "begleitung": 1.117346660427275
+      },
+      "srmse": 0.2921153346006018
+    },
+    "length": null,
+    "differentiation": {
+      "work_share_employed_gap_pp": 61.01166276718354
+    },
+    "mobility_by_segment": [
+      {
+        "segment": "employed",
+        "segment_value": 0,
+        "n_persons": 595181,
+        "n_mobile": 471509,
+        "mobility_rate": 0.7922111088895647
+      },
+      {
+        "segment": "employed",
+        "segment_value": 1,
+        "n_persons": 535241,
+        "n_mobile": 475380,
+        "mobility_rate": 0.8881606603380533
+      },
+      {
+        "segment": "is_urban_resident",
+        "segment_value": 0,
+        "n_persons": 877584,
+        "n_mobile": 732071,
+        "mobility_rate": 0.8341890918704078
+      },
+      {
+        "segment": "is_urban_resident",
+        "segment_value": 1,
+        "n_persons": 252838,
+        "n_mobile": 214818,
+        "mobility_rate": 0.8496270339110419
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 1,
+        "n_persons": 229545,
+        "n_mobile": 188860,
+        "mobility_rate": 0.8227580648674552
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 2,
+        "n_persons": 368034,
+        "n_mobile": 298589,
+        "mobility_rate": 0.8113081943516088
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 3,
+        "n_persons": 214218,
+        "n_mobile": 192122,
+        "mobility_rate": 0.8968527387987938
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 4,
+        "n_persons": 212468,
+        "n_mobile": 180217,
+        "mobility_rate": 0.8482077301052394
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 5,
+        "n_persons": 74885,
+        "n_mobile": 62033,
+        "mobility_rate": 0.8283768444948921
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 6,
+        "n_persons": 31272,
+        "n_mobile": 25068,
+        "mobility_rate": 0.8016116653875671
+      }
+    ],
+    "work_participation_by_segment": [
+      {
+        "segment": "employed",
+        "segment_value": false,
+        "purpose": "work",
+        "n_persons": 595181,
+        "n_with_purpose": 16130,
+        "participation_rate": 0.027100999527874713
+      },
+      {
+        "segment": "employed",
+        "segment_value": true,
+        "purpose": "work",
+        "n_persons": 535241,
+        "n_with_purpose": 341065,
+        "participation_rate": 0.6372176271997101
+      },
+      {
+        "segment": "is_urban_resident",
+        "segment_value": false,
+        "purpose": "work",
+        "n_persons": 877584,
+        "n_with_purpose": 273837,
+        "participation_rate": 0.3120350872395121
+      },
+      {
+        "segment": "is_urban_resident",
+        "segment_value": true,
+        "purpose": "work",
+        "n_persons": 252838,
+        "n_with_purpose": 83358,
+        "participation_rate": 0.3296893663136079
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 1,
+        "purpose": "work",
+        "n_persons": 229545,
+        "n_with_purpose": 81787,
+        "participation_rate": 0.3563005075257575
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 2,
+        "purpose": "work",
+        "n_persons": 368034,
+        "n_with_purpose": 97990,
+        "participation_rate": 0.26625257449040035
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 3,
+        "purpose": "work",
+        "n_persons": 214218,
+        "n_with_purpose": 75172,
+        "participation_rate": 0.35091355535015734
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 4,
+        "purpose": "work",
+        "n_persons": 212468,
+        "n_with_purpose": 70387,
+        "participation_rate": 0.33128282847299356
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 5,
+        "purpose": "work",
+        "n_persons": 74885,
+        "n_with_purpose": 21205,
+        "participation_rate": 0.28316752353608865
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 6,
+        "purpose": "work",
+        "n_persons": 31272,
+        "n_with_purpose": 10654,
+        "participation_rate": 0.3406881555385009
+      }
+    ],
+    "trips_per_person_by_segment": [
+      {
+        "segment": "employed",
+        "segment_value": 0,
+        "n_persons": 595181,
+        "n_trips": 1640423.0,
+        "trips_per_person": 2.7561750123071804
+      },
+      {
+        "segment": "employed",
+        "segment_value": 1,
+        "n_persons": 535241,
+        "n_trips": 1797553.0,
+        "trips_per_person": 3.358399300502017
+      },
+      {
+        "segment": "is_urban_resident",
+        "segment_value": 0,
+        "n_persons": 877584,
+        "n_trips": 2640023.0,
+        "trips_per_person": 3.0082852467684007
+      },
+      {
+        "segment": "is_urban_resident",
+        "segment_value": 1,
+        "n_persons": 252838,
+        "n_trips": 797953.0,
+        "trips_per_person": 3.155985255380916
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 1,
+        "n_persons": 229545,
+        "n_trips": 684690.0,
+        "trips_per_person": 2.9828138273541134
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 2,
+        "n_persons": 368034,
+        "n_trips": 1055913.0,
+        "trips_per_person": 2.869063727807757
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 3,
+        "n_persons": 214218,
+        "n_trips": 721287.0,
+        "trips_per_person": 3.3670699941181415
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 4,
+        "n_persons": 212468,
+        "n_trips": 663318.0,
+        "trips_per_person": 3.1219666020294823
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 5,
+        "n_persons": 74885,
+        "n_trips": 221096.0,
+        "trips_per_person": 2.9524737931494958
+      },
+      {
+        "segment": "household_size",
+        "segment_value": 6,
+        "n_persons": 31272,
+        "n_trips": 91672.0,
+        "trips_per_person": 2.931440266052699
+      }
+    ]
+  },
+  "participation_fit": [
+    {
+      "ars5": "03101",
+      "purpose": "work",
+      "realised_rate": 0.32970535890844377,
+      "n_persons": 252850,
+      "target_rate": 0.3444,
+      "abs_error": 0.014694641091556215
+    },
+    {
+      "ars5": "03101",
+      "purpose": "leisure",
+      "realised_rate": 0.39512359106189443,
+      "n_persons": 252850,
+      "target_rate": 0.4178,
+      "abs_error": 0.022676408938105574
+    },
+    {
+      "ars5": "03101",
+      "purpose": "education",
+      "realised_rate": 0.1672572671544394,
+      "n_persons": 252850,
+      "target_rate": 0.1758,
+      "abs_error": 0.008542732845560619
+    },
+    {
+      "ars5": "03101",
+      "purpose": "escort",
+      "realised_rate": 0.07197943444730077,
+      "n_persons": 252850,
+      "target_rate": 0.0751,
+      "abs_error": 0.0031205655526992254
+    },
+    {
+      "ars5": "03101",
+      "purpose": "mobility",
+      "realised_rate": 0.8496341704567926,
+      "n_persons": 252850,
+      "target_rate": 0.9003,
+      "abs_error": 0.05066582954320742
+    },
+    {
+      "ars5": "03102",
+      "purpose": "work",
+      "realised_rate": 0.31816653699488034,
+      "n_persons": 104109,
+      "target_rate": 0.3302,
+      "abs_error": 0.012033463005119649
+    },
+    {
+      "ars5": "03102",
+      "purpose": "leisure",
+      "realised_rate": 0.3256106580603022,
+      "n_persons": 104109,
+      "target_rate": 0.3422,
+      "abs_error": 0.0165893419396978
+    },
+    {
+      "ars5": "03102",
+      "purpose": "education",
+      "realised_rate": 0.18321182606691064,
+      "n_persons": 104109,
+      "target_rate": 0.193,
+      "abs_error": 0.009788173933089367
+    },
+    {
+      "ars5": "03102",
+      "purpose": "escort",
+      "realised_rate": 0.09586106868762546,
+      "n_persons": 104109,
+      "target_rate": 0.1005,
+      "abs_error": 0.004638931312374542
+    },
+    {
+      "ars5": "03102",
+      "purpose": "mobility",
+      "realised_rate": 0.8334918210721456,
+      "n_persons": 104109,
+      "target_rate": 0.8801,
+      "abs_error": 0.046608178927854405
+    },
+    {
+      "ars5": "03103",
+      "purpose": "work",
+      "realised_rate": 0.2949099918459512,
+      "n_persons": 127544,
+      "target_rate": 0.3316,
+      "abs_error": 0.036690008154048825
+    },
+    {
+      "ars5": "03103",
+      "purpose": "leisure",
+      "realised_rate": 0.369339208430032,
+      "n_persons": 127544,
+      "target_rate": 0.3832,
+      "abs_error": 0.013860791569968
+    },
+    {
+      "ars5": "03103",
+      "purpose": "education",
+      "realised_rate": 0.17799347676096092,
+      "n_persons": 127544,
+      "target_rate": 0.1761,
+      "abs_error": 0.0018934767609609104
+    },
+    {
+      "ars5": "03103",
+      "purpose": "escort",
+      "realised_rate": 0.09633538229944176,
+      "n_persons": 127544,
+      "target_rate": 0.0992,
+      "abs_error": 0.0028646177005582363
+    },
+    {
+      "ars5": "03103",
+      "purpose": "mobility",
+      "realised_rate": 0.8301527316063476,
+      "n_persons": 127544,
+      "target_rate": 0.8761,
+      "abs_error": 0.045947268393652374
+    },
+    {
+      "ars5": "03151",
+      "purpose": "work",
+      "realised_rate": 0.31979940372585175,
+      "n_persons": 174081,
+      "target_rate": 0.3239,
+      "abs_error": 0.0041005962741482715
+    },
+    {
+      "ars5": "03151",
+      "purpose": "leisure",
+      "realised_rate": 0.3630608739609722,
+      "n_persons": 174081,
+      "target_rate": 0.3821,
+      "abs_error": 0.0190391260390278
+    },
+    {
+      "ars5": "03151",
+      "purpose": "education",
+      "realised_rate": 0.1867291663076384,
+      "n_persons": 174081,
+      "target_rate": 0.1826,
+      "abs_error": 0.004129166307638377
+    },
+    {
+      "ars5": "03151",
+      "purpose": "escort",
+      "realised_rate": 0.10991435021627863,
+      "n_persons": 174081,
+      "target_rate": 0.1151,
+      "abs_error": 0.005185649783721366
+    },
+    {
+      "ars5": "03151",
+      "purpose": "mobility",
+      "realised_rate": 0.8323194375032312,
+      "n_persons": 174081,
+      "target_rate": 0.878,
+      "abs_error": 0.04568056249676877
+    },
+    {
+      "ars5": "03153",
+      "purpose": "work",
+      "realised_rate": 0.30684177944253327,
+      "n_persons": 127613,
+      "target_rate": 0.3285,
+      "abs_error": 0.021658220557466745
+    },
+    {
+      "ars5": "03153",
+      "purpose": "leisure",
+      "realised_rate": 0.33132204399238324,
+      "n_persons": 127613,
+      "target_rate": 0.3479,
+      "abs_error": 0.016577956007616745
+    },
+    {
+      "ars5": "03153",
+      "purpose": "education",
+      "realised_rate": 0.13558179809267082,
+      "n_persons": 127613,
+      "target_rate": 0.1456,
+      "abs_error": 0.010018201907329188
+    },
+    {
+      "ars5": "03153",
+      "purpose": "escort",
+      "realised_rate": 0.11447893239716957,
+      "n_persons": 127613,
+      "target_rate": 0.12,
+      "abs_error": 0.005521067602830429
+    },
+    {
+      "ars5": "03153",
+      "purpose": "mobility",
+      "realised_rate": 0.8280190889642904,
+      "n_persons": 127613,
+      "target_rate": 0.8789,
+      "abs_error": 0.050880911035709575
+    },
+    {
+      "ars5": "03154",
+      "purpose": "work",
+      "realised_rate": 0.3021803064812153,
+      "n_persons": 90446,
+      "target_rate": 0.3214,
+      "abs_error": 0.01921969351878472
+    },
+    {
+      "ars5": "03154",
+      "purpose": "leisure",
+      "realised_rate": 0.3653450677752471,
+      "n_persons": 90446,
+      "target_rate": 0.3833,
+      "abs_error": 0.017954932224752862
+    },
+    {
+      "ars5": "03154",
+      "purpose": "education",
+      "realised_rate": 0.14997899299029255,
+      "n_persons": 90446,
+      "target_rate": 0.1566,
+      "abs_error": 0.006621007009707441
+    },
+    {
+      "ars5": "03154",
+      "purpose": "escort",
+      "realised_rate": 0.10135329367799571,
+      "n_persons": 90446,
+      "target_rate": 0.1066,
+      "abs_error": 0.005246706322004288
+    },
+    {
+      "ars5": "03154",
+      "purpose": "mobility",
+      "realised_rate": 0.8387435596930766,
+      "n_persons": 90446,
+      "target_rate": 0.8854,
+      "abs_error": 0.0466564403069234
+    },
+    {
+      "ars5": "03157",
+      "purpose": "work",
+      "realised_rate": 0.30074835267127453,
+      "n_persons": 136433,
+      "target_rate": 0.3164,
+      "abs_error": 0.015651647328725482
+    },
+    {
+      "ars5": "03157",
+      "purpose": "leisure",
+      "realised_rate": 0.35497277051739684,
+      "n_persons": 136433,
+      "target_rate": 0.3723,
+      "abs_error": 0.01732722948260318
+    },
+    {
+      "ars5": "03157",
+      "purpose": "education",
+      "realised_rate": 0.18999069140164038,
+      "n_persons": 136433,
+      "target_rate": 0.1901,
+      "abs_error": 0.00010930859835961426
+    },
+    {
+      "ars5": "03157",
+      "purpose": "escort",
+      "realised_rate": 0.10139775567494667,
+      "n_persons": 136433,
+      "target_rate": 0.1064,
+      "abs_error": 0.0050022443250533205
+    },
+    {
+      "ars5": "03157",
+      "purpose": "mobility",
+      "realised_rate": 0.827996159286976,
+      "n_persons": 136433,
+      "target_rate": 0.8776,
+      "abs_error": 0.04960384071302404
+    },
+    {
+      "ars5": "03158",
+      "purpose": "work",
+      "realised_rate": 0.3400259067357513,
+      "n_persons": 117344,
+      "target_rate": 0.3337,
+      "abs_error": 0.0063259067357512855
+    },
+    {
+      "ars5": "03158",
+      "purpose": "leisure",
+      "realised_rate": 0.36790973547859285,
+      "n_persons": 117344,
+      "target_rate": 0.3852,
+      "abs_error": 0.01729026452140714
+    },
+    {
+      "ars5": "03158",
+      "purpose": "education",
+      "realised_rate": 0.16357035724025087,
+      "n_persons": 117344,
+      "target_rate": 0.1783,
+      "abs_error": 0.014729642759749112
+    },
+    {
+      "ars5": "03158",
+      "purpose": "escort",
+      "realised_rate": 0.11012919280065449,
+      "n_persons": 117344,
+      "target_rate": 0.1155,
+      "abs_error": 0.0053708071993455175
+    },
+    {
+      "ars5": "03158",
+      "purpose": "mobility",
+      "realised_rate": 0.8523656940278157,
+      "n_persons": 117344,
+      "target_rate": 0.8999,
+      "abs_error": 0.04753430597218433
+    }
+  ],
+  "participation_universe_fit": [
+    {
+      "ars5": "03101",
+      "control": "work_by_employment",
+      "category": "employed_work",
+      "realised_share": 0.3400057103951154,
+      "n_persons": 227655,
+      "target_share": 0.3604,
+      "abs_error": 0.020394289604884597
+    },
+    {
+      "ars5": "03101",
+      "control": "work_by_employment",
+      "category": "employed_nowork",
+      "realised_share": 0.19244031538951484,
+      "n_persons": 227655,
+      "target_share": 0.1613,
+      "abs_error": 0.03114031538951484
+    },
+    {
+      "ars5": "03101",
+      "control": "work_by_employment",
+      "category": "nonemployed_work",
+      "realised_share": 0.02546396960312754,
+      "n_persons": 227655,
+      "target_share": 0.0293,
+      "abs_error": 0.003836030396872459
+    },
+    {
+      "ars5": "03101",
+      "control": "work_by_employment",
+      "category": "nonemployed_nowork",
+      "realised_share": 0.4420900046122422,
+      "n_persons": 227655,
+      "target_share": 0.449,
+      "abs_error": 0.006909995387757828
+    },
+    {
+      "ars5": "03102",
+      "control": "work_by_employment",
+      "category": "employed_work",
+      "realised_share": 0.35573704194657263,
+      "n_persons": 89018,
+      "target_share": 0.3872,
+      "abs_error": 0.03146295805342736
+    },
+    {
+      "ars5": "03102",
+      "control": "work_by_employment",
+      "category": "employed_nowork",
+      "realised_share": 0.14895863757891661,
+      "n_persons": 89018,
+      "target_share": 0.1255,
+      "abs_error": 0.023458637578916613
+    },
+    {
+      "ars5": "03102",
+      "control": "work_by_employment",
+      "category": "nonemployed_work",
+      "realised_share": 0.015333977397829653,
+      "n_persons": 89018,
+      "target_share": 0.0163,
+      "abs_error": 0.0009660226021703452
+    },
+    {
+      "ars5": "03102",
+      "control": "work_by_employment",
+      "category": "nonemployed_nowork",
+      "realised_share": 0.4799703430766811,
+      "n_persons": 89018,
+      "target_share": 0.471,
+      "abs_error": 0.008970343076681153
+    },
+    {
+      "ars5": "03103",
+      "control": "work_by_employment",
+      "category": "employed_work",
+      "realised_share": 0.3094605765341119,
+      "n_persons": 113714,
+      "target_share": 0.3125,
+      "abs_error": 0.0030394234658880914
+    },
+    {
+      "ars5": "03103",
+      "control": "work_by_employment",
+      "category": "employed_nowork",
+      "realised_share": 0.16331322440508644,
+      "n_persons": 113714,
+      "target_share": 0.1319,
+      "abs_error": 0.031413224405086454
+    },
+    {
+      "ars5": "03103",
+      "control": "work_by_employment",
+      "category": "nonemployed_work",
+      "realised_share": 0.020657087078108236,
+      "n_persons": 113714,
+      "target_share": 0.0251,
+      "abs_error": 0.0044429129218917646
+    },
+    {
+      "ars5": "03103",
+      "control": "work_by_employment",
+      "category": "nonemployed_nowork",
+      "realised_share": 0.5065691119826934,
+      "n_persons": 113714,
+      "target_share": 0.5305,
+      "abs_error": 0.023930888017306584
+    },
+    {
+      "ars5": "03151",
+      "control": "work_by_employment",
+      "category": "employed_work",
+      "realised_share": 0.35768380450632675,
+      "n_persons": 148813,
+      "target_share": 0.3931,
+      "abs_error": 0.03541619549367325
+    },
+    {
+      "ars5": "03151",
+      "control": "work_by_employment",
+      "category": "employed_nowork",
+      "realised_share": 0.2134356541431192,
+      "n_persons": 148813,
+      "target_share": 0.1846,
+      "abs_error": 0.028835654143119227
+    },
+    {
+      "ars5": "03151",
+      "control": "work_by_employment",
+      "category": "nonemployed_work",
+      "realised_share": 0.01598650655520687,
+      "n_persons": 148813,
+      "target_share": 0.0189,
+      "abs_error": 0.002913493444793129
+    },
+    {
+      "ars5": "03151",
+      "control": "work_by_employment",
+      "category": "nonemployed_nowork",
+      "realised_share": 0.4128940347953472,
+      "n_persons": 148813,
+      "target_share": 0.4034,
+      "abs_error": 0.009494034795347217
+    },
+    {
+      "ars5": "03153",
+      "control": "work_by_employment",
+      "category": "employed_work",
+      "realised_share": 0.331828619142052,
+      "n_persons": 114972,
+      "target_share": 0.3658,
+      "abs_error": 0.03397138085794804
+    },
+    {
+      "ars5": "03153",
+      "control": "work_by_employment",
+      "category": "employed_nowork",
+      "realised_share": 0.1688411091396166,
+      "n_persons": 114972,
+      "target_share": 0.1312,
+      "abs_error": 0.0376411091396166
+    },
+    {
+      "ars5": "03153",
+      "control": "work_by_employment",
+      "category": "nonemployed_work",
+      "realised_share": 0.008480325644504749,
+      "n_persons": 114972,
+      "target_share": 0.0118,
+      "abs_error": 0.003319674355495251
+    },
+    {
+      "ars5": "03153",
+      "control": "work_by_employment",
+      "category": "nonemployed_nowork",
+      "realised_share": 0.49084994607382665,
+      "n_persons": 114972,
+      "target_share": 0.4912,
+      "abs_error": 0.00035005392617337705
+    },
+    {
+      "ars5": "03154",
+      "control": "work_by_employment",
+      "category": "employed_work",
+      "realised_share": 0.3268736603281648,
+      "n_persons": 79777,
+      "target_share": 0.3504,
+      "abs_error": 0.023526339671835206
+    },
+    {
+      "ars5": "03154",
+      "control": "work_by_employment",
+      "category": "employed_nowork",
+      "realised_share": 0.18180678641713777,
+      "n_persons": 79777,
+      "target_share": 0.1523,
+      "abs_error": 0.029506786417137776
+    },
+    {
+      "ars5": "03154",
+      "control": "work_by_employment",
+      "category": "nonemployed_work",
+      "realised_share": 0.015179813730774533,
+      "n_persons": 79777,
+      "target_share": 0.0185,
+      "abs_error": 0.003320186269225466
+    },
+    {
+      "ars5": "03154",
+      "control": "work_by_employment",
+      "category": "nonemployed_nowork",
+      "realised_share": 0.4761397395239229,
+      "n_persons": 79777,
+      "target_share": 0.4788,
+      "abs_error": 0.002660260476077092
+    },
+    {
+      "ars5": "03157",
+      "control": "work_by_employment",
+      "category": "employed_work",
+      "realised_share": 0.3305135695838096,
+      "n_persons": 118095,
+      "target_share": 0.3651,
+      "abs_error": 0.03458643041619036
+    },
+    {
+      "ars5": "03157",
+      "control": "work_by_employment",
+      "category": "employed_nowork",
+      "realised_share": 0.2152250306956264,
+      "n_persons": 118095,
+      "target_share": 0.1778,
+      "abs_error": 0.03742503069562639
+    },
+    {
+      "ars5": "03157",
+      "control": "work_by_employment",
+      "category": "nonemployed_work",
+      "realised_share": 0.01650366230577078,
+      "n_persons": 118095,
+      "target_share": 0.02,
+      "abs_error": 0.0034963376942292214
+    },
+    {
+      "ars5": "03157",
+      "control": "work_by_employment",
+      "category": "nonemployed_nowork",
+      "realised_share": 0.4377577374147932,
+      "n_persons": 118095,
+      "target_share": 0.4371,
+      "abs_error": 0.0006577374147931914
+    },
+    {
+      "ars5": "03158",
+      "control": "work_by_employment",
+      "category": "employed_work",
+      "realised_share": 0.36821942848253264,
+      "n_persons": 102849,
+      "target_share": 0.4007,
+      "abs_error": 0.03248057151746736
+    },
+    {
+      "ars5": "03158",
+      "control": "work_by_employment",
+      "category": "employed_nowork",
+      "realised_share": 0.1844257114799366,
+      "n_persons": 102849,
+      "target_share": 0.156,
+      "abs_error": 0.02842571147993661
+    },
+    {
+      "ars5": "03158",
+      "control": "work_by_employment",
+      "category": "nonemployed_work",
+      "realised_share": 0.01939736895837587,
+      "n_persons": 102849,
+      "target_share": 0.0217,
+      "abs_error": 0.0023026310416241307
+    },
+    {
+      "ars5": "03158",
+      "control": "work_by_employment",
+      "category": "nonemployed_nowork",
+      "realised_share": 0.4279574910791549,
+      "n_persons": 102849,
+      "target_share": 0.4216,
+      "abs_error": 0.006357491079154898
+    },
+    {
+      "ars5": "03101",
+      "control": "education_0_5",
+      "category": "edu",
+      "realised_share": 0.6523504607215368,
+      "n_persons": 12806,
+      "target_share": 0.6722,
+      "abs_error": 0.019849539278463224
+    },
+    {
+      "ars5": "03101",
+      "control": "education_0_5",
+      "category": "noedu",
+      "realised_share": 0.3476495392784632,
+      "n_persons": 12806,
+      "target_share": 0.3278,
+      "abs_error": 0.019849539278463224
+    },
+    {
+      "ars5": "03102",
+      "control": "education_0_5",
+      "category": "edu",
+      "realised_share": 0.63968788249694,
+      "n_persons": 6536,
+      "target_share": 0.6563,
+      "abs_error": 0.01661211750306002
+    },
+    {
+      "ars5": "03102",
+      "control": "education_0_5",
+      "category": "noedu",
+      "realised_share": 0.36031211750305997,
+      "n_persons": 6536,
+      "target_share": 0.3437,
+      "abs_error": 0.016612117503059964
+    },
+    {
+      "ars5": "03103",
+      "control": "education_0_5",
+      "category": "edu",
+      "realised_share": 0.6519607843137255,
+      "n_persons": 7752,
+      "target_share": 0.6785,
+      "abs_error": 0.026539215686274487
+    },
+    {
+      "ars5": "03103",
+      "control": "education_0_5",
+      "category": "noedu",
+      "realised_share": 0.3480392156862745,
+      "n_persons": 7752,
+      "target_share": 0.3215,
+      "abs_error": 0.026539215686274487
+    },
+    {
+      "ars5": "03151",
+      "control": "education_0_5",
+      "category": "edu",
+      "realised_share": 0.6582519001085776,
+      "n_persons": 11052,
+      "target_share": 0.6666,
+      "abs_error": 0.008348099891422378
+    },
+    {
+      "ars5": "03151",
+      "control": "education_0_5",
+      "category": "noedu",
+      "realised_share": 0.34174809989142235,
+      "n_persons": 11052,
+      "target_share": 0.3334,
+      "abs_error": 0.008348099891422378
+    },
+    {
+      "ars5": "03153",
+      "control": "education_0_5",
+      "category": "edu",
+      "realised_share": 0.7538293216630197,
+      "n_persons": 5484,
+      "target_share": 0.7582,
+      "abs_error": 0.004370678336980238
+    },
+    {
+      "ars5": "03153",
+      "control": "education_0_5",
+      "category": "noedu",
+      "realised_share": 0.2461706783369803,
+      "n_persons": 5484,
+      "target_share": 0.2418,
+      "abs_error": 0.0043706783369803215
+    },
+    {
+      "ars5": "03154",
+      "control": "education_0_5",
+      "category": "edu",
+      "realised_share": 0.6719211822660098,
+      "n_persons": 5075,
+      "target_share": 0.6765,
+      "abs_error": 0.004578817733990159
+    },
+    {
+      "ars5": "03154",
+      "control": "education_0_5",
+      "category": "noedu",
+      "realised_share": 0.32807881773399017,
+      "n_persons": 5075,
+      "target_share": 0.3235,
+      "abs_error": 0.004578817733990159
+    },
+    {
+      "ars5": "03157",
+      "control": "education_0_5",
+      "category": "edu",
+      "realised_share": 0.6804184995838782,
+      "n_persons": 8411,
+      "target_share": 0.6974,
+      "abs_error": 0.016981500416121786
+    },
+    {
+      "ars5": "03157",
+      "control": "education_0_5",
+      "category": "noedu",
+      "realised_share": 0.31958150041612177,
+      "n_persons": 8411,
+      "target_share": 0.3026,
+      "abs_error": 0.016981500416121786
+    },
+    {
+      "ars5": "03158",
+      "control": "education_0_5",
+      "category": "edu",
+      "realised_share": 0.6354117087101381,
+      "n_persons": 6303,
+      "target_share": 0.6492,
+      "abs_error": 0.01378829128986192
+    },
+    {
+      "ars5": "03158",
+      "control": "education_0_5",
+      "category": "noedu",
+      "realised_share": 0.364588291289862,
+      "n_persons": 6303,
+      "target_share": 0.3508,
+      "abs_error": 0.013788291289861976
+    },
+    {
+      "ars5": "03101",
+      "control": "education_6_17",
+      "category": "edu",
+      "realised_share": 0.9011559040967202,
+      "n_persons": 24483,
+      "target_share": 0.9177,
+      "abs_error": 0.016544095903279765
+    },
+    {
+      "ars5": "03101",
+      "control": "education_6_17",
+      "category": "noedu",
+      "realised_share": 0.09884409590327983,
+      "n_persons": 24483,
+      "target_share": 0.0823,
+      "abs_error": 0.016544095903279835
+    },
+    {
+      "ars5": "03102",
+      "control": "education_6_17",
+      "category": "edu",
+      "realised_share": 0.8897776355783075,
+      "n_persons": 12502,
+      "target_share": 0.9064,
+      "abs_error": 0.016622364421692515
+    },
+    {
+      "ars5": "03102",
+      "control": "education_6_17",
+      "category": "noedu",
+      "realised_share": 0.11022236442169253,
+      "n_persons": 12502,
+      "target_share": 0.0936,
+      "abs_error": 0.01662236442169253
+    },
+    {
+      "ars5": "03103",
+      "control": "education_6_17",
+      "category": "edu",
+      "realised_share": 0.9005490305094169,
+      "n_persons": 14389,
+      "target_share": 0.9171,
+      "abs_error": 0.0165509694905831
+    },
+    {
+      "ars5": "03103",
+      "control": "education_6_17",
+      "category": "noedu",
+      "realised_share": 0.09945096949058309,
+      "n_persons": 14389,
+      "target_share": 0.0829,
+      "abs_error": 0.016550969490583087
+    },
+    {
+      "ars5": "03151",
+      "control": "education_6_17",
+      "category": "edu",
+      "realised_share": 0.8798733995108617,
+      "n_persons": 20853,
+      "target_share": 0.8905,
+      "abs_error": 0.010626600489138216
+    },
+    {
+      "ars5": "03151",
+      "control": "education_6_17",
+      "category": "noedu",
+      "realised_share": 0.12012660048913826,
+      "n_persons": 20853,
+      "target_share": 0.1095,
+      "abs_error": 0.010626600489138258
+    },
+    {
+      "ars5": "03153",
+      "control": "education_6_17",
+      "category": "edu",
+      "realised_share": 0.8933160845191893,
+      "n_persons": 11595,
+      "target_share": 0.9015,
+      "abs_error": 0.008183915480810655
+    },
+    {
+      "ars5": "03153",
+      "control": "education_6_17",
+      "category": "noedu",
+      "realised_share": 0.1066839154808107,
+      "n_persons": 11595,
+      "target_share": 0.0985,
+      "abs_error": 0.008183915480810697
+    },
+    {
+      "ars5": "03154",
+      "control": "education_6_17",
+      "category": "edu",
+      "realised_share": 0.9146608315098468,
+      "n_persons": 9597,
+      "target_share": 0.9252,
+      "abs_error": 0.010539168490153239
+    },
+    {
+      "ars5": "03154",
+      "control": "education_6_17",
+      "category": "noedu",
+      "realised_share": 0.08533916849015317,
+      "n_persons": 9597,
+      "target_share": 0.0748,
+      "abs_error": 0.01053916849015317
+    },
+    {
+      "ars5": "03157",
+      "control": "education_6_17",
+      "category": "edu",
+      "realised_share": 0.9201990416513085,
+      "n_persons": 16278,
+      "target_share": 0.9328,
+      "abs_error": 0.01260095834869146
+    },
+    {
+      "ars5": "03157",
+      "control": "education_6_17",
+      "category": "noedu",
+      "realised_share": 0.07980095834869148,
+      "n_persons": 16278,
+      "target_share": 0.0672,
+      "abs_error": 0.012600958348691488
+    },
+    {
+      "ars5": "03158",
+      "control": "education_6_17",
+      "category": "edu",
+      "realised_share": 0.9481002425222312,
+      "n_persons": 12370,
+      "target_share": 0.9611,
+      "abs_error": 0.012999757477768714
+    },
+    {
+      "ars5": "03158",
+      "control": "education_6_17",
+      "category": "noedu",
+      "realised_share": 0.051899757477768795,
+      "n_persons": 12370,
+      "target_share": 0.0389,
+      "abs_error": 0.012999757477768797
+    },
+    {
+      "ars5": "03101",
+      "control": "education_18plus",
+      "category": "edu",
+      "realised_share": 0.05508417570896405,
+      "n_persons": 215561,
+      "target_share": 0.0595,
+      "abs_error": 0.004415824291035944
+    },
+    {
+      "ars5": "03101",
+      "control": "education_18plus",
+      "category": "noedu",
+      "realised_share": 0.9449158242910359,
+      "n_persons": 215561,
+      "target_share": 0.9405,
+      "abs_error": 0.00441582429103593
+    },
+    {
+      "ars5": "03102",
+      "control": "education_18plus",
+      "category": "edu",
+      "realised_share": 0.04430416945845235,
+      "n_persons": 85071,
+      "target_share": 0.0478,
+      "abs_error": 0.0034958305415476523
+    },
+    {
+      "ars5": "03102",
+      "control": "education_18plus",
+      "category": "noedu",
+      "realised_share": 0.9556958305415476,
+      "n_persons": 85071,
+      "target_share": 0.9522,
+      "abs_error": 0.003495830541547562
+    },
+    {
+      "ars5": "03103",
+      "control": "education_18plus",
+      "category": "edu",
+      "realised_share": 0.04449588721383642,
+      "n_persons": 105403,
+      "target_share": 0.0476,
+      "abs_error": 0.0031041127861635848
+    },
+    {
+      "ars5": "03103",
+      "control": "education_18plus",
+      "category": "noedu",
+      "realised_share": 0.9555041127861635,
+      "n_persons": 105403,
+      "target_share": 0.9524,
+      "abs_error": 0.0031041127861635154
+    },
+    {
+      "ars5": "03151",
+      "control": "education_18plus",
+      "category": "edu",
+      "realised_share": 0.04841182759396804,
+      "n_persons": 142176,
+      "target_share": 0.0531,
+      "abs_error": 0.004688172406031962
+    },
+    {
+      "ars5": "03151",
+      "control": "education_18plus",
+      "category": "noedu",
+      "realised_share": 0.951588172406032,
+      "n_persons": 142176,
+      "target_share": 0.9469,
+      "abs_error": 0.004688172406032032
+    },
+    {
+      "ars5": "03153",
+      "control": "education_18plus",
+      "category": "edu",
+      "realised_share": 0.02542204208659779,
+      "n_persons": 110534,
+      "target_share": 0.0284,
+      "abs_error": 0.0029779579134022113
+    },
+    {
+      "ars5": "03153",
+      "control": "education_18plus",
+      "category": "noedu",
+      "realised_share": 0.9745779579134022,
+      "n_persons": 110534,
+      "target_share": 0.9716,
+      "abs_error": 0.0029779579134021628
+    },
+    {
+      "ars5": "03154",
+      "control": "education_18plus",
+      "category": "edu",
+      "realised_share": 0.018172460210626337,
+      "n_persons": 75774,
+      "target_share": 0.0212,
+      "abs_error": 0.003027539789373663
+    },
+    {
+      "ars5": "03154",
+      "control": "education_18plus",
+      "category": "noedu",
+      "realised_share": 0.9818275397893736,
+      "n_persons": 75774,
+      "target_share": 0.9788,
+      "abs_error": 0.0030275397893736455
+    },
+    {
+      "ars5": "03157",
+      "control": "education_18plus",
+      "category": "edu",
+      "realised_share": 0.04670496849942726,
+      "n_persons": 111744,
+      "target_share": 0.0513,
+      "abs_error": 0.0045950315005727355
+    },
+    {
+      "ars5": "03157",
+      "control": "education_18plus",
+      "category": "noedu",
+      "realised_share": 0.9532950315005727,
+      "n_persons": 111744,
+      "target_share": 0.9487,
+      "abs_error": 0.004595031500572722
+    },
+    {
+      "ars5": "03158",
+      "control": "education_18plus",
+      "category": "edu",
+      "realised_share": 0.03507616219557925,
+      "n_persons": 98671,
+      "target_share": 0.0385,
+      "abs_error": 0.0034238378044207513
+    },
+    {
+      "ars5": "03158",
+      "control": "education_18plus",
+      "category": "noedu",
+      "realised_share": 0.9649238378044207,
+      "n_persons": 98671,
+      "target_share": 0.9615,
+      "abs_error": 0.003423837804420682
+    }
+  ],
+  "geo_outputs": {},
+  "fleet_evaluation": {
+    "fleet_overview.png": "/home/felix/i648/popval_old/fleet_overview.png",
+    "fleet_summary.csv": "/home/felix/i648/popval_old/fleet_summary.csv"
+  },
+  "minor_employment": {
+    "n_minors": 155992,
+    "n_employed": 18,
+    "rate": 0.00011539053284783835,
+    "max_rate": 0.005,
+    "exceeded": false
+  }
+}

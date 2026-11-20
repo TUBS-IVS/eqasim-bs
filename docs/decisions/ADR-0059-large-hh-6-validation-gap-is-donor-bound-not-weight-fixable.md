@@ -2,7 +2,11 @@
 
 - **Status:** accepted 2026-07-13. Diagnostic session — no code/output change. Refines the
   standing "household composition is donor-bound" note (§ backlog, ADR-0056) with concrete numbers
-  and a specific rejected option.
+  and a specific rejected option. Re-assessed 2026-11-20 (#648): the "donor-bound" diagnosis of the
+  6+ count gap is superseded — the full rerun meets the 6+ household target with the same donor pool,
+  so the gap came from the integer rounding that ADR-0199 and ADR-0201 replaced; the pool still limits
+  the variety of large households, and the rejection of SrV as a donor stands. Figures: run manifest
+  `popsim-full-rerun-20261120` (rare groups, donor reuse).
 - **Context:** the `household_size` validation control on the newest synthesis (**kreis5 100% run**,
   2026-07-10, controls export 2026-07-12, `output_bs_100pct_allfeat_popsim_kreis5`) still shows the
   6+ class under target: **2.92% of persons vs Zensus-2022 reference 4.75% = 61.5% of reference,
