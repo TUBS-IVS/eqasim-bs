@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 from braunschweig.popsim import batch
 from braunschweig.popsim.stage import fast_path_rate
 
@@ -71,3 +73,19 @@ def test_with_the_option_off_no_log_is_read(tmp_path, caplog):
         totals = fast_path_rate.check_fast_path(tmp_path / "missing", False)
     assert totals["enabled"] is False and totals["calls"] == 0 and totals["batches"] == 0
     assert not caplog.records
+
+
+def test_the_last_summary_line_of_a_log_counts(tmp_path):
+    # A resumed PopulationSim run appends to its log: the earlier summary is superseded.
+    _batch(tmp_path, "batch_001", [
+        _summary(10, 12, svml=2), "INFO - x - resumed", _summary(40, 40)])
+    totals = fast_path_rate.check_fast_path(tmp_path, True)
+    assert totals["calls"] == 40 and totals["fast_calls"] == 40
+    assert totals["fallback_svml"] == 0 and totals["fallback_share"] == 0.0
+
+
+def test_a_summary_with_more_fast_calls_than_calls_is_a_damaged_line_naming_the_log(tmp_path):
+    _batch(tmp_path, "batch_001", [_summary(32, 32)])
+    _batch(tmp_path, "batch_002", [_summary(33, 32)])
+    with pytest.raises(ValueError, match=r"batch_002.*populationsim\.log.*33.*32"):
+        fast_path_rate.check_fast_path(tmp_path, True)

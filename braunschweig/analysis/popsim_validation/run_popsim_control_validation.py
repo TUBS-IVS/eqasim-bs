@@ -10,6 +10,10 @@ Usage (PowerShell, conda env eqasim):
         --run-output-dir eqasim-data/output_popsim_25pct `
         --label popsim_25pct
 
+The tenure and building-type targets follow the production values of configs/base_bs.yml by
+default; a run made with other values needs the matching --building-type-target-basis and
+--[no-]tenure-owner-limited-to-dwellings options (analysis_suite passes the run's own values).
+
 Output files (in --analysis-out or <source>/analysis/popsim_validation/):
     controls_long.csv       -- per-(control, geo, category) deviations
     controls_summary.csv    -- per-(control, category) summary statistics
@@ -56,10 +60,12 @@ def _parse_args(argv):
         help="basis of the building_type target; pass 'dwellings' for a run with "
              "braunschweig.population.popsim.building_type_targets_to_households off")
     ap.add_argument(
-        "--tenure-owner-limited-to-dwellings", action="store_true",
+        "--tenure-owner-limited-to-dwellings", action=argparse.BooleanOptionalAction,
+        default=True,
         help="validate the tenure target with the owner households limited to the dwellings "
-             "of the cell; pass it for a run with "
-             "braunschweig.population.popsim.tenure_owner_limited_to_dwellings on")
+             "of the cell (default, as in production); pass --no-tenure-owner-limited-to-"
+             "dwellings for a run with braunschweig.population.popsim."
+             "tenure_owner_limited_to_dwellings off")
     ap.add_argument(
         "--tenure-min-households-outside", type=float,
         default=DEFAULT_MIN_HOUSEHOLDS_OUTSIDE,

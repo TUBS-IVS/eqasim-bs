@@ -20,7 +20,7 @@ from popsim_batch_fixture import TOTAL, build_work_dir  # noqa: E402
 from braunschweig.analysis.popsim_batch_diagnostics.batch_folder import (  # noqa: E402
     control_totals, household_incidence, list_batch_folders, load_batch_folder)
 from braunschweig.analysis.popsim_batch_diagnostics.conservation import (  # noqa: E402
-    household_conservation)
+    household_conservation, log_crosswalk_sources)
 from braunschweig.analysis.popsim_batch_diagnostics.coverage import (  # noqa: E402
     coverage_table, resolved_record_shares, universe_table)
 from braunschweig.analysis.popsim_batch_diagnostics.fit import (  # noqa: E402
@@ -1067,3 +1067,46 @@ def test_input_consistency_without_crosswalk_is_not_measured_and_named(work_dir,
     assert "geo_cross_walk" in caplog.text
     assert "not measured" in (tmp_path / "out" / "popsim_batch_diagnostics.md").read_text(
         encoding="utf-8")
+
+
+# --- the crosswalk of the conservation table: store first, CSV as the fallback ------------
+
+def test_conservation_uses_the_store_crosswalk_first_and_equals_the_csv_result(tmp_path):
+    parent_rows = [(1, "K1", 2), (2, "K1", 1)]
+    sub_rows = [(1, "A", 1), (1, "B", 1), (2, "A", 1)]
+    csv_work = build_work_dir(tmp_path / "csv")
+    from_csv = household_conservation(
+        _two_level_store(csv_work, parent_rows, sub_rows), levels=_PAIR)
+    store_work = build_work_dir(tmp_path / "store", crosswalk_in_store=True)
+    batch = _two_level_store(store_work, parent_rows, sub_rows)
+    # Without the CSV only the store table can have supplied the map.
+    (store_work / "batch_000" / "data" / "geo_cross_walk.csv").unlink()
+    from_store = household_conservation(batch, levels=_PAIR)
+    assert from_store.attrs["crosswalk_source"] == "store"
+    assert from_csv.attrs["crosswalk_source"] == "csv"
+    pd.testing.assert_frame_equal(from_store, from_csv)
+
+
+def test_crosswalk_source_rate_line_over_mixed_batches(caplog):
+    with caplog.at_level(logging.INFO):
+        log_crosswalk_sources(["store", "store", "csv"])
+    assert ("[popsim_batch_diagnostics] crosswalk from the store 2/3 batches (66.7%), "
+            "from data/geo_cross_walk.csv 1 (33.3%)") in caplog.text
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_crosswalk_never_from_the_store_is_a_warning_and_unneeded_batches_are_named(caplog):
+    with caplog.at_level(logging.INFO):
+        log_crosswalk_sources(["csv", "csv", None])
+    warned = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert len(warned) == 1
+    assert "from the store 0/2 batches (0.0%)" in warned[0].getMessage()
+    assert "no crosswalk needed 1" in warned[0].getMessage()
+
+
+def test_run_reports_the_crosswalk_source_rate_with_misfit(work_dir, tmp_path, caplog):
+    _two_level_store(work_dir, [(1, "K1", 1)], [(1, "A", 1)])
+    with caplog.at_level(logging.INFO):
+        main(["--work-dir", str(work_dir), "--out-dir", str(tmp_path / "misfit"), "--misfit"])
+    assert ("crosswalk from the store 0/1 batches (0.0%), from data/geo_cross_walk.csv 1 "
+            "(100.0%)") in caplog.text

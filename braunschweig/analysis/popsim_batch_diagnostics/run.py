@@ -35,7 +35,8 @@ from braunschweig.analysis.popsim_batch_diagnostics.batch_folder import (
     list_batch_folders, load_batch_folder)
 from braunschweig.analysis.popsim_batch_diagnostics.composition import (
     CENSUS_SQUARE_COLUMNS, household_composition)
-from braunschweig.analysis.popsim_batch_diagnostics.conservation import household_conservation
+from braunschweig.analysis.popsim_batch_diagnostics.conservation import (
+    household_conservation, log_crosswalk_sources)
 from braunschweig.analysis.popsim_batch_diagnostics.coverage import (
     coverage_table, resolved_record_shares, universe_table)
 from braunschweig.analysis.popsim_batch_diagnostics.fit import (
@@ -288,7 +289,8 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
     warnings = _Warnings()
     groups: dict = {}
     reuse_rows, fit_parts, universe_parts, split_parts, shift_parts = [], [], [], [], []
-    conservation_parts, consistency_parts, consistency_notes_all = [], [], []
+    conservation_parts, crosswalk_sources = [], []
+    consistency_parts, consistency_notes_all = [], []
     composition_parts = []
     if squares is None:
         logger.info("%s no 1 km census squares given: census columns of household_composition "
@@ -343,6 +345,7 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
             shift_parts.append(shift)
             conservation = household_conservation(batch, levels=batch.geographies,
                                                   chunk_rows=chunk_rows)
+            crosswalk_sources.append(conservation.attrs.get("crosswalk_source"))
             conservation.insert(0, "batch", batch.name)
             conservation_parts.append(conservation)
             for row in shift.itertuples():
@@ -472,6 +475,7 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
         tables["misfit_split"] = pd.concat(split_parts, ignore_index=True)
         tables["rounding_shift"] = pd.concat(shift_parts, ignore_index=True)
         tables["household_conservation"] = pd.concat(conservation_parts, ignore_index=True)
+        log_crosswalk_sources(crosswalk_sources)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, table in tables.items():

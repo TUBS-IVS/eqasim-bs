@@ -280,3 +280,56 @@ def test_as_dict_is_json_serialisable_for_the_run_provenance():
     assert payload["machine"]["memory_source"] == "psutil"
     assert payload["resolutions"]["java_memory"]["effective"] == "86G"
     json.dumps(payload)   # must not raise
+
+
+# Issue #656: a per-worker figure below the default holds only with both run-time options on.
+@pytest.mark.parametrize("store_positive, fast_paths, expected_workers", [
+    (True, True, 8),    # 86.28 GB / 6 GB per worker allows 14; a ceiling of 8 applies
+    (False, True, 2),   # dense weight tables: the 30 GB default applies, 86.28 / 30 -> 2
+    (True, False, 2),   # this combination was never measured: the default applies
+])
+def test_reduced_worker_memory_needs_both_run_time_options(store_positive, fast_paths,
+                                                           expected_workers):
+    config = dict(PRODUCTION_CONFIG, **{
+        "braunschweig.population.popsim.num_workers": 8,
+        "braunschweig.population.popsim.worker_memory_gb": 6.0,
+        "braunschweig.population.popsim.store_positive_weight_rows_only": store_positive,
+        "braunschweig.population.popsim.fast_paths": fast_paths,
+    })
+    report = resources.build_report(config, machine=SERVER, env={})
+    workers = next(r for r in report.resolutions
+                   if r.key == "braunschweig.population.popsim.num_workers")
+    assert workers.effective == expected_workers
+
+
+def test_substituted_default_keeps_the_scale_rule_of_a_small_run():
+    # A 1 % popsim run with fast_paths off on a 32 GB workstation: the configured 6 GB is
+    # replaced by the 30 GB default, which is not the operator's assertion, so the run warns
+    # instead of aborting (as without a configured figure).
+    workstation = resources.MachineResources(
+        cores=8, memory_gb=32.0, cores_source="cpu_count", memory_source="psutil",
+    )
+    config = dict(PRODUCTION_CONFIG, **{
+        "sampling_rate": 0.01,
+        "braunschweig.population.popsim.num_workers": 1,
+        "braunschweig.population.popsim.worker_memory_gb": 6.0,
+        "braunschweig.population.popsim.store_positive_weight_rows_only": True,
+        "braunschweig.population.popsim.fast_paths": False,
+    })
+    report = resources.build_report(config, machine=workstation, env={})
+    popsim = [v for v in report.violations
+              if v.key == "braunschweig.population.popsim.num_workers"]
+    assert popsim and all(v.severity == "warning" for v in popsim)
+
+
+@pytest.mark.parametrize("fast_paths", [True, False])
+def test_non_positive_worker_memory_is_an_error_whatever_the_options(fast_paths):
+    config = dict(PRODUCTION_CONFIG, **{
+        "braunschweig.population.popsim.worker_memory_gb": 0,
+        "braunschweig.population.popsim.store_positive_weight_rows_only": True,
+        "braunschweig.population.popsim.fast_paths": fast_paths,
+    })
+    report = resources.build_report(config, machine=SERVER, env={})
+    error = next(v for v in report.violations
+                 if v.key == "braunschweig.population.popsim.worker_memory_gb")
+    assert error.severity == "error"

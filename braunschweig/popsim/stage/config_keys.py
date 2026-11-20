@@ -127,6 +127,8 @@ KEY_INTEGERIZER_TIMEOUT_S = "braunschweig.population.popsim.integerizer_timeout_
 # Controlled-rounding options of the simultaneous integerizer (fork release 0.10.0+bs.2, issue
 # #646; the fork's WP4 design owns the formulation). Same handling as the three keys above:
 # written into every batch settings.yaml, never volatile, each enters the batch signature.
+# "The fork's defaults" below are the defaults of the table in the section "Controlled rounding"
+# of the fork README on its branch bs/main.
 # integerizer_rounding (-> INTEGERIZER_ROUNDING): "round" (upstream, default) or "controlled".
 # With "controlled" the stage fails when a simultaneous integerizer call was not recorded as
 # controlled (braunschweig.popsim.stage.solver_path_gate.check_solver_paths).
@@ -152,28 +154,30 @@ KEY_INTEGERIZER_CONSERVE_PENALTY = "braunschweig.population.popsim.integerizer_c
 # method only. The LP solver choice of the "lp" method is left at the fork's defaults.
 KEY_INTEGERIZER_CONTROLLED_METHOD = "braunschweig.population.popsim.integerizer_controlled_method"
 # Upper bound of the swap sweeps of one "search" call, positive integer
-# (-> INTEGERIZER_SEARCH_MAX_SWEEPS). A call that stops at the bound without a local optimum is
-# recorded as not converged (braunschweig.popsim.stage.solver_path_gate).
+# (-> INTEGERIZER_SEARCH_MAX_SWEEPS; code default = the fork's default). A call that stops at
+# the bound without a local optimum is recorded as not converged
+# (braunschweig.popsim.stage.solver_path_gate).
 KEY_INTEGERIZER_SEARCH_MAX_SWEEPS = "braunschweig.population.popsim.integerizer_search_max_sweeps"
 # Number of candidate swaps the "search" method keeps per step, integer >= 1
-# (-> INTEGERIZER_SEARCH_SHORTLIST).
+# (-> INTEGERIZER_SEARCH_SHORTLIST; code default = the fork's default).
 KEY_INTEGERIZER_SEARCH_SHORTLIST = "braunschweig.population.popsim.integerizer_search_shortlist"
 # Run-time and memory options of the group's fork (release 0.10.0+bs.2, issue #656). Each is a
 # boolean (code default False), written into every batch settings.yaml (-> the PopulationSim
 # setting of the same name in capitals) and part of the work-dir batch signature, never volatile.
 # Both need fork 0.10.0+bs.2 or later: an older fork ignores a setting it does not know, so the
 # stage refuses either option with an older configured version
-# (braunschweig.popsim.folders.require_fork_version_for_run_time_options). The expectation that
-# the synthetic population is byte-identical with them on is an ASSUMPTION until the run manifest
-# of issue #656 holds the evidence.
+# (braunschweig.popsim.folders.require_fork_version_for_run_time_options). Why they may be on
+# (the population is identical with them on) and the limit of that evidence (three batches on one
+# machine; the identity of the fast kernels is a tested property of an environment): run manifest
+# popsim-run-performance-2026-11-18 and ADR-0200, decisions 2 and 5.
 # store_positive_weight_rows_only (-> STORE_POSITIVE_WEIGHT_ROWS_ONLY): the weight tables of the
 # sub-geographies keep only the rows with a positive weight; this cuts the peak memory of a batch
 # run.
-KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY = (
-    "braunschweig.population.popsim.store_positive_weight_rows_only")
 # fast_paths (-> FAST_PATHS): the fork's faster implementations of hot steps, with bit-identical
-# results (same expectation and same evidence owed as above).
-KEY_FAST_PATHS = "braunschweig.population.popsim.fast_paths"
+# results (evidence and its limit: see above).
+# Both keys are defined once in braunschweig.resources (the run-start gate reads them to decide
+# the worker memory) and re-exported here like KEY_WORKER_MEMORY_GB.
+from braunschweig.resources import KEY_FAST_PATHS, KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY  # noqa: E402,F401
 # Solver-path gate (braunschweig.popsim.stage.solver_path_gate, design goal G5, issue #645):
 # float in (0, 1] or null. Above this share of parent zones NOT integerized simultaneously
 # (per geography) the stage raises; null = warn only. Volatile: it only gates, no result, so a
@@ -215,7 +219,7 @@ KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS = (
 #   employment_level_source: "survey" (legacy: the employed classes of work_by_employment /
 #       employment_status keep their survey level) | "zensus" (rescaled to the Zensus employment level,
 #       braunschweig.popsim.employment_level).
-#   kreis_fine_tolerance / kreis_fine_min_persons: the guard (input_consistency.guard_violations)
+#   kreis_fine_tolerance / kreis_fine_min_persons: the guard (input_consistency_guard.guard_violations)
 #       raises when an age-universe pair differs by more than this relative share in a Kreis part
 #       whose grid sum is at least this many persons. Used only with kreis_batch_apportionment
 #       "universe"; with "population" the table is written and nothing raises. The 0.05 is an
