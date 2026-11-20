@@ -22,6 +22,9 @@ sys.path.append(str(Path(__file__).resolve().parent))
 import popsim_control_build_fixture as fixture  # noqa: E402
 
 from braunschweig.popsim import control_spec, stage, tool_version  # noqa: E402
+from braunschweig.popsim.seed import HH_MINOR_CLASSES  # noqa: E402
+
+HH_MINOR_NONE = HH_MINOR_CLASSES[0]
 
 
 class _Stop(Exception):
@@ -55,6 +58,10 @@ def _values(**overrides):
         stage.KEY_EMPLOYMENT_LEVEL_SOURCE: "survey",
         stage.KEY_KREIS_FINE_TOLERANCE: 0.05,
         stage.KEY_KREIS_FINE_MIN_PERSONS: 1000,
+        # The #659 household-universe keys at their legacy values.
+        stage.KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS: False,
+        stage.KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS: 20.0,
+        stage.KEY_FAMILY_CONTROLS: "zensus_family5",
         "random_seed": 4711,
     }
     values.update(overrides)
@@ -248,6 +255,7 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     def purge(*args, **kwargs):
         calls.append("purge")
         seen["purge_args"] = args
+        seen["purge_kwargs"] = kwargs
 
     def batches(*args, **kwargs):
         calls.append("batches")
@@ -451,3 +459,174 @@ def test_execute_refuses_production_kreis_keys_without_a_kreis_table_before_the_
     with pytest.raises(ValueError, match=stage.KEY_KREIS_BATCH_APPORTIONMENT.replace(".", r"\.")):
         stage.execute(_context(_values(**_PRODUCTION_KREIS_KEYS), stage_path=tmp_path))
     assert "columns" not in loaded and calls == ["environment check"]
+
+
+# --- execute: the #659 household-universe keys (own stub helper) ---
+
+def _stub_execute_steps(monkeypatch, tmp_path, calls, *, tiers=(), controls_source="csv",
+                        employment_grid_on=False, cells=None, tier3_kreis=(None, None, set())):
+    """Stub every step of ``execute`` between the early actions and the gate; returns ``seen``.
+
+    ``seen`` collects the arguments of the purge (``purge_args``), the batch runner
+    (``batches_args`` / ``batches_kwargs``), the fast-path check and the gate, and the parquet
+    load set (``load_columns``). ``cells`` is what the cell load returns (an empty frame by default).
+    """
+    cells = pd.DataFrame() if cells is None else cells
+    _stub_early_steps(monkeypatch, calls, tmp_path / "settings.yaml")
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(_SETTINGS_TEXT + "geographies: [ZENSUS100m]\n", encoding="utf-8")
+    monkeypatch.setattr(
+        stage, "_read_stage_paths",
+        lambda ctx: ("cells", "mid", "controls", str(settings), "logging", "popsimprep", "uv"))
+
+    class _Source:
+        name = "mid"
+
+        @staticmethod
+        def seed_columns():
+            return SimpleNamespace(household_id="H_ID")
+
+    monkeypatch.setattr(
+        stage, "_read_batching_and_scope_config",
+        lambda ctx: (10, 1, str(tmp_path / "work"), [], "mid", False, False))
+    monkeypatch.setattr(
+        stage, "_create_seeded_rngs",
+        lambda ctx: (1, np.random.RandomState(1), np.random.RandomState(2),
+                     np.random.RandomState(3)))
+    monkeypatch.setattr(stage, "_resolve_source", lambda name: _Source())
+    monkeypatch.setattr(
+        stage, "_read_control_config",
+        lambda ctx, name: (tiers, (), controls_source, employment_grid_on, False, (), set(), 30,
+                           None, "default", False))
+    monkeypatch.setattr(
+        stage, "_build_control_frame", lambda *a, **k: (pd.DataFrame(), []))
+    monkeypatch.setattr(stage, "_load_tier3_kreis_controls", lambda *a, **k: tier3_kreis)
+    # _resolve_cell_load_columns runs for real: the test checks which columns execute asks for.
+    seen = {}
+
+    def load_control_cells(cells_path, load_cols):
+        seen["load_columns"] = list(load_cols)
+        return cells
+
+    monkeypatch.setattr(stage.mid, "load_control_cells", load_control_cells)
+    monkeypatch.setattr(
+        stage.mid, "filter_zgb_cells_with_report",
+        lambda cells, kreise: (cells, {"cells_seen": 0, "cells_kept": 0, "cells_dropped": 0}))
+    monkeypatch.setattr(stage, "_add_aggregated_control_columns", lambda cells, *a, **k: (cells, None))
+    monkeypatch.setattr(stage, "_inject_employment_grid_columns", lambda c, cells, *a, **k: cells)
+    monkeypatch.setattr(stage, "_inject_ownership_grid_columns", lambda c, cells, *a, **k: cells)
+    monkeypatch.setattr(
+        stage, "_build_populationsim_seed",
+        lambda *a, **k: (pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()))
+    monkeypatch.setattr(stage, "_prepare_batch_runner", lambda *a, **k: "run_one")
+    monkeypatch.setattr(
+        stage, "_derive_kreis_attribute_control_targets",
+        lambda context, cells, active, prior, table, cmap, names, *a, **k: (table, cmap))
+    monkeypatch.setattr(stage.folders, "validate_settings_geographies", lambda *a, **k: None)
+    # The WP3 seed contract check (tested in tests/test_popsim_seed_contract.py) runs before the
+    # purge; this test only pins its place in the order.
+    monkeypatch.setattr(stage, "_read_total_hh_control", lambda path: "HH_TOTAL")
+    monkeypatch.setattr(stage, "_check_seed_contract", lambda *a, **k: calls.append("contract"))
+
+    def purge(*args, **kwargs):
+        calls.append("purge")
+        seen["purge_args"] = args
+        seen["purge_kwargs"] = kwargs
+
+    def batches(*args, **kwargs):
+        calls.append("batches")
+        seen["batches_args"] = args
+        seen["batches_kwargs"] = kwargs
+        return "merge_report"
+
+    def gate(work_dir, error_rate, expected_rounding="round", **kwargs):
+        calls.append("gate")
+        seen["gate"] = (work_dir, error_rate, expected_rounding)
+        raise _Stop
+
+    monkeypatch.setattr(stage, "_purge_stale_batches_for_changed_config", purge)
+    monkeypatch.setattr(stage, "_run_populationsim_batches", batches)
+    def fast_paths(work_dir, enabled):
+        calls.append("fast paths")
+        seen["fast_paths"] = (work_dir, enabled)
+        return {}
+
+    monkeypatch.setattr(stage, "_log_integerizer_feasibility", lambda *a, **k: calls.append("log"))
+    monkeypatch.setattr(stage.fast_path_rate, "check_fast_path", fast_paths)
+    monkeypatch.setattr(stage.solver_path_gate, "check_solver_paths", gate)
+
+    return seen
+
+
+# --- execute: the #659 household-universe keys ---------------------------------------------
+
+_CELLS_1KM = "grid_1km.parquet"
+
+
+@pytest.mark.parametrize("keys", [
+    (False, 20.0, "zensus_family5"), (True, 25.0, "zensus_family5"), (False, 20.0, "none"),
+    (False, 20.0, "minor_child_1km")], ids=["legacy", "move", "none", "minor_child_1km"])
+def test_execute_hands_the_household_universe_keys_on(monkeypatch, tmp_path, keys):
+    move, max_persons, family = keys
+    calls = []
+    # The move needs the tier0 age x sex bands and the household total among the base columns
+    # (fine teen bands, as in fixture.base_columns(); read before the stubs replace the build).
+    base_cols = fixture.base_columns()
+    seen = _stub_execute_steps(monkeypatch, tmp_path, calls)
+    monkeypatch.setattr(stage, "_build_control_frame", lambda *a, **k: (pd.DataFrame(), base_cols))
+    monkeypatch.setattr(
+        stage, "_read_control_config",
+        lambda ctx, name: ((), (), "csv", False, False, (), set(), 30, None, "default", True))
+    # The seed build always derives hh_minor_class (the analysis tools read it too).
+    seed = pd.DataFrame({"H_ID": [1, 2], "hh_type5": ["einpersonen", "paar_mit_kind"],
+                         "hh_minor_class": [HH_MINOR_NONE, "multi_adult"]})
+    monkeypatch.setattr(stage, "_build_populationsim_seed",
+                        lambda *a, **k: (None, None, seed, pd.DataFrame({"H_ID": [1, 2]})))
+
+    def minor_targets(cells, path):
+        seen["minor_targets_path"] = path
+        return cells, {"squares_on_kreis_fallback": 0}
+
+    monkeypatch.setattr(stage, "_add_minor_child_targets", minor_targets)
+    with pytest.raises(_Stop):
+        stage.execute(_context(_values(**{
+            stage.KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS: move,
+            stage.KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS: max_persons,
+            stage.KEY_FAMILY_CONTROLS: family,
+            "braunschweig.population.popsim.cells_1km_path": _CELLS_1KM}), stage_path=tmp_path))
+
+    payload = seen["purge_kwargs"]["household_universes"]
+    if keys == (False, 20.0, "zensus_family5"):
+        assert payload is None
+    else:
+        assert payload == {stage.KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS: move,
+                           stage.KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS: max_persons,
+                           stage.KEY_FAMILY_CONTROLS: family}
+    # The seed of the signature and of the batches: hh_minor_class only where a control reads it.
+    for seed_households in (seen["purge_args"][8], seen["batches_args"][4]):
+        assert ("hh_minor_class" in seed_households.columns) == (family == "minor_child_1km")
+    move_kwargs = seen["batches_kwargs"]["household_less_kwargs"]
+    assert (move_kwargs.get("move_persons_max") if move_kwargs else None) == (
+        max_persons if move else None)
+    assert seen.get("minor_targets_path") == (_CELLS_1KM if family == "minor_child_1km" else None)
+
+
+def test_run_populationsim_batches_passes_the_move_to_run_popsim_mid(monkeypatch, tmp_path):
+    captured = {}
+
+    def run_popsim_mid(*args, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(n_rows=0, n_cells=0, n_missing=0)
+
+    monkeypatch.setattr(stage.mid, "run_popsim_mid", run_popsim_mid)
+    monkeypatch.setattr(stage, "_batch_settings_yaml", lambda *a, **k: "x: 1\n")
+    logging_path = tmp_path / "logging.yaml"
+    logging_path.write_text("version: 1\n", encoding="utf-8")
+    move = {"household_total_col": "HH_TOTAL", "person_cols": ["M_AGE_0"],
+            "threshold_cols": ["M_AGE_0"], "move_persons_max": 20.0,
+            "household_less_reports": []}
+    stage._run_populationsim_batches(
+        _context(_values()), pd.DataFrame(), [], pd.DataFrame(), pd.DataFrame(), pd.DataFrame(),
+        tmp_path, "settings.yaml", logging_path, 10, "run_one", 1, None, False, None, None,
+        set(), {}, None, household_less_kwargs=move)
+    assert {key: captured[key] for key in move} == move

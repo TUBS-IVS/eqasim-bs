@@ -1,0 +1,74 @@
+{
+  "arm_8/batch_000": {
+    "cells": 679,
+    "household_column": "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj_ZENSUS100m",
+    "cells_rebuilt_differs_from_folder": 0,
+    "household_less_cells_with_person_target": 11,
+    "of_which_in_squares_without_households": 8,
+    "of_which_with_20_or_more_persons": 3,
+    "of_which_below_20_in_squares_with_households": 0
+  },
+  "arm_8/batch_013": {
+    "cells": 732,
+    "household_column": "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj_ZENSUS100m",
+    "cells_rebuilt_differs_from_folder": 0,
+    "household_less_cells_with_person_target": 2,
+    "of_which_in_squares_without_households": 1,
+    "of_which_with_20_or_more_persons": 1,
+    "of_which_below_20_in_squares_with_households": 0
+  },
+  "arm_8/batch_028": {
+    "cells": 739,
+    "household_column": "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj_ZENSUS100m",
+    "cells_rebuilt_differs_from_folder": 0,
+    "household_less_cells_with_person_target": 3,
+    "of_which_in_squares_without_households": 1,
+    "of_which_with_20_or_more_persons": 2,
+    "of_which_below_20_in_squares_with_households": 0
+  },
+  "arm_8/batch_032": {
+    "cells": 743,
+    "household_column": "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj_ZENSUS100m",
+    "cells_rebuilt_differs_from_folder": 0,
+    "household_less_cells_with_person_target": 4,
+    "of_which_in_squares_without_households": 0,
+    "of_which_with_20_or_more_persons": 4,
+    "of_which_below_20_in_squares_with_households": 0
+  },
+  "arm_7b/batch_000": {
+    "cells": 679,
+    "household_column": "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj_ZENSUS100m",
+    "cells_rebuilt_differs_from_folder": 0,
+    "household_less_cells_with_person_target": 71,
+    "of_which_in_squares_without_households": 8,
+    "of_which_with_20_or_more_persons": 3,
+    "of_which_below_20_in_squares_with_households": 60
+  },
+  "arm_7b/batch_013": {
+    "cells": 732,
+    "household_column": "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj_ZENSUS100m",
+    "cells_rebuilt_differs_from_folder": 0,
+    "household_less_cells_with_person_target": 73,
+    "of_which_in_squares_without_households": 1,
+    "of_which_with_20_or_more_persons": 1,
+    "of_which_below_20_in_squares_with_households": 71
+  },
+  "arm_7b/batch_028": {
+    "cells": 739,
+    "household_column": "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj_ZENSUS100m",
+    "cells_rebuilt_differs_from_folder": 0,
+    "household_less_cells_with_person_target": 24,
+    "of_which_in_squares_without_households": 1,
+    "of_which_with_20_or_more_persons": 2,
+    "of_which_below_20_in_squares_with_households": 21
+  },
+  "arm_7b/batch_032": {
+    "cells": 743,
+    "household_column": "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj_ZENSUS100m",
+    "cells_rebuilt_differs_from_folder": 0,
+    "household_less_cells_with_person_target": 38,
+    "of_which_in_squares_without_households": 0,
+    "of_which_with_20_or_more_persons": 4,
+    "of_which_below_20_in_squares_with_households": 34
+  }
+}

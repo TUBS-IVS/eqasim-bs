@@ -51,6 +51,9 @@ KEY_BUILDING_TYPE_TO_HOUSEHOLDS = "braunschweig.population.popsim.building_type_
 KEY_TENURE_OWNER_LIMITED = "braunschweig.population.popsim.tenure_owner_limited_to_dwellings"
 KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE = (
     "braunschweig.population.popsim.tenure_min_households_outside_dwellings")
+# The family rows are scored against the run's family controls (issue #659; mirrors the popsim
+# stage key, same default).
+KEY_FAMILY_CONTROLS = "braunschweig.population.popsim.family_controls"
 # Issue #96 minor-employment plausibility guard (population_validation). The
 # default bound is single-sourced from controls.DEFAULT_MINOR_EMPLOYMENT_MAX_RATE
 # (imported lazily where needed to keep stage import light).
@@ -127,8 +130,12 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.diary_plan_match",
     "braunschweig.popsim.escort_pairing",
     "braunschweig.popsim.folders",
+    # Reached through popsim.mid.control_cells (household-less move, #659).
+    "braunschweig.popsim.household_less_cells",
     "braunschweig.popsim.kreis_attribute_control",
     "braunschweig.popsim.member_completion",
+    # Reached through popsim.control_spec and popsim_validation.controls (minor-child controls, #659).
+    "braunschweig.popsim.minor_child_targets",
     "braunschweig.popsim.mid.control_cells",
     "braunschweig.popsim.mid.csv_format",
     "braunschweig.popsim.mid.donor",
@@ -201,6 +208,7 @@ def configure(context):
     from braunschweig.popsim.tenure_targets import DEFAULT_MIN_HOUSEHOLDS_OUTSIDE
     context.config(KEY_TENURE_OWNER_LIMITED, False)
     context.config(KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE, DEFAULT_MIN_HOUSEHOLDS_OUTSIDE)
+    context.config(KEY_FAMILY_CONTROLS, "zensus_family5")
     context.config("analysis_working_directory", None)
     from braunschweig.analysis.population_validation.controls import (
         DEFAULT_MINOR_EMPLOYMENT_MAX_RATE,
@@ -314,7 +322,8 @@ def execute(context):
         argv = ["--run-output-dir", str(output_path), "--prefix", prefix,
                 "--building-type-target-basis", basis,
                 "--tenure-min-households-outside",
-                str(context.config(KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE))]
+                str(context.config(KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE)),
+                "--family-controls", str(context.config(KEY_FAMILY_CONTROLS))]
         argv.append("--tenure-owner-limited-to-dwellings"
                     if context.config(KEY_TENURE_OWNER_LIMITED)
                     else "--no-tenure-owner-limited-to-dwellings")

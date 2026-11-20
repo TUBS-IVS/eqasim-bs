@@ -1,0 +1,318 @@
+{
+  "base_diag": "~/i658_a/arms/diag_arm_6",
+  "new_diag": "~/i658_a/arms/diag_arm_6",
+  "checks_file": "arm7_vs_arm6.json",
+  "batches": [
+    "batch_000",
+    "batch_013",
+    "batch_028",
+    "batch_032"
+  ],
+  "checks": {
+    "O-fam": {
+      "met": false,
+      "error": "~/i658_a/arms/diag_arm_6/household_composition.csv absent",
+      "kind": "composition"
+    },
+    "N-wape": {
+      "deltas": {
+        "ZENSUS100m": 0.02,
+        "ZENSUS1km": 0.02,
+        "KREIS": 0.01
+      },
+      "values": {
+        "ZENSUS100m": {
+          "wape_base": 0.1258137193806625,
+          "wape_new": 0.1258137193806625,
+          "limit": 0.14581371938066248,
+          "met": true,
+          "controls_only_in_base": [],
+          "controls_only_in_new": []
+        },
+        "ZENSUS1km": {
+          "wape_base": 0.00946860022424011,
+          "wape_new": 0.00946860022424011,
+          "limit": 0.02946860022424011,
+          "met": true,
+          "controls_only_in_base": [],
+          "controls_only_in_new": []
+        },
+        "KREIS": {
+          "wape_base": 0.0017816980210515494,
+          "wape_new": 0.0017816980210515494,
+          "limit": 0.01178169802105155,
+          "met": true,
+          "controls_only_in_base": [],
+          "controls_only_in_new": []
+        }
+      },
+      "met": true,
+      "kind": "wape_vs_base"
+    },
+    "N-conservation": {
+      "deltas": {
+        "abs_deviation_share": 0.0,
+        "conserved_pair_share": 0.0
+      },
+      "values": {
+        "batch_000/KREIS/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_000/KREIS/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_000/ZENSUS100m/abs_deviation_share": {
+          "base": 0.0199125056569618,
+          "new": 0.0199125056569618,
+          "limit": 0.0199125056569618,
+          "met": true
+        },
+        "batch_000/ZENSUS100m/conserved_pair_share": {
+          "base": 0.9803560466543892,
+          "new": 0.9803560466543892,
+          "limit": 0.9803560466543892,
+          "met": true
+        },
+        "batch_000/ZENSUS1km/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_000/ZENSUS1km/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_013/KREIS/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_013/KREIS/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_013/ZENSUS100m/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_013/ZENSUS100m/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_013/ZENSUS1km/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_013/ZENSUS1km/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_028/KREIS/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_028/KREIS/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_028/ZENSUS100m/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_028/ZENSUS100m/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_028/ZENSUS1km/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_028/ZENSUS1km/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_032/KREIS/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_032/KREIS/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_032/ZENSUS100m/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_032/ZENSUS100m/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_032/ZENSUS1km/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_032/ZENSUS1km/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        }
+      },
+      "met": true,
+      "kind": "conservation_vs_base"
+    },
+    "N-solver": {
+      "levels": null,
+      "values": {
+        "base/batch_000": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "new/batch_000": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "base/batch_013": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "new/batch_013": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "base/batch_028": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "new/batch_028": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "base/batch_032": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "new/batch_032": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        }
+      },
+      "met": true,
+      "kind": "no_sequential_fallback"
+    },
+    "N-G4": {
+      "max_extra_outside": 0,
+      "values": {
+        "batch_000": {
+          "base": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 0.022
+          },
+          "new": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 0.022
+          },
+          "limit": 0,
+          "met": true
+        },
+        "batch_013": {
+          "base": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 1.428226604542915e-15
+          },
+          "new": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 1.428226604542915e-15
+          },
+          "limit": 0,
+          "met": true
+        },
+        "batch_028": {
+          "base": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 1.7389124836727278e-15
+          },
+          "new": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 1.7389124836727278e-15
+          },
+          "limit": 0,
+          "met": true
+        },
+        "batch_032": {
+          "base": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 1.717795624914528e-15
+          },
+          "new": {
+            "n_controls": 47,
+            "n_outside": 0,
+            "max_shift": 1.717795624914528e-15
+          },
+          "limit": 0,
+          "met": true
+        }
+      },
+      "met": true,
+      "kind": "rounding_shift_vs_base"
+    }
+  },
+  "all_met": false
+}

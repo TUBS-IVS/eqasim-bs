@@ -9,6 +9,8 @@ so any other submodule may import these names directly without risking a
 partial-initialisation ordering problem.
 """
 
+import math
+
 
 def require_positive(key: str, value):
     """Validate that a config value is strictly positive, at DAG-build (``configure()``) time.
@@ -233,6 +235,28 @@ KEY_EMPLOYMENT_LEVEL_SOURCE = "braunschweig.population.popsim.employment_level_s
 KEY_KREIS_FINE_TOLERANCE = "braunschweig.population.popsim.kreis_fine_tolerance"
 KEY_KREIS_FINE_MIN_PERSONS = "braunschweig.population.popsim.kreis_fine_min_persons"
 KREIS_BATCH_APPORTIONMENTS = ("population", "universe")
+# Household universes of the control tables (issue #659, Part B). The code defaults are the LEGACY
+# values: all three at their default reproduce the control tables value for value
+# (tests/test_popsim_household_universe_keys.py). Production values: configs/base_bs.yml; why each
+# is on (the move by owner decision with one pre-registered no-harm check not met): ADR-0204.
+#   move_persons_of_household_less_cells: false (legacy) | true: before the integerisation, the
+#       persons (age x sex bands and active EMPLOYED_* columns) of a 100 m cell with 0 households move
+#       to the household cells of the same 1 km square, in proportion to their households (rule and
+#       ASSUMPTION: braunschweig.popsim.household_less_cells).
+#   household_less_cell_max_persons: a household-less cell with this many persons or more (over the
+#       age x sex bands) keeps them (likely an institution). Unit: persons. Valid range: > 0. Inert
+#       while the move is off.
+#   family_controls: "zensus_family5" (legacy: the four 100 m census family-type controls) | "none"
+#       (no family control) | "minor_child_1km" (two 1 km controls of households with a minor, from
+#       the census 1 km family table; braunschweig.popsim.minor_child_targets, reads cells_1km_path).
+#       The modes are owned by braunschweig.popsim.control_spec.FAMILY_CONTROLS_MODES.
+KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS = (
+    "braunschweig.population.popsim.move_persons_of_household_less_cells")
+KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS = "braunschweig.population.popsim.household_less_cell_max_persons"
+KEY_FAMILY_CONTROLS = "braunschweig.population.popsim.family_controls"
+MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS_DEFAULT = False
+HOUSEHOLD_LESS_CELL_MAX_PERSONS_DEFAULT = 20.0
+FAMILY_CONTROLS_DEFAULT = "zensus_family5"
 # Limit the per-100m owner-household targets to the dwellings of the cell (issue #657; rule in
 # ``braunschweig.popsim.tenure_targets``): the Zensus owner quote covers only dwellings, so the
 # households of a dormitory or a home in a cell must not become owner targets. Needs the tier2
@@ -903,3 +927,28 @@ def validate_kreis_consistency_keys(
             or fine_min_persons < 0):
         raise ValueError(f"{KEY_KREIS_FINE_MIN_PERSONS} must be an integer >= 0, "
                          f"got {fine_min_persons!r}")
+
+
+def validate_household_universe_keys(move_persons, max_persons, family_controls,
+                                     family_controls_modes) -> None:
+    """Reject an invalid value of the three #659 household-universe keys, naming the key.
+
+    ``family_controls_modes`` is the accepted set of ``family_controls`` (owned by
+    ``braunschweig.popsim.control_spec.FAMILY_CONTROLS_MODES``; passed in because this module is a
+    leaf).
+
+    Raises:
+        ValueError: ``move_persons_of_household_less_cells`` is not a bool,
+            ``household_less_cell_max_persons`` is not a finite number > 0, or ``family_controls`` is not
+            one of its allowed strings.
+    """
+    if not isinstance(move_persons, bool):
+        raise ValueError(f"{KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS} must be true or false, "
+                         f"got {move_persons!r}")
+    if (isinstance(max_persons, bool) or not isinstance(max_persons, (int, float))
+            or not math.isfinite(max_persons) or not max_persons > 0):
+        raise ValueError(f"{KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS} must be a finite number > 0, "
+                         f"got {max_persons!r}")
+    if family_controls not in tuple(family_controls_modes):
+        raise ValueError(f"{KEY_FAMILY_CONTROLS} must be one of {tuple(family_controls_modes)}, "
+                         f"got {family_controls!r}")

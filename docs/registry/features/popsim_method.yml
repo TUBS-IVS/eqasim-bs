@@ -64,5 +64,13 @@ assessment:
     ADR-0002 documents all three methods; configs/base_bs.yml:155 confirms popsim_mid is the active production method. No owner verdict on realised popsim_mid fit quality has been recorded in this register (see also placement_income_l2.yml and srv_participation_controls.yml, which layer on top of this method).
   source: ADR-0002
 notes: |
+  Household-type controls (issue #659, ADR-0204): the family-type controls of the households
+  (control_spec, group household_type, hh_type5) have three modes via braunschweig.population.popsim.family_controls:
+  zensus_family5 (legacy), none, and minor_child_1km (two 1 km controls of households with a minor, seed column
+  hh_minor_class); household-less 100 m cells can hand their persons to their square
+  (move_persons_of_household_less_cells). Meaning: braunschweig/popsim/stage/config_keys.py; production values:
+  configs/base_bs.yml; method: braunschweig/popsim/minor_child_targets.py. Feature record:
+  minor_child_family_controls; decision and current state of both keys: ADR-0204, run record
+  popsim-ladder-inputs-b-2026-11-19.
   WP2 state (issue #645): the PopulationSim fork core is implemented; production values in configs/base_bs.yml, evidence in run manifest popsim-ladder-arm1-2026-11-17. Decision: ADR-0199; wiring: docs/codebase/notes/populationsim-fork.md.
   WP4 state (issue #646): the controlled rounding of fork release 0.10.0+bs.2 is the production value (braunschweig.population.popsim.integerizer_rounding in configs/base_bs.yml). Decision, including the pre-registered check that was missed: ADR-0201; evidence: run manifest popsim-ladder-arm3-2026-11-18.

@@ -1,0 +1,57 @@
+2026-11-19_10:57:35 prepared selfcheck batch_000 from ~/i658_a/arms/arm_6/batch_000 (steps move_persons)
+2026-11-19_10:58:16 prepared selfcheck batch_013 from ~/i658_a/arms/arm_6/batch_013 (steps move_persons)
+2026-11-19_10:58:57 prepared selfcheck batch_028 from ~/i658_a/arms/arm_6/batch_028 (steps move_persons)
+2026-11-19_10:59:38 prepared selfcheck batch_032 from ~/i658_a/arms/arm_6/batch_032 (steps move_persons)
+2026-11-19_10:59:38 prepare selfcheck done
+2026-11-19_11:02:59 prepared arm_7a batch_000 from ~/i658_a/arms/arm_6/batch_000 (steps family_none)
+2026-11-19_11:03:30 prepared arm_7a batch_013 from ~/i658_a/arms/arm_6/batch_013 (steps family_none)
+2026-11-19_11:04:02 prepared arm_7a batch_028 from ~/i658_a/arms/arm_6/batch_028 (steps family_none)
+2026-11-19_11:04:33 prepared arm_7a batch_032 from ~/i658_a/arms/arm_6/batch_032 (steps family_none)
+2026-11-19_11:04:33 prepare arm_7a done
+2026-11-19_11:05:11 prepared arm_7b batch_000 from ~/i658_a/arms/arm_6/batch_000 (steps family_minor_child)
+2026-11-19_11:05:48 prepared arm_7b batch_013 from ~/i658_a/arms/arm_6/batch_013 (steps family_minor_child)
+2026-11-19_11:06:25 prepared arm_7b batch_028 from ~/i658_a/arms/arm_6/batch_028 (steps family_minor_child)
+2026-11-19_11:07:02 prepared arm_7b batch_032 from ~/i658_a/arms/arm_6/batch_032 (steps family_minor_child)
+2026-11-19_11:07:02 prepare arm_7b done
+2026-11-19_11:13:05 start PopulationSim arm_7a: batch_000 batch_013
+2026-11-19_11:13:05 end PopulationSim arm_7a batch_000: 
+2026-11-19_11:13:05 end PopulationSim arm_7a batch_013: 
+2026-11-19_11:13:05 start PopulationSim arm_7a: batch_028 batch_032
+2026-11-19_11:13:05 end PopulationSim arm_7a batch_028: 
+2026-11-19_11:13:05 end PopulationSim arm_7a batch_032: 
+2026-11-19_11:13:05 start PopulationSim arm_7b: batch_000 batch_013
+2026-11-19_11:13:06 end PopulationSim arm_7b batch_000: 
+2026-11-19_11:13:06 end PopulationSim arm_7b batch_013: 
+2026-11-19_11:13:06 start PopulationSim arm_7b: batch_028 batch_032
+2026-11-19_11:13:06 end PopulationSim arm_7b batch_028: 
+2026-11-19_11:13:06 end PopulationSim arm_7b batch_032: 
+ARMS7_DONE
+2026-11-19_11:14:32 NOTE: the PopulationSim start above used a wrong project dir (no environment; all exits empty, no output); its run files were removed; restart with ~/i646/env_bs2
+2026-11-19_11:14:32 start PopulationSim arm_7a: batch_000 batch_013
+2026-11-19_11:15:31 start diagnostics arm_7b: batch_000 batch_013 batch_028 batch_032
+2026-11-19_11:15:31 start diagnostics arm_7a: batch_000 batch_013 batch_028 batch_032
+2026-11-19_11:15:32 end diagnostics arm_7a: rc=1
+2026-11-19_11:15:32 end diagnostics arm_7b: rc=1
+DIAG7_DONE
+2026-11-19_11:16:21 NOTE: the diagnostics start above fired on the earlier ARMS7_DONE marker before the runs finished; both exited rc=1 at once without output or deletion; logs in logs/failed_diag_1
+2026-11-19_11:25:36 end PopulationSim arm_7a batch_000: exit 0
+2026-11-19_11:25:36 end PopulationSim arm_7a batch_013: exit 0
+2026-11-19_11:25:36 start PopulationSim arm_7a: batch_028 batch_032
+2026-11-19_11:27:08 NOTE: the run of arm_7a batch_028/batch_032 (options off) was stopped after 1 min by the lead to switch to the #656 run-time options (owner question 2026-11-19); outputs removed, logs in logs/stopped_pair_2
+2026-11-19_11:27:22 start PopulationSim with options on: idcheck_arm batch_000; arm_7a batch_028 batch_032; arm_7b all four (7 processes at once)
+2026-11-19_11:34:05 RUNS7_ON_FINISHED: exit 0 exit 0 exit 0 exit 0 exit 0 exit 0 exit 0 exit 0 exit 0 
+2026-11-19_11:34:05 start diagnostics arm_7b: batch_000 batch_013 batch_028 batch_032
+2026-11-19_11:34:05 start diagnostics arm_7a: batch_000 batch_013 batch_028 batch_032
+2026-11-19_11:34:46 end diagnostics arm_7b: rc=0
+2026-11-19_11:56:08 end diagnostics arm_7a: rc=0
+DIAG7_FINISHED
+2026-11-19_11:57:45 prepared arm_8 batch_000 from ~/i659_b/arm_7b/batch_000 (steps move_persons)
+2026-11-19_11:58:25 prepared arm_8 batch_013 from ~/i659_b/arm_7b/batch_013 (steps move_persons)
+2026-11-19_11:59:05 prepared arm_8 batch_028 from ~/i659_b/arm_7b/batch_028 (steps move_persons)
+2026-11-19_11:59:45 prepared arm_8 batch_032 from ~/i659_b/arm_7b/batch_032 (steps move_persons)
+2026-11-19_11:59:45 prepare arm_8 done
+2026-11-19_12:06:21 RUNS8_FINISHED: exit 0 exit 0 exit 0 exit 0 
+2026-11-19_12:06:21 start diagnostics arm_8: batch_000 batch_013 batch_028 batch_032
+2026-11-19_12:07:00 end diagnostics arm_8: rc=0
+DIAG8_FINISHED
+2026-11-19_12:08:17 deleted the checkpoint store of idcheck_arm batch_000 (identity check only, no diagnostics)

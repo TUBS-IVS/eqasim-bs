@@ -105,7 +105,7 @@ def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
                                    seed_persons, kreis_table, populationsim_version: str,
                                    populationsim_commit: str, populationsim_lock_hash: str, settings_overrides, integerizer_seed_base,
                                    active_entries=None, status_prior_n=0.0,
-                                   kreis_consistency=None) -> str:
+                                   kreis_consistency=None, household_universes=None) -> str:
     """Compute the work-dir batch-input signature (sha256 hex).
 
     The signature covers the batch inputs listed in ``payload`` below, so that a change to
@@ -175,4 +175,9 @@ def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
         # when one of the three table-shaping keys is off its legacy value, so a legacy run keeps
         # the signature (and its completed batches) it had before the keys existed.
         payload["kreis_consistency"] = dict(kreis_consistency)
+    if household_universes is not None:
+        # The #659 household-universe keys (stage.HouseholdUniverseSettings.key_values), present
+        # only when the move is on or family_controls is off its legacy value, so a legacy run
+        # keeps its signature.
+        payload["household_universes"] = dict(household_universes)
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()

@@ -82,6 +82,9 @@ CONTROL_GROUPS: tuple = (
     ControlGroup("household_size", "households", r"^\d_Person", None, True),
     ControlGroup("household_type", "households", r"Typ_priv_HH_Familie",
                  "(households.H_GR >= 2)", True),
+    # The 1 km minor-child household controls (#659): households without a minor match
+    # neither class, so the group is not exhaustive.
+    ControlGroup("household_minor", "households", r"^HH_MINOR_", None, False),
     ControlGroup("tenure", "households", r"_Tenure_", None, True),
     ControlGroup("building_type", "households", r"^building_type_", None, True),
     ControlGroup("own_cars", "households", r"^OWN_CARS_", None, True),

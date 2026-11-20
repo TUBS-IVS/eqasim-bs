@@ -28,6 +28,7 @@ import pyarrow.parquet as pq
 from braunschweig.popsim import cells as cellmod
 from braunschweig.popsim import controls as ctrl
 from braunschweig.popsim import prepared_cells
+from braunschweig.popsim.household_less_cells import move_persons_to_household_cells
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +164,33 @@ def filter_zgb_cells(
 # Control totals (notebook-faithful: per-geography suffix, integerized)
 # --------------------------------------------------------------------------- #
 
+def _log_household_less_report(move_report: dict) -> None:
+    """Log the household-less-cell move as rates; warn when most such persons stay (no silent fallback)."""
+    left = (move_report["large_cell_persons"]
+            + move_report["persons_in_parents_without_households"])
+    household_less = move_report["persons_moved"] + left
+    message = (
+        "[popsim.controls] household-less cells: moved %.0f persons from %d cells; left: "
+        "%d large cells (%.0f persons), %d cells in %d squares without households (%.0f persons)")
+    args = (
+        move_report["persons_moved"], move_report["donor_cells"],
+        move_report["large_cells"], move_report["large_cell_persons"],
+        move_report["stuck_cells"], move_report["parents_without_households"],
+        move_report["persons_in_parents_without_households"])
+    if household_less > 0 and left > 0.5 * household_less:
+        logger.warning(
+            message + ". More than 50%% of the household-less persons (%.0f of %.0f) stay "
+            "in place -- check the household column.", *args, left, household_less)
+    else:
+        logger.info(message, *args)
+
+
+def _rounded_parent_totals(work: pd.DataFrame, col: str, parent_col: str) -> dict:
+    """``{parent: round(sum of col)}``, the default target of ``integerize_within_parents``."""
+    return {parent: int(round(float(group[col].sum())))
+            for parent, group in work.groupby(parent_col, sort=False)}
+
+
 def build_control_totals(
     per_cell_targets: pd.DataFrame,
     geo_crosswalk: pd.DataFrame,
@@ -170,6 +198,11 @@ def build_control_totals(
     *,
     cell_col: str = "ZENSUS100m",
     parent_col: str = "ZENSUS1km",
+    household_total_col: str | None = None,
+    person_cols: Sequence[str] = (),
+    threshold_cols: Sequence[str] | None = None,
+    move_persons_max: float | None = None,
+    report: dict | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Build the four control-total tables with per-geography suffixed columns.
 
@@ -177,7 +210,44 @@ def build_control_totals(
     the integer 100 m values sum exactly to the 1 km total; the 100 m columns are
     suffixed ``_ZENSUS100m`` and the 1 km totals ``_ZENSUS1km``. STAAT / WELT carry
     only the geography key (no controls), matching the notebook + control spec.
+
+    Household-less cells (#659): with ``move_persons_max`` set (a person count, e.g. 20), the
+    persons of a cell without households and with fewer than ``move_persons_max`` persons over
+    ``threshold_cols`` (default ``person_cols``) move to the household cells of the same 1 km
+    parent before the person columns are integerized
+    (``household_less_cells.move_persons_to_household_cells``). The household total column
+    ``household_total_col`` is integerized first and its integer values drive the move; both it
+    and ``person_cols`` must be base columns. The stage passes the 22 age x sex bands plus the
+    ten ``EMPLOYED_*_agg`` columns as ``person_cols`` and the 22 age bands as
+    ``threshold_cols``. A base column that is not in ``person_cols`` is NOT moved: it stays in
+    the donor cell, so the caller must pass EVERY person-count column as ``person_cols`` (the
+    stage passes the age bands and the employed grid). Raises ``ValueError`` when
+    ``move_persons_max`` is not positive, ``person_cols`` is empty or a ``threshold_cols`` entry
+    is not a base column. The person columns are integerised to their rounded PRE-move parent
+    totals, so the move cannot shift a 1 km total through float drift; the report key
+    ``max_parent_sum_change`` (integer 1 km total after the move minus before, largest absolute
+    value over the person columns) is 0 by construction, and a non-zero value raises.
+    The move report is written into ``report`` (updated in place) when given.
+    With ``move_persons_max`` None the output is exactly that of the plain build.
     """
+    move_persons = move_persons_max is not None
+    if move_persons:
+        if move_persons_max <= 0:
+            raise ValueError(f"move_persons_max must be positive, got {move_persons_max}")
+        if not len(person_cols):
+            raise ValueError(
+                "move_persons_max needs person_cols (every person-count column to move); "
+                "got none")
+        not_base = [c for c in (household_total_col, *person_cols) if c not in base_cols]
+        if household_total_col is None or not_base:
+            raise ValueError(
+                "move_persons_max needs household_total_col and person_cols among the base "
+                f"columns; got household_total_col={household_total_col!r}, "
+                f"not in base columns: {not_base}")
+        bad_threshold = [c for c in (threshold_cols or ()) if c not in base_cols]
+        if bad_threshold:
+            raise ValueError(
+                f"threshold_cols {bad_threshold} are not among the base columns / person_cols")
     parent_of = geo_crosswalk.set_index(cell_col)[parent_col]
     work = per_cell_targets.copy()
     work[parent_col] = work[cell_col].map(parent_of)
@@ -207,11 +277,46 @@ def build_control_totals(
                 logger.info(message, col, n_nan, n_cells, 100.0 * rate)
             work[col] = work[col].fillna(0)
 
+    if move_persons:
+        # The integer households decide who is household-less; the float persons keep their
+        # 1 km sums through the move, so the integerisation below rounds the same parent totals.
+        published_households = work[household_total_col].astype("float64")
+        households_int = ctrl.integerize_within_parents(
+            work, value_col=household_total_col, parent_col=parent_col)
+        work[household_total_col] = households_int
+        # Rounded pre-move parent totals of the person columns: the integerisation below keeps
+        # them, so float drift of the moved sums cannot flip a 1 km total by one.
+        pre_move_totals = {col: _rounded_parent_totals(work, col, parent_col)
+                           for col in person_cols}
+        moved, move_report = move_persons_to_household_cells(
+            work, parent_col=parent_col, households=households_int,
+            person_cols=list(person_cols), threshold_cols=threshold_cols,
+            max_persons=move_persons_max, published_households=published_households)
+        work = moved
+    else:
+        pre_move_totals = {}
+
     df_100m = pd.DataFrame({cell_col: work[cell_col].to_numpy()})
     for col in base_cols:
         df_100m[f"{col}{SUFFIX_100M}"] = ctrl.integerize_within_parents(
-            work, value_col=col, parent_col=parent_col
+            work, value_col=col, parent_col=parent_col, targets=pre_move_totals.get(col)
         ).to_numpy()
+
+    if move_persons:
+        max_change = 0
+        parents = work[parent_col].to_numpy()
+        for col, totals in pre_move_totals.items():
+            after = df_100m[f"{col}{SUFFIX_100M}"].groupby(parents, sort=False).sum()
+            change = (after - pd.Series(totals).reindex(after.index)).abs().max()
+            max_change = max(max_change, int(change) if len(after) else 0)
+        if max_change:
+            raise RuntimeError(
+                f"[popsim.controls] the household-less-cell move changed a 1 km person total by "
+                f"{max_change}; the integerisation must keep the pre-move parent totals")
+        move_report["max_parent_sum_change"] = max_change
+        _log_household_less_report(move_report)
+        if report is not None:
+            report.update(move_report)
 
     df_100m[parent_col] = work[parent_col].to_numpy()
     cols_100m = [f"{c}{SUFFIX_100M}" for c in base_cols]

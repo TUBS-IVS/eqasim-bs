@@ -21,6 +21,8 @@ code:
 - braunschweig/popsim/input_consistency.py
 - braunschweig/popsim/input_consistency_guard.py
 - braunschweig/popsim/employment_level.py
+- braunschweig/popsim/minor_child_targets.py
+- braunschweig/popsim/household_less_cells.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -48,6 +50,7 @@ features:
 - income_spatial_tilt
 - ipf_synthesis_legacy
 - kreis_income_control
+- minor_child_family_controls
 - ownership_grid_1km
 - escort_passive_from_adult
 - participation_universe_controls
@@ -77,6 +80,7 @@ decisions:
 - ADR-0201
 - ADR-0202
 - ADR-0203
+- ADR-0204
 notes: >-
   DONOR RESOLUTION ONCE (ADR-0192): donor household counts and donor person attributes with
   imputed codes are resolved once, before the seed, and inherited by the clones.
@@ -227,3 +231,18 @@ notes: >-
   On every run it writes the report file census_filtered_report.json (CENSUS_FILTERED_REPORT_FILE): the
   counts of the ZGB cell filter, the building-type rescale and the tenure rule, each with a status
   (disabled when its key is off). Rule, evidence and the accepted check miss: ADR-0202 and its run record.
+  HOUSEHOLD UNIVERSES (#659, ADR-0204, note popsim-input-consistency.md; feature popsim_method):
+  the keys braunschweig.population.popsim.move_persons_of_household_less_cells,
+  .household_less_cell_max_persons and .family_controls (values: configs/base_bs.yml; meaning and valid
+  values: braunschweig/popsim/stage/config_keys.py) move the persons of household-less 100 m cells to the
+  household cells of their square (braunschweig.popsim.household_less_cells) and replace the four 100 m
+  family-type controls by two under-18 household controls (braunschweig.popsim.minor_child_targets, seed
+  column hh_minor_class from seed.derive_hh_minor_class). While family_controls is minor_child_1km the stage
+  also reads the prepared 1 km grid at braunschweig.population.popsim.cells_1km_path. The report file
+  census_filtered_report.json carries the sections household_less_cells and family_controls (counts,
+  fallback squares and rates are written there, not repeated here). The batch diagnostics table
+  household_composition.csv (braunschweig.analysis.popsim_batch_diagnostics.composition) reads the result.
+  The income placement builds its donor signatures from the same enforced controls, 1 km ownership
+  grid included (_placement_income_catalog; effect on results: ADR-0204 Consequences).
+  Decision and current state: ADR-0204 (feature minor_child_family_controls); evidence: the
+  pre-registered run record popsim-ladder-inputs-b-2026-11-19.

@@ -267,6 +267,13 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_KREIS_FINE_TOLERANCE,
     KEY_KREIS_FINE_MIN_PERSONS,
     validate_kreis_consistency_keys,
+    KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS,
+    KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS,
+    KEY_FAMILY_CONTROLS,
+    MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS_DEFAULT,
+    HOUSEHOLD_LESS_CELL_MAX_PERSONS_DEFAULT,
+    FAMILY_CONTROLS_DEFAULT,
+    validate_household_universe_keys,
     KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE_DWELLINGS,
     KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS,
     KEY_SEED_CONTRACT_MODE,
@@ -576,7 +583,11 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # a seed built under the old rule (issue #372, ADR-0112).
     "braunschweig.popsim.escort_pairing",
     "braunschweig.popsim.folders",
+    # Reached through mid.control_cells (the household-less move of build_control_totals, #659).
+    "braunschweig.popsim.household_less_cells",
     "braunschweig.popsim.kreis_attribute_control",
+    # Imported inside _add_minor_child_targets (minor-child household targets, #659).
+    "braunschweig.popsim.minor_child_targets",
     "braunschweig.popsim.ownership_grid",
     "braunschweig.popsim.placement_income",
     "braunschweig.popsim.trips",
@@ -609,6 +620,9 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.stratum",
     "braunschweig.popsim.time_imputation",
     "braunschweig.popsim.weekend_plan_match",
+    # Imported inside _configure_household_universe_keys and execute() for the key of the 1 km
+    # cell file (minor-child targets, #659).
+    "braunschweig.population.config",
     "braunschweig.population.methods",
     "braunschweig.population.schema",
     "braunschweig.population.socioprofessional_class",
@@ -856,6 +870,8 @@ def configure(context):
     context.config(KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS, True)
     # KREIS input consistency (#658, Part A; meaning: config_keys). Code defaults = legacy values.
     _configure_kreis_consistency_keys(context)
+    # Household universes (#659, Part B; meaning: config_keys). Code defaults = legacy values.
+    family_controls = _configure_household_universe_keys(context)
     # Owner-household targets limited to the dwellings of the cell (#657; meaning:
     # KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS in config_keys). Default False in code: the production
     # switch follows the evidence run. The threshold's default is single-sourced from the rule
@@ -1099,6 +1115,7 @@ def configure(context):
         context.stage("braunschweig.data.bbsr.regiostar", alias="regiostar_tenure")
 
     source_name = context.config(KEY_SOURCE, "mid")
+    _require_family_controls_source(family_controls, source_name)
     # Member completion (D3) runs for the MiD source only. When active, the donor
     # build (member completion + weekend-plan match) is delegated to the cached
     # braunschweig.popsim.completed_donor stage so it runs ONCE across all runs
@@ -1304,10 +1321,38 @@ def _read_control_config(context, source_name: str):
     )
 
 
+def _placement_income_catalog(control_tiers, employment_grid_on: bool, active_entry_names,
+                              fine_teen_age_bands: bool, family_controls: str,
+                              ownership_grid_on: bool):
+    """Catalog the donor signatures of the income placement are built from.
+
+    The signatures must cover every control PopulationSim enforced (``_build_control_frame``),
+    so the teen bands, the family-control mode (#659) and the 1 km ownership grid
+    (ADR-0092) follow the run with the same flags. The grid controls select the same
+    households as the KREIS car/bicycle ownership controls, which the grid requires to be
+    active (``_inject_ownership_grid_columns``), so including them leaves the signatures'
+    donor partition unchanged; they are included so the signature catalog is the enforced
+    catalog by construction rather than by that coincidence.
+    """
+    from braunschweig.popsim import control_spec as _cs
+    return _cs.full_catalog(
+        include_tiers=control_tiers,
+        include_employment_grid=employment_grid_on,
+        include_ownership_grid=ownership_grid_on,
+        kreis_control_names=active_entry_names,
+        fine_teen_age_bands=fine_teen_age_bands,
+        family_controls=family_controls,
+    )
+
+
 def _build_control_frame(controls_source, controls_path, source_name: str, control_tiers,
         employment_grid_on: bool, active_entry_names, importance_profile: str,
-        fine_teen_age_bands: bool = True, ownership_grid_on: bool = False):
+        fine_teen_age_bands: bool = True, ownership_grid_on: bool = False,
+        family_controls: str = FAMILY_CONTROLS_DEFAULT):
     """Build the PopulationSim ``controls.csv`` frame and its base cell columns.
+
+    ``family_controls`` (config key ``family_controls``, #659): the family controls of the
+    catalog (``control_spec.apply_family_controls``); the default is the legacy set.
 
     Returns: ``(controls_df, base_cols)``.
     Mutates: nothing.
@@ -1322,6 +1367,7 @@ def _build_control_frame(controls_source, controls_path, source_name: str, contr
         kreis_control_names=active_entry_names,
         importance_profile=importance_profile,
         fine_teen_age_bands=fine_teen_age_bands,
+        family_controls=family_controls,
     )
     if importance_profile and importance_profile != "uniform":
         logger.info("[popsim.stage] importance profile applied: %s", importance_profile)
@@ -1532,6 +1578,266 @@ def _read_kreis_consistency_config(context) -> KreisConsistencySettings:
     return KreisConsistencySettings(*values)
 
 
+#: Top-level keys of the #659 (Part B) entries in the stage report file ``CENSUS_FILTERED_REPORT_FILE``.
+HOUSEHOLD_LESS_CELLS_REPORT_KEY = "household_less_cells"
+FAMILY_CONTROLS_REPORT_KEY = "family_controls"
+
+
+def _household_less_person_columns(base_cols, *, fine_teen_age_bands: bool):
+    """``(age_band_cols, employed_cols)`` the household-less move works on (#659).
+
+    The age x sex band controls of the tier0 backbone (the threshold columns) and the
+    ``EMPLOYED_*_agg`` grid controls that are active base columns.
+
+    Raises:
+        ValueError: an age band or the household total is not a base column (the move needs the
+            tier0 backbone; naming the key that asked for it).
+    """
+    from braunschweig.popsim import control_spec as _cs
+
+    age_cols = [c.name for c in _cs.tier0_backbone_catalog(fine_teen_age_bands=fine_teen_age_bands)
+                if c.geography == _cs.GEO_100M and c.seed_table == _cs.SEED_TABLE_PERSONS]
+    missing = [c for c in (*age_cols, _cs.HH_TOTAL_CENSUS_COLUMN) if c not in set(base_cols)]
+    if missing:
+        raise ValueError(
+            f"{KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS} is on but the control base columns lack "
+            f"{missing}; the move needs the tier0 age x sex bands and the household total.")
+    employed_cols = [c.name for c in _cs.employment_grid_controls() if c.name in set(base_cols)]
+    return age_cols, employed_cols
+
+
+class HouseholdUniverseSettings:
+    """The three #659 household-universe keys of a run, with the reports of their steps (Task B4).
+
+    ``batch_reports`` (one move report per batch) is filled by ``mid.run_popsim_mid`` through the
+    list passed by :meth:`run_popsim_mid_kwargs`; ``targets_report`` is the report of
+    ``minor_child_targets.per_cell_targets``. Meaning of the keys:
+    ``config_keys.KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS`` and its neighbours.
+    """
+
+    def __init__(self, move_persons: bool, max_persons: float, family_controls: str):
+        self.move_persons = move_persons
+        self.max_persons = max_persons
+        self.family_controls = family_controls
+        self.batch_reports: list = []
+        self.targets_report = None
+
+    def key_values(self) -> dict:
+        """``{config key: value used}`` of the three keys (the signature)."""
+        return {
+            KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS: self.move_persons,
+            KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS: self.max_persons,
+            KEY_FAMILY_CONTROLS: self.family_controls,
+        }
+
+    def is_legacy(self) -> bool:
+        """True when the keys leave the control tables as before #659 (move off, legacy family set)."""
+        return not self.move_persons and self.family_controls == FAMILY_CONTROLS_DEFAULT
+
+    def signature_payload(self):
+        """Batch-signature entry: ``None`` at the legacy values (their signatures stay as they were).
+
+        Off legacy all three keys are part of it, also the bound while the move is off: a deliberate
+        over-invalidation in the safe direction, as for ``KreisConsistencySettings``.
+        """
+        return None if self.is_legacy() else self.key_values()
+
+    def seed_households_for_run(self, seed_households: pd.DataFrame) -> pd.DataFrame:
+        """The PopulationSim seed households of this run: ``hh_minor_class`` only where a control reads it.
+
+        The seed build always derives ``hh_minor_class`` (``mid.seed_loading._join_hh_type5_column``).
+        Only the "minor_child_1km" controls read it; every other mode drops it here, so the seed
+        written per batch and the content hash of the batch signature
+        (``batch_cache.compute_batch_config_signature``) stay those of the runs before #659.
+
+        Returns: ``seed_households`` itself in "minor_child_1km" mode, else a frame without the column.
+        Mutates: nothing in place.
+        """
+        from braunschweig.popsim import control_spec as _cs
+
+        if (self.family_controls == _cs.FAMILY_CONTROLS_MINOR_CHILD_1KM
+                or "hh_minor_class" not in seed_households.columns):
+            return seed_households
+        return seed_households.drop(columns="hh_minor_class")
+
+    def run_popsim_mid_kwargs(self, base_cols, *, fine_teen_age_bands: bool) -> dict:
+        """The keyword arguments of ``mid.run_popsim_mid`` that carry the move; ``{}`` while it is off."""
+        if not self.move_persons:
+            return {}
+        from braunschweig.popsim import control_spec as _cs
+
+        age_cols, employed_cols = _household_less_person_columns(
+            base_cols, fine_teen_age_bands=fine_teen_age_bands)
+        self.batch_reports = []
+        return {
+            "household_total_col": _cs.HH_TOTAL_CENSUS_COLUMN,
+            "person_cols": [*age_cols, *employed_cols],
+            "threshold_cols": age_cols,
+            "move_persons_max": float(self.max_persons),
+            "household_less_reports": self.batch_reports,
+        }
+
+    def report(self) -> tuple[dict, dict]:
+        """The two report sections: ``(household_less_cells, family_controls)``.
+
+        ``household_less_cells``: ``enabled``, ``max_persons``, ``totals`` (the move counts summed
+        over the batches; ``None`` while the move is off) and ``batches`` (one entry per batch).
+        ``family_controls``: ``mode`` and ``report`` (the minor-child targets report or ``None``).
+        """
+        totals = None
+        if self.move_persons:
+            totals = {}
+            for batch_report in self.batch_reports:
+                for key, value in batch_report.items():
+                    if key == "max_parent_sum_change":
+                        totals[key] = max(totals.get(key, 0), value)
+                    elif key != "batch":
+                        totals[key] = totals.get(key, 0) + value
+        household_less = {
+            "enabled": bool(self.move_persons),
+            "max_persons": float(self.max_persons),
+            "totals": totals,
+            "batches": [dict(b) for b in self.batch_reports],
+        }
+        family = {"mode": self.family_controls, "report": self.targets_report}
+        return household_less, family
+
+
+def _configure_household_universe_keys(context) -> str:
+    """Declare the three #659 keys with their legacy defaults in ``configure()`` and validate them.
+
+    With ``family_controls`` "minor_child_1km" the 1 km cell file key is declared too (read in
+    ``execute()``). A bad value fails at DAG-build time, naming the key (ValueError).
+    Returns the ``family_controls`` value (checked against the seed source by
+    :func:`_require_family_controls_source`).
+    """
+    from braunschweig.popsim import control_spec as _cs
+
+    family_controls = context.config(KEY_FAMILY_CONTROLS, FAMILY_CONTROLS_DEFAULT)
+    validate_household_universe_keys(
+        context.config(KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS,
+                       MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS_DEFAULT),
+        context.config(KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS, HOUSEHOLD_LESS_CELL_MAX_PERSONS_DEFAULT),
+        family_controls, _cs.FAMILY_CONTROLS_MODES)
+    if family_controls == _cs.FAMILY_CONTROLS_MINOR_CHILD_1KM:
+        from braunschweig.population.config import KEY_CELLS_1KM
+
+        context.config(KEY_CELLS_1KM)
+    return family_controls
+
+
+def _require_family_controls_source(family_controls: str, source_name: str) -> None:
+    """Refuse "minor_child_1km" for a seed source other than MiD, at DAG-build time (#659).
+
+    The two minor-child controls read the seed column ``hh_minor_class``, which only the MiD seed
+    build derives (``mid.seed_loading``); an ENTD run would otherwise fail in the seed contract
+    after the seed build.
+
+    Raises:
+        ValueError: ``family_controls`` is "minor_child_1km" and ``source_name`` is not "mid".
+    """
+    from braunschweig.popsim import control_spec as _cs
+
+    if family_controls == _cs.FAMILY_CONTROLS_MINOR_CHILD_1KM and source_name != "mid":
+        raise ValueError(
+            f"{KEY_FAMILY_CONTROLS} is 'minor_child_1km' but {KEY_SOURCE} is {source_name!r}: the "
+            "minor-child controls read the seed column hh_minor_class, which only the 'mid' seed "
+            "carries. Use family_controls 'zensus_family5' or 'none' with this source.")
+
+
+def _read_household_universe_config(context) -> HouseholdUniverseSettings:
+    """Read the three #659 keys in ``execute()`` (one-argument ``context.config``; declared in configure)."""
+    from braunschweig.popsim import control_spec as _cs
+
+    values = (
+        context.config(KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS),
+        context.config(KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS),
+        context.config(KEY_FAMILY_CONTROLS),
+    )
+    validate_household_universe_keys(*values, _cs.FAMILY_CONTROLS_MODES)
+    return HouseholdUniverseSettings(*values)
+
+
+def _add_minor_child_targets(cells: pd.DataFrame, cells_1km_path):
+    """Add the two minor-child household targets (#659) to the cells; ``(cells, report)``.
+
+    Reads the columns ``minor_child_targets.SQUARE_COLUMNS`` of the prepared 1 km parquet
+    (raw names cleaned by ``prepared_cells.clean_col_name``), keeps the squares of the model's
+    cells and calls ``minor_child_targets.per_cell_targets`` with the cells' household total
+    (``control_spec.HH_TOTAL_CENSUS_COLUMN``, the one the household-size controls partition) and
+    their Kreis (from the ARS). Runs after the building-type rescale and the owner limit. A cell
+    whose household total is NaN counts 0 households, as in ``mid.build_control_totals``; their
+    number is logged and reported (``cells_with_missing_households``).
+
+    Raises:
+        FileNotFoundError: the 1 km parquet is missing.
+        ValueError: a column of ``SQUARE_COLUMNS`` or a cell column is missing, two raw columns
+            of the 1 km file clean to one name (``prepared_cells.read_columns_by_clean_name``),
+            and the errors of ``per_cell_targets``.
+    Mutates: nothing in place; the cells frame MUST be reassigned.
+    """
+    from braunschweig.popsim import control_spec as _cs
+    from braunschweig.popsim import minor_child_targets as _mct
+
+    path = Path(cells_1km_path)
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"[popsim.stage] {KEY_FAMILY_CONTROLS} is 'minor_child_1km' but the 1 km cell file "
+            f"{path} does not exist (config key braunschweig.population.popsim.cells_1km_path).")
+    for column in ("ZENSUS1km", mid._ARS_COLUMN, _cs.HH_TOTAL_CENSUS_COLUMN):
+        if column not in cells.columns:
+            raise ValueError(f"[popsim.stage] the cells frame lacks {column!r}; the minor-child "
+                             "targets need the 1 km parent, the ARS and the household total.")
+    squares = prepared_cells.read_columns_by_clean_name(path, _mct.SQUARE_COLUMNS)
+    squares = squares[squares[_mct.SQUARE_ID_COLUMN].isin(set(cells["ZENSUS1km"]))]
+
+    households = pd.to_numeric(cells[_cs.HH_TOTAL_CENSUS_COLUMN], errors="coerce")
+    n_missing = int(households.isna().sum())
+    if n_missing:
+        logger.info("[popsim.stage] minor-child targets: %d/%d cells without a household total "
+                    "count 0 households", n_missing, len(cells))
+    work = pd.DataFrame({
+        "ZENSUS1km": cells["ZENSUS1km"].to_numpy(),
+        folders.GEO_KREIS: derive_geo_kreis_from_ars(cells[mid._ARS_COLUMN]).to_numpy(),
+        "_households": households.fillna(0.0).to_numpy(),
+    }, index=cells.index)
+    targets, report = _mct.per_cell_targets(
+        work, squares, parent_col="ZENSUS1km", kreis_col=folders.GEO_KREIS,
+        household_total_col="_households")
+    report = {**report, "squares_in_table": int(len(squares)),
+              "cells_with_missing_households": n_missing}
+    out = cells.copy()
+    for column in (_mct.ONE_ADULT_TARGET, _mct.MULTI_ADULT_TARGET):
+        out[column] = targets[column].to_numpy()
+    return out, report
+
+
+def _write_household_universe_report(context, settings: HouseholdUniverseSettings) -> Path:
+    """Write the #659 entries ``household_less_cells`` and ``family_controls`` and set the run info."""
+    household_less, family = settings.report()
+    _update_stage_report(context, HOUSEHOLD_LESS_CELLS_REPORT_KEY, household_less)
+    path = _update_stage_report(context, FAMILY_CONTROLS_REPORT_KEY, family)
+    context.set_info("popsim_household_less_cells", household_less)
+    context.set_info("popsim_family_controls", family)
+    totals = household_less["totals"]
+    logger.info("[popsim.stage] household universes: move %s, family controls %s; report %s",
+                "on" if settings.move_persons else "off", settings.family_controls, path)
+    if totals is not None:
+        moved = float(totals.get("persons_moved", 0.0))
+        left = (float(totals.get("large_cell_persons", 0.0))
+                + float(totals.get("persons_in_parents_without_households", 0.0)))
+        household_less_persons = moved + left
+        rate = moved / household_less_persons if household_less_persons else 0.0
+        logger.info(
+            "[popsim.stage] household-less cells over %d batches: moved %.0f/%.0f persons "
+            "(%.1f%%) from %d cells, left %.0f (%.1f%%: %d large cells, %d stuck cells)",
+            len(household_less["batches"]), moved, household_less_persons, 100.0 * rate,
+            int(totals.get("donor_cells", 0)), left,
+            100.0 * (1.0 - rate) if household_less_persons else 0.0,
+            int(totals.get("large_cells", 0)), int(totals.get("stuck_cells", 0)))
+    return path
+
+
 def _json_safe(value):
     """``value`` with every NaN / infinity replaced by ``None`` (strict JSON has no such number)."""
     if isinstance(value, dict):
@@ -1615,8 +1921,12 @@ def _run_with_consistency_report(context, consistency: KreisConsistencySettings,
 def _resolve_cell_load_columns(context, controls_source, source_name: str, control_tiers, base_cols,
         employment_grid_on: bool, cells_path, active_entries, fine_teen_age_bands: bool = True,
         ownership_grid_on: bool = False, kreis_batch_apportionment: str = "population",
-        tier3_control_names=(), tenure_owner_limited_to_dwellings: bool = False):
+        tier3_control_names=(), tenure_owner_limited_to_dwellings: bool = False,
+        family_controls: str = FAMILY_CONTROLS_DEFAULT):
     """Resolve the column set loaded from the prepared-cells parquet.
+
+    ``family_controls`` (#659): passed to ``build_source_columns`` (the census family-type columns
+    are loaded only in the legacy mode).
 
     ``tenure_owner_limited_to_dwellings`` (issue #657): with the key on and a tenure control
     active (``_tenure_control_active``) the rooms-table dwelling column the owner limit reads
@@ -1647,6 +1957,7 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
         seed=source_name,
         tiers=control_tiers,
         fine_teen_age_bands=fine_teen_age_bands,
+        family_controls=family_controls,
     )
     load_cols = source_cols_override if source_cols_override is not None else base_cols
 
@@ -1757,8 +2068,11 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
 
 def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source_name: str, control_tiers,
         fine_teen_age_bands: bool = True,
-        building_type_targets_to_households: bool = False, return_report: bool = False):
+        building_type_targets_to_households: bool = False, return_report: bool = False,
+        family_controls: str = FAMILY_CONTROLS_DEFAULT):
     """Derive the multi-column aggregated control columns on the cells frame.
+
+    ``family_controls`` (#659): passed to ``build_aggregation_map``; the default is the legacy set.
 
     Derive the multi-column aggregated control columns (e.g. building_type_*).
     For tier0-only: agg_map is empty -> add_aggregated_controls returns cells
@@ -1783,6 +2097,7 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
         seed=source_name,
         tiers=control_tiers,
         fine_teen_age_bands=fine_teen_age_bands,
+        family_controls=family_controls,
     )
     cells = prepared_cells.add_aggregated_controls(cells, agg_map)
     rescale_report = None
@@ -2634,7 +2949,7 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
         seed_persons: pd.DataFrame, kreis_table, active_entries,
         status_prior_n: float, work_dir, populationsim_version: str,
         populationsim_commit: str, populationsim_lock_hash: str, settings_overrides,
-        integerizer_seed_base, kreis_consistency=None) -> None:
+        integerizer_seed_base, kreis_consistency=None, household_universes=None) -> None:
     """Purge work-dir batch folders whose batch inputs changed since the last run.
 
     Purge stale batch folders if the popsim config/control set changed since the last
@@ -2671,6 +2986,7 @@ def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_
         settings_overrides=settings_overrides,
         integerizer_seed_base=integerizer_seed_base,
         kreis_consistency=kreis_consistency,
+        household_universes=household_universes,
     )
     purge_stale_batches_on_config_change(work_dir, _config_signature)
 
@@ -2727,11 +3043,13 @@ def _run_populationsim_batches(context, cells: pd.DataFrame, base_cols, controls
         settings_path, logging_path, max_cells: int, run_one, num_workers: int,
         source, stratify_regiostar: bool, kreis_table, kreis_controls_map,
         household_control_names: set, settings_overrides, integerizer_seed_base,
-        consistency=None):
+        consistency=None, household_less_kwargs=None):
     """Run PopulationSim per 1 km batch and merge the expanded households.
 
     ``consistency`` (#658, Task A6): a ``KreisConsistencySettings`` with its recorder; ``None``
     keeps the legacy call (nothing measured, the population share, no following, survey level).
+    ``household_less_kwargs`` (#659): ``HouseholdUniverseSettings.run_popsim_mid_kwargs``; ``None``
+    or ``{}`` keeps the plain control build.
 
     Returns: ``merge_report`` (its ``combined`` frame is the merged expanded
     household table).
@@ -2753,6 +3071,7 @@ def _run_populationsim_batches(context, cells: pd.DataFrame, base_cols, controls
         kreis_controls_map=kreis_controls_map,
         household_control_names=household_control_names,
         **({} if consistency is None else consistency.run_popsim_mid_kwargs()),
+        **(household_less_kwargs or {}),
     )
     context.set_info("popsim_n_households", merge_report.n_rows)
     context.set_info("popsim_n_cells", merge_report.n_cells)
@@ -3361,10 +3680,14 @@ def execute(context) -> pd.DataFrame:
     else:
         _band_text = "off (ten-year 10-19)"
     logger.info("[popsim.stage] fine teen age bands (issue #320): %s", _band_text)
+    # Household universes (#659, Part B): read before the control frame, which the
+    # family_controls mode shapes.
+    household_universes = _read_household_universe_config(context)
     controls_df, base_cols = _build_control_frame(
         controls_source, controls_path, source_name, control_tiers,
         employment_grid_on, active_entry_names, importance_profile,
         fine_teen_age_bands=fine_teen_bands_on, ownership_grid_on=ownership_grid_on,
+        family_controls=household_universes.family_controls,
     )
     kreis_table, kreis_controls_map, household_control_names = _load_tier3_kreis_controls(
         context, control_tiers, controls_source, source_name, kreise,
@@ -3390,6 +3713,7 @@ def execute(context) -> pd.DataFrame:
         kreis_batch_apportionment=consistency.apportionment,
         tier3_control_names=tier3_control_names,
         tenure_owner_limited_to_dwellings=tenure_owner_limited,
+        family_controls=household_universes.family_controls,
     )
 
     cells = mid.load_control_cells(cells_path, load_cols)
@@ -3400,10 +3724,18 @@ def execute(context) -> pd.DataFrame:
         fine_teen_age_bands=fine_teen_bands_on,
         building_type_targets_to_households=building_type_rescaled,
         return_report=True,
+        family_controls=household_universes.family_controls,
     )
     cells, tenure_limit_report = _limit_owner_targets_to_dwellings(
         cells, controls_source, source_name, control_tiers,
         enabled=tenure_owner_limited, min_households_outside=tenure_min_households_outside)
+    # Minor-child household targets (#659): on the final household totals, i.e. after the
+    # building-type rescale and the owner limit.
+    from braunschweig.popsim import control_spec as _cs_family
+    if household_universes.family_controls == _cs_family.FAMILY_CONTROLS_MINOR_CHILD_1KM:
+        from braunschweig.population.config import KEY_CELLS_1KM
+        cells, household_universes.targets_report = _add_minor_child_targets(
+            cells, context.config(KEY_CELLS_1KM))
     _write_census_filtered_report(
         context, zgb_cell_filter=zgb_cell_filter_report,
         building_type_enabled=building_type_rescaled, building_type_report=building_type_report,
@@ -3466,6 +3798,7 @@ def execute(context) -> pd.DataFrame:
         resolve_tenure_building_type=bool(
             context.config(KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE)),
     )
+    seed_households = household_universes.seed_households_for_run(seed_households)
 
     # Contract check (#647, G6) on the final controls and cells, before any batch is written.
     _check_seed_contract(
@@ -3497,6 +3830,7 @@ def execute(context) -> pd.DataFrame:
         populationsim_version, tool_report["commit"],
         tool_version.lock_content_hash(popsimprep_dir), settings_overrides,
         integerizer_seed_base, consistency.signature_payload(),
+        household_universes=household_universes.signature_payload(),
     )
     # The universe weight columns live on a copy: the plain ``cells`` below feeds the cell
     # attributes joined onto the output and must not gain them.
@@ -3506,14 +3840,21 @@ def execute(context) -> pd.DataFrame:
     else:
         logger.info("[popsim.stage] no KREIS table in this run: the KREIS input consistency is "
                     "not measured")
-    merge_report = _run_with_consistency_report(
-        context, consistency, lambda: _run_populationsim_batches(
-            context, batch_cells, base_cols, controls_df, seed_households, seed_persons,
-            work_dir, settings_path, logging_path, max_cells, run_one, num_workers,
-            source, stratify_regiostar, kreis_table, kreis_controls_map,
-            household_control_names, settings_overrides, integerizer_seed_base,
-            consistency=consistency,
-        ))
+    household_less_kwargs = household_universes.run_popsim_mid_kwargs(
+        base_cols, fine_teen_age_bands=fine_teen_bands_on)
+    try:
+        merge_report = _run_with_consistency_report(
+            context, consistency, lambda: _run_populationsim_batches(
+                context, batch_cells, base_cols, controls_df, seed_households, seed_persons,
+                work_dir, settings_path, logging_path, max_cells, run_one, num_workers,
+                source, stratify_regiostar, kreis_table, kreis_controls_map,
+                household_control_names, settings_overrides, integerizer_seed_base,
+                consistency=consistency, household_less_kwargs=household_less_kwargs,
+            ))
+    finally:
+        # Written also when a batch fails: the batch folders, and with them the move counts,
+        # are complete before the first batch runs.
+        _write_household_universe_report(context, household_universes)
     _log_integerizer_feasibility(context, work_dir)
     # Reported before the gate, which may stop the stage: with fast_paths on, how many balancer
     # calls the fork's fast kernels answered (no silent fallback to the original kernels).
@@ -3553,11 +3894,11 @@ def execute(context) -> pd.DataFrame:
         from braunschweig.popsim import placement_income as _pi
         from braunschweig.popsim import control_spec as _cs_pi
         _pi.check_controls_source_compatible(placement_income_on, controls_source)
-        _pi_catalog = _cs_pi.full_catalog(
-            include_tiers=control_tiers,
-            include_employment_grid=employment_grid_on,
-            kreis_control_names=active_entry_names,
-        )
+        # Same flags as _build_control_frame, so the slot swaps keep every aggregate
+        # PopulationSim fitted, including the 1 km car/bicycle ownership grid.
+        _pi_catalog = _placement_income_catalog(
+            control_tiers, employment_grid_on, active_entry_names, fine_teen_bands_on,
+            household_universes.family_controls, ownership_grid_on)
         _pi_controls = _cs_pi.controls_for_seed(_pi_catalog, source_name)
         _signatures = _pi.donor_control_signatures(
             _pi_controls, seed_households, seed_persons, seed=source_name)

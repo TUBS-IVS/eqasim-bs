@@ -131,13 +131,16 @@ def required_cell_columns() -> list[str]:
     return list(columns)
 
 
-def base_columns() -> list[str]:
-    """The control base columns of ``stage._build_control_frame`` (100 m and 1 km geographies)."""
+def base_columns(**family_kwargs: Any) -> list[str]:
+    """The control base columns of ``stage._build_control_frame`` (100 m and 1 km geographies).
+
+    ``family_kwargs``: optionally ``family_controls`` (#659); omitted, the stage default.
+    """
     _, base_cols = stage._build_control_frame(
         controls_source=CONTROL_SOURCE, controls_path=None, source_name=SEED_NAME,
         control_tiers=CONTROL_TIERS, employment_grid_on=False, active_entry_names=[],
         importance_profile=IMPORTANCE_PROFILE, fine_teen_age_bands=FINE_TEEN_AGE_BANDS,
-        ownership_grid_on=False)
+        ownership_grid_on=False, **family_kwargs)
     return base_cols
 
 
@@ -187,6 +190,8 @@ def build_control_tables_and_report(
         cells: pd.DataFrame | None = None, *,
         tenure_owner_limited_to_dwellings: bool = False,
         tenure_min_households_outside: float = 10.0,
+        family_controls: str | None = None,
+        move_persons_max: float | None = None,
         **extra_aggregate_kwargs: Any,
 ) -> tuple[dict[str, pd.DataFrame], dict | None]:
     """Run the control-total path of the stage on ``cells``: its four tables and the owner-limit report.
@@ -199,6 +204,9 @@ def build_control_tables_and_report(
     100 m -> 1 km crosswalk.
 
     ``extra_aggregate_kwargs`` extend or override ``AGGREGATE_KWARGS`` (for a later keyword).
+    ``family_controls`` (``None``: the stage default) and ``move_persons_max`` (``None``: no move;
+    a number moves the age x sex bands of household-less cells, threshold = the same bands) are
+    the #659 keys, passed to ``_build_control_frame`` and ``mid.build_control_totals``.
     Returns ``(tables, report)``; ``report`` is ``None`` while the owner limit is off.
     """
     if cells is None:
@@ -211,7 +219,14 @@ def build_control_tables_and_report(
         enabled=tenure_owner_limited_to_dwellings,
         min_households_outside=tenure_min_households_outside)
     crosswalk = prepared[["ZENSUS100m", "ZENSUS1km"]]
-    return mid.build_control_totals(prepared, crosswalk, base_columns()), report
+    base_cols = base_columns(
+        **({} if family_controls is None else {"family_controls": family_controls}))
+    move_kwargs: dict[str, Any] = {}
+    if move_persons_max is not None:
+        age_cols = [c for c in base_cols if "_AGE_" in c]
+        move_kwargs = {"household_total_col": control_spec.HH_TOTAL_CENSUS_COLUMN,
+                       "person_cols": age_cols, "move_persons_max": move_persons_max}
+    return mid.build_control_totals(prepared, crosswalk, base_cols, **move_kwargs), report
 
 
 def build_control_tables(

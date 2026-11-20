@@ -369,6 +369,11 @@ def assemble_batch_folder(
     kreis_follow_grids: bool = False,
     employed_bridge: float | None = None,
     consistency_recorder: ConsistencyRecorder | None = None,
+    household_total_col: str | None = None,
+    person_cols: Sequence[str] = (),
+    threshold_cols: Sequence[str] | None = None,
+    move_persons_max: float | None = None,
+    household_less_report: dict | None = None,
 ) -> dict[str, Path]:
     """Assemble one PopulationSim run folder for a subset of cells.
 
@@ -424,6 +429,11 @@ def assemble_batch_folder(
     and the counts of the three steps above are added to its report. The folder name is the batch
     name. Needs the Tier-3 KREIS geography (there is no KREIS table to compare without it).
     Default ``None`` -> nothing is measured.
+
+    Household-less cells (#659): ``household_total_col``, ``person_cols``, ``threshold_cols`` and
+    ``move_persons_max`` are passed to :func:`build_control_totals` (meaning there); the move's
+    counts are written into ``household_less_report`` when given. ``move_persons_max`` ``None``
+    (default) -> the plain build, unchanged.
     """
     if consistency_recorder is not None and not (kreis_table is not None and bool(kreis_controls_map)):
         raise ValueError(
@@ -460,7 +470,10 @@ def assemble_batch_folder(
         kreis_weight_col=(kreis_weight_col if tier3 else None),
     )
     targets = cells_subset[["ZENSUS100m", *base_cols]].copy()
-    control_totals = build_control_totals(targets, geo_crosswalk, base_cols)
+    control_totals = build_control_totals(
+        targets, geo_crosswalk, base_cols, household_total_col=household_total_col,
+        person_cols=person_cols, threshold_cols=threshold_cols,
+        move_persons_max=move_persons_max, report=household_less_report)
     if tier3:
         apportion_weights = None
         if kreis_total_pop is not None:
@@ -629,6 +642,11 @@ def run_popsim_mid(
     kreis_follow_grids: bool = False,
     employment_level_source: str = "survey",
     consistency_recorder: ConsistencyRecorder | None = None,
+    household_total_col: str | None = None,
+    person_cols: Sequence[str] = (),
+    threshold_cols: Sequence[str] | None = None,
+    move_persons_max: float | None = None,
+    household_less_reports: list | None = None,
 ) -> mergemod.MergeReport:
     """Batch the cells into PopulationSim runs, execute them, and merge the output.
 
@@ -710,6 +728,13 @@ def run_popsim_mid(
         after the folder is written, i.e. before any PopulationSim process starts (the folders of
         all batches are assembled before the first ``run_one`` call); the bridge and the dropped
         target mass of empty universes are stored in its report. Needs the Tier-3 KREIS geography.
+    household_total_col / person_cols / threshold_cols / move_persons_max:
+        Household-less cells (#659), passed to every :func:`assemble_batch_folder` (meaning:
+        :func:`build_control_totals`). ``move_persons_max`` ``None`` (default) -> unchanged.
+    household_less_reports:
+        ``None`` (default) or a list that receives, while the move is on, one
+        ``{"batch": <folder name>, **<move counts>}`` per batch. The folders are assembled in this
+        process before any batch runs, so the list is complete when the batches start.
     """
     if employment_level_source not in EMPLOYMENT_LEVEL_SOURCES:
         raise ValueError(f"employment_level_source must be one of {EMPLOYMENT_LEVEL_SOURCES}, "
@@ -728,6 +753,16 @@ def run_popsim_mid(
     # subprocess, so the path must be absolute to be cwd-independent.
     work_dir = Path(work_dir).resolve()
     groups = cell_groups(cells)
+
+    def _household_less_kwargs(folder: Path) -> dict:
+        """The household-less keyword arguments of one batch; appends its report while the move is on."""
+        kwargs = {"household_total_col": household_total_col, "person_cols": person_cols,
+                  "threshold_cols": threshold_cols, "move_persons_max": move_persons_max}
+        if move_persons_max is not None and household_less_reports is not None:
+            batch_report = {"batch": Path(folder).name}
+            household_less_reports.append(batch_report)
+            kwargs["household_less_report"] = batch_report
+        return kwargs
 
     # Tier-3 per-batch KREIS apportionment basis: the region-wide population per
     # RESOLVED dominant Kreis, computed ONCE over ALL cells. A Kreis split across
@@ -837,6 +872,7 @@ def run_popsim_mid(
                 kreis_follow_grids=kreis_follow_grids,
                 employed_bridge=employed_bridge,
                 consistency_recorder=consistency_recorder,
+                **_household_less_kwargs(folder),
             )
             batch_folders.append(str(folder))
 
@@ -910,6 +946,7 @@ def run_popsim_mid(
                 kreis_follow_grids=kreis_follow_grids,
                 employed_bridge=employed_bridge,
                 consistency_recorder=consistency_recorder,
+                **_household_less_kwargs(folder),
             )
             batch_folders_stratified.append(str(folder))
             global_batch_index += 1

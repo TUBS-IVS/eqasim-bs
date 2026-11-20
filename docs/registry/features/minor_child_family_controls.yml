@@ -1,0 +1,80 @@
+feature: minor_child_family_controls
+title: Household controls by the under-18 definition (1 km census family table, seed class hh_minor_class)
+area: population
+description: 'Two ZENSUS1km PopulationSim household controls (HH_MINOR_ONE_ADULT_agg,
+  HH_MINOR_MULTI_ADULT_agg, issue #659) replace the four 100 m census family-type controls, which
+  count a child of any age while the MiD seed can only see age. Target per 100 m cell: its
+  household total times its 1 km square''s share of lone parents / couples with a child under 18
+  in the census family table (Typ_der_Kernfamilie_nach_Kindern); seed class hh_minor_class
+  (members under 18 and the number of adults). Mode "minor_child_1km" of the key
+  braunschweig.population.popsim.family_controls (meaning: braunschweig/popsim/stage/config_keys.py).
+  Decision, ASSUMPTIONS, blind spots and the rejected options: ADR-0204.'
+stages:
+- data.census.filtered
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.population.popsim.family_controls
+introduced:
+  issue: '#659'
+  pr: null
+  adr: ADR-0204
+detail_doc: docs/codebase/notes/popsim-input-consistency.md
+code_paths:
+- braunschweig/popsim/minor_child_targets.py
+- braunschweig/popsim/seed.py
+- braunschweig/popsim/control_spec.py
+- braunschweig/popsim/stage/__init__.py
+- braunschweig/popsim/stage/config_keys.py
+- braunschweig/analysis/popsim_validation/controls.py
+- braunschweig/analysis/popsim_batch_diagnostics/composition.py
+evidence:
+  tests:
+  - tests/test_popsim_minor_child_targets.py
+  - tests/test_popsim_household_universe_keys.py
+  - tests/test_popsim_validation_controls.py
+  - tests/test_popsim_batch_diagnostics_composition.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_popsim_household_universe_keys.py::test_legacy_keys_reproduce_the_control_tables
+    note: |
+      At the legacy value "zensus_family5" (code default) the control tables equal the committed
+      goldens value for value, and the seed and batch signature equal those of the base commit
+      (test_legacy_keys_keep_the_seed_and_signature_of_the_base_commit).
+  fallback_rate:
+    instrumented: true
+    log_marker: '[minor_child_targets] squares primary'
+    note: |
+      per_cell_targets logs the squares on the Kreis-share fallback and their household rate, warns
+      and raises above two bounds, and writes the counts into the family_controls section of
+      census_filtered_report.json (rule and bounds: the module docstring).
+  reference:
+    kind: none
+    note: |
+      Control fit against census family shares; the check is not independent of the targets (both use the same census share); not a
+      behavioural validation. The census 1 km family table is the target source, not an
+      independent reference (data record zensus2022_grid_cells).
+validation:
+  state: unvalidated
+  runs:
+  - popsim-ladder-inputs-b-2026-11-19
+  metric: null
+  note: 'Arm 7b of the pre-registered run record popsim-ladder-inputs-b-2026-11-19 was chosen;
+    verdict and checks: that run record and ADR-0204 "Evidence". Control fit against census
+    family shares; the check is not independent of the targets (both use the same census share); not a behavioural validation.'
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Chosen on four batches of one draw (ADR-0204); the region-wide evidence is the full rerun
+    (#648).
+  source: ADR-0204
+notes: 'Sibling of the household-less-cell move of the same issue (key
+  braunschweig.population.popsim.move_persons_of_household_less_cells, feature popsim_method
+  notes); both are recorded in ADR-0204.'

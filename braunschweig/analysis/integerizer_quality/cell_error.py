@@ -141,6 +141,7 @@ def cell_error_table(work_dir, mid_dir, *, random_seed: int, tiers, employment_g
     hh_type5 = seedmod.derive_hh_type5(donor_p, household_id_col="H_ID", age_col="HP_ALTER")
     donor_hh = donor_hh.copy()
     donor_hh["hh_type5"] = donor_hh["H_ID"].map(hh_type5)
+    # No hh_minor_class here: the 1 km HH_MINOR_* controls (#659) are not evaluated at 100 m.
     logger.info("[integerizer_quality] donor loaded: %d households, %d persons; "
                 "hh_type5 attached (%d classified); evaluating controls per batch...",
                 len(donor_hh), len(donor_p), int(donor_hh["hh_type5"].notna().sum()))
