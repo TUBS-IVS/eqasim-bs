@@ -1,7 +1,7 @@
 # Population validation - old
 
 - Source: `~/prod100_20261031/output` (run_output)
-- Git commit: `1041849c243c71859c95275447a24363ee1aa358`
+- Git commit: `unknown`
 - Persons: 1,130,422 | Households: 558,274 | Vehicles: 2,311,830
 
 ## Headline quality by family

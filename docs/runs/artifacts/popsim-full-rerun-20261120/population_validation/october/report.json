@@ -3,7 +3,7 @@
   "source_kind": "run_output",
   "source_path": "~/prod100_20261031/output",
   "prefix": "braunschweig_100pct_prod20261031_",
-  "git_commit": "1041849c243c71859c95275447a24363ee1aa358",
+  "git_commit": "unknown",
   "n_persons": 1130422,
   "n_households": 558274,
   "n_vehicles": 2311830,
@@ -483,10 +483,10 @@
     {
       "ars5": "03101",
       "purpose": "mobility",
-      "realised_rate": 0.8496341704567926,
-      "n_persons": 252850,
+      "realised_rate": 0.8979685671292426,
+      "n_persons": 239240,
       "target_rate": 0.9003,
-      "abs_error": 0.05066582954320742
+      "abs_error": 0.0023314328707574328
     },
     {
       "ars5": "03102",
@@ -523,10 +523,10 @@
     {
       "ars5": "03102",
       "purpose": "mobility",
-      "realised_rate": 0.8334918210721456,
-      "n_persons": 104109,
+      "realised_rate": 0.8770365878310087,
+      "n_persons": 98940,
       "target_rate": 0.8801,
-      "abs_error": 0.046608178927854405
+      "abs_error": 0.0030634121689913085
     },
     {
       "ars5": "03103",
@@ -563,10 +563,10 @@
     {
       "ars5": "03103",
       "purpose": "mobility",
-      "realised_rate": 0.8301527316063476,
-      "n_persons": 127544,
+      "realised_rate": 0.8734398587726752,
+      "n_persons": 121223,
       "target_rate": 0.8761,
-      "abs_error": 0.045947268393652374
+      "abs_error": 0.0026601412273248304
     },
     {
       "ars5": "03151",
@@ -603,10 +603,10 @@
     {
       "ars5": "03151",
       "purpose": "mobility",
-      "realised_rate": 0.8323194375032312,
-      "n_persons": 174081,
+      "realised_rate": 0.8738586058405606,
+      "n_persons": 165806,
       "target_rate": 0.878,
-      "abs_error": 0.04568056249676877
+      "abs_error": 0.004141394159439371
     },
     {
       "ars5": "03153",
@@ -643,10 +643,10 @@
     {
       "ars5": "03153",
       "purpose": "mobility",
-      "realised_rate": 0.8280190889642904,
-      "n_persons": 127613,
+      "realised_rate": 0.8733376862741857,
+      "n_persons": 120991,
       "target_rate": 0.8789,
-      "abs_error": 0.050880911035709575
+      "abs_error": 0.005562313725814283
     },
     {
       "ars5": "03154",
@@ -683,10 +683,10 @@
     {
       "ars5": "03154",
       "purpose": "mobility",
-      "realised_rate": 0.8387435596930766,
-      "n_persons": 90446,
+      "realised_rate": 0.882586995218317,
+      "n_persons": 85953,
       "target_rate": 0.8854,
-      "abs_error": 0.0466564403069234
+      "abs_error": 0.002813004781683004
     },
     {
       "ars5": "03157",
@@ -723,10 +723,10 @@
     {
       "ars5": "03157",
       "purpose": "mobility",
-      "realised_rate": 0.827996159286976,
-      "n_persons": 136433,
+      "realised_rate": 0.8717454045961756,
+      "n_persons": 129586,
       "target_rate": 0.8776,
-      "abs_error": 0.04960384071302404
+      "abs_error": 0.005854595403824492
     },
     {
       "ars5": "03158",
@@ -763,10 +763,10 @@
     {
       "ars5": "03158",
       "purpose": "mobility",
-      "realised_rate": 0.8523656940278157,
-      "n_persons": 117344,
+      "realised_rate": 0.8967186659494352,
+      "n_persons": 111540,
       "target_rate": 0.8999,
-      "abs_error": 0.04753430597218433
+      "abs_error": 0.0031813340505648657
     }
   ],
   "participation_universe_fit": [
@@ -1493,8 +1493,8 @@
   ],
   "geo_outputs": {},
   "fleet_evaluation": {
-    "fleet_overview.png": "~/i648/popval_old/fleet_overview.png",
-    "fleet_summary.csv": "~/i648/popval_old/fleet_summary.csv"
+    "fleet_overview.png": "~/i648/popval2_old/fleet_overview.png",
+    "fleet_summary.csv": "~/i648/popval2_old/fleet_summary.csv"
   },
   "minor_employment": {
     "n_minors": 155992,

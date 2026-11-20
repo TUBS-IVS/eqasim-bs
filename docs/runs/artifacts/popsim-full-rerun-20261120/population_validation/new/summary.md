@@ -1,7 +1,7 @@
 # Population validation - new
 
 - Source: `~/popsim100_20261120/output` (run_output)
-- Git commit: `1041849c243c71859c95275447a24363ee1aa358`
+- Git commit: `unknown`
 - Persons: 1,129,395 | Households: 558,179 | Vehicles: 2,305,705
 
 ## Headline quality by family
