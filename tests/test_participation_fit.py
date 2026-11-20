@@ -157,6 +157,15 @@ def test_realised_participation_mobility_counts_present_persons_only():
     assert indexed.loc[("03102", "leisure"), "n_persons"] == 3
 
 
+def test_day_absence_states_match_their_owner():
+    # participation_fit restates the absence states instead of importing them (that import would enter the
+    # analysis stage's source hash); this pins the copy to braunschweig.synthesis.day_absence.absence.
+    from braunschweig.analysis.population_validation import participation_fit as pf
+    from braunschweig.synthesis.day_absence import absence
+    assert pf.DAY_ABSENCE_STATE_PRESENT == absence.STATE_PRESENT
+    assert set(pf.DAY_ABSENCE_STATES) == set(absence.STATES)
+
+
 def test_realised_participation_mobility_keeps_missing_or_unknown_states_and_warns(caplog):
     # A missing (NaN) or unknown absence state must not be counted as absent: that would drop the person from
     # the mobility denominator and inflate the realised mobility. Persons 5 and 6 are immobile, so keeping them

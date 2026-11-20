@@ -898,12 +898,16 @@ def build_registry(data_path: str) -> list[Control]:
         independence="partially_independent"))
 
     # --- Census distribution controls (REAL targets) -------------------------
+    # age_group / sex are FIT CHECKS: popsim_mid steers 22 age x sex controls per 100 m cell from the
+    # Zensus 2022 grid, and the DESTATIS 12411-0018 Kreis table describes the same Zensus-based
+    # population, so agreement here is mostly convergence to the steered margins, not an
+    # independent cross-check.
     reg.append(banded_person_control(
         "age_group", "census", "kreis", "age",
-        bounds=AGE_GROUP_BOUNDS, target=age_group_target))
+        bounds=AGE_GROUP_BOUNDS, target=age_group_target, independence="fit_check"))
     reg.append(categorical_person_control(
         "sex", "census", "kreis", "sex",
-        ("male", "female"), sex_target))
+        ("male", "female"), sex_target, independence="fit_check"))
     # household_size uses the bucket builder so values >= 6 are collapsed to the
     # "6+" label matching the Zensus 1000A-2081 target categories. The geography
     # is "gemeinde" (8-digit commune_id) because the Zensus source is per-Gemeinde.

@@ -96,15 +96,18 @@ from braunschweig.popsim import kreis_attribute_control as kac
 from braunschweig.popsim.attributes import (
     EMPLOYED_EMPLOYMENT_STATUS_CLASSES, EMPLOYMENT_STATUS_CATEGORIES)
 from braunschweig.popsim.mid.participation import PARTICIPATION_W_ZWECK
-from braunschweig.synthesis.day_absence.absence import STATE_PRESENT as DAY_ABSENCE_STATE_PRESENT
-from braunschweig.synthesis.day_absence.absence import STATES as DAY_ABSENCE_STATES
 
 LOGGER = logging.getLogger("braunschweig.analysis.participation_fit")
 
 #: persons.csv column of the reporting-day absence state (stage
-#: braunschweig.synthesis.day_absence.absence_stage); its values are owned by
-#: braunschweig.synthesis.day_absence.absence (STATES, STATE_PRESENT).
+#: braunschweig.synthesis.day_absence.absence_stage).
 DAY_ABSENCE_COLUMN = "day_absence_state"
+#: Its values. The owner is braunschweig.synthesis.day_absence.absence (STATES, STATE_PRESENT); they are restated
+#: here, not imported, because that module's import closure (the SrV calibration modules) would otherwise enter
+#: the source hash of every stage that imports this analysis (tests/test_audit_synpp_helper_hash.py).
+#: tests/test_participation_fit.py pins both values to the owner.
+DAY_ABSENCE_STATE_PRESENT = "present"
+DAY_ABSENCE_STATES = ("present", "absent_household", "absent_individual")
 
 # The per-purpose participation controls evaluated by this module, derived from
 # mid.PARTICIPATION_W_ZWECK (the single source of truth for the registered purpose
@@ -183,15 +186,19 @@ def realised_participation(trips: pd.DataFrame, persons_kreis: pd.DataFrame) -> 
     whole day (``E_ANZ_WEGE != -7``; ASSUMPTION note in
     ``scripts/build_trip_class_target.py``). So when ``persons_kreis`` carries
     ``day_absence_state`` (persons.csv, stage
-    ``braunschweig.synthesis.day_absence.absence_stage``), the mobility row counts
-    only the persons with ``day_absence_state == "present"``; without the column
-    every person counts and a WARNING says that the universes then differ (the
-    gap is about the absent share, about 5 % of persons).
+    ``braunschweig.synthesis.day_absence.absence_stage``), the mobility row leaves
+    out the persons whose state is ``absent_household`` or ``absent_individual``:
+    its universe is the present persons plus any person with a missing or unknown
+    state (kept, counted and warned, so a bad state never inflates the rate).
+    Without the column every person counts and a WARNING says that the universes
+    then differ (the gap is about the absent share, about 5 % of persons).
 
     Returns one row per (``ars5``, ``purpose``) with ``purpose`` in
     ``PARTICIPATION_PURPOSES`` plus ``"mobility"`` (currently work / leisure /
     education / escort / mobility): columns ``ars5, purpose,
-    realised_rate, n_persons``; ``n_persons`` is the denominator of the row.
+    realised_rate, n_persons``; ``n_persons`` is the denominator of the row: all
+    persons of the Kreis for the purposes, the mobility universe above for
+    ``mobility``.
     """
     missing_persons_cols = [c for c in ("person_id", "ars5") if c not in persons_kreis.columns]
     if missing_persons_cols:
@@ -349,8 +356,10 @@ def participation_fit(trips: pd.DataFrame, persons_kreis: pd.DataFrame, targets_
 
     Returns ``ars5, purpose, realised_rate, n_persons, target_rate, abs_error``.
 
-    ``n_persons`` -- the number of persons in that Kreis, carried through unchanged from
-    :func:`realised_participation` -- is what makes an ``abs_error`` interpretable: the
+    ``n_persons`` -- the row's denominator, carried through unchanged from
+    :func:`realised_participation` (all persons of the Kreis for the purposes, the mobility
+    universe of present persons plus missing/unknown states for ``mobility``, so it differs
+    between the rows of one Kreis) -- is what makes an ``abs_error`` interpretable: the
     same deviation means different things in a Kreis of 500 and one of 50,000, and the
     run's headline "worst abs_error" line reports exactly such a single cell. Added for
     parity with :func:`universe_participation_fit`, which has carried it since #368.
