@@ -242,8 +242,11 @@ validation:
   reference: the round method on the same inputs (model output)
   result: >-
     61 parents (31 of batch_044, 30 of batch_028), release candidate d9a2e28, production environment, one
-    thread (method_summary.csv, level ALL; round / search / lp): wall time 1,620 / 20 / 3,031 s; parents on a
-    fallback path 33 / 0 / 0; household rows whose weight over the sub-zones is kept 53.2 % / 100 % / 100 %;
+    thread (method_summary.csv, level ALL; round / search / lp): wall time 1,620 / 20 / 3,031 s; parents not
+    solved by the first simultaneous call 33 / 0 / 0 (round: 18 on a fallback path as the solver-path gate
+    defines it, i.e. sequential or smart-round outcomes, and 15 solved by the retry, which the gate counts
+    as primary; column fallback_instances of method_summary.csv counts every outcome other than
+    "simultaneous"; wording corrected 2026-11-19 after review, no figure changed); household rows whose weight over the sub-zones is kept 53.2 % / 100 % / 100 %;
     importance-weighted distance of the integer to the float cell totals 21.30 M / 15.45 M / 25.79 M; distance
     to the targets 55,626 / 53,085 / 58,241; rows with a positive integer weight 59,991 / 79,892 / 79,892 of
     79,892. The lp method reached OPTIMAL in all 61 calls and is the slowest and the farthest from the float
