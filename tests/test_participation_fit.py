@@ -130,6 +130,68 @@ def test_realised_participation_wzweck_schema():
     _assert_matches_expected(result)
 
 
+def _persons_kreis_with_absence():
+    # The shared fixture plus one whole-day-absent person per Kreis (no trips, as the
+    # day-absence stage leaves them): person 5 absent with its household, person 6 alone.
+    return pd.DataFrame({
+        "person_id": [1, 2, 5, 3, 4, 6],
+        "ars5": ["03101", "03101", "03101", "03102", "03102", "03102"],
+        "day_absence_state": ["present", "present", "absent_household",
+                              "present", "present", "absent_individual"],
+    })
+
+
+def test_realised_participation_mobility_counts_present_persons_only():
+    # The mobility target (1 - trips_0 of the SrV trip-class target) excludes the respondents
+    # away from home the whole day, so the realised mobility must exclude the absent persons;
+    # the purpose rows keep every person, as their SrV targets count every respondent.
+    result = realised_participation(_trips_purpose_schema(), _persons_kreis_with_absence())
+    indexed = result.set_index(["ars5", "purpose"])
+    assert indexed.loc[("03101", "mobility"), "realised_rate"] == pytest.approx(0.5)
+    assert indexed.loc[("03101", "mobility"), "n_persons"] == 2
+    assert indexed.loc[("03102", "mobility"), "realised_rate"] == pytest.approx(1.0)
+    assert indexed.loc[("03102", "mobility"), "n_persons"] == 2
+    assert indexed.loc[("03101", "work"), "realised_rate"] == pytest.approx(1 / 3)
+    assert indexed.loc[("03101", "work"), "n_persons"] == 3
+    assert indexed.loc[("03102", "leisure"), "realised_rate"] == pytest.approx(1 / 3)
+    assert indexed.loc[("03102", "leisure"), "n_persons"] == 3
+
+
+def test_day_absence_states_match_their_owner():
+    # participation_fit restates the absence states instead of importing them (that import would enter the
+    # analysis stage's source hash); this pins the copy to braunschweig.synthesis.day_absence.absence.
+    from braunschweig.analysis.population_validation import participation_fit as pf
+    from braunschweig.synthesis.day_absence import absence
+    assert pf.DAY_ABSENCE_STATE_PRESENT == absence.STATE_PRESENT
+    assert set(pf.DAY_ABSENCE_STATES) == set(absence.STATES)
+
+
+def test_realised_participation_mobility_keeps_missing_or_unknown_states_and_warns(caplog):
+    # A missing (NaN) or unknown absence state must not be counted as absent: that would drop the person from
+    # the mobility denominator and inflate the realised mobility. Persons 5 and 6 are immobile, so keeping them
+    # gives 1/3 and 2/3; dropping them would give the 0.5 and 1.0 of the all-known fixture.
+    persons = _persons_kreis_with_absence().assign(
+        day_absence_state=["present", "present", None, "present", "present", "on_holiday"])
+    with caplog.at_level(logging.WARNING, logger="braunschweig.analysis.participation_fit"):
+        result = realised_participation(_trips_purpose_schema(), persons)
+    indexed = result.set_index(["ars5", "purpose"])
+    assert indexed.loc[("03101", "mobility"), "realised_rate"] == pytest.approx(1 / 3)
+    assert indexed.loc[("03102", "mobility"), "realised_rate"] == pytest.approx(2 / 3)
+    assert indexed.loc[("03102", "mobility"), "n_persons"] == 3
+    assert any(record.levelno == logging.WARNING and "day_absence_state" in record.getMessage()
+               for record in caplog.records)
+
+
+def test_realised_participation_mobility_without_absence_column_counts_everyone_and_warns(caplog):
+    # Fallback (no day_absence_state column, e.g. an older run): every person counts, and the
+    # check warns, because the mobility row then compares different universes.
+    with caplog.at_level(logging.WARNING, logger="braunschweig.analysis.participation_fit"):
+        result = realised_participation(_trips_purpose_schema(), _persons_kreis())
+    _assert_matches_expected(result)
+    assert any(record.levelno == logging.WARNING and "day_absence_state" in record.getMessage()
+               for record in caplog.records)
+
+
 def test_realised_participation_raises_on_unknown_trip_schema():
     trips = pd.DataFrame({"person_id": [1, 2], "some_other_column": ["a", "b"]})
     with pytest.raises(KeyError, match="following_purpose"):

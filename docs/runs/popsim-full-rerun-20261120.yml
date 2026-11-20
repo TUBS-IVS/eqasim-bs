@@ -1,0 +1,294 @@
+id: popsim-full-rerun-20261120
+date: '2026-11-20'
+repository:
+  commit: 1041849c243c71859c95275447a24363ee1aa358
+  branch: main
+  notes: >-
+    The run built origin/main 1041849c (eqasim-java-bs cb7e81fa3851c1338cfd80921c9d55aaeef2e600) as an isolated run
+    (scripts/isolated_run.py; run directory popsim100_20261120 on the run server). PopulationSim from the tracked uv
+    project environments/populationsim: fork TUBS-IVS/populationsim release v0.10.0+bs.2 (commit d9a2e28); the fork's
+    tests/test_bs_balancer_fast_path.py passed on that environment before the launch (205 passed). The comparison run
+    prod100_20261031 was built from eqasim-bs 7a41f0ba with PopulationSim 0.10.0 (its manifests:
+    popsim-batch-diagnostics-prod100-20261031-2026-11-16, prod100-java-heap-driver-rss-2026-11-04). Both runs were
+    measured with the same diagnostics code (popsim_batch_diagnostics at 1041849c); the October figures here therefore
+    replace none of the baseline manifest's and can differ from them where the diagnostics changed since b1e4a5a5.
+    Analysis scripts of this record (comparison, zone views, activity grid, dashboard data): committed under
+    docs/runs/artifacts/popsim-full-rerun-20261120/scripts/.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - configs/overlays/test_100pct.yml (run list and paths replaced by the run overlay below)
+  - docs/runs/artifacts/popsim-full-rerun-20261120/run_overlay.yml (as composed by isolated_run.py; source overlay run_overlay_source.yml)
+  notes: >-
+    All production values of main at 1041849c (fork core ADR-0199, seed records and control universes #647/#652,
+    controlled rounding ADR-0201, run-time options and num_workers auto ADR-0200, tenure/dwelling targets ADR-0202,
+    Kreis targets per batch and consistency guard ADR-0203, household target definitions ADR-0204, #660). Run target:
+    synthesis.output plus four synthesis analyses against SrV; no MATSim (owner, 2026-11-20). The launch was gated with
+    --allow-popsim and --allow-environment-mismatch: the eqasim conda env lacked five pip packages of the commit's
+    environment snapshot (py-spy, pdfplumber, pdfminer.six, pypdfium2, cryptography), none imported by the pipeline;
+    recorded in the run's run.json. Building potentials: eqasim-data/data/braunschweig/buildings/08_redistribution.gpkg,
+    SHA-256 84af5b19bb36646923c08d4fc98b92215cc189b920874c182e3cbcbfdbc0e67f (the release the owner delivered on
+    2026-11-05, Data Registry building_potentials_redistribution); prod100_20261031 predates it.
+sampling:
+  rate: 1.0
+  scope: >-
+    the full model area: 60 PopulationSim batches, 558,179 synthetic households and 1,129,395 persons, from one seed of
+    218,097 MiD 2023 households.
+  notes: Same scope and seed households as prod100_20261031 (558,274 households, 1,130,422 persons).
+pipeline:
+  targets:
+  - synthesis.output
+  - braunschweig.analysis.synthesis.plan_structure_vs_srv
+  - braunschweig.analysis.synthesis.departure_time_vs_srv
+  - braunschweig.analysis.synthesis.commute_distance_by_kreis
+  - braunschweig.analysis.synthesis.work_participation_by_kreis
+  notes: >-
+    67 stages recomputed (gate list in run_overlay.yml): PopulationSim and every stage after it, plus network, transit
+    and location-data stages whose code or configuration changed on main since 2026-10-31. Upstream cache copied
+    (cp -a) from prod100_20261031. Wall time 13:59:39 to 16:31:14 (2 h 32 min), exit 0.
+classification:
+- production_candidate
+- ab_test
+status:
+  execution: completed
+  notes: >-
+    A full build of the synthetic population up to finished persons with day plans, and its comparison with the
+    October production run. Control fit and donor diversity are measurements of the synthesis against its own inputs,
+    NOT a behavioural validation; the comparisons with MiD and SrV below are checks of the population and the day
+    plans against committed survey references; MATSim was not run, so nothing here validates traffic or mode choice.
+source: >-
+  Server outputs of the run (popsim100_20261120: popsim_work, output, logs, cache/monitoring) and of the
+  measurements (i648/: diag_new, diag_old, zones_*, grid, popval_*); committed copies of every table cited here in
+  docs/runs/artifacts/popsim-full-rerun-20261120/. The published dashboard (claude.ai artifact) is a view of the same
+  tables (dashboard/facts.csv and siblings), not a separate source.
+environment: >-
+  run server (Linux, 62-core budget, 94 GB); conda eqasim (Python 3.10) for the pipeline; PopulationSim in
+  environments/populationsim (Python 3.12, uv lock of 1041849c).
+validation:
+- metric: run resources (num_workers auto, PopulationSim wall time, worker memory)
+  reference: none (operational measurement; ADR-0200 sized worker_memory_gb at 6.0 from three batches)
+  result: >-
+    The resource gate chose 13 batch workers (budget 62 cores / 86.3 GB, driver RSS 2.37 GB, 6 GB per worker).
+    PopulationSim stage 34 min 55 s (October run: 12 h 56 min with 2 workers). At the pool's memory peak the 13
+    workers held 26.9 GiB private memory together, 2.07 GiB per worker on average, well below the 13 x 6 GB the gate
+    reserved; the heaviest single worker is not recorded separately (the stage's largest process RSS was 15.5 GiB, not
+    attributed to a worker or the driver). The highest machine memory of the
+    run, 93.8 GiB used with 11.5 GiB available and 676.8 MiB swapped, came from the pt2matsim stage (one Java process
+    77.2 GiB), not from PopulationSim.
+  artifact: docs/runs/artifacts/popsim-full-rerun-20261120/resource_monitoring_summary.md
+  notes: Input to #281 (worker tuning). The pt2matsim peak leaves little room for other jobs on the server during that stage.
+- metric: solver paths and fast-path rate of the batch integerizers (stage log lines)
+  reference: none (design goal G5 of the repair design asks for every path recorded and counted)
+  result: >-
+    Fast balancer kernel 2,525 of 2,525 calls (0 fallback). Controlled rounding: 2,465 simultaneous calls, all method
+    search, 0 not OPTIMAL/FEASIBLE. Parents integerized simultaneously: KREIS 60/60, ZENSUS1km 172/172, ZENSUS100m
+    2,233/2,233; NOT_SOLVED 0 of 2,525 call rows. October run (same diagnostics): ZENSUS1km 15.1 % and ZENSUS100m
+    33.9 % of parents not simultaneous, 52 NOT_SOLVED calls.
+  artifact: docs/runs/artifacts/popsim-full-rerun-20261120/comparison/headline.csv
+- metric: donor reuse over the region
+  reference: none (a reuse measure describes the draw)
+  result: >-
+    107,940 of 218,097 seed households used (49.5 %; October 15,248 = 7.0 %). Kish effective sample size 16,016
+    (1,293). Most-copied seed household 624 copies (3,796). The 100 / 1,000 / 5,000 most-used seed households carry
+    4.8 % / 16.6 % / 35.9 % of the synthetic households (20.7 % / 57.0 % / 89.1 %). Per Kreis 24,510 to 49,409
+    distinct seed households (5,602 to 9,269).
+  artifact: docs/runs/artifacts/popsim-full-rerun-20261120/diagnostics/new/reuse.csv
+  notes: >-
+    Concentration curve and copies histogram from the per-donor counts in zones/*/donor_usage.csv. By household size
+    (comparison/reuse_by_household_size.csv, scripts/reuse_by_household_size.py): seed households with 6 or more
+    persons 633 of 1,661 used (October 90), Kish 64.7 (21.0), most-copied 426 copies (622); 5 persons 2,362 of 6,009
+    used, Kish 174 (42). The large households are still the thinnest part of the pool.
+- metric: share of synthetic households per MiD seed-weight class (H_GEW) against the class's share of the seed weight
+  reference: >-
+    the seed's own weight shares (MiD 2023 H_GEW); the 5-percentage-point bound of design goal G2 is an
+    ASSUMPTION-grade design bound, not an observed reference
+  result: >-
+    G2 met: largest difference 2.96 percentage points (class below 1: 30.6 % of copies against 27.6 % of the weight);
+    October 26.97 points.
+  artifact: docs/runs/artifacts/popsim-full-rerun-20261120/diagnostics/new/weight_class_shares.csv
+- metric: seed records outside the control categories (coverage) and resolved raw codes
+  reference: none (internal consistency; the diagnostics' ratio bounds 0.5 and 2 are ASSUMPTION-grade)
+  result: >-
+    Every exhaustive control group covers every seed record. Persons without a binary sex (raw codes 3/9) are
+    resolved into the age x sex controls and over-represented by a factor 1.79 (October, uncovered: 7.21); below the
+    bound 2, so no separate issue. Remaining warnings: persons outside the Schulabschluss categories 2.23 times their
+    weight share, outside the berufliche Abschluss categories 0.34 times (October 2.29 / 0.53).
+  artifact: docs/runs/artifacts/popsim-full-rerun-20261120/diagnostics/new/control_coverage.csv
+- metric: >-
+    integer control fit, WAPE pooled per geography and per control group (sum over zones of |synthetic - target| over
+    the sum of targets); KREIS rows are upper bounds (per-batch apportioned targets)
+  reference: the run's own control targets (census, MiD and SrV derived), NOT observed behaviour
+  result: >-
+    All controls: ZENSUS100m 0.122 (October 0.197), ZENSUS1km 0.0056 (0.040), KREIS 0.0021 (0.014). The control sets
+    differ between the runs (household targets of #657, #659), and several targets were redefined: building type
+    counted dwellings in October (609,816 against 558,151 households; ADR-0198 made it count households), so
+    October's building-type WAPE has an unreachable floor of 0.085 of its 0.154; the tenure targets (ADR-0202) and
+    the Kreis employment targets (employment_status, work_by_employment, employed; ADR-0203) changed as well. The
+    pooled values and these groups are therefore not like for like; per group,
+    every group present in both runs has a lower WAPE in the new run (age x sex 100 m 0.279 / 0.325, household size
+    0.139 / 0.230, employed by age 0.074 / 0.205, building type 0.043 / 0.154, tenure 0.038 / 0.066, cars 1 km
+    0.0045 / 0.069, bikes 1 km 0.0054 / 0.050, every Kreis family 0.0005 to 0.0032 / 0.0052 to 0.027). Households:
+    558,179 against a target of 558,151 (+28, one of 60 batches off; October +123, four batches).
+  artifact: docs/runs/artifacts/popsim-full-rerun-20261120/comparison/fit_by_group_geography.csv
+  notes: >-
+    Per control in comparison/fit_by_control.csv; per 1 km cell in zones/*/cells_1km.csv. Not every control improved
+    inside its cells: the 100 m WAPE rose for persons 10-14 (women 0.450 to 0.539, men 0.463 to 0.553), 15-17
+    (0.493 to 0.753, 0.484 to 0.690), 18-19 (0.622 to 0.835, 0.578 to 0.875), men 80+ (0.407 to 0.420), households
+    of 5 persons (0.447 to 0.558) and of 6+ persons (0.515 to 0.651). The region totals of these age bands now meet
+    their targets within 0.6 % (October 4 to 27 % short) and 6+ households within 1.6 %; households of 5 persons
+    overshoot region-wide by 5.2 % (16,030 against 15,233; October -1.7 %), which alone sets a floor of 0.052 under
+    their cell WAPE (October 0.017), about a third of their rise. Household-size totals, new (October): 1 person
+    -1.4 % (-4.7 %), 2 +0.1 % (+4.5 %), 3 +1.6 % (+3.0 %), 4 +3.2 % (+9.1 %), 5 +5.2 % (-1.7 %), 6+ +1.6 % (-32.9 %).
+    These targets and cells are the same in both runs, so the small numbers per cell explain the level of the
+    error, not its rise; the cause of the rise is not established (a trade-off with the new household-type targets
+    is a candidate, untested).
+- metric: 100 m fit by cell size (households targeted in the 100 m cell)
+  reference: the run's own control targets
+  result: >-
+    Age x sex WAPE 0.686 in cells with 1 to 5 households, 0.279 with 11 to 20, 0.110 with 51 to 100 (October 0.699 /
+    0.331 / 0.139); household size 0.458 / 0.144 / 0.043. Cells with person targets but no household target hold
+    0.7 % of the age target and 2.5 % of the age error. Over a whole batch (about 9,300 households) the age x sex
+    WAPE is 0.003 (October 0.033): the remaining 100 m error is placement within neighbourhoods of tiny cells.
+  artifact: docs/runs/artifacts/popsim-full-rerun-20261120/zones/new/cellsize_bins.csv
+- metric: rare groups, region total against target and WAPE in their cells
+  reference: the run's own control targets
+  result: >-
+    Households with 6+ persons 7,901 against 7,773 (+1.6 %; October -32.9 %), cell WAPE 0.651 (0.515). Persons aged
+    18-19 20,780 against 20,706 (+0.4 %; October -25.2 %), cell WAPE 0.855 (0.600). Households with minors and one
+    adult (1 km control of #659) 23,056 against 23,093 (-0.2 %), WAPE 0.070; the October run controlled the Zensus
+    single-parent family type (children of any age, 100 m) instead, -12.6 %, WAPE 0.360.
+  artifact: docs/runs/artifacts/popsim-full-rerun-20261120/comparison/rare_groups.csv
+- metric: persons and households against committed census and survey tables (population_validation, mean absolute
+    difference of category shares per Kreis, household size per Gemeinde)
+  reference: >-
+    DESTATIS 12411-0018 (age, sex), Zensus 2022 1000A-2081 (household size), MiD 2023 H7 and H12.3 (cars, bicycles
+    per household), P9 (employment), P17.1 (licence), P24.1 (PT ticket); files and loaders named in
+    braunschweig/analysis/population_validation/controls.py
+  result: >-
+    New (October) in percentage points: age groups 0.51 (0.80), household size 0.87 (1.92), sex 0.22 (0.18), cars per
+    household 0.99 (1.00), bicycles per household 0.98 (1.10), employment status 1.41 (0.84), employed yes/no 4.24
+    (2.09), licence 2.83 (2.28), PT ticket 1.65 (1.47). Persons living in households of 6+: 4.20 % against Zensus
+    4.75 % (October 2.77 %). Households with a minor 19.2 % (October 28.2 %): the target now counts households with
+    minors (106,448 targeted, 106,931 synthetic), the October run's family types counted children of any age.
+  artifact: docs/runs/artifacts/popsim-full-rerun-20261120/population_validation/new/quality_summary.csv
+  notes: >-
+    The employment rate is controlled to the Zensus (ILO concept, employed by age at 100 m), which the new run now
+    meets; the October run stayed 1 to 5 % below those targets. Against MiD P9 (self-reported, a few hundred to about
+    2,000 respondents per Kreis) the new rate is higher in five Kreise (most Wolfsburg, 53.0 % against 44.4 %) and lower
+    in three (Salzgitter, Gifhorn, Wolfenbüttel, 3 to 4 points), so the gap to P9 widened in both directions. The owner
+    keeps the Zensus as the reference (2026-11-20). Household size, licence, age and sex are fit checks (household
+    size and 22 age x sex classes are controlled per 100 m cell from the Zensus 2022 grid, and the DESTATIS Kreis
+    table describes the same population; the licence is raked to P17.1), so their improvement is mostly convergence
+    to steered margins; employment yes/no is the independent check. population_validation labels age and sex as
+    fit checks since 8e16b2e3; both runs were re-measured with it (only that label changed).
+- metric: day plans against SrV 2023 (plan structure, departure times, commute distances, participation per Kreis)
+  reference: SrV 2023 Braunschweig and region (committed SrV aggregates read by the four analysis stages and by population_validation)
+  result: >-
+    Mobile persons 83.9 % against SrV 84.4 % (October 83.9 %), trips per person 3.05 against 3.19 (3.04), tours per
+    mobile person 1.53 against 1.60 (1.53). Departure times: the first trip of the day is calibrated to SrV (EMD 0.0021,
+    October 0.0024, a fit check); the later trips are the holdout check, EMD 0.0124 (October 0.0140). Commute
+    distance EMD for trips to other municipalities: Goslar 0.130 (0.129), Peine 0.099 (0.100), Wolfsburg 0.086
+    (0.083), Wolfenbüttel 0.082 (0.082) above the stage's gap bound 0.08; within the municipality every Kreis below it.
+    Participation per Kreis in the finished plans against the SrV targets: mobility -0.22 to -0.58 percentage points
+    (October -0.23 to -0.59), leisure -1.5 to -2.1, work -0.1 to -2.7.
+  artifact: docs/runs/artifacts/popsim-full-rerun-20261120/srv/new/plan_structure_headline.csv
+  notes: >-
+    The differences to October mix the new population with every location change on main since 2026-10-31, the new
+    building potentials included. The participation check first reported mobility 4.4 to 5.2 points below target in
+    every Kreis (October 4.6 to 5.1): a universe mismatch of the check, not a model deficit. Its target
+    (1 - trips_0 of target2026_trip_class_by_kreis.csv) holds for the SrV "computable" universe, which excludes the
+    persons away from home the whole day (E_ANZ_WEGE = -7; ASSUMPTION note in scripts/build_trip_class_target.py),
+    while the realised rate counted every person, including the 56,830 persons (5.03 %) the day-absence stage
+    (feature general_day_absence) makes absent. The check now counts mobility over present persons (commit daba7de0 on
+    this branch, braunschweig/analysis/population_validation/participation_fit.py); both runs were re-measured with it
+    (population_validation/*, every other output byte-identical). Over all persons the new run is 83.89 % mobile
+    against the plan-structure SrV share 84.37 %, which also counts the absent persons. PopulationSim meets the
+    trip-class target per Kreis within WAPE 0.002 (comparison/fit_by_group_geography.csv).
+- metric: activities and work locations per 500 m cell (EPSG:25832) against the building potentials
+  reference: >-
+    building potentials 08_redistribution.gpkg (modelled weights of the producer, not observed counts); pattern
+    comparison by shares only
+  result: >-
+    330,427 residents with a work activity in the finished plans (October 325,968; work locations beyond the portal
+    threshold became outside stays and are not counted here) against a total job weight of 591,700 in the potentials
+    file (modelled weights, compared as shares only); activity totals per purpose in activity_grid_totals.csv.
+  artifact: docs/runs/artifacts/popsim-full-rerun-20261120/activity_grid/activity_grid_500m.csv
+  notes: >-
+    As in the SrV entry, October against new mixes the new population with the location changes since 2026-10-31,
+    the new building potentials included.
+- metric: commuters across the model boundary (in-commuters, out-commuters), counts and 500 m layers
+  reference: >-
+    BA Pendleratlas in-commuter flows (the stage's od_target frame; the stage scales its agents to them, so equality
+    is by construction, not a check); everything else is a measurement of the synthesis
+  result: >-
+    In-commuters to work 68,630 in both runs, equal to the Pendleratlas total. Student in-commuters 6,574 (October
+    6,174). Residents whose assigned work location lies outside the 880 traffic zones (pre-portal commute lines)
+    40,185 of 361,405 with a work location, 11.1 % (October 40,336 of 357,195, 11.3 %); residents whose assigned
+    education location lies outside them 1,234 of 192,995 (October 1,368 of 192,555); the finished plans hold a
+    similar number of education activities outside the zones (cross-check in the script log).
+  artifact: docs/runs/artifacts/popsim-full-rerun-20261120/commuter/commuter_totals.csv
+  notes: >-
+    The in-commuter stages are not needed by synthesis.output, so a follow-up isolated run (popsim100_20261120_incommuters,
+    same commits, cache copied from popsim100_20261120, run list braunschweig.synthesis.incommuters and
+    braunschweig.synthesis.student_incommuters; run_overlay_incommuters.yml) built them for the new run, 18:23 to 18:36,
+    exit 0; the October values are that run's own stage outputs. The 500 m layers (commuter/commuter_grid_500m.csv)
+    place in-commuters at their work or study location and out-commuters at their home; the model area is the union
+    of the traffic zones of 08_redistribution.gpkg. October against new mixes the new population with every change
+    on main since 2026-10-31.
+features:
+  note: >-
+    Evidence for popsim_method: the first full-region run with the repaired PopulationSim (fork core, seed/control
+    fixes, controlled rounding, input consistency), measured side by side with prod100_20261031.
+artifacts:
+- docs/runs/artifacts/popsim-full-rerun-20261120/diagnostics/new/popsim_batch_diagnostics.md
+- docs/runs/artifacts/popsim-full-rerun-20261120/diagnostics/october_same_code/popsim_batch_diagnostics.md
+- docs/runs/artifacts/popsim-full-rerun-20261120/comparison/headline.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/comparison/fit_by_control.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/comparison/fit_by_group_geography.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/comparison/rare_groups.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/comparison/household_totals_per_batch.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/zones/new/cells_1km.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/zones/new/cellsize_bins.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/zones/new/donor_usage.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/population_validation/new/summary.md
+- docs/runs/artifacts/popsim-full-rerun-20261120/srv/new/srv_distance_summary.md
+- docs/runs/artifacts/popsim-full-rerun-20261120/activity_grid/activity_grid_totals.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/commuter/commuter_totals.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/commuter/commuter_grid_500m.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/comparison/reuse_by_household_size.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/dashboard/facts.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/dashboard/activity_grid_combined.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/run_overlay_incommuters.yml
+- docs/runs/artifacts/popsim-full-rerun-20261120/run_overlay.yml
+- docs/runs/artifacts/popsim-full-rerun-20261120/resource_monitoring_summary.md
+issues:
+- '#648'
+- '#278'
+- '#281'
+- '#359'
+decisions:
+- ADR-0059
+- ADR-0199
+- ADR-0200
+- ADR-0201
+- ADR-0202
+- ADR-0203
+- ADR-0204
+notes: >-
+  Re-assessment for #648: ADR-0059 attributed the 6+ household shortfall to the donor pool; this run meets the 6+
+  household target with the same pool, so the count gap was not a property of the pool. The run changed the fork core,
+  the rounding, the seed records and several household targets together and does not isolate which change closed
+  it; the 6+ error inside the 100 m cells grew (WAPE 0.515 to 0.651). ADR-0059's own metric, the share of persons
+  living in 6+ households against Zensus (4.75 %), narrowed but remains: 2.77 % (October, -1.98 points) to 4.20 % (new,
+  -0.55 points); the 7,901 large households hold 6.0 persons each on average, so meeting the household count does not
+  close the persons share, and whether the remainder depends on the donor pool is not established. The pool still
+  limits the variety of large households (reuse by household size above), which keeps #278 relevant for diversity
+  and for that remainder. Committed copies
+  of server files carry the run server's home directory as ~ (provenance.json, report.json, summaries, run overlays).
+  After the run, an accidental gate call on popsim100_20261120 (18:16) rewrote its run.yml gate list; the launched
+  list was restored from a copy, and run.json records that later gate; run_overlay.yml here is the launched list.
+  The published dashboard reads dashboard/facts.csv (as JSON), dashboard/controls.csv, dashboard/plausibility.csv,
+  dashboard/cells_1km.csv and dashboard/activity_grid_combined.csv; the analysis scripts were rerun after the final
+  review's changes (fallback rates logged, split-cell rule) and reproduced the committed zone tables byte for byte and
+  the activity grid in every earlier column (activity_grid.py added university_pot). The published dashboard shows every table of this record with charts, a 1 km map and a
+  500 m activity heatmap; it reads the files under dashboard/, zones/new and activity_grid/.

@@ -224,6 +224,22 @@ def test_participation_fit_report_joins_kreis_and_scores_every_purpose():
     assert by_purpose.loc["escort", "target_rate"] == pytest.approx(0.0751, abs=1e-9)
 
 
+def test_participation_fit_report_passes_day_absence_state_to_the_mobility_row():
+    """Primary path of the production report: day_absence_state must reach participation_fit, so the
+    mobility row counts present persons only (its SrV trip-class target's universe) while the purpose
+    rows keep every person. Person 4 is absent the whole day."""
+    persons = pd.DataFrame({"person_id": [1, 2, 3, 4], "household_id": [10, 10, 20, 20],
+                            "day_absence_state": ["present", "present", "present", "absent_household"]})
+    geo = pd.DataFrame({"household_id": [10, 20], "ars5": ["03101", "03101"]})
+
+    fit = R._participation_fit_report(persons, geo, _participation_trips(), R.DATA_PATH).set_index("purpose")
+
+    assert fit.loc["mobility", "n_persons"] == 3
+    assert fit.loc["mobility", "realised_rate"] == pytest.approx(2 / 3)
+    assert fit.loc["escort", "n_persons"] == 4
+    assert fit.loc["escort", "realised_rate"] == pytest.approx(0.25)
+
+
 def test_participation_fit_report_drops_persons_without_a_kreis():
     """No silent fallback: a household with no geo row must not be counted into
     a Kreis it does not belong to."""
