@@ -414,3 +414,18 @@ def test_subprocess_run_one_keeps_the_path_record_of_a_completed_batch(tmp_path)
     batch.make_populationsim_run_one(
         subprocess_run=lambda cmd, **kwargs: _FakeCompleted(0))(str(folder))
     assert record.read_text(encoding="utf-8") == "kept"
+
+
+def test_batches_start_largest_first_and_ties_keep_their_order(tmp_path):
+    # Size = bytes of data/control_totals_*.csv; a folder without them sorts last.
+    sizes = {"batch_000": 10, "batch_001": 300, "batch_002": 10, "batch_003": 0}
+    folders = []
+    for name, size in sizes.items():
+        folder = tmp_path / name
+        (folder / "data").mkdir(parents=True)
+        if size:
+            (folder / "data" / "control_totals_ZENSUS100m.csv").write_text("x" * size)
+        folders.append(str(folder))
+    ordered = batch.order_largest_first(folders)
+    assert [p.split("\\")[-1].split("/")[-1] for p in ordered] == [
+        "batch_001", "batch_000", "batch_002", "batch_003"]

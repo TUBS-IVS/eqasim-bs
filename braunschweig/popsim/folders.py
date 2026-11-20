@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Iterable, Mapping, Sequence, Union
 
 import yaml
+from packaging.version import InvalidVersion, Version
 
 import numpy as np
 import pandas as pd
@@ -209,9 +210,9 @@ INTEGERIZER_CONTROLLED_METHODS = ("search", "lp")
 STORE_POSITIVE_WEIGHT_ROWS_ONLY_SETTING = "STORE_POSITIVE_WEIGHT_ROWS_ONLY"
 FAST_PATHS_SETTING = "FAST_PATHS"
 RUN_TIME_OPTION_SETTINGS = (STORE_POSITIVE_WEIGHT_ROWS_ONLY_SETTING, FAST_PATHS_SETTING)
-# The fork release that reads the run-time options: 0.10.0+bs.N with N >= this number.
-_RUN_TIME_OPTIONS_FORK_VERSION = re.compile(r"^0\.10\.0\+bs\.(\d+)$")
-_RUN_TIME_OPTIONS_MIN_BS_NUMBER = 2
+# The first fork release that reads the run-time options; a later release, also on a newer
+# upstream base, has them too (compared with ``fork_version_at_least``).
+RUN_TIME_OPTIONS_MIN_FORK_VERSION = "0.10.0+bs.2"
 _MAX_INTEGERIZER_SEED = 2 ** 32
 
 
@@ -271,6 +272,62 @@ _OVERRIDE_RULES = {
     STORE_POSITIVE_WEIGHT_ROWS_ONLY_SETTING: (_is_bool, "a boolean"),
     FAST_PATHS_SETTING: (_is_bool, "a boolean"),
 }
+
+
+# The first release of the group's PopulationSim fork that reads INTEGERIZER_ROUNDING; an
+# older release ignores the setting and rounds plainly (issue #646).
+CONTROLLED_ROUNDING_MIN_FORK_VERSION = "0.10.0+bs.2"
+_POPSIM_VERSION_KEY = "braunschweig.population.popsim.populationsim_version"
+_INTEGERIZER_ROUNDING_KEY = "braunschweig.population.popsim.integerizer_rounding"
+
+
+def fork_version_at_least(version: str, minimum: str) -> bool:
+    """True when ``version`` is a release of the group's fork (``X.Y.Z+bs.N``) >= ``minimum``.
+
+    A version without a local segment starting with ``bs`` (upstream PopulationSim) is never
+    a fork release, so it is not "at least" any fork version.
+
+    Raises
+    ------
+    ValueError
+        If ``version`` is no valid PEP 440 version (names the config key and the value).
+    """
+    try:
+        parsed = Version(str(version))
+    except InvalidVersion as error:
+        raise ValueError(
+            f"{_POPSIM_VERSION_KEY} must be a PEP 440 version such as '0.10.0+bs.2', "
+            f"got {version!r}.") from error
+    if parsed.local is None or not parsed.local.startswith("bs"):
+        return False
+    return parsed >= Version(minimum)
+
+
+def require_fork_version_for_controlled_rounding(
+    overrides: Mapping[str, object], populationsim_version: str,
+) -> None:
+    """Refuse ``controlled`` rounding against a fork release that does not have it.
+
+    An older release ignores ``INTEGERIZER_ROUNDING`` and every batch would run with plain
+    rounding; only the solver-path gate after all batches would notice. With ``round`` the
+    version is not looked at. ``overrides`` must hold ``INTEGERIZER_ROUNDING``.
+
+    Raises
+    ------
+    KeyError
+        If ``overrides`` lacks ``INTEGERIZER_ROUNDING``.
+    ValueError
+        If the rounding is ``controlled`` and ``populationsim_version`` is below
+        ``CONTROLLED_ROUNDING_MIN_FORK_VERSION`` (or no fork release, or unparsable).
+    """
+    if overrides[INTEGERIZER_ROUNDING_SETTING] != "controlled":
+        return
+    if not fork_version_at_least(populationsim_version, CONTROLLED_ROUNDING_MIN_FORK_VERSION):
+        raise ValueError(
+            f"{_INTEGERIZER_ROUNDING_KEY} is 'controlled', but {_POPSIM_VERSION_KEY} is "
+            f"{populationsim_version!r}; controlled rounding needs the fork release "
+            f"{CONTROLLED_ROUNDING_MIN_FORK_VERSION} or newer. An older fork ignores the "
+            "setting and would round plainly in every batch.")
 
 
 def _same_value(left: object, right: object) -> bool:
@@ -334,25 +391,28 @@ def require_fork_version_for_run_time_options(
     on while the configured PopulationSim version is older than fork ``0.10.0+bs.2``.
 
     An older fork ignores a setting it does not know, so the run would go on with the option
-    off while the tracked config says on: a silent fallback. The version must match
-    ``0.10.0+bs.N`` with ``N >= 2`` (``N`` compared as an integer); anything else, upstream
-    ``0.10.0`` included, is refused. With both options off nothing is checked. ``overrides``
-    is read with ``.get``: a missing entry counts as off (some test doubles return ``{}``).
+    off while the tracked config says on: a silent fallback. The version must be a fork release
+    (``X.Y.Z+bs.N``) at least ``RUN_TIME_OPTIONS_MIN_FORK_VERSION``
+    (:func:`fork_version_at_least`, which compares PEP 440 versions, so ``0.10.1+bs.1`` and
+    ``0.11.0+bs.1`` pass); anything else, upstream ``0.10.0`` included, is refused. With both
+    options off nothing is checked, the version included. Every setting of
+    ``RUN_TIME_OPTION_SETTINGS`` must be in ``overrides`` (``KeyError`` otherwise: a renamed
+    setting must not let this guard pass silently).
 
     Raises
     ------
     ValueError
-        Naming the config key and the version.
+        Naming the config key and the version; for an unparsable version the error of
+        :func:`fork_version_at_least`, which names ``populationsim_version``.
     """
-    match = _RUN_TIME_OPTIONS_FORK_VERSION.match(str(populationsim_version))
-    supported = match is not None and int(match.group(1)) >= _RUN_TIME_OPTIONS_MIN_BS_NUMBER
     for setting in RUN_TIME_OPTION_SETTINGS:
-        if overrides.get(setting) is True and not supported:
+        if overrides[setting] is True and not fork_version_at_least(
+                str(populationsim_version), RUN_TIME_OPTIONS_MIN_FORK_VERSION):
             # The config key is the setting name in lower case under the popsim prefix.
             raise ValueError(
                 f"braunschweig.population.popsim.{setting.lower()} is true, but the configured "
                 f"PopulationSim version is {populationsim_version!r}: the option needs the "
-                f"group's fork 0.10.0+bs.{_RUN_TIME_OPTIONS_MIN_BS_NUMBER} or later (an older "
+                f"group's fork {RUN_TIME_OPTIONS_MIN_FORK_VERSION} or later (an older "
                 "fork ignores the setting silently). Set the option to false or require a "
                 "newer fork in braunschweig.population.popsim.populationsim_version.")
 
@@ -375,7 +435,23 @@ def _format_setting_value(value: object) -> str:
         return "true" if value else "false"
     if isinstance(value, str):
         return f"'{value}'"
+    if isinstance(value, float):
+        return _format_float(value)
     return str(value)
+
+
+def _format_float(value: float) -> str:
+    """Shortest round-trip text of a float that PyYAML reads back as a float.
+
+    ``repr`` gives ``1e-05`` or ``1e+16`` for some values; PyYAML (YAML 1.1) needs a decimal
+    point in the mantissa and reads those as strings, so ``1.0e-05`` / ``1.0e+16`` is written.
+    Python writes the exponent with a sign, which PyYAML also needs.
+    """
+    text = repr(float(value))
+    mantissa, marker, exponent = text.partition("e")
+    if marker and "." not in mantissa:
+        mantissa += ".0"
+    return mantissa + marker + exponent
 
 
 def _line_ending(text: str) -> str:

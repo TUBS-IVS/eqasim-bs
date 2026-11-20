@@ -523,3 +523,80 @@ def test_unknown_expected_rounding_is_rejected(tmp_path):
     _two_batches(tmp_path)
     with pytest.raises(ValueError, match="expected_rounding"):
         solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="banana")
+
+
+# --- the configured controlled method must be the one that ran (issue #646) ---------------
+
+def _check_method(work_dir, expected_method):
+    return solver_path_gate.check_solver_paths(
+        work_dir, None, expected_rounding="controlled", expected_method=expected_method)
+
+
+def test_expected_method_matching_the_record_passes(tmp_path):
+    _controlled_batch(tmp_path, "batch_001", [
+        _simul_call("OPTIMAL", label="a"), _simul_call("FEASIBLE", label="b")])
+    _, totals = _check_method(tmp_path, "search")
+    assert totals["search_calls"] == 2 and totals["lp_calls"] == 0
+
+
+def test_expected_method_other_than_the_recorded_one_raises_naming_the_batch(tmp_path):
+    _good_controlled_batch(tmp_path)
+    _controlled_batch(tmp_path, "batch_002", [
+        _simul_call("OPTIMAL", label="a"), _simul_call("OPTIMAL", "lp", label="lp-call")])
+    with pytest.raises(RuntimeError) as error:
+        _check_method(tmp_path, "search")
+    message = str(error.value)
+    assert "batch_002" in message and "1 of 2" in message
+    assert "lp-call" in message and "'lp'" in message and "'search'" in message
+    assert "did not run" in message
+
+
+def test_expected_method_none_keeps_the_behaviour_without_the_method_check(tmp_path):
+    _controlled_batch(tmp_path, "batch_001", [_simul_call("OPTIMAL", "lp", label="a")])
+    _, totals = solver_path_gate.check_solver_paths(
+        tmp_path, None, expected_rounding="controlled", expected_method=None)
+    assert totals["lp_calls"] == 1
+
+
+def test_unknown_expected_method_is_rejected(tmp_path):
+    _good_controlled_batch(tmp_path)
+    with pytest.raises(ValueError, match="expected_method"):
+        _check_method(tmp_path, "banana")
+
+
+def test_controlled_log_line_gives_the_share_of_failed_calls(tmp_path, caplog):
+    _controlled_batch(tmp_path, "batch_001", [
+        _simul_call("OPTIMAL", label="a"), _simul_call("OPTIMAL", label="b"),
+        _simul_call("OPTIMAL", label="c"), _simul_call("ABNORMAL", label="d")])
+    with caplog.at_level(logging.INFO):
+        _check_controlled(tmp_path)
+    assert "1 not OPTIMAL/FEASIBLE (25.0% of the controlled simultaneous calls" in caplog.text
+
+
+# A real record of one batch of ladder arm 3 (fork release 0.10.0+bs.2, rounding "controlled",
+# method "search"; batch_032 of run manifest popsim-ladder-arm3-2026-11-18): the hand-written
+# controlled records above cannot show a drift of the fork's controlled file format.
+REAL_CONTROLLED_RECORD = (
+    Path(__file__).parent / "fixtures" / "popsim" / "integerizer_paths_real_controlled.csv")
+
+
+def test_real_controlled_fork_record_proves_the_rounding_and_the_method(tmp_path):
+    folder = _batch(tmp_path, "batch_032", [], record=False)
+    (folder / "output" / "integerizer_paths.csv").write_bytes(
+        REAL_CONTROLLED_RECORD.read_bytes())
+    summary, totals = solver_path_gate.check_solver_paths(
+        tmp_path, None, expected_rounding="controlled", expected_method="search")
+    assert summary.set_index("geography")["non_simultaneous"].to_dict() == {
+        "KREIS": 0, "ZENSUS100m": 0, "ZENSUS1km": 0}
+    assert (totals["controlled_simul_calls"], totals["search_calls"], totals["lp_calls"]) == (
+        31, 31, 0)
+    assert totals["controlled_non_success_calls"] == 0
+    assert totals["search_not_converged_calls"] == 0
+    assert totals["swaps"] == 15111  # the figure the run manifest reports for this batch
+    assert totals["row_shortfall"] == 0 and totals["hh_excess"] == 0
+    # The same record is refused when the config asks for the other method or for "round".
+    with pytest.raises(RuntimeError, match="batch_032"):
+        solver_path_gate.check_solver_paths(
+            tmp_path, None, expected_rounding="controlled", expected_method="lp")
+    with pytest.raises(RuntimeError, match="batch_032"):
+        solver_path_gate.check_solver_paths(tmp_path, None, expected_rounding="round")

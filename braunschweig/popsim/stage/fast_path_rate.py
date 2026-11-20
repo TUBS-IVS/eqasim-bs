@@ -7,8 +7,9 @@ unseen one would mean that the option silently does nothing. The fork ends the l
 with one summary line of its balancer calls; this module sums that line over the completed
 batches and logs the primary-vs-fallback rate (``braunschweig.popsim.fallback_rates``).
 
-Reads files only. It never raises for a missing line: a completed batch without one is logged
-as a WARNING and listed in the totals.
+Reads files only. It does not raise for a missing line: a completed batch without one is logged
+as a WARNING and listed in the totals. It raises ``ValueError`` for a damaged line (more fast
+calls than calls).
 """
 
 from __future__ import annotations
@@ -54,6 +55,12 @@ def check_fast_path(work_dir, enabled: bool) -> dict:
     completed batch has no summary line: the fork writes it whenever a fast kernel was called,
     so its absence means numba is off in the PopulationSim settings or the installed build does
     not know the option.
+
+    Raises
+    ------
+    ValueError
+        If the summary line of a batch reports more fast calls than calls (damaged line or a
+        changed format); the message names the batch and its log file.
     """
     totals = _empty_totals(bool(enabled))
     if not enabled:
@@ -68,8 +75,14 @@ def check_fast_path(work_dir, enabled: bool) -> dict:
         if not matches:
             totals["batches_without_summary"].append(folder.name)
             continue
-        for name, value in zip(_COUNTS, matches[-1]):
-            totals[name] += int(value)
+        counts = dict(zip(_COUNTS, (int(value) for value in matches[-1])))
+        if counts["fast_calls"] > counts["calls"]:
+            raise ValueError(
+                f"[{STAGE_TAG}] batch {folder.name}: the balancer summary in {log_path} reports "
+                f"{counts['fast_calls']} fast calls of {counts['calls']} calls: the line is "
+                "damaged or its format changed")
+        for name, value in counts.items():
+            totals[name] += value
     not_fast = totals["calls"] - totals["fast_calls"]
     totals["fallback_share"] = log_fallback_rate(
         logger, STAGE_TAG, not_fast, totals["calls"],
