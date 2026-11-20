@@ -1,0 +1,10 @@
+2026-11-18_17:36:08 arm 1 preparation (code ~/i645/code_a7e3ee34); arm 4 and diagnostics: code 4067e1ea
+2026-11-18_17:36:08 arm 2 preparation
+2026-11-18_17:36:30 arm 3 preparation
+2026-11-18_17:36:32 reproduction check: the chain's batch_028 against the arm-3 folder of popsim-run-performance-2026-11-18
+2026-11-18_17:36:33 reproduction check passed (all configs/ and data/ files identical)
+2026-11-18_17:36:33 arm 4 self-check (rule off) and preparation (rule on)
+2026-11-18_17:37:15 start PopulationSim batch_013 batch_028
+2026-11-18_17:59:03 end PopulationSim: exit 0 exit 0 
+2026-11-18_17:59:03 start diagnostics
+2026-11-18_18:30:37 end diagnostics: done rc=0

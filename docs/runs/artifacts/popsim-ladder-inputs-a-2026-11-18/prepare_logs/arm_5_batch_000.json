@@ -1,0 +1,384 @@
+{
+  "base": "~/i657/arm4/arm_4/batch_000",
+  "out": "~/i658_a/arms/arm_5/batch_000",
+  "steps": [
+    "kreis_universe",
+    "kreis_follow_grids"
+  ],
+  "commit": "4067e1ea",
+  "prod_work_dir": "~/prod100_20261031/popsim_work",
+  "cells_100m": "~/prod100_20261031/eqasim-bs/eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_100m_de_prepared.parquet",
+  "expected_kreise": 8,
+  "expected_batches": 60,
+  "bridge": null,
+  "stats": {
+    "kreis_universe": {
+      "n_controls": 28,
+      "n_parts": 5,
+      "n_empty_part": 0,
+      "n_empty_region": 0,
+      "dropped_target_mass_by_universe_column": {}
+    },
+    "kreis_follow_grids": {
+      "n_controls": 10,
+      "n_changed": 10,
+      "n_kreis_parts": 1,
+      "largest_relative_change": 0.23091397647933243,
+      "largest_relative_change_control": "number_of_bicycles_4plus_KREIS",
+      "controls_without_grid": []
+    }
+  },
+  "kreis_targets": {
+    "n_batches": 60,
+    "kreise": [
+      "03101",
+      "03102",
+      "03103",
+      "03151",
+      "03153",
+      "03154",
+      "03157",
+      "03158"
+    ],
+    "fine_teen_age_bands": true,
+    "trip_class_partition": {
+      "active": true,
+      "deviation_persons_by_kreis": {
+        "03101": -0.17151309252949432,
+        "03102": -0.38770429108990356,
+        "03103": -0.4358180881390581,
+        "03151": -0.041357533511472866,
+        "03153": -0.15116656479949597,
+        "03154": -0.35472848867357243,
+        "03157": -0.14924837139551528,
+        "03158": -0.15139288805949036
+      },
+      "max_abs_deviation_persons": 0.4358180881390581
+    }
+  },
+  "active_entries": [
+    "economic_status",
+    "number_of_cars",
+    "number_of_bicycles",
+    "has_ebike",
+    "trip_class",
+    "employment_status",
+    "pt_ticket_group4",
+    "leisure_participation",
+    "escort_participation",
+    "work_by_employment",
+    "education_0_5",
+    "education_6_17",
+    "education_18plus"
+  ],
+  "tier3_names": [
+    "employed_KREIS",
+    "schulabschluss_low_KREIS",
+    "schulabschluss_mid_KREIS",
+    "schulabschluss_high_KREIS",
+    "beruflabschluss_none_KREIS",
+    "beruflabschluss_vocational_KREIS",
+    "beruflabschluss_tertiary_KREIS"
+  ],
+  "apportion_map": {
+    "employment_status_vollzeit_KREIS": "_universe_persons_14_plus",
+    "employment_status_teilzeit_KREIS": "_universe_persons_14_plus",
+    "employment_status_geringfuegig_KREIS": "_universe_persons_14_plus",
+    "employment_status_sonstiges_KREIS": "_universe_persons_14_plus",
+    "employment_status_erwerbstaetig_unspec_KREIS": "_universe_persons_14_plus",
+    "employment_status_in_ausbildung_KREIS": "_universe_persons_14_plus",
+    "employment_status_nicht_erwerbstaetig_KREIS": "_universe_persons_14_plus",
+    "pt_ticket_group4_deutschlandticket_KREIS": "_universe_persons_14_plus",
+    "pt_ticket_group4_other_flatrate_KREIS": "_universe_persons_14_plus",
+    "pt_ticket_group4_never_pt_KREIS": "_universe_persons_14_plus",
+    "pt_ticket_group4_occasional_ticket_KREIS": "_universe_persons_14_plus",
+    "work_by_employment_employed_work_KREIS": "_universe_persons_14_plus",
+    "work_by_employment_employed_nowork_KREIS": "_universe_persons_14_plus",
+    "work_by_employment_nonemployed_work_KREIS": "_universe_persons_14_plus",
+    "work_by_employment_nonemployed_nowork_KREIS": "_universe_persons_14_plus",
+    "education_0_5_edu_KREIS": "_universe_persons_0_5",
+    "education_0_5_noedu_KREIS": "_universe_persons_0_5",
+    "education_6_17_edu_KREIS": "_universe_persons_6_17",
+    "education_6_17_noedu_KREIS": "_universe_persons_6_17",
+    "education_18plus_edu_KREIS": "_universe_persons_18_plus",
+    "education_18plus_noedu_KREIS": "_universe_persons_18_plus",
+    "employed_KREIS": "_universe_persons_15_plus",
+    "schulabschluss_low_KREIS": "_universe_persons_15_plus",
+    "schulabschluss_mid_KREIS": "_universe_persons_15_plus",
+    "schulabschluss_high_KREIS": "_universe_persons_15_plus",
+    "beruflabschluss_none_KREIS": "_universe_persons_15_plus",
+    "beruflabschluss_vocational_KREIS": "_universe_persons_15_plus",
+    "beruflabschluss_tertiary_KREIS": "_universe_persons_15_plus"
+  },
+  "kreis_columns": {
+    "KREIS": {
+      "changed": false
+    },
+    "employed_KREIS": {
+      "changed": true,
+      "max_abs_change": 138.70290714612293
+    },
+    "schulabschluss_low_KREIS": {
+      "changed": true,
+      "max_abs_change": 104.34151528594066
+    },
+    "schulabschluss_mid_KREIS": {
+      "changed": true,
+      "max_abs_change": 99.72890279280273
+    },
+    "schulabschluss_high_KREIS": {
+      "changed": true,
+      "max_abs_change": 95.3876204463204
+    },
+    "beruflabschluss_none_KREIS": {
+      "changed": true,
+      "max_abs_change": 86.16239546004545
+    },
+    "beruflabschluss_vocational_KREIS": {
+      "changed": true,
+      "max_abs_change": 196.38273059018047
+    },
+    "beruflabschluss_tertiary_KREIS": {
+      "changed": true,
+      "max_abs_change": 49.11075654458159
+    },
+    "economic_status_very_low_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "economic_status_low_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "economic_status_medium_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "economic_status_high_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "economic_status_very_high_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "number_of_cars_0_KREIS": {
+      "changed": true,
+      "max_abs_change": 110.41162045090232
+    },
+    "number_of_cars_1_KREIS": {
+      "changed": true,
+      "max_abs_change": 97.52230985178267
+    },
+    "number_of_cars_2_KREIS": {
+      "changed": true,
+      "max_abs_change": 158.9547314931583
+    },
+    "number_of_cars_3plus_KREIS": {
+      "changed": true,
+      "max_abs_change": 46.008408734536204
+    },
+    "number_of_bicycles_0_KREIS": {
+      "changed": true,
+      "max_abs_change": 271.8246940431932
+    },
+    "number_of_bicycles_1_KREIS": {
+      "changed": true,
+      "max_abs_change": 142.3500774130962
+    },
+    "number_of_bicycles_2_KREIS": {
+      "changed": true,
+      "max_abs_change": 48.77506189339192
+    },
+    "number_of_bicycles_3_KREIS": {
+      "changed": true,
+      "max_abs_change": 112.52364447161597
+    },
+    "number_of_bicycles_4plus_KREIS": {
+      "changed": true,
+      "max_abs_change": 251.90527501629163
+    },
+    "has_ebike_yes_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "has_ebike_no_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "trip_class_0_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "trip_class_1_2_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "trip_class_3_4_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "trip_class_5plus_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "employment_status_vollzeit_KREIS": {
+      "changed": true,
+      "max_abs_change": 108.31201598243479
+    },
+    "employment_status_teilzeit_KREIS": {
+      "changed": true,
+      "max_abs_change": 38.694444242169084
+    },
+    "employment_status_geringfuegig_KREIS": {
+      "changed": true,
+      "max_abs_change": 9.950243766750532
+    },
+    "employment_status_sonstiges_KREIS": {
+      "changed": true,
+      "max_abs_change": 3.282613295263019
+    },
+    "employment_status_erwerbstaetig_unspec_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "employment_status_in_ausbildung_KREIS": {
+      "changed": true,
+      "max_abs_change": 4.650842926997427
+    },
+    "employment_status_nicht_erwerbstaetig_KREIS": {
+      "changed": true,
+      "max_abs_change": 160.27060736135627
+    },
+    "pt_ticket_group4_deutschlandticket_KREIS": {
+      "changed": true,
+      "max_abs_change": 39.34584670717368
+    },
+    "pt_ticket_group4_other_flatrate_KREIS": {
+      "changed": true,
+      "max_abs_change": 22.434983587295847
+    },
+    "pt_ticket_group4_never_pt_KREIS": {
+      "changed": true,
+      "max_abs_change": 139.81827669156246
+    },
+    "pt_ticket_group4_occasional_ticket_KREIS": {
+      "changed": true,
+      "max_abs_change": 123.56166058893905
+    },
+    "leisure_participation_yes_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "leisure_participation_no_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "escort_participation_yes_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "escort_participation_no_KREIS": {
+      "changed": false,
+      "max_abs_change": 0.0
+    },
+    "work_by_employment_employed_work_KREIS": {
+      "changed": true,
+      "max_abs_change": 118.94495228892856
+    },
+    "work_by_employment_employed_nowork_KREIS": {
+      "changed": true,
+      "max_abs_change": 42.65975007717475
+    },
+    "work_by_employment_nonemployed_work_KREIS": {
+      "changed": true,
+      "max_abs_change": 3.837300983803999
+    },
+    "work_by_employment_nonemployed_nowork_KREIS": {
+      "changed": true,
+      "max_abs_change": 159.71876422506375
+    },
+    "education_0_5_edu_KREIS": {
+      "changed": true,
+      "max_abs_change": 119.57791662582105
+    },
+    "education_0_5_noedu_KREIS": {
+      "changed": true,
+      "max_abs_change": 38.137338376176615
+    },
+    "education_6_17_edu_KREIS": {
+      "changed": true,
+      "max_abs_change": 209.3678734976977
+    },
+    "education_6_17_noedu_KREIS": {
+      "changed": true,
+      "max_abs_change": 22.865175658301183
+    },
+    "education_18plus_edu_KREIS": {
+      "changed": true,
+      "max_abs_change": 11.073985467331738
+    },
+    "education_18plus_noedu_KREIS": {
+      "changed": true,
+      "max_abs_change": 378.8753615783244
+    }
+  },
+  "files": {
+    "configs/controls.csv": {
+      "changed": false,
+      "sha256_base": "0786907b0346d3dd353e6cda173fb8ff0d55dad1a924e37531be2044170628da",
+      "sha256_out": "0786907b0346d3dd353e6cda173fb8ff0d55dad1a924e37531be2044170628da"
+    },
+    "configs/logging.yaml": {
+      "changed": false,
+      "sha256_base": "863e60c0683d8232c8418428867df29687f04204daa90adb19a3378da6b208c4",
+      "sha256_out": "863e60c0683d8232c8418428867df29687f04204daa90adb19a3378da6b208c4"
+    },
+    "configs/settings.yaml": {
+      "changed": false,
+      "sha256_base": "4ce89783de4fcc1aad482d9c72d111802a1c15ef8e275c985d337a85c00c1fc4",
+      "sha256_out": "4ce89783de4fcc1aad482d9c72d111802a1c15ef8e275c985d337a85c00c1fc4"
+    },
+    "data/control_totals_KREIS.csv": {
+      "changed": true,
+      "sha256_base": "bac4aa79792c5e2bbf089512fc83f4f219c3bf686d13e08c7a18ebb0f68b63c4",
+      "sha256_out": "df28eb2517738408f0b20ce7d04931cc8220e7943a9bc94c8476c3a40df588c8"
+    },
+    "data/control_totals_STAAT.csv": {
+      "changed": false,
+      "sha256_base": "ab346622a3997159f6d15c53c5323aab2c12469b119ce3ded61447cacaa0a531",
+      "sha256_out": "ab346622a3997159f6d15c53c5323aab2c12469b119ce3ded61447cacaa0a531"
+    },
+    "data/control_totals_WELT.csv": {
+      "changed": false,
+      "sha256_base": "f4512bfcc01d6376ef90e0d2099dfbeb6c336c59fadc793d084b999ddd1b5571",
+      "sha256_out": "f4512bfcc01d6376ef90e0d2099dfbeb6c336c59fadc793d084b999ddd1b5571"
+    },
+    "data/control_totals_ZENSUS100m.csv": {
+      "changed": false,
+      "sha256_base": "8de758e7cbcc674cbbf87c6454767117354b85db47335eacc10344f3e9830f4c",
+      "sha256_out": "8de758e7cbcc674cbbf87c6454767117354b85db47335eacc10344f3e9830f4c"
+    },
+    "data/control_totals_ZENSUS1km.csv": {
+      "changed": false,
+      "sha256_base": "57fab31a98a60a72c898ce3c70e8ffd96cada7cb96ae794324bdea37258fd3e6",
+      "sha256_out": "57fab31a98a60a72c898ce3c70e8ffd96cada7cb96ae794324bdea37258fd3e6"
+    },
+    "data/geo_cross_walk.csv": {
+      "changed": false,
+      "sha256_base": "773102853d7e2f56fcfad7bf1cbc1cb1ca31ceaaaf4aae0131dc5ab9e4abd79e",
+      "sha256_out": "773102853d7e2f56fcfad7bf1cbc1cb1ca31ceaaaf4aae0131dc5ab9e4abd79e"
+    },
+    "data/seed_households.csv": {
+      "changed": false,
+      "sha256_base": "c331557d04da3726bcb1ac2899bcca5dc507628882e0db63d48391a25fa95ece",
+      "sha256_out": "c331557d04da3726bcb1ac2899bcca5dc507628882e0db63d48391a25fa95ece"
+    },
+    "data/seed_persons.csv": {
+      "changed": false,
+      "sha256_base": "76890fcc886343a85b808de64d56875863947401c60d816dbd7f37572ffd2091",
+      "sha256_out": "76890fcc886343a85b808de64d56875863947401c60d816dbd7f37572ffd2091"
+    }
+  },
+  "unexpected_changed_files": []
+}

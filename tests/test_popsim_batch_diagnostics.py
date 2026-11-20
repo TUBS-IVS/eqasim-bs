@@ -1009,6 +1009,66 @@ def test_conservation_table_only_with_misfit(work_dir, tmp_path):
     assert table["abs_deviation_sum"].tolist() == [0]
 
 
+def test_diagnostics_write_input_consistency(work_dir, tmp_path):
+    """The table reads the grid and KREIS control tables of the batch folder and names the rest."""
+    from braunschweig.popsim.input_consistency import EMPLOYED_COLUMNS
+    data = work_dir / "batch_000" / "data"
+    grid = pd.read_csv(data / "control_totals_ZENSUS100m.csv")
+    grid[list(EMPLOYED_COLUMNS)] = 0
+    grid.loc[0, EMPLOYED_COLUMNS[0]] = 4
+    grid.to_csv(data / "control_totals_ZENSUS100m.csv", index=False)
+    pd.DataFrame({"KREIS": [3153], "employed_KREIS": [5]}).to_csv(
+        data / "control_totals_KREIS.csv", index=False)
+    result = run_diagnostics(work_dir, tmp_path / "out")
+    table = result["tables"]["input_consistency"]
+    assert (tmp_path / "out" / "input_consistency.csv").exists()
+    employed = table[(table["scope"] == "kreis") & (table["check"] == "employed")]
+    assert employed[["batch", "key", "amount", "base"]].values.tolist() == [
+        ["batch_000", "3153", 1.0, 4.0]]
+    assert "## Input consistency" in (tmp_path / "out" / "popsim_batch_diagnostics.md").read_text(
+        encoding="utf-8")
+
+
+def test_input_consistency_without_kreis_table_is_not_measured(work_dir, tmp_path, caplog):
+    with caplog.at_level(logging.WARNING):
+        result = run_diagnostics(work_dir, tmp_path / "out")
+    assert result["tables"]["input_consistency"].empty
+    assert "input consistency not measured for 1 of 1 batches" in caplog.text
+    assert "not measured" in (tmp_path / "out" / "popsim_batch_diagnostics.md").read_text(
+        encoding="utf-8")
+
+
+def test_input_consistency_measures_one_km_pairs_and_names_skipped_ones(work_dir, tmp_path, caplog):
+    data = work_dir / "batch_000" / "data"
+    pd.DataFrame({"ZENSUS1km": ["K1"], "OWN_CARS_0_agg_ZENSUS1km": [3.0]}).to_csv(
+        data / "control_totals_ZENSUS1km.csv", index=False)
+    pd.DataFrame({"KREIS": [3153], "number_of_cars_0_KREIS": [5.0]}).to_csv(
+        data / "control_totals_KREIS.csv", index=False)
+    with caplog.at_level(logging.WARNING):
+        table = run_diagnostics(work_dir, tmp_path / "out")["tables"]["input_consistency"]
+    cars = table[table["check"] == "cars_0"]
+    assert cars[["key", "amount", "base"]].values.tolist() == [["3153", 2.0, 3.0]]
+    skipped = table[table["check"] == "skipped"]
+    assert "cars_0" not in set(skipped["key"]) and "employed" in set(skipped["key"])
+    assert sum("pairs/checks skipped" in r.message for r in caplog.records) == 1   # one line, not per pair
+    assert "Skipped for absent columns" in (tmp_path / "out" / "popsim_batch_diagnostics.md"
+                                            ).read_text(encoding="utf-8")
+
+
+def test_input_consistency_without_crosswalk_is_not_measured_and_named(work_dir, tmp_path, caplog):
+    data = work_dir / "batch_000" / "data"
+    pd.DataFrame({"KREIS": [3153], "employed_KREIS": [5]}).to_csv(
+        data / "control_totals_KREIS.csv", index=False)
+    (data / "geo_cross_walk.csv").unlink(missing_ok=True)
+    with caplog.at_level(logging.WARNING):
+        result = run_diagnostics(work_dir, tmp_path / "out")
+    assert result["tables"]["input_consistency"].empty
+    assert "input consistency not measured for 1 of 1 batches" in caplog.text
+    assert "geo_cross_walk" in caplog.text
+    assert "not measured" in (tmp_path / "out" / "popsim_batch_diagnostics.md").read_text(
+        encoding="utf-8")
+
+
 # --- the crosswalk of the conservation table: store first, CSV as the fallback ------------
 
 def test_conservation_uses_the_store_crosswalk_first_and_equals_the_csv_result(tmp_path):

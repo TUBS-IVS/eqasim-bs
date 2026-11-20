@@ -964,6 +964,17 @@ _TIER3_ENTRIES: Sequence[tuple] = (
 )
 
 
+# ASSUMPTION (#658 Task A3): the Tier-3 person controls (employed, schulabschluss_*,
+# beruflabschluss_*) are counted over persons aged 15 and over. Only the batch split of their
+# KREIS targets reads it (controls_builder.apportion_weight_columns); it changes no target.
+# The loader of the Tier-3 Kreis targets (mid.kreis_controls.load_kreis_control_table, the
+# cleancensus kreis_* tables) states no age basis, nor does ADR-0015, so a later record can
+# confirm or replace this value. Consistent with the employed age classes of the
+# Zensus regional table (zensus_employment_age.KREIS_AGE_CLASSES start at 15-19) and with
+# control_groups._AGE15.
+TIER3_PERSON_MIN_AGE = 15
+
+
 def tier3_controls() -> List[CatalogControl]:
     """Tier-3: employment + education controls at KREIS geography (MiD-only).
 
@@ -1075,6 +1086,45 @@ def ownership_grid_controls(importance: int = GRID_SHAPE_IMPORTANCE_DEFAULT) -> 
                 importance=importance, census_source=(col,),
                 seed_expressions={"mid": f"(households.{ctl.seed_column} {predicate})",
                                   "entd": None}))
+    return out
+
+
+def kreis_grid_pairs() -> dict:
+    """Every KREIS control that can follow a grid -> its grid control fields (#658, Task A4).
+
+    Keys and values are ``control_field`` names (the column names of the control-totals
+    tables): ``number_of_cars_<c>_KREIS`` -> ``OWN_CARS_<c>_agg_ZENSUS1km``,
+    ``number_of_bicycles_<c>_KREIS`` -> ``OWN_BIKES_<c>_agg_ZENSUS1km`` (the ownership grid is a
+    1 km control, ADR-0092) and ``employed_KREIS`` -> the ten ``EMPLOYED_*_agg_ZENSUS100m``.
+    """
+    from braunschweig.popsim.ownership_grid import BIKES_COLUMNS, CARS_COLUMNS
+    pairs = {}
+    for prefix, columns in (("number_of_cars", CARS_COLUMNS), ("number_of_bicycles", BIKES_COLUMNS)):
+        for col in columns:
+            label = col.split("_", 2)[2][: -len("_agg")]
+            pairs[f"{prefix}_{label}_{GEO_KREIS}"] = (f"{col}_{GEO_1KM}",)
+    pairs[f"employed_{GEO_KREIS}"] = tuple(f"{c.name}_{GEO_100M}" for c in employment_grid_controls())
+    return pairs
+
+
+def kreis_controls_following_grids(controls_df: pd.DataFrame) -> dict:
+    """KREIS control field -> the grid control fields whose batch sum is its value (#658, Task A4).
+
+    The pairs of :func:`kreis_grid_pairs` whose both sides are active controls of ``controls_df``;
+    a KREIS control whose grid is off is left out (the caller logs it). A grid that is only partly
+    present is an error (``ValueError``): the sum over some of its columns would be a wrong number.
+    """
+    fields = set(controls_df["control_field"])
+    out = {}
+    for kreis_field, grid_fields in kreis_grid_pairs().items():
+        present = [f for f in grid_fields if f in fields]
+        if kreis_field not in fields or not present:
+            continue
+        if len(present) != len(grid_fields):
+            raise ValueError(
+                f"KREIS control {kreis_field!r} follows {len(grid_fields)} grid control(s) but "
+                f"controls_df carries only {present}; missing {sorted(set(grid_fields) - set(present))}.")
+        out[kreis_field] = grid_fields
     return out
 
 

@@ -1323,6 +1323,15 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         popsim_stage.KEY_ESCORT_PASSIVE_FROM_ADULT: True,
         popsim_stage.KEY_PASSIVE_PAIR_MAX_GAP_MINUTES: 22.0,
         popsim_stage.KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS: 16,
+        # The #658 input-consistency keys, at their legacy values (execute reads all five).
+        popsim_stage.KEY_KREIS_BATCH_APPORTIONMENT: "population",
+        popsim_stage.KEY_KREIS_CONTROLS_FOLLOW_GRIDS: False,
+        popsim_stage.KEY_EMPLOYMENT_LEVEL_SOURCE: "survey",
+        popsim_stage.KEY_KREIS_FINE_TOLERANCE: 0.05,
+        popsim_stage.KEY_KREIS_FINE_MIN_PERSONS: 1000,
+        # The #657 tenure keys, at their legacy values (execute reads both).
+        popsim_stage.KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS: False,
+        popsim_stage.KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE_DWELLINGS: 10.0,
     }
     context = _StrictExecuteContext(values)
 

@@ -43,6 +43,7 @@ from braunschweig.analysis.popsim_batch_diagnostics.reuse import (
     reuse_by_zone, reuse_summary, shares_by_attribute, usage_counts, weight_class_shares)
 from braunschweig.analysis.popsim_batch_diagnostics.solver_paths import solver_path_table
 from braunschweig.popsim.control_groups import UNIVERSE_RATIO_TOLERANCE, unmatched_controls
+from braunschweig.popsim.input_consistency import summarize as summarize_input_consistency
 
 logger = logging.getLogger(__name__)
 _TAG = "[popsim_batch_diagnostics]"
@@ -284,6 +285,7 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
     groups: dict = {}
     reuse_rows, fit_parts, universe_parts, split_parts, shift_parts = [], [], [], [], []
     conservation_parts, crosswalk_sources = [], []
+    consistency_parts, consistency_notes_all = [], []
 
     for position, folder in enumerate(folders, start=1):
         logger.info("%s batch %d/%d: %s", _TAG, position, len(folders), folder.name)
@@ -310,6 +312,11 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
         fit.insert(0, "batch", batch.name)
         fit_parts.append(fit)
         universe_parts.append(universe_table(batch))
+        consistency, consistency_notes = _input_consistency(batch)
+        consistency_notes_all.append(consistency_notes)
+        if consistency is not None:
+            consistency.insert(0, "batch", batch.name)
+            consistency_parts.append(consistency)
         if misfit:
             split = misfit_split(batch, levels=batch.geographies, chunk_rows=chunk_rows,
                                  max_unmatched_zone_share=max_unmatched_zone_share)
@@ -405,6 +412,8 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
                 warnings.add("coverage_ratio", f"{prefix}{item.group}", item.ratio,
                              thresholds.coverage_ratio_high)
 
+    _log_input_consistency_notes(consistency_notes_all)
+
     seen_unmatched: set = set()
     for group in groups.values():
         spec_batch = group.first_batch
@@ -448,6 +457,8 @@ def run_diagnostics(work_dir, out_dir, *, batches: Sequence[str] | None = None,
         "control_universe": universe,
         "control_fit": fit_table,
         "solver_paths": solver,
+        "input_consistency": pd.concat(consistency_parts, ignore_index=True)
+        if consistency_parts else pd.DataFrame(),
     }
     if misfit:
         tables["misfit_split"] = pd.concat(split_parts, ignore_index=True)
@@ -496,9 +507,105 @@ def _write_summary(out_dir: Path, work_dir: Path, folders, groups, commit: str, 
         "not come from the simultaneous solution (sequential, single feasible sub zone, or "
         "all-smart-rounded).", "", _md_table(solver_levels),
         *_conservation_section(tables),
+        *_input_consistency_section(tables),
         "## Warnings", "", _md_table(pd.DataFrame(
             warnings, columns=["check", "subject", "value", "threshold"]))]
     (out_dir / "popsim_batch_diagnostics.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _read_zone_table(path: Path, geography: str) -> pd.DataFrame:
+    """A ``control_totals_<geography>.csv`` as PopulationSim reads it, indexed by the zone id string."""
+    table = pd.read_csv(path, dtype={geography: str}).set_index(geography)
+    table.index = table.index.astype(str)
+    return table
+
+
+def _input_consistency(batch) -> tuple:
+    """``(summary or None, notes)``: ``summarize`` of the KREIS, 1 km and 100 m tables of a batch.
+
+    The tables are read from ``data/`` directly, so a table the batch does not carry only
+    removes the pairs that need it.  The 1 km and the 100 m table are kept apart (their zone ids
+    may collide).  A batch without KREIS table or crosswalk has nothing to compare: ``None``.
+    ``notes`` (``batch``, ``measured``, ``absent_tables``, ``skipped``) feed one aggregate log line
+    over all batches (``_log_input_consistency_notes``); per batch only DEBUG is logged here.
+    """
+    data = batch.path / "data"
+    names = {"KREIS": "control_totals_KREIS.csv", "ZENSUS1km": "control_totals_ZENSUS1km.csv",
+             "ZENSUS100m": "control_totals_ZENSUS100m.csv"}
+    present = {geo: data / name for geo, name in names.items() if (data / name).is_file()}
+    crosswalk_path = data / "geo_cross_walk.csv"
+    notes = {"batch": batch.name, "measured": False, "absent_tables": [], "skipped": []}
+    if "KREIS" not in present or not crosswalk_path.is_file():
+        notes["absent_tables"] = [geo for geo in names if geo not in present]
+        if not crosswalk_path.is_file():
+            notes["absent_tables"].append("geo_cross_walk")
+        logger.debug("%s %s: input consistency not measured (absent: %s)", _TAG, batch.name,
+                     notes["absent_tables"])
+        return None, notes
+    notes["measured"] = True
+    notes["absent_tables"] = [geo for geo in ("ZENSUS1km", "ZENSUS100m") if geo not in present]
+    cells = (_read_zone_table(present["ZENSUS100m"], "ZENSUS100m") if "ZENSUS100m" in present
+             else pd.DataFrame())
+    cells_1km = (_read_zone_table(present["ZENSUS1km"], "ZENSUS1km") if "ZENSUS1km" in present
+                 else pd.DataFrame())
+    crosswalk = pd.read_csv(crosswalk_path, dtype=str)
+    table = summarize_input_consistency(
+        _read_zone_table(present["KREIS"], "KREIS"), cells, crosswalk, cells_1km=cells_1km,
+        skip_log_level=logging.DEBUG)
+    notes["skipped"] = list(table.attrs["skipped"])
+    return table, notes
+
+
+def _log_input_consistency_notes(notes: list) -> None:
+    """One WARNING per problem class over all batches (pair names and number of batches)."""
+    total = len(notes)
+    unmeasured = [n["batch"] for n in notes if not n["measured"]]
+    if unmeasured:
+        absent = sorted({t for n in notes if not n["measured"] for t in n["absent_tables"]})
+        logger.warning("%s input consistency not measured for %d of %d batches (no KREIS table "
+                       "or crosswalk; absent: %s): %s", _TAG, len(unmeasured), total, absent,
+                       unmeasured)
+    absent_by_table: dict = {}
+    for n in notes:
+        if n["measured"]:
+            for table in n["absent_tables"]:
+                absent_by_table[table] = absent_by_table.get(table, 0) + 1
+    if absent_by_table:
+        logger.warning("%s input consistency: control tables absent (table: number of batches "
+                       "of %d): %s", _TAG, total, absent_by_table)
+    skipped_by_name: dict = {}
+    for n in notes:
+        for name in n["skipped"]:
+            skipped_by_name[name] = skipped_by_name.get(name, 0) + 1
+    if skipped_by_name:
+        logger.warning("%s input consistency: pairs/checks skipped for absent columns "
+                       "(name: number of batches of %d): %s", _TAG, total, skipped_by_name)
+
+
+def _input_consistency_section(tables: dict) -> list:
+    """Summary lines: the largest contradictions of the input-consistency table, the skipped."""
+    table = tables["input_consistency"]
+    if table.empty:
+        return ["## Input consistency", "", "not measured (see the log)", ""]
+    skipped = table[table["check"] == "skipped"]
+    noted = ["skipped", "ratio_reported", "kreis_without_grid", "grid_without_kreis",
+             "nan_cells_excluded"]
+    judged = table[~table["check"].isin(noted)]
+    worst = judged.sort_values("share", ascending=False).head(20)
+    lines = ["## Input consistency (20 largest shares)", "",
+             "`share` = contradiction `amount` / `base` of the check; Kreis rows compare the "
+             "KREIS control table with the grid tables, cell rows are contradictions inside "
+             "the 100 m cells (`braunschweig.popsim.input_consistency`); `ratio_reported` rows "
+             "(survey ratio, no bound) are in `input_consistency.csv` only.", "", _md_table(worst)]
+    if len(skipped):
+        names = skipped.groupby(["scope", "key"])["batch"].nunique().reset_index(name="batches")
+        lines += ["Skipped for absent columns (not measured):", "", _md_table(names)]
+    unmatched = table[table["check"].isin(noted[2:])]
+    if len(unmatched):
+        counts = unmatched.groupby(["check", "key"])["batch"].nunique().reset_index(name="batches")
+        lines += ["Kreis ids without a partner table and cells excluded for missing values "
+                  "(not judged):", "", _md_table(counts)]
+    return lines
 
 
 def _conservation_section(tables: dict) -> list:

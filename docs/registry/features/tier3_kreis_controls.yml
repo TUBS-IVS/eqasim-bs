@@ -21,6 +21,7 @@ introduced:
 detail_doc: null
 code_paths:
 - braunschweig/popsim/control_spec.py
+- braunschweig/popsim/input_consistency.py
 evidence:
   tests:
   - tests/test_popsim_tier3_controls.py
@@ -40,9 +41,12 @@ evidence:
       The Tier-3/employment-grid kreis_controls directory itself (braunschweig.population.popsim.kreis_controls_dir) is explicitly gitignored and absent from this checkout; only this companion employment-by-age reference file is committed.
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - popsim-input-consistency-2026-11-18
+  - popsim-ladder-inputs-a-2026-11-18
   metric: null
-  note: No scalar KPI currently attributed to a recorded run.
+  note: |
+    Batch split of the KREIS controls by their own age universe (issue #658, ADR-0203, production on): the contradiction with the 100 m age targets was measured on the production tables and the new split checked on four batches of one draw, in the run records above. One pre-registered check was missed and the owner accepted the miss (ADR-0203). This is control consistency, NOT validation; the realised Tier-3 fit has no recorded run.
 assessment:
   status: pending
   by: null
@@ -50,3 +54,5 @@ assessment:
   pending_reason: |
     ADR-0015 documents the design (Codeplan-B1 crosswalk). docs/features/regional-control-targets.md exists but documents a different (5-entry economic_status/cars/bicycles/ebike/trip_class) registry, not this Tier-3 mechanism -- the detail_doc does not actually cover this feature, so it is omitted from this declaration rather than pointed at the wrong doc. No owner verdict on realised Tier-3 fit has been recorded.
   source: ADR-0015
+notes: |
+  Since ADR-0203 a KREIS person control with an age universe is split over the batches by the batch's share of the persons of that universe (key braunschweig.population.popsim.kreis_batch_apportionment); the Tier-3 controls use the universe 15 and over (control_spec.TIER3_PERSON_MIN_AGE, an ASSUMPTION stated in ADR-0203).

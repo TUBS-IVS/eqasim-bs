@@ -1,0 +1,32 @@
+{
+  "batches": 60,
+  "kreis_parts": 173,
+  "grid_pairs": {
+    "rows": 1730,
+    "max_share": 0.0,
+    "rows_above_1e-6": 0
+  },
+  "age_pairs_gated": {
+    "rows": 203,
+    "tolerance": 0.05,
+    "min_persons": 1000.0,
+    "max_share": 0.016756300795536,
+    "share_quantiles": {
+      "0.5": 0.0008760760631997,
+      "0.9": 0.004868709450718962,
+      "0.99": 0.011735647092009532,
+      "1.0": 0.016756300795536
+    },
+    "rows_above_tolerance": 0,
+    "above": []
+  },
+  "age_pairs_small_parts_reported": {
+    "rows": 143,
+    "max_share": 1.1184620467486353,
+    "rows_above_tolerance": 9
+  },
+  "persons_all_reported": {
+    "max_share": 1.502571876620758,
+    "max_share_parts_ge_min": 0.0131907625285283
+  }
+}

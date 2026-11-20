@@ -1,0 +1,12 @@
+{
+  "set": "arm3",
+  "commit": "aa6144c8",
+  "folders": [
+    "~/i646/ev/controlled_off/batch_000",
+    "~/i646/ev/controlled_off/batch_032",
+    "~/i646/ev/controlled_off_b028/batch_028"
+  ],
+  "rows": 157,
+  "unmeasured": [],
+  "skipped": []
+}

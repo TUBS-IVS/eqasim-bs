@@ -1,0 +1,7 @@
+2026-11-18_22:28:45 copy configs and data (code 556c610c, batch batch_000, arms arm4 arm5 arm6)
+2026-11-18_22:28:46 start runs in parallel
+2026-11-18_22:40:52 end run arm4: exit 0
+2026-11-18_22:40:52 end run arm5: exit 0
+2026-11-18_22:40:52 end run arm6: exit 0
+2026-11-18_22:40:53 outputs byte-identical to the evidence runs (identity_check.txt)
+2026-11-18_23:10:36 located; stores deleted

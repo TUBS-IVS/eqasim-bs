@@ -1,0 +1,97 @@
+id: popsim-input-consistency-new-keys-2026-11-19
+date: '2026-11-19'
+repository:
+  commit: 3dde0233
+  branch: fix/i658-popsim-kreis-consistency
+  notes: >-
+    Post hoc check of issue #658 after the owner switched the three keys on (ADR-0203), asked for by the
+    whole-branch review: does the input-consistency guard of the stage pass on all 60 production batches with
+    the production keys, and how large is the residual of the new split there. The code on the run server was
+    a git archive of commit 3dde0233; scripts/run_all_batches.sh and scripts/guard_summary.py of the artifact
+    directory were run as committed with this record. Table work only: no PopulationSim run.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - the run overlay of prod100_20261031 (server-local), only as the configuration that produced the batch folders
+  notes: >-
+    For each of the 60 batch folders of prod100_20261031, prepare_input_arm.py (the driver of
+    popsim-ladder-inputs-a-2026-11-18, which calls the same library functions as the stage) rewrote a copy of
+    control_totals_KREIS.csv with the three steps kreis_universe, kreis_follow_grids and employment_level, i.e.
+    the production values of kreis_batch_apportionment, kreis_controls_follow_grids and
+    employment_level_source; the other tables are those of the production run. The copies were measured with
+    run_input_consistency.py of popsim-input-consistency-2026-11-18 (the diagnostics' reader) and judged with
+    the stage guard's bounds (kreis_fine_tolerance 0.05, kreis_fine_min_persons 1000, 1e-6 for the grid pairs).
+    Difference to a pipeline run: the 100 m, 1 km, STAAT and WELT tables and the seed are those of
+    prod100_20261031, which was built before Parts T and A (the tenure rule of #657 changes two 100 m columns
+    and is not applied here; it does not enter the KREIS table).
+sampling:
+  rate: 1.0
+  scope: all 60 batches of prod100_20261031 (173 Kreis parts)
+  notes: The measurement reads control tables, not a synthetic population.
+pipeline:
+  targets: []
+  notes: No synpp pipeline run and no PopulationSim run.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    All 60 preparations exit 0 and the measurement exits 0 (prepare_summary.txt). Every batch passes the
+    guard. The seed of every production batch is the production seed (the driver's check), so the bridge here
+    is the production value. This is a check of the inputs against each other, not a validation against
+    observed behaviour.
+source: >-
+  run server, ~/i658_a/all60 (prepared copies, logs, table); committed copy in
+  docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/.
+environment: >-
+  run server, conda eqasim environment, PYTHONPATH set to the code archive of the commit above.
+validation:
+- metric: >-
+    Stage guard with the production keys on all 60 batches: grid pairs (KREIS car and bicycle classes and
+    employed against the batch sums of their grid controls), bound 1e-6 relative; age pairs (KREIS persons 0-17
+    and 18+ against the 100 m age bands of the Kreis part), bound 0.05 in Kreis parts with at least 1,000
+    persons of the universe
+  reference: >-
+    none (property of the inputs). The 0.05 bound is the ASSUMPTION-grade design bound of ADR-0203; the
+    residual it has to sit above comes from the 100 m bands being integers rounded inside each 1 km square
+    while the KREIS share comes from float age counts
+  result: >-
+    MET on every batch: grid pairs max share 0 over 1,730 rows; age pairs max share 0.0168 over the 203 gated
+    rows (median 0.0009, 90 % quantile 0.0049, 99 % quantile 0.0117), 0 rows above 0.05. Reported, not gated
+    by the stage: in the 143 age rows of parts below 1,000 persons the share reaches 1.12 (9 rows above 0.05);
+    persons_all (population-share split in both modes) max 0.0132 in the parts with at least 1,000 persons.
+    Correction after review (2026-11-20, no figure changed): the stage's guard DOES gate persons_all
+    (input_consistency_guard.AGE_UNIVERSE_PAIRS), while scripts/guard_summary.py reports it apart; with
+    0.0132 it is below the 0.05 bound, so the verdict holds.
+    Employment level: 346 Kreis-part x family pairs reconciled, 0 capped, 0 left unchanged; bridge 0.9827.
+  artifact: docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/guard_summary.json
+- metric: >-
+    Sensitivity of the guard bounds (added 2026-11-19 after the whole-branch review, computed from the
+    committed table with scripts/guard_summary.py --tolerance 0.02 --min-persons 200, no new server run): the
+    age pairs of the same 60 batches judged with a 2 % bound in Kreis parts with at least 200 persons of the
+    universe, the stricter bound ADR-0203 rejects
+  reference: >-
+    none (property of the inputs). Under the new split the age residual is the rounding residual described in
+    the entry above, so every row above a bound here is a rounding row, not a defect
+  result: >-
+    Reported, not gated: 3 of the 301 gated age rows exceed 0.02 (max share 0.0266; batch_028 Kreis
+    03158 persons_18plus, batch_037 Kreis 03154 persons_0_17, batch_040 Kreis 03151 persons_18plus), so a 2 %
+    guard from 200 persons would stop three production batches on the rounding residual alone. Correction
+    after review (2026-11-20): the stage's guard also gates persons_all, which scripts/guard_summary.py
+    reports apart; counted from the committed input_consistency_new_keys.csv, 2 of its 165 rows in parts
+    with at least 200 persons exceed 0.02 (max 0.0314), so a 2 % guard would stop more batches, not fewer.
+  artifact: docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/guard_summary_tolerance_0.02_min_persons_200.json
+artifacts:
+- docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/scripts/run_all_batches.sh
+- docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/scripts/guard_summary.py
+- docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/input_consistency_new_keys.csv
+- docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/input_consistency_new_keys.json
+- docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/guard_summary.json
+- docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/guard_summary_tolerance_0.02_min_persons_200.json
+- docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/prepare_summary.txt
+issues:
+- '#658'
+- '#648'
+notes: >-
+  The full rerun (#648) builds these tables through the stage itself; this record says only that the guard
+  will not stop it on the production inputs as they stand.

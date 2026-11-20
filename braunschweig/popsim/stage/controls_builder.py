@@ -400,6 +400,85 @@ def universe_age_census_columns(active_entries, *, single_year_max=SINGLE_YEAR_M
     )
 
 
+def _universe_key(control):
+    """``(lower, max_age)`` of an age-universe entry, as :func:`apportion_universes` keys it."""
+    return (0 if control.min_age is None else int(control.min_age), control.max_age)
+
+
+def apportion_universes(active_entries, tier3_control_names):
+    """The distinct age universes ``(lower, upper | None)`` whose person totals the batch split needs.
+
+    One per age-universe registry entry (:func:`age_universe_entries`) plus
+    ``(TIER3_PERSON_MIN_AGE, None)`` when ``tier3_control_names`` is non-empty; sorted.
+
+    Kept for the stage wiring (Task A6): the stage passes this list to
+    :func:`add_universe_weight_columns` (and to the parquet load set), then the result to
+    :func:`apportion_weight_columns`, so the universes loaded and the universes mapped are one set.
+    """
+    from braunschweig.popsim import control_spec as cs
+    universes = {_universe_key(c) for c, _lo, _hi in age_universe_entries(active_entries)}
+    if list(tier3_control_names):
+        universes.add((cs.TIER3_PERSON_MIN_AGE, None))
+    return sorted(universes, key=lambda u: (u[0], 10 ** 6 if u[1] is None else u[1]))
+
+
+def add_universe_weight_columns(cells, universes):
+    """Add one float column ``_universe_persons_<lo>_<hi|plus>`` per distinct age universe.
+
+    Each column is the per-cell sum of the single-year ``M_AGE_<y>`` / ``F_AGE_<y>`` columns of
+    ``[lo, hi]`` (``hi=None`` -> up to :data:`SINGLE_YEAR_MAX_AGE`), the same years
+    :func:`person_total_by_kreis_age_range` sums. It is the weight column from which a batch's
+    share of the Kreis persons OF THAT UNIVERSE is computed.
+
+    Returns ``(cells with the new columns (a copy), {universe: column name})``.
+
+    Raises
+    ------
+    RuntimeError
+        If a needed single-year column is absent (no silent fallback: a partial sum would be the
+        share of a shorter universe).
+    """
+    out = cells.copy()
+    column_of = {}
+    new_columns = {}
+    for lo, hi in universes:
+        if (lo, hi) in column_of:
+            continue
+        upper = SINGLE_YEAR_MAX_AGE if hi is None else int(hi)
+        expected = [f"{p}_AGE_{y}" for p in ("M", "F") for y in range(int(lo), upper + 1)]
+        missing = [c for c in expected if c not in out.columns]
+        if missing:
+            raise RuntimeError(
+                f"add_universe_weight_columns: age universe {lo}-{hi} needs {len(expected)} "
+                f"single-year columns but {len(missing)} are absent ({missing[:4]}...); the "
+                "batch share of this universe cannot be derived (no silent fallback).")
+        name = f"_universe_persons_{lo}_{'plus' if hi is None else hi}"
+        new_columns[name] = out[expected].astype(float).sum(axis=1)
+        column_of[(lo, hi)] = name
+    return out.assign(**new_columns), column_of
+
+
+def apportion_weight_columns(active_entries, tier3_control_names, column_of_universe):
+    """``{KREIS control name: weight column}`` for every person control with an age universe.
+
+    Keys are control names as in the KREIS controls map (``<column>_KREIS``). Registry entries
+    with ``min_age`` / ``max_age`` contribute the control columns of the entry; every name of
+    ``tier3_control_names`` gets the ``(TIER3_PERSON_MIN_AGE, None)`` universe. Controls without
+    an age universe and household controls are NOT in the map: they keep the population or
+    household share of the batch.
+    """
+    from braunschweig.popsim import control_spec as cs
+    from braunschweig.popsim.kreis_attribute_control import control_columns
+    mapping = {}
+    for control, _lo, _hi in age_universe_entries(active_entries):
+        column = column_of_universe[_universe_key(control)]
+        for name in control_columns(control):
+            mapping[f"{name}_{cs.GEO_KREIS}"] = column
+    for name in tier3_control_names:
+        mapping[name] = column_of_universe[(cs.TIER3_PERSON_MIN_AGE, None)]
+    return mapping
+
+
 def _grid_geography_controls(controls, cs):
     """Keep only controls sourced from the GRID parquet (ZENSUS100m / ZENSUS1km).
 

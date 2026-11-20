@@ -49,6 +49,12 @@ def _values(**overrides):
         stage.KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY: False,
         stage.KEY_FAST_PATHS: False,
         stage.KEY_SOLVER_FALLBACK_ERROR_RATE: 0.2,
+        # The #658 input-consistency keys at their legacy values (string keys: a False default fails validation).
+        stage.KEY_KREIS_BATCH_APPORTIONMENT: "population",
+        stage.KEY_KREIS_CONTROLS_FOLLOW_GRIDS: False,
+        stage.KEY_EMPLOYMENT_LEVEL_SOURCE: "survey",
+        stage.KEY_KREIS_FINE_TOLERANCE: 0.05,
+        stage.KEY_KREIS_FINE_MIN_PERSONS: 1000,
         "random_seed": 4711,
     }
     values.update(overrides)
@@ -154,12 +160,17 @@ def test_execute_validates_the_integerizer_and_gate_settings_before_the_seed_bui
 
 # --- execute: batches, then the solver-path gate -----------------------------------------
 
-def _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls, tenure_limit=False):
+def _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls, tenure_limit=False, *,
+                                    employment_grid_on=False, cells=None,
+                                    tier3_kreis=(None, None, set()), real_load_columns=True):
     """Stub every step of ``execute`` before the purge and the batches (see the module doc).
 
     With ``tenure_limit`` (#657) the run uses the catalog controls of tiers 0-2 and the fixture
     cells. ``_resolve_cell_load_columns`` runs for real; the returned dict records the columns
-    ``execute`` asked the parquet loader for.
+    ``execute`` asked the parquet loader for. The keyword arguments serve the #658 tests: the
+    employment grid on, the cells the loader returns (default: the fixture cells with
+    ``tenure_limit``, else an empty frame), the Tier-3 KREIS table, and ``real_load_columns=False``
+    to stub the load-set resolution (it reads the parquet schema with the employment grid on).
     """
     _stub_early_steps(monkeypatch, calls, tmp_path / "settings.yaml")
     settings = tmp_path / "settings.yaml"
@@ -186,17 +197,20 @@ def _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls, tenure_limit=F
     tiers, controls_source = (fixture.CONTROL_TIERS, "catalog") if tenure_limit else ((), "csv")
     monkeypatch.setattr(
         stage, "_read_control_config",
-        lambda ctx, name: (tiers, (), controls_source, False, False, (), set(), 30, None,
-                           "default", False))
+        lambda ctx, name: (tiers, (), controls_source, employment_grid_on, False, (), set(), 30,
+                           None, "default", False))
     monkeypatch.setattr(
         stage, "_build_control_frame", lambda *a, **k: (pd.DataFrame(), []))
-    monkeypatch.setattr(
-        stage, "_load_tier3_kreis_controls", lambda *a, **k: (None, None, set()))
+    monkeypatch.setattr(stage, "_load_tier3_kreis_controls", lambda *a, **k: tier3_kreis)
+    if not real_load_columns:
+        monkeypatch.setattr(stage, "_resolve_cell_load_columns", lambda *a, **k: [])
     loaded_columns = {}
+    loaded_cells = (cells if cells is not None
+                    else fixture.make_cells() if tenure_limit else pd.DataFrame())
 
     def load_control_cells(cells_path, load_cols):
         loaded_columns["columns"] = list(load_cols)
-        return fixture.make_cells() if tenure_limit else pd.DataFrame()
+        return loaded_cells
 
     monkeypatch.setattr(stage.mid, "load_control_cells", load_control_cells)
     monkeypatch.setattr(
@@ -297,10 +311,11 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     }
     # The last two positional arguments of the batch runner are the overrides and the seed base.
     assert seen["batches_args"][-2:] == (expected_overrides, 4711)
-    # The purge (batch signature) gets the version, the verified commit, the lock hash,
-    # overrides and seed base.
-    assert seen["purge_args"][-5:] == (
-        "0.10.0+bs.2", _COMMIT, _LOCK_HASH, expected_overrides, 4711)
+    # The purge (batch signature) gets the version, the verified commit, the lock hash, overrides,
+    # seed base and the #658 consistency payload (None while every key is at its legacy value, so
+    # legacy work dirs keep their signature).
+    assert seen["purge_args"][-6:] == (
+        "0.10.0+bs.2", _COMMIT, _LOCK_HASH, expected_overrides, 4711, None)
     # The configured rounding mode and controlled method are what the gate must find in the record.
     assert seen["gate"] == (str(tmp_path / "work"), 0.2, "controlled", "search")
 
@@ -359,3 +374,80 @@ def test_execute_reports_the_controlled_rounding_shares_only_for_a_controlled_ru
                           "popsim_integerizer_not_converged_share": 0.1}
     else:
         assert not [key for key in shares if key in infos]
+
+
+# --- execute: the #658 input-consistency keys at their production values -----------------
+
+_PRODUCTION_KREIS_KEYS = {
+    stage.KEY_KREIS_BATCH_APPORTIONMENT: "universe",
+    stage.KEY_KREIS_CONTROLS_FOLLOW_GRIDS: True,
+    stage.KEY_EMPLOYMENT_LEVEL_SOURCE: "zensus",
+}
+
+
+def _stub_batches_and_gate(monkeypatch, calls):
+    """Stub the purge, the batch runner and the gate; returns what they were called with."""
+    seen = {}
+
+    def purge(*args, **kwargs):
+        calls.append("purge")
+        seen["purge_args"] = args
+
+    def batches(*args, **kwargs):
+        calls.append("batches")
+        seen["batches_args"] = args
+        seen["batches_kwargs"] = kwargs
+        return "merge_report"
+
+    def gate(*args, **kwargs):
+        raise _Stop
+
+    monkeypatch.setattr(stage, "_purge_stale_batches_for_changed_config", purge)
+    monkeypatch.setattr(stage, "_run_populationsim_batches", batches)
+    monkeypatch.setattr(stage, "_log_integerizer_feasibility", lambda *a, **k: None)
+    monkeypatch.setattr(stage.fast_path_rate, "check_fast_path", lambda *a, **k: {})
+    monkeypatch.setattr(stage.solver_path_gate, "check_solver_paths", gate)
+    return seen
+
+
+def test_execute_hands_the_production_kreis_keys_to_the_batch_runner(monkeypatch, tmp_path):
+    import popsim_kreis_batch_fixture as kreis_fixture
+
+    calls = []
+    # One Tier-3 KREIS control (universe: persons 15+) and the employment grid on; the cells carry
+    # the single-year age columns the universe weight column is summed from.
+    tier3_kreis = (pd.DataFrame({"ARS_kreis": ["03101", "03158"]}),
+                   {"employed_KREIS": ["employed_source"]}, set())
+    _stub_execute_up_to_the_batches(
+        monkeypatch, tmp_path, calls, employment_grid_on=True, cells=kreis_fixture.make_cells(),
+        tier3_kreis=tier3_kreis, real_load_columns=False)
+    seen = _stub_batches_and_gate(monkeypatch, calls)
+
+    with pytest.raises(_Stop):
+        stage.execute(_context(_values(**_PRODUCTION_KREIS_KEYS), stage_path=tmp_path))
+
+    consistency = seen["batches_kwargs"]["consistency"]
+    kwargs = consistency.run_popsim_mid_kwargs()
+    assert kwargs["apportion_weight_col_by_control"] == {"employed_KREIS": "_universe_persons_15_plus"}
+    assert "_universe_persons_15_plus" in seen["batches_args"][1].columns  # the batch cells
+    assert kwargs["kreis_follow_grids"] is True
+    assert kwargs["employment_level_source"] == "zensus"
+    assert kwargs["consistency_recorder"] is not None
+    # The signature payload is the last purge argument: off legacy it carries the keys.
+    assert seen["purge_args"][-1] == consistency.signature_payload() is not None
+    assert seen["purge_args"][-1][stage.KEY_KREIS_BATCH_APPORTIONMENT] == "universe"
+
+
+def test_execute_refuses_production_kreis_keys_without_a_kreis_table_before_the_cell_load(
+        monkeypatch, tmp_path):
+    calls = []
+    loaded = _stub_execute_up_to_the_batches(
+        monkeypatch, tmp_path, calls, employment_grid_on=True)
+
+    def must_not_load(*args, **kwargs):
+        raise AssertionError("execute() loaded the cells although the keys cannot be honoured")
+
+    monkeypatch.setattr(stage.mid, "load_control_cells", must_not_load)
+    with pytest.raises(ValueError, match=stage.KEY_KREIS_BATCH_APPORTIONMENT.replace(".", r"\.")):
+        stage.execute(_context(_values(**_PRODUCTION_KREIS_KEYS), stage_path=tmp_path))
+    assert "columns" not in loaded and calls == ["environment check"]

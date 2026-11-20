@@ -1,0 +1,93 @@
+id: popsim-input-consistency-2026-11-18
+date: '2026-11-18'
+repository:
+  commit: aa6144c8
+  branch: fix/i658-popsim-kreis-consistency
+  notes: >-
+    Baseline of issue #658 (Part A, Task A2). The code on the run server was a git archive of commit
+    aa6144c8 (braunschweig, data, scripts, matsim, configs, documentation, eqasim_common, synthesis), i.e.
+    the branch with the measurement module braunschweig.popsim.input_consistency and its diagnostics
+    reader, BEFORE any change to how the control tables are built. The three scripts of the artifact
+    directory were copied next to it as they are committed with this manifest. Table reads only: no
+    PopulationSim run, no pipeline run.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - the run overlay of prod100_20261031 (server-local), only as the configuration that produced the batch folders
+  notes: >-
+    Two folder sets are read. prod100: the 60 batch folders of the production run prod100_20261031
+    (popsim_work/batch_000 .. batch_059). arm3: the arm-3 folders of batch_000 and batch_032
+    (popsim-ladder-arm3-2026-11-18) and of batch_028 (popsim-run-performance-2026-11-18), as prepared by
+    those records. Folder paths in the two JSON files are written relative to the server home (~/).
+sampling:
+  rate: 1.0
+  scope: all 60 batches of prod100_20261031; three arm-3 batch folders
+  notes: The measurement reads the control tables, not a synthetic population; no sampling is involved.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. scripts/run_input_consistency.py reads data/control_totals_{KREIS,ZENSUS1km,
+    ZENSUS100m}.csv and data/geo_cross_walk.csv of every folder through the batch diagnostics' own reader
+    (braunschweig.analysis.popsim_batch_diagnostics.run._input_consistency, which calls
+    braunschweig.popsim.input_consistency.summarize), so the table equals the diagnostics table
+    input_consistency.csv for the same folder. scripts/aggregate_input_consistency.py sums it per Kreis and
+    check; scripts/compare_with_scratch.py sums it over the region and puts it next to the scratch figures
+    quoted in the plan of #658.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Both reads exited 0 on 2026-11-18 (60 and 3 batches measured, 0 batches unmeasured, no pair or check
+    skipped, no WARNING in the logs). This is a measurement of contradictions BETWEEN control targets of
+    the model; it compares the targets with each other, not with observed behaviour, and is no validation.
+source: >-
+  run server, ~/i658_a/out (tables, logs); committed copy in docs/runs/artifacts/popsim-input-consistency-2026-11-18/.
+environment: >-
+  run server, conda eqasim environment (Python 3.10, pandas 1.5.3).
+validation:
+- metric: >-
+    Agreement of the committed measurement with the scratch figures of the plan of #658 (region sums over
+    the 60 prod100 batches): persons below the size minimum (cells, persons), persons without households,
+    households without persons, and the sums over Kreis parts of |KREIS - finer sum| for persons 0-17,
+    employed, car classes and bicycle classes
+  reference: >-
+    scratch figures measured on the run server on 2026-11-18 by an uncommitted exploration script (values
+    quoted in the plan of #658 and in compare_with_scratch.py); they are earlier measurements of the same
+    tables, not observed data
+  result: >-
+    Persons without households (20,070 in 3,387 cells) and households without persons (3,376 in 1,057
+    cells): identical. Employed 14,417.7 (scratch 14,418), cars 41,082.4 (41,082), bicycles 26,419.6
+    (26,420): identical up to the scratch rounding. Persons 0-17: 16,376.4 against 16,371, a difference of
+    5.4 persons (0.03 %); the scratch computation behind 16,371 was not found on the server, so this
+    difference is reported, not explained. Persons below the size minimum: 101,921 in 18,299 cells against
+    106,792 in 19,341; the difference of 4,871 persons is explained exactly by the definition: the committed
+    check judges only cells with households AND persons (a cell with households and no person is counted
+    once, by households_without_persons), while the scratch count also took the 1,057 cells with households
+    and no person, whose household sizes need 4,871 persons (compare_with_scratch.py --work-dir). The cell
+    count differs by 1,042, not 1,057, because 15 of those cells carry no household in any size class.
+  artifact: docs/runs/artifacts/popsim-input-consistency-2026-11-18/prod100/compare_prod100_scratch.csv
+- metric: >-
+    Baseline contradiction table per batch, Kreis part and check (prod100 and arm3), for the later arms of
+    #658 (KREIS consistency) to be compared against
+  reference: none (property of the control tables)
+  result: >-
+    Written: 3,361 rows (prod100) and 157 rows (arm3). The aggregated sums per Kreis and check are in
+    agg_prod100.csv and agg_arm3.csv. KREIS employed versus the survey employed classes (ratio pair) is
+    reported as ratio_reported and is not a contradiction.
+  artifact: docs/runs/artifacts/popsim-input-consistency-2026-11-18/prod100/input_consistency_prod100.csv
+artifacts:
+- docs/runs/artifacts/popsim-input-consistency-2026-11-18/scripts/run_input_consistency.py
+- docs/runs/artifacts/popsim-input-consistency-2026-11-18/scripts/aggregate_input_consistency.py
+- docs/runs/artifacts/popsim-input-consistency-2026-11-18/scripts/compare_with_scratch.py
+- docs/runs/artifacts/popsim-input-consistency-2026-11-18/prod100/input_consistency_prod100.csv
+- docs/runs/artifacts/popsim-input-consistency-2026-11-18/prod100/input_consistency_prod100.json
+- docs/runs/artifacts/popsim-input-consistency-2026-11-18/prod100/agg_prod100.csv
+- docs/runs/artifacts/popsim-input-consistency-2026-11-18/prod100/compare_prod100_scratch.csv
+- docs/runs/artifacts/popsim-input-consistency-2026-11-18/arm3/input_consistency_arm3.csv
+- docs/runs/artifacts/popsim-input-consistency-2026-11-18/arm3/input_consistency_arm3.json
+- docs/runs/artifacts/popsim-input-consistency-2026-11-18/arm3/agg_arm3.csv
+issues:
+- '#658'
+notes: >-
+  The arm-3 table covers three batches only; the Kreis parts in it are batch parts, not whole Kreise.

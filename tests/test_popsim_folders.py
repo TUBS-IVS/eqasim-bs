@@ -127,6 +127,17 @@ def test_build_kreis_control_totals_raises_on_missing_kreis():
         )
 
 
+def test_build_kreis_control_totals_rejects_a_universe_share_for_an_unknown_control():
+    # A per-control share for a control the map does not carry (inactive or misspelt) would be
+    # dropped silently and the control it was meant for would keep the population share.
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101", "03153"], "E11": [100.0, 200.0]})
+    share = {"03101": 0.5, "03153": 1.0}
+    with pytest.raises(ValueError, match="employd"):
+        folders.build_kreis_control_totals(
+            kreis_table, _toy_kreis_xwalk(), controls_map={"employed": ("E11",)},
+            apportion_weights_by_control={"employed": share, "employd": share})
+
+
 def test_build_kreis_control_totals_apportions_by_weight():
     # Each Kreis's controls are scaled by its apportion weight (the batch's
     # population share of that Kreis). This is the per-batch target so a Kreis

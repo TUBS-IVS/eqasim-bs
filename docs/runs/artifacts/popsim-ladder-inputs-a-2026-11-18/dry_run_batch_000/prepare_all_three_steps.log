@@ -1,0 +1,75 @@
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.weight] primary 43598/43598 (100.0%), fallback 0 (0.0%): _universe_persons_0_5 missing or non-numeric, coerced to 0
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.kreis] primary 43598/43598 (100.0%), fallback 0 (0.0%): cells without a crosswalk Kreis are dropped from the _universe_persons_0_5 sums (weight share dropped 0.0%)
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.weight] primary 43598/43598 (100.0%), fallback 0 (0.0%): _universe_persons_14_plus missing or non-numeric, coerced to 0
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.kreis] primary 43598/43598 (100.0%), fallback 0 (0.0%): cells without a crosswalk Kreis are dropped from the _universe_persons_14_plus sums (weight share dropped 0.0%)
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.weight] primary 43598/43598 (100.0%), fallback 0 (0.0%): _universe_persons_15_plus missing or non-numeric, coerced to 0
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.kreis] primary 43598/43598 (100.0%), fallback 0 (0.0%): cells without a crosswalk Kreis are dropped from the _universe_persons_15_plus sums (weight share dropped 0.0%)
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.weight] primary 43598/43598 (100.0%), fallback 0 (0.0%): _universe_persons_18_plus missing or non-numeric, coerced to 0
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.kreis] primary 43598/43598 (100.0%), fallback 0 (0.0%): cells without a crosswalk Kreis are dropped from the _universe_persons_18_plus sums (weight share dropped 0.0%)
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.weight] primary 43598/43598 (100.0%), fallback 0 (0.0%): _universe_persons_6_17 missing or non-numeric, coerced to 0
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.kreis] primary 43598/43598 (100.0%), fallback 0 (0.0%): cells without a crosswalk Kreis are dropped from the _universe_persons_6_17 sums (weight share dropped 0.0%)
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.weight] primary 679/679 (100.0%), fallback 0 (0.0%): _universe_persons_0_5 missing or non-numeric, coerced to 0
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.kreis] primary 679/679 (100.0%), fallback 0 (0.0%): cells without a crosswalk Kreis are dropped from the _universe_persons_0_5 sums (weight share dropped 0.0%)
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.weight] primary 679/679 (100.0%), fallback 0 (0.0%): _universe_persons_14_plus missing or non-numeric, coerced to 0
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.kreis] primary 679/679 (100.0%), fallback 0 (0.0%): cells without a crosswalk Kreis are dropped from the _universe_persons_14_plus sums (weight share dropped 0.0%)
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.weight] primary 679/679 (100.0%), fallback 0 (0.0%): _universe_persons_15_plus missing or non-numeric, coerced to 0
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.kreis] primary 679/679 (100.0%), fallback 0 (0.0%): cells without a crosswalk Kreis are dropped from the _universe_persons_15_plus sums (weight share dropped 0.0%)
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.weight] primary 679/679 (100.0%), fallback 0 (0.0%): _universe_persons_18_plus missing or non-numeric, coerced to 0
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.kreis] primary 679/679 (100.0%), fallback 0 (0.0%): cells without a crosswalk Kreis are dropped from the _universe_persons_18_plus sums (weight share dropped 0.0%)
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.weight] primary 679/679 (100.0%), fallback 0 (0.0%): _universe_persons_6_17 missing or non-numeric, coerced to 0
+INFO braunschweig.popsim.mid.kreis_controls: [kreis_pop_from_crosswalk.kreis] primary 679/679 (100.0%), fallback 0 (0.0%): cells without a crosswalk Kreis are dropped from the _universe_persons_6_17 sums (weight share dropped 0.0%)
+INFO braunschweig.popsim.mid.batch_folders: [popsim.kreis_universe_apportion.empty_part] primary 5/5 (100.0%), fallback 0 (0.0%): Kreis parts with no person of the control's age universe get the control value 0
+INFO braunschweig.popsim.folders: [popsim.kreis_follow_grids] 10 of 10 KREIS control(s) set to their grid sums over 1 Kreis part(s); largest relative change against the apportioned value 23.09% (number_of_bicycles_4plus_KREIS)
+WARNING prepare_input_arm: data/seed_persons.csv of the base batch differs from the production seed; the bridge is computed from the base batch's seed
+WARNING prepare_input_arm: data/seed_households.csv of the base batch differs from the production seed; the bridge is computed from the base batch's seed
+INFO braunschweig.popsim.employment_level: [popsim.employment_level] bridge 0.9827 over persons aged 16+ (the employed grid's universe) = persons in an employed class of work_by_employment / persons with P_TAET in EMPLOYED_TAET, household-weighted MiD seed; 0.9825 over the families' own 14+ universe; 0.02% of the weighted employed persons aged 14+ are younger than 16: they sit inside the scaled employed group, so the employed persons aged 16+ end up lower than bridge x Zensus by about that share
+INFO braunschweig.popsim.folders: [popsim.kreis_follow_grids] 1 of 1 KREIS control(s) set to their grid sums over 1 Kreis part(s); largest relative change against the apportioned value 0.00% (employed_grid_sum_KREIS)
+INFO braunschweig.popsim.employment_level: [popsim.employment_level] bridge 0.9827, Zensus employment level on 2 family(ies): work_by_employment: mean relative change of the employed level 1.92% over 1 part(s), capped 0 part(s) (0 persons), empty 0, unchanged 0; employment_status: mean relative change of the employed level 1.92% over 1 part(s), capped 0 part(s) (0 persons), empty 0, unchanged 0
+INFO braunschweig.popsim.employment_level: [popsim.employment_level.unchanged_part] primary 2/2 (100.0%), fallback 0 (0.0%): rate over Kreis-part x family pairs; a pair whose employed or other group is empty keeps its apportioned values
+{
+  "out": "~/i658_a/dryrun3/batch_000",
+  "steps": [
+    "kreis_universe",
+    "kreis_follow_grids",
+    "employment_level"
+  ],
+  "changed_kreis_columns": [
+    "employed_KREIS",
+    "schulabschluss_low_KREIS",
+    "schulabschluss_mid_KREIS",
+    "schulabschluss_high_KREIS",
+    "beruflabschluss_none_KREIS",
+    "beruflabschluss_vocational_KREIS",
+    "beruflabschluss_tertiary_KREIS",
+    "number_of_cars_0_KREIS",
+    "number_of_cars_1_KREIS",
+    "number_of_cars_2_KREIS",
+    "number_of_cars_3plus_KREIS",
+    "number_of_bicycles_0_KREIS",
+    "number_of_bicycles_1_KREIS",
+    "number_of_bicycles_2_KREIS",
+    "number_of_bicycles_3_KREIS",
+    "number_of_bicycles_4plus_KREIS",
+    "employment_status_vollzeit_KREIS",
+    "employment_status_teilzeit_KREIS",
+    "employment_status_geringfuegig_KREIS",
+    "employment_status_sonstiges_KREIS",
+    "employment_status_in_ausbildung_KREIS",
+    "employment_status_nicht_erwerbstaetig_KREIS",
+    "pt_ticket_group4_deutschlandticket_KREIS",
+    "pt_ticket_group4_other_flatrate_KREIS",
+    "pt_ticket_group4_never_pt_KREIS",
+    "pt_ticket_group4_occasional_ticket_KREIS",
+    "work_by_employment_employed_work_KREIS",
+    "work_by_employment_employed_nowork_KREIS",
+    "work_by_employment_nonemployed_work_KREIS",
+    "work_by_employment_nonemployed_nowork_KREIS",
+    "education_0_5_edu_KREIS",
+    "education_0_5_noedu_KREIS",
+    "education_6_17_edu_KREIS",
+    "education_6_17_noedu_KREIS",
+    "education_18plus_edu_KREIS",
+    "education_18plus_noedu_KREIS"
+  ],
+  "unexpected_changed_files": []
+}
