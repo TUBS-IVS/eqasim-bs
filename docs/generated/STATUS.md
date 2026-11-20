@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 113 | stages: 133 | datasets: 107 | ADRs: 197 | run manifests: 105
+- Features: 113 | stages: 133 | datasets: 107 | ADRs: 198 | run manifests: 108
 
 ## Population synthesis
 
@@ -26,7 +26,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Income spatial tilt (Nettokaltmiete)](../registry/features/income_spatial_tilt.yml) | active | off | i/i/- | unvalidated |  |
 | [IPF synthesis (legacy default)](../registry/features/ipf_synthesis_legacy.yml) | supported | off | -/-/A | unvalidated |  |
 | [Joint age×size margin (#3)](../registry/features/joint_age_size_margin.yml) | supported | off | -/-/A | unvalidated |  |
-| [1 km car/bike ownership shape controls (MiD-conditional, raked to the blended Kreis anchors)](../registry/features/ownership_grid_1km.yml) | active | ON | A/-/- | unvalidated (`smoke-ownership-grid-03101-2026-08-19`, `100pct-allfeat-i240-2026-08-20`) | [#240](https://github.com/TUBS-IVS/eqasim-bs/issues/240) |
+| [1 km car/bike ownership shape controls (MiD-conditional, raked to the blended Kreis anchors)](../registry/features/ownership_grid_1km.yml) | active | ON | A/-/- | unvalidated (`smoke-ownership-grid-03101-2026-08-19`, `100pct-allfeat-i240-2026-08-20`, `popsim-input-consistency-2026-11-18`, `popsim-ladder-inputs-a-2026-11-18`) | [#240](https://github.com/TUBS-IVS/eqasim-bs/issues/240) |
 | [PopulationSim diagnostic data dictionary step (write_data_dictionary), switchable](../registry/features/popsim_data_dictionary.yml) | active | off | A/s/- | not_applicable (`popsim-data-dictionary-identity-2026-11-16`) |  |
 | [popsim_open / popsim_mid](../registry/features/popsim_method.yml) | active | ON | A/A/- | measured_vs_reference (`synth-100pct-2.2.0-2026-07-23`, `popsim-batch-diagnostics-prod100-20261031-2026-11-16`, `popsim-ladder-baseline-2026-11-16`, `popsim-ladder-arm1-2026-11-17`, `popsim-ladder-arm2-2026-11-17`, `popsim-ladder-arm3-2026-11-18`) |  |
 | [Sex-aware couples (~1.1%)](../registry/features/sex_aware_couples.yml) | supported | off | -/-/A | unvalidated |  |
@@ -40,7 +40,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Consistent car_availability](../registry/features/consistent_car_availability.yml) | active | off | -/-/A | unvalidated |  |
 | [Driving licence (P17.1, 3-margin IPF)](../registry/features/driving_licence_enrichment.yml) | active | off | -/-/A | unvalidated |  |
 | [Economic status (Bayes hhtype×region)](../registry/features/economic_status_bayes.yml) | active | off | -/-/A | unvalidated |  |
-| [100m employment grid control (employed persons per cell by sex and age group)](../registry/features/employment_grid_control.yml) | active | ON | A/s/- | unvalidated |  |
+| [100m employment grid control (employed persons per cell by sex and age group)](../registry/features/employment_grid_control.yml) | active | ON | A/s/- | unvalidated (`popsim-input-consistency-2026-11-18`, `popsim-ladder-inputs-a-2026-11-18`) |  |
 | [Employment margin (IPF)](../registry/features/employment_margin.yml) | PARKED | off | -/-/i | unvalidated |  |
 | [Household income € + distribution](../registry/features/household_income_distribution.yml) | active | off | -/-/A | unvalidated |  |
 | [Housing tenure (completeness)](../registry/features/housing_tenure.yml) | active | ON | A/A/A | unvalidated (`popsim-ladder-tenure-2026-11-18`) |  |
@@ -53,7 +53,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [PT-subscription per-Kreis control (four groups by default, three under the flag; MiD x SrV blend)](../registry/features/pt_ticket_group_kreis_control.yml) | active | ON | A/-/- | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`, `smoke-pt-never-group-03101-off-2026-08-21`, `smoke-pt-never-group-03101-on-2026-08-21`) | [#321](https://github.com/TUBS-IVS/eqasim-bs/issues/321) |
 | [Reactivated attrs (couple/studies/SPC)](../registry/features/reactivated_person_attributes.yml) | active | off | -/-/A | unvalidated |  |
 | [SrV participation controls (#224)](../registry/features/srv_participation_controls.yml) | active | ON | A/i/- | unvalidated | [#224](https://github.com/TUBS-IVS/eqasim-bs/issues/224) |
-| [Tier-3 Kreis controls](../registry/features/tier3_kreis_controls.yml) | active | ON | A/i/- | unvalidated |  |
+| [Tier-3 Kreis controls](../registry/features/tier3_kreis_controls.yml) | active | ON | A/i/- | unvalidated (`popsim-input-consistency-2026-11-18`, `popsim-ladder-inputs-a-2026-11-18`) |  |
 
 ## Travel / activity behavior
 
