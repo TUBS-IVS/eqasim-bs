@@ -280,3 +280,23 @@ def test_as_dict_is_json_serialisable_for_the_run_provenance():
     assert payload["machine"]["memory_source"] == "psutil"
     assert payload["resolutions"]["java_memory"]["effective"] == "86G"
     json.dumps(payload)   # must not raise
+
+
+# Issue #656: a per-worker figure below the default holds only with both run-time options on.
+@pytest.mark.parametrize("store_positive, fast_paths, expected_workers", [
+    (True, True, 8),    # 86.28 GB / 6 GB per worker allows 14; the ceiling of 8 applies
+    (False, True, 2),   # dense weight tables: the 30 GB default applies, 86.28 / 30 -> 2
+    (True, False, 2),   # this combination was never measured: the default applies
+])
+def test_reduced_worker_memory_needs_both_run_time_options(store_positive, fast_paths,
+                                                           expected_workers):
+    config = dict(PRODUCTION_CONFIG, **{
+        "braunschweig.population.popsim.num_workers": 8,
+        "braunschweig.population.popsim.worker_memory_gb": 6.0,
+        "braunschweig.population.popsim.store_positive_weight_rows_only": store_positive,
+        "braunschweig.population.popsim.fast_paths": fast_paths,
+    })
+    report = resources.build_report(config, machine=SERVER, env={})
+    workers = next(r for r in report.resolutions
+                   if r.key == "braunschweig.population.popsim.num_workers")
+    assert workers.effective == expected_workers

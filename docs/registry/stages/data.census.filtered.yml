@@ -98,7 +98,9 @@ notes: >-
   material, expected drop in parallelism on this stage, not yet exercised in a
   real-machine smoke (see the Feature Registry's validation.note). These clamps are those of
   the code default of 30 GB per worker; since issue #656 configs/base_bs.yml sets a smaller
-  worker_memory_gb (see RUN TIME AND MEMORY OF A BATCH below), with which these overlay values fit.
+  worker_memory_gb (see RUN TIME AND MEMORY OF A BATCH below), against which the overlay ceilings
+  (values in configs/overlays/*.yml) are resolved; with the run-time options not both on the code
+  default applies again (braunschweig.resources.popsim_worker_memory_gb).
 
 
   SETTINGS/GEOGRAPHY FAIL-FAST: before any batch folder is written or any PopulationSim

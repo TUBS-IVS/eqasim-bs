@@ -1155,7 +1155,10 @@ def _read_batching_and_scope_config(context):
     # stage's hash and discard the shared popsim cache.
     from braunschweig import resources
     _requested_workers = context.config(KEY_WORKERS)
-    _worker_memory_gb = float(context.config(KEY_WORKER_MEMORY_GB))
+    # A configured figure below the default holds only with both run-time options on.
+    _worker_memory_gb = resources.popsim_worker_memory_gb(
+        float(context.config(KEY_WORKER_MEMORY_GB)),
+        context.config(KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY), context.config(KEY_FAST_PATHS))
     num_workers = resources.effective_popsim_workers(_requested_workers, _worker_memory_gb)
     # The worker count is memory-bound, not core-bound (see the comment above),
     # so the log names the quantity that actually decided it -- the memory

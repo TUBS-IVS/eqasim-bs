@@ -659,6 +659,34 @@ MEASURED_POPSIM_WORKER_MEMORY_SAMPLING_RATE = 1.0
 
 KEY_WORKER_MEMORY_GB = "braunschweig.population.popsim.worker_memory_gb"
 
+#: The two run-time options of fork release 0.10.0+bs.2 (issue #656). A per-worker figure below
+#: :data:`DEFAULT_POPSIM_WORKER_MEMORY_GB` was measured only with BOTH on (run manifest
+#: popsim-run-performance-2026-11-18); see :func:`popsim_worker_memory_gb`.
+KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY = "braunschweig.population.popsim.store_positive_weight_rows_only"
+KEY_FAST_PATHS = "braunschweig.population.popsim.fast_paths"
+
+
+def popsim_worker_memory_gb(configured: float, store_positive_weight_rows_only: bool,
+                            fast_paths: bool) -> float:
+    """Per-worker memory the gate may assume for a PopulationSim batch, in GB.
+
+    A configured figure below :data:`DEFAULT_POPSIM_WORKER_MEMORY_GB` holds only for runs with
+    both run-time options on: without them a batch keeps its dense weight tables and peaks at
+    the default's order (run manifest popsim-run-performance-2026-11-18), and the peak with only
+    one option on was never measured. In that case the default is used instead and a WARNING
+    names the keys, so a run with the options off is clamped rather than OOM-killed.
+    """
+    if configured < DEFAULT_POPSIM_WORKER_MEMORY_GB and not (
+            store_positive_weight_rows_only is True and fast_paths is True):
+        logger.warning(
+            "[resources] %s is %g GB, but that figure holds only with %s and %s both true "
+            "(here %r and %r): using the default %g GB per PopulationSim worker instead",
+            KEY_WORKER_MEMORY_GB, configured, KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY,
+            KEY_FAST_PATHS, store_positive_weight_rows_only, fast_paths,
+            DEFAULT_POPSIM_WORKER_MEMORY_GB)
+        return DEFAULT_POPSIM_WORKER_MEMORY_GB
+    return configured
+
 #: Config key carrying the run's sampling rate. Read only to decide the SEVERITY
 #: of a PopulationSim memory mismatch (see above); this module never resolves or
 #: clamps it.
@@ -888,8 +916,10 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
 
     worker_memory_gb = None
     try:
-        worker_memory_gb = _memory_setting(KEY_WORKER_MEMORY_GB,
-                                           DEFAULT_POPSIM_WORKER_MEMORY_GB)
+        worker_memory_gb = popsim_worker_memory_gb(
+            _memory_setting(KEY_WORKER_MEMORY_GB, DEFAULT_POPSIM_WORKER_MEMORY_GB),
+            config.get(KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY, False),
+            config.get(KEY_FAST_PATHS, False))
     except ValueError as exc:
         _add_violation(Violation(key=KEY_WORKER_MEMORY_GB, severity="error",
                                  message=str(exc)))
