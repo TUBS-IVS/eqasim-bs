@@ -160,8 +160,9 @@ def per_cell_targets(
         One row per 100 m cell with its 1 km parent id (``parent_col``), its Kreis
         code (``kreis_col``) and its household total (``household_total_col``).
     squares:
-        One row per 1 km square with :data:`SQUARE_COLUMNS` (counts of families and
-        households of the census table ``Typ_der_Kernfamilie_nach_Kindern``).
+        One row per 1 km square with :data:`SQUARE_COLUMNS` (families of the census table
+        ``Typ_der_Kernfamilie_nach_Kindern`` and private households of the household-type
+        table ``Typ_priv_HH_Familie``).
     fallback_warn_household_rate:
         Share (0..1) of all cell households on the Kreis fallback above which the rate
         is logged as a warning.

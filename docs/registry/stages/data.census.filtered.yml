@@ -21,6 +21,8 @@ code:
 - braunschweig/popsim/input_consistency.py
 - braunschweig/popsim/input_consistency_guard.py
 - braunschweig/popsim/employment_level.py
+- braunschweig/popsim/minor_child_targets.py
+- braunschweig/popsim/household_less_cells.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -48,6 +50,7 @@ features:
 - income_spatial_tilt
 - ipf_synthesis_legacy
 - kreis_income_control
+- minor_child_family_controls
 - ownership_grid_1km
 - escort_passive_from_adult
 - participation_universe_controls
