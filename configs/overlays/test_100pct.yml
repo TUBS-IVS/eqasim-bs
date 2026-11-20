@@ -5,18 +5,20 @@
 ## recorded in a run manifest under docs/runs/, not here. For prod100_20261031 it is in
 ## docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml; prod100_20260925 has no manifest
 ## of its own (see docs/runs/freight-boundary-links-prod100-2026-10-15.yml).
-## Memory-bound scale. num_workers 8 is a ceiling: the resource gate (ADR-0126,
+## Memory-bound scale. num_workers 12 is a ceiling: the resource gate (ADR-0126,
 ## braunschweig/resources.py) clamps it at run start to what the machine's memory
 ## budget allows (all figures in GiB, the gate's unit). The run server has 94.28 GiB total
 ## memory (recorder value, see docs/runs/chainsolver-worker-private-memory-2026-09-17.yml).
 ## Until issue #656 the gate sized each worker at its 30 GiB default
 ## (DEFAULT_POPSIM_WORKER_MEMORY_GB), so run prod100_20261031 (2026-10-31) was clamped from 3 to
 ## 2 workers (per-worker peak of that run: docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml).
-## With store_positive_weight_rows_only on, configs/base_bs.yml sets worker_memory_gb from the
-## peaks of docs/runs/popsim-run-performance-2026-11-18.yml, and the memory budget would allow
-## more than 8 workers. 8 is a first step (ASSUMPTION: it leaves room for the driver process of
-## this stage and for other jobs on the shared run server). The worker count cannot change
-## results (braunschweig.resources.resolve_popsim_workers); issue #281 tunes it on the full rerun.
+## With both run-time options on, configs/base_bs.yml sets worker_memory_gb from the peaks of
+## docs/runs/popsim-run-performance-2026-11-18.yml. 12 = the gate's memory budget minus the
+## driver's resident memory at the stage start (prod100-java-heap-driver-rss-2026-11-04.yml),
+## divided by worker_memory_gb, rounded down; the gate itself does not subtract the driver for
+## this stage, so the ceiling does. ASSUMPTION: other jobs on the shared run server leave that
+## room; owner decision 2026-11-20 to try 12. The worker count cannot change results
+## (braunschweig.resources.resolve_popsim_workers); issue #281 tunes it on the full rerun.
 working_directory: eqasim-data/cache_bs_100pct_allfeat_popsim
 
 run:
@@ -39,6 +41,6 @@ config:
   matsim_last_iteration: 0
   braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat_opt
   braunschweig.population.popsim.max_cells: 750
-  braunschweig.population.popsim.num_workers: 8
+  braunschweig.population.popsim.num_workers: 12
   cache_share_export: true
   cache_share_recompute: []

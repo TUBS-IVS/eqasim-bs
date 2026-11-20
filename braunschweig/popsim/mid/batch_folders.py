@@ -160,7 +160,8 @@ def _run_batches_and_merge(
     missing batch (e.g. an OOM-killed worker) means whole regions are absent from
     the population -- scientifically unusable, never merely "a recoverable miss".
     """
-    batch.run_batches(batch_folders, run_one, num_workers=num_workers)
+    # Start the largest batches first (shorter tail; the order cannot change a result).
+    batch.run_batches(batch.order_largest_first(batch_folders), run_one, num_workers=num_workers)
     report = mergemod.merge_batch_folders(batch_folders)
     n_total = len(batch_folders)
     n_missing = int(getattr(report, "n_missing", 0) or 0)

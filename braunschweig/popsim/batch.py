@@ -401,6 +401,27 @@ def _error_detail(result, *, max_chars: int = 800) -> str:
     return joined[-max_chars:]
 
 
+def order_largest_first(folders: Sequence[str]) -> list:
+    """Return ``folders`` with the largest batch first, for the start order of the runner.
+
+    Size = total bytes of the batch's ``data/control_totals_*.csv`` (it grows with the cells
+    and zones of the batch, which drive the run time). Starting the long batches first lets the
+    short ones fill the workers at the end instead of one long batch running alone (longest
+    processing time first). The order cannot change a result: every batch is its own
+    PopulationSim process with a seed derived from the batch, not from its position. Ties and
+    folders without control files keep their given order (a stable sort; size 0 sorts last).
+    """
+    def size(folder: str) -> int:
+        return sum(p.stat().st_size for p in Path(folder).glob("data/control_totals_*.csv"))
+
+    sizes = {str(f): size(str(f)) for f in folders}
+    ordered = sorted(folders, key=lambda f: -sizes[str(f)])
+    logger.info("[popsim.batch] start order largest first: %s",
+                ", ".join(f"{Path(f).name} ({sizes[str(f)]} B)" for f in ordered[:5])
+                + (" ..." if len(ordered) > 5 else ""))
+    return ordered
+
+
 def run_batches(
     folders: Sequence[str],
     run_one: Callable[[str], BatchResult],

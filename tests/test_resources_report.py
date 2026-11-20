@@ -284,7 +284,7 @@ def test_as_dict_is_json_serialisable_for_the_run_provenance():
 
 # Issue #656: a per-worker figure below the default holds only with both run-time options on.
 @pytest.mark.parametrize("store_positive, fast_paths, expected_workers", [
-    (True, True, 8),    # 86.28 GB / 6 GB per worker allows 14; the ceiling of 8 applies
+    (True, True, 8),    # 86.28 GB / 6 GB per worker allows 14; a ceiling of 8 applies
     (False, True, 2),   # dense weight tables: the 30 GB default applies, 86.28 / 30 -> 2
     (True, False, 2),   # this combination was never measured: the default applies
 ])
