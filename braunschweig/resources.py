@@ -544,7 +544,7 @@ def resolve_java_memory(configured, budget: ResourceBudget) -> Resolution:
 
 
 def resolve_popsim_workers(configured, budget: ResourceBudget,
-                           worker_memory_gb: float) -> Resolution:
+                           worker_memory_gb: float, driver_rss_gb: float = 0.0) -> Resolution:
     """Resolve the PopulationSim batch worker count against the MEMORY budget.
 
     This key is memory-bound, not core-bound: each worker drives its own
@@ -570,7 +570,13 @@ def resolve_popsim_workers(configured, budget: ResourceBudget,
         raise ValueError(
             f"worker_memory_gb must be a positive number of gigabytes, got "
             f"{worker_memory_gb!r}.")
-    memory_bound = max(1, int(math.floor(budget.memory_gb / worker_memory_gb)))
+    if driver_rss_gb < 0:
+        raise ValueError(f"driver_rss_gb must not be negative, got {driver_rss_gb!r}.")
+    # The batch workers share the memory budget with the driver process that starts them
+    # (``driver_rss_gb``, measured by :func:`effective_popsim_workers` at the point of use;
+    # 0.0 in the start-up report, which runs before the driver has grown).
+    memory_bound = max(1, int(math.floor(
+        max(0.0, budget.memory_gb - driver_rss_gb) / worker_memory_gb)))
     ceiling = max(1, min(memory_bound, budget.cores))
     return _resolve_ceiling(
         "braunschweig.population.popsim.num_workers", configured, ceiling,
@@ -1167,7 +1173,8 @@ def effective_java_memory(configured, machine: Optional[MachineResources] = None
 
 def effective_popsim_workers(configured, worker_memory_gb: float,
                              machine: Optional[MachineResources] = None,
-                             env: Optional[dict] = None) -> int:
+                             env: Optional[dict] = None,
+                             driver_rss_gb: Optional[float] = None) -> int:
     """Effective PopulationSim batch worker count for this machine, logged.
 
     Called at the point of use rather than resolved into the config, for the
@@ -1175,10 +1182,26 @@ def effective_popsim_workers(configured, worker_memory_gb: float,
     of the popsim stage's cache key, so writing a machine-dependent number
     back into it would give every machine a different hash and destroy the
     shared Tier-B PopulationSim cache. Clamping here changes nothing any stage
-    hashes.
+    hashes. Like :func:`effective_chainsolver_workers`, the memory bound subtracts THIS
+    process's live RSS (``driver_rss_gb``; measured when not injected, with a WARNING and
+    no subtraction when it cannot be measured), so ``"auto"`` fills the machine without
+    over-committing it.
     """
-    resolution = resolve_popsim_workers(
-        configured, resolve_budget(machine=machine, env=env), worker_memory_gb)
+    budget = resolve_budget(machine=machine, env=env)
+    if driver_rss_gb is None:
+        driver_rss_gb = current_process_rss_gb()
+        if driver_rss_gb is None:
+            logger.warning(
+                "[resources] braunschweig.population.popsim.num_workers: this process's RSS "
+                "could not be measured (psutil not installed and /proc/self/status "
+                "unavailable) -- the driver's memory is NOT subtracted for this run.")
+            driver_rss_gb = 0.0
+    resolution = resolve_popsim_workers(configured, budget, worker_memory_gb, driver_rss_gb)
+    logger.info(
+        "[resources] braunschweig.population.popsim.num_workers: budget %d cores / %.1f GB "
+        "memory, driver RSS %.2f GB, worker_memory_gb %.2f GB -> %s workers (configured %r)",
+        budget.cores, budget.memory_gb, driver_rss_gb, worker_memory_gb, resolution.effective,
+        configured)
     _log_resolution_deviation(resolution)
     return int(resolution.effective)
 

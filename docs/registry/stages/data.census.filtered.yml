@@ -78,7 +78,8 @@ notes: >-
   only for the input files it was built from (braunschweig.popsim.batch.reconcile_batch_outputs).
   RESOURCE-ADAPTIVE CONFIGURATION (ADR-0126, feature record resource_adaptive_config):
   the popsim_mid/popsim_open producer (braunschweig.popsim.stage) now clamps
-  braunschweig.population.popsim.num_workers against the MACHINE's memory budget at
+  braunschweig.population.popsim.num_workers against the MACHINE's memory budget (since issue
+  #656 minus this process's live resident memory, as for the chainsolver pool) at
   its point of use (_read_batching_and_scope_config,
   braunschweig/resources.py::effective_popsim_workers), bounded by an assumed per-worker
   memory via braunschweig.population.popsim.worker_memory_gb (default 30 GB, attributed

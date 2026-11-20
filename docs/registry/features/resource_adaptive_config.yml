@@ -13,7 +13,8 @@ description: >
   data/osm/osmosis.py still clamps against the machine budget alone, see
   docs/codebase/notes/resource-budget.md), braunschweig.population.popsim.num_workers
   (braunschweig/popsim/stage/__init__.py, bounded by measured per-worker memory via
-  braunschweig.population.popsim.worker_memory_gb, default 30 GB), and (2026-09-17
+  braunschweig.population.popsim.worker_memory_gb, default 30 GB, against the budget minus
+  this process's live RSS since issue #656), and (2026-09-17
   amendment) braunschweig.chainsolvers.processes (braunschweig/synthesis/locations/
   secondary_chainsolvers/__init__.py's _solve_problem_set, bounded by BOTH the core
   budget and a measured per-worker memory footprint via

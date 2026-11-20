@@ -149,7 +149,7 @@ def test_scale_knobs_per_overlay():
     assert (c1["sampling_rate"], c25["sampling_rate"], c100["sampling_rate"]) == (0.01, 0.25, 1.0)
     assert c100["braunschweig.population.popsim.max_cells"] == 750
     # Ceiling of the batch workers since issue #656 (reasoning: the overlay's header comment).
-    assert c100["braunschweig.population.popsim.num_workers"] == 12
+    assert c100["braunschweig.population.popsim.num_workers"] == "auto"
     assert c100["braunschweig.population.popsim.work_dir"] == "eqasim-data/popsim_work_allfeat_opt"
 
 
