@@ -126,7 +126,14 @@ validation:
     0.0045 / 0.069, bikes 1 km 0.0054 / 0.050, every Kreis family 0.0005 to 0.0032 / 0.0052 to 0.027). Households:
     558,179 against a target of 558,151 (+28, one of 60 batches off; October +123, four batches).
   artifact: docs/runs/artifacts/popsim-full-rerun-20261120/comparison/fit_by_group_geography.csv
-  notes: Per control in comparison/fit_by_control.csv; per 1 km cell in zones/*/cells_1km.csv.
+  notes: >-
+    Per control in comparison/fit_by_control.csv; per 1 km cell in zones/*/cells_1km.csv. Not every control improved
+    inside its cells: the 100 m WAPE rose for persons 10-14 (women 0.450 to 0.539, men 0.463 to 0.553), 15-17
+    (0.493 to 0.753, 0.484 to 0.690), 18-19 (0.622 to 0.835, 0.578 to 0.875), men 80+ (0.407 to 0.420), households
+    of 5 persons (0.447 to 0.558) and of 6+ persons (0.515 to 0.651), while their region totals now meet the
+    targets. These targets and cells are the same in both runs, so the small numbers per cell explain the level of
+    the error, not its rise; the cause of the rise is not established (a trade-off with the new household-type
+    targets is a candidate, untested).
 - metric: 100 m fit by cell size (households targeted in the 100 m cell)
   reference: the run's own control targets
   result: >-
@@ -161,8 +168,11 @@ validation:
     meets; the October run stayed 1 to 5 % below those targets. Against MiD P9 (self-reported, a few hundred to about
     2,000 respondents per Kreis) the new rate is higher in five Kreise (most Wolfsburg, 53.0 % against 44.4 %) and lower
     in three (Salzgitter, Gifhorn, Wolfenbüttel, 3 to 4 points), so the gap to P9 widened in both directions. The owner
-    keeps the Zensus as the reference (2026-11-20). Household size and licence are fit checks (household size is
-    controlled at 100 m, the licence raked to P17.1); employment yes/no, age and sex are the independent checks.
+    keeps the Zensus as the reference (2026-11-20). Household size, licence, age and sex are fit checks (household
+    size and 22 age x sex classes are controlled per 100 m cell from the Zensus 2022 grid, and the DESTATIS Kreis
+    table describes the same population; the licence is raked to P17.1), so their improvement is mostly convergence
+    to steered margins; employment yes/no is the independent check. population_validation labels age and sex as
+    fit checks since 8e16b2e3; both runs were re-measured with it (only that label changed).
 - metric: day plans against SrV 2023 (plan structure, departure times, commute distances, participation per Kreis)
   reference: SrV 2023 Braunschweig and region (committed SrV aggregates read by the four analysis stages and by population_validation)
   result: >-

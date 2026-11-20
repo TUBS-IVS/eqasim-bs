@@ -52,7 +52,7 @@
     {
       "control": "sex",
       "family": "census",
-      "independence": "independent",
+      "independence": "fit_check",
       "n_cells": 16,
       "srmse": 0.003928484932934352,
       "tae": 3879.0711244536433,
@@ -67,7 +67,7 @@
     {
       "control": "age_group",
       "family": "census",
-      "independence": "independent",
+      "independence": "fit_check",
       "n_cells": 48,
       "srmse": 0.06785870772989055,
       "tae": 54347.09546390199,
@@ -1493,8 +1493,8 @@
   ],
   "geo_outputs": {},
   "fleet_evaluation": {
-    "fleet_overview.png": "~/i648/popval2_old/fleet_overview.png",
-    "fleet_summary.csv": "~/i648/popval2_old/fleet_summary.csv"
+    "fleet_overview.png": "~/i648/popval3_old/fleet_overview.png",
+    "fleet_summary.csv": "~/i648/popval3_old/fleet_summary.csv"
   },
   "minor_employment": {
     "n_minors": 155992,

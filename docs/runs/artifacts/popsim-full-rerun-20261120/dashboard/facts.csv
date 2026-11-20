@@ -555,10 +555,10 @@ cellsize|51-100|tenure,cellsize,51-100,tenure,Eigentum / Miete,0.034104071039423
 cellsize|6-10|tenure,cellsize,6-10,tenure,Eigentum / Miete,0.0948075551567856,0.062748751926749,,WAPE,cells new 10905,zone_views cellsize_bins.csv
 popval|bev_share|mean_abs_delta_pp,popval,bev_share,mean_abs_delta_pp,Bevölkerungsanteil je Kreis,0.1318413249205567,0.1207198384903858,,Prozentpunkte,DESTATIS 12411-0018 (Bevölkerung je Kreis) · fit_check,population_validation quality_summary.csv
 popval|bev_share|srmse,popval,bev_share,srmse,Bevölkerungsanteil je Kreis,0.0042351778052892,0.0042944750011107,,SRMSE,DESTATIS 12411-0018 (Bevölkerung je Kreis) · fit_check,population_validation quality_summary.csv
-popval|sex|mean_abs_delta_pp,popval,sex,mean_abs_delta_pp,Geschlecht,0.1839627406406259,0.2189227576648513,,Prozentpunkte,DESTATIS 12411-0018 · independent,population_validation quality_summary.csv
-popval|sex|srmse,popval,sex,srmse,Geschlecht,0.0039284849329343,0.0043104993097636,,SRMSE,DESTATIS 12411-0018 · independent,population_validation quality_summary.csv
-popval|age_group|mean_abs_delta_pp,popval,age_group,mean_abs_delta_pp,Altersgruppen,0.7991289928674595,0.5107322290190172,,Prozentpunkte,DESTATIS 12411-0018 · independent,population_validation quality_summary.csv
-popval|age_group|srmse,popval,age_group,srmse,Altersgruppen,0.0678587077298905,0.043366023344706,,SRMSE,DESTATIS 12411-0018 · independent,population_validation quality_summary.csv
+popval|sex|mean_abs_delta_pp,popval,sex,mean_abs_delta_pp,Geschlecht,0.1839627406406259,0.2189227576648513,,Prozentpunkte,DESTATIS 12411-0018 · fit_check,population_validation quality_summary.csv
+popval|sex|srmse,popval,sex,srmse,Geschlecht,0.0039284849329343,0.0043104993097636,,SRMSE,DESTATIS 12411-0018 · fit_check,population_validation quality_summary.csv
+popval|age_group|mean_abs_delta_pp,popval,age_group,mean_abs_delta_pp,Altersgruppen,0.7991289928674595,0.5107322290190172,,Prozentpunkte,DESTATIS 12411-0018 · fit_check,population_validation quality_summary.csv
+popval|age_group|srmse,popval,age_group,srmse,Altersgruppen,0.0678587077298905,0.043366023344706,,SRMSE,DESTATIS 12411-0018 · fit_check,population_validation quality_summary.csv
 popval|household_size|mean_abs_delta_pp,popval,household_size,mean_abs_delta_pp,Haushaltsgröße (Gemeinde),1.9186982589747408,0.8683409160170444,,Prozentpunkte,"Zensus 2022, 1000A-2081 · fit_check",population_validation quality_summary.csv
 popval|household_size|srmse,popval,household_size,srmse,Haushaltsgröße (Gemeinde),0.1896899997299555,0.0771609801880136,,SRMSE,"Zensus 2022, 1000A-2081 · fit_check",population_validation quality_summary.csv
 popval|bicycles_per_hh|mean_abs_delta_pp,popval,bicycles_per_hh,mean_abs_delta_pp,Fahrräder je Haushalt,1.1036876286059534,0.9831610709860452,,Prozentpunkte,MiD 2023 H12.3 je Kreis · partially_independent,population_validation quality_summary.csv
