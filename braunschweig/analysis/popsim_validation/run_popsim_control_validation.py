@@ -10,6 +10,10 @@ Usage (PowerShell, conda env eqasim):
         --run-output-dir eqasim-data/output_popsim_25pct `
         --label popsim_25pct
 
+The tenure and building-type targets follow the production values of configs/base_bs.yml by
+default; a run made with other values needs the matching --building-type-target-basis and
+--[no-]tenure-owner-limited-to-dwellings options (analysis_suite passes the run's own values).
+
 Output files (in --analysis-out or <source>/analysis/popsim_validation/):
     controls_long.csv       -- per-(control, geo, category) deviations
     controls_summary.csv    -- per-(control, category) summary statistics
@@ -35,6 +39,7 @@ from braunschweig.analysis.population_validation import (
     population_source as PS,
 )
 from braunschweig.analysis.popsim_validation import controls as C
+from braunschweig.popsim.tenure_targets import DEFAULT_MIN_HOUSEHOLDS_OUTSIDE
 
 LOGGER = logging.getLogger("braunschweig.analysis.popsim_validation")
 REPO_ROOT = spatial.REPO_ROOT
@@ -53,6 +58,19 @@ def _parse_args(argv):
         default="households",
         help="basis of the building_type target; pass 'dwellings' for a run with "
              "braunschweig.population.popsim.building_type_targets_to_households off")
+    ap.add_argument(
+        "--tenure-owner-limited-to-dwellings", action=argparse.BooleanOptionalAction,
+        default=True,
+        help="validate the tenure target with the owner households limited to the dwellings "
+             "of the cell (default, as in production); pass --no-tenure-owner-limited-to-"
+             "dwellings for a run with braunschweig.population.popsim."
+             "tenure_owner_limited_to_dwellings off")
+    ap.add_argument(
+        "--tenure-min-households-outside", type=float,
+        default=DEFAULT_MIN_HOUSEHOLDS_OUTSIDE,
+        help="households outside any dwelling a cell needs before the owner limit changes it "
+             "(the run's ...tenure_min_households_outside_dwellings); read only with "
+             "--tenure-owner-limited-to-dwellings")
     ns = ap.parse_args(argv)
     if (ns.run_output_dir is None) == (ns.sim_cache is None):
         ap.error("pass exactly ONE of --run-output-dir / --sim-cache")
@@ -122,7 +140,12 @@ def run(ns) -> dict:
 
     basis = ns.building_type_target_basis
     LOGGER.info("building_type target basis: %s", basis)
-    registry = C.build_registry(DATA_PATH, building_type_target_basis=basis)
+    tenure_limited = bool(ns.tenure_owner_limited_to_dwellings)
+    LOGGER.info("tenure target: owner households limited to dwellings: %s", tenure_limited)
+    registry = C.build_registry(
+        DATA_PATH, building_type_target_basis=basis,
+        tenure_owner_limited_to_dwellings=tenure_limited,
+        tenure_min_households_outside=ns.tenure_min_households_outside)
     try:
         long = _annotate_target_basis(CV.evaluate_all(registry, frames, geo, DATA_PATH), basis)
     finally:
@@ -146,6 +169,8 @@ def run(ns) -> dict:
         "prefix": frames.prefix,
         "git_commit": _git_commit(),
         "building_type_target_basis": basis,
+        "tenure_owner_limited_to_dwellings": tenure_limited,
+        "tenure_min_households_outside": float(ns.tenure_min_households_outside),
         "n_persons": int(len(frames.persons)),
         "n_households": int(len(frames.households)),
         "family_scores": fam.to_dict(orient="records"),
@@ -160,6 +185,7 @@ def run(ns) -> dict:
         f"- Source: `{frames.source_path}` ({frames.source_kind})",
         f"- Git commit: `{report['git_commit']}`",
         f"- building_type target basis: {basis}",
+        f"- tenure target: owner households limited to dwellings: {tenure_limited}",
         f"- Persons: {report['n_persons']:,} | Households: {report['n_households']:,}", "",
         "## Headline quality by family", "",
         fam.to_string(index=False) if not fam.empty else "_no targets_", "",

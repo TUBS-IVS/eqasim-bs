@@ -632,3 +632,51 @@ def test_load_cells_cache_rereads_after_clear_and_on_file_change(tmp_path, monke
         assert len(C._CELLS_CACHE) == 1
     finally:
         C.clear_cells_cache()
+
+
+# ---------------------------------------------------------------------------
+# 11. Tenure target: the owner limit of issue #657 (same rule as the stage)
+# ---------------------------------------------------------------------------
+
+def _fixture_cells_with_kreis(monkeypatch):
+    """The synthetic cells of the control-build fixture as ``_load_cells`` returns them."""
+    import sys
+    from pathlib import Path
+    # append, never insert(0): 'tests' at the front of sys.path would shadow braunschweig.
+    sys.path.append(str(Path(__file__).resolve().parent))
+    import popsim_control_build_fixture as fixture
+    from braunschweig.popsim import mid
+
+    cells = fixture.make_cells()
+    cells["ars5"] = cells[mid._ARS_COLUMN].str[:5]
+    monkeypatch.setattr(C, "_load_cells", lambda data_path: cells)
+    return cells
+
+
+def test_validation_tenure_target_uses_the_same_rule(monkeypatch):
+    """The Kreis owner share of the validation equals the share of the limited cells.
+
+    Hand computation on the fixture cells (owner / renter households per cell). Kreis 03101
+    holds cells 0-4: owners 11.3 + 12.1 + 30 + 118 + 20.9 = 192.3, renters 13.2 + 5.2 + 0 + 0 +
+    20.9 = 39.3, total 231.6. The rule limits cell 2 (30 households, 2 dwellings: owners 30 ->
+    2) and cell 3 (118 households, 0 dwellings: owners 118 -> 0), so the owners fall to
+    11.3 + 12.1 + 2 + 0 + 20.9 = 46.3 of the same 231.6 households. Kreis 03158 (cells 5-7) has
+    no cell with 10 or more households outside its dwellings: 21.2 owners of 49.0.
+    """
+    _fixture_cells_with_kreis(monkeypatch)
+
+    def owner_share(**kwargs):
+        target = C.tenure_target("unused", **kwargs)
+        owner = target[target["category"] == "owner"].set_index("geo_id")["target_share"]
+        renter = target[target["category"] == "renter"].set_index("geo_id")["target_share"]
+        assert (owner + renter).tolist() == pytest.approx([1.0, 1.0])
+        return owner
+
+    default = owner_share()
+    off = owner_share(owner_limited_to_dwellings=False)
+    on = owner_share(owner_limited_to_dwellings=True, min_households_outside=10.0)
+
+    assert default["03101"] == pytest.approx(192.3 / 231.6)
+    assert off["03101"] == pytest.approx(192.3 / 231.6)
+    assert on["03101"] == pytest.approx(46.3 / 231.6)
+    assert on["03158"] == off["03158"] == pytest.approx(21.2 / 49.0)

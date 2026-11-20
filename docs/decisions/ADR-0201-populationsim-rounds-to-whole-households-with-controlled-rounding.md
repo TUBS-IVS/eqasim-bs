@@ -18,7 +18,7 @@
 5. **Production value `"controlled"`, as a documented deviation from the gate.** Ladder arm 3 met every pre-registered check except one: design goal G4 on one of the two batches, by one control (verdict and figures: the run manifest). The bound and the verdict stay as recorded; nothing was tuned. The owner switches the rounding on for these reasons:
    - The miss is located. One 1 km parent of that batch carries the whole rounding shift of the control, every defect of the solver-path record and the batch's whole household excess, and the float weights of its cells contradict their controls; in every other parent the rounding returns the float sums of the control (post-hoc entry of the run manifest).
    - Upstream's rounding misses the same check on the same batch by more controls (run manifest), so keeping `round` does not meet the bound either.
-   - The control targets of that parent are the subject of issue #657. The repeat of the check on repaired targets is owed by that issue and comes with its own pull request; this ADR draws no conclusion from it.
+   - The control targets of that parent are the subject of issue #657. The repeat of the check on repaired targets is owed by that issue and comes with its own pull request; this ADR draws no conclusion from it. Added with that pull request: on the repaired tenure targets the check is met on both batches (run record [`popsim-ladder-tenure-2026-11-18`](../runs/popsim-ladder-tenure-2026-11-18.yml), [ADR-0202](ADR-0202-owner-targets-are-limited-to-the-dwellings-the-owner-quote-covers.md)).
 
 ## Rejected options
 
@@ -38,4 +38,4 @@
 
 - Run manifest [`popsim-ladder-arm3-2026-11-18`](../runs/popsim-ladder-arm3-2026-11-18.yml): pre-registered checks and verdict, post-hoc location of the miss, method replay, development record. Two batches and one draw; the verdict for the full population is the full rerun (#648).
 - The fork's test suite at the release commit in three environments: `fork_test_suites.txt` of that manifest.
-- Owed by issue #657: the repeat of the missed check on repaired targets. Until that record is on main, the committed evidence for this check on that batch is the miss recorded in the manifest above.
+- Issue #657: the repeat of the missed check on repaired targets, run record [`popsim-ladder-tenure-2026-11-18`](../runs/popsim-ladder-tenure-2026-11-18.yml): with the controlled rounding and the repaired tenure targets the check is met on both batches.

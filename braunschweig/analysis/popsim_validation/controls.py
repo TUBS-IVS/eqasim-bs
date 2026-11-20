@@ -52,6 +52,7 @@ from braunschweig.analysis.population_validation.controls import (
     categorical_person_control,
     _geo_col,
 )
+from braunschweig.popsim.tenure_targets import DEFAULT_MIN_HOUSEHOLDS_OUTSIDE
 from braunschweig.popsim.zensus_employment_age import AGE_GROUPS as _AGE_GROUPS3
 
 if TYPE_CHECKING:
@@ -342,13 +343,48 @@ def household_type_target(data_path: str) -> pd.DataFrame:
     return _multi_col_kreis_target(cells, col_cat, total_col=total_col)
 
 
-def tenure_target(data_path: str) -> pd.DataFrame:
-    """Per-Kreis tenure (owner/renter) target from prepared cells (Tier-2)."""
+def tenure_target(data_path: str, *, owner_limited_to_dwellings: bool = False,
+                  min_households_outside: float = DEFAULT_MIN_HOUSEHOLDS_OUTSIDE) -> pd.DataFrame:
+    """Per-Kreis tenure (owner/renter) target from prepared cells (Tier-2).
+
+    ``owner_limited_to_dwellings`` and ``min_households_outside`` mirror the stage keys
+    ``braunschweig.population.popsim.tenure_owner_limited_to_dwellings`` and
+    ``..._tenure_min_households_outside_dwellings`` (issue #657): True applies the same rule
+    (``braunschweig.popsim.tenure_targets.limit_owner_households_to_dwellings``) to the 100 m
+    cells BEFORE they are aggregated to the Kreis, so the validation compares against the
+    targets PopulationSim was fitted to. The control registry calls this loader through
+    ``build_registry``, which hands the run's two values over; a direct call keeps the legacy
+    (unlimited) targets. The rule needs the household-total and rooms-table dwelling columns
+    of the prepared cells and raises ``KeyError`` when one is absent.
+
+    ASSUMPTION: the validated run used a seed source WITH a tenure control (the MiD source of the
+    popsim registry). The stage applies the rule only then (``_tenure_control_active`` of
+    ``braunschweig.popsim.stage``); this loader receives no seed source or control tiers, so it
+    cannot check that and applies the rule whenever ``owner_limited_to_dwellings`` is True.
+
+    Limitation: like ``building_type_target``, the rule runs on all cells of the prepared
+    parquet, not only the run's Kreise; it works per cell, so the Kreis result is unaffected.
+    """
+    from braunschweig.popsim import control_spec as _cs
+    from braunschweig.popsim import tenure_targets as _tt
+
     cells = _load_cells(data_path)
-    col_cat = {
-        "EigentuemerHH_Tenure_100m_Gitter": "owner",
-        "MieterHH_Tenure_100m_Gitter":      "renter",
-    }
+    owner_col, renter_col = "EigentuemerHH_Tenure_100m_Gitter", "MieterHH_Tenure_100m_Gitter"
+    col_cat = {owner_col: "owner", renter_col: "renter"}
+    if owner_limited_to_dwellings:
+        LOGGER.info("[popsim_validation] tenure target basis: owner households limited to the "
+                    "dwellings of the cell (threshold %s households outside any dwelling, "
+                    "issue #657)", min_households_outside)
+        # A narrow copy: the rule copies its input, and the cached national frame is wide. A
+        # column absent from the prepared cells is named by the rule's KeyError.
+        needed = [owner_col, renter_col, _cs.HH_TOTAL_CENSUS_COLUMN,
+                  _cs.OWNER_QUOTE_DWELLING_COLUMN, "ars5"]
+        cells, _ = _tt.limit_owner_households_to_dwellings(
+            cells[[c for c in needed if c in cells.columns]],
+            owner_col=owner_col, renter_col=renter_col,
+            household_total_col=_cs.HH_TOTAL_CENSUS_COLUMN,
+            dwelling_col=_cs.OWNER_QUOTE_DWELLING_COLUMN,
+            min_households_outside=min_households_outside)
     return _multi_col_kreis_target(cells, col_cat)
 
 
@@ -739,12 +775,17 @@ BUILDING_TYPE_TARGET_BASES = ("households", "dwellings")
 
 
 def build_registry(data_path: str, *,
-                   building_type_target_basis: str = "households") -> list[Control]:
+                   building_type_target_basis: str = "households",
+                   tenure_owner_limited_to_dwellings: bool = False,
+                   tenure_min_households_outside: float = DEFAULT_MIN_HOUSEHOLDS_OUTSIDE,
+                   ) -> list[Control]:
     """Build the popsim control-fit validation registry.
 
     ``building_type_target_basis`` ("households" or "dwellings") must match the run's
     ``braunschweig.population.popsim.building_type_targets_to_households`` (True = households)
-    and is threaded to ``building_type_target``.
+    and is threaded to ``building_type_target``. ``tenure_owner_limited_to_dwellings`` and
+    ``tenure_min_households_outside`` must match the run's keys of the same names (issue #657)
+    and are threaded to ``tenure_target``.
 
     Returns a list of Controls for:
     - household_size (Tier-1, 6 categories, geography=kreis)
@@ -796,7 +837,9 @@ def build_registry(data_path: str, *,
         geography="kreis",
         categories=("owner", "renter"),
         realized=_realized_housing_tenure,
-        target=tenure_target,
+        target=lambda dp: tenure_target(
+            dp, owner_limited_to_dwellings=tenure_owner_limited_to_dwellings,
+            min_households_outside=tenure_min_households_outside),
     ))
 
     # --- Tier-2: building_type ---

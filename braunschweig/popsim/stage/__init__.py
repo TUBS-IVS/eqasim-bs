@@ -102,7 +102,7 @@ change.
 
 from __future__ import annotations
 
-import json  # noqa: F401 -- namespace parity only; the pre-split module had this at top level
+import json
 import logging
 import os
 import shutil  # noqa: F401 -- namespace parity only; the pre-split module had this at top level
@@ -260,6 +260,8 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_SEED_RESOLVE_BINARY_SEX,
     KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE,
     KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS,
+    KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE_DWELLINGS,
+    KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS,
     KEY_SEED_CONTRACT_MODE,
     KEY_MID_PASSENGER_AVAILABILITY,
     KEY_CONTROL_TIERS,
@@ -548,6 +550,8 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.attributes",
     # Imported inside _add_aggregated_control_columns (building-type targets per household, #647).
     "braunschweig.popsim.building_type_targets",
+    # Imported inside configure and _limit_owner_targets_to_dwellings (owner limit, #657).
+    "braunschweig.popsim.tenure_targets",
     # Reached through seed_contract (the contract check before PopulationSim, #647).
     "braunschweig.popsim.control_groups",
     "braunschweig.popsim.control_spec",
@@ -838,6 +842,16 @@ def configure(context):
     context.config(KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE, True)
     # Building-type targets rescaled from dwellings to households per cell (#647). Default True.
     context.config(KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS, True)
+    # Owner-household targets limited to the dwellings of the cell (#657; meaning:
+    # KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS in config_keys). Default False in code: the production
+    # switch follows the evidence run. The threshold's default is single-sourced from the rule
+    # module and must be > 0; a bad YAML value fails here, not after the seed build.
+    from braunschweig.popsim import tenure_targets as _tenure_targets
+    context.config(KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS, False)
+    config_keys.require_positive(
+        KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE_DWELLINGS,
+        context.config(KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE_DWELLINGS,
+                       _tenure_targets.DEFAULT_MIN_HOUSEHOLDS_OUTSIDE))
     # Contract check before PopulationSim: "error" | "warn" (#647). Default "error".
     _seed_contract.validate_mode(context.config(KEY_SEED_CONTRACT_MODE, "error"))
     context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
@@ -1357,8 +1371,12 @@ def _load_tier3_kreis_controls(context, control_tiers, controls_source, source_n
 
 def _resolve_cell_load_columns(context, controls_source, source_name: str, control_tiers, base_cols,
         employment_grid_on: bool, cells_path, active_entries, fine_teen_age_bands: bool = True,
-        ownership_grid_on: bool = False):
+        ownership_grid_on: bool = False, tenure_owner_limited_to_dwellings: bool = False):
     """Resolve the column set loaded from the prepared-cells parquet.
+
+    ``tenure_owner_limited_to_dwellings`` (issue #657): with the key on and a tenure control
+    active (``_tenure_control_active``) the rooms-table dwelling column the owner limit reads
+    joins the load set; off, the load set is exactly the one of today.
 
     For catalog-based controls with multi-column census sources (e.g. building_type),
     load the raw source columns from the parquet (union of all census_source tuples)
@@ -1456,6 +1474,17 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
              for entry, lower, upper in age_universe_entries(active_entries)],
             len(_universe_new), len(_universe_cols) - len(_universe_new))
 
+    # Owner limit (issue #657): the rooms-table dwelling count of the cell is a census column
+    # no control reads, so it must be requested here, and only when the rule will run. It
+    # cannot leak into the merged output: join_cell_attributes takes just the cell id, the ARS
+    # and RegioStaR7 from the cells frame.
+    if tenure_owner_limited_to_dwellings and _tenure_control_active(
+            controls_source, source_name, control_tiers):
+        from braunschweig.popsim import control_spec as _cs
+
+        if _cs.OWNER_QUOTE_DWELLING_COLUMN not in set(load_cols):
+            load_cols = [*load_cols, _cs.OWNER_QUOTE_DWELLING_COLUMN]
+
     # Income spatial tilt (issue #136): fetch the tilt cell columns (rent /
     # Eigentuemerquote / HH weight) in this SINGLE read instead of re-scanning
     # the national parquet later. When the tilt is OFF, load_cols is returned
@@ -1468,7 +1497,7 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
 
 def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source_name: str, control_tiers,
         fine_teen_age_bands: bool = True,
-        building_type_targets_to_households: bool = False) -> pd.DataFrame:
+        building_type_targets_to_households: bool = False, return_report: bool = False):
     """Derive the multi-column aggregated control columns on the cells frame.
 
     Derive the multi-column aggregated control columns (e.g. building_type_*).
@@ -1481,8 +1510,12 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
     ``braunschweig.popsim.building_type_targets``). The raw dwelling source columns stay
     unchanged. False keeps the dwelling sums byte-identically and logs nothing.
 
+    ``return_report``: also return the count dict of the rescale (the one of
+    ``braunschweig.popsim.building_type_targets.rescale_building_type_to_households_with_report``),
+    or ``None`` when nothing was rescaled (key off, or no building_type control active).
+
     Returns: the cells frame with the aggregated control columns (MUST be
-    reassigned).
+    reassigned); with ``return_report`` the tuple ``(cells, rescale_report)``.
     Mutates: nothing in place.
     """
     agg_map = build_aggregation_map(
@@ -1492,6 +1525,7 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
         fine_teen_age_bands=fine_teen_age_bands,
     )
     cells = prepared_cells.add_aggregated_controls(cells, agg_map)
+    rescale_report = None
     if building_type_targets_to_households:
         from braunschweig.popsim import building_type_targets as _btt
         from braunschweig.popsim import control_spec as _cs
@@ -1503,7 +1537,7 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
             logger.info(
                 "[popsim.stage] building_type_targets_to_households is on but no building_type "
                 "control is active (tiers %s); nothing to rescale.", tuple(control_tiers))
-            return cells
+            return (cells, None) if return_report else cells
         # The Kreis level of the share fallback comes from the cell ARS, derived on a copy
         # so the cells frame the stage carries on is not widened by an extra column.
         if mid._ARS_COLUMN not in cells.columns:
@@ -1512,11 +1546,150 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
                 f"carries no {mid._ARS_COLUMN!r} column; cannot derive the Kreis shares.")
         work = cells.copy()
         work[_folders.GEO_KREIS] = derive_geo_kreis_from_ars(work[mid._ARS_COLUMN])
-        work = _btt.rescale_building_type_to_households(work, building_type_cols)
+        work, rescale_report = _btt.rescale_building_type_to_households_with_report(
+            work, building_type_cols)
         cells = cells.copy()
         for column in building_type_cols:
             cells[column] = work[column]
-    return cells
+    return (cells, rescale_report) if return_report else cells
+
+
+#: Report file of this stage (written into ``context.path()`` on every run): the counts of the ZGB
+#: cell filter, the building-type rescale (#647) and the owner limit (#657), each with its status.
+CENSUS_FILTERED_REPORT_FILE = "census_filtered_report.json"
+
+
+#: ``status`` values of the owner-limit entry of the report file (stable, read by people and scripts).
+TENURE_LIMIT_STATUS_DISABLED = "disabled"
+TENURE_LIMIT_STATUS_NO_TENURE_CONTROL = "no_tenure_control"
+TENURE_LIMIT_STATUS_APPLIED = "applied"
+
+#: ``status`` values of the ``building_type_rescale`` section (``applied`` is shared).
+BUILDING_TYPE_STATUS_DISABLED = "disabled"
+BUILDING_TYPE_STATUS_NO_CONTROL = "no_building_type_control"
+
+
+def _tenure_control_inactive_reason(controls_source, source_name: str, control_tiers):
+    """Why the tenure (owner / renter) 100 m controls are not active, or ``None`` when they are.
+
+    Only the catalog source knows its controls; with the CSV source the tenure control is
+    not detectable here and the owner limit does not run.
+    """
+    from braunschweig.popsim import control_spec as _cs
+
+    if controls_source != "catalog":
+        return (f"controls_source is {controls_source!r}, not 'catalog': the tenure control "
+                "is not detectable")
+    if "tier2" not in tuple(control_tiers):
+        return f"tier2 is not among the control tiers {tuple(control_tiers)}"
+    source_columns = set(build_source_columns(
+        controls_source=controls_source, seed=source_name, tiers=control_tiers))
+    if not all(base in source_columns for base, _ in _cs._TIER2_TENURE_ENTRIES):
+        return f"the seed source {source_name!r} has no tenure control"
+    return None
+
+
+def _tenure_control_active(controls_source, source_name: str, control_tiers) -> bool:
+    """Whether the active controls include the tenure controls (see ``_tenure_control_inactive_reason``)."""
+    return _tenure_control_inactive_reason(controls_source, source_name, control_tiers) is None
+
+
+def _limit_owner_targets_to_dwellings(cells: pd.DataFrame, controls_source, source_name: str,
+        control_tiers, *, enabled: bool, min_households_outside: float):
+    """Limit the owner-household targets of each cell to its dwellings (issue #657).
+
+    Runs after ``_add_aggregated_control_columns``. ``enabled`` is the config key
+    ``tenure_owner_limited_to_dwellings``; the rule, its fallback counts and its log lines are in
+    ``braunschweig.popsim.tenure_targets``. Off, the cells come back unchanged and nothing is
+    logged. On without an active tenure control (CSV controls source, or tier2 not among the
+    tiers, or a seed source without the control) one INFO line says so and nothing changes.
+
+    Returns: ``(cells, report)``; ``report`` is the rule's count dict, or ``None`` when nothing
+    was limited (off, or on without a tenure control). The cells frame MUST be reassigned.
+    Mutates: nothing in place.
+    """
+    if not enabled:
+        return cells, None
+    reason = _tenure_control_inactive_reason(controls_source, source_name, control_tiers)
+    if reason is not None:
+        logger.info(
+            "[popsim.stage] tenure_owner_limited_to_dwellings is on but no tenure control is "
+            "active (%s); nothing limited.", reason)
+        return cells, None
+    from braunschweig.popsim import control_spec as _cs
+    from braunschweig.popsim import tenure_targets as _tenure_targets
+
+    owner_col = next(n for n, _ in _cs._TIER2_TENURE_ENTRIES if n.startswith("Eigentuemer"))
+    renter_col = next(n for n, _ in _cs._TIER2_TENURE_ENTRIES if n.startswith("Mieter"))
+    return _tenure_targets.limit_owner_households_to_dwellings(
+        cells, owner_col=owner_col, renter_col=renter_col,
+        household_total_col=_cs.HH_TOTAL_CENSUS_COLUMN,
+        dwelling_col=_cs.OWNER_QUOTE_DWELLING_COLUMN,
+        min_households_outside=min_households_outside)
+
+
+def _write_census_filtered_report(context, *, zgb_cell_filter: dict,
+        building_type_enabled: bool, building_type_report, enabled: bool,
+        min_households_outside: float, report, no_tenure_control_reason: str | None = None) -> dict:
+    """Write ``census_filtered_report.json`` (every step that drops, filters or replaces records).
+
+    The file always has three sections, written on every run:
+
+    * ``zgb_cell_filter``: the cell counts of ``mid.filter_zgb_cells_with_report`` (given).
+    * ``building_type_rescale`` (ADR-0198): ``enabled``, ``status`` (``disabled``, ``applied`` or
+      ``no_building_type_control`` for key on without a building_type control) and ``report``
+      (``building_type_report``, the count dict of the rescale, or ``None``).
+    * ``tenure_owner_limited_to_dwellings`` (ADR-0202): ``report`` is the count dict of
+      ``_limit_owner_targets_to_dwellings`` or ``None``, with a ``status`` that tells the three
+      cases apart: ``disabled`` (key off), ``no_tenure_control`` (key on, report ``None``;
+      ``reason`` says which condition failed, ``no_tenure_control_reason`` is then required) and
+      ``applied`` (the rule ran, ``report`` holds its counts).
+
+    Returns: the tenure entry, also published with ``set_info``.
+    Mutates: writes ``CENSUS_FILTERED_REPORT_FILE`` into ``context.path()``.
+    """
+    if not building_type_enabled:
+        building_type_status = BUILDING_TYPE_STATUS_DISABLED
+    elif building_type_report is None:
+        building_type_status = BUILDING_TYPE_STATUS_NO_CONTROL
+    else:
+        building_type_status = TENURE_LIMIT_STATUS_APPLIED
+    if not enabled:
+        status = TENURE_LIMIT_STATUS_DISABLED
+    elif report is None:
+        if no_tenure_control_reason is None:
+            raise ValueError(
+                "[popsim.stage] the owner limit is on and produced no report, but no reason "
+                "was given; the report file would not say why nothing was limited")
+        status = TENURE_LIMIT_STATUS_NO_TENURE_CONTROL
+    else:
+        status = TENURE_LIMIT_STATUS_APPLIED
+    entry = {
+        "enabled": bool(enabled),
+        "status": status,
+        "reason": no_tenure_control_reason if status == TENURE_LIMIT_STATUS_NO_TENURE_CONTROL
+        else None,
+        "min_households_outside": float(min_households_outside),
+        "report": report,
+    }
+    path = Path(context.path()) / CENSUS_FILTERED_REPORT_FILE
+    sections = {
+        "zgb_cell_filter": zgb_cell_filter,
+        "building_type_rescale": {
+            "enabled": bool(building_type_enabled),
+            "status": building_type_status,
+            "report": building_type_report,
+        },
+        "tenure_owner_limited_to_dwellings": entry,
+    }
+    path.write_text(json.dumps(sections, indent=2), encoding="utf-8")
+    context.set_info("popsim_tenure_owner_limit", entry)
+    logger.info("[popsim.stage] tenure owner limit: status %s, %s; report written to %s",
+                status,
+                "no cells limited" if report is None
+                else f"{report['cells_changed']} of {report['cells_seen']} cells limited",
+                path)
+    return entry
 
 
 # Columns besides the ARS that ``mid.resolved_kreis_per_cell`` reads (grid keys and the
@@ -2930,21 +3103,37 @@ def execute(context) -> pd.DataFrame:
     kreis_table, kreis_controls_map, household_control_names = _load_tier3_kreis_controls(
         context, control_tiers, controls_source, source_name, kreise,
     )
+    tenure_owner_limited = bool(context.config(KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS))
+    tenure_min_households_outside = float(
+        context.config(KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE_DWELLINGS))
     load_cols = _resolve_cell_load_columns(
         context, controls_source, source_name, control_tiers, base_cols,
         employment_grid_on, cells_path, active_entries,
         fine_teen_age_bands=fine_teen_bands_on,
         ownership_grid_on=ownership_grid_on,
+        tenure_owner_limited_to_dwellings=tenure_owner_limited,
     )
 
     cells = mid.load_control_cells(cells_path, load_cols)
-    cells = mid.filter_zgb_cells(cells, kreise)
-    cells = _add_aggregated_control_columns(
+    cells, zgb_cell_filter_report = mid.filter_zgb_cells_with_report(cells, kreise)
+    building_type_rescaled = bool(context.config(KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS))
+    cells, building_type_report = _add_aggregated_control_columns(
         cells, controls_source, source_name, control_tiers,
         fine_teen_age_bands=fine_teen_bands_on,
-        building_type_targets_to_households=bool(
-            context.config(KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS)),
+        building_type_targets_to_households=building_type_rescaled,
+        return_report=True,
     )
+    cells, tenure_limit_report = _limit_owner_targets_to_dwellings(
+        cells, controls_source, source_name, control_tiers,
+        enabled=tenure_owner_limited, min_households_outside=tenure_min_households_outside)
+    _write_census_filtered_report(
+        context, zgb_cell_filter=zgb_cell_filter_report,
+        building_type_enabled=building_type_rescaled, building_type_report=building_type_report,
+        enabled=tenure_owner_limited,
+        min_households_outside=tenure_min_households_outside, report=tenure_limit_report,
+        no_tenure_control_reason=(
+            _tenure_control_inactive_reason(controls_source, source_name, control_tiers)
+            if tenure_owner_limited else None))
     cells = _inject_employment_grid_columns(context, cells, employment_grid_on)
     cells = _inject_ownership_grid_columns(
         context, cells, ownership_grid_on, active_entry_names, kreise)

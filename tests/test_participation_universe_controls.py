@@ -1258,7 +1258,8 @@ class _StopAtSeedBuild(Exception):
     that follows the seed build."""
 
 
-def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_seed(monkeypatch):
+def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_seed(
+        monkeypatch, tmp_path):
     """Issue #373 cleanup wave fix round, IMPORTANT 3: the two tests above pin the PRIVATE
     _build_populationsim_seed function directly, which proves nothing about whether
     braunschweig.popsim.stage.execute() itself actually resolves the three config keys and
@@ -1293,6 +1294,13 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
                     "meant to mock away was not mocked, or the stub is missing a key")
             return self._values[key]
 
+        def path(self):
+            # The stage writes its census_filtered_report.json here.
+            return str(tmp_path)
+
+        def set_info(self, key, value):
+            pass
+
     values = {
         popsim_stage.KEY_MID_PASSENGER_AVAILABILITY: False,
         popsim_stage.KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE: False,
@@ -1303,6 +1311,8 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         popsim_stage.KEY_SEED_RESOLVE_BINARY_SEX: True,
         popsim_stage.KEY_SEED_RESOLVE_TENURE_BUILDING_TYPE: True,
         popsim_stage.KEY_BUILDING_TYPE_TARGETS_TO_HOUSEHOLDS: True,
+        popsim_stage.KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS: False,
+        popsim_stage.KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE_DWELLINGS: 10.0,
         popsim_stage.KEY_SEED_CONTRACT_MODE: "warn",  # NON-default (default is "error")
         # The four flags under test -- all NON-DEFAULT (the pure function's own keyword
         # defaults are False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES=15.0 /
@@ -1366,12 +1376,14 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
     monkeypatch.setattr(
         popsim_stage, "_resolve_cell_load_columns", lambda *args, **kwargs: [])
     monkeypatch.setattr(popsim_stage.mid, "load_control_cells", lambda *args, **kwargs: pd.DataFrame())
-    monkeypatch.setattr(popsim_stage.mid, "filter_zgb_cells", lambda cells, kreise: cells)
+    monkeypatch.setattr(
+        popsim_stage.mid, "filter_zgb_cells_with_report",
+        lambda cells, kreise: (cells, {"cells_seen": 0, "cells_kept": 0, "cells_dropped": 0}))
     aggregated_kwargs = {}
 
     def capturing_add_aggregated_control_columns(cells, *args, **kwargs):
         aggregated_kwargs.update(kwargs)
-        return cells
+        return cells, None
 
     monkeypatch.setattr(
         popsim_stage, "_add_aggregated_control_columns", capturing_add_aggregated_control_columns)

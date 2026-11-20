@@ -66,6 +66,12 @@ GEO_GEMEINDE = "GEMEINDE"
 # get the household total its status targets must partition (IPF-consistent).
 HH_TOTAL_CENSUS_COLUMN = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
 
+# The per-cell dwelling count (rooms table, harmonised like the household total) that
+# ``braunschweig.popsim.tenure_targets`` uses to limit the owner households of a cell to the
+# dwellings the Zensus owner quote covers (issue #657). Deliberately NOT the dwelling columns of
+# the building-type controls: those flag different cells (see the ADR of issue #657).
+OWNER_QUOTE_DWELLING_COLUMN = "Insgesamt_Wohnungen_Wohnungen_nach_Zahl_der_Raeume_100m_Gitter_adj"
+
 # Nine ten-year age bands as (label, lower_bound, upper_bound). ``None`` marks an
 # open edge: the first band has no lower bound, the last band no upper bound.
 AGE_BANDS: Sequence[tuple] = (

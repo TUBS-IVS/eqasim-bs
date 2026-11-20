@@ -16,6 +16,7 @@ code:
 - braunschweig/popsim/employment_grid.py
 - braunschweig/popsim/zensus_employment_age.py
 - braunschweig/popsim/building_type_targets.py
+- braunschweig/popsim/tenure_targets.py
 - braunschweig/popsim/seed_contract.py
 pipelines:
   popsim_mid: active
@@ -71,6 +72,7 @@ decisions:
 - ADR-0199
 - ADR-0200
 - ADR-0201
+- ADR-0202
 notes: >-
   DONOR RESOLUTION ONCE (ADR-0192): donor household counts and donor person attributes with
   imputed codes are resolved once, before the seed, and inherited by the clones.
@@ -202,3 +204,11 @@ notes: >-
   (keys in configs/base_bs.yml and braunschweig/popsim/stage/config_keys.py); the log tags are
   in the code that logs them (braunschweig.popsim.attributes, building_type_targets,
   seed_contract).
+  TENURE RULE (#657, ADR-0202, feature housing_tenure): the keys
+  braunschweig.population.popsim.tenure_owner_limited_to_dwellings and
+  .tenure_min_households_outside_dwellings (values: configs/base_bs.yml) switch on and parameterise the
+  limit of the owner targets to the dwellings of the rooms table (braunschweig.popsim.tenure_targets).
+  While the key is on, the stage reads one more cell column, control_spec.OWNER_QUOTE_DWELLING_COLUMN.
+  On every run it writes the report file census_filtered_report.json (CENSUS_FILTERED_REPORT_FILE): the
+  counts of the ZGB cell filter, the building-type rescale and the tenure rule, each with a status
+  (disabled when its key is off). Rule, evidence and the accepted check miss: ADR-0202 and its run record.

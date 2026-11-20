@@ -1,0 +1,202 @@
+id: popsim-ladder-tenure-2026-11-18
+date: '2026-11-18'
+repository:
+  commit: 26171e09036581e9a255557a428ab828f5bde457
+  branch: fix/i657-popsim-tenure-dwellings
+  notes: >-
+    PRE-REGISTRATION: this file was committed with the checks and bounds below before any arm-4 PopulationSim
+    run started; only results, artifacts and execution notes are added afterwards. The commit is the eqasim-bs
+    code archived on the run server (git archive of the branch) that prepares the arm-4 folders
+    (scripts/prepare_tenure_arm.py), measures the rule on all model cells (scripts/measure_tenure_rule.py),
+    runs the diagnostics and compares the arms (scripts/compare_tenure_arm.py). The branch is stacked on the
+    unmerged branches of issues #646 and #656 (chore/i656-popsim-batch-memory). PopulationSim is the
+    release-candidate build used for ladder arm 3 (popsim-ladder-arm3-2026-11-18: fork 0.10.0+bs.2 candidate,
+    commit d9a2e2810139e822ff2870a1845c30a509461462, its environment on the run server, used read-only).
+    The full commit id above was corrected before any PopulationSim run of arm 4 started (the first
+    pre-registration commit carried a mistyped id after the correct short id 26171e09).
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - the run overlay of prod100_20261031 (server-local), only as the configuration that produced the batch folders
+  notes: >-
+    Arm 4 = arm 3 of popsim-ladder-arm3-2026-11-18 (controlled rounding, method search, run-time options of
+    #656 off, settings.yaml unchanged) plus the tenure rule of issue #657
+    (braunschweig.popsim.tenure_targets.limit_owner_households_to_dwellings): in a cell with at least 10 more
+    households than dwellings of the rooms table (control_spec.OWNER_QUOTE_DWELLING_COLUMN), owner targets are
+    limited to that dwelling count and the other households become renter targets. The arm-3 folders of
+    batch_000 and batch_032 are copied (configs/ and data/); prepare_tenure_arm.py rebuilds only the two
+    tenure columns of control_totals_ZENSUS100m.csv and control_totals_ZENSUS1km.csv from the prepared grid
+    with the branch's library functions (the rule, then mid.build_control_totals, which integerises each
+    column within its 1 km parent as the pipeline does) and proves column by column that nothing else
+    changed. Difference to a pipeline run: the other control tables, the seed and the settings are those of
+    arm 3, not rebuilt by data.census.filtered; the pipeline path of the key
+    (braunschweig.population.popsim.tenure_owner_limited_to_dwellings) is covered by the unit and stage tests
+    of the branch and by the full rerun (#648). The key stays false in configs/base_bs.yml until this record
+    meets its checks.
+sampling:
+  rate: 1.0
+  scope: >-
+    two of the 60 batches of prod100_20261031 (batch_000, batch_032, the batches of the #646 evidence) with
+    their full seed pool, as in arm 3.
+  notes: The rate is the share of each batch's cells simulated (all of them), not a population sampling rate.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run: PopulationSim standalone on the prepared batch folders (run_arm.sh of the arm-3
+    record), evaluated with braunschweig.analysis.popsim_batch_diagnostics (--misfit, run_diag.sh of the arm-3
+    record) and scripts/compare_tenure_arm.py. Orchestration: scripts/run_arm4.sh.
+classification:
+- ab_test
+status:
+  execution: completed
+  notes: >-
+    Verdict: every gated check is met except O-ten-c on batch_000 (pooled tenure WAPE 0.0902 against the
+    bound 0.0898, missed by 0.0004); the record as pre-registered is therefore NOT passed and the key
+    braunschweig.population.popsim.tenure_owner_limited_to_dwellings stays false in configs/base_bs.yml until
+    the owner decides. No tuning, no change of a bound. Owner decision after the verdict (2026-11-19, in the
+    #657 work session): switch the key on with this documented deviation from the gate (ADR-0202); the bound
+    and the result above stay as they are. Runs: the first launch of scripts/run_arm4.sh stopped
+    after the preparation, before any PopulationSim run, because run_arm.sh and run_diag.sh of the arm-3
+    record are committed without the executable bit; the runner was fixed to call them through bash (commit
+    7b194d41849cdbd3b616c6ec57f00fb42b1f5669; library code identical to the commit above, only run_arm4.sh
+    differs) and the whole sequence ran again from the self-check on. Both PopulationSim runs exit 0
+    (run_times_and_hashes.txt); diagnostics with --misfit exit 0; checkpoint stores deleted by run_diag.sh.
+    Pre-registered 2026-11-18 before the arm-4 runs. Done before the pre-registration, without PopulationSim
+    and not part of the gate: (1) the self-check of the driver, prepare_tenure_arm.py --rule off on the arm-3
+    folders of batch_000 and batch_032, exit 0 with no changed file or column in either batch
+    (selfcheck/*.rule_off.json); (2) the measurement of the rule on all 43,598 model cells of the 60 batch
+    folders of prod100_20261031 (measure/). Owner decision on the dwelling count (rooms table, threshold 10)
+    taken in the #657 work session on 2026-11-18 after the measurement of the alternatives below.
+source: >-
+  run server, ~/i657 (code archive, self-check, measurement, arm-4 folders, diagnostics); committed copy in
+  docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/.
+environment: >-
+  run server (Linux); PopulationSim environment of the arm-3 record (fork release candidate d9a2e28),
+  used read-only; driver, measurement, diagnostics and comparison in the conda eqasim environment with
+  PYTHONPATH set to the code archive of the commit above.
+validation:
+- metric: >-
+    Measurement of the rule (not a gate): on the float cell values before the integerisation, per dwelling
+    count (rooms table harmonised = the rule's column, rooms table raw, occupied dwellings of the vacancy
+    table) and threshold (5, 10, 20 households): cells changed, households moved from owner to renter
+    targets, changed cells with at least 90 % owner targets, batches touched; per batch for the configured rule
+  reference: >-
+    none (property of the inputs). Universes, from the Destatis data set descriptions of the grid tables
+    (accessed 2026-11-18): the owner quote covers occupied dwellings in residential buildings without
+    dormitories; the rooms table counts all dwellings in buildings with living space (a superset), so a cell
+    with more households than rooms-table dwellings has households outside every dwelling of the quote
+  result: >-
+    Configured rule (rooms table harmonised, 10): 119 of 43,598 cells, 1,903.5 of 558,170.75 households
+    (0.341 %) move from owner to renter targets, 12 changed cells with at least 90 % owner targets
+    (1,053.9 households), 37 batches; batch_000: 7 cells, 688.6 households moved; batch_032: 2 cells, 31.7.
+    Occupied dwellings at 10: 144 cells, 1,983.3 moved, the same 12 high-owner cells; rooms raw at 10: 123
+    cells, 1,918.0. Thresholds 5 and 20 with the rule's column: 368 / 68 cells, 2,610.3 / 1,715.6 moved.
+    No NaN dwelling or tenure count and no owner count above the household total in any model cell.
+  artifact: docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/measure/rule_sensitivity.csv
+- metric: >-
+    O-ten-a: the arm-4 folders differ from arm 3 only in the two tenure columns of the 100 m and 1 km tables,
+    and prepare_tenure_arm.py --rule off reproduces the arm-3 folders exactly (prepare logs: no other changed
+    file or column, no problem recorded); both batches
+  reference: none (property of the preparation)
+  result: >-
+    MET on both batches: the rule-on prepare logs change only the two tenure columns of the 100 m and 1 km tables (batch_000: 7 cells, 688.6 households moved; batch_032: 2 cells, 31.7), the rule-off logs change nothing, no problem recorded (prepare_logs/).
+  artifact: docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/comparison.csv
+- metric: >-
+    O-ten-b: household excess of batch_000 = synthetic minus target households of the household-total
+    control at ZENSUS100m (control_fit.csv, batch scope); bound arm 4 <= arm 3 (arm 3: 6,690 - 6,629 = 61)
+  reference: >-
+    arm 3 of popsim-ladder-arm3-2026-11-18 (model output, NOT observed data), read from its committed
+    diagnostics arm_3_A/control_fit.csv
+  result: >-
+    MET: household excess of batch_000 14 in arm 4 (6,643 synthetic against 6,629) against 61 in arm 3.
+  artifact: docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/comparison.csv
+- metric: >-
+    O-ten-c: pooled ZENSUS100m WAPE of the two tenure controls = sum of abs_error over sum of target_sum of
+    the two rows of control_fit.csv, per batch; bound arm 4 <= arm 3 + 0.02 (arm 3: batch_000 0.0698,
+    batch_032 0.0241). The arm-4 targets are the corrected ones, so the two arms are fitted against
+    different targets; the bound says only that the repair does not make the tenure fit worse
+  reference: arm 3 (model output); ASSUMPTION-grade design bound of the plan of issue #657
+  result: >-
+    NOT MET on batch_000, MET on batch_032. batch_000: 0.0902 against the bound 0.0898 (arm 3 0.0698 + 0.02), missed by 0.0004; abs_error 311 (owner) + 287 (renter) over 2,955 + 3,674 targets; synthetic sums 2,910 owner and 3,733 renter households. batch_032: 0.0276 against 0.0441. Descriptive context, the bound is not changed after the run: arm 4 is fitted against the corrected targets and arm 3 against the old ones, so the two values measure the fit to different targets. Where in the batch the larger tenure error arises is not analysed in this record.
+  artifact: docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/comparison.csv
+- metric: >-
+    N-a (no harm): pooled zone-level WAPE per geography over the controls whose targets arm 4 did not change,
+    computed as G3 of compare_arm3.py (batch scope, target above 0, building_type_* left out) with the two
+    tenure controls also left out; bound arm 4 <= arm 3 + 0.02 (ZENSUS100m), + 0.02 (ZENSUS1km), + 0.01
+    (KREIS). Arm 3 on this definition: batch_000 0.3132 / 0.0598 / 0.0155, batch_032 0.1473 / 0.0197 /
+    0.0077 (they differ from the G3 figures of the arm-3 record because the tenure controls are left out)
+  reference: arm 3 (model output); ASSUMPTION-grade design bounds of the ladder (as G3)
+  result: >-
+    MET on both batches and all three geographies (arm 3 / arm 4 / limit): batch_000 ZENSUS100m 0.3132 / 0.2843 / 0.3332, ZENSUS1km 0.0598 / 0.0643 / 0.0798, KREIS 0.0155 / 0.0083 / 0.0255; batch_032 ZENSUS100m 0.1473 / 0.1455 / 0.1673, ZENSUS1km 0.0197 / 0.0200 / 0.0397, KREIS 0.0077 / 0.0077 / 0.0177.
+  artifact: docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/comparison.csv
+- metric: >-
+    N-b (no harm): G4 as defined in the arm-3 record (net rounding shift per ZENSUS100m control with target
+    >= 40, household total left out, bound 0.10; rounding_shift.csv). Gate: no batch that met G4 in arm 3
+    misses it in arm 4 (arm 3: batch_032 met, batch_000 missed by building_type_sonstiges_ZENSUS100m_target,
+    0.149). batch_000 is reported per control, met / not met, NOT gated: it is the observation this record
+    exists for (whether the repair removes the cause of the arm-3 miss)
+  reference: arm 3 (model output); the G4 bound of the WP4 design
+  result: >-
+    MET (gate): batch_032 0 of its G4 controls above 0.10 in arm 4, as in arm 3. Reported for batch_000: 0 controls above 0.10 in arm 4 (arm 3: 1, building_type_sonstiges_ZENSUS100m_target 0.149); that control's shift is 0.018 in arm 4.
+  artifact: docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/verdict.json
+- metric: >-
+    N-c (no harm): no sequential fallback: solver-path record read with the stage's gate
+    (solver_path_gate.summarize_controlled_calls) and the diagnostics' solver_paths.csv: no non-simultaneous
+    parent at KREIS, ZENSUS1km or ZENSUS100m, every simultaneous call controlled, OPTIMAL or FEASIBLE,
+    converged; a missing level counts as a violation; bound 0 violations per batch
+  reference: none (property of the run)
+  result: >-
+    MET on both batches: 0 violations (no non-simultaneous parent at any level; every simultaneous call controlled, OPTIMAL or FEASIBLE, converged).
+  artifact: docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/verdict.json
+- metric: >-
+    N-d (no harm): household conservation per level (household_conservation.csv, abs_deviation_sum), arm 4
+    <= arm 3 at KREIS, ZENSUS1km and ZENSUS100m (arm 3: batch_000 0 / 0 / 331, batch_032 0 / 0 / 0)
+  reference: arm 3 (model output)
+  result: >-
+    MET on both batches: batch_000 abs_deviation_sum 0 / 0 / 116 at KREIS / ZENSUS1km / ZENSUS100m (arm 3: 0 / 0 / 331); batch_032 0 at every level in both arms.
+  artifact: docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/comparison.csv
+- metric: >-
+    Reported, not gated: the solver-path sums hh_excess, zone_shortfall and row_shortfall per batch (arm 3,
+    batch_000: 61 / 196 / 135; batch_032: 0 / 0 / 0) and the tenure target and synthetic sums per batch
+  reference: arm 3 (model output)
+  result: >-
+    batch_000: hh_excess 61 -> 14, zone_shortfall 196 -> 65, row_shortfall 135 -> 51 (arm 3 -> arm 4); batch_032: 0 / 0 / 0 in both arms. Tenure targets of batch_000 owner 3,644 -> 2,955, renter 2,985 -> 3,674; batch_032 owner 5,726 -> 5,695, renter 7,737 -> 7,768 (integer targets at ZENSUS100m).
+  artifact: docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/verdict.json
+features:
+  note: >-
+    Evidence for housing_tenure (issue #657) and context for popsim_method (#646): single-batch evidence on
+    two batches and one draw (random_seed of the arm-3 folders); the full population is the full rerun (#648).
+artifacts:
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/scripts/prepare_tenure_arm.py
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/scripts/compare_tenure_arm.py
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/scripts/measure_tenure_rule.py
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/scripts/run_arm4.sh
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/selfcheck/batch_000.rule_off.json
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/selfcheck/batch_032.rule_off.json
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/measure/rule_sensitivity.csv
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/measure/rule_by_batch.csv
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/measure/changed_cells.csv
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/measure/measure_log.json
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/comparison.csv
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/verdict.json
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/run_times_and_hashes.txt
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/progress.log
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/prepare_logs/batch_000.rule_on.json
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/prepare_logs/batch_032.rule_on.json
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/prepare_logs/batch_000.rule_off.json
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/prepare_logs/batch_032.rule_off.json
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/arm_4/control_fit.csv
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/arm_4/rounding_shift.csv
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/arm_4/household_conservation.csv
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/arm_4/solver_paths.csv
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/arm_4/misfit_split.csv
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/arm_4/popsim_batch_diagnostics.md
+- docs/runs/artifacts/popsim-ladder-tenure-2026-11-18/arm_4/provenance.json
+issues:
+- '#657'
+- '#646'
+notes: >-
+  Control fit against the model's own targets is not validation against observed behaviour. The tenure rule
+  rests on the ASSUMPTION that households outside every dwelling counted in the rooms table rent; the rooms
+  table counts more dwellings than the owner quote covers, so the rule corrects too little rather than too
+  much.

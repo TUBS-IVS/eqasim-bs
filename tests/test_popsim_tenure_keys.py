@@ -1,0 +1,281 @@
+"""Config keys and stage wiring of the owner-household limit (issue #657, Task T3).
+
+The rule itself (``braunschweig.popsim.tenure_targets``) is tested in
+``tests/test_popsim_tenure_targets.py``; these tests prove that the two config keys put it
+behind a switch in the ``data.census.filtered`` control build, that the switch OFF leaves the
+control tables of today untouched, and that the stage reports what the rule did. All expected
+values are computed by hand from the synthetic cell frame of
+``tests/popsim_control_build_fixture.py`` (households / owners / renters / rooms-table
+dwellings per cell):
+
+* cell 2: 30 / 30 / 0 / 2 -> 28 households outside any dwelling, owners 30 -> 2, renters 0 -> 28
+* cell 3: 118 / 118 / 0 / 0 -> 118 households outside, owners 118 -> 0, renters 0 -> 118
+* every other cell has fewer than 10 households outside its dwellings (cell 6: 3 / 3 / 0 / 0
+  has only 3), so it stays as it is.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import sys
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+# append, never insert(0): 'tests' at the front of sys.path would shadow the braunschweig package.
+sys.path.append(str(Path(__file__).resolve().parent))
+
+import popsim_control_build_fixture as fixture  # noqa: E402
+
+from braunschweig.popsim import stage  # noqa: E402
+
+OWNER_COLUMN = fixture.OWNER_COLUMN
+RENTER_COLUMN = fixture.RENTER_COLUMN
+TENURE_COLUMNS = {
+    f"{base}_{geography}"
+    for base in (OWNER_COLUMN, RENTER_COLUMN)
+    for geography in ("ZENSUS100m", "ZENSUS1km")
+}
+
+
+def _tenure_warnings(caplog):
+    """WARNING records or above that mention the tenure rule (logger name or message)."""
+    return [
+        record for record in caplog.records
+        if record.levelno >= logging.WARNING
+        and ("tenure" in record.name or "tenure" in record.getMessage().lower())
+    ]
+
+
+def test_key_off_reports_and_logs_nothing_about_the_rule(caplog):
+    """The switch OFF: no rule counters, no warning, no log line of the rule.
+
+    The golden tables of the OFF path are compared once, in
+    ``tests/test_popsim_control_build_golden.py`` (the key defaults to off in the fixture).
+    """
+    caplog.set_level(logging.DEBUG)
+
+    _, report = fixture.build_control_tables_and_report(
+        tenure_owner_limited_to_dwellings=False)
+
+    assert report is None
+    assert _tenure_warnings(caplog) == []
+    assert not any("popsim.tenure_targets" in r.getMessage() for r in caplog.records)
+
+
+def test_key_on_changes_only_the_tenure_columns():
+    """The switch ON moves the owner and renter targets of the two over-count cells, nothing else.
+
+    Hand computation (largest-remainder rounding within the 1 km parent, parents are cells
+    0-2, 3-4 and 5-7): owner 100 m = 11.3, 12.1, 2, 0, 20.9, 8.4, 3, 9.8; renter 100 m =
+    13.2, 5.2, 28, 118, 20.9, 25, 0, 2.8.
+    """
+    built, report = fixture.build_control_tables_and_report(
+        tenure_owner_limited_to_dwellings=True, tenure_min_households_outside=10.0)
+    assert report is not None
+
+    # Owners: parent 0 sums to 25.4 -> 25 = floors (11, 12, 2); parent 1 sums to 20.9 -> 21,
+    # the one leftover unit goes to cell 4 (remainder .9); parent 2 is unchanged (21).
+    expected_owner = [11, 12, 2, 0, 21, 8, 3, 10]
+    # Renters: parent 0 sums to 46.4 (floors 13, 5, 28 = 46, total 46); parent 1 sums to 138.9 -> 139, leftover unit to cell 4 (118, 21); parent 2 unchanged.
+    expected_renter = [13, 5, 28, 118, 21, 25, 0, 3]
+
+    for geography, key in (("ZENSUS100m", "ZENSUS100m"), ("ZENSUS1km", "ZENSUS1km")):
+        golden = fixture.read_golden(geography)
+        table = built[geography]
+        assert list(table.columns) == list(golden.columns)
+        changed = {c for c in table.columns if c != key and not table[c].equals(golden[c])}
+        assert changed == {c for c in TENURE_COLUMNS if c.endswith(geography)}
+        pd.testing.assert_frame_equal(
+            table.drop(columns=list(changed)), golden.drop(columns=list(changed)),
+            check_exact=True)
+
+    table_100m = built["ZENSUS100m"]
+    assert table_100m[f"{OWNER_COLUMN}_ZENSUS100m"].tolist() == expected_owner
+    assert table_100m[f"{RENTER_COLUMN}_ZENSUS100m"].tolist() == expected_renter
+    # The 1 km targets are the sums of their 100 m children (parents 0, 1, 2).
+    table_1km = built["ZENSUS1km"]
+    assert table_1km[f"{OWNER_COLUMN}_ZENSUS1km"].tolist() == [25, 21, 21]
+    assert table_1km[f"{RENTER_COLUMN}_ZENSUS1km"].tolist() == [46, 139, 28]
+    # STAAT and WELT tables carry no tenure column: unchanged (covered by the loop above for the
+    # grid tables, here by equality).
+    for name in ("STAAT", "WELT"):
+        pd.testing.assert_frame_equal(
+            built[name], fixture.read_golden(name), check_exact=True)
+
+
+def test_report_lists_cells_and_households(tmp_path):
+    """The stage report file holds the rule's counts (and the OFF path states 'off', no counts)."""
+    cells = fixture.make_cells()
+    _, report = stage._limit_owner_targets_to_dwellings(
+        cells, fixture.CONTROL_SOURCE, fixture.SEED_NAME, fixture.CONTROL_TIERS,
+        enabled=True, min_households_outside=10.0)
+
+    # Cells 2 and 3 change: 30 - 2 = 28 and 118 - 0 = 118 owner households become renters.
+    assert report["cells_seen"] == 8
+    assert report["cells_changed"] == 2
+    assert report["households_moved_owner_to_renter"] == pytest.approx(146.0)
+    assert report["cells_with_nan_dwelling_count"] == 0
+    assert report["cells_changed_with_nan_dwelling_count"] == 0
+    assert report["cells_with_owner_above_household_total"] == 0
+    assert report["min_households_outside"] == 10.0
+
+    # The two other dropping / replacing steps of the stage report their own counts. ZGB filter:
+    # cells 0-4 lie in Kreis 03101, cells 5-7 in 03153; scope 03101 keeps 5 and drops 3.
+    filtered, zgb_report = stage.mid.filter_zgb_cells_with_report(cells, ["03101"])
+    assert len(filtered) == 5
+    assert zgb_report == {
+        "cells_seen": 8, "cells_kept": 5, "cells_dropped": 3, "kreise_in_scope": 1}
+    # Building-type rescale (ADR-0198), all 8 cells have households (sum 280.7). Cells 3 and 6 have
+    # no dwelling count and take the shares of their 1 km parent (118 + 3 = 121 households); the
+    # other six keep their own shares (24.6 + 17.3 + 30 + 41.8 + 33.4 + 12.6 = 159.7 households).
+    # The dwellings of the six own-share cells sum to 25.5 + 18.4 + 2 + 42.3 + 34.8 + 13.4 = 136.4.
+    _, bt_report = stage._add_aggregated_control_columns(
+        cells, fixture.CONTROL_SOURCE, fixture.SEED_NAME, fixture.CONTROL_TIERS,
+        **fixture.AGGREGATE_KWARGS, return_report=True)
+    assert bt_report["cells_seen"] == 8 and bt_report["cells_with_households"] == 8
+    assert bt_report["share_tiers"]["own"]["cells"] == 6
+    assert bt_report["share_tiers"]["own"]["households"] == pytest.approx(159.7)
+    assert bt_report["share_tiers"]["ZENSUS1km"]["cells"] == 2
+    assert bt_report["share_tiers"]["ZENSUS1km"]["households"] == pytest.approx(121.0)
+    assert set(bt_report["share_tiers"]) == {"own", "ZENSUS1km"}
+    assert bt_report["fallback_cells"] == 2 and bt_report["fallback_households"] == 121
+    assert bt_report["partial_nan_cells"] == 0 and bt_report["partial_nan_households"] == 0
+    assert bt_report["target_sum_over_household_total_before"] == pytest.approx(136.4 / 280.7)
+    assert bt_report["target_sum_over_household_total_after"] == pytest.approx(1.0)
+    assert bt_report["levels_unavailable"] == []
+
+    class _Context:
+        def __init__(self):
+            self.info = {}
+
+        def path(self):
+            return str(tmp_path)
+
+        def set_info(self, key, value):
+            self.info[key] = value
+
+    def written_file():
+        text = (tmp_path / stage.CENSUS_FILTERED_REPORT_FILE).read_text(encoding="utf-8")
+        return json.loads(text)
+
+    def written():
+        return written_file()["tenure_owner_limited_to_dwellings"]
+
+    context = _Context()
+    # applied: the rule ran, its counts are in the file and in set_info; the file carries the
+    # counts of the ZGB filter and the building-type rescale in their own sections.
+    stage._write_census_filtered_report(
+        context, zgb_cell_filter=zgb_report, building_type_enabled=True,
+        building_type_report=bt_report, enabled=True, min_households_outside=10.0,
+        report=report)
+    assert written() == {"enabled": True, "status": "applied", "reason": None,
+                         "min_households_outside": 10.0, "report": report}
+    assert context.info["popsim_tenure_owner_limit"] == written()
+    assert written_file()["zgb_cell_filter"] == zgb_report
+    assert written_file()["building_type_rescale"] == {
+        "enabled": True, "status": "applied", "report": bt_report}
+
+    # disabled: key off, nothing ran (building-type key off and on without a control as well).
+    stage._write_census_filtered_report(
+        context, zgb_cell_filter=zgb_report, building_type_enabled=False,
+        building_type_report=None, enabled=False, min_households_outside=10.0, report=None)
+    assert written() == {"enabled": False, "status": "disabled", "reason": None,
+                         "min_households_outside": 10.0, "report": None}
+    assert written_file()["building_type_rescale"] == {
+        "enabled": False, "status": "disabled", "report": None}
+    stage._write_census_filtered_report(
+        context, zgb_cell_filter=zgb_report, building_type_enabled=True,
+        building_type_report=None, enabled=False, min_households_outside=10.0, report=None)
+    assert written_file()["building_type_rescale"]["status"] == "no_building_type_control"
+
+    # no_tenure_control: key on, nothing to limit; the reason says why, and a missing reason is refused.
+    stage._write_census_filtered_report(
+        context, zgb_cell_filter=zgb_report, building_type_enabled=False,
+        building_type_report=None, enabled=True, min_households_outside=10.0, report=None,
+        no_tenure_control_reason="tier2 is not among the control tiers")
+    assert written() == {"enabled": True, "status": "no_tenure_control",
+                         "reason": "tier2 is not among the control tiers",
+                         "min_households_outside": 10.0, "report": None}
+    with pytest.raises(ValueError, match="no reason"):
+        stage._write_census_filtered_report(
+            context, zgb_cell_filter=zgb_report, building_type_enabled=False,
+            building_type_report=None, enabled=True, min_households_outside=10.0, report=None)
+
+
+@pytest.mark.parametrize("controls_source, seed, tiers, reason_part", [
+    ("csv", "mid", fixture.CONTROL_TIERS, "controls_source"),
+    ("catalog", "mid", ("tier0", "tier1"), "tier2"),
+    ("catalog", "entd", fixture.CONTROL_TIERS, "seed source"),
+], ids=["csv_source", "tier2_missing", "seed_without_tenure_control"])
+def test_key_on_without_a_tenure_control_changes_nothing(
+        caplog, controls_source, seed, tiers, reason_part):
+    """On, but no tenure control is active: one INFO line, cells and report untouched, reason named."""
+    cells = fixture.make_cells()
+    caplog.set_level(logging.INFO)
+
+    result, report = stage._limit_owner_targets_to_dwellings(
+        cells, controls_source, seed, tiers, enabled=True, min_households_outside=10.0)
+
+    pd.testing.assert_frame_equal(result, cells, check_exact=True)
+    assert report is None
+    assert len([r for r in caplog.records if "no tenure control" in r.getMessage()]) == 1
+    # No warning from the stage or the rule (control_spec itself warns when it drops the ENTD
+    # tenure control; that is not this switch).
+    assert [r for r in _tenure_warnings(caplog) if r.name != "braunschweig.popsim.control_spec"] == []
+    # The reason the report file carries names the failed condition.
+    reason = stage._tenure_control_inactive_reason(controls_source, seed, tiers)
+    assert reason is not None and reason_part in reason
+    assert stage._tenure_control_inactive_reason(
+        fixture.CONTROL_SOURCE, fixture.SEED_NAME, fixture.CONTROL_TIERS) is None
+
+
+def test_owner_quote_dwelling_column_is_loaded_only_when_the_rule_can_run():
+    """The dwelling column joins the parquet load set only for key on and an active tenure control."""
+    from braunschweig.popsim import control_spec
+
+    class _Context:
+        def config(self, key):
+            return False
+
+    def load_columns(tiers, enabled):
+        return stage._resolve_cell_load_columns(
+            _Context(), fixture.CONTROL_SOURCE, fixture.SEED_NAME, tiers, [],
+            employment_grid_on=False, cells_path=None, active_entries=[],
+            tenure_owner_limited_to_dwellings=enabled)
+
+    column = control_spec.OWNER_QUOTE_DWELLING_COLUMN
+    off = load_columns(fixture.CONTROL_TIERS, False)
+    on = load_columns(fixture.CONTROL_TIERS, True)
+    # The OFF path loads exactly the columns of today; ON adds the one dwelling column.
+    assert column not in off
+    assert set(on) - set(off) == {column} and len(on) == len(off) + 1
+    assert set(off) <= set(on)
+    assert load_columns(("tier0", "tier1"), True) == load_columns(("tier0", "tier1"), False)
+
+
+def test_configure_declares_both_keys_and_rejects_a_non_positive_threshold():
+    declared = {}
+
+    class _Recorder:
+        def __init__(self, threshold=None):
+            self.threshold = threshold
+
+        def config(self, key, default=None, **kwargs):
+            declared.setdefault(key, default)
+            if key == stage.KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE_DWELLINGS \
+                    and self.threshold is not None:
+                return self.threshold
+            return default
+
+        def stage(self, *args, **kwargs):
+            return None
+
+    stage.configure(_Recorder())
+    assert declared[stage.KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS] is False
+    assert declared[stage.KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE_DWELLINGS] == 10.0
+    for bad in (0, -1.0):
+        with pytest.raises(ValueError, match="tenure_min_households_outside_dwellings"):
+            stage.configure(_Recorder(bad))

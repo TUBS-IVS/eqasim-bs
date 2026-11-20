@@ -7,6 +7,8 @@ in between are stubbed; ``execute`` stops with ``_Stop`` once the spied call was
 """
 from __future__ import annotations
 
+import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,7 +16,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braunschweig.popsim import stage, tool_version
+# append, never insert(0): 'tests' at the front of sys.path would shadow the braunschweig package.
+sys.path.append(str(Path(__file__).resolve().parent))
+
+import popsim_control_build_fixture as fixture  # noqa: E402
+
+from braunschweig.popsim import control_spec, stage, tool_version  # noqa: E402
 
 
 class _Stop(Exception):
@@ -48,10 +55,12 @@ def _values(**overrides):
     return values
 
 
-def _context(values):
+def _context(values, stage_path=None):
     # Unlisted keys are the boolean/numeric feature flags the stubbed steps never use.
+    # ``stage_path`` is the directory ``context.path()`` returns (the stage report file goes there).
     return SimpleNamespace(
-        config=lambda key: values.get(key, False), set_info=lambda key, value: None)
+        config=lambda key: values.get(key, False), set_info=lambda key, value: None,
+        path=lambda: str(stage_path))
 
 
 # --- read_stage_paths: relative project dir ----------------------------------------------
@@ -145,8 +154,13 @@ def test_execute_validates_the_integerizer_and_gate_settings_before_the_seed_bui
 
 # --- execute: batches, then the solver-path gate -----------------------------------------
 
-def _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls):
-    """Stub every step of ``execute`` before the purge and the batches (see the module doc)."""
+def _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls, tenure_limit=False):
+    """Stub every step of ``execute`` before the purge and the batches (see the module doc).
+
+    With ``tenure_limit`` (#657) the run uses the catalog controls of tiers 0-2 and the fixture
+    cells. ``_resolve_cell_load_columns`` runs for real; the returned dict records the columns
+    ``execute`` asked the parquet loader for.
+    """
     _stub_early_steps(monkeypatch, calls, tmp_path / "settings.yaml")
     settings = tmp_path / "settings.yaml"
     settings.write_text(_SETTINGS_TEXT + "geographies: [ZENSUS100m]\n", encoding="utf-8")
@@ -169,17 +183,26 @@ def _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls):
         lambda ctx: (1, np.random.RandomState(1), np.random.RandomState(2),
                      np.random.RandomState(3)))
     monkeypatch.setattr(stage, "_resolve_source", lambda name: _Source())
+    tiers, controls_source = (fixture.CONTROL_TIERS, "catalog") if tenure_limit else ((), "csv")
     monkeypatch.setattr(
         stage, "_read_control_config",
-        lambda ctx, name: ((), (), "csv", False, False, (), set(), 30, None, "default", False))
+        lambda ctx, name: (tiers, (), controls_source, False, False, (), set(), 30, None,
+                           "default", False))
     monkeypatch.setattr(
         stage, "_build_control_frame", lambda *a, **k: (pd.DataFrame(), []))
     monkeypatch.setattr(
         stage, "_load_tier3_kreis_controls", lambda *a, **k: (None, None, set()))
-    monkeypatch.setattr(stage, "_resolve_cell_load_columns", lambda *a, **k: [])
-    monkeypatch.setattr(stage.mid, "load_control_cells", lambda *a, **k: pd.DataFrame())
-    monkeypatch.setattr(stage.mid, "filter_zgb_cells", lambda cells, kreise: cells)
-    monkeypatch.setattr(stage, "_add_aggregated_control_columns", lambda cells, *a, **k: cells)
+    loaded_columns = {}
+
+    def load_control_cells(cells_path, load_cols):
+        loaded_columns["columns"] = list(load_cols)
+        return fixture.make_cells() if tenure_limit else pd.DataFrame()
+
+    monkeypatch.setattr(stage.mid, "load_control_cells", load_control_cells)
+    monkeypatch.setattr(
+        stage.mid, "filter_zgb_cells_with_report",
+        lambda cells, kreise: (cells, {"cells_seen": 0, "cells_kept": 0, "cells_dropped": 0}))
+    monkeypatch.setattr(stage, "_add_aggregated_control_columns", lambda cells, *a, **k: (cells, None))
     monkeypatch.setattr(stage, "_inject_employment_grid_columns", lambda c, cells, *a, **k: cells)
     monkeypatch.setattr(stage, "_inject_ownership_grid_columns", lambda c, cells, *a, **k: cells)
     monkeypatch.setattr(
@@ -194,14 +217,17 @@ def _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls):
     # purge; this test only pins its place in the order.
     monkeypatch.setattr(stage, "_read_total_hh_control", lambda path: "HH_TOTAL")
     monkeypatch.setattr(stage, "_check_seed_contract", lambda *a, **k: calls.append("contract"))
+    return loaded_columns
 
 
-@pytest.mark.parametrize("fast_paths_on", [False, True])
+@pytest.mark.parametrize("fast_paths_on, tenure_limit", [
+    (False, False), (True, False), (False, True)],
+    ids=["plain", "fast_paths_on", "owner_limit_on"])
 def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
-        monkeypatch, tmp_path, fast_paths_on):
+        monkeypatch, tmp_path, fast_paths_on, tenure_limit):
     # With the option on (fork 0.10.0+bs.2, the version of _values) the rate check must be told so.
     calls = []
-    _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls)
+    loaded_columns = _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls, tenure_limit)
 
     seen = {}
 
@@ -231,7 +257,30 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     monkeypatch.setattr(stage.solver_path_gate, "check_solver_paths", gate)
 
     with pytest.raises(_Stop):
-        stage.execute(_context(_values(**{stage.KEY_FAST_PATHS: fast_paths_on})))
+        stage.execute(_context(
+            _values(**{stage.KEY_FAST_PATHS: fast_paths_on,
+                       **({stage.KEY_TENURE_OWNER_LIMITED_TO_DWELLINGS: True,
+                           stage.KEY_TENURE_MIN_HOUSEHOLDS_OUTSIDE_DWELLINGS: 10.0}
+                          if tenure_limit else {})}),
+            stage_path=tmp_path))
+
+    # The stage always leaves its report file. Off: status disabled, the OFF path loads no
+    # dwelling column. On: the dwelling column is requested from the parquet and the rule ran;
+    # on the fixture cells it changes two cells (30 households / 2 dwellings and 118 / 0) and
+    # moves (30 - 2) + (118 - 0) = 146 owner households to renters.
+    entry = json.loads(
+        (tmp_path / stage.CENSUS_FILTERED_REPORT_FILE).read_text(encoding="utf-8")
+    )["tenure_owner_limited_to_dwellings"]
+    dwelling_column = control_spec.OWNER_QUOTE_DWELLING_COLUMN
+    if tenure_limit:
+        assert dwelling_column in loaded_columns["columns"]
+        assert entry["enabled"] is True and entry["status"] == "applied"
+        assert entry["report"]["cells_changed"] == 2
+        assert entry["report"]["households_moved_owner_to_renter"] == pytest.approx(146.0)
+    else:
+        assert dwelling_column not in loaded_columns["columns"]
+        assert entry["enabled"] is False and entry["status"] == "disabled"
+        assert entry["report"] is None
 
     # The fast-path rate is reported before the gate, which may stop the stage.
     assert calls == [
@@ -298,7 +347,7 @@ def test_execute_reports_the_controlled_rounding_shares_only_for_a_controlled_ru
     infos = {}
     context = SimpleNamespace(
         config=_context(_values(**{stage.KEY_INTEGERIZER_ROUNDING: rounding})).config,
-        set_info=lambda key, value: infos.__setitem__(key, value))
+        set_info=lambda key, value: infos.__setitem__(key, value), path=lambda: str(tmp_path))
     with pytest.raises(_Stop):
         stage.execute(context)
     # The totals of the gate and the solver-path table are always reported.
