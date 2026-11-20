@@ -14,6 +14,8 @@ Tables in scope:
     P17.1    Führerscheinbesitz Auto           (Kreis + Geschlecht + Alter × ja/nein)
     W10.3    Hauptverkehrsmittel               (Kreis × Modus, Wege-Ebene)
     W12      Wegelänge                         (Kreis × Distanzklassen)
+    H12.1    Elektrofahrräder/Pedelecs im HH   (Kreis × {0,1,2,3,4+} + Mittel)
+    P39.1    Anzahl Wege am Stichtag           (Kreis × {0,1,2,3,4,5+} + Mittel)
 
 Design notes
 ------------
@@ -141,6 +143,19 @@ SPECS = [
     TableSpec("W2", 233, 234,
               ["arbeit", "dienst", "ausbildung", "einkauf",
                "erledigung", "freizeit", "begleitung", "keine_angabe"]),
+    # H12.1 (page 31) Anzahl Elektrofahrräder und Pedelecs im Haushalt, Basis = alle
+    # Haushalte. A household table has no "Tabelle B" variant (page_b None). The
+    # Wolfsburg row is the has_ebike Kreis target for the one Kreis SrV does not
+    # survey (scripts/build_blended_kreis_targets.py, ADR-0205).
+    TableSpec("H12_1", 31, None,
+              ["ebikes_0", "ebikes_1", "ebikes_2", "ebikes_3", "ebikes_4plus",
+               "keine_angabe"], has_mittel=True),
+    # P39.1 (page 213) Anzahl Wege am Stichtag (alle Personen), Basis = Personen mit
+    # Wegeerfassung und bekannter Mobilität. All reporting days (the Kreis rows have no
+    # weekday cut). Read by scripts/backtest_wolfsburg_kreis_transfer.py (ADR-0205).
+    TableSpec("P39_1", 213, 214,
+              ["wege_0", "wege_1", "wege_2", "wege_3", "wege_4", "wege_5plus"],
+              has_mittel=True),
 ]
 
 # Sex labels in the ``Geschlecht`` section (PDF) -> short key written to CSV.
@@ -310,8 +325,18 @@ def _parse_labelled_rows(lines, allowed_labels, num_cols):
 
 def extract_table(pdf, spec: TableSpec) -> pd.DataFrame:
     text = pdf.pages[spec.page_a - 1].extract_text() or ""
-    lines = text.split("\n")
+    return parse_table_lines(text.split("\n"), spec)
 
+
+def parse_table_lines(lines: list[str], spec: TableSpec) -> pd.DataFrame:
+    """Parse the text lines of one Tabelle A page into one row per area.
+
+    Returns the ``Gesamt`` row (ars5 ``03ZGB``) first, then the eight Kreise of the
+    ``Teilgebiete`` section, with ``n_weighted``, ``n_unweighted``, one column per
+    ``spec.columns`` entry (row-% as printed) and ``mittel`` when the table has one.
+    Raises ``ValueError`` when the ``Gesamt`` row or any of the eight Kreise is missing:
+    a consumer reading a per-Kreis row must never meet a silently absent Kreis.
+    """
     teilgebiete = _extract_section(lines, "Teilgebiete", SECTION_HEADERS)
     gesamt = _parse_gesamt(lines, len(spec.columns), spec.has_mittel)
     rows = _parse_region_rows(teilgebiete, len(spec.columns), spec.has_mittel)
@@ -332,6 +357,13 @@ def extract_table(pdf, spec: TableSpec) -> pd.DataFrame:
         renamed.append(out)
 
     df = pd.DataFrame(renamed)
+    expected = {"03ZGB", *TEILGEBIETE.values()}
+    found = set(df["ars5"]) if not df.empty else set()
+    if found != expected:
+        raise ValueError(
+            f"[mid-extract] {spec.code} page {spec.page_a}: expected the Gesamt row and the "
+            f"eight Kreise {sorted(expected)}, found {sorted(found)}; missing "
+            f"{sorted(expected - found)}. The PDF page index or its layout has changed.")
     return df
 
 

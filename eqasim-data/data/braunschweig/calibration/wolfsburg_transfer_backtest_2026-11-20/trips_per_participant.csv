@@ -1,0 +1,15 @@
+# Backtest of the Wolfsburg rules for the per-Kreis control targets (ADR-0205), written by
+# scripts/backtest_wolfsburg_kreis_transfer.py from the committed MiD 2023 regional tables
+# (H12.1, P36.1, P39.1, W1), the committed SrV 2023 aggregates and the local-only SrV 2023
+# microdata (average weekday, GEWICHT_P_ZENSUS). Each SrV Kreis is predicted as if SrV had not
+# surveyed it; anchors: Braunschweig, or the region without the Kreis (leave-one-out).
+# SrV purpose trips per participant and participation share, by Kreis (03ZGB_srv7 = the seven SrV Kreise together).
+ars5,leisure_participation,leisure_trips_per_participant,escort_participation,escort_trips_per_participant
+03101,0.41776,1.376229,0.075053,1.59866
+03102,0.342177,1.384111,0.100453,1.649935
+03151,0.382145,1.319494,0.11508,1.61946
+03153,0.347937,1.406444,0.120013,1.648947
+03154,0.383272,1.348973,0.106603,1.486932
+03157,0.372266,1.387418,0.106357,1.612349
+03158,0.385201,1.334488,0.115527,1.60958
+03ZGB_srv7,0.383163,1.368721,0.099172,1.610721

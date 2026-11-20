@@ -11,7 +11,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 from scripts.build_blended_kreis_targets import (  # noqa: E402
-    BlendConfig, build_pt_ticket_group, build_pt_ticket_group4)
+    BlendConfig, build_has_ebike, build_pt_ticket_group, build_pt_ticket_group4)
 
 TARGETS = (Path(__file__).resolve().parents[1] / "eqasim-data" / "data"
            / "braunschweig" / "targets")
@@ -42,10 +42,9 @@ def test_structure(name, cats):
     # Shares are stored rounded to 4 decimals, so a row summing to 1.0 in float
     # can land at 0.9999/1.0001; tolerate the rounding, still catch real errors.
     assert ((t[cats].sum(axis=1) - 1.0).abs() < 1e-3).all()
-    # Wolfsburg has no SrV coverage -> MiD fallback, except the SrV-only ebike
-    # attribute, where it uses the documented SrV region-total assumption.
-    expected_wob = "srv_region_total_assumption" if "ebike" in name else "mid"
-    assert t.set_index("ars5").loc["03103", "source"] == expected_wob
+    # Wolfsburg has no SrV coverage -> its row is MiD in every file (has_ebike:
+    # MiD H12.1 since ADR-0205; it used the SrV region total before).
+    assert t.set_index("ars5").loc["03103", "source"] == "mid"
 
 
 def test_status_salzgitter_is_srv_arbitrated():
@@ -215,9 +214,52 @@ def test_build_pt_ticket_group4_renormalizes_no_answer_and_splits(tmp_path):
     assert out[out["ars5"] == "03103"]["source"].iloc[0].startswith("mid")
 
 
-def test_ebike_is_srv_with_wob_assumption():
+def test_ebike_is_srv_with_wolfsburg_from_mid_h12_1():
     t = load("target2026_has_ebike_by_kreis.csv").set_index("ars5")
     assert t.loc["03151", "source"] == "srv"
     assert t.loc["03151", "ebike_yes"] == pytest.approx(0.3108, abs=0.005)
-    assert t.loc["03103", "source"] == "srv_region_total_assumption"
-    assert t.loc["03103", "ebike_yes"] == pytest.approx(0.2450, abs=0.005)
+    # MiD H12.1 Wolfsburg row: 81 % keins, 11 % one, 8 % two, no keine_angabe ->
+    # 19 of 100 answering households own at least one e-bike/pedelec (n = 508).
+    assert t.loc["03103", "source"] == "mid"
+    assert t.loc["03103", "ebike_yes"] == pytest.approx(0.19, abs=1e-4)
+    assert t.loc["03103", "n_effective"] == 508
+    assert t.loc["Gesamt", "source"] == "srv"
+    assert t.loc["Gesamt", "ebike_yes"] == pytest.approx(0.2450, abs=0.005)
+
+
+def _write_ebike_inputs(root: Path, mid_rows: str) -> None:
+    (root / "srv").mkdir(parents=True)
+    (root / "mid").mkdir(parents=True)
+    (root / "srv" / "srv2023_ebike_household_by_kreis.csv").write_text(
+        "level,code,name,n_unweighted,n_weighted,share_hh_with_ebike\n"
+        "total,total,Gesamt,8094,402665.18,0.245\n"
+        "kreis,03101,Braunschweig,2071,145485.24,0.1806\n",
+        encoding="utf-8")
+    (root / "mid" / "mid2023_H12_1.csv").write_text(
+        "kreis,ars5,n_weighted,n_unweighted,ebikes_0,ebikes_1,ebikes_2,ebikes_3,"
+        "ebikes_4plus,keine_angabe,mittel\n" + mid_rows, encoding="utf-8")
+
+
+def test_build_has_ebike_takes_wolfsburg_from_mid_and_renormalizes_no_answer(tmp_path):
+    # Wolfsburg answers 70/15/8/1/1 with 5 % keine_angabe: 25 of the 95 answering
+    # households own an e-bike -> 5/19. The surveyed Kreis and Gesamt stay SrV.
+    _write_ebike_inputs(tmp_path,
+                        "Gesamt,03ZGB,3013.0,5924.0,78.0,13.0,8.0,0.0,0.0,0.0,0.3\n"
+                        "Braunschweig,03101,648.0,1105.0,60.0,20.0,20.0,0.0,0.0,0.0,0.6\n"
+                        "Wolfsburg,03103,155.0,508.0,70.0,15.0,8.0,1.0,1.0,5.0,0.4\n")
+    out = build_has_ebike(tmp_path).set_index("ars5")
+    assert set(out.index) == {"03101", "03103", "Gesamt"}
+    assert out.loc["03103", "source"] == "mid"
+    assert out.loc["03103", "n_effective"] == 508
+    assert out.loc["03103", "ebike_yes"] == pytest.approx(5 / 19)
+    assert out.loc["03103", "ebike_no"] == pytest.approx(14 / 19)
+    assert (out.loc["03101", "source"], out.loc["03101", "ebike_yes"]) == ("srv", 0.1806)
+    assert (out.loc["Gesamt", "source"], out.loc["Gesamt", "ebike_yes"]) == ("srv", 0.245)
+
+
+def test_build_has_ebike_fails_without_the_mid_wolfsburg_row(tmp_path):
+    # No silent fallback to the SrV region total when the MiD row is missing.
+    _write_ebike_inputs(tmp_path,
+                        "Gesamt,03ZGB,3013.0,5924.0,78.0,13.0,8.0,0.0,0.0,0.0,0.3\n")
+    with pytest.raises(ValueError, match="03103"):
+        build_has_ebike(tmp_path)

@@ -10,8 +10,11 @@ Attributes built:
   registration-by-holder, directional only) -> disagreement shrinks MiD.
   ASSUMPTION: H7 carries no per-Kreis n; MiD precision weight uses the H4
   n_unweighted of the same Kreis (same survey households).
-- has_ebike {yes,no}: SrV only (no MiD per-Kreis source exists).
-  ASSUMPTION: Wolfsburg uses the SrV region-total share.
+- has_ebike {yes,no}: SrV for the seven surveyed Kreise and the Gesamt row, no
+  blending. Wolfsburg (not surveyed by SrV) = MiD H12.1 (mid2023_H12_1.csv,
+  households with at least one e-bike/pedelec, keine_angabe renormalized out),
+  the same "Wolfsburg = MiD" rule as the blended attributes (ADR-0205; it used
+  the SrV region-total share before).
 - number_of_bicycles {0..4+}: MiD H12.3 x SrV bikes; no arbiter.
 - pt_ticket_group {deutschlandticket,other_flatrate,not_flatrate}: MiD P24.1 x SrV
   E_OEV_FK on a matched 14+ universe (issue #321); no arbiter -> disagreement shrinks
@@ -154,8 +157,32 @@ def build_employment_status(data: Path, config: BlendConfig) -> pd.DataFrame:
         EMPLOYMENT_STATUS_CATS, config=config)
 
 
+H12_1_COUNT_COLUMNS = ["ebikes_0", "ebikes_1", "ebikes_2", "ebikes_3", "ebikes_4plus"]
+
+
+def mid_h12_1_ebike_share(data: Path, ars5: str) -> tuple[float, int]:
+    """Share of households with at least one e-bike/pedelec in one Kreis of MiD H12.1.
+
+    Returns ``(share, n_unweighted)``. The printed row-% are integers; the keine_angabe
+    mass is renormalized OUT (the seed's has_ebike is never "unknown"), so the share is
+    (sum of the 1..4+ columns) / (sum of the 0..4+ columns). Raises ``ValueError`` when the
+    row is missing or has no answering households: there is no fallback.
+    """
+    mid = read_csv(data / "mid" / "mid2023_H12_1.csv", dtype={"ars5": str}).set_index("ars5")
+    if ars5 not in mid.index:
+        raise ValueError(f"mid2023_H12_1.csv has no row for Kreis {ars5}; regenerate it "
+                         "with scripts/extract_mid_tables.py.")
+    row = mid.loc[ars5]
+    answered = float(sum(float(row[c]) for c in H12_1_COUNT_COLUMNS))
+    if answered <= 0:
+        raise ValueError(f"mid2023_H12_1.csv row {ars5}: no answering households "
+                         f"(the 0..4+ columns sum to {answered}).")
+    return (answered - float(row["ebikes_0"])) / answered, int(row["n_unweighted"])
+
+
 def build_has_ebike(data: Path) -> pd.DataFrame:
-    # SrV is the ONLY per-Kreis source; no blending. Wolfsburg = region total.
+    # SrV for the seven surveyed Kreise and Gesamt, no blending; Wolfsburg (not surveyed
+    # by SrV) = MiD H12.1, the "Wolfsburg = MiD" rule of the blended attributes (ADR-0205).
     srv = read_csv(data / "srv" / "srv2023_ebike_household_by_kreis.csv",
                    dtype={"code": str})
     kreis = srv[srv["level"] == "kreis"]
@@ -166,9 +193,12 @@ def build_has_ebike(data: Path) -> pd.DataFrame:
              "ebike_yes": float(r["share_hh_with_ebike"]),
              "ebike_no": 1.0 - float(r["share_hh_with_ebike"])}
             for _, r in kreis.iterrows()]
-    rows.append({"ars5": "03103", "source": "srv_region_total_assumption",
-                 "n_effective": total_n, "ebike_yes": total,
-                 "ebike_no": 1.0 - total})
+    wob_share, wob_n = mid_h12_1_ebike_share(data, "03103")
+    log.info("has_ebike: Wolfsburg (03103) from MiD H12.1: ebike_yes %.4f, n_unweighted %d "
+             "households (SrV region total, the previous value, is %.4f)",
+             wob_share, wob_n, total)
+    rows.append({"ars5": "03103", "source": "mid", "n_effective": wob_n,
+                 "ebike_yes": wob_share, "ebike_no": 1.0 - wob_share})
     rows.append({"ars5": "Gesamt", "source": "srv", "n_effective": total_n,
                  "ebike_yes": total, "ebike_no": 1.0 - total})
     return pd.DataFrame(rows)
@@ -305,8 +335,10 @@ def write_target(df: pd.DataFrame, out_path: Path, config: BlendConfig,
     blending rules in the header, so a single-source file cannot be mistaken for a
     blended one (``ebike`` is the pre-existing shorthand for its own exception)."""
     if ebike:
-        note = ("; EXCEPTION this file: SrV-only attribute, Wolfsburg uses the "
-                "SrV region total (ASSUMPTION)")
+        note = ("; EXCEPTION this file: no blending -- the seven surveyed Kreise "
+                "and Gesamt are SrV, Wolfsburg is MiD H12.1 (share of households "
+                "with at least one e-bike/pedelec, keine_angabe renormalized out; "
+                "ADR-0205)")
     header = HEADER_COMMON.format(tol=config.tolerance_pp,
                                   lam=config.disagreement_shrink_lambda,
                                   ebike_note=note)
