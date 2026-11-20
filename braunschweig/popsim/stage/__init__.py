@@ -314,6 +314,8 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_INTEGERIZER_SEARCH_MAX_SWEEPS,
     KEY_INTEGERIZER_SEARCH_SHORTLIST,
     KEY_INTEGERIZER_TIMEOUT_S,
+    KEY_FAST_PATHS,
+    KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY,
     KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS,
     KEY_KREIS_CONTROLS,
     KEY_KREISE,
@@ -349,6 +351,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     _KREIS_CONTROL_DEFAULT,
     _KREIS_CONTROL_TOGGLE_KEY,
 )
+from . import fast_path_rate
 from . import solver_path_gate
 from . import controls_builder
 from .controls_builder import (  # noqa: F401  (re-exports)
@@ -410,6 +413,7 @@ _HELPER_MODULES = (
     cell_attributes,
     config_keys,
     controls_builder,
+    fast_path_rate,
     solver_path_gate,
     source_resolution,
     tilt_columns,
@@ -820,6 +824,10 @@ def configure(context):
     context.config(KEY_INTEGERIZER_CONTROLLED_METHOD, "search")
     context.config(KEY_INTEGERIZER_SEARCH_MAX_SWEEPS, 200)
     context.config(KEY_INTEGERIZER_SEARCH_SHORTLIST, 24)
+    # Run-time and memory options of fork 0.10.0+bs.2 (meaning: KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY
+    # and KEY_FAST_PATHS in config_keys); off in code, none is volatile.
+    context.config(KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY, False)
+    context.config(KEY_FAST_PATHS, False)
     # Solver-path gate threshold (meaning: KEY_SOLVER_FALLBACK_ERROR_RATE in config_keys).
     context.config(KEY_SOLVER_FALLBACK_ERROR_RATE, None, volatile = True)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
@@ -1147,7 +1155,10 @@ def _read_batching_and_scope_config(context):
     # stage's hash and discard the shared popsim cache.
     from braunschweig import resources
     _requested_workers = context.config(KEY_WORKERS)
-    _worker_memory_gb = float(context.config(KEY_WORKER_MEMORY_GB))
+    # A configured figure below the default holds only with both run-time options on.
+    _worker_memory_gb = resources.popsim_worker_memory_gb(
+        float(context.config(KEY_WORKER_MEMORY_GB)),
+        context.config(KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY), context.config(KEY_FAST_PATHS))
     num_workers = resources.effective_popsim_workers(_requested_workers, _worker_memory_gb)
     # The worker count is memory-bound, not core-bound (see the comment above),
     # so the log names the quantity that actually decided it -- the memory
@@ -2252,7 +2263,9 @@ def _read_integerizer_settings(context):
         integerizer_conserve_penalty=context.config(KEY_INTEGERIZER_CONSERVE_PENALTY),
         integerizer_controlled_method=context.config(KEY_INTEGERIZER_CONTROLLED_METHOD),
         integerizer_search_max_sweeps=context.config(KEY_INTEGERIZER_SEARCH_MAX_SWEEPS),
-        integerizer_search_shortlist=context.config(KEY_INTEGERIZER_SEARCH_SHORTLIST))
+        integerizer_search_shortlist=context.config(KEY_INTEGERIZER_SEARCH_SHORTLIST),
+        store_positive_weight_rows_only=context.config(KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY),
+        fast_paths=context.config(KEY_FAST_PATHS))
     draw_on = overrides[folders.INTEGERIZER_DRAW_SETTING] != "off"
     seed_base = int(context.config("random_seed")) if draw_on else None
     return overrides, seed_base
@@ -2864,6 +2877,9 @@ def execute(context) -> pd.DataFrame:
     # An older fork ignores controlled rounding: refuse it now, not after all batches.
     folders.require_fork_version_for_controlled_rounding(
         settings_overrides, populationsim_version)
+    # An older fork ignores the run-time options silently: refuse them against the configured
+    # version now. Both guards index the overrides, so a missing setting is a KeyError.
+    folders.require_fork_version_for_run_time_options(settings_overrides, populationsim_version)
     solver_path_gate.validate_error_rate(context.config(KEY_SOLVER_FALLBACK_ERROR_RATE))
     # The server-local settings file must not contradict the tracked options (it is checked
     # again when the batch folders are written); resolving it here makes a conflict cost seconds.
@@ -3022,6 +3038,10 @@ def execute(context) -> pd.DataFrame:
         household_control_names, settings_overrides, integerizer_seed_base,
     )
     _log_integerizer_feasibility(context, work_dir)
+    # Reported before the gate, which may stop the stage: with fast_paths on, how many balancer
+    # calls the fork's fast kernels answered (no silent fallback to the original kernels).
+    context.set_info("popsim_fast_path_totals", fast_path_rate.check_fast_path(
+        work_dir, settings_overrides[folders.FAST_PATHS_SETTING]))
     solver_paths, solver_path_totals = solver_path_gate.check_solver_paths(
         work_dir, context.config(KEY_SOLVER_FALLBACK_ERROR_RATE),
         expected_rounding=settings_overrides[folders.INTEGERIZER_ROUNDING_SETTING],

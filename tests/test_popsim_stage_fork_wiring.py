@@ -39,6 +39,8 @@ def _values(**overrides):
         stage.KEY_INTEGERIZER_CONTROLLED_METHOD: "search",
         stage.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS: 200,
         stage.KEY_INTEGERIZER_SEARCH_SHORTLIST: 24,
+        stage.KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY: False,
+        stage.KEY_FAST_PATHS: False,
         stage.KEY_SOLVER_FALLBACK_ERROR_RATE: 0.2,
         "random_seed": 4711,
     }
@@ -101,20 +103,30 @@ def _stub_early_steps(monkeypatch, calls, settings_path):
     monkeypatch.setattr(stage.tool_version, "lock_content_hash", lambda project_dir: _LOCK_HASH)
 
 
-@pytest.mark.parametrize("key, bad_value, settings_text, error_match", [
-    (stage.KEY_INTEGERIZER_DRAW, "banana", None, "INTEGERIZER_DRAW"),
-    (stage.KEY_INTEGERIZER_ROUNDING, "banana", None, "INTEGERIZER_ROUNDING"),
+# An OLD fork (bs.1) with the plain rounding: the controlled-rounding guard would raise first
+# otherwise, and the run-time options are refused against the old fork only.
+_OLD_FORK_PLAIN_ROUNDING = {
+    stage.KEY_POPSIM_VERSION: "0.10.0+bs.1", stage.KEY_INTEGERIZER_ROUNDING: "round"}
+
+
+@pytest.mark.parametrize("config_overrides, settings_text, error_match", [
+    ({stage.KEY_INTEGERIZER_DRAW: "banana"}, None, "INTEGERIZER_DRAW"),
+    ({stage.KEY_INTEGERIZER_ROUNDING: "banana"}, None, "INTEGERIZER_ROUNDING"),
+    # The run-time options need fork 0.10.0+bs.2: refused up front, before any seed is built,
+    # instead of being ignored silently by the older fork.
+    ({**_OLD_FORK_PLAIN_ROUNDING, stage.KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY: True}, None,
+     "store_positive_weight_rows_only"),
+    ({**_OLD_FORK_PLAIN_ROUNDING, stage.KEY_FAST_PATHS: True}, None, "fast_paths"),
     # The gate only runs after all batches (hours); a typo must fail before the seed build.
-    (stage.KEY_SOLVER_FALLBACK_ERROR_RATE, 2.0, None, "solver_fallback_error_rate"),
+    ({stage.KEY_SOLVER_FALLBACK_ERROR_RATE: 2.0}, None, "solver_fallback_error_rate"),
     # A server-local settings file contradicting the tracked timeout (0.10.0's key name).
-    (None, None, _SETTINGS_TEXT + "INTEGIZER_TIMEOUT: 60\n", "INTEGIZER_TIMEOUT"),
+    ({}, _SETTINGS_TEXT + "INTEGIZER_TIMEOUT: 60\n", "INTEGIZER_TIMEOUT"),
     # The per-batch seed is derived by the pipeline: a settings file that sets it is refused
     # up front too, not only per batch after the seed build and the work-dir purge.
-    (None, None, _SETTINGS_TEXT + "INTEGERIZER_RANDOM_SEED: 2541077060\n",
-     "INTEGERIZER_RANDOM_SEED"),
+    ({}, _SETTINGS_TEXT + "INTEGERIZER_RANDOM_SEED: 2541077060\n", "INTEGERIZER_RANDOM_SEED"),
 ])
 def test_execute_validates_the_integerizer_and_gate_settings_before_the_seed_build(
-        monkeypatch, tmp_path, key, bad_value, settings_text, error_match):
+        monkeypatch, tmp_path, config_overrides, settings_text, error_match):
     calls = []
     settings_path = tmp_path / "settings.yaml"
     if settings_text is not None:
@@ -125,7 +137,7 @@ def test_execute_validates_the_integerizer_and_gate_settings_before_the_seed_bui
         raise AssertionError("execute() went on after an invalid setting")
 
     monkeypatch.setattr(stage, "_read_batching_and_scope_config", must_not_run)
-    context = _context(_values(**({key: bad_value} if key else {})))
+    context = _context(_values(**config_overrides))
     with pytest.raises(ValueError, match=error_match):
         stage.execute(context)
     assert calls == ["environment check"]
@@ -184,8 +196,10 @@ def _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls):
     monkeypatch.setattr(stage, "_check_seed_contract", lambda *a, **k: calls.append("contract"))
 
 
+@pytest.mark.parametrize("fast_paths_on", [False, True])
 def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
-        monkeypatch, tmp_path):
+        monkeypatch, tmp_path, fast_paths_on):
+    # With the option on (fork 0.10.0+bs.2, the version of _values) the rate check must be told so.
     calls = []
     _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls)
 
@@ -207,13 +221,22 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
 
     monkeypatch.setattr(stage, "_purge_stale_batches_for_changed_config", purge)
     monkeypatch.setattr(stage, "_run_populationsim_batches", batches)
+    def fast_paths(work_dir, enabled):
+        calls.append("fast paths")
+        seen["fast_paths"] = (work_dir, enabled)
+        return {}
+
     monkeypatch.setattr(stage, "_log_integerizer_feasibility", lambda *a, **k: calls.append("log"))
+    monkeypatch.setattr(stage.fast_path_rate, "check_fast_path", fast_paths)
     monkeypatch.setattr(stage.solver_path_gate, "check_solver_paths", gate)
 
     with pytest.raises(_Stop):
-        stage.execute(_context(_values()))
+        stage.execute(_context(_values(**{stage.KEY_FAST_PATHS: fast_paths_on})))
 
-    assert calls == ["environment check", "contract", "purge", "batches", "log", "gate"]
+    # The fast-path rate is reported before the gate, which may stop the stage.
+    assert calls == [
+        "environment check", "contract", "purge", "batches", "log", "fast paths", "gate"]
+    assert seen["fast_paths"] == (str(tmp_path / "work"), fast_paths_on)
     expected_overrides = {
         "KEEP_FRACTIONAL_SAMPLE_WEIGHTS": True, "INTEGERIZER_DRAW": "pareto",
         "INTEGERIZER_TIMEOUT": 600, "INTEGERIZER_PATH_RECORD": True,
@@ -221,6 +244,7 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
         "INTEGERIZER_PENALTY_CAP": 100000.0, "INTEGERIZER_PARENT_TOTAL_FACTOR": 10.0,
         "INTEGERIZER_CONSERVE_PENALTY": 100000.0, "INTEGERIZER_CONTROLLED_METHOD": "search",
         "INTEGERIZER_SEARCH_MAX_SWEEPS": 200, "INTEGERIZER_SEARCH_SHORTLIST": 24,
+        "STORE_POSITIVE_WEIGHT_ROWS_ONLY": False, "FAST_PATHS": fast_paths_on,
     }
     # The last two positional arguments of the batch runner are the overrides and the seed base.
     assert seen["batches_args"][-2:] == (expected_overrides, 4711)

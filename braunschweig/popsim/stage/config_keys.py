@@ -159,6 +159,23 @@ KEY_INTEGERIZER_SEARCH_MAX_SWEEPS = "braunschweig.population.popsim.integerizer_
 # Number of candidate swaps the "search" method keeps per step, integer >= 1
 # (-> INTEGERIZER_SEARCH_SHORTLIST; code default = the fork's default).
 KEY_INTEGERIZER_SEARCH_SHORTLIST = "braunschweig.population.popsim.integerizer_search_shortlist"
+# Run-time and memory options of the group's fork (release 0.10.0+bs.2, issue #656). Each is a
+# boolean (code default False), written into every batch settings.yaml (-> the PopulationSim
+# setting of the same name in capitals) and part of the work-dir batch signature, never volatile.
+# Both need fork 0.10.0+bs.2 or later: an older fork ignores a setting it does not know, so the
+# stage refuses either option with an older configured version
+# (braunschweig.popsim.folders.require_fork_version_for_run_time_options). Why they may be on
+# (the population is identical with them on) and the limit of that evidence (three batches on one
+# machine; the identity of the fast kernels is a tested property of an environment): run manifest
+# popsim-run-performance-2026-11-18 and ADR-0200, decisions 2 and 5.
+# store_positive_weight_rows_only (-> STORE_POSITIVE_WEIGHT_ROWS_ONLY): the weight tables of the
+# sub-geographies keep only the rows with a positive weight; this cuts the peak memory of a batch
+# run.
+# fast_paths (-> FAST_PATHS): the fork's faster implementations of hot steps, with bit-identical
+# results (evidence and its limit: see above).
+# Both keys are defined once in braunschweig.resources (the run-start gate reads them to decide
+# the worker memory) and re-exported here like KEY_WORKER_MEMORY_GB.
+from braunschweig.resources import KEY_FAST_PATHS, KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY  # noqa: E402,F401
 # Solver-path gate (braunschweig.popsim.stage.solver_path_gate, design goal G5, issue #645):
 # float in (0, 1] or null. Above this share of parent zones NOT integerized simultaneously
 # (per geography) the stage raises; null = warn only. Volatile: it only gates, no result, so a

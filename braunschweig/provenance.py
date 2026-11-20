@@ -57,6 +57,9 @@ PROVENANCE_CONFIG_KEYS = (
     "braunschweig.population.popsim.integerizer_controlled_method",
     "braunschweig.population.popsim.integerizer_search_max_sweeps",
     "braunschweig.population.popsim.integerizer_search_shortlist",
+    # The run-time and memory options (same KEY_* comments in config_keys).
+    "braunschweig.population.popsim.store_positive_weight_rows_only",
+    "braunschweig.population.popsim.fast_paths",
 )
 
 
