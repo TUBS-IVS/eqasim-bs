@@ -351,18 +351,25 @@ def test_legacy_keys_keep_the_seed_and_signature_of_the_base_commit(keys, legacy
     assert (signature == base_commit) == legacy
 
 
+@pytest.mark.parametrize("ownership_grid_on", [False, True])
 @pytest.mark.parametrize("family", [
     control_spec.FAMILY_CONTROLS_ZENSUS_FAMILY5, control_spec.FAMILY_CONTROLS_NONE,
     control_spec.FAMILY_CONTROLS_MINOR_CHILD_1KM])
-def test_placement_income_signatures_cover_the_enforced_family_controls(family):
+def test_placement_income_signatures_cover_the_enforced_controls(family, ownership_grid_on):
     # The income placement only keeps every control aggregate when its donor signatures are
-    # built from the controls PopulationSim enforced; in every family mode that is the catalog
-    # of the same mode.
+    # built from the controls PopulationSim enforced; in every family mode and with the 1 km
+    # ownership grid on or off that is the catalog built with the same flags.
     tiers = ("tier0", "tier1", "tier2")
-    placement = stage._placement_income_catalog(tiers, False, (), True, family)
+    # The grid requires the KREIS car/bicycle entries (_inject_ownership_grid_columns).
+    kreis_names = ("number_of_cars", "number_of_bicycles")
+    placement = stage._placement_income_catalog(tiers, False, kreis_names, True, family,
+                                                ownership_grid_on)
     enforced = control_spec.full_catalog(include_tiers=tiers, fine_teen_age_bands=True,
-                                         family_controls=family)
+                                         family_controls=family, kreis_control_names=kreis_names,
+                                         include_ownership_grid=ownership_grid_on)
     assert [c.name for c in placement] == [c.name for c in enforced]
     names = " ".join(c.name for c in placement)
     assert ("HH_MINOR_ONE_ADULT" in names) == (family == control_spec.FAMILY_CONTROLS_MINOR_CHILD_1KM)
     assert ("Typ_priv_HH_Familie_100m" in names) == (family == control_spec.FAMILY_CONTROLS_ZENSUS_FAMILY5)
+    assert ("OWN_CARS_" in names) == ownership_grid_on
+    assert ("OWN_BIKES_" in names) == ownership_grid_on

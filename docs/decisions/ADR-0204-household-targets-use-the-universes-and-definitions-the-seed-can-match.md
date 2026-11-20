@@ -17,6 +17,10 @@
 3. **Report and measurement:** both steps write their counts to `census_filtered_report.json` (sections `family_controls`, `household_less_cells`); the batch diagnostics write `household_composition.csv` against the census family table (`braunschweig.analysis.popsim_batch_diagnostics.composition`).
 4. **Keys:** meaning and valid values in `braunschweig/popsim/stage/config_keys.py`; code defaults are the legacy values, which reproduce the control tables and the seed of the base commit; the keys enter the batch config signature only when off legacy.
 
+## Consequences
+
+- The income placement after PopulationSim swaps household slots only between donors with equal control signatures; those signatures are now built from the controls PopulationSim enforced, with the same family mode and the same 1 km ownership-grid flag (`braunschweig.popsim.stage._placement_income_catalog`). With `"minor_child_1km"` this changes the placement's production result (the swaps keep the two under-18 controls instead of the dropped 100 m family types). Adding the ownership grid leaves the result unchanged: its controls select the same households as the KREIS car/bicycle controls already in the signatures, which the grid requires to be active.
+
 ## Assumptions
 
 - ASSUMPTION (D-fam): one family with a child under 18 is one household with a member under 18, and a lone parent is the one adult of that household. Blind spots: a household with two families, minors living without a parent, a lone parent living with a further adult (a two-adult household in the seed; one-sided).

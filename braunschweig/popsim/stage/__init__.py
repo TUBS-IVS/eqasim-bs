@@ -1322,18 +1322,23 @@ def _read_control_config(context, source_name: str):
 
 
 def _placement_income_catalog(control_tiers, employment_grid_on: bool, active_entry_names,
-                              fine_teen_age_bands: bool, family_controls: str):
+                              fine_teen_age_bands: bool, family_controls: str,
+                              ownership_grid_on: bool):
     """Catalog the donor signatures of the income placement are built from.
 
-    The signatures must cover the controls PopulationSim enforced (``_build_control_frame``),
-    so the teen bands and the family-control mode (#659) follow the run. The 1 km ownership
-    grid is left out, as before #659: including it would change the placement's results and
-    is a separate question.
+    The signatures must cover every control PopulationSim enforced (``_build_control_frame``),
+    so the teen bands, the family-control mode (#659) and the 1 km ownership grid
+    (ADR-0092) follow the run with the same flags. The grid controls select the same
+    households as the KREIS car/bicycle ownership controls, which the grid requires to be
+    active (``_inject_ownership_grid_columns``), so including them leaves the signatures'
+    donor partition unchanged; they are included so the signature catalog is the enforced
+    catalog by construction rather than by that coincidence.
     """
     from braunschweig.popsim import control_spec as _cs
     return _cs.full_catalog(
         include_tiers=control_tiers,
         include_employment_grid=employment_grid_on,
+        include_ownership_grid=ownership_grid_on,
         kreis_control_names=active_entry_names,
         fine_teen_age_bands=fine_teen_age_bands,
         family_controls=family_controls,
@@ -3889,9 +3894,11 @@ def execute(context) -> pd.DataFrame:
         from braunschweig.popsim import placement_income as _pi
         from braunschweig.popsim import control_spec as _cs_pi
         _pi.check_controls_source_compatible(placement_income_on, controls_source)
+        # Same flags as _build_control_frame, so the slot swaps keep every aggregate
+        # PopulationSim fitted, including the 1 km car/bicycle ownership grid.
         _pi_catalog = _placement_income_catalog(
             control_tiers, employment_grid_on, active_entry_names, fine_teen_bands_on,
-            household_universes.family_controls)
+            household_universes.family_controls, ownership_grid_on)
         _pi_controls = _cs_pi.controls_for_seed(_pi_catalog, source_name)
         _signatures = _pi.donor_control_signatures(
             _pi_controls, seed_households, seed_persons, seed=source_name)
