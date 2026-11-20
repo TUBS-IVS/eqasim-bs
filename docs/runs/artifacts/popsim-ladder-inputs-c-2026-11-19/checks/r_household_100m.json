@@ -1,0 +1,7 @@
+{
+  "batches": ["batch_000", "batch_013", "batch_028", "batch_032"],
+  "checks": [
+    {"id": "R-household-100m", "kind": "wape_vs_base", "deltas": {"ZENSUS100m": -0.02},
+     "exclude_regex": "^(?!([0-9]_Person|EigentuemerHH_|MieterHH_|building_type_))"}
+  ]
+}

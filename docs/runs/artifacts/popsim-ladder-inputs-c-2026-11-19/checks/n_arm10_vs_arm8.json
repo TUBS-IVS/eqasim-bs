@@ -1,0 +1,11 @@
+{
+  "batches": ["batch_000", "batch_013", "batch_028", "batch_032"],
+  "checks": [
+    {"id": "N-wape", "kind": "wape_vs_base", "deltas": {"ZENSUS100m": 0.02, "ZENSUS1km": 0.02, "KREIS": 0.01},
+     "exclude_regex": "^([MF]_AGE_|[0-9]_Person|EigentuemerHH_|MieterHH_|building_type_)"},
+    {"id": "N-conservation", "kind": "conservation_vs_base",
+     "abs_deviation_share_delta": 0.0, "conserved_pair_share_delta": 0.0},
+    {"id": "N-solver", "kind": "no_sequential_fallback"},
+    {"id": "N-G4", "kind": "rounding_shift_vs_base", "max_extra_outside": 0}
+  ]
+}

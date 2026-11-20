@@ -1,0 +1,7 @@
+{
+  "batches": ["batch_000", "batch_013", "batch_028", "batch_032"],
+  "checks": [
+    {"id": "R-age-1km", "kind": "wape_vs_base", "deltas": {"ZENSUS1km": 0.02},
+     "exclude_regex": "^(?![MF]_AGE_)"}
+  ]
+}

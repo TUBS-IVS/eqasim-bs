@@ -1,0 +1,279 @@
+id: popsim-ladder-inputs-c-2026-11-19
+date: '2026-11-19'
+repository:
+  commit: 14c5f293
+  branch: analysis/i660-popsim-control-level-and-rounding
+  notes: >-
+    PRE-REGISTRATION: this file was committed with the measures, the checks, their bounds and the
+    recommendation rule below before any PopulationSim run of arm 9 or arm 10 started; only results,
+    artifacts and execution notes are added afterwards. The commit is the eqasim-bs code archived on the run
+    server (git archive) that prepares the arm folders (scripts/prepare_method_arm.py, which imports the
+    helpers of Part B's prepare_household_arm.py), runs PopulationSim and the diagnostics
+    (scripts/run_method_arms.sh), compares the arms (compare_input_arms.py of
+    popsim-ladder-inputs-a-2026-11-18) and summarises them (scripts/summarize_method_arms.py). The branch
+    contains Parts T, A and B (#657, #658, #659), all stacked on the unmerged branches of #646 and #656.
+    PopulationSim is the release-candidate build of the arm-3 record (popsim-ladder-arm3-2026-11-18: fork
+    0.10.0+bs.2 candidate, commit d9a2e2810139e822ff2870a1845c30a509461462, its environment on the run
+    server, read-only).
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - the run overlay of prod100_20261031 (server-local), only as the configuration that produced the batch folders
+  notes: >-
+    MEASUREMENT ONLY (owner decision D-method of the plan of issues #657 to #660): no key is added or switched
+    on by this record; configs/base_bs.yml is unchanged. Baseline: arm 8 of popsim-ladder-inputs-b-2026-11-19
+    (every key of Parts T, A and B on, as in configs/base_bs.yml at the commit above). Arm 9 = arm 8 with the
+    22 age x sex controls at the 1 km level instead of 100 m: in configs/controls.csv the 22 rows get
+    geography ZENSUS1km and the 1 km target / control field, which the 1 km table of arm 8 already carries as
+    the sums of the integer 100 m values; importance and expression unchanged; no data table changes. Arm 10
+    = arm 8 with unrounded census targets per 100 m cell for four groups: household size (six classes),
+    tenure (owner / renter), building type (three classes) and the 22 age x sex bands. The unrounded values
+    are the values the stage integerises (aggregated census columns, the building-type household rescale of
+    ADR-0198, the owner limit of Part T, and for the age bands the move of the persons of household-less
+    cells of Part B on the float values); each household group is then rescaled per cell to the cell's
+    INTEGER household total (the target PopulationSim must meet exactly), the age bands are not rescaled; the
+    1 km table gets the sums of the new 100 m values for these columns. The household total, the employed
+    grid, the ownership grid, the minor-child controls, the KREIS table, controls.csv, the seed and
+    settings.yaml stay those of arm 8. Arms 9 and 10 are each prepared from arm 8, not from each other.
+    prepare_method_arm.py proves file by file and column by column that nothing else changed, and for arm 10
+    proves before writing that rounding its float values the way the pipeline does reproduces the integer
+    columns of arm 8 exactly (self-check in prepare_log.json). Run-time options of #656
+    (STORE_POSITIVE_WEIGHT_ROWS_ONLY, FAST_PATHS): ON in settings.yaml of every arm-9 and arm-10 folder,
+    exactly as in arm 8 (the folders copy arm 8's settings.yaml unchanged). Difference to a pipeline run:
+    the other control tables, the seed and the settings are those of arm 8, not rebuilt by
+    data.census.filtered; neither change is wired into the stage (a follow-up plan would do that if the owner
+    adopts one).
+sampling:
+  rate: 1.0
+  scope: >-
+    the four batches of the Part A and Part B records (batch_000, batch_013, batch_028, batch_032 of
+    prod100_20261031) with their full seed pool.
+  notes: The rate is the share of each batch's cells simulated (all of them), not a population sampling rate.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. Arm 8 is not re-run: its folders and outputs are copies of the run server's arm-8
+    folders of popsim-ladder-inputs-b-2026-11-19 (stores already deleted), its as-run diagnostics a copy of
+    that record's diag_arm_8. Runs: scripts/run_method_arms.sh (prepare; PopulationSim with run_arm.sh of the
+    arm-3 record, the four batches of an arm at once; diagnostics with --misfit and --cells-1km; target
+    views). A target view judges the output of one arm against the targets of another folder set (symlinked
+    configs/ and data/, the arm's own output/): int100 = arm-8 targets; int1km = arm-9 controls.csv with
+    arm-8 data (age x sex at 1 km); flt100 = arm-10 folders (unrounded targets, age x sex at 100 m); flt1km
+    = arm-9 controls.csv with arm-10 data. Each of arms 8, 9 and 10 is judged against all four views, so
+    every arm is compared on the SAME targets. Then compare_input_arms.py with the four checks files of
+    checks/ and scripts/summarize_method_arms.py.
+classification:
+- ab_test
+status:
+  execution: completed
+  notes: >-
+    Pre-registered 2026-11-19 before the arm-9 and arm-10 runs. Done before the pre-registration, without a
+    PopulationSim run of arm 9 or 10 that is used here: the preparation of the arm-9 and arm-10 folders of all
+    four batches (deterministic; prepare_logs/), the target views of arm 8 and their diagnostics, and the
+    evaluation of every check of this record on arm 8 against itself (baseline_eval/), which fixes the
+    baseline values below. Dry run required by the plan (Task C1): arm 10 batch_000 prepared and run once in
+    a scratch folder to see that PopulationSim exits 0 with unrounded targets and that the diagnostics read
+    the folder; only the exit codes were looked at (PopulationSim exit 0, diagnostics exit 0), the folder was
+    deleted, and the arm-10 runs of this record start from a fresh preparation.
+    Building-type basis of arm 10 (decided before the runs, found by the self-check): the building-type
+    integers of the ladder folders are not the pipeline's rounding of the household-rescaled float dwellings
+    (ADR-0198) but arm 2's rescale of the integerised dwelling targets (popsim-ladder-arm2-2026-11-17, a
+    recorded deviation); with the pipeline's floats the self-check found 265 differing cells in batch_000.
+    prepare_method_arm.py therefore rebuilds the unrounded building-type values on the folders' basis
+    (--building-type-basis arm2_integer_dwellings): the arm-2 rescale before its final rounding. So arm 10
+    differs from arm 8 only by the rounding of the four groups; household size, tenure and age bands are the
+    pipeline's floats. The self-check passes in all four batches (prepare_logs/arm_10_*.json). The 1 km
+    building-type columns of the folders are still dwelling sums from the production run (arm 2 rewrote the
+    100 m columns only); no 1 km building-type control exists, so this does not reach PopulationSim.
+    Recommendation rule (the decision stays with the owner): an arm is recommended only if (1) every N check
+    is met, (2) the pooled 100 m WAPE of the household-level targets (household size, tenure, building type)
+    falls by at least 0.02 against arm 8, and (3) the pooled 1 km WAPE of the 22 age x sex targets is not
+    higher than arm 8 + 0.02. (2) and (3) compare both arms on the same targets: arm 9 on the integer targets
+    (views int100 / as run and int1km), arm 10 on the unrounded targets (views flt100 and flt1km). Stated blind
+    spot: arm 9 gives up the age targets per 100 m cell by construction, so its 100 m age WAPE is reported,
+    not judged. No tuning, no bound changed after a run; a run that fails is reported as such.
+    Verdict (filled after the runs; the text above is unchanged): NEITHER arm is recommended by the rule.
+    Both meet every N check and the 1 km age check; both miss the household-level check (100 m WAPE falls
+    by 0.0099 in arm 9 and by 0.0086 in arm 10, the rule asks for 0.02). Nothing is switched on; the
+    decision stays with the owner (summary/recommendation.json).
+    Owner decision (2026-11-19, in the #660 work session, after the verdict and the post hoc entries
+    below): both changes are rejected; nothing is switched on and the controls stay as they are. The
+    rejection is recorded in ADR-0204 (section "Considered afterwards and rejected").
+    Execution notes (added after the runs): (1) Every PopulationSim run exits 0 and reports fork
+    0.10.0+bs.2, commit d9a2e28 (run_records/tool_versions.txt); the eight runs of arms 9 and 10 ran at
+    once, 3.7 to 6.7 min each, peak RSS 2.6 GB (run_records/run_times.txt); the run-time options of #656
+    were on, as in arm 8 (the folders copy arm 8's settings.yaml unchanged; prepare_logs/ show
+    configs/settings.yaml unchanged). (2) The chained diagnostics started on per-run exit files, not on
+    progress.log lines (run_records/progress.txt); checkpoint stores were deleted after the diagnostics.
+    (3) summarize_method_arms.py prints a pandas UserWarning about match groups in its group patterns;
+    str.contains is unaffected by it (it tests for a match only), so the tables are as intended.
+    Post hoc entries (2026-11-19, written after the results; exploratory, not part of the pre-registered
+    checks or of the rule; checks, bounds and results above unchanged): (a)
+    scripts/posthoc_age_error_by_group.py judges the as-run outputs of arms 8, 9 and 10 against the integer
+    100 m age x sex targets of arm 8 at coarser aggregations of the 22 bands
+    (posthoc/age_error_by_group.csv). Its 22-band row reproduces the pooled WAPE of the diagnostics (0.2265,
+    0.4403, 0.2455). Arm 8 -> arm 9: four age groups with the sexes summed 0.1760 -> 0.2551 (0-17 0.2854 ->
+    0.4510, 18-29 0.1645 -> 0.2527, 30-59 0.1048 -> 0.1209, 60+ 0.2265 -> 0.3445); persons per cell 0.1233
+    -> 0.1380. The 100 m age error that arm 9 adds sits mainly in the persons under 30 and over 59. Reading
+    (HYPOTHESIS, not tested): the employed grid at 100 m keeps the working-age persons in their cells. (b)
+    posthoc/input_consistency_arm_8.csv and posthoc/input_consistency_arm_10.csv are the input-consistency
+    tables of the as-run diagnostics of the two arms (integer and unrounded targets). Persons below the
+    minimum the household sizes of their cell need: 4.2 to 10.9 % of the persons of a batch with the integer
+    targets, 3.8 to 8.8 % with the unrounded ones; persons above the maximum (cells without a household of
+    six or more): 5.2 to 10.3 % and 0.1 to 2.7 %. So the shortfall of persons against the household sizes
+    is in the unrounded census values, not made by the rounding. (c)
+    scripts/posthoc_fit_by_cell_consistency.py classes every 100 m cell by whether its person targets (sum
+    of the age bands) agree with the persons its household-size targets need (gap of at most 0.5 persons:
+    consistent; else persons short or persons over) and judges the as-run outputs per class and cell size
+    (posthoc/fit_by_cell_consistency_integer_targets.csv: targets of arm 8, outputs of arms 8 and 9;
+    posthoc/fit_by_cell_consistency_unrounded_targets.csv: targets and output of arm 10). With the integer
+    targets 9.2 % of the households are in consistent cells, 50.7 % in cells short of persons, 39.8 % in
+    cells with persons over. Within a cell-size bin the fit of arm 8 hardly differs between the classes
+    (consistent / short / over): household-size WAPE 0.286 / 0.286 / 0.284 in cells with 1-10 households,
+    0.137 / 0.133 / 0.127 with 11-30, 0.064 / 0.038 / 0.045 with 31 and more; 22-band age WAPE 0.477 /
+    0.552 / 0.453, 0.249 / 0.281 / 0.238, 0.120 / 0.110 / 0.124; only the persons per cell fit better in
+    consistent cells (0.176 / 0.325 / 0.258, 0.078 / 0.148 / 0.108, 0.057 / 0.066 / 0.059). The cell size
+    carries the error: cells with 1-10 households hold 13.7 % of the households and 39.3 % of the
+    household-size error (WAPE 0.296; 11-30: 0.131; 31 and more: 0.043; 22-band age 0.529 / 0.257 /
+    0.116). Correction after review (2026-11-20, no figure of the tables changed): the script's first
+    size bin is "10 households or fewer" (the script labels it "1-10") and also holds the 399 cells of
+    class not_judged (no household or no person targeted; posthoc/input_consistency_arm_8.csv: 20 cells
+    with persons but no households, holding the 778 target persons; 64 cells with households but no
+    person targets, holding 204 households; 315 cells with neither); the "1-10" figures above include them.
+    Without them, from the same committed table: 13.3 % of the households, 36.9 % of the household-size
+    error, household-size WAPE 0.285, 22-band age WAPE 0.488; the reading below does not change. The
+    shift from arm 8 to arm 9 is the same in consistent cells (11-30 households: household size
+    0.137 -> 0.108, 22-band age 0.249 -> 0.459). Reading (observational, no run with reconciled targets;
+    the consistent class is small, 225 cells): the contradiction between persons and household sizes is
+    not what limits the household-size and age fit at 100 m; the small number of households per cell is.
+    The unrounded targets give the same picture.
+source: >-
+  run server, ~/i660_c (code archive, arm folders, diagnostics, target views, comparisons); committed copy in
+  docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/.
+environment: >-
+  run server (Linux); PopulationSim environment of the arm-3 record (fork release candidate d9a2e28), used
+  read-only; preparation, diagnostics, comparison and summary in the conda eqasim environment with
+  PYTHONPATH set to the code archive of the commit above.
+validation:
+- metric: >-
+    N (no harm, arm 9 and arm 10 each against arm 8, as-run diagnostics): pooled WAPE over the four batches
+    per geography, over the controls whose targets the arm did not change (target above 0; arm 9: the 22 age
+    x sex controls left out; arm 10: the age x sex, household-size, tenure and building-type controls left
+    out), bound arm 8 + 0.02 (ZENSUS100m), + 0.02 (ZENSUS1km), + 0.01 (KREIS); household conservation per
+    batch and level not worse than arm 8 (abs_deviation_share, conserved_pair_share, delta 0); no
+    sequential fallback (non_simultaneous 0 at every level); G4 judged against arm 8: no batch with more
+    ZENSUS100m controls outside the rounding-shift bound than in arm 8. Checks files
+    checks/n_arm9_vs_arm8.json and checks/n_arm10_vs_arm8.json.
+  reference: >-
+    arm 8 (model output); ASSUMPTION-grade design bounds of the ladder (as in Parts A and B). Arm 8 values:
+    pooled WAPE over the arm-9 control set ZENSUS100m 0.0482, ZENSUS1km 0.0111, KREIS 0.0016; over the arm-10 control set ZENSUS100m 0.0288, ZENSUS1km 0.0111, KREIS 0.0016; household conservation exact in every batch and level except batch_000 at ZENSUS100m (abs_deviation_share 0.0172); non_simultaneous 0 everywhere; 0 controls outside the rounding-shift bound in every batch (baseline_eval/n_arm9_vs_arm8, n_arm10_vs_arm8)
+  result: >-
+    MET for both arms. Arm 9 vs arm 8: pooled WAPE ZENSUS100m 0.0482 -> 0.0403, ZENSUS1km 0.0111 -> 0.0112,
+    KREIS 0.0016 -> 0.0016; household conservation not worse anywhere (batch_000 at ZENSUS100m
+    abs_deviation_share 0.0172 -> 0.0113, other batches exact); no sequential fallback; 0 controls outside the
+    rounding-shift bound in every batch. Arm 10 vs arm 8: ZENSUS100m 0.0288 -> 0.0231, ZENSUS1km 0.0111 ->
+    0.0106, KREIS 0.0016 -> 0.0015; batch_000 conservation 0.0172 -> 0.0122, others exact; no sequential
+    fallback; G4 0 outside in every batch.
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/comparisons/n_arm_9/comparison.csv
+- metric: >-
+    R-household-100m (recommendation part 2): pooled 100 m WAPE over the four batches of the 11 household
+    targets (six household sizes, owner / renter, three building types), arm minus arm 8 <= -0.02. Arm 9
+    against arm 8 as run (same integer targets); arm 10 against arm 8 on view flt100 (the unrounded
+    targets). checks/r_household_100m.json.
+  reference: >-
+    the model's own census control targets (control fit, not behavioural validation). Blind spot: the
+    integer targets of arm 8 carry the rounding inside the 1 km squares, so arm 8 judged on the unrounded
+    targets includes that rounding error by construction; this is the quantity arm 10 is meant to remove.
+    Arm 8 values: 0.0606 on the integer targets (view int100, as run), 0.0771 on the unrounded targets (view flt100); the bounds for arm 9 and arm 10 are therefore 0.0406 and 0.0571 (baseline_eval/r_household_int100, r_household_flt100)
+  result: >-
+    NOT MET for both arms. Arm 9 (integer targets): 0.0606 -> 0.0507 (-0.0099; bound 0.0406); per group
+    household size 0.1006 -> 0.0789, tenure 0.0404 -> 0.0367, building type 0.0408 -> 0.0363. Arm 10 (unrounded
+    targets, view flt100): 0.0771 -> 0.0685 (-0.0086; bound 0.0571); household size 0.1285 -> 0.1157, tenure
+    0.0519 -> 0.0437, building type 0.0508 -> 0.0462. Reported: on the integer targets (view int100) arm 10
+    gives 0.0596 against arm 8's 0.0606.
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/comparisons/r_household_100m_arm_10/comparison.csv
+- metric: >-
+    R-age-1km (recommendation part 3): pooled 1 km WAPE over the four batches of the 22 age x sex targets,
+    arm <= arm 8 + 0.02. Arm 9 against arm 8 on view int1km; arm 10 against arm 8 on view flt1km.
+    checks/r_age_1km.json.
+  reference: >-
+    the model's own census control targets (control fit). Blind spot: a 1 km WAPE hides misplacement
+    between the 100 m cells of a square, which is the price arm 9 pays; the 100 m age WAPE of every arm on
+    every view is reported in wape_matrix.csv. Arm 8 values: 0.0420 on the integer 1 km targets (view int1km), 0.0450 on the unrounded 1 km targets (view flt1km); bounds 0.0620 (arm 9) and 0.0650 (arm 10) (baseline_eval/r_age_int1km, r_age_flt1km)
+  result: >-
+    MET for both arms. Arm 9: 0.0420 -> 0.0422 (bound 0.0620). Arm 10: 0.0450 -> 0.0460 (bound 0.0650).
+    Reported (not judged): pooled 100 m age x sex WAPE, integer targets (view int100): arm 8 0.2265, arm 9
+    0.4403, arm 10 0.2455; unrounded targets (view flt100): arm 8 0.2923, arm 9 0.4618, arm 10 0.2810.
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/comparisons/r_age_1km_arm_10/comparison.csv
+- metric: >-
+    Reported, not judged: wape_matrix.csv (pooled and per-batch WAPE per arm, target view, geography and
+    group: age x sex, household size, tenure, building type, household level, all), key_figures.csv
+    (synthetic and distinct seed households, Kish effective n, non-simultaneous parents, G4 controls outside
+    the bound and largest shift, household conservation, household composition against the census family
+    table, PopulationSim wall time and peak RSS) and input_consistency.csv of each arm's diagnostics.
+  reference: >-
+    model output; household composition against the Zensus 2022 family table of the batch's 1 km squares
+    (observed census data, blind spots as in popsim-ladder-inputs-b-2026-11-19)
+  result: >-
+    Household composition against the census family table unchanged within 0.6 percentage points in every
+    batch and arm (share of households with a minor, one-adult share); distinct seed households used change
+    by less than 0.3 % (summary/key_figures.csv). Synthetic households of batch_000: 6641 (arm 8), 6632
+    (arm 9), 6640 (arm 10) against 6629 targeted; the other batches equal their targets in every arm.
+  artifact: docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/summary/wape_matrix.csv
+features:
+  note: >-
+    Evidence for the owner's decision on two methods of handing the census targets to PopulationSim (issue
+    #660) before the full rerun (#648): four batches, one draw (random_seed of the arm folders).
+artifacts:
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/scripts/prepare_method_arm.py
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/scripts/run_method_arms.sh
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/scripts/summarize_method_arms.py
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/checks/n_arm9_vs_arm8.json
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/checks/n_arm10_vs_arm8.json
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/checks/r_household_100m.json
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/checks/r_age_1km.json
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/prepare_logs/arm_9_batch_000.json
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/prepare_logs/arm_10_batch_000.json
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/baseline_eval/n_arm9_vs_arm8/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/baseline_eval/n_arm10_vs_arm8/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/baseline_eval/r_household_int100/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/baseline_eval/r_household_flt100/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/baseline_eval/r_age_int1km/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/baseline_eval/r_age_flt1km/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/summary/wape_matrix.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/summary/key_figures.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/summary/recommendation.json
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/comparisons/n_arm_9/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/comparisons/n_arm_9/verdict.json
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/comparisons/n_arm_10/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/comparisons/n_arm_10/verdict.json
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/comparisons/r_household_100m_arm_9/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/comparisons/r_household_100m_arm_9/verdict.json
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/comparisons/r_household_100m_arm_10/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/comparisons/r_household_100m_arm_10/verdict.json
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/comparisons/r_age_1km_arm_9/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/comparisons/r_age_1km_arm_9/verdict.json
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/comparisons/r_age_1km_arm_10/comparison.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/comparisons/r_age_1km_arm_10/verdict.json
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/diag/arm_9/control_fit.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/diag/arm_9/household_composition.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/diag/arm_10/control_fit.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/diag/arm_10/household_composition.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/run_records/run_times.txt
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/run_records/outputs_sha256.txt
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/run_records/tool_versions.txt
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/run_records/progress.txt
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/scripts/posthoc_age_error_by_group.py
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/posthoc/age_error_by_group.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/posthoc/input_consistency_arm_8.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/posthoc/input_consistency_arm_10.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/scripts/posthoc_fit_by_cell_consistency.py
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/posthoc/fit_by_cell_consistency_integer_targets.csv
+- docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/posthoc/fit_by_cell_consistency_unrounded_targets.csv
+issues:
+- '#660'
+- '#659'
+- '#648'
+notes: >-
+  Control fit against the model's own targets is not validation against observed behaviour. Nothing is
+  switched on by this record; the recommendation is input to the owner's decision.

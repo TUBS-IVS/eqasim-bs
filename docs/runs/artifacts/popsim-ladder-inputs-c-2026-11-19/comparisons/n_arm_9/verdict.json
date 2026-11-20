@@ -1,0 +1,313 @@
+{
+  "base_diag": "diag_arm_8",
+  "new_diag": "diag_arm_9",
+  "checks_file": "code_14c5f293/docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/checks/n_arm9_vs_arm8.json",
+  "batches": [
+    "batch_000",
+    "batch_013",
+    "batch_028",
+    "batch_032"
+  ],
+  "checks": {
+    "N-wape": {
+      "deltas": {
+        "ZENSUS100m": 0.02,
+        "ZENSUS1km": 0.02,
+        "KREIS": 0.01
+      },
+      "values": {
+        "ZENSUS100m": {
+          "wape_base": 0.04816988950276243,
+          "wape_new": 0.04031422651933702,
+          "limit": 0.06816988950276243,
+          "met": true,
+          "controls_only_in_base": [],
+          "controls_only_in_new": []
+        },
+        "ZENSUS1km": {
+          "wape_base": 0.01111832447259605,
+          "wape_new": 0.011153416501441698,
+          "limit": 0.03111832447259605,
+          "met": true,
+          "controls_only_in_base": [],
+          "controls_only_in_new": []
+        },
+        "KREIS": {
+          "wape_base": 0.0015524329959520097,
+          "wape_new": 0.0015670566599333107,
+          "limit": 0.01155243299595201,
+          "met": true,
+          "controls_only_in_base": [],
+          "controls_only_in_new": []
+        }
+      },
+      "met": true,
+      "kind": "wape_vs_base"
+    },
+    "N-conservation": {
+      "deltas": {
+        "abs_deviation_share": 0.0,
+        "conserved_pair_share": 0.0
+      },
+      "values": {
+        "batch_000/KREIS/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_000/KREIS/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_000/ZENSUS100m/abs_deviation_share": {
+          "base": 0.017197163976467,
+          "new": 0.0113139236687283,
+          "limit": 0.017197163976467,
+          "met": true
+        },
+        "batch_000/ZENSUS100m/conserved_pair_share": {
+          "base": 0.9827243540743006,
+          "new": 0.9885338633236508,
+          "limit": 0.9827243540743006,
+          "met": true
+        },
+        "batch_000/ZENSUS1km/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_000/ZENSUS1km/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_013/KREIS/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_013/KREIS/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_013/ZENSUS100m/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_013/ZENSUS100m/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_013/ZENSUS1km/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_013/ZENSUS1km/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_028/KREIS/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_028/KREIS/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_028/ZENSUS100m/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_028/ZENSUS100m/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_028/ZENSUS1km/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_028/ZENSUS1km/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_032/KREIS/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_032/KREIS/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_032/ZENSUS100m/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_032/ZENSUS100m/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        },
+        "batch_032/ZENSUS1km/abs_deviation_share": {
+          "base": 0.0,
+          "new": 0.0,
+          "limit": 0.0,
+          "met": true
+        },
+        "batch_032/ZENSUS1km/conserved_pair_share": {
+          "base": 1.0,
+          "new": 1.0,
+          "limit": 1.0,
+          "met": true
+        }
+      },
+      "met": true,
+      "kind": "conservation_vs_base"
+    },
+    "N-solver": {
+      "levels": null,
+      "values": {
+        "base/batch_000": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "new/batch_000": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "base/batch_013": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "new/batch_013": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "base/batch_028": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "new/batch_028": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "base/batch_032": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        },
+        "new/batch_032": {
+          "KREIS": 0,
+          "ZENSUS1km": 0,
+          "ZENSUS100m": 0
+        }
+      },
+      "met": true,
+      "kind": "no_sequential_fallback"
+    },
+    "N-G4": {
+      "max_extra_outside": 0,
+      "values": {
+        "batch_000": {
+          "base": {
+            "n_controls": 43,
+            "n_outside": 0,
+            "max_shift": 0.018823529411764
+          },
+          "new": {
+            "n_controls": 21,
+            "n_outside": 0,
+            "max_shift": 0.0184696569920845
+          },
+          "limit": 0,
+          "met": true
+        },
+        "batch_013": {
+          "base": {
+            "n_controls": 43,
+            "n_outside": 0,
+            "max_shift": 1.2164440951042286e-15
+          },
+          "new": {
+            "n_controls": 21,
+            "n_outside": 0,
+            "max_shift": 1.0575519788057305e-15
+          },
+          "limit": 0,
+          "met": true
+        },
+        "batch_028": {
+          "base": {
+            "n_controls": 43,
+            "n_outside": 0,
+            "max_shift": 2.2605862287745454e-15
+          },
+          "new": {
+            "n_controls": 21,
+            "n_outside": 0,
+            "max_shift": 1.6012230665016345e-15
+          },
+          "limit": 0,
+          "met": true
+        },
+        "batch_032": {
+          "base": {
+            "n_controls": 43,
+            "n_outside": 0,
+            "max_shift": 1.8516457004446067e-15
+          },
+          "new": {
+            "n_controls": 21,
+            "n_outside": 0,
+            "max_shift": 1.7610697753778733e-15
+          },
+          "limit": 0,
+          "met": true
+        }
+      },
+      "met": true,
+      "kind": "rounding_shift_vs_base"
+    }
+  },
+  "all_met": true
+}

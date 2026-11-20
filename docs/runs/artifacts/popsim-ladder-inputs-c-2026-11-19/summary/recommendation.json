@@ -1,0 +1,57 @@
+{
+  "rule": "recommended only if every N check is met (n), the pooled 100 m WAPE of the household-level targets falls by at least 0.02 against arm 8 (r_household_100m) and the pooled 1 km WAPE of the age x sex targets is not above arm 8 + 0.02 (r_age_1km); the same rule for every tested arm, as pre-registered in docs/runs/popsim-ladder-inputs-c-2026-11-19.yml",
+  "arm_9": {
+    "verdicts": {
+      "n": {
+        "all_met": true,
+        "checks": {
+          "N-wape": true,
+          "N-conservation": true,
+          "N-solver": true,
+          "N-G4": true
+        }
+      },
+      "r_household_100m": {
+        "all_met": false,
+        "checks": {
+          "R-household-100m": false
+        }
+      },
+      "r_age_1km": {
+        "all_met": true,
+        "checks": {
+          "R-age-1km": true
+        }
+      }
+    },
+    "missing": [],
+    "recommended": false
+  },
+  "arm_10": {
+    "verdicts": {
+      "n": {
+        "all_met": true,
+        "checks": {
+          "N-wape": true,
+          "N-conservation": true,
+          "N-solver": true,
+          "N-G4": true
+        }
+      },
+      "r_household_100m": {
+        "all_met": false,
+        "checks": {
+          "R-household-100m": false
+        }
+      },
+      "r_age_1km": {
+        "all_met": true,
+        "checks": {
+          "R-age-1km": true
+        }
+      }
+    },
+    "missing": [],
+    "recommended": false
+  }
+}

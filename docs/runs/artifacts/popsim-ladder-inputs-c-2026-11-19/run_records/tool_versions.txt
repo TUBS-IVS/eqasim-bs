@@ -1,0 +1,2 @@
+arm_9 {"populationsim": "0.10.0+bs.2", "direct_url": "{\"url\":\"file:///home/felix/i646/populationsim_C\",\"vcs_info\":{\"vcs\":\"git\",\"commit_id\":\"d9a2e2810139e822ff2870a1845c30a509461462\",\"requested_revision\":\"d9a2e2810139e822ff2870a1845c30a509461462\"}}"}
+arm_10 {"populationsim": "0.10.0+bs.2", "direct_url": "{\"url\":\"file:///home/felix/i646/populationsim_C\",\"vcs_info\":{\"vcs\":\"git\",\"commit_id\":\"d9a2e2810139e822ff2870a1845c30a509461462\",\"requested_revision\":\"d9a2e2810139e822ff2870a1845c30a509461462\"}}"}

@@ -1,0 +1,13 @@
+batch,level,n_parents,first_optimal,first_feasible,first_infeasible,first_not_solved,retry_optimal,retry_feasible,retry_infeasible,retry_not_solved,sequential_fallback,no_infeasible_subzones,single_feasible_subzone,all_subzones_infeasible,infeasible_subzones,non_simultaneous
+batch_000,KREIS,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0
+batch_000,ZENSUS1km,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0
+batch_000,ZENSUS100m,40,10,30,0,0,0,0,0,0,0,0,0,0,0,0
+batch_013,KREIS,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0
+batch_013,ZENSUS1km,3,0,3,0,0,0,0,0,0,0,0,0,0,0,0
+batch_013,ZENSUS100m,52,8,44,0,0,0,0,0,0,0,0,0,0,0,0
+batch_028,KREIS,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0
+batch_028,ZENSUS1km,3,0,3,0,0,0,0,0,0,0,0,0,0,0,0
+batch_028,ZENSUS100m,26,3,23,0,0,0,0,0,0,0,0,0,0,0,0
+batch_032,KREIS,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0
+batch_032,ZENSUS1km,4,1,3,0,0,0,0,0,0,0,0,0,0,0,0
+batch_032,ZENSUS100m,26,2,24,0,0,0,0,0,0,0,0,0,0,0,0

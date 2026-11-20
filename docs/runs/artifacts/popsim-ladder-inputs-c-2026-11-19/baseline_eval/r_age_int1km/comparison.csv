@@ -1,0 +1,3 @@
+check,batch,arm,metric,value,limit,met
+R-age-1km,ALL,base,wape_ZENSUS1km,0.04204111658978845,0.06204111658978845,True
+R-age-1km,ALL,new,wape_ZENSUS1km,0.04204111658978845,0.06204111658978845,True

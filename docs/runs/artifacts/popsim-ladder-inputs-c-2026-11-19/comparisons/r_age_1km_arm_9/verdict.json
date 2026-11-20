@@ -1,0 +1,31 @@
+{
+  "base_diag": "diag_views/arm_8@int1km",
+  "new_diag": "diag_views/arm_9@int1km",
+  "checks_file": "code_14c5f293/docs/runs/artifacts/popsim-ladder-inputs-c-2026-11-19/checks/r_age_1km.json",
+  "batches": [
+    "batch_000",
+    "batch_013",
+    "batch_028",
+    "batch_032"
+  ],
+  "checks": {
+    "R-age-1km": {
+      "deltas": {
+        "ZENSUS1km": 0.02
+      },
+      "values": {
+        "ZENSUS1km": {
+          "wape_base": 0.04204111658978845,
+          "wape_new": 0.04221011611261333,
+          "limit": 0.06204111658978845,
+          "met": true,
+          "controls_only_in_base": [],
+          "controls_only_in_new": []
+        }
+      },
+      "met": true,
+      "kind": "wape_vs_base"
+    }
+  },
+  "all_met": true
+}

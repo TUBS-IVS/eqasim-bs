@@ -1,0 +1,8 @@
+arm_9/batch_000 3:40.15 2735104 exit 0
+arm_9/batch_013 3:45.11 2735924 exit 0
+arm_9/batch_028 5:35.02 2734908 exit 0
+arm_9/batch_032 4:19.00 2736320 exit 0
+arm_10/batch_000 4:05.88 2735780 exit 0
+arm_10/batch_013 3:57.95 2733328 exit 0
+arm_10/batch_028 6:41.50 2736328 exit 0
+arm_10/batch_032 4:39.32 2736348 exit 0
