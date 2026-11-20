@@ -73,9 +73,10 @@ def _parse_args(argv):
              "(the run's ...tenure_min_households_outside_dwellings); read only with "
              "--tenure-owner-limited-to-dwellings")
     ap.add_argument(
-        "--family-controls", choices=FAMILY_CONTROLS_MODES, default="zensus_family5",
-        help="the run's braunschweig.population.popsim.family_controls; decides which family rows "
-             "are scored as PopulationSim controls")
+        "--family-controls", choices=FAMILY_CONTROLS_MODES, default="minor_child_1km",
+        help="the run's braunschweig.population.popsim.family_controls (default "
+             "'minor_child_1km', as in production); decides which family rows are scored as "
+             "PopulationSim controls. Pass 'zensus_family5' for a run from before issue #659")
     ns = ap.parse_args(argv)
     if (ns.run_output_dir is None) == (ns.sim_cache is None):
         ap.error("pass exactly ONE of --run-output-dir / --sim-cache")

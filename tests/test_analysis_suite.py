@@ -250,6 +250,7 @@ def test_popsim_validation_receives_the_runs_tenure_limit(
     assert seen == [(limited, threshold, family)]
     # Called by hand without the option, the CLI follows the production value (limit on).
     assert PV._parse_args(["--sim-cache", "x"]).tenure_owner_limited_to_dwellings is True
+    assert PV._parse_args(["--sim-cache", "x"]).family_controls == "minor_child_1km"
 
 
 def test_dashboard_and_education_skip_without_inputs(tmp_path, monkeypatch):
