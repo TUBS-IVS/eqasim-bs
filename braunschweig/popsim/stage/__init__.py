@@ -1321,6 +1321,25 @@ def _read_control_config(context, source_name: str):
     )
 
 
+def _placement_income_catalog(control_tiers, employment_grid_on: bool, active_entry_names,
+                              fine_teen_age_bands: bool, family_controls: str):
+    """Catalog the donor signatures of the income placement are built from.
+
+    The signatures must cover the controls PopulationSim enforced (``_build_control_frame``),
+    so the teen bands and the family-control mode (#659) follow the run. The 1 km ownership
+    grid is left out, as before #659: including it would change the placement's results and
+    is a separate question.
+    """
+    from braunschweig.popsim import control_spec as _cs
+    return _cs.full_catalog(
+        include_tiers=control_tiers,
+        include_employment_grid=employment_grid_on,
+        kreis_control_names=active_entry_names,
+        fine_teen_age_bands=fine_teen_age_bands,
+        family_controls=family_controls,
+    )
+
+
 def _build_control_frame(controls_source, controls_path, source_name: str, control_tiers,
         employment_grid_on: bool, active_entry_names, importance_profile: str,
         fine_teen_age_bands: bool = True, ownership_grid_on: bool = False,
@@ -3870,11 +3889,9 @@ def execute(context) -> pd.DataFrame:
         from braunschweig.popsim import placement_income as _pi
         from braunschweig.popsim import control_spec as _cs_pi
         _pi.check_controls_source_compatible(placement_income_on, controls_source)
-        _pi_catalog = _cs_pi.full_catalog(
-            include_tiers=control_tiers,
-            include_employment_grid=employment_grid_on,
-            kreis_control_names=active_entry_names,
-        )
+        _pi_catalog = _placement_income_catalog(
+            control_tiers, employment_grid_on, active_entry_names, fine_teen_bands_on,
+            household_universes.family_controls)
         _pi_controls = _cs_pi.controls_for_seed(_pi_catalog, source_name)
         _signatures = _pi.donor_control_signatures(
             _pi_controls, seed_households, seed_persons, seed=source_name)

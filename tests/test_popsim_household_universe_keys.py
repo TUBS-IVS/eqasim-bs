@@ -349,3 +349,20 @@ def test_legacy_keys_keep_the_seed_and_signature_of_the_base_commit(keys, legacy
     # Only the minor-child controls read hh_minor_class; every other mode seeds without it.
     assert ("hh_minor_class" in seed_hh.columns) == (keys[2] == "minor_child_1km")
     assert (signature == base_commit) == legacy
+
+
+@pytest.mark.parametrize("family", [
+    control_spec.FAMILY_CONTROLS_ZENSUS_FAMILY5, control_spec.FAMILY_CONTROLS_NONE,
+    control_spec.FAMILY_CONTROLS_MINOR_CHILD_1KM])
+def test_placement_income_signatures_cover_the_enforced_family_controls(family):
+    # The income placement only keeps every control aggregate when its donor signatures are
+    # built from the controls PopulationSim enforced; in every family mode that is the catalog
+    # of the same mode.
+    tiers = ("tier0", "tier1", "tier2")
+    placement = stage._placement_income_catalog(tiers, False, (), True, family)
+    enforced = control_spec.full_catalog(include_tiers=tiers, fine_teen_age_bands=True,
+                                         family_controls=family)
+    assert [c.name for c in placement] == [c.name for c in enforced]
+    names = " ".join(c.name for c in placement)
+    assert ("HH_MINOR_ONE_ADULT" in names) == (family == control_spec.FAMILY_CONTROLS_MINOR_CHILD_1KM)
+    assert ("Typ_priv_HH_Familie_100m" in names) == (family == control_spec.FAMILY_CONTROLS_ZENSUS_FAMILY5)
