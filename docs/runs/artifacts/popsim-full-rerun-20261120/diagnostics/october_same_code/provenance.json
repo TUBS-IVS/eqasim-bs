@@ -1,5 +1,5 @@
 {
-  "work_dir": "/home/felix/prod100_20261031/popsim_work",
+  "work_dir": "~/prod100_20261031/popsim_work",
   "batches": [
     "batch_000",
     "batch_001",
@@ -140,7 +140,7 @@
   "misfit": false,
   "chunk_rows": 5000000,
   "mid_households": {
-    "path": "/home/felix/eqasim-bs/eqasim-data/data/braunschweig/popsim/mid2023_raw/MiD2023_Haushalte.csv",
+    "path": "~/eqasim-bs/eqasim-data/data/braunschweig/popsim/mid2023_raw/MiD2023_Haushalte.csv",
     "sha256": "a40b41b26654831b4296d8f34c709bda40f8a7d323fcf4e25106be6acde0f3c3"
   },
   "utc_timestamp": "2026-11-20T14:13:43.650522+00:00"

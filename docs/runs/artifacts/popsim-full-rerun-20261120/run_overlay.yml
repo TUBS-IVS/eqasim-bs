@@ -1,5 +1,5 @@
 ## Run overlay of popsim100_20261120, written by scripts/isolated_run.py overlay on 2026-11-20T13:56:22+01:00.
-## Source: /home/felix/popsim100_20261120/popsim100_20261120_source.yml (sha256 8639d2edc0da7c42de5421224c2473768b7c21672473d1a5b509659c84abd910).
+## Source: ~/popsim100_20261120/popsim100_20261120_source.yml (sha256 8639d2edc0da7c42de5421224c2473768b7c21672473d1a5b509659c84abd910).
 ## Paths are relative to RUN_DIR/eqasim-bs, the launch directory, so every isolated run carries the
 ## same strings: output_path enters synthesis stage hashes, analysis_working_directory the analysis suite's.
 ## `launch` compares this file with its gate record: edit it only before `gate --write`.

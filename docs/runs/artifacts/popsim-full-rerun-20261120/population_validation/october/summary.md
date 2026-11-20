@@ -1,6 +1,6 @@
 # Population validation - old
 
-- Source: `/home/felix/prod100_20261031/output` (run_output)
+- Source: `~/prod100_20261031/output` (run_output)
 - Git commit: `1041849c243c71859c95275447a24363ee1aa358`
 - Persons: 1,130,422 | Households: 558,274 | Vehicles: 2,311,830
 

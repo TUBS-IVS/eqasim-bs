@@ -1,7 +1,7 @@
 {
   "label": "old",
   "source_kind": "run_output",
-  "source_path": "/home/felix/prod100_20261031/output",
+  "source_path": "~/prod100_20261031/output",
   "prefix": "braunschweig_100pct_prod20261031_",
   "git_commit": "1041849c243c71859c95275447a24363ee1aa358",
   "n_persons": 1130422,
@@ -1493,8 +1493,8 @@
   ],
   "geo_outputs": {},
   "fleet_evaluation": {
-    "fleet_overview.png": "/home/felix/i648/popval_old/fleet_overview.png",
-    "fleet_summary.csv": "/home/felix/i648/popval_old/fleet_summary.csv"
+    "fleet_overview.png": "~/i648/popval_old/fleet_overview.png",
+    "fleet_summary.csv": "~/i648/popval_old/fleet_summary.csv"
   },
   "minor_employment": {
     "n_minors": 155992,

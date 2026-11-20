@@ -12,8 +12,9 @@ Layers (one column per layer and source):
     nonhome       all activities except home and outside
     *_pot         reference from the building potentials (relative weights of the producer, not observed counts):
                   workplace/work <- assigned_Workers; education <- assigned_School + assigned_University +
-                  assigned_Kindergarten; shop <- assigned_Retail_Daily + assigned_Retail_Non_Daily;
-                  leisure <- assigned_Leisure; other <- value_errands
+                  assigned_Kindergarten; university <- assigned_University (reference for student in-commuters);
+                  shop <- assigned_Retail_Daily + assigned_Retail_Non_Daily; leisure <- assigned_Leisure;
+                  other <- value_errands
 
 Usage (eqasim conda env):
     python activity_grid.py OLD_ACTIVITIES_GPKG NEW_ACTIVITIES_GPKG POTENTIALS_GPKG OUT_DIR
@@ -37,6 +38,7 @@ logger = logging.getLogger("activity_grid")
 POTENTIAL_LAYERS = {
     "workplace": ["assigned_Workers"], "work": ["assigned_Workers"],
     "education": ["assigned_School", "assigned_University", "assigned_Kindergarten"],
+    "university": ["assigned_University"],
     "shop": ["assigned_Retail_Daily", "assigned_Retail_Non_Daily"], "leisure": ["assigned_Leisure"],
     "other": ["value_errands"]}
 
@@ -52,7 +54,8 @@ def activity_counts(path: Path, label: str) -> pd.DataFrame:
         raise ValueError(f"{path}: the activity layer holds non-point geometries")
     x, y = frame.geometry.x.to_numpy(), frame.geometry.y.to_numpy()
     missing = ~(np.isfinite(x) & np.isfinite(y))
-    logger.info("%s: %d activities, %d without coordinates; purposes %s", label, len(frame), int(missing.sum()),
+    logger.info("%s: %d activities, with coordinates %d, without (left out) %d (%.3f%%); purposes %s", label,
+                len(frame), int((~missing).sum()), int(missing.sum()), 100.0 * missing.mean(),
                 frame["purpose"].value_counts().to_dict())
     frame = pd.DataFrame({"person_id": frame["person_id"].to_numpy(), "purpose": frame["purpose"].to_numpy(),
                           "x": x, "y": y})[~missing]
@@ -77,8 +80,14 @@ def potential_weights(path: Path) -> pd.DataFrame:
     centroid = buildings.geometry.centroid
     cells = _cells(centroid.x.to_numpy(), centroid.y.to_numpy())
     out = {}
+    numeric = buildings[columns].apply(pd.to_numeric, errors="coerce")
+    coerced = int((numeric.isna() & buildings[columns].notna()).sum().sum())
+    empty = int(buildings[columns].isna().sum().sum())
+    logger.info("potentials: %d building values, non-numeric set to 0: %d (%.3f%%), empty set to 0: %d (%.3f%%)",
+                numeric.size, coerced, 100.0 * coerced / max(numeric.size, 1), empty,
+                100.0 * empty / max(numeric.size, 1))
     for layer, cols in POTENTIAL_LAYERS.items():
-        values = buildings[cols].apply(pd.to_numeric, errors="coerce").fillna(0.0).sum(axis=1).to_numpy()
+        values = numeric[cols].fillna(0.0).sum(axis=1).to_numpy()
         out[f"{layer}_pot"] = pd.Series(values, index=cells).groupby(level=["ix", "iy"]).sum()
     logger.info("potentials: %d buildings; totals %s", len(buildings),
                 {k: round(float(v.sum()), 1) for k, v in out.items()})

@@ -194,15 +194,29 @@
     <div class="pr-card">
       <div class="pr-controls">
         <label for="pr-heat-layer">Ebene <select id="pr-heat-layer" class="dash-select" aria-label="Ebene der Heatmap">
-          <option value="workplace">Arbeitsplätze (Personen je Arbeitsort)</option>
-          <option value="work">Arbeit (Aktivitäten)</option>
-          <option value="education">Ausbildung</option>
-          <option value="shop">Einkauf</option>
-          <option value="leisure">Freizeit</option>
-          <option value="other">Erledigung / Sonstiges</option>
-          <option value="escort">Begleitung</option>
-          <option value="nonhome">alle Aktivitäten außer Zuhause</option>
-          <option value="home">Zuhause (Aktivitäten zu Hause)</option>
+          <optgroup label="Bewohner">
+            <option value="workplace">Arbeitsplätze der Bewohner (Personen je Arbeitsort)</option>
+            <option value="work">Arbeit (Aktivitäten)</option>
+            <option value="education">Ausbildung</option>
+            <option value="shop">Einkauf</option>
+            <option value="leisure">Freizeit</option>
+            <option value="other">Erledigung / Sonstiges</option>
+            <option value="escort">Begleitung</option>
+            <option value="nonhome">alle Aktivitäten außer Zuhause</option>
+            <option value="home">Zuhause (Aktivitäten zu Hause)</option>
+          </optgroup>
+          <optgroup label="Pendler">
+            <option value="incommuter_work">Einpendler Arbeit: Arbeitsorte</option>
+            <option value="incommuter_student">Einpendler Studium: Studienorte</option>
+            <option value="incommuter_all">Einpendler gesamt (Arbeit und Studium)</option>
+            <option value="outcommuter_home">Auspendler Arbeit: Wohnorte</option>
+            <option value="outstudent_home">Auspendler Ausbildung: Wohnorte</option>
+            <option value="outcommuter_all">Auspendler gesamt: Wohnorte</option>
+          </optgroup>
+          <optgroup label="Zusammen">
+            <option value="workplace_all">Arbeitsplätze inkl. Einpendler</option>
+            <option value="education_all">Ausbildung inkl. Einpendler-Studierende</option>
+          </optgroup>
         </select></label>
         <div class="pr-seg" role="group" aria-label="Ansicht der Heatmap">
           <button type="button" data-heatview="old" aria-pressed="false">Oktober</button>
@@ -218,6 +232,14 @@
         <button type="button" class="pr-play" id="pr-heat-play" aria-pressed="false">▶ Ebenen durchlaufen</button>
       </div>
       <div class="pr-map" id="pr-heat" data-draw="heat" data-source="grid"></div>
+    </div>
+    <div class="pr-card" id="pendler">
+      <h3>Pendler in Zahlen</h3>
+      <p class="pr-muted pr-small">Einpendler kommen aus dem BA-Pendleratlas (Arbeit, auf dessen Zahl skaliert) und der Hochschulstatistik (Studium) und werden mit eigenen Tagesplänen erzeugt. Auspendler sind Bewohner, deren zugewiesener Arbeits- oder Ausbildungsort außerhalb der 880 Verkehrszellen liegt, gemessen vor dem Umbau ferner Wege an der Gebietsgrenze. Die Unterschiede zum Oktober mischen die neue Bevölkerung mit den übrigen Änderungen seit Oktober.</p>
+      <div class="pr-tablewrap"><table class="pr-table" data-source="facts" data-row-key="id">
+        <thead><tr><th class="pr-left" data-field="label">Gruppe</th><th data-field="old">Oktober</th><th data-field="new">Neu</th></tr></thead>
+        <tbody data-draw="commuters"></tbody>
+      </table></div>
     </div>
   </section>
 
@@ -262,7 +284,7 @@
     <header><h2>Personen und Haushalte gegen Zensus und MiD</h2><p>Mittlere Abweichung der Anteile in Prozentpunkten je Kreis (bei Haushaltsgröße je Gemeinde) gegen Tabellen, die im Repository liegen. „Unabhängig“ heißt: nicht gesteuert, echte Gegenprobe. „Abgleich“ heißt: die Synthese steuert genau darauf hin.</p></header>
     <div class="pr-card" id="pr-popval">
       <div class="pr-chart" data-draw="popval" data-source="facts"></div>
-      <p class="pr-small">Erwerbstätig ja/nein: Gesteuert wird auf den Zensus (Konzept der ILO, schon eine Stunde Arbeit zählt). Die MiD fragt nach Selbsteinschätzung. Im Oktober lag der Lauf 1 bis 5 % unter der Zensus-Vorgabe und damit zufällig näher an der MiD; jetzt trifft er den Zensus. Maßstab bleibt der Zensus (Entscheidung vom 20.11.2026).</p>
+      <p class="pr-small">Erwerbstätig ja/nein: Gesteuert wird auf den Zensus (Konzept der ILO, schon eine Stunde Arbeit zählt), den der neue Lauf jetzt trifft; der Oktober-Lauf blieb darunter. Die MiD fragt nach Selbsteinschätzung und hat je Kreis nur wenige hundert bis etwa 2.000 Befragte. Gegen sie weicht der neue Lauf je Kreis in beide Richtungen stärker ab: in den meisten Kreisen liegt er darüber, in einigen darunter (Detail unten, Merkmal „erwerbstätig ja/nein“). Maßstab bleibt der Zensus (Entscheidung vom 20.11.2026).</p>
     </div>
     <div class="pr-card" id="pr-plaus">
       <h3>Verteilung im Detail</h3>
@@ -319,7 +341,7 @@
       </div>
       <div class="pr-card" id="pr-departure">
         <h3>Abfahrtszeiten: Abstand zu SrV</h3>
-        <p class="pr-muted pr-small">Earth Mover's Distance der Abfahrtszeiten (kleiner ist besser), erster und spätere Wege des Tages.</p>
+        <p class="pr-muted pr-small">Earth Mover's Distance der Abfahrtszeiten (kleiner ist besser). Der erste Weg des Tages ist auf SrV kalibriert (Abgleich); die späteren Wege sind die eigentliche Gegenprobe.</p>
         <div class="pr-tablewrap"><table class="pr-table" data-source="facts" data-row-key="id">
           <thead><tr><th class="pr-left" data-field="item">Gruppe</th><th class="pr-left" data-field="sub">Weg</th><th data-field="old">Oktober</th><th data-field="new">Neu</th></tr></thead>
           <tbody data-draw="departure"></tbody>
@@ -356,11 +378,11 @@
         <li>Jede Vorgabengruppe, die es in beiden Läufen gibt, wird besser getroffen; Kreis- und 1-km-Vorgaben fast exakt.</li>
         <li>Rundung ohne Notlösung und ohne ungelöste Fälle; PopulationSim in <span data-draw="fact" data-source="facts" data-field="new" data-where="id=run|popsim_wall_minutes|" data-fmt="min">—</span> statt <span data-draw="fact" data-source="facts" data-field="old" data-where="id=run|popsim_wall_minutes|" data-fmt="min">—</span>.</li>
         <li>Seltene Gruppen sind regionsweit wieder vollständig da; „divers/keine Angabe“ unter der Prüfgrenze.</li>
-        <li>Tagespläne gegen SrV etwa so gut wie im Oktober; Wege- und Tourenzahlen minimal näher an SrV.</li>
+        <li>Tagespläne gegen SrV etwa so gut wie im Oktober; Wege- und Tourenzahlen minimal näher an SrV, Abfahrtszeiten der späteren Wege (Gegenprobe) etwas näher.</li>
       </ul></div>
       <div class="pr-card warn"><h3>Noch nicht gut</h3><ul>
         <li>Seltene Gruppen sitzen in den 100-m-Zellen öfter falsch (18–19-Jährige, 6+-Personen-Haushalte). Ursache sind die kleinen Zahlen je Zelle; eine Altersvorgabe auf 1 km hat das im Test nicht verbessert.</li>
-        <li>Erwerbsquote liegt über der MiD, weil jetzt der Zensus getroffen wird (Definitionsunterschied, vor allem Wolfsburg).</li>
+        <li>Die Erwerbsquote weicht je Kreis stärker von der MiD ab als im Oktober, in beide Richtungen; gesteuert wird auf den Zensus, den der Lauf jetzt trifft (am stärksten Wolfsburg, kleine MiD-Stichprobe).</li>
         <li>Pendeln in andere Gemeinden weicht in vier Kreisen von SrV ab (Goslar, Peine, Wolfsburg, Wolfenbüttel), wie im Oktober. Das betrifft die Arbeitsortwahl, nicht die Bevölkerung (Issue #359).</li>
         <li>Wegezwecke weichen von MiD W1 ab (Arbeit zu hoch, Freizeit zu niedrig), unverändert; das kommt aus den Werktags-Tagebüchern.</li>
         <li>In den fertigen Tagesplänen liegt der Anteil mobiler Personen in jedem Kreis unter dem SrV-Zielwert, Freizeit leicht darunter (Grafik „Teilnahme je Kreis“), in beiden Läufen gleich. PopulationSim trifft die Vorgabe; der Abstand entsteht in den späteren Schritten der Tagespläne.</li>

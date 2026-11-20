@@ -473,7 +473,11 @@
   });
 
   // ---------- Heatmap der Aktivitäten ----------
-  const HEAT_LAYERS = { workplace: 'Arbeitsplätze', work: 'Arbeit', education: 'Ausbildung', shop: 'Einkauf', leisure: 'Freizeit', other: 'Erledigung / Sonstiges', escort: 'Begleitung', nonhome: 'Alle Aktivitäten außer Zuhause', home: 'Zuhause' };
+  const HEAT_LAYERS = { workplace: 'Arbeitsplätze der Bewohner', work: 'Arbeit', education: 'Ausbildung', shop: 'Einkauf', leisure: 'Freizeit', other: 'Erledigung / Sonstiges', escort: 'Begleitung', nonhome: 'Alle Aktivitäten außer Zuhause', home: 'Zuhause',
+    incommuter_work: 'Einpendler Arbeit (Arbeitsorte)', incommuter_student: 'Einpendler Studium (Studienorte)', incommuter_all: 'Einpendler gesamt', outcommuter_home: 'Auspendler Arbeit (Wohnorte)', outstudent_home: 'Auspendler Ausbildung (Wohnorte)', outcommuter_all: 'Auspendler gesamt (Wohnorte)',
+    workplace_all: 'Arbeitsplätze inkl. Einpendler', education_all: 'Ausbildung inkl. Einpendler-Studierende' };
+  // Which potential of the building file a layer is compared with (pattern only; potentials are modelled weights).
+  const POT_OF = { workplace: 'workplace_pot', work: 'work_pot', workplace_all: 'workplace_pot', incommuter_work: 'workplace_pot', education: 'education_pot', education_all: 'education_pot', incommuter_student: 'university_pot', shop: 'shop_pot', leisure: 'leisure_pot', other: 'other_pot' };
   const HEAT_VIEWS = { old: 'Oktober', new: 'Neu', diff: 'Änderung (neu minus Oktober)', pot: 'Gebäude-Potenzial', vspot: 'Neu gegen Potenzial (Anteile)' };
   let heatLayer = 'workplace', heatView = 'new', heatSmooth = true, heatTimer = null;
   const heatSelect = () => document.querySelector('#pr-heat-layer');
@@ -506,16 +510,18 @@
     title.className = 'pr-heat-title';
     title.textContent = `${HEAT_LAYERS[heatLayer]} · ${HEAT_VIEWS[heatView]}`;
     el.appendChild(title);
-    if ((heatView === 'pot' || heatView === 'vspot') && !has(heatLayer + '_pot')) {
+    const potCol = POT_OF[heatLayer];
+    const hasPot = Boolean(potCol) && has(potCol);
+    if ((heatView === 'pot' || heatView === 'vspot') && !hasPot) {
       const p = document.createElement('p'); p.className = 'pr-muted pr-small';
-      p.textContent = 'Für diese Ebene gibt es in der Gebäudedatei kein Potenzial. Potenziale gibt es für Arbeitsplätze, Arbeit, Ausbildung, Einkauf, Freizeit und Erledigung.';
+      p.textContent = 'Für diese Ebene gibt es in der Gebäudedatei kein Potenzial. Potenziale gibt es für Arbeitsplätze und Einpendler (Arbeitsplatz-Gewicht), Ausbildung, Einpendler-Studierende (Hochschulen), Einkauf, Freizeit und Erledigung.';
       el.appendChild(p); return;
     }
-    const col = (run) => `${heatLayer}_${run}`;
+    const col = (run) => (run === 'pot' ? potCol : `${heatLayer}_${run}`);
     const total = (run) => d3.sum(rows, (r) => num(r[col(run)]) || 0) || 1;
-    const tOld = has(col('old')) ? total('old') : 1, tNew = total('new'), tPot = has(col('pot')) ? total('pot') : 1;
+    const tNew = total('new'), tPot = hasPot ? total('pot') : 1;
     const value = (r) => {
-      const o = num(r[col('old')]) || 0, n = num(r[col('new')]) || 0, p = num(r[col('pot')]) || 0;
+      const o = num(r[col('old')]) || 0, n = num(r[col('new')]) || 0, p = hasPot ? (num(r[potCol]) || 0) : 0;
       switch (heatView) {
         case 'old': return o;
         case 'new': return n;
@@ -577,7 +583,7 @@
       const r = index.get(`${cx}|${cy}`);
       if (!r) { tip.hide(); return; }
       const lines = [`Zelle ${F.dec1.format(num(r.x_km))} / ${F.dec1.format(num(r.y_km))} km (UTM 32)`, `${HEAT_LAYERS[heatLayer]}: Oktober ${fmt(r[col('old')], 'int')}, neu ${fmt(r[col('new')], 'int')}`];
-      if (has(col('pot'))) lines.push(`Potenzial: ${fmt(r[col('pot')], 'dec1')} (Anteil ${fmt(num(r[col('pot')]) / tPot, 'pct1')} gegen neu ${fmt(num(r[col('new')]) / tNew, 'pct1')})`);
+      if (hasPot) lines.push(`Potenzial: ${fmt(r[potCol], 'dec1')} (Anteil ${fmt(num(r[potCol]) / tPot, 'pct1')} gegen neu ${fmt(num(r[col('new')]) / tNew, 'pct1')})`);
       tip.show(lines, ev);
     });
     canvas.addEventListener('mouseleave', () => tip.hide());
@@ -682,6 +688,9 @@
   const SEG = { all: 'alle', employed: 'Erwerbstätige', adult_18_64_not_employed: '18–64, nicht erwerbstätig', child_0_5: 'Kinder 0–5', school_age_6_17_not_employed: 'Schulalter 6–17', senior_65plus_not_employed: '65+, nicht erwerbstätig' };
   dash.draw('departure', factTable('departure_emd', [['item', (r) => SEG[r.item] || r.item, true], ['sub', (r) => (r.sub === 'first' ? 'erster' : r.sub === 'later' ? 'spätere' : r.sub), true], ['old', 'dec4'], ['new', 'dec4']],
     (r) => SEG[r.item], (a, b) => Object.keys(SEG).indexOf(a.item) - Object.keys(SEG).indexOf(b.item) || a.sub.localeCompare(b.sub)));
+  const COMMUTER_ORDER = ['incommuter_persons', 'incommuter_target', 'incommuter_student_persons', 'outcommuter_home', 'work_lines', 'outstudent_home', 'education_lines'];
+  dash.draw('commuters', factTable('commuters', [['label', null, true], ['old', 'int'], ['new', 'int']], null,
+    (a, b) => COMMUTER_ORDER.indexOf(a.item) - COMMUTER_ORDER.indexOf(b.item)));
   const runKind = (r) => (r.item === 'popsim_wall_minutes' ? 'min' : r.unit === 'Anteil' ? 'pct1' : r.unit === 'Prozesse' ? 'int' : 'dec2');
   dash.draw('runfacts', factTable('run', [['label', null, true], ['old', (r) => fmt(r.old, runKind(r))], ['new', (r) => fmt(r.new, runKind(r))], ['unit', (r) => (r.item === 'popsim_wall_minutes' ? '' : r.unit), true]]));
 

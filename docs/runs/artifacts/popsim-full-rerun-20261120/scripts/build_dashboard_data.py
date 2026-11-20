@@ -13,6 +13,9 @@ Usage:
     python build_dashboard_data.py IN_DIR OUT_DIR
 
 Writes controls.csv, facts.csv, cells_1km.csv and plausibility.csv (columns documented per function).
+
+The labels written into the tables (column "label", group and category names) are German because the dashboard is a
+German-language report for the project owner; identifiers, code and comments stay English.
 """
 
 from __future__ import annotations
@@ -356,6 +359,24 @@ def build_facts(in_dir: Path) -> pd.DataFrame:
                   note="employed persons with a work trip; reference SrV 2023",
                   source="commute_day_state_phase_a work_participation_by_kreis.csv")
 
+    # Commuters (commuter_grid.py totals): in-commuters against their BA Pendleratlas targets, out-commuters.
+    commuter = pd.read_csv(in_dir / "commuter" / "commuter_totals.csv").set_index("run")
+    commuter_labels = {
+        "incommuter_persons": ("Einpendler (Arbeit)", "Personen", "agents of braunschweig.synthesis.incommuters"),
+        "incommuter_target": ("Einpendler laut BA-Pendleratlas (Vorgabe)", "Personen",
+                              "sum of n_target, direction ein, of the stage's od_target frame"),
+        "incommuter_student_persons": ("Einpendler (Studium)", "Personen",
+                                       "agents of braunschweig.synthesis.student_incommuters"),
+        "outcommuter_home": ("Auspendler (Arbeitsort außerhalb des Gebiets)", "Personen",
+                             "residents whose pre-portal work location lies outside the 880 traffic zones"),
+        "outstudent_home": ("Auspendler (Ausbildungsort außerhalb des Gebiets)", "Personen",
+                            "residents whose pre-portal education location lies outside the 880 traffic zones"),
+        "work_lines": ("Bewohner mit Arbeitsort", "Personen", "work lines in commutes_pre_portal.gpkg"),
+        "education_lines": ("Bewohner mit Ausbildungsort", "Personen",
+                            "lines of layer education in commutes_pre_portal.gpkg")}
+    for item, (label, unit, note) in commuter_labels.items():
+        facts.add("commuters", item, "", label, commuter.at["old", item], commuter.at["new", item], unit=unit,
+                  note=note, source="commuter_grid commuter_totals.csv")
     run_facts = pd.read_csv(in_dir / "run_facts.csv")
     for _, row in run_facts.iterrows():
         facts.add("run", row["item"], "", row["label"], row["old"], row["new"], unit=row["unit"],
@@ -436,10 +457,33 @@ def main(in_dir: Path, out_dir: Path) -> None:
         frame.to_csv(out_dir / f"{name}.csv", index=False)
         _write_json(frame, out_dir / f"{name}.json", name)
         print(f"[build_dashboard_data] {name}.csv / {name}.json: {len(frame)} rows")
-    # The activity grid (activity_grid.py) is passed through unchanged, as JSON for the heatmap.
-    grid = pd.read_csv(in_dir / "grid" / "activity_grid_500m.csv")
-    _write_json(grid, out_dir / "activity_grid.json", "activity_grid_500m")
-    print(f"[build_dashboard_data] activity_grid.json: {len(grid)} rows")
+    grid = build_grid(in_dir)
+    grid.to_csv(out_dir / "activity_grid_combined.csv", index=False)
+    print(f"[build_dashboard_data] activity_grid_combined.csv: {len(grid)} rows")
+
+
+def build_grid(in_dir: Path) -> pd.DataFrame:
+    """activity_grid_combined.csv: the activity grid (activity_grid.py) joined with the commuter layers
+    (commuter_grid.py) on the 500 m cell, plus layers that add residents and commuters up:
+    workplace_all = workplace + incommuter_work (persons per work location, residents and in-commuters);
+    education_all = education + incommuter_student (education activities of residents plus student in-commuters);
+    incommuter_all = incommuter_work + incommuter_student (at the destination);
+    outcommuter_all = outcommuter_home + outstudent_home (at the home location)."""
+    grid = pd.read_csv(in_dir / "grid" / "activity_grid_500m.csv").set_index(["ix", "iy"])
+    commuters = pd.read_csv(in_dir / "commuter" / "commuter_grid_500m.csv").set_index(["ix", "iy"])
+    merged = grid.drop(columns=["x_km", "y_km"]).join(commuters.drop(columns=["x_km", "y_km"]), how="outer")
+    merged = merged.fillna(0)
+    for run in RUNS:
+        merged[f"workplace_all_{run}"] = merged[f"workplace_{run}"] + merged[f"incommuter_work_{run}"]
+        merged[f"education_all_{run}"] = merged[f"education_{run}"] + merged[f"incommuter_student_{run}"]
+        merged[f"incommuter_all_{run}"] = merged[f"incommuter_work_{run}"] + merged[f"incommuter_student_{run}"]
+        merged[f"outcommuter_all_{run}"] = merged[f"outcommuter_home_{run}"] + merged[f"outstudent_home_{run}"]
+    counts = [c for c in merged.columns if not c.endswith("_pot")]
+    merged[counts] = merged[counts].astype(np.int64)
+    merged = merged.reset_index()
+    merged.insert(2, "x_km", merged["ix"] * 0.5)
+    merged.insert(3, "y_km", merged["iy"] * 0.5)
+    return merged
 
 
 if __name__ == "__main__":

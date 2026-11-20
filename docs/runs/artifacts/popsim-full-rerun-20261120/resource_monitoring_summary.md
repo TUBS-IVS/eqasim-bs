@@ -1,7 +1,7 @@
 ### Resource record
 
 - samples: 283 (source: proc), wall clock 2:30:54
-- peak process RSS: 77.2 GiB (pid 486131, `/home/felix/tools/jdk-25.0.3+9/bin/java -cp /home/felix/popsim100_20261120/cache/matsim.runtime.pt2matsim__63258fbf8a6ba`)
+- peak process RSS: 77.2 GiB (pid 486131, `~/tools/jdk-25.0.3+9/bin/java -cp ~/popsim100_20261120/cache/matsim.runtime.pt2matsim__63258fbf8a6ba`)
 - system memory: peak used 93.8 GiB, minimum available 11.5 GiB, peak swap used 676.8 MiB
 - peak processes / threads: 67 / 2821
 - CPU: 38225 s accounted as `per_pid`, efficiency 0.07 of the machine

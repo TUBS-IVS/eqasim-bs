@@ -69,8 +69,10 @@ validation:
   reference: none (operational measurement; ADR-0200 sized worker_memory_gb at 6.0 from three batches)
   result: >-
     The resource gate chose 13 batch workers (budget 62 cores / 86.3 GB, driver RSS 2.37 GB, 6 GB per worker).
-    PopulationSim stage 34 min 55 s (October run: 12 h 56 min with 2 workers); peak private memory per batch worker
-    2.07 GiB, pool total 26.9 GiB, so 6 GB per worker holds with margin for this run. The highest machine memory of the
+    PopulationSim stage 34 min 55 s (October run: 12 h 56 min with 2 workers). At the pool's memory peak the 13
+    workers held 26.9 GiB private memory together, 2.07 GiB per worker on average, well below the 13 x 6 GB the gate
+    reserved; the heaviest single worker is not recorded separately (the stage's largest process RSS was 15.5 GiB, not
+    attributed to a worker or the driver). The highest machine memory of the
     run, 93.8 GiB used with 11.5 GiB available and 676.8 MiB swapped, came from the pt2matsim stage (one Java process
     77.2 GiB), not from PopulationSim.
   artifact: docs/runs/artifacts/popsim-full-rerun-20261120/resource_monitoring_summary.md
@@ -92,9 +94,10 @@ validation:
     distinct seed households (5,602 to 9,269).
   artifact: docs/runs/artifacts/popsim-full-rerun-20261120/diagnostics/new/reuse.csv
   notes: >-
-    Concentration curve and copies histogram from the per-donor counts in zones/*/donor_usage.csv. Seed households
-    with 6 or more persons: 633 of 1,661 used (October 90), Kish 64.7 (21.0), most-copied 426 copies (622): the large
-    households are still the thinnest part of the pool.
+    Concentration curve and copies histogram from the per-donor counts in zones/*/donor_usage.csv. By household size
+    (comparison/reuse_by_household_size.csv, scripts/reuse_by_household_size.py): seed households with 6 or more
+    persons 633 of 1,661 used (October 90), Kish 64.7 (21.0), most-copied 426 copies (622); 5 persons 2,362 of 6,009
+    used, Kish 174 (42). The large households are still the thinnest part of the pool.
 - metric: share of synthetic households per MiD seed-weight class (H_GEW) against the class's share of the seed weight
   reference: >-
     the seed's own weight shares (MiD 2023 H_GEW); the 5-percentage-point bound of design goal G2 is an
@@ -120,7 +123,7 @@ validation:
     differ between the runs (household targets of #657, #659), so the pooled values are not like for like; per group,
     every group present in both runs has a lower WAPE in the new run (age x sex 100 m 0.279 / 0.325, household size
     0.139 / 0.230, employed by age 0.074 / 0.205, building type 0.043 / 0.154, tenure 0.038 / 0.066, cars 1 km
-    0.0045 / 0.069, bikes 1 km 0.0054 / 0.050, every Kreis family 0.0005 to 0.016 / 0.005 to 0.076). Households:
+    0.0045 / 0.069, bikes 1 km 0.0054 / 0.050, every Kreis family 0.0005 to 0.0032 / 0.0052 to 0.027). Households:
     558,179 against a target of 558,151 (+28, one of 60 batches off; October +123, four batches).
   artifact: docs/runs/artifacts/popsim-full-rerun-20261120/comparison/fit_by_group_geography.csv
   notes: Per control in comparison/fit_by_control.csv; per 1 km cell in zones/*/cells_1km.csv.
@@ -155,13 +158,17 @@ validation:
   artifact: docs/runs/artifacts/popsim-full-rerun-20261120/population_validation/new/quality_summary.csv
   notes: >-
     The employment rate is controlled to the Zensus (ILO concept, employed by age at 100 m), which the new run now
-    meets; MiD P9 is self-reported and lower, most in Wolfsburg (53.0 % synthetic against 44.4 % P9), a small MiD
-    sample. The owner keeps the Zensus as the reference (2026-11-20). Licence is a fit check (raked to P17.1).
+    meets; the October run stayed 1 to 5 % below those targets. Against MiD P9 (self-reported, a few hundred to about
+    2,000 respondents per Kreis) the new rate is higher in five Kreise (most Wolfsburg, 53.0 % against 44.4 %) and lower
+    in three (Salzgitter, Gifhorn, Wolfenbüttel, 3 to 4 points), so the gap to P9 widened in both directions. The owner
+    keeps the Zensus as the reference (2026-11-20). Household size and licence are fit checks (household size is
+    controlled at 100 m, the licence raked to P17.1); employment yes/no, age and sex are the independent checks.
 - metric: day plans against SrV 2023 (plan structure, departure times, commute distances, participation per Kreis)
   reference: SrV 2023 Braunschweig and region (committed SrV aggregates read by the four analysis stages and by population_validation)
   result: >-
     Mobile persons 83.9 % against SrV 84.4 % (October 83.9 %), trips per person 3.05 against 3.19 (3.04), tours per
-    mobile person 1.53 against 1.60 (1.53). Departure-time EMD of first trips, all persons 0.0021 (0.0024). Commute
+    mobile person 1.53 against 1.60 (1.53). Departure times: the first trip of the day is calibrated to SrV (EMD 0.0021,
+    October 0.0024, a fit check); the later trips are the holdout check, EMD 0.0124 (October 0.0140). Commute
     distance EMD for trips to other municipalities: Goslar 0.130 (0.129), Peine 0.099 (0.100), Wolfsburg 0.086
     (0.083), Wolfenbüttel 0.082 (0.082) above the stage's gap bound 0.08; within the municipality every Kreis below it.
     Participation per Kreis in the finished plans against the SrV targets: mobility -4.4 to -5.2 percentage points
@@ -169,18 +176,41 @@ validation:
   artifact: docs/runs/artifacts/popsim-full-rerun-20261120/srv/new/plan_structure_headline.csv
   notes: >-
     The differences to October mix the new population with every location change on main since 2026-10-31, the new
-    building potentials included. PopulationSim meets the SrV trip-class target per Kreis exactly; the mobility gap
-    opens in the later day-plan steps and is unchanged. The plan-structure analysis and the participation targets use
-    different SrV mobility shares (84.4 % against about 89 % per Kreis); not resolved here.
+    building potentials included. PopulationSim meets the SrV trip-class target per Kreis within WAPE 0.002
+    (comparison/fit_by_group_geography.csv); INFERENCE, not measured here: the mobility gap of the finished plans
+    therefore opens in the later day-plan steps; it is unchanged from October. The plan-structure analysis and the
+    participation targets use different SrV mobility shares (84.4 % against about 89 % per Kreis); not resolved here.
 - metric: activities and work locations per 500 m cell (EPSG:25832) against the building potentials
   reference: >-
     building potentials 08_redistribution.gpkg (modelled weights of the producer, not observed counts); pattern
     comparison by shares only
   result: >-
-    330,427 persons with a work location inside the area (October 325,968) against 591,700 jobs in the potentials
-    file (the difference is in-commuters and residents working outside); activity totals per purpose in
-    activity_grid_totals.csv.
+    330,427 residents with a work activity in the finished plans (October 325,968; work locations beyond the portal
+    threshold became outside stays and are not counted here) against a total job weight of 591,700 in the potentials
+    file (modelled weights, compared as shares only); activity totals per purpose in activity_grid_totals.csv.
   artifact: docs/runs/artifacts/popsim-full-rerun-20261120/activity_grid/activity_grid_500m.csv
+  notes: >-
+    As in the SrV entry, October against new mixes the new population with the location changes since 2026-10-31,
+    the new building potentials included.
+- metric: commuters across the model boundary (in-commuters, out-commuters), counts and 500 m layers
+  reference: >-
+    BA Pendleratlas in-commuter flows (the stage's od_target frame; the stage scales its agents to them, so equality
+    is by construction, not a check); everything else is a measurement of the synthesis
+  result: >-
+    In-commuters to work 68,630 in both runs, equal to the Pendleratlas total. Student in-commuters 6,574 (October
+    6,174). Residents whose assigned work location lies outside the 880 traffic zones (pre-portal commute lines)
+    40,185 of 361,405 with a work location, 11.1 % (October 40,336 of 357,195, 11.3 %); residents whose assigned
+    education location lies outside them 1,234 of 192,995 (October 1,368 of 192,555); the finished plans hold a
+    similar number of education activities outside the zones (cross-check in the script log).
+  artifact: docs/runs/artifacts/popsim-full-rerun-20261120/commuter/commuter_totals.csv
+  notes: >-
+    The in-commuter stages are not needed by synthesis.output, so a follow-up isolated run (popsim100_20261120_incommuters,
+    same commits, cache copied from popsim100_20261120, run list braunschweig.synthesis.incommuters and
+    braunschweig.synthesis.student_incommuters; run_overlay_incommuters.yml) built them for the new run, 18:23 to 18:36,
+    exit 0; the October values are that run's own stage outputs. The 500 m layers (commuter/commuter_grid_500m.csv)
+    place in-commuters at their work or study location and out-commuters at their home; the model area is the union
+    of the traffic zones of 08_redistribution.gpkg. October against new mixes the new population with every change
+    on main since 2026-10-31.
 features:
   note: >-
     Evidence for popsim_method: the first full-region run with the repaired PopulationSim (fork core, seed/control
@@ -199,7 +229,12 @@ artifacts:
 - docs/runs/artifacts/popsim-full-rerun-20261120/population_validation/new/summary.md
 - docs/runs/artifacts/popsim-full-rerun-20261120/srv/new/srv_distance_summary.md
 - docs/runs/artifacts/popsim-full-rerun-20261120/activity_grid/activity_grid_totals.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/commuter/commuter_totals.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/commuter/commuter_grid_500m.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/comparison/reuse_by_household_size.csv
 - docs/runs/artifacts/popsim-full-rerun-20261120/dashboard/facts.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/dashboard/activity_grid_combined.csv
+- docs/runs/artifacts/popsim-full-rerun-20261120/run_overlay_incommuters.yml
 - docs/runs/artifacts/popsim-full-rerun-20261120/run_overlay.yml
 - docs/runs/artifacts/popsim-full-rerun-20261120/resource_monitoring_summary.md
 issues:
@@ -217,7 +252,15 @@ decisions:
 - ADR-0204
 notes: >-
   Re-assessment for #648: ADR-0059 attributed the 6+ household shortfall to the donor pool; this run meets the 6+
-  household target with the same pool, so the count gap came from the integer rounding (fixed by ADR-0199/ADR-0201);
-  the pool still limits the variety of large households (Kish 64.7 for 7,901 copies), which keeps #278 relevant for
-  diversity, not for counts. The published dashboard shows every table of this record with charts, a 1 km map and a
+  household target with the same pool, so the count gap was not a property of the pool. The run changed the fork core,
+  the rounding, the seed records and several household targets together and does not isolate which change closed
+  it; the 6+ error inside the 100 m cells grew (WAPE 0.515 to 0.651). The pool still limits the variety of large
+  households (reuse by household size above), which keeps #278 relevant for diversity, not for counts. Committed copies
+  of server files carry the run server's home directory as ~ (provenance.json, report.json, summaries, run overlays).
+  After the run, an accidental gate call on popsim100_20261120 (18:16) rewrote its run.yml gate list; the launched
+  list was restored from a copy, and run.json records that later gate; run_overlay.yml here is the launched list.
+  The published dashboard reads dashboard/facts.csv (as JSON), dashboard/controls.csv, dashboard/plausibility.csv,
+  dashboard/cells_1km.csv and dashboard/activity_grid_combined.csv; the analysis scripts were rerun after the final
+  review's changes (fallback rates logged, split-cell rule) and reproduced the committed zone tables byte for byte and
+  the activity grid in every earlier column (activity_grid.py added university_pot). The published dashboard shows every table of this record with charts, a 1 km map and a
   500 m activity heatmap; it reads the files under dashboard/, zones/new and activity_grid/.

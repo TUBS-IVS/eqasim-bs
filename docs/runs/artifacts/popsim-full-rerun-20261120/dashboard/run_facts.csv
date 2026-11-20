@@ -1,7 +1,7 @@
 item,label,old,new,unit,note,source
-popsim_wall_minutes,Laufzeit PopulationSim,776,34.9,Minuten,"old: launch 1, 08:02:08-20:58:02","old: docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml; new: cache/monitoring/resource_series_20261120T140008.summary.md"
-popsim_workers,Parallele PopulationSim-Prozesse,2,13,Prozesse,"old: configured 3, clamped to 2 by the 30 GiB default; new: auto (6 GiB per worker)","old: docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml; new: run log [resources] line 14:19:37"
-popsim_worker_peak_gib,Größter Speicher je PopulationSim-Prozess,,2.07,GiB,private memory per worker; pool total peak 26.9 GiB,new: cache/monitoring/resource_series_20261120T140008.summary.md
+popsim_wall_minutes,Laufzeit PopulationSim,776.0,34.9,Minuten,"old: launch 1, 08:02:08-20:58:02",old: docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml; new: cache/monitoring/resource_series_20261120T140008.summary.md
+popsim_workers,Parallele PopulationSim-Prozesse,2.0,13.0,Prozesse,"old: configured 3, clamped to 2 by the 30 GiB default; new: auto (6 GiB per worker)",old: docs/runs/prod100-java-heap-driver-rss-2026-11-04.yml; new: run log [resources] line 14:19:37
+popsim_worker_peak_gib,"Speicher je PopulationSim-Prozess, Mittel zur Spitze",,2.07,GiB,"pool total 26.9 GiB private memory over 13 workers at the pool peak (mean, not the heaviest worker)",new: cache/monitoring/resource_series_20261120T140008.summary.md
 run_wall_hours,Laufzeit bis zu den fertigen Personen,,2.53,Stunden,"13:59:39-16:31:14, 67 stages recomputed; the October run also ran MATSim, so no comparable value",new: logs/run_20261120T135939.log (isolated-run end line)
 system_memory_peak_gib,Höchste Speicherbelegung des Servers,,93.8,GiB,"during the pt2matsim stage (one Java process 77.2 GiB), not during PopulationSim",new: cache/monitoring/resource_series_20261120T140008.summary.md
 fast_path_primary_share,Schneller Rechenweg genutzt,,1.0,Anteil,2525 of 2525 balancer calls,new: run log [popsim.fast_paths] line 14:51:14

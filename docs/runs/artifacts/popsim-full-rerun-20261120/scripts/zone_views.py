@@ -72,6 +72,7 @@ def _zone_errors(batch, geography: str, incidence: pd.DataFrame, household_pos: 
 def run(work_dir: Path, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     cell_rows, bin_rows, usage_parts = [], [], []
+    n_cells_seen = n_cells_without_kreis = 0
     folders = list_batch_folders(work_dir)
     for index, folder in enumerate(folders, start=1):
         batch = load_batch_folder(folder)
@@ -128,6 +129,9 @@ def run(work_dir: Path, out_dir: Path) -> None:
         zones = sorted(set().union(*[f.index for f in per_cell.values()], donors.index))
         for zone in zones:
             x_km, y_km = _grid_corner_km(zone)
+            n_cells_seen += 1
+            if zone not in kreis_of.index:
+                n_cells_without_kreis += 1
             row = {"zone": zone, "batch": batch.name, "kreis": kreis_of.get(zone, ""),
                    "x_km": x_km, "y_km": y_km}
             for key, frame in per_cell.items():
@@ -142,19 +146,26 @@ def run(work_dir: Path, out_dir: Path) -> None:
             cell_rows.append(row)
         usage_parts.append(expanded[id_col].value_counts())
 
+    logger.info("Kreis of the 1 km cell from the crosswalk: primary %d/%d, fallback empty Kreis %d (%.2f%%)",
+                n_cells_seen - n_cells_without_kreis, n_cells_seen, n_cells_without_kreis,
+                100.0 * n_cells_without_kreis / max(n_cells_seen, 1))
     cells = pd.DataFrame(cell_rows)
     duplicated = cells["zone"].duplicated(keep=False)
-    if duplicated.any():
-        # A 1 km cell split over batches (boundary cells): sum the counts, keep donor stats of the
-        # larger part and flag the row.
-        logger.warning("%d 1 km cell row(s) appear in more than one batch; summed",
-                       int(duplicated.sum()))
+    logger.info("1 km cells in one batch: %d, split over batches: %d rows (%.2f%%)",
+                int((~duplicated).sum()), int(duplicated.sum()), 100.0 * duplicated.mean())
     numeric = [c for c in cells.columns if c.endswith(("_target", "_synthetic", "_abs_error"))]
     agg = {c: "sum" for c in numeric}
     agg.update({"batch": lambda s: "+".join(sorted(set(s))), "kreis": "first", "x_km": "first",
                 "y_km": "first", "n_distinct_donors": "max", "kish_n_eff": "max"})
     cells = cells.groupby("zone", as_index=False).agg(agg)
     cells["split_over_batches"] = cells["batch"].str.contains(r"\+")
+    # A cell split over batches sums the per-part |synthetic - target| (an upper bound of the cell's error, because
+    # errors of opposite sign in the parts do not cancel) and has no donor statistics of the whole cell: the donor
+    # columns are left empty for it instead of taking one part's value.
+    if cells["split_over_batches"].any():
+        logger.warning("%d 1 km cell(s) split over batches: abs errors are upper bounds, donor columns left empty",
+                       int(cells["split_over_batches"].sum()))
+        cells.loc[cells["split_over_batches"], ["n_distinct_donors", "kish_n_eff"]] = np.nan
     cells.to_csv(out_dir / "cells_1km.csv", index=False)
 
     bins = pd.DataFrame(bin_rows).groupby(["group", "cell_households"], as_index=False)[

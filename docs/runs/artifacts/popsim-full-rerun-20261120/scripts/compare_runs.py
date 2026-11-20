@@ -57,6 +57,11 @@ def _region_fit(diag: Path) -> pd.DataFrame:
     fit = pd.read_csv(diag / "control_fit.csv")
     fit = fit[fit["scope"] == "region"].copy()
     fit["group"] = fit["control"].map(control_group)
+    other = int((fit["group"] == "other").sum())
+    print(f"[compare_runs] {diag.name}: controls with a named group {len(fit) - other}/{len(fit)}, "
+          f"fallback group 'other' {other} ({100.0 * other / max(len(fit), 1):.1f}%)")
+    if other:
+        print(f"[compare_runs] WARNING: controls without a group pattern: {sorted(fit.loc[fit['group'] == 'other', 'control'])}")
     return fit[["control", "geography", "group", "target_sum", "synthetic_sum", "abs_error", "bias", "wape"]]
 
 

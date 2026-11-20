@@ -1,6 +1,6 @@
 # PopulationSim batch diagnostics
 
-- work directory: `/home/felix/prod100_20261031/popsim_work`
+- work directory: `~/prod100_20261031/popsim_work`
 - batches: 60
 - seed groups: 1 (de13d57636a9: 60 batch(es))
 - repository commit: `1041849c243c71859c95275447a24363ee1aa358`
