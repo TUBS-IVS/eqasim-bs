@@ -99,6 +99,11 @@ from braunschweig.popsim.mid.participation import PARTICIPATION_W_ZWECK
 
 LOGGER = logging.getLogger("braunschweig.analysis.participation_fit")
 
+#: persons.csv column of the reporting-day absence state (stage
+#: braunschweig.synthesis.day_absence.absence_stage) and its value for a person at home.
+DAY_ABSENCE_COLUMN = "day_absence_state"
+DAY_ABSENCE_PRESENT = "present"
+
 # The per-purpose participation controls evaluated by this module, derived from
 # mid.PARTICIPATION_W_ZWECK (the single source of truth for the registered purpose
 # set: work / leisure / education from feature #224, escort from issue #227), plus
@@ -164,15 +169,27 @@ def realised_participation(trips: pd.DataFrame, persons_kreis: pd.DataFrame) -> 
     raises ``KeyError`` (no silent fallback to an empty/zero result).
 
     ``persons_kreis`` must carry ``person_id`` and ``ars5`` (5-digit Kreis).
-    Every person in ``persons_kreis`` is counted (including persons absent
-    from ``trips``, who are immobile / non-participating by construction).
+    Every person in ``persons_kreis`` is counted for the purposes (including
+    persons absent from ``trips``, who are non-participating by construction):
+    their SrV targets count every respondent, the ones away from home the whole
+    day included (``srv2023_participation_by_kreis.csv``; see
+    :mod:`braunschweig.calibration.srv_participation_universe`).
+
+    ``mobility`` is the share of persons with at least one trip of ANY purpose
+    that day (the Mobilitaetsquote). Its target, ``1 - trips_0`` of the SrV
+    trip-class target, holds for the respondents who were NOT away from home the
+    whole day (``E_ANZ_WEGE != -7``; ASSUMPTION note in
+    ``scripts/build_trip_class_target.py``). So when ``persons_kreis`` carries
+    ``day_absence_state`` (persons.csv, stage
+    ``braunschweig.synthesis.day_absence.absence_stage``), the mobility row counts
+    only the persons with ``day_absence_state == "present"``; without the column
+    every person counts and a WARNING says that the universes then differ (the
+    gap is about the absent share, about 5 % of persons).
 
     Returns one row per (``ars5``, ``purpose``) with ``purpose`` in
     ``PARTICIPATION_PURPOSES`` plus ``"mobility"`` (currently work / leisure /
     education / escort / mobility): columns ``ars5, purpose,
-    realised_rate, n_persons``. ``mobility`` is the share of persons with at
-    least one trip of ANY purpose that day (the Mobilitaetsquote), i.e. the
-    complement of the trip-class "0 trips" share.
+    realised_rate, n_persons``; ``n_persons`` is the denominator of the row.
     """
     missing_persons_cols = [c for c in ("person_id", "ars5") if c not in persons_kreis.columns]
     if missing_persons_cols:
@@ -212,20 +229,43 @@ def realised_participation(trips: pd.DataFrame, persons_kreis: pd.DataFrame) -> 
             mask = trips["W_ZWECK"].isin(codes)
             per_purpose_person_ids[purpose] = set(trips.loc[mask, "person_id"].unique())
 
+    # Mobility universe: persons present on the reporting day (the trip-class target's universe).
+    if DAY_ABSENCE_COLUMN in persons_kreis.columns:
+        present = persons_kreis[DAY_ABSENCE_COLUMN].astype(str).eq(DAY_ABSENCE_PRESENT).to_numpy()
+        n_total = len(persons_kreis)
+        LOGGER.info(
+            "realised_participation: mobility universe = persons present on the reporting day: "
+            "present %d/%d (%.2f%%), whole-day absent %d (%.2f%%) left out of the mobility row only",
+            int(present.sum()), n_total, 100.0 * present.mean() if n_total else 0.0,
+            int((~present).sum()), 100.0 * (~present).mean() if n_total else 0.0)
+    else:
+        present = None
+        LOGGER.warning(
+            "realised_participation: persons_kreis has no %r column; fallback: the mobility row counts all "
+            "%d persons (100%%), while its trip-class target excludes the persons away from home the "
+            "whole day, so the realised mobility reads low by about that share.",
+            DAY_ABSENCE_COLUMN, len(persons_kreis))
+    persons_kreis = persons_kreis.assign(_present=True if present is None else present)
+
     rows = []
     for ars5, group in persons_kreis.groupby("ars5"):
         n_persons = len(group)
         if n_persons == 0:
             continue
         person_ids = set(group["person_id"])
+        present_ids = set(group.loc[group["_present"], "person_id"])
         for purpose in (*PARTICIPATION_PURPOSES, "mobility"):
-            participating_ids = mobile_person_ids if purpose == "mobility" else per_purpose_person_ids[purpose]
-            n_participating = len(person_ids & participating_ids)
+            if purpose == "mobility":
+                universe, participating_ids = present_ids, mobile_person_ids
+            else:
+                universe, participating_ids = person_ids, per_purpose_person_ids[purpose]
+            if not universe:
+                continue
             rows.append({
                 "ars5": ars5,
                 "purpose": purpose,
-                "realised_rate": n_participating / n_persons,
-                "n_persons": n_persons,
+                "realised_rate": len(universe & participating_ids) / len(universe),
+                "n_persons": len(universe),
             })
     return pd.DataFrame(rows, columns=["ars5", "purpose", "realised_rate", "n_persons"])
 
