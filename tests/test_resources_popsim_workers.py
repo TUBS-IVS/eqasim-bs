@@ -50,3 +50,14 @@ def test_non_positive_worker_memory_gb_raises():
         resources.resolve_popsim_workers(3, budget, worker_memory_gb=0.0)
     with pytest.raises(ValueError):
         resources.resolve_popsim_workers(3, budget, worker_memory_gb=-5.0)
+
+
+@pytest.mark.parametrize("driver_rss_gb, expected", [
+    (0.0, 14),    # floor(86.28 / 6)
+    (10.5, 12),   # floor((86.28 - 10.5) / 6): the driver shares the budget
+    (90.0, 1),    # never below one worker
+])
+def test_auto_subtracts_the_driver_memory(driver_rss_gb, expected):
+    assert resources.effective_popsim_workers(
+        "auto", worker_memory_gb=6.0, machine=SERVER, env={},
+        driver_rss_gb=driver_rss_gb) == expected

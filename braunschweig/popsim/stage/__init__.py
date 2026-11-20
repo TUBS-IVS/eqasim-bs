@@ -849,7 +849,8 @@ def configure(context):
     context.config(KEY_INTEGERIZER_PENALTY_CAP, 100000.0)
     context.config(KEY_INTEGERIZER_PARENT_TOTAL_FACTOR, 10.0)
     context.config(KEY_INTEGERIZER_CONSERVE_PENALTY, 100000.0)
-    # The method of the controlled rounding and its search options (the fork's defaults).
+    # The method of the controlled rounding and its search options (the fork's defaults, whose
+    # source is named at the controlled-rounding options in config_keys).
     context.config(KEY_INTEGERIZER_CONTROLLED_METHOD, "search")
     context.config(KEY_INTEGERIZER_SEARCH_MAX_SWEEPS, 200)
     context.config(KEY_INTEGERIZER_SEARCH_SHORTLIST, 24)
@@ -1199,7 +1200,10 @@ def _read_batching_and_scope_config(context):
     # stage's hash and discard the shared popsim cache.
     from braunschweig import resources
     _requested_workers = context.config(KEY_WORKERS)
-    _worker_memory_gb = float(context.config(KEY_WORKER_MEMORY_GB))
+    # A configured figure below the default holds only with both run-time options on.
+    _worker_memory_gb = resources.popsim_worker_memory_gb(
+        float(context.config(KEY_WORKER_MEMORY_GB)),
+        context.config(KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY), context.config(KEY_FAST_PATHS))
     num_workers = resources.effective_popsim_workers(_requested_workers, _worker_memory_gb)
     # The worker count is memory-bound, not core-bound (see the comment above),
     # so the log names the quantity that actually decided it -- the memory
@@ -1314,6 +1318,30 @@ def _read_control_config(context, source_name: str):
         control_tiers, seed_day_filter, controls_source, employment_grid_on,
         ownership_grid_on, active_entries, active_entry_names, status_prior_n,
         ebike_seed_column_cfg, importance_profile, fine_teen_bands_on,
+    )
+
+
+def _placement_income_catalog(control_tiers, employment_grid_on: bool, active_entry_names,
+                              fine_teen_age_bands: bool, family_controls: str,
+                              ownership_grid_on: bool):
+    """Catalog the donor signatures of the income placement are built from.
+
+    The signatures must cover every control PopulationSim enforced (``_build_control_frame``),
+    so the teen bands, the family-control mode (#659) and the 1 km ownership grid
+    (ADR-0092) follow the run with the same flags. The grid controls select the same
+    households as the KREIS car/bicycle ownership controls, which the grid requires to be
+    active (``_inject_ownership_grid_columns``), so including them leaves the signatures'
+    donor partition unchanged; they are included so the signature catalog is the enforced
+    catalog by construction rather than by that coincidence.
+    """
+    from braunschweig.popsim import control_spec as _cs
+    return _cs.full_catalog(
+        include_tiers=control_tiers,
+        include_employment_grid=employment_grid_on,
+        include_ownership_grid=ownership_grid_on,
+        kreis_control_names=active_entry_names,
+        fine_teen_age_bands=fine_teen_age_bands,
+        family_controls=family_controls,
     )
 
 
@@ -3604,8 +3632,11 @@ def execute(context) -> pd.DataFrame:
     # any seed is built, so an invalid value costs seconds, not the seed build or, for the gate
     # (which only runs after all batches), the whole batch run (ValueError names the key).
     settings_overrides, integerizer_seed_base = _read_integerizer_settings(context)
+    # An older fork ignores controlled rounding: refuse it now, not after all batches.
+    folders.require_fork_version_for_controlled_rounding(
+        settings_overrides, populationsim_version)
     # An older fork ignores the run-time options silently: refuse them against the configured
-    # version now (".get": some test doubles return an empty dict).
+    # version now. Both guards index the overrides, so a missing setting is a KeyError.
     folders.require_fork_version_for_run_time_options(settings_overrides, populationsim_version)
     solver_path_gate.validate_error_rate(context.config(KEY_SOLVER_FALLBACK_ERROR_RATE))
     # The server-local settings file must not contradict the tracked options (it is checked
@@ -3831,14 +3862,17 @@ def execute(context) -> pd.DataFrame:
         work_dir, settings_overrides[folders.FAST_PATHS_SETTING]))
     solver_paths, solver_path_totals = solver_path_gate.check_solver_paths(
         work_dir, context.config(KEY_SOLVER_FALLBACK_ERROR_RATE),
-        expected_rounding=settings_overrides[folders.INTEGERIZER_ROUNDING_SETTING])
+        expected_rounding=settings_overrides[folders.INTEGERIZER_ROUNDING_SETTING],
+        expected_method=settings_overrides[folders.INTEGERIZER_CONTROLLED_METHOD_SETTING])
     context.set_info("popsim_solver_paths", solver_paths.to_dict("records"))
     context.set_info("popsim_solver_path_totals", solver_path_totals)
-    context.set_info(
-        "popsim_integerizer_conservation_loss_share",
-        solver_path_totals["conservation_loss_share"])
-    context.set_info(
-        "popsim_integerizer_not_converged_share", solver_path_totals["not_converged_share"])
+    # Only a controlled run measures these shares; with "round" the totals are placeholders.
+    if settings_overrides[folders.INTEGERIZER_ROUNDING_SETTING] == solver_path_gate.CONTROLLED:
+        context.set_info(
+            "popsim_integerizer_conservation_loss_share",
+            solver_path_totals["conservation_loss_share"])
+        context.set_info(
+            "popsim_integerizer_not_converged_share", solver_path_totals["not_converged_share"])
     inkar_income = _load_inkar_income_scale(context)
     combined = _join_cell_attributes_onto_merged_output(merge_report, cells)
     donor_households, donor_persons = _load_donor_tables(
@@ -3860,11 +3894,11 @@ def execute(context) -> pd.DataFrame:
         from braunschweig.popsim import placement_income as _pi
         from braunschweig.popsim import control_spec as _cs_pi
         _pi.check_controls_source_compatible(placement_income_on, controls_source)
-        _pi_catalog = _cs_pi.full_catalog(
-            include_tiers=control_tiers,
-            include_employment_grid=employment_grid_on,
-            kreis_control_names=active_entry_names,
-        )
+        # Same flags as _build_control_frame, so the slot swaps keep every aggregate
+        # PopulationSim fitted, including the 1 km car/bicycle ownership grid.
+        _pi_catalog = _placement_income_catalog(
+            control_tiers, employment_grid_on, active_entry_names, fine_teen_bands_on,
+            household_universes.family_controls, ownership_grid_on)
         _pi_controls = _cs_pi.controls_for_seed(_pi_catalog, source_name)
         _signatures = _pi.donor_control_signatures(
             _pi_controls, seed_households, seed_persons, seed=source_name)

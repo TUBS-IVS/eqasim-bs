@@ -31,7 +31,7 @@ may only name run manifests (no run, no claim).
 | [education_enrollment_validation](../registry/features/education_enrollment_validation.yml) | validation | active | ON | A/s/- | 1 | -- | marker | none | unvalidated | pending |
 | [education_gravity](../registry/features/education_gravity.yml) | education | active | ON | A/A/- | 4 | not claimed | none | committed | unvalidated | pending |
 | [einpendler_injection](../registry/features/einpendler_injection.yml) | cordon | active | ON | A/A/- | 7 | -- | marker | none | unvalidated | pending |
-| [employment_grid_control](../registry/features/employment_grid_control.yml) | attributes | active | ON | A/s/- | 4 | proven | marker | none | unvalidated | pending |
+| [employment_grid_control](../registry/features/employment_grid_control.yml) | attributes | active | ON | A/s/- | 4 | proven | marker | none | unvalidated (`popsim-input-consistency-2026-11-18`, `popsim-ladder-inputs-a-2026-11-18`) | pending |
 | [employment_margin](../registry/features/employment_margin.yml) | attributes | parked | off | -/-/i | 1 | -- | marker | none | unvalidated | pending |
 | [eqasim_java_fork](../registry/features/eqasim_java_fork.yml) | infrastructure | active | ON | A/A/A | 0 | -- | none | none | unvalidated (`matsim-e2e-2.2.0-kreis03101-2026-07-23`) | pending |
 | [escort_passive_from_adult](../registry/features/escort_passive_from_adult.yml) | behavior | active | ON | A/i/- | 10 | proven | marker | committed | unvalidated | pending |
@@ -60,7 +60,7 @@ may only name run manifests (no run, no claim).
 | [household_fleet](../registry/features/household_fleet.yml) | fleet | active | ON | A/A/A | 1 | proven | marker | committed | unvalidated | pending |
 | [household_income_distribution](../registry/features/household_income_distribution.yml) | attributes | active | off | -/-/A | 1 | proven | marker | committed | unvalidated | pending |
 | [household_size_margin](../registry/features/household_size_margin.yml) | population | active | off | -/-/A | 1 | -- | none | none | unvalidated | pending |
-| [housing_tenure](../registry/features/housing_tenure.yml) | attributes | active | ON | A/A/A | 1 | -- | marker | committed | unvalidated | pending |
+| [housing_tenure](../registry/features/housing_tenure.yml) | attributes | active | ON | A/A/A | 1 | -- | marker | committed | unvalidated (`popsim-ladder-tenure-2026-11-18`) | pending |
 | [income_aware_cars](../registry/features/income_aware_cars.yml) | attributes | active | off | -/-/A | 1 | proven | marker | committed | unvalidated | pending |
 | [income_spatial_tilt](../registry/features/income_spatial_tilt.yml) | population | active | off | i/i/- | 3 | proven | marker | none | unvalidated | pending |
 | [incommuter_donor_demographics](../registry/features/incommuter_donor_demographics.yml) | cordon | active | ON | A/A/- | 2 | not claimed | marker | none | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | pending |
@@ -80,7 +80,7 @@ may only name run manifests (no run, no claim).
 | [mode_choice](../registry/features/mode_choice.yml) | matsim | supported | off | i/i/i | 0 | -- | none | none | unvalidated | pending |
 | [no_answer_codes_excluded](../registry/features/no_answer_codes_excluded.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | unvalidated | pending |
 | [outside_tour_modes](../registry/features/outside_tour_modes.yml) | cordon | active | ON | A/-/- | 9 | proven | marker | committed | unvalidated (`i453-i443-ab-1pct-2026-10-16`) | pending |
-| [ownership_grid_1km](../registry/features/ownership_grid_1km.yml) | population | active | ON | A/-/- | 6 | proven | marker | committed | unvalidated (`smoke-ownership-grid-03101-2026-08-19`, `100pct-allfeat-i240-2026-08-20`) | pending |
+| [ownership_grid_1km](../registry/features/ownership_grid_1km.yml) | population | active | ON | A/-/- | 6 | proven | marker | committed | unvalidated (`smoke-ownership-grid-03101-2026-08-19`, `100pct-allfeat-i240-2026-08-20`, `popsim-input-consistency-2026-11-18`, `popsim-ladder-inputs-a-2026-11-18`) | pending |
 | [parallel_chainsolvers](../registry/features/parallel_chainsolvers.yml) | infrastructure | active | ON | A/A/A | 5 | -- | marker | none | unvalidated | pending |
 | [parking_cost_zones](../registry/features/parking_cost_zones.yml) | matsim | experimental | ON | A/A/- | 36 | proven | marker | committed | unvalidated (`parking-zones-smoke-zgb-1pct-2026-09-30`, `parking-v3-arms-2026-10-15`) | pending |
 | [participation_universe_controls](../registry/features/participation_universe_controls.yml) | attributes | active | ON | A/i/- | 15 | proven | marker | committed | measured_vs_reference (`participation-universe-controls-arm4-100pct-2026-09-08`) | Claude (Fable 5.1) subagent-driven task reviews plus one whole-branch review, 2026-09-07; the whole-branch review found the census age-column defect that would have aborted the arm-4 run, so the review is load-bearing evidence and not a formality. User sign-off outstanding., None |
@@ -89,7 +89,7 @@ may only name run manifests (no run, no claim).
 | [placement_income_l2](../registry/features/placement_income_l2.yml) | attributes | active | ON | A/A/- | 4 | proven | marker | committed | measured_vs_reference (`placement-income-l2-gate-2026-07-18`) | pending |
 | [plan_feasibility_check](../registry/features/plan_feasibility_check.yml) | matsim | active | ON | A/A/A | 7 | -- | marker | assumption | unvalidated (`i453-i443-ab-1pct-2026-10-16`, `i465-wpe-smoke-1pct-2026-10-23`, `i576-plan-check-split-prod100-2026-11-06`) | pending |
 | [popsim_data_dictionary](../registry/features/popsim_data_dictionary.yml) | population | active | off | A/s/- | 1 | -- | none | none | not_applicable (`popsim-data-dictionary-identity-2026-11-16`) | pending |
-| [popsim_method](../registry/features/popsim_method.yml) | population | active | ON | A/A/- | 4 | -- | none | none | measured_vs_reference (`synth-100pct-2.2.0-2026-07-23`, `popsim-batch-diagnostics-prod100-20261031-2026-11-16`, `popsim-ladder-baseline-2026-11-16`, `popsim-ladder-arm1-2026-11-17`, `popsim-ladder-arm2-2026-11-17`) | pending |
+| [popsim_method](../registry/features/popsim_method.yml) | population | active | ON | A/A/- | 4 | -- | none | none | measured_vs_reference (`synth-100pct-2.2.0-2026-07-23`, `popsim-batch-diagnostics-prod100-20261031-2026-11-16`, `popsim-ladder-baseline-2026-11-16`, `popsim-ladder-arm1-2026-11-17`, `popsim-ladder-arm2-2026-11-17`, `popsim-ladder-arm3-2026-11-18`) | pending |
 | [population_validation](../registry/features/population_validation.yml) | validation | active | ON | A/s/s | 1 | -- | marker | none | unvalidated | pending |
 | [portal_trips](../registry/features/portal_trips.yml) | cordon | active | ON | A/-/- | 29 | proven | marker | none | unvalidated (`portal-trips-ab-1pct-2026-10-09`, `i465-wpe-smoke-1pct-2026-10-23`, `i574-portal-replay-prod100-2026-11-06`) | pending |
 | [primary_location_far_class_rank](../registry/features/primary_location_far_class_rank.yml) | work | active | ON | A/A/A | 2 | proven | marker | none | unvalidated (`i465-primary-assignment-measure-1pct-2026-10-23`) | pending |
@@ -115,7 +115,7 @@ may only name run manifests (no run, no claim).
 | [student_incommuters](../registry/features/student_incommuters.yml) | cordon | active | ON | A/A/- | 3 | proven | marker | none | unvalidated | pending |
 | [svb_wohn_work_production_mass](../registry/features/svb_wohn_work_production_mass.yml) | work | parked | off | i/i/i | 1 | proven | marker | none | measured_vs_reference (`verbindungen-ab-2026-07-16`) | pending |
 | [taz_work_location_choice](../registry/features/taz_work_location_choice.yml) | work | parked | off | i/i/i | 3 | proven | none | committed | unvalidated | pending |
-| [tier3_kreis_controls](../registry/features/tier3_kreis_controls.yml) | attributes | active | ON | A/i/- | 3 | -- | none | committed | unvalidated | pending |
+| [tier3_kreis_controls](../registry/features/tier3_kreis_controls.yml) | attributes | active | ON | A/i/- | 3 | -- | none | committed | unvalidated (`popsim-input-consistency-2026-11-18`, `popsim-ladder-inputs-a-2026-11-18`) | pending |
 | [tier_ab_caching](../registry/features/tier_ab_caching.yml) | infrastructure | active | ON | A/s/s | 5 | -- | none | none | unvalidated (`cache-migration-100pct-2026-10-22`, `content-addressed-cache-acceptance-100pct-2026-10-22`) | pending |
 | [transit_next_day](../registry/features/transit_next_day.yml) | matsim | active | ON | A/A/A | 3 | proven | marker | assumption | unvalidated (`i465-wpe-smoke-1pct-2026-10-23`) | pending |
 | [urban_parking](../registry/features/urban_parking.yml) | matsim | supported | off | i/i/i | 5 | -- | none | none | unvalidated | pending |

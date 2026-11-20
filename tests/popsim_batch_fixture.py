@@ -107,8 +107,13 @@ def _incidence(controls: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_work_dir(root: Path, *, with_store: bool = True,
-                   extra_controls: Sequence[dict] = ()) -> Path:
-    """Write ``<root>/batch_000`` and return ``root``."""
+                   extra_controls: Sequence[dict] = (),
+                   crosswalk_in_store: bool = False) -> Path:
+    """Write ``<root>/batch_000`` and return ``root``.
+
+    ``crosswalk_in_store`` also puts the ``geo_cross_walk`` table into the checkpoint store (the
+    CSV under ``data/`` is always written); it needs ``with_store``.
+    """
     batch = Path(root) / "batch_000"
     for sub in ("data", "configs", "output"):
         (batch / sub).mkdir(parents=True, exist_ok=True)
@@ -116,8 +121,9 @@ def build_work_dir(root: Path, *, with_store: bool = True,
 
     SEED_HOUSEHOLDS.to_csv(batch / "data" / "seed_households.csv", index=False)
     SEED_PERSONS.to_csv(batch / "data" / "seed_persons.csv", index=False)
-    pd.DataFrame({"STAAT": 1, "KREIS": 3153, "ZENSUS1km": "K1", "ZENSUS100m": ["A", "B"]}).to_csv(
-        batch / "data" / "geo_cross_walk.csv", index=False)
+    crosswalk = pd.DataFrame(
+        {"STAAT": 1, "KREIS": 3153, "ZENSUS1km": "K1", "ZENSUS100m": ["A", "B"]})
+    crosswalk.to_csv(batch / "data" / "geo_cross_walk.csv", index=False)
 
     totals = pd.DataFrame(
         [[cell] + values for cell, values in TOTALS_100M.items()],
@@ -153,4 +159,6 @@ def build_work_dir(root: Path, *, with_store: bool = True,
                       format="fixed")
             store.put("/ZENSUS100m_weights/sub_balancing.geography=ZENSUS100m", weights,
                       format="fixed")
+            if crosswalk_in_store:
+                store.put("/geo_cross_walk/setup_data_structures", crosswalk, format="fixed")
     return Path(root)

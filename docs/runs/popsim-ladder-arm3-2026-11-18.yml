@@ -9,7 +9,11 @@ repository:
     commit is the eqasim-bs code on the run server (git archive without docs/ and tests/) that writes the
     batch settings, runs the diagnostics and reads the solver-path record; it is a commit of the stacked
     branch chore/i656-popsim-batch-memory, i.e. this branch as pre-registered plus the option keys of issue
-    #656, which prepare_variant.py needs (the two options stay false in every arm of this record). This line
+    #656, which prepare_variant.py needs (the two options stay false in every arm of this record). That
+    commit is not an ancestor of this branch: it becomes part of main with the pull request of issue #656.
+    Until then the scripts of this record cannot be re-run from main (prepare_variant.py passes the two
+    option keys and calls their fork-version guard; run_locate.sh names the run-performance record of that
+    issue, while its own check of the outputs is against the evidence run of this record). This line
     was corrected before any run started: a rebase of that branch had replaced the commit named first by
     one with the same code. PopulationSim is the
     release candidate of 0.10.0+bs.2 of the group's fork at commit
@@ -175,9 +179,11 @@ validation:
   artifact: docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/arm3_verdict.json
 - metric: >-
     Reported without a bound, arm 2 (and arm 2r where arm 2 has no table) against arm 3: the status of every
-    integerizer call (the arm-2 path records are committed here); household conservation per level (share
-    of the parent weight that the sub level does not return to the same row, conserved pairs, distinct rows
-    at the parent and the sub level); the rare-group table (target T, float sum F, integer sum I at
+    integerizer call (the arm-2 path records are committed here); household conservation per level
+    (abs_deviation_share = the sum over household rows of the absolute difference between a row's weight
+    over the sub zones and its parent weight, divided by the parent weight sum, so a household moved to
+    another row counts twice, once as missing and once as added; conserved pairs; distinct rows at the
+    parent and the sub level); the rare-group table (target T, float sum F, integer sum I at
     ZENSUS100m for households of 5 and of 6 or more persons, single parents, ages 18-19 by sex); the
     rounding WAPE per level; the search totals (swaps, distance before and after, row_shortfall,
     zone_shortfall, hh_unreachable, hh_outside_lp, hh_excess); distinct seed households, Kish effective
@@ -188,9 +194,14 @@ validation:
     Integerizer calls by status (arm3_call_status_counts.csv): arm 2 simultaneous 32 INFEASIBLE and 28
     OPTIMAL (batch_000), 21 and 21 (batch_032), single 90 INFEASIBLE of 506 and 35 of 583; arm 3 simultaneous
     34 FEASIBLE and 8 OPTIMAL (batch_000), 30 and 1 (batch_032), one single call each (the seed level,
-    OPTIMAL). Household conservation (share of the parent weight not returned to the same row, arm 2r / arm
-    3): batch_000 ZENSUS1km 0.600 / 0, ZENSUS100m 0.637 / 0.050; batch_032 KREIS 0.166 / 0, ZENSUS1km 0.569
-    / 0, ZENSUS100m 0.638 / 0; household groups with a positive weight at ZENSUS100m, of those at the seed
+    OPTIMAL). Household conservation (abs_deviation_share as defined in the metric above, in which a moved
+    household counts twice; arm 2r / arm 3): batch_000 ZENSUS1km 0.600 / 0, ZENSUS100m 0.637 / 0.050;
+    batch_032 KREIS 0.166 / 0, ZENSUS1km 0.569 / 0, ZENSUS100m 0.638 / 0. Read as parent weight that is not
+    returned to its row it is half of that where the parent and the sub weight sums are equal (batch_000
+    ZENSUS1km in arm 2r: 1,989 of 6,629, 0.300); in arm 3 at ZENSUS100m of batch_000 the deviation of 331
+    is 135 not returned (the row_shortfall of the path record, 0.020 of the parent weight) and 196 added.
+    This description was corrected on 2026-11-19 after review (the value had been called the share not
+    returned); no figure changed. Household groups with a positive weight at ZENSUS100m, of those at the seed
     level: batch_000 3,091 / 5,804 of 5,937, batch_032 5,901 / 11,659 of 11,659. Rare groups at ZENSUS100m
     (target T, then integer sum arm 2 / arm 3; arm 3 keeps the float sum, so its distance to T is the
     balancing's): batch_000 households of 5 persons 79, 54 / 88; of 6 or more 47, 23 / 49; single parents
@@ -231,8 +242,11 @@ validation:
   reference: the round method on the same inputs (model output)
   result: >-
     61 parents (31 of batch_044, 30 of batch_028), release candidate d9a2e28, production environment, one
-    thread (method_summary.csv, level ALL; round / search / lp): wall time 1,620 / 20 / 3,031 s; parents on a
-    fallback path 33 / 0 / 0; household rows whose weight over the sub-zones is kept 53.2 % / 100 % / 100 %;
+    thread (method_summary.csv, level ALL; round / search / lp): wall time 1,620 / 20 / 3,031 s; parents not
+    solved by the first simultaneous call 33 / 0 / 0 (round: 18 on a fallback path as the solver-path gate
+    defines it, i.e. sequential or smart-round outcomes, and 15 solved by the retry, which the gate counts
+    as primary; column fallback_instances of method_summary.csv counts every outcome other than
+    "simultaneous"; wording corrected 2026-11-19 after review, no figure changed); household rows whose weight over the sub-zones is kept 53.2 % / 100 % / 100 %;
     importance-weighted distance of the integer to the float cell totals 21.30 M / 15.45 M / 25.79 M; distance
     to the targets 55,626 / 53,085 / 58,241; rows with a positive integer weight 59,991 / 79,892 / 79,892 of
     79,892. The lp method reached OPTIMAL in all 61 calls and is the slowest and the farthest from the float

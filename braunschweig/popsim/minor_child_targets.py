@@ -13,8 +13,11 @@ per-cell household targets with the same under-18 definition:
   partnerships and cohabiting couples with at least one child under 18
   (:data:`COUPLE_SOURCES`).
 
-Method. For each 1 km square the share of each class is the class sum divided by the
-households of the same census table (:data:`FAMILY_TABLE_HOUSEHOLDS`). A 100 m cell's
+Method. For each 1 km square the share of each class is the class sum (families of the table
+``Typ_der_Kernfamilie_nach_Kindern``) divided by the private households of the square in the
+household-type table ``Typ_priv_HH_Familie`` (:data:`FAMILY_TABLE_HOUSEHOLDS`). The household
+table is the denominator because the targets are shares of HOUSEHOLDS; the family table's own
+total counts families, and a household can hold more than one. A 100 m cell's
 target is its own household total times its square's share, so the targets follow the
 cells' household totals and the census only supplies the composition.
 
@@ -78,7 +81,8 @@ COUPLE_SOURCES = (
     "EingetrLP_mind_1Kind_unter18_Typ_der_Kernfamilie_nach_Kindern_1km_Gitter",
     "NichtehelLG_mind_1Kind_unter18_Typ_der_Kernfamilie_nach_Kindern_1km_Gitter",
 )
-#: Households of the census family table; the denominator of the square shares.
+#: Private households of the census household-type table Typ_priv_HH_Familie (not of the family
+#: table, whose total counts families); the denominator of the square shares.
 FAMILY_TABLE_HOUSEHOLDS = "Insgesamt_Haushalte_Typ_priv_HH_Familie_1km_Gitter"
 #: Raw square id of the 1 km parquet; equals the model's 1 km parent ids
 #: (e.g. ``CRS3035RES1000mN3187000E4345000``).
@@ -156,8 +160,9 @@ def per_cell_targets(
         One row per 100 m cell with its 1 km parent id (``parent_col``), its Kreis
         code (``kreis_col``) and its household total (``household_total_col``).
     squares:
-        One row per 1 km square with :data:`SQUARE_COLUMNS` (counts of families and
-        households of the census table ``Typ_der_Kernfamilie_nach_Kindern``).
+        One row per 1 km square with :data:`SQUARE_COLUMNS` (families of the census table
+        ``Typ_der_Kernfamilie_nach_Kindern`` and private households of the household-type
+        table ``Typ_priv_HH_Familie``).
     fallback_warn_household_rate:
         Share (0..1) of all cell households on the Kreis fallback above which the rate
         is logged as a warning.

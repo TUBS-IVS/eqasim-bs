@@ -27,6 +27,7 @@ import pandas as pd
 
 from braunschweig.popsim import kreis_attribute_control as kac
 from braunschweig.popsim.control_spec import (
+    HH_TOTAL_CENSUS_COLUMN,
     _TIER1_HH_SIZE_ENTRIES, _TIER2_BUILDING_TYPE_ENTRIES, _TIER2_TENURE_ENTRIES,
     backbone_age_bands, employment_grid_controls)
 from braunschweig.popsim.ownership_grid import BIKES_CATEGORIES, CARS_CATEGORIES
@@ -37,8 +38,7 @@ _TAG = "[popsim_input_consistency]"
 SUFFIX_KREIS = "_KREIS"
 SUFFIX_1KM = "_ZENSUS1km"
 SUFFIX_100M = "_ZENSUS100m"
-HH_TOTAL_COLUMN = ("Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
-                   + SUFFIX_100M)
+HH_TOTAL_COLUMN = HH_TOTAL_CENSUS_COLUMN + SUFFIX_100M
 # Amounts below this are float noise, not a contradiction.
 TOLERANCE = 1e-6
 RELATIONS = ("equal", "at_least", "at_most", "ratio")

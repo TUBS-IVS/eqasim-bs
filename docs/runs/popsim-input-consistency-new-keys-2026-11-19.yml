@@ -60,6 +60,9 @@ validation:
     rows (median 0.0009, 90 % quantile 0.0049, 99 % quantile 0.0117), 0 rows above 0.05. Reported, not gated
     by the stage: in the 143 age rows of parts below 1,000 persons the share reaches 1.12 (9 rows above 0.05);
     persons_all (population-share split in both modes) max 0.0132 in the parts with at least 1,000 persons.
+    Correction after review (2026-11-20, no figure changed): the stage's guard DOES gate persons_all
+    (input_consistency_guard.AGE_UNIVERSE_PAIRS), while scripts/guard_summary.py reports it apart; with
+    0.0132 it is below the 0.05 bound, so the verdict holds.
     Employment level: 346 Kreis-part x family pairs reconciled, 0 capped, 0 left unchanged; bridge 0.9827.
   artifact: docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/guard_summary.json
 - metric: >-
@@ -73,7 +76,10 @@ validation:
   result: >-
     Reported, not gated: 3 of the 301 gated age rows exceed 0.02 (max share 0.0266; batch_028 Kreis
     03158 persons_18plus, batch_037 Kreis 03154 persons_0_17, batch_040 Kreis 03151 persons_18plus), so a 2 %
-    guard from 200 persons would stop three production batches on the rounding residual alone.
+    guard from 200 persons would stop three production batches on the rounding residual alone. Correction
+    after review (2026-11-20): the stage's guard also gates persons_all, which scripts/guard_summary.py
+    reports apart; counted from the committed input_consistency_new_keys.csv, 2 of its 165 rows in parts
+    with at least 200 persons exceed 0.02 (max 0.0314), so a 2 % guard would stop more batches, not fewer.
   artifact: docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/guard_summary_tolerance_0.02_min_persons_200.json
 artifacts:
 - docs/runs/artifacts/popsim-input-consistency-new-keys-2026-11-19/scripts/run_all_batches.sh

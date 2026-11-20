@@ -296,11 +296,11 @@ def test_entd_source_with_the_legacy_family_controls_is_accepted():
 
 # --- the legacy seed and batch signature are those of the commit before #659 Part B ---------
 
-# compute_batch_config_signature of the seed below at the legacy keys, computed on the base
-# commit bc5e5b54 (before hh_minor_class existed): a detached `git worktree add` of bc5e5b54 and
-# a script building these frames with mid.project_completed_seed and the other arguments of
-# _legacy_signature. A legacy run must keep its signature, or it purges its completed batches.
-_BASE_COMMIT_LEGACY_SIGNATURE = "a02528dc1a399fd1f3eb1ea9742843259da7fa14b89ff4ac565429bcb5ccc901"
+# The base commit before #659 Part B (bc5e5b54) built the seed without hh_minor_class and passed
+# no household-universe payload to the batch signature. A legacy run must keep that signature, or
+# it purges its completed batches. The reference is computed in the same process: a hash pinned
+# on one platform differs on another (the signature hashes the seed frames, whose integer dtype is
+# platform-dependent), which turned the Linux CI red while Windows passed.
 
 
 def _legacy_signature(settings):
@@ -318,17 +318,22 @@ def _legacy_signature(settings):
         cols.age: [34, 41, 39, 9, 45, 16],
         cols.sex: [2, 1, 2, 1, 2, 1],
     })
-    seed_hh, seed_p = mid.project_completed_seed(households, persons, cols)
-    seed_hh = settings.seed_households_for_run(seed_hh)
-    signature = stage.compute_batch_config_signature(
-        controls_df=pd.DataFrame({"target": ["total_households"], "importance": [1000]}),
-        settings_text="geographies: [ZENSUS100m]\n", max_cells=1500, stratify_regiostar=False,
-        source_name="mid", employment_grid_on=False, kreis_controls_map=None,
-        seed_day_filter=None, seed_households=seed_hh, seed_persons=seed_p, kreis_table=None,
-        populationsim_version="0.10.0+bs.1", populationsim_commit="c0ffee",
-        populationsim_lock_hash="lockhash", settings_overrides={"INTEGERIZER_DRAW": "off"},
-        integerizer_seed_base=None, household_universes=settings.signature_payload())
-    return seed_hh, signature
+    raw_seed_hh, seed_p = mid.project_completed_seed(households, persons, cols)
+    seed_hh = settings.seed_households_for_run(raw_seed_hh)
+
+    def signature_of(seed_households, payload):
+        return stage.compute_batch_config_signature(
+            controls_df=pd.DataFrame({"target": ["total_households"], "importance": [1000]}),
+            settings_text="geographies: [ZENSUS100m]\n", max_cells=1500, stratify_regiostar=False,
+            source_name="mid", employment_grid_on=False, kreis_controls_map=None,
+            seed_day_filter=None, seed_households=seed_households, seed_persons=seed_p,
+            kreis_table=None, populationsim_version="0.10.0+bs.1", populationsim_commit="c0ffee",
+            populationsim_lock_hash="lockhash", settings_overrides={"INTEGERIZER_DRAW": "off"},
+            integerizer_seed_base=None, household_universes=payload)
+
+    # What the base commit computed: no hh_minor_class column, no household-universe payload.
+    base_commit = signature_of(raw_seed_hh.drop(columns=["hh_minor_class"], errors="ignore"), None)
+    return seed_hh, signature_of(seed_hh, settings.signature_payload()), base_commit
 
 
 @pytest.mark.parametrize("keys, legacy", [
@@ -340,7 +345,31 @@ def _legacy_signature(settings):
     ((False, 20.0, "minor_child_1km"), False),
 ])
 def test_legacy_keys_keep_the_seed_and_signature_of_the_base_commit(keys, legacy):
-    seed_hh, signature = _legacy_signature(stage.HouseholdUniverseSettings(*keys))
+    seed_hh, signature, base_commit = _legacy_signature(stage.HouseholdUniverseSettings(*keys))
     # Only the minor-child controls read hh_minor_class; every other mode seeds without it.
     assert ("hh_minor_class" in seed_hh.columns) == (keys[2] == "minor_child_1km")
-    assert (signature == _BASE_COMMIT_LEGACY_SIGNATURE) == legacy
+    assert (signature == base_commit) == legacy
+
+
+@pytest.mark.parametrize("ownership_grid_on", [False, True])
+@pytest.mark.parametrize("family", [
+    control_spec.FAMILY_CONTROLS_ZENSUS_FAMILY5, control_spec.FAMILY_CONTROLS_NONE,
+    control_spec.FAMILY_CONTROLS_MINOR_CHILD_1KM])
+def test_placement_income_signatures_cover_the_enforced_controls(family, ownership_grid_on):
+    # The income placement only keeps every control aggregate when its donor signatures are
+    # built from the controls PopulationSim enforced; in every family mode and with the 1 km
+    # ownership grid on or off that is the catalog built with the same flags.
+    tiers = ("tier0", "tier1", "tier2")
+    # The grid requires the KREIS car/bicycle entries (_inject_ownership_grid_columns).
+    kreis_names = ("number_of_cars", "number_of_bicycles")
+    placement = stage._placement_income_catalog(tiers, False, kreis_names, True, family,
+                                                ownership_grid_on)
+    enforced = control_spec.full_catalog(include_tiers=tiers, fine_teen_age_bands=True,
+                                         family_controls=family, kreis_control_names=kreis_names,
+                                         include_ownership_grid=ownership_grid_on)
+    assert [c.name for c in placement] == [c.name for c in enforced]
+    names = " ".join(c.name for c in placement)
+    assert ("HH_MINOR_ONE_ADULT" in names) == (family == control_spec.FAMILY_CONTROLS_MINOR_CHILD_1KM)
+    assert ("Typ_priv_HH_Familie_100m" in names) == (family == control_spec.FAMILY_CONTROLS_ZENSUS_FAMILY5)
+    assert ("OWN_CARS_" in names) == ownership_grid_on
+    assert ("OWN_BIKES_" in names) == ownership_grid_on
