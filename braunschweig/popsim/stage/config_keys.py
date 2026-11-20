@@ -171,11 +171,11 @@ KEY_INTEGERIZER_SEARCH_SHORTLIST = "braunschweig.population.popsim.integerizer_s
 # store_positive_weight_rows_only (-> STORE_POSITIVE_WEIGHT_ROWS_ONLY): the weight tables of the
 # sub-geographies keep only the rows with a positive weight; this cuts the peak memory of a batch
 # run.
-KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY = (
-    "braunschweig.population.popsim.store_positive_weight_rows_only")
 # fast_paths (-> FAST_PATHS): the fork's faster implementations of hot steps, with bit-identical
 # results (evidence and its limit: see above).
-KEY_FAST_PATHS = "braunschweig.population.popsim.fast_paths"
+# Both keys are defined once in braunschweig.resources (the run-start gate reads them to decide
+# the worker memory) and re-exported here like KEY_WORKER_MEMORY_GB.
+from braunschweig.resources import KEY_FAST_PATHS, KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY  # noqa: E402,F401
 # Solver-path gate (braunschweig.popsim.stage.solver_path_gate, design goal G5, issue #645):
 # float in (0, 1] or null. Above this share of parent zones NOT integerized simultaneously
 # (per geography) the stage raises; null = warn only. Volatile: it only gates, no result, so a

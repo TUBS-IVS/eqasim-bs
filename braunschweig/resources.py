@@ -675,7 +675,13 @@ def popsim_worker_memory_gb(configured: float, store_positive_weight_rows_only: 
     the default's order (run manifest popsim-run-performance-2026-11-18), and the peak with only
     one option on was never measured. In that case the default is used instead and a WARNING
     names the keys, so a run with the options off is clamped rather than OOM-killed.
+
+    Raises ``ValueError`` for a non-positive ``configured`` (whatever the options), naming the key.
     """
+    if configured <= 0:
+        raise ValueError(
+            f"{KEY_WORKER_MEMORY_GB} must be a positive number of gigabytes per worker, "
+            f"got {configured!r}.")
     if configured < DEFAULT_POPSIM_WORKER_MEMORY_GB and not (
             store_positive_weight_rows_only is True and fast_paths is True):
         logger.warning(
@@ -915,11 +921,18 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
                 f"{key} must be a number of gigabytes per worker, got {raw!r}.") from None
 
     worker_memory_gb = None
+    # True only when the figure in use is the operator's own value, not the default that
+    # popsim_worker_memory_gb substitutes when the run-time options are not both on.
+    worker_memory_is_configured = False
     try:
+        configured_worker_memory_gb = _memory_setting(
+            KEY_WORKER_MEMORY_GB, DEFAULT_POPSIM_WORKER_MEMORY_GB)
         worker_memory_gb = popsim_worker_memory_gb(
-            _memory_setting(KEY_WORKER_MEMORY_GB, DEFAULT_POPSIM_WORKER_MEMORY_GB),
+            configured_worker_memory_gb,
             config.get(KEY_STORE_POSITIVE_WEIGHT_ROWS_ONLY, False),
             config.get(KEY_FAST_PATHS, False))
+        worker_memory_is_configured = (KEY_WORKER_MEMORY_GB in config
+                                       and worker_memory_gb == configured_worker_memory_gb)
     except ValueError as exc:
         _add_violation(Violation(key=KEY_WORKER_MEMORY_GB, severity="error",
                                  message=str(exc)))
@@ -1015,7 +1028,9 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
                 and float(sampling_rate) >= MEASURED_POPSIM_WORKER_MEMORY_SAMPLING_RATE)
         except (TypeError, ValueError):
             at_measured_scale = False
-        operator_asserted_figure = KEY_WORKER_MEMORY_GB in config
+        # The default substituted for a configured figure (options not both on) is not the
+        # operator's assertion: it keeps the scale rule of point 2.
+        operator_asserted_figure = worker_memory_is_configured
         severity = ("error" if popsim_selected
                     and (at_measured_scale or operator_asserted_figure) else "warning")
         message = (

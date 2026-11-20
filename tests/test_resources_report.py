@@ -300,3 +300,36 @@ def test_reduced_worker_memory_needs_both_run_time_options(store_positive, fast_
     workers = next(r for r in report.resolutions
                    if r.key == "braunschweig.population.popsim.num_workers")
     assert workers.effective == expected_workers
+
+
+def test_substituted_default_keeps_the_scale_rule_of_a_small_run():
+    # A 1 % popsim run with fast_paths off on a 32 GB workstation: the configured 6 GB is
+    # replaced by the 30 GB default, which is not the operator's assertion, so the run warns
+    # instead of aborting (as without a configured figure).
+    workstation = resources.MachineResources(
+        cores=8, memory_gb=32.0, cores_source="cpu_count", memory_source="psutil",
+    )
+    config = dict(PRODUCTION_CONFIG, **{
+        "sampling_rate": 0.01,
+        "braunschweig.population.popsim.num_workers": 1,
+        "braunschweig.population.popsim.worker_memory_gb": 6.0,
+        "braunschweig.population.popsim.store_positive_weight_rows_only": True,
+        "braunschweig.population.popsim.fast_paths": False,
+    })
+    report = resources.build_report(config, machine=workstation, env={})
+    popsim = [v for v in report.violations
+              if v.key == "braunschweig.population.popsim.num_workers"]
+    assert popsim and all(v.severity == "warning" for v in popsim)
+
+
+@pytest.mark.parametrize("fast_paths", [True, False])
+def test_non_positive_worker_memory_is_an_error_whatever_the_options(fast_paths):
+    config = dict(PRODUCTION_CONFIG, **{
+        "braunschweig.population.popsim.worker_memory_gb": 0,
+        "braunschweig.population.popsim.store_positive_weight_rows_only": True,
+        "braunschweig.population.popsim.fast_paths": fast_paths,
+    })
+    report = resources.build_report(config, machine=SERVER, env={})
+    error = next(v for v in report.violations
+                 if v.key == "braunschweig.population.popsim.worker_memory_gb")
+    assert error.severity == "error"
