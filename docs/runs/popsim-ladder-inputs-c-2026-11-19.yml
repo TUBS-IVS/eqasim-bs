@@ -136,8 +136,10 @@ status:
     carries the error: cells with 1-10 households hold 13.7 % of the households and 39.3 % of the
     household-size error (WAPE 0.296; 11-30: 0.131; 31 and more: 0.043; 22-band age 0.529 / 0.257 /
     0.116). Correction after review (2026-11-20, no figure of the tables changed): the script's first
-    size bin is "10 households or fewer" and also holds the 399 cells of class not_judged (cells whose
-    persons cannot be placed, 778 target persons, age error 1,043); the "1-10" figures above include them.
+    size bin is "10 households or fewer" (the script labels it "1-10") and also holds the 399 cells of
+    class not_judged (no household or no person targeted; posthoc/input_consistency_arm_8.csv: 20 cells
+    with persons but no households, holding the 778 target persons; 64 cells with households but no
+    person targets, holding 204 households; 315 cells with neither); the "1-10" figures above include them.
     Without them, from the same committed table: 13.3 % of the households, 36.9 % of the household-size
     error, household-size WAPE 0.285, 22-band age WAPE 0.488; the reading below does not change. The
     shift from arm 8 to arm 9 is the same in consistent cells (11-30 households: household size
