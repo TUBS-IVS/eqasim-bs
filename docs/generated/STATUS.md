@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 113 | stages: 133 | datasets: 107 | ADRs: 196 | run manifests: 104
+- Features: 113 | stages: 133 | datasets: 107 | ADRs: 197 | run manifests: 105
 
 ## Population synthesis
 
@@ -43,7 +43,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [100m employment grid control (employed persons per cell by sex and age group)](../registry/features/employment_grid_control.yml) | active | ON | A/s/- | unvalidated |  |
 | [Employment margin (IPF)](../registry/features/employment_margin.yml) | PARKED | off | -/-/i | unvalidated |  |
 | [Household income € + distribution](../registry/features/household_income_distribution.yml) | active | off | -/-/A | unvalidated |  |
-| [Housing tenure (completeness)](../registry/features/housing_tenure.yml) | active | ON | A/A/A | unvalidated |  |
+| [Housing tenure (completeness)](../registry/features/housing_tenure.yml) | active | ON | A/A/A | unvalidated (`popsim-ladder-tenure-2026-11-18`) |  |
 | [Income-aware #cars](../registry/features/income_aware_cars.yml) | active | off | -/-/A | unvalidated |  |
 | [Kreis income control (popsim)](../registry/features/kreis_income_control.yml) | active | off | i/i/- | unvalidated |  |
 | [MiD passenger access independent of driver access](../registry/features/mid_passenger_availability.yml) | active | ON | A/-/- | unvalidated (`smoke-mid-passenger-availability-2026-09-15`) | [#398](https://github.com/TUBS-IVS/eqasim-bs/issues/398) |
