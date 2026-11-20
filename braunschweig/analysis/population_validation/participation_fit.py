@@ -96,13 +96,15 @@ from braunschweig.popsim import kreis_attribute_control as kac
 from braunschweig.popsim.attributes import (
     EMPLOYED_EMPLOYMENT_STATUS_CLASSES, EMPLOYMENT_STATUS_CATEGORIES)
 from braunschweig.popsim.mid.participation import PARTICIPATION_W_ZWECK
+from braunschweig.synthesis.day_absence.absence import STATE_PRESENT as DAY_ABSENCE_STATE_PRESENT
+from braunschweig.synthesis.day_absence.absence import STATES as DAY_ABSENCE_STATES
 
 LOGGER = logging.getLogger("braunschweig.analysis.participation_fit")
 
 #: persons.csv column of the reporting-day absence state (stage
-#: braunschweig.synthesis.day_absence.absence_stage) and its value for a person at home.
+#: braunschweig.synthesis.day_absence.absence_stage); its values are owned by
+#: braunschweig.synthesis.day_absence.absence (STATES, STATE_PRESENT).
 DAY_ABSENCE_COLUMN = "day_absence_state"
-DAY_ABSENCE_PRESENT = "present"
 
 # The per-purpose participation controls evaluated by this module, derived from
 # mid.PARTICIPATION_W_ZWECK (the single source of truth for the registered purpose
@@ -231,13 +233,28 @@ def realised_participation(trips: pd.DataFrame, persons_kreis: pd.DataFrame) -> 
 
     # Mobility universe: persons present on the reporting day (the trip-class target's universe).
     if DAY_ABSENCE_COLUMN in persons_kreis.columns:
-        present = persons_kreis[DAY_ABSENCE_COLUMN].astype(str).eq(DAY_ABSENCE_PRESENT).to_numpy()
+        state = persons_kreis[DAY_ABSENCE_COLUMN]
         n_total = len(persons_kreis)
+        known = state.isin(DAY_ABSENCE_STATES).to_numpy()
+        is_present = state.eq(DAY_ABSENCE_STATE_PRESENT).to_numpy()
+        absent = known & ~is_present
+        unknown = ~known
+        # A missing or unknown state is kept in the mobility universe (the all-persons count of the old check):
+        # dropping it would count it as absent and inflate the realised mobility.
+        present = is_present | unknown
         LOGGER.info(
             "realised_participation: mobility universe = persons present on the reporting day: "
-            "present %d/%d (%.2f%%), whole-day absent %d (%.2f%%) left out of the mobility row only",
-            int(present.sum()), n_total, 100.0 * present.mean() if n_total else 0.0,
-            int((~present).sum()), 100.0 * (~present).mean() if n_total else 0.0)
+            "present %d/%d (%.2f%%), whole-day absent %d (%.2f%%) left out of the mobility row only, "
+            "missing or unknown state %d (%.2f%%) kept in it",
+            int(is_present.sum()), n_total, 100.0 * is_present.mean() if n_total else 0.0,
+            int(absent.sum()), 100.0 * absent.mean() if n_total else 0.0,
+            int(unknown.sum()), 100.0 * unknown.mean() if n_total else 0.0)
+        if unknown.any():
+            LOGGER.warning(
+                "realised_participation: %d of %d persons (%.2f%%) have a missing or unknown %s (values %s, "
+                "expected one of %s); fallback: they stay in the mobility universe like present persons.",
+                int(unknown.sum()), n_total, 100.0 * unknown.mean(), DAY_ABSENCE_COLUMN,
+                sorted(state[unknown].astype(str).unique().tolist())[:5], list(DAY_ABSENCE_STATES))
     else:
         present = None
         LOGGER.warning(

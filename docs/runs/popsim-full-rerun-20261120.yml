@@ -119,7 +119,7 @@ validation:
     the sum of targets); KREIS rows are upper bounds (per-batch apportioned targets)
   reference: the run's own control targets (census, MiD and SrV derived), NOT observed behaviour
   result: >-
-    All controls: ZENSUS100m 0.122 (October 0.198), ZENSUS1km 0.0056 (0.040), KREIS 0.0021 (0.014). The control sets
+    All controls: ZENSUS100m 0.122 (October 0.197), ZENSUS1km 0.0056 (0.040), KREIS 0.0021 (0.014). The control sets
     differ between the runs (household targets of #657, #659), so the pooled values are not like for like; per group,
     every group present in both runs has a lower WAPE in the new run (age x sex 100 m 0.279 / 0.325, household size
     0.139 / 0.230, employed by age 0.074 / 0.205, building type 0.043 / 0.154, tenure 0.038 / 0.066, cars 1 km
@@ -260,8 +260,12 @@ notes: >-
   Re-assessment for #648: ADR-0059 attributed the 6+ household shortfall to the donor pool; this run meets the 6+
   household target with the same pool, so the count gap was not a property of the pool. The run changed the fork core,
   the rounding, the seed records and several household targets together and does not isolate which change closed
-  it; the 6+ error inside the 100 m cells grew (WAPE 0.515 to 0.651). The pool still limits the variety of large
-  households (reuse by household size above), which keeps #278 relevant for diversity, not for counts. Committed copies
+  it; the 6+ error inside the 100 m cells grew (WAPE 0.515 to 0.651). ADR-0059's own metric, the share of persons
+  living in 6+ households against Zensus (4.75 %), narrowed but remains: 2.77 % (October, -1.98 points) to 4.20 % (new,
+  -0.55 points); the 7,901 large households hold 6.0 persons each on average, so meeting the household count does not
+  close the persons share, and whether the remainder depends on the donor pool is not established. The pool still
+  limits the variety of large households (reuse by household size above), which keeps #278 relevant for diversity
+  and for that remainder. Committed copies
   of server files carry the run server's home directory as ~ (provenance.json, report.json, summaries, run overlays).
   After the run, an accidental gate call on popsim100_20261120 (18:16) rewrote its run.yml gate list; the launched
   list was restored from a copy, and run.json records that later gate; run_overlay.yml here is the launched list.
