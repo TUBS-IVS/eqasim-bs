@@ -57,6 +57,9 @@ _COMPOSITE_STAGES = {
     # Holds the SrV location-type table digests next to the module digests while
     # secondary_srv_location_types is ON (repository audit C3).
     "braunschweig.synthesis.locations.secondary_chainsolvers",
+    # Holds the digests of the committed Kreis target CSVs and MiD / Zensus tables next to the module
+    # digests, the PopulationSim commit and the lock hash.
+    "braunschweig.popsim.stage",
     # Hold the tool-jar inputs, the OSM extract size and the jar or source-tree digest next to the module
     # digests (ADR-0194).
     "braunschweig.freight.extraction_tool",

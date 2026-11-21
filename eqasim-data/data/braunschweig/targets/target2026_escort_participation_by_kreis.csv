@@ -13,7 +13,7 @@
 #
 # ASSUMPTION (Wolfsburg, SrV region-total convention): 03103 is not covered by
 # SrV. Its escort_yes share is the SrV region total (03ZGB) directly -- the
-# SAME convention as target2026_has_ebike_by_kreis.csv. Unlike the trip_class
+# convention target2026_has_ebike used until ADR-0205. Unlike the trip_class
 # target, NO MiD-P36 immobility pattern transfer is applied here: that transfer
 # is specific to immobility, not to purpose-participation.
 #

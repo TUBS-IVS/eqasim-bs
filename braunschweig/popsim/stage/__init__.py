@@ -647,6 +647,53 @@ _TOKEN_CLOSURE_BOUNDARIES = {
 }
 
 
+#: Committed tables (relative to ``data_path``) that ``execute()`` reads besides the Kreis target
+#: CSVs, which ``_committed_data_file_digests`` takes from ``kreis_attribute_control.REGISTRY``.
+#: Hashed whatever the feature flags say: a committed file always exists, and a flag that is off
+#: today can be on in the next run. Each entry names the reader, so a reader that stops using
+#: its file leaves a visible, removable line here:
+#:
+#: * ``ownership_grid.load_ownership_conditionals`` (ownership_grid_1km),
+#: * ``income_by_size`` / ``income_by_status`` loaders (income Kreis control redraw),
+#: * ``tenure_by_income`` loaders (``_apply_housing_tenure`` fallback, a donor without a tenure
+#:   column),
+#: * ``zensus_employment_age.load_age_shares`` (employment grid, age-shape source
+#:   ``zensus2022_2000S_2001``; the production source reads a local-only file, see ``validate``).
+_COMMITTED_DATA_FILES = (
+    "braunschweig/mid/mid2023_cars_by_rs7_haustyp.csv",
+    "braunschweig/mid/mid2023_bikes_by_rs7_haustyp.csv",
+    "braunschweig/mid/mid2023_income_by_size_bundesland.csv",
+    "braunschweig/mid/mid2023_income_by_size_raumtyp.csv",
+    "braunschweig/mid/mid2023_income_by_status_bundesland.csv",
+    "braunschweig/mid/mid2023_income_by_status_raumtyp.csv",
+    "braunschweig/mid/mid2023_income_by_tenure_bundesland.csv",
+    "braunschweig/mid/mid2023_income_by_tenure_raumtyp.csv",
+    "braunschweig/popsim/zensus2022_employment_by_age_ref.csv",
+)
+
+
+def _committed_data_file_digests(data_path) -> dict:
+    """``{path relative to data_path: LF-normalised sha256}`` of every committed data file.
+
+    The files are the Kreis target CSV of every ``kreis_attribute_control.REGISTRY`` entry
+    (derived from the registry, never listed by hand) plus ``_COMMITTED_DATA_FILES``. A missing
+    file raises ``RuntimeError``: ``execute()`` cannot run without it, and a token that skipped
+    it would hide the missing input.
+    """
+    from braunschweig.popsim import kreis_attribute_control  # deferred like the other helpers
+    relpaths = [control.target_csv_relpath for control in kreis_attribute_control.REGISTRY]
+    relpaths.extend(_COMMITTED_DATA_FILES)
+    digests = {}
+    for relpath in relpaths:
+        path = Path(data_path) / relpath
+        if not path.is_file():
+            raise RuntimeError(
+                f"[braunschweig.popsim.stage] committed data file {relpath!r} not found at {path} "
+                "(config key 'data_path'); restore it from the repository.")
+        digests[relpath] = synpp_tokens.text_file_sha256(path)
+    return digests
+
+
 def validate(context):
     """synpp validation token: structured token over every helper module's source.
 
@@ -763,16 +810,40 @@ def validate(context):
     re-lock to another fork commit under the same version string would otherwise reuse
     the output of the old solver. ``KEY_POPSIMPREP`` is declared in ``configure()``.
 
+    COMMITTED DATA FILES are part of the token under ``"files"``: ``{path relative to
+    data_path: sha256}`` for the Kreis target CSV of every ``kreis_attribute_control.REGISTRY``
+    entry plus the committed tables of ``_COMMITTED_DATA_FILES`` (MiD ownership, income and
+    tenure tables, the Zensus 2000S-2001 employment-age reference). They are read in
+    ``execute()`` and invisible to the stage hash and to the source digests, so without them a
+    corrected table would leave a warm cache serving the old PopulationSim output
+    (docs/codebase/notes/synpp-helper-hash-audit.md, "Data files are invisible"). Every file is
+    hashed whatever the feature flags say, line endings normalised (a Windows and a Linux
+    checkout of one commit give one token). ``data_path`` is declared in ``configure()``.
+
+    THE POPULATIONSIM SETTINGS FILE (``KEY_SETTINGS``: tolerances, iterations, weight bounds) is
+    part of the token under ``"settings_file"`` (its line-ending-normalised content digest). It
+    lives outside the repository, so the digest protects the machine that holds it; its path is
+    a config value and changes the stage hash by itself.
+
+    DELIBERATE GAP, local-only inputs (not tracked by git, so no digest can be reproduced from a
+    commit): the raw MiD tables under ``KEY_MID``, the Tier-3 ``kreis_controls`` parquet files
+    (including ``kreis_erwerbsstatus.parquet``), ``braunschweig/5000H-2001_de_flat.csv`` (the
+    Zensus household file of the income Kreis control) and
+    ``braunschweig/popsim/zensus2022_employed_by_age_kreis.csv`` (the production employment age
+    shape), and the external controls CSV at ``KEY_CONTROLS`` (read only when ``controls_source``
+    is ``"csv"``; production uses ``"catalog"``). A change to one of them reaches a warm cache
+    only through a changed path or a manual cache clear.
+
     Raises:
         RuntimeError: if a module named in ``_DEFERRED_HELPER_MODULE_NAMES``
             cannot be imported or has no retrievable source (the original error
-            is chained), or if the project directory or its lock file does not yield
-            a locked commit (no silent fallback: a token without it would let a stale
-            cache through).
+            is chained), if the project directory or its lock file does not yield
+            a locked commit, or if a committed data file or the settings file is missing (no silent fallback:
+            a token without it would let a stale cache through).
 
     Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
     digest per helper module (docstrings, comments and formatting do not change it), plus
-    ``"populationsim_commit"`` and ``"populationsim_lock_hash"``.
+    ``"populationsim_commit"``, ``"populationsim_lock_hash"``, ``"files"`` and ``"settings_file"``.
     """
     token = synpp_tokens.source_token(
         _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
@@ -781,6 +852,14 @@ def validate(context):
         context.config(KEY_POPSIMPREP), key=KEY_POPSIMPREP)
     token["populationsim_commit"] = tool_version.expected_populationsim_commit(project_dir)
     token["populationsim_lock_hash"] = tool_version.lock_content_hash(project_dir)
+    token["files"] = _committed_data_file_digests(context.config("data_path"))
+    # The PopulationSim settings file lives outside the repository (KEY_SETTINGS); its path is a
+    # config value, so only its CONTENT needs the digest. execute() cannot run without it.
+    settings_path = Path(context.config(KEY_SETTINGS))
+    if not settings_path.is_file():
+        raise RuntimeError(f"[braunschweig.popsim.stage] PopulationSim settings file not found: "
+                           f"{settings_path} (config key {KEY_SETTINGS!r}).")
+    token["settings_file"] = synpp_tokens.text_file_sha256(settings_path)
     return token
 
 
@@ -803,6 +882,8 @@ def configure(context):
     context.config(KEY_SETTINGS)
     context.config(KEY_LOGGING)
     context.config(KEY_POPSIMPREP)
+    # validate() hashes the committed data files under data_path (no-op when already declared below).
+    context.config("data_path")
     context.config(KEY_UV)
     context.config(KEY_POPSIM_VERSION)  # required PopulationSim version (G7, issue #645)
     context.config(KEY_MAX_CELLS, 3000)

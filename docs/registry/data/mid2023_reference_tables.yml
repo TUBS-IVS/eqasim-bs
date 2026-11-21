@@ -33,7 +33,7 @@ licensing:
   redistribution: allowed
 limitations: null
 notes: |
-  The only MiD content in the repository: small aggregate tables (P9/P12.1/P13/P17.1/P24.1/T43/W1/W12/H4/H7...)
+  The only MiD content in the repository: small aggregate tables (P9/P12.1/P13/P17.1/P24.1/P39.1/T43/W1/W12/H4/H7/H12.1...)
   that every reference comparison and CDF override reads. The expected_path glob also covers the
   MiD aggregates DERIVED in-repo from the raw B1 delivery; those that carry their own provenance,
   universe and consumers have their own record and are not described here:

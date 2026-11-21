@@ -23,7 +23,9 @@ Wolfsburg and Gesamt always MiD. Every output row carries `source` and
 Outputs (committed, `eqasim-data/data/braunschweig/targets/`):
 `target2026_{economic_status,number_of_cars,has_ebike,number_of_bicycles}_by_kreis.csv`.
 They are FINAL targets: the `kreis_attribute_control` registry must consume
-them with `prior_n = 0`.
+them with `prior_n = 0`. `has_ebike` is not blended: the seven SrV Kreise and
+the Gesamt row are SrV, Wolfsburg is the SrV region share moved by the MiD H12.1
+odds ratio (ADR-0205).
 
 ## Weights
 
@@ -167,15 +169,14 @@ of the 18 age-x-sex 100m band census columns for that Kreis).
    SrV level, per project decision (regional survey = regional behaviour authority), rather
    than correcting to the MiD level. Consumers of MiD-anchored trip statistics (e.g. tour or
    activity-chain analyses seeded from MiD) must be aware totals shift accordingly.
-3. **ASSUMPTION (Wolfsburg, MiD-P36.1 pattern transfer).** ARS 03103 is not covered by the
-   SrV Braunschweig+RGB survey. Its `trips_0` share is the SrV region total scaled by
-   Wolfsburg's RELATIVE immobility in the MiD 2023 regional Aufstockung (committed
-   `mid2023_P36_1.csv`: `nicht_mobil` WOB 21% vs ZGB-Gesamt 19% -> ratio ~1.105); the three
-   mobile classes are rescaled proportionally from the SrV region total so the row sums to 1.
-   This keeps the SrV LEVEL anchoring while injecting Wolfsburg's MiD-measured relative
-   deviation (WOB is the region's most-immobile city per MiD). ASSUMPTION: the WOB-vs-region
-   immobility ratio transfers across survey methods and day universes (MiD P36.1 = all
-   reporting days; SrV = Di-Do).
+3. **ASSUMPTION (Wolfsburg, MiD P36.1 odds transfer).** ARS 03103 is not covered by the
+   SrV Braunschweig+RGB survey. Its `trips_0` share is the SrV region total moved by the odds
+   ratio of Wolfsburg's immobile share to that of the MiD region without Wolfsburg (committed
+   `mid2023_P36_1.csv`, persons of known mobility), the rule `has_ebike` uses too (ADR-0205);
+   the three mobile classes keep the SrV region pattern so the row sums to 1. This keeps the
+   SrV LEVEL anchoring while injecting Wolfsburg's MiD-measured relative deviation.
+   ASSUMPTION: the WOB-vs-region immobility odds ratio transfers across survey methods and day
+   universes (MiD P36.1 = all reporting days; SrV = Di-Do).
 
 *Evidence for adding this control.* The 2026-07-08 S2-A proxy gate measured that the four
 STRUCTURAL controls (`economic_status`, `number_of_cars`, `number_of_bicycles`, `has_ebike`)

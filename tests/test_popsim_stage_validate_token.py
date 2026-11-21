@@ -42,6 +42,8 @@ from __future__ import annotations
 import importlib
 import inspect
 import pkgutil
+import shutil
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -162,7 +164,21 @@ HEX_DIGITS = set("0123456789abcdef")
 
 # validate() reads the project directory (the tracked default, repository-relative) to pin the
 # locked PopulationSim commit; the helper-source tests below do not vary it.
-_CONTEXT = SimpleNamespace(config=lambda key: {stage.KEY_POPSIMPREP: "environments/populationsim"}[key])
+_DATA_ROOT = tool_version.REPO_ROOT / "eqasim-data" / "data"
+
+
+_SETTINGS = Path(__file__).resolve().parent / "data" / "popsim_validate_token" / "settings.yaml"
+
+
+def _context(data_path=_DATA_ROOT, popsimprep_dir="environments/populationsim",
+             settings_path=_SETTINGS):
+    """The keys ``validate()`` reads: the project dir, ``data_path`` and the settings file."""
+    values = {stage.KEY_POPSIMPREP: str(popsimprep_dir), "data_path": str(data_path),
+              stage.KEY_SETTINGS: str(settings_path)}
+    return SimpleNamespace(config=lambda key: values[key])
+
+
+_CONTEXT = _context()
 
 
 def _discovered_submodule_names(package_name: str) -> list[str]:
@@ -278,7 +294,7 @@ def _project_with_locked_commit(tmp_path, commit):
     old_commit = tool_version.expected_populationsim_commit(
         tool_version.REPO_ROOT / "environments" / "populationsim")
     (tmp_path / "uv.lock").write_text(lock_text.replace(old_commit, commit), encoding="utf-8")
-    return SimpleNamespace(config=lambda key: str(tmp_path))
+    return _context(popsimprep_dir=tmp_path)
 
 
 def test_validate_token_changes_when_the_locked_populationsim_commit_changes(tmp_path):
@@ -302,7 +318,7 @@ def test_validate_token_changes_when_the_locked_populationsim_commit_changes(tmp
 def test_validate_raises_when_the_project_has_no_usable_lock(tmp_path):
     # No silent fallback: a token without the commit would let a stale cache through.
     with pytest.raises(RuntimeError, match="uv.lock"):
-        stage.validate(SimpleNamespace(config=lambda key: str(tmp_path)))
+        stage.validate(_context(popsimprep_dir=tmp_path))
 
 
 def test_a_comment_edit_to_a_helper_keeps_the_token(monkeypatch):
@@ -601,7 +617,87 @@ def test_validate_token_follows_the_lock_text_not_its_line_endings(tmp_path):
         directory = tmp_path / name
         directory.mkdir()
         (directory / "uv.lock").write_bytes(text.encode("utf-8"))
-        tokens[name] = stage.validate(SimpleNamespace(config=lambda key, d=directory: str(d)))
+        tokens[name] = stage.validate(_context(popsimprep_dir=directory))
 
     assert tokens["lf"] == tokens["crlf"]
     assert tokens["lf"] != tokens["other_ortools"]
+
+
+# ---------------------------------------------------------------------------
+# committed data files read at execute() time
+# ---------------------------------------------------------------------------
+
+def _registry_target_relpaths():
+    from braunschweig.popsim import kreis_attribute_control
+    return [control.target_csv_relpath for control in kreis_attribute_control.REGISTRY]
+
+
+@pytest.fixture
+def data_copy(tmp_path):
+    """A throw-away ``data_path`` holding copies of exactly the files validate() hashes.
+
+    Only those files: on a full-data machine the same folders also hold GB of local-only cell
+    parquets and MiD microdata.
+    """
+    for relpath in [*_registry_target_relpaths(), *stage._COMMITTED_DATA_FILES]:
+        destination = tmp_path / relpath
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(_DATA_ROOT / relpath, destination)
+    return tmp_path
+
+
+def test_validate_token_follows_committed_data_file_content_not_line_endings(data_copy):
+    """A changed committed table must devalidate a warm cache; a CRLF checkout must not.
+
+    Without the ``files`` part, editing a Kreis target CSV left the token unchanged and a warm
+    cache silently reused the old PopulationSim output. Line endings differ between a Windows
+    and a Linux checkout of one commit, so they must not change the token.
+    """
+    target_relpaths = _registry_target_relpaths()
+    assert target_relpaths
+    baseline = stage.validate(_context(data_copy))
+
+    assert set(target_relpaths) <= set(baseline["files"])
+    assert baseline == stage.validate(_CONTEXT)
+
+    target = data_copy / target_relpaths[0]
+    lf_text = target.read_bytes().replace(b"\r\n", b"\n")
+    target.write_bytes(lf_text.replace(b"\n", b"\r\n"))
+    assert stage.validate(_context(data_copy)) == baseline
+
+    target.write_bytes(lf_text + b"# content change\n")
+    changed = stage.validate(_context(data_copy))
+    assert changed != baseline
+    assert {rel for rel in baseline["files"] if changed["files"][rel] != baseline["files"][rel]} == {
+        target_relpaths[0]}
+
+
+@pytest.mark.parametrize("relpath", (
+    _registry_target_relpaths()[0],                      # derived from the control registry
+    "braunschweig/mid/mid2023_cars_by_rs7_haustyp.csv",  # a listed table outside the registry
+))
+def test_validate_raises_naming_a_missing_committed_data_file(data_copy, relpath):
+    # No silent skip: a token without the file would let a stale cache through.
+    (data_copy / relpath).unlink()
+
+    with pytest.raises(RuntimeError, match=relpath.rsplit("/", 1)[1]):
+        stage.validate(_context(data_copy))
+
+
+def test_validate_token_follows_the_popsim_settings_file(tmp_path):
+    """The settings file (tolerances, iterations, weight bounds) lives outside the repository.
+
+    Its path is a config value, but an edit of its CONTENT under the same path left the token
+    unchanged and a warm cache reused the old output. A missing file must raise.
+    """
+    settings = tmp_path / "settings.yaml"
+    settings.write_bytes(_SETTINGS.read_bytes())
+    baseline = stage.validate(_context(settings_path=settings))
+    assert baseline == stage.validate(_CONTEXT)
+
+    settings.write_bytes(_SETTINGS.read_bytes().replace(b"100", b"50"))
+    assert stage.validate(_context(settings_path=settings)) != baseline
+
+    settings.unlink()
+    with pytest.raises(RuntimeError, match="settings.yaml"):
+        stage.validate(_context(settings_path=settings))

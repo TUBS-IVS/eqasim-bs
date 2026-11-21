@@ -28,6 +28,29 @@ class BlendConfig:
     disagreement_shrink_lambda: float = 0.3
 
 
+def leave_one_out(total: float, total_weight: float, value_k: float, weight_k: float) -> float:
+    """Region value without one Kreis, from the region total and the Kreis's own value and weight."""
+    if total_weight - weight_k <= 0:
+        raise ValueError(f"leave_one_out: no weight left without the Kreis ({total_weight} - {weight_k})")
+    return (total * total_weight - value_k * weight_k) / (total_weight - weight_k)
+
+
+def odds_transfer(anchor_share: float, mid_kreis: float, mid_anchor: float) -> float:
+    """Anchor share moved by the MiD odds ratio of a Kreis to the anchor (ADR-0205).
+
+    Used for a Kreis one survey does not cover: the covering survey's anchor share keeps its
+    own level, the other survey contributes only the relative difference, as an odds ratio so
+    the result stays inside (0, 1).
+    """
+    for name, share in (("anchor_share", anchor_share), ("mid_kreis", mid_kreis),
+                        ("mid_anchor", mid_anchor)):
+        if not 0.0 < share < 1.0:
+            raise ValueError(f"odds_transfer: {name} = {share} is not a share strictly between 0 and 1")
+    odds = (anchor_share / (1 - anchor_share)) * (mid_kreis / (1 - mid_kreis)) \
+        / (mid_anchor / (1 - mid_anchor))
+    return odds / (1 + odds)
+
+
 def _renorm(row: pd.Series, categories: list) -> pd.Series:
     total = row[categories].sum()
     if total <= 0:

@@ -1,0 +1,25 @@
+# Backtest of the Wolfsburg rules for the per-Kreis control targets (ADR-0205), written by
+# scripts/backtest_wolfsburg_kreis_transfer.py from the committed MiD 2023 regional tables
+# (H12.1, P36.1, P39.1, W1), the committed SrV 2023 aggregates and the local-only SrV 2023
+# microdata (average weekday, GEWICHT_P_ZENSUS). Each SrV Kreis is predicted as if SrV had not
+# surveyed it; anchors: Braunschweig, or the region without the Kreis (leave-one-out).
+# Mean absolute errors in percentage points; bs_/sz_ = the two kreisfreie Staedte.
+attribute,quantity_set,anchor,n_kreise,mae_copy_pp,mae_transfer_pp,mae_mid_direct_pp,bs_copy_abs_err_pp,bs_transfer_abs_err_pp,bs_mid_direct_abs_err_pp,sz_copy_abs_err_pp,sz_transfer_abs_err_pp,sz_mid_direct_abs_err_pp
+leisure_srv_rate,all,03101,6,4.892668,0.794216,,,,,7.558259,0.195966,
+leisure_mid_rate,all,03101,6,4.892668,2.756019,,,,,7.558259,1.326969,
+leisure_srv_rate,all,region_without_k,7,2.205608,0.812067,,5.096321,0.353713,,4.7239,0.437005,
+leisure_mid_rate,all,region_without_k,7,2.205608,3.082405,,5.096321,3.004296,,4.7239,4.404746,
+escort_srv_rate,all,03101,6,3.561886,0.294073,,,,,2.539981,0.322185,
+escort_mid_rate,all,03101,6,3.561886,3.891362,,,,,2.539981,3.71269,
+escort_srv_rate,all,region_without_k,7,1.618713,0.238597,,3.552753,0.074063,,0.147704,0.283495,
+escort_mid_rate,all,region_without_k,7,1.618713,2.828017,,3.552753,3.340136,,0.147704,1.912901,
+has_ebike,all,03101,6,10.216667,7.583037,5.660505,,,,6.29,4.028718,2.127778
+has_ebike,all,region_without_k,7,5.099826,3.700214,5.100716,10.083072,7.71678,1.74198,0.171755,1.214482,2.127778
+trip_class_p39_1,all,03101,6,2.4875,2.222743,,,,,3.73,2.844555,
+trip_class_p36_1,all,03101,6,2.4875,2.480823,,,,,3.73,3.529802,
+trip_class_p39_1,all,region_without_k,7,1.61995,2.11944,,2.567244,1.914621,,2.404219,2.812943,
+trip_class_p36_1,all,region_without_k,7,1.61995,1.910322,,2.567244,2.344259,,2.404219,2.390211,
+trip_class_p39_1,trips_0,03101,6,1.698333,1.491884,,,,,2.02,0.570017,
+trip_class_p36_1,trips_0,03101,6,1.698333,2.010534,,,,,2.02,1.407102,
+trip_class_p39_1,trips_0,region_without_k,7,1.094642,1.554181,,1.824288,0.260418,,0.901582,0.700306,
+trip_class_p36_1,trips_0,region_without_k,7,1.094642,1.805077,,1.824288,1.091903,,0.901582,0.804582,

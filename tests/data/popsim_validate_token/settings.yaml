@@ -1,0 +1,3 @@
+# Minimal stand-in for the PopulationSim settings file whose content the popsim stage token hashes.
+total_hh_control: num_hh
+max_expansion_factor: 100

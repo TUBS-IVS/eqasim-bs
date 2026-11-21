@@ -22,7 +22,7 @@ Documented decisions (verbatim; also recorded in the written target CSV header):
    DELIBERATE SrV-level anchoring, not a claim that SrV and MiD agree.
 2. ASSUMPTION (Wolfsburg, SrV region-total convention): 03103 is not covered by
    SrV; its <purpose>_yes share is the SrV region total (03ZGB) directly --
-   the SAME convention as target2026_has_ebike_by_kreis.csv. Unlike the
+   (target2026_has_ebike used this convention until ADR-0205). Unlike the
    trip_class target, NO MiD-P36 immobility pattern transfer is applied here:
    that transfer is specific to immobility, not to purpose-participation.
 
@@ -62,7 +62,7 @@ PURPOSES = ("work", "leisure", "education", "escort")
 
 # Wolfsburg (kreisfreie Stadt) is not covered by the SrV 2023 Braunschweig+RGB
 # survey; per the documented ASSUMPTION above, its row uses the SrV region total
-# directly (identical convention to target2026_has_ebike_by_kreis.csv; unlike
+# directly (target2026_has_ebike used this convention until ADR-0205; unlike
 # the trip_class target, no MiD pattern transfer is applied for participation).
 # The code is still named because the header text and the Gesamt row refer to it, but the
 # builder no longer USES it to decide which Kreis needs the substitution -- that is read from
@@ -93,7 +93,7 @@ HEADER_TEMPLATE = """\
 #
 # ASSUMPTION (Wolfsburg, SrV region-total convention): 03103 is not covered by
 # SrV. Its {purpose}_yes share is the SrV region total (03ZGB) directly -- the
-# SAME convention as target2026_has_ebike_by_kreis.csv. Unlike the trip_class
+# convention target2026_has_ebike used until ADR-0205. Unlike the trip_class
 # target, NO MiD-P36 immobility pattern transfer is applied here: that transfer
 # is specific to immobility, not to purpose-participation.
 #

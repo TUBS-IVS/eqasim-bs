@@ -264,7 +264,8 @@ REGISTRY: tuple = (
     #       anchored to the SrV level (regional survey = regional behaviour authority),
     #       not corrected to the MiD mobility-rate level (uniform ~+5..+8pp offset).
     #   (3) ASSUMPTION (Wolfsburg): 03103 (not covered by SrV) uses the SrV region
-    #       total, same convention as target2026_has_ebike.
+    #       total, its trips_0 moved by the MiD P36.1 immobility odds ratio, the rule
+    #       has_ebike uses too (scripts/build_trip_class_target.py; ADR-0205).
     # tier="hard" (feature #224 task 6, flipped from the original "soft"): the SOFT tier
     # missed its SrV Mobilitaetsquote target (synthetic immobility ~26.5% vs. SrV
     # target ~11.2%, the largest single SrV gap of all Kreis controls). Registering
@@ -362,7 +363,7 @@ REGISTRY: tuple = (
     #   (1) DECISION (level anchoring): the synthetic distribution is anchored to the
     #       SrV level (regional survey = regional behaviour authority).
     #   (2) ASSUMPTION (Wolfsburg): 03103 (not covered by SrV) uses the SrV region
-    #       total, the SAME convention as target2026_has_ebike / target2026_trip_class.
+    #       total directly (scripts/build_participation_target.py states the rule).
     # tier="hard": unlike employment_status (soft, yields gracefully to the Zensus
     # backbone in small cells), work_participation is registered HARD so its importance
     # is classified into the "kreis_hard" group (control_spec.IMPORTANCE_PROFILES)
@@ -390,8 +391,8 @@ REGISTRY: tuple = (
     #   (1) DECISION (level anchoring): the synthetic distribution is anchored to the
     #       SrV level (regional survey = regional behaviour authority).
     #   (2) ASSUMPTION (Wolfsburg): 03103 (not covered by SrV) uses the SrV region
-    #       total, the SAME convention as target2026_has_ebike / target2026_work_
-    #       participation.
+    #       total, the SAME convention as target2026_work_participation. A MiD-ratio
+    #       transfer for leisure was backtested and not adopted (ADR-0205).
     # tier="hard": mirrors work_participation (registered hard, not soft like
     # employment_status), so both are classified into the "kreis_hard" importance group.
     KreisAttributeControl(
@@ -423,7 +424,8 @@ REGISTRY: tuple = (
     # from the SAME SrV 2023 Braunschweig+RGB participation aggregate
     # (scripts/build_participation_target.py --purpose escort; NO MiD blending), with
     # the same two documented decisions as the other three (SrV level anchoring;
-    # Wolfsburg = SrV region total). tier="hard": mirrors work/leisure/education, so it
+    # Wolfsburg = SrV region total; a MiD-ratio transfer for Wolfsburg was backtested
+    # and not adopted, ADR-0205). tier="hard": mirrors work/leisure/education, so it
     # is classified into the "kreis_hard" importance group.
     # HONEST CAVEAT (issue #227): the SrV-vs-MiD escort gap is small (~+2.8pp per the
     # issue-#227 measurement on the MiD donor; the MiD side is not committed in-repo,
