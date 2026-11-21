@@ -46,6 +46,7 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
+from braunschweig.popsim.blended_targets import leave_one_out, odds_transfer  # noqa: E402,F401
 from scripts.build_blended_kreis_targets import mid_h12_1_ebike_share  # noqa: E402
 from scripts.build_srv_participation_aggregate import (  # noqa: E402
     CSV_READ_KWARGS, PURPOSE, compute_participation, load_kreis_by_hhnr)
@@ -68,19 +69,8 @@ PARTICIPATION_REPRODUCTION_TOLERANCE = 1e-5
 
 
 # ---------------------------------------------------------------------------- formulas
-
-def leave_one_out(total: float, total_weight: float, value_k: float, weight_k: float) -> float:
-    """Region value without Kreis k, from the region total and k's own value and weight."""
-    if total_weight - weight_k <= 0:
-        raise ValueError(f"leave_one_out: no weight left without k ({total_weight} - {weight_k})")
-    return (total * total_weight - value_k * weight_k) / (total_weight - weight_k)
-
-
-def odds_transfer(anchor_share: float, mid_k: float, mid_anchor: float) -> float:
-    """Anchor share moved by the MiD odds ratio of Kreis k to the anchor."""
-    odds = (anchor_share / (1 - anchor_share)) * (mid_k / (1 - mid_k)) / (mid_anchor / (1 - mid_anchor))
-    return odds / (1 + odds)
-
+# leave_one_out and odds_transfer live in braunschweig.popsim.blended_targets, where the
+# has_ebike target builder uses the same odds transfer for Wolfsburg (one definition).
 
 def class_transfer(anchor_shares: list[float], mid_k: list[float], mid_anchor: list[float]) -> list[float]:
     """Class shares of the anchor, each moved by the MiD ratio k / anchor, renormalised."""

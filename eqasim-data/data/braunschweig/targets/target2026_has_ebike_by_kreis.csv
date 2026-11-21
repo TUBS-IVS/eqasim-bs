@@ -3,7 +3,7 @@
 # agreement (<= 5.0 pp per category) -> precision blend; disagreement with a
 # register arbiter -> rank-agreement pick; disagreement without arbiter ->
 # MiD shrunk toward Gesamt (lambda = 0.3); Wolfsburg (03103) and Gesamt
-# always MiD; EXCEPTION this file: no blending -- the seven surveyed Kreise and Gesamt are SrV, Wolfsburg is MiD H12.1 (share of households with at least one e-bike/pedelec, keine_angabe renormalized out; ADR-0205). Column `source` records the rule per row;
+# always MiD; EXCEPTION this file: no blending -- the seven surveyed Kreise and Gesamt are SrV, Wolfsburg is the SrV region share moved by the MiD H12.1 odds ratio of Wolfsburg to the MiD region without Wolfsburg (households with at least one e-bike/pedelec, keine_angabe renormalized out; ADR-0205). Column `source` records the rule per row;
 # shares are fractions summing to 1.
 # CONSUMER NOTE: FINAL target - use with kreis_attribute_control prior_n = 0.
 # ASSUMPTION (SrV side): stratified PSU design over selected municipalities;
@@ -16,5 +16,5 @@ ars5,source,n_effective,ebike_yes,ebike_no
 03154,srv,800,0.3012,0.6988
 03157,srv,1002,0.2816,0.7184
 03158,srv,839,0.2777,0.7223
-03103,mid,508,0.19,0.81
+03103,srv_region_total_mid_h12_1_odds,508,0.2192,0.7808
 Gesamt,srv,8094,0.245,0.755

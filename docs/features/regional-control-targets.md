@@ -24,7 +24,8 @@ Outputs (committed, `eqasim-data/data/braunschweig/targets/`):
 `target2026_{economic_status,number_of_cars,has_ebike,number_of_bicycles}_by_kreis.csv`.
 They are FINAL targets: the `kreis_attribute_control` registry must consume
 them with `prior_n = 0`. `has_ebike` is not blended: the seven SrV Kreise and
-the Gesamt row are SrV, Wolfsburg is MiD H12.1 (ADR-0205).
+the Gesamt row are SrV, Wolfsburg is the SrV region share moved by the MiD H12.1
+odds ratio (ADR-0205).
 
 ## Weights
 

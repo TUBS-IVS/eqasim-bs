@@ -42,9 +42,10 @@ def test_structure(name, cats):
     # Shares are stored rounded to 4 decimals, so a row summing to 1.0 in float
     # can land at 0.9999/1.0001; tolerate the rounding, still catch real errors.
     assert ((t[cats].sum(axis=1) - 1.0).abs() < 1e-3).all()
-    # Wolfsburg has no SrV coverage -> its row is MiD in every file (has_ebike:
-    # MiD H12.1 since ADR-0205; it used the SrV region total before).
-    assert t.set_index("ars5").loc["03103", "source"] == "mid"
+    # Wolfsburg has no SrV coverage -> its row is MiD, except has_ebike: the SrV region
+    # total moved by the MiD H12.1 odds ratio (ADR-0205; the plain region total before).
+    expected_wob = "srv_region_total_mid_h12_1_odds" if "ebike" in name else "mid"
+    assert t.set_index("ars5").loc["03103", "source"] == expected_wob
 
 
 def test_status_salzgitter_is_srv_arbitrated():
@@ -214,14 +215,15 @@ def test_build_pt_ticket_group4_renormalizes_no_answer_and_splits(tmp_path):
     assert out[out["ars5"] == "03103"]["source"].iloc[0].startswith("mid")
 
 
-def test_ebike_is_srv_with_wolfsburg_from_mid_h12_1():
+def test_ebike_is_srv_with_wolfsburg_moved_by_the_mid_h12_1_odds_ratio():
     t = load("target2026_has_ebike_by_kreis.csv").set_index("ars5")
     assert t.loc["03151", "source"] == "srv"
     assert t.loc["03151", "ebike_yes"] == pytest.approx(0.3108, abs=0.005)
-    # MiD H12.1 Wolfsburg row: 81 % keins, 11 % one, 8 % two, no keine_angabe ->
-    # 19 of 100 answering households own at least one e-bike/pedelec (n = 508).
-    assert t.loc["03103", "source"] == "mid"
-    assert t.loc["03103", "ebike_yes"] == pytest.approx(0.19, abs=1e-4)
+    # SrV region 0.245, moved by the MiD H12.1 odds ratio of Wolfsburg (19 of 100 answering
+    # households) to the MiD region without Wolfsburg ((21/99 x 3013 - 0.19 x 155) / 2858
+    # = 0.21332): hand-computed 0.21918 (n = Wolfsburg's 508 MiD households).
+    assert t.loc["03103", "source"] == "srv_region_total_mid_h12_1_odds"
+    assert t.loc["03103", "ebike_yes"] == pytest.approx(0.2192, abs=1e-4)
     assert t.loc["03103", "n_effective"] == 508
     assert t.loc["Gesamt", "source"] == "srv"
     assert t.loc["Gesamt", "ebike_yes"] == pytest.approx(0.2450, abs=0.005)
@@ -240,26 +242,31 @@ def _write_ebike_inputs(root: Path, mid_rows: str) -> None:
         "ebikes_4plus,keine_angabe,mittel\n" + mid_rows, encoding="utf-8")
 
 
-def test_build_has_ebike_takes_wolfsburg_from_mid_and_renormalizes_no_answer(tmp_path):
+def test_build_has_ebike_moves_the_region_share_by_the_mid_odds_ratio(tmp_path):
     # Wolfsburg answers 70/15/8/1/1 with 5 % keine_angabe: 25 of the 95 answering
-    # households own an e-bike -> 5/19. The surveyed Kreis and Gesamt stay SrV.
+    # households own an e-bike (keine_angabe renormalized out). MiD region without
+    # Wolfsburg: (21/99 x 3013 - 25/95 x 155) / 2858 = 0.209353. Odds transfer of the SrV
+    # region 0.245: hand-computed 0.304438. The surveyed Kreis and Gesamt stay SrV.
     _write_ebike_inputs(tmp_path,
                         "Gesamt,03ZGB,3013.0,5924.0,78.0,13.0,8.0,0.0,0.0,0.0,0.3\n"
                         "Braunschweig,03101,648.0,1105.0,60.0,20.0,20.0,0.0,0.0,0.0,0.6\n"
                         "Wolfsburg,03103,155.0,508.0,70.0,15.0,8.0,1.0,1.0,5.0,0.4\n")
     out = build_has_ebike(tmp_path).set_index("ars5")
     assert set(out.index) == {"03101", "03103", "Gesamt"}
-    assert out.loc["03103", "source"] == "mid"
+    assert out.loc["03103", "source"] == "srv_region_total_mid_h12_1_odds"
     assert out.loc["03103", "n_effective"] == 508
-    assert out.loc["03103", "ebike_yes"] == pytest.approx(5 / 19)
-    assert out.loc["03103", "ebike_no"] == pytest.approx(14 / 19)
+    assert out.loc["03103", "ebike_yes"] == pytest.approx(0.304438, abs=1e-6)
+    assert out.loc["03103", "ebike_no"] == pytest.approx(1 - 0.304438, abs=1e-6)
     assert (out.loc["03101", "source"], out.loc["03101", "ebike_yes"]) == ("srv", 0.1806)
     assert (out.loc["Gesamt", "source"], out.loc["Gesamt", "ebike_yes"]) == ("srv", 0.245)
 
 
-def test_build_has_ebike_fails_without_the_mid_wolfsburg_row(tmp_path):
-    # No silent fallback to the SrV region total when the MiD row is missing.
-    _write_ebike_inputs(tmp_path,
-                        "Gesamt,03ZGB,3013.0,5924.0,78.0,13.0,8.0,0.0,0.0,0.0,0.3\n")
-    with pytest.raises(ValueError, match="03103"):
+@pytest.mark.parametrize("missing,row", [
+    ("03103", "Gesamt,03ZGB,3013.0,5924.0,78.0,13.0,8.0,0.0,0.0,0.0,0.3\n"),
+    ("03ZGB", "Wolfsburg,03103,155.0,508.0,81.0,11.0,8.0,0.0,0.0,0.0,0.3\n"),
+])
+def test_build_has_ebike_fails_without_a_mid_row_it_needs(tmp_path, missing, row):
+    # No silent fallback to the plain SrV region total when a MiD row is missing.
+    _write_ebike_inputs(tmp_path, row)
+    with pytest.raises(ValueError, match=missing):
         build_has_ebike(tmp_path)

@@ -144,9 +144,9 @@ SPECS = [
               ["arbeit", "dienst", "ausbildung", "einkauf",
                "erledigung", "freizeit", "begleitung", "keine_angabe"]),
     # H12.1 (page 31) Anzahl Elektrofahrräder und Pedelecs im Haushalt, Basis = alle
-    # Haushalte. A household table has no "Tabelle B" variant (page_b None). The
-    # Wolfsburg row is the has_ebike Kreis target for the one Kreis SrV does not
-    # survey (scripts/build_blended_kreis_targets.py, ADR-0205).
+    # Haushalte. A household table has no "Tabelle B" variant (page_b None). Its
+    # Wolfsburg and Gesamt rows give the MiD ratio that moves the has_ebike target of
+    # the one Kreis SrV does not survey (scripts/build_blended_kreis_targets.py, ADR-0205).
     TableSpec("H12_1", 31, None,
               ["ebikes_0", "ebikes_1", "ebikes_2", "ebikes_3", "ebikes_4plus",
                "keine_angabe"], has_mittel=True),
