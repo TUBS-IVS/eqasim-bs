@@ -32,7 +32,7 @@ The backtest `scripts/backtest_wolfsburg_kreis_transfer.py` treats each SrV Krei
 ## Consequences
 
 - Wolfsburg's soft `has_ebike` target is lower (row 03103 of `target2026_has_ebike_by_kreis.csv`), so the synthetic Wolfsburg households own fewer e-bikes. The seven other Kreise and every other target table are unchanged (regenerated content-identical). The effect on a synthetic population is not measured here; no run manifest exists yet.
-- The PopulationSim stage's synpp token covers source code, not the target CSVs (`docs/codebase/notes/synpp-helper-hash-audit.md`, "Data files are invisible"). A run on a warm cache must recompute that stage once; inside the stage the batch configuration signature then purges the stale batches (`braunschweig.popsim.stage.batch_cache`).
+- The PopulationSim stage's synpp token covered source code only, so a changed target CSV would have left a warm cache serving the old output (`docs/codebase/notes/synpp-helper-hash-audit.md`, "Data files are invisible"). The same branch adds the content of every committed data file the stage reads to its token (what is covered and the deliberate gap of local-only inputs: the docstring of `braunschweig.popsim.stage.validate`). Every existing PopulationSim cache therefore recomputes once, which this change needs anyway.
 - Regenerating the backtest needs the local-only SrV 2023 microdata; the targets need committed tables only.
 
 ## Evidence

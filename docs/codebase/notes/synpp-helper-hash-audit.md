@@ -114,7 +114,8 @@ stale, or say nothing at all.
   and a Linux checkout give one token). No scan covers file reads in general. The one input that
   is scanned is the VG250-EW archive: `tests/test_vg250_cache_tokens.py` checks the token of each
   listed reader and scans the first-party `ROOTS` for stage modules that name the archive; it finds
-  only the names it looks for.
+  only the names it looks for. The PopulationSim stage hashes its committed tables this way, its
+  Kreis targets derived from `kreis_attribute_control.REGISTRY` (`braunschweig.popsim.stage.validate`, ADR-0205).
 - **Computed import names.** A module loaded through `importlib` with a name that is not in a
   helper tuple is invisible to the walk. The registry pattern is covered only because its module
   names are listed in `_DEFERRED_HELPER_MODULE_NAMES` (step 5).
