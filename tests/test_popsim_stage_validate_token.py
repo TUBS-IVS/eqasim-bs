@@ -43,6 +43,7 @@ import importlib
 import inspect
 import pkgutil
 import shutil
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -166,9 +167,14 @@ HEX_DIGITS = set("0123456789abcdef")
 _DATA_ROOT = tool_version.REPO_ROOT / "eqasim-data" / "data"
 
 
-def _context(data_path=_DATA_ROOT, popsimprep_dir="environments/populationsim"):
-    """The two keys ``validate()`` reads: the PopulationSim project dir and ``data_path``."""
-    values = {stage.KEY_POPSIMPREP: str(popsimprep_dir), "data_path": str(data_path)}
+_SETTINGS = Path(__file__).resolve().parent / "data" / "popsim_validate_token" / "settings.yaml"
+
+
+def _context(data_path=_DATA_ROOT, popsimprep_dir="environments/populationsim",
+             settings_path=_SETTINGS):
+    """The keys ``validate()`` reads: the project dir, ``data_path`` and the settings file."""
+    values = {stage.KEY_POPSIMPREP: str(popsimprep_dir), "data_path": str(data_path),
+              stage.KEY_SETTINGS: str(settings_path)}
     return SimpleNamespace(config=lambda key: values[key])
 
 
@@ -670,3 +676,22 @@ def test_validate_raises_naming_a_missing_committed_data_file(data_copy, relpath
 
     with pytest.raises(RuntimeError, match=relpath.rsplit("/", 1)[1]):
         stage.validate(_context(data_copy))
+
+
+def test_validate_token_follows_the_popsim_settings_file(tmp_path):
+    """The settings file (tolerances, iterations, weight bounds) lives outside the repository.
+
+    Its path is a config value, but an edit of its CONTENT under the same path left the token
+    unchanged and a warm cache reused the old output. A missing file must raise.
+    """
+    settings = tmp_path / "settings.yaml"
+    settings.write_bytes(_SETTINGS.read_bytes())
+    baseline = stage.validate(_context(settings_path=settings))
+    assert baseline == stage.validate(_CONTEXT)
+
+    settings.write_bytes(_SETTINGS.read_bytes().replace(b"100", b"50"))
+    assert stage.validate(_context(settings_path=settings)) != baseline
+
+    settings.unlink()
+    with pytest.raises(RuntimeError, match="settings.yaml"):
+        stage.validate(_context(settings_path=settings))

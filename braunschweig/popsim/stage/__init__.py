@@ -820,6 +820,11 @@ def validate(context):
     hashed whatever the feature flags say, line endings normalised (a Windows and a Linux
     checkout of one commit give one token). ``data_path`` is declared in ``configure()``.
 
+    THE POPULATIONSIM SETTINGS FILE (``KEY_SETTINGS``: tolerances, iterations, weight bounds) is
+    part of the token under ``"settings_file"`` (its line-ending-normalised content digest). It
+    lives outside the repository, so the digest protects the machine that holds it; its path is
+    a config value and changes the stage hash by itself.
+
     DELIBERATE GAP, local-only inputs (not tracked by git, so no digest can be reproduced from a
     commit): the raw MiD tables under ``KEY_MID``, the Tier-3 ``kreis_controls`` parquet files
     (including ``kreis_erwerbsstatus.parquet``), ``braunschweig/5000H-2001_de_flat.csv`` (the
@@ -832,12 +837,12 @@ def validate(context):
         RuntimeError: if a module named in ``_DEFERRED_HELPER_MODULE_NAMES``
             cannot be imported or has no retrievable source (the original error
             is chained), if the project directory or its lock file does not yield
-            a locked commit, or if a committed data file is missing (no silent fallback:
+            a locked commit, or if a committed data file or the settings file is missing (no silent fallback:
             a token without it would let a stale cache through).
 
     Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
     digest per helper module (docstrings, comments and formatting do not change it), plus
-    ``"populationsim_commit"``, ``"populationsim_lock_hash"`` and ``"files"``.
+    ``"populationsim_commit"``, ``"populationsim_lock_hash"``, ``"files"`` and ``"settings_file"``.
     """
     token = synpp_tokens.source_token(
         _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
@@ -847,6 +852,13 @@ def validate(context):
     token["populationsim_commit"] = tool_version.expected_populationsim_commit(project_dir)
     token["populationsim_lock_hash"] = tool_version.lock_content_hash(project_dir)
     token["files"] = _committed_data_file_digests(context.config("data_path"))
+    # The PopulationSim settings file lives outside the repository (KEY_SETTINGS); its path is a
+    # config value, so only its CONTENT needs the digest. execute() cannot run without it.
+    settings_path = Path(context.config(KEY_SETTINGS))
+    if not settings_path.is_file():
+        raise RuntimeError(f"[braunschweig.popsim.stage] PopulationSim settings file not found: "
+                           f"{settings_path} (config key {KEY_SETTINGS!r}).")
+    token["settings_file"] = synpp_tokens.text_file_sha256(settings_path)
     return token
 
 
