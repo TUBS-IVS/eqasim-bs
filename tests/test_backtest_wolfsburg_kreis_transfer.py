@@ -22,6 +22,7 @@ def test_transfer_formulas_on_hand_computed_cases():
     assert odds_transfer(0.25, 0.5, 0.25) == pytest.approx(0.5)
     # Ratios 2 and 1 turn [0.2, 0.8] into [0.4, 0.8], renormalised [1/3, 2/3].
     assert class_transfer([0.2, 0.8], [0.4, 0.6], [0.2, 0.6]) == pytest.approx([1 / 3, 2 / 3])
-    # trips_0 0.10 x 21/18; the rest 0.88333 split 1:2 like the anchor's mobile classes.
-    assert immobile_transfer([0.1, 0.3, 0.6], 21, 18) == pytest.approx(
-        [0.1166667, 0.2944444, 0.5888889], abs=1e-6)
+    # trips_0: odds 1/9 x (0.21/0.79) / (0.18/0.82) = 0.134552 -> 0.118595; the rest
+    # 0.881405 split 1:2 like the anchor's mobile classes.
+    assert immobile_transfer([0.1, 0.3, 0.6], 0.21, 0.18) == pytest.approx(
+        [0.118595, 0.293802, 0.587603], abs=1e-6)

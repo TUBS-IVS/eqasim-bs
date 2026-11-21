@@ -23,7 +23,7 @@ scripts/extract_mid_tables.py):
                         "SrV rate" = SrV's own rate of k, which isolates the assumption
                         "participation is proportional to the purpose trip rate".
   trip_class            trip classes 0 / 1-2 / 3-4 / 5+. "P39.1": class-wise transfer with the
-                        MiD trip-count classes. "P36.1": trips_0 scaled by the MiD immobile
+                        MiD trip-count classes. "P36.1": trips_0 moved by the MiD immobile odds
                         ratio, the mobile classes keep the anchor's pattern (the Wolfsburg rule
                         of scripts/build_trip_class_target.py).
 
@@ -80,8 +80,8 @@ def class_transfer(anchor_shares: list[float], mid_k: list[float], mid_anchor: l
 
 def immobile_transfer(anchor_shares: list[float], mid_immobile_k: float,
                       mid_immobile_anchor: float) -> list[float]:
-    """trips_0 scaled by the MiD immobile ratio; the mobile classes keep the anchor's pattern."""
-    trips_0 = anchor_shares[0] * mid_immobile_k / mid_immobile_anchor
+    """trips_0 moved by the MiD immobile odds ratio; the mobile classes keep the anchor's pattern."""
+    trips_0 = odds_transfer(anchor_shares[0], mid_immobile_k, mid_immobile_anchor)
     mobile = sum(anchor_shares[1:])
     return [trips_0] + [s / mobile * (1 - trips_0) for s in anchor_shares[1:]]
 
@@ -246,7 +246,9 @@ def run_backtest(data: Path, persons: pd.DataFrame) -> tuple[pd.DataFrame, pd.Da
         counts = [v[0], v[1] + v[2], v[3] + v[4], v[5]]
         mid_classes[c] = [x / sum(counts) for x in counts]
     p361 = mid_table(data, "mid2023_P36_1.csv")
-    mid_immobile = p361["nicht_mobil"].to_dict()
+    # Immobile share among persons of known mobility ("unbekannt" renormalized out), as the
+    # Wolfsburg rule of scripts/build_trip_class_target.py reads it.
+    mid_immobile = (p361["nicht_mobil"] / (p361["nicht_mobil"] + p361["mobil"])).to_dict()
     p361_weights = p361["n_weighted"].to_dict()
     for anchor, k in pairs():
         actual = [classes.loc[k, c] for c in TRIP_CLASSES]

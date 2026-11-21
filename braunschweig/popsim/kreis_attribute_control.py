@@ -264,9 +264,8 @@ REGISTRY: tuple = (
     #       anchored to the SrV level (regional survey = regional behaviour authority),
     #       not corrected to the MiD mobility-rate level (uniform ~+5..+8pp offset).
     #   (3) ASSUMPTION (Wolfsburg): 03103 (not covered by SrV) uses the SrV region
-    #       total, its trips_0 scaled by Wolfsburg's relative MiD P36.1 immobility
-    #       (scripts/build_trip_class_target.py states the exact rule; how that
-    #       transfer scored in a backtest on the SrV Kreise: ADR-0205).
+    #       total, its trips_0 moved by the MiD P36.1 immobility odds ratio, the rule
+    #       has_ebike uses too (scripts/build_trip_class_target.py; ADR-0205).
     # tier="hard" (feature #224 task 6, flipped from the original "soft"): the SOFT tier
     # missed its SrV Mobilitaetsquote target (synthetic immobility ~26.5% vs. SrV
     # target ~11.2%, the largest single SrV gap of all Kreis controls). Registering
