@@ -185,8 +185,9 @@ def test_registry_labels_fit_checks(tmp_path):
         "cars_per_hh": "partially_independent",
         "bicycles_per_hh": "partially_independent",
         "household_size": "fit_check",
-        "age_group": "independent",
-        "sex": "independent",
+        # Steered by popsim_mid's 22 age x sex controls per 100 m cell (Zensus 2022 grid, #648 review).
+        "age_group": "fit_check",
+        "sex": "fit_check",
         "employment": "independent",
         "employment_status": "partially_independent",
         "bev_share": "fit_check",

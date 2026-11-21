@@ -175,9 +175,12 @@ def _participation_fit_report(persons: pd.DataFrame, geo: pd.DataFrame,
 
     Returns the ``ars5, purpose, realised_rate, target_rate, abs_error`` frame.
     """
-    persons_kreis = persons[["person_id", "household_id"]].merge(
+    # day_absence_state (when the run has it) lets the mobility row use its target's universe,
+    # the persons present on the reporting day (participation_fit.realised_participation).
+    absence = [PF.DAY_ABSENCE_COLUMN] if PF.DAY_ABSENCE_COLUMN in persons.columns else []
+    persons_kreis = persons[["person_id", "household_id", *absence]].merge(
         geo[["household_id", "ars5"]], on="household_id", how="left")
-    persons_kreis = persons_kreis.dropna(subset=["ars5"])[["person_id", "ars5"]]
+    persons_kreis = persons_kreis.dropna(subset=["ars5"])[["person_id", "ars5", *absence]]
     targets_dir = Path(data_path) / "braunschweig" / "targets"
     return PF.participation_fit(trips, persons_kreis, targets_dir)
 
