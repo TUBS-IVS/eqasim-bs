@@ -472,7 +472,7 @@ HEADER_WORK = """\
 # universes are combined as-is; this is a small, explicitly documented gap, not a silently
 # absorbed one.
 #
-# ASSUMPTION (Wolfsburg 03103, SrV region-total convention -- same as target2026_has_ebike /
+# ASSUMPTION (Wolfsburg 03103, SrV region-total convention -- same as
 # target2026_work_participation): 03103 is not covered by SrV, so its row uses ITS OWN
 # employment_status margin row combined with the 03ZGB (region-total) conditional rates;
 # source = "employment_status_target x srv_region_total".
@@ -511,7 +511,7 @@ def _education_header(entry_name: str) -> str:
 #
 # FORMULA: edu = round(p_education, 4); noedu = round(1 - p_education, 4).
 #
-# ASSUMPTION (Wolfsburg 03103, SrV region-total convention -- same as target2026_has_ebike /
+# ASSUMPTION (Wolfsburg 03103, SrV region-total convention -- same as
 # target2026_work_participation): 03103 is not covered by SrV; its row uses the 03ZGB
 # (region-total) p_education directly (source = "srv_region_total").
 # ASSUMPTION (Gesamt): the Gesamt row also uses the 03ZGB p_education directly (source = "srv"),

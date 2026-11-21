@@ -364,7 +364,7 @@ REGISTRY: tuple = (
     #   (1) DECISION (level anchoring): the synthetic distribution is anchored to the
     #       SrV level (regional survey = regional behaviour authority).
     #   (2) ASSUMPTION (Wolfsburg): 03103 (not covered by SrV) uses the SrV region
-    #       total, the SAME convention as target2026_trip_class.
+    #       total directly (scripts/build_participation_target.py states the rule).
     # tier="hard": unlike employment_status (soft, yields gracefully to the Zensus
     # backbone in small cells), work_participation is registered HARD so its importance
     # is classified into the "kreis_hard" group (control_spec.IMPORTANCE_PROFILES)

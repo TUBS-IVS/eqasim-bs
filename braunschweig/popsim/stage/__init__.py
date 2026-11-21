@@ -830,8 +830,9 @@ def validate(context):
     (including ``kreis_erwerbsstatus.parquet``), ``braunschweig/5000H-2001_de_flat.csv`` (the
     Zensus household file of the income Kreis control) and
     ``braunschweig/popsim/zensus2022_employed_by_age_kreis.csv`` (the production employment age
-    shape). A change to one of them reaches a warm cache only through a changed path or a
-    manual cache clear.
+    shape), and the external controls CSV at ``KEY_CONTROLS`` (read only when ``controls_source``
+    is ``"csv"``; production uses ``"catalog"``). A change to one of them reaches a warm cache
+    only through a changed path or a manual cache clear.
 
     Raises:
         RuntimeError: if a module named in ``_DEFERRED_HELPER_MODULE_NAMES``

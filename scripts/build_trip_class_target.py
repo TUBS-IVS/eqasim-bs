@@ -58,7 +58,7 @@ TRIP_CLASS_COLUMNS = ("trips_0", "trips_1_2", "trips_3_4", "trips_5plus")
 
 # Wolfsburg (kreisfreie Stadt) is not covered by the SrV 2023 Braunschweig+RGB
 # survey; per the documented ASSUMPTION above, its row uses the SrV region total
-# (identical convention to target2026_has_ebike_by_kreis.csv).
+# with its trips_0 scaled by the MiD P36.1 ratio (ASSUMPTION below).
 WOLFSBURG_ARS5 = "03103"
 
 HEADER = """\

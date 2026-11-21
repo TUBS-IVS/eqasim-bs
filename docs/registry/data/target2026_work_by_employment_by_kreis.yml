@@ -75,7 +75,7 @@ limitations: |
   ASSUMPTION (Wolfsburg 03103): not covered by SrV, so its row combines ITS OWN employment_status
   margin with the 03ZGB region-total conditional rates (source column
   "employment_status_target x srv_region_total") - the convention of
-  scripts/build_participation_target.py and target2026_has_ebike. The Gesamt row uses the Gesamt
+  scripts/build_participation_target.py. The Gesamt row uses the Gesamt
   margin with the same 03ZGB rates, because 03ZGB is the only committed region-total conditional.
 
   ASSUMPTION (universe mismatch, controller ruling R15 - documented, NOT reconciled): the margin's

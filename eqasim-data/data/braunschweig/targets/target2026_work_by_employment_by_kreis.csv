@@ -29,7 +29,7 @@
 # universes are combined as-is; this is a small, explicitly documented gap, not a silently
 # absorbed one.
 #
-# ASSUMPTION (Wolfsburg 03103, SrV region-total convention -- same as target2026_has_ebike /
+# ASSUMPTION (Wolfsburg 03103, SrV region-total convention -- same as
 # target2026_work_participation): 03103 is not covered by SrV, so its row uses ITS OWN
 # employment_status margin row combined with the 03ZGB (region-total) conditional rates;
 # source = "employment_status_target x srv_region_total".

@@ -57,6 +57,7 @@ DATA_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig"
 OUT_DEFAULT = DATA_DEFAULT / "calibration" / "wolfsburg_transfer_backtest_2026-11-20"
 BRAUNSCHWEIG = "03101"
 SALZGITTER = "03102"
+WOLFSBURG = "03103"
 REGION = "region_without_k"
 # The seven Kreise SrV 2023 surveys (Wolfsburg 03103 is the one it does not).
 SRV_KREISE = ["03101", "03102", "03151", "03153", "03154", "03157", "03158"]
@@ -164,13 +165,25 @@ def participation_and_rate(persons: pd.DataFrame, purpose: str) -> tuple[float, 
 # ---------------------------------------------------------------------------- backtest
 
 def mid_anchor_value(values: dict, weights: dict, anchor: str, k: str):
-    """MiD value of the anchor: Braunschweig, or the Gesamt row without Kreis k."""
+    """MiD value of the anchor: Braunschweig, or the Gesamt row without Kreis k AND Wolfsburg.
+
+    The MiD Gesamt row covers all eight Kreise; the SrV region it is paired with never holds
+    Wolfsburg, so both Wolfsburg and k leave the MiD side (the anchor is built the same way in
+    both surveys).
+    """
     if anchor == BRAUNSCHWEIG:
         return values[BRAUNSCHWEIG]
+
+    def without(total, weight, value_of):
+        for code in (WOLFSBURG, k):
+            total = leave_one_out(total, weight, value_of(code), weights[code])
+            weight -= weights[code]
+        return total
+
     if isinstance(values["TOT"], list):
-        return [leave_one_out(t, weights["TOT"], v, weights[k])
-                for t, v in zip(values["TOT"], values[k])]
-    return leave_one_out(values["TOT"], weights["TOT"], values[k], weights[k])
+        return [without(t, weights["TOT"], lambda code, i=i: values[code][i])
+                for i, t in enumerate(values["TOT"])]
+    return without(values["TOT"], weights["TOT"], lambda code: values[code])
 
 
 def run_backtest(data: Path, persons: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:

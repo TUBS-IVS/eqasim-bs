@@ -12,22 +12,24 @@
 
 ## Decision
 
-1. **`has_ebike`: Wolfsburg = MiD H12.1.** Its row is the share of households with at least one e-bike or pedelec in MiD table H12.1, with the `keine_angabe` mass renormalized out, `source` = `mid`: the "Wolfsburg = MiD" rule of the blended household attributes. The seven SrV Kreise and the `Gesamt` row stay SrV. `scripts/build_blended_kreis_targets.py` (`build_has_ebike`, `mid_h12_1_ebike_share`) raises when the MiD row is missing; there is no fallback to the region total.
-2. **Every other SrV-only Wolfsburg row is unchanged.** Leisure and escort participation keep the SrV region total; `trip_class` keeps its P36.1 rule. The work and education rows were not tested: the report has no per-Kreis table of the same construct with enough Wolfsburg cases.
+1. **`has_ebike`: Wolfsburg = MiD H12.1.** Its row is the share of households with at least one e-bike or pedelec in MiD table H12.1, with the `keine_angabe` mass renormalized out, `source` = `mid`: the "Wolfsburg = MiD" rule of the blended household attributes. The seven SrV Kreise and the `Gesamt` row stay SrV. `scripts/build_blended_kreis_targets.py` (`build_has_ebike`, `mid_h12_1_ebike_share`) raises when the MiD row is missing; there is no fallback to the region total. ASSUMPTION: Wolfsburg resembles Braunschweig more than the region; the backtest supports this choice only through Braunschweig (Rationale).
+2. **Every other SrV-only Wolfsburg row is unchanged.** Leisure and escort participation keep the SrV region total. `trip_class` keeps its P36.1 rule although the backtest scores it worse than a plain region copy; switching it is left to a separate owner decision, so this ADR does not change a hard control on that evidence (ASSUMPTION until then). The work and education rows were not tested: the report has no per-Kreis table of the same construct with enough Wolfsburg cases.
 3. **Two report tables are committed:** H12.1 (input of decision 1) and P39.1 (input of the backtest), both written by `scripts/extract_mid_tables.py`, which now raises when a page lacks the `Gesamt` row or one of the eight Kreise.
 
 ## Rationale
 
-The backtest `scripts/backtest_wolfsburg_kreis_transfer.py` treats each SrV Kreis as if it were not surveyed, predicts its SrV value from an anchor (Braunschweig, or the region without that Kreis, leave-one-out in both surveys) and scores the prediction against the SrV value. The figures are in the evidence bundle (Evidence); this section states what they show.
+The backtest `scripts/backtest_wolfsburg_kreis_transfer.py` treats each SrV Kreis as if it were not surveyed, predicts its SrV value from an anchor (Braunschweig, or the region without that Kreis; on the MiD side Wolfsburg leaves the region too, because the SrV region never holds it) and scores the prediction against the SrV value. The figures are in the evidence bundle (Evidence); this section states what they show.
 
 - **Leisure and escort:** inside SrV the trips per participant are nearly the same in every Kreis (`trips_per_participant.csv`), so participation is proportional to the purpose trip rate, and a transfer with SrV's own rate beats copying the anchor (`*_srv_rate` rows). With the MiD rate, the only rate available for Wolfsburg, the transfer misses the SrV Kreise by more than copying the region does (`*_mid_rate` rows). The assumption holds; the MiD per-Kreis purpose shares are too coarse to carry it.
-- **`trip_class`:** over all Kreise neither transfer (P39.1 classes, P36.1 immobility) beats copying the region; P39.1 is closer only for the two kreisfreie Staedte. No change is supported.
-- **`has_ebike`:** a Braunschweig anchor is the worst rule. For the two kreisfreie Staedte the MiD value of the Kreis itself has the smallest mean error (`bs_` / `sz_` columns), while the region copy misses Braunschweig by the largest error of any rule: in the Landkreise SrV lies far above MiD, in the cities the two surveys agree. Wolfsburg is a kreisfreie Stadt whose MiD share is close to Braunschweig's.
+- **`trip_class`:** over all Kreise neither transfer (P39.1 classes, P36.1 immobility) beats copying the region, the current P36.1 rule included, also on `trips_0`, the only class it changes. With a Braunschweig anchor P39.1 is closer for Salzgitter; with the region anchor it is not. The evidence therefore favours the plain region total over the current rule (Decision 2).
+- **`has_ebike`:** a Braunschweig anchor is the worst rule. Over the seven Kreise the odds transfer from the region anchor has the smallest error and beats the MiD value of the Kreis itself everywhere except in Braunschweig, Salzgitter included. The MiD value wins only in Braunschweig, where the region copy and the region transfer miss by the largest errors of any rule (in the Landkreise SrV lies far above MiD; in Braunschweig the two surveys agree). The decided rule rests on Wolfsburg's MiD share being close to Braunschweig's, and on the "Wolfsburg = MiD" rule of the other household attributes; the region transfer would give Wolfsburg a share a few points higher. Both lie below the previous region copy.
 
 ## Rejected options
 
 - **`has_ebike` from the SrV region total** (the previous rule): it carries the Landkreis level into a city.
-- **Ratio transfers from a Braunschweig or a region anchor** (`has_ebike`, leisure, escort, `trip_class` P39.1): worse than the decided rule in the backtest, or not better than the current one.
+- **Ratio transfers from a Braunschweig anchor** (`has_ebike`, leisure, escort, `trip_class` P39.1): worse than copying the region or than the region transfer.
+- **MiD-rate transfers for leisure and escort, and P39.1 for `trip_class`:** worse than copying the region.
+- **`has_ebike` from the region odds transfer:** lowest error over the seven Kreise, but it carries part of the Landkreis level into a city; not chosen (ASSUMPTION in Decision 1). The owner may revisit this choice.
 
 ## Consequences
 

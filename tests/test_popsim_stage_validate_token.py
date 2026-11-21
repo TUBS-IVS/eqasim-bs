@@ -634,9 +634,15 @@ def _registry_target_relpaths():
 
 @pytest.fixture
 def data_copy(tmp_path):
-    """A throw-away ``data_path`` holding copies of the committed folders the stage reads."""
-    for folder in ("targets", "mid", "popsim"):
-        shutil.copytree(_DATA_ROOT / "braunschweig" / folder, tmp_path / "braunschweig" / folder)
+    """A throw-away ``data_path`` holding copies of exactly the files validate() hashes.
+
+    Only those files: on a full-data machine the same folders also hold GB of local-only cell
+    parquets and MiD microdata.
+    """
+    for relpath in [*_registry_target_relpaths(), *stage._COMMITTED_DATA_FILES]:
+        destination = tmp_path / relpath
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(_DATA_ROOT / relpath, destination)
     return tmp_path
 
 
