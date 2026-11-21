@@ -28,7 +28,7 @@ The backtest `scripts/backtest_wolfsburg_kreis_transfer.py` treats each SrV Krei
 ## Rejected options
 
 - **`has_ebike` from the plain SrV region share** (the previous rule) and **from the MiD value of Wolfsburg itself** (this PR's first version): larger backtest errors than the region transfer; the MiD value wins only in Braunschweig.
-- **Ratio transfers from a Braunschweig anchor** (`has_ebike`, leisure, escort, `trip_class` P39.1): worse than the region anchor.
+- **Ratio transfers from a Braunschweig anchor** (`has_ebike`, leisure, escort, `trip_class` P39.1): never closer than copying the region, and for `has_ebike` the worst rule. Against the region transfer the Braunschweig anchor is closer for leisure and for the `trips_0` class of P39.1, which does not change the result.
 - **MiD-rate transfers for leisure and escort, and P39.1 for `trip_class`:** worse than copying the region.
 - **`trip_class` on the plain region total:** smaller backtest error, but it breaks the common rule of decision 3 (owner decision of 2026-11-21).
 - **`trip_class` with the previous percentage ratio against the `Gesamt` row with Wolfsburg in it:** a different formula and anchor than `has_ebike` (owner decision of 2026-11-21 to make both rows follow one rule).
