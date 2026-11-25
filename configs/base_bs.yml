@@ -611,7 +611,7 @@ config:
   braunschweig.population.popsim.popsimprep_dir: environments/populationsim
   braunschweig.population.popsim.uv_path: /home/felix/.local/bin/uv
   # Required PopulationSim version (meaning and format: KEY_POPSIM_VERSION in config_keys.py).
-  braunschweig.population.popsim.populationsim_version: "0.10.0+bs.2"
+  braunschweig.population.popsim.populationsim_version: "0.10.0+bs.3"
   # Tracked PopulationSim integerizer options (meaning: KEY_KEEP_FRACTIONAL_SAMPLE_WEIGHTS,
   # KEY_INTEGERIZER_DRAW, KEY_INTEGERIZER_TIMEOUT_S in config_keys.py); written into every
   # batch settings.yaml, so the server-local settings file must not set them. Evidence for the
@@ -650,7 +650,8 @@ config:
   # braunschweig.resources.popsim_worker_memory_gb). 6 is about one and a half times the largest
   # per-batch peak the same manifest measured with both options on. ASSUMPTION: no batch that was
   # not measured needs more; the worker memory of every run is sampled (monitoring_* keys below),
-  # and issue #281 tunes the value on the full rerun.
+  # and issue #281 tunes the value on the full rerun. Memory of fork release 0.10.0+bs.3 against
+  # 0.10.0+bs.2: run manifest popsim-bs3-release-2026-11-25 (the value is unchanged).
   braunschweig.population.popsim.worker_memory_gb: 6.0
   # Solver-path gate (meaning: KEY_SOLVER_FALLBACK_ERROR_RATE in config_keys.py): null = warn
   # only. ASSUMPTION-grade threshold, to be set from the first full run (design, issue #645).

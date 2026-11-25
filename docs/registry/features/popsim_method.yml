@@ -54,6 +54,7 @@ validation:
   - popsim-ladder-arm2-2026-11-17
   - popsim-ladder-arm3-2026-11-18
   - popsim-full-rerun-20261120
+  - popsim-bs3-release-2026-11-25
   metric: 'control-fit vs committed controls (category shares): census-scale families mean ~0.25pp,
     KREIS/SrV families mean ~1.1pp, car/bike ~3.6-4.7pp urban-concentrated'
   note: Control fit against committed control tables; NOT a behavioural validation.
@@ -75,4 +76,5 @@ notes: |
   popsim-ladder-inputs-b-2026-11-19.
   WP2 state (issue #645): the PopulationSim fork core is implemented; production values in configs/base_bs.yml, evidence in run manifest popsim-ladder-arm1-2026-11-17. Decision: ADR-0199; wiring: docs/codebase/notes/populationsim-fork.md.
   WP4 state (issue #646): the controlled rounding of fork release 0.10.0+bs.2 is the production value (braunschweig.population.popsim.integerizer_rounding in configs/base_bs.yml). Decision, including the pre-registered check that was missed: ADR-0201; evidence: run manifest popsim-ladder-arm3-2026-11-18.
+  WP6 state (issue #677): the tracked environment and `populationsim_version` pin fork release 0.10.0+bs.3 (environments/populationsim, configs/base_bs.yml); release evidence: run manifest popsim-bs3-release-2026-11-25; why: ADR-0200 (no amendment); release steps: docs/codebase/notes/populationsim-fork.md.
   WP5 state (issue #648): first full-region run with all repairs of the series, compared with prod100_20261031 (donor reuse, control fit, rare groups, census/MiD/SrV checks): run manifest popsim-full-rerun-20261120.

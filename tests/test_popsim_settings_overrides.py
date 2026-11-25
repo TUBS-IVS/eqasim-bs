@@ -470,7 +470,7 @@ def test_base_config_states_the_tracked_values():
     # Production value by owner decision of 2026-11-19 (ADR-0201, issue #646); it needs the fork
     # release that has the controlled rounding.
     assert config[config_keys.KEY_INTEGERIZER_ROUNDING] == "controlled"
-    assert config[config_keys.KEY_POPSIM_VERSION] == "0.10.0+bs.2"
+    assert config[config_keys.KEY_POPSIM_VERSION] == "0.10.0+bs.3"
     # The search method's options state the fork's defaults.
     assert config[config_keys.KEY_INTEGERIZER_CONTROLLED_METHOD] == "search"
     assert config[config_keys.KEY_INTEGERIZER_SEARCH_MAX_SWEEPS] == 200
