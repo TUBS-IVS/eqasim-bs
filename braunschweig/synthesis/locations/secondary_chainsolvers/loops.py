@@ -1,10 +1,15 @@
-"""Loop flag: which synthetic leisure legs are strolls or dog walks (issue #679, task C2).
+"""Strolls and dog walks: which synthetic leisure legs are loops, and where they are placed (#679).
 
 The MiD 2023 diary records a stroll (``W_ZWD`` 710) or a dog walk (711) as ONE trip whose length
 is the whole loop: the person leaves the previous activity, walks (or rides) around, and comes
 back to the same place. The secondary-location stage takes such a loop activity out of the chain
-and places it at the activity before it (other tasks of #679). This module only decides WHICH
-legs are loops; it is a pure function of its inputs and wires into no stage.
+and places it at the activity before it. This module holds the pure functions of that rule and
+wires into no stage itself:
+
+- :func:`flag_loops` decides WHICH legs are loops (below);
+- :func:`collapse_loops` takes the loop activities out of the trips table before the chain solver
+  runs, and :func:`restore_loops` puts them back afterwards at the place of the activity they
+  start from (see :func:`collapse_loops` for the index convention and the assumption).
 
 Two sources of the flag, in this order:
 
@@ -33,6 +38,7 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 
@@ -69,6 +75,29 @@ _TRIP_COLUMNS = ("person_id", "trip_index", "mode", "preceding_purpose", "follow
 _MID_COLUMNS = ("H_ID", "P_ID", "W_ID", "W_ZWECK", "W_ZWD", "W_GEW", "hvm_imp")
 
 _STAT_KEYS = ("in_scope", "by_label", "by_draw", "draws", "draws_from_marginal")
+
+#: Purposes whose place is fixed before the chain solver runs; a loop that starts at one of them
+#: copies that place, and ``loop_origin`` names it by the purpose.
+PRIMARY_LOOP_ORIGINS = ("home", "work", "education")
+
+#: ``loop_origin`` of a loop that starts at any other activity: the place the solver drew for it.
+SECONDARY_LOOP_ORIGIN = "secondary"
+
+#: The values of ``origin_purpose`` in the loop table and of ``loop_origin`` on a loop row.
+LOOP_ORIGINS = (*PRIMARY_LOOP_ORIGINS, SECONDARY_LOOP_ORIGIN)
+
+#: Columns of the index map :func:`collapse_loops` returns.
+INDEX_MAP_COLUMNS = ("person_id", "local_activity_index", "activity_index")
+
+#: Columns of the loop table :func:`collapse_loops` returns.
+LOOP_TABLE_COLUMNS = ("person_id", "activity_index", "origin_purpose", "origin_activity_index")
+
+#: Columns :func:`collapse_loops` reads or rewrites; every other column is carried unchanged.
+_COLLAPSE_COLUMNS = ("person_id", "trip_index", "preceding_purpose", "following_purpose",
+                     "is_first_trip", "is_last_trip")
+
+#: Columns of the solver's location rows (``results._extract_locations``).
+_LOCATION_COLUMNS = ("person_id", "activity_index", "location_id", "geometry")
 
 
 @dataclass(frozen=True)
@@ -348,3 +377,320 @@ def _log_stats(stats: dict) -> None:
                            "thin for this mode", *arguments, 100.0 * FALLBACK_WARN_RATE)
         else:
             logger.info(message, *arguments)
+
+
+def _aligned_loop_flags(is_loop: pd.Series, df_trips: pd.DataFrame) -> pd.Series:
+    """``is_loop`` on ``df_trips.index`` (any order); ``ValueError`` unless one Boolean per trip."""
+    if (len(is_loop) != len(df_trips) or not is_loop.index.is_unique
+            or not df_trips.index.isin(is_loop.index).all()):
+        raise ValueError(
+            "[secondary_loops] collapse_loops: is_loop must hold exactly one flag per trip, on "
+            f"the index of df_trips (as flag_loops returns it); got {len(is_loop)} flags for "
+            f"{len(df_trips)} trips, {int((~df_trips.index.isin(is_loop.index)).sum())} trips "
+            "without a flag.")
+    if not pd.api.types.is_bool_dtype(is_loop.dtype):
+        raise ValueError("[secondary_loops] collapse_loops: is_loop must be Boolean, got dtype "
+                         f"{is_loop.dtype}.")
+    return is_loop.reindex(df_trips.index)
+
+
+def _origin_kind(purposes: pd.Series) -> np.ndarray:
+    """``home``, ``work`` and ``education`` keep their name; any other purpose is ``secondary``."""
+    is_primary = purposes.isin(PRIMARY_LOOP_ORIGINS)
+    return np.where(is_primary, purposes, SECONDARY_LOOP_ORIGIN).astype(object)
+
+
+def collapse_loops(df_trips: pd.DataFrame, is_loop: pd.Series,
+                   eligible_persons: set) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Take the loop activities of the eligible persons out of their trip chains.
+
+    ASSUMPTION (owner's decision for #679, the eqasim-france Paris model; design spec section 1):
+    a stroll or dog walk has no displacement. The loop activity therefore needs no place of its
+    own: it is taken out of the chain here, the chain solver places the remaining activities, and
+    :func:`restore_loops` puts the loop back at the place of the activity it starts from.
+
+    Index convention (the one ``find_assignment_problems`` derives from ``trip_index``): the
+    activity before trip ``k`` has activity index ``k``, the activity after it ``k + 1``. A trip
+    flagged in ``is_loop`` (a Boolean Series on ``df_trips.index``, as :func:`flag_loops` returns
+    it) leads INTO a loop activity.
+
+    For every person in ``eligible_persons`` with at least one loop trip:
+
+    - every loop trip is dropped (also a run of consecutive loops, and a loop as the last
+      activity of the day);
+    - the trip after a run of loops now leaves the activity before the run: its
+      ``preceding_purpose`` becomes that activity's purpose; all its other values (mode, times,
+      ``travel_time``, the donor columns) stay;
+    - ``trip_index`` is renumbered without gaps from the person's first index, and
+      ``is_first_trip`` / ``is_last_trip`` are rebuilt. A person whose trips were all loops has
+      no trip left.
+
+    Every other row (persons not eligible, persons without a loop) comes back with the same index
+    label and values; the row order of ``df_trips`` is kept; the input is not changed. The
+    ``trip_index`` of a person to collapse must be contiguous from its first value (``ValueError``
+    otherwise), and a loop trip must not lead into a home, work or education activity
+    (``ValueError``).
+
+    Returns ``(collapsed trips, index map, loop table)``:
+
+    - index map (:data:`INDEX_MAP_COLUMNS`): for every activity left in a collapsed person's
+      chain, ``local_activity_index`` (its index in the collapsed chain) and ``activity_index``
+      (its index in ``df_trips``); only collapsed persons are listed;
+    - loop table (:data:`LOOP_TABLE_COLUMNS`): one row per loop activity taken out, sorted by
+      ``(person_id, activity_index)``: its original ``activity_index``, the
+      ``origin_activity_index`` of the last activity before it that is not a loop (two loops in
+      a row share it), and ``origin_purpose``, that activity's purpose as one of
+      :data:`LOOP_ORIGINS` (home, work and education by name, every other purpose
+      ``secondary``).
+    """
+    _require_columns(df_trips, _COLLAPSE_COLUMNS, "trips")
+    _require_unique_index(df_trips, "collapse_loops")
+    flags = _aligned_loop_flags(is_loop, df_trips)
+
+    into_primary = flags & df_trips["following_purpose"].isin(PRIMARY_LOOP_ORIGINS)
+    if bool(into_primary.any()):
+        examples = list(zip(df_trips.loc[into_primary, "person_id"],
+                            df_trips.loc[into_primary, "trip_index"]))[:5]
+        raise ValueError(
+            f"[secondary_loops] collapse_loops: {int(into_primary.sum())} trips flagged as loops "
+            "lead into a home, work or education activity; a loop activity must be a secondary "
+            f"one. First (person_id, trip_index): {_plain(examples)}.")
+
+    loop_persons = df_trips.loc[flags & df_trips["person_id"].isin(eligible_persons), "person_id"]
+    collapsing = df_trips["person_id"].isin(loop_persons.unique())
+    person_dtype = df_trips["person_id"].dtype
+    index_dtype = df_trips["trip_index"].dtype
+    if not bool(collapsing.any()):
+        index_map = pd.DataFrame({
+            "person_id": pd.Series(dtype=person_dtype),
+            "local_activity_index": pd.Series(dtype=index_dtype),
+            "activity_index": pd.Series(dtype=index_dtype)})
+        loop_table = pd.DataFrame({
+            "person_id": pd.Series(dtype=person_dtype),
+            "activity_index": pd.Series(dtype=index_dtype),
+            "origin_purpose": pd.Series(dtype=object),
+            "origin_activity_index": pd.Series(dtype=index_dtype)})
+        return df_trips.copy(), index_map, loop_table
+
+    # Only the persons with a loop to take out are worked on (a few percent of all persons).
+    trips = df_trips.loc[collapsing, ["person_id", "trip_index", "preceding_purpose"]].assign(
+        is_loop=flags[collapsing]).sort_values(["person_id", "trip_index"], kind="stable")
+    person = trips["person_id"]
+    position = trips.groupby(person, sort=False).cumcount()
+    first_index = trips.groupby(person, sort=False)["trip_index"].transform("min")
+    gaps = trips["trip_index"] != first_index + position
+    if bool(gaps.any()):
+        raise ValueError(
+            "[secondary_loops] collapse_loops: the trip_index of a person must be contiguous (no "
+            "gaps, no repeats) from its first value, because the activity indices are derived "
+            "from it; person_ids "
+            f"{_plain(trips.loc[gaps, 'person_id'].unique()[:5].tolist())} (first five) do not.")
+
+    loop = trips["is_loop"].to_numpy(dtype=bool)
+    previous_is_loop = trips.groupby(person, sort=False)["is_loop"].shift(
+        1, fill_value=False).to_numpy(dtype=bool)
+    run_start = loop & ~previous_is_loop
+    # The activity a run of loops starts from is the one its first loop trip leaves (index =
+    # that trip's index, purpose = its preceding_purpose). Carried forward within the person, it
+    # reaches every loop of the run and the trip after the run; the next run sets a new one.
+    origin_activity_index = trips["trip_index"].where(run_start).groupby(person).ffill()
+    origin_purpose = trips["preceding_purpose"].where(run_start).groupby(person).ffill()
+    resumes = ~loop & previous_is_loop
+    kept = ~loop
+    kept_rank = pd.Series(kept.astype(np.int64), index=trips.index).groupby(person).cumsum()
+    kept_total = kept_rank.groupby(person).transform("max")
+
+    loop_rows = trips[loop]
+    loop_table = pd.DataFrame({
+        "person_id": loop_rows["person_id"].to_numpy(),
+        "activity_index": (loop_rows["trip_index"] + 1).to_numpy(),
+        "origin_purpose": _origin_kind(origin_purpose[loop]),
+        "origin_activity_index": origin_activity_index[loop].to_numpy().astype(index_dtype),
+    })
+
+    # Activity k + 1 stays in the chain exactly when trip k is kept; the first activity of the
+    # chain always stays. A kept trip's destination is the (kept_rank)-th activity after it.
+    starts = trips.drop_duplicates("person_id")
+    kept_rows = trips[kept]
+    index_map = pd.concat([
+        pd.DataFrame({"person_id": starts["person_id"].to_numpy(),
+                      "local_activity_index": starts["trip_index"].to_numpy(),
+                      "activity_index": starts["trip_index"].to_numpy()}),
+        pd.DataFrame({"person_id": kept_rows["person_id"].to_numpy(),
+                      "local_activity_index": (first_index + kept_rank)[kept].to_numpy(),
+                      "activity_index": (kept_rows["trip_index"] + 1).to_numpy()}),
+    ]).sort_values(["person_id", "local_activity_index"]).reset_index(drop=True)
+
+    collapsed = df_trips.copy()
+    kept_labels = trips.index[kept]
+    collapsed.loc[kept_labels, "trip_index"] = (first_index + kept_rank - 1)[kept].to_numpy()
+    collapsed.loc[kept_labels, "is_first_trip"] = (kept_rank == 1)[kept].to_numpy()
+    collapsed.loc[kept_labels, "is_last_trip"] = (kept_rank == kept_total)[kept].to_numpy()
+    collapsed.loc[trips.index[resumes], "preceding_purpose"] = origin_purpose[resumes].to_numpy()
+    collapsed = collapsed.drop(index=trips.index[loop])
+    return collapsed, index_map, loop_table.sort_values(
+        ["person_id", "activity_index"]).reset_index(drop=True)
+
+
+def _plain(value):
+    """``value`` with numpy scalars turned into Python ones, for readable error messages."""
+    if isinstance(value, (list, tuple)):
+        return type(value)(_plain(item) for item in value)
+    return value.item() if isinstance(value, np.generic) else value
+
+
+def _unique_lookup(frame: pd.DataFrame, keys, columns, what: str) -> pd.DataFrame:
+    """``frame[columns]`` indexed by ``keys``; ``ValueError`` naming ``what`` when a key repeats."""
+    table = frame.set_index(list(keys))[list(columns)]
+    if not table.index.is_unique:
+        raise ValueError(
+            f"[secondary_loops] restore_loops: the {what} repeat a key {list(keys)} "
+            f"({int(table.index.duplicated().sum())} times); a loop cannot pick one of them.")
+    return table
+
+
+def _raise_if_missing(loops: pd.DataFrame, missing: np.ndarray, origin: str, reason: str) -> None:
+    if bool(missing.any()):
+        examples = list(zip(loops.loc[missing, "person_id"], loops.loc[missing, "activity_index"],
+                            loops.loc[missing, "origin_activity_index"]))[:5]
+        raise ValueError(
+            f"[secondary_loops] restore_loops: {int(missing.sum())} loop activities copy a "
+            f"{origin} place, but {reason}. First (person_id, activity_index, "
+            f"origin_activity_index): {_plain(examples)}.")
+
+
+def restore_loops(df_locations: gpd.GeoDataFrame, index_map: pd.DataFrame, loops: pd.DataFrame,
+                  *, df_persons: pd.DataFrame, df_home: gpd.GeoDataFrame,
+                  df_work: gpd.GeoDataFrame, df_education: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Give the solver's location rows their original activity indices and add one row per loop.
+
+    ``df_locations`` are the solver's rows for the COLLAPSED chains (``person_id``,
+    ``activity_index``, ``location_id``, ``geometry``); ``index_map`` and ``loops`` come from the
+    :func:`collapse_loops` call that built those chains. A row of a person in ``index_map`` gets
+    its original ``activity_index`` back (``ValueError`` when the map has no entry for it); rows of
+    other persons keep theirs.
+
+    Then every loop activity gets one row at the place of its origin activity (ASSUMPTION: a loop
+    has no displacement, see :func:`collapse_loops`), with ``loop_origin`` naming the kind:
+
+    - ``home``: the household's home ``geometry`` (``df_persons`` gives the household,
+      ``df_home`` its place) and ``location_id`` ``home_<household_id>``, the id of the home
+      facility the MATSim writers build (``matsim/scenario/population.py::add_person`` and
+      ``matsim/scenario/facilities.py::write_facilities``, both ``"home_%s" % household_id``);
+    - ``work`` / ``education``: the person's ``location_id`` and ``geometry`` in ``df_work`` /
+      ``df_education``;
+    - ``secondary``: the ``location_id`` and ``geometry`` of the origin's row in the restored
+      solver rows.
+
+    The origin is never itself a loop (``origin_activity_index`` is the last activity before the
+    loop that is not one), so two loops in a row copy the same place and the order of the lookups
+    does not matter. An origin without a place raises a ``ValueError`` naming the person, the loop
+    and the origin activity; there is no stand-in place.
+
+    Returns a GeoDataFrame in the CRS of ``df_locations``: the solver rows in their order, then
+    the loop rows sorted by ``(person_id, activity_index)``, on a fresh RangeIndex, with the
+    column ``loop_origin`` (one of :data:`LOOP_ORIGINS` on a loop row, None on every other row).
+    The places must be in the CRS of ``df_locations`` where both CRSs are set (``ValueError``
+    otherwise), and no ``(person_id, activity_index)`` may end up twice. The inputs are not
+    changed.
+    """
+    _require_columns(df_locations, _LOCATION_COLUMNS, "locations")
+    _require_columns(index_map, INDEX_MAP_COLUMNS, "index map")
+    _require_columns(loops, LOOP_TABLE_COLUMNS, "loop table")
+    _require_columns(df_persons, ("person_id", "household_id"), "persons")
+    _require_columns(df_home, ("household_id", "geometry"), "home places")
+    _require_columns(df_work, ("person_id", "location_id", "geometry"), "work places")
+    _require_columns(df_education, ("person_id", "location_id", "geometry"), "education places")
+    crs = df_locations.crs
+    for frame, what in ((df_home, "home"), (df_work, "work"), (df_education, "education")):
+        frame_crs = getattr(frame, "crs", None)
+        if crs is not None and frame_crs is not None and frame_crs != crs:
+            raise ValueError(
+                f"[secondary_loops] restore_loops: the {what} places are in CRS {frame_crs}, the "
+                f"locations in CRS {crs}; a copied place would land elsewhere.")
+    unknown_origins = ~loops["origin_purpose"].isin(LOOP_ORIGINS)
+    if bool(unknown_origins.any()):
+        unknown = sorted(loops.loc[unknown_origins, "origin_purpose"].astype(str).unique())
+        raise ValueError("[secondary_loops] restore_loops: origin_purpose must be one of "
+                         f"{list(LOOP_ORIGINS)}; got {unknown}.")
+
+    restored = df_locations.copy()
+    collapsed = restored["person_id"].isin(index_map["person_id"].unique()).to_numpy()
+    if collapsed.any():
+        original_index = _unique_lookup(
+            index_map, ("person_id", "local_activity_index"), ("activity_index",), "index map")
+        keys = pd.MultiIndex.from_arrays([restored.loc[collapsed, "person_id"],
+                                          restored.loc[collapsed, "activity_index"]])
+        mapped = original_index["activity_index"].reindex(keys)
+        unmapped = mapped.isna().to_numpy()
+        if unmapped.any():
+            raise ValueError(
+                f"[secondary_loops] restore_loops: {int(unmapped.sum())} solver rows of collapsed "
+                "persons have an activity index the index map does not know; first (person_id, "
+                f"activity_index): {_plain(list(keys[unmapped])[:5])}. The rows and the map must "
+                "come from the same collapse_loops call.")
+        restored.loc[collapsed, "activity_index"] = mapped.to_numpy()
+
+    ordered = loops.sort_values(["person_id", "activity_index"]).reset_index(drop=True)
+    location_id = np.full(len(ordered), None, dtype=object)
+    geometry = np.full(len(ordered), None, dtype=object)
+    for origin in LOOP_ORIGINS:
+        of_origin = (ordered["origin_purpose"] == origin).to_numpy()
+        if not of_origin.any():
+            continue
+        origin_loops = ordered[of_origin]
+        if origin == "home":
+            households = _unique_lookup(df_persons, ("person_id",), ("household_id",), "persons")[
+                "household_id"].reindex(origin_loops["person_id"])
+            _raise_if_missing(origin_loops, households.isna().to_numpy(), origin,
+                              "the person has no household in df_persons")
+            place = _unique_lookup(
+                df_home, ("household_id",), ("geometry",), "home places").reindex(households)
+            _raise_if_missing(origin_loops, place["geometry"].isna().to_numpy(), origin,
+                              "the household has no home place in df_home")
+            # The id the MATSim writers give the home facility (see the docstring).
+            ids = ["home_%s" % household_id for household_id in households]
+        elif origin in PRIMARY_LOOP_ORIGINS:
+            frame = df_work if origin == "work" else df_education
+            place = _unique_lookup(frame, ("person_id",), ("location_id", "geometry"),
+                                   f"{origin} places").reindex(origin_loops["person_id"])
+            _raise_if_missing(
+                origin_loops, (place["location_id"].isna() | place["geometry"].isna()).to_numpy(),
+                origin, f"the person has no {origin} place in df_{origin}")
+            ids = place["location_id"].tolist()
+        else:
+            place = _unique_lookup(restored, ("person_id", "activity_index"),
+                                   ("location_id", "geometry"), "solver rows").reindex(
+                pd.MultiIndex.from_arrays([origin_loops["person_id"],
+                                           origin_loops["origin_activity_index"]]))
+            _raise_if_missing(
+                origin_loops, (place["location_id"].isna() | place["geometry"].isna()).to_numpy(),
+                origin, "the solver result has no row for the origin activity")
+            ids = place["location_id"].tolist()
+        location_id[of_origin] = np.asarray(ids, dtype=object)
+        geometry[of_origin] = np.asarray(list(place["geometry"]), dtype=object)
+
+    loop_rows = gpd.GeoDataFrame({
+        "person_id": ordered["person_id"].to_numpy(),
+        "activity_index": ordered["activity_index"].to_numpy(),
+        "location_id": location_id,
+        "geometry": geometry,
+        "loop_origin": ordered["origin_purpose"].to_numpy(dtype=object),
+    }, geometry="geometry", crs=crs)
+
+    restored["loop_origin"] = None
+    columns = list(restored.columns)
+    # An empty frame takes no part in the concat, so its all-object dtypes (the solver's empty
+    # result) cannot turn the loop rows' integer columns into objects.
+    frames = [frame for frame in (restored, loop_rows) if len(frame)] or [restored]
+    result = gpd.GeoDataFrame(pd.concat(frames, ignore_index=True).reindex(columns=columns),
+                              geometry="geometry", crs=crs)
+    repeated = result.duplicated(["person_id", "activity_index"])
+    if bool(repeated.any()):
+        examples = list(zip(result.loc[repeated, "person_id"],
+                            result.loc[repeated, "activity_index"]))[:5]
+        raise ValueError(
+            f"[secondary_loops] restore_loops: {int(repeated.sum())} (person_id, activity_index) "
+            f"occur twice after the restore, first {_plain(examples)}; a loop activity also has a "
+            "solver row (were the solver rows remapped with the index map of the same collapse?).")
+    return result

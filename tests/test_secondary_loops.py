@@ -1,17 +1,21 @@
-"""Tests for the stroll / dog-walk loop flag (issue #679, task C2).
+"""Tests for the stroll / dog-walk loops (issue #679, tasks C2 and C3).
 
 The MiD 2023 diary records a stroll (W_ZWD 710) or a dog walk (711) as ONE trip whose length is
 the whole loop. ``loops.flag_loops`` marks the synthetic leisure legs that are such loops: by the
 donor's own detail code where it has one, else by a seeded draw from a probability estimated on
-the MiD legs that carry the detail code.
+the MiD legs that carry the detail code. ``loops.collapse_loops`` takes the flagged loop
+activities out of the chains before the chain solver runs, and ``loops.restore_loops`` puts them
+back afterwards at the place of the activity they start from.
 """
 from __future__ import annotations
 
 import logging
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pytest
+from shapely.geometry import Point
 
 from braunschweig.popsim.purpose_subtype import leisure_spec
 from braunschweig.synthesis.locations.secondary_chainsolvers import loops
@@ -333,3 +337,325 @@ def test_estimate_warns_when_every_cell_is_below_min_obs(caplog):
     assert estimate.cells == {} and set(estimate.marginal) == {"walk", "bicycle"}
     assert [record for record in caplog.records
             if record.levelno == logging.WARNING and "below min_obs" in record.getMessage()]
+
+
+# ---------------------------------------------------------------------------
+# Task C3: collapse the loop activities before the solve, restore them after it
+# ---------------------------------------------------------------------------
+
+CRS = "EPSG:25832"
+LOCATION_COLUMNS = ["person_id", "activity_index", "location_id", "geometry"]
+PRIMARY_PURPOSES = ("home", "work", "education")
+NON_LOOP_MODES = ("car", "pt", "bicycle")
+
+
+def _chains(*persons):
+    """Trips table and loop flags from ``(person_id, chain)`` pairs such as ``(1, "home S home")``.
+
+    The chain lists the activity purposes in order; ``S`` is a stroll (purpose ``leisure``, the
+    trip into it flagged). Trip ``k`` leaves activity ``k`` and reaches ``k + 1``. Every trip of a
+    person has its own mode, departure and arrival time, so a test can tell which trip survived.
+    """
+    rows = []
+    for person_id, chain in persons:
+        purposes = chain.split()
+        n_trips = len(purposes) - 1
+        for k in range(n_trips):
+            is_loop = purposes[k + 1] == "S"
+            departure = 3600.0 * (k + 1)
+            rows.append({
+                "person_id": person_id, "trip_index": k,
+                "preceding_purpose": "leisure" if purposes[k] == "S" else purposes[k],
+                "following_purpose": "leisure" if is_loop else purposes[k + 1],
+                "mode": "walk" if is_loop else NON_LOOP_MODES[k % len(NON_LOOP_MODES)],
+                "departure_time": departure, "arrival_time": departure + 60.0 * (k + 1),
+                "is_first_trip": k == 0, "is_last_trip": k == n_trips - 1,
+                "W_ZWECK": 7 if is_loop else 4, "W_ZWD": 710 if is_loop else 2202,
+                "is_loop": is_loop,
+            })
+    df = pd.DataFrame(rows)
+    df["travel_time"] = df["arrival_time"] - df["departure_time"]
+    return df.drop(columns="is_loop"), df["is_loop"].astype(bool)
+
+
+def _places(person_ids):
+    """Household, home, work and education places; the household of person p is 100 + p."""
+    person_ids = list(person_ids)
+    return dict(
+        df_persons=pd.DataFrame({"person_id": person_ids,
+                                 "household_id": [100 + p for p in person_ids]}),
+        df_home=gpd.GeoDataFrame({"household_id": [100 + p for p in person_ids],
+                                  "geometry": [Point(p, 0) for p in person_ids]}, crs=CRS),
+        df_work=gpd.GeoDataFrame({"person_id": person_ids,
+                                  "location_id": [f"work_{p}" for p in person_ids],
+                                  "geometry": [Point(p, 1) for p in person_ids]}, crs=CRS),
+        df_education=gpd.GeoDataFrame({"person_id": person_ids,
+                                       "location_id": [f"education_{p}" for p in person_ids],
+                                       "geometry": [Point(p, 2) for p in person_ids]}, crs=CRS),
+    )
+
+
+def _activities(df_trips):
+    """(person_id, activity_index, purpose): activity k is trip k's preceding purpose, the last one
+    the last trip's following purpose (the convention of ``find_assignment_problems``)."""
+    before = df_trips[["person_id", "trip_index", "preceding_purpose"]].set_axis(
+        ["person_id", "activity_index", "purpose"], axis=1)
+    last = df_trips[df_trips["is_last_trip"]]
+    after = pd.DataFrame({"person_id": last["person_id"], "activity_index": last["trip_index"] + 1,
+                          "purpose": last["following_purpose"]})
+    return pd.concat([before, after]).sort_values(["person_id", "activity_index"]).reset_index(
+        drop=True)
+
+
+def _solve(df_trips):
+    """Stand-in for the chain solver: one row per secondary activity of the (collapsed) chains, in
+    the shape of ``results._extract_locations``. The place is named ``<purpose>@<person_id>`` and
+    sits at ``(person_id, 10 + activity_index)``; the indices are those of the table it is given."""
+    activities = _activities(df_trips)
+    secondary = activities[~activities["purpose"].isin(PRIMARY_PURPOSES)]
+    records = [(person_id, activity_index, f"{purpose}@{person_id}",
+                Point(person_id, 10 + activity_index))
+               for person_id, activity_index, purpose in secondary.itertuples(index=False)]
+    return gpd.GeoDataFrame(pd.DataFrame.from_records(records, columns=LOCATION_COLUMNS), crs=CRS)
+
+
+def _chain_of(df_trips, person_id=1):
+    """A person's trips as (trip_index, preceding_purpose, following_purpose), in table order."""
+    trips = df_trips[df_trips["person_id"] == person_id]
+    return list(zip(trips["trip_index"], trips["preceding_purpose"], trips["following_purpose"]))
+
+
+def _row(df_locations, person_id, activity_index):
+    rows = df_locations[(df_locations["person_id"] == person_id)
+                        & (df_locations["activity_index"] == activity_index)]
+    assert len(rows) == 1, f"expected one row for ({person_id}, {activity_index}), got {len(rows)}"
+    return rows.iloc[0]
+
+
+def _collapse_solve_restore(*persons, eligible=None):
+    df_trips, is_loop = _chains(*persons)
+    person_ids = [person_id for person_id, _ in persons]
+    eligible = set(person_ids) if eligible is None else eligible
+    collapsed, index_map, loop_table = loops.collapse_loops(df_trips, is_loop, eligible)
+    result = _solve(collapsed)
+    restored = loops.restore_loops(result, index_map, loop_table, **_places(person_ids))
+    return df_trips, collapsed, result, restored
+
+
+def test_home_stroll_home_leaves_nothing_to_solve():
+    df_trips, collapsed, result, restored = _collapse_solve_restore((1, "home S home"))
+
+    assert _chain_of(collapsed) == [(0, "home", "home")]
+    # The one trip left is the walk back, with its own times.
+    assert collapsed["departure_time"].tolist() == [df_trips.loc[1, "departure_time"]]
+    assert result.empty
+    assert isinstance(restored, gpd.GeoDataFrame) and restored.crs == CRS
+    stroll = _row(restored, 1, 1)
+    assert stroll["location_id"] == "home_101" and stroll["geometry"].equals(Point(1, 0))
+    assert stroll["loop_origin"] == "home" and len(restored) == 1
+
+
+def test_a_person_whose_only_trip_leads_into_a_stroll_keeps_the_stroll():
+    df_trips, collapsed, _, restored = _collapse_solve_restore((1, "home S"), (2, "home shop home"))
+
+    # Person 1 has no trip left; person 2 has no loop and keeps its rows as they were.
+    pd.testing.assert_frame_equal(collapsed, df_trips[df_trips["person_id"] == 2])
+    stroll = _row(restored, 1, 1)
+    assert stroll["location_id"] == "home_101" and stroll["geometry"].equals(Point(1, 0))
+    assert stroll["loop_origin"] == "home"
+
+
+def test_the_trip_after_a_stroll_starts_at_the_activity_before_it():
+    df_trips, is_loop = _chains((1, "home S shop home"))
+    df_before = df_trips.copy()
+
+    collapsed, _, _ = loops.collapse_loops(df_trips, is_loop, {1})
+
+    assert _chain_of(collapsed) == [(0, "home", "shop"), (1, "shop", "home")]
+    kept_columns = ["mode", "departure_time", "arrival_time", "travel_time", "W_ZWECK", "W_ZWD"]
+    assert (collapsed[kept_columns].to_numpy().tolist()
+            == df_trips.loc[[1, 2], kept_columns].to_numpy().tolist())
+    pd.testing.assert_frame_equal(df_trips, df_before)
+
+
+def test_a_stroll_after_a_secondary_activity_copies_its_place():
+    df_trips, is_loop = _chains((1, "work shop S home"))
+    collapsed, index_map, loop_table = loops.collapse_loops(df_trips, is_loop, {1})
+    result = _solve(collapsed)
+    result_before = result.copy()
+
+    restored = loops.restore_loops(result, index_map, loop_table, **_places([1]))
+
+    assert _chain_of(collapsed) == [(0, "work", "shop"), (1, "shop", "home")]
+    shop, stroll = _row(restored, 1, 1), _row(restored, 1, 2)
+    assert shop["location_id"] == "shop@1" and shop["loop_origin"] is None
+    assert stroll["location_id"] == "shop@1" and stroll["geometry"].equals(shop["geometry"])
+    assert stroll["loop_origin"] == "secondary"
+    pd.testing.assert_frame_equal(result, result_before)
+
+
+@pytest.mark.parametrize("primary", ["work", "education"])
+def test_a_stroll_after_work_copies_the_work_place(primary):
+    _, _, _, restored = _collapse_solve_restore((1, f"home {primary} S home"))
+
+    stroll = _row(restored, 1, 2)
+    places = _places([1])[f"df_{primary}"]
+    assert stroll["location_id"] == f"{primary}_1"
+    assert stroll["geometry"].equals(places["geometry"].iloc[0])
+    assert stroll["loop_origin"] == primary
+
+
+def test_two_strolls_in_a_row_copy_the_same_place():
+    df_trips, is_loop = _chains((1, "home shop S S home"))
+    collapsed, index_map, loop_table = loops.collapse_loops(df_trips, is_loop, {1})
+    restored = loops.restore_loops(_solve(collapsed), index_map, loop_table, **_places([1]))
+
+    assert _chain_of(collapsed) == [(0, "home", "shop"), (1, "shop", "home")]
+    assert collapsed["departure_time"].tolist() == df_trips.loc[[0, 3], "departure_time"].tolist()
+    assert loop_table.to_dict("records") == [
+        {"person_id": 1, "activity_index": 2, "origin_purpose": "secondary",
+         "origin_activity_index": 1},
+        {"person_id": 1, "activity_index": 3, "origin_purpose": "secondary",
+         "origin_activity_index": 1},
+    ]
+    shop = _row(restored, 1, 1)
+    for activity_index in (2, 3):
+        stroll = _row(restored, 1, activity_index)
+        assert stroll["location_id"] == "shop@1" and stroll["geometry"].equals(shop["geometry"])
+
+
+def test_a_stroll_as_the_last_activity_of_the_day_is_restored():
+    _, collapsed, _, restored = _collapse_solve_restore((1, "home shop S"))
+
+    assert _chain_of(collapsed) == [(0, "home", "shop")]
+    shop, stroll = _row(restored, 1, 1), _row(restored, 1, 2)
+    assert stroll["location_id"] == "shop@1" and stroll["geometry"].equals(shop["geometry"])
+    assert stroll["loop_origin"] == "secondary"
+
+
+@pytest.mark.parametrize("start", ["leisure", "other"])
+def test_a_stroll_as_the_first_activity_after_a_start_that_is_not_home(start):
+    df_trips, collapsed, _, restored = _collapse_solve_restore((1, f"{start} S home"))
+
+    # The walk home keeps its times and now starts at the plan's first activity.
+    assert _chain_of(collapsed) == [(0, start, "home")]
+    assert collapsed["departure_time"].tolist() == [df_trips.loc[1, "departure_time"]]
+    first, stroll = _row(restored, 1, 0), _row(restored, 1, 1)
+    assert first["location_id"] == f"{start}@1"
+    assert stroll["location_id"] == f"{start}@1" and stroll["geometry"].equals(first["geometry"])
+    assert stroll["loop_origin"] == "secondary"
+
+
+def test_first_and_last_trip_flags_are_rebuilt():
+    # The first and the last trip both lead into a stroll: the shop trip is first and last.
+    df_trips, is_loop = _chains((1, "home S shop S"))
+
+    collapsed, _, _ = loops.collapse_loops(df_trips, is_loop, {1})
+
+    assert _chain_of(collapsed) == [(0, "home", "shop")]
+    assert collapsed["is_first_trip"].tolist() == [True]
+    assert collapsed["is_last_trip"].tolist() == [True]
+
+
+def test_the_index_map_restores_every_original_activity_index():
+    persons = [(1, "home S shop S S other S home"),   # loops after home, a shop and an other
+               (2, "work leisure S escort S"),        # the plan ends with a stroll
+               (3, "home shop home"),                 # eligible, no loop
+               (4, "home S other home")]              # not eligible: the solver places its stroll
+    df_trips, _, _, restored = _collapse_solve_restore(*persons, eligible={1, 2, 3})
+
+    original = _activities(df_trips)
+    original = original[~original["purpose"].isin(PRIMARY_PURPOSES)]
+    keys = list(zip(restored["person_id"], restored["activity_index"]))
+    assert len(keys) == len(set(keys))
+    assert set(keys) == set(zip(original["person_id"], original["activity_index"]))
+
+    purpose_of = dict(zip(zip(original["person_id"], original["activity_index"]),
+                          original["purpose"]))
+    placed = restored[restored["loop_origin"].isna()]
+    for person_id, activity_index, location_id in zip(
+            placed["person_id"], placed["activity_index"], placed["location_id"]):
+        assert location_id == f"{purpose_of[(person_id, activity_index)]}@{person_id}"
+    copied = restored[restored["loop_origin"].notna()]
+    assert dict(zip(zip(copied["person_id"], copied["activity_index"]), copied["location_id"])) == {
+        (1, 1): "home_101", (1, 3): "shop@1", (1, 4): "shop@1", (1, 6): "other@1",
+        (2, 2): "leisure@2", (2, 4): "escort@2"}
+
+
+def test_a_table_without_loops_comes_back_unchanged():
+    df_trips, is_loop = _chains((1, "home shop home"), (2, "work leisure other home"))
+
+    collapsed, index_map, loop_table = loops.collapse_loops(df_trips, is_loop, {1, 2})
+    result = _solve(collapsed)
+    restored = loops.restore_loops(result, index_map, loop_table, **_places([1, 2]))
+
+    pd.testing.assert_frame_equal(collapsed, df_trips)
+    assert index_map.empty and loop_table.empty
+    pd.testing.assert_frame_equal(restored.drop(columns="loop_origin"), result)
+    assert restored["loop_origin"].isna().all()
+
+
+def test_persons_that_are_not_eligible_keep_their_loop():
+    df_trips, is_loop = _chains((1, "home S home"), (2, "home S shop home"))
+
+    collapsed, index_map, loop_table = loops.collapse_loops(df_trips, is_loop, {1})
+
+    pd.testing.assert_frame_equal(collapsed[collapsed["person_id"] == 2],
+                                  df_trips[df_trips["person_id"] == 2])
+    assert set(index_map["person_id"]) == {1} and set(loop_table["person_id"]) == {1}
+
+
+def _flag_on_trip(index):
+    def damage(df_trips, is_loop):
+        is_loop = is_loop.copy()
+        is_loop.iloc[index] = True
+        return df_trips, is_loop
+    return damage
+
+
+@pytest.mark.parametrize("damage, message", [
+    (lambda df, flags: (df, flags.set_axis(flags.index + 100)), "is_loop"),
+    (_flag_on_trip(-1), "into a home, work or education activity"),
+    (lambda df, flags: (df.assign(trip_index=[0, 2, 3]), flags), "contiguous"),
+], ids=["flags_on_another_index", "loop_into_home", "gap_in_trip_index"])
+def test_collapse_rejects_inputs_it_cannot_collapse(damage, message):
+    df_trips, is_loop = damage(*_chains((1, "home S shop home")))
+
+    with pytest.raises(ValueError, match=message):
+        loops.collapse_loops(df_trips, is_loop, {1})
+
+
+def _with_unknown_row(df_locations):
+    extra = gpd.GeoDataFrame(pd.DataFrame.from_records(
+        [(1, 9, "shop@1", Point(1, 19))], columns=LOCATION_COLUMNS), crs=CRS)
+    return pd.concat([df_locations, extra], ignore_index=True)
+
+
+@pytest.mark.parametrize("chain, damage, message", [
+    ("work shop S home", lambda inputs: inputs.update(df_locations=inputs["df_locations"].iloc[:0]),
+     r"secondary.*\(1, 2, 1\)"),
+    ("home S home", lambda inputs: inputs.update(df_home=inputs["df_home"].iloc[:0]),
+     r"home.*\(1, 1, 0\)"),
+    ("home work S home", lambda inputs: inputs.update(df_work=inputs["df_work"].iloc[:0]),
+     r"work.*\(1, 2, 1\)"),
+    ("home shop S home",
+     lambda inputs: inputs.update(df_locations=_with_unknown_row(inputs["df_locations"])),
+     "index map"),
+    ("home S home", lambda inputs: inputs.update(df_home=inputs["df_home"].to_crs("EPSG:4326")),
+     "CRS"),
+    # The solver rows are not remapped: the shop keeps index 1, where the stroll goes back.
+    ("home S shop home", lambda inputs: inputs.update(index_map=inputs["index_map"].iloc[:0]),
+     r"occur twice.*\(1, 1\)"),
+], ids=["secondary_origin_without_result_row", "home_origin_without_home",
+        "work_origin_without_work", "result_row_unknown_to_the_index_map", "places_in_another_crs",
+        "rows_not_remapped"])
+def test_restore_raises_when_a_place_is_missing_or_does_not_fit(chain, damage, message):
+    df_trips, is_loop = _chains((1, chain))
+    collapsed, index_map, loop_table = loops.collapse_loops(df_trips, is_loop, {1})
+    inputs = dict(df_locations=_solve(collapsed), index_map=index_map, loops=loop_table,
+                  **_places([1]))
+    damage(inputs)
+
+    with pytest.raises(ValueError, match=message):
+        loops.restore_loops(inputs.pop("df_locations"), inputs.pop("index_map"),
+                            inputs.pop("loops"), **inputs)
