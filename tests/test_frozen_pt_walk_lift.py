@@ -380,6 +380,25 @@ def test_a_long_bicycle_trip_takes_the_other_bicycle_trips_of_its_tour_along(tmp
     assert report["n_lifted_by_reason"][reason] == 2
 
 
+def test_a_reached_bicycle_trip_taken_along_is_warned_about_and_counted(tmp_path, monkeypatch, caplog):
+    """No plan reaches this branch under the reach rules (a reached bicycle trip never shares a home tour with an
+    unreached bicycle trip), so the classification is forced: the short bicycle trip (leg 0) is marked reached."""
+    real_leg_reach = L.plan_check.leg_reach
+
+    def forced_leg_reach(activities, legs, **settings):
+        classes = real_leg_reach(activities, legs, **settings)
+        classes[0] = L.plan_check.REACHED
+        return classes
+
+    monkeypatch.setattr(L.plan_check, "leg_reach", forced_leg_reach)
+    with caplog.at_level(logging.INFO):
+        _, target, report = _lift(tmp_path, _bicycle_border_tour("p"), reach=REACH, all_modes=True)
+    assert [leg.get("mode") for leg in _legs(target, "p")][0] == "car_passenger"
+    assert report["n_lifted_with_tour"] == 1
+    assert report["n_lifted_by_reason"] == {"fixed_border": 1, "fixed_vehicle": 0, "fixed_length": 0, "reached": 1}
+    assert [r for r in caplog.records if r.levelno == logging.WARNING and "person p:" in r.getMessage()]
+
+
 def test_the_report_gives_the_share_of_the_other_modes(tmp_path, caplog):
     population = [_person("w", "walk", 8000.0), _person("b", "bicycle", 35000.0),
                   _person("r", "car", 1000.0, frozen=False)]

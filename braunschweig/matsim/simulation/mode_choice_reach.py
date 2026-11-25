@@ -52,7 +52,7 @@ def configure(context) -> None:
     context.config(KEY_INITIAL_MAX_TOUR_LENGTH, DEFAULT_INITIAL_MAX_TOUR_LENGTH)
 
 
-def _parse_bool(key: str, value) -> bool:
+def parse_bool(key: str, value) -> bool:
     """A real bool, or the text ``true``/``false`` (any case, e.g. from a command-line override); else ValueError."""
     if isinstance(value, bool):
         return value
@@ -74,12 +74,12 @@ def _parse_length(key: str, value) -> int:
 
 
 def loop_settings(context) -> ReachSettings:
-    return ReachSettings(_parse_bool(KEY_LOOP_ISOLATE, context.config(KEY_LOOP_ISOLATE)),
+    return ReachSettings(parse_bool(KEY_LOOP_ISOLATE, context.config(KEY_LOOP_ISOLATE)),
                          _parse_length(KEY_LOOP_MAX_TOUR_LENGTH, context.config(KEY_LOOP_MAX_TOUR_LENGTH)))
 
 
 def initial_settings(context) -> ReachSettings:
-    return ReachSettings(_parse_bool(KEY_INITIAL_ISOLATE, context.config(KEY_INITIAL_ISOLATE)),
+    return ReachSettings(parse_bool(KEY_INITIAL_ISOLATE, context.config(KEY_INITIAL_ISOLATE)),
                          _parse_length(KEY_INITIAL_MAX_TOUR_LENGTH, context.config(KEY_INITIAL_MAX_TOUR_LENGTH)))
 
 

@@ -64,8 +64,8 @@ from dataclasses import dataclass
 from braunschweig.matsim.simulation import mode_choice_reach, plan_check
 from braunschweig.matsim.simulation.mode_choice_reach import ReachSettings
 from braunschweig.matsim.simulation.plan_check import (
-    BICYCLE_MODE, FIXED_BORDER, FIXED_LENGTH, FIXED_VEHICLE, HOME, LEG_MODE_POSITION, LEG_ROUTING_MODE_POSITION,
-    PT_MODE, REACHED, RESIDENTS, ROUTING_MODE_ATTRIBUTE, WALK_FALLBACK_ATTRIBUTE, WALK_MODE, WALK_MODES)
+    BICYCLE_MODE, FIXED_BORDER, FIXED_LENGTH, FIXED_VEHICLE, PT_MODE, REACHED, RESIDENTS, ROUTING_MODE_ATTRIBUTE,
+    WALK_FALLBACK_ATTRIBUTE, WALK_MODE)
 
 logger = logging.getLogger(__name__)
 
@@ -177,10 +177,9 @@ def _repair_person(person: ET.Element, rules: _LiftRules, counts: dict) -> None:
     lifted = {}                  # trip position -> original mode it is lifted from
     bicycle_trips_by_tour = {}   # home-based tour index -> positions of its bicycle trips
     lifted_bicycle_tours = set()
-    home_tour = 0
+    tour_of_trip = plan_check.home_tours(activities, trips)
     for position, trip in enumerate(trips):
-        if position > 0 and activities[trip[0]][0] == HOME:
-            home_tour += 1
+        home_tour = tour_of_trip[position]
         legs = [leg_tuples[index] for index in trip]
         stamped = any(leg[WALK_FALLBACK_POSITION] == PT_MODE for leg in legs)
         pt_intended = plan_check.trip_is_pt_intended(legs)
@@ -224,13 +223,19 @@ def _repair_person(person: ET.Element, rules: _LiftRules, counts: dict) -> None:
         counts["n_lifted_by_reason"][reason] += 1
 
     # The bicycle stays with its rider: the other bicycle trips of a tour with a lifted bicycle trip go along, also
-    # those before it and those the loop reaches (reported under their own class, "reached" included).
+    # those before it, each reported under its own reach class.
     for tour in sorted(lifted_bicycle_tours):
         for position in bicycle_trips_by_tour[tour]:
             if position in lifted:
                 continue
             lifted[position] = BICYCLE_MODE
             reason = classes[trips[position][0]]
+            if reason == REACHED:
+                # Outside the step's scope. The reach rules make it impossible: a home tour without a border trip is
+                # one run, so all its trips share one class, and in a border home tour every bicycle trip is fixed at
+                # the border or as a vehicle leg. Kept visible, not raised, under the key "reached".
+                logger.warning("%s person %s: bicycle trip %d is lifted with its tour although the mode choice "
+                               "reaches it", _LOG_TAG, person.get("id"), position)
             counts["n_lifted_with_tour"] += 1
             counts["n_lifted_by_mode"][BICYCLE_MODE] += 1
             counts["n_lifted_by_reason"][reason] = counts["n_lifted_by_reason"].get(reason, 0) + 1
@@ -330,12 +335,12 @@ def _log_scope_and_other_modes(report: dict) -> None:
              else "frozen tours (no reach settings)")
     reasons = ", ".join(f"{reason} {rate(count)}" for reason, count in report["n_unreached_by_reason"].items())
     lifted = ", ".join(f"{mode} {rate(count)}" for mode, count in report["n_lifted_by_mode"].items())
-    lifted_reasons = ", ".join(f"{reason} {count}" for reason, count in report["n_lifted_by_reason"].items())
+    lifted_reasons = ", ".join(f"{reason} {rate(count)}" for reason, count in report["n_lifted_by_reason"].items())
     message = (f"{_LOG_TAG} scope {scope}: {rate(report['n_unreached_trips'])} of {n_trips} resident trips not "
                f"reached ({reasons}); residents skipped without legs {report['n_persons_without_legs']} of "
                f"{report['n_persons']}; all_modes {report['all_modes']}; lifted by mode {lifted}; by reason "
-               f"{lifted_reasons}; bicycle trips taken along with their tour {report['n_lifted_with_tour']}; walk "
-               f"and bicycle lifted {100.0 * report['share_lifted_other_modes']:.3f}% of resident trips")
+               f"{lifted_reasons}; bicycle trips taken along with their tour {rate(report['n_lifted_with_tour'])}; "
+               f"walk and bicycle lifted {100.0 * report['share_lifted_other_modes']:.3f}% of resident trips")
     if report["bound_exceeded_other_modes"]:
         logger.error("%s exceeds the bound %.3f%% of %s: many walk or bicycle trips the mode choice does not reach "
                      "have a mode that does not fit their distance", message,
@@ -383,15 +388,6 @@ def _stream_elements(handle, out, rules: _LiftRules, counts: dict) -> None:
         root.clear()
 
 
-def _config_bool(key: str, value) -> bool:
-    """A real bool, or the text ``true``/``false`` (any case, e.g. from a command-line override); else ValueError."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str) and value.strip().lower() in ("true", "false"):
-        return value.strip().lower() == "true"
-    raise ValueError(f"{_LOG_TAG} config key {key} must be true or false, got {value!r}")
-
-
 def run(context, result: str) -> dict:
     """Lift in the cut population of the prepare stage (located as ``plan_check.run`` does) and write the report.
 
@@ -407,7 +403,7 @@ def run(context, result: str) -> dict:
     population_path = plan_check.resolve_population_path(config_path)
     folder, name = os.path.split(population_path)
     temporary_path = os.path.join(folder, "lift_tmp_" + name)
-    all_modes = _config_bool(KEY_ALL_MODES, context.config(KEY_ALL_MODES))
+    all_modes = mode_choice_reach.parse_bool(KEY_ALL_MODES, context.config(KEY_ALL_MODES))
     max_share_other_modes = float(context.config(KEY_MAX_SHARE_OTHER_MODES))
     if not 0.0 <= max_share_other_modes <= 1.0:
         raise ValueError(f"{_LOG_TAG} config key {KEY_MAX_SHARE_OTHER_MODES} is a share in [0, 1], got "

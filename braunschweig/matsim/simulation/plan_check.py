@@ -289,6 +289,21 @@ _REASON_COUNTERS = {FIXED_BORDER: "n_trips_fixed_border", FIXED_VEHICLE: "n_trip
                     FIXED_LENGTH: "n_trips_fixed_length"}
 
 
+def home_tours(activities: list, trips: list) -> list:
+    """Per trip (``split_trips``): the index of its home-based tour, cut at ``home`` only.
+
+    A tour ends after a trip whose destination is ``home``; the trips before the first ``home`` (a plan that does not
+    start at home) and after the last one form a tour of their own. The vehicle rule of ``leg_reach`` and the bicycle
+    take-along of ``frozen_pt_walk_lift`` use this one split.
+    """
+    tour_of_trip, tour = [], 0
+    for trip in trips:
+        tour_of_trip.append(tour)
+        if activities[trip[-1] + 1][ACTIVITY_TYPE_POSITION] == HOME:
+            tour += 1
+    return tour_of_trip
+
+
 def leg_reach(activities: list, legs: list, *, isolate_outside_trips: bool, max_tour_length: int,
               restricted_modes: frozenset = RESTRICTED_MODES) -> list:
     """Per leg: REACHED, or the reason why the mode choice does not re-choose the trip of this leg.
@@ -343,13 +358,8 @@ def leg_reach(activities: list, legs: list, *, isolate_outside_trips: bool, max_
                 run = [position]
         runs.append(run)
 
-    home_tour_touches, home_tour = {}, []
-    for position, trip in enumerate(trips):
-        home_tour.append(position)
-        if destination(trip) == HOME or position == len(trips) - 1:
-            border = any(touches[p] for p in home_tour)
-            home_tour_touches.update(dict.fromkeys(home_tour, border))
-            home_tour = []
+    tour_of_trip = home_tours(activities, trips)
+    border_home_tours = {tour for tour, touch in zip(tour_of_trip, touches) if touch}
 
     trip_class = [None] * len(trips)
     for run in runs:
@@ -359,7 +369,7 @@ def leg_reach(activities: list, legs: list, *, isolate_outside_trips: bool, max_
             mode = first_leg[LEG_ROUTING_MODE_POSITION] or first_leg[LEG_MODE_POSITION]
             if run_border:
                 trip_class[position] = FIXED_BORDER
-            elif isolate_outside_trips and mode in restricted_modes and home_tour_touches[position]:
+            elif isolate_outside_trips and mode in restricted_modes and tour_of_trip[position] in border_home_tours:
                 trip_class[position] = FIXED_VEHICLE
             elif len(run) > max_tour_length:
                 trip_class[position] = FIXED_LENGTH
