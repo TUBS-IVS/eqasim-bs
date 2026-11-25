@@ -4,9 +4,7 @@ area: secondary
 description: 'With the switch on, the secondary location stage takes the leisure legs that are loops (a walk or
   bicycle leg with the MiD detail code 710 or 711, or drawn where the detail was not asked) out of the chain
   before the solve and puts each loop activity back at the place of the activity it starts from, the
-  eqasim-france Paris model (owner decision of 2026-11-25, ADR-0207). The flag definition and the placement
-  rule are owned by docs/codebase/notes/leisure-loops.md; the reasons, the rejected approaches and the
-  assumptions by ADR-0207; the survey measurement by the run manifest linked under validation.'
+  eqasim-france Paris model (owner decision of 2026-11-25).'
 stages:
 - synthesis.population.spatial.secondary.locations
 - matsim.scenario.facilities
@@ -45,12 +43,8 @@ evidence:
   fallback_rate:
     instrumented: true
     log_marker: '[secondary_loops]'
-    note: 'Two fallbacks, both counted with a rate. The draw for a leg without a detail code falls back from its
-      cell to the marginal of its mode (the line "[secondary_loops] <mode>: ..." gives the primary and marginal
-      counts and warns above the stage fallback warn rate). Loops of persons with an anchored or linked activity
-      stay on the solver and are counted in the line "[braunschweig.secondary_chainsolvers] loops: ..." and in the
-      block loops of secondary_locations_report.json, with the same warn rate. The definition: the note of the
-      detail_doc.'
+    note: 'Both fallbacks (cell to mode marginal; loops kept for anchored or linked persons) are counted with a
+      rate in the log and the stage report; see the detail_doc note, section Report.'
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference_without_loops.csv
@@ -73,6 +67,4 @@ assessment:
     anchored or linked activity and its effect are read from that run. ADR-0207 records the decision and its
     assumptions.'
   source: ADR-0207
-notes: 'Siblings: secondary_distance_by_purpose, secondary_srv_location_types and leisure_unspecified_subtype
-  carry a pointer only. Toggling the key recomputes the secondary location stage and the facilities stage, which
-  both declare it. Known difference to survey totals and the loop-free reference: ADR-0207, Consequences.'
+notes: 'Toggling the key recomputes the secondary location stage and the facilities stage, which both declare it.'

@@ -47,6 +47,5 @@ notes: >-
   above cordon_gate_facility_link_maximum_fallback_share. OFF writes no link (byte-identical file).
 
   STROLL LOOP COPIES (ADR-0207, issue #679, feature record secondary_loop_zero_displacement): the stage mirrors the
-  key secondary_loop_zero_displacement read-only; with it on, validate_secondary_coverage accepts the identifier of a
-  loop row that copies a home, work or education place only as an id written for that kind. The rule:
+  key secondary_loop_zero_displacement read-only and validate_secondary_coverage checks the loop rows. The rule:
   docs/codebase/notes/leisure-loops.md.

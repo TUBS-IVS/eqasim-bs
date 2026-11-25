@@ -41,8 +41,8 @@ features:
 - no_answer_codes_excluded
 - parallel_chainsolvers
 - secondary_distance_by_purpose
-- secondary_mid_weekday_universe
 - secondary_loop_zero_displacement
+- secondary_mid_weekday_universe
 - secondary_srv_location_types
 - w_zwd_codeplan_sentinels
 - portal_trips
@@ -300,9 +300,6 @@ notes: >-
   flag off no anchors are staged or added.
 
   STROLL AND DOG-WALK LOOPS (issue #679, ADR-0207, feature record secondary_loop_zero_displacement): with
-  secondary_loop_zero_displacement on (code default false, production true in configs/base_bs.yml) execute
-  flags the loop legs, collapses them out of the chains of eligible persons before the solve and restores them at
-  the place of the activity they start from; the new helper module secondary_chainsolvers/loops.py is listed in
-  _HELPER_MODULES. The flag definition and the placement rule are owned by docs/codebase/notes/leisure-loops.md.
-  With the key on the result carries a column loop_origin and the stage writes secondary_locations_report.json
-  (block loops) into its stage directory; with it off neither exists.
+  secondary_loop_zero_displacement (default and production value: the config-key comment and the feature
+  record) execute uses the new helper module secondary_chainsolvers/loops.py, listed in
+  _HELPER_MODULES. Rule, column loop_origin and report file: docs/codebase/notes/leisure-loops.md.
