@@ -34,9 +34,21 @@ licensing:
   notes: |
     The CHE page names no licence. Committed by owner decision of 2026-11-25.
 limitations: |
-  Origin is the Kreis of the school leaving certificate, not the place of residence
-  (assumption A2 of the student-commuting design). Cells below the tenth value are censored by
-  the source; abroad and other rows carry the remainder.
+  Origin is the Kreis of the school leaving certificate, not the place of residence (an
+  assumption of the design of this work, issue #140, to be recorded in an ADR in the next
+  phase). Cells below the tenth value are censored by the source; abroad and other rows carry
+  the remainder.
+
+  Omission: the art academy in Braunschweig (Hochschule fuer Bildende Kuenste Braunschweig), a
+  local institution of the site table lsn_university_sites, has no origin list. The CHE
+  institution view lists only institutions with at least 1,000 students and its institution
+  selector does not offer this one (checked 2026-11-25); it appears only as a destination in the
+  Kreis view. No list is invented; Phase 1 needs an explicit rule for the origins of its
+  students (reason also in the INSTITUTION_ORIGINS comment of scripts/seed_che_student_origins.py).
+
+  Note for the next phase: no key joins the institution names of the site table
+  (lsn_university_sites, LSN short names) to the CHE institution names yet; Phase 1 needs that
+  mapping before the two tables can be combined.
 notes: |
   used_by stays empty until the stage that reads this table is wired in (Phase 1 of #140).
   The list of origin Kreise to read comes from

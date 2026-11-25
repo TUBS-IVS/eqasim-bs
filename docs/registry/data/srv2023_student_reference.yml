@@ -1,6 +1,7 @@
 dataset: srv2023_student_reference
 title: SrV 2023 university-student aggregates (share, presence, education status, distance
-  bands, behaviour cells, car and licence comparison; five committed tables)
+  bands, behaviour cells, car, licence and season-ticket availability comparison; five committed
+  tables)
 provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
 vintage: 2023 survey year
 geography: |
@@ -57,6 +58,15 @@ limitations: |
   table is weighted with the trip weight GEWICHT_W_ZENSUS that select_person_observations
   returns (the convention of the committed SrV distance tables); all other tables with the
   person weight GEWICHT_P_ZENSUS (ADR-0055).
+
+  Universe: persons away from home all day are outside every table (the participation
+  universe), while the MiD mirror keeps them; the module docstring of srv_student_reference.py
+  states it, and the students dropped this way are counted in each file's "# Exclusions:" line
+  (n_students_away_from_home, n_adult_students_away_from_home).
+
+  Note for the next phase: the per-Kreis rows of the distance table rest on few students (column
+  n_persons; every Kreis but Braunschweig holds only a handful), so only the 03ZGB region row is
+  usable as a distance reference; the Kreis rows are descriptive at most.
 
   Measured values: see the committed headers and the Phase 0 run manifest of issue #140. A
   measurement, not a validation.

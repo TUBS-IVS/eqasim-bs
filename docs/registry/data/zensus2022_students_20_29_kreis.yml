@@ -38,7 +38,8 @@ licensing:
   restricted: false
   redistribution: allowed
 limitations: 'The category excludes students in paid work, so the count is a spatial pattern of
-  students, not a level (assumption A9 of the student-commuting design). Census counts are
+  students, not a level (an assumption of the design of this work, issue #140, to be recorded
+  in an ADR in the next phase). Census counts are
   rounded by the publisher.'
 notes: 'Student in-commuter reference of #140; used_by stays empty until a stage reads it. The
   counts live in the local CSV, not in this record.'
