@@ -27,7 +27,7 @@ licensing:
   restricted: false
   redistribution: allowed
 limitations: null
-notes: 'Measured immaterial vs the constant 1.3 (ADR-0042); kept as opt-in infra. Provenance of the committed curve: fitted
-  by scripts/calibrate_detour_circuity.py on a 25 % cache measured in June 2026 (eqasim-data/data/braunschweig/calibration/detour/PROVENANCE.md),
-  before #679, so WITHOUT leaving loop legs (strolls, dog walks) out of the secondary walk/bike OD pairs; the script
-  now leaves them out where the cache carries loop_origin, so a refit may change the curve (#679, ADR-0207).'
+notes: 'Measured immaterial vs the constant 1.3 (ADR-0042); kept as opt-in infra. Provenance of the committed curve: the
+  committed file was last changed by commit a627fcaba (2026-06-26, per git history), before the loop exclusion of
+  c657ba70 (#679, ADR-0207), so it was fitted WITHOUT leaving loop legs (strolls, dog walks) out of the secondary
+  walk/bike OD pairs; the script now leaves them out where the cache carries loop_origin, so a refit may change it.'
