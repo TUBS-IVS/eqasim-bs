@@ -127,7 +127,8 @@ def configure(context):
     # that household-linked escort anchors reference (#201 Phase 2).
     context.config("escort_household_link", False)
     # Strolls and dog walks (eqasim-bs#679): read-only mirror of the secondary location stage's
-    # switch (owner: secondary_chainsolvers.loops.KEY_ENABLED, same default). ON -> the realised
+    # switch (owner: braunschweig.popsim.stage.config_keys.KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT,
+    # re-exported as secondary_chainsolvers.loops.KEY_ENABLED; same default). ON -> the realised
     # rows carry loop_origin, and a loop row that copies a home, work or education place is
     # checked against the home / work / education facility ids instead of the secondary ones.
     context.config(KEY_LOOP_ZERO_DISPLACEMENT, False)
