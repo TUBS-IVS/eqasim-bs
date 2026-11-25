@@ -7,6 +7,8 @@ the MiD legs that carry the detail code.
 """
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -14,7 +16,9 @@ import pytest
 from braunschweig.popsim.purpose_subtype import leisure_spec
 from braunschweig.synthesis.locations.secondary_chainsolvers import loops
 
-TRAVEL_TIME_S = 1800.0  # band 3 of shop_subtype.tt_band ([1200, inf))
+# Band 3 ([1200 s, inf)) of braunschweig.popsim.purpose_subtype.tt_band, the band function the
+# module docstring names (it is defined in braunschweig.popsim.shop_subtype).
+TRAVEL_TIME_S = 1800.0
 BAND_OF_TRAVEL_TIME = 3
 
 WALK_HOME_HOME = ("walk", BAND_OF_TRAVEL_TIME, True, True)
@@ -60,6 +64,8 @@ def test_labelled_stroll_dog_walk_and_ride_without_destination_are_loops():
     assert not flags[(df["following_purpose"] == "home")].any()
     assert stats["by_label"] == {"walk": 2, "bicycle": 1}
     assert stats["draws"] == {"walk": 0, "bicycle": 0}
+    assert set(stats) == {"in_scope", "by_label", "by_draw", "draws", "draws_from_marginal"}
+    assert all(set(per_mode) == {"walk", "bicycle"} for per_mode in stats.values())
 
 
 def test_other_codes_other_modes_other_purposes_and_missing_codes_are_no_loops_and_draw_nothing():
@@ -115,6 +121,42 @@ def test_a_cell_without_an_estimate_uses_the_marginal_and_is_counted():
 
     assert flags.iloc[0]
     assert stats["draws_from_marginal"]["walk"] == 1
+
+
+def test_a_marginal_share_above_the_fallback_warn_rate_warns_and_cell_draws_do_not(caplog):
+    cell_probabilities = _probabilities(cells={WALK_HOME_HOME: 0.5})
+    marginal_probabilities = _probabilities(marginal={"walk": 0.5})
+    df = _trips(_leisure_leg(1, "walk", 2202))
+
+    with caplog.at_level(logging.INFO, logger=loops.logger.name):
+        loops.flag_loops(df, cell_probabilities, np.random.RandomState(1))
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger=loops.logger.name):
+        loops.flag_loops(df, marginal_probabilities, np.random.RandomState(1))
+    assert [record for record in caplog.records
+            if record.levelno == logging.WARNING and "marginal" in record.getMessage()]
+
+
+def test_a_drawing_leg_without_a_travel_time_raises_tagged_and_draws_nothing():
+    df = _trips(_leisure_leg(41, "walk", 2202) + _leisure_leg(42, "walk", 2202))
+    df.loc[df["person_id"] == 42, "travel_time"] = np.nan
+    random = np.random.RandomState(9)
+
+    with pytest.raises(ValueError, match=r"\[secondary_loops\] flag_loops: 1 of 2 legs .*\[42\]"):
+        loops.flag_loops(df, _probabilities(marginal={"walk": 0.5}), random)
+    assert random.random_sample() == np.random.RandomState(9).random_sample()
+
+
+def test_a_repeated_index_raises_naming_the_function_and_the_duplicates():
+    df = _trips(_leisure_leg(1, "walk", 2202) + _leisure_leg(2, "walk", 2202))
+    df.index = [0, 0, 1, 1]
+
+    with pytest.raises(ValueError, match=r"flag_loops needs a unique index.*2 of 4"):
+        loops.flag_loops(df, _probabilities(marginal={"walk": 0.5}), np.random.RandomState(1))
+    with pytest.raises(ValueError, match="way_home_follows needs a unique index"):
+        loops.way_home_follows(df)
 
 
 def test_a_mode_without_any_estimate_raises_naming_the_mode():
@@ -230,3 +272,61 @@ def test_estimate_loop_probabilities_weights_drops_thin_cells_and_keeps_a_margin
     all_days = loops.estimate_loop_probabilities(mid, min_obs=30, weekday_only=False)
     assert all_days.marginal["bicycle"] == pytest.approx(1.0)
     assert all_days.n_observations["bicycle"] == 15 and estimate.n_observations["bicycle"] == 5
+
+
+def _mid_persons(groups):
+    """MiD table from ``(n_persons, legs)`` groups; each person walks, on a weekday, 30 min a leg."""
+    rows = []
+    household_id = 0
+    for n_persons, legs in groups:
+        for _ in range(n_persons):
+            household_id += 1
+            rows.extend(_mid_person(household_id, legs))
+    return pd.DataFrame(rows)
+
+
+def test_the_codeplan_variant_leaves_799_out_of_the_estimate_universe():
+    # 30 strolls and 10 "Freizeit k.A." legs in one cell: 799 is a labelled non-loop code with the
+    # codeplan sentinels off (share 30/40), a no-detail code outside the universe with them on.
+    mid = _mid_persons([(30, [(7, 710), (8, 2202)]), (10, [(7, 799), (8, 2202)])])
+
+    off = loops.estimate_loop_probabilities(mid, min_obs=30, weekday_only=True)
+    on = loops.estimate_loop_probabilities(
+        mid, min_obs=30, weekday_only=True, codeplan_sentinels=True)
+
+    assert off.cells[WALK_HOME_HOME] == pytest.approx(0.75)
+    assert off.n_observations[WALK_HOME_HOME] == 40
+    assert on.cells[WALK_HOME_HOME] == pytest.approx(1.0)
+    assert on.n_observations[WALK_HOME_HOME] == 30
+    assert 799 in off.labelled_codes and 799 not in on.labelled_codes
+
+
+def test_the_way_home_and_the_last_leg_of_a_mid_person_are_read_from_the_next_leg():
+    # W_ZWECK 9 (back home, other kind) counts as a way home like 8; a stroll as the person's
+    # last leg has no way home after it.
+    mid = _mid_persons([(30, [(7, 710), (9, 2202)]), (30, [(7, 701)])])
+
+    estimate = loops.estimate_loop_probabilities(mid, min_obs=30, weekday_only=True)
+
+    assert estimate.cells[WALK_HOME_HOME] == pytest.approx(1.0)
+    assert estimate.cells[("walk", BAND_OF_TRAVEL_TIME, True, False)] == pytest.approx(0.0)
+
+
+def test_estimate_loop_probabilities_rejects_a_bad_min_obs_and_an_empty_universe():
+    mid = _mid_table()
+    with pytest.raises(ValueError, match="min_obs must be >= 1"):
+        loops.estimate_loop_probabilities(mid, min_obs=0, weekday_only=True)
+
+    # Shopping legs only: no labelled leisure leg to estimate from.
+    shopping = _mid_persons([(5, [(4, 501), (8, 2202)])])
+    with pytest.raises(ValueError, match="no labelled leisure leg"):
+        loops.estimate_loop_probabilities(shopping, min_obs=1, weekday_only=True)
+
+
+def test_estimate_warns_when_every_cell_is_below_min_obs(caplog):
+    with caplog.at_level(logging.INFO, logger=loops.logger.name):
+        estimate = loops.estimate_loop_probabilities(_mid_table(), min_obs=1000, weekday_only=True)
+
+    assert estimate.cells == {} and set(estimate.marginal) == {"walk", "bicycle"}
+    assert [record for record in caplog.records
+            if record.levelno == logging.WARNING and "below min_obs" in record.getMessage()]

@@ -14,6 +14,8 @@ Two sources of the flag, in this order:
    in PAPI", 4402 "child under 14", 999, ... and, with ``purpose_subtype_codeplan_sentinels`` on,
    799 "Freizeit k.A.") draws ``Bernoulli(p)`` once, ``p`` being the weighted MiD share of loops
    among the labelled legs of its cell ``(mode, tt_band, starts_at_home, way_home_follows)``.
+   ``tt_band`` is ``braunschweig.popsim.purpose_subtype.tt_band`` (defined in
+   ``braunschweig.popsim.shop_subtype``), the band function the leisure subtype decider uses.
 
 ASSUMPTION: the loop probability estimated on the legs whose detail was asked (CATI/CAWI) holds
 for the legs where it was not asked (PAPI, children). The MiD cannot test this: the unasked legs
@@ -97,14 +99,22 @@ class LoopProbabilities:
     labelled_codes: frozenset
 
 
+def _require_unique_index(frame: pd.DataFrame, caller: str) -> None:
+    """Raise a ``ValueError`` naming ``caller`` and the duplicate count when the index repeats."""
+    if not frame.index.is_unique:
+        n_duplicates = int(frame.index.duplicated().sum())
+        raise ValueError(
+            f"[secondary_loops] {caller} needs a unique index on its frame to align its result; "
+            f"{n_duplicates} of {len(frame)} index labels repeat an earlier one. Reset the index "
+            "(``df.reset_index(drop=True)``) before the call.")
+
+
 def _next_leg_is_home(frame: pd.DataFrame, group_columns: list, order_column: str) -> pd.Series:
     """True where the NEXT leg of the same person (by ``order_column``) ends at home.
 
     The last leg of a person has no next leg and gets False. Aligned to ``frame.index``, which must
-    be unique.
+    be unique (the callers check it and name themselves in the error).
     """
-    if not frame.index.is_unique:
-        raise ValueError("[secondary_loops] the trips frame needs a unique index.")
     ordered = frame.sort_values([*group_columns, order_column])
     next_purpose = ordered.groupby(group_columns, sort=False)["following_purpose"].shift(-1)
     return (next_purpose == "home").reindex(frame.index)
@@ -114,9 +124,10 @@ def way_home_follows(df_trips: pd.DataFrame) -> pd.Series:
     """Per synthetic trip: does the next trip of the same person (by ``trip_index``) go home?
 
     Needs ``person_id``, ``trip_index`` and ``following_purpose``. The last trip of a person is
-    False. Aligned to ``df_trips.index``.
+    False. Aligned to ``df_trips.index``, which must be unique (``ValueError`` otherwise).
     """
     _require_columns(df_trips, ("person_id", "trip_index", "following_purpose"), "trips")
+    _require_unique_index(df_trips, "way_home_follows")
     return _next_leg_is_home(df_trips, ["person_id"], "trip_index")
 
 
@@ -158,6 +169,7 @@ def estimate_loop_probabilities(mid_wege: pd.DataFrame, *, min_obs: int, weekday
     wege = map_mode(map_purpose(wege))
     wege["following_purpose"] = wege["purpose"]
     wege["preceding_purpose"] = _build_preceding_purpose(wege)
+    _require_unique_index(wege, "estimate_loop_probabilities")
     wege["way_home_follows"] = _next_leg_is_home(wege, ["H_ID", "P_ID"], "W_ID")
     wege["travel_time"] = mid_travel_time_seconds(
         wege, log_tag="[secondary_loops]", log=logger)
@@ -237,10 +249,15 @@ def flag_loops(df_trips: pd.DataFrame, probabilities: LoopProbabilities,
 
     The draws are taken in ``(person_id, trip_index)`` order, one ``random.random_sample`` value
     per drawing leg, so the result depends on the seed and the legs, not on the frame's row order.
-    Rows out of scope and labelled rows consume no draw. Raises ``ValueError`` when a drawing leg's
-    mode has no marginal (no silent default probability).
+    Rows out of scope and labelled rows consume no draw.
+
+    ``df_trips.index`` must be unique. Raises ``ValueError`` (before any random number is drawn
+    for the legs concerned) when the index repeats, when a leg to draw has no finite
+    ``travel_time`` (it cannot be banded), and when a drawing leg's mode has no marginal (no
+    silent default probability).
     """
     _require_columns(df_trips, _TRIP_COLUMNS, "trips")
+    _require_unique_index(df_trips, "flag_loops")
 
     in_scope = ((df_trips["following_purpose"] == "leisure")
                 & df_trips["mode"].isin(LOOP_MODES)
@@ -256,15 +273,27 @@ def flag_loops(df_trips: pd.DataFrame, probabilities: LoopProbabilities,
 
     if bool(to_draw.any()):
         drawing = df_trips[to_draw].sort_values(["person_id", "trip_index"])
+        # A leg without a finite travel time cannot be banded; stop with the stage tag and the
+        # persons concerned instead of the bare error of tt_band.
+        finite = np.isfinite(pd.to_numeric(drawing["travel_time"], errors="coerce").to_numpy(
+            dtype=float))
+        if not finite.all():
+            raise ValueError(
+                f"[secondary_loops] flag_loops: {int((~finite).sum())} of {len(drawing)} legs "
+                "to draw have no finite travel_time (seconds) and cannot be banded; person_ids "
+                f"{drawing.loc[~finite, 'person_id'].unique()[:5].tolist()} (first five).")
         starts_at_home = (drawing["preceding_purpose"] == "home")
         way_home = way_home_follows(df_trips).loc[drawing.index]
+        # tt_band itself (not a copy of its edges) bands the validated column, so the cell key
+        # is the one the estimate used; it is a per-leg Python call, kept for that reason.
+        bands = drawing["travel_time"].map(tt_band)
         uniform = random.random_sample(len(drawing))
 
         probability = np.empty(len(drawing), dtype=float)
         used_marginal = np.zeros(len(drawing), dtype=bool)
-        for position, (mode, travel_time, at_home, home_follows) in enumerate(zip(
-                drawing["mode"], drawing["travel_time"], starts_at_home, way_home)):
-            key = (mode, tt_band(travel_time), bool(at_home), bool(home_follows))
+        for position, (mode, band, at_home, home_follows) in enumerate(zip(
+                drawing["mode"], bands, starts_at_home, way_home)):
+            key = (mode, int(band), bool(at_home), bool(home_follows))
             if key in probabilities.cells:
                 probability[position] = probabilities.cells[key]
             elif mode in probabilities.marginal:
@@ -280,13 +309,9 @@ def flag_loops(df_trips: pd.DataFrame, probabilities: LoopProbabilities,
         by_draw.loc[drawing.index] = drawn_flag
         from_marginal.loc[drawing.index] = used_marginal
 
-    stats = {
-        "in_scope": _per_mode(df_trips, in_scope),
-        "by_label": _per_mode(df_trips, by_label),
-        "by_draw": _per_mode(df_trips, by_draw),
-        "draws": _per_mode(df_trips, to_draw),
-        "draws_from_marginal": _per_mode(df_trips, from_marginal),
-    }
+    masks = {"in_scope": in_scope, "by_label": by_label, "by_draw": by_draw, "draws": to_draw,
+             "draws_from_marginal": from_marginal}
+    stats = {key: _per_mode(df_trips, masks[key]) for key in _STAT_KEYS}
     _log_stats(stats)
     return flags.astype(bool), stats
 
