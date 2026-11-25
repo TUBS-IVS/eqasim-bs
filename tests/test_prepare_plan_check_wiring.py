@@ -290,3 +290,15 @@ def test_execute_with_todays_values_does_not_edit_the_config(monkeypatch, tmp_pa
     context = _ReachContext(tmp_path, **{R.KEY_LOOP_ISOLATE: False, R.KEY_LOOP_MAX_TOUR_LENGTH: 11})
     prepare.execute(context)  # a positive control: another value does edit it
     assert config.read_bytes() != DMC_CONFIG.encode("utf-8")
+
+
+@pytest.mark.parametrize("cordon, freight, expected", [
+    (True, True, ("incommuter", "student_incommuter", "freight")),
+    (False, True, ("freight",)),
+    (True, False, ("incommuter", "student_incommuter")),
+    (False, False, ()),
+])
+def test_initial_mode_choice_excludes_incommuters_and_injected_freight(cordon, freight, expected):
+    """Freight legs have no routing mode, so the outside constraint would fail on them (found on #678's replay)."""
+    context = _RecordingContext({"cordon_enabled": cordon, "freight_enabled": freight})
+    assert tuple(prepare._initial_mode_choice_excluded_subpopulations(context)) == expected
