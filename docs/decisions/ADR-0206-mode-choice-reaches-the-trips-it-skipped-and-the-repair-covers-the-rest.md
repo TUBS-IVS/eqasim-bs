@@ -1,6 +1,6 @@
 # ADR-0206 · 2026-11-25 · The mode choice reaches the trips it skipped, and the repair covers every trip it still cannot reach
 
-- **Status:** active on branch `fix/i678-mode-choice-reach` (not merged). Evidence still pending: the replay on the prepared population of `prod100_20261031` was blocked at the initial mode choice (manifest under Evidence) and the 1 % comparison has not run; their manifests will be linked under Evidence and no result is stated here.
+- **Status:** active on branch `fix/i678-mode-choice-reach` (not merged). Evidence still pending: the 1 % comparison has not run; its manifest will be linked under Evidence and no result is stated here.
 - **Numbering:** ADR-0206 is the next free id; checked on 2026-11-25 across all refs (`git for-each-ref` and `git ls-tree` of `docs/decisions/`; the highest id taken is ADR-0205). The parallel #679 session takes ADR-0207.
 - **Issue:** #678. **Owner decisions (2026-11-25):** parts A and B go in together; tour length 11 in the loop (computing time is not the constraint). **Takes up** what three records left open: ADR-0141 decision 6 (selecting `IsolatedOutsideTrips` "would need that constraint and is a separate decision"), ADR-0145 decision 1 (only frozen tours are judged, the mode choice is assumed to reach the rest) and ADR-0189 (the repair covers one case of one reason). **Builds on:** ADR-0178 (initial mode choice), ADR-0146 (plan check).
 - **Rule and definition:** `docs/codebase/notes/mode-choice-reach.md` (the one home of the reach definition).
@@ -60,6 +60,6 @@
 
 - Before: [`docs/runs/i678-mode-choice-reach-probe-prod100-2026-11-25.yml`](../runs/i678-mode-choice-reach-probe-prod100-2026-11-25.yml) (B1).
 - Timing of the initial mode choice on the long tours (done): [`docs/runs/i678-long-tour-timing-prod100-2026-11-25.yml`](../runs/i678-long-tour-timing-prod100-2026-11-25.yml).
-- Replay on the prepared population of `prod100_20261031` (blocked at the initial mode choice; a replay, not a validation): [`docs/runs/i678-reach-replay-prod100-2026-11-25.yml`](../runs/i678-reach-replay-prod100-2026-11-25.yml).
-- Pending, to be added by manifest links when they exist: (1) replay on the prepared population of `prod100_20261031` with the new jar and code (trips not reached by reason before and after, trips of border tours with an unfitting mode after the initial choice, lifted trips by mode, `n_unreached_unfit` = 0; a replay, not a validation); (2) 1 % comparison of today's values against the defaults through `prepare` and a short MATSim run. The replay was blocked (line above); the comparison has not run.
+- Replay on the prepared population of `prod100_20261031` (completed; a replay, not a validation; the first attempt failed on freight, fixed by 884627f0): [`docs/runs/i678-reach-replay-prod100-2026-11-25.yml`](../runs/i678-reach-replay-prod100-2026-11-25.yml).
+- Pending, to be added by a manifest link when it exists: 1 % comparison of today's values against the defaults through `prepare` and a short MATSim run. It has not run.
 - Tests: `tests/test_plan_check.py`, `tests/test_mode_choice_reach.py`, `tests/test_frozen_pt_walk_lift.py`, `tests/test_initial_mode_choice.py` (the named cases of the note); Java: the tests of `BorderTourVehicleConstraint` in the fork.

@@ -137,7 +137,9 @@ validation:
   result: >-
     Of the 15,963 border-tour trips the initial choice reached, 1,433 were plain walks over 5 km and 538 pt-as-walk
     trips over 5 km before the choice; after it, 123 plain walks over 5 km remain unfit (no pt-as-walk, no bicycle).
-    The loop (coarse rule) does not reach them, so the lift repaired them.
+    The loop (coarse rule) does not reach them, so the lift repaired them. These 538 pt-as-walk trips are inside trips
+    of border tours that the initial choice REACHED and re-chose or re-routed (real repairs); they are distinct from
+    the 760 border trips the initial choice did NOT reach whose walkFallbackFrom stamp the runner dropped (lift row).
   artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/analysis_replay2.json
 - metric: lifted trips by mode and reason, the taken-along bicycle trips, and the share of the other modes against max_share_other_modes
   reference: 'the bounds of the branch: max_share_other_modes 0.002 (an ASSUMPTION, ADR-0206) and the plan check pt share 0.02'
@@ -149,17 +151,33 @@ validation:
     123 inside trips the initial choice reached but left unfit, 99 border trips that were long walks already, 760
     border trips that were pt-as-walk before the choice (walk legs with the walkFallbackFrom=pt stamp) and lost the
     stamp in the runner's output although their mode was not re-chosen (same walk legs), so the plan check now judges
-    them as walks, and 5 freed vehicle legs that became walks (unreached_changes_output.txt). The runner's re-routing
-    of trips it did not re-choose also explains all 67 resident pt lifts: pt trips at the border with a pt leg before
-    the choice that are walk-only after it.
+    them as walks, and 5 freed vehicle legs that became walks (unreached_changes_output.txt). The runner thus drops
+    the walkFallbackFrom stamp on border trips it does not re-choose: 760 resident trips keep the same walk legs and
+    the same routing mode but lose the stamp, so the lift and the plan check count them as plain walks instead of
+    pt-as-walk; the lift still repairs them (as walk). The runner's re-routing of trips it did not re-choose also
+    explains all 67 resident pt lifts: pt trips at the border with a pt leg before the choice that are walk-only after
+    it. Traced for residents (unfit_mode rule), the pt-as-walk trips over 5 km that the loop does not reach go from
+    1,298 on the input to 67 after the initial choice: 538 repaired by the choice (reached inside trips of border
+    tours), 760 moved to the walk count by the dropped stamp, 0 kept, 67 new by re-routing. Derivation: the 67
+    resident pt lifts are all trips that were not pt-as-walk before (unreached_changes_output.txt), so no unreached
+    pt-as-walk trip kept that class; 1,298 = 538 + 760 + 0.
   artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/replay2_frozen_pt_walk_lift.json
 - metric: n_unreached_unfit and the plan check's threshold result
   reference: 'the plan check invariant of the branch (n_unreached_unfit must be 0 with all_modes) and its thresholds (max_frozen_defect_share 0.005, max_frozen_pt_as_walk_share 0.02)'
   result: >-
     n_unreached_unfit 0 in the frozen and the in-region resident block of plan_check.json (the same code gives 3,320 on
-    the input and 1,568 after the initial choice). Threshold result: exceeded [share_plans_non_monotonic_large], 1.12 %
+    the input and 1,568 after the initial choice; the 1,568 are the trips the lift then repaired, 2 taken-along
+    bicycles aside). Threshold result: exceeded [share_plans_non_monotonic_large], 1.12 %
     (1,702 of 151,733 frozen residents) against 0.50 %; share_plans_late 0.003 % and share_pt_as_walk_long 0.0 are
-    within their bounds. The exceeded share is a property of the input: the branch's plan check gives 1.14 % (1,726)
+    within their bounds. The pt-as-walk counts of the frozen block (residents and in-commuters, plan check rule) fall
+    from 1,785 of 45,469 pt-intended trips (3.93 %) on the input to 95 of 41,140 (0.23 %) after the initial choice and
+    0 after the lift. Of that fall, the residents' part is traced in the lift row: 538 real repairs by the initial
+    choice and 760 dropped walkFallbackFrom stamps (the same trips, counted as walks afterwards), with 67 new by
+    re-routing. The rest (1,785 - 1,298 = 487 before, 95 - 67 = 28 after) is in-commuters, re-chosen in this pre-#566
+    run, plus any trips where the plan check's pt-as-walk rule and unfit_mode differ (a stamped walk leg in a trip
+    with a non-walk leg); not traced, because the committed analysis splits only residents. The pt-as-walk share
+    after the initial choice is therefore NOT comparable to the input's: part of the fall is a change of label, not
+    of mode. The exceeded share is a property of the input: the branch's plan check gives 1.14 % (1,726)
     on the input and 1.13 % (1,722) after the initial choice (plan_check_compare.json). The run's own plan_check.json
     (older code) already listed share_plans_non_monotonic as exceeded.
   artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/plan_check_compare.json
@@ -168,8 +186,12 @@ validation:
   result: >-
     Input, today's rule: not reached 1,433 (not touching outside) + 1,122 (long tours) = 2,555, equal to the "before"
     manifest, plus 99 that touch outside; reached 88,112. Input, the branch's loop rule: not reached 1,532, reached
-    89,234. After the initial choice, loop rule: not reached 987 (see the lift row for their origin), reached 1,817.
-    After the lift: not reached 0 (n_unreached_unfit 0), reached 1,817; the loop can still re-choose those.
+    89,234. After the initial choice, loop rule: not reached 987 (the trips the lift had to repair; 760 of them are
+    border pt-as-walk trips relabelled by the dropped stamp, see the lift row), reached 1,817. Of the walks in the
+    border tours that the initial choice reached, 123 are left unfit by it (the number behind the loop switch). After
+    the lift: not reached 0, which is the invariant holding by construction (the lift repairs every unreached unfit
+    trip, the plan check enforces n_unreached_unfit = 0), not a further result; reached 1,817, which the loop can still
+    re-choose. The meaningful numbers are 987 before the lift and 123 left unfit by the initial choice.
   artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/analysis_replay2.json
 - metric: border-tour vehicle legs relaxed for missing availability, own count against the runner's running log lines
   reference: 'the running summary lines of BorderTourVehicleConstraint.Factory (written whenever the relaxed count reaches a power of two); model output'
@@ -178,8 +200,12 @@ validation:
     bicycle, where BraunschweigModeAvailability does not offer that mode (car: carAvailability none or hasLicense no;
     bicycle: bicycleAvailability none). Residents: car 2,394 of 162,153, bicycle 67 of 1,415; in-commuters: car 0 of
     134,649. Total 2,461 of 298,217 (0.83 %). The runner's last running line in the second attempt: "2049 of 264642
-    (0.77 %)" at 18:45:44; no line for 4,096 followed before "Done!", so the runner's total lies between 2,049 and
-    4,095, consistent with the count. The standalone runner writes no final summary line.
+    (0.77 %)" at 18:45:44. Both figures of that line are running counts at the moment the relaxed count passed 2,048
+    (a power of two): 264,642 is the number of border-tour vehicle legs counted UP TO THAT MOMENT, not the total, so it
+    is not comparable with the denominator 298,217; the choice went on until "Done!" at 18:51:44. No line for 4,096
+    followed, so the runner's final relaxed total lies between 2,049 and 4,095, and its final vehicle-leg total is at
+    least 264,642. The counted 2,461 of 298,217 lies in both ranges; that is the extent of the agreement (the
+    standalone runner writes no final summary line, so the exact totals cannot be compared).
   artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/replay2_lines_output.txt
 - metric: the gap of the step-1 manifest (uncut 365 tours of 13 trips and 1,193 of 9 to 11 trips against 329 and 815 persons in the prepared population)
   reference: 'none: a count of model output'
