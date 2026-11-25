@@ -1,0 +1,178 @@
+id: popsim-bs3-release-2026-11-25
+date: '2026-11-25'
+repository:
+  commit: 4b54064a7a900ce4961f1808dc548f337a0483e3
+  branch: runs/i677-popsim-codex-variants
+  notes: >-
+    PRE-REGISTRATION: this file is committed with the checks below before any run starts; only results,
+    artifacts and execution notes are added afterwards. The commit is the release candidate of the group's
+    PopulationSim fork, local branch bs/i677-summary-and-fast-paths at 4b54064 (not pushed yet), compared
+    against the released 0.10.0+bs.2 = origin/bs/main d9a2e2810139e822ff2870a1845c30a509461462. Changes of
+    the candidate against 0.10.0+bs.2: (1) the zone summary _diff is aligned by zone id (a correction;
+    summarize is not in the production step list, so no production output can change); (2) FAST_PATHS: the
+    household expansion draws all households in one batch (the parked Codex variant C, ported after
+    popsim-codex-variants-2026-11-25); (3) FAST_PATHS: the integerizer result frames are built in one pass.
+    Acceptance rule (ADR-0200 decision 2): the synthetic population is byte-identical with the run-time
+    options on and off and to the released tool. FOLLOW-UP after the run: the release candidate became ea51a8a55ac1c36442c4c0a6ee2a000d41d84855
+    (the batched household draw was vectorised because expand_households was 2.2 to 3.5 times slower than in
+    0.10.0+bs.2 in the runs below, see check 6); the arm rc2_on, one run per batch with options on, repeats
+    checks 1 to 4 for ea51a8a (results appended to those checks; the pre-registered checks are unchanged and the
+    4b54064 results are kept).
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - the run overlay of prod100_20261031 (server-local), only as the configuration that produced the batch folders
+  notes: >-
+    Production settings: rounding controlled with the search integerizer, store_positive_weight_rows_only and
+    fast_paths both on, numba on. The batch folders are the controlled-rounding evidence folders of
+    popsim-run-performance-2026-11-18 (settings owned by that record) on the felix run server under ~/i646/ev:
+    controlled_on (batch_000, batch_032) and controlled_on_b028 (batch_028) have both options on;
+    controlled_off and controlled_off_b028 are the same batches with both options off. Arms per batch:
+    bs2_on = code tree d9a2e28, folders controlled_on*; rc_on = code tree 4b54064, folders controlled_on*;
+    rc_off = code tree 4b54064, folders controlled_off*. Within one batch the folders differ only in the two
+    options and the code tree.
+sampling:
+  rate: 1.0
+  scope: >-
+    three of the 60 batches of prod100_20261031 with their full seed pool: batch_000 and batch_032 (one run
+    per arm) and batch_028 (the batch with the largest household target; three repeats of bs2_on and rc_on,
+    one run of rc_off).
+  notes: The rate is the share of each batch's cells simulated (all of them), not a population sampling rate.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run: PopulationSim standalone on copies of the prepared batch folders, one copy per run.
+classification:
+- ab_test
+status:
+  execution: completed
+  notes: >-
+    Pre-registered 2026-11-25 (commit before any run); the checks were not changed afterwards. Runs on the
+    felix run server, 13 in total, in 6 rounds one after the other: batch_028 repeats 1 to 3 (bs2_on and rc_on
+    started together), batch_000 and batch_032 (bs2_on, rc_on and rc_off together, 3 processes), and batch_028
+    rc_off alone. Code trees: ~/i677/trees/A is byte-identical to git archive of d9a2e28 and ~/i677/trees/RC to
+    that of 4b54064 (both archived with core.autocrlf=false); populationsim was imported from the arm's tree in
+    every run (checked per run, runs.csv metric pyfile). Foreign load (another job with java and populationsim
+    processes, never touched): uptime load average and the number of foreign java/populationsim process lines
+    (ps lines without i677 in the command line) at the start of the rounds: batch_028 repeat 1 load 28.43 with 12
+    lines, repeat 2 load 27.33 with 12, repeat 3 load 10.20 with 9; batch_000 load 5.44 with 9; batch_032 load 5.22
+    with 9; batch_028 rc_off load 5.13 with 9 (all values in runs.csv rows load:*). The foreign load therefore fell
+    between the batch_028 repeats, which is why wall times fall from repeat 1 to 3 for both arms; the pairs of one
+    round started together and saw the same load, but the spread over the repeats is large. Deviations: (1)
+    between about 14:35 and 15:00 the server refused SSH connections for a while; uptime ran on unbroken and
+    the runs continued; (2) rc_off on batch_028 is round 4 and ran alone after batch_032, not inside a
+    timing round. Result: checks 1 to 5 MET, the timing report allows no statement of faster; expand_households
+    of the candidate is slower than 0.10.0+bs.2 (see check 6).
+    Follow-up (after the results above): arm rc2_on, tree ~/i677/trees/RC2 = git archive of ea51a8a
+    (core.autocrlf=false), populationsim imported from it (metric pyfile), batch_000, batch_032 and batch_028
+    started together as round 5 with options on, at uptime load average 0.93 and 2 foreign java process lines
+    (a foreign MATSim run, not touched; runs.csv rows load:*). Checks 1 to 4 MET for rc2_on, with one
+    qualification: check 1 includes the comparison with rc_off, which was not re-run for ea51a8a;
+    4b54064..ea51a8a changes only the FAST_PATHS branch of expand_households, the README and the tests
+    (git diff --stat 4b54064 ea51a8a), so rc_off is unaffected. Check 5 (memory) was not repeated; the peak RSS of
+    rc2_on is reported only (runs.csv, metric peak_rss_kb): batch_000 2829648 kB, batch_028 2807140 kB,
+    batch_032 2807292 kB. Reported only, no
+    claim: expand_households seconds rc2_on vs bs2_on (repeat 1) 0.167 vs 0.965 on batch_000, 0.404 vs 2.430 on
+    batch_032 and 0.373 vs 4.903 on batch_028; these single runs are not a timing comparison (rc2_on ran under
+    a different server load).
+source: >-
+  felix run server, ~/i677 (code trees, batch copies, logs).
+environment: >-
+  felix run server, 64 cores, GNU time for wall time and peak RSS; PopulationSim from the benchmark environment of
+  popsim-run-performance-2026-11-18 with the code tree of the arm first on PYTHONPATH. The server carries a
+  foreign load of another job; uptime and the foreign process count are recorded at the start of every round,
+  at most 6 of our processes run at once.
+validation:
+- metric: >-
+    Identity of the synthetic population: per batch, the sha256 of final_expanded_household_ids.csv,
+    synthetic_households.csv and synthetic_persons.csv of rc_on, rc_off and bs2_on; bound: all three equal
+    (for batch_028, all repeats of bs2_on and rc_on equal as well)
+  reference: bs2_on on the same batch (model output)
+  result: >-
+    MET. Per batch all runs have equal sha256 of the three files: batch_000 (bs2_on, rc_on, rc_off), batch_032
+    (the same) and batch_028 (bs2_on and rc_on of repeats 1 to 3 and rc_off), 13 runs in total; see
+    scripts/evaluate.py output rows "identity".
+  artifact: docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv
+- metric: >-
+    Reference to the released tool: the sha256 of the three files of every run equal the committed
+    controlled-rounding hashes of 0.10.0+bs.2 (identity_controlled_batch_000, _032 and _028 in
+    docs/runs/artifacts/popsim-run-performance-2026-11-18/run_performance_verdict.json), and for batch_000
+    and batch_028 the arm-A hashes of popsim-codex-variants-2026-11-25 (its runs.csv); bound: equal
+  reference: popsim-run-performance-2026-11-18 and popsim-codex-variants-2026-11-25 (model output of the released tool)
+  result: >-
+    MET. All 13 runs equal the committed controlled-rounding hashes of 0.10.0+bs.2 (identity_controlled_batch_000,
+    _032 and _028 of the verdict json) in all three files, and the arm-A hashes of popsim-codex-variants-2026-11-25
+    for batch_000 and batch_028 equal them as well.
+    Follow-up arm rc2_on (final release candidate ea51a8a, see the repository notes; one run per batch, started
+    together): its hashes equal the same references in all three files on batch_000, batch_032 and batch_028.
+  artifact: docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv
+- metric: >-
+    Every run exits 0; bound: all runs of all arms
+  reference: none
+  result: >-
+    MET. All 13 runs (batch_028: 3 repeats of bs2_on and rc_on and one rc_off; batch_000 and batch_032: one run of
+    each of the three arms) exited with code 0.
+    Follow-up arm rc2_on: 3 of 3 runs exited with code 0.
+  artifact: docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv
+- metric: >-
+    No silent fallback: every rc_on run logs the balancer fast-path summary line ("balancer fast path: fast N
+    of M calls") and the batch-draw INFO line of the new household expansion ("households drawn in one batch");
+    bound: both lines present in every rc_on run (counts reported; the balancer line must report no fallback
+    and no re-run)
+  reference: none
+  result: >-
+    MET. All 5 rc_on runs (batch_028 x 3, batch_000, batch_032) log exactly 1 balancer summary line, each "fast N
+    of N calls (100.0 %)" with fallback value cap, SVML, non-finite and delta-guard re-run all 0 (31 calls on
+    batch_028, 43 on batch_000, 32 on batch_032), and exactly 1 batch-draw line ("26906 households drawn in one
+    batch" on batch_028, 6690 on batch_000, 13464 on batch_032). bs2_on logs the balancer line and no batch-draw
+    line (it has the household-list line of the old fast path); rc_off logs neither, as expected with the
+    options off.
+    Follow-up arm rc2_on: all 3 runs log exactly 1 balancer line (100.0 % fast, all fallback and re-run counts 0;
+    31, 43 and 32 calls on batch_028, batch_000 and batch_032) and exactly 1 batch-draw line (26906, 6690 and
+    13464 households).
+  artifact: docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv
+- metric: >-
+    Peak RSS (GNU time) of rc_on on batch_028 (median of the 3 repeats); bound: median_rc_on <= 1.05 *
+    median_bs2_on
+  reference: bs2_on on batch_028 (engineering measurement)
+  result: >-
+    MET. Median peak RSS over the 3 batch_028 repeats: bs2_on 2774684 kB, rc_on 2775916 kB (ratio 1.0004; bound
+    1.05). One rc_on repeat (repeat 1) peaked at 3330304 kB, the other two at 2775916 and 2774212 kB; the median
+    is what the bound uses. For reference rc_off peaked at 28.2 to 32.8 million kB.
+  artifact: docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv
+- metric: >-
+    Reported, not a pass/fail bound: on batch_028 with 3 repeats, bs2_on and rc_on started at the same time per
+    round, the wall time, the sum of the seconds of the three sub_balancing steps (geography=KREIS, =ZENSUS1km,
+    =ZENSUS100m, where the integerizer result frames are built) and the seconds of expand_households. A
+    statement "faster" is allowed only if (median_bs2_on - median_rc_on) > (max_bs2_on - min_bs2_on) for that
+    quantity (formula of popsim-codex-variants-2026-11-25)
+  reference: bs2_on on batch_028 (engineering measurement)
+  result: >-
+    Reported, no statement of "faster" is allowed for any of the three quantities. Repeats 1 to 3 on batch_028
+    (bs2_on / rc_on): wall time 818.05, 779.76, 571.16 s / 762.74, 722.08, 518.33 s (median difference 57.68 s,
+    bs2_on spread 246.89 s); sum of the three sub_balancing steps 597.85, 551.73, 404.36 s / 513.00, 490.64,
+    342.19 s (median difference 61.09 s, spread 193.50 s); expand_households 4.90, 3.02, 2.87 s / 10.75, 7.85,
+    10.14 s (median difference -7.11 s, i.e. rc_on is SLOWER in all three repeats, spread 2.03 s). The large spread
+    of the timing is consistent with the foreign load that fell between the repeats (see notes). The slower
+    expand_households of the candidate agrees with the extra per-group validation of its batch draw (finite,
+    non-negative and positive-sum weights, id-cast checks, one pandas lookup per used group, 16417 groups on
+    batch_028); this cause was read from the code, not profiled. Variant C had no such validation; its
+    expand_households time is in docs/runs/popsim-codex-variants-2026-11-25.yml.
+  artifact: docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv
+features:
+  note: >-
+    Evidence for the release 0.10.0+bs.3 of the PopulationSim fork (issues #677, #656): an engineering
+    measurement of identity, memory and time on three batches; it says nothing about the quality of the
+    population.
+artifacts:
+- docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv
+- docs/runs/artifacts/popsim-bs3-release-2026-11-25/scripts/run_round.sh
+- docs/runs/artifacts/popsim-bs3-release-2026-11-25/scripts/run_all.sh
+- docs/runs/artifacts/popsim-bs3-release-2026-11-25/scripts/collect_runs.py
+- docs/runs/artifacts/popsim-bs3-release-2026-11-25/scripts/evaluate.py
+issues:
+- '#677'
+- '#656'
+notes: >-
+  Identity of two runs of the same model is not validation against observed behaviour. Related records:
+  popsim-run-performance-2026-11-18, popsim-ladder-arm3-2026-11-18 and popsim-codex-variants-2026-11-25.

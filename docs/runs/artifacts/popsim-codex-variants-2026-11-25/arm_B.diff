@@ -1,0 +1,111 @@
+diff --git a/populationsim/steps/sub_balancing.py b/populationsim/steps/sub_balancing.py
+index f159011..ff42887 100644
+--- a/populationsim/steps/sub_balancing.py
++++ b/populationsim/steps/sub_balancing.py
+@@ -4,6 +4,7 @@
+ import contextlib
+ import logging
+ 
++import numpy as np
+ import pandas as pd
+ 
+ from populationsim.balancing import do_simul_balancing
+@@ -24,9 +25,23 @@ from populationsim.core.helper import (
+ 
+ logger = logging.getLogger(__name__)
+ 
++_NO_POSITIONS = np.empty(0, dtype=np.intp)
++
++
++def _positions(indices, key):
++    """Row positions of one group from a ``groupby(...).indices`` dict (empty if absent)."""
++    return indices.get(key, _NO_POSITIONS)
++
+ 
+ def _rebuilt_parent_weights(
+-    weights_df, geography, parent_geography, parent_id, household_id_col, column, order
++    weights_df,
++    geography,
++    parent_geography,
++    parent_id,
++    household_id_col,
++    column,
++    order,
++    parent_rows=None,
+ ):
+     """Fork: full-length parent weights from a positive-row parent table.
+ 
+@@ -38,7 +53,8 @@ def _rebuilt_parent_weights(
+     :func:`populationsim.core.positive_weight_rows.rebuild_parent_weights`, which
+     refuses a parent without any stored row.
+     """
+-    parent_rows = weights_df[weights_df[parent_geography] == parent_id]
++    if parent_rows is None:
++        parent_rows = weights_df[weights_df[parent_geography] == parent_id]
+     return positive_weight_rows.rebuild_parent_weights(
+         parent_rows,
+         household_id_col,
+@@ -243,13 +259,25 @@ def sub_balancing(settings, crosswalk, control_spec, incidence_table):
+ 
+     integer_weights_list = []
+ 
++    # arm B (throwaway): group the row positions once per step; slicing with
++    # .iloc[positions] returns the same rows in the same (original) order as the
++    # boolean masks of upstream, because .indices positions are ascending
++    weight_rows_by_parent = weights_df.groupby(parent_geography).indices
++    incidence_rows_by_seed = incidence_df.groupby(seed_geography).indices
++    crosswalk_rows_by_seed = crosswalk_df.groupby(seed_geography).indices
++    crosswalk_rows_by_parent = crosswalk_df.groupby(parent_geography).indices
++
+     # the incidence table is siloed by seed geography, se we handle each seed zone in turn
+     seed_ids = crosswalk_df[seed_geography].unique()
+     for seed_num, seed_id in enumerate(seed_ids):
+ 
+         # slice incidence and crosswalk tables for this seed zone
+-        seed_incidence_df = incidence_df[incidence_df[seed_geography] == seed_id]
+-        seed_crosswalk_df = crosswalk_df[crosswalk_df[seed_geography] == seed_id]
++        seed_incidence_df = incidence_df.iloc[
++            _positions(incidence_rows_by_seed, seed_id)
++        ]
++        seed_crosswalk_df = crosswalk_df.iloc[
++            _positions(crosswalk_rows_by_seed, seed_id)
++        ]
+ 
+         # expects seed geography is siloed by meta_geography
+         # (no seed_id is in more than one meta_geography zone)
+@@ -270,6 +298,10 @@ def sub_balancing(settings, crosswalk, control_spec, incidence_table):
+                 f"{parent_geography} {parent_id}"
+             )
+ 
++            parent_weight_rows = weights_df.iloc[
++                _positions(weight_rows_by_parent, parent_id)
++            ]
++
+             if positive_only and parent_geography != seed_geography:
+                 initial_weights = _rebuilt_parent_weights(
+                     weights_df,
+@@ -283,9 +315,10 @@ def sub_balancing(settings, crosswalk, control_spec, incidence_table):
+                         else "integer_weight"
+                     ),
+                     seed_incidence_df.index,
++                    parent_rows=parent_weight_rows,
+                 )
+             else:
+-                initial_weights = weights_df[weights_df[parent_geography] == parent_id]
++                initial_weights = parent_weight_rows
+                 initial_weights = initial_weights.set_index(
+                     settings.get("household_id_col")
+                 )
+@@ -342,9 +375,9 @@ def sub_balancing(settings, crosswalk, control_spec, incidence_table):
+                 )
+ 
+             # add higher level geography id columns to facilitate summaries
+-            parent_geography_ids = crosswalk_df.loc[
+-                crosswalk_df[parent_geography] == parent_id, parent_geographies
+-            ].max(axis=0)
++            parent_geography_ids = crosswalk_df.iloc[
++                _positions(crosswalk_rows_by_parent, parent_id)
++            ][parent_geographies].max(axis=0)
+             for z in parent_geography_ids.index:
+                 zone_weights_df[z] = parent_geography_ids[z]
+ 
