@@ -31,7 +31,11 @@ Definitions (MiD 2023 codebook B1 as quoted in ``braunschweig/popsim/attributes.
   ``braunschweig.popsim.mid.participation.PARTICIPATION_W_ZWECK`` (the seed's sets). Its
   education set also carries the passive escort code (13) under the production flag
   ``escort_passive_education``; that leg is an escorted CHILD's own trip (``PARTICIPATION_W_ZWECK``
-  escort comment), so it cannot change a result restricted to adults and is not added here.
+  escort comment), so it cannot change a result restricted to adults and is not added here. It
+  does matter for the youngest age band of :func:`build_status_by_age_table`, which includes
+  children: an escorted child whose only education-set leg is such a passive escort leg is NOT
+  in that table (whether the plan realises it as education is a model pairing rule, not a survey
+  fact), so the under-20 band describes children with a directly recorded education trip only.
 * ``exclude_rbw_legs`` (production value of ``braunschweig.population.popsim.exclude_rbw_legs``
   in ``configs/base_bs.yml``): True counts only DIRECTLY recorded legs (``W_RBW == 0``), the legs
   the plan contains, exactly as ``participation.compute_has_direct_purpose_leg`` does for the
@@ -45,9 +49,19 @@ Definitions (MiD 2023 codebook B1 as quoted in ``braunschweig/popsim/attributes.
   :data:`student_behaviour_labels.ARRIVAL_HOUR_EDGES`); 99 or a missing hour excludes the student
   from the arrival control only. The arrival control's exclusion rate is measured over the
   students WITH an education leg, the only ones that can lose a label there.
-* Trip class from ``anzwege1`` (bins :data:`student_behaviour_labels.TRIP_CLASS_EDGES`); the MiD
-  filter codes (>= 800, e.g. 803 / 804 for a missing diary) exclude the student from that
-  control only, counted.
+* Diary of the day (behaviour table only): ``anzwege1`` 0 to 799 is a real trip count. The
+  no-diary codes 803 / 804 (``popsim.diary_plan_match.NO_DIARY_CODES``) are an UNKNOWN day, never
+  "no trip", exactly as the popsim seed reads them (``participation.compute_has_purpose_trip``,
+  ``diary_plan_match``), with the one exception that diary_plan_match makes too: ``803`` with
+  ``mobil != 1`` is a person who was not mobile, zero trips is what they reported, and the day
+  counts as 0 trips. A person with an unknown day (students AND non-students) leaves the four
+  diary-dependent controls (``status_x_education_leg``, ``trip_class``, ``arrival``,
+  ``work_leg``) in BOTH universes, counted; the regional survey has a diary for every person, so
+  keeping them would class a day nobody observed as "no education leg" / "no work leg". The
+  season ticket does not depend on the diary and keeps them. The status and distance tables are
+  built from persons WITH a recorded education leg, who have a diary by construction, so they
+  need no such rule.
+* Trip class from the day's trip count (bins :data:`student_behaviour_labels.TRIP_CLASS_EDGES`).
 * Season ticket = the flatrate group of ``P_FKARTE`` through
   ``braunschweig.popsim.attributes.FKARTE_TO_CATEGORY`` (``deutschlandticket`` and
   ``PT_TICKET_OTHER_FLATRATE`` are flatrate). Item non-response (99, the interview-mode codes
@@ -57,6 +71,12 @@ Definitions (MiD 2023 codebook B1 as quoted in ``braunschweig/popsim/attributes.
   MID_TRIP_LENGTH_MAX_KM`` (the MiD filter-value bound of the commute-day code); anything else
   is counted, never banded. Mode = ``hvm_imp``, the imputed main mode the handbook mandates and
   the seed's ``trips.MODE_BY_HVM`` maps (codes 1-5; any other non-missing code raises).
+
+LIMITATION of the behaviour table: persons without a diary of the day are ABSENT from the four
+diary-dependent controls, so each of those shares rests on a reduced base (the counts are in the
+committed file's ``# Exclusions:`` header line), while the SrV side has a diary for everyone.
+The comparison of the two surveys therefore assumes that the persons without a diary are not a
+distinct group with respect to those cells; that is not checkable from the survey itself.
 
 Every exclusion is counted in the builder's diagnostics and logged as ``primary n/N (rate),
 excluded m (rate)``; a step that would exclude more than :data:`MAX_EXCLUSION_RATE` of its base
@@ -77,6 +97,7 @@ from braunschweig.calibration.student_behaviour_labels import (
     UNIVERSE_STUDENTS, effective_sample_size, share_standard_error)
 from braunschweig.popsim.attributes import (FKARTE_TO_CATEGORY, PT_TICKET_DEUTSCHLANDTICKET,
                                             PT_TICKET_OTHER_FLATRATE)
+from braunschweig.popsim.diary_plan_match import NO_DIARY_CODES
 from braunschweig.popsim.mid.participation import PARTICIPATION_W_ZWECK
 
 logger = logging.getLogger(__name__)
@@ -115,6 +136,8 @@ WORK_W_ZWECK = frozenset(PARTICIPATION_W_ZWECK["work"])
 
 # anzwege1 codes at or above this value are MiD filter codes (803 / 804: diary not covered).
 FILTER_CODE_MIN = 800
+# mobil == 1: the person was mobile on the reporting day (diary_plan_match's own reading).
+MOBILE_CODE = 1
 # Reported clock fields: an hour of 99 (and any value outside 0-23 / minute outside 0-59) is a
 # filter code; hours 24-98 are undocumented and raise.
 ARRIVAL_HOUR_FILTER_CODE = 99
@@ -137,7 +160,7 @@ AGE_BAND_20_29 = (20, 29)
 
 PERSON_COLUMNS = ["H_ID", "P_ID", "P_GEW", "P_TAET", "HP_ALTER"]
 WEEKDAY_COLUMN = "ST_WOTAG"
-BEHAVIOUR_PERSON_COLUMNS = PERSON_COLUMNS + [WEEKDAY_COLUMN, "anzwege1", "P_FKARTE"]
+BEHAVIOUR_PERSON_COLUMNS = PERSON_COLUMNS + [WEEKDAY_COLUMN, "anzwege1", "mobil", "P_FKARTE"]
 STATUS_PERSON_COLUMNS = PERSON_COLUMNS + [WEEKDAY_COLUMN]
 LEG_KEY_COLUMNS = ["H_ID", "P_ID", "W_ZWECK"]
 FIRST_LEG_COLUMNS = ["W_SZS", "W_SZM"]
@@ -349,7 +372,12 @@ def build_distance_mode_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
     n_with_education = len(with_education)
     _log_exclusion("readable start time of the education legs, over the adult students with an "
                    "education leg", len(unreadable_start), n_with_education)
-    diagnostics.update(n_students_with_education_leg=int(n_with_education),
+    # Students without an education leg are outside this table by definition (a student who did
+    # not go to the education place that day has no education trip), counted explicitly.
+    diagnostics.update(n_adult_students=int(len(students)),
+                       n_adult_students_without_education_leg=int(len(students)
+                                                                  - n_with_education),
+                       n_students_with_education_leg=int(n_with_education),
                        n_students_unreadable_start_time=len(unreadable_start))
 
     km = pd.to_numeric(first["wegkm_imp"], errors="coerce")
@@ -471,17 +499,39 @@ def build_behaviour_seed_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
                                                    exclude_rbw_legs=exclude_rbw_legs)
     work_legs, work_leg_diagnostics = _direct_legs(trips, WORK_W_ZWECK, [],
                                                    exclude_rbw_legs=exclude_rbw_legs)
+
+    # A person without a diary of the day has an UNKNOWN day, not an empty one: they leave every
+    # diary-dependent control (students and non-students alike, both universes), as the popsim
+    # seed treats them (item non-response, never "no trip"). Only the season ticket, a fact that
+    # does not depend on the diary, keeps them.
+    students["trip_count"], students_immobile = _trip_counts(students)
+    non_students = non_students.copy()
+    non_students["trip_count"], non_students_immobile = _trip_counts(non_students)
+    student_has_diary = students["trip_count"].notna()
+    non_student_has_diary = non_students["trip_count"].notna().to_numpy()
+    n_students_no_diary = int((~student_has_diary).sum())
+    n_non_students_no_diary = int((~non_student_has_diary).sum())
+    _log_exclusion("diary of the reporting day (anzwege1 0-%d, or 803 with mobil != 1 = a "
+                   "genuine stay-at-home day), adult students" % (FILTER_CODE_MIN - 1),
+                   n_students_no_diary, len(students))
+    _log_exclusion("diary of the reporting day, adult non-students", n_non_students_no_diary,
+                   len(non_students))
+
     has_education = students["pid"].isin(set(education_legs["pid"]))
-    trip_class, trip_diagnostics = _trip_class_labels(students)
-    arrival, arrival_diagnostics = _arrival_labels(students, trips, exclude_rbw_legs)
+    has_work = students["pid"].isin(set(work_legs["pid"]))
+    trip_class = _trip_class_labels(students)
+    arrival, arrival_diagnostics = _arrival_labels(students[student_has_diary.to_numpy()], trips,
+                                                   exclude_rbw_legs)
     season, season_diagnostics = _season_ticket_labels(students)
     labels = {
         "status_x_education_leg": pd.Series(np.where(has_education, "student_edu",
-                                                     "student_noedu"), index=students.index),
+                                                     "student_noedu"),
+                                            index=students.index, dtype=object).where(
+                                                student_has_diary),
         "trip_class": trip_class,
-        "arrival": arrival,
-        "work_leg": pd.Series(np.where(students["pid"].isin(set(work_legs["pid"])),
-                                       "student_work", "student_nowork"), index=students.index),
+        "arrival": arrival.reindex(students.index),
+        "work_leg": pd.Series(np.where(has_work, "student_work", "student_nowork"),
+                              index=students.index, dtype=object).where(student_has_diary),
         "season_ticket": season,
     }
     rows = []
@@ -492,15 +542,19 @@ def build_behaviour_seed_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
         student_weight = base["weight"].to_numpy(dtype=float)
         rows += _behaviour_rows(control, UNIVERSE_STUDENTS, student_labels, student_weight,
                                 base_labels)
-        adult_weight = np.concatenate([non_students["weight"].to_numpy(dtype=float),
-                                       student_weight])
-        adult_labels = np.concatenate([np.full(len(non_students), NOT_STUDENT, dtype=object),
+        other = non_students if control == "season_ticket" else             non_students[non_student_has_diary]
+        adult_weight = np.concatenate([other["weight"].to_numpy(dtype=float), student_weight])
+        adult_labels = np.concatenate([np.full(len(other), NOT_STUDENT, dtype=object),
                                        base_labels])
         rows += _behaviour_rows(control, UNIVERSE_ADULTS, (*student_labels, NOT_STUDENT),
                                 adult_weight, adult_labels)
     table = pd.DataFrame(rows, columns=BEHAVIOUR_COLUMNS)
     diagnostics.update(n_adults=int(len(adults)), n_students=int(len(students)),
-                       **trip_diagnostics, **arrival_diagnostics, **season_diagnostics,
+                       n_students_without_diary=n_students_no_diary,
+                       n_non_students_without_diary=n_non_students_no_diary,
+                       n_students_diary_immobile_zero_trips=int(students_immobile.sum()),
+                       n_non_students_diary_immobile_zero_trips=int(non_students_immobile.sum()),
+                       **arrival_diagnostics, **season_diagnostics,
                        n_education_legs_dropped_rbw=leg_diagnostics["n_legs_dropped_rbw"],
                        n_work_legs_dropped_rbw=work_leg_diagnostics["n_legs_dropped_rbw"])
     logger.info("%s behaviour table: %d rows (%d controls x 2 universes); %d adults, %d adult "
@@ -524,15 +578,26 @@ def _behaviour_rows(control: str, universe_name: str, label_set, weight: np.ndar
     return rows
 
 
-def _trip_class_labels(students: pd.DataFrame) -> tuple[pd.Series, dict]:
-    """Trip-class label per student; NaN for a missing count or a MiD filter code (>= 800)."""
-    count = students["anzwege1"]
-    unreadable = (count.isna() | (count < 0) | (count >= FILTER_CODE_MIN)).to_numpy()
-    label = pd.cut(count.where(~unreadable), TRIP_CLASS_EDGES,
-                   labels=list(CONTROLS["trip_class"])).astype(object)
-    _log_exclusion("trip-class control (anzwege1 readable, no filter code >= %d)"
-                   % FILTER_CODE_MIN, int(unreadable.sum()), len(students))
-    return label, {"n_students_unreadable_trip_count": int(unreadable.sum())}
+def _trip_counts(frame: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """``(trips on the reporting day, genuine stay-at-home flag)``; NaN count = no diary.
+
+    The count is ``anzwege1`` when it is a real count (0 to :data:`FILTER_CODE_MIN` - 1). The
+    no-diary codes (``popsim.diary_plan_match.NO_DIARY_CODES``, 803 / 804) are an UNKNOWN day,
+    except ``803`` with ``mobil != 1``: the person was not mobile, zero trips is what they
+    reported and ``diary_plan_match`` keeps that day (``REASON_KEEP_IMMOBILE``); it counts as 0.
+    """
+    count = frame["anzwege1"]
+    valid = count.notna() & (count >= 0) & (count < FILTER_CODE_MIN)
+    immobile = ((count == NO_DIARY_CODES[0]) & (frame["mobil"] != MOBILE_CODE)).to_numpy()
+    trips_on_day = count.where(valid)
+    trips_on_day[immobile] = 0
+    return trips_on_day, pd.Series(immobile, index=frame.index)
+
+
+def _trip_class_labels(students: pd.DataFrame) -> pd.Series:
+    """Trip-class label per student; NaN for a student without a diary of the day."""
+    return pd.cut(students["trip_count"], TRIP_CLASS_EDGES,
+                  labels=list(CONTROLS["trip_class"])).astype(object)
 
 
 def _arrival_labels(students: pd.DataFrame, trips: pd.DataFrame,

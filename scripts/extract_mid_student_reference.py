@@ -117,7 +117,11 @@ def _status_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool
         _core_weekday_line(),
         "# Base: persons with at least one education leg, by age band %s (HP_ALTER, bounds"
         % [band for band, _, _ in R.STATUS_AGE_BANDS],
-        "#   inclusive; a person without a valid age is in no band, counted).",
+        "#   inclusive; a person without a valid age is in no band, counted). Education leg =",
+        "#   W_ZWECK in %s only: the passive escort leg (W_ZWECK 13) of an escorted child is NOT"
+        % sorted(R.EDUCATION_W_ZWECK),
+        "#   counted (whether the plan realises it as education is a model rule), so the lt20 band",
+        "#   holds children with a directly recorded education trip only.",
         "# Columns: age_band, status, n_unweighted, share (weighted within the age band).",
         _exclusions(diagnostics),
     ]
@@ -165,15 +169,24 @@ def _behaviour_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: b
         "#   readable P_TAET, non-students labelled %s; %s = the adult students alone (student"
         % (L.NOT_STUDENT, L.UNIVERSE_STUDENTS),
         "#   labels renormalised).",
-        "# Definitions: trip class from anzwege1 (right-inclusive edges %s; filter codes >= %d"
-        % (list(L.TRIP_CLASS_EDGES), R.FILTER_CODE_MIN),
-        "#   excluded); arrival = W_AZS of the first education leg by W_SZS then W_SZM (right-",
+        "# Definitions: trip class from the day's trip count anzwege1 (right-inclusive edges %s);"
+        % list(L.TRIP_CLASS_EDGES),
+        "#   arrival = W_AZS of the first education leg by W_SZS then W_SZM (right-",
         "#   inclusive hour edges %s; 99 excluded); flatrate = the deutschlandticket or another"
         % list(L.ARRIVAL_HOUR_EDGES),
         "#   flatrate group of P_FKARTE via popsim.attributes.FKARTE_TO_CATEGORY, item non-response",
         "#   excluded (no imputation: a measurement, not a seed).",
         "# Per-control exclusions: a student leaves only the control whose code is unreadable, in",
         "#   both universes; counted below.",
+        "# LIMITATION (persons without a diary): anzwege1 %s (popsim.diary_plan_match."
+        "NO_DIARY_CODES)" % list(R.NO_DIARY_CODES),
+        "#   is an UNKNOWN day, except 803 with mobil != 1 (not mobile: a genuine day with 0 trips,",
+        "#   as diary_plan_match keeps it). Persons with an unknown day, students AND non-students,",
+        "#   are ABSENT from the four diary-dependent controls status_x_education_leg, trip_class,",
+        "#   arrival and work_leg in BOTH universes (n_students_without_diary,",
+        "#   n_non_students_without_diary below); only season_ticket keeps them. Those shares rest",
+        "#   on this reduced base, while the SrV side has a diary for every person: the comparison",
+        "#   assumes persons without a diary are not a distinct group for these cells.",
         "# Columns: %s; n_effective is the Kish size of the control's base in that universe."
         % ", ".join(L.BEHAVIOUR_COLUMNS),
         _exclusions(diagnostics),
