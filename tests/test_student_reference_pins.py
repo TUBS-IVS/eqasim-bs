@@ -6,7 +6,7 @@ so these tests read them directly (not data-gated). Two kinds of check:
 * invariants that must hold for any correct extraction (row sets, shares in [0, 1], partitions
   summing to 1, NaN where the base is empty, shared label vocabulary of the two surveys);
 * three value pins per file, copied unrounded from the files written by the extraction run of
-  2026-11-25 (code state ``f99b0658``). A pin failing after a deliberate re-extraction means
+  2026-11-25 (code state ``fbb54d76``). A pin failing after a deliberate re-extraction means
   the pin is to be re-copied from the new file together with a new run manifest; it is not a
   reference value, only a guard against an unnoticed change of a committed table.
 """
@@ -127,9 +127,9 @@ def test_mid_status_by_age_partitions_and_pins_2026_11_25():
     sums = frame.groupby("age_band")["share"].sum()
     assert sums.to_numpy() == pytest.approx(np.ones(3), abs=1e-8)
     student = _row(frame, age_band="lt20", status="student")
-    assert student["n_unweighted"] == 205
-    assert student["share"] == pytest.approx(0.007506635344, rel=1e-9)
-    assert _row(frame, age_band="lt20", status="pupil")["share"] == pytest.approx(0.6753854134, rel=1e-9)
+    assert student["n_unweighted"] == 204
+    assert student["share"] == pytest.approx(0.007523271496, rel=1e-9)
+    assert _row(frame, age_band="lt20", status="pupil")["share"] == pytest.approx(0.6755780361, rel=1e-9)
 
 
 def test_mid_distance_mode_partitions_and_pins_2026_11_25():
@@ -141,8 +141,8 @@ def test_mid_distance_mode_partitions_and_pins_2026_11_25():
     assert frame["share_of_all"].sum() == pytest.approx(1.0, abs=1e-8)
     row = _row(frame, distance_band="0_5", mode="walk")
     assert row["n_unweighted"] == 200
-    assert row["share_of_band"] == pytest.approx(0.2957598118, rel=1e-9)
-    assert row["share_of_all"] == pytest.approx(0.153498431, rel=1e-9)
+    assert row["share_of_band"] == pytest.approx(0.2961731434, rel=1e-9)
+    assert row["share_of_all"] == pytest.approx(0.1543911778, rel=1e-9)
 
 
 def test_mid_share_20_29_by_land_rows_and_pins_2026_11_25():
@@ -182,9 +182,9 @@ def test_behaviour_value_pins_2026_11_25():
     assert row["n_effective"] == pytest.approx(198.8957514, rel=1e-9)
     mid = _read(MID, "mid2023_student_behaviour_seed.csv")
     row = _row(mid, control="status_x_education_leg", universe="students", label="student_edu")
-    assert row["n_unweighted"] == 1484
-    assert row["share"] == pytest.approx(0.2959089414, rel=1e-9)
-    assert row["n_effective"] == pytest.approx(1492.351624, rel=1e-9)
+    assert row["n_unweighted"] == 1478
+    assert row["share"] == pytest.approx(0.3046225057, rel=1e-9)
+    assert row["n_effective"] == pytest.approx(1424.609214, rel=1e-9)
 
 
 # ------------------------------------------------------------------ decision tables (artifacts)
@@ -198,15 +198,15 @@ def test_decision_tables_rows_verdicts_and_value_pins_2026_11_25():
     assert len(rule) == 14
     verdicts = rule.groupby("control")["verdict"].agg(lambda v: sorted(set(v)))
     assert verdicts.to_dict() == {
-        "status_x_education_leg": ["build_candidate"],
-        "arrival": ["build_candidate"],
+        "status_x_education_leg": ["comparison_only"],
+        "arrival": ["comparison_only"],
         "trip_class": ["comparison_only"],
         "work_leg": ["comparison_only"],
         "season_ticket": ["comparison_only"],
     }
     assert (rule["rule3_smoke"] == "pending_phase2").all()
     row = _row(rule, control="arrival", label="student_no_education_leg")
-    assert row["difference_in_se"] == pytest.approx(-2.19044799, rel=1e-8)
+    assert row["difference_in_se"] == pytest.approx(-1.936233064, rel=1e-8)
     assert _row(rule, control="trip_class", label="student_trips_0")["srv_share_students"] == pytest.approx(
         0.1784765925, rel=1e-9)
 
