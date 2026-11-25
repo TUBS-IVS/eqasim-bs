@@ -163,8 +163,11 @@ def test_a_mode_without_any_estimate_raises_naming_the_mode():
     df = _trips(_leisure_leg(1, "bicycle", 2202))
     probabilities = _probabilities(marginal={"walk": 0.5})
 
+    random = np.random.RandomState(3)
+
     with pytest.raises(ValueError, match="bicycle"):
-        loops.flag_loops(df, probabilities, np.random.RandomState(3))
+        loops.flag_loops(df, probabilities, random)
+    assert random.random_sample() == np.random.RandomState(3).random_sample()
 
 
 def test_the_same_seed_gives_the_same_flags_whatever_the_row_order():

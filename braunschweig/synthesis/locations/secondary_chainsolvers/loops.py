@@ -287,7 +287,6 @@ def flag_loops(df_trips: pd.DataFrame, probabilities: LoopProbabilities,
         # tt_band itself (not a copy of its edges) bands the validated column, so the cell key
         # is the one the estimate used; it is a per-leg Python call, kept for that reason.
         bands = drawing["travel_time"].map(tt_band)
-        uniform = random.random_sample(len(drawing))
 
         probability = np.empty(len(drawing), dtype=float)
         used_marginal = np.zeros(len(drawing), dtype=bool)
@@ -304,6 +303,9 @@ def flag_loops(df_trips: pd.DataFrame, probabilities: LoopProbabilities,
                     f"[secondary_loops] no loop probability for mode {mode!r}: neither the cell "
                     f"{key} nor a marginal of that mode was estimated (marginal modes: "
                     f"{sorted(probabilities.marginal)}).")
+        # All three input checks above have passed: only now does the call consume its random
+        # numbers (one per drawing leg, in the sorted order of ``drawing``).
+        uniform = random.random_sample(len(drawing))
         drawn_flag = uniform < probability
         flags.loc[drawing.index] = drawn_flag
         by_draw.loc[drawing.index] = drawn_flag
