@@ -582,16 +582,15 @@ def test_estimation_labels_through_the_shared_helper(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_drop_loop_legs_drops_exactly_the_walk_and_bicycle_strolls_and_dog_walks(caplog):
+def test_drop_loop_legs_drops_exactly_the_walk_and_bicycle_strolls_and_dog_walks():
     """A wrong mode set (car 710 dropped) or a wrong code set (706 dropped) changes the kept rows;
-    the per-mode counts are the fallback-transparency contract of the filter."""
+    the per-mode counts are what the stage reports write (fallback transparency)."""
     legs = pd.DataFrame({
         "mode": ["walk", "bicycle", "walk", "car", "walk", "bicycle", "car_passenger", "pt",
                  "walk"],
         "W_ZWD": [710, 711, 706, 710, 701, 2202, 711, 710, 711],
     })
-    with caplog.at_level(logging.INFO, logger=ps.__name__):
-        kept = ps.drop_loop_legs(legs, log_tag="[test]")
-    assert kept.index.tolist() == [2, 3, 4, 5, 6, 7]
+    kept, counts = ps.drop_loop_legs(legs, log_tag="[test]")
     assert kept.equals(legs.loc[[2, 3, 4, 5, 6, 7]])
-    assert "walk 2/4" in caplog.text and "bicycle 1/2" in caplog.text
+    assert counts == {"bicycle": {"legs": 2, "left_out": 1, "kept": 1},
+                      "walk": {"legs": 4, "left_out": 2, "kept": 2}}

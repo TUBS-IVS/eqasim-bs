@@ -1382,7 +1382,7 @@ def _loop_decider_draws(monkeypatch, overrides):
                            monkeypatch, pd.DataFrame(rows))
     decide = sc._build_leisure_subtype_decider(ctx, random_seed=1)
     return ({decide("walk", 600.0) for _ in range(200)},
-            {decide("car", 600.0) for _ in range(200)})
+            {decide("car", 600.0) for _ in range(200)}, decide.loop_legs_left_out)
 
 
 def test_leisure_decider_estimates_without_the_loop_legs_when_the_switch_is_on(monkeypatch):
@@ -1393,12 +1393,16 @@ def test_leisure_decider_estimates_without_the_loop_legs_when_the_switch_is_on(m
     assert loops.LOOP_CODES is purpose_subtype.LOOP_CODES
     assert loops.LOOP_MODES is purpose_subtype.LOOP_MODES
 
-    walk_on, car_on = _loop_decider_draws(monkeypatch, {_KEY_WITHOUT_LOOPS: True})
+    walk_on, car_on, left_out_on = _loop_decider_draws(monkeypatch, {_KEY_WITHOUT_LOOPS: True})
     assert walk_on == {"leisure_visit"}
     assert car_on == {"leisure_local"}
-    walk_off, car_off = _loop_decider_draws(monkeypatch, {_KEY_WITHOUT_LOOPS: False})
+    # The counts the stage writes to the loops block of its report: the leisure legs only.
+    assert left_out_on == {"bicycle": {"legs": 0, "left_out": 0, "kept": 0},
+                           "walk": {"legs": 80, "left_out": 40, "kept": 40}}
+    walk_off, car_off, left_out_off = _loop_decider_draws(monkeypatch, {_KEY_WITHOUT_LOOPS: False})
     assert walk_off == {"leisure_local", "leisure_visit"}
     assert car_off == {"leisure_local"}
+    assert left_out_off is None
 
 
 @pytest.mark.parametrize("missing", ["secondary_leisure_subtype_split",

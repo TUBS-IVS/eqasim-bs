@@ -2263,8 +2263,13 @@ def _rate(count, total):
     return float(count) / total if total else 0.0
 
 
-def _report_loops(context, flag_stats, counts, loop_table):
+def _report_loops(context, flag_stats, counts, loop_table, subtype_estimate_legs_left_out=None):
     """Log the loop counts with rates and write them as the ``loops`` block of the stage report.
+
+    ``subtype_estimate_legs_left_out`` (issue #679): the leisure decider's
+    ``loop_legs_left_out``, per loop mode the MiD leisure legs before the filter, left out and
+    kept, when ``secondary_leisure_estimates_without_loops`` is ON; written as the block's key of
+    that name. None (the switch off) adds no key, so the report is unchanged then.
 
     Each reason a loop is kept on the solver (``loops.KEPT_LOOP_REASONS``) and their sum
     ``kept_total`` are reported as counts and as rates of all flagged loops; the ``kept_total``
@@ -2287,6 +2292,8 @@ def _report_loops(context, flag_stats, counts, loop_table):
            for reason in (*loops.KEPT_LOOP_REASONS, "kept_total")},
         "by_origin": {origin: int(by_origin.get(origin, 0)) for origin in loops.LOOP_ORIGINS},
     }
+    if subtype_estimate_legs_left_out is not None:
+        block["subtype_estimate_legs_left_out"] = subtype_estimate_legs_left_out
     kept_rate = block["kept_total_rate"]
     message = (
         "[braunschweig.secondary_chainsolvers] loops: %d flagged; %d (%.1f%%) placed at the "
@@ -2489,7 +2496,9 @@ def execute(context):
                 ["person_id", "household_id"]],
             df_home=context.stage("synthesis.population.spatial.home.locations"),
             df_work=df_work_raw, df_education=df_education_raw)
-        _report_loops(context, loop_flag_stats, loop_collapse.counts, loop_collapse.loop_table)
+        _report_loops(context, loop_flag_stats, loop_collapse.counts, loop_collapse.loop_table,
+                      subtype_estimate_legs_left_out=getattr(
+                          shared["leisure_subtype_decider"], "loop_legs_left_out", None))
 
     if len(df_convergence):
         print(

@@ -411,22 +411,23 @@ def _build_leisure_unspecified_layer(df: pd.DataFrame) -> dict | None:
     return _build_mode_distributions(unspecified_df)
 
 
-def _require_loop_modes_kept(group_name: str, with_loops: pd.DataFrame,
-                             without_loops: pd.DataFrame) -> None:
+def _require_loop_modes_kept(group_name: str, mode_counts: dict) -> None:
     """Raise when a loop mode's layer of ``group_name`` had legs with the loops and has none without.
 
     Issue #679: without its loop legs such a layer cannot be estimated, and the sampler would
     otherwise quietly use the aggregate ``leisure`` layer for those legs (which still holds the
-    loops). Logs, per loop mode, the legs of the group with and without the loops.
+    loops). ``mode_counts`` is the group's entry of the stage report:
+    ``{mode: {"legs_with_loops": n, "legs_without_loops": n}}``. Logs, per loop mode, the legs of
+    the group with and without the loops.
     """
     from braunschweig.popsim.purpose_subtype import LOOP_MODES
 
     emptied = []
     for mode in sorted(LOOP_MODES):
-        n_with = int((with_loops["mode"] == mode).sum())
-        if not n_with:
+        if mode not in mode_counts:
             continue
-        n_without = int((without_loops["mode"] == mode).sum())
+        n_with = mode_counts[mode]["legs_with_loops"]
+        n_without = mode_counts[mode]["legs_without_loops"]
         logger.info(
             "[popsim.distance_distributions] leisure subtype %s [%s]: %d of %d legs (%.1f%%) are "
             "no loop and build the layer", group_name, mode, n_without, n_with,
@@ -491,7 +492,8 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         weekday_legs_only: bool = False,
         exclude_no_answer_purpose: bool = False,
         max_distance_m: float | None = None,
-        leisure_estimates_without_loops: bool = False) -> dict:
+        leisure_estimates_without_loops: bool = False,
+        report: dict | None = None) -> dict:
     """Build secondary distance distributions from the MiD 2023 Wege survey.
 
     This is the pure computational core, factored out of execute() so that
@@ -667,6 +669,14 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         Inert unless ``leisure_subtype_split`` is True and ``W_ZWD`` is present. Default
         False keeps the output byte-identical; ``configure()`` refuses True without
         ``secondary_leisure_subtype_split`` and ``secondary_loop_zero_displacement``.
+    report:
+        Optional dict this call fills with the counts of the loop-free layers, the content of
+        the stage report ``distance_distributions_report.json`` (written by ``execute()``):
+        ``leisure_subtype_legs_left_out`` (per loop mode, the leisure legs before the filter,
+        left out and kept; ``purpose_subtype.drop_loop_legs``) and
+        ``leisure_subtype_layer_legs`` (per leisure group and mode, ``legs_with_loops`` and
+        ``legs_without_loops``). Filled only when the leisure subtype layers are built without
+        the loops; otherwise left unchanged.
 
     Returns
     -------
@@ -960,9 +970,10 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
             # every leg.
             subtype_df = leisure_df
             if leisure_estimates_without_loops:
-                from braunschweig.popsim.purpose_subtype import drop_loop_legs
-                subtype_df = drop_loop_legs(
+                from braunschweig.popsim.purpose_subtype import LOOP_CODES, drop_loop_legs
+                subtype_df, left_out = drop_loop_legs(
                     leisure_df, log_tag="[popsim.distance_distributions] leisure subtype layers:")
+                layer_counts = {}
             for group_name, codes in leisure_groups.items():
                 group_df = subtype_df[subtype_df["W_ZWD"].isin(codes)]
                 logger.info(
@@ -970,10 +981,19 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
                     group_name, len(group_df),
                 )
                 if leisure_estimates_without_loops:
-                    _require_loop_modes_kept(
-                        group_name, leisure_df[leisure_df["W_ZWD"].isin(codes)], group_df)
+                    with_loops = leisure_df[leisure_df["W_ZWD"].isin(codes)]
+                    layer_counts[group_name] = {
+                        mode: {"legs_with_loops": int((with_loops["mode"] == mode).sum()),
+                               "legs_without_loops": int((group_df["mode"] == mode).sum())}
+                        for mode in sorted(with_loops["mode"].unique())}
+                    # Only a group holding loop codes can lose legs to the filter.
+                    if set(codes) & LOOP_CODES:
+                        _require_loop_modes_kept(group_name, layer_counts[group_name])
                 if len(group_df):
                     out[group_name] = _build_mode_distributions(group_df)
+            if leisure_estimates_without_loops and report is not None:
+                report["leisure_subtype_legs_left_out"] = left_out
+                report["leisure_subtype_layer_legs"] = layer_counts
 
         # --- Step 8b: the fifth leisure subtype (issue #373, ADR-0115). ------
         # Deliberately OUTSIDE the W_ZWD branch above: this group is defined by
@@ -1269,7 +1289,11 @@ def execute(context):
     logger.info(
         "[popsim.distance_distributions] loaded %d MiD trips", len(mid_wege)
     )
-    return run(
+    # Stage report (coding standards "Validation and quality control"): the legs the loop-free
+    # leisure subtype layers left out. Written only while the switch is on, so the OFF path leaves
+    # the stage folder exactly as before.
+    report = {} if leisure_estimates_without_loops else None
+    distributions = run(
         mid_wege,
         by_purpose=by_purpose,
         shop_daily_split=shop_daily_split,
@@ -1290,4 +1314,24 @@ def execute(context):
         exclude_no_answer_purpose=exclude_no_answer_purpose,
         max_distance_m=max_distance_m,
         leisure_estimates_without_loops=leisure_estimates_without_loops,
+        report=report,
     )
+    if report is not None:
+        _write_report(context.path(), report)
+    return distributions
+
+
+#: File name of the stage report, in the stage folder (``context.path()``).
+REPORT_FILE = "distance_distributions_report.json"
+
+
+def _write_report(stage_path, report: dict) -> None:
+    """Write ``report`` (the dict ``run()`` filled) as :data:`REPORT_FILE` into ``stage_path``."""
+    import json
+    import os
+
+    path = os.path.join(stage_path, REPORT_FILE)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"secondary_leisure_estimates_without_loops": True, **report}, handle,
+                  indent=2, sort_keys=True)
+    logger.info("[popsim.distance_distributions] wrote %s", path)

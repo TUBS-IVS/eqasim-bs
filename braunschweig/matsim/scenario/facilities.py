@@ -75,8 +75,9 @@ _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon", "matsim.wri
 logger = logging.getLogger(__name__)
 
 #: Config key of the loop placement (eqasim-bs#679). Spelled out rather than imported: its owner,
-#: ``braunschweig.synthesis.locations.secondary_chainsolvers.loops.KEY_ENABLED``, would pull the
-#: whole secondary location package into this stage's imports.
+#: ``braunschweig.popsim.stage.config_keys.KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT`` (re-exported as
+#: ``secondary_chainsolvers.loops.KEY_ENABLED``), lives in the popsim stage package, whose
+#: ``__init__`` an import would load into this stage (measured 2026-11-25: about 370 modules).
 #: ``tests/test_secondary_loops_stage.py`` drives this stage through the owner's constant.
 KEY_LOOP_ZERO_DISPLACEMENT = "secondary_loop_zero_displacement"
 

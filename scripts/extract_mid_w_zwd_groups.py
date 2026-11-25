@@ -52,13 +52,13 @@ from braunschweig.calibration.srv_fine_purpose import QUANTILE_PROBABILITIES  # 
 from braunschweig.popsim.diary_facts import WEGKM_CODE_MIN  # noqa: E402
 from braunschweig.popsim.mid.csv_format import detect_csv_separator  # noqa: E402
 from braunschweig.popsim.purpose_subtype import (  # noqa: E402
-    SubtypeSpec, code_coverage_guard, label_legs, leisure_spec, other_errand_spec,
+    LOOP_CODES, LOOP_MODES, SubtypeSpec, code_coverage_guard, drop_loop_legs, label_legs,
+    leisure_spec, other_errand_spec,
 )
 from braunschweig.popsim.shop_subtype import (  # noqa: E402
     SHOP_DAILY_W_ZWD, SHOP_DETAIL_MISSING, SHOP_NONDAILY_W_ZWD,
 )
-from braunschweig.popsim.trips import weekday_diary_leg_mask  # noqa: E402
-from braunschweig.synthesis.locations.secondary_chainsolvers.loops import LOOP_CODES  # noqa: E402
+from braunschweig.popsim.trips import map_mode, weekday_diary_leg_mask  # noqa: E402
 from scripts.extract_mid_w_zweck_hwzweck1 import (  # noqa: E402
     KERNWO_WEEKDAY_CODES, RBW_SUMMARY_LEG_CODE,
 )
@@ -67,12 +67,18 @@ RAW_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig" / "popsim" / "mid20
 OUT_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig" / "mid"
 WEGE_FILE = "MiD2023_Wege.csv"
 MID_GROUP_TABLE = "mid2023_w_zwd_group_reference.csv"
-#: The variant with the loop legs (``loops.LOOP_CODES``) left out of the leg universe, written by
-#: ``--without-loops`` (issue #679). The default run never writes it and never changes
-#: :data:`MID_GROUP_TABLE`.
+#: The variant with the loop legs left out of the leg universe, written by ``--without-loops``
+#: (issue #679): the model's own rule, ``purpose_subtype.drop_loop_legs`` (W_ZWD in
+#: ``LOOP_CODES`` on foot or by bicycle, ``LOOP_MODES``). The default run never writes it and never
+#: changes :data:`MID_GROUP_TABLE`.
 MID_GROUP_TABLE_WITHOUT_LOOPS = "mid2023_w_zwd_group_reference_without_loops.csv"
 
 REQUIRED_COLUMNS = ["W_ZWECK", "W_ZWD", "W_GEW", "W_RBW", "kernwo", "wegkm_imp"]
+#: Read only by ``--without-loops``: the MiD imputed main mode, mapped by ``trips.map_mode`` (the
+#: mapping the model's estimators use) so the loop rule can test the mode. Not in
+#: :data:`REQUIRED_COLUMNS`, so the default run reads, coerces and reports exactly what it did
+#: before.
+LOOP_RULE_COLUMNS = ["hvm_imp"]
 GROUP_COLUMNS = ["purpose", "spec_variant", "group", "n_unweighted", "share_within_purpose",
                  "km_p25", "km_p50", "km_p75", "n_missing_distance"]
 
@@ -220,12 +226,16 @@ def build_group_reference(wege: pd.DataFrame, *, leave_out_loops: bool = False) 
     wege : DataFrame
         Raw-shaped MiD Wege frame carrying :data:`REQUIRED_COLUMNS`.
     leave_out_loops : bool
-        When true, the legs whose ``W_ZWD`` is in :data:`LOOP_CODES` (strolls, dog walks) leave
-        the leg universe after the weekday filter, so every block's shares are measured on the
-        non-loop legs only (issue #679: a comparison with a model that places loops without a
-        leg length must not count them on the survey side). The count is logged and written to
-        the diagnostics as ``n_loop_legs_left_out``; with false (the default) nothing changes,
-        diagnostics included.
+        When true, the loop legs leave the leg universe after the weekday filter, by the model's
+        own rule ``purpose_subtype.drop_loop_legs`` (``W_ZWD`` in :data:`LOOP_CODES`, a stroll or
+        dog walk, on foot or by bicycle, :data:`LOOP_MODES`; the mode is ``trips.map_mode`` of
+        ``hvm_imp``, which the frame must then carry), so every block's shares are measured on
+        the legs the model still places (issue #679: a comparison with a model that places loops
+        without a leg length must not count them on the survey side). A car leg with 710/711
+        stays, as in the model. The counts go to the diagnostics: ``n_loop_legs_left_out``
+        (total), ``n_loop_legs_left_out_by_mode`` (per loop mode, the weekday legs of the mode,
+        left out and kept) and ``n_legs_after_loop_removal``; with false (the default) nothing
+        changes, diagnostics included.
 
     Returns
     -------
@@ -249,22 +259,26 @@ def build_group_reference(wege: pd.DataFrame, *, leave_out_loops: bool = False) 
         raise ValueError("%s MiD Wege table is missing required column(s) %s" % (_LOG_TAG, missing))
     filtered, universe_diagnostics = filter_weekday_legs(wege)
     if leave_out_loops:
-        is_loop = filtered["W_ZWD"].isin(LOOP_CODES)
-        n_loop = int(is_loop.sum())
-        logger.info("%s loops left out: %d/%d weekday legs (%.2f%%, W_GEW share %.2f%%) have W_ZWD "
-                    "in %s; by W_ZWECK %s", _LOG_TAG, n_loop, len(filtered),
-                    100.0 * n_loop / len(filtered),
-                    100.0 * float(filtered.loc[is_loop, "W_GEW"].sum()
-                                  / filtered["W_GEW"].sum()),
-                    sorted(LOOP_CODES), filtered.loc[is_loop, "W_ZWECK"].value_counts().to_dict())
+        missing_rule = [column for column in LOOP_RULE_COLUMNS if column not in filtered.columns]
+        if missing_rule:
+            raise ValueError("%s leaving the loops out needs column(s) %s (the mode of the loop "
+                             "rule)" % (_LOG_TAG, missing_rule))
+        n_before = len(filtered)
+        kept, left_out_by_mode = drop_loop_legs(map_mode(filtered), log_tag=_LOG_TAG)
+        n_loop = n_before - len(kept)
+        logger.info("%s loops left out: %d/%d weekday legs (%.2f%%) by the model's rule (W_ZWD in "
+                    "%s by %s); W_GEW share %.2f%%", _LOG_TAG, n_loop, n_before,
+                    100.0 * n_loop / n_before, sorted(LOOP_CODES), sorted(LOOP_MODES),
+                    100.0 * (1.0 - float(kept["W_GEW"].sum() / filtered["W_GEW"].sum())))
         if n_loop == 0:
             # Nothing to leave out almost always means a code or column mismatch, not a delivery
             # without a single stroll.
-            raise ValueError("%s no leg carries a loop code %s; leaving loops out would change "
-                             "nothing, which points to a code or column mismatch."
-                             % (_LOG_TAG, sorted(LOOP_CODES)))
-        filtered = filtered[~is_loop]
+            raise ValueError("%s no leg on foot or by bicycle carries a loop code %s; leaving "
+                             "loops out would change nothing, which points to a code or column "
+                             "mismatch." % (_LOG_TAG, sorted(LOOP_CODES)))
+        filtered = kept.drop(columns="mode")
         universe_diagnostics = dict(universe_diagnostics, n_loop_legs_left_out=n_loop,
+                                    n_loop_legs_left_out_by_mode=left_out_by_mode,
                                     n_legs_after_loop_removal=int(len(filtered)))
 
     rows, diagnostics = [], dict(universe_diagnostics)
@@ -418,15 +432,20 @@ def _header(table: pd.DataFrame, diagnostics: dict, source_commit: str,
     for variant in SPEC_VARIANTS:
         lines += _comment_paragraph("'%s' -- %s" % (variant, SPEC_VARIANT_DESCRIPTIONS[variant]))
     if "n_loop_legs_left_out" in diagnostics:
-        lines += [
-            "# Loops left out (issue #679): legs whose W_ZWD is in %s (loops.LOOP_CODES, imported)"
-            % sorted(LOOP_CODES),
-            "#   are removed from the universe after the weekday filter, so every share and",
-            "#   percentile below is measured on the non-loop legs only. Purpose: compare a model",
-            "#   whose loops have no leg length with the survey without them. The default table",
-            "#   %s keeps the loops; n_loop_legs_left_out=%d."
-            % (MID_GROUP_TABLE, diagnostics["n_loop_legs_left_out"]),
-        ]
+        lines += _comment_paragraph(
+            "Loops left out (issue #679), by the model's own rule purpose_subtype.drop_loop_legs: "
+            "a leg whose W_ZWD is in %s (LOOP_CODES) and whose mode (trips.map_mode of hvm_imp) "
+            "is in %s (LOOP_MODES) is removed from the universe after the weekday filter; a car "
+            "leg with those codes stays, as in the model. Every share and percentile below is "
+            "measured on the remaining legs. Purpose: compare a model whose loops have no leg "
+            "length with the survey without them. The default table %s keeps the loops; "
+            "n_loop_legs_left_out=%d (%s), n_legs_after_loop_removal=%d."
+            % (sorted(LOOP_CODES), sorted(LOOP_MODES), MID_GROUP_TABLE,
+               diagnostics["n_loop_legs_left_out"],
+               ", ".join("%s %d of %d weekday legs" % (mode, count["left_out"], count["legs"])
+                         for mode, count in diagnostics["n_loop_legs_left_out_by_mode"].items()),
+               diagnostics["n_legs_after_loop_removal"]),
+            indent="# ", hanging="#   ")
     # In the loop-free variant n_legs_after_weekday_rbw is the universe BEFORE the loop removal, so
     # the sentence that names the universe of every count below must name the smaller one.
     if "n_legs_after_loop_removal" in diagnostics:
@@ -506,8 +525,9 @@ def main(argv=None) -> int:
     parser.add_argument("--source-commit", required=True,
                         help="Git commit hash of the code state, recorded in the header.")
     parser.add_argument("--without-loops", action="store_true",
-                        help="Leave the loop legs (W_ZWD in loops.LOOP_CODES: strolls, dog walks) "
-                             "out of the leg universe and write %s INSTEAD of %s (issue #679)."
+                        help="Leave the loop legs (purpose_subtype.drop_loop_legs: W_ZWD in "
+                             "LOOP_CODES, strolls and dog walks, on foot or by bicycle) out of "
+                             "the leg universe and write %s INSTEAD of %s (issue #679)."
                              % (MID_GROUP_TABLE_WITHOUT_LOOPS, MID_GROUP_TABLE))
     args = parser.parse_args(argv)
 
@@ -523,7 +543,12 @@ def main(argv=None) -> int:
     if missing:
         raise RuntimeError("[extract_mid_w_zwd_groups] %s is missing required column(s) %s"
                            % (wege_path, missing))
-    wege = pd.read_csv(wege_path, sep=separator, usecols=REQUIRED_COLUMNS, low_memory=False)
+    columns = REQUIRED_COLUMNS + (LOOP_RULE_COLUMNS if args.without_loops else [])
+    missing_rule = [column for column in columns if column not in header]  # loop rule columns
+    if missing_rule:
+        raise RuntimeError("[extract_mid_w_zwd_groups] %s is missing column(s) %s"
+                           % (wege_path, missing_rule))
+    wege = pd.read_csv(wege_path, sep=separator, usecols=columns, low_memory=False)
     logger.info("%s read %d legs from %s", _LOG_TAG, len(wege), wege_path)
 
     table, diagnostics = build_group_reference(wege, leave_out_loops=args.without_loops)

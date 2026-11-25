@@ -98,7 +98,8 @@ config:
   # Leaves those loop legs (710/711 on foot or by bicycle) out of the leisure subtype draw
   # P(subtype | mode, travel time) and of the leisure subtype distance layers, so both describe
   # the leisure legs the model still places (issue #679). Requires
-  # secondary_leisure_subtype_split and secondary_loop_zero_displacement. ADR-0207; rule: docs/codebase/notes/leisure-loops.md. Defaults False in code; false -> today's
+  # secondary_leisure_subtype_split and secondary_loop_zero_displacement. ADR-0207;
+  # rule: docs/codebase/notes/leisure-loops.md. Defaults False in code; false -> today's
   # estimates (with the loops).
   secondary_leisure_estimates_without_loops: true
   # Places leisure_visit legs on residential building potential (pot_visit)

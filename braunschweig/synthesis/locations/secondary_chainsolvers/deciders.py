@@ -94,6 +94,11 @@ class _CountedDecider:
         self._decide = decide
         self.n_legs = 0
         self.n_marginal_fallback = 0
+        #: Per loop mode, the leisure legs the estimate left out (``purpose_subtype.drop_loop_legs``
+        #: counts) when the leisure decider was estimated without the loop legs (issue #679);
+        #: None for every other decider and with the switch off. The stage writes it to the
+        #: ``loops`` block of its report.
+        self.loop_legs_left_out = None
 
     def __call__(self, mode: str, travel_time_s: float) -> str:
         outcome, used_marginal = self._decide(mode, travel_time_s)
@@ -347,8 +352,9 @@ def _build_leisure_subtype_decider(context, random_seed: int,
     # min_obs, or disappears, falls to the marginal and is counted by the estimate's thin-cell
     # log and by _CountedDecider's fallback count.
     without_loops = bool(context.config(KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS))
+    loop_legs_left_out = None
     if without_loops:
-        mid_wege = drop_loop_legs(
+        mid_wege, loop_legs_left_out = drop_loop_legs(
             mid_wege[mid_wege["W_ZWECK"].isin(spec.zweck_values)],
             log_tag="[braunschweig.secondary_chainsolvers] leisure subtype:")
 
@@ -369,7 +375,9 @@ def _build_leisure_subtype_decider(context, random_seed: int,
         probs = marginal if cell is None else cell
         return _inverse_cdf_choice(probs, group_names, rng.random_sample()), cell is None
 
-    return _CountedDecider(decide)
+    counted = _CountedDecider(decide)
+    counted.loop_legs_left_out = loop_legs_left_out
+    return counted
 
 
 def _build_other_subtype_decider(context, random_seed: int,

@@ -451,6 +451,27 @@ def test_the_report_gives_loops_by_label_by_draw_and_by_origin(tmp_path, stage_d
                 if record.levelno >= logging.WARNING and "kept" in record.getMessage()]
 
 
+@pytest.mark.parametrize("left_out", [None, {"bicycle": {"legs": 3, "left_out": 1, "kept": 2},
+                                              "walk": {"legs": 9, "left_out": 4, "kept": 5}}])
+def test_the_report_carries_the_leisure_legs_the_subtype_estimate_left_out(
+        tmp_path, stage_doubles, monkeypatch, left_out):
+    """The leisure decider's left-out counts (issue #679; computed and checked in
+    tests/test_secondary_chainsolvers_subtypes.py) reach the loops block; without them (the switch
+    off) the block has no such key."""
+    class _Decider:
+        loop_legs_left_out = left_out
+
+    monkeypatch.setattr(sc, "_build_leisure_subtype_decider",
+                        lambda context, random_seed, mid_wege_loader: _Decider())
+    # The solve stand-in draws no subtype, so the per-subtype draw-rate log has nothing to read.
+    monkeypatch.setattr(sc, "_log_subtype_draw_rates", lambda *args, **kwargs: None)
+    _run(tmp_path, TRIPS_WITH_LOOPS, enabled=True)
+
+    report = json.loads((tmp_path / REPORT_FILENAME).read_text(encoding="utf-8"))["loops"]
+    assert report.get("subtype_estimate_legs_left_out") == left_out
+    assert ("subtype_estimate_legs_left_out" in report) == (left_out is not None)
+
+
 def test_the_report_gives_the_share_of_draws_from_the_mode_marginal(tmp_path, stage_doubles):
     # Both MiD cells hold 30 legs: with min_obs 31 neither has its own estimate, so person 3's
     # walk without a detail code (the one draw) takes the walk marginal; bicycle has no draw.

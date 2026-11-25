@@ -646,6 +646,48 @@ def test_leisure_local_layer_leaves_out_the_walk_and_bicycle_loops():
         assert _serialise(on[key]) == _serialise(off[key]), key
 
 
+@pytest.mark.parametrize("switch", [True, False])
+def test_execute_reports_the_legs_left_out_only_while_the_switch_is_on(monkeypatch, tmp_path,
+                                                                        switch):
+    """The stage report holds, per loop mode, the leisure legs the filter saw and left out, and
+    per leisure group and mode the layer's legs with and without the loops; with the switch off
+    the stage folder stays empty (today's state)."""
+    from braunschweig.popsim import distance_distributions as dd
+    from braunschweig.popsim.mid import donor
+    from braunschweig.popsim.stage import config_keys as keys
+
+    monkeypatch.setattr(donor, "load_mid_wege", lambda mid_dir: _loop_wege())
+    values = {"braunschweig.population.popsim.mid_dir": "unused",
+              "secondary_distance_by_purpose": True, "secondary_leisure_subtype_split": True,
+              keys.KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS: switch,
+              keys.KEY_PASSIVE_PAIR_MAX_GAP_MINUTES: 10.0,
+              keys.KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS: 18}
+
+    class _Context:
+        def config(self, key):
+            return values.get(key, False)
+
+        def path(self):
+            return str(tmp_path)
+
+    dd.execute(_Context())
+    if not switch:
+        assert list(tmp_path.iterdir()) == []
+        return
+    report = json.loads((tmp_path / dd.REPORT_FILE).read_text(encoding="utf-8"))
+    # walk: 710, 711, 701, 706 (5 legs each); bicycle: 713, 711; car legs are no loop mode.
+    assert report["leisure_subtype_legs_left_out"] == {
+        "bicycle": {"legs": 10, "left_out": 5, "kept": 5},
+        "walk": {"legs": 20, "left_out": 10, "kept": 10}}
+    layers = report["leisure_subtype_layer_legs"]
+    assert layers["leisure_local"] == {
+        "bicycle": {"legs_with_loops": 10, "legs_without_loops": 5},
+        "car": {"legs_with_loops": 10, "legs_without_loops": 10},
+        "walk": {"legs_with_loops": 15, "legs_without_loops": 5}}
+    assert layers["leisure_visit"] == {"walk": {"legs_with_loops": 5, "legs_without_loops": 5}}
+    assert layers["leisure_activity"] == layers["leisure_excursion"] == {}
+
+
 def test_leisure_local_layer_raises_when_a_loop_mode_keeps_no_leg():
     """All walk leisure_local legs are loops: the walk layer cannot be estimated without them, and
     falling back to the with-loops layer (or to the aggregate) silently is not allowed."""
