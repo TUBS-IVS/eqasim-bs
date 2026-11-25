@@ -4,7 +4,8 @@ repository:
   commit: 7a41f0ba
   branch: fix/i678-mode-choice-reach
   notes: >-
-    The probes read the products of the run prod100_20261031, which was produced by code 7a41f0ba, i.e. before #570 to
+    commit is the code that PRODUCED the run prod100_20261031 (the measured state), not the code of this branch; branch is
+    only the branch that commits this record. The probes read the products of the run prod100_20261031, which was produced by code 7a41f0ba, i.e. before #570 to
     #589. The probe scripts are standalone, read-only and were not run from a repository checkout (they live in
     scratch on felix, ~/scratch_longwalk); the branch named here is the one that commits this record.
 configuration:
@@ -97,7 +98,11 @@ validation:
 - metric: walk trips over 5 km straight line before the simulation against the diaries (reporting-day trips joined to the written trips)
   reference: 'the survey diary distance of the same trips (wegkm_imp divided by the detour factor) and the diary duration; survey data used as the comparison, NOT a validated target'
   result: >-
-    Over 946,889 persons and 3,428,756 trips (trips at an outside activity, 106,646, left out; a different universe from
+    All figures below are all-trips figures of distance_output.txt (part 2: every person and trip of the reporting-day
+    table, all routing and trip types, not only frozen tours); only the statement that trips at an outside activity are
+    left out is a restriction. Part 1 of the same file (the distance layers: for each purpose and mode, the travel-time
+    bin that a 150 min walk or a 120 min pt diary trip falls into, with its distance quantiles) is context for how the
+    diary distances are binned, not a measured quantity of this record. Over 946,889 persons and 3,428,756 trips (trips at an outside activity, 106,646, left out; a different universe from
     the resident rows above): walk trips with a realised straight line over 5 km 85,234 of 743,744 (11.46 %) for 58,314
     persons; of them the diary distance has a median of 0.75 km and 79.0 % are 2 km or shorter in the diary. Walk trips
     over 5 km in the diary itself: 18,052. Bicycle trips over 20 km realised: 11,082 of 396,274 (2.80 %), over 20 km in
