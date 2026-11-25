@@ -503,6 +503,8 @@ _EXECUTE_CONFIG = {
     "braunschweig.chainsolvers.worker_memory_gb": 0.86,
     "braunschweig.chainsolvers.shards": sc.DEFAULT_CHAIN_SHARDS,
     "braunschweig.chainsolvers.shard_attempts": sc.DEFAULT_SHARD_ATTEMPTS,
+    # Stroll and dog-walk placement (#679) OFF: no loop is flagged, no MiD table is read.
+    "secondary_loop_zero_displacement": False,
 }
 
 

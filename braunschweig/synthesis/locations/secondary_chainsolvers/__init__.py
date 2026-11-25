@@ -41,6 +41,7 @@ module path keep working unchanged. The submodules:
     deciders           per-leg subtype / escort location deciders
     srv_location_types SrV-2023 category vocabulary, loader, decider
     escort             escort household-link rewrite + distance factors
+    loops              stroll / dog-walk loops: flag, collapse before, restore after the solve
     plans              plans-DF construction (the per-leg loop)
     fallback           rda / random fallback placement
     parallel_solving   person-sharded parallel solve
@@ -54,6 +55,7 @@ change devalidates the cached stage output exactly like an edit here.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from pathlib import Path
@@ -125,6 +127,7 @@ from . import (
     escort,
     fallback,
     inverse_cdf,
+    loops,
     parallel_solving,
     plans,
     pool_protection,
@@ -331,6 +334,7 @@ _HELPER_MODULES: Tuple[Any, ...] = (
     escort_links,
     fallback,
     inverse_cdf,
+    loops,
     parallel_solving,
     passive_joint_links,
     plans,
@@ -391,6 +395,13 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "synthesis.population.matched",
     "synthesis.population.spatial.secondary.components",
     "synthesis.population.spatial.secondary.rda",
+    # The loop estimate (loops.estimate_loop_probabilities, #679) derives the MiD preceding
+    # purpose with braunschweig.popsim.distance_distributions._build_preceding_purpose, so that
+    # module and the modules it imports are now part of this stage's import closure.
+    "braunschweig.constants",
+    "braunschweig.popsim.diary_facts",
+    "braunschweig.popsim.distance_distributions",
+    "synthesis.population.spatial.secondary.distance_distributions",
 )
 
 
@@ -754,13 +765,22 @@ def configure(context):
     context.config("escort_distance_factors", DEFAULT_ESCORT_DISTANCE_FACTORS)
 
     # MiD Wege directory: only consumed (and only declared) when at least one
-    # subtype split is ON, so non-real configs that leave all three flags off
-    # never require the local-only MiD delivery.
+    # subtype split or the loop placement below is ON, so non-real configs that
+    # leave all four flags off never require the local-only MiD delivery.
     shop_daily_split = context.config("secondary_shop_daily_split")
     # leisure_subtype_split is already bound above (captured where it is declared,
     # for the leisure_unspecified_subtype guard).
     other_subtype_split = context.config("secondary_other_subtype_split")
-    if shop_daily_split or leisure_subtype_split or other_subtype_split:
+    # Strolls and dog walks (issue #679): ON places a loop activity at the place of the
+    # activity it starts from (loops.collapse_loops / loops.restore_loops); its loop
+    # probability for legs without a detail code is estimated on the MiD Wege table with
+    # secondary_distance_min_obs, KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY and
+    # KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS (all declared above). Code default False: no
+    # loop is flagged, no MiD table is read, no column or report is added (byte-identical
+    # OFF path); the production value is set in configs/base_bs.yml. Declared
+    # unconditionally, like the split flags.
+    loop_zero_displacement = context.config(loops.KEY_ENABLED, False)
+    if shop_daily_split or leisure_subtype_split or other_subtype_split or loop_zero_displacement:
         context.config("braunschweig.population.popsim.mid_dir")
 
     # Residential ``pot_visit`` placement for leisure_visit legs (Task 5,
@@ -1470,12 +1490,16 @@ def _passive_joint_anchor_summary(n_linked_children, anchor_stats) -> str:
     )
 
 
-def _build_shared_solve_state(context, crs):
+def _build_shared_solve_state(context, crs, mid_wege_loader=None):
     """Everything one solver pass needs that does not depend on WHICH persons it solves.
 
     Built exactly once per stage execution so that two passes (issue #385) share the same
     candidate set, deciders, distributions, worker settings and RNG. Returns a dict; the
     key names are the local variable names execute() used before the extraction.
+
+    ``mid_wege_loader`` is the stage's one ``_shared_mid_wege_loader`` when execute() has
+    already used it (the loop estimate of #679), so the MiD table is read once per run;
+    None builds a fresh one.
 
     Nothing built here consumes the shared ``RandomState``, so building the candidate
     frame / locations_df / scorer spec here -- ahead of the first pass instead of after
@@ -1523,7 +1547,8 @@ def _build_shared_solve_state(context, crs):
     # probability-estimation logging happens exactly once, up front. The three share one
     # lazy MiD Wege loader, so the CSV is read once, not once per builder (audit 2026-11
     # package H, finding P5a-F7).
-    mid_wege_loader = _shared_mid_wege_loader()
+    if mid_wege_loader is None:
+        mid_wege_loader = _shared_mid_wege_loader()
     shop_daily_split = bool(context.config("secondary_shop_daily_split"))
     shop_subtype_decider = _build_shop_subtype_decider(
         context, random_seed, mid_wege_loader=mid_wege_loader)
@@ -1533,7 +1558,8 @@ def _build_shared_solve_state(context, crs):
     other_subtype_split = bool(context.config("secondary_other_subtype_split"))
     other_subtype_decider = _build_other_subtype_decider(
         context, random_seed, mid_wege_loader=mid_wege_loader)
-    del mid_wege_loader  # release the MiD frame before the solve
+    # Release the MiD frame before the solve (execute() drops its own reference as well).
+    del mid_wege_loader
     escort_purpose_on = bool(context.config("escort_purpose"))
     escort_location_decider = _build_escort_location_decider(context, random_seed)
     leisure_visit_building_potential = bool(context.config("leisure_visit_building_potential"))
@@ -2043,6 +2069,144 @@ def _compose_two_pass(df_trips, df_primary, escort_activity_anchors, links, shar
     return df_locations, df_convergence, [report_1, report_2], anchor_stats
 
 
+#: Stage report in the stage directory (``context.path()``), written only while
+#: ``secondary_loop_zero_displacement`` is ON (issue #679): with the switch off the stage directory
+#: stays byte-identical to the pre-feature stage.
+STAGE_REPORT_FILENAME = "secondary_locations_report.json"
+
+
+def _flag_loop_trips(context, df_trips, mid_wege_loader):
+    """Flag the trips that lead into a stroll or dog walk (issue #679, ``loops.flag_loops``).
+
+    Runs on the ORIGINAL trips, before any rewrite of this stage. The probability for legs without
+    a detail code is estimated on the MiD Wege table of ``mid_wege_loader`` (the stage's shared
+    loader, so the table is read once) in the universe of the leisure subtype decider: the same
+    ``secondary_distance_min_obs``, weekday restriction and codeplan sentinels. The draw has its
+    own stream, ``random_seed + loops.LOOP_SEED_OFFSET``, so it consumes nothing of the solver's
+    stream. Returns ``(is_loop, flag_stats)`` as ``flag_loops`` does.
+    """
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
+    )
+    probabilities = loops.estimate_loop_probabilities(
+        mid_wege_loader(context.config("braunschweig.population.popsim.mid_dir")),
+        min_obs=int(context.config("secondary_distance_min_obs")),
+        weekday_only=bool(context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY)),
+        codeplan_sentinels=bool(context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS)))
+    random = np.random.RandomState(int(context.config("random_seed")) + loops.LOOP_SEED_OFFSET)
+    return loops.flag_loops(df_trips, probabilities, random)
+
+
+def _persons_with_anchored_activities(activity_anchors, linked_location_rows,
+                                      portal_location_rows, links) -> set:
+    """Persons with an activity that this stage fixes or links by its activity index.
+
+    The keys of ``activity_anchors`` (escort links and portal gates), the persons of the #201
+    linked escort rows and of the #442 portal rows, and BOTH sides (child and adult) of every
+    #385 passive joint link. ``loops.collapse_loops`` renumbers activity indices, so these
+    persons keep their loops (design spec section 3, non-goals).
+    """
+    persons = set()
+    if activity_anchors:
+        persons.update(person_id for person_id, _activity_index in activity_anchors)
+    for rows in (linked_location_rows, portal_location_rows):
+        if rows is not None:
+            persons.update(rows["person_id"].tolist())
+    if links is not None:
+        persons.update(links["child_person_id"].tolist())
+        persons.update(links["adult_person_id"].tolist())
+    return persons
+
+
+def _collapse_loops_of_eligible_persons(df_trips, df_trips_original, is_loop, anchored_persons):
+    """Take the loops of the eligible persons out of ``df_trips`` (issue #679).
+
+    Eligible: a person with at least one flagged loop and no anchored or linked activity.
+    ``df_trips`` is the trips table after the #201 escort rewrite (same index as
+    ``df_trips_original``, on which ``is_loop`` was computed). Returns ``(collapsed trips,
+    index_map, loop_table, counts)``; ``counts`` holds what the stage report needs.
+
+    Fails fast (``ValueError``) when a collapsed person has an anchored or linked activity: the
+    anchors and links keep their original activity indices, which the collapse would shift.
+    """
+    loop_persons = df_trips_original.loc[is_loop, "person_id"]
+    kept = loop_persons.isin(anchored_persons)
+    eligible = set(loop_persons[~kept].unique().tolist())
+    collapsed, index_map, loop_table = loops.collapse_loops(df_trips, is_loop, eligible)
+
+    touched = set(index_map["person_id"].unique().tolist()) & anchored_persons
+    if touched:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] loops were collapsed for persons with an "
+            "anchored or linked activity (escort link, portal stay or passive joint link), whose "
+            "activity indices must not move; first person_ids "
+            f"{sorted(touched)[:5]}.")
+    if len(loop_table) != int((~kept).sum()):
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {int((~kept).sum())} loops of eligible "
+            f"persons were flagged but {len(loop_table)} were collapsed.")
+
+    # Persons left without a secondary activity: every activity of their collapsed chain is a
+    # fixed one (home, work, education, ...), or they have no trip left at all.
+    fixed = _secondary_problems.FIXED_PURPOSES
+    collapsed_persons = set(index_map["person_id"].unique().tolist())
+    of_collapsed = collapsed[collapsed["person_id"].isin(collapsed_persons)]
+    has_secondary = (~of_collapsed["preceding_purpose"].isin(fixed)
+                     | ~of_collapsed["following_purpose"].isin(fixed))
+    with_secondary = set(of_collapsed.loc[has_secondary, "person_id"].unique().tolist())
+    counts = {
+        "loops": int(len(loop_persons)),
+        "kept_person_has_anchored_activity": int(kept.sum()),
+        "collapsed": int(len(loop_table)),
+        "persons_collapsed": len(collapsed_persons),
+        "persons_without_secondary_activity": len(collapsed_persons - with_secondary),
+    }
+    return collapsed, index_map, loop_table, counts
+
+
+def _rate(count, total):
+    return float(count) / total if total else 0.0
+
+
+def _report_loops(context, flag_stats, counts, loop_table):
+    """Log the loop counts with rates and write them as the ``loops`` block of the stage report.
+
+    The kept share (loops of persons with an anchored or linked activity, which keep today's
+    placement) is a WARNING above ``FALLBACK_WARN_RATE``; the marginal-draw share is logged and
+    warned by ``loops.flag_loops`` already and only reported here.
+    """
+    by_origin = loop_table["origin_purpose"].value_counts()
+    block = {
+        "enabled": True,
+        "flags": flag_stats,
+        **counts,
+        "kept_person_has_anchored_activity_rate": _rate(
+            counts["kept_person_has_anchored_activity"], counts["loops"]),
+        "by_origin": {origin: int(by_origin.get(origin, 0)) for origin in loops.LOOP_ORIGINS},
+    }
+    kept_rate = block["kept_person_has_anchored_activity_rate"]
+    message = (
+        "[braunschweig.secondary_chainsolvers] loops: %d flagged; %d (%.1f%%) placed at the "
+        "activity they start from (by origin: %s); %d (%.1f%%) kept on the solver because the "
+        "person has an anchored or linked activity (escort link, portal stay, passive joint "
+        "link); %d of %d collapsed persons (%.1f%%) have no secondary activity left to solve")
+    arguments = (
+        counts["loops"], counts["collapsed"], 100.0 * _rate(counts["collapsed"], counts["loops"]),
+        ", ".join(f"{origin} {count}" for origin, count in block["by_origin"].items()),
+        counts["kept_person_has_anchored_activity"], 100.0 * kept_rate,
+        counts["persons_without_secondary_activity"], counts["persons_collapsed"],
+        100.0 * _rate(counts["persons_without_secondary_activity"], counts["persons_collapsed"]))
+    if kept_rate > FALLBACK_WARN_RATE:
+        logger.warning(message + " -- kept share above %.0f%%", *arguments,
+                       100.0 * FALLBACK_WARN_RATE)
+    else:
+        logger.info(message, *arguments)
+
+    path = Path(context.path()) / STAGE_REPORT_FILENAME
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"loops": block}, handle, indent=2, sort_keys=True)
+
+
 def execute(context):
     # Import eagerly (not used here directly) to fail fast with a clear error if
     # the optional dependency is missing, rather than deep inside a worker; the
@@ -2064,6 +2228,15 @@ def execute(context):
     # original frame just keeps that rule readable.
     df_trips_original = df_trips
 
+    # Strolls and dog walks (issue #679): flagged on these ORIGINAL trips, before any rewrite.
+    # OFF: nothing is flagged, no MiD table is read and no random number is drawn. The one
+    # MiD loader is shared with the subtype deciders of _build_shared_solve_state, so the
+    # table is read at most once.
+    loop_enabled = bool(context.config(loops.KEY_ENABLED))
+    mid_wege_loader = _shared_mid_wege_loader()
+    if loop_enabled:
+        is_loop, loop_flag_stats = _flag_loop_trips(context, df_trips_original, mid_wege_loader)
+
     df_trips, linked_location_rows, escort_activity_anchors = (
         _apply_escort_household_link(context, df_trips)
     )
@@ -2077,13 +2250,17 @@ def execute(context):
     escort_activity_anchors, portal_location_rows = _apply_portal_anchors(
         portal_anchor_rows, escort_activity_anchors)
     df_primary, crs = _prepare_primary(context)
-    shared = _build_shared_solve_state(context, crs)
+    shared = _build_shared_solve_state(context, crs, mid_wege_loader=mid_wege_loader)
+    del mid_wege_loader  # release the MiD frame before the solve
 
     # ON: the two-pass composition (adults first, then the children whose joint
     # activities anchor at the adults' placed locations), issue #385 / ADR-0119.
     # OFF: ONE pass over the whole population, frame-equal to the pre-extraction
-    # inline solve.
-    if bool(context.config("escort_passive_joint_location")):
+    # inline solve. The link table is built first, because the loop collapse below must
+    # know both sides of every link.
+    joint_location = bool(context.config("escort_passive_joint_location"))
+    links = None
+    if joint_location:
         from braunschweig.synthesis.locations.passive_joint_links import (
             KEY_SURROGATE_ENABLED, KEY_SURROGATE_MAX_GAP_MINUTES, KEY_SURROGATE_MIN_AGE_YEARS,
             KEY_SURROGATE_REQUIRE_SAME_PURPOSE,
@@ -2114,6 +2291,17 @@ def execute(context):
         print(_passive_joint_link_summary(link_stats))
         if rescue_stats is not None:
             print(_passive_joint_surrogate_summary(link_stats, rescue_stats))
+
+    # Loop collapse (issue #679): the escort link, the portal anchors and the passive joint links
+    # above were all computed on the original activity indices. They concern only persons who
+    # keep their loops, so the collapse of every other person's chain leaves them valid.
+    if loop_enabled:
+        anchored_persons = _persons_with_anchored_activities(
+            escort_activity_anchors, linked_location_rows, portal_location_rows, links)
+        df_trips, loop_index_map, loop_table, loop_counts = _collapse_loops_of_eligible_persons(
+            df_trips, df_trips_original, is_loop, anchored_persons)
+
+    if joint_location:
         df_locations, df_convergence, reports, _anchor_stats = _compose_two_pass(
             df_trips, df_primary, escort_activity_anchors, links, shared)
     else:
@@ -2162,6 +2350,25 @@ def execute(context):
     if portal_location_rows is not None:
         df_portal = gpd.GeoDataFrame(portal_location_rows, geometry="geometry", crs=crs)
         df_locations = pd.concat([df_locations, df_portal], ignore_index=True)
+
+    # Loop restore (issue #679), ONCE on the combined result: the solver rows of the collapsed
+    # persons get their original activity indices back and every loop activity one row at the
+    # place it starts from, with the column loop_origin. After the linked and portal rows on
+    # purpose: those rows belong to persons who were not collapsed, so the remap leaves them
+    # alone and they cannot collide with a loop row, and restore_loops's duplicate check then
+    # covers the whole stage output. The place frames are the RAW stage outputs (restore_loops
+    # needs location_id and geometry, not _prepare_primary's renamed columns).
+    if loop_enabled:
+        df_work_raw, df_education_raw = context.stage(
+            "synthesis.population.spatial.primary.locations")
+        df_locations = loops.restore_loops(
+            gpd.GeoDataFrame(df_locations, geometry="geometry", crs=crs),
+            loop_index_map, loop_table,
+            df_persons=context.stage("synthesis.population.sampled")[
+                ["person_id", "household_id"]],
+            df_home=context.stage("synthesis.population.spatial.home.locations"),
+            df_work=df_work_raw, df_education=df_education_raw)
+        _report_loops(context, loop_flag_stats, loop_counts, loop_table)
 
     if len(df_convergence):
         print(

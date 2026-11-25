@@ -74,6 +74,16 @@ _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon", "matsim.wri
 
 logger = logging.getLogger(__name__)
 
+#: Config key of the loop placement (eqasim-bs#679). Spelled out rather than imported: its owner,
+#: ``braunschweig.synthesis.locations.secondary_chainsolvers.loops.KEY_ENABLED``, would pull the
+#: whole secondary location package into this stage's imports.
+#: ``tests/test_secondary_loops_stage.py`` drives this stage through the owner's constant.
+KEY_LOOP_ZERO_DISPLACEMENT = "secondary_loop_zero_displacement"
+
+#: ``loop_origin`` values whose loop row copies a place this stage writes outside the secondary
+#: facilities (``loops.PRIMARY_LOOP_ORIGINS``); ``secondary`` copies are ordinary secondary rows.
+LOOP_ORIGINS_OUTSIDE_SECONDARY = ("home", "work", "education")
+
 
 def configure(context):
     base.configure(context)
@@ -115,6 +125,11 @@ def configure(context):
     # Only consumed to widen the coverage check with the education facility ids
     # that household-linked escort anchors reference (#201 Phase 2).
     context.config("escort_household_link", False)
+    # Strolls and dog walks (eqasim-bs#679): read-only mirror of the secondary location stage's
+    # switch (owner: secondary_chainsolvers.loops.KEY_ENABLED, same default). ON -> the realised
+    # rows carry loop_origin, and a loop row that copies a home, work or education place is
+    # checked against the home / work / education facility ids instead of the secondary ones.
+    context.config(KEY_LOOP_ZERO_DISPLACEMENT, False)
 
     # Realised secondary locations, for the dangling-id validation below.
     context.stage("synthesis.population.spatial.secondary.locations")
@@ -263,7 +278,8 @@ def portal_facility_frame(df_realised):
                             crs=getattr(df_realised, "crs", None))
 
 
-def validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=None, portal_facility_ids=None):
+def validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=None, portal_facility_ids=None,
+                                loop_origin_ids=None):
     """Fail fast if a realised secondary location id has no facility row.
 
     Every secondary activity's ``location_id`` must exist in the written
@@ -277,8 +293,24 @@ def validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=None,
 
     portal_facility_ids: ids of the portal gate facilities registered separately
     (eqasim-bs#442); a realised ``portal_*`` id that is not among them is dangling.
+
+    loop_origin_ids: ``{loop_origin: facility ids}`` for the kinds of
+    :data:`LOOP_ORIGINS_OUTSIDE_SECONDARY` (eqasim-bs#679), or None (switch off: the
+    ``loop_origin`` column is not read). A realised row whose ``loop_origin`` is one of these
+    kinds copies the place of a home, work or education activity; its id is accepted ONLY if it
+    is a written facility of that kind (``home_<household_id>`` / a work / an education
+    facility), never as a secondary one and never just because a loop row carries it. Every
+    other row, including a ``secondary`` copy, is checked as above.
     """
-    realised_ids = set(df_realised["location_id"].dropna().astype(str))
+    copies = {}
+    is_copy = pd.Series(False, index=df_realised.index)
+    if loop_origin_ids is not None:
+        for origin in LOOP_ORIGINS_OUTSIDE_SECONDARY:
+            of_origin = (df_realised["loop_origin"] == origin).fillna(False).astype(bool)
+            is_copy |= of_origin
+            # astype(str) without dropna: a copy without an id is reported, not skipped.
+            copies[origin] = set(df_realised.loc[of_origin, "location_id"].astype(str))
+    realised_ids = set(df_realised.loc[~is_copy, "location_id"].dropna().astype(str))
     written_ids = set(df_secondary["location_id"].astype(str))
     if extra_valid_ids:
         written_ids = written_ids | {str(i) for i in extra_valid_ids}
@@ -288,20 +320,53 @@ def validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=None,
         n_portal_facilities = len(portal_ids)
         written_ids = written_ids | portal_ids
     missing = realised_ids - written_ids
-    if missing:
+    missing_copies = {origin: ids - {str(i) for i in loop_origin_ids[origin]}
+                      for origin, ids in copies.items()}
+    n_missing_copies = sum(len(ids) for ids in missing_copies.values())
+    if missing or n_missing_copies:
         sample = sorted(missing)[:5]
+        copy_samples = {origin: sorted(ids)[:5] for origin, ids in missing_copies.items() if ids}
         raise RuntimeError(
             "[braunschweig.facilities] %d realised secondary location id(s) have "
-            "no facility row (sample: %s). The candidate set used by the "
-            "chainsolvers and the facilities writer have diverged -- both must "
-            "consume braunschweig.synthesis.locations.secondary_candidates."
-            % (len(missing), sample)
+            "no facility row (sample: %s; loop rows copying a home / work / education place "
+            "whose id is no written facility of that kind (eqasim-bs#679): %s). The candidate "
+            "set used by the chainsolvers and the facilities writer have diverged -- both must "
+            "consume braunschweig.synthesis.locations.secondary_candidates; a loop copy must "
+            "carry the id of the place it copies."
+            % (len(missing) + n_missing_copies, sample, copy_samples)
         )
     logger.info(
         "[braunschweig.facilities] secondary coverage OK: %d realised ids, "
-        "%d facility rows, 0 dangling; %d portal gate facilities registered.",
+        "%d facility rows, 0 dangling; %d portal gate facilities registered; loop copies of a "
+        "home / work / education place checked against those facilities: %s.",
         len(realised_ids), len(written_ids), n_portal_facilities,
+        {origin: len(ids) for origin, ids in copies.items()} if loop_origin_ids is not None
+        else "switch off",
     )
+
+
+def _loop_origin_facility_ids(context, df_realised, df_homes, df_primary):
+    """The facility ids a loop copy of each kind may carry (eqasim-bs#679), or None when the switch is off.
+
+    Home: ``home_<household_id>``, the id ``base.write_facilities`` gives every row of ``df_homes``;
+    work / education: the ``location_id`` of the work / education rows of ``df_primary``
+    (``base.load_facility_frames``). Taken before the cordon block appends the in-commuters, who have no
+    secondary locations. With the switch on the realised frame must carry ``loop_origin``.
+    """
+    if not context.config(KEY_LOOP_ZERO_DISPLACEMENT):
+        return None
+    if "loop_origin" not in df_realised.columns:
+        raise RuntimeError(
+            "[braunschweig.facilities] %s is on, but the realised secondary locations carry no loop_origin "
+            "column, so the loop copies of a home, work or education place cannot be told apart. The "
+            "secondary location stage and this stage must run with the same value of the key."
+            % KEY_LOOP_ZERO_DISPLACEMENT)
+    is_work = df_primary["is_work"].astype(bool)
+    return {
+        "home": {"home_%s" % household_id for household_id in df_homes["household_id"]},
+        "work": set(df_primary.loc[is_work, "location_id"].astype(str)),
+        "education": set(df_primary.loc[~is_work, "location_id"].astype(str)),
+    }
 
 
 def execute(context):
@@ -328,7 +393,9 @@ def execute(context):
     # Portal gates (eqasim-bs#442): one facility per used gate; empty (a no-op) when the portal layer is off.
     df_portal = portal_facility_frame(df_realised)
     validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=extra_valid_ids,
-                                portal_facility_ids=set(df_portal["location_id"]))
+                                portal_facility_ids=set(df_portal["location_id"]),
+                                loop_origin_ids=_loop_origin_facility_ids(context, df_realised, df_homes,
+                                                                          df_primary))
 
     if context.config("cordon_enabled"):
         inc = context.stage("braunschweig.synthesis.incommuters")
