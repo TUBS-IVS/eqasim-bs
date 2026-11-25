@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
 
+from braunschweig.matsim.simulation import mode_choice_reach
+from braunschweig.matsim.simulation.mode_choice_reach import ReachSettings
 from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
 
 logger = logging.getLogger(__name__)
@@ -105,7 +107,11 @@ NON_MONOTONIC_LATENESS_BAND_LABELS =("0_1min", "1_5min", "5_15min", "15_60min", 
 KEY_FAIL_ON_THRESHOLD = "braunschweig.plan_check.fail_on_threshold"
 #: Name in ``threshold.exceeded`` when the share lifted by ``frozen_pt_walk_lift`` is above the pt-as-walk bound.
 KEY_SHARE_LIFTED_FROZEN_PT_WALK = "share_lifted_frozen_pt_walk"
+#: Name in ``threshold.exceeded`` when the lift report says the lifted walk and bicycle trips are above their bound.
+KEY_SHARE_LIFTED_OTHER_MODES = "share_lifted_other_modes"
 DEFAULT_FAIL_ON_THRESHOLD = False
+WALK_MODE = "walk"
+BICYCLE_MODE = "bicycle"
 
 
 @dataclass
@@ -209,7 +215,9 @@ def _empty_block() -> dict:
             "pt_as_walk_by_hour": {},
             "pt_as_walk_by_distance_band": dict.fromkeys(PT_AS_WALK_DISTANCE_BAND_LABELS, 0), "n_pt_as_walk_long": 0,
             "non_monotonic_by_lateness_band": dict.fromkeys(NON_MONOTONIC_LATENESS_BAND_LABELS, 0),
-            "n_plans_non_monotonic_large": 0}
+            "n_plans_non_monotonic_large": 0,
+            "n_trips_fixed_border": 0, "n_trips_fixed_vehicle": 0, "n_trips_fixed_length": 0,
+            "n_unreached_unfit": 0, "n_walk_trips_over_reached": 0, "n_bicycle_trips_over_reached": 0}
 
 
 def band_label(value: float, edges: tuple, labels: tuple) -> str:
@@ -277,6 +285,8 @@ FIXED_VEHICLE = "fixed_vehicle"
 FIXED_LENGTH = "fixed_length"
 # Modes a border tour keeps fixed under the vehicle rule (a vehicle cannot be left behind at the border).
 RESTRICTED_MODES = frozenset({"car", "bicycle"})
+_REASON_COUNTERS = {FIXED_BORDER: "n_trips_fixed_border", FIXED_VEHICLE: "n_trips_fixed_vehicle",
+                    FIXED_LENGTH: "n_trips_fixed_length"}
 
 
 def leg_reach(activities: list, legs: list, *, isolate_outside_trips: bool, max_tour_length: int,
@@ -363,10 +373,52 @@ def leg_reach(activities: list, legs: list, *, isolate_outside_trips: bool, max_
     return reach
 
 
+def trip_is_pt_intended(trip_legs: list) -> bool:
+    """True when a leg of the trip is stamped ``walkFallbackFrom`` = pt or carries the routing mode pt."""
+    return any(leg[2] == PT_MODE or leg[LEG_ROUTING_MODE_POSITION] == PT_MODE for leg in trip_legs)
+
+
+def trip_mode(trip_legs: list):
+    """The mode of a trip as ``leg_reach`` reads it: the routing mode of its first leg, else that leg's mode."""
+    return trip_legs[0][LEG_ROUTING_MODE_POSITION] or trip_legs[0][LEG_MODE_POSITION]
+
+
+def trip_is_all_walk(trip_legs: list) -> bool:
+    return all(leg[LEG_MODE_POSITION] in WALK_MODES for leg in trip_legs)
+
+
+def unfit_mode(trip_legs: list, distance_m: float, *, pt_as_walk_bound_min_distance_m: float,
+               walk_max_distance_m: float, bicycle_max_distance_m: float):
+    """The mode a trip is lifted from when its mode does not fit its straight-line distance, else None.
+
+    The single rule of the lift (``frozen_pt_walk_lift``) and of the plan check's unfit counters. ``distance_m`` is
+    the straight line between the trip's activities and every bound is strict. A pt-intended trip is judged by the pt
+    rule only: pt when all its legs are walk legs and the distance is above ``pt_as_walk_bound_min_distance_m``.
+    Otherwise a walk trip (mode walk, only walk legs) above ``walk_max_distance_m`` is walk, and a bicycle trip above
+    ``bicycle_max_distance_m`` is bicycle. Car and every other mode are never unfit.
+    """
+    if trip_is_pt_intended(trip_legs):
+        return PT_MODE if trip_is_all_walk(trip_legs) and distance_m > pt_as_walk_bound_min_distance_m else None
+    mode = trip_mode(trip_legs)
+    if mode == WALK_MODE and trip_is_all_walk(trip_legs) and distance_m > walk_max_distance_m:
+        return WALK_MODE
+    if mode == BICYCLE_MODE and distance_m > bicycle_max_distance_m:
+        return BICYCLE_MODE
+    return None
+
+
 def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bicycle_max_distance_m: float,
               leg_max_duration_s: float, pt_as_walk_bound_min_distance_m: float,
-              non_monotonic_bound_min_lateness_s: float) -> dict:
+              non_monotonic_bound_min_lateness_s: float, reach: ReachSettings | None = None) -> dict:
     """Count plan and leg defects per subpopulation and per class (frozen / in_region).
+
+    With ``reach`` (the settings of the mode choice LOOP) a leg is ``frozen`` when ``leg_reach`` says the mode choice
+    does not re-choose its trip, and a person is frozen when at least one trip is not reached. Without ``reach`` the
+    old tour rule applies (``leg_tour_frozen``) and the reason counters stay 0. Per TRIP, in the block of the trip's
+    class: ``n_trips_fixed_border`` / ``n_trips_fixed_vehicle`` / ``n_trips_fixed_length`` (the reasons),
+    ``n_unreached_unfit`` (an unreached trip whose mode does not fit its distance, ``unfit_mode``: the trips the lift
+    must have repaired) and ``n_walk_trips_over_reached`` / ``n_bicycle_trips_over_reached`` (reached trips over the
+    walk or bicycle distance bound; reported, the mode choice repairs them).
 
     ``n_plans_late`` counts plans with an activity END time after the simulated day. ``n_plans_arrival_late``
     counts plans whose last planned arrival (end time of the last leg's origin activity plus the leg's travel
@@ -405,7 +457,16 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
             raise ValueError(f"{_LOG_TAG} person {person.person_id}: {len(person.legs)} legs for "
                              f"{len(person.activities)} activities; a plan has at most activities - 1 legs "
                              "(corrupt written population)")
-        frozen_legs = leg_tour_frozen(person.activities)
+        if reach is None:
+            frozen_legs, leg_classes = leg_tour_frozen(person.activities), None
+        else:
+            try:
+                leg_classes = leg_reach(person.activities, person.legs,
+                                        isolate_outside_trips=reach.isolate_outside_trips,
+                                        max_tour_length=reach.max_tour_length)
+            except ValueError as error:
+                raise ValueError(f"{_LOG_TAG} person {person.person_id}: {error}") from error
+            frozen_legs = [leg_class != REACHED for leg_class in leg_classes]
         person_class = FROZEN if any(frozen_legs) else IN_REGION
         sub = blocks.setdefault(person.subpopulation, {FROZEN: _empty_block(), IN_REGION: _empty_block()})
         block = sub[person_class]
@@ -449,9 +510,22 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
             n_pt_or_stamped_legs += mode == PT_MODE or walk_fallback_from is not None
         for trip in split_trips(person.activities, len(person.legs)):
             trip_legs = [person.legs[index] for index in trip]
+            trip_block = sub[FROZEN if frozen_legs[trip[0]] else IN_REGION]
+            if leg_classes is not None and leg_classes[trip[0]] != REACHED:
+                trip_block[_REASON_COUNTERS[leg_classes[trip[0]]]] += 1
+            _, _, trip_ox, trip_oy = person.activities[trip[0]]
+            _, _, trip_dx, trip_dy = person.activities[trip[-1] + 1]
+            unfit = unfit_mode(trip_legs, math.hypot(trip_dx - trip_ox, trip_dy - trip_oy),
+                               pt_as_walk_bound_min_distance_m=pt_as_walk_bound_min_distance_m,
+                               walk_max_distance_m=walk_max_distance_m, bicycle_max_distance_m=bicycle_max_distance_m)
+            if unfit is not None and frozen_legs[trip[0]]:
+                trip_block["n_unreached_unfit"] += 1
+            elif unfit == WALK_MODE:
+                trip_block["n_walk_trips_over_reached"] += 1
+            elif unfit == BICYCLE_MODE:
+                trip_block["n_bicycle_trips_over_reached"] += 1
             if not any(leg[2] == PT_MODE or leg[3] == PT_MODE for leg in trip_legs):
                 continue
-            trip_block = sub[FROZEN if frozen_legs[trip[0]] else IN_REGION]
             trip_block["n_pt_trips"] += 1
             stamped_walk = next((index for index in trip
                                  if person.legs[index][2] is not None and person.legs[index][0] == "walk"), None)
@@ -462,8 +536,6 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
                             and any(leg[3] == PT_MODE for leg in trip_legs))
             if stamped_walk is not None or walk_only_pt:
                 trip_block["n_pt_as_walk"] += 1
-                _, _, trip_ox, trip_oy = person.activities[trip[0]]
-                _, _, trip_dx, trip_dy = person.activities[trip[-1] + 1]
                 trip_distance_m = math.hypot(trip_dx - trip_ox, trip_dy - trip_oy)
                 trip_block["pt_as_walk_by_distance_band"][band_label(
                     trip_distance_m, PT_AS_WALK_DISTANCE_BAND_EDGES_M, PT_AS_WALK_DISTANCE_BAND_LABELS)] += 1
@@ -564,6 +636,8 @@ def find_threshold_violations(summary: dict, max_frozen_defect_share: float,
              if frozen.get(key, 0.0) > allowed]
     if lift_report is not None and lift_report["share_lifted"] > max_frozen_pt_as_walk_share:
         names.append(KEY_SHARE_LIFTED_FROZEN_PT_WALK)
+    if lift_report is not None and lift_report.get("bound_exceeded_other_modes"):
+        names.append(KEY_SHARE_LIFTED_OTHER_MODES)
     return names
 
 
@@ -587,6 +661,12 @@ def check_thresholds(summary: dict, max_frozen_defect_share: float, max_frozen_p
                             f"frozen_pt_walk_lift, no longer in share_pt_as_walk_long) exceeds "
                             f"{100.0 * max_frozen_pt_as_walk_share:.2f}%; the router finds no pt connection for them")
             continue
+        if key == KEY_SHARE_LIFTED_OTHER_MODES:
+            messages.append(f"{_LOG_TAG} resident plans: {key} = {100.0 * lift_report['share_lifted_other_modes']:.3f}% "
+                            f"of the resident trips (walk and bicycle trips lifted to car_passenger by "
+                            f"frozen_pt_walk_lift) exceeds {100.0 * lift_report['max_share_other_modes']:.3f}%; many "
+                            "trips the mode choice does not reach have a mode that does not fit their distance")
+            continue
         unit, count_key = (("pt-intended trips", "n_pt_trips") if key == "share_pt_as_walk_long"
                            else ("persons", "n_persons"))
         messages.append(f"{_LOG_TAG} frozen resident plans: {key} = {100.0 * frozen[key]:.2f}% of "
@@ -598,6 +678,26 @@ def check_thresholds(summary: dict, max_frozen_defect_share: float, max_frozen_p
     for message in messages:
         logger.error("%s (%s=false: continuing)", message, KEY_FAIL_ON_THRESHOLD)
     return violations
+
+
+def check_unreached_invariant(summary: dict, *, lift_all_modes: bool) -> None:
+    """Stop the run when a resident trip the mode choice does not reach keeps a mode that does not fit its distance.
+
+    After the lift no unreached resident trip may be ``unfit`` (``unfit_mode``): the lift repairs exactly those. With
+    ``lift_all_modes`` (the lift covers pt, walk and bicycle) a remaining one means a lift gap or a rule drift: the
+    check raises whatever ``fail_on_threshold`` says. With the lift limited to the pt rule the unfit walk and
+    bicycle trips are expected: the check only logs them at ERROR (never silent).
+    """
+    frozen = summary["subpopulations"].get(RESIDENTS, {}).get(FROZEN, _empty_block())
+    count = frozen["n_unreached_unfit"]
+    if not count:
+        return
+    message = (f"{_LOG_TAG} {count} resident trips the mode choice does not reach keep a mode that does not fit "
+               "their distance (n_unreached_unfit)")
+    if lift_all_modes:
+        raise ValueError(f"{message}; the lift covers all modes, so none may remain: a gap in frozen_pt_walk_lift or "
+                         "a rule that drifted from the plan check")
+    logger.error("%s; the lift covers only the pt rule (all_modes=false): continuing", message)
 
 
 def _format_by_hour(by_hour: dict) -> dict:
@@ -689,12 +789,15 @@ def run(context, config_name: str, lift_report: dict | None = None) -> dict:
     jar_path = "%s/%s" % (context.path("matsim.runtime.eqasim"), context.stage("matsim.runtime.eqasim"))
     require_walk_fallback_stamp(jar_path)
     population_path = resolve_population_path(config_path)
+    # The settings of the mode choice LOOP: what the trips of the written population can still be re-chosen by.
+    reach = mode_choice_reach.loop_settings(context)
     summary = summarise(iter_person_plans(population_path), simulation_end_s=MAX_PLAN_TIME_SECONDS,
                         walk_max_distance_m=float(context.config(KEY_WALK_MAX_DISTANCE_M)),
                         bicycle_max_distance_m=float(context.config(KEY_BICYCLE_MAX_DISTANCE_M)),
                         leg_max_duration_s=float(context.config(KEY_LEG_MAX_DURATION_S)),
                         pt_as_walk_bound_min_distance_m=float(context.config(KEY_PT_AS_WALK_BOUND_MIN_DISTANCE_M)),
-                        non_monotonic_bound_min_lateness_s=float(context.config(KEY_NON_MONOTONIC_BOUND_MIN_LATENESS_S)))
+                        non_monotonic_bound_min_lateness_s=float(context.config(KEY_NON_MONOTONIC_BOUND_MIN_LATENESS_S)),
+                        reach=reach)
     _log_summary(summary)
     max_frozen_defect_share = float(context.config(KEY_MAX_FROZEN_DEFECT_SHARE))
     max_frozen_pt_as_walk_share = float(context.config(KEY_MAX_FROZEN_PT_AS_WALK_SHARE))
@@ -706,8 +809,16 @@ def run(context, config_name: str, lift_report: dict | None = None) -> dict:
                                                                   max_frozen_pt_as_walk_share, lift_report)}
     if lift_report is not None:
         summary["threshold"]["share_lifted_frozen_pt_walk"] = lift_report["share_lifted"]
+        if "share_lifted_other_modes" in lift_report:
+            summary["threshold"][KEY_SHARE_LIFTED_OTHER_MODES] = lift_report["share_lifted_other_modes"]
+    # The lift's own report says whether it covered all modes (None report: the lift is off or ran nothing).
+    lift_all_modes = bool(lift_report is not None and lift_report.get("all_modes", False))
+    summary["reach"] = {"isolate_outside_trips": reach.isolate_outside_trips, "max_tour_length": reach.max_tour_length,
+                        "lift_all_modes": lift_all_modes}
     with open(os.path.join(directory, PLAN_CHECK_FILE_NAME), "w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
+    # The report exists when either check raises.
     check_thresholds(summary, max_frozen_defect_share, max_frozen_pt_as_walk_share,
                      fail_on_threshold=fail_on_threshold, lift_report=lift_report)
+    check_unreached_invariant(summary, lift_all_modes=lift_all_modes)
     return summary

@@ -5,6 +5,7 @@ import zipfile
 import pytest
 
 from braunschweig.matsim.simulation import plan_check as C
+from braunschweig.matsim.simulation.mode_choice_reach import ReachSettings
 
 POPULATION = """<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE population SYSTEM "http://www.matsim.org/files/dtd/population_v6.dtd">
@@ -269,10 +270,11 @@ def _plan(person_id, activities, legs, subpopulation=C.RESIDENTS):
     return C.PersonPlan(person_id=person_id, subpopulation=subpopulation, activities=activities, legs=legs)
 
 
-def _summarise(plans):
+def _summarise(plans, reach=None):
     return C.summarise(plans, simulation_end_s=30 * 3600.0, walk_max_distance_m=5000.0,
                        bicycle_max_distance_m=30000.0, leg_max_duration_s=10800.0,
-                       pt_as_walk_bound_min_distance_m=5000.0, non_monotonic_bound_min_lateness_s=900.0)
+                       pt_as_walk_bound_min_distance_m=5000.0, non_monotonic_bound_min_lateness_s=900.0,
+                       reach=reach)
 
 
 def test_summarise_counts_plans_whose_last_planned_arrival_is_after_the_simulated_day_per_class():
@@ -392,7 +394,9 @@ class _RunContext:
                         C.KEY_LEG_MAX_DURATION_S: 10800.0, C.KEY_MAX_FROZEN_DEFECT_SHARE: max_share,
                         C.KEY_MAX_FROZEN_PT_AS_WALK_SHARE: 0.02,
                         C.KEY_PT_AS_WALK_BOUND_MIN_DISTANCE_M: 5000.0, C.KEY_NON_MONOTONIC_BOUND_MIN_LATENESS_S: 900.0,
-                        C.KEY_FAIL_ON_THRESHOLD: fail_on_threshold}
+                        C.KEY_FAIL_ON_THRESHOLD: fail_on_threshold,
+                        "braunschweig.mode_choice.isolate_outside_trips": False,
+                        "braunschweig.mode_choice.max_tour_length": 11}
         (directory / "runtime").mkdir(exist_ok=True)
         _write_stub_jar(directory / "runtime" / JAR_NAME)
 
@@ -848,3 +852,116 @@ def test_run_raises_before_writing_the_report_when_the_jar_predates_the_stamp(tm
     with pytest.raises(RuntimeError, match="predates the walk fallback stamp"):
         C.run(context, "bs_config.xml")
     assert not (tmp_path / C.PLAN_CHECK_FILE_NAME).exists()
+
+
+# --- the reach classification in the summary and the unreached invariant (#678) ---
+
+FINER_EIGHT = ReachSettings(isolate_outside_trips=True, max_tour_length=8)
+
+
+def _reach_plan(person_id, types, modes, coordinates=None):
+    """A resident plan with one trip per leg; activities one metre apart on the x axis unless ``coordinates``."""
+    coordinates = coordinates or [(float(index), 0.0) for index in range(len(types))]
+    activities = [(kind, None, x, y) for kind, (x, y) in zip(types, coordinates)]
+    return _plan(person_id, activities, [(mode, None, None, mode) for mode in modes])
+
+
+def _case(name):
+    _, types, modes, _, _ = next(case for case in REACH_CASES if case[0] == name)
+    return types, modes
+
+
+def _frozen_residents(summary):
+    return summary["subpopulations"][C.RESIDENTS][C.FROZEN]
+
+
+def test_summarise_counts_the_trips_by_reason():
+    plans = [_reach_plan(name, *_case(name)) for name in ("portal stay", "car left behind", "nine trips")]
+    frozen = _frozen_residents(_summarise(plans, reach=FINER_EIGHT))
+    assert frozen["n_persons"] == 3
+    assert (frozen["n_trips_fixed_border"], frozen["n_trips_fixed_vehicle"], frozen["n_trips_fixed_length"]) == (4, 1, 9)
+
+
+def test_a_person_with_one_unreached_trip_is_in_the_frozen_block():
+    # trips home>a (reached) and a>outside, outside>home (border): one frozen person, not split over two blocks
+    summary = _summarise([_reach_plan("p", ["home", "a", "outside", "home"], ["walk"] * 3)], reach=FINER_EIGHT)
+    residents = summary["subpopulations"][C.RESIDENTS]
+    assert residents[C.FROZEN]["n_persons"] == 1 and residents[C.IN_REGION]["n_persons"] == 0
+    assert residents[C.FROZEN]["n_legs"] == 2 and residents[C.IN_REGION]["n_legs"] == 1   # legs follow their trip
+
+
+def test_summarise_without_reach_settings_keeps_the_old_tour_rule():
+    types, modes = _case("seven trips")   # no outside activity: the old tour rule does not freeze it
+    plan = _reach_plan("p", types, modes)
+    old = _summarise([plan])["subpopulations"][C.RESIDENTS]
+    assert old[C.FROZEN]["n_persons"] == 0 and old[C.IN_REGION]["n_persons"] == 1
+    new = _summarise([plan], reach=ReachSettings(isolate_outside_trips=False, max_tour_length=6))
+    assert new["subpopulations"][C.RESIDENTS][C.FROZEN]["n_persons"] == 1
+    assert old[C.FROZEN]["n_trips_fixed_length"] == 0 and old[C.IN_REGION]["n_unreached_unfit"] == 0
+
+
+def _walk_plan(person_id, work_xy, outside_xy):
+    return _reach_plan(person_id, ["home", "work", "outside"], ["walk", "walk"],
+                       [(0.0, 0.0), work_xy, outside_xy])
+
+
+def test_an_unreached_walk_over_the_bound_is_counted_as_unfit():
+    # home>work 1 km (reached), work>outside 6 km straight line (border: unreached)
+    frozen = _frozen_residents(_summarise([_walk_plan("p", (0.0, 1000.0), (6000.0, 1000.0))], reach=FINER_EIGHT))
+    assert frozen["n_unreached_unfit"] == 1 and frozen["n_walk_trips_over_reached"] == 0
+
+
+def test_a_reached_walk_over_the_bound_is_only_reported():
+    # home>work 6 km (reached), work>outside 100 m
+    summary = _summarise([_walk_plan("p", (6000.0, 0.0), (6000.0, 100.0))], reach=FINER_EIGHT)
+    reached = summary["subpopulations"][C.RESIDENTS][C.IN_REGION]   # the trips of this class are the reached ones
+    assert reached["n_walk_trips_over_reached"] == 1 and reached["n_bicycle_trips_over_reached"] == 0
+    assert _frozen_residents(summary)["n_unreached_unfit"] == 0
+
+
+def test_the_unfit_bounds_are_strict_for_walk_and_bicycle_trips():
+    at_bound = _reach_plan("b", ["home", "outside", "home"], ["bicycle", "walk"],
+                           [(0.0, 0.0), (30000.0, 0.0), (25000.0, 0.0)])
+    assert _frozen_residents(_summarise([at_bound], reach=FINER_EIGHT))["n_unreached_unfit"] == 0
+    over = _reach_plan("o", ["home", "outside", "home"], ["bicycle", "walk"],
+                       [(0.0, 0.0), (30001.0, 0.0), (25000.0, 0.0)])
+    assert _frozen_residents(_summarise([over], reach=FINER_EIGHT))["n_unreached_unfit"] == 2
+
+
+def test_the_invariant_raises_when_the_lift_covers_all_modes():
+    summary = _summarise([_walk_plan("p", (0.0, 1000.0), (6000.0, 1000.0))], reach=FINER_EIGHT)
+    with pytest.raises(ValueError, match="n_unreached_unfit"):
+        C.check_unreached_invariant(summary, lift_all_modes=True)
+
+
+def test_the_invariant_only_logs_when_the_lift_does_not_cover_all_modes(caplog):
+    summary = _summarise([_walk_plan("p", (0.0, 1000.0), (6000.0, 1000.0))], reach=FINER_EIGHT)
+    with caplog.at_level("ERROR"):
+        C.check_unreached_invariant(summary, lift_all_modes=False)
+    assert "n_unreached_unfit" in caplog.text
+
+
+def test_the_invariant_is_silent_without_unfit_trips(caplog):
+    summary = _summarise([_walk_plan("p", (6000.0, 0.0), (6000.0, 100.0))], reach=FINER_EIGHT)
+    with caplog.at_level("ERROR"):
+        C.check_unreached_invariant(summary, lift_all_modes=True)
+    assert caplog.text == ""
+
+
+def test_the_share_of_the_other_modes_is_a_threshold_violation():
+    summary = _summarise([])
+    lift_report = {"share_lifted": 0.0, "bound_exceeded_other_modes": True, "share_lifted_other_modes": 0.5,
+                   "max_share_other_modes": 0.002}
+    assert "share_lifted_other_modes" in C.find_threshold_violations(summary, 0.005, 0.02, lift_report)
+    lift_report["bound_exceeded_other_modes"] = False
+    assert C.find_threshold_violations(summary, 0.005, 0.02, lift_report) == []
+
+
+def test_run_writes_the_json_before_the_invariant_stops_the_run(tmp_path):
+    import json
+    _write_run_inputs(tmp_path)   # the resident "late" walks 9 km at the border: unreached and unfit
+    with pytest.raises(ValueError, match="n_unreached_unfit"):
+        C.run(_RunContext(tmp_path, fail_on_threshold=False, max_share=1.0), "bs_config.xml",
+              lift_report={"share_lifted": 0.0, "all_modes": True, "bound_exceeded_other_modes": False})
+    written = json.loads((tmp_path / C.PLAN_CHECK_FILE_NAME).read_text(encoding="utf-8"))
+    assert written["subpopulations"][C.RESIDENTS][C.FROZEN]["n_unreached_unfit"] == 2

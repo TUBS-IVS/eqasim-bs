@@ -64,8 +64,8 @@ from dataclasses import dataclass
 from braunschweig.matsim.simulation import mode_choice_reach, plan_check
 from braunschweig.matsim.simulation.mode_choice_reach import ReachSettings
 from braunschweig.matsim.simulation.plan_check import (
-    FIXED_BORDER, FIXED_LENGTH, FIXED_VEHICLE, HOME, LEG_MODE_POSITION, LEG_ROUTING_MODE_POSITION, PT_MODE, REACHED,
-    RESIDENTS, ROUTING_MODE_ATTRIBUTE, WALK_FALLBACK_ATTRIBUTE, WALK_MODES)
+    BICYCLE_MODE, FIXED_BORDER, FIXED_LENGTH, FIXED_VEHICLE, HOME, LEG_MODE_POSITION, LEG_ROUTING_MODE_POSITION,
+    PT_MODE, REACHED, RESIDENTS, ROUTING_MODE_ATTRIBUTE, WALK_FALLBACK_ATTRIBUTE, WALK_MODE, WALK_MODES)
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +80,7 @@ DEFAULT_ALL_MODES = True
 # Bound on lifted walk and bicycle trips / all resident trips (share, 0..1). ASSUMPTION and reason: the #678 design.
 KEY_MAX_SHARE_OTHER_MODES = "braunschweig.frozen_pt_walk_lift.max_share_other_modes"
 DEFAULT_MAX_SHARE_OTHER_MODES = 0.002
-WALK_MODE = "walk"
-BICYCLE_MODE = "bicycle"
+WALK_FALLBACK_POSITION = 2   # position of the walkFallbackFrom value in the plan_check leg tuples
 LIFTED_FROM_MODES = (PT_MODE, WALK_MODE, BICYCLE_MODE)
 UNREACHED_REASONS = (FIXED_BORDER, FIXED_VEHICLE, FIXED_LENGTH)
 LIFTED_MODE = "car_passenger"
@@ -124,7 +123,7 @@ class _LiftRules:
     bicycle_max_distance_m: float
 
 
-def _scope_classes(person: ET.Element, activities: list, legs: list, reach: ReachSettings | None) -> list:
+def _scope_classes(person: ET.Element, activities: list, leg_tuples: list, reach: ReachSettings | None) -> list:
     """Per leg: ``REACHED`` (out of scope) or the reason the loop does not reach its trip.
 
     Without reach settings the scope is the old tour rule (``plan_check.leg_tour_frozen``), whose trips are reported
@@ -133,8 +132,6 @@ def _scope_classes(person: ET.Element, activities: list, legs: list, reach: Reac
     """
     if reach is None:
         return [FIXED_BORDER if frozen else REACHED for frozen in plan_check.leg_tour_frozen(activities)]
-    leg_tuples = [(leg.get("mode"), None, plan_check.leg_attribute(leg, WALK_FALLBACK_ATTRIBUTE),
-                   plan_check.leg_attribute(leg, ROUTING_MODE_ATTRIBUTE)) for leg in legs]
     try:
         return plan_check.leg_reach(activities, leg_tuples, isolate_outside_trips=reach.isolate_outside_trips,
                                     max_tour_length=reach.max_tour_length)
@@ -171,7 +168,9 @@ def _repair_person(person: ET.Element, rules: _LiftRules, counts: dict) -> None:
         counts["n_persons_without_legs"] += 1
         return
     all_legs = [children[position] for position in leg_positions]
-    classes = _scope_classes(person, activities, all_legs, rules.reach)
+    leg_tuples = [(leg.get("mode"), None, plan_check.leg_attribute(leg, WALK_FALLBACK_ATTRIBUTE),
+                   plan_check.leg_attribute(leg, ROUTING_MODE_ATTRIBUTE)) for leg in all_legs]
+    classes = _scope_classes(person, activities, leg_tuples, rules.reach)
     trips = plan_check.split_trips(activities, n_legs)
     counts["n_resident_trips"] += len(trips)
 
@@ -182,11 +181,10 @@ def _repair_person(person: ET.Element, rules: _LiftRules, counts: dict) -> None:
     for position, trip in enumerate(trips):
         if position > 0 and activities[trip[0]][0] == HOME:
             home_tour += 1
-        legs = [all_legs[index] for index in trip]
-        stamped = any(plan_check.leg_attribute(leg, WALK_FALLBACK_ATTRIBUTE) == PT_MODE for leg in legs)
-        pt_intended = stamped or any(plan_check.leg_attribute(leg, ROUTING_MODE_ATTRIBUTE) == PT_MODE for leg in legs)
-        # The trip's mode as plan_check.leg_reach reads it: routing mode of the first leg, else that leg's mode.
-        mode = plan_check.leg_attribute(legs[0], ROUTING_MODE_ATTRIBUTE) or legs[0].get("mode")
+        legs = [leg_tuples[index] for index in trip]
+        stamped = any(leg[WALK_FALLBACK_POSITION] == PT_MODE for leg in legs)
+        pt_intended = plan_check.trip_is_pt_intended(legs)
+        mode = plan_check.trip_mode(legs)
         if not pt_intended and mode == BICYCLE_MODE:
             bicycle_trips_by_tour.setdefault(home_tour, []).append(position)
         reason = classes[trip[0]]
@@ -197,14 +195,18 @@ def _repair_person(person: ET.Element, rules: _LiftRules, counts: dict) -> None:
         _, _, ox, oy = activities[trip[0]]
         _, _, dx, dy = activities[trip[-1] + 1]
         distance_m = math.hypot(dx - ox, dy - oy)
-        all_walk = all(leg.get("mode") in WALK_MODES for leg in legs)
+        all_walk = plan_check.trip_is_all_walk(legs)
+        # The one rule of "the mode does not fit the distance": the plan check counts what is left of it.
+        unfit = plan_check.unfit_mode(legs, distance_m, pt_as_walk_bound_min_distance_m=rules.min_distance_m,
+                                      walk_max_distance_m=rules.walk_max_distance_m,
+                                      bicycle_max_distance_m=rules.bicycle_max_distance_m)
         if pt_intended:
             # A pt-intended trip is judged by the pt rule only (today's rule), never as a walk.
             counts["n_pt_trips_frozen"] += 1
             if not all_walk:
                 continue
             counts["n_pt_as_walk_frozen"] += 1
-            if distance_m <= rules.min_distance_m:
+            if unfit != PT_MODE:
                 continue
             counts["n_lifted"] += 1
             counts["n_lifted_stamped" if stamped else "n_lifted_routing_mode_only"] += 1
@@ -212,15 +214,12 @@ def _repair_person(person: ET.Element, rules: _LiftRules, counts: dict) -> None:
                 distance_m, plan_check.PT_AS_WALK_DISTANCE_BAND_EDGES_M,
                 plan_check.PT_AS_WALK_DISTANCE_BAND_LABELS)] += 1
             lifted[position] = PT_MODE
-        elif not rules.all_modes:
+        elif not rules.all_modes or unfit is None:
             continue
-        elif mode == WALK_MODE and all_walk and distance_m > rules.walk_max_distance_m:
-            lifted[position] = WALK_MODE
-        elif mode == BICYCLE_MODE and distance_m > rules.bicycle_max_distance_m:
-            lifted[position] = BICYCLE_MODE
-            lifted_bicycle_tours.add(home_tour)
         else:
-            continue
+            lifted[position] = unfit
+            if unfit == BICYCLE_MODE:
+                lifted_bicycle_tours.add(home_tour)
         counts["n_lifted_by_mode"][lifted[position]] += 1
         counts["n_lifted_by_reason"][reason] += 1
 
