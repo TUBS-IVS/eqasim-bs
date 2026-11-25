@@ -1,0 +1,52 @@
+
+  _     ._   __/__   _ _  _  _ _/_   Recorded: 10:26:25  Samples:  63249
+ /_//_/// /_\ / //_// / //_'/ //     Duration: 538.266   CPU time: 537.577
+/   _/                      v5.1.2
+
+Program: populationsim -w ~/i677/runs/b028_Aprofile
+
+536.904 <module>  populationsim/__main__.py:1
+`- 536.904 main  populationsim/__main__.py:12
+   `- 536.902 run  populationsim/run.py:245
+      `- 536.838 run  populationsim/core/pipeline.py:637
+         `- 535.922 run_model  populationsim/core/pipeline.py:454
+            `- 530.573 run  orca/orca.py:2093
+               `- 530.562 _StepFuncWrapper.__call__  orca/orca.py:969
+                  |- 367.522 sub_balancing  populationsim/steps/sub_balancing.py:178
+                  |  `- 365.486 balance_and_integerize  populationsim/steps/sub_balancing.py:53
+                  |     |- 258.340 do_simul_balancing  populationsim/balancing/wrappers.py:126
+                  |     |  `- 257.196 SimultaneousListBalancer.balance  populationsim/balancing/simul_balancer.py:107
+                  |     |     `- 250.078 np_simul_balancer_numba_fast  populationsim/balancing/balancers_numba.py:638
+                  |     `- 103.390 do_simul_integerizing  populationsim/integerizing/wrappers.py:340
+                  |        `- 103.321 try_simul_integerizing  populationsim/integerizing/wrappers.py:42
+                  |           |- 72.224 reshape_result  populationsim/integerizing/wrappers.py:119
+                  |           |  |- 54.225 DataFrame.__init__  pandas/core/frame.py:698
+                  |           |  |     [7 frames hidden]  pandas
+                  |           |  `- 7.043 [self]  populationsim/integerizing/wrappers.py
+                  |           |- 15.498 DataFrame.update  pandas/core/frame.py:8883
+                  |           |     [5 frames hidden]  pandas
+                  |           `- 13.864 SimulIntegerizer.integerize  populationsim/integerizing/simul_integerizer.py:83
+                  |              `- 13.863 SimulIntegerizer._integerize_controlled  populationsim/integerizing/simul_integerizer.py:280
+                  |                 `- 13.119 solve_search  populationsim/integerizing/controlled_search.py:441
+                  |- 90.071 initial_seed_balancing  populationsim/steps/initial_seed_balancing.py:15
+                  |  `- 89.848 do_balancing  populationsim/balancing/wrappers.py:10
+                  |     `- 89.760 ListBalancer.balance  populationsim/balancing/single_balancer.py:157
+                  |        `- 89.597 np_balancer_numba_fast  populationsim/balancing/balancers_numba.py:584
+                  |- 44.206 integerize_final_seed_weights  populationsim/steps/integerize_final_seed_weights.py:19
+                  |  `- 43.900 do_integerizing  populationsim/integerizing/wrappers.py:172
+                  |     `- 43.464 Integerizer.integerize  populationsim/integerizing/single_integerizer.py:95
+                  |        `- 43.239 np_integerizer_ortools_fast  populationsim/integerizing/lp_single_fast.py:153
+                  |           |- 23.566 Solver.Solve  ortools/linear_solver/pywraplp.py:271
+                  |           |  `- 23.566 Solver_Solve  <built-in>
+                  |           `- 19.393 _build_model  populationsim/integerizing/lp_single_fast.py:53
+                  |              `- 13.679 _set_row  populationsim/integerizing/lp_single_fast.py:42
+                  |                 `- 8.748 Constraint.SetCoefficient  ortools/linear_solver/pywraplp.py:783
+                  |- 10.137 write_data_dictionary  populationsim/steps/output.py:13
+                  |  `- 9.648 get_table  populationsim/core/pipeline.py:708
+                  |     `- 8.476 read_df  populationsim/core/pipeline.py:154
+                  |        `- 8.476 HDFStore.__getitem__  pandas/io/pytables.py:614
+                  |              [9 frames hidden]  pandas, tables, pickle
+                  |- 9.034 setup_data_structures  populationsim/steps/setup_data_structures.py:347
+                  `- 6.796 expand_households  populationsim/steps/expand_households.py:93
+                     `- 6.007 household_lists_for_groups  populationsim/steps/expand_households.py:15
+

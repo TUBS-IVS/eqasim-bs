@@ -38,11 +38,19 @@ pipeline:
 classification:
 - ab_test
 status:
-  execution: running
+  execution: completed
   notes: >-
-    Pre-registered 2026-11-25 before any run (the vocabulary has no pre-run value; "running" is set now and
-    changed to completed, partial or killed with the results). Runs: arms A, B and C on batch_028 with
-    three repeats each and on batch_000 with one repeat each. No result yet.
+    Pre-registered 2026-11-25 before any run; the checks were not changed afterwards. Runs: arms A, B and C on
+    batch_028 with three repeats each and on batch_000 with one repeat each, in four rounds (A, B and C of a
+    round started together on the idle server, three processes at once). Deviations: (1) unit check of the
+    throwaway trees in a clone of the fork on Windows: B passed tests/test_bs_fast_paths.py and
+    tests/test_bs_positive_weight_rows.py (116 passed); C passed them except 8 tests of test_bs_fast_paths.py
+    that compare the FAST_PATHS on and off tables with assert_frame_equal and fail only on the dtype of hh_id
+    (on Windows the hh_id column of C is int64 and that of the old per-row RandomState.choice on a Python list is
+    int32; the cause is read from the assert message, not tested separately on Linux); the parked
+    tests/test_expand_households.py passed; the Linux server runs are identical in all three output files
+    (check 1), so the dtype point did not show there; (2) one extra untimed pyinstrument run of arm A on batch_028
+    for the per-function view (profile_A_b028.txt; it ran alone, after the rounds).
 source: >-
   felix run server, ~/i677 (arm trees, batch copies, logs).
 environment: >-
@@ -54,38 +62,58 @@ validation:
     Identity of the synthetic population: for B against A and C against A, on each batch run, the sha256 of
     final_expanded_household_ids.csv, synthetic_households.csv and synthetic_persons.csv; bound: equal
   reference: arm A on the same batch (model output)
-  result: pending
-  artifact: none yet
+  result: >-
+    MET for B and for C. The sha256 of final_expanded_household_ids.csv, synthetic_households.csv and
+    synthetic_persons.csv equals arm A's in all 4 batch runs per variant (batch_028 repeats 1 to 3 and
+    batch_000); see scripts/evaluate.py output rows "identity".
+  artifact: docs/runs/artifacts/popsim-codex-variants-2026-11-25/runs.csv
 - metric: >-
     Time of the changed step on batch_028. Per arm and run the changed-step time is B: the sum of the seconds
     of sub_balancing.geography=KREIS, =ZENSUS1km and =ZENSUS100m from populationsim.log; C: the seconds of
     expand_households (A: the same step as the arm it is compared with). Bound, over the 3 batch_028
     repeats: (median_A - median_X) > (max_A - min_A), X = B or C
   reference: arm A, the same step, three repeats on batch_028 (engineering measurement)
-  result: pending
-  artifact: none yet
+  result: >-
+    B: NOT MET. Changed-step seconds (sub_balancing KREIS + ZENSUS1km + ZENSUS100m), repeats 1 to 3: A 368.43,
+    372.58, 365.86; B 371.23, 368.42, 364.33. median_A - median_B = 0.01 s, A spread (max - min) = 6.72 s.
+    C: MET. expand_households seconds, repeats 1 to 3: A 3.07, 2.94, 2.72; C 0.70, 0.72, 0.68.
+    median_A - median_C = 2.24 s, A spread = 0.35 s. The gain of C is 2.24 s of a run of about 500 s wall time.
+  artifact: docs/runs/artifacts/popsim-codex-variants-2026-11-25/runs.csv
 - metric: >-
     Peak RSS (GNU time) of B and C on batch_028 only (median of the 3 runs per arm); bound:
     median_X <= 1.05 * median_A. On batch_000 only the identity and exit-code checks apply.
   reference: arm A on batch_028 (engineering measurement)
-  result: pending
-  artifact: none yet
+  result: >-
+    MET for B and for C. Median peak RSS over the 3 batch_028 runs: A 2775300 kB, B 2777208 kB (ratio 1.0007),
+    C 2775016 kB (ratio 0.9999); bound 1.05.
+  artifact: docs/runs/artifacts/popsim-codex-variants-2026-11-25/runs.csv
 - metric: >-
     Every run exits 0; bound: all runs of all arms
   reference: none
-  result: pending
-  artifact: none yet
+  result: >-
+    MET. All 12 runs (arms A, B, C: batch_028 x 3 repeats, batch_000 x 1) exited with code 0.
+  artifact: docs/runs/artifacts/popsim-codex-variants-2026-11-25/runs.csv
 - metric: >-
     Verdict rule: a variant is "port" only if all four checks above are met; otherwise it is not ported
   reference: none
-  result: pending
-  artifact: none yet
+  result: >-
+    B: not ported (check 2 NOT MET). C: port (checks 1 to 4 MET). Evidence: scripts/evaluate.py applied to
+    runs.csv.
+  artifact: docs/runs/artifacts/popsim-codex-variants-2026-11-25/runs.csv
 features:
   note: >-
     Evidence for the decision whether to port two Codex-made PopulationSim optimisations (issues #677, #656):
     an engineering measurement of identity, time and memory on two batches; it says nothing about the quality
     of the population.
-artifacts: []
+artifacts:
+- docs/runs/artifacts/popsim-codex-variants-2026-11-25/runs.csv
+- docs/runs/artifacts/popsim-codex-variants-2026-11-25/arm_B.diff
+- docs/runs/artifacts/popsim-codex-variants-2026-11-25/arm_C.diff
+- docs/runs/artifacts/popsim-codex-variants-2026-11-25/profile_A_b028.txt
+- docs/runs/artifacts/popsim-codex-variants-2026-11-25/scripts/run_round.sh
+- docs/runs/artifacts/popsim-codex-variants-2026-11-25/scripts/run_all.sh
+- docs/runs/artifacts/popsim-codex-variants-2026-11-25/scripts/collect_runs.py
+- docs/runs/artifacts/popsim-codex-variants-2026-11-25/scripts/evaluate.py
 issues:
 - '#677'
 - '#656'
