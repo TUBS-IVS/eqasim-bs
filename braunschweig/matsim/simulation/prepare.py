@@ -189,6 +189,8 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "matsim.runtime.process_watchdog",
     # plan_check reads MAX_PLAN_TIME_SECONDS from braunschweig.popsim.plan_validation, whose own
     # imports (closure_dwell, data.hts.hts) are part of the check's import closure (#443).
+    # plan_check and frozen_pt_walk_lift read the reach settings of the mode choice (#678).
+    "braunschweig.matsim.simulation.mode_choice_reach",
     "braunschweig.popsim.closure_dwell",
     "braunschweig.popsim.plan_validation",
     "data.hts.hts",

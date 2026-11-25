@@ -116,6 +116,9 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.mid.status_by_hhtype",
     "braunschweig.data.mid.status_by_kreis",
     "braunschweig.gravity.friction",
+    # plan_check imports mode_choice_reach (ReachSettings), which imports config_modules (#678).
+    "braunschweig.matsim.config_modules",
+    "braunschweig.matsim.simulation.mode_choice_reach",
     "braunschweig.matsim.simulation.plan_check",
     "braunschweig.popsim.attributes",
     # popsim_validation.controls rescales the building-type targets with it (#647).
