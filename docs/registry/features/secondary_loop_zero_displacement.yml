@@ -28,12 +28,14 @@ code_paths:
 - braunschweig/matsim/scenario/facilities.py
 - braunschweig/calibration/secondary_measurement.py
 - scripts/validate_secondary_distances.py
+- scripts/calibrate_detour_circuity.py
 - scripts/extract_mid_w_zwd_groups.py
 evidence:
   tests:
   - tests/test_secondary_loops.py
   - tests/test_secondary_loops_stage.py
   - tests/test_extract_mid_w_zwd_groups.py
+  - tests/test_calibrate_detour_circuity_loops.py
   off_path_byte_identical:
     claimed: 'true'
     test: tests/test_secondary_loops_stage.py::test_the_key_off_gives_todays_result_without_the_loop_origin_column
@@ -43,8 +45,10 @@ evidence:
   fallback_rate:
     instrumented: true
     log_marker: '[secondary_loops]'
-    note: 'Both fallbacks (cell to mode marginal; loops kept for anchored or linked persons) are counted with a
-      rate in the log and the stage report; see the detail_doc note, sections "The flag (...)" (marginal fallback) and "The placement rule (...)" (step 6, Report).'
+    note: 'Both fallbacks (cell to mode marginal; loops kept on the solver instead of collapsed, by reason: the
+      loop activity is anchored or linked, or the loop starts at an outside stay) are counted with a rate in the
+      log and the stage report, and legs without any detail code are counted too; see the detail_doc note, sections
+      "The flag (...)" (marginal fallback, missing detail code) and "The placement rule (...)" (the Report step).'
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference_without_loops.csv
@@ -63,8 +67,9 @@ assessment:
   by: null
   date: null
   pending_reason: 'The end-to-end evidence (1 % synthesis with the switch off and on, RunPreparation with the
-    new facility ids, a short simulation) is not recorded yet; the share of loops kept for persons with an
-    anchored or linked activity and its effect are read from that run. ADR-0207 records the decision and its
-    assumptions.'
+    new facility ids, a short simulation) is not recorded yet; the share of loops kept on the solver (the loop
+    activity is anchored or linked, or the loop starts at an outside stay), the loops collapsed for persons with
+    an escort link, a portal stay or a passive joint link, and their effect are read from that run. ADR-0207
+    records the decision, its assumptions and the known limitation of the leisure subtype decider.'
   source: ADR-0207
 notes: 'Toggling the key recomputes the secondary location stage and the facilities stage, which both declare it.'

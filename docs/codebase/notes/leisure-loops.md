@@ -6,16 +6,17 @@ activity. The reasons, the rejected approaches and the assumptions are in
 state are in the feature record
 [`secondary_loop_zero_displacement`](../../registry/features/secondary_loop_zero_displacement.yml); numbers are in the
 run manifests those records link. Code: `braunschweig/synthesis/locations/secondary_chainsolvers/loops.py` (pure
-functions), `secondary_chainsolvers/__init__.py` (`execute`, `_flag_loop_trips`,
-`_persons_with_anchored_activities`, `_collapse_loops_of_eligible_persons`, `_report_loops`) and
+functions: `estimate_loop_probabilities`, `flag_loops`, `select_collapsible_loops`, `collapse_loops`, the
+`to_collapsed_*` translators, `restore_loops`), `secondary_chainsolvers/__init__.py` (`execute`, `_flag_loop_trips`,
+`_linked_activity_keys`, `_collapse_loops_and_move_anchors`, `_require_no_loop_origin_outside`, `_report_loops`) and
 `braunschweig/matsim/scenario/facilities.py` (`_loop_origin_facility_ids`, `validate_secondary_coverage`).
 
 ## Switch
 
-Config key `secondary_loop_zero_displacement` (code default `false`, production `true` in `configs/base_bs.yml`).
-Off: no loop function runs, no MiD table is read for it, the result has no `loop_origin` column and the stage writes
-no report file. The key is declared by the secondary location stage and, as a read-only mirror, by the facilities
-stage; both must run with the same value.
+Config key `secondary_loop_zero_displacement`; its default and production value are owned by the key and its comment in
+[`configs/base_bs.yml`](../../../configs/base_bs.yml). Off: no loop function runs, no MiD table is read for it, the
+result has no `loop_origin` column and the stage writes no report file. The key is declared by the secondary location
+stage and, as a read-only mirror, by the facilities stage; both must run with the same value.
 
 ## The flag (`loops.estimate_loop_probabilities`, `loops.flag_loops`)
 
@@ -24,14 +25,21 @@ anything else of the stage rewrites it, and it is independent of the leisure sub
 stay untouched).
 
 - **Scope.** The destination activity is leisure, the mode is walk or bicycle (`loops.LOOP_MODES`), the donor's
-  `W_ZWECK` is in `purpose_subtype.LEISURE_ZWECK` and the donor row exists. Every other trip is false and consumes no
-  random number: motorised legs, the coarse purpose 10 (`leisure_unspecified`) and the child purposes stay out.
+  `W_ZWECK` is in `purpose_subtype.LEISURE_ZWECK`, the donor row exists and the donor's `W_ZWD` is present. Every other
+  trip is false and consumes no random number: motorised legs, the coarse purpose 10 (`leisure_unspecified`) and the
+  child purposes stay out.
 - **Labelled leg.** The donor's `W_ZWD` is one of the leisure detail codes of `purpose_subtype.leisure_spec`
   (`labelled_codes`, which follows `purpose_subtype_codeplan_sentinels`: with it on, 799 "Freizeit k.A." is not a
   label). The leg is a loop exactly when the code is in `loops.LOOP_CODES` (710 stroll, 711 dog walk), by bicycle too.
-- **Drawn leg.** A leg in scope with another `W_ZWD` (a design sentinel, or 799 with the sentinels on) draws one
-  Bernoulli value with the probability of its cell. The stream is `random_seed + loops.LOOP_SEED_OFFSET`, separate from
-  the subtype, escort and distance draws; draws are taken in `(person_id, trip_index)` order.
+- **Drawn leg.** A leg in scope whose `W_ZWD` is NOT one of those leisure detail codes draws one Bernoulli value with
+  the probability of its cell. That is every other code the donor leg carries: the members of
+  `purpose_subtype.LEISURE_SENTINELS` (the design codes for "not asked", and the shop and errand detail codes that occur
+  on leisure legs, see the assumption in ADR-0207), and 799 with the sentinels on. The stream is `random_seed +
+  loops.LOOP_SEED_OFFSET`, an offset that differs from every other stream of the stage, so the draw perturbs none of the
+  subtype, escort, location-type or distance draws; draws are taken in `(person_id, trip_index)` order.
+- **Missing detail code.** A leg that meets the scope except that its `W_ZWD` is missing (NaN) stays not-loop and draws
+  nothing. It is counted per mode as `missing_detail_code` in the flag statistics and logged against
+  `fallback.FALLBACK_WARN_RATE`, so a donor table that lost its detail codes shows up.
 - **Cells.** `(mode, travel-time band, starts at home, way home follows)`. The band is `purpose_subtype.tt_band`, the
   band of the leisure subtype decider. "Starts at home": the purpose before the leg is home. "Way home follows": the
   next trip of the same person ends at home (the last trip of a day has none). The probability is the `W_GEW`-weighted
@@ -41,43 +49,73 @@ stay untouched).
   did so is logged per mode (WARNING above `fallback.FALLBACK_WARN_RATE`) and reported; a mode without a marginal
   raises.
 
-## The placement rule (`loops.collapse_loops`, `loops.restore_loops`, `execute`)
+## The placement rule (`loops.select_collapsible_loops`, `loops.collapse_loops`, `loops.restore_loops`, `execute`)
 
-1. **Eligibility.** A person is eligible when no activity of theirs is anchored or linked: no key in
-   `activity_anchors`, no row of the linked escort or portal rows, and neither side (child or adult) of a passive joint
-   link (`_persons_with_anchored_activities`). Their loops are kept: the solver places them like any other leisure
-   activity, and they are counted (`kept_person_has_anchored_activity` in the report).
-2. **Collapse.** For an eligible person every loop trip is dropped (a run of consecutive loops, and a loop that is the
-   last activity of the day, included). The trip after a run of loops now starts at the activity before the run
-   (its `preceding_purpose` is rewritten); mode, times and `travel_time` stay. Trip indices are renumbered without
-   gaps, and `collapse_loops` returns the index map to the original activity indices and the loop table (original
-   index, origin activity, origin kind). A loop must lead into a secondary activity, never into home, work or
-   education (`ValueError`).
-3. **Solve.** Escort link, portal anchors, problems, both passes and result extraction run on the collapsed table as
-   before. A person left without a secondary activity has nothing to solve.
-4. **Restore.** Solver rows of collapsed persons get their original activity indices back. Every loop activity then
-   gets one row at the place of the last activity before it that is not a loop (two loops in a row copy the same
-   place). Origin kinds, written to the column `loop_origin`: `home` (`location_id` `home_<household_id>`, the home
-   `geometry`), `work` and `education` (the person's primary `location_id` and `geometry`), `secondary` (the
-   `location_id` and `geometry` the solver gave that activity). `loop_origin` is empty on every other row. A missing
-   origin place raises; there is no stand-in place.
-5. **Facility check.** `validate_secondary_coverage` accepts a loop row's identifier only when it is a written home
-   facility (`home`) or a primary facility (`work`, `education`) of that kind, never because the loop row carries it.
-   With the switch on and no `loop_origin` column in the realised rows the facilities stage raises.
-6. **Report.** The log line `[secondary_loops] <mode>: in scope ...` gives, per mode, the legs in scope, the loops by
+1. **Selection** (`select_collapsible_loops`, with `_linked_activity_keys`). Every flagged loop is collapsed, whatever
+   else the person's chain holds (an escort link, a portal stay or a passive joint link do not exclude a person). Two
+   kinds stay on the solver and are counted, each under the first reason that applies:
+   - `kept_loop_is_linked_activity`: the loop's own activity is anchored or linked: its key is in `activity_anchors`, it
+     is a row of the linked escort or portal rows, or it is either side (child or adult) of a passive joint link. The
+     anchor or link needs that activity in the chain.
+   - `kept_after_outside`: the loop starts at an `outside` activity (a portal stay). Only the first loop of a run after
+     the stay is kept; the next one collapses onto it. The reason is in ADR-0207.
+2. **Collapse** (`collapse_loops`). Every collapsible loop trip is dropped (a run of consecutive loops, and a loop that
+   is the last activity of the day, included). The trip after a run of loops now starts at the activity before the run
+   (its `preceding_purpose` is rewritten); mode, times and `travel_time` stay. Trip indices are renumbered without gaps,
+   and `collapse_loops` returns the index map to the original activity indices and the loop table (original index,
+   origin activity, origin kind). A loop must lead into a secondary activity, never into home, work or education
+   (`ValueError`).
+3. **Move anchors and links** (`_collapse_loops_and_move_anchors`, `to_collapsed_anchor_keys`,
+   `to_collapsed_activity_rows`, `to_collapsed_links`). The anchor keys, the linked escort and portal rows and both sides
+   of every passive joint link were built on the original activity indices; before the solve they are translated to the
+   collapsed numbering with the index map, so the solver and the pass-2 anchor resolution see the numbering of the
+   chains they solve. The stage raises when an anchored or linked activity has no place in the collapsed chain, when two
+   anchors of one person end on the same index, when the number of collapsed loops differs from the number of
+   collapsible flags, and when a collapsed loop starts at an outside stay (`_require_no_loop_origin_outside`: it would
+   copy the gate's portal id).
+   Escort runs (consecutive activity indices of one person, assigned by `escort_links.assign_escort_anchors`) are
+   assigned on the diary as recorded, before the collapse: "escort, stroll, escort" keeps two escort runs, which a
+   hand-removed stroll would have made one.
+4. **Solve.** Escort link, portal anchors, problems, both passes and result extraction run on the collapsed table, with
+   every anchor and link in the collapsed numbering. A person left without a secondary activity has nothing to solve.
+5. **Restore** (`restore_loops`), once on the combined rows (solver rows, the pass-2 joint anchor rows, the linked
+   escort and portal rows). Every row of a collapsed person gets its original activity index back; a row the index map
+   does not know raises. The activity index is checked as whole numbers and read as int64 (an object column from an
+   empty solver frame is accepted, a missing or fractional value raises). Then every loop activity gets one row at the
+   place of the last activity before it that is not a loop (two loops in a row copy the same place). Origin kinds,
+   written to the column `loop_origin`: `home` (`location_id` `home_<household_id>`, the home `geometry`), `work` and
+   `education` (the person's primary `location_id` and `geometry`), `secondary` (the `location_id` and `geometry` of
+   that activity's row in the restored rows). An anchored origin is a `secondary` origin: a stroll after a linked
+   drop-off copies the child's education place, one after a child's joint activity the adult's placed location. A
+   portal id is never copied (step 1 keeps such a loop on the solver). `loop_origin` is empty on every other row. A
+   missing origin place raises; there is no stand-in place.
+6. **Facility check.** `validate_secondary_coverage` accepts a loop row's identifier only when it is a written home
+   facility (`home`) or a primary facility (`work`, `education`) of that kind, never because the loop row carries it. A
+   `secondary` loop row is checked like any realised secondary row: the child's education id of a stroll after a linked
+   drop-off passes only with `escort_household_link` on (the education ids are then extra valid ids). With the switch on
+   and no `loop_origin` column in the realised rows the facilities stage raises.
+7. **Report.** The log line `[secondary_loops] <mode>: in scope ...` gives, per mode, the legs in scope, the loops by
    label and by draw, the legs drawn and the share from the mode marginal. The line `[braunschweig.secondary_chainsolvers]
    loops: ...` and the block `loops` of `secondary_locations_report.json` (stage directory) give the loops flagged,
-   those placed at their origin by origin kind, those kept for an anchored or linked person (WARNING above
-   `FALLBACK_WARN_RATE`), the persons left without a secondary activity and the marginal share per mode.
+   those placed at their origin by origin kind, those kept on the solver by reason (`kept_loop_is_linked_activity`,
+   `kept_after_outside`, their sum `kept_total`, each with a rate; WARNING when `kept_total` is above
+   `FALLBACK_WARN_RATE`), the collapsed loops of persons with an escort link, a portal stay or a passive joint link
+   (`collapsed_loops_of_persons_with_escort_link`, `..._portal_stay`, `..._passive_joint_link`: they show the
+   translation of step 3 is exercised), the persons left without a secondary activity and the marginal share per mode.
 
 The random streams of the solver are consumed by fewer legs with the switch on, so a comparison of the two switch
 states compares distributions; the stage tests compare against an input from which the loop was removed by hand.
 
+Known limitation: the leisure subtype decider and the `leisure_local` distance layer are untouched and still count the
+loops, so the leisure legs that remain are assigned to `leisure_local` too often and draw from a pool that holds loop
+path lengths; the direction and the reason are in ADR-0207, Consequences.
+
 ## Comparisons
 
-`braunschweig/calibration/secondary_measurement.py` (`leave_out_loop_legs`) and `scripts/validate_secondary_distances.py`
-leave loop legs out of the model side where the cache carries `loop_origin`. The survey side of
-`validate_secondary_distances` is the published MiD W12 table, which keeps loops and has no `W_ZWD`; the script states
+`braunschweig/calibration/secondary_measurement.py` (`leave_out_loop_legs`), `scripts/validate_secondary_distances.py`
+and `scripts/calibrate_detour_circuity.py` leave loop legs out of the model side where the cache carries `loop_origin`;
+a secondary activity without a marker row raises. The survey side of `validate_secondary_distances` and of the circuity
+calibration's band-shift impact is the published MiD W12 table, which keeps loops and has no `W_ZWD`; both scripts state
 that difference. The W_ZWD group reference has a loop-free variant
 ([data record](../../registry/data/mid2023_w_zwd_group_reference_without_loops.yml)).
 
