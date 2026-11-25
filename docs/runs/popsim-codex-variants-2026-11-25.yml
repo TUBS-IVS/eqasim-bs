@@ -10,7 +10,9 @@ repository:
     each and are NOT committed to the fork: B changes sub_balancing to slice weights, crosswalk and
     incidence by groupby(...).indices computed once per step; C takes the batched household draw
     _draw_household_ids from the local fork branch park/codex-perf-2026-11-24 at commit f64fdfc. A variant
-    reaches the fork only through a separate port after this verdict.
+    reaches the fork only through a separate port after this verdict. The throwaway diffs of arms B and C
+    against d9a2e28 will be committed as artifacts with the results
+    (docs/runs/artifacts/popsim-codex-variants-2026-11-25/arm_B.diff and arm_C.diff).
 configuration:
   base: configs/base_bs.yml
   overlays:
@@ -55,15 +57,17 @@ validation:
   result: pending
   artifact: none yet
 - metric: >-
-    Time of the changed step on batch_028, median of the 3 repeats (B: sum of the three sub_balancing steps;
-    C: expand_households); bound: B or C is faster than A by more than the max-min spread of A's three
-    repeats
+    Time of the changed step on batch_028. Per arm and run the changed-step time is B: the sum of the seconds
+    of sub_balancing.geography=KREIS, =ZENSUS1km and =ZENSUS100m from populationsim.log; C: the seconds of
+    expand_households (A: the same step as the arm it is compared with). Bound, over the 3 batch_028
+    repeats: (median_A - median_X) > (max_A - min_A), X = B or C
   reference: arm A, the same step, three repeats on batch_028 (engineering measurement)
   result: pending
   artifact: none yet
 - metric: >-
-    Peak RSS (GNU time) of B and C; bound: not above the median of A's repeats on the same batch plus 5 %
-  reference: arm A on the same batch (engineering measurement)
+    Peak RSS (GNU time) of B and C on batch_028 only (median of the 3 runs per arm); bound:
+    median_X <= 1.05 * median_A. On batch_000 only the identity and exit-code checks apply.
+  reference: arm A on batch_028 (engineering measurement)
   result: pending
   artifact: none yet
 - metric: >-
