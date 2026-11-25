@@ -7,9 +7,13 @@ and places it at the activity before it. This module holds the pure functions of
 wires into no stage itself:
 
 - :func:`flag_loops` decides WHICH legs are loops (below);
-- :func:`collapse_loops` takes the loop activities out of the trips table before the chain solver
-  runs, and :func:`restore_loops` puts them back afterwards at the place of the activity they
-  start from (see :func:`collapse_loops` for the index convention and the assumption).
+- :func:`select_collapsible_loops` keeps on the solver the loops that cannot be taken out (an
+  anchored or linked loop activity, the first loop after an outside stay);
+- :func:`collapse_loops` takes the other loop activities out of the trips table before the chain
+  solver runs, the ``to_collapsed_*`` functions move the anchors and links of the collapsed persons
+  to the collapsed numbering, and :func:`restore_loops` puts the loops back afterwards at the place
+  of the activity they start from (see :func:`collapse_loops` for the index convention and the
+  assumption).
 
 Two sources of the flag, in this order:
 
@@ -37,7 +41,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import geopandas as gpd
 import numpy as np
@@ -48,6 +52,7 @@ from braunschweig.popsim.purpose_subtype import LEISURE_ZWECK, leisure_spec, tt_
 from braunschweig.popsim.shop_subtype import drop_legs_of_unknown_duration
 from braunschweig.popsim.trips import (
     map_mode, map_purpose, mid_travel_time_seconds, restrict_to_weekday_diary_legs)
+from braunschweig.synthesis.portal_trips.config_keys import OUTSIDE_PURPOSE
 
 from .fallback import FALLBACK_WARN_RATE
 
@@ -96,6 +101,9 @@ INDEX_MAP_COLUMNS = ("person_id", "local_activity_index", "activity_index")
 
 #: Columns of the loop table :func:`collapse_loops` returns.
 LOOP_TABLE_COLUMNS = ("person_id", "activity_index", "origin_purpose", "origin_activity_index")
+
+#: Reasons :func:`select_collapsible_loops` keeps a loop on the solver, keys of its counts.
+KEPT_LOOP_REASONS = ("kept_loop_is_linked_activity", "kept_after_outside")
 
 #: Columns :func:`collapse_loops` reads or rewrites; every other column is carried unchanged.
 _COLLAPSE_COLUMNS = ("person_id", "trip_index", "preceding_purpose", "following_purpose",
@@ -406,24 +414,76 @@ def _log_stats(stats: dict) -> None:
             logger.info(message, *arguments)
 
 
-def _aligned_loop_flags(is_loop: pd.Series, df_trips: pd.DataFrame) -> pd.Series:
-    """``is_loop`` on ``df_trips.index`` (any order); ``ValueError`` unless one Boolean per trip."""
+def _aligned_loop_flags(is_loop: pd.Series, df_trips: pd.DataFrame, caller: str) -> pd.Series:
+    """``is_loop`` on ``df_trips.index`` (any order); ``ValueError`` naming ``caller`` unless one
+    Boolean per trip."""
     if (len(is_loop) != len(df_trips) or not is_loop.index.is_unique
             or not df_trips.index.isin(is_loop.index).all()):
         raise ValueError(
-            "[secondary_loops] collapse_loops: is_loop must hold exactly one flag per trip, on "
+            f"[secondary_loops] {caller}: is_loop must hold exactly one flag per trip, on "
             f"the index of df_trips (as flag_loops returns it); got {len(is_loop)} flags for "
             f"{len(df_trips)} trips, {int((~df_trips.index.isin(is_loop.index)).sum())} trips "
             "without a flag.")
     if not pd.api.types.is_bool_dtype(is_loop.dtype):
-        raise ValueError("[secondary_loops] collapse_loops: is_loop must be Boolean, got dtype "
+        raise ValueError(f"[secondary_loops] {caller}: is_loop must be Boolean, got dtype "
                          f"{is_loop.dtype}.")
     # A nullable Boolean passes the dtype check but may hold NA, which is neither loop nor not.
     n_missing = int(is_loop.isna().sum())
     if n_missing:
-        raise ValueError(f"[secondary_loops] collapse_loops: {n_missing} of {len(is_loop)} "
+        raise ValueError(f"[secondary_loops] {caller}: {n_missing} of {len(is_loop)} "
                          "is_loop flags are missing (NA); every trip needs True or False.")
     return is_loop.reindex(df_trips.index).astype(bool)
+
+
+def select_collapsible_loops(df_trips: pd.DataFrame, is_loop: pd.Series,
+                             linked_activity_keys) -> Tuple[pd.Series, dict]:
+    """The loops :func:`collapse_loops` may take out of the chains, and the counts of those kept.
+
+    ``is_loop`` is the flag of :func:`flag_loops` on ``df_trips.index`` (a trip leads INTO the
+    loop activity ``trip_index + 1``); ``linked_activity_keys`` holds the ``(person_id,
+    activity_index)`` of every activity the stage fixes or links by its index (anchor keys,
+    linked escort and portal rows, both sides of a passive joint link). A flagged loop is KEPT on
+    the solver, and counted under the first reason that applies (:data:`KEPT_LOOP_REASONS`):
+
+    - ``kept_loop_is_linked_activity``: the loop activity itself is in ``linked_activity_keys``.
+      Its index is the key of the anchor or link, which needs the activity in the chain (in
+      practice a stroll a child takes along with an adult, #385);
+    - ``kept_after_outside``: the loop starts at an ``outside`` activity (a portal stay, #442).
+      The gate is a road crossing at the region boundary, not a place where an activity happens,
+      and a leisure activity at a portal facility is unproven in MATSim.
+
+    Every other flagged loop is collapsible. The second reason needs only the activity right before
+    the loop, although the place a loop copies is that of its ORIGIN, the last activity before it
+    that is not a collapsed loop: if the activity before the loop is itself a loop, that loop is
+    either kept (then it is the origin, and a leisure activity) or collapsed (then, by the same
+    argument one step earlier, its origin is not ``outside``, and it is this loop's origin too).
+    So only the first loop of a run after an outside stay is kept; the next one collapses onto it.
+
+    Returns ``(is_loop_to_collapse, counts)``: a Boolean Series on ``df_trips.index`` (True for
+    the collapsible loops, False for every other trip) and ``{reason: count}``. ``is_loop`` must
+    hold one Boolean per trip of ``df_trips`` (``ValueError`` otherwise). Pure; the inputs are not
+    changed.
+    """
+    _require_columns(df_trips, ("person_id", "trip_index", "preceding_purpose"), "trips")
+    _require_unique_index(df_trips, "select_collapsible_loops")
+    flags = _aligned_loop_flags(is_loop, df_trips, "select_collapsible_loops")
+
+    is_linked = pd.Series(False, index=df_trips.index)
+    loop_trips = df_trips[flags]
+    if len(loop_trips) and linked_activity_keys:
+        loop_activities = pd.MultiIndex.from_arrays(
+            [loop_trips["person_id"], loop_trips["trip_index"] + 1])
+        is_linked.loc[loop_trips.index] = loop_activities.isin(list(linked_activity_keys))
+    after_outside = flags & ~is_linked & (df_trips["preceding_purpose"] == OUTSIDE_PURPOSE)
+    to_collapse = flags & ~is_linked & ~after_outside
+    counts = {"kept_loop_is_linked_activity": int(is_linked.sum()),
+              "kept_after_outside": int(after_outside.sum())}
+    logger.info(
+        "[secondary_loops] select_collapsible_loops: %d of %d flagged loops collapsible; kept on "
+        "the solver: %d whose activity is anchored or linked itself, %d right after an outside "
+        "stay", int(to_collapse.sum()), int(flags.sum()), counts["kept_loop_is_linked_activity"],
+        counts["kept_after_outside"])
+    return to_collapse.astype(bool), counts
 
 
 def _origin_kind(purposes: pd.Series) -> np.ndarray:
@@ -433,7 +493,8 @@ def _origin_kind(purposes: pd.Series) -> np.ndarray:
 
 
 def collapse_loops(df_trips: pd.DataFrame, is_loop: pd.Series,
-                   eligible_persons: set) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+                   eligible_persons: Optional[set] = None
+                   ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Take the loop activities of the eligible persons out of their trip chains.
 
     ASSUMPTION (owner's decision for #679, the eqasim-france Paris model; design spec section 1):
@@ -444,9 +505,11 @@ def collapse_loops(df_trips: pd.DataFrame, is_loop: pd.Series,
     Index convention (the one ``find_assignment_problems`` derives from ``trip_index``): the
     activity before trip ``k`` has activity index ``k``, the activity after it ``k + 1``. A trip
     flagged in ``is_loop`` (a Boolean Series on ``df_trips.index``, as :func:`flag_loops` returns
-    it) leads INTO a loop activity.
+    it, or the collapsible subset of :func:`select_collapsible_loops`) leads INTO a loop activity.
+    ``eligible_persons`` restricts the collapse to these persons; None (the stage's call) collapses
+    every person with a flagged loop.
 
-    For every person in ``eligible_persons`` with at least one loop trip:
+    For every eligible person with at least one loop trip:
 
     - every loop trip is dropped (also a run of consecutive loops, and a loop as the last
       activity of the day);
@@ -477,7 +540,7 @@ def collapse_loops(df_trips: pd.DataFrame, is_loop: pd.Series,
     """
     _require_columns(df_trips, _COLLAPSE_COLUMNS, "trips")
     _require_unique_index(df_trips, "collapse_loops")
-    flags = _aligned_loop_flags(is_loop, df_trips)
+    flags = _aligned_loop_flags(is_loop, df_trips, "collapse_loops")
 
     into_primary = flags & df_trips["following_purpose"].isin(PRIMARY_LOOP_ORIGINS)
     if bool(into_primary.any()):
@@ -488,7 +551,9 @@ def collapse_loops(df_trips: pd.DataFrame, is_loop: pd.Series,
             "lead into a home, work or education activity; a loop activity must be a secondary "
             f"one. First (person_id, trip_index): {_plain(examples)}.")
 
-    loop_persons = df_trips.loc[flags & df_trips["person_id"].isin(eligible_persons), "person_id"]
+    eligible = flags if eligible_persons is None else (
+        flags & df_trips["person_id"].isin(eligible_persons))
+    loop_persons = df_trips.loc[eligible, "person_id"]
     collapsing = df_trips["person_id"].isin(loop_persons.unique())
     person_dtype = df_trips["person_id"].dtype
     index_dtype = df_trips["trip_index"].dtype
@@ -574,6 +639,112 @@ def _log_collapse(n_persons: int, n_loops: int, n_without_trips: int) -> None:
         n_persons, n_loops, n_without_trips)
 
 
+def to_collapsed_activity_index(person_ids, activity_indices, index_map: pd.DataFrame, *,
+                                what: str) -> np.ndarray:
+    """Original activity indices -> indices in the collapsed chains (the inverse of ``index_map``).
+
+    ``person_ids`` and ``activity_indices`` are aligned sequences of activities in the numbering of
+    the trips before :func:`collapse_loops`; ``index_map`` is that call's index map. An activity of
+    a person in the map gets its ``local_activity_index``; every other person keeps its index (its
+    chain was not changed). Returns a new array with the dtype of ``activity_indices``.
+
+    The stage moves every anchor and link (anchor keys, linked escort and portal rows, both sides
+    of a passive joint link) with this one function, before the solve, so that the solver and the
+    pass-2 anchor resolution see them in the numbering of the chains they solve; ``restore_loops``
+    maps every row back afterwards. An anchored or linked activity is never a collapsed loop
+    (:func:`select_collapsible_loops` keeps such loops), so an activity of a collapsed person that
+    is not in the map means the selection and the collapse disagree: ``ValueError`` naming
+    ``what`` and the first ``(person_id, activity_index)`` concerned; there is no stand-in index.
+    """
+    _require_columns(index_map, INDEX_MAP_COLUMNS, "index map")
+    person_ids = np.asarray(person_ids)
+    original = np.asarray(activity_indices)
+    local = original.copy()
+    if len(index_map) == 0 or len(original) == 0:
+        return local
+    of_collapsed = np.isin(person_ids, index_map["person_id"].unique())
+    if not of_collapsed.any():
+        return local
+    lookup = index_map.set_index(["person_id", "activity_index"])["local_activity_index"]
+    if not lookup.index.is_unique:
+        raise ValueError(
+            f"[secondary_loops] {what}: the index map repeats an original (person_id, "
+            f"activity_index) {int(lookup.index.duplicated().sum())} times; it must come from one "
+            "collapse_loops call.")
+    persons, activities = person_ids[of_collapsed], original[of_collapsed]
+    mapped = lookup.reindex(pd.MultiIndex.from_arrays([persons, activities]))
+    unmapped = mapped.isna().to_numpy()
+    if unmapped.any():
+        examples = list(zip(persons[unmapped], activities[unmapped]))[:5]
+        raise ValueError(
+            f"[secondary_loops] {what}: {int(unmapped.sum())} anchored or linked activities of "
+            "collapsed persons are no activity of the collapsed chain (they were taken out as "
+            "loops), so they have no index there; an anchored or linked loop must stay on the "
+            "solver (select_collapsible_loops). First (person_id, original activity_index): "
+            f"{_plain(examples)}.")
+    local[of_collapsed] = mapped.to_numpy().astype(local.dtype)
+    return local
+
+
+def to_collapsed_anchor_keys(activity_anchors, index_map: pd.DataFrame, *,
+                             what: str = "activity anchors"):
+    """``{(person_id, activity_index): point}`` with the keys moved to the collapsed numbering.
+
+    :func:`to_collapsed_activity_index` per key; the points and the order of the entries are kept,
+    and a key whose index does not change is kept as it is. None or an empty mapping, and an empty
+    ``index_map`` (nobody collapsed), return ``activity_anchors`` itself.
+    """
+    if not activity_anchors or len(index_map) == 0:
+        return activity_anchors
+    keys = list(activity_anchors)
+    local = to_collapsed_activity_index([person_id for person_id, _ in keys],
+                                        [activity_index for _, activity_index in keys],
+                                        index_map, what=what)
+    moved = {}
+    for (person_id, activity_index), local_index, point in zip(keys, local,
+                                                               activity_anchors.values()):
+        key = ((person_id, activity_index) if local_index == activity_index
+               else (person_id, int(local_index)))
+        moved[key] = point
+    if len(moved) != len(activity_anchors):
+        raise ValueError(
+            f"[secondary_loops] {what}: {len(activity_anchors)} anchors became {len(moved)} keys "
+            "in the collapsed numbering; two anchors of one person cannot share an activity.")
+    return moved
+
+
+def to_collapsed_activity_rows(rows: Optional[pd.DataFrame], index_map: pd.DataFrame, *,
+                               what: str) -> Optional[pd.DataFrame]:
+    """A copy of ``rows`` (``person_id``, ``activity_index``, ...) with ``activity_index`` in the
+    collapsed numbering (:func:`to_collapsed_activity_index`); every other column and the row order
+    are kept. None, an empty frame and an empty ``index_map`` return ``rows`` itself."""
+    if rows is None or len(rows) == 0 or len(index_map) == 0:
+        return rows
+    _require_columns(rows, ("person_id", "activity_index"), what)
+    moved = rows.copy()
+    moved["activity_index"] = to_collapsed_activity_index(
+        rows["person_id"].to_numpy(), rows["activity_index"].to_numpy(), index_map, what=what)
+    return moved
+
+
+def to_collapsed_links(links: Optional[pd.DataFrame], index_map: pd.DataFrame
+                       ) -> Optional[pd.DataFrame]:
+    """A copy of the passive joint link table (#385) with both sides in the collapsed numbering:
+    ``child_activity_index`` with the child's map, ``adult_activity_index`` with the adult's
+    (:func:`to_collapsed_activity_index`). None, an empty table and an empty ``index_map`` return
+    ``links`` itself."""
+    if links is None or len(links) == 0 or len(index_map) == 0:
+        return links
+    moved = links.copy()
+    for side in ("child", "adult"):
+        person_column, index_column = f"{side}_person_id", f"{side}_activity_index"
+        _require_columns(links, (person_column, index_column), "passive joint links")
+        moved[index_column] = to_collapsed_activity_index(
+            links[person_column].to_numpy(), links[index_column].to_numpy(), index_map,
+            what=f"passive joint links ({side} side)")
+    return moved
+
+
 def _plain(value):
     """``value`` with numpy scalars turned into Python ones, for readable error messages."""
     if isinstance(value, (list, tuple)):
@@ -607,10 +778,12 @@ def restore_loops(df_locations: gpd.GeoDataFrame, index_map: pd.DataFrame, loops
     """Give the solver's location rows their original activity indices and add one row per loop.
 
     ``df_locations`` are the solver's rows for the COLLAPSED chains (``person_id``,
-    ``activity_index``, ``location_id``, ``geometry``); ``index_map`` and ``loops`` come from the
-    :func:`collapse_loops` call that built those chains. A row of a person in ``index_map`` gets
-    its original ``activity_index`` back (``ValueError`` when the map has no entry for it); rows of
-    other persons keep theirs.
+    ``activity_index``, ``location_id``, ``geometry``), in the stage together with the rows of the
+    anchored activities (linked escort, portal and joint anchor rows) in the same numbering (the
+    ``to_collapsed_*`` functions); ``index_map`` and ``loops`` come from the :func:`collapse_loops`
+    call that built those chains. A row of a person in ``index_map`` gets its original
+    ``activity_index`` back (``ValueError`` when the map has no entry for it); rows of other
+    persons keep theirs.
 
     Then every loop activity gets one row at the place of its origin activity (ASSUMPTION: a loop
     has no displacement, see :func:`collapse_loops`), with ``loop_origin`` naming the kind:
@@ -622,7 +795,8 @@ def restore_loops(df_locations: gpd.GeoDataFrame, index_map: pd.DataFrame, loops
     - ``work`` / ``education``: the person's ``location_id`` and ``geometry`` in ``df_work`` /
       ``df_education``;
     - ``secondary``: the ``location_id`` and ``geometry`` of the origin's row in the restored
-      solver rows.
+      rows, an anchored origin included (a stroll after a linked escort drop-off copies the
+      child's education place, one after a child's joint activity the adult's placed location).
 
     The origin is never itself a loop (``origin_activity_index`` is the last activity before the
     loop that is not one), so two loops in a row copy the same place and the order of the lookups

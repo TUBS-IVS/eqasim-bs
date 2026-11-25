@@ -627,6 +627,108 @@ def test_persons_that_are_not_eligible_keep_their_loop():
     assert set(index_map["person_id"]) == {1} and set(loop_table["person_id"]) == {1}
 
 
+def test_only_linked_loops_and_the_first_loop_after_an_outside_stay_are_kept():
+    df_trips, is_loop = _chains(
+        (1, "home S shop S S home"),     # ordinary loops: all collapse
+        (2, "home outside S S home"),    # the first loop after the outside stay is kept, the next
+                                         # one collapses onto it
+        (3, "home shop S home"),         # the stroll itself is linked: kept
+        (4, "home outside S home"))      # linked AND after an outside stay: counted once, as linked
+    # (3, 1) is a linked activity that is no loop: it keeps nothing.
+    linked_activity_keys = {(3, 1), (3, 2), (4, 2)}
+
+    to_collapse, kept = loops.select_collapsible_loops(df_trips, is_loop, linked_activity_keys)
+
+    assert to_collapse.index.equals(df_trips.index) and to_collapse.dtype == bool
+    collapsing = df_trips[to_collapse]
+    assert sorted(zip(collapsing["person_id"], collapsing["trip_index"] + 1)) == [
+        (1, 1), (1, 3), (1, 4), (2, 3)]
+    assert kept == {"kept_loop_is_linked_activity": 2, "kept_after_outside": 1}
+    # The second loop after the outside stay copies the kept loop's place, not the gate's.
+    _, _, loop_table = loops.collapse_loops(df_trips, to_collapse)
+    assert loop_table[loop_table["person_id"] == 2].to_dict("records") == [
+        {"person_id": 2, "activity_index": 3, "origin_purpose": "secondary",
+         "origin_activity_index": 2}]
+
+
+#: Person 1 is collapsed (activities 0 home, 1 S, 2 shop, 3 S, 4 S, 5 other, 6 home: kept 0, 2, 5
+#: and 6 at the local indices 0 to 3); person 2 keeps its loop and its indices.
+TRANSLATION_CHAINS = ((1, "home S shop S S other home"), (2, "home S shop home"))
+
+
+def _translation_index_map():
+    df_trips, is_loop = _chains(*TRANSLATION_CHAINS)
+    collapsed, index_map, loop_table = loops.collapse_loops(df_trips, is_loop, {1})
+    return collapsed, index_map, loop_table
+
+
+def _links(rows):
+    """Passive joint links from ``(child, child activity, adult, adult activity)``."""
+    return pd.DataFrame(rows, columns=["child_person_id", "child_activity_index",
+                                       "adult_person_id", "adult_activity_index"]).assign(
+        adult_purpose="shop")
+
+
+def test_anchors_rows_and_both_link_sides_move_to_the_collapsed_chain_and_back():
+    collapsed, index_map, loop_table = _translation_index_map()
+    original_of = dict(zip(zip(index_map["person_id"], index_map["local_activity_index"]),
+                           index_map["activity_index"]))
+
+    def to_original(person_id, local_activity_index):
+        # Persons that were not collapsed are not in the map and keep their index.
+        return original_of.get((person_id, local_activity_index), local_activity_index)
+
+    anchors = {(1, 2): Point(1, 2), (1, 5): Point(1, 5), (2, 2): Point(2, 2)}
+    local_anchors = loops.to_collapsed_anchor_keys(anchors, index_map)
+    assert local_anchors == {(1, 1): Point(1, 2), (1, 2): Point(1, 5), (2, 2): Point(2, 2)}
+    assert {(p, to_original(p, a)): point for (p, a), point in local_anchors.items()} == anchors
+
+    links = _links([(1, 5, 2, 2), (2, 2, 1, 2), (2, 1, 1, 6)])
+    local_links = loops.to_collapsed_links(links, index_map)
+    # Each side moves with its own person's map.
+    assert local_links[["child_activity_index", "adult_activity_index"]].to_numpy().tolist() == [
+        [2, 2], [2, 1], [1, 3]]
+    for side in ("child", "adult"):
+        back = [to_original(p, a) for p, a in zip(local_links[f"{side}_person_id"],
+                                                    local_links[f"{side}_activity_index"])]
+        assert back == links[f"{side}_activity_index"].tolist()
+    pd.testing.assert_frame_equal(local_links.drop(columns=["child_activity_index",
+                                                            "adult_activity_index"]),
+                                  links.drop(columns=["child_activity_index",
+                                                      "adult_activity_index"]))
+
+    # Location rows: to the collapsed chain, through the solve-side restore and back.
+    rows = gpd.GeoDataFrame(pd.DataFrame.from_records(
+        [(1, 5, "other@1", Point(1, 15)), (1, 2, "shop@1", Point(1, 12)),
+         (2, 2, "shop@2", Point(2, 12)), (2, 1, "leisure@2", Point(2, 11))],
+        columns=LOCATION_COLUMNS), crs=CRS)
+    rows_before = rows.copy()
+    local_rows = loops.to_collapsed_activity_rows(rows, index_map, what="test rows")
+    assert local_rows["activity_index"].tolist() == [2, 1, 2, 1]
+    assert local_rows["activity_index"].dtype == rows["activity_index"].dtype
+    pd.testing.assert_frame_equal(rows, rows_before)
+    restored = loops.restore_loops(local_rows, index_map, loop_table, **_places([1, 2]))
+    pd.testing.assert_frame_equal(
+        pd.DataFrame(restored[restored["loop_origin"].isna()].drop(columns="loop_origin")),
+        pd.DataFrame(rows))
+
+
+@pytest.mark.parametrize("translate", [
+    lambda index_map: loops.to_collapsed_anchor_keys({(1, 3): Point(0, 0)}, index_map),
+    lambda index_map: loops.to_collapsed_activity_rows(
+        pd.DataFrame({"person_id": [2, 1], "activity_index": [1, 3]}), index_map,
+        what="portal rows"),
+    lambda index_map: loops.to_collapsed_links(_links([(1, 3, 2, 2)]), index_map),
+    lambda index_map: loops.to_collapsed_links(_links([(2, 2, 1, 3)]), index_map),
+], ids=["anchor_key", "location_row", "link_child_side", "link_adult_side"])
+def test_an_anchored_or_linked_activity_taken_out_as_a_loop_raises_naming_it(translate):
+    # Activity 3 of person 1 is a collapsed stroll: an anchor or link on it has nowhere to go.
+    _, index_map, _ = _translation_index_map()
+
+    with pytest.raises(ValueError, match=r"\[secondary_loops\].*\(1, 3\)"):
+        translate(index_map)
+
+
 def test_flags_in_another_row_order_give_the_same_collapse():
     df_trips, is_loop = _chains((1, "home S shop S S home"), (2, "work S home"))
     shuffled = is_loop.sample(frac=1.0, random_state=3)

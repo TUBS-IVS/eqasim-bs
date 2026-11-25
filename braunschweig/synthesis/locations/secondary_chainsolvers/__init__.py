@@ -59,7 +59,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, NamedTuple, Tuple
 
 import geopandas as gpd
 import numpy as np
@@ -2097,54 +2097,72 @@ def _flag_loop_trips(context, df_trips, mid_wege_loader):
     return loops.flag_loops(df_trips, probabilities, random)
 
 
-def _persons_with_anchored_activities(activity_anchors, linked_location_rows,
-                                      portal_location_rows, links) -> set:
-    """Persons with an activity that this stage fixes or links by its activity index.
+def _linked_activity_keys(activity_anchors, linked_location_rows, portal_location_rows,
+                          links) -> set:
+    """``(person_id, activity_index)`` of every activity this stage fixes or links by its index.
 
-    The keys of ``activity_anchors`` (escort links and portal gates), the persons of the #201
-    linked escort rows and of the #442 portal rows, and BOTH sides (child and adult) of every
-    #385 passive joint link. ``loops.collapse_loops`` renumbers activity indices, so these
-    persons keep their loops (design spec section 3, non-goals).
+    The keys of ``activity_anchors`` (escort links and portal gates), the rows of the #201 linked
+    escort rows and of the #442 portal rows, and BOTH sides (child and adult) of every #385
+    passive joint link, all in the numbering of the original trips.
+    ``loops.select_collapsible_loops`` keeps a loop whose own activity is one of them.
     """
-    persons = set()
+    keys = set()
     if activity_anchors:
-        persons.update(person_id for person_id, _activity_index in activity_anchors)
+        keys.update(activity_anchors)
     for rows in (linked_location_rows, portal_location_rows):
-        if rows is not None:
-            persons.update(rows["person_id"].tolist())
-    if links is not None:
-        persons.update(links["child_person_id"].tolist())
-        persons.update(links["adult_person_id"].tolist())
-    return persons
+        if rows is not None and len(rows):
+            keys.update(zip(rows["person_id"].tolist(), rows["activity_index"].tolist()))
+    if links is not None and len(links):
+        for side in ("child", "adult"):
+            keys.update(zip(links[f"{side}_person_id"].tolist(),
+                            links[f"{side}_activity_index"].tolist()))
+    return keys
 
 
-def _collapse_loops_of_eligible_persons(df_trips, df_trips_original, is_loop, anchored_persons):
-    """Take the loops of the eligible persons out of ``df_trips`` (issue #679).
+class _LoopCollapse(NamedTuple):
+    """The collapsed trips with everything the solve and the restore need (issue #679).
 
-    Eligible: a person with at least one flagged loop and no anchored or linked activity.
-    ``df_trips`` is the trips table after the #201 escort rewrite (same index as
-    ``df_trips_original``, on which ``is_loop`` was computed). Returns ``(collapsed trips,
-    index_map, loop_table, counts)``; ``counts`` holds what the stage report needs.
+    ``activity_anchors``, ``linked_location_rows``, ``portal_location_rows`` and ``links`` are the
+    stage's anchors and links with the indices of the collapsed persons in the collapsed
+    numbering; ``counts`` is what the stage report needs."""
+    trips: pd.DataFrame
+    index_map: pd.DataFrame
+    loop_table: pd.DataFrame
+    counts: dict
+    activity_anchors: Any
+    linked_location_rows: Any
+    portal_location_rows: Any
+    links: Any
 
-    Fails fast (``ValueError``) when a collapsed person has an anchored or linked activity: the
-    anchors and links keep their original activity indices, which the collapse would shift.
+
+def _collapse_loops_and_move_anchors(df_trips, is_loop, *, activity_anchors,
+                                     linked_location_rows, portal_location_rows,
+                                     links) -> _LoopCollapse:
+    """Take the collapsible loops out of ``df_trips`` and move the anchors to the collapsed chains.
+
+    ``df_trips`` is the trips table after the #201 escort rewrite (same index as the original
+    trips, on which ``is_loop`` was computed); the anchors, the linked escort and portal rows and
+    the passive joint links were all built on the original activity indices.
+
+    1. ``loops.select_collapsible_loops`` keeps on the solver a loop whose activity is anchored
+       or linked itself and the first loop after an outside stay; every other flagged loop is
+       collapsible, whatever else the person's chain holds.
+    2. ``loops.collapse_loops`` takes the collapsible loops out of every person's chain.
+    3. The anchor keys, the rows and BOTH sides of the links move to the collapsed numbering
+       (``loops.to_collapsed_*``); an anchored or linked activity that was collapsed raises there.
+
+    Fails fast (``ValueError``) when the number of collapsed loops differs from the number of
+    collapsible flags. Returns a :class:`_LoopCollapse`.
     """
-    loop_persons = df_trips_original.loc[is_loop, "person_id"]
-    kept = loop_persons.isin(anchored_persons)
-    eligible = set(loop_persons[~kept].unique().tolist())
-    collapsed, index_map, loop_table = loops.collapse_loops(df_trips, is_loop, eligible)
-
-    touched = set(index_map["person_id"].unique().tolist()) & anchored_persons
-    if touched:
+    linked_keys = _linked_activity_keys(activity_anchors, linked_location_rows,
+                                        portal_location_rows, links)
+    to_collapse, kept_counts = loops.select_collapsible_loops(df_trips, is_loop, linked_keys)
+    collapsed, index_map, loop_table = loops.collapse_loops(df_trips, to_collapse)
+    n_collapsible = int(to_collapse.sum())
+    if len(loop_table) != n_collapsible:
         raise ValueError(
-            "[braunschweig.secondary_chainsolvers] loops were collapsed for persons with an "
-            "anchored or linked activity (escort link, portal stay or passive joint link), whose "
-            "activity indices must not move; first person_ids "
-            f"{sorted(touched)[:5]}.")
-    if len(loop_table) != int((~kept).sum()):
-        raise ValueError(
-            f"[braunschweig.secondary_chainsolvers] {int((~kept).sum())} loops of eligible "
-            f"persons were flagged but {len(loop_table)} were collapsed.")
+            f"[braunschweig.secondary_chainsolvers] {n_collapsible} loops were selected for the "
+            f"collapse but {len(loop_table)} were collapsed.")
 
     # Persons left without a secondary activity: every activity of their collapsed chain is a
     # fixed one (home, work, education, ...), or they have no trip left at all.
@@ -2154,14 +2172,39 @@ def _collapse_loops_of_eligible_persons(df_trips, df_trips_original, is_loop, an
     has_secondary = (~of_collapsed["preceding_purpose"].isin(fixed)
                      | ~of_collapsed["following_purpose"].isin(fixed))
     with_secondary = set(of_collapsed.loc[has_secondary, "person_id"].unique().tolist())
+
+    def persons_of(frame, columns):
+        if frame is None or not len(frame):
+            return set()
+        return set().union(*(frame[column].tolist() for column in columns))
+
+    def collapsed_of(persons):
+        return int(loop_table["person_id"].isin(persons).sum())
+
     counts = {
-        "loops": int(len(loop_persons)),
-        "kept_person_has_anchored_activity": int(kept.sum()),
+        "loops": int(is_loop.sum()),
+        **kept_counts,
+        "kept_total": int(sum(kept_counts.values())),
         "collapsed": int(len(loop_table)),
         "persons_collapsed": len(collapsed_persons),
         "persons_without_secondary_activity": len(collapsed_persons - with_secondary),
+        # The loops whose collapse moved an anchor or link: the run shows the remap is exercised.
+        "collapsed_person_has_escort_link": collapsed_of(
+            persons_of(linked_location_rows, ["person_id"])),
+        "collapsed_person_has_portal_stay": collapsed_of(
+            persons_of(portal_location_rows, ["person_id"])),
+        "collapsed_person_has_passive_joint_link": collapsed_of(
+            persons_of(links, ["child_person_id", "adult_person_id"])),
     }
-    return collapsed, index_map, loop_table, counts
+    return _LoopCollapse(
+        trips=collapsed, index_map=index_map, loop_table=loop_table, counts=counts,
+        activity_anchors=loops.to_collapsed_anchor_keys(
+            activity_anchors, index_map, what="activity anchors (escort links, portal gates)"),
+        linked_location_rows=loops.to_collapsed_activity_rows(
+            linked_location_rows, index_map, what="linked escort rows (#201)"),
+        portal_location_rows=loops.to_collapsed_activity_rows(
+            portal_location_rows, index_map, what="portal rows (#442)"),
+        links=loops.to_collapsed_links(links, index_map))
 
 
 def _rate(count, total):
@@ -2171,8 +2214,11 @@ def _rate(count, total):
 def _report_loops(context, flag_stats, counts, loop_table):
     """Log the loop counts with rates and write them as the ``loops`` block of the stage report.
 
-    The kept share (loops of persons with an anchored or linked activity, which keep today's
-    placement) is a WARNING above ``FALLBACK_WARN_RATE``; the marginal-draw share per mode
+    Each reason a loop is kept on the solver (``loops.KEPT_LOOP_REASONS``) and their sum
+    ``kept_total`` are reported as counts and as rates of all flagged loops; the ``kept_total``
+    rate is a WARNING above ``FALLBACK_WARN_RATE``. ``collapsed_person_has_escort_link`` /
+    ``_portal_stay`` / ``_passive_joint_link`` count the collapsed loops of persons with such an
+    anchor or link, whose indices the collapse moved. The marginal-draw share per mode
     (``draws_from_marginal / draws``, 0 for a mode without draws) is warned by
     ``loops.flag_loops`` already and only reported and logged here.
     """
@@ -2184,21 +2230,26 @@ def _report_loops(context, flag_stats, counts, loop_table):
         "flags": flag_stats,
         "draws_from_marginal_share": marginal_share,
         **counts,
-        "kept_person_has_anchored_activity_rate": _rate(
-            counts["kept_person_has_anchored_activity"], counts["loops"]),
+        **{f"{reason}_rate": _rate(counts[reason], counts["loops"])
+           for reason in (*loops.KEPT_LOOP_REASONS, "kept_total")},
         "by_origin": {origin: int(by_origin.get(origin, 0)) for origin in loops.LOOP_ORIGINS},
     }
-    kept_rate = block["kept_person_has_anchored_activity_rate"]
+    kept_rate = block["kept_total_rate"]
     message = (
         "[braunschweig.secondary_chainsolvers] loops: %d flagged; %d (%.1f%%) placed at the "
-        "activity they start from (by origin: %s); %d (%.1f%%) kept on the solver because the "
-        "person has an anchored or linked activity (escort link, portal stay, passive joint "
-        "link); %d of %d collapsed persons (%.1f%%) have no secondary activity left to solve; "
-        "share of loop draws from the mode marginal: %s")
+        "activity they start from (by origin: %s); %d (%.1f%%) kept on the solver: %d (%.1f%%) "
+        "because the loop activity itself is anchored or linked, %d (%.1f%%) because the loop "
+        "starts at an outside stay; collapsed loops of persons with an escort link %d, a portal "
+        "stay %d, a passive joint link %d; %d of %d collapsed persons (%.1f%%) have no secondary "
+        "activity left to solve; share of loop draws from the mode marginal: %s")
     arguments = (
         counts["loops"], counts["collapsed"], 100.0 * _rate(counts["collapsed"], counts["loops"]),
         ", ".join(f"{origin} {count}" for origin, count in block["by_origin"].items()),
-        counts["kept_person_has_anchored_activity"], 100.0 * kept_rate,
+        counts["kept_total"], 100.0 * kept_rate,
+        counts["kept_loop_is_linked_activity"], 100.0 * block["kept_loop_is_linked_activity_rate"],
+        counts["kept_after_outside"], 100.0 * block["kept_after_outside_rate"],
+        counts["collapsed_person_has_escort_link"], counts["collapsed_person_has_portal_stay"],
+        counts["collapsed_person_has_passive_joint_link"],
         counts["persons_without_secondary_activity"], counts["persons_collapsed"],
         100.0 * _rate(counts["persons_without_secondary_activity"], counts["persons_collapsed"]),
         ", ".join(f"{mode} {100.0 * share:.1f}%" for mode, share in sorted(marginal_share.items())))
@@ -2299,13 +2350,19 @@ def execute(context):
             print(_passive_joint_surrogate_summary(link_stats, rescue_stats))
 
     # Loop collapse (issue #679): the escort link, the portal anchors and the passive joint links
-    # above were all computed on the original activity indices. They concern only persons who
-    # keep their loops, so the collapse of every other person's chain leaves them valid.
+    # above were all computed on the original activity indices. The collapse renumbers the chains
+    # of the persons it touches, so their anchors and links move to the collapsed numbering with
+    # them, before the solve; the restore below maps every row back.
     if loop_enabled:
-        anchored_persons = _persons_with_anchored_activities(
-            escort_activity_anchors, linked_location_rows, portal_location_rows, links)
-        df_trips, loop_index_map, loop_table, loop_counts = _collapse_loops_of_eligible_persons(
-            df_trips, df_trips_original, is_loop, anchored_persons)
+        loop_collapse = _collapse_loops_and_move_anchors(
+            df_trips, is_loop, activity_anchors=escort_activity_anchors,
+            linked_location_rows=linked_location_rows, portal_location_rows=portal_location_rows,
+            links=links)
+        df_trips = loop_collapse.trips
+        escort_activity_anchors = loop_collapse.activity_anchors
+        linked_location_rows = loop_collapse.linked_location_rows
+        portal_location_rows = loop_collapse.portal_location_rows
+        links = loop_collapse.links
 
     if joint_location:
         df_locations, df_convergence, reports, _anchor_stats = _compose_two_pass(
@@ -2357,24 +2414,26 @@ def execute(context):
         df_portal = gpd.GeoDataFrame(portal_location_rows, geometry="geometry", crs=crs)
         df_locations = pd.concat([df_locations, df_portal], ignore_index=True)
 
-    # Loop restore (issue #679), ONCE on the combined result: the solver rows of the collapsed
-    # persons get their original activity indices back and every loop activity one row at the
-    # place it starts from, with the column loop_origin. After the linked and portal rows on
-    # purpose: those rows belong to persons who were not collapsed, so the remap leaves them
-    # alone and they cannot collide with a loop row, and restore_loops's duplicate check then
-    # covers the whole stage output. The place frames are the RAW stage outputs (restore_loops
-    # needs location_id and geometry, not _prepare_primary's renamed columns).
+    # Loop restore (issue #679), ONCE on the combined result: every row of a collapsed person --
+    # solver rows, the pass-2 joint anchor rows and the linked escort and portal rows appended
+    # above, all in the collapsed numbering -- gets its original activity index back, and every
+    # loop activity one row at the place it starts from, with the column loop_origin. After the
+    # linked and portal rows on purpose: a loop that starts at an anchored activity copies that
+    # row's place (a stroll after a linked drop-off copies the child's education place), and
+    # restore_loops's duplicate check covers the whole stage output. The place frames are the RAW
+    # stage outputs (restore_loops needs location_id and geometry, not _prepare_primary's renamed
+    # columns).
     if loop_enabled:
         df_work_raw, df_education_raw = context.stage(
             "synthesis.population.spatial.primary.locations")
         df_locations = loops.restore_loops(
             gpd.GeoDataFrame(df_locations, geometry="geometry", crs=crs),
-            loop_index_map, loop_table,
+            loop_collapse.index_map, loop_collapse.loop_table,
             df_persons=context.stage("synthesis.population.sampled")[
                 ["person_id", "household_id"]],
             df_home=context.stage("synthesis.population.spatial.home.locations"),
             df_work=df_work_raw, df_education=df_education_raw)
-        _report_loops(context, loop_flag_stats, loop_counts, loop_table)
+        _report_loops(context, loop_flag_stats, loop_collapse.counts, loop_collapse.loop_table)
 
     if len(df_convergence):
         print(
