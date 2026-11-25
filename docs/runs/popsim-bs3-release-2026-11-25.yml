@@ -66,7 +66,12 @@ status:
     Follow-up (after the results above): arm rc2_on, tree ~/i677/trees/RC2 = git archive of ea51a8a
     (core.autocrlf=false), populationsim imported from it (metric pyfile), batch_000, batch_032 and batch_028
     started together as round 5 with options on, at uptime load average 0.93 and 2 foreign java process lines
-    (a foreign MATSim run, not touched; runs.csv rows load:*). Checks 1 to 4 MET for rc2_on. Reported only, no
+    (a foreign MATSim run, not touched; runs.csv rows load:*). Checks 1 to 4 MET for rc2_on, with one
+    qualification: check 1 includes the comparison with rc_off, which was not re-run for ea51a8a;
+    4b54064..ea51a8a changes only the FAST_PATHS branch of expand_households, the README and the tests
+    (git diff --stat 4b54064 ea51a8a), so rc_off is unaffected. Check 5 (memory) was not repeated; the peak RSS of
+    rc2_on is reported only (runs.csv, metric peak_rss_kb): batch_000 2829648 kB, batch_028 2807140 kB,
+    batch_032 2807292 kB. Reported only, no
     claim: expand_households seconds rc2_on vs bs2_on (repeat 1) 0.167 vs 0.965 on batch_000, 0.404 vs 2.430 on
     batch_032 and 0.373 vs 4.903 on batch_028; these single runs are not a timing comparison (rc2_on ran under
     a different server load).
@@ -151,8 +156,8 @@ validation:
     of the timing is consistent with the foreign load that fell between the repeats (see notes). The slower
     expand_households of the candidate agrees with the extra per-group validation of its batch draw (finite,
     non-negative and positive-sum weights, id-cast checks, one pandas lookup per used group, 16417 groups on
-    batch_028); this cause was read from the code, not profiled. Variant C of popsim-codex-variants-2026-11-25
-    had no such validation and measured 0.70 s.
+    batch_028); this cause was read from the code, not profiled. Variant C had no such validation; its
+    expand_households time is in docs/runs/popsim-codex-variants-2026-11-25.yml.
   artifact: docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv
 features:
   note: >-
