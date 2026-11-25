@@ -87,7 +87,7 @@ def test_configure_declares_the_four_keys_with_their_defaults():
 
     R.configure(Ctx())
     assert calls == {R.KEY_LOOP_ISOLATE: False, R.KEY_LOOP_MAX_TOUR_LENGTH: 11,
-                     R.KEY_INITIAL_ISOLATE: True, R.KEY_INITIAL_MAX_TOUR_LENGTH: 13}
+                     R.KEY_INITIAL_ISOLATE: True, R.KEY_INITIAL_MAX_TOUR_LENGTH: 11}
 
 
 REAL_MODULE = (Path(__file__).parent / "fixtures" / "dmc_module_prod100.xml").read_text(encoding="utf-8")

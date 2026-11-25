@@ -28,7 +28,7 @@ KEY_LOOP_MAX_TOUR_LENGTH = "braunschweig.mode_choice.max_tour_length"
 KEY_INITIAL_ISOLATE = "braunschweig.initial_mode_choice.isolate_outside_trips"
 KEY_INITIAL_MAX_TOUR_LENGTH = "braunschweig.initial_mode_choice.max_tour_length"
 DEFAULT_LOOP_ISOLATE, DEFAULT_LOOP_MAX_TOUR_LENGTH = False, 11
-DEFAULT_INITIAL_ISOLATE, DEFAULT_INITIAL_MAX_TOUR_LENGTH = True, 13
+DEFAULT_INITIAL_ISOLATE, DEFAULT_INITIAL_MAX_TOUR_LENGTH = True, 11
 
 DMC_MODULE = "DiscreteModeChoice"
 TOUR_LENGTH_SET = "tourFilter:TourLength"

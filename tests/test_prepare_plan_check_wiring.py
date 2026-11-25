@@ -201,7 +201,7 @@ def test_configure_declares_the_reach_and_repair_keys():
         context = _RecordingContext({"cordon_enabled": cordon, "freight_enabled": False})
         prepare.configure(context)
         for key, default in ((R.KEY_LOOP_ISOLATE, False), (R.KEY_LOOP_MAX_TOUR_LENGTH, 11),
-                             (R.KEY_INITIAL_ISOLATE, True), (R.KEY_INITIAL_MAX_TOUR_LENGTH, 13),
+                             (R.KEY_INITIAL_ISOLATE, True), (R.KEY_INITIAL_MAX_TOUR_LENGTH, 11),
                              (L.KEY_ALL_MODES, True), (L.KEY_MAX_SHARE_OTHER_MODES, 0.002)):
             assert context.calls[key] == default
 

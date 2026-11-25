@@ -1066,7 +1066,9 @@ config:
   # mode choice still handles (tourFilter:TourLength). "initial" is the one standalone mode choice before iteration
   # 0, "mode_choice" the MATSim loop. Values that restore today's behaviour: initial false and 6, loop false and 6.
   braunschweig.initial_mode_choice.isolate_outside_trips: true
-  braunschweig.initial_mode_choice.max_tour_length: 13
+  # Owner decision of 2026-11-25: the initial choice uses the loop's limit of 11, because a limit of 13 would add
+  # hours of computing time (timing manifest i678-long-tour-timing-prod100-2026-11-25); longer tours stay unreached.
+  braunschweig.initial_mode_choice.max_tour_length: 11
   braunschweig.mode_choice.isolate_outside_trips: false
   braunschweig.mode_choice.max_tour_length: 11
   # The lift also repairs long walk and bicycle trips that the mode choice cannot reach, not only pt-as-walk
