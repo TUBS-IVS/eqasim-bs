@@ -779,9 +779,26 @@ def configure(context):
     # loop is flagged, no MiD table is read, no column or report is added (byte-identical
     # OFF path); the production value is set in configs/base_bs.yml. Declared
     # unconditionally, like the split flags.
-    loop_zero_displacement = context.config(loops.KEY_ENABLED, False)
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS, DEFAULT_SECONDARY_LOOP_ZERO_DISPLACEMENT,
+        KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS, require_loop_free_estimate_prerequisites,
+    )
+    loop_zero_displacement = context.config(loops.KEY_ENABLED,
+                                            DEFAULT_SECONDARY_LOOP_ZERO_DISPLACEMENT)
     if shop_daily_split or leisure_subtype_split or other_subtype_split or loop_zero_displacement:
         context.config("braunschweig.population.popsim.mid_dir")
+    # Loop-free leisure subtype decider (issue #679, ADR-0207): ON leaves the loop legs
+    # (purpose_subtype.drop_loop_legs) out of _build_leisure_subtype_decider's estimate. Shared
+    # key/default constants: braunschweig.popsim.distance_distributions leaves the same legs out of
+    # the leisure subtype distance layers, and the two must agree. Declared unconditionally; the
+    # guard (the same function in both stages) needs the leisure subtype split and the loop
+    # placement on.
+    if context.config(KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS,
+                      DEFAULT_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS):
+        require_loop_free_estimate_prerequisites(
+            leisure_subtype_split=bool(leisure_subtype_split),
+            loop_zero_displacement=bool(loop_zero_displacement),
+            stage_tag="[braunschweig.secondary_chainsolvers]")
 
     # Residential ``pot_visit`` placement for leisure_visit legs (Task 5,
     # issue #127). When ON, ``leisure_visit`` candidates are the ALKIS

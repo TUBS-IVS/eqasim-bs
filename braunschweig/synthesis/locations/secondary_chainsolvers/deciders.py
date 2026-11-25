@@ -272,19 +272,28 @@ def _build_leisure_subtype_decider(context, random_seed: int,
     universes"). Again the SAME flag
     ``braunschweig.popsim.distance_distributions`` reads for the leisure subtype
     distance layers, and both must resolve the same value.
+
+    Loop-free estimate (issue #679, ADR-0207): when
+    ``secondary_leisure_estimates_without_loops`` is ON, the loop legs
+    (``purpose_subtype.drop_loop_legs``: W_ZWD 710/711 on foot or by bicycle) are
+    left out after the coverage guard and before the estimation, because the
+    secondary location stage takes them out of the chain. Again the SAME flag
+    ``braunschweig.popsim.distance_distributions`` reads for the leisure subtype
+    distance layers.
     """
     if not context.config("secondary_leisure_subtype_split"):
         return None
 
     from braunschweig.popsim.purpose_subtype import (
         code_coverage_guard,
+        drop_loop_legs,
         estimate_group_probabilities,
         leisure_spec,
         tt_band,
     )
     from braunschweig.popsim.stage.config_keys import (
         KEY_LEISURE_UNSPECIFIED_SUBTYPE, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
-        KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
+        KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS, KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
     )
     from braunschweig.popsim.trips import (
         map_mode, mid_travel_time_seconds, restrict_to_weekday_diary_legs)
@@ -328,13 +337,29 @@ def _build_leisure_subtype_decider(context, random_seed: int,
     # separate change and is out of this scope (stated in ADR-0115).
     code_coverage_guard(mid_wege, spec)
 
+    # Loop-free estimate (issue #679, ADR-0207; one-argument execute-context read of the key
+    # declared in configure()): with the loop placement on, the strolls and dog walks on foot or
+    # by bicycle leave the chain, so P(group | mode, tt_band) is estimated on the leisure legs the
+    # model still places. Filtered AFTER the coverage guard, which therefore still sees 710/711
+    # (and the spec keeps them as leisure_local codes, so a car stroll stays labelled). Only the
+    # spec's own W_ZWECK legs are handed to the filter, so its per-mode counts describe leisure
+    # legs; the estimate reads no other rows. A (mode, tt_band) cell that loses legs below
+    # min_obs, or disappears, falls to the marginal and is counted by the estimate's thin-cell
+    # log and by _CountedDecider's fallback count.
+    without_loops = bool(context.config(KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS))
+    if without_loops:
+        mid_wege = drop_loop_legs(
+            mid_wege[mid_wege["W_ZWECK"].isin(spec.zweck_values)],
+            log_tag="[braunschweig.secondary_chainsolvers] leisure subtype:")
+
     cell_probs, marginal = estimate_group_probabilities(mid_wege, spec, min_obs=min_obs)
     group_names = sorted(marginal)
     print(
         "[braunschweig.secondary_chainsolvers] leisure subtype: marginal shares "
         + ", ".join(f"{name}={marginal[name]:.3f}" for name in group_names)
         + f" (codeplan no-detail sentinels: {'on' if codeplan_sentinels else 'off'}"
-        + f", unspecified subtype: {'on' if unspecified_subtype else 'off'})"
+        + f", unspecified subtype: {'on' if unspecified_subtype else 'off'}"
+        + (", loop legs left out)" if without_loops else ")")
     )
 
     rng = np.random.RandomState(int(random_seed) + LEISURE_SUBTYPE_SEED_OFFSET)

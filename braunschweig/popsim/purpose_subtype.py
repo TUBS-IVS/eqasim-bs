@@ -557,6 +557,58 @@ LEISURE_SENTINELS = frozenset({2202, 4402, 599, 999, 503, 603, 605})
 # whether the underlying donor leg was originally W_ZWECK 7 or 10.
 LEISURE_SENTINELS |= {7704, 7705}
 
+# Strolls and dog walks (issue #679, ADR-0207): the loop legs of the leisure_local group. The
+# definition lives here, next to LEISURE_GROUPS, because both of its consumers need it and one of
+# them cannot import the other: the loop placement
+# (braunschweig.synthesis.locations.secondary_chainsolvers.loops, which re-exports both names)
+# imports braunschweig.popsim.distance_distributions, which builds the loop-free distance layers.
+#: MiD ``W_ZWD`` codes recorded as a loop: 710 Spaziergang, 711 Hund ausfuehren.
+LOOP_CODES = frozenset({710, 711})
+#: Modes a loop can have. A stroll by car is not a loop; a ride by bicycle without a destination
+#: is (ASSUMPTION: same reading as the diary's "Spaziergang" by bicycle).
+LOOP_MODES = frozenset({"walk", "bicycle"})
+
+
+def drop_loop_legs(legs: pd.DataFrame, *, log_tag: str) -> pd.DataFrame:
+    """Leave out the loop legs: mode in :data:`LOOP_MODES` AND ``W_ZWD`` in :data:`LOOP_CODES`.
+
+    The one row filter of the loop-free leisure estimates (issue #679,
+    ``secondary_leisure_estimates_without_loops``): the leisure subtype distance layers
+    (``braunschweig.popsim.distance_distributions.run``, Step 8) and the leisure subtype decider
+    (``secondary_chainsolvers.deciders._build_leisure_subtype_decider``) both call it, so the two
+    estimates leave out the same legs. Every other leg is kept, a car leg with 710 included (the
+    model keeps a motorised stroll as a trip to a destination).
+
+    Logs, per loop mode, how many legs were left out of how many of that mode, and the total
+    kept; a loop mode that loses ALL its legs is a WARNING (its cells then rest on the fallback of
+    the caller). Needs the columns ``mode`` and ``W_ZWD`` (``ValueError`` otherwise). Returns the
+    kept rows in their order, with their index and columns; the input is not changed.
+    """
+    missing = [column for column in ("mode", "W_ZWD") if column not in legs.columns]
+    if missing:
+        raise ValueError(f"{log_tag} drop_loop_legs: the legs are missing column(s) {missing}.")
+    is_loop = legs["mode"].isin(LOOP_MODES) & legs["W_ZWD"].isin(LOOP_CODES)
+    kept = legs[~is_loop]
+    per_mode = []
+    emptied = []
+    for mode in sorted(LOOP_MODES):
+        of_mode = legs["mode"] == mode
+        n_mode = int(of_mode.sum())
+        n_dropped = int((is_loop & of_mode).sum())
+        share = 100.0 * n_dropped / n_mode if n_mode else 0.0
+        per_mode.append(f"{mode} {n_dropped}/{n_mode} ({share:.1f}%)")
+        if n_mode and n_dropped == n_mode:
+            emptied.append(mode)
+    logger.info(
+        "%s loop legs (W_ZWD %s by %s) left out of the estimate: %s; kept %d/%d legs",
+        log_tag, sorted(LOOP_CODES), ", ".join(sorted(LOOP_MODES)), ", ".join(per_mode),
+        len(kept), len(legs))
+    if emptied:
+        logger.warning(
+            "%s every leg of mode(s) %s is a loop leg; without the loops these modes have no leg "
+            "left in this estimate.", log_tag, emptied)
+    return kept
+
 OTHER_ERRAND_ZWECK = frozenset({5})   # W_ZWECK 5: private Erledigung (verified, MiD 2023 codeplan)
 OTHER_ESCORT_ZWECK = frozenset({6})   # W_ZWECK 6: Bringen/Holen (verified; no W_ZWD detail is collected for this purpose)
 OTHER_ERRAND_GROUPS = {

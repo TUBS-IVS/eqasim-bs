@@ -411,6 +411,36 @@ def _build_leisure_unspecified_layer(df: pd.DataFrame) -> dict | None:
     return _build_mode_distributions(unspecified_df)
 
 
+def _require_loop_modes_kept(group_name: str, with_loops: pd.DataFrame,
+                             without_loops: pd.DataFrame) -> None:
+    """Raise when a loop mode's layer of ``group_name`` had legs with the loops and has none without.
+
+    Issue #679: without its loop legs such a layer cannot be estimated, and the sampler would
+    otherwise quietly use the aggregate ``leisure`` layer for those legs (which still holds the
+    loops). Logs, per loop mode, the legs of the group with and without the loops.
+    """
+    from braunschweig.popsim.purpose_subtype import LOOP_MODES
+
+    emptied = []
+    for mode in sorted(LOOP_MODES):
+        n_with = int((with_loops["mode"] == mode).sum())
+        if not n_with:
+            continue
+        n_without = int((without_loops["mode"] == mode).sum())
+        logger.info(
+            "[popsim.distance_distributions] leisure subtype %s [%s]: %d of %d legs (%.1f%%) are "
+            "no loop and build the layer", group_name, mode, n_without, n_with,
+            100.0 * n_without / n_with)
+        if not n_without:
+            emptied.append(mode)
+    if emptied:
+        raise ValueError(
+            f"[popsim.distance_distributions] leisure subtype {group_name}: every leg of mode(s) "
+            f"{emptied} is a loop leg, so the layer cannot be estimated without the loops "
+            "(secondary_leisure_estimates_without_loops). Turn the switch off or check the W_ZWD "
+            "and mode columns of the MiD table.")
+
+
 def _drop_trips_beyond_distance(df: pd.DataFrame, max_distance_m: float) -> pd.DataFrame:
     """Drop trips whose ``distance`` (straight-line metres) exceeds ``max_distance_m``.
 
@@ -460,7 +490,8 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         leisure_unspecified_subtype: bool = False,
         weekday_legs_only: bool = False,
         exclude_no_answer_purpose: bool = False,
-        max_distance_m: float | None = None) -> dict:
+        max_distance_m: float | None = None,
+        leisure_estimates_without_loops: bool = False) -> dict:
     """Build secondary distance distributions from the MiD 2023 Wege survey.
 
     This is the pure computational core, factored out of execute() so that
@@ -623,6 +654,19 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         supplied area; None keeps every trip and the output byte-identical). Unit:
         metres, valid range > 0. The dropped share is logged per mode; a mode left
         without any trip raises ``ValueError`` naming the mode(s) and the bound.
+    leisure_estimates_without_loops:
+        When True (issue #679, ADR-0207), the leisure subtype layers of Step 8 are built
+        without the loop legs (``purpose_subtype.drop_loop_legs``: a stroll or dog walk,
+        W_ZWD 710/711, on foot or by bicycle), because the secondary location stage takes
+        those legs out of the chain under ``secondary_loop_zero_displacement``; a car leg
+        with 710/711 stays. Only the layer of the group holding the loop codes
+        (``leisure_local``) changes; the aggregate ``leisure`` layer, the
+        ``leisure_unspecified`` layer and every other purpose keep every leg. A loop mode
+        whose layer of that group had legs with the loops and has none without them raises
+        ``ValueError`` (the layer cannot be estimated; no fallback to the with-loops layer).
+        Inert unless ``leisure_subtype_split`` is True and ``W_ZWD`` is present. Default
+        False keeps the output byte-identical; ``configure()`` refuses True without
+        ``secondary_leisure_subtype_split`` and ``secondary_loop_zero_displacement``.
 
     Returns
     -------
@@ -909,12 +953,25 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
             # docstring parameter above.
             leisure_groups = leisure_spec(codeplan_sentinels).groups
             leisure_df = df[df["following_purpose"] == "leisure"]
+            # Loop-free subtype layers (issue #679): the strolls and dog walks on foot or by
+            # bicycle leave the chain under secondary_loop_zero_displacement, so the legs the
+            # model still places draw from layers without them. Only these subtype layers are
+            # built from the reduced frame; the aggregate "leisure" layer above and Step 8b keep
+            # every leg.
+            subtype_df = leisure_df
+            if leisure_estimates_without_loops:
+                from braunschweig.popsim.purpose_subtype import drop_loop_legs
+                subtype_df = drop_loop_legs(
+                    leisure_df, log_tag="[popsim.distance_distributions] leisure subtype layers:")
             for group_name, codes in leisure_groups.items():
-                group_df = leisure_df[leisure_df["W_ZWD"].isin(codes)]
+                group_df = subtype_df[subtype_df["W_ZWD"].isin(codes)]
                 logger.info(
                     "[popsim.distance_distributions] leisure subtype %s: %d legs",
                     group_name, len(group_df),
                 )
+                if leisure_estimates_without_loops:
+                    _require_loop_modes_kept(
+                        group_name, leisure_df[leisure_df["W_ZWD"].isin(codes)], group_df)
                 if len(group_df):
                     out[group_name] = _build_mode_distributions(group_df)
 
@@ -1006,13 +1063,16 @@ def configure(context):
         DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
         DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
         DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY, DEFAULT_W_ZWECK_10_AS_LEISURE,
+        DEFAULT_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS,
+        DEFAULT_SECONDARY_LOOP_ZERO_DISPLACEMENT,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
         KEY_EXCLUDE_RBW_LEGS, KEY_LEISURE_UNSPECIFIED_SUBTYPE,
         KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
         KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
         KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
+        KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS, KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT,
         KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, KEY_W_ZWECK_10_AS_LEISURE,
-        require_positive,
+        require_loop_free_estimate_prerequisites, require_positive,
     )
     context.config("braunschweig.population.popsim.mid_dir")
     # random_seed is not consumed here (the default stage also does not use one)
@@ -1086,6 +1146,17 @@ def configure(context):
             f"would be estimated but never realised. Set both or disable "
             f"{KEY_LEISURE_UNSPECIFIED_SUBTYPE}."
         )
+    # Loop-free leisure subtype layers (issue #679, ADR-0207): shared key/default constants, since
+    # the secondary location stage's leisure decider must leave out the same loop legs. Declared
+    # unconditionally; the loop placement switch is declared only when this one is on, because only
+    # the guard reads it here (this stage's output does not depend on it otherwise).
+    if context.config(KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS,
+                      DEFAULT_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS):
+        require_loop_free_estimate_prerequisites(
+            leisure_subtype_split=bool(leisure_subtype_split),
+            loop_zero_displacement=bool(context.config(
+                KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT, DEFAULT_SECONDARY_LOOP_ZERO_DISPLACEMENT)),
+            stage_tag="[popsim.distance_distributions]")
     # Passive escort leg -> the accompanying adult's purpose (issue #372, ADR-0112),
     # declared with the SHARED key/default constants for the same reason: a passive leg
     # the trip build sends to "shop" must contribute to the SHOP distance distribution,
@@ -1158,7 +1229,7 @@ def execute(context):
         KEY_EXCLUDE_RBW_LEGS, KEY_LEISURE_UNSPECIFIED_SUBTYPE,
         KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
         KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
-        KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
+        KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS, KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS,
         KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, KEY_W_ZWECK_10_AS_LEISURE,
     )
     from braunschweig.synthesis.portal_trips.config_keys import (
@@ -1187,6 +1258,9 @@ def execute(context):
     # Straight-line metres; None (feature disabled) keeps every donor trip.
     max_distance_m = (float(context.config(KEY_MAX_ROUTABLE_DISTANCE_M))
                       if context.config(PORTAL_KEY_ENABLED) else None)
+    # Loop-free leisure subtype layers (issue #679); declared in configure().
+    leisure_estimates_without_loops = bool(
+        context.config(KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS))
 
     logger.info(
         "[popsim.distance_distributions] loading MiD Wege from %s", mid_dir
@@ -1215,4 +1289,5 @@ def execute(context):
         weekday_legs_only=weekday_legs_only,
         exclude_no_answer_purpose=exclude_no_answer_purpose,
         max_distance_m=max_distance_m,
+        leisure_estimates_without_loops=leisure_estimates_without_loops,
     )

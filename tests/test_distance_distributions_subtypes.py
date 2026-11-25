@@ -584,3 +584,71 @@ def test_no_answer_purpose_exclusion_logs_the_rate(caplog):
     with caplog.at_level(logging.INFO):
         run(_wege_with_a_no_answer_purpose_leg(), by_purpose=True, exclude_no_answer_purpose=True)
     assert "no-answer purpose" in caplog.text and "15/45" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Issue #679: the leisure subtype layers without the loop legs. A stroll or dog walk on foot or
+# by bicycle (W_ZWD 710/711) leaves the chain under secondary_loop_zero_displacement, so the
+# leisure_local layer the remaining legs draw from must not pool the loops' path lengths.
+# ---------------------------------------------------------------------------
+
+_HVM_WALK, _HVM_BICYCLE, _HVM_CAR = 1, 2, 4   # trips.MODE_BY_HVM
+
+
+def _loop_wege(*, walk_non_loop_local: bool = True) -> pd.DataFrame:
+    """Leisure legs whose distance names their (mode, code) cell.
+
+    walk: 706 at 3 km (non-loop local, optional), 710 at 4 km and 711 at 4.5 km (loops), 701 at
+    2 km (visit); bicycle: 713 at 7 km (non-loop local), 711 at 6 km (loop); car: 710 at 9 km
+    (a car stroll is no loop and stays), 706 at 8 km; plus an errand leg so a non-leisure layer
+    exists.
+    """
+    cells = [(_HVM_WALK, 7, 710, 4.0), (_HVM_WALK, 7, 711, 4.5), (_HVM_WALK, 7, 701, 2.0),
+             (_HVM_BICYCLE, 7, 713, 7.0), (_HVM_BICYCLE, 7, 711, 6.0),
+             (_HVM_CAR, 7, 710, 9.0), (_HVM_CAR, 7, 706, 8.0), (_HVM_CAR, 5, 601, 6.0)]
+    if walk_non_loop_local:
+        cells.append((_HVM_WALK, 7, 706, 3.0))
+    rows: list = []
+    row_id = 0
+    for hvm, zweck, zwd, km in cells:
+        start = len(rows)
+        row_id = _add_rows(rows, row_id, w_zweck=zweck, w_zwd=zwd, wegkm=km, n=5)
+        for row in rows[start:]:
+            row["hvm_imp"] = hvm
+    return pd.DataFrame(rows)
+
+
+def _metres(*km: float) -> set:
+    return {value * 1000.0 / DETOUR_FACTOR for value in km}
+
+
+def test_leisure_local_layer_leaves_out_the_walk_and_bicycle_loops():
+    """Switch on: the walk and bicycle leisure_local layers hold only the non-loop legs, the car
+    layer keeps its 710 legs; every other layer equals the switch-off output, which equals the
+    output of a call that does not know the switch (today's)."""
+    wege = _loop_wege()
+    today = run(wege, by_purpose=True, leisure_subtype_split=True)
+    off = run(wege, by_purpose=True, leisure_subtype_split=True,
+              leisure_estimates_without_loops=False)
+    on = run(wege, by_purpose=True, leisure_subtype_split=True,
+             leisure_estimates_without_loops=True)
+
+    assert set(off) == set(today) and all(
+        _serialise(off[key]) == _serialise(today[key]) for key in today)
+    local = on["leisure_local"]
+    assert _layer_values({"walk": local["walk"]}) == _metres(3.0)
+    assert _layer_values({"bicycle": local["bicycle"]}) == _metres(7.0)
+    assert _serialise(local["car"]) == _serialise(off["leisure_local"]["car"])
+    assert _layer_values({"walk": off["leisure_local"]["walk"]}) == _metres(3.0, 4.0, 4.5)
+    assert set(on) == set(off)
+    for key in set(off) - {"leisure_local"}:
+        # the aggregate "leisure" layer and every other group or purpose keep the loops' legs
+        assert _serialise(on[key]) == _serialise(off[key]), key
+
+
+def test_leisure_local_layer_raises_when_a_loop_mode_keeps_no_leg():
+    """All walk leisure_local legs are loops: the walk layer cannot be estimated without them, and
+    falling back to the with-loops layer (or to the aggregate) silently is not allowed."""
+    with pytest.raises(ValueError, match="walk"):
+        run(_loop_wege(walk_non_loop_local=False), by_purpose=True, leisure_subtype_split=True,
+            leisure_estimates_without_loops=True)

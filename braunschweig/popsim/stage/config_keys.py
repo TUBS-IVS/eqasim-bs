@@ -44,6 +44,27 @@ def require_positive(key: str, value):
     return value
 
 
+def require_loop_free_estimate_prerequisites(*, leisure_subtype_split: bool,
+                                             loop_zero_displacement: bool, stage_tag: str) -> None:
+    """The configure-time guard of KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS (issue #679).
+
+    Called by both stages that declare that key, only when it is on: the loop-free estimates
+    change the leisure subtype layers and decider (which exist only with
+    ``secondary_leisure_subtype_split``) and leave out the loops that
+    KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT takes out of the chain (with that switch off the loops
+    are placed as destination trips and must stay in the estimates). Raises ``ValueError`` naming
+    the missing key(s), so synpp fails the DAG before any stage runs.
+    """
+    missing = [key for key, on in (("secondary_leisure_subtype_split", leisure_subtype_split),
+                                   (KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT, loop_zero_displacement))
+               if not on]
+    if missing:
+        raise ValueError(
+            f"{stage_tag} {KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS}: true requires "
+            f"{' and '.join(f'{key}: true' for key in missing)}; set them or disable "
+            f"{KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS}.")
+
+
 # Config keys.
 KEY_CELLS = "braunschweig.population.popsim.cells_100m_path"
 KEY_MID = "braunschweig.population.popsim.mid_raw_path"
@@ -713,6 +734,30 @@ DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE = True
 # the ENTD distance CDFs and never estimates on MiD, so the key is inert there).
 KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY = "secondary_mid_weekday_legs_only"
 DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY = True
+
+# secondary_loop_zero_displacement (issue #679, ADR-0207): the secondary location stage places a
+# stroll or dog walk on foot or by bicycle at the place of the activity it starts from
+# (braunschweig.synthesis.locations.secondary_chainsolvers.loops, whose KEY_ENABLED is this
+# constant). Its home is here because braunschweig.popsim.distance_distributions reads it too (the
+# guard of KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS below) and cannot import the loop module,
+# which imports it. Code default False (the byte-identical OFF path); production true in
+# configs/base_bs.yml. Not a trip-build key -> not in ENTD_REJECTED_KEYS.
+KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT = "secondary_loop_zero_displacement"
+DEFAULT_SECONDARY_LOOP_ZERO_DISPLACEMENT = False
+
+# secondary_leisure_estimates_without_loops (issue #679, ADR-0207): with the loop placement on,
+# the loop legs (purpose_subtype.drop_loop_legs: mode in LOOP_MODES and W_ZWD in LOOP_CODES) leave
+# the chain, so ON leaves them out of the two leisure estimates the remaining legs use: the leisure
+# subtype distance layers (braunschweig.popsim.distance_distributions.run, Step 8) and the leisure
+# subtype decider's P(group | mode, tt_band)
+# (secondary_chainsolvers.deciders._build_leisure_subtype_decider). Both stages declare it with
+# these constants and must resolve the same value, or a leg labelled from a loop-free mix would
+# draw its distance from a pool with loops (or the reverse). Requires
+# secondary_leisure_subtype_split and KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT (both configure()
+# calls raise otherwise). Code default False = today's estimates (byte-identical); production true
+# in configs/base_bs.yml. Not a trip-build key -> not in ENTD_REJECTED_KEYS.
+KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS = "secondary_leisure_estimates_without_loops"
+DEFAULT_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS = False
 # Departure-time (start-time) model of the trip build and of the commute-day plan replacement
 # (issue #123, ADR-0114): which of the three models in
 # braunschweig.popsim.departure_time_model.MODELS shapes a person's FIRST departure --

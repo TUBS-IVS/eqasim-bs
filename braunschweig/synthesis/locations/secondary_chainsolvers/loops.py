@@ -50,8 +50,13 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim.distance_distributions import _build_preceding_purpose
-from braunschweig.popsim.purpose_subtype import LEISURE_ZWECK, leisure_spec, tt_band
+# LOOP_CODES / LOOP_MODES are owned by purpose_subtype (the loop-free leisure estimates of
+# distance_distributions need them, and that module cannot import this one: this one imports it)
+# and re-exported here under their established names.
+from braunschweig.popsim.purpose_subtype import (  # noqa: F401 (LOOP_* re-exported)
+    LEISURE_ZWECK, LOOP_CODES, LOOP_MODES, leisure_spec, tt_band)
 from braunschweig.popsim.shop_subtype import drop_legs_of_unknown_duration
+from braunschweig.popsim.stage.config_keys import KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT
 from braunschweig.popsim.trips import (
     map_mode, map_purpose, mid_travel_time_seconds, restrict_to_weekday_diary_legs)
 from braunschweig.synthesis.portal_trips.config_keys import OUTSIDE_PURPOSE
@@ -59,13 +64,6 @@ from braunschweig.synthesis.portal_trips.config_keys import OUTSIDE_PURPOSE
 from .fallback import FALLBACK_WARN_RATE
 
 logger = logging.getLogger(__name__)
-
-#: MiD ``W_ZWD`` codes recorded as a loop: 710 Spaziergang, 711 Hund ausfuehren.
-LOOP_CODES = frozenset({710, 711})
-
-#: Modes a loop can have. A stroll by car is not a loop; a ride by bicycle without a destination
-#: is (ASSUMPTION: same reading as the diary's "Spaziergang" by bicycle).
-LOOP_MODES = frozenset({"walk", "bicycle"})
 
 #: Offset added to ``random_seed`` for the loop draw's own stream. It differs from the offsets of
 #: the stage's other streams (``deciders.SHOP_SUBTYPE_SEED_OFFSET``,
@@ -76,8 +74,9 @@ LOOP_MODES = frozenset({"walk", "bicycle"})
 #: draws; ``tests/test_secondary_loops.py`` checks that these offsets are pairwise distinct.
 LOOP_SEED_OFFSET = 90216
 
-#: Config key of the feature flag (declared by the stage wiring, not by this module).
-KEY_ENABLED = "secondary_loop_zero_displacement"
+#: Config key of the feature flag (declared by the stage wiring, not by this module). Owned by
+#: ``braunschweig.popsim.stage.config_keys`` since the distance distributions stage reads it too.
+KEY_ENABLED = KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT
 
 #: Columns :func:`flag_loops` reads from the synthetic trips.
 _TRIP_COLUMNS = ("person_id", "trip_index", "mode", "preceding_purpose", "following_purpose",
