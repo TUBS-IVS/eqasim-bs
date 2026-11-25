@@ -74,3 +74,16 @@ INFO build_student_control_evidence: wrote docs\runs\artifacts\student-commuting
 INFO build_student_control_evidence: wrote docs\runs\artifacts\student-commuting-phase0-reference-2026-11-25\student_level_gate.csv (9 rows)
 INFO build_student_control_evidence: wrote docs\runs\artifacts\student-commuting-phase0-reference-2026-11-25\student_comparison_only.csv (2 rows)
 exit=0
+### Step 3 re-run after the overlap-line wording fix (decision tables only, source-commit 1b6fb56b)
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] status_x_education_leg: rule 1 (>= 30 respondents) 2/2 labels, rule 2 (> 2.0 se) 0/2 labels -> comparison_only
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] trip_class: rule 1 (>= 30 respondents) 4/4 labels, rule 2 (> 2.0 se) 0/4 labels -> comparison_only
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] arrival: rule 1 (>= 30 respondents) 4/4 labels, rule 2 (> 2.0 se) 0/4 labels -> comparison_only
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] work_leg: rule 1 (>= 30 respondents) 2/2 labels, rule 2 (> 2.0 se) 0/2 labels -> comparison_only
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] season_ticket: rule 1 (>= 30 respondents) 2/2 labels, rule 2 (> 2.0 se) 0/2 labels -> comparison_only
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] rule 2 evaluable: primary 14/14 (100.0%), excluded 0 (0.0%; MiD share NaN 0, SrV standard error NaN or 0 0); an excluded cell counts as 'does not differ'
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] level gate: enrollment from local sites in 5/8 Kreise, 3 without a local site set to 0 persons ['03151', '03154', '03157']
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] level gate: SrV estimate in 7/8 Kreise, NaN for the unsurveyed ['03103']; pooled row 03ZGB over ['03101', '03102', '03151', '03153', '03154', '03157', '03158']; MiD-to-census ratio Germany 1.7108, Land 03 1.6395
+INFO build_student_control_evidence: wrote docs\runs\artifacts\student-commuting-phase0-reference-2026-11-25\student_control_build_rule.csv (14 rows)
+INFO build_student_control_evidence: wrote docs\runs\artifacts\student-commuting-phase0-reference-2026-11-25\student_level_gate.csv (9 rows)
+INFO build_student_control_evidence: wrote docs\runs\artifacts\student-commuting-phase0-reference-2026-11-25\student_comparison_only.csv (2 rows)
+exit=0
