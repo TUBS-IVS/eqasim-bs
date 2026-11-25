@@ -131,3 +131,43 @@ def set_param(config_path, module: str, name: str, value: str) -> str:
     old_value = unescape(text[value_start:value_end], {"&quot;": '"'})
     path.write_bytes((text[:value_start] + escape(value, {'"': "&quot;"}) + text[value_end:]).encode("utf-8"))
     return old_value
+
+
+def set_parameterset_param(config_path, module: str, set_type: str, name: str, value: str) -> str:
+    """Change one existing parameter inside the single parameter set ``set_type`` of ``module``; return the old value.
+
+    Same byte-preserving text edit as ``set_param``, limited to the ``<parameterset type="set_type">`` element
+    inside the module, so a same-named parameter in another parameter set is not touched. Writes nothing when the
+    value is already ``value``. Raises ``ValueError`` when the module, the set or the parameter is absent or
+    appears more than once (the message names the set type), ``TypeError`` for a non-text value and
+    ``xml.etree.ElementTree.ParseError`` for a file that is not well-formed XML. Side effect: rewrites the file.
+    """
+    _check_module_name(module)
+    _check_params({name: value})
+    path = Path(config_path)
+    ET.parse(str(path))  # fail early on a malformed file, before any text edit
+    text = path.read_bytes().decode("utf-8")
+    modules = list(re.finditer(r"<module\s+name=\"%s\"\s*>(.*?)</module>" % re.escape(module), text, re.DOTALL))
+    if not modules:
+        raise ValueError(f"{path}: no module {module!r}")
+    if len(modules) > 1:
+        raise ValueError(f"{path}: module {module!r} appears {len(modules)} times")
+    module_start, module_end = modules[0].span(1)
+    sets = list(re.finditer(r"<parameterset\s+type=\"%s\"\s*>(.*?)</parameterset>" % re.escape(set_type),
+                            text[module_start:module_end], re.DOTALL))
+    if not sets:
+        raise ValueError(f"{path}: no parameter set {set_type!r} in module {module!r}")
+    if len(sets) > 1:
+        raise ValueError(f"{path}: parameter set {set_type!r} appears {len(sets)} times in module {module!r}")
+    set_start, set_end = (module_start + offset for offset in sets[0].span(1))
+    params = list(re.finditer(r"<param\s+name=\"%s\"\s+value=\"([^\"]*)\"" % re.escape(name),
+                              text[set_start:set_end]))
+    if not params:
+        raise ValueError(f"{path}: no parameter {name!r} in parameter set {set_type!r} of module {module!r}")
+    if len(params) > 1:
+        raise ValueError(f"{path}: parameter {name!r} appears {len(params)} times in parameter set {set_type!r}")
+    value_start, value_end = (set_start + offset for offset in params[0].span(1))
+    old_value = unescape(text[value_start:value_end], {"&quot;": '"'})
+    if old_value != value:
+        path.write_bytes((text[:value_start] + escape(value, {'"': "&quot;"}) + text[value_end:]).encode("utf-8"))
+    return old_value
