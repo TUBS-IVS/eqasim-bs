@@ -25,6 +25,12 @@ the cached secondary locations result carries ``loop_origin`` (``_build_secondar
 pair without matching marker rows stops the run. The W12 survey side of the band-shift impact is a
 published table that still counts them: the run prints a NOTE and summary.md says so.
 
+The secondary legs are the pickles of ONE run (locations, activities, trips, loop marker), resolved
+from the legs' locations pickle through the cache's pipeline.json; an ambiguous cache is refused
+unless the run is named with --locations-key (<stage>__<hash>). LIMITATION: the other stages this
+script reads (home locations, home zones, enriched persons, work locations, education) are still
+the newest pickle of their name, not resolved from that run; the run prints a NOTE.
+
 Run (server-side only; no cache here):
   python scripts/calibrate_detour_circuity.py \\
     --working-directory eqasim-data/cache_bs_25pct_allfeat \\
@@ -225,9 +231,18 @@ def _build_secondary_legs(df_xy: pd.DataFrame, df_acts: pd.DataFrame, df_trips: 
     return df_sec_legs.dropna(subset=["mode", "prev_x", "prev_y"])
 
 
-def _extract_od_pools(wd: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray,
-                                         np.ndarray, np.ndarray]:
+def _extract_od_pools(wd: str, locations_key: str | None = None
+                      ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray,
+                                 np.ndarray, np.ndarray]:
     """Extract car and walk OD pools from the cached synthesis stages.
+
+    ``locations_key`` (``<stage>__<hash>``) names the run whose locations pickle the secondary
+    legs are built on; needed only when the cache holds several candidates (an ambiguous cache
+    raises ``AmbiguousCacheRunError``, see ``validate_secondary_distances.resolve_run_pickles``).
+    LIMITATION: only the secondary legs (locations, activities, trips, loop marker) are resolved
+    from that run. The home locations, home zones, enriched persons and work locations (and the
+    education stage) are still the NEWEST pickle of their name, not necessarily those of the same
+    run; the run prints a NOTE.
 
     Car OD pool:
       - home->work pairs for employed persons (commute legs)
@@ -263,6 +278,10 @@ def _extract_od_pools(wd: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.n
         back to all pairs being treated as car. Logged explicitly below.
     """
     logger.info("[circuity] extracting OD pools from cache: %s", wd)
+    print("NOTE: only the secondary legs come from ONE resolved run (the locations, activities, "
+          "trips and loop marker of the legs' run); the home locations, home zones, enriched "
+          "persons, work locations and education stage are loaded as the NEWEST pickle of their "
+          "name and may belong to another run of this cache.")
 
     # --- Core stages ---
     df_home_locations = _load_stage(wd, "synthesis.population.spatial.home.locations")
@@ -370,7 +389,7 @@ def _extract_od_pools(wd: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.n
     secondary_inputs = None
     secondary_run = None
     try:
-        secondary_run = resolve_run_pickles(wd, tag="[circuity]")
+        secondary_run = resolve_run_pickles(wd, tag="[circuity]", locations_key=locations_key)
         df_all_locs = read_pickle(secondary_run.locations)
         df_acts = read_pickle(secondary_run.activities)
         df_trips = read_pickle(secondary_run.trips)
@@ -1223,6 +1242,14 @@ def main():
         ),
     )
     parser.add_argument(
+        "--locations-key", default=None,
+        help=(
+            "Cache key (<stage>__<hash>, the pickle name without .p) of the locations pickle of "
+            "the run whose secondary legs are used. Needed only when the cache holds several "
+            "candidates (hashed variants of a copied cache); an ambiguous cache is refused."
+        ),
+    )
+    parser.add_argument(
         "--seed", type=int, default=None,
         help="Random seed (default: random_seed from config, or 0).",
     )
@@ -1268,7 +1295,7 @@ def main():
     # --- Extract OD pools ---
     (car_origins, car_dests,
      walk_origins, walk_dests,
-     car_commune_ids, walk_commune_ids) = _extract_od_pools(wd)
+     car_commune_ids, walk_commune_ids) = _extract_od_pools(wd, locations_key=args.locations_key)
 
     if len(car_origins) == 0:
         raise RuntimeError(

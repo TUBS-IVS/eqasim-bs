@@ -76,31 +76,6 @@ _SECONDARY_PURPOSES = ("shop", "leisure", "other")
 # Stage-cache loading
 # ---------------------------------------------------------------------------
 
-def _load_stage(working_directory: str, stage: str, aliases=()):
-    """Load the most-recently-modified pickle for a synpp stage (or any alias).
-
-    synpp caches a stage under its RESOLVED alias-target name, so the same logical
-    stage has different pickle names per workflow. The trips stage, for example, is
-    cached as ``synthesis.population.trips`` in the ENTD/IPF workflows but as
-    ``braunschweig.popsim.trips_stage`` in the popsim_mid workflow. ``aliases`` is
-    tried in order after ``stage``; the first name with a matching pickle wins.
-
-    Raises RuntimeError when no name matches (fail-fast, no silent fallback).
-    """
-    for name in (stage, *aliases):
-        matches = glob.glob(os.path.join(working_directory, name + "__*.p"))
-        if matches:
-            latest = max(matches, key=os.path.getmtime)
-            logger.info("Loading stage '%s' from '%s'", name, latest)
-            with open(latest, "rb") as fh:
-                return pickle.load(fh)
-    tried = ", ".join((stage, *aliases))
-    raise RuntimeError(
-        f"No cached pickle found for stage '{stage}' (names tried: {tried}) "
-        f"in '{working_directory}'."
-    )
-
-
 # ---------------------------------------------------------------------------
 # Loop marker (issue #679)
 # ---------------------------------------------------------------------------
@@ -147,11 +122,22 @@ class RunPickles(NamedTuple):
 
 
 def _stage_pickle_paths(working_directory: str, names) -> list:
-    """Every ``<name>__<hash>.p`` of ``names`` in ``working_directory``, newest first."""
+    """Every ``<name>__<hash>.p`` of ``names`` in ``working_directory``, newest first.
+
+    A stage without any config is cached under its bare name (synpp's ``hash_name``), so
+    ``<name>.p`` counts too; its key is the bare name."""
     paths = []
     for name in names:
         paths.extend(glob.glob(os.path.join(working_directory, name + "__*.p")))
+        bare = os.path.join(working_directory, name + ".p")
+        if os.path.exists(bare):
+            paths.append(bare)
     return sorted(paths, key=os.path.getmtime, reverse=True)
+
+
+def _key_is_of(key: str, name: str) -> bool:
+    """Whether the pickle key ``key`` (``<stage>__<hash>`` or the bare stage name) is of stage ``name``."""
+    return key == name or key.startswith(name + "__")
 
 
 def _pickle_key(path: str) -> str:
@@ -168,6 +154,20 @@ def _dependency_closure(meta: dict, key: str) -> set:
                 seen.add(dependency)
                 pending.append(dependency)
     return seen
+
+
+def _describe_candidate(key: str, path: str, meta) -> str:
+    """``key (pipeline.json updated <UTC time>)`` or ``key (file modified <UTC time>, not in
+    pipeline.json)``: what the refusal of an ambiguous anchor shows to choose from."""
+    import datetime
+
+    def utc(seconds):
+        return datetime.datetime.fromtimestamp(float(seconds), datetime.timezone.utc).strftime(
+            "%Y-%m-%d %H:%M:%S UTC")
+
+    if meta is not None and key in meta and "updated" in meta[key]:
+        return f"{key} (pipeline.json updated {utc(meta[key]['updated'])})"
+    return f"{key} (file modified {utc(os.path.getmtime(path))}, not in pipeline.json)"
 
 
 def read_pickle(path: str):
@@ -208,8 +208,8 @@ def _resolve_role(role: str, names, working_directory: str, closure, legs_key: s
     if closure is not None:
         skipped = []
         for name in names:
-            cached = sorted(key for key in by_key if key.rpartition("__")[0] == name)
-            linked = sorted(key for key in closure if key.rpartition("__")[0] == name)
+            cached = sorted(key for key in by_key if _key_is_of(key, name))
+            linked = sorted(key for key in closure if _key_is_of(key, name))
             if not linked:
                 skipped.extend(cached)
                 continue
@@ -217,7 +217,9 @@ def _resolve_role(role: str, names, working_directory: str, closure, legs_key: s
                 raise AmbiguousCacheRunError(
                     f"{tag} {role}: pipeline.json links the legs' pickle '{legs_key}' to {linked} "
                     f"but the higher-priority {role} pickle(s) {skipped} in the cache are not "
-                    "linked to it; refusing to take a lower-priority (pre-assignment) pickle.")
+                    "linked to it; refusing to take a lower-priority (pre-assignment) pickle. "
+                    "Missing metadata can cause this too: a cache primed without pipeline.json "
+                    "entries for the higher-priority pickle looks like an unlinked one.")
             if len(linked) == 1 and linked[0] in by_key:
                 logger.info("%s run resolution, %s: PRIMARY, '%s' is the pickle the legs' pickle "
                             "'%s' depends on (pipeline.json); %d %s pickle(s) in the cache.",
@@ -242,12 +244,17 @@ def _resolve_role(role: str, names, working_directory: str, closure, legs_key: s
         "directory that holds one run.")
 
 
-def resolve_run_pickles(working_directory: str, tag: str = "[secondary-validate]") -> RunPickles:
+def resolve_run_pickles(working_directory: str, tag: str = "[secondary-validate]",
+                        locations_key: Optional[str] = None) -> RunPickles:
     """The cache pickles of the run the legs belong to: ONE resolution for locations, activities,
     trips and the secondary locations marker.
 
-    The legs' anchor is the locations pickle (the production name first, the plain name of the
-    older workflows after it; the newest of its name if several, logged as a WARNING). The
+    The legs' anchor is the locations pickle, of the production name or of the plain name of the
+    older workflows. It must be unique: a cache with several candidates (hashed variants of a
+    copied cache, or both names) raises :class:`AmbiguousCacheRunError` listing them with their
+    ``updated`` time from ``pipeline.json`` (the file time when the key is unknown to it), unless
+    the caller names the run with ``locations_key`` (``<stage>__<hash>``, ``--locations-key`` of
+    both scripts; an uncached key raises). The
     activities, the trips and the secondary locations pickle are the ones in the dependency closure
     of that pickle in the working directory's ``pipeline.json`` (synpp records, per pickle key
     ``<stage>__<hash>``, the keys it was built from), found by :func:`_resolve_role`; a cache
@@ -262,23 +269,35 @@ def resolve_run_pickles(working_directory: str, tag: str = "[secondary-validate]
     Raises ``RuntimeError`` when no locations, activities or trips pickle is cached at all.
     ``secondary`` is None when no secondary locations pickle is cached.
     """
-    anchors = {name: _stage_pickle_paths(working_directory, (name,)) for name in _LOCATIONS_NAMES}
-    chosen = next((name for name in _LOCATIONS_NAMES if anchors[name]), None)
-    if chosen is None:
-        raise RuntimeError(
-            f"No cached pickle found for the legs' locations (names tried: "
-            f"{', '.join(_LOCATIONS_NAMES)}) in '{working_directory}'.")
-    legs = anchors[chosen][0]
-    if len(anchors[chosen]) > 1:
-        logger.warning("%s run resolution, locations: %d pickles of '%s' in the cache; the newest "
-                       "by modification time is taken as the legs' run: %s", tag,
-                       len(anchors[chosen]), chosen, _pickle_key(legs))
-    legs_key = _pickle_key(legs)
+    candidates = _stage_pickle_paths(working_directory, _LOCATIONS_NAMES)
     meta_path = os.path.join(working_directory, "pipeline.json")
     meta = None
     if os.path.exists(meta_path):
         with open(meta_path, "r", encoding="utf-8") as fh:
             meta = json.load(fh)
+    if not candidates:
+        raise RuntimeError(
+            f"No cached pickle found for the legs' locations (names tried: "
+            f"{', '.join(_LOCATIONS_NAMES)}) in '{working_directory}'.")
+    by_key = {_pickle_key(path): path for path in candidates}
+    if locations_key is not None:
+        if locations_key not in by_key:
+            raise AmbiguousCacheRunError(
+                f"{tag} locations: the named run '{locations_key}' is not cached; the cache holds "
+                f"{', '.join(sorted(by_key))}.")
+        legs = by_key[locations_key]
+    elif len(candidates) == 1:
+        legs = candidates[0]
+    else:
+        raise AmbiguousCacheRunError(
+            f"{tag} locations: the cache holds {len(candidates)} locations pickles and the legs' "
+            "run is not unique (copied caches hold several hashed variants; the plain name is an "
+            "alias in the production workflow and should not be cached next to the production "
+            "name). Name the run with the locations_key argument (--locations-key "
+            "<stage>__<hash>). Candidates: "
+            + "; ".join(_describe_candidate(key, path, meta)
+                        for key, path in sorted(by_key.items())))
+    legs_key = _pickle_key(legs)
     closure = _dependency_closure(meta, legs_key) if meta is not None and legs_key in meta else None
     return RunPickles(
         locations=legs,
@@ -296,7 +315,14 @@ def require_same_activity_keys(df_locations: pd.DataFrame, df_activities: pd.Dat
 
     The legs join the locations with the activities by that key. Activities of another day (the
     pre-assignment table next to the day locations) would join with the wrong purposes on the
-    keys both hold, and drop or ignore the rest; a row-count log does not show that."""
+    keys both hold, and drop or ignore the rest; a row-count log does not show that.
+
+    LIMITS: equal key sets prove a matching shape, not the same day or run (two runs can share
+    their keys and differ in purposes); the run is established by the dependency link of
+    :func:`resolve_run_pickles`. A role taken as FALLBACK (the only pickle, no link) is accepted
+    unchecked apart from this key test. The trips are not checked here: a leg without a mode
+    after the mode join is logged by :func:`measure_secondary_distances` ("mode join: primary
+    n/n", or a WARNING with the count of legs missing a mode, which are then counted as car)."""
     keys = ["person_id", "activity_index"]
     locations = pd.MultiIndex.from_frame(df_locations[keys])
     activities = pd.MultiIndex.from_frame(df_activities[keys])
@@ -394,7 +420,7 @@ def attach_loop_marker(df_merged: pd.DataFrame, df_loop_origin: pd.DataFrame,
 # Main measurement logic
 # ---------------------------------------------------------------------------
 
-def measure_secondary_distances(working_directory: str):
+def measure_secondary_distances(working_directory: str, locations_key: Optional[str] = None):
     """Load cache and compute per-purpose euclidean secondary trip distances.
 
     Returns
@@ -412,7 +438,7 @@ def measure_secondary_distances(working_directory: str):
     stage; the activities are the day activities the locations were built on, and the two frames
     must hold the same ``(person_id, activity_index)`` keys (:func:`require_same_activity_keys`).
     """
-    run = resolve_run_pickles(working_directory)
+    run = resolve_run_pickles(working_directory, locations_key=locations_key)
     df_locs = read_pickle(run.locations)
     df_acts = read_pickle(run.activities)
     df_trips = read_pickle(run.trips)
@@ -837,6 +863,15 @@ def main():
         "--output", default=None,
         help="Optional path to write the per-purpose comparison CSV.",
     )
+    parser.add_argument(
+        "--locations-key", default=None,
+        help=(
+            "Cache key (<stage>__<hash>, the pickle name without .p) of the locations pickle of "
+            "the run to validate. Needed only when the cache holds several candidates (hashed "
+            "variants of a copied cache); a unique one is taken without it, an ambiguous cache is "
+            "refused."
+        ),
+    )
     args = parser.parse_args()
 
     # ------------------------------------------------------------------
@@ -866,7 +901,7 @@ def main():
     # ------------------------------------------------------------------
     # 3. Measure realised secondary distances from cache
     # ------------------------------------------------------------------
-    distances = measure_secondary_distances(args.cache)
+    distances = measure_secondary_distances(args.cache, locations_key=args.locations_key)
 
     # ------------------------------------------------------------------
     # 4. Build and print comparison table

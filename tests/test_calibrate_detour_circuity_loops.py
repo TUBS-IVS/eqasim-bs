@@ -63,6 +63,7 @@ def test_a_secondary_activity_without_a_marker_row_stops_the_calibration():
 def _fake_stages(monkeypatch, marker, resolution_error=None):
     """Patch the cache readers of ``_extract_od_pools`` with the hand-built stages of one person
     (a worker); the education stage is absent (RuntimeError, as in a cache without it)."""
+    resolved_with = []
     df_xy, df_acts, df_trips = _stage_frames()
     locations = gpd.GeoDataFrame(
         df_xy[["person_id", "activity_index", "commune_id"]],
@@ -84,7 +85,8 @@ def _fake_stages(monkeypatch, marker, resolution_error=None):
             raise RuntimeError(f"No cached pickle found for stage '{stage}'")
         return stages[stage]
 
-    def fake_resolve(working_directory, tag="[circuity]"):
+    def fake_resolve(working_directory, tag="[circuity]", locations_key=None):
+        resolved_with.append(locations_key)
         if resolution_error is not None:
             raise resolution_error
         return RunPickles(locations="L", activities="A", trips="T", secondary="S")
@@ -93,6 +95,7 @@ def _fake_stages(monkeypatch, marker, resolution_error=None):
     monkeypatch.setattr(_calibrate, "resolve_run_pickles", fake_resolve)
     monkeypatch.setattr(_calibrate, "read_pickle", lambda path: run_frames[path])
     monkeypatch.setattr(_calibrate, "load_loop_origin", lambda *args, **kwargs: marker)
+    return resolved_with
 
 
 def test_the_od_pools_leave_the_loop_leg_out_and_a_marker_mismatch_is_not_swallowed(monkeypatch):
@@ -129,3 +132,11 @@ def test_activities_that_do_not_cover_the_locations_stop_the_calibration():
     with pytest.raises(RuntimeError, match=r"same \(person_id, activity_index\)"):
         _calibrate._build_secondary_legs(
             df_xy, df_acts[df_acts["activity_index"] != 3], df_trips, df_loop_origin=None)
+
+
+def test_the_named_run_reaches_the_resolution(monkeypatch):
+    """``--locations-key`` is forwarded to ``resolve_run_pickles``; without it the call names none."""
+    resolved_with = _fake_stages(monkeypatch, None)
+    _calibrate._extract_od_pools("unused", locations_key="stage__abc")
+    _calibrate._extract_od_pools("unused")
+    assert resolved_with == ["stage__abc", None]

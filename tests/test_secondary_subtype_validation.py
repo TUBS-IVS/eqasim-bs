@@ -476,6 +476,79 @@ def test_a_pre_assignment_trips_pickle_is_not_taken_when_trips_final_is_not_link
         _validate_mod.measure_secondary_distances(str(tmp_path))
 
 
+def _copy_pickle(directory, source_name, target_name, mtime=2_000_000_000):
+    import os
+    import shutil
+
+    shutil.copy(directory / (source_name + ".p"), directory / (target_name + ".p"))
+    os.utime(directory / (target_name + ".p"), (mtime, mtime))
+
+
+def test_several_locations_pickles_are_refused_with_their_candidates_unless_one_is_named(tmp_path):
+    """A copied cache holds several hashed variants of the legs' locations; the newest by file age
+    is not a choice the script may make. The refusal lists the candidates; naming the run works,
+    an unknown key raises."""
+    _production_cache(tmp_path)
+    _copy_pickle(tmp_path, _LOCATIONS_DAY + "__L1", _LOCATIONS_DAY + "__L2")
+    with pytest.raises(RuntimeError, match=r"2 locations pickles.*locations_key.*__L1.*__L2"):
+        _validate_mod.measure_secondary_distances(str(tmp_path))
+
+    distances = _validate_mod.measure_secondary_distances(
+        str(tmp_path), locations_key=_LOCATIONS_DAY + "__L1")
+    assert distances["leisure"]["loop_origin"].tolist() == ["secondary", None]
+
+    with pytest.raises(RuntimeError, match=r"__L9.* is not cached"):
+        _validate_mod.measure_secondary_distances(
+            str(tmp_path), locations_key=_LOCATIONS_DAY + "__L9")
+
+
+def test_the_candidate_listing_gives_the_recorded_update_time_or_the_file_time(tmp_path):
+    import json
+
+    _production_cache(tmp_path)
+    meta = json.loads((tmp_path / "pipeline.json").read_text(encoding="utf-8"))
+    meta[_LOCATIONS_DAY + "__L1"]["updated"] = 1_700_000_000.0
+    (tmp_path / "pipeline.json").write_text(json.dumps(meta), encoding="utf-8")
+    _copy_pickle(tmp_path, _LOCATIONS_DAY + "__L1", _LOCATIONS_DAY + "__L2")
+    with pytest.raises(RuntimeError) as error:
+        _validate_mod.measure_secondary_distances(str(tmp_path))
+    text = str(error.value)
+    assert "__L1 (pipeline.json updated 2023-11-14" in text
+    assert "__L2 (file modified 2033-05-18" in text and "not in pipeline.json" in text
+
+
+def test_the_plain_locations_name_next_to_the_production_name_is_ambiguous(tmp_path):
+    """The plain name is an alias in the production workflow and should not be cached at all;
+    when both names are cached, the cache is a mix and the run must be named."""
+    _production_cache(tmp_path)
+    _copy_pickle(tmp_path, _LOCATIONS_DAY + "__L1", _LEGS_NAME + "__P")
+    with pytest.raises(RuntimeError, match=r"2 locations pickles.*__L1.*__P"):
+        _validate_mod.measure_secondary_distances(str(tmp_path))
+
+
+def test_a_stage_cached_under_its_bare_name_is_found(tmp_path):
+    """synpp's hash_name returns the bare stage name for a stage without config: ``<name>.p``."""
+    import os
+
+    _write_stage_caches(tmp_path, [None, None, "secondary", None, None])
+    os.replace(tmp_path / (_SECONDARY_NAME + "__test.p"), tmp_path / (_SECONDARY_NAME + ".p"))
+    distances = _validate_mod.measure_secondary_distances(str(tmp_path))
+    assert distances["leisure"]["loop_origin"].tolist() == ["secondary", None]
+
+
+def test_a_role_taken_without_a_link_is_logged_as_a_fallback_warning(tmp_path, caplog):
+    """Single-run plain layout without pipeline.json: the activities, the trips and the marker are
+    each the only pickle of their role, taken unchecked, and each says so as a WARNING."""
+    _write_stage_caches(tmp_path, [None, None, "secondary", None, None])
+    with caplog.at_level(logging.INFO):
+        _validate_mod.measure_secondary_distances(str(tmp_path))
+    fallbacks = [r.getMessage() for r in caplog.records
+                 if r.levelno == logging.WARNING and "FALLBACK" in r.getMessage()]
+    assert [role for role in ("activities", "trips", "secondary locations")
+            if any(f", {role}: FALLBACK" in message for message in fallbacks)] == [
+        "activities", "trips", "secondary locations"]
+
+
 def _w12_targets_stub():
     """W12 band shares of three purposes (uniform) -- the EMD value itself is not asserted."""
     uniform = np.full(9, 1.0 / 9.0)

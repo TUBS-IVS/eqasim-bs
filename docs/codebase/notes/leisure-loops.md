@@ -162,9 +162,13 @@ a secondary activity without a marker row raises. Both scripts read the location
 marker from the cache pickles of ONE run (`validate_secondary_distances.resolve_run_pickles`): synpp caches a stage
 under its resolved alias target, so the production names are those of `configs/base_bs.yml` `aliases:` (the day
 locations, the day activities, `trips_final`, the secondary locations); the plain names are the fallback of the
-older workflows. The activities, trips and marker are the pickles in the dependency closure of the legs' locations
-pickle in the working directory's `pipeline.json`; a role with one cached pickle and no link is taken with a WARNING,
-and several candidates without a link are refused, never resolved by file age. The trips are the modes the chain solver
+older workflows. The legs' locations pickle must be unique: several candidates (hashed variants of a copied cache, or
+both names) are refused with their times listed, unless the run is named (`--locations-key <stage>__<hash>` of both
+scripts). The activities, trips and marker are the pickles in the dependency closure of that pickle in the working
+directory's `pipeline.json`; a role with one cached pickle and no link is taken with a WARNING, and several
+candidates without a link are refused, never resolved by file age. The circuity script resolves only its secondary
+legs this way; its other stages (home, work, enriched, education) are still the newest pickle of their name, which
+it prints. The trips are the modes the chain solver
 saw, before the outside-tour mode stage, and the locations and activities must hold the same `(person_id,
 activity_index)` keys or the script raises. The survey side of `validate_secondary_distances` and of the circuity
 calibration's band-shift impact is the published MiD W12 table, which keeps loops and has no `W_ZWD`; both scripts state
