@@ -44,7 +44,7 @@ evidence:
     instrumented: true
     log_marker: '[secondary_loops]'
     note: 'Both fallbacks (cell to mode marginal; loops kept for anchored or linked persons) are counted with a
-      rate in the log and the stage report; see the detail_doc note, section Report.'
+      rate in the log and the stage report; see the detail_doc note, sections "The flag (...)" (marginal fallback) and "The placement rule (...)" (step 6, Report).'
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference_without_loops.csv
