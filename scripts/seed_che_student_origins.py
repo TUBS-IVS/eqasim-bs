@@ -21,9 +21,12 @@ Usage: python scripts/seed_che_student_origins.py
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 SEMESTER = "WS 2022/23"
 SOURCE = "CHE DatenCHECK 2/2024 (data: Statistisches Bundesamt)"
@@ -53,6 +56,11 @@ def _check_count(value, where: str) -> None:
         raise ValueError(f"students_persons must be an integer, got {value!r} for {where}")
     if value < 0:
         raise ValueError(f"negative students_persons {value} for {where}")
+
+
+def _check_ars5(ars5, where: str) -> None:
+    if not isinstance(ars5, str) or len(ars5) != 5 or not ars5.isdigit():
+        raise ValueError(f"origin_ars5 must be a 5-digit string, got {ars5!r} for {where}")
 
 
 def _row_kind(rank_or_kind, where: str) -> str:
@@ -90,6 +98,10 @@ def build_origins_frame(institution_origins, kreis_destinations) -> pd.DataFrame
         where = f"institution {institution!r}"
         _check_count(students, where)
         kind = _row_kind(rank_or_kind, where)
+        if not institution:
+            raise ValueError(f"empty institution in an institution_origins row ({rank_or_kind!r})")
+        if kind == "listed":
+            _check_ars5(ars5, where)
         by_institution.setdefault(institution, []).append((rank_or_kind, kind, ars5, students))
         records.append({"view": "institution_origins", "institution": institution,
                         "origin_ars5": ars5, "origin_name": name,
@@ -103,6 +115,10 @@ def build_origins_frame(institution_origins, kreis_destinations) -> pd.DataFrame
         if len(listed) > MAX_LISTED_RANKS:
             raise ValueError(f"more than {MAX_LISTED_RANKS} listed rows for {where}")
         _check_ranked_listed(listed, where)
+        origin_kreise = [ars5 for _, kind, ars5, _ in items if kind == "listed"]
+        duplicated = sorted({a for a in origin_kreise if origin_kreise.count(a) > 1})
+        if duplicated:
+            raise ValueError(f"origin Kreis listed twice for {where}: duplicate {duplicated}")
         singles = {}
         for kind in _SPECIAL_KINDS:
             values = [n for _, k, _, n in items if k == kind]
@@ -122,6 +138,9 @@ def build_origins_frame(institution_origins, kreis_destinations) -> pd.DataFrame
         kind = _row_kind(rank_or_kind, where)
         if kind in ("abroad", "other"):
             raise ValueError(f"kreis_destinations has no {kind!r} row, got one for {where}")
+        _check_ars5(ars5, where)
+        if kind == "listed" and not institution:
+            raise ValueError(f"empty institution in a listed row of {where}")
         by_kreis.setdefault(ars5, []).append((rank_or_kind, kind, institution, students))
         records.append({"view": "kreis_destinations", "institution": institution,
                         "origin_ars5": ars5, "origin_name": name,
@@ -133,6 +152,10 @@ def build_origins_frame(institution_origins, kreis_destinations) -> pd.DataFrame
         if len(listed) > MAX_LISTED_RANKS:
             raise ValueError(f"more than {MAX_LISTED_RANKS} listed rows for {where}")
         _check_ranked_listed(listed, where)
+        institutions = [inst for _, kind, inst, _ in items if kind == "listed"]
+        duplicated = sorted({i for i in institutions if institutions.count(i) > 1})
+        if duplicated:
+            raise ValueError(f"institution listed twice for {where}: duplicate {duplicated}")
         totals = [n for _, kind, _, n in items if kind == "total"]
         if len(totals) != 1:
             raise ValueError(f"expected exactly one 'total' row for {where}, got {len(totals)}")
@@ -152,15 +175,16 @@ def build_origins_frame(institution_origins, kreis_destinations) -> pd.DataFrame
 
 
 def _require_metric(frame, label: str) -> None:
-    if frame.crs is None or not frame.crs.is_projected:
-        raise ValueError(f"{label} must be in a metric (projected) CRS such as {METRIC_CRS}, "
-                         f"got {frame.crs}")
+    """Distances are only computed in EPSG:25832 (metric); any other CRS is refused."""
+    if frame.crs is None or frame.crs.to_epsg() != int(METRIC_CRS.split(":")[1]):
+        raise ValueError(f"{label} must be in the metric CRS {METRIC_CRS}, got {frame.crs}; "
+                         "reproject it explicitly first")
 
 
 def required_origin_kreise(kreis_polygons, site_points, max_distance_km: float = 100.0) -> list[str]:
     """Sorted ARS-5 codes of Kreise whose polygon lies within max_distance_km of any site.
 
-    kreis_polygons needs an ``ars5`` column; both frames must share one metric CRS.
+    kreis_polygons needs an ``ars5`` column; both frames must be in EPSG:25832.
     Polygon (not centroid) distance makes this a superset of the population-weighted
     centroid rule of the design, so the pinned list over-covers rather than misses.
     """
@@ -168,9 +192,6 @@ def required_origin_kreise(kreis_polygons, site_points, max_distance_km: float =
 
     _require_metric(kreis_polygons, "kreis_polygons")
     _require_metric(site_points, "site_points")
-    if kreis_polygons.crs != site_points.crs:
-        raise ValueError(f"kreis_polygons ({kreis_polygons.crs}) and site_points "
-                         f"({site_points.crs}) must share one CRS")
     if "ars5" not in kreis_polygons.columns:
         raise ValueError("kreis_polygons needs an 'ars5' column")
     if len(site_points) == 0:
@@ -180,31 +201,57 @@ def required_origin_kreise(kreis_polygons, site_points, max_distance_km: float =
     return sorted(set(kreis_polygons.loc[distance_m <= max_distance_km * 1000.0, "ars5"]))
 
 
+def prepare_vg250_frames(kreise_raw, communes_raw, site_ags8):
+    """Kreis polygons (``ars5``) and site-commune points from raw VG250 layers.
+
+    Same conventions as the repository's own loaders (``braunschweig.analysis.spatial``
+    ``load_kreise`` / ``load_gemeinden``, ``braunschweig.data.cordon.network.read_kreise``):
+    land area only (``GF == 4``, applied to both layers before any geometry is used),
+    ``ars5 = ARS[:5]``, 8-digit commune key ``ARS[:5] + ARS[9:12]``, geometries dissolved per
+    key and reprojected to EPSG:25832. Site points are representative points of the commune.
+    """
+    def land_only(frame):
+        return frame[frame["GF"] == 4] if "GF" in frame.columns else frame
+
+    kreise = land_only(kreise_raw).copy()
+    kreise["ars5"] = kreise["ARS"].astype(str).str.zfill(12).str[:5]
+    kreise = kreise.to_crs(METRIC_CRS).dissolve(by="ars5", as_index=False)[["ars5", "geometry"]]
+
+    communes = land_only(communes_raw).copy()
+    ars = communes["ARS"].astype(str).str.zfill(12)
+    communes["commune_id"] = ars.str[:5] + ars.str[9:12]
+    wanted = set(site_ags8)
+    communes = communes[communes["commune_id"].isin(wanted)]
+    missing = wanted - set(communes["commune_id"])
+    if missing:
+        raise ValueError(f"site communes not found in the vg250_gem land-area rows: "
+                         f"{sorted(missing)}")
+    communes = communes.to_crs(METRIC_CRS).dissolve(by="commune_id", as_index=False)
+    points = communes[["commune_id", "geometry"]].copy()
+    points["geometry"] = points.geometry.representative_point()
+    return kreise, points
+
+
 def _list_required(vg250: Path, sites_csv: Path, max_distance_km: float) -> list[str]:
     import geopandas as gpd
+
+    from braunschweig.analysis.spatial import VG250_INNER  # the repository's one owner of this path
 
     for path in (vg250, sites_csv):
         if not Path(path).exists():
             raise FileNotFoundError(f"input not found: {path}")
-    kreise = gpd.read_file(f"zip://{vg250}", layer="vg250_krs")
-    if "GF" in kreise.columns:
-        kreise = kreise[kreise["GF"] == 4]  # land area only, not the water polygons
-    kreise = kreise.assign(ars5=kreise["ARS"].astype(str).str[:5]).to_crs(METRIC_CRS)
-    communes = gpd.read_file(f"zip://{vg250}", layer="vg250_gem")
+    source = f"/vsizip/{Path(vg250).resolve()}/{VG250_INNER}"
     sites = pd.read_csv(sites_csv, comment="#", dtype={"site_ags8": str})
-    wanted = set(sites["site_ags8"])
-    communes = communes[communes["AGS"].astype(str).isin(wanted)].to_crs(METRIC_CRS)
-    missing = wanted - set(communes["AGS"].astype(str))
-    if missing:
-        raise ValueError(f"site communes not found in vg250_gem: {sorted(missing)}")
-    points = communes.assign(geometry=communes.geometry.representative_point())
+    kreise, points = prepare_vg250_frames(
+        gpd.read_file(source, layer="vg250_krs"), gpd.read_file(source, layer="vg250_gem"),
+        sites["site_ags8"])
     return required_origin_kreise(kreise, points, max_distance_km)
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--list-required-kreise", action="store_true")
-    parser.add_argument("--vg250", type=Path, help="VG250 GeoPackage zip")
+    parser.add_argument("--vg250", type=Path, help="VG250 archive, normally eqasim-data/data/germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip (dataset vg250_ew)")
     parser.add_argument("--sites", type=Path, help="lsn_university_sites.csv")
     parser.add_argument("--max-distance-km", type=float, default=100.0)
     args = parser.parse_args(argv)
