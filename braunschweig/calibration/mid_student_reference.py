@@ -48,7 +48,9 @@ Definitions (MiD 2023 codebook B1 as quoted in ``braunschweig/popsim/attributes.
 * Arrival = ``W_AZS`` of the first education leg (right-inclusive bins
   :data:`student_behaviour_labels.ARRIVAL_HOUR_EDGES`); 99 or a missing hour excludes the student
   from the arrival control only. The arrival control's exclusion rate is measured over the
-  students WITH an education leg, the only ones that can lose a label there.
+  students WITH a diary of the day AND an education leg, the only ones that can lose a label
+  there: students without a diary have already left the arrival control (see "Diary of the
+  day" below) and are counted there, not in this rate.
 * Diary of the day (behaviour table only): ``anzwege1`` 0 to 799 is a real trip count. The
   no-diary codes 803 / 804 (``popsim.diary_plan_match.NO_DIARY_CODES``) are an UNKNOWN day, never
   "no trip", exactly as the popsim seed reads them (``participation.compute_has_purpose_trip``,
@@ -493,7 +495,7 @@ def build_behaviour_seed_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
     diagnostics["n_missing_age"] = int(no_age.sum())
     adults = people[(people["age"] >= MIN_ADULT_AGE).to_numpy()]
     students = adults[adults["taet"] == STUDENT_P_TAET].copy()
-    non_students = adults[adults["taet"] != STUDENT_P_TAET]
+    non_students = adults[adults["taet"] != STUDENT_P_TAET].copy()
 
     education_legs, leg_diagnostics = _direct_legs(trips, EDUCATION_W_ZWECK, [],
                                                    exclude_rbw_legs=exclude_rbw_legs)
@@ -505,7 +507,6 @@ def build_behaviour_seed_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
     # seed treats them (item non-response, never "no trip"). Only the season ticket, a fact that
     # does not depend on the diary, keeps them.
     students["trip_count"], students_immobile = _trip_counts(students)
-    non_students = non_students.copy()
     non_students["trip_count"], non_students_immobile = _trip_counts(non_students)
     student_has_diary = students["trip_count"].notna()
     non_student_has_diary = non_students["trip_count"].notna().to_numpy()
@@ -542,7 +543,8 @@ def build_behaviour_seed_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
         student_weight = base["weight"].to_numpy(dtype=float)
         rows += _behaviour_rows(control, UNIVERSE_STUDENTS, student_labels, student_weight,
                                 base_labels)
-        other = non_students if control == "season_ticket" else             non_students[non_student_has_diary]
+        other = (non_students if control == "season_ticket"
+                 else non_students[non_student_has_diary])
         adult_weight = np.concatenate([other["weight"].to_numpy(dtype=float), student_weight])
         adult_labels = np.concatenate([np.full(len(other), NOT_STUDENT, dtype=object),
                                        base_labels])
