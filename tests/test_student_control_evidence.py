@@ -150,23 +150,31 @@ def test_build_rule_refuses_when_most_cells_are_not_evaluable():
         E.evaluate_build_rule(srv, mid)
 
 
-@pytest.mark.parametrize("srv_share, mid_share, time_labels", [
+@pytest.mark.parametrize("srv_share, mid_share, verdict, time_labels", [
     # arrival differs only in the cell it shares with the status control: -0.1 / sqrt(0.24 / 100)
     # = -2.04 se there, 0.75 / 0.75 / 1.0 se in the three arrival-time cells
-    ([0.20, 0.20, 0.20, 0.40], [0.17, 0.17, 0.16, 0.50], []),
+    ([0.20, 0.20, 0.20, 0.40], [0.17, 0.17, 0.16, 0.50], "build_candidate", []),
     # arrival differs in two arrival-time cells: 0.2 / 0.05 = 4.0 and -0.1 / 0.04 = -2.5 se;
     # the shared cell stays at -0.05 / 0.03 = -1.67 se
-    ([0.50, 0.20, 0.20, 0.10], [0.30, 0.30, 0.25, 0.15],
+    ([0.50, 0.20, 0.20, 0.10], [0.30, 0.30, 0.25, 0.15], "build_candidate",
      ["student_arrive_before_9", "student_arrive_9_11"]),
+    # nothing passes (the state of the committed table): 0.5 se in the time cells, the shared
+    # cell -0.06 / sqrt(0.24 / 100) = -1.22 se
+    ([0.20, 0.20, 0.20, 0.40], [0.18, 0.18, 0.18, 0.46], "comparison_only", []),
 ])
-def test_arrival_status_overlap_is_read_from_the_rule_table(srv_share, mid_share, time_labels):
-    """The arrival cell student_no_education_leg holds the same students as the status cell
-    student_noedu; the overlap summary must say through which cells arrival passes rule 2."""
-    srv, mid = _frames(control="arrival", srv_n=[50] * 4, srv_share=srv_share,
-                       mid_share=mid_share, srv_n_eff=100)
+def test_arrival_status_overlap_is_read_from_the_rule_table(srv_share, mid_share, verdict,
+                                                            time_labels):
+    """The arrival cell student_no_education_leg and the status cell student_noedu hold the
+    students without an education leg; the overlap summary must say through which cells arrival
+    passes rule 2 and carry both cells' unweighted counts, so a reader sees the two bases."""
+    srv, mid = _frames(control="arrival", srv_n=[50, 50, 50, 60], srv_share=srv_share,
+                       mid_share=mid_share, srv_n_eff=100, mid_n=[500, 500, 500, 640])
     rule = E.evaluate_build_rule(srv, mid)
     overlap = E.arrival_status_overlap(rule)
-    assert overlap["arrival_verdict"] == "build_candidate"
+    assert overlap["arrival_verdict"] == verdict
+    # the status cells carry the 50 respondents _survey gives every other control in both surveys
+    assert overlap["n_unweighted_srv"] == {"status": 50, "arrival": 60}
+    assert overlap["n_unweighted_mid"] == {"status": 50, "arrival": 640}
     assert overlap["status_verdict"] == "comparison_only"     # identical status cells
     assert overlap["arrival_time_labels_passing_rule2"] == time_labels
     no_edu = _control(rule, "arrival").loc["student_no_education_leg", "difference_in_se"]

@@ -107,10 +107,17 @@ def _overlap_lines(overlap: dict) -> list:
                    "the shared cell")
     else:
         passing = "no arrival-time cell passes rule 2"
+    srv_n, mid_n = overlap["n_unweighted_srv"], overlap["n_unweighted_mid"]
+    same_counts = srv_n["status"] == srv_n["arrival"] and mid_n["status"] == mid_n["arrival"]
     return [
-        "# Overlap of two controls: arrival cell %s and %s cell %s hold the same students"
-        % (E.ARRIVAL_NO_EDUCATION_LABEL, E.STATUS_CONTROL, E.STATUS_NO_EDUCATION_LABEL),
-        "#   (no education leg on the reporting day); difference_in_se %.10g and %.10g; %s."
+        "# Overlap of two controls: arrival cell %s and %s cell %s hold %s students"
+        % (E.ARRIVAL_NO_EDUCATION_LABEL, E.STATUS_CONTROL, E.STATUS_NO_EDUCATION_LABEL,
+           "the same" if same_counts else "nearly the same"),
+        "#   (no education leg on the reporting day; unweighted counts SrV %d and %d, MiD %d and %d)"
+        % (srv_n["arrival"], srv_n["status"], mid_n["arrival"], mid_n["status"]),
+        "#   on slightly different control bases (the arrival base leaves out students with an",
+        "#   unreadable start or arrival hour), so the differences are nearly, not exactly, equal:",
+        "#   difference_in_se %.10g and %.10g; %s."
         % (overlap["arrival_no_education_leg_difference_in_se"],
            overlap["status_noedu_difference_in_se"], passing),
         "#   Verdicts: %s %s, %s %s. The two controls must NOT be built together: they would"

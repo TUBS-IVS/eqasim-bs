@@ -39,9 +39,12 @@ passes rule 2, else ``comparison_only``. ``status_x_education_leg`` is evaluated
 region level; its Kreis pattern is not part of this table. :data:`COMPARISON_ONLY` variables are
 comparison tables by decision (the model derives availability itself) and are never evaluated.
 
-Overlap: the arrival cell ``student_no_education_leg`` and the status cell ``student_noedu`` hold
-the same students (no education leg on the reporting day), so the two controls must never be
-built together; :func:`arrival_status_overlap` says through which cells arrival passes rule 2.
+Overlap: the arrival cell ``student_no_education_leg`` and the status cell ``student_noedu`` are
+both defined as the students without an education leg on the reporting day, so the two controls
+must never be built together. The two CONTROL bases differ slightly (the arrival base leaves out
+students with an unreadable start or arrival hour of their education leg), so the shares and
+differences of the two cells are nearly, not exactly, equal; :func:`arrival_status_overlap`
+reports both cells' unweighted counts and through which cells arrival passes rule 2.
 
 The MiD bases of the four diary-dependent controls are reduced (persons without a diary of the
 day are absent, see :mod:`braunschweig.calibration.mid_student_reference`), so the table carries
@@ -251,12 +254,16 @@ def arrival_status_overlap(rule: pd.DataFrame) -> dict:
     """The overlap of the arrival and the status control in a :func:`evaluate_build_rule` table.
 
     :data:`ARRIVAL_NO_EDUCATION_LABEL` of the arrival control and :data:`STATUS_NO_EDUCATION_LABEL`
-    of the status control are the same students, so an arrival verdict carried by that cell alone
+    of the status control share one definition (no education leg on the reporting day) on
+    slightly different control bases, so an arrival verdict carried by that cell alone nearly
     repeats the status difference. Returns ``status_verdict``, ``arrival_verdict``,
-    ``status_noedu_difference_in_se``, ``arrival_no_education_leg_difference_in_se`` and
-    ``arrival_time_labels_passing_rule2`` (the arrival-time labels with ``rule2_differs``, in
-    vocabulary order; empty when arrival passes rule 2 only through the shared cell or not at all).
-    Raises ``ValueError`` when either control or cell is missing.
+    ``status_noedu_difference_in_se``, ``arrival_no_education_leg_difference_in_se``,
+    ``n_unweighted_srv`` / ``n_unweighted_mid`` (``{"status": .., "arrival": ..}``, the unweighted
+    counts of the two cells in the adults universe, from ``srv_n_unweighted_adults`` /
+    ``mid_n_unweighted_adults``) and ``arrival_time_labels_passing_rule2`` (the arrival-time
+    labels with ``rule2_differs``, in vocabulary order; empty when arrival passes rule 2 only
+    through the shared cell or not at all). Raises ``ValueError`` when either control or cell is
+    missing.
     """
     _require_columns(rule, BUILD_RULE_COLUMNS, "build rule")
     indexed = _unique_index(rule, ["control", "label"], "build rule")
@@ -267,7 +274,15 @@ def arrival_status_overlap(rule: pd.DataFrame) -> dict:
         raise ValueError("build rule table: cells %s missing" % missing)
     time_labels = [label for label in CONTROLS[ARRIVAL_CONTROL]
                    if label != ARRIVAL_NO_EDUCATION_LABEL]
+    status_key = (STATUS_CONTROL, STATUS_NO_EDUCATION_LABEL)
+    arrival_key = (ARRIVAL_CONTROL, ARRIVAL_NO_EDUCATION_LABEL)
     return {
+        "n_unweighted_srv": {"status": int(indexed.loc[status_key, "srv_n_unweighted_adults"]),
+                             "arrival": int(indexed.loc[arrival_key,
+                                                        "srv_n_unweighted_adults"])},
+        "n_unweighted_mid": {"status": int(indexed.loc[status_key, "mid_n_unweighted_adults"]),
+                             "arrival": int(indexed.loc[arrival_key,
+                                                        "mid_n_unweighted_adults"])},
         "status_verdict": str(indexed.loc[(STATUS_CONTROL, STATUS_NO_EDUCATION_LABEL), "verdict"]),
         "arrival_verdict": str(indexed.loc[(ARRIVAL_CONTROL, ARRIVAL_NO_EDUCATION_LABEL),
                                            "verdict"]),
