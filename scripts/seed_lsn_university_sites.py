@@ -36,12 +36,7 @@ ACCESS_DATE = "2026-11-25"
 #
 # Layout: one tuple per institution and site commune, counts are persons (not cases),
 # site_ags8 is the 8-digit AGS of the site commune as a string with leading zero.
-# One commented example row per local institution (values are filled by the owner's
-# hand reading, never invented here):
-#   ("TU Braunschweig", "Braunschweig, Stadt", "03101000", <persons>),
-#   ("HBK Braunschweig", "Braunschweig, Stadt", "03101000", <persons>),
-#   ("TU Clausthal", "Clausthal-Zellerfeld, Bergstadt", "03153<xxx>", <persons>),
-#   ("Ostfalia", "Wolfenbuettel, Stadt", "03158037", <persons>),
+#
 # Read from LSN-Online table K3100101 ("Studierende und Studienanfaenger/innen", Haupt- und
 # Nebenhoerer, Faechergruppe insgesamt, Geschlecht insgesamt), column "Studierende insgesamt",
 # level Hochschulstandort. Institution names as in the table. An institution without site rows
