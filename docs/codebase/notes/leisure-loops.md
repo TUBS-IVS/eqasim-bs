@@ -18,10 +18,12 @@ the loop-free estimates below, `braunschweig/popsim/purpose_subtype.py` (`LOOP_C
 
 Config key `secondary_loop_zero_displacement` (constant `config_keys.KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT` in
 `braunschweig/popsim/stage/config_keys.py`, re-exported as `loops.KEY_ENABLED`); its default and production value are
-owned by the key and its comment in [`configs/base_bs.yml`](../../../configs/base_bs.yml). The second switch of the
-change, `secondary_leisure_estimates_without_loops`, has its own section below. Off: no loop function runs, no MiD table is read for it, the
-result has no `loop_origin` column and the stage writes no report file. The key is declared by the secondary location
-stage and, as a read-only mirror, by the facilities stage; both must run with the same value.
+owned by the key and its comment in [`configs/base_bs.yml`](../../../configs/base_bs.yml). Off: no loop function runs,
+no MiD table is read for it, the result has no `loop_origin` column and the stage writes no report file. The key is
+declared by the secondary location stage and, as a read-only mirror, by the facilities stage; both read the same key of
+one resolved config, so they cannot differ within a run.
+
+The second switch of the change, `secondary_leisure_estimates_without_loops`, has its own section below.
 
 ## The flag (`loops.estimate_loop_probabilities`, `loops.flag_loops`)
 
@@ -135,9 +137,9 @@ from estimates that still count the loops. With the switch on, two estimates lea
   (`config_keys.KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS`; default and production value: the key comment in
   `braunschweig/popsim/stage/config_keys.py` and [`configs/base_bs.yml`](../../../configs/base_bs.yml)). On requires
   `secondary_leisure_subtype_split` and `secondary_loop_zero_displacement`: `config_keys.
-  require_loop_free_estimate_prerequisites` runs in `configure` of both stages, which declare the key with the shared
-  constants and must resolve the same value, and raises `ValueError` naming the missing key. Off: both estimates are
-  as before the change.
+  require_loop_free_estimate_prerequisites` runs in `configure` of both stages and raises `ValueError` naming the
+  missing key. Both stages declare the key with the shared constants and read the same key of one resolved config, so
+  they cannot differ within a run. Off: both estimates are as before the change.
 - **Reports.** `subtype_estimate_legs_left_out` in the `loops` block of `secondary_locations_report.json` (the
   decider's counts per loop mode: legs before the filter, left out, kept; the key is absent with the switch off), and
   `distance_distributions_report.json` in the folder of the distance distributions stage (written only with the switch

@@ -5,9 +5,10 @@ description: 'With the switch on, the secondary location stage takes the leisure
   bicycle leg with the MiD detail code 710 or 711, or drawn where the detail was not asked) out of the chain
   before the solve and puts each loop activity back at the place of the activity it starts from, the
   eqasim-france Paris model (owner decision of 2026-11-25). A second switch,
-  secondary_leisure_estimates_without_loops, leaves the loop legs (walk or bicycle with 710 or 711) out of the
-  leisure subtype distance layers and of the leisure subtype decider''s estimate, so the legs that remain are
-  not assigned a subtype or a distance from estimates that still count the loops.'
+  secondary_leisure_estimates_without_loops, leaves the loop legs as defined in the detail_doc note
+  (purpose_subtype.drop_loop_legs) out of the leisure subtype distance layers and of the leisure subtype
+  decider''s estimate, so the legs that remain are not assigned a subtype or a distance from estimates that
+  still count the loops.'
 stages:
 - synthesis.population.spatial.secondary.locations
 - matsim.scenario.facilities
@@ -94,4 +95,6 @@ assessment:
 notes: 'Toggling secondary_loop_zero_displacement recomputes the secondary location stage and the facilities stage,
   which both declare it. Toggling secondary_leisure_estimates_without_loops recomputes the secondary location stage
   and the distance distributions stage, which both declare it; it requires secondary_leisure_subtype_split and
-  secondary_loop_zero_displacement (both stages raise at configure time otherwise).'
+  secondary_loop_zero_displacement (both stages raise at configure time otherwise). production.enabled is true
+  only while BOTH flags are on, so turning off only the second switch makes the documentation checker report
+  this feature as disabled.'

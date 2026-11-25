@@ -169,12 +169,13 @@ notes: >-
 
   LOOP-FREE LEISURE SUBTYPE LAYERS (issue #679, ADR-0207, feature record
   secondary_loop_zero_displacement): this stage declares secondary_leisure_estimates_without_loops
-  (key and default constants from braunschweig.popsim.stage.config_keys, shared with
+  (key and default constants from braunschweig.popsim.stage.config_keys, KEY_SECONDARY_LEISURE_ESTIMATES_
+  WITHOUT_LOOPS, whose comment and configs/base_bs.yml own the default and production value; shared with
   braunschweig.synthesis.locations.secondary_chainsolvers, whose leisure subtype decider leaves out the
-  same legs; code default false, production value: configs/base_bs.yml) and forwards it into run() as
-  leisure_estimates_without_loops. With it on, Step 8 builds the leisure subtype layers from the leisure
-  legs minus purpose_subtype.drop_loop_legs (walk or bicycle with W_ZWD 710/711); only the layer of the
-  group holding the loop codes changes, and a loop mode that loses all its legs there raises ValueError.
+  same legs) and forwards it into run() as leisure_estimates_without_loops. With it on, Step 8 builds the
+  leisure subtype layers from the leisure legs minus the loop legs (purpose_subtype.drop_loop_legs, defined
+  in docs/codebase/notes/leisure-loops.md); only the layer of the group holding the loop codes changes, and
+  a loop mode that loses all its legs there raises ValueError.
   The aggregate leisure layer, the leisure_unspecified layer and the other purposes keep every leg.
   configure() declares the key unconditionally and, only when it is on, declares
   secondary_loop_zero_displacement and calls config_keys.require_loop_free_estimate_prerequisites (the
