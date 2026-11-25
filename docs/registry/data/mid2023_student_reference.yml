@@ -1,0 +1,71 @@
+dataset: mid2023_student_reference
+title: MiD 2023 university-student aggregates (education-trip status by age, distance band x
+  main mode, pupil and student share of the 20-29 year olds per Land, seed-side behaviour
+  cells; four committed tables)
+provider: derived in-repo from MiD 2023 scientific-use microdata (SUF B1, infas/DLR/IVT/infas 360)
+vintage: 2023 survey year
+geography: |
+  Germany (national MiD sample). The share of the 20-29 year olds has one row for Germany and
+  one per Land (BLAND 1-16); the other three tables are national only. There is no Braunschweig
+  or ZGB sample: transfer to the study area is an assumption of the consumer.
+crs: null
+roles:
+- reference_table
+- validation_reference
+used_by: []
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_mid_student_reference.py --raw <MiD CSV directory>
+    --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha>, which writes all four
+    tables in one run. Reads MiD2023_Personen.csv and MiD2023_Wege.csv (required columns:
+    mid_student_reference.BEHAVIOUR_PERSON_COLUMNS for persons, the script's TRIP_READ_COLUMNS
+    for trips); when the persons file has no BLAND column the households file
+    MiD2023_Haushalte.csv (H_ID, BLAND) is read as well. The raw microdata is restricted and
+    never committed. The script requires --source-commit, recorded in every header.
+  script: scripts/extract_mid_student_reference.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mid/{mid2023_student_status_by_age,mid2023_student_education_distance_mode,mid2023_student_share_20_29_by_land,mid2023_student_behaviour_seed}.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py: the four files are committed (by the
+    Phase 0 extraction run) and no stage reads them - they are build-time references of the
+    student-commuting feature (issue #140). Unit tests on synthetic MiD-shaped frames
+    (hand-computed shares, the universe restriction to core weekdays and adults, the rbW rule,
+    the exclusion of unreadable codes, the Land join and the CLI end to end):
+    tests/test_mid_student_reference.py.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: aggregate values only; raw SUF restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Definitions (student = P_TAET 10, adults 18+, core weekdays ST_WOTAG 2-4, the seed's
+  education and work W_ZWECK sets, direct legs only under exclude_rbw_legs, first education leg,
+  arrival hour, trip class, season-ticket flatrate, distance validity, the exclusion rules for
+  unreadable codes) live in the module docstring of
+  braunschweig/calibration/mid_student_reference.py; the shared label vocabulary, bin edges and
+  the Kish effective sample size in braunschweig/calibration/student_behaviour_labels.py. Each
+  file's own header repeats the definitions it uses, states the exclude_rbw_legs setting it was
+  built with and carries its "# Exclusions:" counts.
+
+  The behaviour table is the seed-side mirror of srv2023_student_behaviour.csv (record
+  srv2023_student_reference): the same labels, the same two universes (adults 18+ and adult
+  students), the same column set, so a candidate control is compared across the two surveys on
+  the same footing. Unlike the SrV side it carries no per-Kreis rows.
+
+  Mode is the imputed main mode hvm_imp (the variable the handbook mandates and the popsim seed
+  maps), not the raw hvm. The pupil and student share of the 20-29 year olds is a status share
+  over all reporting days; every other table is restricted to Tuesday to Thursday.
+
+  Measured values: see the committed headers and the Phase 0 run manifest of issue #140. A
+  measurement, not a validation.
+notes: |
+  Reference table R4 of Phase 0 of the student-commuting feature (issue #140). Pattern:
+  mid2023_workday_location (same extraction conventions, --source-commit, header provenance).
