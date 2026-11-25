@@ -8,13 +8,18 @@ state are in the feature record
 run manifests those records link. Code: `braunschweig/synthesis/locations/secondary_chainsolvers/loops.py` (pure
 functions: `estimate_loop_probabilities`, `flag_loops`, `select_collapsible_loops`, `collapse_loops`, the
 `to_collapsed_*` translators, `restore_loops`), `secondary_chainsolvers/__init__.py` (`execute`, `_flag_loop_trips`,
-`_linked_activity_keys`, `_collapse_loops_and_move_anchors`, `_require_no_loop_origin_outside`, `_report_loops`) and
-`braunschweig/matsim/scenario/facilities.py` (`_loop_origin_facility_ids`, `validate_secondary_coverage`).
+`_linked_activity_keys`, `_collapse_loops_and_move_anchors`, `_require_no_loop_origin_outside`, `_report_loops`),
+`braunschweig/matsim/scenario/facilities.py` (`_loop_origin_facility_ids`, `validate_secondary_coverage`) and, for
+the loop-free estimates below, `braunschweig/popsim/purpose_subtype.py` (`LOOP_CODES`, `LOOP_MODES`,
+`drop_loop_legs`), `braunschweig/popsim/distance_distributions.py` (`run`, Step 8) and
+`secondary_chainsolvers/deciders.py` (`_build_leisure_subtype_decider`).
 
 ## Switch
 
-Config key `secondary_loop_zero_displacement`; its default and production value are owned by the key and its comment in
-[`configs/base_bs.yml`](../../../configs/base_bs.yml). Off: no loop function runs, no MiD table is read for it, the
+Config key `secondary_loop_zero_displacement` (constant `config_keys.KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT` in
+`braunschweig/popsim/stage/config_keys.py`, re-exported as `loops.KEY_ENABLED`); its default and production value are
+owned by the key and its comment in [`configs/base_bs.yml`](../../../configs/base_bs.yml). The second switch of the
+change, `secondary_leisure_estimates_without_loops`, has its own section below. Off: no loop function runs, no MiD table is read for it, the
 result has no `loop_origin` column and the stage writes no report file. The key is declared by the secondary location
 stage and, as a read-only mirror, by the facilities stage; both must run with the same value.
 
@@ -24,13 +29,15 @@ A Boolean per synthetic trip, true when the trip leads INTO a loop activity. It 
 anything else of the stage rewrites it, and it is independent of the leisure subtype group (the group and its decider
 stay untouched).
 
-- **Scope.** The destination activity is leisure, the mode is walk or bicycle (`loops.LOOP_MODES`), the donor's
+- **Scope.** The destination activity is leisure, the mode is walk or bicycle (`purpose_subtype.LOOP_MODES`, which
+  `loops` re-exports; it is owned there because the loop-free estimates need it), the donor's
   `W_ZWECK` is in `purpose_subtype.LEISURE_ZWECK`, the donor row exists and the donor's `W_ZWD` is present. Every other
   trip is false and consumes no random number: motorised legs, the coarse purpose 10 (`leisure_unspecified`) and the
   child purposes stay out.
 - **Labelled leg.** The donor's `W_ZWD` is one of the leisure detail codes of `purpose_subtype.leisure_spec`
   (`labelled_codes`, which follows `purpose_subtype_codeplan_sentinels`: with it on, 799 "Freizeit k.A." is not a
-  label). The leg is a loop exactly when the code is in `loops.LOOP_CODES` (710 stroll, 711 dog walk), by bicycle too.
+  label). The leg is a loop exactly when the code is in `purpose_subtype.LOOP_CODES` (710 stroll, 711 dog walk; re-exported by
+  `loops`), by bicycle too.
 - **Drawn leg.** A leg in scope whose `W_ZWD` is NOT one of those leisure detail codes draws one Bernoulli value with
   the probability of its cell. That is every other code the donor leg carries: the members of
   `purpose_subtype.LEISURE_SENTINELS` (the design codes for "not asked", and the shop and errand detail codes that occur
@@ -102,13 +109,48 @@ stay untouched).
    `FALLBACK_WARN_RATE`), the collapsed loops of persons with an escort link, a portal stay or a passive joint link
    (`collapsed_loops_of_persons_with_escort_link`, `..._portal_stay`, `..._passive_joint_link`: they show the
    translation of step 3 is exercised), the persons left without a secondary activity and the marginal share per mode.
+   With `secondary_leisure_estimates_without_loops` on, the block also has `subtype_estimate_legs_left_out` (below).
 
 The random streams of the solver are consumed by fewer legs with the switch on, so a comparison of the two switch
 states compares distributions; the stage tests compare against an input from which the loop was removed by hand.
 
-Known limitation: the leisure subtype decider and the `leisure_local` distance layer are untouched and still count the
-loops, so the leisure legs that remain are assigned to `leisure_local` too often and draw from a pool that holds loop
-path lengths; the direction and the reason are in ADR-0207, Consequences.
+## The loop-free leisure estimates (`secondary_leisure_estimates_without_loops`)
+
+With the loops taken out of the chain, the leisure legs that remain must not be assigned a subtype, or a distance,
+from estimates that still count the loops. With the switch on, two estimates leave the loop legs out:
+
+- **The rule** (`purpose_subtype.drop_loop_legs`, the one row filter): a leg is left out when its mode is in
+  `purpose_subtype.LOOP_MODES` AND its `W_ZWD` is in `purpose_subtype.LOOP_CODES`. This is the labelled rule only: the
+  filter makes no draw, and a motorised leg with 710 or 711 stays (the model keeps it as a trip to a destination). It is
+  logged per loop mode with the legs left out and kept; a loop mode that loses all its legs is a WARNING.
+- **Place 1: the leisure subtype distance layers** (`distance_distributions.run`, Step 8). The subtype layers are built
+  from the leisure legs without the loop legs. Only the layer of the group that holds the loop codes changes. A loop
+  mode that had legs in that layer with the loops and has none without raises `ValueError`; the sampler is never left
+  to fall back to the aggregate layer, which still holds the loops.
+- **Place 2: the leisure subtype decider** (`deciders._build_leisure_subtype_decider`). The filter runs on the MiD legs
+  of the spec's own `W_ZWECK` values, after the code coverage guard and before `estimate_group_probabilities`. A
+  (mode, travel-time band) cell that falls below the minimum number of observations takes the marginal, which the
+  estimate's thin-cell log and the decider's fallback count already report.
+- **The switch and its prerequisites.** Config key `secondary_leisure_estimates_without_loops`
+  (`config_keys.KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS`; default and production value: the key comment in
+  `braunschweig/popsim/stage/config_keys.py` and [`configs/base_bs.yml`](../../../configs/base_bs.yml)). On requires
+  `secondary_leisure_subtype_split` and `secondary_loop_zero_displacement`: `config_keys.
+  require_loop_free_estimate_prerequisites` runs in `configure` of both stages, which declare the key with the shared
+  constants and must resolve the same value, and raises `ValueError` naming the missing key. Off: both estimates are
+  as before the change.
+- **Reports.** `subtype_estimate_legs_left_out` in the `loops` block of `secondary_locations_report.json` (the
+  decider's counts per loop mode: legs before the filter, left out, kept; the key is absent with the switch off), and
+  `distance_distributions_report.json` in the folder of the distance distributions stage (written only with the switch
+  on), which holds `leisure_subtype_legs_left_out` (the same counts for the layers) and `leisure_subtype_layer_legs`
+  (per leisure group and mode, `legs_with_loops` and `legs_without_loops`).
+- **What stays untouched.** The aggregate `leisure` distance layer, the `leisure_unspecified` layer, every other
+  purpose, and the estimate of the loop probability itself (it needs the labelled loops by definition). Motorised
+  loops stay in both estimates. A loop kept on the solver (step 1) is placed and drawn like any other leisure leg, so it
+  draws its subtype and its distance from the loop-free estimates.
+- **Survey reference.** `scripts/extract_mid_w_zwd_groups.py --without-loops` applies the same rule through
+  `drop_loop_legs` (the mode is `trips.map_mode` of `hvm_imp`); see Comparisons.
+
+The assumptions of this section are in ADR-0207.
 
 ## Comparisons
 
@@ -119,7 +161,7 @@ legs belong to, found through the dependencies synpp records in the working dire
 (`validate_secondary_distances.pair_secondary_locations_pickle`); a working directory with several secondary pickles
 and no such link is refused, never resolved by file age. The survey side of `validate_secondary_distances` and of the circuity
 calibration's band-shift impact is the published MiD W12 table, which keeps loops and has no `W_ZWD`; both scripts state
-that difference. The W_ZWD group reference has a loop-free variant
+that difference. The W_ZWD group reference has a loop-free variant that applies the rule of the loop-free estimates
 ([data record](../../registry/data/mid2023_w_zwd_group_reference_without_loops.yml)).
 
 The mapping of the MiD purposes and detail codes: [`mid-purpose-mapping.md`](mid-purpose-mapping.md).

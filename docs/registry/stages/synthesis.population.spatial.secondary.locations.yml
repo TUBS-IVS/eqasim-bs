@@ -303,3 +303,12 @@ notes: >-
   secondary_loop_zero_displacement (default and production value: the config-key comment and the feature
   record) execute uses the new helper module secondary_chainsolvers/loops.py, listed in
   _HELPER_MODULES. Rule, column loop_origin and report file: docs/codebase/notes/leisure-loops.md.
+  The loop switch constant is owned by braunschweig.popsim.stage.config_keys
+  (KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT; loops.KEY_ENABLED re-exports it), and LOOP_CODES / LOOP_MODES by
+  purpose_subtype. A second key, secondary_leisure_estimates_without_loops (shared constants from
+  config_keys, declared unconditionally here and by the distance distributions stage), makes
+  deciders._build_leisure_subtype_decider leave the loop legs (purpose_subtype.drop_loop_legs) out of its
+  P(group | mode, tt_band) estimate; configure() raises ValueError when it is on without
+  secondary_leisure_subtype_split or secondary_loop_zero_displacement. With it on the loops block of
+  secondary_locations_report.json carries subtype_estimate_legs_left_out; the rule and the report keys are in
+  the note.

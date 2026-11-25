@@ -4,10 +4,14 @@ area: secondary
 description: 'With the switch on, the secondary location stage takes the leisure legs that are loops (a walk or
   bicycle leg with the MiD detail code 710 or 711, or drawn where the detail was not asked) out of the chain
   before the solve and puts each loop activity back at the place of the activity it starts from, the
-  eqasim-france Paris model (owner decision of 2026-11-25).'
+  eqasim-france Paris model (owner decision of 2026-11-25). A second switch,
+  secondary_leisure_estimates_without_loops, leaves the loop legs (walk or bicycle with 710 or 711) out of the
+  leisure subtype distance layers and of the leisure subtype decider''s estimate, so the legs that remain are
+  not assigned a subtype or a distance from estimates that still count the loops.'
 stages:
 - synthesis.population.spatial.secondary.locations
 - matsim.scenario.facilities
+- synthesis.population.spatial.secondary.distance_distributions
 pipelines:
   popsim_mid: active
   popsim_open: not_used
@@ -17,6 +21,7 @@ production:
   enabled: true
   flags:
   - secondary_loop_zero_displacement
+  - secondary_leisure_estimates_without_loops
 introduced:
   issue: '#679'
   pr: null
@@ -25,6 +30,10 @@ detail_doc: docs/codebase/notes/leisure-loops.md
 code_paths:
 - braunschweig/synthesis/locations/secondary_chainsolvers/loops.py
 - braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/deciders.py
+- braunschweig/popsim/purpose_subtype.py
+- braunschweig/popsim/distance_distributions.py
+- braunschweig/popsim/stage/config_keys.py
 - braunschweig/matsim/scenario/facilities.py
 - braunschweig/calibration/secondary_measurement.py
 - scripts/validate_secondary_distances.py
@@ -36,25 +45,34 @@ evidence:
   - tests/test_secondary_loops_stage.py
   - tests/test_extract_mid_w_zwd_groups.py
   - tests/test_calibrate_detour_circuity_loops.py
+  - tests/test_purpose_subtype.py
+  - tests/test_distance_distributions_subtypes.py
+  - tests/test_secondary_chainsolvers_subtypes.py
   off_path_byte_identical:
     claimed: 'true'
     test: tests/test_secondary_loops_stage.py::test_the_key_off_gives_todays_result_without_the_loop_origin_column
     note: 'The test fails if any loop function or the MiD loader runs with the key off, compares the stage result
       with the solver output on the uncollapsed trips (no loop_origin column) and asserts that no report file is
-      written. It is a frame-level check on hand-made fixtures, not a comparison of two runs.'
+      written. It is a frame-level check on hand-made fixtures, not a comparison of two runs. It covers
+      secondary_loop_zero_displacement only; for secondary_leisure_estimates_without_loops the tests pin that both
+      stages default it to off and that the distance distributions report is written only while it is on.'
   fallback_rate:
     instrumented: true
     log_marker: '[secondary_loops]'
     note: 'Both fallbacks (cell to mode marginal; loops kept on the solver instead of collapsed, by reason: the
       loop activity is anchored or linked, or the loop starts at an outside stay) are counted with a rate in the
       log and the stage report, and legs without any detail code are counted too; see the detail_doc note, sections
-      "The flag (...)" (marginal fallback, missing detail code) and "The placement rule (...)" (the Report step).'
+      "The flag (...)" (marginal fallback, missing detail code) and "The placement rule (...)" (the Report step).
+      The loop-free estimates count the legs they leave out per loop mode in both stage reports; a (mode,
+      travel-time band) cell of the decider that falls below the minimum takes the marginal, which the existing
+      thin-cell log and fallback count report, and a distance layer that loses all legs of a loop mode raises
+      instead of falling back (section "The loop-free leisure estimates").'
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference_without_loops.csv
     note: 'The loop-free variant of the W_ZWD group reference (data record
-      mid2023_w_zwd_group_reference_without_loops) is a measurement reference only; no stage reads it as a
-      target. The loop probability itself is estimated at run time from the MiD Wege table.'
+      mid2023_w_zwd_group_reference_without_loops, which applies the rule of the loop-free estimates) is a
+      measurement reference only; no stage reads it as a target. The loop probability itself is estimated at run time from the MiD Wege table.'
 validation:
   state: unvalidated
   runs: []
@@ -70,6 +88,10 @@ assessment:
     new facility ids, a short simulation) is not recorded yet; the share of loops kept on the solver (the loop
     activity is anchored or linked, or the loop starts at an outside stay), the loops collapsed for persons with
     an escort link, a portal stay or a passive joint link, and their effect are read from that run. ADR-0207
-    records the decision, its assumptions and the known limitation of the leisure subtype decider.'
+    records the decision and its assumptions. The effect of the loop-free leisure estimates on the distances is
+    read from the same run.'
   source: ADR-0207
-notes: 'Toggling the key recomputes the secondary location stage and the facilities stage, which both declare it.'
+notes: 'Toggling secondary_loop_zero_displacement recomputes the secondary location stage and the facilities stage,
+  which both declare it. Toggling secondary_leisure_estimates_without_loops recomputes the secondary location stage
+  and the distance distributions stage, which both declare it; it requires secondary_leisure_subtype_split and
+  secondary_loop_zero_displacement (both stages raise at configure time otherwise).'
