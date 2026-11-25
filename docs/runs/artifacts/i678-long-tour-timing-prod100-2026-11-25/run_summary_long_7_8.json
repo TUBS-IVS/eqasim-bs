@@ -1,0 +1,39 @@
+{
+  "population": "long_7_8.xml.gz",
+  "config_file": "braunschweig_100pct_prod20261031_config_initial_mode_choice.xml",
+  "threads": 16,
+  "xmx": "40G",
+  "chunk_size": 1,
+  "java_exit": 0,
+  "java_wall_time_s": 297.7,
+  "java_cpu_user_s": 3199.6,
+  "java_cpu_sys_s": 53.2,
+  "java_max_rss_kb": 16201104,
+  "started": "2026-11-25T14:16:30+0100",
+  "persons_before": 5473,
+  "persons_after": 5473,
+  "persons_removed": 0,
+  "summary": {
+    "n_trips": 43230,
+    "n_trips_mode_changed": 23233,
+    "share_mode_changed": 0.5374277122368726,
+    "mode_shares_before": {
+      "bicycle": 0.09095535507749249,
+      "car": 0.548207263474439,
+      "car_passenger": 0.07494795281054822,
+      "outside": 0.0030534351145038168,
+      "pt": 0.061068702290076333,
+      "walk": 0.2217672912329401
+    },
+    "mode_shares_after": {
+      "bicycle": 0.022229932916955818,
+      "car": 0.5542216053666436,
+      "car_passenger": 0.1159148739301411,
+      "outside": 0.0030534351145038168,
+      "pt": 0.03384223918575063,
+      "walk": 0.27073791348600507
+    }
+  },
+  "relaxed_lines": [],
+  "n_exception_lines": 0
+}

@@ -1,0 +1,2 @@
+2026-11-25T13:52:56,576  INFO StandaloneModeChoicePerformer:129 Splitting 5473 plans into 6 chunks (1,000 each) over 16 threads
+2026-11-25T13:59:21,725  INFO ParallelProgress:140 Standalone mode choice Done!

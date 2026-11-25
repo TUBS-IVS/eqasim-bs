@@ -1,0 +1,125 @@
+id: i678-long-tour-timing-prod100-2026-11-25
+date: '2026-11-25'
+repository:
+  commit: 17f5e9235592ea82edd12577ca1f3a7b6a9730cb
+  branch: fix/i678-mode-choice-reach
+  notes: >-
+    eqasim-bs fix/i678-mode-choice-reach at 17f5e923 and eqasim-java-bs feat/i678-border-tour-vehicle-rule at
+    ab56318a118ab17777ba57bc6b149b25c95ea8fb, both clean clones on felix (~/i678_work/eqasim-bs and
+    ~/i678_work/eqasim-java-bs, 0 changes) made from git bundles of the two branches. The jar was built in the Java
+    clone with -Pstandalone and the fixed build timestamp of matsim.runtime.eqasim (braunschweig-2.3.1.jar,
+    193,785,113 bytes, sha256 11d8abb6b6afb5fb737cb44fe402e7443a451afc7144db8d91330db1ff399728); after the build the
+    clone shows only braunschweig/dependency-reduced-pom.xml as modified (the shade plugin rewrites it). The branch's
+    mode_choice_reach.require_border_vehicle_constraint passed on this jar. The population and the final config are
+    those of the run prod100_20261031 (code 7a41f0ba), read only.
+configuration:
+  config: >-
+    the final MATSim config of prod100_20261031 (prepare stage directory, braunschweig_100pct_prod20261031_config.xml,
+    copied unchanged) and its second file from mode_choice_reach.write_initial_config(config, ReachSettings(True, 13))
+  notes: >-
+    The second file differs from the final config in three values only (initial_config_diff_*_output.txt): tourFinder
+    ActivityBased -> IsolatedOutsideTrips, tourConstraints "FromTripBased, VehicleContinuity" -> "FromTripBased,
+    BorderTourVehicleContinuity", maximumLength of tourFilter:TourLength 6 -> 13. Runner arguments from the branch's
+    initial_mode_choice.arguments(config, population, 16, ()) with no excluded subpopulation (the files hold residents
+    only), plus --config:standaloneModeChoice.chunkSize 1 in the runs this record times (see status notes). JVM:
+    JDK 25.0.3 (~/tools/jdk-25.0.3+9), -Xmx40G (7 to 8 and 9 to 11 trips) and -Xmx48G (13 trips), cwd the run directory,
+    as matsim.runtime.java.run sets it. 16 threads in every run.
+sampling:
+  rate: 1.0
+  scope: >-
+    residents of the prepared population of prod100_20261031 whose longest enumerated run has more than 6 trips, in
+    three files: 7 to 8 trips 5,473 persons (43,230 trips), 9 to 11 trips 815 persons (7,889 trips), 13 trips 329 persons
+    (4,277 trips). Residents: persons without a subpopulation attribute whose uncut plan has no ic_ facility (the rule of
+    the "before" probe), 1,130,422 of 1,261,590 persons. Runs as in the finer rule (isolate_outside_trips true):
+    plan_check.leg_reach, cross-checked trip by trip in i678_cut_long_tours.py; an enumerated run is a run that does not
+    start or end at outside and has at most 13 trips. No resident has a longest run of 12 trips or a run of more than 13
+    trips.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. i678_cut_long_tours.py cut the three files (416 s); i678_setup_run_dir.sh made one run
+    directory per file (links to the prepare stage files, a copy of the final config);
+    i678_run_initial_choice.py wrote the second config and started eqasim's RunStandaloneModeChoice as the branch's
+    initial_mode_choice.run does, then counted persons with count_persons and changed trips with summarise. The
+    population was not replaced (no prepare stage ran). run_two.sh started the first two runs (chunk size 1,000),
+    run_three.sh the timed runs (chunk size 1), java_capped_4h.sh capped the 13-trip run at four hours.
+classification:
+- wiring_proof
+status:
+  execution: partial
+  notes: >-
+    Model output, NOT a validation: a timing of the initial mode choice on cut files and the first real run of the
+    constraint name. The 7 to 8 and 9 to 11 files completed; the 13-trip file was stopped by hand after 1,998 s (exit
+    143) under the stop rule of the task (more than four hours), once its first 16 persons had finished and the rate
+    was clear. Chunk size: the runner hands chunks of standaloneModeChoice.chunkSize plans (default 1,000) to its
+    threads, so a file of fewer than 1,000 persons runs on one thread whatever numberOfThreads says (13-trip file:
+    "Splitting 329 plans into 1 chunks"; 7 to 8 trips: 6 chunks). The first runs with the default chunk size were
+    therefore stopped (9 to 11 and 13 trips) or kept only for comparison (7 to 8 trips) and the timed runs use chunk
+    size 1, which spreads the long-tour persons over the threads as the full population does (about 1,262 chunks of 1,000);
+    it changes the chunk random seeds, not the model. The 7 to 8 file gave the same number of changed trips with both
+    chunk sizes (23,233). The server was shared with another session (load average about 25 on 64 cores during the
+    13-trip run, of which 16 threads plus garbage collection were ours). The final summary line of the border-tour
+    constraint is written by a MATSim end-of-run listener, which the standalone runner does not call; the constraint
+    itself logs a line only when it relaxes a leg.
+source: >-
+  felix:~/i678_timing (cut files in cut/, run directories run_long_7_8, run_long_9_11, run_long_12_13, Java logs
+  java_output.txt). Committed in docs/runs/artifacts/i678-long-tour-timing-prod100-2026-11-25/ with the sha256 of the
+  server file (sha256_output.txt): i678_cut_long_tours.py (cc3eccbc51d8e18606e70b0e41f371a497000fc8284201320a52fbc1a8359403)
+  with cut_output.txt; i678_run_initial_choice.py (52032d2168f7d98632e0713e0525f158b7c3e5b4f29a229d90be851b9201e448;
+  the first 7 to 8 run used an earlier version without the CPU time and chunk size fields) with
+  run_summary_long_*.json and driver_long_*_output.txt; i678_setup_run_dir.sh
+  (bc850ae1c06de82ee47d744b84a071c2a2d7e4cfd5391ebc5f9af0854e952f35); run_two.sh
+  (88827269b7ad35dcd3d0aabbd9fcaf645ae1850e4969cec3de5d92f3ff9d4dec); run_three.sh
+  (f9ebc3d8c1e2cfc1be71c4bfb331402965558a716527df9a4cbc53a01cabacd5); java_capped_4h.sh
+  (09f6403447ff46ccb1eefa021ba7f72ea27828c498109cc43ce4201ae315bd17); the runner's own lines (command line options,
+  "Splitting", progress, "Done!", population written) in runner_lines_long_*_output.txt and of the default chunk size
+  runs in runner_lines_*_chunk1000*_output.txt; the config diffs in initial_config_diff_long_*_output.txt. Home
+  directory paths are written as ~ in the committed outputs; nothing else differs from the server files.
+environment: 'server (felix, hostname matsim, 64 cores, 94 GB), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10), Java ~/tools/jdk-25.0.3+9 (25.0.3), Maven 3.6.3; 16 threads per run'
+validation:
+- metric: does the finer rule with the constraint name BorderTourVehicleContinuity run in eqasim's standalone mode choice, and are persons lost?
+  reference: 'none: a wiring check on model output'
+  result: >-
+    Yes. The runs with the second config exited 0 for 7 to 8 trips (5,473 persons before and after) and 9 to 11 trips
+    (815 before and after); persons removed 0; no exception line. The stopped 13-trip run had no exception before it
+    was stopped. No "border-tour vehicle legs relaxed for missing availability" line appeared in any run, i.e. no leg
+    was relaxed in the persons processed. Trips with a changed mode: 23,233 of 43,230 (53.7 %) for 7 to 8 trips, 2,486
+    of 7,889 (31.5 %) for 9 to 11 trips (free-flow travel times; the prepared population of this run had no initial
+    mode choice before).
+  artifact: docs/runs/artifacts/i678-long-tour-timing-prod100-2026-11-25/run_summary_long_9_11.json
+- metric: wall time of the initial mode choice per file (16 threads, chunk size 1)
+  reference: 'ASSUMPTION of the design (1 to 2 microseconds per mode chain); enumeration sizes per tour length from docs/runs/i678-mode-choice-reach-probe-prod100-2026-11-25.yml'
+  result: >-
+    7 to 8 trips: Java 297.7 s in total, of which the choice phase ("Splitting" to "Done!") 176 s; CPU 3,253 s.
+    9 to 11 trips: Java 633.5 s, choice phase 523 s; CPU 10,535 s. 13 trips: stopped after 1,998 s; choice phase
+    started 14:23:22, the first person finished after 1,770 s and 16 persons after 1,840 s (all 16 threads busy, one
+    person each); CPU 41,996 s. The scenario load before the choice phase takes about two minutes in every run. With
+    the default chunk size of 1,000 the 7 to 8 file took 502.4 s (choice phase 385 s on 6 chunks).
+  artifact: docs/runs/artifacts/i678-long-tour-timing-prod100-2026-11-25/runner_lines_long_12_13_output.txt
+- metric: time per mode chain against the assumption, and the projection for the 13-trip file
+  reference: 'ASSUMPTION of the design: 1 to 2 microseconds per chain; chain counts are an ESTIMATE (available modes to the power of the run length, modes as in long_tour_cost_probe.py)'
+  result: >-
+    Chains per file (estimate): 665,521,815 (7 to 8), 5,779,665,662 (9 to 11), 401,611,328,125 (13; 329 runs of 13 trips,
+    all with five modes, 1,220,703,125 each). Thread time per chain (choice phase times 16 threads, or the per-person
+    time for 13 trips): 4.2 microseconds for 7 to 8 trips (short runs: the work per trip dominates), 1.45 for 9 to 11
+    and 1.45 to 1.51 for 13 trips; CPU per chain including load and garbage collection 4.9 and 1.8. For runs of 9 and
+    more trips the assumption of 1 to 2 microseconds per chain holds. The wall time it was meant to give does not: one
+    13-trip person takes about 30 minutes of one thread, so the 329 persons take about 329 x 1,800 s / 16 = 37,000 s,
+    about 10 hours at 16 threads (more than the four-hour stop bound), against "2 to 4 hours" in the design. That figure
+    is the chain count times 1 to 2 microseconds (124 to 248 hours of one thread) divided by roughly 60 threads; it
+    holds only with that many threads (ASSUMPTION, not measured: linear scaling). Peak resident memory of the JVM
+    21,555,112 kB (about 20.6 GiB) at 16 threads for the 13-trip file.
+  artifact: docs/runs/artifacts/i678-long-tour-timing-prod100-2026-11-25/run_summary_long_12_13.json
+- metric: residents with a long enumerated run (finer rule) in the prepared population, by longest run
+  reference: 'none: a count of model output'
+  result: >-
+    Runs of more than 6 trips: 7 trips 3,880, 8 trips 1,593, 9 trips 351, 10 trips 439, 11 trips 25, 13 trips 329 (6,617
+    runs in 6,617 persons, one each; none of 12 or of more than 13 trips). 6,554 of these persons also have a tour of
+    more than 6 trips without an outside activity under the coarse rule, the same number as the tours of that kind the
+    "before" manifest counts in the prepared population; the other 63 persons (60 with 7 to 8 trips, 3 with 9 to 11) have
+    their long run only inside a border tour, which the finer rule cuts out. The "before"
+    manifest counts 365 tours of 13 trips and 1,193 of 9 to 11 trips in the UNCUT population; the difference to the
+    prepared population is not explained here.
+  artifact: docs/runs/artifacts/i678-long-tour-timing-prod100-2026-11-25/cut_output.txt
+issues:
+- '#678'

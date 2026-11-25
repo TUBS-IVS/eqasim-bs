@@ -1,0 +1,68 @@
+pass 1: uncut in-commuters 74804 in 31 s
+{
+  "stats": {
+    "persons": 1261590,
+    "residents": 1130422,
+    "incommuters": 74804,
+    "persons_with_subpopulation": 56364
+  },
+  "per_file": {
+    "long_7_8": {
+      "persons": 5473,
+      "trips": 43230,
+      "runs_enumerated": 7336,
+      "chains_estimate": 665521815,
+      "chains_estimate_runs_over_6": 664563830,
+      "modes_5": 3906,
+      "coarse_longest_over_6": 5413,
+      "modes_4": 1400,
+      "modes_3": 136,
+      "modes_2": 31
+    },
+    "long_9_11": {
+      "persons": 815,
+      "trips": 7889,
+      "runs_enumerated": 862,
+      "chains_estimate": 5779665662,
+      "chains_estimate_runs_over_6": 5779665247,
+      "modes_5": 591,
+      "coarse_longest_over_6": 812,
+      "modes_3": 144,
+      "modes_4": 80
+    },
+    "long_12_13": {
+      "persons": 329,
+      "trips": 4277,
+      "runs_enumerated": 329,
+      "chains_estimate": 401611328125,
+      "chains_estimate_runs_over_6": 401611328125,
+      "modes_5": 329,
+      "coarse_longest_over_6": 329
+    }
+  },
+  "runs_over_6_by_length": {
+    "long_7_8": {
+      "7": 3880,
+      "8": 1593
+    },
+    "long_9_11": {
+      "9": 351,
+      "10": 439,
+      "11": 25
+    },
+    "long_12_13": {
+      "13": 329
+    }
+  },
+  "coarse_longest_by_file": {
+    "long_12_13|13": 329,
+    "long_7_8|0": 60,
+    "long_7_8|7": 3857,
+    "long_7_8|8": 1556,
+    "long_9_11|0": 3,
+    "long_9_11|9": 348,
+    "long_9_11|10": 439,
+    "long_9_11|11": 25
+  },
+  "elapsed_s": 416
+}
