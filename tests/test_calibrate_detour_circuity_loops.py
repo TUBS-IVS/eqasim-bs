@@ -10,11 +10,13 @@ from __future__ import annotations
 import importlib.util
 import pathlib
 
+import geopandas as gpd
 import pandas as pd
 import pytest
+from shapely.geometry import Point
 
-_spec = importlib.util.spec_from_file_location(
-    "calibrate_detour_circuity", pathlib.Path("scripts/calibrate_detour_circuity.py"))
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "calibrate_detour_circuity.py"
+_spec = importlib.util.spec_from_file_location("calibrate_detour_circuity", _SCRIPT)
 _calibrate = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_calibrate)
 
@@ -51,8 +53,52 @@ def test_without_a_loop_marker_every_secondary_leg_stays():
 
 
 def test_a_secondary_activity_without_a_marker_row_stops_the_calibration():
-    """A marker pickle of another run must not turn the unmatched activity into 'not a loop'
-    (and the stage-not-found handling of the caller must not swallow this error)."""
     marker = _marker([None, None, "secondary", None, None]).query("activity_index != 3")
     with pytest.raises(RuntimeError, match=r"1/3 secondary activities.*no row"):
         _calibrate._build_secondary_legs(*_stage_frames(), df_loop_origin=marker)
+
+
+def _fake_stages(monkeypatch, marker):
+    """Patch the cache readers of ``_extract_od_pools`` with the hand-built stages of one person
+    (a worker); the education stage is absent (RuntimeError, as in a cache without it)."""
+    df_xy, df_acts, df_trips = _stage_frames()
+    locations = gpd.GeoDataFrame(
+        df_xy[["person_id", "activity_index", "commune_id"]],
+        geometry=[Point(x, 0.0) for x in df_xy["x_m"]], crs="EPSG:25832")
+    stages = {
+        "synthesis.population.spatial.home.locations": gpd.GeoDataFrame(
+            {"household_id": [10]}, geometry=[Point(0.0, 0.0)], crs="EPSG:25832"),
+        "braunschweig.synthesis.spatial.home_zones": pd.DataFrame(
+            {"household_id": [10], "commune_id": ["03101000"]}),
+        "braunschweig.synthesis.population.enriched": pd.DataFrame(
+            {"person_id": [1], "household_id": [10], "employed": [True], "age": [40]}),
+        "braunschweig.locations.work": gpd.GeoDataFrame(
+            {"commune_id": ["03101000"]}, geometry=[Point(2000.0, 0.0)], crs="EPSG:25832"),
+        "synthesis.population.spatial.locations": locations,
+        "synthesis.population.activities": df_acts,
+        "synthesis.population.trips": df_trips,
+    }
+
+    def fake_load_stage(working_directory, stage):
+        if stage not in stages:
+            raise RuntimeError(f"No cached pickle found for stage '{stage}'")
+        return stages[stage]
+
+    monkeypatch.setattr(_calibrate, "_load_stage", fake_load_stage)
+    monkeypatch.setattr(_calibrate, "load_loop_origin", lambda *args, **kwargs: marker)
+
+
+def test_the_od_pools_leave_the_loop_leg_out_and_a_marker_mismatch_is_not_swallowed(monkeypatch):
+    """Through ``_extract_od_pools``: the walk pool holds the shop leg and the 3 km leisure leg
+    (the stroll is left out) and the car pool the commute only; a marker pickle of another run
+    raises out of the stage-not-found handling (a RuntimeError too) instead of being logged
+    away."""
+    _fake_stages(monkeypatch, _marker([None, None, "secondary", None, None]))
+    car_origins, _, walk_origins, walk_dests, _, _ = _calibrate._extract_od_pools("unused")
+    assert walk_dests.tolist() == [[1000.0, 0.0], [4000.0, 0.0]]
+    assert len(car_origins) == 1
+
+    _fake_stages(monkeypatch, _marker([None, None, "secondary", None, None]).query(
+        "activity_index != 3"))
+    with pytest.raises(RuntimeError, match=r"no row"):
+        _calibrate._extract_od_pools("unused")

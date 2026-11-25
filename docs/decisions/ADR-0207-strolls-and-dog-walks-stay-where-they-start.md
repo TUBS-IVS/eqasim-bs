@@ -32,7 +32,7 @@
 - ASSUMPTION: the probability estimated on leisure legs (`W_ZWECK` 7) does not transfer to the coarse purpose 10 or to the child purposes, so no loop is imputed for them.
 - Loops with a motorised main mode (a drive without destination) stay as before: their vehicle kilometres belong on the network.
 - Which legs draw a loop value and the fallback for thin cells are defined in the note: every in-scope leg whose `W_ZWD` is no leisure group code draws.
-- ASSUMPTION (ruling R14 of the design review): a leg with `W_ZWD` 503, 603 or 605 (a shop or errand detail code on a leisure leg, members of `purpose_subtype.LEISURE_SENTINELS`) draws a loop value like the "not asked" codes (2202, 4402, 799 under the production sentinel setting). It carries no leisure label, so the labelled legs cannot tell whether such a leg is more or less often a loop; the survey cannot test it. How many synthetic legs draw per code: the survey manifest above.
+- ASSUMPTION (ruling R14 of the design review): a leg with `W_ZWD` 503, 603 or 605 (a shop or errand detail code on a leisure leg, members of `purpose_subtype.LEISURE_SENTINELS`) draws a loop value like the other members of `purpose_subtype.LEISURE_SENTINELS` (the "not asked" codes) and 799 under the codeplan sentinels. It carries no leisure label, so the labelled legs cannot tell whether such a leg is more or less often a loop; the survey cannot test it. How many synthetic legs draw per code: the survey manifest above.
 - ASSUMPTION: a bicycle leg with the stroll code 710 or the dog-walk code 711 (a ride without destination) is a loop, like the same code on foot.
 
 ## Consequences

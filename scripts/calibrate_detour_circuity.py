@@ -52,8 +52,8 @@ from braunschweig.calibration.secondary_measurement import (  # noqa: E402
     leave_out_loop_legs,
 )
 from scripts.validate_secondary_distances import (  # noqa: E402
-    _load_loop_origin,
     attach_loop_marker,
+    load_loop_origin,
 )
 from braunschweig.calibration.detour_fit import (  # noqa: E402
     accumulate_accepted_indices,
@@ -146,7 +146,7 @@ def _build_secondary_legs(df_xy: pd.DataFrame, df_acts: pd.DataFrame, df_trips: 
     legs without a mode or a previous place are dropped and counted in the log.
 
     ``df_loop_origin`` is the ``loop_origin`` marker of the secondary locations stage
-    (``validate_secondary_distances._load_loop_origin``; None when the cache has none or the
+    (``validate_secondary_distances.load_loop_origin``; None when the cache has none or the
     switch ``secondary_loop_zero_displacement`` was off). The leg INTO a marked activity is a loop
     leg and is left out (``secondary_measurement.leave_out_loop_legs``, as the validation script
     does): its two ends are the same place, so it says nothing about a detour. A secondary
@@ -401,7 +401,9 @@ def _extract_od_pools(wd: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.n
     # run, not read as "stage not found".
     if secondary_inputs is not None:
         df_sec_legs = _build_secondary_legs(
-            *secondary_inputs, df_loop_origin=_load_loop_origin(wd))
+            *secondary_inputs, df_loop_origin=load_loop_origin(
+                wd, tag="[circuity]",
+                not_filtered_text="loop legs (strolls, dog walks) were NOT left out of the OD pool"))
 
         sec_mode_arr = df_sec_legs["mode"].values
         car_sec_mask = np.isin(sec_mode_arr, ["car", "car_passenger"])

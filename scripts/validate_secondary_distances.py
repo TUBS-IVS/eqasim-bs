@@ -109,7 +109,9 @@ _SECONDARY_LOCATIONS_STAGE = "synthesis.population.spatial.secondary.locations"
 _SECONDARY_LOCATIONS_ALIASES = ("braunschweig.synthesis.locations.secondary_chainsolvers",)
 
 
-def _load_loop_origin(working_directory: str):
+def load_loop_origin(working_directory: str, tag: str = "[secondary-validate]",
+                     not_filtered_text: str = "the model side was NOT filtered for loop legs "
+                                              "(strolls, dog walks)"):
     """The ``loop_origin`` marker per (person_id, activity_index), or None when there is none.
 
     The cached ``synthesis.population.spatial.locations`` frame the legs are built from keeps
@@ -117,33 +119,36 @@ def _load_loop_origin(working_directory: str):
     locations stage writes when ``secondary_loop_zero_displacement`` is ON) is read from that
     stage's own cached result. None, with the reason logged, when the cache holds no such stage
     or the result has no marker column (switch off): the legs are then left exactly as before.
+
+    Public because ``scripts/calibrate_detour_circuity.py`` reuses it. ``tag`` prefixes the log
+    lines; ``not_filtered_text`` completes the NOTE printed when the cache has no secondary
+    locations pickle ("NOTE: no secondary locations pickle in the cache -- <text>.").
     """
     try:
         result = _load_stage(working_directory, _SECONDARY_LOCATIONS_STAGE,
                              aliases=_SECONDARY_LOCATIONS_ALIASES)
     except RuntimeError:
-        logger.info("[secondary-validate] loop_origin: no secondary locations pickle in the "
-                    "cache; loops cannot be identified, legs are compared unchanged.")
-        print("NOTE: no secondary locations pickle in the cache -- the model side was NOT "
-              "filtered for loop legs (strolls, dog walks).")
+        logger.info("%s loop_origin: no secondary locations pickle in the cache; loops cannot "
+                    "be identified, legs are left unchanged.", tag)
+        print(f"NOTE: no secondary locations pickle in the cache -- {not_filtered_text}.")
         return None
     df_secondary = result[0] if isinstance(result, tuple) else result
     if LOOP_ORIGIN_COLUMN not in df_secondary.columns:
-        logger.info("[secondary-validate] loop_origin: the secondary locations result has no "
-                    "'%s' column (secondary_loop_zero_displacement OFF); legs are compared "
-                    "unchanged.", LOOP_ORIGIN_COLUMN)
+        logger.info("%s loop_origin: the secondary locations result has no '%s' column "
+                    "(secondary_loop_zero_displacement OFF); legs are left unchanged.",
+                    tag, LOOP_ORIGIN_COLUMN)
         return None
     marker = df_secondary[["person_id", "activity_index", LOOP_ORIGIN_COLUMN]]
     n_loops = int(marker[LOOP_ORIGIN_COLUMN].notna().sum())
-    logger.info("[secondary-validate] loop_origin: found, %d/%d secondary location rows are "
-                "loops.", n_loops, len(marker))
+    logger.info("%s loop_origin: found, %d/%d secondary location rows are loops.",
+                tag, n_loops, len(marker))
     return marker
 
 
 def attach_loop_marker(df_merged: pd.DataFrame, df_loop_origin: pd.DataFrame,
                        tag: str = "[secondary-validate]") -> pd.DataFrame:
     """``df_merged`` (``person_id``, ``activity_index``, ``purpose``, ...) with the ``loop_origin``
-    column of ``df_loop_origin`` (:func:`_load_loop_origin`) joined on, row for row.
+    column of ``df_loop_origin`` (:func:`load_loop_origin`) joined on, row for row.
 
     Raises ``AssertionError`` when the join changes the row count (a repeated key in the marker)
     and ``RuntimeError`` when a secondary activity has no marker row: the marker pickle is picked
@@ -227,7 +232,7 @@ def measure_secondary_distances(working_directory: str):
 
     # Loop marker of the secondary locations result (issue #679): the leg INTO a marked
     # activity is the loop leg.
-    df_loop_origin = _load_loop_origin(working_directory)
+    df_loop_origin = load_loop_origin(working_directory)
     if df_loop_origin is not None:
         df_merged = attach_loop_marker(df_merged, df_loop_origin)
 
