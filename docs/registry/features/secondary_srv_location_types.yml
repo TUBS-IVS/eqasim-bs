@@ -67,3 +67,4 @@ assessment:
     external escape (10.8% clip at the region edge) and the MiD-vs-SrV realized distance level
     gap overlaps the calibration-corner scope.'
   source: ADR-0075
+notes: 'Strolls and dog walks (#679, ADR-0207): the loop flag and the placement rule live in docs/codebase/notes/leisure-loops.md; feature record secondary_loop_zero_displacement. A loop activity takes the place of the activity before it and draws no location category.'

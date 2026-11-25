@@ -42,6 +42,7 @@ features:
 - parallel_chainsolvers
 - secondary_distance_by_purpose
 - secondary_mid_weekday_universe
+- secondary_loop_zero_displacement
 - secondary_srv_location_types
 - w_zwd_codeplan_sentinels
 - portal_trips
@@ -60,6 +61,7 @@ decisions:
 - ADR-0126
 - ADR-0127
 - ADR-0141
+- ADR-0207
 notes: >-
   RESOURCE-ADAPTIVE CONFIGURATION (ADR-0126, feature record resource_adaptive_config):
   the chainsolver's person-shard count now has its OWN hashed config key,
@@ -296,3 +298,11 @@ notes: >-
   trips touch an outside activity but the anchors frame is empty. Its external candidates are bounded to
   the supply ring by braunschweig.synthesis.locations.secondary_candidates (ADR-0027 amended). With the
   flag off no anchors are staged or added.
+
+  STROLL AND DOG-WALK LOOPS (issue #679, ADR-0207, feature record secondary_loop_zero_displacement): with
+  secondary_loop_zero_displacement on (code default false, production true in configs/base_bs.yml) execute
+  flags the loop legs, collapses them out of the chains of eligible persons before the solve and restores them at
+  the place of the activity they start from; the new helper module secondary_chainsolvers/loops.py is listed in
+  _HELPER_MODULES. The flag definition and the placement rule are owned by docs/codebase/notes/leisure-loops.md.
+  With the key on the result carries a column loop_origin and the stage writes secondary_locations_report.json
+  (block loops) into its stage directory; with it off neither exists.

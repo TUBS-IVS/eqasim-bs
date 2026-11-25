@@ -218,4 +218,4 @@ notes: 'Sibling record of the same branch: secondary_mid_weekday_universe (ADR-0
   braunschweig.popsim.purpose_subtype, and the chainsolver stage additionally hashes
   braunschweig.popsim.trips since this wave, because LEISURE_UNSPECIFIED_ZWECK is built from
   trips.W_ZWECK_OTHER_CODE) -- PopulationSim and the trip build are untouched, no seed column
-  changes, which is what makes arm C cheap.'
+  changes, which is what makes arm C cheap. Strolls and dog walks (#679, ADR-0207): the loop flag and the placement rule live in docs/codebase/notes/leisure-loops.md; feature record secondary_loop_zero_displacement.'

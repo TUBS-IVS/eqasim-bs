@@ -92,7 +92,7 @@ config:
   # Strolls and dog walks (issue #679): a leisure walk or ride that is a loop (MiD W_ZWD
   # 710/711, or drawn where the detail was not asked) is placed at the place of the
   # activity it starts from (zero displacement, eqasim-france Paris model); the trip after
-  # it starts there. Rule: docs/codebase/notes/leisure-loops.md. Defaults False in code;
+  # it starts there. ADR-0207; rule: docs/codebase/notes/leisure-loops.md. Defaults False in code;
   # false -> byte-identical to the behaviour before #679.
   secondary_loop_zero_displacement: true
   # Places leisure_visit legs on residential building potential (pot_visit)
