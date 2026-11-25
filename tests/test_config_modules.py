@@ -196,3 +196,13 @@ def test_set_parameterset_param_rejects_two_sets_of_the_same_type(tmp_path):
     path = _config(tmp_path, twice)
     with pytest.raises(ValueError, match="tourFilter:TourLength"):
         cm.set_parameterset_param(path, "DiscreteModeChoice", "tourFilter:TourLength", "maximumLength", "11")
+
+
+def test_set_parameterset_param_rejects_a_nested_parameter_set(tmp_path):
+    nested = DMC_CONFIG.replace('\t\t\t<param name="maximumLength" value="6" />\n',
+                                '\t\t\t<parameterset type="inner">\n\t\t\t</parameterset>\n'
+                                '\t\t\t<param name="maximumLength" value="6" />\n', 1)
+    path = _config(tmp_path, nested)
+    with pytest.raises(ValueError, match="nested"):
+        cm.set_parameterset_param(path, "DiscreteModeChoice", "tourFilter:TourLength", "maximumLength", "11")
+    assert path.read_bytes() == nested.encode("utf-8")

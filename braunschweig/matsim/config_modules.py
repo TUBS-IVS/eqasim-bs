@@ -160,6 +160,8 @@ def set_parameterset_param(config_path, module: str, set_type: str, name: str, v
     if len(sets) > 1:
         raise ValueError(f"{path}: parameter set {set_type!r} appears {len(sets)} times in module {module!r}")
     set_start, set_end = (module_start + offset for offset in sets[0].span(1))
+    if "<parameterset" in text[set_start:set_end]:
+        raise ValueError(f"{path}: parameter set {set_type!r} contains a nested parameter set; not supported")
     params = list(re.finditer(r"<param\s+name=\"%s\"\s+value=\"([^\"]*)\"" % re.escape(name),
                               text[set_start:set_end]))
     if not params:

@@ -52,12 +52,35 @@ def configure(context) -> None:
     context.config(KEY_INITIAL_MAX_TOUR_LENGTH, DEFAULT_INITIAL_MAX_TOUR_LENGTH)
 
 
+def _parse_bool(key: str, value) -> bool:
+    """A real bool, or the text ``true``/``false`` (any case, e.g. from a command-line override); else ValueError."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in ("true", "false"):
+        return value.strip().lower() == "true"
+    raise ValueError(f"{_LOG_TAG} config key {key} must be true or false, got {value!r}")
+
+
+def _parse_length(key: str, value) -> int:
+    """A whole number >= 1 (an int or its text, e.g. from an override); else ValueError."""
+    if isinstance(value, str):
+        try:
+            value = int(value.strip())
+        except ValueError:
+            raise ValueError(f"{_LOG_TAG} config key {key} must be a whole number >= 1, got {value!r}") from None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"{_LOG_TAG} config key {key} must be a whole number >= 1, got {value!r}")
+    return value
+
+
 def loop_settings(context) -> ReachSettings:
-    return ReachSettings(bool(context.config(KEY_LOOP_ISOLATE)), int(context.config(KEY_LOOP_MAX_TOUR_LENGTH)))
+    return ReachSettings(_parse_bool(KEY_LOOP_ISOLATE, context.config(KEY_LOOP_ISOLATE)),
+                         _parse_length(KEY_LOOP_MAX_TOUR_LENGTH, context.config(KEY_LOOP_MAX_TOUR_LENGTH)))
 
 
 def initial_settings(context) -> ReachSettings:
-    return ReachSettings(bool(context.config(KEY_INITIAL_ISOLATE)), int(context.config(KEY_INITIAL_MAX_TOUR_LENGTH)))
+    return ReachSettings(_parse_bool(KEY_INITIAL_ISOLATE, context.config(KEY_INITIAL_ISOLATE)),
+                         _parse_length(KEY_INITIAL_MAX_TOUR_LENGTH, context.config(KEY_INITIAL_MAX_TOUR_LENGTH)))
 
 
 def _read_dmc_param(config_path, name: str) -> str:
@@ -80,20 +103,27 @@ def apply(config_path, settings: ReachSettings) -> dict:
     the values that changed (empty when the file already has these settings and is left byte-identical).
 
     Raises ``ValueError`` when the finer rule is selected and ``tourConstraints`` holds neither
-    ``VehicleContinuity`` nor ``BorderTourVehicleContinuity`` (nothing is skipped silently).
+    ``VehicleContinuity`` nor ``BorderTourVehicleContinuity`` (nothing is skipped silently), or when it holds both
+    (ambiguous); nothing is written in either case.
     """
     changes: dict = {}
     finder = TOUR_FINDER_ISOLATED if settings.isolate_outside_trips else TOUR_FINDER_COARSE
     constraints = _read_dmc_param(config_path, "tourConstraints")
     wanted, other = ((BORDER_VEHICLE_CONSTRAINT, STOCK_VEHICLE_CONSTRAINT) if settings.isolate_outside_trips
                      else (STOCK_VEHICLE_CONSTRAINT, BORDER_VEHICLE_CONSTRAINT))
+    if (_swap_token(constraints, STOCK_VEHICLE_CONSTRAINT, STOCK_VEHICLE_CONSTRAINT) is not None
+            and _swap_token(constraints, BORDER_VEHICLE_CONSTRAINT, BORDER_VEHICLE_CONSTRAINT) is not None):
+        raise ValueError(f"{config_path}: parameter 'tourConstraints' of module {DMC_MODULE!r} holds both "
+                         f"{STOCK_VEHICLE_CONSTRAINT} and {BORDER_VEHICLE_CONSTRAINT}, which is ambiguous: "
+                         f"{constraints!r}")
     swapped = _swap_token(constraints, other, wanted)
     if swapped is None and settings.isolate_outside_trips and _swap_token(constraints, wanted, wanted) is None:
         raise ValueError(f"{config_path}: parameter 'tourConstraints' of module {DMC_MODULE!r} holds neither "
                          f"{STOCK_VEHICLE_CONSTRAINT} nor {BORDER_VEHICLE_CONSTRAINT}: {constraints!r}")
 
-    old = config_modules.set_param(config_path, DMC_MODULE, "tourFinder", finder)
-    if old != finder:
+    old = _read_dmc_param(config_path, "tourFinder")
+    if old != finder:  # no write (and no mtime change) when the value already matches
+        config_modules.set_param(config_path, DMC_MODULE, "tourFinder", finder)
         changes["tourFinder"] = (old, finder)
     if swapped is not None and swapped != constraints:
         config_modules.set_param(config_path, DMC_MODULE, "tourConstraints", swapped)
