@@ -1,0 +1,114 @@
+id: popsim-bs3-release-2026-11-25
+date: '2026-11-25'
+repository:
+  commit: 4b54064a7a900ce4961f1808dc548f337a0483e3
+  branch: runs/i677-popsim-codex-variants
+  notes: >-
+    PRE-REGISTRATION: this file is committed with the checks below before any run starts; only results,
+    artifacts and execution notes are added afterwards. The commit is the release candidate of the group's
+    PopulationSim fork, local branch bs/i677-summary-and-fast-paths at 4b54064 (not pushed yet), compared
+    against the released 0.10.0+bs.2 = origin/bs/main d9a2e2810139e822ff2870a1845c30a509461462. Changes of
+    the candidate against 0.10.0+bs.2: (1) the zone summary _diff is aligned by zone id (a correction;
+    summarize is not in the production step list, so no production output can change); (2) FAST_PATHS: the
+    household expansion draws all households in one batch (the parked Codex variant C, ported after
+    popsim-codex-variants-2026-11-25); (3) FAST_PATHS: the integerizer result frames are built in one pass.
+    Acceptance rule (ADR-0200 decision 2): the synthetic population is byte-identical with the run-time
+    options on and off and to the released tool.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - the run overlay of prod100_20261031 (server-local), only as the configuration that produced the batch folders
+  notes: >-
+    Production settings: rounding controlled with the search integerizer, store_positive_weight_rows_only and
+    fast_paths both on, numba on. The batch folders are the controlled-rounding evidence folders of
+    popsim-run-performance-2026-11-18 (settings owned by that record) on the felix run server under ~/i646/ev:
+    controlled_on (batch_000, batch_032) and controlled_on_b028 (batch_028) have both options on;
+    controlled_off and controlled_off_b028 are the same batches with both options off. Arms per batch:
+    bs2_on = code tree d9a2e28, folders controlled_on*; rc_on = code tree 4b54064, folders controlled_on*;
+    rc_off = code tree 4b54064, folders controlled_off*. Within one batch the folders differ only in the two
+    options and the code tree.
+sampling:
+  rate: 1.0
+  scope: >-
+    three of the 60 batches of prod100_20261031 with their full seed pool: batch_000 and batch_032 (one run
+    per arm) and batch_028 (the batch with the largest household target; three repeats of bs2_on and rc_on,
+    one run of rc_off).
+  notes: The rate is the share of each batch's cells simulated (all of them), not a population sampling rate.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run: PopulationSim standalone on copies of the prepared batch folders, one copy per run.
+classification:
+- ab_test
+status:
+  execution: running
+  notes: >-
+    Pre-registered 2026-11-25 before any run; the checks are not changed afterwards. Results are pending.
+source: >-
+  felix run server, ~/i677 (code trees, batch copies, logs).
+environment: >-
+  felix run server, 64 cores, GNU time for wall time and peak RSS; PopulationSim from the benchmark environment of
+  popsim-run-performance-2026-11-18 with the code tree of the arm first on PYTHONPATH. The server carries a
+  foreign load of another job; uptime and the foreign process count are recorded at the start of every round,
+  at most 6 of our processes run at once.
+validation:
+- metric: >-
+    Identity of the synthetic population: per batch, the sha256 of final_expanded_household_ids.csv,
+    synthetic_households.csv and synthetic_persons.csv of rc_on, rc_off and bs2_on; bound: all three equal
+    (for batch_028, all repeats of bs2_on and rc_on equal as well)
+  reference: bs2_on on the same batch (model output)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv
+- metric: >-
+    Reference to the released tool: the sha256 of the three files of every run equal the committed
+    controlled-rounding hashes of 0.10.0+bs.2 (identity_controlled_batch_000, _032 and _028 in
+    docs/runs/artifacts/popsim-run-performance-2026-11-18/run_performance_verdict.json), and for batch_000
+    and batch_028 the arm-A hashes of popsim-codex-variants-2026-11-25 (its runs.csv); bound: equal
+  reference: popsim-run-performance-2026-11-18 and popsim-codex-variants-2026-11-25 (model output of the released tool)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv
+- metric: >-
+    Every run exits 0; bound: all runs of all arms
+  reference: none
+  result: pending
+  artifact: docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv
+- metric: >-
+    No silent fallback: every rc_on run logs the balancer fast-path summary line ("balancer fast path: fast N
+    of M calls") and the batch-draw INFO line of the new household expansion ("households drawn in one batch");
+    bound: both lines present in every rc_on run (counts reported; the balancer line must report no fallback
+    and no re-run)
+  reference: none
+  result: pending
+  artifact: docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv
+- metric: >-
+    Peak RSS (GNU time) of rc_on on batch_028 (median of the 3 repeats); bound: median_rc_on <= 1.05 *
+    median_bs2_on
+  reference: bs2_on on batch_028 (engineering measurement)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv
+- metric: >-
+    Reported, not a pass/fail bound: on batch_028 with 3 repeats, bs2_on and rc_on started at the same time per
+    round, the wall time, the sum of the seconds of the three sub_balancing steps (geography=KREIS, =ZENSUS1km,
+    =ZENSUS100m, where the integerizer result frames are built) and the seconds of expand_households. A
+    statement "faster" is allowed only if (median_bs2_on - median_rc_on) > (max_bs2_on - min_bs2_on) for that
+    quantity (formula of popsim-codex-variants-2026-11-25)
+  reference: bs2_on on batch_028 (engineering measurement)
+  result: pending
+  artifact: docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv
+features:
+  note: >-
+    Evidence for the release 0.10.0+bs.3 of the PopulationSim fork (issues #677, #656): an engineering
+    measurement of identity, memory and time on three batches; it says nothing about the quality of the
+    population.
+artifacts:
+- docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv
+- docs/runs/artifacts/popsim-bs3-release-2026-11-25/scripts/run_round.sh
+- docs/runs/artifacts/popsim-bs3-release-2026-11-25/scripts/run_all.sh
+- docs/runs/artifacts/popsim-bs3-release-2026-11-25/scripts/collect_runs.py
+- docs/runs/artifacts/popsim-bs3-release-2026-11-25/scripts/evaluate.py
+issues:
+- '#677'
+- '#656'
+notes: >-
+  Identity of two runs of the same model is not validation against observed behaviour. Related records:
+  popsim-run-performance-2026-11-18, popsim-ladder-arm3-2026-11-18 and popsim-codex-variants-2026-11-25.
