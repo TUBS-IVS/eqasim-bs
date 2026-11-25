@@ -27,6 +27,34 @@ b000,bs2_on,1,load:uptime,"15:05:38 up 23 days,  1:00,  0 users,  load average: 
 b000,bs2_on,1,load:foreign_procs,9
 b000,bs2_on,1,load:mem_available_gb,84
 b000,bs2_on,1,load:waited_s,0
+b000,rc2_on,5,exit_code,0
+b000,rc2_on,5,wall_s,294.03
+b000,rc2_on,5,peak_rss_kb,2829648
+b000,rc2_on,5,step_s:input_pre_processor,2.086
+b000,rc2_on,5,step_s:setup_data_structures,10.677
+b000,rc2_on,5,step_s:initial_seed_balancing,109.454
+b000,rc2_on,5,step_s:meta_control_factoring,0.5
+b000,rc2_on,5,step_s:final_seed_balancing,0.246
+b000,rc2_on,5,step_s:integerize_final_seed_weights,37.598
+b000,rc2_on,5,step_s:sub_balancing.geography=KREIS,12.866
+b000,rc2_on,5,step_s:sub_balancing.geography=ZENSUS1km,45.647
+b000,rc2_on,5,step_s:sub_balancing.geography=ZENSUS100m,63.418
+b000,rc2_on,5,step_s:expand_households,0.167
+b000,rc2_on,5,step_s:write_data_dictionary,4.029
+b000,rc2_on,5,step_s:write_tables,0.027
+b000,rc2_on,5,step_s:write_synthetic_population,0.198
+b000,rc2_on,5,sha256:final_expanded_household_ids.csv,19f721ce45cd66778c6b3a5cb989d2549ce1703e4b4417875c0bd79c65aa13a4
+b000,rc2_on,5,sha256:synthetic_households.csv,ba25e5d6dfa273f9ceb89579394338a539f421fe03a902df682519c05b5e3425
+b000,rc2_on,5,sha256:synthetic_persons.csv,41225fff76f546b0a09836bf7ddf6a485a6ed58536b28b2d9245fd1e187fd09e
+b000,rc2_on,5,pyfile,~/i677/trees/RC2/populationsim/__init__.py
+b000,rc2_on,5,log:balancer_fast_path_count,1
+b000,rc2_on,5,log:balancer_fast_path_line,"balancer fast path: fast 43 of 43 calls (100.0 %), fallback value cap 0, fallback SVML 0, fallback non-finite 0, re-run after the delta guard 0"
+b000,rc2_on,5,log:batch_draw_count,1
+b000,rc2_on,5,log:batch_draw_line,expand_households: 6690 households drawn in one batch from 5804 of 207793 incidence groups (FAST_PATHS; the others are not drawn from; id dtype int64 from one range check)
+b000,rc2_on,5,load:uptime,"16:29:14 up 23 days,  2:23,  0 users,  load average: 0,93, 2,22, 3,84"
+b000,rc2_on,5,load:foreign_procs,2
+b000,rc2_on,5,load:mem_available_gb,92
+b000,rc2_on,5,load:waited_s,0
 b000,rc_off,1,exit_code,0
 b000,rc_off,1,wall_s,994.33
 b000,rc_off,1,peak_rss_kb,28163388
@@ -167,6 +195,34 @@ b028,bs2_on,3,load:uptime,"14:56:04 up 23 days, 50 min,  0 users,  load average:
 b028,bs2_on,3,load:foreign_procs,9
 b028,bs2_on,3,load:mem_available_gb,84
 b028,bs2_on,3,load:waited_s,0
+b028,rc2_on,5,exit_code,0
+b028,rc2_on,5,wall_s,512.22
+b028,rc2_on,5,peak_rss_kb,2807140
+b028,rc2_on,5,step_s:input_pre_processor,2.08
+b028,rc2_on,5,step_s:setup_data_structures,10.585
+b028,rc2_on,5,step_s:initial_seed_balancing,117.085
+b028,rc2_on,5,step_s:meta_control_factoring,0.618
+b028,rc2_on,5,step_s:final_seed_balancing,0.333
+b028,rc2_on,5,step_s:integerize_final_seed_weights,42.043
+b028,rc2_on,5,step_s:sub_balancing.geography=KREIS,20.889
+b028,rc2_on,5,step_s:sub_balancing.geography=ZENSUS1km,31.913
+b028,rc2_on,5,step_s:sub_balancing.geography=ZENSUS100m,274.635
+b028,rc2_on,5,step_s:expand_households,0.373
+b028,rc2_on,5,step_s:write_data_dictionary,4.158
+b028,rc2_on,5,step_s:write_tables,0.098
+b028,rc2_on,5,step_s:write_synthetic_population,0.442
+b028,rc2_on,5,sha256:final_expanded_household_ids.csv,9070153915d3f668611e5c54c5828a60ceed4b67d933cd0fcef27fef5f017ce2
+b028,rc2_on,5,sha256:synthetic_households.csv,c75a0c03ee095b85515489e07e1c98c38589fd0a5ccc398521b5372fa6ae99ee
+b028,rc2_on,5,sha256:synthetic_persons.csv,f3cc74e9ae2ac1ce4b6a96c0034aec36433ab80c44494dc0533b48b28810b4ad
+b028,rc2_on,5,pyfile,~/i677/trees/RC2/populationsim/__init__.py
+b028,rc2_on,5,log:balancer_fast_path_count,1
+b028,rc2_on,5,log:balancer_fast_path_line,"balancer fast path: fast 31 of 31 calls (100.0 %), fallback value cap 0, fallback SVML 0, fallback non-finite 0, re-run after the delta guard 0"
+b028,rc2_on,5,log:batch_draw_count,1
+b028,rc2_on,5,log:batch_draw_line,expand_households: 26906 households drawn in one batch from 16417 of 207793 incidence groups (FAST_PATHS; the others are not drawn from; id dtype int64 from one range check)
+b028,rc2_on,5,load:uptime,"16:29:14 up 23 days,  2:23,  0 users,  load average: 0,93, 2,22, 3,84"
+b028,rc2_on,5,load:foreign_procs,2
+b028,rc2_on,5,load:mem_available_gb,92
+b028,rc2_on,5,load:waited_s,0
 b028,rc_off,4,exit_code,0
 b028,rc_off,4,wall_s,1808.37
 b028,rc_off,4,peak_rss_kb,32842752
@@ -307,6 +363,34 @@ b032,bs2_on,1,load:uptime,"15:22:16 up 23 days,  1:16,  0 users,  load average: 
 b032,bs2_on,1,load:foreign_procs,9
 b032,bs2_on,1,load:mem_available_gb,84
 b032,bs2_on,1,load:waited_s,0
+b032,rc2_on,5,exit_code,0
+b032,rc2_on,5,wall_s,352.58
+b032,rc2_on,5,peak_rss_kb,2807292
+b032,rc2_on,5,step_s:input_pre_processor,1.966
+b032,rc2_on,5,step_s:setup_data_structures,10.94
+b032,rc2_on,5,step_s:initial_seed_balancing,114.197
+b032,rc2_on,5,step_s:meta_control_factoring,0.438
+b032,rc2_on,5,step_s:final_seed_balancing,0.213
+b032,rc2_on,5,step_s:integerize_final_seed_weights,44.049
+b032,rc2_on,5,step_s:sub_balancing.geography=KREIS,17.039
+b032,rc2_on,5,step_s:sub_balancing.geography=ZENSUS1km,24.819
+b032,rc2_on,5,step_s:sub_balancing.geography=ZENSUS100m,127.736
+b032,rc2_on,5,step_s:expand_households,0.404
+b032,rc2_on,5,step_s:write_data_dictionary,3.508
+b032,rc2_on,5,step_s:write_tables,0.071
+b032,rc2_on,5,step_s:write_synthetic_population,0.342
+b032,rc2_on,5,sha256:final_expanded_household_ids.csv,51699a50e1ad37dd08581a3ef26b36ef1beb7896552bfa64b1dadea5851cf5ed
+b032,rc2_on,5,sha256:synthetic_households.csv,5c5f157568cdb4b69fe87e746e1e8e3ea5cb4321b7c8dfb7091efa6876ca9742
+b032,rc2_on,5,sha256:synthetic_persons.csv,b3de0e979bc2a255e7d37b340800a3b40d966b6e1f7cdfebb1693ac6cc4a8d07
+b032,rc2_on,5,pyfile,~/i677/trees/RC2/populationsim/__init__.py
+b032,rc2_on,5,log:balancer_fast_path_count,1
+b032,rc2_on,5,log:balancer_fast_path_line,"balancer fast path: fast 32 of 32 calls (100.0 %), fallback value cap 0, fallback SVML 0, fallback non-finite 0, re-run after the delta guard 0"
+b032,rc2_on,5,log:batch_draw_count,1
+b032,rc2_on,5,log:batch_draw_line,expand_households: 13464 households drawn in one batch from 11659 of 207793 incidence groups (FAST_PATHS; the others are not drawn from; id dtype int64 from one range check)
+b032,rc2_on,5,load:uptime,"16:29:14 up 23 days,  2:23,  0 users,  load average: 0,93, 2,22, 3,84"
+b032,rc2_on,5,load:foreign_procs,2
+b032,rc2_on,5,load:mem_available_gb,92
+b032,rc2_on,5,load:waited_s,0
 b032,rc_off,1,exit_code,0
 b032,rc_off,1,wall_s,1267.37
 b032,rc_off,1,peak_rss_kb,32596756

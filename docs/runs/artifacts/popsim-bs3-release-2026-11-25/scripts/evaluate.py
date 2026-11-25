@@ -1,6 +1,10 @@
 """Apply the pre-registered bounds of popsim-bs3-release-2026-11-25 to runs.csv.
 
-Usage: evaluate.py <runs.csv> <variants_runs.csv> <run_performance_verdict.json>
+Usage: evaluate.py <runs.csv> <variants_runs.csv> <run_performance_verdict.json> [rc2]
+  Without the last argument the pre-registered arms bs2_on, rc_on and rc_off (release candidate 4b54064) are
+  evaluated. With "rc2" the follow-up arm rc2_on (final release candidate ea51a8a, one run per batch) is
+  evaluated against bs2_on repeat 1: checks 1 to 4 only (rc2_on has no rc_off partner, no repeats, no timing claim);
+  the expand_households seconds are printed.
   <variants_runs.csv> = docs/runs/artifacts/popsim-codex-variants-2026-11-25/runs.csv (arm A hashes)
   <run_performance_verdict.json> = docs/runs/artifacts/popsim-run-performance-2026-11-18/run_performance_verdict.json
 Checks (bounds exactly as in docs/runs/popsim-bs3-release-2026-11-25.yml):
@@ -35,11 +39,14 @@ BALANCER = re.compile(
 VERDICT_KEY = {"b000": "batch_000", "b032": "batch_032", "b028": "batch_028"}
 
 
-def main(path, variants_path, verdict_path):
+def main(path, variants_path, verdict_path, mode=None):
     v = {}
     for r in csv.DictReader(open(path, newline="")):
         v[(r["batch"], r["arm"], int(r["round"]), r["metric"])] = r["value"]
-    runs = sorted({k[:3] for k in v})
+    rc2 = mode == "rc2"
+    cand = "rc2_on" if rc2 else "rc_on"
+    allowed = ("bs2_on", "rc2_on") if rc2 else ("bs2_on", "rc_on", "rc_off")
+    runs = sorted(k for k in {k[:3] for k in v} if k[1] in allowed and not (rc2 and k[1] == "bs2_on" and k[2] != 1))
     result = {}
 
     # check 3
@@ -87,20 +94,27 @@ def main(path, variants_path, verdict_path):
 
     # check 4
     ok4 = True
-    for k in (r for r in runs if r[1] == "rc_on"):
+    for k in (r for r in runs if r[1] == cand):
         nb, nd = int(v[(*k, "log:balancer_fast_path_count")]), int(v[(*k, "log:batch_draw_count")])
         m = BALANCER.search(v[(*k, "log:balancer_fast_path_line")])
         clean = bool(m) and m.group(1) == m.group(2) and all(int(g) == 0 for g in m.groups()[2:])
         good = nb >= 1 and nd == 1 and clean
         ok4 &= good
-        print(f"  {k[0]} r{k[2]} rc_on: balancer lines {nb}, batch-draw lines {nd}; "
+        print(f"  {k[0]} r{k[2]} {cand}: balancer lines {nb}, batch-draw lines {nd}; "
               f"'{v[(*k, 'log:balancer_fast_path_line')][:80]}' | '{v[(*k, 'log:batch_draw_line')][:75]}'")
-    for k in (r for r in runs if r[1] != "rc_on"):
+    for k in (r for r in runs if r[1] != cand):
         print(f"  (info) {k[0]} {k[1]} r{k[2]}: balancer lines {v[(*k, 'log:balancer_fast_path_count')]}, "
               f"batch-draw lines {v[(*k, 'log:batch_draw_count')]}")
     result[4] = ok4
     print(f"check 4 fast-path summary and batch-draw line in every rc_on run: {'MET' if ok4 else 'NOT MET'}")
 
+    if rc2:
+        for k in (r for r in runs if r[1] == "rc2_on"):
+            print(f"  (reported) {k[0]} rc2_on expand_households {float(v[(*k, 'step_s:expand_households')]):.3f} s, "
+                  f"bs2_on {float(v[(k[0], 'bs2_on', 1, 'step_s:expand_households')]):.3f} s")
+        print("verdict: " + ("all checks 1-4 met" if all(result.values()) else "NOT all checks met: " +
+                             str([k for k, ok in result.items() if not ok])))
+        return
     # check 5 and report 6 on batch_028
     rounds = sorted({k[2] for k in runs if k[0] == "b028" and k[1] == "bs2_on"})
     ra = statistics.median(float(v[("b028", "bs2_on", r, "peak_rss_kb")]) for r in rounds)
@@ -122,4 +136,4 @@ def main(path, variants_path, verdict_path):
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:4])
+    main(*sys.argv[1:5])

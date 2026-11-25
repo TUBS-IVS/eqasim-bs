@@ -12,7 +12,7 @@ import re
 import sys
 from pathlib import Path
 
-RUN = re.compile(r"^(b\d{3})_(bs2_on|rc_on|rc_off)_r(\d+)$")
+RUN = re.compile(r"^(b\d{3})_(bs2_on|rc_on|rc_off|rc2_on)_r(\d+)$")
 STEP = re.compile(r"completed step '([^']+)' : ([0-9.]+) seconds")
 BALANCER = "balancer fast path: fast "
 BATCH_DRAW = "households drawn in one batch"
