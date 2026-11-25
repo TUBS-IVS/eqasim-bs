@@ -12,6 +12,7 @@ import yaml
 
 import matsim.runtime.eqasim as eqasim
 from braunschweig.matsim import initial_mode_choice as I
+from braunschweig.matsim.simulation import mode_choice_reach as R
 from braunschweig.matsim.simulation import plan_check as C
 from braunschweig.matsim.simulation import prepare
 from braunschweig.matsim.simulation.mode_choice_reach import ReachSettings
@@ -315,20 +316,32 @@ def test_execute_runs_the_mode_choice_after_the_parking_inputs_and_before_the_pl
     monkeypatch.setattr(prepare, "_summarise_final_schedule", lambda context: {})
     monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result, summary: seen.append("fares"))
     monkeypatch.setattr(prepare, "_write_parking_inputs", lambda context, result: seen.append("parking"))
-    monkeypatch.setattr(I, "run", lambda context, result, excluded: seen.append(("initial", result, excluded)) or {})
+    monkeypatch.setattr(I, "run",
+                        lambda context, result, excluded, reach: seen.append(("initial", result, excluded, reach)) or {})
     monkeypatch.setattr(C, "run", lambda context, result: seen.append("check"))
+    monkeypatch.setattr(R, "apply", lambda config_path, settings: {})  # the config name is no file here
+    monkeypatch.setattr(R, "require_border_vehicle_constraint", lambda jar_path: None)  # the jar is no file here
 
     class _Context:
         _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
                    prepare.PARKING_KEY: True, C.KEY_ENABLED: True, I.KEY_ENABLED: enabled,
-                   "braunschweig.frozen_pt_walk_lift.enabled": False}
+                   "braunschweig.frozen_pt_walk_lift.enabled": False,
+                   R.KEY_LOOP_ISOLATE: False, R.KEY_LOOP_MAX_TOUR_LENGTH: 11,
+                   R.KEY_INITIAL_ISOLATE: True, R.KEY_INITIAL_MAX_TOUR_LENGTH: 13}
 
         def config(self, key):
             return self._values[key]
 
+        def path(self, name=None):
+            return "."
+
+        def stage(self, name, **kwargs):
+            return "eqasim.jar"
+
     assert prepare.execute(_Context()) == "config.xml"
-    # without the cordon there are no in-commuters, so nothing is excluded (the runner would fail on an empty match)
-    expected = (["fares", "parking", ("initial", "config.xml", ()), "check"] if enabled
+    # without the cordon there are no in-commuters, so nothing is excluded (the runner would fail on an empty match);
+    # the choice gets its own reach settings (#678)
+    expected = (["fares", "parking", ("initial", "config.xml", (), R.ReachSettings(True, 13)), "check"] if enabled
                 else ["fares", "parking", "check"])
     assert seen == expected
 

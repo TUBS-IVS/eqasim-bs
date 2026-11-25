@@ -36,7 +36,7 @@ from braunschweig import synpp_tokens
 from braunschweig.data.transit import cut_schedule, schedule as transit_schedule
 from braunschweig.data.vrb import fare_config_xml, fare_model_export, line_scopes
 from braunschweig.matsim import config_modules, initial_mode_choice
-from braunschweig.matsim.simulation import cordon_subpopulation, frozen_pt_walk_lift, plan_check
+from braunschweig.matsim.simulation import cordon_subpopulation, frozen_pt_walk_lift, mode_choice_reach, plan_check
 from braunschweig.parking import tariff_export
 
 log = logging.getLogger(__name__)
@@ -309,6 +309,11 @@ def configure(context):
                    plan_check.DEFAULT_NON_MONOTONIC_BOUND_MIN_LATENESS_S)
     context.config(plan_check.KEY_FAIL_ON_THRESHOLD, plan_check.DEFAULT_FAIL_ON_THRESHOLD)
     context.config(frozen_pt_walk_lift.KEY_ENABLED, frozen_pt_walk_lift.DEFAULT_ENABLED)
+    # Which trips the mode choice can change, and how the lift repairs the rest (#678): declared unconditionally,
+    # because execute reads them whichever step is on.
+    mode_choice_reach.configure(context)
+    context.config(frozen_pt_walk_lift.KEY_ALL_MODES, frozen_pt_walk_lift.DEFAULT_ALL_MODES)
+    context.config(frozen_pt_walk_lift.KEY_MAX_SHARE_OTHER_MODES, frozen_pt_walk_lift.DEFAULT_MAX_SHARE_OTHER_MODES)
 
     # Every agent chooses its modes once before iteration 0 (#542, ADR-0178): the helper declares its switch and
     # the Java options, and refuses the retired ADR-0155 weight key unconditionally, so a stale overlay fails even
@@ -441,10 +446,22 @@ def execute(context):
     if context.config(PARKING_KEY):
         _write_parking_inputs(context, result)
 
+    # The reach settings of the mode choice loop go into the FINAL config (#678); the initial mode choice gets its
+    # own copy of the config with its settings. A jar without the border tour vehicle constraint fails here, not
+    # in the Java run: the initial setting counts only while the initial mode choice runs.
+    loop_reach = mode_choice_reach.loop_settings(context)
+    initial_reach = mode_choice_reach.initial_settings(context)
+    initial_enabled = context.config(initial_mode_choice.KEY_ENABLED)
+    mode_choice_reach.apply(Path(context.path()) / result, loop_reach)
+    if loop_reach.isolate_outside_trips or (initial_enabled and initial_reach.isolate_outside_trips):
+        mode_choice_reach.require_border_vehicle_constraint(
+            "%s/%s" % (context.path("matsim.runtime.eqasim"), context.stage("matsim.runtime.eqasim")))
+
     # The standalone mode choice runs on the FINAL population (after the cut, the freight injection and the
     # fare/parking inputs), free flow, before the plan check reads the result.
-    if context.config(initial_mode_choice.KEY_ENABLED):
-        initial_mode_choice.run(context, result, _initial_mode_choice_excluded_subpopulations(context))
+    if initial_enabled:
+        initial_mode_choice.run(context, result, _initial_mode_choice_excluded_subpopulations(context),
+                                reach=initial_reach)
 
     # Long pt-as-walk trips of frozen resident tours become car_passenger legs (eqasim-bs#575, ADR-0189): on the
     # FINAL population, before the check measures it.
