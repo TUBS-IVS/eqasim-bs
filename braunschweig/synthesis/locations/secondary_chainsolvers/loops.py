@@ -29,7 +29,8 @@ are exactly the ones without the label.
 Scope of the flag: ``following_purpose == "leisure"``, mode in :data:`LOOP_MODES`, ``W_ZWECK`` in
 ``purpose_subtype.LEISURE_ZWECK`` and a donor detail code present. Every other leg is False and
 consumes no random number. A leg with a ``W_ZWECK`` or ``W_ZWD`` that is NaN (closure trips,
-in-commuters: no donor leg) is out of scope.
+in-commuters: no donor leg) is out of scope; the legs that meet every other scope condition but
+have no ``W_ZWD`` are counted (``missing_detail_code`` in the stats of :func:`flag_loops`).
 """
 
 from __future__ import annotations
@@ -59,10 +60,13 @@ LOOP_CODES = frozenset({710, 711})
 #: is (ASSUMPTION: same reading as the diary's "Spaziergang" by bicycle).
 LOOP_MODES = frozenset({"walk", "bicycle"})
 
-#: Offset added to ``random_seed`` for the loop draw's own stream; the next free one after
-#: ``deciders.ESCORT_LOCATION_SEED_OFFSET`` (90214), so the loop draw cannot perturb the
-#: subtype, escort or distance draws.
-LOOP_SEED_OFFSET = 90215
+#: Offset added to ``random_seed`` for the loop draw's own stream: one more than
+#: ``srv_location_types.SRV_LOCATION_SEED_OFFSET`` (90215), the last offset of this stage's
+#: decider streams (``deciders``: 90211 to 90214), so the loop draw neither reads the uniforms of
+#: another stream nor perturbs the subtype, escort, SrV location-type or distance draws. No other
+#: ``*SEED_OFFSET`` in ``braunschweig/`` uses 90216; ``tests/test_secondary_loops.py`` checks that
+#: the offsets of this stage's streams are pairwise distinct.
+LOOP_SEED_OFFSET = 90216
 
 #: Config key of the feature flag (declared by the stage wiring, not by this module).
 KEY_ENABLED = "secondary_loop_zero_displacement"
@@ -74,7 +78,8 @@ _TRIP_COLUMNS = ("person_id", "trip_index", "mode", "preceding_purpose", "follow
 #: Columns :func:`estimate_loop_probabilities` reads from the MiD Wege table.
 _MID_COLUMNS = ("H_ID", "P_ID", "W_ID", "W_ZWECK", "W_ZWD", "W_GEW", "hvm_imp")
 
-_STAT_KEYS = ("in_scope", "by_label", "by_draw", "draws", "draws_from_marginal")
+_STAT_KEYS = ("in_scope", "by_label", "by_draw", "draws", "draws_from_marginal",
+              "missing_detail_code")
 
 #: Purposes whose place is fixed before the chain solver runs; a loop that starts at one of them
 #: copies that place, and ``loop_origin`` names it by the purpose.
@@ -266,15 +271,19 @@ def flag_loops(df_trips: pd.DataFrame, probabilities: LoopProbabilities,
 
     Returns ``(flags, stats)``: ``flags`` is a Boolean Series on ``df_trips.index`` (True: the
     trip leads into a stroll or dog walk), ``stats`` has the keys ``in_scope``, ``by_label``,
-    ``by_draw``, ``draws`` and ``draws_from_marginal``, each a dict ``mode -> count`` over
-    :data:`LOOP_MODES`:
+    ``by_draw``, ``draws``, ``draws_from_marginal`` and ``missing_detail_code``, each a dict
+    ``mode -> count`` over :data:`LOOP_MODES`:
 
     - ``in_scope``: legs of the scope in the module docstring;
     - ``by_label``: in-scope legs flagged True by their donor's label (710 or 711);
     - ``draws``: in-scope legs without a labelled code, each of which consumed one random number;
     - ``by_draw``: the ``draws`` legs flagged True;
     - ``draws_from_marginal``: the ``draws`` legs whose cell has no estimate of its own and took
-      the mode's marginal.
+      the mode's marginal;
+    - ``missing_detail_code``: legs outside the scope ONLY because their ``W_ZWD`` is NaN (leisure
+      destination, a mode of :data:`LOOP_MODES`, a ``W_ZWECK`` in ``LEISURE_ZWECK``). They stay
+      not-loop and draw nothing; they are counted so that a donor table that lost its detail
+      codes shows in the log (WARNING above ``FALLBACK_WARN_RATE`` of in scope plus these).
 
     The draws are taken in ``(person_id, trip_index)`` order, one ``random.random_sample`` value
     per drawing leg, so the result depends on the seed and the legs, not on the frame's row order.
@@ -288,10 +297,11 @@ def flag_loops(df_trips: pd.DataFrame, probabilities: LoopProbabilities,
     _require_columns(df_trips, _TRIP_COLUMNS, "trips")
     _require_unique_index(df_trips, "flag_loops")
 
-    in_scope = ((df_trips["following_purpose"] == "leisure")
-                & df_trips["mode"].isin(LOOP_MODES)
-                & df_trips["W_ZWECK"].isin(LEISURE_ZWECK)
-                & df_trips["W_ZWD"].notna())
+    leisure_leg_of_loop_mode = ((df_trips["following_purpose"] == "leisure")
+                                & df_trips["mode"].isin(LOOP_MODES)
+                                & df_trips["W_ZWECK"].isin(LEISURE_ZWECK))
+    in_scope = leisure_leg_of_loop_mode & df_trips["W_ZWD"].notna()
+    missing_detail_code = leisure_leg_of_loop_mode & df_trips["W_ZWD"].isna()
     labelled = in_scope & df_trips["W_ZWD"].isin(probabilities.labelled_codes)
     by_label = labelled & df_trips["W_ZWD"].isin(LOOP_CODES)
     to_draw = in_scope & ~labelled
@@ -341,7 +351,7 @@ def flag_loops(df_trips: pd.DataFrame, probabilities: LoopProbabilities,
         from_marginal.loc[drawing.index] = used_marginal
 
     masks = {"in_scope": in_scope, "by_label": by_label, "by_draw": by_draw, "draws": to_draw,
-             "draws_from_marginal": from_marginal}
+             "draws_from_marginal": from_marginal, "missing_detail_code": missing_detail_code}
     stats = {key: _per_mode(df_trips, masks[key]) for key in _STAT_KEYS}
     _log_stats(stats)
     return flags.astype(bool), stats
@@ -355,9 +365,26 @@ def _log_stats(stats: dict) -> None:
     """Log the flag sources per mode with rates; a high marginal share is a WARNING.
 
     Fallback transparency (CLAUDE.md): the primary path of a drawing leg is its own cell; the
-    marginal is the fallback, and its rate is logged against ``FALLBACK_WARN_RATE``.
+    marginal is the fallback, and its rate is logged against ``FALLBACK_WARN_RATE``. A leg without
+    any detail code is neither labelled nor drawn but left not-loop; its share of the legs that
+    have a leisure destination, a loop mode and a leisure ``W_ZWECK`` is logged against the same
+    rate.
     """
     for mode in sorted(LOOP_MODES):
+        n_missing = stats["missing_detail_code"][mode]
+        n_candidates = stats["in_scope"][mode] + n_missing
+        missing_rate = n_missing / n_candidates if n_candidates else 0.0
+        missing_message = (
+            "[secondary_loops] %s: %d of %d leisure legs (%.1f%%) carry no W_ZWD at all and are "
+            "left not-loop without a draw (primary: %d with a detail code)")
+        missing_arguments = (mode, n_missing, n_candidates, 100.0 * missing_rate,
+                             stats["in_scope"][mode])
+        if missing_rate > FALLBACK_WARN_RATE:
+            logger.warning(missing_message + " -- share above %.0f%%: the donor detail codes "
+                           "are probably lost upstream", *missing_arguments,
+                           100.0 * FALLBACK_WARN_RATE)
+        else:
+            logger.info(missing_message, *missing_arguments)
         in_scope = stats["in_scope"][mode]
         draws = stats["draws"][mode]
         from_marginal = stats["draws_from_marginal"][mode]

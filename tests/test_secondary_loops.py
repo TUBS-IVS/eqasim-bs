@@ -68,7 +68,8 @@ def test_labelled_stroll_dog_walk_and_ride_without_destination_are_loops():
     assert not flags[(df["following_purpose"] == "home")].any()
     assert stats["by_label"] == {"walk": 2, "bicycle": 1}
     assert stats["draws"] == {"walk": 0, "bicycle": 0}
-    assert set(stats) == {"in_scope", "by_label", "by_draw", "draws", "draws_from_marginal"}
+    assert set(stats) == {"in_scope", "by_label", "by_draw", "draws", "draws_from_marginal",
+                          "missing_detail_code"}
     assert all(set(per_mode) == {"walk", "bicycle"} for per_mode in stats.values())
 
 
@@ -93,6 +94,8 @@ def test_other_codes_other_modes_other_purposes_and_missing_codes_are_no_loops_a
 
     assert not flags.any()
     assert stats["draws"] == {"walk": 0, "bicycle": 0}
+    # Person 9's leisure walk has no detail code at all: no loop, no draw, but counted.
+    assert stats["missing_detail_code"] == {"walk": 1, "bicycle": 0}
     # No random number consumed: the next draw is the first draw of a fresh stream.
     assert random.random_sample() == np.random.RandomState(7).random_sample()
 
@@ -115,6 +118,25 @@ def test_a_leg_without_detail_draws_with_the_cell_probability():
     assert stats["in_scope"]["walk"] == 3
     assert stats["draws"]["walk"] == 3 and stats["by_draw"]["walk"] == 2
     assert stats["draws_from_marginal"]["walk"] == 0
+
+
+def test_the_random_streams_of_the_secondary_location_stage_have_distinct_seed_offsets():
+    # Every stream of the stage is RandomState(random_seed + offset); the solver's own stream is
+    # random_seed itself (offset 0). Two equal offsets give two streams of identical uniforms, so
+    # one feature's draws would mirror another's (the loop draw once shared 90215 with the SrV
+    # location-type decider, both on in production).
+    from braunschweig.synthesis.locations.secondary_chainsolvers import (
+        deciders, srv_location_types)
+    offsets = {f"{module.__name__.rsplit('.', 1)[-1]}.{name}": value
+               for module in (deciders, srv_location_types, loops)
+               for name, value in vars(module).items() if name.endswith("SEED_OFFSET")}
+
+    # The scan finds every stream the stage seeds today (it cannot pass by finding nothing).
+    assert {"deciders.SHOP_SUBTYPE_SEED_OFFSET", "deciders.LEISURE_SUBTYPE_SEED_OFFSET",
+            "deciders.OTHER_SUBTYPE_SEED_OFFSET", "deciders.ESCORT_LOCATION_SEED_OFFSET",
+            "srv_location_types.SRV_LOCATION_SEED_OFFSET", "loops.LOOP_SEED_OFFSET"} <= set(offsets)
+    values = [0, *offsets.values()]
+    assert len(set(values)) == len(values), offsets
 
 
 def test_a_cell_without_an_estimate_uses_the_marginal_and_is_counted():

@@ -265,7 +265,8 @@ def test_the_report_gives_loops_by_label_by_draw_and_by_origin(tmp_path, stage_d
     assert report["flags"] == {
         "in_scope": {"bicycle": 2, "walk": 5}, "by_label": {"bicycle": 1, "walk": 4},
         "by_draw": {"bicycle": 0, "walk": 1}, "draws": {"bicycle": 0, "walk": 1},
-        "draws_from_marginal": {"bicycle": 0, "walk": 0}}
+        "draws_from_marginal": {"bicycle": 0, "walk": 0},
+        "missing_detail_code": {"bicycle": 0, "walk": 0}}
     # Share of the draws that took the mode marginal; 0 for a mode without draws.
     assert report["draws_from_marginal_share"] == {"bicycle": 0.0, "walk": 0.0}
     assert report["loops"] == 6
