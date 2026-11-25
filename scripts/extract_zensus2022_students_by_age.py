@@ -21,7 +21,10 @@ file per region level, all in ``--source-dir``):
 
 A withheld cell (statistical secrecy) appears as the value ``0`` with the status flag ``/``; every
 published cell carries the flag ``e``. A requested region whose students or all-persons cell is
-not a positive count with the flag ``e`` is an error, never a silent zero.
+not a positive count with the flag ``e`` is an error, never a silent zero. A PUBLISHED count of
+zero (flag ``e``) is rejected together with the withheld cells (the check is ``value <= 0``): the
+census counts are rounded by the publisher, and a region with no students aged 20 to 29 would be
+implausible for a Kreis, so a zero signals a broken extraction rather than a real count.
 
 Output CSV (``#``-prefixed provenance header, then): ``region, region_name, region_level,
 age_group, students_nonemployed_persons, all_persons``. The file is local-only (``.gitignore``
@@ -68,11 +71,12 @@ COUNT_CONTENT_MARKER = "ID0004"   # the count; the percentage content code carri
 NORMAL_STATUS = "e"
 WITHHELD_STATUS = "/"
 
-#: Region level -> (region variable of the file, file suffix, expected code length).
+#: Region level -> (region variable of the file, file suffix, expected code length; ``None`` for
+#: Germany, whose one code is checked against :data:`GERMANY_CODE` instead).
 LEVELS = {
     "kreis": ("GEOLK4", "GEOLK4", 5),
     "land": ("GEOBL1", "GEOBL1", 2),
-    "germany": ("GEODL1", "GEODL1", 2),
+    "germany": ("GEODL1", "GEODL1", None),
 }
 GERMANY_CODE = "DG"
 #: The eight ZGB Kreise, Land Niedersachsen and Germany.
@@ -151,7 +155,8 @@ def extract_students_by_age(source_dir, regions: Optional[Iterable[str]]) -> pd.
     ``FileNotFoundError`` when a file is missing.
     """
     source_dir = Path(source_dir)
-    structure = _load_json(_structure_path(source_dir))["variableValues"]
+    structure_document = _load_json(_structure_path(source_dir))
+    structure = structure_document["variableValues"]
     labels = {code: entry["label"]["de"] for code, entry in structure.items()}
     if labels.get(STUDENT_STATUS_CODE) != STATUS_CATEGORY:
         raise ValueError(f"{_structure_path(source_dir)}: label of {STUDENT_STATUS_CODE} is "
@@ -167,14 +172,20 @@ def extract_students_by_age(source_dir, regions: Optional[Iterable[str]]) -> pd.
         detailed = _find_dataset(document, DETAILED_STATUS_VARIABLE, path)
         coarse = _find_dataset(document, COARSE_STATUS_VARIABLE, path)
         available = list(detailed["dimension"][variable]["category"]["index"])
+        # Labels come from the region variable's own code list, not from the flat dictionary of
+        # all variables, so a code shared by two variables cannot take the wrong label.
+        own_codes = set(structure_document["variables"][variable]["variableValues"])
         for code in available:
             if level == "germany" and code != GERMANY_CODE:
                 raise ValueError(f"{path}: unexpected Germany code {code!r}, expected {GERMANY_CODE!r}.")
-            if level != "germany" and len(code) != code_length:
+            if code_length is not None and len(code) != code_length:
                 raise ValueError(f"{path}: region code {code!r} is not {code_length} characters long.")
         for code in available:
             if wanted is not None and code not in wanted:
                 continue
+            if code not in own_codes or code not in labels:
+                raise ValueError(f"region {code}: no label in the structure file under variable "
+                                 f"{variable} ({_structure_path(source_dir)}).")
             seen.add(code)
             students = _checked_count(*_cell(detailed, variable, STUDENT_STATUS_CODE, code, path),
                                       code, "students_nonemployed_persons")
@@ -183,7 +194,7 @@ def extract_students_by_age(source_dir, regions: Optional[Iterable[str]]) -> pd.
             if students > everyone:
                 raise ValueError(f"region {code}: students_nonemployed_persons ({students}) exceed "
                                  f"all_persons ({everyone}); a column is mislabelled.")
-            records.append((code, labels.get(code, ""), level, AGE_GROUP, students, everyone))
+            records.append((code, labels[code], level, AGE_GROUP, students, everyone))
     if wanted is not None:
         missing = [code for code in wanted if code not in seen]
         if missing:

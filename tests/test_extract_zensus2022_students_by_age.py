@@ -8,6 +8,7 @@ value 0 and the status flag ``/``. These tests build small files of that shape i
 """
 from __future__ import annotations
 
+import itertools
 import json
 
 import pandas as pd
@@ -54,7 +55,7 @@ def _cell(region, status, age):
     return (300 if status == "ERW-AKTIV-X" else 1000) * scale if status != "%TOTAL%" else 2000 * scale
 
 
-def _write_source(tmp_path, withheld=(), student_code="ERW-AKTIV-X", skip_region=None):
+def _write_source(tmp_path, withheld=(), student_code="ERW-AKTIV-X", skip_region=None, unlabelled=None):
     kreise = [r for r in ["03101", "03151"] if r != skip_region]
     for name, variable, regions in (("GEOLK4", "GEOLK4", kreise), ("GEOBL1", "GEOBL1", ["03"]),
                                     ("GEODL1", "GEODL1", ["DG"])):
@@ -65,8 +66,13 @@ def _write_source(tmp_path, withheld=(), student_code="ERW-AKTIV-X", skip_region
         (tmp_path / f"2000S-2001_ALTGR2_{name}.json").write_text(json.dumps(data), encoding="utf-8")
     labels = {code: {"label": {"de": label}} for code, label in LABELS.items()}
     labels["ERW-AKTIV-X"] = {"label": {"de": ex.STATUS_CATEGORY}}
+    variables = {"GEOLK4": ["03101", "03151"], "GEOBL1": ["03"], "GEODL1": ["DG"]}
+    if unlabelled:
+        labels.pop(unlabelled)
     (tmp_path / "2000S-2001_structure.json").write_text(
-        json.dumps({"variableValues": labels}, ensure_ascii=False), encoding="utf-8")
+        json.dumps({"variableValues": labels,
+                    "variables": {name: {"variableValues": codes} for name, codes in variables.items()}},
+                   ensure_ascii=False), encoding="utf-8")
     return tmp_path
 
 
@@ -134,6 +140,46 @@ def test_students_above_all_persons_raises(tmp_path):
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ValueError, match="03101"):
         ex.extract_students_by_age(source, regions=["03101"])
+
+
+def test_region_without_a_label_raises(tmp_path):
+    source = _write_source(tmp_path, unlabelled="03151")
+    with pytest.raises(ValueError, match="03151"):
+        ex.extract_students_by_age(source, regions=["03151"])
+
+
+def _permute(dataset, order):
+    """Reorder the dimensions of a dataset: id, size and the flat value/status arrays together."""
+    old_size = dataset["size"]
+    strides = [1] * len(old_size)
+    for i in range(len(old_size) - 2, -1, -1):
+        strides[i] = strides[i + 1] * old_size[i + 1]
+    new_size = [old_size[i] for i in order]
+    values, flags = [], []
+    for coords in itertools.product(*[range(n) for n in new_size]):
+        flat = sum(coords[k] * strides[order[k]] for k in range(len(order)))
+        values.append(dataset["value"][flat])
+        flags.append(dataset["status"][flat])
+    dataset["id"] = [dataset["id"][i] for i in order]
+    dataset["size"] = new_size
+    dataset["value"], dataset["status"] = values, flags
+
+
+def test_dimension_order_may_differ_between_files(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    regions = ["03101", "03151", "03", "DG"]
+    reference = ex.extract_students_by_age(_write_source(tmp_path / "a"), regions=regions)
+    source = _write_source(tmp_path / "b")
+    # Region before the age group in the Land and Germany files; region first in the Kreis file.
+    orders = {"GEOLK4": [5, 0, 1, 2, 3, 4], "GEOBL1": [0, 1, 2, 3, 5, 4], "GEODL1": [0, 1, 2, 3, 5, 4]}
+    for suffix, order in orders.items():
+        path = source / f"2000S-2001_ALTGR2_{suffix}.json"
+        document = json.loads(path.read_text(encoding="utf-8"))
+        for dataset in document["data"]:
+            _permute(dataset, order)
+        path.write_text(json.dumps(document), encoding="utf-8")
+    assert ex.extract_students_by_age(source, regions=regions).equals(reference)
 
 
 def test_written_csv_carries_provenance_and_round_trips(tmp_path):
