@@ -29,8 +29,8 @@ OUTPUT_PATH = Path("eqasim-data/data/braunschweig/schools/lsn_university_sites.c
 
 # Filled together with SITE_ROWS (hand-read from LSN-Online); main() refuses to run
 # while any of the three is empty.
-SEMESTER = ""
-ACCESS_DATE = ""
+SEMESTER = "WS 2024/25"
+ACCESS_DATE = "2026-11-25"
 
 # (institution, site_commune_name, site_ags8, students_persons)
 #
@@ -42,7 +42,30 @@ ACCESS_DATE = ""
 #   ("HBK Braunschweig", "Braunschweig, Stadt", "03101000", <persons>),
 #   ("TU Clausthal", "Clausthal-Zellerfeld, Bergstadt", "03153<xxx>", <persons>),
 #   ("Ostfalia", "Wolfenbuettel, Stadt", "03158037", <persons>),
-SITE_ROWS: list[tuple[str, str, str, int]] = []
+# Read from LSN-Online table K3100101 ("Studierende und Studienanfaenger/innen", Haupt- und
+# Nebenhoerer, Faechergruppe insgesamt, Geschlecht insgesamt), column "Studierende insgesamt",
+# level Hochschulstandort. Institution names as in the table. An institution without site rows
+# in the table (one site) carries its institution total; sites shown as "-" are left out.
+SITE_ROWS: list[tuple[str, str, str, int]] = [
+    ("TU Braunschweig", "Braunschweig, Stadt", "03101000", 15632),
+    ("Hochsch. f. Bildende Künste Braunschweig", "Braunschweig, Stadt", "03101000", 902),
+    ("TU Clausthal", "Clausthal-Zellerfeld, Stadt", "03153018", 2759),
+    ("HS Braunschweig/Wolfenbüttel", "Salzgitter, Stadt", "03102000", 1669),
+    ("HS Braunschweig/Wolfenbüttel", "Wolfsburg, Stadt", "03103000", 2363),
+    ("HS Braunschweig/Wolfenbüttel", "Wolfenbüttel, Stadt", "03158037", 5092),
+    ("HS Braunschweig/Wolfenbüttel", "Suderburg", "03360023", 926),
+    ("Uni Hannover", "Hannover, Stadt", "03241001", 26074),
+    ("HS Hannover", "Hannover, Stadt", "03241001", 8441),
+    ("MHH Hannover", "Hannover, Stadt", "03241001", 4030),
+    ("TiHo Hannover", "Hannover, Stadt", "03241001", 2331),
+    ("Hochsch. f. Musik, Theater und Medien Hannover", "Hannover, Stadt", "03241001", 1365),
+    ("Uni Göttingen", "Göttingen, Stadt", "03159016", 26824),
+    ("Uni Hildesheim", "Hildesheim, Stadt", "03254021", 7784),
+    ("HS Hildesheim/Holzminden/Göttingen", "Göttingen, Stadt", "03159016", 2123),
+    ("HS Hildesheim/Holzminden/Göttingen", "Hildesheim, Stadt", "03254021", 2956),
+    ("HS Hildesheim/Holzminden/Göttingen", "Holzminden, Stadt", "03255023", 1048),
+    ("Uni Lüneburg", "Lüneburg, Stadt", "03355022", 9127),
+]
 
 _COLUMNS = ["institution", "site_commune", "site_ags8", "site_kreis_ars5", "scope",
             "students_persons", "semester"]

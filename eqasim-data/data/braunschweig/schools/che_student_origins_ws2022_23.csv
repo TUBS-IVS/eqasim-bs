@@ -1,0 +1,839 @@
+# Source: CHE DatenCHECK 2/2024 (data: Statistisches Bundesamt), WS 2022/23, accessed 2026-11-25
+# Script: scripts/seed_che_student_origins.py (values pinned in INSTITUTION_ORIGINS and KREIS_DESTINATIONS)
+# Licence: the CHE page names no licence; committed by owner decision 2026-11-25
+# Origin = Kreis of the school leaving certificate, not residence; cells below the tenth value are censored
+# Rows: institution_origins 195, kreis_destinations 638
+view,institution,origin_ars5,origin_name,rank,row_kind,students_persons
+institution_origins,Technische Universität Carolo-Wilhelmina zu Braunschweig,03101,"Braunschweig, Stadt",1,listed,2417
+institution_origins,Technische Universität Carolo-Wilhelmina zu Braunschweig,03241,Region Hannover,2,listed,1027
+institution_origins,Technische Universität Carolo-Wilhelmina zu Braunschweig,03103,"Wolfsburg, Stadt",3,listed,624
+institution_origins,Technische Universität Carolo-Wilhelmina zu Braunschweig,03151,Gifhorn,4,listed,579
+institution_origins,Technische Universität Carolo-Wilhelmina zu Braunschweig,03157,Peine,5,listed,533
+institution_origins,Technische Universität Carolo-Wilhelmina zu Braunschweig,03158,Wolfenbüttel,6,listed,466
+institution_origins,Technische Universität Carolo-Wilhelmina zu Braunschweig,03254,Hildesheim,7,listed,457
+institution_origins,Technische Universität Carolo-Wilhelmina zu Braunschweig,03102,"Salzgitter, Stadt",8,listed,426
+institution_origins,Technische Universität Carolo-Wilhelmina zu Braunschweig,03153,Goslar,9,listed,363
+institution_origins,Technische Universität Carolo-Wilhelmina zu Braunschweig,02000,Hamburg,10,listed,316
+institution_origins,Technische Universität Carolo-Wilhelmina zu Braunschweig,,,,abroad,2648
+institution_origins,Technische Universität Carolo-Wilhelmina zu Braunschweig,,,,other,6953
+institution_origins,Technische Universität Carolo-Wilhelmina zu Braunschweig,,,,total,16809
+institution_origins,Ostfalia Hochschule für angewandte Wissenschaften,03101,"Braunschweig, Stadt",1,listed,2067
+institution_origins,Ostfalia Hochschule für angewandte Wissenschaften,03103,"Wolfsburg, Stadt",2,listed,927
+institution_origins,Ostfalia Hochschule für angewandte Wissenschaften,03241,Region Hannover,3,listed,682
+institution_origins,Ostfalia Hochschule für angewandte Wissenschaften,03102,"Salzgitter, Stadt",4,listed,589
+institution_origins,Ostfalia Hochschule für angewandte Wissenschaften,03158,Wolfenbüttel,5,listed,540
+institution_origins,Ostfalia Hochschule für angewandte Wissenschaften,03151,Gifhorn,6,listed,531
+institution_origins,Ostfalia Hochschule für angewandte Wissenschaften,03157,Peine,7,listed,336
+institution_origins,Ostfalia Hochschule für angewandte Wissenschaften,03153,Goslar,8,listed,306
+institution_origins,Ostfalia Hochschule für angewandte Wissenschaften,03360,Uelzen,9,listed,277
+institution_origins,Ostfalia Hochschule für angewandte Wissenschaften,03254,Hildesheim,10,listed,271
+institution_origins,Ostfalia Hochschule für angewandte Wissenschaften,,,,abroad,703
+institution_origins,Ostfalia Hochschule für angewandte Wissenschaften,,,,other,3538
+institution_origins,Ostfalia Hochschule für angewandte Wissenschaften,,,,total,10767
+institution_origins,Technische Universität Clausthal,03153,Goslar,1,listed,167
+institution_origins,Technische Universität Clausthal,03159,Göttingen,2,listed,117
+institution_origins,Technische Universität Clausthal,03241,Region Hannover,3,listed,71
+institution_origins,Technische Universität Clausthal,03155,Northeim,4,listed,63
+institution_origins,Technische Universität Clausthal,03254,Hildesheim,5,listed,49
+institution_origins,Technische Universität Clausthal,03101,"Braunschweig, Stadt",6,listed,39
+institution_origins,Technische Universität Clausthal,02000,Hamburg,7,listed,31
+institution_origins,Technische Universität Clausthal,11000,Berlin,8,listed,29
+institution_origins,Technische Universität Clausthal,05315,"Köln, Stadt",9,listed,24
+institution_origins,Technische Universität Clausthal,05711,"Bielefeld, Stadt",10,listed,20
+institution_origins,Technische Universität Clausthal,,,,abroad,1522
+institution_origins,Technische Universität Clausthal,,,,other,892
+institution_origins,Technische Universität Clausthal,,,,total,3024
+institution_origins,Gottfried Wilhelm Leibniz Universität Hannover,03241,Region Hannover,1,listed,10506
+institution_origins,Gottfried Wilhelm Leibniz Universität Hannover,03254,Hildesheim,2,listed,1249
+institution_origins,Gottfried Wilhelm Leibniz Universität Hannover,03257,Schaumburg,3,listed,818
+institution_origins,Gottfried Wilhelm Leibniz Universität Hannover,03351,Celle,4,listed,682
+institution_origins,Gottfried Wilhelm Leibniz Universität Hannover,03252,Hameln-Pyrmont,5,listed,534
+institution_origins,Gottfried Wilhelm Leibniz Universität Hannover,03256,Nienburg (Weser),6,listed,421
+institution_origins,Gottfried Wilhelm Leibniz Universität Hannover,05770,Minden-Lübbecke,7,listed,421
+institution_origins,Gottfried Wilhelm Leibniz Universität Hannover,03358,Heidekreis,8,listed,379
+institution_origins,Gottfried Wilhelm Leibniz Universität Hannover,03157,Peine,9,listed,368
+institution_origins,Gottfried Wilhelm Leibniz Universität Hannover,03101,"Braunschweig, Stadt",10,listed,364
+institution_origins,Gottfried Wilhelm Leibniz Universität Hannover,,,,abroad,3513
+institution_origins,Gottfried Wilhelm Leibniz Universität Hannover,,,,other,8767
+institution_origins,Gottfried Wilhelm Leibniz Universität Hannover,,,,total,28022
+institution_origins,Hochschule Hannover,03241,Region Hannover,1,listed,3644
+institution_origins,Hochschule Hannover,03254,Hildesheim,2,listed,346
+institution_origins,Hochschule Hannover,03257,Schaumburg,3,listed,259
+institution_origins,Hochschule Hannover,03351,Celle,4,listed,212
+institution_origins,Hochschule Hannover,03252,Hameln-Pyrmont,5,listed,189
+institution_origins,Hochschule Hannover,03256,Nienburg (Weser),6,listed,161
+institution_origins,Hochschule Hannover,05770,Minden-Lübbecke,7,listed,124
+institution_origins,Hochschule Hannover,03101,"Braunschweig, Stadt",8,listed,108
+institution_origins,Hochschule Hannover,03157,Peine,9,listed,106
+institution_origins,Hochschule Hannover,03159,Göttingen,10,listed,92
+institution_origins,Hochschule Hannover,,,,abroad,790
+institution_origins,Hochschule Hannover,,,,other,2880
+institution_origins,Hochschule Hannover,,,,total,8911
+institution_origins,Medizinische Hochschule Hannover (MHH),03241,Region Hannover,1,listed,798
+institution_origins,Medizinische Hochschule Hannover (MHH),03254,Hildesheim,2,listed,108
+institution_origins,Medizinische Hochschule Hannover (MHH),04011,"Bremen, Stadt",3,listed,106
+institution_origins,Medizinische Hochschule Hannover (MHH),11000,Berlin,4,listed,95
+institution_origins,Medizinische Hochschule Hannover (MHH),03404,"Osnabrück, Stadt",5,listed,70
+institution_origins,Medizinische Hochschule Hannover (MHH),03101,"Braunschweig, Stadt",6,listed,69
+institution_origins,Medizinische Hochschule Hannover (MHH),03257,Schaumburg,7,listed,62
+institution_origins,Medizinische Hochschule Hannover (MHH),05770,Minden-Lübbecke,8,listed,58
+institution_origins,Medizinische Hochschule Hannover (MHH),03157,Peine,9,listed,56
+institution_origins,Medizinische Hochschule Hannover (MHH),05758,Herford,10,listed,53
+institution_origins,Medizinische Hochschule Hannover (MHH),,,,abroad,479
+institution_origins,Medizinische Hochschule Hannover (MHH),,,,other,1962
+institution_origins,Medizinische Hochschule Hannover (MHH),,,,total,3916
+institution_origins,Stiftung Tierärztliche Hochschule Hannover,03241,Region Hannover,1,listed,136
+institution_origins,Stiftung Tierärztliche Hochschule Hannover,02000,Hamburg,2,listed,69
+institution_origins,Stiftung Tierärztliche Hochschule Hannover,05566,Steinfurt,3,listed,45
+institution_origins,Stiftung Tierärztliche Hochschule Hannover,04011,"Bremen, Stadt",4,listed,41
+institution_origins,Stiftung Tierärztliche Hochschule Hannover,05770,Minden-Lübbecke,5,listed,34
+institution_origins,Stiftung Tierärztliche Hochschule Hannover,03453,Cloppenburg,6,listed,32
+institution_origins,Stiftung Tierärztliche Hochschule Hannover,05515,"Münster, Stadt",7,listed,27
+institution_origins,Stiftung Tierärztliche Hochschule Hannover,05562,Recklinghausen,8,listed,27
+institution_origins,Stiftung Tierärztliche Hochschule Hannover,03159,Göttingen,9,listed,26
+institution_origins,Stiftung Tierärztliche Hochschule Hannover,05315,"Köln, Stadt",10,listed,26
+institution_origins,Stiftung Tierärztliche Hochschule Hannover,,,,abroad,195
+institution_origins,Stiftung Tierärztliche Hochschule Hannover,,,,other,1687
+institution_origins,Stiftung Tierärztliche Hochschule Hannover,,,,total,2345
+institution_origins,"Hochschule für Musik, Theater und Medien Hannover",03241,Region Hannover,1,listed,274
+institution_origins,"Hochschule für Musik, Theater und Medien Hannover",03254,Hildesheim,2,listed,38
+institution_origins,"Hochschule für Musik, Theater und Medien Hannover",11000,Berlin,3,listed,36
+institution_origins,"Hochschule für Musik, Theater und Medien Hannover",02000,Hamburg,4,listed,35
+institution_origins,"Hochschule für Musik, Theater und Medien Hannover",03101,"Braunschweig, Stadt",5,listed,25
+institution_origins,"Hochschule für Musik, Theater und Medien Hannover",03351,Celle,6,listed,16
+institution_origins,"Hochschule für Musik, Theater und Medien Hannover",03257,Schaumburg,7,listed,15
+institution_origins,"Hochschule für Musik, Theater und Medien Hannover",04011,"Bremen, Stadt",8,listed,13
+institution_origins,"Hochschule für Musik, Theater und Medien Hannover",03157,Peine,9,listed,12
+institution_origins,"Hochschule für Musik, Theater und Medien Hannover",03159,Göttingen,10,listed,12
+institution_origins,"Hochschule für Musik, Theater und Medien Hannover",,,,abroad,476
+institution_origins,"Hochschule für Musik, Theater und Medien Hannover",,,,other,483
+institution_origins,"Hochschule für Musik, Theater und Medien Hannover",,,,total,1435
+institution_origins,Georg-August-Universität Göttingen,03159,Göttingen,1,listed,2429
+institution_origins,Georg-August-Universität Göttingen,03241,Region Hannover,2,listed,1539
+institution_origins,Georg-August-Universität Göttingen,03155,Northeim,3,listed,830
+institution_origins,Georg-August-Universität Göttingen,03254,Hildesheim,4,listed,805
+institution_origins,Georg-August-Universität Göttingen,02000,Hamburg,5,listed,708
+institution_origins,Georg-August-Universität Göttingen,06611,"Kassel, documenta-Stadt",6,listed,683
+institution_origins,Georg-August-Universität Göttingen,03101,"Braunschweig, Stadt",7,listed,519
+institution_origins,Georg-August-Universität Göttingen,11000,Berlin,8,listed,470
+institution_origins,Georg-August-Universität Göttingen,04011,"Bremen, Stadt",9,listed,346
+institution_origins,Georg-August-Universität Göttingen,06636,Werra-Meißner-Kreis,10,listed,343
+institution_origins,Georg-August-Universität Göttingen,,,,abroad,4252
+institution_origins,Georg-August-Universität Göttingen,,,,other,14432
+institution_origins,Georg-August-Universität Göttingen,,,,total,27356
+institution_origins,Stiftung Universität Hildesheim,03241,Region Hannover,1,listed,2184
+institution_origins,Stiftung Universität Hildesheim,03254,Hildesheim,2,listed,1162
+institution_origins,Stiftung Universität Hildesheim,03101,"Braunschweig, Stadt",3,listed,222
+institution_origins,Stiftung Universität Hildesheim,03159,Göttingen,4,listed,183
+institution_origins,Stiftung Universität Hildesheim,03252,Hameln-Pyrmont,5,listed,177
+institution_origins,Stiftung Universität Hildesheim,03157,Peine,6,listed,167
+institution_origins,Stiftung Universität Hildesheim,03351,Celle,7,listed,126
+institution_origins,Stiftung Universität Hildesheim,03153,Goslar,8,listed,122
+institution_origins,Stiftung Universität Hildesheim,03102,"Salzgitter, Stadt",9,listed,111
+institution_origins,Stiftung Universität Hildesheim,11000,Berlin,10,listed,110
+institution_origins,Stiftung Universität Hildesheim,,,,abroad,634
+institution_origins,Stiftung Universität Hildesheim,,,,other,2862
+institution_origins,Stiftung Universität Hildesheim,,,,total,8060
+institution_origins,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03241,Region Hannover,1,listed,904
+institution_origins,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03254,Hildesheim,2,listed,745
+institution_origins,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03159,Göttingen,3,listed,545
+institution_origins,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03155,Northeim,4,listed,230
+institution_origins,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,05762,Höxter,5,listed,191
+institution_origins,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03252,Hameln-Pyrmont,6,listed,170
+institution_origins,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03101,"Braunschweig, Stadt",7,listed,144
+institution_origins,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03255,Holzminden,8,listed,142
+institution_origins,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03153,Goslar,9,listed,98
+institution_origins,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,02000,Hamburg,10,listed,93
+institution_origins,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,,,,abroad,384
+institution_origins,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,,,,other,2602
+institution_origins,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,,,,total,6248
+institution_origins,Otto-von-Guericke-Universität Magdeburg,15003,"Magdeburg, Landeshauptstadt",1,listed,1883
+institution_origins,Otto-von-Guericke-Universität Magdeburg,15083,Börde,2,listed,589
+institution_origins,Otto-von-Guericke-Universität Magdeburg,15089,Salzlandkreis,3,listed,362
+institution_origins,Otto-von-Guericke-Universität Magdeburg,11000,Berlin,4,listed,339
+institution_origins,Otto-von-Guericke-Universität Magdeburg,15085,Harz,5,listed,327
+institution_origins,Otto-von-Guericke-Universität Magdeburg,15090,Stendal,6,listed,286
+institution_origins,Otto-von-Guericke-Universität Magdeburg,15086,Jerichower Land,7,listed,279
+institution_origins,Otto-von-Guericke-Universität Magdeburg,03103,"Wolfsburg, Stadt",8,listed,199
+institution_origins,Otto-von-Guericke-Universität Magdeburg,03101,"Braunschweig, Stadt",9,listed,169
+institution_origins,Otto-von-Guericke-Universität Magdeburg,03241,Region Hannover,10,listed,158
+institution_origins,Otto-von-Guericke-Universität Magdeburg,,,,abroad,3429
+institution_origins,Otto-von-Guericke-Universität Magdeburg,,,,other,4814
+institution_origins,Otto-von-Guericke-Universität Magdeburg,,,,total,12834
+institution_origins,Hochschule Magdeburg-Stendal,15003,"Magdeburg, Landeshauptstadt",1,listed,1031
+institution_origins,Hochschule Magdeburg-Stendal,15090,Stendal,2,listed,343
+institution_origins,Hochschule Magdeburg-Stendal,15083,Börde,3,listed,314
+institution_origins,Hochschule Magdeburg-Stendal,15085,Harz,4,listed,207
+institution_origins,Hochschule Magdeburg-Stendal,15089,Salzlandkreis,5,listed,203
+institution_origins,Hochschule Magdeburg-Stendal,15086,Jerichower Land,6,listed,182
+institution_origins,Hochschule Magdeburg-Stendal,11000,Berlin,7,listed,139
+institution_origins,Hochschule Magdeburg-Stendal,15081,Altmarkkreis Salzwedel,8,listed,114
+institution_origins,Hochschule Magdeburg-Stendal,15082,Anhalt-Bitterfeld,9,listed,110
+institution_origins,Hochschule Magdeburg-Stendal,14713,"Leipzig, Stadt",10,listed,76
+institution_origins,Hochschule Magdeburg-Stendal,,,,abroad,341
+institution_origins,Hochschule Magdeburg-Stendal,,,,other,2192
+institution_origins,Hochschule Magdeburg-Stendal,,,,total,5252
+institution_origins,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),15085,Harz,1,listed,453
+institution_origins,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),15003,"Magdeburg, Landeshauptstadt",2,listed,151
+institution_origins,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),03153,Goslar,3,listed,150
+institution_origins,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),15083,Börde,4,listed,99
+institution_origins,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),03101,"Braunschweig, Stadt",5,listed,87
+institution_origins,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),15089,Salzlandkreis,6,listed,85
+institution_origins,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),15082,Anhalt-Bitterfeld,7,listed,83
+institution_origins,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),03241,Region Hannover,8,listed,69
+institution_origins,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),15002,"Halle (Saale), Stadt",9,listed,68
+institution_origins,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),15087,Mansfeld-Südharz,10,listed,68
+institution_origins,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),,,,abroad,205
+institution_origins,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),,,,other,1501
+institution_origins,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),,,,total,3019
+institution_origins,Leuphana Universität Lüneburg,02000,Hamburg,1,listed,1948
+institution_origins,Leuphana Universität Lüneburg,03355,Lüneburg,2,listed,553
+institution_origins,Leuphana Universität Lüneburg,03353,Harburg,3,listed,478
+institution_origins,Leuphana Universität Lüneburg,01062,Stormarn,4,listed,251
+institution_origins,Leuphana Universität Lüneburg,03241,Region Hannover,5,listed,225
+institution_origins,Leuphana Universität Lüneburg,01053,Herzogtum Lauenburg,6,listed,224
+institution_origins,Leuphana Universität Lüneburg,11000,Berlin,7,listed,216
+institution_origins,Leuphana Universität Lüneburg,03359,Stade,8,listed,192
+institution_origins,Leuphana Universität Lüneburg,01056,Pinneberg,9,listed,161
+institution_origins,Leuphana Universität Lüneburg,03360,Uelzen,10,listed,145
+institution_origins,Leuphana Universität Lüneburg,,,,abroad,993
+institution_origins,Leuphana Universität Lüneburg,,,,other,4104
+institution_origins,Leuphana Universität Lüneburg,,,,total,9490
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03101,"Braunschweig, Stadt",1,listed,2417
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,03101,"Braunschweig, Stadt",2,listed,2067
+kreis_destinations,Georg-August-Universität Göttingen,03101,"Braunschweig, Stadt",3,listed,519
+kreis_destinations,IU Internationale Hochschule in Erfurt,03101,"Braunschweig, Stadt",4,listed,405
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03101,"Braunschweig, Stadt",5,listed,364
+kreis_destinations,FernUniversität in Hagen,03101,"Braunschweig, Stadt",6,listed,300
+kreis_destinations,Stiftung Universität Hildesheim,03101,"Braunschweig, Stadt",7,listed,222
+kreis_destinations,Hochschule für Bildende Künste Braunschweig,03101,"Braunschweig, Stadt",8,listed,216
+kreis_destinations,Otto-von-Guericke-Universität Magdeburg,03101,"Braunschweig, Stadt",9,listed,169
+kreis_destinations,Universität Leipzig,03101,"Braunschweig, Stadt",10,listed,150
+kreis_destinations,,03101,"Braunschweig, Stadt",,total,11629
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,03102,"Salzgitter, Stadt",1,listed,589
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03102,"Salzgitter, Stadt",2,listed,426
+kreis_destinations,Stiftung Universität Hildesheim,03102,"Salzgitter, Stadt",3,listed,111
+kreis_destinations,Georg-August-Universität Göttingen,03102,"Salzgitter, Stadt",4,listed,103
+kreis_destinations,IU Internationale Hochschule in Erfurt,03102,"Salzgitter, Stadt",5,listed,102
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03102,"Salzgitter, Stadt",6,listed,88
+kreis_destinations,FernUniversität in Hagen,03102,"Salzgitter, Stadt",7,listed,55
+kreis_destinations,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03102,"Salzgitter, Stadt",8,listed,40
+kreis_destinations,Universität Kassel,03102,"Salzgitter, Stadt",9,listed,29
+kreis_destinations,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),03102,"Salzgitter, Stadt",10,listed,25
+kreis_destinations,,03102,"Salzgitter, Stadt",,total,2277
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,03103,"Wolfsburg, Stadt",1,listed,927
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03103,"Wolfsburg, Stadt",2,listed,624
+kreis_destinations,IU Internationale Hochschule in Erfurt,03103,"Wolfsburg, Stadt",3,listed,201
+kreis_destinations,Otto-von-Guericke-Universität Magdeburg,03103,"Wolfsburg, Stadt",4,listed,199
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03103,"Wolfsburg, Stadt",5,listed,178
+kreis_destinations,Georg-August-Universität Göttingen,03103,"Wolfsburg, Stadt",6,listed,150
+kreis_destinations,FernUniversität in Hagen,03103,"Wolfsburg, Stadt",7,listed,79
+kreis_destinations,Hochschule Magdeburg-Stendal,03103,"Wolfsburg, Stadt",8,listed,69
+kreis_destinations,Stiftung Universität Hildesheim,03103,"Wolfsburg, Stadt",9,listed,67
+kreis_destinations,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),03103,"Wolfsburg, Stadt",10,listed,59
+kreis_destinations,,03103,"Wolfsburg, Stadt",,total,4511
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03151,Gifhorn,1,listed,579
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,03151,Gifhorn,2,listed,531
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03151,Gifhorn,3,listed,264
+kreis_destinations,Georg-August-Universität Göttingen,03151,Gifhorn,4,listed,154
+kreis_destinations,IU Internationale Hochschule in Erfurt,03151,Gifhorn,5,listed,135
+kreis_destinations,Otto-von-Guericke-Universität Magdeburg,03151,Gifhorn,6,listed,97
+kreis_destinations,FernUniversität in Hagen,03151,Gifhorn,7,listed,70
+kreis_destinations,Hochschule Hannover,03151,Gifhorn,8,listed,58
+kreis_destinations,Stiftung Universität Hildesheim,03151,Gifhorn,9,listed,51
+kreis_destinations,Universität Hamburg,03151,Gifhorn,10,listed,37
+kreis_destinations,,03151,Gifhorn,,total,3439
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03153,Goslar,1,listed,363
+kreis_destinations,Georg-August-Universität Göttingen,03153,Goslar,2,listed,313
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,03153,Goslar,3,listed,306
+kreis_destinations,Technische Universität Clausthal,03153,Goslar,4,listed,167
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03153,Goslar,5,listed,152
+kreis_destinations,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),03153,Goslar,6,listed,150
+kreis_destinations,Stiftung Universität Hildesheim,03153,Goslar,7,listed,122
+kreis_destinations,IU Internationale Hochschule in Erfurt,03153,Goslar,8,listed,102
+kreis_destinations,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03153,Goslar,9,listed,98
+kreis_destinations,FernUniversität in Hagen,03153,Goslar,10,listed,74
+kreis_destinations,,03153,Goslar,,total,3345
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03154,Helmstedt,1,listed,277
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,03154,Helmstedt,2,listed,221
+kreis_destinations,Otto-von-Guericke-Universität Magdeburg,03154,Helmstedt,3,listed,98
+kreis_destinations,Georg-August-Universität Göttingen,03154,Helmstedt,4,listed,82
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03154,Helmstedt,5,listed,52
+kreis_destinations,IU Internationale Hochschule in Erfurt,03154,Helmstedt,6,listed,51
+kreis_destinations,FernUniversität in Hagen,03154,Helmstedt,7,listed,41
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,03154,Helmstedt,8,listed,33
+kreis_destinations,Hochschule Magdeburg-Stendal,03154,Helmstedt,9,listed,28
+kreis_destinations,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),03154,Helmstedt,10,listed,23
+kreis_destinations,,03154,Helmstedt,,total,1454
+kreis_destinations,Georg-August-Universität Göttingen,03155,Northeim,1,listed,830
+kreis_destinations,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03155,Northeim,2,listed,230
+kreis_destinations,Universität Kassel,03155,Northeim,3,listed,175
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03155,Northeim,4,listed,148
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03155,Northeim,5,listed,117
+kreis_destinations,IU Internationale Hochschule in Erfurt,03155,Northeim,6,listed,112
+kreis_destinations,Stiftung Universität Hildesheim,03155,Northeim,7,listed,94
+kreis_destinations,PFH - Private Hochschule Göttingen,03155,Northeim,8,listed,87
+kreis_destinations,FernUniversität in Hagen,03155,Northeim,9,listed,70
+kreis_destinations,Technische Universität Clausthal,03155,Northeim,10,listed,63
+kreis_destinations,,03155,Northeim,,total,3456
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03157,Peine,1,listed,533
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03157,Peine,2,listed,368
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,03157,Peine,3,listed,336
+kreis_destinations,Georg-August-Universität Göttingen,03157,Peine,4,listed,167
+kreis_destinations,Stiftung Universität Hildesheim,03157,Peine,5,listed,167
+kreis_destinations,Hochschule Hannover,03157,Peine,6,listed,106
+kreis_destinations,IU Internationale Hochschule in Erfurt,03157,Peine,7,listed,93
+kreis_destinations,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03157,Peine,8,listed,61
+kreis_destinations,Medizinische Hochschule Hannover (MHH),03157,Peine,9,listed,56
+kreis_destinations,FernUniversität in Hagen,03157,Peine,10,listed,47
+kreis_destinations,,03157,Peine,,total,3088
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,03158,Wolfenbüttel,1,listed,540
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03158,Wolfenbüttel,2,listed,466
+kreis_destinations,Georg-August-Universität Göttingen,03158,Wolfenbüttel,3,listed,176
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03158,Wolfenbüttel,4,listed,93
+kreis_destinations,IU Internationale Hochschule in Erfurt,03158,Wolfenbüttel,5,listed,73
+kreis_destinations,Stiftung Universität Hildesheim,03158,Wolfenbüttel,6,listed,58
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,03158,Wolfenbüttel,7,listed,53
+kreis_destinations,Otto-von-Guericke-Universität Magdeburg,03158,Wolfenbüttel,8,listed,52
+kreis_destinations,FernUniversität in Hagen,03158,Wolfenbüttel,9,listed,39
+kreis_destinations,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),03158,Wolfenbüttel,10,listed,36
+kreis_destinations,,03158,Wolfenbüttel,,total,2613
+kreis_destinations,Georg-August-Universität Göttingen,03159,Göttingen,1,listed,2429
+kreis_destinations,Universität Kassel,03159,Göttingen,2,listed,860
+kreis_destinations,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03159,Göttingen,3,listed,545
+kreis_destinations,PFH - Private Hochschule Göttingen,03159,Göttingen,4,listed,322
+kreis_destinations,IU Internationale Hochschule in Erfurt,03159,Göttingen,5,listed,298
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03159,Göttingen,6,listed,261
+kreis_destinations,FernUniversität in Hagen,03159,Göttingen,7,listed,236
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03159,Göttingen,8,listed,233
+kreis_destinations,Universität Leipzig,03159,Göttingen,9,listed,204
+kreis_destinations,Stiftung Universität Hildesheim,03159,Göttingen,10,listed,183
+kreis_destinations,,03159,Göttingen,,total,10792
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03241,Region Hannover,1,listed,10506
+kreis_destinations,Hochschule Hannover,03241,Region Hannover,2,listed,3644
+kreis_destinations,Stiftung Universität Hildesheim,03241,Region Hannover,3,listed,2184
+kreis_destinations,Georg-August-Universität Göttingen,03241,Region Hannover,4,listed,1539
+kreis_destinations,IU Internationale Hochschule in Erfurt,03241,Region Hannover,5,listed,1239
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03241,Region Hannover,6,listed,1027
+kreis_destinations,FernUniversität in Hagen,03241,Region Hannover,7,listed,976
+kreis_destinations,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03241,Region Hannover,8,listed,904
+kreis_destinations,Medizinische Hochschule Hannover (MHH),03241,Region Hannover,9,listed,798
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,03241,Region Hannover,10,listed,682
+kreis_destinations,,03241,Region Hannover,,total,40086
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03252,Hameln-Pyrmont,1,listed,534
+kreis_destinations,Georg-August-Universität Göttingen,03252,Hameln-Pyrmont,2,listed,253
+kreis_destinations,Universität Paderborn,03252,Hameln-Pyrmont,3,listed,208
+kreis_destinations,Hochschule Hannover,03252,Hameln-Pyrmont,4,listed,189
+kreis_destinations,Stiftung Universität Hildesheim,03252,Hameln-Pyrmont,5,listed,177
+kreis_destinations,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03252,Hameln-Pyrmont,6,listed,170
+kreis_destinations,IU Internationale Hochschule in Erfurt,03252,Hameln-Pyrmont,7,listed,138
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03252,Hameln-Pyrmont,8,listed,108
+kreis_destinations,Technische Hochschule Ostwestfalen-Lippe,03252,Hameln-Pyrmont,9,listed,104
+kreis_destinations,Universität Osnabrück,03252,Hameln-Pyrmont,10,listed,92
+kreis_destinations,,03252,Hameln-Pyrmont,,total,4286
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03254,Hildesheim,1,listed,1249
+kreis_destinations,Stiftung Universität Hildesheim,03254,Hildesheim,2,listed,1162
+kreis_destinations,Georg-August-Universität Göttingen,03254,Hildesheim,3,listed,805
+kreis_destinations,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03254,Hildesheim,4,listed,745
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03254,Hildesheim,5,listed,457
+kreis_destinations,Hochschule Hannover,03254,Hildesheim,6,listed,346
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,03254,Hildesheim,7,listed,271
+kreis_destinations,IU Internationale Hochschule in Erfurt,03254,Hildesheim,8,listed,206
+kreis_destinations,FernUniversität in Hagen,03254,Hildesheim,9,listed,194
+kreis_destinations,Medizinische Hochschule Hannover (MHH),03254,Hildesheim,10,listed,108
+kreis_destinations,,03254,Hildesheim,,total,9338
+kreis_destinations,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03255,Holzminden,1,listed,142
+kreis_destinations,Georg-August-Universität Göttingen,03255,Holzminden,2,listed,109
+kreis_destinations,Universität Paderborn,03255,Holzminden,3,listed,87
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03255,Holzminden,4,listed,52
+kreis_destinations,IU Internationale Hochschule in Erfurt,03255,Holzminden,5,listed,40
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03255,Holzminden,6,listed,39
+kreis_destinations,Technische Hochschule Ostwestfalen-Lippe,03255,Holzminden,7,listed,39
+kreis_destinations,Hochschule Hannover,03255,Holzminden,8,listed,24
+kreis_destinations,FernUniversität in Hagen,03255,Holzminden,9,listed,21
+kreis_destinations,Stiftung Universität Hildesheim,03255,Holzminden,10,listed,20
+kreis_destinations,,03255,Holzminden,,total,1215
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03256,Nienburg (Weser),1,listed,421
+kreis_destinations,Hochschule Hannover,03256,Nienburg (Weser),2,listed,161
+kreis_destinations,Georg-August-Universität Göttingen,03256,Nienburg (Weser),3,listed,156
+kreis_destinations,IU Internationale Hochschule in Erfurt,03256,Nienburg (Weser),4,listed,128
+kreis_destinations,Carl von Ossietzky Universität Oldenburg,03256,Nienburg (Weser),5,listed,112
+kreis_destinations,Universität Bremen,03256,Nienburg (Weser),6,listed,105
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03256,Nienburg (Weser),7,listed,83
+kreis_destinations,Universität Vechta,03256,Nienburg (Weser),8,listed,73
+kreis_destinations,Stiftung Universität Hildesheim,03256,Nienburg (Weser),9,listed,71
+kreis_destinations,FernUniversität in Hagen,03256,Nienburg (Weser),10,listed,62
+kreis_destinations,,03256,Nienburg (Weser),,total,2918
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03257,Schaumburg,1,listed,818
+kreis_destinations,Hochschule Hannover,03257,Schaumburg,2,listed,259
+kreis_destinations,Universität Bielefeld,03257,Schaumburg,3,listed,220
+kreis_destinations,IU Internationale Hochschule in Erfurt,03257,Schaumburg,4,listed,163
+kreis_destinations,Georg-August-Universität Göttingen,03257,Schaumburg,5,listed,159
+kreis_destinations,Hochschule Bielefeld,03257,Schaumburg,6,listed,157
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03257,Schaumburg,7,listed,126
+kreis_destinations,FernUniversität in Hagen,03257,Schaumburg,8,listed,111
+kreis_destinations,Stiftung Universität Hildesheim,03257,Schaumburg,9,listed,103
+kreis_destinations,Universität Osnabrück,03257,Schaumburg,10,listed,100
+kreis_destinations,,03257,Schaumburg,,total,4564
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03351,Celle,1,listed,682
+kreis_destinations,Georg-August-Universität Göttingen,03351,Celle,2,listed,281
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,03351,Celle,3,listed,233
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03351,Celle,4,listed,224
+kreis_destinations,Hochschule Hannover,03351,Celle,5,listed,212
+kreis_destinations,Stiftung Universität Hildesheim,03351,Celle,6,listed,126
+kreis_destinations,IU Internationale Hochschule in Erfurt,03351,Celle,7,listed,126
+kreis_destinations,FernUniversität in Hagen,03351,Celle,8,listed,123
+kreis_destinations,Universität Hamburg,03351,Celle,9,listed,94
+kreis_destinations,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03351,Celle,10,listed,81
+kreis_destinations,,03351,Celle,,total,4466
+kreis_destinations,Universität Hamburg,03353,Harburg,1,listed,956
+kreis_destinations,Hochschule für Angewandte Wissenschaften Hamburg,03353,Harburg,2,listed,485
+kreis_destinations,Leuphana Universität Lüneburg,03353,Harburg,3,listed,478
+kreis_destinations,Technische Universität Hamburg,03353,Harburg,4,listed,428
+kreis_destinations,Christian-Albrechts-Universität zu Kiel,03353,Harburg,5,listed,281
+kreis_destinations,IU Internationale Hochschule in Erfurt,03353,Harburg,6,listed,189
+kreis_destinations,Universität Bremen,03353,Harburg,7,listed,185
+kreis_destinations,Georg-August-Universität Göttingen,03353,Harburg,8,listed,180
+kreis_destinations,FOM Hochschule für Oekonomie & Management in Hamburg,03353,Harburg,9,listed,166
+kreis_destinations,FernUniversität in Hagen,03353,Harburg,10,listed,111
+kreis_destinations,,03353,Harburg,,total,6872
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03354,Lüchow-Dannenberg,1,listed,65
+kreis_destinations,Universität Hamburg,03354,Lüchow-Dannenberg,2,listed,54
+kreis_destinations,Georg-August-Universität Göttingen,03354,Lüchow-Dannenberg,3,listed,48
+kreis_destinations,Leuphana Universität Lüneburg,03354,Lüchow-Dannenberg,4,listed,47
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,03354,Lüchow-Dannenberg,5,listed,44
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03354,Lüchow-Dannenberg,6,listed,41
+kreis_destinations,IU Internationale Hochschule in Erfurt,03354,Lüchow-Dannenberg,7,listed,30
+kreis_destinations,FernUniversität in Hagen,03354,Lüchow-Dannenberg,8,listed,29
+kreis_destinations,Christian-Albrechts-Universität zu Kiel,03354,Lüchow-Dannenberg,9,listed,29
+kreis_destinations,Otto-von-Guericke-Universität Magdeburg,03354,Lüchow-Dannenberg,10,listed,26
+kreis_destinations,,03354,Lüchow-Dannenberg,,total,1050
+kreis_destinations,Leuphana Universität Lüneburg,03355,Lüneburg,1,listed,553
+kreis_destinations,Universität Hamburg,03355,Lüneburg,2,listed,413
+kreis_destinations,Georg-August-Universität Göttingen,03355,Lüneburg,3,listed,245
+kreis_destinations,IU Internationale Hochschule in Erfurt,03355,Lüneburg,4,listed,207
+kreis_destinations,Christian-Albrechts-Universität zu Kiel,03355,Lüneburg,5,listed,201
+kreis_destinations,Hochschule für Angewandte Wissenschaften Hamburg,03355,Lüneburg,6,listed,198
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03355,Lüneburg,7,listed,169
+kreis_destinations,FernUniversität in Hagen,03355,Lüneburg,8,listed,164
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,03355,Lüneburg,9,listed,164
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03355,Lüneburg,10,listed,163
+kreis_destinations,,03355,Lüneburg,,total,6052
+kreis_destinations,Universität Bremen,03357,Rotenburg (Wümme),1,listed,493
+kreis_destinations,Hochschule Bremen,03357,Rotenburg (Wümme),2,listed,205
+kreis_destinations,Carl von Ossietzky Universität Oldenburg,03357,Rotenburg (Wümme),3,listed,204
+kreis_destinations,IU Internationale Hochschule in Erfurt,03357,Rotenburg (Wümme),4,listed,164
+kreis_destinations,Universität Hamburg,03357,Rotenburg (Wümme),5,listed,162
+kreis_destinations,Georg-August-Universität Göttingen,03357,Rotenburg (Wümme),6,listed,148
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03357,Rotenburg (Wümme),7,listed,131
+kreis_destinations,Christian-Albrechts-Universität zu Kiel,03357,Rotenburg (Wümme),8,listed,119
+kreis_destinations,Hochschule für Angewandte Wissenschaften Hamburg,03357,Rotenburg (Wümme),9,listed,104
+kreis_destinations,Leuphana Universität Lüneburg,03357,Rotenburg (Wümme),10,listed,98
+kreis_destinations,,03357,Rotenburg (Wümme),,total,4345
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03358,Heidekreis,1,listed,379
+kreis_destinations,Georg-August-Universität Göttingen,03358,Heidekreis,2,listed,158
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03358,Heidekreis,3,listed,122
+kreis_destinations,Universität Hamburg,03358,Heidekreis,4,listed,115
+kreis_destinations,IU Internationale Hochschule in Erfurt,03358,Heidekreis,5,listed,107
+kreis_destinations,Universität Bremen,03358,Heidekreis,6,listed,101
+kreis_destinations,Christian-Albrechts-Universität zu Kiel,03358,Heidekreis,7,listed,95
+kreis_destinations,Hochschule Hannover,03358,Heidekreis,8,listed,84
+kreis_destinations,Leuphana Universität Lüneburg,03358,Heidekreis,9,listed,76
+kreis_destinations,Carl von Ossietzky Universität Oldenburg,03358,Heidekreis,10,listed,75
+kreis_destinations,,03358,Heidekreis,,total,3164
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,03360,Uelzen,1,listed,277
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03360,Uelzen,2,listed,180
+kreis_destinations,Georg-August-Universität Göttingen,03360,Uelzen,3,listed,167
+kreis_destinations,Leuphana Universität Lüneburg,03360,Uelzen,4,listed,145
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,03360,Uelzen,5,listed,119
+kreis_destinations,Universität Hamburg,03360,Uelzen,6,listed,88
+kreis_destinations,IU Internationale Hochschule in Erfurt,03360,Uelzen,7,listed,67
+kreis_destinations,Christian-Albrechts-Universität zu Kiel,03360,Uelzen,8,listed,48
+kreis_destinations,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,03360,Uelzen,9,listed,43
+kreis_destinations,Hochschule Hannover,03360,Uelzen,10,listed,40
+kreis_destinations,,03360,Uelzen,,total,2402
+kreis_destinations,Universität Bremen,03361,Verden,1,listed,588
+kreis_destinations,Hochschule Bremen,03361,Verden,2,listed,287
+kreis_destinations,Carl von Ossietzky Universität Oldenburg,03361,Verden,3,listed,171
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,03361,Verden,4,listed,165
+kreis_destinations,Georg-August-Universität Göttingen,03361,Verden,5,listed,106
+kreis_destinations,IU Internationale Hochschule in Erfurt,03361,Verden,6,listed,101
+kreis_destinations,Universität Hamburg,03361,Verden,7,listed,74
+kreis_destinations,FernUniversität in Hagen,03361,Verden,8,listed,73
+kreis_destinations,Universität Osnabrück,03361,Verden,9,listed,68
+kreis_destinations,IU Internationale Hochschule in Bremen,03361,Verden,10,listed,52
+kreis_destinations,,03361,Verden,,total,3430
+kreis_destinations,Universität Bielefeld,05758,Herford,1,listed,2557
+kreis_destinations,Hochschule Bielefeld,05758,Herford,2,listed,1182
+kreis_destinations,Universität Paderborn,05758,Herford,3,listed,385
+kreis_destinations,Technische Hochschule Ostwestfalen-Lippe,05758,Herford,4,listed,376
+kreis_destinations,Universität Osnabrück,05758,Herford,5,listed,357
+kreis_destinations,Universität Münster,05758,Herford,6,listed,342
+kreis_destinations,Hochschule Osnabrück,05758,Herford,7,listed,299
+kreis_destinations,IU Internationale Hochschule in Erfurt,05758,Herford,8,listed,295
+kreis_destinations,FernUniversität in Hagen,05758,Herford,9,listed,183
+kreis_destinations,Fachhochschule des Mittelstands (FHM) in NRW,05758,Herford,10,listed,166
+kreis_destinations,,05758,Herford,,total,9695
+kreis_destinations,Universität Paderborn,05762,Höxter,1,listed,1145
+kreis_destinations,Universität Kassel,05762,Höxter,2,listed,345
+kreis_destinations,Technische Hochschule Ostwestfalen-Lippe,05762,Höxter,3,listed,266
+kreis_destinations,Georg-August-Universität Göttingen,05762,Höxter,4,listed,235
+kreis_destinations,Universität Bielefeld,05762,Höxter,5,listed,231
+kreis_destinations,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,05762,Höxter,6,listed,191
+kreis_destinations,Universität Münster,05762,Höxter,7,listed,173
+kreis_destinations,IU Internationale Hochschule in Erfurt,05762,Höxter,8,listed,156
+kreis_destinations,FernUniversität in Hagen,05762,Höxter,9,listed,140
+kreis_destinations,Hochschule Bielefeld,05762,Höxter,10,listed,121
+kreis_destinations,,05762,Höxter,,total,5900
+kreis_destinations,Universität Bielefeld,05766,Lippe,1,listed,1860
+kreis_destinations,Technische Hochschule Ostwestfalen-Lippe,05766,Lippe,2,listed,1415
+kreis_destinations,Universität Paderborn,05766,Lippe,3,listed,1234
+kreis_destinations,Hochschule Bielefeld,05766,Lippe,4,listed,693
+kreis_destinations,IU Internationale Hochschule in Erfurt,05766,Lippe,5,listed,338
+kreis_destinations,Universität Münster,05766,Lippe,6,listed,308
+kreis_destinations,FernUniversität in Hagen,05766,Lippe,7,listed,219
+kreis_destinations,Hochschule für Polizei und öffentliche Verwaltung NRW,05766,Lippe,8,listed,197
+kreis_destinations,Fachhochschule des Mittelstands (FHM) in NRW,05766,Lippe,9,listed,142
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,05766,Lippe,10,listed,124
+kreis_destinations,,05766,Lippe,,total,10865
+kreis_destinations,Universität Bielefeld,05770,Minden-Lübbecke,1,listed,1973
+kreis_destinations,Hochschule Bielefeld,05770,Minden-Lübbecke,2,listed,1097
+kreis_destinations,Universität Münster,05770,Minden-Lübbecke,3,listed,476
+kreis_destinations,Gottfried Wilhelm Leibniz Universität Hannover,05770,Minden-Lübbecke,4,listed,421
+kreis_destinations,Universität Osnabrück,05770,Minden-Lübbecke,5,listed,347
+kreis_destinations,Universität Paderborn,05770,Minden-Lübbecke,6,listed,335
+kreis_destinations,IU Internationale Hochschule in Erfurt,05770,Minden-Lübbecke,7,listed,310
+kreis_destinations,Hochschule Osnabrück,05770,Minden-Lübbecke,8,listed,303
+kreis_destinations,FernUniversität in Hagen,05770,Minden-Lübbecke,9,listed,251
+kreis_destinations,Georg-August-Universität Göttingen,05770,Minden-Lübbecke,10,listed,159
+kreis_destinations,,05770,Minden-Lübbecke,,total,10727
+kreis_destinations,Universität Paderborn,05774,Paderborn,1,listed,3457
+kreis_destinations,Universität Bielefeld,05774,Paderborn,2,listed,651
+kreis_destinations,Universität Münster,05774,Paderborn,3,listed,417
+kreis_destinations,Katholische Hochschule Nordrhein-Westfalen,05774,Paderborn,4,listed,397
+kreis_destinations,Hochschule Bielefeld,05774,Paderborn,5,listed,382
+kreis_destinations,Technische Hochschule Ostwestfalen-Lippe,05774,Paderborn,6,listed,378
+kreis_destinations,Hochschule Hamm-Lippstadt,05774,Paderborn,7,listed,297
+kreis_destinations,Rheinisch-Westfälische Technische Hochschule Aachen,05774,Paderborn,8,listed,269
+kreis_destinations,IU Internationale Hochschule in Erfurt,05774,Paderborn,9,listed,263
+kreis_destinations,FernUniversität in Hagen,05774,Paderborn,10,listed,254
+kreis_destinations,,05774,Paderborn,,total,12172
+kreis_destinations,Universität Kassel,06611,"Kassel, documenta-Stadt",1,listed,5399
+kreis_destinations,Georg-August-Universität Göttingen,06611,"Kassel, documenta-Stadt",2,listed,683
+kreis_destinations,Philipps-Universität Marburg,06611,"Kassel, documenta-Stadt",3,listed,354
+kreis_destinations,FernUniversität in Hagen,06611,"Kassel, documenta-Stadt",4,listed,234
+kreis_destinations,IU Internationale Hochschule in Erfurt,06611,"Kassel, documenta-Stadt",5,listed,199
+kreis_destinations,Justus-Liebig-Universität Gießen,06611,"Kassel, documenta-Stadt",6,listed,198
+kreis_destinations,Hochschule Fulda,06611,"Kassel, documenta-Stadt",7,listed,197
+kreis_destinations,Universität Leipzig,06611,"Kassel, documenta-Stadt",8,listed,129
+kreis_destinations,Johann Wolfgang Goethe-Universität Frankfurt am Main,06611,"Kassel, documenta-Stadt",9,listed,125
+kreis_destinations,Hessische Hochschule für Polizei und Verwaltung Wiesbaden,06611,"Kassel, documenta-Stadt",10,listed,110
+kreis_destinations,,06611,"Kassel, documenta-Stadt",,total,11322
+kreis_destinations,Universität Kassel,06632,Hersfeld-Rotenburg,1,listed,734
+kreis_destinations,Hochschule Fulda,06632,Hersfeld-Rotenburg,2,listed,384
+kreis_destinations,Technische Hochschule Mittelhessen (THM),06632,Hersfeld-Rotenburg,3,listed,127
+kreis_destinations,Philipps-Universität Marburg,06632,Hersfeld-Rotenburg,4,listed,124
+kreis_destinations,Georg-August-Universität Göttingen,06632,Hersfeld-Rotenburg,5,listed,96
+kreis_destinations,Justus-Liebig-Universität Gießen,06632,Hersfeld-Rotenburg,6,listed,95
+kreis_destinations,IU Internationale Hochschule in Erfurt,06632,Hersfeld-Rotenburg,7,listed,81
+kreis_destinations,Johann Wolfgang Goethe-Universität Frankfurt am Main,06632,Hersfeld-Rotenburg,8,listed,72
+kreis_destinations,Hessische Hochschule für Finanzen und Rechtspflege Rotenburg,06632,Hersfeld-Rotenburg,9,listed,55
+kreis_destinations,FernUniversität in Hagen,06632,Hersfeld-Rotenburg,10,listed,51
+kreis_destinations,,06632,Hersfeld-Rotenburg,,total,3079
+kreis_destinations,Universität Kassel,06633,Kassel,1,listed,1386
+kreis_destinations,Georg-August-Universität Göttingen,06633,Kassel,2,listed,243
+kreis_destinations,FOM Hochschule für Oekonomie & Management in Hessen,06633,Kassel,3,listed,237
+kreis_destinations,IU Internationale Hochschule in Erfurt,06633,Kassel,4,listed,207
+kreis_destinations,Philipps-Universität Marburg,06633,Kassel,5,listed,118
+kreis_destinations,FernUniversität in Hagen,06633,Kassel,6,listed,62
+kreis_destinations,Hessische Hochschule für Finanzen und Rechtspflege Rotenburg,06633,Kassel,7,listed,58
+kreis_destinations,Hessische Hochschule für Polizei und Verwaltung Wiesbaden,06633,Kassel,8,listed,55
+kreis_destinations,Hochschule Fulda,06633,Kassel,9,listed,54
+kreis_destinations,Justus-Liebig-Universität Gießen,06633,Kassel,10,listed,50
+kreis_destinations,,06633,Kassel,,total,3942
+kreis_destinations,Universität Kassel,06634,Schwalm-Eder-Kreis,1,listed,1519
+kreis_destinations,Philipps-Universität Marburg,06634,Schwalm-Eder-Kreis,2,listed,510
+kreis_destinations,Justus-Liebig-Universität Gießen,06634,Schwalm-Eder-Kreis,3,listed,203
+kreis_destinations,Georg-August-Universität Göttingen,06634,Schwalm-Eder-Kreis,4,listed,189
+kreis_destinations,Technische Hochschule Mittelhessen (THM),06634,Schwalm-Eder-Kreis,5,listed,160
+kreis_destinations,Hochschule Fulda,06634,Schwalm-Eder-Kreis,6,listed,131
+kreis_destinations,IU Internationale Hochschule in Erfurt,06634,Schwalm-Eder-Kreis,7,listed,127
+kreis_destinations,FernUniversität in Hagen,06634,Schwalm-Eder-Kreis,8,listed,81
+kreis_destinations,Hessische Hochschule für Finanzen und Rechtspflege Rotenburg,06634,Schwalm-Eder-Kreis,9,listed,76
+kreis_destinations,Johann Wolfgang Goethe-Universität Frankfurt am Main,06634,Schwalm-Eder-Kreis,10,listed,72
+kreis_destinations,,06634,Schwalm-Eder-Kreis,,total,4873
+kreis_destinations,Universität Kassel,06635,Waldeck-Frankenberg,1,listed,702
+kreis_destinations,Philipps-Universität Marburg,06635,Waldeck-Frankenberg,2,listed,411
+kreis_destinations,Technische Hochschule Mittelhessen (THM),06635,Waldeck-Frankenberg,3,listed,347
+kreis_destinations,Justus-Liebig-Universität Gießen,06635,Waldeck-Frankenberg,4,listed,241
+kreis_destinations,IU Internationale Hochschule in Erfurt,06635,Waldeck-Frankenberg,5,listed,112
+kreis_destinations,Universität Paderborn,06635,Waldeck-Frankenberg,6,listed,109
+kreis_destinations,Georg-August-Universität Göttingen,06635,Waldeck-Frankenberg,7,listed,100
+kreis_destinations,FernUniversität in Hagen,06635,Waldeck-Frankenberg,8,listed,82
+kreis_destinations,Johann Wolfgang Goethe-Universität Frankfurt am Main,06635,Waldeck-Frankenberg,9,listed,63
+kreis_destinations,Technische Universität Darmstadt,06635,Waldeck-Frankenberg,10,listed,56
+kreis_destinations,,06635,Waldeck-Frankenberg,,total,3952
+kreis_destinations,Universität Kassel,06636,Werra-Meißner-Kreis,1,listed,704
+kreis_destinations,Georg-August-Universität Göttingen,06636,Werra-Meißner-Kreis,2,listed,343
+kreis_destinations,IU Internationale Hochschule in Erfurt,06636,Werra-Meißner-Kreis,3,listed,72
+kreis_destinations,Hochschule Fulda,06636,Werra-Meißner-Kreis,4,listed,70
+kreis_destinations,Philipps-Universität Marburg,06636,Werra-Meißner-Kreis,5,listed,63
+kreis_destinations,"DIPLOMA Hochschule, Fachhochschule Nordhessen",06636,Werra-Meißner-Kreis,6,listed,61
+kreis_destinations,Justus-Liebig-Universität Gießen,06636,Werra-Meißner-Kreis,7,listed,49
+kreis_destinations,Hochschule für angewandte Wissenschaft und Kunst Hildesheim/Holzminden/Göttingen,06636,Werra-Meißner-Kreis,8,listed,46
+kreis_destinations,FernUniversität in Hagen,06636,Werra-Meißner-Kreis,9,listed,41
+kreis_destinations,Hessische Hochschule für Finanzen und Rechtspflege Rotenburg,06636,Werra-Meißner-Kreis,10,listed,38
+kreis_destinations,,06636,Werra-Meißner-Kreis,,total,2557
+kreis_destinations,Universität Potsdam,12063,Havelland,1,listed,482
+kreis_destinations,Technische Universität Berlin,12063,Havelland,2,listed,384
+kreis_destinations,Freie Universität Berlin,12063,Havelland,3,listed,305
+kreis_destinations,Humboldt-Universität zu Berlin,12063,Havelland,4,listed,300
+kreis_destinations,Hochschule für Wirtschaft und Recht Berlin,12063,Havelland,5,listed,190
+kreis_destinations,Berliner Hochschule für Technik,12063,Havelland,6,listed,184
+kreis_destinations,IU Internationale Hochschule in Erfurt,12063,Havelland,7,listed,108
+kreis_destinations,Technische Hochschule Brandenburg,12063,Havelland,8,listed,103
+kreis_destinations,Hochschule für Technik und Wirtschaft Berlin,12063,Havelland,9,listed,80
+kreis_destinations,Charité Universitätsmedizin Berlin,12063,Havelland,10,listed,69
+kreis_destinations,,12063,Havelland,,total,3892
+kreis_destinations,Universität Rostock,12070,Prignitz,1,listed,112
+kreis_destinations,Universität Potsdam,12070,Prignitz,2,listed,95
+kreis_destinations,Universität Greifswald,12070,Prignitz,3,listed,57
+kreis_destinations,Humboldt-Universität zu Berlin,12070,Prignitz,4,listed,49
+kreis_destinations,"Hochschule Wismar - University of Applied Sciences: Technology, Business and Design",12070,Prignitz,5,listed,49
+kreis_destinations,IU Internationale Hochschule in Erfurt,12070,Prignitz,6,listed,47
+kreis_destinations,Hochschule Neubrandenburg,12070,Prignitz,7,listed,36
+kreis_destinations,Universität Leipzig,12070,Prignitz,8,listed,31
+kreis_destinations,Technische Hochschule Wildau,12070,Prignitz,9,listed,31
+kreis_destinations,Freie Universität Berlin,12070,Prignitz,10,listed,28
+kreis_destinations,,12070,Prignitz,,total,1267
+kreis_destinations,Universität Rostock,13076,Ludwigslust-Parchim,1,listed,558
+kreis_destinations,"Hochschule Wismar - University of Applied Sciences: Technology, Business and Design",13076,Ludwigslust-Parchim,2,listed,199
+kreis_destinations,Universität Greifswald,13076,Ludwigslust-Parchim,3,listed,164
+kreis_destinations,Universität Hamburg,13076,Ludwigslust-Parchim,4,listed,134
+kreis_destinations,IU Internationale Hochschule in Erfurt,13076,Ludwigslust-Parchim,5,listed,92
+kreis_destinations,Christian-Albrechts-Universität zu Kiel,13076,Ludwigslust-Parchim,6,listed,85
+kreis_destinations,"Fachhochschule für öffentliche Verwaltung, Polizei und Rechtspflege in Güstrow",13076,Ludwigslust-Parchim,7,listed,79
+kreis_destinations,FernUniversität in Hagen,13076,Ludwigslust-Parchim,8,listed,74
+kreis_destinations,Universität Leipzig,13076,Ludwigslust-Parchim,9,listed,61
+kreis_destinations,Hochschule Neubrandenburg,13076,Ludwigslust-Parchim,10,listed,56
+kreis_destinations,,13076,Ludwigslust-Parchim,,total,3018
+kreis_destinations,Otto-von-Guericke-Universität Magdeburg,15003,"Magdeburg, Landeshauptstadt",1,listed,1883
+kreis_destinations,Hochschule Magdeburg-Stendal,15003,"Magdeburg, Landeshauptstadt",2,listed,1031
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,15003,"Magdeburg, Landeshauptstadt",3,listed,524
+kreis_destinations,Universität Leipzig,15003,"Magdeburg, Landeshauptstadt",4,listed,329
+kreis_destinations,Hochschule Anhalt,15003,"Magdeburg, Landeshauptstadt",5,listed,219
+kreis_destinations,IU Internationale Hochschule in Erfurt,15003,"Magdeburg, Landeshauptstadt",6,listed,192
+kreis_destinations,FernUniversität in Hagen,15003,"Magdeburg, Landeshauptstadt",7,listed,174
+kreis_destinations,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),15003,"Magdeburg, Landeshauptstadt",8,listed,151
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,15003,"Magdeburg, Landeshauptstadt",9,listed,135
+kreis_destinations,Friedrich-Schiller-Universität Jena,15003,"Magdeburg, Landeshauptstadt",10,listed,116
+kreis_destinations,,15003,"Magdeburg, Landeshauptstadt",,total,7497
+kreis_destinations,Otto-von-Guericke-Universität Magdeburg,15081,Altmarkkreis Salzwedel,1,listed,155
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,15081,Altmarkkreis Salzwedel,2,listed,115
+kreis_destinations,Hochschule Magdeburg-Stendal,15081,Altmarkkreis Salzwedel,3,listed,114
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,15081,Altmarkkreis Salzwedel,4,listed,58
+kreis_destinations,Universität Leipzig,15081,Altmarkkreis Salzwedel,5,listed,52
+kreis_destinations,Hochschule Anhalt,15081,Altmarkkreis Salzwedel,6,listed,52
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,15081,Altmarkkreis Salzwedel,7,listed,47
+kreis_destinations,Universität Rostock,15081,Altmarkkreis Salzwedel,8,listed,37
+kreis_destinations,IU Internationale Hochschule in Erfurt,15081,Altmarkkreis Salzwedel,9,listed,37
+kreis_destinations,Friedrich-Schiller-Universität Jena,15081,Altmarkkreis Salzwedel,10,listed,25
+kreis_destinations,,15081,Altmarkkreis Salzwedel,,total,1290
+kreis_destinations,Hochschule Anhalt,15082,Anhalt-Bitterfeld,1,listed,518
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,15082,Anhalt-Bitterfeld,2,listed,409
+kreis_destinations,Universität Leipzig,15082,Anhalt-Bitterfeld,3,listed,209
+kreis_destinations,Otto-von-Guericke-Universität Magdeburg,15082,Anhalt-Bitterfeld,4,listed,151
+kreis_destinations,Hochschule Magdeburg-Stendal,15082,Anhalt-Bitterfeld,5,listed,110
+kreis_destinations,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),15082,Anhalt-Bitterfeld,6,listed,83
+kreis_destinations,FernUniversität in Hagen,15082,Anhalt-Bitterfeld,7,listed,75
+kreis_destinations,Technische Universität Berlin,15082,Anhalt-Bitterfeld,8,listed,73
+kreis_destinations,Technische Universität Dresden,15082,Anhalt-Bitterfeld,9,listed,69
+kreis_destinations,IU Internationale Hochschule in Erfurt,15082,Anhalt-Bitterfeld,10,listed,68
+kreis_destinations,,15082,Anhalt-Bitterfeld,,total,3632
+kreis_destinations,Otto-von-Guericke-Universität Magdeburg,15083,Börde,1,listed,589
+kreis_destinations,Hochschule Magdeburg-Stendal,15083,Börde,2,listed,314
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,15083,Börde,3,listed,237
+kreis_destinations,Hochschule Anhalt,15083,Börde,4,listed,121
+kreis_destinations,Universität Leipzig,15083,Börde,5,listed,116
+kreis_destinations,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),15083,Börde,6,listed,99
+kreis_destinations,Friedrich-Schiller-Universität Jena,15083,Börde,7,listed,76
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,15083,Börde,8,listed,75
+kreis_destinations,IU Internationale Hochschule in Erfurt,15083,Börde,9,listed,73
+kreis_destinations,Technische Universität Dresden,15083,Börde,10,listed,40
+kreis_destinations,,15083,Börde,,total,2661
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,15084,Burgenlandkreis,1,listed,366
+kreis_destinations,Universität Leipzig,15084,Burgenlandkreis,2,listed,361
+kreis_destinations,Friedrich-Schiller-Universität Jena,15084,Burgenlandkreis,3,listed,229
+kreis_destinations,Technische Universität Dresden,15084,Burgenlandkreis,4,listed,127
+kreis_destinations,Hochschule Merseburg,15084,Burgenlandkreis,5,listed,127
+kreis_destinations,"Hochschule für Technik, Wirtschaft und Kultur Leipzig",15084,Burgenlandkreis,6,listed,94
+kreis_destinations,IU Internationale Hochschule in Erfurt,15084,Burgenlandkreis,7,listed,76
+kreis_destinations,FernUniversität in Hagen,15084,Burgenlandkreis,8,listed,75
+kreis_destinations,Universität Erfurt,15084,Burgenlandkreis,9,listed,63
+kreis_destinations,Hochschule Anhalt,15084,Burgenlandkreis,10,listed,55
+kreis_destinations,,15084,Burgenlandkreis,,total,2972
+kreis_destinations,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),15085,Harz,1,listed,453
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,15085,Harz,2,listed,363
+kreis_destinations,Otto-von-Guericke-Universität Magdeburg,15085,Harz,3,listed,327
+kreis_destinations,Universität Leipzig,15085,Harz,4,listed,244
+kreis_destinations,Hochschule Magdeburg-Stendal,15085,Harz,5,listed,207
+kreis_destinations,Technische Universität Carolo-Wilhelmina zu Braunschweig,15085,Harz,6,listed,172
+kreis_destinations,Ostfalia Hochschule für angewandte Wissenschaften,15085,Harz,7,listed,140
+kreis_destinations,IU Internationale Hochschule in Erfurt,15085,Harz,8,listed,122
+kreis_destinations,Technische Universität Dresden,15085,Harz,9,listed,119
+kreis_destinations,Friedrich-Schiller-Universität Jena,15085,Harz,10,listed,97
+kreis_destinations,,15085,Harz,,total,4260
+kreis_destinations,Otto-von-Guericke-Universität Magdeburg,15086,Jerichower Land,1,listed,279
+kreis_destinations,Hochschule Magdeburg-Stendal,15086,Jerichower Land,2,listed,182
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,15086,Jerichower Land,3,listed,134
+kreis_destinations,Universität Leipzig,15086,Jerichower Land,4,listed,58
+kreis_destinations,Hochschule Anhalt,15086,Jerichower Land,5,listed,46
+kreis_destinations,IU Internationale Hochschule in Erfurt,15086,Jerichower Land,6,listed,40
+kreis_destinations,Universität Potsdam,15086,Jerichower Land,7,listed,35
+kreis_destinations,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),15086,Jerichower Land,8,listed,33
+kreis_destinations,Fachhochschule Polizei Sachsen-Anhalt,15086,Jerichower Land,9,listed,25
+kreis_destinations,FernUniversität in Hagen,15086,Jerichower Land,10,listed,24
+kreis_destinations,,15086,Jerichower Land,,total,1336
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,15087,Mansfeld-Südharz,1,listed,366
+kreis_destinations,Hochschule Nordhausen,15087,Mansfeld-Südharz,2,listed,99
+kreis_destinations,Universität Leipzig,15087,Mansfeld-Südharz,3,listed,96
+kreis_destinations,Hochschule Anhalt,15087,Mansfeld-Südharz,4,listed,69
+kreis_destinations,IU Internationale Hochschule in Erfurt,15087,Mansfeld-Südharz,5,listed,69
+kreis_destinations,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),15087,Mansfeld-Südharz,6,listed,68
+kreis_destinations,Technische Universität Dresden,15087,Mansfeld-Südharz,7,listed,61
+kreis_destinations,Hochschule Merseburg,15087,Mansfeld-Südharz,8,listed,51
+kreis_destinations,FernUniversität in Hagen,15087,Mansfeld-Südharz,9,listed,48
+kreis_destinations,Otto-von-Guericke-Universität Magdeburg,15087,Mansfeld-Südharz,10,listed,47
+kreis_destinations,,15087,Mansfeld-Südharz,,total,1721
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,15088,Saalekreis,1,listed,653
+kreis_destinations,Hochschule Merseburg,15088,Saalekreis,2,listed,259
+kreis_destinations,Universität Leipzig,15088,Saalekreis,3,listed,132
+kreis_destinations,Hochschule Anhalt,15088,Saalekreis,4,listed,96
+kreis_destinations,"Hochschule für Technik, Wirtschaft und Kultur Leipzig",15088,Saalekreis,5,listed,66
+kreis_destinations,Technische Universität Dresden,15088,Saalekreis,6,listed,60
+kreis_destinations,Friedrich-Schiller-Universität Jena,15088,Saalekreis,7,listed,59
+kreis_destinations,IU Internationale Hochschule in Erfurt,15088,Saalekreis,8,listed,57
+kreis_destinations,FernUniversität in Hagen,15088,Saalekreis,9,listed,53
+kreis_destinations,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),15088,Saalekreis,10,listed,47
+kreis_destinations,,15088,Saalekreis,,total,2366
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,15089,Salzlandkreis,1,listed,397
+kreis_destinations,Otto-von-Guericke-Universität Magdeburg,15089,Salzlandkreis,2,listed,362
+kreis_destinations,Hochschule Anhalt,15089,Salzlandkreis,3,listed,262
+kreis_destinations,Hochschule Magdeburg-Stendal,15089,Salzlandkreis,4,listed,203
+kreis_destinations,Universität Leipzig,15089,Salzlandkreis,5,listed,159
+kreis_destinations,Hochschule Harz - Hochschule für angewandte Wissenschaften (FH),15089,Salzlandkreis,6,listed,85
+kreis_destinations,Friedrich-Schiller-Universität Jena,15089,Salzlandkreis,7,listed,67
+kreis_destinations,Fachhochschule Polizei Sachsen-Anhalt,15089,Salzlandkreis,8,listed,59
+kreis_destinations,IU Internationale Hochschule in Erfurt,15089,Salzlandkreis,9,listed,52
+kreis_destinations,Technische Universität Dresden,15089,Salzlandkreis,10,listed,51
+kreis_destinations,,15089,Salzlandkreis,,total,2607
+kreis_destinations,Hochschule Magdeburg-Stendal,15090,Stendal,1,listed,343
+kreis_destinations,Otto-von-Guericke-Universität Magdeburg,15090,Stendal,2,listed,286
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,15090,Stendal,3,listed,172
+kreis_destinations,Universität Rostock,15090,Stendal,4,listed,134
+kreis_destinations,Universität Leipzig,15090,Stendal,5,listed,87
+kreis_destinations,Universität Potsdam,15090,Stendal,6,listed,59
+kreis_destinations,FernUniversität in Hagen,15090,Stendal,7,listed,50
+kreis_destinations,IU Internationale Hochschule in Erfurt,15090,Stendal,8,listed,49
+kreis_destinations,Hochschule Anhalt,15090,Stendal,9,listed,46
+kreis_destinations,Technische Universität Dresden,15090,Stendal,10,listed,45
+kreis_destinations,,15090,Stendal,,total,2290
+kreis_destinations,Friedrich-Schiller-Universität Jena,16051,"Erfurt, Stadt",1,listed,628
+kreis_destinations,Fachhochschule Erfurt,16051,"Erfurt, Stadt",2,listed,556
+kreis_destinations,Universität Erfurt,16051,"Erfurt, Stadt",3,listed,429
+kreis_destinations,IU Internationale Hochschule in Erfurt,16051,"Erfurt, Stadt",4,listed,416
+kreis_destinations,Universität Leipzig,16051,"Erfurt, Stadt",5,listed,385
+kreis_destinations,Technische Universität Dresden,16051,"Erfurt, Stadt",6,listed,327
+kreis_destinations,Technische Universität Ilmenau,16051,"Erfurt, Stadt",7,listed,198
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,16051,"Erfurt, Stadt",8,listed,196
+kreis_destinations,FernUniversität in Hagen,16051,"Erfurt, Stadt",9,listed,157
+kreis_destinations,Ernst-Abbe-Hochschule Jena,16051,"Erfurt, Stadt",10,listed,152
+kreis_destinations,,16051,"Erfurt, Stadt",,total,13634
+kreis_destinations,Friedrich-Schiller-Universität Jena,16061,Eichsfeld,1,listed,184
+kreis_destinations,Georg-August-Universität Göttingen,16061,Eichsfeld,2,listed,177
+kreis_destinations,Universität Kassel,16061,Eichsfeld,3,listed,169
+kreis_destinations,Hochschule Nordhausen,16061,Eichsfeld,4,listed,159
+kreis_destinations,Universität Erfurt,16061,Eichsfeld,5,listed,131
+kreis_destinations,Universität Leipzig,16061,Eichsfeld,6,listed,127
+kreis_destinations,Fachhochschule Erfurt,16061,Eichsfeld,7,listed,110
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,16061,Eichsfeld,8,listed,84
+kreis_destinations,IU Internationale Hochschule in Erfurt,16061,Eichsfeld,9,listed,60
+kreis_destinations,Technische Universität Ilmenau,16061,Eichsfeld,10,listed,51
+kreis_destinations,,16061,Eichsfeld,,total,2281
+kreis_destinations,Hochschule Nordhausen,16062,Nordhausen,1,listed,256
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,16062,Nordhausen,2,listed,191
+kreis_destinations,Universität Leipzig,16062,Nordhausen,3,listed,168
+kreis_destinations,Friedrich-Schiller-Universität Jena,16062,Nordhausen,4,listed,132
+kreis_destinations,Universität Erfurt,16062,Nordhausen,5,listed,114
+kreis_destinations,Technische Universität Dresden,16062,Nordhausen,6,listed,58
+kreis_destinations,Johann Wolfgang Goethe-Universität Frankfurt am Main,16062,Nordhausen,7,listed,54
+kreis_destinations,IU Internationale Hochschule in Erfurt,16062,Nordhausen,8,listed,51
+kreis_destinations,Georg-August-Universität Göttingen,16062,Nordhausen,9,listed,49
+kreis_destinations,Fachhochschule Erfurt,16062,Nordhausen,10,listed,47
+kreis_destinations,,16062,Nordhausen,,total,2763
+kreis_destinations,Friedrich-Schiller-Universität Jena,16063,Wartburgkreis,1,listed,253
+kreis_destinations,Universität Erfurt,16063,Wartburgkreis,2,listed,162
+kreis_destinations,Universität Kassel,16063,Wartburgkreis,3,listed,141
+kreis_destinations,Universität Leipzig,16063,Wartburgkreis,4,listed,131
+kreis_destinations,Hochschule Schmalkalden,16063,Wartburgkreis,5,listed,129
+kreis_destinations,IU Internationale Hochschule in Erfurt,16063,Wartburgkreis,6,listed,105
+kreis_destinations,Duale Hochschule Gera-Eisenach,16063,Wartburgkreis,7,listed,104
+kreis_destinations,Technische Universität Dresden,16063,Wartburgkreis,8,listed,92
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,16063,Wartburgkreis,9,listed,85
+kreis_destinations,Fachhochschule Erfurt,16063,Wartburgkreis,10,listed,83
+kreis_destinations,,16063,Wartburgkreis,,total,2781
+kreis_destinations,Friedrich-Schiller-Universität Jena,16064,Unstrut-Hainich-Kreis,1,listed,239
+kreis_destinations,Universität Erfurt,16064,Unstrut-Hainich-Kreis,2,listed,186
+kreis_destinations,Universität Leipzig,16064,Unstrut-Hainich-Kreis,3,listed,112
+kreis_destinations,Fachhochschule Erfurt,16064,Unstrut-Hainich-Kreis,4,listed,85
+kreis_destinations,IU Internationale Hochschule in Erfurt,16064,Unstrut-Hainich-Kreis,5,listed,77
+kreis_destinations,Technische Universität Dresden,16064,Unstrut-Hainich-Kreis,6,listed,74
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,16064,Unstrut-Hainich-Kreis,7,listed,72
+kreis_destinations,Georg-August-Universität Göttingen,16064,Unstrut-Hainich-Kreis,8,listed,69
+kreis_destinations,Hochschule Nordhausen,16064,Unstrut-Hainich-Kreis,9,listed,63
+kreis_destinations,FernUniversität in Hagen,16064,Unstrut-Hainich-Kreis,10,listed,54
+kreis_destinations,,16064,Unstrut-Hainich-Kreis,,total,1967
+kreis_destinations,Friedrich-Schiller-Universität Jena,16065,Kyffhäuserkreis,1,listed,115
+kreis_destinations,Universität Erfurt,16065,Kyffhäuserkreis,2,listed,102
+kreis_destinations,Universität Leipzig,16065,Kyffhäuserkreis,3,listed,74
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,16065,Kyffhäuserkreis,4,listed,74
+kreis_destinations,Hochschule Nordhausen,16065,Kyffhäuserkreis,5,listed,73
+kreis_destinations,IU Internationale Hochschule in Erfurt,16065,Kyffhäuserkreis,6,listed,67
+kreis_destinations,Fachhochschule Erfurt,16065,Kyffhäuserkreis,7,listed,58
+kreis_destinations,Technische Universität Dresden,16065,Kyffhäuserkreis,8,listed,45
+kreis_destinations,Georg-August-Universität Göttingen,16065,Kyffhäuserkreis,9,listed,33
+kreis_destinations,Technische Universität Ilmenau,16065,Kyffhäuserkreis,10,listed,32
+kreis_destinations,,16065,Kyffhäuserkreis,,total,1242
+kreis_destinations,Friedrich-Schiller-Universität Jena,16067,Gotha,1,listed,346
+kreis_destinations,Universität Erfurt,16067,Gotha,2,listed,216
+kreis_destinations,Fachhochschule Erfurt,16067,Gotha,3,listed,149
+kreis_destinations,Universität Leipzig,16067,Gotha,4,listed,132
+kreis_destinations,IU Internationale Hochschule in Erfurt,16067,Gotha,5,listed,118
+kreis_destinations,Technische Universität Ilmenau,16067,Gotha,6,listed,108
+kreis_destinations,Technische Universität Dresden,16067,Gotha,7,listed,90
+kreis_destinations,Hochschule Schmalkalden,16067,Gotha,8,listed,73
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,16067,Gotha,9,listed,63
+kreis_destinations,Duale Hochschule Gera-Eisenach,16067,Gotha,10,listed,63
+kreis_destinations,,16067,Gotha,,total,2591
+kreis_destinations,Friedrich-Schiller-Universität Jena,16068,Sömmerda,1,listed,155
+kreis_destinations,Universität Erfurt,16068,Sömmerda,2,listed,120
+kreis_destinations,Fachhochschule Erfurt,16068,Sömmerda,3,listed,80
+kreis_destinations,Universität Leipzig,16068,Sömmerda,4,listed,50
+kreis_destinations,IU Internationale Hochschule in Erfurt,16068,Sömmerda,5,listed,41
+kreis_destinations,Technische Universität Ilmenau,16068,Sömmerda,6,listed,32
+kreis_destinations,Ernst-Abbe-Hochschule Jena,16068,Sömmerda,7,listed,30
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,16068,Sömmerda,8,listed,29
+kreis_destinations,Technische Universität Dresden,16068,Sömmerda,9,listed,26
+kreis_destinations,Duale Hochschule Gera-Eisenach,16068,Sömmerda,10,listed,26
+kreis_destinations,,16068,Sömmerda,,total,972
+kreis_destinations,Friedrich-Schiller-Universität Jena,16071,Weimarer Land,1,listed,187
+kreis_destinations,Hochschule Fresenius in München,16071,Weimarer Land,2,listed,103
+kreis_destinations,Universität Erfurt,16071,Weimarer Land,3,listed,81
+kreis_destinations,Universität Leipzig,16071,Weimarer Land,4,listed,54
+kreis_destinations,Technische Universität Ilmenau,16071,Weimarer Land,5,listed,49
+kreis_destinations,Ernst-Abbe-Hochschule Jena,16071,Weimarer Land,6,listed,48
+kreis_destinations,Fachhochschule Erfurt,16071,Weimarer Land,7,listed,40
+kreis_destinations,Technische Universität Dresden,16071,Weimarer Land,8,listed,36
+kreis_destinations,Martin-Luther-Universität Halle-Wittenberg,16071,Weimarer Land,9,listed,34
+kreis_destinations,Bauhaus-Universität Weimar,16071,Weimarer Land,10,listed,27
+kreis_destinations,,16071,Weimarer Land,,total,1159

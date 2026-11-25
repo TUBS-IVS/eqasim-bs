@@ -231,3 +231,43 @@ def test_only_local_sites_are_used_for_the_coverage_list():
     assert co.local_site_ags8(sites) == ["03101000"]
     with pytest.raises(ValueError, match="local"):
         co.local_site_ags8(sites.assign(scope="surrounding"))
+
+
+# --- Pins of the hand-read seed constants (values as read on 2026-11-25) -------------------
+
+# Kreise whose land polygon lies within 100 km of a local site, printed by
+# `seed_che_student_origins.py --list-required-kreise` on VG250 (31.12., EPSG:25832) and the
+# R1 table of winter semester 2024/25, computed 2026-11-25.
+REQUIRED_KREISE_2026_11_25 = (
+    "03101 03102 03103 03151 03153 03154 03155 03157 03158 03159 03241 03252 03254 03255 03256 "
+    "03257 03351 03353 03354 03355 03357 03358 03360 03361 05758 05762 05766 05770 05774 06611 "
+    "06632 06633 06634 06635 06636 12063 12070 13076 15003 15081 15082 15083 15084 15085 15086 "
+    "15087 15088 15089 15090 16051 16061 16062 16063 16064 16065 16067 16068 16071").split()
+
+
+def test_pinned_lsn_rows_match_the_source():
+    frame = sl.build_sites_frame(sl.SITE_ROWS, sl.SEMESTER)
+    assert sl.SEMESTER == "WS 2024/25"
+    per_institution = frame.groupby("institution")["students_persons"].sum()
+    assert per_institution["TU Braunschweig"] == 15632
+    assert per_institution["TU Clausthal"] == 2759
+    wolfsburg = frame[(frame["institution"] == "HS Braunschweig/Wolfenbüttel")
+                      & (frame["site_ags8"] == "03103000")]
+    assert wolfsburg["students_persons"].item() == 2363
+
+
+def test_pinned_che_rows_match_the_source():
+    frame = co.build_origins_frame(co.INSTITUTION_ORIGINS, co.KREIS_DESTINATIONS)
+    tu = "Technische Universität Carolo-Wilhelmina zu Braunschweig"
+    origins = frame[(frame["view"] == "institution_origins") & (frame["institution"] == tu)]
+    assert origins.loc[origins["row_kind"] == "total", "students_persons"].item() == 16809
+    assert origins.loc[origins["origin_ars5"] == "03241", "students_persons"].item() == 1027
+    destinations = frame[(frame["view"] == "kreis_destinations") & (frame["origin_ars5"] == "03101")]
+    assert destinations.loc[destinations["row_kind"] == "total", "students_persons"].item() == 11629
+
+
+def test_pinned_che_lists_cover_required_kreise():
+    covered = {row[0] for row in co.KREIS_DESTINATIONS}
+    zgb = {"03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158"}
+    assert zgb <= covered
+    assert set(REQUIRED_KREISE_2026_11_25) <= covered
