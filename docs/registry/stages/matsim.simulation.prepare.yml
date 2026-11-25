@@ -102,7 +102,6 @@ features:
 - transit_next_day
 - gate_facility_links
 decisions:
-- ADR-0206
 - ADR-0121
 - ADR-0186
 - ADR-0030
@@ -120,6 +119,7 @@ decisions:
 - ADR-0178
 - ADR-0182
 - ADR-0189
+- ADR-0206
 notes: >-
   Frozen pt walk lift (ADR-0189, issue #575). After the cut, the freight injection and the initial mode choice and
   before the plan check, braunschweig.matsim.simulation.frozen_pt_walk_lift lifts the long pt-as-walk trips of frozen
