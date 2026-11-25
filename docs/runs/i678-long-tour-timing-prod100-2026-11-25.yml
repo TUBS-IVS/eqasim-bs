@@ -42,7 +42,8 @@ pipeline:
     i678_run_initial_choice.py wrote the second config and started eqasim's RunStandaloneModeChoice as the branch's
     initial_mode_choice.run does, then counted persons with count_persons and changed trips with summarise. The
     population was not replaced (no prepare stage ran). run_two.sh started the first two runs (chunk size 1,000),
-    run_three.sh the timed runs (chunk size 1), java_capped_4h.sh capped the 13-trip run at four hours.
+    run_three.sh the timed runs (chunk size 1); java_capped_4h.sh put a four-hour cap on the 13-trip run, which never
+    fired because that run was stopped by hand before (exit 143).
 classification:
 - wiring_proof
 status:
@@ -50,8 +51,9 @@ status:
   notes: >-
     Model output, NOT a validation: a timing of the initial mode choice on cut files and the first real run of the
     constraint name. The 7 to 8 and 9 to 11 files completed; the 13-trip file was stopped by hand after 1,998 s (exit
-    143) under the stop rule of the task (more than four hours), once its first 16 persons had finished and the rate
-    was clear. Chunk size: the runner hands chunks of standaloneModeChoice.chunkSize plans (default 1,000) to its
+    143; the four-hour cap of java_capped_4h.sh never fired) under the stop rule of the task (more than four hours),
+    once its first 16 persons had finished. The stop rule was applied to a PROJECTION from those 16 of 329 persons
+    (about 10 hours at 16 threads), not to a measured run of four hours. Chunk size: the runner hands chunks of standaloneModeChoice.chunkSize plans (default 1,000) to its
     threads, so a file of fewer than 1,000 persons runs on one thread whatever numberOfThreads says (13-trip file:
     "Splitting 329 plans into 1 chunks"; 7 to 8 trips: 6 chunks). The first runs with the default chunk size were
     therefore stopped (9 to 11 and 13 trips) or kept only for comparison (7 to 8 trips) and the timed runs use chunk
@@ -103,11 +105,13 @@ validation:
     all with five modes, 1,220,703,125 each). Thread time per chain (choice phase times 16 threads, or the per-person
     time for 13 trips): 4.2 microseconds for 7 to 8 trips (short runs: the work per trip dominates), 1.45 for 9 to 11
     and 1.45 to 1.51 for 13 trips; CPU per chain including load and garbage collection 4.9 and 1.8. For runs of 9 and
-    more trips the assumption of 1 to 2 microseconds per chain holds. The wall time it was meant to give does not: one
-    13-trip person takes about 30 minutes of one thread, so the 329 persons take about 329 x 1,800 s / 16 = 37,000 s,
-    about 10 hours at 16 threads (more than the four-hour stop bound), against "2 to 4 hours" in the design. That figure
-    is the chain count times 1 to 2 microseconds (124 to 248 hours of one thread) divided by roughly 60 threads; it
-    holds only with that many threads (ASSUMPTION, not measured: linear scaling). Peak resident memory of the JVM
+    more trips the assumption of 1 to 2 microseconds per chain holds. The wall time it was meant to give does not at 16
+    threads. ESTIMATE, based on the first 16 of 329 persons, under a server load of about 25; scatter between persons
+    not measured: one 13-trip person takes about 30 minutes of one thread, so the 329 persons take about
+    329 x 1,800 s / 16 = 37,000 s, about 10 hours at 16 threads (more than the four-hour stop bound), against "2 to 4
+    hours" in the design. For these 329 persons the chain count times 1 to 2 microseconds is 401,611 to 803,223 s, i.e.
+    112 to 223 hours of one thread (at the measured 1.45 to 1.51 microseconds: 162 to 168 hours); 2 to 4 hours follow
+    only with about 56 threads (ASSUMPTION, not measured: linear scaling). Peak resident memory of the JVM
     21,555,112 kB (about 20.6 GiB) at 16 threads for the 13-trip file.
   artifact: docs/runs/artifacts/i678-long-tour-timing-prod100-2026-11-25/run_summary_long_12_13.json
 - metric: residents with a long enumerated run (finer rule) in the prepared population, by longest run
@@ -118,8 +122,9 @@ validation:
     more than 6 trips without an outside activity under the coarse rule, the same number as the tours of that kind the
     "before" manifest counts in the prepared population; the other 63 persons (60 with 7 to 8 trips, 3 with 9 to 11) have
     their long run only inside a border tour, which the finer rule cuts out. The "before"
-    manifest counts 365 tours of 13 trips and 1,193 of 9 to 11 trips in the UNCUT population; the difference to the
-    prepared population is not explained here.
+    manifest counts 365 tours of 13 trips and 1,193 of 9 to 11 trips in the UNCUT population, against 329 and 815
+    persons with such a run in the prepared population here; the difference is not explained here, to be checked in
+    the replay manifest.
   artifact: docs/runs/artifacts/i678-long-tour-timing-prod100-2026-11-25/cut_output.txt
 issues:
 - '#678'
