@@ -207,18 +207,28 @@ def prepare_vg250_frames(kreise_raw, communes_raw, site_ags8):
     Same conventions as the repository's own loaders (``braunschweig.analysis.spatial``
     ``load_kreise`` / ``load_gemeinden``, ``braunschweig.data.cordon.network.read_kreise``):
     land area only (``GF == 4``, applied to both layers before any geometry is used),
-    ``ars5 = ARS[:5]``, 8-digit commune key ``ARS[:5] + ARS[9:12]``, geometries dissolved per
+    ``ars5 = ARS[:5]`` (the Kreis layer carries 5-character ARS, the commune layer 12),
+    8-digit commune key ``ARS[:5] + ARS[9:12]``, geometries dissolved per
     key and reprojected to EPSG:25832. Site points are representative points of the commune.
     """
     def land_only(frame):
         return frame[frame["GF"] == 4] if "GF" in frame.columns else frame
 
     kreise = land_only(kreise_raw).copy()
-    kreise["ars5"] = kreise["ARS"].astype(str).str.zfill(12).str[:5]
+    kreis_ars = kreise["ARS"].astype(str)
+    bad = kreis_ars[kreis_ars.str.len() < 5]
+    if len(bad):
+        raise ValueError(f"layer vg250_krs: ARS must have at least 5 characters (the real layer "
+                         f"has exactly 5), got {sorted(set(bad))[:5]}")
+    kreise["ars5"] = kreis_ars.str[:5]
     kreise = kreise.to_crs(METRIC_CRS).dissolve(by="ars5", as_index=False)[["ars5", "geometry"]]
 
     communes = land_only(communes_raw).copy()
-    ars = communes["ARS"].astype(str).str.zfill(12)
+    ars = communes["ARS"].astype(str)
+    bad = ars[ars.str.len() != 12]
+    if len(bad):
+        raise ValueError(f"layer vg250_gem: ARS must have exactly 12 characters, got "
+                         f"{sorted(set(bad))[:5]}")
     communes["commune_id"] = ars.str[:5] + ars.str[9:12]
     wanted = set(site_ags8)
     communes = communes[communes["commune_id"].isin(wanted)]
@@ -230,6 +240,14 @@ def prepare_vg250_frames(kreise_raw, communes_raw, site_ags8):
     points = communes[["commune_id", "geometry"]].copy()
     points["geometry"] = points.geometry.representative_point()
     return kreise, points
+
+
+def local_site_ags8(sites: pd.DataFrame) -> list[str]:
+    """site_ags8 of the LOCAL sites of the R1 table (scope == 'local'); raises if none."""
+    local = sites.loc[sites["scope"] == "local", "site_ags8"]
+    if local.empty:
+        raise ValueError("the R1 table has no site with scope == 'local'")
+    return sorted(set(local))
 
 
 def _list_required(vg250: Path, sites_csv: Path, max_distance_km: float) -> list[str]:
@@ -244,7 +262,7 @@ def _list_required(vg250: Path, sites_csv: Path, max_distance_km: float) -> list
     sites = pd.read_csv(sites_csv, comment="#", dtype={"site_ags8": str})
     kreise, points = prepare_vg250_frames(
         gpd.read_file(source, layer="vg250_krs"), gpd.read_file(source, layer="vg250_gem"),
-        sites["site_ags8"])
+        local_site_ags8(sites))
     return required_origin_kreise(kreise, points, max_distance_km)
 
 

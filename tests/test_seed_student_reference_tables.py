@@ -194,7 +194,7 @@ def test_vg250_frames_use_land_area_only_for_kreise_and_site_points():
     # Kreis 03101 and commune 03101000 each have a land polygon (GF 4) and a far-away water
     # polygon (GF 1); the water polygon must neither widen the Kreis nor move the site point.
     kreise_raw = geopandas.GeoDataFrame(
-        {"ARS": ["031010000000", "031010000000"], "GF": [4, 1]},
+        {"ARS": ["03101", "03101"], "GF": [4, 1]},
         geometry=[box(0, 0, 1000, 1000), box(500000, 0, 501000, 1000)], crs="EPSG:25832")
     communes_raw = geopandas.GeoDataFrame(
         {"ARS": ["031010000000", "031010000000", "031580000037"], "GF": [4, 1, 4]},
@@ -208,3 +208,26 @@ def test_vg250_frames_use_land_area_only_for_kreise_and_site_points():
 
     with pytest.raises(ValueError, match="not found"):
         co.prepare_vg250_frames(kreise_raw, communes_raw, ["03999999"])
+
+
+@pytest.mark.parametrize("kreise_ars, commune_ars, layer", [
+    (["0310"], ["031010000000"], "vg250_krs"),
+    (["03101"], ["03101000"], "vg250_gem"),
+])
+def test_vg250_frames_reject_malformed_ars_naming_the_layer(kreise_ars, commune_ars, layer):
+    geopandas = pytest.importorskip("geopandas")
+    from shapely.geometry import box
+
+    kreise_raw = geopandas.GeoDataFrame({"ARS": kreise_ars}, geometry=[box(0, 0, 1, 1)],
+                                        crs="EPSG:25832")
+    communes_raw = geopandas.GeoDataFrame({"ARS": commune_ars}, geometry=[box(0, 0, 1, 1)],
+                                          crs="EPSG:25832")
+    with pytest.raises(ValueError, match=layer):
+        co.prepare_vg250_frames(kreise_raw, communes_raw, ["03101000"])
+
+
+def test_only_local_sites_are_used_for_the_coverage_list():
+    sites = pd.DataFrame({"site_ags8": ["03101000", "03241001"], "scope": ["local", "surrounding"]})
+    assert co.local_site_ags8(sites) == ["03101000"]
+    with pytest.raises(ValueError, match="local"):
+        co.local_site_ags8(sites.assign(scope="surrounding"))
