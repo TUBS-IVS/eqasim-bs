@@ -1,0 +1,90 @@
+id: popsim-codex-variants-2026-11-25
+date: '2026-11-25'
+repository:
+  commit: d9a2e2810139e822ff2870a1845c30a509461462
+  branch: runs/i677-popsim-codex-variants
+  notes: >-
+    PRE-REGISTRATION: this file is committed with the checks below before any run starts; only results,
+    artifacts and execution notes are added afterwards. The commit is the group's PopulationSim fork at
+    0.10.0+bs.2 (origin/bs/main), arm A unchanged. Arms B and C are throwaway trees = A plus one change
+    each and are NOT committed to the fork: B changes sub_balancing to slice weights, crosswalk and
+    incidence by groupby(...).indices computed once per step; C takes the batched household draw
+    _draw_household_ids from the local fork branch park/codex-perf-2026-11-24 at commit f64fdfc. A variant
+    reaches the fork only through a separate port after this verdict.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - the run overlay of prod100_20261031 (server-local), only as the configuration that produced the batch folders
+  notes: >-
+    Production settings: rounding controlled with the search integerizer, store_positive_weight_rows_only and
+    fast_paths both on, numba on. The batch folders are copies of the arm-3 evidence folders of
+    popsim-ladder-arm3-2026-11-18 (controlled rounding, both run-time options on; the settings are owned by
+    popsim-run-performance-2026-11-18): controlled_on_b028 for batch_028 and controlled_on/batch_000 for
+    batch_000, on the felix run server under ~/i646/ev. Within one batch the three arms differ only in the
+    PopulationSim code tree. Arms of one round start at the same time on the idle 64-core server.
+sampling:
+  rate: 1.0
+  scope: >-
+    two of the 60 batches of prod100_20261031 with their full seed pool of 218,097 MiD 2023 households:
+    batch_028 (3 repeats per arm, the batch with the largest household target) and batch_000 (1 repeat per arm).
+  notes: The rate is the share of each batch's cells simulated (all of them), not a population sampling rate.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run: PopulationSim standalone on copies of the prepared batch folders, one copy per arm
+    and repeat.
+classification:
+- ab_test
+status:
+  execution: running
+  notes: >-
+    Pre-registered 2026-11-25 before any run (the vocabulary has no pre-run value; "running" is set now and
+    changed to completed, partial or killed with the results). Runs: arms A, B and C on batch_028 with
+    three repeats each and on batch_000 with one repeat each. No result yet.
+source: >-
+  felix run server, ~/i677 (arm trees, batch copies, logs).
+environment: >-
+  felix run server, 64 cores, idle at the start of each round; GNU time for wall time and peak
+  RSS; same environment and PopulationSim build as popsim-ladder-arm3-2026-11-18 except the code tree of the
+  arm.
+validation:
+- metric: >-
+    Identity of the synthetic population: for B against A and C against A, on each batch run, the sha256 of
+    final_expanded_household_ids.csv, synthetic_households.csv and synthetic_persons.csv; bound: equal
+  reference: arm A on the same batch (model output)
+  result: pending
+  artifact: none yet
+- metric: >-
+    Time of the changed step on batch_028, median of the 3 repeats (B: sum of the three sub_balancing steps;
+    C: expand_households); bound: B or C is faster than A by more than the max-min spread of A's three
+    repeats
+  reference: arm A, the same step, three repeats on batch_028 (engineering measurement)
+  result: pending
+  artifact: none yet
+- metric: >-
+    Peak RSS (GNU time) of B and C; bound: not above the median of A's repeats on the same batch plus 5 %
+  reference: arm A on the same batch (engineering measurement)
+  result: pending
+  artifact: none yet
+- metric: >-
+    Every run exits 0; bound: all runs of all arms
+  reference: none
+  result: pending
+  artifact: none yet
+- metric: >-
+    Verdict rule: a variant is "port" only if all four checks above are met; otherwise it is not ported
+  reference: none
+  result: pending
+  artifact: none yet
+features:
+  note: >-
+    Evidence for the decision whether to port two Codex-made PopulationSim optimisations (issues #677, #656):
+    an engineering measurement of identity, time and memory on two batches; it says nothing about the quality
+    of the population.
+artifacts: []
+issues:
+- '#677'
+- '#656'
+notes: >-
+  Identity of two runs of the same model is not validation against observed behaviour. Related records:
+  popsim-run-performance-2026-11-18 and popsim-ladder-arm3-2026-11-18.
