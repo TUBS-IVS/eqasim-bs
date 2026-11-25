@@ -262,3 +262,4 @@ notes: >-
   becomes pt in the portal stage when its person can use neither car nor car_passenger, because ADR-0145 can
   re-mode only within the stay's gate class and found no road-class candidate for such persons (persons 343377 and
   64849 of the 1 % rerun kept walks/rides to gates 63 km away); the other far soft-mode stays stay with ADR-0145.
+  ADR-0206 (#678) takes up ADR-0141 decision 6 (selecting IsolatedOutsideTrips was left as a separate decision); portal stays stay fixed. Definition of reach: docs/codebase/notes/mode-choice-reach.md.

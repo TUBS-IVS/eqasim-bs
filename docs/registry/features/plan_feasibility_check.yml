@@ -151,3 +151,4 @@ notes: >-
   braunschweig.popsim.closure_dwell and data.hts.hts, the import closure of plan_check (ADR-0136). The
   upstream neighbour is outside_tour_modes: its re-moded tours are what makes the late and non-monotonic
   frozen plans disappear.
+  Since ADR-0206 (#678) the frozen/not-reached class follows the reach definition of docs/codebase/notes/mode-choice-reach.md, with new reason counters and an invariant on the repaired trips; the repair is widened to all modes (frozen_pt_walk_lift).

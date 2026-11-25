@@ -28,7 +28,7 @@ order it:
 
 ## Frozen and in-region
 
-The class comes from the home-based tours of the WRITTEN plan (`leg_tour_frozen`): a tour starts at every leg
+The class comes from the reach definition (`leg_reach`, docs/codebase/notes/mode-choice-reach.md; ADR-0206) when `prepare` passes the loop settings. The older rule it extends, `leg_tour_frozen`, reads the home-based tours of the WRITTEN plan: a tour starts at every leg
 that departs from a `home` activity, and a tour is frozen when any of its legs starts or ends at an `outside`
 activity. These are the tours the production discrete mode choice never re-chooses (`OutsideFilter`, see
 ADR-0145). The two levels differ on purpose:

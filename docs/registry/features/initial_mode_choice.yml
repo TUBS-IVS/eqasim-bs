@@ -98,3 +98,5 @@ assessment:
     First measured in the next 1 % and 100 % runs (wall time of the step and of iteration 1, mode shares
     before/after); the owner's verdict follows those manifests.
   source: null
+notes: >-
+  Since ADR-0206 (#678) the initial choice runs with its own reach settings (finer outside rule, longer tours) from a second config file; rule: docs/codebase/notes/mode-choice-reach.md, keys: configs/base_bs.yml.

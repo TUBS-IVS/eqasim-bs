@@ -102,6 +102,7 @@ features:
 - transit_next_day
 - gate_facility_links
 decisions:
+- ADR-0206
 - ADR-0121
 - ADR-0186
 - ADR-0030
@@ -188,3 +189,4 @@ notes: >-
   share of trips whose mode changed, the mode shares before and after (in-commuters included; scope in the feature record initial_mode_choice) and the Java wall time
   (observations, not reference values). braunschweig.initial_mode_choice.weight is retired: a config that still
   sets it is refused in configure() with a pointer to ADR-0178.
+  Reach of the mode choice (ADR-0206, issue #678): before the initial mode choice prepare edits the final config and writes a second config for it (braunschweig.matsim.simulation.mode_choice_reach), checks the jar for the border vehicle constraint, passes the loop settings to frozen_pt_walk_lift and the plan check; rule: docs/codebase/notes/mode-choice-reach.md.
