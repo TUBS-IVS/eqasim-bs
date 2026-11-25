@@ -412,3 +412,56 @@ def test_kernwo_weekday_codes_is_the_shared_universe_definition():
 
     assert tuple(M.KERNWO_WEEKDAY_CODES) == trips.WEEKDAY_DIARY_KERNWO
     assert M.RBW_SUMMARY_LEG_CODE == trips.RBW_LEG_FLAG
+
+
+# --------------------------------------------------------------- loops left out (issue #679)
+
+
+def test_leaving_out_the_loops_drops_both_codes_and_changes_nothing_else():
+    """Strolls (710) and dog walks (711) leave the leg universe; the other purposes and the
+    default call are untouched, and the left-out count is reported."""
+    from braunschweig.synthesis.locations.secondary_chainsolvers.loops import LOOP_CODES
+
+    wege = _wege(extra=[_leg(7, 711, 3.0)])
+    default_table, default_diagnostics = M.build_group_reference(wege)
+    table, diagnostics = M.build_group_reference(wege, leave_out_loops=True)
+    M.check_invariants(table)
+
+    assert M.LOOP_CODES is LOOP_CODES
+    assert "n_loop_legs_left_out" not in default_diagnostics
+    assert diagnostics["n_loop_legs_left_out"] == 2
+    # leisure_local holds 706 + 710 + 711 by default; only 706 remains.
+    assert int(_row(default_table, "default", "leisure_local")["n_unweighted"]) == 3
+    assert int(_row(table, "default", "leisure_local")["n_unweighted"]) == 1
+    # 9 labelled leisure legs by default (706, 710, 711, 701 x2, 702, 799, 708, 709), 7 without.
+    assert diagnostics["default/leisure"]["n_labelled"] == 7
+    assert _row(table, "default", "leisure_local")["share_within_purpose"] == pytest.approx(1 / 7)
+    other = default_table["purpose"] != "leisure"
+    pd.testing.assert_frame_equal(table[table["purpose"] != "leisure"].reset_index(drop=True),
+                                  default_table[other].reset_index(drop=True))
+
+
+def test_main_writes_the_loop_free_table_next_to_the_unchanged_default_table(tmp_path):
+    """The default run writes only the present table; ``--without-loops`` writes the second
+    one and leaves the first alone."""
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    _wege(extra=[_leg(7, 711, 3.0)]).to_csv(raw / M.WEGE_FILE, sep=";", index=False)
+    out = tmp_path / "out"
+    common = ["--raw", str(raw), "--out-dir", str(out), "--source-commit", "abc12345"]
+
+    assert M.main(common) == 0
+    assert sorted(path.name for path in out.iterdir()) == [M.MID_GROUP_TABLE]
+    default_bytes = (out / M.MID_GROUP_TABLE).read_bytes()
+
+    assert M.main(common + ["--without-loops"]) == 0
+    assert sorted(path.name for path in out.iterdir()) == sorted(
+        [M.MID_GROUP_TABLE, M.MID_GROUP_TABLE_WITHOUT_LOOPS])
+    assert (out / M.MID_GROUP_TABLE).read_bytes() == default_bytes
+    loop_free_text = (out / M.MID_GROUP_TABLE_WITHOUT_LOOPS).read_text(encoding="utf-8")
+    assert "n_loop_legs_left_out=2" in loop_free_text
+    assert "# Table: %s" % M.MID_GROUP_TABLE_WITHOUT_LOOPS in loop_free_text
+    loop_free = pd.read_csv(out / M.MID_GROUP_TABLE_WITHOUT_LOOPS, comment="#")
+    local = loop_free[(loop_free["spec_variant"] == "default")
+                      & (loop_free["group"] == "leisure_local")]
+    assert int(local["n_unweighted"].iloc[0]) == 1

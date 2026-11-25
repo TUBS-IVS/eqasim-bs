@@ -24,6 +24,7 @@ import pytest
 from braunschweig.calibration.secondary_measurement import (
     SUBTYPE_DONOR_MEAN_KM_RANGE,
     boundary_clip_share,
+    leave_out_loop_legs,
     per_group_distance_summary,
     placement_share_at_positive_potential,
 )
@@ -244,3 +245,114 @@ def test_build_subtype_report_computes_real_rows_when_subtype_column_present(cap
     assert "in-sample sanity (NOT a validated target" in messages
     # Placement share: 1/2 leisure_visit legs have pot_visit > 0 -> 50.0%.
     assert "leisure_visit placement share (pot_visit > 0): 1/2 (50.0%" in messages
+
+
+# ---------------------------------------------------------------------------
+# Loops left out of the comparison (issue #679)
+# ---------------------------------------------------------------------------
+
+
+def _write_stage_caches(directory, secondary_loop_origin):
+    """One person: home, shop (1 km away), a stroll that starts at the shop, a leisure leg of 3 km.
+
+    ``secondary_loop_origin`` is the ``loop_origin`` column of the secondary locations result
+    (a list per activity), or the string ``"absent"`` (column missing, switch off) or
+    ``"no_stage"`` (no secondary pickle in the cache at all).
+    """
+    import pickle
+
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    xs = [0.0, 1000.0, 1000.0, 4000.0, 0.0]
+    frame = gpd.GeoDataFrame({
+        "person_id": 1, "activity_index": range(5), "location_id": [-1, 7, 7, 8, -1],
+        "geometry": [Point(x, 0.0) for x in xs]}, crs="EPSG:25832")
+    activities = pd.DataFrame({"person_id": 1, "activity_index": range(5),
+                               "purpose": ["home", "shop", "leisure", "leisure", "home"]})
+    trips = pd.DataFrame({"person_id": 1, "trip_index": range(1, 5), "mode": "car"})
+    stages = {"synthesis.population.spatial.locations": frame,
+              "synthesis.population.activities": activities,
+              "synthesis.population.trips": trips}
+    if secondary_loop_origin != "no_stage":
+        secondary = frame.copy()
+        if secondary_loop_origin != "absent":
+            secondary["loop_origin"] = pd.Series(secondary_loop_origin, dtype=object)
+        stages["braunschweig.synthesis.locations.secondary_chainsolvers"] = (
+            secondary, pd.DataFrame())
+    for name, content in stages.items():
+        with open(directory / (name + "__test.p"), "wb") as handle:
+            pickle.dump(content, handle)
+
+
+def test_the_comparison_leaves_the_loop_legs_out_and_reports_their_count_and_share(tmp_path):
+    _write_stage_caches(tmp_path, [None, None, "secondary", None, None])
+    distances = _validate_mod.measure_secondary_distances(str(tmp_path))
+    # The leg INTO the stroll carries the loop mark; its length is the 0 km of a loop.
+    assert distances["leisure"]["loop_origin"].tolist() == ["secondary", None]
+    assert distances["leisure"]["euclidean_km"].tolist() == pytest.approx([0.0, 3.0])
+
+    kept, summary = leave_out_loop_legs(distances)
+    assert kept["leisure"]["euclidean_km"].tolist() == pytest.approx([3.0])
+    assert kept["shop"]["euclidean_km"].tolist() == pytest.approx([1.0])
+    by_purpose = summary.set_index("purpose")
+    assert by_purpose.loc["leisure", "n_loops"] == 1 and by_purpose.loc["leisure", "n_legs"] == 2
+    assert by_purpose.loc["leisure", "loop_share"] == pytest.approx(0.5)
+    assert by_purpose.loc["shop", "n_loops"] == 0
+    # The report on the loop-free legs sees one leisure leg.
+    rows = _validate_mod.build_report(kept, _w12_targets_stub())
+    assert {row["purpose"]: row["n"] for row in rows} == {"shop": 1, "leisure": 1, "other": 0}
+
+
+@pytest.mark.parametrize("secondary_loop_origin", ["absent", "no_stage"])
+def test_without_a_loop_column_the_comparison_is_unchanged(tmp_path, caplog, secondary_loop_origin):
+    """Switch off (no ``loop_origin`` in the secondary result) or a cache with no such stage:
+    the legs keep every row and column, no loop summary exists, and the log says which of the
+    two it was instead of staying silent."""
+    _write_stage_caches(tmp_path, secondary_loop_origin)
+    with caplog.at_level(logging.INFO):
+        distances = _validate_mod.measure_secondary_distances(str(tmp_path))
+    assert list(distances["leisure"].columns) == ["euclidean_km", "mode"]
+    assert distances["leisure"]["euclidean_km"].tolist() == pytest.approx([0.0, 3.0])
+    kept, summary = leave_out_loop_legs(distances)
+    assert summary is None and kept is distances
+    assert "loop_origin" in "\n".join(caplog.messages)
+
+
+def _w12_targets_stub():
+    """W12 band shares of three purposes (uniform) -- the EMD value itself is not asserted."""
+    uniform = np.full(9, 1.0 / 9.0)
+    return {"shop": uniform, "leisure": uniform, "other": uniform,
+            "shop_mean_km": 5.0, "leisure_mean_km": 15.0, "other_mean_km": 11.0}
+
+
+@pytest.mark.parametrize("secondary_loop_origin, loops_reported", [
+    ([None, None, "secondary", None, None], True),
+    ("absent", False),
+])
+def test_the_script_reports_the_loops_and_the_survey_table_only_when_loops_are_marked(
+        tmp_path, monkeypatch, capsys, secondary_loop_origin, loops_reported):
+    """Marked loops: printed summary, the survey table named, one extra CSV row. No marker
+    (switch off): no loop text and the CSV is the per-purpose table it always was."""
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    _write_stage_caches(cache, secondary_loop_origin)
+    out_csv = tmp_path / "out.csv"
+    monkeypatch.setattr("sys.argv", [
+        "validate_secondary_distances.py", "--cache", str(cache),
+        "--mid-dir", "eqasim-data/data/braunschweig/mid", "--output", str(out_csv)])
+    _validate_mod.main()
+
+    printed = capsys.readouterr().out
+    written = pd.read_csv(out_csv)
+    assert ("Loop legs" in printed) is loops_reported
+    assert ("mid2023_W12_triplength_by_purpose.csv" in printed) is loops_reported
+    if loops_reported:
+        loop_row = written[written["purpose"] == "loops_left_out"].iloc[0]
+        assert loop_row["n"] == 1
+        assert loop_row["loop_share_of_secondary_legs"] == pytest.approx(1 / 3)  # 1 of 3 legs
+        assert written.set_index("purpose").loc["leisure", "n"] == 1
+    else:
+        assert list(written["purpose"]) == ["shop", "leisure", "other"]
+        assert "loop_share_of_secondary_legs" not in written.columns
+        assert written.set_index("purpose").loc["leisure", "n"] == 2

@@ -41,7 +41,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from braunschweig.calibration import circuity  # noqa: E402
 from braunschweig.calibration.metrics import emd_on_bands  # noqa: E402
 from braunschweig.calibration.secondary_measurement import (  # noqa: E402
+    LOOP_ORIGIN_COLUMN,
     SUBTYPE_DONOR_MEAN_KM_RANGE,
+    leave_out_loop_legs,
     mode_to_network,
     per_group_distance_summary,
     placement_share_at_positive_potential,
@@ -98,6 +100,45 @@ def _load_stage(working_directory: str, stage: str, aliases=()):
 
 
 # ---------------------------------------------------------------------------
+# Loop marker (issue #679)
+# ---------------------------------------------------------------------------
+
+#: The secondary locations stage under its logical name and under the name synpp caches it by
+#: in the production workflow (``configs/base_bs.yml`` aliases the first to the second).
+_SECONDARY_LOCATIONS_STAGE = "synthesis.population.spatial.secondary.locations"
+_SECONDARY_LOCATIONS_ALIASES = ("braunschweig.synthesis.locations.secondary_chainsolvers",)
+
+
+def _load_loop_origin(working_directory: str):
+    """The ``loop_origin`` marker per (person_id, activity_index), or None when there is none.
+
+    The cached ``synthesis.population.spatial.locations`` frame the legs are built from keeps
+    only person, activity, location and geometry, so the loop marker (which the secondary
+    locations stage writes when ``secondary_loop_zero_displacement`` is ON) is read from that
+    stage's own cached result. None, with the reason logged, when the cache holds no such stage
+    or the result has no marker column (switch off): the legs are then left exactly as before.
+    """
+    try:
+        result = _load_stage(working_directory, _SECONDARY_LOCATIONS_STAGE,
+                             aliases=_SECONDARY_LOCATIONS_ALIASES)
+    except RuntimeError:
+        logger.info("[secondary-validate] loop_origin: no secondary locations pickle in the "
+                    "cache; loops cannot be identified, legs are compared unchanged.")
+        return None
+    df_secondary = result[0] if isinstance(result, tuple) else result
+    if LOOP_ORIGIN_COLUMN not in df_secondary.columns:
+        logger.info("[secondary-validate] loop_origin: the secondary locations result has no "
+                    "'%s' column (secondary_loop_zero_displacement OFF); legs are compared "
+                    "unchanged.", LOOP_ORIGIN_COLUMN)
+        return None
+    marker = df_secondary[["person_id", "activity_index", LOOP_ORIGIN_COLUMN]]
+    n_loops = int(marker[LOOP_ORIGIN_COLUMN].notna().sum())
+    logger.info("[secondary-validate] loop_origin: found, %d/%d secondary location rows are "
+                "loops.", n_loops, len(marker))
+    return marker
+
+
+# ---------------------------------------------------------------------------
 # Main measurement logic
 # ---------------------------------------------------------------------------
 
@@ -108,7 +149,9 @@ def measure_secondary_distances(working_directory: str):
     -------
     dict[str, pd.DataFrame]
         Per purpose (shop / leisure / other): DataFrame with columns
-        ``euclidean_km`` (float) and ``mode`` (str). Empty DataFrame when no
+        ``euclidean_km`` (float) and ``mode`` (str), plus ``loop_origin`` (None on a
+        destination leg, the origin kind on a loop leg) when the cache carries the loop
+        marker of the secondary locations stage (issue #679). Empty DataFrame when no
         trips of that purpose are present.
     """
     # Load the three required stages.
@@ -144,6 +187,20 @@ def measure_secondary_distances(working_directory: str):
         "Merged locations+activities: %d rows (from %d locations, %d activities).",
         len(df_merged), len(df_locs), len(df_acts),
     )
+
+    # Loop marker of the secondary locations result (issue #679): the leg INTO a marked
+    # activity is the loop leg.
+    df_loop_origin = _load_loop_origin(working_directory)
+    if df_loop_origin is not None:
+        n_before_loop_join = len(df_merged)
+        df_merged = df_merged.merge(df_loop_origin, on=["person_id", "activity_index"],
+                                    how="left")
+        if len(df_merged) != n_before_loop_join:
+            raise AssertionError(
+                f"[secondary-validate] loop_origin join changed row count "
+                f"{n_before_loop_join} -> {len(df_merged)}: non-unique "
+                "(person_id, activity_index) key in the secondary locations result?"
+            )
 
     # Sort by (person_id, activity_index) to ensure leg ordering is correct.
     df_merged = df_merged.sort_values(["person_id", "activity_index"]).reset_index(drop=True)
@@ -211,11 +268,15 @@ def measure_secondary_distances(working_directory: str):
             n_before_mode_join, n_before_mode_join,
         )
 
-    # Split by purpose and return per-leg DataFrames with euclidean_km + mode.
+    # Split by purpose and return per-leg DataFrames with euclidean_km + mode (+ loop_origin
+    # when the cache carries the marker).
+    leg_columns = ["euclidean_km", "mode"]
+    if df_loop_origin is not None:
+        leg_columns.append(LOOP_ORIGIN_COLUMN)
     result: dict[str, pd.DataFrame] = {}
     for purpose in _SECONDARY_PURPOSES:
         mask = df_secondary["purpose"] == purpose
-        df_purpose = df_secondary.loc[mask, ["euclidean_km", "mode"]].copy()
+        df_purpose = df_secondary.loc[mask, leg_columns].copy()
         result[purpose] = df_purpose
         n_legs = len(df_purpose)
         mean_euc = float(df_purpose["euclidean_km"].mean()) if n_legs > 0 else float("nan")
@@ -334,6 +395,45 @@ def print_table(rows: list[dict]) -> None:
             f"{row['w12_mean_km']:>12.1f}  {row['emd_vs_w12']:>12.4f}"
         )
     print(sep + "\n")
+
+
+#: ``purpose`` value of the CSV row that reports the left-out loop legs.
+LOOP_ROW_PURPOSE = "loops_left_out"
+
+
+def loop_csv_row(loop_summary: pd.DataFrame) -> dict:
+    """The one CSV row that reports the loop legs left out of the comparison (issue #679).
+
+    ``n`` is the loop count over all secondary purposes and ``loop_share_of_secondary_legs``
+    its share of all secondary legs before leaving them out; the per-purpose split is in the log
+    and the printed summary. The column exists in the CSV only when loops were identified.
+    """
+    n_loops = int(loop_summary["n_loops"].sum())
+    n_legs = int(loop_summary["n_legs"].sum())
+    return {"purpose": LOOP_ROW_PURPOSE, "n": n_loops,
+            "loop_share_of_secondary_legs": n_loops / n_legs if n_legs else float("nan")}
+
+
+def print_loop_summary(loop_summary: pd.DataFrame, w12_path: str) -> None:
+    """Print and log the loop legs left out, per purpose, and which survey table the model is
+    compared with (issue #679).
+
+    The survey side of this comparison is the published W12 table, which is NOT filtered for
+    strolls and dog walks; the loop-free MiD reference is a different table (subtype groups,
+    ``scripts/extract_mid_w_zwd_groups.py --without-loops``) that this EMD comparison does not
+    read. The summary says so instead of implying that both sides are loop-free.
+    """
+    print("Loop legs (strolls, dog walks) left out of the model side above:")
+    for _, row in loop_summary.iterrows():
+        logger.info("[secondary-validate] loops left out: purpose=%s %d/%d legs (%.2f%%).",
+                    row["purpose"], row["n_loops"], row["n_legs"], 100.0 * row["loop_share"])
+        print(f"  {row['purpose']:<10}  {int(row['n_loops']):>8d} of {int(row['n_legs']):>8d} legs"
+              f"  ({100.0 * row['loop_share']:.2f} %)")
+    print(f"Survey side: {w12_path}")
+    print("  (published MiD W12: all trips of the purpose, NOT filtered for W_ZWD 710/711; no "
+          "loop-free W12 exists.")
+    print("  The loop-free MiD reference is written by scripts/extract_mid_w_zwd_groups.py "
+          "--without-loops; this comparison does not read it.)\n")
 
 
 # ---------------------------------------------------------------------------
@@ -485,6 +585,7 @@ def main():
     # 2. Load W12 targets
     # ------------------------------------------------------------------
     w12 = load_w12_band_shares(args.mid_dir)
+    w12_path = os.path.join(args.mid_dir, "mid2023_W12_triplength_by_purpose.csv")
     logger.info(
         "[secondary-validate] W12 targets loaded: shop %.1f km, leisure %.1f km, other %.1f km.",
         w12["shop_mean_km"], w12["leisure_mean_km"], w12["other_mean_km"],
@@ -498,8 +599,14 @@ def main():
     # ------------------------------------------------------------------
     # 4. Build and print comparison table
     # ------------------------------------------------------------------
+    # Loops (issue #679): with secondary_loop_zero_displacement ON a stroll or dog walk is placed
+    # at the place before it, so its leg has no length. They are left out here and reported
+    # on their own; without the marker column nothing changes.
+    distances, loop_summary = leave_out_loop_legs(distances)
     rows = build_report(distances, w12)
     print_table(rows)
+    if loop_summary is not None:
+        print_loop_summary(loop_summary, w12_path)
 
     # ------------------------------------------------------------------
     # 4b. Subtype validation additions (issue #127, Task 6): per-group
@@ -514,7 +621,8 @@ def main():
     # 5. Write optional CSV output
     # ------------------------------------------------------------------
     if args.output:
-        df_out = pd.DataFrame(rows)
+        df_out = pd.DataFrame(rows if loop_summary is None
+                              else rows + [loop_csv_row(loop_summary)])
         df_out.to_csv(args.output, index=False)
         logger.info("[secondary-validate] wrote comparison CSV to '%s'.", args.output)
 
