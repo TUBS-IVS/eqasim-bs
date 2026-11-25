@@ -1,0 +1,96 @@
+id: i679-stroll-loops-survey-probe-2026-11-25
+date: '2026-11-25'
+repository:
+  commit: unknown
+  branch: unknown
+  notes: >-
+    The probes are read-only scripts that ran on felix in ~/scratch_longwalk against the cached results of
+    prod100_20261031; neither the scripts nor their logs state a code commit, so the checkout they ran from is
+    unknown.
+configuration:
+  config: 'the run overlay of prod100_20261031 (felix:~/prod100_20261031/run.yml); the probes read cached stage results and change no configuration'
+  notes: >-
+    Nothing was configured or run beyond the five probe scripts. The scripts name a server path only as the usage
+    argument ~/prod100_20261031; no path or address was redacted, the scripts and logs are committed as run.
+sampling:
+  rate: 1.0
+  scope: >-
+    Survey part: MiD 2023 donor trips Monday to Friday with a valid wegkm_imp (836,178 trips), observed survey data.
+    Model part: the synthetic trips of prod100_20261031 (braunschweig.popsim.trips_stage 3,628,876 trips;
+    braunschweig.synthesis.portal_trips.trips_final 3,428,756 trips), model output. The probes read the full tables.
+pipeline:
+  targets: []
+  notes: 'No synpp pipeline run. Five stand-alone read-only scripts over cached tables.'
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Completed on 2026-11-25 (distance_probe_output.txt: done in 34 s). A measurement for the design of #679 (strolls
+    and dog walks are loops), NOT a validation: the survey part is observed data, the model part is model output of
+    one run, and no model output is compared to a reference here. wiring_proof is the closest entry of the checker
+    vocabulary (it has no probe class). The survey shares are observed values of the MiD 2023 donor sample; every
+    count of the synthetic trips is model output.
+source: >-
+  felix:~/scratch_longwalk (scratch). Committed in docs/runs/artifacts/i679-stroll-loops-survey-probe-2026-11-25/, each
+  script unchanged as run with its log as *_output.txt (*.log is git-ignored): sampling_tail_probe.py (sha256
+  c43595385401d51f6adaa2d9eb1e89156a768dce877a9dbffb393a6300631589), loop_probe.py (sha256
+  6bdada3a172efca1dbabdb60911c09130abd1b8f254381f9ee5e51f7fd7dbe61), loop_rule_probe.py (sha256
+  0ee6179bfaeefaaa6e164976d1f61cbe510762ac1115a5a4f82d77718b0b56fe), loop_scope_probe.py (sha256
+  49510c29424dbfc9a08c325f1e4e6713404232526df28b3a88b108c93a34005f), distance_probe.py (sha256
+  e2816437ac4beec3b0b9661cb7a107c559ed6de57c2371a598aeb0749dc3be3f).
+environment: 'server (felix), conda eqasim; interpreter and package versions are not recorded in the logs (unknown)'
+validation:
+- metric: long walk and bicycle trips by detailed purpose (W_ZWD) in the MiD 2023 donor trips, Monday to Friday
+  reference: 'MiD 2023 donor trips of prod100_20261031 (survey data, observed); long = path above 6.5 km for walk (about 5 km straight line) and above 26 km for bicycle (about 20 km)'
+  result: >-
+    Walk, 202,811 trips: 6,477 are long (2.94 % of trips, 22.5 % of walk km). Shares of the long walk trips: no detail
+    (other purposes) 0.26, no detail (leisure, PAPI, child, k.A.) 0.25, no detail W_ZWECK 8 0.11, 710 Spaziergang 0.10
+    (745 trips), 704 Sport aktiv 0.10 (813), 711 Hund ausfuehren 0.03 (296). Bicycle, 109,001 trips: 1,565 are long
+    (1.14 % of trips, 13.8 % of bicycle km); 704 Sport aktiv 0.21 (332), 708/709/722 Ausflug 0.15 (189), 710 Spaziergang
+    0.04 (103), 711 0.01 (3). Walk trips of 60 min or more at a path speed below 2 km/h: 6,545 (3.02 %).
+  artifact: docs/runs/artifacts/i679-stroll-loops-survey-probe-2026-11-25/sampling_tail_probe_output.txt
+- metric: how strolls (710), dog walks (711) and active sport (704) are recorded, by mode
+  reference: 'MiD 2023 donor trips (survey data, observed), W_ZWD 710, 711 and 704, Monday to Friday'
+  result: >-
+    Walk 710: 6,419 trips, 67.7 % start at home, 44.9 % are the last trip of the day, 27.3 % are followed by a way home
+    or back, median stay after the trip 32 min, length ratio of the way home to the way out p50 1.00 (41.2 % within
+    0.8 to 1.25). Walk 711: 6,828 trips, 69.8 % start at home, 31.4 % last, 16.4 % followed by a way home, ratio p50
+    1.00 (55.9 % within 0.8 to 1.25). Walk 704: 3,647 trips, 25.7 % last, 42.3 % followed by a way home, 76.0 % within
+    0.8 to 1.25. Bicycle 710: 698 trips, 42.6 % last, 58.3 % within 0.8 to 1.25; 711: 173 trips; 704: 3,521 trips,
+    64.3 % followed by a way home, 85.3 % within 0.8 to 1.25. Path km p50 of the walk trips: 710 2.94, 711 2.45 (from
+    the previous entry's table, sampling_tail_probe_output.txt).
+  artifact: docs/runs/artifacts/i679-stroll-loops-survey-probe-2026-11-25/loop_probe_output.txt
+- metric: chain rules that detect a loop on the trips that carry a detailed purpose (precision and recall for 710/711)
+  reference: 'the labelled leisure trips of the MiD 2023 donor (survey data, observed); base rate = share of 710/711 among them: walk 12,064 of 25,166 (47.9 %), bicycle 824 of 9,459 (8.7 %); 29,790 walk and 9,972 bicycle leisure trips have no detail'
+  result: >-
+    Walk, precision / recall / share of the unlabelled trips the rule fires on: R1 last trip of the day 0.625 / 0.387 /
+    0.285; R2 starts at home and no way home follows 0.643 / 0.564 / 0.414; R3 starts at home and is the last trip
+    0.654 / 0.280 / 0.181; R4 0.648 / 0.300 / 0.195; R5 R3 and 20 min or longer 0.675 / 0.265 / 0.157. Bicycle: R1 0.212
+    / 0.400 / 0.167; R2 0.171 / 0.484 / 0.273; R3 0.234 / 0.278 / 0.094; R4 0.231 / 0.307 / 0.104; R5 0.262 / 0.273 /
+    0.074. On the walk the best rule (R5, 0.675) is 19.6 points above the base rate; on the bicycle no rule reaches
+    0.27. The trip counts of this probe differ from the previous entry (711: 5,645 walk trips here, 6,828 there)
+    because this probe takes the leisure trips only.
+  artifact: docs/runs/artifacts/i679-stroll-loops-survey-probe-2026-11-25/loop_rule_probe_output.txt
+- metric: labelled loops and legs without a detail code in the synthetic trips, and the activity before a labelled loop
+  reference: 'braunschweig.popsim.trips_stage of prod100_20261031 (model output; W_ZWD and W_ZWECK are the donor trip''s labels); NOT observed data'
+  result: >-
+    The W_ZWD and W_ZWECK columns are present in trips_stage (3,628,876 trips), braunschweig.synthesis.commute_day.trips_day_stage
+    (3,437,976) and trips_final (3,428,756). Leisure legs on foot or by bicycle 296,096 (bicycle 72,643, walk 223,453).
+    Loop by label (710, 711) 40,954 (bicycle 1,276, walk 39,678); W_ZWECK 7 without detail 89,876 (24,600, 65,276);
+    W_ZWECK 7 with detail, not a loop 67,987 (23,210, 44,777); W_ZWECK 10 73,227 (13,164, 60,063); W_ZWECK 14 to 16
+    21,369 (9,889, 11,480); other coarse purpose 2,683 (504, 2,179). The 40,954 labelled loops belong to 33,650
+    persons; the activity before them: home 30,860, secondary 9,413, work 681. Legs that need a draw, by W_ZWD: 2202
+    77,121, 799 5,811, 4402 4,025, 503 2,307, 605 341, 603 271.
+  artifact: docs/runs/artifacts/i679-stroll-loops-survey-probe-2026-11-25/loop_scope_probe_output.txt
+- metric: share of synthetic trips whose realised straight line is longer than the path of their own diary trip, by mode
+  reference: 'diary distance = wegkm_imp / detour factor of the same trip (survey-derived) against the written trips of prod100_20261031 (model output); 106,646 trips at an outside activity are left out'
+  result: >-
+    Over the diary distance (and over twice it), trips with a secondary end: bicycle 0.47 (0.21), car 0.43 (0.19),
+    car_passenger 0.44 (0.20), pt 0.50 (0.25), walk 0.50 (0.27), all 0.46 (0.22), 2,019,722 trips. Trips between home,
+    work and education only: walk 0.55 (0.44), bicycle 0.41 (0.27), car 0.25 (0.09), car_passenger 0.30 (0.16), pt
+    0.25 (0.12), all 0.33 (0.19), 1,108,253 trips. Walk over 5 km realised: 85,234 of 743,744 trips (11.46 %), of them
+    79.0 % with a diary distance of 2 km or less; 18,052 walk trips are over 5 km in the diary. Bicycle over 20 km
+    realised: 11,082 of 396,274 (2.80 %). Trips with a secondary end and a diary distance above 0.2 km: realised over
+    diary distance p50 1.14, p95 7.09, share above 3 17.1 %, share below 1/3 9.9 %.
+  artifact: docs/runs/artifacts/i679-stroll-loops-survey-probe-2026-11-25/distance_probe_output.txt

@@ -1,0 +1,16 @@
+braunschweig.popsim.trips_stage: (3628876, 151), columns present {'W_ZWD': True, 'W_ZWECK': True, 'mode': True, 'trip_index': True}
+braunschweig.synthesis.commute_day.trips_day_stage: (3437976, 151), columns present {'W_ZWD': True, 'W_ZWECK': True, 'mode': True, 'trip_index': True}
+braunschweig.synthesis.portal_trips.trips_final: (3428756, 152), columns present {'W_ZWD': True, 'W_ZWECK': True, 'mode': True, 'trip_index': True}
+leisure legs on foot or by bicycle: 296096 of all trips 3628876
+mode                               bicycle    walk     All
+class                                                     
+W_ZWECK 10 other purpose             13164   60063   73227
+W_ZWECK 14-16 child purposes          9889   11480   21369
+W_ZWECK 7 with detail, not a loop    23210   44777   67987
+W_ZWECK 7 without detail (draw)      24600   65276   89876
+loop by label (710, 711)              1276   39678   40954
+other coarse purpose                   504    2179    2683
+All                                  72643  223453  296096
+labelled loops by the activity before them: {'home': 30860, 'secondary': 9413, 'work': 681}
+persons with a labelled loop: 33650
+legs that need a draw, W_ZWD values: {2202.0: 77121, 799.0: 5811, 4402.0: 4025, 503.0: 2307, 605.0: 341, 603.0: 271}
