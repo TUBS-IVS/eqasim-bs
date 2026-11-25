@@ -279,6 +279,17 @@ def test_the_report_gives_loops_by_label_by_draw_and_by_origin(tmp_path, stage_d
                 if record.levelno >= logging.WARNING and "kept" in record.getMessage()]
 
 
+def test_the_report_gives_the_share_of_draws_from_the_mode_marginal(tmp_path, stage_doubles):
+    # Both MiD cells hold 30 legs: with min_obs 31 neither has its own estimate, so person 3's
+    # walk without a detail code (the one draw) takes the walk marginal; bicycle has no draw.
+    ctx = _LoopExecuteCtx(tmp_path, PERSONS, _trips(TRIPS_WITH_LOOPS),
+                          **{**_loop_config(True), "secondary_distance_min_obs": 31})
+    sc.execute(ctx)
+
+    report = json.loads((tmp_path / REPORT_FILENAME).read_text(encoding="utf-8"))["loops"]
+    assert report["draws_from_marginal_share"] == {"bicycle": 0.0, "walk": 1.0}
+
+
 def test_the_key_off_gives_todays_result_without_the_loop_origin_column(
         tmp_path, stage_doubles, monkeypatch):
     def must_not_run(*args, **kwargs):
