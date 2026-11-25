@@ -42,7 +42,7 @@ source: >-
 environment: 'server (felix), conda eqasim; interpreter and package versions are not recorded in the logs (unknown)'
 validation:
 - metric: long walk and bicycle trips by detailed purpose (W_ZWD) in the MiD 2023 donor trips, Monday to Friday
-  reference: 'MiD 2023 donor trips of prod100_20261031 (survey data, observed); long = path above 6.5 km for walk (about 5 km straight line) and above 26 km for bicycle (about 20 km). Weighting: the shares (of trips, of km, of the long trips) are W_GEW-weighted; trip counts and the 6,545 / 6,477 style counts are unweighted.'
+  reference: 'MiD 2023 donor trips of prod100_20261031 (survey data, observed); long = path above 6.5 km for walk (about 5 km straight line) and above 26 km for bicycle (about 20 km). Weighting: the shares (of trips, of km, of the long trips) are W_GEW-weighted; all trip counts are unweighted.'
   result: >-
     Walk, 202,811 trips: 6,477 are long (2.94 % of trips, 22.5 % of walk km). Shares of the long walk trips: no detail
     (other purposes) 0.26, no detail (leisure, PAPI, child, k.A.) 0.25, no detail W_ZWECK 8 0.11, 710 Spaziergang 0.10
@@ -62,7 +62,7 @@ validation:
     (unweighted medians from the previous entry's table, sampling_tail_probe_output.txt).
   artifact: docs/runs/artifacts/i679-stroll-loops-survey-probe-2026-11-25/loop_probe_output.txt
 - metric: chain rules that detect a loop on the trips that carry a detailed purpose (precision and recall for 710/711)
-  reference: 'the labelled leisure trips of the MiD 2023 donor (survey data, observed); base rate = share of 710/711 among them: walk 12,064 of 25,166 (47.9 %), bicycle 824 of 9,459 (8.7 %); 29,790 walk and 9,972 bicycle leisure trips have no detail; unweighted counts (loop_rule_probe.py docstring). ASSUMPTION: the precision and recall measured on the labelled trips (interview modes) transfer to the unlabelled trips (paper questionnaire, children under 14); the probe cannot test this, and the two groups may differ'
+  reference: 'the labelled leisure trips of the MiD 2023 donor (survey data, observed); base rate = share of 710/711 among them: walk 12,064 of 25,166 (47.9 %), bicycle 824 of 9,459 (8.7 %); 29,790 walk and 9,972 bicycle leisure trips have no detail; unweighted counts (loop_rule_probe.py docstring). ASSUMPTION: the precision and recall measured on the labelled trips (the trips where the detail was asked) transfer to the unlabelled trips (paper questionnaire (PAPI), children under 14); the probe cannot test this, and the two groups may differ'
   result: >-
     Walk, precision / recall / share of the unlabelled trips the rule fires on: R1 last trip of the day 0.625 / 0.387 /
     0.285; R2 starts at home and no way home follows 0.643 / 0.564 / 0.414; R3 starts at home and is the last trip
