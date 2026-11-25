@@ -2172,13 +2172,17 @@ def _report_loops(context, flag_stats, counts, loop_table):
     """Log the loop counts with rates and write them as the ``loops`` block of the stage report.
 
     The kept share (loops of persons with an anchored or linked activity, which keep today's
-    placement) is a WARNING above ``FALLBACK_WARN_RATE``; the marginal-draw share is logged and
-    warned by ``loops.flag_loops`` already and only reported here.
+    placement) is a WARNING above ``FALLBACK_WARN_RATE``; the marginal-draw share per mode
+    (``draws_from_marginal / draws``, 0 for a mode without draws) is warned by
+    ``loops.flag_loops`` already and only reported and logged here.
     """
     by_origin = loop_table["origin_purpose"].value_counts()
+    marginal_share = {mode: _rate(flag_stats["draws_from_marginal"][mode], draws)
+                      for mode, draws in flag_stats["draws"].items()}
     block = {
         "enabled": True,
         "flags": flag_stats,
+        "draws_from_marginal_share": marginal_share,
         **counts,
         "kept_person_has_anchored_activity_rate": _rate(
             counts["kept_person_has_anchored_activity"], counts["loops"]),
@@ -2189,13 +2193,15 @@ def _report_loops(context, flag_stats, counts, loop_table):
         "[braunschweig.secondary_chainsolvers] loops: %d flagged; %d (%.1f%%) placed at the "
         "activity they start from (by origin: %s); %d (%.1f%%) kept on the solver because the "
         "person has an anchored or linked activity (escort link, portal stay, passive joint "
-        "link); %d of %d collapsed persons (%.1f%%) have no secondary activity left to solve")
+        "link); %d of %d collapsed persons (%.1f%%) have no secondary activity left to solve; "
+        "share of loop draws from the mode marginal: %s")
     arguments = (
         counts["loops"], counts["collapsed"], 100.0 * _rate(counts["collapsed"], counts["loops"]),
         ", ".join(f"{origin} {count}" for origin, count in block["by_origin"].items()),
         counts["kept_person_has_anchored_activity"], 100.0 * kept_rate,
         counts["persons_without_secondary_activity"], counts["persons_collapsed"],
-        100.0 * _rate(counts["persons_without_secondary_activity"], counts["persons_collapsed"]))
+        100.0 * _rate(counts["persons_without_secondary_activity"], counts["persons_collapsed"]),
+        ", ".join(f"{mode} {100.0 * share:.1f}%" for mode, share in sorted(marginal_share.items())))
     if kept_rate > FALLBACK_WARN_RATE:
         logger.warning(message + " -- kept share above %.0f%%", *arguments,
                        100.0 * FALLBACK_WARN_RATE)

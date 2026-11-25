@@ -325,15 +325,19 @@ def validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=None,
     n_missing_copies = sum(len(ids) for ids in missing_copies.values())
     if missing or n_missing_copies:
         sample = sorted(missing)[:5]
-        copy_samples = {origin: sorted(ids)[:5] for origin, ids in missing_copies.items() if ids}
+        # The loop clause only where loop rows were checked at all (switch on).
+        loop_clause = ""
+        if loop_origin_ids is not None:
+            copy_samples = {origin: sorted(ids)[:5] for origin, ids in missing_copies.items() if ids}
+            loop_clause = ("; loop rows copying a home / work / education place whose id is no "
+                           "written facility of that kind (eqasim-bs#679): %s" % copy_samples)
         raise RuntimeError(
             "[braunschweig.facilities] %d realised secondary location id(s) have "
-            "no facility row (sample: %s; loop rows copying a home / work / education place "
-            "whose id is no written facility of that kind (eqasim-bs#679): %s). The candidate "
-            "set used by the chainsolvers and the facilities writer have diverged -- both must "
-            "consume braunschweig.synthesis.locations.secondary_candidates; a loop copy must "
-            "carry the id of the place it copies."
-            % (len(missing) + n_missing_copies, sample, copy_samples)
+            "no facility row (sample: %s%s). The candidate set used by the "
+            "chainsolvers and the facilities writer have diverged -- both must "
+            "consume braunschweig.synthesis.locations.secondary_candidates%s."
+            % (len(missing) + n_missing_copies, sample, loop_clause,
+               "; a loop copy must carry the id of the place it copies" if loop_clause else "")
         )
     logger.info(
         "[braunschweig.facilities] secondary coverage OK: %d realised ids, "

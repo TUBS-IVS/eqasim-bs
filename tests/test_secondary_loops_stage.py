@@ -219,12 +219,11 @@ def test_the_stage_places_other_activities_as_if_the_loop_had_been_removed_by_ha
     with_loops = _run(tmp_path / "with", TRIPS_WITH_LOOPS, enabled=True)
     without_loops = _run(tmp_path / "without", TRIPS_WITHOUT_LOOPS, enabled=False)
 
-    # The solver saw the hand-made diary: same trips (modes, times, purposes) in the same order.
+    # The solver saw the hand-made diary: every column of every trip (modes, times, travel times,
+    # purposes, donor codes) in the same order; only the row labels differ.
     seen_with, seen_without = stage_doubles
-    columns = ["person_id", "trip_index", "preceding_purpose", "following_purpose", "mode",
-               "departure_time", "arrival_time", "is_first_trip", "is_last_trip"]
-    pd.testing.assert_frame_equal(seen_with[columns].reset_index(drop=True),
-                                  seen_without[columns].reset_index(drop=True))
+    pd.testing.assert_frame_equal(seen_with.reset_index(drop=True),
+                                  seen_without.reset_index(drop=True))
 
     # Every non-loop secondary activity sits where the run without loops put it.
     assert len(without_loops) == len(WITHOUT_TO_WITH_LOOPS)
@@ -267,6 +266,8 @@ def test_the_report_gives_loops_by_label_by_draw_and_by_origin(tmp_path, stage_d
         "in_scope": {"bicycle": 2, "walk": 5}, "by_label": {"bicycle": 1, "walk": 4},
         "by_draw": {"bicycle": 0, "walk": 1}, "draws": {"bicycle": 0, "walk": 1},
         "draws_from_marginal": {"bicycle": 0, "walk": 0}}
+    # Share of the draws that took the mode marginal; 0 for a mode without draws.
+    assert report["draws_from_marginal_share"] == {"bicycle": 0.0, "walk": 0.0}
     assert report["loops"] == 6
     assert report["kept_person_has_anchored_activity"] == 0
     assert report["kept_person_has_anchored_activity_rate"] == 0.0
@@ -432,6 +433,19 @@ def test_the_facility_check_still_rejects_an_unknown_identifier(tmp_path, ids_an
     realised = _realised_with_origins(ids_and_origins)
     with pytest.raises(RuntimeError, match=message):
         bs_facilities.execute(_LoopFacilitiesContext(tmp_path, realised))
+
+
+@pytest.mark.parametrize("loop_origin_ids, names_loop_copies", [
+    (None, False),                                                    # switch off
+    ({"home": {"home_1"}, "work": {"work_1"}, "education": {"edu_1"}}, True),
+])
+def test_the_coverage_error_names_loop_copies_only_with_the_switch_on(loop_origin_ids,
+                                                                      names_loop_copies):
+    realised = _realised_with_origins([("sec_b_9", None)])
+    with pytest.raises(RuntimeError, match="1 realised secondary location id") as excinfo:
+        bs_facilities.validate_secondary_coverage(
+            realised, pd.DataFrame({"location_id": ["sec_b_1"]}), loop_origin_ids=loop_origin_ids)
+    assert ("loop rows" in str(excinfo.value)) is names_loop_copies
 
 
 def test_the_facility_check_with_the_switch_on_needs_the_loop_origin_column(tmp_path):
