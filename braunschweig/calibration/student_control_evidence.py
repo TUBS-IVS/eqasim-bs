@@ -77,6 +77,11 @@ COMPARISON_ONLY = ("car_availability", "driving_licence")
 COMPARISON_ONLY_SRV_VARIABLES = {"car_availability": "V_PKW_VERFUEG",
                                  "driving_licence": "V_FUEHR_PKW"}
 
+# ASSUMPTION: when rule 2 cannot be evaluated for more than half of the cells (a NaN share means
+# an empty base of a whole control), the input tables are broken, not thin, so the build raises.
+# Half mirrors srv_student_reference.MAX_EXCLUSION_RATE; a judgement, not a sourced threshold.
+MAX_EXCLUSION_RATE = 0.5
+
 VERDICT_BUILD = "build_candidate"
 VERDICT_COMPARISON = "comparison_only"
 RULE3_PENDING = "pending_phase2"
@@ -152,9 +157,11 @@ def evaluate_build_rule(srv_behaviour: pd.DataFrame, mid_behaviour: pd.DataFrame
     :data:`BUILD_RULE_COLUMNS`. ``difference_in_se`` is signed, ``(SrV share - MiD share) /
     srv_se_share_students``, NaN where that standard error is NaN or zero (an empty or one-label
     base, which rule 1 already rejects); ``rule2_differs`` is ``|difference_in_se| >``
-    :data:`MIN_DIFFERENCE_STANDARD_ERRORS` and False for NaN. Raises ``ValueError`` when a label
-    is present in one survey only (naming it), on a duplicated key or on any key outside the
-    vocabulary.
+    :data:`MIN_DIFFERENCE_STANDARD_ERRORS` and False for NaN (also when the MiD share is NaN).
+    Those not-evaluable cells are counted (:func:`build_rule_exclusions`) and logged as primary
+    against excluded. Raises ``ValueError`` when a label is present in one survey only (naming
+    it), on a duplicated key, on any key outside the vocabulary, or when more than
+    :data:`MAX_EXCLUSION_RATE` of the cells are not evaluable.
     """
     _require_columns(srv_behaviour, BEHAVIOUR_COLUMNS, "SrV behaviour")
     _require_columns(mid_behaviour, BEHAVIOUR_COLUMNS, "MiD behaviour")
@@ -199,7 +206,36 @@ def evaluate_build_rule(srv_behaviour: pd.DataFrame, mid_behaviour: pd.DataFrame
                     MIN_DIFFERENCE_STANDARD_ERRORS,
                     sum(row["rule2_differs"] for row in control_rows), len(control_rows), verdict)
         rows += control_rows
-    return pd.DataFrame(rows, columns=BUILD_RULE_COLUMNS)
+    table = pd.DataFrame(rows, columns=BUILD_RULE_COLUMNS)
+    exclusions = build_rule_exclusions(table)
+    n_cells, n_excluded = exclusions["n_cells"], exclusions["n_cells_rule2_not_evaluable"]
+    rate = n_excluded / n_cells if n_cells else float("nan")
+    logger.info("%s rule 2 evaluable: primary %d/%d (%.1f%%), excluded %d (%.1f%%; MiD share NaN "
+                "%d, SrV standard error NaN or 0 %d); an excluded cell counts as 'does not differ'",
+                _LOG_TAG, n_cells - n_excluded, n_cells, 100.0 * (1.0 - rate), n_excluded,
+                100.0 * rate, exclusions["n_cells_mid_share_nan"],
+                exclusions["n_cells_srv_se_undefined"])
+    if n_cells and rate > MAX_EXCLUSION_RATE:
+        raise ValueError("%s rule 2 cannot be evaluated for %d of %d cells (%.1f%%), above the "
+                         "%.0f%% limit: an empty survey base, not a measurement (%s)"
+                         % (_LOG_TAG, n_excluded, n_cells, 100.0 * rate,
+                            100.0 * MAX_EXCLUSION_RATE, exclusions))
+    return table
+
+
+def build_rule_exclusions(rule: pd.DataFrame) -> dict:
+    """Counts of the cells of a :func:`evaluate_build_rule` table where rule 2 is not evaluable.
+
+    ``n_cells_mid_share_nan``: the MiD share is NaN (empty MiD base of the control);
+    ``n_cells_srv_se_undefined``: the SrV standard error is NaN or 0 (empty or one-label base);
+    ``n_cells_rule2_not_evaluable``: either (``difference_in_se`` NaN), counted as "does not
+    differ". The CLI writes these into the ``# Exclusions:`` header line.
+    """
+    se = rule["srv_se_share_students"]
+    return {"n_cells": int(len(rule)),
+            "n_cells_rule2_not_evaluable": int(rule["difference_in_se"].isna().sum()),
+            "n_cells_mid_share_nan": int(rule["mid_share_students"].isna().sum()),
+            "n_cells_srv_se_undefined": int((se.isna() | (se == 0)).sum())}
 
 
 # --------------------------------------------------------------------------- level gate

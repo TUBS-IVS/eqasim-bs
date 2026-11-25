@@ -127,6 +127,29 @@ def test_standard_error_uses_effective_size_of_the_share_universe():
     assert set(work["verdict"]) == {"comparison_only"}
 
 
+def test_cells_without_a_mid_share_are_counted_not_silently_equal():
+    # empty MiD base of the work_leg control: both of its shares are NaN
+    srv, mid = _frames(control="work_leg", srv_n=[40, 35], srv_share=[0.30, 0.70],
+                       mid_share=[np.nan, np.nan], srv_n_eff=100)
+    out = E.evaluate_build_rule(srv, mid)
+    work = _control(out, "work_leg")
+    assert work["difference_in_se"].isna().all()
+    assert work["rule2_differs"].tolist() == [False, False]
+    assert set(work["verdict"]) == {"comparison_only"}
+    assert E.build_rule_exclusions(out) == {
+        "n_cells": sum(len(labels) for labels in CONTROLS.values()),
+        "n_cells_rule2_not_evaluable": 2, "n_cells_mid_share_nan": 2,
+        "n_cells_srv_se_undefined": 0}
+
+
+def test_build_rule_refuses_when_most_cells_are_not_evaluable():
+    srv, mid = _frames(control="work_leg", srv_n=[40, 35], srv_share=[0.30, 0.70],
+                       mid_share=[0.10, 0.90], srv_n_eff=100)
+    mid["share"] = np.nan
+    with pytest.raises(ValueError, match="cannot be evaluated"):
+        E.evaluate_build_rule(srv, mid)
+
+
 @pytest.mark.parametrize("survey", ["srv", "mid"])
 def test_mismatched_labels_between_surveys_raise(survey):
     srv, mid = _frames(control="work_leg", srv_n=[40, 35], srv_share=[0.30, 0.70],
@@ -301,8 +324,12 @@ def test_cli_writes_gate_and_rule_tables(tmp_path):
         assert text.startswith("#") and "\r\n" not in text, name
         header = [line for line in text.splitlines() if line.startswith("#")]
         assert any("abc1234" in line for line in header), name
+        if name != "student_comparison_only.csv":
+            assert sum(line.startswith("# Exclusions:") for line in header) == 1, name
+            assert any("GEWICHT_P_ZENSUS" in line and "P_GEW" in line for line in header), name
     rule_text = (out / "student_control_build_rule.csv").read_text(encoding="utf-8")
     assert "ASSUMPTION" in rule_text and UNIVERSE_STUDENTS in rule_text
+    assert "n_cells_rule2_not_evaluable=0" in rule_text
     gate_text = (out / "student_level_gate.csv").read_text(encoding="utf-8")
     assert "sha256" in gate_text and "Phase 1" in gate_text
 

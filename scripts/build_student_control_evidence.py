@@ -96,8 +96,11 @@ def _common_header(table_name: str, source_commit: str, inputs) -> list:
     ]
 
 
-def _build_rule_header(source_commit: str, inputs) -> list:
+def _build_rule_header(source_commit: str, inputs, rule: pd.DataFrame) -> list:
+    exclusions = E.build_rule_exclusions(rule)
     return _common_header(BUILD_RULE_TABLE, source_commit, inputs) + [
+        "# Weights: SrV GEWICHT_P_ZENSUS, MiD P_GEW (the shares and the Kish n_effective are taken",
+        "#   from the input tables, which are weighted with them).",
         "# Rule 1: every SrV cell (student label, unweighted count in the %s universe) holds"
         % UNIVERSE_ADULTS,
         "#   >= %d respondents. ASSUMPTION (design 6.8), not a sourced threshold."
@@ -115,6 +118,10 @@ def _build_rule_header(source_commit: str, inputs) -> list:
         "# MiD bases: persons without a diary of the day are absent from the four diary-dependent",
         "#   controls (see the header of mid2023_student_behaviour_seed.csv), so",
         "#   mid_n_unweighted_adults is the reduced MiD count of the cell.",
+        "# Exclusions: %s (n_cells_rule2_not_evaluable = difference_in_se NaN, because the MiD"
+        % ", ".join("%s=%s" % item for item in exclusions.items()),
+        "#   share is NaN or the SrV standard error is NaN or 0; such a cell counts as 'does not",
+        "#   differ')",
     ]
 
 
@@ -126,6 +133,11 @@ def _gate_header(source_commit: str, inputs, gate: pd.DataFrame) -> list:
         "# Rows: one per ZGB Kreis %s, then %s = the pooled covered area %s (ZGB minus the Kreise"
         % (list(ZGB_KREISE), REGION_CODE, covered),
         "#   SrV does not survey); every column of that row is summed or applied over those Kreise.",
+        "# Weights: SrV GEWICHT_P_ZENSUS (srv_* shares and srv_students_weighted_persons), MiD P_GEW",
+        "#   (the share of students in the ratio); census counts and enrollment are unweighted counts.",
+        "# DEFINITION GAPS: the SrV estimate counts students by main activity (V_ERW 7, working",
+        "#   students included), the census group is pupils and students WITHOUT paid work; the",
+        "#   enrollment counts students of ALL ages, the estimates are age 20-29 only.",
         "# Estimates of the students aged 20-29: srv_estimate = SrV student_share_20_29 x census",
         "#   all persons 20-29; census_estimate = census pupils and students without paid work",
         "#   20-29 x mid_to_census_ratio_germany (MiD share of students, P_TAET 10, among 20-29 /",
@@ -203,7 +215,7 @@ def main(argv=None) -> int:
     out = Path(args.out_dir)
     commit = args.source_commit
     _write(rule, out / BUILD_RULE_TABLE,
-           _build_rule_header(commit, [srv_behaviour_path, mid_behaviour_path]))
+           _build_rule_header(commit, [srv_behaviour_path, mid_behaviour_path], rule))
     _write(gate, out / LEVEL_GATE_TABLE,
            _gate_header(commit, [srv_share_path, census_path, mid_share_path, sites_path], gate))
     _write(comparison_only, out / COMPARISON_ONLY_TABLE,
