@@ -1,10 +1,11 @@
 """The prepare stage declares the plan-check keys, hashes the module and runs the check last (eqasim-bs#443)."""
+import pytest
+
 from braunschweig.matsim import initial_mode_choice as I
 from braunschweig.matsim.simulation import frozen_pt_walk_lift as L
 from braunschweig.matsim.simulation import mode_choice_reach as R
 from braunschweig.matsim.simulation import plan_check as C
 from braunschweig.matsim.simulation import prepare
-import pytest
 
 #: The values of the keys ``execute`` reads for the reach settings (#678), for the contexts that do not test them.
 _REACH_VALUES = {R.KEY_LOOP_ISOLATE: R.DEFAULT_LOOP_ISOLATE, R.KEY_LOOP_MAX_TOUR_LENGTH: R.DEFAULT_LOOP_MAX_TOUR_LENGTH,
@@ -17,6 +18,7 @@ _REAL_APPLY = R.apply
 
 @pytest.fixture(autouse=True)
 def _no_config_edit(monkeypatch):
+    # Stubs ``apply`` for the whole file; test_execute_with_todays_values_does_not_edit_the_config runs the real edit.
     """The older tests use a config name that is no file: the reach edit is a no-op there (tested below)."""
     monkeypatch.setattr(R, "apply", lambda config_path, settings: {})
 
@@ -242,7 +244,7 @@ def test_execute_applies_the_loop_settings_before_the_initial_mode_choice(monkey
                                          R.KEY_INITIAL_ISOLATE: True})
     assert prepare.execute(context) == "config.xml"
     jar = str(tmp_path) + "/eqasim.jar"
-    assert seen == [("apply", R.ReachSettings(True, 9)), ("jar", jar),
+    assert seen == [("jar", jar), ("apply", R.ReachSettings(True, 9)),
                     ("initial", R.ReachSettings(True, R.DEFAULT_INITIAL_MAX_TOUR_LENGTH)), "lift", "plan_check"]
 
 
@@ -251,9 +253,13 @@ def test_execute_applies_the_loop_settings_before_the_initial_mode_choice(monkey
     (True, False, False, True), (False, False, True, False)])
 def test_execute_checks_the_jar_only_when_a_finer_rule_is_selected(monkeypatch, tmp_path, loop, initial_enabled,
                                                                    initial, checked):
-    """The initial value counts only while the initial mode choice runs; a jar without the class stops prepare."""
+    """The initial value counts only while the initial mode choice runs; a jar without the class stops prepare
+    before the config is edited and before the Java run."""
+    from tests.test_config_modules import DMC_CONFIG, _config
     seen = []
-    _record_steps(monkeypatch, seen)
+    config = _config(tmp_path, DMC_CONFIG)
+    _record_steps(monkeypatch, seen, apply=_REAL_APPLY)
+    monkeypatch.setattr(prepare.delegate, "execute", lambda context: config.name)
     context = _ReachContext(tmp_path, **{R.KEY_LOOP_ISOLATE: loop, R.KEY_INITIAL_ISOLATE: initial,
                                          I.KEY_ENABLED: initial_enabled})
     prepare.execute(context)
@@ -262,10 +268,12 @@ def test_execute_checks_the_jar_only_when_a_finer_rule_is_selected(monkeypatch, 
     def refuse(jar_path):
         raise RuntimeError("no border constraint")
     seen.clear()
+    config.write_bytes(DMC_CONFIG.encode("utf-8"))  # the first run edited it (the loop length 11 differs from 6)
     monkeypatch.setattr(R, "require_border_vehicle_constraint", refuse)
     if checked:
         with pytest.raises(RuntimeError, match="no border constraint"):
             prepare.execute(context)
+        assert config.read_bytes() == DMC_CONFIG.encode("utf-8")
         assert not any(step[0] == "initial" for step in seen if isinstance(step, tuple))  # before the Java run
 
 

@@ -452,10 +452,10 @@ def execute(context):
     loop_reach = mode_choice_reach.loop_settings(context)
     initial_reach = mode_choice_reach.initial_settings(context)
     initial_enabled = context.config(initial_mode_choice.KEY_ENABLED)
-    mode_choice_reach.apply(Path(context.path()) / result, loop_reach)
     if loop_reach.isolate_outside_trips or (initial_enabled and initial_reach.isolate_outside_trips):
         mode_choice_reach.require_border_vehicle_constraint(
             "%s/%s" % (context.path("matsim.runtime.eqasim"), context.stage("matsim.runtime.eqasim")))
+    mode_choice_reach.apply(Path(context.path()) / result, loop_reach)  # after the jar check: a refusal edits nothing
 
     # The standalone mode choice runs on the FINAL population (after the cut, the freight injection and the
     # fare/parking inputs), free flow, before the plan check reads the result.
