@@ -119,6 +119,12 @@ class PersonPlan:
     legs: list = field(default_factory=list)
 
 
+# Positions in the PersonPlan tuples, named for the reach classification (the older code indexes them directly).
+ACTIVITY_TYPE_POSITION = 0
+LEG_MODE_POSITION = 0
+LEG_ROUTING_MODE_POSITION = 3
+
+
 def parse_time_s(text: str) -> float:
     """Parse a MATSim HH:MM:SS time (hours may exceed 24) into seconds."""
     hours, minutes, seconds = text.split(":")
@@ -297,10 +303,10 @@ def leg_reach(activities: list, legs: list, *, isolate_outside_trips: bool, max_
     trips = split_trips(activities, n_legs)
 
     def origin(trip):
-        return activities[trip[0]][0]
+        return activities[trip[0]][ACTIVITY_TYPE_POSITION]
 
     def destination(trip):
-        return activities[trip[-1] + 1][0]
+        return activities[trip[-1] + 1][ACTIVITY_TYPE_POSITION]
 
     touches = [origin(trip) == OUTSIDE or destination(trip) == OUTSIDE for trip in trips]
 
@@ -340,7 +346,7 @@ def leg_reach(activities: list, legs: list, *, isolate_outside_trips: bool, max_
         run_border = origin(trips[run[0]]) == OUTSIDE or destination(trips[run[-1]]) == OUTSIDE
         for position in run:
             first_leg = legs[trips[position][0]]
-            mode = first_leg[3] or first_leg[0]
+            mode = first_leg[LEG_ROUTING_MODE_POSITION] or first_leg[LEG_MODE_POSITION]
             if run_border:
                 trip_class[position] = FIXED_BORDER
             elif isolate_outside_trips and mode in restricted_modes and home_tour_touches[position]:

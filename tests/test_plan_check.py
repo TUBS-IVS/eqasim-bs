@@ -147,6 +147,34 @@ def test_leg_reach_matches_the_named_cases(name, types, modes, coarse, finer):
     assert _reach(types, modes, isolate=True, limit=8) == finer
 
 
+ODD_SHAPE_CASES = [  # name, activity types, modes, coarse rule with limit 6, finer rule with limit 8
+    # trips outside>a, a>home; one base tour (ends at home) that starts at the border: coarse B,B; finer cut:
+    # the border trip is B, the trip a>home does not touch the border and is a walk trip of 1 <= 8: R.
+    ("starts at outside", ["outside", "a", "home"], ["walk"] * 2, [B] * 2, [B, R]),
+    # trips home>a, a>b, b>outside; the base tour ends at outside: coarse B,B,B; finer cut: [home>a, a>b] R,R and B.
+    ("ends at outside without home", ["home", "a", "b", "outside"], ["walk"] * 3, [B] * 3, [R, R, B]),
+    # trips outside>outside (ends a base tour on its own), outside>a, a>home: coarse B,B,B; finer: B, B, and a>home R.
+    ("outside to outside first", ["outside", "outside", "a", "home"], ["walk"] * 3, [B] * 3, [B, B, R]),
+    # trips home>a, a>outside (ends the base tour), outside>outside (a tour of its own): coarse B,B,B; finer R,B,B.
+    ("outside to outside last", ["home", "a", "outside", "outside"], ["walk"] * 3, [B] * 3, [R, B, B]),
+    # mode None is not a restricted mode: the vehicle rule never fires although the home tour touches the border;
+    # trips home>a, a>b, b>outside, outside>home: coarse B x4; finer R,R (run of 2 <= 8), B, B.
+    ("mode and routing mode None", ["home", "a", "b", "outside", "home"], [None] * 4, [B] * 4, [R, R, B, B]),
+]
+
+
+@pytest.mark.parametrize("name, types, modes, coarse, finer", ODD_SHAPE_CASES)
+def test_leg_reach_of_odd_plan_shapes(name, types, modes, coarse, finer):
+    assert _reach(types, modes, isolate=False, limit=6) == coarse
+    assert _reach(types, modes, isolate=True, limit=8) == finer
+
+
+def test_leg_reach_rejects_a_plan_whose_legs_do_not_match_its_activities():
+    activities = [("home", None, 0.0, 0.0), ("work", None, 1.0, 0.0), ("home", None, 0.0, 0.0)]
+    with pytest.raises(ValueError):
+        C.leg_reach(activities, [("walk", None, None, None)], isolate_outside_trips=True, max_tour_length=8)
+
+
 @pytest.mark.parametrize("name, types, modes, coarse, finer", REACH_CASES)
 def test_the_coarse_rule_without_a_length_limit_is_the_old_tour_rule(name, types, modes, coarse, finer):
     activities = [(kind, None, float(index), 0.0) for index, kind in enumerate(types)]
