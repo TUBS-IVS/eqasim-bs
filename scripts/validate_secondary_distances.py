@@ -31,6 +31,7 @@ import os
 import pickle
 import sys
 from pathlib import Path
+from typing import NamedTuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -109,9 +110,40 @@ def _load_stage(working_directory: str, stage: str, aliases=()):
 _SECONDARY_LOCATIONS_STAGE = "synthesis.population.spatial.secondary.locations"
 _SECONDARY_LOCATIONS_ALIASES = ("braunschweig.synthesis.locations.secondary_chainsolvers",)
 
-#: The stage the legs' locations are cached under (``measure_secondary_distances`` and
-#: ``scripts/calibrate_detour_circuity.py`` both load exactly this name).
-_LEGS_LOCATIONS_STAGE = "synthesis.population.spatial.locations"
+#: The stages the legs are built from, as the names their pickles carry, PRODUCTION NAME FIRST.
+#: synpp caches a stage under its RESOLVED alias target, so the production workflow has no pickle
+#: of the logical name. The production names are the targets of ``configs/base_bs.yml``
+#: ``aliases:`` (``synthesis.population.spatial.locations``, ``synthesis.population.activities.
+#: final``, ``synthesis.population.trips.final``, ``synthesis.population.spatial.secondary.
+#: locations``; measured on the 1 % run in docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/
+#: i679_validate_stage_name_mapping.txt); the plain names are those of the older workflows, where
+#: the logical stage is its own implementation. ``braunschweig.popsim.trips_stage`` stays the last
+#: trips name for the popsim_mid workflow without the portal layer; in the production workflow it
+#: is the PRE-ASSIGNMENT trip table, which :func:`_resolve_role` never takes next to a cached
+#: ``trips_final``.
+_LOCATIONS_NAMES = ("braunschweig.synthesis.commute_day.spatial_locations_day",
+                    "synthesis.population.spatial.locations")
+_ACTIVITIES_NAMES = ("braunschweig.synthesis.commute_day.activities_day_stage",
+                     "synthesis.population.activities")
+_TRIPS_NAMES = ("braunschweig.synthesis.portal_trips.trips_final",
+                "synthesis.population.trips", "braunschweig.popsim.trips_stage")
+_SECONDARY_NAMES = (*_SECONDARY_LOCATIONS_ALIASES, _SECONDARY_LOCATIONS_STAGE)
+
+
+class AmbiguousCacheRunError(RuntimeError):
+    """The cache holds several runs and does not say which one the legs belong to (or says so
+    inconsistently). A ``RuntimeError`` too, but a callers' stage-not-found handling must let it
+    through: it is not "the stage is missing"."""
+
+
+class RunPickles(NamedTuple):
+    """The cache pickles of ONE run: the legs' locations, the activities and trips they were
+    built with and, when the cache holds one, the secondary locations result (``None``)."""
+
+    locations: str
+    activities: str
+    trips: str
+    secondary: Optional[str]
 
 
 def _stage_pickle_paths(working_directory: str, names) -> list:
@@ -138,96 +170,170 @@ def _dependency_closure(meta: dict, key: str) -> set:
     return seen
 
 
-def pair_secondary_locations_pickle(working_directory: str, tag: str = "[secondary-validate]"):
-    """The cached secondary locations pickle of the run the legs' own locations pickle belongs to.
+def read_pickle(path: str):
+    """The content of a cache pickle."""
+    logger.info("Loading cache pickle '%s'", path)
+    with open(path, "rb") as fh:
+        return pickle.load(fh)
 
-    synpp names a cache pickle ``<stage>__<hash>.p`` and records, per pickle, the keys of the
-    pickles it was built from in the working directory's ``pipeline.json``
-    (``meta[key]["dependencies"]``). The legs come from the newest
-    ``synthesis.population.spatial.locations`` pickle (as :func:`_load_stage` picks it); the
-    marker must come from the secondary locations pickle that pickle depends on, directly or
-    through other stages. Taking the newest secondary pickle by modification time instead would
-    pair the legs of one run (say switch off) with the marker of another (switch on) in a
-    working directory that holds both: destination legs silently dropped, or zero-length loop
-    legs left in.
 
-    Returns the pickle path, or None when the cache holds no secondary locations pickle. Rules,
-    each logged under ``tag`` with which one applied:
+def _resolve_role(role: str, names, working_directory: str, closure, legs_key: str, tag: str,
+                  required: bool):
+    """The pickle of one stage role that belongs to the legs' run, or None (not required, none cached).
 
-    - exactly one secondary pickle and ``pipeline.json`` does not name another one as a
-      dependency of the legs' pickle: that one (unchanged behaviour for a single run);
-    - several secondary pickles: the one in the dependency closure of the legs' pickle;
-    - ``RuntimeError`` naming the candidates when ``pipeline.json`` is missing, does not know the
-      legs' pickle, or links it to none or several of them, and when it links the legs' pickle
-      to a secondary pickle that is not in the cache.
+    ``names`` are the pickle names of the role, production name first; ``closure`` is the
+    dependency closure of the legs' pickle in ``pipeline.json`` (None when that file or the legs'
+    entry is missing). Rules, each logged under ``tag``:
+
+    - PRIMARY: the highest-priority name that has a pickle in the closure, when exactly one
+      pickle of it is linked and cached. A name with cached pickles but no link is skipped only
+      when no lower-priority name is linked either; a link on a LOWER-priority name while a
+      higher-priority name is cached but not linked raises (production: the pre-assignment
+      activities and trips are upstream of the day ones and are linked too, so they must not win
+      by being the only link).
+    - FALLBACK (WARNING): no link at all and exactly one pickle of the role in the cache.
+    - :class:`AmbiguousCacheRunError` naming the pickles otherwise (several candidates without
+      a link, a link to a pickle that is not cached, several linked pickles of one name).
+    - ``RuntimeError`` (the ordinary stage-not-found) when the role is ``required`` and nothing is
+      cached under any of its names.
     """
-    candidates = _stage_pickle_paths(
-        working_directory, (_SECONDARY_LOCATIONS_STAGE, *_SECONDARY_LOCATIONS_ALIASES))
-    if not candidates:
+    by_key = {_pickle_key(path): path for path in _stage_pickle_paths(working_directory, names)}
+    if not by_key:
+        if required:
+            raise RuntimeError(
+                f"No cached pickle found for the {role} (names tried: {', '.join(names)}) in "
+                f"'{working_directory}'.")
         return None
-    by_key = {_pickle_key(path): path for path in candidates}
-    legs_paths = _stage_pickle_paths(working_directory, (_LEGS_LOCATIONS_STAGE,))
-    legs = legs_paths[0] if legs_paths else None
-    meta_path = os.path.join(working_directory, "pipeline.json")
-    meta = None
-    if legs is not None and os.path.exists(meta_path):
-        with open(meta_path, "r", encoding="utf-8") as fh:
-            meta = json.load(fh)
-    closure = _dependency_closure(meta, _pickle_key(legs)) if (
-        meta is not None and _pickle_key(legs) in meta) else None
-
-    names = (_SECONDARY_LOCATIONS_STAGE, *_SECONDARY_LOCATIONS_ALIASES)
-    linked = ({key for key in closure if key.rpartition("__")[0] in names}
-              if closure is not None else set())
     listing = ", ".join(sorted(by_key))
-    if closure is not None and linked:
-        if len(linked) == 1 and linked <= set(by_key):
-            (key,) = linked
-            logger.info("%s loop_origin pairing: PRIMARY, secondary pickle '%s' is the one the "
-                        "legs' pickle '%s' depends on (pipeline.json); %d secondary pickle(s) in "
-                        "the cache.", tag, key, _pickle_key(legs), len(by_key))
-            return by_key[key]
-        raise RuntimeError(
-            f"{tag} loop_origin: pipeline.json links the legs' pickle '{_pickle_key(legs)}' to "
-            f"secondary locations pickle(s) {sorted(linked)}, but the cache holds {listing}; "
-            "refusing to pair the legs with a marker of another run. Rebuild the cache or run "
-            "from a working directory that holds this run only.")
+    if closure is not None:
+        skipped = []
+        for name in names:
+            cached = sorted(key for key in by_key if key.rpartition("__")[0] == name)
+            linked = sorted(key for key in closure if key.rpartition("__")[0] == name)
+            if not linked:
+                skipped.extend(cached)
+                continue
+            if skipped:
+                raise AmbiguousCacheRunError(
+                    f"{tag} {role}: pipeline.json links the legs' pickle '{legs_key}' to {linked} "
+                    f"but the higher-priority {role} pickle(s) {skipped} in the cache are not "
+                    "linked to it; refusing to take a lower-priority (pre-assignment) pickle.")
+            if len(linked) == 1 and linked[0] in by_key:
+                logger.info("%s run resolution, %s: PRIMARY, '%s' is the pickle the legs' pickle "
+                            "'%s' depends on (pipeline.json); %d %s pickle(s) in the cache.",
+                            tag, role, linked[0], legs_key, len(by_key), role)
+                return by_key[linked[0]]
+            raise AmbiguousCacheRunError(
+                f"{tag} {role}: pipeline.json links the legs' pickle '{legs_key}' to {linked}, "
+                f"but the cache holds {listing}; refusing to pair the legs with a pickle of "
+                "another run. Rebuild the cache or run from a working directory that holds this "
+                "run only.")
     if len(by_key) == 1:
         logger.warning(
-            "%s loop_origin pairing: FALLBACK, '%s' is the only secondary locations pickle and "
-            "pipeline.json does not link it to the legs' pickle (%s); taken without a check.",
-            tag, next(iter(by_key)),
-            "no legs pickle" if legs is None else
-            "no pipeline.json" if meta is None else "legs pickle unknown to it, or no link")
-        return candidates[0]
-    raise RuntimeError(
-        f"{tag} loop_origin: the cache holds {len(by_key)} secondary locations pickles ({listing}) "
-        "and cannot say which belongs to the legs' pickle "
-        f"'{_pickle_key(legs) if legs else None}' (pipeline.json missing, or no dependency link "
-        "to one of them); refusing to take the newest by modification time, which can be the "
-        "marker of another run (switch on versus off). Work in a directory that holds one run.")
+            "%s run resolution, %s: FALLBACK, '%s' is the only %s pickle and pipeline.json does "
+            "not link it to the legs' pickle; taken without a check.",
+            tag, role, next(iter(by_key)), role)
+        return next(iter(by_key.values()))
+    raise AmbiguousCacheRunError(
+        f"{tag} {role}: the cache holds {len(by_key)} {role} pickles ({listing}) and cannot say "
+        f"which belongs to the legs' pickle '{legs_key}' (pipeline.json missing, or no dependency "
+        "link to one of them); refusing to take the newest by modification time, which can be a "
+        "pickle of another run (switch on versus off, or the pre-assignment table). Work in a "
+        "directory that holds one run.")
+
+
+def resolve_run_pickles(working_directory: str, tag: str = "[secondary-validate]") -> RunPickles:
+    """The cache pickles of the run the legs belong to: ONE resolution for locations, activities,
+    trips and the secondary locations marker.
+
+    The legs' anchor is the locations pickle (the production name first, the plain name of the
+    older workflows after it; the newest of its name if several, logged as a WARNING). The
+    activities, the trips and the secondary locations pickle are the ones in the dependency closure
+    of that pickle in the working directory's ``pipeline.json`` (synpp records, per pickle key
+    ``<stage>__<hash>``, the keys it was built from), found by :func:`_resolve_role`; a cache
+    without such a link falls back to a role's only pickle, and several candidates without a link
+    raise :class:`AmbiguousCacheRunError`.
+
+    The trips are the ones in the closure, ``trips_final`` in production: the modes the chain
+    solver saw, BEFORE the outside-tour mode stage (``trips_simulated``) that writes the modes to
+    the population. The activities are the day activities (``activities_day_stage``), the ones the
+    day locations were built on, never the pre-assignment table of the plain name.
+
+    Raises ``RuntimeError`` when no locations, activities or trips pickle is cached at all.
+    ``secondary`` is None when no secondary locations pickle is cached.
+    """
+    anchors = {name: _stage_pickle_paths(working_directory, (name,)) for name in _LOCATIONS_NAMES}
+    chosen = next((name for name in _LOCATIONS_NAMES if anchors[name]), None)
+    if chosen is None:
+        raise RuntimeError(
+            f"No cached pickle found for the legs' locations (names tried: "
+            f"{', '.join(_LOCATIONS_NAMES)}) in '{working_directory}'.")
+    legs = anchors[chosen][0]
+    if len(anchors[chosen]) > 1:
+        logger.warning("%s run resolution, locations: %d pickles of '%s' in the cache; the newest "
+                       "by modification time is taken as the legs' run: %s", tag,
+                       len(anchors[chosen]), chosen, _pickle_key(legs))
+    legs_key = _pickle_key(legs)
+    meta_path = os.path.join(working_directory, "pipeline.json")
+    meta = None
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as fh:
+            meta = json.load(fh)
+    closure = _dependency_closure(meta, legs_key) if meta is not None and legs_key in meta else None
+    return RunPickles(
+        locations=legs,
+        activities=_resolve_role("activities", _ACTIVITIES_NAMES, working_directory, closure,
+                                 legs_key, tag, required=True),
+        trips=_resolve_role("trips", _TRIPS_NAMES, working_directory, closure, legs_key, tag,
+                            required=True),
+        secondary=_resolve_role("secondary locations", _SECONDARY_NAMES, working_directory,
+                                closure, legs_key, tag, required=False))
+
+
+def require_same_activity_keys(df_locations: pd.DataFrame, df_activities: pd.DataFrame,
+                               tag: str = "[secondary-validate]") -> None:
+    """Raise ``RuntimeError`` unless both frames hold the same ``(person_id, activity_index)`` keys.
+
+    The legs join the locations with the activities by that key. Activities of another day (the
+    pre-assignment table next to the day locations) would join with the wrong purposes on the
+    keys both hold, and drop or ignore the rest; a row-count log does not show that."""
+    keys = ["person_id", "activity_index"]
+    locations = pd.MultiIndex.from_frame(df_locations[keys])
+    activities = pd.MultiIndex.from_frame(df_activities[keys])
+    only_locations = locations.difference(activities)
+    only_activities = activities.difference(locations)
+    if len(only_locations) or len(only_activities):
+        raise RuntimeError(
+            f"{tag} the locations and the activities must hold the same (person_id, "
+            f"activity_index) keys, but {len(only_locations)} keys are only in the locations "
+            f"(first {[tuple(map(int, k)) for k in only_locations[:3]]}) and "
+            f"{len(only_activities)} only in the activities (first "
+            f"{[tuple(map(int, k)) for k in only_activities[:3]]}): they do not belong to the "
+            "same run or day.")
 
 
 def load_loop_origin(working_directory: str, tag: str = "[secondary-validate]",
                      not_filtered_text: str = "the model side was NOT filtered for loop legs "
-                                              "(strolls, dog walks)"):
+                                              "(strolls, dog walks)",
+                     run: Optional[RunPickles] = None):
     """The ``loop_origin`` marker per (person_id, activity_index), or None when there is none.
 
-    The cached ``synthesis.population.spatial.locations`` frame the legs are built from keeps
-    only person, activity, location and geometry, so the loop marker (which the secondary
-    locations stage writes when ``secondary_loop_zero_displacement`` is ON) is read from that
-    stage's own cached result, the one run the legs belong to
-    (:func:`pair_secondary_locations_pickle`; ``RuntimeError`` when a cache with several runs
-    does not say which). None, with the reason logged, when the cache holds no such stage
-    or the result has no marker column (switch off): the legs are then left exactly as before.
+    The cached locations frame the legs are built from keeps only person, activity, location and
+    geometry, so the loop marker (which the secondary locations stage writes when
+    ``secondary_loop_zero_displacement`` is ON) is read from that stage's own cached result, the
+    one run the legs belong to (``run.secondary`` of :func:`resolve_run_pickles`, resolved here
+    unless the caller passes the ``run`` it already resolved; :class:`AmbiguousCacheRunError`
+    when a cache with several runs does not say which). None, with the reason logged, when the
+    cache holds no such stage or the result has no marker column (switch off): the legs are then
+    left exactly as before.
 
     Public because ``scripts/calibrate_detour_circuity.py`` reuses it. ``tag`` prefixes the log
     lines; ``not_filtered_text`` completes the NOTE printed when the cache has no secondary
     locations pickle ("NOTE: no secondary locations pickle in the cache -- <text>.").
     """
-    # Outside any try: the pairing refusal (RuntimeError) must stop the run, not read as "no
+    # Outside any try: the resolution refusal (RuntimeError) must stop the run, not read as "no
     # pickle in the cache".
-    marker_path = pair_secondary_locations_pickle(working_directory, tag=tag)
+    marker_path = (run if run is not None else resolve_run_pickles(working_directory, tag)).secondary
     if marker_path is None:
         logger.info("%s loop_origin: no secondary locations pickle in the cache; loops cannot "
                     "be identified, legs are left unchanged.", tag)
@@ -299,17 +405,23 @@ def measure_secondary_distances(working_directory: str):
         destination leg, the origin kind on a loop leg) when the cache carries the loop
         marker of the secondary locations stage (issue #679). Empty DataFrame when no
         trips of that purpose are present.
+
+    The three stages and the loop marker are the pickles of ONE run, resolved from the legs'
+    locations pickle (:func:`resolve_run_pickles`). The trips are the ones the chain solver saw
+    (``trips_final`` in the production workflow), i.e. the modes BEFORE the outside-tour mode
+    stage; the activities are the day activities the locations were built on, and the two frames
+    must hold the same ``(person_id, activity_index)`` keys (:func:`require_same_activity_keys`).
     """
-    # Load the three required stages.
-    df_locs = _load_stage(working_directory, "synthesis.population.spatial.locations")
-    df_acts = _load_stage(working_directory, "synthesis.population.activities")
-    df_trips = _load_stage(working_directory, "synthesis.population.trips",
-                           aliases=("braunschweig.popsim.trips_stage",))
+    run = resolve_run_pickles(working_directory)
+    df_locs = read_pickle(run.locations)
+    df_acts = read_pickle(run.activities)
+    df_trips = read_pickle(run.trips)
 
     logger.info(
         "Loaded locations (%d rows), activities (%d rows) and trips (%d rows).",
         len(df_locs), len(df_acts), len(df_trips),
     )
+    require_same_activity_keys(df_locs, df_acts)
 
     # Merge geometry onto activities using (person_id, activity_index) as the
     # join key.  The locations stage stores one geometry per (person_id,
@@ -336,7 +448,7 @@ def measure_secondary_distances(working_directory: str):
 
     # Loop marker of the secondary locations result (issue #679): the leg INTO a marked
     # activity is the loop leg.
-    df_loop_origin = load_loop_origin(working_directory)
+    df_loop_origin = load_loop_origin(working_directory, run=run)
     if df_loop_origin is not None:
         df_merged = attach_loop_marker(df_merged, df_loop_origin)
 

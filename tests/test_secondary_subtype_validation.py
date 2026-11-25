@@ -392,6 +392,90 @@ def test_a_cache_that_does_not_say_which_run_the_legs_belong_to_is_refused(
         _validate_mod.measure_secondary_distances(str(tmp_path))
 
 
+_LOCATIONS_DAY = "braunschweig.synthesis.commute_day.spatial_locations_day"
+_ACTIVITIES_DAY = "braunschweig.synthesis.commute_day.activities_day_stage"
+_TRIPS_FINAL = "braunschweig.synthesis.portal_trips.trips_final"
+_TRIPS_PRE = "braunschweig.popsim.trips_stage"
+
+
+def _production_cache(directory, *, drop_day_activity=None, trips_final_linked=True,
+                      with_decoys=True):
+    """A cache with the production stage names (the RESOLVED alias targets of configs/base_bs.yml).
+
+    The run: day locations ``L1``, day activities ``A1``, final trips ``T1`` (mode walk on the
+    stroll leg) and secondary locations ``S1`` marking the stroll, all linked in ``pipeline.json``
+    (the locations depend on the activities, those on the trips, those on the secondary stage).
+    Decoys, NEWER by modification time: the pre-assignment activities ``synthesis.population.
+    activities__P1`` (every purpose "other") and the pre-assignment trips ``trips_stage__TS``
+    (mode car); both are in the dependency closure too, as upstream stages are."""
+    import json
+    import os
+    import pickle
+
+    _write_stage_caches(directory, [None, None, "secondary", None, None])
+    frame = pickle.load(open(directory / "synthesis.population.spatial.locations__test.p", "rb"))
+    acts = pickle.load(open(directory / "synthesis.population.activities__test.p", "rb"))
+    trips = pickle.load(open(directory / "synthesis.population.trips__test.p", "rb"))
+    for plain in ("spatial.locations", "activities", "trips"):
+        os.remove(directory / f"synthesis.population.{plain}__test.p")
+
+    def dump(name, content):
+        with open(directory / (name + ".p"), "wb") as handle:
+            pickle.dump(content, handle)
+
+    dump(_LOCATIONS_DAY + "__L1", frame)
+    dump(_ACTIVITIES_DAY + "__A1",
+         acts if drop_day_activity is None else acts[acts["activity_index"] != drop_day_activity])
+    dump(_TRIPS_FINAL + "__T1", trips.assign(mode=["car", "walk", "car", "car"]))
+    os.replace(directory / (_SECONDARY_NAME + "__test.p"), directory / (_SECONDARY_NAME + "__S1.p"))
+    if with_decoys:
+        dump("synthesis.population.activities__P1", acts.assign(purpose="other"))
+        dump(_TRIPS_PRE + "__TS", trips.assign(mode="car"))
+    for old in (_LOCATIONS_DAY + "__L1", _ACTIVITIES_DAY + "__A1", _TRIPS_FINAL + "__T1",
+                _SECONDARY_NAME + "__S1"):
+        os.utime(directory / (old + ".p"), (1_000_000_000, 1_000_000_000))
+    upstream = {_ACTIVITIES_DAY + "__A1": {"dependencies": {}}}
+    closure = {_ACTIVITIES_DAY + "__A1": 1.0, _SECONDARY_NAME + "__S1": 1.0}
+    if trips_final_linked:
+        closure[_TRIPS_FINAL + "__T1"] = 1.0
+    if with_decoys:
+        closure.update({"synthesis.population.activities__P1": 1.0, _TRIPS_PRE + "__TS": 1.0})
+    meta = {_LOCATIONS_DAY + "__L1": {"dependencies": {"other.stage__x": 1.0}},
+            "other.stage__x": {"dependencies": closure}, **upstream}
+    (directory / "pipeline.json").write_text(json.dumps(meta), encoding="utf-8")
+
+
+def test_the_production_stage_names_resolve_to_the_legs_own_run_not_the_newer_decoys(tmp_path):
+    """Production cache: the legs are the day locations; the activities are the day activities
+    (not the newer pre-assignment pickle under the plain name), the trips are trips.final (not the
+    newer pre-assignment trips) and the marker is the secondary pickle, each found through the
+    dependency closure of the locations pickle."""
+    _production_cache(tmp_path)
+    distances = _validate_mod.measure_secondary_distances(str(tmp_path))
+    # Day activities: shop, leisure, leisure are secondary; the decoy would make all of them "other".
+    assert {purpose: len(frame) for purpose, frame in distances.items()} == {
+        "shop": 1, "leisure": 2, "other": 0}
+    # trips.final's modes (walk on the stroll leg), not the decoy's car.
+    assert distances["leisure"]["mode"].tolist() == ["walk", "car"]
+    assert distances["leisure"]["loop_origin"].tolist() == ["secondary", None]
+
+
+def test_activities_that_do_not_cover_the_locations_stop_the_comparison(tmp_path):
+    """Day locations joined with activities of another day (here one activity missing) would give
+    wrong purposes on the joined rows: the key sets must be equal."""
+    _production_cache(tmp_path, drop_day_activity=3)
+    with pytest.raises(RuntimeError, match=r"same \(person_id, activity_index\)"):
+        _validate_mod.measure_secondary_distances(str(tmp_path))
+
+
+def test_a_pre_assignment_trips_pickle_is_not_taken_when_trips_final_is_not_linked(tmp_path):
+    """trips_final is in the cache but the locations' closure only links the pre-assignment trips:
+    the lower-priority link must not win silently."""
+    _production_cache(tmp_path, trips_final_linked=False)
+    with pytest.raises(RuntimeError, match=r"trips.*not linked|not linked.*trips"):
+        _validate_mod.measure_secondary_distances(str(tmp_path))
+
+
 def _w12_targets_stub():
     """W12 band shares of three purposes (uniform) -- the EMD value itself is not asserted."""
     uniform = np.full(9, 1.0 / 9.0)

@@ -15,6 +15,8 @@ import pandas as pd
 import pytest
 from shapely.geometry import Point
 
+from scripts.validate_secondary_distances import AmbiguousCacheRunError, RunPickles
+
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "calibrate_detour_circuity.py"
 _spec = importlib.util.spec_from_file_location("calibrate_detour_circuity", _SCRIPT)
 _calibrate = importlib.util.module_from_spec(_spec)
@@ -58,7 +60,7 @@ def test_a_secondary_activity_without_a_marker_row_stops_the_calibration():
         _calibrate._build_secondary_legs(*_stage_frames(), df_loop_origin=marker)
 
 
-def _fake_stages(monkeypatch, marker):
+def _fake_stages(monkeypatch, marker, resolution_error=None):
     """Patch the cache readers of ``_extract_od_pools`` with the hand-built stages of one person
     (a worker); the education stage is absent (RuntimeError, as in a cache without it)."""
     df_xy, df_acts, df_trips = _stage_frames()
@@ -74,17 +76,22 @@ def _fake_stages(monkeypatch, marker):
             {"person_id": [1], "household_id": [10], "employed": [True], "age": [40]}),
         "braunschweig.locations.work": gpd.GeoDataFrame(
             {"commune_id": ["03101000"]}, geometry=[Point(2000.0, 0.0)], crs="EPSG:25832"),
-        "synthesis.population.spatial.locations": locations,
-        "synthesis.population.activities": df_acts,
-        "synthesis.population.trips": df_trips,
     }
+    run_frames = {"L": locations, "A": df_acts, "T": df_trips, "S": None}
 
     def fake_load_stage(working_directory, stage):
         if stage not in stages:
             raise RuntimeError(f"No cached pickle found for stage '{stage}'")
         return stages[stage]
 
+    def fake_resolve(working_directory, tag="[circuity]"):
+        if resolution_error is not None:
+            raise resolution_error
+        return RunPickles(locations="L", activities="A", trips="T", secondary="S")
+
     monkeypatch.setattr(_calibrate, "_load_stage", fake_load_stage)
+    monkeypatch.setattr(_calibrate, "resolve_run_pickles", fake_resolve)
+    monkeypatch.setattr(_calibrate, "read_pickle", lambda path: run_frames[path])
     monkeypatch.setattr(_calibrate, "load_loop_origin", lambda *args, **kwargs: marker)
 
 
@@ -102,3 +109,23 @@ def test_the_od_pools_leave_the_loop_leg_out_and_a_marker_mismatch_is_not_swallo
         "activity_index != 3"))
     with pytest.raises(RuntimeError, match=r"no row"):
         _calibrate._extract_od_pools("unused")
+
+
+def test_a_cache_that_does_not_say_which_run_the_legs_belong_to_stops_the_calibration(monkeypatch):
+    """The stage-not-found handling of ``_extract_od_pools`` logs and goes on without secondary
+    pairs; an ambiguous cache (several runs, no link in pipeline.json) must not be handled that
+    way."""
+    _fake_stages(monkeypatch, None, resolution_error=AmbiguousCacheRunError("[circuity] ambiguous"))
+    with pytest.raises(AmbiguousCacheRunError, match="ambiguous"):
+        _calibrate._extract_od_pools("unused")
+
+    _fake_stages(monkeypatch, None, resolution_error=RuntimeError("No cached pickle found"))
+    _, _, walk_origins, _, _, _ = _calibrate._extract_od_pools("unused")
+    assert len(walk_origins) == 0     # the ordinary stage-not-found: no secondary pairs, no stop
+
+
+def test_activities_that_do_not_cover_the_locations_stop_the_calibration():
+    df_xy, df_acts, df_trips = _stage_frames()
+    with pytest.raises(RuntimeError, match=r"same \(person_id, activity_index\)"):
+        _calibrate._build_secondary_legs(
+            df_xy, df_acts[df_acts["activity_index"] != 3], df_trips, df_loop_origin=None)

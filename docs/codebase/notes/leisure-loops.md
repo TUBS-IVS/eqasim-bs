@@ -158,10 +158,15 @@ The assumptions of this section are in ADR-0207.
 
 `braunschweig/calibration/secondary_measurement.py` (`leave_out_loop_legs`), `scripts/validate_secondary_distances.py`
 and `scripts/calibrate_detour_circuity.py` leave loop legs out of the model side where the cache carries `loop_origin`;
-a secondary activity without a marker row raises. The marker is read from the secondary locations pickle of the run the
-legs belong to, found through the dependencies synpp records in the working directory's `pipeline.json`
-(`validate_secondary_distances.pair_secondary_locations_pickle`); a working directory with several secondary pickles
-and no such link is refused, never resolved by file age. The survey side of `validate_secondary_distances` and of the circuity
+a secondary activity without a marker row raises. Both scripts read the locations, the activities, the trips and the
+marker from the cache pickles of ONE run (`validate_secondary_distances.resolve_run_pickles`): synpp caches a stage
+under its resolved alias target, so the production names are those of `configs/base_bs.yml` `aliases:` (the day
+locations, the day activities, `trips_final`, the secondary locations); the plain names are the fallback of the
+older workflows. The activities, trips and marker are the pickles in the dependency closure of the legs' locations
+pickle in the working directory's `pipeline.json`; a role with one cached pickle and no link is taken with a WARNING,
+and several candidates without a link are refused, never resolved by file age. The trips are the modes the chain solver
+saw, before the outside-tour mode stage, and the locations and activities must hold the same `(person_id,
+activity_index)` keys or the script raises. The survey side of `validate_secondary_distances` and of the circuity
 calibration's band-shift impact is the published MiD W12 table, which keeps loops and has no `W_ZWD`; both scripts state
 that difference. The W_ZWD group reference has a loop-free variant that applies the rule of the loop-free estimates
 ([data record](../../registry/data/mid2023_w_zwd_group_reference_without_loops.yml)).

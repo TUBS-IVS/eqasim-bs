@@ -52,8 +52,12 @@ from braunschweig.calibration.secondary_measurement import (  # noqa: E402
     leave_out_loop_legs,
 )
 from scripts.validate_secondary_distances import (  # noqa: E402
+    AmbiguousCacheRunError,
     attach_loop_marker,
     load_loop_origin,
+    read_pickle,
+    require_same_activity_keys,
+    resolve_run_pickles,
 )
 from braunschweig.calibration.detour_fit import (  # noqa: E402
     accumulate_accepted_indices,
@@ -157,6 +161,8 @@ def _build_secondary_legs(df_xy: pd.DataFrame, df_acts: pd.DataFrame, df_trips: 
     is a published table that still counts strolls and dog walks, so it is compared with a pool
     that has none.
     """
+    # Never join the day locations with activities of another day (the pre-assignment table).
+    require_same_activity_keys(df_xy, df_acts, tag="[circuity]")
     df_merged = df_xy.merge(
         df_acts[["person_id", "activity_index", "purpose"]],
         on=["person_id", "activity_index"],
@@ -356,11 +362,18 @@ def _extract_od_pools(wd: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.n
     # Loop legs (strolls, dog walks; the leg INTO a loop activity, which sits at the place of the
     # activity before it, issue #679) are left out where the secondary locations result carries
     # loop_origin: _build_secondary_legs.
+    # The three stages (and the loop marker) are the pickles of ONE run, resolved from the legs'
+    # locations pickle by validate_secondary_distances.resolve_run_pickles: synpp caches a stage
+    # under its resolved alias target (configs/base_bs.yml aliases:), so the logical names have no
+    # pickle in the production workflow. The trips are the modes the chain solver saw (trips_final
+    # there), before the outside-tour mode stage.
     secondary_inputs = None
+    secondary_run = None
     try:
-        df_all_locs = _load_stage(wd, "synthesis.population.spatial.locations")
-        df_acts = _load_stage(wd, "synthesis.population.activities")
-        df_trips = _load_stage(wd, "synthesis.population.trips")
+        secondary_run = resolve_run_pickles(wd, tag="[circuity]")
+        df_all_locs = read_pickle(secondary_run.locations)
+        df_acts = read_pickle(secondary_run.activities)
+        df_trips = read_pickle(secondary_run.trips)
         logger.info(
             "[circuity] secondary: loaded locations (%d), activities (%d), trips (%d)",
             len(df_all_locs), len(df_acts), len(df_trips),
@@ -388,11 +401,14 @@ def _extract_od_pools(wd: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.n
 
         secondary_inputs = (df_xy, df_acts, df_trips)
 
+    except AmbiguousCacheRunError:
+        # A cache with several runs that does not say which one the legs belong to is not "stage
+        # not found": it must stop the run.
+        raise
     except RuntimeError as exc:
         logger.warning(
-            "[circuity] secondary locations stages not found (tried "
-            "synthesis.population.spatial.locations / synthesis.population.activities / "
-            "synthesis.population.trips): %s; "
+            "[circuity] secondary locations stages not found (see resolve_run_pickles for the "
+            "names tried: locations, activities and trips of the legs' run): %s; "
             "secondary OD pairs will be absent from the pool.", exc
         )
 
@@ -403,7 +419,8 @@ def _extract_od_pools(wd: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.n
         df_sec_legs = _build_secondary_legs(
             *secondary_inputs, df_loop_origin=load_loop_origin(
                 wd, tag="[circuity]",
-                not_filtered_text="loop legs (strolls, dog walks) were NOT left out of the OD pool"))
+                not_filtered_text="loop legs (strolls, dog walks) were NOT left out of the OD pool",
+                run=secondary_run))
 
         sec_mode_arr = df_sec_legs["mode"].values
         car_sec_mask = np.isin(sec_mode_arr, ["car", "car_passenger"])
