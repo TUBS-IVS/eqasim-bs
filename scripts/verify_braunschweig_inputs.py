@@ -220,6 +220,18 @@ INPUTS: List[Input] = [
         optional=True,
     ),
 
+    Input(
+        name="B15 Zensus 2022 pupils and students without paid work, age 20-29, per Kreis/Land/Germany",
+        generated=True,
+        rel_path="braunschweig/popsim/zensus2022_students_20_29_kreis.csv",
+        source="Run python scripts/extract_zensus2022_students_by_age.py --source-dir <folder with the "
+               "four 2000S-2001 JSON files> --out <this path> (raw input: Zensus 2022 table 2000S-2001 "
+               "from https://ergebnisse.zensus2022.de, the three region levels plus the structure file)",
+        notes="dl-de/by-2-0 (Statistische Aemter). Student in-commuter reference of #140 (a pattern, "
+              "not a level); not read by a stage yet.",
+        optional=True,
+    ),
+
     # --- C: Preprocessed ALKIS / ATKIS / OSM parquets ---------------------
     Input(
         name="C1  ALKIS buildings preprocessed parquet",

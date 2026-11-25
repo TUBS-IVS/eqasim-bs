@@ -226,6 +226,7 @@ setup-oriented summary; all target paths are **relative to `eqasim-data/data/`**
 | **Zensus 2022 1000A-3082** persons age×sex×size (optional) | ergebnisse.zensus2022.de | `braunschweig/1000A-3082_de_flat.zip` |
 | **Zensus 2022 2000S-2001** employed by age (previous employment-grid age shape; only with `employment_grid_age_shape_source: zensus2022_2000S_2001`) | ergebnisse.zensus2022.de | `braunschweig/popsim/zensus2022_employment_by_age_ref.csv` |
 | **Zensus 2022 Regionaltabelle "Bildung und Erwerbstätigkeit"** (employed by age × sex for every Kreis) | zensus2022.de — Regionaltabelle xlsx (the cleancensus repo keeps a copy under `data/raw/regionaltabellen/`) | processed below into `braunschweig/popsim/zensus2022_employed_by_age_kreis.csv` |
+| **Zensus 2022 2000S-2001** pupils and students without paid work, age 20-29, per Kreis/Land/Germany (student commuting, #140) | ergebnisse.zensus2022.de — JSON per region level (Kreis, Land, Germany) plus structure file, in `braunschweig/popsim/raw_zensus2022_2000S-2001/` | processed below into `braunschweig/popsim/zensus2022_students_20_29_kreis.csv` |
 | **BBSR INKAR** household income (+ optional panel) | [inkar.de](https://www.inkar.de) | `braunschweig/E_Haushaltseinkommen.xls` (+ `braunschweig/E_*.xls`) |
 | **KBA FZ 27 / FZ 12.1 / EV series / 46251** fleet sources | kba.de + regionalstatistik.de | `braunschweig/kba/{fz27_202501.xlsx,fz12_2025.xlsx,raw/}` |
 | **ALKIS Hausumringe NI** (~1.7 GB) | [opengeodata.lgln.niedersachsen.de](https://opengeodata.lgln.niedersachsen.de) | `braunschweig/buildings/gebaeude-ni.zip` |
@@ -268,6 +269,7 @@ tables keep all reference comparisons working.
 | Employed by age × sex per Kreis (employment-grid age shape, ADR-0137) | `python scripts/extract_zensus2022_employed_by_age.py --regionaltabelle <Regionaltabelle_Bildung_Erwerbstaetigkeit.xlsx> --out eqasim-data/data/braunschweig/popsim/zensus2022_employed_by_age_kreis.csv` | `braunschweig/popsim/zensus2022_employed_by_age_kreis.csv` |
 | Buildings-with-households (cell-linked) | popsimprep preprocessing step 5 | `braunschweig/popsim/buildings/buildings_with_households_zgb.parquet` |
 | Building activity potentials (redistribution release 08, ADR-0190) | TUBS-IVS potentials pipeline delivery, copied unchanged (read directly; SHA-256 in data record `building_potentials_redistribution`) | `braunschweig/buildings/08_redistribution.gpkg` |
+| Census students without paid work, age 20-29, per Kreis/Land/Germany (local-only) | `python scripts/extract_zensus2022_students_by_age.py --source-dir <raw_zensus2022_2000S-2001 folder> --out eqasim-data/data/braunschweig/popsim/zensus2022_students_20_29_kreis.csv` | `braunschweig/popsim/zensus2022_students_20_29_kreis.csv` |
 | University students per site commune (local-only) | `python scripts/seed_lsn_university_sites.py` | `braunschweig/schools/lsn_university_sites.csv` |
 | CHE student origins (committed) | `python scripts/seed_che_student_origins.py` | `braunschweig/schools/che_student_origins_ws2022_23.csv` |
 | HSN/TSN engine lookup | `python scripts/scrape_hsn_tsn.py` | `braunschweig/kba/hsn_tsn_lookup.csv` |

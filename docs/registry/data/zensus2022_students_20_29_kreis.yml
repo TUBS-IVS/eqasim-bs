@@ -1,0 +1,44 @@
+dataset: zensus2022_students_20_29_kreis
+title: Zensus 2022 pupils and students without paid work, age 20 to 29, per Kreis, Land and Germany (table 2000S-2001)
+inventory_id: B15
+provider: Statistische Aemter des Bundes und der Laender
+vintage: '2022-05-15'
+geography: Kreis (ARS-5; the 8 ZGB Kreise), Land Niedersachsen (03) and Germany (DG)
+crs: null
+roles:
+- control
+- reference_table
+used_by: []
+acquisition:
+  method: derived
+  source: 'Zensus 2022 table 2000S-2001 from the census database (https://ergebnisse.zensus2022.de),
+    category "Schueler/-innen u. Studierende (nicht erwerbsaktiv)" of the detailed activity status
+    and the total of the coarse status, age group 20 to 29; four JSON files (Kreis, Land, Germany,
+    structure) kept in eqasim-data/data/braunschweig/popsim/raw_zensus2022_2000S-2001/. The
+    sha256 of each file is recorded in the CSV header.'
+  script: scripts/extract_zensus2022_students_by_age.py
+  notes: 'A withheld cell is the value 0 with status flag "/", a published cell has flag "e";
+    the script raises for a requested region with a withheld cell. The file layout is described
+    in the script docstring.'
+storage:
+  expected_path: eqasim-data/data/braunschweig/popsim/zensus2022_students_20_29_kreis.csv
+  committed: false
+  local_only: true
+  notes: Not committed under the data-protection policy in .gitignore; regenerate it with the
+    script from the raw folder.
+verification:
+  verifier_entry: B15
+  script: scripts/verify_braunschweig_inputs.py
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: 'The category excludes students in paid work, so the count is a spatial pattern of
+  students, not a level (assumption A9 of the student-commuting design). Census counts are
+  rounded by the publisher.'
+notes: 'Student in-commuter reference of #140; used_by stays empty until a stage reads it. The
+  counts live in the local CSV, not in this record.'
