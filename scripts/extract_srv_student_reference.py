@@ -6,7 +6,7 @@ households; cp1252, semicolon, decimal comma) and writes five small aggregate ta
 
     srv2023_student_share_by_kreis.csv               student share of adults / 20-29, presence
     srv2023_education_status_by_age.csv              status of adults with an education leg
-    srv2023_student_education_distance_by_kreis.csv  home-to-education distance bands, students
+    srv2023_student_education_distance_by_kreis.csv  home-to-education distance bands, adult students
     srv2023_student_behaviour.csv                    behaviour cells, adults and students
     srv2023_student_comparison.csv                   car / licence / bicycle, students vs others
 
@@ -37,9 +37,10 @@ from braunschweig.calibration import srv_student_reference as R  # noqa: E402
 from braunschweig.calibration import student_behaviour_labels as L  # noqa: E402
 from braunschweig.calibration.srv_distance_targets import (  # noqa: E402
     EDUCATION_PURPOSES, WOLFSBURG_KREIS, ZGB_KREISE, select_person_observations)
+# The raw SrV read format (cp1252, semicolon, decimal comma) has one home; reuse it.
+from scripts.extract_srv_participation_universe import CSV_READ_KWARGS  # noqa: E402
 
 OUT_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig" / "srv"
-CSV_READ_KWARGS = dict(sep=";", decimal=",", encoding="cp1252", low_memory=False)
 
 PERSONS_FILE = "SrV2023_Personen.csv"
 LEGS_FILE = "SrV2023_Wege.csv"
@@ -151,7 +152,11 @@ def _distance_header(observation_diagnostics: dict, selection_log: dict,
         "#   %s (ADR-0102: per person the first home-to-education trip, else the first"
         % list(EDUCATION_PURPOSES),
         "#   education-to-home trip; GIS-routed km where GIS_LAENGE_GUELTIG > 0), kept for the",
-        "#   students of the universe above (select_student_observations).",
+        "#   ADULT students (V_ALTER >= %d) of the universe above, the same persons as the"
+        % L.MIN_ADULT_AGE,
+        "#   share, behaviour and comparison tables (select_student_observations); students",
+        "#   under %d or without a valid age are counted as n_observations_students_not_adult."
+        % L.MIN_ADULT_AGE,
         "# Weight of THIS table: GEWICHT_W_ZENSUS of the selected trip, as",
         "#   select_person_observations returns it (the convention of the committed SrV",
         "#   distance tables).",
@@ -168,7 +173,7 @@ def _distance_header(observation_diagnostics: dict, selection_log: dict,
                     observation_diagnostics)
         + " (selection_* = select_person_observations keys, units as in"
         " scripts/extract_srv_primary_distance_targets.py; n_observations_* count selected"
-        " persons before / after the student restriction)",
+        " persons before / after the adult-student restriction)",
     ]
 
 

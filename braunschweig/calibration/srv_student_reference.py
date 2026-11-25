@@ -10,8 +10,8 @@ microdata; it owns the CLI and the provenance headers of the five committed tabl
   reporting day;
 * :func:`build_education_status_table` -- who the adults with an education leg are (student,
   pupil, apprentice, employed, other) per age band;
-* :func:`build_education_distance_table` -- home-to-education distance bands of students per
-  home Kreis, with a bootstrap noise floor of the band EMD;
+* :func:`build_education_distance_table` -- home-to-education distance bands of adult students
+  per home Kreis, with a bootstrap noise floor of the band EMD;
 * :func:`build_behaviour_table` -- the candidate behaviour cells of
   :mod:`braunschweig.calibration.student_behaviour_labels`, in the adults and in the students
   universe;
@@ -44,7 +44,7 @@ Definitions (SrV codebook ``SrV2023_Datenkodierung_SciUse.xlsx``):
 * Distances: :func:`srv_distance_targets.select_person_observations` with
   :data:`srv_distance_targets.EDUCATION_PURPOSES` (the convention of ADR-0102: first
   home-to-education trip, else the first education-to-home trip, GIS-routed km, weight
-  ``GEWICHT_W_ZENSUS`` as that function returns it), restricted to students by
+  ``GEWICHT_W_ZENSUS`` as that function returns it), restricted to ADULT students by
   :func:`select_student_observations`.
 
 Every exclusion is counted in the builder's diagnostics and logged as
@@ -315,28 +315,39 @@ def build_education_status_table(universe: pd.DataFrame,
 # --------------------------------------------------------------------------- distances
 def select_student_observations(observations: pd.DataFrame,
                                 universe: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    """Keep the :func:`srv_distance_targets.select_person_observations` rows of students.
+    """Keep the :func:`srv_distance_targets.select_person_observations` rows of ADULT students.
 
-    A row whose person is not in ``universe`` or whose ``V_ERW`` is unreadable is excluded and
-    counted; a readable non-student is simply not a student and is not an exclusion.
+    Adult (``age >= MIN_ADULT_AGE``, age from ``universe``) like the share, behaviour and
+    comparison tables, so all student tables describe the same persons. A row whose person is
+    not in ``universe`` or whose ``V_ERW`` is unreadable is excluded and counted; a readable
+    non-student is simply not a student, and a student under ``MIN_ADULT_AGE`` or without a
+    valid age is outside the universe of this table (counted, not an exclusion).
     """
     _require_columns(observations, ["hhnr", "pnr"], "observations")
-    pid = observations["hhnr"].astype(str) + "_" + observations["pnr"].astype(str)
-    status = universe.set_index("pid")["is_student"]
-    in_universe = pid.isin(status.index).values
-    mapped = pid.map(status)
+    pid = _person_ids(pd.DataFrame({"HHNR": observations["hhnr"].values,
+                                    "PNR": observations["pnr"].values},
+                                   index=observations.index))
+    by_pid = universe.set_index("pid")
+    in_universe = pid.isin(by_pid.index).values
+    mapped = pid.map(by_pid["is_student"])
     unreadable = in_universe & mapped.isna().values
     is_student = mapped.fillna(False).astype(bool).values
+    is_adult = (pid.map(by_pid["age"]) >= MIN_ADULT_AGE).values
     n_total = len(observations)
     n_not_in_universe = int((~in_universe).sum())
     n_unreadable = int(unreadable.sum())
     _log_exclusion("education distance observations in the universe with a readable V_ERW",
                    n_not_in_universe + n_unreadable, n_total)
-    kept = observations[is_student].copy()
+    kept = observations[is_student & is_adult].copy()
+    n_not_adult = int((is_student & ~is_adult).sum())
+    logger.info("%s education distance observations: %d adult students kept, %d students under "
+                "%d or without a valid age outside this table's universe", _LOG_TAG, len(kept),
+                n_not_adult, MIN_ADULT_AGE)
     diagnostics = {"n_observations_total": int(n_total),
                    "n_observations_not_in_universe": n_not_in_universe,
                    "n_observations_unreadable_employment_code": n_unreadable,
-                   "n_observations_students": int(len(kept))}
+                   "n_observations_students_not_adult": n_not_adult,
+                   "n_observations_adult_students": int(len(kept))}
     return kept, diagnostics
 
 
@@ -344,8 +355,9 @@ def build_education_distance_table(observations: pd.DataFrame, n_bootstrap: int,
                                    seed: int) -> pd.DataFrame:
     """Students' home-to-education distance band shares per Kreis and region.
 
-    ``observations``: student rows of :func:`srv_distance_targets.select_person_observations`
-    (see :func:`select_student_observations`), with ``kreis``, ``distance_km`` and ``weight``.
+    ``observations``: adult-student rows of
+    :func:`srv_distance_targets.select_person_observations` (see
+    :func:`select_student_observations`), with ``kreis``, ``distance_km`` and ``weight``.
     Columns :data:`DISTANCE_COLUMNS`: ``n_persons``, ``share_<label>`` over
     :data:`student_behaviour_labels.STUDENT_DISTANCE_EDGES_KM` (left-inclusive) and
     ``emd_noise_95``, the 95th percentile of the band EMD a resample of the same persons reaches
@@ -489,9 +501,13 @@ def _arrival_labels(students: pd.DataFrame, legs: pd.DataFrame) -> tuple[pd.Seri
         lambda pid: by_pid.get(pid, np.nan) if pid in with_education
         else CONTROLS["arrival"][3])
     n_start, n_arrival = len(unreadable_start), len(unreadable_arrival)
+    # Base = the students WITH an education leg: only they can lose their arrival label. Over
+    # all students the rate would be diluted by the absence share, and a recoded hour column
+    # (every hour negative) would stay below MAX_EXCLUSION_RATE instead of raising.
     _log_exclusion("arrival control (readable start and arrival hour of the first education "
-                   "leg; start unreadable %d, arrival unreadable %d)" % (n_start, n_arrival),
-                   n_start + n_arrival, len(students))
+                   "leg, over the students with an education leg; start unreadable %d, arrival "
+                   "unreadable %d)" % (n_start, n_arrival),
+                   n_start + n_arrival, len(with_education))
     return label, {"n_students_unreadable_start_hour": n_start,
                    "n_students_unreadable_arrival_hour": n_arrival}
 

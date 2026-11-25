@@ -29,8 +29,8 @@ def _raw():
     ====  =====  ===  =====  ======  ==========  ===========================================
     pid   kreis  age  V_ERW  weight  E_OEV_FK    day (E_ANZ_WEGE; legs)
     ====  =====  ===  =====  ======  ==========  ===========================================
-    1_1   03101   22  7 stu       2  50 (flat)   3: edu 9->10 h, edu 12->13 h, home; legs in
-                                                 REVERSE file order
+    1_1   03101   22  7 stu       2  50 (flat)   3: edu 9->10 h (WNR 2), edu 12->13 h (WNR 1),
+                                                 home (WNR 3, listed first in the file)
     1_2   03101   24  7 stu       1  1 (no)      2: work, home
     2_1   03101   27  9           2  -8          2: work, home
     2_2   03101   15  6 pupil     1  -8          2: school, home (not an adult)
@@ -71,8 +71,8 @@ def _raw():
     # stand for a return home; V_START_LAGE / V_ZIEL_LAGE 1 = own home.
     rows = [
         (1, 1, 3, 9, 14, 15, 8, 6, 2, 1, 12.0),
-        (1, 1, 2, 4, 12, 13, 6, 6, 2, 2, 3.0),
-        (1, 1, 1, 4, 9, 10, 6, 8, 1, 2, 12.0),
+        (1, 1, 1, 4, 12, 13, 6, 6, 2, 2, 3.0),
+        (1, 1, 2, 4, 9, 10, 6, 8, 1, 2, 12.0),
         (1, 2, 1, 1, 8, 9, 1, 8, 1, 2, 5.0),
         (1, 2, 2, 9, 17, 18, 8, 1, 2, 1, 5.0),
         (2, 1, 1, 1, 7, 8, 1, 8, 1, 2, 20.0),
@@ -167,12 +167,15 @@ def test_behaviour_labels_partition_both_universes(srv_frames):
 
 
 def test_arrival_uses_the_first_education_leg(srv_frames):
-    """1_1 [2] arrives 10 h on the first education leg (begins 9 h) and 13 h on the later one,
-    the legs listed in reverse file order: only "student_arrive_9_11" may carry it. Base of the
-    students universe: 1_1 [2], 1_2 [1], 3_2 [1] (3_1 has an unreadable arrival hour)."""
+    """1_1 [2] arrives 10 h on the first education leg by start hour (begins 9 h, WNR 2) and
+    13 h on the later one (begins 12 h, WNR 1, listed first in the file): only
+    "student_arrive_9_11" may carry it, so ordering by file position or by leg number alone
+    fails. Base of the students universe: 1_1 [2], 1_2 [1], 3_2 [1] (3_1 has an unreadable
+    arrival hour), so n_effective = 4^2 / (4 + 1 + 1) = 16/6 on this reduced base."""
     table, _ = _behaviour(srv_frames)
-    assert _cell(table, "arrival", UNIVERSE_STUDENTS,
-                 "student_arrive_9_11")["share"] == pytest.approx(2 / 4)
+    arrive = _cell(table, "arrival", UNIVERSE_STUDENTS, "student_arrive_9_11")
+    assert arrive["share"] == pytest.approx(2 / 4)
+    assert arrive["n_effective"] == pytest.approx(16 / 6)
     assert _cell(table, "arrival", UNIVERSE_STUDENTS,
                  "student_arrive_12_later")["weight_sum"] == 0
     assert _cell(table, "arrival", UNIVERSE_STUDENTS,
@@ -203,6 +206,52 @@ def test_unreadable_codes_are_excluded_and_counted(srv_frames):
                  "student_no_education_leg")["weight_sum"] == 2
     assert _cell(table, "status_x_education_leg", UNIVERSE_STUDENTS,
                  "student_edu")["weight_sum"] == 3
+
+
+def test_unreadable_start_hour_excludes_from_arrival_only(srv_frames):
+    """3_1 gets a readable arrival hour (8 h) but an unreadable start hour (-1): the order of
+    their education legs is undeterminable, so they leave the arrival control (1 of the 2
+    students with an education leg) and stay in every other control."""
+    persons, legs, households = srv_frames
+    first_leg_of_3_1 = (legs["HHNR"] == 3) & (legs["PNR"] == 1) & (legs["WNR"] == 1)
+    legs.loc[first_leg_of_3_1, ["V_BEGINN_STUNDE", "V_ANKUNFT_STUNDE"]] = [-1, 8]
+    table, diagnostics = _behaviour((persons, legs, households))
+    assert diagnostics["n_students_unreadable_start_hour"] == 1
+    assert diagnostics["n_students_unreadable_arrival_hour"] == 0
+    assert _cell(table, "arrival", UNIVERSE_STUDENTS,
+                 "student_arrive_before_9")["weight_sum"] == 0
+    assert _cell(table, "arrival", UNIVERSE_STUDENTS,
+                 "student_no_education_leg")["weight_sum"] == 2
+    assert _cell(table, "status_x_education_leg", UNIVERSE_STUDENTS,
+                 "student_edu")["weight_sum"] == 3
+
+
+def test_every_arrival_hour_unreadable_raises(srv_frames):
+    """A recoded arrival-hour column excludes 2 of the 2 students with an education leg. Over
+    all 4 adult students that would be 50 % and pass the limit; the base is the students with
+    an education leg, so it raises."""
+    persons, legs, households = srv_frames
+    legs["V_ANKUNFT_STUNDE"] = -1
+    with pytest.raises(ValueError, match="arrival control"):
+        _behaviour((persons, legs, households))
+
+
+def test_distance_observations_keep_adult_students_only(srv_frames):
+    """3_1 is made 17: still a student, but outside the adult universe of the distance table
+    (counted). 2_2 is a pupil, 4_3 has an unreadable V_ERW (excluded, counted), 9_1 is in no
+    household of the universe (excluded, counted); only 1_1 remains."""
+    persons, legs, households = srv_frames
+    persons.loc[(persons["HHNR"] == 3) & (persons["PNR"] == 1), "V_ALTER"] = 17
+    universe, _ = R.student_universe(persons, households)
+    observations = pd.DataFrame({"hhnr": [1, 3, 2, 4, 9], "pnr": [1, 1, 2, 3, 1],
+                                 "kreis": ["03101", "03102", "03101", "03102", "03101"],
+                                 "distance_km": [12.0, 30.0, 2.0, 1.0, 5.0],
+                                 "weight": [2.0, 1.0, 1.0, 2.0, 1.0]})
+    kept, diagnostics = R.select_student_observations(observations, universe)
+    assert list(zip(kept["hhnr"], kept["pnr"])) == [(1, 1)]
+    assert diagnostics["n_observations_students_not_adult"] == 1
+    assert diagnostics["n_observations_unreadable_employment_code"] == 1
+    assert diagnostics["n_observations_not_in_universe"] == 1
 
 
 @pytest.mark.parametrize("column, value", [("V_ERW", 99), ("E_OEV_FK", 99)])
