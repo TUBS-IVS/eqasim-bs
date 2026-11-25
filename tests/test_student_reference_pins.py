@@ -89,7 +89,9 @@ def test_srv_distance_by_kreis_rows_and_invariants():
     filled = frame[frame["n_persons"] > 0]
     assert filled[DISTANCE_SHARE_COLUMNS].sum(axis=1).to_numpy() == pytest.approx(
         np.ones(len(filled)), abs=1e-8)
-    assert (filled["emd_noise_95"] > 0).all()
+    # the header states a floor of 0.0 for a row of a single person; positive wherever there are two or more
+    assert (filled["emd_noise_95"] >= 0).all()
+    assert (filled.loc[filled["n_persons"] > 1, "emd_noise_95"] > 0).all()
     empty = _row(frame, code="03103")
     assert empty["n_persons"] == 0
     assert empty[DISTANCE_SHARE_COLUMNS].isna().all()
@@ -183,3 +185,35 @@ def test_behaviour_value_pins_2026_11_25():
     assert row["n_unweighted"] == 1484
     assert row["share"] == pytest.approx(0.2959089414, rel=1e-9)
     assert row["n_effective"] == pytest.approx(1492.351624, rel=1e-9)
+
+
+# ------------------------------------------------------------------ decision tables (artifacts)
+
+ARTIFACTS = ROOT / "docs" / "runs" / "artifacts" / "student-commuting-phase0-reference-2026-11-25"
+
+
+def test_decision_tables_rows_verdicts_and_value_pins_2026_11_25():
+    rule = pd.read_csv(ARTIFACTS / "student_control_build_rule.csv", comment="#")
+    assert rule["control"].nunique() == 5
+    assert len(rule) == 14
+    verdicts = rule.groupby("control")["verdict"].agg(lambda v: sorted(set(v)))
+    assert verdicts.to_dict() == {
+        "status_x_education_leg": ["build_candidate"],
+        "arrival": ["build_candidate"],
+        "trip_class": ["comparison_only"],
+        "work_leg": ["comparison_only"],
+        "season_ticket": ["comparison_only"],
+    }
+    assert (rule["rule3_smoke"] == "pending_phase2").all()
+    row = _row(rule, control="arrival", label="student_no_education_leg")
+    assert row["difference_in_se"] == pytest.approx(-2.19044799, rel=1e-8)
+    assert _row(rule, control="trip_class", label="student_trips_0")["srv_share_students"] == pytest.approx(
+        0.1784765925, rel=1e-9)
+
+    gate = pd.read_csv(ARTIFACTS / "student_level_gate.csv", comment="#", dtype={"code": str})
+    assert list(gate["code"]) == ZGB_KREISE + [REGION_ROW]
+    assert gate["residents_implied_by_enrollment_persons"].isna().all()
+    assert np.isnan(_row(gate, code="03103")["srv_estimate_students_20_29_persons"])
+    assert _row(gate, code="03101")["srv_estimate_students_20_29_persons"] == pytest.approx(
+        16776.12607, rel=1e-9)
+    assert _row(gate, code=REGION_ROW)["enrollment_local_sites_persons"] == 26054

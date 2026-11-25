@@ -16,7 +16,7 @@ sampling:
   scope: >-
     SrV 2023 Braunschweig and RGB (the surveyed Kreise of the ZGB-8; Wolfsburg 03103 is not surveyed), MiD 2023
     Germany (adults 18+, reporting day Tuesday to Thursday for the behaviour table), census 2022 Kreis table of
-    pupils and students aged 20-29.
+    pupils and students WITHOUT paid work aged 20-29.
   notes: >-
     Universes of the three level estimates (columns of student_level_gate.csv): the SrV estimate is the weighted
     share of students aged 20-29 in the surveyed municipalities times the census population aged 20-29 of the whole
@@ -67,7 +67,11 @@ validation:
     Read from docs/runs/artifacts/student-commuting-phase0-reference-2026-11-25/student_control_build_rule.csv
     (column verdict, with difference_in_se per label): status_x_education_leg build_candidate; arrival build_candidate;
     trip_class comparison_only; work_leg comparison_only; season_ticket comparison_only. Rule 3 (one-batch smoke) is
-    pending_phase2 for all. car_availability and driving_licence are comparison tables by design (file
+    pending_phase2 for all. Finding for the owner's decision in Phase 2 (the verdict stays as computed): the arrival
+    control passes rule 2 only through its cell student_no_education_leg (difference_in_se -2.19044799), which holds
+    the same persons as the cell student_noedu of the status control (difference_in_se -2.180108458) and repeats that
+    difference; its three arrival-time cells stay within two standard errors (student_arrive_before_9 1.276987586,
+    student_arrive_9_11 0.6205851134, student_arrive_12_later 1.40890218). car_availability and driving_licence are comparison tables by design (file
     student_comparison_only.csv).
 - metric: level gate, students aged 20-29 in Braunschweig (03101), three estimates available in this phase
   reference: none (measurement)
@@ -99,8 +103,12 @@ notes: >-
   20-29. The third estimate (residents implied by enrollment) follows in Phase 1; enrollment is the bound until
   then. (d) The two thresholds of the build rule (MIN_RESPONDENTS_PER_CELL and MIN_DIFFERENCE_STANDARD_ERRORS, values
   in the header of student_control_build_rule.csv) are assumptions, not sourced values. (e) This is a measurement, not
-  a validation; no reference or ground truth was compared. If the SrV estimate exceeds what enrollment allows, the
-  owner decides the level (design 6.8).
+  a validation; no reference or ground truth was compared. The SrV estimate of students aged 20-29 is above the
+  enrollment of all ages at the local sites, in Braunschweig (03101: srv_estimate_students_20_29_persons 16776.12607
+  against enrollment_local_sites_persons 16534) and in the pooled area (03ZGB: 36697.77653 against 26054; values
+  from student_level_gate.csv), so the owner decides the level (design 6.8). Caveat on the comparison: the survey
+  counts residents, and its share comes from the covered municipalities and is applied to the census population of the
+  whole Kreis; enrollment counts students at local sites (where they study), at all ages.
 source: >-
   scripts/extract_srv_student_reference.py, scripts/extract_mid_student_reference.py and
   scripts/build_student_control_evidence.py over the inputs under pipeline.notes; outputs committed under
