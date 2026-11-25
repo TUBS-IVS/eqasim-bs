@@ -2,7 +2,8 @@
 
 API under test: ``lift_frozen_pt_walks(source_path, target_path, *, min_distance_m, max_share) -> dict`` with the
 report keys ``n_persons`` (residents examined), ``n_pt_trips_frozen`` (pt-intended trips in frozen resident tours),
-``n_long_pt_as_walk_before`` and ``n_lifted``.
+``n_long_pt_as_walk_before`` and ``n_lifted``. The #678 tests at the end add the keywords ``reach``, ``all_modes`` and
+``max_share_other_modes`` (scope = trips the loop does not reach; long walk and bicycle trips lifted too).
 """
 import gzip
 import logging
@@ -11,13 +12,17 @@ import xml.etree.ElementTree as ET
 import pytest
 
 from braunschweig.matsim.simulation import frozen_pt_walk_lift as L
+from braunschweig.matsim.simulation.mode_choice_reach import ReachSettings
 
 HEADER = ('<?xml version="1.0" encoding="utf-8"?>\n'
           '<!DOCTYPE population SYSTEM "http://www.matsim.org/files/dtd/population_v6.dtd">\n')
 STAMP = '<attributes><attribute name="walkFallbackFrom" class="java.lang.String">pt</attribute></attributes>'
 ROUTING_PT = '<attributes><attribute name="routingMode" class="java.lang.String">pt</attribute></attributes>'
 ROUTING_WALK = '<attributes><attribute name="routingMode" class="java.lang.String">walk</attribute></attributes>'
+ROUTING_BICYCLE = '<attributes><attribute name="routingMode" class="java.lang.String">bicycle</attribute></attributes>'
+ROUTING_CAR = '<attributes><attribute name="routingMode" class="java.lang.String">car</attribute></attributes>'
 MIN_DISTANCE_M = 5000.0
+REACH = ReachSettings(False, 11)
 
 
 def _interaction(x):
@@ -39,8 +44,12 @@ def _trip(kind, x_from, x_to):
                 f'<leg mode="pt" dep_time="09:10:00" trav_time="00:30:00">{ROUTING_PT}</leg>'
                 f'{_interaction(x_to - 100)}'
                 f'<leg mode="walk" dep_time="09:40:00" trav_time="00:10:00">{ROUTING_PT}</leg>')
-    if kind == "plain_walk":
+    if kind in ("plain_walk", "walk"):
         return f'<leg mode="walk" dep_time="09:00:00" trav_time="01:40:00">{ROUTING_WALK}</leg>'
+    if kind == "bicycle":
+        return f'<leg mode="bicycle" dep_time="09:00:00" trav_time="01:40:00">{ROUTING_BICYCLE}</leg>'
+    if kind == "car":
+        return f'<leg mode="car" dep_time="09:00:00" trav_time="01:40:00">{ROUTING_CAR}</leg>'
     raise ValueError(kind)
 
 
@@ -66,6 +75,23 @@ def _person(pid, kind, distance_m, *, frozen=True, cut_mode="pt", subpopulation=
             f'{_trip(kind, x_leisure, x_work)}'
             f'<activity type="work" x="{x_work}" y="0" end_time="17:00:00"/>'
             f'{tail}<activity type="home" x="0" y="0"/></plan></person>')
+
+
+def _long_tour(pid, n_trips, kind, distance_m):
+    """One home-based tour of ``n_trips`` trips without ``outside``: home -> leisure -> (trip under test) -> work ->
+    shops ... -> home; every trip but the one under test is a short car trip."""
+    x_work = 1000.0 + distance_m
+    shops = "".join(f'<leg mode="car" dep_time="{10 + i:02d}:00:00" trav_time="00:05:00"/>'
+                    f'<activity type="shop" x="{x_work}" y="{100.0 * (i + 1)}" end_time="{11 + i:02d}:00:00"/>'
+                    for i in range(n_trips - 3))
+    return (f'<person id="{pid}"><plan selected="yes">'
+            '<activity type="home" x="0" y="0" end_time="07:00:00"/>'
+            '<leg mode="car" dep_time="07:00:00" trav_time="00:10:00"/>'
+            '<activity type="leisure" x="1000.0" y="0" end_time="09:00:00"/>'
+            f'{_trip(kind, 1000.0, x_work)}'
+            f'<activity type="work" x="{x_work}" y="0" end_time="10:00:00"/>'
+            f'{shops}<leg mode="car" dep_time="23:00:00" trav_time="00:30:00"/>'
+            '<activity type="home" x="0" y="0"/></plan></person>')
 
 
 def _write(path, *persons):
@@ -99,10 +125,10 @@ def _attribute(element, name):
     return next((a.text for a in attributes.findall("attribute") if a.get("name") == name), None)
 
 
-def _lift(tmp_path, *persons, max_share=1.0, name="out.xml.gz"):
+def _lift(tmp_path, *persons, max_share=1.0, name="out.xml.gz", **options):
     source = _write(tmp_path / "in.xml.gz", *persons)
     target = tmp_path / name
-    report = L.lift_frozen_pt_walks(source, target, min_distance_m=MIN_DISTANCE_M, max_share=max_share)
+    report = L.lift_frozen_pt_walks(source, target, min_distance_m=MIN_DISTANCE_M, max_share=max_share, **options)
     return source, target, report
 
 
@@ -210,10 +236,13 @@ def test_an_activity_without_coordinates_fails_early_naming_person_and_activity(
 
 
 class _RunContext:
-    def __init__(self, directory, max_share=1.0, fail_on_threshold=False):
+    """synpp double: ``config`` takes one argument and raises KeyError for a key the stage never declared."""
+
+    def __init__(self, directory, max_share=1.0, fail_on_threshold=False, all_modes=False):
         self._directory = directory
         self._max_share = max_share
         self._fail = fail_on_threshold
+        self._all_modes = all_modes
 
     def path(self):
         return str(self._directory)
@@ -221,7 +250,13 @@ class _RunContext:
     def config(self, key):
         return {"braunschweig.plan_check.pt_as_walk_bound_min_distance_m": MIN_DISTANCE_M,
                 "braunschweig.plan_check.max_frozen_pt_as_walk_share": self._max_share,
-                "braunschweig.plan_check.fail_on_threshold": self._fail}[key]
+                "braunschweig.plan_check.fail_on_threshold": self._fail,
+                "braunschweig.plan_check.walk_max_distance_m": 5000.0,
+                "braunschweig.plan_check.bicycle_max_distance_m": 30000.0,
+                "braunschweig.frozen_pt_walk_lift.all_modes": self._all_modes,
+                "braunschweig.frozen_pt_walk_lift.max_share_other_modes": 0.002,
+                "braunschweig.mode_choice.isolate_outside_trips": False,
+                "braunschweig.mode_choice.max_tour_length": 11}[key]
 
 
 def _stage_directory(tmp_path, *persons):
@@ -270,3 +305,124 @@ def test_the_encoding_of_the_xml_declaration_is_kept(tmp_path):
     L.lift_frozen_pt_walks(source, target, min_distance_m=MIN_DISTANCE_M, max_share=1.0)
     text = target.read_bytes().decode("iso-8859-1")
     assert 'encoding="iso-8859-1"' in text and "M\u00fcller" in text
+
+
+# --- #678: the repair for every trip the mode choice does not reach (reach settings, all modes) ---------------------
+
+def _legs(path, pid):
+    return [e for e in _plan_elements(path, pid) if e.tag == "leg"]
+
+
+def test_a_long_plain_walk_of_an_unreached_trip_becomes_car_passenger(tmp_path):
+    _, target, report = _lift(tmp_path, _person("p", "walk", 8000.0), reach=REACH, all_modes=True)
+    legs = _legs(target, "p")
+    assert [leg.get("mode") for leg in legs] == ["car", "car_passenger", "pt", "pt", "pt"]
+    assert _attribute(legs[1], "liftedFrom") == "walk" and _attribute(legs[1], "routingMode") == "car_passenger"
+    assert legs[1].get("dep_time") == "09:00:00" and legs[1].find("route") is None
+    assert report["n_lifted_by_mode"] == {"pt": 0, "walk": 1, "bicycle": 0}
+    assert report["n_lifted_by_reason"] == {"fixed_border": 1, "fixed_vehicle": 0, "fixed_length": 0}
+    assert report["n_lifted"] == 0   # n_lifted keeps its meaning: lifted pt-intended trips only
+
+
+@pytest.mark.parametrize("person, options", [
+    pytest.param(_person("p", "walk", 8000.0), dict(reach=REACH, all_modes=False), id="plain_walk_without_all_modes"),
+    pytest.param(_person("p", "walk", 5000.0), dict(reach=REACH, all_modes=True), id="walk_of_exactly_the_bound"),
+    pytest.param(_person("p", "bicycle", 30000.0), dict(reach=REACH, all_modes=True), id="bicycle_of_exactly_the_bound"),
+    pytest.param(_person("p", "walk", 8000.0, frozen=False), dict(reach=REACH, all_modes=True), id="reached_trip"),
+    pytest.param(_long_tour("p", 11, "walk", 8000.0), dict(reach=REACH, all_modes=True), id="tour_of_eleven_trips"),
+    pytest.param(_person("p", "car", 100000.0), dict(reach=REACH, all_modes=True), id="car_trip"),
+])
+def test_trips_outside_the_wider_rule_are_left_untouched(tmp_path, person, options):
+    source, target, report = _lift(tmp_path, person, **options)
+    assert _plan_signature(target) == _plan_signature(source)
+    assert report["n_lifted_by_mode"] == {"pt": 0, "walk": 0, "bicycle": 0}
+
+
+def test_a_trip_of_an_over_long_tour_is_lifted_for_its_length(tmp_path):
+    _, target, report = _lift(tmp_path, _long_tour("p", 12, "walk", 8000.0), reach=REACH, all_modes=True)
+    assert [leg.get("mode") for leg in _legs(target, "p")][1] == "car_passenger"
+    assert report["n_lifted_by_reason"] == {"fixed_border": 0, "fixed_vehicle": 0, "fixed_length": 1}
+    assert (report["n_resident_trips"], report["n_unreached_trips"]) == (12, 12)
+    assert report["n_unreached_by_reason"] == {"fixed_border": 0, "fixed_vehicle": 0, "fixed_length": 12}
+
+
+def _bicycle_border_tour(pid):
+    """home -bicycle 2 km-> work -walk 1 km-> leisure -bicycle 35 km-> shop -car-> outside -car-> outside -car-> home.
+
+    The short bicycle trip comes BEFORE the long one, so a lift that only looks forward would miss it.
+    """
+    return (f'<person id="{pid}"><plan selected="yes">'
+            '<activity type="home" x="0" y="0" end_time="07:00:00"/>'
+            f'<leg mode="bicycle" dep_time="07:00:00" trav_time="00:10:00">{ROUTING_BICYCLE}</leg>'
+            '<activity type="work" x="2000" y="0" end_time="12:00:00"/>'
+            f'<leg mode="walk" dep_time="12:00:00" trav_time="00:15:00">{ROUTING_WALK}</leg>'
+            '<activity type="leisure" x="3000" y="0" end_time="13:00:00"/>'
+            f'<leg mode="bicycle" dep_time="13:00:00" trav_time="02:00:00">{ROUTING_BICYCLE}</leg>'
+            '<activity type="shop" x="38000" y="0" end_time="16:00:00"/>'
+            f'<leg mode="car" dep_time="16:00:00" trav_time="00:30:00">{ROUTING_CAR}</leg>'
+            '<activity type="outside" x="60000" y="0" end_time="18:00:00"/>'
+            f'<leg mode="car" dep_time="18:00:00" trav_time="00:10:00">{ROUTING_CAR}</leg>'
+            '<activity type="outside" x="60000" y="100" end_time="19:00:00"/>'
+            f'<leg mode="car" dep_time="19:00:00" trav_time="01:00:00">{ROUTING_CAR}</leg>'
+            '<activity type="home" x="0" y="0"/></plan></person>')
+
+
+@pytest.mark.parametrize("reach, reason", [(REACH, "fixed_border"), (ReachSettings(True, 11), "fixed_vehicle")],
+                         ids=["coarse_rule", "isolated_outside_trips"])
+def test_a_long_bicycle_trip_takes_the_other_bicycle_trips_of_its_tour_along(tmp_path, reach, reason):
+    _, target, report = _lift(tmp_path, _bicycle_border_tour("p"), reach=reach, all_modes=True)
+    legs = _legs(target, "p")
+    assert [leg.get("mode") for leg in legs] == ["car_passenger", "walk", "car_passenger", "car", "car", "car"]
+    assert [_attribute(legs[i], "liftedFrom") for i in (0, 2)] == ["bicycle", "bicycle"]
+    assert legs[0].get("dep_time") == "07:00:00" and legs[2].get("dep_time") == "13:00:00"
+    assert report["n_lifted_with_tour"] == 1
+    assert report["n_lifted_by_mode"] == {"pt": 0, "walk": 0, "bicycle": 2}
+    assert report["n_lifted_by_reason"][reason] == 2
+
+
+def test_the_report_gives_the_share_of_the_other_modes(tmp_path, caplog):
+    population = [_person("w", "walk", 8000.0), _person("b", "bicycle", 35000.0),
+                  _person("r", "car", 1000.0, frozen=False)]
+    with caplog.at_level(logging.INFO):
+        _, _, report = _lift(tmp_path, *population, reach=REACH, all_modes=True, max_share_other_modes=0.2)
+    # 5 + 5 trips of the two border persons (all fixed at the border) and 3 reached trips of the third.
+    assert (report["n_resident_trips"], report["n_unreached_trips"]) == (13, 10)
+    assert report["n_unreached_by_reason"] == {"fixed_border": 10, "fixed_vehicle": 0, "fixed_length": 0}
+    assert report["n_lifted_by_mode"] == {"pt": 0, "walk": 1, "bicycle": 1}
+    assert report["share_lifted_other_modes"] == pytest.approx(2 / 13)
+    assert (report["max_share_other_modes"], report["bound_exceeded_other_modes"]) == (0.2, False)
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        _, _, exceeded = _lift(tmp_path, *population, reach=REACH, all_modes=True, max_share_other_modes=0.1,
+                               name="again.xml.gz")
+    assert exceeded["bound_exceeded_other_modes"] is True
+    assert [r for r in caplog.records if r.levelno == logging.ERROR]
+
+
+def test_without_reach_settings_the_scope_is_the_old_tour_rule(tmp_path):
+    """Without reach settings an over-long tour without ``outside`` is out of scope, a border tour is in it."""
+    source, target, report = _lift(tmp_path, _long_tour("long", 12, "walk", 8000.0),
+                                   _person("border", "walk", 8000.0), all_modes=True)
+    assert _plan_signature(target)["long"] == _plan_signature(source)["long"]
+    assert [leg.get("mode") for leg in _legs(target, "border")][1] == "car_passenger"
+    assert report["n_lifted_by_mode"] == {"pt": 0, "walk": 1, "bicycle": 0}
+
+
+def test_run_with_all_modes_off_keeps_todays_scope(tmp_path):
+    """The key off: no reach settings, the 12-trip tour is out of scope; on: the loop settings put it in scope."""
+    for all_modes, expected in ((False, "walk"), (True, "car_passenger")):
+        stage = tmp_path / f"all_modes_{all_modes}"
+        stage.mkdir()
+        _stage_directory(stage, _long_tour("p", 12, "pt_routed_walks", 8000.0))
+        report = L.run(_RunContext(stage, all_modes=all_modes), "config.xml")
+        assert [leg.get("mode") for leg in _legs(stage / "pop.xml.gz", "p")][1] == expected
+        assert report["n_lifted"] == (1 if all_modes else 0) and report["all_modes"] is all_modes
+
+
+def test_a_person_without_legs_is_skipped(tmp_path):
+    stay_home = '<person id="s"><plan selected="yes"><activity type="home" x="0" y="0"/></plan></person>'
+    source, target, report = _lift(tmp_path, stay_home, reach=REACH, all_modes=True)
+    assert _plan_signature(target) == _plan_signature(source)
+    assert (report["n_persons"], report["n_persons_without_legs"], report["n_resident_trips"]) == (1, 1, 0)
