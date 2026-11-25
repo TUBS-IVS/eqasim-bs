@@ -12,7 +12,8 @@ All definitions live in ``braunschweig.calibration.mid_student_reference`` (and 
 vocabulary in ``braunschweig.calibration.student_behaviour_labels``); this script owns only the
 raw I/O, the CLI and the provenance headers. Each written file carries an ``# Exclusions:`` line
 with the builder's counts, so the exclusion counts live IN the file. The ``exclude_rbw_legs``
-setting is read from the production config ``configs/base_bs.yml``.
+and ``exclude_holiday_plan_sources`` settings are read from the production config
+``configs/base_bs.yml``.
 
 Usage (eqasim env, from a worktree; the raw directory is restricted and always passed):
     python scripts/extract_mid_student_reference.py --raw <MiD CSV directory> \
@@ -42,6 +43,7 @@ from braunschweig.calibration import student_behaviour_labels as L  # noqa: E402
 OUT_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig" / "mid"
 CONFIG_PATH = REPO / "configs" / "base_bs.yml"
 RBW_CONFIG_KEY = "braunschweig.population.popsim.exclude_rbw_legs"
+HOLIDAY_CONFIG_KEY = "braunschweig.population.popsim.exclude_holiday_plan_sources"
 
 PERSONS_FILE = "MiD2023_Personen.csv"
 TRIPS_FILE = "MiD2023_Wege.csv"
@@ -55,14 +57,23 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 logger = logging.getLogger("extract_mid_student_reference")
 
 
-def production_exclude_rbw_legs(config_path: Path = CONFIG_PATH) -> bool:
-    """The production value of ``braunschweig.population.popsim.exclude_rbw_legs``."""
+def _production_flag(key: str, config_path: Path) -> bool:
+    """The boolean production value of ``config.<key>``; raises if it is missing or not a bool."""
     document = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
     settings = document.get("config", {})
-    if RBW_CONFIG_KEY not in settings or not isinstance(settings[RBW_CONFIG_KEY], bool):
-        raise ValueError("%s: key config.%s is missing or not a boolean" % (config_path,
-                                                                           RBW_CONFIG_KEY))
-    return settings[RBW_CONFIG_KEY]
+    if key not in settings or not isinstance(settings[key], bool):
+        raise ValueError("%s: key config.%s is missing or not a boolean" % (config_path, key))
+    return settings[key]
+
+
+def production_exclude_rbw_legs(config_path: Path = CONFIG_PATH) -> bool:
+    """The production value of ``braunschweig.population.popsim.exclude_rbw_legs``."""
+    return _production_flag(RBW_CONFIG_KEY, config_path)
+
+
+def production_exclude_holidays(config_path: Path = CONFIG_PATH) -> bool:
+    """The production value of ``braunschweig.population.popsim.exclude_holiday_plan_sources``."""
+    return _production_flag(HOLIDAY_CONFIG_KEY, config_path)
 
 
 def _header_columns(path: Path) -> list:
@@ -107,14 +118,23 @@ def _common_header(table_name: str, source_commit: str, exclude_rbw_legs: bool) 
     ]
 
 
-def _core_weekday_line() -> str:
-    return ("# Weekday filter: ST_WOTAG in %s (Tuesday to Thursday), the reporting weekdays of the "
-            "SrV side." % list(R.CORE_WEEKDAYS))
+def _core_weekday_lines(exclude_holidays: bool) -> list:
+    return [
+        "# Weekday filter: ST_WOTAG in %s (Tuesday to Thursday), the reporting weekdays of the "
+        "SrV side." % list(R.CORE_WEEKDAYS),
+        "# Holiday filter: exclude_holiday_plan_sources = %s (production value of"
+        % str(exclude_holidays).lower(),
+        "#   braunschweig.population.popsim.exclude_holiday_plan_sources in configs/base_bs.yml):",
+        "#   true drops persons whose reporting day was a public holiday (%s == %d), counted as"
+        % (R.HOLIDAY_COLUMN, R.MID_HOLIDAY),
+        "#   n_holiday_reporting_day; the SrV reference days exclude public holidays.",
+    ]
 
 
-def _status_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool) -> list:
+def _status_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool,
+                   exclude_holidays: bool) -> list:
     return _common_header(R.STATUS_TABLE, source_commit, exclude_rbw_legs) + [
-        _core_weekday_line(),
+        *_core_weekday_lines(exclude_holidays),
         "# Base: persons with at least one education leg, by age band %s (HP_ALTER, bounds"
         % [band for band, _, _ in R.STATUS_AGE_BANDS],
         "#   inclusive; a person without a valid age is in no band, counted). Education leg =",
@@ -127,9 +147,10 @@ def _status_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool
     ]
 
 
-def _distance_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool) -> list:
+def _distance_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool,
+                     exclude_holidays: bool) -> list:
     return _common_header(R.DISTANCE_MODE_TABLE, source_commit, exclude_rbw_legs) + [
-        _core_weekday_line(),
+        *_core_weekday_lines(exclude_holidays),
         "# Base: ADULT students (the same persons as the SrV distance table) with an education leg;",
         "#   the FIRST education leg by W_SZS then W_SZM (a person with an unreadable start time on",
         "#   any education leg is excluded, counted). Distance = wegkm_imp, valid for 0 < km < %.0f"
@@ -146,8 +167,9 @@ def _distance_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bo
 
 def _share_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool) -> list:
     return _common_header(R.SHARE_20_29_TABLE, source_commit, exclude_rbw_legs) + [
-        "# Weekday filter: none (ST_WOTAG is NOT filtered: a status share, not a day share);",
-        "#   exclude_rbw_legs is unused by this table, no leg is read.",
+        "# Weekday filter: none (ST_WOTAG is NOT filtered: a status share, not a day share, so",
+        "#   public-holiday reporting days are kept too); exclude_rbw_legs is unused by this",
+        "#   table, no leg is read.",
         "# Base: persons aged %d-%d (HP_ALTER, inclusive) with a readable P_TAET."
         % R.AGE_BAND_20_29,
         "# Rows: %s = all of Germany, then one row per Land (BLAND 1-16, zero-padded; a Land with no"
@@ -160,9 +182,10 @@ def _share_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool)
     ]
 
 
-def _behaviour_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool) -> list:
+def _behaviour_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool,
+                      exclude_holidays: bool) -> list:
     return _common_header(R.BEHAVIOUR_TABLE, source_commit, exclude_rbw_legs) + [
-        _core_weekday_line(),
+        *_core_weekday_lines(exclude_holidays),
         "# Label vocabulary: student_behaviour_labels.CONTROLS, shared with the SrV table",
         "#   srv2023_student_behaviour.csv. Universes: %s = adults on a core weekday with a"
         % L.UNIVERSE_ADULTS,
@@ -187,6 +210,9 @@ def _behaviour_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: b
         "#   n_non_students_without_diary below); only season_ticket keeps them. Those shares rest",
         "#   on this reduced base, while the SrV side has a diary for every person: the comparison",
         "#   assumes persons without a diary are not a distinct group for these cells.",
+        "# UNIVERSE GAP to srv2023_student_behaviour.csv: MiD keeps persons away from home all",
+        "#   day, the SrV universe drops them (E_ANZ_WEGE -7; the adult students lost that way are",
+        "#   n_adult_students_away_from_home in the SrV file's Exclusions line).",
         "# Columns: %s; n_effective is the Kish size of the control's base in that universe."
         % ", ".join(L.BEHAVIOUR_COLUMNS),
         _exclusions(diagnostics),
@@ -239,24 +265,24 @@ def main(argv=None) -> int:
     logger.info("read %d persons, %d trips", len(persons), len(trips))
 
     exclude_rbw_legs = production_exclude_rbw_legs()
-    status, status_diagnostics = R.build_status_by_age_table(
-        persons, trips, exclude_rbw_legs=exclude_rbw_legs)
-    distance, distance_diagnostics = R.build_distance_mode_table(
-        persons, trips, exclude_rbw_legs=exclude_rbw_legs)
+    exclude_holidays = production_exclude_holidays()
+    day_settings = {"exclude_rbw_legs": exclude_rbw_legs, "exclude_holidays": exclude_holidays}
+    status, status_diagnostics = R.build_status_by_age_table(persons, trips, **day_settings)
+    distance, distance_diagnostics = R.build_distance_mode_table(persons, trips, **day_settings)
     share, share_diagnostics = R.build_share_20_29_table(persons, households)
-    behaviour, behaviour_diagnostics = R.build_behaviour_seed_table(
-        persons, trips, exclude_rbw_legs=exclude_rbw_legs)
+    behaviour, behaviour_diagnostics = R.build_behaviour_seed_table(persons, trips,
+                                                                    **day_settings)
 
     out = Path(args.out_dir)
     commit = args.source_commit
     _write(status, out / R.STATUS_TABLE,
-           _status_header(status_diagnostics, commit, exclude_rbw_legs))
+           _status_header(status_diagnostics, commit, exclude_rbw_legs, exclude_holidays))
     _write(distance, out / R.DISTANCE_MODE_TABLE,
-           _distance_header(distance_diagnostics, commit, exclude_rbw_legs))
+           _distance_header(distance_diagnostics, commit, exclude_rbw_legs, exclude_holidays))
     _write(share, out / R.SHARE_20_29_TABLE,
            _share_header(share_diagnostics, commit, exclude_rbw_legs))
     _write(behaviour, out / R.BEHAVIOUR_TABLE,
-           _behaviour_header(behaviour_diagnostics, commit, exclude_rbw_legs))
+           _behaviour_header(behaviour_diagnostics, commit, exclude_rbw_legs, exclude_holidays))
     return 0
 
 

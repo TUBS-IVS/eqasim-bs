@@ -11,9 +11,14 @@ CLI and the provenance headers.
   table.
 * :func:`build_level_gate` -- per ZGB Kreis and for the pooled area SrV covers, the estimates of
   the students aged 20 to 29 living there, side by side, plus the enrollment at local sites as a
-  bound.
+  comparison figure (not a bound: residents who study elsewhere or at a distance-learning
+  university are survey students but not local enrollment, and local enrollment includes
+  in-commuters who live elsewhere).
+* :func:`arrival_status_overlap` -- the overlap of the arrival and the status control, read from
+  the build-rule table.
 
-Build rule (design section 6.8, fixed before the measurement; both thresholds are ASSUMPTIONS):
+Build rule (fixed before the measurement in the design of this work, issue #140, to be recorded
+in an ADR in the next phase; both thresholds are ASSUMPTIONS):
 
 1. every SrV cell of the control holds at least :data:`MIN_RESPONDENTS_PER_CELL` respondents --
    the unweighted count of each student label in the ``adults_18plus`` universe, the universe of
@@ -32,7 +37,11 @@ Build rule (design section 6.8, fixed before the measurement; both thresholds ar
 The verdict of a control is ``build_candidate`` when all its labels pass rule 1 and at least one
 passes rule 2, else ``comparison_only``. ``status_x_education_leg`` is evaluated the same way at
 region level; its Kreis pattern is not part of this table. :data:`COMPARISON_ONLY` variables are
-comparison tables by design (the model derives availability itself) and are never evaluated.
+comparison tables by decision (the model derives availability itself) and are never evaluated.
+
+Overlap: the arrival cell ``student_no_education_leg`` and the status cell ``student_noedu`` hold
+the same students (no education leg on the reporting day), so the two controls must never be
+built together; :func:`arrival_status_overlap` says through which cells arrival passes rule 2.
 
 The MiD bases of the four diary-dependent controls are reduced (persons without a diary of the
 day are absent, see :mod:`braunschweig.calibration.mid_student_reference`), so the table carries
@@ -43,7 +52,8 @@ Level gate: the student estimates the owner decides the level on. ``mid_to_censu
 "pupils and students without paid work" among the 20 to 29 year olds, both for Germany; the census
 group times that ratio is the second estimate. The same ratio for Land 03 (Niedersachsen) is a
 sensitivity. The third estimate, the residents implied by enrollment, needs the origin-destination
-table of Phase 1 and is NaN here; until then the enrollment at the local sites is the bound.
+table of Phase 1 and is NaN here; until then the enrollment at the local sites is a comparison
+figure only (where students study, all ages, its own semester).
 """
 from __future__ import annotations
 
@@ -56,31 +66,30 @@ from braunschweig.calibration.mid_student_reference import REGION_GERMANY as MID
 from braunschweig.calibration.srv_distance_targets import ZGB_KREISE
 from braunschweig.calibration.srv_participation_universe import REGION_CODE, UNSURVEYED_KREISE
 from braunschweig.calibration.student_behaviour_labels import (
-    BEHAVIOUR_COLUMNS, CONTROLS, NOT_STUDENT, UNIVERSE_ADULTS, UNIVERSE_STUDENTS,
-    share_standard_error)
+    BEHAVIOUR_COLUMNS, CONTROLS, MAX_EXCLUSION_RATE, NOT_STUDENT, UNIVERSE_ADULTS,
+    UNIVERSE_STUDENTS, share_standard_error)
 
 logger = logging.getLogger(__name__)
 
 _LOG_TAG = "[student control evidence]"
 
-# ASSUMPTION (design section 6.8): a cell with fewer respondents is too thin for a regional
-# target. A judgement fixed before the measurement, not a sourced threshold.
+# ASSUMPTION (design of issue #140, fixed before the measurement): a cell with fewer respondents
+# is too thin for a regional target. A judgement, not a sourced threshold.
 MIN_RESPONDENTS_PER_CELL = 30
-# ASSUMPTION (design section 6.8): a MiD-SrV difference above two standard errors of the SrV share
-# is taken as real, i.e. as something a control would steer. A judgement, not a sourced threshold.
+# ASSUMPTION (design of issue #140): a MiD-SrV difference above two standard errors of the SrV
+# share is taken as real, i.e. as something a control would steer. A judgement, not a sourced
+# threshold.
 MIN_DIFFERENCE_STANDARD_ERRORS = 2.0
 RULE_UNIVERSE = UNIVERSE_STUDENTS
-# Comparison tables by design (design section 6.8: the model derives availability itself).
+# Comparison tables by decision of issue #140 (the model derives availability itself).
 COMPARISON_ONLY = ("car_availability", "driving_licence")
 # Their SrV codebook variables in srv2023_student_comparison.csv (srv_student_reference.
-# COMPARISON_VARIABLES, which also carries bicycle availability V_FK_VERFUEG).
+# COMPARISON_VARIABLES, which also carries season-ticket availability V_FK_VERFUEG).
 COMPARISON_ONLY_SRV_VARIABLES = {"car_availability": "V_PKW_VERFUEG",
                                  "driving_licence": "V_FUEHR_PKW"}
-
-# ASSUMPTION: when rule 2 cannot be evaluated for more than half of the cells (a NaN share means
-# an empty base of a whole control), the input tables are broken, not thin, so the build raises.
-# Half mirrors srv_student_reference.MAX_EXCLUSION_RATE; a judgement, not a sourced threshold.
-MAX_EXCLUSION_RATE = 0.5
+# The two cells that hold the same students (no education leg on the reporting day).
+STATUS_CONTROL, STATUS_NO_EDUCATION_LABEL = "status_x_education_leg", "student_noedu"
+ARRIVAL_CONTROL, ARRIVAL_NO_EDUCATION_LABEL = "arrival", "student_no_education_leg"
 
 VERDICT_BUILD = "build_candidate"
 VERDICT_COMPARISON = "comparison_only"
@@ -236,6 +245,40 @@ def build_rule_exclusions(rule: pd.DataFrame) -> dict:
             "n_cells_rule2_not_evaluable": int(rule["difference_in_se"].isna().sum()),
             "n_cells_mid_share_nan": int(rule["mid_share_students"].isna().sum()),
             "n_cells_srv_se_undefined": int((se.isna() | (se == 0)).sum())}
+
+
+def arrival_status_overlap(rule: pd.DataFrame) -> dict:
+    """The overlap of the arrival and the status control in a :func:`evaluate_build_rule` table.
+
+    :data:`ARRIVAL_NO_EDUCATION_LABEL` of the arrival control and :data:`STATUS_NO_EDUCATION_LABEL`
+    of the status control are the same students, so an arrival verdict carried by that cell alone
+    repeats the status difference. Returns ``status_verdict``, ``arrival_verdict``,
+    ``status_noedu_difference_in_se``, ``arrival_no_education_leg_difference_in_se`` and
+    ``arrival_time_labels_passing_rule2`` (the arrival-time labels with ``rule2_differs``, in
+    vocabulary order; empty when arrival passes rule 2 only through the shared cell or not at all).
+    Raises ``ValueError`` when either control or cell is missing.
+    """
+    _require_columns(rule, BUILD_RULE_COLUMNS, "build rule")
+    indexed = _unique_index(rule, ["control", "label"], "build rule")
+    needed = [(STATUS_CONTROL, STATUS_NO_EDUCATION_LABEL),
+              *((ARRIVAL_CONTROL, label) for label in CONTROLS[ARRIVAL_CONTROL])]
+    missing = [key for key in needed if key not in indexed.index]
+    if missing:
+        raise ValueError("build rule table: cells %s missing" % missing)
+    time_labels = [label for label in CONTROLS[ARRIVAL_CONTROL]
+                   if label != ARRIVAL_NO_EDUCATION_LABEL]
+    return {
+        "status_verdict": str(indexed.loc[(STATUS_CONTROL, STATUS_NO_EDUCATION_LABEL), "verdict"]),
+        "arrival_verdict": str(indexed.loc[(ARRIVAL_CONTROL, ARRIVAL_NO_EDUCATION_LABEL),
+                                           "verdict"]),
+        "status_noedu_difference_in_se": float(
+            indexed.loc[(STATUS_CONTROL, STATUS_NO_EDUCATION_LABEL), "difference_in_se"]),
+        "arrival_no_education_leg_difference_in_se": float(
+            indexed.loc[(ARRIVAL_CONTROL, ARRIVAL_NO_EDUCATION_LABEL), "difference_in_se"]),
+        "arrival_time_labels_passing_rule2": [
+            label for label in time_labels
+            if bool(indexed.loc[(ARRIVAL_CONTROL, label), "rule2_differs"])],
+    }
 
 
 # --------------------------------------------------------------------------- level gate

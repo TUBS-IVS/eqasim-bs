@@ -1,8 +1,8 @@
 """Contracts of the seed scripts for the university-site and CHE student-origin tables.
 
-Synthetic rows only: the real tables are filled by a later task and never read here, and
-every test that runs a script's ``main`` patches the constants and redirects the output
-into ``tmp_path``.
+Synthetic rows for the contract tests (the real tables are never read here; the pins at the
+end check the hand-read seed constants), and every test that runs a script's ``main`` patches
+the constants and redirects the output into ``tmp_path``.
 """
 import importlib.util
 import sys
@@ -231,6 +231,9 @@ def test_only_local_sites_are_used_for_the_coverage_list():
     assert co.local_site_ags8(sites) == ["03101000"]
     with pytest.raises(ValueError, match="local"):
         co.local_site_ags8(sites.assign(scope="surrounding"))
+    # a site table without the scope column is refused by name, not with a bare KeyError
+    with pytest.raises(ValueError, match="scope"):
+        co.local_site_ags8(sites.drop(columns="scope"))
 
 
 # --- Pins of the hand-read seed constants (values as read on 2026-11-25) -------------------

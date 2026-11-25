@@ -15,14 +15,19 @@ microdata; it owns the CLI and the provenance headers of the five committed tabl
 * :func:`build_behaviour_table` -- the candidate behaviour cells of
   :mod:`braunschweig.calibration.student_behaviour_labels`, in the adults and in the students
   universe;
-* :func:`build_comparison_table` -- car availability, licence and bicycle availability of
-  students against the other adults, each code as delivered.
+* :func:`build_comparison_table` -- car availability, licence and season-ticket availability
+  (``V_FK_VERFUEG``; bicycles would be ``V_RAD_VERFUEG``, not read here) of students against
+  the other adults, each code as delivered.
 
 Definitions (SrV codebook ``SrV2023_Datenkodierung_SciUse.xlsx``):
 
 * Universe: :func:`srv_participation_universe.prepare_universe_persons` (valid
   ``GEWICHT_P_ZENSUS``, persons at home at some point on the reporting day, household Kreis in
   the ZGB; its guards raise on any universe drift). Weight ``GEWICHT_P_ZENSUS`` (ADR-0055).
+  Persons AWAY FROM HOME ALL DAY (``E_ANZ_WEGE == -7``) are outside that universe, while the MiD
+  side keeps them: every share here describes students who were at home at some point of the
+  day. :func:`student_universe` counts the students dropped this way
+  (``n_students_away_from_home``, ``n_adult_students_away_from_home``).
 * Student = ``V_ERW == STUDENT_V_ERW`` (7, Student/in). A person whose ``V_ERW`` is missing or
   negative (``-8`` not surveyed, ``-10`` implausible) answered nothing about their activity: they
   are excluded from EVERY table here and counted, never classed "not a student". A non-negative
@@ -49,8 +54,8 @@ Definitions (SrV codebook ``SrV2023_Datenkodierung_SciUse.xlsx``):
 
 Every exclusion is counted in the builder's diagnostics and logged as
 ``primary n/N (rate), excluded m (rate)``; a step that would exclude more than
-:data:`MAX_EXCLUSION_RATE` of its base raises, because that is a broken code mapping, not a
-measurement. Shares are NaN, never 0.0, when their base is empty, and empty cells are emitted.
+:data:`student_behaviour_labels.MAX_EXCLUSION_RATE` of its base raises, because that is a broken
+code mapping, not a measurement. Shares are NaN, never 0.0, when their base is empty, and empty cells are emitted.
 """
 from __future__ import annotations
 
@@ -70,11 +75,12 @@ from braunschweig.calibration.srv_participation_universe import \
 # The person key and the NaN-for-empty share rule are taken from the sibling builder rather than
 # re-implemented, so the key format persons_with_purpose returns cannot drift from ours.
 from braunschweig.calibration.srv_participation_universe import _person_ids, _weighted_share
-from braunschweig.calibration.srv_plan_structure import EMPLOYED_V_ERW
+from braunschweig.calibration.srv_plan_structure import AWAY_FROM_HOME_CODE, EMPLOYED_V_ERW
 from braunschweig.calibration.student_behaviour_labels import (
-    ARRIVAL_HOUR_EDGES, BEHAVIOUR_COLUMNS, CONTROLS, MIN_ADULT_AGE, NOT_STUDENT,
-    STUDENT_DISTANCE_EDGES_KM, STUDENT_DISTANCE_LABELS, TRIP_CLASS_EDGES, UNIVERSE_ADULTS,
-    UNIVERSE_STUDENTS, effective_sample_size, share_standard_error)
+    ARRIVAL_HOUR_EDGES, BEHAVIOUR_COLUMNS, CONTROLS, MAX_EXCLUSION_RATE, MIN_ADULT_AGE,
+    NOT_STUDENT, STUDENT_DISTANCE_EDGES_KM, STUDENT_DISTANCE_LABELS, TRIP_CLASS_EDGES,
+    UNIVERSE_ADULTS, UNIVERSE_STUDENTS, behaviour_rows, effective_sample_size,
+    share_standard_error)
 
 logger = logging.getLogger(__name__)
 
@@ -102,11 +108,6 @@ V_ERW_CODES = frozenset({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 70})
 FLATRATE_E_OEV_FK = frozenset({50, 3})
 NO_FLATRATE_E_OEV_FK = frozenset({1, 2, 60, 70, -8})
 UNREADABLE_E_OEV_FK = -10
-
-# ASSUMPTION: an exclusion step that removes more than half of its base is a broken code mapping
-# (a renamed column, a recoded variable), not a measurement, so the build raises instead of
-# shipping a table built on the remainder. Half is a judgement, not a sourced threshold.
-MAX_EXCLUSION_RATE = 0.5
 
 AGE_BAND_20_29 = (20, 29)
 # Age bands of the education-status table, bounds INCLUSIVE; 200 is an upper sentinel.
@@ -188,15 +189,35 @@ def student_universe(persons: pd.DataFrame,
     Returns ``(universe, diagnostics)``: the frame of
     :func:`srv_participation_universe.prepare_universe_persons` joined on ``pid`` with
     ``V_ERW``, ``E_ANZ_WEGE`` (needed for the trip class; the universe guarantees it is
-    non-negative), ``E_OEV_FK``, ``V_PKW_VERFUEG``, ``V_FUEHR_PKW``, ``V_FK_VERFUEG`` (numeric)
+    non-negative), ``E_OEV_FK``, ``V_PKW_VERFUEG`` (car availability), ``V_FUEHR_PKW`` (car
+    licence), ``V_FK_VERFUEG`` (season-ticket availability) (numeric)
     and ``is_student`` (nullable boolean, ``pd.NA`` where ``V_ERW`` is missing or negative).
-    ``diagnostics`` are the universe diagnostics unchanged.
+    ``diagnostics`` are the universe diagnostics plus ``n_students_away_from_home`` and
+    ``n_adult_students_away_from_home``: the students (``V_ERW == STUDENT_V_ERW``; adults
+    ``V_ALTER >= MIN_ADULT_AGE``) among the persons the universe drops as away from home all day,
+    measured, like ``away_from_home``, on the persons with a valid weight. The MiD side keeps
+    such persons, so the count is the size of that universe gap on the student side.
 
     Raises ``ValueError`` on a duplicated person key or a non-negative ``V_ERW`` outside
     :data:`V_ERW_CODES`.
     """
     _require_columns(persons, PERSON_COLUMNS, "persons")
     universe, diagnostics = prepare_universe_persons(persons, households)
+
+    # Same filter order as prepare_universe_persons: valid weight first, then away from home.
+    weight = pd.to_numeric(persons["GEWICHT_P_ZENSUS"], errors="coerce")
+    away = ((weight.notna() & (weight >= 0))
+            & (pd.to_numeric(persons["E_ANZ_WEGE"], errors="coerce") == AWAY_FROM_HOME_CODE))
+    away_student = away & (pd.to_numeric(persons["V_ERW"], errors="coerce") == STUDENT_V_ERW)
+    away_adult_student = away_student & (pd.to_numeric(persons["V_ALTER"], errors="coerce")
+                                         >= MIN_ADULT_AGE)
+    diagnostics = dict(diagnostics, n_students_away_from_home=int(away_student.sum()),
+                       n_adult_students_away_from_home=int(away_adult_student.sum()))
+    logger.info("%s away from home all day (E_ANZ_WEGE %d, outside the universe; MiD keeps such "
+                "persons): %d persons, of them %d students (%d adult students)", _LOG_TAG,
+                AWAY_FROM_HOME_CODE, diagnostics["away_from_home"],
+                diagnostics["n_students_away_from_home"],
+                diagnostics["n_adult_students_away_from_home"])
 
     extra = persons[["HHNR", "PNR", "V_ERW", "E_ANZ_WEGE", *EXTRA_PERSON_COLUMNS]].copy()
     extra["pid"] = _person_ids(extra)
@@ -437,36 +458,20 @@ def build_behaviour_table(universe: pd.DataFrame,
         label = labels[control]
         base = students[label.notna().values]
         base_labels = label[label.notna()].values
-        rows += _behaviour_rows(control, UNIVERSE_STUDENTS, student_labels,
-                                base["weight"].to_numpy(dtype=float), base_labels)
+        rows += behaviour_rows(control, UNIVERSE_STUDENTS, student_labels,
+                               base["weight"].to_numpy(dtype=float), base_labels)
         adult_weight = np.concatenate([non_students["weight"].to_numpy(dtype=float),
                                        base["weight"].to_numpy(dtype=float)])
         adult_labels = np.concatenate([np.full(len(non_students), NOT_STUDENT, dtype=object),
                                        base_labels.astype(object)])
-        rows += _behaviour_rows(control, UNIVERSE_ADULTS, (*student_labels, NOT_STUDENT),
-                                adult_weight, adult_labels)
+        rows += behaviour_rows(control, UNIVERSE_ADULTS, (*student_labels, NOT_STUDENT),
+                               adult_weight, adult_labels)
     table = pd.DataFrame(rows, columns=BEHAVIOUR_COLUMNS)
     diagnostics.update(n_adults=int(len(adults)), n_students=int(len(students)),
                        **arrival_diagnostics, **season_diagnostics, **leg_diagnostics)
     logger.info("%s behaviour table: %d rows (%d controls x 2 universes); %d adults, %d adult "
                 "students", _LOG_TAG, len(table), len(CONTROLS), len(adults), len(students))
     return table, diagnostics
-
-
-def _behaviour_rows(control: str, universe_name: str, label_set, weight: np.ndarray,
-                    labels: np.ndarray) -> list:
-    total = weight.sum()
-    n_effective = effective_sample_size(weight)
-    rows = []
-    for label in label_set:
-        mask = labels == label
-        weight_sum = float(weight[mask].sum())
-        share = weight_sum / total if total > 0 else float("nan")
-        rows.append({"control": control, "universe": universe_name, "label": label,
-                     "n_unweighted": int(mask.sum()), "weight_sum": weight_sum, "share": share,
-                     "n_effective": n_effective,
-                     "se_share": share_standard_error(share, n_effective)})
-    return rows
 
 
 def _arrival_labels(students: pd.DataFrame, legs: pd.DataFrame) -> tuple[pd.Series, dict]:
@@ -533,7 +538,7 @@ def _season_ticket_labels(students: pd.DataFrame) -> tuple[pd.Series, dict]:
 
 # --------------------------------------------------------------------------- comparison
 def build_comparison_table(universe: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    """Car availability, licence and bicycle availability: adult students vs other adults.
+    """Car availability, car licence and season-ticket availability: adult students vs others.
 
     Variables :data:`COMPARISON_VARIABLES`, each code as delivered (missing codes included as
     their own rows), every code seen among the adults emitted for both groups. Columns

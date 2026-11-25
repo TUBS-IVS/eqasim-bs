@@ -208,6 +208,21 @@ def test_unreadable_codes_are_excluded_and_counted(srv_frames):
                  "student_edu")["weight_sum"] == 3
 
 
+def test_students_away_from_home_all_day_are_counted(srv_frames):
+    """The SrV universe drops persons away from home all day (E_ANZ_WEGE -7); MiD keeps them, so
+    the number of STUDENTS lost this way must be in the files. 3_2 (student, 35) and 3_3 (not a
+    student) are away; 2_2 (pupil, 15) is away too and is no student."""
+    persons, legs, households = srv_frames
+    away = (((persons["HHNR"] == 3) & persons["PNR"].isin([2, 3]))
+            | ((persons["HHNR"] == 2) & (persons["PNR"] == 2)))
+    persons.loc[away, "E_ANZ_WEGE"] = -7
+    universe, diagnostics = R.student_universe(persons, households)
+    assert diagnostics["away_from_home"] == 3
+    assert diagnostics["n_students_away_from_home"] == 1
+    assert diagnostics["n_adult_students_away_from_home"] == 1
+    assert "3_2" not in set(universe["pid"])
+
+
 def test_unreadable_start_hour_excludes_from_arrival_only(srv_frames):
     """3_1 gets a readable arrival hour (8 h) but an unreadable start hour (-1): the order of
     their education legs is undeterminable, so they leave the arrival control (1 of the 2

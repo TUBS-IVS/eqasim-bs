@@ -40,6 +40,11 @@ ACCESS_DATE = "2026-11-25"
 # (institution, rank_or_kind, origin_ars5, origin_name, students_persons)
 # rank_or_kind is 1..10 (listed), "abroad", "other" or "total"; abroad/other/total rows
 # carry an empty origin_ars5.
+# OMITTED, not forgotten: the art academy in Braunschweig (Hochschule fuer Bildende Kuenste
+# Braunschweig), a local institution of the site table, has NO origin list here. The CHE
+# institution view lists only institutions with at least 1,000 students, and its selector did
+# not offer this one (checked 2026-11-25); it appears only as a destination in the Kreis view
+# (KREIS_DESTINATIONS). Phase 1 needs an explicit rule for its origins; no list is invented.
 INSTITUTION_ORIGINS: list[tuple[str, int | str, str, str, int]] = [
     ('Technische Universität Carolo-Wilhelmina zu Braunschweig', 1, '03101', 'Braunschweig, Stadt', 2417),
     ('Technische Universität Carolo-Wilhelmina zu Braunschweig', 2, '03241', 'Region Hannover', 1027),
@@ -1021,7 +1026,7 @@ def required_origin_kreise(kreis_polygons, site_points, max_distance_km: float =
 
     kreis_polygons needs an ``ars5`` column; both frames must be in EPSG:25832.
     Polygon (not centroid) distance makes this a superset of the population-weighted
-    centroid rule of the design, so the pinned list over-covers rather than misses.
+    centroid rule of the design of issue #140, so the pinned list over-covers rather than misses.
     """
     from shapely.ops import unary_union
 
@@ -1078,7 +1083,13 @@ def prepare_vg250_frames(kreise_raw, communes_raw, site_ags8):
 
 
 def local_site_ags8(sites: pd.DataFrame) -> list[str]:
-    """site_ags8 of the LOCAL sites of the R1 table (scope == 'local'); raises if none."""
+    """site_ags8 of the LOCAL sites of the R1 table (scope == 'local'); raises if none.
+
+    Raises ValueError naming the column when ``scope`` or ``site_ags8`` is missing.
+    """
+    missing = [column for column in ("scope", "site_ags8") if column not in sites.columns]
+    if missing:
+        raise ValueError(f"the R1 table is missing required column(s) {missing}")
     local = sites.loc[sites["scope"] == "local", "site_ags8"]
     if local.empty:
         raise ValueError("the R1 table has no site with scope == 'local'")

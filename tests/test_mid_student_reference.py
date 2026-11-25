@@ -60,6 +60,7 @@ def _raw():
         "anzwege1": [4, 2, 2, 803, 2, 2, 2, 2, 2, 2, 0, 2, 2, 2, 804, 803],
         "mobil": [1] * 15 + [0],
         "P_FKARTE": [3, 1, 99, 5, 1, 1, 8, 8, 8, 8, 8, 8, 1, 5, 8, 1],
+        "feiertag": [0] * 16,                              # no public holiday by default
     })
     rows = [
         # H_ID, P_ID, W_ZWECK, W_SZS, W_SZM, W_AZS, wegkm_imp, hvm_imp, W_RBW
@@ -191,6 +192,37 @@ def test_rbw_legs_do_not_count(mid_frames):
         == pytest.approx(3 / 6)
 
 
+def test_public_holiday_reporting_days_leave_every_day_table(mid_frames):
+    """a (student, Tuesday, weight 1, education legs: 09:00 12 km pt first) reported on a public
+    holiday (feiertag == 1). The regional survey's reference days exclude holidays, so a leaves
+    every table restricted to Tuesday to Thursday, counted; with the filter off a stays."""
+    persons, trips = mid_frames
+    persons.loc[(persons["H_ID"] == 1) & (persons["P_ID"] == 1), "feiertag"] = 1
+
+    behaviour, diagnostics = M.build_behaviour_seed_table(persons, trips)
+    # students with a diary b 2, c 1, p 1, r 1; with an education leg c and p: 2 of 5
+    assert _cell(behaviour, "status_x_education_leg", UNIVERSE_STUDENTS, "student_edu")[
+        "share"] == pytest.approx(2 / 5)
+    assert diagnostics["n_holiday_reporting_day"] == 1
+    status, status_diagnostics = M.build_status_by_age_table(persons, trips)
+    assert status.set_index(["age_band", "status"]).loc[("20_29", "student"),
+                                                        "n_unweighted"] == 2   # c, p
+    assert status_diagnostics["n_holiday_reporting_day"] == 1
+    distance, distance_diagnostics = M.build_distance_mode_table(persons, trips)
+    assert distance["n_unweighted"].sum() == 1                                 # p only
+    assert distance_diagnostics["n_holiday_reporting_day"] == 1
+
+    unfiltered, unfiltered_diagnostics = M.build_behaviour_seed_table(persons, trips,
+                                                                      exclude_holidays=False)
+    assert _cell(unfiltered, "status_x_education_leg", UNIVERSE_STUDENTS, "student_edu")[
+        "share"] == pytest.approx(3 / 6)                                        # a, c, p
+    assert unfiltered_diagnostics["n_holiday_reporting_day"] == 0
+
+    persons.loc[0, "feiertag"] = 2                         # outside the documented 0 / 1
+    with pytest.raises(ValueError, match="feiertag"):
+        M.build_behaviour_seed_table(persons, trips)
+
+
 def test_missing_ticket_code_is_excluded_and_counted(mid_frames):
     persons, trips = mid_frames
     table, diagnostics = M.build_behaviour_seed_table(persons, trips)
@@ -307,8 +339,10 @@ def _load_script():
     return module
 
 
-def test_default_rbw_setting_matches_the_production_config():
-    assert M.EXCLUDE_RBW_LEGS_DEFAULT == _load_script().production_exclude_rbw_legs()
+def test_default_day_settings_match_the_production_config():
+    script = _load_script()
+    assert M.EXCLUDE_RBW_LEGS_DEFAULT == script.production_exclude_rbw_legs()
+    assert M.EXCLUDE_HOLIDAYS_DEFAULT == script.production_exclude_holidays()
 
 
 def test_cli_writes_all_tables_with_headers(mid_frames, tmp_path):
@@ -341,6 +375,8 @@ def test_cli_writes_all_tables_with_headers(mid_frames, tmp_path):
         assert any("exclude_rbw_legs" in line for line in header)
         assert any("P_GEW" in line for line in header)
         assert any("ST_WOTAG" in line for line in header)
+        # every table restricted to the reporting day names its holiday filter
+        assert any("feiertag" in line for line in header) == (name != M.SHARE_20_29_TABLE)
         tables[name] = pd.read_csv(out / name, comment="#", dtype={"region": str})
         assert list(tables[name].columns) == list(columns)
     assert len(tables[M.STATUS_TABLE]) == 12

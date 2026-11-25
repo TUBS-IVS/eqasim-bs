@@ -1,17 +1,18 @@
 """Shared label vocabulary of the university-student behaviour cells (issue #140, Phase 0).
 
 The SrV 2023 aggregates (:mod:`braunschweig.calibration.srv_student_reference`) and the MiD
-seed side of a later task must classify persons into EXACTLY the same cells, otherwise every
-candidate control would "differ" between the two surveys for a reason that has nothing to do
-with behaviour. This module is therefore vocabulary only: label strings, bin edges, the two
-universe names, the column order of the behaviour table and the two statistics every share of
-those tables carries. It holds no survey code and does no I/O.
+seed side (:mod:`braunschweig.calibration.mid_student_reference`) must classify persons into
+EXACTLY the same cells, otherwise every candidate control would "differ" between the two surveys
+for a reason that has nothing to do with behaviour. This module is therefore the shared
+vocabulary: label strings, bin edges, the two universe names, the column order of the behaviour
+table, the two statistics every share of those tables carries, the one builder of a control's
+rows (:func:`behaviour_rows`) and the exclusion limit all three student modules apply
+(:data:`MAX_EXCLUSION_RATE`). It holds no survey code and does no I/O.
 
-Statistics (plan "Global Constraints"): the effective sample size is Kish's
-``n_effective = (sum w)^2 / sum w^2`` over exactly the rows of the share's universe, and the
-standard error of a weighted share is ``sqrt(share * (1 - share) / n_effective)``. Both are NaN
-for an empty base, never 0.0, so a consumer cannot mistake "not measurable" for "measured with
-certainty".
+Statistics: the effective sample size is Kish's ``n_effective = (sum w)^2 / sum w^2`` over
+exactly the rows of the share's universe, and the standard error of a weighted share is
+``sqrt(share * (1 - share) / n_effective)``. Both are NaN for an empty base, never 0.0, so a
+consumer cannot mistake "not measurable" for "measured with certainty".
 """
 from __future__ import annotations
 
@@ -43,7 +44,8 @@ TRIP_CLASS_EDGES = (-1, 0, 2, 4, 10_000)
 ARRIVAL_HOUR_EDGES = (-1, 8, 11, 30)
 
 # Home-to-education distance bands, LEFT-inclusive (a 10.0 km leg is in 10_25). The 10 / 25 /
-# 50 / 100 km edges are the commuter-weight bands of design section 6.5.
+# 50 / 100 km edges are the commuter-weight bands of the design of this work (issue #140), to be
+# recorded in an ADR in the next phase.
 STUDENT_DISTANCE_EDGES_KM = (0.0, 5.0, 10.0, 25.0, 50.0, 100.0, float("inf"))
 STUDENT_DISTANCE_LABELS = ("0_5", "5_10", "10_25", "25_50", "50_100", "100_plus")
 
@@ -53,6 +55,12 @@ UNIVERSE_STUDENTS = "students"
 
 BEHAVIOUR_COLUMNS = ["control", "universe", "label", "n_unweighted", "weight_sum", "share",
                      "n_effective", "se_share"]
+
+# ASSUMPTION: an exclusion step that removes more than half of its base is a broken code mapping
+# (a renamed column, a recoded variable), not a measurement, so the build raises instead of
+# shipping a table built on the remainder; the decision tables apply the same limit to cells
+# whose rule 2 cannot be evaluated. Half is a judgement, not a sourced threshold.
+MAX_EXCLUSION_RATE = 0.5
 
 
 def effective_sample_size(weights) -> float:
@@ -71,3 +79,26 @@ def share_standard_error(share: float, n_effective: float) -> float:
     if math.isnan(share) or math.isnan(n_effective) or not n_effective > 0:
         return float("nan")
     return math.sqrt(share * (1.0 - share) / n_effective)
+
+
+def behaviour_rows(control: str, universe_name: str, label_set, weight: np.ndarray,
+                   labels: np.ndarray) -> list:
+    """Rows of :data:`BEHAVIOUR_COLUMNS` for one control in one universe.
+
+    ``weight`` and ``labels`` are aligned arrays over exactly the base of the control in that
+    universe; every label of ``label_set`` gets a row (an absent label a zero count and a 0.0
+    share over a non-empty base). The weighted share, the Kish size of the whole base and the
+    standard error follow the module docstring; the share is NaN for an empty base.
+    """
+    total = weight.sum()
+    n_effective = effective_sample_size(weight)
+    rows = []
+    for label in label_set:
+        mask = labels == label
+        weight_sum = float(weight[mask].sum())
+        share = weight_sum / total if total > 0 else float("nan")
+        rows.append({"control": control, "universe": universe_name, "label": label,
+                     "n_unweighted": int(mask.sum()), "weight_sum": weight_sum, "share": share,
+                     "n_effective": n_effective,
+                     "se_share": share_standard_error(share, n_effective)})
+    return rows

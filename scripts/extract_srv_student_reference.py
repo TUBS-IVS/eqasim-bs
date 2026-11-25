@@ -8,7 +8,7 @@ households; cp1252, semicolon, decimal comma) and writes five small aggregate ta
     srv2023_education_status_by_age.csv              status of adults with an education leg
     srv2023_student_education_distance_by_kreis.csv  home-to-education distance bands, adult students
     srv2023_student_behaviour.csv                    behaviour cells, adults and students
-    srv2023_student_comparison.csv                   car / licence / bicycle, students vs others
+    srv2023_student_comparison.csv                   car / licence / season ticket, students vs others
 
 All definitions live in ``braunschweig.calibration.srv_student_reference`` (and the shared
 label vocabulary in ``braunschweig.calibration.student_behaviour_labels``); this script owns
@@ -57,8 +57,10 @@ logger = logging.getLogger("extract_srv_student_reference")
 
 _UNIVERSE_UNITS_NOTE = (
     "(n_persons_total is the raw Personen-file row count; missing_weight is measured on it, "
-    "away_from_home on the persons surviving the weight filter, missing_kreis on the persons "
-    "surviving the away-from-home filter; n_universe is the resulting person count; "
+    "away_from_home on the persons surviving the weight filter (n_students_away_from_home / "
+    "n_adult_students_away_from_home: the students / adult students among them), missing_kreis "
+    "on the persons surviving the away-from-home filter; n_universe is the resulting person "
+    "count; "
     "n_missing_age and n_unreadable_employment_code are measured on n_universe, and "
     "n_excluded_unreadable_employment_code is the same persons removed from this table; "
     "n_legs_total and n_legs_missing_purpose, where present, are raw Wege-file row counts)")
@@ -125,6 +127,8 @@ def _share_header(diagnostics: dict, universe_diagnostics: dict, source_commit: 
         "#   share of the students of ALL ages with at least one leg with E_ZWECK_9 in %s on the"
         % sorted(R.EDUCATION_E_ZWECK_9),
         "#   reporting day, with n_effective_presence and se_presence_share.",
+        "# Every share here excludes persons away from home all day (E_ANZ_WEGE -7, outside the",
+        "#   universe; the students among them are n_students_away_from_home below).",
         _exclusions(universe_diagnostics, diagnostics) + " " + _UNIVERSE_UNITS_NOTE,
     ]
 
@@ -195,10 +199,14 @@ def _behaviour_header(diagnostics: dict, universe_diagnostics: dict,
         "# Per-control exclusions: a student with an unreadable start or arrival hour leaves the",
         "#   arrival control only, a student with E_OEV_FK -10 the season_ticket control only, in",
         "#   both universes; counted below.",
+        "# UNIVERSE GAP to the MiD mirror mid2023_student_behaviour_seed.csv: persons away from",
+        "#   home all day (E_ANZ_WEGE -7) are outside this universe, MiD keeps them; the adult",
+        "#   students dropped this way are n_adult_students_away_from_home below.",
         "# Columns: %s; n_effective is the Kish size of the control's base in that universe."
         % ", ".join(L.BEHAVIOUR_COLUMNS),
         _exclusions(universe_diagnostics, diagnostics) + " " + _UNIVERSE_UNITS_NOTE
-        + " (n_students_* are adult students)",
+        + " (n_students and n_students_unreadable_* count adult students; "
+        "n_students_away_from_home counts students of all ages)",
     ]
 
 

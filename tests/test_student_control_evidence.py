@@ -150,6 +150,30 @@ def test_build_rule_refuses_when_most_cells_are_not_evaluable():
         E.evaluate_build_rule(srv, mid)
 
 
+@pytest.mark.parametrize("srv_share, mid_share, time_labels", [
+    # arrival differs only in the cell it shares with the status control: -0.1 / sqrt(0.24 / 100)
+    # = -2.04 se there, 0.75 / 0.75 / 1.0 se in the three arrival-time cells
+    ([0.20, 0.20, 0.20, 0.40], [0.17, 0.17, 0.16, 0.50], []),
+    # arrival differs in two arrival-time cells: 0.2 / 0.05 = 4.0 and -0.1 / 0.04 = -2.5 se;
+    # the shared cell stays at -0.05 / 0.03 = -1.67 se
+    ([0.50, 0.20, 0.20, 0.10], [0.30, 0.30, 0.25, 0.15],
+     ["student_arrive_before_9", "student_arrive_9_11"]),
+])
+def test_arrival_status_overlap_is_read_from_the_rule_table(srv_share, mid_share, time_labels):
+    """The arrival cell student_no_education_leg holds the same students as the status cell
+    student_noedu; the overlap summary must say through which cells arrival passes rule 2."""
+    srv, mid = _frames(control="arrival", srv_n=[50] * 4, srv_share=srv_share,
+                       mid_share=mid_share, srv_n_eff=100)
+    rule = E.evaluate_build_rule(srv, mid)
+    overlap = E.arrival_status_overlap(rule)
+    assert overlap["arrival_verdict"] == "build_candidate"
+    assert overlap["status_verdict"] == "comparison_only"     # identical status cells
+    assert overlap["arrival_time_labels_passing_rule2"] == time_labels
+    no_edu = _control(rule, "arrival").loc["student_no_education_leg", "difference_in_se"]
+    assert overlap["arrival_no_education_leg_difference_in_se"] == pytest.approx(no_edu)
+    assert overlap["status_noedu_difference_in_se"] == pytest.approx(0.0)
+
+
 @pytest.mark.parametrize("survey", ["srv", "mid"])
 def test_mismatched_labels_between_surveys_raise(survey):
     srv, mid = _frames(control="work_leg", srv_n=[40, 35], srv_share=[0.30, 0.70],
@@ -208,11 +232,11 @@ def _gate_inputs():
                         "share_pupils_and_students": [0.17, 0.15, 0.35]})
 
     sites = pd.DataFrame(
-        [("Uni A", "A", "03101000", "03101", "local", 1000, "WS"),
-         ("Art school", "A", "03101000", "03101", "local", 200, "WS"),
-         ("HS B", "W", "03103000", "03103", "local", 400, "WS"),
-         ("HS B", "F", "03158037", "03158", "local", 300, "WS"),
-         ("Uni H", "H", "03241001", "03241", "surrounding", 5000, "WS")],
+        [("Uni A", "A", "03101000", "03101", "local", 1000, "WS 2099/00"),
+         ("Art school", "A", "03101000", "03101", "local", 200, "WS 2099/00"),
+         ("HS B", "W", "03103000", "03103", "local", 400, "WS 2099/00"),
+         ("HS B", "F", "03158037", "03158", "local", 300, "WS 2099/00"),
+         ("Uni H", "H", "03241001", "03241", "surrounding", 5000, "WS 2099/00")],
         columns=["institution", "site_commune", "site_ags8", "site_kreis_ars5", "scope",
                  "students_persons", "semester"])
     return srv, census, mid, sites
@@ -330,8 +354,13 @@ def test_cli_writes_gate_and_rule_tables(tmp_path):
     rule_text = (out / "student_control_build_rule.csv").read_text(encoding="utf-8")
     assert "ASSUMPTION" in rule_text and UNIVERSE_STUDENTS in rule_text
     assert "n_cells_rule2_not_evaluable=0" in rule_text
+    # one generated line on the overlap of the arrival and the status control
+    assert sum(line.startswith("# Overlap") for line in rule_text.splitlines()) == 1
     gate_text = (out / "student_level_gate.csv").read_text(encoding="utf-8")
     assert "sha256" in gate_text and "Phase 1" in gate_text
+    # the enrollment semester of the local sites is printed; enrollment is no bound
+    assert "WS 2099/00" in gate_text
+    assert "bound" not in gate_text
 
     rule = pd.read_csv(out / "student_control_build_rule.csv", comment="#")
     assert set(rule.loc[rule["control"] == "work_leg", "verdict"]) == {"build_candidate"}

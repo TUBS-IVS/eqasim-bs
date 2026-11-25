@@ -53,6 +53,7 @@ BUILD_RULE_TABLE = "student_control_build_rule.csv"
 LEVEL_GATE_TABLE = "student_level_gate.csv"
 COMPARISON_ONLY_TABLE = "student_comparison_only.csv"
 COMPARISON_ONLY_COLUMNS = ["variable", "srv_variable", "source_table", "reason"]
+SITE_SEMESTER_COLUMN = "semester"
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("build_student_control_evidence")
@@ -96,6 +97,29 @@ def _common_header(table_name: str, source_commit: str, inputs) -> list:
     ]
 
 
+def _overlap_lines(overlap: dict) -> list:
+    """The generated ``# Overlap`` line (with continuations) of the build-rule table."""
+    time_labels = overlap["arrival_time_labels_passing_rule2"]
+    if time_labels:
+        passing = "arrival-time cells passing rule 2: %s" % ", ".join(time_labels)
+    elif overlap["arrival_verdict"] == E.VERDICT_BUILD:
+        passing = ("no arrival-time cell passes rule 2: the arrival control passes only through "
+                   "the shared cell")
+    else:
+        passing = "no arrival-time cell passes rule 2"
+    return [
+        "# Overlap of two controls: arrival cell %s and %s cell %s hold the same students"
+        % (E.ARRIVAL_NO_EDUCATION_LABEL, E.STATUS_CONTROL, E.STATUS_NO_EDUCATION_LABEL),
+        "#   (no education leg on the reporting day); difference_in_se %.10g and %.10g; %s."
+        % (overlap["arrival_no_education_leg_difference_in_se"],
+           overlap["status_noedu_difference_in_se"], passing),
+        "#   Verdicts: %s %s, %s %s. The two controls must NOT be built together: they would"
+        % (E.STATUS_CONTROL, overlap["status_verdict"], E.ARRIVAL_CONTROL,
+           overlap["arrival_verdict"]),
+        "#   steer the same students twice.",
+    ]
+
+
 def _build_rule_header(source_commit: str, inputs, rule: pd.DataFrame) -> list:
     exclusions = E.build_rule_exclusions(rule)
     return _common_header(BUILD_RULE_TABLE, source_commit, inputs) + [
@@ -103,12 +127,12 @@ def _build_rule_header(source_commit: str, inputs, rule: pd.DataFrame) -> list:
         "#   from the input tables, which are weighted with them).",
         "# Rule 1: every SrV cell (student label, unweighted count in the %s universe) holds"
         % UNIVERSE_ADULTS,
-        "#   >= %d respondents. ASSUMPTION (design 6.8), not a sourced threshold."
+        "#   >= %d respondents. ASSUMPTION (design of issue #140), not a sourced threshold."
         % E.MIN_RESPONDENTS_PER_CELL,
         "# Rule 2: in at least one cell |SrV share - MiD share| > %.1f standard errors of the SrV"
         % E.MIN_DIFFERENCE_STANDARD_ERRORS,
-        "#   share. ASSUMPTION (design 6.8), not a sourced threshold. Shares are taken in the %s"
-        % E.RULE_UNIVERSE,
+        "#   share. ASSUMPTION (design of issue #140), not a sourced threshold. Shares are taken in"
+        " the %s" % E.RULE_UNIVERSE,
         "#   universe (within students: the student level is the status control's job); the",
         "#   standard error is sqrt(share * (1 - share) / n_effective) with the Kish size of that",
         "#   universe (srv_n_effective_students). difference_in_se = (SrV - MiD) / se, signed.",
@@ -118,6 +142,7 @@ def _build_rule_header(source_commit: str, inputs, rule: pd.DataFrame) -> list:
         "# MiD bases: persons without a diary of the day are absent from the four diary-dependent",
         "#   controls (see the header of mid2023_student_behaviour_seed.csv), so",
         "#   mid_n_unweighted_adults is the reduced MiD count of the cell.",
+        *_overlap_lines(E.arrival_status_overlap(rule)),
         "# Exclusions: %s (n_cells_rule2_not_evaluable = difference_in_se NaN, because the MiD"
         % ", ".join("%s=%s" % item for item in exclusions.items()),
         "#   share is NaN or the SrV standard error is NaN or 0; such a cell counts as 'does not",
@@ -125,7 +150,7 @@ def _build_rule_header(source_commit: str, inputs, rule: pd.DataFrame) -> list:
     ]
 
 
-def _gate_header(source_commit: str, inputs, gate: pd.DataFrame) -> list:
+def _gate_header(source_commit: str, inputs, gate: pd.DataFrame, enrollment_semesters) -> list:
     covered = [code for code in ZGB_KREISE if code not in UNSURVEYED_KREISE]
     kreise = gate[gate["code"] != REGION_CODE]
     without_site = kreise.loc[kreise["enrollment_local_sites_persons"] == 0, "code"].tolist()
@@ -136,8 +161,11 @@ def _gate_header(source_commit: str, inputs, gate: pd.DataFrame) -> list:
         "# Weights: SrV GEWICHT_P_ZENSUS (srv_* shares and srv_students_weighted_persons), MiD P_GEW",
         "#   (the share of students in the ratio); census counts and enrollment are unweighted counts.",
         "# DEFINITION GAPS: the SrV estimate counts students by main activity (V_ERW 7, working",
-        "#   students included), the census group is pupils and students WITHOUT paid work; the",
-        "#   enrollment counts students of ALL ages, the estimates are age 20-29 only.",
+        "#   students included) among the persons at home at some point of the reporting day",
+        "#   (persons away from home all day are outside the SrV universe); the census group is",
+        "#   pupils and students WITHOUT paid work; the enrollment counts students of ALL ages at",
+        "#   the site where they study, semester %s, the estimates are residents aged 20-29."
+        % ", ".join(enrollment_semesters),
         "# Estimates of the students aged 20-29: srv_estimate = SrV student_share_20_29 x census",
         "#   all persons 20-29; census_estimate = census pupils and students without paid work",
         "#   20-29 x mid_to_census_ratio_germany (MiD share of students, P_TAET 10, among 20-29 /",
@@ -145,10 +173,12 @@ def _gate_header(source_commit: str, inputs, gate: pd.DataFrame) -> list:
         "#   Land %s (sensitivity). The census group excludes students in paid work and includes"
         % E.SENSITIVITY_LAND,
         "#   pupils: the ratio scales that pattern to MiD's student level.",
-        "# The third estimate is delivered in Phase 1; enrollment is the bound until then",
-        "#   (residents_implied_by_enrollment_persons is NaN: it needs the origin-destination",
-        "#   table of Phase 1). enrollment_local_sites_persons = students at local sites in the",
-        "#   Kreis (where they study, not where they live), 0 where there is none.",
+        "# The third estimate is delivered in Phase 1 (residents_implied_by_enrollment_persons is",
+        "#   NaN: it needs the origin-destination table of Phase 1). enrollment_local_sites_persons",
+        "#   = students at local sites in the Kreis (where they study, not where they live), 0",
+        "#   where there is none: a COMPARISON FIGURE, not a limit on the estimates (residents who",
+        "#   study elsewhere or by distance learning are survey students but not local enrollment;",
+        "#   local enrollment includes students who live elsewhere).",
         "# srv_students_weighted_persons and srv_student_share_adults are adults 18+, all ages.",
         "# Exclusions: srv_unsurveyed_kreise_nan=%s, kreise_without_local_site_zero=%s"
         % (list(UNSURVEYED_KREISE), without_site),
@@ -157,7 +187,7 @@ def _gate_header(source_commit: str, inputs, gate: pd.DataFrame) -> list:
 
 def _comparison_header(source_commit: str, inputs) -> list:
     return _common_header(COMPARISON_ONLY_TABLE, source_commit, inputs) + [
-        "# Variables that are comparison tables by design (design 6.8: the model derives",
+        "# Variables that are comparison tables by decision of issue #140 (the model derives",
         "#   availability itself). This file copies no value; the shares live in source_table.",
     ]
 
@@ -197,7 +227,15 @@ def main(argv=None) -> int:
     srv_shares = _read(srv_share_path, ["code", "level"])
     mid_shares = _read(mid_share_path, ["region"])
     census = _read(census_path, ["region", "age_group"])
-    sites = _read(sites_path, ["site_ags8", "site_kreis_ars5", "scope"])
+    sites = _read(sites_path, ["site_ags8", "site_kreis_ars5", "scope", SITE_SEMESTER_COLUMN])
+    if SITE_SEMESTER_COLUMN not in sites.columns:
+        raise ValueError("%s: missing required column %s (the enrollment semester printed in the "
+                         "level-gate header)" % (sites_path, SITE_SEMESTER_COLUMN))
+    local_semesters = sites.loc[sites["scope"] == E.SCOPE_LOCAL, SITE_SEMESTER_COLUMN]
+    if local_semesters.isna().any():
+        raise ValueError("%s: column %s is missing for %d local site(s)"
+                         % (sites_path, SITE_SEMESTER_COLUMN, int(local_semesters.isna().sum())))
+    enrollment_semesters = sorted(set(local_semesters))
     comparison = _read(srv_comparison_path, ["variable"])
     absent = sorted(set(E.COMPARISON_ONLY_SRV_VARIABLES.values()) - set(comparison["variable"]))
     if absent:
@@ -209,7 +247,8 @@ def main(argv=None) -> int:
     comparison_only = pd.DataFrame(
         [{"variable": variable, "srv_variable": E.COMPARISON_ONLY_SRV_VARIABLES[variable],
           "source_table": S.COMPARISON_TABLE,
-          "reason": "comparison table by design (design 6.8)"} for variable in E.COMPARISON_ONLY],
+          "reason": "comparison table by decision of issue #140 (the model derives availability "
+                    "itself)"} for variable in E.COMPARISON_ONLY],
         columns=COMPARISON_ONLY_COLUMNS)
 
     out = Path(args.out_dir)
@@ -217,7 +256,8 @@ def main(argv=None) -> int:
     _write(rule, out / BUILD_RULE_TABLE,
            _build_rule_header(commit, [srv_behaviour_path, mid_behaviour_path], rule))
     _write(gate, out / LEVEL_GATE_TABLE,
-           _gate_header(commit, [srv_share_path, census_path, mid_share_path, sites_path], gate))
+           _gate_header(commit, [srv_share_path, census_path, mid_share_path, sites_path], gate,
+                        enrollment_semesters))
     _write(comparison_only, out / COMPARISON_ONLY_TABLE,
            _comparison_header(commit, [srv_comparison_path]))
     return 0

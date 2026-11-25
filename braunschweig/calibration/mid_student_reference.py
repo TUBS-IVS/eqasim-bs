@@ -22,6 +22,17 @@ Definitions (MiD 2023 codebook B1 as quoted in ``braunschweig/popsim/attributes.
 * Core weekdays: ``ST_WOTAG`` in :data:`CORE_WEEKDAYS` (Tuesday to Thursday), the reporting-day
   universe of the SrV side. Every table but :func:`build_share_20_29_table` is restricted to it,
   because the others describe a reporting DAY and that one a person status.
+* Public holidays (``exclude_holidays``, production value of
+  ``braunschweig.population.popsim.exclude_holiday_plan_sources`` in ``configs/base_bs.yml``):
+  True drops the persons whose reporting day was a public holiday at their residence
+  (``feiertag == popsim.diary_plan_match.MID_HOLIDAY``) from every table restricted to the core
+  weekdays, counted as ``n_holiday_reporting_day``, because the SrV reference days exclude public
+  holidays and the popsim seed drops such diaries for the same reason
+  (``diary_plan_match.classify_plan_sources``). ``feiertag`` must be 0 or 1; anything else
+  raises. The status share of :func:`build_share_20_29_table` keeps every day, holidays included.
+* Universe gap to the SrV side, not corrected here: MiD keeps persons who were away from home
+  all day, the SrV universe drops them (``srv_student_reference.student_universe`` counts the
+  students lost that way).
 * Student = ``P_TAET == STUDENT_P_TAET``. ``P_TAET`` 99 (no answer) or a missing value answers
   nothing about the activity: the person is excluded from every table here and counted, never
   classed "not a student" or "other". A code outside the documented 1-17 raises.
@@ -81,8 +92,9 @@ The comparison of the two surveys therefore assumes that the persons without a d
 distinct group with respect to those cells; that is not checkable from the survey itself.
 
 Every exclusion is counted in the builder's diagnostics and logged as ``primary n/N (rate),
-excluded m (rate)``; a step that would exclude more than :data:`MAX_EXCLUSION_RATE` of its base
-raises, because that is a broken code mapping, not a measurement. Shares are NaN, never 0.0,
+excluded m (rate)``; a step that would exclude more than
+:data:`student_behaviour_labels.MAX_EXCLUSION_RATE` of its base raises, because that is a broken
+code mapping, not a measurement. Shares are NaN, never 0.0,
 when their base is empty, and empty cells are emitted.
 """
 from __future__ import annotations
@@ -94,12 +106,12 @@ import pandas as pd
 
 from braunschweig.calibration.commute_day_state_reference import MID_TRIP_LENGTH_MAX_KM
 from braunschweig.calibration.student_behaviour_labels import (
-    ARRIVAL_HOUR_EDGES, BEHAVIOUR_COLUMNS, CONTROLS, MIN_ADULT_AGE, NOT_STUDENT,
-    STUDENT_DISTANCE_EDGES_KM, STUDENT_DISTANCE_LABELS, TRIP_CLASS_EDGES, UNIVERSE_ADULTS,
-    UNIVERSE_STUDENTS, effective_sample_size, share_standard_error)
+    ARRIVAL_HOUR_EDGES, BEHAVIOUR_COLUMNS, CONTROLS, MAX_EXCLUSION_RATE, MIN_ADULT_AGE,
+    NOT_STUDENT, STUDENT_DISTANCE_EDGES_KM, STUDENT_DISTANCE_LABELS, TRIP_CLASS_EDGES,
+    UNIVERSE_ADULTS, UNIVERSE_STUDENTS, behaviour_rows)
 from braunschweig.popsim.attributes import (FKARTE_TO_CATEGORY, PT_TICKET_DEUTSCHLANDTICKET,
                                             PT_TICKET_OTHER_FLATRATE)
-from braunschweig.popsim.diary_plan_match import NO_DIARY_CODES
+from braunschweig.popsim.diary_plan_match import MID_HOLIDAY, NO_DIARY_CODES
 from braunschweig.popsim.mid.participation import PARTICIPATION_W_ZWECK
 
 logger = logging.getLogger(__name__)
@@ -127,6 +139,12 @@ CORE_WEEKDAYS = (2, 3, 4)
 # the extraction script reads the config and passes the value explicitly, and a test pins this
 # default to it.
 EXCLUDE_RBW_LEGS_DEFAULT = True
+# Production value of braunschweig.population.popsim.exclude_holiday_plan_sources in
+# configs/base_bs.yml; read and passed the same way, pinned by the same test.
+EXCLUDE_HOLIDAYS_DEFAULT = True
+# feiertag: 1 = the reporting day was a public holiday at the residence (MID_HOLIDAY), 0 = not.
+HOLIDAY_COLUMN = "feiertag"
+HOLIDAY_CODES = frozenset({0, MID_HOLIDAY})
 
 # hvm_imp main-mode codes (handbook: the imputed variant; trips.MODE_BY_HVM maps the same codes).
 MODE_COLUMN = "hvm_imp"
@@ -146,12 +164,6 @@ ARRIVAL_HOUR_FILTER_CODE = 99
 MAX_CLOCK_HOUR = 23
 MAX_VALID_AGE_YEARS = 120
 
-# ASSUMPTION: an exclusion step that removes more than half of its base is a broken code mapping
-# (a renamed column, a recoded variable), not a measurement, so the build raises instead of
-# shipping a table built on the remainder. Half is a judgement, not a sourced threshold; the
-# value is the one of srv_student_reference.MAX_EXCLUSION_RATE, which this module mirrors.
-MAX_EXCLUSION_RATE = 0.5
-
 REGION_GERMANY = "DE"
 # MiD BLAND codes 1-16, the sixteen Laender; emitted as zero-padded two-digit strings.
 LAND_CODES = tuple(range(1, 17))
@@ -162,8 +174,9 @@ AGE_BAND_20_29 = (20, 29)
 
 PERSON_COLUMNS = ["H_ID", "P_ID", "P_GEW", "P_TAET", "HP_ALTER"]
 WEEKDAY_COLUMN = "ST_WOTAG"
-BEHAVIOUR_PERSON_COLUMNS = PERSON_COLUMNS + [WEEKDAY_COLUMN, "anzwege1", "mobil", "P_FKARTE"]
-STATUS_PERSON_COLUMNS = PERSON_COLUMNS + [WEEKDAY_COLUMN]
+BEHAVIOUR_PERSON_COLUMNS = PERSON_COLUMNS + [WEEKDAY_COLUMN, HOLIDAY_COLUMN, "anzwege1", "mobil",
+                                             "P_FKARTE"]
+STATUS_PERSON_COLUMNS = PERSON_COLUMNS + [WEEKDAY_COLUMN, HOLIDAY_COLUMN]
 LEG_KEY_COLUMNS = ["H_ID", "P_ID", "W_ZWECK"]
 FIRST_LEG_COLUMNS = ["W_SZS", "W_SZM"]
 ARRIVAL_COLUMNS = ["W_AZS"]
@@ -216,13 +229,16 @@ def _weighted_share(weight: np.ndarray, mask: np.ndarray) -> float:
     return float(weight[mask].sum() / total) if total > 0 else float("nan")
 
 
-def _prepare_persons(persons: pd.DataFrame, columns, name: str, *,
-                     core_weekdays: bool) -> tuple[pd.DataFrame, dict]:
+def _prepare_persons(persons: pd.DataFrame, columns, name: str, *, core_weekdays: bool,
+                     exclude_holidays: bool = False) -> tuple[pd.DataFrame, dict]:
     """Numeric person frame with a valid weight (and, if asked, on a core weekday).
 
     Columns: the requested ones as numbers (non-numeric -> NaN), ``pid`` and ``weight``,
     ``age`` (NaN when missing or outside 0 to :data:`MAX_VALID_AGE_YEARS`) and ``taet``.
-    Raises on a duplicated person key and on a ``P_TAET`` outside the documented set.
+    With ``core_weekdays`` the ``feiertag`` codes are checked and, with ``exclude_holidays``,
+    the core-weekday persons reporting on a public holiday are dropped
+    (``n_holiday_reporting_day``, 0 when the filter is off). Raises on a duplicated person key,
+    on a ``P_TAET`` outside the documented set and on a ``feiertag`` other than 0 / 1.
     """
     _require_columns(persons, columns, name)
     frame = persons[list(columns)].copy()
@@ -251,6 +267,20 @@ def _prepare_persons(persons: pd.DataFrame, columns, name: str, *,
                     _LOG_TAG, WEEKDAY_COLUMN, list(CORE_WEEKDAYS), int(on_core.sum()),
                     int((~on_core).sum()))
         frame = frame[on_core.values]
+        holiday_code = frame[HOLIDAY_COLUMN]
+        undocumented_holiday = sorted(set(holiday_code[~holiday_code.isin(sorted(HOLIDAY_CODES))]
+                                          .tolist()), key=str)
+        if undocumented_holiday:
+            raise ValueError("%s: column %s carries code(s) %s (NaN = missing or non-numeric) "
+                             "outside the documented set %s"
+                             % (name, HOLIDAY_COLUMN, undocumented_holiday,
+                                sorted(HOLIDAY_CODES)))
+        holiday = (holiday_code == MID_HOLIDAY).to_numpy() & exclude_holidays
+        _log_exclusion("reporting day not a public holiday (%s != %d; exclude_holidays=%s)"
+                       % (HOLIDAY_COLUMN, MID_HOLIDAY, exclude_holidays),
+                       int(holiday.sum()), len(frame))
+        diagnostics["n_holiday_reporting_day"] = int(holiday.sum())
+        frame = frame[~holiday]
     code = frame["taet"]
     undocumented = sorted(set(code[code.notna() & ~code.isin(sorted(P_TAET_CODES))
                                    & (code != P_TAET_NO_ANSWER)].tolist()))
@@ -311,17 +341,19 @@ def _age_band(age: pd.Series) -> pd.Series:
 
 # --------------------------------------------------------------------------- status by age
 def build_status_by_age_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
-                              exclude_rbw_legs: bool = EXCLUDE_RBW_LEGS_DEFAULT
+                              exclude_rbw_legs: bool = EXCLUDE_RBW_LEGS_DEFAULT,
+                              exclude_holidays: bool = EXCLUDE_HOLIDAYS_DEFAULT
                               ) -> tuple[pd.DataFrame, dict]:
     """Activity status of the persons with an education trip on a core weekday, per age band.
 
     Status: ``student`` (P_TAET 10), ``pupil`` (9), ``apprentice`` (8), ``other`` (the rest).
     Bands :data:`STATUS_AGE_BANDS` (bounds inclusive, ``lt20`` from age 0). Columns
     :data:`STATUS_COLUMNS`; ``share`` is weighted within the band, NaN for an empty band; all 12
-    cells are emitted. A person without a valid age is in no band (counted).
+    cells are emitted. A person without a valid age is in no band (counted); with
+    ``exclude_holidays`` a holiday reporting day is outside the table (counted).
     """
     people, diagnostics = _prepare_persons(persons, STATUS_PERSON_COLUMNS, "persons",
-                                           core_weekdays=True)
+                                           core_weekdays=True, exclude_holidays=exclude_holidays)
     legs, _ = _direct_legs(trips, EDUCATION_W_ZWECK, [], exclude_rbw_legs=exclude_rbw_legs)
     people = people[people["pid"].isin(set(legs["pid"])).values]
     diagnostics["n_with_education_trip"] = int(len(people))
@@ -351,7 +383,8 @@ def build_status_by_age_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
 
 # --------------------------------------------------------------------------- distance x mode
 def build_distance_mode_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
-                              exclude_rbw_legs: bool = EXCLUDE_RBW_LEGS_DEFAULT
+                              exclude_rbw_legs: bool = EXCLUDE_RBW_LEGS_DEFAULT,
+                              exclude_holidays: bool = EXCLUDE_HOLIDAYS_DEFAULT
                               ) -> tuple[pd.DataFrame, dict]:
     """Distance band x main mode of the adult students' first education trip, core weekdays.
 
@@ -359,10 +392,11 @@ def build_distance_mode_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
     edges), modes :data:`MODE_BY_HVM`. Columns :data:`DISTANCE_MODE_COLUMNS`: ``share_of_band``
     is weighted within the band (NaN for an empty band), ``share_of_all`` over all banded
     students; all 30 cells are emitted. Students under :data:`MIN_ADULT_AGE` or without a valid
-    age are outside the universe (counted), like the SrV distance table.
+    age are outside the universe (counted), like the SrV distance table; with
+    ``exclude_holidays`` so is a holiday reporting day (counted).
     """
     people, diagnostics = _prepare_persons(persons, STATUS_PERSON_COLUMNS, "persons",
-                                           core_weekdays=True)
+                                           core_weekdays=True, exclude_holidays=exclude_holidays)
     people, unreadable = _drop_unreadable_activity(people, "the core-weekday persons")
     diagnostics.update(unreadable)
     students = people[people["taet"] == STUDENT_P_TAET]
@@ -474,7 +508,8 @@ def build_share_20_29_table(persons: pd.DataFrame,
 
 # --------------------------------------------------------------------------- behaviour
 def build_behaviour_seed_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
-                               exclude_rbw_legs: bool = EXCLUDE_RBW_LEGS_DEFAULT
+                               exclude_rbw_legs: bool = EXCLUDE_RBW_LEGS_DEFAULT,
+                               exclude_holidays: bool = EXCLUDE_HOLIDAYS_DEFAULT
                                ) -> tuple[pd.DataFrame, dict]:
     """Every control of :data:`student_behaviour_labels.CONTROLS` in both universes.
 
@@ -485,10 +520,11 @@ def build_behaviour_seed_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
     control (unreadable trip count, arrival hour or start time, an unmapped ``P_FKARTE``) is
     absent from that control's base in BOTH universes and stays in every other control.
     ``status_x_education_leg`` and ``work_leg`` use the seed's education / work leg sets.
-    ``n_effective`` is the Kish size over exactly the rows of the control's base.
+    ``n_effective`` is the Kish size over exactly the rows of the control's base. With
+    ``exclude_holidays`` a person reporting on a public holiday is in neither universe (counted).
     """
     people, diagnostics = _prepare_persons(persons, BEHAVIOUR_PERSON_COLUMNS, "persons",
-                                           core_weekdays=True)
+                                           core_weekdays=True, exclude_holidays=exclude_holidays)
     people, unreadable = _drop_unreadable_activity(people, "the core-weekday persons")
     diagnostics.update(unreadable)
     no_age = people["age"].isna()
@@ -541,15 +577,15 @@ def build_behaviour_seed_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
         base = students[label.notna().to_numpy()]
         base_labels = label[label.notna()].to_numpy(dtype=object)
         student_weight = base["weight"].to_numpy(dtype=float)
-        rows += _behaviour_rows(control, UNIVERSE_STUDENTS, student_labels, student_weight,
-                                base_labels)
+        rows += behaviour_rows(control, UNIVERSE_STUDENTS, student_labels, student_weight,
+                               base_labels)
         other = (non_students if control == "season_ticket"
                  else non_students[non_student_has_diary])
         adult_weight = np.concatenate([other["weight"].to_numpy(dtype=float), student_weight])
         adult_labels = np.concatenate([np.full(len(other), NOT_STUDENT, dtype=object),
                                        base_labels])
-        rows += _behaviour_rows(control, UNIVERSE_ADULTS, (*student_labels, NOT_STUDENT),
-                                adult_weight, adult_labels)
+        rows += behaviour_rows(control, UNIVERSE_ADULTS, (*student_labels, NOT_STUDENT),
+                               adult_weight, adult_labels)
     table = pd.DataFrame(rows, columns=BEHAVIOUR_COLUMNS)
     diagnostics.update(n_adults=int(len(adults)), n_students=int(len(students)),
                        n_students_without_diary=n_students_no_diary,
@@ -562,22 +598,6 @@ def build_behaviour_seed_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
     logger.info("%s behaviour table: %d rows (%d controls x 2 universes); %d adults, %d adult "
                 "students", _LOG_TAG, len(table), len(CONTROLS), len(adults), len(students))
     return table, diagnostics
-
-
-def _behaviour_rows(control: str, universe_name: str, label_set, weight: np.ndarray,
-                    labels: np.ndarray) -> list:
-    total = weight.sum()
-    n_effective = effective_sample_size(weight)
-    rows = []
-    for label in label_set:
-        mask = labels == label
-        weight_sum = float(weight[mask].sum())
-        share = weight_sum / total if total > 0 else float("nan")
-        rows.append({"control": control, "universe": universe_name, "label": label,
-                     "n_unweighted": int(mask.sum()), "weight_sum": weight_sum, "share": share,
-                     "n_effective": n_effective,
-                     "se_share": share_standard_error(share, n_effective)})
-    return rows
 
 
 def _trip_counts(frame: pd.DataFrame) -> tuple[pd.Series, pd.Series]:

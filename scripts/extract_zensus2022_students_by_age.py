@@ -4,7 +4,8 @@ Issue #140 (student commuting), Phase 0 reference table R3. The Zensus 2022 tabl
 ("Persons: age (10-year age bands) ... - activity status (in detail)") counts, per region, the
 persons in the category "Schueler/-innen u. Studierende (nicht erwerbsaktiv)" -- pupils and
 students who are NOT gainfully active. Students in paid work are in other categories, so the
-count is a spatial PATTERN of students, not a level (design assumption A9).
+count is a spatial PATTERN of students, not a level (an assumption of the design of this work,
+issue #140, to be recorded in an ADR in the next phase).
 
 Source layout (verified on the files delivered by the census database's data interface, one
 file per region level, all in ``--source-dir``):
