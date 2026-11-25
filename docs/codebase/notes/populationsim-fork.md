@@ -8,7 +8,7 @@ The fork is the public repository `TUBS-IVS/populationsim`. `master` is an untou
 
 ## Cutting a release `v0.10.0+bs.N`
 
-1. Only after the evidence run (the arm-1 manifest `popsim-ladder-arm1-2026-11-17` for `bs.1`, the arm-3 manifest `popsim-ladder-arm3-2026-11-18` for `bs.2`).
+1. Only after the evidence run (the arm-1 manifest `popsim-ladder-arm1-2026-11-17` for `bs.1`, the arm-3 manifest `popsim-ladder-arm3-2026-11-18` for `bs.2`, the release manifest `popsim-bs3-release-2026-11-25` for `bs.3`).
 2. In the fork: set the version in `pyproject.toml` and in the fork's `uv.lock` entry, commit, tag `v0.10.0+bs.N`.
 3. Here: switch the fork source in `environments/populationsim/pyproject.toml` from `rev` to `tag`, relock on the run server (`uv lock`), commit `uv.lock`.
 4. Set `braunschweig.population.popsim.populationsim_version` in `configs/base_bs.yml` to the same string.
@@ -27,7 +27,7 @@ With `keep_fractional_sample_weights` false and `integerizer_draw` "off" the for
 
 ## Run-time options and the environment rule (issue #656)
 
-`store_positive_weight_rows_only` and `fast_paths` switch on two settings of fork release `0.10.0+bs.2`; decision and acceptance rule: [ADR-0200](../../decisions/ADR-0200-populationsim-keeps-only-positive-weight-rows-and-takes-bit-identical-fast-paths.md).
+`store_positive_weight_rows_only` and `fast_paths` switch on two settings of fork release `0.10.0+bs.2` (the pinned release is `0.10.0+bs.3`, evidence: manifest `popsim-bs3-release-2026-11-25`); decision and acceptance rule: [ADR-0200](../../decisions/ADR-0200-populationsim-keeps-only-positive-weight-rows-and-takes-bit-identical-fast-paths.md).
 
 Rule: before a run with `fast_paths` on in a changed environment (another numba or LLVM version in `environments/populationsim`, or another run machine), run the fork's balancer test file in that environment. The reason is decision 5 of ADR-0200. How: in a clone of the fork at the pinned tag, with the clone first on `PYTHONPATH`, `uv run --project <path to environments/populationsim> --no-sync --with pytest python -m pytest tests/test_bs_balancer_fast_path.py`. A failure means the option must stay off in that environment.
 
@@ -42,5 +42,5 @@ Rule: before a run with `fast_paths` on in a changed environment (another numba 
 | Rate of balancer calls on the fast kernels | `braunschweig/popsim/stage/fast_path_rate.py` |
 | Production value of draw and fractional weights | outcome of the arm-1 manifest |
 | Production value of the rounding | decision 5 of ADR-0201, on the outcome of the arm-3 manifest |
-| Production value of the run-time options, worker memory | outcome of the manifest `popsim-run-performance-2026-11-18`; values in `configs/base_bs.yml` and `configs/overlays/test_100pct.yml` |
+| Production value of the run-time options, worker memory | outcome of the manifest `popsim-run-performance-2026-11-18` (memory of release `bs.3` checked in `popsim-bs3-release-2026-11-25`); values in `configs/base_bs.yml` and `configs/overlays/test_100pct.yml` |
 | Why | ADR-0197, ADR-0199, ADR-0200, ADR-0201 |
