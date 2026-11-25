@@ -1,0 +1,108 @@
+id: student-commuting-phase0-reference-2026-11-25
+date: '2026-11-25'
+repository:
+  commit: f99b0658
+  branch: feature/i140-student-commuters
+  notes: >-
+    The three extraction scripts and their modules as committed at f99b0658 (every output header carries this code
+    state). This manifest is a MEASUREMENT over raw survey microdata and published tables, not a pipeline run.
+configuration:
+  base: configs/base_bs.yml
+  notes: >-
+    No model configuration. The MiD extraction reads only the setting exclude_rbw_legs from configs/base_bs.yml (its
+    effect is counted in the Exclusions header of mid2023_student_behaviour_seed.csv).
+sampling:
+  rate: not applicable (survey microdata, weighted with SrV GEWICHT_P_ZENSUS and MiD P_GEW)
+  scope: >-
+    SrV 2023 Braunschweig and RGB (the surveyed Kreise of the ZGB-8; Wolfsburg 03103 is not surveyed), MiD 2023
+    Germany (adults 18+, reporting day Tuesday to Thursday for the behaviour table), census 2022 Kreis table of
+    pupils and students aged 20-29.
+  notes: >-
+    Universes of the three level estimates (columns of student_level_gate.csv): the SrV estimate is the weighted
+    share of students aged 20-29 in the surveyed municipalities times the census population aged 20-29 of the whole
+    Kreis; the census estimate is the census group of pupils and students without paid work aged 20-29 of the whole
+    Kreis times the MiD-to-census ratio; enrollment is the head count of enrolled students at local university sites
+    (where they study, not where they live), all ages, neither residents nor one day's presence.
+pipeline:
+  targets:
+  - scripts/extract_srv_student_reference.py
+  - scripts/extract_mid_student_reference.py
+  - scripts/build_student_control_evidence.py
+  notes: >-
+    (1) python -X utf8 scripts/extract_srv_student_reference.py --raw <main checkout>/eqasim-data/data/braunschweig/srv/srv2023_raw
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit f99b0658 (raw directory local-only, never committed).
+    (2) python -X utf8 scripts/extract_mid_student_reference.py --raw <local Downloads>/MiD2023/MiD2023_B1_Datensatzpaket/CSV
+    --out-dir eqasim-data/data/braunschweig/mid --source-commit f99b0658 (restricted raw directory, local-only).
+    (3) python -X utf8 scripts/build_student_control_evidence.py --srv-dir eqasim-data/data/braunschweig/srv
+    --mid-dir eqasim-data/data/braunschweig/mid --census eqasim-data/data/braunschweig/popsim/zensus2022_students_20_29_kreis.csv
+    --sites eqasim-data/data/braunschweig/schools/lsn_university_sites.csv --out-dir
+    docs/runs/artifacts/student-commuting-phase0-reference-2026-11-25 --source-commit f99b0658 (census and site table
+    are local-only and stay uncommitted; their sha256 are in the headers of student_level_gate.csv). All three exited
+    0; the log is extraction_logs.txt. sha256 of the outputs - srv2023_student_behaviour.csv
+    d6b7b51d2888dff04aa4a9ba5793f19b466e4ff65a5ef4b4c26ff9a5a091a7f3, srv2023_student_comparison.csv
+    701e4a85dc63e4757ede90ef795b8cea6630317ae8c48b3d3aa6d640c4ae701b, srv2023_student_education_distance_by_kreis.csv
+    1ca7383ca2ab7d1820e71edc6bbd0cfc0e46c3fac4ab0591c22bf26542710540, srv2023_student_share_by_kreis.csv
+    2bfbfeba25cd14788dc0b451d14b3bac00a359c1b4b24f07b36df53aa01bc382, srv2023_education_status_by_age.csv
+    1419736fb73de6a68170f3c559ecbcb97e049098677db14f780fe4632c53e96e, mid2023_student_behaviour_seed.csv
+    40a418b1ffcfaf5e137b7d4b73b3edbaccb7017b4637bc522da7c2b87964f67d, mid2023_student_education_distance_mode.csv
+    6197ce444562b33e73cdee88f4aec8f9937f10d41dc214ad5bb3b28990d2c394, mid2023_student_share_20_29_by_land.csv
+    7ca58b3a569b70a59dc910f2db7b20ef52584b84116f96e7dbdc7dfcc76b7b81, mid2023_student_status_by_age.csv
+    c279cd55a70406aad6afe02006e680fc9aa1ead8cc2a703b3d81a769b8753292, student_control_build_rule.csv
+    2c552e884c5e0b5d96d2ba869113dbd718227c951d98e27e68c4401ae86e0a9e, student_level_gate.csv
+    ee8090170b1c25ad6e734ca20894194091d8e151d3a8894e0432d00b1e8c47c8, student_comparison_only.csv
+    546c120b35f68d49107d1e754a32e5f2fcab180ec0ace769c2bccc22bbdb3e32, extraction_logs.txt
+    c16c963558138b87156619db6fd4c5a152110ad5e1f28a698b12063801d0d2ea.
+classification:
+- smoke
+status:
+  execution: completed
+  notes: >-
+    Classified smoke because the run-manifest schema has no measurement class: this is a measurement over raw surveys
+    and published tables, not a validation. No reference is compared; the verdicts below are outputs of an assumed
+    rule, not confirmations.
+validation:
+- metric: build-rule verdict per candidate behaviour control (SrV vs MiD, students universe)
+  reference: none (measurement)
+  result: >-
+    Read from docs/runs/artifacts/student-commuting-phase0-reference-2026-11-25/student_control_build_rule.csv
+    (column verdict, with difference_in_se per label): status_x_education_leg build_candidate; arrival build_candidate;
+    trip_class comparison_only; work_leg comparison_only; season_ticket comparison_only. Rule 3 (one-batch smoke) is
+    pending_phase2 for all. car_availability and driving_licence are comparison tables by design (file
+    student_comparison_only.csv).
+- metric: level gate, students aged 20-29 in Braunschweig (03101), three estimates available in this phase
+  reference: none (measurement)
+  result: >-
+    Read from docs/runs/artifacts/student-commuting-phase0-reference-2026-11-25/student_level_gate.csv, row 03101:
+    srv_estimate_students_20_29_persons 16776.12607; census_estimate_students_20_29_persons 9614.625881 (Land-ratio
+    variant 9213.810599); enrollment_local_sites_persons 16534 (all ages, where students study). The third estimate
+    (residents implied by enrollment) is empty and follows in Phase 1.
+- metric: level gate, pooled covered area (row 03ZGB = ZGB without the unsurveyed Wolfsburg)
+  reference: none (measurement)
+  result: >-
+    Same file, row 03ZGB: srv_estimate_students_20_29_persons 36697.77653; census_estimate_students_20_29_persons
+    20255.72428 (Land-ratio variant 19411.30204); enrollment_local_sites_persons 26054. Kreise without a local site are
+    set to 0 enrollment (listed in the Exclusions header).
+issues:
+- '#140'
+- '#279'
+decisions: []
+notes: >-
+  Limitations. (a) The MiD cells of the four diary-dependent controls (status_x_education_leg, trip_class, arrival,
+  work_leg) exclude persons without a diary of the day, students and non-students alike; the counts are in the
+  Exclusions header of eqasim-data/data/braunschweig/mid/mid2023_student_behaviour_seed.csv
+  (n_students_without_diary, n_non_students_without_diary, n_adults, n_students), so the comparison with the regional
+  survey rests on a reduced MiD base and assumes persons without a diary are not a distinct group. (b) Rule 2 of the
+  build rule compares shares within students and uses only the standard error of the regional survey (the SrV
+  Kish effective size of the students universe); the MiD sampling error is not included. (c) The level gate compares
+  students by main activity in the surveys (V_ERW 7, working students included) with the census group of pupils and
+  students without paid work; enrollment counts students where they study, at all ages, while the estimates cover ages
+  20-29. The third estimate (residents implied by enrollment) follows in Phase 1; enrollment is the bound until
+  then. (d) The two thresholds of the build rule (MIN_RESPONDENTS_PER_CELL and MIN_DIFFERENCE_STANDARD_ERRORS, values
+  in the header of student_control_build_rule.csv) are assumptions, not sourced values. (e) This is a measurement, not
+  a validation; no reference or ground truth was compared. If the SrV estimate exceeds what enrollment allows, the
+  owner decides the level (design 6.8).
+source: >-
+  scripts/extract_srv_student_reference.py, scripts/extract_mid_student_reference.py and
+  scripts/build_student_control_evidence.py over the inputs under pipeline.notes; outputs committed under
+  eqasim-data/data/braunschweig/srv, eqasim-data/data/braunschweig/mid and
+  docs/runs/artifacts/student-commuting-phase0-reference-2026-11-25/.

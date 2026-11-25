@@ -1,0 +1,72 @@
+### Step 1: SrV (source-commit f99b0658)
+INFO extract_srv_student_reference: read 18223 persons, 58148 legs, 8106 households
+INFO braunschweig.calibration.srv_participation_universe: [srv participation universe] weight validity (GEWICHT_P_ZENSUS present and >= 0): 0/18223 dropped (0.00%), 18223 kept
+INFO braunschweig.calibration.srv_participation_universe: [srv participation universe] at-home-or-mobile universe (E_ANZ_WEGE != -7, i.e. the person was at home at some point on the reporting day): 954/18223 dropped (5.24%), 17269 kept
+INFO braunschweig.calibration.srv_participation_universe: [srv participation universe] household-to-Kreis resolution (no_household=0, invalid_ags=0): 0/17269 dropped (0.00%), 17269 kept
+INFO braunschweig.calibration.srv_participation_universe: [srv participation universe] universe: 17269/18223 persons (94.76%); 2 have no valid age (V_ALTER sentinel); 11 carry employed=<NA> because their V_ERW could not be read and are dropped by the WORK control only (ADR-0117: a non-answer is not an employment status)
+INFO braunschweig.calibration.srv_participation_universe: [srv participation universe] ZGB Kreise with no person in this universe: ['03103'] -- each gets a ZERO row, not a missing one (03103 is Wolfsburg, which SrV does not survey, and is expected here; any OTHER code means the delivery changed and is rejected by check_kreis_coverage)
+INFO braunschweig.calibration.srv_student_reference: [srv student reference] universe: 17269 persons, 439 students (V_ERW 7), 11 with an unreadable V_ERW
+INFO braunschweig.calibration.srv_student_reference: [srv student reference] readable employment status (V_ERW present and non-negative; a non-answer is never 'not a student'): primary 17258/17269 (99.9%), excluded 11 (0.1%)
+INFO braunschweig.calibration.srv_participation_universe: [srv participation universe] legs with E_ZWECK_9 in [3, 4]: 3405/58148, held by 3130 persons (27 legs carry a missing purpose code and can match nothing)
+INFO braunschweig.calibration.srv_student_reference: [srv student reference] student share table: 9 rows; 03ZGB student_share_adults=0.0424, presence_share=0.3684
+INFO braunschweig.calibration.srv_student_reference: [srv student reference] readable employment status (V_ERW present and non-negative; a non-answer is never 'not a student'): primary 17258/17269 (99.9%), excluded 11 (0.1%)
+INFO braunschweig.calibration.srv_participation_universe: [srv participation universe] legs with E_ZWECK_9 in [3, 4]: 3405/58148, held by 3130 persons (27 legs carry a missing purpose code and can match nothing)
+INFO braunschweig.calibration.srv_student_reference: [srv student reference] education status table: 3126 persons with an education leg, 552 of them in an adult age band
+INFO braunschweig.calibration.srv_distance_targets: [srv_distance_targets] purposes (3, 4, 5, 6): distance_source=gis: 5449 candidate trips -> 2503 persons selected; length-invalid trips 854; pool weight<0 0 trips, pool >300 km 0 trips; selected persons dropped: weight<0 0, >300 km 0, no Kreis 0, missing trip AGS 0; home AGS == household AGS 100.0% (of 2503 persons with known trip AGS)
+INFO braunschweig.calibration.srv_student_reference: [srv student reference] education distance observations in the universe with a readable V_ERW: primary 2500/2503 (99.9%), excluded 3 (0.1%)
+INFO braunschweig.calibration.srv_student_reference: [srv student reference] education distance observations: 111 adult students kept, 0 students under 18 or without a valid age outside this table's universe
+INFO braunschweig.calibration.srv_student_reference: [srv student reference] readable employment status (V_ERW present and non-negative; a non-answer is never 'not a student'): primary 17258/17269 (99.9%), excluded 11 (0.1%)
+INFO braunschweig.calibration.srv_participation_universe: [srv participation universe] legs with E_ZWECK_9 in [3, 4]: 3405/58148, held by 3130 persons (27 legs carry a missing purpose code and can match nothing)
+INFO braunschweig.calibration.srv_participation_universe: [srv participation universe] legs with E_ZWECK_9 in [1, 2]: 6957/58148, held by 5834 persons (27 legs carry a missing purpose code and can match nothing)
+INFO braunschweig.calibration.srv_student_reference: [srv student reference] arrival control (readable start and arrival hour of the first education leg, over the students with an education leg; start unreadable 0, arrival unreadable 0): primary 156/156 (100.0%), excluded 0 (0.0%)
+INFO braunschweig.calibration.srv_student_reference: [srv student reference] season-ticket control (E_OEV_FK != -10; -8 kept as no flatrate): primary 438/438 (100.0%), excluded 0 (0.0%)
+INFO braunschweig.calibration.srv_student_reference: [srv student reference] behaviour table: 33 rows (5 controls x 2 universes); 14188 adults, 438 adult students
+INFO braunschweig.calibration.srv_student_reference: [srv student reference] readable employment status (V_ERW present and non-negative; a non-answer is never 'not a student'): primary 17258/17269 (99.9%), excluded 11 (0.1%)
+INFO extract_srv_student_reference: wrote eqasim-data\data\braunschweig\srv\srv2023_student_share_by_kreis.csv (9 rows)
+INFO extract_srv_student_reference: wrote eqasim-data\data\braunschweig\srv\srv2023_education_status_by_age.csv (15 rows)
+INFO extract_srv_student_reference: wrote eqasim-data\data\braunschweig\srv\srv2023_student_education_distance_by_kreis.csv (9 rows)
+INFO extract_srv_student_reference: wrote eqasim-data\data\braunschweig\srv\srv2023_student_behaviour.csv (33 rows)
+INFO extract_srv_student_reference: wrote eqasim-data\data\braunschweig\srv\srv2023_student_comparison.csv (18 rows)
+exit=0
+### Step 2: MiD
+INFO extract_mid_student_reference: read 420979 persons, 1087393 trips
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] valid P_GEW (positive): primary 420979/420979 (100.0%), excluded 0 (0.0%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] core weekdays (ST_WOTAG in [2, 3, 4]): 179941 persons kept, 241038 on another day
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] readable P_TAET over the persons with an education trip (99 / missing is never 'not a student'): primary 15523/15527 (100.0%), excluded 4 (0.0%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] status table: 15523 persons with an education trip in 3 age bands
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] valid P_GEW (positive): primary 420979/420979 (100.0%), excluded 0 (0.0%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] core weekdays (ST_WOTAG in [2, 3, 4]): 179941 persons kept, 241038 on another day
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] readable P_TAET over the core-weekday persons (99 / missing is never 'not a student'): primary 179856/179941 (100.0%), excluded 85 (0.0%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] readable start time of the education legs, over the adult students with an education leg: primary 1480/1484 (99.7%), excluded 4 (0.3%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] valid education trip length (0 < wegkm_imp < 1000 km): primary 1480/1480 (100.0%), excluded 0 (0.0%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] readable main mode (hvm_imp): primary 1480/1480 (100.0%), excluded 0 (0.0%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] distance x mode table: 1480 of 1484 adult students with an education leg banded
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] valid P_GEW (positive): primary 420979/420979 (100.0%), excluded 0 (0.0%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] readable P_TAET over all persons (99 / missing is never 'not a student'): primary 420779/420979 (100.0%), excluded 200 (0.0%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] share 20-29 table: 34158 persons aged 20-29, 16 Laender
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] valid P_GEW (positive): primary 420979/420979 (100.0%), excluded 0 (0.0%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] core weekdays (ST_WOTAG in [2, 3, 4]): 179941 persons kept, 241038 on another day
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] readable P_TAET over the core-weekday persons (99 / missing is never 'not a student'): primary 179856/179941 (100.0%), excluded 85 (0.0%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] diary of the reporting day (anzwege1 0-799, or 803 with mobil != 1 = a genuine stay-at-home day), adult students: primary 5101/5780 (88.3%), excluded 679 (11.7%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] diary of the reporting day, adult non-students: primary 136353/151644 (89.9%), excluded 15291 (10.1%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] arrival control (readable start time and arrival hour of the first education leg, over the students with an education leg; start unreadable 4, arrival unreadable 1): primary 1479/1484 (99.7%), excluded 5 (0.3%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] season-ticket control (P_FKARTE in FKARTE_TO_CATEGORY; item non-response excluded, never 'no flatrate'; 8 = never PT is no flatrate): primary 5306/5780 (91.8%), excluded 474 (8.2%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] behaviour table: 33 rows (5 controls x 2 universes); 157424 adults, 5780 adult students
+INFO extract_mid_student_reference: wrote eqasim-data\data\braunschweig\mid\mid2023_student_status_by_age.csv (12 rows)
+INFO extract_mid_student_reference: wrote eqasim-data\data\braunschweig\mid\mid2023_student_education_distance_mode.csv (30 rows)
+INFO extract_mid_student_reference: wrote eqasim-data\data\braunschweig\mid\mid2023_student_share_20_29_by_land.csv (17 rows)
+INFO extract_mid_student_reference: wrote eqasim-data\data\braunschweig\mid\mid2023_student_behaviour_seed.csv (33 rows)
+exit=0
+### Step 3: evidence
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] status_x_education_leg: rule 1 (>= 30 respondents) 2/2 labels, rule 2 (> 2.0 se) 2/2 labels -> build_candidate
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] trip_class: rule 1 (>= 30 respondents) 4/4 labels, rule 2 (> 2.0 se) 0/4 labels -> comparison_only
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] arrival: rule 1 (>= 30 respondents) 4/4 labels, rule 2 (> 2.0 se) 1/4 labels -> build_candidate
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] work_leg: rule 1 (>= 30 respondents) 2/2 labels, rule 2 (> 2.0 se) 0/2 labels -> comparison_only
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] season_ticket: rule 1 (>= 30 respondents) 2/2 labels, rule 2 (> 2.0 se) 0/2 labels -> comparison_only
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] rule 2 evaluable: primary 14/14 (100.0%), excluded 0 (0.0%; MiD share NaN 0, SrV standard error NaN or 0 0); an excluded cell counts as 'does not differ'
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] level gate: enrollment from local sites in 5/8 Kreise, 3 without a local site set to 0 persons ['03151', '03154', '03157']
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] level gate: SrV estimate in 7/8 Kreise, NaN for the unsurveyed ['03103']; pooled row 03ZGB over ['03101', '03102', '03151', '03153', '03154', '03157', '03158']; MiD-to-census ratio Germany 1.7108, Land 03 1.6395
+INFO build_student_control_evidence: wrote docs\runs\artifacts\student-commuting-phase0-reference-2026-11-25\student_control_build_rule.csv (14 rows)
+INFO build_student_control_evidence: wrote docs\runs\artifacts\student-commuting-phase0-reference-2026-11-25\student_level_gate.csv (9 rows)
+INFO build_student_control_evidence: wrote docs\runs\artifacts\student-commuting-phase0-reference-2026-11-25\student_comparison_only.csv (2 rows)
+exit=0
