@@ -1,0 +1,129 @@
+=== part 1: distance layers; purposes: ['other', 'shop', 'leisure', 'home', 'escort', 'work', 'education', 'shop_daily', 'shop_non_daily', 'leisure_local', 'leisure_visit', 'leisure_activity', 'leisure_excursion', 'leisure_unspecified', 'other_errand_short', 'other_errand_long']
+  layer 'other': ['car', 'bicycle', 'walk', 'pt', 'car_passenger']
+  layer 'shop': ['car', 'walk', 'bicycle', 'car_passenger', 'pt']
+  layer 'leisure': ['walk', 'car', 'car_passenger', 'bicycle', 'pt']
+  layer 'home': ['walk', 'bicycle', 'car', 'car_passenger', 'pt']
+  layer 'escort': ['car', 'car_passenger', 'walk', 'bicycle', 'pt']
+  layer 'work': ['car', 'walk', 'bicycle', 'pt', 'car_passenger']
+  layer 'education': ['walk', 'car_passenger', 'bicycle', 'car', 'pt']
+  layer 'shop_daily': ['car', 'walk', 'car_passenger', 'bicycle', 'pt']
+  layer 'shop_non_daily': ['car', 'walk', 'car_passenger', 'pt', 'bicycle']
+  layer 'leisure_local': ['walk', 'bicycle', 'car', 'car_passenger', 'pt']
+  layer 'leisure_visit': ['bicycle', 'car', 'walk', 'car_passenger', 'pt']
+  layer 'leisure_activity': ['car', 'walk', 'pt', 'bicycle', 'car_passenger']
+  layer 'leisure_excursion': ['walk', 'car', 'car_passenger', 'bicycle', 'pt']
+  layer 'leisure_unspecified': ['walk', 'car', 'car_passenger', 'bicycle', 'pt']
+  layer 'other_errand_short': ['car', 'pt', 'walk', 'bicycle', 'car_passenger']
+  layer 'other_errand_long': ['walk', 'car', 'bicycle', 'pt', 'car_passenger']
+            purpose mode  n_bins  bin_index  bin_from_min  bin_to_min  n_obs  km_p50  km_p90  km_p99  km_max  share_over_5km  share_over_10km  share_over_20km
+              other walk      19         18        120.00         inf    318    3.77    9.05   22.62   26.38            0.30             0.09             0.02
+              other   pt      13         12        110.00         inf    224   13.85   33.65   43.90   45.00            0.75             0.61             0.38
+               shop walk      20         19        120.00         inf    243    3.77    8.72   19.90   21.52            0.28             0.09             0.00
+               shop   pt       8          7         50.00         inf    374    5.54   23.65   40.15   45.00            0.53             0.35             0.17
+            leisure walk      38         30        135.00      150.00    523    3.77    7.84   11.31   18.85            0.37             0.03             0.00
+            leisure   pt      19         16        110.00      130.00    203   13.85   39.95   44.64   45.00            0.71             0.58             0.44
+               home walk      23         22         90.00         inf    279    5.28   11.31   20.47   27.89            0.51             0.15             0.06
+               home   pt      17         16        115.00         inf    252   20.77   38.33   45.00   45.00            0.93             0.81             0.52
+             escort walk       6          5         30.00         inf    321    1.51    3.77   15.08   36.54            0.05             0.03             0.01
+             escort   pt       3          2         30.00         inf    316    6.92   26.31   45.00   45.00            0.72             0.41             0.17
+               work walk       3          2         10.00         inf    365    1.13    4.15    9.05   30.15            0.08             0.01             0.00
+               work   pt       3          2         44.00         inf    243   13.85   22.85   38.77   45.00            0.91             0.72             0.26
+          education walk       1          0          0.00         inf    278    0.53    1.13    2.42   20.46            0.01             0.01             0.00
+          education   pt       1          0          0.00         inf    273    4.85   12.64   30.46   45.00            0.46             0.18             0.06
+         shop_daily walk      11         10         60.00         inf    307    1.51    5.28   26.38   26.38            0.11             0.02             0.01
+         shop_daily   pt       3          2         30.00         inf    240    4.85   19.38   36.00   43.62            0.48             0.31             0.09
+     shop_non_daily walk       7          6         65.00         inf    254    3.02    6.84   19.90   35.43            0.19             0.06             0.00
+     shop_non_daily   pt       2          1         20.00         inf    366    4.85   20.38   38.43   43.12            0.48             0.22             0.11
+      leisure_local walk      21         19        120.00      150.00    237    3.77    7.54   12.06   12.06            0.35             0.02             0.00
+      leisure_local   pt       3          2         30.00         inf    336    6.23   17.31   41.54   45.00            0.63             0.29             0.07
+      leisure_visit walk       5          4         30.00         inf    266    3.02    6.03   11.42   26.80            0.14             0.01             0.00
+      leisure_visit   pt       4          3         45.00         inf    302   12.46   29.77   42.23   45.00            0.82             0.56             0.34
+   leisure_activity walk      13         12        120.00         inf    343    6.03   12.06   22.62   30.15            0.54             0.29             0.01
+   leisure_activity   pt       7          6         65.00         inf    294   14.54   34.62   41.54   45.00            0.88             0.61             0.45
+  leisure_excursion walk       2          1         45.00         inf    379    5.65   13.57   31.08   33.92            0.59             0.23             0.06
+  leisure_excursion   pt       2          1         45.00         inf    226   16.62   38.08   43.27   45.00            0.92             0.71             0.42
+leisure_unspecified walk      18         17        120.00         inf    221    5.28   14.45   24.20   37.69            0.52             0.25             0.02
+leisure_unspecified   pt      11         10         85.00         inf    250   15.92   41.54   45.00   45.00            0.77             0.68             0.48
+ other_errand_short walk       5          4         25.00         inf    380    1.62    3.02   10.19   26.38            0.03             0.02             0.00
+ other_errand_short   pt       4          3         45.00         inf    208   10.38   22.55   43.90   43.90            0.74             0.54             0.16
+  other_errand_long walk       5          4         30.00         inf    339    3.02    4.89   22.62   37.69            0.10             0.03             0.02
+  other_errand_long   pt       2          1         30.00         inf    234   11.08   29.08   38.08   41.54            0.79             0.58             0.28
+=== part 2: trips (3428756, 152) loaded in 14 s
+columns with mode/outside/portal: ['mode', 'MODE', 'portal_leg']
+persons: 946889 modes: {'car': 1412761, 'walk': 835008, 'car_passenger': 440054, 'bicycle': 417718, 'pt': 323215}
+written trips 3428756 read in 26 s; without geometry 0
+duplicate keys: synthesis 0 written 0 ; key dtypes {'person_id': dtype('int64'), 'trip_index': dtype('int64')} {'person_id': dtype('int64'), 'trip_index': dtype('int64')}
+joined 3428756 of 3428756 synthesis trips and 3428756 written trips
+trips at an outside activity (left out below): 106646
+--- all trips: diary distance (wegkm_imp / detour factor) vs realised straight line, km
+         mode       n  diary_km_mean  diary_km_p50  diary_km_p90  diary_km_p99  synth_km_mean  synth_km_p50  synth_km_p90  synth_km_p99
+      bicycle  396274           2.73          1.58          5.65         17.34           4.11          2.34          9.80         25.95
+          car 1282675           8.62          5.12         19.73         40.19           8.40          5.12         21.85         39.52
+car_passenger  400245           8.35          3.65         18.16         58.46           6.67          4.09         16.79         34.78
+           pt  305037          12.14          5.54         19.38        173.08           7.67          4.82         19.82         37.06
+         walk  743744           1.23          0.75          2.64          7.54           2.41          1.14          5.57         21.47
+--- trips with a secondary end
+         mode      n  diary_km_mean  diary_km_p50  diary_km_p90  diary_km_p99  synth_km_mean  synth_km_p50  synth_km_p90  synth_km_p99
+      bicycle 227049           2.60          1.51          5.28         18.85           3.24          2.11          6.96         19.22
+          car 826526           6.69          3.65         15.35         36.54           7.08          4.65         16.58         34.45
+car_passenger 275205           8.07          4.38         18.27         43.85           7.97          5.40         18.47         35.96
+           pt 129031           9.93          4.57         16.39        166.15           8.64          6.08         19.70         35.64
+         walk 561911           1.31          0.75          3.02          7.54           1.99          1.12          4.42         13.26
+--- trips between home, work and education only
+         mode      n  diary_km_mean  diary_km_p50  diary_km_p90  diary_km_p99  synth_km_mean  synth_km_p50  synth_km_p90  synth_km_p99
+      bicycle 169225           2.91          2.04          6.03         15.08           5.27          2.91         14.08         29.12
+          car 456149          12.12          8.77         24.12         48.54          10.78          6.74         27.53         42.05
+car_passenger 125040           8.97          3.65         14.62        109.62           3.81          1.65          9.73         29.40
+           pt 176006          13.75          6.72         20.77        173.08           6.97          3.59         19.97         38.13
+         walk 181833           0.95          0.75          1.51          9.05           3.71          1.25         10.84         28.21
+--- walk: diary band (rows) x realised band (columns), trips
+synth_band     <=1     1-2     2-5   5-10  10-20   >20     All
+diary_band                                                    
+<=1         272085   85504   75410  31292  14077  6809  485177
+1-2          48716   39901   31398   9484   4518  1117  135134
+2-5          20892   26281   44382   9627   3123  1076  105381
+5-10          1662    2274    6237   2058    498    78   12807
+10-20         1072     712    1450    897    310    38    4479
+>20            105     141     288    129     53    50     766
+All         344532  154813  159165  53487  22579  9168  743744
+--- walk: by diary duration (min); over = realised straight line > 5 km; too_fast = realised straight line / diary duration > 6 km/h
+                 trips   over  diary_over  too_fast  share_over
+duration_class                                                 
+<=15            453625  48427        1146    203428        0.11
+15-30           144885  15168         719     33171        0.10
+30-60            90872  11360        3706     11942        0.13
+60-120           39447   6032        6845      1720        0.15
+>120             14915   4247        5636       165        0.28
+walk > 5 km realised: 85234 trips of 743744 (11.46 %), persons 58314; with a secondary end 46849, primary only 38385; diary distance of these: median 0.75 km, share with diary <= 2 km 79.0 %
+walk > 5 km in the DIARY: 18052 trips
+top purpose pairs of walk > 5 km realised: {'home > education': 13847, 'home > leisure': 12578, 'education > home': 11108, 'work > home': 6604, 'home > work': 6221, 'leisure > leisure': 4238, 'leisure > home': 3108, 'home > other': 2903, 'home > escort': 2527, 'other > home': 2451}
+--- bicycle: diary band (rows) x realised band (columns), trips
+synth_band    <=1    1-2     2-5   5-10  10-20    >20     All
+diary_band                                                   
+<=1         44634  28116   25045   9055   4863   2197  113910
+1-2         23409  35449   31114  10739   5228   2048  107987
+2-5         14614  18692   62617  16517   7826   3906  124172
+5-10         2725   2404   10312  15709   3513   1318   35981
+10-20         443    562    2643   2587   4523   1187   11945
+>20            52    108     494    587    612    426    2279
+All         85877  85331  132225  55194  26565  11082  396274
+--- bicycle: by diary duration (min); over = realised straight line > 20 km; too_fast = realised straight line / diary duration > 25 km/h
+                 trips  over  diary_over  too_fast  share_over
+duration_class                                                
+<=15            253346  5685          23     52296        0.02
+15-30           105954  2952           3      9042        0.03
+30-60            24730  1315         243      1388        0.05
+60-120            8677   741         976        41        0.09
+>120              3567   389        1034         0        0.11
+bicycle > 20 km realised: 11082 trips of 396274 (2.80 %), persons 6642; with a secondary end 1962, primary only 9120; diary distance of these: median 3.02 km, share with diary <= 2 km 38.3 %
+bicycle > 20 km in the DIARY: 2279 trips
+top purpose pairs of bicycle > 20 km realised: {'home > work': 3605, 'work > home': 3020, 'home > education': 1373, 'education > home': 1061, 'home > leisure': 682, 'leisure > leisure': 276, 'leisure > home': 170, 'other > home': 115, 'escort > work': 113, 'shop > leisure': 93}
+--- trips with a secondary end and diary > 0.2 km: realised / diary distance ratio quantiles
+0.05    0.21
+0.25    0.62
+0.50    1.14
+0.75    2.21
+0.95    7.09
+0.99   17.63
+share with ratio > 3: 17.1 %, ratio < 1/3: 9.9 %
+done in 34 s

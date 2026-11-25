@@ -1,0 +1,107 @@
+id: i678-mode-choice-reach-probe-prod100-2026-11-25
+date: '2026-11-25'
+repository:
+  commit: 7a41f0ba
+  branch: fix/i678-mode-choice-reach
+  notes: >-
+    The probes read the products of the run prod100_20261031, which was produced by code 7a41f0ba, i.e. before #570 to
+    #589. The probe scripts are standalone, read-only and were not run from a repository checkout (they live in
+    scratch on felix, ~/scratch_longwalk); the branch named here is the one that commits this record.
+configuration:
+  config: 'configs/base_bs.yml with the run overlay of prod100_20261031 (felix:~/prod100_20261031/run.yml); not changed, not re-run'
+  notes: >-
+    Production mode choice as the run's MATSim config sets it (tour finder on [home, outside], tour filters
+    OutsideFilter and TourLength with maximumLength 6); see issue #678 for the mechanism.
+sampling:
+  rate: 1.0
+  scope: >-
+    the uncut population (braunschweig.matsim.scenario.population) and the prepared population (routed and cut, the file
+    MATSim reads, braunschweig.matsim.simulation.prepare) of prod100_20261031: 1,205,226 uncut persons, 1,261,590
+    prepared persons of which 1,130,422 residents; residents only unless a row says otherwise.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. Read-only Python probes over the run's cached artifacts on felix; the run directory and the
+    scratch folder were only read. tour_length_probe.py printed to the terminal on 2026-11-25; it was run again for
+    this record (2026-11-25, 152 s, ~/i678_b1 on felix, with a copy of frozen_scope_probe.py, which it imports) and
+    its output is committed as tour_length_output.txt; the re-run gives the numbers issue #678 quotes.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Measurement of the prepared population of prod100_20261031 (code 7a41f0ba, before #570 to #589). Model output,
+    NOT a validation: no observed value is a target here, and the diary comparison below uses the survey diary only as
+    the reference for what a trip would plausibly look like. No simulation output of that run was found, so what the
+    MATSim iterations did to the trips that the mode choice never re-chooses is not measured; the numbers are the state
+    before the simulation (the population as it is written). This is the "before" side for the evidence of #678.
+    The uncut and the prepared population differ in size and in tour boundaries, so counts of the uncut probe
+    (tour_length_output.txt) and of the prepared probe (frozen_scope_output.txt) are not additive: tours over 6 trips
+    without an outside activity are 7,355 in the uncut population and 6,554 in the prepared one; the 801 difference is
+    not explained here.
+source: >-
+  felix:~/scratch_longwalk (scratch, read-only for this record) and ~/i678_b1. Committed in
+  docs/runs/artifacts/i678-mode-choice-reach-probe-prod100-2026-11-25/ with the sha256 of the ORIGINAL server file:
+  frozen_scope_probe.py (5114e25830c13956021ed68122347cf71627710c2aaf5ee9669732db95ee8a48) with frozen_scope.json and
+  frozen_scope_output.txt (the probe's log; *.log is git-ignored); tour_length_probe.py
+  (0b74ae35d1e0e2aaf4a361c6f84d40c6bafadf8ac8574994d3e7d9fcd0d84dd1) with tour_length_output.txt;
+  long_tour_cost_probe.py (87cb9055ce67f77958e7eb73c3f9f2ff1aee9c1401258f3158e1fb01e2bec082) with
+  long_tour_cost_output.txt; distance_probe.py (e2816437ac4beec3b0b9661cb7a107c559ed6de57c2371a598aeb0749dc3be3f) with
+  distance_output.txt. The four scripts are committed unchanged (their sha256 equals the server file's). Redaction:
+  in frozen_scope_output.txt the home directory path of the two warning lines (user name) is replaced by /home/<user>/;
+  nothing else differs from the server log; no other file needed one.
+environment: 'server (felix, hostname matsim), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10)'
+validation:
+- metric: trips the mode choice never re-chooses, by group (residents, prepared population); the three rows of issue #678
+  reference: 'none: a count of model output, NOT observed data'
+  result: >-
+    Trips at an outside activity: 83,209 tours, 444,614 trip pieces (trips_touching_outside; plain walks over 5 km not
+    measured for this row). Other trips of the same tours (frozen, do not touch outside): 26,115 tours with such trips,
+    41,710 trips, of which plain walks over 5 km 1,433 and over 10 km 132. Tours with more than 6 trips and no outside
+    activity: 6,554 tours, 51,521 trips, plain walks over 5 km 1,122 and over 10 km 381. The 132 walks over 10 km of the
+    second row are all in tours frozen only by the cut. 81,507 of 1,130,422 residents have a frozen tour.
+  artifact: docs/runs/artifacts/i678-mode-choice-reach-probe-prod100-2026-11-25/frozen_scope.json
+- metric: frozen resident tours by cause (a tour with several causes is counted by its first in the order portal, destination outside the extent, cut only)
+  reference: 'none: a count of model output; the freeze rule is plan_check.leg_tour_frozen, which the production mode choice shares'
+  result: >-
+    Portal stay 53,018 tours, destination outside the extent 27,036, frozen only by the cut 3,155 (sum 83,209).
+    Persons by cause: portal 51,926, destination outside 26,098, cut only 3,007, and 356 + 73 + 46 + 1 with two or three
+    causes. Other-trip counts by cause (trips that do not touch outside): portal 24,052, destination outside 13,500,
+    cut only 4,158. In-commuters (74,804 persons, 69,897 with a frozen tour) are listed separately in the same file and
+    are not part of the numbers of this record's other rows; freight (56,364 persons) is not frozen.
+  artifact: docs/runs/artifacts/i678-mode-choice-reach-probe-prod100-2026-11-25/frozen_scope_output.txt
+- metric: the other (inside) trips of frozen resident tours, by routing mode, and their plain walks and implausible modes by straight-line distance band
+  reference: 'none: a count of model output; distance bounds are those of the plan check (walk 5 km, bicycle 30 km)'
+  result: >-
+    By routing mode (41,710 trips): car 25,077, car_passenger 9,050, walk 3,948, pt 2,211, pt_as_walk 754, bicycle 670.
+    Walk trips over 5 km (inside_walk bands 5-10 km, 10-20 km, over 20 km): 1,433 in total, of which 795 portal tours,
+    353 destination-outside tours, and 285 in tours frozen only by the cut (153 + 99 + 33). pt_as_walk trips of these
+    tours: 754; bicycle trips over 30 km: 3 (cut only).
+  artifact: docs/runs/artifacts/i678-mode-choice-reach-probe-prod100-2026-11-25/frozen_scope_output.txt
+- metric: resident home-based tours without an outside activity (uncut population) by number of trips
+  reference: 'none: a count of model output'
+  result: >-
+    1,392,414 such tours; 7,355 have more than 6 trips: 7 trips 4,137 (cumulative 56.2 %), 8 trips 1,660 (78.8 %),
+    9 trips 378 (84.0 %), 10 trips 783 (94.6 %), 11 trips 32 (95.0 %), 13 trips 365 (100.0 %). Note: the same probe
+    counts tours of the uncut population; the 6,554 tours of the first row are counted in the prepared population.
+  artifact: docs/runs/artifacts/i678-mode-choice-reach-probe-prod100-2026-11-25/tour_length_output.txt
+- metric: size of the mode-chain enumeration per tour length (tours without outside, with the persons' mode availability)
+  reference: 'none: arithmetic on the number of available modes per trip; model output'
+  result: >-
+    Tours of up to 6 trips: 1,385,059 tours, 315,176,835 mode chains in total. Tours of 7 trips: 4,137 tours, 256,838,257
+    chains (at most 78,125 per tour); 8 trips 1,660 tours, 421,760,819 (at most 390,625); 9 trips 378 tours, 308,398,449
+    (at most 1,953,125); 10 trips 783 tours, 7,637,767,326 (at most 9,765,625); 11 trips 32 tours, 1,562,500,000 (at most
+    48,828,125); 13 trips 365 tours, 445,556,640,625 (at most 1,220,703,125; all five modes available). Cumulative over
+    the tours of 7 to 13 trips 455,743,905,476.
+  artifact: docs/runs/artifacts/i678-mode-choice-reach-probe-prod100-2026-11-25/long_tour_cost_output.txt
+- metric: walk trips over 5 km straight line before the simulation against the diaries (reporting-day trips joined to the written trips)
+  reference: 'the survey diary distance of the same trips (wegkm_imp divided by the detour factor) and the diary duration; survey data used as the comparison, NOT a validated target'
+  result: >-
+    Over 946,889 persons and 3,428,756 trips (trips at an outside activity, 106,646, left out; a different universe from
+    the resident rows above): walk trips with a realised straight line over 5 km 85,234 of 743,744 (11.46 %) for 58,314
+    persons; of them the diary distance has a median of 0.75 km and 79.0 % are 2 km or shorter in the diary. Walk trips
+    over 5 km in the diary itself: 18,052. Bicycle trips over 20 km realised: 11,082 of 396,274 (2.80 %), over 20 km in
+    the diary 2,279. Walk by diary duration: of the 14,915 trips with a diary duration over 120 min, 4,247 are over 5 km
+    realised and 5,636 are over 5 km in the diary; of the 453,625 trips of up to 15 min, 203,428 imply more than 6 km/h
+    when the realised straight line is divided by the diary duration.
+  artifact: docs/runs/artifacts/i678-mode-choice-reach-probe-prod100-2026-11-25/distance_output.txt
