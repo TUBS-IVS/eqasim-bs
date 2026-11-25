@@ -49,7 +49,9 @@ def main(src, out):
         for line in (src / f"{d.name}.sha256").read_text().splitlines():
             digest, name = line.split(None, 1)
             rows.append((*key, f"sha256:{Path(name.strip()).name}", digest))
-        rows.append((*key, "pyfile", (src / f"{d.name}.pyfile").read_text().strip()))
+        # the user's home directory is written as "~" (no user name in tracked files)
+        pyfile = re.sub(r"^/home/[^/]+/", "~/", (src / f"{d.name}.pyfile").read_text().strip())
+        rows.append((*key, "pyfile", pyfile))
         for label, needle in (("balancer_fast_path", BALANCER), ("batch_draw", BATCH_DRAW)):
             n, text = log_line(log_lines, needle)
             rows.append((*key, f"log:{label}_count", n))

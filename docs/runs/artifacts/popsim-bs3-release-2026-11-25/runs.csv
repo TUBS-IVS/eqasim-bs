@@ -18,7 +18,7 @@ b000,bs2_on,1,step_s:write_synthetic_population,0.247
 b000,bs2_on,1,sha256:final_expanded_household_ids.csv,19f721ce45cd66778c6b3a5cb989d2549ce1703e4b4417875c0bd79c65aa13a4
 b000,bs2_on,1,sha256:synthetic_households.csv,ba25e5d6dfa273f9ceb89579394338a539f421fe03a902df682519c05b5e3425
 b000,bs2_on,1,sha256:synthetic_persons.csv,41225fff76f546b0a09836bf7ddf6a485a6ed58536b28b2d9245fd1e187fd09e
-b000,bs2_on,1,pyfile,/home/felix/i677/trees/A/populationsim/__init__.py
+b000,bs2_on,1,pyfile,~/i677/trees/A/populationsim/__init__.py
 b000,bs2_on,1,log:balancer_fast_path_count,1
 b000,bs2_on,1,log:balancer_fast_path_line,"balancer fast path: fast 43 of 43 calls (100.0 %), fallback value cap 0, fallback SVML 0, fallback non-finite 0, re-run after the delta guard 0"
 b000,bs2_on,1,log:batch_draw_count,0
@@ -46,7 +46,7 @@ b000,rc_off,1,step_s:write_synthetic_population,0.171
 b000,rc_off,1,sha256:final_expanded_household_ids.csv,19f721ce45cd66778c6b3a5cb989d2549ce1703e4b4417875c0bd79c65aa13a4
 b000,rc_off,1,sha256:synthetic_households.csv,ba25e5d6dfa273f9ceb89579394338a539f421fe03a902df682519c05b5e3425
 b000,rc_off,1,sha256:synthetic_persons.csv,41225fff76f546b0a09836bf7ddf6a485a6ed58536b28b2d9245fd1e187fd09e
-b000,rc_off,1,pyfile,/home/felix/i677/trees/RC/populationsim/__init__.py
+b000,rc_off,1,pyfile,~/i677/trees/RC/populationsim/__init__.py
 b000,rc_off,1,log:balancer_fast_path_count,0
 b000,rc_off,1,log:balancer_fast_path_line,
 b000,rc_off,1,log:batch_draw_count,0
@@ -74,7 +74,7 @@ b000,rc_on,1,step_s:write_synthetic_population,0.175
 b000,rc_on,1,sha256:final_expanded_household_ids.csv,19f721ce45cd66778c6b3a5cb989d2549ce1703e4b4417875c0bd79c65aa13a4
 b000,rc_on,1,sha256:synthetic_households.csv,ba25e5d6dfa273f9ceb89579394338a539f421fe03a902df682519c05b5e3425
 b000,rc_on,1,sha256:synthetic_persons.csv,41225fff76f546b0a09836bf7ddf6a485a6ed58536b28b2d9245fd1e187fd09e
-b000,rc_on,1,pyfile,/home/felix/i677/trees/RC/populationsim/__init__.py
+b000,rc_on,1,pyfile,~/i677/trees/RC/populationsim/__init__.py
 b000,rc_on,1,log:balancer_fast_path_count,1
 b000,rc_on,1,log:balancer_fast_path_line,"balancer fast path: fast 43 of 43 calls (100.0 %), fallback value cap 0, fallback SVML 0, fallback non-finite 0, re-run after the delta guard 0"
 b000,rc_on,1,log:batch_draw_count,1
@@ -102,7 +102,7 @@ b028,bs2_on,1,step_s:write_synthetic_population,0.69
 b028,bs2_on,1,sha256:final_expanded_household_ids.csv,9070153915d3f668611e5c54c5828a60ceed4b67d933cd0fcef27fef5f017ce2
 b028,bs2_on,1,sha256:synthetic_households.csv,c75a0c03ee095b85515489e07e1c98c38589fd0a5ccc398521b5372fa6ae99ee
 b028,bs2_on,1,sha256:synthetic_persons.csv,f3cc74e9ae2ac1ce4b6a96c0034aec36433ab80c44494dc0533b48b28810b4ad
-b028,bs2_on,1,pyfile,/home/felix/i677/trees/A/populationsim/__init__.py
+b028,bs2_on,1,pyfile,~/i677/trees/A/populationsim/__init__.py
 b028,bs2_on,1,log:balancer_fast_path_count,1
 b028,bs2_on,1,log:balancer_fast_path_line,"balancer fast path: fast 31 of 31 calls (100.0 %), fallback value cap 0, fallback SVML 0, fallback non-finite 0, re-run after the delta guard 0"
 b028,bs2_on,1,log:batch_draw_count,0
@@ -130,7 +130,7 @@ b028,bs2_on,2,step_s:write_synthetic_population,0.418
 b028,bs2_on,2,sha256:final_expanded_household_ids.csv,9070153915d3f668611e5c54c5828a60ceed4b67d933cd0fcef27fef5f017ce2
 b028,bs2_on,2,sha256:synthetic_households.csv,c75a0c03ee095b85515489e07e1c98c38589fd0a5ccc398521b5372fa6ae99ee
 b028,bs2_on,2,sha256:synthetic_persons.csv,f3cc74e9ae2ac1ce4b6a96c0034aec36433ab80c44494dc0533b48b28810b4ad
-b028,bs2_on,2,pyfile,/home/felix/i677/trees/A/populationsim/__init__.py
+b028,bs2_on,2,pyfile,~/i677/trees/A/populationsim/__init__.py
 b028,bs2_on,2,log:balancer_fast_path_count,1
 b028,bs2_on,2,log:balancer_fast_path_line,"balancer fast path: fast 31 of 31 calls (100.0 %), fallback value cap 0, fallback SVML 0, fallback non-finite 0, re-run after the delta guard 0"
 b028,bs2_on,2,log:batch_draw_count,0
@@ -158,7 +158,7 @@ b028,bs2_on,3,step_s:write_synthetic_population,0.389
 b028,bs2_on,3,sha256:final_expanded_household_ids.csv,9070153915d3f668611e5c54c5828a60ceed4b67d933cd0fcef27fef5f017ce2
 b028,bs2_on,3,sha256:synthetic_households.csv,c75a0c03ee095b85515489e07e1c98c38589fd0a5ccc398521b5372fa6ae99ee
 b028,bs2_on,3,sha256:synthetic_persons.csv,f3cc74e9ae2ac1ce4b6a96c0034aec36433ab80c44494dc0533b48b28810b4ad
-b028,bs2_on,3,pyfile,/home/felix/i677/trees/A/populationsim/__init__.py
+b028,bs2_on,3,pyfile,~/i677/trees/A/populationsim/__init__.py
 b028,bs2_on,3,log:balancer_fast_path_count,1
 b028,bs2_on,3,log:balancer_fast_path_line,"balancer fast path: fast 31 of 31 calls (100.0 %), fallback value cap 0, fallback SVML 0, fallback non-finite 0, re-run after the delta guard 0"
 b028,bs2_on,3,log:batch_draw_count,0
@@ -186,7 +186,7 @@ b028,rc_off,4,step_s:write_synthetic_population,0.43
 b028,rc_off,4,sha256:final_expanded_household_ids.csv,9070153915d3f668611e5c54c5828a60ceed4b67d933cd0fcef27fef5f017ce2
 b028,rc_off,4,sha256:synthetic_households.csv,c75a0c03ee095b85515489e07e1c98c38589fd0a5ccc398521b5372fa6ae99ee
 b028,rc_off,4,sha256:synthetic_persons.csv,f3cc74e9ae2ac1ce4b6a96c0034aec36433ab80c44494dc0533b48b28810b4ad
-b028,rc_off,4,pyfile,/home/felix/i677/trees/RC/populationsim/__init__.py
+b028,rc_off,4,pyfile,~/i677/trees/RC/populationsim/__init__.py
 b028,rc_off,4,log:balancer_fast_path_count,0
 b028,rc_off,4,log:balancer_fast_path_line,
 b028,rc_off,4,log:batch_draw_count,0
@@ -214,7 +214,7 @@ b028,rc_on,1,step_s:write_synthetic_population,0.418
 b028,rc_on,1,sha256:final_expanded_household_ids.csv,9070153915d3f668611e5c54c5828a60ceed4b67d933cd0fcef27fef5f017ce2
 b028,rc_on,1,sha256:synthetic_households.csv,c75a0c03ee095b85515489e07e1c98c38589fd0a5ccc398521b5372fa6ae99ee
 b028,rc_on,1,sha256:synthetic_persons.csv,f3cc74e9ae2ac1ce4b6a96c0034aec36433ab80c44494dc0533b48b28810b4ad
-b028,rc_on,1,pyfile,/home/felix/i677/trees/RC/populationsim/__init__.py
+b028,rc_on,1,pyfile,~/i677/trees/RC/populationsim/__init__.py
 b028,rc_on,1,log:balancer_fast_path_count,1
 b028,rc_on,1,log:balancer_fast_path_line,"balancer fast path: fast 31 of 31 calls (100.0 %), fallback value cap 0, fallback SVML 0, fallback non-finite 0, re-run after the delta guard 0"
 b028,rc_on,1,log:batch_draw_count,1
@@ -242,7 +242,7 @@ b028,rc_on,2,step_s:write_synthetic_population,0.371
 b028,rc_on,2,sha256:final_expanded_household_ids.csv,9070153915d3f668611e5c54c5828a60ceed4b67d933cd0fcef27fef5f017ce2
 b028,rc_on,2,sha256:synthetic_households.csv,c75a0c03ee095b85515489e07e1c98c38589fd0a5ccc398521b5372fa6ae99ee
 b028,rc_on,2,sha256:synthetic_persons.csv,f3cc74e9ae2ac1ce4b6a96c0034aec36433ab80c44494dc0533b48b28810b4ad
-b028,rc_on,2,pyfile,/home/felix/i677/trees/RC/populationsim/__init__.py
+b028,rc_on,2,pyfile,~/i677/trees/RC/populationsim/__init__.py
 b028,rc_on,2,log:balancer_fast_path_count,1
 b028,rc_on,2,log:balancer_fast_path_line,"balancer fast path: fast 31 of 31 calls (100.0 %), fallback value cap 0, fallback SVML 0, fallback non-finite 0, re-run after the delta guard 0"
 b028,rc_on,2,log:batch_draw_count,1
@@ -270,7 +270,7 @@ b028,rc_on,3,step_s:write_synthetic_population,0.47
 b028,rc_on,3,sha256:final_expanded_household_ids.csv,9070153915d3f668611e5c54c5828a60ceed4b67d933cd0fcef27fef5f017ce2
 b028,rc_on,3,sha256:synthetic_households.csv,c75a0c03ee095b85515489e07e1c98c38589fd0a5ccc398521b5372fa6ae99ee
 b028,rc_on,3,sha256:synthetic_persons.csv,f3cc74e9ae2ac1ce4b6a96c0034aec36433ab80c44494dc0533b48b28810b4ad
-b028,rc_on,3,pyfile,/home/felix/i677/trees/RC/populationsim/__init__.py
+b028,rc_on,3,pyfile,~/i677/trees/RC/populationsim/__init__.py
 b028,rc_on,3,log:balancer_fast_path_count,1
 b028,rc_on,3,log:balancer_fast_path_line,"balancer fast path: fast 31 of 31 calls (100.0 %), fallback value cap 0, fallback SVML 0, fallback non-finite 0, re-run after the delta guard 0"
 b028,rc_on,3,log:batch_draw_count,1
@@ -298,7 +298,7 @@ b032,bs2_on,1,step_s:write_synthetic_population,0.292
 b032,bs2_on,1,sha256:final_expanded_household_ids.csv,51699a50e1ad37dd08581a3ef26b36ef1beb7896552bfa64b1dadea5851cf5ed
 b032,bs2_on,1,sha256:synthetic_households.csv,5c5f157568cdb4b69fe87e746e1e8e3ea5cb4321b7c8dfb7091efa6876ca9742
 b032,bs2_on,1,sha256:synthetic_persons.csv,b3de0e979bc2a255e7d37b340800a3b40d966b6e1f7cdfebb1693ac6cc4a8d07
-b032,bs2_on,1,pyfile,/home/felix/i677/trees/A/populationsim/__init__.py
+b032,bs2_on,1,pyfile,~/i677/trees/A/populationsim/__init__.py
 b032,bs2_on,1,log:balancer_fast_path_count,1
 b032,bs2_on,1,log:balancer_fast_path_line,"balancer fast path: fast 32 of 32 calls (100.0 %), fallback value cap 0, fallback SVML 0, fallback non-finite 0, re-run after the delta guard 0"
 b032,bs2_on,1,log:batch_draw_count,0
@@ -326,7 +326,7 @@ b032,rc_off,1,step_s:write_synthetic_population,0.538
 b032,rc_off,1,sha256:final_expanded_household_ids.csv,51699a50e1ad37dd08581a3ef26b36ef1beb7896552bfa64b1dadea5851cf5ed
 b032,rc_off,1,sha256:synthetic_households.csv,5c5f157568cdb4b69fe87e746e1e8e3ea5cb4321b7c8dfb7091efa6876ca9742
 b032,rc_off,1,sha256:synthetic_persons.csv,b3de0e979bc2a255e7d37b340800a3b40d966b6e1f7cdfebb1693ac6cc4a8d07
-b032,rc_off,1,pyfile,/home/felix/i677/trees/RC/populationsim/__init__.py
+b032,rc_off,1,pyfile,~/i677/trees/RC/populationsim/__init__.py
 b032,rc_off,1,log:balancer_fast_path_count,0
 b032,rc_off,1,log:balancer_fast_path_line,
 b032,rc_off,1,log:batch_draw_count,0
@@ -354,7 +354,7 @@ b032,rc_on,1,step_s:write_synthetic_population,0.269
 b032,rc_on,1,sha256:final_expanded_household_ids.csv,51699a50e1ad37dd08581a3ef26b36ef1beb7896552bfa64b1dadea5851cf5ed
 b032,rc_on,1,sha256:synthetic_households.csv,5c5f157568cdb4b69fe87e746e1e8e3ea5cb4321b7c8dfb7091efa6876ca9742
 b032,rc_on,1,sha256:synthetic_persons.csv,b3de0e979bc2a255e7d37b340800a3b40d966b6e1f7cdfebb1693ac6cc4a8d07
-b032,rc_on,1,pyfile,/home/felix/i677/trees/RC/populationsim/__init__.py
+b032,rc_on,1,pyfile,~/i677/trees/RC/populationsim/__init__.py
 b032,rc_on,1,log:balancer_fast_path_count,1
 b032,rc_on,1,log:balancer_fast_path_line,"balancer fast path: fast 32 of 32 calls (100.0 %), fallback value cap 0, fallback SVML 0, fallback non-finite 0, re-run after the delta guard 0"
 b032,rc_on,1,log:batch_draw_count,1
