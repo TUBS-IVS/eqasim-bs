@@ -799,12 +799,15 @@ def _with_unknown_row(df_locations):
      "index map"),
     ("home S home", lambda inputs: inputs.update(df_home=inputs["df_home"].to_crs("EPSG:4326")),
      "CRS"),
+    ("home shop S home",
+     lambda inputs: inputs.update(df_locations=inputs["df_locations"].assign(activity_index=1.5)),
+     r"activity_index.*no whole number.*1\.5"),
     # The solver rows are not remapped: the shop keeps index 1, where the stroll goes back.
     ("home S shop home", lambda inputs: inputs.update(index_map=inputs["index_map"].iloc[:0]),
      r"occur twice.*\(1, 1\)"),
 ], ids=["secondary_origin_without_result_row", "home_origin_without_home",
         "work_origin_without_work", "result_row_unknown_to_the_index_map", "places_in_another_crs",
-        "rows_not_remapped"])
+        "activity_index_not_a_whole_number", "rows_not_remapped"])
 def test_restore_raises_when_a_place_is_missing_or_does_not_fit(chain, damage, message):
     df_trips, is_loop = _chains((1, chain))
     collapsed, index_map, loop_table = loops.collapse_loops(df_trips, is_loop, {1})
@@ -815,6 +818,19 @@ def test_restore_raises_when_a_place_is_missing_or_does_not_fit(chain, damage, m
     with pytest.raises(ValueError, match=message):
         loops.restore_loops(inputs.pop("df_locations"), inputs.pop("index_map"),
                             inputs.pop("loops"), **inputs)
+
+
+def test_restore_reads_whole_activity_indices_of_an_object_column_as_integers():
+    # A concat with an empty solver frame (object columns) hands the restore an object column.
+    df_trips, is_loop = _chains((1, "home shop S home"))
+    collapsed, index_map, loop_table = loops.collapse_loops(df_trips, is_loop, {1})
+    solved = _solve(collapsed)
+
+    restored = loops.restore_loops(solved.astype({"activity_index": object}), index_map,
+                                   loop_table, **_places([1]))
+
+    assert restored["activity_index"].dtype == np.int64
+    assert restored["activity_index"].tolist() == [1, 2]
 
 
 def test_restore_accepts_places_without_a_crs_and_says_so(caplog):

@@ -65,12 +65,13 @@ LOOP_CODES = frozenset({710, 711})
 #: is (ASSUMPTION: same reading as the diary's "Spaziergang" by bicycle).
 LOOP_MODES = frozenset({"walk", "bicycle"})
 
-#: Offset added to ``random_seed`` for the loop draw's own stream: one more than
-#: ``srv_location_types.SRV_LOCATION_SEED_OFFSET`` (90215), the last offset of this stage's
-#: decider streams (``deciders``: 90211 to 90214), so the loop draw neither reads the uniforms of
-#: another stream nor perturbs the subtype, escort, SrV location-type or distance draws. No other
-#: ``*SEED_OFFSET`` in ``braunschweig/`` uses 90216; ``tests/test_secondary_loops.py`` checks that
-#: the offsets of this stage's streams are pairwise distinct.
+#: Offset added to ``random_seed`` for the loop draw's own stream. It differs from the offsets of
+#: the stage's other streams (``deciders.SHOP_SUBTYPE_SEED_OFFSET``,
+#: ``deciders.LEISURE_SUBTYPE_SEED_OFFSET``, ``deciders.OTHER_SUBTYPE_SEED_OFFSET``,
+#: ``deciders.ESCORT_LOCATION_SEED_OFFSET``, ``srv_location_types.SRV_LOCATION_SEED_OFFSET``)
+#: and from the solver's own stream (``random_seed`` itself), so the loop draw neither reads the
+#: uniforms of another stream nor perturbs the subtype, escort, SrV location-type or distance
+#: draws; ``tests/test_secondary_loops.py`` checks that these offsets are pairwise distinct.
 LOOP_SEED_OFFSET = 90216
 
 #: Config key of the feature flag (declared by the stage wiring, not by this module).
@@ -458,6 +459,12 @@ def select_collapsible_loops(df_trips: pd.DataFrame, is_loop: pd.Series,
     either kept (then it is the origin, and a leisure activity) or collapsed (then, by the same
     argument one step earlier, its origin is not ``outside``, and it is this loop's origin too).
     So only the first loop of a run after an outside stay is kept; the next one collapses onto it.
+    The rule applies with the portal layer off as well, where it keeps nothing: the only writer of
+    the ``outside`` purpose into the trips this stage reads is the portal rewrite
+    (``braunschweig.synthesis.portal_trips.rewrite``); with the layer off its stage returns the
+    trips unchanged, and the scenario cutter, which turns boundary-crossing trips (and the
+    in-commuters' homes, ``braunschweig.synthesis.incommuters``) into outside activities, runs
+    later, in ``braunschweig.matsim.simulation.prepare``.
 
     Returns ``(is_loop_to_collapse, counts)``: a Boolean Series on ``df_trips.index`` (True for
     the collapsible loops, False for every other trip) and ``{reason: count}``. ``is_loop`` must
@@ -772,6 +779,26 @@ def _raise_if_missing(loops: pd.DataFrame, missing: np.ndarray, origin: str, rea
             f"origin_activity_index): {_plain(examples)}.")
 
 
+def _whole_activity_indices(values: pd.Series) -> pd.Series:
+    """``values`` as int64; ``ValueError`` when one is missing or no whole number.
+
+    The rows ``restore_loops`` receives can carry an object ``activity_index`` (a concat with an
+    empty solver frame, whose columns have no dtype); read as int64, the remap and the duplicate
+    check compare like with like.
+    """
+    if values.dtype.kind in "iu":
+        return values.astype("int64")
+    numbers = pd.to_numeric(values, errors="coerce").astype(float)
+    whole = np.isfinite(numbers) & (numbers == np.round(numbers))
+    if not bool(whole.all()):
+        examples = values[~whole].tolist()[:5]
+        raise ValueError(
+            f"[secondary_loops] restore_loops: {int((~whole).sum())} location rows have an "
+            f"activity_index that is no whole number, first {_plain(examples)}; the solver rows "
+            "and the anchored rows must carry integer activity indices.")
+    return numbers.astype("int64")
+
+
 def restore_loops(df_locations: gpd.GeoDataFrame, index_map: pd.DataFrame, loops: pd.DataFrame,
                   *, df_persons: pd.DataFrame, df_home: gpd.GeoDataFrame,
                   df_work: gpd.GeoDataFrame, df_education: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -808,7 +835,9 @@ def restore_loops(df_locations: gpd.GeoDataFrame, index_map: pd.DataFrame, loops
     column ``loop_origin`` (one of :data:`LOOP_ORIGINS` on a loop row, None on every other row).
     The places must be in the CRS of ``df_locations`` where both CRSs are set (``ValueError``
     otherwise; a place frame without a CRS is read as being in it and named in an INFO line), and
-    no ``(person_id, activity_index)`` may end up twice. The inputs are not changed.
+    no ``(person_id, activity_index)`` may end up twice. ``activity_index`` is read as int64 (an
+    object column of whole numbers is accepted, a missing or fractional value raises
+    ``ValueError``). The inputs are not changed.
     """
     _require_columns(df_locations, _LOCATION_COLUMNS, "locations")
     _require_columns(index_map, INDEX_MAP_COLUMNS, "index map")
@@ -840,6 +869,7 @@ def restore_loops(df_locations: gpd.GeoDataFrame, index_map: pd.DataFrame, loops
                          f"{list(LOOP_ORIGINS)}; got {unknown}.")
 
     restored = df_locations.copy()
+    restored["activity_index"] = _whole_activity_indices(restored["activity_index"])
     collapsed = restored["person_id"].isin(index_map["person_id"].unique()).to_numpy()
     if collapsed.any():
         original_index = _unique_lookup(

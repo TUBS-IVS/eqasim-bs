@@ -279,14 +279,17 @@ def _run(tmp_path, trips_rows, enabled):
     return df_locations
 
 
-def _patch_escort_link(monkeypatch, person_id, school_id, school_point):
-    """Anchor ``person_id``'s escort activities at a child's school (#201 household link).
+def _patch_escort_link(monkeypatch, person_id, schools):
+    """Anchor ``person_id``'s escort activities at the schools of the household's children
+    (#201 household link); ``schools`` lists ``(location_id, point)`` youngest child first.
 
     The stand-in for ``_apply_escort_household_link`` skips only the household search
     (``build_escort_links``): the real anchor assignment and trip rewrite run on the trips the
     stage hands over, so the anchors are in the numbering of that run."""
-    df_links = pd.DataFrame({"person_id": [person_id], "child_rank": [0],
-                             "location_id": [school_id], "geometry": [school_point]})
+    df_links = pd.DataFrame({"person_id": [person_id] * len(schools),
+                             "child_rank": list(range(len(schools))),
+                             "location_id": [school_id for school_id, _ in schools],
+                             "geometry": [point for _, point in schools]})
 
     def link(context, df_trips):
         rows, _stats = escort_links.assign_escort_anchors(df_trips, df_links)
@@ -317,7 +320,7 @@ def _anchored_run(tmp_path, monkeypatch, trips_rows, enabled, *, outside_index, 
     """Persons 1 to 9 through the two-pass path, with person 6's escort link, person 7's portal
     stay at ``outside_index`` and the passive joint ``links``, all in the numbering of the run."""
     person_ids = PERSONS + ANCHORED_PERSONS
-    _patch_escort_link(monkeypatch, 6, SCHOOL_ID, SCHOOL_POINT)
+    _patch_escort_link(monkeypatch, 6, [(SCHOOL_ID, SCHOOL_POINT)])
     _patch_links(monkeypatch, links)
     ctx = _LoopExecuteCtx(tmp_path, person_ids, _trips(trips_rows),
                           persons_extra={"source_H_ID": person_ids, "source_P_ID": [1] * 9},
@@ -415,9 +418,9 @@ def test_the_stage_places_other_activities_as_if_the_loop_had_been_removed_by_ha
         assert (report["kept_after_outside"], report["kept_loop_is_linked_activity"]) == (1, 0)
         # The remap is exercised: collapsed loops of persons with an escort link, a portal stay
         # and a passive joint link (both sides).
-        assert (report["collapsed_person_has_escort_link"],
-                report["collapsed_person_has_portal_stay"],
-                report["collapsed_person_has_passive_joint_link"]) == (2, 2, 4)
+        assert (report["collapsed_loops_of_persons_with_escort_link"],
+                report["collapsed_loops_of_persons_with_portal_stay"],
+                report["collapsed_loops_of_persons_with_passive_joint_link"]) == (2, 2, 4)
 
 
 def test_the_report_gives_loops_by_label_by_draw_and_by_origin(tmp_path, stage_doubles, caplog):
@@ -439,7 +442,7 @@ def test_the_report_gives_loops_by_label_by_draw_and_by_origin(tmp_path, stage_d
     for reason in ("kept_loop_is_linked_activity", "kept_after_outside", "kept_total"):
         assert (report[reason], report[f"{reason}_rate"]) == (0, 0.0)
     for kind in ("escort_link", "portal_stay", "passive_joint_link"):
-        assert report[f"collapsed_person_has_{kind}"] == 0
+        assert report[f"collapsed_loops_of_persons_with_{kind}"] == 0
     assert report["collapsed"] == 6
     assert report["by_origin"] == {"home": 3, "work": 1, "education": 1, "secondary": 1}
     # Persons 2, 3 and 5 had only loops between their home, work and education activities.
@@ -554,7 +557,7 @@ def test_a_stroll_after_an_escort_drop_off_copies_the_school_and_passes_the_faci
     # Person 1 drops a child at school edu_1, an education facility of the facilities stage's
     # test frames, and strolls from there.
     school = Point(200.0, 0.0)
-    _patch_escort_link(monkeypatch, 1, "edu_1", school)
+    _patch_escort_link(monkeypatch, 1, [("edu_1", school)])
     rows = [(1, "home", "escort", "car", 6, 2202, 8),
             (1, "escort", "leisure", "walk", 7, 710, 9),       # S, activity 2
             (1, "leisure", "home", "car", 8, 2202, 10)]
@@ -574,6 +577,46 @@ def test_a_stroll_after_an_escort_drop_off_copies_the_school_and_passes_the_faci
     with pytest.raises(RuntimeError, match="edu_1"):
         bs_facilities.execute(_LoopFacilitiesContext(tmp_path / "facilities_without_link",
                                                      df_locations))
+
+
+def test_escort_runs_stay_as_the_diary_records_them_when_a_stroll_between_them_collapses(
+        tmp_path, stage_doubles, monkeypatch):
+    # Ruling R17: the escort runs are assigned on the diary as recorded. "escort S escort" is two
+    # runs, so both drop-offs go to the youngest child's school; after the stroll collapses they
+    # are neighbours in the chain but keep that assignment (a diary without the stroll would make
+    # them one run: youngest, then second child).
+    youngest, second = ("edu_7", Point(700.0, 70.0)), ("edu_8", Point(800.0, 70.0))
+    _patch_escort_link(monkeypatch, 1, [youngest, second])
+    rows = [(1, "home", "escort", "car", 6, 2202, 8),
+            (1, "escort", "leisure", "walk", 7, 710, 9),       # S, activity 2
+            (1, "leisure", "escort", "car", 6, 2202, 10),
+            (1, "escort", "home", "car", 8, 2202, 11)]
+    df_locations, _df_convergence = sc.execute(
+        _LoopExecuteCtx(tmp_path, [1], _trips(rows), **_loop_config(True)))
+
+    # The solver gets both escort activities anchored at the youngest child's school, under their
+    # indices in the collapsed chain.
+    [(_trips_seen, anchors_seen)] = stage_doubles
+    assert anchors_seen == {(1, 1): youngest[1], (1, 2): youngest[1]}
+    placed = {activity_index: (location_id, loop_origin) for activity_index, location_id, loop_origin
+              in zip(df_locations["activity_index"], df_locations["location_id"],
+                     df_locations["loop_origin"])}
+    assert placed == {1: ("edu_7", None), 2: ("edu_7", "secondary"), 3: ("edu_7", None)}
+
+
+def test_a_collapsed_loop_that_would_copy_an_outside_stay_stops_the_stage(
+        tmp_path, stage_doubles, monkeypatch):
+    # A regression of the selection that lets the loop after an outside stay collapse would copy
+    # the gate's portal id onto a stroll; the stage must stop instead.
+    rows, config, stages, _kept = _kept_after_outside(monkeypatch)
+    monkeypatch.setattr(loops, "select_collapsible_loops", lambda df_trips, is_loop, keys: (
+        is_loop.reindex(df_trips.index).astype(bool),
+        {"kept_loop_is_linked_activity": 0, "kept_after_outside": 0}))
+    ctx = _LoopExecuteCtx(tmp_path, [1], _trips(rows), **_loop_config(True), **config)
+    ctx._stages.update(stages)
+
+    with pytest.raises(ValueError, match=r"secondary_chainsolvers.*outside.*\(1, 2, 1\)"):
+        sc.execute(ctx)
 
 
 # ---------------------------------------------------------------------------

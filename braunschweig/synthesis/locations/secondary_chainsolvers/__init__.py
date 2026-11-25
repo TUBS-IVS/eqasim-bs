@@ -2006,6 +2006,20 @@ def _concat_desired_by_category(reports):
     return merged
 
 
+def _concat_non_empty(frames):
+    """``pd.concat(frames, ignore_index=True)`` over the frames that have rows.
+
+    Empty frames are dropped first: pandas derives the result dtype from ALL entries, so an empty
+    solver result (whose columns carry no dtype information) would coerce the columns of the stage
+    output to object -- the bool ``valid`` of the convergence frame, and ``person_id`` /
+    ``activity_index`` of the location rows, which the loop restore (#679) then reads as objects.
+    pandas deprecates exactly that coercion. Every frame empty -> concat them anyway, which yields
+    the empty result frame with its columns.
+    """
+    non_empty = [frame for frame in frames if len(frame)]
+    return pd.concat(non_empty or frames, ignore_index=True)
+
+
 def _compose_two_pass(df_trips, df_primary, escort_activity_anchors, links, shared, *,
                       solve=None):
     """Two solver passes (issue #385, ADR-0119): adults and unlinked persons first, then the
@@ -2051,20 +2065,11 @@ def _compose_two_pass(df_trips, df_primary, escort_activity_anchors, links, shar
     df_loc_2, df_conv_2, report_2 = solve(
         trips_2, df_primary, anchors_2, shared, pass_label=" [pass 2/2: linked children]")
 
-    def _concat(frames):
-        # Empty frames are dropped first: pandas derives the result dtype from ALL entries,
-        # so an empty pass-2 result (whose columns carry no dtype information) would coerce
-        # the bool "valid" column of the stage output to object/float -- pandas deprecates
-        # exactly that coercion. Every frame empty -> concat them anyway, which yields the
-        # empty result frame with its columns.
-        non_empty = [frame for frame in frames if len(frame)]
-        return pd.concat(non_empty or frames, ignore_index=True)
-
     frames = [df_loc_1, df_loc_2]
     if len(anchor_rows):
         frames.append(gpd.GeoDataFrame(anchor_rows, geometry="geometry", crs=crs))
-    df_locations = gpd.GeoDataFrame(_concat(frames), geometry="geometry", crs=crs)
-    df_convergence = _concat([df_conv_1, df_conv_2])
+    df_locations = gpd.GeoDataFrame(_concat_non_empty(frames), geometry="geometry", crs=crs)
+    df_convergence = _concat_non_empty([df_conv_1, df_conv_2])
     print(_passive_joint_anchor_summary(len(pass2_persons), anchor_stats), flush=True)
     return df_locations, df_convergence, [report_1, report_2], anchor_stats
 
@@ -2135,6 +2140,34 @@ class _LoopCollapse(NamedTuple):
     links: Any
 
 
+def _require_no_loop_origin_outside(df_trips, loop_table) -> None:
+    """Raise when a collapsed loop starts at an outside stay (#442).
+
+    ``loops.select_collapsible_loops`` keeps such a loop on the solver; collapsed, it would copy
+    the gate's ``portal_*`` id, a road crossing, onto a leisure activity. The loop table names an
+    outside origin ``secondary`` (it is no primary purpose), so the origin's own purpose is read
+    from ``df_trips`` (the uncollapsed trips): activity ``k`` is the ``preceding_purpose`` of trip
+    ``k``, and the trip leaving a loop's origin is the first loop trip of its run.
+    """
+    if not len(loop_table):
+        return
+    from braunschweig.synthesis.portal_trips.config_keys import OUTSIDE_PURPOSE
+    trips = df_trips[df_trips["person_id"].isin(loop_table["person_id"].unique())]
+    purpose_of_activity = trips.set_index(["person_id", "trip_index"])["preceding_purpose"]
+    origin_purpose = purpose_of_activity.reindex(pd.MultiIndex.from_arrays(
+        [loop_table["person_id"], loop_table["origin_activity_index"]]))
+    from_outside = (origin_purpose == OUTSIDE_PURPOSE).to_numpy()
+    if from_outside.any():
+        examples = list(zip(loop_table.loc[from_outside, "person_id"].tolist(),
+                            loop_table.loc[from_outside, "activity_index"].tolist(),
+                            loop_table.loc[from_outside, "origin_activity_index"].tolist()))[:5]
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {int(from_outside.sum())} collapsed loops start "
+            f"at an {OUTSIDE_PURPOSE} stay and would copy its portal gate; such a loop must stay on "
+            "the solver (loops.select_collapsible_loops). First (person_id, activity_index, "
+            f"origin_activity_index): {examples}.")
+
+
 def _collapse_loops_and_move_anchors(df_trips, is_loop, *, activity_anchors,
                                      linked_location_rows, portal_location_rows,
                                      links) -> _LoopCollapse:
@@ -2152,7 +2185,8 @@ def _collapse_loops_and_move_anchors(df_trips, is_loop, *, activity_anchors,
        (``loops.to_collapsed_*``); an anchored or linked activity that was collapsed raises there.
 
     Fails fast (``ValueError``) when the number of collapsed loops differs from the number of
-    collapsible flags. Returns a :class:`_LoopCollapse`.
+    collapsible flags, and when a collapsed loop starts at an outside stay
+    (:func:`_require_no_loop_origin_outside`). Returns a :class:`_LoopCollapse`.
     """
     linked_keys = _linked_activity_keys(activity_anchors, linked_location_rows,
                                         portal_location_rows, links)
@@ -2163,6 +2197,7 @@ def _collapse_loops_and_move_anchors(df_trips, is_loop, *, activity_anchors,
         raise ValueError(
             f"[braunschweig.secondary_chainsolvers] {n_collapsible} loops were selected for the "
             f"collapse but {len(loop_table)} were collapsed.")
+    _require_no_loop_origin_outside(df_trips, loop_table)
 
     # Persons left without a secondary activity: every activity of their collapsed chain is a
     # fixed one (home, work, education, ...), or they have no trip left at all.
@@ -2189,11 +2224,11 @@ def _collapse_loops_and_move_anchors(df_trips, is_loop, *, activity_anchors,
         "persons_collapsed": len(collapsed_persons),
         "persons_without_secondary_activity": len(collapsed_persons - with_secondary),
         # The loops whose collapse moved an anchor or link: the run shows the remap is exercised.
-        "collapsed_person_has_escort_link": collapsed_of(
+        "collapsed_loops_of_persons_with_escort_link": collapsed_of(
             persons_of(linked_location_rows, ["person_id"])),
-        "collapsed_person_has_portal_stay": collapsed_of(
+        "collapsed_loops_of_persons_with_portal_stay": collapsed_of(
             persons_of(portal_location_rows, ["person_id"])),
-        "collapsed_person_has_passive_joint_link": collapsed_of(
+        "collapsed_loops_of_persons_with_passive_joint_link": collapsed_of(
             persons_of(links, ["child_person_id", "adult_person_id"])),
     }
     return _LoopCollapse(
@@ -2216,9 +2251,10 @@ def _report_loops(context, flag_stats, counts, loop_table):
 
     Each reason a loop is kept on the solver (``loops.KEPT_LOOP_REASONS``) and their sum
     ``kept_total`` are reported as counts and as rates of all flagged loops; the ``kept_total``
-    rate is a WARNING above ``FALLBACK_WARN_RATE``. ``collapsed_person_has_escort_link`` /
-    ``_portal_stay`` / ``_passive_joint_link`` count the collapsed loops of persons with such an
-    anchor or link, whose indices the collapse moved. The marginal-draw share per mode
+    rate is a WARNING above ``FALLBACK_WARN_RATE``.
+    ``collapsed_loops_of_persons_with_escort_link`` / ``_portal_stay`` / ``_passive_joint_link``
+    count the collapsed loops of persons with such an anchor or link, whose indices the collapse
+    moved. The marginal-draw share per mode
     (``draws_from_marginal / draws``, 0 for a mode without draws) is warned by
     ``loops.flag_loops`` already and only reported and logged here.
     """
@@ -2248,8 +2284,9 @@ def _report_loops(context, flag_stats, counts, loop_table):
         counts["kept_total"], 100.0 * kept_rate,
         counts["kept_loop_is_linked_activity"], 100.0 * block["kept_loop_is_linked_activity_rate"],
         counts["kept_after_outside"], 100.0 * block["kept_after_outside_rate"],
-        counts["collapsed_person_has_escort_link"], counts["collapsed_person_has_portal_stay"],
-        counts["collapsed_person_has_passive_joint_link"],
+        counts["collapsed_loops_of_persons_with_escort_link"],
+        counts["collapsed_loops_of_persons_with_portal_stay"],
+        counts["collapsed_loops_of_persons_with_passive_joint_link"],
         counts["persons_without_secondary_activity"], counts["persons_collapsed"],
         100.0 * _rate(counts["persons_without_secondary_activity"], counts["persons_collapsed"]),
         ", ".join(f"{mode} {100.0 * share:.1f}%" for mode, share in sorted(marginal_share.items())))
@@ -2403,16 +2440,18 @@ def execute(context):
     # problem splitter never places them; append their pre-anchored rows
     # (issue #201 Phase 2). They reference PRIMARY education facility ids, which
     # the facilities coverage check accepts via extra_valid_ids.
+    # _concat_non_empty: a solver that placed nothing returns columns without dtype, which would
+    # turn the appended rows' integer columns into objects.
     if linked_location_rows is not None and len(linked_location_rows):
         df_linked = gpd.GeoDataFrame(linked_location_rows, geometry="geometry", crs=crs)
-        df_locations = pd.concat([df_locations, df_linked], ignore_index=True)
+        df_locations = _concat_non_empty([df_locations, df_linked])
 
     # The gates of the portal stays (eqasim-bs#442) are fixed boundaries as well: one row per stay
     # (location_id "portal_<gate_id>", a facility registered by the facilities stage) so the eqasim
     # location join finds a geometry and a facility for every outside activity.
     if portal_location_rows is not None:
         df_portal = gpd.GeoDataFrame(portal_location_rows, geometry="geometry", crs=crs)
-        df_locations = pd.concat([df_locations, df_portal], ignore_index=True)
+        df_locations = _concat_non_empty([df_locations, df_portal])
 
     # Loop restore (issue #679), ONCE on the combined result: every row of a collapsed person --
     # solver rows, the pass-2 joint anchor rows and the linked escort and portal rows appended
