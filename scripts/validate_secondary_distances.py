@@ -140,6 +140,41 @@ def _load_loop_origin(working_directory: str):
     return marker
 
 
+def attach_loop_marker(df_merged: pd.DataFrame, df_loop_origin: pd.DataFrame,
+                       tag: str = "[secondary-validate]") -> pd.DataFrame:
+    """``df_merged`` (``person_id``, ``activity_index``, ``purpose``, ...) with the ``loop_origin``
+    column of ``df_loop_origin`` (:func:`_load_loop_origin`) joined on, row for row.
+
+    Raises ``AssertionError`` when the join changes the row count (a repeated key in the marker)
+    and ``RuntimeError`` when a secondary activity has no marker row: the marker pickle is picked
+    by modification time independently of the locations frame, and an unmatched secondary
+    activity would silently count as "not a loop", so a cache pair that does not belong together
+    must stop the run. ``tag`` prefixes the messages (the calibration script reuses this).
+    """
+    n_before_loop_join = len(df_merged)
+    df_merged = df_merged.merge(df_loop_origin, on=["person_id", "activity_index"],
+                                how="left", indicator="_loop_marker_match")
+    if len(df_merged) != n_before_loop_join:
+        raise AssertionError(
+            f"{tag} loop_origin join changed row count "
+            f"{n_before_loop_join} -> {len(df_merged)}: non-unique "
+            "(person_id, activity_index) key in the secondary locations result?"
+        )
+    is_secondary_row = df_merged["purpose"].isin(_SECONDARY_PURPOSES)
+    n_secondary_rows = int(is_secondary_row.sum())
+    n_unmatched = int((is_secondary_row & (df_merged["_loop_marker_match"] != "both")).sum())
+    if n_unmatched:
+        raise RuntimeError(
+            f"{tag} loop_origin: {n_unmatched}/{n_secondary_rows} secondary "
+            "activities of the locations frame have no row in the secondary locations "
+            "pickle; the two cached stages do not belong to the same run. Refusing to "
+            "count their legs as non-loops."
+        )
+    logger.info("%s loop_origin join: matched %d/%d secondary activities "
+                "(100%%, no unmatched row).", tag, n_secondary_rows, n_secondary_rows)
+    return df_merged.drop(columns="_loop_marker_match")
+
+
 # ---------------------------------------------------------------------------
 # Main measurement logic
 # ---------------------------------------------------------------------------
@@ -194,31 +229,7 @@ def measure_secondary_distances(working_directory: str):
     # activity is the loop leg.
     df_loop_origin = _load_loop_origin(working_directory)
     if df_loop_origin is not None:
-        n_before_loop_join = len(df_merged)
-        df_merged = df_merged.merge(df_loop_origin, on=["person_id", "activity_index"],
-                                    how="left", indicator="_loop_marker_match")
-        if len(df_merged) != n_before_loop_join:
-            raise AssertionError(
-                f"[secondary-validate] loop_origin join changed row count "
-                f"{n_before_loop_join} -> {len(df_merged)}: non-unique "
-                "(person_id, activity_index) key in the secondary locations result?"
-            )
-        # The marker pickle is picked by modification time independently of the locations
-        # frame. A secondary activity without a marker row would silently count as "not a loop",
-        # so a cache pair that does not belong together must stop the run.
-        is_secondary_row = df_merged["purpose"].isin(_SECONDARY_PURPOSES)
-        n_secondary_rows = int(is_secondary_row.sum())
-        n_unmatched = int((is_secondary_row & (df_merged["_loop_marker_match"] != "both")).sum())
-        if n_unmatched:
-            raise RuntimeError(
-                f"[secondary-validate] loop_origin: {n_unmatched}/{n_secondary_rows} secondary "
-                "activities of the locations frame have no row in the secondary locations "
-                "pickle; the two cached stages do not belong to the same run. Refusing to "
-                "count their legs as non-loops."
-            )
-        logger.info("[secondary-validate] loop_origin join: matched %d/%d secondary activities "
-                    "(100%%, no unmatched row).", n_secondary_rows, n_secondary_rows)
-        df_merged = df_merged.drop(columns="_loop_marker_match")
+        df_merged = attach_loop_marker(df_merged, df_loop_origin)
 
     # Sort by (person_id, activity_index) to ensure leg ordering is correct.
     df_merged = df_merged.sort_values(["person_id", "activity_index"]).reset_index(drop=True)
