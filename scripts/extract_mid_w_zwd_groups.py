@@ -264,7 +264,8 @@ def build_group_reference(wege: pd.DataFrame, *, leave_out_loops: bool = False) 
                              "nothing, which points to a code or column mismatch."
                              % (_LOG_TAG, sorted(LOOP_CODES)))
         filtered = filtered[~is_loop]
-        universe_diagnostics = dict(universe_diagnostics, n_loop_legs_left_out=n_loop)
+        universe_diagnostics = dict(universe_diagnostics, n_loop_legs_left_out=n_loop,
+                                    n_legs_after_loop_removal=int(len(filtered)))
 
     rows, diagnostics = [], dict(universe_diagnostics)
     for variant in SPEC_VARIANTS:
@@ -426,13 +427,21 @@ def _header(table: pd.DataFrame, diagnostics: dict, source_commit: str,
             "#   %s keeps the loops; n_loop_legs_left_out=%d."
             % (MID_GROUP_TABLE, diagnostics["n_loop_legs_left_out"]),
         ]
+    # In the loop-free variant n_legs_after_weekday_rbw is the universe BEFORE the loop removal, so
+    # the sentence that names the universe of every count below must name the smaller one.
+    if "n_legs_after_loop_removal" in diagnostics:
+        universe_sentence = (
+            "n_legs_after_weekday_rbw is the weekday universe BEFORE loop removal; every count "
+            "below is measured on n_legs_after_loop_removal=%d" % diagnostics["n_legs_after_loop_removal"])
+    else:
+        universe_sentence = "the universe every count below is measured on"
     lines += [
         "# Exclusions: n_legs_raw=%d (raw Wege-file row count), n_legs_after_weekday_rbw=%d "
         "(%.2f%% kept;" % (diagnostics["n_legs_raw"], diagnostics["n_legs_after_weekday_rbw"],
                            100.0 * diagnostics["n_legs_after_weekday_rbw"]
                            / diagnostics["n_legs_raw"] if diagnostics["n_legs_raw"] else float("nan")),
-        "#   the universe every count below is measured on), n_legs_invalid_weight=%d (missing or "
-        "non-positive" % diagnostics["n_legs_invalid_weight"],
+        "#   %s), n_legs_invalid_weight=%d (missing or "
+        "non-positive" % (universe_sentence, diagnostics["n_legs_invalid_weight"]),
         "#   W_GEW; the extraction RAISES if this is not 0), n_values_coerced_to_nan=%s (per raw "
         "column, values" % (diagnostics["n_values_coerced_to_nan"],),
         "#   that became NaN under the numeric coercion of the raw text).",

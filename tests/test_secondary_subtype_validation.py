@@ -252,12 +252,13 @@ def test_build_subtype_report_computes_real_rows_when_subtype_column_present(cap
 # ---------------------------------------------------------------------------
 
 
-def _write_stage_caches(directory, secondary_loop_origin):
+def _write_stage_caches(directory, secondary_loop_origin, drop_secondary_activity=None):
     """One person: home, shop (1 km away), a stroll that starts at the shop, a leisure leg of 3 km.
 
     ``secondary_loop_origin`` is the ``loop_origin`` column of the secondary locations result
     (a list per activity), or the string ``"absent"`` (column missing, switch off) or
-    ``"no_stage"`` (no secondary pickle in the cache at all).
+    ``"no_stage"`` (no secondary pickle in the cache at all). ``drop_secondary_activity`` removes
+    that activity's row from the secondary pickle (a cache pair from different runs).
     """
     import pickle
 
@@ -276,8 +277,11 @@ def _write_stage_caches(directory, secondary_loop_origin):
               "synthesis.population.trips": trips}
     if secondary_loop_origin != "no_stage":
         secondary = frame.copy()
+        if drop_secondary_activity is not None:
+            secondary = secondary[secondary["activity_index"] != drop_secondary_activity]
         if secondary_loop_origin != "absent":
-            secondary["loop_origin"] = pd.Series(secondary_loop_origin, dtype=object)
+            secondary["loop_origin"] = pd.Series(secondary_loop_origin, dtype=object).reindex(
+                secondary.index)
         stages["braunschweig.synthesis.locations.secondary_chainsolvers"] = (
             secondary, pd.DataFrame())
     for name, content in stages.items():
@@ -305,7 +309,8 @@ def test_the_comparison_leaves_the_loop_legs_out_and_reports_their_count_and_sha
 
 
 @pytest.mark.parametrize("secondary_loop_origin", ["absent", "no_stage"])
-def test_without_a_loop_column_the_comparison_is_unchanged(tmp_path, caplog, secondary_loop_origin):
+def test_without_a_loop_column_the_comparison_is_unchanged(tmp_path, caplog, capsys,
+                                                            secondary_loop_origin):
     """Switch off (no ``loop_origin`` in the secondary result) or a cache with no such stage:
     the legs keep every row and column, no loop summary exists, and the log says which of the
     two it was instead of staying silent."""
@@ -317,6 +322,18 @@ def test_without_a_loop_column_the_comparison_is_unchanged(tmp_path, caplog, sec
     kept, summary = leave_out_loop_legs(distances)
     assert summary is None and kept is distances
     assert "loop_origin" in "\n".join(caplog.messages)
+    # No pickle at all is said on stdout too; a switched-off result keeps today's output.
+    assert ("NOT filtered for loop legs" in capsys.readouterr().out) is (
+        secondary_loop_origin == "no_stage")
+
+
+def test_a_secondary_activity_without_a_marker_row_stops_the_comparison(tmp_path):
+    """A cache pair from different runs (the marker pickle misses activity 3) must not turn
+    the unmatched activity into a silent 'not a loop'."""
+    _write_stage_caches(tmp_path, [None, None, "secondary", None, None],
+                        drop_secondary_activity=3)
+    with pytest.raises(RuntimeError, match=r"1/3 secondary activities.*no row"):
+        _validate_mod.measure_secondary_distances(str(tmp_path))
 
 
 def _w12_targets_stub():
@@ -345,6 +362,8 @@ def test_the_script_reports_the_loops_and_the_survey_table_only_when_loops_are_m
 
     printed = capsys.readouterr().out
     written = pd.read_csv(out_csv)
+    assert ("INCLUDES strolls and dog walks" in printed) is loops_reported
+    assert ("survey_includes_loops" in written.columns) is loops_reported
     assert ("Loop legs" in printed) is loops_reported
     assert ("mid2023_W12_triplength_by_purpose.csv" in printed) is loops_reported
     if loops_reported:
@@ -352,6 +371,8 @@ def test_the_script_reports_the_loops_and_the_survey_table_only_when_loops_are_m
         assert loop_row["n"] == 1
         assert loop_row["loop_share_of_secondary_legs"] == pytest.approx(1 / 3)  # 1 of 3 legs
         assert written.set_index("purpose").loc["leisure", "n"] == 1
+        # The caveat travels with EVERY row, the loop row included.
+        assert written["survey_includes_loops"].all() and len(written) == 4
     else:
         assert list(written["purpose"]) == ["shop", "leisure", "other"]
         assert "loop_share_of_secondary_legs" not in written.columns

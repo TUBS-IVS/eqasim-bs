@@ -430,6 +430,7 @@ def test_leaving_out_the_loops_drops_both_codes_and_changes_nothing_else():
     assert M.LOOP_CODES is LOOP_CODES
     assert "n_loop_legs_left_out" not in default_diagnostics
     assert diagnostics["n_loop_legs_left_out"] == 2
+    assert diagnostics["n_legs_after_loop_removal"] == 17      # 19 weekday legs - 2 loops
     # leisure_local holds 706 + 710 + 711 by default; only 706 remains.
     assert int(_row(default_table, "default", "leisure_local")["n_unweighted"]) == 3
     assert int(_row(table, "default", "leisure_local")["n_unweighted"]) == 1
@@ -460,6 +461,12 @@ def test_main_writes_the_loop_free_table_next_to_the_unchanged_default_table(tmp
     assert (out / M.MID_GROUP_TABLE).read_bytes() == default_bytes
     loop_free_text = (out / M.MID_GROUP_TABLE_WITHOUT_LOOPS).read_text(encoding="utf-8")
     assert "n_loop_legs_left_out=2" in loop_free_text
+    # The header must not call the pre-removal count the universe of every count below.
+    assert "n_legs_after_weekday_rbw=19" in loop_free_text
+    assert "n_legs_after_loop_removal=17" in loop_free_text
+    assert "universe every count below is measured on" not in loop_free_text
+    assert "universe every count below is measured on" in (
+        out / M.MID_GROUP_TABLE).read_text(encoding="utf-8")
     assert "# Table: %s" % M.MID_GROUP_TABLE_WITHOUT_LOOPS in loop_free_text
     loop_free = pd.read_csv(out / M.MID_GROUP_TABLE_WITHOUT_LOOPS, comment="#")
     local = loop_free[(loop_free["spec_variant"] == "default")

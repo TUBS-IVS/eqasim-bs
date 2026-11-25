@@ -124,6 +124,8 @@ def _load_loop_origin(working_directory: str):
     except RuntimeError:
         logger.info("[secondary-validate] loop_origin: no secondary locations pickle in the "
                     "cache; loops cannot be identified, legs are compared unchanged.")
+        print("NOTE: no secondary locations pickle in the cache -- the model side was NOT "
+              "filtered for loop legs (strolls, dog walks).")
         return None
     df_secondary = result[0] if isinstance(result, tuple) else result
     if LOOP_ORIGIN_COLUMN not in df_secondary.columns:
@@ -194,13 +196,29 @@ def measure_secondary_distances(working_directory: str):
     if df_loop_origin is not None:
         n_before_loop_join = len(df_merged)
         df_merged = df_merged.merge(df_loop_origin, on=["person_id", "activity_index"],
-                                    how="left")
+                                    how="left", indicator="_loop_marker_match")
         if len(df_merged) != n_before_loop_join:
             raise AssertionError(
                 f"[secondary-validate] loop_origin join changed row count "
                 f"{n_before_loop_join} -> {len(df_merged)}: non-unique "
                 "(person_id, activity_index) key in the secondary locations result?"
             )
+        # The marker pickle is picked by modification time independently of the locations
+        # frame. A secondary activity without a marker row would silently count as "not a loop",
+        # so a cache pair that does not belong together must stop the run.
+        is_secondary_row = df_merged["purpose"].isin(_SECONDARY_PURPOSES)
+        n_secondary_rows = int(is_secondary_row.sum())
+        n_unmatched = int((is_secondary_row & (df_merged["_loop_marker_match"] != "both")).sum())
+        if n_unmatched:
+            raise RuntimeError(
+                f"[secondary-validate] loop_origin: {n_unmatched}/{n_secondary_rows} secondary "
+                "activities of the locations frame have no row in the secondary locations "
+                "pickle; the two cached stages do not belong to the same run. Refusing to "
+                "count their legs as non-loops."
+            )
+        logger.info("[secondary-validate] loop_origin join: matched %d/%d secondary activities "
+                    "(100%%, no unmatched row).", n_secondary_rows, n_secondary_rows)
+        df_merged = df_merged.drop(columns="_loop_marker_match")
 
     # Sort by (person_id, activity_index) to ensure leg ordering is correct.
     df_merged = df_merged.sort_values(["person_id", "activity_index"]).reset_index(drop=True)
@@ -373,8 +391,12 @@ def build_report(distances_by_purpose: dict, w12_targets: dict) -> list[dict]:
     return rows
 
 
-def print_table(rows: list[dict]) -> None:
-    """Print a formatted per-purpose comparison table."""
+def print_table(rows: list[dict], survey_includes_loops: bool = False) -> None:
+    """Print a formatted per-purpose comparison table.
+
+    ``survey_includes_loops`` adds the footnote that the W12 side still holds the strolls and
+    dog walks the model side left out (issue #679); it is set exactly when loops were left out.
+    """
     header = (
         f"{'purpose':<10}  {'n':>8}  "
         f"{'mean_euc_km':>12}  {'mean_routed_km':>14}  "
@@ -394,7 +416,25 @@ def print_table(rows: list[dict]) -> None:
             f"{row['mean_euclidean_km']:>12.2f}  {row['mean_routed_equiv_km']:>14.2f}  "
             f"{row['w12_mean_km']:>12.1f}  {row['emd_vs_w12']:>12.4f}"
         )
-    print(sep + "\n")
+    print(sep)
+    if survey_includes_loops:
+        print("* W12 (published MiD table over all trips of the purpose) INCLUDES strolls and "
+              "dog walks; the model rows above leave loop legs out.")
+    print()
+
+
+#: Name of the CSV column that carries the survey-side loop caveat with the numbers.
+SURVEY_INCLUDES_LOOPS_COLUMN = "survey_includes_loops"
+
+
+def mark_survey_includes_loops(rows: list[dict]) -> list[dict]:
+    """Add ``survey_includes_loops = True`` to every CSV row (issue #679).
+
+    Used exactly when loop legs were left out on the model side: the W12 survey side of every
+    row still holds them, and the caveat must travel with the numbers, not only with the
+    printed text. Without left-out loops the column does not exist.
+    """
+    return [dict(row, **{SURVEY_INCLUDES_LOOPS_COLUMN: True}) for row in rows]
 
 
 #: ``purpose`` value of the CSV row that reports the left-out loop legs.
@@ -604,7 +644,7 @@ def main():
     # on their own; without the marker column nothing changes.
     distances, loop_summary = leave_out_loop_legs(distances)
     rows = build_report(distances, w12)
-    print_table(rows)
+    print_table(rows, survey_includes_loops=loop_summary is not None)
     if loop_summary is not None:
         print_loop_summary(loop_summary, w12_path)
 
@@ -621,8 +661,8 @@ def main():
     # 5. Write optional CSV output
     # ------------------------------------------------------------------
     if args.output:
-        df_out = pd.DataFrame(rows if loop_summary is None
-                              else rows + [loop_csv_row(loop_summary)])
+        df_out = pd.DataFrame(rows if loop_summary is None else mark_survey_includes_loops(
+            rows + [loop_csv_row(loop_summary)]))
         df_out.to_csv(args.output, index=False)
         logger.info("[secondary-validate] wrote comparison CSV to '%s'.", args.output)
 
