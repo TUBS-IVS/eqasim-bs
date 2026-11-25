@@ -364,8 +364,9 @@ def test_prepare_writes_the_incommuter_strategies_into_the_final_config(tmp_path
     _, initial_blocks, excluded = seen[2]
     for subpopulation in CS.INCOMMUTER_SUBPOPULATIONS:
         assert ("ReRoute", 0.1, subpopulation) in initial_blocks
-    # the standalone mode choice leaves the same subpopulations unchanged as the loop does
-    assert excluded == CS.INCOMMUTER_SUBPOPULATIONS == ("incommuter", "student_incommuter")
+    # the standalone mode choice leaves the in-commuters (as the loop does) and the injected freight unchanged
+    assert excluded == CS.INCOMMUTER_SUBPOPULATIONS + (prepare.FREIGHT_SUBPOPULATION,)
+    assert excluded == ("incommuter", "student_incommuter", "freight")
 
 
 def test_prepare_leaves_the_config_alone_without_the_cordon(monkeypatch):

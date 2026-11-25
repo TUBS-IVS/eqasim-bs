@@ -229,6 +229,10 @@ def validate(context):
     return token
 
 
+#: The subpopulation of the injected freight agents; the value RunInjectFreight (eqasim-java-bs) writes.
+FREIGHT_SUBPOPULATION = "freight"
+
+
 def configure(context):
     delegate.configure(context)
     # Read by _summarise_final_schedule for the next-day extension check (result only, no config key).
@@ -462,12 +466,17 @@ def execute(context):
 
 
 def _initial_mode_choice_excluded_subpopulations(context) -> tuple[str, ...]:
-    """The subpopulations the standalone mode choice leaves unchanged: the in-commuters whenever the cordon writes them.
+    """The subpopulations the standalone mode choice leaves unchanged: in-commuters and injected freight.
 
-    They have the fixed-mode strategies in the MATSim loop (ADR-0182), so they keep their synthesised mode before
-    iteration 0 as well (eqasim-bs#566). Without the cordon there are no in-commuters to exclude.
+    The in-commuters have the fixed-mode strategies in the MATSim loop (ADR-0182), so they keep their synthesised mode
+    before iteration 0 as well (eqasim-bs#566); without the cordon there are none. The freight agents keep their truck
+    mode for the whole run (own strategies, ADR-0182) and their legs are a bare truck leg without a routing mode, which
+    fails the outside constraint of the mode choice; without the injection there are none.
     """
-    return cordon_subpopulation.INCOMMUTER_SUBPOPULATIONS if context.config("cordon_enabled") else ()
+    excluded = cordon_subpopulation.INCOMMUTER_SUBPOPULATIONS if context.config("cordon_enabled") else ()
+    if context.config("freight_enabled"):
+        excluded = excluded + (FREIGHT_SUBPOPULATION,)
+    return excluded
 
 
 def _add_incommuter_strategies(context, config_name):

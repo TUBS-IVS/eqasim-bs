@@ -1,4 +1,6 @@
 """The prepare stage declares the plan-check keys, hashes the module and runs the check last (eqasim-bs#443)."""
+import pytest
+
 from braunschweig.matsim import initial_mode_choice as I
 from braunschweig.matsim.simulation import plan_check as C
 from braunschweig.matsim.simulation import prepare
@@ -162,3 +164,15 @@ def test_execute_runs_the_frozen_pt_walk_lift_after_the_cut_and_before_the_plan_
     seen.clear()
     assert prepare.execute(_Context(False)) == "cut_config.xml"
     assert seen == ["cut", ("check", "cut_config.xml", None)]
+
+
+@pytest.mark.parametrize("cordon, freight, expected", [
+    (True, True, ("incommuter", "student_incommuter", "freight")),
+    (False, True, ("freight",)),
+    (True, False, ("incommuter", "student_incommuter")),
+    (False, False, ()),
+])
+def test_initial_mode_choice_excludes_incommuters_and_injected_freight(cordon, freight, expected):
+    """Freight legs have no routing mode, so the outside constraint would fail on them (found on #678's replay)."""
+    context = _RecordingContext({"cordon_enabled": cordon, "freight_enabled": freight})
+    assert tuple(prepare._initial_mode_choice_excluded_subpopulations(context)) == expected
