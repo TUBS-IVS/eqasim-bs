@@ -14,6 +14,7 @@ import matsim.runtime.eqasim as eqasim
 from braunschweig.matsim import initial_mode_choice as I
 from braunschweig.matsim.simulation import plan_check as C
 from braunschweig.matsim.simulation import prepare
+from braunschweig.matsim.simulation.mode_choice_reach import ReachSettings
 
 
 def test_arguments_mirror_the_eqasim_france_call_on_the_final_scenario():
@@ -363,3 +364,53 @@ def test_run_passes_the_excluded_subpopulations_and_records_them(tmp_path, monke
     (_, arguments), = fake.calls
     assert arguments == I.arguments("bs_config.xml", "bs_population.xml.gz", 8, excluded_subpopulations=("incommuter",))
     assert summary["excluded_subpopulations"] == ["incommuter"]
+
+
+# --- the initial choice's own reach settings (eqasim-bs#678) ---------------------------------------------------------
+
+_REACH_CONFIG = _CONFIG.replace("</config>", (
+    '\t<module name="DiscreteModeChoice">\n'
+    '\t\t<param name="tourFinder" value="ActivityBased" />\n'
+    '\t\t<param name="tourConstraints" value="FromTripBased, VehicleContinuity" />\n'
+    '\t\t<parameterset type="tourFilter:TourLength">\n'
+    '\t\t\t<param name="maximumLength" value="6" />\n'
+    '\t\t</parameterset>\n'
+    '\t</module>\n</config>\n'))
+
+
+def _reach_stage(tmp_path):
+    stage = _stage(tmp_path)
+    (stage / "bs_config.xml").write_text(_REACH_CONFIG, encoding="utf-8")
+    return stage
+
+
+def test_run_passes_its_own_config_file_to_the_runner(tmp_path, monkeypatch):
+    stage = _reach_stage(tmp_path)
+    final_bytes = (stage / "bs_config.xml").read_bytes()
+    fake = _fake_java(stage, ["1", "2"])
+    monkeypatch.setattr(eqasim, "run", fake)
+    I.run(_Context(stage, threads=8), "bs_config.xml", reach=ReachSettings(True, 13))
+    (_, arguments), = fake.calls
+    assert arguments[arguments.index("--config-path") + 1] == "bs_config_initial_mode_choice.xml"
+    assert (stage / "bs_config_initial_mode_choice.xml").exists()
+    assert (stage / "bs_config.xml").read_bytes() == final_bytes
+
+
+def test_run_without_reach_settings_uses_the_final_config(tmp_path, monkeypatch):
+    stage = _reach_stage(tmp_path)
+    fake = _fake_java(stage, ["1", "2"])
+    monkeypatch.setattr(eqasim, "run", fake)
+    summary = I.run(_Context(stage, threads=8), "bs_config.xml")
+    (_, arguments), = fake.calls
+    assert arguments == I.arguments("bs_config.xml", "bs_population.xml.gz", 8)
+    assert not (stage / "bs_config_initial_mode_choice.xml").exists()
+    assert summary["config_file"] == "bs_config.xml" and summary["reach"] is None
+
+
+def test_the_report_names_the_config_file_and_the_reach_settings(tmp_path, monkeypatch):
+    stage = _reach_stage(tmp_path)
+    monkeypatch.setattr(eqasim, "run", _fake_java(stage, ["1", "2"]))
+    summary = I.run(_Context(stage, threads=8), "bs_config.xml", reach=ReachSettings(True, 13))
+    assert summary["config_file"] == "bs_config_initial_mode_choice.xml"
+    assert summary["reach"] == {"isolate_outside_trips": True, "max_tour_length": 13}
+    assert json.loads((stage / "initial_mode_choice.json").read_text(encoding="utf-8")) == summary
