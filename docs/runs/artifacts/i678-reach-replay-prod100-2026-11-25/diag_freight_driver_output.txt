@@ -1,0 +1,5 @@
+written 500 persons with a subpopulation attribute to ~/i678_replay/diag_freight/freight_500.xml.gz
+initial: killed after the main thread exception
+initial: exit 143
+final: killed after the main thread exception
+final: exit 143

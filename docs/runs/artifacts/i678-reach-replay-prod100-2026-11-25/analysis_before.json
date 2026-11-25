@@ -1,0 +1,87 @@
+{
+  "settings": {
+    "today": {
+      "isolate_outside_trips": false,
+      "max_tour_length": 6
+    },
+    "loop": {
+      "isolate_outside_trips": false,
+      "max_tour_length": 11
+    },
+    "initial": {
+      "isolate_outside_trips": true,
+      "max_tour_length": 11
+    }
+  },
+  "limit": null,
+  "uncut": {
+    "persons_by_kind": {
+      "resident": 1130422,
+      "incommuter": 74804
+    },
+    "long_tours_without_outside_by_length": {
+      "7_8": 5797,
+      "9_11": 1193,
+      "13": 365
+    },
+    "residents_with_such_tour": 7355
+  },
+  "input": {
+    "persons_by_kind": {
+      "resident": 1130422,
+      "incommuter": 74804,
+      "freight": 56364
+    },
+    "resident_trips": 3697894,
+    "resident_trips_by_class": {
+      "today": {
+        "reached": 3160049,
+        "fixed_border": 486324,
+        "fixed_length": 51521
+      },
+      "loop": {
+        "reached": 3207293,
+        "fixed_border": 486324,
+        "fixed_length": 4277
+      },
+      "initial": {
+        "reached": 3223256,
+        "fixed_vehicle": 25747,
+        "fixed_border": 444614,
+        "fixed_length": 4277
+      }
+    },
+    "resident_plain_walks_over_5km": {
+      "initial | fixed_border": 99,
+      "initial | reached": 90667,
+      "loop | fixed_border": 1532,
+      "loop | reached": 89234,
+      "today | fixed_border | inside": 1433,
+      "today | fixed_border | touches_outside": 99,
+      "today | fixed_length | inside": 1122,
+      "today | reached | inside": 88112
+    },
+    "border_tour_vehicle_legs": {
+      "incommuter | car | available": 134649,
+      "resident | bicycle | available": 1348,
+      "resident | bicycle | relaxed": 67,
+      "resident | car | available": 159759,
+      "resident | car | relaxed": 2394
+    },
+    "uncut_long_tours_in_prepared": {
+      "13 | prepared tour touches outside": 36,
+      "13 | same length, no outside": 329,
+      "7_8 | prepared tour touches outside": 384,
+      "7_8 | same length, no outside": 5413,
+      "9_11 | prepared tour touches outside": 381,
+      "9_11 | same length, no outside": 812
+    },
+    "residents_by_longest_free_finer_run": {
+      "7_8": 5473,
+      "9_11": 815,
+      "13": 329
+    }
+  },
+  "after_initial": "not run: no population after the initial mode choice",
+  "final": "not run: no population after the initial mode choice"
+}
