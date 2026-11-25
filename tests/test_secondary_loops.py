@@ -605,6 +605,36 @@ def test_persons_that_are_not_eligible_keep_their_loop():
     assert set(index_map["person_id"]) == {1} and set(loop_table["person_id"]) == {1}
 
 
+def test_flags_in_another_row_order_give_the_same_collapse():
+    df_trips, is_loop = _chains((1, "home S shop S S home"), (2, "work S home"))
+    shuffled = is_loop.sample(frac=1.0, random_state=3)
+    assert not shuffled.index.equals(is_loop.index)
+
+    expected = loops.collapse_loops(df_trips, is_loop, {1, 2})
+    from_shuffled = loops.collapse_loops(df_trips, shuffled, {1, 2})
+
+    for frame, expected_frame in zip(from_shuffled, expected):
+        pd.testing.assert_frame_equal(frame, expected_frame)
+
+
+def test_a_chain_that_does_not_start_at_trip_index_0_keeps_its_offset():
+    df_trips, is_loop = _chains((1, "home S shop home"))
+    df_trips["trip_index"] += 5
+
+    collapsed, index_map, loop_table = loops.collapse_loops(df_trips, is_loop, {1})
+    restored = loops.restore_loops(_solve(collapsed), index_map, loop_table, **_places([1]))
+
+    assert _chain_of(collapsed) == [(5, "home", "shop"), (6, "shop", "home")]
+    assert index_map[["local_activity_index", "activity_index"]].to_numpy().tolist() == [
+        [5, 5], [6, 7], [7, 8]]
+    assert loop_table.to_dict("records") == [
+        {"person_id": 1, "activity_index": 6, "origin_purpose": "home",
+         "origin_activity_index": 5}]
+    # The shop, solved at index 6 of the collapsed chain, is activity 7 of the original one.
+    assert _row(restored, 1, 7)["location_id"] == "shop@1"
+    assert _row(restored, 1, 6)["location_id"] == "home_101"
+
+
 def _flag_on_trip(index):
     def damage(df_trips, is_loop):
         is_loop = is_loop.copy()
@@ -617,7 +647,9 @@ def _flag_on_trip(index):
     (lambda df, flags: (df, flags.set_axis(flags.index + 100)), "is_loop"),
     (_flag_on_trip(-1), "into a home, work or education activity"),
     (lambda df, flags: (df.assign(trip_index=[0, 2, 3]), flags), "contiguous"),
-], ids=["flags_on_another_index", "loop_into_home", "gap_in_trip_index"])
+    (lambda df, flags: (df, pd.Series([pd.NA, True, False], index=flags.index, dtype="boolean")),
+     r"\[secondary_loops\].*missing"),
+], ids=["flags_on_another_index", "loop_into_home", "gap_in_trip_index", "missing_flag"])
 def test_collapse_rejects_inputs_it_cannot_collapse(damage, message):
     df_trips, is_loop = damage(*_chains((1, "home S shop home")))
 
@@ -659,3 +691,24 @@ def test_restore_raises_when_a_place_is_missing_or_does_not_fit(chain, damage, m
     with pytest.raises(ValueError, match=message):
         loops.restore_loops(inputs.pop("df_locations"), inputs.pop("index_map"),
                             inputs.pop("loops"), **inputs)
+
+
+def test_restore_accepts_places_without_a_crs_and_says_so(caplog):
+    # primary.locations builds its work and education frames without setting a CRS.
+    df_trips, is_loop = _chains((1, "home work S home"))
+    collapsed, index_map, loop_table = loops.collapse_loops(df_trips, is_loop, {1})
+    places = _places([1])
+    for primary in ("work", "education"):
+        places[f"df_{primary}"] = gpd.GeoDataFrame(
+            {"person_id": [1], "location_id": [f"{primary}_1"], "geometry": [Point(1, 1)]})
+        assert places[f"df_{primary}"].crs is None
+
+    with caplog.at_level(logging.INFO, logger=loops.logger.name):
+        restored = loops.restore_loops(_solve(collapsed), index_map, loop_table, **places)
+
+    assert _row(restored, 1, 2)["location_id"] == "work_1" and restored.crs == CRS
+    crs_records = [record.getMessage() for record in caplog.records
+                   if record.levelno == logging.INFO and "CRS" in record.getMessage()]
+    assert len(crs_records) == 1
+    assert "work" in crs_records[0] and "education" in crs_records[0]
+    assert "home" not in crs_records[0]

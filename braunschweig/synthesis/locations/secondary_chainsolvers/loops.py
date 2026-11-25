@@ -391,7 +391,12 @@ def _aligned_loop_flags(is_loop: pd.Series, df_trips: pd.DataFrame) -> pd.Series
     if not pd.api.types.is_bool_dtype(is_loop.dtype):
         raise ValueError("[secondary_loops] collapse_loops: is_loop must be Boolean, got dtype "
                          f"{is_loop.dtype}.")
-    return is_loop.reindex(df_trips.index)
+    # A nullable Boolean passes the dtype check but may hold NA, which is neither loop nor not.
+    n_missing = int(is_loop.isna().sum())
+    if n_missing:
+        raise ValueError(f"[secondary_loops] collapse_loops: {n_missing} of {len(is_loop)} "
+                         "is_loop flags are missing (NA); every trip needs True or False.")
+    return is_loop.reindex(df_trips.index).astype(bool)
 
 
 def _origin_kind(purposes: pd.Series) -> np.ndarray:
@@ -470,6 +475,7 @@ def collapse_loops(df_trips: pd.DataFrame, is_loop: pd.Series,
             "activity_index": pd.Series(dtype=index_dtype),
             "origin_purpose": pd.Series(dtype=object),
             "origin_activity_index": pd.Series(dtype=index_dtype)})
+        _log_collapse(0, 0, 0)
         return df_trips.copy(), index_map, loop_table
 
     # Only the persons with a loop to take out are worked on (a few percent of all persons).
@@ -528,8 +534,17 @@ def collapse_loops(df_trips: pd.DataFrame, is_loop: pd.Series,
     collapsed.loc[kept_labels, "is_last_trip"] = (kept_rank == kept_total)[kept].to_numpy()
     collapsed.loc[trips.index[resumes], "preceding_purpose"] = origin_purpose[resumes].to_numpy()
     collapsed = collapsed.drop(index=trips.index[loop])
+    _log_collapse(n_persons=len(starts), n_loops=int(loop.sum()),
+                  n_without_trips=int((kept_total.groupby(person).first() == 0).sum()))
     return collapsed, index_map, loop_table.sort_values(
         ["person_id", "activity_index"]).reset_index(drop=True)
+
+
+def _log_collapse(n_persons: int, n_loops: int, n_without_trips: int) -> None:
+    logger.info(
+        "[secondary_loops] collapse_loops: %d persons collapsed, %d loop activities taken out of "
+        "their chains, %d persons left with zero trips (all their trips led into loops)",
+        n_persons, n_loops, n_without_trips)
 
 
 def _plain(value):
@@ -591,8 +606,8 @@ def restore_loops(df_locations: gpd.GeoDataFrame, index_map: pd.DataFrame, loops
     the loop rows sorted by ``(person_id, activity_index)``, on a fresh RangeIndex, with the
     column ``loop_origin`` (one of :data:`LOOP_ORIGINS` on a loop row, None on every other row).
     The places must be in the CRS of ``df_locations`` where both CRSs are set (``ValueError``
-    otherwise), and no ``(person_id, activity_index)`` may end up twice. The inputs are not
-    changed.
+    otherwise; a place frame without a CRS is read as being in it and named in an INFO line), and
+    no ``(person_id, activity_index)`` may end up twice. The inputs are not changed.
     """
     _require_columns(df_locations, _LOCATION_COLUMNS, "locations")
     _require_columns(index_map, INDEX_MAP_COLUMNS, "index map")
@@ -602,12 +617,21 @@ def restore_loops(df_locations: gpd.GeoDataFrame, index_map: pd.DataFrame, loops
     _require_columns(df_work, ("person_id", "location_id", "geometry"), "work places")
     _require_columns(df_education, ("person_id", "location_id", "geometry"), "education places")
     crs = df_locations.crs
+    without_crs = []
     for frame, what in ((df_home, "home"), (df_work, "work"), (df_education, "education")):
         frame_crs = getattr(frame, "crs", None)
-        if crs is not None and frame_crs is not None and frame_crs != crs:
+        if crs is not None and frame_crs is None:
+            without_crs.append(what)
+        elif crs is not None and frame_crs != crs:
             raise ValueError(
                 f"[secondary_loops] restore_loops: the {what} places are in CRS {frame_crs}, the "
                 f"locations in CRS {crs}; a copied place would land elsewhere.")
+    if without_crs:
+        # ASSUMPTION: a source without a CRS is in the stage CRS (primary.locations builds its
+        # frames without setting one). It cannot be checked, so the run goes on and says so.
+        logger.info(
+            "[secondary_loops] restore_loops: the %s places carry no CRS; their geometry is read "
+            "as being in the CRS of the locations (%s).", ", ".join(without_crs), crs)
     unknown_origins = ~loops["origin_purpose"].isin(LOOP_ORIGINS)
     if bool(unknown_origins.any()):
         unknown = sorted(loops.loc[unknown_origins, "origin_purpose"].astype(str).unique())
@@ -693,4 +717,10 @@ def restore_loops(df_locations: gpd.GeoDataFrame, index_map: pd.DataFrame, loops
             f"[secondary_loops] restore_loops: {int(repeated.sum())} (person_id, activity_index) "
             f"occur twice after the restore, first {_plain(examples)}; a loop activity also has a "
             "solver row (were the solver rows remapped with the index map of the same collapse?).")
+    by_origin = ordered["origin_purpose"].value_counts()
+    logger.info(
+        "[secondary_loops] restore_loops: %d solver rows of collapsed persons back on their "
+        "original activity index; %d loop rows written, by origin: %s",
+        int(collapsed.sum()), len(ordered),
+        ", ".join(f"{origin} {int(by_origin.get(origin, 0))}" for origin in LOOP_ORIGINS))
     return result
