@@ -414,3 +414,15 @@ def test_the_report_names_the_config_file_and_the_reach_settings(tmp_path, monke
     assert summary["config_file"] == "bs_config_initial_mode_choice.xml"
     assert summary["reach"] == {"isolate_outside_trips": True, "max_tour_length": 13}
     assert json.loads((stage / "initial_mode_choice.json").read_text(encoding="utf-8")) == summary
+
+
+def test_run_with_reach_equal_to_the_config_uses_the_final_config_and_records_the_reach(tmp_path, monkeypatch):
+    stage = _reach_stage(tmp_path)
+    fake = _fake_java(stage, ["1", "2"])
+    monkeypatch.setattr(eqasim, "run", fake)
+    summary = I.run(_Context(stage, threads=8), "bs_config.xml", reach=ReachSettings(False, 6))
+    (_, arguments), = fake.calls
+    assert arguments == I.arguments("bs_config.xml", "bs_population.xml.gz", 8)
+    assert not (stage / "bs_config_initial_mode_choice.xml").exists()
+    assert summary["config_file"] == "bs_config.xml"
+    assert summary["reach"] == {"isolate_outside_trips": False, "max_tour_length": 6}

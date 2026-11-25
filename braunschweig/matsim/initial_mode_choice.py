@@ -189,7 +189,13 @@ def run(context, config_name: str, excluded_subpopulations: tuple[str, ...] = ()
 
     config_file = config_name
     if reach is not None:
-        config_file = mode_choice_reach.write_initial_config(os.path.join(stage_path, config_name), reach).name
+        # Written before the Java call and overwritten or removed by the next call: a failed run leaves it as a trace
+        # of what was run. Passed stage-relative, so a config_name with a directory part still finds its copy.
+        written = mode_choice_reach.write_initial_config(os.path.join(stage_path, config_name), reach)
+        config_file = os.path.relpath(written, stage_path).replace(os.sep, "/")
+    logger.info("%s the runner uses the config file %s; reach settings: %s", _LOG_TAG, config_file,
+                "none (final config as is)" if reach is None else
+                f"isolate_outside_trips={reach.isolate_outside_trips}, max_tour_length={reach.max_tour_length}")
 
     started = time.monotonic()
     # Like every other Java call of the repo, pass the plans file relative to the config (the stage directory).
