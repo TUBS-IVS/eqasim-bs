@@ -4,8 +4,9 @@ repository:
   commit: fbb54d76
   branch: feature/i140-student-commuters
   notes: >-
-    The three extraction scripts and their modules as committed at fbb54d76 (every output header carries this code
-    state; the outputs themselves are committed in 0dccb364). This manifest is a MEASUREMENT over raw survey microdata
+    The three extraction scripts and their modules as committed at fbb54d76 (the survey tables carry this code state
+    and are committed in 0dccb364; the decision tables were regenerated at 1b6fb56b, a header-wording change, and
+    are committed in 9be9912f). This manifest is a MEASUREMENT over raw survey microdata
     and published tables, not a pipeline run. It replaces the first extraction of the same day (code state f99b0658,
     see the git history of this file), which kept MiD reporting days that fell on a public holiday.
 configuration:
@@ -41,7 +42,10 @@ pipeline:
     --sites eqasim-data/data/braunschweig/schools/lsn_university_sites.csv --out-dir
     docs/runs/artifacts/student-commuting-phase0-reference-2026-11-25 --source-commit fbb54d76 (census and site table
     are local-only and stay uncommitted; their sha256 are in the header of student_level_gate.csv). All three exited
-    0; the log is extraction_logs.txt. sha256 of the committed blobs (git show 0dccb364:<path>) -
+    0; the log is extraction_logs.txt. Step (3) alone was re-run at code state 1b6fb56b (commit 9be9912f) after the
+    overlap line of the build-rule header was reworded; the data rows of the three decision tables did not change.
+    sha256 of the committed blobs (git show 0dccb364:<path> for the survey tables, git show 9be9912f:<path> for the
+    decision tables and the log) -
     srv2023_student_behaviour.csv 1171934f0154bb0196b5f42ee6158170bb446c7a552abdad6ff07fab632d5674,
     srv2023_student_comparison.csv 3063cc8489fbf180bf650ed483782b96f6941dd1ab09a6813d3dce9298a11fac,
     srv2023_student_education_distance_by_kreis.csv ae1cace657c90ca2c0b113e02edd73debc50efc29060ee09fca97347aba75e23,
@@ -51,10 +55,10 @@ pipeline:
     mid2023_student_education_distance_mode.csv 1a2e9e6da9c9cf0bf68dfb4d99337d0254a6121d6db84ca6ad9e16f514172761,
     mid2023_student_share_20_29_by_land.csv 3cc0c28d5ab10bbb96c104a8b61fe549c1f758ae194480563425429008f9a2f7,
     mid2023_student_status_by_age.csv 3d722079715f038f3896a9878ce5784c803c96b5706f0ee744e02b13074c8c31,
-    student_control_build_rule.csv de1ab9390483583b99c57dcca8bb1b8d2d6d9e1b19503064e8b8120f70e4c1c4,
-    student_level_gate.csv 4cb040494fe7dd7a3ff1b801619be5ae5bb0c389e264b340bc040dba3fd2588e,
-    student_comparison_only.csv 0706f7f259d965bfd5a70fb8922c4bcc9c1aade9698a4d8f039b9a27a3ad8b2f,
-    extraction_logs.txt 083c8ba963ca01c1b4e630736003bf83b7ea36e1565f8efa72cc9fb7a350b986.
+    student_control_build_rule.csv 35b6476180019e10533489d1a46dff701628ed79b2d9b2f1c6a761ec4684884c,
+    student_level_gate.csv 863f5671d4f6eb17c61905744d06722e379112186772b29a47257194507227ad,
+    student_comparison_only.csv 85758113c63e0f3eec8584755c945e2776da4ab2359b00a77e27d40e92593a8c,
+    extraction_logs.txt e765e1c8a2a1492e960b5ca20266bf2272d67ea1490395c232205ea73bee63f7.
 classification:
 - smoke
 status:
@@ -77,9 +81,15 @@ validation:
     education leg on the reporting day) no longer passes the build rule; it sits just below the assumed threshold,
     and the first extraction of the day, which kept public-holiday reporting days in MiD, had it at 2.180108458
     (git history of this file), so this verdict turns on the holiday rule and on a threshold that is an assumption.
-    Second finding: the arrival cell student_no_education_leg holds the same students as the status cell
-    student_noedu and repeats its difference; none of the three arrival-time cells passes rule 2 (generated Overlap
-    line of the same file, which also states that the two controls must not be built together). car_availability and
+    It also rests on universes that are not identical: the regional survey leaves out students who were away from
+    home all day (73 adult students dropped against 438 adult students kept; n_adult_students_away_from_home and
+    n_students in the Exclusions header of eqasim-data/data/braunschweig/srv/srv2023_student_behaviour.csv), while
+    MiD keeps them; how the share with an education leg would move with them is not measured (the regional survey
+    records no day for them). Second finding: the arrival cell student_no_education_leg and the status cell
+    student_noedu share one definition, on slightly different control bases (the arrival base leaves out students
+    with an unreadable start or arrival hour), so the arrival cell nearly repeats the status difference; none of the
+    three arrival-time cells passes rule 2 (generated Overlap line of the same file, which gives both cells'
+    unweighted counts and states that the two controls must not be built together). car_availability and
     driving_licence are comparison tables by decision (file student_comparison_only.csv).
 - metric: level gate, students aged 20-29, Braunschweig (03101) and the pooled covered area (03ZGB = ZGB without the
     unsurveyed Wolfsburg)
@@ -87,9 +97,10 @@ validation:
   result: >-
     Read from docs/runs/artifacts/student-commuting-phase0-reference-2026-11-25/student_level_gate.csv. Braunschweig
     (03101): srv_estimate_students_20_29_persons 16776.12607 and enrollment_local_sites_persons 16534 (winter semester
-    2024/25, as the file header states) are about equal, within sampling error: the difference of 242.13 persons is
-    0.195 of the estimate's own standard error (srv_se_student_share_20_29 0.03382719049 x
-    census_population_20_29_persons 36640 = 1239.43 persons; derived from the same row). Enrollment moves between
+    2024/25, as the file header states) are about equal, within sampling error. Derived from the same row and
+    rounded: the difference srv_estimate_students_20_29_persons minus enrollment_local_sites_persons is 242.13
+    persons; the estimate's own standard error srv_se_student_share_20_29 (0.03382719049) x
+    census_population_20_29_persons (36640) is 1239.43 persons; their ratio is 0.195. Enrollment moves between
     semesters: the committed CHE table (eqasim-data/data/braunschweig/schools/che_student_origins_ws2022_23.csv) has
     the Technische Universitaet Braunschweig at 16809 students in winter semester 2022/23, the site table
     (scripts/seed_lsn_university_sites.py, SITE_ROWS) at 15632 in winter semester 2024/25. The survey's own expansion
