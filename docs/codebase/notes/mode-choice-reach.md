@@ -28,7 +28,7 @@ mirrors the Java mode choice of the fork eqasim-java-bs:
    - `reached`: everything else.
 
 A trip's mode is the routing mode of its first leg, else that leg's mode. Scope: residents only
-(`plan_check.RESIDENTS`); in-commuters and freight are not classified. Running without reach settings (`summarise` called without reach, the lift with `all_modes` false) is a configuration choice, not a per-item fallback: the callers then use the older rule `plan_check.leg_tour_frozen` (border only, no length filter) for every trip, and the lift report and the `[plan_check]` / lift log lines record the settings (`reach` in `frozen_pt_walk_lift.json`). A plan whose leg count differs from its
+(`plan_check.RESIDENTS`); in-commuters and freight are not classified. Running without reach settings is a configuration choice, not a per-item fallback. Only the lift can do it (`braunschweig.frozen_pt_walk_lift.all_modes` false): it then uses the older rule `plan_check.leg_tour_frozen` (border only, no length filter) for every trip. The plan check stage always passes the loop settings. The settings are recorded in the lift log line (scope: reach settings of the loop, or frozen tours without reach settings) and in the `reach` key of the lift report and of `plan_check.json`. A plan whose leg count differs from its
 activity count minus one raises.
 
 ## Which settings a caller passes
