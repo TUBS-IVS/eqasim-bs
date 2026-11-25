@@ -262,6 +262,101 @@ def split_trips(activities: list, n_legs: int) -> list:
     return trips
 
 
+# Reach classes of a leg: whether the discrete mode choice re-chooses the mode of its trip. The rules mirror the Java
+# tour finder and filters (the [home, outside] finder, OutsideFilter, TourLengthFilter, and eqasim's finer
+# IsolatedOutsideTrips finder with the vehicle rule for border tours); issue #678.
+REACHED = "reached"
+FIXED_BORDER = "fixed_border"
+FIXED_VEHICLE = "fixed_vehicle"
+FIXED_LENGTH = "fixed_length"
+# Modes a border tour keeps fixed under the vehicle rule (a vehicle cannot be left behind at the border).
+RESTRICTED_MODES = frozenset({"car", "bicycle"})
+
+
+def leg_reach(activities: list, legs: list, *, isolate_outside_trips: bool, max_tour_length: int,
+              restricted_modes: frozenset = RESTRICTED_MODES) -> list:
+    """Per leg: REACHED, or the reason why the mode choice does not re-choose the trip of this leg.
+
+    Works on trips (``split_trips``); every leg gets the class of its trip. A trip's mode is the routing mode of its
+    first leg, or that leg's mode when it has none. A trip touches the border when its origin or destination activity
+    is ``outside``. Base tours end after a trip whose destination is ``home`` or ``outside``. With
+    ``isolate_outside_trips`` a base tour is cut into maximal runs of border trips and of non-border trips, else it
+    is one run. A trip is, in this order:
+
+    - ``FIXED_BORDER`` when its run starts or ends at ``outside``;
+    - ``FIXED_VEHICLE`` when ``isolate_outside_trips`` is on, its mode is in ``restricted_modes`` and its home-based
+      tour (cut at ``home`` only) has a border trip;
+    - ``FIXED_LENGTH`` when its run has more than ``max_tour_length`` trips;
+    - ``REACHED`` otherwise.
+    """
+    n_legs = max(len(activities) - 1, 0)
+    if len(legs) != n_legs:
+        raise ValueError(f"{_LOG_TAG} a plan with {len(activities)} activities needs {n_legs} legs, got {len(legs)}")
+    if n_legs == 0:
+        return []
+    trips = split_trips(activities, n_legs)
+
+    def origin(trip):
+        return activities[trip[0]][0]
+
+    def destination(trip):
+        return activities[trip[-1] + 1][0]
+
+    touches = [origin(trip) == OUTSIDE or destination(trip) == OUTSIDE for trip in trips]
+
+    base_tours, current = [], []
+    for position, trip in enumerate(trips):
+        current.append(position)
+        if destination(trip) in (HOME, OUTSIDE):
+            base_tours.append(current)
+            current = []
+    if current:
+        base_tours.append(current)
+
+    runs = []
+    for tour in base_tours:
+        if not isolate_outside_trips:
+            runs.append(tour)
+            continue
+        run = [tour[0]]
+        for position in tour[1:]:
+            if touches[position] == touches[run[-1]]:
+                run.append(position)
+            else:
+                runs.append(run)
+                run = [position]
+        runs.append(run)
+
+    home_tour_touches, home_tour = {}, []
+    for position, trip in enumerate(trips):
+        home_tour.append(position)
+        if destination(trip) == HOME or position == len(trips) - 1:
+            border = any(touches[p] for p in home_tour)
+            home_tour_touches.update(dict.fromkeys(home_tour, border))
+            home_tour = []
+
+    trip_class = [None] * len(trips)
+    for run in runs:
+        run_border = origin(trips[run[0]]) == OUTSIDE or destination(trips[run[-1]]) == OUTSIDE
+        for position in run:
+            first_leg = legs[trips[position][0]]
+            mode = first_leg[3] or first_leg[0]
+            if run_border:
+                trip_class[position] = FIXED_BORDER
+            elif isolate_outside_trips and mode in restricted_modes and home_tour_touches[position]:
+                trip_class[position] = FIXED_VEHICLE
+            elif len(run) > max_tour_length:
+                trip_class[position] = FIXED_LENGTH
+            else:
+                trip_class[position] = REACHED
+
+    reach = [None] * n_legs
+    for position, trip in enumerate(trips):
+        for leg_index in trip:
+            reach[leg_index] = trip_class[position]
+    return reach
+
+
 def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bicycle_max_distance_m: float,
               leg_max_duration_s: float, pt_as_walk_bound_min_distance_m: float,
               non_monotonic_bound_min_lateness_s: float) -> dict:

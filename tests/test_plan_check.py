@@ -120,6 +120,57 @@ def test_leg_tour_frozen_marks_the_legs_of_tours_touching_outside():
     assert C.leg_tour_frozen(activities) == [True, True, False, False]
 
 
+def _reach(types, modes, *, isolate, limit):
+    activities = [(kind, None, float(index), 0.0) for index, kind in enumerate(types)]
+    legs = [(mode, None, None, mode) for mode in modes]
+    return C.leg_reach(activities, legs, isolate_outside_trips=isolate, max_tour_length=limit)
+
+
+R, B, V, N = C.REACHED, C.FIXED_BORDER, C.FIXED_VEHICLE, C.FIXED_LENGTH
+REACH_CASES = [  # name, activity types, modes, coarse rule with limit 6, finer rule with limit 8
+    ("ordinary", ["home", "work", "shop", "home"], ["walk"] * 3, [R] * 3, [R] * 3),
+    ("portal stay", ["home", "work", "outside", "leisure", "home"], ["walk"] * 4, [B] * 4, [R, B, B, R]),
+    ("outside destination", ["home", "work", "outside", "home"], ["walk"] * 3, [B] * 3, [R, B, B]),
+    ("cut trip", ["home", "a", "outside", "outside", "b", "home"], ["pt", "pt", "outside", "pt", "pt"],
+     [B] * 5, [R, B, B, B, R]),
+    ("not from home", ["leisure", "work", "outside", "shop", "home"], ["walk"] * 4, [B] * 4, [R, B, B, R]),
+    ("seven trips", ["home"] + ["other"] * 6 + ["home"], ["walk"] * 7, [N] * 7, [R] * 7),
+    ("nine trips", ["home"] + ["other"] * 8 + ["home"], ["walk"] * 9, [N] * 9, [N] * 9),
+    ("car to the border", ["home", "a", "outside", "home"], ["car"] * 3, [B] * 3, [V, B, B]),
+    ("car left behind", ["home", "a", "b", "outside", "home"], ["car", "walk", "pt", "pt"], [B] * 4, [V, R, B, B]),
+]
+
+
+@pytest.mark.parametrize("name, types, modes, coarse, finer", REACH_CASES)
+def test_leg_reach_matches_the_named_cases(name, types, modes, coarse, finer):
+    assert _reach(types, modes, isolate=False, limit=6) == coarse
+    assert _reach(types, modes, isolate=True, limit=8) == finer
+
+
+@pytest.mark.parametrize("name, types, modes, coarse, finer", REACH_CASES)
+def test_the_coarse_rule_without_a_length_limit_is_the_old_tour_rule(name, types, modes, coarse, finer):
+    activities = [(kind, None, float(index), 0.0) for index, kind in enumerate(types)]
+    reach = _reach(types, modes, isolate=False, limit=10 ** 9)
+    assert [value != C.REACHED for value in reach] == C.leg_tour_frozen(activities)
+
+
+def test_leg_reach_gives_every_leg_of_a_routed_pt_trip_the_class_of_the_trip():
+    activities = [("home", None, 0.0, 0.0), ("pt interaction", None, 1.0, 0.0), ("pt interaction", None, 2.0, 0.0),
+                  ("outside", None, 3.0, 0.0), ("home", None, 0.0, 0.0)]
+    legs = [("walk", None, None, "pt"), ("pt", None, None, "pt"), ("walk", None, None, "pt"), ("car", None, None, "car")]
+    assert C.leg_reach(activities, legs, isolate_outside_trips=True, max_tour_length=8) == [C.FIXED_BORDER] * 4
+
+
+def test_leg_reach_of_a_plan_without_legs_is_empty():
+    assert C.leg_reach([], [], isolate_outside_trips=True, max_tour_length=8) == []
+    assert C.leg_reach([("home", None, 0.0, 0.0)], [], isolate_outside_trips=False, max_tour_length=6) == []
+
+
+def test_a_border_trip_wins_over_the_vehicle_and_the_length_reason():
+    types = ["home"] + ["other"] * 8 + ["outside", "home"]
+    assert _reach(types, ["car"] * 10, isolate=True, limit=6) == [C.FIXED_VEHICLE] * 8 + [C.FIXED_BORDER] * 2
+
+
 def test_summarise_counts_late_non_monotonic_long_and_slow_legs_per_subpopulation_and_class(population_path):
     summary = C.summarise(C.iter_person_plans(population_path), simulation_end_s=30 * 3600.0,
                           walk_max_distance_m=5000.0, bicycle_max_distance_m=30000.0, leg_max_duration_s=10800.0,
