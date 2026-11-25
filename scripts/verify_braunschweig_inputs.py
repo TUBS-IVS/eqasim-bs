@@ -209,6 +209,16 @@ INPUTS: List[Input] = [
         notes="dl-de/by-2-0 (Statistische Aemter). Read by the popsim employment grid "
               "(ADR-0137) while employment_grid_age_shape_source is zensus2022_kreis_by_sex.",
     ),
+    Input(
+        name="B14 LSN university students per institution and site commune (K3100101)",
+        generated=True,
+        rel_path="braunschweig/schools/lsn_university_sites.csv",
+        source="Run python scripts/seed_lsn_university_sites.py (values pinned in SITE_ROWS, "
+               "hand-read from LSN-Online table K3100101)",
+        notes="dl-de/by-2-0 (LSN). Student in-commuter site table of #140; not read by a stage yet. "
+              "nds_hochschulen.csv stays the file the OFF path reads.",
+        optional=True,
+    ),
 
     # --- C: Preprocessed ALKIS / ATKIS / OSM parquets ---------------------
     Input(

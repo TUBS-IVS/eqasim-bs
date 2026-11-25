@@ -1,0 +1,43 @@
+dataset: che_student_origins
+title: CHE student origins by Kreis of the school leaving certificate (WS 2022/23, hand-read)
+provider: CHE Centrum fuer Hochschulentwicklung (data - Statistisches Bundesamt)
+vintage: WS 2022/23
+geography: |
+  Origin Kreise (5-digit ARS) of students of universities in and around the study region, in
+  two views: per institution the largest origin Kreise, per origin Kreis the largest
+  institutions (column view).
+crs: null
+roles:
+- reference_table
+used_by: []
+acquisition:
+  method: manual_download
+  source: CHE DatenCHECK 2/2024 pages (data - Statistisches Bundesamt), read by hand
+  script: scripts/seed_che_student_origins.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/schools/che_student_origins_ws2022_23.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py: the file ships committed with the
+    checkout, so there is nothing to download or check the presence of.
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: none stated on the source page
+  restricted: false
+  redistribution: allowed
+  notes: |
+    The CHE page names no licence. Committed by owner decision of 2026-11-25.
+limitations: |
+  Origin is the Kreis of the school leaving certificate, not the place of residence
+  (assumption A2 of the student-commuting design). Cells below the tenth value are censored by
+  the source; abroad and other rows carry the remainder.
+notes: |
+  used_by stays empty until the stage that reads this table is wired in (Phase 1 of #140).
+  The list of origin Kreise to read comes from
+  python scripts/seed_che_student_origins.py --list-required-kreise.

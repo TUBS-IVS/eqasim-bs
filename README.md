@@ -235,6 +235,8 @@ setup-oriented summary; all target paths are **relative to `eqasim-data/data/`**
 | **GTFS Germany (DELFI)** or ZGB feed | [opendata-oepnv.de](https://www.opendata-oepnv.de) (registration) | `gtfs_cordon/` (e.g. `gtfs_cordon/de_full_2026-06-02.zip`; config key `gtfs_path`) |
 | **LSN Schulverzeichnis ABS+BBS** | [statistik.niedersachsen.de](https://www.statistik.niedersachsen.de) | processed to `braunschweig/schools/nds_schools_zgb.csv` via `scripts/extract_nds_schools.py` |
 | **LSN Hochschulstatistik** (SS 2025) | statistik.niedersachsen.de | processed to `braunschweig/schools/nds_hochschulen.csv` via `scripts/seed_nds_hochschulen.py` |
+| **LSN-Online K3100101** (university students per site commune) | [statistik.niedersachsen.de](https://www.statistik.niedersachsen.de) | processed to `braunschweig/schools/lsn_university_sites.csv` via `scripts/seed_lsn_university_sites.py` (local-only; #140) |
+| **CHE DatenCHECK 2/2024** (student origins, data: Destatis) | CHE, hand-read | committed `braunschweig/schools/che_student_origins_ws2022_23.csv` via `scripts/seed_che_student_origins.py` (#140) |
 | **LSN Kindertageseinrichtungen** (K2300112) | [nls.niedersachsen.de](https://www1.nls.niedersachsen.de/statistik/) | processed to `braunschweig/schools/nds_kitas_zgb.csv` via `scripts/extract_nds_kitas.py` |
 | **VRB tariff zones** | [vrb-online.de](https://www.vrb-online.de/de/tickets/tarifzonen-preisstufen) | `vrb/tarifzonen.html` → `vrb/stations.json` via `scripts/build_vrb_stations_json.py` |
 | **VRB tariff zone polygons** (official, Regionalverband Großraum Braunschweig ArcGIS REST; licence confirmation pending, keep local) | [webgis.regionalverband-braunschweig.de](https://webgis.regionalverband-braunschweig.de/server/rest/services/Verkehr/Tarifzonen/MapServer/0) — layer `query` with `where=1=1`, `outFields=*`, `outSR=25832`, `f=geojson` (exact `curl` in `docs/registry/data/vrb_tariff_zone_polygons.yml`) | `vrb/vrb_tarifzonen_rgb_25832.geojson` |
@@ -266,6 +268,8 @@ tables keep all reference comparisons working.
 | Employed by age × sex per Kreis (employment-grid age shape, ADR-0137) | `python scripts/extract_zensus2022_employed_by_age.py --regionaltabelle <Regionaltabelle_Bildung_Erwerbstaetigkeit.xlsx> --out eqasim-data/data/braunschweig/popsim/zensus2022_employed_by_age_kreis.csv` | `braunschweig/popsim/zensus2022_employed_by_age_kreis.csv` |
 | Buildings-with-households (cell-linked) | popsimprep preprocessing step 5 | `braunschweig/popsim/buildings/buildings_with_households_zgb.parquet` |
 | Building activity potentials (redistribution release 08, ADR-0190) | TUBS-IVS potentials pipeline delivery, copied unchanged (read directly; SHA-256 in data record `building_potentials_redistribution`) | `braunschweig/buildings/08_redistribution.gpkg` |
+| University students per site commune (local-only) | `python scripts/seed_lsn_university_sites.py` | `braunschweig/schools/lsn_university_sites.csv` |
+| CHE student origins (committed) | `python scripts/seed_che_student_origins.py` | `braunschweig/schools/che_student_origins_ws2022_23.csv` |
 | HSN/TSN engine lookup | `python scripts/scrape_hsn_tsn.py` | `braunschweig/kba/hsn_tsn_lookup.csv` |
 | KBA derived fleet tables (committed) | `python scripts/extract_kba_fleet.py` | `braunschweig/kba/derived/*.csv` |
 | MiD fleet cross tables (committed) | `python scripts/build_mid_age_by_segment_status.py` and `python scripts/build_mid_antrieb_by_status.py` (both accept `--mid-path`) | `braunschweig/kba/derived/mid2023_{age_by_segment_status,antrieb_by_status}.csv` |
