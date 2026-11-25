@@ -336,6 +336,62 @@ def test_a_secondary_activity_without_a_marker_row_stops_the_comparison(tmp_path
         _validate_mod.measure_secondary_distances(str(tmp_path))
 
 
+_SECONDARY_NAME = "braunschweig.synthesis.locations.secondary_chainsolvers"
+_LEGS_NAME = "synthesis.population.spatial.locations"
+
+
+def _two_run_cache(directory, pipeline_json):
+    """A working directory with the legs of ONE run and the secondary pickles of TWO runs.
+
+    Run A (switch on) marks the stroll; run B (switch off) has no ``loop_origin`` column and is
+    the NEWER pickle by modification time. ``pipeline_json`` is the content of synpp's
+    ``pipeline.json`` (None: no file)."""
+    import json
+    import os
+    import pickle
+
+    _write_stage_caches(directory, [None, None, "secondary", None, None])
+    on_path = directory / (_SECONDARY_NAME + "__hashA.p")
+    os.replace(directory / (_SECONDARY_NAME + "__test.p"), on_path)
+    with open(on_path, "rb") as handle:
+        frame, extra = pickle.load(handle)
+    with open(directory / (_SECONDARY_NAME + "__hashB.p"), "wb") as handle:
+        pickle.dump((frame.drop(columns="loop_origin"), extra), handle)
+    os.replace(directory / (_LEGS_NAME + "__test.p"), directory / (_LEGS_NAME + "__legs1.p"))
+    os.utime(on_path, (1_000_000_000, 1_000_000_000))      # A is the OLDER pickle
+    if pipeline_json is not None:
+        (directory / "pipeline.json").write_text(json.dumps(pipeline_json), encoding="utf-8")
+
+
+def test_the_marker_is_the_one_of_the_legs_own_run_not_the_newest_pickle(tmp_path):
+    """Two runs in one working directory: the legs depend (through another stage) on run A, whose
+    pickle is older than run B's. Taking the newest secondary pickle would read B, which has no
+    marker, and leave the stroll leg in; the pairing by ``pipeline.json`` reads A."""
+    _two_run_cache(tmp_path, {
+        _LEGS_NAME + "__legs1": {"dependencies": {"other.stage__x": 1.0}},
+        "other.stage__x": {"dependencies": {_SECONDARY_NAME + "__hashA": 1.0}},
+        _SECONDARY_NAME + "__hashA": {"dependencies": {}},
+        _SECONDARY_NAME + "__hashB": {"dependencies": {}},
+    })
+    distances = _validate_mod.measure_secondary_distances(str(tmp_path))
+    assert distances["leisure"]["loop_origin"].tolist() == ["secondary", None]
+
+
+@pytest.mark.parametrize("pipeline_json, expected", [
+    (None, r"2 secondary locations pickles .*hashA.*hashB.*cannot say which"),
+    ({_LEGS_NAME + "__legs1": {"dependencies": {}}}, r"2 secondary locations pickles .*cannot say"),
+    ({_LEGS_NAME + "__legs1": {"dependencies": {_SECONDARY_NAME + "__hashC": 1.0}}},
+     r"links the legs' pickle .*hashC.*holds"),
+])
+def test_a_cache_that_does_not_say_which_run_the_legs_belong_to_is_refused(
+        tmp_path, pipeline_json, expected):
+    """No ``pipeline.json``, one without a link, or one linking a secondary pickle that is not in
+    the cache: the marker is not taken by modification time, the run stops."""
+    _two_run_cache(tmp_path, pipeline_json)
+    with pytest.raises(RuntimeError, match=expected):
+        _validate_mod.measure_secondary_distances(str(tmp_path))
+
+
 def _w12_targets_stub():
     """W12 band shares of three purposes (uniform) -- the EMD value itself is not asserted."""
     uniform = np.full(9, 1.0 / 9.0)

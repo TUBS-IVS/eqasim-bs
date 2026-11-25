@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import json
 import logging
 import os
 import pickle
@@ -108,6 +109,104 @@ def _load_stage(working_directory: str, stage: str, aliases=()):
 _SECONDARY_LOCATIONS_STAGE = "synthesis.population.spatial.secondary.locations"
 _SECONDARY_LOCATIONS_ALIASES = ("braunschweig.synthesis.locations.secondary_chainsolvers",)
 
+#: The stage the legs' locations are cached under (``measure_secondary_distances`` and
+#: ``scripts/calibrate_detour_circuity.py`` both load exactly this name).
+_LEGS_LOCATIONS_STAGE = "synthesis.population.spatial.locations"
+
+
+def _stage_pickle_paths(working_directory: str, names) -> list:
+    """Every ``<name>__<hash>.p`` of ``names`` in ``working_directory``, newest first."""
+    paths = []
+    for name in names:
+        paths.extend(glob.glob(os.path.join(working_directory, name + "__*.p")))
+    return sorted(paths, key=os.path.getmtime, reverse=True)
+
+
+def _pickle_key(path: str) -> str:
+    """synpp's key of a cache pickle: its file name without ``.p`` (``<stage>__<hash>``)."""
+    return os.path.basename(path)[:-len(".p")]
+
+
+def _dependency_closure(meta: dict, key: str) -> set:
+    """Every stage key ``key`` depends on, directly or not, per synpp's ``pipeline.json``."""
+    seen, pending = set(), [key]
+    while pending:
+        for dependency in meta.get(pending.pop(), {}).get("dependencies", {}):
+            if dependency not in seen:
+                seen.add(dependency)
+                pending.append(dependency)
+    return seen
+
+
+def pair_secondary_locations_pickle(working_directory: str, tag: str = "[secondary-validate]"):
+    """The cached secondary locations pickle of the run the legs' own locations pickle belongs to.
+
+    synpp names a cache pickle ``<stage>__<hash>.p`` and records, per pickle, the keys of the
+    pickles it was built from in the working directory's ``pipeline.json``
+    (``meta[key]["dependencies"]``). The legs come from the newest
+    ``synthesis.population.spatial.locations`` pickle (as :func:`_load_stage` picks it); the
+    marker must come from the secondary locations pickle that pickle depends on, directly or
+    through other stages. Taking the newest secondary pickle by modification time instead would
+    pair the legs of one run (say switch off) with the marker of another (switch on) in a
+    working directory that holds both: destination legs silently dropped, or zero-length loop
+    legs left in.
+
+    Returns the pickle path, or None when the cache holds no secondary locations pickle. Rules,
+    each logged under ``tag`` with which one applied:
+
+    - exactly one secondary pickle and ``pipeline.json`` does not name another one as a
+      dependency of the legs' pickle: that one (unchanged behaviour for a single run);
+    - several secondary pickles: the one in the dependency closure of the legs' pickle;
+    - ``RuntimeError`` naming the candidates when ``pipeline.json`` is missing, does not know the
+      legs' pickle, or links it to none or several of them, and when it links the legs' pickle
+      to a secondary pickle that is not in the cache.
+    """
+    candidates = _stage_pickle_paths(
+        working_directory, (_SECONDARY_LOCATIONS_STAGE, *_SECONDARY_LOCATIONS_ALIASES))
+    if not candidates:
+        return None
+    by_key = {_pickle_key(path): path for path in candidates}
+    legs_paths = _stage_pickle_paths(working_directory, (_LEGS_LOCATIONS_STAGE,))
+    legs = legs_paths[0] if legs_paths else None
+    meta_path = os.path.join(working_directory, "pipeline.json")
+    meta = None
+    if legs is not None and os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as fh:
+            meta = json.load(fh)
+    closure = _dependency_closure(meta, _pickle_key(legs)) if (
+        meta is not None and _pickle_key(legs) in meta) else None
+
+    names = (_SECONDARY_LOCATIONS_STAGE, *_SECONDARY_LOCATIONS_ALIASES)
+    linked = ({key for key in closure if key.rpartition("__")[0] in names}
+              if closure is not None else set())
+    listing = ", ".join(sorted(by_key))
+    if closure is not None and linked:
+        if len(linked) == 1 and linked <= set(by_key):
+            (key,) = linked
+            logger.info("%s loop_origin pairing: PRIMARY, secondary pickle '%s' is the one the "
+                        "legs' pickle '%s' depends on (pipeline.json); %d secondary pickle(s) in "
+                        "the cache.", tag, key, _pickle_key(legs), len(by_key))
+            return by_key[key]
+        raise RuntimeError(
+            f"{tag} loop_origin: pipeline.json links the legs' pickle '{_pickle_key(legs)}' to "
+            f"secondary locations pickle(s) {sorted(linked)}, but the cache holds {listing}; "
+            "refusing to pair the legs with a marker of another run. Rebuild the cache or run "
+            "from a working directory that holds this run only.")
+    if len(by_key) == 1:
+        logger.warning(
+            "%s loop_origin pairing: FALLBACK, '%s' is the only secondary locations pickle and "
+            "pipeline.json does not link it to the legs' pickle (%s); taken without a check.",
+            tag, next(iter(by_key)),
+            "no legs pickle" if legs is None else
+            "no pipeline.json" if meta is None else "legs pickle unknown to it, or no link")
+        return candidates[0]
+    raise RuntimeError(
+        f"{tag} loop_origin: the cache holds {len(by_key)} secondary locations pickles ({listing}) "
+        "and cannot say which belongs to the legs' pickle "
+        f"'{_pickle_key(legs) if legs else None}' (pipeline.json missing, or no dependency link "
+        "to one of them); refusing to take the newest by modification time, which can be the "
+        "marker of another run (switch on versus off). Work in a directory that holds one run.")
+
 
 def load_loop_origin(working_directory: str, tag: str = "[secondary-validate]",
                      not_filtered_text: str = "the model side was NOT filtered for loop legs "
@@ -117,21 +216,26 @@ def load_loop_origin(working_directory: str, tag: str = "[secondary-validate]",
     The cached ``synthesis.population.spatial.locations`` frame the legs are built from keeps
     only person, activity, location and geometry, so the loop marker (which the secondary
     locations stage writes when ``secondary_loop_zero_displacement`` is ON) is read from that
-    stage's own cached result. None, with the reason logged, when the cache holds no such stage
+    stage's own cached result, the one run the legs belong to
+    (:func:`pair_secondary_locations_pickle`; ``RuntimeError`` when a cache with several runs
+    does not say which). None, with the reason logged, when the cache holds no such stage
     or the result has no marker column (switch off): the legs are then left exactly as before.
 
     Public because ``scripts/calibrate_detour_circuity.py`` reuses it. ``tag`` prefixes the log
     lines; ``not_filtered_text`` completes the NOTE printed when the cache has no secondary
     locations pickle ("NOTE: no secondary locations pickle in the cache -- <text>.").
     """
-    try:
-        result = _load_stage(working_directory, _SECONDARY_LOCATIONS_STAGE,
-                             aliases=_SECONDARY_LOCATIONS_ALIASES)
-    except RuntimeError:
+    # Outside any try: the pairing refusal (RuntimeError) must stop the run, not read as "no
+    # pickle in the cache".
+    marker_path = pair_secondary_locations_pickle(working_directory, tag=tag)
+    if marker_path is None:
         logger.info("%s loop_origin: no secondary locations pickle in the cache; loops cannot "
                     "be identified, legs are left unchanged.", tag)
         print(f"NOTE: no secondary locations pickle in the cache -- {not_filtered_text}.")
         return None
+    logger.info("Loading stage '%s' from '%s'", _SECONDARY_LOCATIONS_STAGE, marker_path)
+    with open(marker_path, "rb") as fh:
+        result = pickle.load(fh)
     df_secondary = result[0] if isinstance(result, tuple) else result
     if LOOP_ORIGIN_COLUMN not in df_secondary.columns:
         logger.info("%s loop_origin: the secondary locations result has no '%s' column "

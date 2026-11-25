@@ -19,9 +19,11 @@ Two sources of the flag, in this order:
 
 1. By label. A leg whose donor carries a leisure detail code (``W_ZWD`` in the group codes of
    ``purpose_subtype.leisure_spec``) is a loop exactly when the code is in :data:`LOOP_CODES`.
-2. By draw. A leg whose donor carries no leisure detail code (the design sentinels 2202 "not asked
-   in PAPI", 4402 "child under 14", 999, ... and, with ``purpose_subtype_codeplan_sentinels`` on,
-   799 "Freizeit k.A.") draws ``Bernoulli(p)`` once, ``p`` being the weighted MiD share of loops
+2. By draw. A leg whose donor's ``W_ZWD`` is present but is no leisure group code (every other
+   code: the design sentinels 2202 "not asked in PAPI", 4402 "child under 14", 999, ..., the
+   cross-purpose codes 503, 603 and 605 (shop and errand detail codes on leisure legs, ADR-0207
+   assumption) and, with ``purpose_subtype_codeplan_sentinels`` on, 799 "Freizeit k.A.") draws
+   ``Bernoulli(p)`` once, ``p`` being the weighted MiD share of loops
    among the labelled legs of its cell ``(mode, tt_band, starts_at_home, way_home_follows)``.
    ``tt_band`` is ``braunschweig.popsim.purpose_subtype.tt_band`` (defined in
    ``braunschweig.popsim.shop_subtype``), the band function the leisure subtype decider uses.
