@@ -5,7 +5,7 @@ activity. The reasons, the rejected approaches and the assumptions are in
 [ADR-0207](../../decisions/ADR-0207-strolls-and-dog-walks-stay-where-they-start.md); the switch and its production
 state are in the feature record
 [`secondary_loop_zero_displacement`](../../registry/features/secondary_loop_zero_displacement.yml); numbers are in the
-run manifests those records link (the 1 % evidence of both switches:
+run manifests those records link (the 1 % evidence of both switches and of the mode rule, arm D:
 [`i679-stroll-loops-ab-1pct-2026-11-25`](../../runs/i679-stroll-loops-ab-1pct-2026-11-25.yml)).
 Code: `braunschweig/synthesis/locations/secondary_chainsolvers/loops.py` (pure
 functions: `estimate_loop_probabilities`, `flag_loops`, `select_collapsible_loops`, `collapse_loops`, the
