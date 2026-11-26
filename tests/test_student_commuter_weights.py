@@ -491,8 +491,11 @@ def test_stage_two_objective_equals_apply_movers_implied_shares_and_fit_distance
     assert len(rows) == 3
     stage_one = W.calibrate(toy_build, ref, SITE_KREISE, MIX, grid_step=0.1).table
     picked = [(0.2, 0.1, 0.1), (0.6, 0.3, 0.1), (1.0, 0.9, 0.4)]
-    rows = pd.concat([rows, stage_one[[triple in picked for triple in
-                                       zip(stage_one["short"], stage_one["middle"], stage_one["long"])]]])
+    weights = stage_one[["short", "middle", "long"]].to_numpy(dtype=float)
+    chosen = np.zeros(len(stage_one), dtype=bool)
+    for triple in picked:
+        chosen |= np.isclose(weights, triple).all(axis=1)
+    rows = pd.concat([rows, stage_one[chosen]])
     assert len(rows) == 6
     assert res.noise_floor == pytest.approx((120 * 0.01 + 30 * 0.05 + 60 * 0.03) / 210)
     columns = {SR.HOME_GROUP_BRAUNSCHWEIG: "tvd_braunschweig", SR.HOME_GROUP_SITE: "tvd_other_site_kreis",

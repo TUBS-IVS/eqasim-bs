@@ -626,7 +626,7 @@ def _log_optimum_build(build: Callable[[CommuterWeights], pd.DataFrame], optimum
                 tuple(optimum), mover_share)
     od = build(optimum)
     if mover_share > 0.0:
-        apply_movers(od, mover_share, mover_site_kreise, braunschweig_kreis)
+        apply_movers(od, mover_share, mover_site_kreise, braunschweig_kreis)   # result unused: called for its log line
 
 
 def calibrate(build: Callable[[CommuterWeights], pd.DataFrame], reference: pd.DataFrame, site_kreise,
