@@ -282,7 +282,5 @@ def test_kreis_lookup_that_misses_a_curated_site_fails_before_any_output(script,
 
 def test_read_header_value_stops_at_space_before_a_bracketed_list(script, tmp_path):
     path = tmp_path / "header.csv"
-    path.write_text("# Weights: mover_share=0.45 mover_site_kreise=[03158] weights_source=owner
-code
-", encoding="utf-8")
+    path.write_text("# Weights: mover_share=0.45 mover_site_kreise=[03158] weights_source=owner\ncode\n", encoding="utf-8")
     assert script.read_header_value(path, "mover_share") == "0.45"
