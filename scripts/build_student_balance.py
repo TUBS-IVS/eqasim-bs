@@ -135,6 +135,9 @@ MIKROZENSUS_ROW = "hochschule"
 MIKROZENSUS_BANDS = {"lt5": "0_5", "b5_10": "5_10", "b10_25": "10_25", "b25_50": "25_50", "ge50": "50_plus"}
 MIKROZENSUS_COLUMNS = ["school_type", *MIKROZENSUS_BANDS]
 SHARE_TOLERANCE = 1e-6
+# The model level table is written with rounded counts; its pooled row and the sum of its Kreis rows may
+# differ by this many persons (rounding only, no modelling meaning).
+POOLED_MODEL_TOLERANCE_PERSONS = 0.5
 
 
 # --------------------------------------------------------------------------------------------- files
@@ -371,7 +374,13 @@ def prepare(args) -> dict:
     points = G.site_points(pd.concat([lsn_rows, curated_rows], ignore_index=True)[["destination_id", "site_ags8"]],
                            gemeinden, curated[["destination_id", "lon", "lat"]])
     curated_points = points[points["destination_id"].isin(curated["destination_id"])]
+    if len(curated_points) != len(T.OUTSIDE_LSN_CROSSWALK):
+        raise ValueError("expected %d curated site point(s) (OUTSIDE_LSN_CROSSWALK), found %d"
+                         % (len(T.OUTSIDE_LSN_CROSSWALK), len(curated_points)))
     curated_kreise = locate_site_kreise(Path(args.vg250), curated_points)
+    if len(curated_kreise) != len(T.OUTSIDE_LSN_CROSSWALK):
+        raise ValueError("the VG250 Kreis lookup located %d of the %d curated sites (OUTSIDE_LSN_CROSSWALK)"
+                         % (len(curated_kreise), len(T.OUTSIDE_LSN_CROSSWALK)))
     missing = sorted(set(curated["destination_id"]) - set(curated_kreise))
     if missing:
         raise ValueError("Kreis lookup returned no Kreis for curated site(s) %s" % missing)
@@ -593,7 +602,16 @@ def _model_today(model_level: pd.DataFrame) -> pd.Series:
     if absent:
         raise ValueError("model level table: Kreis(e) %s missing in column 'code'" % absent)
     values = values.loc[list(ZGB_KREISE)]
-    values[REGION_CODE] = float(values.drop(list(UNSURVEYED_KREISE)).sum())
+    pooled = float(values.drop(list(UNSURVEYED_KREISE)).sum())
+    own = model_level.loc[model_level["code"] == REGION_CODE, "model_students_expanded_persons"].astype(float)
+    if len(own) != 1:
+        raise ValueError("model level table: needs exactly one pooled row %r in column 'code', found %d"
+                         % (REGION_CODE, len(own)))
+    if abs(float(own.iloc[0]) - pooled) > POOLED_MODEL_TOLERANCE_PERSONS:
+        raise ValueError("model level table: the pooled row %s holds %.10g students but the surveyed Kreise "
+                         "(all but %s) sum to %.10g; the table and the Kreis rows disagree"
+                         % (REGION_CODE, float(own.iloc[0]), list(UNSURVEYED_KREISE), pooled))
+    values[REGION_CODE] = pooled
     return values
 
 

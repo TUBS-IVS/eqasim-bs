@@ -204,6 +204,16 @@ def test_cli_writes_all_tables_with_headers(script, world, tmp_path):
     assert set(od["cell_kind"]) >= {"commuter", "local", "mover_to_braunschweig", "out_commuter"}
     pd.testing.assert_frame_equal(_table(option_dir / "student_od_table.csv", dtype={"home_ars5": str}), od)
 
+    # No written file (calibration, labelled and final tables, gate, pre-check) holds an absolute path:
+    # neither the output folders nor the folder of the local-only inputs.
+    written = [path for path in tmp_path.rglob("*") if path.is_file()]
+    assert len(written) >= 3 + 7 + 5 + 2
+    forbidden = {str(tmp_path), tmp_path.as_posix(), str(Path(world["sites"]).parent),
+                 Path(world["sites"]).parent.as_posix(), str(ROOT), ROOT.as_posix()}
+    for path in written:
+        text = path.read_text(encoding="utf-8")
+        assert not any(value in text for value in forbidden), path.name
+
 
 def test_curated_site_gets_the_kreis_polygon_that_contains_it_and_a_point_in_none_raises(script):
     """The Kreis of the three institutions outside the LSN table comes from the VG250 polygons."""
@@ -216,3 +226,46 @@ def test_curated_site_gets_the_kreis_polygon_that_contains_it_and_a_point_in_non
     outside = pd.DataFrame({"destination_id": ["c"], "x": [50.0], "y": [5.0]})
     with pytest.raises(ValueError, match="'c'"):
         script.kreis_of_points(kreise, outside)
+
+
+@pytest.mark.parametrize("decided", [True, False])
+def test_snippet_exists_exactly_for_a_decided_final_stage(script, world, tmp_path, monkeypatch, decided):
+    """A decided final stage writes the snippet (with its header and the triple); an undecided one
+    writes none and removes a snippet left by an earlier run."""
+    for name in ("calibrate", "calibrate_movers"):
+        original = getattr(script.W, name)
+        monkeypatch.setattr(script.W, name, (lambda original: lambda *args, **kwargs: original(*args, **kwargs)._replace(
+            decided=decided, reasons=[] if decided else ["forced by the test"]))(original))
+    out = tmp_path / "calibration"
+    out.mkdir()
+    snippet = out / "student_commuter_weight_snippet.yml"
+    snippet.write_text("stale: from an earlier run" + chr(10), encoding="utf-8")
+    assert script.main(["calibrate", *_common(world), "--out-dir", str(out), "--grid-step", "1", "--mover-step", "1"]) == 0
+    if not decided:
+        assert not snippet.exists()
+        return
+    text = snippet.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    header = [line for line in lines if line.startswith("#")]
+    assert any(line.startswith("# Diagnostics:") for line in header) and "stale" not in text
+    assert [line.strip().split(":")[0] for line in lines if line.startswith("  ")][:3] == ["short", "middle", "long"]
+    assert "student_commuter_weights:" in lines
+    stage_line = [line for line in header if re.match(r"# Stage \w+: optimum", line)][-1]
+    for name in ("short", "middle", "long"):
+        value = re.search(r" %s=(\S+)" % name, stage_line).group(1)
+        assert float(value) == pytest.approx(float(re.search(r"^  %s: (\S+)$" % name, text, re.M).group(1)))
+
+
+def test_model_level_pooled_row_must_match_the_surveyed_kreise(script, world, tmp_path):
+    """The pooled model row is checked against the sum of the surveyed Kreis rows, not trusted."""
+    level = pd.read_csv(script.MODEL_LEVEL_DEFAULT, comment="#", dtype={"code": str})
+    level.loc[level["code"] == "03ZGB", "model_students_expanded_persons"] += 10
+    broken = tmp_path / "model_level.csv"
+    level.to_csv(broken, index=False)
+    arguments = ["balance", *_common(world), "--weights", "0.5,0.25,0.1", "--mover-share", "0.2",
+                 "--weights-source", "owner", "--zensus-students", world["zensus_students"],
+                 "--zensus-employed", world["zensus_employed"], "--artifact-dir", str(tmp_path / "art"),
+                 "--label", "x", "--model-level", str(broken)]
+    with pytest.raises(ValueError, match="03ZGB"):
+        script.main(arguments)
+    assert not (tmp_path / "art").exists()
