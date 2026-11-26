@@ -41,7 +41,8 @@ configuration:
     parameter), braunschweig.chainsolvers.processes 8, the shared cache store off, output_prefix braunschweig_1pct_i679_.
     The arms differ ONLY in the two switches of issue #679 (and in their run targets, which do not enter stage hashes):
     A secondary_loop_zero_displacement false and secondary_leisure_estimates_without_loops false; B true and false; C true
-    and true (the production values of configs/base_bs.yml). random_seed is the base value in every arm (1234, configs/base_bs.yml). The run.yml files carry each launch's gate list of the stages allowed to recompute.
+    and true (the production values of configs/base_bs.yml). random_seed is the base value in every arm (1234,
+    configs/base_bs.yml). The run.yml files carry each launch's gate list of the stages allowed to recompute.
 sampling:
   rate: 0.01
   scope: 'ZGB-8, full region, cordon on (base configuration)'
@@ -103,9 +104,9 @@ validation:
     differs only in the write time (gpkg_contents.last_change) of its layer `education`, both layers are
     content-identical (3,689 and 1,903 rows). i679_off2 equals the switch-off arm of 66da6ee0 the same way, with one more
     difference recorded in i679_off_identity_66da6ee0_vs_0611505f.json: braunschweig_1pct_i679_meta.json exists only in
-    the output of the 66da6ee0 arm (written by the documentation stage in its first launch; that stage was a cache hit
-    in i679_off2, so it wrote no file there). The switch-off path is therefore unchanged across the three commits in
-    these stage outputs and population files.
+    the output of the 66da6ee0 arm (probable cause, not checked: the documentation stage that writes it ran in the
+    66da6ee0 arm and was a cache hit in i679_off2). The switch-off path is therefore unchanged across the three
+    commits in these stage outputs and population files.
   artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_identity_a_vs_off2_0611505f.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_identity_a_vs_off2_pre_portal_gpkg.txt, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_off_identity_66da6ee0_vs_0611505f.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_off_identity_pre_portal_gpkg.txt'
   notes: 'A regression check between commits; not a behavioural statement.'
 - metric: loop-free estimates switched off, arm B (ff83decf) against i679_on2 (0611505f, loop placement on)
@@ -173,26 +174,31 @@ validation:
   reference: 'the other arms (same seed, shared upstream trip table); no observed reference'
   result: >-
     Straight line between the two activity places of a trip, modes as written to the population (trips.simulated);
-    loop legs = the 746 trips into an activity that arm C placed by the loop rule, the same keys in every arm. Counts are
-    exact; metres are the JSON values (keys mean_m, p50_m, p90_m, max_m) rounded to 1 m and totals (sum_km) to 0.1 km;
-    model output. WALK all legs, A / B / C: n 8,646 / 8,655 / 8,654;
-    mean 2,599 / 2,267 / 2,270 m; median 1,370 / 1,012 / 1,000 m; p90 5,871 / 5,502 / 5,599 m; over 5 km 1,037 / 969 /
-    987; over 30 km 8 / 8 / 8; total 22,466.7 / 19,618.9 / 19,641.5 km. WALK without loop legs: n 7,942 / 7,941 / 7,941;
-    mean 2,579 / 2,471 / 2,473 m; median 1,284 / 1,158 / 1,145 m; over 5 km 960 / 969 / 987; over 30 km 8 / 8 / 8. WALK
-    loop legs: A 704 legs, mean 2,815 m, median 2,248 m, 77 over 5 km, longest 22,867 m; B 714 and C 713 legs, all of
-    length 0. BICYCLE all legs, A / B / C: n 4,473 / 4,494 / 4,496; mean 4,221 / 4,197 / 4,177 m; median 2,332 / 2,239 /
-    2,225 m; over 5 km 1,091 / 1,117 / 1,110; over 30 km 24 / 24 / 24. BICYCLE without loop legs: n 4,449 / 4,469 /
-    4,471; over 5 km 1,076 / 1,117 / 1,110; over 30 km 24 / 24 / 24. BICYCLE loop legs: A 24 legs, mean 9,072 m, 15 over
-    5 km; B and C 25 legs of length 0. Written modes of the loop legs: A walk 704, bicycle 24, car 9, car_passenger 7, pt
-    2; B walk 714, bicycle 25, car_passenger 5, car 2; C walk 713, bicycle 25, car 6, car_passenger 2.
+    loop legs = the 746 trips into an activity that arm C placed by the loop rule, the same keys in every arm.
+    Values copied from the JSON keys n, mean_m, p50_m, p90_m, max_m, n_over_5km, n_over_30km, sum_km; model output.
+    WALK all legs, A / B / C: n 8,646 / 8,655 / 8,654; mean 2598.5100382288515 / 2266.765778842237 /
+    2269.644649097071 m; median 1369.8337828404344 / 1012.3716119221309 / 1000.4081069381231 m; p90
+    5871.404932503816 / 5502.190492185545 / 5599.455529387904 m; over 5 km 1,037 / 969 / 987; over 30 km 8 / 8 / 8;
+    total 22466.71779052665 / 19618.85781587956 / 19641.50479328605 km. WALK without loop legs: n 7,942 / 7,941 /
+    7,941; mean 2579.286832018535 / 2470.57773780123 / 2473.4296427762315 m; median 1283.5890883687002 /
+    1157.5680362379214 / 1144.5939952498902 m; over 5 km 960 / 969 / 987; over 30 km 8 / 8 / 8. WALK loop legs: A
+    704 legs, mean 2815.3718332889825 m, median 2248.0105937669837 m, 77 over 5 km, longest 22866.831553182983 m; B
+    714 and C 713 legs, all of length 0. BICYCLE all legs, A / B / C: n 4,473 / 4,494 / 4,496; mean
+    4221.404273383484 / 4197.182087744995 / 4177.245068466246 m; median 2331.6596916833278 / 2239.2582824366514 /
+    2225.4598363955556 m; over 5 km 1,091 / 1,117 / 1,110; over 30 km 24 / 24 / 24. BICYCLE without loop legs: n
+    4,449 / 4,469 / 4,471; over 5 km 1,076 / 1,117 / 1,110; over 30 km 24 / 24 / 24. BICYCLE loop legs: A 24 legs,
+    mean 9072.268858880643 m, 15 over 5 km; B and C 25 legs of length 0. Written modes of the loop legs: A walk 704,
+    bicycle 24, car 9, car_passenger 7, pt 2; B walk 714, bicycle 25, car_passenger 5, car 2; C walk 713, bicycle
+    25, car 6, car_passenger 2.
   artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_A_vs_C_ff83decf.json (A = off, C = on), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_B_vs_C_ff83decf.json (B = off) (key legs)'
   notes: >-
     Without the loop legs, the count of walk legs over 5 km does not fall (960 in A, 969 in B, 987 in C), while the
-    mean and the median of the non-loop walk legs do (mean 2,579 -> 2,471 / 2,473 m, median 1,284 -> 1,158 / 1,145 m):
-    the non-loop walk legs of length 0 grow from 458 (A) to 804 (B) and 802 (C); 340 of them are the leg that leaves a
-    loop activity, which had a length in arm A (next entry). The arms consume the solver's random streams differently (fewer legs with the loops collapsed), so the non-loop legs
-    differ as distributions, not leg by leg; one draw per arm, so differences of a few dozen legs are not separated from
-    draw variation.
+    mean and the median of the non-loop walk legs do (mean 2579.286832018535 -> 2470.57773780123 /
+    2473.4296427762315 m, median 1283.5890883687002 -> 1157.5680362379214 / 1144.5939952498902 m, A -> B / C): the
+    non-loop walk legs of length 0 grow from 458 (A) to 804 (B) and 802 (C); 340 of them are the leg that leaves a
+    loop activity, which had a length in arm A (next entry). The arms consume the solver's random streams
+    differently (fewer legs with the loops collapsed), so the non-loop legs differ as distributions, not leg by leg;
+    one draw per arm, so differences of a few dozen legs are not separated from draw variation.
 - metric: non-loop walk and bicycle legs that lose their length because they follow a loop (arms B and C)
   reference: 'arm A, the same legs (same person and trip index); no observed reference'
   result: >-
@@ -212,11 +218,13 @@ validation:
 - metric: non-loop leisure legs on foot and by bicycle, B vs C (effect of the loop-free estimates)
   reference: 'arm B (same seed, same loops collapsed); no observed reference'
   result: >-
-    Trips into a leisure activity that is not a loop, straight line, metres as in the leg-length entry (JSON values
-    rounded to 1 m); model output. Walk, A / B /
-    C: n 1,383 / 1,384 / 1,383; mean 2,237 / 2,293 / 2,292 m; median 1,439 / 1,485 / 1,426 m; p90 4,791 / 5,082 / 5,372
-    m; over 5 km 123 / 141 / 148. Bicycle: n 699 / 708 / 709; mean 3,594 / 3,817 / 3,751 m; median 2,104 / 2,081 / 2,056
-    m; p90 8,385 / 8,806 / 8,528 m; over 5 km 128 / 155 / 153.
+    Trips into a leisure activity that is not a loop, straight line, values copied from the JSON keys as in the
+    leg-length entry; model output. Walk, A / B / C: n 1,383 / 1,384 / 1,383; mean 2236.9123291232027 /
+    2293.2363082807333 / 2291.659268153901 m; median 1438.5123926483066 / 1485.1151242670635 / 1425.6252395783083 m;
+    p90 4790.8017523125845 / 5082.362197346004 / 5372.060238536983 m; over 5 km 123 / 141 / 148. Bicycle: n 699 /
+    708 / 709; mean 3594.3108022200763 / 3816.9557543002256 / 3751.494701418742 m; median 2104.1829028037755 /
+    2080.6950588346735 / 2055.668024449405 m; p90 8385.48011800733 / 8806.253248812192 / 8527.902164940044 m; over 5
+    km 128 / 155 / 153.
   artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_A_vs_C_ff83decf.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_B_vs_C_ff83decf.json (key legs.<arm>.<mode>.leisure_without_loop_legs)'
   notes: 'About 1,400 walk and 700 bicycle legs in one draw per arm: the B-vs-C differences are of the size of draw variation and are not claimed as an effect here.'
 - metric: chain solver placement and the SrV location-type marginal fallback, A vs B vs C
