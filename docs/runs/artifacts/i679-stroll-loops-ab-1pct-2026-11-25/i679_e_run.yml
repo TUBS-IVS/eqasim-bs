@@ -1,5 +1,5 @@
 ## Run overlay of i679_e, written by scripts/isolated_run.py overlay on 2026-11-26T16:45:19+01:00.
-## Source: /home/felix/i679_ship_e/i679_e_33abe12f_source.yml (sha256 cf82ca17e1fb559ad2bfc6f90039b2a8e0a37900f7741e41a75c57eb3b3adbf0).
+## Source: ~/i679_ship_e/i679_e_33abe12f_source.yml (sha256 cf82ca17e1fb559ad2bfc6f90039b2a8e0a37900f7741e41a75c57eb3b3adbf0).
 ## Paths are relative to RUN_DIR/eqasim-bs, the launch directory, so every isolated run carries the
 ## same strings: output_path enters synthesis stage hashes, analysis_working_directory the analysis suite's.
 ## `launch` compares this file with its gate record: edit it only before `gate --write`.
