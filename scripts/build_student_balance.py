@@ -190,10 +190,11 @@ def _read_csv(path, required: list, what: str, text_columns=(), **kwargs) -> pd.
 def read_header_value(path, key: str) -> str:
     """The value of ``key=value`` anywhere in the leading ``#`` lines of ``path``.
 
-    A value ends at a comma, a semicolon, a closing bracket or a space. Raises ``ValueError`` when
+    A value ends at a comma, a semicolon, a closing bracket or a space. List-valued keys such as
+    ``mover_site_kreise`` are written for the reader and are not read back by this function. Raises ``ValueError`` when
     the key is absent or found more than once (the value would be ambiguous).
     """
-    pattern = re.compile(r"(?:^|[\s,;(:])" + re.escape(key) + r"=([^\s,;)]+)")
+    pattern = re.compile(r"(?:^|[\s,;(:])" + re.escape(key) + r"=([^\s,;)\]]+)")
     values = []
     with open(path, encoding="utf-8") as handle:
         for line in handle:

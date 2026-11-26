@@ -52,12 +52,12 @@ def _weight_triple(path):
     return tuple(float(value) for value in match.groups())
 
 
-def test_headers_name_owner_weights_and_mover_site_2026_11_26():
+def test_headers_name_owner_weights_and_mover_site_2026_11_26(script):
     for path in ALL_FILES:
         text = _header_text(path)
         assert "weights_source=owner" in text, path.name
         assert "mover_site_kreise=[03158]" in text, path.name
-        assert "mover_share=0.4" in text, path.name
+        assert script.read_header_value(path, "mover_share") == "0.4", path.name
         assert _weight_triple(path) == (1.0, 1.0, 0.3), path.name
 
 
