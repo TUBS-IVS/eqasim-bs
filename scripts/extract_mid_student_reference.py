@@ -11,9 +11,9 @@ writes four small aggregate tables to ``--out-dir`` (default ``eqasim-data/data/
 All definitions live in ``braunschweig.calibration.mid_student_reference`` (and the shared label
 vocabulary in ``braunschweig.calibration.student_behaviour_labels``); this script owns only the
 raw I/O, the CLI and the provenance headers. Each written file carries an ``# Exclusions:`` line
-with the builder's counts, so the exclusion counts live IN the file. The ``exclude_rbw_legs``
-and ``exclude_holiday_plan_sources`` settings are read from the production config
-``configs/base_bs.yml``.
+with the builder's counts, so the exclusion counts live IN the file. The ``exclude_rbw_legs``,
+``exclude_holiday_plan_sources`` and ``drop_leading_arrive_home_leg`` settings are read from the
+production config ``configs/base_bs.yml``.
 
 Usage (eqasim env, from a worktree; the raw directory is restricted and always passed):
     python scripts/extract_mid_student_reference.py --raw <MiD CSV directory> \
@@ -44,14 +44,16 @@ OUT_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig" / "mid"
 CONFIG_PATH = REPO / "configs" / "base_bs.yml"
 RBW_CONFIG_KEY = "braunschweig.population.popsim.exclude_rbw_legs"
 HOLIDAY_CONFIG_KEY = "braunschweig.population.popsim.exclude_holiday_plan_sources"
+ARRIVE_HOME_CONFIG_KEY = "braunschweig.population.popsim.drop_leading_arrive_home_leg"
 
 PERSONS_FILE = "MiD2023_Personen.csv"
 TRIPS_FILE = "MiD2023_Wege.csv"
 HOUSEHOLDS_FILE = "MiD2023_Haushalte.csv"
 
 PERSON_READ_COLUMNS = list(R.BEHAVIOUR_PERSON_COLUMNS)
-TRIP_READ_COLUMNS = (R.LEG_KEY_COLUMNS + R.FIRST_LEG_COLUMNS + R.ARRIVAL_COLUMNS
-                     + R.DISTANCE_COLUMNS + [R.RBW_COLUMN])
+TRIP_READ_COLUMNS = list(dict.fromkeys(R.LEG_KEY_COLUMNS + R.FIRST_LEG_COLUMNS
+                                       + R.ARRIVAL_COLUMNS + R.DISTANCE_COLUMNS
+                                       + [R.RBW_COLUMN] + R.DIARY_FACT_COLUMNS))
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("extract_mid_student_reference")
@@ -74,6 +76,11 @@ def production_exclude_rbw_legs(config_path: Path = CONFIG_PATH) -> bool:
 def production_exclude_holidays(config_path: Path = CONFIG_PATH) -> bool:
     """The production value of ``braunschweig.population.popsim.exclude_holiday_plan_sources``."""
     return _production_flag(HOLIDAY_CONFIG_KEY, config_path)
+
+
+def production_drop_leading_arrive_home_leg(config_path: Path = CONFIG_PATH) -> bool:
+    """The production value of ``braunschweig.population.popsim.drop_leading_arrive_home_leg``."""
+    return _production_flag(ARRIVE_HOME_CONFIG_KEY, config_path)
 
 
 def _header_columns(path: Path) -> list:
@@ -183,7 +190,7 @@ def _share_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool)
 
 
 def _behaviour_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool,
-                      exclude_holidays: bool) -> list:
+                      exclude_holidays: bool, drop_leading_arrive_home_leg: bool) -> list:
     return _common_header(R.BEHAVIOUR_TABLE, source_commit, exclude_rbw_legs) + [
         *_core_weekday_lines(exclude_holidays),
         "# Label vocabulary: student_behaviour_labels.CONTROLS, shared with the SrV table",
@@ -201,15 +208,20 @@ def _behaviour_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: b
         "#   excluded (no imputation: a measurement, not a seed).",
         "# Per-control exclusions: a student leaves only the control whose code is unreadable, in",
         "#   both universes; counted below.",
-        "# LIMITATION (persons without a diary): anzwege1 %s (popsim.diary_plan_match."
-        "NO_DIARY_CODES)" % list(R.NO_DIARY_CODES),
-        "#   is an UNKNOWN day, except 803 with mobil != 1 (not mobile: a genuine day with 0 trips,",
-        "#   as diary_plan_match keeps it). Persons with an unknown day, students AND non-students,",
-        "#   are ABSENT from the four diary-dependent controls status_x_education_leg, trip_class,",
-        "#   arrival and work_leg in BOTH universes (n_students_without_diary,",
-        "#   n_non_students_without_diary below); only season_ticket keeps them. Those shares rest",
-        "#   on this reduced base, while the SrV side has a diary for every person: the comparison",
-        "#   assumes persons without a diary are not a distinct group for these cells.",
+        "# LIMITATION (unknown day): a day the popsim seed does not keep as the person's own plan",
+        "#   source (popsim.diary_plan_match) is UNKNOWN here: anzwege1 %s (NO_DIARY_CODES), except"
+        % list(R.NO_DIARY_CODES),
+        "#   803 with mobil != 1 (not mobile: a genuine day with 0 trips, as diary_plan_match keeps",
+        "#   it); a diary with only rbW legs (exclude_rbw_legs = %s); a diary whose only direct leg"
+        % str(exclude_rbw_legs).lower(),
+        "#   is a leading arrive-home leg the trip build drops (drop_leading_arrive_home_leg = %s,"
+        % str(drop_leading_arrive_home_leg).lower(),
+        "#   production value in configs/base_bs.yml). Persons with an unknown day, students AND",
+        "#   non-students, are ABSENT from the four diary-dependent controls status_x_education_leg,",
+        "#   trip_class, arrival and work_leg in BOTH universes (n_*_without_diary,",
+        "#   n_*_only_rbw_diary, n_*_emptied_by_arrive_home_drop below); only season_ticket keeps",
+        "#   them. Those shares rest on this reduced base, while the SrV side has a diary for every",
+        "#   person: the comparison assumes these persons are not a distinct group for these cells.",
         "# UNIVERSE GAP to srv2023_student_behaviour.csv: MiD keeps persons away from home all",
         "#   day, the SrV universe drops them (E_ANZ_WEGE -7; the adult students lost that way are",
         "#   n_adult_students_away_from_home in the SrV file's Exclusions line).",
@@ -266,12 +278,14 @@ def main(argv=None) -> int:
 
     exclude_rbw_legs = production_exclude_rbw_legs()
     exclude_holidays = production_exclude_holidays()
+    drop_leading_arrive_home_leg = production_drop_leading_arrive_home_leg()
     day_settings = {"exclude_rbw_legs": exclude_rbw_legs, "exclude_holidays": exclude_holidays}
     status, status_diagnostics = R.build_status_by_age_table(persons, trips, **day_settings)
     distance, distance_diagnostics = R.build_distance_mode_table(persons, trips, **day_settings)
     share, share_diagnostics = R.build_share_20_29_table(persons, households)
-    behaviour, behaviour_diagnostics = R.build_behaviour_seed_table(persons, trips,
-                                                                    **day_settings)
+    behaviour, behaviour_diagnostics = R.build_behaviour_seed_table(
+        persons, trips, drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        **day_settings)
 
     out = Path(args.out_dir)
     commit = args.source_commit
@@ -282,7 +296,8 @@ def main(argv=None) -> int:
     _write(share, out / R.SHARE_20_29_TABLE,
            _share_header(share_diagnostics, commit, exclude_rbw_legs))
     _write(behaviour, out / R.BEHAVIOUR_TABLE,
-           _behaviour_header(behaviour_diagnostics, commit, exclude_rbw_legs, exclude_holidays))
+           _behaviour_header(behaviour_diagnostics, commit, exclude_rbw_legs, exclude_holidays,
+                             drop_leading_arrive_home_leg))
     return 0
 
 

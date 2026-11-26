@@ -62,18 +62,39 @@ Definitions (MiD 2023 codebook B1 as quoted in ``braunschweig/popsim/attributes.
   students WITH a diary of the day AND an education leg, the only ones that can lose a label
   there: students without a diary have already left the arrival control (see "Diary of the
   day" below) and are counted there, not in this rate.
-* Diary of the day (behaviour table only): ``anzwege1`` 0 to 799 is a real trip count. The
-  no-diary codes 803 / 804 (``popsim.diary_plan_match.NO_DIARY_CODES``) are an UNKNOWN day, never
-  "no trip", exactly as the popsim seed reads them (``participation.compute_has_purpose_trip``,
-  ``diary_plan_match``), with the one exception that diary_plan_match makes too: ``803`` with
-  ``mobil != 1`` is a person who was not mobile, zero trips is what they reported, and the day
-  counts as 0 trips. A person with an unknown day (students AND non-students) leaves the four
-  diary-dependent controls (``status_x_education_leg``, ``trip_class``, ``arrival``,
-  ``work_leg``) in BOTH universes, counted; the regional survey has a diary for every person, so
-  keeping them would class a day nobody observed as "no education leg" / "no work leg". The
-  season ticket does not depend on the diary and keeps them. The status and distance tables are
-  built from persons WITH a recorded education leg, who have a diary by construction, so they
-  need no such rule.
+* Diary of the day (behaviour table only): a person's own day is kept exactly when the popsim
+  seed keeps it as the person's plan source (``diary_plan_match._own_diary_reason``, the
+  reasons in ``REASONS_REMAP``); every day the seed replaces by a donor's is an UNKNOWN day here,
+  never "no trip". Three kinds remain after the weekday and holiday filters:
+
+  - the no-diary codes 803 / 804 (``popsim.diary_plan_match.NO_DIARY_CODES``), as the seed reads
+    them (``participation.compute_has_purpose_trip``, ``diary_plan_match``), with the one
+    exception diary_plan_match makes too: ``803`` with ``mobil != 1`` is a person who was not
+    mobile, zero trips is what they reported, and the day counts as 0 trips. ``anzwege1`` 0 to
+    799 is a real trip count; any other value is an unknown day as well. Counted as
+    ``n_students_without_diary`` / ``n_non_students_without_diary``;
+  - ``only_rbw`` (only with ``exclude_rbw_legs``): no directly recorded leg but rbW legs, so the
+    plan would have no leg. Counted as ``n_students_only_rbw_diary`` /
+    ``n_non_students_only_rbw_diary``;
+  - ``emptied_by_arrive_home_drop`` (only with ``drop_leading_arrive_home_leg``, production value
+    of ``braunschweig.population.popsim.drop_leading_arrive_home_leg`` in ``configs/base_bs.yml``,
+    read and passed like ``exclude_rbw_legs``): the only direct leg is a leading leg that
+    arrives home from elsewhere, which the trip build drops. Counted as
+    ``n_students_emptied_by_arrive_home_drop`` / ``n_non_students_emptied_by_arrive_home_drop``.
+
+  The last two are taken from the seed's own diary facts (``popsim.diary_facts.
+  compute_diary_facts`` over all trips) and reason function, so the precedence is the seed's; the
+  two are counted only among the persons the no-diary rule kept, so nobody is counted twice. A
+  person with an unknown day (students AND non-students) leaves the four diary-dependent
+  controls (``status_x_education_leg``, ``trip_class``, ``arrival``, ``work_leg``) in BOTH
+  universes; the regional survey has a diary for every person, so keeping them would class a day
+  nobody observed as "no education leg" / "no work leg". The season ticket does not depend on
+  the diary and keeps them. The status and distance tables are built from persons WITH a
+  directly recorded education leg: such a person has a direct leg (not ``only_rbw``) that does
+  not arrive home (not emptied), so with ``exclude_rbw_legs`` on (production) neither rule can
+  apply and they need none. (With ``exclude_rbw_legs`` off, a person whose education leg is an
+  rbW leg and whose only direct leg is a leading arrive-home leg would stay in those tables
+  although the seed replaces their day; not a production setting.)
 * Trip class from the day's trip count (bins :data:`student_behaviour_labels.TRIP_CLASS_EDGES`).
 * Season ticket = the flatrate group of ``P_FKARTE`` through
   ``braunschweig.popsim.attributes.FKARTE_TO_CATEGORY`` (``deutschlandticket`` and
@@ -85,11 +106,12 @@ Definitions (MiD 2023 codebook B1 as quoted in ``braunschweig/popsim/attributes.
   is counted, never banded. Mode = ``hvm_imp``, the imputed main mode the handbook mandates and
   the seed's ``trips.MODE_BY_HVM`` maps (codes 1-5; any other non-missing code raises).
 
-LIMITATION of the behaviour table: persons without a diary of the day are ABSENT from the four
-diary-dependent controls, so each of those shares rests on a reduced base (the counts are in the
-committed file's ``# Exclusions:`` header line), while the SrV side has a diary for everyone.
-The comparison of the two surveys therefore assumes that the persons without a diary are not a
-distinct group with respect to those cells; that is not checkable from the survey itself.
+LIMITATION of the behaviour table: persons with an unknown day (no diary, or a diary the seed
+replaces) are ABSENT from the four diary-dependent controls, so each of those shares rests on a
+reduced base (the counts are in the committed file's ``# Exclusions:`` header line), while the
+SrV side has a diary for everyone. The comparison of the two surveys therefore assumes that
+these persons are not a distinct group with respect to those cells; that is not checkable from
+the survey itself.
 
 Every exclusion is counted in the builder's diagnostics and logged as ``primary n/N (rate),
 excluded m (rate)``; a step that would exclude more than
@@ -111,7 +133,8 @@ from braunschweig.calibration.student_behaviour_labels import (
     UNIVERSE_ADULTS, UNIVERSE_STUDENTS, behaviour_rows)
 from braunschweig.popsim.attributes import (FKARTE_TO_CATEGORY, PT_TICKET_DEUTSCHLANDTICKET,
                                             PT_TICKET_OTHER_FLATRATE)
-from braunschweig.popsim.diary_plan_match import MID_HOLIDAY, NO_DIARY_CODES
+from braunschweig.popsim.diary_facts import compute_diary_facts
+from braunschweig.popsim.diary_plan_match import MID_HOLIDAY, NO_DIARY_CODES, _own_diary_reason
 from braunschweig.popsim.mid.participation import PARTICIPATION_W_ZWECK
 
 logger = logging.getLogger(__name__)
@@ -142,6 +165,18 @@ EXCLUDE_RBW_LEGS_DEFAULT = True
 # Production value of braunschweig.population.popsim.exclude_holiday_plan_sources in
 # configs/base_bs.yml; read and passed the same way, pinned by the same test.
 EXCLUDE_HOLIDAYS_DEFAULT = True
+# Production value of braunschweig.population.popsim.drop_leading_arrive_home_leg in
+# configs/base_bs.yml; read and passed the same way, pinned by the same test.
+DROP_LEADING_ARRIVE_HOME_LEG_DEFAULT = True
+# The two diary_plan_match reasons (REASONS_REMAP) for a diary that carries a trip count but that
+# the seed still replaces by a donor's; the extraction reads such a day as unknown.
+SEED_REPLACED_REASONS = ("only_rbw", "emptied_by_arrive_home_drop")
+SEED_REPLACED_DIAGNOSTIC = {"only_rbw": "n_%s_only_rbw_diary",
+                            "emptied_by_arrive_home_drop": "n_%s_emptied_by_arrive_home_drop"}
+SEED_REPLACED_DESCRIPTION = {
+    "only_rbw": "no direct leg but rbW legs, exclude_rbw_legs",
+    "emptied_by_arrive_home_drop": "the only direct leg is a leading arrive-home leg the trip "
+                                   "build drops, drop_leading_arrive_home_leg"}
 # feiertag: 1 = the reporting day was a public holiday at the residence (MID_HOLIDAY), 0 = not.
 HOLIDAY_COLUMN = "feiertag"
 HOLIDAY_CODES = frozenset({0, MID_HOLIDAY})
@@ -182,6 +217,9 @@ FIRST_LEG_COLUMNS = ["W_SZS", "W_SZM"]
 ARRIVAL_COLUMNS = ["W_AZS"]
 DISTANCE_COLUMNS = ["wegkm_imp", MODE_COLUMN]
 RBW_COLUMN = "W_RBW"
+# Trip columns popsim.diary_facts.compute_diary_facts needs besides LEG_KEY_COLUMNS (W_ID orders
+# the legs, W_SO1 marks a day that starts away from home).
+DIARY_FACT_COLUMNS = ["W_ID", "W_SO1", "wegkm_imp", RBW_COLUMN]
 HOUSEHOLD_COLUMNS = ["H_ID", "BLAND"]
 
 STATUS_COLUMNS = ["age_band", "status", "n_unweighted", "share"]
@@ -509,7 +547,9 @@ def build_share_20_29_table(persons: pd.DataFrame,
 # --------------------------------------------------------------------------- behaviour
 def build_behaviour_seed_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
                                exclude_rbw_legs: bool = EXCLUDE_RBW_LEGS_DEFAULT,
-                               exclude_holidays: bool = EXCLUDE_HOLIDAYS_DEFAULT
+                               exclude_holidays: bool = EXCLUDE_HOLIDAYS_DEFAULT,
+                               drop_leading_arrive_home_leg: bool =
+                               DROP_LEADING_ARRIVE_HOME_LEG_DEFAULT
                                ) -> tuple[pd.DataFrame, dict]:
     """Every control of :data:`student_behaviour_labels.CONTROLS` in both universes.
 
@@ -522,6 +562,10 @@ def build_behaviour_seed_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
     ``status_x_education_leg`` and ``work_leg`` use the seed's education / work leg sets.
     ``n_effective`` is the Kish size over exactly the rows of the control's base. With
     ``exclude_holidays`` a person reporting on a public holiday is in neither universe (counted).
+    A person whose day is unknown (no diary, or a diary the popsim seed replaces: only rbW legs
+    under ``exclude_rbw_legs``, emptied by ``drop_leading_arrive_home_leg``; module docstring,
+    "Diary of the day") leaves the four diary-dependent controls in both universes (counted per
+    group) and keeps the season ticket.
     """
     people, diagnostics = _prepare_persons(persons, BEHAVIOUR_PERSON_COLUMNS, "persons",
                                            core_weekdays=True, exclude_holidays=exclude_holidays)
@@ -544,15 +588,33 @@ def build_behaviour_seed_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
     # does not depend on the diary, keeps them.
     students["trip_count"], students_immobile = _trip_counts(students)
     non_students["trip_count"], non_students_immobile = _trip_counts(non_students)
-    student_has_diary = students["trip_count"].notna()
-    non_student_has_diary = non_students["trip_count"].notna().to_numpy()
-    n_students_no_diary = int((~student_has_diary).sum())
-    n_non_students_no_diary = int((~non_student_has_diary).sum())
+    n_students_no_diary = int(students["trip_count"].isna().sum())
+    n_non_students_no_diary = int(non_students["trip_count"].isna().sum())
     _log_exclusion("diary of the reporting day (anzwege1 0-%d, or 803 with mobil != 1 = a "
                    "genuine stay-at-home day), adult students" % (FILTER_CODE_MIN - 1),
                    n_students_no_diary, len(students))
     _log_exclusion("diary of the reporting day, adult non-students", n_non_students_no_diary,
                    len(non_students))
+    # The seed also replaces two kinds of diary that DO carry a trip count (see the module
+    # docstring, "Diary of the day"): they become an unknown day too. Counted only among the
+    # persons the no-diary rule above kept, so nobody is counted twice.
+    seed_reasons = _seed_diary_reasons(adults, trips, exclude_rbw_legs=exclude_rbw_legs,
+                                       exclude_holidays=exclude_holidays,
+                                       drop_leading_arrive_home_leg=drop_leading_arrive_home_leg)
+    replaced_counts = {}
+    for group_name, group in (("students", students), ("non_students", non_students)):
+        reason = seed_reasons.loc[group.index]
+        for seed_reason in SEED_REPLACED_REASONS:
+            replaced = (group["trip_count"].notna() & (reason == seed_reason)).to_numpy()
+            key = SEED_REPLACED_DIAGNOSTIC[seed_reason] % group_name
+            replaced_counts[key] = int(replaced.sum())
+            _log_exclusion("diary the popsim seed keeps (not '%s': %s), adult %s"
+                           % (seed_reason, SEED_REPLACED_DESCRIPTION[seed_reason],
+                              group_name.replace("_", "-")),
+                           replaced_counts[key], int(group["trip_count"].notna().sum()))
+            group.loc[replaced, "trip_count"] = np.nan
+    student_has_diary = students["trip_count"].notna()
+    non_student_has_diary = non_students["trip_count"].notna().to_numpy()
 
     has_education = students["pid"].isin(set(education_legs["pid"]))
     has_work = students["pid"].isin(set(work_legs["pid"]))
@@ -592,12 +654,42 @@ def build_behaviour_seed_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
                        n_non_students_without_diary=n_non_students_no_diary,
                        n_students_diary_immobile_zero_trips=int(students_immobile.sum()),
                        n_non_students_diary_immobile_zero_trips=int(non_students_immobile.sum()),
-                       **arrival_diagnostics, **season_diagnostics,
+                       **replaced_counts, **arrival_diagnostics, **season_diagnostics,
                        n_education_legs_dropped_rbw=leg_diagnostics["n_legs_dropped_rbw"],
                        n_work_legs_dropped_rbw=work_leg_diagnostics["n_legs_dropped_rbw"])
     logger.info("%s behaviour table: %d rows (%d controls x 2 universes); %d adults, %d adult "
                 "students", _LOG_TAG, len(table), len(CONTROLS), len(adults), len(students))
     return table, diagnostics
+
+
+def _seed_diary_reasons(people: pd.DataFrame, trips: pd.DataFrame, *, exclude_rbw_legs: bool,
+                        exclude_holidays: bool,
+                        drop_leading_arrive_home_leg: bool) -> pd.Series:
+    """The popsim seed's verdict on each person's OWN diary (index = ``people.index``).
+
+    Computed by the seed's own functions, not re-derived: the per-person diary facts
+    (``n_direct_legs``, ``n_rbw_legs``, ``starts_arriving_home``) by
+    ``popsim.diary_facts.compute_diary_facts`` over ALL of the person's trips, and the reason by
+    ``popsim.diary_plan_match._own_diary_reason`` with the same three settings, so its precedence
+    is the seed's: a later rule overrides an earlier one, i.e. the no-diary codes (and, when
+    excluded, holidays) override ``only_rbw`` and ``emptied_by_arrive_home_drop``; those two are
+    disjoint (``only_rbw`` needs no direct leg, the other at least one). A private function of
+    that module is called deliberately: a copy would drift from the rule the seed applies.
+    """
+    _require_columns(trips, LEG_KEY_COLUMNS + DIARY_FACT_COLUMNS, "trips")
+    wege = trips[LEG_KEY_COLUMNS + DIARY_FACT_COLUMNS].copy()
+    _person_ids(wege)                       # raises on a missing or non-numeric key part
+    for column in ("H_ID", "P_ID"):
+        wege[column] = pd.to_numeric(wege[column]).astype("int64")
+    for column in ("W_ZWECK", "W_SO1", RBW_COLUMN):
+        wege[column] = pd.to_numeric(wege[column], errors="coerce")
+    facts = compute_diary_facts(wege)
+    donors = people[["H_ID", "P_ID", "anzwege1", "mobil", HOLIDAY_COLUMN]].copy()
+    for column in ("H_ID", "P_ID"):
+        donors[column] = pd.to_numeric(donors[column]).astype("int64")
+    return _own_diary_reason(donors, facts, exclude_rbw_legs=exclude_rbw_legs,
+                             exclude_holidays=exclude_holidays,
+                             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg)
 
 
 def _trip_counts(frame: pd.DataFrame) -> tuple[pd.Series, pd.Series]:

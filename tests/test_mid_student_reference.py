@@ -79,6 +79,9 @@ def _raw():
     ]
     trips = pd.DataFrame(rows, columns=["H_ID", "P_ID", "W_ZWECK", "W_SZS", "W_SZM", "W_AZS",
                                         "wegkm_imp", "hvm_imp", "W_RBW"])
+    # diary order (file order within the person) and W_SO1 1 = the day starts at home
+    trips["W_ID"] = trips.groupby(["H_ID", "P_ID"]).cumcount() + 1
+    trips["W_SO1"] = 1
     return persons, trips
 
 
@@ -143,6 +146,66 @@ def test_persons_without_a_diary_leave_the_diary_dependent_controls(mid_frames):
     assert diagnostics["n_students_without_diary"] == 1
     assert diagnostics["n_non_students_without_diary"] == 1
     assert diagnostics["n_students_diary_immobile_zero_trips"] == 1
+
+
+def _with_diaries_the_seed_replaces(persons, trips):
+    """Add three adults on a Wednesday (weight 1, anzwege1 1, mobil 1) in household 7:
+
+    s (student, flatrate): only an rbW work leg -- under exclude_rbw_legs the plan has no leg;
+    t (student, flatrate) and u (employed, no flatrate): only a leading arrive-home leg
+    (W_ZWECK 8, W_SO1 2), which the trip build drops, so the plan is empty.
+    """
+    extra = pd.DataFrame({
+        "H_ID": [7, 7, 7], "P_ID": [1, 2, 3], "HP_ID": [17, 18, 19], "P_TAET": [10, 10, 1],
+        "HP_ALTER": [25, 25, 40], "ST_WOTAG": [3, 3, 3], "P_GEW": [1.0, 1.0, 1.0],
+        "anzwege1": [1, 1, 1], "mobil": [1, 1, 1], "P_FKARTE": [1, 1, 8], "feiertag": [0, 0, 0]})
+    extra_trips = pd.DataFrame({
+        "H_ID": [7, 7, 7], "P_ID": [1, 2, 3], "W_ZWECK": [1, 8, 8], "W_SZS": [8, 8, 8],
+        "W_SZM": [0, 0, 0], "W_AZS": [9, 9, 9], "wegkm_imp": [5.0, 5.0, 5.0],
+        "hvm_imp": [4, 4, 4], "W_RBW": [1, 0, 0], "W_ID": [1, 1, 1], "W_SO1": [1, 2, 2]})
+    return (pd.concat([persons, extra], ignore_index=True),
+            pd.concat([trips, extra_trips], ignore_index=True))
+
+
+def test_diaries_the_seed_replaces_are_an_unknown_day(mid_frames):
+    """The popsim seed replaces an own diary with only rbW legs (s) or with only a leading
+    arrive-home leg (t, u) by a donor's (``diary_plan_match``); the extraction must not read
+    those days as "no education leg". They leave the four diary-dependent controls in both
+    universes, keep the season ticket, and are counted; with the flag off the person stays."""
+    persons, trips = _with_diaries_the_seed_replaces(*mid_frames)
+    table, diagnostics = M.build_behaviour_seed_table(persons, trips)
+    students = table[table["universe"] == UNIVERSE_STUDENTS]
+    n = {control: int(group["n_unweighted"].sum())
+         for control, group in students.groupby("control")}
+    # the base fixture's counts (test above) plus s and t in the season ticket only
+    assert n == {"status_x_education_leg": 5, "trip_class": 5, "arrival": 4, "work_leg": 5,
+                 "season_ticket": 7}
+    # u is out of the adults' diary controls (still 4 of 10), in the season ticket: non-students
+    # g 2, j 1, l 1, q 2, u 1 = 7 of (7 + students a, b, d, p, r, s, t = 8)
+    assert _cell(table, "status_x_education_leg", UNIVERSE_ADULTS, NOT_STUDENT)["share"] \
+        == pytest.approx(4 / 10)
+    assert _cell(table, "season_ticket", UNIVERSE_ADULTS, NOT_STUDENT)["share"] \
+        == pytest.approx(7 / 15)
+    assert diagnostics["n_students_only_rbw_diary"] == 1
+    assert diagnostics["n_non_students_only_rbw_diary"] == 0
+    assert diagnostics["n_students_emptied_by_arrive_home_drop"] == 1
+    assert diagnostics["n_non_students_emptied_by_arrive_home_drop"] == 1
+
+    # exclude_rbw_legs off: s's rbW work leg is a leg of the plan, s is a student with a work leg
+    with_rbw, rbw_diagnostics = M.build_behaviour_seed_table(persons, trips,
+                                                             exclude_rbw_legs=False)
+    assert _cell(with_rbw, "status_x_education_leg", UNIVERSE_STUDENTS, "student_noedu")[
+        "n_unweighted"] == 3                                      # b, r and s
+    assert rbw_diagnostics["n_students_only_rbw_diary"] == 0
+    assert rbw_diagnostics["n_students_emptied_by_arrive_home_drop"] == 1
+
+    # drop_leading_arrive_home_leg off: t and u keep their day; status adults 5 of (5 + 7)
+    kept, kept_diagnostics = M.build_behaviour_seed_table(persons, trips,
+                                                          drop_leading_arrive_home_leg=False)
+    assert _cell(kept, "status_x_education_leg", UNIVERSE_ADULTS, NOT_STUDENT)["share"] \
+        == pytest.approx(5 / 12)
+    assert kept_diagnostics["n_students_emptied_by_arrive_home_drop"] == 0
+    assert kept_diagnostics["n_non_students_emptied_by_arrive_home_drop"] == 0
 
 
 def test_behaviour_seed_controls_by_hand(mid_frames):
@@ -343,6 +406,8 @@ def test_default_day_settings_match_the_production_config():
     script = _load_script()
     assert M.EXCLUDE_RBW_LEGS_DEFAULT == script.production_exclude_rbw_legs()
     assert M.EXCLUDE_HOLIDAYS_DEFAULT == script.production_exclude_holidays()
+    assert (M.DROP_LEADING_ARRIVE_HOME_LEG_DEFAULT
+            == script.production_drop_leading_arrive_home_leg())
 
 
 def test_cli_writes_all_tables_with_headers(mid_frames, tmp_path):
