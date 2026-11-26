@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "run_name": "popsim100_20261120_students",
+  "run_dir": "RUN_DIR",
+  "setup": {
+    "time": "2026-11-26T15:22:10+01:00",
+    "host": "<run server>",
+    "tool_blob": "600f1654460d2115aaac37340beb9e95d138b89b",
+    "repositories": {
+      "eqasim-bs": {
+        "shared_checkout": "<run server home>/eqasim-bs",
+        "ref": "measurement/i140-popsim100-20261120",
+        "bundle": "<run server home>/i140_students/students.bundle",
+        "bundle_sha256": "807754805eea8afc975ce08c33c791c18d596f678d80537c9e22a39e1f3f9aa8",
+        "bundle_ref": "refs/heads/measurement/i140-popsim100-20261120",
+        "namespaced_ref": "refs/isolated-runs/popsim100_20261120_students/eqasim-bs",
+        "commit": "0681e38be157032619b8a88067f6df71cca55633",
+        "worktree": "RUN_DIR/eqasim-bs"
+      },
+      "eqasim-java-bs": {
+        "shared_checkout": "<run server home>/eqasim-java-bs",
+        "ref": "cb7e81fa3851c1338cfd80921c9d55aaeef2e600",
+        "bundle": null,
+        "bundle_sha256": null,
+        "bundle_ref": null,
+        "namespaced_ref": null,
+        "commit": "cb7e81fa3851c1338cfd80921c9d55aaeef2e600",
+        "worktree": "RUN_DIR/eqasim-java-bs"
+      }
+    },
+    "symlink_farm": {
+      "shared_data": "<run server home>/eqasim-bs/eqasim-data",
+      "links": 87,
+      "kept": 385,
+      "excluded": "51 top-level run-state entries of the shared data directory (list trimmed before commit: names of unrelated server work)"
+    },
+    "cache": {
+      "source": "<run server home>/popsim100_20261120/cache",
+      "files": 4434,
+      "links": 0,
+      "bytes": 63660021887
+    },
+    "shared_checkouts": {
+      "before": {
+        "eqasim-bs": {
+          "branch": "main",
+          "head": "68ee8df873fe6c71627a14f3c03992dfc4393f52",
+          "dirty": 0
+        },
+        "eqasim-java-bs": {
+          "branch": "main",
+          "head": "c5343300e02d51f0247fa494080c5a9b536409f4",
+          "dirty": 0
+        }
+      },
+      "after": {
+        "eqasim-bs": {
+          "branch": "main",
+          "head": "68ee8df873fe6c71627a14f3c03992dfc4393f52",
+          "dirty": 0
+        },
+        "eqasim-java-bs": {
+          "branch": "main",
+          "head": "c5343300e02d51f0247fa494080c5a9b536409f4",
+          "dirty": 0
+        }
+      },
+      "unchanged": true,
+      "changes": []
+    }
+  },
+  "overlay": {
+    "time": "2026-11-26T15:22:21+01:00",
+    "source": "<run server home>/i140_students/run_overlay_students.yml",
+    "source_sha256": "da86ea6ceb2ff2882a55f0d29a262cfddc0f4ee2460488e9be99040859398c2f",
+    "prefix": null,
+    "changes": [],
+    "output_dir": "RUN_DIR/output",
+    "run_yml_sha256": "61e0108209ed7ca4337c3ba452fe6a06a2e80db3edffb16802493a596d1c4fd5",
+    "tool_blob": "600f1654460d2115aaac37340beb9e95d138b89b"
+  },
+  "gate": {
+    "time": "2026-11-26T15:23:08+01:00",
+    "explain_log": "RUN_DIR/logs/explain_20261126T152258.log",
+    "inputs_log": "RUN_DIR/logs/inputs_20261126T152258.log",
+    "inputs_checked": true,
+    "stale_stages": [
+      "braunschweig.analysis.synthesis.students_vs_srv"
+    ],
+    "summary": "# 41 stages: 1 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 40 hits",
+    "popsim_status": "HIT",
+    "allow_popsim": false,
+    "commits": {
+      "eqasim-bs": "0681e38be157032619b8a88067f6df71cca55633",
+      "eqasim-java-bs": "cb7e81fa3851c1338cfd80921c9d55aaeef2e600"
+    },
+    "run_yml_sha256": "03379523b1d8908d1d9ae9c55c3769c4009baf8c8be9212e2225d43679313125",
+    "tool_blob": "600f1654460d2115aaac37340beb9e95d138b89b",
+    "environment": {
+      "conda": "312/312",
+      "pip": "9/14",
+      "git_pins": 1,
+      "extra_conda": 0,
+      "offenders": [
+        "pip py-spy 0.4.2 wanted, not installed",
+        "pip pdfplumber 0.11.9 wanted, not installed",
+        "pip pdfminer.six 20251230 wanted, not installed",
+        "pip pypdfium2 5.7.1 wanted, not installed",
+        "pip cryptography 46.0.7 wanted, not installed"
+      ],
+      "checked": true,
+      "platform": "linux",
+      "overridden": true,
+      "prefix": "<run server home>/miniforge3/envs/eqasim",
+      "python": "<run server home>/miniforge3/envs/eqasim/bin/python"
+    }
+  },
+  "launches": [
+    {
+      "time": "2026-11-26T15:23:10+01:00",
+      "pid": 1167973,
+      "log": "RUN_DIR/logs/run_20261126T152310.log",
+      "run_yml_sha256": "03379523b1d8908d1d9ae9c55c3769c4009baf8c8be9212e2225d43679313125",
+      "gate": "gated",
+      "java_home": "<run server home>/tools/jdk-25.0.3+9",
+      "conda_env": "eqasim",
+      "commits": {
+        "eqasim-bs": "0681e38be157032619b8a88067f6df71cca55633",
+        "eqasim-java-bs": "cb7e81fa3851c1338cfd80921c9d55aaeef2e600"
+      },
+      "tool_blob": "600f1654460d2115aaac37340beb9e95d138b89b",
+      "check": {
+        "passed": true,
+        "lines": [
+          "launcher [explain] block complete, no gate abort: # 41 stages: 1 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 40 hits",
+          "braunschweig.popsim.stage: HIT"
+        ]
+      }
+    }
+  ]
+}

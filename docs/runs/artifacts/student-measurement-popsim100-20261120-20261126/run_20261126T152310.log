@@ -1,0 +1,153 @@
+[isolated-run] run=popsim100_20261120_students eqasim-bs=0681e38be157032619b8a88067f6df71cca55633 eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 start=2026-11-26T15:23:10+01:00
+15:23:11 │ INFO    │ braunschweig     │ Run log: logs/run_20261126T152311.log
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] working_directory: (added) ../cache
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] run: (added) ['braunschweig.analysis.synthesis.students_vs_srv']
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] config.sampling_rate: (added) 1.0
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] config.output_path: (added) ../output
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] config.analysis_working_directory: (added) ../cache
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] config.output_prefix: (added) braunschweig_100pct_popsim20261120_
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] config.matsim_last_iteration: (added) 0
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] config.braunschweig.population.popsim.work_dir: (added) ../popsim_work
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] config.braunschweig.population.popsim.max_cells: (added) 750
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] config.braunschweig.population.popsim.num_workers: (added) auto
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] config.cache_share_enabled: True -> False
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] config.cache_share_export: (added) False
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] config.cache_share_recompute: (added) []
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] config.braunschweig.chainsolvers.processes: 0 -> 16
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] config.synpp_expected_stale_stages: [] -> ['braunschweig.analysis.synthesis.students_vs_srv']
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] composed configs/base_bs.yml + RUN_DIR/run.yml: 3 overridden, 12 added
+15:23:11 │ INFO    │ braunschweig     │ [config-merge] merged config written to ../cache/.merged_config.yml
+15:23:11 │ INFO    │ resources        │ [resources] machine: 64 cores (sched_getaffinity), 94.3 GB (psutil)
+15:23:11 │ INFO    │ resources        │ [resources] budget for this run: 62 cores, 86.3 GB
+15:23:11 │ INFO    │ resources        │ [resources]   java_memory = 86G [clamped] (configured 100G exceeds the memory budget; clamped to 86G)
+15:23:11 │ INFO    │ resources        │ [resources]   processes = 32 [pinned] (configured value fits the resource budget (cores))
+15:23:11 │ INFO    │ resources        │ [resources]   braunschweig.population.popsim.num_workers = 14 [derived] (derived from the resource budget (14 workers at 6 GB each))
+15:23:11 │ INFO    │ resources        │ [resources]   braunschweig.chainsolvers.processes = 16 [reported] (startup preview against the CORE budget only (62 cores); the configured pin 16 is the ceiling. The memory bound (braunschweig.chainsolvers.worker_memory_gb = 1.09 GB/worker, against this process's LIVE RSS) is applied at stage start, not here, so the final count can be LOWER than this preview; the stage's own '[resources] braunschweig.chainsolvers.processes: ... -> ceiling N workers' log line is the source of truth for the value actually used.)
+15:23:11 │ WARNING │ resources        │ [resources] processes is pinned to 32 but 62 cores are budgeted on this machine; the run will leave capacity unused. This warning is EXPECTED on the canonical production configuration (configs/base_bs.yml pins processes: 32 against a 62-core budget on the run server) -- do not act on it there. processes is RESULT-AFFECTING, not operational: raising it changes the np.array_split person-chunk partition and the drawn seed count at synthesis/population/matched.py (parallel_statistical_matching) and synthesis/population/spatial/secondary/locations.py (execute), i.e. the statistical-matching and secondary-location realisations. Both sites declare it HASHED (not volatile), so raising the pin correctly devalidates those two stages and they recompute by themselves -- the recompute is the cost of a changed realisation, not a defect (ADR-0126, Decision 3). Raise the pin only deliberately.
+15:23:12 │ INFO    │ provenance       │ [provenance] pipeline_commit=0681e38b eqasim_java_commit=cb7e81f config=RUN_DIR/cache/.merged_config.yml sampling_rate=1.0 hts=entd random_seed=1234 population.method=popsim_mid python=3.10.10
+15:23:12 │ INFO    │ provenance       │ [provenance] record written to ../cache/run_provenance_20261126T142312Z.json
+15:23:12 │ INFO    │ braunschweig     │ [run_dirs] created 1 (../output), already present 1 (working_directory), not configured 0 (-)
+15:23:12 │ INFO    │ braunschweig     │ [cache_share] disabled (no-op).
+15:23:12 │ INFO    │ synpp_deterministic │ [synpp deterministic] patched synpp 1.6.2 process_stages: implicit config propagation now topological and order-independent (stage hashes stable across processes)
+15:23:12 │ INFO    │ numexpr.utils    │ Note: NumExpr detected 64 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+15:23:12 │ INFO    │ numexpr.utils    │ NumExpr defaulting to 16 threads.
+15:23:21 │ INFO    │ braunschweig     │ [explain] STALE    braunschweig.analysis.synthesis.students_vs_srv  [required, not_in_meta, cache_missing]
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.data.alkis
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.data.bbsr.regiostar
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.data.building_potentials
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.data.buildings
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.data.census.employees
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.data.census.employment
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.data.census.pendler
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.data.external_workplaces
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.data.inkar.household_income
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.data.schools.facilities
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.data.schools.kita_facilities
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.data.schools.university_facilities
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.data.verbindungen.work_od
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.data.verbindungen.zones
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.gravity.model
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.locations.synthesis.replacement_education_gravity
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.locations.work
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.popsim.commute_distance
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.popsim.completed_donor
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.popsim.enriched_adapter
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.popsim.stage
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.popsim.trips_stage
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.synthesis.commute_day.home_office_donors_stage
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.synthesis.commute_day.state_stage
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.synthesis.commute_day.trips_day_stage
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.synthesis.day_absence.absence_stage
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.synthesis.locations.education_gravity
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.synthesis.locations.home_cell
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.synthesis.spatial.home_zones
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      data.spatial.municipalities
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      eqasim_common.data.osm.chunked
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      eqasim_common.data.osm.locations
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      eqasim_common.data.osm.osmconvert
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      eqasim_common.data.population.raw
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      eqasim_common.data.spatial.iris
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      eqasim_common.gravity.distance_matrix
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      eqasim_common.locations.education
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      eqasim_common.spatial.codes
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      synthesis.population.sampled
+15:23:21 │ INFO    │ braunschweig     │ [explain] HIT      synthesis.population.spatial.primary.candidates
+15:23:21 │ INFO    │ braunschweig     │ [explain] # 41 stages: 1 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 40 hits
+15:23:21 │ INFO    │ monitoring.recorder │ [monitoring] recording every 30 s to ../cache/monitoring/resource_series_20261126T152321.jsonl
+15:23:23 │ INFO    │ synpp            │ Found 41 stages
+15:23:23 │ INFO    │ synpp            │ Found pipeline metadata in RUN_DIR/cache/pipeline.json
+15:23:29 │ INFO    │ synpp            │ Stale before execution: 1 stages, decided for their own reasons
+15:23:29 │ INFO    │ synpp            │ - braunschweig.analysis.synthesis.students_vs_srv__d9f39616321eb1fcdbed6b8237916e66 [required, not_in_meta, cache_missing]
+15:23:29 │ INFO    │ synpp            │ Successfully reset meta data
+15:23:29 │ INFO    │ synpp            │ Executing stage braunschweig.analysis.synthesis.students_vs_srv__d9f39616321eb1fcdbed6b8237916e66 ...
+15:23:29 │ INFO    │ synpp            │ Reasons for braunschweig.analysis.synthesis.students_vs_srv__d9f39616321eb1fcdbed6b8237916e66: required, not_in_meta, cache_missing
+15:23:29 │ INFO    │ analysis.synthesis.students_vs_srv │ [students_vs_srv] SrV table eqasim-data/data/braunschweig/srv/srv2023_student_parameters.csv: 66 rows
+15:23:29 │ INFO    │ analysis.synthesis.students_vs_srv │ [students_vs_srv] SrV table eqasim-data/data/braunschweig/srv/srv2023_student_share_by_kreis.csv: 9 rows
+15:23:29 │ INFO    │ analysis.synthesis.students_vs_srv │ [students_vs_srv] SrV table eqasim-data/data/braunschweig/srv/srv2023_young_adult_status_by_kreis.csv: 27 rows
+15:23:29 │ INFO    │ synpp            │ Loading cache for braunschweig.popsim.enriched_adapter__21c21a5505931989f689182991015f41 ...
+15:23:31 │ INFO    │ synpp            │ Loading cache for braunschweig.synthesis.commute_day.trips_day_stage__6a49e835d1a2b7551a8224092075bb75 ...
+15:23:56 │ INFO    │ synpp            │ Loading cache for braunschweig.synthesis.day_absence.absence_stage__05a64177e87d82da2651643af5d12910 ...
+15:23:56 │ INFO    │ synpp            │ Loading cache for braunschweig.synthesis.locations.home_cell__381029e3848c710762147f5018aa4852 ...
+15:23:57 │ INFO    │ synpp            │ Loading cache for braunschweig.popsim.completed_donor__693b5a0a42bac73ddcc522d33254e434 ...
+15:23:58 │ INFO    │ analysis.synthesis.students_vs_srv │ [students_vs_srv] sampling_rate=1.0, max_unmatched_home_share=0.05, portal_layer_enabled=True; writing to ../output/analysis/students_vs_srv
+15:23:59 │ INFO    │ analysis.spatial │ Extracted vg250-ew_12-31.utm32s.gpkg.ebenen/vg250-ew_ebenen_1231/DE_VG250.gpkg from RUN_DIR/eqasim-bs/eqasim-data/data/germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip (sha256 51a31279653edc1488c98484ddbc346dcd9f77cf0b1d6a75cd2179da57ed962f) into RUN_DIR/eqasim-bs/.cache/vg250/DE_VG250.gpkg
+15:24:08 │ INFO    │ analysis.spatial │ assign_geographies: 558179 homes; Kreis matched 558177 (100.00%), unmatched 2; Gemeinde unmatched 2
+15:24:08 │ WARNING │ analysis.student_measurement │ [student measurement] readable P_TAET (99 / missing is never 'not a student'): primary 1127877/1129395 (99.9%), excluded 1518 (0.1%)
+15:24:08 │ INFO    │ analysis.student_measurement │ [student measurement] students with a known age (no age, no adult): primary 27657/27657 (100.0%), excluded 0 (0.0%)
+15:24:15 │ INFO    │ popsim.attributes │ [braunschweig.popsim.attributes] map_pt_ticket_group: deutschlandticket 3854 (14.16%), other_flatrate 17670 (64.93%), not_flatrate 5689 (20.91%) [four-group split of not_flatrate, percentages of all persons: never_pt 1124 (4.13%), occasional_ticket 4565 (16.78%)]
+15:24:15 │ INFO    │ popsim.attributes │ [braunschweig.popsim.attributes] map_pt_ticket_group: deutschlandticket 1 (25.00%), other_flatrate 3 (75.00%), not_flatrate 0 (0.00%) [four-group split of not_flatrate, percentages of all persons: never_pt 0 (0.00%), occasional_ticket 0 (0.00%)]
+15:24:15 │ INFO    │ analysis.student_measurement │ [student measurement] household_type (a household member of unknown age leaves it undetermined): primary 27213/27213 (100.0%), excluded 0 (0.0%)
+15:24:15 │ INFO    │ analysis.student_measurement │ [student measurement] lives_with_person_18_years_older (a household member of unknown age leaves it undetermined): primary 27213/27213 (100.0%), excluded 0 (0.0%)
+15:24:15 │ INFO    │ analysis.plan_structure │ [plan structure model] home Kreis resolved for 27213/27213 persons (100.00%), unresolved 0 (0.00%)
+15:24:15 │ INFO    │ analysis.plan_structure │ [plan structure model] harmonised 27213 persons (22307 mobile, 81.97%; 2070 away from home, 7.61%) and 82897 trips; invalid departure time 0, invalid arrival time 0
+<run server home>/miniforge3/envs/eqasim/lib/python3.10/site-packages/pandas/core/arraylike.py:402: RuntimeWarning: invalid value encountered in floor
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+<run server home>/miniforge3/envs/eqasim/lib/python3.10/site-packages/pandas/core/arraylike.py:402: RuntimeWarning: invalid value encountered in floor
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+<run server home>/miniforge3/envs/eqasim/lib/python3.10/site-packages/pandas/core/arraylike.py:402: RuntimeWarning: invalid value encountered in floor
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+15:24:16 │ INFO    │ calibration.student_parameters │ [student_parameters] first_departure_hour: primary 22307/22307 (100.0%), excluded 0 (0.0%)
+15:24:16 │ INFO    │ calibration.student_parameters │ [student_parameters] last_arrival_home_hour: primary 22307/22307 (100.0%), excluded 0 (0.0%)
+15:24:16 │ INFO    │ calibration.student_parameters │ [student_parameters] time_at_education: primary 9598/9598 (100.0%), excluded 0 (0.0%)
+15:24:16 │ INFO    │ calibration.student_parameters │ [student_parameters] arrival_band: primary 9598/9598 (100.0%), excluded 0 (0.0%)
+15:24:16 │ INFO    │ analysis.student_measurement │ [student measurement] first_departure_hour (a missing or negative time excludes the student from this parameter only): primary 22307/22307 (100.0%), excluded 0 (0.0%)
+15:24:16 │ INFO    │ analysis.student_measurement │ [student measurement] last_arrival_home_hour (a missing or negative time excludes the student from this parameter only): primary 22307/22307 (100.0%), excluded 0 (0.0%)
+15:24:16 │ INFO    │ analysis.student_measurement │ [student measurement] time_at_education (a missing or negative time excludes the student from this parameter only): primary 9598/9598 (100.0%), excluded 0 (0.0%)
+15:24:16 │ INFO    │ analysis.student_measurement │ [student measurement] arrival_band (a missing or negative time excludes the student from this parameter only): primary 9598/9598 (100.0%), excluded 0 (0.0%)
+15:24:16 │ INFO    │ analysis.student_measurement │ [student measurement] home Kreis: primary 27213/27213 adult students (100.0%), no home Kreis 0 (0.0%)
+15:24:16 │ INFO    │ analysis.student_measurement │ [student measurement] 27213 adult students (25143 present, 2070 away all day) of 1129395 persons; per Kreis {'03101': 10179, '03102': 2605, '03103': 2940, '03151': 2905, '03153': 2822, '03154': 1492, '03157': 2203, '03158': 2067}
+15:24:16 │ INFO    │ analysis.student_measurement │ [student measurement] comparison universe: 24273/27213 adult students (89.2%) live in the 7 surveyed Kreise; Wolfsburg (model only) 2940, no home Kreis 0, other 0
+15:24:16 │ INFO    │ analysis.student_measurement │ [student measurement] cells: 66 in the vocabulary; missing from the SrV table 0 (NaN SrV columns), SrV only by design (bases ['other_adults_all']) 2
+15:24:18 │ INFO    │ analysis.student_measurement │ [student measurement] student level: known age: primary 1129395/1129395 (100.0%), excluded 0 (0.0%)
+15:24:18 │ WARNING │ analysis.student_measurement │ [student measurement] student level: readable P_TAET among the adults (99 / missing answers nothing about the activity): primary 941359/942846 (99.8%), excluded 1487 (0.2%)
+15:24:18 │ WARNING │ analysis.student_measurement │ [student measurement] student level: home Kreis: primary 941356/941359 (100.0%), excluded 3 (0.0%)
+15:24:19 │ INFO    │ analysis.student_measurement │ [student measurement] student level: 0 surveyed Kreis / region code(s) missing from the SrV table (NaN SrV columns) []
+15:24:19 │ INFO    │ analysis.student_measurement │ [student measurement] student level, region 03ZGB: 24273 adult students of 836457 adults, 24273 persons expanded at sampling rate 1.0; present: share 0.0284
+15:24:19 │ INFO    │ analysis.student_measurement │ [student measurement] young-adult status: known age: primary 1129395/1129395 (100.0%), excluded 0 (0.0%)
+15:24:19 │ WARNING │ analysis.student_measurement │ [student measurement] young-adult status: readable P_TAET among the adults (99 / missing answers nothing about the activity): primary 941359/942846 (99.8%), excluded 1487 (0.2%)
+15:24:19 │ WARNING │ analysis.student_measurement │ [student measurement] young-adult status: home Kreis: primary 941356/941359 (100.0%), excluded 3 (0.0%)
+15:24:20 │ INFO    │ analysis.student_measurement │ [student measurement] Zensus employed 20-29: ZGB Kreise found (missing []; NaN there): primary 8/8 (100.0%), excluded 0 (0.0%)
+15:24:20 │ INFO    │ analysis.student_measurement │ [student measurement] young-adult status: 0 surveyed Kreis / region code(s) missing from the SrV table (NaN SrV columns) []
+15:24:20 │ INFO    │ analysis.student_measurement │ [student measurement] young-adult status: 110570 persons aged 20 to 29 in the surveyed Kreise (101416 present)
+15:24:20 │ WARNING │ analysis.student_measurement │ [student measurement] readable P_TAET (99 / missing is never 'not a student'): primary 1127877/1129395 (99.9%), excluded 1518 (0.1%)
+15:24:20 │ INFO    │ analysis.student_measurement │ [student measurement] students with a known age (no age, no adult): primary 27657/27657 (100.0%), excluded 0 (0.0%)
+15:24:20 │ INFO    │ analysis.student_measurement │ [student measurement] work class of 27213 adult students: employed 0 (0.0%); not employed but in an employed class ['vollzeit', 'teilzeit', 'geringfuegig', 'in_ausbildung'] of the work control 0 (0.0%)
+15:24:20 │ INFO    │ analysis.synthesis.students_vs_srv │ [students_vs_srv] weekend trace RUN_DIR/cache/braunschweig.popsim.completed_donor__693b5a0a42bac73ddcc522d33254e434.cache/weekend_plan_match_trace.parquet: 485709 rows
+15:24:20 │ INFO    │ analysis.synthesis.students_vs_srv │ [students_vs_srv] diary trace RUN_DIR/cache/braunschweig.popsim.completed_donor__693b5a0a42bac73ddcc522d33254e434.cache/diary_plan_match_trace.parquet: 485709 rows
+15:24:23 │ INFO    │ analysis.student_measurement │ [student measurement] plan source, match path of the re-drawn plans: primary 9638/9638 (100.0%), unresolved 0 (0.0%)
+15:24:23 │ WARNING │ analysis.student_measurement │ [student measurement] plan source, donor of the re-drawn plans found with a readable P_TAET (not found 0, unreadable 1): primary 9637/9638 (100.0%), excluded 1 (0.0%)
+15:24:23 │ INFO    │ analysis.synthesis.students_vs_srv │ [students_vs_srv] exclusion report: RUN_DIR/cache/braunschweig.analysis.synthesis.students_vs_srv__d9f39616321eb1fcdbed6b8237916e66.cache/students_vs_srv_report.json
+15:24:23 │ INFO    │ analysis.synthesis.students_vs_srv │ [students_vs_srv] wrote 5 tables, summary.md and provenance.json to ../output/analysis/students_vs_srv (measurement, not validation)
+15:24:24 │ INFO    │ synpp            │ Writing cache for braunschweig.analysis.synthesis.students_vs_srv__d9f39616321eb1fcdbed6b8237916e66
+15:24:24 │ INFO    │ synpp            │ Output hash for braunschweig.analysis.synthesis.students_vs_srv__d9f39616321eb1fcdbed6b8237916e66: 1 files, 19862 bytes, 0.0 s; no previous output hash recorded
+15:24:24 │ INFO    │ synpp            │ Finished running braunschweig.analysis.synthesis.students_vs_srv__d9f39616321eb1fcdbed6b8237916e66.
+15:24:24 │ INFO    │ synpp            │ Pipeline progress: 1/1 known stale (100.00%)
+15:24:24 │ INFO    │ synpp            │ Executed 1 stages; early cutoff kept 0 stages cached (descendants of stale stages that did not execute)
+15:24:24 │ INFO    │ synpp            │ - executed braunschweig.analysis.synthesis.students_vs_srv__d9f39616321eb1fcdbed6b8237916e66 [required, not_in_meta, cache_missing]
+15:24:25 │ INFO    │ braunschweig     │ [cache_share] auto-export disabled (cache_share_enabled false).
+15:24:25 │ INFO    │ monitoring.recorder │ [monitoring] recording stopped: 2 sample(s) written, 0 failed.
+15:24:25 │ INFO    │ monitoring.summary │ [monitoring] summary written: ../cache/monitoring/resource_series_20261126T152321.summary.json and ../cache/monitoring/resource_series_20261126T152321.summary.md
+WARNING! osmconvert of at least version 0.8.x is recommended!
+WARNING! osmconvert of at least version 0.8.x is recommended!
+Codeplan
+[isolated-run] run=popsim100_20261120_students eqasim-bs=0681e38be157032619b8a88067f6df71cca55633 eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 exit=0 end=2026-11-26T15:24:26+01:00
