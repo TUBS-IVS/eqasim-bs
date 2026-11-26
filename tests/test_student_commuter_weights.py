@@ -1,9 +1,11 @@
-"""Tests for braunschweig.calibration.student_commuter_weights (#140, Phase 2, Task 4).
+"""Tests for braunschweig.calibration.student_commuter_weights (#140, Phase 2, Tasks 4 and 5).
 
 The student table T is mapped onto the destination groups of the committed SrV reference
 (srv2023_student_education_destination.csv) and compared with it. Inputs are small synthetic
 frames with hand-computed expectations; one test reads the committed reference to prove that
-both sides agree on the destination-group vocabulary.
+both sides agree on the destination-group vocabulary. The grid search is tested on a toy whose
+reference is built from a known weight triple and mover share (:func:`reference_from`), so the
+calibration must recover them.
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+import yaml
 
 from braunschweig.calibration import srv_student_reference as SR
 from braunschweig.calibration import student_commuter_weights as W
@@ -264,3 +267,219 @@ def test_committed_reference_is_accepted_and_matches_the_model_vocabulary():
     assert 0.0 < fit.objective <= 1.0
     floors = reference.groupby("home_group")["noise_floor_tvd_95"].first().loc[list(GROUPS)]
     assert floors.min() <= fit.noise_floor <= floors.max()
+
+
+# --- the grid search (Task 5) -----------------------------------------------------------------------------
+
+# Toy region Braunschweig (BS), site Kreis S, no-site Kreise N and M. Uni 1 has site U1 in BS (enrollment 1000,
+# CHE total 500 -> scale 2), Uni 2 site U2 in S (enrollment 400, CHE total 250 -> scale 1.6), Uni H a
+# surrounding site H1 in Region Hannover (outside LSN, unscaled). Each pair loads on ONE anchor, so with the
+# triple (a, b, c) and mover share s (movers of U2: 160 - 80a - 40b - 40c) the rows are, by hand:
+#   BS: own 1000 - 200a - 100b - 100c, site_kreis_S 80a + s * movers, region_hannover 100b
+#   S:  own 400 - 80a - 40b - 40c - s * movers, site_kreis_03101 200a, region_hannover 50c
+#   N:  site_kreis_03101 100b, site_kreis_S 40c, region_hannover 100a
+#   M:  site_kreis_03101 100c, site_kreis_S 40b, region_hannover 50b
+# N and M are pooled 1 : 3 (MIX) into the no-site group. Eight free shares for four parameters: the triple
+# and the mover share are identifiable. (0, 0, 0) leaves N and M without students (their fit is undefined).
+SITE_KREISE = frozenset({BS, "S"})
+MOVER_SITE_KREISE = ("S",)
+MIX = pd.Series({BS: 2.0, "S": 1.0, "N": 1.0, "M": 3.0})
+_SHORT, _MIDDLE, _LONG = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)
+
+
+def _toy_builder_inputs():
+    origins = {"Uni 1": {BS: 300, "S": 100, "N": 50, "M": 50}, "Uni 2": {BS: 50, "S": 150, "N": 25, "M": 25},
+               "Uni H": {BS: 100, "S": 50, "N": 100, "M": 50}}
+    cells = pd.DataFrame([(kreis, institution, persons, T.SOURCE_BOTH_VIEWS, float(persons))
+                          for institution, by_kreis in origins.items() for kreis, persons in by_kreis.items()],
+                         columns=T.CELL_COLUMNS)
+    sites = pd.DataFrame([
+        {"destination_id": "U1", "che_institution": "Uni 1", "institution": "LSN Uni 1", "site_kreis_ars5": BS,
+         "scope": T.SCOPE_LOCAL, "students_persons": 1000.0},
+        {"destination_id": "U2", "che_institution": "Uni 2", "institution": "LSN Uni 2", "site_kreis_ars5": "S",
+         "scope": T.SCOPE_LOCAL, "students_persons": 400.0},
+        {"destination_id": "H1", "che_institution": "Uni H", "institution": "Uni H",
+         "site_kreis_ars5": SR.REGION_HANNOVER_ARS5, "scope": T.SCOPE_SURROUNDING, "students_persons": np.nan}])
+    coefficients = {(BS, "U1"): _SHORT, (BS, "U2"): _SHORT, (BS, "H1"): _MIDDLE,
+                    ("S", "U1"): _SHORT, ("S", "U2"): _SHORT, ("S", "H1"): _LONG,
+                    ("N", "U1"): _MIDDLE, ("N", "U2"): _LONG, ("N", "H1"): _SHORT,
+                    ("M", "U1"): _LONG, ("M", "U2"): _MIDDLE, ("M", "H1"): _MIDDLE}
+    pairs = pd.DataFrame([{"ars5": kreis, "destination_id": site, "distance_km": 10.0, "coeff_short": c[0],
+                           "coeff_middle": c[1], "coeff_long": c[2]} for (kreis, site), c in coefficients.items()])
+    totals = pd.Series({"Uni 1": 500, "Uni 2": 250, "Uni H": 1000}, dtype="int64")
+    return cells, totals, sites, pairs, [BS, "S", "N", "M"]
+
+
+@pytest.fixture(scope="module")
+def toy_build():
+    """``CommuterWeights -> T`` on the toy, memoised: the grid searches of several tests share the builds."""
+    inputs = _toy_builder_inputs()
+    cache = {}
+
+    def build(weights):
+        key = tuple(float(value) for value in weights)
+        if key not in cache:
+            cache[key] = T.build_od_table(*inputs, weights=T.CommuterWeights(*key))[0]
+        return cache[key].copy()
+    return build
+
+
+def reference_from(build, weights, noise_floor, mover_share=0.0):
+    """A reference in the committed layout whose shares are the toy's implied shares at a known parameter set.
+
+    ``n_unweighted`` and ``se_share`` differ per row so that a column mix-up in the fit table shows; one
+    pooled ``region`` row is added, as in the committed table, and must never be fitted.
+    """
+    od = build(weights)
+    if mover_share:
+        od = T.apply_movers(od, mover_share, MOVER_SITE_KREISE, BS)
+    implied = W.implied_shares(od, SITE_KREISE, MIX)
+    counter = np.arange(len(implied)) + 1
+    reference = implied.assign(n_persons_group=100, n_unweighted=counter, weight_sum=1.0,
+                               share=implied["implied_share"], n_effective=50.0, se_share=0.001 * counter,
+                               noise_floor_tvd_95=noise_floor)
+    pooled = reference.iloc[[0]].assign(home_group=SR.HOME_GROUP_ALL, share=1.0)
+    return pd.concat([reference, pooled], ignore_index=True)[SR.DESTINATION_COLUMNS]
+
+
+def _slow_fit(build, weights, mover_share, reference):
+    od = build(weights)
+    if mover_share > 0:
+        od = T.apply_movers(od, mover_share, MOVER_SITE_KREISE, BS)
+    return W.fit_distance(W.implied_shares(od, SITE_KREISE, MIX), reference)
+
+
+def test_grid_has_only_non_increasing_triples():
+    grid = W.weight_grid(0.5)
+    assert len(grid) == 10
+    assert len(set(grid)) == 10 and all(isinstance(w, T.CommuterWeights) for w in grid)
+    assert all(w.short >= w.middle >= w.long and set(w) <= {0.0, 0.5, 1.0} for w in grid)
+    assert len(W.weight_grid(0.05)) == 1771                    # C(23, 3) non-increasing triples on 21 values
+    with pytest.raises(ValueError, match="step"):
+        W.weight_grid(0.3)                                      # 1 / 0.3 is no whole number: 1 never reached
+
+
+def test_known_optimum_is_recovered_on_a_toy(toy_build):
+    # About 15 s: recovery at the production grid step 0.05 needs all 1,771 builds of the toy (the builder lays
+    # out its inputs on every call, about 10 ms); the memo hands these builds to the coarser grids below.
+    ref = reference_from(toy_build, T.CommuterWeights(0.6, 0.3, 0.1), noise_floor=0.001)
+    res = W.calibrate(toy_build, ref, SITE_KREISE, MIX, grid_step=0.05)
+    assert tuple(res.optimum) == pytest.approx((0.6, 0.3, 0.1)) and res.decided
+    assert res.stage == "weights" and res.mover_share == 0.0 and res.reasons == []
+    assert res.objective == pytest.approx(0.0, abs=1e-12) and res.noise_floor == pytest.approx(0.001)
+    assert not W.stage_two_due(res)
+
+    table = res.table
+    assert list(table.columns) == W.CALIBRATION_COLUMNS and len(table) == 1771
+    assert (table["stage"] == "weights").all() and (table["mover_share"] == 0.0).all()
+    # (0, 0, 0) leaves Kreis N without students: its fit is undefined (NaN) and never the optimum.
+    zero = table[(table["short"] == 0) & (table["middle"] == 0) & (table["long"] == 0)]
+    assert len(zero) == 1 and zero["objective_tvd"].isna().all() and not zero["within_noise_floor"].any()
+    within = table[table["within_noise_floor"]]
+    assert (within["objective_tvd"] <= res.objective + res.noise_floor).all()
+    for name in ("short", "middle", "long"):
+        assert res.ranges[name] == (within[name].min(), within[name].max())
+        low, high = res.ranges[name]
+        assert low <= getattr(res.optimum, name) <= high and high - low <= 0.2
+    assert set(res.ranges) == {"short", "middle", "long"}
+
+    proposal = yaml.safe_load(W.config_snippet(res))
+    assert proposal == {"student_commuter_weights": {"short": 0.6, "middle": 0.3, "long": 0.1}}
+
+
+def test_flat_fit_gives_ranges_and_no_snippet(toy_build):
+    # A noise floor of 0.5 puts most of the grid within reach of the optimum: the survey cannot decide.
+    ref = reference_from(toy_build, T.CommuterWeights(0.6, 0.3, 0.1), noise_floor=0.5)
+    res = W.calibrate(toy_build, ref, SITE_KREISE, MIX, grid_step=0.1, max_flat_range=0.2)
+    assert tuple(res.optimum) == pytest.approx((0.6, 0.3, 0.1))
+    assert not res.decided and W.config_snippet(res) is None
+    too_wide = [name for name, (low, high) in res.ranges.items() if high - low > 0.2]
+    assert too_wide and len(res.reasons) == len(too_wide)      # interior optimum: one reason per wide range
+    assert res.table["within_noise_floor"].sum() > 1
+
+
+@pytest.fixture(scope="module")
+def bound_reference(toy_build):
+    """Reference of the triple (1.0, 0.3, 0.1) with mover share 0.4: the short weight sits at its bound."""
+    return reference_from(toy_build, T.CommuterWeights(1.0, 0.3, 0.1), noise_floor=0.001, mover_share=0.4)
+
+
+@pytest.fixture(scope="module")
+def bound_stage_one(toy_build, bound_reference):
+    return W.calibrate(toy_build, bound_reference, SITE_KREISE, MIX, grid_step=0.1)
+
+
+@pytest.fixture(scope="module")
+def bound_stage_two(toy_build, bound_reference):
+    return W.calibrate_movers(toy_build, bound_reference, SITE_KREISE, MIX, MOVER_SITE_KREISE, BS, grid_step=0.1,
+                              mover_step=0.1)
+
+
+def test_optimum_at_a_bound_is_undecided_and_makes_stage_two_due(bound_stage_one):
+    # Movers living in Braunschweig look like extra short-distance commuting when the mover share is held at 0.
+    res = bound_stage_one
+    assert res.optimum.short == 1.0 and W.stage_two_due(res)
+    assert not res.decided and res.reasons and W.config_snippet(res) is None
+    assert res.objective > 0.0                                  # no triple alone reproduces the movers
+
+
+def test_stage_two_recovers_a_known_mover_share(bound_stage_two):
+    res = bound_stage_two
+    assert res.stage == "weights_and_movers"
+    assert tuple(res.optimum) == pytest.approx((1.0, 0.3, 0.1)) and res.mover_share == pytest.approx(0.4)
+    assert res.objective == pytest.approx(0.0, abs=1e-12)
+    table = res.table
+    assert list(table.columns) == W.CALIBRATION_COLUMNS and (table["stage"] == res.stage).all()
+    assert table["mover_share"].tolist() == pytest.approx([i / 10 for i in range(11)])   # one row per share
+    assert set(res.ranges) == {"short", "middle", "long", "mover_share"}
+    low, high = res.ranges["mover_share"]
+    assert low <= 0.4 <= high and high - low <= 0.2
+    assert not res.decided and W.config_snippet(res) is None    # the short weight still sits at the bound 1
+
+
+def test_stage_two_objective_equals_apply_movers_implied_shares_and_fit_distance(toy_build):
+    # Stage two evaluates the mover shares by the linear structure of the movers step; this must equal the
+    # direct route (apply_movers, implied_shares, fit_distance) at every share. 0.25 lies off the grid, so
+    # the objectives are not 0.
+    ref = reference_from(toy_build, T.CommuterWeights(0.6, 0.3, 0.1), noise_floor=0.001, mover_share=0.25)
+    res = W.calibrate_movers(toy_build, ref, SITE_KREISE, MIX, MOVER_SITE_KREISE, BS, grid_step=0.1,
+                             mover_step=0.1)
+    share = res.table["mover_share"].to_numpy(dtype=float)
+    rows = res.table[np.isclose(share, 0.0) | np.isclose(share, 0.3) | np.isclose(share, 1.0)]
+    assert len(rows) == 3
+    columns = {SR.HOME_GROUP_BRAUNSCHWEIG: "tvd_braunschweig", SR.HOME_GROUP_SITE: "tvd_other_site_kreis",
+               SR.HOME_GROUP_NO_SITE: "tvd_no_site_kreis"}
+    for row in rows.itertuples(index=False):
+        fit = _slow_fit(toy_build, T.CommuterWeights(row.short, row.middle, row.long), row.mover_share, ref)
+        assert row.objective_tvd > 0.0
+        assert row.objective_tvd == pytest.approx(fit.objective, abs=1e-9)
+        for group, value in fit.by_group.set_index("home_group")["total_variation_distance"].items():
+            assert getattr(row, columns[group]) == pytest.approx(value, abs=1e-9)
+
+
+def test_fit_table_lists_every_reference_cell_with_the_implied_share(toy_build, bound_reference, bound_stage_one,
+                                                                     bound_stage_two):
+    ref, stage_one, stage_two = bound_reference, bound_stage_one, bound_stage_two
+    cells = ref[ref["home_group"] != SR.HOME_GROUP_ALL].reset_index(drop=True)
+
+    one = W.fit_table(stage_one, toy_build, ref, SITE_KREISE, MIX, MOVER_SITE_KREISE, BS)
+    assert list(one.columns) == W.FIT_COLUMNS and (one["stage"] == "weights").all()
+    assert list(zip(one["home_group"], one["destination_group"])) == \
+        list(zip(cells["home_group"], cells["destination_group"]))
+    assert one["srv_share"].tolist() == pytest.approx(cells["share"].tolist())
+    assert one["srv_n_unweighted"].tolist() == cells["n_unweighted"].tolist()
+    assert one["srv_se_share"].tolist() == pytest.approx(cells["se_share"].tolist())
+    # Stage one sits at the triple only (mover share 0): the implied shares are those of the optimum's own T.
+    implied = W.implied_shares(toy_build(stage_one.optimum), SITE_KREISE, MIX)
+    assert one["implied_share"].tolist() == pytest.approx(implied["implied_share"].tolist(), abs=1e-12)
+    assert one["difference_pp"].tolist() == pytest.approx(
+        (100.0 * (one["implied_share"] - one["srv_share"])).tolist())
+    assert one["difference_pp"].abs().max() > 0.0
+    unreachable = one[~one["reachable"]]
+    assert ((unreachable["home_group"] == SR.HOME_GROUP_NO_SITE)
+            & (unreachable["destination_group"] == SR.DEST_OWN)).any()
+
+    # Stage two applies the optimum's mover share: the toy reference is reproduced cell by cell.
+    two = W.fit_table(stage_two, toy_build, ref, SITE_KREISE, MIX, MOVER_SITE_KREISE, BS)
+    assert (two["stage"] == "weights_and_movers").all()
+    assert two["implied_share"].tolist() == pytest.approx(two["srv_share"].tolist(), abs=1e-9)
