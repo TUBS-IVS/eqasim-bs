@@ -153,3 +153,46 @@ def test_set_param_value_must_be_text(tmp_path):
     path = _config(tmp_path, QSIM_CONFIG)
     with pytest.raises(TypeError):
         cm.set_param(path, "qsim", "numberOfThreads", 8)
+
+
+# A module with a parameter set, as the real DiscreteModeChoice module has (eqasim-bs#679): the same name is a direct
+# parameter and a parameter of the set, and `onlyInSet` exists only inside the set.
+SET_CONFIG = ('<config>\n\t<module name="withSets" >\n\t\t<param name="constraints" value="A, B" />\n'
+              '\t\t<parameterset type="x:Y" >\n\t\t\t<param name="constraints" value="inner" />\n'
+              '\t\t\t<param name="onlyInSet" value="1" />\n\t\t</parameterset>\n'
+              '\t\t<param name="late" value="after the set" />\n\t</module>\n</config>\n')
+
+
+def test_read_param_reads_the_direct_parameter_of_a_module_with_parameter_sets(tmp_path):
+    path = _config(tmp_path, SET_CONFIG)
+    assert cm.read_param(path, "withSets", "constraints") == "A, B"
+    assert cm.read_param(path, "withSets", "late") == "after the set"
+    # A parameter inside a parameter set is never matched, and an absent direct parameter is None, not an error.
+    assert cm.read_param(path, "withSets", "onlyInSet") is None
+    assert cm.read_param(path, "withSets", "missing") is None
+
+
+def test_read_param_refuses_a_missing_or_repeated_module_and_a_repeated_parameter(tmp_path):
+    with pytest.raises(ValueError, match="no module 'nope'"):
+        cm.read_param(_config(tmp_path, SET_CONFIG), "nope", "x")
+    twice = _config(tmp_path, '<config>\n<module name="m"/>\n<module name="m"/>\n</config>\n')
+    with pytest.raises(ValueError, match="appears 2 times"):
+        cm.read_param(twice, "m", "x")
+    repeated = _config(tmp_path, '<config><module name="m"><param name="x" value="1"/>'
+                                 '<param name="x" value="2"/></module></config>')
+    with pytest.raises(ValueError, match="parameter 'x' appears 2 times"):
+        cm.read_param(repeated, "m", "x")
+
+
+def test_set_param_edits_only_the_direct_parameter_not_one_in_a_parameter_set(tmp_path):
+    """Before this fix the whole module body was searched: the set's `constraints` made the name 'appear 2 times'."""
+    path = _config(tmp_path, SET_CONFIG)
+    assert cm.set_param(path, "withSets", "constraints", "A, B, C") == "A, B"
+    assert path.read_bytes().decode("utf-8") == SET_CONFIG.replace('value="A, B"', 'value="A, B, C"')
+
+
+def test_set_param_does_not_edit_a_parameter_that_exists_only_inside_a_parameter_set(tmp_path):
+    path = _config(tmp_path, SET_CONFIG)
+    with pytest.raises(ValueError, match="no parameter 'onlyInSet' in module 'withSets'"):
+        cm.set_param(path, "withSets", "onlyInSet", "2")
+    assert path.read_bytes().decode("utf-8") == SET_CONFIG

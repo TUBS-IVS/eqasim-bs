@@ -1,4 +1,6 @@
 """The prepare stage declares the plan-check keys, hashes the module and runs the check last (eqasim-bs#443)."""
+from pathlib import Path
+
 import pytest
 
 from braunschweig.matsim import initial_mode_choice as I
@@ -222,9 +224,10 @@ def test_execute_selects_the_loop_mode_rule_in_the_final_config_before_the_initi
         assert seen == ["fares", "parking", "initial", "check"]
 
 
-_DMC_CONFIG = ('<?xml version="1.0" encoding="utf-8"?>\n<config>\n\t<module name="DiscreteModeChoice">\n'
-               '\t\t<param name="tripConstraints" value="PassengerConstraint, OutsideConstraint, TransitWalk" />\n'
-               '\t</module>\n</config>\n')
+# The DiscreteModeChoice module as a prepared config carries it, parameter sets included (see test_loop_mode_rule.py).
+_REAL_MODULE = (Path(__file__).parent / "fixtures" / "dmc_module_real.xml").read_bytes().decode("utf-8")
+_DMC_CONFIG = '<?xml version="1.0" encoding="utf-8"?>\n<config>\n' + _REAL_MODULE + '</config>\n'
+_OLD = "OutsideConstraint, TransitWalk"
 
 
 @pytest.mark.parametrize("with_class", [True, False])
@@ -256,14 +259,14 @@ def test_select_loop_mode_rule_end_to_end_with_a_stub_jar(monkeypatch, tmp_path,
         assert sorted(path.name for path in stage.iterdir()) == before_files
         return
     prepare._select_loop_mode_rule(_Context(), "config.xml")
-    expected = "PassengerConstraint, OutsideConstraint, TransitWalk, SameFacilityLeisureNonMotorised"
+    expected = _OLD + ", SameFacilityLeisureNonMotorised"
     assert (stage / "config.xml").read_bytes().decode("utf-8") == _DMC_CONFIG.replace(
-        'TransitWalk"', 'TransitWalk, SameFacilityLeisureNonMotorised"')
+        'value="%s" />' % _OLD, 'value="%s" />' % expected)
     report = json.loads((stage / L.REPORT_FILE_NAME).read_text(encoding="utf-8"))
     assert report == {
         "constraint": "SameFacilityLeisureNonMotorised", "constraint_class_checked": L.CONSTRAINT_CLASS,
         "jar_file_name": "eqasim.jar", "module": "DiscreteModeChoice", "parameter": "tripConstraints",
-        "trip_constraints_before": "PassengerConstraint, OutsideConstraint, TransitWalk",
+        "trip_constraints_before": _OLD,
         "trip_constraints_after": expected, "already_selected": False}
     # A second run (a re-prepare of an already selected config) changes nothing and says so.
     prepare._select_loop_mode_rule(_Context(), "config.xml")

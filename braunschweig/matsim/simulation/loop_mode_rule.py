@@ -61,15 +61,17 @@ def apply(config_path) -> tuple[str, str] | None:
     config was not generated the way this rule expects and a silently created parameter would hide that.
     """
     path = Path(config_path)
-    module = config_modules.read_module(path, DMC_MODULE)
-    if module is None:
-        raise ValueError(f"{_LOG_TAG} {path} has no module {DMC_MODULE!r}, so the trip constraint {CONSTRAINT_NAME} "
-                         f"cannot be selected; check the generated config or set {KEY_ENABLED} to false")
-    if TRIP_CONSTRAINTS_PARAM not in module:
+    # The generated module has parameter sets after its flat parameters, so it is read parameter by parameter.
+    try:
+        old = config_modules.read_param(path, DMC_MODULE, TRIP_CONSTRAINTS_PARAM)
+    except ValueError as error:
+        raise ValueError(f"{_LOG_TAG} cannot read {TRIP_CONSTRAINTS_PARAM!r} of module {DMC_MODULE!r}, so the trip "
+                         f"constraint {CONSTRAINT_NAME} cannot be selected: {error}; check the generated config or "
+                         f"set {KEY_ENABLED} to false") from error
+    if old is None:
         raise ValueError(f"{_LOG_TAG} module {DMC_MODULE!r} of {path} has no parameter {TRIP_CONSTRAINTS_PARAM!r}, so "
                          f"the trip constraint {CONSTRAINT_NAME} cannot be selected; check the generated config or "
                          f"set {KEY_ENABLED} to false")
-    old = module[TRIP_CONSTRAINTS_PARAM]
     names = [name.strip() for name in old.split(",") if name.strip()]
     if CONSTRAINT_NAME in names:
         return None
@@ -87,7 +89,7 @@ def write_report(report_path, config_path, jar_path, changed: tuple[str, str] | 
     ``tripConstraints`` before and after and ``already_selected`` (true when ``apply`` changed nothing, then before and
     after are equal). The "after" value is read back from the config on disk. Side effect: writes ``report_path``.
     """
-    after = config_modules.read_module(config_path, DMC_MODULE)[TRIP_CONSTRAINTS_PARAM]
+    after = config_modules.read_param(config_path, DMC_MODULE, TRIP_CONSTRAINTS_PARAM)
     report = {"constraint": CONSTRAINT_NAME, "constraint_class_checked": CONSTRAINT_CLASS,
               "jar_file_name": Path(jar_path).name, "module": DMC_MODULE, "parameter": TRIP_CONSTRAINTS_PARAM,
               "trip_constraints_before": changed[0] if changed else after, "trip_constraints_after": after,

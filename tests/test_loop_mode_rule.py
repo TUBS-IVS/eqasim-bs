@@ -2,47 +2,53 @@
 from __future__ import annotations
 
 import zipfile
+from pathlib import Path
 
 import pytest
 
 from braunschweig.matsim import config_modules
 from braunschweig.matsim.simulation import loop_mode_rule as rule
 
+#: The DiscreteModeChoice module exactly as a prepared config of the 1 % run carries it (tabs, comments, flat params
+#: followed by parameter sets); eqasim-bs#679: a reader that supported only flat modules failed on it.
+REAL_MODULE = (Path(__file__).parent / "fixtures" / "dmc_module_real.xml").read_bytes().decode("utf-8")
+REAL_VALUE = "OutsideConstraint, TransitWalk"
 CONFIG = ('<?xml version="1.0" encoding="utf-8"?>\n'
           '<!DOCTYPE config SYSTEM "http://www.matsim.org/files/dtd/config_v2.dtd">\n'
           '<config>\n'
           '\t<module name="global">\n\t\t<param name="randomSeed" value="1234" />\n'
           '\t\t<param name="tripConstraints" value="untouched" />\n\t</module>\n'
-          '\t<module name="DiscreteModeChoice">\n'
-          '\t\t<param name="tripFilters" value="OutsideFilter" />\n'
-          '\t\t<param name="tripConstraints" value="%s" />\n'
-          '\t</module>\n</config>\n')
+          + REAL_MODULE + '</config>\n')
 
 
-def _write(tmp_path, value="VehicleContinuity,SubtourMode", newline="\n"):
+def _config_text(value=REAL_VALUE, newline="\n"):
+    assert 'name="tripConstraints" value="%s"' % REAL_VALUE in CONFIG
+    return CONFIG.replace('name="tripConstraints" value="%s"' % REAL_VALUE,
+                          'name="tripConstraints" value="%s"' % value).replace("\n", newline)
+
+
+def _write(tmp_path, value=REAL_VALUE, newline="\n"):
     path = tmp_path / "config.xml"
-    path.write_bytes((CONFIG % value).replace("\n", newline).encode("utf-8"))
+    path.write_bytes(_config_text(value, newline).encode("utf-8"))
     return path
 
 
 @pytest.mark.parametrize("old, expected", [
+    (REAL_VALUE, "OutsideConstraint, TransitWalk, SameFacilityLeisureNonMotorised"),
     ("VehicleContinuity,SubtourMode", "VehicleContinuity,SubtourMode,SameFacilityLeisureNonMotorised"),
-    ("VehicleContinuity, SubtourMode", "VehicleContinuity, SubtourMode, SameFacilityLeisureNonMotorised"),
     ("VehicleContinuity", "VehicleContinuity,SameFacilityLeisureNonMotorised"),
     ("", "SameFacilityLeisureNonMotorised"),
-    ("PassengerConstraint, OutsideConstraint, TransitWalk",
-     "PassengerConstraint, OutsideConstraint, TransitWalk, SameFacilityLeisureNonMotorised"),
 ])
 def test_apply_adds_the_constraint_once_and_touches_nothing_else(tmp_path, old, expected):
+    """On the real module (parameter sets included): only the one value changes, every parameter set keeps its bytes."""
     path = _write(tmp_path, old)
     before = path.read_bytes()
     assert rule.apply(path) == (old, expected)
     after = path.read_bytes()
-    # Only the one value changed: the same bytes with the old value replaced by the new one.
-    assert after == before.replace(b'name="tripConstraints" value="%s" />\n\t</module>\n</config>' % old.encode(),
-                                   b'name="tripConstraints" value="%s" />\n\t</module>\n</config>' % expected.encode())
-    assert config_modules.read_module(path, "DiscreteModeChoice")["tripConstraints"] == expected
-    assert config_modules.read_module(path, "global")["tripConstraints"] == "untouched"
+    assert after == _config_text(expected).encode("utf-8")
+    assert config_modules.read_param(path, "DiscreteModeChoice", "tripConstraints") == expected
+    assert config_modules.read_param(path, "global", "tripConstraints") == "untouched"
+    assert after.count(b"<parameterset") == before.count(b"<parameterset") == 12
     # A second call is a no-op: no change, no return value.
     assert rule.apply(path) is None
     assert path.read_bytes() == after
