@@ -374,6 +374,7 @@ def test_cli_writes_all_tables_with_headers(srv_frames, tmp_path):
         encoding="utf-8").splitlines() if line.startswith("#"))
     destination = pd.read_csv(out / R.DESTINATION_TABLE, comment="#")
     assert len(destination) > 0
+
     tables = {}
     for name in (R.STUDENT_SHARE_TABLE, R.EDUCATION_STATUS_TABLE, R.EDUCATION_DISTANCE_TABLE,
                  R.BEHAVIOUR_TABLE, R.COMPARISON_TABLE):
@@ -449,7 +450,6 @@ def test_cli_fails_before_writing_when_a_new_raw_column_is_missing(srv_frames, t
         _load_extraction_script().main(["--raw", str(raw), "--sites", str(sites), "--out-dir",
                                         str(out), "--source-commit", "abc1234"])
     assert not out.exists()
-
 
 
 def test_education_distance_noise_floor_is_seeded():

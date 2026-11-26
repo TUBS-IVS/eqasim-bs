@@ -1057,7 +1057,7 @@ def build_young_adult_status_table(universe: pd.DataFrame) -> tuple[pd.DataFrame
                    n_missing_age, len(readable))
     # own key: the universe diagnostics already carry n_missing_age, measured on a larger base
     diagnostics["n_young_adult_base_missing_age"] = n_missing_age
-    young =readable[(readable["age"] >= AGE_BAND_20_29[0])
+    young = readable[(readable["age"] >= AGE_BAND_20_29[0])
                      & (readable["age"] <= AGE_BAND_20_29[1])].copy()
     code = young["V_ERW"]
     young["status"] = np.select([code == STUDENT_V_ERW, code.isin(EMPLOYED_V_ERW)],

@@ -35,7 +35,8 @@ verification:
   verifier_entry: null
   notes: |
     Not listed in scripts/verify_braunschweig_inputs.py: the five Phase 0 tables are committed
-    (Phase 0 extraction run) and so are the four Phase 1 tables (Phase 1 extraction run), no SrV aggregate is listed in the verifier, and no stage reads them -
+    (Phase 0 extraction run) and so are the four Phase 1 tables (Phase 1 extraction run), no
+    SrV aggregate is listed in the verifier, and no stage reads them -
     they are build-time references of the student-commuting feature (issue #140). Unit tests
     on synthetic SrV-shaped frames (hand-computed shares, the label partition of both
     universes, the exclusion of unreadable codes, the seeded noise floor and the CLI end to

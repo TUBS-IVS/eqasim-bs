@@ -339,7 +339,8 @@ def read_site_kreise(path: Path) -> tuple:
 
     The site table is local-only (R1). Only the LEADING ``#`` lines are skipped (a ``#`` inside a
     field stays), the required columns are checked first (fail early), the codes are read as
-    strings so a leading zero stays.
+    strings so a leading zero stays. The file is read as UTF-8, the encoding
+    ``scripts/seed_lsn_university_sites.py`` writes the table in.
     """
     path = Path(path)
     if not path.exists():
