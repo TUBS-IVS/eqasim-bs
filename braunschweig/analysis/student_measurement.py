@@ -10,6 +10,14 @@ sets those cells against the committed SrV parameter table
 :func:`braunschweig.calibration.srv_student_reference.build_parameter_table`). A difference is a
 measurement in SrV standard errors, not a validation verdict.
 
+Four further tables put the student level and the plans in context (definitions in their
+docstrings): :func:`student_level_table` (student shares per Kreis against
+``srv2023_student_share_by_kreis.csv``), :func:`young_adult_status_table` (student / employed /
+other among the 20 to 29 year olds against ``srv2023_young_adult_status_by_kreis.csv``, next to
+the Zensus 2022 employed count the employment grid reads), :func:`student_work_class_table` (the
+students' work-control class) and :func:`plan_source_table` (own diary or re-drawn plan, the
+match path of the completed-donor step and the donor's activity).
+
 Universes (the same on both sides)
 ----------------------------------
 * Student = ``P_TAET == mid_student_reference.STUDENT_P_TAET`` (10) of the enriched population;
@@ -73,16 +81,25 @@ import pandas as pd
 
 from braunschweig.analysis import plan_structure as P
 from braunschweig.calibration import student_parameters as SP
-from braunschweig.calibration.mid_student_reference import (P_TAET_CODES, P_TAET_NO_ANSWER,
+from braunschweig.calibration.mid_student_reference import (APPRENTICE_P_TAET, P_TAET_CODES,
+                                                            P_TAET_NO_ANSWER, PUPIL_P_TAET,
                                                             STUDENT_P_TAET)
 from braunschweig.calibration.srv_distance_targets import WOLFSBURG_KREIS, ZGB_KREISE
-from braunschweig.calibration.srv_student_reference import (AGE_GROUP_EDGES,
-                                                            OLDER_PERSON_GAP_YEARS)
+from braunschweig.calibration.srv_participation_universe import (LEVEL_KREIS, LEVEL_TOTAL,
+                                                                 REGION_CODE)
+from braunschweig.calibration.srv_student_reference import (AGE_BAND_20_29, AGE_GROUP_EDGES,
+                                                            OLDER_PERSON_GAP_YEARS, SHARE_COLUMNS,
+                                                            YOUNG_ADULT_STATUS_COLUMNS,
+                                                            YOUNG_ADULT_STATUSES)
 from braunschweig.calibration.student_behaviour_labels import MAX_EXCLUSION_RATE, MIN_ADULT_AGE
 from braunschweig.calibration.student_control_evidence import (MIN_DIFFERENCE_STANDARD_ERRORS,
                                                                MIN_RESPONDENTS_PER_CELL)
 from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES, PT_TICKET_FLATRATE
-from braunschweig.popsim.attributes import map_pt_ticket_group
+from braunschweig.popsim.attributes import (EMPLOYED_EMPLOYMENT_STATUS_CLASSES, EMPLOYED_TAET,
+                                            map_pt_ticket_group)
+from braunschweig.popsim.diary_plan_match import (REASON_KEEP, REASON_KEEP_IMMOBILE,
+                                                  REASONS_REMAP)
+from braunschweig.popsim.zensus_employment_age import KREIS_AGE_CLASSES
 from braunschweig.synthesis.day_absence.absence import STATES, absent_person_ids
 
 LOG = logging.getLogger(__name__)
@@ -203,18 +220,28 @@ def _yes_no(flag) -> np.ndarray:
 
 
 # --------------------------------------------------------------------------- model students
-def _adult_students(persons: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    """The adult students of ``persons`` and the counts of the persons who cannot be one."""
-    raw = persons["P_TAET"]
+def _p_taet_codes(frame: pd.DataFrame, name: str = "persons") -> tuple[pd.Series, pd.Series]:
+    """``(code, unreadable)`` of the ``P_TAET`` column; a code outside the documented set raises.
+
+    ``unreadable`` marks ``P_TAET_NO_ANSWER`` (99) and missing values: they answer nothing about
+    the activity, so the caller excludes and counts them (never "not a student").
+    """
+    raw = frame["P_TAET"]
     code = pd.to_numeric(raw, errors="coerce")
     non_numeric = raw.notna() & code.isna()
     undocumented = sorted(set(code[code.notna() & ~code.isin(sorted(P_TAET_CODES))
                                    & (code != P_TAET_NO_ANSWER)].tolist()))
     if non_numeric.any() or undocumented:
-        raise ValueError("persons: column P_TAET carries code(s) %s outside the documented set "
-                         "%s and %d" % (undocumented + raw[non_numeric].astype(str).tolist()[:5],
+        raise ValueError("%s: column P_TAET carries code(s) %s outside the documented set "
+                         "%s and %d" % (name, undocumented
+                                        + raw[non_numeric].astype(str).tolist()[:5],
                                         sorted(P_TAET_CODES), P_TAET_NO_ANSWER))
-    unreadable = code.isna() | (code == P_TAET_NO_ANSWER)
+    return code, code.isna() | (code == P_TAET_NO_ANSWER)
+
+
+def _adult_students(persons: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """The adult students of ``persons`` and the counts of the persons who cannot be one."""
+    code, unreadable = _p_taet_codes(persons)
     n_unreadable = int(unreadable.sum())
     _log_exclusion("readable P_TAET (99 / missing is never 'not a student')", n_unreadable,
                    len(persons))
@@ -575,3 +602,519 @@ def compare_parameters(model_students: pd.DataFrame,
     beyond[out["difference_in_se"].isna().to_numpy()] = pd.NA
     out["beyond_two_se"] = beyond
     return out[COMPARISON_COLUMNS]
+
+
+# --------------------------------------------------------------------------- level and status
+#: Columns required on the person frame of the level and young-adult tables: the enriched
+#: persons with their home Kreis (``kreis``, five-digit string, NaN without a home Kreis).
+PERSON_KREIS_COLUMNS = ("person_id", "age", "P_TAET", "employed", "kreis")
+
+#: Scope of the region row, for the CSV headers the stage writes.
+REGION_SCOPE_NOTE = (
+    "Region row %s = the %d SrV-surveyed Kreise %s (ZGB_KREISE minus Wolfsburg %s) on the model "
+    "side; the SrV region row is built over the ZGB Kreise, of which SrV surveys no person in "
+    "Wolfsburg. Wolfsburg rows are model-only with NaN SrV columns."
+    % (REGION_CODE, len(SURVEYED_KREISE), list(SURVEYED_KREISE), WOLFSBURG_KREIS))
+
+LEVEL_COLUMNS = ["code", "level", "model_adults", "model_students_18_29", "model_students_30plus",
+                 "model_persons_20_29", "model_students_20_29", "model_student_share_adults",
+                 "model_student_share_20_29", "model_students_expanded_persons",
+                 "srv_student_share_adults", "srv_se_student_share_adults",
+                 "srv_student_share_20_29", "srv_se_student_share_20_29",
+                 "srv_students_weighted_persons", "difference_in_se_adults",
+                 "difference_in_se_20_29"]
+#: SrV student-share column (``SHARE_COLUMNS``) -> level-table column.
+_LEVEL_SRV_COLUMNS = {"student_share_adults": "srv_student_share_adults",
+                      "se_student_share_adults": "srv_se_student_share_adults",
+                      "student_share_20_29": "srv_student_share_20_29",
+                      "se_student_share_20_29": "srv_se_student_share_20_29",
+                      "students_weighted_persons": "srv_students_weighted_persons"}
+
+YOUNG_ADULT_COLUMNS = ["code", "level", "status", "model_n", "model_share",
+                       "model_expanded_persons", "srv_share", "srv_se_share", "difference_in_se",
+                       "zensus_employed_persons"]
+#: Status of a young adult that the Zensus employed count belongs to.
+_EMPLOYED_STATUS = YOUNG_ADULT_STATUSES[1]
+
+#: Columns of the Zensus employed-by-age frame as ``zensus_employment_age.
+#: read_kreis_employed_by_age`` returns it.
+ZENSUS_EMPLOYED_COLUMNS = ("region", "age_class", "sex", "employed_persons")
+#: The Regionaltabelle age class of the 20 to 29 year olds, derived from the SrV band.
+ZENSUS_AGE_CLASS_20_29 = "%d-%d" % AGE_BAND_20_29
+if ZENSUS_AGE_CLASS_20_29 not in KREIS_AGE_CLASSES:
+    raise RuntimeError("age class %r of AGE_BAND_20_29 is not a Zensus class %s"
+                       % (ZENSUS_AGE_CLASS_20_29, list(KREIS_AGE_CLASSES)))
+_ZENSUS_SEXES = ["F", "M"]
+
+WORK_CLASS_COLUMNS = ["employed", "employment_status", "model_n", "share"]
+
+
+def _require_sampling_rate(sampling_rate) -> float:
+    rate = float(sampling_rate)
+    if not 0.0 < rate <= 1.0:
+        raise ValueError("sampling_rate must be in (0, 1], got %r" % sampling_rate)
+    return rate
+
+
+def _share(count: int, total: int) -> float:
+    return count / total if total else float("nan")
+
+
+def _difference_in_se(model: pd.Series, srv: pd.Series, se: pd.Series) -> pd.Series:
+    """``(model - srv) / se``; NaN where the SrV standard error is 0 or NaN (see
+    :func:`compare_parameters`)."""
+    return (model - srv) / se.where(se > 0)
+
+
+def _persons_with_kreis(persons_with_kreis: pd.DataFrame, table: str) -> pd.DataFrame:
+    """The persons a level or status table counts: readable ``P_TAET``, known age, home Kreis.
+
+    Each exclusion is counted and logged over the persons that reached it and raises above
+    ``MAX_EXCLUSION_RATE``; a home Kreis outside ``ZGB_KREISE`` or a non-boolean ``employed``
+    raises.
+    """
+    _require_columns(persons_with_kreis, PERSON_KREIS_COLUMNS, "persons")
+    _require_unique_person_ids(persons_with_kreis, "persons")
+    code, unreadable = _p_taet_codes(persons_with_kreis)
+    _log_exclusion("%s: readable P_TAET (99 / missing answers nothing about the activity)"
+                   % table, int(unreadable.sum()), len(persons_with_kreis))
+    age = pd.to_numeric(persons_with_kreis["age"], errors="coerce")
+    no_age = ~unreadable & (age.isna() | (age < 0))
+    _log_exclusion("%s: known age" % table, int(no_age.sum()), int((~unreadable).sum()))
+    raw_kreis = persons_with_kreis["kreis"]
+    kreis = raw_kreis.where(raw_kreis.isna(), raw_kreis.astype(str))
+    outside = sorted(set(kreis.dropna()) - set(ZGB_KREISE))
+    if outside:
+        raise ValueError("persons: column kreis carries code(s) %s outside ZGB_KREISE %s"
+                         % (outside, list(ZGB_KREISE)))
+    kept = ~unreadable & ~no_age
+    _log_exclusion("%s: home Kreis" % table, int((kept & kreis.isna()).sum()), int(kept.sum()))
+    kept &= kreis.notna()
+    return pd.DataFrame({"code": code[kept].to_numpy(), "age": age[kept].to_numpy(),
+                         "kreis": kreis[kept].to_numpy(dtype=object),
+                         "employed": _flags(persons_with_kreis, "employed")[kept].to_numpy()})
+
+
+def _scopes(frame: pd.DataFrame):
+    """``(level, code, persons)`` per ZGB Kreis, then the region row over the surveyed Kreise."""
+    for kreis in ZGB_KREISE:
+        yield LEVEL_KREIS, kreis, frame[(frame["kreis"] == kreis).to_numpy()]
+    yield LEVEL_TOTAL, REGION_CODE, frame[frame["kreis"].isin(SURVEYED_KREISE).to_numpy()]
+
+
+def _validated_srv_rows(srv: pd.DataFrame, columns, key: list, name: str,
+                        labels: dict | None = None) -> pd.DataFrame:
+    """The SrV rows with string codes; a code outside the ZGB Kreise and the region, a value
+    outside ``labels`` (column -> allowed values) or a duplicated ``key`` raises."""
+    _require_columns(srv, columns, name)
+    table = srv[list(columns)].copy()
+    for column, allowed in {"code": list(ZGB_KREISE) + [REGION_CODE], **(labels or {})}.items():
+        outside = sorted(set(table[column].astype(str)) - set(allowed))
+        if outside or table[column].isna().any():
+            raise ValueError("%s: column %s carries value(s) %s outside %s (read codes as "
+                             "strings)" % (name, column, outside, list(allowed)))
+        table[column] = table[column].astype(str)
+    duplicated = table[table.duplicated(key)]
+    if len(duplicated):
+        raise ValueError("%s: %d duplicated row(s) on %s, e.g. %s"
+                         % (name, len(duplicated), key, duplicated[key].head(5).values.tolist()))
+    return table
+
+
+def _log_missing_srv_rows(merged: pd.DataFrame, indicator: str, name: str) -> None:
+    """Count the rows of a surveyed Kreis or the region that the SrV table did not carry."""
+    missing = merged[(merged[indicator] == "left_only") & (merged["code"] != WOLFSBURG_KREIS)]
+    (LOG.warning if len(missing) else LOG.info)(
+        "%s %s: %d row(s) of a surveyed Kreis or the region missing from the SrV table (NaN SrV "
+        "columns) %s", _LOG_TAG, name, len(missing), sorted(set(missing["code"])))
+
+
+def student_level_table(persons_with_kreis: pd.DataFrame, srv_shares: pd.DataFrame,
+                        sampling_rate: float) -> pd.DataFrame:
+    """Student level per Kreis and region, model against the committed SrV student shares.
+
+    ``persons_with_kreis`` carries :data:`PERSON_KREIS_COLUMNS`; ``srv_shares`` is
+    ``srv2023_student_share_by_kreis.csv`` (``srv_student_reference.SHARE_COLUMNS``, codes read
+    as strings); ``sampling_rate`` the run's sampling rate in (0, 1].
+
+    One row per ``ZGB_KREISE`` Kreis (``level`` kreis) and one :data:`REGION_CODE` row (``level``
+    total) over the seven surveyed Kreise (:data:`REGION_SCOPE_NOTE`). Model counts are sample
+    counts of persons with a readable ``P_TAET``, a known age and a home Kreis (each exclusion
+    counted and logged, raising above ``MAX_EXCLUSION_RATE``): adults (age >= ``MIN_ADULT_AGE``),
+    adult students (``P_TAET == STUDENT_P_TAET``) aged up to 29 and from 30, persons and students
+    aged 20 to 29 (``AGE_BAND_20_29``, inclusive, the SrV band). The shares are student counts
+    over those bases (NaN on an empty base); ``model_students_expanded_persons`` is the number of
+    adult students divided by ``sampling_rate``. The SrV columns are the SrV table's own;
+    Wolfsburg rows carry NaN there (not surveyed), and a missing SrV row is counted and logged.
+    ``difference_in_se_* = (model share - SrV share) / SrV se``, NaN where that se is 0 or NaN.
+    """
+    rate = _require_sampling_rate(sampling_rate)
+    persons = _persons_with_kreis(persons_with_kreis, "student level")
+    srv = _validated_srv_rows(srv_shares, SHARE_COLUMNS, ["code"], "SrV student share table")
+    rows = []
+    for level, code, group in _scopes(persons):
+        age = group["age"]
+        adult = (age >= MIN_ADULT_AGE).to_numpy()
+        student = (group["code"] == STUDENT_P_TAET).to_numpy()
+        young = age.between(*AGE_BAND_20_29).to_numpy()
+        up_to_29 = (age <= AGE_BAND_20_29[1]).to_numpy()
+        n_adults, n_young = int(adult.sum()), int(young.sum())
+        n_students = int((student & adult).sum())
+        n_young_students = int((student & young).sum())
+        rows.append({"code": code, "level": level, "model_adults": n_adults,
+                     "model_students_18_29": int((student & adult & up_to_29).sum()),
+                     "model_students_30plus": int((student & adult & ~up_to_29).sum()),
+                     "model_persons_20_29": n_young, "model_students_20_29": n_young_students,
+                     "model_student_share_adults": _share(n_students, n_adults),
+                     "model_student_share_20_29": _share(n_young_students, n_young),
+                     "model_students_expanded_persons": n_students / rate})
+    out = pd.DataFrame(rows).merge(
+        srv[["code", *_LEVEL_SRV_COLUMNS]].rename(columns=_LEVEL_SRV_COLUMNS), on="code",
+        how="left", validate="1:1", indicator="_srv")
+    _log_missing_srv_rows(out, "_srv", "student level")
+    srv_columns = list(_LEVEL_SRV_COLUMNS.values())
+    out[srv_columns] = out[srv_columns].astype(float)
+    out.loc[out["code"] == WOLFSBURG_KREIS, srv_columns] = np.nan
+    out["difference_in_se_adults"] = _difference_in_se(
+        out["model_student_share_adults"], out["srv_student_share_adults"],
+        out["srv_se_student_share_adults"])
+    out["difference_in_se_20_29"] = _difference_in_se(
+        out["model_student_share_20_29"], out["srv_student_share_20_29"],
+        out["srv_se_student_share_20_29"])
+    region = out.iloc[-1]
+    LOG.info("%s student level, region %s: %d adult students of %d adults (share %.4f), "
+             "%.0f persons expanded at sampling rate %s", _LOG_TAG, REGION_CODE,
+             region["model_students_18_29"] + region["model_students_30plus"],
+             region["model_adults"], region["model_student_share_adults"],
+             region["model_students_expanded_persons"], rate)
+    return out[LEVEL_COLUMNS]
+
+
+def _zensus_employed_20_29(zensus_employed: pd.DataFrame) -> dict:
+    """Zensus 2022 employed persons aged 20 to 29, both sexes summed, per ZGB Kreis and region.
+
+    ``zensus_employed`` is the frame ``zensus_employment_age.read_kreis_employed_by_age`` returns
+    for ``KREIS_EMPLOYED_BY_AGE_FILE``. A Kreis without rows is NaN, counted and logged; the
+    region (the surveyed Kreise) is NaN when one of them is missing, as a partial sum would
+    understate it. A Kreis whose class rows are not exactly one per sex, or a count that is not
+    a count, raises.
+    """
+    _require_columns(zensus_employed, ZENSUS_EMPLOYED_COLUMNS, "Zensus employed-by-age")
+    rows = zensus_employed[zensus_employed["age_class"] == ZENSUS_AGE_CLASS_20_29]
+    region = rows["region"].astype(str)
+    counts, missing = {}, []
+    for kreis in ZGB_KREISE:
+        kreis_rows = rows[(region == kreis).to_numpy()]
+        if kreis_rows.empty:
+            missing.append(kreis)
+            counts[kreis] = float("nan")
+            continue
+        if sorted(kreis_rows["sex"].astype(str)) != _ZENSUS_SEXES:
+            raise ValueError("Zensus employed-by-age: Kreis %s, class %s carries sexes %s, "
+                             "expected one row each of %s" % (kreis, ZENSUS_AGE_CLASS_20_29,
+                                                              sorted(kreis_rows["sex"]),
+                                                              _ZENSUS_SEXES))
+        counts[kreis] = float(_counts(kreis_rows, "employed_persons",
+                                      "Zensus employed-by-age").sum())
+    surveyed_missing = [kreis for kreis in missing if kreis in SURVEYED_KREISE]
+    counts[REGION_CODE] = (float("nan") if surveyed_missing
+                           else float(sum(counts[kreis] for kreis in SURVEYED_KREISE)))
+    (LOG.warning if missing else LOG.info)(
+        "%s Zensus employed %s: primary %d/%d Kreise (%.1f%%), missing %d %s (NaN there%s)",
+        _LOG_TAG, ZENSUS_AGE_CLASS_20_29, len(ZGB_KREISE) - len(missing), len(ZGB_KREISE),
+        _rate(len(ZGB_KREISE) - len(missing), len(ZGB_KREISE)), len(missing), missing,
+        " and on the region row" if surveyed_missing else "")
+    return counts
+
+
+def young_adult_status_table(persons_with_kreis: pd.DataFrame, srv_status: pd.DataFrame,
+                             zensus_employed: pd.DataFrame, sampling_rate: float) -> pd.DataFrame:
+    """Activity status of the 20 to 29 year olds per Kreis and region: model, SrV and Zensus.
+
+    ``persons_with_kreis`` as in :func:`student_level_table`; ``srv_status`` is
+    ``srv2023_young_adult_status_by_kreis.csv`` (``srv_student_reference.
+    YOUNG_ADULT_STATUS_COLUMNS``, codes as strings); ``zensus_employed`` the frame
+    ``zensus_employment_age.read_kreis_employed_by_age`` returns for
+    ``zensus_employment_age.KREIS_EMPLOYED_BY_AGE_FILE``; ``sampling_rate`` in (0, 1].
+
+    Persons aged ``AGE_BAND_20_29`` (inclusive) with a readable ``P_TAET``, a known age and a
+    home Kreis (exclusions counted, as in :func:`student_level_table`). Model status, in the
+    order of the SrV builder: ``student`` (``P_TAET == STUDENT_P_TAET``), else ``employed``
+    (``employed`` true, which includes apprentices as SrV's employed codes do), else ``other``.
+    One block of the three statuses per ZGB Kreis and one :data:`REGION_CODE` block over the
+    surveyed Kreise (:data:`REGION_SCOPE_NOTE`). ``model_share`` is within the block (NaN on an
+    empty block), ``model_expanded_persons = model_n / sampling_rate``; the SrV columns are the
+    SrV table's ``share`` / ``se_share`` (NaN for Wolfsburg; a missing row counted);
+    ``difference_in_se`` as in :func:`student_level_table`. ``zensus_employed_persons`` is set on
+    the ``employed`` rows only: the Zensus 2022 employed persons of the age class
+    :data:`ZENSUS_AGE_CLASS_20_29`, both sexes summed (the region: the sum over the surveyed
+    Kreise); NaN on the other rows and where the Kreis is missing from the Zensus frame.
+    """
+    rate = _require_sampling_rate(sampling_rate)
+    persons = _persons_with_kreis(persons_with_kreis, "young-adult status")
+    srv = _validated_srv_rows(srv_status, YOUNG_ADULT_STATUS_COLUMNS, ["code", "status"],
+                              "SrV young-adult status table",
+                              {"status": list(YOUNG_ADULT_STATUSES)})
+    zensus = _zensus_employed_20_29(zensus_employed)
+    young = persons[persons["age"].between(*AGE_BAND_20_29).to_numpy()]
+    status = np.select([(young["code"] == STUDENT_P_TAET).to_numpy(),
+                        young["employed"].to_numpy(dtype=bool)],
+                       list(YOUNG_ADULT_STATUSES[:2]), default=YOUNG_ADULT_STATUSES[2])
+    young = young.assign(status=status)
+    rows = []
+    for level, code, group in _scopes(young):
+        for label in YOUNG_ADULT_STATUSES:
+            n = int((group["status"] == label).sum())
+            rows.append({"code": code, "level": level, "status": label, "model_n": n,
+                         "model_share": _share(n, len(group)), "model_expanded_persons": n / rate,
+                         "zensus_employed_persons": (zensus[code] if label == _EMPLOYED_STATUS
+                                                     else float("nan"))})
+    out = pd.DataFrame(rows).merge(
+        srv[["code", "status", "share", "se_share"]].rename(
+            columns={"share": "srv_share", "se_share": "srv_se_share"}),
+        on=["code", "status"], how="left", validate="1:1", indicator="_srv")
+    _log_missing_srv_rows(out, "_srv", "young-adult status")
+    out[["srv_share", "srv_se_share"]] = out[["srv_share", "srv_se_share"]].astype(float)
+    out.loc[out["code"] == WOLFSBURG_KREIS, ["srv_share", "srv_se_share"]] = np.nan
+    out["difference_in_se"] = _difference_in_se(out["model_share"], out["srv_share"],
+                                                out["srv_se_share"])
+    LOG.info("%s young-adult status: %d persons aged %d to %d in the surveyed Kreise",
+             _LOG_TAG, int(young["kreis"].isin(SURVEYED_KREISE).sum()), *AGE_BAND_20_29)
+    return out[YOUNG_ADULT_COLUMNS]
+
+
+def student_work_class_table(persons: pd.DataFrame) -> pd.DataFrame:
+    """Adult students by ``employed`` and ``employment_status``, all Kreise and none.
+
+    Checks the design statement that every non-employed student falls into the not-employed
+    classes of the work control (``employment_status`` outside
+    ``attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES``): a student who breaks it, and a student
+    with ``employed`` true, is reported (a row of its own, counted in the log), never dropped.
+    Columns :data:`WORK_CLASS_COLUMNS`, ``share`` over all adult students, sorted by
+    ``employed`` and ``employment_status``. A missing ``employment_status`` or a non-boolean
+    ``employed`` raises.
+    """
+    _require_columns(persons, ("person_id", "age", "P_TAET", "employed", "employment_status"),
+                     "persons")
+    _require_unique_person_ids(persons, "persons")
+    students, _ = _adult_students(persons)
+    if students["employment_status"].isna().any():
+        raise ValueError("persons: %d adult student(s) without an employment_status"
+                         % int(students["employment_status"].isna().sum()))
+    frame = pd.DataFrame({"employed": _flags(students, "employed").to_numpy(),
+                          "employment_status": students["employment_status"].astype(str)})
+    table = (frame.groupby(["employed", "employment_status"]).size().rename("model_n")
+             .reset_index().sort_values(["employed", "employment_status"]))
+    table["share"] = table["model_n"] / len(frame)
+    n_employed = int(frame["employed"].sum())
+    in_employed_class = ~frame["employed"] & frame["employment_status"].isin(
+        EMPLOYED_EMPLOYMENT_STATUS_CLASSES)
+    n_breaking = int(in_employed_class.sum())
+    (LOG.warning if n_employed or n_breaking else LOG.info)(
+        "%s work class of %d adult students: employed %d (%.1f%%); not employed but in an "
+        "employed class %s of the work control %d (%.1f%%)", _LOG_TAG, len(frame), n_employed,
+        _rate(n_employed, len(frame)), list(EMPLOYED_EMPLOYMENT_STATUS_CLASSES), n_breaking,
+        _rate(n_breaking, len(frame)))
+    return table[WORK_CLASS_COLUMNS].reset_index(drop=True)
+
+
+# --------------------------------------------------------------------------- plan source
+PLAN_SOURCE_COLUMNS = ["plan_origin", "match_path", "donor_status", "model_n",
+                       "share_of_students", "share_with_education_leg", "share_with_work_leg"]
+#: Columns required on the students frame of :func:`plan_source_table`.
+PLAN_STUDENT_COLUMNS = ("person_id", "present", "education_leg", "work_leg")
+#: Columns required on the enriched persons; the seed key ``H_ID`` / ``P_ID`` is optional.
+PLAN_PERSON_COLUMNS = ("person_id", "source_H_ID", "source_P_ID", "attribute_source_H_ID",
+                       "attribute_source_P_ID")
+SEED_KEY = ("H_ID", "P_ID")
+WEEKEND_TRACE_COLUMNS = (*SEED_KEY, "resolution")
+DIARY_TRACE_COLUMNS = (*SEED_KEY, "reason")
+#: Diary-match reasons that keep the seed person's own diary: the diary match chose no path.
+DIARY_KEEP_REASONS = (REASON_KEEP, REASON_KEEP_IMMOBILE)
+DIARY_REASONS = (*DIARY_KEEP_REASONS, *REASONS_REMAP)
+PLAN_ORIGIN_OWN = "own_diary"
+PLAN_ORIGIN_REDRAWN = "redrawn"
+MATCH_PATH_UNRESOLVED = "unresolved"
+DONOR_STATUS_UNKNOWN = "unknown"
+
+
+def _integer_key(values: pd.Series, name: str, column: str) -> np.ndarray:
+    """A key column as int64; a missing or fractional value raises (a lossy cast would join
+    the wrong person)."""
+    numeric = pd.to_numeric(values, errors="coerce")
+    bad = numeric.isna() | (numeric != np.floor(numeric))
+    if bad.any():
+        raise ValueError("%s: column %s carries %d value(s) that are not an integer key, e.g. %s"
+                         % (name, column, int(bad.sum()),
+                            values[bad].astype(str).unique()[:5].tolist()))
+    return numeric.to_numpy().astype("int64")
+
+
+def _keyed(frame: pd.DataFrame, columns, name: str) -> pd.DataFrame:
+    """``frame[columns]`` with an int64 seed key; a duplicated key raises (a join is m:1)."""
+    _require_columns(frame, columns, name)
+    out = frame[list(columns)].copy()
+    for column in SEED_KEY:
+        out[column] = _integer_key(frame[column], name, column)
+    duplicated = out[out.duplicated(list(SEED_KEY))]
+    if len(duplicated):
+        raise ValueError("%s: %d duplicated (H_ID, P_ID) key(s), e.g. %s"
+                         % (name, len(duplicated), duplicated[list(SEED_KEY)].head(5)
+                            .values.tolist()))
+    return out
+
+
+def _donor_status(frame: pd.DataFrame, donor_persons: pd.DataFrame) -> tuple[np.ndarray, dict]:
+    """The donor's activity per row of ``frame`` (keyed by its int ``source_H_ID`` /
+    ``source_P_ID``) and the counts of the donors not found or without a readable ``P_TAET``."""
+    donors = _keyed(donor_persons, (*SEED_KEY, "P_TAET"), "donor persons")
+    code, unreadable = _p_taet_codes(donors, "donor persons")
+    donors = donors.assign(donor_code=code, donor_unreadable=unreadable).rename(
+        columns={"H_ID": "source_H_ID", "P_ID": "source_P_ID"})
+    joined = frame[["source_H_ID", "source_P_ID"]].merge(
+        donors[["source_H_ID", "source_P_ID", "donor_code", "donor_unreadable"]],
+        on=["source_H_ID", "source_P_ID"], how="left", validate="m:1", indicator=True)
+    not_found = (joined["_merge"] == "left_only").to_numpy()
+    unreadable = joined["donor_unreadable"].fillna(False).to_numpy(dtype=bool)
+    donor_code = joined["donor_code"]
+    status = np.select(
+        [not_found | unreadable, donor_code == STUDENT_P_TAET, donor_code == PUPIL_P_TAET,
+         donor_code == APPRENTICE_P_TAET, donor_code.isin(sorted(EMPLOYED_TAET))],
+        [DONOR_STATUS_UNKNOWN, "student", "pupil", "apprentice", "employed"],
+        default="other_not_employed").astype(object)
+    return status, {"not_found": not_found, "unreadable": unreadable}
+
+
+def _match_path(frame: pd.DataFrame, persons: pd.DataFrame, weekend_trace: pd.DataFrame,
+                diary_trace: pd.DataFrame) -> tuple[np.ndarray, str | None]:
+    """``diary:<reason>``, ``weekend:<resolution>`` or ``unresolved`` per row of ``frame``,
+    and why every row is unresolved when the persons carry no seed key (else None)."""
+    weekend = _keyed(weekend_trace, WEEKEND_TRACE_COLUMNS, "weekend trace")
+    diary = _keyed(diary_trace, DIARY_TRACE_COLUMNS, "diary trace")
+    if weekend["resolution"].isna().any():
+        raise ValueError("weekend trace: %d row(s) without a resolution"
+                         % int(weekend["resolution"].isna().sum()))
+    odd_reason = diary["reason"].isna() | ~diary["reason"].isin(DIARY_REASONS)
+    if odd_reason.any():
+        raise ValueError("diary trace: column reason carries %d value(s) outside %s, e.g. %s"
+                         % (int(odd_reason.sum()), list(DIARY_REASONS),
+                            diary.loc[odd_reason, "reason"].astype(str).unique()[:5].tolist()))
+    missing_key = [column for column in SEED_KEY if column not in persons.columns]
+    if missing_key:
+        reason = ("the enriched persons carry no seed key column(s) %s, so no person reaches "
+                  "the weekend or diary trace" % missing_key)
+        return np.full(len(frame), MATCH_PATH_UNRESOLVED, dtype=object), reason
+    seed = pd.DataFrame({column: _integer_key(frame[column], "persons", column)
+                         for column in SEED_KEY})
+    seed = seed.merge(diary[[*SEED_KEY, "reason"]], on=list(SEED_KEY), how="left",
+                      validate="m:1")
+    seed = seed.merge(weekend[[*SEED_KEY, "resolution"]], on=list(SEED_KEY), how="left",
+                      validate="m:1")
+    diary_path = seed["reason"].notna() & ~seed["reason"].isin(DIARY_KEEP_REASONS)
+    path = np.where(diary_path, "diary:" + seed["reason"].astype(str),
+                    np.where(seed["resolution"].notna(),
+                             "weekend:" + seed["resolution"].astype(str),
+                             MATCH_PATH_UNRESOLVED))
+    return path.astype(object), None
+
+
+def plan_source_table(students: pd.DataFrame, persons: pd.DataFrame,
+                      donor_persons: pd.DataFrame, weekend_trace: pd.DataFrame,
+                      diary_trace: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Whose day plan the model students carry, and through which match path.
+
+    ``students`` carries :data:`PLAN_STUDENT_COLUMNS` (the :func:`model_student_frame` output);
+    ``persons`` the enriched persons with :data:`PLAN_PERSON_COLUMNS` and, normally, the seed
+    key ``H_ID`` / ``P_ID`` (not unique: PopulationSim replicates seed households);
+    ``donor_persons`` is ``CompletedDonor.persons`` (``H_ID``, ``P_ID``, ``P_TAET``); the traces
+    are the completed-donor stage's ``WEEKEND_TRACE_FILE`` (:data:`WEEKEND_TRACE_COLUMNS`) and
+    ``DIARY_TRACE_FILE`` (:data:`DIARY_TRACE_COLUMNS`), one row per seed person. ``H_ID`` columns
+    are cast to int64 (a missing or fractional key raises); persons join the traces and the
+    donors m:1, students join persons 1:1 on ``person_id``.
+
+    * ``plan_origin``: :data:`PLAN_ORIGIN_OWN` when (``source_H_ID``, ``source_P_ID``) equals
+      (``attribute_source_H_ID``, ``attribute_source_P_ID``), else :data:`PLAN_ORIGIN_REDRAWN`.
+    * ``match_path``: ``diary:<reason>`` where the diary-trace row of the seed key carries a
+      reason outside :data:`DIARY_KEEP_REASONS`; else ``weekend:<resolution>`` where a weekend
+      row exists; else ``unresolved`` (counted and logged, never raised: a trace need not reach
+      every person). Without a seed key on ``persons`` every row is unresolved and
+      ``diagnostics["unresolved_reason"]`` says why.
+    * ``donor_status``: the ``P_TAET`` of the plan donor (``source_*``) in ``donor_persons``:
+      ``student`` (10), ``pupil`` (9), ``apprentice`` (8), ``employed`` (``EMPLOYED_TAET``),
+      else ``other_not_employed``; ``unknown`` where the donor is not found or its ``P_TAET``
+      is 99 / missing (counted apart). Unknown donors above ``MAX_EXCLUSION_RATE`` of the
+      re-drawn plans raise.
+
+    Returns ``(table, diagnostics)``: :data:`PLAN_SOURCE_COLUMNS`, one row per occurring
+    combination; ``share_of_students`` over all rows of ``students``; the leg shares over the
+    PRESENT students of the row (absent ones have no day; NaN where none is present).
+    """
+    _require_columns(students, PLAN_STUDENT_COLUMNS, "students")
+    _require_columns(persons, PLAN_PERSON_COLUMNS, "persons")
+    _require_unique_person_ids(students, "students")
+    _require_unique_person_ids(persons, "persons")
+    _require_known_person_ids(students["person_id"], set(persons["person_id"]), "students")
+    if students.empty:
+        raise ValueError("students: no row; the plan-source table needs the model students")
+    present = _flags(students, "present").to_numpy()
+    for leg in ("education_leg", "work_leg"):
+        odd = present & ~students[leg].isin(SP.YES_NO).to_numpy()
+        if odd.any():
+            raise ValueError("students: column %s carries %d value(s) outside %s among the "
+                             "present students" % (leg, int(odd.sum()), list(SP.YES_NO)))
+
+    person_columns = [*PLAN_PERSON_COLUMNS,
+                      *[column for column in SEED_KEY if column in persons.columns]]
+    frame = students[list(PLAN_STUDENT_COLUMNS)].merge(
+        persons[person_columns], on="person_id", how="left", validate="1:1")
+    for column in PLAN_PERSON_COLUMNS[1:]:
+        frame[column] = _integer_key(frame[column], "persons", column)
+    own = ((frame["source_H_ID"] == frame["attribute_source_H_ID"])
+           & (frame["source_P_ID"] == frame["attribute_source_P_ID"])).to_numpy()
+    frame["plan_origin"] = np.where(own, PLAN_ORIGIN_OWN, PLAN_ORIGIN_REDRAWN)
+    frame["donor_status"], donor = _donor_status(frame, donor_persons)
+    frame["match_path"], unresolved_reason = _match_path(frame, persons, weekend_trace,
+                                                         diary_trace)
+
+    redrawn = ~own
+    unresolved = (frame["match_path"] == MATCH_PATH_UNRESOLVED).to_numpy()
+    n_students, n_redrawn = len(frame), int(redrawn.sum())
+    diagnostics = {
+        "n_students": n_students, "n_own_diary": n_students - n_redrawn, "n_redrawn": n_redrawn,
+        "n_redrawn_donor_not_found": int((redrawn & donor["not_found"]).sum()),
+        "n_redrawn_donor_p_taet_unreadable": int((redrawn & donor["unreadable"]).sum()),
+        "n_redrawn_donor_unknown": int((redrawn & (frame["donor_status"]
+                                                   == DONOR_STATUS_UNKNOWN)).sum()),
+        "n_own_diary_donor_unknown": int((own & (frame["donor_status"]
+                                                 == DONOR_STATUS_UNKNOWN)).sum()),
+        "n_unresolved": int(unresolved.sum()),
+        "n_redrawn_unresolved": int((redrawn & unresolved).sum()),
+        "seed_key_present": unresolved_reason is None,
+        "unresolved_reason": unresolved_reason,
+    }
+    (LOG.warning if diagnostics["n_redrawn_unresolved"] else LOG.info)(
+        "%s plan source, match path of the re-drawn plans: primary %d/%d (%.1f%%), unresolved "
+        "%d (%.1f%%)%s", _LOG_TAG, n_redrawn - diagnostics["n_redrawn_unresolved"], n_redrawn,
+        _rate(n_redrawn - diagnostics["n_redrawn_unresolved"], n_redrawn),
+        diagnostics["n_redrawn_unresolved"], _rate(diagnostics["n_redrawn_unresolved"],
+                                                   n_redrawn),
+        "; %s" % unresolved_reason if unresolved_reason else "")
+    if diagnostics["n_own_diary_donor_unknown"]:
+        LOG.warning("%s plan source: %d own-diary student(s) whose own seed person is not in "
+                    "the donor persons or has no readable P_TAET", _LOG_TAG,
+                    diagnostics["n_own_diary_donor_unknown"])
+    _log_exclusion("plan source, donor of the re-drawn plans found with a readable P_TAET "
+                   "(not found %d, unreadable %d)"
+                   % (diagnostics["n_redrawn_donor_not_found"],
+                      diagnostics["n_redrawn_donor_p_taet_unreadable"]),
+                   diagnostics["n_redrawn_donor_unknown"], n_redrawn)
+
+    frame["education"] = np.where(present, frame["education_leg"] == "yes", np.nan)
+    frame["work"] = np.where(present, frame["work_leg"] == "yes", np.nan)
+    keys = ["plan_origin", "match_path", "donor_status"]
+    grouped = frame.groupby(keys)
+    table = pd.DataFrame({"model_n": grouped.size(),
+                          "share_with_education_leg": grouped["education"].mean(),
+                          "share_with_work_leg": grouped["work"].mean()}).reset_index()
+    table["share_of_students"] = table["model_n"] / n_students
+    return table.sort_values(keys)[PLAN_SOURCE_COLUMNS].reset_index(drop=True), diagnostics
