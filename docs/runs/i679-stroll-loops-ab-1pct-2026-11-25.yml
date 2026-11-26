@@ -525,7 +525,7 @@ artifacts:
 - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_d_plan_mode_diff_prepared_vs_it5.json
 - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_rule_trip_diff.py
 - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_rule_trip_diff_C_vs_D.json
-- 'run server, kept for now: the caches of i679_a, i679_c and i679_d (about 62 GB each), the stage-result copies keep_{off2,on2,a,b,c} (about 81 MB each) and the per-person loop-leg tables in i679_c7/'
+- 'run server, kept until #684 is decided: the caches of i679_c and i679_d (about 62 GB each), the stage-result copies keep_{off2,on2,a,b,c} (about 81 MB each) and the per-person loop-leg tables in i679_c7/; the cache of i679_a was deleted on 2026-11-26 (owner-approved cleanup)'
 issues:
 - '#679'
 - '#678'
