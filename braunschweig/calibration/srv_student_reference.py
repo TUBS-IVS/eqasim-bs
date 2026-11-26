@@ -262,18 +262,27 @@ def _require_columns(frame: pd.DataFrame, required, name: str) -> None:
         raise ValueError("%s frame is missing required column(s) %s" % (name, missing))
 
 
+def _log_rate(step: str, kind: str, n_flagged: int, n_total: int) -> bool:
+    """Log ``primary n/N (rate), <kind> m (rate)``; True if the rate is above the limit.
+
+    The shared core of :func:`_log_exclusion` and :func:`_log_fallback`: the rate computation,
+    the log line and the :data:`MAX_EXCLUSION_RATE` check. The callers raise with their own text.
+    """
+    rate = n_flagged / n_total if n_total else float("nan")
+    logger.info("%s %s: primary %d/%d (%.1f%%), %s %d (%.1f%%)", _LOG_TAG, step,
+                n_total - n_flagged, n_total, 100.0 * (1.0 - rate) if n_total else float("nan"),
+                kind, n_flagged, 100.0 * rate if n_total else float("nan"))
+    return bool(n_total) and rate > MAX_EXCLUSION_RATE
+
+
 def _log_exclusion(step: str, n_excluded: int, n_total: int) -> None:
     """Log ``primary n/N (rate), excluded m (rate)``; raise above :data:`MAX_EXCLUSION_RATE`."""
-    n_primary = n_total - n_excluded
-    rate = n_excluded / n_total if n_total else float("nan")
-    logger.info("%s %s: primary %d/%d (%.1f%%), excluded %d (%.1f%%)", _LOG_TAG, step,
-                n_primary, n_total, 100.0 * (1.0 - rate) if n_total else float("nan"),
-                n_excluded, 100.0 * rate if n_total else float("nan"))
-    if n_total and rate > MAX_EXCLUSION_RATE:
+    if _log_rate(step, "excluded", n_excluded, n_total):
         raise ValueError(
             "%s %s: %d of %d rows (%.1f%%) would be excluded, above the %.0f%% limit; this is a "
             "broken code mapping or a recoded variable, not a measurement"
-            % (_LOG_TAG, step, n_excluded, n_total, 100.0 * rate, 100.0 * MAX_EXCLUSION_RATE))
+            % (_LOG_TAG, step, n_excluded, n_total, 100.0 * n_excluded / n_total,
+               100.0 * MAX_EXCLUSION_RATE))
 
 
 def _log_fallback(step: str, n_fallback: int, n_total: int) -> None:
@@ -283,16 +292,12 @@ def _log_fallback(step: str, n_fallback: int, n_total: int) -> None:
     A fallback rate above the limit means the primary method is broken (a recoded column), so it
     raises like a high exclusion rate does.
     """
-    n_primary = n_total - n_fallback
-    rate = n_fallback / n_total if n_total else float("nan")
-    logger.info("%s %s: primary %d/%d (%.1f%%), fallback %d (%.1f%%)", _LOG_TAG, step, n_primary,
-                n_total, 100.0 * (1.0 - rate) if n_total else float("nan"), n_fallback,
-                100.0 * rate if n_total else float("nan"))
-    if n_total and rate > MAX_EXCLUSION_RATE:
+    if _log_rate(step, "fallback", n_fallback, n_total):
         raise ValueError(
             "%s %s: the fallback served %d of %d rows (%.1f%%), above the %.0f%% limit; the "
             "primary method is broken (a recoded or missing column), not a measurement"
-            % (_LOG_TAG, step, n_fallback, n_total, 100.0 * rate, 100.0 * MAX_EXCLUSION_RATE))
+            % (_LOG_TAG, step, n_fallback, n_total, 100.0 * n_fallback / n_total,
+               100.0 * MAX_EXCLUSION_RATE))
 
 
 def _share_with_error(weight: pd.Series, mask) -> tuple[float, float, float]:
