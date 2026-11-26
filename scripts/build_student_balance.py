@@ -446,9 +446,9 @@ def _common_header(table_name: str, args, prepared: dict, inputs: list, diagnost
     ]
 
 
-def _weights_lines(weights, mover_share: float, source: str) -> list:
-    return ["# Weights: %s mover_share=%.10g weights_source=%s (calibrated = optimum of a decided calibration "
-            "stage, owner = set by the owner)." % (_format_weights(weights), mover_share, source)]
+def _weights_lines(weights, mover_share: float, source: str, mover_kreise=()) -> list:
+    return ["# Weights: %s mover_share=%.10g mover_site_kreise=[%s] weights_source=%s (calibrated = optimum of a decided calibration "
+            "stage, owner = set by the owner)." % (_format_weights(weights), mover_share, ",".join(mover_kreise), source)]
 
 
 # ---------------------------------------------------------------------------------------- calibrate
@@ -705,7 +705,7 @@ def _run_balance(args) -> int:
     diagnostics["build_od_table"] = t_diagnostics
     diagnostics["balance"] = _balance_summary(tables, od)
     day_factor = education_leg_share * (1.0 - away_share)
-    weights_lines = _weights_lines(weights, mover_share, args.weights_source)
+    weights_lines = _weights_lines(weights, mover_share, args.weights_source, mover_kreise)
     t_inputs = prepared["inputs"]
     balance_inputs = t_inputs + [("srv_student_parameters", Path(args.srv_parameters), False)]
     level_inputs = [*balance_inputs, ("srv_student_share", Path(args.srv_share), False),

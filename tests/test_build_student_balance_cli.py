@@ -180,6 +180,7 @@ def test_cli_writes_all_tables_with_headers(script, world, tmp_path):
         assert any(line.startswith("# Diagnostics:") for line in header), path.name
         assert "short=0.5" in text and "middle=0.25" in text and "long=0.1" in text, path.name
         assert "mover_share=0.2" in text and "weights_source=owner" in text, path.name
+        assert "mover_site_kreise=[%s]" % script.MOVER_SITE_KREISE_DEFAULT in text, path.name
         assert "sha256" in text and "abc1234" in text, path.name
     diagnostics = [line for line in _header(committed[0]) if line.startswith("# Diagnostics:")][0]
     parsed = json.loads(diagnostics[len("# Diagnostics:"):])
