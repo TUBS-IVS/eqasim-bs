@@ -432,21 +432,69 @@ def test_stage_two_recovers_a_known_mover_share(bound_stage_two):
     assert list(table.columns) == W.CALIBRATION_COLUMNS and (table["stage"] == res.stage).all()
     assert table["mover_share"].tolist() == pytest.approx([i / 10 for i in range(11)])   # one row per share
     assert set(res.ranges) == {"short", "middle", "long", "mover_share"}
-    low, high = res.ranges["mover_share"]
-    assert low <= 0.4 <= high and high - low <= 0.2
+    for name, value in (("short", 1.0), ("middle", 0.3), ("long", 0.1), ("mover_share", 0.4)):
+        low, high = res.ranges[name]
+        assert low <= value <= high and high - low <= 0.2
+    assert res.ranges["short"][1] == 1.0
     assert not res.decided and W.config_snippet(res) is None    # the short weight still sits at the bound 1
+
+
+def test_ties_are_logged_and_stage_two_ranges_span_every_tied_triple(toy_build, caplog):
+    # A build that reads only the short weight: on the 0.5 grid the 3 triples with short 0.5 tie at the optimum
+    # (the first in grid order is taken, the count 3 is logged); (0, 0, 0) is undefined. With a noise floor of
+    # 0.9 every defined set is indifferent, so stage two's weight ranges must span all of them, not only the
+    # best triple per mover share that its table shows.
+    def short_only_build(weights):
+        return toy_build(T.CommuterWeights(weights.short, weights.short / 2, weights.short / 4))
+    ref = reference_from(toy_build, T.CommuterWeights(0.5, 0.25, 0.125), noise_floor=0.9, mover_share=0.5)
+    with caplog.at_level("INFO", logger=W.__name__):
+        one = W.calibrate(short_only_build, ref, SITE_KREISE, MIX, grid_step=0.5)
+    assert tuple(one.optimum) == (0.5, 0.0, 0.0)
+    count = re.compile(r"(?<![\d./])3(?![\d./])")             # the tie count as a token; no other line has it
+    assert any(count.search(record.getMessage()) for record in caplog.records if record.name == W.__name__)
+    two = W.calibrate_movers(short_only_build, ref, SITE_KREISE, MIX, MOVER_SITE_KREISE, BS, grid_step=0.5,
+                             mover_step=0.5)
+    assert two.mover_share == 0.5 and len(two.table) == 3
+    assert {name: two.ranges[name] for name in ("short", "middle", "long")} == {
+        "short": (0.5, 1.0), "middle": (0.0, 1.0), "long": (0.0, 1.0)}
+
+
+@pytest.mark.parametrize("mover_share", [0.0, 1.0])
+def test_mover_share_at_a_bound_is_undecided(toy_build, mover_share):
+    ref = reference_from(toy_build, T.CommuterWeights(0.75, 0.5, 0.25), noise_floor=0.001, mover_share=mover_share)
+    res = W.calibrate_movers(toy_build, ref, SITE_KREISE, MIX, MOVER_SITE_KREISE, BS, grid_step=0.25,
+                             mover_step=0.25)
+    assert tuple(res.optimum) == pytest.approx((0.75, 0.5, 0.25)) and res.mover_share == mover_share
+    assert not res.decided and W.config_snippet(res) is None
+    assert [reason for reason in res.reasons if "mover_share" in reason]
 
 
 def test_stage_two_objective_equals_apply_movers_implied_shares_and_fit_distance(toy_build):
     # Stage two evaluates the mover shares by the linear structure of the movers step; this must equal the
-    # direct route (apply_movers, implied_shares, fit_distance) at every share. 0.25 lies off the grid, so
-    # the objectives are not 0.
+    # direct route (apply_movers, implied_shares, fit_distance) at every share; stage one's array objective
+    # must equal it too. 0.25 lies off the grid, so the objectives are not 0. The reference also puts mass on
+    # cells the model cannot reach (no-site own_kreis, other_region_kreis) and weights the groups unequally,
+    # with unequal noise floors.
     ref = reference_from(toy_build, T.CommuterWeights(0.6, 0.3, 0.1), noise_floor=0.001, mover_share=0.25)
+    no_site = ref["home_group"] == SR.HOME_GROUP_NO_SITE
+    ref.loc[no_site, "share"] *= 0.8
+    ref.loc[no_site & (ref["destination_group"] == SR.DEST_OWN), "share"] = 0.15
+    ref.loc[no_site & (ref["destination_group"] == SR.DEST_OTHER_REGION), "share"] = 0.05
+    ref["n_effective"] = ref["home_group"].map({SR.HOME_GROUP_BRAUNSCHWEIG: 120.0, SR.HOME_GROUP_SITE: 30.0,
+                                                SR.HOME_GROUP_NO_SITE: 60.0, SR.HOME_GROUP_ALL: 1.0})
+    ref["noise_floor_tvd_95"] = ref["home_group"].map({SR.HOME_GROUP_BRAUNSCHWEIG: 0.01, SR.HOME_GROUP_SITE: 0.05,
+                                                       SR.HOME_GROUP_NO_SITE: 0.03, SR.HOME_GROUP_ALL: 0.5})
     res = W.calibrate_movers(toy_build, ref, SITE_KREISE, MIX, MOVER_SITE_KREISE, BS, grid_step=0.1,
                              mover_step=0.1)
     share = res.table["mover_share"].to_numpy(dtype=float)
     rows = res.table[np.isclose(share, 0.0) | np.isclose(share, 0.3) | np.isclose(share, 1.0)]
     assert len(rows) == 3
+    stage_one = W.calibrate(toy_build, ref, SITE_KREISE, MIX, grid_step=0.1).table
+    picked = [(0.2, 0.1, 0.1), (0.6, 0.3, 0.1), (1.0, 0.9, 0.4)]
+    rows = pd.concat([rows, stage_one[[triple in picked for triple in
+                                       zip(stage_one["short"], stage_one["middle"], stage_one["long"])]]])
+    assert len(rows) == 6
+    assert res.noise_floor == pytest.approx((120 * 0.01 + 30 * 0.05 + 60 * 0.03) / 210)
     columns = {SR.HOME_GROUP_BRAUNSCHWEIG: "tvd_braunschweig", SR.HOME_GROUP_SITE: "tvd_other_site_kreis",
                SR.HOME_GROUP_NO_SITE: "tvd_no_site_kreis"}
     for row in rows.itertuples(index=False):

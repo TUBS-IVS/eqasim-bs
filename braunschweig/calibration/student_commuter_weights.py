@@ -132,11 +132,15 @@ class _SurveyedRows(NamedTuple):
     n_unsurveyed: int           # rows left out: home Kreis not surveyed by SrV
 
 
-def _surveyed_rows(od: pd.DataFrame, sites: frozenset) -> _SurveyedRows:
-    """Validate T and label its surveyed region rows; shared by :func:`implied_shares` and the grid search."""
-    _require_columns(od, _OD_COLUMNS, "implied_shares od")
+def _surveyed_rows(od: pd.DataFrame, sites: frozenset, what: str) -> _SurveyedRows:
+    """Validate T and label its surveyed region rows; shared by :func:`implied_shares` and the grid search.
+
+    ``what`` names the caller in the error messages. The label vocabulary is checked separately
+    (:func:`_check_vocabulary`), after the caller's mix-weight and empty-row checks.
+    """
+    _require_columns(od, _OD_COLUMNS, f"{what} od")
     if BRAUNSCHWEIG_KREIS not in sites:
-        raise ValueError(f"implied_shares: site_kreise {sorted(sites)} must contain {BRAUNSCHWEIG_KREIS} "
+        raise ValueError(f"{what}: site_kreise {sorted(sites)} must contain {BRAUNSCHWEIG_KREIS} "
                          f"(the Braunschweig home group is defined by it)")
     in_region = od["home_in_region"].to_numpy(dtype=bool)
     home = od["home_ars5"].to_numpy(dtype=object)[in_region].astype(str)
@@ -145,28 +149,32 @@ def _surveyed_rows(od: pd.DataFrame, sites: frozenset) -> _SurveyedRows:
     home, groups = home[surveyed], groups[surveyed]
     students = od["students_persons"].to_numpy(dtype=float)[in_region][surveyed]
     if not np.isfinite(students).all() or (students < 0).any():
-        raise ValueError(f"implied_shares: column 'students_persons' holds negative or non-finite values for home "
+        raise ValueError(f"{what}: column 'students_persons' holds negative or non-finite values for home "
                          f"Kreis(e) {sorted(set(home[~np.isfinite(students) | (students < 0)]))[:5]}")
     labels = _destination_groups(home, od["site_kreis_ars5"].to_numpy(dtype=object)[in_region][surveyed],
                                  od["scope"].to_numpy(dtype=object)[in_region][surveyed])
-    vocabulary = {group: set(destination_vocabulary(sites, group)) for group in FIT_HOME_GROUPS}
-    produced = set(zip(groups, labels))
-    unknown = sorted((g, l) for g, l in produced if l not in vocabulary[g])
-    if unknown:
-        raise ValueError(f"implied_shares: destination label(s) (home_group, destination_group) {unknown[:5]} are not "
-                         f"in the SrV reference vocabulary for site_kreise {sorted(sites)}; model and reference "
-                         f"disagree on the site set")
     return _SurveyedRows(home=home, group=groups, label=labels, students=students,
                          n_in_commuter=int((~in_region).sum()), n_unsurveyed=int((~surveyed).sum()))
 
 
-def _mix_weights(kreise, kreis_mix: pd.Series) -> np.ndarray:
+def _check_vocabulary(rows: _SurveyedRows, sites: frozenset, what: str) -> None:
+    """Raise unless every (home group, destination group) of ``rows`` is a label of the SrV reference."""
+    vocabulary = {group: set(destination_vocabulary(sites, group)) for group in FIT_HOME_GROUPS}
+    produced = set(zip(rows.group, rows.label))
+    unknown = sorted((g, l) for g, l in produced if l not in vocabulary[g])
+    if unknown:
+        raise ValueError(f"{what}: destination label(s) (home_group, destination_group) {unknown[:5]} are not "
+                         f"in the SrV reference vocabulary for site_kreise {sorted(sites)}; model and reference "
+                         f"disagree on the site set")
+
+
+def _mix_weights(kreise, kreis_mix: pd.Series, what: str) -> np.ndarray:
     """``kreis_mix`` for ``kreise`` (ASSUMPTION A9); raises unless every weight is positive and finite."""
     mix = pd.to_numeric(pd.Series(kreis_mix).reindex(list(kreise)), errors="coerce")
     values = mix.to_numpy(dtype=float)
     no_mix = mix.index[~(np.isfinite(values) & (values > 0))]
     if len(no_mix):
-        raise ValueError(f"implied_shares: surveyed home Kreis(e) {list(no_mix)} have no positive kreis_mix weight "
+        raise ValueError(f"{what}: surveyed home Kreis(e) {list(no_mix)} have no positive kreis_mix weight "
                          f"(SrV 'students_weighted_persons'); got {mix.loc[no_mix].tolist()}")
     return values
 
@@ -220,14 +228,15 @@ def implied_shares(od: pd.DataFrame, site_kreise: frozenset[str], kreis_mix: pd.
             (the two sides disagree on the site set).
     """
     sites = frozenset(site_kreise)
-    rows = _surveyed_rows(od, sites)
+    rows = _surveyed_rows(od, sites, "implied_shares")
     frame = pd.DataFrame({"home": rows.home, "group": rows.group, "label": rows.label, "students": rows.students})
     row_sum = frame.groupby("home", sort=True)["students"].sum()
-    mix = pd.Series(_mix_weights(row_sum.index, kreis_mix), index=row_sum.index)
+    mix = pd.Series(_mix_weights(row_sum.index, kreis_mix, "implied_shares"), index=row_sum.index)
     empty = row_sum.index[row_sum.to_numpy() <= 0]
     if len(empty):
         raise ValueError(f"implied_shares: surveyed home Kreis(e) {list(empty)} have an empty row (column "
                          f"'students_persons' sums to 0); their destination distribution is undefined")
+    _check_vocabulary(rows, sites, "implied_shares")
 
     frame["weighted"] = (frame["students"] / frame["home"].map(row_sum)) * frame["home"].map(mix)
     pooled = frame.groupby(["group", "label"], sort=False)["weighted"].sum()
@@ -410,6 +419,8 @@ _MOVER_NAME = "mover_share"
 _FLOAT_TOLERANCE = 1e-12
 # Float rounding only: the grid search's array objective and fit_distance on the same table agree to this.
 _OBJECTIVE_AGREEMENT = 1e-9
+# Names the grid search (calibrate, calibrate_movers) in the error messages of the shared validation helpers.
+_GRID_SEARCH = "calibration grid search"
 
 
 class CalibrationResult(NamedTuple):
@@ -474,7 +485,7 @@ class _GridObjective:
     def __init__(self, reference: pd.DataFrame, site_kreise, kreis_mix: pd.Series):
         self.sites = frozenset(site_kreise)
         if BRAUNSCHWEIG_KREIS not in self.sites:
-            raise ValueError(f"calibration: site_kreise {sorted(self.sites)} must contain {BRAUNSCHWEIG_KREIS}")
+            raise ValueError(f"{_GRID_SEARCH}: site_kreise {sorted(self.sites)} must contain {BRAUNSCHWEIG_KREIS}")
         frame = _validated_reference(reference)
         cells = [(group, label) for group in FIT_HOME_GROUPS for label in destination_vocabulary(self.sites, group)]
         keys = list(zip(frame["home_group"], frame["destination_group"]))
@@ -496,24 +507,25 @@ class _GridObjective:
     def _bind_kreise(self, kreise: np.ndarray, groups: np.ndarray) -> None:
         # The first table fixes the surveyed home Kreise, their mix weights and the pooled mix per group.
         self.kreise = kreise
-        self.mix = _mix_weights(kreise, self.kreis_mix)
+        self.mix = _mix_weights(kreise, self.kreis_mix, _GRID_SEARCH)
         group_index = np.array([FIT_HOME_GROUPS.index(group) for group in groups])
         self.group_mix = np.bincount(group_index, weights=self.mix, minlength=len(FIT_HOME_GROUPS))
         missing = [group for group, total in zip(FIT_HOME_GROUPS, self.group_mix) if total <= 0]
         if missing:
-            raise ValueError(f"fit_distance implied: column 'home_group' must hold exactly {list(FIT_HOME_GROUPS)}; "
-                             f"T has no surveyed home Kreis for {missing}")
+            raise ValueError(f"{_GRID_SEARCH}: T has no surveyed home Kreis for the home group(s) {missing}; the "
+                             f"fit needs all of {list(FIT_HOME_GROUPS)}")
 
     def students(self, od: pd.DataFrame) -> np.ndarray:
         """The (Kreis, cell) student matrix of one T table."""
         if not isinstance(od, pd.DataFrame):
-            raise ValueError(f"calibration: build must return the T table as a DataFrame, got {type(od).__name__}")
-        rows = _surveyed_rows(od, self.sites)
+            raise ValueError(f"{_GRID_SEARCH}: build must return the T table as a DataFrame, got {type(od).__name__}")
+        rows = _surveyed_rows(od, self.sites, _GRID_SEARCH)
+        _check_vocabulary(rows, self.sites, _GRID_SEARCH)
         kreise, first = np.unique(rows.home, return_index=True)
         if self.kreise is None:
             self._bind_kreise(kreise, rows.group[first])
         elif not np.array_equal(kreise, self.kreise):
-            raise ValueError(f"calibration: the surveyed home Kreise of T changed between tables "
+            raise ValueError(f"{_GRID_SEARCH}: the surveyed home Kreise of T changed between tables "
                              f"({list(self.kreise)} -> {list(kreise)}); build must lay out every triple alike")
         cell = np.fromiter((self.cell_index[key] for key in zip(rows.group, rows.label)), dtype=int,
                            count=len(rows.home))
@@ -603,12 +615,18 @@ def _log_stage(stage: str, n_sets: int, n_undefined: int, optimum: CommuterWeigh
                        stage, "; ".join(reasons))
 
 
-def _log_optimum_build(build: Callable[[CommuterWeights], pd.DataFrame], optimum: CommuterWeights) -> None:
+def _log_optimum_build(build: Callable[[CommuterWeights], pd.DataFrame], optimum: CommuterWeights,
+                       mover_share: float = 0.0, mover_site_kreise: tuple[str, ...] = (),
+                       braunschweig_kreis: str = BRAUNSCHWEIG_KREIS) -> None:
     # build returns T only, not the builder's diagnostics: rebuilding the optimum at the normal log level lets
-    # the builder's own line report the weight-dependent counts (multi-site splits by enrollment only).
-    LOGGER.info("[student_commuter_weights] rebuilding the optimum %s once at the normal log level for the "
-                "builder's diagnostics (multi-site splits by weight / by enrollment only)", tuple(optimum))
-    build(optimum)
+    # the builder's own line report the weight-dependent counts (multi-site splits by enrollment only); with
+    # a mover share, the movers step's own line reports the persons moved at the chosen optimum.
+    LOGGER.info("[student_commuter_weights] rebuilding the optimum %s with mover share %g once at the normal log "
+                "level for the builder's diagnostics (multi-site splits by weight / by enrollment only)",
+                tuple(optimum), mover_share)
+    od = build(optimum)
+    if mover_share > 0.0:
+        apply_movers(od, mover_share, mover_site_kreise, braunschweig_kreis)
 
 
 def calibrate(build: Callable[[CommuterWeights], pd.DataFrame], reference: pd.DataFrame, site_kreise,
@@ -718,7 +736,7 @@ def calibrate_movers(build: Callable[[CommuterWeights], pd.DataFrame], reference
     table["within_noise_floor"] = table["within_noise_floor"].astype(bool)
     _log_stage(STAGE_WEIGHTS_AND_MOVERS, objective.size, int(np.isnan(objective).sum()), optimum, mover_share,
                float(objective.ravel()[best]), measure.noise_floor, int(within.sum()), ranges, decided, reasons)
-    _log_optimum_build(build, optimum)
+    _log_optimum_build(build, optimum, mover_share, mover_site_kreise, braunschweig_kreis)
     return CalibrationResult(stage=STAGE_WEIGHTS_AND_MOVERS, table=table, optimum=optimum, mover_share=mover_share,
                              objective=float(objective.ravel()[best]), noise_floor=measure.noise_floor,
                              ranges=ranges, decided=decided, reasons=reasons)
@@ -775,6 +793,7 @@ def config_snippet(result: CalibrationResult) -> str | None:
         return None
     lines = [f"# Proposal for Phase 4 from calibration stage '{result.stage}' against the SrV destination "
              f"reference (objective {result.objective:.6g}, noise floor {result.noise_floor:.6g}); not applied.",
+             "# The key names are proposals too, to be confirmed when Phase 4 adds them to the configuration.",
              "student_commuter_weights:",
              *(f"  {name}: {_yaml_number(value)}" for name, value in zip(_WEIGHT_NAMES, result.optimum))]
     if result.stage == STAGE_WEIGHTS_AND_MOVERS:
