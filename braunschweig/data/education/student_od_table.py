@@ -883,7 +883,9 @@ def balance_tables(od: pd.DataFrame, region_kreise) -> dict[str, pd.DataFrame]:
             in-commuters the others; ``censored_upper_bound_persons`` = scaled bounds of the site's
             censored origin cells (``upper_bound_persons_scaled - origin_persons_scaled``, 0 for a shown
             cell; a NaN bound counts 0); ``censored_upper_bound_commuters_persons`` = the same bound times
-            the weight, summed over the commuter rows; ``censored_cells_without_bound`` = the site's rows
+            the weight, summed over the commuter rows, capped at ``enrollment_persons`` minus the site's
+            scaled own-Kreis origin cell (never below 0: no more students can live outside the site's
+            Kreis, A6); ``censored_cells_without_bound`` = the site's rows
             (origin cells after the split, mover rows excluded) whose bound is NaN, i.e. censored cells
             that no CHE list bounds. A cell counts once per site it is split to, so the sum over the
             sites can exceed the number of such CHE cells.
@@ -893,6 +895,8 @@ def balance_tables(od: pd.DataFrame, region_kreise) -> dict[str, pd.DataFrame]:
             outside the region.
         ``by_home_kreis`` (:data:`HOME_KREIS_COLUMNS`, one row per region Kreis): students at local
             sites, out-commuting students and their sum, the students living in the Kreis.
+        ``diagnostics`` (a dict, not a table): ``censored_upper_bound_commuters_capped_sites``, the local
+            sites whose censored commuter bound the cap above cut (logged as a rate).
 
     Raises:
         ValueError: a missing column, a local site whose ``enrollment_persons`` is NaN or differs between
@@ -945,6 +949,19 @@ def balance_tables(od: pd.DataFrame, region_kreise) -> dict[str, pd.DataFrame]:
         censored_upper_bound_commuters_persons=("commuter_bound", "sum"),
         censored_cells_without_bound=("without_bound", "sum")).reset_index()
     by_site["enrollment_persons"] = by_site["destination_id"].map(enrollment).astype(float)
+    # At most enrollment - own-Kreis origin students of a site can live outside its Kreis (A6: the own-Kreis
+    # origins live at the site), so the censored commuter bound is capped there, never below 0.
+    is_local_row = (od["cell_kind"] == KIND_LOCAL).to_numpy()
+    own_origin = (pd.Series(od.loc[is_local_row, "origin_persons_scaled"].to_numpy(dtype=float),
+                            index=od.loc[is_local_row, "destination_id"].to_numpy()))
+    cap = (by_site["enrollment_persons"] - by_site["destination_id"].map(own_origin).fillna(0.0)).clip(lower=0.0)
+    capped = by_site["censored_upper_bound_commuters_persons"] > cap + TOLERANCE_PERSONS
+    by_site["censored_upper_bound_commuters_persons"] = by_site["censored_upper_bound_commuters_persons"].where(
+        ~capped, cap)
+    capped_sites = by_site.loc[capped, "destination_id"].tolist()
+    if capped_sites:
+        LOGGER.warning("[student_od_table] balance: censored commuter bound capped at enrollment minus the own-Kreis "
+                       "origin at %s local site(s) %s", _rate(len(capped_sites), len(by_site)), capped_sites)
     by_site["total_persons"] = by_site["residents_region_persons"] + by_site["in_commuters_persons"]
     off = (by_site["total_persons"] - by_site["enrollment_persons"]).abs() > TOLERANCE_PERSONS
     if off.any():
@@ -981,4 +998,5 @@ def balance_tables(od: pd.DataFrame, region_kreise) -> dict[str, pd.DataFrame]:
                 int(by_site["censored_cells_without_bound"].sum()),
                 int(out_commuters["censored_cells_without_bound"].sum()))
     return {"by_site": by_site, "out_commuters": out_commuters, "in_commuters_by_origin": in_commuters,
-            "by_home_kreis": by_home_kreis}
+            "by_home_kreis": by_home_kreis,
+            "diagnostics": {"censored_upper_bound_commuters_capped_sites": capped_sites}}

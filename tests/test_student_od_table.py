@@ -497,8 +497,9 @@ def test_balance_reads_a_table_written_to_csv(toy_with_surrounding, tmp_path):
     codes = {column: str for column in ["home_ars5", "destination_id", "site_kreis_ars5"]}
     back = pd.read_csv(tmp_path / "od.csv", dtype=codes)
     expected, read = T.balance_tables(moved, ["A", "B"]), T.balance_tables(back, ["A", "B"])
-    for key in expected:
+    for key in ["by_site", "out_commuters", "in_commuters_by_origin", "by_home_kreis"]:
         pd.testing.assert_frame_equal(read[key], expected[key])
+    assert read["diagnostics"] == expected["diagnostics"]
     # The enrollment is a column: a row whose site disagrees with the other rows is caught.
     back.loc[back["destination_id"] == "S1", "enrollment_persons"] = [1000.0, 1000.0, 999.0, 1000.0]
     with pytest.raises(ValueError, match="enrollment_persons"):
@@ -535,6 +536,20 @@ def test_censored_bound_passes_through_scale_split_and_weight(toy_censored):
     # A censored own-Kreis cell counts 0: movers = local = 100 - 16 * 30 / 330 * 0.3.
     assert _at(od, "D", "S3", "movers_persons") == pytest.approx(100 - 144 / 330)
     assert _at(od, "D", "S3", "students_persons") == pytest.approx(100 - 144 / 330)
+
+
+def test_censored_commuter_bound_is_capped_at_enrollment_minus_the_own_kreis_origin():
+    # Art Z (no CHE total, factor 1), S1 in A with enrollment 100; A's own cell shows 80, B's cell is censored at 60.
+    # Raw commuter bound 60 * 0.5 = 30, but at most 100 - 80 = 20 students of S1 can live outside A: capped, counted.
+    cells = [_shown("A", "Art Z", 80), _censored("B", "Art Z", 60)]
+    sites = [_site("S1", "Art Z", "A", "local", 100.0)]
+    pairs = [_pair("A", "S1", 3.0, SHORT), _pair("B", "S1", 15.0, SHORT)]
+    od, _ = T.build_od_table(**_toy_input(cells, {}, sites, pairs, ["A", "B"]), weights=WEIGHTS)
+    balance = T.balance_tables(od, ["A", "B"])
+    site = balance["by_site"].set_index("destination_id").loc["S1"]
+    assert site["censored_upper_bound_commuters_persons"] == pytest.approx(20.0)
+    assert site["censored_upper_bound_persons"] == pytest.approx(60.0)  # the origin bound itself is not capped
+    assert balance["diagnostics"]["censored_upper_bound_commuters_capped_sites"] == ["S1"]
 
 
 def test_by_home_kreis_row_sum_is_local_plus_out_commuting(toy_with_surrounding):

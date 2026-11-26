@@ -653,6 +653,7 @@ def _balance_summary(tables: dict, od: pd.DataFrame) -> dict:
         "censored_upper_bound_commuters_persons": float(by_site["censored_upper_bound_commuters_persons"].sum()),
         "censored_cells_without_bound": {"local_sites": int(by_site["censored_cells_without_bound"].sum()),
                                          "surrounding_sites": int(out["censored_cells_without_bound"].sum())},
+        "censored_upper_bound_commuters_capped_sites": tables["diagnostics"]["censored_upper_bound_commuters_capped_sites"],
         "movers_to_braunschweig_persons": float(od.loc[od["cell_kind"] == T.KIND_MOVER, "students_persons"].sum()),
         "students_living_persons": float(tables["by_home_kreis"]["students_living_persons"].sum()),
     }
