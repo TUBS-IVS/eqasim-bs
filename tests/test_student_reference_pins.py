@@ -12,6 +12,8 @@ so these tests read them directly (not data-gated). Two kinds of check:
   the pin is to be re-copied from the new file together with a new run manifest; it is not a
   reference value, only a guard against an unnoticed change of a committed table.
 """
+import ast
+import re
 from pathlib import Path
 
 import numpy as np
@@ -20,8 +22,10 @@ import pytest
 
 from braunschweig.calibration.srv_distance_targets import WOLFSBURG_KREIS
 from braunschweig.calibration.srv_student_reference import (
-    BRAUNSCHWEIG_KREIS, DEST_SITE_PREFIX, HOME_GROUP_BRAUNSCHWEIG, HOME_GROUP_NO_SITE,
-    HOME_GROUP_SITE, destination_vocabulary)
+    DESTINATION_TABLE, HOME_GROUP_BRAUNSCHWEIG, HOME_GROUP_NO_SITE, HOME_GROUP_SITE,
+    MEAN_LABEL, MODE_BY_E_HVM_5, PARAMETER_TABLE, POST_MATSIM_TABLE, QUANTITY_DAILY_DISTANCE,
+    QUANTITY_DAILY_TRAVEL_TIME, QUANTITY_MODE_ALL_LEGS, QUANTITY_MODE_EDUCATION_LEGS,
+    YOUNG_ADULT_STATUS_TABLE, YOUNG_ADULT_STATUSES, destination_vocabulary)
 from braunschweig.calibration.student_parameters import EXTRA_BASES, PARAMETERS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -228,9 +232,18 @@ def test_decision_tables_rows_verdicts_and_value_pins_2026_11_25():
 
 
 # ------------------------------------------------------- Phase 1 tables (extraction of 2026-11-26)
-# Written by the extraction run of 2026-11-26 at code state 0efd3cc9. The structural tests read the
-# vocabulary and the groups from the modules that own them; the value pins are copied unrounded
-# from the committed files and are guards against an unnoticed change, not reference values.
+# Written by the extraction run of 2026-11-26 at the code state named in each file header. The
+# structural tests read the vocabulary and the groups from the modules that own them and the site
+# Kreise from the file header; the value pins are copied unrounded from the committed files and are
+# guards against an unnoticed change, not reference values.
+
+PHASE1_TABLES = (PARAMETER_TABLE, YOUNG_ADULT_STATUS_TABLE, POST_MATSIM_TABLE, DESTINATION_TABLE)
+FORBIDDEN_HEADER_PATTERNS = {
+    "drive letter": r"\b[A-Za-z]:[\\/]",
+    "home directory": r"/home/",
+    "at sign": r"@",
+    "IPv4 address": r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b",
+}
 
 
 def _read_with_nan_label(name):
@@ -238,8 +251,32 @@ def _read_with_nan_label(name):
                        keep_default_na=False, na_values=[""])
 
 
+def _header_lines(name):
+    return [line for line in (SRV / name).read_text(encoding="utf-8").splitlines()
+            if line.startswith("#")]
+
+
+def _site_kreise_of_header(name):
+    match = re.search(r"Site Kreise \([^)]*\): (\[[^\]]*\]);", " ".join(_header_lines(name)))
+    assert match, "no 'Site Kreise' header line in %s" % name
+    return frozenset(ast.literal_eval(match.group(1)))
+
+
+def _assert_statistics(cell, base_size, share_column="share"):
+    """One base: n_effective <= its size, se = sqrt(p (1 - p) / n_effective), NaN only if empty."""
+    if base_size == 0:
+        assert cell[share_column].isna().all()
+        assert cell["n_effective"].isna().all() and cell["se_share"].isna().all()
+        return
+    assert cell[share_column].notna().all()
+    assert (cell["n_effective"] <= base_size * (1 + 1e-9)).all()
+    share = cell[share_column].to_numpy()
+    expected = np.sqrt(share * (1.0 - share) / cell["n_effective"].to_numpy())
+    assert cell["se_share"].to_numpy() == pytest.approx(expected, rel=1e-6, abs=1e-12)
+
+
 def test_student_parameters_cover_the_vocabulary_and_partition():
-    frame = _read_with_nan_label("srv2023_student_parameters.csv")
+    frame = _read_with_nan_label(PARAMETER_TABLE)
     assert set(frame["parameter"]) == set(PARAMETERS)
     expected_bases = {(name, spec.base) for name, spec in PARAMETERS.items()}
     expected_bases |= {(name, base) for name, bases in EXTRA_BASES.items() for base in bases}
@@ -248,15 +285,14 @@ def test_student_parameters_cover_the_vocabulary_and_partition():
     for (parameter, base), cell in frame.groupby(["parameter", "base"]):
         assert list(cell["label"]) == list(PARAMETERS[parameter].labels), (parameter, base)
         assert _in_unit_interval(cell["share"]), (parameter, base)
-        assert (cell["n_unweighted"] >= 0).all()
-        if cell["n_unweighted"].sum() > 0:
+        base_size = int(cell["n_unweighted"].sum())
+        if base_size > 0:
             assert cell["share"].sum() == pytest.approx(1.0, abs=1e-8), (parameter, base)
-        else:
-            assert cell["share"].isna().all(), (parameter, base)
+        _assert_statistics(cell, base_size)
 
 
 def test_student_parameters_value_pins_20261126():
-    frame = _read_with_nan_label("srv2023_student_parameters.csv")
+    frame = _read_with_nan_label(PARAMETER_TABLE)
     row = _row(frame, parameter="age_group", base="students_present", label="20_24")
     assert row["n_unweighted"] == 240
     assert row["share"] == pytest.approx(0.6211472026, rel=1e-9)
@@ -269,20 +305,21 @@ def test_student_parameters_value_pins_20261126():
 
 
 def test_young_adult_status_rows_partition_and_wolfsburg_is_nan():
-    frame = _read(SRV, "srv2023_young_adult_status_by_kreis.csv")
+    frame = _read(SRV, YOUNG_ADULT_STATUS_TABLE)
     kreis_rows = frame[frame["level"] == "kreis"]
     assert list(kreis_rows["code"].drop_duplicates()) == ZGB_KREISE
+    for code, cell in frame.groupby("code"):
+        assert list(cell["status"]) == list(YOUNG_ADULT_STATUSES), code
+        if code == WOLFSBURG_KREIS:
+            assert (cell["n_unweighted"] == 0).all()
+        else:
+            assert cell["share"].sum() == pytest.approx(1.0, abs=1e-8), code
+        _assert_statistics(cell, int(cell["n_unweighted"].sum()))
     assert _in_unit_interval(frame["share"])
-    wolfsburg = frame[frame["code"] == WOLFSBURG_KREIS]
-    assert len(wolfsburg) == 3
-    assert (wolfsburg["n_unweighted"] == 0).all()
-    assert wolfsburg["share"].isna().all()
-    for code, cell in frame[frame["code"] != WOLFSBURG_KREIS].groupby("code"):
-        assert cell["share"].sum() == pytest.approx(1.0, abs=1e-8), code
 
 
 def test_young_adult_status_value_pins_20261126():
-    frame = _read(SRV, "srv2023_young_adult_status_by_kreis.csv")
+    frame = _read(SRV, YOUNG_ADULT_STATUS_TABLE)
     row = _row(frame, code="03101", status="student")
     assert row["n_unweighted"] == 199
     assert row["share"] == pytest.approx(0.4578637028, rel=1e-9)
@@ -293,9 +330,14 @@ def test_young_adult_status_value_pins_20261126():
 
 
 def test_post_matsim_reference_rows_and_pins_20261126():
-    frame = _read_with_nan_label("srv2023_student_post_matsim_reference.csv")
-    assert len(frame) == 12
-    for quantity in ("main_mode_all_legs", "main_mode_education_legs"):
+    frame = _read_with_nan_label(POST_MATSIM_TABLE)
+    modes = list(MODE_BY_E_HVM_5.values())
+    expected = [(quantity, mode) for quantity in (QUANTITY_MODE_ALL_LEGS,
+                                                  QUANTITY_MODE_EDUCATION_LEGS)
+                for mode in modes]
+    expected += [(QUANTITY_DAILY_DISTANCE, MEAN_LABEL), (QUANTITY_DAILY_TRAVEL_TIME, MEAN_LABEL)]
+    assert [tuple(pair) for pair in frame[["quantity", "label"]].to_numpy()] == expected
+    for quantity in (QUANTITY_MODE_ALL_LEGS, QUANTITY_MODE_EDUCATION_LEGS):
         cell = frame[frame["quantity"] == quantity]
         assert _in_unit_interval(cell["value"])
         assert cell["value"].sum() == pytest.approx(1.0, abs=1e-6), quantity
@@ -310,26 +352,24 @@ def test_post_matsim_reference_rows_and_pins_20261126():
 
 
 def test_education_destination_groups_partition_and_noise_floors():
-    frame = pd.read_csv(SRV / "srv2023_student_education_destination.csv", comment="#",
-                        dtype=str, keep_default_na=False)
-    numeric = ["n_persons_group", "n_unweighted", "share", "noise_floor_tvd_95"]
-    frame[numeric] = frame[numeric].apply(pd.to_numeric)
+    frame = pd.read_csv(SRV / DESTINATION_TABLE, comment="#")
+    sites = _site_kreise_of_header(DESTINATION_TABLE)
     assert set(frame["home_group"]) == {
         HOME_GROUP_BRAUNSCHWEIG, HOME_GROUP_SITE, HOME_GROUP_NO_SITE, "region"}
     for home_group, cell in frame.groupby("home_group"):
-        groups = list(cell["destination_group"])
-        sites = frozenset(g[len(DEST_SITE_PREFIX):] for g in groups
-                          if g.startswith(DEST_SITE_PREFIX))
-        if home_group == HOME_GROUP_BRAUNSCHWEIG:
-            sites = sites | {BRAUNSCHWEIG_KREIS}
-        assert groups == destination_vocabulary(sites, home_group), home_group
-        assert cell["share"].sum() == pytest.approx(1.0, abs=1e-8), home_group
-        assert (cell["noise_floor_tvd_95"] >= 0).all(), home_group
-        assert (cell["n_persons_group"] == cell["n_persons_group"].iloc[0]).all()
+        assert list(cell["destination_group"]) == destination_vocabulary(sites, home_group), \
+            home_group
+        base_size = int(cell["n_persons_group"].iloc[0])
+        assert (cell["n_persons_group"] == base_size).all()
+        assert (cell["noise_floor_tvd_95"] >= 0).all()
+        assert _in_unit_interval(cell["share"])
+        if base_size > 0:
+            assert cell["share"].sum() == pytest.approx(1.0, abs=1e-8), home_group
+        _assert_statistics(cell, base_size)
 
 
 def test_education_destination_value_pins_20261126():
-    frame = pd.read_csv(SRV / "srv2023_student_education_destination.csv", comment="#")
+    frame = pd.read_csv(SRV / DESTINATION_TABLE, comment="#")
     row = _row(frame, home_group="braunschweig", destination_group="own_kreis")
     assert row["n_persons_group"] == 88
     assert row["share"] == pytest.approx(0.7736633592, rel=1e-9)
@@ -338,3 +378,17 @@ def test_education_destination_value_pins_20261126():
     assert row["noise_floor_tvd_95"] == pytest.approx(0.1311193596, rel=1e-9)
     assert _row(frame, home_group="region", destination_group="landkreis_hildesheim")[
         "weight_sum"] == pytest.approx(428.7944169, rel=1e-9)
+
+
+@pytest.mark.parametrize("name", PHASE1_TABLES)
+def test_phase1_table_headers_are_traceable_and_carry_no_local_paths(name):
+    lines = _header_lines(name)
+    header = " ".join(lines)
+    assert sum(line.startswith("# Exclusions:") for line in lines) == 1
+    assert re.search(r"table sha256 [0-9a-f]{64}", header), name
+    assert _site_kreise_of_header(name)
+    for label, pattern in FORBIDDEN_HEADER_PATTERNS.items():
+        assert not re.search(pattern, header), (name, label)
+    if name == PARAMETER_TABLE:
+        assert "education_leg_share_harmonised_purpose" in header
+        assert "education_leg_share_control_definition" in header
