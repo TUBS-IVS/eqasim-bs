@@ -6,7 +6,9 @@ so these tests read them directly (not data-gated). Two kinds of check:
 * invariants that must hold for any correct extraction (row sets, shares in [0, 1], partitions
   summing to 1, NaN where the base is empty, shared label vocabulary of the two surveys);
 * three value pins per file, copied unrounded from the files written by the extraction run of
-  2026-11-25 (code state ``fbb54d76``). A pin failing after a deliberate re-extraction means
+  2026-11-25 (code state ``fbb54d76``; the MiD behaviour table and the decision tables from the
+  re-run of 2026-11-26 at code state ``f8c79e4d``, run manifest
+  ``student-commuting-phase0-reference-2026-11-25``). A pin failing after a deliberate re-extraction means
   the pin is to be re-copied from the new file together with a new run manifest; it is not a
   reference value, only a guard against an unnoticed change of a committed table.
 """
@@ -183,8 +185,8 @@ def test_behaviour_value_pins_2026_11_25():
     mid = _read(MID, "mid2023_student_behaviour_seed.csv")
     row = _row(mid, control="status_x_education_leg", universe="students", label="student_edu")
     assert row["n_unweighted"] == 1478
-    assert row["share"] == pytest.approx(0.3046225057, rel=1e-9)
-    assert row["n_effective"] == pytest.approx(1424.609214, rel=1e-9)
+    assert row["share"] == pytest.approx(0.3054065027, rel=1e-9)
+    assert row["n_effective"] == pytest.approx(1428.127849, rel=1e-9)
 
 
 # ------------------------------------------------------------------ decision tables (artifacts)
@@ -206,7 +208,7 @@ def test_decision_tables_rows_verdicts_and_value_pins_2026_11_25():
     }
     assert (rule["rule3_smoke"] == "pending_phase2").all()
     row = _row(rule, control="arrival", label="student_no_education_leg")
-    assert row["difference_in_se"] == pytest.approx(-1.936233064, rel=1e-8)
+    assert row["difference_in_se"] == pytest.approx(-1.913354468, rel=1e-8)
     assert _row(rule, control="trip_class", label="student_trips_0")["srv_share_students"] == pytest.approx(
         0.1784765925, rel=1e-9)
 

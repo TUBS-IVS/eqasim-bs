@@ -35,8 +35,8 @@ verification:
     Phase 0 extraction run) and no stage reads them - they are build-time references of the
     student-commuting feature (issue #140). Unit tests on synthetic MiD-shaped frames
     (hand-computed shares, the universe restriction to core weekdays and adults, the
-    public-holiday exclusion, the rbW rule,
-    the exclusion of unreadable codes, the Land join and the CLI end to end):
+    public-holiday exclusion, the rbW rule, the unknown day for no diary and for a diary the
+    popsim seed replaces, the exclusion of unreadable codes, the Land join and the CLI end to end):
     tests/test_mid_student_reference.py.
 requirements:
   synthesis: not_needed
@@ -49,7 +49,8 @@ licensing:
 limitations: |
   Definitions (student = P_TAET 10, adults 18+, core weekdays ST_WOTAG 2-4 without public-holiday
   reporting days under exclude_holiday_plan_sources, the seed's education and work W_ZWECK
-  sets, direct legs only under exclude_rbw_legs, first education leg, arrival hour, trip class,
+  sets, direct legs only under exclude_rbw_legs, the unknown day of the behaviour table, first
+  education leg, arrival hour, trip class,
   season-ticket flatrate, distance validity, the exclusion rules for unreadable codes) live in
   the module docstring of braunschweig/calibration/mid_student_reference.py; the shared label
   vocabulary, bin edges and the Kish effective sample size in
@@ -64,8 +65,9 @@ limitations: |
 
   Two universe differences to the SrV side remain, both described in the module docstring of
   mid_student_reference.py (owner of the wording) and counted in the file headers: persons
-  without a diary of the reporting day are absent from the four diary-dependent controls
-  (paragraph "LIMITATION of the behaviour table"), and MiD keeps persons away from home all day,
+  with an unknown day (no diary, or a diary the popsim seed replaces by a donor's; bullet
+  "Diary of the day") are absent from the four diary-dependent controls (paragraph "LIMITATION
+  of the behaviour table"), and MiD keeps persons away from home all day,
   whom the SrV universe drops (bullet "Universe gap to the SrV side").
 
   Education leg set: the seed's W_ZWECK {3, 11, 12} without the passive escort leg (13) of an

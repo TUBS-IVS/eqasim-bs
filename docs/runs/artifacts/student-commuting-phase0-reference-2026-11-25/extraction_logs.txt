@@ -29,7 +29,7 @@ INFO extract_srv_student_reference: wrote eqasim-data\data\braunschweig\srv\srv2
 INFO extract_srv_student_reference: wrote eqasim-data\data\braunschweig\srv\srv2023_student_behaviour.csv (33 rows)
 INFO extract_srv_student_reference: wrote eqasim-data\data\braunschweig\srv\srv2023_student_comparison.csv (18 rows)
 exit=0
-### Step 2: MiD (source-commit fbb54d76)
+### Step 2: MiD (source-commit f8c79e4d; re-run after the rule that reads a diary the seed replaces as an unknown day)
 INFO extract_mid_student_reference: read 420979 persons, 1087393 trips
 INFO braunschweig.calibration.mid_student_reference: [mid student reference] valid P_GEW (positive): primary 420979/420979 (100.0%), excluded 0 (0.0%)
 INFO braunschweig.calibration.mid_student_reference: [mid student reference] core weekdays (ST_WOTAG in [2, 3, 4]): 179941 persons kept, 241038 on another day
@@ -53,6 +53,11 @@ INFO braunschweig.calibration.mid_student_reference: [mid student reference] rep
 INFO braunschweig.calibration.mid_student_reference: [mid student reference] readable P_TAET over the core-weekday persons (99 / missing is never 'not a student'): primary 170931/171015 (100.0%), excluded 84 (0.0%)
 INFO braunschweig.calibration.mid_student_reference: [mid student reference] diary of the reporting day (anzwege1 0-799, or 803 with mobil != 1 = a genuine stay-at-home day), adult students: primary 4862/5513 (88.2%), excluded 651 (11.8%)
 INFO braunschweig.calibration.mid_student_reference: [mid student reference] diary of the reporting day, adult non-students: primary 129603/144059 (90.0%), excluded 14456 (10.0%)
+INFO braunschweig.popsim.diary_facts: [diary_facts] 305206 donor persons with Wege: 22933/305206 (7.5%) carry rbW legs (107368 legs, 0/107368 (0.0%) coded km set to 0), 86445/305206 (28.3%) do not end at home, 3198/305206 (1.0%) start by arriving home, 5144/305206 (1.7%) have only rbW legs
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] diary the popsim seed keeps (not 'only_rbw': no direct leg but rbW legs, exclude_rbw_legs), adult students: primary 4862/4862 (100.0%), excluded 0 (0.0%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] diary the popsim seed keeps (not 'emptied_by_arrive_home_drop': the only direct leg is a leading arrive-home leg the trip build drops, drop_leading_arrive_home_leg), adult students: primary 4858/4862 (99.9%), excluded 4 (0.1%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] diary the popsim seed keeps (not 'only_rbw': no direct leg but rbW legs, exclude_rbw_legs), adult non-students: primary 126711/129603 (97.8%), excluded 2892 (2.2%)
+INFO braunschweig.calibration.mid_student_reference: [mid student reference] diary the popsim seed keeps (not 'emptied_by_arrive_home_drop': the only direct leg is a leading arrive-home leg the trip build drops, drop_leading_arrive_home_leg), adult non-students: primary 126629/126711 (99.9%), excluded 82 (0.1%)
 INFO braunschweig.calibration.mid_student_reference: [mid student reference] arrival control (readable start time and arrival hour of the first education leg, over the students with an education leg; start unreadable 4, arrival unreadable 1): primary 1473/1478 (99.7%), excluded 5 (0.3%)
 INFO braunschweig.calibration.mid_student_reference: [mid student reference] season-ticket control (P_FKARTE in FKARTE_TO_CATEGORY; item non-response excluded, never 'no flatrate'; 8 = never PT is no flatrate): primary 5070/5513 (92.0%), excluded 443 (8.0%)
 INFO braunschweig.calibration.mid_student_reference: [mid student reference] behaviour table: 33 rows (5 controls x 2 universes); 149572 adults, 5513 adult students
@@ -61,20 +66,7 @@ INFO extract_mid_student_reference: wrote eqasim-data\data\braunschweig\mid\mid2
 INFO extract_mid_student_reference: wrote eqasim-data\data\braunschweig\mid\mid2023_student_share_20_29_by_land.csv (17 rows)
 INFO extract_mid_student_reference: wrote eqasim-data\data\braunschweig\mid\mid2023_student_behaviour_seed.csv (33 rows)
 exit=0
-### Step 3: evidence (source-commit fbb54d76)
-INFO braunschweig.calibration.student_control_evidence: [student control evidence] status_x_education_leg: rule 1 (>= 30 respondents) 2/2 labels, rule 2 (> 2.0 se) 0/2 labels -> comparison_only
-INFO braunschweig.calibration.student_control_evidence: [student control evidence] trip_class: rule 1 (>= 30 respondents) 4/4 labels, rule 2 (> 2.0 se) 0/4 labels -> comparison_only
-INFO braunschweig.calibration.student_control_evidence: [student control evidence] arrival: rule 1 (>= 30 respondents) 4/4 labels, rule 2 (> 2.0 se) 0/4 labels -> comparison_only
-INFO braunschweig.calibration.student_control_evidence: [student control evidence] work_leg: rule 1 (>= 30 respondents) 2/2 labels, rule 2 (> 2.0 se) 0/2 labels -> comparison_only
-INFO braunschweig.calibration.student_control_evidence: [student control evidence] season_ticket: rule 1 (>= 30 respondents) 2/2 labels, rule 2 (> 2.0 se) 0/2 labels -> comparison_only
-INFO braunschweig.calibration.student_control_evidence: [student control evidence] rule 2 evaluable: primary 14/14 (100.0%), excluded 0 (0.0%; MiD share NaN 0, SrV standard error NaN or 0 0); an excluded cell counts as 'does not differ'
-INFO braunschweig.calibration.student_control_evidence: [student control evidence] level gate: enrollment from local sites in 5/8 Kreise, 3 without a local site set to 0 persons ['03151', '03154', '03157']
-INFO braunschweig.calibration.student_control_evidence: [student control evidence] level gate: SrV estimate in 7/8 Kreise, NaN for the unsurveyed ['03103']; pooled row 03ZGB over ['03101', '03102', '03151', '03153', '03154', '03157', '03158']; MiD-to-census ratio Germany 1.7108, Land 03 1.6395
-INFO build_student_control_evidence: wrote docs\runs\artifacts\student-commuting-phase0-reference-2026-11-25\student_control_build_rule.csv (14 rows)
-INFO build_student_control_evidence: wrote docs\runs\artifacts\student-commuting-phase0-reference-2026-11-25\student_level_gate.csv (9 rows)
-INFO build_student_control_evidence: wrote docs\runs\artifacts\student-commuting-phase0-reference-2026-11-25\student_comparison_only.csv (2 rows)
-exit=0
-### Step 3 re-run after the overlap-line wording fix (decision tables only, source-commit 1b6fb56b)
+### Step 3: evidence (source-commit f8c79e4d)
 INFO braunschweig.calibration.student_control_evidence: [student control evidence] status_x_education_leg: rule 1 (>= 30 respondents) 2/2 labels, rule 2 (> 2.0 se) 0/2 labels -> comparison_only
 INFO braunschweig.calibration.student_control_evidence: [student control evidence] trip_class: rule 1 (>= 30 respondents) 4/4 labels, rule 2 (> 2.0 se) 0/4 labels -> comparison_only
 INFO braunschweig.calibration.student_control_evidence: [student control evidence] arrival: rule 1 (>= 30 respondents) 4/4 labels, rule 2 (> 2.0 se) 0/4 labels -> comparison_only

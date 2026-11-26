@@ -1,20 +1,23 @@
 id: student-commuting-phase0-reference-2026-11-25
 date: '2026-11-25'
 repository:
-  commit: fbb54d76
+  commit: f8c79e4d
   branch: feature/i140-student-commuters
   notes: >-
-    The three extraction scripts and their modules as committed at fbb54d76 (the survey tables carry this code state
-    and are committed in 0dccb364; the decision tables were regenerated at 1b6fb56b, a header-wording change, and
-    are committed in 9be9912f). This manifest is a MEASUREMENT over raw survey microdata
+    The SrV tables carry code state fbb54d76 and are committed in 0dccb364. The four MiD tables and the three
+    decision tables were re-run on 2026-11-26 at code state f8c79e4d, after the MiD behaviour table started to read a
+    diary the popsim seed replaces (only rbW legs; only a leading arrive-home leg) as an unknown day, like a missing
+    diary. This manifest is a MEASUREMENT over raw survey microdata
     and published tables, not a pipeline run. It replaces the first extraction of the same day (code state f99b0658,
     see the git history of this file), which kept MiD reporting days that fell on a public holiday.
 configuration:
   base: configs/base_bs.yml
   notes: >-
-    No model configuration. The MiD extraction reads two settings from configs/base_bs.yml: exclude_rbw_legs and
-    exclude_holiday_plan_sources (both true); their effects are counted in the Exclusions headers of the MiD tables
-    (n_work_legs_dropped_rbw, n_holiday_reporting_day).
+    No model configuration. The MiD extraction reads three settings from configs/base_bs.yml: exclude_rbw_legs,
+    exclude_holiday_plan_sources and drop_leading_arrive_home_leg (all true); their effects are counted in the
+    Exclusions headers of the MiD tables (n_work_legs_dropped_rbw, n_holiday_reporting_day, and in the behaviour
+    table n_students_only_rbw_diary, n_non_students_only_rbw_diary, n_students_emptied_by_arrive_home_drop,
+    n_non_students_emptied_by_arrive_home_drop).
 sampling:
   rate: not applicable (survey microdata, weighted with SrV GEWICHT_P_ZENSUS and MiD P_GEW)
   scope: >-
@@ -36,14 +39,16 @@ pipeline:
     (1) python -X utf8 scripts/extract_srv_student_reference.py --raw <main checkout>/eqasim-data/data/braunschweig/srv/srv2023_raw
     --out-dir eqasim-data/data/braunschweig/srv --source-commit fbb54d76 (raw directory local-only, never committed).
     (2) python -X utf8 scripts/extract_mid_student_reference.py --raw <local Downloads>/MiD2023/MiD2023_B1_Datensatzpaket/CSV
-    --out-dir eqasim-data/data/braunschweig/mid --source-commit fbb54d76 (restricted raw directory, local-only).
+    --out-dir eqasim-data/data/braunschweig/mid --source-commit f8c79e4d (restricted raw directory, local-only).
     (3) python -X utf8 scripts/build_student_control_evidence.py --srv-dir eqasim-data/data/braunschweig/srv
     --mid-dir eqasim-data/data/braunschweig/mid --census eqasim-data/data/braunschweig/popsim/zensus2022_students_20_29_kreis.csv
     --sites eqasim-data/data/braunschweig/schools/lsn_university_sites.csv --out-dir
-    docs/runs/artifacts/student-commuting-phase0-reference-2026-11-25 --source-commit fbb54d76 (census and site table
-    are local-only and stay uncommitted; their sha256 are in the header of student_level_gate.csv). All three exited
-    0; the log is extraction_logs.txt. Step (3) alone was re-run at code state 1b6fb56b (commit 9be9912f) after the
-    overlap line of the build-rule header was reworded; the data rows of the three decision tables did not change.
+    docs/runs/artifacts/student-commuting-phase0-reference-2026-11-25 --source-commit f8c79e4d (census and site table
+    are local-only and stay uncommitted; their sha256 are in the header of student_level_gate.csv). Step (1) ran at
+    fbb54d76 on 2026-11-25; steps (2) and (3) were re-run at f8c79e4d on 2026-11-26 (the earlier runs at fbb54d76 and
+    1b6fb56b are in the git history of this file). All exited 0; the log is extraction_logs.txt. The re-run changed
+    the data rows of the MiD behaviour table and of student_control_build_rule.csv only; the other three MiD tables,
+    student_level_gate.csv and student_comparison_only.csv changed in their header lines only.
     sha256 of the committed blobs (git show 0dccb364:<path> for the survey tables, git show 9be9912f:<path> for the
     decision tables and the log) -
     srv2023_student_behaviour.csv 1171934f0154bb0196b5f42ee6158170bb446c7a552abdad6ff07fab632d5674,
@@ -74,13 +79,14 @@ validation:
     Read from docs/runs/artifacts/student-commuting-phase0-reference-2026-11-25/student_control_build_rule.csv
     (columns verdict and difference_in_se): every control is comparison_only. All 14 cells pass rule 1 (at least 30
     SrV respondents); no cell passes rule 2 (more than 2.0 standard errors). Largest absolute difference per control:
-    status_x_education_leg 1.92565954 (student_edu; student_noedu -1.92565954), arrival -1.936233064
-    (student_no_education_leg), trip_class -1.479244739 (student_trips_1_2), work_leg 1.250288005 (student_nowork;
-    student_work -1.250288005), season_ticket 0.9246324781 (student_flatrate; student_no_flatrate -0.9246324781). Rule 3 (one-batch
+    status_x_education_leg 1.902765672 (student_edu; student_noedu -1.902765672), arrival -1.913354468
+    (student_no_education_leg), trip_class -1.424407399 (student_trips_1_2), work_leg 1.270387539 (student_nowork;
+    student_work -1.270387539), season_ticket 0.9246324781 (student_flatrate; student_no_flatrate -0.9246324781). Rule 3 (one-batch
     smoke) is pending_phase2 for all. Finding for the owner: the status control (students with and without an
-    education leg on the reporting day) no longer passes the build rule; it sits just below the assumed threshold,
-    and the first extraction of the day, which kept public-holiday reporting days in MiD, had it at 2.180108458
-    (git history of this file), so this verdict turns on the holiday rule and on a threshold that is an assumption.
+    education leg on the reporting day) does not pass the build rule; it sits just below the assumed threshold. The
+    first extraction of 2026-11-25, which kept public-holiday reporting days in MiD, had it at 2.180108458, and the
+    run before the unknown-day rule for diaries the seed replaces at 1.92565954 (git history of this file), so this
+    verdict turns on how MiD reporting days are filtered and on a threshold that is an assumption.
     It also rests on universes that are not identical: the regional survey leaves out students who were away from
     home all day (73 adult students dropped against 438 adult students kept; n_adult_students_away_from_home and
     n_students in the Exclusions header of eqasim-data/data/braunschweig/srv/srv2023_student_behaviour.csv), while
@@ -117,10 +123,13 @@ issues:
 decisions: []
 notes: >-
   Limitations. (a) Universe differences between the two surveys in the behaviour comparison. The MiD cells of the four
-  diary-dependent controls (status_x_education_leg, trip_class, arrival, work_leg) exclude persons without a diary of
-  the day, students and non-students alike (n_students_without_diary, n_non_students_without_diary in the Exclusions
-  header of eqasim-data/data/braunschweig/mid/mid2023_student_behaviour_seed.csv), so the comparison rests on a
-  reduced MiD base and assumes persons without a diary are not a distinct group. The SrV universe drops persons away
+  diary-dependent controls (status_x_education_leg, trip_class, arrival, work_leg) exclude persons with an unknown day,
+  students and non-students alike: no diary of the day, or a diary the popsim seed replaces by a donor's (only rbW
+  legs; only a leading arrive-home leg). The counts are n_students_without_diary, n_non_students_without_diary,
+  n_students_only_rbw_diary, n_non_students_only_rbw_diary, n_students_emptied_by_arrive_home_drop and
+  n_non_students_emptied_by_arrive_home_drop in the Exclusions header of
+  eqasim-data/data/braunschweig/mid/mid2023_student_behaviour_seed.csv. The comparison therefore rests on a reduced MiD
+  base and assumes persons with an unknown day are not a distinct group. The SrV universe drops persons away
   from home all day, MiD keeps them: the adult students dropped this way are n_adult_students_away_from_home in the
   Exclusions header of eqasim-data/data/braunschweig/srv/srv2023_student_behaviour.csv, against n_students adult
   students kept in the same line. Both behaviour headers state this gap. MiD public-holiday reporting days are
