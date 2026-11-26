@@ -52,7 +52,8 @@ status:
     (check 1), so the dtype point did not show there; (2) one extra untimed pyinstrument run of arm A on batch_028
     for the per-function view (profile_A_b028.txt; it ran alone, after the rounds).
 source: >-
-  felix run server, ~/i677 (arm trees, batch copies, logs).
+  felix run server, ~/i677 (arm trees, batch copies, logs). The folder was deleted on 2026-11-26 to free disk
+  space (owner's decision); the committed artifacts below are what remains.
 environment: >-
   felix run server, 64 cores, idle at the start of each round; GNU time for wall time and peak
   RSS; same environment and PopulationSim build as popsim-ladder-arm3-2026-11-18 except the code tree of the
