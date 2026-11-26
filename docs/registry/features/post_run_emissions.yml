@@ -1,0 +1,95 @@
+feature: post_run_emissions
+title: Post-run road-traffic emissions (HBEFA)
+area: analysis
+description: >-
+  Computes road-traffic emissions of a finished MATSim run from its archive, as four synpp stages that are
+  requested explicitly: braunschweig.data.hbefa -> braunschweig.emissions.inputs ->
+  braunschweig.emissions.events -> braunschweig.emissions.summary. Python only; the calculation itself is
+  MATSim's AirPollutionAnalysis from the pipeline jar. A read-only consumer: no upstream stage, no Java
+  code and no file of the archive is changed (ADR-0209). Needs licensed HBEFA tables, which are not
+  available yet, so no emission value has been produced: the chain is proven to be wired, nothing more.
+  Owner assumptions (Felix, 2026-11-26): public transport and car passengers emit nothing, heavy_truck is
+  the HBEFA heavy-goods-vehicle average without cold start, scaling is 1 / sampling_rate.
+stages: []
+pipelines:
+  popsim_mid: supported
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: experimental
+production:
+  enabled: false
+introduced:
+  issue: '#688'
+  pr: null
+  adr: ADR-0209
+detail_doc: docs/features/post-run-emissions.md
+code_paths:
+- braunschweig/data/hbefa.py
+- braunschweig/emissions/inputs.py
+- braunschweig/emissions/events.py
+- braunschweig/emissions/summary.py
+- braunschweig/emissions/vehicle_types.py
+- braunschweig/emissions/vehicle_type_rules.csv
+- braunschweig/emissions/technology_names.csv
+- braunschweig/emissions/road_types.py
+- braunschweig/emissions/osm_hbefa_road_classes.csv
+- braunschweig/emissions/view.py
+- braunschweig/emissions/hbefa_tables.py
+- braunschweig/emissions/table_keys.py
+- braunschweig/emissions/totals.py
+- braunschweig/emissions/vehicle_km.py
+evidence:
+  tests:
+  - tests/test_emissions_stages.py::test_the_chain_builds_the_view_runs_the_tool_and_summarises
+  - tests/test_emissions_stages.py::test_a_fleet_type_below_the_detailed_table_stops_the_chain_before_the_tool
+  - tests/test_emissions_totals.py::test_the_fallback_share_weights_the_fleet_types_by_their_vehicle_km
+  - tests/test_emissions_view.py::test_view_is_complete_and_the_archive_stays_byte_identical
+  - tests/test_emissions_table_keys.py
+  - tests/test_emissions_road_types.py
+  - tests/test_emissions_vehicle_types.py
+  - tests/test_emissions_hbefa_tables.py
+  - tests/test_data_hbefa_stage.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      No flag and no OFF path: the four stages are additional, run only when requested and change no
+      existing stage. That the archive they read stays byte-identical is asserted by
+      tests/test_emissions_view.py::test_view_is_complete_and_the_archive_stays_byte_identical.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[emissions.table_keys] primary %d/%d types with their own technology'
+    note: |
+      Three rates, each logged as primary against fallback and written to a stage report: HBEFA road class
+      per drivable link ("[emissions.road_types] primary"), table level per fleet vehicle type (the marker
+      above), and the same by vehicle-km after the run ("[emissions.summary] primary"). The first two are
+      bounded by config keys that default to 0, so a fallback stops the chain before the Java run unless it
+      is accepted on purpose.
+  reference:
+    kind: none
+    note: |
+      No observed or published emission figure for Braunschweig, Lower Saxony or Germany is in the
+      repository, and none was seen in a source. Every output is model output computed with the
+      configured HBEFA tables; a plausible total is not a validated one.
+validation:
+  state: unvalidated
+  runs:
+  - emissions-wiring-1pct-2026-11-26
+  metric: null
+  note: |
+    The run listed is a wiring proof on the MATSim sample tables (altered values): it shows that the chain
+    runs on a real archive, not that any emission value is right. No run on real HBEFA tables exists.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Open owner decisions (issue #688): HBEFA licence and version; how "heavy_truck without cold start" is
+    implemented if the cold tables hold no heavy-goods-vehicle rows; confirmation of the road-type method;
+    StopAndGoFraction against AverageSpeed. No run on real tables yet.
+  source: ADR-0209
+notes: |
+  The four stages are in no run list and therefore in no DAG snapshot, so the registry cannot list them
+  under `stages` (check R1 resolves that list against the snapshots); their records carry
+  `features: [post_run_emissions]` instead. popsim_mid is `supported` because the archives the chain was
+  wired against come from that workflow; the chain depends only on the archive, but was not exercised on
+  an archive of the other two workflows.

@@ -1,0 +1,94 @@
+# Post-run road-traffic emissions (HBEFA)
+
+Method of the feature `post_run_emissions` (issue #688). Why it is built this way and what was
+rejected: [ADR-0209](../decisions/ADR-0209-post-run-emissions-are-read-only-stages-on-the-run-archive.md).
+Per-stage contracts and config keys: the stage records `braunschweig.data.hbefa`,
+`braunschweig.emissions.inputs`, `.events`, `.summary` under `docs/registry/stages/`.
+Rules for maintainers: [`docs/codebase/notes/post-run-emissions.md`](../codebase/notes/post-run-emissions.md).
+
+## What it computes
+
+Exhaust emissions of the simulated road traffic of one finished MATSim run, per pollutant and per
+vehicle group, from the run's events. The emission factors come from HBEFA (Handbook Emission
+Factors for Road Transport); the calculation is done by MATSim's emissions contrib through its
+tool `org.matsim.application.analysis.emissions.AirPollutionAnalysis`. The pipeline adds what the
+tool needs and does not have: HBEFA keys on the vehicle types, an HBEFA road type on every link,
+a check of every lookup before the hours-long run, and a summary that says how much of the
+driving was answered by which table level.
+
+Every output is **model output**. Nothing is compared to an observed or published emission
+figure, because none is in the repository.
+
+## Chain
+
+```
+braunschweig.data.hbefa -> braunschweig.emissions.inputs -> braunschweig.emissions.events -> braunschweig.emissions.summary
+```
+
+The stages read the run archive `<output_path>/matsim_output` and write only into their own stage
+directories. They are in no run list; request `braunschweig.emissions.summary` with the
+configuration of the archived run plus the four table paths and the computation method.
+
+## Vehicle types
+
+Committed tables decide, per vehicle type of the archive, what the tool gets
+(`braunschweig/emissions/vehicle_type_rules.csv`, `technology_names.csv`):
+
+| Vehicle type | Treatment | Basis |
+|---|---|---|
+| fleet types `car_*` | own technology, size class and emission concept; three technology names translated to the contrib's ids | fleet synthesis (ADR-0019, ADR-0021) |
+| `default_car` | HBEFA passenger-car average | as written by the vehicle stage |
+| `heavy_truck` | HBEFA heavy-goods-vehicle average, no cold start | ASSUMPTION, owner decision 2026-11-26 |
+| `default_car_passenger` | emits nothing | ASSUMPTION, owner decision 2026-11-26 |
+| transit types (Bus, Rail, Tram, ...) | emit nothing | ASSUMPTION, owner decision 2026-11-26; public transport is not simulated on the network |
+
+Any other type raises. One translation is unverified: `petrol (hybrid)` -> `petrol (4S)`
+(the contrib has no hybrid technology id; status `ASSUMPTION_unverified` in the table).
+
+## Road types
+
+HBEFA factors depend on a road type per link (for example `URB/Local/50`). The method is a
+faithful port of MATSim's `OsmHbefaMapping`: OSM highway class plus speed give the HBEFA class and
+speed band (`braunschweig/emissions/osm_hbefa_road_classes.csv`). Known properties of that
+mapping, kept on purpose and documented in `braunschweig/emissions/road_types.py`: every link is
+urban (`URB/`), every motorway is `MW-Nat.`, and the speed is clamped into the class range.
+
+LIMITATION: the model network's free speeds are not legal speed limits everywhere, so the speed
+band comes from the clamp on many links. How this interacts with the computation method
+`StopAndGoFraction` is untested.
+
+## Pre-check and fallback
+
+The tool has no lookup counter and stops at the first key it cannot find. The input stage
+therefore replays the tool's lookup order on the key columns of the tables, per vehicle type, road
+type and pollutant component: detailed table, technology average, average table. It records which
+level answers each type and stops before the Java run when
+
+- a lookup has no answer at all,
+- more drivable link length than allowed has no HBEFA road class, or
+- more fleet types than allowed are answered below the detailed table.
+
+Both bounds default to 0: a fallback has to be accepted on purpose. After the run the summary
+reports the same fallback weighted by vehicle-km.
+
+## Outputs and units
+
+| File (summary stage) | Content |
+|---|---|
+| `emissions_by_pollutant.csv` | `total_kg` over the whole simulated time, `before_24h_kg`, `after_24h_share`, `gram_per_vehicle_km` |
+| `emissions_by_vehicle_group.csv` | kg per pollutant and vehicle group, with the group's scaled vehicle-km |
+| `emissions_summary_report.json` | both tables, archive, sha256 and `Case` of each HBEFA table, settings, sample size, fallback share, excluded types |
+
+- **Scaling:** the tool multiplies by `1 / sample size`; nothing is scaled again. The events
+  stage refuses a `sampling_rate` that differs from the rate the archive was simulated with.
+- **After 24:00:** the tool's total, per-link and grid files drop every emission from 24:00 on;
+  its per-vehicle-type file does not. Totals are taken from the per-vehicle-type file and the
+  difference is reported as the after-24:00 share.
+- **Vehicle-km:** full link length per `entered link` event, per vehicle type; sample values,
+  scaled only for grams per vehicle-km.
+
+## What is not covered
+
+Non-exhaust emissions, public transport, trips within one link, and any traffic that is not in
+the simulation. Cold-start emissions of heavy trucks are excluded by assumption; how that is
+implemented depends on the real tables (ADR-0209, open points).
