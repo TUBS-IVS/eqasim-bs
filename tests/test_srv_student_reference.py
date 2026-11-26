@@ -791,3 +791,213 @@ def test_age_group_edges_are_right_inclusive(srv_frames, age, label):
     expected[label] += 1.0
     for name, weight in expected.items():
         assert _parameter_cell(table, "age_group", name)["share"] == pytest.approx(weight / 5)
+
+
+# ------------------------------------------------- Phase 1: education destination, post-MATSim
+SITES = frozenset({"03101", "03158"})
+NAN = float("nan")
+
+
+def _destination_frames(students):
+    """One-person households; ``students`` rows are ``(ags, weight, v_erw, legs)`` with legs
+    ``(WNR, E_ZWECK_9, start hour, start minute, V_ZIEL_AGS)``. Returns ``(universe, legs)``."""
+    n = len(students)
+    households = pd.DataFrame({"HHNR": range(1, n + 1), "AGS": [s[0] for s in students]})
+    persons = pd.DataFrame({
+        "HHNR": range(1, n + 1), "PNR": 1, "V_ALTER": 22, "V_ERW": [s[2] for s in students],
+        "E_ANZ_WEGE": 2, "GEWICHT_P_ZENSUS": [float(s[1]) for s in students],
+        "MITTL_WERKTAG": 1, "E_OEV_FK": -8, "V_PKW_VERFUEG": 1, "V_FUEHR_PKW": 1,
+        "V_FK_VERFUEG": 1})
+    rows = [(hh, 1, *leg) for hh, student in enumerate(students, start=1) for leg in student[3]]
+    legs = pd.DataFrame(rows, columns=["HHNR", "PNR", "WNR", "E_ZWECK_9", "V_BEGINN_STUNDE",
+                                       "V_BEGINN_MINUTE", "V_ZIEL_AGS"])
+    universe, _ = R.student_universe(persons, households)
+    return universe, legs
+
+
+def _edu(ziel, wnr=1, hour=8, minute=0):
+    return (wnr, 4, hour, minute, ziel)
+
+
+def _mixed_destination_frames():
+    """Braunschweig (03101): b1 [2] own, b2 [1] to 03158 (a site), b3 [5] only a work leg (no
+    education leg, outside the table), an employee [10] with an education leg (no student).
+    Wolfenbuettel (03158, a site): w1 [3] has two education legs, WNR 1 at 09:45 to 03101 and
+    WNR 2 at 09:15 to 03158: the FIRST by time is WNR 2 (own Kreis), by leg number it would be
+    03101. Peine (03157, no site): p1 [1] to 03101."""
+    return _destination_frames([
+        (3101000, 2, 7, [_edu(3101000)]),
+        (3101000, 1, 7, [_edu(3158000)]),
+        (3101000, 5, 7, [(1, 1, 8, 0, 3101000)]),
+        (3101000, 10, 9, [_edu(3101000)]),
+        (3158000, 3, 7, [_edu(3101000, wnr=1, hour=9, minute=45),
+                         _edu(3158000, wnr=2, hour=9, minute=15)]),
+        (3157000, 1, 7, [_edu(3101000)]),
+    ])
+
+
+def test_destination_ags_is_padded_and_unknown_codes_are_excluded():
+    """3101000 lost its leading zero: unpadded it reads 31010 (an 'other outside' Kreis). The
+    codes -1 and NaN are unknown, excluded and counted (2 of 6 persons), never 'outside'."""
+    universe, legs = _destination_frames([
+        (3101000, 1, 7, [_edu(3101000)]), (3101000, 2, 7, [_edu(3158037)]),
+        (3101000, 1, 7, [_edu(-1)]), (3101000, 1, 7, [_edu(NAN)]),
+        (3101000, 3, 7, [_edu(3241001)]), (3101000, 1, 7, [_edu(9162000)])])
+    table, diag = R.build_destination_reference(universe, legs, SITES, 50, 0)
+    bs = table[table.home_group == R.HOME_GROUP_BRAUNSCHWEIG].set_index("destination_group")
+    assert set(bs.index) >= {R.DEST_OWN, "site_kreis_03158", R.DEST_REGION_HANNOVER,
+                             R.DEST_OTHER_OUTSIDE}
+    assert diag["n_excluded_unknown_destination"] == 2
+    assert bs["share"].sum() == pytest.approx(1.0)
+    # weights: own 1, site 2, Hannover 3, outside 1 -> base 7
+    assert bs.loc[R.DEST_OWN, "share"] == pytest.approx(1 / 7)
+    assert bs.loc["site_kreis_03158", "share"] == pytest.approx(2 / 7)
+    assert bs.loc[R.DEST_REGION_HANNOVER, "share"] == pytest.approx(3 / 7)
+    assert bs.loc[R.DEST_OTHER_OUTSIDE, "share"] == pytest.approx(1 / 7)
+    assert bs.loc[R.DEST_OTHER_OUTSIDE, "n_unweighted"] == 1
+    assert bs.loc[R.DEST_LK_HILDESHEIM, "n_unweighted"] == 0
+    # the other home groups hold nobody: every cell is emitted, empty, with a NaN share
+    empty = table[table.home_group == R.HOME_GROUP_NO_SITE]
+    assert len(empty) > 0 and (empty["n_unweighted"] == 0).all()
+    assert empty["share"].isna().all() and empty["noise_floor_tvd_95"].isna().all()
+
+
+def test_home_groups_and_first_education_leg():
+    universe, legs = _mixed_destination_frames()
+    table, diag = R.build_destination_reference(universe, legs, SITES, 50, 0)
+    cell = table.set_index(["home_group", "destination_group"])
+    # Braunschweig: b1 [2] own, b2 [1] site; b3 has no education leg, the employee is no student
+    assert cell.loc[(R.HOME_GROUP_BRAUNSCHWEIG, R.DEST_OWN), "share"] == pytest.approx(2 / 3)
+    assert cell.loc[(R.HOME_GROUP_BRAUNSCHWEIG, "site_kreis_03158"),
+                    "share"] == pytest.approx(1 / 3)
+    assert cell.loc[(R.HOME_GROUP_BRAUNSCHWEIG, R.DEST_OWN), "n_persons_group"] == 2
+    # Wolfenbuettel counts by its FIRST leg (09:15, WNR 2): own Kreis, not 03101
+    assert cell.loc[(R.HOME_GROUP_SITE, R.DEST_OWN), "share"] == pytest.approx(1.0)
+    assert cell.loc[(R.HOME_GROUP_SITE, "site_kreis_03101"), "n_unweighted"] == 0
+    # Peine has no site: its own group
+    assert cell.loc[(R.HOME_GROUP_NO_SITE, "site_kreis_03101"), "share"] == pytest.approx(1.0)
+    # region: own [2 + 3] of 7, site 03158 [1], site 03101 [1]
+    assert cell.loc[(R.HOME_GROUP_ALL, R.DEST_OWN), "share"] == pytest.approx(5 / 7)
+    assert cell.loc[(R.HOME_GROUP_ALL, "site_kreis_03158"), "share"] == pytest.approx(1 / 7)
+    assert cell.loc[(R.HOME_GROUP_ALL, "site_kreis_03101"), "share"] == pytest.approx(1 / 7)
+    assert diag["n_adult_students_without_education_leg"] == 1
+    assert diag["n_persons_ordered_by_leg_number"] == 0
+
+
+def test_negative_start_time_orders_by_leg_number_and_is_counted():
+    """A negative start minute of one education leg makes the time order undeterminable: that
+    person is ordered by WNR (first = WNR 1 to 03158) and counted, not dropped. Ordered by
+    time it would be WNR 2 (03101)."""
+    universe, legs = _destination_frames([
+        (3101000, 1, 7, [_edu(3158000, wnr=1, hour=10, minute=-1),
+                         _edu(3101000, wnr=2, hour=9, minute=0)]),
+        (3101000, 1, 7, [_edu(3101000)])])
+    table, diag = R.build_destination_reference(universe, legs, SITES, 50, 0)
+    bs = table[table.home_group == R.HOME_GROUP_BRAUNSCHWEIG].set_index("destination_group")
+    assert diag["n_persons_ordered_by_leg_number"] == 1
+    assert bs.loc["site_kreis_03158", "n_unweighted"] == 1
+    assert bs.loc[R.DEST_OWN, "n_unweighted"] == 1
+
+
+@pytest.mark.parametrize("sites", [frozenset({"03158"}), frozenset({"03101", "09162"}),
+                                   frozenset()])
+def test_site_kreise_must_contain_braunschweig_and_lie_in_the_region(sites):
+    with pytest.raises(ValueError, match="site_kreise"):
+        R.build_destination_reference(pd.DataFrame(), pd.DataFrame(), sites, 50, 0)
+
+
+def test_destination_noise_floor_is_seeded():
+    universe, legs = _mixed_destination_frames()
+    first, _ = R.build_destination_reference(universe, legs, SITES, 200, 7)
+    second, _ = R.build_destination_reference(universe, legs, SITES, 200, 7)
+    pd.testing.assert_frame_equal(first, second)
+    floor = first.groupby("home_group")["noise_floor_tvd_95"].first()
+    assert (floor >= 0).all()
+    assert floor[R.HOME_GROUP_BRAUNSCHWEIG] > 0  # two persons with different destinations
+    assert floor[R.HOME_GROUP_SITE] == 0.0       # a single person cannot differ from itself
+    with pytest.raises(ValueError, match="n_bootstrap"):
+        R.build_destination_reference(universe, legs, SITES, 0, 7)
+
+
+def test_destination_exclusion_above_the_limit_raises():
+    """3 of 4 persons have an unknown destination (75 %, away from the 0.5 limit)."""
+    universe, legs = _destination_frames([
+        (3101000, 1, 7, [_edu(-1)]), (3101000, 1, 7, [_edu(-1)]),
+        (3101000, 1, 7, [_edu(NAN)]), (3101000, 1, 7, [_edu(3101000)])])
+    with pytest.raises(ValueError, match="unknown destination"):
+        R.build_destination_reference(universe, legs, SITES, 10, 0)
+
+
+def test_bootstrap_standard_error_resamples_persons_not_legs():
+    """Person A has two legs of value 1, person B one leg of value 0, equal weights. Resampled
+    persons: AA -> 1 (p 1/4), BB -> 0 (1/4), AB -> 2/3 (1/2): mean 7/12, variance 19/144, so
+    se = sqrt(19) / 12. A leg-level bootstrap of the same three legs would give another value."""
+    se = R.bootstrap_standard_error([[1.0, 1.0], [0.0]], [1.0, 1.0], 4000, 3)
+    assert se == pytest.approx(math.sqrt(19) / 12, abs=0.03)
+    assert R.bootstrap_standard_error([[1.0, 1.0], [0.0]], [1.0, 1.0], 4000, 3) == se
+    assert R.bootstrap_standard_error([[2.0], [2.0], [2.0]], [1.0, 5.0, 2.0], 50, 3) == 0.0
+    assert math.isnan(R.bootstrap_standard_error([[1.0]], [1.0], 50, 3))
+    with pytest.raises(ValueError, match="n_bootstrap"):
+        R.bootstrap_standard_error([[1.0], [2.0]], [1.0, 1.0], 0, 3)
+
+
+def _post_matsim_frames(srv_frames):
+    """The standard frames plus E_HVM_5 per leg and the two daily totals per person (all
+    adult students: 1_1 [2], 1_2 [1], 3_1 [1], 3_2 [1])."""
+    persons, legs, households = srv_frames
+    mode = {(1, 1, 3): 5, (1, 1, 1): 2, (1, 1, 2): 2, (1, 2, 1): 3, (1, 2, 2): 3,
+            (3, 1, 1): -7, (3, 1, 2): 1}
+    legs["E_HVM_5"] = [mode.get(key, 4) for key in zip(legs["HHNR"], legs["PNR"], legs["WNR"])]
+    persons["E_VERKEHRSLEIST"] = [27.0, -7, 5, 5, 5, 6.0, 0.0, 5, 5, 5, 5]
+    persons["E_DAUER_GESAMT"] = [90, 40, 5, 5, 5, -1, 0, 5, 5, 5, 5]
+    return persons, legs, households
+
+
+def _quantity(table, quantity, label):
+    row = table[(table["quantity"] == quantity) & (table["label"] == label)]
+    assert len(row) == 1
+    return row.iloc[0]
+
+
+def test_post_matsim_reference_by_hand(srv_frames):
+    """Adult students' legs (weight = the person's): 1_1 [2] pt, bicycle, bicycle (the two
+    education legs); 1_2 [1] car driver x2 (work, home); 3_1 [1] -7 (education, excluded) and
+    walk (home); 3_2 no leg. Valid legs: pt 2, bicycle 2 x 2 = 4, car driver 1 + 1 = 2, walk 1:
+    total 9. Education legs: bicycle 2 x 2 = 4 only (the -7 one excluded). Distance:
+    1_1 27 [2], 1_2 -7 excluded, 3_1 6, 3_2 0 -> (54 + 6 + 0) / 4 = 15. Time: 90 [2], 40,
+    3_1 -1 excluded, 0 -> (180 + 40 + 0) / 4 = 55."""
+    persons, legs, households = _post_matsim_frames(srv_frames)
+    universe, _ = R.student_universe(persons, households)
+    table, diag = R.build_post_matsim_reference(universe, persons, legs, 200, 5)
+    assert list(table.columns) == ["quantity", "label", "n_unweighted", "weight_sum", "value",
+                                   "se_value"]
+    for label, weight, n in (("walk", 1, 1), ("bicycle", 4, 2), ("car_driver", 2, 2),
+                             ("car_passenger", 0, 0), ("pt", 2, 1)):
+        row = _quantity(table, "main_mode_all_legs", label)
+        assert row["value"] == pytest.approx(weight / 9) and row["n_unweighted"] == n
+        assert row["weight_sum"] == pytest.approx(weight)
+    assert _quantity(table, "main_mode_education_legs", "bicycle")["value"] == pytest.approx(1.0)
+    # one person (1_1) holds all valid education legs: no person bootstrap is defined
+    assert math.isnan(_quantity(table, "main_mode_education_legs", "bicycle")["se_value"])
+    assert _quantity(table, "main_mode_education_legs", "pt")["value"] == pytest.approx(0.0)
+    assert diag["n_excluded_mode_all_legs"] == 1 and diag["n_legs_all"] == 7
+    assert diag["n_excluded_mode_education_legs"] == 1 and diag["n_legs_education"] == 3
+    distance = _quantity(table, "daily_distance_km_mean", "mean")
+    assert distance["value"] == pytest.approx(15.0)
+    assert (distance["n_unweighted"], distance["weight_sum"]) == (3, 4.0)
+    duration = _quantity(table, "daily_travel_time_min_mean", "mean")
+    assert duration["value"] == pytest.approx(55.0)
+    assert (duration["n_unweighted"], duration["weight_sum"]) == (3, 4.0)
+    assert diag["n_excluded_daily_distance"] == 1 and diag["n_excluded_daily_travel_time"] == 1
+    assert "valid trips" in diag["daily_total_sub_universe"]
+    assert distance["se_value"] > 0
+    again, _ = R.build_post_matsim_reference(universe, persons, legs, 200, 5)
+    pd.testing.assert_frame_equal(table, again)
+
+
+def test_post_matsim_undocumented_mode_code_raises(srv_frames):
+    persons, legs, households = _post_matsim_frames(srv_frames)
+    legs.loc[0, "E_HVM_5"] = 9
+    universe, _ = R.student_universe(persons, households)
+    with pytest.raises(ValueError, match="E_HVM_5"):
+        R.build_post_matsim_reference(universe, persons, legs, 20, 5)

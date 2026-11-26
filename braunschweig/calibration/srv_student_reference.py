@@ -66,6 +66,13 @@ away from home all day, measured on the file BEFORE the universe filter) and
 per Kreis). An attribute code outside its documented set raises; a documented missing code
 excludes the student from that parameter only, counted and logged.
 
+Two more Phase 1 builders serve the post-MATSim analysis and the education-place reference:
+:func:`build_post_matsim_reference` (main-mode shares of all and of the education legs, mean daily
+distance and travel time of the adult students, standard errors from the person bootstrap
+:func:`bootstrap_standard_error`; the daily totals exist only for persons at home with only valid
+trips, see :data:`DAILY_TOTAL_SUB_UNIVERSE`) and :func:`build_destination_reference` (the Kreis group
+of the first education leg's destination per home group, no distances).
+
 Two definitions of an education leg coexist on purpose: the parameter table's ``education_leg``
 uses the harmonised purpose of the plan-structure comparison (so survey and model pass through one
 function), the control definition (``E_ZWECK_9`` in :data:`EDUCATION_E_ZWECK_9`, as the behaviour
@@ -97,7 +104,7 @@ from braunschweig.calibration.srv_plan_structure import (AWAY_FROM_HOME_CODE, EM
                                                          SEX_BY_V_GESCHLECHT)
 from braunschweig.calibration.student_parameters import (
     BASE_OTHER_ADULTS_ALL, BASE_STUDENTS_ALL, GROUP_DAY, PARAMETER_COLUMNS, PARAMETERS,
-    parameter_rows, person_day_labels)
+    bootstrap_share_noise_floor, parameter_rows, person_day_labels)
 from braunschweig.calibration.student_behaviour_labels import (
     ARRIVAL_HOUR_EDGES, BEHAVIOUR_COLUMNS, CONTROLS, MAX_EXCLUSION_RATE, MIN_ADULT_AGE,
     NOT_STUDENT, STUDENT_DISTANCE_EDGES_KM, STUDENT_DISTANCE_LABELS, TRIP_CLASS_EDGES,
@@ -149,6 +156,47 @@ OBSERVATION_COLUMNS = ["hhnr", "pnr", "kreis", "distance_km", "weight"]
 # ---------------------------------------------------------------- Phase 1 parameter measurement
 PARAMETER_TABLE = "srv2023_student_parameters.csv"
 YOUNG_ADULT_STATUS_TABLE = "srv2023_young_adult_status_by_kreis.csv"
+POST_MATSIM_TABLE = "srv2023_student_post_matsim_reference.csv"
+DESTINATION_TABLE = "srv2023_student_education_destination.csv"
+
+# Post-MATSim comparison values. E_HVM_5 (main mode of a trip): 1 walk, 2 bicycle, 3 car driver,
+# 4 car passenger, 5 public transport; -7 not computable (a negative or missing code is excluded
+# and counted, a non-negative code outside the set raises).
+MODE_BY_E_HVM_5 = {1: "walk", 2: "bicycle", 3: "car_driver", 4: "car_passenger", 5: "pt"}
+QUANTITY_MODE_ALL_LEGS = "main_mode_all_legs"
+QUANTITY_MODE_EDUCATION_LEGS = "main_mode_education_legs"
+QUANTITY_DAILY_DISTANCE = "daily_distance_km_mean"
+QUANTITY_DAILY_TRAVEL_TIME = "daily_travel_time_min_mean"
+MEAN_LABEL = "mean"
+POST_MATSIM_COLUMNS = ["quantity", "label", "n_unweighted", "weight_sum", "value", "se_value"]
+POST_MATSIM_PERSON_COLUMNS = ["HHNR", "PNR", "E_VERKEHRSLEIST", "E_DAUER_GESAMT"]
+POST_MATSIM_LEG_COLUMNS = ["HHNR", "PNR", "E_ZWECK_9", "E_HVM_5"]
+# E_VERKEHRSLEIST (km) and E_DAUER_GESAMT (min) exist only for persons at home on the reporting
+# day whose trips are ALL valid (below 100 km, duration and length known); -7 otherwise. The
+# consumer of the table states this sub-universe in the CSV header.
+DAILY_TOTAL_SUB_UNIVERSE = ("adult students at home on the reporting day with only valid trips "
+                            "(below 100 km, duration and length known); persons with another "
+                            "day carry -7 and are excluded")
+
+# Education-destination reference (home group x destination group).
+HOME_GROUP_BRAUNSCHWEIG = "braunschweig"
+HOME_GROUP_SITE = "other_site_kreis"
+HOME_GROUP_NO_SITE = "no_site_kreis"
+HOME_GROUP_ALL = "region"
+HOME_GROUPS = (HOME_GROUP_BRAUNSCHWEIG, HOME_GROUP_SITE, HOME_GROUP_NO_SITE, HOME_GROUP_ALL)
+DEST_OWN = "own_kreis"
+DEST_SITE_PREFIX = "site_kreis_"
+DEST_OTHER_REGION = "other_region_kreis"
+DEST_REGION_HANNOVER = "region_hannover"
+DEST_LK_HILDESHEIM = "landkreis_hildesheim"
+DEST_OTHER_OUTSIDE = "other_outside"
+BRAUNSCHWEIG_KREIS = "03101"
+REGION_HANNOVER_ARS5 = "03241"
+LANDKREIS_HILDESHEIM_ARS5 = "03254"
+DESTINATION_LEG_COLUMNS = ["HHNR", "PNR", "WNR", "E_ZWECK_9", "V_BEGINN_STUNDE",
+                           "V_BEGINN_MINUTE", "V_ZIEL_AGS"]
+DESTINATION_COLUMNS = ["home_group", "destination_group", "n_persons_group", "n_unweighted",
+                       "weight_sum", "share", "n_effective", "se_share", "noise_floor_tvd_95"]
 
 # Raw columns the parameter table reads on top of the student universe: the person columns come
 # from the raw person file (V_FUEHR_PKW and E_OEV_FK are read from the universe, which
@@ -1004,4 +1052,353 @@ def build_young_adult_status_table(universe: pd.DataFrame) -> tuple[pd.DataFrame
     diagnostics["n_young_adults"] = int(len(young))
     logger.info("%s young-adult status table: %d persons aged %d to %d", _LOG_TAG, len(young),
                 *AGE_BAND_20_29)
+    return table, diagnostics
+
+
+# --------------------------------------------------------------------------- bootstrap helper
+def bootstrap_standard_error(values_by_person, weights, n_bootstrap: int, seed: int) -> float:
+    """Standard error of a person-weighted mean over observations that cluster in persons.
+
+    ``values_by_person`` holds one array of observations per person (one number per person for a
+    daily total, the 0/1 indicators of the person's legs for a mode share) and ``weights`` the
+    person weight; every observation of a person carries that weight. The statistic is
+    ``sum_i w_i sum_j v_ij / sum_i w_i n_i`` (``n_i`` the observations of person ``i``). The
+    estimator is a seeded PERSON bootstrap: ``n`` persons are drawn with replacement, taking their
+    whole observation arrays along (legs of one person are not independent, so a leg-level
+    resample would understate the error), the statistic is recomputed per draw, and the standard
+    error is the sample standard deviation (``ddof=1``) of the ``n_bootstrap`` statistics. A draw
+    without any observation has no statistic: it is skipped, counted and logged as a warning with
+    its rate. Returns NaN for fewer than two persons. Raises ``ValueError`` for
+    ``n_bootstrap < 1``, a weight that is negative or not finite, unequal lengths, or fewer than
+    two usable draws.
+    """
+    if n_bootstrap < 1:
+        raise ValueError("n_bootstrap must be >= 1")
+    arrays = [np.asarray(values, dtype=float).ravel() for values in values_by_person]
+    weight = np.asarray(weights, dtype=float)
+    if len(arrays) != weight.size:
+        raise ValueError("%d persons but %d weights" % (len(arrays), weight.size))
+    if not np.isfinite(weight).all() or (weight < 0).any():
+        raise ValueError("weights must be finite and >= 0")
+    n_persons = len(arrays)
+    if n_persons < 2:
+        return float("nan")
+    numerator = weight * np.array([array.sum() for array in arrays])
+    denominator = weight * np.array([array.size for array in arrays], dtype=float)
+    rng = np.random.default_rng(seed)
+    statistics = []
+    for _ in range(n_bootstrap):
+        drawn = rng.integers(0, n_persons, n_persons)
+        total = denominator[drawn].sum()
+        if total > 0:
+            statistics.append(numerator[drawn].sum() / total)
+    n_skipped = n_bootstrap - len(statistics)
+    if n_skipped:
+        logger.warning("%s bootstrap standard error: primary %d/%d draws, skipped %d (%.1f%%) "
+                       "without any weighted observation", _LOG_TAG, len(statistics), n_bootstrap,
+                       n_skipped, 100.0 * n_skipped / n_bootstrap)
+    if len(statistics) < 2:
+        raise ValueError("bootstrap standard error: fewer than two draws held a weighted "
+                         "observation")
+    return float(np.std(statistics, ddof=1))
+
+
+# --------------------------------------------------------------------------- post-MATSim values
+def _adult_students(universe: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    readable, diagnostics = _drop_unreadable_employment(universe)
+    adults = _adults(readable)
+    return adults[adults["is_student"]].reset_index(drop=True), diagnostics
+
+
+def _mode_rows(quantity: str, legs: pd.DataFrame, n_bootstrap: int, seed: int) -> list:
+    """One row per mode label; ``legs`` holds the valid legs (``pid``, ``weight``, ``mode``)."""
+    persons = list(legs.groupby("pid", sort=True))
+    person_weight = [float(group["weight"].iloc[0]) for _, group in persons]
+    person_modes = [group["mode"].to_numpy() for _, group in persons]
+    leg_weight = legs["weight"].to_numpy(dtype=float)
+    total_weight = float(leg_weight.sum())
+    rows = []
+    for label in MODE_BY_E_HVM_5.values():
+        mask = (legs["mode"] == label).to_numpy()
+        weight_sum = float(leg_weight[mask].sum())
+        if total_weight > 0:
+            value = weight_sum / total_weight
+            se = bootstrap_standard_error([(modes == label).astype(float) for modes in person_modes],
+                                          person_weight, n_bootstrap, seed)
+        else:
+            value = se = float("nan")
+        rows.append({"quantity": quantity, "label": label, "n_unweighted": int(mask.sum()),
+                     "weight_sum": weight_sum, "value": value, "se_value": se})
+    return rows
+
+
+def _mean_row(quantity: str, weight: pd.Series, value: pd.Series, n_bootstrap: int,
+              seed: int) -> dict:
+    """Weighted mean of one value per person; ``weight`` and ``value`` cover the valid persons."""
+    weight_values = weight.to_numpy(dtype=float)
+    total = float(weight_values.sum())
+    if len(value) and total > 0:
+        mean = float((weight_values * value.to_numpy(dtype=float)).sum() / total)
+        se = bootstrap_standard_error([[v] for v in value.to_numpy(dtype=float)], weight_values,
+                                      n_bootstrap, seed)
+    else:
+        mean = se = float("nan")
+    return {"quantity": quantity, "label": MEAN_LABEL, "n_unweighted": int(len(value)),
+            "weight_sum": total, "value": mean, "se_value": se}
+
+
+def build_post_matsim_reference(universe: pd.DataFrame, persons: pd.DataFrame,
+                                legs: pd.DataFrame, n_bootstrap: int,
+                                seed: int) -> tuple[pd.DataFrame, dict]:
+    """SrV values the post-MATSim analysis compares the model's adult students against.
+
+    Persons: the adult students (``V_ERW`` 7, age at least :data:`MIN_ADULT_AGE`) of
+    ``universe`` (:func:`student_universe`), weight ``GEWICHT_P_ZENSUS``. ``persons`` is the raw
+    person frame (:data:`POST_MATSIM_PERSON_COLUMNS`, joined 1:1 on the person key), ``legs`` the
+    raw leg frame (:data:`POST_MATSIM_LEG_COLUMNS`). Columns :data:`POST_MATSIM_COLUMNS`:
+
+    * ``main_mode_all_legs`` / ``main_mode_education_legs``: per mode of :data:`MODE_BY_E_HVM_5`
+      the weighted share of the legs (every leg of an adult student, or only its education legs,
+      ``E_ZWECK_9`` in :data:`EDUCATION_E_ZWECK_9`), each leg weighted with its PERSON's weight;
+      ``n_unweighted`` counts legs, ``weight_sum`` is the weight carried by those legs. A leg
+      with a negative or missing ``E_HVM_5`` is excluded from the base, counted and logged; a
+      non-negative code outside the documented set raises.
+    * ``daily_distance_km_mean`` / ``daily_travel_time_min_mean`` (``E_VERKEHRSLEIST`` in km,
+      ``E_DAUER_GESAMT`` in min), label ``mean``: the weighted mean over the adult students with a
+      non-negative value; ``n_unweighted`` counts persons. SUB-UNIVERSE
+      (:data:`DAILY_TOTAL_SUB_UNIVERSE`, also returned in the diagnostics for the CSV header):
+      the codebook defines both totals only for persons at home on the reporting day with ONLY
+      valid trips (below 100 km, duration and length known); every other person carries ``-7``
+      and is excluded.
+
+    ``se_value`` comes from :func:`bootstrap_standard_error` (a seeded person bootstrap, because
+    legs cluster within persons; persons without an observation of the quantity are not part of
+    its base); NaN where the base is empty or holds one person. A quantity with an empty base
+    carries NaN, never 0.0. Diagnostics: ``n_adult_students``, ``n_legs_all`` /
+    ``n_excluded_mode_all_legs``, ``n_legs_education`` / ``n_excluded_mode_education_legs``,
+    ``n_excluded_daily_distance``, ``n_excluded_daily_travel_time``,
+    ``daily_total_sub_universe``.
+    """
+    if n_bootstrap < 1:
+        raise ValueError("n_bootstrap must be >= 1")
+    _require_columns(persons, POST_MATSIM_PERSON_COLUMNS, "persons")
+    _require_columns(legs, POST_MATSIM_LEG_COLUMNS, "legs")
+    students, diagnostics = _adult_students(universe)
+    diagnostics["n_adult_students"] = int(len(students))
+
+    totals = persons[POST_MATSIM_PERSON_COLUMNS].copy()
+    totals["pid"] = _person_ids(totals)
+    _unique_keyed(totals["pid"], "persons: person key HHNR_PNR")
+    lost = sorted(set(students["pid"]) - set(totals["pid"]))
+    if lost:
+        raise ValueError("universe students missing from persons: %s" % lost[:10])
+    students = students.merge(totals[["pid", "E_VERKEHRSLEIST", "E_DAUER_GESAMT"]], on="pid",
+                              how="left", validate="1:1")
+
+    work = legs[POST_MATSIM_LEG_COLUMNS].copy()
+    work["pid"] = _person_ids(work)
+    work = work[work["pid"].isin(set(students["pid"]))]
+    work = work.merge(students[["pid", "weight"]], on="pid", how="left", validate="m:1")
+    work["mode_code"] = pd.to_numeric(work["E_HVM_5"], errors="coerce")
+    undocumented = sorted(set(work.loc[(work["mode_code"] >= 0)
+                                       & ~work["mode_code"].isin(sorted(MODE_BY_E_HVM_5)),
+                                       "mode_code"].tolist()))
+    if undocumented:
+        raise ValueError("legs: column E_HVM_5 carries code(s) %s outside the documented set %s "
+                         "(negative or missing codes are excluded)"
+                         % (undocumented, sorted(MODE_BY_E_HVM_5)))
+    work["mode"] = work["mode_code"].map(MODE_BY_E_HVM_5)
+    purpose = pd.to_numeric(work["E_ZWECK_9"], errors="coerce")
+    is_education = purpose.isin(sorted(EDUCATION_E_ZWECK_9)).to_numpy()
+
+    rows = []
+    for quantity, key, frame in ((QUANTITY_MODE_ALL_LEGS, "all", work),
+                                 (QUANTITY_MODE_EDUCATION_LEGS, "education",
+                                  work[is_education])):
+        valid = frame[frame["mode"].notna()]
+        n_excluded = int(len(frame) - len(valid))
+        _log_exclusion("%s (E_HVM_5 readable, non-negative; legs of adult students)" % quantity,
+                       n_excluded, len(frame))
+        diagnostics["n_legs_%s" % key] = int(len(frame))
+        diagnostics["n_excluded_mode_%s_legs" % key] = n_excluded
+        rows += _mode_rows(quantity, valid, n_bootstrap, seed)
+
+    for quantity, column, key in ((QUANTITY_DAILY_DISTANCE, "E_VERKEHRSLEIST", "daily_distance"),
+                                  (QUANTITY_DAILY_TRAVEL_TIME, "E_DAUER_GESAMT",
+                                   "daily_travel_time")):
+        value = pd.to_numeric(students[column], errors="coerce")
+        valid = (value.notna() & (value >= 0)).to_numpy()
+        n_excluded = int((~valid).sum())
+        _log_exclusion("%s (%s non-negative; %s)" % (quantity, column, DAILY_TOTAL_SUB_UNIVERSE),
+                       n_excluded, len(students))
+        diagnostics["n_excluded_%s" % key] = n_excluded
+        rows.append(_mean_row(quantity, students.loc[valid, "weight"], value[valid], n_bootstrap,
+                              seed))
+    diagnostics["daily_total_sub_universe"] = DAILY_TOTAL_SUB_UNIVERSE
+    table = pd.DataFrame(rows, columns=POST_MATSIM_COLUMNS)
+    logger.info("%s post-MATSim reference: %d rows, %d adult students, %d legs", _LOG_TAG,
+                len(table), len(students), len(work))
+    return table, diagnostics
+
+
+# --------------------------------------------------------------------------- education destination
+def _validate_site_kreise(site_kreise) -> frozenset:
+    sites = frozenset(site_kreise)
+    if BRAUNSCHWEIG_KREIS not in sites:
+        raise ValueError("site_kreise %s must contain %s (the Braunschweig home group is "
+                         "defined by it)" % (sorted(sites), BRAUNSCHWEIG_KREIS))
+    outside = sorted(sites - set(ZGB_KREISE))
+    if outside:
+        raise ValueError("site_kreise %s lie outside the region Kreise %s"
+                         % (outside, list(ZGB_KREISE)))
+    return sites
+
+
+def _destination_vocabulary(site_kreise: frozenset, home_group: str) -> list:
+    """Destination groups of a home group; the Braunschweig group has no 'site' 03101."""
+    sites = sorted(site_kreise - ({BRAUNSCHWEIG_KREIS} if home_group == HOME_GROUP_BRAUNSCHWEIG
+                                  else set()))
+    return [DEST_OWN, *(DEST_SITE_PREFIX + kreis for kreis in sites), DEST_OTHER_REGION,
+            DEST_REGION_HANNOVER, DEST_LK_HILDESHEIM, DEST_OTHER_OUTSIDE]
+
+
+def _destination_group(destination: str, home: str, site_kreise: frozenset) -> str:
+    if destination == home:
+        return DEST_OWN
+    if destination in site_kreise:
+        return DEST_SITE_PREFIX + destination
+    if destination in ZGB_KREISE:
+        return DEST_OTHER_REGION
+    if destination == REGION_HANNOVER_ARS5:
+        return DEST_REGION_HANNOVER
+    if destination == LANDKREIS_HILDESHEIM_ARS5:
+        return DEST_LK_HILDESHEIM
+    return DEST_OTHER_OUTSIDE
+
+
+def _first_education_legs(education_legs: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """The first education leg per person, ordered by start hour, start minute, then ``WNR``.
+
+    A person with a negative or missing start hour or minute on ANY education leg has no
+    determinable time order: that person is ordered by ``WNR`` alone (a fallback, counted and
+    logged as a rate, never dropped). Returns ``(first legs, number of such persons)``.
+    """
+    legs = education_legs.copy()
+    for column, name in (("V_BEGINN_STUNDE", "hour"), ("V_BEGINN_MINUTE", "minute"),
+                         ("WNR", "wnr")):
+        legs[name] = pd.to_numeric(legs[column], errors="coerce")
+    if legs["wnr"].isna().any():
+        raise ValueError("legs: column WNR is missing or non-numeric on %d education leg(s) of "
+                         "adult students; the leg order is undeterminable"
+                         % int(legs["wnr"].isna().sum()))
+    bad_time = (legs["hour"].isna() | (legs["hour"] < 0) | legs["minute"].isna()
+                | (legs["minute"] < 0))
+    fallback = set(legs.loc[bad_time, "pid"])
+    by_number = legs["pid"].isin(fallback).to_numpy()
+    legs["hour"] = legs["hour"].where(~by_number, 0)
+    legs["minute"] = legs["minute"].where(~by_number, 0)
+    first = (legs.sort_values(["pid", "hour", "minute", "wnr"], kind="stable")
+             .drop_duplicates("pid", keep="first"))
+    # "excluded" in the log line of _log_exclusion means "ordered by the WNR fallback" here.
+    _log_exclusion("first education leg ordered by start hour and minute (fallback: leg number "
+                   "WNR where a start hour or minute is negative or missing; no person is "
+                   "dropped)", len(fallback), len(first))
+    return first, len(fallback)
+
+
+def build_destination_reference(universe: pd.DataFrame, legs: pd.DataFrame,
+                                site_kreise: frozenset, n_bootstrap: int,
+                                seed: int) -> tuple[pd.DataFrame, dict]:
+    """Where the SrV adult students go for education, per home group (no distances).
+
+    Persons: the adult students of ``universe`` with at least one education leg
+    (``E_ZWECK_9`` in :data:`EDUCATION_E_ZWECK_9`). Destination: ``V_ZIEL_AGS`` of the FIRST
+    education leg (ordered by :func:`_first_education_legs`: start hour, start minute, ``WNR``;
+    the Phase 0 arrival control orders by hour and ``WNR`` only and is unchanged), zero-padded to
+    eight digits (a number loses its leading zero), the first five digits the Kreis; a missing or
+    ``<= 0`` code is unknown, excluded and counted (``n_excluded_unknown_destination``).
+
+    ``site_kreise`` are the region Kreise with a local site; it must contain ``03101`` and lie
+    inside :data:`srv_distance_targets.ZGB_KREISE` (``ValueError`` otherwise). Home group from
+    the household Kreis: :data:`HOME_GROUP_BRAUNSCHWEIG`, :data:`HOME_GROUP_SITE` (another site
+    Kreis), :data:`HOME_GROUP_NO_SITE`, and :data:`HOME_GROUP_ALL` over all three. Destination
+    group: :data:`DEST_OWN` (the person's own Kreis), ``site_kreis_<ars5>`` (a site Kreis other
+    than the own one), :data:`DEST_OTHER_REGION` (another region Kreis), Region Hannover
+    (:data:`REGION_HANNOVER_ARS5`), Landkreis Hildesheim (:data:`LANDKREIS_HILDESHEIM_ARS5`),
+    :data:`DEST_OTHER_OUTSIDE`. Every group of a home group's vocabulary is emitted, an empty one
+    with ``n_unweighted`` 0 and a NaN share (a cell can be empty by construction, e.g. a person
+    never goes to their own Kreis as a ``site_kreis_``).
+
+    Columns :data:`DESTINATION_COLUMNS`: ``n_persons_group`` is the persons of the home group
+    (the share's base), ``share`` the weighted share (``GEWICHT_P_ZENSUS``), ``n_effective`` the
+    Kish size of the home group's base, ``se_share`` its standard error, and
+    ``noise_floor_tvd_95`` the 95th percentile of the total-variation distance a person
+    bootstrap of the home group reaches by sampling noise alone
+    (:func:`student_parameters.bootstrap_share_noise_floor`, seeded, over the home group's
+    groups; NaN for an empty home group, 0.0 for a single person).
+    """
+    sites = _validate_site_kreise(site_kreise)
+    if n_bootstrap < 1:
+        raise ValueError("n_bootstrap must be >= 1")
+    _require_columns(legs, DESTINATION_LEG_COLUMNS, "legs")
+    students, diagnostics = _adult_students(universe)
+
+    purpose = pd.to_numeric(legs["E_ZWECK_9"], errors="coerce")
+    education = legs[purpose.isin(sorted(EDUCATION_E_ZWECK_9)).to_numpy()].copy()
+    education["pid"] = _person_ids(education)
+    education = education[education["pid"].isin(set(students["pid"]))]
+    first, n_by_leg_number = _first_education_legs(education)
+    n_with_education = len(first)
+    diagnostics.update(n_adult_students=int(len(students)),
+                       n_adult_students_with_education_leg=int(n_with_education),
+                       n_adult_students_without_education_leg=int(len(students) - n_with_education),
+                       n_persons_ordered_by_leg_number=int(n_by_leg_number))
+
+    destination = pd.to_numeric(first["V_ZIEL_AGS"], errors="coerce")
+    unknown = (destination.isna() | (destination <= 0)).to_numpy()
+    n_unknown = int(unknown.sum())
+    _log_exclusion("first education leg with a known destination (unknown destination: "
+                   "V_ZIEL_AGS missing or <= 0)", n_unknown, n_with_education)
+    diagnostics["n_excluded_unknown_destination"] = n_unknown
+    known = first[~unknown].copy()
+    ags = destination[~unknown].astype("int64")
+    if (ags > 99999999).any():
+        raise ValueError("legs: column V_ZIEL_AGS carries value(s) %s with more than 8 digits"
+                         % sorted(set(ags[ags > 99999999]))[:5])
+    known["destination_kreis"] = ags.astype(str).str.zfill(8).str[:5]
+    persons = students[["pid", "kreis", "weight"]].merge(
+        known[["pid", "destination_kreis"]], on="pid", how="inner", validate="1:1")
+    persons["destination_group"] = [
+        _destination_group(dest, home, sites)
+        for dest, home in zip(persons["destination_kreis"], persons["kreis"])]
+    persons["home_group"] = np.where(
+        persons["kreis"] == BRAUNSCHWEIG_KREIS, HOME_GROUP_BRAUNSCHWEIG,
+        np.where(persons["kreis"].isin(sorted(sites)), HOME_GROUP_SITE, HOME_GROUP_NO_SITE))
+
+    rows = []
+    for home_group in HOME_GROUPS:
+        group = persons if home_group == HOME_GROUP_ALL else persons[
+            persons["home_group"] == home_group]
+        vocabulary = _destination_vocabulary(sites, home_group)
+        unexpected = sorted(set(group["destination_group"]) - set(vocabulary))
+        if unexpected:
+            raise ValueError("destination group(s) %s are outside the vocabulary %s of home "
+                             "group %s" % (unexpected, vocabulary, home_group))
+        weight = group["weight"].to_numpy(dtype=float)
+        n_effective = effective_sample_size(weight)
+        noise = (bootstrap_share_noise_floor(group["destination_group"], weight, vocabulary,
+                                             n_bootstrap, seed) if len(group) else float("nan"))
+        diagnostics["n_persons_%s" % home_group] = int(len(group))
+        for label in vocabulary:
+            mask = (group["destination_group"] == label).to_numpy()
+            share = _weighted_share(weight, mask)
+            rows.append({"home_group": home_group, "destination_group": label,
+                         "n_persons_group": int(len(group)), "n_unweighted": int(mask.sum()),
+                         "weight_sum": float(weight[mask].sum()), "share": share,
+                         "n_effective": n_effective,
+                         "se_share": share_standard_error(share, n_effective),
+                         "noise_floor_tvd_95": noise})
+    table = pd.DataFrame(rows, columns=DESTINATION_COLUMNS)
+    logger.info("%s education destination reference: %d rows, %d persons with a known "
+                "destination", _LOG_TAG, len(table), len(persons))
     return table, diagnostics
