@@ -489,7 +489,7 @@ def _initial_mode_choice_excluded_subpopulations(context) -> tuple[str, ...]:
 
 
 def _select_loop_mode_rule(context, config_name):
-    """Refuse a jar without the same-facility leisure trip constraint, then select it in the prepared config (#679)."""
+    """Refuse a jar without the same-facility leisure and stroll trip constraints, then select both in the prepared config (#679)."""
     # Resolved exactly as plan_check.run and matsim.runtime.eqasim.run do.
     jar_path = "%s/%s" % (context.path("matsim.runtime.eqasim"), context.stage("matsim.runtime.eqasim"))
     loop_mode_rule.require_constraint_in_jar(jar_path)
@@ -497,7 +497,7 @@ def _select_loop_mode_rule(context, config_name):
     changed = loop_mode_rule.apply(config_path)
     loop_mode_rule.write_report(Path(context.path()) / loop_mode_rule.REPORT_FILE_NAME, config_path, jar_path, changed)
     if changed is None:
-        log.info("[loop mode rule] %s already selected in %s of %s: unchanged", loop_mode_rule.CONSTRAINT_NAME,
+        log.info("[loop mode rule] %s already selected in %s of %s: unchanged", ", ".join(loop_mode_rule.CONSTRAINT_NAMES),
                  loop_mode_rule.TRIP_CONSTRAINTS_PARAM, config_name)
     else:
         log.info("[loop mode rule] %s of %s: %r -> %r", loop_mode_rule.TRIP_CONSTRAINTS_PARAM, config_name, *changed)

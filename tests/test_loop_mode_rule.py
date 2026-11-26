@@ -1,4 +1,4 @@
-"""Selecting the same-facility leisure trip constraint in the prepared MATSim config (eqasim-bs#679, ADR-0207)."""
+"""Selecting the same-facility leisure and stroll trip constraints in the prepared MATSim config (eqasim-bs#679, ADR-0207)."""
 from __future__ import annotations
 
 import zipfile
@@ -35,10 +35,10 @@ def _write(tmp_path, value=REAL_VALUE, newline="\n"):
 
 
 @pytest.mark.parametrize("old, expected", [
-    (REAL_VALUE, "OutsideConstraint, TransitWalk, SameFacilityLeisureNonMotorised"),
-    ("VehicleContinuity,SubtourMode", "VehicleContinuity,SubtourMode,SameFacilityLeisureNonMotorised"),
-    ("VehicleContinuity", "VehicleContinuity,SameFacilityLeisureNonMotorised"),
-    ("", "SameFacilityLeisureNonMotorised"),
+    (REAL_VALUE, "OutsideConstraint, TransitWalk, SameFacilityLeisureNonMotorised, StrollNonMotorised"),
+    ("VehicleContinuity,SubtourMode", "VehicleContinuity,SubtourMode,SameFacilityLeisureNonMotorised,StrollNonMotorised"),
+    ("VehicleContinuity,StrollNonMotorised", "VehicleContinuity,StrollNonMotorised,SameFacilityLeisureNonMotorised"),
+    ("", "SameFacilityLeisureNonMotorised,StrollNonMotorised"),
 ])
 def test_apply_adds_the_constraint_once_and_touches_nothing_else(tmp_path, old, expected):
     """On the real module (parameter sets included): only the one value changes, every parameter set keeps its bytes."""
@@ -85,16 +85,23 @@ def _jar(tmp_path, entries):
     return path
 
 
-def test_the_jar_check_passes_with_the_class_and_names_class_and_jar_without_it(tmp_path):
-    rule.require_constraint_in_jar(_jar(tmp_path, ["a/B.class", rule.CONSTRAINT_CLASS]))
-    other = tmp_path / "other"
-    other.mkdir()
-    jar = _jar(other, ["a/B.class"])
+def test_the_jar_check_passes_with_both_classes_and_names_each_missing_class_and_the_jar(tmp_path):
+    rule.require_constraint_in_jar(_jar(tmp_path, ["a/B.class", *rule.CONSTRAINT_CLASSES]))
+    for index, present in enumerate(rule.CONSTRAINT_CLASSES):
+        folder = tmp_path / str(index)
+        folder.mkdir()
+        jar = _jar(folder, ["a/B.class", present])
+        with pytest.raises(RuntimeError) as error:
+            rule.require_constraint_in_jar(jar)
+        message = str(error.value)
+        missing = rule.CONSTRAINT_CLASSES[1 - index]
+        assert missing in message and present not in message and str(jar) in message
+        assert "StrollTripConstraint" in message and rule.KEY_ENABLED in message  # names the fix and the way out
+    empty = tmp_path / "none"
+    empty.mkdir()
     with pytest.raises(RuntimeError) as error:
-        rule.require_constraint_in_jar(jar)
-    message = str(error.value)
-    assert "SameFacilityLeisureTripConstraint" in message and str(jar) in message
-    assert rule.KEY_ENABLED in message  # names the way out: false = today's behaviour
+        rule.require_constraint_in_jar(_jar(empty, ["a/B.class"]))
+    assert all(name in str(error.value) for name in rule.CONSTRAINT_CLASSES)
 
 
 def test_the_jar_check_refuses_a_missing_file_and_a_non_zip(tmp_path):

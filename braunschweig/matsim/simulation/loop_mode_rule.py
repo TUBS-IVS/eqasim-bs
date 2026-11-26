@@ -1,4 +1,4 @@
-"""Select the same-facility leisure trip constraint in the prepared MATSim config (eqasim-bs#679, ADR-0207).
+"""Select the same-facility leisure and the stroll trip constraints in the prepared MATSim config (eqasim-bs#679, ADR-0207).
 
 Strolls and dog walks are placed at the activity they start from (#679), so their legs have no length, and the
 zero-length way home after them has none either. A mode choice that is free to pick a car for such a trip produces a
@@ -30,14 +30,18 @@ DEFAULT_ENABLED = False
 
 DMC_MODULE = "DiscreteModeChoice"
 TRIP_CONSTRAINTS_PARAM = "tripConstraints"
-#: Name the Java constraint is registered under (eqasim-java-bs) and selected by in ``tripConstraints``.
-CONSTRAINT_NAME = "SameFacilityLeisureNonMotorised"
+#: Names the Java constraints are registered under (eqasim-java-bs) and selected by in ``tripConstraints``.
+CONSTRAINT_NAMES = ("SameFacilityLeisureNonMotorised", "StrollNonMotorised")
 #: Report of the selection in the stage folder; written only when the switch is on.
 REPORT_FILE_NAME = "loop_mode_rule_report.json"
-#: Jar entry of the constraint class; a jar built before the constraint existed does not contain it.
-CONSTRAINT_CLASS = "org/eqasim/braunschweig/mode_choice/constraints/SameFacilityLeisureTripConstraint.class"
+#: Jar entries of the constraint classes, in the order of ``CONSTRAINT_NAMES``; an older jar lacks them.
+CONSTRAINT_CLASSES = (
+    "org/eqasim/braunschweig/mode_choice/constraints/SameFacilityLeisureTripConstraint.class",
+    "org/eqasim/braunschweig/mode_choice/constraints/StrollTripConstraint.class")
 
-_FIX = (f"build the eqasim-java-bs jar from a commit that contains SameFacilityLeisureTripConstraint, or set "
+_NAMES_TEXT = " and ".join(CONSTRAINT_NAMES)
+_FIX = (f"build the eqasim-java-bs jar from a commit that contains SameFacilityLeisureTripConstraint and "
+        f"StrollTripConstraint, or set "
         f"{KEY_ENABLED} to false")
 
 
@@ -52,9 +56,9 @@ def enabled(context) -> bool:
 
 
 def apply(config_path) -> tuple[str, str] | None:
-    """Add ``CONSTRAINT_NAME`` to the ``tripConstraints`` of the ``DiscreteModeChoice`` module of the config.
+    """Add every name of ``CONSTRAINT_NAMES`` that is missing to the ``tripConstraints`` of the ``DiscreteModeChoice`` module of the config.
 
-    Returns ``(old, new)``, the value of the parameter before and after, or None when the name is already selected
+    Returns ``(old, new)``, the value of the parameter before and after, or None when all names are already selected
     (nothing is written, so a second call changes nothing). The existing names and their separator style (``,`` or
     ``, ``) are kept and the file is edited as text, so every other byte stays. Raises ``ValueError`` naming the module
     or the parameter when the config has no ``DiscreteModeChoice`` module or no ``tripConstraints`` parameter: the
@@ -66,17 +70,18 @@ def apply(config_path) -> tuple[str, str] | None:
         old = config_modules.read_param(path, DMC_MODULE, TRIP_CONSTRAINTS_PARAM)
     except ValueError as error:
         raise ValueError(f"{_LOG_TAG} cannot read {TRIP_CONSTRAINTS_PARAM!r} of module {DMC_MODULE!r}, so the trip "
-                         f"constraint {CONSTRAINT_NAME} cannot be selected: {error}; check the generated config or "
+                         f"constraints {_NAMES_TEXT} cannot be selected: {error}; check the generated config or "
                          f"set {KEY_ENABLED} to false") from error
     if old is None:
         raise ValueError(f"{_LOG_TAG} module {DMC_MODULE!r} of {path} has no parameter {TRIP_CONSTRAINTS_PARAM!r}, so "
-                         f"the trip constraint {CONSTRAINT_NAME} cannot be selected; check the generated config or "
+                         f"the trip constraints {_NAMES_TEXT} cannot be selected; check the generated config or "
                          f"set {KEY_ENABLED} to false")
     names = [name.strip() for name in old.split(",") if name.strip()]
-    if CONSTRAINT_NAME in names:
+    missing = [name for name in CONSTRAINT_NAMES if name not in names]
+    if not missing:
         return None
     separator = ", " if ", " in old else ","
-    new = f"{old}{separator}{CONSTRAINT_NAME}" if names else CONSTRAINT_NAME
+    new = separator.join(names + missing) if not names else f"{old}{separator}{separator.join(missing)}"
     config_modules.set_param(path, DMC_MODULE, TRIP_CONSTRAINTS_PARAM, new)
     return old, new
 
@@ -84,13 +89,13 @@ def apply(config_path) -> tuple[str, str] | None:
 def write_report(report_path, config_path, jar_path, changed: tuple[str, str] | None) -> dict:
     """Write the citable record of the selection to ``report_path`` (JSON) and return it.
 
-    ``changed`` is the return value of ``apply``. The report names the constraint, the class checked in the jar, the
+    ``changed`` is the return value of ``apply``. The report names the constraints, the classes checked in the jar, the
     jar's file name (no directories, so the report does not depend on where the run lives), the value of
     ``tripConstraints`` before and after and ``already_selected`` (true when ``apply`` changed nothing, then before and
     after are equal). The "after" value is read back from the config on disk. Side effect: writes ``report_path``.
     """
     after = config_modules.read_param(config_path, DMC_MODULE, TRIP_CONSTRAINTS_PARAM)
-    report = {"constraint": CONSTRAINT_NAME, "constraint_class_checked": CONSTRAINT_CLASS,
+    report = {"constraints": list(CONSTRAINT_NAMES), "constraint_classes_checked": list(CONSTRAINT_CLASSES),
               "jar_file_name": Path(jar_path).name, "module": DMC_MODULE, "parameter": TRIP_CONSTRAINTS_PARAM,
               "trip_constraints_before": changed[0] if changed else after, "trip_constraints_after": after,
               "already_selected": changed is None}
@@ -99,24 +104,27 @@ def write_report(report_path, config_path, jar_path, changed: tuple[str, str] | 
 
 
 def require_constraint_in_jar(jar_path) -> None:
-    """Raise unless the eqasim jar at ``jar_path`` contains the class of the constraint.
+    """Raise unless the eqasim jar at ``jar_path`` contains the classes of all constraints.
 
     Selecting a constraint name that the jar does not know fails only when the simulation loads the config, i.e. after
-    the long synthesis; a jar built before the constraint existed is refused here instead. Raises
-    ``FileNotFoundError`` for a missing jar and ``RuntimeError`` for a file that is no zip archive or a jar without
-    ``CONSTRAINT_CLASS``; the messages name the jar and the fix. Reads the jar's entry list; no other side effect.
+    the long synthesis; a jar built before the constraints existed is refused here instead. Raises
+    ``FileNotFoundError`` for a missing jar and ``RuntimeError`` for a file that is no zip archive or a jar lacking any
+    of ``CONSTRAINT_CLASSES`` (all missing ones are named); the messages name the jar and the fix. Reads the jar's
+    entry list; no other side effect.
     """
     path = Path(jar_path)
+    classes_text = ", ".join(CONSTRAINT_CLASSES)
     if not path.is_file():
-        raise FileNotFoundError(f"{_LOG_TAG} the eqasim jar to check for {CONSTRAINT_CLASS} does not exist: {path}; "
+        raise FileNotFoundError(f"{_LOG_TAG} the eqasim jar to check for {classes_text} does not exist: {path}; "
                                 f"{_FIX}")
     try:
         with zipfile.ZipFile(path) as jar:
-            present = CONSTRAINT_CLASS in set(jar.namelist())
+            entries = set(jar.namelist())
     except zipfile.BadZipFile as error:
-        raise RuntimeError(f"{_LOG_TAG} {path} is not a zip archive, so it cannot contain {CONSTRAINT_CLASS}; "
+        raise RuntimeError(f"{_LOG_TAG} {path} is not a zip archive, so it cannot contain {classes_text}; "
                            f"{_FIX}") from error
-    if not present:
-        raise RuntimeError(f"{_LOG_TAG} the eqasim jar {path} lacks {CONSTRAINT_CLASS}, so the trip constraint "
-                           f"{CONSTRAINT_NAME} cannot be selected (eqasim-bs#679); {_FIX}")
-    logger.info("%s the eqasim jar %s contains %s", _LOG_TAG, path, CONSTRAINT_CLASS)
+    absent = [name for name in CONSTRAINT_CLASSES if name not in entries]
+    if absent:
+        raise RuntimeError(f"{_LOG_TAG} the eqasim jar {path} lacks {', '.join(absent)}, so the trip constraints "
+                           f"{_NAMES_TEXT} cannot be selected (eqasim-bs#679); {_FIX}")
+    logger.info("%s the eqasim jar %s contains %s", _LOG_TAG, path, classes_text)

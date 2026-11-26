@@ -242,7 +242,8 @@ def test_select_loop_mode_rule_end_to_end_with_a_stub_jar(monkeypatch, tmp_path,
     jar_directory.mkdir()
     (stage / "config.xml").write_bytes(_DMC_CONFIG.encode("utf-8"))
     with zipfile.ZipFile(jar_directory / "eqasim.jar", "w") as jar:
-        jar.writestr(L.CONSTRAINT_CLASS if with_class else "other/Class.class", b"\xca\xfe\xba\xbe")
+        for name in (L.CONSTRAINT_CLASSES if with_class else L.CONSTRAINT_CLASSES[:1] + ("other/Class.class",)):
+            jar.writestr(name, b"\xca\xfe\xba\xbe")
     before_files = sorted(path.name for path in stage.iterdir())
 
     class _Context:
@@ -253,18 +254,19 @@ def test_select_loop_mode_rule_end_to_end_with_a_stub_jar(monkeypatch, tmp_path,
             return "eqasim.jar"
 
     if not with_class:
-        with pytest.raises(RuntimeError, match="SameFacilityLeisureTripConstraint"):
+        with pytest.raises(RuntimeError, match="StrollTripConstraint"):
             prepare._select_loop_mode_rule(_Context(), "config.xml")
         assert (stage / "config.xml").read_bytes() == _DMC_CONFIG.encode("utf-8")
         assert sorted(path.name for path in stage.iterdir()) == before_files
         return
     prepare._select_loop_mode_rule(_Context(), "config.xml")
-    expected = _OLD + ", SameFacilityLeisureNonMotorised"
+    expected = _OLD + ", SameFacilityLeisureNonMotorised, StrollNonMotorised"
     assert (stage / "config.xml").read_bytes().decode("utf-8") == _DMC_CONFIG.replace(
         'value="%s" />' % _OLD, 'value="%s" />' % expected)
     report = json.loads((stage / L.REPORT_FILE_NAME).read_text(encoding="utf-8"))
     assert report == {
-        "constraint": "SameFacilityLeisureNonMotorised", "constraint_class_checked": L.CONSTRAINT_CLASS,
+        "constraints": ["SameFacilityLeisureNonMotorised", "StrollNonMotorised"],
+        "constraint_classes_checked": list(L.CONSTRAINT_CLASSES),
         "jar_file_name": "eqasim.jar", "module": "DiscreteModeChoice", "parameter": "tripConstraints",
         "trip_constraints_before": _OLD,
         "trip_constraints_after": expected, "already_selected": False}
