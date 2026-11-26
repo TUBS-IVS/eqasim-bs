@@ -606,8 +606,9 @@ def compare_parameters(model_students: pd.DataFrame,
 
 # --------------------------------------------------------------------------- level and status
 #: Columns required on the person frame of the level and young-adult tables: the enriched
-#: persons with their home Kreis (``kreis``, five-digit string, NaN without a home Kreis).
-PERSON_KREIS_COLUMNS = ("person_id", "age", "P_TAET", "employed", "kreis")
+#: persons with their home Kreis (``kreis``, five-digit string, NaN without a home Kreis) and
+#: ``present`` (boolean, False for a person :func:`absent_person_ids` marks away all day).
+PERSON_KREIS_COLUMNS = ("person_id", "age", "P_TAET", "employed", "kreis", "present")
 
 #: Scope of the region row, for the CSV headers the stage writes.
 REGION_SCOPE_NOTE = (
@@ -616,8 +617,13 @@ REGION_SCOPE_NOTE = (
     "Wolfsburg. Wolfsburg rows are model-only with NaN SrV columns."
     % (REGION_CODE, len(SURVEYED_KREISE), list(SURVEYED_KREISE), WOLFSBURG_KREIS))
 
+#: ``model_*`` counts and ``*_expanded_persons`` are over ALL persons (the population level);
+#: ``model_present_*`` counts and every ``model_*share*`` over PRESENT persons, the universe of
+#: the SrV shares (persons at home at some point of the reporting day).
 LEVEL_COLUMNS = ["code", "level", "model_adults", "model_students_18_29", "model_students_30plus",
-                 "model_persons_20_29", "model_students_20_29", "model_student_share_adults",
+                 "model_persons_20_29", "model_students_20_29", "model_present_adults",
+                 "model_present_students_adults", "model_present_persons_20_29",
+                 "model_present_students_20_29", "model_student_share_adults",
                  "model_student_share_20_29", "model_students_expanded_persons",
                  "srv_student_share_adults", "srv_se_student_share_adults",
                  "srv_student_share_20_29", "srv_se_student_share_20_29",
@@ -630,7 +636,9 @@ _LEVEL_SRV_COLUMNS = {"student_share_adults": "srv_student_share_adults",
                       "se_student_share_20_29": "srv_se_student_share_20_29",
                       "students_weighted_persons": "srv_students_weighted_persons"}
 
-YOUNG_ADULT_COLUMNS = ["code", "level", "status", "model_n", "model_share",
+#: ``model_n`` and ``model_expanded_persons`` over ALL persons, ``model_present_n`` and
+#: ``model_share`` over PRESENT persons (the SrV universe).
+YOUNG_ADULT_COLUMNS = ["code", "level", "status", "model_n", "model_present_n", "model_share",
                        "model_expanded_persons", "srv_share", "srv_se_share", "difference_in_se",
                        "zensus_employed_persons"]
 #: Status of a young adult that the Zensus employed count belongs to.
@@ -666,33 +674,58 @@ def _difference_in_se(model: pd.Series, srv: pd.Series, se: pd.Series) -> pd.Ser
     return (model - srv) / se.where(se > 0)
 
 
-def _persons_with_kreis(persons_with_kreis: pd.DataFrame, table: str) -> pd.DataFrame:
-    """The persons a level or status table counts: readable ``P_TAET``, known age, home Kreis.
+def _require_string_codes(values: pd.Series, name: str, column: str) -> None:
+    """A code column must hold strings: a code read as a number has lost its leading zero."""
+    odd = values.notna() & ~values.map(lambda value: isinstance(value, str))
+    if odd.any():
+        raise ValueError("%s: column %s carries %d non-string code(s), e.g. %s; read the codes "
+                         "as strings (a number loses the leading zero)"
+                         % (name, column, int(odd.sum()), values[odd].head(5).tolist()))
 
-    Each exclusion is counted and logged over the persons that reached it and raises above
-    ``MAX_EXCLUSION_RATE``; a home Kreis outside ``ZGB_KREISE`` or a non-boolean ``employed``
-    raises.
+
+def _persons_with_kreis(persons_with_kreis: pd.DataFrame,
+                        table: str) -> tuple[pd.DataFrame, dict]:
+    """The adults a level or status table counts and the counts of the persons excluded.
+
+    In this order, each exclusion counted over the persons that reached it, logged and raising
+    above ``MAX_EXCLUSION_RATE``: a known age (over all persons); then the adults (age >=
+    ``MIN_ADULT_AGE``, the tables' base; minors are outside it, not excluded); a readable
+    ``P_TAET`` (over the adults); a home Kreis (over the adults left). A home Kreis outside
+    ``ZGB_KREISE`` or not a string, or a non-boolean ``employed`` / ``present``, raises.
     """
     _require_columns(persons_with_kreis, PERSON_KREIS_COLUMNS, "persons")
     _require_unique_person_ids(persons_with_kreis, "persons")
     code, unreadable = _p_taet_codes(persons_with_kreis)
-    _log_exclusion("%s: readable P_TAET (99 / missing answers nothing about the activity)"
-                   % table, int(unreadable.sum()), len(persons_with_kreis))
-    age = pd.to_numeric(persons_with_kreis["age"], errors="coerce")
-    no_age = ~unreadable & (age.isna() | (age < 0))
-    _log_exclusion("%s: known age" % table, int(no_age.sum()), int((~unreadable).sum()))
-    raw_kreis = persons_with_kreis["kreis"]
-    kreis = raw_kreis.where(raw_kreis.isna(), raw_kreis.astype(str))
+    employed = _flags(persons_with_kreis, "employed")
+    present = _flags(persons_with_kreis, "present")
+    kreis = persons_with_kreis["kreis"]
+    _require_string_codes(kreis, "persons", "kreis")
     outside = sorted(set(kreis.dropna()) - set(ZGB_KREISE))
     if outside:
         raise ValueError("persons: column kreis carries code(s) %s outside ZGB_KREISE %s"
                          % (outside, list(ZGB_KREISE)))
-    kept = ~unreadable & ~no_age
-    _log_exclusion("%s: home Kreis" % table, int((kept & kreis.isna()).sum()), int(kept.sum()))
+    age = pd.to_numeric(persons_with_kreis["age"], errors="coerce")
+    no_age = age.isna() | (age < 0)
+    n_persons = len(persons_with_kreis)
+    _log_exclusion("%s: known age" % table, int(no_age.sum()), n_persons)
+    adult = ~no_age & (age >= MIN_ADULT_AGE)
+    n_adults = int(adult.sum())
+    n_unreadable = int((adult & unreadable).sum())
+    _log_exclusion("%s: readable P_TAET among the adults (99 / missing answers nothing about "
+                   "the activity)" % table, n_unreadable, n_adults)
+    kept = adult & ~unreadable
+    n_no_kreis = int((kept & kreis.isna()).sum())
+    _log_exclusion("%s: home Kreis" % table, n_no_kreis, int(kept.sum()))
     kept &= kreis.notna()
-    return pd.DataFrame({"code": code[kept].to_numpy(), "age": age[kept].to_numpy(),
-                         "kreis": kreis[kept].to_numpy(dtype=object),
-                         "employed": _flags(persons_with_kreis, "employed")[kept].to_numpy()})
+    frame = pd.DataFrame({"code": code[kept].to_numpy(), "age": age[kept].to_numpy(),
+                          "kreis": kreis[kept].to_numpy(dtype=object),
+                          "employed": employed[kept].to_numpy(),
+                          "present": present[kept].to_numpy()})
+    diagnostics = {"n_persons": n_persons, "n_missing_age": int(no_age.sum()),
+                   "n_adults_with_age": n_adults, "n_adults_unreadable_p_taet": n_unreadable,
+                   "n_adults_no_home_kreis": n_no_kreis, "n_adults_counted": int(len(frame)),
+                   "n_adults_counted_absent": int((~frame["present"]).sum())}
+    return frame, diagnostics
 
 
 def _scopes(frame: pd.DataFrame):
@@ -704,16 +737,16 @@ def _scopes(frame: pd.DataFrame):
 
 def _validated_srv_rows(srv: pd.DataFrame, columns, key: list, name: str,
                         labels: dict | None = None) -> pd.DataFrame:
-    """The SrV rows with string codes; a code outside the ZGB Kreise and the region, a value
-    outside ``labels`` (column -> allowed values) or a duplicated ``key`` raises."""
+    """The SrV rows; a code that is not a string or outside the ZGB Kreise and the region, a
+    value outside ``labels`` (column -> allowed values) or a duplicated ``key`` raises."""
     _require_columns(srv, columns, name)
     table = srv[list(columns)].copy()
+    _require_string_codes(table["code"], name, "code")
     for column, allowed in {"code": list(ZGB_KREISE) + [REGION_CODE], **(labels or {})}.items():
         outside = sorted(set(table[column].astype(str)) - set(allowed))
         if outside or table[column].isna().any():
-            raise ValueError("%s: column %s carries value(s) %s outside %s (read codes as "
-                             "strings)" % (name, column, outside, list(allowed)))
-        table[column] = table[column].astype(str)
+            raise ValueError("%s: column %s carries value(s) %s outside %s"
+                             % (name, column, outside, list(allowed)))
     duplicated = table[table.duplicated(key)]
     if len(duplicated):
         raise ValueError("%s: %d duplicated row(s) on %s, e.g. %s"
@@ -721,57 +754,78 @@ def _validated_srv_rows(srv: pd.DataFrame, columns, key: list, name: str,
     return table
 
 
-def _log_missing_srv_rows(merged: pd.DataFrame, indicator: str, name: str) -> None:
-    """Count the rows of a surveyed Kreis or the region that the SrV table did not carry."""
-    missing = merged[(merged[indicator] == "left_only") & (merged["code"] != WOLFSBURG_KREIS)]
-    (LOG.warning if len(missing) else LOG.info)(
-        "%s %s: %d row(s) of a surveyed Kreis or the region missing from the SrV table (NaN SrV "
-        "columns) %s", _LOG_TAG, name, len(missing), sorted(set(missing["code"])))
+def _missing_srv_codes(merged: pd.DataFrame, indicator: str, name: str) -> list:
+    """The surveyed Kreise or region whose rows the SrV table did not carry; counted, logged."""
+    missing = sorted(set(merged.loc[(merged[indicator] == "left_only")
+                                    & (merged["code"] != WOLFSBURG_KREIS), "code"]))
+    (LOG.warning if missing else LOG.info)(
+        "%s %s: %d surveyed Kreis / region code(s) missing from the SrV table (NaN SrV columns) "
+        "%s", _LOG_TAG, name, len(missing), missing)
+    return missing
 
 
 def student_level_table(persons_with_kreis: pd.DataFrame, srv_shares: pd.DataFrame,
-                        sampling_rate: float) -> pd.DataFrame:
+                        sampling_rate: float) -> tuple[pd.DataFrame, dict]:
     """Student level per Kreis and region, model against the committed SrV student shares.
 
-    ``persons_with_kreis`` carries :data:`PERSON_KREIS_COLUMNS`; ``srv_shares`` is
-    ``srv2023_student_share_by_kreis.csv`` (``srv_student_reference.SHARE_COLUMNS``, codes read
-    as strings); ``sampling_rate`` the run's sampling rate in (0, 1].
+    ``persons_with_kreis`` carries :data:`PERSON_KREIS_COLUMNS` (``present`` from
+    :func:`absent_person_ids`); ``srv_shares`` is ``srv2023_student_share_by_kreis.csv``
+    (``srv_student_reference.SHARE_COLUMNS``, codes read as strings); ``sampling_rate`` the
+    run's sampling rate in (0, 1].
 
     One row per ``ZGB_KREISE`` Kreis (``level`` kreis) and one :data:`REGION_CODE` row (``level``
-    total) over the seven surveyed Kreise (:data:`REGION_SCOPE_NOTE`). Model counts are sample
-    counts of persons with a readable ``P_TAET``, a known age and a home Kreis (each exclusion
-    counted and logged, raising above ``MAX_EXCLUSION_RATE``): adults (age >= ``MIN_ADULT_AGE``),
-    adult students (``P_TAET == STUDENT_P_TAET``) aged up to 29 and from 30, persons and students
-    aged 20 to 29 (``AGE_BAND_20_29``, inclusive, the SrV band). The shares are student counts
-    over those bases (NaN on an empty base); ``model_students_expanded_persons`` is the number of
-    adult students divided by ``sampling_rate``. The SrV columns are the SrV table's own;
-    Wolfsburg rows carry NaN there (not surveyed), and a missing SrV row is counted and logged.
-    ``difference_in_se_* = (model share - SrV share) / SrV se``, NaN where that se is 0 or NaN.
+    total) over the seven surveyed Kreise (:data:`REGION_SCOPE_NOTE`). Model persons: adults
+    with a readable ``P_TAET`` and a home Kreis (exclusions: :func:`_persons_with_kreis`).
+    Students are ``P_TAET == STUDENT_P_TAET``; 20 to 29 is ``AGE_BAND_20_29`` (inclusive, the
+    SrV band).
+
+    * Over ALL persons (the population level): ``model_adults``, ``model_students_18_29``,
+      ``model_students_30plus``, ``model_persons_20_29``, ``model_students_20_29`` and
+      ``model_students_expanded_persons`` (adult students / ``sampling_rate``).
+    * Over PRESENT persons (the SrV universe; every SrV share excludes persons away from home
+      all day): ``model_present_*`` and the shares ``model_student_share_adults`` /
+      ``model_student_share_20_29`` (NaN on an empty base), so the difference compares one
+      universe on both sides.
+    * SrV columns: the SrV table's own; ``srv_students_weighted_persons`` is the weighted count
+      of the adult students of the SrV universe, so it EXCLUDES the SrV students away from home
+      all day (design A11: the population cross-check adds them back later, not here).
+      Wolfsburg rows carry NaN there (not surveyed); a missing SrV row is counted.
+    * ``difference_in_se_* = (model share - SrV share) / SrV se``, NaN where that se is 0 or NaN.
+
+    Returns ``(table, diagnostics)``: :data:`LEVEL_COLUMNS`; the exclusion counts of
+    :func:`_persons_with_kreis` and ``missing_srv_codes`` / ``n_missing_srv_rows``.
     """
     rate = _require_sampling_rate(sampling_rate)
-    persons = _persons_with_kreis(persons_with_kreis, "student level")
+    persons, diagnostics = _persons_with_kreis(persons_with_kreis, "student level")
     srv = _validated_srv_rows(srv_shares, SHARE_COLUMNS, ["code"], "SrV student share table")
     rows = []
     for level, code, group in _scopes(persons):
         age = group["age"]
-        adult = (age >= MIN_ADULT_AGE).to_numpy()
         student = (group["code"] == STUDENT_P_TAET).to_numpy()
         young = age.between(*AGE_BAND_20_29).to_numpy()
         up_to_29 = (age <= AGE_BAND_20_29[1]).to_numpy()
-        n_adults, n_young = int(adult.sum()), int(young.sum())
-        n_students = int((student & adult).sum())
-        n_young_students = int((student & young).sum())
-        rows.append({"code": code, "level": level, "model_adults": n_adults,
-                     "model_students_18_29": int((student & adult & up_to_29).sum()),
-                     "model_students_30plus": int((student & adult & ~up_to_29).sum()),
-                     "model_persons_20_29": n_young, "model_students_20_29": n_young_students,
-                     "model_student_share_adults": _share(n_students, n_adults),
-                     "model_student_share_20_29": _share(n_young_students, n_young),
-                     "model_students_expanded_persons": n_students / rate})
+        present = group["present"].to_numpy(dtype=bool)
+        n_present, n_present_young = int(present.sum()), int((present & young).sum())
+        n_present_students = int((present & student).sum())
+        n_present_young_students = int((present & student & young).sum())
+        rows.append({"code": code, "level": level, "model_adults": int(len(group)),
+                     "model_students_18_29": int((student & up_to_29).sum()),
+                     "model_students_30plus": int((student & ~up_to_29).sum()),
+                     "model_persons_20_29": int(young.sum()),
+                     "model_students_20_29": int((student & young).sum()),
+                     "model_present_adults": n_present,
+                     "model_present_students_adults": n_present_students,
+                     "model_present_persons_20_29": n_present_young,
+                     "model_present_students_20_29": n_present_young_students,
+                     "model_student_share_adults": _share(n_present_students, n_present),
+                     "model_student_share_20_29": _share(n_present_young_students,
+                                                         n_present_young),
+                     "model_students_expanded_persons": int(student.sum()) / rate})
     out = pd.DataFrame(rows).merge(
         srv[["code", *_LEVEL_SRV_COLUMNS]].rename(columns=_LEVEL_SRV_COLUMNS), on="code",
         how="left", validate="1:1", indicator="_srv")
-    _log_missing_srv_rows(out, "_srv", "student level")
+    missing = _missing_srv_codes(out, "_srv", "student level")
+    diagnostics.update(missing_srv_codes=missing, n_missing_srv_rows=len(missing))
     srv_columns = list(_LEVEL_SRV_COLUMNS.values())
     out[srv_columns] = out[srv_columns].astype(float)
     out.loc[out["code"] == WOLFSBURG_KREIS, srv_columns] = np.nan
@@ -781,30 +835,31 @@ def student_level_table(persons_with_kreis: pd.DataFrame, srv_shares: pd.DataFra
     out["difference_in_se_20_29"] = _difference_in_se(
         out["model_student_share_20_29"], out["srv_student_share_20_29"],
         out["srv_se_student_share_20_29"])
-    region = out.iloc[-1]
-    LOG.info("%s student level, region %s: %d adult students of %d adults (share %.4f), "
-             "%.0f persons expanded at sampling rate %s", _LOG_TAG, REGION_CODE,
+    region = out[out["code"] == REGION_CODE].iloc[0]
+    LOG.info("%s student level, region %s: %d adult students of %d adults, %.0f persons "
+             "expanded at sampling rate %s; present: share %.4f", _LOG_TAG, REGION_CODE,
              region["model_students_18_29"] + region["model_students_30plus"],
-             region["model_adults"], region["model_student_share_adults"],
-             region["model_students_expanded_persons"], rate)
-    return out[LEVEL_COLUMNS]
+             region["model_adults"], region["model_students_expanded_persons"], rate,
+             region["model_student_share_adults"])
+    return out[LEVEL_COLUMNS], diagnostics
 
 
-def _zensus_employed_20_29(zensus_employed: pd.DataFrame) -> dict:
+def _zensus_employed_20_29(zensus_employed: pd.DataFrame) -> tuple[dict, list]:
     """Zensus 2022 employed persons aged 20 to 29, both sexes summed, per ZGB Kreis and region.
 
     ``zensus_employed`` is the frame ``zensus_employment_age.read_kreis_employed_by_age`` returns
-    for ``KREIS_EMPLOYED_BY_AGE_FILE``. A Kreis without rows is NaN, counted and logged; the
-    region (the surveyed Kreise) is NaN when one of them is missing, as a partial sum would
-    understate it. A Kreis whose class rows are not exactly one per sex, or a count that is not
-    a count, raises.
+    for ``KREIS_EMPLOYED_BY_AGE_FILE``. A ZGB Kreis without rows is NaN, counted, logged, and the
+    missing Kreise raise above ``MAX_EXCLUSION_RATE`` of the ZGB Kreise; the region (the
+    surveyed Kreise) is NaN when one of them is missing, as a partial sum would understate it.
+    A region code that is not a string, a Kreis whose class rows are not exactly one per sex, or
+    a count that is not a count raises. Returns ``(counts by code, missing Kreise)``.
     """
     _require_columns(zensus_employed, ZENSUS_EMPLOYED_COLUMNS, "Zensus employed-by-age")
+    _require_string_codes(zensus_employed["region"], "Zensus employed-by-age", "region")
     rows = zensus_employed[zensus_employed["age_class"] == ZENSUS_AGE_CLASS_20_29]
-    region = rows["region"].astype(str)
     counts, missing = {}, []
     for kreis in ZGB_KREISE:
-        kreis_rows = rows[(region == kreis).to_numpy()]
+        kreis_rows = rows[(rows["region"] == kreis).to_numpy()]
         if kreis_rows.empty:
             missing.append(kreis)
             counts[kreis] = float("nan")
@@ -816,19 +871,18 @@ def _zensus_employed_20_29(zensus_employed: pd.DataFrame) -> dict:
                                                               _ZENSUS_SEXES))
         counts[kreis] = float(_counts(kreis_rows, "employed_persons",
                                       "Zensus employed-by-age").sum())
-    surveyed_missing = [kreis for kreis in missing if kreis in SURVEYED_KREISE]
-    counts[REGION_CODE] = (float("nan") if surveyed_missing
+    _log_exclusion("Zensus employed %s: ZGB Kreise found (missing %s; NaN there%s)" % (
+        ZENSUS_AGE_CLASS_20_29, missing,
+        " and on the region row" if set(missing) & set(SURVEYED_KREISE) else ""),
+        len(missing), len(ZGB_KREISE))
+    counts[REGION_CODE] = (float("nan") if set(missing) & set(SURVEYED_KREISE)
                            else float(sum(counts[kreis] for kreis in SURVEYED_KREISE)))
-    (LOG.warning if missing else LOG.info)(
-        "%s Zensus employed %s: primary %d/%d Kreise (%.1f%%), missing %d %s (NaN there%s)",
-        _LOG_TAG, ZENSUS_AGE_CLASS_20_29, len(ZGB_KREISE) - len(missing), len(ZGB_KREISE),
-        _rate(len(ZGB_KREISE) - len(missing), len(ZGB_KREISE)), len(missing), missing,
-        " and on the region row" if surveyed_missing else "")
-    return counts
+    return counts, missing
 
 
 def young_adult_status_table(persons_with_kreis: pd.DataFrame, srv_status: pd.DataFrame,
-                             zensus_employed: pd.DataFrame, sampling_rate: float) -> pd.DataFrame:
+                             zensus_employed: pd.DataFrame,
+                             sampling_rate: float) -> tuple[pd.DataFrame, dict]:
     """Activity status of the 20 to 29 year olds per Kreis and region: model, SrV and Zensus.
 
     ``persons_with_kreis`` as in :func:`student_level_table`; ``srv_status`` is
@@ -837,25 +891,34 @@ def young_adult_status_table(persons_with_kreis: pd.DataFrame, srv_status: pd.Da
     ``zensus_employment_age.read_kreis_employed_by_age`` returns for
     ``zensus_employment_age.KREIS_EMPLOYED_BY_AGE_FILE``; ``sampling_rate`` in (0, 1].
 
-    Persons aged ``AGE_BAND_20_29`` (inclusive) with a readable ``P_TAET``, a known age and a
-    home Kreis (exclusions counted, as in :func:`student_level_table`). Model status, in the
-    order of the SrV builder: ``student`` (``P_TAET == STUDENT_P_TAET``), else ``employed``
-    (``employed`` true, which includes apprentices as SrV's employed codes do), else ``other``.
-    One block of the three statuses per ZGB Kreis and one :data:`REGION_CODE` block over the
-    surveyed Kreise (:data:`REGION_SCOPE_NOTE`). ``model_share`` is within the block (NaN on an
-    empty block), ``model_expanded_persons = model_n / sampling_rate``; the SrV columns are the
-    SrV table's ``share`` / ``se_share`` (NaN for Wolfsburg; a missing row counted);
-    ``difference_in_se`` as in :func:`student_level_table`. ``zensus_employed_persons`` is set on
-    the ``employed`` rows only: the Zensus 2022 employed persons of the age class
-    :data:`ZENSUS_AGE_CLASS_20_29`, both sexes summed (the region: the sum over the surveyed
-    Kreise); NaN on the other rows and where the Kreis is missing from the Zensus frame.
+    Persons aged ``AGE_BAND_20_29`` (inclusive) of the persons :func:`student_level_table`
+    counts. Model status, in the order of the SrV builder: ``student`` (``P_TAET ==
+    STUDENT_P_TAET``), else ``employed`` (``employed`` true, which includes apprentices as SrV's
+    employed codes do), else ``other``. One block of the three statuses per ZGB Kreis and one
+    :data:`REGION_CODE` block over the surveyed Kreise (:data:`REGION_SCOPE_NOTE`).
+
+    * Over ALL persons (the population level): ``model_n`` and ``model_expanded_persons`` (=
+      ``model_n / sampling_rate``), and ``zensus_employed_persons``.
+    * Over PRESENT persons (the SrV universe, which excludes persons away from home all day):
+      ``model_present_n`` and ``model_share`` (within the block's present persons, NaN on an
+      empty block).
+    * SrV columns: the SrV table's ``share`` / ``se_share`` (NaN for Wolfsburg; a missing row
+      counted); ``difference_in_se`` as in :func:`student_level_table`.
+    * ``zensus_employed_persons`` is set on the ``employed`` rows only: the Zensus 2022 employed
+      persons of the age class :data:`ZENSUS_AGE_CLASS_20_29`, both sexes summed (the region:
+      the sum over the surveyed Kreise); NaN on the other rows and where the Kreis is missing
+      from the Zensus frame.
+
+    Returns ``(table, diagnostics)``: :data:`YOUNG_ADULT_COLUMNS`; the exclusion counts of
+    :func:`_persons_with_kreis`, ``n_young_adults``, ``missing_srv_codes`` /
+    ``n_missing_srv_rows`` and ``zensus_missing_kreise`` / ``n_zensus_missing_kreise``.
     """
     rate = _require_sampling_rate(sampling_rate)
-    persons = _persons_with_kreis(persons_with_kreis, "young-adult status")
+    persons, diagnostics = _persons_with_kreis(persons_with_kreis, "young-adult status")
     srv = _validated_srv_rows(srv_status, YOUNG_ADULT_STATUS_COLUMNS, ["code", "status"],
                               "SrV young-adult status table",
                               {"status": list(YOUNG_ADULT_STATUSES)})
-    zensus = _zensus_employed_20_29(zensus_employed)
+    zensus, zensus_missing = _zensus_employed_20_29(zensus_employed)
     young = persons[persons["age"].between(*AGE_BAND_20_29).to_numpy()]
     status = np.select([(young["code"] == STUDENT_P_TAET).to_numpy(),
                         young["employed"].to_numpy(dtype=bool)],
@@ -863,41 +926,53 @@ def young_adult_status_table(persons_with_kreis: pd.DataFrame, srv_status: pd.Da
     young = young.assign(status=status)
     rows = []
     for level, code, group in _scopes(young):
+        present = group[group["present"].to_numpy(dtype=bool)]
         for label in YOUNG_ADULT_STATUSES:
             n = int((group["status"] == label).sum())
+            n_present = int((present["status"] == label).sum())
             rows.append({"code": code, "level": level, "status": label, "model_n": n,
-                         "model_share": _share(n, len(group)), "model_expanded_persons": n / rate,
+                         "model_present_n": n_present,
+                         "model_share": _share(n_present, len(present)),
+                         "model_expanded_persons": n / rate,
                          "zensus_employed_persons": (zensus[code] if label == _EMPLOYED_STATUS
                                                      else float("nan"))})
     out = pd.DataFrame(rows).merge(
         srv[["code", "status", "share", "se_share"]].rename(
             columns={"share": "srv_share", "se_share": "srv_se_share"}),
         on=["code", "status"], how="left", validate="1:1", indicator="_srv")
-    _log_missing_srv_rows(out, "_srv", "young-adult status")
+    missing = _missing_srv_codes(out, "_srv", "young-adult status")
     out[["srv_share", "srv_se_share"]] = out[["srv_share", "srv_se_share"]].astype(float)
     out.loc[out["code"] == WOLFSBURG_KREIS, ["srv_share", "srv_se_share"]] = np.nan
     out["difference_in_se"] = _difference_in_se(out["model_share"], out["srv_share"],
                                                 out["srv_se_share"])
-    LOG.info("%s young-adult status: %d persons aged %d to %d in the surveyed Kreise",
-             _LOG_TAG, int(young["kreis"].isin(SURVEYED_KREISE).sum()), *AGE_BAND_20_29)
-    return out[YOUNG_ADULT_COLUMNS]
+    diagnostics.update(n_young_adults=int(len(young)), missing_srv_codes=missing,
+                       n_missing_srv_rows=int(((out["_srv"] == "left_only")
+                                               & (out["code"] != WOLFSBURG_KREIS)).sum()),
+                       zensus_missing_kreise=zensus_missing,
+                       n_zensus_missing_kreise=len(zensus_missing))
+    LOG.info("%s young-adult status: %d persons aged %d to %d in the surveyed Kreise (%d present)",
+             _LOG_TAG, int(young["kreis"].isin(SURVEYED_KREISE).sum()), *AGE_BAND_20_29,
+             int((young["kreis"].isin(SURVEYED_KREISE) & young["present"]).sum()))
+    return out[YOUNG_ADULT_COLUMNS], diagnostics
 
 
-def student_work_class_table(persons: pd.DataFrame) -> pd.DataFrame:
+def student_work_class_table(persons: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """Adult students by ``employed`` and ``employment_status``, all Kreise and none.
 
     Checks the design statement that every non-employed student falls into the not-employed
     classes of the work control (``employment_status`` outside
     ``attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES``): a student who breaks it, and a student
-    with ``employed`` true, is reported (a row of its own, counted in the log), never dropped.
-    Columns :data:`WORK_CLASS_COLUMNS`, ``share`` over all adult students, sorted by
-    ``employed`` and ``employment_status``. A missing ``employment_status`` or a non-boolean
-    ``employed`` raises.
+    with ``employed`` true, is reported (a row of its own, counted), never dropped. Columns
+    :data:`WORK_CLASS_COLUMNS`, ``share`` over all adult students, sorted by ``employed`` and
+    ``employment_status``. A missing ``employment_status`` or a non-boolean ``employed`` raises.
+
+    Returns ``(table, diagnostics)``: the counts of ``_adult_students`` plus
+    ``n_adult_students_employed`` and ``n_adult_students_not_employed_in_employed_class``.
     """
     _require_columns(persons, ("person_id", "age", "P_TAET", "employed", "employment_status"),
                      "persons")
     _require_unique_person_ids(persons, "persons")
-    students, _ = _adult_students(persons)
+    students, diagnostics = _adult_students(persons)
     if students["employment_status"].isna().any():
         raise ValueError("persons: %d adult student(s) without an employment_status"
                          % int(students["employment_status"].isna().sum()))
@@ -907,15 +982,16 @@ def student_work_class_table(persons: pd.DataFrame) -> pd.DataFrame:
              .reset_index().sort_values(["employed", "employment_status"]))
     table["share"] = table["model_n"] / len(frame)
     n_employed = int(frame["employed"].sum())
-    in_employed_class = ~frame["employed"] & frame["employment_status"].isin(
-        EMPLOYED_EMPLOYMENT_STATUS_CLASSES)
-    n_breaking = int(in_employed_class.sum())
+    n_breaking = int((~frame["employed"] & frame["employment_status"].isin(
+        EMPLOYED_EMPLOYMENT_STATUS_CLASSES)).sum())
     (LOG.warning if n_employed or n_breaking else LOG.info)(
         "%s work class of %d adult students: employed %d (%.1f%%); not employed but in an "
         "employed class %s of the work control %d (%.1f%%)", _LOG_TAG, len(frame), n_employed,
         _rate(n_employed, len(frame)), list(EMPLOYED_EMPLOYMENT_STATUS_CLASSES), n_breaking,
         _rate(n_breaking, len(frame)))
-    return table[WORK_CLASS_COLUMNS].reset_index(drop=True)
+    diagnostics.update(n_adult_students_employed=n_employed,
+                       n_adult_students_not_employed_in_employed_class=n_breaking)
+    return table[WORK_CLASS_COLUMNS].reset_index(drop=True), diagnostics
 
 
 # --------------------------------------------------------------------------- plan source
@@ -932,6 +1008,12 @@ DIARY_TRACE_COLUMNS = (*SEED_KEY, "reason")
 #: Diary-match reasons that keep the seed person's own diary: the diary match chose no path.
 DIARY_KEEP_REASONS = (REASON_KEEP, REASON_KEEP_IMMOBILE)
 DIARY_REASONS = (*DIARY_KEEP_REASONS, *REASONS_REMAP)
+#: The ``resolution`` values ``weekend_plan_match.reassign_weekend_plan_sources`` writes. That
+#: module keeps them as inline literals, not constants; adding constants there would change the
+#: source the completed-donor stage folds into its cache token and devalidate its cached output,
+#: so the set is listed here and pinned to the literals of that module by a source-scan test.
+WEEKEND_RESOLUTIONS = ("own_plan", "member_completion_filler", "hh_match", "person_fallback",
+                       "mixed_person_sweep")
 PLAN_ORIGIN_OWN = "own_diary"
 PLAN_ORIGIN_REDRAWN = "redrawn"
 MATCH_PATH_UNRESOLVED = "unresolved"
@@ -991,9 +1073,13 @@ def _match_path(frame: pd.DataFrame, persons: pd.DataFrame, weekend_trace: pd.Da
     and why every row is unresolved when the persons carry no seed key (else None)."""
     weekend = _keyed(weekend_trace, WEEKEND_TRACE_COLUMNS, "weekend trace")
     diary = _keyed(diary_trace, DIARY_TRACE_COLUMNS, "diary trace")
-    if weekend["resolution"].isna().any():
-        raise ValueError("weekend trace: %d row(s) without a resolution"
-                         % int(weekend["resolution"].isna().sum()))
+    odd_resolution = weekend["resolution"].isna() | ~weekend["resolution"].isin(
+        WEEKEND_RESOLUTIONS)
+    if odd_resolution.any():
+        raise ValueError("weekend trace: column resolution carries %d value(s) outside %s, "
+                         "e.g. %s" % (int(odd_resolution.sum()), list(WEEKEND_RESOLUTIONS),
+                                      weekend.loc[odd_resolution, "resolution"].astype(str)
+                                      .unique()[:5].tolist()))
     odd_reason = diary["reason"].isna() | ~diary["reason"].isin(DIARY_REASONS)
     if odd_reason.any():
         raise ValueError("diary trace: column reason carries %d value(s) outside %s, e.g. %s"

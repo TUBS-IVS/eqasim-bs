@@ -335,29 +335,30 @@ def test_unmatched_home_share_above_the_bound_raises(frames):
 
 # --------------------------------------------------------------------------- Task 7 tables
 SAMPLING_RATE = 0.25
-# person_id, age, P_TAET, employed, employment_status, kreis. 03101: three students (22, 19,
-# 35), an employed 25-year-old, a 27-year-old with no job, an employed 50-year-old, a pupil of
-# 12 and a 40-year-old without a readable P_TAET (99); 03102: a student of 24 and an employed
-# apprentice of 29; Wolfsburg (03103): a student of 21; one student of 23 without a home Kreis.
+# person_id, age, P_TAET, employed, employment_status, kreis, present. 03101: three students
+# (22 away all day, 19, 35), an employed 25-year-old, a 27-year-old with no job, an employed
+# 50-year-old, a pupil of 12 and a 40-year-old without a readable P_TAET (99); 03102: a student
+# of 24 and an employed apprentice of 29; Wolfsburg (03103): a student of 21; one student of 23
+# without a home Kreis.
 _LEVEL_PERSONS = [
-    (1, 22, 10, False, "nicht_erwerbstaetig", "03101"),
-    (2, 19, 10, False, "geringfuegig", "03101"),
-    (3, 35, 10, True, "teilzeit", "03101"),
-    (4, 25, 1, True, "vollzeit", "03101"),
-    (5, 27, 12, False, "nicht_erwerbstaetig", "03101"),
-    (6, 50, 1, True, "vollzeit", "03101"),
-    (7, 12, 9, False, "nicht_erwerbstaetig", "03101"),
-    (8, 40, 99, False, "nicht_erwerbstaetig", "03101"),
-    (9, 24, 10, False, "nicht_erwerbstaetig", "03102"),
-    (10, 29, 8, True, "in_ausbildung", "03102"),
-    (11, 21, 10, False, "nicht_erwerbstaetig", "03103"),
-    (12, 23, 10, False, "nicht_erwerbstaetig", None),
+    (1, 22, 10, False, "nicht_erwerbstaetig", "03101", False),
+    (2, 19, 10, False, "geringfuegig", "03101", True),
+    (3, 35, 10, True, "teilzeit", "03101", True),
+    (4, 25, 1, True, "vollzeit", "03101", True),
+    (5, 27, 12, False, "nicht_erwerbstaetig", "03101", True),
+    (6, 50, 1, True, "vollzeit", "03101", True),
+    (7, 12, 9, False, "nicht_erwerbstaetig", "03101", True),
+    (8, 40, 99, False, "nicht_erwerbstaetig", "03101", True),
+    (9, 24, 10, False, "nicht_erwerbstaetig", "03102", True),
+    (10, 29, 8, True, "in_ausbildung", "03102", True),
+    (11, 21, 10, False, "nicht_erwerbstaetig", "03103", True),
+    (12, 23, 10, False, "nicht_erwerbstaetig", None, True),
 ]
 
 
 def _level_persons():
     return pd.DataFrame(_LEVEL_PERSONS, columns=["person_id", "age", "P_TAET", "employed",
-                                                 "employment_status", "kreis"])
+                                                 "employment_status", "kreis", "present"])
 
 
 def _srv_shares():
@@ -387,7 +388,7 @@ def _srv_status():
     return table
 
 
-def _zensus(drop_kreis=None):
+def _zensus(drop_kreise=()):
     """Employed persons by Kreis, age class and sex in the shape ``read_kreis_employed_by_age``
     returns; only the 20-29 rows count, the 15-19, 30-39 and Germany rows must be ignored."""
     employed_20_29 = {"03101": (100, 120), "03102": (50, 40), "03103": (30, 20)}
@@ -398,32 +399,36 @@ def _zensus(drop_kreis=None):
                  (code, "15-19", "M", 1000), (code, "30-39", "F", 1000)]
     frame = pd.DataFrame(rows, columns=["region", "age_class", "sex", "employed_persons"])
     frame.insert(1, "region_name", "x")
-    return frame[frame["region"] != drop_kreis].reset_index(drop=True)
+    return frame[~frame["region"].isin(drop_kreise)].reset_index(drop=True)
 
 
 def test_level_table_by_hand():
-    table = M.student_level_table(_level_persons(), _srv_shares(), SAMPLING_RATE)
+    table, diag = M.student_level_table(_level_persons(), _srv_shares(), SAMPLING_RATE)
     assert list(table.columns) == M.LEVEL_COLUMNS
     assert list(table["code"]) == list(M.ZGB_KREISE) + [M.REGION_CODE]
     rows = table.set_index("code")
-    # 03101: adults 1-6 (8 has no readable P_TAET, 7 is 12); students 22, 19 | 35;
-    # 20-29: persons 1, 4, 5, of them student 1
+    # 03101 over all persons: adults 1-6 (8 has no readable P_TAET, 7 is 12); students 22, 19 |
+    # 35; 20-29: persons 1, 4, 5, of them student 1
     bs = rows.loc["03101"]
     assert (bs["model_adults"], bs["model_students_18_29"], bs["model_students_30plus"],
             bs["model_persons_20_29"], bs["model_students_20_29"]) == (6, 2, 1, 3, 1)
-    assert bs["model_student_share_adults"] == pytest.approx(0.5)
-    assert bs["model_student_share_20_29"] == pytest.approx(1 / 3)
     assert bs["model_students_expanded_persons"] == pytest.approx(12.0)
-    assert bs["difference_in_se_adults"] == pytest.approx((0.5 - 0.4) / 0.05)
-    assert bs["difference_in_se_20_29"] == pytest.approx((1 / 3 - 0.5) / 0.1)
+    # shares over the PRESENT persons only: student 1 is away all day, so 2 of 5 adults and 0 of
+    # the 2 present 20-29 year olds (over all persons they would be 3/6 and 1/3)
+    assert (bs["model_present_adults"], bs["model_present_students_adults"],
+            bs["model_present_persons_20_29"], bs["model_present_students_20_29"]) == (5, 2, 2, 0)
+    assert bs["model_student_share_adults"] == pytest.approx(0.4)
+    assert bs["model_student_share_20_29"] == pytest.approx(0.0)
+    assert bs["difference_in_se_adults"] == pytest.approx(0.0)
+    assert bs["difference_in_se_20_29"] == pytest.approx((0.0 - 0.5) / 0.1)
     # region = the seven surveyed Kreise: 03101 + 03102; Wolfsburg and no-Kreis student 12 out
     region = rows.loc[M.REGION_CODE]
     assert region["level"] == "total"
     assert (region["model_adults"], region["model_students_18_29"],
             region["model_persons_20_29"], region["model_students_20_29"]) == (8, 3, 5, 2)
     assert region["model_students_expanded_persons"] == pytest.approx(16.0)
-    assert region["difference_in_se_adults"] == pytest.approx((0.5 - 0.45) / 0.025)
-    assert region["difference_in_se_20_29"] == pytest.approx((0.4 - 0.3) / 0.05)
+    assert region["difference_in_se_adults"] == pytest.approx((3 / 7 - 0.45) / 0.025)
+    assert region["difference_in_se_20_29"] == pytest.approx((1 / 4 - 0.3) / 0.05)
     assert region["srv_students_weighted_persons"] == pytest.approx(900.0)
     # Wolfsburg: model only, every SrV column NaN (the file's 0 weight sum included)
     wolfsburg = rows.loc["03103"]
@@ -433,24 +438,37 @@ def test_level_table_by_hand():
     # a surveyed Kreis without a model person: zero counts, NaN shares
     empty = rows.loc["03158"]
     assert empty["model_adults"] == 0 and pd.isna(empty["model_student_share_adults"])
+    # exclusions reach the diagnostics: P_TAET over the 11 adults, home Kreis over the 10 left
+    assert (diag["n_adults_with_age"], diag["n_adults_unreadable_p_taet"],
+            diag["n_adults_no_home_kreis"], diag["n_missing_srv_rows"]) == (11, 1, 1, 0)
+    # a surveyed Kreis missing from the SrV table: NaN SrV columns there, counted
+    srv = _srv_shares()
+    reduced, diag = M.student_level_table(_level_persons(), srv[srv["code"] != "03102"],
+                                          SAMPLING_RATE)
+    assert diag["missing_srv_codes"] == ["03102"] and diag["n_missing_srv_rows"] == 1
+    assert pd.isna(reduced.set_index("code").loc["03102", "srv_student_share_adults"])
 
 
 def test_young_adult_status_and_work_class_by_hand():
-    table = M.young_adult_status_table(_level_persons(), _srv_status(), _zensus(),
-                                       SAMPLING_RATE)
+    table, diag = M.young_adult_status_table(_level_persons(), _srv_status(), _zensus(),
+                                             SAMPLING_RATE)
     assert list(table.columns) == M.YOUNG_ADULT_COLUMNS
     rows = table.set_index(["code", "status"])
-    # 03101, ages 20-29: student 1, employed 4, other 5
+    # 03101, ages 20-29, all persons: student 1 (away all day), employed 4, other 5
     for status in ("student", "employed", "other"):
         assert rows.loc[("03101", status), "model_n"] == 1
-        assert rows.loc[("03101", status), "model_share"] == pytest.approx(1 / 3)
         assert rows.loc[("03101", status), "model_expanded_persons"] == pytest.approx(4.0)
+    # shares over the present ones: employed 4 and other 5
+    assert rows.loc[("03101", "student"), ["model_present_n", "model_share"]].tolist() == [0, 0.0]
+    assert rows.loc[("03101", "employed"), "model_share"] == pytest.approx(1 / 2)
     assert rows.loc[("03101", "employed"), "difference_in_se"] == pytest.approx(
-        (1 / 3 - 0.5) / 0.1)
-    # 03102: student 9, employed apprentice 10; region: 2 students, 2 employed, 1 other of 5
+        (1 / 2 - 0.5) / 0.1)
+    # 03102: student 9, employed apprentice 10; region present: student 9, employed 4 and 10,
+    # other 5 (student 1 away)
     assert rows.loc[("03102", "other"), "model_n"] == 0
-    assert rows.loc[(M.REGION_CODE, "student"), "model_share"] == pytest.approx(0.4)
-    assert rows.loc[(M.REGION_CODE, "other"), "model_share"] == pytest.approx(0.2)
+    assert rows.loc[(M.REGION_CODE, "student"), "model_n"] == 2
+    assert rows.loc[(M.REGION_CODE, "student"), "model_share"] == pytest.approx(1 / 4)
+    assert rows.loc[(M.REGION_CODE, "employed"), "model_share"] == pytest.approx(1 / 2)
     # Zensus employed 20-29, both sexes summed, on the employed rows only; region = the seven
     # surveyed Kreise (220 + 90 + 5 * 20), Wolfsburg keeps its own count
     zensus = rows["zensus_employed_persons"]
@@ -460,14 +478,17 @@ def test_young_adult_status_and_work_class_by_hand():
     assert zensus[rows.index.get_level_values("status") != "employed"].isna().all()
     assert rows.loc[("03103", "student"), ["srv_share", "srv_se_share",
                                           "difference_in_se"]].isna().all()
-    # a Kreis missing from the Zensus frame: NaN there and on the region row
-    missing = M.young_adult_status_table(_level_persons(), _srv_status(), _zensus("03158"),
-                                         SAMPLING_RATE).set_index(["code", "status"])
+    assert (diag["n_young_adults"], diag["n_zensus_missing_kreise"]) == (6, 0)
+    # a Kreis missing from the Zensus frame: NaN there and on the region row, counted
+    missing, diag = M.young_adult_status_table(_level_persons(), _srv_status(),
+                                               _zensus(["03158"]), SAMPLING_RATE)
+    missing = missing.set_index(["code", "status"])
     assert pd.isna(missing.loc[("03158", "employed"), "zensus_employed_persons"])
     assert pd.isna(missing.loc[(M.REGION_CODE, "employed"), "zensus_employed_persons"])
     assert missing.loc[("03101", "employed"), "zensus_employed_persons"] == pytest.approx(220.0)
+    assert diag["zensus_missing_kreise"] == ["03158"]
 
-    work = M.student_work_class_table(_level_persons())
+    work, diag = M.student_work_class_table(_level_persons())
     assert list(work.columns) == M.WORK_CLASS_COLUMNS
     # adult students 1, 2, 3, 9, 11, 12: student 3 is employed (reported, not dropped), the
     # non-employed student 2 sits in an employed class of the work control (reported too)
@@ -476,6 +497,60 @@ def test_young_adult_status_and_work_class_by_hand():
     assert cells.loc[(False, "geringfuegig"), "model_n"] == 1
     assert cells.loc[(True, "teilzeit"), "share"] == pytest.approx(1 / 6)
     assert work["model_n"].sum() == 6
+    assert (diag["n_adult_students_employed"],
+            diag["n_adult_students_not_employed_in_employed_class"]) == (1, 1)
+
+
+def _persons_set(column, person_id, value):
+    def mutate(persons, srv, status, zensus):
+        persons = persons.copy()
+        persons[column] = persons[column].astype(object)
+        persons.loc[persons["person_id"] == person_id, column] = value
+        return persons, srv, status, zensus
+    return mutate
+
+
+def _srv_code(old, new):
+    def mutate(persons, srv, status, zensus):
+        srv = srv.astype({"code": object})
+        srv.loc[srv["code"] == old, "code"] = new
+        return persons, srv, status, zensus
+    return mutate
+
+
+def _zensus_rows(change):
+    def mutate(persons, srv, status, zensus):
+        return persons, srv, status, change(zensus)
+    return mutate
+
+
+def _one_20_29_row(zensus, kreis, sex):
+    return (zensus["region"] == kreis) & (zensus["age_class"] == "20-29") & (zensus["sex"] == sex)
+
+
+@pytest.mark.parametrize("mutate, rate, match", [
+    (_persons_set("kreis", 2, "03241"), SAMPLING_RATE, "ZGB_KREISE"),     # Region Hannover
+    (_persons_set("kreis", 2, 3101), SAMPLING_RATE, "non-string"),
+    (_srv_code("03102", 3102), SAMPLING_RATE, "non-string"),
+    (_srv_code("03102", "03241"), SAMPLING_RATE, "outside"),
+    (lambda *frames: frames, 0.0, "sampling_rate"),
+    (lambda *frames: frames, 1.5, "sampling_rate"),
+    # more or fewer than one Zensus row per sex
+    (_zensus_rows(lambda z: z[~_one_20_29_row(z, "03101", "F")]), SAMPLING_RATE, "sexes"),
+    (_zensus_rows(lambda z: pd.concat([z, z[_one_20_29_row(z, "03101", "M")]])), SAMPLING_RATE,
+     "sexes"),
+    # region read as numbers: no Kreis would be found
+    (_zensus_rows(lambda z: z.assign(region=z["region"].astype(int))), SAMPLING_RATE,
+     "non-string"),
+    # five of the eight ZGB Kreise missing (62.5 %) is above the 50 % limit
+    (_zensus_rows(lambda z: z[~z["region"].isin(M.ZGB_KREISE[:5])]), SAMPLING_RATE, "Zensus"),
+])
+def test_invalid_level_and_status_inputs_raise(mutate, rate, match):
+    persons, srv, status, zensus = mutate(_level_persons(), _srv_shares(), _srv_status(),
+                                          _zensus())
+    with pytest.raises(ValueError, match=match):
+        M.student_level_table(persons, srv, rate)
+        M.young_adult_status_table(persons, status, zensus, rate)
 
 
 # Seed key (H_ID, P_ID), plan source and attribute source of each student. Student 1 keeps its
@@ -539,6 +614,21 @@ def test_plan_source_by_hand():
     assert table["model_n"].sum() == 5
 
 
+def test_donor_without_readable_p_taet_is_unknown():
+    students, persons, donors, weekend, diary = _plan_frames()
+    # student 4's donor is found this time (a student); the weekend donor of student 2 answers
+    # P_TAET 99: 1 of 3 re-drawn plans has an unknown donor, below the limit
+    donors = pd.concat([donors, pd.DataFrame({"H_ID": [700.0], "P_ID": [1], "P_TAET": [10]})],
+                       ignore_index=True)
+    donors.loc[donors["H_ID"] == 300.0, "P_TAET"] = 99
+    table, diag = M.plan_source_table(students, persons, donors, weekend, diary)
+    row = table.set_index(["plan_origin", "match_path", "donor_status"])
+    assert row.loc[("redrawn", "weekend:hh_match", "unknown"), "model_n"] == 1
+    assert row.loc[("redrawn", "unresolved", "student"), "model_n"] == 1
+    assert (diag["n_redrawn_donor_p_taet_unreadable"], diag["n_redrawn_donor_not_found"],
+            diag["n_redrawn_donor_unknown"]) == (1, 0, 1)
+
+
 def test_plan_source_without_seed_key_is_unresolved():
     students, persons, donors, weekend, diary = _plan_frames()
     table, diag = M.plan_source_table(students, persons.drop(columns=["H_ID", "P_ID"]), donors,
@@ -547,7 +637,42 @@ def test_plan_source_without_seed_key_is_unresolved():
     assert diag["n_redrawn_unresolved"] == 3 and "H_ID" in diag["unresolved_reason"]
 
 
-def test_unknown_donor_share_above_the_limit_raises():
+def _trace_change(position, change):
+    def mutate(frames):
+        frames = list(frames)
+        frames[position] = change(frames[position].copy())
+        return frames
+    return mutate
+
+
+def _set_first(column, value):
+    def change(frame):
+        frame.loc[frame.index[0], column] = value
+        return frame
+    return change
+
+
+@pytest.mark.parametrize("mutate, match", [
     # donors of students 3 and 4 missing: 2 of 3 re-drawn plans (67 %) above the 50 % limit
-    with pytest.raises(ValueError, match="donor"):
-        M.plan_source_table(*_plan_frames(unknown_donors=(500.0,)))
+    (lambda frames: _plan_frames(unknown_donors=(500.0,)), "donor"),
+    (_trace_change(3, lambda weekend: pd.concat([weekend, weekend.iloc[[0]]])), "duplicated"),
+    (_trace_change(4, lambda diary: pd.concat([diary, diary.iloc[[1]]])), "duplicated"),
+    (_trace_change(4, _set_first("reason", "lost_diary")), "reason"),
+    (_trace_change(3, _set_first("resolution", "best_guess")), "resolution"),
+    (_trace_change(2, _set_first("H_ID", 100.5)), "integer key"),
+])
+def test_invalid_plan_source_inputs_raise(mutate, match):
+    with pytest.raises(ValueError, match=match):
+        M.plan_source_table(*mutate(_plan_frames()))
+
+
+def test_weekend_resolutions_are_the_literals_the_weekend_match_writes():
+    # weekend_plan_match keeps its resolutions as inline literals; this pins the measurement's
+    # vocabulary to every literal assigned to `resolution` there (initial Series and updates)
+    import re
+    from pathlib import Path
+    import braunschweig.popsim.weekend_plan_match as W
+    source = Path(W.__file__).read_text(encoding="utf-8")
+    literals = set(re.findall(r'resolution(?:\[.*\])?\s*=\s*"(\w+)"', source))
+    literals |= set(re.findall(r'resolution\s*=\s*pd\.Series\("(\w+)"', source))
+    assert literals == set(M.WEEKEND_RESOLUTIONS)
