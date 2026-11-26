@@ -62,6 +62,23 @@ def test_site_points_use_the_commune_or_the_curated_list_and_raise_otherwise():
         G.site_points(missing_commune, gemeinden, curated)
 
 
+def test_site_in_both_lists_takes_the_curated_point_and_warns_with_the_displacement(caplog):
+    gemeinden = pd.DataFrame({"ags8": ["03101000"], "ewz": [1], "x": [500_000.0], "y": [5_000_000.0]})
+    # lon 9 / lat 52 projects to easting 500000 m; the commune centroid lies on the same easting
+    curated = pd.DataFrame({"destination_id": ["both", "unknown_commune"], "lon": [9.0, 9.0],
+                            "lat": [52.0, 52.0]})
+    sites = pd.DataFrame({"destination_id": ["both", "unknown_commune"], "site_ags8": ["03101000", "99999999"]})
+    with caplog.at_level("WARNING", logger=G.LOGGER.name):
+        points = G.site_points(sites, gemeinden, curated).set_index("destination_id")
+    assert points.loc["both", "x"] == pytest.approx(500_000.0, abs=1e-3)
+    assert points.loc["both", "y"] > 5_700_000  # the curated point, not the commune centroid
+    displacement_km = (points.loc["both", "y"] - 5_000_000.0) / 1000.0
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert f"both ({displacement_km:.2f} km from the centroid of 03101000)" in warnings[0]
+    assert "unknown_commune (site_ags8 '99999999' unknown, no displacement)" in warnings[0]
+
+
 def test_curve_basis_by_hand():
     d = np.array([5.0, 17.5, 27.5, 37.5, 56.25, 75.0, 87.5, 100.0, 120.0])
     expected = [[1, 0, 0], [1, 0, 0], [.5, .5, 0], [0, 1, 0], [0, .5, .5], [0, 0, 1], [0, 0, .5],
@@ -138,6 +155,34 @@ def test_kreise_within_reach_uses_communes():
         G.kreise_within_reach(g, destinations, ["nope"], 50.0)
 
 
+def test_missing_population_or_coordinate_raises_naming_column_and_id():
+    destinations = _origin_destination()
+    for column in ("ewz", "x", "y"):
+        broken = _communes_east_of_origin()
+        broken[column] = broken[column].astype(float)
+        broken.loc[1, column] = np.nan
+        for call in (lambda g: G.pair_coefficients(g, destinations, G.WEIGHT_RULE_COMMUNE_CURVE, 100.0),
+                     lambda g: G.kreise_within_reach(g, destinations, ["site"], 100.0)):
+            with pytest.raises(ValueError, match=rf"column '{column}'.*03158002"):
+                call(broken)
+    broken_destination = pd.DataFrame({"destination_id": ["site"], "x": [0.0], "y": [np.nan]})
+    for call in (lambda d: G.pair_coefficients(_communes_east_of_origin(), d, G.WEIGHT_RULE_CENTROID_BANDS, 100.0),
+                 lambda d: G.kreise_within_reach(_communes_east_of_origin(), d, ["site"], 100.0)):
+        with pytest.raises(ValueError, match=r"column 'y'.*site"):
+            call(broken_destination)
+
+
+def test_pair_coefficients_and_reach_log_the_unpopulated_communes(caplog):
+    g = pd.concat([_communes_east_of_origin(),
+                   pd.DataFrame({"ags8": ["03158003"], "ewz": [0], "x": [1_000.0], "y": [0.0]})])
+    with caplog.at_level("INFO", logger=G.LOGGER.name):
+        G.pair_coefficients(g, _origin_destination(), G.WEIGHT_RULE_COMMUNE_CURVE, 100.0)
+        G.kreise_within_reach(g, _origin_destination(), ["site"], 100.0)
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("1 of 3 communes with ewz == 0 carry no weight" in m for m in messages)
+    assert any("1 Kreise, 2 communes in reach" in m and "1 unpopulated communes" in m for m in messages)
+
+
 def _write_vg250_zip(tmp_path, rows):
     import geopandas as gpd
     from shapely.geometry import box
@@ -158,9 +203,11 @@ def _write_vg250_zip(tmp_path, rows):
 # The repository reads the real archive through a file object as well (population.py), which makes
 # pyogrio warn about the in-memory file name; the warning says nothing about the data.
 @pytest.mark.filterwarnings("ignore:.*non conformant file extension:RuntimeWarning")
-def test_load_gemeinden_keeps_land_rows_and_one_row_per_ags(tmp_path):
+def test_load_gemeinden_keeps_land_rows_and_one_row_per_ags(tmp_path, caplog):
     rows = [("03101000", 4, 100, 0.0), ("03101000", 2, 0, 5000.0), ("03158001", 4, 40, 10_000.0)]
-    gemeinden = G.load_gemeinden(_write_vg250_zip(tmp_path, rows))
+    with caplog.at_level("INFO", logger=G.LOGGER.name):
+        gemeinden = G.load_gemeinden(_write_vg250_zip(tmp_path, rows))
+    assert any("dropped 1 non-land rows" in r.getMessage() for r in caplog.records)
     assert gemeinden["ags8"].tolist() == ["03101000", "03158001"]
     assert gemeinden["ewz"].tolist() == [100, 40]
     # centroid of box(10000, 0, 11000, 2000)

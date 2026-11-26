@@ -47,6 +47,17 @@ def _require_columns(frame: pd.DataFrame, columns: list[str], what: str) -> None
         raise ValueError(f"{what}: missing column(s) {missing}; found {list(frame.columns)}")
 
 
+def _require_finite(frame: pd.DataFrame, columns: list[str], id_column: str, what: str) -> None:
+    """Raise on NaN or infinite values, naming the column and the first offending ids."""
+    for column in columns:
+        values = pd.to_numeric(frame[column], errors="raise").to_numpy(dtype=float)
+        bad = ~np.isfinite(values)
+        if bad.any():
+            ids = frame[id_column].astype(str)[bad].tolist()
+            raise ValueError(f"{what}: {int(bad.sum())} missing or non-finite value(s) in column {column!r}, "
+                             f"{id_column} {ids[:5]}")
+
+
 def _require_unique(frame: pd.DataFrame, column: str, what: str) -> None:
     duplicated = frame.loc[frame[column].duplicated(), column].unique()
     if len(duplicated):
@@ -75,6 +86,7 @@ def load_gemeinden(vg250_zip: Path) -> pd.DataFrame:
         raise ValueError(f"{vg250_zip.name} layer {VG250_LAYER}: CRS is {layer.crs}, expected {CRS}")
 
     land = layer[layer["GF"] == LAND_GF]
+    n_dropped = len(layer) - len(land)
     ags8 = land["AGS"].astype(str).str.zfill(8)
     if (ags8.str.len() != 8).any() or not ags8.str.isdigit().all():
         raise ValueError(f"{VG250_LAYER}: AGS is not an 8-digit code for land rows, e.g. "
@@ -87,8 +99,9 @@ def load_gemeinden(vg250_zip: Path) -> pd.DataFrame:
     result = pd.DataFrame({"ags8": ags8.to_numpy(), "ewz": ewz.to_numpy(),
                            "x": centroids.x.to_numpy(), "y": centroids.y.to_numpy()})
     _require_unique(result, "ags8", f"{VG250_LAYER} land rows (GF == {LAND_GF})")
-    LOGGER.info("[student_geometry] %s: %d land communes, %d inhabitants, from %s",
-                VG250_LAYER, len(result), int(result["ewz"].sum()), vg250_zip)
+    LOGGER.info("[student_geometry] %s: %d land communes (GF == %d), %d inhabitants; dropped %d non-land rows "
+                "(GF != %d) of %d, from %s", VG250_LAYER, len(result), LAND_GF, int(result["ewz"].sum()),
+                n_dropped, LAND_GF, len(layer), vg250_zip)
     return result
 
 
@@ -135,16 +148,26 @@ def site_points(sites: pd.DataFrame, gemeinden: pd.DataFrame, curated: pd.DataFr
 
     rows = []
     n_commune = 0
+    overridden = []  # (destination_id, displacement text) of sites that also have curated coordinates
     for destination_id, site_ags8 in zip(sites["destination_id"].astype(str), sites["site_ags8"]):
         ags8 = None if pd.isna(site_ags8) else str(site_ags8)
         if destination_id in curated_xy:
             rows.append((destination_id, *curated_xy[destination_id]))
+            if ags8 in commune_xy:
+                displacement_km = np.hypot(curated_xy[destination_id][0] - commune_xy[ags8][0],
+                                           curated_xy[destination_id][1] - commune_xy[ags8][1]) / 1000.0
+                overridden.append(f"{destination_id} ({displacement_km:.2f} km from the centroid of {ags8})")
+            else:
+                overridden.append(f"{destination_id} (site_ags8 {site_ags8!r} unknown, no displacement)")
         elif ags8 in commune_xy:
             rows.append((destination_id, *commune_xy[ags8]))
             n_commune += 1
         else:
             raise ValueError(f"destination {destination_id!r}: site_ags8 {site_ags8!r} is not a commune of "
                              f"gemeinden and the destination is not in the curated list")
+    if overridden:
+        LOGGER.warning("[student_geometry] %d site(s) are in the site table AND the curated list; the curated "
+                       "coordinates are used: %s", len(overridden), "; ".join(overridden))
     listed = {row[0] for row in rows}
     rows.extend((i, *xy) for i, xy in curated_xy.items() if i not in listed)
     LOGGER.info("[student_geometry] site points: commune centroid %d/%d (%.1f%%), curated coordinates %d "
@@ -212,10 +235,16 @@ def pair_coefficients(gemeinden: pd.DataFrame, destinations: pd.DataFrame, rule:
         raise ValueError(f"unknown weight rule {rule!r}; expected {WEIGHT_RULE_COMMUNE_CURVE!r} "
                          f"or {WEIGHT_RULE_CENTROID_BANDS!r}")
     curve_anchors_km(max_commute_km)
+    _require_columns(gemeinden, ["ags8", "ewz", "x", "y"], "gemeinden")
+    _require_finite(gemeinden, ["ewz", "x", "y"], "ags8", "gemeinden")
     _check_destinations(destinations)
+    _require_finite(destinations, ["x", "y"], "destination_id", "destinations")
     centroids = population_weighted_kreis_centroids(gemeinden)
 
     populated = gemeinden[gemeinden["ewz"] > 0]
+    n_unpopulated = len(gemeinden) - len(populated)
+    LOGGER.info("[student_geometry] pair coefficients: %d of %d communes with ewz == 0 carry no weight "
+                "(%.1f%%)", n_unpopulated, len(gemeinden), 100.0 * n_unpopulated / max(len(gemeinden), 1))
     ars5_populated = populated["ags8"].astype(str).str[:5].to_numpy()
     weight = populated["ewz"].to_numpy(dtype=float)
     kreis_index = pd.Index(centroids["ars5"])
@@ -251,7 +280,9 @@ def kreise_within_reach(gemeinden: pd.DataFrame, destinations: pd.DataFrame, des
     """Sorted ``ars5`` of the Kreise with at least one populated commune (``ewz > 0``) whose centroid
     lies within ``max_km`` of one of the listed destinations."""
     _require_columns(gemeinden, ["ags8", "ewz", "x", "y"], "gemeinden")
+    _require_finite(gemeinden, ["ewz", "x", "y"], "ags8", "gemeinden")
     _check_destinations(destinations)
+    _require_finite(destinations, ["x", "y"], "destination_id", "destinations")
     wanted = [str(i) for i in destination_ids]
     unknown = sorted(set(wanted) - set(destinations["destination_id"].astype(str)))
     if unknown:
@@ -263,4 +294,8 @@ def kreise_within_reach(gemeinden: pd.DataFrame, destinations: pd.DataFrame, des
     inside = np.zeros(len(populated), dtype=bool)
     for dx, dy in zip(chosen["x"], chosen["y"]):
         inside |= np.hypot(px - dx, py - dy) / 1000.0 <= max_km
-    return sorted(populated.loc[inside, "ags8"].astype(str).str[:5].unique().tolist())
+    reach = sorted(populated.loc[inside, "ags8"].astype(str).str[:5].unique().tolist())
+    LOGGER.info("[student_geometry] reach %g km of %d destination(s): %d Kreise, %d communes in reach; "
+                "%d unpopulated communes (ewz == 0) skipped", max_km, len(chosen), len(reach), int(inside.sum()),
+                len(gemeinden) - len(populated))
+    return reach
