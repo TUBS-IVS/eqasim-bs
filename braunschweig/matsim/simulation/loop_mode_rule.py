@@ -2,10 +2,11 @@
 
 Strolls and dog walks are placed at the activity they start from (#679), so their legs have no length, and the
 zero-length way home after them has none either. A mode choice that is free to pick a car for such a trip produces a
-car trip between two identical locations. The Java trip constraint ``SameFacilityLeisureNonMotorised`` (eqasim-java-bs,
-``SameFacilityLeisureTripConstraint``) allows only walk or bicycle for a trip whose two activities share a facility
-and one of which is ``leisure``. The constraint is registered in the jar but selected by name in the
-``tripConstraints`` parameter of the ``DiscreteModeChoice`` config module; this module adds the name to the final
+car trip between two identical locations. Two Java trip constraints of eqasim-java-bs keep such trips on walk or
+bicycle: ``SameFacilityLeisureNonMotorised`` (``SameFacilityLeisureTripConstraint``) for a trip whose two activities
+share a facility and one of which is ``leisure``, and ``StrollNonMotorised`` (``StrollTripConstraint``) for a trip
+into an activity marked ``outAndBackStroll``. The constraints are registered in the jar but selected by name in the
+``tripConstraints`` parameter of the ``DiscreteModeChoice`` config module; this module adds the names to the final
 config, behind the switch ``KEY_ENABLED`` (default off: the config keeps its bytes and the jar is not opened).
 
 Side effects are confined to ``apply`` (one byte-preserving text edit of one parameter value, see
@@ -81,7 +82,10 @@ def apply(config_path) -> tuple[str, str] | None:
     if not missing:
         return None
     separator = ", " if ", " in old else ","
-    new = separator.join(names + missing) if not names else f"{old}{separator}{separator.join(missing)}"
+    if names:
+        new = f"{old}{separator}{separator.join(missing)}"
+    else:
+        new = separator.join(missing)
     config_modules.set_param(path, DMC_MODULE, TRIP_CONSTRAINTS_PARAM, new)
     return old, new
 

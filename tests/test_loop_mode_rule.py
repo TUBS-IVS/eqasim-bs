@@ -96,7 +96,7 @@ def test_the_jar_check_passes_with_both_classes_and_names_each_missing_class_and
         message = str(error.value)
         missing = rule.CONSTRAINT_CLASSES[1 - index]
         assert missing in message and present not in message and str(jar) in message
-        assert "StrollTripConstraint" in message and rule.KEY_ENABLED in message  # names the fix and the way out
+        assert rule.KEY_ENABLED in message  # names the way out
     empty = tmp_path / "none"
     empty.mkdir()
     with pytest.raises(RuntimeError) as error:

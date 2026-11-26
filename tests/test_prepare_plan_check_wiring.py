@@ -1,4 +1,5 @@
 """The prepare stage declares the plan-check keys, hashes the module and runs the check last (eqasim-bs#443)."""
+import re
 from pathlib import Path
 
 import pytest
@@ -254,7 +255,7 @@ def test_select_loop_mode_rule_end_to_end_with_a_stub_jar(monkeypatch, tmp_path,
             return "eqasim.jar"
 
     if not with_class:
-        with pytest.raises(RuntimeError, match="StrollTripConstraint"):
+        with pytest.raises(RuntimeError, match=re.escape(L.CONSTRAINT_CLASSES[1])):
             prepare._select_loop_mode_rule(_Context(), "config.xml")
         assert (stage / "config.xml").read_bytes() == _DMC_CONFIG.encode("utf-8")
         assert sorted(path.name for path in stage.iterdir()) == before_files
