@@ -50,6 +50,8 @@ OSM_HIGHWAY_ATTRIBUTE = "osm:way:highway"
 ALLOWED_SPEED_ATTRIBUTE = "allowed_speed"
 
 _CLASSES_FILE = Path(__file__).with_name("osm_hbefa_road_classes.csv")
+#: The committed table a stage must add to its validate() token (it is not Python source).
+COMMITTED_TABLE_FILES = (_CLASSES_FILE,)
 
 
 class UnmappedRoadClass(KeyError):

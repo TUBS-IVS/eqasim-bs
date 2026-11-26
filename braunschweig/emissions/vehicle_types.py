@@ -36,6 +36,8 @@ FLEET_TYPE_PREFIX = "car_"
 
 _RULES_FILE = Path(__file__).with_name("vehicle_type_rules.csv")
 _TECHNOLOGY_FILE = Path(__file__).with_name("technology_names.csv")
+#: The committed tables a stage must add to its validate() token (they are not Python source).
+COMMITTED_TABLE_FILES = (_RULES_FILE, _TECHNOLOGY_FILE)
 
 _ATTRIBUTE_NAMES = (
     "HbefaVehicleCategory",
