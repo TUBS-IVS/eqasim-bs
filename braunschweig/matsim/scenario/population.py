@@ -127,6 +127,13 @@ STATE_COLUMN = "commute_day_state"
 #: General day-absence flag (issue #370) and the stage it reads when on -- independent of
 #: KEY_COMMUTE_DAY_STATE_ENABLED. Same names as
 #: braunschweig.synthesis.commute_day.trips_day_stage.KEY_DAY_ABSENCE_ENABLED / ABSENCE_STAGE.
+#: The loop switch of the secondary location stage (issue #679). With it on, the location frame must
+#: carry the out-and-back stroll marker. A literal rather than an import of its home
+#: braunschweig.popsim.stage.config_keys (KEY_/DEFAULT_SECONDARY_LOOP_ZERO_DISPLACEMENT), whose import
+#: closure would enter this stage's synpp token; tests/test_population_stroll_attribute.py pins both.
+KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT = "secondary_loop_zero_displacement"
+DEFAULT_SECONDARY_LOOP_ZERO_DISPLACEMENT = False
+
 KEY_DAY_ABSENCE_ENABLED = "day_absence_enabled"
 DEFAULT_DAY_ABSENCE_ENABLED = True
 ABSENCE_STAGE = "braunschweig.synthesis.day_absence.absence_stage"
@@ -227,6 +234,8 @@ def configure(context):
     context.config(KEY_DAY_ABSENCE_ENABLED, DEFAULT_DAY_ABSENCE_ENABLED)
     if context.config(KEY_DAY_ABSENCE_ENABLED):
         context.stage(ABSENCE_STAGE)
+    # issue #679: read in execute to check that the stroll marker reached the location frame.
+    context.config(KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT, DEFAULT_SECONDARY_LOOP_ZERO_DISPLACEMENT)
     context.config("cordon_enabled", False)
     if context.config("cordon_enabled"):
         context.stage("braunschweig.synthesis.incommuters")
@@ -496,6 +505,24 @@ def _require_incommuter_subpopulations(merged_persons, incommuter_persons):
                 dict(sorted(labels.value_counts().items())))
 
 
+def _require_stroll_marker(locations, loop_switch):
+    """Raise ValueError when the loop switch is on but the location frame lacks the stroll marker.
+
+    Only the day-view location join (braunschweig.synthesis.commute_day.spatial_locations_day) carries
+    ``is_out_and_back_stroll``; a pipeline whose ``synthesis.population.spatial.locations`` is the plain
+    vendored join drops it, and the plans would then carry no ``outAndBackStroll`` at all, so the Java
+    stroll rule would silently never fire.
+    """
+    if loop_switch and base.OUT_AND_BACK_STROLL_COLUMN not in locations.columns:
+        raise ValueError(
+            "%s %s is true, but the location frame (synthesis.population.spatial.locations) has no %s "
+            "column, so no %s attribute could be written. Likely cause: the location stage of this "
+            "pipeline does not carry the marker (the plain vendored join instead of "
+            "braunschweig.synthesis.commute_day.spatial_locations_day). Alias that stage, or set %s: false."
+            % (_LOG_TAG, KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT, base.OUT_AND_BACK_STROLL_COLUMN,
+               base.OUT_AND_BACK_STROLL_ATTRIBUTE, KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT))
+
+
 def _injected_rows_without_stroll(locations, injected_person_ids):
     """``locations`` with the injected agents' out-and-back stroll flag set to False (issue #679).
 
@@ -533,6 +560,7 @@ def execute(context):
         BASE_TRIPS_STAGE: context.stage(DAY_TRIPS_STAGE),
         BASE_ACTIVITIES_STAGE: context.stage(DAY_ACTIVITIES_STAGE),
     }))
+    _require_stroll_marker(raw["locations"], context.config(KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT))
     if bool(context.config(KEY_COMMUTE_DAY_STATE_ENABLED)):
         raw["persons"] = attach_commute_day_state(
             raw["persons"], context.stage(STATE_STAGE)["states"])

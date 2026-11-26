@@ -106,8 +106,11 @@ def _with_out_and_back_strolls(locations, secondary):
     result = locations.copy()
     result[OUT_AND_BACK_STROLL_COLUMN] = located_keys.isin(marked_keys)
     n_marked = int(result[OUT_AND_BACK_STROLL_COLUMN].sum())
-    logger.info("%s %s on %d/%d located activities (%.2f%%)", _LOG_TAG, OUT_AND_BACK_STROLL_COLUMN,
-                n_marked, len(result), 100.0 * n_marked / max(len(result), 1))
+    # Zero with the switch on almost certainly means the secondary stage lost the marker, hence a warning.
+    log = logger.info if n_marked > 0 else logger.warning
+    log("%s %s on %d/%d located activities (%.2f%%)%s", _LOG_TAG, OUT_AND_BACK_STROLL_COLUMN,
+        n_marked, len(result), 100.0 * n_marked / max(len(result), 1),
+        "" if n_marked > 0 else " -- none at all: check the secondary stage's stroll marker")
     return result
 
 

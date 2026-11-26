@@ -873,9 +873,13 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
         # eqasim-bs#679: 0 attributes on a population with strolls would mean the marker was lost on the way.
         n_activities = len(df_activities)
         n_strolls = stroll_counter["out_and_back_strolls"]
-        logger.info("[population] %s written on %d/%d activities (%.2f%%)",
-                    OUT_AND_BACK_STROLL_ATTRIBUTE, n_strolls, n_activities,
-                    100.0 * n_strolls / max(n_activities, 1))
+        # Zero with the column present (the loop switch on) almost certainly means the marker was lost
+        # upstream, hence a warning.
+        log = logger.info if n_strolls > 0 else logger.warning
+        log("[population] %s written on %d/%d activities (%.2f%%)%s",
+            OUT_AND_BACK_STROLL_ATTRIBUTE, n_strolls, n_activities,
+            100.0 * n_strolls / max(n_activities, 1),
+            "" if n_strolls > 0 else " -- none at all: check that the stroll marker reaches the writer")
 
     if remode_carless_car_legs:
         # CLAUDE.md fallback transparency (eqasim-bs#442): the re-mode shim substitutes the
