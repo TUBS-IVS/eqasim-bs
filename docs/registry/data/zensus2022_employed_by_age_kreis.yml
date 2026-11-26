@@ -9,6 +9,7 @@ roles:
 - control
 used_by:
 - data.census.filtered
+- braunschweig.analysis.synthesis.students_vs_srv
 acquisition:
   method: derived
   source: 'Zensus 2022 Regionaltabelle "Bildung und Erwerbstaetigkeit" (https://www.zensus2022.de,

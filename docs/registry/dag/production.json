@@ -266,6 +266,10 @@
   ],
   [
    "braunschweig.popsim.completed_donor",
+   "braunschweig.analysis.synthesis.students_vs_srv"
+  ],
+  [
+   "braunschweig.popsim.completed_donor",
    "data.census.filtered"
   ],
   [
@@ -310,6 +314,10 @@
   ],
   [
    "braunschweig.synthesis.commute_day.trips_day_stage",
+   "braunschweig.analysis.synthesis.students_vs_srv"
+  ],
+  [
+   "braunschweig.synthesis.commute_day.trips_day_stage",
    "braunschweig.analysis.synthesis.work_participation_by_kreis"
   ],
   [
@@ -343,6 +351,10 @@
   [
    "braunschweig.synthesis.day_absence.absence_stage",
    "braunschweig.analysis.synthesis.plan_structure_vs_srv"
+  ],
+  [
+   "braunschweig.synthesis.day_absence.absence_stage",
+   "braunschweig.analysis.synthesis.students_vs_srv"
   ],
   [
    "braunschweig.synthesis.day_absence.absence_stage",
@@ -922,6 +934,10 @@
   ],
   [
    "synthesis.population.enriched",
+   "braunschweig.analysis.synthesis.students_vs_srv"
+  ],
+  [
+   "synthesis.population.enriched",
    "braunschweig.analysis.synthesis.work_participation_by_kreis"
   ],
   [
@@ -1027,6 +1043,10 @@
   [
    "synthesis.population.spatial.home.locations",
    "braunschweig.analysis.synthesis.plan_structure_vs_srv"
+  ],
+  [
+   "synthesis.population.spatial.home.locations",
+   "braunschweig.analysis.synthesis.students_vs_srv"
   ],
   [
    "synthesis.population.spatial.home.locations",
@@ -1237,6 +1257,7 @@
   "braunschweig.analysis.synthesis.commute_distance_by_kreis",
   "braunschweig.analysis.synthesis.departure_time_vs_srv",
   "braunschweig.analysis.synthesis.plan_structure_vs_srv",
+  "braunschweig.analysis.synthesis.students_vs_srv",
   "braunschweig.analysis.synthesis.work_participation_by_kreis",
   "braunschweig.analysis.verbindungen_validation",
   "braunschweig.data.alkis",
@@ -1342,6 +1363,7 @@
   "braunschweig.analysis.synthesis.commute_distance_by_kreis",
   "braunschweig.analysis.synthesis.departure_time_vs_srv",
   "braunschweig.analysis.synthesis.plan_structure_vs_srv",
+  "braunschweig.analysis.synthesis.students_vs_srv",
   "braunschweig.analysis.synthesis.work_participation_by_kreis",
   "braunschweig.analysis.verbindungen_validation",
   "matsim.output",

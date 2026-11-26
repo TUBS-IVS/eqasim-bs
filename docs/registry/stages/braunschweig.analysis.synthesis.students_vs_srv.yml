@@ -1,0 +1,64 @@
+stage: braunschweig.analysis.synthesis.students_vs_srv
+title: University students of the synthetic population vs SrV 2023
+layer: analysis
+description: 'Measures the adult university students of the synthetic population against the
+  committed SrV 2023 student tables (issue #140, Phase 1): the who / mobility-tool / day parameter
+  cells, the student level per Kreis, the activity status of the 20 to 29 year olds (with the
+  Zensus 2022 employed count), the students'' work-control class and the source of their day
+  plans. A measurement, not a validation: differences are stated in SrV standard errors and no
+  synthesis stage reads the output. The stage loads cached synthesis stages and hands them to the
+  pure functions of braunschweig/analysis/student_measurement.py, which own every definition
+  (students, adults, the presence universe, the region scope, the exclusion rules). Writes
+  <output_path>/analysis/students_vs_srv/. Config keys: students_vs_srv_output_subdir (default
+  analysis/students_vs_srv) and students_vs_srv_max_unmatched_home_share (default 0.05, the
+  sibling plan_structure_vs_srv value: above this share of adult students without a home Kreis
+  the stage RAISES, because a broken VG250 or household join must not produce a well-formed
+  report). Both are analysis parameters of this stage, kept as code defaults and not carried in
+  configs/base_bs.yml. The general day-absence draw is mandatory (day_absence_enabled, the key
+  every consumer of the absence stage shares): with it off the stage raises, since the presence
+  universe is what makes the model side comparable with SrV.'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: eqasim precedent analysis/synthesis/* (a comparison stage writing a report next to the
+    population); the student measurement is Braunschweig-specific (issue #140).
+code:
+- braunschweig/analysis/synthesis/students_vs_srv.py
+- braunschweig/analysis/student_measurement.py
+- braunschweig/calibration/student_parameters.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+inputs:
+- srv2023_student_reference
+- zensus2022_employed_by_age_kreis
+- vg250_ew
+- regiostar
+features:
+- general_day_absence
+- diary_plan_match
+- portal_trips
+decisions: []
+notes: 'Writes under <output_path>/analysis/students_vs_srv/: student_behaviour_vs_srv.csv (every
+  parameter cell, model against srv2023_student_parameters.csv), student_level_by_kreis.csv
+  (against srv2023_student_share_by_kreis.csv), young_adult_status_by_kreis.csv (against
+  srv2023_young_adult_status_by_kreis.csv, plus the Zensus employed count read from
+  <data_path>/braunschweig/popsim/zensus2022_employed_by_age_kreis.csv), student_work_class.csv,
+  student_plan_source.csv, summary.md and provenance.json (git commit, parameters, path and
+  sha256 of every input table, the trace files, every diagnostics dict, sampling_rate). Column
+  definitions and universes: the docstrings of braunschweig/analysis/student_measurement.py.
+
+  popsim_mid only: the model side needs P_TAET, the seed keys and the completed-donor traces
+  (braunschweig.popsim.completed_donor writes weekend_plan_match_trace.parquet and
+  diary_plan_match_trace.parquet into its cache directory). A missing trace file is recorded as
+  trace_available false in provenance.json and the match paths it would resolve stay
+  unresolved (counted); a missing committed SrV table or Zensus file raises FileNotFoundError.
+
+  validate() hashes the measurement modules and their import closure, the VG250 and RegioStaR
+  digests, and the sha256 of the three SrV tables and the Zensus file, so a changed reference
+  never serves a cached report. Measured values live in the run manifests of issue #140; the
+  method and the design behind the parameters are linked from that issue. Unit tests:
+  tests/test_students_vs_srv.py (stage wiring, against copies of the committed SrV tables) and
+  tests/test_student_measurement.py (the tables, by hand).'

@@ -14,7 +14,8 @@ crs: null
 roles:
 - calibration_target
 - reference_table
-used_by: []
+used_by:
+- braunschweig.analysis.synthesis.students_vs_srv
 acquisition:
   method: committed
   source: |
@@ -35,9 +36,11 @@ verification:
   verifier_entry: null
   notes: |
     Not listed in scripts/verify_braunschweig_inputs.py: the five Phase 0 tables are committed
-    (Phase 0 extraction run) and so are the four Phase 1 tables (Phase 1 extraction run), no
-    SrV aggregate is listed in the verifier, and no stage reads them -
-    they are build-time references of the student-commuting feature (issue #140). Unit tests
+    (Phase 0 extraction run) and so are the four Phase 1 tables (Phase 1 extraction run), and
+    no SrV aggregate is listed in the verifier. Only the analysis stage
+    braunschweig.analysis.synthesis.students_vs_srv reads three of them (parameters, student
+    share by Kreis, young-adult status) and raises if one is missing; no synthesis stage reads
+    any (issue #140). Unit tests
     on synthetic SrV-shaped frames (hand-computed shares, the label partition of both
     universes, the exclusion of unreadable codes, the seeded noise floor and the CLI end to
     end): tests/test_srv_student_reference.py.
