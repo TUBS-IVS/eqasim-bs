@@ -1,9 +1,9 @@
 == calibrate (commune_curve)
-<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_86280aa5e8884c69aa0f392fc1278b19 has GPKG application_id, but non conformant file extension
+<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_25167a34735a4cdaa755905a4cba735d has GPKG application_id, but non conformant file extension
   return ogr_read(
 INFO braunschweig.data.education.student_geometry: [student_geometry] vg250_gem: 10956 land communes (GF == 4), 83577140 inhabitants; dropped 154 non-land rows (GF != 4) of 11110, from <main checkout>\eqasim-data\data\germany\vg250-ew_12-31.utm32s.gpkg.ebenen.zip
 INFO braunschweig.data.education.student_geometry: [student_geometry] site points: commune centroid 18/21 (85.7%), curated coordinates 3 (0 of them overriding a site row)
-<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_cfc11711c53340aab4ccc3e2d644c178 has GPKG application_id, but non conformant file extension
+<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_f712549e586f47349604297d70a737d4 has GPKG application_id, but non conformant file extension
   return ogr_read(
 INFO build_student_balance: [build_student_balance] site Kreis: LSN table (primary) 18/21 (85.7%), VG250 polygon lookup (curated institutions) 3 (14.3%)
 INFO braunschweig.data.education.student_geometry: [student_geometry] reach 100 km of 6 destination(s): 51 Kreise, 859 communes in reach; 202 unpopulated communes (ewz == 0) skipped
@@ -40,11 +40,11 @@ INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26
 INFO build_student_balance: [build_student_balance] calibration done: final stage weights_and_movers, decided False, snippet absent
 rc=0
 == calibrate (centroid_bands, comparison only)
-<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_436da188ca16434ea136e858fd011ee6 has GPKG application_id, but non conformant file extension
+<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_89e3433f260243b481328ed352d31af6 has GPKG application_id, but non conformant file extension
   return ogr_read(
 INFO braunschweig.data.education.student_geometry: [student_geometry] vg250_gem: 10956 land communes (GF == 4), 83577140 inhabitants; dropped 154 non-land rows (GF != 4) of 11110, from <main checkout>\eqasim-data\data\germany\vg250-ew_12-31.utm32s.gpkg.ebenen.zip
 INFO braunschweig.data.education.student_geometry: [student_geometry] site points: commune centroid 18/21 (85.7%), curated coordinates 3 (0 of them overriding a site row)
-<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_36aaf1ff986145bc9924f0035eafb901 has GPKG application_id, but non conformant file extension
+<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_5aaea408d68c453db258653a8ca94cab has GPKG application_id, but non conformant file extension
   return ogr_read(
 INFO build_student_balance: [build_student_balance] site Kreis: LSN table (primary) 18/21 (85.7%), VG250 polygon lookup (curated institutions) 3 (14.3%)
 INFO braunschweig.data.education.student_geometry: [student_geometry] reach 100 km of 6 destination(s): 51 Kreise, 859 communes in reach; 202 unpopulated communes (ewz == 0) skipped
