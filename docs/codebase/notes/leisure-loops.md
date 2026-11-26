@@ -1,20 +1,43 @@
-# Strolls and dog walks: the loop flag and the placement rule
+# Strolls and dog walks: the loop flag, the out-and-back split, the placement rule and the mode rules
 
-This note is the ONE home of the definition of a loop leg (the flag) and of the rule that places a loop
-activity. The reasons, the rejected approaches and the assumptions are in
+This note is the ONE home of the definitions of a stroll, a loop and an out-and-back stroll (section "Definitions"),
+of the rule that places a loop activity, of the marker that carries an out-and-back stroll into the plans, and of the two
+Java mode rules with what each does not reach. The reasons, the rejected approaches and the assumptions are in
 [ADR-0207](../../decisions/ADR-0207-strolls-and-dog-walks-stay-where-they-start.md); the switch and its production
 state are in the feature record
 [`secondary_loop_zero_displacement`](../../registry/features/secondary_loop_zero_displacement.yml); numbers are in the
 run manifests those records link (the 1 % evidence of both switches and of the mode rule, arm D:
 [`i679-stroll-loops-ab-1pct-2026-11-25`](../../runs/i679-stroll-loops-ab-1pct-2026-11-25.yml)).
 Code: `braunschweig/synthesis/locations/secondary_chainsolvers/loops.py` (pure
-functions: `estimate_loop_probabilities`, `flag_loops`, `select_collapsible_loops`, `collapse_loops`, the
-`to_collapsed_*` translators, `restore_loops`), `secondary_chainsolvers/__init__.py` (`execute`, `_flag_loop_trips`,
-`_linked_activity_keys`, `_collapse_loops_and_move_anchors`, `_require_no_loop_origin_outside`, `_report_loops`),
-`braunschweig/matsim/scenario/facilities.py` (`_loop_origin_facility_ids`, `validate_secondary_coverage`) and, for
-the loop-free estimates below, `braunschweig/popsim/purpose_subtype.py` (`LOOP_CODES`, `LOOP_MODES`,
-`drop_loop_legs`), `braunschweig/popsim/distance_distributions.py` (`run`, Step 8) and
+functions: `estimate_loop_probabilities`, `flag_loops`, `out_and_back_strolls`, `diary_way_home_follows`,
+`select_collapsible_loops`, `collapse_loops`, the `to_collapsed_*` translators, `restore_loops`),
+`secondary_chainsolvers/__init__.py` (`execute`, `_flag_loop_trips`, `_linked_activity_keys`,
+`_collapse_loops_and_move_anchors`, `_require_no_loop_origin_outside`, `_mark_out_and_back_strolls`, `_report_loops`),
+`braunschweig/matsim/scenario/facilities.py` (`_loop_origin_facility_ids`, `validate_secondary_coverage`),
+`braunschweig/synthesis/commute_day/spatial_locations_day.py` (`_with_out_and_back_strolls`),
+`braunschweig/matsim/scenario/population.py` (`_require_stroll_marker`, `_injected_rows_without_stroll`),
+`matsim/scenario/population.py` (`add_person`, `write_population`) and, for the loop-free estimates below,
+`braunschweig/popsim/purpose_subtype.py` (`LOOP_CODES`, `LOOP_MODES`, `mark_diary_returns`, `is_out_and_back_stroll`,
+`drop_loop_legs`), `braunschweig/popsim/distance_distributions.py` (`run`, Step 2 and Step 8) and
 `secondary_chainsolvers/deciders.py` (`_build_leisure_subtype_decider`).
+
+## Definitions: stroll, loop, out-and-back
+
+- **Stroll** (the flag, `loops.flag_loops`): a leisure leg on foot or by bicycle whose detail code is 710 (stroll) or 711
+  (dog walk), by the donor's label or drawn where the detail was not asked (section "The flag"). MiD records it as ONE
+  trip whose length is the whole walk.
+- **Diary way home** of a trip: the same person's NEXT diary trip ends at home. Survey side:
+  `purpose_subtype.mark_diary_returns` (next leg by `W_ID` within `H_ID`, `P_ID`; the last leg of a person has none).
+  Synthetic side: `loops.diary_way_home_follows` (next trip by `trip_index` ends at home AND is not the plan repair's
+  invented home trip, the column `is_synthetic_closure` written by `braunschweig.popsim.plan_validation.PlanValidator`).
+  The MiD diary has no invented trip, so a trip followed only by that closure ended the diary: it has no diary way home.
+- **Out-and-back stroll**: a stroll that starts at home AND has a diary way home. Survey side
+  `purpose_subtype.is_out_and_back_stroll`, synthetic side `loops.out_and_back_strolls`; both read the same two marks.
+  The model places it like any leisure leg: the subtype comes from the decider, the distance from the pool, no bound
+  from the diary's own length, and the way home keeps its drawn length. It stays in the loop-free estimates.
+- **Loop**: a stroll that is NOT out-and-back (it starts elsewhere than at home, or no diary way home follows it, a stroll
+  followed only by the invented closure included). Only loops are collapsed, placed at their start and left out of the
+  loop-free estimates (the rest of this note).
 
 ## Switch
 
@@ -27,11 +50,14 @@ one resolved config, so they cannot differ within a run.
 
 The second switch of the change, `secondary_leisure_estimates_without_loops`, has its own section below.
 
-## The flag (`loops.estimate_loop_probabilities`, `loops.flag_loops`)
+## The flag (`loops.estimate_loop_probabilities`, `loops.flag_loops`, `loops.out_and_back_strolls`)
 
-A Boolean per synthetic trip, true when the trip leads INTO a loop activity. It is computed on the trips table before
-anything else of the stage rewrites it, and it is independent of the leisure subtype group (the group and its decider
-stay untouched).
+`flag_loops` gives a Boolean per synthetic trip, true when the trip leads INTO a stroll activity. It is computed on the
+trips table before anything else of the stage rewrites it, and it is independent of the leisure subtype group (the group
+and its decider stay untouched). `loops.out_and_back_strolls` then splits the strolls (section "Definitions"): the
+out-and-back strolls stay on the solver, the other strolls are the loops that the rest of the stage handles
+(`_flag_loop_trips` returns both flags). The trips must carry `is_synthetic_closure` (`ValueError` naming it
+otherwise; there is no default for a missing mark).
 
 - **Scope.** The destination activity is leisure, the mode is walk or bicycle (`purpose_subtype.LOOP_MODES`, which
   `loops` re-exports; it is owned there because the loop-free estimates need it), the donor's
@@ -40,8 +66,8 @@ stay untouched).
   child purposes stay out.
 - **Labelled leg.** The donor's `W_ZWD` is one of the leisure detail codes of `purpose_subtype.leisure_spec`
   (`labelled_codes`, which follows `purpose_subtype_codeplan_sentinels`: with it on, 799 "Freizeit k.A." is not a
-  label). The leg is a loop exactly when the code is in `purpose_subtype.LOOP_CODES` (710 stroll, 711 dog walk; re-exported by
-  `loops`), by bicycle too.
+  label). The leg is a stroll exactly when the code is in `purpose_subtype.LOOP_CODES` (710 stroll, 711 dog walk;
+  re-exported by `loops`), by bicycle too.
 - **Drawn leg.** A leg in scope whose `W_ZWD` is NOT one of those leisure detail codes draws one Bernoulli value with
   the probability of its cell. That is every other code the donor leg carries: the members of
   `purpose_subtype.LEISURE_SENTINELS` (the design codes for "not asked", and the shop and errand detail codes that occur
@@ -53,7 +79,9 @@ stay untouched).
   `fallback.FALLBACK_WARN_RATE`, so a donor table that lost its detail codes shows up.
 - **Cells.** `(mode, travel-time band, starts at home, way home follows)`. The band is `purpose_subtype.tt_band`, the
   band of the leisure subtype decider. "Starts at home": the purpose before the leg is home. "Way home follows": the
-  next trip of the same person ends at home (the last trip of a day has none). The probability is the `W_GEW`-weighted
+  diary way home of the leg (section "Definitions"), read the same way on both sides (`mark_diary_returns` on the MiD
+  legs, `diary_way_home_follows` on the synthetic trips), so the plan repair's invented home trip counts on neither. The
+  probability is the `W_GEW`-weighted
   loop share of the labelled MiD leisure legs of the cell, in the universe of the distance layers (weekday legs when
   `secondary_mid_weekday_legs_only` is on), for cells with at least `secondary_distance_min_obs` observations.
 - **Marginal fallback.** A cell below that minimum takes the weighted loop share of its mode. The share of draws that
@@ -70,6 +98,8 @@ stay untouched).
      anchor or link needs that activity in the chain.
    - `kept_after_outside`: the loop starts at an `outside` activity (a portal stay). Only the first loop of a run after
      the stay is kept; the next one collapses onto it. The reason is in ADR-0207.
+
+   Out-and-back strolls are not selected at all: they are no loops and go through the solver like any leisure leg.
 2. **Collapse** (`collapse_loops`). Every collapsible loop trip is dropped (a run of consecutive loops, and a loop that
    is the last activity of the day, included). The trip after a run of loops now starts at the activity before the run
    (its `preceding_purpose` is rewritten); mode, times and `travel_time` stay. Trip indices are renumbered without gaps,
@@ -115,6 +145,13 @@ stay untouched).
    (`collapsed_loops_of_persons_with_escort_link`, `..._portal_stay`, `..._passive_joint_link`: they show the
    translation of step 3 is exercised), the persons left without a secondary activity and the marginal share per mode.
    With `secondary_leisure_estimates_without_loops` on, the block also has `subtype_estimate_legs_left_out` (below).
+   The block and the log line also count the strolls that are out-and-back (`strolls_out_and_back`; `flags.out_and_back`
+   per mode) and the loops whose next trip is the invented home trip (`loops_followed_by_synthetic_closure`);
+   `loops` counts the loops only.
+8. **Marker** (`_mark_out_and_back_strolls`, after `restore_loops`). With the switch on, the stage result gets the Boolean
+   column `is_out_and_back_stroll`: True on the one solver row of every out-and-back stroll activity, False on every
+   other row (loop rows included, a loop kept on the solver too). An out-and-back stroll without a row, with a row
+   copied from an origin or with more than one row raises `ValueError`. With the switch off the column does not exist.
 
 The random streams of the solver are consumed by fewer legs with the switch on, so a comparison of the two switch
 states compares distributions; the stage tests compare against an input from which the loop was removed by hand.
@@ -125,15 +162,23 @@ With the loops taken out of the chain, the leisure legs that remain must not be 
 from estimates that still count the loops. With the switch on, two estimates leave the loop legs out:
 
 - **The rule** (`purpose_subtype.drop_loop_legs`, the one row filter): a leg is left out when its mode is in
-  `purpose_subtype.LOOP_MODES` AND its `W_ZWD` is in `purpose_subtype.LOOP_CODES`. This is the labelled rule only: the
-  filter makes no draw, and a motorised leg with 710 or 711 stays (the model keeps it as a trip to a destination). It is
-  logged per loop mode with the legs left out and kept; a loop mode that loses all its legs is a WARNING.
+  `purpose_subtype.LOOP_MODES`, its `W_ZWD` is in `purpose_subtype.LOOP_CODES` AND it is no out-and-back stroll
+  (`purpose_subtype.is_out_and_back_stroll`, so the filter drops exactly the legs the stage treats as loops). This is the
+  labelled rule only: the filter makes no draw, a motorised leg with 710 or 711 stays (the model keeps it as a trip to a
+  destination) and so does an out-and-back stroll (the model places it like any leisure leg). The filter needs the two
+  marks of `mark_diary_returns` (`ValueError` otherwise), which every caller sets on the whole diary BEFORE its purpose
+  filter, because the next leg of a stroll is usually the way home, which is no leisure leg. It is logged per loop mode
+  with the legs left out and kept and the out-and-back strolls kept (`out_and_back_kept` in the counts); a loop mode that
+  loses all its legs is a WARNING.
 - **Place 1: the leisure subtype distance layers** (`distance_distributions.run`, Step 8). The subtype layers are built
-  from the leisure legs without the loop legs. Only the layer of the group that holds the loop codes changes. A loop
+  from the leisure legs without the loop legs; the two marks are set right after Step 2 (`preceding_purpose`), and only
+  with both `secondary_leisure_subtype_split` and `secondary_leisure_estimates_without_loops` on. Only the layer of the group that holds the loop codes changes. A loop
   mode that had legs in that layer with the loops and has none without raises `ValueError`; the sampler is never left
   to fall back to the aggregate layer, which still holds the loops.
 - **Place 2: the leisure subtype decider** (`deciders._build_leisure_subtype_decider`). The filter runs on the MiD legs
-  of the spec's own `W_ZWECK` values, after the code coverage guard and before `estimate_group_probabilities`. A
+  of the spec's own `W_ZWECK` values, after the code coverage guard and before `estimate_group_probabilities`; the two
+  marks are set before that purpose filter on the weekday diary, with the chain derivation of
+  `loops.estimate_loop_probabilities`. A
   (mode, travel-time band) cell that falls below the minimum number of observations takes the marginal, which the
   estimate's thin-cell log and the decider's fallback count already report.
 - **The switch and its prerequisites.** Config key `secondary_leisure_estimates_without_loops`
@@ -153,28 +198,62 @@ from estimates that still count the loops. With the switch on, two estimates lea
   loops stay in both estimates. A loop kept on the solver (step 1) is placed and drawn like any other leisure leg, so it
   draws its subtype and its distance from the loop-free estimates.
 - **Survey reference.** `scripts/extract_mid_w_zwd_groups.py --without-loops` applies the same rule through
-  `drop_loop_legs` (the mode is `trips.map_mode` of `hvm_imp`); see Comparisons.
+  `mark_diary_returns` and `drop_loop_legs` (the mode is `trips.map_mode` of `hvm_imp`); see Comparisons.
 
 The assumptions of this section are in ADR-0207.
 
-## Mode choice (same-facility leisure trips)
+## From the stage to the plans: the marker and the attribute
 
-A loop activity sits at the facility of the activity before it, so the trip into it and the way home after it start and
-end at one facility. The rule that such a trip may only be walk or bicycle lives in the Java trip constraint
-`SameFacilityLeisureNonMotorised`, class `org.eqasim.braunschweig.mode_choice.constraints.SameFacilityLeisureTripConstraint`
-(eqasim-java-bs): origin and destination activity carry the same non-null facility id and at least one end is of type
-`leisure`; trips with the initial mode `outside` are not constrained, and same-facility trips without a leisure end stay
-free. The rule reads the place, not the loop flag or a marker. It acts only on the trips the mode choice evaluates: a
-caught trip in a tour the mode choice does not re-choose keeps its initial mode; the factory
-(`SameFacilityLeisureTripConstraint.Factory`) counts the caught, evaluated and not evaluated trips in the Java log. When
-the border tour vehicle rule of #678 is selected too, a caught trip is not pinned there but gets no new vehicle mode (see
-the Javadoc of `org.eqasim.braunschweig.mode_choice.constraints.BorderTourVehicleConstraint`). The Python side only selects it:
-`braunschweig/matsim/simulation/loop_mode_rule.py` and `prepare._select_loop_mode_rule` add the constraint name to
-`DiscreteModeChoice.tripConstraints` of the final config before the initial mode choice, behind the config key
-`braunschweig.mode_choice.loop_trips_non_motorised` (default and production value: the key comment in
-[`configs/base_bs.yml`](../../../configs/base_bs.yml)), refuse a jar without the class, and write
-`loop_mode_rule_report.json` into the prepare stage folder (written only while the switch is on). The reasons and the
-rejected alternatives are in ADR-0207, decision 6.
+The Java stroll rule (below) needs to know which activity is an out-and-back stroll, and a place cannot tell it: the
+activity has its own destination. The marker travels in four hops, all behind `secondary_loop_zero_displacement`:
+
+1. The secondary location stage writes the column `is_out_and_back_stroll` (step 8 of the placement rule).
+2. The day-view location join (`spatial_locations_day._with_out_and_back_strolls`) copies it to every located activity
+   (False elsewhere); a marked row without a located activity, or a secondary result without the column, raises.
+3. The plans writer wrapper (`braunschweig/matsim/scenario/population.py`) raises when the switch is on and the location
+   frame has no such column (`_require_stroll_marker`: a pipeline whose location stage is the plain vendored join drops
+   it, and the Java rule would silently never fire); the in-commuters' rows get False (`_injected_rows_without_stroll`:
+   the marker comes from the residents' stage, an injected agent's plan is not solved by it).
+4. The writer (`matsim/scenario/population.py`, `add_person`) writes the Boolean activity attribute `outAndBackStroll`
+   (`java.lang.Boolean`, written only as `true`; a value that is no boolean raises). It logs the count and warns when it
+   is zero with the column present.
+
+With the switch off no column and no attribute exist. Loops carry no marker: a collapsed loop is covered by the
+same-facility rule below, and a loop kept on the solver keeps the free mode choice (the reason: ADR-0207, decision 6).
+
+## Mode choice (two Java trip rules)
+
+Both rules are trip constraints of eqasim-java-bs, selected by name in `DiscreteModeChoice.tripConstraints`, and both
+allow only walk or bicycle (one shared set in Java).
+
+**Same-facility rule.** A loop activity sits at the facility of the activity before it, so the trip into it and the way
+home after it start and end at one facility. The Java constraint `SameFacilityLeisureNonMotorised`, class
+`org.eqasim.braunschweig.mode_choice.constraints.SameFacilityLeisureTripConstraint`: origin and destination activity
+carry the same non-null facility id and at least one end is of type `leisure`; trips with the initial mode `outside`
+are not constrained, and same-facility trips without a leisure end stay free. The rule reads the place, not the loop
+flag or a marker. It acts only on the trips the mode choice evaluates: a caught trip in a tour the mode choice does not
+re-choose keeps its initial mode; the factory (`SameFacilityLeisureTripConstraint.Factory`) counts the caught,
+evaluated and not evaluated trips in the Java log. When the border tour vehicle rule of #678 is selected too, a caught
+trip is not pinned there but gets no new vehicle mode (see the Javadoc of
+`org.eqasim.braunschweig.mode_choice.constraints.BorderTourVehicleConstraint`).
+
+**Stroll rule.** The Java constraint `StrollNonMotorised`, class
+`org.eqasim.braunschweig.mode_choice.constraints.StrollTripConstraint`: a trip whose DESTINATION activity carries the
+attribute `outAndBackStroll` with the value true may only be walk or bicycle; false or an absent attribute place no
+restriction, and a value that is no `java.lang.Boolean` makes the constraint throw. Like the first rule it acts only
+where the mode choice evaluates the trip, and its factory counts the caught, evaluated and not evaluated trips in the
+Java log (the line starts with "stroll trips"). What it does not reach: the way home after the stroll (a different
+trip, whose destination carries no marker, stays free), a loop kept on the solver (no marker), and any trip in a tour the
+mode choice does not re-choose. It needs no coordination with the border tour rule: an out-and-back stroll starts at
+home and its next trip ends at home, so its tour never touches an `outside` stay.
+
+The Python side only selects both: `braunschweig/matsim/simulation/loop_mode_rule.py` and `prepare._select_loop_mode_rule`
+add every missing name of `loop_mode_rule.CONSTRAINT_NAMES` to `DiscreteModeChoice.tripConstraints` of the final config
+before the initial mode choice, behind the config key `braunschweig.mode_choice.loop_trips_non_motorised` (default and
+production value: the key comment in [`configs/base_bs.yml`](../../../configs/base_bs.yml)), refuse a jar that lacks
+either class (`loop_mode_rule.CONSTRAINT_CLASSES`; all missing ones are named), and write `loop_mode_rule_report.json`
+into the prepare stage folder (written only while the switch is on; it names the constraints and the classes
+checked). The reasons and the rejected alternatives are in ADR-0207, decision 6.
 
 ## Comparisons
 

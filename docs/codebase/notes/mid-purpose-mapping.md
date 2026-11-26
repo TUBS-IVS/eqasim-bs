@@ -167,5 +167,5 @@ third have a record of the same name; the escort split has none of its own and i
 documented in the umbrella record `mid2023_reference_tables` (whose
 `storage.expected_path` glob `mid/mid2023_*.csv` covers it).
 
-Strolls (`W_ZWD` 710) and dog walks (711) are loops in the stage that places the secondary activities; which legs
-count as loops and where they are placed: [`leisure-loops.md`](leisure-loops.md) (ADR-0207).
+Strolls (`W_ZWD` 710) and dog walks (711) are loops, or out-and-back strolls, in the stage that places the secondary
+activities; which legs count as which and where they are placed: [`leisure-loops.md`](leisure-loops.md) (ADR-0207).

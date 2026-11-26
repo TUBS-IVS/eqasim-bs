@@ -311,4 +311,7 @@ notes: >-
   P(group | mode, tt_band) estimate; configure() raises ValueError when it is on without
   secondary_leisure_subtype_split or secondary_loop_zero_displacement. With it on the loops block of
   secondary_locations_report.json carries subtype_estimate_legs_left_out; the rule and the report keys are in
-  the note.
+  the note. A stroll that starts at home and whose person's next diary trip goes home (out-and-back) is no loop: it
+  stays on the solver, and with the switch on the result carries the Boolean column is_out_and_back_stroll
+  (loops.out_and_back_strolls, _mark_out_and_back_strolls; the trips must carry is_synthetic_closure or the stage
+  raises); definitions, report keys and the path of the marker to the plans: the note.

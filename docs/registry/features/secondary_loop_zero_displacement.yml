@@ -5,14 +5,19 @@ description: 'With the switch on, the secondary location stage takes the leisure
   bicycle leg with the MiD detail code 710 or 711, or drawn where the detail was not asked) out of the chain
   before the solve and puts each loop activity back at the place of the activity it starts from (owner
   decision of 2026-11-25; how this differs from the French eqasim pipeline, which has no loop rule: ADR-0207,
-  Context). A second switch,
+  Context). A stroll that goes out from home and whose next diary trip goes home (out-and-back, owner decision
+  of 2026-11-26) is no loop: the solver places it like any leisure leg, and the stage marks it for the Java
+  stroll rule of the mode choice (column is_out_and_back_stroll, activity attribute outAndBackStroll; the
+  definitions, the path from the stage to the plans and the rule are in the detail_doc note). A second switch,
   secondary_leisure_estimates_without_loops, leaves the loop legs as defined in the detail_doc note
   (purpose_subtype.drop_loop_legs) out of the leisure subtype distance layers and of the leisure subtype
   decider''s estimate, so the legs that remain are not assigned a subtype or a distance from estimates that
   still count the loops.'
 stages:
 - synthesis.population.spatial.secondary.locations
+- synthesis.population.spatial.locations
 - matsim.scenario.facilities
+- matsim.scenario.population
 - synthesis.population.spatial.secondary.distance_distributions
 pipelines:
   popsim_mid: active
@@ -37,6 +42,9 @@ code_paths:
 - braunschweig/popsim/distance_distributions.py
 - braunschweig/popsim/stage/config_keys.py
 - braunschweig/matsim/scenario/facilities.py
+- braunschweig/synthesis/commute_day/spatial_locations_day.py
+- braunschweig/matsim/scenario/population.py
+- matsim/scenario/population.py
 - braunschweig/calibration/secondary_measurement.py
 - scripts/validate_secondary_distances.py
 - scripts/calibrate_detour_circuity.py
@@ -46,6 +54,7 @@ evidence:
   - tests/test_secondary_loops.py
   - tests/test_secondary_loops_stage.py
   - tests/test_extract_mid_w_zwd_groups.py
+  - tests/test_population_stroll_attribute.py
   - tests/test_calibrate_detour_circuity_loops.py
   - tests/test_purpose_subtype.py
   - tests/test_distance_distributions_subtypes.py
@@ -92,10 +101,11 @@ assessment:
     including the loop legs that the mode choice gives a motorised mode) is pending, and so is the joint effect with
     #678 at 100 %, which the next production run (#22) measures. ADR-0207 records the decision and its assumptions.'
   source: ADR-0207
-notes: 'Toggling secondary_loop_zero_displacement recomputes the secondary location stage and the facilities stage,
-  which both declare it. Toggling secondary_leisure_estimates_without_loops recomputes the secondary location stage
+notes: 'Toggling secondary_loop_zero_displacement recomputes the secondary location stage, the facilities stage, the
+  day-view location join and the plans writer wrapper, which all declare it (with it off no column
+  is_out_and_back_stroll and no attribute outAndBackStroll is written). Toggling secondary_leisure_estimates_without_loops recomputes the secondary location stage
   and the distance distributions stage, which both declare it; it requires secondary_leisure_subtype_split and
   secondary_loop_zero_displacement (both stages raise at configure time otherwise). production.enabled is true
   only while BOTH flags are on, so turning off only the second switch makes the documentation checker report
-  this feature as disabled. The mode choice rule for same-facility leisure trips (a third switch, independent of
-  both) is the feature record loop_trips_non_motorised.'
+  this feature as disabled. The mode choice rules (a third switch, independent of both; the stroll rule reads the
+  marker this feature writes and is inert without it) are the feature record loop_trips_non_motorised.'

@@ -81,6 +81,7 @@ features:
 - outside_tour_modes
 - einpendler_injection
 - student_incommuters
+- secondary_loop_zero_displacement
 decisions:
 - ADR-0121
 - ADR-0104
@@ -106,3 +107,11 @@ notes: >-
   synthesis.population.trips.simulated (the record of that alias describes it) and, since ADR-0159, the
   activities from DAY_ACTIVITIES_STAGE = synthesis.population.activities.simulated, because the timetable check
   of the outside tours may move a tour's times.
+  OUT-AND-BACK STROLL ATTRIBUTE (ADR-0207, issue #679, feature record secondary_loop_zero_displacement): the
+  wrapper declares secondary_loop_zero_displacement (a literal, default and production value: the key comment in
+  configs/base_bs.yml). With it on, the location frame must carry the column is_out_and_back_stroll (the wrapper
+  raises otherwise, naming the likely cause: a location stage that is the plain vendored join), the in-commuters'
+  rows get False, and the vendored writer writes the Boolean activity attribute outAndBackStroll=true on the
+  activities where it is True (a value that is no boolean raises). The Java stroll rule of the mode choice reads it.
+  The writer logs the count and warns when it is zero. With the switch off no column and no attribute exist and
+  the plans are as before. Definition and path: docs/codebase/notes/leisure-loops.md.

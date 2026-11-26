@@ -192,17 +192,18 @@ notes: >-
   share of trips whose mode changed, the mode shares before and after (in-commuters included; scope in the feature record initial_mode_choice) and the Java wall time
   (observations, not reference values). braunschweig.initial_mode_choice.weight is retired: a config that still
   sets it is refused in configure() with a pointer to ADR-0178.
-  Same-facility leisure trip mode rule (ADR-0207 decision 6, #679, feature record loop_trips_non_motorised):
+  Leisure trip mode rules (same-facility trips and trips into an out-and-back stroll; ADR-0207 decision 6, #679, feature record loop_trips_non_motorised):
   configure() declares braunschweig.mode_choice.loop_trips_non_motorised (default and production value: the key
   comment in configs/base_bs.yml; braunschweig.matsim.simulation.loop_mode_rule is in _HELPER_MODULES).
-  With it on, execute selects the eqasim-java-bs trip constraint SameFacilityLeisureNonMotorised:
+  With it on, execute selects the eqasim-java-bs trip constraints SameFacilityLeisureNonMotorised and StrollNonMotorised:
   after the VRB fare and parking inputs and BEFORE the initial mode choice (so the standalone mode choice and the
-  MATSim loop both read it), it opens the eqasim jar of matsim.runtime.eqasim and RAISES unless it contains the class
-  org/eqasim/braunschweig/mode_choice/constraints/SameFacilityLeisureTripConstraint.class (fix: build the jar from an
-  eqasim-java-bs revision with the constraint, or set the key false), appends the constraint name to the
-  DiscreteModeChoice tripConstraints of the final config (a byte-preserving text edit; a config without the module
-  or the parameter raises) and writes loop_mode_rule_report.json (the constraint, the class checked, the jar file
-  name, tripConstraints before and after, already_selected). Off: the jar is not opened, the config keeps its bytes
+  MATSim loop both read them), it opens the eqasim jar of matsim.runtime.eqasim and RAISES unless it contains the
+  classes SameFacilityLeisureTripConstraint and StrollTripConstraint of
+  org/eqasim/braunschweig/mode_choice/constraints/ (loop_mode_rule.CONSTRAINT_CLASSES; fix: build the jar from an
+  eqasim-java-bs revision with both constraints, or set the key false), appends every missing name of
+  loop_mode_rule.CONSTRAINT_NAMES to the DiscreteModeChoice tripConstraints of the final config (a byte-preserving
+  text edit; a config without the module or the parameter raises) and writes loop_mode_rule_report.json (the
+  constraints, the classes checked, the jar file name, tripConstraints before and after, already_selected). Off: the jar is not opened, the config keeps its bytes
   and no report is written. The rule itself is defined in docs/codebase/notes/leisure-loops.md ("Mode choice").
   The counts of the trips the rule caught, the mode choice evaluated and it did not evaluate exist only in the Java
   log (running lines in the standalone mode choice, a final line at the MATSim shutdown); loop_mode_rule_report.json

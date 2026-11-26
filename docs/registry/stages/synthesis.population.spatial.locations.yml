@@ -7,7 +7,13 @@ description: 'Upstream join of persons to their chosen activity locations. In th
   (synthesis.population.activities.final) -- the location rows must describe the activities the
   MATSim population is written from, and the reporting-day view removes the work activity of a
   home or absent worker and splices a donor day in its place. With commute_day_state_enabled
-  false the .final alias is a pass-through, so the output is byte-identical.'
+  false the .final alias is a pass-through, so the output is byte-identical. Since issue #679 (ADR-0207, feature
+  record secondary_loop_zero_displacement) the day-view stage declares the loop switch and, with it on, adds the
+  Boolean column is_out_and_back_stroll to its output (True on the activities the secondary location stage marked
+  as out-and-back strolls, False on every other located activity); it raises when the secondary stage returns no such
+  column or a marked row matches no located activity. With the switch off the output has no such column. The
+  vendored join of the popsim_open and simple_ipf_open pipelines never carries it. Definition and path to the plans:
+  docs/codebase/notes/leisure-loops.md.'
 lineage:
   type: overridden
   upstream: synthesis.population.spatial.locations
@@ -28,5 +34,6 @@ resolves_to:
   simple_ipf_open: synthesis.population.spatial.locations
 features:
 - commute_day_state
+- secondary_loop_zero_displacement
 decisions:
 - ADR-0104
