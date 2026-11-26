@@ -13,7 +13,7 @@ acquisition:
     Same extraction as the sibling record mid2023_w_zwd_group_reference, run with
     --without-loops: python scripts/extract_mid_w_zwd_groups.py --raw <MiD2023 B1 CSV dir>
     --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha> --without-loops. The loop
-    legs are removed from the leg universe after the weekday filter by the model's own rule,
+    legs, except an out-and-back stroll, are removed from the leg universe after the weekday filter by the model's own rule,
     braunschweig.popsim.purpose_subtype.drop_loop_legs (defined in
     docs/codebase/notes/leisure-loops.md); the mode it needs is trips.map_mode of the MiD column
     hvm_imp, which this run reads in addition. Nothing else differs.
