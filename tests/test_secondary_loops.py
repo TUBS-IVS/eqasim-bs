@@ -29,13 +29,20 @@ WALK_HOME_HOME = ("walk", BAND_OF_TRAVEL_TIME, True, True)
 WALK_AWAY_HOME = ("walk", BAND_OF_TRAVEL_TIME, False, True)
 
 
-def _trips(rows):
-    """Rows of (person_id, trip_index, mode, preceding, following, W_ZWECK, W_ZWD)."""
-    return pd.DataFrame(
+def _trips(rows, synthetic_closures=()):
+    """Rows of (person_id, trip_index, mode, preceding, following, W_ZWECK, W_ZWD).
+
+    ``synthetic_closures`` lists the ``(person_id, trip_index)`` of the trips that are the plan
+    repair's invented home trip (``is_synthetic_closure``); every other trip is from the diary.
+    """
+    frame = pd.DataFrame(
         rows,
         columns=["person_id", "trip_index", "mode", "preceding_purpose", "following_purpose",
                  "W_ZWECK", "W_ZWD"],
     ).assign(travel_time=TRAVEL_TIME_S)
+    frame["is_synthetic_closure"] = [
+        key in set(synthetic_closures) for key in zip(frame["person_id"], frame["trip_index"])]
+    return frame
 
 
 def _probabilities(cells=None, marginal=None, codeplan_sentinels=False):
@@ -245,6 +252,54 @@ def test_way_home_follows_reads_the_next_trip_of_the_same_person():
     by_trip = dict(zip(zip(df["person_id"], df["trip_index"]), result))
     assert by_trip == {(1, 0): True, (1, 1): False, (2, 0): False, (2, 1): False,
                        (2, 2): False, (3, 0): False}
+
+
+def test_out_and_back_needs_home_start_and_diary_way_home():
+    rows = [
+        (1, 0, "walk", "home", "leisure", 7, 710),       # home -> stroll -> home: out-and-back
+        (1, 1, "walk", "leisure", "home", 8, np.nan),
+        (2, 0, "car", "home", "shop", 4, 2202),
+        (2, 1, "walk", "shop", "leisure", 7, 710),       # shop -> stroll -> home: loop
+        (2, 2, "walk", "leisure", "home", 8, np.nan),
+        (3, 0, "walk", "home", "leisure", 7, 710),       # home -> stroll -> invented home: loop
+        (3, 1, "walk", "leisure", "home", 8, np.nan),
+        (4, 0, "walk", "home", "leisure", 7, 710),       # home -> stroll -> stroll -> home:
+        (4, 1, "walk", "leisure", "leisure", 7, 711),    # both loops
+        (4, 2, "walk", "leisure", "home", 8, np.nan),
+    ]
+    df = _trips(rows, synthetic_closures=[(3, 1)]).sample(frac=1.0, random_state=2)
+    is_stroll, _stats = loops.flag_loops(df, _probabilities(), np.random.RandomState(1))
+
+    out_and_back = loops.out_and_back_strolls(df, is_stroll)
+
+    assert out_and_back.index.equals(df.index) and out_and_back.dtype == bool
+    by_trip = df.assign(out_and_back=out_and_back).sort_values(["person_id", "trip_index"])
+    assert by_trip.loc[is_stroll.reindex(by_trip.index), "out_and_back"].tolist() == [
+        True, False, False, False, False]
+    assert not (out_and_back & ~is_stroll).any()
+
+
+def test_cell_lookup_ignores_the_synthetic_closure():
+    # Same diary twice: person 1's way home is the plan repair's invented closure, person 2's is
+    # a diary trip. A drawn leg followed only by the closure uses the cell way_home_follows=False.
+    df = _trips(_leisure_leg(1, "walk", 2202) + _leisure_leg(2, "walk", 2202),
+                synthetic_closures=[(1, 1)])
+    probabilities = _probabilities(cells={WALK_HOME_HOME: 1.0,
+                                          ("walk", BAND_OF_TRAVEL_TIME, True, False): 0.0})
+
+    flags, stats = loops.flag_loops(df, probabilities, np.random.RandomState(3))
+
+    assert flags[df["following_purpose"] == "leisure"].tolist() == [False, True]
+    assert stats["draws_from_marginal"]["walk"] == 0
+
+
+def test_diary_way_home_requires_the_closure_column():
+    df = _trips(_leisure_leg(1, "walk", 710))
+    with pytest.raises(ValueError, match="is_synthetic_closure"):
+        loops.diary_way_home_follows(df.drop(columns="is_synthetic_closure"))
+    # A missing value is neither a diary trip nor an invented one.
+    with pytest.raises(ValueError, match="is_synthetic_closure"):
+        loops.diary_way_home_follows(df.assign(is_synthetic_closure=[False, None]))
 
 
 def _mid_person(household_id, legs, *, hvm_imp=1, weight=1.0, kernwo=1):

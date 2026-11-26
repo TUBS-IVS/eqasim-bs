@@ -2105,18 +2105,55 @@ def _flag_loop_trips(context, df_trips, mid_wege_loader):
     loader, so the table is read once) in the universe of the leisure subtype decider: the same
     ``secondary_distance_min_obs``, weekday restriction and codeplan sentinels. The draw has its
     own stream, ``random_seed + loops.LOOP_SEED_OFFSET``, so it consumes nothing of the solver's
-    stream. Returns ``(is_loop, flag_stats)`` as ``flag_loops`` does.
+    stream.
+
+    The strolls are then split (``loops.out_and_back_strolls``): a stroll from home whose
+    person's next diary trip goes home is out-and-back and stays on the solver like any leisure
+    leg; every other stroll is a loop. The trips must carry ``loops.SYNTHETIC_CLOSURE_COLUMN``
+    (``ValueError`` naming it otherwise).
+
+    Returns ``(is_stroll, is_loop, flag_stats)``: the stroll flags of ``flag_loops``, the loop
+    flags (``is_stroll & ~out_and_back``), both on ``df_trips.index``, and the statistics of
+    ``flag_loops`` with two more per-mode counts: ``out_and_back`` (the out-and-back strolls) and
+    ``loops_followed_by_synthetic_closure`` (the loops whose next trip is the plan repair's
+    invented home trip: a stroll from home followed only by that trip is a loop, because the
+    diary recorded no way home after it).
     """
     from braunschweig.popsim.stage.config_keys import (
         KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
     )
+    if loops.SYNTHETIC_CLOSURE_COLUMN not in df_trips.columns:
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {loops.KEY_ENABLED} needs the column "
+            f"{loops.SYNTHETIC_CLOSURE_COLUMN} on synthesis.population.trips.final (written by "
+            "braunschweig.popsim.plan_validation.PlanValidator) to tell a diary way home from the "
+            "plan repair's invented one.")
     probabilities = loops.estimate_loop_probabilities(
         mid_wege_loader(context.config("braunschweig.population.popsim.mid_dir")),
         min_obs=int(context.config("secondary_distance_min_obs")),
         weekday_only=bool(context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY)),
         codeplan_sentinels=bool(context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS)))
     random = np.random.RandomState(int(context.config("random_seed")) + loops.LOOP_SEED_OFFSET)
-    return loops.flag_loops(df_trips, probabilities, random)
+    is_stroll, flag_stats = loops.flag_loops(df_trips, probabilities, random)
+    out_and_back = loops.out_and_back_strolls(df_trips, is_stroll)
+    is_loop = (is_stroll & ~out_and_back).astype(bool)
+    after_closure = is_loop & loops.next_trip_is_synthetic_closure(df_trips)
+
+    def per_mode(mask):
+        return {mode: int((mask & (df_trips["mode"] == mode)).sum())
+                for mode in sorted(loops.LOOP_MODES)}
+
+    flag_stats = {**flag_stats, "out_and_back": per_mode(out_and_back),
+                  "loops_followed_by_synthetic_closure": per_mode(after_closure)}
+    n_strolls = int(is_stroll.sum())
+    logger.info(
+        "[braunschweig.secondary_chainsolvers] strolls and dog walks: %d flagged; %d (%.1f%%) "
+        "out-and-back from home (placed by the solver), %d (%.1f%%) loops (placed at the "
+        "activity they start from unless kept), of which %d followed only by the plan repair's "
+        "invented home trip", n_strolls, int(out_and_back.sum()),
+        100.0 * _rate(int(out_and_back.sum()), n_strolls), int(is_loop.sum()),
+        100.0 * _rate(int(is_loop.sum()), n_strolls), int(after_closure.sum()))
+    return is_stroll, is_loop, flag_stats
 
 
 def _linked_activity_keys(activity_anchors, linked_location_rows, portal_location_rows,
@@ -2259,6 +2296,37 @@ def _collapse_loops_and_move_anchors(df_trips, is_loop, *, activity_anchors,
         links=loops.to_collapsed_links(links, index_map))
 
 
+#: Bool column of the stage result, written only while ``secondary_loop_zero_displacement`` is on
+#: (issue #679): True on the solver row of an out-and-back stroll activity, False on every other
+#: row (loop rows included, also a loop kept on the solver).
+OUT_AND_BACK_STROLL_COLUMN = "is_out_and_back_stroll"
+
+
+def _mark_out_and_back_strolls(df_locations, df_trips, out_and_back):
+    """``df_locations`` with :data:`OUT_AND_BACK_STROLL_COLUMN` (issue #679).
+
+    ``out_and_back`` flags, on ``df_trips.index`` (the original trips), the trips INTO an
+    out-and-back stroll; the stroll activity is ``(person_id, trip_index + 1)`` in the original
+    numbering, the numbering of ``df_locations`` after ``loops.restore_loops``. Every such
+    activity must have exactly one row, placed by the solver (``loop_origin`` empty): an
+    out-and-back stroll without a row, or one that was copied from its origin, raises
+    ``ValueError``; there is no default.
+    """
+    trips = df_trips[out_and_back.reindex(df_trips.index).astype(bool)]
+    keys = pd.MultiIndex.from_arrays([trips["person_id"], trips["trip_index"] + 1])
+    rows = pd.MultiIndex.from_arrays([df_locations["person_id"], df_locations["activity_index"]])
+    marked = rows.isin(keys) & df_locations["loop_origin"].isna().to_numpy()
+    if int(marked.sum()) != len(keys):
+        missing = [key for key in keys if key not in set(rows[marked])][:5]
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {len(keys)} out-and-back strolls but "
+            f"{int(marked.sum())} solver rows for them; first (person_id, activity_index) without "
+            f"one: {missing}.")
+    result = df_locations.copy()
+    result[OUT_AND_BACK_STROLL_COLUMN] = np.asarray(marked, dtype=bool)
+    return result
+
+
 def _rate(count, total):
     return float(count) / total if total else 0.0
 
@@ -2279,6 +2347,9 @@ def _report_loops(context, flag_stats, counts, loop_table, subtype_estimate_legs
     moved. The marginal-draw share per mode
     (``draws_from_marginal / draws``, 0 for a mode without draws) is warned by
     ``loops.flag_loops`` already and only reported and logged here.
+    ``strolls_out_and_back`` and ``loops_followed_by_synthetic_closure`` are the totals over the
+    loop modes of the per-mode counts :func:`_flag_loop_trips` adds to ``flag_stats``; ``loops``
+    counts the loops only (the out-and-back strolls are no loops).
     """
     by_origin = loop_table["origin_purpose"].value_counts()
     marginal_share = {mode: _rate(flag_stats["draws_from_marginal"][mode], draws)
@@ -2287,6 +2358,9 @@ def _report_loops(context, flag_stats, counts, loop_table, subtype_estimate_legs
         "enabled": True,
         "flags": flag_stats,
         "draws_from_marginal_share": marginal_share,
+        "strolls_out_and_back": int(sum(flag_stats["out_and_back"].values())),
+        "loops_followed_by_synthetic_closure": int(
+            sum(flag_stats["loops_followed_by_synthetic_closure"].values())),
         **counts,
         **{f"{reason}_rate": _rate(counts[reason], counts["loops"])
            for reason in (*loops.KEPT_LOOP_REASONS, "kept_total")},
@@ -2296,14 +2370,18 @@ def _report_loops(context, flag_stats, counts, loop_table, subtype_estimate_legs
         block["subtype_estimate_legs_left_out"] = subtype_estimate_legs_left_out
     kept_rate = block["kept_total_rate"]
     message = (
-        "[braunschweig.secondary_chainsolvers] loops: %d flagged; %d (%.1f%%) placed at the "
+        "[braunschweig.secondary_chainsolvers] loops: %d out-and-back strolls placed by the "
+        "solver; %d loops flagged (%d of them followed only by the invented home trip); %d "
+        "(%.1f%%) placed at the "
         "activity they start from (by origin: %s); %d (%.1f%%) kept on the solver: %d (%.1f%%) "
         "because the loop activity itself is anchored or linked, %d (%.1f%%) because the loop "
         "starts at an outside stay; collapsed loops of persons with an escort link %d, a portal "
         "stay %d, a passive joint link %d; %d of %d collapsed persons (%.1f%%) have no secondary "
         "activity left to solve; share of loop draws from the mode marginal: %s")
     arguments = (
-        counts["loops"], counts["collapsed"], 100.0 * _rate(counts["collapsed"], counts["loops"]),
+        block["strolls_out_and_back"], counts["loops"],
+        block["loops_followed_by_synthetic_closure"],
+        counts["collapsed"], 100.0 * _rate(counts["collapsed"], counts["loops"]),
         ", ".join(f"{origin} {count}" for origin, count in block["by_origin"].items()),
         counts["kept_total"], 100.0 * kept_rate,
         counts["kept_loop_is_linked_activity"], 100.0 * block["kept_loop_is_linked_activity_rate"],
@@ -2353,7 +2431,8 @@ def execute(context):
     loop_enabled = bool(context.config(loops.KEY_ENABLED))
     mid_wege_loader = _shared_mid_wege_loader()
     if loop_enabled:
-        is_loop, loop_flag_stats = _flag_loop_trips(context, df_trips_original, mid_wege_loader)
+        is_stroll, is_loop, loop_flag_stats = _flag_loop_trips(
+            context, df_trips_original, mid_wege_loader)
 
     df_trips, linked_location_rows, escort_activity_anchors = (
         _apply_escort_household_link(context, df_trips)
@@ -2496,6 +2575,8 @@ def execute(context):
                 ["person_id", "household_id"]],
             df_home=context.stage("synthesis.population.spatial.home.locations"),
             df_work=df_work_raw, df_education=df_education_raw)
+        df_locations = _mark_out_and_back_strolls(
+            df_locations, df_trips_original, is_stroll & ~is_loop)
         _report_loops(context, loop_flag_stats, loop_collapse.counts, loop_collapse.loop_table,
                       subtype_estimate_legs_left_out=getattr(
                           shared["leisure_subtype_decider"], "loop_legs_left_out", None))

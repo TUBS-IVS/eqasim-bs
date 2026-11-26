@@ -6,7 +6,10 @@ back to the same place. The secondary-location stage takes such a loop activity 
 and places it at the activity before it. This module holds the pure functions of that rule and
 wires into no stage itself:
 
-- :func:`flag_loops` decides WHICH legs are loops (below);
+- :func:`flag_loops` decides WHICH legs are strolls or dog walks (below), and
+  :func:`out_and_back_strolls` splits them: a stroll that starts at home and whose person's next
+  diary trip goes home is an out-and-back stroll, placed by the solver like any leisure leg; every
+  other stroll is a loop, handled by the functions that follow;
 - :func:`select_collapsible_loops` keeps on the solver the loops that cannot be taken out (an
   anchored or linked loop activity, the first loop after an outside stay);
 - :func:`collapse_loops` takes the other loop activities out of the trips table before the chain
@@ -27,6 +30,8 @@ Two sources of the flag, in this order:
    among the labelled legs of its cell ``(mode, tt_band, starts_at_home, way_home_follows)``.
    ``tt_band`` is ``braunschweig.popsim.purpose_subtype.tt_band`` (defined in
    ``braunschweig.popsim.shop_subtype``), the band function the leisure subtype decider uses.
+   Both marks are read from the diary on both sides (``purpose_subtype.mark_diary_returns`` on
+   the MiD legs, :func:`diary_way_home_follows` on the synthetic trips).
 
 ASSUMPTION: the loop probability estimated on the legs whose detail was asked (CATI/CAWI) holds
 for the legs where it was not asked (PAPI, children). The MiD cannot test this: the unasked legs
@@ -54,7 +59,7 @@ from braunschweig.popsim.distance_distributions import _build_preceding_purpose
 # distance_distributions need them, and that module cannot import this one: this one imports it)
 # and re-exported here under their established names.
 from braunschweig.popsim.purpose_subtype import (  # noqa: F401 (LOOP_* re-exported)
-    LEISURE_ZWECK, LOOP_CODES, LOOP_MODES, leisure_spec, tt_band)
+    LEISURE_ZWECK, LOOP_CODES, LOOP_MODES, leisure_spec, mark_diary_returns, tt_band)
 from braunschweig.popsim.shop_subtype import drop_legs_of_unknown_duration
 from braunschweig.popsim.stage.config_keys import KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT
 from braunschweig.popsim.trips import (
@@ -77,6 +82,12 @@ LOOP_SEED_OFFSET = 90216
 #: Config key of the feature flag (declared by the stage wiring, not by this module). Owned by
 #: ``braunschweig.popsim.stage.config_keys`` since the distance distributions stage reads it too.
 KEY_ENABLED = KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT
+
+#: Column of the synthetic trips that marks the plan repair's invented home trip
+#: (``braunschweig.popsim.plan_validation.PlanValidator`` writes it; the portal stage keeps it).
+#: The MiD diary has no such trip, so the synthetic "way home follows" skips it
+#: (:func:`diary_way_home_follows`).
+SYNTHETIC_CLOSURE_COLUMN = "is_synthetic_closure"
 
 #: Columns :func:`flag_loops` reads from the synthetic trips.
 _TRIP_COLUMNS = ("person_id", "trip_index", "mode", "preceding_purpose", "following_purpose",
@@ -168,11 +179,70 @@ def way_home_follows(df_trips: pd.DataFrame) -> pd.Series:
     """Per synthetic trip: does the next trip of the same person (by ``trip_index``) go home?
 
     Needs ``person_id``, ``trip_index`` and ``following_purpose``. The last trip of a person is
-    False. Aligned to ``df_trips.index``, which must be unique (``ValueError`` otherwise).
+    False. Aligned to ``df_trips.index``, which must be unique (``ValueError`` otherwise). Counts
+    the plan repair's invented home trip as a way home; :func:`diary_way_home_follows` does not.
     """
     _require_columns(df_trips, ("person_id", "trip_index", "following_purpose"), "trips")
     _require_unique_index(df_trips, "way_home_follows")
     return _next_leg_is_home(df_trips, ["person_id"], "trip_index")
+
+
+def next_trip_is_synthetic_closure(df_trips: pd.DataFrame) -> pd.Series:
+    """Per synthetic trip: is the next trip of the same person (by ``trip_index``) the plan
+    repair's invented home trip (:data:`SYNTHETIC_CLOSURE_COLUMN`)?
+
+    The last trip of a person is False. Needs ``person_id``, ``trip_index`` and the closure
+    column without missing values, and a unique index (``ValueError`` otherwise; there is no
+    default for a missing mark).
+    """
+    _require_columns(df_trips, ("person_id", "trip_index", SYNTHETIC_CLOSURE_COLUMN), "trips")
+    _require_unique_index(df_trips, "next_trip_is_synthetic_closure")
+    closure = df_trips[SYNTHETIC_CLOSURE_COLUMN]
+    n_missing = int(closure.isna().sum())
+    if n_missing:
+        raise ValueError(
+            f"[secondary_loops] {n_missing} of {len(df_trips)} trips have no value in "
+            f"{SYNTHETIC_CLOSURE_COLUMN}; every trip must be marked as a diary trip (False) or "
+            "the plan repair's invented home trip (True).")
+    ordered = df_trips.sort_values(["person_id", "trip_index"])
+    next_closure = ordered[SYNTHETIC_CLOSURE_COLUMN].astype(bool).groupby(
+        ordered["person_id"], sort=False).shift(-1, fill_value=False)
+    return next_closure.astype(bool).reindex(df_trips.index)
+
+
+def diary_way_home_follows(df_trips: pd.DataFrame) -> pd.Series:
+    """Per synthetic trip: does the person's next DIARY trip go home?
+
+    True where the next trip of the same person (by ``trip_index``) ends at home AND is not the
+    plan repair's invented home trip (``is_synthetic_closure``, written by
+    ``braunschweig.popsim.plan_validation.PlanValidator``). This is the synthetic side of
+    ``purpose_subtype.mark_diary_returns``'s ``way_home_follows``: the MiD diary has no invented
+    trip, so a trip followed only by the closure ended the person's diary and has no recorded way
+    home after it. Needs ``person_id``, ``trip_index``, ``following_purpose`` and
+    the closure column (``ValueError`` naming it when it is missing or holds a missing value).
+    Aligned to ``df_trips.index``, which must be unique.
+    """
+    _require_columns(df_trips, ("person_id", "trip_index", "following_purpose",
+                                SYNTHETIC_CLOSURE_COLUMN), "trips")
+    _require_unique_index(df_trips, "diary_way_home_follows")
+    return (way_home_follows(df_trips) & ~next_trip_is_synthetic_closure(df_trips)).astype(bool)
+
+
+def out_and_back_strolls(df_trips: pd.DataFrame, is_stroll: pd.Series) -> pd.Series:
+    """The strolls that go out from home and come straight back (issue #679).
+
+    ``is_stroll`` is the flag of :func:`flag_loops` on ``df_trips.index``. An out-and-back stroll
+    is a stroll whose trip starts at home (``preceding_purpose == "home"``) and whose person's next
+    diary trip goes home (:func:`diary_way_home_follows`), the synthetic side of
+    ``purpose_subtype.is_out_and_back_stroll``. Every other stroll is a loop. Returns a Boolean
+    Series on ``df_trips.index``; ``ValueError`` when a column is missing, the index repeats or
+    ``is_stroll`` is not one Boolean per trip.
+    """
+    _require_columns(df_trips, ("preceding_purpose",), "trips")
+    _require_unique_index(df_trips, "out_and_back_strolls")
+    strolls = _aligned_loop_flags(is_stroll, df_trips, "out_and_back_strolls")
+    return (strolls & (df_trips["preceding_purpose"] == "home")
+            & diary_way_home_follows(df_trips)).astype(bool)
 
 
 def _require_columns(frame: pd.DataFrame, columns, what: str) -> None:
@@ -214,7 +284,9 @@ def estimate_loop_probabilities(mid_wege: pd.DataFrame, *, min_obs: int, weekday
     wege["following_purpose"] = wege["purpose"]
     wege["preceding_purpose"] = _build_preceding_purpose(wege)
     _require_unique_index(wege, "estimate_loop_probabilities")
-    wege["way_home_follows"] = _next_leg_is_home(wege, ["H_ID", "P_ID"], "W_ID")
+    # The cell marks starts_at_home and way_home_follows, read on the whole (restricted) diary
+    # before the leisure filter below: the ONE survey-side definition.
+    wege = mark_diary_returns(wege)
     wege["travel_time"] = mid_travel_time_seconds(
         wege, log_tag="[secondary_loops]", log=logger)
 
@@ -230,7 +302,6 @@ def estimate_loop_probabilities(mid_wege: pd.DataFrame, *, min_obs: int, weekday
     universe["_band"] = universe["travel_time"].map(tt_band)
     universe["_is_loop"] = universe["W_ZWD"].isin(LOOP_CODES)
     universe["_weight"] = universe["W_GEW"].astype(float)
-    universe["_starts_at_home"] = (universe["preceding_purpose"] == "home")
 
     cells: Dict[Tuple, float] = {}
     marginal: Dict[str, float] = {}
@@ -249,7 +320,7 @@ def estimate_loop_probabilities(mid_wege: pd.DataFrame, *, min_obs: int, weekday
         n_observations[mode] = len(mode_legs)
 
     n_thin_cells = 0
-    cell_columns = ["mode", "_band", "_starts_at_home", "way_home_follows"]
+    cell_columns = ["mode", "_band", "starts_at_home", "way_home_follows"]
     for (mode, band, starts_at_home, way_home), cell_legs in universe.groupby(cell_columns):
         key = (mode, int(band), bool(starts_at_home), bool(way_home))
         n_observations[key] = len(cell_legs)
@@ -299,10 +370,16 @@ def flag_loops(df_trips: pd.DataFrame, probabilities: LoopProbabilities,
     per drawing leg, so the result depends on the seed and the legs, not on the frame's row order.
     Rows out of scope and labelled rows consume no draw.
 
+    The flags mark every stroll and dog walk; :func:`out_and_back_strolls` splits them into the
+    out-and-back strolls and the loops. A drawing leg's cell reads "starts at home" from its
+    ``preceding_purpose`` and "way home follows" from :func:`diary_way_home_follows` (the plan
+    repair's invented home trip does not count, as in the MiD estimate).
+
     ``df_trips.index`` must be unique. Raises ``ValueError`` (before any random number is drawn
     for the legs concerned) when the index repeats, when a leg to draw has no finite
-    ``travel_time`` (it cannot be banded), and when a drawing leg's mode has no marginal (no
-    silent default probability).
+    ``travel_time`` (it cannot be banded), when legs draw and the trips have no
+    :data:`SYNTHETIC_CLOSURE_COLUMN`, and when a drawing leg's mode has no marginal (no silent
+    default probability).
     """
     _require_columns(df_trips, _TRIP_COLUMNS, "trips")
     _require_unique_index(df_trips, "flag_loops")
@@ -332,7 +409,10 @@ def flag_loops(df_trips: pd.DataFrame, probabilities: LoopProbabilities,
                 "to draw have no finite travel_time (seconds) and cannot be banded; person_ids "
                 f"{drawing.loc[~finite, 'person_id'].unique()[:5].tolist()} (first five).")
         starts_at_home = (drawing["preceding_purpose"] == "home")
-        way_home = way_home_follows(df_trips).loc[drawing.index]
+        # The cell's way_home_follows is read from the diary, as the estimate reads it
+        # (purpose_subtype.mark_diary_returns): the plan repair's invented home trip is no way
+        # home of the diary.
+        way_home = diary_way_home_follows(df_trips).loc[drawing.index]
         # tt_band itself (not a copy of its edges) bands the validated column, so the cell key
         # is the one the estimate used; it is a per-leg Python call, kept for that reason.
         bands = drawing["travel_time"].map(tt_band)

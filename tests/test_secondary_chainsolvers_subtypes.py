@@ -1397,12 +1397,33 @@ def test_leisure_decider_estimates_without_the_loop_legs_when_the_switch_is_on(m
     assert walk_on == {"leisure_visit"}
     assert car_on == {"leisure_local"}
     # The counts the stage writes to the loops block of its report: the leisure legs only.
-    assert left_out_on == {"bicycle": {"legs": 0, "left_out": 0, "kept": 0},
-                           "walk": {"legs": 80, "left_out": 40, "kept": 40}}
+    assert left_out_on == {"bicycle": {"legs": 0, "left_out": 0, "kept": 0, "out_and_back_kept": 0},
+                           "walk": {"legs": 80, "left_out": 40, "kept": 40,
+                                    "out_and_back_kept": 0}}
     walk_off, car_off, left_out_off = _loop_decider_draws(monkeypatch, {_KEY_WITHOUT_LOOPS: False})
     assert walk_off == {"leisure_local", "leisure_visit"}
     assert car_off == {"leisure_local"}
     assert left_out_off is None
+
+
+def test_leisure_decider_keeps_out_and_back_strolls_in_the_loop_free_estimate(monkeypatch):
+    """40 visits and 40 walk strolls from home, each followed by its own way home in the diary:
+    the strolls are out-and-back, stay in the estimate and keep leisure_local drawable. The way
+    home is no leisure leg, so the marks must be read before the purpose filter."""
+    rows = []
+    _add_rows(rows, 0, w_zweck=7, w_zwd=701, wegkm=3.0, n=40, hvm_imp=1)
+    _add_rows(rows, 100, w_zweck=7, w_zwd=710, wegkm=3.0, n=40, hvm_imp=1)
+    _add_rows(rows, 100, w_zweck=8, w_zwd=2202, wegkm=3.0, n=40, hvm_imp=1)
+    for row in rows[80:]:
+        row["W_ID"] = 1                                 # the way home after each stroll
+    ctx = _decider_context({"secondary_leisure_subtype_split": True, _KEY_WITHOUT_LOOPS: True},
+                           monkeypatch, pd.DataFrame(rows))
+
+    decide = sc._build_leisure_subtype_decider(ctx, random_seed=1)
+
+    assert {decide("walk", 600.0) for _ in range(200)} == {"leisure_local", "leisure_visit"}
+    assert decide.loop_legs_left_out["walk"] == {"legs": 80, "left_out": 0, "kept": 80,
+                                                 "out_and_back_kept": 40}
 
 
 @pytest.mark.parametrize("missing", ["secondary_leisure_subtype_split",

@@ -646,6 +646,24 @@ def test_leisure_local_layer_leaves_out_the_walk_and_bicycle_loops():
         assert _serialise(on[key]) == _serialise(off[key]), key
 
 
+def test_leisure_local_layer_keeps_out_and_back_strolls():
+    """Five walk strolls from home at 5 km, each followed by its own way home in the diary, are
+    out-and-back and stay in the loop-free walk layer next to the 706 legs; the loops (4 and
+    4.5 km, one leg per person, no way home) still leave it."""
+    rows: list = []
+    _add_rows(rows, 1000, w_zweck=7, w_zwd=710, wegkm=5.0, n=5)
+    _add_rows(rows, 1000, w_zweck=8, w_zwd=2202, wegkm=5.0, n=5)
+    for position, row in enumerate(rows):
+        row["hvm_imp"] = _HVM_WALK
+        row["W_ID"] = 0 if position < 5 else 1          # the way home after each stroll
+    wege = pd.concat([_loop_wege(), pd.DataFrame(rows)], ignore_index=True)
+
+    on = run(wege, by_purpose=True, leisure_subtype_split=True,
+             leisure_estimates_without_loops=True)
+
+    assert _layer_values({"walk": on["leisure_local"]["walk"]}) == _metres(3.0, 5.0)
+
+
 @pytest.mark.parametrize("switch", [True, False])
 def test_execute_reports_the_legs_left_out_only_while_the_switch_is_on(monkeypatch, tmp_path,
                                                                         switch):
@@ -677,8 +695,8 @@ def test_execute_reports_the_legs_left_out_only_while_the_switch_is_on(monkeypat
     report = json.loads((tmp_path / dd.REPORT_FILE).read_text(encoding="utf-8"))
     # walk: 710, 711, 701, 706 (5 legs each); bicycle: 713, 711; car legs are no loop mode.
     assert report["leisure_subtype_legs_left_out"] == {
-        "bicycle": {"legs": 10, "left_out": 5, "kept": 5},
-        "walk": {"legs": 20, "left_out": 10, "kept": 10}}
+        "bicycle": {"legs": 10, "left_out": 5, "kept": 5, "out_and_back_kept": 0},
+        "walk": {"legs": 20, "left_out": 10, "kept": 10, "out_and_back_kept": 0}}
     layers = report["leisure_subtype_layer_legs"]
     assert layers["leisure_local"] == {
         "bicycle": {"legs_with_loops": 10, "legs_without_loops": 5},

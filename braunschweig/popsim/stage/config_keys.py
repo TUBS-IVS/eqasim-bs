@@ -746,7 +746,7 @@ KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT = "secondary_loop_zero_displacement"
 DEFAULT_SECONDARY_LOOP_ZERO_DISPLACEMENT = False
 
 # secondary_leisure_estimates_without_loops (issue #679, ADR-0207): with the loop placement on,
-# the loop legs (purpose_subtype.drop_loop_legs: mode in LOOP_MODES and W_ZWD in LOOP_CODES) leave
+# the loop legs (purpose_subtype.drop_loop_legs: the strolls that are no out-and-back stroll) leave
 # the chain, so ON leaves them out of the two leisure estimates the remaining legs use: the leisure
 # subtype distance layers (braunschweig.popsim.distance_distributions.run, Step 8) and the leisure
 # subtype decider's P(group | mode, tt_band)

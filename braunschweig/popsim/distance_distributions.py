@@ -659,10 +659,12 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
     leisure_estimates_without_loops:
         When True (issue #679, ADR-0207), the leisure subtype layers of Step 8 are built
         without the loop legs (``purpose_subtype.drop_loop_legs``: a stroll or dog walk,
-        W_ZWD 710/711, on foot or by bicycle), because the secondary location stage takes
-        those legs out of the chain under ``secondary_loop_zero_displacement``; a car leg
-        with 710/711 stays. Only the layer of the group holding the loop codes
-        (``leisure_local``) changes; the aggregate ``leisure`` layer, the
+        W_ZWD 710/711, on foot or by bicycle, that is no out-and-back stroll from home), because
+        the secondary location stage takes those legs out of the chain under
+        ``secondary_loop_zero_displacement``; a car leg with 710/711 and an out-and-back stroll
+        stay. The two marks of the out-and-back rule (``purpose_subtype.mark_diary_returns``)
+        are read on the whole diary right after Step 2. Only the layer of the group holding
+        the loop codes (``leisure_local``) changes; the aggregate ``leisure`` layer, the
         ``leisure_unspecified`` layer and every other purpose keep every leg. A loop mode
         whose layer of that group had legs with the loops and has none without them raises
         ``ValueError`` (the layer cannot be estimated; no fallback to the with-loops layer).
@@ -786,6 +788,14 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
 
     # --- Step 2: derive preceding_purpose (diary-starts-at-home). ----------
     df["preceding_purpose"] = _build_preceding_purpose(df)
+    # Loop-free subtype layers (issue #679): an out-and-back stroll (from home, the next diary leg
+    # goes home) is no loop and stays in the layers. Its two marks are read HERE, on the whole
+    # diary before Step 3 to Step 5 drop any leg: the next leg of a stroll is usually the way home,
+    # which is no leisure leg. Only under the switch, so the OFF path keeps its columns.
+    mark_returns = leisure_subtype_split and leisure_estimates_without_loops
+    if mark_returns:
+        from braunschweig.popsim.purpose_subtype import mark_diary_returns
+        df = mark_diary_returns(df)
 
     # --- Step 3: travel_time in seconds, coded clock times rescued (issue #160). ---
     # The clock-time duration, the midnight repair and the wegmin_imp1 rescue of the coded
@@ -828,6 +838,8 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
     for opt_col in _OPTIONAL_COLUMNS:
         if opt_col in df.columns:
             keep_cols.append(opt_col)
+    if mark_returns:
+        keep_cols.extend(["starts_at_home", "way_home_follows"])
     df = df[keep_cols].rename(columns={"W_GEW": "weight"})
 
     # Replicate the default stage filter exactly (see PRIMARY_ACTIVITIES):

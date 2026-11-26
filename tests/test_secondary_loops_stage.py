@@ -53,11 +53,12 @@ def _mid_wege():
     return _mid_persons([(30, [(7, 710), (8, 2202)]), (30, [(7, 701)])])
 
 
-def _trips(rows):
+def _trips(rows, *, closing_persons=()):
     """Trips from ``(person_id, preceding, following, mode, W_ZWECK, W_ZWD, departure_hour)``.
 
     ``trip_index``, ``is_first_trip`` and ``is_last_trip`` follow the row order of each person;
-    every trip lasts ``TRAVEL_TIME_S``.
+    every trip lasts ``TRAVEL_TIME_S``. The last trip of each person in ``closing_persons`` is the
+    plan repair's invented home trip (``is_synthetic_closure``); every other trip is from the diary.
     """
     frame = pd.DataFrame(rows, columns=["person_id", "preceding_purpose", "following_purpose",
                                         "mode", "W_ZWECK", "W_ZWD", "departure_hour"])
@@ -65,6 +66,8 @@ def _trips(rows):
     count = frame.groupby("person_id")["trip_index"].transform("size")
     frame["is_first_trip"] = frame["trip_index"] == 0
     frame["is_last_trip"] = frame["trip_index"] == count - 1
+    frame["is_synthetic_closure"] = frame["is_last_trip"] & frame["person_id"].isin(
+        list(closing_persons))
     frame["departure_time"] = 3600.0 * frame.pop("departure_hour")
     frame["arrival_time"] = frame["departure_time"] + TRAVEL_TIME_S
     return frame
@@ -165,7 +168,9 @@ def _row(df_locations, person_id, activity_index):
 # ---------------------------------------------------------------------------
 
 #: S = a labelled stroll (710) or dog walk (711), D = a leisure walk without a detail code that the
-#: MiD cell (from home, way home follows) makes a loop by draw.
+#: MiD cell (from home, way home follows) makes a stroll by draw. Person 3's D starts at home and
+#: its next diary trip goes home: an out-and-back stroll, which the solver places like any leisure
+#: activity (it stays in the diary without loops too).
 #:   1: home shop S leisure home      2: home work S home       3: home D home
 #:   4: home S S shop home            5: home education S home   (S by bicycle)
 TRIPS_WITH_LOOPS = [
@@ -188,14 +193,15 @@ TRIPS_WITH_LOOPS = [
 ]
 
 #: The same diaries with every loop trip removed by hand: the trip after a loop (run) leaves the
-#: activity before it, so person 3 keeps one trip from home to home.
+#: activity before it; person 3's out-and-back stroll is no loop and stays.
 TRIPS_WITHOUT_LOOPS = [
     (1, "home", "shop", "car", 4, 2202, 8),
     (1, "shop", "leisure", "bicycle", 7, 701, 10),
     (1, "leisure", "home", "pt", 8, 2202, 11),
     (2, "home", "work", "car", 1, 2202, 7),
     (2, "work", "home", "bicycle", 8, 2202, 13),
-    (3, "home", "home", "walk", 8, 2202, 10),
+    (3, "home", "leisure", "walk", 7, 2202, 9),
+    (3, "leisure", "home", "walk", 8, 2202, 10),
     (4, "home", "shop", "car", 4, 2202, 10),
     (4, "shop", "home", "car", 8, 2202, 11),
     (5, "home", "education", "pt", 3, 2202, 7),
@@ -204,7 +210,7 @@ TRIPS_WITHOUT_LOOPS = [
 
 #: (person_id, activity index without loops) -> activity index in the diary with loops, for the
 #: secondary activities that are no loops.
-WITHOUT_TO_WITH_LOOPS = {(1, 1): 1, (1, 2): 3, (4, 1): 3}
+WITHOUT_TO_WITH_LOOPS = {(1, 1): 1, (1, 2): 3, (3, 1): 1, (4, 1): 3}
 
 PERSONS = [1, 2, 3, 4, 5]
 
@@ -387,7 +393,7 @@ def test_the_stage_places_other_activities_as_if_the_loop_had_been_removed_by_ha
     expected_loops = {
         (1, 2): _copy_of(with_loops, 1, 1),
         (2, 2): ("work", "work_2", Point(200.0, 50.0)),
-        (3, 1): _home(3), (4, 1): _home(4), (4, 2): _home(4),
+        (4, 1): _home(4), (4, 2): _home(4),
         (5, 2): ("education", "edu_5", Point(500.0, 70.0)),
     }
     if composition == "anchored_two_pass":
@@ -412,9 +418,10 @@ def test_the_stage_places_other_activities_as_if_the_loop_had_been_removed_by_ha
     if composition == "anchored_two_pass":
         report = json.loads((tmp_path / "with" / REPORT_FILENAME).read_text(
             encoding="utf-8"))["loops"]
-        # 15 loops: 6 of persons 1 to 5, 2 + 3 + 2 + 2 of persons 6 to 9; person 7's loop after
-        # the outside stay is the one kept.
-        assert (report["loops"], report["collapsed"], report["kept_total"]) == (15, 14, 1)
+        # 14 loops: 5 of persons 1 to 5 (person 3's stroll is out-and-back), 2 + 3 + 2 + 2 of
+        # persons 6 to 9; person 7's loop after the outside stay is the one kept.
+        assert (report["loops"], report["collapsed"], report["kept_total"]) == (14, 13, 1)
+        assert report["strolls_out_and_back"] == 1
         assert (report["kept_after_outside"], report["kept_loop_is_linked_activity"]) == (1, 0)
         # The remap is exercised: collapsed loops of persons with an escort link, a portal stay
         # and a passive joint link (both sides).
@@ -430,23 +437,27 @@ def test_the_report_gives_loops_by_label_by_draw_and_by_origin(tmp_path, stage_d
     report = json.loads((tmp_path / REPORT_FILENAME).read_text(encoding="utf-8"))["loops"]
     assert report["enabled"] is True
     # In scope: the five walks into leisure and the two bicycle legs into leisure (person 1's
-    # 701 leg is labelled and no loop); person 3's walk is the one leg without a detail code.
+    # 701 leg is labelled and no loop); person 3's walk is the one leg without a detail code, a
+    # stroll by draw and out-and-back (from home, its next diary trip goes home).
     assert report["flags"] == {
         "in_scope": {"bicycle": 2, "walk": 5}, "by_label": {"bicycle": 1, "walk": 4},
         "by_draw": {"bicycle": 0, "walk": 1}, "draws": {"bicycle": 0, "walk": 1},
         "draws_from_marginal": {"bicycle": 0, "walk": 0},
-        "missing_detail_code": {"bicycle": 0, "walk": 0}}
+        "missing_detail_code": {"bicycle": 0, "walk": 0},
+        "out_and_back": {"bicycle": 0, "walk": 1},
+        "loops_followed_by_synthetic_closure": {"bicycle": 0, "walk": 0}}
     # Share of the draws that took the mode marginal; 0 for a mode without draws.
     assert report["draws_from_marginal_share"] == {"bicycle": 0.0, "walk": 0.0}
-    assert report["loops"] == 6
+    assert (report["strolls_out_and_back"], report["loops_followed_by_synthetic_closure"]) == (1, 0)
+    assert report["loops"] == 5
     for reason in ("kept_loop_is_linked_activity", "kept_after_outside", "kept_total"):
         assert (report[reason], report[f"{reason}_rate"]) == (0, 0.0)
     for kind in ("escort_link", "portal_stay", "passive_joint_link"):
         assert report[f"collapsed_loops_of_persons_with_{kind}"] == 0
-    assert report["collapsed"] == 6
-    assert report["by_origin"] == {"home": 3, "work": 1, "education": 1, "secondary": 1}
-    # Persons 2, 3 and 5 had only loops between their home, work and education activities.
-    assert report["persons_without_secondary_activity"] == 3
+    assert report["collapsed"] == 5
+    assert report["by_origin"] == {"home": 2, "work": 1, "education": 1, "secondary": 1}
+    # Persons 2 and 5 had only loops between their home, work and education activities.
+    assert report["persons_without_secondary_activity"] == 2
     assert not [record for record in caplog.records
                 if record.levelno >= logging.WARNING and "kept" in record.getMessage()]
 
@@ -483,6 +494,34 @@ def test_the_report_gives_the_share_of_draws_from_the_mode_marginal(tmp_path, st
     assert report["draws_from_marginal_share"] == {"bicycle": 0.0, "walk": 1.0}
 
 
+def test_out_and_back_stroll_is_solved_and_marked(tmp_path, stage_doubles):
+    # Persons 1 and 2 have the same diary, home -> stroll -> home; person 2's way home is the plan
+    # repair's invented closure, so only person 1's stroll is out-and-back. Person 3 walks to a
+    # leisure activity that is no stroll.
+    rows = [(person_id, *leg) for person_id, code in ((1, 710), (2, 710), (3, 701)) for leg in (
+        ("home", "leisure", "walk", 7, code, 9),
+        ("leisure", "home", "walk", 8, 2202, 10))]
+    df_locations, _df_convergence = sc.execute(_LoopExecuteCtx(
+        tmp_path, [1, 2, 3], _trips(rows, closing_persons=[2]), **_loop_config(True)))
+
+    out_and_back, loop, other = (_row(df_locations, person_id, 1) for person_id in (1, 2, 3))
+    # The out-and-back stroll gets the solver's place, not the home place.
+    assert out_and_back["loop_origin"] is None
+    assert out_and_back["location_id"].startswith("leisure|walk")
+    assert (loop["loop_origin"], loop["location_id"]) == ("home", "home_20")
+    assert other["loop_origin"] is None
+    # Only the out-and-back stroll is marked; the loop row is not (nor is a loop kept on the
+    # solver: the mark is for the out-and-back strolls alone).
+    assert len(df_locations) == 3
+    assert dict(zip(df_locations["person_id"], df_locations["is_out_and_back_stroll"])) == {
+        1: True, 2: False, 3: False}
+    assert df_locations["is_out_and_back_stroll"].dtype == bool
+
+    report = json.loads((tmp_path / REPORT_FILENAME).read_text(encoding="utf-8"))["loops"]
+    assert (report["loops"], report["strolls_out_and_back"],
+            report["loops_followed_by_synthetic_closure"]) == (1, 1, 1)
+
+
 def test_the_key_off_gives_todays_result_without_the_loop_origin_column(
         tmp_path, stage_doubles, monkeypatch):
     def must_not_run(*args, **kwargs):
@@ -505,6 +544,7 @@ def test_the_key_off_gives_todays_result_without_the_loop_origin_column(
         _trips(TRIPS_WITH_LOOPS).assign(travel_time=TRAVEL_TIME_S), df_primary, None,
         {"random": np.random.RandomState(ctx.config("random_seed")), "crs": CRS})
     assert "loop_origin" not in df_locations.columns
+    assert "is_out_and_back_stroll" not in df_locations.columns
     pd.testing.assert_frame_equal(pd.DataFrame(df_locations), pd.DataFrame(expected))
     assert not (tmp_path / REPORT_FILENAME).exists()
 
@@ -543,7 +583,9 @@ def test_a_kept_loop_is_placed_by_the_solver_and_counted_by_its_reason(
     rows, config, stages, kept_activities = KEPT_CASES[reason](monkeypatch)
     rows = rows + [(3, "home", "leisure", "walk", 7, 710, 8),     # S of a person without anchors
                    (3, "leisure", "home", "walk", 8, 2202, 9)]
-    ctx = _LoopExecuteCtx(tmp_path, [1, 2, 3], _trips(rows),
+    # Every way home is the plan repair's invented closure, so a stroll from home is a loop, not
+    # an out-and-back stroll (that needs a way home from the diary).
+    ctx = _LoopExecuteCtx(tmp_path, [1, 2, 3], _trips(rows, closing_persons=[1, 2, 3]),
                           persons_extra={"source_H_ID": [100, 100, 300],
                                          "source_P_ID": [1, 2, 1]},
                           **_loop_config(True), **config)
@@ -557,6 +599,8 @@ def test_a_kept_loop_is_placed_by_the_solver_and_counted_by_its_reason(
     for person_id, activity_index in kept_activities:
         kept = _row(df_locations, person_id, activity_index)
         assert kept["loop_origin"] is None and kept["location_id"].startswith("leisure|")
+        # A kept loop is no out-and-back stroll: the stroll mode rule must not reach it.
+        assert not kept["is_out_and_back_stroll"]
     # Person 3's stroll is copied from home.
     copied = _row(df_locations, 3, 1)
     assert (copied["loop_origin"], copied["location_id"]) == ("home", "home_30")

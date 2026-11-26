@@ -51,14 +51,15 @@ from braunschweig.calibration.srv_distance_targets import weighted_quantiles  # 
 from braunschweig.calibration.srv_fine_purpose import QUANTILE_PROBABILITIES  # noqa: E402
 from braunschweig.popsim.diary_facts import WEGKM_CODE_MIN  # noqa: E402
 from braunschweig.popsim.mid.csv_format import detect_csv_separator  # noqa: E402
+from braunschweig.popsim.distance_distributions import _build_preceding_purpose  # noqa: E402
 from braunschweig.popsim.purpose_subtype import (  # noqa: E402
     LOOP_CODES, LOOP_MODES, SubtypeSpec, code_coverage_guard, drop_loop_legs, label_legs,
-    leisure_spec, other_errand_spec,
+    leisure_spec, mark_diary_returns, other_errand_spec,
 )
 from braunschweig.popsim.shop_subtype import (  # noqa: E402
     SHOP_DAILY_W_ZWD, SHOP_DETAIL_MISSING, SHOP_NONDAILY_W_ZWD,
 )
-from braunschweig.popsim.trips import map_mode, weekday_diary_leg_mask  # noqa: E402
+from braunschweig.popsim.trips import map_mode, map_purpose, weekday_diary_leg_mask  # noqa: E402
 from scripts.extract_mid_w_zweck_hwzweck1 import (  # noqa: E402
     KERNWO_WEEKDAY_CODES, RBW_SUMMARY_LEG_CODE,
 )
@@ -69,16 +70,17 @@ WEGE_FILE = "MiD2023_Wege.csv"
 MID_GROUP_TABLE = "mid2023_w_zwd_group_reference.csv"
 #: The variant with the loop legs left out of the leg universe, written by ``--without-loops``
 #: (issue #679): the model's own rule, ``purpose_subtype.drop_loop_legs`` (W_ZWD in
-#: ``LOOP_CODES`` on foot or by bicycle, ``LOOP_MODES``). The default run never writes it and never
+#: ``LOOP_CODES`` on foot or by bicycle, ``LOOP_MODES``, no out-and-back stroll). The default run never writes it and never
 #: changes :data:`MID_GROUP_TABLE`.
 MID_GROUP_TABLE_WITHOUT_LOOPS = "mid2023_w_zwd_group_reference_without_loops.csv"
 
 REQUIRED_COLUMNS = ["W_ZWECK", "W_ZWD", "W_GEW", "W_RBW", "kernwo", "wegkm_imp"]
 #: Read only by ``--without-loops``: the MiD imputed main mode, mapped by ``trips.map_mode`` (the
-#: mapping the model's estimators use) so the loop rule can test the mode. Not in
-#: :data:`REQUIRED_COLUMNS`, so the default run reads, coerces and reports exactly what it did
-#: before.
-LOOP_RULE_COLUMNS = ["hvm_imp"]
+#: mapping the model's estimators use) so the loop rule can test the mode, and the diary keys
+#: (household, person, leg number) that tell an out-and-back stroll from a loop
+#: (``purpose_subtype.mark_diary_returns``). Not in :data:`REQUIRED_COLUMNS`, so the default run
+#: reads, coerces and reports exactly what it did before.
+LOOP_RULE_COLUMNS = ["hvm_imp", "H_ID", "P_ID", "W_ID"]
 GROUP_COLUMNS = ["purpose", "spec_variant", "group", "n_unweighted", "share_within_purpose",
                  "km_p25", "km_p50", "km_p75", "n_missing_distance"]
 
@@ -228,8 +230,9 @@ def build_group_reference(wege: pd.DataFrame, *, leave_out_loops: bool = False) 
     leave_out_loops : bool
         When true, the loop legs leave the leg universe after the weekday filter, by the model's
         own rule ``purpose_subtype.drop_loop_legs`` (``W_ZWD`` in :data:`LOOP_CODES`, a stroll or
-        dog walk, on foot or by bicycle, :data:`LOOP_MODES`; the mode is ``trips.map_mode`` of
-        ``hvm_imp``, which the frame must then carry), so every block's shares are measured on
+        dog walk, on foot or by bicycle, :data:`LOOP_MODES`, that is no out-and-back stroll from
+        home; the mode is ``trips.map_mode`` of ``hvm_imp``, and the frame must then carry the
+        :data:`LOOP_RULE_COLUMNS`), so every block's shares are measured on
         the legs the model still places (issue #679: a comparison with a model that places loops
         without a leg length must not count them on the survey side). A car leg with 710/711
         stays, as in the model. The counts go to the diagnostics: ``n_loop_legs_left_out``
@@ -264,7 +267,13 @@ def build_group_reference(wege: pd.DataFrame, *, leave_out_loops: bool = False) 
             raise ValueError("%s leaving the loops out needs column(s) %s (the mode of the loop "
                              "rule)" % (_LOG_TAG, missing_rule))
         n_before = len(filtered)
-        kept, left_out_by_mode = drop_loop_legs(map_mode(filtered), log_tag=_LOG_TAG)
+        # An out-and-back stroll (from home, the next diary leg goes home) is no loop and stays.
+        # Its marks are read on the whole weekday diary, before any purpose block, with the chain
+        # derivation of the model's loop estimate (map_purpose defaults, _build_preceding_purpose).
+        diary = filtered.assign(following_purpose=map_purpose(filtered)["purpose"])
+        diary = mark_diary_returns(
+            diary.assign(preceding_purpose=_build_preceding_purpose(diary)))
+        kept, left_out_by_mode = drop_loop_legs(map_mode(diary), log_tag=_LOG_TAG)
         n_loop = n_before - len(kept)
         logger.info("%s loops left out: %d/%d weekday legs (%.2f%%) by the model's rule (W_ZWD in "
                     "%s by %s); W_GEW share %.2f%%", _LOG_TAG, n_loop, n_before,
@@ -276,7 +285,8 @@ def build_group_reference(wege: pd.DataFrame, *, leave_out_loops: bool = False) 
             raise ValueError("%s no leg on foot or by bicycle carries a loop code %s; leaving "
                              "loops out would change nothing, which points to a code or column "
                              "mismatch." % (_LOG_TAG, sorted(LOOP_CODES)))
-        filtered = kept.drop(columns="mode")
+        filtered = kept.drop(columns=["mode", "following_purpose", "preceding_purpose",
+                                      "starts_at_home", "way_home_follows"])
         universe_diagnostics = dict(universe_diagnostics, n_loop_legs_left_out=n_loop,
                                     n_loop_legs_left_out_by_mode=left_out_by_mode,
                                     n_legs_after_loop_removal=int(len(filtered)))
@@ -435,8 +445,10 @@ def _header(table: pd.DataFrame, diagnostics: dict, source_commit: str,
         lines += _comment_paragraph(
             "Loops left out (issue #679), by the model's own rule purpose_subtype.drop_loop_legs: "
             "a leg whose W_ZWD is in %s (LOOP_CODES) and whose mode (trips.map_mode of hvm_imp) "
-            "is in %s (LOOP_MODES) is removed from the universe after the weekday filter; a car "
-            "leg with those codes stays, as in the model. Every share and percentile below is "
+            "is in %s (LOOP_MODES) is removed from the universe after the weekday filter, unless "
+            "it is an out-and-back stroll (it starts at home and the person's next diary leg "
+            "goes home, purpose_subtype.mark_diary_returns); a car leg with those codes and an "
+            "out-and-back stroll stay, as in the model. Every share and percentile below is "
             "measured on the remaining legs. Purpose: compare a model whose loops have no leg "
             "length with the survey without them. The default table %s keeps the loops; "
             "n_loop_legs_left_out=%d (%s), n_legs_after_loop_removal=%d."
@@ -526,8 +538,8 @@ def main(argv=None) -> int:
                         help="Git commit hash of the code state, recorded in the header.")
     parser.add_argument("--without-loops", action="store_true",
                         help="Leave the loop legs (purpose_subtype.drop_loop_legs: W_ZWD in "
-                             "LOOP_CODES, strolls and dog walks, on foot or by bicycle) out of "
-                             "the leg universe and write %s INSTEAD of %s (issue #679)."
+                             "LOOP_CODES, strolls and dog walks, on foot or by bicycle, that are "
+                             "no out-and-back stroll from home) out of the leg universe and write %s INSTEAD of %s (issue #679)."
                              % (MID_GROUP_TABLE_WITHOUT_LOOPS, MID_GROUP_TABLE))
     args = parser.parse_args(argv)
 

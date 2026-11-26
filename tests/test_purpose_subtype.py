@@ -589,8 +589,43 @@ def test_drop_loop_legs_drops_exactly_the_walk_and_bicycle_strolls_and_dog_walks
         "mode": ["walk", "bicycle", "walk", "car", "walk", "bicycle", "car_passenger", "pt",
                  "walk"],
         "W_ZWD": [710, 711, 706, 710, 701, 2202, 711, 710, 711],
+        # No leg starts at home with its own way home after it: every stroll is a loop.
+        "starts_at_home": False, "way_home_follows": False,
     })
     kept, counts = ps.drop_loop_legs(legs, log_tag="[test]")
     assert kept.equals(legs.loc[[2, 3, 4, 5, 6, 7]])
-    assert counts == {"bicycle": {"legs": 2, "left_out": 1, "kept": 1},
-                      "walk": {"legs": 4, "left_out": 2, "kept": 2}}
+    assert counts == {"bicycle": {"legs": 2, "left_out": 1, "kept": 1, "out_and_back_kept": 0},
+                      "walk": {"legs": 4, "left_out": 2, "kept": 2, "out_and_back_kept": 0}}
+
+
+def test_drop_loop_legs_keeps_out_and_back_strolls():
+    """A stroll from home whose NEXT diary leg goes home is an out-and-back stroll and stays; a
+    stroll that starts elsewhere, or after which the person goes on to another leisure leg, is a
+    loop. The marks are read on the whole diary, before any purpose filter (the home leg that
+    follows the stroll is not a leisure leg)."""
+    legs = pd.DataFrame([
+        # H_ID, W_ID, mode, W_ZWD, preceding, following
+        (1, 1, "walk", 710, "home", "leisure"),          # out-and-back: kept
+        (1, 2, "car", 2202, "leisure", "home"),
+        (2, 1, "walk", 711, "home", "leisure"),          # next leg is no way home: loop
+        (2, 2, "walk", 710, "leisure", "leisure"),       # starts away from home: loop
+        (2, 3, "car", 2202, "leisure", "home"),
+        (3, 1, "walk", 706, "home", "leisure"),          # no stroll
+        (4, 2, "bicycle", 2202, "leisure", "home"),      # W_ID order, not row order, decides
+        (4, 1, "bicycle", 710, "home", "leisure"),       # out-and-back by bicycle: kept
+    ], columns=["H_ID", "W_ID", "mode", "W_ZWD", "preceding_purpose", "following_purpose"]
+    ).assign(P_ID=1)
+
+    marked = ps.mark_diary_returns(legs)
+    kept, counts = ps.drop_loop_legs(marked, log_tag="[t]")
+
+    assert marked["starts_at_home"].tolist() == [True, False, True, False, False, True, False, True]
+    assert marked["way_home_follows"].tolist() == [True, False, False, True, False, False, False,
+                                                   True]
+    assert kept.index.tolist() == [0, 1, 4, 5, 6, 7]
+    assert counts["walk"] == {"legs": 4, "left_out": 2, "kept": 2, "out_and_back_kept": 1}
+    assert counts["bicycle"] == {"legs": 2, "left_out": 0, "kept": 2, "out_and_back_kept": 1}
+    with pytest.raises(ValueError, match="way_home_follows"):
+        ps.drop_loop_legs(legs, log_tag="[t]")
+    with pytest.raises(ValueError, match="W_ID"):
+        ps.mark_diary_returns(legs.drop(columns="W_ID"))

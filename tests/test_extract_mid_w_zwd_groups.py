@@ -44,7 +44,8 @@ def _wege(extra=()) -> pd.DataFrame:
         _leg(10, 2202, 3.0), _leg(10, 7704, 2.5),    # leisure_unspecified (third variant only)
     ]
     legs.extend(extra)
-    return pd.DataFrame(legs)
+    # One leg per person (H_ID): no leg is followed by a way home, so every stroll is a loop.
+    return pd.DataFrame(legs).assign(H_ID=lambda frame: range(len(frame)), P_ID=1, W_ID=1)
 
 
 def _wege_without_the_code_10_legs() -> pd.DataFrame:
@@ -438,8 +439,8 @@ def test_leaving_out_the_loops_applies_the_models_rule_and_changes_nothing_else(
     assert diagnostics["n_loop_legs_left_out"] == 2
     # Every fixture leg is on foot unless stated: 18 walk legs, one of them the 710 stroll.
     assert diagnostics["n_loop_legs_left_out_by_mode"] == {
-        "bicycle": {"legs": 1, "left_out": 1, "kept": 0},
-        "walk": {"legs": 18, "left_out": 1, "kept": 17}}
+        "bicycle": {"legs": 1, "left_out": 1, "kept": 0, "out_and_back_kept": 0},
+        "walk": {"legs": 18, "left_out": 1, "kept": 17, "out_and_back_kept": 0}}
     assert diagnostics["n_legs_after_loop_removal"] == 18      # 20 weekday legs - 2 loops
     # leisure_local holds 706 + walk 710 + bicycle 711 + car 710 by default; 706 and car 710 remain.
     assert int(_row(default_table, "default", "leisure_local")["n_unweighted"]) == 4
@@ -450,6 +451,21 @@ def test_leaving_out_the_loops_applies_the_models_rule_and_changes_nothing_else(
     other = default_table["purpose"] != "leisure"
     pd.testing.assert_frame_equal(table[table["purpose"] != "leisure"].reset_index(drop=True),
                                   default_table[other].reset_index(drop=True))
+
+
+def test_leaving_out_the_loops_keeps_an_out_and_back_stroll():
+    """A walk stroll from home whose next diary leg goes home is out-and-back and stays: the
+    script reads the way home on the whole weekday diary, before the purpose blocks (the
+    home leg is in none of them)."""
+    person = pd.DataFrame([_leg(7, 710, 1.5), _leg(8, 7704, 1.5)]).assign(
+        H_ID=10_000, P_ID=1, W_ID=[1, 2])
+    wege = pd.concat([_wege(extra=_LOOP_EXTRA_LEGS), person], ignore_index=True)
+
+    _table, diagnostics = M.build_group_reference(wege, leave_out_loops=True)
+
+    assert diagnostics["n_loop_legs_left_out"] == 2
+    assert diagnostics["n_loop_legs_left_out_by_mode"]["walk"] == {
+        "legs": 20, "left_out": 1, "kept": 19, "out_and_back_kept": 1}
 
 
 def test_main_writes_the_loop_free_table_next_to_the_unchanged_default_table(tmp_path):

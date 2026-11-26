@@ -569,45 +569,106 @@ LOOP_CODES = frozenset({710, 711})
 LOOP_MODES = frozenset({"walk", "bicycle"})
 
 
+#: Columns :func:`mark_diary_returns` reads.
+_DIARY_RETURN_COLUMNS = ("H_ID", "P_ID", "W_ID", "preceding_purpose", "following_purpose")
+
+
+def _require_leg_columns(legs: pd.DataFrame, columns, what: str) -> None:
+    missing = [column for column in columns if column not in legs.columns]
+    if missing:
+        raise ValueError(f"[purpose_subtype] {what}: the legs are missing column(s) {missing}.")
+
+
+def mark_diary_returns(legs: pd.DataFrame) -> pd.DataFrame:
+    """A copy of the MiD diary legs with the two Boolean columns of the stroll split (#679).
+
+    - ``starts_at_home``: the leg leaves home (``preceding_purpose == "home"``);
+    - ``way_home_follows``: the NEXT leg of the same person (``H_ID``, ``P_ID``, ordered by
+      ``W_ID``) ends at home (``following_purpose == "home"``). The last leg of a person has no
+      next leg and gets False.
+
+    This is the ONE survey-side definition of both marks: the loop probability estimate
+    (``secondary_chainsolvers.loops.estimate_loop_probabilities``) reads its cells from them, and
+    :func:`drop_loop_legs` its out-and-back strolls. Callers apply it to the whole diary (weekday
+    restricted where configured) BEFORE any purpose filter: the next leg of a stroll is usually
+    the way home, which is no leisure leg. Needs the columns ``H_ID``, ``P_ID``, ``W_ID``,
+    ``preceding_purpose`` and ``following_purpose`` and a unique index (``ValueError``
+    otherwise). The input is not changed; the row order and index are kept.
+    """
+    _require_leg_columns(legs, _DIARY_RETURN_COLUMNS, "mark_diary_returns")
+    if not legs.index.is_unique:
+        raise ValueError(
+            "[purpose_subtype] mark_diary_returns needs a unique index to align the next leg; "
+            f"{int(legs.index.duplicated().sum())} of {len(legs)} index labels repeat.")
+    ordered = legs.sort_values(["H_ID", "P_ID", "W_ID"], kind="stable")
+    next_purpose = ordered.groupby(["H_ID", "P_ID"], sort=False)["following_purpose"].shift(-1)
+    marked = legs.copy()
+    marked["starts_at_home"] = (legs["preceding_purpose"] == "home").to_numpy(dtype=bool)
+    marked["way_home_follows"] = (next_purpose == "home").reindex(legs.index).to_numpy(dtype=bool)
+    return marked
+
+
+def is_out_and_back_stroll(legs: pd.DataFrame) -> pd.Series:
+    """Per leg: a stroll or dog walk that goes out from home and comes straight back (#679).
+
+    True where the mode is in :data:`LOOP_MODES`, ``W_ZWD`` is in :data:`LOOP_CODES`, the leg
+    starts at home and the person's next diary leg goes home (the two columns of
+    :func:`mark_diary_returns`, ``ValueError`` when one is missing). Such a leg has a turning
+    point the diary does not record, so the model places it like any leisure leg; every other
+    stroll is a loop.
+    """
+    _require_leg_columns(legs, ("mode", "W_ZWD", "starts_at_home", "way_home_follows"),
+                         "is_out_and_back_stroll")
+    return (legs["mode"].isin(LOOP_MODES) & legs["W_ZWD"].isin(LOOP_CODES)
+            & legs["starts_at_home"].astype(bool) & legs["way_home_follows"].astype(bool))
+
+
 def drop_loop_legs(legs: pd.DataFrame, *, log_tag: str) -> tuple:
-    """Leave out the loop legs: mode in :data:`LOOP_MODES` AND ``W_ZWD`` in :data:`LOOP_CODES`.
+    """Leave out the loop legs: the strolls and dog walks (mode in :data:`LOOP_MODES` AND
+    ``W_ZWD`` in :data:`LOOP_CODES`) that are no out-and-back stroll (:func:`is_out_and_back_stroll`).
 
     The one row filter of the loop-free leisure estimates (issue #679,
     ``secondary_leisure_estimates_without_loops``): the leisure subtype distance layers
     (``braunschweig.popsim.distance_distributions.run``, Step 8), the leisure subtype decider
     (``secondary_chainsolvers.deciders._build_leisure_subtype_decider``) and the loop-free MiD
     group reference (``scripts/extract_mid_w_zwd_groups.py --without-loops``) all call it, so they
-    leave out the same legs. Every other leg is kept, a car leg with 710 included (the model keeps
-    a motorised stroll as a trip to a destination).
+    leave out the same legs. Every other leg is kept: a car leg with 710 (the model keeps a
+    motorised stroll as a trip to a destination) and an out-and-back stroll (the model places it
+    like any leisure leg).
 
-    Logs, per loop mode, how many legs were left out of how many of that mode, and the total
-    kept; a loop mode that loses ALL its legs is a WARNING (its cells then rest on the fallback of
-    the caller). Needs the columns ``mode`` and ``W_ZWD`` (``ValueError`` otherwise).
+    Logs, per loop mode, how many legs were left out of how many of that mode, the out-and-back
+    strolls kept and the total kept; a loop mode that loses ALL its legs is a WARNING (its cells
+    then rest on the fallback of the caller). Needs the columns ``mode``, ``W_ZWD`` and the two
+    columns of :func:`mark_diary_returns` (``ValueError`` otherwise), which the caller sets on the
+    whole diary before any purpose filter.
 
     Returns ``(kept, counts)``: the kept rows in their order, with their index and columns (the
-    input is not changed), and per loop mode (sorted) ``{"legs": n, "left_out": n, "kept": n}``,
-    the counts the callers write into their stage reports.
+    input is not changed), and per loop mode (sorted) ``{"legs": n, "left_out": n, "kept": n,
+    "out_and_back_kept": n}``, the counts the callers write into their stage reports.
     """
-    missing = [column for column in ("mode", "W_ZWD") if column not in legs.columns]
-    if missing:
-        raise ValueError(f"{log_tag} drop_loop_legs: the legs are missing column(s) {missing}.")
-    is_loop = legs["mode"].isin(LOOP_MODES) & legs["W_ZWD"].isin(LOOP_CODES)
+    _require_leg_columns(legs, ("mode", "W_ZWD", "starts_at_home", "way_home_follows"),
+                         f"{log_tag} drop_loop_legs")
+    is_stroll = legs["mode"].isin(LOOP_MODES) & legs["W_ZWD"].isin(LOOP_CODES)
+    out_and_back = is_out_and_back_stroll(legs)
+    is_loop = is_stroll & ~out_and_back
     kept = legs[~is_loop]
     counts = {}
     for mode in sorted(LOOP_MODES):
         of_mode = legs["mode"] == mode
         n_mode = int(of_mode.sum())
         n_dropped = int((is_loop & of_mode).sum())
-        counts[mode] = {"legs": n_mode, "left_out": n_dropped, "kept": n_mode - n_dropped}
+        counts[mode] = {"legs": n_mode, "left_out": n_dropped, "kept": n_mode - n_dropped,
+                        "out_and_back_kept": int((out_and_back & of_mode).sum())}
     per_mode = [
         f"{mode} {count['left_out']}/{count['legs']} "
-        f"({100.0 * count['left_out'] / count['legs'] if count['legs'] else 0.0:.1f}%)"
+        f"({100.0 * count['left_out'] / count['legs'] if count['legs'] else 0.0:.1f}%; "
+        f"{count['out_and_back_kept']} out-and-back strolls kept)"
         for mode, count in counts.items()]
     emptied = [mode for mode, count in counts.items() if count["legs"] and not count["kept"]]
     logger.info(
-        "%s loop legs (W_ZWD %s by %s) left out of the estimate: %s; kept %d/%d legs",
-        log_tag, sorted(LOOP_CODES), ", ".join(sorted(LOOP_MODES)), ", ".join(per_mode),
-        len(kept), len(legs))
+        "%s loop legs (W_ZWD %s by %s, not out-and-back from home) left out of the estimate: %s; "
+        "kept %d/%d legs", log_tag, sorted(LOOP_CODES), ", ".join(sorted(LOOP_MODES)),
+        ", ".join(per_mode), len(kept), len(legs))
     if emptied:
         logger.warning(
             "%s every leg of mode(s) %s is a loop leg; without the loops these modes have no leg "

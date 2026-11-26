@@ -280,7 +280,8 @@ def _build_leisure_subtype_decider(context, random_seed: int,
 
     Loop-free estimate (issue #679, ADR-0207): when
     ``secondary_leisure_estimates_without_loops`` is ON, the loop legs
-    (``purpose_subtype.drop_loop_legs``: W_ZWD 710/711 on foot or by bicycle) are
+    (``purpose_subtype.drop_loop_legs``: W_ZWD 710/711 on foot or by bicycle, no
+    out-and-back stroll from home) are
     left out after the coverage guard and before the estimation, because the
     secondary location stage takes them out of the chain. Again the SAME flag
     ``braunschweig.popsim.distance_distributions`` reads for the leisure subtype
@@ -289,11 +290,13 @@ def _build_leisure_subtype_decider(context, random_seed: int,
     if not context.config("secondary_leisure_subtype_split"):
         return None
 
+    from braunschweig.popsim.distance_distributions import _build_preceding_purpose
     from braunschweig.popsim.purpose_subtype import (
         code_coverage_guard,
         drop_loop_legs,
         estimate_group_probabilities,
         leisure_spec,
+        mark_diary_returns,
         tt_band,
     )
     from braunschweig.popsim.stage.config_keys import (
@@ -301,7 +304,7 @@ def _build_leisure_subtype_decider(context, random_seed: int,
         KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS, KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
     )
     from braunschweig.popsim.trips import (
-        map_mode, mid_travel_time_seconds, restrict_to_weekday_diary_legs)
+        map_mode, map_purpose, mid_travel_time_seconds, restrict_to_weekday_diary_legs)
 
     min_obs = int(context.config("secondary_distance_min_obs"))
     # Execute-context config() takes the key alone (declared in configure()
@@ -354,6 +357,13 @@ def _build_leisure_subtype_decider(context, random_seed: int,
     without_loops = bool(context.config(KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS))
     loop_legs_left_out = None
     if without_loops:
+        # An out-and-back stroll (from home, the next diary leg goes home) is no loop and stays.
+        # Its marks are read on the whole (weekday) diary before the purpose filter below, with
+        # the chain derivation of loops.estimate_loop_probabilities: map_purpose with its
+        # defaults (only "home", trips.HOME_W_ZWECK, matters here) and _build_preceding_purpose.
+        mid_wege = mid_wege.assign(following_purpose=map_purpose(mid_wege)["purpose"])
+        mid_wege = mark_diary_returns(
+            mid_wege.assign(preceding_purpose=_build_preceding_purpose(mid_wege)))
         mid_wege, loop_legs_left_out = drop_loop_legs(
             mid_wege[mid_wege["W_ZWECK"].isin(spec.zweck_values)],
             log_tag="[braunschweig.secondary_chainsolvers] leisure subtype:")
