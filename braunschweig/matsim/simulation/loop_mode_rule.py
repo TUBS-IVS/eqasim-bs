@@ -13,6 +13,7 @@ Side effects are confined to ``apply`` (one byte-preserving text edit of one par
 """
 from __future__ import annotations
 
+import json
 import logging
 import zipfile
 from pathlib import Path
@@ -31,6 +32,8 @@ DMC_MODULE = "DiscreteModeChoice"
 TRIP_CONSTRAINTS_PARAM = "tripConstraints"
 #: Name the Java constraint is registered under (eqasim-java-bs) and selected by in ``tripConstraints``.
 CONSTRAINT_NAME = "SameFacilityLeisureNonMotorised"
+#: Report of the selection in the stage folder; written only when the switch is on.
+REPORT_FILE_NAME = "loop_mode_rule_report.json"
 #: Jar entry of the constraint class; a jar built before the constraint existed does not contain it.
 CONSTRAINT_CLASS = "org/eqasim/braunschweig/mode_choice/constraints/SameFacilityLeisureTripConstraint.class"
 
@@ -74,6 +77,23 @@ def apply(config_path) -> tuple[str, str] | None:
     new = f"{old}{separator}{CONSTRAINT_NAME}" if names else CONSTRAINT_NAME
     config_modules.set_param(path, DMC_MODULE, TRIP_CONSTRAINTS_PARAM, new)
     return old, new
+
+
+def write_report(report_path, config_path, jar_path, changed: tuple[str, str] | None) -> dict:
+    """Write the citable record of the selection to ``report_path`` (JSON) and return it.
+
+    ``changed`` is the return value of ``apply``. The report names the constraint, the class checked in the jar, the
+    jar's file name (no directories, so the report does not depend on where the run lives), the value of
+    ``tripConstraints`` before and after and ``already_selected`` (true when ``apply`` changed nothing, then before and
+    after are equal). The "after" value is read back from the config on disk. Side effect: writes ``report_path``.
+    """
+    after = config_modules.read_module(config_path, DMC_MODULE)[TRIP_CONSTRAINTS_PARAM]
+    report = {"constraint": CONSTRAINT_NAME, "constraint_class_checked": CONSTRAINT_CLASS,
+              "jar_file_name": Path(jar_path).name, "module": DMC_MODULE, "parameter": TRIP_CONSTRAINTS_PARAM,
+              "trip_constraints_before": changed[0] if changed else after, "trip_constraints_after": after,
+              "already_selected": changed is None}
+    Path(report_path).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    return report
 
 
 def require_constraint_in_jar(jar_path) -> None:

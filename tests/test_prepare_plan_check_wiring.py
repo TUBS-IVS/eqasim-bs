@@ -2,10 +2,11 @@
 import pytest
 
 from braunschweig.matsim import initial_mode_choice as I
+from braunschweig.matsim.simulation import loop_mode_rule as L
 from braunschweig.matsim.simulation import plan_check as C
 from braunschweig.matsim.simulation import prepare
-from braunschweig.matsim.simulation import loop_mode_rule as L
-from braunschweig.matsim.simulation.loop_mode_rule import KEY_ENABLED as LOOP_KEY
+
+LOOP_KEY = L.KEY_ENABLED
 
 
 class _RecordingContext:
@@ -191,6 +192,7 @@ def test_execute_selects_the_loop_mode_rule_in_the_final_config_before_the_initi
     monkeypatch.setattr(prepare, "_write_parking_inputs", lambda context, result: seen.append("parking"))
     monkeypatch.setattr(L, "require_constraint_in_jar", lambda jar: seen.append(("jar", jar)))
     monkeypatch.setattr(L, "apply", lambda config: seen.append(("apply", str(config))) or ("a", "a,b"))
+    monkeypatch.setattr(L, "write_report", lambda *args: seen.append("report"))
     monkeypatch.setattr(I, "run", lambda context, result, excluded: seen.append("initial") or {})
     monkeypatch.setattr(C, "run", lambda context, result: seen.append("check"))
 
@@ -215,9 +217,59 @@ def test_execute_selects_the_loop_mode_rule_in_the_final_config_before_the_initi
     if enabled:
         jar = "%s/%s" % (tmp_path / "matsim.runtime.eqasim", "eqasim.jar")
         config = str(tmp_path / "prepare" / "uncut_config.xml")
-        assert seen == ["fares", "parking", ("jar", jar), ("apply", config), "initial", "check"]
+        assert seen == ["fares", "parking", ("jar", jar), ("apply", config), "report", "initial", "check"]
     else:
         assert seen == ["fares", "parking", "initial", "check"]
+
+
+_DMC_CONFIG = ('<?xml version="1.0" encoding="utf-8"?>\n<config>\n\t<module name="DiscreteModeChoice">\n'
+               '\t\t<param name="tripConstraints" value="PassengerConstraint, OutsideConstraint, TransitWalk" />\n'
+               '\t</module>\n</config>\n')
+
+
+@pytest.mark.parametrize("with_class", [True, False])
+def test_select_loop_mode_rule_end_to_end_with_a_stub_jar(monkeypatch, tmp_path, with_class):
+    """Real jar check, real config edit, real report: the config carries the constraint and the report says so; a jar
+    without the class raises and leaves the config bytes and the stage folder as they were."""
+    import json
+    import zipfile
+    stage = tmp_path / "prepare"
+    jar_directory = tmp_path / "matsim.runtime.eqasim"
+    stage.mkdir()
+    jar_directory.mkdir()
+    (stage / "config.xml").write_bytes(_DMC_CONFIG.encode("utf-8"))
+    with zipfile.ZipFile(jar_directory / "eqasim.jar", "w") as jar:
+        jar.writestr(L.CONSTRAINT_CLASS if with_class else "other/Class.class", b"\xca\xfe\xba\xbe")
+    before_files = sorted(path.name for path in stage.iterdir())
+
+    class _Context:
+        def path(self, name=None):
+            return str(jar_directory if name == "matsim.runtime.eqasim" else stage)
+
+        def stage(self, name):
+            return "eqasim.jar"
+
+    if not with_class:
+        with pytest.raises(RuntimeError, match="SameFacilityLeisureTripConstraint"):
+            prepare._select_loop_mode_rule(_Context(), "config.xml")
+        assert (stage / "config.xml").read_bytes() == _DMC_CONFIG.encode("utf-8")
+        assert sorted(path.name for path in stage.iterdir()) == before_files
+        return
+    prepare._select_loop_mode_rule(_Context(), "config.xml")
+    expected = "PassengerConstraint, OutsideConstraint, TransitWalk, SameFacilityLeisureNonMotorised"
+    assert (stage / "config.xml").read_bytes().decode("utf-8") == _DMC_CONFIG.replace(
+        'TransitWalk"', 'TransitWalk, SameFacilityLeisureNonMotorised"')
+    report = json.loads((stage / L.REPORT_FILE_NAME).read_text(encoding="utf-8"))
+    assert report == {
+        "constraint": "SameFacilityLeisureNonMotorised", "constraint_class_checked": L.CONSTRAINT_CLASS,
+        "jar_file_name": "eqasim.jar", "module": "DiscreteModeChoice", "parameter": "tripConstraints",
+        "trip_constraints_before": "PassengerConstraint, OutsideConstraint, TransitWalk",
+        "trip_constraints_after": expected, "already_selected": False}
+    # A second run (a re-prepare of an already selected config) changes nothing and says so.
+    prepare._select_loop_mode_rule(_Context(), "config.xml")
+    again = json.loads((stage / L.REPORT_FILE_NAME).read_text(encoding="utf-8"))
+    assert again["already_selected"] is True
+    assert again["trip_constraints_before"] == again["trip_constraints_after"] == expected
 
 
 @pytest.mark.parametrize("cordon, freight, expected", [

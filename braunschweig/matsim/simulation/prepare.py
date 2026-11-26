@@ -493,7 +493,9 @@ def _select_loop_mode_rule(context, config_name):
     # Resolved exactly as plan_check.run and matsim.runtime.eqasim.run do.
     jar_path = "%s/%s" % (context.path("matsim.runtime.eqasim"), context.stage("matsim.runtime.eqasim"))
     loop_mode_rule.require_constraint_in_jar(jar_path)
-    changed = loop_mode_rule.apply(Path(context.path()) / config_name)
+    config_path = Path(context.path()) / config_name
+    changed = loop_mode_rule.apply(config_path)
+    loop_mode_rule.write_report(Path(context.path()) / loop_mode_rule.REPORT_FILE_NAME, config_path, jar_path, changed)
     if changed is None:
         log.info("[loop mode rule] %s already selected in %s of %s: unchanged", loop_mode_rule.CONSTRAINT_NAME,
                  loop_mode_rule.TRIP_CONSTRAINTS_PARAM, config_name)

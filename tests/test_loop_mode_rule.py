@@ -30,6 +30,8 @@ def _write(tmp_path, value="VehicleContinuity,SubtourMode", newline="\n"):
     ("VehicleContinuity, SubtourMode", "VehicleContinuity, SubtourMode, SameFacilityLeisureNonMotorised"),
     ("VehicleContinuity", "VehicleContinuity,SameFacilityLeisureNonMotorised"),
     ("", "SameFacilityLeisureNonMotorised"),
+    ("PassengerConstraint, OutsideConstraint, TransitWalk",
+     "PassengerConstraint, OutsideConstraint, TransitWalk, SameFacilityLeisureNonMotorised"),
 ])
 def test_apply_adds_the_constraint_once_and_touches_nothing_else(tmp_path, old, expected):
     path = _write(tmp_path, old)
