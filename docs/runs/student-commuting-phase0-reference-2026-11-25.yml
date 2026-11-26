@@ -7,7 +7,7 @@ repository:
     The SrV tables carry code state fbb54d76 and are committed in 0dccb364. The four MiD tables and the three
     decision tables were re-run on 2026-11-26 at code state f8c79e4d, after the MiD behaviour table started to read a
     diary the popsim seed replaces (only rbW legs; only a leading arrive-home leg) as an unknown day, like a missing
-    diary. This manifest is a MEASUREMENT over raw survey microdata
+    diary; they are committed in 172fd501. This manifest is a MEASUREMENT over raw survey microdata
     and published tables, not a pipeline run. It replaces the first extraction of the same day (code state f99b0658,
     see the git history of this file), which kept MiD reporting days that fell on a public holiday.
 configuration:
@@ -49,21 +49,21 @@ pipeline:
     1b6fb56b are in the git history of this file). All exited 0; the log is extraction_logs.txt. The re-run changed
     the data rows of the MiD behaviour table and of student_control_build_rule.csv only; the other three MiD tables,
     student_level_gate.csv and student_comparison_only.csv changed in their header lines only.
-    sha256 of the committed blobs (git show 0dccb364:<path> for the survey tables, git show 9be9912f:<path> for the
-    decision tables and the log) -
+    sha256 of the committed blobs (git show 0dccb364:<path> for the SrV tables, git show 172fd501:<path> for the
+    MiD tables, the decision tables and the log) -
     srv2023_student_behaviour.csv 1171934f0154bb0196b5f42ee6158170bb446c7a552abdad6ff07fab632d5674,
     srv2023_student_comparison.csv 3063cc8489fbf180bf650ed483782b96f6941dd1ab09a6813d3dce9298a11fac,
     srv2023_student_education_distance_by_kreis.csv ae1cace657c90ca2c0b113e02edd73debc50efc29060ee09fca97347aba75e23,
     srv2023_student_share_by_kreis.csv addfa1a3e70ca2d42021f410c2775b21955759fd5863141884534bf09fb32934,
     srv2023_education_status_by_age.csv f9e8eb68aa69a1fb659e640e390fe439b65be35dcf38cb0a7ff44d7c15eb7385,
-    mid2023_student_behaviour_seed.csv cbce5c475a1206a44e26e06125ffd04db93926d7c137fbc7272b2af640c72a5b,
-    mid2023_student_education_distance_mode.csv 1a2e9e6da9c9cf0bf68dfb4d99337d0254a6121d6db84ca6ad9e16f514172761,
-    mid2023_student_share_20_29_by_land.csv 3cc0c28d5ab10bbb96c104a8b61fe549c1f758ae194480563425429008f9a2f7,
-    mid2023_student_status_by_age.csv 3d722079715f038f3896a9878ce5784c803c96b5706f0ee744e02b13074c8c31,
-    student_control_build_rule.csv 35b6476180019e10533489d1a46dff701628ed79b2d9b2f1c6a761ec4684884c,
-    student_level_gate.csv 863f5671d4f6eb17c61905744d06722e379112186772b29a47257194507227ad,
-    student_comparison_only.csv 85758113c63e0f3eec8584755c945e2776da4ab2359b00a77e27d40e92593a8c,
-    extraction_logs.txt e765e1c8a2a1492e960b5ca20266bf2272d67ea1490395c232205ea73bee63f7.
+    mid2023_student_behaviour_seed.csv 3b291472447347f2fb905eb6aa4e9673751ecad6fc173529b0bf366afbc8c521,
+    mid2023_student_education_distance_mode.csv 73e8a2efc0d9b8725f10a789f500394e0ef5bb4b2b4cffb29c08150dfc6b958d,
+    mid2023_student_share_20_29_by_land.csv 491150d7dda6fabf872c1d1a7472c98602a7a1a4dd65bc25c92b0c801e54a8c2,
+    mid2023_student_status_by_age.csv ba12a3dcb15f1472608095a219c5773fb502bdb07cf4d9c93e55a39856a1532c,
+    student_control_build_rule.csv 13411b47477929463d14e7da3b28860849ebad3ce309ed0e122521f22c1902d1,
+    student_level_gate.csv 256d7fb2ebf3d910c22cefeea890813a3ba181b75beac2e6e31ae9a2b7d72dfa,
+    student_comparison_only.csv 0bb571114693ddafac309af946fbfbe690504b341833b7ee05aeea1b251c1c07,
+    extraction_logs.txt fa1d3947c1b705146fb66b5d2371adb0f7a42c1bbf05913c84035ccea481c2a6.
 classification:
 - smoke
 status:
