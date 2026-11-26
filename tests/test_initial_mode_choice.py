@@ -14,6 +14,7 @@ import matsim.runtime.eqasim as eqasim
 from braunschweig.matsim import initial_mode_choice as I
 from braunschweig.matsim.simulation import plan_check as C
 from braunschweig.matsim.simulation import prepare
+from braunschweig.matsim.simulation.loop_mode_rule import KEY_ENABLED as LOOP_KEY
 
 
 def test_arguments_mirror_the_eqasim_france_call_on_the_final_scenario():
@@ -320,7 +321,8 @@ def test_execute_runs_the_mode_choice_after_the_parking_inputs_and_before_the_pl
     class _Context:
         _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
                    prepare.PARKING_KEY: True, C.KEY_ENABLED: True, I.KEY_ENABLED: enabled,
-                   "braunschweig.frozen_pt_walk_lift.enabled": False}
+                   "braunschweig.frozen_pt_walk_lift.enabled": False,
+                   LOOP_KEY: False}
 
         def config(self, key):
             return self._values[key]

@@ -4,6 +4,8 @@ import pytest
 from braunschweig.matsim import initial_mode_choice as I
 from braunschweig.matsim.simulation import plan_check as C
 from braunschweig.matsim.simulation import prepare
+from braunschweig.matsim.simulation import loop_mode_rule as L
+from braunschweig.matsim.simulation.loop_mode_rule import KEY_ENABLED as LOOP_KEY
 
 
 class _RecordingContext:
@@ -77,7 +79,8 @@ def test_execute_runs_the_plan_check_last_and_only_when_enabled(monkeypatch):
             self._values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": True,
                             prepare.PARKING_KEY: False, C.KEY_ENABLED: enabled,
                             I.KEY_ENABLED: False,
-                   "braunschweig.frozen_pt_walk_lift.enabled": False}
+                   "braunschweig.frozen_pt_walk_lift.enabled": False,
+                   LOOP_KEY: False}
 
         def config(self, key):
             return self._values[key]
@@ -102,7 +105,8 @@ def test_execute_writes_the_parking_inputs_before_the_plan_check(monkeypatch):
     class _Context:
         _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
                    prepare.PARKING_KEY: True, C.KEY_ENABLED: True, I.KEY_ENABLED: False,
-                   "braunschweig.frozen_pt_walk_lift.enabled": False}
+                   "braunschweig.frozen_pt_walk_lift.enabled": False,
+                   LOOP_KEY: False}
 
         def config(self, key):
             return self._values[key]
@@ -124,7 +128,8 @@ def test_execute_skips_the_walk_fallback_stamp_guard_when_the_plan_check_is_disa
     class _Context:
         _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
                    prepare.PARKING_KEY: False, C.KEY_ENABLED: False, I.KEY_ENABLED: False,
-                   "braunschweig.frozen_pt_walk_lift.enabled": False}
+                   "braunschweig.frozen_pt_walk_lift.enabled": False,
+                   LOOP_KEY: False}
 
         def config(self, key):
             return self._values[key]
@@ -154,7 +159,8 @@ def test_execute_runs_the_frozen_pt_walk_lift_after_the_cut_and_before_the_plan_
         def __init__(self, enabled):
             self._values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": True, "freight_enabled": False,
                             prepare.PARKING_KEY: False, C.KEY_ENABLED: True, I.KEY_ENABLED: False,
-                            "braunschweig.frozen_pt_walk_lift.enabled": enabled}
+                            "braunschweig.frozen_pt_walk_lift.enabled": enabled,
+                            LOOP_KEY: False}
 
         def config(self, key):
             return self._values[key]
@@ -164,6 +170,54 @@ def test_execute_runs_the_frozen_pt_walk_lift_after_the_cut_and_before_the_plan_
     seen.clear()
     assert prepare.execute(_Context(False)) == "cut_config.xml"
     assert seen == ["cut", ("check", "cut_config.xml", None)]
+
+
+def test_configure_declares_the_loop_mode_rule_switch_off_by_default():
+    context = _RecordingContext({"cordon_enabled": False, "freight_enabled": False})
+    prepare.configure(context)
+    assert context.calls[LOOP_KEY] is False
+    assert L in prepare._HELPER_MODULES
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_execute_selects_the_loop_mode_rule_in_the_final_config_before_the_initial_mode_choice(
+        monkeypatch, tmp_path, enabled):
+    """On: jar check, then the config edit, then the mode choice. Off: no jar read, no edit (#679, ADR-0207)."""
+    seen = []
+    monkeypatch.setattr(prepare.delegate, "execute", lambda context: "uncut_config.xml")
+    monkeypatch.setattr(prepare, "_attach_vrb_tariff_zones", lambda context: None)
+    monkeypatch.setattr(prepare, "_summarise_final_schedule", lambda context: {})
+    monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result, summary: seen.append("fares"))
+    monkeypatch.setattr(prepare, "_write_parking_inputs", lambda context, result: seen.append("parking"))
+    monkeypatch.setattr(L, "require_constraint_in_jar", lambda jar: seen.append(("jar", jar)))
+    monkeypatch.setattr(L, "apply", lambda config: seen.append(("apply", str(config))) or ("a", "a,b"))
+    monkeypatch.setattr(I, "run", lambda context, result, excluded: seen.append("initial") or {})
+    monkeypatch.setattr(C, "run", lambda context, result: seen.append("check"))
+
+    class _Context:
+        _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
+                   prepare.PARKING_KEY: True, C.KEY_ENABLED: True, I.KEY_ENABLED: True,
+                   "braunschweig.frozen_pt_walk_lift.enabled": False, LOOP_KEY: enabled}
+
+        def config(self, key):
+            return self._values[key]
+
+        def path(self, stage=None):
+            assert enabled, "the stage path is only needed to find the jar and the config when the rule is on"
+            return str(tmp_path / (stage or "prepare"))
+
+        def stage(self, name):
+            assert enabled, "the jar is not even resolved when the rule is off"
+            assert name == "matsim.runtime.eqasim"
+            return "eqasim.jar"
+
+    assert prepare.execute(_Context()) == "uncut_config.xml"
+    if enabled:
+        jar = "%s/%s" % (tmp_path / "matsim.runtime.eqasim", "eqasim.jar")
+        config = str(tmp_path / "prepare" / "uncut_config.xml")
+        assert seen == ["fares", "parking", ("jar", jar), ("apply", config), "initial", "check"]
+    else:
+        assert seen == ["fares", "parking", "initial", "check"]
 
 
 @pytest.mark.parametrize("cordon, freight, expected", [

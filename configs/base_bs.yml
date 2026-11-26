@@ -1078,6 +1078,12 @@ config:
   # travel times, before iteration 0 (ADR-0178, #542). It replaces the first-replanning strategy of ADR-0155.
   # The key braunschweig.initial_mode_choice.weight is retired and refused.
   braunschweig.initial_mode_choice.enabled: true
+  # Same-facility leisure trips (strolls placed at their start and the way home after them, #679) may only be walk
+  # or bicycle in the mode choice: the prepare stage adds the trip constraint SameFacilityLeisureNonMotorised to the
+  # DiscreteModeChoice tripConstraints of the final config before the standalone mode choice. Needs an eqasim-java-bs
+  # jar with SameFacilityLeisureTripConstraint (the stage refuses a jar without it); false = the config as before
+  # (ADR-0207, #679).
+  braunschweig.mode_choice.loop_trips_non_motorised: true
   # WARN when more than this share of the external points miss the distance band, or of the
   # work/education legs fall back to the donor's reported distance (the primary method is then suspect).
   braunschweig.portal.fallback_warn_share: 0.1
