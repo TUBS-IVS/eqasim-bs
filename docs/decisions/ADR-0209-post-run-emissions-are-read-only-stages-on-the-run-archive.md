@@ -125,13 +125,63 @@
 
 ## Open points (owner)
 
-1. HBEFA licence and version (the contrib documents 3.1 and 4.1; 5.x is unproven with it).
+1. DECIDED (owner, 2026-11-26): HBEFA 5.1; the licence is pending. See "Amendment 2026-11-26".
 2. `heavy_truck` without cold start: the tool looks up cold factors for every non-excluded vehicle category and
    stops when none is found. If the real cold tables hold no heavy-goods-vehicle rows, the assumption needs a
-   mechanism; the pre-check stops before the Java run and names the type. UNVERIFIED on real tables.
+   mechanism; the pre-check stops before the Java run and names the type. UNVERIFIED on real tables. New with
+   the 5.1 decision: HBEFA has heavy-vehicle cold-start factors from 5.1 on, so "none" would discard data the
+   licensed tables hold; the owner has not decided yet (amendment, A3).
 3. Confirmation of the road-type method (D6). The model network's free speeds are not legal limits everywhere, so
-   on many links the speed band comes from the clamp.
-4. `StopAndGoFraction` against `AverageSpeed` (D8); to be compared on real tables.
+   on many links the speed band comes from the clamp. Measured cause: amendment, A4.
+4. `StopAndGoFraction` against `AverageSpeed` (D8); to be compared on real tables. Neither method is validated
+   against measured emissions (amendment, A5).
+
+## Amendment 2026-11-26: version decision and findings of the method review
+
+Read-only review of the contrib source (matsim-libs `main` 5499e50b), the HBEFA documents and the literature.
+No code changed. No emission value exists; nothing below is a validation.
+
+- **A1. Version (owner): HBEFA 5.1.** Facts behind it: the 5.1 application offers only 4.2 besides 5.1, "for
+  comparison or pure informative purposes"; versions up to 4.x are Access applications for which the HBEFA site
+  refers to INFRAS (`HBEFA51_help_en.pdf`, 20 Oct 2025; hbefa.net/en/software). Consequence: a 5.1 export does
+  not fit the contrib's reader as it is (D3). The help file lists other column names (`Pollutant`, `Vehicle
+  category`, no `EFA_weighted`), cold-start factors on a continuous grid of parking time, temperature and trip
+  distance instead of the 4.x classes, and does not document the separator, the database column names or the
+  text form of a traffic situation. The conversion belongs to `braunschweig.data.hbefa` (Python) and can only
+  be specified on a licensed export; slice 8 starts as a format test. UNVERIFIED: that the reader of the pinned
+  jar accepts converted 5.1 tables.
+- **A2. Exports must be weighted.** Unweighted sub-segment factors are valid for 50,000 km cumulative mileage
+  and 20 °C, without the mileage correction (HBEFA help files 4.1 and 5.1, update documentation 5.1). A table by
+  emission concept must therefore be a weighted export for the reference year. The reference year is an open
+  owner choice.
+- **A3. Heavy-vehicle cold start exists from 5.1 on** ("HBEFA provides cold start emissions for HDV for the
+  first time in the version 5.1", update documentation v1.1; 4.1: passenger cars and light duty vehicles only;
+  the 4.2 update documentation is silent). The contrib already looks the rows up, so no Java change is needed
+  to use them.
+- **A4. The network carries no speed limit.** No link of the 100 % network (`prod100_20260925`) has
+  `allowed_speed` or an OSM `maxspeed` attribute (attribute names counted on the archive network; D6 report:
+  `speed_from_allowed_speed_links` 0 of 214,807). pt2matsim 22.3 sets the freespeed to the OSM `maxspeed` tag
+  when one exists and to a class default otherwise (residential 15 km/h, tertiary 25 km/h; defaults read on
+  `master`), and does not keep the tag. A low class default distorts the level of service under both
+  computation methods. `osm:way:id` is on every link, so a side table from the OSM extract is possible without
+  changing the network. NOT measured: how many links carry a class default.
+- **A5. Evidence on the two methods.** `StopAndGoFraction` rests on one test road (304 m, NOx, Euro 3,
+  compared with the model PHEM, figures only; Hülsmann et al. 2011, VSP working paper 10-15). `AverageSpeed`
+  became the contrib default in commit 1630a309cd (2020) without a documented reason; the 2011 "average speed"
+  variant interpolated between levels of service, today's picks one. No comparison of the two after 2011 and no
+  MATSim study validated against measured emissions were found. D8 (no default) stands.
+- **A6. Own Java code, reason corrected.** The rejected alternative above holds for a class INSIDE the fork
+  (`eqasim-java-bs`), whose source digest decides the pipeline jar. A separate jar with own classes only,
+  compiled against the pipeline jar, would not touch that digest. It stays rejected for now for other reasons:
+  the workflows and `environment.yml` provide no Java, so the code would run on neither CI platform while the
+  port is tested on both; it could replace the road-type port only, because the contrib's factor lookup is
+  private (`WarmEmissionAnalysisModule.getEf`); and a second mapping after the UBA guideline (UBA Texte
+  108/2025) is our own method in any case. A separate jar is the vehicle if a Java-only need arises.
+- **A7. Follow-up work, not implemented.** (a) Prove the port equal to the contrib's `OsmHbefaMapping` on every
+  link of the 100 % network, per jar version, and bind the proof to the jar: the stage refuses a jar without
+  one. (b) Long term, what belongs in Java goes to matsim-libs (a road-type option in `AirPollutionAnalysis`
+  reading a named OSM attribute, lookup statistics, a 5.1 reader), which would shrink the three replay modules
+  without an own build.
 
 ## Evidence
 
