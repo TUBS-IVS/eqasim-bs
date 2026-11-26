@@ -1,0 +1,185 @@
+1:copied unchanged: config da0786e43a3b495e50ea2b82f47bca142f55b9465616371857c42d045c2580bd, population b0dbd34f066700aa9d3b033ce0523da892a9d11636fcbad67c6de07f2bdcad50
+2:start 2026-11-26T15:13:21+01:00; threads 32, Xmx 56G;  15:13:21 up 24 days,  1:08,  1 user,  load average: 1,23, 0,95, 1,21
+5:2026-11-26 15:13:55,705 INFO braunschweig.matsim.simulation.mode_choice_reach [mode_choice_reach] the eqasim jar ~/i678_replay3/eqasim-java-bs/braunschweig/target/braunschweig-2.3.1.jar contains the border tour vehicle constraint
+6:2026-11-26 15:14:29,395 INFO i678_reach_replay [replay] step jar_check done in 34 s; persons in the population file: 1261590
+7:2026-11-26 15:14:29,403 INFO braunschweig.matsim.simulation.mode_choice_reach [mode_choice_reach] maximumLength: 6 -> 11 in ~/i678_replay3/stage/braunschweig_100pct_prod20261031_config.xml
+8:2026-11-26 15:15:02,245 INFO i678_reach_replay [replay] step mode_choice_reach_apply done in 33 s; persons in the population file: 1261590
+9:2026-11-26 15:15:35,166 INFO braunschweig.matsim.simulation.mode_choice_reach [mode_choice_reach] tourFinder: ActivityBased -> IsolatedOutsideTrips in ~/i678_replay3/stage/braunschweig_100pct_prod20261031_config_initial_mode_choice.xml
+10:2026-11-26 15:15:35,166 INFO braunschweig.matsim.simulation.mode_choice_reach [mode_choice_reach] tourConstraints: FromTripBased, VehicleContinuity -> FromTripBased, BorderTourVehicleContinuity in ~/i678_replay3/stage/braunschweig_100pct_prod20261031_config_initial_mode_choice.xml
+11:2026-11-26 15:15:35,166 INFO braunschweig.matsim.initial_mode_choice [initial mode choice] the runner uses the config file braunschweig_100pct_prod20261031_config_initial_mode_choice.xml; reach settings: isolate_outside_trips=True, max_tour_length=11
+12:2026-11-26 15:15:35,190 INFO braunschweig.java_heap [resources] java_memory 56G -> 56G (memory budget 86.28 GB (psutil) - driver RSS 0.12 GB = 86.16 GB for the JVM; configured 56G fits)
+236:2026-11-26T15:26:53,348  INFO StandaloneModeChoicePerformer:91 Excluded subpopulations: 56364 of 1261590 persons (4.47 %) keep their plan unchanged: {freight=56364, incommuter=0, student_incommuter=0}
+237:2026-11-26T15:26:53,350  WARN StandaloneModeChoicePerformer:95 Excluded subpopulation incommuter matches no person
+238:2026-11-26T15:26:53,351  WARN StandaloneModeChoicePerformer:95 Excluded subpopulation student_incommuter matches no person
+239:2026-11-26T15:26:53,357  INFO StandaloneModeChoicePerformer:150 Splitting 1205226 plans into 1206 chunks (1,000 each) over 32 threads
+1269:2026-11-26T15:27:09,071  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 2 of 9 (22.22 %)
+1271:2026-11-26T15:27:11,082  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 4 of 168 (2.38 %)
+1274:2026-11-26T15:27:13,357  INFO ParallelProgress:92 [Standalone mode choice, 3877/1205226, (0.32%)]
+1276:2026-11-26T15:27:13,540  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 9 of 424 (2.12 %)
+1280:2026-11-26T15:27:20,580  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 16 of 1018 (1.57 %)
+1283:2026-11-26T15:27:23,358  INFO ParallelProgress:92 [Standalone mode choice, 9938/1205226, (0.82%), RT:10s, 993.80it/s, ~20:02]
+1284:2026-11-26T15:27:33,362  INFO ParallelProgress:92 [Standalone mode choice, 16435/1205226, (1.36%), RT:20s, 821.80it/s, ~24:06]
+1285:2026-11-26T15:27:34,342  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 33 of 2041 (1.62 %)
+1291:2026-11-26T15:27:43,364  INFO ParallelProgress:92 [Standalone mode choice, 23874/1205226, (1.98%), RT:30s, 795.80it/s, ~24:44]
+1305:2026-11-26T15:27:53,365  INFO ParallelProgress:92 [Standalone mode choice, 32967/1205226, (2.74%), RT:40s, 824.20it/s, ~23:42]
+1317:2026-11-26T15:28:03,372  INFO ParallelProgress:92 [Standalone mode choice, 42446/1205226, (3.52%), RT:50s, 848.96it/s, ~22:49]
+1325:2026-11-26T15:28:11,174  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 68 of 6465 (1.05 %)
+1328:2026-11-26T15:28:13,373  INFO ParallelProgress:92 [Standalone mode choice, 51914/1205226, (4.31%), RT:01:00, 865.23it/s, ~22:12]
+1333:2026-11-26T15:28:23,375  INFO ParallelProgress:92 [Standalone mode choice, 60131/1205226, (4.99%), RT:01:10, 859.07it/s, ~22:12]
+1346:2026-11-26T15:28:33,376  INFO ParallelProgress:92 [Standalone mode choice, 69528/1205226, (5.77%), RT:01:20, 869.10it/s, ~21:46]
+1356:2026-11-26T15:28:43,378  INFO ParallelProgress:92 [Standalone mode choice, 77716/1205226, (6.45%), RT:01:30, 863.51it/s, ~21:45]
+1368:2026-11-26T15:28:53,386  INFO ParallelProgress:92 [Standalone mode choice, 86231/1205226, (7.15%), RT:01:40, 862.34it/s, ~21:37]
+1373:2026-11-26T15:29:02,792  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 131 of 11957 (1.10 %)
+1376:2026-11-26T15:29:03,387  INFO ParallelProgress:92 [Standalone mode choice, 95275/1205226, (7.91%), RT:01:50, 866.14it/s, ~21:21]
+1384:2026-11-26T15:29:13,388  INFO ParallelProgress:92 [Standalone mode choice, 104082/1205226, (8.64%), RT:02:00, 867.36it/s, ~21:09]
+1398:2026-11-26T15:29:23,389  INFO ParallelProgress:92 [Standalone mode choice, 112452/1205226, (9.33%), RT:02:10, 865.02it/s, ~21:03]
+1416:2026-11-26T15:29:33,390  INFO ParallelProgress:92 [Standalone mode choice, 122199/1205226, (10.14%), RT:02:20, 872.85it/s, ~20:40]
+1429:2026-11-26T15:29:43,391  INFO ParallelProgress:92 [Standalone mode choice, 133705/1205226, (11.09%), RT:02:30, 891.37it/s, ~20:02]
+1430:2026-11-26T15:29:46,077  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 256 of 27036 (0.95 %)
+1441:2026-11-26T15:29:53,394  INFO ParallelProgress:92 [Standalone mode choice, 144175/1205226, (11.96%), RT:02:40, 901.09it/s, ~19:37]
+1476:2026-11-26T15:30:03,395  INFO ParallelProgress:92 [Standalone mode choice, 155046/1205226, (12.86%), RT:02:50, 912.04it/s, ~19:11]
+1503:2026-11-26T15:30:13,397  INFO ParallelProgress:92 [Standalone mode choice, 166339/1205226, (13.80%), RT:03:00, 924.11it/s, ~18:44]
+1518:2026-11-26T15:30:23,398  INFO ParallelProgress:92 [Standalone mode choice, 176909/1205226, (14.68%), RT:03:10, 931.11it/s, ~18:24]
+1539:2026-11-26T15:30:33,399  INFO ParallelProgress:92 [Standalone mode choice, 186488/1205226, (15.47%), RT:03:20, 932.44it/s, ~18:12]
+1562:2026-11-26T15:30:43,400  INFO ParallelProgress:92 [Standalone mode choice, 197502/1205226, (16.39%), RT:03:30, 940.49it/s, ~17:51]
+1585:2026-11-26T15:30:53,401  INFO ParallelProgress:92 [Standalone mode choice, 210334/1205226, (17.45%), RT:03:40, 956.07it/s, ~17:20]
+1603:2026-11-26T15:31:03,402  INFO ParallelProgress:92 [Standalone mode choice, 221685/1205226, (18.39%), RT:03:50, 963.85it/s, ~17:00]
+1615:2026-11-26T15:31:13,403  INFO ParallelProgress:92 [Standalone mode choice, 232322/1205226, (19.28%), RT:04:00, 968.01it/s, ~16:45]
+1626:2026-11-26T15:31:23,405  INFO ParallelProgress:92 [Standalone mode choice, 243990/1205226, (20.24%), RT:04:10, 975.97it/s, ~16:24]
+1637:2026-11-26T15:31:33,407  INFO ParallelProgress:92 [Standalone mode choice, 256212/1205226, (21.26%), RT:04:20, 985.43it/s, ~16:03]
+1657:2026-11-26T15:31:43,409  INFO ParallelProgress:92 [Standalone mode choice, 269148/1205226, (22.33%), RT:04:30, 996.85it/s, ~15:39]
+1666:2026-11-26T15:31:53,410  INFO ParallelProgress:92 [Standalone mode choice, 277919/1205226, (23.06%), RT:04:40, 992.58it/s, ~15:34]
+1674:2026-11-26T15:32:03,412  INFO ParallelProgress:92 [Standalone mode choice, 287092/1205226, (23.82%), RT:04:50, 989.98it/s, ~15:27]
+1681:2026-11-26T15:32:13,413  INFO ParallelProgress:92 [Standalone mode choice, 295172/1205226, (24.49%), RT:05:00, 983.91it/s, ~15:24]
+1686:2026-11-26T15:32:16,818  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 513 of 167696 (0.31 %)
+1693:2026-11-26T15:32:23,417  INFO ParallelProgress:92 [Standalone mode choice, 303378/1205226, (25.17%), RT:05:10, 978.64it/s, ~15:21]
+1707:2026-11-26T15:32:33,418  INFO ParallelProgress:92 [Standalone mode choice, 313084/1205226, (25.98%), RT:05:20, 978.39it/s, ~15:11]
+1714:2026-11-26T15:32:43,419  INFO ParallelProgress:92 [Standalone mode choice, 322916/1205226, (26.79%), RT:05:30, 978.54it/s, ~15:01]
+1726:2026-11-26T15:32:53,420  INFO ParallelProgress:92 [Standalone mode choice, 333978/1205226, (27.71%), RT:05:40, 982.29it/s, ~14:46]
+1743:2026-11-26T15:33:03,421  INFO ParallelProgress:92 [Standalone mode choice, 344699/1205226, (28.60%), RT:05:50, 984.85it/s, ~14:33]
+1753:2026-11-26T15:33:13,422  INFO ParallelProgress:92 [Standalone mode choice, 355967/1205226, (29.54%), RT:06:00, 988.80it/s, ~14:18]
+1760:2026-11-26T15:33:23,423  INFO ParallelProgress:92 [Standalone mode choice, 364833/1205226, (30.27%), RT:06:10, 986.04it/s, ~14:12]
+1772:2026-11-26T15:33:33,424  INFO ParallelProgress:92 [Standalone mode choice, 375116/1205226, (31.12%), RT:06:20, 987.15it/s, ~14:00]
+1785:2026-11-26T15:33:43,425  INFO ParallelProgress:92 [Standalone mode choice, 385673/1205226, (32.00%), RT:06:30, 988.91it/s, ~13:48]
+1800:2026-11-26T15:33:53,426  INFO ParallelProgress:92 [Standalone mode choice, 396921/1205226, (32.93%), RT:06:40, 992.30it/s, ~13:34]
+1811:2026-11-26T15:34:03,427  INFO ParallelProgress:92 [Standalone mode choice, 406850/1205226, (33.76%), RT:06:50, 992.32it/s, ~13:24]
+1822:2026-11-26T15:34:13,428  INFO ParallelProgress:92 [Standalone mode choice, 416801/1205226, (34.58%), RT:07:00, 992.38it/s, ~13:14]
+1832:2026-11-26T15:34:23,429  INFO ParallelProgress:92 [Standalone mode choice, 425606/1205226, (35.31%), RT:07:10, 989.78it/s, ~13:07]
+1841:2026-11-26T15:34:33,430  INFO ParallelProgress:92 [Standalone mode choice, 434993/1205226, (36.09%), RT:07:20, 988.62it/s, ~12:59]
+1843:2026-11-26T15:34:34,740  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 1025 of 188682 (0.54 %)
+1854:2026-11-26T15:34:43,431  INFO ParallelProgress:92 [Standalone mode choice, 444850/1205226, (36.91%), RT:07:30, 988.56it/s, ~12:49]
+1863:2026-11-26T15:34:53,432  INFO ParallelProgress:92 [Standalone mode choice, 454760/1205226, (37.73%), RT:07:40, 988.61it/s, ~12:39]
+1876:2026-11-26T15:35:03,433  INFO ParallelProgress:92 [Standalone mode choice, 465013/1205226, (38.58%), RT:07:50, 989.39it/s, ~12:28]
+1887:2026-11-26T15:35:13,434  INFO ParallelProgress:92 [Standalone mode choice, 474298/1205226, (39.35%), RT:08:00, 988.12it/s, ~12:19]
+1899:2026-11-26T15:35:23,435  INFO ParallelProgress:92 [Standalone mode choice, 484322/1205226, (40.19%), RT:08:10, 988.41it/s, ~12:09]
+1905:2026-11-26T15:35:33,436  INFO ParallelProgress:92 [Standalone mode choice, 493274/1205226, (40.93%), RT:08:20, 986.55it/s, ~12:01]
+1917:2026-11-26T15:35:43,436  INFO ParallelProgress:92 [Standalone mode choice, 502255/1205226, (41.67%), RT:08:30, 984.81it/s, ~11:53]
+1929:2026-11-26T15:35:53,437  INFO ParallelProgress:92 [Standalone mode choice, 512215/1205226, (42.50%), RT:08:40, 985.03it/s, ~11:43]
+1939:2026-11-26T15:36:03,438  INFO ParallelProgress:92 [Standalone mode choice, 522840/1205226, (43.38%), RT:08:50, 986.49it/s, ~11:31]
+1955:2026-11-26T15:36:13,439  INFO ParallelProgress:92 [Standalone mode choice, 533908/1205226, (44.30%), RT:09:00, 988.72it/s, ~11:18]
+1964:2026-11-26T15:36:23,440  INFO ParallelProgress:92 [Standalone mode choice, 544977/1205226, (45.22%), RT:09:10, 990.87it/s, ~11:06]
+1978:2026-11-26T15:36:33,441  INFO ParallelProgress:92 [Standalone mode choice, 556087/1205226, (46.14%), RT:09:20, 993.01it/s, ~10:53]
+1989:2026-11-26T15:36:43,442  INFO ParallelProgress:92 [Standalone mode choice, 567203/1205226, (47.06%), RT:09:30, 995.09it/s, ~10:41]
+2003:2026-11-26T15:36:53,442  INFO ParallelProgress:92 [Standalone mode choice, 577592/1205226, (47.92%), RT:09:40, 995.85it/s, ~10:30]
+2010:2026-11-26T15:37:03,476  INFO ParallelProgress:92 [Standalone mode choice, 587214/1205226, (48.72%), RT:09:50, 995.28it/s, ~10:20]
+2024:2026-11-26T15:37:13,477  INFO ParallelProgress:92 [Standalone mode choice, 596713/1205226, (49.51%), RT:10:00, 994.52it/s, ~10:11]
+2031:2026-11-26T15:37:23,478  INFO ParallelProgress:92 [Standalone mode choice, 606051/1205226, (50.29%), RT:10:10, 993.53it/s, ~10:03]
+2043:2026-11-26T15:37:33,479  INFO ParallelProgress:92 [Standalone mode choice, 614789/1205226, (51.01%), RT:10:20, 991.60it/s, ~09:55]
+2051:2026-11-26T15:37:43,480  INFO ParallelProgress:92 [Standalone mode choice, 623591/1205226, (51.74%), RT:10:30, 989.83it/s, ~09:47]
+2066:2026-11-26T15:37:53,480  INFO ParallelProgress:92 [Standalone mode choice, 633960/1205226, (52.60%), RT:10:40, 990.56it/s, ~09:36]
+2074:2026-11-26T15:38:03,481  INFO ParallelProgress:92 [Standalone mode choice, 643097/1205226, (53.36%), RT:10:50, 989.38it/s, ~09:28]
+2083:2026-11-26T15:38:13,482  INFO ParallelProgress:92 [Standalone mode choice, 651210/1205226, (54.03%), RT:11:00, 986.68it/s, ~09:21]
+2096:2026-11-26T15:38:23,483  INFO ParallelProgress:92 [Standalone mode choice, 660596/1205226, (54.81%), RT:11:10, 985.96it/s, ~09:12]
+2102:2026-11-26T15:38:33,484  INFO ParallelProgress:92 [Standalone mode choice, 667078/1205226, (55.35%), RT:11:20, 981.00it/s, ~09:08]
+2111:2026-11-26T15:38:43,485  INFO ParallelProgress:92 [Standalone mode choice, 672365/1205226, (55.79%), RT:11:30, 974.44it/s, ~09:06]
+2118:2026-11-26T15:38:53,490  INFO ParallelProgress:92 [Standalone mode choice, 679184/1205226, (56.35%), RT:11:40, 970.26it/s, ~09:02]
+2123:2026-11-26T15:39:03,492  INFO ParallelProgress:92 [Standalone mode choice, 685407/1205226, (56.87%), RT:11:50, 965.36it/s, ~08:58]
+2130:2026-11-26T15:39:13,493  INFO ParallelProgress:92 [Standalone mode choice, 691198/1205226, (57.35%), RT:12:00, 960.00it/s, ~08:55]
+2139:2026-11-26T15:39:23,494  INFO ParallelProgress:92 [Standalone mode choice, 697207/1205226, (57.85%), RT:12:10, 955.08it/s, ~08:51]
+2148:2026-11-26T15:39:33,495  INFO ParallelProgress:92 [Standalone mode choice, 703557/1205226, (58.38%), RT:12:20, 950.75it/s, ~08:47]
+2152:2026-11-26T15:39:43,496  INFO ParallelProgress:92 [Standalone mode choice, 708064/1205226, (58.75%), RT:12:30, 944.09it/s, ~08:46]
+2158:2026-11-26T15:39:53,497  INFO ParallelProgress:92 [Standalone mode choice, 713539/1205226, (59.20%), RT:12:40, 938.87it/s, ~08:43]
+2162:2026-11-26T15:40:03,498  INFO ParallelProgress:92 [Standalone mode choice, 716494/1205226, (59.45%), RT:12:50, 930.51it/s, ~08:45]
+2170:2026-11-26T15:40:13,499  INFO ParallelProgress:92 [Standalone mode choice, 721658/1205226, (59.88%), RT:13:00, 925.20it/s, ~08:42]
+2176:2026-11-26T15:40:23,500  INFO ParallelProgress:92 [Standalone mode choice, 726598/1205226, (60.29%), RT:13:10, 919.74it/s, ~08:40]
+2181:2026-11-26T15:40:33,501  INFO ParallelProgress:92 [Standalone mode choice, 730987/1205226, (60.65%), RT:13:20, 913.73it/s, ~08:39]
+2185:2026-11-26T15:40:43,535  INFO ParallelProgress:92 [Standalone mode choice, 736486/1205226, (61.11%), RT:13:30, 909.24it/s, ~08:35]
+2198:2026-11-26T15:40:53,536  INFO ParallelProgress:92 [Standalone mode choice, 742547/1205226, (61.61%), RT:13:40, 905.55it/s, ~08:30]
+2204:2026-11-26T15:41:03,538  INFO ParallelProgress:92 [Standalone mode choice, 748156/1205226, (62.08%), RT:13:50, 901.39it/s, ~08:27]
+2207:2026-11-26T15:41:13,540  INFO ParallelProgress:92 [Standalone mode choice, 755025/1205226, (62.65%), RT:14:00, 898.84it/s, ~08:20]
+2218:2026-11-26T15:41:23,541  INFO ParallelProgress:92 [Standalone mode choice, 761782/1205226, (63.21%), RT:14:10, 896.21it/s, ~08:14]
+2223:2026-11-26T15:41:33,542  INFO ParallelProgress:92 [Standalone mode choice, 767392/1205226, (63.67%), RT:14:20, 892.32it/s, ~08:10]
+2231:2026-11-26T15:41:43,546  INFO ParallelProgress:92 [Standalone mode choice, 773568/1205226, (64.18%), RT:14:30, 889.16it/s, ~08:05]
+2241:2026-11-26T15:41:53,547  INFO ParallelProgress:92 [Standalone mode choice, 780785/1205226, (64.78%), RT:14:40, 887.26it/s, ~07:58]
+2247:2026-11-26T15:42:03,548  INFO ParallelProgress:92 [Standalone mode choice, 786629/1205226, (65.27%), RT:14:50, 883.85it/s, ~07:53]
+2254:2026-11-26T15:42:13,550  INFO ParallelProgress:92 [Standalone mode choice, 793522/1205226, (65.84%), RT:15:00, 881.69it/s, ~07:46]
+2262:2026-11-26T15:42:23,551  INFO ParallelProgress:92 [Standalone mode choice, 800323/1205226, (66.40%), RT:15:10, 879.48it/s, ~07:40]
+2269:2026-11-26T15:42:33,552  INFO ParallelProgress:92 [Standalone mode choice, 806489/1205226, (66.92%), RT:15:20, 876.62it/s, ~07:34]
+2279:2026-11-26T15:42:43,553  INFO ParallelProgress:92 [Standalone mode choice, 813633/1205226, (67.51%), RT:15:30, 874.87it/s, ~07:27]
+2293:2026-11-26T15:42:53,554  INFO ParallelProgress:92 [Standalone mode choice, 822223/1205226, (68.22%), RT:15:40, 874.71it/s, ~07:17]
+2301:2026-11-26T15:43:03,554  INFO ParallelProgress:92 [Standalone mode choice, 832459/1205226, (69.07%), RT:15:50, 876.27it/s, ~07:05]
+2309:2026-11-26T15:43:13,555  INFO ParallelProgress:92 [Standalone mode choice, 841751/1205226, (69.84%), RT:16:00, 876.82it/s, ~06:54]
+2321:2026-11-26T15:43:23,556  INFO ParallelProgress:92 [Standalone mode choice, 850949/1205226, (70.60%), RT:16:10, 877.27it/s, ~06:43]
+2332:2026-11-26T15:43:33,558  INFO ParallelProgress:92 [Standalone mode choice, 860251/1205226, (71.38%), RT:16:20, 877.81it/s, ~06:32]
+2342:2026-11-26T15:43:43,559  INFO ParallelProgress:92 [Standalone mode choice, 869611/1205226, (72.15%), RT:16:30, 878.39it/s, ~06:22]
+2351:2026-11-26T15:43:53,560  INFO ParallelProgress:92 [Standalone mode choice, 879279/1205226, (72.96%), RT:16:40, 879.28it/s, ~06:10]
+2364:2026-11-26T15:44:03,561  INFO ParallelProgress:92 [Standalone mode choice, 889444/1205226, (73.80%), RT:16:50, 880.64it/s, ~05:58]
+2377:2026-11-26T15:44:13,605  INFO ParallelProgress:92 [Standalone mode choice, 899576/1205226, (74.64%), RT:17:00, 881.94it/s, ~05:46]
+2387:2026-11-26T15:44:23,606  INFO ParallelProgress:92 [Standalone mode choice, 911091/1205226, (75.60%), RT:17:10, 884.55it/s, ~05:32]
+2402:2026-11-26T15:44:33,607  INFO ParallelProgress:92 [Standalone mode choice, 922457/1205226, (76.54%), RT:17:20, 886.98it/s, ~05:18]
+2414:2026-11-26T15:44:43,610  INFO ParallelProgress:92 [Standalone mode choice, 933218/1205226, (77.43%), RT:17:30, 888.78it/s, ~05:06]
+2417:2026-11-26T15:44:48,435  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 2050 of 264771 (0.77 %)
+2422:2026-11-26T15:44:53,611  INFO ParallelProgress:92 [Standalone mode choice, 941560/1205226, (78.12%), RT:17:40, 888.26it/s, ~04:56]
+2435:2026-11-26T15:45:03,612  INFO ParallelProgress:92 [Standalone mode choice, 949659/1205226, (78.80%), RT:17:50, 887.53it/s, ~04:47]
+2442:2026-11-26T15:45:13,614  INFO ParallelProgress:92 [Standalone mode choice, 958849/1205226, (79.56%), RT:18:00, 887.82it/s, ~04:37]
+2457:2026-11-26T15:45:23,615  INFO ParallelProgress:92 [Standalone mode choice, 969080/1205226, (80.41%), RT:18:10, 889.07it/s, ~04:25]
+2467:2026-11-26T15:45:33,668  INFO ParallelProgress:92 [Standalone mode choice, 976387/1205226, (81.01%), RT:18:20, 887.62it/s, ~04:17]
+2473:2026-11-26T15:45:43,669  INFO ParallelProgress:92 [Standalone mode choice, 984704/1205226, (81.70%), RT:18:30, 887.12it/s, ~04:08]
+2479:2026-11-26T15:45:53,669  INFO ParallelProgress:92 [Standalone mode choice, 993491/1205226, (82.43%), RT:18:40, 887.05it/s, ~03:58]
+2492:2026-11-26T15:46:03,670  INFO ParallelProgress:92 [Standalone mode choice, 1001472/1205226, (83.09%), RT:18:50, 886.26it/s, ~03:49]
+2503:2026-11-26T15:46:13,672  INFO ParallelProgress:92 [Standalone mode choice, 1010592/1205226, (83.85%), RT:19:00, 886.48it/s, ~03:39]
+2515:2026-11-26T15:46:23,672  INFO ParallelProgress:92 [Standalone mode choice, 1019879/1205226, (84.62%), RT:19:10, 886.85it/s, ~03:28]
+2520:2026-11-26T15:46:33,673  INFO ParallelProgress:92 [Standalone mode choice, 1028312/1205226, (85.32%), RT:19:20, 886.48it/s, ~03:19]
+2532:2026-11-26T15:46:43,674  INFO ParallelProgress:92 [Standalone mode choice, 1036889/1205226, (86.03%), RT:19:30, 886.23it/s, ~03:09]
+2541:2026-11-26T15:46:53,675  INFO ParallelProgress:92 [Standalone mode choice, 1045045/1205226, (86.71%), RT:19:40, 885.63it/s, ~03:00]
+2551:2026-11-26T15:47:03,676  INFO ParallelProgress:92 [Standalone mode choice, 1054460/1205226, (87.49%), RT:19:50, 886.10it/s, ~02:50]
+2562:2026-11-26T15:47:13,677  INFO ParallelProgress:92 [Standalone mode choice, 1064324/1205226, (88.31%), RT:20:00, 886.94it/s, ~02:38]
+2575:2026-11-26T15:47:23,678  INFO ParallelProgress:92 [Standalone mode choice, 1073894/1205226, (89.10%), RT:20:10, 887.52it/s, ~02:27]
+2583:2026-11-26T15:47:33,679  INFO ParallelProgress:92 [Standalone mode choice, 1083211/1205226, (89.88%), RT:20:20, 887.88it/s, ~02:17]
+2597:2026-11-26T15:47:43,680  INFO ParallelProgress:92 [Standalone mode choice, 1092336/1205226, (90.63%), RT:20:30, 888.08it/s, ~02:07]
+2602:2026-11-26T15:47:53,681  INFO ParallelProgress:92 [Standalone mode choice, 1101427/1205226, (91.39%), RT:20:40, 888.25it/s, ~01:56]
+2615:2026-11-26T15:48:03,682  INFO ParallelProgress:92 [Standalone mode choice, 1111478/1205226, (92.22%), RT:20:50, 889.18it/s, ~01:45]
+2626:2026-11-26T15:48:13,683  INFO ParallelProgress:92 [Standalone mode choice, 1121917/1205226, (93.09%), RT:21:00, 890.41it/s, ~01:33]
+2639:2026-11-26T15:48:23,684  INFO ParallelProgress:92 [Standalone mode choice, 1131021/1205226, (93.84%), RT:21:10, 890.57it/s, ~01:23]
+2651:2026-11-26T15:48:33,685  INFO ParallelProgress:92 [Standalone mode choice, 1141303/1205226, (94.70%), RT:21:20, 891.64it/s, ~01:11]
+2662:2026-11-26T15:48:43,686  INFO ParallelProgress:92 [Standalone mode choice, 1150926/1205226, (95.49%), RT:21:30, 892.19it/s, ~01:00]
+2670:2026-11-26T15:48:53,687  INFO ParallelProgress:92 [Standalone mode choice, 1158994/1205226, (96.16%), RT:21:40, 891.53it/s, ~51s]
+2680:2026-11-26T15:49:03,688  INFO ParallelProgress:92 [Standalone mode choice, 1170183/1205226, (97.09%), RT:21:50, 893.27it/s, ~39s]
+2691:2026-11-26T15:49:13,688  INFO ParallelProgress:92 [Standalone mode choice, 1179101/1205226, (97.83%), RT:22:00, 893.26it/s, ~29s]
+2701:2026-11-26T15:49:23,689  INFO ParallelProgress:92 [Standalone mode choice, 1187426/1205226, (98.52%), RT:22:10, 892.80it/s, ~19s]
+2705:2026-11-26T15:49:33,690  INFO ParallelProgress:92 [Standalone mode choice, 1194525/1205226, (99.11%), RT:22:20, 891.44it/s, ~12s]
+2706:2026-11-26T15:49:43,691  INFO ParallelProgress:92 [Standalone mode choice, 1199337/1205226, (99.51%), RT:22:30, 888.40it/s, ~06s]
+2707:2026-11-26T15:49:53,692  INFO ParallelProgress:92 [Standalone mode choice, 1201610/1205226, (99.70%), RT:22:40, 883.54it/s, ~04s]
+2708:2026-11-26T15:50:03,693  INFO ParallelProgress:92 [Standalone mode choice, 1203303/1205226, (99.84%), RT:22:50, 878.32it/s, ~02s]
+2709:2026-11-26T15:50:13,694  INFO ParallelProgress:92 [Standalone mode choice, 1204095/1205226, (99.91%), RT:23:00, 872.53it/s, ~01s]
+2710:2026-11-26T15:50:23,695  INFO ParallelProgress:92 [Standalone mode choice, 1204699/1205226, (99.96%), RT:23:10, 866.69it/s, ~00s]
+2711:2026-11-26T15:50:32,298  INFO ParallelProgress:147 Standalone mode choice Done!
+2712:2026-11-26T15:50:32,300  INFO StandaloneModeChoicePerformer:134 Standalone mode choice: 660457 of 3919594 trips (16.85 %) are rejected by the model's filter and not re-chosen; they were kept unchanged (persons without a valid alternative are not counted)
+2728:2026-11-26 16:00:38,268 INFO braunschweig.matsim.initial_mode_choice [initial mode choice] persons 1261590 before, 1261590 after; trips 3919594; share with changed mode 42.9%; mode shares before: bicycle 10.7%, car 40.1%, car_passenger 11.3%, outside 4.8%, pt 6.6%, walk 26.5%; after: bicycle 8.1%, car 53.1%, car_passenger 11.6%, outside 4.8%, pt 5.9%, walk 16.5%; free-flow travel times; Java wall time 2593 s
+2729:2026-11-26 16:01:16,080 INFO i678_reach_replay [replay] step initial_mode_choice done in 2774 s; persons in the population file: 1261590
+2730:2026-11-26 16:20:25,512 INFO braunschweig.matsim.simulation.frozen_pt_walk_lift [frozen_pt_walk_lift] scope reach settings of the loop {'isolate_outside_trips': False, 'max_tour_length': 11}: 702487 (17.922%) of 3919594 resident trips not reached (fixed_border 698210 (17.813%), fixed_vehicle 0 (0.000%), fixed_length 4277 (0.109%)); residents skipped without legs 183533 of 1205226; all_modes True; lifted by mode pt 1212 (0.031%), walk 258 (0.007%), bicycle 5 (0.000%); by reason fixed_border 1475 (0.038%), fixed_vehicle 0 (0.000%), fixed_length 0 (0.000%); bicycle trips taken along with their tour 2 (0.000%); walk and bicycle lifted 0.007% of resident trips
+2731:2026-11-26 16:20:25,512 ERROR braunschweig.matsim.simulation.frozen_pt_walk_lift [frozen_pt_walk_lift] lifted 1212 of 45216 pt-intended trips in frozen resident tours (2.68%), of 1205226 persons; pt-intended trips realised as walk in frozen tours at any distance 4076; lifted by detection: stamp 1212, routingMode only 0; lifted by distance {'0_1km': 0, '1_2km': 0, '2_5km': 0, '5_10km': 578, '10km_plus': 634} exceeds the bound 2.00% of braunschweig.plan_check.max_frozen_pt_as_walk_share (the plan check's frozen pt-as-walk share): the router finds no pt connection for many trips of tours the mode choice never re-chooses; the lifted trips no longer count in the plan check's bounded share
+2732:2026-11-26 16:21:01,929 INFO i678_reach_replay [replay] step frozen_pt_walk_lift done in 1186 s; persons in the population file: 1261590
+2733:2026-11-26 16:21:02,516 INFO braunschweig.matsim.simulation.plan_check [plan_check] the eqasim jar ~/i678_replay3/eqasim-java-bs/braunschweig/target/braunschweig-2.3.1.jar stamps the walk fallback (walkFallbackFrom found in org/eqasim/core/scenario/routing/PlanRouter.class, org/eqasim/core/scenario/cutter/population/PlanCutter.class)
+2734:2026-11-26 16:28:13,144 INFO braunschweig.matsim.simulation.plan_check [plan_check] residents/frozen: persons 151733, activity end after the day 5 (0.00%), last arrival after the day 15 (0.01%), non-monotonic 3766 (2.48%), planned lateness over 900 s 1702 (1.12%, bounded), by lateness {'0_1min': 1737, '1_5min': 104, '5_15min': 222, '15_60min': 918, '60min_plus': 785}, lateness with a leg without trav_time (lower bound) 176, walk legs over 0, bicycle legs over 0, legs over duration 534 of 1599201, pt as walk 2864 of 44004 pt-intended trips (6.51%), over 5000 m 0 (0.00%, bounded), by distance {'0_1km': 1550, '1_2km': 681, '2_5km': 633, '5_10km': 0, '10km_plus': 0}, walk-fallback attribute without walk 0, pt as walk by departure hour {'0': 14, '1': 20, '2': 39, '3': 63, '4': 93, '5': 337, '6': 200, '7': 127, '8': 75, '9': 83, '10': 79, '11': 55, '12': 96, '13': 124, '14': 134, '15': 124, '16': 168, '17': 209, '18': 142, '19': 184, '20': 173, '21': 79, '22': 53, '23': 65, '24': 25, '25': 28, '26': 9, '27': 20, '28': 22, '29': 23, '30': 1}
+2735:2026-11-26 16:28:13,144 INFO braunschweig.matsim.simulation.plan_check [plan_check] residents/in_region: persons 1053493, activity end after the day 0 (0.00%), last arrival after the day 6 (0.00%), non-monotonic 0 (0.00%), planned lateness over 900 s 0 (0.00%), by lateness {'0_1min': 0, '1_5min': 0, '5_15min': 0, '15_60min': 0, '60min_plus': 0}, lateness with a leg without trav_time (lower bound) 0, walk legs over 1817, bicycle legs over 182, legs over duration 806 of 8181423, pt as walk 0 of 190838 pt-intended trips (0.00%), over 5000 m 0 (0.00%), by distance {'0_1km': 0, '1_2km': 0, '2_5km': 0, '5_10km': 0, '10km_plus': 0}, walk-fallback attribute without walk 0, pt as walk by departure hour {}
+2736:2026-11-26 16:28:13,145 INFO braunschweig.matsim.simulation.plan_check [plan_check] freight/frozen: persons 0, activity end after the day 0 (0.00%), last arrival after the day 0 (0.00%), non-monotonic 0 (0.00%), planned lateness over 900 s 0 (0.00%), by lateness {'0_1min': 0, '1_5min': 0, '5_15min': 0, '15_60min': 0, '60min_plus': 0}, lateness with a leg without trav_time (lower bound) 0, walk legs over 0, bicycle legs over 0, legs over duration 0 of 0, pt as walk 0 of 0 pt-intended trips (0.00%), over 5000 m 0 (0.00%), by distance {'0_1km': 0, '1_2km': 0, '2_5km': 0, '5_10km': 0, '10km_plus': 0}, walk-fallback attribute without walk 0, pt as walk by departure hour {}
+2737:2026-11-26 16:28:13,145 INFO braunschweig.matsim.simulation.plan_check [plan_check] freight/in_region: persons 56364, activity end after the day 0 (0.00%), last arrival after the day 0 (0.00%), non-monotonic 0 (0.00%), planned lateness over 900 s 0 (0.00%), by lateness {'0_1min': 0, '1_5min': 0, '5_15min': 0, '15_60min': 0, '60min_plus': 0}, lateness with a leg without trav_time (lower bound) 0, walk legs over 0, bicycle legs over 0, legs over duration 0 of 56364, pt as walk 0 of 0 pt-intended trips (0.00%), over 5000 m 0 (0.00%), by distance {'0_1km': 0, '1_2km': 0, '2_5km': 0, '5_10km': 0, '10km_plus': 0}, walk-fallback attribute without walk 0, pt as walk by departure hour {}
+2738:2026-11-26 16:28:13,146 ERROR braunschweig.matsim.simulation.plan_check [plan_check] frozen resident plans: share_plans_non_monotonic_large = 1.12% of 151733 persons exceeds 0.50%; the tours the mode choice never re-chooses cannot be lived in the simulated day (braunschweig.plan_check.fail_on_threshold=false: continuing)
+2739:2026-11-26 16:28:13,146 ERROR braunschweig.matsim.simulation.plan_check [plan_check] frozen resident plans: share_lifted_frozen_pt_walk = 2.68% of 45216 pt-intended trips (lifted to car_passenger by frozen_pt_walk_lift, no longer in share_pt_as_walk_long) exceeds 2.00%; the router finds no pt connection for them (braunschweig.plan_check.fail_on_threshold=false: continuing)
+2740:2026-11-26 16:28:49,333 INFO i678_reach_replay [replay] step plan_check done in 467 s; persons in the population file: 1261590
+2741:Executing java: ~/tools/jdk-25.0.3+9/bin/java -cp ~/i678_replay3/eqasim-java-bs/braunschweig/target/braunschweig-2.3.1.jar -Xmx56G -Djava.io.tmpdir=~/i678_replay3/stage/__java_temp -Dmatsim.useLocalDtds=true org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice --config-path braunschweig_100pct_prod20261031_config_initial_mode_choice.xml --config:plans.inputPlansFile braunschweig_100pct_prod20261031_population.xml.gz --config:standaloneModeChoice.outputDirectory mode_choice --config:standaloneModeChoice.removePersonsWithNoValidAlternatives true --config:standaloneModeChoice.excludedSubpopulations incommuter,student_incommuter,freight --config:global.numberOfThreads 32 --write-input-csv-trips true --write-output-csv-trips true --compression gzip --skip-scenario-check true --eqasim-configurator org.eqasim.braunschweig.BraunschweigConfigurator
+2747:	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:15:28
+2752:	Maximum resident set size (kbytes): 45798356
+2765:	Exit status: 0
+2766:end 2026-11-26T16:28:50+01:00; exit 0;  16:28:50 up 24 days,  2:23,  1 user,  load average: 1,25, 1,38, 3,18
