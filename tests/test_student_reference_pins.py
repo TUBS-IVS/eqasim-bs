@@ -21,7 +21,7 @@ import pytest
 from braunschweig.calibration.srv_distance_targets import WOLFSBURG_KREIS
 from braunschweig.calibration.srv_student_reference import (
     BRAUNSCHWEIG_KREIS, DEST_SITE_PREFIX, HOME_GROUP_BRAUNSCHWEIG, HOME_GROUP_NO_SITE,
-    HOME_GROUP_SITE, _destination_vocabulary)
+    HOME_GROUP_SITE, destination_vocabulary)
 from braunschweig.calibration.student_parameters import EXTRA_BASES, PARAMETERS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -322,7 +322,7 @@ def test_education_destination_groups_partition_and_noise_floors():
                           if g.startswith(DEST_SITE_PREFIX))
         if home_group == HOME_GROUP_BRAUNSCHWEIG:
             sites = sites | {BRAUNSCHWEIG_KREIS}
-        assert groups == _destination_vocabulary(sites, home_group), home_group
+        assert groups == destination_vocabulary(sites, home_group), home_group
         assert cell["share"].sum() == pytest.approx(1.0, abs=1e-8), home_group
         assert (cell["noise_floor_tvd_95"] >= 0).all(), home_group
         assert (cell["n_persons_group"] == cell["n_persons_group"].iloc[0]).all()

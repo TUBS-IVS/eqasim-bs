@@ -1307,7 +1307,7 @@ def _validate_site_kreise(site_kreise) -> frozenset:
     return sites
 
 
-def _destination_vocabulary(site_kreise: frozenset, home_group: str) -> list:
+def destination_vocabulary(site_kreise: frozenset, home_group: str) -> list:
     """Destination groups of a home group; the Braunschweig group has no 'site' 03101."""
     sites = sorted(site_kreise - ({BRAUNSCHWEIG_KREIS} if home_group == HOME_GROUP_BRAUNSCHWEIG
                                   else set()))
@@ -1439,7 +1439,7 @@ def build_destination_reference(universe: pd.DataFrame, legs: pd.DataFrame,
     for home_group in HOME_GROUPS:
         group = persons if home_group == HOME_GROUP_ALL else persons[
             persons["home_group"] == home_group]
-        vocabulary = _destination_vocabulary(sites, home_group)
+        vocabulary = destination_vocabulary(sites, home_group)
         unexpected = sorted(set(group["destination_group"]) - set(vocabulary))
         if unexpected:
             raise ValueError("destination group(s) %s are outside the vocabulary %s of home "

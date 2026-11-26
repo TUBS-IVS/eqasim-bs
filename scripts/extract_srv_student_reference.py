@@ -291,8 +291,11 @@ def _parameter_header(diagnostics: dict, universe_diagnostics: dict, source_comm
 def _young_adult_header(diagnostics: dict, universe_diagnostics: dict, source_commit: str,
                         sites: list) -> list:
     return _phase1_header(R.YOUNG_ADULT_STATUS_TABLE, source_commit, sites) + [
-        "# Status %s of the young adults per Kreis (age group edges %s) and one %s row; Wolfsburg"
-        % (list(R.YOUNG_ADULT_STATUSES), list(R.AGE_GROUP_EDGES), R.REGION_CODE),
+        "# Base of THIS table: persons aged %d to %d (bounds inclusive) of the universe above, not"
+        % R.AGE_BAND_20_29,
+        "#   all adults (the 'adult = V_ALTER >= N' remark above defines a student, not this base).",
+        "# Status %s of these young adults per Kreis and one %s row; Wolfsburg"
+        % (list(R.YOUNG_ADULT_STATUSES), R.REGION_CODE),
         "#   is emitted with zero counts and NaN shares.",
         "# Columns: %s." % ", ".join(R.YOUNG_ADULT_STATUS_COLUMNS),
         _exclusions(universe_diagnostics, diagnostics) + " " + _UNIVERSE_UNITS_NOTE

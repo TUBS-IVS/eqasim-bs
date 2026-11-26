@@ -370,6 +370,11 @@ def test_cli_writes_all_tables_with_headers(srv_frames, tmp_path):
     assert "education_leg_share_harmonised_purpose" in parameter_header
     assert "education_leg_share_control_definition" in parameter_header
     assert "BEFORE" in parameter_header  # away rows: measured before the universe filter
+    young_header = " ".join(line for line in (out / R.YOUNG_ADULT_STATUS_TABLE).read_text(
+        encoding="utf-8").splitlines() if line.startswith("#"))
+    # the base is the 20-29 band of the module constant, not the age-group edges of the adults
+    assert "aged %d to %d (bounds inclusive)" % R.AGE_BAND_20_29 in young_header
+    assert "age group edges" not in young_header
     assert "03101" in " ".join(line for line in (out / R.DESTINATION_TABLE).read_text(
         encoding="utf-8").splitlines() if line.startswith("#"))
     destination = pd.read_csv(out / R.DESTINATION_TABLE, comment="#")
