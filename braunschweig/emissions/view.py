@@ -14,7 +14,14 @@ writes a separate *view* folder:
   function (the road-type method is decided elsewhere);
 * ``output_config.xml``: archive config with the ``emissions`` module added and
   ``households.inputFile`` nulled (the tool loads the scenario from the config);
-* ``output_events`` and ``output_transitSchedule``: linked, not copied (events are GBs).
+* ``output_events``: linked, not copied (events are GBs);
+* ``output_transitSchedule``: linked, or rewritten when a coordinate system is configured.
+
+Coordinate system: a run that never configured one carries MATSim's placeholder ``Atlantis`` in
+the config, the network and the schedule. The tool transforms each file from its own label to
+the config's system and fails on the placeholder, so with ``coordinate_system`` set the view
+puts that one name on all three. Coordinates are never transformed; a file that names another
+real system raises (wiring run of 2026-11-26, issue #688).
 
 The files are rewritten line by line rather than through an XML library so that everything the
 rewrite does not touch stays byte-for-byte as MATSim wrote it. Output is gzip with a fixed
@@ -68,6 +75,16 @@ _AFTER_ENGINE_TAGS = (
     "<flowEfficiencyFactor",
 )
 
+#: MATSim's placeholder for "no coordinate system configured". It names no real system: the tool
+#: fails when it has to transform from it ("No authority was defined for code ATLANTIS").
+UNSET_COORDINATE_SYSTEM = "Atlantis"
+#: Recorded for a file that carries no coordinate system label at all.
+NO_COORDINATE_SYSTEM_LABEL = "<none>"
+
+_CRS_ATTRIBUTE_LINE = re.compile(
+    r'(<attribute name="coordinateReferenceSystem" class="java\.lang\.String">)([^<]*)(</attribute>)')
+_CONFIG_CRS = r'(<module name="global" >\s*(?:<!--.*?-->\s*)*<param name="coordinateSystem" value=")([^"]*)(")'
+
 _VEHICLE_TYPE_OPEN = re.compile(r'<vehicleType id="([^"]+)"')
 _ATTRIBUTE_LINE = re.compile(r'<attribute name="([^"]+)"[^>]*>([^<]*)</attribute>')
 _XML_ATTRIBUTE = re.compile(r'(\w+)="([^"]*)"')
@@ -108,6 +125,9 @@ class ViewReport:
     #: Links whose archive ``hbefa_road_type`` differed from the value written (replaced, counted).
     road_types_replaced: int = 0
     events_link_mode: str = ""
+    #: Per file the coordinate system label found in the archive (``<none>`` when it has none);
+    #: empty when no coordinate system is configured and the labels are left as they are.
+    coordinate_system_labels: dict[str, str] = field(default_factory=dict)
 
 
 def build_emissions_view(
@@ -143,12 +163,20 @@ def build_emissions_view(
         report.transit_vehicle_types = _rewrite_vehicle_types(
             archive / "output_transitVehicles.xml.gz", view_dir / "output_transitVehicles.xml.gz"
         )
-        report.links, report.road_types_replaced = _rewrite_network(
-            archive / "output_network.xml.gz", view_dir / "output_network.xml.gz", road_type_of_link
+        target_crs = settings.coordinate_system
+        labels = report.coordinate_system_labels
+        report.links, report.road_types_replaced, network_label = _rewrite_network(
+            archive / "output_network.xml.gz", view_dir / "output_network.xml.gz", road_type_of_link, target_crs
         )
-        _rewrite_config(archive / "output_config.xml", view_dir / "output_config.xml", settings)
+        config_label = _rewrite_config(archive / "output_config.xml", view_dir / "output_config.xml", settings)
         report.events_link_mode = _link_or_copy(archive / "output_events.xml.gz", view_dir)
-        _link_or_copy(archive / "output_transitSchedule.xml.gz", view_dir)
+        if target_crs:
+            labels["output_network.xml.gz"] = network_label
+            labels["output_transitSchedule.xml.gz"] = _rewrite_schedule(
+                archive / "output_transitSchedule.xml.gz", view_dir / "output_transitSchedule.xml.gz", target_crs)
+            labels["output_config.xml"] = config_label
+        else:
+            _link_or_copy(archive / "output_transitSchedule.xml.gz", view_dir)
     except BaseException:
         shutil.rmtree(view_dir, ignore_errors=True)
         raise
@@ -163,6 +191,13 @@ def build_emissions_view(
         report.road_types_replaced,
         report.events_link_mode,
     )
+    relabelled = sorted(name for name, label in report.coordinate_system_labels.items()
+                        if label == UNSET_COORDINATE_SYSTEM)
+    if relabelled:
+        logger.info(
+            "[emissions.view] coordinate system label %r replaced by %r in %s (coordinates unchanged)",
+            UNSET_COORDINATE_SYSTEM, settings.coordinate_system, relabelled,
+        )
     if report.road_types_replaced:
         logger.warning(
             "[emissions.view] %d of %d links already carried a different %s in the archive; replaced",
@@ -302,14 +337,63 @@ def _rewrite_link(block: list[str], road_type: str) -> list[str]:
     return [head, "\t\t\t<attributes>\n", attribute, "\t\t\t</attributes>\n"] + body
 
 
+def _relabel_coordinate_system(line: str, target_crs: str, file_name: str) -> tuple[str, str | None]:
+    """Return ``(line, label found)``; a line that carries the placeholder label gets ``target_crs``.
+
+    The view never transforms coordinates. It only names the system of coordinates that carry
+    MATSim's placeholder; a file that names another real system raises, because relabelling it
+    would declare its coordinates to be something they are not.
+    """
+    match = _CRS_ATTRIBUTE_LINE.search(line)
+    if match is None:
+        return line, None
+    label = unescape(match.group(2))
+    if label == target_crs:
+        return line, label
+    if label != UNSET_COORDINATE_SYSTEM:
+        raise ValueError(
+            f"{file_name} of the archive is in the coordinate system {label!r}, the emissions view is "
+            f"configured for {target_crs!r}; the view relabels only the placeholder "
+            f"{UNSET_COORDINATE_SYSTEM!r} and never transforms coordinates"
+        )
+    return _CRS_ATTRIBUTE_LINE.sub(
+        lambda m: m.group(1) + escape(target_crs) + m.group(3), line, count=1), label
+
+
+def _rewrite_schedule(source: Path, target: Path, target_crs: str) -> str:
+    """Copy the transit schedule with its coordinate system label set; return the label found."""
+    found = NO_COORDINATE_SYSTEM_LABEL
+    with _open_gz_read(source) as reader, _open_gz_write(target) as writer:
+        for line in reader:
+            # MATSim writes the label once, in the file's own attributes before the first stop.
+            if found == NO_COORDINATE_SYSTEM_LABEL and "coordinateReferenceSystem" in line:
+                line, label = _relabel_coordinate_system(line, target_crs, source.name)
+                found = label if label is not None else found
+            writer.write(line)
+    return found
+
+
 def _rewrite_network(
-    source: Path, target: Path, road_type_of_link: Callable[[LinkRecord], str]
-) -> tuple[int, int]:
-    """Tag every link; return ``(links, links whose archive road type was replaced)``."""
+    source: Path, target: Path, road_type_of_link: Callable[[LinkRecord], str], target_crs: str | None = None
+) -> tuple[int, int, str]:
+    """Tag every link; return ``(links, links whose archive road type was replaced, CRS label found)``.
+
+    With ``target_crs`` the network's own coordinate system label is set to it
+    (:func:`_relabel_coordinate_system`); without, the label stays as it is.
+    """
     links = 0
     replaced = 0
+    found = NO_COORDINATE_SYSTEM_LABEL
     with _open_gz_read(source) as reader, _open_gz_write(target) as writer:
         for is_block, lines in _blocks(reader, "<link ", "</link>"):
+            if not is_block and target_crs and found == NO_COORDINATE_SYSTEM_LABEL:
+                relabelled = []
+                for line in lines:
+                    if found == NO_COORDINATE_SYSTEM_LABEL and "coordinateReferenceSystem" in line:
+                        line, label = _relabel_coordinate_system(line, target_crs, source.name)
+                        found = label if label is not None else found
+                    relabelled.append(line)
+                lines = relabelled
             if is_block:
                 record = _link_record(lines)
                 road_type = road_type_of_link(record)
@@ -322,7 +406,7 @@ def _rewrite_network(
             writer.writelines(lines)
     if links == 0:
         raise ValueError(f"{source} holds no links")
-    return links, replaced
+    return links, replaced, found
 
 
 def _attribute_value(value: str) -> str:
@@ -337,8 +421,18 @@ def _replace_exactly_once(text: str, pattern: str, replacement: str, what: str) 
     return text
 
 
-def _rewrite_config(source: Path, target: Path, settings: EmissionsViewSettings) -> None:
+def _rewrite_config(source: Path, target: Path, settings: EmissionsViewSettings) -> str:
+    """Write the view's config; return the coordinate system the archive config names."""
     text = source.read_text(encoding="utf-8")
+    config_crs = re.search(_CONFIG_CRS, text)
+    config_label = unescape(config_crs.group(2)) if config_crs else NO_COORDINATE_SYSTEM_LABEL
+    if settings.coordinate_system and config_crs and config_label not in (
+            settings.coordinate_system, UNSET_COORDINATE_SYSTEM):
+        raise ValueError(
+            f"output_config.xml of the archive names the coordinate system {config_label!r}, the emissions "
+            f"view is configured for {settings.coordinate_system!r}; the view relabels only the placeholder "
+            f"{UNSET_COORDINATE_SYSTEM!r} and never transforms coordinates"
+        )
     if '<module name="emissions"' in text:
         raise ValueError(f"{source} already has an emissions module; refusing to overwrite its settings")
     text = _replace_exactly_once(
@@ -350,8 +444,8 @@ def _rewrite_config(source: Path, target: Path, settings: EmissionsViewSettings)
     if settings.coordinate_system:
         text = _replace_exactly_once(
             text,
-            r'(<module name="global" >\s*(?:<!--.*?-->\s*)*<param name="coordinateSystem" value=")[^"]*(")',
-            lambda m: m.group(1) + _attribute_value(settings.coordinate_system) + m.group(2),
+            _CONFIG_CRS,
+            lambda m: m.group(1) + _attribute_value(settings.coordinate_system) + m.group(3),
             "global coordinate system",
         )
     params = [(_TABLE_PARAMETERS[key], str(settings.tables[key])) for key in TABLE_KEYS]
@@ -370,6 +464,7 @@ def _rewrite_config(source: Path, target: Path, settings: EmissionsViewSettings)
     module += "\t</module>\n"
     text = _replace_exactly_once(text, r"</config>", lambda m: module + "</config>", "config end tag")
     target.write_text(text, encoding="utf-8", newline="")
+    return config_label
 
 
 def _link_or_copy(source: Path, view_dir: Path) -> str:

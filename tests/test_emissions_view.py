@@ -75,6 +75,9 @@ _TRANSIT_TYPE = """\t<vehicleType id="Bus">
 _NETWORK = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE network SYSTEM "http://www.matsim.org/files/dtd/network_v2.dtd">
 <network>
+\t<attributes>
+\t\t<attribute name="coordinateReferenceSystem" class="java.lang.String">NETWORK_CRS</attribute>
+\t</attributes>
 \t<nodes>
 \t\t<node id="1" x="0.0" y="0.0" >
 \t\t</node>
@@ -115,7 +118,16 @@ def _gz(path: Path, text: str) -> None:
         handle.write(text)
 
 
-def _write_archive(archive: Path, *, extra_vehicle_type: str = "") -> None:
+# As MATSim writes it when no coordinate system was configured: the placeholder "Atlantis".
+_SCHEDULE = """<transitSchedule>
+\t<attributes>
+\t\t<attribute name="coordinateReferenceSystem" class="java.lang.String">Atlantis</attribute>
+\t</attributes>
+</transitSchedule>
+"""
+
+
+def _write_archive(archive: Path, *, extra_vehicle_type: str = "", network_crs: str = "Atlantis") -> None:
     archive.mkdir()
     vehicles = (
         _HEAD
@@ -132,8 +144,8 @@ def _write_archive(archive: Path, *, extra_vehicle_type: str = "") -> None:
     _gz(archive / "output_vehicles.xml.gz", vehicles)
     _gz(archive / "output_transitVehicles.xml.gz",
         _HEAD + _TRANSIT_TYPE + "</vehicleDefinitions>\n")
-    _gz(archive / "output_network.xml.gz", _NETWORK)
-    _gz(archive / "output_transitSchedule.xml.gz", "<transitSchedule/>\n")
+    _gz(archive / "output_network.xml.gz", _NETWORK.replace("NETWORK_CRS", network_crs))
+    _gz(archive / "output_transitSchedule.xml.gz", _SCHEDULE)
     _gz(archive / "output_events.xml.gz", "<events/>\n")
     (archive / "output_config.xml").write_text(_CONFIG, encoding="utf-8", newline="")
 
@@ -235,9 +247,30 @@ def test_view_is_complete_and_the_archive_stays_byte_identical(tmp_path):
                  "output_config.xml"):
         assert (second / name).read_bytes() == (view / name).read_bytes(), name
 
-    # Events and schedule are reachable under their archive names.
+    # Events are reachable under their archive name.
     assert _read_gz(view / "output_events.xml.gz") == "<events/>\n"
     assert report.events_link_mode in {"symlinked", "copied"}
+
+    # The tool transforms every file from its own label to the config's system and stops on the
+    # placeholder "Atlantis": network, schedule and config have to name one system.
+    label = '<attribute name="coordinateReferenceSystem" class="java.lang.String">EPSG:25832</attribute>'
+    schedule = _read_gz(view / "output_transitSchedule.xml.gz")
+    assert label in network and label in schedule
+    assert "Atlantis" not in network + schedule + config
+    assert report.coordinate_system_labels == {
+        "output_network.xml.gz": "Atlantis", "output_transitSchedule.xml.gz": "Atlantis",
+        "output_config.xml": "Atlantis"}
+
+
+def test_a_file_in_another_coordinate_system_is_refused_not_relabelled(tmp_path):
+    archive = tmp_path / "matsim_output"
+    _write_archive(archive, network_crs="EPSG:4326")
+    view = tmp_path / "view"
+
+    # Relabelling would declare WGS84 degrees to be metres; the view never transforms coordinates.
+    with pytest.raises(ValueError, match=r"output_network.*EPSG:4326.*EPSG:25832"):
+        build_emissions_view(archive, view, _settings(tmp_path), lambda link: "URB/Local/50")
+    assert not view.exists()
 
 
 def test_unknown_vehicle_type_aborts_and_leaves_no_half_view(tmp_path):

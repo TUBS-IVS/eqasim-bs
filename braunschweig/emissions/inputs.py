@@ -251,6 +251,7 @@ def execute(context):
             "type_notes": {r.type_id: r.note for r in resolutions if r.note},
             "links": view_report.links,
             "archive_road_types_replaced": view_report.road_types_replaced,
+            "archive_coordinate_system_labels": view_report.coordinate_system_labels,
             "events": view_report.events_link_mode,
         },
         "road_types": tagger.report(),
