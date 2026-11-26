@@ -156,6 +156,11 @@ def test_unreachable_reference_cells_stay_in_the_distance():
                                                 SR.HOME_GROUP_NO_SITE: 0.1})
     assert fit.objective == pytest.approx(0.1 / 3)
     assert fit.noise_floor == pytest.approx(0.3)
+    # The unreachable 0.1 is the floor of the no-site group's distance; the other groups reach every
+    # cell the reference fills.
+    floor = fit.by_group.set_index("home_group")["unreachable_reference_share"]
+    assert floor.to_dict() == pytest.approx({SR.HOME_GROUP_BRAUNSCHWEIG: 0.0, SR.HOME_GROUP_SITE: 0.0,
+                                             SR.HOME_GROUP_NO_SITE: 0.1})
 
 
 def test_fit_distance_weights_groups_with_n_effective():
@@ -193,14 +198,25 @@ def _broken(kind):
     elif kind == "model label unknown to the reference":
         implied.loc[implied["destination_group"] == SR.DEST_SITE_PREFIX + "03158", "destination_group"] = \
             SR.DEST_SITE_PREFIX + "03999"
+    elif kind == "non-finite implied share":
+        implied.loc[implied["destination_group"] == SR.DEST_OTHER_OUTSIDE, "implied_share"] = np.nan
+    elif kind == "open implied shares":
+        implied.loc[(implied["home_group"] == SR.HOME_GROUP_NO_SITE)
+                    & (implied["destination_group"] == SR.DEST_OWN), "implied_share"] = 0.9
     return implied, reference
 
 
-@pytest.mark.parametrize("kind", ["unknown reference label", "open shares", "missing home group",
-                                  "model label unknown to the reference"])
-def test_reference_with_an_unknown_label_or_open_shares_raises(kind):
+@pytest.mark.parametrize("kind, match", [
+    ("unknown reference label", "reference: column 'destination_group' has unknown label"),
+    ("open shares", "reference: column 'share' does not sum to 1"),
+    ("missing home group", "reference: column 'home_group'"),
+    ("model label unknown to the reference", "disagree"),
+    ("non-finite implied share", "implied: column 'implied_share' must be finite"),
+    ("open implied shares", "implied: column 'implied_share' does not sum to 1"),
+])
+def test_reference_with_an_unknown_label_or_open_shares_raises(kind, match):
     implied, reference = _broken(kind)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=match):
         W.fit_distance(implied, reference)
 
 

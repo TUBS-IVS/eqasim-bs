@@ -37,6 +37,7 @@ from braunschweig.calibration.srv_student_reference import (
     BRAUNSCHWEIG_KREIS, DEST_LK_HILDESHEIM, DEST_OTHER_OUTSIDE, DEST_OTHER_REGION, DEST_OWN,
     DEST_REGION_HANNOVER, DEST_SITE_PREFIX, HOME_GROUP_ALL, HOME_GROUP_BRAUNSCHWEIG, HOME_GROUP_NO_SITE,
     HOME_GROUP_SITE, LANDKREIS_HILDESHEIM_ARS5, REGION_HANNOVER_ARS5, destination_vocabulary)
+from braunschweig.calibration.student_behaviour_labels import STUDENT_DISTANCE_EDGES_KM
 from braunschweig.data.education.student_od_table import KIND_LOCAL, SCOPE_LOCAL, SCOPE_SURROUNDING, SCOPES
 
 LOGGER = logging.getLogger(__name__)
@@ -47,19 +48,21 @@ FIT_HOME_GROUPS = (HOME_GROUP_BRAUNSCHWEIG, HOME_GROUP_SITE, HOME_GROUP_NO_SITE)
 _FIXED_DESTINATIONS = frozenset({DEST_OWN, DEST_OTHER_REGION, DEST_REGION_HANNOVER, DEST_LK_HILDESHEIM,
                                  DEST_OTHER_OUTSIDE})
 IMPLIED_COLUMNS = ["home_group", "destination_group", "implied_share", "reachable"]
-BY_GROUP_COLUMNS = ["home_group", "total_variation_distance", "n_effective", "noise_floor_tvd_95"]
+BY_GROUP_COLUMNS = ["home_group", "total_variation_distance", "unreachable_reference_share", "n_effective",
+                    "noise_floor_tvd_95"]
 _OD_COLUMNS = ["home_ars5", "home_in_region", "site_kreis_ars5", "scope", "students_persons"]
 _REFERENCE_COLUMNS = ["home_group", "destination_group", "share", "n_effective", "noise_floor_tvd_95"]
 
 # Float rounding only, no modelling meaning: the reference is written with ten significant digits, so
-# its shares per home group sum to 1 within this tolerance.
+# its shares per home group sum to 1 within this tolerance; the implied shares are held to the same.
 REFERENCE_SHARE_TOLERANCE = 1e-6
 
 # Centroid-to-site distance classes reported next to the fit (never fitted). The edges are the 25 and
-# 50 km band edges of the SrV education-distance table (srv_student_reference.EDUCATION_DISTANCE_TABLE),
-# left-inclusive like there: [0, 25), [25, 50), [50, inf). Rows of kind KIND_LOCAL are own_kreis.
+# 50 km edges of student_behaviour_labels.STUDENT_DISTANCE_EDGES_KM (the bands of the SrV
+# education-distance table), left-inclusive like there: [0, 25), [25, 50), [50, inf). Rows of kind
+# KIND_LOCAL are own_kreis.
 DISTANCE_CLASSES = ("own_kreis", "other_kreis_under_25_km", "other_kreis_25_50_km", "other_kreis_50_plus_km")
-DISTANCE_CLASS_EDGES_KM = (25.0, 50.0)
+DISTANCE_CLASS_EDGES_KM = tuple(STUDENT_DISTANCE_EDGES_KM[3:5])
 DISTANCE_CLASS_COLUMNS = ["code", "distance_class", "students_persons", "share"]
 
 
@@ -69,6 +72,8 @@ class FitDistance(NamedTuple):
     ``objective``: total-variation distance per home group, averaged with the reference's ``n_effective``;
     ``noise_floor``: the same weighted mean of the reference's ``noise_floor_tvd_95``; ``by_group``:
     :data:`BY_GROUP_COLUMNS`, one row per home group of :data:`FIT_HOME_GROUPS`.
+    ``unreachable_reference_share`` is the reference share on the group's cells with ``reachable`` False:
+    the model puts 0 there, so the group's distance cannot go below it (no weight triple can).
     """
     objective: float
     noise_floor: float
@@ -263,26 +268,38 @@ def fit_distance(implied: pd.DataFrame, reference: pd.DataFrame) -> FitDistance:
             (plus the pooled one), a duplicated row, an unknown destination label, a share outside [0, 1]
             or shares not summing to 1 per home group, ``n_effective`` or ``noise_floor_tvd_95`` not one
             finite value per group, a non-positive ``n_effective``. Then: ``implied`` without one of the
-            three home groups, with a duplicated row, or with a label set per home group other than the
+            three home groups, with a duplicated row, a non-finite ``implied_share``, shares not summing
+            to 1 per home group, or a label set per home group other than the
             reference's (the two sides disagree on the site set).
     """
     reference = _validated_reference(reference)
-    _require_columns(implied, ["home_group", "destination_group", "implied_share"], "fit_distance implied")
+    _require_columns(implied, IMPLIED_COLUMNS, "fit_distance implied")
     groups = set(implied["home_group"])
     if groups != set(FIT_HOME_GROUPS):
         raise ValueError(f"fit_distance implied: column 'home_group' must hold exactly {list(FIT_HOME_GROUPS)}; "
                          f"got {sorted(map(str, groups))}")
     if implied.duplicated(["home_group", "destination_group"]).any():
         raise ValueError("fit_distance implied: duplicated (home_group, destination_group) row(s)")
-    merged = reference.merge(implied[["home_group", "destination_group", "implied_share"]],
+    implied_share = pd.to_numeric(implied["implied_share"], errors="coerce").to_numpy(dtype=float)
+    if not np.isfinite(implied_share).all():
+        raise ValueError(f"fit_distance implied: column 'implied_share' must be finite; non-finite for "
+                         f"{implied.loc[~np.isfinite(implied_share), ['home_group', 'destination_group']].values.tolist()[:5]}")
+    sums = pd.Series(implied_share, index=implied.index).groupby(implied["home_group"]).sum()
+    open_groups = sums[(sums - 1.0).abs() > REFERENCE_SHARE_TOLERANCE]
+    if len(open_groups):
+        raise ValueError(f"fit_distance implied: column 'implied_share' does not sum to 1 for home group(s) "
+                         f"{open_groups.to_dict()}")
+    merged = reference.merge(implied[IMPLIED_COLUMNS].assign(implied_share=implied_share),
                              on=["home_group", "destination_group"], how="outer", indicator=True)
     if (merged["_merge"] != "both").any():
         unmatched = merged.loc[merged["_merge"] != "both", ["home_group", "destination_group", "_merge"]]
         raise ValueError(f"fit_distance: model and reference disagree on the destination groups (left_only = "
                          f"reference only, right_only = model only): {unmatched.values.tolist()[:5]}")
-    merged["absolute_difference"] = (merged["implied_share"].astype(float) - merged["share"]).abs()
+    merged["absolute_difference"] = (merged["implied_share"] - merged["share"]).abs()
+    merged["unreachable_share"] = np.where(merged["reachable"].to_numpy(dtype=bool), 0.0, merged["share"])
     by_group = merged.groupby("home_group").agg(
-        absolute_difference=("absolute_difference", "sum"), n_effective=("n_effective", "first"),
+        absolute_difference=("absolute_difference", "sum"),
+        unreachable_reference_share=("unreachable_share", "sum"), n_effective=("n_effective", "first"),
         noise_floor_tvd_95=("noise_floor_tvd_95", "first")).reindex(list(FIT_HOME_GROUPS))
     by_group["total_variation_distance"] = 0.5 * by_group["absolute_difference"]
     by_group = by_group.reset_index()[BY_GROUP_COLUMNS]
