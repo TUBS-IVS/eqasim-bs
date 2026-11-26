@@ -136,9 +136,20 @@ def flatrate_ticket_groups4() -> tuple:
     Derived by running the owner's mapping on every flat-rate subscription type of
     ``PT_TICKET_FLATRATE`` (the single owner of "which ticket grants unlimited rides"), so the
     set follows the mapping and is never restated here. Sorted, computed once.
+
+    The mapping logs its group counts as "percentages of all persons"; on these made-up rows
+    that line would read like a population figure in the run log, so the mapping's logger is
+    held at WARNING during the derivation (its level restored afterwards).
     """
     flatrate_types = pd.DataFrame({"pt_subscription_type": sorted(PT_TICKET_FLATRATE)})
-    return tuple(sorted(map_pt_ticket_group(flatrate_types)["pt_ticket_group4"].unique()))
+    mapping_logger = logging.getLogger(map_pt_ticket_group.__module__)
+    previous_level = mapping_logger.level
+    mapping_logger.setLevel(logging.WARNING)
+    try:
+        mapped = map_pt_ticket_group(flatrate_types)
+    finally:
+        mapping_logger.setLevel(previous_level)
+    return tuple(sorted(mapped["pt_ticket_group4"].unique()))
 
 
 #: Day parameters that can lose a student to a missing or negative time, with the

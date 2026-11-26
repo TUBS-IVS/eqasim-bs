@@ -274,7 +274,24 @@ def persons_with_kreis(persons: pd.DataFrame, homes_with_ars5: pd.DataFrame,
                        absent_ids: set) -> pd.DataFrame:
     """The enriched persons with their home Kreis (``kreis``, the ``ars5`` of the household,
     NaN without one) and ``present`` (not in ``absent_ids``), the frame the level and status
-    tables read. Households join m:1 on ``household_id``; a duplicated home row raises."""
+    tables read. Households join m:1 on ``household_id``.
+
+    A household with more than one home row raises ``ValueError`` naming the count and the first
+    household ids: a duplicated home is an upstream defect (a household listed twice by the
+    home-location stage, or a home point the VG250 join of ``spatial.assign_geographies``
+    matched to two Kreise), and keeping one of the rows would assign a Kreis by row order (the
+    plan-structure comparison of the same stage, ``plan_structure.harmonise_model``, keeps the
+    first row with a warning; this table refuses instead, per the rule that a duplicated join
+    key raises)."""
+    duplicated = homes_with_ars5.loc[homes_with_ars5["household_id"].duplicated(keep=False),
+                                     "household_id"]
+    if len(duplicated):
+        ids = sorted(duplicated.unique().tolist())
+        raise ValueError(
+            "%s home locations with Kreis (synthesis.population.spatial.home.locations joined to "
+            "VG250): %d household(s) with more than one home row (%d rows), e.g. household_id "
+            "%s; each household needs exactly one home row to get a home Kreis"
+            % (_LOG_TAG, len(ids), len(duplicated), ids[:5]))
     homes = homes_with_ars5[["household_id", _plan_structure.KREIS_COLUMN]].rename(
         columns={_plan_structure.KREIS_COLUMN: "kreis"})
     frame = persons[["person_id", "household_id", "age", "P_TAET", "employed"]].merge(
@@ -336,6 +353,10 @@ def summary_markdown(tables: dict, provenance: dict) -> str:
         f"adults model {_fmt(region['model_student_share_adults'])} vs SrV "
         f"{_fmt(region['srv_student_share_adults'])} (difference "
         f"{_fmt(region['difference_in_se_adults'], 2)} SrV standard errors).",
+        "  srv_students_weighted_persons counts only the SrV students at home on the reporting "
+        "day (the participation universe), so its like-for-like model count is "
+        "model_present_students_adults, not the count of all model students; the SrV students "
+        "away all day are added back in Phase 2 (design A11).",
         f"* {OUTPUT_FILES['young_adult_status']}: student / employed / other among the 20 to 29 "
         "year olds, model against SrV, with the Zensus 2022 employed count on the employed rows.",
         f"* {OUTPUT_FILES['student_work_class']}: the adult students by employed flag and "

@@ -254,6 +254,17 @@ def _row_value(rows: pd.DataFrame, column: str, index: pd.Index) -> pd.Series:
     return pd.Series(rows[column].to_numpy(dtype=float), index=rows["pid"].to_numpy()).reindex(index)
 
 
+def _whole_hour(minutes: pd.Series) -> pd.Series:
+    """Whole hour (floor of ``minutes / 60``) of a time in minutes after midnight; a missing
+    time stays NaN. Only present values are floored: ``np.floor`` on NaN raises an "invalid
+    value encountered in floor" RuntimeWarning on some numpy builds, which would put a spurious
+    warning into every run log for the persons without a trip."""
+    hours = pd.Series(np.nan, index=minutes.index, dtype=float)
+    present = minutes.notna().to_numpy()
+    hours[present] = np.floor(minutes.to_numpy(dtype=float)[present] / 60.0)
+    return hours
+
+
 def _yes_no(flag: pd.Series) -> pd.Series:
     return pd.Series(np.where(flag.to_numpy(dtype=bool), "yes", "no"), index=flag.index,
                      dtype=object)
@@ -327,14 +338,14 @@ def person_day_labels(persons: pd.DataFrame, trips: pd.DataFrame) -> tuple[pd.Da
     # head(1)/tail(1), never first()/last(): those skip a NaN and would return the NEXT trip's time
     # for a person whose defining trip has no readable time, instead of excluding the person.
     first_departure_min = _row_value(by_pid.head(1), "dep_min", index)
-    first_hour = np.floor(first_departure_min / 60.0)
+    first_hour = _whole_hour(first_departure_min)
     out["first_departure_hour"] = _band(first_hour.where(mobile), FIRST_DEPARTURE_HOUR_EDGES,
                                         PARAMETERS["first_departure_hour"].labels, True)
 
     home = ordered[ordered["purpose"] == "home"]
     last_home_arrival_min = _row_value(home.groupby("pid", sort=False).tail(1), "arr_min", index)
     out["last_arrival_home_hour"] = _band(
-        np.floor(last_home_arrival_min / 60.0).where(mobile), LAST_ARRIVAL_HOME_HOUR_EDGES,
+        _whole_hour(last_home_arrival_min).where(mobile), LAST_ARRIVAL_HOME_HOUR_EDGES,
         PARAMETERS["last_arrival_home_hour"].labels, True)
 
     n_home = home.groupby("pid", sort=False).size().reindex(index).fillna(0).astype(int)
@@ -357,7 +368,7 @@ def person_day_labels(persons: pd.DataFrame, trips: pd.DataFrame) -> tuple[pd.Da
                                      PARAMETERS["time_at_education"].labels, False)
 
     first_education_arrival_min = _row_value(education_by_pid.head(1), "arr_min", index)
-    out["arrival_band"] = _band(np.floor(first_education_arrival_min / 60.0).where(has_education),
+    out["arrival_band"] = _band(_whole_hour(first_education_arrival_min).where(has_education),
                                 ARRIVAL_HOUR_EDGES, PARAMETERS["arrival_band"].labels, True)
 
     labels = out[list(_DAY_LABEL_PARAMETERS)].reset_index()

@@ -274,6 +274,9 @@ def test_execute_writes_all_outputs_on_synthetic_stages(tmp_path, stubbed_geogra
     assert "measurement, not validation" in summary
     assert M.REGION_SCOPE_NOTE in summary
     assert "present students" in summary
+    # the SrV student count is over persons at home on the day: the summary names its
+    # like-for-like model count, so nobody sets it beside all model students
+    assert "model_present_students_adults" in summary and "away all day" in summary
 
     # No output carries an absolute path (on the server it would hold the home directory).
     report_path = tmp_path / "cache" / (S.__name__ + ".cache") / S.REPORT_FILE
@@ -323,6 +326,17 @@ def test_configure_refuses_a_run_without_day_absence():
     with pytest.raises(ValueError, match=S.KEY_DAY_ABSENCE_ENABLED):
         S.configure(recorder)
     assert S.ABSENCE_STAGE not in recorder.stages
+
+
+def test_a_household_with_two_home_rows_raises_naming_count_and_ids():
+    """A duplicated home (household listed twice, or a boundary point joined to two Kreise) must
+    not reach the level table: the merge would double its persons or pick a Kreis by row order."""
+    homes = _homes()
+    homes = pd.concat([homes, homes[homes["household_id"] == 20].assign(ars5="03102")],
+                      ignore_index=True)
+    with pytest.raises(ValueError, match=r"1 household\(s\) with more than one home row "
+                                         r"\(2 rows\), e\.g\. household_id \[20\]"):
+        S.persons_with_kreis(_persons(), homes, _ABSENT)
 
 
 @pytest.mark.parametrize("srv_tables, zensus, match", [

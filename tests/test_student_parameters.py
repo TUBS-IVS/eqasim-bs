@@ -4,6 +4,8 @@ Every expected value is computed by hand on a few synthetic persons; no survey d
 """
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -203,6 +205,20 @@ def test_a_missing_time_excludes_only_that_parameter_and_is_counted():
     assert diag["n_excluded_arrival_band"] == 1
     assert diag["n_excluded_time_at_education"] == 1
     assert diag["n_excluded_first_departure_hour"] == 0
+
+
+def test_persons_without_a_trip_or_time_raise_no_numeric_warning():
+    """Regression: the hour bands floored NaN times of persons without a trip, which on some
+    numpy builds (the server's) logs "invalid value encountered in floor" once per band."""
+    persons = _persons([("a", 2), ("b", 0)])
+    trips = _trips([("a", 1, "education", 480, np.nan), ("a", 2, "home", 900, 960)])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        labels, _ = SP.person_day_labels(persons, trips)
+    by_pid = labels.set_index("pid")
+    assert by_pid.loc["a", "first_departure_hour"] == "7_8"
+    assert by_pid.loc["b", ["first_departure_hour", "last_arrival_home_hour",
+                            "arrival_band"]].isna().all()
 
 
 def test_trips_of_a_person_missing_from_the_persons_frame_raise():

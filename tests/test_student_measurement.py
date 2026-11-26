@@ -6,6 +6,7 @@ synthetic table in ``student_parameters.PARAMETER_COLUMNS``, never the committed
 from __future__ import annotations
 
 import ast
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -156,13 +157,21 @@ def test_student_labels_by_hand(frames):
     assert diagnostics["n_adult_students_by_kreis"] == {"03101": 4, "03103": 1}
 
 
-def test_flatrate_groups_are_the_groups_of_the_flatrate_subscription_types():
+def test_flatrate_groups_are_the_groups_of_the_flatrate_subscription_types(caplog):
     # each subscription type through the owner's mapping on its own: the flat-rate types land
     # exactly on the derived groups, every other type outside them
     groups = {category: map_pt_ticket_group(pd.DataFrame(
         {"pt_subscription_type": [category]}))["pt_ticket_group4"].iloc[0]
         for category in PT_TICKET_CATEGORIES}
-    derived = set(M.flatrate_ticket_groups4())
+    mapping_logger = logging.getLogger(map_pt_ticket_group.__module__)
+    level_before = mapping_logger.level
+    M.flatrate_ticket_groups4.cache_clear()
+    with caplog.at_level(logging.INFO):
+        caplog.clear()
+        derived = set(M.flatrate_ticket_groups4())
+    # the derivation's made-up rows must not log the mapping's population-style counts
+    assert not [record for record in caplog.records if record.name == mapping_logger.name]
+    assert mapping_logger.level == level_before
     assert derived == {groups[category] for category in PT_TICKET_FLATRATE}
     assert all(groups[category] not in derived
                for category in set(PT_TICKET_CATEGORIES) - PT_TICKET_FLATRATE)

@@ -1377,9 +1377,11 @@ def build_destination_reference(universe: pd.DataFrame, legs: pd.DataFrame,
     group: :data:`DEST_OWN` (the person's own Kreis), ``site_kreis_<ars5>`` (a site Kreis other
     than the own one), :data:`DEST_OTHER_REGION` (another region Kreis), Region Hannover
     (:data:`REGION_HANNOVER_ARS5`), Landkreis Hildesheim (:data:`LANDKREIS_HILDESHEIM_ARS5`),
-    :data:`DEST_OTHER_OUTSIDE`. Every group of a home group's vocabulary is emitted, an empty one
-    with ``n_unweighted`` 0 and a NaN share (a cell can be empty by construction, e.g. a person
-    never goes to their own Kreis as a ``site_kreis_``).
+    :data:`DEST_OTHER_OUTSIDE`. Every group of a home group's vocabulary is emitted; an empty
+    destination group has ``n_unweighted`` 0 and, in a non-empty home group, a share of 0 with a
+    standard error of 0 (a cell can be empty by construction, e.g. a person never goes to their
+    own Kreis as a ``site_kreis_``). The share and its standard error are NaN only when the whole
+    home group is empty or its weights sum to zero.
 
     The cells are POOLED across the home Kreise of a group: with more than one site Kreis,
     :data:`HOME_GROUP_SITE` and :data:`HOME_GROUP_ALL` mix persons of different home Kreise, so
