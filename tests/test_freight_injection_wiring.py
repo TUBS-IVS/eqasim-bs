@@ -86,13 +86,15 @@ def test_inject_freight_passes_the_boundary_link_options(tmp_path, monkeypatch):
     def fake_run(context, class_name, arguments):
         calls.append((class_name, [str(a) for a in arguments]))
         options = dict(zip(calls[-1][1][::2], calls[-1][1][1::2]))
-        (tmp_path / options["--summary-path"]).write_text("trip_type;injected_trips\ntransit;1\n", encoding="utf-8")
+        (tmp_path / options["--summary-path"]).write_text("trip_type;injected_trips\ntransit;1\ninternal;2\n", encoding="utf-8")
         (tmp_path / options["--boundary-link-summary-path"]).write_text(
             "endpoint_role;selected_link_endpoints;nearest_node_fallback_endpoints\nstart;1;0\nend;1;0\n",
             encoding="utf-8")
 
     monkeypatch.setattr(prepare.eqasim, "run", fake_run)
-    prepare._inject_freight(InjectContext(), "config.xml")
+    # The count comes from the injector's summary (1 + 2), not from the Python sample (1 trip): the initial mode
+    # choice names the freight subpopulation only when the injector wrote trips (#678 final review, finding 12).
+    assert prepare._inject_freight(InjectContext(), "config.xml") == 3
 
     class_name, arguments = calls[0]
     options = dict(zip(arguments[::2], arguments[1::2]))

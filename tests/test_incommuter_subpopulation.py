@@ -343,7 +343,7 @@ def test_prepare_writes_the_incommuter_strategies_into_the_final_config(tmp_path
     monkeypatch.setattr(prepare, "_verify_gate_facility_links", lambda context: None)
     monkeypatch.setattr(prepare, "_attach_vrb_tariff_zones", lambda context: None)
     monkeypatch.setattr(prepare, "_cut_to_cordon", lambda context: seen.append("cut") or "config.xml")
-    monkeypatch.setattr(prepare, "_inject_freight", lambda context, result: seen.append(("freight", result)))
+    monkeypatch.setattr(prepare, "_inject_freight", lambda context, result: seen.append(("freight", result)) or 1)
     monkeypatch.setattr(prepare, "_summarise_final_schedule", lambda context: {})
     monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result, summary: None)
     monkeypatch.setattr(I, "run", lambda context, result, excluded, reach: seen.append(("initial", _strategies(

@@ -84,7 +84,7 @@ def test_execute_runs_the_plan_check_last_and_only_when_enabled(monkeypatch):
     seen = []
     monkeypatch.setattr(prepare.delegate, "execute", lambda context: "config.xml")
     monkeypatch.setattr(prepare, "_attach_vrb_tariff_zones", lambda context: None)
-    monkeypatch.setattr(prepare, "_inject_freight", lambda context, result: seen.append("freight"))
+    monkeypatch.setattr(prepare, "_inject_freight", lambda context, result: seen.append("freight") or 1)
     monkeypatch.setattr(prepare, "_summarise_final_schedule", lambda context: {})
     monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result, summary: seen.append("fares"))
     monkeypatch.setattr(C, "run", lambda context, result: seen.append(("check", result)))
@@ -292,13 +292,17 @@ def test_execute_with_todays_values_does_not_edit_the_config(monkeypatch, tmp_pa
     assert config.read_bytes() != DMC_CONFIG.encode("utf-8")
 
 
-@pytest.mark.parametrize("cordon, freight, expected", [
-    (True, True, ("incommuter", "student_incommuter", "freight")),
-    (False, True, ("freight",)),
-    (True, False, ("incommuter", "student_incommuter")),
-    (False, False, ()),
+@pytest.mark.parametrize("cordon, injected_freight_trips, expected", [
+    (True, 3, ("incommuter", "student_incommuter", "freight")),
+    (False, 3, ("freight",)),
+    (True, 0, ("incommuter", "student_incommuter")),
+    (False, 0, ()),
 ])
-def test_initial_mode_choice_excludes_incommuters_and_injected_freight(cordon, freight, expected):
-    """Freight legs have no routing mode, so the outside constraint would fail on them (found on #678's replay)."""
-    context = _RecordingContext({"cordon_enabled": cordon, "freight_enabled": freight})
-    assert tuple(prepare._initial_mode_choice_excluded_subpopulations(context)) == expected
+def test_initial_mode_choice_excludes_incommuters_and_injected_freight(cordon, injected_freight_trips, expected):
+    """Freight legs have no routing mode, so the outside constraint would fail on them (found on #678's replay).
+
+    An enabled injection that wrote zero trips must not name freight: the Java performer fails on an excluded
+    subpopulation that matches nobody (final #678 review, finding 12).
+    """
+    context = _RecordingContext({"cordon_enabled": cordon, "freight_enabled": True})
+    assert tuple(prepare._initial_mode_choice_excluded_subpopulations(context, injected_freight_trips)) == expected
