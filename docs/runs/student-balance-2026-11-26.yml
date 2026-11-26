@@ -1,12 +1,12 @@
 id: student-balance-2026-11-26
 date: '2026-11-26'
 repository:
-  commit: '1b88c47d'
+  commit: '0a352955'
   branch: claude/i140-student-balance-3b6cbe
   notes: >-
-    Code state of every table of this run: 855b10fd (written in the header of each committed table, calibration artifact,
-    option table and the decision aid). Commit 1b88c47d holds the tables of that re-run (the five committed tables and every
-    run artifact); the sha256 values under pipeline.notes are those of the blobs at 1b88c47d. The commits of the phase are
+    Code state of every table of this run: d800ccdc (written in the header of each committed table, calibration artifact,
+    option table and the decision aid). Commit 0a352955 holds the tables of that re-run (the five committed tables and every
+    run artifact); the sha256 values under pipeline.notes are those of the blobs at 0a352955. The commits of the phase are
     listed by git log bd7844f7..HEAD. The run directory, host and user are not recorded in tracked files.
 configuration:
   base: configs/base_bs.yml
@@ -25,11 +25,11 @@ pipeline:
   - scripts/build_student_balance.py
   notes: |-
     Commands (local-only inputs are named by file name and sha256, never by path). Calibration: python -X utf8 scripts/build_student_balance.py calibrate
-    --sites lsn_university_sites.csv --vg250 vg250-ew_12-31.utm32s.gpkg.ebenen.zip --source-commit 855b10fd --out-dir <run artifact dir>
+    --sites lsn_university_sites.csv --vg250 vg250-ew_12-31.utm32s.gpkg.ebenen.zip --source-commit d800ccdc --out-dir <run artifact dir>
     (the comparison run adds --weight-rule centroid_bands).
     Final tables (option C, the five committed tables): python -X utf8 scripts/build_student_balance.py balance --sites lsn_university_sites.csv
     --vg250 vg250-ew_12-31.utm32s.gpkg.ebenen.zip --zensus-students zensus2022_students_20_29_kreis.csv --zensus-employed zensus2022_employed_by_age_kreis.csv
-    --weights 1,1,0.3 --mover-share 0.4 --mover-site-kreise 03158 --weights-source owner --source-commit 855b10fd
+    --weights 1,1,0.3 --mover-share 0.4 --mover-site-kreise 03158 --weights-source owner --source-commit d800ccdc
     --artifact-dir <run artifact dir> --final --out-dir eqasim-data
     (--mover-site-kreise has a default, 03102,03103,03158, that the final run does NOT use.)
     Option runs (options/<label>/): the same call with --label <option> instead of --final --out-dir; the weights, mover share, mover site Kreise and
@@ -52,54 +52,54 @@ pipeline:
     zensus_employed: zensus2022_employed_by_age_kreis.csv (local-only) sha256 43d64e5d0f8bfb417385290dcb96ed94b1b1992dcd550afd82235b2c70ebb586;
     model_level: docs/runs/artifacts/student-measurement-popsim100-20261120-20261126/student_level_by_kreis.csv sha256 5ffb3390ff45758f7d9e4d2d85a95668ac9b07274da663bfa90f668d952b4bd2.
     Logs in the artifact directory: calibration_logs.txt, balance_option_logs.txt, balance_logs.txt, weights_decision/decision_logs.txt.
-    sha256 of the committed blobs at commit 1b88c47d (the hash of the weights_decision script is that of its unchanged file):
-    eqasim-data/data/braunschweig/popsim/student_level_table.csv: 7c50b3232f3533e405806f17d7ccf516117e6d06f7690a776271c3e089b88c22
-    eqasim-data/data/braunschweig/schools/student_balance_by_site.csv: e5fe006358af4743a368d7e917c92e769169bdb44d8b4006370988f314459567
-    eqasim-data/data/braunschweig/schools/student_balance_in_commuters_by_origin.csv: 6603c2b07ea38d64332e03ac09953e89edcaead918295533f15bae68abb9e15b
-    eqasim-data/data/braunschweig/schools/student_balance_out_commuters.csv: 5af778668d7427f7ad9b5ecb67a71c16d08db3e85d4c3444757cae67b592e77c
-    eqasim-data/data/braunschweig/schools/student_od_table.csv: 24c4c6cc01f373f95e7571de8f5701463a182ec1f9f62f854e10cb161f6c8d47
-    docs/runs/artifacts/student-balance-2026-11-26/balance_logs.txt: ddd5a8daac4bfe8cc0f45aa5ce0b9540bf6d5ff16a98a2608f0b8a6d191f1927
-    docs/runs/artifacts/student-balance-2026-11-26/balance_option_logs.txt: ee4e566e8b42c64b2ebe86c7658db80164ae7fd41bb46c985f5c1f865b5e0dd4
-    docs/runs/artifacts/student-balance-2026-11-26/calibration_logs.txt: d5fc36c414f0a0fe7f411cd44921326d058fd441495cc0d984ab3f9d66a8c160
-    docs/runs/artifacts/student-balance-2026-11-26/comparison_centroid_bands/student_commuter_weight_calibration.csv: 44198d420cd8e310008a8ca657349cc1f54bcd59f845b1e966af262e4f951445
-    docs/runs/artifacts/student-balance-2026-11-26/comparison_centroid_bands/student_commuter_weight_context.csv: 11144d5c14880365e64a3bb551532b45c47890fd8e4f1619325a771e8f9ccd3f
-    docs/runs/artifacts/student-balance-2026-11-26/comparison_centroid_bands/student_commuter_weight_fit.csv: 571935f215d3ac4e86e94707b39e7dab945c45d65e288ac7331fb4bbc7fc093b
-    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_balance_by_site.csv: 269e46d0e8dd3107176d79e8e0e5d2dc9d9500e07c4c35a5391d742e212985d4
-    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_balance_in_commuters_by_origin.csv: b20e19e845925e354b3a6656e67ecccec9cf2c8bfb80cf98c9344d6ed22f56ad
-    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_balance_out_commuters.csv: 2e2f8acc73402e9f2fcefc2287f37e9238753ffcebb92ab95d7b48755c79549b
-    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_employed_target_precheck.csv: c6fe10591acad517f56e3ec9b56aa9241655a1d5e3958882b96cbea7d24c27bf
-    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_level_gate.csv: 91401018635a9d692c99d533042c0f40508405d3d24023e21328baccb62201e1
-    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_level_table.csv: d8c027525500d4591f2c43b2e77af1df155567a4f72c1ee6da9d2818068ce3af
-    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_od_table.csv: 5f53827582261e682e8e9c8ff93ce852a745d643119ea5ae7e440256591f8dee
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_balance_by_site.csv: 01e0f27765e95caa0b814a77e6cc9e899d8b61478b00ab4b8eb935eee40575a4
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_balance_in_commuters_by_origin.csv: 7d9d8527611bfb217b0404514eb208a438406f285e7747d8f8f294e16a26f0cf
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_balance_out_commuters.csv: 9afb6bf5fb323d8c6d8e930177fcfd76b76ee62dcfee06dd40fd7b5f15cc5a8d
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_employed_target_precheck.csv: ca1a45fef12f03676b0b1be91b25fa0f4e0f0b62de3b01e524f0abb6bba1c7d6
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_level_gate.csv: dcc3f7e9bad361e67adc7847d27ab90c95b911a0fe8c1cd0ccc6f6b7fe968275
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_level_table.csv: b28d89c93e78f9bff2f7fc1eb111b718a091376157c116ed28e6b4282063352e
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_od_table.csv: 96f242d2b92d7aa548a141182278b0001327ec90dd93c288e707d431e2d83052
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_balance_by_site.csv: ed9990084616153edf6dda3f1e3a0c1cbb29d114b2f83a78e6682cf868bea501
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_balance_in_commuters_by_origin.csv: c6c0bb788776b73817ff8720dd800f5c4807514cb0bad1b05fec36d7c83a74be
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_balance_out_commuters.csv: 0fdbca788f5ed9d126bfe809094bb3ef7d95b76681a5bc96695d39f3a3b29165
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_employed_target_precheck.csv: ade7e882eb318d1c130192a5d4622e94bd7036eb73403784ed65b48d6f7b6e95
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_level_gate.csv: 609988b372644c70b49878196602ba11b1ec6822a10d20d2f3e04dec286168e1
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_level_table.csv: cd10945f18a7011ddc73b4cc2b2039dae636aa0688610e85dc2d4ddb9e475c65
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_od_table.csv: 0ada47bb62f6708f412e50cf125912e484b82a75a19ee445c181c01f94aa947d
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_balance_by_site.csv: e5fe006358af4743a368d7e917c92e769169bdb44d8b4006370988f314459567
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_balance_in_commuters_by_origin.csv: 6603c2b07ea38d64332e03ac09953e89edcaead918295533f15bae68abb9e15b
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_balance_out_commuters.csv: 5af778668d7427f7ad9b5ecb67a71c16d08db3e85d4c3444757cae67b592e77c
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_employed_target_precheck.csv: 4f6d0e6f7452d0b8f4eee1748c1083acf700acc37b553f50308e6d1c6ea865cb
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_level_gate.csv: 61f6d520f63916b0b4c3dc8d525e74b8425675ecb1b0b8d16fbb28d30c2511fa
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_level_table.csv: 7c50b3232f3533e405806f17d7ccf516117e6d06f7690a776271c3e089b88c22
-    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_od_table.csv: 24c4c6cc01f373f95e7571de8f5701463a182ec1f9f62f854e10cb161f6c8d47
-    docs/runs/artifacts/student-balance-2026-11-26/student_commuter_weight_calibration.csv: d5b98eeb85c4a627f4def0032903e00cced34983925a00bb012b2478e7b0bf44
-    docs/runs/artifacts/student-balance-2026-11-26/student_commuter_weight_context.csv: 3fa631775f1f41df285b3c0e06e1f84a254d8a63958d7ed76b8390b53f700442
-    docs/runs/artifacts/student-balance-2026-11-26/student_commuter_weight_fit.csv: 28dab17d78d8d99507b05dd6e5ab9e6b8e1fdea6aafb13f1c950334910ccee6e
-    docs/runs/artifacts/student-balance-2026-11-26/student_employed_target_precheck.csv: 4f6d0e6f7452d0b8f4eee1748c1083acf700acc37b553f50308e6d1c6ea865cb
-    docs/runs/artifacts/student-balance-2026-11-26/student_level_gate.csv: 61f6d520f63916b0b4c3dc8d525e74b8425675ecb1b0b8d16fbb28d30c2511fa
+    sha256 of the committed blobs at commit 0a352955 (the hash of the weights_decision script is that of its unchanged file):
+    eqasim-data/data/braunschweig/popsim/student_level_table.csv: ab58b0cb61f4247e70b1a490b9d5441b4c77243b0e7985ebdc03217c294def96
+    eqasim-data/data/braunschweig/schools/student_balance_by_site.csv: 1b2759f84f7137492bfb14168d87f1259efc219de9247c76e7e7c28c5d863967
+    eqasim-data/data/braunschweig/schools/student_balance_in_commuters_by_origin.csv: 15b7a10b8f2f44d681c62709c2f656774944c4005f900e6c5f86f7d548e68de4
+    eqasim-data/data/braunschweig/schools/student_balance_out_commuters.csv: c77888a24a47d55fd27824de90eecd83e8cbba8d9469e63fce9ad11fdcb75e47
+    eqasim-data/data/braunschweig/schools/student_od_table.csv: e9eacaa1ba9a18d08cf8db4cb1abfbbfaa380c39baa1a4df17c124f5461c422f
+    docs/runs/artifacts/student-balance-2026-11-26/balance_logs.txt: 8353db8b3235d50249032dca2a46e603d568bf5e1aadb3ea113923e0d46fb60e
+    docs/runs/artifacts/student-balance-2026-11-26/balance_option_logs.txt: f8a35c3fb50a2470e0ff3ef33d2bc9dd829487830f08a5a08ffb2f17b9d862c6
+    docs/runs/artifacts/student-balance-2026-11-26/calibration_logs.txt: 2387feabd16327ce4253dcb665cd3e5258de2f9063c3eadcb4e470d038fff9e7
+    docs/runs/artifacts/student-balance-2026-11-26/comparison_centroid_bands/student_commuter_weight_calibration.csv: 4fb0fdbf7ee2c24b33662386bb2a336e52dd13bd35c46a901cd9a9b8321ce17f
+    docs/runs/artifacts/student-balance-2026-11-26/comparison_centroid_bands/student_commuter_weight_context.csv: abdc22980c9a73704ea024e08686f4f3edcac5dbf10b8a211c65f6928a1a2305
+    docs/runs/artifacts/student-balance-2026-11-26/comparison_centroid_bands/student_commuter_weight_fit.csv: 1de7abccca4d32a10b695c2529896cf07995150017f1eea0e5cac5cee88cec91
+    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_balance_by_site.csv: 39c0cc233bbb111eb3c081e0e91da54a9d70979b133912a9472ab5345125186e
+    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_balance_in_commuters_by_origin.csv: 2b6d512c4e281f35703aa35da3219da9e29970f0a7625388f2678a0e0aea9da5
+    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_balance_out_commuters.csv: 2f01b2ff2bebe199e95533fdd683d8a8adbab849cf8e53d5f2a99708d2344135
+    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_employed_target_precheck.csv: 14aa0fc0aa19cc61eb165765d14b4f36059575c6a83a4b63cb8bed3c3e8f0bc0
+    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_level_gate.csv: c65b4fd06137dabe52aeaebb01d24046faa46e7714768811e1ec8e8569e06871
+    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_level_table.csv: ea98c185d3a1a5f22f36b3ae282b6ad99b2c678f604cffa8ed246e9f6445a10e
+    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_od_table.csv: 99a702f551c9c8f4a12af2b39eafcc2b79093d8134ab3a685b2862ce971e2bd2
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_balance_by_site.csv: 992676679beff84800192fe5f45f99c4229c371e1b1e8452b4dc4407113d7fe8
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_balance_in_commuters_by_origin.csv: fa99684f583c98be2fe309483f0d605d14e82acce6c6ad23ec8d54f3d175e5ed
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_balance_out_commuters.csv: ac2def4879197e37f42151551ed58a48267ce270ad1c49c0a804cbe7db11cb2a
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_employed_target_precheck.csv: a51e4af4eb062df6a5532f87e2589ecd390c4346e9992e4ca7b3d0988e50bbb6
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_level_gate.csv: 136d8c346092fdf00cb1987e785339f809e3a5729b4f55e96a97947ae5d87b7b
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_level_table.csv: 0b1ebd4dc52b608617e64629727da52e2d888aee323219951239edb1f3778971
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_od_table.csv: bea271d7b0dbbd20c2690c0ec2eebb0a4f0704da9bf9e07eb528291fe708444d
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_balance_by_site.csv: 147ca9ff302d40e8e61285839586e939c571d0609f4e472da1d9fa515020ea2e
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_balance_in_commuters_by_origin.csv: 4a310eb37505dd882396e52d558033a23b18a483bcab0c85604714222042c7fe
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_balance_out_commuters.csv: 8083daf097050ce18d2164fc448001a0d59e444e89548e6091ff497d1d95875c
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_employed_target_precheck.csv: 971714c8fc4fc5c9659c6fcfc9fbce8a64087e1bc161fd874e7a212e74fc778a
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_level_gate.csv: df3e098894a17221c1381c2ce43b764f9215ff2f18bb27a017e9e704f62a434f
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_level_table.csv: 75b16b68fa2aa0bf7cb80db8c44a09f5cc68f2eb6633bcf71d048dd6fcb363e8
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_od_table.csv: 60ce0627af74087d3a04f4f3861c8a8b03aa3c02d50c01e012015552df89d8bf
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_balance_by_site.csv: 1b2759f84f7137492bfb14168d87f1259efc219de9247c76e7e7c28c5d863967
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_balance_in_commuters_by_origin.csv: 15b7a10b8f2f44d681c62709c2f656774944c4005f900e6c5f86f7d548e68de4
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_balance_out_commuters.csv: c77888a24a47d55fd27824de90eecd83e8cbba8d9469e63fce9ad11fdcb75e47
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_employed_target_precheck.csv: 92b2be1e54e4eb9e65639d6670e2186353e9bbd077a755f9344f40d0a5d874bc
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_level_gate.csv: b81785f640134bfbc90ed1540cd1d2d25c0a87b589cf5a8f2d5a633dee191761
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_level_table.csv: ab58b0cb61f4247e70b1a490b9d5441b4c77243b0e7985ebdc03217c294def96
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_od_table.csv: e9eacaa1ba9a18d08cf8db4cb1abfbbfaa380c39baa1a4df17c124f5461c422f
+    docs/runs/artifacts/student-balance-2026-11-26/student_commuter_weight_calibration.csv: 08efc43827b6612a64a351c1baae346c16093d10497f888017a771d128d088a2
+    docs/runs/artifacts/student-balance-2026-11-26/student_commuter_weight_context.csv: 07c6ebb3b1d702d314b0e7fc2984073b79d7d223515f711505e5b1903e30984a
+    docs/runs/artifacts/student-balance-2026-11-26/student_commuter_weight_fit.csv: bc0c7087fb8a79511bde67ed60a7696f6c4b3f11884344c2859be2e5af68502d
+    docs/runs/artifacts/student-balance-2026-11-26/student_employed_target_precheck.csv: 92b2be1e54e4eb9e65639d6670e2186353e9bbd077a755f9344f40d0a5d874bc
+    docs/runs/artifacts/student-balance-2026-11-26/student_level_gate.csv: b81785f640134bfbc90ed1540cd1d2d25c0a87b589cf5a8f2d5a633dee191761
     docs/runs/artifacts/student-balance-2026-11-26/weights_decision/analyse_weight_candidates.py: bb022b94d39a3cca8b5c4704fa9ebd17d0822425a6e95dc4051b09c3cf8cb5ae
-    docs/runs/artifacts/student-balance-2026-11-26/weights_decision/decision_logs.txt: e0d588a6b3a47bbbb9d4489faed179f2f7bc49e141d59020e5e82b6cd7cec934
-    docs/runs/artifacts/student-balance-2026-11-26/weights_decision/weight_candidates.csv: 3e502fd457b8f0b43ac54df0db13160b9c752f56af36e76c6376ff3e8d050b40
+    docs/runs/artifacts/student-balance-2026-11-26/weights_decision/decision_logs.txt: 8bd65412c82c43769bb44f8a7570027413035d8b6e0509390664a60c50c245b6
+    docs/runs/artifacts/student-balance-2026-11-26/weights_decision/weight_candidates.csv: ae87fbf583a6ae1d34d935807091acccb46445191f7520d86685ac039fb512df
 classification:
 - calibration
 status:
@@ -223,8 +223,10 @@ validation:
     difference_20_29_in_srv_se, beyond_two_se_20_29. gate_triggered_area_consistent=True (the same rule: Braunschweig
     row or pooled row beyond 2.0 SrV standard errors). Braunschweig 03101: balance 13987.20723 versus SrV estimate
     16776.12607 (standard error 1239.42826), difference_20_29_in_srv_se -2.250165604 (beyond_two_se_20_29 True).
-    Pooled 03ZGB (seven surveyed Kreise): balance 23920.41769 versus 36697.77653 (standard error 2114.361662),
-    -6.043128326 (True). Other rows: 03102: -2.090896588 (True); 03103: not evaluable; 03151: -2.384917849 (True);
+    Pooled 03ZGB (seven surveyed Kreise): balance 23920.41769 versus 33532.0742 (standard error 1926.425571),
+    difference_20_29_persons -9611.656519, -4.989373409 (True); the pooled estimate is the sum of the seven Kreis
+    estimates and its standard error the root-sum-square of the seven Kreis standard errors (not the pooled SrV share times
+    the pooled population). Other rows: 03102: -2.090896588 (True); 03103: not evaluable; 03151: -2.384917849 (True);
     03153: 0.3703673664 (False); 03154: -1.45304628 (False); 03157: -3.31632005 (True); 03158: -2.523430899 (True).
     The same table carries the Zensus-based estimate (Zensus group times the MiD ratio) as
     census_estimate_students_20_29_persons: 03101: 9614.625881; 03ZGB: 20255.72428.
