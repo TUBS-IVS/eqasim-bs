@@ -27,18 +27,26 @@ sampling:
     surveyed Kreise (the ZGB-8 without Wolfsburg 03103); Wolfsburg is reported model-only with NaN SrV columns.
   notes: >-
     Universes. Shares of attributes and of the day are over PRESENT persons: SrV adult students at home at some point
-    of the reporting day against model adult students whose day_absence_state is present. Counts of students and the
-    away-all-day share are over ALL persons: all model adult students against all SrV adult students before the
-    universe filter. Students are SrV V_ERW 7 and model P_TAET 10; adults are 18 and older. Model counts are sample
-    counts at sampling_rate 1.0, unweighted; SrV shares are weighted with GEWICHT_P_ZENSUS.
+    of the reporting day against model adult students whose day_absence_state is present. The away-all-day share is
+    over ALL persons: all model adult students against all SrV adult students before the universe filter. Student
+    counts: the SrV count srv_students_weighted_persons of student_level_by_kreis.csv counts only the SrV adult students
+    at home at some point of the reporting day (the participation universe; on the 03ZGB row it equals the weight_sum of
+    row day,away_all_day,students_all,no of eqasim-data/data/braunschweig/srv/srv2023_student_parameters.csv), so it
+    leaves out the SrV students away all day (added back in Phase 2, design A11). Its like-for-like model count is
+    model_present_students_adults (present model adult students), not model_students_expanded_persons (all model adult
+    students). Students are SrV V_ERW 7 and model P_TAET 10; adults are 18 and older. Model counts are sample counts at
+    sampling_rate 1.0, unweighted; SrV shares are weighted with GEWICHT_P_ZENSUS.
 pipeline:
   targets:
   - braunschweig.analysis.synthesis.students_vs_srv
   - scripts/extract_srv_student_reference.py
   notes: >-
     (1) scripts/extract_srv_student_reference.py over the restricted local-only SrV raw directory (never committed),
-    log in extraction_logs.txt (its four WARNING lines are the stage's exclusion rates of the parameter table, kept
-    unchanged). (2) isolated run of the analysis stage on the cached population of popsim100_20261120 with
+    log in extraction_logs.txt (kept unchanged; its four WARNING lines are the exclusion rates of the day labelling
+    over every SrV person it labels, the base being all mobile persons for first_departure_hour and
+    last_arrival_home_hour and all persons with an education trip for time_at_education and arrival_band, not the
+    adult students; the adult students' exclusion counts are the n_base_* / n_excluded_* keys of the Exclusions header
+    of eqasim-data/data/braunschweig/srv/srv2023_student_parameters.csv). (2) isolated run of the analysis stage on the cached population of popsim100_20261120 with
     run_overlay_students.yml (scripts/isolated_run.py): the launch gate reported 41 stages, 1 stale (students_vs_srv)
     and the PopulationSim stage a HIT; launched 2026-11-26 15:23:10 local time, exit 0 at 15:24:26. The gate ran with
     --allow-environment-mismatch because the run environment lacks the same five pip packages the original run lacked
@@ -54,28 +62,37 @@ status:
     Classified smoke because the run-manifest schema has no measurement class: a measurement on a cached population,
     not a validation. No reference is compared; the SrV tables are a survey, not ground truth.
 validation:
-- metric: students per Kreis and age group, model against SrV (adult students; all persons)
+- metric: students per Kreis and age group, model against SrV (adult students; model counts over all and over present
+    persons, the SrV count over persons at home on the reporting day)
   reference: SrV 2023 aggregates of this branch (a survey, not ground truth)
   result: >-
     Read from docs/runs/artifacts/student-measurement-popsim100-20261120-20261126/student_level_by_kreis.csv (rows by
     Kreis, 03ZGB = the seven surveyed Kreise; Wolfsburg 03103 model-only, SrV columns NaN). Model counts by age band are
     columns model_students_18_29 and model_students_30plus (sample counts); the SrV table has no count by age band, only
     srv_students_weighted_persons and the share of present adults with difference_in_se_adults. 03101 model_students_18_29
-    8659, model_students_30plus 1520, model_students_expanded_persons 10179, srv_students_weighted_persons 15577.31682,
+    8659, model_students_30plus 1520, model_students_expanded_persons 10179, model_present_students_adults 9408, srv_students_weighted_persons 15577.31682,
     difference_in_se_adults -4.509717506; 03102 model_students_18_29 2189, model_students_30plus 416,
-    model_students_expanded_persons 2605, srv_students_weighted_persons 2617.205537, difference_in_se_adults
-    -0.3181273592; 03103 model_students_18_29 2431, model_students_30plus 509, model_students_expanded_persons 2940,
+    model_students_expanded_persons 2605, model_present_students_adults 2429, srv_students_weighted_persons 2617.205537, difference_in_se_adults
+    -0.3181273592; 03103 model_students_18_29 2431, model_students_30plus 509, model_students_expanded_persons 2940, model_present_students_adults 2731,
     srv_students_weighted_persons NaN, difference_in_se_adults NaN; 03151 model_students_18_29 2470, model_students_30plus
-    435, model_students_expanded_persons 2905, srv_students_weighted_persons 1136.061874, difference_in_se_adults
-    1.541641821; 03153 model_students_18_29 2484, model_students_30plus 338, model_students_expanded_persons 2822,
+    435, model_students_expanded_persons 2905, model_present_students_adults 2670, srv_students_weighted_persons 1136.061874, difference_in_se_adults
+    1.541641821; 03153 model_students_18_29 2484, model_students_30plus 338, model_students_expanded_persons 2822, model_present_students_adults 2622,
     srv_students_weighted_persons 1591.315009, difference_in_se_adults 1.119024461; 03154 model_students_18_29 1331,
-    model_students_30plus 161, model_students_expanded_persons 1492, srv_students_weighted_persons 702.8586682,
+    model_students_30plus 161, model_students_expanded_persons 1492, model_present_students_adults 1358, srv_students_weighted_persons 702.8586682,
     difference_in_se_adults 0.6314908546; 03157 model_students_18_29 1916, model_students_30plus 287,
-    model_students_expanded_persons 2203, srv_students_weighted_persons 2389.038858, difference_in_se_adults -2.189217894;
-    03158 model_students_18_29 1773, model_students_30plus 294, model_students_expanded_persons 2067,
+    model_students_expanded_persons 2203, model_present_students_adults 2025, srv_students_weighted_persons 2389.038858, difference_in_se_adults -2.189217894;
+    03158 model_students_18_29 1773, model_students_30plus 294, model_students_expanded_persons 2067, model_present_students_adults 1900,
     srv_students_weighted_persons 2201.102208, difference_in_se_adults -3.010495228; 03ZGB model_students_18_29 20822,
-    model_students_30plus 3451, model_students_expanded_persons 24273, srv_students_weighted_persons 26214.89897,
-    difference_in_se_adults -5.571590226.
+    model_students_30plus 3451, model_students_expanded_persons 24273, model_present_students_adults 22412, srv_students_weighted_persons 26214.89897,
+    difference_in_se_adults -5.571590226. Like-for-like counts on the 03ZGB row (the seven surveyed Kreise): present
+    model adult students (model_present_students_adults 22412) against the SrV students at home on the reporting day
+    (srv_students_weighted_persons 26214.89897); all model adult students (model_students_expanded_persons 24273)
+    against the SrV count plus the SrV students away all day (weight_sum 3708.271229 of row
+    day,away_all_day,students_all,yes of eqasim-data/data/braunschweig/srv/srv2023_student_parameters.csv), derived here
+    as their sum 29923.170199. The SrV side has no per-Kreis away-all-day weight, so the per-Kreis rows give only the
+    present pair. Coverage: the per-Kreis SrV values carry the coverage caveat and the standard-error definition of the
+    header of eqasim-data/data/braunschweig/srv/srv2023_student_share_by_kreis.csv ("Coverage caveat" and "Standard
+    errors" lines); read the per-Kreis distances in SrV standard errors with them.
 - metric: behaviour parameters beyond two SrV standard errors with a usable SrV cell (srv_cell_ok true), present students
   reference: SrV 2023 aggregates of this branch (a survey, not ground truth)
   result: >-
@@ -108,7 +125,7 @@ validation:
     438, difference_in_se 2.214521997. The standard error is the SrV one only (Kish effective size of the same base); the
     model sampling error is not included.
 - metric: plan source of the model's adult students (own diary or re-drawn, match path, donor activity)
-  reference: SrV 2023 aggregates of this branch (a survey, not ground truth)
+  reference: none (model-only diagnostic)
   result: >-
     Read from docs/runs/artifacts/student-measurement-popsim100-20261120-20261126/student_plan_source.csv
     (share_of_students over all adult students; the leg shares over the present students of the row; model counts
@@ -162,10 +179,12 @@ notes: >-
   Small cells are shown with their number of respondents (n_unweighted, srv_n_unweighted), not pooled (owner decision,
   2026-11-26); a reader judges a cell by that number and its standard error, srv_cell_ok marks the cells with at least
   the respondent minimum of the control rule. Wolfsburg rule: Wolfsburg (03103) is not surveyed by SrV, its rows are
-  model-only with NaN SrV columns. Universes: shares over present persons on both sides, counts and the away-all-day
-  share over all persons (see sampling.notes). The other_adults_all rows of the behaviour table are SrV-only by
+  model-only with NaN SrV columns. Universes: shares over present persons on both sides, the away-all-day share over
+  all persons; the SrV student count covers only the students at home on the reporting day, so it is set beside the
+  present model students (see sampling.notes). The other_adults_all rows of the behaviour table are SrV-only by
   design (the model side is empty there). The work-class table has one row: all adult students fall in the
-  not-employed class, and the class of the work control is independent of a work leg on the day. An SrV standard error
+  not-employed class. By definition the class comes from employment_status (the class of the work control), not from a
+  work trip on the day. An SrV standard error
   of 0 gives a NaN difference_in_se and an NA beyond_two_se. This is a measurement on a cached population, not a
   validation; the SrV aggregates are a survey, not ground truth, and no target value is stated here.
 source: >-
