@@ -20,7 +20,12 @@ configuration:
     (so the cached PopulationSim result stays valid), cache_share off. Arm "defaults": no reach keys, so the branch
     defaults apply. Arm "today": braunschweig.initial_mode_choice.isolate_outside_trips false,
     braunschweig.initial_mode_choice.max_tour_length 6, braunschweig.mode_choice.isolate_outside_trips false,
-    braunschweig.mode_choice.max_tour_length 6, braunschweig.frozen_pt_walk_lift.all_modes false.
+    braunschweig.mode_choice.max_tour_length 6, braunschweig.frozen_pt_walk_lift.all_modes false. Effective values per
+    step, as the step reports record them (reach of plan_check.json and frozen_pt_walk_lift.json, reach of
+    initial_mode_choice.json): defaults: loop isolate_outside_trips false, max_tour_length 11; initial choice
+    isolate_outside_trips true, max_tour_length 11; lift all_modes true. Today: loop false, 6; initial choice false, 6;
+    lift all_modes false. The loop isolates border trips in neither arm, so the comparison tests the isolation of border
+    trips only in the initial choice (plus the tour length 11 in both steps and the lift of all modes).
   notes: >-
     The two prepared MATSim configs differ in one value only, maximumLength of the tour length filter 6 (today) against
     11 (defaults) (config_diff_today_vs_defaults_output.txt). The arm "today" logs "the initial mode choice uses the
@@ -42,15 +47,15 @@ pipeline:
   targets:
   - matsim.output
   notes: >-
-    Cache: a physical copy (cp -a, by isolated_run.py setup) of ~/i679_d/cache, the newest 1 % cache on the server,
+    Cache: a physical copy (cp -a, by isolated_run.py setup) of the cache of the run folder i679_d, the newest 1 % cache on the server,
     read only. The copy held 61.8 GiB of stage variants of earlier runs and two copies did not fit on the disk, so
     i678_ab_prune.py removed from the run-owned copy every stage variant that the explain report of the run's own
     commit and overlay does not name (kept 235 entries, 4.7 GiB; removed 1,522 entries, 57.1 GiB); the explain verdict
-    before and after the prune was identical. Arm "defaults" (~/i678_ab_defaults): 23 stages stale for their own
+    before and after the prune was identical. Arm "defaults" (run folder i678_ab_defaults): 23 stages stale for their own
     reasons (code and config of the i679 run differ from this branch; braunschweig.popsim.stage was not executed, its
     stale parent's output was unchanged),
     launched 17:18:03, prepare 18:07:46 to 18:21:59, matsim.simulation.run 18:21:59 to 18:32:17, exit 0 at 18:32:19.
-    Arm "today" (~/i678_ab_today): set up afterwards from the arm "defaults" cache (5.3 GiB), so only prepare,
+    Arm "today" (run folder i678_ab_today): set up afterwards from the arm "defaults" cache (5.3 GiB), so only prepare,
     matsim.simulation.run and matsim.output were stale; launched 20:53:43, prepare 20:54:18 to 21:08:31,
     matsim.simulation.run 21:08:31 to 21:18:39, exit 0 at 21:18:41. Both gates ran with --allow-environment-mismatch:
     five pip packages of the snapshot (py-spy, pdfplumber, pdfminer.six, pypdfium2, cryptography) are not installed in
@@ -63,15 +68,16 @@ classification:
 status:
   execution: completed
   notes: >-
-    A 1 % smoke comparison of the reach defaults against today's values, NOT a validation: one seed, 5 iterations, no
-    observed reference. Mode shares are model output, and with 5 iterations they are not an equilibrium. Both arms
+    A 1 % smoke comparison of the reach defaults against today's values, NOT a validation: one seed, iterations 0 to 5 (5 replanning iterations), no
+    observed reference. Mode shares are model output, and after iterations 0 to 5 (5 replanning iterations) they are not an equilibrium. Both arms
     finished prepare and the MATSim run without an exception and without a traceback (the launcher log of the arm
     "today" has no line naming an exception; the only one in the arm "defaults" is a Maven SLF4J warning of its jar
     build). The plan check reported thresholds as exceeded in both
     arms (fail_on_threshold false, so it logged ERROR and continued; no bound or code was changed).
 source: >-
-  felix:~/i678_ab_defaults and ~/i678_ab_today (run.json, run.yml, logs/run_*.log, cache with the prepare and run stage
-  directories, output/), ~/i678_ab (scripts, overlays, outputs, art/ the folder that was committed). Committed in
+  the project server, run folders i678_ab_defaults and i678_ab_today (run.json, run.yml, logs/run_*.log, cache with the
+  prepare and run stage directories, output/) and the work folder i678_ab (scripts, overlays, outputs, art/ the folder
+  that was committed). Committed in
   docs/runs/artifacts/i678-reach-ab-1pct-2026-11-26/: helper scripts i678_ab_collect.py, i678_ab_log_lines.py,
   i678_ab_prune.py and the overlays i678_ab_defaults_source.yml, i678_ab_today_source.yml with the sha256 of the server
   files in sha256_output.txt (isolated_run.py was the blob 600f1654 of origin/main and of the branch, not copied); the
@@ -81,9 +87,9 @@ source: >-
   config_diff_defaults_final_vs_initial_output.txt; the tool outputs setup_*_output.txt, overlay_today_output.txt,
   gate_*_output.txt, launch_*_output.txt, explain_defaults_pre_output.txt and prune_defaults_output.txt. Home
   directory paths are written as ~; nothing else differs from the server files.
-environment: 'server (felix, 64 cores, 94 GB), conda eqasim (~/miniforge3/envs/eqasim), Java ~/tools/jdk-25.0.3+9 (25.0.3); processes 32 (base), matsim_threads 16, java_memory 100G (base); load average about 3 to 5 when the arm "defaults" started (another session ran a 1 % pipeline) and below 0.1 when the arm "today" started'
+environment: 'the project server (64 cores, 94 GB), conda env eqasim, Java JDK 25.0.3+9 (25.0.3); processes 32 (base), matsim_threads 16, java_memory 100G (base); load average about 3 to 5 when the arm "defaults" started (another session ran a 1 % pipeline) and below 0.1 when the arm "today" started'
 validation:
-- metric: does prepare finish and does the MATSim run of 5 iterations run without an exception, with no person lost?
+- metric: does prepare finish and does the MATSim run of iterations 0 to 5 (5 replanning iterations) run without an exception, with no person lost?
   reference: 'none: a wiring check on model output'
   result: >-
     Yes in both arms. 12,667 persons in the prepared population, persons_before = persons_after = 12,667 in
@@ -114,16 +120,22 @@ validation:
     defaults exceeded [share_plans_non_monotonic_large] (2.00 % of 952 frozen residents against 0.50 %),
     share_lifted_frozen_pt_walk 0.01845, share_lifted_other_modes 0.000135; today exceeded
     [share_plans_non_monotonic_large, share_lifted_frozen_pt_walk] (1.86 % of 1,022; 0.02290 of 262 pt-intended trips
-    against 0.02), share_lifted_other_modes 0.0. Frozen pt-as-walk legs in the plan check: defaults 3 (none over 5 km),
+    against 0.02), share_lifted_other_modes 0.0. Frozen pt-as-walk legs in the plan check (residents, frozen block):
+    defaults 3 (none over 5 km),
     today 27 (1 over 5 km).
   artifact: docs/runs/artifacts/i678-reach-ab-1pct-2026-11-26/defaults_plan_check.json
 - metric: lifted trips by mode and reason
   reference: 'none: a count of model output'
   result: >-
-    Defaults (all_modes true, scope the loop rule): pt 5, walk 5, bicycle 0, all fixed_border (fixed_vehicle 0,
-    fixed_length 0), no bicycle taken along with its tour; 5 of 271 frozen pt-intended trips. The lift report counts
+    Defaults (all_modes true, scope the loop rule): 10 lifted trips, each counted once under its mode
+    (frozen_pt_walk_lift.run adds a trip to one key of n_lifted_by_mode, and n_lifted_by_reason sums to the same 10):
+    5 pt-intended trips realised as walk over 5 km (key pt; n_lifted 5, all with the walkFallbackFrom stamp, 5 of 271
+    frozen pt-intended trips) and 5 plain walk trips over 5 km (key walk; share_lifted_other_modes 0.000135 = 5 of
+    36,920 resident trips); bicycle 0; all fixed_border (fixed_vehicle 0, fixed_length 0); no bicycle taken along with
+    its tour. The lift report counts
     4,936 unreached resident trips (fixed_border 4,912, fixed_length 24). Today (all_modes false, scope the frozen
-    tours without reach settings): pt 6, walk 0, bicycle 0, all fixed_border; 6 of 262 frozen pt-intended trips; its
+    tours without reach settings): 6 lifted trips, all pt-intended trips realised as walk over 5 km (key pt; n_lifted
+    6, 6 of 262 frozen pt-intended trips), walk 0, bicycle 0, all fixed_border; its
     report counts fixed_border 4,912 and fixed_length 0, because that scope does not classify by tour length (the plan
     check row has the 559).
   artifact: docs/runs/artifacts/i678-reach-ab-1pct-2026-11-26/defaults_frozen_pt_walk_lift.json

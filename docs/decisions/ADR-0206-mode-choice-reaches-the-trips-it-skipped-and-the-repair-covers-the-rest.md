@@ -65,5 +65,5 @@
 - Before: [`docs/runs/i678-mode-choice-reach-probe-prod100-2026-11-25.yml`](../runs/i678-mode-choice-reach-probe-prod100-2026-11-25.yml) (B1).
 - Timing of the initial mode choice on the long tours (done): [`docs/runs/i678-long-tour-timing-prod100-2026-11-25.yml`](../runs/i678-long-tour-timing-prod100-2026-11-25.yml).
 - Replay on the prepared population of `prod100_20261031` (completed; a replay, not a validation; the first attempt failed on freight, fixed by 884627f0): [`docs/runs/i678-reach-replay-prod100-2026-11-25.yml`](../runs/i678-reach-replay-prod100-2026-11-25.yml).
-- 1 % comparison of today's values against the defaults through `prepare` and 5 MATSim iterations (completed; a smoke, not a validation): [`docs/runs/i678-reach-ab-1pct-2026-11-26.yml`](../runs/i678-reach-ab-1pct-2026-11-26.yml).
+- 1 % comparison of today's values against the defaults through `prepare` and MATSim iterations 0 to 5 (5 replanning iterations) (completed; a smoke, not a validation): [`docs/runs/i678-reach-ab-1pct-2026-11-26.yml`](../runs/i678-reach-ab-1pct-2026-11-26.yml).
 - Tests: `tests/test_plan_check.py`, `tests/test_mode_choice_reach.py`, `tests/test_frozen_pt_walk_lift.py`, `tests/test_initial_mode_choice.py` (the named cases of the note); Java: the tests of `BorderTourVehicleConstraint` in the fork.

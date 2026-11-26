@@ -5,17 +5,17 @@ repository:
   branch: fix/i678-mode-choice-reach
   notes: >-
     Result of record: the third attempt (2026-11-26). eqasim-bs fix/i678-mode-choice-reach at 950c91a8 in a clean clone
-    on felix (~/i678_replay3/eqasim-bs, 0 changes) with eqasim-java-bs main at 3f398bdfe0960096b1702def8fa772b7db6e8e23
+    on the project server (run folder i678_replay3, eqasim-bs, 0 changes) with eqasim-java-bs main at 3f398bdfe0960096b1702def8fa772b7db6e8e23
     (the merge of PR #66: the standalone runner keeps the trips it does not re-choose exactly as they came in and logs
-    how many, and a worker failure ends the run), a clean clone (~/i678_replay3/eqasim-java-bs); both clones were made
+    how many, and a worker failure ends the run), a clean clone (i678_replay3/eqasim-java-bs); both clones were made
     from git bundles of these commits. The jar was built there with -Pstandalone and the fixed build timestamp of
     matsim.runtime.eqasim (braunschweig-2.3.1.jar, 193,801,549 bytes, sha256
     23fe730bea68f9f472a2f5e868586f6eb32e0b2eb1c046007a23d630e0574862; it holds KeepFilteredTripsModel,
     BorderTourVehicleConstraint, its Factory and BorderTourVehicleSummaryListener); after the build the clone shows only
     braunschweig/dependency-reduced-pom.xml as modified (the shade plugin rewrites it). Second attempt (2026-11-25, kept
-    as the comparison before the Java fix): eqasim-bs 884627f0 (~/i678_replay2/eqasim-bs) with eqasim-java-bs main at
+    as the comparison before the Java fix): eqasim-bs 884627f0 (run folder i678_replay2, eqasim-bs) with eqasim-java-bs main at
     ae6a10a1c753537597145cc722ad0277ede58cfb (the merge of PR #65, the border tour vehicle constraint), jar 193,786,595
-    bytes, sha256 8cf877113730d4ddd4397d660386189cd2b6d110bfbdf61e60f6b4c5962e6bb8 (~/i678_replay/eqasim-java-bs).
+    bytes, sha256 8cf877113730d4ddd4397d660386189cd2b6d110bfbdf61e60f6b4c5962e6bb8 (run folder i678_replay, eqasim-java-bs).
     First (failed) attempt: eqasim-bs 79d0bcbd with the same ae6a10a1 jar. The population and the final config are
     those of the run prod100_20261031 (code 7a41f0ba), read only; every attempt worked on copies.
 configuration:
@@ -87,8 +87,8 @@ status:
     exception the JVM did not exit; it was stopped by hand after 35 minutes (exit 143) and wrote no output. Fixed on
     the branch by commit 884627f0 (freight excluded) and in the Java fork by PR #66 (the run ends on a worker failure).
 source: >-
-  felix:~/i678_replay3 (third attempt: stage/, snapshots/, replay_output.txt the full log, analysis outputs),
-  ~/i678_replay2 (second attempt) and ~/i678_replay (first attempt, thread_dump_1.txt, diag_freight/). Committed in
+  the project server, run folder i678_replay3 (third attempt: stage/, snapshots/, replay_output.txt the full log, analysis outputs),
+  run folders i678_replay2 (second attempt) and i678_replay (first attempt, thread_dump_1.txt, diag_freight/). Committed in
   docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/ with the sha256 of the server file (sha256_output.txt,
   sha256_replay2_output.txt, sha256_replay3_output.txt). Third attempt: i678_run_replay_v3.sh
   (0a0603871936ad8de308728fdd1f8581db791c862556ea374fad24615e755fc5), i678_run_analyses_v3.sh (the server file
@@ -115,7 +115,7 @@ source: >-
   replay_lines_output.txt, thread_dump_excerpt_output.txt, analysis_before.json, analysis_before_output.txt,
   diag_freight_{initial,final,driver}_output.txt and config_diff_{final,initial}_output.txt. Home directory paths are
   written as ~ in the committed outputs; nothing else differs from the server files.
-environment: 'server (felix, hostname matsim, 64 cores, 94 GB), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10), Java ~/tools/jdk-25.0.3+9 (25.0.3), Maven 3.6.3; 32 threads, -Xmx56G; load average about 1 to 3 in the third attempt, about 1 to 4 in the second (another session ran populationsim workers and a Java job)'
+environment: 'the project server (64 cores, 94 GB), conda env eqasim (Python 3.10), Java JDK 25.0.3+9 (25.0.3), Maven 3.6.3; 32 threads, -Xmx56G; load average about 1 to 3 in the third attempt, about 1 to 4 in the second (another session ran populationsim workers and a Java job)'
 validation:
 - metric: persons in and out of every step, and are freight and in-commuters handled as the exclusion says?
   reference: 'none: a wiring check on model output'

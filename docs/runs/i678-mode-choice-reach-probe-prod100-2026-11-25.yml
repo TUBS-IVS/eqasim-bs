@@ -7,9 +7,9 @@ repository:
     commit is the code that PRODUCED the run prod100_20261031 (the measured state), not the code of this branch; branch is
     only the branch that commits this record. The probes read the products of the run prod100_20261031, which was produced by code 7a41f0ba, i.e. before #570 to
     #589. The probe scripts are standalone, read-only and were not run from a repository checkout (they live in
-    scratch on felix, ~/scratch_longwalk); the branch named here is the one that commits this record.
+    a scratch folder scratch_longwalk on the project server); the branch named here is the one that commits this record.
 configuration:
-  config: 'configs/base_bs.yml with the run overlay of prod100_20261031 (felix:~/prod100_20261031/run.yml); not changed, not re-run'
+  config: 'configs/base_bs.yml with the run overlay of prod100_20261031 (run.yml of the run folder prod100_20261031 on the project server); not changed, not re-run'
   notes: >-
     Production mode choice as the run's MATSim config sets it (tour finder on [home, outside], tour filters
     OutsideFilter and TourLength with maximumLength 6); see issue #678 for the mechanism.
@@ -22,9 +22,9 @@ sampling:
 pipeline:
   targets: []
   notes: >-
-    No synpp pipeline run. Read-only Python probes over the run's cached artifacts on felix; the run directory and the
+    No synpp pipeline run. Read-only Python probes over the run's cached artifacts on the project server; the run directory and the
     scratch folder were only read. tour_length_probe.py printed to the terminal on 2026-11-25; it was run again for
-    this record (2026-11-25, 152 s, ~/i678_b1 on felix, with a copy of frozen_scope_probe.py, which it imports) and
+    this record (2026-11-25, 152 s, folder i678_b1 on the project server, with a copy of frozen_scope_probe.py, which it imports) and
     its output is committed as tour_length_output.txt; the re-run gives the numbers issue #678 quotes.
 classification:
 - wiring_proof
@@ -41,7 +41,7 @@ status:
     without an outside activity are 7,355 in the uncut population and 6,554 in the prepared one; the 801 difference is
     not explained here.
 source: >-
-  felix:~/scratch_longwalk (scratch, read-only for this record) and ~/i678_b1. Committed in
+  the project server, folders scratch_longwalk (scratch, read-only for this record) and i678_b1. Committed in
   docs/runs/artifacts/i678-mode-choice-reach-probe-prod100-2026-11-25/ with the sha256 of the ORIGINAL server file:
   frozen_scope_probe.py (5114e25830c13956021ed68122347cf71627710c2aaf5ee9669732db95ee8a48) with frozen_scope.json and
   frozen_scope_output.txt (the probe's log; *.log is git-ignored); tour_length_probe.py
@@ -51,7 +51,7 @@ source: >-
   distance_output.txt. The four scripts are committed unchanged (their sha256 equals the server file's). Redaction:
   in frozen_scope_output.txt the home directory path of the two warning lines (user name) is replaced by /home/<user>/;
   nothing else differs from the server log; no other file needed one.
-environment: 'server (felix, hostname matsim), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10)'
+environment: 'the project server, conda env eqasim (Python 3.10)'
 validation:
 - metric: trips the mode choice never re-chooses, by group (residents, prepared population); the three rows of issue #678
   reference: 'none: a count of model output, NOT observed data'

@@ -5,8 +5,8 @@ repository:
   branch: fix/i678-mode-choice-reach
   notes: >-
     eqasim-bs fix/i678-mode-choice-reach at 17f5e923 and eqasim-java-bs feat/i678-border-tour-vehicle-rule at
-    ab56318a118ab17777ba57bc6b149b25c95ea8fb, both clean clones on felix (~/i678_work/eqasim-bs and
-    ~/i678_work/eqasim-java-bs, 0 changes) made from git bundles of the two branches. The jar was built in the Java
+    ab56318a118ab17777ba57bc6b149b25c95ea8fb, both clean clones on the project server (work folder i678_work, eqasim-bs and
+    eqasim-java-bs, 0 changes) made from git bundles of the two branches. The jar was built in the Java
     clone with -Pstandalone and the fixed build timestamp of matsim.runtime.eqasim (braunschweig-2.3.1.jar,
     193,785,113 bytes, sha256 11d8abb6b6afb5fb737cb44fe402e7443a451afc7144db8d91330db1ff399728); after the build the
     clone shows only braunschweig/dependency-reduced-pom.xml as modified (the shade plugin rewrites it). The branch's
@@ -22,7 +22,7 @@ configuration:
     BorderTourVehicleContinuity", maximumLength of tourFilter:TourLength 6 -> 13. Runner arguments from the branch's
     initial_mode_choice.arguments(config, population, 16, ()) with no excluded subpopulation (the files hold residents
     only), plus --config:standaloneModeChoice.chunkSize 1 in the runs this record times (see status notes). JVM:
-    JDK 25.0.3 (~/tools/jdk-25.0.3+9), -Xmx40G (7 to 8 and 9 to 11 trips) and -Xmx48G (13 trips), cwd the run directory,
+    JDK 25.0.3 (jdk-25.0.3+9), -Xmx40G (7 to 8 and 9 to 11 trips) and -Xmx48G (13 trips), cwd the run directory,
     as matsim.runtime.java.run sets it. 16 threads in every run.
 sampling:
   rate: 1.0
@@ -64,7 +64,7 @@ status:
     constraint is written by a MATSim end-of-run listener, which the standalone runner does not call; the constraint
     itself logs a line only when it relaxes a leg.
 source: >-
-  felix:~/i678_timing (cut files in cut/, run directories run_long_7_8, run_long_9_11, run_long_12_13, Java logs
+  the project server, run folder i678_timing (cut files in cut/, run directories run_long_7_8, run_long_9_11, run_long_12_13, Java logs
   java_output.txt). Committed in docs/runs/artifacts/i678-long-tour-timing-prod100-2026-11-25/ with the sha256 of the
   server file (sha256_output.txt): i678_cut_long_tours.py (cc3eccbc51d8e18606e70b0e41f371a497000fc8284201320a52fbc1a8359403)
   with cut_output.txt; i678_run_initial_choice.py (52032d2168f7d98632e0713e0525f158b7c3e5b4f29a229d90be851b9201e448;
@@ -77,7 +77,7 @@ source: >-
   "Splitting", progress, "Done!", population written) in runner_lines_long_*_output.txt and of the default chunk size
   runs in runner_lines_*_chunk1000*_output.txt; the config diffs in initial_config_diff_long_*_output.txt. Home
   directory paths are written as ~ in the committed outputs; nothing else differs from the server files.
-environment: 'server (felix, hostname matsim, 64 cores, 94 GB), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10), Java ~/tools/jdk-25.0.3+9 (25.0.3), Maven 3.6.3; 16 threads per run'
+environment: 'the project server (64 cores, 94 GB), conda env eqasim (Python 3.10), Java JDK 25.0.3+9 (25.0.3), Maven 3.6.3; 16 threads per run'
 validation:
 - metric: does the finer rule with the constraint name BorderTourVehicleContinuity run in eqasim's standalone mode choice, and are persons lost?
   reference: 'none: a wiring check on model output'
