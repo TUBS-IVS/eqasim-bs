@@ -5,6 +5,9 @@ synthetic table in ``student_parameters.PARAMETER_COLUMNS``, never the committed
 """
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -501,26 +504,24 @@ def test_young_adult_status_and_work_class_by_hand():
             diag["n_adult_students_not_employed_in_employed_class"]) == (1, 1)
 
 
-def _persons_set(column, person_id, value):
-    def mutate(persons, srv, status, zensus):
-        persons = persons.copy()
-        persons[column] = persons[column].astype(object)
-        persons.loc[persons["person_id"] == person_id, column] = value
-        return persons, srv, status, zensus
+def _set_value(frame_name, select, column, value):
+    """Set ``column`` of the rows ``select(frame)`` picks in the named input frame."""
+    def mutate(inputs):
+        frame = inputs[frame_name].astype({column: object})
+        frame.loc[select(frame), column] = value
+        return {**inputs, frame_name: frame}
     return mutate
 
 
-def _srv_code(old, new):
-    def mutate(persons, srv, status, zensus):
-        srv = srv.astype({"code": object})
-        srv.loc[srv["code"] == old, "code"] = new
-        return persons, srv, status, zensus
+def _change(frame_name, change):
+    def mutate(inputs):
+        return {**inputs, frame_name: change(inputs[frame_name])}
     return mutate
 
 
-def _zensus_rows(change):
-    def mutate(persons, srv, status, zensus):
-        return persons, srv, status, change(zensus)
+def _sampling_rate(rate):
+    def mutate(inputs):
+        return {**inputs, "rate": rate}
     return mutate
 
 
@@ -528,29 +529,53 @@ def _one_20_29_row(zensus, kreis, sex):
     return (zensus["region"] == kreis) & (zensus["age_class"] == "20-29") & (zensus["sex"] == sex)
 
 
-@pytest.mark.parametrize("mutate, rate, match", [
-    (_persons_set("kreis", 2, "03241"), SAMPLING_RATE, "ZGB_KREISE"),     # Region Hannover
-    (_persons_set("kreis", 2, 3101), SAMPLING_RATE, "non-string"),
-    (_srv_code("03102", 3102), SAMPLING_RATE, "non-string"),
-    (_srv_code("03102", "03241"), SAMPLING_RATE, "outside"),
-    (lambda *frames: frames, 0.0, "sampling_rate"),
-    (lambda *frames: frames, 1.5, "sampling_rate"),
+def _person(person_id):
+    return lambda frame: frame["person_id"] == person_id
+
+
+def _code(code):
+    return lambda frame: frame["code"] == code
+
+
+_LEVEL = "student_level_table"
+_STATUS = "young_adult_status_table"
+_BAD_INPUTS = [
+    # (target, mutate, match): the persons and the rate reach both tables, the SrV frames and
+    # the Zensus frame their own table only
+    *[(target, mutate, match) for target in (_LEVEL, _STATUS) for mutate, match in [
+        (_set_value("persons", _person(2), "kreis", "03241"), "ZGB_KREISE"),  # Region Hannover
+        (_set_value("persons", _person(2), "kreis", 3101), "non-string"),
+        (_sampling_rate(0.0), "sampling_rate"),
+        (_sampling_rate(1.5), "sampling_rate"),
+    ]],
+    (_LEVEL, _set_value("srv_shares", _code("03102"), "code", 3102), "non-string"),
+    (_LEVEL, _set_value("srv_shares", _code("03102"), "code", "03241"), "outside"),
+    (_STATUS, _set_value("srv_status", _code("03102"), "code", 3102), "non-string"),
+    (_STATUS, _set_value("srv_status", _code("03102"), "code", "03241"), "outside"),
+    (_STATUS, _set_value("srv_status", lambda f: f["status"] == "other", "status", "retired"),
+     "outside"),
     # more or fewer than one Zensus row per sex
-    (_zensus_rows(lambda z: z[~_one_20_29_row(z, "03101", "F")]), SAMPLING_RATE, "sexes"),
-    (_zensus_rows(lambda z: pd.concat([z, z[_one_20_29_row(z, "03101", "M")]])), SAMPLING_RATE,
+    (_STATUS, _change("zensus", lambda z: z[~_one_20_29_row(z, "03101", "F")]), "sexes"),
+    (_STATUS, _change("zensus", lambda z: pd.concat([z, z[_one_20_29_row(z, "03101", "M")]])),
      "sexes"),
     # region read as numbers: no Kreis would be found
-    (_zensus_rows(lambda z: z.assign(region=z["region"].astype(int))), SAMPLING_RATE,
+    (_STATUS, _change("zensus", lambda z: z.assign(region=z["region"].astype(int))),
      "non-string"),
     # five of the eight ZGB Kreise missing (62.5 %) is above the 50 % limit
-    (_zensus_rows(lambda z: z[~z["region"].isin(M.ZGB_KREISE[:5])]), SAMPLING_RATE, "Zensus"),
-])
-def test_invalid_level_and_status_inputs_raise(mutate, rate, match):
-    persons, srv, status, zensus = mutate(_level_persons(), _srv_shares(), _srv_status(),
-                                          _zensus())
+    (_STATUS, _change("zensus", lambda z: z[~z["region"].isin(M.ZGB_KREISE[:5])]), "Zensus"),
+]
+
+
+@pytest.mark.parametrize("target, mutate, match", _BAD_INPUTS)
+def test_invalid_level_and_status_inputs_raise(target, mutate, match):
+    inputs = mutate({"persons": _level_persons(), "srv_shares": _srv_shares(),
+                     "srv_status": _srv_status(), "zensus": _zensus(), "rate": SAMPLING_RATE})
     with pytest.raises(ValueError, match=match):
-        M.student_level_table(persons, srv, rate)
-        M.young_adult_status_table(persons, status, zensus, rate)
+        if target == _LEVEL:
+            M.student_level_table(inputs["persons"], inputs["srv_shares"], inputs["rate"])
+        else:
+            M.young_adult_status_table(inputs["persons"], inputs["srv_status"],
+                                       inputs["zensus"], inputs["rate"])
 
 
 # Seed key (H_ID, P_ID), plan source and attribute source of each student. Student 1 keeps its
@@ -666,13 +691,56 @@ def test_invalid_plan_source_inputs_raise(mutate, match):
         M.plan_source_table(*mutate(_plan_frames()))
 
 
+def _resolution_assignments(source: str) -> tuple[set, list]:
+    """Values assigned to ``resolution`` in ``source``: ``(string literals, other right-hand
+    sides)``. Targets: ``resolution``, ``resolution[...]``, ``resolution.loc/.at/.iloc/.iat[...]``;
+    a call such as ``pd.Series("x", index=...)`` contributes its first argument."""
+    literals, others = set(), []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)) or node.value is None:
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        if not any(_is_resolution_target(target) for target in targets):
+            continue
+        value = node.value
+        if isinstance(value, ast.Call) and value.args:
+            value = value.args[0]
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            literals.add(value.value)
+        else:
+            others.append(ast.unparse(node))
+    return literals, others
+
+
+def _is_resolution_target(target) -> bool:
+    if isinstance(target, ast.Subscript):
+        target = target.value
+    if isinstance(target, ast.Attribute) and target.attr in ("loc", "at", "iloc", "iat"):
+        target = target.value
+    return isinstance(target, ast.Name) and target.id == "resolution"
+
+
+@pytest.mark.parametrize("snippet, literals, others", [
+    ('resolution = pd.Series("a", index=persons.index)', {"a"}, 0),
+    ('resolution[persons["x"].to_numpy()] = "b"', {"b"}, 0),
+    ('resolution.loc[mask] = "c"', {"c"}, 0),
+    ('resolution.at[3] = "d"', {"d"}, 0),
+    ('resolution.iloc[ridx] = "e"', {"e"}, 0),
+    ('resolution[ridx] = RESOLUTION_HH_MATCH', set(), 1),
+    ('resolution = np.where(mask, "f", "g")', set(), 1),
+    ('other[ridx] = "h"', set(), 0),
+])
+def test_resolution_scan_catches_every_assignment_idiom(snippet, literals, others):
+    # positive controls of the scan below: each idiom is caught, a non-literal is surfaced
+    found, rest = _resolution_assignments(snippet)
+    assert (found, len(rest)) == (literals, others)
+
+
 def test_weekend_resolutions_are_the_literals_the_weekend_match_writes():
     # weekend_plan_match keeps its resolutions as inline literals; this pins the measurement's
-    # vocabulary to every literal assigned to `resolution` there (initial Series and updates)
-    import re
-    from pathlib import Path
+    # vocabulary to every value assigned to `resolution` there. A non-literal right-hand side
+    # (e.g. a module constant) fails: then import the constants in student_measurement instead.
     import braunschweig.popsim.weekend_plan_match as W
-    source = Path(W.__file__).read_text(encoding="utf-8")
-    literals = set(re.findall(r'resolution(?:\[.*\])?\s*=\s*"(\w+)"', source))
-    literals |= set(re.findall(r'resolution\s*=\s*pd\.Series\("(\w+)"', source))
+    literals, others = _resolution_assignments(Path(W.__file__).read_text(encoding="utf-8"))
+    assert others == [], "non-literal resolution assignment(s): import the constants instead"
     assert literals == set(M.WEEKEND_RESOLUTIONS)
