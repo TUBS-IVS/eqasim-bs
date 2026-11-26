@@ -110,8 +110,12 @@ def _exclusions(*dicts) -> str:
     return "# Exclusions: " + ", ".join("%s=%s" % (key, value) for key, value in merged.items())
 
 
-def _common_header(table_name: str, source_commit: str) -> list:
-    """Provenance lines all five tables share (source, code state, universe, weight, caveats)."""
+def _common_header(table_name: str, source_commit: str,
+                   table_label: str = "Phase 0 reference table R5") -> list:
+    """Provenance lines all nine tables share (source, code state, universe, weight, caveats).
+
+    ``table_label`` names the phase / reference table in the ``# Table:`` line.
+    """
     return [
         "# Source: SrV 2023 Braunschweig + Regionalverband Grossraum Braunschweig scientific-use",
         "#   microdata (local-only, see srv2023_raw/README.md; files %s, %s, %s),"
@@ -121,8 +125,7 @@ def _common_header(table_name: str, source_commit: str) -> list:
         "# Code state: eqasim-bs %s, modules braunschweig/calibration/srv_student_reference.py"
         % source_commit,
         "#   and braunschweig/calibration/student_behaviour_labels.py (definitions live there).",
-        "# Table: %s (issue #140, Phase 0 reference table R5). A measurement, not a validation."
-        % table_name,
+        "# Table: %s (issue #140, %s). A measurement, not a validation." % (table_name, table_label),
         "# Universe: srv_participation_universe.prepare_universe_persons -- valid non-negative",
         "#   GEWICHT_P_ZENSUS, persons at home at some point on the (Tuesday-Thursday) reporting",
         "#   day, household Kreis inside the 8 ZGB Kreise. Persons whose V_ERW is missing or",
@@ -258,10 +261,8 @@ def _sites_line(site_kreise: frozenset, sites_sha256: str) -> list:
 
 
 def _phase1_header(table_name: str, source_commit: str, sites: list) -> list:
-    """The shared provenance block of the four Phase 1 tables (relabelled) plus the site line."""
-    header = [line.replace("Phase 0 reference table R5", "Phase 1 reference table")
-              for line in _common_header(table_name, source_commit)]
-    return header + sites
+    """The shared provenance block of the four Phase 1 tables plus the site line."""
+    return _common_header(table_name, source_commit, "Phase 1 reference table") + sites
 
 
 def _parameter_header(diagnostics: dict, universe_diagnostics: dict, source_commit: str,
@@ -294,7 +295,9 @@ def _young_adult_header(diagnostics: dict, universe_diagnostics: dict, source_co
         % (list(R.YOUNG_ADULT_STATUSES), list(R.AGE_GROUP_EDGES), R.REGION_CODE),
         "#   is emitted with zero counts and NaN shares.",
         "# Columns: %s." % ", ".join(R.YOUNG_ADULT_STATUS_COLUMNS),
-        _exclusions(universe_diagnostics, diagnostics) + " " + _UNIVERSE_UNITS_NOTE,
+        _exclusions(universe_diagnostics, diagnostics) + " " + _UNIVERSE_UNITS_NOTE
+        + " (n_young_adult_base_missing_age counts the persons without a valid age among the"
+        " persons with a readable V_ERW of this table's own base)",
     ]
 
 
@@ -334,13 +337,20 @@ def _destination_header(diagnostics: dict, universe_diagnostics: dict, n_bootstr
 def read_site_kreise(path: Path) -> tuple:
     """Site Kreise (``site_kreis_ars5`` of the ``local`` rows) and the sha256 of the table.
 
-    The site table is local-only (R1). ``#`` comment lines are skipped, the required columns are
-    checked first (fail early), the codes are read as strings so a leading zero stays.
+    The site table is local-only (R1). Only the LEADING ``#`` lines are skipped (a ``#`` inside a
+    field stays), the required columns are checked first (fail early), the codes are read as
+    strings so a leading zero stays.
     """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError("site table missing: %s" % path)
-    table = pd.read_csv(path, comment="#", dtype=str)
+    n_comment_lines = 0
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            if not line.startswith("#"):
+                break
+            n_comment_lines += 1
+    table = pd.read_csv(path, skiprows=n_comment_lines, dtype=str)
     missing = [column for column in SITE_REQUIRED_COLUMNS if column not in table.columns]
     if missing:
         raise ValueError("%s: missing required column(s) %s" % (path, missing))

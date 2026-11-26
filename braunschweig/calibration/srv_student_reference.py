@@ -1055,8 +1055,9 @@ def build_young_adult_status_table(universe: pd.DataFrame) -> tuple[pd.DataFrame
     n_missing_age = int(readable["age"].isna().sum())
     _log_exclusion("young-adult status: valid age (V_ALTER present and non-negative)",
                    n_missing_age, len(readable))
-    diagnostics["n_missing_age"] = n_missing_age
-    young = readable[(readable["age"] >= AGE_BAND_20_29[0])
+    # own key: the universe diagnostics already carry n_missing_age, measured on a larger base
+    diagnostics["n_young_adult_base_missing_age"] = n_missing_age
+    young =readable[(readable["age"] >= AGE_BAND_20_29[0])
                      & (readable["age"] <= AGE_BAND_20_29[1])].copy()
     code = young["V_ERW"]
     young["status"] = np.select([code == STUDENT_V_ERW, code.isin(EMPLOYED_V_ERW)],
@@ -1191,7 +1192,8 @@ def build_post_matsim_reference(universe: pd.DataFrame, persons: pd.DataFrame,
     * ``daily_distance_km_mean`` / ``daily_travel_time_min_mean`` (``E_VERKEHRSLEIST`` in km,
       ``E_DAUER_GESAMT`` in min), label ``mean``: the weighted mean over the adult students with a
       non-negative value; ``n_unweighted`` counts persons. SUB-UNIVERSE
-      (:data:`DAILY_TOTAL_SUB_UNIVERSE`, also returned in the diagnostics for the CSV header):
+      (:data:`DAILY_TOTAL_SUB_UNIVERSE`, which the CSV header states; the diagnostics hold counts
+      only):
       the codebook defines both totals only for persons at home on the reporting day with ONLY
       valid trips (below 100 km, duration and length known); every other person carries ``-7``
       (:data:`NOT_COMPUTABLE_DAILY_TOTAL`). The base of these two quantities IS that
@@ -1208,8 +1210,7 @@ def build_post_matsim_reference(universe: pd.DataFrame, persons: pd.DataFrame,
     carries NaN, never 0.0. Diagnostics: ``n_adult_students``, ``n_legs_all`` /
     ``n_excluded_mode_all_legs``, ``n_legs_education`` / ``n_excluded_mode_education_legs``,
     ``n_not_computable_daily_distance`` / ``n_not_computable_daily_travel_time`` (the ``-7``
-    count of the sub-universe rule below), ``n_missing_*`` and ``n_base_*`` of both, and
-    ``daily_total_sub_universe``.
+    count of the sub-universe rule below), ``n_missing_*`` and ``n_base_*`` of both.
     """
     if n_bootstrap < 2:
         raise ValueError("n_bootstrap must be >= 2 (a standard error needs two draws)")
@@ -1287,7 +1288,6 @@ def build_post_matsim_reference(universe: pd.DataFrame, persons: pd.DataFrame,
         diagnostics["n_base_%s" % key] = int(valid.sum())
         rows.append(_mean_row(quantity, students.loc[valid, "weight"], value[valid], n_bootstrap,
                               seed))
-    diagnostics["daily_total_sub_universe"] = DAILY_TOTAL_SUB_UNIVERSE
     table = pd.DataFrame(rows, columns=POST_MATSIM_COLUMNS)
     logger.info("%s post-MATSim reference: %d rows, %d adult students, %d legs", _LOG_TAG,
                 len(table), len(students), len(work))

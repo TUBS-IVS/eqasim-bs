@@ -8,6 +8,7 @@ two Kreis shares and the right weighted share all differ.
 import hashlib
 import importlib.util
 import math
+import re
 from pathlib import Path
 
 import numpy as np
@@ -346,10 +347,22 @@ def test_cli_writes_all_tables_with_headers(srv_frames, tmp_path):
     new_names = (R.PARAMETER_TABLE, R.YOUNG_ADULT_STATUS_TABLE, R.POST_MATSIM_TABLE,
                  R.DESTINATION_TABLE)
     sites_hash = hashlib.sha256(sites.read_bytes()).hexdigest()
+    exclusion_keys = {
+        R.PARAMETER_TABLE: ["away_all_day_n_students_all", "education_leg_share_harmonised_purpose",
+                            "education_leg_share_control_definition"],
+        R.YOUNG_ADULT_STATUS_TABLE: ["n_young_adult_base_missing_age"],
+        R.POST_MATSIM_TABLE: ["n_not_computable_"],
+        R.DESTINATION_TABLE: ["n_excluded_unknown_destination"]}
     for name in new_names:
         header = [line for line in (out / name).read_text(encoding="utf-8").splitlines()
                   if line.startswith("#")]
         assert header and sum(line.startswith("# Exclusions:") for line in header) == 1
+        assert "Phase 0" not in " ".join(header)
+        exclusions = next(line for line in header if line.startswith("# Exclusions:"))
+        for key in exclusion_keys[name]:
+            assert key in exclusions
+        # the Phase 0 universe key keeps its meaning (the table's own count has another key)
+        assert re.search(r"(?:: |, )n_missing_age=", exclusions)
         # the local-only site table is named by its hash, never by its path
         assert sites_hash in " ".join(header) and str(sites) not in " ".join(header)
     parameter_header = " ".join(line for line in (out / R.PARAMETER_TABLE).read_text(
@@ -361,7 +374,6 @@ def test_cli_writes_all_tables_with_headers(srv_frames, tmp_path):
         encoding="utf-8").splitlines() if line.startswith("#"))
     destination = pd.read_csv(out / R.DESTINATION_TABLE, comment="#")
     assert len(destination) > 0
-
     tables = {}
     for name in (R.STUDENT_SHARE_TABLE, R.EDUCATION_STATUS_TABLE, R.EDUCATION_DISTANCE_TABLE,
                  R.BEHAVIOUR_TABLE, R.COMPARISON_TABLE):
@@ -387,6 +399,57 @@ def test_cli_writes_all_tables_with_headers(srv_frames, tmp_path):
     comparison = tables[R.COMPARISON_TABLE]
     assert set(comparison["group"]) == {"student", "other_adult"}
     assert set(comparison["variable"]) == {"V_PKW_VERFUEG", "V_FUEHR_PKW", "V_FK_VERFUEG"}
+
+
+def _load_extraction_script():
+    path = REPO / "scripts" / "extract_srv_student_reference.py"
+    spec = importlib.util.spec_from_file_location("extract_srv_student_reference", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("text, message", [
+    (None, "site table missing"),
+    ("institution,scope\nTU,local\n", "site_kreis_ars5"),
+    ("institution,site_kreis_ars5,scope\nTU,03101,surrounding\n", "no row with scope"),
+    ("institution,site_kreis_ars5,scope\nTU,,local\n", "has no site_kreis_ars5"),
+])
+def test_site_table_is_checked_early(tmp_path, text, message):
+    module = _load_extraction_script()
+    path = tmp_path / "sites.csv"
+    if text is not None:
+        path.write_text(text, encoding="utf-8")
+    with pytest.raises((ValueError, FileNotFoundError), match=message):
+        module.read_site_kreise(path)
+
+
+def test_site_table_skips_only_leading_comment_lines(tmp_path):
+    """A '#' inside a field must not cut the row; the codes keep their leading zero."""
+    module = _load_extraction_script()
+    path = tmp_path / "sites.csv"
+    path.write_text("# provenance\n# more\ninstitution,site_kreis_ars5,scope\n"
+                    "TU #1,03101,local\nHS,03241,surrounding\n", encoding="utf-8")
+    kreise, digest = module.read_site_kreise(path)
+    assert kreise == frozenset({"03101"})
+    assert digest == hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_cli_fails_before_writing_when_a_new_raw_column_is_missing(srv_frames, tmp_path):
+    persons, legs, households = _cli_frames(srv_frames)
+    raw = tmp_path / "srv2023_raw"
+    raw.mkdir()
+    for frame, name in ((persons.drop(columns=["E_VERKEHRSLEIST"]), "SrV2023_Personen.csv"),
+                        (legs, "SrV2023_Wege.csv"), (households, "SrV2023_Haushalte.csv")):
+        frame.to_csv(raw / name, sep=";", decimal=",", encoding="cp1252", index=False)
+    sites = tmp_path / "sites.csv"
+    sites.write_text("institution,site_kreis_ars5,scope\nTU,03101,local\n", encoding="utf-8")
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match="E_VERKEHRSLEIST"):
+        _load_extraction_script().main(["--raw", str(raw), "--sites", str(sites), "--out-dir",
+                                        str(out), "--source-commit", "abc1234"])
+    assert not out.exists()
+
 
 
 def test_education_distance_noise_floor_is_seeded():
@@ -809,7 +872,8 @@ def test_young_adult_status_by_kreis_by_hand(srv_frames):
         assert cell.loc[(WOLFSBURG, status), "n_unweighted"] == 0
     assert set(table["level"]) == {"kreis", "total"}
     assert diagnostics["n_excluded_unreadable_employment_code"] == 1
-    assert diagnostics["n_missing_age"] == 1                 # 4_2: counted, in no age band
+    # 4_2: counted, in no age band; the universe's own n_missing_age key is not overwritten
+    assert diagnostics["n_young_adult_base_missing_age"] == 1
 
 
 @pytest.mark.parametrize("age, label", [(18, "18_19"), (19, "18_19"), (20, "20_24"),
@@ -1033,7 +1097,8 @@ def test_post_matsim_reference_by_hand(srv_frames):
     big, _ = R.build_post_matsim_reference(universe, persons, legs, 4000, 5)
     assert _quantity(big, "main_mode_all_legs", "bicycle")["se_value"] == pytest.approx(
         0.24086, abs=0.02)
-    assert "valid trips" in diag["daily_total_sub_universe"]
+    assert "valid trips" in R.DAILY_TOTAL_SUB_UNIVERSE
+    assert "daily_total_sub_universe" not in diag        # the text lives in the header only
     assert distance["se_value"] > 0
     again, _ = R.build_post_matsim_reference(universe, persons, legs, 200, 5)
     pd.testing.assert_frame_equal(table, again)
