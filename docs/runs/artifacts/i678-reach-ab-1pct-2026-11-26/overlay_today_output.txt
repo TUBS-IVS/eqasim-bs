@@ -1,0 +1,6 @@
+~/i678_ab_today/run.yml written from ~/i678_ab/i678_ab_today_source.yml
+  kept: config.output_path '../output', inside the run at ~/i678_ab_today/output (it enters the synthesis stage hashes, so keeping it keeps them)
+  kept: config.output_prefix 'braunschweig_1pct_i678_' (part of the matsim.simulation.prepare and .run configuration; --prefix changes it)
+  kept: config.braunschweig.population.popsim.work_dir '../popsim_work' (enters the popsim hash), resolves to ~/i678_ab_today/popsim_work
+WARNING: ~/i678_ab_today/popsim_work does not exist: harmless while PopulationSim stays cached (the gate checks that), but stages that read the popsim work dir will not find it
+next: python scripts/isolated_run.py gate ~/i678_ab_today --write

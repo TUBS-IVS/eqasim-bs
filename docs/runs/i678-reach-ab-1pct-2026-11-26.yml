@@ -1,0 +1,155 @@
+id: i678-reach-ab-1pct-2026-11-26
+date: '2026-11-26'
+repository:
+  commit: 5bfc8ec8eb8c3d99ecd50838fbb742f15548897e
+  branch: fix/i678-mode-choice-reach
+  notes: >-
+    Both arms ran the same code: eqasim-bs fix/i678-mode-choice-reach at 5bfc8ec8 and eqasim-java-bs main at
+    3f398bdfe0960096b1702def8fa772b7db6e8e23 (the merge of PR #66), as detached worktrees made by scripts/isolated_run.py
+    setup (the branch from a git bundle into a run-owned ref; the shared checkouts were only fetched and reported 0
+    dirty entries before and after, setup_*_output.txt). matsim.runtime.eqasim built the jar in each arm's own Java
+    worktree: braunschweig-2.3.1.jar, 193,801,549 bytes, sha256
+    23fe730bea68f9f472a2f5e868586f6eb32e0b2eb1c046007a23d630e0574862 in both arms, the same bytes as the jar of the
+    third replay attempt (docs/runs/i678-reach-replay-prod100-2026-11-25.yml).
+configuration:
+  config: >-
+    configs/base_bs.yml of the branch with a run overlay per arm (i678_ab_defaults_source.yml and
+    i678_ab_today_source.yml; run_defaults.yml and run_today.yml are the overlays as launched, with the gate lists).
+    Common: sampling_rate 0.01, matsim_last_iteration 5, matsim_threads 16, output_prefix braunschweig_1pct_i678_,
+    random_seed 1234 (base), freight_enabled true (base), the popsim and chainsolver keys of the source run i679_d
+    (so the cached PopulationSim result stays valid), cache_share off. Arm "defaults": no reach keys, so the branch
+    defaults apply. Arm "today": braunschweig.initial_mode_choice.isolate_outside_trips false,
+    braunschweig.initial_mode_choice.max_tour_length 6, braunschweig.mode_choice.isolate_outside_trips false,
+    braunschweig.mode_choice.max_tour_length 6, braunschweig.frozen_pt_walk_lift.all_modes false.
+  notes: >-
+    The two prepared MATSim configs differ in one value only, maximumLength of the tour length filter 6 (today) against
+    11 (defaults) (config_diff_today_vs_defaults_output.txt). The arm "today" logs "the initial mode choice uses the
+    final config unchanged" and no config edit; its config keeps tourFinder ActivityBased and tourConstraints
+    "FromTripBased, VehicleContinuity". The arm "defaults" writes the second file for the initial mode choice, which
+    differs from its final config in tourFinder (IsolatedOutsideTrips) and tourConstraints (FromTripBased,
+    BorderTourVehicleContinuity) (config_diff_defaults_final_vs_initial_output.txt). Byte identity of the arm "today"
+    with prepare before the branch was NOT checked: no reference exists. The code before the branch (merge base
+    3fe5eda6) excludes only the in-commuters from the initial mode choice, so with freight on its prepare runs the
+    choice on freight persons, which fails on this jar (the freight failure of the replay manifest); the branch's tests
+    of the switches carry that claim, this run does not. Only the two arms are compared.
+sampling:
+  rate: 0.01
+  scope: >-
+    the 1 % sample of the full region, 12,667 persons in the prepared population of each arm: 11,466 residents (952
+    frozen and 10,514 in-region in the plan check of the arm "defaults", 1,022 and 10,444 in the arm "today"; the split
+    follows the loop rule), 599 in-commuters, 81 student in-commuters and 521 freight persons.
+pipeline:
+  targets:
+  - matsim.output
+  notes: >-
+    Cache: a physical copy (cp -a, by isolated_run.py setup) of ~/i679_d/cache, the newest 1 % cache on the server,
+    read only. The copy held 61.8 GiB of stage variants of earlier runs and two copies did not fit on the disk, so
+    i678_ab_prune.py removed from the run-owned copy every stage variant that the explain report of the run's own
+    commit and overlay does not name (kept 235 entries, 4.7 GiB; removed 1,522 entries, 57.1 GiB); the explain verdict
+    before and after the prune was identical. Arm "defaults" (~/i678_ab_defaults): 23 stages stale for their own
+    reasons (code and config of the i679 run differ from this branch; braunschweig.popsim.stage was not executed, its
+    stale parent's output was unchanged),
+    launched 17:18:03, prepare 18:07:46 to 18:21:59, matsim.simulation.run 18:21:59 to 18:32:17, exit 0 at 18:32:19.
+    Arm "today" (~/i678_ab_today): set up afterwards from the arm "defaults" cache (5.3 GiB), so only prepare,
+    matsim.simulation.run and matsim.output were stale; launched 20:53:43, prepare 20:54:18 to 21:08:31,
+    matsim.simulation.run 21:08:31 to 21:18:39, exit 0 at 21:18:41. Both gates ran with --allow-environment-mismatch:
+    five pip packages of the snapshot (py-spy, pdfplumber, pdfminer.six, pypdfium2, cryptography) are not installed in
+    the server env; the source run i679_d recorded the same five. Numbers collected with i678_ab_collect.py
+    (summary_*.json, read only from the prepare and run stage directories) and i678_ab_log_lines.py (lines_*_output.txt,
+    line numbers of the launcher log).
+classification:
+- smoke
+- ab_test
+status:
+  execution: completed
+  notes: >-
+    A 1 % smoke comparison of the reach defaults against today's values, NOT a validation: one seed, 5 iterations, no
+    observed reference. Mode shares are model output, and with 5 iterations they are not an equilibrium. Both arms
+    finished prepare and the MATSim run without an exception and without a traceback (the launcher log of the arm
+    "today" has no line naming an exception; the only one in the arm "defaults" is a Maven SLF4J warning of its jar
+    build). The plan check reported thresholds as exceeded in both
+    arms (fail_on_threshold false, so it logged ERROR and continued; no bound or code was changed).
+source: >-
+  felix:~/i678_ab_defaults and ~/i678_ab_today (run.json, run.yml, logs/run_*.log, cache with the prepare and run stage
+  directories, output/), ~/i678_ab (scripts, overlays, outputs, art/ the folder that was committed). Committed in
+  docs/runs/artifacts/i678-reach-ab-1pct-2026-11-26/: helper scripts i678_ab_collect.py, i678_ab_log_lines.py,
+  i678_ab_prune.py and the overlays i678_ab_defaults_source.yml, i678_ab_today_source.yml with the sha256 of the server
+  files in sha256_output.txt (isolated_run.py was the blob 600f1654 of origin/main and of the branch, not copied); the
+  launched overlays run_defaults.yml and run_today.yml; the step reports of each arm (defaults_* and today_*:
+  initial_mode_choice.json, frozen_pt_walk_lift.json, plan_check.json); summary_defaults.json and summary_today.json;
+  lines_defaults_output.txt and lines_today_output.txt; config_diff_today_vs_defaults_output.txt and
+  config_diff_defaults_final_vs_initial_output.txt; the tool outputs setup_*_output.txt, overlay_today_output.txt,
+  gate_*_output.txt, launch_*_output.txt, explain_defaults_pre_output.txt and prune_defaults_output.txt. Home
+  directory paths are written as ~; nothing else differs from the server files.
+environment: 'server (felix, 64 cores, 94 GB), conda eqasim (~/miniforge3/envs/eqasim), Java ~/tools/jdk-25.0.3+9 (25.0.3); processes 32 (base), matsim_threads 16, java_memory 100G (base); load average about 3 to 5 when the arm "defaults" started (another session ran a 1 % pipeline) and below 0.1 when the arm "today" started'
+validation:
+- metric: does prepare finish and does the MATSim run of 5 iterations run without an exception, with no person lost?
+  reference: 'none: a wiring check on model output'
+  result: >-
+    Yes in both arms. 12,667 persons in the prepared population, persons_before = persons_after = 12,667 in
+    initial_mode_choice.json, and 12,667 persons in output_plans.xml.gz of the MATSim run. The standalone runner, both
+    arms: "Excluded subpopulations: 1201 of 12667 persons (9.48 %) keep their plan unchanged: {freight=521,
+    incommuter=599, student_incommuter=81}". Initial mode choice Java wall time 103 s (defaults) and 66 s (today);
+    prepare stage 14 min 13 s in both arms; MATSim stage 10 min 18 s (defaults) and 10 min 8 s (today).
+  artifact: docs/runs/artifacts/i678-reach-ab-1pct-2026-11-26/summary_defaults.json
+- metric: trips the standalone runner and the MATSim loop do not re-choose (the kept-trip lines of PR #66)
+  reference: 'none: a count of model output'
+  result: >-
+    Standalone runner: defaults "4433 of 36920 trips (12.01 %) are rejected by the model's filter and not re-chosen;
+    they were kept unchanged", today "5471 of 36920 trips (14.82 %)". MATSim loop (FilteredTripCounter, iterations 1 to
+    5; kept trips of N replanned trips, walk fallbacks, kept walk-fallback stamps): defaults 319/2037, 1, 0; 210/1860,
+    0, 0; 303/1927, 0, 0; 242/1828, 0, 0; 244/1781, 0, 0. Today 357/2037, 1, 3; 241/1860, 0, 0; 338/1927, 0, 3;
+    249/1828, 0, 0; 266/1781, 0, 0. The replanned trip counts are equal in both arms (consistent with the same persons drawn
+    for replanning; not checked person by person); the kept trips are fewer with the defaults in every iteration. Iteration 0 has no replanning and no
+    line.
+  artifact: docs/runs/artifacts/i678-reach-ab-1pct-2026-11-26/lines_defaults_output.txt
+- metric: resident trips not reached by reason, n_unreached_unfit and the plan check threshold result
+  reference: 'the plan check invariant of the branch (n_unreached_unfit 0 with all_modes) and its thresholds (max_frozen_defect_share 0.005, max_frozen_pt_as_walk_share 0.02, max_share_other_modes 0.002; ASSUMPTIONS of ADR-0188, ADR-0189 and ADR-0206; fail_on_threshold false)'
+  result: >-
+    Plan check, residents, frozen block, classified by each arm's loop rule (36,920 resident trips): defaults
+    fixed_border 4,912, fixed_vehicle 0, fixed_length 24, n_unreached_unfit 0; today fixed_border 4,912, fixed_vehicle
+    0, fixed_length 559, n_unreached_unfit 22 (the plan check logs ERROR "22 resident trips the mode choice does not
+    reach keep a mode that does not fit their distance (n_unreached_unfit); the lift covers only the pt rule
+    (all_modes=false): continuing"). n_unreached_unfit is 0 in every other block of both arms. Threshold result:
+    defaults exceeded [share_plans_non_monotonic_large] (2.00 % of 952 frozen residents against 0.50 %),
+    share_lifted_frozen_pt_walk 0.01845, share_lifted_other_modes 0.000135; today exceeded
+    [share_plans_non_monotonic_large, share_lifted_frozen_pt_walk] (1.86 % of 1,022; 0.02290 of 262 pt-intended trips
+    against 0.02), share_lifted_other_modes 0.0. Frozen pt-as-walk legs in the plan check: defaults 3 (none over 5 km),
+    today 27 (1 over 5 km).
+  artifact: docs/runs/artifacts/i678-reach-ab-1pct-2026-11-26/defaults_plan_check.json
+- metric: lifted trips by mode and reason
+  reference: 'none: a count of model output'
+  result: >-
+    Defaults (all_modes true, scope the loop rule): pt 5, walk 5, bicycle 0, all fixed_border (fixed_vehicle 0,
+    fixed_length 0), no bicycle taken along with its tour; 5 of 271 frozen pt-intended trips. The lift report counts
+    4,936 unreached resident trips (fixed_border 4,912, fixed_length 24). Today (all_modes false, scope the frozen
+    tours without reach settings): pt 6, walk 0, bicycle 0, all fixed_border; 6 of 262 frozen pt-intended trips; its
+    report counts fixed_border 4,912 and fixed_length 0, because that scope does not classify by tour length (the plan
+    check row has the 559).
+  artifact: docs/runs/artifacts/i678-reach-ab-1pct-2026-11-26/defaults_frozen_pt_walk_lift.json
+- metric: stuck agents (stuckAndAbort events) in iteration 0 and iteration 5
+  reference: 'none: model output'
+  result: >-
+    Defaults: iteration 0 165 (car 121, truck 33, walk 8, pt 3), iteration 5 27 (car 16, walk 6, truck 3, pt 2). Today:
+    iteration 0 173 (car 127, truck 33, walk 7, pt 6), iteration 5 22 (car 11, walk 6, truck 3, pt 2). Counted from
+    ITERS/it.0/0.events.xml.gz and it.5/5.events.xml.gz.
+  artifact: docs/runs/artifacts/i678-reach-ab-1pct-2026-11-26/summary_today.json
+- metric: mode shares after iteration 0 and after iteration 5 (modestats.csv, share of trips by main mode)
+  reference: 'none: model output of a 5-iteration smoke, not an equilibrium and not compared with observed data'
+  result: >-
+    Iteration 0, defaults / today: car 0.5251 / 0.5244, car_passenger 0.1277 / 0.1280, walk 0.1467 / 0.1463, bicycle
+    0.0830 / 0.0839, pt 0.0603 / 0.0601, outside 0.0439 / 0.0439, truck 0.0133 / 0.0133. Iteration 5, defaults / today:
+    car 0.5230 / 0.5221, car_passenger 0.1258 / 0.1264, walk 0.1472 / 0.1469, bicycle 0.0849 / 0.0858, pt 0.0618 /
+    0.0615, outside 0.0439 / 0.0439, truck 0.0133 / 0.0133. Every difference between the arms is below 0.001 (0.1
+    percentage points); with one seed at 1 % this does not separate an effect of the reach from sampling noise. The
+    initial mode choice changed the mode of 17,154 (defaults) and 16,764 (today) of 38,729 trips (initial_mode_choice.json).
+  artifact: docs/runs/artifacts/i678-reach-ab-1pct-2026-11-26/summary_defaults.json
+- metric: replanning time per iteration (stopwatch.csv, whole replanning step, 1 s resolution)
+  reference: 'none: a timing of model code'
+  result: >-
+    Iterations 1 to 5, defaults: 4, 4, 9, 4, 3 s; today: 3, 3, 3, 3, 3 s. Whole iterations 0 to 5, defaults: 76, 62,
+    54, 59, 53, 77 s; today: 75, 63, 55, 55, 56, 80 s. The 9 s of the defaults in iteration 3 is a single value; the
+    arm "defaults" ran while another session's pipeline loaded the machine.
+  artifact: docs/runs/artifacts/i678-reach-ab-1pct-2026-11-26/summary_today.json
+issues:
+- '#678'
