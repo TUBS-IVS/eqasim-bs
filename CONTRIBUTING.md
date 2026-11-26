@@ -42,8 +42,8 @@ onto the `superpowers` skill chain, named in brackets.)
    add an **ADR** (`docs/decisions/ADR-NNNN-*.md`) for any substantive decision, add a
    **run manifest** (`docs/runs/<run_id>.yml`) if a significant run happened, then
    `python -m braunschweig.documentation check` (0 FAIL). Never commit `docs/generated/*`:
-   main's `generated-views` workflow rebuilds and commits them after the merge (ADR-0168). Update `SESSION_LOG.md` (local), sync the
-   GitHub Project board, and close the issue. See
+   main's `generated-views` workflow rebuilds and commits them after the merge (ADR-0168). Update `SESSION_LOG.md` (local) and close the
+   issue (no Project board: ADR-0208). See
    [docs/DOCUMENTATION_GOVERNANCE.md](docs/DOCUMENTATION_GOVERNANCE.md) for the full
    ownership model.
 
