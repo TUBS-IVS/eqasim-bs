@@ -16,7 +16,8 @@ Day parameters (definitions)
   harmonised ``purpose`` X; ``shop_or_errand_leg``: a trip with purpose ``shop`` or ``other``.
   This is the harmonised-purpose definition of the plan-structure comparison. It is deliberately
   not the control definition of the participation targets (``srv_participation_universe``); the
-  header of the parameter table states the share of both.
+  the table builder (``srv_student_reference.build_parameter_table``, Task 2) owns the header that
+  states the SrV share of adult students with an education leg under both definitions.
 * ``mobile``: ``n_trips > 0`` (the person's ``n_trips`` column).
 * ``trip_class``: ``n_trips`` in the right-inclusive classes of
   :data:`~braunschweig.calibration.student_behaviour_labels.TRIP_CLASS_EDGES`.
@@ -150,7 +151,9 @@ def parameter_rows(parameter: str, base: str, labels: pd.Series,
     (excluded person) is not in the base. Every label of the vocabulary gets a row, in vocabulary
     order; an empty cell has ``n_unweighted`` 0 and share 0.0, an empty base a NaN share. A label
     outside the vocabulary, an unknown parameter or base, or an invalid weight raises
-    ``ValueError`` naming it.
+    ``ValueError`` naming it. Labels must be strings or integer-valued (an integer is compared
+    through its string, ``1`` is ``"1"``); a float such as ``1.0`` becomes ``"1.0"`` and raises as
+    outside the vocabulary.
     """
     if parameter not in PARAMETERS:
         raise ValueError("unknown student parameter %r; known: %s" % (parameter, list(PARAMETERS)))
@@ -195,7 +198,9 @@ def bootstrap_share_noise_floor(labels, weights, categories, n_bootstrap: int, s
     the distance is ``0.5 * sum |p_boot - p_full|`` over ``categories``, i.e. the distance a model
     would reach against this reference by sampling noise alone (mirrors
     ``srv_distance_targets.bootstrap_emd_noise_floor``). NaN labels are dropped first. Returns 0.0
-    for fewer than two persons; raises ``ValueError`` for ``n_bootstrap < 1``, a label outside
+    for fewer than two persons. A draw whose persons all carry zero weight has no defined shares:
+    it is skipped, counted and logged as a warning with its rate (raises when every draw is skipped).
+    Raises ``ValueError`` for ``n_bootstrap < 1``, a label outside
     ``categories`` or a weight that is negative, not finite, or sums to zero.
     """
     if n_bootstrap < 1:
@@ -220,13 +225,19 @@ def bootstrap_share_noise_floor(labels, weights, categories, n_bootstrap: int, s
     base_shares = _category_shares(codes, weight_array, n_categories)
     rng = np.random.default_rng(seed)
     distances = []
+    n_zero_weight_draws = 0
     for _ in range(n_bootstrap):
         index = rng.integers(0, codes.size, codes.size)
         if not weight_array[index].sum() > 0:
             # all drawn persons carry zero weight: no share is defined for this draw
+            n_zero_weight_draws += 1
             continue
         distances.append(_total_variation(
             _category_shares(codes[index], weight_array[index], n_categories), base_shares))
+    if n_zero_weight_draws:
+        LOG.warning("%s noise floor: %d/%d bootstrap draws (%.1f%%) had a zero total weight and "
+                    "were skipped", _LOG_TAG, n_zero_weight_draws, n_bootstrap,
+                    100.0 * n_zero_weight_draws / n_bootstrap)
     if not distances:
         raise ValueError("every bootstrap draw had a zero total weight")
     return float(np.quantile(distances, quantile))
@@ -236,6 +247,11 @@ def _band(values: pd.Series, edges, labels, right: bool) -> pd.Series:
     """Band ``values`` into ``labels``; NaN or out-of-range values stay NaN (excluded)."""
     banded = pd.cut(values.astype(float), bins=list(edges), labels=list(labels), right=right)
     return banded.astype(object).where(banded.notna(), np.nan)
+
+
+def _row_value(rows: pd.DataFrame, column: str, index: pd.Index) -> pd.Series:
+    """``column`` of one selected row per pid, aligned to ``index``; NaN where there is no row."""
+    return pd.Series(rows[column].to_numpy(dtype=float), index=rows["pid"].to_numpy()).reindex(index)
 
 
 def _yes_no(flag: pd.Series) -> pd.Series:
@@ -273,12 +289,21 @@ def person_day_labels(persons: pd.DataFrame, trips: pd.DataFrame) -> tuple[pd.Da
                                   .unique())[:5])
     if persons["n_trips"].isna().any():
         raise ValueError("persons carry %d missing n_trips" % int(persons["n_trips"].isna().sum()))
+    declared = persons["n_trips"].to_numpy(dtype=float)
+    if (declared < 0).any() or (declared != np.floor(declared)).any():
+        raise ValueError("persons carry %d n_trips that are negative or not whole numbers"
+                         % int(((declared < 0) | (declared != np.floor(declared))).sum()))
     orphans = sorted(set(trips["pid"]) - set(persons["pid"]))
     if orphans:
         raise ValueError("trips of %d pid(s) missing from persons, e.g. %s"
                          % (len(orphans), [str(pid) for pid in orphans[:5]]))
     if trips.duplicated(["pid", "seq"]).any():
         raise ValueError("duplicated (pid, seq) in trips")
+
+    observed = trips.groupby("pid").size().reindex(persons["pid"].to_numpy()).fillna(0).to_numpy()
+    if (observed != declared).any():
+        raise ValueError("%d person(s) have an n_trips that differs from their number of trip rows"
+                         " (the harmonised frames must agree)" % int((observed != declared).sum()))
 
     ordered = trips.sort_values(["pid", "seq"], kind="stable").reset_index(drop=True)
     by_pid = ordered.groupby("pid", sort=False)
@@ -299,13 +324,15 @@ def person_day_labels(persons: pd.DataFrame, trips: pd.DataFrame) -> tuple[pd.Da
     out["trip_class"] = _band(n_trips, TRIP_CLASS_EDGES, PARAMETERS["trip_class"].labels, True)
 
     # first departure of every person with a trip, then the band; mobile persons only
-    first_departure_min = by_pid["dep_min"].first().reindex(index)
+    # head(1)/tail(1), never first()/last(): those skip a NaN and would return the NEXT trip's time
+    # for a person whose defining trip has no readable time, instead of excluding the person.
+    first_departure_min = _row_value(by_pid.head(1), "dep_min", index)
     first_hour = np.floor(first_departure_min / 60.0)
     out["first_departure_hour"] = _band(first_hour.where(mobile), FIRST_DEPARTURE_HOUR_EDGES,
                                         PARAMETERS["first_departure_hour"].labels, True)
 
     home = ordered[ordered["purpose"] == "home"]
-    last_home_arrival_min = home.groupby("pid", sort=False)["arr_min"].last().reindex(index)
+    last_home_arrival_min = _row_value(home.groupby("pid", sort=False).tail(1), "arr_min", index)
     out["last_arrival_home_hour"] = _band(
         np.floor(last_home_arrival_min / 60.0).where(mobile), LAST_ARRIVAL_HOME_HOUR_EDGES,
         PARAMETERS["last_arrival_home_hour"].labels, True)
@@ -329,7 +356,7 @@ def person_day_labels(persons: pd.DataFrame, trips: pd.DataFrame) -> tuple[pd.Da
                                      TIME_AT_EDUCATION_EDGES_MIN,
                                      PARAMETERS["time_at_education"].labels, False)
 
-    first_education_arrival_min = education_by_pid["arr_min"].first().reindex(index)
+    first_education_arrival_min = _row_value(education_by_pid.head(1), "arr_min", index)
     out["arrival_band"] = _band(np.floor(first_education_arrival_min / 60.0).where(has_education),
                                 ARRIVAL_HOUR_EDGES, PARAMETERS["arrival_band"].labels, True)
 

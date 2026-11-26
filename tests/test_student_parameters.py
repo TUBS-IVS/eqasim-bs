@@ -70,6 +70,51 @@ def test_noise_floor_is_seeded_and_zero_for_one_person():
                                           ["yes", "no"], 50, seed=3) == 0.0
     with pytest.raises(ValueError):
         SP.bootstrap_share_noise_floor(labels, weights, ["yes", "no"], 0, seed=3)
+    # a different seed gives a different draw sequence: with only 3 draws the quantiles differ
+    values = {SP.bootstrap_share_noise_floor(labels, weights, ["yes", "no"], 3, seed=seed)
+              for seed in range(8)}
+    assert len(values) > 1
+
+
+def test_noise_floor_by_hand_two_equal_persons_and_nan_labels_are_dropped():
+    # Full shares (0.5, 0.5). A draw of two persons is yy or nn (total-variation distance 0.5,
+    # probability 1/4 each) or yn / ny (distance 0, probability 1/2): the 0.95 quantile is 0.5.
+    two = SP.bootstrap_share_noise_floor(pd.Series(["yes", "no"]), pd.Series([1.0, 1.0]),
+                                         ["yes", "no"], 400, seed=1)
+    assert two == pytest.approx(0.5)
+    # a NaN-labelled person (huge weight) is not in the base, so the result is unchanged
+    with_nan = SP.bootstrap_share_noise_floor(pd.Series(["yes", "no", np.nan]),
+                                              pd.Series([1.0, 1.0, 1000.0]), ["yes", "no"], 400,
+                                              seed=1)
+    assert with_nan == pytest.approx(0.5)
+    with pytest.raises(ValueError, match="maybe"):
+        SP.bootstrap_share_noise_floor(pd.Series(["yes", "maybe"]), pd.Series([1.0, 1.0]),
+                                       ["yes", "no"], 10, seed=1)
+
+
+def test_noise_floor_counts_and_warns_about_zero_weight_draws(caplog):
+    # person 0 has zero weight: a draw of two copies of it (probability 1/4) has no defined shares
+    with caplog.at_level("WARNING", logger=SP.LOG.name):
+        SP.bootstrap_share_noise_floor(pd.Series(["yes", "no"]), pd.Series([0.0, 1.0]),
+                                       ["yes", "no"], 100, seed=2)
+    assert any(record.levelname == "WARNING" and "zero total weight" in record.getMessage()
+               for record in caplog.records)
+
+
+def test_parameter_rows_reject_invalid_weights_and_lengths():
+    for bad in (-1.0, np.nan, np.inf):
+        with pytest.raises(ValueError, match="weights"):
+            SP.parameter_rows("licence", SP.BASE_PRESENT, pd.Series(["yes", "no"]),
+                              pd.Series([1.0, bad]))
+    with pytest.raises(ValueError, match="weights"):
+        SP.parameter_rows("licence", SP.BASE_PRESENT, pd.Series(["yes", "no"]), pd.Series([1.0]))
+
+
+def test_parameter_rows_on_a_zero_weight_base_keep_counts_and_have_nan_shares():
+    rows = SP.parameter_rows("licence", SP.BASE_PRESENT, pd.Series(["yes", "no"]),
+                             pd.Series([0.0, 0.0]))
+    assert list(rows["n_unweighted"]) == [1, 1]
+    assert rows["share"].isna().all() and rows["se_share"].isna().all()
 
 
 def _persons(rows):
@@ -164,3 +209,90 @@ def test_trips_of_a_person_missing_from_the_persons_frame_raise():
     with pytest.raises(ValueError, match="ghost"):
         SP.person_day_labels(_persons([("a", 0)]),
                              _trips([("ghost", 1, "home", 100, 120)]))
+
+
+def test_every_leg_type_and_other_counts_as_shop_or_errand():
+    persons = _persons([("w", 1), ("l", 1), ("e", 1), ("o", 1), ("s", 1)])
+    trips = _trips([("w", 1, "work", 480, 540), ("l", 1, "leisure", 480, 540),
+                    ("e", 1, "escort", 480, 540), ("o", 1, "other", 480, 540),
+                    ("s", 1, "shop", 480, 540)])
+    labels, _ = SP.person_day_labels(persons, trips)
+    legs = labels.set_index("pid")[["education_leg", "work_leg", "leisure_leg",
+                                    "shop_or_errand_leg", "escort_leg"]]
+    expected = {"w": "work_leg", "l": "leisure_leg", "e": "escort_leg", "o": "shop_or_errand_leg",
+                "s": "shop_or_errand_leg"}
+    for pid, only_yes in expected.items():
+        row = legs.loc[pid]
+        assert {column for column in legs.columns if row[column] == "yes"} == {only_yes}
+
+
+def test_multiple_education_trips_unsorted_input_and_home_returns():
+    # seq 1-2 education (first arrival 510 -> before_9; durations 600-510 = 90 and 900-620 = 280,
+    # sum 370 -> 6h_more), seq 3 home, seq 4 other, seq 5 home: two returns, last arrival 19:10
+    persons = _persons([("a", 5)])
+    trips = _trips([("a", 4, "other", 1000, 1010), ("a", 2, "education", 600, 620),
+                    ("a", 5, "home", 1100, 1150), ("a", 1, "education", 480, 510),
+                    ("a", 3, "home", 900, 960)])
+    labels, diag = SP.person_day_labels(persons, trips)
+    row = labels.iloc[0]
+    assert (row["arrival_band"], row["time_at_education"]) == ("before_9", "6h_more")
+    assert (row["returns_home"], row["last_arrival_home_hour"]) == ("2", "19_21")
+    assert (row["first_departure_hour"], row["shop_or_errand_leg"]) == ("7_8", "yes")
+    assert diag["n_excluded_time_at_education"] == 0
+
+
+def test_three_or_more_home_returns_are_pooled():
+    persons = _persons([("a", 3)])
+    trips = _trips([("a", 1, "home", 100, 110), ("a", 2, "home", 200, 210),
+                    ("a", 3, "home", 300, 310)])
+    labels, _ = SP.person_day_labels(persons, trips)
+    assert labels.loc[0, "returns_home"] == "3plus"
+
+
+def test_a_nan_defining_time_excludes_the_person_instead_of_taking_the_next_trip():
+    # a: first trip has no departure time (the second trip's 10:00 must not stand in for it);
+    # b: the last home trip has no arrival time (the earlier home arrival 07:30 must not stand in);
+    # c: the first education trip has no arrival time (the second's 10:00 must not stand in)
+    persons = _persons([("a", 2), ("b", 3), ("c", 3)])
+    trips = _trips([("a", 1, "leisure", np.nan, 500), ("a", 2, "home", 600, 700),
+                    ("b", 1, "home", 400, 450), ("b", 2, "leisure", 500, 550),
+                    ("b", 3, "home", 700, np.nan),
+                    ("c", 1, "education", 400, np.nan), ("c", 2, "education", 700, 600),
+                    ("c", 3, "home", 900, 960)])
+    labels, diag = SP.person_day_labels(persons, trips)
+    by_pid = labels.set_index("pid")
+    assert pd.isna(by_pid.loc["a", "first_departure_hour"])
+    assert pd.isna(by_pid.loc["b", "last_arrival_home_hour"])
+    assert pd.isna(by_pid.loc["c", "arrival_band"]) and pd.isna(by_pid.loc["c", "time_at_education"])
+    assert by_pid.loc["a", "last_arrival_home_hour"] == "before_16"
+    assert diag["n_excluded_first_departure_hour"] == 1
+    assert diag["n_excluded_last_arrival_home_hour"] == 1
+    assert diag["n_excluded_arrival_band"] == 1
+    assert diag["n_excluded_time_at_education"] == 1
+
+
+def test_a_negative_education_duration_is_excluded_and_counted():
+    persons = _persons([("a", 2)])
+    trips = _trips([("a", 1, "education", 480, 600), ("a", 2, "home", 500, 560)])
+    labels, diag = SP.person_day_labels(persons, trips)
+    assert pd.isna(labels.loc[0, "time_at_education"]) and labels.loc[0, "arrival_band"] == "9_11"
+    assert diag["n_excluded_time_at_education"] == 1
+
+
+def test_inconsistent_frames_raise():
+    ok_trips = _trips([("a", 1, "home", 100, 110)])
+    with pytest.raises(ValueError, match="duplicated pid"):
+        SP.person_day_labels(_persons([("a", 1), ("a", 1)]), ok_trips)
+    with pytest.raises(ValueError, match="duplicated"):
+        SP.person_day_labels(_persons([("a", 2)]),
+                             _trips([("a", 1, "home", 100, 110), ("a", 1, "leisure", 120, 130)]))
+    with pytest.raises(ValueError, match="1 person"):   # n_trips 0 but one trip row
+        SP.person_day_labels(_persons([("a", 0)]), ok_trips)
+    with pytest.raises(ValueError, match="1 person"):   # n_trips 2 but one trip row
+        SP.person_day_labels(_persons([("a", 2)]), ok_trips)
+    with pytest.raises(ValueError, match="n_trips"):
+        SP.person_day_labels(_persons([("a", 1.5)]), ok_trips)
+    with pytest.raises(ValueError, match="n_trips"):
+        SP.person_day_labels(_persons([("a", -1)]), ok_trips.iloc[0:0])
+    with pytest.raises(ValueError, match="n_trips"):
+        SP.person_day_labels(_persons([("a", np.nan)]), ok_trips.iloc[0:0])
