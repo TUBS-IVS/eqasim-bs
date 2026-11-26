@@ -274,3 +274,10 @@ def test_pinned_che_lists_cover_required_kreise():
     zgb = {"03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158"}
     assert zgb <= covered
     assert set(REQUIRED_KREISE_2026_11_25) <= covered
+
+
+@pytest.mark.parametrize("module", [sl, co], ids=["lsn_sites", "che_origins"])
+def test_output_path_is_anchored_at_the_repository_root(module):
+    """A cwd-relative OUTPUT_PATH writes the table wherever the script is started from."""
+    assert module.OUTPUT_PATH.is_absolute()
+    assert module.OUTPUT_PATH.is_relative_to(ROOT)

@@ -20,12 +20,15 @@ from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+# Anchored at the repository root, so the script writes to the same place from any working
+# directory (as scripts/extract_zensus2022_students_by_age.py does).
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from braunschweig.calibration.srv_distance_targets import ZGB_KREISE  # noqa: E402
 
 SOURCE_TABLE = "K3100101"
-OUTPUT_PATH = Path("eqasim-data/data/braunschweig/schools/lsn_university_sites.csv")
+OUTPUT_PATH = REPO_ROOT / "eqasim-data/data/braunschweig/schools/lsn_university_sites.csv"
 
 # Filled together with SITE_ROWS (hand-read from LSN-Online); main() refuses to run
 # while any of the three is empty.
@@ -95,6 +98,14 @@ def build_sites_frame(rows, semester: str = "") -> pd.DataFrame:
     return pd.DataFrame(records, columns=_COLUMNS)
 
 
+def _display_path(path: Path) -> str:
+    """Repository-relative path for the log where possible (a redirected output: as given)."""
+    try:
+        return path.resolve().relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
 def main(argv=None) -> int:
     argparse.ArgumentParser(description=__doc__.splitlines()[0]).parse_args(argv)
     if not SITE_ROWS or not SEMESTER or not ACCESS_DATE:
@@ -115,7 +126,7 @@ def main(argv=None) -> int:
     with open(OUTPUT_PATH, "w", encoding="utf-8", newline="\n") as handle:
         handle.write("\n".join(header) + "\n")
         frame.to_csv(handle, index=False, lineterminator="\n")
-    print(f"[seed_lsn_university_sites] wrote {OUTPUT_PATH} ({len(frame)} rows)")
+    print(f"[seed_lsn_university_sites] wrote {_display_path(OUTPUT_PATH)} ({len(frame)} rows)")
     return 0
 
 

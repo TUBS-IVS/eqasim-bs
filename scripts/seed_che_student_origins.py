@@ -26,11 +26,14 @@ from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+# Anchored at the repository root, so the script writes to the same place from any working
+# directory (as scripts/extract_zensus2022_students_by_age.py does).
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 SEMESTER = "WS 2022/23"
 SOURCE = "CHE DatenCHECK 2/2024 (data: Statistisches Bundesamt)"
-OUTPUT_PATH = Path("eqasim-data/data/braunschweig/schools/che_student_origins_ws2022_23.csv")
+OUTPUT_PATH = REPO_ROOT / "eqasim-data/data/braunschweig/schools/che_student_origins_ws2022_23.csv"
 METRIC_CRS = "EPSG:25832"
 MAX_LISTED_RANKS = 10
 
@@ -1112,6 +1115,14 @@ def _list_required(vg250: Path, sites_csv: Path, max_distance_km: float) -> list
     return required_origin_kreise(kreise, points, max_distance_km)
 
 
+def _display_path(path: Path) -> str:
+    """Repository-relative path for the log where possible (a redirected output: as given)."""
+    try:
+        return path.resolve().relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--list-required-kreise", action="store_true")
@@ -1146,7 +1157,7 @@ def main(argv=None) -> int:
     with open(OUTPUT_PATH, "w", encoding="utf-8", newline="\n") as handle:
         handle.write("\n".join(header) + "\n")
         frame.to_csv(handle, index=False, lineterminator="\n")
-    print(f"[seed_che_student_origins] wrote {OUTPUT_PATH} ({len(frame)} rows)")
+    print(f"[seed_che_student_origins] wrote {_display_path(OUTPUT_PATH)} ({len(frame)} rows)")
     return 0
 
 
