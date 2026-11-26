@@ -81,8 +81,9 @@ from braunschweig.calibration.student_behaviour_labels import MAX_EXCLUSION_RATE
 from braunschweig.calibration.student_control_evidence import (MIN_DIFFERENCE_STANDARD_ERRORS,
                                                                MIN_RESPONDENTS_PER_CELL)
 from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES
-from braunschweig.popsim.attributes import PT_TICKET_DEUTSCHLANDTICKET, map_pt_ticket_group
-from braunschweig.synthesis.day_absence.absence import absent_person_ids
+from braunschweig.popsim.attributes import (PT_TICKET_GROUPS, PT_TICKET_GROUPS4,
+                                            map_pt_ticket_group)
+from braunschweig.synthesis.day_absence.absence import STATES, absent_person_ids
 
 LOG = logging.getLogger(__name__)
 _LOG_TAG = "[student measurement]"
@@ -110,8 +111,18 @@ MODEL_STUDENT_COLUMNS = ["person_id", "kreis", "present", *ATTRIBUTE_PARAMETERS,
 #: Bases the model side does not measure: the comparison is about students.
 MODEL_UNMEASURED_BASES = (SP.BASE_OTHER_ADULTS_ALL,)
 
-#: The ``pt_ticket_group4`` labels :func:`map_pt_ticket_group` gives a flat-rate ticket.
-FLATRATE_TICKET_GROUPS4 = (PT_TICKET_DEUTSCHLANDTICKET, "other_flatrate")
+#: The ``pt_ticket_group4`` labels :func:`map_pt_ticket_group` gives a flat-rate ticket: the
+#: four-group variant only splits ``not_flatrate`` (into ``never_pt`` / ``occasional_ticket``),
+#: so the groups it shares with the three-group variant are exactly the flat-rate ones. Derived
+#: from the owner's two tuples, never restated.
+FLATRATE_TICKET_GROUPS4 = tuple(group for group in PT_TICKET_GROUPS4 if group in PT_TICKET_GROUPS)
+
+#: Day parameters that can lose a student to a missing or negative time, with the
+#: ``person_day_labels`` diagnostics key of their base.
+_DAY_EXCLUSION_BASES = (("first_departure_hour", "n_mobile"),
+                        ("last_arrival_home_hour", "n_mobile"),
+                        ("time_at_education", "n_with_education_leg"),
+                        ("arrival_band", "n_with_education_leg"))
 
 COMPARISON_COLUMNS = ["group", "parameter", "base", "label", "model_n_base", "model_n",
                       "model_share", "srv_n_unweighted", "srv_share", "srv_n_effective",
@@ -318,8 +329,10 @@ def model_student_frame(persons: pd.DataFrame, trips: pd.DataFrame,
 
     Raises ``ValueError`` for a missing column, a duplicated ``person_id`` in ``persons`` or
     ``absence``, a trip or absence row of an unknown person, an adult student without an
-    absence row, a code outside its documented set, a home Kreis outside ``ZGB_KREISE``, or an
-    unmatched-home share above ``max_unmatched_home_share``.
+    absence row, a code outside its documented set (``day_absence_state`` outside the absence
+    module's ``STATES`` included), a home Kreis outside ``ZGB_KREISE``, an exclusion (a label left
+    undetermined, or a day parameter lost to a missing or negative time, over its base) above
+    ``MAX_EXCLUSION_RATE``, or an unmatched-home share above ``max_unmatched_home_share``.
     """
     _require_columns(persons, MODEL_PERSON_COLUMNS, "persons")
     _require_columns(trips, P.MODEL_TRIP_COLUMNS, "trips")
@@ -336,6 +349,14 @@ def model_student_frame(persons: pd.DataFrame, trips: pd.DataFrame,
     known = set(persons["person_id"])
     _require_known_person_ids(trips["person_id"], known, "trips")
     _require_known_person_ids(absence["person_id"], known, "absence")
+    # absent_person_ids reads every state other than "present" as absent, so a missing or
+    # unknown state would silently become an absent student.
+    state = absence["day_absence_state"]
+    odd_state = state.isna() | ~state.isin(STATES)
+    if odd_state.any():
+        raise ValueError("absence: column day_absence_state carries %d value(s) outside %s, "
+                         "e.g. %s" % (int(odd_state.sum()), list(STATES),
+                                      state[odd_state].astype(str).unique()[:5].tolist()))
 
     students, diagnostics = _adult_students(persons)
     without_absence = students.loc[~students["person_id"].isin(set(absence["person_id"])),
@@ -355,6 +376,12 @@ def model_student_frame(persons: pd.DataFrame, trips: pd.DataFrame,
         students, student_trips, homes_with_ars5, absent_person_ids=absent_ids)
     day_labels, day_diagnostics = SP.person_day_labels(harmonised_persons, harmonised_trips)
     diagnostics.update({"day_%s" % key: value for key, value in day_diagnostics.items()})
+    # person_day_labels only logs these exclusions; a time column that is mostly unreadable would
+    # leave a tiny base, so the model side raises above MAX_EXCLUSION_RATE like the SrV side does.
+    for parameter, base_key in _DAY_EXCLUSION_BASES:
+        _log_exclusion("%s (a missing or negative time excludes the student from this parameter "
+                       "only)" % parameter, day_diagnostics["n_excluded_%s" % parameter],
+                       day_diagnostics[base_key])
 
     frame = pd.concat([students[["person_id"]], attributes], axis=1)
     frame["present"] = ~frame["person_id"].isin(absent_ids)
@@ -458,6 +485,16 @@ def _model_rows(model_students: pd.DataFrame) -> pd.DataFrame:
                          "model_share": model["share"].astype(float)})
 
 
+def count_missing_srv_cells(comparison: pd.DataFrame) -> int:
+    """Cells of a :func:`compare_parameters` table that the SrV table did not carry.
+
+    A missing cell is a row whose ``srv_n_unweighted`` is NA; an SrV cell that was emitted empty
+    carries 0 and is not counted.
+    """
+    _require_columns(comparison, ["srv_n_unweighted"], "comparison")
+    return int(comparison["srv_n_unweighted"].isna().sum())
+
+
 def compare_parameters(model_students: pd.DataFrame,
                        srv_parameters: pd.DataFrame) -> pd.DataFrame:
     """Every cell of the parameter vocabulary, model students against the SrV table.
@@ -472,7 +509,9 @@ def compare_parameters(model_students: pd.DataFrame,
     Returns :data:`COMPARISON_COLUMNS`, one row per cell of the vocabulary in vocabulary order.
     ``model_n_base`` is the number of model students in the cell's base, ``model_n`` those with
     the label, ``model_share`` their quotient (NaN on an empty base). A cell missing from the SrV
-    table is emitted with NaN SrV columns (``srv_n_unweighted`` NA) and counted in the log.
+    table is emitted with NaN SrV columns; their number is the number of rows with an NA
+    ``srv_n_unweighted`` (an emitted empty SrV cell carries 0), logged here and recomputed by any
+    consumer through :func:`count_missing_srv_cells`.
     ``difference_pp = 100 (model_share - srv_share)``; ``difference_in_se = (model_share -
     srv_share) / srv_se_share``, NaN where the SrV standard error is 0 or NaN (a share of 0 or 1
     has no binomial spread, so no finite distance in standard errors exists);
@@ -509,7 +548,7 @@ def compare_parameters(model_students: pd.DataFrame,
     out = _grid().merge(_model_rows(model_students.assign(present=present.astype(bool))),
                         on=_KEY, how="left", validate="1:1")
     out = out.merge(srv, on=_KEY, how="left", validate="1:1")
-    n_missing_srv = int(out["srv_n_unweighted"].isna().sum())
+    n_missing_srv = count_missing_srv_cells(out)
     n_unmeasured = int(out["base"].isin(MODEL_UNMEASURED_BASES).sum())
     (LOG.warning if n_missing_srv else LOG.info)(
         "%s cells: %d in the vocabulary; missing from the SrV table %d (NaN SrV columns), "

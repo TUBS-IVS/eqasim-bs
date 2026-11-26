@@ -157,6 +157,22 @@ def _set(column, person_id, value):
     return mutate
 
 
+def _home_kreis(household_id, kreis):
+    def mutate(persons, trips, homes, absence):
+        homes = homes.copy()
+        homes.loc[homes["household_id"] == household_id, "ars5"] = kreis
+        return persons, trips, homes, absence
+    return mutate
+
+
+def _absence_state(person_id, state):
+    def mutate(persons, trips, homes, absence):
+        absence = absence.copy()
+        absence.loc[absence["person_id"] == person_id, "day_absence_state"] = state
+        return persons, trips, homes, absence
+    return mutate
+
+
 @pytest.mark.parametrize("mutate, match", [
     (_set("sex", 1, "diverse"), "sex"),
     (_set("pt_subscription_type", 1, "bahncard"), "pt_subscription_type"),
@@ -164,10 +180,38 @@ def _set(column, person_id, value):
     (_set("P_TAET", 3, 55), "P_TAET"),
     (_set("number_of_cars", 1, -1), "number_of_cars"),
     (_set("has_license", 1, np.nan), "has_license"),
+    (_home_kreis(10, "03241"), "ZGB_KREISE"),                    # Region Hannover
+    (_absence_state(1, "on_holiday"), "day_absence_state"),
+    (_absence_state(1, np.nan), "day_absence_state"),
 ])
 def test_codes_outside_the_documented_set_raise(frames, mutate, match):
     with pytest.raises(ValueError, match=match):
         _student_frame(mutate(*frames))
+
+
+def test_unknown_ages_are_excluded_and_counted(frames):
+    persons, trips, homes, absence = frames
+    persons = persons.assign(age=persons["age"].astype(float))
+    persons.loc[persons["person_id"] == 6, "age"] = np.nan   # student 6: no age, no adult
+    students, diagnostics = M.model_student_frame(persons, trips, homes, absence,
+                                                  max_unmatched_home_share=BOUND)
+    labels = students.set_index("person_id")
+    assert sorted(labels.index) == [1, 2, 5, 7]
+    assert (diagnostics["n_students_missing_age"], diagnostics["n_adult_students"]) == (1, 4)
+    # student 5 lives with 6 (age unknown, no known minor): neither label is determined
+    assert labels.loc[5, ["household_type", "lives_with_person_18_years_older"]].isna().all()
+    assert (diagnostics["n_excluded_household_type"],
+            diagnostics["n_excluded_lives_with_person_18_years_older"]) == (1, 1)
+    assert labels.loc[2, "household_type"] == "with_children"
+
+
+def test_mostly_unreadable_times_raise(frames):
+    persons, trips, homes, absence = frames
+    # the first departure of 4 of the 5 mobile adult students is unreadable: 80 % excluded
+    unreadable = trips["person_id"].isin([1, 2, 5, 6]) & (trips["trip_index"] == 0)
+    trips = trips.assign(departure_time=trips["departure_time"].where(~unreadable))
+    with pytest.raises(ValueError, match="first_departure_hour"):
+        M.model_student_frame(persons, trips, homes, absence, max_unmatched_home_share=BOUND)
 
 
 def _orphan_trip(persons, trips, homes, absence):
@@ -206,6 +250,9 @@ def test_labels_outside_the_vocabulary_raise_and_missing_cells_are_emitted(frame
     assert pd.isna(row["srv_share"]) and pd.isna(row["srv_n_unweighted"])
     assert row["model_share"] == pytest.approx(1 / 3)          # student 2 of the 3 present
     assert len(out) == len(_srv_table())                       # the full vocabulary grid
+    assert M.count_missing_srv_cells(out) == 1
+    empty_cell = _srv_table({("age_group", "30plus"): {"n_unweighted": 0, "share": 0.0}})
+    assert M.count_missing_srv_cells(M.compare_parameters(students, empty_cell)) == 0
     unknown = _srv_table()
     unknown.loc[unknown["label"] == "30plus", "label"] = "40plus"
     with pytest.raises(ValueError, match="vocabulary"):
