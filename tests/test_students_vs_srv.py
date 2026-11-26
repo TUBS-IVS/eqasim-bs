@@ -281,7 +281,8 @@ def test_execute_writes_all_outputs_on_synthetic_stages(tmp_path, stubbed_geogra
         text = path.read_text(encoding="utf-8")
         for prefix in (str(tmp_path), json.dumps(str(tmp_path))[1:-1], tmp_path.as_posix()):
             assert prefix not in text, path.name
-    assert provenance["inputs"]["srv_tables"][R.PARAMETER_TABLE]["path"] ==         "braunschweig/srv/" + R.PARAMETER_TABLE
+    assert (provenance["inputs"]["srv_tables"][R.PARAMETER_TABLE]["path"]
+            == "braunschweig/srv/" + R.PARAMETER_TABLE)
 
     # The exclusion report in the stage's cache directory: one of four adult students away all
     # day, all four with a home Kreis, every plan path resolved.
