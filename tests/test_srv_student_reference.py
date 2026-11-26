@@ -631,6 +631,7 @@ def test_unknown_household_member_age_is_excluded_not_assumed(srv_frames):
     persons.loc[(persons["HHNR"] == 1) & (persons["PNR"] == 2), "V_ALTER"] = -9
     table, diagnostics = _build((persons, legs, households))
     assert diagnostics["n_adult_students"] == 3
+    assert diagnostics["n_students_missing_age"] == 1        # 1_2: counted, in no base
     assert diagnostics["n_excluded_lives_with_person_18_years_older"] == 1
     assert _parameter_cell(table, "lives_with_person_18_years_older",
                            "yes")["share"] == pytest.approx(1 / 2)

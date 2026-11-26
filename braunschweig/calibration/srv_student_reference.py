@@ -748,21 +748,31 @@ def build_parameter_table(universe: pd.DataFrame, persons: pd.DataFrame,
     parameter only; an undocumented code raises. Columns :data:`PARAMETER_COLUMNS`, every label
     of every vocabulary emitted.
 
+    A student without a valid age is no adult student and is in no base of this table. The
+    universe diagnostics count ``n_missing_age`` over ALL persons, not over the students, so this
+    function counts the students concerned itself (``n_students_missing_age``, over the students
+    with a readable ``V_ERW``) and logs them through the exclusion-rate rule.
+
     Returns ``(table, diagnostics)``. Besides the exclusion counts (``n_excluded_<parameter>``,
     over ``n_adult_students``; for the four day parameters on a smaller base also
     ``n_base_<parameter>``, the mobile students or those with an education leg, so each rate can
-    be recomputed from the header) the diagnostics carry the weighted SrV share of adult students with an education leg under
-    both definitions: ``education_leg_share_harmonised_purpose`` (the ``education_leg`` rows of
-    this table: a trip with harmonised purpose education) and
-    ``education_leg_share_control_definition`` (``E_ZWECK_9`` in
-    :data:`srv_participation_universe.EDUCATION_E_ZWECK_9`, the definition of the behaviour table
-    and of the day factor), each over all adult students of the universe.
+    be recomputed from the header) the diagnostics carry the weighted SrV share of adult students
+    with an education leg under both definitions:
+    ``education_leg_share_harmonised_purpose`` (the ``education_leg`` rows of this table: a trip
+    with harmonised purpose education) and ``education_leg_share_control_definition``
+    (``E_ZWECK_9`` in :data:`srv_participation_universe.EDUCATION_E_ZWECK_9`, the definition of
+    the behaviour table and of the day factor), each over all adult students of the universe.
     """
     _require_columns(universe, ["pid", "weight", "age", "is_student", "V_FUEHR_PKW", "E_OEV_FK"],
                      "universe")
     _require_columns(persons, ["HHNR", "PNR", "V_ALTER", *PARAMETER_PERSON_COLUMNS], "persons")
     _require_columns(households, PARAMETER_HOUSEHOLD_COLUMNS, "households")
     readable, diagnostics = _drop_unreadable_employment(universe)
+    all_students = readable[readable["is_student"]]
+    n_missing_age = int(all_students["age"].isna().sum())
+    _log_exclusion("parameter table: students with a valid age (a student without an age is no "
+                   "adult student)", n_missing_age, len(all_students))
+    diagnostics["n_students_missing_age"] = n_missing_age
     students = _adults(readable)
     students = students[students["is_student"]].reset_index(drop=True)
     n_students = len(students)
