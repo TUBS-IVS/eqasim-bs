@@ -62,7 +62,11 @@ REFERENCE_SHARE_TOLERANCE = 1e-6
 # education-distance table), left-inclusive like there: [0, 25), [25, 50), [50, inf). Rows of kind
 # KIND_LOCAL are own_kreis.
 DISTANCE_CLASSES = ("own_kreis", "other_kreis_under_25_km", "other_kreis_25_50_km", "other_kreis_50_plus_km")
-DISTANCE_CLASS_EDGES_KM = tuple(STUDENT_DISTANCE_EDGES_KM[3:5])
+_DISTANCE_CLASS_EDGE_VALUES_KM = (25.0, 50.0)   # the edges DISTANCE_CLASSES names; must exist in the owner
+if not set(_DISTANCE_CLASS_EDGE_VALUES_KM) <= set(STUDENT_DISTANCE_EDGES_KM):
+    raise ValueError(f"student_commuter_weights: distance-class edges {_DISTANCE_CLASS_EDGE_VALUES_KM} km are not all "
+                     f"in student_behaviour_labels.STUDENT_DISTANCE_EDGES_KM {STUDENT_DISTANCE_EDGES_KM}")
+DISTANCE_CLASS_EDGES_KM = tuple(edge for edge in STUDENT_DISTANCE_EDGES_KM if edge in _DISTANCE_CLASS_EDGE_VALUES_KM)
 DISTANCE_CLASS_COLUMNS = ["code", "distance_class", "students_persons", "share"]
 
 
@@ -281,10 +285,12 @@ def fit_distance(implied: pd.DataFrame, reference: pd.DataFrame) -> FitDistance:
     if implied.duplicated(["home_group", "destination_group"]).any():
         raise ValueError("fit_distance implied: duplicated (home_group, destination_group) row(s)")
     implied_share = pd.to_numeric(implied["implied_share"], errors="coerce").to_numpy(dtype=float)
-    if not np.isfinite(implied_share).all():
+    keys = implied[["home_group", "destination_group"]].reset_index(drop=True)   # positional, any index
+    non_finite = ~np.isfinite(implied_share)
+    if non_finite.any():
         raise ValueError(f"fit_distance implied: column 'implied_share' must be finite; non-finite for "
-                         f"{implied.loc[~np.isfinite(implied_share), ['home_group', 'destination_group']].values.tolist()[:5]}")
-    sums = pd.Series(implied_share, index=implied.index).groupby(implied["home_group"]).sum()
+                         f"{keys[non_finite].values.tolist()[:5]}")
+    sums = pd.Series(implied_share).groupby(keys["home_group"]).sum()
     open_groups = sums[(sums - 1.0).abs() > REFERENCE_SHARE_TOLERANCE]
     if len(open_groups):
         raise ValueError(f"fit_distance implied: column 'implied_share' does not sum to 1 for home group(s) "

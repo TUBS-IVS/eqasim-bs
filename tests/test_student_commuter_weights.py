@@ -230,6 +230,8 @@ def test_implied_distance_classes_by_hand():
              _row("A", "K", 0, scope=T.SCOPE_SURROUNDING, distance_km=80.0),
              _row("B", "B", 40, distance_km=4.0), _row("B", "A", 10, distance_km=50.0),
              _row("C", "A", 1000, in_region=False, distance_km=5.0))
+    # The class names fix the edges; they are taken by value from student_behaviour_labels.
+    assert W.DISTANCE_CLASS_EDGES_KM == (25.0, 50.0)
     classes = W.implied_distance_classes(od, ["A", "B"])
     assert list(classes.columns) == ["code", "distance_class", "students_persons", "share"]
     table = classes.set_index(["code", "distance_class"])
