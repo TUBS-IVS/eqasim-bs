@@ -76,6 +76,7 @@ code:
 - braunschweig/matsim/simulation/plan_check.py
 - braunschweig/matsim/simulation/frozen_pt_walk_lift.py
 - braunschweig/matsim/initial_mode_choice.py
+- braunschweig/matsim/simulation/loop_mode_rule.py
 - braunschweig/matsim/scenario/day_end_margin.py
 - braunschweig/matsim/simulation/cordon_subpopulation.py
 pipelines:
@@ -96,6 +97,7 @@ features:
 - qsim_departures_yield
 - mode_choice
 - initial_mode_choice
+- loop_trips_non_motorised
 - vrb_zone_fare_model
 - parking_cost_zones
 - plan_feasibility_check
@@ -119,6 +121,7 @@ decisions:
 - ADR-0178
 - ADR-0182
 - ADR-0189
+- ADR-0207
 notes: >-
   Frozen pt walk lift (ADR-0189, issue #575). After the cut, the freight injection and the initial mode choice and
   before the plan check, braunschweig.matsim.simulation.frozen_pt_walk_lift lifts the long pt-as-walk trips of frozen
@@ -188,3 +191,15 @@ notes: >-
   share of trips whose mode changed, the mode shares before and after (in-commuters included; scope in the feature record initial_mode_choice) and the Java wall time
   (observations, not reference values). braunschweig.initial_mode_choice.weight is retired: a config that still
   sets it is refused in configure() with a pointer to ADR-0178.
+  Same-facility leisure trips only walk or bicycle (ADR-0207 decision 6, issue 679, feature record
+  loop_trips_non_motorised): configure() declares braunschweig.mode_choice.loop_trips_non_motorised (default and
+  production value: the key comment in configs/base_bs.yml; braunschweig.matsim.simulation.loop_mode_rule is in
+  _HELPER_MODULES). With it on, execute selects the eqasim-java-bs trip constraint SameFacilityLeisureNonMotorised:
+  after the VRB fare and parking inputs and BEFORE the initial mode choice (so the standalone mode choice and the
+  MATSim loop both read it), it opens the eqasim jar of matsim.runtime.eqasim and RAISES unless it contains the class
+  org/eqasim/braunschweig/mode_choice/constraints/SameFacilityLeisureTripConstraint.class (fix: build the jar from an
+  eqasim-java-bs revision with the constraint, or set the key false), appends the constraint name to the
+  DiscreteModeChoice tripConstraints of the final config (a byte-preserving text edit; a config without the module
+  or the parameter raises) and writes loop_mode_rule_report.json (the constraint, the class checked, the jar file
+  name, tripConstraints before and after, already_selected). Off: the jar is not opened, the config keeps its bytes
+  and no report is written. The rule itself is defined in docs/codebase/notes/leisure-loops.md.

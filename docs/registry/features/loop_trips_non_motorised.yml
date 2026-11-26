@@ -1,0 +1,64 @@
+feature: loop_trips_non_motorised
+title: 'Same-facility leisure trips may only be walk or bicycle in the mode choice (#679)'
+area: matsim
+description: 'The prepare stage adds the eqasim-java-bs trip constraint SameFacilityLeisureNonMotorised to the
+  DiscreteModeChoice tripConstraints of the final config before the initial mode choice, so a trip whose origin and
+  destination activity share a facility and that has a leisure end (a stroll placed at the facility it starts from,
+  and the way home after it) cannot be given a motorised mode by the initial mode choice or by the MATSim loop. The
+  rule is defined in the detail_doc note and ADR-0207 (decision 6); it reads the place, not the loop switch, so it is
+  independent of secondary_loop_zero_displacement. This record owns the mode choice switch; the placement of the loop
+  activities is the feature record secondary_loop_zero_displacement.'
+stages:
+- matsim.simulation.prepare
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.mode_choice.loop_trips_non_motorised
+introduced:
+  issue: '#679'
+  pr: null
+  adr: ADR-0207
+detail_doc: docs/codebase/notes/leisure-loops.md
+code_paths:
+- braunschweig/matsim/simulation/loop_mode_rule.py
+- braunschweig/matsim/simulation/prepare.py
+evidence:
+  tests:
+  - tests/test_loop_mode_rule.py
+  - tests/test_prepare_plan_check_wiring.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_prepare_plan_check_wiring.py::test_execute_selects_the_loop_mode_rule_in_the_final_config_before_the_initial_mode_choice
+    note: 'With the key off the test fails if the jar is read, the config edited or a report written; with it on it
+      checks the order jar check, config edit, report, initial mode choice. The edit itself keeps every other byte
+      (tests/test_loop_mode_rule.py). The Java constraint is covered by the tests of the eqasim-java-bs change, which
+      is not part of this repository.'
+  fallback_rate:
+    instrumented: false
+    note: 'No fallback path: a jar without the constraint class, a config without the DiscreteModeChoice module or
+      its tripConstraints parameter raises at prepare time. The Java side logs how many trips the rule applied to
+      and how many candidate modes it rejected.'
+  reference:
+    kind: none
+    note: 'No reference value: the rule is a modelling decision of the owner (ADR-0207), not a calibration to
+      observed data.'
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: 'No run with the rule on is recorded here yet, so nothing compares the model with observed behaviour.'
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: 'The end-to-end evidence (a run with the rule on: the modes of the same-facility leisure trips after
+    the initial mode choice and after the simulation) is added by the evidence commit of #679. The eqasim-java-bs
+    change must be merged and its jar built before a production run with the switch on.'
+  source: ADR-0207
+notes: 'Toggling the key recomputes the prepare stage, which declares it. It requires an eqasim-java-bs jar that contains
+  SameFacilityLeisureTripConstraint; the stage refuses an older jar.'

@@ -156,6 +156,21 @@ from estimates that still count the loops. With the switch on, two estimates lea
 
 The assumptions of this section are in ADR-0207.
 
+## Mode choice (same-facility leisure trips)
+
+A loop activity sits at the facility of the activity before it, so the trip into it and the way home after it start and
+end at one facility. The rule that such a trip may only be walk or bicycle lives in the Java trip constraint
+`SameFacilityLeisureNonMotorised`, class `org.eqasim.braunschweig.mode_choice.constraints.SameFacilityLeisureTripConstraint`
+(eqasim-java-bs): origin and destination activity carry the same non-null facility id and at least one end is of type
+`leisure`; trips with the initial mode `outside` are not constrained, and same-facility trips without a leisure end stay
+free. The rule reads the place, not the loop flag or a marker. The Python side only selects it:
+`braunschweig/matsim/simulation/loop_mode_rule.py` and `prepare._select_loop_mode_rule` add the constraint name to
+`DiscreteModeChoice.tripConstraints` of the final config before the initial mode choice, behind the config key
+`braunschweig.mode_choice.loop_trips_non_motorised` (default and production value: the key comment in
+[`configs/base_bs.yml`](../../../configs/base_bs.yml)), refuse a jar without the class, and write
+`loop_mode_rule_report.json` into the prepare stage folder (written only while the switch is on). The reasons and the
+rejected alternatives are in ADR-0207, decision 6.
+
 ## Comparisons
 
 `braunschweig/calibration/secondary_measurement.py` (`leave_out_loop_legs`), `scripts/validate_secondary_distances.py`

@@ -96,4 +96,5 @@ notes: 'Toggling secondary_loop_zero_displacement recomputes the secondary locat
   and the distance distributions stage, which both declare it; it requires secondary_leisure_subtype_split and
   secondary_loop_zero_displacement (both stages raise at configure time otherwise). production.enabled is true
   only while BOTH flags are on, so turning off only the second switch makes the documentation checker report
-  this feature as disabled.'
+  this feature as disabled. The mode choice rule for same-facility leisure trips (a third switch, independent of
+  both) is the feature record loop_trips_non_motorised.'
