@@ -4,7 +4,8 @@ area: matsim
 description: 'The prepare stage adds the eqasim-java-bs trip constraint SameFacilityLeisureNonMotorised to the
   DiscreteModeChoice tripConstraints of the final config before the initial mode choice, so a trip whose origin and
   destination activity share a facility and that has a leisure end (a stroll placed at the facility it starts from,
-  and the way home after it) cannot be given a motorised mode by the initial mode choice or by the MATSim loop. The
+  and the way home after it) cannot be given a motorised mode by the initial mode choice or by the MATSim loop where
+  the mode choice evaluates it (a trip in a tour it does not re-choose keeps its mode). The
   rule is defined in the detail_doc note and ADR-0207 (decision 6); it reads the place, not the loop switch, so it is
   independent of secondary_loop_zero_displacement. This record owns the mode choice switch; the placement of the loop
   activities is the feature record secondary_loop_zero_displacement.'
@@ -40,9 +41,13 @@ evidence:
       is not part of this repository.'
   fallback_rate:
     instrumented: false
-    note: 'No fallback path: a jar without the constraint class, a config without the DiscreteModeChoice module or
-      its tripConstraints parameter raises at prepare time. The Java side logs how many trips the rule applied to
-      and how many candidate modes it rejected.'
+    note: 'Primary = a caught trip the mode choice evaluates, where the rule holds. A caught trip in a tour the mode
+      choice does not re-choose (a tour filter drops it) is not evaluated and keeps its mode; it is the part of the
+      rule that does not reach. The counts (caught, evaluated, not evaluated) are logged by the Java factory
+      SameFacilityLeisureTripConstraint.Factory, whose log line is not a marker of this repository, so this record
+      declares the rate not instrumented here; the evidence commit measures the split in the run manifest. A jar
+      without the constraint class, a config without the DiscreteModeChoice module or its tripConstraints parameter
+      raises at prepare time.'
   reference:
     kind: none
     note: 'No reference value: the rule is a modelling decision of the owner (ADR-0207), not a calibration to

@@ -163,7 +163,11 @@ end at one facility. The rule that such a trip may only be walk or bicycle lives
 `SameFacilityLeisureNonMotorised`, class `org.eqasim.braunschweig.mode_choice.constraints.SameFacilityLeisureTripConstraint`
 (eqasim-java-bs): origin and destination activity carry the same non-null facility id and at least one end is of type
 `leisure`; trips with the initial mode `outside` are not constrained, and same-facility trips without a leisure end stay
-free. The rule reads the place, not the loop flag or a marker. The Python side only selects it:
+free. The rule reads the place, not the loop flag or a marker. It acts only on the trips the mode choice evaluates: a
+caught trip in a tour the mode choice does not re-choose keeps its initial mode; the factory
+(`SameFacilityLeisureTripConstraint.Factory`) counts the caught, evaluated and not evaluated trips in the Java log. When
+the border tour vehicle rule of #678 is selected too, a caught trip is not pinned there but gets no new vehicle mode (see
+the Javadoc of `org.eqasim.braunschweig.mode_choice.constraints.BorderTourVehicleConstraint`). The Python side only selects it:
 `braunschweig/matsim/simulation/loop_mode_rule.py` and `prepare._select_loop_mode_rule` add the constraint name to
 `DiscreteModeChoice.tripConstraints` of the final config before the initial mode choice, behind the config key
 `braunschweig.mode_choice.loop_trips_non_motorised` (default and production value: the key comment in
