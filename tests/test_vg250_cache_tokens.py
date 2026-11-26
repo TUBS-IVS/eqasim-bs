@@ -15,6 +15,7 @@ from __future__ import annotations
 import ast
 import importlib
 import inspect
+import os
 import pathlib
 from dataclasses import dataclass, field
 
@@ -97,8 +98,9 @@ class Reader:
 def _students_vs_srv_inputs(data_path):
     """The committed SrV student tables and the Zensus file that ``students_vs_srv.validate`` digests."""
     from braunschweig.analysis.synthesis import students_vs_srv
-    return [students_vs_srv.srv_table_path(data_path, name) for name in students_vs_srv.SRV_TABLES] + [
-        students_vs_srv.zensus_path(data_path)]
+    paths = [students_vs_srv.srv_table_path(data_path, name) for name in students_vs_srv.SRV_TABLES]
+    paths.append(students_vs_srv.zensus_path(data_path))
+    return [os.path.relpath(path, data_path) for path in paths]
 
 
 _CORDON_ON = {"cordon_enabled": True}

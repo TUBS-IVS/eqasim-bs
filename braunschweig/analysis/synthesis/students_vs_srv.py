@@ -270,19 +270,14 @@ def load_trace(directory: str, file_name: str, columns, name: str) -> tuple[pd.D
                    "sha256": synpp_tokens.file_sha256(path), "n_rows": int(len(frame))}
 
 
-def persons_with_kreis(persons: pd.DataFrame, homes_with_ars5: pd.DataFrame,
-                       absent_ids: set) -> pd.DataFrame:
-    """The enriched persons with their home Kreis (``kreis``, the ``ars5`` of the household,
-    NaN without one) and ``present`` (not in ``absent_ids``), the frame the level and status
-    tables read. Households join m:1 on ``household_id``.
-
-    A household with more than one home row raises ``ValueError`` naming the count and the first
-    household ids: a duplicated home is an upstream defect (a household listed twice by the
+def require_one_home_row_per_household(homes_with_ars5: pd.DataFrame) -> None:
+    """Raise ``ValueError`` naming the count and the first household ids if a household has more
+    than one home row: a duplicated home is an upstream defect (a household listed twice by the
     home-location stage, or a home point the VG250 join of ``spatial.assign_geographies``
     matched to two Kreise), and keeping one of the rows would assign a Kreis by row order (the
     plan-structure comparison of the same stage, ``plan_structure.harmonise_model``, keeps the
-    first row with a warning; this table refuses instead, per the rule that a duplicated join
-    key raises)."""
+    first row with a warning; the stage refuses instead, per the rule that a duplicated join
+    key raises). ``execute`` calls this before any consumer of the homes."""
     duplicated = homes_with_ars5.loc[homes_with_ars5["household_id"].duplicated(keep=False),
                                      "household_id"]
     if len(duplicated):
@@ -292,6 +287,15 @@ def persons_with_kreis(persons: pd.DataFrame, homes_with_ars5: pd.DataFrame,
             "VG250): %d household(s) with more than one home row (%d rows), e.g. household_id "
             "%s; each household needs exactly one home row to get a home Kreis"
             % (_LOG_TAG, len(ids), len(duplicated), ids[:5]))
+
+
+def persons_with_kreis(persons: pd.DataFrame, homes_with_ars5: pd.DataFrame,
+                       absent_ids: set) -> pd.DataFrame:
+    """The enriched persons with their home Kreis (``kreis``, the ``ars5`` of the household,
+    NaN without one) and ``present`` (not in ``absent_ids``), the frame the level and status
+    tables read. Households join m:1 on ``household_id``; a duplicated home raises
+    (:func:`require_one_home_row_per_household`)."""
+    require_one_home_row_per_household(homes_with_ars5)
     homes = homes_with_ars5[["household_id", _plan_structure.KREIS_COLUMN]].rename(
         columns={_plan_structure.KREIS_COLUMN: "kreis"})
     frame = persons[["person_id", "household_id", "age", "P_TAET", "employed"]].merge(
@@ -453,6 +457,9 @@ def execute(context):
                 out_dir)
 
     homes = spatial.assign_geographies(df_home[["household_id", "geometry"]])
+    # Before model_student_frame: its plan-structure comparison would otherwise log "first row
+    # kept" for a duplicated home that this stage is about to refuse.
+    require_one_home_row_per_household(homes)
     students, frame_diagnostics = M.model_student_frame(
         persons, trips, homes, absence, max_unmatched_home_share=max_unmatched_home_share)
     behaviour = M.compare_parameters(students, srv[R.PARAMETER_TABLE])

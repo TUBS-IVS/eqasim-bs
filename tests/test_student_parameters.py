@@ -207,11 +207,26 @@ def test_a_missing_time_excludes_only_that_parameter_and_is_counted():
     assert diag["n_excluded_first_departure_hour"] == 0
 
 
-def test_persons_without_a_trip_or_time_raise_no_numeric_warning():
+class _NanRejectingNumpy:
+    """numpy stand-in: every attribute is numpy's, but ``floor`` raises on a NaN input. Some numpy
+    builds (the server's) only warn on that, others (this laptop's) stay silent, so the test pins
+    the fix on every platform instead of relying on the build's warning."""
+
+    def __getattr__(self, name):
+        return getattr(np, name)
+
+    @staticmethod
+    def floor(values, *args, **kwargs):
+        assert not np.isnan(np.asarray(values, dtype=float)).any(), "np.floor was given a NaN"
+        return np.floor(values, *args, **kwargs)
+
+
+def test_persons_without_a_trip_or_time_raise_no_numeric_warning(monkeypatch):
     """Regression: the hour bands floored NaN times of persons without a trip, which on some
     numpy builds (the server's) logs "invalid value encountered in floor" once per band."""
     persons = _persons([("a", 2), ("b", 0)])
     trips = _trips([("a", 1, "education", 480, np.nan), ("a", 2, "home", 900, 960)])
+    monkeypatch.setattr(SP, "np", _NanRejectingNumpy())
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         labels, _ = SP.person_day_labels(persons, trips)

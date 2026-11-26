@@ -339,6 +339,25 @@ def test_a_household_with_two_home_rows_raises_naming_count_and_ids():
         S.persons_with_kreis(_persons(), homes, _ABSENT)
 
 
+def test_execute_refuses_a_duplicated_home_before_the_plan_structure_comparison_logs_it(
+        tmp_path, monkeypatch, caplog):
+    """The duplicate check runs first: a stage that is about to refuse the homes must not first
+    log the plan-structure comparison's "first row per household is used" warning for the same defect."""
+    from braunschweig.analysis import spatial
+    homes = _homes()
+    duplicated = pd.concat([homes, homes[homes["household_id"] == 20].assign(ars5="03102")],
+                           ignore_index=True)
+    monkeypatch.setattr(spatial, "assign_geographies", lambda homes, kreise=None: duplicated)
+    context = _context(tmp_path, _data_path(tmp_path))
+    _write_traces(context.path(COMPLETED_DONOR))
+
+    with caplog.at_level("WARNING"):
+        with pytest.raises(ValueError, match="more than one home row"):
+            S.execute(context)
+
+    assert "the first row per household is used" not in caplog.text
+
+
 @pytest.mark.parametrize("srv_tables, zensus, match", [
     pytest.param(SRV_TABLES[1:], True, R.PARAMETER_TABLE, id="srv-table-missing"),
     pytest.param(SRV_TABLES, False, Z.KREIS_EMPLOYED_BY_AGE_FILE, id="zensus-missing"),
