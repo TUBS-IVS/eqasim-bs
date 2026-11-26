@@ -172,7 +172,7 @@ def site_points(sites: pd.DataFrame, gemeinden: pd.DataFrame, curated: pd.DataFr
     rows.extend((i, *xy) for i, xy in curated_xy.items() if i not in listed)
     LOGGER.info("[student_geometry] site points: commune centroid %d/%d (%.1f%%), curated coordinates %d "
                 "(%d of them overriding a site row)", n_commune, len(rows), 100.0 * n_commune / max(len(rows), 1),
-                len(rows) - n_commune, len(sites) - n_commune)
+                len(rows) - n_commune, len(overridden))
     return pd.DataFrame(rows, columns=["destination_id", "x", "y"])
 
 

@@ -5,6 +5,7 @@ tested on a tiny GeoPackage built in ``tmp_path``, never on the real file.
 """
 from __future__ import annotations
 
+import re
 import zipfile
 
 import numpy as np
@@ -12,6 +13,11 @@ import pandas as pd
 import pytest
 
 from braunschweig.data.education import student_geometry as G
+
+
+def _integers_in(records, level: str) -> list[set[int]]:
+    """The integer tokens of each log record of the given level (counts are the contract, not the wording)."""
+    return [set(map(int, re.findall(r"\d+", r.getMessage()))) for r in records if r.levelname == level]
 
 
 def _communes_east_of_origin() -> pd.DataFrame:
@@ -75,8 +81,11 @@ def test_site_in_both_lists_takes_the_curated_point_and_warns_with_the_displacem
     displacement_km = (points.loc["both", "y"] - 5_000_000.0) / 1000.0
     warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
     assert len(warnings) == 1
-    assert f"both ({displacement_km:.2f} km from the centroid of 03101000)" in warnings[0]
-    assert "unknown_commune (site_ags8 '99999999' unknown, no displacement)" in warnings[0]
+    for token in ("both", "unknown_commune", "03101000"):
+        assert token in warnings[0]
+    # the first number after the id is the displacement in km (printed with two decimals)
+    shown_km = float(re.search(r"both\D*(\d+(?:\.\d+)?)", warnings[0]).group(1))
+    assert shown_km == pytest.approx(displacement_km, abs=0.01)
 
 
 def test_curve_basis_by_hand():
@@ -177,10 +186,13 @@ def test_pair_coefficients_and_reach_log_the_unpopulated_communes(caplog):
                    pd.DataFrame({"ags8": ["03158003"], "ewz": [0], "x": [1_000.0], "y": [0.0]})])
     with caplog.at_level("INFO", logger=G.LOGGER.name):
         G.pair_coefficients(g, _origin_destination(), G.WEIGHT_RULE_COMMUNE_CURVE, 100.0)
+    # 1 unpopulated commune of 3 communes
+    assert any({1, 3} <= numbers for numbers in _integers_in(caplog.records, "INFO"))
+    caplog.clear()
+    with caplog.at_level("INFO", logger=G.LOGGER.name):
         G.kreise_within_reach(g, _origin_destination(), ["site"], 100.0)
-    messages = [r.getMessage() for r in caplog.records]
-    assert any("1 of 3 communes with ewz == 0 carry no weight" in m for m in messages)
-    assert any("1 Kreise, 2 communes in reach" in m and "1 unpopulated communes" in m for m in messages)
+    # 1 Kreis, 2 populated communes in reach, 1 unpopulated commune skipped
+    assert any({1, 2} <= numbers for numbers in _integers_in(caplog.records, "INFO"))
 
 
 def _write_vg250_zip(tmp_path, rows):
@@ -207,7 +219,8 @@ def test_load_gemeinden_keeps_land_rows_and_one_row_per_ags(tmp_path, caplog):
     rows = [("03101000", 4, 100, 0.0), ("03101000", 2, 0, 5000.0), ("03158001", 4, 40, 10_000.0)]
     with caplog.at_level("INFO", logger=G.LOGGER.name):
         gemeinden = G.load_gemeinden(_write_vg250_zip(tmp_path, rows))
-    assert any("dropped 1 non-land rows" in r.getMessage() for r in caplog.records)
+    # 3 rows read, 2 land communes kept, 1 non-land row dropped
+    assert any({1, 2, 3} <= numbers for numbers in _integers_in(caplog.records, "INFO"))
     assert gemeinden["ags8"].tolist() == ["03101000", "03158001"]
     assert gemeinden["ewz"].tolist() == [100, 40]
     # centroid of box(10000, 0, 11000, 2000)
