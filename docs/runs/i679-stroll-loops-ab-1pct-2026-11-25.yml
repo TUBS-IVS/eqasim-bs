@@ -1,7 +1,7 @@
 id: i679-stroll-loops-ab-1pct-2026-11-25
 date: '2026-11-25'
 repository:
-  commit: ff83decf83b61646dd02c638f76a6b6d8b179bd6
+  commit: 'ff83decf83b61646dd02c638f76a6b6d8b179bd6 (arms A, B, C); 55d9b19458752604da24f92d29ca180808e3b3a1 with eqasim-java-bs f8accd10cc15e1368452e7986bfbb85bdbede9ed (arm D)'
   branch: feature/i679-stroll-loops
   notes: >-
     The three arms (A, B, C) ran from 2026-11-25 to 2026-11-26 at eqasim-bs ff83decf, shipped to the run server as a git
@@ -30,22 +30,26 @@ repository:
     progress thread of StandaloneModeChoicePerformer stays alive when a worker throws (i679_on2_prepare_jstack.txt).
     ARM D (2026-11-26): arm C plus the mode rule for same-facility leisure trips. Stage code: eqasim-bs 55d9b194
     (bundle sha256 1cdd1270e5018550b15fe057bd11ae5c87631a57eaed225a02a155423788e328) and eqasim-java-bs f8accd10c
-    (branch feat/i679-same-facility-leisure-trips, NOT merged yet; it sits on eqasim-java-bs main ae6a10a1c, which
-    since arm C's cb7e81fa also carries PR #65, the border-tour vehicle rule of #678; that rule is not selected in
-    arm D's prepared config, whose tourConstraints are FromTripBased and VehicleContinuity as in arm C). Shaded jar
-    md5 97776a08bbe5f2ac061a84536dbd0fbb (i679_provenance_d.txt). The branch head differs from 55d9b194 in
+    (branch feat/i679-same-facility-leisure-trips, NOT merged yet). Stated by the operator, not checked in a
+    committed artifact: f8accd10c sits on eqasim-java-bs main ae6a10a1c, which since arm C's cb7e81fa also carries
+    PR #65, the border-tour vehicle rule of #678. That rule is not selected in arm D's prepared config: its
+    tourConstraints are FromTripBased and VehicleContinuity as in arm C (i679_provenance_d.txt). Shaded jar md5
+    97776a08bbe5f2ac061a84536dbd0fbb (i679_provenance_d.txt). The branch head differs from 55d9b194 in
     braunschweig/matsim/config_modules.py by f98da12b (XML comments are ignored when the direct parameters of a
-    config module are scanned; no change on the configs MATSim writes) and in records; between ff83decf and 55d9b194
-    the stage code changed only in the prepare stage (braunschweig/matsim/simulation/prepare.py, loop_mode_rule.py,
-    config_modules.py) and configs/base_bs.yml (the switch braunschweig.mode_choice.loop_trips_non_motorised, true).
-    The run directory i679_d was set up at eqasim-bs 5b212d47 and eqasim-java-bs 7ad6ae72e; before any launch the
-    Java worktree was moved by hand (git checkout of commits fetched from bundles into the run's own ref namespace)
-    to 496d362cc and then f8accd10c, the commits the review of the Java rule produced. FAILED FIRST LAUNCH at
-    5b212d47 (2026-11-26 08:47:35 to 09:11:19, exit 1): the prepare stage raised ValueError in loop_mode_rule.apply
-    ("module 'DiscreteModeChoice' has parameter sets (<parameterset>); only flat modules can be compared",
-    config_modules.read_module) after RunPreparation, the cut and the freight injection and BEFORE the initial mode
-    choice, so no mode was chosen and no JVM stayed behind (i679_d_first_launch_failure_excerpt_log.txt); fixed by
-    55d9b194, to which the eqasim-bs worktree was then moved by hand. Final launch 09:20:33 to 09:44:25, exit 0.
+    config module are scanned) and in records; that the edit of the real DiscreteModeChoice module is unchanged by
+    it is pinned by tests/test_loop_mode_rule.py on the fixture tests/fixtures/dmc_module_real.xml, a copy of arm
+    D's module (stated by the operator). Between ff83decf and 55d9b194 the stage code changed only in the prepare
+    stage (braunschweig/matsim/simulation/prepare.py, loop_mode_rule.py, config_modules.py) and configs/base_bs.yml
+    (the switch braunschweig.mode_choice.loop_trips_non_motorised, true). The run directory i679_d was set up at
+    eqasim-bs 5b212d47 and eqasim-java-bs 7ad6ae72e (i679_provenance_d.txt); before any launch the Java worktree was
+    moved by hand (git checkout of commits fetched from bundles into the run's own ref namespace) to 496d362cc and
+    then f8accd10c, the commits the review of the Java rule produced. FAILED FIRST LAUNCH at 5b212d47 (2026-11-26
+    08:47:35 to 09:11:19, exit 1; i679_provenance_d.txt): the prepare stage raised ValueError in
+    loop_mode_rule.apply ("module 'DiscreteModeChoice' has parameter sets (<parameterset>); only flat modules can be
+    compared", config_modules.read_module; i679_d_first_launch_failure_excerpt_log.txt). Read from the full run log
+    on the run server, not from the committed excerpt: the error came after RunPreparation, the cut and the freight
+    injection and before the initial mode choice, so no mode was chosen and no JVM stayed behind. Fixed by 55d9b194,
+    to which the eqasim-bs worktree was then moved by hand. Final launch 09:20:33 to 09:44:25, exit 0.
 configuration:
   base: configs/base_bs.yml
   overlays:
@@ -315,8 +319,9 @@ validation:
     re-execute); synthesis.output: 11 of the 12 synthesis files byte-equal,
     braunschweig_1pct_i679_commutes_pre_portal.gpkg content-identical (3,689 and 1,903 rows, only the write time of
     its layer `education` differs). The comparison of the output directories was taken after arm D's synthesis,
-    before its MATSim stages had written; the prepared and MATSim files are compared in the entries below. Model
-    output.
+    before its MATSim stages had written, so the identity JSON's ok false and output_identical false also count
+    the 208 files of arm C's preparation and MATSim stages (194 of them under matsim_output) that arm D had not
+    written yet; the prepared and MATSim files are compared in the entries below. Model output.
   artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_identity_d_vs_c_5b212d47.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_identity_d_vs_c_pre_portal_gpkg.txt, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_C_vs_D_5b212d47.json (key equality; C = off, D = on in that file)'
   notes: 'The two files carry 5b212d47 in their names: they were computed after the first launch of arm D, whose synthesis stages the final launch at 55d9b194 kept cached.'
 - metric: arm D - the rule's selection and the constraint's own counts
@@ -333,12 +338,13 @@ validation:
     keep their mode; 43038 candidate modes this rule rejected first".
   artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_d_loop_mode_rule_report.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_d_run_log_excerpt_log.txt'
   notes: >-
-    What each line covers: the counts are per constraint instance the factory created and are summed over the plans
-    those instances saw. The standalone step prints running lines only, at 1, 2, 4, ... created constraints, so its
-    last line (above) stops before the end of the step and does not cover all 11,466 residents; the MATSim line is
-    the final total over the replanning of iterations 1 to 5, i.e. over the plans the replanning strategies handed
-    to the mode choice, not over the population. Neither line is a count of distinct trips of the population; the
-    population counts are in the next entry.
+    What each line covers, from reading the Java code at f8accd10c (unmerged branch, not committed in this
+    repository), not measured here: the counts are per constraint instance the factory created and are summed over
+    the plans those instances saw; the standalone step prints running lines only, at 1, 2, 4, ... created
+    constraints, so its last line (above) stops before the end of the step and does not cover all 11,466 residents;
+    the MATSim line is the final total over the replanning of iterations 1 to 5, i.e. over the plans the replanning
+    strategies handed to the mode choice, not over the population. Neither line is a count of distinct trips of the
+    population; the population counts are in the next entry.
 - metric: modes of the trips the rule catches, arm C vs arm D, after the initial mode choice and after iteration 5
   reference: 'arm C (rule off); no observed reference'
   result: >-
@@ -347,9 +353,10 @@ validation:
     activity to the same facility and 60 others. Modes after the initial mode choice, C -> D: all caught trips walk
     904 -> 1,075, bicycle 55 -> 66, car 175 -> 7, car_passenger 18 -> 4. Loop legs: walk 582 -> 689, bicycle 33 ->
     40, car 111 -> 3, car_passenger 8 -> 2. Legs leaving a loop activity: walk 279 -> 334, bicycle 20 -> 24, car 52
-    -> 0, car_passenger 7 -> 0. Others: walk 43 -> 52, bicycle 2 -> 2, car 12 -> 4, car_passenger 3 -> 2. After
-    iteration 5 the counts are the same in both arms (no caught trip changed its mode in the 5 iterations; arm D:
-    186 of 39,187 trips changed their main mode, none a loop or zero-length trip). The 11 caught trips of arm D that
+    -> 0, car_passenger 7 -> 0. Others: walk 43 -> 52, bicycle 2 -> 2, car 12 -> 4, car_passenger 3 -> 2. In each
+    arm the counts after iteration 5 equal those after the initial mode choice: measured trip by trip, none of the
+    1,152 caught trips changed its main mode in the 5 iterations, in C nor in D (i679_rule_trip_diff_C_vs_D.json; arm
+    D: 186 of 39,187 trips changed their main mode, none a loop or zero-length trip). The 11 caught trips of arm D that
     remain motorised (car 7, car_passenger 4) are the trips the mode choice does not re-choose: 10 lie in tours that
     touch an `outside` activity (the OutsideFilter of the run's tour filters) and 1 (leisure -> shop, car) in a tour
     of more than 6 trips (the TourLength filter, maximumLength 6); tours as the run's tour finder cuts them
@@ -359,7 +366,7 @@ validation:
     bicycle 40, car 4 (3 of zero length; the fourth is the loop after an outside stay whose facility differs from
     its origin's and which the rule therefore does not catch), car_passenger 2; arm C walk 582, car 112, bicycle 33,
     car_passenger 8. Model output.
-  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_C.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_C_iteration5.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_D.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_D_iteration5.json (keys rule_caught_by_class_and_mode_after, rule_caught_motorised_after_by_class_types_modes_outside), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_D_initial_mode_choice.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_D_iteration5.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_C_initial_mode_choice.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_d_plan_mode_diff_prepared_vs_it5.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_provenance_d.txt (tour filters)'
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_C.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_C_iteration5.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_D.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_D_iteration5.json (keys rule_caught_by_class_and_mode_after, rule_caught_motorised_after_by_class_types_modes_outside), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_D_initial_mode_choice.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_D_iteration5.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_C_initial_mode_choice.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_d_plan_mode_diff_prepared_vs_it5.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_rule_trip_diff_C_vs_D.json (key within_arm_prepared_vs_iteration5), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_rule_trip_diff.py, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_provenance_d.txt (tour filters)'
   notes: 'The key rule_caught_by_mode_after_initial_choice of the premise JSONs holds the modes in the plans read: the prepared population for C and D, the MATSim output_plans for C_iteration5 and D_iteration5.'
 - metric: arm D - did the rule leave a tour without a feasible mode chain
   reference: 'arm C logs; none'
@@ -368,8 +375,9 @@ validation:
     NoFeasibleChoice, no other line containing "feasible" except the parking report lines, no "Removing ... persons
     with no valid alternative" line and no exception; the mode choice's own warning logs are empty in both arms. Arm
     C's other "feasible" lines belong to synthesis stages before its preparation stage. The prepared configs of both
-    arms set the DiscreteModeChoice fallbackBehaviour to EXCEPTION (i679_provenance_d.txt), so a tour without a
-    feasible chain would have failed the run.
+    arms set the DiscreteModeChoice fallbackBehaviour to EXCEPTION (i679_provenance_d.txt); that this setting makes a
+    tour without a feasible chain fail the run is code reading of the discrete mode choice contrib, not shown by a run
+    here.
   artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_exception_scan_d.txt, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_provenance_d.txt'
 - metric: arm D - resident trip modes, stuck agents, facilities and exceptions, against arm C
   reference: 'arm C; no observed reference'
@@ -381,15 +389,23 @@ validation:
     13, in-commuters 4, freight 2; 17 at the simulation end; by leg mode car 10, walk 5, pt 2, truck 2). Arm D:
     RunPreparation, the initial mode choice and iterations 0 to 5 completed, no traceback, no Java exception, no
     missing-facility line. The plan check of arm D logs the same frozen-resident ERROR as arm C (13 of 935, 1.39 %).
+    Split of the C -> D difference after the initial mode choice, trip by trip (193 trips differ in main mode): the
+    182 caught trips net car -168, car_passenger -14, walk +171, bicycle +11; the 11 non-caught trips net car -11,
+    car_passenger +6, walk +3, bicycle +2 (car -> car_passenger 6, car -> walk 3, car -> bicycle 2), and all 11 lie
+    in a tour that contains a caught trip, which is consistent with the tour-based mode choice choosing the tour as
+    a whole once the caught trip can no longer be motorised; that the jar's other changes play no part is not
+    established trip by trip. After iteration 5, 195 trips differ: 182 caught (same net change) and 13 non-caught
+    (car -9, car_passenger +5, walk +3, bicycle +2, pt -1), 11 of them in a tour with a caught trip; the other 2
+    (car_passenger -> car 1, pt -> car 1) are not explained here (the replanning draws of the two arms differ).
     Model output.
-  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_C.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_D.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_C_iteration5.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_D_iteration5.json (key resident_trips_by_mode_after), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_C_iteration5.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_D_iteration5.json (key stuck), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_exception_scan_d.txt, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_d_run_log_excerpt_log.txt, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_d_matsim_modestats.csv'
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_rule_trip_diff_C_vs_D.json (key between_arms_C_vs_D), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_C.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_D.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_C_iteration5.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_D_iteration5.json (key resident_trips_by_mode_after), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_C_iteration5.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_D_iteration5.json (key stuck), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_exception_scan_d.txt, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_d_run_log_excerpt_log.txt, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_d_matsim_modestats.csv'
   notes: 'Five iterations are a wiring check; the mode counts are one draw per arm and no statement about convergence.'
 - metric: what the rule would catch with and without the loop placement (premise measurement, arms A and C, rule off)
   reference: 'none'
   result: >-
     Every resident activity of the prepared populations carries a facility id (A and C). Arm C: of the 735 aligned
     loop keys, 734 have the facility of the activity before them (home 586, secondary 121, work 20, education 7); 1
-    loop of secondary origin right after an outside stay sits at another facility. The rule catches 1,152 trips in
+    loop of secondary origin right after an outside stay sits at another facility. The rule catches, each in its arm's own prepared population (A 36,920 resident trips, C 36,857), 1,152 trips in
     arm C (mode before the initial choice walk 1,077, bicycle 45, car 18, car_passenger 12) and 43 in arm A (walk
     22, car 13, car_passenger 7, bicycle 1; by types leisure -> leisure 25, other -> leisure 7, leisure -> other 4,
     shop -> leisure 3, leisure -> shop 2, escort -> leisure 2). Same-facility trips without a leisure end, which the
@@ -507,6 +523,8 @@ artifacts:
 - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_D_initial_mode_choice.json
 - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_D_iteration5.json
 - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_d_plan_mode_diff_prepared_vs_it5.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_rule_trip_diff.py
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_rule_trip_diff_C_vs_D.json
 - 'run server, kept for now: the caches of i679_a, i679_c and i679_d (about 62 GB each), the stage-result copies keep_{off2,on2,a,b,c} (about 81 MB each) and the per-person loop-leg tables in i679_c7/'
 issues:
 - '#679'

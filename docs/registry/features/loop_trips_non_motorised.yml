@@ -66,5 +66,5 @@ assessment:
     D) is pending. The eqasim-java-bs change must be merged and its jar built before a production run with the switch
     on.'
   source: ADR-0207
-notes: 'Toggling the key recomputes the prepare stage, which declares it. It requires an eqasim-java-bs jar that contains
-  SameFacilityLeisureTripConstraint; the stage refuses an older jar.'
+notes: 'Toggling the key recomputes the prepare stage, which declares it. It requires an eqasim-java-bs jar that
+  contains SameFacilityLeisureTripConstraint; the stage refuses an older jar.'

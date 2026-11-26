@@ -191,9 +191,10 @@ notes: >-
   share of trips whose mode changed, the mode shares before and after (in-commuters included; scope in the feature record initial_mode_choice) and the Java wall time
   (observations, not reference values). braunschweig.initial_mode_choice.weight is retired: a config that still
   sets it is refused in configure() with a pointer to ADR-0178.
-  Same-facility leisure trip mode rule (ADR-0207 decision 6, #679, feature record loop_trips_non_motorised): configure() declares braunschweig.mode_choice.loop_trips_non_motorised (default and
-  production value: the key comment in configs/base_bs.yml; braunschweig.matsim.simulation.loop_mode_rule is in
-  _HELPER_MODULES). With it on, execute selects the eqasim-java-bs trip constraint SameFacilityLeisureNonMotorised:
+  Same-facility leisure trip mode rule (ADR-0207 decision 6, #679, feature record loop_trips_non_motorised):
+  configure() declares braunschweig.mode_choice.loop_trips_non_motorised (default and production value: the key
+  comment in configs/base_bs.yml; braunschweig.matsim.simulation.loop_mode_rule is in _HELPER_MODULES).
+  With it on, execute selects the eqasim-java-bs trip constraint SameFacilityLeisureNonMotorised:
   after the VRB fare and parking inputs and BEFORE the initial mode choice (so the standalone mode choice and the
   MATSim loop both read it), it opens the eqasim jar of matsim.runtime.eqasim and RAISES unless it contains the class
   org/eqasim/braunschweig/mode_choice/constraints/SameFacilityLeisureTripConstraint.class (fix: build the jar from an
