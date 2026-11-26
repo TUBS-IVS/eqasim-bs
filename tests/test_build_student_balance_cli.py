@@ -8,10 +8,12 @@ and the script's Kreis lookup for the three curated institutions), so no restric
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -123,10 +125,11 @@ def test_site_table_with_a_missing_column_fails_before_any_computation(script, w
     assert not (tmp_path / "out").exists()
 
 
-def test_cli_writes_all_tables_with_headers(script, world, tmp_path):
+def test_cli_writes_all_tables_with_headers(script, world, tmp_path, caplog):
     """Both sub-commands, ``--label`` and ``--final``: every file has its header, the weight triple
     and a ``# Diagnostics:`` line; the snippet exists exactly when the final stage is decided."""
     calibration_dir = tmp_path / "calibration"
+    caplog.set_level("WARNING", logger="braunschweig.data.education.student_geometry")
     assert script.main(["calibrate", *_common(world), "--out-dir", str(calibration_dir),
                         "--grid-step", "0.5", "--mover-step", "0.5"]) == 0
     calibration_files = ["student_commuter_weight_calibration.csv", "student_commuter_weight_fit.csv",
@@ -185,6 +188,10 @@ def test_cli_writes_all_tables_with_headers(script, world, tmp_path):
     diagnostics = [line for line in _header(committed[0]) if line.startswith("# Diagnostics:")][0]
     parsed = json.loads(diagnostics[len("# Diagnostics:"):])
     assert {"origin_cells", "build_od_table", "balance"} <= set(parsed)
+    # the row counts after the movers step hold the mover rows the builder's own count cannot see
+    after = parsed["balance"]["rows_per_cell_kind_after_movers"]
+    assert after["mover_to_braunschweig"] > 0 == parsed["build_od_table"]["rows_per_cell_kind"]["mover_to_braunschweig"]
+    assert parsed["balance"]["movers_to_braunschweig_persons"] > 0
 
     level_header = "\n".join(_header(popsim / "student_level_table.csv"))
     for key in ("omega=", "Z=", "S=", "mid_students_to_pupils_and_students_ratio=",
@@ -193,6 +200,7 @@ def test_cli_writes_all_tables_with_headers(script, world, tmp_path):
         assert key in level_header, key
     gate_header = "\n".join(_header(artifact_dir / "student_level_gate.csv"))
     assert re.search(r"gate_triggered=(True|False)", gate_header)
+    assert re.search(r"gate_triggered_area_consistent=(True|False)", gate_header)
     assert "ONE value" in gate_header                            # the away-share note of student_level_table
 
     # The final tables hold the same students as the labelled run: heads of the enrollment.
@@ -214,6 +222,10 @@ def test_cli_writes_all_tables_with_headers(script, world, tmp_path):
     for path in written:
         text = path.read_text(encoding="utf-8")
         assert not any(value in text for value in forbidden), path.name
+    # LSN sites and curated institutions are disjoint lists: the normal path logs no override warning
+    geometry_warnings = [r.getMessage() for r in caplog.records
+                         if r.name.endswith("student_geometry") and r.levelname == "WARNING"]
+    assert geometry_warnings == []
 
 
 def test_curated_site_gets_the_kreis_polygon_that_contains_it_and_a_point_in_none_raises(script):
@@ -284,3 +296,58 @@ def test_read_header_value_stops_at_space_before_a_bracketed_list(script, tmp_pa
     path = tmp_path / "header.csv"
     path.write_text("# Weights: mover_share=0.45 mover_site_kreise=[03158] weights_source=owner\ncode\n", encoding="utf-8")
     assert script.read_header_value(path, "mover_share") == "0.45"
+
+
+def test_committed_text_inputs_hash_as_git_stores_them_and_local_only_inputs_as_raw_bytes(script, tmp_path):
+    """A committed text input hashes the same on a CRLF and an LF checkout; a local-only file hashes its bytes."""
+    lf, crlf = tmp_path / "lf.csv", tmp_path / "crlf.csv"
+    lf.write_bytes(b"a,b\n1,2\n")
+    crlf.write_bytes(b"a,b\r\n1,2\r\n")
+
+    def digest(line):
+        return re.search(r"sha256 ([0-9a-f]{64})", line).group(1)
+
+    committed = script._input_lines([("lf", lf, False), ("crlf", crlf, False)])
+    local = script._input_lines([("lf", lf, True), ("crlf", crlf, True)])
+    assert digest(committed[0]) == digest(committed[1]) == hashlib.sha256(b"a,b\n1,2\n").hexdigest()
+    assert digest(local[1]) == hashlib.sha256(b"a,b\r\n1,2\r\n").hexdigest()
+    assert "LF" in committed[0] and "raw bytes" in local[0]   # the header says which normalisation applies
+
+
+def _header_args(rule):
+    return SimpleNamespace(command="balance", source_commit="abc1234", weight_rule=rule, max_commute_km=100.0)
+
+
+def _header_lines(script, rule):
+    prepared = {"region_kreise": list(ZGB), "site_kreise": ["03101"], "origin_kreise": list(ZGB)}
+    return script._common_header("t.csv", _header_args(rule), prepared, [], {}, [])
+
+
+def test_header_cites_only_assumption_ids_described_in_the_module_it_points_to(script):
+    """Every id A<n> in the common header is described as an assumption in the module the header names."""
+    text = "\n".join(_header_lines(script, "commune_curve"))
+    owners = {"student_od_table.py": ROOT / "braunschweig" / "data" / "education" / "student_od_table.py",
+              "student_level_table.py": ROOT / "braunschweig" / "calibration" / "student_level_table.py",
+              "student_geometry.py": ROOT / "braunschweig" / "data" / "education" / "student_geometry.py"}
+    described = {}
+    for name, path in owners.items():
+        source = path.read_text(encoding="utf-8")
+        for number in re.findall(r"(?:ASSUMPTION A|\* A)(\d+)\b", source):
+            described.setdefault(int(number), set()).add(name)
+    cited = sorted({int(number) for number in re.findall(r"\bA(\d+)\b", text)})
+    assert cited, text
+    for number in cited:
+        assert number in described, "A%d cited in the header but described in no module" % number
+        assert any(name in text for name in described[number]), "A%d: header names none of %s" % (
+            number, described[number])
+    # the commune-population sentence is an owner decision (ADR-0210), not an assumption id
+    population_line = [line for line in text.split("\n") if "proportion to population" in line]
+    assert population_line and not re.search(r"\bA\d+\b", population_line[0]), population_line
+
+
+def test_centroid_band_header_prints_the_band_rule_not_the_curve(script):
+    curve = "\n".join(_header_lines(script, "commune_curve"))
+    bands = "\n".join(_header_lines(script, "centroid_bands"))
+    assert "curve_anchors_km=" in curve and "proportion to population" in curve
+    assert "curve_anchors_km" not in bands and "proportion to population" not in bands
+    assert "weight_rule=centroid_bands" in bands and "band_edges_km=" in bands

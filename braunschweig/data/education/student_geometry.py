@@ -14,6 +14,8 @@ ASSUMPTION (curve anchors): the anchors are the midpoints of the design's distan
 ASSUMPTION (within-Kreis spread): the students of a site come from the communes of a Kreis in
 proportion to the communes' resident population (``EWZ``). Both are modelling assumptions, not
 observed values.
+ASSUMPTION A10: no student commutes farther than ``max_commute_km`` (a caller argument; the balance
+CLI defaults to 100 km); the curve and the bands are 0 beyond it.
 """
 from __future__ import annotations
 

@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import hashlib
 import importlib.util
 import json
 import logging
@@ -52,6 +51,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
+from braunschweig import synpp_tokens  # noqa: E402
 from braunschweig.calibration import srv_student_reference as SR  # noqa: E402
 from braunschweig.calibration import student_commuter_weights as W  # noqa: E402
 from braunschweig.calibration import student_control_evidence as E  # noqa: E402
@@ -144,14 +144,14 @@ POOLED_MODEL_TOLERANCE_PERSONS = 0.5
 _HASHES: dict = {}
 
 
-def _sha256(path: Path) -> str:
-    key = str(Path(path).resolve())
+def _sha256(path: Path, committed_text: bool) -> str:
+    """sha256 of ``path``: of a committed text file as git stores it (CRLF read as LF,
+    :func:`braunschweig.synpp_tokens.text_file_sha256`), so a Windows and a Linux checkout of one
+    commit give one hash; of a local-only or binary file over its raw bytes (``file_sha256``)."""
+    key = (str(Path(path).resolve()), committed_text)
     if key not in _HASHES:
-        digest = hashlib.sha256()
-        with open(path, "rb") as handle:
-            for block in iter(lambda: handle.read(1 << 20), b""):
-                digest.update(block)
-        _HASHES[key] = digest.hexdigest()
+        _HASHES[key] = (synpp_tokens.text_file_sha256(path) if committed_text
+                        else synpp_tokens.file_sha256(path))
     return _HASHES[key]
 
 
@@ -167,9 +167,16 @@ def _display_path(path: Path, local_only: bool) -> str:
 
 
 def _input_lines(inputs: list) -> list:
-    """``inputs``: ``(label, path, local_only)``; the header names the file and its sha256."""
-    return ["#   %s: %s%s sha256 %s" % (label, _display_path(path, local_only),
-                                        " (local-only)" if local_only else "", _sha256(path))
+    """``inputs``: ``(label, path, local_only)``; the header names the file, its sha256 and how it was hashed.
+
+    Every committed input of this CLI is a text table or script: its hash is taken with CRLF read as
+    LF (as git stores it). Local-only inputs (the LSN site table, the Zensus tables, the VG250 zip) are
+    hashed over their raw bytes.
+    """
+    return ["#   %s: %s%s sha256 %s (%s)" % (
+                label, _display_path(path, local_only), " (local-only)" if local_only else "",
+                _sha256(path, committed_text=not local_only),
+                "raw bytes" if local_only else "committed text, CRLF read as LF as git stores it")
             for label, path, local_only in inputs]
 
 
@@ -372,8 +379,10 @@ def prepare(args) -> dict:
     absent = [code for code in region_kreise if code not in gemeinden_kreise]
     if absent:
         raise ValueError("VG250 communes: region Kreis(e) %s have no commune" % absent)
-    points = G.site_points(pd.concat([lsn_rows, curated_rows], ignore_index=True)[["destination_id", "site_ags8"]],
-                           gemeinden, curated[["destination_id", "lon", "lat"]])
+    # The LSN rows are the sites, the institutions outside LSN the curated list: the two are disjoint, so
+    # site_points warns only on a real double listing.
+    points = G.site_points(lsn_rows[["destination_id", "site_ags8"]], gemeinden,
+                           curated[["destination_id", "lon", "lat"]])
     curated_points = points[points["destination_id"].isin(curated["destination_id"])]
     if len(curated_points) != len(T.OUTSIDE_LSN_CROSSWALK):
         raise ValueError("expected %d curated site point(s) (OUTSIDE_LSN_CROSSWALK), found %d"
@@ -426,20 +435,33 @@ def prepare(args) -> dict:
 
 
 # ---------------------------------------------------------------------------------------- headers
-def _common_header(table_name: str, args, prepared: dict, inputs: list, diagnostics: dict, extra: list) -> list:
+def _weight_rule_lines(args) -> list:
+    """The weight rule of the run: the curve with its anchors, or the design's hard bands."""
+    if args.weight_rule == G.WEIGHT_RULE_CENTROID_BANDS:
+        return ["# Weight rule: weight_rule=%s, band_edges_km=%s, max_commute_km=%.10g (ASSUMPTION A10: the largest "
+                "commuting distance): weight short below %g km, middle from %g to %g km, long from %g km to "
+                "max_commute_km, 0 beyond, at the straight line from the population-weighted Kreis centroid "
+                "(the design's original rule, comparison run only; see student_geometry.py)."
+                % (args.weight_rule, list(G.BAND_EDGES_KM), args.max_commute_km, G.BAND_EDGES_KM[1],
+                   G.BAND_EDGES_KM[1], G.BAND_EDGES_KM[2], G.BAND_EDGES_KM[2])]
     anchors = G.curve_anchors_km(args.max_commute_km)
+    return ["# Weight rule: weight_rule=%s, curve_anchors_km=%s, max_commute_km=%.10g (ASSUMPTION A10: the largest "
+            "commuting distance)." % (args.weight_rule, list(anchors), args.max_commute_km),
+            "#   The students of a site come from the communes of a Kreis in proportion to population (owner "
+            "decision of 2026-11-26, ADR-0210; see student_geometry.py)."]
+
+
+def _common_header(table_name: str, args, prepared: dict, inputs: list, diagnostics: dict, extra: list) -> list:
     return [
         "# Table: %s (issue #140, Phase 2). A construction from the inputs below, not a validation."
         % table_name,
         "# Generated by scripts/build_student_balance.py %s on %s; code state eqasim-bs %s."
         % (args.command, dt.date.today().isoformat(), args.source_commit),
         "# The tables count HEADS (students by the Kreis they live in); no day factor is applied. Assumptions",
-        "#   A2 to A7 are documented in braunschweig/data/education/student_od_table.py, A9 to A16 in",
-        "#   braunschweig/calibration/student_level_table.py.",
+        "#   A2 to A7 are described in braunschweig/data/education/student_od_table.py, A9, A11, A12, A13 and A16",
+        "#   in braunschweig/calibration/student_level_table.py, A10 in braunschweig/data/education/student_geometry.py.",
         "# Inputs:", *_input_lines(inputs),
-        "# Weight rule: weight_rule=%s, curve_anchors_km=%s, max_commute_km=%.10g (ASSUMPTION A10: students of a site"
-        % (args.weight_rule, list(anchors), args.max_commute_km),
-        "#   come from the communes of a Kreis in proportion to population; see student_geometry.py).",
+        *_weight_rule_lines(args),
         "# Region Kreise: %s; local site Kreise: %s; origin Kreise: %d."
         % (prepared["region_kreise"], prepared["site_kreise"], len(prepared["origin_kreise"])),
         *extra,
@@ -655,6 +677,8 @@ def _balance_summary(tables: dict, od: pd.DataFrame) -> dict:
                                          "surrounding_sites": int(out["censored_cells_without_bound"].sum())},
         "censored_upper_bound_commuters_capped_sites": tables["diagnostics"]["censored_upper_bound_commuters_capped_sites"],
         "movers_to_braunschweig_persons": float(od.loc[od["cell_kind"] == T.KIND_MOVER, "students_persons"].sum()),
+        # The builder's ``rows_per_cell_kind`` is counted before the movers step; this count is after it.
+        "rows_per_cell_kind_after_movers": {kind: int((od["cell_kind"] == kind).sum()) for kind in T.CELL_KINDS},
         "students_living_persons": float(tables["by_home_kreis"]["students_living_persons"].sum()),
     }
 
@@ -702,6 +726,7 @@ def _run_balance(args) -> int:
                                     residents_implied=students_living.to_dict())
     gate = LV.gate_table(level_gate, srv_share, away_share, age_shares, model_today)
     triggered = LV.gate_triggered(gate)
+    triggered_area_consistent = LV.gate_triggered_area_consistent(gate)
 
     diagnostics = dict(prepared["diagnostics"])
     diagnostics["build_od_table"] = t_diagnostics
@@ -736,14 +761,17 @@ def _run_balance(args) -> int:
     _write(level, level_dir / LEVEL_FILE, head(LEVEL_FILE, level_inputs, [*omega_line, *day_line]))
     gate_line = ["# gate_triggered=%s (Braunschweig row or pooled row beyond %.1f SrV standard errors: the owner decides "
                  "on the level then)." % (triggered, E.MIN_DIFFERENCE_STANDARD_ERRORS),
+                 "# gate_triggered_area_consistent=%s (the same rule on the comparison of the students aged 20 to 29, "
+                 "column beyond_two_se_20_29)." % triggered_area_consistent,
+                 "# " + LV.SRV_COVERAGE_NOTE,
                  "# " + LV.AWAY_SHARE_COLUMN_NOTE,
                  "# The SrV standard error is that of the student share; the away share's own sampling error is ignored.",
                  "# model_today_students_persons: model_students_expanded_persons of the Phase 1 measurement; the "
                  "pooled row is the sum over the surveyed Kreise."]
     _write(gate, gate_dir / GATE_FILE, head(GATE_FILE, gate_inputs, gate_line))
     _write(precheck, gate_dir / PRECHECK_FILE, head(PRECHECK_FILE, precheck_inputs, omega_line))
-    logger.info("[build_student_balance] balance done: omega %.4f, gate_triggered %s (exit code 0 either way)",
-                omega_value, triggered)
+    logger.info("[build_student_balance] balance done: omega %.4f, gate_triggered %s, gate_triggered_area_consistent "
+                "%s (exit code 0 either way)", omega_value, triggered, triggered_area_consistent)
     return 0
 
 
