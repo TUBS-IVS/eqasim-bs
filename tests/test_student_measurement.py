@@ -11,6 +11,8 @@ import pytest
 
 from braunschweig.analysis import student_measurement as M
 from braunschweig.calibration import student_parameters as SP
+from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES, PT_TICKET_FLATRATE
+from braunschweig.popsim.attributes import map_pt_ticket_group
 from braunschweig.synthesis.day_absence.absence import STATE_ABSENT_INDIVIDUAL, STATE_PRESENT
 
 HOUR_S = 3600.0
@@ -146,6 +148,18 @@ def test_student_labels_by_hand(frames):
                                          7: "03103"}
     assert (diagnostics["n_adult_students"], diagnostics["n_adult_students_absent"]) == (5, 1)
     assert diagnostics["n_adult_students_by_kreis"] == {"03101": 4, "03103": 1}
+
+
+def test_flatrate_groups_are_the_groups_of_the_flatrate_subscription_types():
+    # each subscription type through the owner's mapping on its own: the flat-rate types land
+    # exactly on the derived groups, every other type outside them
+    groups = {category: map_pt_ticket_group(pd.DataFrame(
+        {"pt_subscription_type": [category]}))["pt_ticket_group4"].iloc[0]
+        for category in PT_TICKET_CATEGORIES}
+    derived = set(M.flatrate_ticket_groups4())
+    assert derived == {groups[category] for category in PT_TICKET_FLATRATE}
+    assert all(groups[category] not in derived
+               for category in set(PT_TICKET_CATEGORIES) - PT_TICKET_FLATRATE)
 
 
 def _set(column, person_id, value):

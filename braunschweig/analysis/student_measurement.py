@@ -52,7 +52,7 @@ Label definitions, model side (SrV side: ``srv_student_reference.build_parameter
   ``E_OEV_FK`` onto the same four labels; ``never_pt`` is the MiD "fahre nie" answer on the model
   side and ``E_OEV_FK == -8`` (no public transport use in the past 12 months) on the SrV side.
 * ``season_ticket``: ``flatrate`` = the groups that mapping calls flat-rate
-  (:data:`FLATRATE_TICKET_GROUPS4`); it must agree with ``has_pt_subscription`` for every
+  (:func:`flatrate_ticket_groups4`); it must agree with ``has_pt_subscription`` for every
   student (both derive from ``PT_TICKET_FLATRATE``), a disagreement raises.
 * Day labels: :func:`braunschweig.analysis.plan_structure.harmonise_model` on the students and
   their trips, then :func:`braunschweig.calibration.student_parameters.person_day_labels`, the one
@@ -66,6 +66,7 @@ above the bound the caller passes (the stage's configured unmatched-home share).
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
@@ -80,9 +81,8 @@ from braunschweig.calibration.srv_student_reference import (AGE_GROUP_EDGES,
 from braunschweig.calibration.student_behaviour_labels import MAX_EXCLUSION_RATE, MIN_ADULT_AGE
 from braunschweig.calibration.student_control_evidence import (MIN_DIFFERENCE_STANDARD_ERRORS,
                                                                MIN_RESPONDENTS_PER_CELL)
-from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES
-from braunschweig.popsim.attributes import (PT_TICKET_GROUPS, PT_TICKET_GROUPS4,
-                                            map_pt_ticket_group)
+from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES, PT_TICKET_FLATRATE
+from braunschweig.popsim.attributes import map_pt_ticket_group
 from braunschweig.synthesis.day_absence.absence import STATES, absent_person_ids
 
 LOG = logging.getLogger(__name__)
@@ -111,11 +111,18 @@ MODEL_STUDENT_COLUMNS = ["person_id", "kreis", "present", *ATTRIBUTE_PARAMETERS,
 #: Bases the model side does not measure: the comparison is about students.
 MODEL_UNMEASURED_BASES = (SP.BASE_OTHER_ADULTS_ALL,)
 
-#: The ``pt_ticket_group4`` labels :func:`map_pt_ticket_group` gives a flat-rate ticket: the
-#: four-group variant only splits ``not_flatrate`` (into ``never_pt`` / ``occasional_ticket``),
-#: so the groups it shares with the three-group variant are exactly the flat-rate ones. Derived
-#: from the owner's two tuples, never restated.
-FLATRATE_TICKET_GROUPS4 = tuple(group for group in PT_TICKET_GROUPS4 if group in PT_TICKET_GROUPS)
+
+@lru_cache(maxsize=None)
+def flatrate_ticket_groups4() -> tuple:
+    """The ``pt_ticket_group4`` labels :func:`map_pt_ticket_group` gives a flat-rate ticket.
+
+    Derived by running the owner's mapping on every flat-rate subscription type of
+    ``PT_TICKET_FLATRATE`` (the single owner of "which ticket grants unlimited rides"), so the
+    set follows the mapping and is never restated here. Sorted, computed once.
+    """
+    flatrate_types = pd.DataFrame({"pt_subscription_type": sorted(PT_TICKET_FLATRATE)})
+    return tuple(sorted(map_pt_ticket_group(flatrate_types)["pt_ticket_group4"].unique()))
+
 
 #: Day parameters that can lose a student to a missing or negative time, with the
 #: ``person_day_labels`` diagnostics key of their base.
@@ -260,12 +267,12 @@ def _ticket_labels(students: pd.DataFrame) -> dict:
                          "e.g. %s" % (int(unknown.sum()), list(PT_TICKET_CATEGORIES),
                                       ticket_type[unknown].astype(str).unique()[:5].tolist()))
     group4 = map_pt_ticket_group(students[["pt_subscription_type"]])["pt_ticket_group4"]
-    flatrate = group4.isin(FLATRATE_TICKET_GROUPS4).to_numpy()
+    flatrate = group4.isin(flatrate_ticket_groups4()).to_numpy()
     disagree = flatrate != _flags(students, "has_pt_subscription").to_numpy()
     if disagree.any():
         raise ValueError("persons: has_pt_subscription disagrees with the flat-rate groups %s of "
                          "pt_subscription_type for %d adult student(s); both must derive from "
-                         "PT_TICKET_FLATRATE (ADR-0087)" % (list(FLATRATE_TICKET_GROUPS4),
+                         "PT_TICKET_FLATRATE (ADR-0087)" % (list(flatrate_ticket_groups4()),
                                                            int(disagree.sum())))
     return {"season_ticket": pd.Series(np.where(flatrate, "flatrate", "no_flatrate"),
                                        dtype=object),
