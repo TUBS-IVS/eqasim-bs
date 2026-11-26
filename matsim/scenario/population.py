@@ -40,6 +40,14 @@ PARKING_WRITER_ALIAS = "matsim.scenario.population: braunschweig.matsim.scenario
 PORTAL_GATE_ACTIVITY_TYPE = "outside"
 PORTAL_GATE_ATTRIBUTE = "portalGate"
 
+# eqasim-bs#679 (stroll rule): an activity whose optional column OUT_AND_BACK_STROLL_COLUMN is True gets the
+# Boolean activity attribute OUT_AND_BACK_STROLL_ATTRIBUTE=true, which the Java stroll rule of the mode choice
+# reads (the trip INTO the activity stays on walk/bicycle). Literals for the same reason as above;
+# tests/test_population_stroll_attribute.py pins the column to
+# braunschweig.synthesis.locations.secondary_chainsolvers.OUT_AND_BACK_STROLL_COLUMN.
+OUT_AND_BACK_STROLL_COLUMN = "is_out_and_back_stroll"
+OUT_AND_BACK_STROLL_ATTRIBUTE = "outAndBackStroll"
+
 
 def configure(context):
     """synpp configure of this stage: the writer's own declarations plus the parking-zone guard.
@@ -194,6 +202,10 @@ ACTIVITY_FIELDS = [
 #                   district layer (spec Amendment C3) whose polygon contains the activity
 #                   location; NaN outside every district. A second layer, independent of
 #                   parking_zone: an activity can lie in a district and in no zone and vice versa.
+# A further optional activity field of the stroll rule (eqasim-bs#679), carried from the location frame by
+# prepare_frames when the day-view location join produced it (secondary_loop_zero_displacement on):
+#   is_out_and_back_stroll -> "outAndBackStroll" (java.lang.Boolean): written only where True; a boolean
+#                   for EVERY activity, anything else raises.
 # Appended to the projected fields ONLY when present, exactly like OPTIONAL_PERSON_FIELDS, so the
 # positional ACTIVITY_FIELDS.index(...) lookups are unaffected and frames without the columns are
 # written byte-identically.
@@ -201,6 +213,7 @@ OPTIONAL_ACTIVITY_FIELDS = [
     "parking_zone",
     "parking_free",
     "parking_district",
+    OUT_AND_BACK_STROLL_COLUMN,
 ]
 
 
@@ -304,6 +317,21 @@ def _is_ev_exempt(value):
         "(braunschweig.parking.attach.attach_ev_exemption) for every person." % (value,))
 
 
+def _is_out_and_back_stroll(value):
+    """Whether an activity's ``is_out_and_back_stroll`` value is True; raises ValueError unless boolean.
+
+    The day-view location join assigns a boolean to EVERY resident activity and the regional writer
+    wrapper sets False on the injected agents' rows, so a missing or non-boolean value means a row
+    bypassed both -- writing it as "no stroll" would silently free that trip from the stroll rule.
+    """
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    raise ValueError(
+        "Invalid %s %r; expected a boolean from the day-view location join "
+        "(braunschweig.synthesis.commute_day.spatial_locations_day) for every activity."
+        % (OUT_AND_BACK_STROLL_COLUMN, value))
+
+
 TRIP_FIELDS = [
     "person_id", "mode", "departure_time", "travel_time"
 ]
@@ -318,7 +346,8 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
                rbw_omission_counter = None,
                passenger_availability_omission_counter = None,
                activity_fields = None,
-               remode_counter = None):
+               remode_counter = None,
+               stroll_counter = None):
     # ``person_fields`` is the (possibly extended) field order of the ``person``
     # tuple. Defaults to PERSON_FIELDS so existing callers are unaffected; the
     # population writer passes effective_person_fields(df) so optional additive
@@ -337,6 +366,8 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
                           if "parking_free" in activity_fields else None)
     parking_district_index = (activity_fields.index("parking_district")
                               if "parking_district" in activity_fields else None)
+    stroll_index = (activity_fields.index(OUT_AND_BACK_STROLL_COLUMN)
+                    if OUT_AND_BACK_STROLL_COLUMN in activity_fields else None)
     # ``rbw_omission_counter`` is an optional collections.Counter owned by the caller
     # (write_population); it accumulates the persons whose rbW attributes had to be
     # omitted so the rate can be logged ONCE for the whole population.
@@ -617,6 +648,14 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
             activity_attributes = dict(activity_attributes or {})
             activity_attributes[PORTAL_GATE_ATTRIBUTE] = ("java.lang.Boolean", "true")
 
+        # eqasim-bs#679: mark an out-and-back stroll for the Java stroll rule (see OUT_AND_BACK_STROLL_ATTRIBUTE).
+        # Written only as "true": the Java side reads an absent attribute as "no out-and-back stroll". Without
+        # the column (secondary_loop_zero_displacement off) nothing is read and the output is byte-identical.
+        if stroll_index is not None and _is_out_and_back_stroll(activity[stroll_index]):
+            activity_attributes[OUT_AND_BACK_STROLL_ATTRIBUTE] = ("java.lang.Boolean", "true")
+            if stroll_counter is not None:
+                stroll_counter["out_and_back_strolls"] += 1
+
         writer.add_activity(
             type = activity[ACTIVITY_FIELDS.index("purpose")],
             location = location,
@@ -665,8 +704,12 @@ def prepare_frames(df_persons, df_activities, df_locations, df_trips, df_vehicle
     df_persons = df_persons.sort_values(
         by = ["household_id", "person_id"])[effective_person_fields(df_persons)]
     df_activities = df_activities.sort_values(by = ["person_id", "activity_index"])
-    df_locations = df_locations[[
-        "person_id", "activity_index", "geometry", "location_id"]].sort_values(
+    # The stroll marker (eqasim-bs#679) is carried only when the location frame has it, so a
+    # frame without it merges exactly the columns it did before.
+    location_columns = ["person_id", "activity_index", "geometry", "location_id"]
+    if OUT_AND_BACK_STROLL_COLUMN in df_locations.columns:
+        location_columns.append(OUT_AND_BACK_STROLL_COLUMN)
+    df_locations = df_locations[location_columns].sort_values(
             by = ["person_id", "activity_index"])
     df_activities = pd.merge(df_activities, df_locations, how = "left",
                              on = ["person_id", "activity_index"])
@@ -684,6 +727,7 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
     rbw_omission_counter = collections.Counter()
     passenger_availability_omission_counter = collections.Counter()
     remode_counter = collections.Counter()
+    stroll_counter = collections.Counter()
     writes_rbw_attributes = any(
         column in df_persons.columns for column, _, _, _ in RBW_PERSON_ATTRIBUTES)
     writes_passenger_availability = "car_passenger_availability" in df_persons.columns
@@ -780,7 +824,8 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
                                passenger_availability_omission_counter=
                                passenger_availability_omission_counter,
                                activity_fields=activity_fields,
-                               remode_counter=remode_counter)
+                               remode_counter=remode_counter,
+                               stroll_counter=stroll_counter)
                     progress.update()
 
             # A valid population consumes every vehicle (each person takes the vehicles it owns).
@@ -823,6 +868,14 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
                         label, n_label, n_persons, 100.0 * n_label / max(n_persons, 1))
         logger.info("[population] default subpopulation (residents) %d/%d persons (%.2f%%)",
                     n_default, n_persons, 100.0 * n_default / max(n_persons, 1))
+
+    if OUT_AND_BACK_STROLL_COLUMN in df_activities.columns:
+        # eqasim-bs#679: 0 attributes on a population with strolls would mean the marker was lost on the way.
+        n_activities = len(df_activities)
+        n_strolls = stroll_counter["out_and_back_strolls"]
+        logger.info("[population] %s written on %d/%d activities (%.2f%%)",
+                    OUT_AND_BACK_STROLL_ATTRIBUTE, n_strolls, n_activities,
+                    100.0 * n_strolls / max(n_activities, 1))
 
     if remode_carless_car_legs:
         # CLAUDE.md fallback transparency (eqasim-bs#442): the re-mode shim substitutes the

@@ -496,6 +496,28 @@ def _require_incommuter_subpopulations(merged_persons, incommuter_persons):
                 dict(sorted(labels.value_counts().items())))
 
 
+def _injected_rows_without_stroll(locations, injected_person_ids):
+    """``locations`` with the injected agents' out-and-back stroll flag set to False (issue #679).
+
+    The stroll marker ``is_out_and_back_stroll`` comes from the secondary location stage of the
+    RESIDENTS; the in-commuter frames never carry it, so ``concat_frame`` leaves it missing on
+    their rows. An injected agent's plan is not solved by that stage and has no out-and-back
+    stroll, so those rows become False (counted in the log). A missing value on a resident row is
+    left alone: the writer raises on it. Called only when the column is present (switch on).
+    """
+    column = base.OUT_AND_BACK_STROLL_COLUMN
+    injected = locations["person_id"].isin(injected_person_ids).to_numpy()
+    locations = locations.copy()
+    filled = locations[column].where(~injected, False)
+    n_injected = int(injected.sum())
+    if not filled.isna().any():
+        filled = filled.astype(bool)
+    locations[column] = filled
+    logger.info("%s %s set to False on %d/%d location rows of injected agents (in-commuters carry no "
+                "out-and-back stroll)", _LOG_TAG, column, n_injected, len(locations))
+    return locations
+
+
 def execute(context):
     output_path = "%s/population.xml.gz" % context.path()
     enable_urban_parking = bool(context.config("enable_urban_parking"))
@@ -577,6 +599,9 @@ def execute(context):
         raw["vehicles"] = concat_frame(raw["vehicles"], inc["vehicles"], "owner_id")
         raw["vehicles"] = concat_frame(raw["vehicles"], student_inc["vehicles"],
                                        "owner_id")
+        if base.OUT_AND_BACK_STROLL_COLUMN in raw["locations"].columns:
+            raw["locations"] = _injected_rows_without_stroll(
+                raw["locations"], pd.concat([inc["persons"]["person_id"], student_inc["persons"]["person_id"]]))
 
     # Zone-based parking costs (issue #436). Attached AFTER the in-commuter merge so injected
     # in-commuters carry parkingZone / parkingFree exactly like residents. The order is fixed by

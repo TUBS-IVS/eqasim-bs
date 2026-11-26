@@ -403,7 +403,8 @@ def test_effective_activity_fields_without_parking_columns_is_the_legacy_list():
 
 
 def test_effective_activity_fields_appends_present_optional_fields_in_declared_order():
-    assert pop.OPTIONAL_ACTIVITY_FIELDS == ["parking_zone", "parking_free", "parking_district"]
+    assert pop.OPTIONAL_ACTIVITY_FIELDS == ["parking_zone", "parking_free", "parking_district",
+                                            "is_out_and_back_stroll"]
     columns = ["parking_district", "parking_free"] + pop.ACTIVITY_FIELDS + ["activity_index", "parking_zone"]
     frame = pd.DataFrame({field: [0] for field in columns})
     assert pop.effective_activity_fields(frame) == ALL_PARKING_FIELDS
