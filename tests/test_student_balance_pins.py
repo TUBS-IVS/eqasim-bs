@@ -110,7 +110,7 @@ def test_gate_not_triggered(script):
 
 def test_od_table_values_2026_11_26():
     od = _od()
-    assert od.loc[0, "origin_persons_scaled"] == pytest.approx(2247.7567969540128, rel=1e-12)
+    assert od.loc[0, "origin_persons_scaled"] == pytest.approx(2247.7567969540128, rel=1e-9)  # %.10g after the re-run
     assert od.loc[1, "distance_km"] == pytest.approx(19.79034171, rel=1e-9)
     movers = od[od.cell_kind == "mover_to_braunschweig"]
     assert movers.movers_persons.iloc[0] == pytest.approx(749.995305, rel=1e-9)

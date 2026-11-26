@@ -474,6 +474,10 @@ def test_apply_movers_moves_a_share_of_the_movers_and_keeps_every_site_total(toy
     assert t[("B", "mover_to_braunschweig")] == pytest.approx(371.0) and t[("A", "local")] == pytest.approx(571.0)
     assert T.apply_movers(od, 0.0, ("A",), "B").equals(od)
     assert list(moved.columns) == T.T_COLUMNS and moved["movers_persons"].sum() == pytest.approx(742.0)
+    # The NaN columns of the mover rows must stay float: an object column escapes the writer's %.10g format.
+    numeric = ["enrollment_persons", "distance_km", "coeff_short", "coeff_middle", "coeff_long", "origin_persons_scaled",
+               "upper_bound_persons_scaled", "weight", "students_persons", "movers_persons"]
+    assert all(pd.api.types.is_float_dtype(moved[column]) for column in numeric), moved.dtypes.to_dict()
     geometry = ["distance_km", "coeff_short", "coeff_middle", "coeff_long"]
     mover = moved[moved["cell_kind"] == "mover_to_braunschweig"].iloc[0]
     commuter = od[(od["home_ars5"] == "B") & (od["destination_id"] == "S1")].iloc[0]

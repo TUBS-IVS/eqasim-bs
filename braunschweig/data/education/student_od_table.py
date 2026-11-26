@@ -418,6 +418,9 @@ TOLERANCE_PERSONS = 1e-6
 
 _COEFFICIENTS = ["coeff_short", "coeff_middle", "coeff_long"]
 _GEOMETRY = ["distance_km", *_COEFFICIENTS]
+# The numeric columns of T (all float; ``home_in_region`` is bool).
+_FLOAT_COLUMNS = ["enrollment_persons", *_GEOMETRY, "origin_persons_scaled", "upper_bound_persons_scaled", "weight",
+                  "students_persons", "movers_persons"]
 
 
 def validate_weights(weights: CommuterWeights) -> None:
@@ -861,6 +864,9 @@ def apply_movers(od: pd.DataFrame, share: float, site_kreise: tuple[str, ...], b
     result.loc[selected, "students_persons"] = local_rows["students_persons"].to_numpy(dtype=float) - moved
     result.loc[selected, "movers_persons"] = local_rows["movers_persons"].to_numpy(dtype=float) - moved
     result = pd.concat([result, new_rows], ignore_index=True)[T_COLUMNS]
+    # The NaN columns of the mover rows come out of the constructor as object dtype; cast every numeric
+    # column back to float, else the writer's float format skips them and prints 17 digits.
+    result = result.astype({column: float for column in _FLOAT_COLUMNS})
     _require_unique_row_key(result, "apply_movers")
     LOGGER.info("[student_od_table] movers: share %g of %.1f movers at %d local site(s) in %s moved to %s "
                 "(%.1f persons)", share_value, float(local_rows["movers_persons"].sum()), len(local_rows),
