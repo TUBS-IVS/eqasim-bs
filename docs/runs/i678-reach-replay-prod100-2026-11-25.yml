@@ -202,6 +202,10 @@ validation:
     (1,785 / 45,469) in the input, 2.68 % (1,212 / 45,216) after the initial mode choice, and 0 after the lift (0 of
     44,004). The bound max_frozen_pt_as_walk_share 0.02 was already exceeded before #678: the lift replay of #575 on
     the same run measured 3.9 % (1,785 of 45,469) (docs/runs/i575-frozen-pt-walk-lift-prod100-2026-11-06.yml). The
+    input predates ADR-0186: prod100_20261031 was cut in the old extent mode (its prepare cache has no
+    transit_cut_summary.csv), which split pt trips at the extent polygon and re-routed the inside pieces on the cut
+    timetable, the mechanism that ADR-0186's kept-stops cut (the production setting since) addresses. This replay
+    therefore does not measure the share under the current cut; the next 100 % production run (#22) does. The
     second attempt's 0.23 % (95 of 41,140) after the initial choice was an artefact of the dropped stamps, not a
     repair. Of the fall from 1,785 to 1,212, the residents' part is 538 real repairs by the initial choice (1,298 ->
     760); the rest (487 -> 452) is in-commuters, re-chosen in this pre-#566 run, plus any trips where the plan
