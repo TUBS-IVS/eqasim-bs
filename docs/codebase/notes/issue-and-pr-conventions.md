@@ -1,8 +1,8 @@
 # Issue and PR conventions (TUBS-IVS/eqasim-bs)
 
 GitHub issues on the fork are the ONLY backlog (CLAUDE.md). This note is the one home for
-how an issue and its PR are named, typed and labelled. The Project board is a mirror that
-`/close` keeps in sync; nobody has to open it to understand a work item.
+how an issue and its PR are named, typed and labelled. There is no Project board
+(ADR-0208): the issue's type and labels carry all work-item state.
 
 ## Four dimensions, one home each
 
