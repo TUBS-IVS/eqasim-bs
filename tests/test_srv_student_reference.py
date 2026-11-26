@@ -407,7 +407,6 @@ def _parameter_frames(srv_frames):
              for h, p, w in zip(legs["HHNR"], legs["PNR"], legs["WNR"])]
     legs["E_BEGINN"] = [begin for begin, _ in times]
     legs["E_ANKUNFT"] = [arrival for _, arrival in times]
-    households["V_ANZ_PERS"] = [2, 3, 3, 3]
     households["E_HHTYP"] = [2, 1, 4, 2]
     households["V_ANZ_PKW"] = [2, 1, 1, 0]
     households["E_ANZ_RAD_ALLE_6"] = [3, 0, 0, -7]
@@ -473,8 +472,8 @@ _EXPECTED_SHARES = {
     ("season_ticket", "flatrate"): 2 / 4, ("season_ticket", "no_flatrate"): 2 / 4,
     ("ticket_group4", "deutschlandticket"): 2 / 4, ("ticket_group4", "occasional_ticket"): 1 / 4,
     ("ticket_group4", "never_pt"): 1 / 4,                            # 3_2 (-10) excluded
-    ("education_leg", "yes"): 3 / 5, ("education_leg", "no"): 2 / 5,
-    ("work_leg", "yes"): 1 / 5, ("work_leg", "no"): 4 / 5,
+    ("education_leg", "yes"): 4 / 5, ("education_leg", "no"): 1 / 5,    # 1_2's first trip
+    ("work_leg", "no"): 1.0,                                         # is education, see below
     ("leisure_leg", "no"): 1.0, ("shop_or_errand_leg", "no"): 1.0, ("escort_leg", "no"): 1.0,
     ("mobile", "yes"): 4 / 5, ("mobile", "no"): 1 / 5,
     ("trip_class", "0"): 1 / 5, ("trip_class", "1_2"): 2 / 5, ("trip_class", "3_4"): 2 / 5,
@@ -482,15 +481,19 @@ _EXPECTED_SHARES = {
     ("first_departure_hour", "7_8"): 3 / 4, ("first_departure_hour", "9_11"): 1 / 4,
     ("last_arrival_home_hour", "before_16"): 3 / 4, ("last_arrival_home_hour", "16_18"): 1 / 4,
     ("returns_home", "1"): 1.0,
-    # education students 1_1 [2] (150 + 270 min at education, first arrival 7:30) and 3_1 [1]
-    # (arrival unreadable: excluded from both education parameters)
-    ("time_at_education", "6h_more"): 1.0, ("arrival_band", "before_9"): 1.0,
+    # education students 1_1 [2] (150 + 270 min at education, first arrival 7:30), 1_2 [1] (450
+    # min, arrival 9:30) and 3_1 [1] (arrival unreadable: excluded from both education parameters)
+    ("time_at_education", "6h_more"): 1.0,
+    ("arrival_band", "before_9"): 2 / 3, ("arrival_band", "9_11"): 1 / 3,
     ("away_all_day", "no"): 1.0,
 }
 
 
 def test_parameter_table_by_hand(srv_frames):
-    table, diagnostics = _build(_parameter_frames(srv_frames))
+    """1_2's first trip (E_ZWECK_9 1) is given the harmonised purpose education (V_ZWECK 5), so
+    three students have an education leg and one of them is excluded from the two education
+    parameters (a third, not a limit case of the exclusion rule)."""
+    table, diagnostics = _build(_parameter_frames(srv_frames), purpose_overrides={(1, 2, 1): 5})
     for parameter, spec in SP.PARAMETERS.items():
         for label in spec.labels:
             expected = _EXPECTED_SHARES.get((parameter, label), 0.0)
@@ -501,6 +504,11 @@ def test_parameter_table_by_hand(srv_frames):
     assert sex_female["n_unweighted"] == 2 and sex_female["weight_sum"] == pytest.approx(3.0)
     assert sex_female["n_effective"] == pytest.approx(16 / 6)   # base weights [2, 1, 1]
     assert diagnostics["n_adult_students"] == 4
+    # the base of a day parameter with a smaller base is in the header next to its exclusions
+    assert diagnostics["n_base_first_departure_hour"] == 3
+    assert diagnostics["n_base_last_arrival_home_hour"] == 3
+    assert diagnostics["n_base_time_at_education"] == 3
+    assert diagnostics["n_base_arrival_band"] == 3
     excluded = {name: value for name, value in diagnostics.items()
                 if name.startswith("n_excluded_") and value}
     assert excluded == {"n_excluded_unreadable_employment_code": 1, "n_excluded_sex": 1,
@@ -541,6 +549,22 @@ def test_away_share_is_measured_before_the_universe_filter(srv_frames):
     assert not {"3_2", "3_3"} & set(universe["pid"])
 
 
+def test_away_rows_apply_the_weekday_guard_and_count_missing_ages(srv_frames):
+    persons, legs, households = _parameter_frames(srv_frames)
+    foreign_weekday = persons.copy()
+    foreign_weekday.loc[0, "MITTL_WERKTAG"] = 2
+    with pytest.raises(ValueError, match="MITTL_WERKTAG"):
+        R.away_all_day_rows(foreign_weekday, households)
+    persons.loc[(persons["HHNR"] == 4) & (persons["PNR"] == 2), "V_ALTER"] = -9
+    rows, diagnostics = R.away_all_day_rows(persons, households)
+    assert diagnostics["n_missing_age"] == 1                     # 4_2: in neither base
+    others = rows[rows["base"] == SP.BASE_OTHER_ADULTS_ALL]
+    assert others["n_unweighted"].sum() == 4                     # 2_1, 2_3, 3_3, 4_1
+    persons["V_ALTER"] = -9
+    with pytest.raises(ValueError, match="valid age"):
+        R.away_all_day_rows(persons, households)
+
+
 def test_away_rows_apply_the_zgb_kreis_rule(srv_frames):
     persons, legs, households = _parameter_frames(srv_frames)
     no_household = households[households["HHNR"] != 4]
@@ -567,12 +591,25 @@ def test_household_type_codes_by_hand(srv_frames, hh3_type, label):
         assert _parameter_cell(table, "household_type", name)["share"] == pytest.approx(share)
 
 
+def _five_adult_students(persons):
+    """2_1 (27, weight 2, household 2) becomes a student: [2, 1, 2, 1, 1], so that the two
+    students of one household are 2 of 5, away from the exclusion limit."""
+    persons.loc[(persons["HHNR"] == 2) & (persons["PNR"] == 1), "V_ERW"] = 7
+
+
 def test_household_type_negative_code_is_excluded_and_counted(srv_frames):
+    """Household 3 (3_1, 3_2) has code -5: excluded, counted. Household 1 (code 2) holds 1_1 [2]
+    and 1_2 [1], household 2 (code 1) holds 2_1 [2]: several adults 3/5, with children 2/5."""
     persons, legs, households = _parameter_frames(srv_frames)
+    _five_adult_students(persons)
     households.loc[households["HHNR"] == 3, "E_HHTYP"] = -5
     table, diagnostics = _build((persons, legs, households))
+    assert diagnostics["n_adult_students"] == 5
     assert diagnostics["n_excluded_household_type"] == 2
-    assert _parameter_cell(table, "household_type", "several_adults")["share"] == pytest.approx(1)
+    several = _parameter_cell(table, "household_type", "several_adults")
+    with_children = _parameter_cell(table, "household_type", "with_children")
+    assert several["share"] == pytest.approx(3 / 5)
+    assert with_children["share"] == pytest.approx(2 / 5)
 
 
 @pytest.mark.parametrize("oldest_age, yes_weight", [(53, 2), (52, 1)])
@@ -604,14 +641,16 @@ def test_unknown_household_member_age_is_excluded_not_assumed(srv_frames):
     lambda: pd.Series([-10, 1, 1, 0], dtype="int64"),            # the documented -10
 ])
 def test_integer_coded_car_column_with_a_missing_code(srv_frames, make_column):
-    """Household 1 (students 1_1 [2], 1_2 [1]) has a missing car count: excluded, counted; the
-    remaining label must be "1", not "1.0", whatever the column dtype."""
+    """Household 1 (students 1_1 [2], 1_2 [1]) has a missing car count: excluded, counted (2 of
+    5 students); the remaining label must be "1", not "1.0", whatever the column dtype. 2_1 [2],
+    3_1 [1] and 3_2 [1] have one car each."""
     persons, legs, households = _parameter_frames(srv_frames)
+    _five_adult_students(persons)
     households["V_ANZ_PKW"] = make_column().values
     table, diagnostics = _build((persons, legs, households))
     assert diagnostics["n_excluded_cars_in_household"] == 2
     cell = _parameter_cell(table, "cars_in_household", "1")
-    assert cell["share"] == pytest.approx(1.0) and cell["weight_sum"] == pytest.approx(2.0)
+    assert cell["share"] == pytest.approx(1.0) and cell["weight_sum"] == pytest.approx(4.0)
 
 
 def _kreis_table_module():
@@ -685,12 +724,21 @@ def test_undocumented_parameter_codes_raise(srv_frames, where, column, value):
         _build((persons, legs, households))
 
 
-def test_a_parameter_that_excludes_most_students_raises(srv_frames):
-    """Every student without a sex code (divers/none) is a broken mapping, not a measurement."""
+@pytest.mark.parametrize("more_divers, raises", [([], False), ([(1, 1)], False),
+                                                  ([(1, 1), (1, 2)], True)])
+def test_exclusion_limit_is_exactly_half_of_the_students(srv_frames, more_divers, raises):
+    """The one deliberate limit case. 3_2 has no sex code already (1 of 4); one more is exactly
+    half of the 4 adult students and passes, a third is above half and raises: that many students
+    without a sex code is a broken mapping, not a measurement."""
     persons, legs, households = _parameter_frames(srv_frames)
-    persons["V_GESCHLECHT"] = 3
-    with pytest.raises(ValueError, match="sex"):
-        _build((persons, legs, households))
+    for hhnr, pnr in more_divers:
+        persons.loc[(persons["HHNR"] == hhnr) & (persons["PNR"] == pnr), "V_GESCHLECHT"] = 3
+    if raises:
+        with pytest.raises(ValueError, match="sex"):
+            _build((persons, legs, households))
+    else:
+        _, diagnostics = _build((persons, legs, households))
+        assert diagnostics["n_excluded_sex"] == 1 + len(more_divers)
 
 
 def test_young_adult_status_by_kreis_by_hand(srv_frames):
@@ -701,6 +749,7 @@ def test_young_adult_status_by_kreis_by_hand(srv_frames):
     persons, legs, households = _parameter_frames(srv_frames)
     persons.loc[(persons["HHNR"] == 2) & (persons["PNR"] == 3), "V_ALTER"] = 25
     persons.loc[(persons["HHNR"] == 4) & (persons["PNR"] == 1), "V_ALTER"] = 29
+    persons.loc[(persons["HHNR"] == 4) & (persons["PNR"] == 2), "V_ALTER"] = -9    # no age
     universe, _ = R.student_universe(persons, households)
     table, diagnostics = R.build_young_adult_status_table(universe)
     assert list(table.columns) == ["code", "level", "status", "n_unweighted", "weight_sum",
@@ -725,6 +774,7 @@ def test_young_adult_status_by_kreis_by_hand(srv_frames):
         assert cell.loc[(WOLFSBURG, status), "n_unweighted"] == 0
     assert set(table["level"]) == {"kreis", "total"}
     assert diagnostics["n_excluded_unreadable_employment_code"] == 1
+    assert diagnostics["n_missing_age"] == 1                 # 4_2: counted, in no age band
 
 
 @pytest.mark.parametrize("age, label", [(18, "18_19"), (19, "18_19"), (20, "20_24"),

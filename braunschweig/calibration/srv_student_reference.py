@@ -86,7 +86,7 @@ from braunschweig.calibration.srv_distance_targets import (ZGB_KREISE,
                                                             weighted_band_shares)
 from braunschweig.calibration.srv_participation_universe import (
     EDUCATION_E_ZWECK_9, HOUSEHOLD_COLUMNS, LEVEL_KREIS, LEVEL_TOTAL, REGION_CODE,
-    WORK_E_ZWECK_9, persons_with_purpose, prepare_universe_persons)
+    WORK_E_ZWECK_9, persons_with_purpose, prepare_universe_persons, require_average_weekday)
 from braunschweig.calibration.srv_participation_universe import \
     PERSON_COLUMNS as UNIVERSE_PERSON_COLUMNS
 # The person key and the NaN-for-empty share rule are taken from the sibling builder rather than
@@ -150,9 +150,14 @@ OBSERVATION_COLUMNS = ["hhnr", "pnr", "kreis", "distance_km", "weight"]
 PARAMETER_TABLE = "srv2023_student_parameters.csv"
 YOUNG_ADULT_STATUS_TABLE = "srv2023_young_adult_status_by_kreis.csv"
 
-PARAMETER_PERSON_COLUMNS = ["V_GESCHLECHT", "V_FUEHR_PKW", "E_ZUGANG_PKW"]
-PARAMETER_HOUSEHOLD_COLUMNS = ["HHNR", "V_ANZ_PERS", "E_HHTYP", "V_ANZ_PKW", "E_ANZ_RAD_ALLE_6"]
-AWAY_PERSON_COLUMNS = ["HHNR", "PNR", "V_ALTER", "V_ERW", "E_ANZ_WEGE", "GEWICHT_P_ZENSUS"]
+# Raw columns the parameter table reads on top of the student universe: the person columns come
+# from the raw person file (V_FUEHR_PKW and E_OEV_FK are read from the universe, which
+# student_universe fills from the same file), the household columns from the raw household file.
+PARAMETER_PERSON_COLUMNS = ["V_GESCHLECHT", "E_ZUGANG_PKW"]
+PARAMETER_HOUSEHOLD_COLUMNS = ["HHNR", "E_HHTYP", "V_ANZ_PKW", "E_ANZ_RAD_ALLE_6"]
+# The away-all-day share is measured on the raw person file; MITTL_WERKTAG is the universe guard.
+AWAY_PERSON_COLUMNS = ["HHNR", "PNR", "V_ALTER", "V_ERW", "E_ANZ_WEGE", "GEWICHT_P_ZENSUS",
+                       "MITTL_WERKTAG"]
 
 # Codebook SrV2023_Datenkodierung_SciUse.xlsx. V_GESCHLECHT: 1 male, 2 female (the map of
 # srv_plan_structure, imported above), 3 divers and 4 "no entry in the birth register" are
@@ -727,8 +732,10 @@ def build_parameter_table(universe: pd.DataFrame, persons: pd.DataFrame,
     """Every parameter of :data:`student_parameters.PARAMETERS` over the SrV adult students.
 
     ``universe`` is :func:`student_universe`; ``persons`` / ``households`` / ``legs`` are the
-    raw frames it was built from (``persons`` must also carry :data:`PARAMETER_PERSON_COLUMNS`,
-    ``households`` :data:`PARAMETER_HOUSEHOLD_COLUMNS`); ``harmonised_persons`` and
+    raw frames it was built from (``persons`` must also carry :data:`PARAMETER_PERSON_COLUMNS`
+    and ``V_ALTER`` of every person of a household, ``households``
+    :data:`PARAMETER_HOUSEHOLD_COLUMNS`; the licence and ticket codes are read from the
+    universe); ``harmonised_persons`` and
     ``harmonised_trips`` are exactly what :func:`srv_plan_structure.harmonise_srv` returned for the
     same raw frames (``legs`` is only read for the control definition of an education leg, see the
     diagnostics).
@@ -741,8 +748,10 @@ def build_parameter_table(universe: pd.DataFrame, persons: pd.DataFrame,
     parameter only; an undocumented code raises. Columns :data:`PARAMETER_COLUMNS`, every label
     of every vocabulary emitted.
 
-    Returns ``(table, diagnostics)``. Besides the exclusion counts (``n_excluded_<parameter>``)
-    the diagnostics carry the weighted SrV share of adult students with an education leg under
+    Returns ``(table, diagnostics)``. Besides the exclusion counts (``n_excluded_<parameter>``,
+    over ``n_adult_students``; for the four day parameters on a smaller base also
+    ``n_base_<parameter>``, the mobile students or those with an education leg, so each rate can
+    be recomputed from the header) the diagnostics carry the weighted SrV share of adult students with an education leg under
     both definitions: ``education_leg_share_harmonised_purpose`` (the ``education_leg`` rows of
     this table: a trip with harmonised purpose education) and
     ``education_leg_share_control_definition`` (``E_ZWECK_9`` in
@@ -821,6 +830,8 @@ def build_parameter_table(universe: pd.DataFrame, persons: pd.DataFrame,
                                ("time_at_education", with_education),
                                ("arrival_band", with_education)):
         n_excluded = int(day[parameter].isna().to_numpy()[in_base].sum())
+        # the base differs from all adult students: its size is kept so the rate is recomputable
+        diagnostics["n_base_%s" % parameter] = int(in_base.sum())
         diagnostics["n_excluded_%s" % parameter] = n_excluded
         _log_exclusion("%s (a missing or negative time excludes the student from this parameter "
                        "only)" % parameter, n_excluded, int(in_base.sum()))
@@ -860,15 +871,20 @@ def away_all_day_rows(persons: pd.DataFrame,
     resolvable Kreis (``n_excluded_missing_kreis``; a Kreis outside the ZGB raises, as in
     :func:`srv_participation_universe.prepare_universe_persons`), an unreadable ``V_ERW``
     (``n_excluded_unreadable_employment_code``; a non-negative code outside :data:`V_ERW_CODES`
-    raises). Adults: age at least :data:`MIN_ADULT_AGE`; students: ``V_ERW`` 7, the other adults
-    everybody else. Returns the :data:`PARAMETER_COLUMNS` rows of base
+    raises). Adults: age at least :data:`MIN_ADULT_AGE`; a person without a valid age is in
+    neither base (``n_missing_age``, counted over the persons that reach this step and logged
+    through the same exclusion-rate rule); students: ``V_ERW`` 7, the other adults everybody else.
+    The weekday guard of the universe (``MITTL_WERKTAG`` is the average weekday, see
+    :func:`srv_participation_universe.require_average_weekday`) applies to the whole file first.
+    Returns the :data:`PARAMETER_COLUMNS` rows of base
     :data:`student_parameters.BASE_STUDENTS_ALL` and :data:`student_parameters.BASE_OTHER_ADULTS_ALL`.
-    Raises ``ValueError`` for a missing column, a duplicated person key or an ``E_ANZ_WEGE`` that
-    is missing or negative but not the away code (the universe guard of the participation
-    tables).
+    Raises ``ValueError`` for a missing column, a foreign ``MITTL_WERKTAG``, a duplicated person
+    key or an ``E_ANZ_WEGE`` that is missing or negative but not the away code (the universe
+    guards of the participation tables).
     """
     _require_columns(persons, AWAY_PERSON_COLUMNS, "persons")
     _require_columns(households, ["HHNR", "AGS"], "households")
+    require_average_weekday(persons)
     work = persons[AWAY_PERSON_COLUMNS].copy()
     work["pid"] = _person_ids(work)
     _unique_keyed(work["pid"], "persons: person key HHNR_PNR")
@@ -915,14 +931,20 @@ def away_all_day_rows(persons: pd.DataFrame,
     work = work[~unreadable].copy()
     work["is_student"] = (pd.to_numeric(work["V_ERW"]) == STUDENT_V_ERW).to_numpy()
 
+    # A person without a valid age is neither adult nor not adult: in no base, counted and logged
+    # like the other exclusions (over the persons that reach this step).
     age = pd.to_numeric(work["V_ALTER"], errors="coerce")
+    age = age.where(age >= 0)
+    n_missing_age = int(age.isna().sum())
+    _log_exclusion("away-all-day share: valid age (V_ALTER present and non-negative; no age, no "
+                   "adult)", n_missing_age, len(work))
     adult = (age >= MIN_ADULT_AGE).to_numpy()
     groups = ((BASE_STUDENTS_ALL, work[adult & work["is_student"].to_numpy()]),
               (BASE_OTHER_ADULTS_ALL, work[adult & ~work["is_student"].to_numpy()]))
     diagnostics = {"n_persons_total": int(n_total), "n_excluded_invalid_weight": n_invalid_weight,
                    "n_excluded_missing_kreis": n_missing_kreis,
                    "n_excluded_unreadable_employment_code": n_unreadable,
-                   "n_missing_age": int(age.isna().sum())}
+                   "n_missing_age": n_missing_age}
     frames = []
     for base, group in groups:
         label = pd.Series(np.where(group["away"].to_numpy(), "yes", "no"), dtype=object)
@@ -946,6 +968,11 @@ def build_young_adult_status_table(universe: pd.DataFrame) -> tuple[pd.DataFrame
     the Kish size of the Kreis's persons, ``se_share`` the standard error of the share.
     """
     readable, diagnostics = _drop_unreadable_employment(universe)
+    # a person without a valid age cannot be placed in the age band: counted and logged
+    n_missing_age = int(readable["age"].isna().sum())
+    _log_exclusion("young-adult status: valid age (V_ALTER present and non-negative)",
+                   n_missing_age, len(readable))
+    diagnostics["n_missing_age"] = n_missing_age
     young = readable[(readable["age"] >= AGE_BAND_20_29[0])
                      & (readable["age"] <= AGE_BAND_20_29[1])].copy()
     code = young["V_ERW"]
