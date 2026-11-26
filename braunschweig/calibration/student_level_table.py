@@ -6,7 +6,9 @@ the provenance headers and the sha256 of every input. The students living in eac
 student_od_table`, the balance anchored on official enrollment) are the LEVEL. SrV is the
 cross-check, not the level: :func:`gate_table` shows where the two differ by more than
 :data:`student_control_evidence.MIN_DIFFERENCE_STANDARD_ERRORS` SrV standard errors and
-:func:`gate_triggered` says whether the owner has to decide on it.
+:func:`gate_triggered` says whether the owner has to decide on it;
+:func:`gate_triggered_area_consistent` applies the same rule to the whole-Kreis comparison of the
+students aged 20 to 29 (:data:`SRV_COVERAGE_NOTE`).
 
 Assumptions (numbers follow the design of issue #140; every one is an ASSUMPTION, not a sourced
 value):
@@ -25,7 +27,12 @@ value):
 * A13 -- the grid group of the employment target for students aged 18 to 29 is the group of
   :data:`braunschweig.popsim.zensus_employment_age.AGE_GROUPS` that contains age 20 (``16_29``);
   students aged 30 or older go to ``30_39``.
-* A16 -- the level table carries no day factor: it counts heads, never days.
+* A16 -- the balance counts enrolled students; the design assumes their number equals the number
+  of students by main activity (the survey status). Two known errors pull in opposite directions:
+  enrolled persons whose main activity is a job (in the balance, not students in the survey) and
+  students at institutions outside the table (students in the survey, not in the balance).
+
+The level table carries no day factor: it counts heads, never days.
 
 Eight Kreise versus seven: omega and the level table cover all eight ZGB Kreise (the Zensus and the
 balance both cover Wolfsburg, 03103). The gate compares with SrV, which did not survey
@@ -84,8 +91,16 @@ GATE_COLUMNS = [
     "code", "balance_students_persons", "srv_students_weighted_persons", "srv_away_all_day_share",
     "srv_students_incl_away_persons", "srv_se_students_incl_away_persons", "difference_persons",
     "difference_in_srv_se", "beyond_two_se", "balance_students_20_29_persons",
-    "srv_estimate_students_20_29_persons", "census_estimate_students_20_29_persons",
-    "model_today_students_persons"]
+    "srv_estimate_students_20_29_persons", "srv_se_estimate_students_20_29_persons",
+    "difference_20_29_persons", "difference_20_29_in_srv_se", "beyond_two_se_20_29",
+    "census_estimate_students_20_29_persons", "model_today_students_persons"]
+# What each SrV side of the gate covers. The CLI writes it into the header of the gate table (this
+# module is the one owner of the wording).
+SRV_COVERAGE_NOTE = (
+    "Two cross-checks with opposite blind spots: srv_students_weighted_persons counts only the surveyed "
+    "municipalities of a Kreis (gate_triggered); srv_estimate_students_20_29_persons covers the whole Kreis "
+    "(SrV student share 20-29 times the Zensus population 20-29) but applies the share of the surveyed "
+    "municipalities to all of them (gate_triggered_area_consistent).")
 # Note on one gate column. The CLI task writes it into the header of the gate table (this module
 # is the one owner of the wording).
 AWAY_SHARE_COLUMN_NOTE = (
@@ -365,8 +380,19 @@ def gate_table(level_gate: pd.DataFrame, srv_shares: pd.DataFrame, away_share: f
     ``srv_away_all_day_share`` is ONE value pooled over the seven surveyed Kreise (A11), repeated
     on every surveyed row, not a per-Kreis measurement (:data:`AWAY_SHARE_COLUMN_NOTE` is the
     sentence for the output header). ``balance_students_20_29_persons`` = balance times the SrV
-    share of the ages 20 to 29; the two 20-29 estimates are the level gate's columns, unchanged. An
-    unsurveyed Kreis (Wolfsburg, no SrV share) keeps its row with NaN on the SrV side. Raises
+    share of the ages 20 to 29; the two 20-29 estimates are the level gate's columns, unchanged.
+
+    The area-consistent comparison (ages 20 to 29): ``srv_se_estimate_students_20_29_persons`` =
+    ``srv_se_student_share_20_29 * census_population_20_29_persons``; ``difference_20_29_persons`` =
+    ``balance_students_20_29_persons - srv_estimate_students_20_29_persons``,
+    ``difference_20_29_in_srv_se`` that difference over the standard error (NaN where it is not
+    positive), ``beyond_two_se_20_29`` as ``beyond_two_se``. The two SrV sides have opposite blind
+    spots (:data:`SRV_COVERAGE_NOTE`): ``srv_students_weighted_persons`` covers only the surveyed
+    municipalities of a Kreis; the 20-29 estimate covers the whole Kreis (Zensus population) but
+    applies the share of the surveyed municipalities to all. Both are cross-checks;
+    :func:`gate_triggered` reads the first, :func:`gate_triggered_area_consistent` the second.
+
+    An unsurveyed Kreis (Wolfsburg, no SrV share) keeps its row with NaN on the SrV side. Raises
     ``ValueError`` on a missing column or code, an unfilled or negative balance, an away share
     outside [0, 1), a surveyed row without a positive student share or a finite standard error, a
     missing or non-finite model value, or a surveyed Braunschweig or pooled row whose standard
@@ -376,7 +402,8 @@ def gate_table(level_gate: pd.DataFrame, srv_shares: pd.DataFrame, away_share: f
     """
     gate_inputs = ["code", "residents_implied_by_enrollment_persons",
                    "srv_students_weighted_persons", "srv_student_share_adults",
-                   "srv_estimate_students_20_29_persons", "census_estimate_students_20_29_persons"]
+                   "srv_estimate_students_20_29_persons", "srv_se_student_share_20_29",
+                   "census_population_20_29_persons", "census_estimate_students_20_29_persons"]
     _require_columns(level_gate, gate_inputs, "gate level_gate")
     _require_columns(srv_shares, ["code", "se_student_share_adults"], "gate srv_shares")
     expected = [*ZGB_KREISE, REGION_CODE]
@@ -431,6 +458,13 @@ def gate_table(level_gate: pd.DataFrame, srv_shares: pd.DataFrame, away_share: f
                        _LOG_TAG, int(zero_se.sum()), list(frame.loc[zero_se, "code"]),
                        MIN_DIFFERENCE_STANDARD_ERRORS)
     in_se = difference / se.where(se > 0)
+    # The area-consistent comparison of the students aged 20 to 29 (whole Kreis on the SrV side).
+    balance_20_29 = balance * share_20_29
+    estimate_20_29 = frame["srv_estimate_students_20_29_persons"].astype(float).where(surveyed)
+    se_20_29 = (frame["srv_se_student_share_20_29"].astype(float)
+                * frame["census_population_20_29_persons"].astype(float)).where(surveyed)
+    difference_20_29 = balance_20_29 - estimate_20_29
+    in_se_20_29 = difference_20_29 / se_20_29.where(se_20_29 > 0)
     out = pd.DataFrame({
         "code": frame["code"], "balance_students_persons": balance,
         "srv_students_weighted_persons": weighted,
@@ -438,8 +472,11 @@ def gate_table(level_gate: pd.DataFrame, srv_shares: pd.DataFrame, away_share: f
         "srv_students_incl_away_persons": incl_away, "srv_se_students_incl_away_persons": se,
         "difference_persons": difference, "difference_in_srv_se": in_se,
         "beyond_two_se": in_se.abs() > MIN_DIFFERENCE_STANDARD_ERRORS,
-        "balance_students_20_29_persons": balance * share_20_29,
+        "balance_students_20_29_persons": balance_20_29,
         "srv_estimate_students_20_29_persons": frame["srv_estimate_students_20_29_persons"],
+        "srv_se_estimate_students_20_29_persons": se_20_29, "difference_20_29_persons": difference_20_29,
+        "difference_20_29_in_srv_se": in_se_20_29,
+        "beyond_two_se_20_29": in_se_20_29.abs() > MIN_DIFFERENCE_STANDARD_ERRORS,
         "census_estimate_students_20_29_persons": frame["census_estimate_students_20_29_persons"],
         "model_today_students_persons": frame["code"].map(model).astype(float)},
         columns=GATE_COLUMNS)
@@ -458,12 +495,26 @@ def gate_triggered(gate: pd.DataFrame) -> bool:
     standard errors (design A2): the owner decides on the level then. Other Kreise do not trigger.
     Raises ``ValueError`` when a column or either row is missing.
     """
-    _require_columns(gate, ["code", "beyond_two_se"], "gate")
+    return _triggered(gate, "beyond_two_se")
+
+
+def gate_triggered_area_consistent(gate: pd.DataFrame) -> bool:
+    """True when the Braunschweig row or the pooled row of a :func:`gate_table` is beyond two SrV
+    standard errors on the comparison of the students aged 20 to 29 (``beyond_two_se_20_29``: the
+    SrV side covers the whole Kreis, see :data:`SRV_COVERAGE_NOTE`). A cross-check next to
+    :func:`gate_triggered`, which stays the design's rule. Other Kreise do not trigger. Raises
+    ``ValueError`` when a column or either row is missing.
+    """
+    return _triggered(gate, "beyond_two_se_20_29")
+
+
+def _triggered(gate: pd.DataFrame, flag: str) -> bool:
+    _require_columns(gate, ["code", flag], "gate")
     keyed = _unique_rows(gate, "code", "gate")
     needed = list(_TRIGGER_CODES)
     absent = [code for code in needed if code not in keyed.index]
     if absent:
         raise ValueError("gate: row(s) %s missing; the trigger reads %s" % (absent, needed))
-    triggered = bool(keyed.loc[needed, "beyond_two_se"].astype(bool).any())
-    logger.info("%s gate triggered: %s (rows %s)", _LOG_TAG, triggered, needed)
+    triggered = bool(keyed.loc[needed, flag].astype(bool).any())
+    logger.info("%s gate triggered on %s: %s (rows %s)", _LOG_TAG, flag, triggered, needed)
     return triggered

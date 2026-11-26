@@ -196,6 +196,31 @@ def test_gate_adds_the_away_students_and_flags_beyond_two_se():
     assert by_code.loc[E.REGION_CODE, "balance_students_persons"] == pytest.approx(19150.0)
 
 
+def test_gate_compares_the_students_20_29_with_the_whole_kreis_srv_estimate():
+    # SrV share 20-29 x Zensus population 20-29 (tests/student_gate_inputs.py); the balance side is the
+    # balance x the SrV age share 20-29 (0.75). 03102: share 0.1, se 0.06, population 2000 -> 200 +- 120;
+    # balance 1150 * 0.75 = 862.5 -> +662.5 = +5.52 se. 03101: 0.25 +- 0.05 of 4000 -> 1000 +- 200;
+    # 13000 * 0.75 = 9750 -> +43.75 se. Pooled (seven surveyed Kreise, 4000 + 6 * 2000 = 16000 persons):
+    # 0.15 +- 0.02 -> 2400 +- 320; 19150 * 0.75 = 14362.5 -> +37.38 se.
+    srv, level_gate, model_today = _gate_against_srv()
+    gate = L.gate_table(level_gate, srv, AWAY_SHARE, AGE_SHARES, model_today).set_index("code")
+    columns = ["srv_estimate_students_20_29_persons", "srv_se_estimate_students_20_29_persons",
+               "difference_20_29_persons", "difference_20_29_in_srv_se"]
+    assert gate.loc["03102", columns].tolist() == pytest.approx([200.0, 120.0, 662.5, 662.5 / 120.0])
+    assert gate.loc["03101", columns].tolist() == pytest.approx([1000.0, 200.0, 8750.0, 43.75])
+    assert gate.loc[E.REGION_CODE, columns].tolist() == pytest.approx([2400.0, 320.0, 11962.5, 11962.5 / 320.0])
+    # 03151 and the other surveyed Kreise: 200 +- 120 against 1000 * 0.75 = 750: +4.58 se
+    assert gate.loc["03151", "difference_20_29_in_srv_se"] == pytest.approx(550.0 / 120.0)
+    assert gate["beyond_two_se_20_29"].to_dict() == {code: code != WOLFSBURG for code in gate.index}
+    for column in columns:
+        assert np.isnan(gate.loc[WOLFSBURG, column]), column
+    assert L.gate_triggered_area_consistent(gate.reset_index())
+    # Only the Braunschweig and the pooled row trigger, and only on the 20-29 flag.
+    others_only = gate.reset_index().assign(
+        beyond_two_se_20_29=lambda frame: ~frame["code"].isin(["03101", E.REGION_CODE]), beyond_two_se=True)
+    assert not L.gate_triggered_area_consistent(others_only)
+
+
 def test_gate_keeps_wolfsburg_with_nan_on_the_srv_side():
     srv, level_gate, model_today = _gate_against_srv()
     row = L.gate_table(level_gate, srv, AWAY_SHARE, AGE_SHARES,
