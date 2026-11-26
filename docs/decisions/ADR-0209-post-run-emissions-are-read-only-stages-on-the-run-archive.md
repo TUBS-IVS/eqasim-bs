@@ -164,7 +164,9 @@ No code changed. No emission value exists; nothing below is a validation.
   when one exists and to a class default otherwise (residential 15 km/h, tertiary 25 km/h; defaults read on
   `master`), and does not keep the tag. A low class default distorts the level of service under both
   computation methods. `osm:way:id` is on every link, so a side table from the OSM extract is possible without
-  changing the network. NOT measured: how many links carry a class default.
+  changing the network. Measured afterwards (run manifest `emissions-road-type-parity-2026-11-26`): about a
+  quarter of the links usable by car or truck sit on a class default that cannot be a signed limit (15 or
+  25 km/h); the exact figures and the upper bound for the other classes are in the manifest.
 - **A5. Evidence on the two methods.** `StopAndGoFraction` rests on one test road (304 m, NOx, Euro 3,
   compared with the model PHEM, figures only; Hülsmann et al. 2011, VSP working paper 10-15). `AverageSpeed`
   became the contrib default in commit 1630a309cd (2020) without a documented reason; the 2011 "average speed"
@@ -181,9 +183,15 @@ No code changed. No emission value exists; nothing below is a validation.
   link of the 100 % network, per jar version, and bind the proof to the jar: the stage refuses a jar without
   one. (b) Long term, what belongs in Java goes to matsim-libs (a road-type option in `AirPollutionAnalysis`
   reading a named OSM attribute, lookup statistics, a 5.1 reader), which would shrink the three replay modules
-  without an own build.
+  without an own build. State of (a): the proof itself is done for the contrib version of the current pipeline
+  jars (run manifest `emissions-road-type-parity-2026-11-26`: same road type on every link usable by car or
+  truck of the 100 % network; the two sides differ only on transit-only links without an OSM class, which no
+  emitting vehicle uses). Binding it to the jar inside the stage is still open.
 
 ## Evidence
+
+- Run manifest `docs/runs/emissions-road-type-parity-2026-11-26.yml` (port against the contrib's
+  `OsmHbefaMapping` link by link; links on a pt2matsim class default).
 
 - Commits on `feature/i688-emissions`: e3349655, 65f817cc, efb51c91, ae15bc46, 7e81924d, ca9e53af, 1eaf4c47 and
   the two review and wiring fixes that follow them.
