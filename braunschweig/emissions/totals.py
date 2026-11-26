@@ -18,6 +18,10 @@ Every vehicle type belongs to one group, from the pre-check of
   ``heavy_truck``), or every type under ``directlyTryAverageTable``;
 * ``excluded``: a type that emits nothing by assumption (public transport, car passengers);
 * ``unknown``: a type in the tool's output that the pre-check did not see.
+
+A positive emission of an ``excluded`` or ``unknown`` type raises: it contradicts the view the
+tool ran on, and the fallback share would be computed without it. Pollutants that only one of
+the two files names are listed in the summary and warned about.
 """
 from __future__ import annotations
 
@@ -32,6 +36,9 @@ GROUPS = ("primary", "fallback", "average_table_by_choice", "excluded", "unknown
 _EMITTING_GROUPS = ("primary", "fallback", "average_table_by_choice")
 _GRAMS_PER_KILOGRAM = 1000.0
 _METERS_PER_KILOMETER = 1000.0
+#: An after-24:00 share below minus this counts as "more before 24:00 than in total" (the tool
+#: writes its total file in kg with fewer digits than the per-type file in g).
+_SHARE_TOLERANCE = 1e-6
 
 
 def _rows(path: Path, columns: tuple[str, ...]) -> Iterable[dict]:
@@ -99,6 +106,25 @@ def summarize(
             group["vehicle_types_driving"] += 1
             driving_types.add(type_id)
 
+    # A positive emission outside the three emitting groups cannot be attributed: the fallback
+    # share and the grams per vehicle-km would silently be computed without (or with) it.
+    misplaced = {"unknown": set(), "excluded": set()}
+    for (type_id, _), grams in grams_by_type_and_pollutant.items():
+        group_name = group_of(entries.get(type_id))
+        if grams > 0 and group_name in misplaced:
+            misplaced[group_name].add(type_id)
+    if misplaced["unknown"]:
+        raise ValueError(
+            f"the tool reports emissions for {len(misplaced['unknown'])} vehicle types the pre-check did not see "
+            f"({sorted(misplaced['unknown'])[:10]}); the view and the tool's output do not belong together"
+        )
+    if misplaced["excluded"]:
+        raise ValueError(
+            f"the tool reports emissions for {len(misplaced['excluded'])} excluded vehicle types "
+            f"({sorted(misplaced['excluded'])[:10]}), which emit nothing by assumption; the view did not "
+            "mark them as non-HBEFA vehicles"
+        )
+
     kilograms_total: dict[str, float] = {}
     emitting_types = set()
     for (type_id, pollutant), grams in sorted(grams_by_type_and_pollutant.items()):
@@ -128,10 +154,33 @@ def summarize(
         group["share_of_emitting_vehicle_km"] = (
             group["vehicle_km_sample"] / emitting_km_sample if emitting_km_sample > 0 else None
         )
+    # The after-24:00 share needs both tool files to name a pollutant alike; say so when they do not.
+    without_day_total = sorted(set(kilograms_total) - set(kilograms_before_day_end))
+    without_type_rows = sorted(set(kilograms_before_day_end) - set(kilograms_total))
+    above_total = sorted(
+        pollutant for pollutant, entry in pollutants.items()
+        if entry["after_24h_share"] is not None and entry["after_24h_share"] < -_SHARE_TOLERANCE
+    )
+    if without_day_total:
+        logger.warning(
+            "[emissions.summary] %d of %d pollutants have no value before 24:00 in the tool's total file, "
+            "their after-24:00 share is unknown: %s", len(without_day_total), len(kilograms_total), without_day_total)
+    if without_type_rows:
+        logger.warning(
+            "[emissions.summary] %d pollutants of the tool's total file are in no vehicle-type row and are "
+            "missing from the totals: %s", len(without_type_rows), without_type_rows)
+    if above_total:
+        logger.warning(
+            "[emissions.summary] %d pollutants have more emissions before 24:00 than over the whole time; "
+            "the tool's two files disagree: %s", len(above_total), above_total)
+
     fleet_km = groups["primary"]["vehicle_km_sample"] + groups["fallback"]["vehicle_km_sample"]
     summary = {
         "sample_size": sample_size,
         "pollutants": pollutants,
+        "pollutants_without_day_total": without_day_total,
+        "day_total_pollutants_without_type_rows": without_type_rows,
+        "pollutants_with_day_total_above_total": above_total,
         "groups": groups,
         "emitting_vehicle_km_sample": emitting_km_sample,
         "emitting_vehicle_km_scaled": emitting_km_scaled,

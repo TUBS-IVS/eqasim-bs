@@ -7,7 +7,9 @@ are given relative).
 
 What the tool does, measured on the pinned jar (wiring test of 2026-11-26, issue #688):
 
-* every output is already multiplied by ``1 / sample size``; nothing may be scaled again;
+* every output is already multiplied by ``1 / sample size``; nothing may be scaled again. The
+  stage passes ``sampling_rate`` and stops when the archive was simulated with another rate (or
+  does not name its rate): the tool would scale by whatever it is given;
 * ``emissions_total.csv`` (kg), the per-link files and the grids drop every emission from 24:00
   on; ``emissions_per_vehicle_type.csv`` and ``emissions_per_network_mode.csv`` (g) do not;
 * the raster cannot be switched off, only coarsened. With the tool's own default of 100 m an
@@ -39,6 +41,10 @@ REPORT_FILE_NAME = "emissions_events_report.json"
 #: Edge length of the tool's raster cells in metres (``--grid-size``).
 KEY_GRID_SIZE = "emissions_grid_size_meters"
 DEFAULT_GRID_SIZE_METERS = 1000.0
+
+#: Largest difference between ``sampling_rate`` and the archive's sample size that counts as equal
+#: (both are read from text; this only absorbs float formatting).
+_SAMPLE_SIZE_TOLERANCE = 1e-9
 
 #: Outputs the summary reads; the tool writes them (and its per-link files and grids) by these names.
 TOTAL_FILE_NAME = "emissions_total.csv"
@@ -88,7 +94,22 @@ def execute(context):
     if isinstance(grid_size, bool) or not isinstance(grid_size, (int, float)) or grid_size <= 0:
         raise ValueError(f"{_LOG_TAG} {KEY_GRID_SIZE}={grid_size!r} must be a positive number of metres")
     inputs = context.stage(INPUTS_STAGE)
-    view = os.path.join(context.path(INPUTS_STAGE), inputs["view_path"])
+    # The tool multiplies every output by 1 / sample size and cannot know the rate of the archive.
+    simulated = inputs["archive_sample_size"]
+    if simulated is None:
+        raise ValueError(
+            f"{_LOG_TAG} the config of the archive {inputs['archive']} does not name the sample size of its "
+            "simulation (module eqasim, parameter sampleSize), so sampling_rate cannot be confirmed; "
+            "the outputs would be scaled by an unchecked factor"
+        )
+    if abs(simulated - sample_size) > _SAMPLE_SIZE_TOLERANCE:
+        raise ValueError(
+            f"{_LOG_TAG} sampling_rate={sample_size!r} of this configuration, but the archive "
+            f"{inputs['archive']} was simulated with {simulated!r}; every output would be scaled by the "
+            "wrong factor. Run the emissions stages with the configuration of the archived run."
+        )
+    # Absolute: the Java call runs with this stage's directory as working directory.
+    view = os.path.join(os.path.abspath(context.path(INPUTS_STAGE)), inputs["view_path"])
     arguments = [
         "--input", view,
         "--config", os.path.join(view, "output_config.xml"),

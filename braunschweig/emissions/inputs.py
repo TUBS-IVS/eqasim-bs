@@ -26,14 +26,17 @@ size of the events file), so a new simulation under the same ``output_path`` re-
 In an invocation that also runs the simulation the archive does not exist at validation time;
 the next invocation then re-runs the chain once.
 
-Returns ``{"view_path", "report_path", "archive", "lookups", "settings", "tables"}``; both
-paths are relative to the stage directory.
+Returns ``{"view_path", "report_path", "archive", "archive_sample_size", "lookups", "settings",
+"tables"}``; both paths are relative to the stage directory. ``archive_sample_size`` is the rate
+the archived simulation ran with (:func:`archive_sample_size`), which the events stage compares
+with ``sampling_rate`` before it lets the tool scale anything.
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
+import re
 import shutil
 import time
 from pathlib import Path
@@ -105,6 +108,27 @@ def archive_identity(output_path) -> dict | None:
     }
 
 
+_EQASIM_MODULE = re.compile(r'<module name="eqasim"\s*>(.*?)</module>', re.DOTALL)
+_SAMPLE_SIZE_PARAM = re.compile(r'<param name="sampleSize" value="([^"]*)"')
+
+
+def archive_sample_size(archive) -> float | None:
+    """The sample size the archived simulation ran with, or ``None`` when its config does not say.
+
+    Read from the config module ``eqasim`` of the archive's ``output_config.xml``. Other modules
+    carry a ``sampleSize`` of their own (``simwrapper`` says 1.0 in a 1 % run), so the parameter is
+    taken from that module only. The events stage compares the value with ``sampling_rate``.
+    """
+    text = (Path(archive) / "output_config.xml").read_text(encoding="utf-8")
+    module = _EQASIM_MODULE.search(text)
+    if module is None:
+        return None
+    values = _SAMPLE_SIZE_PARAM.findall(module.group(1))
+    if len(values) != 1:
+        return None
+    return float(values[0])
+
+
 def read_settings(context) -> dict:
     """The validated emission settings of this run; raises ``ValueError`` naming the config key."""
     method = context.config(KEY_COMPUTATION_METHOD)
@@ -122,14 +146,24 @@ def read_settings(context) -> dict:
     modes = context.config(KEY_EMITTING_MODES)
     if not isinstance(modes, (list, tuple)) or not modes or not all(isinstance(m, str) and m for m in modes):
         raise ValueError(f"{KEY_EMITTING_MODES} must be a non-empty list of network modes, got {modes!r}")
+    handle_high_speeds = context.config(KEY_HANDLE_HIGH_SPEEDS)
+    if not isinstance(handle_high_speeds, bool):
+        # bool("false") is True: a quoted value in an overlay would switch the tolerance on.
+        raise ValueError(f"{KEY_HANDLE_HIGH_SPEEDS}={handle_high_speeds!r} must be true or false (a boolean)")
+    texts = {}
+    for key in (KEY_FALLBACK_ROAD_TYPE, KEY_COORDINATE_SYSTEM):
+        value = context.config(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{key}={value!r} must be a non-empty text")
+        texts[key] = value
     settings = {
         "computation_method": method,
         "lookup_behavior": behavior,
         "consistency_check": consistency,
-        "handle_high_average_speeds": bool(context.config(KEY_HANDLE_HIGH_SPEEDS)),
+        "handle_high_average_speeds": handle_high_speeds,
         "emitting_network_modes": sorted(modes),
-        "fallback_road_type": str(context.config(KEY_FALLBACK_ROAD_TYPE)),
-        "coordinate_system": context.config(KEY_COORDINATE_SYSTEM),
+        "fallback_road_type": texts[KEY_FALLBACK_ROAD_TYPE],
+        "coordinate_system": texts[KEY_COORDINATE_SYSTEM],
     }
     for name, key in (("max_road_type_fallback_length_share", KEY_MAX_ROAD_TYPE_FALLBACK),
                       ("max_detailed_fallback_type_share", KEY_MAX_TYPE_FALLBACK)):
@@ -206,6 +240,7 @@ def execute(context):
         "stage": __name__,
         "archive": str(archive),
         "archive_identity": archive_identity(output_path),
+        "archive_sample_size": archive_sample_size(archive),
         "settings": settings,
         "tables": {kind: {name: entry[name] for name in ("path", "sha256", "case")}
                    for kind, entry in hbefa["tables"].items()},
@@ -232,6 +267,7 @@ def execute(context):
         "view_path": VIEW_DIR_NAME,
         "report_path": REPORT_FILE_NAME,
         "archive": str(archive),
+        "archive_sample_size": report["archive_sample_size"],
         "lookups": lookups,
         "settings": settings,
         "tables": report["tables"],

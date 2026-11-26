@@ -47,10 +47,10 @@ class _Recording:
 class _Pipeline:
     """Runs the stages in order with their declared defaults; ``config(key)`` takes the key alone."""
 
-    def __init__(self, tmp_path, *, with_diesel=False, **overrides):
+    def __init__(self, tmp_path, *, with_diesel=False, archive_sample_size=SAMPLE_SIZE, **overrides):
         self.root = tmp_path / "cache"
         self.output_path = tmp_path / "output"
-        self.archive = write_archive(self.output_path, with_diesel=with_diesel)
+        self.archive = write_archive(self.output_path, with_diesel=with_diesel, sample_size=archive_sample_size)
         tables = write_tables(tmp_path / "tables", hgv_cold=True)
         self.values = {}
         for stage in STAGE_NAMES:
@@ -220,3 +220,48 @@ def test_the_events_stage_refuses_a_silent_tool_and_a_wrong_sample_size(tmp_path
     pipeline.values["sampling_rate"] = 10
     with pytest.raises(ValueError, match="sampling_rate=10"):
         pipeline.run(events_stage)
+    # The archive was simulated at 0.1 (its eqasim module; the simwrapper module says 1.0): a config
+    # that names another rate would scale every output by the wrong factor.
+    assert len(fake_tool["calls"]) == 1
+    pipeline.values["sampling_rate"] = 0.25
+    with pytest.raises(ValueError, match=r"sampling_rate=0\.25.*simulated with 0\.1"):
+        pipeline.run(events_stage)
+    assert len(fake_tool["calls"]) == 1
+
+
+def test_an_archive_that_does_not_name_its_sample_size_stops_before_the_tool(tmp_path, fake_tool):
+    pipeline = _Pipeline(tmp_path, archive_sample_size=None)
+    pipeline.run(hbefa_stage)
+    assert pipeline.run(inputs_stage)["archive_sample_size"] is None
+
+    with pytest.raises(ValueError, match="does not name the sample size"):
+        pipeline.run(events_stage)
+    assert fake_tool["calls"] == []
+
+
+def test_the_tool_gets_absolute_paths_for_a_relative_working_directory(tmp_path, fake_tool, monkeypatch):
+    # The Java call runs with the stage directory as working directory: a relative view path
+    # would be looked up below it.
+    monkeypatch.chdir(tmp_path)
+    pipeline = _Pipeline(tmp_path)
+    pipeline.root = Path("cache")
+    pipeline.run(hbefa_stage)
+    pipeline.run(inputs_stage)
+
+    pipeline.run(events_stage)
+
+    (_, arguments), = fake_tool["calls"]
+    view = tmp_path / "cache" / STAGE_NAMES[inputs_stage] / "view"
+    assert arguments[:4] == ["--input", str(view), "--config", str(view / "output_config.xml")]
+
+
+@pytest.mark.parametrize("key, value", [
+    (inputs_stage.KEY_HANDLE_HIGH_SPEEDS, "false"),
+    (inputs_stage.KEY_COORDINATE_SYSTEM, ""),
+    (inputs_stage.KEY_FALLBACK_ROAD_TYPE, None),
+])
+def test_a_setting_of_the_wrong_type_is_refused_by_its_key(tmp_path, key, value):
+    pipeline = _Pipeline(tmp_path, **{key: value})
+
+    with pytest.raises(ValueError, match=key):
+        inputs_stage.read_settings(pipeline)

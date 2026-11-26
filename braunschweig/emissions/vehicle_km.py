@@ -42,12 +42,19 @@ def vehicle_km_by_type(folder: str | Path) -> dict:
     "vehicles", "vehicles_with_link_entry"}}, "event_lines", "unknown_vehicle_link_entries",
     "unknown_vehicle_meters"}``. Every vehicle type that owns a vehicle is listed, also with zero
     driving. A link entry of a vehicle that is in neither vehicles file is counted as unknown.
-    Raises ``ValueError`` for an entered link that is not in the network.
+    Raises ``ValueError`` for an entered link that is not in the network, and when no link or no
+    vehicle could be read at all.
     """
     folder = Path(folder)
     lengths = {link: float(length) for link, length in _read_pairs(folder / "output_network.xml.gz", _LINK).items()}
     types = _read_pairs(folder / "output_transitVehicles.xml.gz", _VEHICLE)
     types.update(_read_pairs(folder / "output_vehicles.xml.gz", _VEHICLE))
+    # The files are read with line patterns, not an XML parser: an attribute order MATSim does not
+    # write today would yield nothing, and all driving would then count as "unknown vehicle".
+    if not lengths:
+        raise ValueError(f"no link with a length was read from the network of {folder}")
+    if not types:
+        raise ValueError(f"no vehicle with a type was read from the vehicles files of {folder}")
     by_type: dict[bytes, dict] = {}
     for type_id in types.values():
         entry = by_type.get(type_id)

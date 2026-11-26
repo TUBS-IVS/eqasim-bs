@@ -70,7 +70,15 @@ _CONFIG = """<?xml version="1.0" ?>
 \t<module name="households" >
 \t\t<param name="inputFile" value="households.xml.gz" />
 \t</module>
+{eqasim}\t<module name="simwrapper" >
+\t\t<param name="sampleSize" value="1.0" />
+\t</module>
 </config>
+"""
+
+_EQASIM_MODULE = """\t<module name="eqasim" >
+\t\t<param name="sampleSize" value="{sample_size}" />
+\t</module>
 """
 
 _EVENTS = [
@@ -92,8 +100,13 @@ def _car(type_id, technology, size, concept, mode="car"):
                         engine=_ENGINE.format(technology=technology, size=size, concept=concept))
 
 
-def write_archive(output_path: Path, *, with_diesel: bool = False) -> Path:
-    """Write ``<output_path>/matsim_output`` and return it."""
+def write_archive(output_path: Path, *, with_diesel: bool = False, sample_size: float | None = 0.1) -> Path:
+    """Write ``<output_path>/matsim_output`` and return it.
+
+    ``sample_size`` is the rate the simulation ran with (config module ``eqasim``); ``None`` writes
+    a config without that module. The ``simwrapper`` module carries its own ``sampleSize`` of 1.0,
+    as a real archive does, so a reader that takes the wrong one is caught.
+    """
     archive = Path(output_path) / "matsim_output"
     archive.mkdir(parents=True)
     types = _car("car_petrol", "petrol (4S)", "not specified", "PC P Euro-6")
@@ -115,5 +128,6 @@ def write_archive(output_path: Path, *, with_diesel: bool = False) -> Path:
     _gz(archive / "output_events.xml.gz", '<?xml version="1.0" encoding="utf-8"?>\n<events version="1.0">\n' + "".join(
         f'\t<event time="{time}" type="entered link" link="{link}" vehicle="{vehicle}"  />\n'
         for time, link, vehicle in _EVENTS) + "</events>\n")
-    (archive / "output_config.xml").write_text(_CONFIG, encoding="utf-8")
+    eqasim = "" if sample_size is None else _EQASIM_MODULE.format(sample_size=sample_size)
+    (archive / "output_config.xml").write_text(_CONFIG.format(eqasim=eqasim), encoding="utf-8")
     return archive
