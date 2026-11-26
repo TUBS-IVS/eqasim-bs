@@ -102,11 +102,14 @@ validation:
   reference: none (measurement)
   result: >-
     Read from docs/runs/artifacts/student-commuting-phase0-reference-2026-11-25/student_level_gate.csv. Braunschweig
-    (03101): srv_estimate_students_20_29_persons 16776.12607 and enrollment_local_sites_persons 16534 (winter semester
-    2024/25, as the file header states) are about equal, within sampling error. Derived from the same row and
-    rounded: the difference srv_estimate_students_20_29_persons minus enrollment_local_sites_persons is 242.13
-    persons; the estimate's own standard error srv_se_student_share_20_29 (0.03382719049) x
-    census_population_20_29_persons (36640) is 1239.43 persons; their ratio is 0.195. Enrollment moves between
+    (03101): srv_estimate_students_20_29_persons is 16776.12607 (residents aged 20-29 of the regional survey, persons
+    away from home all day left out) and enrollment_local_sites_persons is 16534 (winter semester 2024/25, as the file
+    header states; students of all ages at the local university sites, in-commuters included, residents who study
+    elsewhere left out). These are different quantities (limitation c), so the size of their difference does not
+    corroborate either figure. Derived from the same row and rounded: the difference srv_estimate_students_20_29_persons
+    minus enrollment_local_sites_persons is 242.13 persons, which is 0.195 standard errors of the estimate (its own
+    standard error srv_se_student_share_20_29 (0.03382719049) x census_population_20_29_persons (36640) is 1239.43
+    persons). Enrollment moves between
     semesters: the committed CHE table (eqasim-data/data/braunschweig/schools/che_student_origins_ws2022_23.csv) has
     the Technische Universitaet Braunschweig at 16809 students in winter semester 2022/23, the site table
     (scripts/seed_lsn_university_sites.py, SITE_ROWS) at 15632 in winter semester 2024/25. The survey's own expansion
