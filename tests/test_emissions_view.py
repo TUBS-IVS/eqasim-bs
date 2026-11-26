@@ -51,6 +51,27 @@ _HEAD = (
     'http://www.matsim.org/files/dtd/vehicleDefinitions_v2.0.xsd">\n\n'
 )
 
+# A transit type as MATSim writes it: own top-level attributes, a maximum velocity, no engine.
+_TRANSIT_TYPE = """\t<vehicleType id="Bus">
+\t\t<attributes>
+\t\t\t<attribute name="accessTimeInSecondsPerPerson" class="java.lang.Double">0.5</attribute>
+\t\t</attributes>
+\t\t<capacity seats="70" standingRoomInPersons="0">
+
+\t\t</capacity>
+\t\t<length meter="18.0"/>
+\t\t<width meter="2.5"/>
+\t\t<maximumVelocity meterPerSecond="22.2"/>
+\t\t<costInformation>
+
+\t\t</costInformation>
+\t\t<passengerCarEquivalents pce="2.8"/>
+\t\t<networkMode networkMode="car"/>
+\t\t<flowEfficiencyFactor factor="1.0"/>
+\t</vehicleType>
+
+"""
+
 _NETWORK = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE network SYSTEM "http://www.matsim.org/files/dtd/network_v2.dtd">
 <network>
@@ -65,6 +86,13 @@ _NETWORK = """<?xml version="1.0" encoding="UTF-8"?>
 \t\t\t</attributes>
 \t\t</link>
 \t\t<link id="11" from="2" to="1" length="50.0" freespeed="27.8" capacity="600.0" permlanes="1.0" oneway="1" modes="car" >
+\t\t</link>
+\t\t<link id="12" from="2" to="1" length="50.0" freespeed="27.8" capacity="600.0" permlanes="1.0" oneway="1" modes="pt" />
+\t\t<link id="13" from="2" to="1" length="50.0" freespeed="8.3" capacity="600.0" permlanes="1.0" oneway="1" modes="car" >
+\t\t\t<attributes>
+\t\t\t\t<attribute name="hbefa_road_type" class="java.lang.String">OLD/Type/1</attribute>
+\t\t\t\t<attribute name="osm:way:name" class="java.lang.String">A &amp; B</attribute>
+\t\t\t</attributes>
 \t\t</link>
 \t</links>
 </network>
@@ -103,7 +131,7 @@ def _write_archive(archive: Path, *, extra_vehicle_type: str = "") -> None:
     )
     _gz(archive / "output_vehicles.xml.gz", vehicles)
     _gz(archive / "output_transitVehicles.xml.gz",
-        _HEAD + _TYPE.format(type_id="Bus", mode="car", engine="") + "</vehicleDefinitions>\n")
+        _HEAD + _TRANSIT_TYPE + "</vehicleDefinitions>\n")
     _gz(archive / "output_network.xml.gz", _NETWORK)
     _gz(archive / "output_transitSchedule.xml.gz", "<transitSchedule/>\n")
     _gz(archive / "output_events.xml.gz", "<events/>\n")
@@ -146,11 +174,14 @@ def test_view_is_complete_and_the_archive_stays_byte_identical(tmp_path):
 
     assert _digest(archive) == before
 
-    # The road-type function saw both links, one without any attributes.
+    # The road-type function saw every link shape: with attributes, without, self-closing, and
+    # one that already carried a road type (replaced and counted, never duplicated).
     assert [(l.link_id, l.attributes.get("osm:way:highway")) for l in seen_links] == [
-        ("10", "residential"), ("11", None)]
+        ("10", "residential"), ("11", None), ("12", None), ("13", None)]
     assert seen_links[1].freespeed_meters_per_second == pytest.approx(27.8)
-    assert report.links == 2
+    assert seen_links[3].attributes["osm:way:name"] == "A & B"
+    assert report.links == 4
+    assert report.road_types_replaced == 1
 
     # Vehicle types: engine information resolved, sitting before costInformation.
     types = {
@@ -171,12 +202,19 @@ def test_view_is_complete_and_the_archive_stays_byte_identical(tmp_path):
     assert engine("default_car_passenger")["HbefaVehicleCategory"] == "NON_HBEFA_VEHICLE"
     assert engine("heavy_truck")["HbefaVehicleCategory"] == "HEAVY_GOODS_VEHICLE"
     assert [r.excluded for r in report.transit_vehicle_types] == [True]
+    bus = ET.fromstring(_read_gz(view / "output_transitVehicles.xml.gz")).find("m:vehicleType", _NS)
+    assert [child.tag.split("}")[1] for child in bus] == [
+        "attributes", "capacity", "length", "width", "maximumVelocity", "engineInformation",
+        "costInformation", "passengerCarEquivalents", "networkMode", "flowEfficiencyFactor"]
+    assert bus.find("m:attributes/m:attribute", _NS).get("name") == "accessTimeInSecondsPerPerson"
     # Vehicles themselves are copied unchanged.
     assert '<vehicle id="1:car:1" type="car_x_medium_pc_hybrid">' in _read_gz(view / "output_vehicles.xml.gz")
 
     # Network: every link carries the road type; untouched parts survive.
     network = _read_gz(view / "output_network.xml.gz")
-    assert network.count('name="hbefa_road_type"') == 2
+    assert network.count('name="hbefa_road_type"') == 4
+    assert "OLD/Type/1" not in network
+    assert "A &amp; B" in network
     assert 'hbefa_road_type" class="java.lang.String">URB/Access/30<' in network
     assert 'hbefa_road_type" class="java.lang.String">RUR/MW/100<' in network
     assert 'name="osm:way:highway"' in network
@@ -189,6 +227,13 @@ def test_view_is_complete_and_the_archive_stays_byte_identical(tmp_path):
     assert '<param name="emissionsComputationMethod" value="StopAndGoFraction" />' in config
     assert f'value="{tmp_path / "warm_average.csv"}"' in config
     assert "</config>" in config
+
+    # A rebuild from the same archive is byte-identical (fixed gzip header, no timestamps).
+    second = tmp_path / "view_again"
+    build_emissions_view(archive, second, _settings(tmp_path), road_type_of_link)
+    for name in ("output_vehicles.xml.gz", "output_transitVehicles.xml.gz", "output_network.xml.gz",
+                 "output_config.xml"):
+        assert (second / name).read_bytes() == (view / name).read_bytes(), name
 
     # Events and schedule are reachable under their archive names.
     assert _read_gz(view / "output_events.xml.gz") == "<events/>\n"

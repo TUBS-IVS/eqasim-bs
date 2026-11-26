@@ -34,6 +34,7 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterator, Mapping
+from xml.sax.saxutils import escape, unescape
 
 from braunschweig.emissions.vehicle_types import TypeResolution, resolve_vehicle_type
 
@@ -104,6 +105,8 @@ class ViewReport:
     vehicle_types: list[TypeResolution] = field(default_factory=list)
     transit_vehicle_types: list[TypeResolution] = field(default_factory=list)
     links: int = 0
+    #: Links whose archive ``hbefa_road_type`` differed from the value written (replaced, counted).
+    road_types_replaced: int = 0
     events_link_mode: str = ""
 
 
@@ -140,7 +143,7 @@ def build_emissions_view(
         report.transit_vehicle_types = _rewrite_vehicle_types(
             archive / "output_transitVehicles.xml.gz", view_dir / "output_transitVehicles.xml.gz"
         )
-        report.links = _rewrite_network(
+        report.links, report.road_types_replaced = _rewrite_network(
             archive / "output_network.xml.gz", view_dir / "output_network.xml.gz", road_type_of_link
         )
         _rewrite_config(archive / "output_config.xml", view_dir / "output_config.xml", settings)
@@ -150,19 +153,27 @@ def build_emissions_view(
         shutil.rmtree(view_dir, ignore_errors=True)
         raise
     logger.info(
-        "[emissions.view] %s: %d vehicle types (%d excluded), %d transit types, %d links tagged, "
-        "events %s",
+        "[emissions.view] %s: %d vehicle types (%d excluded), %d transit types, %d links tagged "
+        "(%d archive road types replaced), events %s",
         view_dir,
         len(report.vehicle_types),
         sum(r.excluded for r in report.vehicle_types),
         len(report.transit_vehicle_types),
         report.links,
+        report.road_types_replaced,
         report.events_link_mode,
     )
+    if report.road_types_replaced:
+        logger.warning(
+            "[emissions.view] %d of %d links already carried a different %s in the archive; replaced",
+            report.road_types_replaced, report.links, ROAD_TYPE_ATTRIBUTE,
+        )
     return report
 
 
 def _validate_settings(settings: EmissionsViewSettings) -> None:
+    # Only the shape is checked here: that the tables exist and are real HBEFA tables is the
+    # job of the HBEFA data stage, which hands the paths in.
     missing = [key for key in TABLE_KEYS if key not in settings.tables]
     if missing:
         raise ValueError(f"emissions settings lack table paths {missing}")
@@ -211,7 +222,7 @@ def _engine_block(resolution: TypeResolution) -> list[str]:
     for attribute, field_name in _ENGINE_ATTRIBUTES:
         lines.append(
             f'\t\t\t\t<attribute name="{attribute}" class="java.lang.String">'
-            f"{getattr(keys, field_name)}</attribute>\n"
+            f"{escape(getattr(keys, field_name))}</attribute>\n"
         )
     lines += ["\t\t\t</attributes>\n", "\t\t</engineInformation>\n"]
     return lines
@@ -228,7 +239,7 @@ def _rewrite_vehicle_type(block: list[str]) -> tuple[list[str], TypeResolution]:
         if in_engine:
             match = _ATTRIBUTE_LINE.search(line)
             if match:
-                engine_attributes[match.group(1)] = match.group(2)
+                engine_attributes[match.group(1)] = unescape(match.group(2))
         else:
             kept.append(line)
         if "</engineInformation>" in line:
@@ -258,7 +269,12 @@ def _rewrite_vehicle_types(source: Path, target: Path) -> list[TypeResolution]:
 
 def _link_record(block: list[str]) -> LinkRecord:
     head = dict(_XML_ATTRIBUTE.findall(block[0]))
-    attributes = {m.group(1): m.group(2) for line in block[1:] if (m := _ATTRIBUTE_LINE.search(line))}
+    missing = [name for name in ("id", "length", "freespeed") if name not in head]
+    if missing:
+        raise ValueError(f"network link lacks {missing}: {block[0].strip()!r}")
+    attributes = {
+        m.group(1): unescape(m.group(2)) for line in block[1:] if (m := _ATTRIBUTE_LINE.search(line))
+    }
     return LinkRecord(
         link_id=head["id"],
         length_meters=float(head["length"]),
@@ -269,8 +285,13 @@ def _link_record(block: list[str]) -> LinkRecord:
 
 
 def _rewrite_link(block: list[str], road_type: str) -> list[str]:
-    attribute = f'\t\t\t\t<attribute name="{ROAD_TYPE_ATTRIBUTE}" class="java.lang.String">{road_type}</attribute>\n'
+    attribute = (
+        f'\t\t\t\t<attribute name="{ROAD_TYPE_ATTRIBUTE}" class="java.lang.String">'
+        f"{escape(road_type)}</attribute>\n"
+    )
     head = block[0]
+    if "</link>" in head:
+        raise ValueError(f"one-line <link>...</link> is not supported: {head.strip()!r}")
     body = [line for line in block[1:] if f'name="{ROAD_TYPE_ATTRIBUTE}"' not in line]
     if head.rstrip().endswith("/>"):
         return [head.rstrip()[:-2].rstrip() + " >\n", "\t\t\t<attributes>\n", attribute,
@@ -281,12 +302,19 @@ def _rewrite_link(block: list[str], road_type: str) -> list[str]:
     return [head, "\t\t\t<attributes>\n", attribute, "\t\t\t</attributes>\n"] + body
 
 
-def _rewrite_network(source: Path, target: Path, road_type_of_link: Callable[[LinkRecord], str]) -> int:
+def _rewrite_network(
+    source: Path, target: Path, road_type_of_link: Callable[[LinkRecord], str]
+) -> tuple[int, int]:
+    """Tag every link; return ``(links, links whose archive road type was replaced)``."""
     links = 0
+    replaced = 0
     with _open_gz_read(source) as reader, _open_gz_write(target) as writer:
         for is_block, lines in _blocks(reader, "<link ", "</link>"):
             if is_block:
-                road_type = road_type_of_link(_link_record(lines))
+                record = _link_record(lines)
+                road_type = road_type_of_link(record)
+                if record.attributes.get(ROAD_TYPE_ATTRIBUTE, road_type) != road_type:
+                    replaced += 1
                 if not road_type:
                     raise ValueError(f"road type function returned an empty value for link {lines[0].strip()!r}")
                 lines = _rewrite_link(lines, road_type)
@@ -294,7 +322,12 @@ def _rewrite_network(source: Path, target: Path, road_type_of_link: Callable[[Li
             writer.writelines(lines)
     if links == 0:
         raise ValueError(f"{source} holds no links")
-    return links
+    return links, replaced
+
+
+def _attribute_value(value: str) -> str:
+    """Escape ``value`` for use inside a double-quoted XML attribute."""
+    return escape(value, {'"': "&quot;"})
 
 
 def _replace_exactly_once(text: str, pattern: str, replacement: str, what: str) -> str:
@@ -310,7 +343,7 @@ def _rewrite_config(source: Path, target: Path, settings: EmissionsViewSettings)
         raise ValueError(f"{source} already has an emissions module; refusing to overwrite its settings")
     text = _replace_exactly_once(
         text,
-        r'(<module name="households" >\s*<param name="inputFile" value=")[^"]*(")',
+        r'(<module name="households" >\s*(?:<!--.*?-->\s*)*<param name="inputFile" value=")[^"]*(")',
         r"\1null\2",
         "households input file",
     )
@@ -318,7 +351,7 @@ def _rewrite_config(source: Path, target: Path, settings: EmissionsViewSettings)
         text = _replace_exactly_once(
             text,
             r'(<module name="global" >\s*(?:<!--.*?-->\s*)*<param name="coordinateSystem" value=")[^"]*(")',
-            lambda m: m.group(1) + settings.coordinate_system + m.group(2),
+            lambda m: m.group(1) + _attribute_value(settings.coordinate_system) + m.group(2),
             "global coordinate system",
         )
     params = [(_TABLE_PARAMETERS[key], str(settings.tables[key])) for key in TABLE_KEYS]
@@ -331,7 +364,9 @@ def _rewrite_config(source: Path, target: Path, settings: EmissionsViewSettings)
         ("handleHighAverageSpeeds", "true" if settings.handle_high_average_speeds else "false"),
     ]
     module = '\t<module name="emissions" >\n'
-    module += "".join(f'\t\t<param name="{name}" value="{value}" />\n' for name, value in params)
+    module += "".join(
+        f'\t\t<param name="{name}" value="{_attribute_value(value)}" />\n' for name, value in params
+    )
     module += "\t</module>\n"
     text = _replace_exactly_once(text, r"</config>", lambda m: module + "</config>", "config end tag")
     target.write_text(text, encoding="utf-8", newline="")
