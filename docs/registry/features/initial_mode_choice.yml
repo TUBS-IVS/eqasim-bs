@@ -99,4 +99,4 @@ assessment:
     before/after); the owner's verdict follows those manifests.
   source: null
 notes: >-
-  Since ADR-0206 (#678) the initial choice runs with its own reach settings (finer outside rule, longer tours) from a second config file; rule: docs/codebase/notes/mode-choice-reach.md, keys: configs/base_bs.yml.
+  Since ADR-0206 (#678) the initial choice runs with its own reach settings (finer outside rule, longer tours) from a second config file; Kept trips (not re-chosen) are left as they came in and runner worker failures end the run, see ADR-0206; rule: docs/codebase/notes/mode-choice-reach.md, keys: configs/base_bs.yml.

@@ -51,4 +51,4 @@ assessment:
     No ADR was found (this is an upstream eqasim feature kept OFF, not a Braunschweig design decision). No owner verdict is needed while the feature stays OFF; revisit if/when a modal- split target becomes available.
   source: null
 notes: >-
-  The in-loop DMC settings (outside rule, tour length) of the production run are set by prepare since ADR-0206 (#678); this OFF flag is unaffected. Definition: docs/codebase/notes/mode-choice-reach.md.
+  The in-loop DMC settings (outside rule, tour length) of the production run are set by prepare since ADR-0206 (#678); this OFF flag is unaffected. In-loop re-routing of trips the choice does not re-choose: ADR-0206. Definition: docs/codebase/notes/mode-choice-reach.md.
