@@ -56,3 +56,4 @@ limitations: |
 notes: |
   Phase 2 of the student layer (issue #140). The level gate against SrV and the employed-target
   pre-check of the same run are run artifacts, not committed tables.
+  Run manifest docs/runs/student-balance-2026-11-26.yml (omega, day factor, gate rows) and ADR-0210 (decisions).

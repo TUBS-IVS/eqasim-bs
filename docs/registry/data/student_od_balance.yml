@@ -64,3 +64,4 @@ limitations: |
 notes: |
   Phase 2 of the student layer (issue #140). The fifth committed table of the same run is the
   student level table (record student_level_table).
+  Run manifest docs/runs/student-balance-2026-11-26.yml (every figure of this build) and ADR-0210 (table rules, weight curve, owner assumption of the weights).
