@@ -54,13 +54,15 @@ Level gate: the student estimates the owner decides the level on. ``mid_to_censu
 = MiD share of students (``P_TAET`` 10) among the 20 to 29 year olds / census share of the group
 "pupils and students without paid work" among the 20 to 29 year olds, both for Germany; the census
 group times that ratio is the second estimate. The same ratio for Land 03 (Niedersachsen) is a
-sensitivity. The third estimate, the residents implied by enrollment, needs the origin-destination
-table of Phase 1 and is NaN here; until then the enrollment at the local sites is a comparison
-figure only (where students study, all ages, its own semester).
+sensitivity. The third estimate, the residents implied by enrollment, comes from the student
+balance (``students_living_persons``) and is passed in as ``residents_implied``; it stays NaN
+when none is passed (the Phase 0 call). The enrollment at the local sites is a comparison figure
+only (where students study, all ages, its own semester).
 """
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 
 import numpy as np
 import pandas as pd
@@ -318,8 +320,24 @@ def _ratio(mid: pd.DataFrame, census: pd.DataFrame, mid_region: str, census_regi
     return mid_share / census_share
 
 
+def _checked_residents_implied(residents_implied: Mapping[str, float]) -> dict:
+    """``residents_implied`` as a dict, after the checks that fail early (naming Kreis and value)."""
+    values = dict(residents_implied)
+    missing = [code for code in ZGB_KREISE if code not in values]
+    unknown = sorted(set(values) - set(ZGB_KREISE))
+    if missing or unknown:
+        raise ValueError("residents_implied: Kreis(e) %s missing, %s outside the ZGB %s"
+                         % (missing, unknown, list(ZGB_KREISE)))
+    bad = {code: values[code] for code in ZGB_KREISE
+           if not (np.isfinite(values[code]) and values[code] >= 0)}
+    if bad:
+        raise ValueError("residents_implied: non-finite or negative value(s) %s" % bad)
+    return {code: float(values[code]) for code in ZGB_KREISE}
+
+
 def build_level_gate(srv_shares: pd.DataFrame, census_students: pd.DataFrame,
-                     mid_share_20_29: pd.DataFrame, sites: pd.DataFrame) -> pd.DataFrame:
+                     mid_share_20_29: pd.DataFrame, sites: pd.DataFrame,
+                     residents_implied: Mapping[str, float] | None = None) -> pd.DataFrame:
     """Student estimates per ZGB Kreis and for the pooled area SrV covers.
 
     Inputs: ``srv_shares`` = R5 ``srv2023_student_share_by_kreis.csv`` (``code`` per ZGB Kreis and
@@ -337,12 +355,17 @@ def build_level_gate(srv_shares: pd.DataFrame, census_students: pd.DataFrame,
     (Wolfsburg) keeps its row with NaN SrV shares and estimates; its census estimate and
     enrollment exist. Columns :data:`LEVEL_GATE_COLUMNS`; ``enrollment_local_sites_persons`` is
     the sum over ``scope == local`` sites in the Kreis, 0 where there is none;
-    ``residents_implied_by_enrollment_persons`` is NaN (Phase 1).
+    ``residents_implied_by_enrollment_persons`` is NaN when ``residents_implied`` is None (the
+    Phase 0 call; its output is unchanged). Otherwise ``residents_implied`` maps every ZGB Kreis to
+    the students living in it (``by_home_kreis`` of :mod:`braunschweig.data.education.
+    student_od_table`, ``students_living_persons``): the column holds each Kreis's value and the
+    pooled row the sum over the covered Kreise only (Wolfsburg's value stays in its own row).
 
     Raises ``ValueError`` on a missing column or region, a duplicated code, a census row of
     another age group, a surveyed Kreis without SrV adults, an unsurveyed Kreis with SrV adults,
     an undefined MiD-to-census ratio, a site scope outside :data:`SITE_SCOPES`, a negative count
-    or a local site outside the ZGB.
+    or a local site outside the ZGB, and, for ``residents_implied``, on a missing or unknown Kreis
+    or a non-finite or negative value.
     """
     _require_columns(srv_shares, SRV_SHARE_COLUMNS, "SrV student share")
     _require_columns(census_students, CENSUS_COLUMNS, "census students")
@@ -388,6 +411,8 @@ def build_level_gate(srv_shares: pd.DataFrame, census_students: pd.DataFrame,
 
     ratio_germany = _ratio(mid, census, MID_GERMANY_CODE, CENSUS_GERMANY_CODE)
     ratio_land = _ratio(mid, census, SENSITIVITY_LAND, SENSITIVITY_LAND)
+    implied = (None if residents_implied is None
+               else _checked_residents_implied(residents_implied))
 
     def _row(code: str, srv_row: pd.Series, kreise) -> dict:
         population = float(census.loc[list(kreise), "all_persons"].sum())
@@ -408,7 +433,8 @@ def build_level_gate(srv_shares: pd.DataFrame, census_students: pd.DataFrame,
             "srv_student_share_adults": float(srv_row["student_share_adults"]),
             "enrollment_local_sites_persons": float(sum(enrollment.get(kreis, 0)
                                                         for kreis in kreise)),
-            "residents_implied_by_enrollment_persons": float("nan"),
+            "residents_implied_by_enrollment_persons": (
+                float("nan") if implied is None else float(sum(implied[kreis] for kreis in kreise))),
         }
 
     rows = [_row(code, srv.loc[code], [code]) for code in ZGB_KREISE]

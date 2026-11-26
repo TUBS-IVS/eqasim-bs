@@ -294,6 +294,38 @@ def test_level_gate_keeps_wolfsburg_with_nan_srv_columns():
     assert wolfsburg["enrollment_local_sites_persons"] == 400
 
 
+def test_build_level_gate_fills_the_reserved_column_and_keeps_nan_by_default():
+    srv, census, mid, sites = _gate_inputs()
+    default = E.build_level_gate(srv, census, mid, sites)
+    assert default["residents_implied_by_enrollment_persons"].isna().all()
+    # None is the Phase 0 call: byte-identical to leaving the argument out
+    pd.testing.assert_frame_equal(
+        default, E.build_level_gate(srv, census, mid, sites, residents_implied=None))
+
+    # distinct hand-picked values: 03101 = 1000, Wolfsburg 03103 = 400, the six others 100 each
+    implied = {code: {"03101": 1000.0, "03103": 400.0}.get(code, 100.0) for code in ZGB}
+    gate = E.build_level_gate(srv, census, mid, sites, residents_implied=implied).set_index("code")
+    assert gate.loc["03101", "residents_implied_by_enrollment_persons"] == 1000.0
+    assert gate.loc["03103", "residents_implied_by_enrollment_persons"] == 400.0
+    # the pooled row sums the seven surveyed Kreise only: Wolfsburg's 400 is not in it
+    assert gate.loc["03ZGB", "residents_implied_by_enrollment_persons"] == 1000.0 + 6 * 100.0
+    # every other column is untouched by the new argument
+    other = [c for c in E.LEVEL_GATE_COLUMNS if c != "residents_implied_by_enrollment_persons"]
+    pd.testing.assert_frame_equal(gate.reset_index()[other], default[other])
+
+
+@pytest.mark.parametrize("mutate, match", [
+    (lambda d: {k: v for k, v in d.items() if k != "03154"}, "03154"),
+    (lambda d: {**d, "03999": 5.0}, "03999"),
+    (lambda d: {**d, "03101": -1.0}, "03101"),
+    (lambda d: {**d, "03102": float("nan")}, "03102")])
+def test_build_level_gate_refuses_bad_residents_implied(mutate, match):
+    srv, census, mid, sites = _gate_inputs()
+    implied = mutate({code: 100.0 for code in ZGB})
+    with pytest.raises(ValueError, match=match):
+        E.build_level_gate(srv, census, mid, sites, residents_implied=implied)
+
+
 @pytest.mark.parametrize("table, region", [("census", "03154"), ("census", "DG"),
                                            ("mid", "DE"), ("mid", "03")])
 def test_level_gate_refuses_a_missing_region(table, region):
