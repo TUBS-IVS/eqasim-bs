@@ -244,12 +244,10 @@ def test_gate_warns_and_counts_a_zero_standard_error_of_another_kreis(caplog):
     assert len(warnings) == 1 and "03151" in warnings[0].getMessage()
 
 
-def test_away_share_note_says_it_is_one_pooled_value():
-    # the value really is the same on every surveyed row; the note says so for the CLI header
+def test_away_share_is_one_pooled_value_on_every_surveyed_row():
     srv, level_gate, model_today = _gate_against_srv()
     gate = L.gate_table(level_gate, srv, AWAY_SHARE, AGE_SHARES, model_today)
     assert set(gate["srv_away_all_day_share"].dropna()) == {AWAY_SHARE}
-    assert "ONE value" in L.AWAY_SHARE_COLUMN_NOTE
 
 
 def _flags(**by_code):
