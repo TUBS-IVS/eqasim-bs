@@ -879,7 +879,8 @@ def balance_tables(od: pd.DataFrame, region_kreise) -> dict[str, pd.DataFrame]:
             cell; a NaN bound counts 0); ``censored_upper_bound_commuters_persons`` = the same bound times
             the weight, summed over the commuter rows; ``censored_cells_without_bound`` = the site's rows
             (origin cells after the split, mover rows excluded) whose bound is NaN, i.e. censored cells
-            that no CHE list bounds.
+            that no CHE list bounds. A cell counts once per site it is split to, so the sum over the
+            sites can exceed the number of such CHE cells.
         ``out_commuters`` (:data:`OUT_COMMUTER_COLUMNS`, surrounding sites; no enrollment check: only the
             region's rows exist).
         ``in_commuters_by_origin`` (:data:`IN_COMMUTER_COLUMNS`): local-site students per home Kreis

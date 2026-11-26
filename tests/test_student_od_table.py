@@ -447,6 +447,26 @@ def test_negative_local_count_raises(toy, change, column):
         T.build_od_table(**change(toy), weights=WEIGHTS)
 
 
+def test_local_count_within_the_tolerance_below_zero_is_exactly_zero():
+    def build(enrollment):
+        # Art Z without a CHE total (factor 1); its own-Kreis cell A is censored (origin 0, so movers = local).
+        cells = [_censored("A", "Art Z", 5), _shown("B", "Art Z", 100)]
+        sites = [_site("S1", "Art Z", "A", "local", enrollment)]
+        pairs = [_pair("A", "S1", 3.0, SHORT), _pair("B", "S1", 15.0, SHORT)]
+        return T.build_od_table(**_toy_input(cells, {}, sites, pairs, ["A", "B"]), weights=WEIGHTS)[0]
+
+    od = build(50.0 - 5e-7)  # commuters 100 * 0.5 = 50 exceed the enrollment by 5e-7: rounding noise
+    assert _at(od, "A", "S1", "students_persons") == 0.0 and _at(od, "A", "S1", "movers_persons") == 0.0
+    with pytest.raises(ValueError, match="students_persons"):
+        build(50.0 - 2e-6)  # beyond the tolerance of 1e-6 persons
+
+
+def test_duplicate_row_key_raises(toy):
+    od, _ = T.build_od_table(**toy, weights=WEIGHTS)
+    with pytest.raises(ValueError, match="home_ars5.*destination_id.*cell_kind"):
+        T._require_unique_row_key(pd.concat([od, od.iloc[[1]]], ignore_index=True), "test")
+
+
 def test_apply_movers_moves_a_share_of_the_movers_and_keeps_every_site_total(toy):
     od, _ = T.build_od_table(**toy, weights=T.CommuterWeights(0.5, 0.3, 0.1))
     moved = T.apply_movers(od, 0.5, ("A",), "B")
