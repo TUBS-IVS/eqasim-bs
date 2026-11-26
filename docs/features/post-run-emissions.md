@@ -56,6 +56,13 @@ speed band (`braunschweig/emissions/osm_hbefa_road_classes.csv`). Known properti
 mapping, kept on purpose and documented in `braunschweig/emissions/road_types.py`: every link is
 urban (`URB/`), every motorway is `MW-Nat.`, and the speed is clamped into the class range.
 
+The port was compared with the original link by link on the network of a 100 % run and gives the
+same road type on every link a car or truck may use (run manifest
+`emissions-road-type-parity-2026-11-26`). That holds for one version of the original, so the
+calculation stage refuses a pipeline jar whose mapping classes differ from the proven ones
+(`braunschweig/emissions/road_type_proof.py`). Equal to the original does not mean right for the
+road: the properties above remain.
+
 LIMITATION: the model network's free speeds are not legal speed limits everywhere, so the speed
 band comes from the clamp on many links. How this interacts with the computation method
 `StopAndGoFraction` is untested.

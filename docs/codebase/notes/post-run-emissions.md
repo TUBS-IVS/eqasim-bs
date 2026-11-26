@@ -12,6 +12,7 @@ ADR-0209.
 | `inputs.py`, `events.py`, `summary.py` | synpp stages of the chain | own stage directory only |
 | `vehicle_types.py` + `vehicle_type_rules.csv`, `technology_names.csv` | vehicle type -> HBEFA keys | pure |
 | `road_types.py` + `osm_hbefa_road_classes.csv` | link -> HBEFA road type (`RoadTypeTagger`) | pure |
+| `road_type_proof.py` + `osm_hbefa_parity_proof.json`, `osm_hbefa_parity_cases.csv` | ties the port to the proven contrib classes (`require_proven_jar`) | reads the pipeline jar |
 | `view.py` | writes the folder the tool loads (`build_emissions_view`) | reads the archive, writes the view |
 | `hbefa_tables.py` | file checks, refusal of the sample tables (`inspect_hbefa_tables`) | reads the tables |
 | `table_keys.py` | key index and lookup replay (`read_table_keys`, `precheck_lookups`) | reads key columns only |
@@ -45,6 +46,14 @@ committed CSV tables, not in Python. The stages add them to their `validate()` t
    by line, so that the view stays byte-identical outside the edited lines and the events stream.
    They rely on the attribute order MATSim writes; `vehicle_km_by_type` raises when it reads no
    vehicle or no link, and the view tests pin the layout.
+   For `road_types.py` the re-check is enforced: `events.py` refuses a jar whose
+   `OsmHbefaMapping`, `OsmHbefaMapping$Hbefa` or `NetworkUtils` class file is not in
+   `osm_hbefa_parity_proof.json`. To admit a new jar, repeat the run of manifest
+   `emissions-road-type-parity-2026-11-26` against it (its artifacts are the scripts), replace
+   `osm_hbefa_parity_cases.csv` by the new cases, make
+   `test_the_port_reproduces_every_case_of_the_parity_proof` pass, and only then add a proof
+   record with the new digests. Never add digests without the run, and never edit the cases by
+   hand: they are output of the Java original.
 6. **Every fallback is counted and bounded** (road class per link, table level per fleet type,
    the same by vehicle-km). A new fallback gets its primary-against-fallback log line, a report
    field and a bound, like the existing three.

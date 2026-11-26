@@ -5,7 +5,9 @@ description: >-
   Runs MATSim's org.matsim.application.analysis.emissions.AirPollutionAnalysis from the pipeline jar
   (matsim.runtime.eqasim) on the view of braunschweig.emissions.inputs; no Java code of this project is
   involved. The tool multiplies every output by 1 / sample size, so the stage passes sampling_rate and stops
-  before the call when the archive was simulated with another rate or does not name its rate. Writes the
+  before the call when the archive was simulated with another rate or does not name its rate. It also stops
+  before the call when the jar's OsmHbefaMapping class files are not the ones the road-type port was proven
+  equal to (braunschweig/emissions/road_type_proof.py, ADR-0209 A7). Writes the
   tool's outputs into its own stage directory (emissions_total.csv in kg; emissions_per_vehicle_type.csv and
   emissions_per_network_mode.csv in g; per-link files and grids) and emissions_events_report.json (tool
   class, arguments, sample size, grid size, runtime, output sizes). Raises when the tool finishes without

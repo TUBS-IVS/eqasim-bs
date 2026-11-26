@@ -12,6 +12,10 @@ What the tool does, measured on the pinned jar (wiring test of 2026-11-26, issue
   does not name its rate): the tool would scale by whatever it is given;
 * ``emissions_total.csv`` (kg), the per-link files and the grids drop every emission from 24:00
   on; ``emissions_per_vehicle_type.csv`` and ``emissions_per_network_mode.csv`` (g) do not;
+* the tool has no road-type mapping of its own: the road types are the ones the view carries,
+  written by the Python port of ``OsmHbefaMapping``. Before the tool runs the stage checks that
+  the jar holds the ``OsmHbefaMapping`` the port was proven equal to
+  (``braunschweig.emissions.road_type_proof``) and refuses any other jar;
 * the raster cannot be switched off, only coarsened. With the tool's own default of 100 m an
   8 GB heap ran out on a 1 % archive, 1000 m finished; the grid size is therefore a config key
   whose default is the size that is proven to run. The heap is ``java_memory``.
@@ -27,6 +31,7 @@ import os
 import time
 
 from braunschweig import synpp_tokens
+from braunschweig.emissions import road_type_proof as _road_type_proof
 import matsim.runtime.eqasim as eqasim
 import matsim.runtime.java as java
 
@@ -58,7 +63,7 @@ REQUIRED_OUTPUTS = {
 
 #: ``eqasim`` and ``java`` are declared stages this stage runs as libraries (``eqasim.run``,
 #: ``java.run``): the DAG edge covers their output, not this code (ADR-0194).
-_HELPER_MODULES = (eqasim, java)
+_HELPER_MODULES = (eqasim, java, _road_type_proof)
 _DEFERRED_HELPER_MODULE_NAMES = ("matsim.runtime.process_watchdog",)
 #: Stage modules the closure walk reaches through the hashed ``matsim.runtime.eqasim`` helper but
 #: whose code this stage never runs (read by scripts/audit_synpp_helper_hash.py, ADR-0136).
@@ -71,9 +76,13 @@ _TOKEN_CLOSURE_BOUNDARIES = {
 
 
 def validate(context):
-    """synpp validation token over the helper sources."""
-    return synpp_tokens.source_token(
+    """synpp validation token: helper sources and the committed proof record."""
+    token = synpp_tokens.source_token(
         _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES, stage_label=__name__ + ".validate()")
+    token["files"] = {
+        path.name: synpp_tokens.text_file_sha256(path) for path in _road_type_proof.COMMITTED_PROOF_FILES
+    }
+    return token
 
 
 def configure(context):
@@ -108,6 +117,10 @@ def execute(context):
             f"{inputs['archive']} was simulated with {simulated!r}; every output would be scaled by the "
             "wrong factor. Run the emissions stages with the configuration of the archived run."
         )
+    # The view's road types come from the port; they stand for the contrib's mapping only when the
+    # jar holds the class the port was proven equal to (same jar path as eqasim.run uses).
+    jar_path = os.path.join(context.path("matsim.runtime.eqasim"), context.stage("matsim.runtime.eqasim"))
+    road_type_proof = _road_type_proof.require_proven_jar(jar_path)
     # Absolute: the Java call runs with this stage's directory as working directory.
     view = os.path.join(os.path.abspath(context.path(INPUTS_STAGE)), inputs["view_path"])
     arguments = [
@@ -136,6 +149,7 @@ def execute(context):
         "sample_size": sample_size,
         "grid_size_meters": grid_size,
         "runtime_seconds": runtime_seconds,
+        "road_type_proof": road_type_proof,
         "output_size_bytes": sizes,
         "note": "Every output is already multiplied by 1 / sample size. emissions_total.csv, the "
                 "per-link files and the grids end at 24:00; the per-vehicle-type file does not.",

@@ -33,6 +33,9 @@ code_paths:
 - braunschweig/emissions/technology_names.csv
 - braunschweig/emissions/road_types.py
 - braunschweig/emissions/osm_hbefa_road_classes.csv
+- braunschweig/emissions/road_type_proof.py
+- braunschweig/emissions/osm_hbefa_parity_proof.json
+- braunschweig/emissions/osm_hbefa_parity_cases.csv
 - braunschweig/emissions/view.py
 - braunschweig/emissions/hbefa_tables.py
 - braunschweig/emissions/table_keys.py
@@ -42,6 +45,7 @@ evidence:
   tests:
   - tests/test_emissions_stages.py::test_the_chain_builds_the_view_runs_the_tool_and_summarises
   - tests/test_emissions_stages.py::test_a_fleet_type_below_the_detailed_table_stops_the_chain_before_the_tool
+  - tests/test_emissions_stages.py::test_a_jar_with_another_road_type_mapping_stops_before_the_tool
   - tests/test_emissions_totals.py::test_the_fallback_share_weights_the_fleet_types_by_their_vehicle_km
   - tests/test_emissions_view.py::test_view_is_complete_and_the_archive_stays_byte_identical
   - tests/test_emissions_table_keys.py
@@ -74,10 +78,13 @@ validation:
   state: unvalidated
   runs:
   - emissions-wiring-1pct-2026-11-26
+  - emissions-road-type-parity-2026-11-26
   metric: null
   note: |
-    The run listed is a wiring proof on the MATSim sample tables (altered values): it shows that the chain
-    runs on a real archive, not that any emission value is right. No run on real HBEFA tables exists.
+    The first run listed is a wiring proof on the MATSim sample tables (altered values): it shows that the
+    chain runs on a real archive, not that any emission value is right. The second shows that the road-type
+    port equals the contrib's OsmHbefaMapping on a 100 % network, not that those road types are right for
+    the roads. No run on real HBEFA tables exists.
 assessment:
   status: pending
   by: null

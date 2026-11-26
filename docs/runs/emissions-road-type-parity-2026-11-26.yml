@@ -76,8 +76,19 @@ validation:
   notes: 'The jar that produced the archive prod100_20260925 is no longer in its folder, and the 1 % run
     jar braunschweig_1pct_pv3_v3_run.jar was not found at the path of the earlier wiring run; neither
     was looked for further. The digests are printed by a shell loop (unzip -p <jar> <class> |
-    sha256sum), not by a committed script. Binding the proof to the jar inside the stage (ADR-0209
-    A7) is not implemented.'
+    sha256sum), not by a committed script. The stage check that binds the proof to the jar
+    (braunschweig/emissions/road_type_proof.py, ADR-0209 A7) was run with the committed record
+    against 14 jars on the server (the 13 above and braunschweig-2.2.0.jar of 2026-07-17): all 14
+    match, so no real jar was refused; the refusal is covered by a test with a changed class file.'
+- metric: distinct cases of the proof, committed as the regression test of the port
+  reference: 'the per-link table of the Java side (sha256 under notes)'
+  result: '114 combinations of OSM class, freespeed and road type of the original cover the 214,807
+    usable links (13 OSM classes). Committed as braunschweig/emissions/osm_hbefa_parity_cases.csv
+    (sha256 f6f1973e84320d791f2611701e579c5b90e8dc3dd6cf02144cf9ed387a93346e);
+    tests/test_emissions_road_types.py runs the port against every row.'
+  artifact: 'docs/runs/artifacts/emissions-road-type-parity-2026-11-26/extract_parity_cases.py'
+  notes: 'The class digest of OsmHbefaMapping$Hbefa.class in the proof record
+    (b0b8901eca5dfadb4c652cb0dab98962a1b19b934f7b53245fe7742c702dcc58) was read from the same jar.'
 - metric: links whose freespeed equals the pt2matsim default of their OSM class (model input, not a result)
   reference: 'none -- a description of the network; the defaults are the wayDefaultParams of the converter
     config named under configuration'
@@ -102,6 +113,7 @@ artifacts:
 - docs/runs/artifacts/emissions-road-type-parity-2026-11-26/OsmHbefaParityDump.java
 - docs/runs/artifacts/emissions-road-type-parity-2026-11-26/compare_osm_hbefa_parity.py
 - docs/runs/artifacts/emissions-road-type-parity-2026-11-26/class_default_freespeed.py
+- docs/runs/artifacts/emissions-road-type-parity-2026-11-26/extract_parity_cases.py
 - docs/runs/artifacts/emissions-road-type-parity-2026-11-26/parity_prod100_20260925.json
 - docs/runs/artifacts/emissions-road-type-parity-2026-11-26/class_default_freespeed_prod100_20260925.json
 issues:

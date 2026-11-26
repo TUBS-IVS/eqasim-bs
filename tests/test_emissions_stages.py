@@ -8,7 +8,9 @@ All numbers are synthetic; the expected values are computed by hand in the comme
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -16,6 +18,7 @@ import pytest
 from braunschweig.data import hbefa as hbefa_stage
 from braunschweig.emissions import events as events_stage
 from braunschweig.emissions import inputs as inputs_stage
+from braunschweig.emissions import road_type_proof
 from braunschweig.emissions import summary as summary_stage
 from matsim.runtime import eqasim
 from tests.emissions_archive import write_archive
@@ -28,6 +31,21 @@ STAGE_NAMES = {
     summary_stage: "braunschweig.emissions.summary",
 }
 SAMPLE_SIZE = 0.1
+EQASIM_STAGE = "matsim.runtime.eqasim"
+JAR_NAME = "pipeline.jar"
+
+
+def _class_bytes(name, variant=b""):
+    return b"class file of " + name.encode() + variant
+
+
+def write_jar(path, *, changed=(), left_out=()):
+    """A jar that holds the class files the proof names; ``changed`` get other bytes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as jar:
+        for name in road_type_proof.PROVEN_CLASS_FILES:
+            if name not in left_out:
+                jar.writestr(name, _class_bytes(name, b" (other version)" if name in changed else b""))
 
 
 class _Recording:
@@ -64,7 +82,9 @@ class _Pipeline:
             inputs_stage.KEY_COMPUTATION_METHOD: "StopAndGoFraction",
         })
         self.values.update(overrides)
-        self.results = {}
+        self.results = {EQASIM_STAGE: JAR_NAME}
+        self.jar = self.root / EQASIM_STAGE / JAR_NAME
+        write_jar(self.jar)
         self.current = None
 
     def config(self, key):
@@ -88,9 +108,21 @@ class _Pipeline:
 
 
 @pytest.fixture
-def fake_tool(monkeypatch):
-    """Fake the Java tool: it writes the two files the summary reads, with hand-made grams."""
+def fake_tool(monkeypatch, tmp_path):
+    """Fake the Java tool: it writes the two files the summary reads, with hand-made grams.
+
+    The proof record is replaced by one for the class files of the test jar (``write_jar``); the
+    committed record is read by ``tests/test_emissions_road_types.py``.
+    """
     seen = {"calls": [], "write": True}
+    proof_file = tmp_path / "proof.json"
+    proof_file.write_text(json.dumps({"format": 1, "proofs": [{
+        "run_manifest": "test-proof",
+        "contrib_version": "test",
+        "class_sha256": {name: hashlib.sha256(_class_bytes(name)).hexdigest()
+                         for name in road_type_proof.PROVEN_CLASS_FILES},
+    }]}), encoding="utf-8")
+    monkeypatch.setattr(road_type_proof, "PROOF_FILE", proof_file)
 
     def fake_run(context, command, arguments):
         seen["calls"].append((command, list(arguments)))
@@ -227,6 +259,30 @@ def test_the_events_stage_refuses_a_silent_tool_and_a_wrong_sample_size(tmp_path
     with pytest.raises(ValueError, match=r"sampling_rate=0\.25.*simulated with 0\.1"):
         pipeline.run(events_stage)
     assert len(fake_tool["calls"]) == 1
+
+
+def test_a_jar_with_another_road_type_mapping_stops_before_the_tool(tmp_path, fake_tool):
+    """The view's road types come from the port, which is proven equal to ONE version of the
+    contrib's OsmHbefaMapping: a jar with a changed or missing class file must not be run."""
+    pipeline = _Pipeline(tmp_path)
+    pipeline.run(hbefa_stage)
+    pipeline.run(inputs_stage)
+    mapping, _, network_utils = road_type_proof.PROVEN_CLASS_FILES
+
+    write_jar(pipeline.jar, changed=(mapping,))
+    with pytest.raises(road_type_proof.UnprovenRoadTypeMapping, match=r"differs in .*OsmHbefaMapping\.class"):
+        pipeline.run(events_stage)
+    write_jar(pipeline.jar, left_out=(network_utils,))
+    with pytest.raises(road_type_proof.UnprovenRoadTypeMapping, match=r"not in the jar: .*NetworkUtils\.class"):
+        pipeline.run(events_stage)
+    assert fake_tool["calls"] == []
+
+    write_jar(pipeline.jar)
+    pipeline.run(events_stage)
+    assert len(fake_tool["calls"]) == 1
+    proof = pipeline.report(events_stage, events_stage.REPORT_FILE_NAME)["road_type_proof"]
+    assert proof["run_manifest"] == "test-proof"
+    assert set(proof["class_sha256"]) == set(road_type_proof.PROVEN_CLASS_FILES)
 
 
 def test_an_archive_that_does_not_name_its_sample_size_stops_before_the_tool(tmp_path, fake_tool):

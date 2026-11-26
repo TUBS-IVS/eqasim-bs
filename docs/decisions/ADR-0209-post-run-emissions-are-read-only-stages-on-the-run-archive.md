@@ -186,7 +186,11 @@ No code changed. No emission value exists; nothing below is a validation.
   without an own build. State of (a): the proof itself is done for the contrib version of the current pipeline
   jars (run manifest `emissions-road-type-parity-2026-11-26`: same road type on every link usable by car or
   truck of the 100 % network; the two sides differ only on transit-only links without an OSM class, which no
-  emitting vehicle uses). Binding it to the jar inside the stage is still open.
+  emitting vehicle uses). The binding is implemented: `braunschweig.emissions.events` compares the class
+  files of the pipeline jar that decide the original's result with the committed proof record and refuses
+  any other jar, without a switch (`braunschweig/emissions/road_type_proof.py`); the proven cases are a test
+  of the port. A second network with other OSM classes or speeds would extend the cases, not replace the
+  check.
 
 ## Evidence
 

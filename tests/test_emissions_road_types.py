@@ -5,10 +5,12 @@ The expected values are worked out by hand from the Java source (constants and b
 """
 from __future__ import annotations
 
+import csv
 import math
 
 import pytest
 
+from braunschweig.emissions import road_type_proof
 from braunschweig.emissions.road_types import RoadTypeTagger, UnmappedRoadClass, osm_hbefa_road_type
 from braunschweig.emissions.view import LinkRecord
 
@@ -97,3 +99,21 @@ def test_tagger_counts_primary_fallback_and_speed_shifts_and_enforces_the_bound(
     for link in links:
         lenient(link)
     lenient.check()
+
+
+def test_the_port_reproduces_every_case_of_the_parity_proof():
+    """Every OSM class and freespeed on the usable links of the proven 100 % network, with the road
+    type the Java ORIGINAL returned (run manifest emissions-road-type-parity-2026-11-26). An edit
+    of the port or of its class table that leaves the proven behaviour fails here."""
+    proofs = road_type_proof.load_proofs()  # the committed record; the stage tests use their own
+    assert [proof["run_manifest"] for proof in proofs] == ["emissions-road-type-parity-2026-11-26"]
+    with road_type_proof.CASES_FILE.open(newline="", encoding="utf-8") as handle:
+        cases = list(csv.DictReader(handle))
+    assert len(cases) == 114 and sum(int(case["links"]) for case in cases) == 214_807
+    different = [
+        (case["osm_class"], case["freespeed_meters_per_second"], case["java_road_type"], ported)
+        for case in cases
+        if (ported := osm_hbefa_road_type(case["osm_class"], float(case["freespeed_meters_per_second"]))[0])
+        != case["java_road_type"]
+    ]
+    assert different == []

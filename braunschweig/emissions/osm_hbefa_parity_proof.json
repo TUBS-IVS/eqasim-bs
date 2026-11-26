@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "proofs": [
+    {
+      "run_manifest": "emissions-road-type-parity-2026-11-26",
+      "contrib_version": "2026.0-2026w12",
+      "class_sha256": {
+        "org/matsim/contrib/emissions/OsmHbefaMapping.class": "9d6c5281af7c6b297295917134f67840a80acece33662fd28cef2ecc10513ab4",
+        "org/matsim/contrib/emissions/OsmHbefaMapping$Hbefa.class": "b0b8901eca5dfadb4c652cb0dab98962a1b19b934f7b53245fe7742c702dcc58",
+        "org/matsim/core/network/NetworkUtils.class": "cc613a65e18d5a787bd59197c4efe83f196ad1202ee7f22619fb916f4407698e"
+      }
+    }
+  ]
+}
