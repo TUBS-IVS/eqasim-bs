@@ -1,14 +1,23 @@
-"""Extract the five committed SrV 2023 university-student aggregates (issue #140, Phase 0, R5).
+"""Extract the nine committed SrV 2023 university-student aggregates (issue #140, Phases 0 and 1).
 
 Reads the LOCAL-ONLY SrV 2023 "Braunschweig und RGB" scientific-use microdata (persons, legs,
-households; cp1252, semicolon, decimal comma) and writes five small aggregate tables to
-``--out-dir`` (default ``eqasim-data/data/braunschweig/srv``):
+households; cp1252, semicolon, decimal comma) and writes nine small aggregate tables to
+``--out-dir`` (default ``eqasim-data/data/braunschweig/srv``). Phase 0:
 
     srv2023_student_share_by_kreis.csv               student share of adults / 20-29, presence
     srv2023_education_status_by_age.csv              status of adults with an education leg
     srv2023_student_education_distance_by_kreis.csv  home-to-education distance bands, adult students
     srv2023_student_behaviour.csv                    behaviour cells, adults and students
     srv2023_student_comparison.csv                   car / licence / season ticket, students vs others
+
+Phase 1 (needs ``--sites``, the local-only site table R1 ``lsn_university_sites.csv``: the
+``site_kreis_ars5`` of its rows with ``scope == "local"`` are the site Kreise and its sha256
+goes into the header of every new file):
+
+    srv2023_student_parameters.csv                   parameter cells of the adult students, away rows
+    srv2023_young_adult_status_by_kreis.csv          status of the young adults by Kreis
+    srv2023_student_post_matsim_reference.csv        modes, daily distance and travel time
+    srv2023_student_education_destination.csv        destination Kreis of the first education leg
 
 All definitions live in ``braunschweig.calibration.srv_student_reference`` (and the shared
 label vocabulary in ``braunschweig.calibration.student_behaviour_labels``); this script owns
@@ -17,12 +26,14 @@ only the raw I/O, the CLI and the provenance headers. Each written file carries 
 
 Usage (eqasim env, from a worktree; the raw directory is local-only and always passed):
     python scripts/extract_srv_student_reference.py --raw <srv2023_raw dir> \
+        --sites <lsn_university_sites.csv> \
         --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import logging
 import sys
 from pathlib import Path
@@ -34,6 +45,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from braunschweig.calibration import srv_student_reference as R  # noqa: E402
+from braunschweig.calibration import srv_plan_structure as PS  # noqa: E402
 from braunschweig.calibration import student_behaviour_labels as L  # noqa: E402
 from braunschweig.calibration.srv_distance_targets import (  # noqa: E402
     EDUCATION_PURPOSES, WOLFSBURG_KREIS, ZGB_KREISE, select_person_observations)
@@ -50,7 +62,24 @@ HOUSEHOLDS_FILE = "SrV2023_Haushalte.csv"
 TRIP_COLUMNS = ["V_ZWECK", "E_START_ZWECK", "V_START_LAGE", "V_ZIEL_LAGE", "V_START_AGS",
                 "V_ZIEL_AGS", "GIS_LAENGE", "GIS_LAENGE_GUELTIG", "GEWICHT_W_ZENSUS",
                 "REGIOSTAR7"]
-LEG_READ_COLUMNS = list(R.LEG_COLUMNS) + TRIP_COLUMNS
+
+SITE_REQUIRED_COLUMNS = ["site_kreis_ars5", "scope"]
+SITE_SCOPE_LOCAL = "local"
+
+
+def _union(*column_lists) -> list:
+    """Columns of several lists, first occurrence order, no duplicates (a usecols list)."""
+    return list(dict.fromkeys(column for columns in column_lists for column in columns))
+
+
+# The Phase 0 builders read their own columns; Phase 1 adds the plan-structure harmonisation, the
+# parameter table, the away rows, the post-MATSim values and the destination reference.
+PERSON_READ_COLUMNS = _union(R.PERSON_COLUMNS, PS.PERSON_COLUMNS, R.PARAMETER_PERSON_COLUMNS,
+                             R.AWAY_PERSON_COLUMNS, R.POST_MATSIM_PERSON_COLUMNS)
+LEG_READ_COLUMNS = _union(R.LEG_COLUMNS, TRIP_COLUMNS, PS.TRIP_COLUMNS,
+                          R.POST_MATSIM_LEG_COLUMNS, R.DESTINATION_LEG_COLUMNS)
+HOUSEHOLD_READ_COLUMNS = _union(R.HOUSEHOLD_COLUMNS, PS.HOUSEHOLD_COLUMNS,
+                                R.PARAMETER_HOUSEHOLD_COLUMNS)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("extract_srv_student_reference")
@@ -223,6 +252,106 @@ def _comparison_header(diagnostics: dict, universe_diagnostics: dict,
     ]
 
 
+def _sites_line(site_kreise: frozenset, sites_sha256: str) -> list:
+    return ["# Site Kreise (R1 local-only site table, rows with scope == %s): %s; table sha256 %s."
+            % (SITE_SCOPE_LOCAL, sorted(site_kreise), sites_sha256)]
+
+
+def _phase1_header(table_name: str, source_commit: str, sites: list) -> list:
+    """The shared provenance block of the four Phase 1 tables (relabelled) plus the site line."""
+    header = [line.replace("Phase 0 reference table R5", "Phase 1 reference table")
+              for line in _common_header(table_name, source_commit)]
+    return header + sites
+
+
+def _parameter_header(diagnostics: dict, universe_diagnostics: dict, source_commit: str,
+                      sites: list) -> list:
+    return _phase1_header(R.PARAMETER_TABLE, source_commit, sites) + [
+        "# Parameter cells of the adult students (V_ERW %d, age >= %d) of the universe above,"
+        % (R.STUDENT_V_ERW, L.MIN_ADULT_AGE),
+        "#   vocabulary student_parameters.PARAMETERS, every label emitted, a small cell with its",
+        "#   n_unweighted (no pooling). Day parameters: student_parameters.person_day_labels on",
+        "#   srv_plan_structure.harmonise_srv frames (one function for survey and model).",
+        "# The away_all_day rows (bases students_all and other_adults_all) are NOT part of the",
+        "#   universe above: they are measured on the raw person file BEFORE the universe filter",
+        "#   (the filter drops exactly the persons away from home all day), after the weight,",
+        "#   weekday and Kreis rules; their counts are the away_all_day_* keys below.",
+        "# TWO definitions of an education leg, each with its own job:",
+        "#   education_leg_share_harmonised_purpose = weighted share of the adult students with a",
+        "#   trip of harmonised purpose education (the comparison with the model, the",
+        "#   education_leg rows of this table); education_leg_share_control_definition = share",
+        "#   with E_ZWECK_9 in %s (the definition of the behaviour table, the day factor and"
+        % sorted(R.EDUCATION_E_ZWECK_9),
+        "#   the control targets).",
+        _exclusions(universe_diagnostics, diagnostics) + " " + _UNIVERSE_UNITS_NOTE,
+    ]
+
+
+def _young_adult_header(diagnostics: dict, universe_diagnostics: dict, source_commit: str,
+                        sites: list) -> list:
+    return _phase1_header(R.YOUNG_ADULT_STATUS_TABLE, source_commit, sites) + [
+        "# Status %s of the young adults per Kreis (age group edges %s) and one %s row; Wolfsburg"
+        % (list(R.YOUNG_ADULT_STATUSES), list(R.AGE_GROUP_EDGES), R.REGION_CODE),
+        "#   is emitted with zero counts and NaN shares.",
+        "# Columns: %s." % ", ".join(R.YOUNG_ADULT_STATUS_COLUMNS),
+        _exclusions(universe_diagnostics, diagnostics) + " " + _UNIVERSE_UNITS_NOTE,
+    ]
+
+
+def _post_matsim_header(diagnostics: dict, universe_diagnostics: dict, n_bootstrap: int,
+                        seed: int, source_commit: str, sites: list) -> list:
+    return _phase1_header(R.POST_MATSIM_TABLE, source_commit, sites) + [
+        "# Values the post-MATSim analysis compares the model's adult students against: main",
+        "#   mode (E_HVM_5) of all legs and of the education legs, each leg weighted with its",
+        "#   person's weight; the daily distance (km) and travel time (min) means.",
+        "# SUB-UNIVERSE of the two daily totals: %s." % R.DAILY_TOTAL_SUB_UNIVERSE,
+        "#   Persons with the code %d (n_not_computable_* below) are not in their base; this is"
+        % R.NOT_COMPUTABLE_DAILY_TOTAL,
+        "#   a documented definition of the SrV codebook, not a fallback.",
+        "# se_value: seeded person bootstrap (n_bootstrap=%d, seed=%d); NaN for a base of one"
+        % (n_bootstrap, seed),
+        "#   person or none.",
+        "# Columns: %s." % ", ".join(R.POST_MATSIM_COLUMNS),
+        _exclusions(universe_diagnostics, diagnostics) + " " + _UNIVERSE_UNITS_NOTE,
+    ]
+
+
+def _destination_header(diagnostics: dict, universe_diagnostics: dict, n_bootstrap: int,
+                        seed: int, source_commit: str, sites: list) -> list:
+    return _phase1_header(R.DESTINATION_TABLE, source_commit, sites) + [
+        "# Destination Kreis (V_ZIEL_AGS, zero-padded to 8 digits) of the FIRST education leg (by",
+        "#   start hour, start minute, WNR) of the adult students with an education leg, per home",
+        "#   group %s; shares weighted with GEWICHT_P_ZENSUS." % list(R.HOME_GROUPS),
+        "# The cells are POOLED across the home Kreise of a group (see the builder docstring).",
+        "# noise_floor_tvd_95: 95th percentile of the total-variation distance of a person",
+        "#   bootstrap of the home group (n_bootstrap=%d, seed=%d); NaN for an empty group."
+        % (n_bootstrap, seed),
+        "# Columns: %s." % ", ".join(R.DESTINATION_COLUMNS),
+        _exclusions(universe_diagnostics, diagnostics) + " " + _UNIVERSE_UNITS_NOTE,
+    ]
+
+
+def read_site_kreise(path: Path) -> tuple:
+    """Site Kreise (``site_kreis_ars5`` of the ``local`` rows) and the sha256 of the table.
+
+    The site table is local-only (R1). ``#`` comment lines are skipped, the required columns are
+    checked first (fail early), the codes are read as strings so a leading zero stays.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError("site table missing: %s" % path)
+    table = pd.read_csv(path, comment="#", dtype=str)
+    missing = [column for column in SITE_REQUIRED_COLUMNS if column not in table.columns]
+    if missing:
+        raise ValueError("%s: missing required column(s) %s" % (path, missing))
+    local = table.loc[table["scope"] == SITE_SCOPE_LOCAL, "site_kreis_ars5"]
+    if local.isna().any():
+        raise ValueError("%s: a local row has no site_kreis_ars5" % path)
+    if local.empty:
+        raise ValueError("%s: no row with scope == %r" % (path, SITE_SCOPE_LOCAL))
+    return frozenset(local), hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def _write(df: pd.DataFrame, path: Path, header: list) -> None:
     """Write the provenance-headed CSV with LF line endings and ``%.10g`` floats."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -239,27 +368,32 @@ def main(argv=None) -> int:
     parser.add_argument("--raw", required=True,
                         help="SrV raw directory (local-only; must contain %s, %s, %s)"
                              % (PERSONS_FILE, LEGS_FILE, HOUSEHOLDS_FILE))
+    parser.add_argument("--sites", required=True,
+                        help="local-only site table R1 (lsn_university_sites.csv; columns "
+                             "site_kreis_ars5, scope); never a default path")
     parser.add_argument("--out-dir", default=str(OUT_DEFAULT),
-                        help="Directory to write the five tables into")
+                        help="Directory to write the nine tables into")
     parser.add_argument("--source-commit", required=True,
                         help="git commit of the code state, recorded in every header")
     parser.add_argument("--n-bootstrap", type=int, default=500,
-                        help="bootstrap resamples of the distance-band EMD noise floor")
+                        help="bootstrap resamples (distance-band EMD noise floor, post-MATSim "
+                             "standard errors, destination noise floor)")
     parser.add_argument("--seed", type=int, default=0,
-                        help="random seed of the distance-band bootstrap")
+                        help="random seed of all three bootstraps")
     args = parser.parse_args(argv)
 
     raw = Path(args.raw)
     for name in (PERSONS_FILE, LEGS_FILE, HOUSEHOLDS_FILE):
         if not (raw / name).exists():
             raise FileNotFoundError("SrV raw file missing: %s" % (raw / name))
-    _require_columns(raw / PERSONS_FILE, R.PERSON_COLUMNS)
+    site_kreise, sites_sha256 = read_site_kreise(Path(args.sites))
+    _require_columns(raw / PERSONS_FILE, PERSON_READ_COLUMNS)
     _require_columns(raw / LEGS_FILE, LEG_READ_COLUMNS)
-    _require_columns(raw / HOUSEHOLDS_FILE, R.HOUSEHOLD_COLUMNS)
+    _require_columns(raw / HOUSEHOLDS_FILE, HOUSEHOLD_READ_COLUMNS)
 
-    persons = pd.read_csv(raw / PERSONS_FILE, usecols=R.PERSON_COLUMNS, **CSV_READ_KWARGS)
+    persons = pd.read_csv(raw / PERSONS_FILE, usecols=PERSON_READ_COLUMNS, **CSV_READ_KWARGS)
     legs = pd.read_csv(raw / LEGS_FILE, usecols=LEG_READ_COLUMNS, **CSV_READ_KWARGS)
-    households = pd.read_csv(raw / HOUSEHOLDS_FILE, usecols=R.HOUSEHOLD_COLUMNS,
+    households = pd.read_csv(raw / HOUSEHOLDS_FILE, usecols=HOUSEHOLD_READ_COLUMNS,
                              **CSV_READ_KWARGS)
     logger.info("read %d persons, %d legs, %d households", len(persons), len(legs),
                 len(households))
@@ -276,6 +410,17 @@ def main(argv=None) -> int:
     behaviour, behaviour_diagnostics = R.build_behaviour_table(universe, legs)
     comparison, comparison_diagnostics = R.build_comparison_table(universe)
 
+    # Phase 1: the harmonised frames come from the same function the model side passes through.
+    harmonised_persons, harmonised_trips = PS.harmonise_srv(
+        persons[PS.PERSON_COLUMNS], legs[PS.TRIP_COLUMNS], households[PS.HOUSEHOLD_COLUMNS])
+    parameters, parameter_diagnostics = R.build_parameter_table(
+        universe, persons, households, harmonised_persons, harmonised_trips, legs)
+    young_adults, young_adult_diagnostics = R.build_young_adult_status_table(universe)
+    post_matsim, post_matsim_diagnostics = R.build_post_matsim_reference(
+        universe, persons, legs, args.n_bootstrap, args.seed)
+    destination, destination_diagnostics = R.build_destination_reference(
+        universe, legs, site_kreise, args.n_bootstrap, args.seed)
+
     out = Path(args.out_dir)
     commit = args.source_commit
     _write(share, out / R.STUDENT_SHARE_TABLE,
@@ -289,6 +434,18 @@ def main(argv=None) -> int:
            _behaviour_header(behaviour_diagnostics, universe_diagnostics, commit))
     _write(comparison, out / R.COMPARISON_TABLE,
            _comparison_header(comparison_diagnostics, universe_diagnostics, commit))
+    sites_lines = _sites_line(site_kreise, sites_sha256)
+    _write(parameters, out / R.PARAMETER_TABLE,
+           _parameter_header(parameter_diagnostics, universe_diagnostics, commit, sites_lines))
+    _write(young_adults, out / R.YOUNG_ADULT_STATUS_TABLE,
+           _young_adult_header(young_adult_diagnostics, universe_diagnostics, commit,
+                               sites_lines))
+    _write(post_matsim, out / R.POST_MATSIM_TABLE,
+           _post_matsim_header(post_matsim_diagnostics, universe_diagnostics, args.n_bootstrap,
+                               args.seed, commit, sites_lines))
+    _write(destination, out / R.DESTINATION_TABLE,
+           _destination_header(destination_diagnostics, universe_diagnostics, args.n_bootstrap,
+                               args.seed, commit, sites_lines))
     return 0
 
 

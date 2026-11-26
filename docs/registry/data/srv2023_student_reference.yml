@@ -1,7 +1,8 @@
 dataset: srv2023_student_reference
 title: SrV 2023 university-student aggregates (share, presence, education status, distance
-  bands, behaviour cells, car, licence and season-ticket availability comparison; five committed
-  tables)
+  bands, behaviour cells, car, licence and season-ticket availability comparison, plus the
+  Phase 1 parameter cells, young-adult status, post-MATSim values and education destinations;
+  nine committed tables)
 provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
 vintage: 2023 survey year
 geography: |
@@ -18,14 +19,16 @@ acquisition:
   method: committed
   source: |
     Regenerate with: python scripts/extract_srv_student_reference.py --raw <srv2023_raw dir>
-    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha> (optional --n-bootstrap,
-    --seed of the distance-band noise floor), which writes all five tables in one run. Reads
-    SrV2023_Personen.csv, SrV2023_Wege.csv and SrV2023_Haushalte.csv; the required columns are
-    srv_student_reference.PERSON_COLUMNS, srv_student_reference.LEG_COLUMNS plus the script's
-    TRIP_COLUMNS, and HHNR, AGS. The raw microdata is local-only and never committed.
+    --sites <lsn_university_sites.csv, local-only> --out-dir eqasim-data/data/braunschweig/srv
+    --source-commit <sha> (optional --n-bootstrap, --seed of the three bootstraps), which writes
+    all nine tables in one run. Reads SrV2023_Personen.csv, SrV2023_Wege.csv and
+    SrV2023_Haushalte.csv; the required columns are the script's PERSON_READ_COLUMNS,
+    LEG_READ_COLUMNS and HOUSEHOLD_READ_COLUMNS (checked first, the run fails early). The site
+    table is the local-only R1 table (site_kreis_ars5 of the rows with scope local); its sha256 is
+    in the header of each Phase 1 file. The raw microdata is local-only and never committed.
   script: scripts/extract_srv_student_reference.py
 storage:
-  expected_path: eqasim-data/data/braunschweig/srv/{srv2023_student_share_by_kreis,srv2023_education_status_by_age,srv2023_student_education_distance_by_kreis,srv2023_student_behaviour,srv2023_student_comparison}.csv
+  expected_path: eqasim-data/data/braunschweig/srv/{srv2023_student_share_by_kreis,srv2023_education_status_by_age,srv2023_student_education_distance_by_kreis,srv2023_student_behaviour,srv2023_student_comparison,srv2023_student_parameters,srv2023_young_adult_status_by_kreis,srv2023_student_post_matsim_reference,srv2023_student_education_destination}.csv
   committed: true
   local_only: false
 verification:
@@ -68,7 +71,19 @@ limitations: |
   n_persons; every Kreis but Braunschweig holds only a handful), so only the 03ZGB region row is
   usable as a distance reference; the Kreis rows are descriptive at most.
 
-  Measured values: see the committed headers and the Phase 0 run manifest of issue #140. A
+  Small cells (owner decision 2026-11-26): the Phase 1 tables do not pool small cells; every
+  cell is shown with its number of respondents (n_unweighted), a reader judges it by that
+  number and its standard error.
+
+  The away_all_day rows of the parameter table are measured on the raw person file BEFORE the
+  universe filter (the filter drops exactly the persons away from home all day, so the share
+  would be 0 by construction after it); the other rows of that table are measured inside the
+  universe. The parameter table's header names both education-leg definitions (harmonised
+  purpose for the comparison with the model, control definition for the day factor and the
+  control targets). The daily distance and travel time of the post-MATSim table hold for a
+  documented sub-universe (named in its header).
+
+  Measured values: see the committed headers and the run manifests of issue #140. A
   measurement, not a validation.
 notes: |
   Reference table R5 of Phase 0 of the student-commuting feature (issue #140). The behaviour

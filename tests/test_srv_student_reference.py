@@ -5,6 +5,7 @@ never be read by a test. Every expected value is computed by hand from the table
 docstring of :func:`_raw`; the weights are chosen so that an unweighted share, a mean of the
 two Kreis shares and the right weighted share all differ.
 """
+import hashlib
 import importlib.util
 import math
 from pathlib import Path
@@ -312,21 +313,54 @@ def test_season_ticket_codes_match_the_kreis_table_extractor():
     assert set(R.NO_FLATRATE_E_OEV_FK) == set(module.TICKET_GROUP_NOT_FLATRATE_CODES)
 
 
+def _cli_frames(srv_frames):
+    """All raw columns the nine tables read: Phase 0 fixture + parameter + post-MATSim + start
+    minute and a harmonisable V_ZWECK (the fixture's raw V_ZWECK is a distance-table code)."""
+    persons, legs, households = _post_matsim_frames(_parameter_frames(srv_frames))
+    legs["V_ZWECK"] = legs["E_ZWECK_9"].map(_HARMONISED_V_ZWECK)
+    legs["V_BEGINN_MINUTE"] = 0
+    return persons, legs, households
+
+
 def test_cli_writes_all_tables_with_headers(srv_frames, tmp_path):
-    persons, legs, households = srv_frames
+    persons, legs, households = _cli_frames(srv_frames)
     raw = tmp_path / "srv2023_raw"
     raw.mkdir()
     for frame, name in ((persons, "SrV2023_Personen.csv"), (legs, "SrV2023_Wege.csv"),
                         (households, "SrV2023_Haushalte.csv")):
         frame.to_csv(raw / name, sep=";", decimal=",", encoding="cp1252", index=False)
+    sites = tmp_path / "lsn_university_sites.csv"
+    sites.write_text("# local-only synthetic site table\n"
+                     "institution,site_kreis_ars5,scope\n"
+                     "TU,03101,local\nHAW,03158,local\nHS,03241,surrounding\n",
+                     encoding="utf-8")
     out = tmp_path / "out"
     path = REPO / "scripts" / "extract_srv_student_reference.py"
     spec = importlib.util.spec_from_file_location("extract_srv_student_reference", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    assert module.main(["--raw", str(raw), "--out-dir", str(out), "--source-commit", "abc1234",
-                        "--n-bootstrap", "20"]) == 0
+    assert module.main(["--raw", str(raw), "--sites", str(sites), "--out-dir", str(out),
+                        "--source-commit", "abc1234", "--n-bootstrap", "20"]) == 0
+
+    new_names = (R.PARAMETER_TABLE, R.YOUNG_ADULT_STATUS_TABLE, R.POST_MATSIM_TABLE,
+                 R.DESTINATION_TABLE)
+    sites_hash = hashlib.sha256(sites.read_bytes()).hexdigest()
+    for name in new_names:
+        header = [line for line in (out / name).read_text(encoding="utf-8").splitlines()
+                  if line.startswith("#")]
+        assert header and sum(line.startswith("# Exclusions:") for line in header) == 1
+        # the local-only site table is named by its hash, never by its path
+        assert sites_hash in " ".join(header) and str(sites) not in " ".join(header)
+    parameter_header = " ".join(line for line in (out / R.PARAMETER_TABLE).read_text(
+        encoding="utf-8").splitlines() if line.startswith("#"))
+    assert "education_leg_share_harmonised_purpose" in parameter_header
+    assert "education_leg_share_control_definition" in parameter_header
+    assert "BEFORE" in parameter_header  # away rows: measured before the universe filter
+    assert "03101" in " ".join(line for line in (out / R.DESTINATION_TABLE).read_text(
+        encoding="utf-8").splitlines() if line.startswith("#"))
+    destination = pd.read_csv(out / R.DESTINATION_TABLE, comment="#")
+    assert len(destination) > 0
 
     tables = {}
     for name in (R.STUDENT_SHARE_TABLE, R.EDUCATION_STATUS_TABLE, R.EDUCATION_DISTANCE_TABLE,
