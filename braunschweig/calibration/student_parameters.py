@@ -16,7 +16,7 @@ Day parameters (definitions)
   harmonised ``purpose`` X; ``shop_or_errand_leg``: a trip with purpose ``shop`` or ``other``.
   This is the harmonised-purpose definition of the plan-structure comparison. It is deliberately
   not the control definition of the participation targets (``srv_participation_universe``); the
-  the table builder (``srv_student_reference.build_parameter_table``, Task 2) owns the header that
+  table builder (``srv_student_reference.build_parameter_table``, Task 2) owns the header that
   states the SrV share of adult students with an education leg under both definitions.
 * ``mobile``: ``n_trips > 0`` (the person's ``n_trips`` column).
 * ``trip_class``: ``n_trips`` in the right-inclusive classes of
