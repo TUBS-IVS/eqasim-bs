@@ -9,8 +9,9 @@ import pytest
 from braunschweig.matsim import config_modules
 from braunschweig.matsim.simulation import loop_mode_rule as rule
 
-#: The DiscreteModeChoice module exactly as a prepared config of the 1 % run carries it (tabs, comments, flat params
-#: followed by parameter sets); eqasim-bs#679: a reader that supported only flat modules failed on it.
+#: The DiscreteModeChoice module exactly as the prepared config of the 1 % evidence arm D of issue #679 carries it
+#: (run manifest docs/runs/i679-stroll-loops-ab-1pct-2026-11-25.yml; tabs, comments, flat params followed by parameter
+#: sets, tripConstraints value "OutsideConstraint, TransitWalk"); a reader that supported only flat modules failed on it.
 REAL_MODULE = (Path(__file__).parent / "fixtures" / "dmc_module_real.xml").read_bytes().decode("utf-8")
 REAL_VALUE = "OutsideConstraint, TransitWalk"
 CONFIG = ('<?xml version="1.0" encoding="utf-8"?>\n'
@@ -48,7 +49,8 @@ def test_apply_adds_the_constraint_once_and_touches_nothing_else(tmp_path, old, 
     assert after == _config_text(expected).encode("utf-8")
     assert config_modules.read_param(path, "DiscreteModeChoice", "tripConstraints") == expected
     assert config_modules.read_param(path, "global", "tripConstraints") == "untouched"
-    assert after.count(b"<parameterset") == before.count(b"<parameterset") == 12
+    assert after.count(b"<parameterset") == before.count(b"<parameterset") == REAL_MODULE.count("<parameterset")
+    assert REAL_MODULE.count("<parameterset") > 0  # the fixture must keep what the flat reader could not read
     # A second call is a no-op: no change, no return value.
     assert rule.apply(path) is None
     assert path.read_bytes() == after

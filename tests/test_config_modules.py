@@ -196,3 +196,42 @@ def test_set_param_does_not_edit_a_parameter_that_exists_only_inside_a_parameter
     with pytest.raises(ValueError, match="no parameter 'onlyInSet' in module 'withSets'"):
         cm.set_param(path, "withSets", "onlyInSet", "2")
     assert path.read_bytes().decode("utf-8") == SET_CONFIG
+
+
+def _module_config(body: str) -> str:
+    return '<config>\n\t<module name="m" >\n' + body + '\t</module>\n</config>\n'
+
+
+# Each body holds one direct parameter `x` (value "direct") after a construct that could confuse a text scan of the
+# parameter set depth; every one has same-named parameters that must not be found or edited.
+SCAN_BODIES = {
+    "self_closing_set": '\t\t<parameterset type="empty" />\n\t\t<param name="x" value="direct" />\n',
+    "nested_sets": ('\t\t<parameterset type="a" >\n\t\t\t<param name="x" value="outer" />\n'
+                    '\t\t\t<parameterset type="b" >\n\t\t\t\t<param name="x" value="inner" />\n\t\t\t</parameterset>\n'
+                    '\t\t\t<param name="x" value="outer again" />\n\t\t</parameterset>\n'
+                    '\t\t<param name="x" value="direct" />\n'),
+    "commented_out_copy": '\t\t<!-- <param name="x" value="old" /> -->\n\t\t<param name="x" value="direct" />\n',
+    "comment_with_a_set_tag": ('\t\t<!-- Defines a <parameterset type="z" > block\n\t\t     that is never closed here. -->\n'
+                               '\t\t<param name="x" value="direct" />\n'),
+    "comment_with_a_closing_set_tag": ('\t\t<!-- a stray </parameterset> in a comment -->\n'
+                                       '\t\t<parameterset type="a" >\n\t\t\t<param name="x" value="inner" />\n'
+                                       '\t\t</parameterset>\n\t\t<param name="x" value="direct" />\n'),
+}
+
+
+@pytest.mark.parametrize("body", SCAN_BODIES.values(), ids=SCAN_BODIES.keys())
+def test_the_direct_parameter_is_found_and_edited_after_sets_and_comments(tmp_path, body):
+    text = _module_config(body)
+    path = _config(tmp_path, text)
+    assert cm.read_param(path, "m", "x") == "direct"
+    assert cm.set_param(path, "m", "x", "edited") == "direct"
+    # Exactly the direct value changed, whatever else (sets, comments) the module contains.
+    assert path.read_bytes().decode("utf-8") == text.replace('value="direct"', 'value="edited"')
+
+
+def test_a_commented_out_module_is_not_a_second_module_for_set_param(tmp_path):
+    text = ('<config>\n<!-- <module name="m"><param name="x" value="old" /></module> -->\n'
+            '<module name="m"><param name="x" value="direct" /></module>\n</config>\n')
+    path = _config(tmp_path, text)
+    assert cm.set_param(path, "m", "x", "edited") == "direct"
+    assert path.read_bytes().decode("utf-8") == text.replace('value="direct"', 'value="edited"')

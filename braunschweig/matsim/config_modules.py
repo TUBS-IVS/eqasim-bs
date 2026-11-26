@@ -125,13 +125,20 @@ def write_module(config_path, name: str, params: Mapping[str, str]) -> Path:
     return path
 
 
+def _blank_comments(text: str) -> str:
+    """``text`` with every ``<!-- ... -->`` comment replaced by spaces of the same length (offsets stay valid)."""
+    return re.sub(r"<!--.*?-->", lambda comment: " " * len(comment.group()), text, flags=re.DOTALL)
+
+
 def _direct_param_value_spans(body: str, name: str) -> list[tuple[int, int]]:
     """Spans of the ``value`` text of every ``<param name=...>`` that is a DIRECT child of the module body.
 
     A parameter inside a ``<parameterset>`` (nested sets included, self-closing sets too) is skipped: the scan tracks
-    the parameter set depth and keeps only the matches at depth 0. The text scan assumes that no XML comment of the
-    module contains a ``<param`` or ``<parameterset`` tag, which holds for the MATSim config writer.
+    the parameter set depth and keeps only the matches at depth 0. Comments are blanked first, so a commented-out
+    parameter or a tag inside a comment (the MATSim writer puts the parameter descriptions there) neither matches nor
+    shifts the depth; the returned spans refer to the unchanged ``body``.
     """
+    body = _blank_comments(body)
     tokens = re.compile(r"<parameterset\b[^>]*?(?P<self_closing>/?)>|(?P<close></parameterset\s*>)|"
                         r"<param\s+name=\"%s\"\s+value=\"(?P<value>[^\"]*)\"" % re.escape(name))
     depth, spans = 0, []
@@ -152,17 +159,20 @@ def set_param(config_path, module: str, name: str, value: str) -> str:
     Edits only the ``value`` attribute of that one ``<param>`` element as text, so the XML declaration, the
     DOCTYPE, comments, line endings and every other byte are kept. A parameter of the same name in another
     module is not touched, nor is one of the same name inside a ``<parameterset>`` of the module: only a DIRECT
-    ``<param>`` child of the module counts, the one ``read_param`` reads. Side effect: rewrites ``config_path``.
-    Raises ``ValueError`` when the module or that parameter is absent or appears more than once (nothing is written: a missing parameter means the config
-    was not generated the way the caller expects, and adding one silently would hide that), ``TypeError``
-    for a non-text value, and ``xml.etree.ElementTree.ParseError`` for a file that is not well-formed XML.
+    ``<param>`` child of the module counts, the one ``read_param`` reads. Modules and parameters inside XML comments
+    are ignored. Side effect: rewrites ``config_path``. Raises ``ValueError`` when the module or that parameter is
+    absent or appears more than once (nothing is written: a missing parameter means the config was not generated
+    the way the caller expects, and adding one silently would hide that), ``TypeError`` for a non-text value, and
+    ``xml.etree.ElementTree.ParseError`` for a file that is not well-formed XML.
     """
     _check_module_name(module)
     _check_params({name: value})
     path = Path(config_path)
     ET.parse(str(path))  # fail early on a malformed file, before any text edit
     text = path.read_bytes().decode("utf-8")
-    modules = list(re.finditer(r"<module\s+name=\"%s\"\s*>(.*?)</module>" % re.escape(module), text, re.DOTALL))
+    # Scanned with the comments blanked (same offsets), edited in the original text.
+    modules = list(re.finditer(r"<module\s+name=\"%s\"\s*>(.*?)</module>" % re.escape(module),
+                               _blank_comments(text), re.DOTALL))
     if not modules:
         raise ValueError(f"{path}: no module {module!r}")
     if len(modules) > 1:
