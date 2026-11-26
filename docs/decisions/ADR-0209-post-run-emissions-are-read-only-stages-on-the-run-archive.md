@@ -85,8 +85,13 @@
   tree; a new class rebuilds the jar and invalidates the 100 % simulation (ADR-0149).
 - **Re-implementing the HBEFA lookup in Python:** it would duplicate a scientific model that then needs its own
   validation. Only the ORDER of the lookup is replayed, on key columns, to predict what the tool will do.
-- **eqasim's `RunComputeEmissionsEvents` as the primary tool:** it writes shapefiles in EPSG:2154, loads the INPUT
-  vehicles and writes into the run's output directory. Kept as a fallback option.
+- **eqasim's tools as the primary path** (`org.eqasim.core.components.emissions`, read in `eqasim-java-bs` at
+  ae6a10a): `RunComputeEmissionsEvents` writes the contrib's emission events (`output_emissions_events.xml.gz`)
+  and no table, does not scale by the sample size, counts no fallback (an unknown road class gets
+  `URB/Access/30` with a log line per link) and uses the average tables alone when no detailed table is named;
+  `RunExportEmissionsNetwork` writes a shapefile with the coordinate system `epsg:2154` hard-coded. What they
+  offer and this chain does not is listed under "Consequences"; the events tool stays an option for a later
+  per-vehicle output.
 - **Downloading tables like `eqasim-org/eqasim-france` (`data/hbefa/raw.py`):** that stage fetches the sample
   tables (read on 2026-11-26, not pinned to a commit).
 - **Editing `braunschweig/synthesis/vehicles/hbefa.py`** to rename the three technology names: it would change the
@@ -108,6 +113,13 @@
 - ASSUMPTION, unverified, set by the implementing session: `petrol (hybrid)` -> `petrol (4S)`
   (`technology_names.csv`), because the contrib has no hybrid technology id. The wiring run showed that this
   choice decides which table level answers the hybrids; real tables must confirm or replace it.
+- What eqasim's tools offer and this chain does not: (a) the emission events themselves, per vehicle, link and
+  time, from which any aggregation can be made later (by person, trip or hour) without the 24:00 cut-off and
+  without the raster the MATSim tool always builds; (b) the contrib's own `OsmHbefaMapping` class instead of a
+  port, by copying `osm:way:highway` into the link attribute `type` in memory. The two mappings differ for
+  ramps: eqasim sends every `*_link` class to `unclassified` (classed by speed), the port keeps the contrib's
+  own reading (`motorway_link` is a motorway). Same in both: consistency level `consistent`, the full lookup
+  order, vehicle description from the engine information, abort on a vehicle without type.
 - Three modules replay contrib behaviour and must be re-checked on a MATSim version change
   (`docs/codebase/notes/post-run-emissions.md`).
 
