@@ -2,7 +2,7 @@ feature: initial_mode_choice
 title: Initial mode choice before iteration 0 with free-flow travel times
 area: matsim
 description: >-
-  Every agent of the final population except the in-commuters (excluded below) chooses its modes once with the
+  Every agent of the final population except the excluded subpopulations (below) chooses its modes once with the
   production discrete mode choice model
   BEFORE MATSim iteration 0, with free-flow car travel times, the way eqasim intends its upfront mode choice
   (ADR-0178, issue #542; supersedes the first-replanning strategy of ADR-0155). As the last step of
@@ -13,15 +13,17 @@ description: >-
   CSVs, gzip, scenario check skipped, --eqasim-configurator org.eqasim.braunschweig.BraunschweigConfigurator,
   removePersonsWithNoValidAlternatives true) and no travel-time option. The chosen, routed plans are moved over
   the population file under its name, so the run, the output archive and the plan check read them unchanged.
-  Freight agents keep truck (BraunschweigModeAvailability) and tours touching an outside activity keep their
-  modes (OutsideFilter; the DMC re-estimates and re-routes them with their initial modes), exactly as in the
-  loop. With cordon_enabled the in-commuter subpopulations incommuter and student_incommuter are not chosen at
-  all (ADR-0182 decision 5, issue #566): run passes them to the eqasim-java-bs runner option
-  standaloneModeChoice.excludedSubpopulations, which keeps those persons' plans as read, logs the persons kept
-  per subpopulation in mode_choice/, warns for a listed subpopulation without persons and fails when the list
-  matches nobody; initial_mode_choice.json records the list. The exclusion also re-draws the residents' random
-  choices (ADR-0182 decision 5). Without the cordon nothing is excluded and the option
-  is not passed. The DMC's own routing sets routingMode but never the walkFallbackFrom stamp, so the plan check counts a
+  Tours touching an outside activity keep their modes (OutsideFilter; the DMC re-estimates and re-routes them with
+  their initial modes), exactly as in the loop. The subpopulations that are not chosen at all
+  (braunschweig.matsim.simulation.prepare._initial_mode_choice_excluded_subpopulations owns the list): with
+  cordon_enabled the in-commuter subpopulations (ADR-0182 decision 5, issue #566), and with freight_enabled the
+  injected freight subpopulation (its legs are a bare truck leg without a routing mode, which fails the outside
+  constraint of the mode choice; the freight agents keep their truck mode for the whole run, ADR-0182). run passes
+  the list to the eqasim-java-bs runner option standaloneModeChoice.excludedSubpopulations, which keeps those
+  persons' plans as read, logs the persons kept per subpopulation in mode_choice/, warns for a listed
+  subpopulation without persons and fails when the list matches nobody; initial_mode_choice.json records the list.
+  The exclusion also re-draws the residents' random choices (ADR-0182 decision 5). With neither the cordon nor the
+  freight injection the list is empty and the option is not passed. The DMC's own routing sets routingMode but never the walkFallbackFrom stamp, so the plan check counts a
   walk-only trip with routingMode pt as pt-as-walk (plan_check.summarise, extended with this feature). The stage
   raises when the persons of the output differ from the input (eqasim removed persons with no
   feasible alternative) or an output is missing, and logs under [initial mode choice] and writes to

@@ -87,8 +87,9 @@ stay untouched).
    Escort runs (consecutive activity indices of one person, assigned by `escort_links.assign_escort_anchors`) are
    assigned on the diary as recorded, before the collapse: "escort, stroll, escort" keeps two escort runs, which a
    hand-removed stroll would have made one.
-4. **Solve.** Escort link, portal anchors, problems, both passes and result extraction run on the collapsed table, with
-   every anchor and link in the collapsed numbering. A person left without a secondary activity has nothing to solve.
+4. **Solve.** Problems, both passes and result extraction run on the collapsed table, with every anchor and link
+   already translated to the collapsed numbering by step 3. The escort link and the portal anchors are NOT built here:
+   they were built on the original trips before the collapse (step 3) and only translated. A person left without a secondary activity has nothing to solve.
 5. **Restore** (`restore_loops`), once on the combined rows (solver rows, the pass-2 joint anchor rows, the linked
    escort and portal rows). Every row of a collapsed person gets its original activity index back; a row the index map
    does not know raises. The activity index is checked as whole numbers and read as int64 (an object column from an
