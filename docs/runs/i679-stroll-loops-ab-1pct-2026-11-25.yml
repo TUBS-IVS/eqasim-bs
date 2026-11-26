@@ -1,0 +1,326 @@
+id: i679-stroll-loops-ab-1pct-2026-11-25
+date: '2026-11-25'
+repository:
+  commit: ff83decf83b61646dd02c638f76a6b6d8b179bd6
+  branch: feature/i679-stroll-loops
+  notes: >-
+    The three arms (A, B, C) ran from 2026-11-25 to 2026-11-26 at eqasim-bs ff83decf, shipped to the run server as a git
+    bundle (sha256 91d56e85df46692177dbb5865dbc6bc65f0cc44587684a92fd4fbda9b180bda2) and checked out as isolated runs
+    (scripts/isolated_run.py, run directories i679_a, i679_b, i679_c). The branch head when this record was written is
+    84a91698; the two commits after ff83decf (01628248 and 84a91698) change only scripts/validate_secondary_distances.py,
+    scripts/calibrate_detour_circuity.py, their tests and one sentence of docs/codebase/notes/leisure-loops.md, so no
+    stage the arms ran differs. The comparison script runs of this record used the code of 84a91698 (git archive of
+    braunschweig/ and scripts/, sha256 50b78560b30619ec3ff63908b9b79faa61da02304304847947a9f340f0a5b400) against the arms'
+    caches, without touching the arms' checkouts. Java: eqasim-java-bs cb7e81fa3851c1338cfd80921c9d55aaeef2e600
+    (origin/main), shaded jar of the runtime stage md5 926f6dce5a4b309589830ec67cc2c60b (the same runtime stage in every
+    arm; i679_provenance.txt). PopulationSim: fork release 0.10.0+bs.3 (the uv project environments/populationsim of
+    ff83decf, synced with uv sync --frozen in the run worktree of arm C). SUPERSEDED LAUNCHES (kept as a record, their
+    numbers are not used here): (1) 66da6ee0 (bundle sha256 4eaad1f6...): the switch-off arm i679_off completed (first
+    launch exit 1 after 4 min because the run worktree had no PopulationSim environment; relaunched after uv sync, exit 0);
+    the switch-on arm i679_on was stopped by hand during the preparation stage (its log has no exit line) because the
+    whole-branch review found that the loop draw's random stream offset (loops.LOOP_SEED_OFFSET) equalled the SrV
+    location-type draw's offset, so both draws read the same uniform sequence; fixed on the branch (own offset).
+    (2) 0611505f (bundle sha256 255eb0a1...): the switch-off arm i679_off2 completed (exit 0) and is the identity
+    reference for arm A; the switch-on arm i679_on2 crashed in the standalone initial mode choice of the preparation stage
+    (NullPointerException in OutsideConstraint, DiscreteModeChoiceTrip.getInitialMode() null) and its JVM then idled until
+    stopped by hand: the 521 injected freight agents have legs without a routing mode and were not excluded from the
+    initial mode choice, a defect of main (not of the loop change; i679_on2_null_initial_mode_probe.json: every trip
+    without a routing mode is a freight trip, none is a loop or resident trip); fixed by ff83decf ("Exclude injected
+    freight from the standalone initial mode choice", cherry-picked from the #678 branch). The JVM idled because the
+    progress thread of StandaloneModeChoicePerformer stays alive when a worker throws (i679_on2_prepare_jstack.txt).
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_a_run.yml
+  - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_b_run.yml
+  - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_run.yml
+  notes: >-
+    Throwaway server overlays (committed as artifacts, together with the source overlays i679_{a,b,c}_ff83decf_source.yml
+    they were written from), derived from configs/overlays/test_1pct.yml: sampling_rate 0.01, matsim_last_iteration 5,
+    braunschweig.population.popsim.max_cells 750 and num_workers 4 (a resource choice on a shared server, not a model
+    parameter), braunschweig.chainsolvers.processes 8, the shared cache store off, output_prefix braunschweig_1pct_i679_.
+    The arms differ ONLY in the two switches of issue #679 (and in their run targets, which do not enter stage hashes):
+    A secondary_loop_zero_displacement false and secondary_leisure_estimates_without_loops false; B true and false; C true
+    and true (the production values of configs/base_bs.yml). random_seed is the base value in every arm (1234, configs/base_bs.yml). The run.yml files carry each launch's gate list of the stages allowed to recompute.
+sampling:
+  rate: 0.01
+  scope: 'ZGB-8, full region, cordon on (base configuration)'
+  notes: >-
+    Every count is a sample count at sampling_rate 0.01, never expanded. All three arms share the population and the
+    upstream trip table (trips.final identical between A, B and C; equality block of the metrics JSONs): 11,466 persons,
+    9,571 of them with at least one trip, 34,466 trips. The MATSim population of arms A and C holds 12,667 persons
+    (residents plus 599 in-commuters, 81 student in-commuters and 521 freight agents; i679_*_run_log_excerpt_log.txt).
+pipeline:
+  targets:
+  - synthesis.output
+  - braunschweig.matsim.scenario.facilities
+  - matsim.simulation.prepare
+  - matsim.output
+  notes: >-
+    Targets per arm: A synthesis.output, braunschweig.matsim.scenario.facilities and matsim.simulation.prepare
+    (RunPreparation and the initial mode choice, no MATSim iteration); B synthesis.output and
+    braunschweig.matsim.scenario.facilities; C synthesis.output, braunschweig.matsim.scenario.facilities and matsim.output
+    (preparation and 5 MATSim iterations). Caches (always physical cp -a copies, never hard links): the chain started from
+    the cache of popsim100_20261120; arm C was copied from the cache of i679_on2 (64,679,955,112 bytes), which descends
+    from it; arms B and A were copied from arm C's cache after C had finished (65,987,971,436 bytes; i679_provenance.txt).
+    Recomputed stages (the launch gate lists in the run.yml files; stage start times in i679_{a,b,c}_stage_starts.txt):
+    C 40 stages, among them PopulationSim (braunschweig.popsim.stage started 23:57:04, the next stage 01:18:36), because
+    main had moved to PopulationSim fork release 0.10.0+bs.3 (#677) since the cache; B 7 stages and A 9 stages, all
+    downstream of the distance distributions stage, PopulationSim cached. The freight extraction was a cache hit in every
+    arm. The MATSim run of C started 01:52:37 and matsim.output 02:03:11 (server clock, CET).
+classification:
+- wiring_proof
+- ab_test
+status:
+  execution: completed
+  notes: >-
+    Arm C 2026-11-25 23:30:13 to 2026-11-26 02:03:13, arm B 2026-11-26 02:21:06 to 02:32:23, arm A 02:21:54 to 02:44:53
+    (CET), each exit 0 with no traceback, no Java exception and no OutOfMemoryError in the run logs
+    (i679_exception_scan_ff83decf.txt). This is a wiring proof and an A/B comparison of MODEL OUTPUT at 1 % with one draw
+    per arm and the same seed; it is NOT a validation against observed data: no number below is compared with an observed
+    reference. Five MATSim iterations are a wiring check; nothing here says the simulation converged, and convergence
+    would not be validation either. Runtimes are not a performance measurement (other sessions used the server).
+source: >-
+  The run caches and logs of i679_a, i679_b, i679_c (and of the superseded i679_off, i679_on, i679_off2, i679_on2) on
+  the run server, read by the committed scripts of docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/
+  (i679_ab_metrics.py, i679_e2e_metrics.py, i679_off_identity.py, i679_gpkg_content_check.py, i679_plan_mode_diff.py,
+  i679_null_initial_mode_probe.py, i679_keep_stage_pickles.py) and by scripts/validate_secondary_distances.py at 84a91698;
+  every number below is copied from the artifact named in its entry. A stage pickle is the pipeline.json entry of that
+  stage with the newest `updated` time whose pickle exists (i679_ab_metrics.py::resolve_stage); the chosen keys are in
+  the `provenance` block of each metrics JSON.
+environment: >-
+  run server (Linux, 64 cores, 94 GB), conda env eqasim (Python 3.10); gated with --allow-environment-mismatch (five pip
+  packages of the commit's environment snapshot missing, the same as in popsim-full-rerun-20261120; none imported by the
+  pipeline); PopulationSim 0.10.0+bs.3 in environments/populationsim (Python 3.12); JDK 25.0.3+9.
+validation:
+- metric: switch-off identity, arm A (ff83decf, both switches off) against i679_off2 (0611505f, switch off)
+  reference: 'the stage outputs and the written population of i679_off2 (model output of the earlier commit); no observed reference'
+  result: >-
+    Identical. The secondary location result (13,637 location rows and 8,815 convergence rows) and the day locations
+    (45,932 rows) are frame-equal (columns, dtypes, row order, values, geometries as WKB), the secondary stage folder is
+    byte-equal. Written population: 11 of 12 files byte-equal; braunschweig_1pct_i679_commutes_pre_portal.gpkg differs
+    only in the write time of its layer `education`, both layers are content-identical (3,689 and 1,903 rows). i679_off2
+    itself equals the switch-off arm of 66da6ee0 in the same way (i679_off_identity_66da6ee0_vs_0611505f.json), so the
+    switch-off path is unchanged across all three commits. As the written persons, households and trips files are
+    byte-equal too, PopulationSim 0.10.0+bs.3 reproduced the population of 0.10.0+bs.2 in this run.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_identity_a_vs_off2_0611505f.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_identity_a_vs_off2_pre_portal_gpkg.txt, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_off_identity_66da6ee0_vs_0611505f.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_off_identity_pre_portal_gpkg.txt'
+  notes: 'A regression check between commits; not a behavioural statement.'
+- metric: loop-free estimates switched off, arm B (ff83decf) against i679_on2 (0611505f, loop placement on)
+  reference: 'the stage outputs and the written population of i679_on2 (model output); no observed reference'
+  result: >-
+    Identical. Secondary location result (13,637 and 8,381 rows) and day locations (45,932 rows) frame-equal; the
+    secondary stage folder, including secondary_locations_report.json, byte-equal; written population as in the entry
+    above (only the write time of one gpkg layer differs, content identical).
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_identity_b_vs_on2_0611505f.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_identity_b_vs_on2_pre_portal_gpkg.txt'
+- metric: trips and activities per purpose, and leisure participation, A vs B vs C
+  reference: 'the other arms of the same run (same seed, shared upstream trip table); no observed reference'
+  result: >-
+    Equal in all three arms (model output). trips.final 34,466 trips by following purpose: education 2,181, escort
+    1,867, home 14,468, leisure 5,491, other 2,709, outside 567, shop 3,003, work 4,180; activities of the simulated day
+    45,932 (home 25,934, the other purposes as the trips); persons with a leisure activity 4,038 of 11,466. trips.final is
+    identical frame for frame. Downstream of the locations, the outside-tour mode stage (it judges the tours touching
+    outside on their located places) changes modes and times of the simulated trips: A vs C 314 trip modes (112 persons)
+    and 38 departure/arrival times (11 persons); B vs C 38 trip modes (11 persons), no time.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_A_vs_C_ff83decf.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_B_vs_C_ff83decf.json (keys equality, differences_downstream_of_locations, off/on)'
+- metric: loops flagged and placed (stage report block `loops`, arm C; arm B identical)
+  reference: 'none (stage counters of model output)'
+  result: >-
+    In scope (leisure legs on foot or by bicycle with coarse purpose leisure): walk 1,432, bicycle 475. Loops by label
+    (detail code 710/711): walk 420, bicycle 16; by draw: walk 302, bicycle 9 (from 629 walk and 194 bicycle draws).
+    Draws from the mode marginal: walk 0 of 629, bicycle 2 of 194 (share 0.010309278350515464). Legs without any detail
+    code: walk 0, bicycle 0. 747 loops flagged, 746 placed at the place they start from: home 593, secondary 126, work 20,
+    education 7 (625 persons collapsed; 232 of them have no secondary activity left to solve). Kept on the solver: 1 in
+    total (rate 0.0013386880856760374 of 747), 1 because the loop activity is itself linked, 0 right after an outside stay.
+    Collapsed loops of persons with an escort link 39, with a portal stay 15, with a passive joint link 5.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_secondary_locations_report.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_b_secondary_locations_report.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_b_run_log_excerpt_log.txt'
+  notes: 'The loop flag uses its own random stream, so B and C flag the same loops; the B report lacks only the block of the second switch.'
+- metric: legs left out of the two leisure estimates (arm C, loop-free estimates on)
+  reference: 'none (stage counters; the legs are MiD 2023 survey legs, the counts are unweighted)'
+  result: >-
+    Leisure subtype distance layers (distance distributions stage): walk 12,064 of 56,549 legs left out, bicycle 815 of
+    19,559; only the `leisure_local` layer changes (walk 14,762 -> 2,698 legs, bicycle 1,807 -> 992), the layers
+    leisure_activity, leisure_excursion and leisure_visit and the motorised modes keep all their legs. Leisure subtype
+    decider estimate (secondary location stage): walk 12,064 of 54,244, bicycle 824 of 18,131. The two stages count over
+    different universes of MiD legs (different denominators); the difference was not decomposed here.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_distance_distributions_report.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_secondary_locations_report.json (key subtype_estimate_legs_left_out)'
+- metric: leisure subtype drawn for the bounded leisure legs, A vs B vs C (all modes; the log line does not split by mode)
+  reference: 'the other arms (same seed, same trip table); no observed reference'
+  result: >-
+    A 5,450 bounded leisure legs: leisure_local 1,154 (21.2 %), leisure_visit 446 (8.2 %), leisure_activity 1,290
+    (23.7 %), leisure_excursion 153 (2.8 %), leisure_unspecified 2,407 (44.2 %). B 4,704 legs (the loops are out of the
+    chain): leisure_local 808 (17.2 %), leisure_visit 461 (9.8 %), leisure_activity 1,204 (25.6 %), leisure_excursion 137
+    (2.9 %), leisure_unspecified 2,094 (44.5 %). C 4,704 legs: leisure_local 395 (8.4 %), leisure_visit 479 (10.2 %),
+    leisure_activity 1,324 (28.1 %), leisure_excursion 143 (3.0 %), leisure_unspecified 2,363 (50.2 %). Marginal fallback
+    of the decider: 3 of 5,450 (A), 3 of 4,704 (B, C). Model output.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_A_vs_C_ff83decf.json and i679_ab_metrics_B_vs_C_ff83decf.json (key off/on.log_lines)'
+- metric: walk and bicycle leg lengths, A vs B vs C, with and without the loop legs
+  reference: 'the other arms (same seed, shared upstream trip table); no observed reference'
+  result: >-
+    Straight line between the two activity places of a trip, modes as written to the population (trips.simulated);
+    loop legs = the 746 trips into an activity that arm C placed by the loop rule, the same keys in every arm; metres
+    rounded to 1 m from the JSON values, counts exact; model output. WALK all legs, A / B / C: n 8,646 / 8,655 / 8,654;
+    mean 2,599 / 2,267 / 2,270 m; median 1,370 / 1,012 / 1,000 m; p90 5,871 / 5,502 / 5,599 m; over 5 km 1,037 / 969 /
+    987; over 30 km 8 / 8 / 8; total 22,466.7 / 19,618.9 / 19,641.5 km. WALK without loop legs: n 7,942 / 7,941 / 7,941;
+    mean 2,579 / 2,471 / 2,473 m; median 1,284 / 1,158 / 1,145 m; over 5 km 960 / 969 / 987; over 30 km 8 / 8 / 8. WALK
+    loop legs: A 704 legs, mean 2,815 m, median 2,248 m, 77 over 5 km, longest 22,867 m; B 714 and C 713 legs, all of
+    length 0. BICYCLE all legs, A / B / C: n 4,473 / 4,494 / 4,496; mean 4,221 / 4,197 / 4,177 m; median 2,332 / 2,239 /
+    2,225 m; over 5 km 1,091 / 1,117 / 1,110; over 30 km 24 / 24 / 24. BICYCLE without loop legs: n 4,449 / 4,469 /
+    4,471; over 5 km 1,076 / 1,117 / 1,110; over 30 km 24 / 24 / 24. BICYCLE loop legs: A 24 legs, mean 9,072 m, 15 over
+    5 km; B and C 25 legs of length 0. Written modes of the loop legs: A walk 704, bicycle 24, car 9, car_passenger 7, pt
+    2; B walk 714, bicycle 25, car_passenger 5, car 2; C walk 713, bicycle 25, car 6, car_passenger 2.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_A_vs_C_ff83decf.json (A = off, C = on), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_B_vs_C_ff83decf.json (B = off) (key legs)'
+  notes: >-
+    Without the loop legs, walk legs over 5 km are 960 (A), 969 (B), 987 (C): the remaining legs do not get shorter.
+    The arms consume the solver's random streams differently (fewer legs with the loops collapsed), so the non-loop legs
+    differ as distributions, not leg by leg; one draw per arm, so differences of a few dozen legs are not separated from
+    draw variation.
+- metric: non-loop leisure legs on foot and by bicycle, B vs C (effect of the loop-free estimates)
+  reference: 'arm B (same seed, same loops collapsed); no observed reference'
+  result: >-
+    Trips into a leisure activity that is not a loop, straight line, metres rounded to 1 m; model output. Walk, A / B /
+    C: n 1,383 / 1,384 / 1,383; mean 2,237 / 2,293 / 2,292 m; median 1,439 / 1,485 / 1,426 m; p90 4,791 / 5,082 / 5,372
+    m; over 5 km 123 / 141 / 148. Bicycle: n 699 / 708 / 709; mean 3,594 / 3,817 / 3,751 m; median 2,104 / 2,081 / 2,056
+    m; p90 8,385 / 8,806 / 8,528 m; over 5 km 128 / 155 / 153.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_A_vs_C_ff83decf.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_B_vs_C_ff83decf.json (key legs.<arm>.<mode>.leisure_without_loop_legs)'
+  notes: 'About 1,400 walk and 700 bicycle legs in one draw per arm: the B-vs-C differences are of the size of draw variation and are not claimed as an effect here.'
+- metric: chain solver placement and the SrV location-type marginal fallback, A vs B vs C
+  reference: 'none (stage counters)'
+  result: >-
+    Primary (carla) placed A 8,815 of 8,815 problems, B 8,381 of 8,381, C 8,381 of 8,381; fallback 0 in every arm
+    (unbounded 0, carla-failed bounded 0). SrV location-type draw, marginal fallback total: A 466 of 8,133 (5.7 %), B 462
+    of 7,387 (6.3 %), C 468 of 7,387 (6.3 %). Model output.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_A_vs_C_ff83decf.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_B_vs_C_ff83decf.json (keys convergence, log_lines)'
+- metric: modes of the loop legs after the initial mode choice (arms A and C) and after MATSim iteration 5 (arm C)
+  reference: 'the same legs in the other arm (same persons and trip indices); no observed reference'
+  result: >-
+    Matched by person and main-activity index in the prepared population (after RunPreparation and the initial mode
+    choice); aligned = the plan's activity at that index is the leisure activity of the key (A 729 of 746, C 735 of 746;
+    the rest differ in plan numbering, e.g. after the cut, and are left out below). Arm A (switch off: the same legs are
+    destination trips): car 485, walk 93, bicycle 69, car_passenger 59, pt 23; of the legs that are walks in the diary
+    (trips.final) 466 became car. Arm C (zero length): walk 582, car 112 (111 of zero length), bicycle 33, car_passenger
+    8; by diary mode, walk -> walk 563, car 107, bicycle 32, car_passenger 8, and bicycle -> walk 19, car 5, bicycle 1; by
+    origin, home: walk 461, car 88, bicycle 31, car_passenger 6; secondary: walk 97, car 21, bicycle 2, car_passenger 2;
+    work: walk 17, car 3; education: walk 7. After iteration 5 of arm C the loop legs have exactly the same modes: of
+    39,187 trips 188 changed their main mode in the 5 iterations, none of them a loop or zero-length trip. Model output.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_A_initial_mode_choice.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_C_initial_mode_choice.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_C_iteration5.json (key loop_trips_by_origin_diary_mode_main_mode_length_alignment, summed over the aligned rows), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_plan_mode_diff_prepared_vs_it5.json'
+  notes: >-
+    A zero-length loop leg goes through the mode choice like any trip, and a part of them gets a motorised mode. The
+    initial mode choice ran on 11,466 persons; it left out freight (521), in-commuters (599) and student in-commuters
+    (81). The per-leg table behind the matching (i679_ab_metrics.py --loop-keys-out) is per synthetic person and stays on
+    the run server.
+- metric: MATSim end to end (arm C) - facilities, exceptions, stuck agents
+  reference: 'none'
+  result: >-
+    RunPreparation, the initial mode choice and iterations 0 to 5 completed (exit 0); no traceback, no Java exception and
+    no "missing facility" line in the run logs of A, B and C (MATSim's own log files in simulation_output are empty: its
+    output goes to the run log). The facility check of the facilities stage and RunPreparation accepted the loop
+    activities at copied home, work and education places. Stuck agents in the final iteration (stuckAndAbort events): 19
+    persons (residents 13, in-commuters 4, freight 2), 17 of them at the simulation end; by leg mode car 10, walk 5, pt 2,
+    truck 2. Model output.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_exception_scan_ff83decf.txt, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_C_iteration5.json (key stuck), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_matsim_modestats.csv'
+  notes: 'Five iterations are a wiring check: no statement about convergence, and convergence would not be validation.'
+- metric: plan check of the prepared population, frozen resident plans (arms A and C)
+  reference: 'braunschweig.plan_check.max_frozen_defect_share 0.005 (ASSUMPTION-grade bound of ADR-0146); no observed reference'
+  result: >-
+    ERROR logged in both arms (fail_on_threshold false, so the runs continued): share_plans_non_monotonic_large (planned
+    lateness over 900 s) A 19 of 950 frozen residents (2.00 %), C 13 of 935 (1.39 %), both above 0.50 %; non-monotonic
+    end times A 40 (4.21 %), C 33 (3.53 %). In-region residents: 0 in both arms. Model output.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_a_run_log_excerpt_log.txt, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_run_log_excerpt_log.txt'
+  notes: 'The bound is exceeded with both switches off as well (arm A), so it is not caused by the loop change; it concerns the tours the mode choice never re-chooses (issue #678).'
+- metric: comparison script scripts/validate_secondary_distances.py at 84a91698 on the real caches
+  reference: 'MiD 2023 W12 trip lengths (committed, eqasim-data/data/braunschweig/mid/mid2023_W12_triplength_by_purpose.csv); the script reports it, this record draws no conclusion from it'
+  result: >-
+    On arm C's cache without --locations-key the script refuses (AmbiguousCacheRunError: the cache holds 24 locations
+    pickles and the legs' run is not unique; it lists the 24 candidates with their pipeline.json `updated` times), the
+    expected behaviour on a copied cache. With --locations-key
+    braunschweig.synthesis.commute_day.spatial_locations_day__0ad01031a33e03f0beba6433e1698376 (arm C's own run) it
+    resolves activities, trips and secondary locations as PRIMARY from that run's dependencies
+    (activities_day_stage__885e84966dcc325f1d5b03d7632b8a0c, portal_trips.trips_final__885e84966dcc325f1d5b03d7632b8a0c,
+    secondary_chainsolvers__0ad01031a33e03f0beba6433e1698376), matches 11,203 of 11,203 secondary activities to the loop
+    marker and leaves out 746 of 5,491 leisure legs (13.59 %) as loops. On arm A's cache with its own key
+    (spatial_locations_day__993ba04654f5845d4d94a391550b96f2) it resolves the same way and reports that the secondary
+    location result has no loop_origin column, so the legs are left unchanged.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_validate_nokey_log.txt, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_validate_key_log.txt, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_a_validate_key_log.txt (and the .csv outputs)'
+  notes: 'A wiring check of the script; its printed line "This is the OFF-path baseline ... DEFERRED" is a stale message of the script, not a statement about these runs.'
+features:
+  note: >-
+    Evidence for secondary_loop_zero_displacement (both switches): the switch-off path is unchanged, the loop placement
+    and the loop-free estimates run end to end through the facility check, RunPreparation, the initial mode choice and a
+    short MATSim run, with the counts above. A wiring proof and an A/B of model output, not a validation.
+artifacts:
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics.py
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_metrics.py
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_off_identity.py
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_gpkg_content_check.py
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_plan_mode_diff.py
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_null_initial_mode_probe.py
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_keep_stage_pickles.py
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_provenance.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_exception_scan_ff83decf.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_A_vs_C_ff83decf.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_A_vs_C_ff83decf.stdout
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_B_vs_C_ff83decf.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_B_vs_C_ff83decf.stdout
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_A_initial_mode_choice.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_C_initial_mode_choice.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_C_iteration5.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_plan_mode_diff_prepared_vs_it5.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_matsim_modestats.csv
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_identity_a_vs_off2_0611505f.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_identity_a_vs_off2_pre_portal_gpkg.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_identity_b_vs_on2_0611505f.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_identity_b_vs_on2_pre_portal_gpkg.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_off_identity_66da6ee0_vs_0611505f.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_off_identity_pre_portal_gpkg.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_secondary_locations_report.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_b_secondary_locations_report.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_distance_distributions_report.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_validate_nokey_log.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_validate_key_log.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_validate_key.csv
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_a_validate_key_log.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_a_validate_key.csv
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_validate_stage_name_mapping.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_on2_validate_secondary_distances_log.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_on2_validate_secondary_distances_shim_log.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_on2_validate_secondary_distances_shim.csv
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_a_run.yml
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_b_run.yml
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_run.yml
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_a_ff83decf_source.yml
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_b_ff83decf_source.yml
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_ff83decf_source.yml
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_a_run_log_excerpt_log.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_b_run_log_excerpt_log.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_run_log_excerpt_log.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_a_stage_starts.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_b_stage_starts.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_stage_starts.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_off_run.yml
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_off_source.yml
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_on_run_66da6ee0_aborted.yml
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_on_source.yml
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_off2_run.yml
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_off2_source.yml
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_on2_run.yml
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_on2_source.yml
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_on2_secondary_locations_report.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_on2_outside_tour_modes_report.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_off2_outside_tour_modes_report.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_on2_null_initial_mode_probe.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_on2_prepare_failure_excerpt_log.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_on2_prepare_jstack.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_on2_repro_standalone_nofreight_excerpt_log.txt
+- 'run server, kept for now: the caches of i679_a and i679_c (about 62 GB each), the stage-result copies keep_{off2,on2,a,b,c} (about 81 MB each) and the per-person loop-leg tables in i679_c7/'
+issues:
+- '#679'
+- '#678'
+decisions:
+- ADR-0207
+notes: >-
+  Left out of the commit: the per-person loop-leg tables (i679_c_loop_legs_ff83decf.csv and the earlier
+  i679_on_loop_activities / i679_on2_loop_activities tables: one row per synthetic person and activity) and the metrics
+  JSONs of the superseded launches at 66da6ee0 and 0611505f (their numbers are not used; the identity and failure
+  records of those launches are committed). Redaction: server paths in the committed logs and run files are written
+  relative to the home directory (~/...), no host name, address or user name is in any artifact. Every count is a 1 %
+  sample count of model output, never expanded; the same seed in all arms.

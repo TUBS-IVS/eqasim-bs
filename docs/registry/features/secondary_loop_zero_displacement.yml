@@ -76,21 +76,21 @@ evidence:
       measurement reference only; no stage reads it as a target. The loop probability itself is estimated at run time from the MiD Wege table.'
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - i679-stroll-loops-ab-1pct-2026-11-25
   metric: null
-  note: 'No run with the switch on is recorded here yet, so nothing compares the model with observed behaviour.
-    The survey measurement behind the design is the run manifest i679-stroll-loops-survey-probe-2026-11-25
-    (observed MiD donor data plus the cached tables of one earlier run; a measurement, not a validation).'
+  note: 'The 1 % run i679-stroll-loops-ab-1pct-2026-11-25 (both switches off, loop placement only, both on; same seed)
+    is a wiring proof and an A/B of model output; its manifest holds every count. Nothing compares the model with
+    observed behaviour. The survey measurement behind the design is the run manifest
+    i679-stroll-loops-survey-probe-2026-11-25 (observed MiD donor data plus the cached tables of one earlier run; a
+    measurement, not a validation).'
 assessment:
   status: pending
   by: null
   date: null
-  pending_reason: 'The end-to-end evidence (1 % synthesis with the switch off and on, RunPreparation with the
-    new facility ids, a short simulation) is not recorded yet; the share of loops kept on the solver (the loop
-    activity is anchored or linked, or the loop starts at an outside stay), the loops collapsed for persons with
-    an escort link, a portal stay or a passive joint link, and their effect are read from that run. ADR-0207
-    records the decision and its assumptions. The effect of the loop-free leisure estimates on the distances is
-    read from the same run.'
+  pending_reason: 'The owner''s assessment of the 1 % evidence (run manifest i679-stroll-loops-ab-1pct-2026-11-25,
+    including the loop legs that the mode choice gives a motorised mode) is pending, and so is the joint effect with
+    #678 at 100 %, which the next production run (#22) measures. ADR-0207 records the decision and its assumptions.'
   source: ADR-0207
 notes: 'Toggling secondary_loop_zero_displacement recomputes the secondary location stage and the facilities stage,
   which both declare it. Toggling secondary_leisure_estimates_without_loops recomputes the secondary location stage

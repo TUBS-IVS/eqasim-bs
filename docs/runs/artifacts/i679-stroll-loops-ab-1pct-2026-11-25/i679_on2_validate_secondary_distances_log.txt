@@ -1,0 +1,12 @@
+2026-11-25 20:35:02,505 INFO __main__: [secondary-validate] W12 targets loaded: shop 5.2 km, leisure 15.0 km, other 11.3 km.
+Traceback (most recent call last):
+  File "~/i679_on2/eqasim-bs/scripts/validate_secondary_distances.py", line 681, in <module>
+    main()
+  File "~/i679_on2/eqasim-bs/scripts/validate_secondary_distances.py", line 637, in main
+    distances = measure_secondary_distances(args.cache)
+  File "~/i679_on2/eqasim-bs/scripts/validate_secondary_distances.py", line 160, in measure_secondary_distances
+    df_locs = _load_stage(working_directory, "synthesis.population.spatial.locations")
+  File "~/i679_on2/eqasim-bs/scripts/validate_secondary_distances.py", line 96, in _load_stage
+    raise RuntimeError(
+RuntimeError: No cached pickle found for stage 'synthesis.population.spatial.locations' (names tried: synthesis.population.spatial.locations) in '~/i679_on2/cache'.
+rc=1

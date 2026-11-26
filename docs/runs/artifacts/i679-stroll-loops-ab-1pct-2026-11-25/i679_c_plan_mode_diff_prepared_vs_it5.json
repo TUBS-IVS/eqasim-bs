@@ -1,0 +1,23 @@
+{
+  "changed": {
+    "car->bicycle": 33,
+    "car->car_passenger": 21,
+    "car->pt": 19,
+    "car->walk": 25,
+    "car_passenger->bicycle": 20,
+    "car_passenger->car": 13,
+    "car_passenger->pt": 41,
+    "car_passenger->walk": 10,
+    "pt->bicycle": 4,
+    "pt->car": 1,
+    "walk->car": 1
+  },
+  "changed_loop_trips": {},
+  "changed_loop_trips_total": 0,
+  "changed_total": 188,
+  "changed_zero_length": {},
+  "changed_zero_length_total": 0,
+  "trips_after": 39187,
+  "trips_before": 39187,
+  "trips_common": 39187
+}
