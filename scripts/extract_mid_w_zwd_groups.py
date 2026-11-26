@@ -276,7 +276,8 @@ def build_group_reference(wege: pd.DataFrame, *, leave_out_loops: bool = False) 
         kept, left_out_by_mode = drop_loop_legs(map_mode(diary), log_tag=_LOG_TAG)
         n_loop = n_before - len(kept)
         logger.info("%s loops left out: %d/%d weekday legs (%.2f%%) by the model's rule (W_ZWD in "
-                    "%s by %s); W_GEW share %.2f%%", _LOG_TAG, n_loop, n_before,
+                    "%s by %s, unless out-and-back from home); W_GEW share %.2f%%", _LOG_TAG,
+                    n_loop, n_before,
                     100.0 * n_loop / n_before, sorted(LOOP_CODES), sorted(LOOP_MODES),
                     100.0 * (1.0 - float(kept["W_GEW"].sum() / filtered["W_GEW"].sum())))
         if n_loop == 0:

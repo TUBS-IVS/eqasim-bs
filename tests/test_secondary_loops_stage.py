@@ -522,6 +522,55 @@ def test_out_and_back_stroll_is_solved_and_marked(tmp_path, stage_doubles):
             report["loops_followed_by_synthetic_closure"]) == (1, 1, 1)
 
 
+def test_a_linked_out_and_back_stroll_is_solved_and_the_link_survives_the_collapse(
+        tmp_path, stage_doubles, monkeypatch):
+    # Adult 1's out-and-back stroll (activity 1) is the joint activity of child 2's leisure
+    # activity 2 (#385 passive joint link). The child first takes a loop (activity 1, its next
+    # trip goes on to leisure), which collapses: the child's side of the link moves 2 -> 1 for the
+    # solve and back to 2 in the result.
+    _patch_links(monkeypatch, [(2, 2, 1, 1)])
+    rows = [(1, "home", "leisure", "walk", 7, 710, 9),           # out-and-back, linked
+            (1, "leisure", "home", "walk", 8, 2202, 10),
+            (2, "home", "leisure", "walk", 7, 710, 8),           # loop, collapsed
+            (2, "leisure", "leisure", "walk", 7, 701, 9),        # joint activity, linked
+            (2, "leisure", "home", "walk", 8, 2202, 10)]
+    ctx = _LoopExecuteCtx(tmp_path, [1, 2], _trips(rows),
+                          persons_extra={"source_H_ID": [100, 100], "source_P_ID": [1, 2]},
+                          **_loop_config(True), escort_passive_joint_location=True)
+
+    df_locations, _df_convergence = sc.execute(ctx)
+
+    stroll, loop, joint = (_row(df_locations, *key) for key in ((1, 1), (2, 1), (2, 2)))
+    assert stroll["loop_origin"] is None and stroll["location_id"].startswith("leisure|walk")
+    assert (loop["loop_origin"], loop["location_id"]) == ("home", "home_20")
+    # The child's joint activity sits at the adult's placed stroll, under its original index.
+    assert joint["loop_origin"] is None
+    assert (joint["location_id"], joint["geometry"]) == (stroll["location_id"], stroll["geometry"])
+    assert len(df_locations) == 3
+    assert {key: flag for key, flag in zip(zip(df_locations["person_id"],
+                                               df_locations["activity_index"]),
+                                           df_locations["is_out_and_back_stroll"])} == {
+        (1, 1): True, (2, 1): False, (2, 2): False}
+    report = json.loads((tmp_path / REPORT_FILENAME).read_text(encoding="utf-8"))["loops"]
+    assert (report["strolls_out_and_back"], report["loops"], report["collapsed"],
+            report["kept_total"]) == (1, 1, 1, 0)
+    assert report["collapsed_loops_of_persons_with_passive_joint_link"] == 1
+
+
+@pytest.mark.parametrize("person_ids, message", [
+    ([2], r"fewer rows than strolls\); 1 strolls have no solver row, first .*\[\(1, 1\)\]"),
+    ([1, 1], r"more rows than strolls\); 0 strolls .* 1 have more than one, first: \[\(1, 1\)\]"),
+])
+def test_an_out_and_back_stroll_without_exactly_one_solver_row_stops_the_stage(person_ids,
+                                                                              message):
+    # Not reachable through execute() with a consistent solver; the guard behind the column.
+    trips = pd.DataFrame({"person_id": [1, 1], "trip_index": [0, 1]})
+    rows = pd.DataFrame({"person_id": person_ids, "activity_index": [1] * len(person_ids),
+                         "loop_origin": [None] * len(person_ids)})
+    with pytest.raises(ValueError, match=message):
+        sc._mark_out_and_back_strolls(rows, trips, pd.Series([True, False]))
+
+
 def test_the_key_off_gives_todays_result_without_the_loop_origin_column(
         tmp_path, stage_doubles, monkeypatch):
     def must_not_run(*args, **kwargs):

@@ -2309,19 +2309,30 @@ def _mark_out_and_back_strolls(df_locations, df_trips, out_and_back):
     out-and-back stroll; the stroll activity is ``(person_id, trip_index + 1)`` in the original
     numbering, the numbering of ``df_locations`` after ``loops.restore_loops``. Every such
     activity must have exactly one row, placed by the solver (``loop_origin`` empty): an
-    out-and-back stroll without a row, or one that was copied from its origin, raises
-    ``ValueError``; there is no default.
+    out-and-back stroll without a row, one that was copied from its origin, or one with more than
+    one row raises ``ValueError`` naming the counts and up to five keys of each kind; there is no
+    default. The check is vectorised, so it stays fast on a full population.
     """
     trips = df_trips[out_and_back.reindex(df_trips.index).astype(bool)]
     keys = pd.MultiIndex.from_arrays([trips["person_id"], trips["trip_index"] + 1])
     rows = pd.MultiIndex.from_arrays([df_locations["person_id"], df_locations["activity_index"]])
     marked = rows.isin(keys) & df_locations["loop_origin"].isna().to_numpy()
-    if int(marked.sum()) != len(keys):
-        missing = [key for key in keys if key not in set(rows[marked])][:5]
+    marked_rows = rows[marked]
+    without_row = ~keys.isin(marked_rows)
+    repeated = marked_rows[marked_rows.duplicated()].unique()
+    if bool(without_row.any()) or len(repeated):
+        def first_five(index):
+            return [tuple(value.item() if isinstance(value, np.generic) else value
+                          for value in key) for key in index[:5]]
+        n_marked = int(marked.sum())
+        direction = ("fewer" if n_marked < len(keys)
+                     else "more" if n_marked > len(keys) else "as many")
         raise ValueError(
             f"[braunschweig.secondary_chainsolvers] {len(keys)} out-and-back strolls but "
-            f"{int(marked.sum())} solver rows for them; first (person_id, activity_index) without "
-            f"one: {missing}.")
+            f"{n_marked} solver rows for them ({direction} rows than strolls); "
+            f"{int(without_row.sum())} strolls have no solver row, first (person_id, "
+            f"activity_index): {first_five(keys[without_row])}; {len(repeated)} have more than "
+            f"one, first: {first_five(repeated)}.")
     result = df_locations.copy()
     result[OUT_AND_BACK_STROLL_COLUMN] = np.asarray(marked, dtype=bool)
     return result
