@@ -38,7 +38,6 @@ that ``origin_ars5`` keeps its leading zeros.
 """
 from __future__ import annotations
 
-import copy
 import logging
 import math
 import re
@@ -392,21 +391,26 @@ KIND_OUT_COMMUTER = "out_commuter"
 CELL_KINDS = (KIND_COMMUTER, KIND_LOCAL, KIND_MOVER, KIND_OUT_COMMUTER)
 
 SITE_COLUMNS = ["destination_id", "che_institution", "institution", "site_kreis_ars5", "scope", "students_persons"]
+# Columns of T. The row key is (home_ars5, destination_id, cell_kind): unique, checked by build_od_table and
+# apply_movers (a mover row shares home and site with the (Braunschweig, site) commuter row; cell_kind
+# tells them apart).
+# ``enrollment_persons`` is the site's LSN enrollment on every row of that site (NaN outside LSN), so that
+# balance_tables checks the rows against an enrollment it does not derive from the rows themselves, also on
+# a table read back from a file.
 T_COLUMNS = ["home_ars5", "home_in_region", "destination_id", "institution", "site_kreis_ars5", "scope",
-             "distance_km", "coeff_short", "coeff_middle", "coeff_long", "origin_persons_scaled",
-             "upper_bound_persons_scaled", "weight", "students_persons", "movers_persons", "cell_kind"]
+             "enrollment_persons", "distance_km", "coeff_short", "coeff_middle", "coeff_long",
+             "origin_persons_scaled", "upper_bound_persons_scaled", "weight", "students_persons", "movers_persons",
+             "cell_kind"]
+T_ROW_KEY = ["home_ars5", "destination_id", "cell_kind"]
 BALANCE_SITE_COLUMNS = ["destination_id", "institution", "site_kreis_ars5", "enrollment_persons",
                         "residents_region_persons", "in_commuters_persons", "total_persons",
-                        "censored_upper_bound_persons", "censored_upper_bound_commuters_persons"]
+                        "censored_upper_bound_persons", "censored_upper_bound_commuters_persons",
+                        "censored_cells_without_bound"]
 OUT_COMMUTER_COLUMNS = ["destination_id", "institution", "site_kreis_ars5", "out_commuters_persons",
-                        "censored_upper_bound_commuters_persons"]
+                        "censored_upper_bound_commuters_persons", "censored_cells_without_bound"]
 IN_COMMUTER_COLUMNS = ["home_ars5", "in_commuters_persons"]
 HOME_KREIS_COLUMNS = ["home_ars5", "students_local_sites_persons", "students_out_commuting_persons",
                       "students_living_persons"]
-
-# ``od.attrs`` key: destination_id -> LSN enrollment of every local site, set by build_od_table so that
-# balance_tables checks the rows against an enrollment it did not derive from the same rows.
-ENROLLMENT_ATTR = "enrollment_persons_by_destination"
 
 # Float rounding only (persons), no modelling meaning: the sign checks of the builder and the
 # enrollment check of the balance allow this much numerical noise.
@@ -473,6 +477,13 @@ def _numbers(frame: pd.DataFrame, column: str, what: str, *, allow_nan: bool) ->
 def _first_duplicates(values) -> list:
     series = pd.Series(list(values), dtype=object)
     return series[series.duplicated()].drop_duplicates().tolist()[:5]
+
+
+def _require_unique_row_key(od: pd.DataFrame, what: str) -> None:
+    duplicated = od.duplicated(T_ROW_KEY, keep=False)
+    if duplicated.any():
+        raise ValueError(f"{what}: duplicate row key {T_ROW_KEY} "
+                         f"{od.loc[duplicated, T_ROW_KEY].drop_duplicates().values.tolist()[:5]}")
 
 
 class _BuilderInputs(NamedTuple):
@@ -679,9 +690,10 @@ def build_od_table(cells: pd.DataFrame, che_totals: pd.Series, sites: pd.DataFra
            rows for surrounding sites.
     The table is rectangular: one row per (origin Kreis, local site) and per (region Kreis,
     surrounding site), zeros included. ``movers_persons`` is 0 on commuter and out-commuter rows (they
-    live in their origin Kreis by construction). ``od.attrs[ENROLLMENT_ATTR]`` keeps the local sites'
-    enrollment for :func:`balance_tables`. Everything independent of the weights is laid out once per
-    call; the calibration calls the builder once per weight triple.
+    live in their origin Kreis by construction). A local or mover count in (-:data:`TOLERANCE_PERSONS`,
+    0) is float noise and set to exactly 0. ``enrollment_persons`` repeats ``E_s`` on every row of the
+    site. Everything independent of the weights is laid out once per call; the calibration calls the
+    builder once per weight triple.
 
     Returns:
         ``(od, diagnostics)``: ``od`` has :data:`T_COLUMNS`; ``diagnostics`` carries ``scale_factors``
@@ -726,9 +738,8 @@ def build_od_table(cells: pd.DataFrame, che_totals: pd.Series, sites: pd.DataFra
     commuters = students[:, local_columns].copy()
     commuters[own_rows, np.arange(len(local_columns))] = 0.0
     commuter_sum = commuters.sum(axis=0)
-    local_students = base.enrollment[local_columns] - commuter_sum
-    movers = local_students - origin[own_rows, local_columns]
-    for values, column in ((local_students, "students_persons"), (movers, "movers_persons")):
+    def checked(values: np.ndarray, column: str) -> np.ndarray:
+        # Below -TOLERANCE_PERSONS raises; the float noise in (-TOLERANCE_PERSONS, 0) becomes exactly 0.
         negative = values < -TOLERANCE_PERSONS
         if negative.any():
             details = [(base.destination[j], round(float(value), 6), float(base.enrollment[j]),
@@ -738,6 +749,10 @@ def build_od_table(cells: pd.DataFrame, che_totals: pd.Series, sites: pd.DataFra
                              f"(destination_id, value, enrollment, commuters) {details[:5]} with weights "
                              f"{tuple(weights)}: more commuters than enrollment, or more own-Kreis origins than "
                              f"students living at the site")
+        return np.maximum(values, 0.0)
+
+    local_students = checked(base.enrollment[local_columns] - commuter_sum, "students_persons")
+    movers = checked(local_students - origin[own_rows, local_columns], "movers_persons")
     students[own_rows, local_columns] = local_students
     weight_column = weight.copy()
     weight_column[own_rows, local_columns] = 1.0
@@ -752,12 +767,13 @@ def build_od_table(cells: pd.DataFrame, che_totals: pd.Series, sites: pd.DataFra
         "home_ars5": base.kreise[k_idx], "home_in_region": base.region_mask[k_idx],
         "destination_id": base.destination[s_idx], "institution": base.institution_label[s_idx],
         "site_kreis_ars5": base.site_kreis[s_idx], "scope": base.scope[s_idx],
+        "enrollment_persons": base.enrollment[s_idx],
         "distance_km": base.distance_km[k_idx, s_idx], "coeff_short": base.coefficients[0][k_idx, s_idx],
         "coeff_middle": base.coefficients[1][k_idx, s_idx], "coeff_long": base.coefficients[2][k_idx, s_idx],
         "origin_persons_scaled": origin[k_idx, s_idx], "upper_bound_persons_scaled": upper_bound[k_idx, s_idx],
         "weight": weight_column[k_idx, s_idx], "students_persons": students[k_idx, s_idx],
         "movers_persons": movers_column[k_idx, s_idx], "cell_kind": kind.astype(object)}, columns=T_COLUMNS)
-    od.attrs[ENROLLMENT_ATTR] = {base.destination[j]: float(base.enrollment[j]) for j in local_columns}
+    _require_unique_row_key(od, "build_od_table")
 
     censored_own = [base.destination[j] for j, k in zip(local_columns, own_rows)
                     if base.censored[k, base.institution_index[j]]]
@@ -836,6 +852,7 @@ def apply_movers(od: pd.DataFrame, share: float, site_kreise: tuple[str, ...], b
         "home_ars5": braunschweig_kreis, "home_in_region": source["home_in_region"].to_numpy(dtype=bool),
         "destination_id": local_rows["destination_id"].to_numpy(), "institution": local_rows["institution"].to_numpy(),
         "site_kreis_ars5": local_rows["site_kreis_ars5"].to_numpy(), "scope": local_rows["scope"].to_numpy(),
+        "enrollment_persons": local_rows["enrollment_persons"].to_numpy(dtype=float),
         **{column: source[column].to_numpy(dtype=float) for column in _GEOMETRY},
         "origin_persons_scaled": np.nan, "upper_bound_persons_scaled": np.nan, "weight": np.nan,
         "students_persons": moved, "movers_persons": moved, "cell_kind": KIND_MOVER}, columns=T_COLUMNS)
@@ -844,7 +861,7 @@ def apply_movers(od: pd.DataFrame, share: float, site_kreise: tuple[str, ...], b
     result.loc[selected, "students_persons"] = local_rows["students_persons"].to_numpy(dtype=float) - moved
     result.loc[selected, "movers_persons"] = local_rows["movers_persons"].to_numpy(dtype=float) - moved
     result = pd.concat([result, new_rows], ignore_index=True)[T_COLUMNS]
-    result.attrs = copy.deepcopy(od.attrs)  # pandas 1.5 concat drops attrs
+    _require_unique_row_key(result, "apply_movers")
     LOGGER.info("[student_od_table] movers: share %g of %.1f movers at %d local site(s) in %s moved to %s "
                 "(%.1f persons)", share_value, float(local_rows["movers_persons"].sum()), len(local_rows),
                 list(site_kreise), braunschweig_kreis, float(moved.sum()))
@@ -855,12 +872,14 @@ def balance_tables(od: pd.DataFrame, region_kreise) -> dict[str, pd.DataFrame]:
     """The balance of T (design section 5a), head counts, no day factor.
 
     Keys:
-        ``by_site`` (:data:`BALANCE_SITE_COLUMNS`, local sites): ``enrollment_persons`` from
-            ``od.attrs[ENROLLMENT_ATTR]``; residents = rows with home in ``region_kreise``, in-commuters
-            the others; ``censored_upper_bound_persons`` = scaled bounds of the site's censored origin
-            cells (``upper_bound_persons_scaled - origin_persons_scaled``, 0 for a shown cell; a NaN bound
-            counts 0); ``censored_upper_bound_commuters_persons`` = the same bound times the weight,
-            summed over the commuter rows.
+        ``by_site`` (:data:`BALANCE_SITE_COLUMNS`, local sites): ``enrollment_persons`` from the column
+            of the same name (one value per site); residents = rows with home in ``region_kreise``,
+            in-commuters the others; ``censored_upper_bound_persons`` = scaled bounds of the site's
+            censored origin cells (``upper_bound_persons_scaled - origin_persons_scaled``, 0 for a shown
+            cell; a NaN bound counts 0); ``censored_upper_bound_commuters_persons`` = the same bound times
+            the weight, summed over the commuter rows; ``censored_cells_without_bound`` = the site's rows
+            (origin cells after the split, mover rows excluded) whose bound is NaN, i.e. censored cells
+            that no CHE list bounds.
         ``out_commuters`` (:data:`OUT_COMMUTER_COLUMNS`, surrounding sites; no enrollment check: only the
             region's rows exist).
         ``in_commuters_by_origin`` (:data:`IN_COMMUTER_COLUMNS`): local-site students per home Kreis
@@ -869,18 +888,26 @@ def balance_tables(od: pd.DataFrame, region_kreise) -> dict[str, pd.DataFrame]:
             sites, out-commuting students and their sum, the students living in the Kreis.
 
     Raises:
-        ValueError: a missing column or enrollment record, ``home_in_region`` contradicting
-            ``region_kreise``, a region Kreis without rows, or ``total_persons`` differing from
-            ``enrollment_persons`` by more than :data:`TOLERANCE_PERSONS` at a local site.
+        ValueError: a missing column, a local site whose ``enrollment_persons`` is NaN or differs between
+            its rows, ``home_in_region`` contradicting ``region_kreise``, a region Kreis without rows, or
+            ``total_persons`` differing from ``enrollment_persons`` by more than
+            :data:`TOLERANCE_PERSONS` at a local site.
     """
     _require_frame_columns(od, T_COLUMNS, "balance_tables od")
     region = list(region_kreise)
     if _first_duplicates(region):
         raise ValueError(f"balance_tables region_kreise: duplicate Kreis code(s) {_first_duplicates(region)}")
-    enrollment = od.attrs.get(ENROLLMENT_ATTR)
-    if enrollment is None:
-        raise ValueError(f"balance_tables: the table carries no site enrollment (attrs[{ENROLLMENT_ATTR!r}]); pass "
-                         f"the table returned by build_od_table or apply_movers")
+    local = (od["scope"] == SCOPE_LOCAL).to_numpy()
+    site_enrollment = pd.to_numeric(od.loc[local, "enrollment_persons"], errors="coerce")
+    without = sorted(set(od.loc[local, "destination_id"][site_enrollment.isna()]))
+    if without:
+        raise ValueError(f"balance_tables: column 'enrollment_persons' is missing for local site(s) {without[:5]}")
+    enrollment = site_enrollment.groupby(od.loc[local, "destination_id"], sort=False)
+    differing = enrollment.nunique()
+    if (differing > 1).any():
+        raise ValueError(f"balance_tables: column 'enrollment_persons' differs between the rows of local site(s) "
+                         f"{differing[differing > 1].index.tolist()[:5]}")
+    enrollment = enrollment.first()
     in_region = od["home_ars5"].isin(region).to_numpy()
     contradicting = in_region != od["home_in_region"].to_numpy(dtype=bool)
     if contradicting.any():
@@ -889,7 +916,6 @@ def balance_tables(od: pd.DataFrame, region_kreise) -> dict[str, pd.DataFrame]:
     absent = [code for code in region if code not in set(od["home_ars5"])]
     if absent:
         raise ValueError(f"balance_tables: region Kreis(e) {absent} have no row (column 'home_ars5')")
-    local = (od["scope"] == SCOPE_LOCAL).to_numpy()
     if (~local & ~in_region).any():
         raise ValueError("balance_tables: surrounding-site row(s) with a home outside the region; T holds only "
                          "the region's out-commuters")
@@ -902,17 +928,15 @@ def balance_tables(od: pd.DataFrame, region_kreise) -> dict[str, pd.DataFrame]:
         "institution": od["institution"].to_numpy(), "site_kreis_ars5": od["site_kreis_ars5"].to_numpy(),
         "students": students, "residents": np.where(in_region, students, 0.0),
         "in_commuters": np.where(in_region, 0.0, students), "bound": np.nan_to_num(bound, nan=0.0),
-        "commuter_bound": np.where(commuting, np.nan_to_num(bound * od["weight"].to_numpy(dtype=float), nan=0.0), 0.0)})
+        "commuter_bound": np.where(commuting, np.nan_to_num(bound * od["weight"].to_numpy(dtype=float), nan=0.0), 0.0),
+        "without_bound": (od["upper_bound_persons_scaled"].isna() & (od["cell_kind"] != KIND_MOVER)).to_numpy(int)})
 
     by_site = frame[local].groupby("destination_id", sort=False).agg(
         institution=("institution", "first"), site_kreis_ars5=("site_kreis_ars5", "first"),
         residents_region_persons=("residents", "sum"), in_commuters_persons=("in_commuters", "sum"),
         censored_upper_bound_persons=("bound", "sum"),
-        censored_upper_bound_commuters_persons=("commuter_bound", "sum")).reset_index()
-    unmatched = sorted(set(by_site["destination_id"]) ^ set(enrollment))
-    if unmatched:
-        raise ValueError(f"balance_tables: local site(s) {unmatched} are in only one of the table and its enrollment "
-                         f"record")
+        censored_upper_bound_commuters_persons=("commuter_bound", "sum"),
+        censored_cells_without_bound=("without_bound", "sum")).reset_index()
     by_site["enrollment_persons"] = by_site["destination_id"].map(enrollment).astype(float)
     by_site["total_persons"] = by_site["residents_region_persons"] + by_site["in_commuters_persons"]
     off = (by_site["total_persons"] - by_site["enrollment_persons"]).abs() > TOLERANCE_PERSONS
@@ -924,7 +948,8 @@ def balance_tables(od: pd.DataFrame, region_kreise) -> dict[str, pd.DataFrame]:
     out_commuters = frame[~local].groupby("destination_id", sort=False).agg(
         institution=("institution", "first"), site_kreis_ars5=("site_kreis_ars5", "first"),
         out_commuters_persons=("students", "sum"),
-        censored_upper_bound_commuters_persons=("commuter_bound", "sum")).reset_index()
+        censored_upper_bound_commuters_persons=("commuter_bound", "sum"),
+        censored_cells_without_bound=("without_bound", "sum")).reset_index()
     out_commuters = out_commuters.reindex(columns=OUT_COMMUTER_COLUMNS)
 
     in_commuters = (frame[local & ~in_region].groupby("home_ars5", sort=False)["students"].sum()
@@ -939,11 +964,14 @@ def balance_tables(od: pd.DataFrame, region_kreise) -> dict[str, pd.DataFrame]:
                                                 + by_home_kreis["students_out_commuting_persons"])
 
     LOGGER.info("[student_od_table] balance: %d local site(s), enrollment %.1f = residents %.1f + in-commuters %.1f; "
-                "out-commuters %.1f to %d surrounding site(s); censored bound %.1f persons, of which %.1f commuting",
+                "out-commuters %.1f to %d surrounding site(s); censored bound %.1f persons, of which %.1f commuting; "
+                "%d censored cell(s) without a bound (%d at local sites, %d at surrounding sites)",
                 len(by_site), float(by_site["enrollment_persons"].sum()),
                 float(by_site["residents_region_persons"].sum()), float(by_site["in_commuters_persons"].sum()),
                 float(out_commuters["out_commuters_persons"].sum()), len(out_commuters),
                 float(by_site["censored_upper_bound_persons"].sum()),
-                float(by_site["censored_upper_bound_commuters_persons"].sum()))
+                float(by_site["censored_upper_bound_commuters_persons"].sum()), int(frame["without_bound"].sum()),
+                int(by_site["censored_cells_without_bound"].sum()),
+                int(out_commuters["censored_cells_without_bound"].sum()))
     return {"by_site": by_site, "out_commuters": out_commuters, "in_commuters_by_origin": in_commuters,
             "by_home_kreis": by_home_kreis}

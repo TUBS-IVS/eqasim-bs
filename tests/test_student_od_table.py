@@ -295,11 +295,13 @@ def toy_art():
     return _toy_input(cells, {"Uni S": 500}, sites, pairs, ["A", "B"])
 
 
-def _toy_multi(censored_d):
+def _toy_multi(censored):
     # Uni I: S2 in Kreis B (E 300), S3 in Kreis D (E 100); CHE total 200 -> scale 400 / 200 = 2. Region B, D;
-    # E lies outside, beyond reach of both sites (every coefficient 0).
-    d_cell = _censored("D", "Uni I", 6) if censored_d else _shown("D", "Uni I", 4)
-    cells = [_shown("B", "Uni I", 8), d_cell, _shown("E", "Uni I", 10)]
+    # E lies outside, beyond reach of both sites (every coefficient 0). ``censored``: D's cell is censored at 6
+    # and E's cell censored without any bound.
+    d_cell = _censored("D", "Uni I", 6) if censored else _shown("D", "Uni I", 4)
+    e_cell = _censored("E", "Uni I", math.nan) if censored else _shown("E", "Uni I", 10)
+    cells = [_shown("B", "Uni I", 8), d_cell, e_cell]
     sites = [_site("S2", "Uni I", "B", "local", 300.0), _site("S3", "Uni I", "D", "local", 100.0)]
     pairs = [_pair("B", "S2", 2.0, SHORT), _pair("B", "S3", 30.0, MIDDLE), _pair("D", "S2", 30.0, MIDDLE),
              _pair("D", "S3", 2.0, SHORT), _pair("E", "S2", 150.0, NONE), _pair("E", "S3", 160.0, NONE)]
@@ -308,12 +310,12 @@ def _toy_multi(censored_d):
 
 @pytest.fixture
 def toy_multi():
-    return _toy_multi(censored_d=False)
+    return _toy_multi(censored=False)
 
 
 @pytest.fixture
 def toy_censored():
-    return _toy_multi(censored_d=True)
+    return _toy_multi(censored=True)
 
 
 @pytest.fixture
@@ -464,6 +466,21 @@ def test_apply_movers_moves_a_share_of_the_movers_and_keeps_every_site_total(toy
         T.apply_movers(od, 1.5, ("A",), "B")
 
 
+def test_balance_reads_a_table_written_to_csv(toy_with_surrounding, tmp_path):
+    od, _ = T.build_od_table(**toy_with_surrounding, weights=WEIGHTS)
+    moved = T.apply_movers(od, 0.5, ("A",), "B")
+    moved.to_csv(tmp_path / "od.csv", index=False)
+    codes = {column: str for column in ["home_ars5", "destination_id", "site_kreis_ars5"]}
+    back = pd.read_csv(tmp_path / "od.csv", dtype=codes)
+    expected, read = T.balance_tables(moved, ["A", "B"]), T.balance_tables(back, ["A", "B"])
+    for key in expected:
+        pd.testing.assert_frame_equal(read[key], expected[key])
+    # The enrollment is a column: a row whose site disagrees with the other rows is caught.
+    back.loc[back["destination_id"] == "S1", "enrollment_persons"] = [1000.0, 1000.0, 999.0, 1000.0]
+    with pytest.raises(ValueError, match="enrollment_persons"):
+        T.balance_tables(back, ["A", "B"])
+
+
 def test_art_academy_unscaled_and_rest_local_with_counts(toy_art):
     od, diagnostics = T.build_od_table(**toy_art, weights=WEIGHTS)
     t = od.set_index(["home_ars5", "destination_id"])
@@ -488,6 +505,8 @@ def test_censored_bound_passes_through_scale_split_and_weight(toy_censored):
     assert by_site.loc["S2", bounds].tolist() == [pytest.approx(12 * 90 / 190), pytest.approx(12 * 90 / 190 * 0.3)]
     # S3's own-Kreis cell is the censored one: it bounds the site's origins but adds no commuter; counted.
     assert by_site.loc["S3", bounds].tolist() == [pytest.approx(12 * 100 / 190), 0.0]
+    # E's cell has no bound: it adds nothing to the bounds above and is counted at both sites it splits to.
+    assert by_site["censored_cells_without_bound"].tolist() == [1, 1]
     assert diagnostics["local_sites_with_censored_own_kreis_cell"] == ["S3"]
     # A censored own-Kreis cell counts 0: movers = local = 100 - 16 * 30 / 330 * 0.3.
     assert _at(od, "D", "S3", "movers_persons") == pytest.approx(100 - 144 / 330)
