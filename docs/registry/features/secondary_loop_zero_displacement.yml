@@ -3,8 +3,9 @@ title: 'Strolls and dog walks are loops: a loop activity is placed at the place 
 area: secondary
 description: 'With the switch on, the secondary location stage takes the leisure legs that are loops (a walk or
   bicycle leg with the MiD detail code 710 or 711, or drawn where the detail was not asked) out of the chain
-  before the solve and puts each loop activity back at the place of the activity it starts from, the
-  eqasim-france Paris model (owner decision of 2026-11-25). A second switch,
+  before the solve and puts each loop activity back at the place of the activity it starts from (owner
+  decision of 2026-11-25; how this differs from the French eqasim pipeline, which has no loop rule: ADR-0207,
+  Context). A second switch,
   secondary_leisure_estimates_without_loops, leaves the loop legs as defined in the detail_doc note
   (purpose_subtype.drop_loop_legs) out of the leisure subtype distance layers and of the leisure subtype
   decider''s estimate, so the legs that remain are not assigned a subtype or a distance from estimates that
