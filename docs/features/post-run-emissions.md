@@ -8,8 +8,11 @@ Rules for maintainers: [`docs/codebase/notes/post-run-emissions.md`](../codebase
 
 ## What it computes
 
-Exhaust emissions of the simulated road traffic of one finished MATSim run, per pollutant and per
-vehicle group, from the run's events. The emission factors come from HBEFA (Handbook Emission
+Emissions of the simulated road traffic of one finished MATSim run, per pollutant and per vehicle
+group, from the run's events. The pollutants are the components the HBEFA tables hold; in the
+HBEFA 4.1 layout these are 23 warm components (CO2, NOx, PM, fuel consumption and others, with
+three non-exhaust components: `PM_non_exhaust`, `PM2_5_non_exhaust`, `BC_non_exhaust`) and 18 of
+them for cold starts. The emission factors come from HBEFA (Handbook Emission
 Factors for Road Transport); the calculation is done by MATSim's emissions contrib through its
 tool `org.matsim.application.analysis.emissions.AirPollutionAnalysis`. The pipeline adds what the
 tool needs and does not have: HBEFA keys on the vehicle types, an HBEFA road type on every link,
@@ -89,6 +92,6 @@ reports the same fallback weighted by vehicle-km.
 
 ## What is not covered
 
-Non-exhaust emissions, public transport, trips within one link, and any traffic that is not in
-the simulation. Cold-start emissions of heavy trucks are excluded by assumption; how that is
+Public transport, trips within one link, any traffic that is not in the simulation, and road
+gradient (the tool ignores the tables' `Gradient` column). Cold-start emissions of heavy trucks are excluded by assumption; how that is
 implemented depends on the real tables (ADR-0209, open points).
