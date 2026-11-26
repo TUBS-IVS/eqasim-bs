@@ -1,7 +1,7 @@
 id: i679-stroll-loops-ab-1pct-2026-11-25
 date: '2026-11-25'
 repository:
-  commit: 'ff83decf83b61646dd02c638f76a6b6d8b179bd6 (arms A, B, C); 55d9b19458752604da24f92d29ca180808e3b3a1 with eqasim-java-bs f8accd10cc15e1368452e7986bfbb85bdbede9ed (arm D)'
+  commit: 'ff83decf83b61646dd02c638f76a6b6d8b179bd6 (arms A, B, C); 55d9b19458752604da24f92d29ca180808e3b3a1 with eqasim-java-bs f8accd10cc15e1368452e7986bfbb85bdbede9ed (arm D); 33abe12f69282fde2b37c9b037c42793c3b3f6e1 with eqasim-java-bs e83ca961f080d52d916a036ebc9e7b6b2d5bfc0e (arm E)'
   branch: feature/i679-stroll-loops
   notes: >-
     The three arms (A, B, C) ran from 2026-11-25 to 2026-11-26 at eqasim-bs ff83decf, shipped to the run server as a git
@@ -50,6 +50,19 @@ repository:
     on the run server, not from the committed excerpt: the error came after RunPreparation, the cut and the freight
     injection and before the initial mode choice, so no mode was chosen and no JVM stayed behind. Fixed by 55d9b194,
     to which the eqasim-bs worktree was then moved by hand. Final launch 09:20:33 to 09:44:25, exit 0.
+    ARM E (2026-11-26): arm D plus the out-and-back split of the strolls (docs/codebase/notes/leisure-loops.md,
+    section "Definitions"): a stroll that starts at home and is followed in the diary by its own way home is placed
+    by the solver, carries the activity attribute outAndBackStroll, and the Java rule StrollNonMotorised keeps the
+    trip into it on walk or bicycle; the loop-free leisure estimates keep such legs. Stage code: eqasim-bs 33abe12f
+    (bundle sha256 bcbadf3f13bfbd26bb3838bd98a3b7258f32b56072255f58ae1fc386447c7e13, 55d9b194..33abe12f) and
+    eqasim-java-bs e83ca961f (bundle sha256 ff75c224c4cbe1b0d5748192c203bef8a46e7ea9dc6eff46ec5e10d11096f6d2,
+    f8accd10c..e83ca961f; branch feat/i679-same-facility-leisure-trips, NOT merged yet); shaded jar md5
+    5eecbd7fdeb943d981325d79c3a2bb96, built by the runtime stage of this launch (i679_provenance_e.txt). One launch,
+    2026-11-26 16:46:39 to 17:30:34, exit 0. The comparison scripts ran on the run server in a separate directory
+    against the caches of arms D and E, read-only, with the scripts of this record as committed in the same commit
+    as the E entries (i679_ab_metrics.py and i679_loop_mode_rule_premise.py gained the out-and-back blocks; the
+    D outputs of the extended premise script equal the committed i679_loop_mode_rule_premise_D*.json in every key
+    the old script wrote, apart from the arm name and the examples, which now carry the attribute field).
 configuration:
   base: configs/base_bs.yml
   overlays:
@@ -57,6 +70,7 @@ configuration:
   - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_b_run.yml
   - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_run.yml
   - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_d_run.yml
+  - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e_run.yml
   notes: >-
     Throwaway server overlays (committed as artifacts, together with the source overlays i679_{a,b,c}_ff83decf_source.yml
     they were written from), derived from configs/overlays/test_1pct.yml: sampling_rate 0.01, matsim_last_iteration 5,
@@ -72,6 +86,10 @@ configuration:
     SameFacilityLeisureNonMotorised to DiscreteModeChoice.tripConstraints of the prepared config
     (i679_d_loop_mode_rule_report.json). The run.yml of arm D was written for the first launch; its header still
     names the overlay source written before the code moved.
+    Arm E uses arm D's overlay unchanged in its config block (source i679_e_33abe12f_source.yml on the run server,
+    body identical to i679_d_5b212d47_source.yml; i679_provenance_e.txt), so arms D and E differ only in code. The
+    prepare stage added SameFacilityLeisureNonMotorised and StrollNonMotorised to DiscreteModeChoice.tripConstraints
+    (i679_e_loop_mode_rule_report.json).
 sampling:
   rate: 0.01
   scope: 'ZGB-8, full region, cordon on (base configuration)'
@@ -106,6 +124,12 @@ pipeline:
     (early cutoff after the portal-trip stages; i679_d_first_launch_stage_starts.txt). Final launch (55d9b194): the
     facilities stage and synthesis.output (run targets synpp re-executes), the prepare stage, the MATSim run
     (09:33:59) and matsim.output (09:44:23) (i679_d_stage_starts.txt).
+    Arm E: cache a cp -a copy of arm D's cache (66,406,665,279 bytes after setup; i679_provenance_e.txt).
+    Re-executed (i679_e_stage_starts.txt): the distance distributions stage, the Java runtime stage (new Java source),
+    the cut transit schedule, both in-commuter stages, households and vehicles, the portal-trip stages, the secondary
+    location stage (16:59:13), the facilities stage, the day locations, the outside-tour mode stages, the day output,
+    the population stage, the prepare stage (17:07:33), the MATSim run (17:19:34) and matsim.output (17:30:31);
+    PopulationSim and the day activities stayed cached.
 classification:
 - wiring_proof
 - ab_test
@@ -120,6 +144,8 @@ status:
     would not be validation either. Runtimes are not a performance measurement (other sessions used the server).
     Arm D: first launch 2026-11-26 08:47:35 to 09:11:19 (exit 1, see repository notes), final launch 09:20:33 to
     09:44:25 (exit 0, no traceback, no Java exception; i679_exception_scan_d.txt).
+    Arm E: 2026-11-26 16:46:39 to 17:30:34 (exit 0, no traceback, no OutOfMemoryError, no NoFeasibleChoice; the one
+    line containing "Exception" is a build warning of the runtime stage; i679_exception_scan_e.txt).
 source: >-
   The run caches and logs of i679_a, i679_b, i679_c (and of the superseded i679_off, i679_on, i679_off2, i679_on2) on
   the run server, read by the committed scripts of docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/
@@ -127,7 +153,8 @@ source: >-
   i679_null_initial_mode_probe.py, i679_keep_stage_pickles.py) and by scripts/validate_secondary_distances.py at 84a91698;
   every number below is copied from the artifact named in its entry. A stage pickle is the pipeline.json entry of that
   stage with the newest `updated` time whose pickle exists (i679_ab_metrics.py::resolve_stage); the chosen keys are in
-  the `provenance` block of each metrics JSON.
+  the `provenance` block of each metrics JSON. Arms D and E: the caches and logs of i679_d and i679_e, read by
+  i679_ab_metrics.py, i679_loop_mode_rule_premise.py, i679_e2e_metrics.py and i679_rule_trip_diff.py.
 environment: >-
   run server (Linux, 64 cores, 94 GB), conda env eqasim (Python 3.10); gated with --allow-environment-mismatch (five pip
   packages of the commit's environment snapshot missing, the same as in popsim-full-rerun-20261120; none imported by the
@@ -412,6 +439,132 @@ validation:
     rule leaves alone, by mode before: C car 815, walk 654, outside 234, bicycle 225, car_passenger 212; A car 822,
     walk 655, outside 241, bicycle 224, car_passenger 214. Model output.
   artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_A.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_C.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise.py'
+- metric: arm E against arm D - strolls by kind (stage report block `loops`)
+  reference: 'arm D (same seed and configuration, code before the out-and-back split); no observed reference'
+  result: >-
+    Arm D (its report is byte-equal to arm C's, the stage was cached): 747 strolls flagged, all handled as loops; by
+    label walk 420, bicycle 16; by draw walk 302, bicycle 9 (from 629 walk and 194 bicycle draws; 2 bicycle draws
+    from the mode marginal); 746 placed at their origin (home 593, secondary 126, work 20, education 7), 1 kept on
+    the solver (its activity is linked); 625 persons collapsed. Arm E: 802 strolls flagged; by label walk 420,
+    bicycle 16; by draw walk 357, bicycle 9 (from the same 629 walk and 194 bicycle draws; 2 bicycle draws from the
+    mode marginal, share 0.010309278350515464). Of the 802: 103 out-and-back (walk 99, bicycle 4), placed by the
+    solver; 699 loops, of which 365 are followed only by the plan repair's invented home trip (walk 351, bicycle 14);
+    698 loops placed at their origin (home 535, secondary 136, work 20, education 7), 1 kept on the solver (its
+    activity is linked; rate 0.001430615164520744), 0 kept after an outside stay; 591 persons collapsed; 232
+    persons left without a secondary activity (232 in D as well). Collapsed loops of persons with an escort link 35
+    (D 39), a portal stay 15 (D 15), a passive joint link 6 (D 5). The report does not split the out-and-back strolls
+    into labelled and drawn legs. Model output.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e_secondary_locations_report.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_secondary_locations_report.json (arm D: byte-equal to the report in arm D''s cache, md5 5bd0017f30163a4e612f35c665fc5099), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e_run_log_excerpt_log.txt'
+  notes: >-
+    The universes differ: D's 747 are every flagged stroll, E's 802 are strolls of which only 699 are loops. E flags
+    55 more walk strolls, all by draw (357 against 302), from the same 629 walk draws. Between 55d9b194 and 33abe12f
+    the loop probability cell "way home follows" changed on the synthetic side: it no longer counts the plan repair's
+    invented home trip as a way home (loops.diary_way_home_follows), so legs followed only by that trip draw from
+    other cells; that this explains the 55 is code reading, not decomposed here. All 103 keys of E's out-and-back
+    strolls are home loops in arm D (next entry, key off_treatment_of_the_keys).
+- metric: arm E against arm D - length of the out-and-back stroll legs, their ways home, and all walk and bicycle legs
+  reference: 'arm D, the same legs (same person and activity index); no observed reference'
+  result: >-
+    Keys: the 103 activities that arm E marks out-and-back (90 persons); in arm D all 103 are loops placed at home.
+    Straight line between the two activity places, modes as written to the population (trips.simulated, before
+    the mode choice). Legs INTO the out-and-back strolls: arm D 103 legs, all of length 0 (sum 0.0 km); arm E 103
+    legs, none of length 0, sum 171.39792365355635 km, mean 1664.0575111995763 m, median 1192.6169008308507 m, p90
+    3137.6711663111932 m, longest 15567.094406731876 m; by written mode walk 99 (sum 138.32502267405005 km, median
+    1124.8705079674457 m, longest 9674.911788404126 m) and bicycle 4 (sum 33.07290097950634 km, median
+    6379.22775070336 m). The legs AFTER them (the diary way home, all into home): arm D 103 legs of length 0; arm E
+    the same 171.39792365355635 km in total (a straight line home -> stroll place and stroll place -> home has the
+    same length); by written mode walk 91 (117.55636863548517 km), bicycle 7 (36.0813611178533 km), car 1
+    (9.674911788404126 km), car_passenger 2 (4.503276225566061 km), pt 2 (3.5820058862477064 km); the written modes
+    of the legs into and after the strolls have the same counts in D and E as their diary modes (trips.final). ALL
+    written legs, D / E:
+    walk 8,654 / 8,672 legs, 19641.50479328605 / 20080.434870322886 km, of length 0 1,515 / 1,414; bicycle 4,496 /
+    4,494 legs, 18780.893827824242 / 18614.12096680806 km, of length 0 272 / 261. Model output.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_D_vs_E_33abe12f.json (D = off, E = on; keys out_and_back_strolls.into, out_and_back_strolls.way_home, legs.<arm>.<mode>.all), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics.py'
+  notes: >-
+    The walk total rises by more than the out-and-back walk legs add (138.32502267405005 km into, 117.55636863548517
+    km on the way home): the secondary location stage re-ran with a different set of solver legs (the 103
+    out-and-back strolls on the solver, 698 loops collapsed instead of 746), so the solver's random streams are
+    consumed differently and the other secondary legs differ as distributions, not leg by leg, as between arms A and
+    B/C; one draw per arm. trips.final is identical
+    between D and E (equality block); trips.simulated differs in 254 modes of 88 persons and 29 times (outside-tour
+    mode stage, as in the A/B/C entry). Modes here are the synthesis modes, not the modes after the mode choice
+    (next entry).
+- metric: arm E against arm D - modes of the out-and-back stroll legs and their ways home after the initial mode choice and after iteration 5
+  reference: 'arm D, the same keys (person and activity index); no observed reference'
+  result: >-
+    Matched by person and main-activity index in the prepared population and in MATSim's output_plans after
+    iteration 5; aligned = the plan's activity at that index is a leisure activity (E 99 of 103, D 100 of 103; the
+    rest are left out). Arm E, after the initial mode choice: legs into the strolls walk 56, bicycle 43 (mode before
+    the choice: walk 95, bicycle 4; walk -> bicycle 39), every one caught by the stroll rule, none motorised; the
+    ways home walk 46, bicycle 43, car_passenger 7, pt 3 (mode before: walk 87, bicycle 7, car_passenger 2, pt 2,
+    car 1); the 10 motorised ways home (walk -> car_passenger 7, walk -> pt 3) lie in tours without an outside stay
+    and with at most 6 trips, i.e. in tours the mode choice evaluates; no rule applies to them. Arm D, same keys:
+    legs into walk 96, bicycle 4 (walk -> bicycle 4, bicycle -> walk 4); ways home walk 99, bicycle 1 (bicycle ->
+    walk 7, car_passenger -> walk 2, car -> walk 1, walk -> bicycle 1); in D every one of these trips is caught by
+    the same-facility rule (home -> home place). After iteration 5 the counts are the same as after the initial mode
+    choice in each arm. The plans of arm E carry the attribute outAndBackStroll on 103 trip destinations (value
+    true); the trips into them (the stroll rule's catch in the plans) are walk 58, bicycle 45 after the initial mode
+    choice and after iteration 5. Model output.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_E.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_E_iteration5.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_D_e_stroll_keys.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_D_iteration5_e_stroll_keys.json (keys stroll_key_trips_by_role_mode_after, stroll_key_trips_by_role_mode_before_after_destination_rule_tour, stroll_key_trips_found_by_role_alignment, stroll_rule_caught_by_mode_after, stroll_attribute_values_on_trip_destinations), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise.py'
+  notes: >-
+    The way home is outside both rules in arm E by design (leisure-loops.md, "Stroll rule"): its destination
+    carries no marker and its two ends lie at different facilities. The mode before the choice is the mode of the
+    standalone mode choice's input trips; the keys are E's out-and-back strolls read against D's plans, so D's
+    numbers are the same synthetic legs with length 0. "Same counts after iteration 5" is a comparison of counts,
+    not trip by trip; for the same-facility rule's caught trips of arm E it is trip by trip: 0 of 1,038 changed
+    their main mode (i679_rule_trip_diff_D_vs_E.json, key within_arm_prepared_vs_iteration5.D, where C = arm D and
+    D = arm E).
+- metric: arm E - both Java rules, their selection and their own counts
+  reference: 'arm D (same-facility rule only); none'
+  result: >-
+    loop_mode_rule_report.json: constraints SameFacilityLeisureNonMotorised and StrollNonMotorised, both classes
+    found in braunschweig-2.3.1.jar, DiscreteModeChoice.tripConstraints "OutsideConstraint, TransitWalk" ->
+    "OutsideConstraint, TransitWalk, SameFacilityLeisureNonMotorised, StrollNonMotorised", already_selected false.
+    Java log, last running lines of the standalone initial mode choice (17:18:52): stroll trips "caught 70 of 26260
+    plan trips; the mode choice evaluated 70 of them (100.00 %), 0 (0.00 %) lie in tours it does not re-choose and
+    keep their mode; 849 candidate modes this rule rejected first"; same-facility leisure trips "caught 715 of 26260
+    plan trips; the mode choice evaluated 688 of them (96.22 %), 27 (3.78 %) lie in tours it does not re-choose and
+    keep their mode; 132161 candidate modes this rule rejected first". Final lines at the MATSim shutdown
+    (17:27:33): same-facility "caught 255 of 9396 plan trips; the mode choice evaluated 251 of them (98.43 %), 4
+    (1.57 %) lie in tours it does not re-choose and keep their mode; 42260 candidate modes this rule rejected
+    first"; stroll "caught 28 of 9396 plan trips; the mode choice evaluated 28 of them (100.00 %), 0 (0.00 %) lie in
+    tours it does not re-choose and keep their mode; 336 candidate modes this rule rejected first". In the
+    prepared population of arm E the same-facility rule catches 1,038 resident trips (loop legs 686, legs leaving a
+    loop activity 302, others 50; arm D 1,152: 734 / 358 / 60); after the initial mode choice walk 961, bicycle 68,
+    car 6, car_passenger 3; the 9 motorised ones lie in tours touching an outside stay (8) or in a tour of more than 6
+    trips (1), the tours the mode choice does not re-choose. Model output.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e_loop_mode_rule_report.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e_run_log_excerpt_log.txt, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_E.json (keys rule_caught_classes, rule_caught_by_mode_after_initial_choice, rule_caught_motorised_after_by_class_types_modes_outside)'
+  notes: 'What the Java lines cover (per constraint instance, summed over the plans those instances saw; running lines stop before the end of the standalone step; the MATSim line is over the replanned plans of iterations 1 to 5): as for arm D above. Neither line counts distinct trips of the population; the population counts are those of the prepared population.'
+- metric: arm E against arm D - legs left out of the two leisure estimates
+  reference: 'arm D (its distance distributions report is byte-equal to arm C''s; unweighted MiD 2023 legs); no observed reference'
+  result: >-
+    Leisure subtype distance layers (distance distributions stage), left out of all legs, E / D: walk 10,548 /
+    12,064 of 56,549, bicycle 635 / 815 of 19,559; out-and-back strolls kept in E: walk 1,516, bicycle 180. Only
+    the layer leisure_local changes: walk 14,762 -> 4,214 legs (D 2,698), bicycle 1,807 -> 1,172 (D 992). Leisure
+    subtype decider estimate (secondary location stage), E / D: walk 10,548 / 12,064 of 54,244, bicycle 642 / 824 of
+    18,131; out-and-back strolls kept in E: walk 1,516, bicycle 182. Model input estimates from survey legs.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e_distance_distributions_report.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_distance_distributions_report.json (arm D: byte-equal to the report in arm D''s cache, md5 97e7a5c86cabef9cbf5f5c0b49e404ab), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e_secondary_locations_report.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_c_secondary_locations_report.json (key subtype_estimate_legs_left_out)'
+  notes: 'In each estimate the legs E keeps more than D are exactly its out-and-back strolls kept (walk 12,064 - 10,548 = 1,516 in both; bicycle 815 - 635 = 180 and 824 - 642 = 182). The two stages count over different universes of MiD legs, as noted for arm C.'
+- metric: arm E against arm D - resident trip modes, stuck agents, plan check, exceptions
+  reference: 'arm D; no observed reference'
+  result: >-
+    Resident trips in the prepared population: E 36,843, D 36,857. By main mode after the initial mode choice, E /
+    D: walk 6,532 / 6,594, car 18,499 / 18,529, car_passenger 4,853 / 4,907, bicycle 3,401 / 3,223, pt 2,100 /
+    2,142, outside 1,458 / 1,462. After iteration 5, E / D: walk 6,556 / 6,628, car 18,415 / 18,448, car_passenger
+    4,787 / 4,843, bicycle 3,463 / 3,280, pt 2,164 / 2,196, outside 1,458 / 1,462. Stuck in the final iteration: E 26
+    persons (residents 13, in-commuters 6, freight 7; 26 at the simulation end; by leg mode car 15, truck 7, walk 4);
+    D 19. Plan check of the frozen residents: E 19 of 927 with planned lateness over 900 s (2.05 %), non-monotonic 38
+    (4.10 %); D 13 of 935 (1.39 %) and 33 (3.53 %); both above the 0.50 % bound (ERROR logged, run continued).
+    RunPreparation, the initial mode choice and iterations 0 to 5 completed in E; no traceback, no OutOfMemoryError, no
+    NoFeasibleChoice, no "with no valid alternative" line, no missing-facility line; the mode choice's own warning
+    logs are empty. Model output.
+  artifact: 'docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_E.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_E_iteration5.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_D_e_stroll_keys.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_D_iteration5_e_stroll_keys.json (keys resident_trips, resident_trips_by_mode_after), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_E_iteration5.json (key stuck), docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_D_iteration5.json, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e_run_log_excerpt_log.txt, docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_exception_scan_e.txt'
+  notes: >-
+    Not an effect estimate of the out-and-back change: the secondary places of E are a new draw (entry on lengths),
+    so the plans differ well beyond the 103 strolls; matched by (person, trip index), 3,768 of 36,566 common resident
+    trips differ in main mode between D and E after the initial mode choice (i679_rule_trip_diff_D_vs_E.json, key
+    between_arms_C_vs_D.prepared, where C = arm D and D = arm E; trip indices shift where the cut changed a plan).
+    One draw per arm; five iterations are a wiring check, no statement about convergence.
 - metric: comparison script scripts/validate_secondary_distances.py at 84a91698 on the real caches
   reference: 'MiD 2023 W12 trip lengths (committed, eqasim-data/data/braunschweig/mid/mid2023_W12_triplength_by_purpose.csv); the script reports it, this record draws no conclusion from it'
   result: >-
@@ -434,6 +587,10 @@ features:
     short MATSim run, with the counts above. A wiring proof and an A/B of model output, not a validation.
     Arm D is the evidence for loop_trips_non_motorised: the rule is selected, keeps the caught trips the mode choice
     evaluates on foot or by bicycle and leaves only the trips of tours it does not re-choose with a motorised mode.
+    Arm E is the evidence for the out-and-back split and for both rules together: the 103 out-and-back strolls are
+    placed by the solver with a length, carry the attribute into the plans, and the trips into them stay on foot or
+    by bicycle after the initial mode choice and after iteration 5; their ways home are free and 10 of 99 aligned
+    ones are motorised.
 artifacts:
 - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics.py
 - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_metrics.py
@@ -525,6 +682,24 @@ artifacts:
 - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_d_plan_mode_diff_prepared_vs_it5.json
 - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_rule_trip_diff.py
 - docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_rule_trip_diff_C_vs_D.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e_run.yml
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_provenance_e.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e_stage_starts.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e_run_log_excerpt_log.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_exception_scan_e.txt
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e_secondary_locations_report.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e_distance_distributions_report.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e_loop_mode_rule_report.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_D_vs_E_33abe12f.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_ab_metrics_D_vs_E_33abe12f.stdout
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_E.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_E_iteration5.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_D_e_stroll_keys.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_loop_mode_rule_premise_D_iteration5_e_stroll_keys.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_E_initial_mode_choice.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_e2e_E_iteration5.json
+- docs/runs/artifacts/i679-stroll-loops-ab-1pct-2026-11-25/i679_rule_trip_diff_D_vs_E.json
+- 'run server: the cache of i679_e (a copy of i679_d''s, 66,406,665,279 bytes at setup) and the per-person tables of arm E (i679_e_loop_legs_33abe12f.csv, i679_e_stroll_legs_33abe12f.csv) in the comparison directory i679_e_metrics/'
 - 'run server, kept until #684 is decided: the caches of i679_c and i679_d (about 62 GB each), the stage-result copies keep_{off2,on2,a,b,c} (about 81 MB each) and the per-person loop-leg tables in i679_c7/; the cache of i679_a was deleted on 2026-11-26 (owner-approved cleanup)'
 issues:
 - '#679'

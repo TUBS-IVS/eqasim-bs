@@ -38,6 +38,14 @@ judges the tours touching outside on their located places), so the counts per pu
 while modes and times may differ; ``differences_downstream_of_locations`` counts the differing rows per
 column and the mode transitions.
 
+Out-and-back strolls (added for arm E against arm D): when the ON arm's secondary result carries the column
+``is_out_and_back_stroll`` (the marker of the out-and-back split, docs/codebase/notes/leisure-loops.md), the block
+``out_and_back_strolls`` takes the ON arm's marked activities as keys and reports, in BOTH arms, the leg INTO each
+(trip ``activity_index - 1``) and the leg AFTER it (trip ``activity_index``, the diary way home): count, written mode,
+straight-line length per mode and in total, and the diary mode (``trips.final``). For the OFF arm it also reports how
+its own secondary result treated the same keys (``loop_origin`` of the OFF rows, empty = no loop row).
+``--stroll-keys-out`` writes the per-key table (one row per synthetic person; it stays on the run server).
+
 Usage (eqasim conda env, run from outside the repository):
     python i679_ab_metrics.py --off-cache OFF/cache --on-cache ON/cache \
         --off-log OFF/logs/run_x.log --on-log ON/logs/run_y.log --out metrics.json
@@ -254,6 +262,60 @@ def mode_transitions(a, b):
     return {f"{k[0]}->{k[1]}": int(v) for k, v in changed.groupby(["mode_off", "mode_on"]).size().items()}
 
 
+def out_and_back_strolls(sec_on, sec_off, tf_on, legs_by_arm, keys_out=None):
+    """Legs into and after the ON arm's out-and-back strolls, in both arms (None without the marker column)."""
+    if "is_out_and_back_stroll" not in sec_on.columns:
+        return None
+    marked = sec_on["is_out_and_back_stroll"].fillna(False).astype(bool)
+    keys = sec_on.loc[marked, ["person_id", "activity_index"]].drop_duplicates().copy()
+    if "loop_origin" in sec_off.columns:
+        off_rows = sec_off[["person_id", "activity_index", "loop_origin"]].copy()
+        off_rows["loop_origin"] = off_rows["loop_origin"].fillna("").astype(str)
+        off_rows = off_rows.groupby(["person_id", "activity_index"], as_index=False)["loop_origin"].agg(
+            lambda values: "|".join(sorted(set(values))))
+        keys = keys.merge(off_rows.rename(columns={"loop_origin": "off_loop_origin"}),
+                          on=["person_id", "activity_index"], how="left")
+        keys["off_loop_origin"] = keys["off_loop_origin"].fillna("<no OFF row>").replace("", "<not a loop row>")
+    else:
+        keys["off_loop_origin"] = "<OFF result has no loop_origin column>"
+    block = {
+        "n_keys": int(len(keys)),
+        "rows_marked_in_on_secondary": int(marked.sum()),
+        "persons": int(keys["person_id"].nunique()),
+        "off_treatment_of_the_keys": {str(k): int(v) for k, v in keys["off_loop_origin"].value_counts().items()},
+    }
+    table = keys.copy()
+    for role, offset in (("into", -1), ("way_home", 0)):
+        role_keys = keys[["person_id", "activity_index"]].assign(trip_index=keys["activity_index"] + offset)
+        diary = role_keys.merge(tf_on[["person_id", "trip_index", "mode", "following_purpose"]],
+                                on=["person_id", "trip_index"], how="left")
+        role_block = {
+            "diary_mode": {str(k): int(v) for k, v in diary["mode"].astype(str).value_counts().items()},
+            "diary_following_purpose": {str(k): int(v) for k, v in diary["following_purpose"].astype(str).value_counts().items()},
+            "n_without_trip": int(diary["mode"].isna().sum()),
+        }
+        table = table.merge(diary[["person_id", "activity_index", "mode"]].rename(
+            columns={"mode": f"{role}_diary_mode"}), on=["person_id", "activity_index"], how="left")
+        for arm, legs in legs_by_arm.items():
+            sel = role_keys.merge(legs[["person_id", "trip_index", "mode", "length_m"]],
+                                  on=["person_id", "trip_index"], how="left")
+            arm_block = {
+                "n": int(sel["mode"].notna().sum()),
+                "by_mode": {str(k): int(v) for k, v in sel["mode"].dropna().astype(str).value_counts().items()},
+                "all_modes": distribution(sel["length_m"].dropna().to_numpy()),
+            }
+            for mode in sorted(sel["mode"].dropna().astype(str).unique()):
+                arm_block[mode] = distribution(sel.loc[sel["mode"].astype(str) == mode, "length_m"].dropna().to_numpy())
+            role_block[arm] = arm_block
+            table = table.merge(sel[["person_id", "activity_index", "mode", "length_m"]].rename(
+                columns={"mode": f"{role}_mode_{arm}", "length_m": f"{role}_length_m_{arm}"}),
+                on=["person_id", "activity_index"], how="left")
+        block[role] = role_block
+    if keys_out:
+        table.to_csv(keys_out, index=False)
+    return block
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--off-cache", required=True)
@@ -262,6 +324,8 @@ def main(argv=None):
     parser.add_argument("--on-log", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--loop-keys-out", help="CSV of the ON arm's loop activities (person_id, activity_index, loop_origin)")
+    parser.add_argument("--stroll-keys-out", help="CSV of the ON arm's out-and-back strolls with the legs into and "
+                        "after them in both arms (person_id, activity_index, ...)")
     args = parser.parse_args(argv)
 
     provenance = {"off": {}, "on": {}}
@@ -340,6 +404,9 @@ def main(argv=None):
             "on": {"n_legs": int(len(legs_on)), "n_missing_geometry": miss_on, **leg_summary(legs_on, loop_keys)},
         },
     }
+    strolls = out_and_back_strolls(sec_on, sec_off, tf_on, {"off": legs_off, "on": legs_on}, args.stroll_keys_out)
+    if strolls is not None:
+        result["out_and_back_strolls"] = strolls
     with open(args.out, "w", encoding="utf-8") as handle:
         json.dump(result, handle, indent=2, sort_keys=True, default=str)
     print(json.dumps({"equality": result["equality"], "differences": differences}, indent=2))

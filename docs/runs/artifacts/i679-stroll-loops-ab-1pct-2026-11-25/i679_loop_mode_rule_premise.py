@@ -24,6 +24,13 @@ re-choose in this configuration), and
 the main modes of all resident trips. ``--plans-path`` reads another plans file (e.g. MATSim's output_plans.xml.gz)
 against the same input trip table.
 
+Stroll rule (added for arm E): every resident trip whose destination activity carries the attribute
+``outAndBackStroll`` true is counted as caught by StrollNonMotorised (modes after; motorised ones with their tour kind).
+``--stroll-keys`` (person_id, activity_index; e.g. arm E's out-and-back strolls) reports the trip INTO each key
+activity (role ``into``) and the trip after it (role ``way_home``) when the plan's activity at that index is a
+``leisure`` activity (aligned): mode before and after, destination type, which rule catches it, and the tour kind of a
+motorised one. The same keys can be read against another arm's plans (arm D, where they were collapsed loops).
+
 Usage: python i679_loop_mode_rule_premise.py --prepare-dir PREP --name C [--loop-cache CACHE] [--plans-path P] --out out.json
 """
 import argparse
@@ -60,8 +67,14 @@ def iter_plans(path):
                         if acts:
                             trips.append(legs)
                         legs = []
+                        stroll = None
+                        for sub in child:
+                            if sub.tag == "attributes":
+                                for attribute in sub:
+                                    if attribute.get("name") == "outAndBackStroll":
+                                        stroll = (attribute.text or "").strip()
                         acts.append({"type": child.get("type"), "facility": child.get("facility"),
-                                     "x": child.get("x"), "y": child.get("y")})
+                                     "x": child.get("x"), "y": child.get("y"), "stroll": stroll})
                     elif child.tag == "leg":
                         routing = None
                         for sub in child:
@@ -95,6 +108,9 @@ def main(argv=None):
                         "output_plans.xml.gz); the mode before the initial choice still comes from the prepare dir")
     parser.add_argument("--name", required=True)
     parser.add_argument("--loop-cache")
+    parser.add_argument("--stroll-keys", help="CSV with person_id, activity_index of out-and-back strolls (e.g. the "
+                        "--stroll-keys-out table of i679_ab_metrics.py); reports the trip into each and the way home "
+                        "after it")
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
 
@@ -128,6 +144,17 @@ def main(argv=None):
     motorised_examples = []
     resident_modes_after = collections.Counter()
     residents_trips = 0
+    stroll_attribute_values = collections.Counter()
+    stroll_caught_by_mode_after = collections.Counter()
+    stroll_caught_motorised = collections.Counter()
+    stroll_keys_found = collections.Counter()
+    stroll_key_trips = collections.Counter()
+    stroll_key_modes_after = collections.Counter()
+    strolls_of_person = collections.defaultdict(set)
+    if args.stroll_keys:
+        stroll_table = pd.read_csv(args.stroll_keys, usecols=["person_id", "activity_index"], dtype={"person_id": str})
+        for p, a in stroll_table.itertuples(index=False):
+            strolls_of_person[p].add(int(a))
 
     for person_id, subpopulation, acts, trips in iter_plans(args.plans_path or f"{args.prepare_dir}/{args.plans_file}"):
         group = subpopulation or "resident"
@@ -174,6 +201,27 @@ def main(argv=None):
             after = main_mode(legs)
             resident_modes_after[after] += 1
             same_facility = bool(o["facility"]) and o["facility"] == d["facility"]
+            sf_caught = same_facility and LEISURE in (o["type"], d["type"])
+            tour_kind = (("tour_touches_outside" if tour_outside[tour_of_trip[k]] else "tour_without_outside")
+                         + ("|tour_over_6_trips" if tour_size[tour_of_trip[k]] > 6 else "|tour_up_to_6_trips"))
+            if d["stroll"] is not None:
+                stroll_attribute_values[d["stroll"]] += 1
+            if d["stroll"] == "true":
+                stroll_caught_by_mode_after[after] += 1
+                if after not in ("walk", "bicycle"):
+                    stroll_caught_motorised[(o["type"], d["type"], before, after, tour_kind)] += 1
+            for role, key_index in (("into", k + 1), ("way_home", k)):
+                if key_index not in strolls_of_person.get(person_id, ()):
+                    continue
+                aligned = acts[key_index]["type"] == LEISURE
+                stroll_keys_found[(role, "aligned" if aligned else "misaligned")] += 1
+                if not aligned:
+                    continue
+                caught_by = ("stroll_rule" if role == "into" and acts[key_index]["stroll"] == "true" else "") + \
+                            ("+same_facility_rule" if sf_caught else "")
+                stroll_key_trips[(role, before, after, d["type"], caught_by or "no_rule",
+                                  tour_kind if after not in ("walk", "bicycle") else "-")] += 1
+                stroll_key_modes_after[(role, after)] += 1
             if not same_facility:
                 continue
             if LEISURE in (o["type"], d["type"]):
@@ -223,7 +271,17 @@ def main(argv=None):
         "rule_caught_motorised_after_examples": motorised_examples,
         "resident_trips_by_mode_after": dict(resident_modes_after),
         "plans_read": (args.plans_path or f"{args.prepare_dir}/{args.plans_file}").split("/cache/")[-1],
+        "stroll_attribute_values_on_trip_destinations": dict(stroll_attribute_values),
+        "stroll_rule_caught_by_mode_after": dict(stroll_caught_by_mode_after),
+        "stroll_rule_caught_motorised_after_by_types_modes_tour": counter(stroll_caught_motorised),
     }
+    if args.stroll_keys:
+        result.update({
+            "stroll_keys": int(sum(len(v) for v in strolls_of_person.values())),
+            "stroll_key_trips_found_by_role_alignment": counter(stroll_keys_found),
+            "stroll_key_trips_by_role_mode_after": counter(stroll_key_modes_after),
+            "stroll_key_trips_by_role_mode_before_after_destination_rule_tour": counter(stroll_key_trips),
+        })
     if loops:
         result.update({
             "loop_keys": len(loops),

@@ -6,8 +6,9 @@ Java mode rules with what each does not reach. The reasons, the rejected approac
 [ADR-0207](../../decisions/ADR-0207-strolls-and-dog-walks-stay-where-they-start.md); the switch and its production
 state are in the feature record
 [`secondary_loop_zero_displacement`](../../registry/features/secondary_loop_zero_displacement.yml); numbers are in the
-run manifests those records link (the 1 % evidence of both switches and of the mode rule, arm D:
-[`i679-stroll-loops-ab-1pct-2026-11-25`](../../runs/i679-stroll-loops-ab-1pct-2026-11-25.yml)).
+run manifests those records link (the 1 % evidence of both switches and of the same-facility rule, arm D, and of
+the out-and-back split with both mode rules, arm E, metrics "arm E against arm D - ..." and "arm E - both Java
+rules ...": [`i679-stroll-loops-ab-1pct-2026-11-25`](../../runs/i679-stroll-loops-ab-1pct-2026-11-25.yml)).
 Code: `braunschweig/synthesis/locations/secondary_chainsolvers/loops.py` (pure
 functions: `estimate_loop_probabilities`, `flag_loops`, `out_and_back_strolls`, `diary_way_home_follows`,
 `select_collapsible_loops`, `collapse_loops`, the `to_collapsed_*` translators, `restore_loops`),

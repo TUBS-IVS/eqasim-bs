@@ -46,8 +46,9 @@ evidence:
       mode choice, a final line at the MATSim shutdown); no stage report of this repository carries them (loop_mode_rule_report.json records the
       selection only), and the Java log line is no marker of this repository, so the rate is declared not
       instrumented here. The 1 % evidence measures the not-evaluated trips from the written populations: run manifest
-      docs/runs/i679-stroll-loops-ab-1pct-2026-11-25.yml, arm D for the first rule (the run with both rules,
-      arm E, is to be recorded there). A jar without either constraint class, a config without the DiscreteModeChoice module or its tripConstraints parameter raises
+      docs/runs/i679-stroll-loops-ab-1pct-2026-11-25.yml, arm D for the first rule and arm E for both rules
+      (metrics "arm E - both Java rules, their selection and their own counts" and "arm E against arm D - modes
+      of the out-and-back stroll legs and their ways home after the initial mode choice and after iteration 5"). A jar without either constraint class, a config without the DiscreteModeChoice module or its tripConstraints parameter raises
       at prepare time.'
   reference:
     kind: none
@@ -58,14 +59,14 @@ validation:
   runs:
   - i679-stroll-loops-ab-1pct-2026-11-25
   metric: null
-  note: 'Evidence: the run manifest i679-stroll-loops-ab-1pct-2026-11-25, arm D (a wiring proof and an A/B of model
-    output). Nothing compares the model with observed behaviour.'
+  note: 'Evidence: the run manifest i679-stroll-loops-ab-1pct-2026-11-25, arm D (same-facility rule) and arm E (both
+    rules; a wiring proof and an A/B of model output). Nothing compares the model with observed behaviour.'
 assessment:
   status: pending
   by: null
   date: null
-  pending_reason: 'The owner''s assessment of the 1 % evidence (run manifest i679-stroll-loops-ab-1pct-2026-11-25, arm
-    D) is pending. The eqasim-java-bs change must be merged and its jar built before a production run with the switch
+  pending_reason: 'The owner''s assessment of the 1 % evidence (run manifest i679-stroll-loops-ab-1pct-2026-11-25, arms
+    D and E) is pending. The eqasim-java-bs change must be merged and its jar built before a production run with the switch
     on.'
   source: ADR-0207
 notes: 'Toggling the key recomputes the prepare stage, which declares it. It requires an eqasim-java-bs jar that
