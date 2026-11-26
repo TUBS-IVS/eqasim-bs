@@ -1,0 +1,58 @@
+dataset: student_level_table
+title: Student level by home Kreis, sex and age group, with the share counted as employed
+provider: derived in-repo from the student balance (student_od_balance), SrV 2023 parameter cells, MiD 2023 and Zensus 2022
+vintage: enrollment WS 2024/25 balance; SrV 2023, MiD 2023, Zensus 2022 (reference date 2022-05-15)
+geography: |
+  One block per ZGB Kreis (the eight Kreise of the study region): students living in the Kreis,
+  split by sex and by the age groups 18_29 and 30plus with the regional shares of SrV.
+crs: null
+roles:
+- reference_table
+used_by: []
+acquisition:
+  method: committed
+  source: |
+    Written by the balance sub-command of scripts/build_student_balance.py with --final (the
+    same run as the four tables of record student_od_balance); the header carries omega
+    with Z, S and both ratios, the day factor with its two SrV shares (for Phases 3 and 4;
+    the table counts heads, no day factor applied), the weight triple, the mover share and
+    their source, and the sha256 of every input.
+  script: scripts/build_student_balance.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/popsim/student_level_table.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py: the file is committed with the
+    checkout and no synpp stage reads it yet (Phase 3 and 4 of #140). The CLI end to end on
+    synthetic local-only inputs: tests/test_build_student_balance_cli.py. The path is ignored
+    by the catch-all eqasim-data/* rule (checked with git check-ignore), so the file is
+    committed with git add -f; the .gitignore comment next to the CHE entry lists it.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: derived from CHE (committed by owner decision of 2026-11-25), LSN (dl-de/by-2-0), SrV, MiD and Zensus 2022 (dl-de/by-2-0) aggregates
+  restricted: false
+  redistribution: allowed
+  notes: |
+    Derived from the CHE origin table (owner decision of 2026-11-25) through the student
+    balance, and from LSN enrollment (dl-de/by-2-0); the Zensus 2022 and SrV/MiD figures
+    enter as aggregates only.
+limitations: |
+  The table counts heads, never days (A16). Age and sex are taken as independent, the SrV
+  parameter table has no joint cell (A9). A2 (CHE origin is the Kreis of the school-leaving
+  certificate) reaches the level through the balance, and A6 (a student who does not live in
+  the origin Kreis lives in the site Kreis) through the movers; omega (A12) is one number for
+  all Kreise. The assumptions are documented in braunschweig/calibration/student_level_table.py
+  and braunschweig/data/education/student_od_table.py, the owners of the wording.
+
+  The header of the file names the source of the weight triple and the mover share (the optimum
+  of a decided calibration stage, or set by the owner); the values are in the header and the run
+  manifest, not repeated here.
+notes: |
+  Phase 2 of the student layer (issue #140). The level gate against SrV and the employed-target
+  pre-check of the same run are run artifacts, not committed tables.

@@ -123,7 +123,11 @@ zensus_hh_inspect.txt
 # raw_overpass/, raw_sources/ (incl. the owner's municipal packages) and raw_osm/ folders;
 # an explicit exception to the OSM rule below), the hand-read CHE student-origin table
 # (eqasim-data/data/braunschweig/schools/che_student_origins_ws2022_23.csv -- committed by
-# owner decision of 2026-11-25, although the CHE page names no licence), plus the
+# owner decision of 2026-11-25, although the CHE page names no licence), the five generated student-balance
+# tables of scripts/build_student_balance.py (eqasim-data/data/braunschweig/schools/student_od_table.csv,
+# student_balance_by_site.csv, student_balance_out_commuters.csv, student_balance_in_commuters_by_origin.csv and
+# eqasim-data/data/braunschweig/popsim/student_level_table.csv -- derived from CHE and LSN; records
+# docs/registry/data/student_od_balance.yml and student_level_table.yml), plus the
 # documentation markdown.
 # NOT committed (restricted source licences, issue #436, ADR-0140): the three geometry files
 # parking_zones_2026.geojson, parking_resident_districts_2026.geojson and parking_garages_2026.geojson
