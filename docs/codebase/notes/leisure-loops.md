@@ -253,8 +253,13 @@ add every missing name of `loop_mode_rule.CONSTRAINT_NAMES` to `DiscreteModeChoi
 before the initial mode choice, behind the config key `braunschweig.mode_choice.loop_trips_non_motorised` (default and
 production value: the key comment in [`configs/base_bs.yml`](../../../configs/base_bs.yml)), refuse a jar that lacks
 either class (`loop_mode_rule.CONSTRAINT_CLASSES`; all missing ones are named), and write `loop_mode_rule_report.json`
-into the prepare stage folder (written only while the switch is on; it names the constraints and the classes
-checked). The reasons and the rejected alternatives are in ADR-0207, decision 6.
+into the prepare stage folder (written only while the switch is on; it names the constraints, the classes checked,
+the jar file name, `tripConstraints` before and after, and `already_selected`). The selection runs after the VRB fare
+and parking inputs and before the initial mode choice, so the standalone mode choice and the MATSim loop both read it;
+a config without the DiscreteModeChoice module or the parameter raises. With the key off the jar is not opened, the
+config keeps its bytes and no report is written. The counts of the trips the rule caught, the mode choice evaluated and
+it did not evaluate exist only in the Java log (running lines in the standalone mode choice, a final line at the
+MATSim shutdown); the report and no other stage report of this repository carries them. The reasons and the rejected alternatives are in ADR-0207, decision 6.
 
 ## Comparisons
 

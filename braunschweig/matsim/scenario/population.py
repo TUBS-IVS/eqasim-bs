@@ -124,9 +124,6 @@ DEFAULT_COMMUTE_DAY_STATE_ENABLED = True
 #: persons that have one, and writes no attribute at all for the persons that do not.
 STATE_COLUMN = "commute_day_state"
 
-#: General day-absence flag (issue #370) and the stage it reads when on -- independent of
-#: KEY_COMMUTE_DAY_STATE_ENABLED. Same names as
-#: braunschweig.synthesis.commute_day.trips_day_stage.KEY_DAY_ABSENCE_ENABLED / ABSENCE_STAGE.
 #: The loop switch of the secondary location stage (issue #679). With it on, the location frame must
 #: carry the out-and-back stroll marker. A literal rather than an import of its home
 #: braunschweig.popsim.stage.config_keys (KEY_/DEFAULT_SECONDARY_LOOP_ZERO_DISPLACEMENT), whose import
@@ -134,6 +131,9 @@ STATE_COLUMN = "commute_day_state"
 KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT = "secondary_loop_zero_displacement"
 DEFAULT_SECONDARY_LOOP_ZERO_DISPLACEMENT = False
 
+#: General day-absence flag (issue #370) and the stage it reads when on -- independent of
+#: KEY_COMMUTE_DAY_STATE_ENABLED. Same names as
+#: braunschweig.synthesis.commute_day.trips_day_stage.KEY_DAY_ABSENCE_ENABLED / ABSENCE_STAGE.
 KEY_DAY_ABSENCE_ENABLED = "day_absence_enabled"
 DEFAULT_DAY_ABSENCE_ENABLED = True
 ABSENCE_STAGE = "braunschweig.synthesis.day_absence.absence_stage"
@@ -523,6 +523,17 @@ def _require_stroll_marker(locations, loop_switch):
                base.OUT_AND_BACK_STROLL_ATTRIBUTE, KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT))
 
 
+def _with_bool_stroll_column(locations):
+    """``locations`` with the stroll marker as a bool column, False where the frame carries none."""
+    if locations is None or len(locations) == 0:
+        return locations
+    column = base.OUT_AND_BACK_STROLL_COLUMN
+    locations = locations.copy()
+    if column not in locations.columns:
+        locations[column] = False
+    return locations
+
+
 def _injected_rows_without_stroll(locations, injected_person_ids):
     """``locations`` with the injected agents' out-and-back stroll flag set to False (issue #679).
 
@@ -610,9 +621,17 @@ def execute(context):
                                          ["person_id", "activity_index"])
         raw["activities"] = concat_frame(raw["activities"], student_inc["activities"],
                                          ["person_id", "activity_index"])
-        raw["locations"] = concat_frame(raw["locations"], inc["locations"],
+        # The stroll marker is a bool column on the resident frame; an injected frame without it would
+        # be reindexed to float NaN and turn the concatenated column float (pandas FutureWarning), so
+        # it gets an explicit bool False column first (_injected_rows_without_stroll then only counts).
+        inc_locations, student_locations = inc["locations"], student_inc["locations"]
+        stroll_column = base.OUT_AND_BACK_STROLL_COLUMN
+        if stroll_column in raw["locations"].columns:
+            inc_locations = _with_bool_stroll_column(inc_locations)
+            student_locations = _with_bool_stroll_column(student_locations)
+        raw["locations"] = concat_frame(raw["locations"], inc_locations,
                                         ["person_id", "activity_index"])
-        raw["locations"] = concat_frame(raw["locations"], student_inc["locations"],
+        raw["locations"] = concat_frame(raw["locations"], student_locations,
                                         ["person_id", "activity_index"])
         raw["trips"] = concat_frame(raw["trips"], inc["trips"],
                                     ["person_id", "trip_index"])

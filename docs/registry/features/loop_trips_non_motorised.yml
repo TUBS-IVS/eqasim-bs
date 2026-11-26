@@ -41,15 +41,11 @@ evidence:
     instrumented: false
     note: 'Primary = a caught trip the mode choice evaluates, where the rule holds. A caught trip in a tour the mode
       choice does not re-choose (a tour filter drops it) is not evaluated and keeps its mode; it is the part of the
-      rule that does not reach. The counts of caught, evaluated and not evaluated trips exist only in the Java log
-      (SameFacilityLeisureTripConstraint.Factory and StrollTripConstraint.Factory: running lines in the standalone
-      mode choice, a final line at the MATSim shutdown); no stage report of this repository carries them (loop_mode_rule_report.json records the
-      selection only), and the Java log line is no marker of this repository, so the rate is declared not
-      instrumented here. The 1 % evidence measures the not-evaluated trips from the written populations: run manifest
+      rule that does not reach. The counts of caught, evaluated and not evaluated trips exist only in the Java log (docs/codebase/notes/leisure-loops.md,
+      "Mode choice"), no marker of this repository, so the rate is declared not instrumented here. The 1 % evidence measures the not-evaluated trips from the written populations: run manifest
       docs/runs/i679-stroll-loops-ab-1pct-2026-11-25.yml, arm D for the first rule and arm E for both rules
       (metrics "arm E - both Java rules, their selection and their own counts" and "arm E against arm D - modes
-      of the out-and-back stroll legs and their ways home after the initial mode choice and after iteration 5"). A jar without either constraint class, a config without the DiscreteModeChoice module or its tripConstraints parameter raises
-      at prepare time.'
+      of the out-and-back stroll legs and their ways home after the initial mode choice and after iteration 5").'
   reference:
     kind: none
     note: 'No reference value: the rule is a modelling decision of the owner (ADR-0207), not a calibration to

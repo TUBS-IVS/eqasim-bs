@@ -1082,8 +1082,8 @@ config:
   # an out-and-back stroll (a stroll from home whose next diary trip goes home) may only be walk or bicycle in the
   # mode choice: the prepare stage adds the trip constraints SameFacilityLeisureNonMotorised and StrollNonMotorised
   # to the DiscreteModeChoice tripConstraints of the final config before the standalone mode choice. Needs an
-  # eqasim-java-bs jar with SameFacilityLeisureTripConstraint and StrollTripConstraint (the stage refuses a jar
-  # without either). The stroll rule reads the activity attribute outAndBackStroll, which exists only while
+  # eqasim-java-bs jar with both constraints (jar check and report: docs/codebase/notes/leisure-loops.md,
+  # "Mode choice"). The stroll rule reads the activity attribute outAndBackStroll, which exists only while
   # secondary_loop_zero_displacement is on. Code default false (loop_mode_rule.DEFAULT_ENABLED); false -> the
   # config as before (ADR-0207, #679).
   braunschweig.mode_choice.loop_trips_non_motorised: true
