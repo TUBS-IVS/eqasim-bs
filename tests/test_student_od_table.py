@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import importlib.util
 import math
-import sys
 from pathlib import Path
 
 import pandas as pd
@@ -26,8 +25,7 @@ DISTANCE = ("Distance D",)
 
 def _load_script(name):
     spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / (name + ".py"))
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
+    module = importlib.util.module_from_spec(spec)  # never registered in sys.modules
     spec.loader.exec_module(module)
     return module
 
@@ -49,8 +47,8 @@ def _che_toy(conflict: bool = False) -> pd.DataFrame:
 
     Institution view: Uni A has ten rows (tenth value 30), Uni B a short list of three rows.
     Art C (the art-academy case) and Distance D have no own list.
-    Kreis view: 03101 and 03158 have ten rows (tenth values 20 and 12), 03153 a short list of
-    two rows, 05111 has no Kreis list.
+    Kreis view: 03101, 03158 and 01002 have ten rows (tenth values 20, 12 and 5), 03153 a short
+    list of two rows; 05111 and 01001 have no Kreis list.
     """
     uni_a = [("03101", 100), ("01001", 90), ("01002", 80), ("01003", 70), ("01004", 60),
              ("01005", 50), ("01006", 45), ("01007", 40), ("01008", 35), ("01009", 30)]
@@ -60,11 +58,13 @@ def _che_toy(conflict: bool = False) -> pd.DataFrame:
     k03158 = [("Distance D", 40), ("Other E", 30), ("G1", 28), ("G2", 26), ("G3", 24), ("G4", 20),
               ("G5", 18), ("G6", 16), ("Art C", 14), ("G7", 12)]
     k03153 = [("Uni B", 8), ("Uni A", 5)]
+    k01002 = [(f"H{i}", 15 - i) for i in range(1, 11)]  # H1 14 ... H10 5, neither Uni A nor Uni B
     rows = (_list_rows("institution_origins", uni_a, 1000, institution="Uni A")
             + _list_rows("institution_origins", uni_b, 200, institution="Uni B")
             + _list_rows("kreis_destinations", k03101, 2000, kreis="03101")
             + _list_rows("kreis_destinations", k03158, 900, kreis="03158")
-            + _list_rows("kreis_destinations", k03153, 300, kreis="03153"))
+            + _list_rows("kreis_destinations", k03153, 300, kreis="03153")
+            + _list_rows("kreis_destinations", k01002, 400, kreis="01002"))
     return pd.DataFrame(rows, columns=["view", "institution", "origin_ars5", "origin_name", "rank",
                                        "row_kind", "students_persons"])
 
@@ -118,6 +118,20 @@ def test_list_with_fewer_than_ten_rows_bounds_its_missing_cells_at_zero(che_toy)
             for c in flagged] == [("03153", "Uni B", 8, 0)]
 
 
+def test_institution_view_only_cell_is_taken_and_flagged_above_a_full_kreis_list(che_toy):
+    cells, diagnostics = _cells(che_toy, ["01001", "01002"])
+    # 01001 has no Kreis list: the own lists of Uni A (90) and Uni B (15) give the cells.
+    row = cells.loc[("01001", "Uni A")]
+    assert (row["che_persons"], row["source"], row["upper_bound_persons"]) == (90, "institution_view", 90)
+    assert cells.loc[("01001", "Uni B"), "source"] == "institution_view"
+    # 01002's full Kreis list (tenth value 5) misses Uni A (80) and Uni B (10): both are transcription signals.
+    flagged = {(c["origin_ars5"], c["institution"], c["che_persons"], c["source"], c["other_list_bound_persons"])
+               for c in diagnostics["one_view_cells_above_other_tenth"]}
+    assert flagged == {("01002", "Uni A", 80, "institution_view", 5), ("01002", "Uni B", 10, "institution_view", 5)}
+    assert diagnostics["cells_per_source"] == {"institution_view": 4, "kreis_view": 0, "both_views": 0,
+                                               "censored": 2}
+
+
 def test_institution_without_own_list_uses_kreis_view_cells(che_toy):
     cells, diagnostics = _cells(che_toy, ["03101", "03158", "05111"])
     assert cells.loc[("03101", "Art C"), ["che_persons", "source"]].tolist() == [60, "kreis_view"]
@@ -142,6 +156,8 @@ def test_distance_learning_cells_are_dropped_and_counted(che_toy):
     assert diagnostics["distance_learning_cells_dropped"] == (2, 95)  # 55 in 03101, 40 in 03158
     with pytest.raises(ValueError, match="Distance D"):
         _cells(che_toy, ["03101"], institutions=["Uni A", "Distance D"])
+    with pytest.raises(ValueError, match="Distance Z"):  # a misspelt name must not drop nothing silently
+        _cells(che_toy, ["03101"], distance=("Distance D", "Distance Z"))
 
 
 def test_listed_institution_outside_the_choice_set_is_named_with_its_persons(che_toy):
@@ -149,6 +165,9 @@ def test_listed_institution_outside_the_choice_set_is_named_with_its_persons(che
     assert diagnostics["listed_outside_choice_set"] == {
         "Other E": 80, "F1": 49, "F2": 48, "F3": 47, "F4": 46, "F5": 45,
         "G1": 28, "G2": 26, "G3": 24, "G4": 20, "G5": 18, "G6": 16, "G7": 12}
+    # Choice-set cells listed for Kreise other than 03101 are counted, not lost: Uni A 01001-01009 (500)
+    # and 03153 (5), Uni B 01001, 01002, 03153 (15 + 10 + 8), Art C 03158 (14).
+    assert diagnostics["shown_cells_outside_origin_kreise"] == (14, 552)
 
 
 @pytest.mark.parametrize("corrupt, match", [
@@ -160,6 +179,17 @@ def test_listed_institution_outside_the_choice_set_is_named_with_its_persons(che
 def test_invalid_che_table_raises(che_toy, corrupt, match):
     with pytest.raises(ValueError, match=match):
         _cells(corrupt(che_toy), ["03101"])
+
+
+@pytest.mark.parametrize("corrupt, match", [
+    (lambda c: c[~((c["institution"] == "Uni B") & (c["row_kind"] == "total"))], "Uni B"),
+    (lambda c: pd.concat([c, c[(c["institution"] == "Uni A") & (c["row_kind"] == "total")]]), "Uni A"),
+    (lambda c: pd.concat([c, pd.DataFrame([{"view": "institution_origins", "institution": "Art C",
+                                            "row_kind": "total", "students_persons": "7"}])]), "Art C"),
+])
+def test_che_totals_need_exactly_one_total_per_own_list(che_toy, corrupt, match):
+    with pytest.raises(ValueError, match=match):
+        T.che_totals(corrupt(che_toy))
 
 
 def test_unknown_choice_set_institution_raises(che_toy):

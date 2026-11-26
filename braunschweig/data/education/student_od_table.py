@@ -198,7 +198,9 @@ def origin_cells(che: pd.DataFrame, institutions: list[str], origin_kreise: list
         list and the Kreis's list (only lists that exist count; NaN when neither exists). The
         ``diagnostics`` dict carries ``cells_per_source``, ``censored_upper_bound_persons`` (sum of the
         finite bounds), ``censored_cells_without_bound``, ``distance_learning_cells_dropped``
-        ``(cells, persons)`` over ``origin_kreise``, ``listed_outside_choice_set`` (name -> persons over
+        ``(cells, persons)`` over ``origin_kreise``, ``shown_cells_outside_origin_kreise``
+        ``(cells, persons)`` (listed cells of the choice set from Kreise not in ``origin_kreise``),
+        ``listed_outside_choice_set`` (name -> persons over
         the cells of ``region_kreise`` shown in either view, neither in the choice set nor distance
         learning), ``one_view_cells_above_other_tenth`` (cells shown in one view whose value exceeds
         the bound of the other view's list: a transcription signal) and
@@ -207,8 +209,8 @@ def origin_cells(che: pd.DataFrame, institutions: list[str], origin_kreise: list
     Raises:
         ValueError: invalid CHE table (see :func:`_validate_che`), a cell shown in both views with
             different values, a duplicated or malformed Kreis code, a duplicated choice-set
-            institution, an institution absent from the table, or a distance-learning institution in
-            the choice set.
+            institution, a choice-set or distance-learning institution absent from the table, or a
+            distance-learning institution in the choice set.
     """
     frame = _validate_che(che)
     institutions, origin_kreise, region_kreise = list(institutions), list(origin_kreise), list(region_kreise)
@@ -225,6 +227,11 @@ def origin_cells(che: pd.DataFrame, institutions: list[str], origin_kreise: list
     unknown = [name for name in institutions if name not in known]
     if unknown:
         raise ValueError(f"origin_cells: choice-set institution(s) {unknown} appear nowhere in column "
+                         f"'institution' of the CHE table")
+    # A misspelt distance-learning name would drop nothing and leave its cells silently in the table.
+    unknown = [name for name in distance_learning if name not in known]
+    if unknown:
+        raise ValueError(f"origin_cells: distance-learning institution(s) {unknown} appear nowhere in column "
                          f"'institution' of the CHE table")
     _require_codes(origin_kreise, "origin_cells origin_kreise")
     _require_codes(region_kreise, "origin_cells region_kreise")
@@ -271,6 +278,10 @@ def origin_cells(che: pd.DataFrame, institutions: list[str], origin_kreise: list
         if ars5 in region_set and institution not in choice_set and institution not in distance_set:
             outside[institution] = outside.get(institution, 0) + max(v for v in values if v is not None)
     outside = dict(sorted(outside.items(), key=lambda item: (-item[1], item[0])))
+    # Listed cells of the choice set whose origin lies beyond origin_kreise (beyond the commute range):
+    # they never become a cell here, so the persons are counted rather than lost silently.
+    beyond = [max(v for v in values if v is not None) for (ars5, institution), values in shown.items()
+              if ars5 not in origin_set and institution in choice_set]
     without_kreis_list = sorted(ars5 for ars5 in origin_kreise if ars5 not in kreis_bounds)
 
     diagnostics = {
@@ -278,6 +289,7 @@ def origin_cells(che: pd.DataFrame, institutions: list[str], origin_kreise: list
         "censored_upper_bound_persons": int(censored["upper_bound_persons"].sum(skipna=True)),
         "censored_cells_without_bound": without_bound,
         "distance_learning_cells_dropped": (len(dropped), int(sum(dropped))),
+        "shown_cells_outside_origin_kreise": (len(beyond), int(sum(beyond))),
         "listed_outside_choice_set": outside,
         "one_view_cells_above_other_tenth": signals,
         "origin_kreise_without_kreis_list": without_kreis_list,
@@ -292,6 +304,8 @@ def origin_cells(che: pd.DataFrame, institutions: list[str], origin_kreise: list
                 diagnostics["censored_upper_bound_persons"], without_bound)
     LOGGER.info("[student_od_table] distance-learning cells dropped: %d cells, %d persons",
                 *diagnostics["distance_learning_cells_dropped"])
+    LOGGER.info("[student_od_table] listed choice-set cells from Kreise outside the origin Kreise (not in the "
+                "table): %d cells, %d persons", *diagnostics["shown_cells_outside_origin_kreise"])
     if without_bound:
         LOGGER.warning("[student_od_table] %d censored cell(s) have neither an institution nor a Kreis list: "
                        "no upper bound", without_bound)
@@ -312,14 +326,20 @@ def che_totals(che: pd.DataFrame) -> pd.Series:
     """CHE institution -> ``total`` row of its institution-view list (persons).
 
     Institutions without an own list (the art academy) are absent. Raises ValueError for an invalid
-    table (see :func:`_validate_che`) or an institution with more than one total row.
+    table (see :func:`_validate_che`) or unless every institution with an own list has exactly one
+    total row and every total row belongs to such an institution.
     """
     frame = _validate_che(che)
-    totals = frame[(frame["view"] == VIEW_INSTITUTION) & (frame["row_kind"] == "total")]
-    duplicated = totals["institution"][totals["institution"].duplicated()].tolist()
-    if duplicated or totals["institution"].isna().any():
-        raise ValueError(f"CHE table: institution-view total rows need one per institution in column "
-                         f"'institution', got duplicates {duplicated} and "
-                         f"{int(totals['institution'].isna().sum())} without a name")
+    institution_view = frame[frame["view"] == VIEW_INSTITUTION]
+    totals = institution_view[institution_view["row_kind"] == "total"]
+    counts = totals["institution"].fillna("<missing>").value_counts()
+    own_lists = set(institution_view.loc[institution_view["row_kind"] == "listed", "institution"])
+    without_total = sorted(own_lists - set(counts.index))
+    duplicated = sorted(counts[counts > 1].index)
+    without_list = sorted(set(counts.index) - own_lists)
+    if without_total or duplicated or without_list:
+        raise ValueError(f"CHE table: institution view needs exactly one row_kind 'total' row per institution "
+                         f"with an own list (column 'institution'); without total {without_total}, "
+                         f"several totals {duplicated}, total without a list {without_list}")
     return pd.Series(totals["students_persons"].to_numpy(dtype="int64"), index=totals["institution"].to_numpy(),
                      name="che_total_persons")
