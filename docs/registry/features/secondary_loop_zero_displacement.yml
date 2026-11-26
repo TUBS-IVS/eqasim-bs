@@ -79,9 +79,8 @@ validation:
   runs:
   - i679-stroll-loops-ab-1pct-2026-11-25
   metric: null
-  note: 'The 1 % run i679-stroll-loops-ab-1pct-2026-11-25 (both switches off, loop placement only, both on; same seed)
-    is a wiring proof and an A/B of model output; its manifest holds every count. Nothing compares the model with
-    observed behaviour. The survey measurement behind the design is the run manifest
+  note: 'Evidence: the run manifest i679-stroll-loops-ab-1pct-2026-11-25 (a wiring proof and an A/B of model output).
+    Nothing compares the model with observed behaviour. The survey measurement behind the design is the run manifest
     i679-stroll-loops-survey-probe-2026-11-25 (observed MiD donor data plus the cached tables of one earlier run; a
     measurement, not a validation).'
 assessment:
