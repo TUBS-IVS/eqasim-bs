@@ -127,7 +127,7 @@ config:
   # uv executable (used to launch PopulationSim in its own venv).
   braunschweig.population.popsim.uv_path: C:/Users/bienzeisler/.local/bin/uv.exe  # local-only, set to your path
   # Required PopulationSim version (KEY_POPSIM_VERSION in config_keys.py).
-  braunschweig.population.popsim.populationsim_version: "0.10.0+bs.2"
+  braunschweig.population.popsim.populationsim_version: "0.10.0+bs.3"
 
   # Working directory for per-batch PopulationSim folder trees.
   braunschweig.population.popsim.work_dir: eqasim-data/cache_bs_popsim_mid/popsim_work
