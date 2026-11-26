@@ -380,13 +380,20 @@ def gate_table(level_gate: pd.DataFrame, srv_shares: pd.DataFrame, away_share: f
     ``srv_away_all_day_share`` is ONE value pooled over the seven surveyed Kreise (A11), repeated
     on every surveyed row, not a per-Kreis measurement (:data:`AWAY_SHARE_COLUMN_NOTE` is the
     sentence for the output header). ``balance_students_20_29_persons`` = balance times the SrV
-    share of the ages 20 to 29; the two 20-29 estimates are the level gate's columns, unchanged.
+    share of the ages 20 to 29; ``census_estimate_students_20_29_persons`` is the level gate's
+    column, unchanged, and so is ``srv_estimate_students_20_29_persons`` on the Kreis rows.
 
     The area-consistent comparison (ages 20 to 29): ``srv_se_estimate_students_20_29_persons`` =
     ``srv_se_student_share_20_29 * census_population_20_29_persons``; ``difference_20_29_persons`` =
     ``balance_students_20_29_persons - srv_estimate_students_20_29_persons``,
     ``difference_20_29_in_srv_se`` that difference over the standard error (NaN where it is not
-    positive), ``beyond_two_se_20_29`` as ``beyond_two_se``. The two SrV sides have opposite blind
+    positive), ``beyond_two_se_20_29`` as ``beyond_two_se``. On the pooled :data:`REGION_CODE` row
+    ``srv_estimate_students_20_29_persons`` is the SUM of the surveyed Kreis estimates (share 20-29
+    of the Kreis times the census population 20-29 of the Kreis) and its standard error the root of
+    the sum of the squared Kreis standard errors, NOT the pooled SrV share times the pooled
+    population (the pooled share is weighted towards Braunschweig); this differs deliberately from
+    the Phase 0 column of :func:`student_control_evidence.build_level_gate`, which keeps its own
+    definition. The two SrV sides have opposite blind
     spots (:data:`SRV_COVERAGE_NOTE`): ``srv_students_weighted_persons`` covers only the surveyed
     municipalities of a Kreis; the 20-29 estimate covers the whole Kreis (Zensus population) but
     applies the share of the surveyed municipalities to all. Both are cross-checks;
@@ -463,6 +470,15 @@ def gate_table(level_gate: pd.DataFrame, srv_shares: pd.DataFrame, away_share: f
     estimate_20_29 = frame["srv_estimate_students_20_29_persons"].astype(float).where(surveyed)
     se_20_29 = (frame["srv_se_student_share_20_29"].astype(float)
                 * frame["census_population_20_29_persons"].astype(float)).where(surveyed)
+    # The pooled row is the SUM of its surveyed Kreise (independent samples: variances add), not
+    # the pooled SrV share times the pooled population, which is weighted towards Braunschweig.
+    pooled = frame["code"] == REGION_CODE
+    kreis_rows = surveyed & ~pooled
+    if (surveyed & pooled).any():
+        estimate_20_29 = estimate_20_29.copy()
+        se_20_29 = se_20_29.copy()
+        estimate_20_29[pooled] = estimate_20_29[kreis_rows].sum(skipna=False)
+        se_20_29[pooled] = float(np.sqrt((se_20_29[kreis_rows] ** 2).sum(skipna=False)))
     difference_20_29 = balance_20_29 - estimate_20_29
     in_se_20_29 = difference_20_29 / se_20_29.where(se_20_29 > 0)
     out = pd.DataFrame({
@@ -473,7 +489,7 @@ def gate_table(level_gate: pd.DataFrame, srv_shares: pd.DataFrame, away_share: f
         "difference_persons": difference, "difference_in_srv_se": in_se,
         "beyond_two_se": in_se.abs() > MIN_DIFFERENCE_STANDARD_ERRORS,
         "balance_students_20_29_persons": balance_20_29,
-        "srv_estimate_students_20_29_persons": frame["srv_estimate_students_20_29_persons"],
+        "srv_estimate_students_20_29_persons": estimate_20_29,
         "srv_se_estimate_students_20_29_persons": se_20_29, "difference_20_29_persons": difference_20_29,
         "difference_20_29_in_srv_se": in_se_20_29,
         "beyond_two_se_20_29": in_se_20_29.abs() > MIN_DIFFERENCE_STANDARD_ERRORS,

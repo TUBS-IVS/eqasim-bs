@@ -108,6 +108,21 @@ def test_gate_not_triggered(script):
     assert script.read_header_value(GATE, "gate_triggered") == "False"
 
 
+def test_gate_area_consistent_trigger_2026_11_26(script):
+    assert script.read_header_value(GATE, "gate_triggered_area_consistent") == "True"
+
+
+def test_art_academy_censored_bound_is_capped_at_enrollment_minus_own_kreis_2026_11_26():
+    site = pd.read_csv(BY_SITE, comment="#", dtype={"site_kreis_ars5": str})
+    art = site[site.destination_id == "Hochsch. f. Bildende Künste Braunschweig | 03101000"].iloc[0]
+    assert art.censored_upper_bound_commuters_persons == 686
+    od = _od()
+    own = od[(od.destination_id == art.destination_id) & (od.home_ars5 == art.site_kreis_ars5)]
+    assert len(own) == 1
+    assert art.enrollment_persons == 902 and own.origin_persons_scaled.iloc[0] == 216
+    assert art.censored_upper_bound_commuters_persons == art.enrollment_persons - own.origin_persons_scaled.iloc[0]
+
+
 def test_od_table_values_2026_11_26():
     od = _od()
     assert od.loc[0, "origin_persons_scaled"] == pytest.approx(2247.7567969540128, rel=1e-9)  # %.10g after the re-run

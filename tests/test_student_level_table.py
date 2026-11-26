@@ -189,9 +189,12 @@ def test_gate_adds_the_away_students_and_flags_beyond_two_se():
     assert not bool(by_code.loc["03101", "beyond_two_se"])
     # the two 20-29 estimates are the level gate's columns, unchanged
     shared = level_gate.set_index("code")
-    for column in ("srv_estimate_students_20_29_persons",
-                   "census_estimate_students_20_29_persons"):
-        pd.testing.assert_series_equal(by_code[column], shared.loc[by_code.index, column])
+    # (the srv estimate only on the Kreis rows: the pooled row is the sum of the Kreise, see below)
+    kreis_codes = [code for code in by_code.index if code != E.REGION_CODE]
+    pd.testing.assert_series_equal(by_code["census_estimate_students_20_29_persons"],
+                                   shared.loc[by_code.index, "census_estimate_students_20_29_persons"])
+    pd.testing.assert_series_equal(by_code.loc[kreis_codes, "srv_estimate_students_20_29_persons"],
+                                   shared.loc[kreis_codes, "srv_estimate_students_20_29_persons"])
     # the pooled row compares the seven surveyed Kreise: 13000 + 1150 + 5 * 1000
     assert by_code.loc[E.REGION_CODE, "balance_students_persons"] == pytest.approx(19150.0)
 
@@ -200,15 +203,18 @@ def test_gate_compares_the_students_20_29_with_the_whole_kreis_srv_estimate():
     # SrV share 20-29 x Zensus population 20-29 (tests/student_gate_inputs.py); the balance side is the
     # balance x the SrV age share 20-29 (0.75). 03102: share 0.1, se 0.06, population 2000 -> 200 +- 120;
     # balance 1150 * 0.75 = 862.5 -> +662.5 = +5.52 se. 03101: 0.25 +- 0.05 of 4000 -> 1000 +- 200;
-    # 13000 * 0.75 = 9750 -> +43.75 se. Pooled (seven surveyed Kreise, 4000 + 6 * 2000 = 16000 persons):
-    # 0.15 +- 0.02 -> 2400 +- 320; 19150 * 0.75 = 14362.5 -> +37.38 se.
+    # 13000 * 0.75 = 9750 -> +43.75 se. Pooled = sum of the seven Kreise:
+    # 1000 + 6 * 200 = 2200, se = sqrt(200^2 + 6 * 120^2) = 355.5; 19150 * 0.75 = 14362.5 -> +12162.5 = +34.2 se
+    # (NOT the pooled share 0.15 x 16000 persons = 2400 +- 320).
     srv, level_gate, model_today = _gate_against_srv()
     gate = L.gate_table(level_gate, srv, AWAY_SHARE, AGE_SHARES, model_today).set_index("code")
     columns = ["srv_estimate_students_20_29_persons", "srv_se_estimate_students_20_29_persons",
                "difference_20_29_persons", "difference_20_29_in_srv_se"]
     assert gate.loc["03102", columns].tolist() == pytest.approx([200.0, 120.0, 662.5, 662.5 / 120.0])
     assert gate.loc["03101", columns].tolist() == pytest.approx([1000.0, 200.0, 8750.0, 43.75])
-    assert gate.loc[E.REGION_CODE, columns].tolist() == pytest.approx([2400.0, 320.0, 11962.5, 11962.5 / 320.0])
+    pooled_se = float(np.sqrt(200.0 ** 2 + 6 * 120.0 ** 2))
+    assert gate.loc[E.REGION_CODE, columns].tolist() == pytest.approx(
+        [2200.0, pooled_se, 12162.5, 12162.5 / pooled_se])
     # 03151 and the other surveyed Kreise: 200 +- 120 against 1000 * 0.75 = 750: +4.58 se
     assert gate.loc["03151", "difference_20_29_in_srv_se"] == pytest.approx(550.0 / 120.0)
     assert gate["beyond_two_se_20_29"].to_dict() == {code: code != WOLFSBURG for code in gate.index}
@@ -219,6 +225,32 @@ def test_gate_compares_the_students_20_29_with_the_whole_kreis_srv_estimate():
     others_only = gate.reset_index().assign(
         beyond_two_se_20_29=lambda frame: ~frame["code"].isin(["03101", E.REGION_CODE]), beyond_two_se=True)
     assert not L.gate_triggered_area_consistent(others_only)
+
+
+def test_gate_pooled_20_29_estimate_is_the_sum_of_the_kreis_estimates():
+    # Two surveyed Kreise with different shares (hand values): 03101 share 0.25 +- 0.05 of 4000 persons ->
+    # 1000 +- 200; 03102 share 0.10 +- 0.06 of 2000 -> 200 +- 120. Pooled: 1200 +- sqrt(200^2 + 120^2) = 233.2,
+    # not the pooled share (0.15 +- 0.02) times the pooled population (6000 -> 900 +- 120).
+    srv, level_gate, model_today = _gate_against_srv()
+    keep = ["03101", "03102", E.REGION_CODE, WOLFSBURG]
+    level_gate = level_gate.copy()
+    other = ~level_gate["code"].isin(keep)
+    level_gate.loc[other, "srv_student_share_adults"] = np.nan
+    for column in ("srv_estimate_students_20_29_persons", "srv_se_student_share_20_29"):
+        level_gate.loc[other, column] = np.nan
+    pooled_row = level_gate["code"] == E.REGION_CODE
+    level_gate.loc[pooled_row, "srv_estimate_students_20_29_persons"] = 900.0
+    level_gate.loc[pooled_row, "srv_se_student_share_20_29"] = 0.02
+    level_gate.loc[pooled_row, "census_population_20_29_persons"] = 6000.0
+    gate = L.gate_table(level_gate, srv, AWAY_SHARE, AGE_SHARES, model_today).set_index("code")
+    pooled = gate.loc[E.REGION_CODE]
+    se = float(np.sqrt(200.0 ** 2 + 120.0 ** 2))
+    assert pooled["srv_estimate_students_20_29_persons"] == pytest.approx(1200.0)
+    assert pooled["srv_se_estimate_students_20_29_persons"] == pytest.approx(se)
+    assert pooled["difference_20_29_persons"] == pytest.approx(pooled["balance_students_20_29_persons"] - 1200.0)
+    assert pooled["difference_20_29_in_srv_se"] == pytest.approx(pooled["difference_20_29_persons"] / se)
+    # the Kreis rows keep their own estimates
+    assert gate.loc["03101", "srv_estimate_students_20_29_persons"] == pytest.approx(1000.0)
 
 
 def test_gate_keeps_wolfsburg_with_nan_on_the_srv_side():
