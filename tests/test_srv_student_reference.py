@@ -14,7 +14,9 @@ import pandas as pd
 import pytest
 
 from braunschweig.calibration import srv_student_reference as R
+from braunschweig.calibration import student_parameters as SP
 from braunschweig.calibration.srv_participation_universe import REGION_CODE
+from braunschweig.calibration.srv_plan_structure import harmonise_srv
 from braunschweig.calibration.student_behaviour_labels import (
     CONTROLS, NOT_STUDENT, STUDENT_DISTANCE_LABELS, UNIVERSE_ADULTS, UNIVERSE_STUDENTS,
     effective_sample_size, share_standard_error)
@@ -375,3 +377,366 @@ def test_education_distance_noise_floor_is_seeded():
     assert by_code.loc[WOLFSBURG, "n_persons"] == 0
     assert by_code.loc[WOLFSBURG, share_columns].isna().all()
     assert np.isnan(by_code.loc[WOLFSBURG, "emd_noise_95"])
+
+
+# ------------------------------------------------------------------ Phase 1: parameter table
+# Trip times in minutes after midnight, (E_BEGINN, E_ANKUNFT), keyed by (HHNR, PNR, WNR). The
+# harmonised purpose of a leg is taken from E_ZWECK_9 (1 work, 3 and 4 education, 9 home).
+# Legs not listed use (480, 510) for WNR 1 and (1020, 1050) for later legs.
+_LEG_TIMES = {(1, 1, 1): (420, 450), (1, 1, 2): (600, 630), (1, 1, 3): (900, 930),
+              (1, 2, 1): (540, 570), (1, 2, 2): (1020, 1050),
+              (3, 1, 1): (420, -1), (3, 1, 2): (900, 930)}
+_HARMONISED_V_ZWECK = {1: 1, 3: 3, 4: 4, 9: 19}
+
+
+def _parameter_frames(srv_frames):
+    """The Phase 0 fixture plus the columns of the Phase 1 parameter table (copies).
+
+    Adult students of the universe: 1_1 [2] (22, female, licence, car access, Deutschlandticket,
+    household 1: several adults, 2 cars, bicycles), 1_2 [1] (24, male, licence, car access, code 1
+    ticket), 3_1 [1] (21, female, no licence, no car access, code -8, household 3: alone, 1 car,
+    no bicycle) and 3_2 [1] (35, divers -> no sex, licence, E_ZUGANG_PKW -7, E_OEV_FK -10).
+    """
+    persons, legs, households = (frame.copy() for frame in srv_frames)
+    persons["E_ANZ_WEGE2"] = [3, 2, 2, 2, 2, 2, 0, 0, 0, 2, 1]
+    persons["STICHTAG_WTAG"] = 2
+    persons["GEWICHT_P_WERKTAG"] = -6.0
+    persons["V_GESCHLECHT"] = [2, 1, 1, 2, 2, 2, 3, 1, 2, 1, 1]
+    persons["E_ZUGANG_PKW"] = [1, 1, 1, 2, 2, 2, -7, 1, 1, 1, 1]
+    times = [_LEG_TIMES.get((h, p, w), (480, 510) if w == 1 else (1020, 1050))
+             for h, p, w in zip(legs["HHNR"], legs["PNR"], legs["WNR"])]
+    legs["E_BEGINN"] = [begin for begin, _ in times]
+    legs["E_ANKUNFT"] = [arrival for _, arrival in times]
+    households["V_ANZ_PERS"] = [2, 3, 3, 3]
+    households["E_HHTYP"] = [2, 1, 4, 2]
+    households["V_ANZ_PKW"] = [2, 1, 1, 0]
+    households["E_ANZ_RAD_ALLE_6"] = [3, 0, 0, -7]
+    return persons, legs, households
+
+
+def _harmonise(persons, legs, households, purpose_overrides=None):
+    """``harmonise_srv`` output; V_ZWECK from E_ZWECK_9, single legs overridable by key."""
+    harmonised_legs = legs.copy()
+    harmonised_legs["V_ZWECK"] = legs["E_ZWECK_9"].map(_HARMONISED_V_ZWECK)
+    for (hhnr, pnr, wnr), code in (purpose_overrides or {}).items():
+        row = ((harmonised_legs["HHNR"] == hhnr) & (harmonised_legs["PNR"] == pnr)
+               & (harmonised_legs["WNR"] == wnr))
+        harmonised_legs.loc[row, "V_ZWECK"] = code
+    return harmonise_srv(persons, harmonised_legs, households)
+
+
+def _build(frames, purpose_overrides=None):
+    persons, legs, households = frames
+    universe, _ = R.student_universe(persons, households)
+    harmonised_persons, harmonised_trips = _harmonise(persons, legs, households,
+                                                      purpose_overrides)
+    return R.build_parameter_table(universe, persons, households, harmonised_persons,
+                                   harmonised_trips, legs)
+
+
+def _parameter_cell(table, parameter, label, base=None):
+    rows = table[(table["parameter"] == parameter) & (table["label"] == label)]
+    if base is not None:
+        rows = rows[rows["base"] == base]
+    assert len(rows) == 1, (parameter, label, base)
+    return rows.iloc[0]
+
+
+def test_parameter_table_partitions_each_parameter_and_base(srv_frames):
+    table, _ = _build(_parameter_frames(srv_frames))
+    assert list(table.columns) == SP.PARAMETER_COLUMNS
+    for (parameter, base), group in table.groupby(["parameter", "base"]):
+        assert group["share"].sum() == pytest.approx(1.0), (parameter, base)
+    assert set(table["parameter"]) == set(SP.PARAMETERS)
+    bases_by_parameter = table.groupby("parameter")["base"].agg(set).to_dict()
+    for parameter, spec in SP.PARAMETERS.items():
+        assert bases_by_parameter[parameter] == {spec.base, *SP.EXTRA_BASES.get(parameter, ())}
+    # every label of every vocabulary is emitted, in every base the parameter lives on
+    for parameter, spec in SP.PARAMETERS.items():
+        for base in bases_by_parameter[parameter]:
+            labels = table[(table["parameter"] == parameter) & (table["base"] == base)]["label"]
+            assert list(labels) == list(spec.labels)
+
+
+# Adult students 1_1 [2], 1_2 [1], 3_1 [1], 3_2 [1]; each share is the weight of the named
+# students over the weight of the base, i.e. of the students NOT excluded from the parameter.
+_EXPECTED_SHARES = {
+    ("age_group", "20_24"): 4 / 5, ("age_group", "30plus"): 1 / 5,
+    ("sex", "female"): 3 / 4, ("sex", "male"): 1 / 4,               # 3_2 divers: excluded
+    ("household_type", "several_adults"): 3 / 5, ("household_type", "alone"): 2 / 5,
+    ("lives_with_person_18_years_older", "yes"): 1 / 5,    # 3_1 (21) with the 50 year old 3_3
+    ("lives_with_person_18_years_older", "no"): 4 / 5,     # 3_2 (35): gap 15
+    ("licence", "yes"): 4 / 5, ("licence", "no"): 1 / 5,
+    ("cars_in_household", "2plus"): 3 / 5, ("cars_in_household", "1"): 2 / 5,
+    ("car_access", "yes"): 3 / 4, ("car_access", "no"): 1 / 4,       # 3_2 (-7) excluded
+    ("bicycle_in_household", "yes"): 3 / 5, ("bicycle_in_household", "no"): 2 / 5,
+    ("season_ticket", "flatrate"): 2 / 4, ("season_ticket", "no_flatrate"): 2 / 4,
+    ("ticket_group4", "deutschlandticket"): 2 / 4, ("ticket_group4", "occasional_ticket"): 1 / 4,
+    ("ticket_group4", "never_pt"): 1 / 4,                            # 3_2 (-10) excluded
+    ("education_leg", "yes"): 3 / 5, ("education_leg", "no"): 2 / 5,
+    ("work_leg", "yes"): 1 / 5, ("work_leg", "no"): 4 / 5,
+    ("leisure_leg", "no"): 1.0, ("shop_or_errand_leg", "no"): 1.0, ("escort_leg", "no"): 1.0,
+    ("mobile", "yes"): 4 / 5, ("mobile", "no"): 1 / 5,
+    ("trip_class", "0"): 1 / 5, ("trip_class", "1_2"): 2 / 5, ("trip_class", "3_4"): 2 / 5,
+    # mobile students 1_1 [2], 1_2 [1], 3_1 [1]
+    ("first_departure_hour", "7_8"): 3 / 4, ("first_departure_hour", "9_11"): 1 / 4,
+    ("last_arrival_home_hour", "before_16"): 3 / 4, ("last_arrival_home_hour", "16_18"): 1 / 4,
+    ("returns_home", "1"): 1.0,
+    # education students 1_1 [2] (150 + 270 min at education, first arrival 7:30) and 3_1 [1]
+    # (arrival unreadable: excluded from both education parameters)
+    ("time_at_education", "6h_more"): 1.0, ("arrival_band", "before_9"): 1.0,
+    ("away_all_day", "no"): 1.0,
+}
+
+
+def test_parameter_table_by_hand(srv_frames):
+    table, diagnostics = _build(_parameter_frames(srv_frames))
+    for parameter, spec in SP.PARAMETERS.items():
+        for label in spec.labels:
+            expected = _EXPECTED_SHARES.get((parameter, label), 0.0)
+            for base in (spec.base, *SP.EXTRA_BASES.get(parameter, ())):
+                cell = _parameter_cell(table, parameter, label, base)
+                assert cell["share"] == pytest.approx(expected), (parameter, label, base)
+    sex_female = _parameter_cell(table, "sex", "female")
+    assert sex_female["n_unweighted"] == 2 and sex_female["weight_sum"] == pytest.approx(3.0)
+    assert sex_female["n_effective"] == pytest.approx(16 / 6)   # base weights [2, 1, 1]
+    assert diagnostics["n_adult_students"] == 4
+    excluded = {name: value for name, value in diagnostics.items()
+                if name.startswith("n_excluded_") and value}
+    assert excluded == {"n_excluded_unreadable_employment_code": 1, "n_excluded_sex": 1,
+                        "n_excluded_car_access": 1, "n_excluded_season_ticket": 1,
+                        "n_excluded_ticket_group4": 1, "n_excluded_time_at_education": 1,
+                        "n_excluded_arrival_band": 1}
+
+
+def test_parameter_table_emits_empty_cells(srv_frames):
+    table, _ = _build(_parameter_frames(srv_frames))
+    empty = _parameter_cell(table, "household_type", "with_children")
+    assert empty["n_unweighted"] == 0 and empty["weight_sum"] == 0 and empty["share"] == 0
+    other = table[(table["parameter"] == "household_type")
+                  & (table["label"] != "with_children")]
+    assert other["share"].sum() == pytest.approx(1.0)
+
+
+def test_away_share_is_measured_before_the_universe_filter(srv_frames):
+    """3_2 (student [1]) and 3_3 (other adult [2]) were away all day: outside the universe,
+    inside this share. Students [2, 1, 1, 1] -> 1/5; other adults 2_1 [2], 2_3 [1], 3_3 [2],
+    4_2 [2] (4_1 has an invalid weight, 4_3 an unreadable V_ERW, 2_2 is 15) -> 2/7."""
+    persons, legs, households = _parameter_frames(srv_frames)
+    persons.loc[(persons["HHNR"] == 3) & persons["PNR"].isin([2, 3]), "E_ANZ_WEGE"] = -7
+    persons.loc[(persons["HHNR"] == 4) & (persons["PNR"] == 1), "GEWICHT_P_ZENSUS"] = -1.0
+    rows, diagnostics = R.away_all_day_rows(persons, households)
+    students = rows[rows["base"] == SP.BASE_STUDENTS_ALL].set_index("label")
+    others = rows[rows["base"] == SP.BASE_OTHER_ADULTS_ALL].set_index("label")
+    assert students.loc["yes", "share"] == pytest.approx(1 / 5)
+    assert students.loc["yes", "n_unweighted"] == 1 and students["n_unweighted"].sum() == 4
+    assert students.loc["yes", "n_effective"] == pytest.approx(25 / 7)
+    assert others.loc["yes", "share"] == pytest.approx(2 / 7)
+    assert others["n_unweighted"].sum() == 4
+    assert set(rows["parameter"]) == {"away_all_day"}
+    assert diagnostics["n_excluded_invalid_weight"] == 1
+    assert diagnostics["n_excluded_unreadable_employment_code"] == 1
+    # the universe really drops both away persons, so a share measured after it would be 0
+    universe, _ = R.student_universe(persons, households)
+    assert not {"3_2", "3_3"} & set(universe["pid"])
+
+
+def test_away_rows_apply_the_zgb_kreis_rule(srv_frames):
+    persons, legs, households = _parameter_frames(srv_frames)
+    no_household = households[households["HHNR"] != 4]
+    rows, diagnostics = R.away_all_day_rows(persons, no_household)
+    assert diagnostics["n_excluded_missing_kreis"] == 3          # 4_1, 4_2, 4_3
+    others = rows[rows["base"] == SP.BASE_OTHER_ADULTS_ALL]
+    assert others["n_unweighted"].sum() == 3                     # 2_1, 2_3, 3_3
+    foreign = households.copy()
+    foreign.loc[foreign["HHNR"] == 4, "AGS"] = 9162000
+    with pytest.raises(ValueError, match="09162"):
+        R.away_all_day_rows(persons, foreign)
+
+
+@pytest.mark.parametrize("hh3_type, label", [(3, "alone"), (4, "alone"), (2, "several_adults"),
+                                             (1, "with_children")])
+def test_household_type_codes_by_hand(srv_frames, hh3_type, label):
+    """Household 3 holds the students 3_1 and 3_2 (weight 2 of 5); household 1 stays code 2."""
+    persons, legs, households = _parameter_frames(srv_frames)
+    households.loc[households["HHNR"] == 3, "E_HHTYP"] = hh3_type
+    table, _ = _build((persons, legs, households))
+    expected = {"several_adults": 3 / 5, "alone": 0.0, "with_children": 0.0}
+    expected[label] += 2 / 5
+    for name, share in expected.items():
+        assert _parameter_cell(table, "household_type", name)["share"] == pytest.approx(share)
+
+
+def test_household_type_negative_code_is_excluded_and_counted(srv_frames):
+    persons, legs, households = _parameter_frames(srv_frames)
+    households.loc[households["HHNR"] == 3, "E_HHTYP"] = -5
+    table, diagnostics = _build((persons, legs, households))
+    assert diagnostics["n_excluded_household_type"] == 2
+    assert _parameter_cell(table, "household_type", "several_adults")["share"] == pytest.approx(1)
+
+
+@pytest.mark.parametrize("oldest_age, yes_weight", [(53, 2), (52, 1)])
+def test_older_person_in_the_household_needs_an_18_year_gap(srv_frames, oldest_age, yes_weight):
+    """3_3 is [oldest_age]: against 3_1 (21) always 18+ older; against 3_2 (35) exactly 18 at 53
+    (yes, the gap is inclusive) and 17 at 52 (no). Household 1 has nobody 18 years older."""
+    persons, legs, households = _parameter_frames(srv_frames)
+    persons.loc[(persons["HHNR"] == 3) & (persons["PNR"] == 3), "V_ALTER"] = oldest_age
+    table, _ = _build((persons, legs, households))
+    cell = _parameter_cell(table, "lives_with_person_18_years_older", "yes")
+    assert cell["weight_sum"] == yes_weight and cell["share"] == pytest.approx(yes_weight / 5)
+
+
+def test_unknown_household_member_age_is_excluded_not_assumed(srv_frames):
+    """1_2's age is missing (-9), so 1_2 is no adult student any more and 1_1 cannot tell whether
+    their household holds someone 18 years older: excluded from that parameter, counted. 3_1
+    [1] has a 29 year older housemate (yes), 3_2 [1] none (no)."""
+    persons, legs, households = _parameter_frames(srv_frames)
+    persons.loc[(persons["HHNR"] == 1) & (persons["PNR"] == 2), "V_ALTER"] = -9
+    table, diagnostics = _build((persons, legs, households))
+    assert diagnostics["n_adult_students"] == 3
+    assert diagnostics["n_excluded_lives_with_person_18_years_older"] == 1
+    assert _parameter_cell(table, "lives_with_person_18_years_older",
+                           "yes")["share"] == pytest.approx(1 / 2)
+
+
+@pytest.mark.parametrize("make_column", [
+    lambda: pd.Series([np.nan, 1, 1, 0], dtype="float64"),       # NaN for the missing code
+    lambda: pd.Series([-10, 1, 1, 0], dtype="int64"),            # the documented -10
+])
+def test_integer_coded_car_column_with_a_missing_code(srv_frames, make_column):
+    """Household 1 (students 1_1 [2], 1_2 [1]) has a missing car count: excluded, counted; the
+    remaining label must be "1", not "1.0", whatever the column dtype."""
+    persons, legs, households = _parameter_frames(srv_frames)
+    households["V_ANZ_PKW"] = make_column().values
+    table, diagnostics = _build((persons, legs, households))
+    assert diagnostics["n_excluded_cars_in_household"] == 2
+    cell = _parameter_cell(table, "cars_in_household", "1")
+    assert cell["share"] == pytest.approx(1.0) and cell["weight_sum"] == pytest.approx(2.0)
+
+
+def _kreis_table_module():
+    path = REPO / "scripts" / "extract_srv_kreis_tables.py"
+    spec = importlib.util.spec_from_file_location("extract_srv_kreis_tables", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_ticket_group4_codes_match_the_kreis_table_extractor():
+    module = _kreis_table_module()
+    assert R.DEUTSCHLANDTICKET_E_OEV_FK == module.TICKET_GROUP_DEUTSCHLANDTICKET_CODE
+    assert set(R.OTHER_FLATRATE_E_OEV_FK) == set(module.TICKET_GROUP_OTHER_FLATRATE_CODES)
+    assert set(R.TICKET_GROUP4_NEVER_E_OEV_FK) == set(module.TICKET_GROUP4_NEVER_CODES)
+    assert (set(R.TICKET_GROUP4_OCCASIONAL_E_OEV_FK)
+            == set(module.TICKET_GROUP4_OCCASIONAL_CODES))
+
+
+def _group4_cases():
+    module = _kreis_table_module()
+    cases = [(module.TICKET_GROUP_DEUTSCHLANDTICKET_CODE, "deutschlandticket")]
+    cases += [(code, "other_flatrate") for code in module.TICKET_GROUP_OTHER_FLATRATE_CODES]
+    cases += [(code, "never_pt") for code in module.TICKET_GROUP4_NEVER_CODES]
+    cases += [(code, "occasional_ticket") for code in module.TICKET_GROUP4_OCCASIONAL_CODES]
+    return cases
+
+
+@pytest.mark.parametrize("code, group", _group4_cases())
+def test_ticket_group4_uses_the_kreis_table_code_sets(srv_frames, code, group):
+    """1_1 [2] stays Deutschlandticket and 3_1 [1] never_pt; 1_2 [1] takes the code under test
+    (3_2 is excluded, -10): base weight 4."""
+    persons, legs, households = _parameter_frames(srv_frames)
+    persons.loc[(persons["HHNR"] == 1) & (persons["PNR"] == 2), "E_OEV_FK"] = code
+    table, _ = _build((persons, legs, households))
+    expected = {"deutschlandticket": 2.0, "other_flatrate": 0.0, "never_pt": 1.0,
+                "occasional_ticket": 0.0}
+    expected[group] += 1.0
+    for name, weight in expected.items():
+        assert _parameter_cell(table, "ticket_group4", name)["share"] == pytest.approx(weight / 4)
+    flatrate = group in ("deutschlandticket", "other_flatrate")
+    assert (_parameter_cell(table, "season_ticket", "flatrate")["weight_sum"]
+            == (3.0 if flatrate else 2.0))
+
+
+def test_both_education_leg_definitions_are_reported_and_differ(srv_frames):
+    """Harmonised purpose: 1_2's first trip (E_ZWECK_9 1, work in the control definition) is
+    changed to V_ZWECK 5 (education): education students 1_1 [2], 1_2 [1], 3_1 [1] = 4/5. Control
+    definition (E_ZWECK_9 in 3, 4): 1_1 and 3_1 = 3/5."""
+    frames = _parameter_frames(srv_frames)
+    table, diagnostics = _build(frames, purpose_overrides={(1, 2, 1): 5})
+    assert _parameter_cell(table, "education_leg", "yes")["share"] == pytest.approx(4 / 5)
+    assert diagnostics["education_leg_share_harmonised_purpose"] == pytest.approx(4 / 5)
+    assert diagnostics["education_leg_share_control_definition"] == pytest.approx(3 / 5)
+    # without the override both definitions agree on this fixture
+    _, plain = _build(frames)
+    assert plain["education_leg_share_harmonised_purpose"] == pytest.approx(3 / 5)
+    assert plain["education_leg_share_control_definition"] == pytest.approx(3 / 5)
+
+
+@pytest.mark.parametrize("where, column, value", [
+    ("persons", "V_GESCHLECHT", 7), ("persons", "E_ZUGANG_PKW", 5), ("persons", "V_FUEHR_PKW", 3),
+    ("persons", "E_OEV_FK", 99), ("households", "E_HHTYP", 9),
+    ("households", "V_ANZ_PKW", -5), ("households", "E_ANZ_RAD_ALLE_6", 9)])
+def test_undocumented_parameter_codes_raise(srv_frames, where, column, value):
+    persons, legs, households = _parameter_frames(srv_frames)
+    frame = persons if where == "persons" else households
+    # row 1 is 1_2 (an adult student) and household 1
+    frame.loc[1 if where == "persons" else 0, column] = value
+    with pytest.raises(ValueError, match=column):
+        _build((persons, legs, households))
+
+
+def test_a_parameter_that_excludes_most_students_raises(srv_frames):
+    """Every student without a sex code (divers/none) is a broken mapping, not a measurement."""
+    persons, legs, households = _parameter_frames(srv_frames)
+    persons["V_GESCHLECHT"] = 3
+    with pytest.raises(ValueError, match="sex"):
+        _build((persons, legs, households))
+
+
+def test_young_adult_status_by_kreis_by_hand(srv_frames):
+    """Persons 20-29 with a readable V_ERW: 03101 holds the students 1_1 [2], 1_2 [1] and the
+    employed 2_1 [2] and 2_3 [1] (25, V_ERW 8: apprenticeship counts as employed): 3/6 each,
+    n_effective 36/10. 03102 holds the student 3_1 [1] and 4_1 [2] (29, retired: other):
+    1/3 and 2/3. Region: students 4/9, employed 3/9, other 2/9. 4_3 (V_ERW -10) is excluded."""
+    persons, legs, households = _parameter_frames(srv_frames)
+    persons.loc[(persons["HHNR"] == 2) & (persons["PNR"] == 3), "V_ALTER"] = 25
+    persons.loc[(persons["HHNR"] == 4) & (persons["PNR"] == 1), "V_ALTER"] = 29
+    universe, _ = R.student_universe(persons, households)
+    table, diagnostics = R.build_young_adult_status_table(universe)
+    assert list(table.columns) == ["code", "level", "status", "n_unweighted", "weight_sum",
+                                   "share", "n_effective", "se_share"]
+    assert len(table) == 9 * 3
+    cell = table.set_index(["code", "status"])
+    assert cell.loc[("03101", "student"), "share"] == pytest.approx(0.5)
+    assert cell.loc[("03101", "employed"), "share"] == pytest.approx(0.5)
+    assert cell.loc[("03101", "other"), "share"] == 0
+    assert cell.loc[("03101", "student"), "n_unweighted"] == 2
+    assert cell.loc[("03101", "student"), "n_effective"] == pytest.approx(36 / 10)
+    assert cell.loc[("03101", "student"), "se_share"] == pytest.approx(math.sqrt(0.25 / 3.6))
+    assert cell.loc[("03102", "student"), "share"] == pytest.approx(1 / 3)
+    assert cell.loc[("03102", "other"), "share"] == pytest.approx(2 / 3)
+    assert cell.loc[(REGION_CODE, "student"), "share"] == pytest.approx(4 / 9)
+    assert cell.loc[(REGION_CODE, "employed"), "share"] == pytest.approx(3 / 9)
+    assert cell.loc[(REGION_CODE, "other"), "share"] == pytest.approx(2 / 9)
+    assert cell.loc[(REGION_CODE, "student"), "weight_sum"] == pytest.approx(4.0)
+    assert cell.loc[(REGION_CODE, "other"), "n_unweighted"] == 1
+    for status in ("student", "employed", "other"):
+        assert np.isnan(cell.loc[(WOLFSBURG, status), "share"])
+        assert cell.loc[(WOLFSBURG, status), "n_unweighted"] == 0
+    assert set(table["level"]) == {"kreis", "total"}
+    assert diagnostics["n_excluded_unreadable_employment_code"] == 1
+
+
+@pytest.mark.parametrize("age, label", [(18, "18_19"), (19, "18_19"), (20, "20_24"),
+                                        (24, "20_24"), (25, "25_29"), (29, "25_29"),
+                                        (30, "30plus")])
+def test_age_group_edges_are_right_inclusive(srv_frames, age, label):
+    """1_2 [1] takes the age under test; 1_1 (22) and 3_1 (21) stay 20_24 [2 + 1], 3_2 (35)
+    30plus [1]."""
+    persons, legs, households = _parameter_frames(srv_frames)
+    persons.loc[(persons["HHNR"] == 1) & (persons["PNR"] == 2), "V_ALTER"] = age
+    table, _ = _build((persons, legs, households))
+    expected = {"18_19": 0.0, "20_24": 3.0, "25_29": 0.0, "30plus": 1.0}
+    expected[label] += 1.0
+    for name, weight in expected.items():
+        assert _parameter_cell(table, "age_group", name)["share"] == pytest.approx(weight / 5)

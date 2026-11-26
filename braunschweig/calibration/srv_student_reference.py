@@ -56,6 +56,22 @@ Every exclusion is counted in the builder's diagnostics and logged as
 ``primary n/N (rate), excluded m (rate)``; a step that would exclude more than
 :data:`student_behaviour_labels.MAX_EXCLUSION_RATE` of its base raises, because that is a broken
 code mapping, not a measurement. Shares are NaN, never 0.0, when their base is empty, and empty cells are emitted.
+
+Phase 1 (the student layer's parameter measurement) adds three builders on the same universe:
+:func:`build_parameter_table` (every parameter of :data:`student_parameters.PARAMETERS` for the
+adult students at home on the reporting day, the day labels through the one function
+:func:`student_parameters.person_day_labels`), :func:`away_all_day_rows` (the share of persons
+away from home all day, measured on the file BEFORE the universe filter) and
+:func:`build_young_adult_status_table` (student / employed / other among the 20 to 29 year olds
+per Kreis). An attribute code outside its documented set raises; a documented missing code
+excludes the student from that parameter only, counted and logged.
+
+Two definitions of an education leg coexist on purpose: the parameter table's ``education_leg``
+uses the harmonised purpose of the plan-structure comparison (so survey and model pass through one
+function), the control definition (``E_ZWECK_9`` in :data:`EDUCATION_E_ZWECK_9`, as the behaviour
+table uses it) drives the day factor and every control target.
+:func:`build_parameter_table` returns the SrV share of adult students with an education leg under
+both in its diagnostics, so a difference is visible and nobody mixes the two.
 """
 from __future__ import annotations
 
@@ -66,6 +82,7 @@ import pandas as pd
 
 from braunschweig.calibration.srv_distance_targets import (ZGB_KREISE,
                                                             bootstrap_emd_noise_floor,
+                                                            kreis_from_ags,
                                                             weighted_band_shares)
 from braunschweig.calibration.srv_participation_universe import (
     EDUCATION_E_ZWECK_9, HOUSEHOLD_COLUMNS, LEVEL_KREIS, LEVEL_TOTAL, REGION_CODE,
@@ -74,8 +91,13 @@ from braunschweig.calibration.srv_participation_universe import \
     PERSON_COLUMNS as UNIVERSE_PERSON_COLUMNS
 # The person key and the NaN-for-empty share rule are taken from the sibling builder rather than
 # re-implemented, so the key format persons_with_purpose returns cannot drift from ours.
-from braunschweig.calibration.srv_participation_universe import _person_ids, _weighted_share
-from braunschweig.calibration.srv_plan_structure import AWAY_FROM_HOME_CODE, EMPLOYED_V_ERW
+from braunschweig.calibration.srv_participation_universe import (_groups_by_kreis, _person_ids,
+                                                                  _weighted_share)
+from braunschweig.calibration.srv_plan_structure import (AWAY_FROM_HOME_CODE, EMPLOYED_V_ERW,
+                                                         SEX_BY_V_GESCHLECHT)
+from braunschweig.calibration.student_parameters import (
+    BASE_OTHER_ADULTS_ALL, BASE_STUDENTS_ALL, GROUP_DAY, PARAMETER_COLUMNS, PARAMETERS,
+    parameter_rows, person_day_labels)
 from braunschweig.calibration.student_behaviour_labels import (
     ARRIVAL_HOUR_EDGES, BEHAVIOUR_COLUMNS, CONTROLS, MAX_EXCLUSION_RATE, MIN_ADULT_AGE,
     NOT_STUDENT, STUDENT_DISTANCE_EDGES_KM, STUDENT_DISTANCE_LABELS, TRIP_CLASS_EDGES,
@@ -123,6 +145,49 @@ PERSON_COLUMNS = list(UNIVERSE_PERSON_COLUMNS) + EXTRA_PERSON_COLUMNS
 LEG_COLUMNS = ["HHNR", "PNR", "WNR", "E_ZWECK_9", "V_BEGINN_STUNDE", "V_ANKUNFT_STUNDE"]
 HOUSEHOLD_COLUMNS = list(HOUSEHOLD_COLUMNS)
 OBSERVATION_COLUMNS = ["hhnr", "pnr", "kreis", "distance_km", "weight"]
+
+# ---------------------------------------------------------------- Phase 1 parameter measurement
+PARAMETER_TABLE = "srv2023_student_parameters.csv"
+YOUNG_ADULT_STATUS_TABLE = "srv2023_young_adult_status_by_kreis.csv"
+
+PARAMETER_PERSON_COLUMNS = ["V_GESCHLECHT", "V_FUEHR_PKW", "E_ZUGANG_PKW"]
+PARAMETER_HOUSEHOLD_COLUMNS = ["HHNR", "V_ANZ_PERS", "E_HHTYP", "V_ANZ_PKW", "E_ANZ_RAD_ALLE_6"]
+AWAY_PERSON_COLUMNS = ["HHNR", "PNR", "V_ALTER", "V_ERW", "E_ANZ_WEGE", "GEWICHT_P_ZENSUS"]
+
+# Codebook SrV2023_Datenkodierung_SciUse.xlsx. V_GESCHLECHT: 1 male, 2 female (the map of
+# srv_plan_structure, imported above), 3 divers and 4 "no entry in the birth register" are
+# excluded from `sex` and counted; any other code raises.
+SEX_EXCLUDED_V_GESCHLECHT = (3, 4)
+# E_HHTYP: 1 several persons with children, 2 several persons without children, 3 alone under 65,
+# 4 alone from 65; no missing code (a negative code is excluded and counted, any other raises).
+HOUSEHOLD_TYPE_BY_E_HHTYP = {1: "with_children", 2: "several_adults", 3: "alone", 4: "alone"}
+# V_FUEHR_PKW (asked from 17): 1 yes, 2 no; -8 not collected, -10 implausible.
+LICENCE_BY_V_FUEHR_PKW = {1: "yes", 2: "no"}
+LICENCE_MISSING_V_FUEHR_PKW = (-8, -10)
+# E_ZUGANG_PKW (licence AND at least one car in the household): 1 yes, 2 no; -7 not computable.
+CAR_ACCESS_BY_E_ZUGANG_PKW = {1: "yes", 2: "no"}
+CAR_ACCESS_MISSING_E_ZUGANG_PKW = (-7,)
+# V_ANZ_PKW: number of cars; -10 implausible. E_ANZ_RAD_ALLE_6: 0 to 5 (5 = five or more); -7 not
+# computable.
+CARS_MISSING_V_ANZ_PKW = (-10,)
+BICYCLES_MISSING_E_ANZ_RAD_ALLE_6 = (-7,)
+BICYCLES_MAX_E_ANZ_RAD_ALLE_6 = 5
+# Four ticket groups from E_OEV_FK, the code sets of build_ticket_groups4_table in
+# scripts/extract_srv_kreis_tables.py (a test pins them to it): the flatrate and not-flatrate sets
+# above split into Deutschlandticket / other flatrate and never / occasional. -10 is excluded.
+DEUTSCHLANDTICKET_E_OEV_FK = 50
+OTHER_FLATRATE_E_OEV_FK = FLATRATE_E_OEV_FK - {DEUTSCHLANDTICKET_E_OEV_FK}
+TICKET_GROUP4_NEVER_E_OEV_FK = frozenset({-8})
+TICKET_GROUP4_OCCASIONAL_E_OEV_FK = NO_FLATRATE_E_OEV_FK - TICKET_GROUP4_NEVER_E_OEV_FK
+
+# Age groups of the adult students, RIGHT-inclusive: (17, 19] = 18_19, ... ; the last is open.
+AGE_GROUP_EDGES = (MIN_ADULT_AGE - 1, 19, 24, 29, float("inf"))
+# A person lives with someone "18 years older" when the age gap is at least this many years.
+OLDER_PERSON_GAP_YEARS = 18
+
+YOUNG_ADULT_STATUSES = ("student", "employed", "other")
+YOUNG_ADULT_STATUS_COLUMNS = ["code", "level", "status", "n_unweighted", "weight_sum", "share",
+                              "n_effective", "se_share"]
 
 SHARE_COLUMNS = ["code", "level", "n_adults", "n_students", "student_share_adults",
                  "n_effective_adults", "se_student_share_adults", "n_20_29",
@@ -563,4 +628,343 @@ def build_comparison_table(universe: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
                              "share": _weighted_share(group["weight"], mask)})
     table = pd.DataFrame(rows, columns=COMPARISON_COLUMNS)
     diagnostics.update(n_adults=int(len(adults)), n_students=int(len(groups[0][1])))
+    return table, diagnostics
+
+
+# --------------------------------------------------------------------------- parameter table
+def _label_codes(values: pd.Series, column: str, table: dict, excluded=(),
+                 exclude_negative: bool = False) -> pd.Series:
+    """String labels of a coded column; NaN where the documented missing code excludes the row.
+
+    ``table`` maps the documented codes to labels, ``excluded`` lists the documented missing
+    codes (``exclude_negative`` excludes every negative code instead). A missing or non-numeric
+    value is excluded too. Any other code raises ``ValueError`` naming the column and the codes.
+    The labels are built as strings (never from an integer column holding NaN), so ``parameter_rows``
+    never sees ``"1.0"`` for the code 1.
+    """
+    numeric = pd.to_numeric(values, errors="coerce")
+    mapping, unknown = {}, []
+    for code in numeric.dropna().unique():
+        if code in table:
+            mapping[code] = table[code]
+        elif code in excluded or (exclude_negative and code < 0):
+            mapping[code] = np.nan
+        else:
+            unknown.append(code)
+    if unknown:
+        raise ValueError("column %s carries code(s) %s outside the documented set %s (missing "
+                         "codes %s)" % (column, sorted(unknown), sorted(table),
+                                        "all negative" if exclude_negative else sorted(excluded)))
+    return numeric.map(mapping).astype(object)
+
+
+def _car_labels(values: pd.Series) -> pd.Series:
+    """``0`` / ``1`` / ``2plus`` from V_ANZ_PKW; the documented -10 and a missing value exclude."""
+    numeric = pd.to_numeric(values, errors="coerce")
+    undocumented = numeric[numeric.notna() & ~numeric.isin(CARS_MISSING_V_ANZ_PKW)
+                           & ((numeric < 0) | (numeric != np.floor(numeric)))]
+    if len(undocumented):
+        raise ValueError("column V_ANZ_PKW carries value(s) %s: not a car count and not the "
+                         "documented missing code %s" % (sorted(set(undocumented)),
+                                                         list(CARS_MISSING_V_ANZ_PKW)))
+    label = pd.Series(np.nan, index=numeric.index, dtype=object)
+    label[(numeric == 0).to_numpy()] = "0"
+    label[(numeric == 1).to_numpy()] = "1"
+    label[(numeric >= 2).to_numpy()] = "2plus"
+    return label
+
+
+def _bicycle_labels(values: pd.Series) -> pd.Series:
+    """``yes`` (one bicycle or more) / ``no`` from E_ANZ_RAD_ALLE_6; -7 and missing exclude."""
+    table = {code: "yes" if code >= 1 else "no"
+             for code in range(BICYCLES_MAX_E_ANZ_RAD_ALLE_6 + 1)}
+    return _label_codes(values, "E_ANZ_RAD_ALLE_6", table,
+                        excluded=BICYCLES_MISSING_E_ANZ_RAD_ALLE_6)
+
+
+def _ticket_tables() -> tuple[dict, dict]:
+    """Code -> label for ``season_ticket`` and for ``ticket_group4`` (``-10`` is in neither)."""
+    season = {code: "flatrate" for code in FLATRATE_E_OEV_FK}
+    season.update({code: "no_flatrate" for code in NO_FLATRATE_E_OEV_FK})
+    group4 = {DEUTSCHLANDTICKET_E_OEV_FK: "deutschlandticket"}
+    group4.update({code: "other_flatrate" for code in OTHER_FLATRATE_E_OEV_FK})
+    group4.update({code: "never_pt" for code in TICKET_GROUP4_NEVER_E_OEV_FK})
+    group4.update({code: "occasional_ticket" for code in TICKET_GROUP4_OCCASIONAL_E_OEV_FK})
+    return season, group4
+
+
+def _older_person_labels(students: pd.DataFrame, persons: pd.DataFrame) -> pd.Series:
+    """``yes`` if the household holds a person at least 18 years older than the student.
+
+    Ages come from ALL persons of the household in the raw person file (a negative or missing
+    ``V_ALTER`` is unknown). ``yes`` as soon as one known age is at least
+    :data:`OLDER_PERSON_GAP_YEARS` above the student's; otherwise ``no`` if every age is known, and
+    NaN (excluded, counted) if some housemate's age is unknown -- the answer is then not defined.
+    The student's own age is always known (adults only), so including the student in the household
+    maximum changes nothing.
+    """
+    age = pd.to_numeric(persons["V_ALTER"], errors="coerce")
+    members = pd.DataFrame({"hhnr": persons["HHNR"].astype(str).to_numpy(),
+                            "age": age.where(age >= 0).to_numpy()})
+    oldest = members.groupby("hhnr")["age"].max()
+    n_unknown = members["age"].isna().groupby(members["hhnr"]).sum()
+    older = (students["hhnr"].map(oldest) >= students["age"] + OLDER_PERSON_GAP_YEARS).to_numpy()
+    unknown = (students["hhnr"].map(n_unknown) > 0).to_numpy()
+    return pd.Series(np.where(older, "yes", np.where(unknown, "", "no")), index=students.index,
+                     dtype=object).replace("", np.nan)
+
+
+def _unique_keyed(key: pd.Series, name: str) -> None:
+    duplicated = sorted(set(key[key.duplicated()]))
+    if duplicated:
+        raise ValueError("%s: duplicated key %s" % (name, duplicated[:10]))
+
+
+def build_parameter_table(universe: pd.DataFrame, persons: pd.DataFrame,
+                          households: pd.DataFrame, harmonised_persons: pd.DataFrame,
+                          harmonised_trips: pd.DataFrame,
+                          legs: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Every parameter of :data:`student_parameters.PARAMETERS` over the SrV adult students.
+
+    ``universe`` is :func:`student_universe`; ``persons`` / ``households`` / ``legs`` are the
+    raw frames it was built from (``persons`` must also carry :data:`PARAMETER_PERSON_COLUMNS`,
+    ``households`` :data:`PARAMETER_HOUSEHOLD_COLUMNS`); ``harmonised_persons`` and
+    ``harmonised_trips`` are exactly what :func:`srv_plan_structure.harmonise_srv` returned for the
+    same raw frames (``legs`` is only read for the control definition of an education leg, see the
+    diagnostics).
+
+    The base of every parameter except ``away_all_day`` is the adult students (``V_ERW`` 7, age
+    at least :data:`MIN_ADULT_AGE`) of the universe, i.e. at home at some point of the reporting
+    day; the day labels come from :func:`student_parameters.person_day_labels` on the harmonised
+    frames, joined 1:1 on ``pid``. ``away_all_day`` comes from :func:`away_all_day_rows`. A
+    student whose code for a parameter is a documented missing code is excluded from THAT
+    parameter only; an undocumented code raises. Columns :data:`PARAMETER_COLUMNS`, every label
+    of every vocabulary emitted.
+
+    Returns ``(table, diagnostics)``. Besides the exclusion counts (``n_excluded_<parameter>``)
+    the diagnostics carry the weighted SrV share of adult students with an education leg under
+    both definitions: ``education_leg_share_harmonised_purpose`` (the ``education_leg`` rows of
+    this table: a trip with harmonised purpose education) and
+    ``education_leg_share_control_definition`` (``E_ZWECK_9`` in
+    :data:`srv_participation_universe.EDUCATION_E_ZWECK_9`, the definition of the behaviour table
+    and of the day factor), each over all adult students of the universe.
+    """
+    _require_columns(universe, ["pid", "weight", "age", "is_student", "V_FUEHR_PKW", "E_OEV_FK"],
+                     "universe")
+    _require_columns(persons, ["HHNR", "PNR", "V_ALTER", *PARAMETER_PERSON_COLUMNS], "persons")
+    _require_columns(households, PARAMETER_HOUSEHOLD_COLUMNS, "households")
+    readable, diagnostics = _drop_unreadable_employment(universe)
+    students = _adults(readable)
+    students = students[students["is_student"]].reset_index(drop=True)
+    n_students = len(students)
+    diagnostics["n_adult_students"] = n_students
+    students["hhnr"] = students["pid"].str.split("_").str[0]
+
+    person_extra = persons[["HHNR", "PNR", "V_GESCHLECHT", "E_ZUGANG_PKW"]].copy()
+    person_extra["pid"] = _person_ids(person_extra)
+    _unique_keyed(person_extra["pid"], "persons: person key HHNR_PNR")
+    lost = sorted(set(students["pid"]) - set(person_extra["pid"]))
+    if lost:
+        raise ValueError("universe students missing from persons: %s" % lost[:10])
+    students = students.merge(person_extra[["pid", "V_GESCHLECHT", "E_ZUGANG_PKW"]], on="pid",
+                              how="left", validate="1:1")
+    household_extra = households[PARAMETER_HOUSEHOLD_COLUMNS].copy()
+    household_extra["hhnr"] = household_extra["HHNR"].astype(str)
+    _unique_keyed(household_extra["hhnr"], "households: key HHNR")
+    lost = sorted(set(students["hhnr"]) - set(household_extra["hhnr"]))
+    if lost:
+        raise ValueError("universe students without a household row: HHNR %s" % lost[:10])
+    students = students.merge(household_extra.drop(columns=["HHNR"]), on="hhnr", how="left",
+                              validate="m:1")
+
+    season_table, group4_table = _ticket_tables()
+    ticket_missing = (UNREADABLE_E_OEV_FK,)
+    labels = {
+        "age_group": pd.cut(students["age"], list(AGE_GROUP_EDGES),
+                            labels=list(PARAMETERS["age_group"].labels)).astype(object),
+        "sex": _label_codes(students["V_GESCHLECHT"], "V_GESCHLECHT", SEX_BY_V_GESCHLECHT,
+                            excluded=SEX_EXCLUDED_V_GESCHLECHT, exclude_negative=True),
+        "household_type": _label_codes(students["E_HHTYP"], "E_HHTYP",
+                                       HOUSEHOLD_TYPE_BY_E_HHTYP, exclude_negative=True),
+        "lives_with_person_18_years_older": _older_person_labels(students, persons),
+        "licence": _label_codes(students["V_FUEHR_PKW"], "V_FUEHR_PKW", LICENCE_BY_V_FUEHR_PKW,
+                                excluded=LICENCE_MISSING_V_FUEHR_PKW),
+        "cars_in_household": _car_labels(students["V_ANZ_PKW"]),
+        "car_access": _label_codes(students["E_ZUGANG_PKW"], "E_ZUGANG_PKW",
+                                   CAR_ACCESS_BY_E_ZUGANG_PKW,
+                                   excluded=CAR_ACCESS_MISSING_E_ZUGANG_PKW),
+        "bicycle_in_household": _bicycle_labels(students["E_ANZ_RAD_ALLE_6"]),
+        "season_ticket": _label_codes(students["E_OEV_FK"], "E_OEV_FK", season_table,
+                                      excluded=ticket_missing),
+        "ticket_group4": _label_codes(students["E_OEV_FK"], "E_OEV_FK", group4_table,
+                                      excluded=ticket_missing),
+    }
+    for parameter, label in labels.items():
+        n_excluded = int(label.isna().sum())
+        diagnostics["n_excluded_%s" % parameter] = n_excluded
+        _log_exclusion("%s (documented missing code excludes the student from this parameter "
+                       "only)" % parameter, n_excluded, n_students)
+
+    day_labels, _ = person_day_labels(harmonised_persons, harmonised_trips)
+    lost = sorted(set(students["pid"]) - set(day_labels["pid"]))
+    if lost:
+        raise ValueError("adult students without a harmonised person row: %s" % lost[:10])
+    day = students[["pid"]].merge(day_labels, on="pid", how="left", validate="1:1")
+    for parameter in (name for name, spec in PARAMETERS.items()
+                      if spec.group == GROUP_DAY and name != "away_all_day"):
+        labels[parameter] = day[parameter]
+    # Only these four day parameters can lose a student to a missing time; their base is the
+    # mobile students (departure, arrival at home) or those with an education leg.
+    mobile = (day["mobile"] == "yes").to_numpy()
+    with_education = (day["education_leg"] == "yes").to_numpy()
+    for parameter, in_base in (("first_departure_hour", mobile), ("last_arrival_home_hour", mobile),
+                               ("time_at_education", with_education),
+                               ("arrival_band", with_education)):
+        n_excluded = int(day[parameter].isna().to_numpy()[in_base].sum())
+        diagnostics["n_excluded_%s" % parameter] = n_excluded
+        _log_exclusion("%s (a missing or negative time excludes the student from this parameter "
+                       "only)" % parameter, n_excluded, int(in_base.sum()))
+
+    weights = students["weight"]
+    frames = [parameter_rows(parameter, spec.base, labels[parameter], weights)
+              for parameter, spec in PARAMETERS.items() if parameter != "away_all_day"]
+    away_rows, away_diagnostics = away_all_day_rows(persons, households)
+    frames.append(away_rows)
+    table = pd.concat(frames, ignore_index=True)[PARAMETER_COLUMNS]
+    diagnostics.update({"away_all_day_%s" % key: value for key, value in away_diagnostics.items()})
+
+    education_pids, leg_diagnostics = persons_with_purpose(legs, EDUCATION_E_ZWECK_9)
+    diagnostics.update(leg_diagnostics)
+    diagnostics["education_leg_share_harmonised_purpose"] = _weighted_share(
+        weights, (day["education_leg"] == "yes").to_numpy())
+    diagnostics["education_leg_share_control_definition"] = _weighted_share(
+        weights, students["pid"].isin(education_pids).to_numpy())
+    logger.info("%s parameter table: %d rows, %d adult students; education leg share of adult "
+                "students: harmonised purpose %.4f, control definition (E_ZWECK_9 in %s) %.4f",
+                _LOG_TAG, len(table), n_students,
+                diagnostics["education_leg_share_harmonised_purpose"],
+                sorted(EDUCATION_E_ZWECK_9), diagnostics["education_leg_share_control_definition"])
+    return table, diagnostics
+
+
+# --------------------------------------------------------------------------- away all day
+def away_all_day_rows(persons: pd.DataFrame,
+                      households: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """The ``away_all_day`` rows for adult students and for the other adults, on the RAW file.
+
+    The participation universe drops exactly the persons away from home all day
+    (``E_ANZ_WEGE == srv_plan_structure.AWAY_FROM_HOME_CODE``), so this share cannot be measured
+    on it: it is measured on the raw person file after the same weight and Kreis rules, in this
+    order and each counted over the survivors of the step before: a missing or negative
+    ``GEWICHT_P_ZENSUS`` (``n_excluded_invalid_weight``), a person whose household has no
+    resolvable Kreis (``n_excluded_missing_kreis``; a Kreis outside the ZGB raises, as in
+    :func:`srv_participation_universe.prepare_universe_persons`), an unreadable ``V_ERW``
+    (``n_excluded_unreadable_employment_code``; a non-negative code outside :data:`V_ERW_CODES`
+    raises). Adults: age at least :data:`MIN_ADULT_AGE`; students: ``V_ERW`` 7, the other adults
+    everybody else. Returns the :data:`PARAMETER_COLUMNS` rows of base
+    :data:`student_parameters.BASE_STUDENTS_ALL` and :data:`student_parameters.BASE_OTHER_ADULTS_ALL`.
+    Raises ``ValueError`` for a missing column, a duplicated person key or an ``E_ANZ_WEGE`` that
+    is missing or negative but not the away code (the universe guard of the participation
+    tables).
+    """
+    _require_columns(persons, AWAY_PERSON_COLUMNS, "persons")
+    _require_columns(households, ["HHNR", "AGS"], "households")
+    work = persons[AWAY_PERSON_COLUMNS].copy()
+    work["pid"] = _person_ids(work)
+    _unique_keyed(work["pid"], "persons: person key HHNR_PNR")
+    n_total = len(work)
+
+    n_trips = pd.to_numeric(work["E_ANZ_WEGE"], errors="coerce")
+    odd = work[n_trips.isna() | ((n_trips < 0) & (n_trips != AWAY_FROM_HOME_CODE))]
+    if len(odd):
+        raise ValueError("persons: column E_ANZ_WEGE carries %d missing or negative value(s) "
+                         "other than the away code %d, e.g. %s" % (
+                             len(odd), AWAY_FROM_HOME_CODE, sorted(set(odd["E_ANZ_WEGE"]))[:5]))
+    work["away"] = (n_trips == AWAY_FROM_HOME_CODE).to_numpy()
+
+    weight = pd.to_numeric(work["GEWICHT_P_ZENSUS"], errors="coerce")
+    valid_weight = (weight.notna() & (weight >= 0)).to_numpy()
+    n_invalid_weight = int((~valid_weight).sum())
+    _log_exclusion("away-all-day share: valid GEWICHT_P_ZENSUS", n_invalid_weight, n_total)
+    work = work[valid_weight].copy()
+    work["weight"] = pd.to_numeric(work["GEWICHT_P_ZENSUS"]).astype(float)
+
+    kreis_by_household = households[["HHNR", "AGS"]].copy()
+    kreis_by_household["kreis"] = kreis_from_ags(kreis_by_household["AGS"])
+    n_before_kreis = len(work)
+    work = work.merge(kreis_by_household[["HHNR", "kreis"]], on="HHNR", how="left", validate="m:1")
+    n_missing_kreis = int(work["kreis"].isna().sum())
+    _log_exclusion("away-all-day share: home Kreis resolvable from the household AGS",
+                   n_missing_kreis, n_before_kreis)
+    work = work[work["kreis"].notna()].copy()
+    outside_zgb = sorted(set(work.loc[~work["kreis"].isin(ZGB_KREISE), "kreis"]))
+    if outside_zgb:
+        raise ValueError("universe drift: persons resolve to a Kreis outside the surveyed ZGB "
+                         "Kreise (found %s, expected a subset of %s)" % (outside_zgb,
+                                                                          list(ZGB_KREISE)))
+
+    code = pd.to_numeric(work["V_ERW"], errors="coerce")
+    unreadable = (code.isna() | (code < 0)).to_numpy()
+    undocumented = sorted(set(code[~unreadable & ~code.isin(sorted(V_ERW_CODES))].tolist()))
+    if undocumented:
+        raise ValueError("persons: column V_ERW carries code(s) %s outside the documented set %s"
+                         % (undocumented, sorted(V_ERW_CODES)))
+    n_unreadable = int(unreadable.sum())
+    _log_exclusion("away-all-day share: readable employment status (V_ERW present and "
+                   "non-negative)", n_unreadable, len(work))
+    work = work[~unreadable].copy()
+    work["is_student"] = (pd.to_numeric(work["V_ERW"]) == STUDENT_V_ERW).to_numpy()
+
+    age = pd.to_numeric(work["V_ALTER"], errors="coerce")
+    adult = (age >= MIN_ADULT_AGE).to_numpy()
+    groups = ((BASE_STUDENTS_ALL, work[adult & work["is_student"].to_numpy()]),
+              (BASE_OTHER_ADULTS_ALL, work[adult & ~work["is_student"].to_numpy()]))
+    diagnostics = {"n_persons_total": int(n_total), "n_excluded_invalid_weight": n_invalid_weight,
+                   "n_excluded_missing_kreis": n_missing_kreis,
+                   "n_excluded_unreadable_employment_code": n_unreadable,
+                   "n_missing_age": int(age.isna().sum())}
+    frames = []
+    for base, group in groups:
+        label = pd.Series(np.where(group["away"].to_numpy(), "yes", "no"), dtype=object)
+        frames.append(parameter_rows("away_all_day", base, label, group["weight"]))
+        diagnostics["n_%s" % base] = int(len(group))
+        diagnostics["n_%s_away" % base] = int(group["away"].sum())
+    return pd.concat(frames, ignore_index=True), diagnostics
+
+
+# --------------------------------------------------------------------------- young adults
+def build_young_adult_status_table(universe: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Activity status of the 20 to 29 year olds per Kreis and region (who the students' age
+    peers are).
+
+    Persons of the participation universe aged :data:`AGE_BAND_20_29` (bounds inclusive) with a
+    readable ``V_ERW``; status ``student`` (``V_ERW`` 7), ``employed`` (:data:`EMPLOYED_V_ERW`,
+    which includes the apprenticeship code 8) or ``other``. One block of three status rows per
+    :data:`srv_distance_targets.ZGB_KREISE` (Wolfsburg, not surveyed, has no person: zero counts,
+    NaN shares) and one ``total`` block coded :data:`REGION_CODE`. Columns
+    :data:`YOUNG_ADULT_STATUS_COLUMNS`; ``share`` is weighted within the Kreis, ``n_effective``
+    the Kish size of the Kreis's persons, ``se_share`` the standard error of the share.
+    """
+    readable, diagnostics = _drop_unreadable_employment(universe)
+    young = readable[(readable["age"] >= AGE_BAND_20_29[0])
+                     & (readable["age"] <= AGE_BAND_20_29[1])].copy()
+    code = young["V_ERW"]
+    young["status"] = np.select([code == STUDENT_V_ERW, code.isin(EMPLOYED_V_ERW)],
+                                list(YOUNG_ADULT_STATUSES[:2]), default=YOUNG_ADULT_STATUSES[2])
+    by_kreis = _groups_by_kreis(young, ZGB_KREISE, "young-adult status")
+    rows = []
+    for level, code_value, group in ([(LEVEL_KREIS, kreis, by_kreis[kreis]) for kreis in ZGB_KREISE]
+                                     + [(LEVEL_TOTAL, REGION_CODE, young)]):
+        weight = group["weight"].astype(float).to_numpy()
+        for status in YOUNG_ADULT_STATUSES:
+            mask = (group["status"] == status).to_numpy()
+            share, n_effective, se = _share_with_error(pd.Series(weight), mask)
+            rows.append({"code": code_value, "level": level, "status": status,
+                         "n_unweighted": int(mask.sum()),
+                         "weight_sum": float(weight[mask].sum()), "share": share,
+                         "n_effective": n_effective, "se_share": se})
+    table = pd.DataFrame(rows, columns=YOUNG_ADULT_STATUS_COLUMNS)
+    diagnostics["n_young_adults"] = int(len(young))
+    logger.info("%s young-adult status table: %d persons aged %d to %d", _LOG_TAG, len(young),
+                *AGE_BAND_20_29)
     return table, diagnostics
