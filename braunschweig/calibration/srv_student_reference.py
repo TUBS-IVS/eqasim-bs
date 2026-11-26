@@ -171,6 +171,7 @@ MEAN_LABEL = "mean"
 POST_MATSIM_COLUMNS = ["quantity", "label", "n_unweighted", "weight_sum", "value", "se_value"]
 POST_MATSIM_PERSON_COLUMNS = ["HHNR", "PNR", "E_VERKEHRSLEIST", "E_DAUER_GESAMT"]
 POST_MATSIM_LEG_COLUMNS = ["HHNR", "PNR", "E_ZWECK_9", "E_HVM_5"]
+NOT_COMPUTABLE_DAILY_TOTAL = -7
 # E_VERKEHRSLEIST (km) and E_DAUER_GESAMT (min) exist only for persons at home on the reporting
 # day whose trips are ALL valid (below 100 km, duration and length known); -7 otherwise. The
 # consumer of the table states this sub-universe in the CSV header.
@@ -273,6 +274,25 @@ def _log_exclusion(step: str, n_excluded: int, n_total: int) -> None:
             "%s %s: %d of %d rows (%.1f%%) would be excluded, above the %.0f%% limit; this is a "
             "broken code mapping or a recoded variable, not a measurement"
             % (_LOG_TAG, step, n_excluded, n_total, 100.0 * rate, 100.0 * MAX_EXCLUSION_RATE))
+
+
+def _log_fallback(step: str, n_fallback: int, n_total: int) -> None:
+    """Log ``primary n/N (rate), fallback m (rate)``; raise above :data:`MAX_EXCLUSION_RATE`.
+
+    For a path that REPLACES the primary method without dropping anything (nothing is excluded).
+    A fallback rate above the limit means the primary method is broken (a recoded column), so it
+    raises like a high exclusion rate does.
+    """
+    n_primary = n_total - n_fallback
+    rate = n_fallback / n_total if n_total else float("nan")
+    logger.info("%s %s: primary %d/%d (%.1f%%), fallback %d (%.1f%%)", _LOG_TAG, step, n_primary,
+                n_total, 100.0 * (1.0 - rate) if n_total else float("nan"), n_fallback,
+                100.0 * rate if n_total else float("nan"))
+    if n_total and rate > MAX_EXCLUSION_RATE:
+        raise ValueError(
+            "%s %s: the fallback served %d of %d rows (%.1f%%), above the %.0f%% limit; the "
+            "primary method is broken (a recoded or missing column), not a measurement"
+            % (_LOG_TAG, step, n_fallback, n_total, 100.0 * rate, 100.0 * MAX_EXCLUSION_RATE))
 
 
 def _share_with_error(weight: pd.Series, mask) -> tuple[float, float, float]:
@@ -1069,11 +1089,11 @@ def bootstrap_standard_error(values_by_person, weights, n_bootstrap: int, seed: 
     error is the sample standard deviation (``ddof=1``) of the ``n_bootstrap`` statistics. A draw
     without any observation has no statistic: it is skipped, counted and logged as a warning with
     its rate. Returns NaN for fewer than two persons. Raises ``ValueError`` for
-    ``n_bootstrap < 1``, a weight that is negative or not finite, unequal lengths, or fewer than
+    ``n_bootstrap < 2``, a weight that is negative or not finite, unequal lengths, or fewer than
     two usable draws.
     """
-    if n_bootstrap < 1:
-        raise ValueError("n_bootstrap must be >= 1")
+    if n_bootstrap < 2:
+        raise ValueError("n_bootstrap must be >= 2 (a standard error needs two draws)")
     arrays = [np.asarray(values, dtype=float).ravel() for values in values_by_person]
     weight = np.asarray(weights, dtype=float)
     if len(arrays) != weight.size:
@@ -1169,18 +1189,25 @@ def build_post_matsim_reference(universe: pd.DataFrame, persons: pd.DataFrame,
       (:data:`DAILY_TOTAL_SUB_UNIVERSE`, also returned in the diagnostics for the CSV header):
       the codebook defines both totals only for persons at home on the reporting day with ONLY
       valid trips (below 100 km, duration and length known); every other person carries ``-7``
-      and is excluded.
+      (:data:`NOT_COMPUTABLE_DAILY_TOTAL`). The base of these two quantities IS that
+      sub-universe, a documented definition and not a fallback: the ``-7`` count and rate are
+      logged and returned in the diagnostics (for the CSV header), and a rate above
+      :data:`student_behaviour_labels.MAX_EXCLUSION_RATE` is a logged WARNING, not an error,
+      so a broken column stays visible. Any other negative code is undocumented and raises; a
+      missing value is excluded and counted under the strict exclusion-rate rule (raises above
+      the limit).
 
     ``se_value`` comes from :func:`bootstrap_standard_error` (a seeded person bootstrap, because
     legs cluster within persons; persons without an observation of the quantity are not part of
     its base); NaN where the base is empty or holds one person. A quantity with an empty base
     carries NaN, never 0.0. Diagnostics: ``n_adult_students``, ``n_legs_all`` /
     ``n_excluded_mode_all_legs``, ``n_legs_education`` / ``n_excluded_mode_education_legs``,
-    ``n_excluded_daily_distance``, ``n_excluded_daily_travel_time``,
+    ``n_not_computable_daily_distance`` / ``n_not_computable_daily_travel_time`` (the ``-7``
+    count of the sub-universe rule below), ``n_missing_*`` and ``n_base_*`` of both, and
     ``daily_total_sub_universe``.
     """
-    if n_bootstrap < 1:
-        raise ValueError("n_bootstrap must be >= 1")
+    if n_bootstrap < 2:
+        raise ValueError("n_bootstrap must be >= 2 (a standard error needs two draws)")
     _require_columns(persons, POST_MATSIM_PERSON_COLUMNS, "persons")
     _require_columns(legs, POST_MATSIM_LEG_COLUMNS, "legs")
     students, diagnostics = _adult_students(universe)
@@ -1227,11 +1254,32 @@ def build_post_matsim_reference(universe: pd.DataFrame, persons: pd.DataFrame,
                                   (QUANTITY_DAILY_TRAVEL_TIME, "E_DAUER_GESAMT",
                                    "daily_travel_time")):
         value = pd.to_numeric(students[column], errors="coerce")
-        valid = (value.notna() & (value >= 0)).to_numpy()
-        n_excluded = int((~valid).sum())
-        _log_exclusion("%s (%s non-negative; %s)" % (quantity, column, DAILY_TOTAL_SUB_UNIVERSE),
-                       n_excluded, len(students))
-        diagnostics["n_excluded_%s" % key] = n_excluded
+        # -7 is the codebook's structural "not computable" code: the definition of the
+        # sub-universe, not a data defect. Any other negative code is undocumented and raises.
+        other_negative = sorted(set(value[(value < 0) & (value != NOT_COMPUTABLE_DAILY_TOTAL)]))
+        if other_negative:
+            raise ValueError("persons: column %s carries negative code(s) %s; only %d (not "
+                             "computable) is documented" % (column, other_negative,
+                                                            NOT_COMPUTABLE_DAILY_TOTAL))
+        # A missing value is no documented code: a broken column, so the strict rule applies.
+        _log_exclusion("%s (%s present)" % (quantity, column), int(value.isna().sum()),
+                       len(students))
+        n_not_computable = int((value == NOT_COMPUTABLE_DAILY_TOTAL).sum())
+        rate = n_not_computable / len(students) if len(students) else float("nan")
+        logger.info("%s %s sub-universe (%s): in the base %d/%d (%.1f%%), not computable "
+                    "(%d) %d (%.1f%%)", _LOG_TAG, quantity, DAILY_TOTAL_SUB_UNIVERSE,
+                    len(students) - n_not_computable, len(students), 100.0 * (1.0 - rate),
+                    NOT_COMPUTABLE_DAILY_TOTAL, n_not_computable, 100.0 * rate)
+        if rate > MAX_EXCLUSION_RATE:
+            logger.warning("%s %s: %.1f%% of the adult students carry the not-computable code "
+                           "%d, above %.0f%%: expected only if few students have exclusively "
+                           "valid trips; otherwise check the column", _LOG_TAG, quantity,
+                           100.0 * rate, NOT_COMPUTABLE_DAILY_TOTAL,
+                           100.0 * MAX_EXCLUSION_RATE)
+        diagnostics["n_not_computable_%s" % key] = n_not_computable
+        diagnostics["n_missing_%s" % key] = int(value.isna().sum())
+        valid = (value >= 0).to_numpy()
+        diagnostics["n_base_%s" % key] = int(valid.sum())
         rows.append(_mean_row(quantity, students.loc[valid, "weight"], value[valid], n_bootstrap,
                               seed))
     diagnostics["daily_total_sub_universe"] = DAILY_TOTAL_SUB_UNIVERSE
@@ -1299,10 +1347,9 @@ def _first_education_legs(education_legs: pd.DataFrame) -> tuple[pd.DataFrame, i
     legs["minute"] = legs["minute"].where(~by_number, 0)
     first = (legs.sort_values(["pid", "hour", "minute", "wnr"], kind="stable")
              .drop_duplicates("pid", keep="first"))
-    # "excluded" in the log line of _log_exclusion means "ordered by the WNR fallback" here.
-    _log_exclusion("first education leg ordered by start hour and minute (fallback: leg number "
-                   "WNR where a start hour or minute is negative or missing; no person is "
-                   "dropped)", len(fallback), len(first))
+    _log_fallback("first education leg ordered by start hour and minute (fallback: leg number "
+                  "WNR where a start hour or minute is negative or missing; no person is "
+                  "dropped)", len(fallback), len(first))
     return first, len(fallback)
 
 
@@ -1329,17 +1376,24 @@ def build_destination_reference(universe: pd.DataFrame, legs: pd.DataFrame,
     with ``n_unweighted`` 0 and a NaN share (a cell can be empty by construction, e.g. a person
     never goes to their own Kreis as a ``site_kreis_``).
 
+    The cells are POOLED across the home Kreise of a group: with more than one site Kreis,
+    :data:`HOME_GROUP_SITE` and :data:`HOME_GROUP_ALL` mix persons of different home Kreise, so
+    ``own_kreis`` is "the person's own Kreis" whichever it is, and ``site_kreis_<ars5>`` is empty
+    for the persons living in ``<ars5>`` (their trips there are ``own_kreis``). Read these cells
+    as shares of a pooled group, never per Kreis.
+
     Columns :data:`DESTINATION_COLUMNS`: ``n_persons_group`` is the persons of the home group
     (the share's base), ``share`` the weighted share (``GEWICHT_P_ZENSUS``), ``n_effective`` the
     Kish size of the home group's base, ``se_share`` its standard error, and
     ``noise_floor_tvd_95`` the 95th percentile of the total-variation distance a person
     bootstrap of the home group reaches by sampling noise alone
     (:func:`student_parameters.bootstrap_share_noise_floor`, seeded, over the home group's
-    groups; NaN for an empty home group, 0.0 for a single person).
+    groups; NaN for an empty home group or one whose weights sum to zero, counted as
+    ``n_home_groups_zero_weight`` and logged; 0.0 for a single person).
     """
     sites = _validate_site_kreise(site_kreise)
-    if n_bootstrap < 1:
-        raise ValueError("n_bootstrap must be >= 1")
+    if n_bootstrap < 2:
+        raise ValueError("n_bootstrap must be >= 2 (a standard error needs two draws)")
     _require_columns(legs, DESTINATION_LEG_COLUMNS, "legs")
     students, diagnostics = _adult_students(universe)
 
@@ -1376,6 +1430,7 @@ def build_destination_reference(universe: pd.DataFrame, legs: pd.DataFrame,
         np.where(persons["kreis"].isin(sorted(sites)), HOME_GROUP_SITE, HOME_GROUP_NO_SITE))
 
     rows = []
+    n_zero_weight_groups = 0
     for home_group in HOME_GROUPS:
         group = persons if home_group == HOME_GROUP_ALL else persons[
             persons["home_group"] == home_group]
@@ -1386,8 +1441,17 @@ def build_destination_reference(universe: pd.DataFrame, legs: pd.DataFrame,
                              "group %s" % (unexpected, vocabulary, home_group))
         weight = group["weight"].to_numpy(dtype=float)
         n_effective = effective_sample_size(weight)
-        noise = (bootstrap_share_noise_floor(group["destination_group"], weight, vocabulary,
-                                             n_bootstrap, seed) if len(group) else float("nan"))
+        # An empty home group, or one whose weights sum to zero, has no defined shares and no
+        # bootstrap (the helper raises on a zero weight total): its floor is NaN, counted.
+        if len(group) and weight.sum() > 0:
+            noise = bootstrap_share_noise_floor(group["destination_group"], weight, vocabulary,
+                                                n_bootstrap, seed)
+        else:
+            noise = float("nan")
+            if len(group):
+                n_zero_weight_groups += 1
+                logger.warning("%s home group %s: %d persons with a zero weight sum, shares and "
+                               "noise floor are NaN", _LOG_TAG, home_group, len(group))
         diagnostics["n_persons_%s" % home_group] = int(len(group))
         for label in vocabulary:
             mask = (group["destination_group"] == label).to_numpy()
@@ -1398,6 +1462,7 @@ def build_destination_reference(universe: pd.DataFrame, legs: pd.DataFrame,
                          "n_effective": n_effective,
                          "se_share": share_standard_error(share, n_effective),
                          "noise_floor_tvd_95": noise})
+    diagnostics["n_home_groups_zero_weight"] = n_zero_weight_groups
     table = pd.DataFrame(rows, columns=DESTINATION_COLUMNS)
     logger.info("%s education destination reference: %d rows, %d persons with a known "
                 "destination", _LOG_TAG, len(table), len(persons))

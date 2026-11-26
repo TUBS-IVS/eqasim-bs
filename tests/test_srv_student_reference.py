@@ -915,8 +915,9 @@ def test_destination_noise_floor_is_seeded():
     assert (floor >= 0).all()
     assert floor[R.HOME_GROUP_BRAUNSCHWEIG] > 0  # two persons with different destinations
     assert floor[R.HOME_GROUP_SITE] == 0.0       # a single person cannot differ from itself
-    with pytest.raises(ValueError, match="n_bootstrap"):
-        R.build_destination_reference(universe, legs, SITES, 0, 7)
+    for n_bootstrap in (0, 1):
+        with pytest.raises(ValueError, match="n_bootstrap"):
+            R.build_destination_reference(universe, legs, SITES, n_bootstrap, 7)
 
 
 def test_destination_exclusion_above_the_limit_raises():
@@ -937,8 +938,9 @@ def test_bootstrap_standard_error_resamples_persons_not_legs():
     assert R.bootstrap_standard_error([[1.0, 1.0], [0.0]], [1.0, 1.0], 4000, 3) == se
     assert R.bootstrap_standard_error([[2.0], [2.0], [2.0]], [1.0, 5.0, 2.0], 50, 3) == 0.0
     assert math.isnan(R.bootstrap_standard_error([[1.0]], [1.0], 50, 3))
-    with pytest.raises(ValueError, match="n_bootstrap"):
-        R.bootstrap_standard_error([[1.0], [2.0]], [1.0, 1.0], 0, 3)
+    for n_bootstrap in (0, 1):
+        with pytest.raises(ValueError, match="n_bootstrap"):
+            R.bootstrap_standard_error([[1.0], [2.0]], [1.0, 1.0], n_bootstrap, 3)
 
 
 def _post_matsim_frames(srv_frames):
@@ -949,7 +951,7 @@ def _post_matsim_frames(srv_frames):
             (3, 1, 1): -7, (3, 1, 2): 1}
     legs["E_HVM_5"] = [mode.get(key, 4) for key in zip(legs["HHNR"], legs["PNR"], legs["WNR"])]
     persons["E_VERKEHRSLEIST"] = [27.0, -7, 5, 5, 5, 6.0, 0.0, 5, 5, 5, 5]
-    persons["E_DAUER_GESAMT"] = [90, 40, 5, 5, 5, -1, 0, 5, 5, 5, 5]
+    persons["E_DAUER_GESAMT"] = [90, 40, 5, 5, 5, -7, 0, 5, 5, 5, 5]
     return persons, legs, households
 
 
@@ -965,7 +967,7 @@ def test_post_matsim_reference_by_hand(srv_frames):
     walk (home); 3_2 no leg. Valid legs: pt 2, bicycle 2 x 2 = 4, car driver 1 + 1 = 2, walk 1:
     total 9. Education legs: bicycle 2 x 2 = 4 only (the -7 one excluded). Distance:
     1_1 27 [2], 1_2 -7 excluded, 3_1 6, 3_2 0 -> (54 + 6 + 0) / 4 = 15. Time: 90 [2], 40,
-    3_1 -1 excluded, 0 -> (180 + 40 + 0) / 4 = 55."""
+    3_1 -7 excluded, 0 -> (180 + 40 + 0) / 4 = 55."""
     persons, legs, households = _post_matsim_frames(srv_frames)
     universe, _ = R.student_universe(persons, households)
     table, diag = R.build_post_matsim_reference(universe, persons, legs, 200, 5)
@@ -988,7 +990,15 @@ def test_post_matsim_reference_by_hand(srv_frames):
     duration = _quantity(table, "daily_travel_time_min_mean", "mean")
     assert duration["value"] == pytest.approx(55.0)
     assert (duration["n_unweighted"], duration["weight_sum"]) == (3, 4.0)
-    assert diag["n_excluded_daily_distance"] == 1 and diag["n_excluded_daily_travel_time"] == 1
+    assert diag["n_not_computable_daily_distance"] == 1
+    assert diag["n_not_computable_daily_travel_time"] == 1
+    # bicycle share of all legs, hand-enumerated person bootstrap of the three persons with a leg
+    # (1_1 [2]: 0 1 1 of 3 legs, 1_2 [1]: 0 0, 3_1 [1]: 0): the statistic 4a / (6a + 2b + c) over
+    # the 27 equally likely draws (a, b, c = draws of the three persons) has standard deviation
+    # 0.24086
+    big, _ = R.build_post_matsim_reference(universe, persons, legs, 4000, 5)
+    assert _quantity(big, "main_mode_all_legs", "bicycle")["se_value"] == pytest.approx(
+        0.24086, abs=0.02)
     assert "valid trips" in diag["daily_total_sub_universe"]
     assert distance["se_value"] > 0
     again, _ = R.build_post_matsim_reference(universe, persons, legs, 200, 5)
@@ -1001,3 +1011,96 @@ def test_post_matsim_undocumented_mode_code_raises(srv_frames):
     universe, _ = R.student_universe(persons, households)
     with pytest.raises(ValueError, match="E_HVM_5"):
         R.build_post_matsim_reference(universe, persons, legs, 20, 5)
+
+
+def test_post_matsim_needs_two_bootstrap_draws(srv_frames):
+    persons, legs, households = _post_matsim_frames(srv_frames)
+    universe, _ = R.student_universe(persons, households)
+    with pytest.raises(ValueError, match="n_bootstrap"):
+        R.build_post_matsim_reference(universe, persons, legs, 1, 5)
+
+
+def test_not_computable_daily_totals_are_the_sub_universe_and_warn_above_the_limit(
+        srv_frames, caplog):
+    """3 of the 4 adult students carry -7 (75 %): the codebook sub-universe, so it builds with
+    a WARNING (no raise) and the base is the one student left (1_1, 27 km)."""
+    persons, legs, households = _post_matsim_frames(srv_frames)
+    persons["E_VERKEHRSLEIST"] = [27.0, -7, 5, 5, 5, -7, -7, 5, 5, 5, 5]
+    universe, _ = R.student_universe(persons, households)
+    with caplog.at_level("WARNING", logger=R.logger.name):
+        table, diag = R.build_post_matsim_reference(universe, persons, legs, 20, 5)
+    assert diag["n_not_computable_daily_distance"] == 3 and diag["n_base_daily_distance"] == 1
+    distance = _quantity(table, "daily_distance_km_mean", "mean")
+    assert distance["value"] == pytest.approx(27.0) and distance["n_unweighted"] == 1
+    assert math.isnan(distance["se_value"])
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any("daily_distance_km_mean" in message and "75.0%" in message
+               for message in warnings)
+
+
+@pytest.mark.parametrize("column", ["E_VERKEHRSLEIST", "E_DAUER_GESAMT"])
+def test_undocumented_negative_daily_total_raises(srv_frames, column):
+    persons, legs, households = _post_matsim_frames(srv_frames)
+    persons.loc[0, column] = -10
+    universe, _ = R.student_universe(persons, households)
+    with pytest.raises(ValueError, match=column):
+        R.build_post_matsim_reference(universe, persons, legs, 20, 5)
+
+
+def test_every_destination_group_is_reachable_and_pooled_by_hand():
+    """Sites 03101, 03154, 03158. Braunschweig b1 [1] Landkreis Hildesheim (03254), b2 [2]
+    Peine (03157, a region Kreis without a site: other_region_kreis), b3 [1] 03154. Wolfenbuettel
+    (a site) w1 [3] to the other site 03154, w2 [1] to 03101. Peine (no site) p1 [2] to its own
+    03157. Braunschweig base 4; site group base 4; no-site base 2; region base 10."""
+    sites = frozenset({"03101", "03154", "03158"})
+    universe, legs = _destination_frames([
+        (3101000, 1, 7, [_edu(3254001)]), (3101000, 2, 7, [_edu(3157000)]),
+        (3101000, 1, 7, [_edu(3154000)]), (3158000, 3, 7, [_edu(3154000)]),
+        (3158000, 1, 7, [_edu(3101000)]), (3157000, 2, 7, [_edu(3157000)])])
+    table, _ = R.build_destination_reference(universe, legs, sites, 200, 4)
+    cell = table.set_index(["home_group", "destination_group"])["share"]
+    assert cell[(R.HOME_GROUP_BRAUNSCHWEIG, R.DEST_LK_HILDESHEIM)] == pytest.approx(1 / 4)
+    assert cell[(R.HOME_GROUP_BRAUNSCHWEIG, R.DEST_OTHER_REGION)] == pytest.approx(2 / 4)
+    assert cell[(R.HOME_GROUP_BRAUNSCHWEIG, "site_kreis_03154")] == pytest.approx(1 / 4)
+    assert (R.HOME_GROUP_BRAUNSCHWEIG, "site_kreis_03101") not in cell.index
+    assert cell[(R.HOME_GROUP_SITE, "site_kreis_03154")] == pytest.approx(3 / 4)
+    assert cell[(R.HOME_GROUP_SITE, "site_kreis_03101")] == pytest.approx(1 / 4)
+    assert cell[(R.HOME_GROUP_NO_SITE, R.DEST_OWN)] == pytest.approx(1.0)
+    expected_region = {R.DEST_LK_HILDESHEIM: 0.1, R.DEST_OTHER_REGION: 0.2,
+                       "site_kreis_03154": 0.4, "site_kreis_03101": 0.1, R.DEST_OWN: 0.2}
+    for label, share in expected_region.items():
+        assert cell[(R.HOME_GROUP_ALL, label)] == pytest.approx(share)
+    assert cell[R.HOME_GROUP_ALL].sum() == pytest.approx(1.0)
+    # The region noise floor is the seeded person bootstrap over ALL six persons (b1, b2, b3,
+    # w1, w2, p1 with their weights), not over one home group.
+    vocabulary = [R.DEST_OWN, "site_kreis_03101", "site_kreis_03154", "site_kreis_03158",
+                  R.DEST_OTHER_REGION, R.DEST_REGION_HANNOVER, R.DEST_LK_HILDESHEIM,
+                  R.DEST_OTHER_OUTSIDE]
+    expected_floor = SP.bootstrap_share_noise_floor(
+        [R.DEST_LK_HILDESHEIM, R.DEST_OTHER_REGION, "site_kreis_03154", "site_kreis_03154",
+         "site_kreis_03101", R.DEST_OWN], [1.0, 2.0, 1.0, 3.0, 1.0, 2.0], vocabulary, 200, 4)
+    floors = table.groupby("home_group")["noise_floor_tvd_95"].first()
+    assert floors[R.HOME_GROUP_ALL] > 0
+    assert floors[R.HOME_GROUP_ALL] == pytest.approx(expected_floor)
+
+
+def test_home_group_with_zero_weight_sum_has_nan_floor_and_is_counted():
+    universe, legs = _destination_frames([
+        (3101000, 0, 7, [_edu(3101000)]), (3101000, 0, 7, [_edu(3158000)]),
+        (3157000, 2, 7, [_edu(3157000)])])
+    table, diag = R.build_destination_reference(universe, legs, SITES, 50, 0)
+    bs = table[table.home_group == R.HOME_GROUP_BRAUNSCHWEIG]
+    assert bs["noise_floor_tvd_95"].isna().all() and bs["share"].isna().all()
+    assert (bs["n_persons_group"] == 2).all()
+    assert diag["n_home_groups_zero_weight"] == 1
+    assert table[table.home_group == R.HOME_GROUP_NO_SITE]["noise_floor_tvd_95"].notna().all()
+
+
+def test_fallback_rate_above_the_limit_raises_with_a_fallback_message():
+    """3 of 4 persons have an unreadable start minute (75 %): the WNR order serves most of the
+    base, which means the primary column is broken."""
+    universe, legs = _destination_frames([
+        (3101000, 1, 7, [_edu(3101000, minute=-1)]), (3101000, 1, 7, [_edu(3101000, minute=-1)]),
+        (3101000, 1, 7, [_edu(3101000, minute=-1)]), (3101000, 1, 7, [_edu(3101000)])])
+    with pytest.raises(ValueError, match="fallback served 3 of 4"):
+        R.build_destination_reference(universe, legs, SITES, 10, 0)
