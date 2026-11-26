@@ -18,6 +18,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from braunschweig.calibration.srv_distance_targets import WOLFSBURG_KREIS
+from braunschweig.calibration.srv_student_reference import (
+    BRAUNSCHWEIG_KREIS, DEST_SITE_PREFIX, HOME_GROUP_BRAUNSCHWEIG, HOME_GROUP_NO_SITE,
+    HOME_GROUP_SITE, _destination_vocabulary)
+from braunschweig.calibration.student_parameters import EXTRA_BASES, PARAMETERS
+
 ROOT = Path(__file__).resolve().parents[1]
 SRV = ROOT / "eqasim-data" / "data" / "braunschweig" / "srv"
 MID = ROOT / "eqasim-data" / "data" / "braunschweig" / "mid"
@@ -219,3 +225,116 @@ def test_decision_tables_rows_verdicts_and_value_pins_2026_11_25():
     assert _row(gate, code="03101")["srv_estimate_students_20_29_persons"] == pytest.approx(
         16776.12607, rel=1e-9)
     assert _row(gate, code=REGION_ROW)["enrollment_local_sites_persons"] == 26054
+
+
+# ------------------------------------------------------- Phase 1 tables (extraction of 2026-11-26)
+# Written by the extraction run of 2026-11-26 at code state 0efd3cc9. The structural tests read the
+# vocabulary and the groups from the modules that own them; the value pins are copied unrounded
+# from the committed files and are guards against an unnoticed change, not reference values.
+
+
+def _read_with_nan_label(name):
+    return pd.read_csv(SRV / name, comment="#", dtype={"code": str, "label": str},
+                       keep_default_na=False, na_values=[""])
+
+
+def test_student_parameters_cover_the_vocabulary_and_partition():
+    frame = _read_with_nan_label("srv2023_student_parameters.csv")
+    assert set(frame["parameter"]) == set(PARAMETERS)
+    expected_bases = {(name, spec.base) for name, spec in PARAMETERS.items()}
+    expected_bases |= {(name, base) for name, bases in EXTRA_BASES.items() for base in bases}
+    assert {tuple(pair) for pair in frame[["parameter", "base"]].drop_duplicates().to_numpy()} == \
+        expected_bases
+    for (parameter, base), cell in frame.groupby(["parameter", "base"]):
+        assert list(cell["label"]) == list(PARAMETERS[parameter].labels), (parameter, base)
+        assert _in_unit_interval(cell["share"]), (parameter, base)
+        assert (cell["n_unweighted"] >= 0).all()
+        if cell["n_unweighted"].sum() > 0:
+            assert cell["share"].sum() == pytest.approx(1.0, abs=1e-8), (parameter, base)
+        else:
+            assert cell["share"].isna().all(), (parameter, base)
+
+
+def test_student_parameters_value_pins_20261126():
+    frame = _read_with_nan_label("srv2023_student_parameters.csv")
+    row = _row(frame, parameter="age_group", base="students_present", label="20_24")
+    assert row["n_unweighted"] == 240
+    assert row["share"] == pytest.approx(0.6211472026, rel=1e-9)
+    row = _row(frame, parameter="mobile", base="students_present", label="yes")
+    assert row["n_unweighted"] == 365
+    assert row["se_share"] == pytest.approx(0.02715112635, rel=1e-9)
+    row = _row(frame, parameter="away_all_day", base="other_adults_all", label="yes")
+    assert row["share"] == pytest.approx(0.05186169651, rel=1e-9)
+    assert row["n_effective"] == pytest.approx(6562.401874, rel=1e-9)
+
+
+def test_young_adult_status_rows_partition_and_wolfsburg_is_nan():
+    frame = _read(SRV, "srv2023_young_adult_status_by_kreis.csv")
+    kreis_rows = frame[frame["level"] == "kreis"]
+    assert list(kreis_rows["code"].drop_duplicates()) == ZGB_KREISE
+    assert _in_unit_interval(frame["share"])
+    wolfsburg = frame[frame["code"] == WOLFSBURG_KREIS]
+    assert len(wolfsburg) == 3
+    assert (wolfsburg["n_unweighted"] == 0).all()
+    assert wolfsburg["share"].isna().all()
+    for code, cell in frame[frame["code"] != WOLFSBURG_KREIS].groupby("code"):
+        assert cell["share"].sum() == pytest.approx(1.0, abs=1e-8), code
+
+
+def test_young_adult_status_value_pins_20261126():
+    frame = _read(SRV, "srv2023_young_adult_status_by_kreis.csv")
+    row = _row(frame, code="03101", status="student")
+    assert row["n_unweighted"] == 199
+    assert row["share"] == pytest.approx(0.4578637028, rel=1e-9)
+    assert _row(frame, code="03102", status="employed")["se_share"] == pytest.approx(
+        0.05492499539, rel=1e-9)
+    assert _row(frame, code="03ZGB", status="student")["weight_sum"] == pytest.approx(
+        23549.04024, rel=1e-9)
+
+
+def test_post_matsim_reference_rows_and_pins_20261126():
+    frame = _read_with_nan_label("srv2023_student_post_matsim_reference.csv")
+    assert len(frame) == 12
+    for quantity in ("main_mode_all_legs", "main_mode_education_legs"):
+        cell = frame[frame["quantity"] == quantity]
+        assert _in_unit_interval(cell["value"])
+        assert cell["value"].sum() == pytest.approx(1.0, abs=1e-6), quantity
+    assert (frame["n_unweighted"] >= 0).all()
+    assert _row(frame, quantity="main_mode_all_legs", label="walk")["value"] == pytest.approx(
+        0.2958223002, rel=1e-9)
+    assert _row(frame, quantity="daily_distance_km_mean", label="mean")["value"] == pytest.approx(
+        23.27352894, rel=1e-9)
+    row = _row(frame, quantity="daily_travel_time_min_mean", label="mean")
+    assert row["n_unweighted"] == 378
+    assert row["value"] == pytest.approx(65.50703693, rel=1e-9)
+
+
+def test_education_destination_groups_partition_and_noise_floors():
+    frame = pd.read_csv(SRV / "srv2023_student_education_destination.csv", comment="#",
+                        dtype=str, keep_default_na=False)
+    numeric = ["n_persons_group", "n_unweighted", "share", "noise_floor_tvd_95"]
+    frame[numeric] = frame[numeric].apply(pd.to_numeric)
+    assert set(frame["home_group"]) == {
+        HOME_GROUP_BRAUNSCHWEIG, HOME_GROUP_SITE, HOME_GROUP_NO_SITE, "region"}
+    for home_group, cell in frame.groupby("home_group"):
+        groups = list(cell["destination_group"])
+        sites = frozenset(g[len(DEST_SITE_PREFIX):] for g in groups
+                          if g.startswith(DEST_SITE_PREFIX))
+        if home_group == HOME_GROUP_BRAUNSCHWEIG:
+            sites = sites | {BRAUNSCHWEIG_KREIS}
+        assert groups == _destination_vocabulary(sites, home_group), home_group
+        assert cell["share"].sum() == pytest.approx(1.0, abs=1e-8), home_group
+        assert (cell["noise_floor_tvd_95"] >= 0).all(), home_group
+        assert (cell["n_persons_group"] == cell["n_persons_group"].iloc[0]).all()
+
+
+def test_education_destination_value_pins_20261126():
+    frame = pd.read_csv(SRV / "srv2023_student_education_destination.csv", comment="#")
+    row = _row(frame, home_group="braunschweig", destination_group="own_kreis")
+    assert row["n_persons_group"] == 88
+    assert row["share"] == pytest.approx(0.7736633592, rel=1e-9)
+    row = _row(frame, home_group="region", destination_group="own_kreis")
+    assert row["n_unweighted"] == 82
+    assert row["noise_floor_tvd_95"] == pytest.approx(0.1311193596, rel=1e-9)
+    assert _row(frame, home_group="region", destination_group="landkreis_hildesheim")[
+        "weight_sum"] == pytest.approx(428.7944169, rel=1e-9)
