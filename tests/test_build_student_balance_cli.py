@@ -269,3 +269,11 @@ def test_model_level_pooled_row_must_match_the_surveyed_kreise(script, world, tm
     with pytest.raises(ValueError, match="03ZGB"):
         script.main(arguments)
     assert not (tmp_path / "art").exists()
+
+
+def test_kreis_lookup_that_misses_a_curated_site_fails_before_any_output(script, world, tmp_path, monkeypatch):
+    """The three institutions outside the LSN table each need a Kreis: a lookup that locates fewer raises."""
+    monkeypatch.setattr(script, "locate_site_kreise", lambda path, points: {points["destination_id"].iloc[0]: CURATED_KREIS})
+    with pytest.raises(ValueError, match="located 1 of the 3 curated sites"):
+        script.main(["calibrate", *_common(world), "--out-dir", str(tmp_path / "out")])
+    assert not (tmp_path / "out").exists()
