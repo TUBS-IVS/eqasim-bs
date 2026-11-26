@@ -29,7 +29,8 @@ Inputs and refusals (no silent fallback)
   pre-portal day while the portal layer is on).
 * The general day-absence draw is MANDATORY: the presence universe (persons at home at some
   point of the reporting day) is what makes the model side comparable with SrV. With
-  ``day_absence_enabled`` false ``execute`` raises ``ValueError``.
+  ``day_absence_enabled`` false ``configure`` raises ``ValueError``, so the run stops at DAG
+  time, before the population is built.
 * A missing committed SrV table or a missing Zensus file raises ``FileNotFoundError``; a person
   frame without ``P_TAET`` raises (the stage is a popsim_mid stage).
 * A missing trace file is recorded in ``provenance.json`` as ``trace_available: false`` and
@@ -40,8 +41,10 @@ Outputs, under ``<output_path>/<students_vs_srv_output_subdir>/``: ``student_lev
 ``young_adult_status_by_kreis.csv``, ``student_work_class.csv``, ``student_behaviour_vs_srv.csv``,
 ``student_plan_source.csv`` (plain CSVs, LF, ``%.10g``, as the sibling stages write them; the
 provenance lives in ``provenance.json`` and at the top of ``summary.md``), ``summary.md`` and
-``provenance.json`` (git commit, parameters, SrV table paths and sha256, the Zensus path and
-sha256, the trace files, every diagnostics dict, ``sampling_rate``).
+``provenance.json`` (git commit, parameters, SrV table and Zensus paths relative to
+``data_path`` with their sha256, the trace file names, every diagnostics dict,
+``sampling_rate``). No output carries an absolute path. The stage's own cache directory gets
+:data:`REPORT_FILE` with the exclusion and fallback counts and rates (:func:`exclusion_report`).
 """
 from __future__ import annotations
 
@@ -102,6 +105,8 @@ _SRV_STRING_COLUMNS = {R.PARAMETER_TABLE: {"label": str},
 ZENSUS_SUBDIR = ("braunschweig", "popsim")
 
 STATUS = "measurement, not validation"
+#: Exclusion / fallback counts and rates, written into the stage's own cache directory.
+REPORT_FILE = "students_vs_srv_report.json"
 
 OUTPUT_FILES = {"student_level": "student_level_by_kreis.csv",
                 "young_adult_status": "young_adult_status_by_kreis.csv",
@@ -208,10 +213,15 @@ def configure(context):
     context.stage("synthesis.population.enriched")
     portal_on = bool(context.config(KEY_PORTAL_ENABLED, DEFAULT_PORTAL_ENABLED))
     context.stage(_portal_config_keys.final_view_trips_stage(portal_on), alias="trips")
-    # Declared only when the draw is on: with it off the stage cannot measure (execute raises),
-    # and pulling the absence stage into such a DAG would only hide that.
-    if bool(context.config(KEY_DAY_ABSENCE_ENABLED, DEFAULT_DAY_ABSENCE_ENABLED)):
-        context.stage(ABSENCE_STAGE)
+    # Refused here, at DAG time, not in execute(): a run without the draw must stop before it
+    # builds the population, not after it (fail early).
+    if not bool(context.config(KEY_DAY_ABSENCE_ENABLED, DEFAULT_DAY_ABSENCE_ENABLED)):
+        raise ValueError(
+            "%s %s is false: the student measurement compares present persons with the SrV "
+            "participation universe, which needs the general day-absence draw; enable it or drop "
+            "this stage from the run list (no fallback to an all-present model side)"
+            % (_LOG_TAG, KEY_DAY_ABSENCE_ENABLED))
+    context.stage(ABSENCE_STAGE)
     context.stage("synthesis.population.spatial.home.locations")
     context.stage("braunschweig.popsim.completed_donor")  # a literal: the hash audit reads it
     context.config("output_path")
@@ -247,13 +257,16 @@ def load_trace(directory: str, file_name: str, columns, name: str) -> tuple[pd.D
     so; ``trace_available`` records it.
     """
     path = os.path.join(str(directory), file_name)
+    # The entry names the file inside the stage's cache directory, never the absolute cache
+    # path (it would carry the run machine's home directory into the outputs).
+    entry = {"stage": COMPLETED_DONOR_STAGE, "file": file_name}
     if not os.path.isfile(path):
         LOGGER.warning("%s %s trace missing (%s): its match paths are reported as unresolved",
                        _LOG_TAG, name, path)
-        return _empty_trace(columns), {"path": path, "trace_available": False, "sha256": None}
+        return _empty_trace(columns), {**entry, "trace_available": False, "sha256": None}
     frame = pd.read_parquet(path)
     LOGGER.info("%s %s trace %s: %d rows", _LOG_TAG, name, path, len(frame))
-    return frame, {"path": path, "trace_available": True,
+    return frame, {**entry, "trace_available": True,
                    "sha256": synpp_tokens.file_sha256(path), "n_rows": int(len(frame))}
 
 
@@ -336,6 +349,46 @@ def summary_markdown(tables: dict, provenance: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _rate(count, total) -> float:
+    return float(count) / float(total) if total else float("nan")
+
+
+def exclusion_report(provenance: dict) -> dict:
+    """The stage's drop / exclusion / fallback counts and their rates, for
+    :data:`REPORT_FILE` in the stage's cache directory (coding standards "Validation and quality
+    control"): the diagnostics dicts of ``provenance.json`` plus the trace availability, without
+    any path. ``rates`` puts each exclusion over the base it was counted on; NaN (``null``) on an
+    empty base."""
+    diagnostics = provenance["diagnostics"]
+    frame, level = diagnostics["student_frame"], diagnostics["student_level"]
+    plan = diagnostics["plan_source"]
+    n_students = (frame["n_adult_students_present"] + frame["n_adult_students_absent"])
+    traces = provenance["plan_source"]["traces"]
+    return {
+        "stage": __name__,
+        "status": STATUS,
+        "sampling_rate": provenance["parameters"]["sampling_rate"],
+        "trace_available": {name: entry["trace_available"] for name, entry in traces.items()},
+        "n_missing_srv_cells": provenance["n_missing_srv_cells"],
+        "rates": {
+            "adult_students_no_home_kreis": frame["unmatched_home_share"],
+            "adult_students_absent": _rate(frame["n_adult_students_absent"], n_students),
+            "persons_missing_age": _rate(level["n_missing_age"], level["n_persons"]),
+            "adults_unreadable_p_taet": _rate(level["n_adults_unreadable_p_taet"],
+                                              level["n_adults_with_age"]),
+            "adults_no_home_kreis": _rate(level["n_adults_no_home_kreis"],
+                                          level["n_adults_with_age"]
+                                          - level["n_adults_unreadable_p_taet"]),
+            "plan_source_unresolved": _rate(plan["n_unresolved"], plan["n_students"]),
+            "plan_source_redrawn_unresolved": _rate(plan["n_redrawn_unresolved"],
+                                                    plan["n_redrawn"]),
+            "plan_source_redrawn_donor_unknown": _rate(plan["n_redrawn_donor_unknown"],
+                                                       plan["n_redrawn"]),
+        },
+        "diagnostics": diagnostics,
+    }
+
+
 def write_outputs(directory: str, tables: dict, provenance: dict) -> None:
     """Write the five CSVs (header-free, LF, ``%.10g``), ``provenance.json`` (strict JSON) and
     ``summary.md`` into ``directory`` (created if absent)."""
@@ -361,11 +414,6 @@ def execute(context):
     sampling_rate = float(context.config("sampling_rate"))
     max_unmatched_home_share = float(context.config(KEY_MAX_UNMATCHED_HOME_SHARE))
     portal_on = bool(context.config(KEY_PORTAL_ENABLED))
-    if not bool(context.config(KEY_DAY_ABSENCE_ENABLED)):
-        raise ValueError(
-            "%s %s is false: the student measurement compares present persons with the SrV "
-            "participation universe, which needs the general day-absence draw; enable it (no "
-            "fallback to an all-present model side)" % (_LOG_TAG, KEY_DAY_ABSENCE_ENABLED))
     out_dir = os.path.join(output_path, subdir)
 
     # Inputs that can be missing are checked first, before any expensive work.
@@ -420,10 +468,12 @@ def execute(context):
             "trips_stage": _portal_config_keys.final_view_trips_stage(portal_on),
         },
         "inputs": {
-            "srv_tables": {name: {"path": srv_table_path(data_path, name),
+            "paths_relative_to": "data_path",
+            # Paths relative to data_path: no absolute path enters an output file.
+            "srv_tables": {name: {"path": "/".join((*_sibling.SRV_SUBDIR, name)),
                                   "sha256": digests[name], "n_rows": int(len(srv[name]))}
                            for name in SRV_TABLES},
-            "zensus_employed_by_age": {"path": zensus_path(data_path),
+            "zensus_employed_by_age": {"path": "/".join((*ZENSUS_SUBDIR, zensus_file)),
                                        "sha256": digests[zensus_file]},
         },
         "region_scope": M.REGION_SCOPE_NOTE,
@@ -442,6 +492,9 @@ def execute(context):
         },
     }
     write_outputs(out_dir, tables, provenance)
+    report_path = os.path.join(context.path(), REPORT_FILE)
+    json_output.write_json(report_path, exclusion_report(provenance))
+    LOGGER.info("%s exclusion report: %s", _LOG_TAG, report_path)
     LOGGER.info("%s wrote %d tables, summary.md and provenance.json to %s (%s)", _LOG_TAG,
                 len(tables), out_dir, STATUS)
     return tables

@@ -183,8 +183,9 @@ class _ExecuteContext:
         return self._stage_paths[name]
 
 
-def _context(tmp_path, data_path, absence_enabled=True):
+def _context(tmp_path, data_path):
     stage_dir = tmp_path / "cache" / (COMPLETED_DONOR + ".cache")
+    own_dir = tmp_path / "cache" / (S.__name__ + ".cache")
     return _ExecuteContext(
         stages={"synthesis.population.enriched": _persons(), "trips": _trips(),
                 "synthesis.population.spatial.home.locations": _homes().assign(geometry=None),
@@ -193,8 +194,8 @@ def _context(tmp_path, data_path, absence_enabled=True):
         config={"output_path": str(tmp_path / "out"), "data_path": str(data_path),
                 "sampling_rate": 0.25, S.KEY_SUBDIR: S.DEFAULT_SUBDIR,
                 S.KEY_MAX_UNMATCHED_HOME_SHARE: S.DEFAULT_MAX_UNMATCHED_HOME_SHARE,
-                S.KEY_DAY_ABSENCE_ENABLED: absence_enabled, S.KEY_PORTAL_ENABLED: False},
-        stage_paths={COMPLETED_DONOR: str(stage_dir)})
+                S.KEY_PORTAL_ENABLED: False},
+        stage_paths={COMPLETED_DONOR: str(stage_dir), None: str(own_dir)})
 
 
 @pytest.fixture
@@ -223,7 +224,7 @@ def test_execute_writes_all_outputs_on_synthetic_stages(tmp_path, stubbed_geogra
     S.configure(recorder)
     assert context.stages_read <= set(recorder.stages)
     assert context.config_read <= set(recorder.config_keys)
-    assert context.paths_read <= set(recorder.stages)
+    assert context.paths_read - {None} <= set(recorder.stages)
     assert recorder.config_keys[S.KEY_SUBDIR] == "analysis/students_vs_srv"
     assert recorder.config_keys[S.KEY_MAX_UNMATCHED_HOME_SHARE] == 0.05
 
@@ -274,6 +275,23 @@ def test_execute_writes_all_outputs_on_synthetic_stages(tmp_path, stubbed_geogra
     assert M.REGION_SCOPE_NOTE in summary
     assert "present students" in summary
 
+    # No output carries an absolute path (on the server it would hold the home directory).
+    report_path = tmp_path / "cache" / (S.__name__ + ".cache") / S.REPORT_FILE
+    for path in [out / name for name in OUTPUTS] + [report_path]:
+        text = path.read_text(encoding="utf-8")
+        for prefix in (str(tmp_path), json.dumps(str(tmp_path))[1:-1], tmp_path.as_posix()):
+            assert prefix not in text, path.name
+    assert provenance["inputs"]["srv_tables"][R.PARAMETER_TABLE]["path"] ==         "braunschweig/srv/" + R.PARAMETER_TABLE
+
+    # The exclusion report in the stage's cache directory: one of four adult students away all
+    # day, all four with a home Kreis, every plan path resolved.
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["rates"]["adult_students_absent"] == pytest.approx(0.25)
+    assert report["rates"]["adult_students_no_home_kreis"] == 0.0
+    assert report["rates"]["plan_source_unresolved"] == 0.0
+    assert report["trace_available"] == {"weekend": True, "diary": True}
+    assert report["diagnostics"] == provenance["diagnostics"]
+
 
 def test_a_missing_trace_is_recorded_and_its_paths_stay_unresolved(tmp_path, stubbed_geographies):
     context = _context(tmp_path, _data_path(tmp_path))
@@ -290,21 +308,31 @@ def test_a_missing_trace_is_recorded_and_its_paths_stay_unresolved(tmp_path, stu
     # Without the weekend trace only the diary path of student 2 resolves.
     paths = dict(zip(plan["match_path"], plan["model_n"]))
     assert paths == {"diary:" + _REDRAWN_DIARY_REASON: 1, M.MATCH_PATH_UNRESOLVED: 3}
+    report = json.loads((tmp_path / "cache" / (S.__name__ + ".cache") / S.REPORT_FILE)
+                        .read_text(encoding="utf-8"))
+    assert report["trace_available"] == {"weekend": False, "diary": True}
+    assert report["rates"]["plan_source_unresolved"] == pytest.approx(0.75)
+    assert report["rates"]["plan_source_redrawn_unresolved"] == 0.0
 
 
-@pytest.mark.parametrize("absence_enabled, srv_tables, zensus, error, match", [
-    pytest.param(False, SRV_TABLES, True, ValueError, S.KEY_DAY_ABSENCE_ENABLED,
-                 id="day-absence-off"),
-    pytest.param(True, SRV_TABLES[1:], True, FileNotFoundError, R.PARAMETER_TABLE,
-                 id="srv-table-missing"),
-    pytest.param(True, SRV_TABLES, False, FileNotFoundError, Z.KREIS_EMPLOYED_BY_AGE_FILE,
-                 id="zensus-missing"),
+def test_configure_refuses_a_run_without_day_absence():
+    """Day absence off: configure raises at DAG time, before declaring the absence stage, so the
+    run stops before the population is built."""
+    recorder = _ConfigureRecorder(config={S.KEY_DAY_ABSENCE_ENABLED: False})
+    with pytest.raises(ValueError, match=S.KEY_DAY_ABSENCE_ENABLED):
+        S.configure(recorder)
+    assert S.ABSENCE_STAGE not in recorder.stages
+
+
+@pytest.mark.parametrize("srv_tables, zensus, match", [
+    pytest.param(SRV_TABLES[1:], True, R.PARAMETER_TABLE, id="srv-table-missing"),
+    pytest.param(SRV_TABLES, False, Z.KREIS_EMPLOYED_BY_AGE_FILE, id="zensus-missing"),
 ])
-def test_execute_refuses_without_day_absence_or_an_input_table(
-        tmp_path, stubbed_geographies, absence_enabled, srv_tables, zensus, error, match):
-    context = _context(tmp_path, _data_path(tmp_path, srv_tables, zensus), absence_enabled)
+def test_execute_refuses_without_an_input_table(tmp_path, stubbed_geographies, srv_tables,
+                                                 zensus, match):
+    context = _context(tmp_path, _data_path(tmp_path, srv_tables, zensus))
     _write_traces(context.path(COMPLETED_DONOR))
-    with pytest.raises(error, match=match):
+    with pytest.raises(FileNotFoundError, match=match):
         S.execute(context)
 
 

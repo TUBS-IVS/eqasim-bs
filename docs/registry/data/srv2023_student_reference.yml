@@ -39,7 +39,8 @@ verification:
     (Phase 0 extraction run) and so are the four Phase 1 tables (Phase 1 extraction run), and
     no SrV aggregate is listed in the verifier. Only the analysis stage
     braunschweig.analysis.synthesis.students_vs_srv reads three of them (parameters, student
-    share by Kreis, young-adult status) and raises if one is missing; no synthesis stage reads
+    share by Kreis, young-adult status) and raises if one is missing, so requirements.production
+    is "required" since that stage entered the production run lists; no synthesis stage reads
     any (issue #140). Unit tests
     on synthetic SrV-shaped frames (hand-computed shares, the label partition of both
     universes, the exclusion of unreadable codes, the seeded noise floor and the CLI end to
@@ -47,7 +48,7 @@ verification:
 requirements:
   synthesis: not_needed
   matsim: not_needed
-  production: optional
+  production: required
 licensing:
   license: aggregate values only; raw SciUse file restricted
   restricted: false
