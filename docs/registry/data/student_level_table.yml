@@ -43,12 +43,16 @@ licensing:
     balance, and from LSN enrollment (dl-de/by-2-0); the Zensus 2022 and SrV/MiD figures
     enter as aggregates only.
 limitations: |
-  The table counts heads, never days (A16). Age and sex are taken as independent, the SrV
-  parameter table has no joint cell (A9). A2 (CHE origin is the Kreis of the school-leaving
-  certificate) reaches the level through the balance, and A6 (a student who does not live in
-  the origin Kreis lives in the site Kreis) through the movers; omega (A12) is one number for
-  all Kreise. The assumptions are documented in braunschweig/calibration/student_level_table.py
-  and braunschweig/data/education/student_od_table.py, the owners of the wording.
+  The table counts heads, never days (no day factor applied). Age and sex are taken as
+  independent, the SrV parameter table has no joint cell (A9). A2 (CHE origin is the Kreis of the
+  school-leaving certificate) reaches the level through the balance, and A6 (a student who does
+  not live in the origin Kreis lives in the site Kreis) through the movers; A16 (the balance counts
+  enrolled students, SrV counts students by main activity; two errors in opposite directions)
+  affects the comparison with SrV; omega (A12) is one number for all Kreise. The assumptions are
+  documented in braunschweig/calibration/student_level_table.py and
+  braunschweig/data/education/student_od_table.py, the owners of the wording. The level against
+  SrV is not decided yet (ADR-0210, Decision 5; the two gate comparisons are in the run
+  manifest).
 
   The header of the file names the source of the weight triple and the mover share (the optimum
   of a decided calibration stage, or set by the owner); the values are in the header and the run

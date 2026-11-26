@@ -8,8 +8,8 @@ geography: |
   Kreise of the study region (ZGB) as homes plus the in-commuters from the Kreise within the
   maximum commuting distance of a local site. The three balance tables sum T by site, by
   out-commuting site and by in-commuter origin.
-crs: EPSG:25832 (distances are straight lines between commune centroids; the tables carry
-  km, no coordinates)
+crs: EPSG:25832 (distances are straight lines between commune centroids; the three curated
+  sites outside the LSN table use their own coordinates; the tables carry km, no coordinates)
 roles:
 - reference_table
 used_by: []
@@ -17,12 +17,13 @@ acquisition:
   method: committed
   source: |
     Regenerate with: python scripts/build_student_balance.py balance --final --out-dir
-    eqasim-data --artifact-dir <run artifact dir> --weights s,m,l --mover-share x
-    --weights-source {calibrated,owner} --sites <lsn_university_sites.csv, local-only> --vg250
+    eqasim-data --artifact-dir <run artifact dir> --weights 1,1,0.3 --mover-share 0.4
+    --mover-site-kreise 03158 --weights-source owner --sites <lsn_university_sites.csv, local-only> --vg250
     <VG250 zip, local-only> --zensus-students <csv, local-only> --zensus-employed <csv,
-    local-only> --source-commit <sha>. The weight triple and the mover share are arguments with
-    no default; each file's header names them, their source (calibrated or owner) and the sha256
-    of every input.
+    local-only> --source-commit <sha> (the values shown are those of the committed tables). The
+    weight triple and the mover share are arguments with no default and --mover-site-kreise has a
+    default the final run does not use; each file's header names them, their source (calibrated
+    or owner) and the sha256 of every input.
   script: scripts/build_student_balance.py
 storage:
   expected_path: eqasim-data/data/braunschweig/schools/{student_od_table,student_balance_by_site,student_balance_out_commuters,student_balance_in_commuters_by_origin}.csv
@@ -52,9 +53,13 @@ licensing:
 limitations: |
   The tables count heads (students by the Kreis they live in), never days. Assumptions A2 (a CHE
   origin is the Kreis of the school-leaving certificate, not the residence), A6 (a student who
-  does not live in the origin Kreis lives in the Kreis of the site) and A16 (no day factor) are
-  documented in braunschweig/data/education/student_od_table.py and
-  braunschweig/calibration/student_level_table.py, the owners of the wording.
+  does not live in the origin Kreis lives in the Kreis of the site) are documented in
+  braunschweig/data/education/student_od_table.py, A10 (maximum commute distance) in
+  braunschweig/data/education/student_geometry.py and A16 (enrolled students versus students by
+  main activity) in braunschweig/calibration/student_level_table.py, the owners of the wording.
+  The rule that the students of a site come from the communes of a Kreis in proportion to
+  population is an owner decision of 2026-11-26 (ADR-0210), not an assumption id. The level of
+  the students against SrV is not decided yet (ADR-0210, Decision 5).
 
   The header of every file names the source of the weight triple and the mover share (the
   optimum of a decided calibration stage, or set by the owner): the values themselves are in
