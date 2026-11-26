@@ -11,9 +11,8 @@ import pytest
 
 from braunschweig.calibration import student_control_evidence as E
 from braunschweig.calibration import student_level_table as L
-from tests.test_student_control_evidence import _gate_inputs
+from tests.student_gate_inputs import ZGB, gate_inputs as _gate_inputs
 
-ZGB = ("03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158")
 WOLFSBURG = "03103"
 
 # students living per Kreis: 600 + 7 * 200 = 2000 over the eight Kreise, 1800 over the seven
@@ -223,6 +222,34 @@ def test_gate_refuses_bad_inputs(problem):
         age = AGE_SHARES.drop("25_29")
     with pytest.raises(ValueError):
         L.gate_table(level_gate, srv, away, age, model_today)
+
+
+@pytest.mark.parametrize("code", ["03101", E.REGION_CODE])
+def test_gate_raises_when_a_trigger_row_has_a_zero_standard_error(code):
+    srv, level_gate, model_today = _gate_against_srv()
+    srv.loc[srv["code"] == code, "se_student_share_adults"] = 0.0
+    with pytest.raises(ValueError, match=code):
+        L.gate_table(level_gate, srv, AWAY_SHARE, AGE_SHARES, model_today)
+
+
+def test_gate_warns_and_counts_a_zero_standard_error_of_another_kreis(caplog):
+    srv, level_gate, model_today = _gate_against_srv()
+    srv.loc[srv["code"] == "03151", "se_student_share_adults"] = 0.0
+    with caplog.at_level("WARNING", logger=L.logger.name):
+        gate = L.gate_table(level_gate, srv, AWAY_SHARE, AGE_SHARES, model_today)
+    row = gate.set_index("code").loc["03151"]
+    assert row["srv_se_students_incl_away_persons"] == 0.0
+    assert np.isnan(row["difference_in_srv_se"]) and not bool(row["beyond_two_se"])
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1 and "03151" in warnings[0].getMessage()
+
+
+def test_away_share_note_says_it_is_one_pooled_value():
+    # the value really is the same on every surveyed row; the note says so for the CLI header
+    srv, level_gate, model_today = _gate_against_srv()
+    gate = L.gate_table(level_gate, srv, AWAY_SHARE, AGE_SHARES, model_today)
+    assert set(gate["srv_away_all_day_share"].dropna()) == {AWAY_SHARE}
+    assert "ONE value" in L.AWAY_SHARE_COLUMN_NOTE
 
 
 def _flags(**by_code):

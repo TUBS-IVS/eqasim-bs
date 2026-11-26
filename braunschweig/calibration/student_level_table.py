@@ -58,6 +58,9 @@ logger = logging.getLogger(__name__)
 
 _LOG_TAG = "[student level table]"
 
+# The two gate rows that decide whether the owner has to rule on the level (design A2).
+_TRIGGER_CODES = (BRAUNSCHWEIG_KREIS, REGION_CODE)
+
 # Age labels of the SrV parameter table (row ``who,age_group,students_present``) and the two level
 # age groups they fold into. 18_19 + 20_24 + 25_29 = 18_29.
 AGE_LABELS = ("18_19", "20_24", "25_29", "30plus")
@@ -83,6 +86,11 @@ GATE_COLUMNS = [
     "difference_in_srv_se", "beyond_two_se", "balance_students_20_29_persons",
     "srv_estimate_students_20_29_persons", "census_estimate_students_20_29_persons",
     "model_today_students_persons"]
+# Note on one gate column, for the header of the CLI output (one owner of the wording).
+AWAY_SHARE_COLUMN_NOTE = (
+    "srv_away_all_day_share is ONE value, the share of the SrV students away from home all day "
+    "pooled over the seven surveyed Kreise (A11), repeated on every surveyed row; it is not a "
+    "per-Kreis measurement.")
 
 
 # --------------------------------------------------------------------------- helpers
@@ -353,11 +361,16 @@ def gate_table(level_gate: pd.DataFrame, srv_shares: pd.DataFrame, away_share: f
     / student_share_adults`` (the away share's own error is ignored). ``difference_in_srv_se`` =
     ``(balance - SrV) / standard error``, ``beyond_two_se`` when its absolute value exceeds
     :data:`student_control_evidence.MIN_DIFFERENCE_STANDARD_ERRORS` (False where not evaluable).
-    ``balance_students_20_29_persons`` = balance times the SrV share of the ages 20 to 29; the two
+    ``srv_away_all_day_share`` is ONE value pooled over the seven surveyed Kreise (A11), repeated
+    on every surveyed row, not a per-Kreis measurement (:data:`AWAY_SHARE_COLUMN_NOTE` is the
+    sentence for the output header). ``balance_students_20_29_persons`` = balance times the SrV share of the ages 20 to 29; the two
     20-29 estimates are the level gate's columns, unchanged. An unsurveyed Kreis (Wolfsburg, no
     SrV share) keeps its row with NaN on the SrV side. Raises ``ValueError`` on a missing column or
     code, an unfilled or negative balance, an away share outside [0, 1), a surveyed row without a
-    positive student share or a finite standard error, or a missing or non-finite model value.
+    positive student share or a finite standard error, a missing or non-finite model value, or a
+    surveyed Braunschweig or pooled row whose standard error is exactly 0 (a row that decides the
+    trigger cannot be evaluated). A surveyed row of another Kreis with standard error 0 gets NaN
+    ``difference_in_srv_se`` and ``beyond_two_se`` False, counted and warned about.
     """
     gate_inputs = ["code", "residents_implied_by_enrollment_persons",
                    "srv_students_weighted_persons", "srv_student_share_adults",
@@ -404,6 +417,17 @@ def gate_table(level_gate: pd.DataFrame, srv_shares: pd.DataFrame, away_share: f
     incl_away = weighted / (1.0 - away_share)
     se = incl_away * se_share / share_adults
     difference = balance - incl_away
+    zero_se = surveyed & (se == 0)
+    decisive = [code for code in frame.loc[zero_se, "code"] if code in _TRIGGER_CODES]
+    if decisive:
+        raise ValueError("gate: surveyed row(s) %s have a standard error of exactly 0 (SrV count "
+                         "%s, se of the student share %s), so the trigger row cannot be evaluated"
+                         % (decisive, weighted[zero_se].to_dict(), se_share[zero_se].to_dict()))
+    if zero_se.any():
+        logger.warning("%s gate: %d surveyed row(s) %s have a standard error of exactly 0; their "
+                       "difference in SrV standard errors is NaN and counts as not beyond %.1f",
+                       _LOG_TAG, int(zero_se.sum()), list(frame.loc[zero_se, "code"]),
+                       MIN_DIFFERENCE_STANDARD_ERRORS)
     in_se = difference / se.where(se > 0)
     out = pd.DataFrame({
         "code": frame["code"], "balance_students_persons": balance,
@@ -434,7 +458,7 @@ def gate_triggered(gate: pd.DataFrame) -> bool:
     """
     _require_columns(gate, ["code", "beyond_two_se"], "gate")
     keyed = _unique_rows(gate, "code", "gate")
-    needed = [BRAUNSCHWEIG_KREIS, REGION_CODE]
+    needed = list(_TRIGGER_CODES)
     absent = [code for code in needed if code not in keyed.index]
     if absent:
         raise ValueError("gate: row(s) %s missing; the trigger reads %s" % (absent, needed))
