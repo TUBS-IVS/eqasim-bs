@@ -32,7 +32,9 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 #: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 48 (+12 production-reachable stages without a token, repository audit C2, group 1).
 #: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 61 (+13, group 2 of the production-reachable stages without a token, repository audit C2).
 #: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 69 (+8 production stages that run declared stages as libraries, ADR-0194).
-EXPECTED_SOURCE_HASHING_STAGES = 69
+#: 2026-11-26 on branch feature/i688-emissions: 73 (+4 post-run emissions stages = braunschweig.data.hbefa,
+#: braunschweig.emissions.inputs, braunschweig.emissions.events, braunschweig.emissions.summary, ADR-0209).
+EXPECTED_SOURCE_HASHING_STAGES = 73
 
 #: Stages whose token holds a non-source part (data files, sizes) next to the module digests.
 _COMPOSITE_STAGES = {
