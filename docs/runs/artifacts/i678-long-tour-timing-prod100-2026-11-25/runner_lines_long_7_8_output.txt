@@ -1,0 +1,30 @@
+2026-11-25T14:16:31,442  INFO CommandLine:539    compression = gzip
+2026-11-25T14:16:31,442  INFO CommandLine:539    config-path = braunschweig_100pct_prod20261031_config_initial_mode_choice.xml
+2026-11-25T14:16:31,443  INFO CommandLine:539    eqasim-configurator = org.eqasim.braunschweig.BraunschweigConfigurator
+2026-11-25T14:16:31,443  INFO CommandLine:539    skip-scenario-check = true
+2026-11-25T14:16:31,443  INFO CommandLine:539    write-input-csv-trips = true
+2026-11-25T14:16:31,443  INFO CommandLine:539    write-output-csv-trips = true
+2026-11-25T14:16:31,447  INFO CommandLine:549       standaloneModeChoice.removePersonsWithNoValidAlternatives = true
+2026-11-25T14:16:31,447  INFO CommandLine:549       plans.inputPlansFile = long_7_8.xml.gz
+2026-11-25T14:16:31,447  INFO CommandLine:549       global.numberOfThreads = 16
+2026-11-25T14:16:31,447  INFO CommandLine:549       standaloneModeChoice.chunkSize = 1
+2026-11-25T14:16:31,448  INFO CommandLine:549       standaloneModeChoice.outputDirectory = mode_choice
+2026-11-25T14:18:23,887  INFO StandaloneModeChoicePerformer:129 Splitting 5473 plans into 5473 chunks (1 each) over 16 threads
+2026-11-25T14:18:43,889  INFO ParallelProgress:86 [Standalone mode choice, 89/5473, (1.63%)]
+2026-11-25T14:18:53,891  INFO ParallelProgress:86 [Standalone mode choice, 386/5473, (7.05%), RT:10s, 38.60it/s, ~02:11]
+2026-11-25T14:19:03,892  INFO ParallelProgress:86 [Standalone mode choice, 820/5473, (14.98%), RT:20s, 41.00it/s, ~01:53]
+2026-11-25T14:19:13,894  INFO ParallelProgress:86 [Standalone mode choice, 1184/5473, (21.63%), RT:30s, 39.47it/s, ~01:48]
+2026-11-25T14:19:23,896  INFO ParallelProgress:86 [Standalone mode choice, 1459/5473, (26.66%), RT:40s, 36.48it/s, ~01:50]
+2026-11-25T14:19:33,898  INFO ParallelProgress:86 [Standalone mode choice, 1738/5473, (31.76%), RT:50s, 34.76it/s, ~01:47]
+2026-11-25T14:19:43,899  INFO ParallelProgress:86 [Standalone mode choice, 2100/5473, (38.37%), RT:01:00, 35.00it/s, ~01:36]
+2026-11-25T14:19:53,900  INFO ParallelProgress:86 [Standalone mode choice, 2509/5473, (45.84%), RT:01:10, 35.84it/s, ~01:22]
+2026-11-25T14:20:03,901  INFO ParallelProgress:86 [Standalone mode choice, 2852/5473, (52.11%), RT:01:20, 35.65it/s, ~01:13]
+2026-11-25T14:20:13,902  INFO ParallelProgress:86 [Standalone mode choice, 3327/5473, (60.79%), RT:01:30, 36.97it/s, ~58s]
+2026-11-25T14:20:23,903  INFO ParallelProgress:86 [Standalone mode choice, 3761/5473, (68.72%), RT:01:40, 37.61it/s, ~45s]
+2026-11-25T14:20:33,903  INFO ParallelProgress:86 [Standalone mode choice, 4130/5473, (75.46%), RT:01:50, 37.55it/s, ~35s]
+2026-11-25T14:20:43,905  INFO ParallelProgress:86 [Standalone mode choice, 4461/5473, (81.51%), RT:02:00, 37.18it/s, ~27s]
+2026-11-25T14:20:53,906  INFO ParallelProgress:86 [Standalone mode choice, 4692/5473, (85.73%), RT:02:10, 36.09it/s, ~21s]
+2026-11-25T14:21:03,907  INFO ParallelProgress:86 [Standalone mode choice, 5026/5473, (91.83%), RT:02:20, 35.90it/s, ~12s]
+2026-11-25T14:21:13,908  INFO ParallelProgress:86 [Standalone mode choice, 5365/5473, (98.03%), RT:02:30, 35.77it/s, ~03s]
+2026-11-25T14:21:20,195  INFO ParallelProgress:140 Standalone mode choice Done!
+2026-11-25T14:21:24,358  INFO PopulationWriter:150 Population written to: mode_choice/output_plans.xml.gz

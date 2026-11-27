@@ -1,0 +1,153 @@
+{
+ "empty_log_files": [
+  "~/i678_ab_today/cache/braunschweig.matsim.simulation.prepare__ac1f19899017d4dcc2d263d5d6397342.cache/mode_choice/logfile.log",
+  "~/i678_ab_today/cache/braunschweig.matsim.simulation.prepare__ac1f19899017d4dcc2d263d5d6397342.cache/mode_choice/logfileWarningsErrors.log",
+  "~/i678_ab_today/cache/matsim.simulation.run__93cc42b186a460f45bf199539d391b7b.cache/simulation_output/logfile.log",
+  "~/i678_ab_today/cache/matsim.simulation.run__93cc42b186a460f45bf199539d391b7b.cache/simulation_output/logfile.log",
+  "~/i678_ab_today/cache/matsim.simulation.run__93cc42b186a460f45bf199539d391b7b.cache/simulation_output/logfileWarningsErrors.log"
+ ],
+ "error_lines": null,
+ "exception_lines": null,
+ "initial_runner_lines": null,
+ "kept_trip_lines": null,
+ "modestats": [
+  {
+   "bicycle": "0.08394904458598726",
+   "car": "0.5244076433121019",
+   "car_passenger": "0.12802547770700637",
+   "iteration": "0",
+   "outside": "0.04392356687898089",
+   "pt": "0.06007643312101911",
+   "truck": "0.013273885350318471",
+   "walk": "0.14634394904458597"
+  },
+  {
+   "bicycle": "0.0844076433121019",
+   "car": "0.5236687898089172",
+   "car_passenger": "0.1278216560509554",
+   "iteration": "1",
+   "outside": "0.04392356687898089",
+   "pt": "0.060382165605095545",
+   "truck": "0.013273885350318471",
+   "walk": "0.14652229299363057"
+  },
+  {
+   "bicycle": "0.0849171974522293",
+   "car": "0.5231592356687899",
+   "car_passenger": "0.12743949044585987",
+   "iteration": "2",
+   "outside": "0.04392356687898089",
+   "pt": "0.06063694267515923",
+   "truck": "0.013273885350318471",
+   "walk": "0.14664968152866242"
+  },
+  {
+   "bicycle": "0.08527388535031848",
+   "car": "0.5229299363057325",
+   "car_passenger": "0.12710828025477708",
+   "iteration": "3",
+   "outside": "0.04392356687898089",
+   "pt": "0.06078980891719745",
+   "truck": "0.013273885350318471",
+   "walk": "0.14670063694267516"
+  },
+  {
+   "bicycle": "0.08568152866242038",
+   "car": "0.5224458598726115",
+   "car_passenger": "0.12654777070063694",
+   "iteration": "4",
+   "outside": "0.04392356687898089",
+   "pt": "0.06132484076433121",
+   "truck": "0.013273885350318471",
+   "walk": "0.14680254777070065"
+  },
+  {
+   "bicycle": "0.08578343949044585",
+   "car": "0.522140127388535",
+   "car_passenger": "0.12642038216560508",
+   "iteration": "5",
+   "outside": "0.04392356687898089",
+   "pt": "0.061528662420382164",
+   "truck": "0.013273885350318471",
+   "walk": "0.14692993630573248"
+  }
+ ],
+ "output_plans_persons": 12667,
+ "prepare_dir": "braunschweig.matsim.simulation.prepare__ac1f19899017d4dcc2d263d5d6397342.cache",
+ "prepare_population_persons": 12667,
+ "prepare_sha256": {
+  "braunschweig_1pct_i678_config.xml": "503b6d720c5c800599bc3f2f7ab3878599d65c84eff0511e6992920504551593",
+  "braunschweig_1pct_i678_population.xml.gz": "caacfb1365c86b44c987ca74f2c9aec0de2711078d0753c99089a7a2ab09214d",
+  "plan_check.json": "b2178ccadbd52dd7b0fe80d6a2450fe86b50d32b8c20ca1143ce8f4eb8424ec8"
+ },
+ "run_dir": "~/i678_ab_today",
+ "run_dir_stage": "matsim.simulation.run__93cc42b186a460f45bf199539d391b7b.cache",
+ "stopwatch": [
+  {
+   "iteration": "0",
+   "iteration_total": "00:01:15",
+   "mobsim": "00:01:00",
+   "replanning": ""
+  },
+  {
+   "iteration": "1",
+   "iteration_total": "00:01:03",
+   "mobsim": "00:00:51",
+   "replanning": "00:00:03"
+  },
+  {
+   "iteration": "2",
+   "iteration_total": "00:00:55",
+   "mobsim": "00:00:49",
+   "replanning": "00:00:03"
+  },
+  {
+   "iteration": "3",
+   "iteration_total": "00:00:55",
+   "mobsim": "00:00:49",
+   "replanning": "00:00:03"
+  },
+  {
+   "iteration": "4",
+   "iteration_total": "00:00:56",
+   "mobsim": "00:00:50",
+   "replanning": "00:00:03"
+  },
+  {
+   "iteration": "5",
+   "iteration_total": "00:01:20",
+   "mobsim": "00:01:03",
+   "replanning": "00:00:03"
+  }
+ ],
+ "stuck_by_iteration": {
+  "0.events.xml.gz": {
+   "by_leg_mode": {
+    "car": 127,
+    "pt": 6,
+    "truck": 33,
+    "walk": 7
+   },
+   "total": 173
+  },
+  "5.events.xml.gz": {
+   "by_leg_mode": {
+    "car": 11,
+    "pt": 2,
+    "truck": 3,
+    "walk": 6
+   },
+   "total": 22
+  }
+ },
+ "stuck_last_iteration": {
+  "by_leg_mode": {
+   "car": 11,
+   "pt": 2,
+   "truck": 3,
+   "walk": 6
+  },
+  "total": 22
+ },
+ "warn_error_count": null
+}

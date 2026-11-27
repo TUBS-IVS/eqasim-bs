@@ -167,3 +167,4 @@ notes: >-
   (the fixtures do; tests/test_outside_tour_modes_wiring.py). Since ADR-0159 the same holds for
   synthesis.population.activities.simulated and synthesis.population.activities.final. The timetable check
   (ADR-0159) is not measured yet; the next 1 % rerun of the #465 fixes is the first run with it.
+  ADR-0206 (#678) takes up the premise of decision 1 of ADR-0145 (the mode choice reaches every tour that is not frozen); the tours this feature judges are unchanged. Definition of reach: docs/codebase/notes/mode-choice-reach.md.

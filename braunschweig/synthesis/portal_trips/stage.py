@@ -70,6 +70,8 @@ _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon", "braunschwe
                                  "braunschweig.data.transit.schedule", "braunschweig.data.transit.connections",
                                  "braunschweig.data.transit.router_cache",
                                  "braunschweig.matsim.scenario.day_end_margin",
+                                 # plan_check imports mode_choice_reach, which imports config_modules (#678)
+                                 "braunschweig.matsim.simulation.mode_choice_reach", "braunschweig.matsim.config_modules",
                                  "braunschweig.popsim.closure_dwell", "data.hts.hts",
                                  # Declared stages this stage runs as libraries, and their imports (ADR-0194): the
                                  # DAG edge covers their output, not this code. The batch pt router starts through
