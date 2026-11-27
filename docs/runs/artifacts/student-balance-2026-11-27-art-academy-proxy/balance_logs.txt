@@ -1,10 +1,10 @@
 WARNING build_student_balance: [build_student_balance] enrollment outside LSN, --sites (WS 2025/26): primary 1/3 of 3 (own semester), fallback 2/3 (last published winter semester) {'Hochschule Magdeburg-Stendal': 'WS 2024/25', 'Hochschule Harz': 'WS 2024/25'}
 INFO build_student_balance: [build_student_balance] enrollment outside LSN, --sites-census-year (WS 2022/23): primary 3/3 of 3 (own semester), fallback 0/3 (last published winter semester) {}
-<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_b90540f62f134416b4042ff96aa5af1f has GPKG application_id, but non conformant file extension
+<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_6b7525e5afe24d14bcec5c15583b302d has GPKG application_id, but non conformant file extension
   return ogr_read(
 INFO braunschweig.data.education.student_geometry: [student_geometry] vg250_gem: 10956 land communes (GF == 4), 83577140 inhabitants; dropped 154 non-land rows (GF != 4) of 11110, from <main-checkout>\eqasim-data\data\germany\vg250-ew_12-31.utm32s.gpkg.ebenen.zip
 INFO braunschweig.data.education.student_geometry: [student_geometry] site points: commune centroid 18/21 (85.7%), curated coordinates 3 (0 of them overriding a site row)
-<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_5b9109227e564de292433ed21db1a6ed has GPKG application_id, but non conformant file extension
+<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_8649eadd4d4f4506916c231a747522bd has GPKG application_id, but non conformant file extension
   return ogr_read(
 INFO build_student_balance: [build_student_balance] site Kreis: LSN table (primary) 18/21 (85.7%), VG250 polygon lookup (curated institutions) 3 (14.3%)
 INFO braunschweig.data.education.student_geometry: [student_geometry] reach 100 km of 6 destination(s): 51 Kreise, 859 communes in reach; 202 unpopulated communes (ewz == 0) skipped

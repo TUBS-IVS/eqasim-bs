@@ -1,12 +1,13 @@
 id: student-balance-2026-11-27-art-academy-proxy
 date: '2026-11-27'
 repository:
-  commit: '352850b4'
+  commit: '3b2704cb'
   branch: claude/i140-student-flows-fde844
   notes: >-
-    Code state of every table of this run: 352850b4 (written in the header of each committed table and artifact). The five
-    rewritten tables, the run artifacts and this manifest are committed together in the commit that adds this file; the sha256
-    values under pipeline.notes are those of the committed blobs (LF). This run supersedes the five tables of run
+    Code state of every table and artifact of this run: 3b2704cb (written in each header). A first build at 352850b4
+    (commit 53aa810c) had the same data rows; the rebuild at 3b2704cb changes only the header (the CHE cell counts now list the
+    proxy cells under their own source, see pipeline.notes). The five tables, the run artifacts and this manifest are committed
+    together; the sha256 values under pipeline.notes are those of the committed blobs (LF). This run supersedes the five tables of run
     student-balance-2026-11-27 (record docs/runs/student-balance-2026-11-27.yml), whose weights, mover share, inputs and level
     rule it keeps. The run directory, host and user are not recorded in tracked files.
 configuration:
@@ -28,7 +29,12 @@ pipeline:
   notes: |-
     Command (local-only inputs are named by file name and sha256, never by path; the command of run student-balance-2026-11-27
     plus --origin-pattern-proxy, written to a scratch directory and copied back):
-    python -X utf8 scripts/build_student_balance.py balance --sites lsn_university_sites.csv --sites-census-year lsn_university_sites_ws2022_23.csv --vg250 vg250-ew_12-31.utm32s.gpkg.ebenen.zip --zensus-students zensus2022_students_20_29_kreis.csv --zensus-employed zensus2022_employed_by_age_kreis.csv --weights 1,1,0.3 --mover-share 0.4 --mover-site-kreise 03158 --weights-source owner --origin-pattern-proxy "Hochsch. f. Bildende Künste Braunschweig=TU Braunschweig" --source-commit 352850b4 --final --out-dir <scratch>/eqasim-data --artifact-dir <scratch>/artifacts
+    python -X utf8 scripts/build_student_balance.py balance --sites lsn_university_sites.csv --sites-census-year lsn_university_sites_ws2022_23.csv --vg250 vg250-ew_12-31.utm32s.gpkg.ebenen.zip --zensus-students zensus2022_students_20_29_kreis.csv --zensus-employed zensus2022_employed_by_age_kreis.csv --weights 1,1,0.3 --mover-share 0.4 --mover-site-kreise 03158 --weights-source owner --origin-pattern-proxy "Hochsch. f. Bildende Künste Braunschweig=TU Braunschweig" --source-commit 3b2704cb --final --out-dir <scratch>/eqasim-data --artifact-dir <scratch>/artifacts
+    python -X utf8 scripts/build_student_balance.py calibrate --sites lsn_university_sites.csv --vg250 vg250-ew_12-31.utm32s.gpkg.ebenen.zip --origin-pattern-proxy "Hochsch. f. Bildende Künste Braunschweig=TU Braunschweig" --source-commit 3b2704cb --out-dir docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/calibration_check
+    (the calibrate command of run student-balance-2026-11-27 plus --origin-pattern-proxy; grid defaults, mover_site_kreise default 03102,03103,03158)
+    python -X utf8 docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/weights_decision/analyse_weight_candidates.py --sites lsn_university_sites.csv --sites-census-year lsn_university_sites_ws2022_23.csv --vg250 vg250-ew_12-31.utm32s.gpkg.ebenen.zip --zensus-students zensus2022_students_20_29_kreis.csv --zensus-employed zensus2022_employed_by_age_kreis.csv --source-commit 3b2704cb --origin-pattern-proxy <value> --out docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/weights_decision/weight_candidates_proxy_<on|off>.csv
+    (run twice: <value> = the art academy pair above, output weight_candidates_proxy_on.csv, and none, output
+    weight_candidates_proxy_off.csv; the script is a copy of the aid of 2026-11-26 with the three changes named in its docstring)
     The local-only inputs were checked against the sha256 values of run student-balance-2026-11-27 before the run (all five equal).
     Every input is listed with its sha256 in the Inputs lines of the table headers. One committed input differs from run
     student-balance-2026-11-27: eqasim-data/data/braunschweig/srv/srv2023_student_parameters.csv, sha256
@@ -38,16 +44,28 @@ pipeline:
     OFF check: the same command with --origin-pattern-proxy none reproduces the data rows of the five tables of run
     student-balance-2026-11-27 (test test_without_origin_pattern_proxy_the_balance_equals_the_tables_of_2026_11_27 in
     tests/test_student_balance_pins.py, data-gated, passed locally on 2026-11-27).
-    Log in the artifact directory: balance_logs.txt (local paths scrubbed to placeholders).
+    Header of the rebuild at 3b2704cb: the object origin_cells of the Diagnostics line counts the cells the builder reads, so
+    the 50 proxy cells of the art academy appear under source proxy_pattern (with their summed bound,
+    proxy_pattern_upper_bound_persons) and censored_upper_bound_persons covers only the cells still censored. The data rows of
+    the five tables and of the gate and pre-check artifacts are identical to those of commit 53aa810c (line-by-line comparison
+    of every non-header line).
+    Logs in the artifact directory: balance_logs.txt, calibration_check/calibration_logs.txt (local paths scrubbed to placeholders).
     sha256 of the committed blobs:
-    eqasim-data/data/braunschweig/popsim/student_level_table.csv: 030aca45c36be32e08e3e7f64b79a6e723f0367cac5e1ac81085ae07787c860c
-    eqasim-data/data/braunschweig/schools/student_balance_by_site.csv: 500c21e072ca052eaa8b94312ca5032a226fff970d6e1d09e07c04d5cc31ccba
-    eqasim-data/data/braunschweig/schools/student_balance_in_commuters_by_origin.csv: 5d69137febd60134946add9c0ae6a2c333a0518a6e0fac3e1fa0447cc46a5b38
-    eqasim-data/data/braunschweig/schools/student_balance_out_commuters.csv: b78eb2e5e2d7ea757e203750e0cd1e3e8008cea2a682cd7f93e02b0f63891afe
-    eqasim-data/data/braunschweig/schools/student_od_table.csv: cf65df53ebf53e9a95f3fe1d97e852adf3b99738fec6852d7b4515658a57fbd6
-    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/balance_logs.txt: ef7720bd8d986e2b6e718d16d4fe4b1caab89e8b97ce6e088e45a036a0279b7c
-    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/student_employed_target_precheck.csv: fc5d40e9424d2623a28a13355e125f325f1d450cc27583c4e3f0cc289980c2e5
-    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/student_level_gate.csv: b945e077ffd78c9490478b5a72a38f755984d670aea9e556b25f88038803e571
+    eqasim-data/data/braunschweig/popsim/student_level_table.csv: 8ba668f327684334f729b4a0be715b3f8af7ca46b4ba1e50341fe96330a595a6
+    eqasim-data/data/braunschweig/schools/student_balance_by_site.csv: 99d570dd9fd74205b384d0f91d2c3c7099837d6fe835f22a1f82b357744609b2
+    eqasim-data/data/braunschweig/schools/student_balance_in_commuters_by_origin.csv: cd40564fc75860c265d65dbcd94f04a7005405787d8fc80ba56afa703c0f9959
+    eqasim-data/data/braunschweig/schools/student_balance_out_commuters.csv: 5e5d8cb997f4928104dc7eb88d30376624def4a848395746e753c3ccb66501a0
+    eqasim-data/data/braunschweig/schools/student_od_table.csv: 6681f35cda3c7b8678a751484c812f0ace54baca33e2627fc6b43c6fc88267f8
+    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/balance_logs.txt: bb806b947669aae3e44c35d4b83551e8c6b6ed94a4d232cad74043d38e971a00
+    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/calibration_check/calibration_logs.txt: 51d194ae02dba4bcc17269736174724d0729124f4166a7788260382b950e24d1
+    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/calibration_check/student_commuter_weight_calibration.csv: 9fb3f5e840c0a71c869d5da99e43060796db27dbb2fc36813aecc64f71ac787f
+    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/calibration_check/student_commuter_weight_context.csv: 8664973105c2bc4f0856183e34af814a9ec31261a11a682e73c2287db6858b6a
+    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/calibration_check/student_commuter_weight_fit.csv: 22e9d7bb6a80404821fac62d9ad1339827f10c2198c442f271ba927e974a83e1
+    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/student_employed_target_precheck.csv: 1527c4ad54d7e0c190f6c36450df1a2decb0591a7053e81b73e332dd12bf3ccb
+    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/student_level_gate.csv: 8f768a1ce150c7a489206f4332c380a0a596ccd76aa4b7ec460b088d3e25b79a
+    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/weights_decision/analyse_weight_candidates.py: 8c45b7810b3bb315e10776e35a3ebc47881b17bfe192b42aaec7799f05c85bed
+    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/weights_decision/weight_candidates_proxy_off.csv: a0063732a56d15aa07cba5f8718a0f528158abbfbc9905acf6c3512afcf19a00
+    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/weights_decision/weight_candidates_proxy_on.csv: eb76673c3f2d1a5493820692adb20a0f3edf4d7b30ddedc797a9af218bf14a8d
     student_destination_points.csv was not rebuilt: the rule changes no site, point or distance.
 classification:
 - calibration
@@ -57,6 +75,29 @@ status:
     A table build on published aggregates, not a validation. The weights and the mover share are the owner's of 2026-11-26;
     the origin pattern of the art academy is an ASSUMPTION of the owner of 2026-11-27 (ADR-0210).
 validation:
+- metric: 'calibration check with the rule (stage weights, stage weights and movers): total variation distance to the SrV destination reference'
+  reference: SrV 2023 destination reference; the calibration check of run student-balance-2026-11-27 (without the rule)
+  result: >-
+    Read from the header lines 'Stage ...' of calibration_check/student_commuter_weight_calibration.csv of both runs. Both
+    stages stay undecided (decided=False) with unchanged ranges (weights: short 0.05 to 1, middle 0 to 1, long 0 to 1; weights
+    and movers: the same plus mover_share 0 to 1) and the unchanged noise floor noise_floor_tvd_95=0.2225188096. Stage weights:
+    optimum short=1 middle=1 long=0.85, objective_tvd 0.1572448396 (without the rule) -> short=1 middle=1 long=0.8,
+    objective_tvd 0.1524691863 (with it). Stage weights_and_movers: optimum short=1 middle=0.95 long=0.65 mover_share=0.1,
+    objective_tvd 0.1521655978 -> short=1 middle=0.9 long=0.65 mover_share=0.1, objective_tvd 0.1495142568. Each optimum moves
+    by one grid step (0.05) in one weight and stays inside the earlier ranges. The weights 1 / 1 / 0.3 and the mover share 0.4
+    at 03158 stay the owner's assumption of 2026-11-26, set before this rule; they were not changed.
+- metric: weights decision aid with and without the rule (option C = the owner's weights 1 / 1 / 0.3, mover share 0.4 at 03158)
+  reference: the pooled SrV yardsticks of the aid of 2026-11-26 (approximate standard errors, an ASSUMPTION of the aid)
+  result: >-
+    Read from weights_decision/weight_candidates_proxy_off.csv and weight_candidates_proxy_on.csv (row label
+    option_c_lead_recommendation; both under the enrollment of WS 2025/26, so the off file is the like-for-like baseline, not
+    the aid of 2026-11-26, which used WS 2024/25). sum_squared_z_yardsticks 5.989425 (off) -> 6.133348 (on); objective_tvd
+    0.146211 -> 0.143344; z_distance_50_km_or_more 1.373614 -> 1.369747; z_bs_study_in_bs -0.098051 -> -0.159294;
+    level_difference_in_srv_se_03ZGB -2.126828 -> -2.191823 (the same values as the gate rows of the two runs). Option C ranks
+    third of the 22 candidates by sum_squared_z_yardsticks in both files (the lowest is c_short_0.9_middle_0.9 in both) and
+    lies below options A and B on sum_squared_z_yardsticks in both files. The copy of the aid passes the balance rows as the
+    two level arguments that gate_table gained after the aid was written; the columns the aid reads do not use them
+    (docstring of the copy).
 - metric: the art academy in T (student_od_table.csv, destination 'Hochsch. f. Bildende Künste Braunschweig | 03101000')
   reference: TU Braunschweig in the same table (the proxy); the art academy's rows of run student-balance-2026-11-27
   result: >-
@@ -119,7 +160,13 @@ notes: >-
   Limitations. (a) The art academy's origin pattern is assumed, not observed: CHE publishes no list for it, and the only
   observed cell is its Braunschweig cell. (b) All limitations of run student-balance-2026-11-27 (record
   docs/runs/student-balance-2026-11-27.yml, notes) hold unchanged. (c) A table build, not a validation; the tables count
-  heads, no day factor is applied. Decisions: ADR-0210.
+  heads, no day factor is applied. (d) The calibration and the weights decision aid of 2026-11-26/27 (records
+  student-balance-2026-11-26 and student-balance-2026-11-27) were computed without the rule. With --origin-pattern-proxy none
+  the current code reproduces the calibration check of 2026-11-27 (data rows of its three files and its 'Stage' header lines
+  identical, checked on 2026-11-27) and the five tables of 2026-11-27 (the OFF pin test). The aid of 2026-11-26 was built
+  under the enrollment of WS 2024/25 and is not re-scored; its baseline without the rule under WS 2025/26 is
+  weight_candidates_proxy_off.csv. The rerun with the rule is in the two calibration and decision-aid validation entries; the
+  owner's weights were set before the rule and were not revisited. Decisions: ADR-0210.
 source: >-
   scripts/build_student_balance.py over the inputs named in the table headers; outputs committed under
   eqasim-data/data/braunschweig/schools, eqasim-data/data/braunschweig/popsim and
