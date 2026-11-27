@@ -184,6 +184,14 @@ from braunschweig.resources import KEY_FAST_PATHS, KEY_STORE_POSITIVE_WEIGHT_ROW
 # changed threshold takes effect only when the stage executes.
 # ASSUMPTION-grade threshold, to be set from the first full run (design, issue #645).
 KEY_SOLVER_FALLBACK_ERROR_RATE = "braunschweig.population.popsim.solver_fallback_error_rate"
+# Smoke mode of the student design (ADR-0211, and the one-batch smoke manifest it names): with true the
+# stage runs as usual up to and including the writing of every batch folder, the input-consistency table,
+# the stage report and student_kreis_targets.csv, then raises AssembleBatchesOnlyStop BEFORE PopulationSim,
+# so synpp caches no stage output and one batch can be run by hand from the written folders. Default
+# false: the stage is unchanged. Volatile: it changes no result of a completed run (a run with it on never
+# completes), so declaring it does not change the stage hash.
+KEY_ASSEMBLE_BATCHES_ONLY = "braunschweig.population.popsim.assemble_batches_only"
+DEFAULT_ASSEMBLE_BATCHES_ONLY = False
 # Member completion (decision D3, mid source only): fill member-incomplete MiD
 # donor households by mirror-household sampling, in ONE pass on the attribute
 # donor tables that feeds BOTH the PopulationSim seed and the expansion.

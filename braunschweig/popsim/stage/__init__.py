@@ -356,6 +356,8 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
     KEY_SEED_DAY_FILTER,
     KEY_SETTINGS,
+    KEY_ASSEMBLE_BATCHES_ONLY,
+    DEFAULT_ASSEMBLE_BATCHES_ONLY,
     KEY_SOLVER_FALLBACK_ERROR_RATE,
     KEY_SOURCE,
     KEY_STATUS_KREIS_CONTROL,
@@ -965,6 +967,9 @@ def configure(context):
     context.config(KEY_FAST_PATHS, False)
     # Solver-path gate threshold (meaning: KEY_SOLVER_FALLBACK_ERROR_RATE in config_keys).
     context.config(KEY_SOLVER_FALLBACK_ERROR_RATE, None, volatile = True)
+    # Smoke mode (ADR-0211; meaning: KEY_ASSEMBLE_BATCHES_ONLY in config_keys). Volatile: a declared
+    # default-false key must not devalidate the cached stage of every run.
+    context.config(KEY_ASSEMBLE_BATCHES_ONLY, DEFAULT_ASSEMBLE_BATCHES_ONLY, volatile = True)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
     context.config(KEY_COMPLETE_MEMBERS, True)
     # Sex codes 3 / 9 resolved once per donor person (issue #647). Default True.
@@ -3417,6 +3422,25 @@ def _batch_settings_yaml(context, settings_path, settings_overrides) -> str:
         settings_overrides)
 
 
+class AssembleBatchesOnlyStop(RuntimeError):
+    """Raised by the smoke mode ``assemble_batches_only`` (ADR-0211) instead of running PopulationSim.
+
+    It is the intended end of such a run, not a failure of the stage: the batch folders, the
+    input-consistency table, the stage report and ``student_kreis_targets.csv`` are written, and no
+    stage output is cached.
+    """
+
+
+def _assemble_batches_only_run_one(work_dir):
+    """Build the ``run_one`` that replaces PopulationSim in the smoke mode: it only raises the stop."""
+    def run_one(folder):
+        raise AssembleBatchesOnlyStop(
+            f"assemble_batches_only is on (smoke mode, ADR-0211): the batch folders are written "
+            f"under {work_dir} (first folder: {folder}) and PopulationSim was not run; the stage "
+            f"stops here, so synpp caches no output. Run one batch from these folders by hand.")
+    return run_one
+
+
 def _run_populationsim_batches(context, cells: pd.DataFrame, base_cols, controls_df: pd.DataFrame,
         seed_households: pd.DataFrame, seed_persons: pd.DataFrame, work_dir,
         settings_path, logging_path, max_cells: int, run_one, num_workers: int,
@@ -4203,6 +4227,14 @@ def execute(context) -> pd.DataFrame:
     run_one = _prepare_batch_runner(
         context, uv_path, popsimprep_dir, stratify_regiostar,
     )
+    if bool(context.config(KEY_ASSEMBLE_BATCHES_ONLY)):
+        # Smoke mode (ADR-0211): every folder is written before the first run_one call, so the
+        # first call stops the stage, and PopulationSim is never invoked.
+        logger.warning(
+            "[popsim.stage] assemble_batches_only is ON: the batch folders will be written under %s "
+            "and the stage then stops before PopulationSim (smoke mode); it caches no output.",
+            work_dir)
+        run_one = _assemble_batches_only_run_one(work_dir)
     kreis_table, kreis_controls_map = _derive_kreis_attribute_control_targets(
         context, cells, active_entries, status_prior_n, kreis_table,
         kreis_controls_map, household_control_names, fine_teen_bands_on,
