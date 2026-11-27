@@ -125,3 +125,21 @@ notes: >-
   which requires protobuf >=6.31.1,<6.32 while the fix is 6.33.5; the next ortools (9.15.6755) requires NumPy 2,
   so the fix needs a new fork release with its own evidence. The advisory (GHSA-7gcm-g887-7qv7) concerns
   `google.protobuf.json_format.ParseDict()` on input from an attacker.
+
+  Reference arm: rc2_on of popsim-bs3-release-2026-11-25 ran release candidate ea51a8a; the tag v0.10.0+bs.3
+  (a5de8c0a) adds three commits to it (version strings, a summarize test and a three-line change in
+  populationsim/steps/expand_households.py; GitHub compare ea51a8a...a5de8c0a). Arm old, which installs the tag,
+  reproduces the rc2_on hashes on all three batches (check 2), so on these batches both give the same output.
+
+  Limits of the harness: check 5 is measured once per arm by setup_envs.sh, not inside each run; run_ab.sh clears
+  PYTHONPATH but not VIRTUAL_ENV or UV_PROJECT_ENVIRONMENT (both unset on the run server account is not recorded).
+  fork_test.sh used one clone for both arms, so arm new may have reused numba machine code cached by arm old (its
+  tests took 33.69 s against 96.57 s); harmless here because numba and llvmlite are the same in both arms. The rule
+  in docs/codebase/notes/populationsim-fork.md asks for separate caches next time.
+
+  Advisories closed (Dependabot, 2026-11-27): certifi GHSA-6q48-6c7w-9gw2; idna GHSA-65pc-fj4g-8rjx; msgpack
+  GHSA-6v7p-g79w-8964 and GHSA-j586-36cw-2gc2; pyarrow GHSA-rgxp-2hwp-jwgg; requests GHSA-gc5v-m9x4-r6x2; setuptools
+  GHSA-h35f-9h28-mq5c and GHSA-xmj3-9gf7-h52w; urllib3 GHSA-8988-9cw3-xx77, GHSA-gh4c-6fx4-qh6g, GHSA-mf9v-mfxr-j63j,
+  GHSA-qccp-gfcp-xxvc and GHSA-vxq7-64xx-v4gw. Each new version is the highest first-patched version of its package's
+  alerts, except certifi: 2026.10.19 instead of 2026.10.18, because the advisory itself says 2026.10.18 removed every
+  emSign root and 2026.10.19 restored the unaffected ones.
