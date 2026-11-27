@@ -2347,7 +2347,7 @@ def _attach_loop_diary_distances(df_locations, df_trips, loop_table):
     ``(locations, stats)`` with the stats of ``loops.loop_diary_distances``.
     """
     lengths, stats = loops.loop_diary_distances(df_trips, loop_table)
-    columns = [loops.LOOP_DIARY_DISTANCE_COLUMN, loops.LOOP_RETURN_DIARY_DISTANCE_COLUMN]
+    columns = [loops.LOOP_DIARY_DISTANCE_COLUMN, loops.LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN]
     is_loop_row = df_locations["loop_origin"].notna().to_numpy()
     rows = pd.MultiIndex.from_arrays([df_locations["person_id"], df_locations["activity_index"]])
     keys = pd.MultiIndex.from_arrays([lengths["person_id"], lengths["activity_index"]])
@@ -2373,8 +2373,8 @@ def _report_loops(context, flag_stats, counts, loop_table, subtype_estimate_legs
     """Log the loop counts with rates and write them as the ``loops`` block of the stage report.
 
     ``diary_lengths``: the stats of ``loops.loop_diary_distances`` (the diary lengths of the
-    trips into the loops and back to their start place), written as the block's key of that name
-    (logged by that function); None adds no key.
+    trips into the loops and out of them), written as the block's key of that name (logged by that
+    function); None adds no key.
 
     ``subtype_estimate_legs_left_out`` (issue #679): the leisure decider's
     ``loop_legs_left_out``, per loop mode the MiD leisure legs before the filter, left out and

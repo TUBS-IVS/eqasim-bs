@@ -60,3 +60,28 @@ def test_the_distance_evolution_reads_the_loop_counted_companion_when_the_run_ha
     assert out["distance_evolution_source"] == expected_source
     assert out["distance_evolution"]["avg_trip_km"] == expected_trip_km
     assert out["avg_trip_km_final"] == expected_trip_km[-1]
+
+
+def test_the_run_record_reads_the_loop_table_from_the_synthesis_trips_file(tmp_path, monkeypatch):
+    """The whole dashboard path: assemble_run_record finds <prefix>trips.csv in the output folder, reads its loop
+    columns and hands them to the MATSim metrics (the hand-computed walk mean of the first test)."""
+    from braunschweig.analysis.dashboard import run_records
+
+    output_dir, sim_output = tmp_path / "out", tmp_path / "matsim_output"
+    output_dir.mkdir()
+    sim_output.mkdir()
+    _write_eqasim_trips(sim_output)
+    pd.DataFrame({"person_id": [1, 1, 2, 3], "trip_index": [0, 1, 0, 0],
+                  ltd.LOOP_FLAG_COLUMN: [True, False, False, False],
+                  ltd.LOOP_DIARY_DISTANCE_COLUMN: [3.0, 0.8, None, None]}).to_csv(
+        output_dir / "x_trips.csv", sep=";", index=False)
+    monkeypatch.setattr(run_metrics, "_load_zgb_kreise", lambda: None)
+    monkeypatch.setattr(run_records, "metrics_eqasim", lambda *args, **kwargs: {})
+    monkeypatch.setattr(run_records, "load_mid_reference", lambda: {})
+    monkeypatch.setattr(run_records, "build_comparisons", lambda *args, **kwargs: {})
+    monkeypatch.setattr(run_records, "_find_sim_output", lambda sim_cache: sim_cache)
+
+    record = run_records.assemble_run_record("label", output_dir, sim_output, None)
+
+    assert record["matsim"]["mean_km_by_mode"]["walk"] == pytest.approx(1.6)
+    assert record["matsim"]["loop_trips"]["into_loop"]["corrected"] == 1

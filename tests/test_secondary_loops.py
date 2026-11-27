@@ -923,3 +923,29 @@ def test_the_diary_lengths_of_loops_refuse_trips_they_cannot_read(damage, messag
 
     with pytest.raises(ValueError, match=message):
         loops.loop_diary_distances(damage(df_trips), loop_table)
+
+
+@pytest.mark.parametrize("chain, expected", [
+    # Two loops in a row: the trip between them is the trip out of the first and into the second.
+    ("home S S shop home", {1: (1.0, 2.0), 2: (2.0, 3.0)}),
+    # A loop that ends the day has no trip out.
+    ("home shop S", {2: (2.0, None)}),
+])
+def test_each_loop_gets_the_diary_lengths_of_its_trip_in_and_its_trip_out(chain, expected):
+    """Trip k has the diary length k + 1 km here; loop activity k has its trip in at k - 1 and its
+    trip out at k."""
+    df_trips, is_loop = _chains((1, chain))
+    df_trips = df_trips.assign(is_synthetic_closure=False, wegkm_imp=df_trips["trip_index"] + 1.0)
+    _, _, loop_table = loops.collapse_loops(df_trips, is_loop, {1})
+
+    frame, stats = loops.loop_diary_distances(df_trips, loop_table)
+
+    got = {row.activity_index: (getattr(row, loops.LOOP_DIARY_DISTANCE_COLUMN),
+                                getattr(row, loops.LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN))
+           for row in frame.itertuples(index=False)}
+    assert got.keys() == expected.keys()
+    for activity_index, (into_km, next_km) in expected.items():
+        assert got[activity_index][0] == into_km
+        assert (np.isnan(got[activity_index][1]) if next_km is None
+                else got[activity_index][1] == next_km)
+    assert stats["loops_without_next_trip"] == sum(next_km is None for _, next_km in expected.values())

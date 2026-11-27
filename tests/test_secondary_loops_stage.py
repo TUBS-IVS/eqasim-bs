@@ -525,11 +525,12 @@ def test_out_and_back_stroll_is_solved_and_marked(tmp_path, stage_doubles):
             report["loops_followed_by_synthetic_closure"]) == (1, 1, 1)
 
 
-def test_loop_rows_carry_the_diary_length_of_the_trip_in_and_of_the_trip_back_to_the_start(
+def test_loop_rows_carry_the_diary_length_of_the_trip_in_and_of_the_trip_out(
         tmp_path, stage_doubles):
     """The loop placement makes the trip into a loop zero-length, and the trip out of it when it
-    goes back to the loop's start place; the loop row carries both diary lengths for the analyses.
-    Diary lengths by ``_trips``: 0.5 * departure hour + 0.1 * person id (km)."""
+    ends at the loop's place; the loop row carries both diary lengths for the analyses (which
+    trip out ends there is decided by the day-view join). Diary lengths by ``_trips``:
+    0.5 * departure hour + 0.1 * person id (km)."""
     rows = [
         # 1: home, work, stroll from work, back to work, home: a diary trip back to the start.
         (1, "home", "work", "car", 1, 2202, 7),
@@ -539,7 +540,7 @@ def test_loop_rows_carry_the_diary_length_of_the_trip_in_and_of_the_trip_back_to
         # 2: home, dog walk, home by the plan repair's invented trip: no diary length back.
         (2, "home", "leisure", "walk", 7, 711, 9),        # into the loop: 4.7 km
         (2, "leisure", "home", "walk", 8, 2202, 10),      # invented
-        # 3: home, shop, stroll from the shop, home: the trip out goes elsewhere, a real length.
+        # 3: home, shop, stroll from the shop, home: the trip out (5.3 km) goes elsewhere.
         (3, "home", "shop", "car", 4, 2202, 8),
         (3, "shop", "leisure", "bicycle", 7, 710, 9),     # into the loop: 4.8 km
         (3, "leisure", "home", "bicycle", 8, 2202, 10),
@@ -547,15 +548,17 @@ def test_loop_rows_carry_the_diary_length_of_the_trip_in_and_of_the_trip_back_to
     df_locations, _df_convergence = sc.execute(_LoopExecuteCtx(
         tmp_path, [1, 2, 3], _trips(rows, closing_persons=[2]), **_loop_config(True)))
 
-    into, back = loops.LOOP_DIARY_DISTANCE_COLUMN, loops.LOOP_RETURN_DIARY_DISTANCE_COLUMN
+    into, out = loops.LOOP_DIARY_DISTANCE_COLUMN, loops.LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN
     loop_rows = df_locations[df_locations["loop_origin"].notna()].set_index(
         ["person_id", "activity_index"]).sort_index()
     assert list(loop_rows.index) == [(1, 2), (2, 1), (3, 2)]
     assert loop_rows[into].tolist() == pytest.approx([6.1, 4.7, 4.8])
-    assert loop_rows.loc[(1, 2), back] == pytest.approx(6.6)
-    assert np.isnan(loop_rows.loc[(2, 1), back]) and np.isnan(loop_rows.loc[(3, 2), back])
+    # Person 2's trip out is the invented home trip: it has no diary length.
+    assert loop_rows.loc[(1, 2), out] == pytest.approx(6.6)
+    assert np.isnan(loop_rows.loc[(2, 1), out])
+    assert loop_rows.loc[(3, 2), out] == pytest.approx(5.3)
     other_rows = df_locations[df_locations["loop_origin"].isna()]
-    assert len(other_rows) == 1 and other_rows[[into, back]].isna().all().all()  # person 3's shop
+    assert len(other_rows) == 1 and other_rows[[into, out]].isna().all().all()  # person 3's shop
 
     report = json.loads((tmp_path / REPORT_FILENAME).read_text(encoding="utf-8"))["loops"]
     lengths = report["diary_lengths"]
@@ -564,10 +567,9 @@ def test_loop_rows_carry_the_diary_length_of_the_trip_in_and_of_the_trip_back_to
     assert lengths["into_diary_km"] == pytest.approx(15.6)
     assert lengths["into_by_mode"]["walk"]["trips"] == 2
     assert lengths["into_by_mode"]["bicycle"]["diary_km"] == pytest.approx(4.8)
-    assert (lengths["returns_to_start_place"], lengths["returns_invented_home_trip"],
-            lengths["returns_with_diary_length"], lengths["returns_without_diary_length"]) == (
-        2, 1, 1, 0)
-    assert lengths["return_diary_km"] == pytest.approx(6.6)
+    assert (lengths["loops_without_next_trip"], lengths["next_trips_invented_home_trip"],
+            lengths["next_trips_with_diary_length"], lengths["next_trips_without_diary_length"]) == (
+        0, 1, 2, 0)
 
 
 def test_a_linked_out_and_back_stroll_is_solved_and_the_link_survives_the_collapse(

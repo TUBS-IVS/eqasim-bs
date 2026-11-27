@@ -5,7 +5,7 @@ Background
 The synthesis places some leisure trips on foot or by bicycle (strolls, dog walks, "loops") at the place of the activity
 BEFORE them, because the survey (MiD 2023) records such a walk as ONE trip whose length is the whole round walk. In the
 model such a trip has origin == destination, so its crow-fly AND routed distance is 0 m. The trip AFTER a loop can also
-become zero length when it leads back to the loop's start place (work, a stroll placed at work, back to work).
+become zero length when it ends at the loop's place (work, a stroll placed at work, back to work).
 
 When the switch ``secondary_loop_zero_displacement`` is on, the synthesis output ``<prefix>trips.csv`` carries two
 appended columns (produced by ``synthesis/output.py``; this module only reads them):
@@ -13,7 +13,7 @@ appended columns (produced by ``synthesis/output.py``; this module only reads th
 * ``is_loop_stroll`` (bool): the trip leads INTO a loop.
 * ``loop_trip_diary_distance_km`` (float, km): the survey diary length (MiD ``wegkm_imp``, a PATH length) of every trip
   the loop placement turns into a zero-length trip, i.e. the trip into a loop (``is_loop_stroll`` True) and the trip out
-  of a loop that ends at the loop's start place (``is_loop_stroll`` False). Empty on every other trip and on a
+  of a loop that ends at the loop's place (``is_loop_stroll`` False). Empty on every other trip and on a
   zero-length trip without a diary length (the plan repair's invented home trip).
 
 The rule (ONE owner, used by the dashboard and by the 10 % validation package)

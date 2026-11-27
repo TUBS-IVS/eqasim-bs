@@ -131,10 +131,12 @@ _LOCATION_COLUMNS = ("person_id", "activity_index", "location_id", "geometry")
 DIARY_LENGTH_COLUMN = "wegkm_imp"
 
 #: Columns :func:`loop_diary_distances` returns next to ``person_id`` and ``activity_index``: on a
-#: loop activity, the diary length (km) of the trip INTO it, and of the trip OUT of it when that
-#: trip goes back to the loop's start place (NaN otherwise). The stage writes both on its loop rows.
+#: loop activity, the diary length (km) of the trip INTO it, and of the trip OUT of it (the next
+#: trip; NaN when there is none or it is the plan repair's invented home trip). The stage writes
+#: both on its loop rows; the day-view location join uses the second only where the trip out ends
+#: at the loop's place.
 LOOP_DIARY_DISTANCE_COLUMN = "loop_diary_distance_km"
-LOOP_RETURN_DIARY_DISTANCE_COLUMN = "loop_return_diary_distance_km"
+LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN = "loop_next_trip_diary_distance_km"
 
 
 @dataclass(frozen=True)
@@ -1052,65 +1054,60 @@ def restore_loops(df_locations: gpd.GeoDataFrame, index_map: pd.DataFrame, loops
 
 def loop_diary_distances(df_trips: pd.DataFrame, loop_table: pd.DataFrame
                          ) -> Tuple[pd.DataFrame, dict]:
-    """The diary lengths of the trips that a loop placed at its start turns into zero-length trips.
+    """The diary lengths of the trip into each loop and of the trip out of it.
 
     A loop activity sits at the place of the activity before it (:func:`restore_loops`), so the
     trip INTO it starts and ends at one place and has no length in the model. So has the trip OUT
-    of it when that trip goes back to the loop's start place. The survey diary still records how
-    far the person walked or rode on these trips; this function looks the lengths up, so that
-    analyses can count them (the rule for analyses: ``docs/codebase/notes/leisure-loops.md``,
-    section "Loop lengths for analyses").
+    of it when that trip ends at the same place (back to the loop's start place, or at an activity
+    anchored there). The survey diary still records how far the person walked or rode on these
+    trips; this function looks the lengths up, so that analyses can count them (the rule for
+    analyses: ``docs/codebase/notes/leisure-loops.md``, section "Loop lengths for analyses").
+    Whether the trip out ends at the loop's place is decided later, by place, in the day-view
+    location join, which sees every located activity.
 
     ``loop_table`` is the loop table of :func:`collapse_loops` (one row per loop activity taken
     out, original numbering); ``df_trips`` are the ORIGINAL synthetic trips that table was built
-    from (``person_id``, ``trip_index``, ``mode``, ``following_purpose``,
-    :data:`SYNTHETIC_CLOSURE_COLUMN` and, when there is a loop, :data:`DIARY_LENGTH_COLUMN`).
-    Index convention as in :func:`collapse_loops`: the trip into loop activity ``k`` is trip
-    ``k - 1``, the trip out of it is trip ``k`` (none when the loop is the last activity of the
-    day).
+    from (``person_id``, ``trip_index``, ``mode``, :data:`SYNTHETIC_CLOSURE_COLUMN` and, when there
+    is a loop, :data:`DIARY_LENGTH_COLUMN`). Index convention as in :func:`collapse_loops`: the
+    trip into loop activity ``k`` is trip ``k - 1``, the trip out of it is trip ``k`` (none when
+    the loop is the last activity of the day).
 
     - :data:`LOOP_DIARY_DISTANCE_COLUMN`: the diary length of the trip into the loop. A loop
       without such a trip raises ``ValueError``; a trip without a length (NaN) leaves NaN and is
       counted.
-    - :data:`LOOP_RETURN_DIARY_DISTANCE_COLUMN`: the diary length of the trip out of the loop when
-      it goes back to the start place, else NaN. It goes back to the start place when the loop
-      starts at home, work or education and that trip ends at an activity of the same purpose: a
-      person has one home, one work place and one education place, and that is the place the
-      loop copied. A loop that starts at a secondary activity has no such trip (the next
-      activity is another one, placed by the solver). When the trip back is the plan repair's
-      invented home trip it has no diary length: NaN, counted apart.
+    - :data:`LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN`: the diary length of the trip out of the loop;
+      NaN when the loop is the last activity, when that trip is the plan repair's invented home
+      trip (it has no diary length) and when the diary trip has no length.
 
     The lengths are read through ``diary_facts.validate_trip_length_km`` (a MiD design code
     raises, a missing value is passed through). Returns ``(frame, stats)``: the frame has one row
     per row of ``loop_table``, in its order, with ``person_id``, ``activity_index`` and the two
     columns; ``stats`` counts the loops and the lengths (keys ``loops``,
     ``into_with_diary_length``, ``into_without_diary_length``, ``into_diary_km``,
-    ``into_by_mode``, ``returns_to_start_place``, ``returns_invented_home_trip``,
-    ``returns_with_diary_length``, ``returns_without_diary_length``, ``return_diary_km``,
-    ``return_by_mode``; a ``*_by_mode`` map gives per synthesis mode the trips with a length and
-    their km). Loops whose trip in has no length are a WARNING above ``FALLBACK_WARN_RATE``. The
-    inputs are not changed.
+    ``into_by_mode``, ``loops_without_next_trip``, ``next_trips_invented_home_trip``,
+    ``next_trips_with_diary_length``, ``next_trips_without_diary_length``; an ``into_by_mode``
+    entry gives per synthesis mode the trips with a length and their km). Loops whose trip in
+    has no length are a WARNING above ``FALLBACK_WARN_RATE``. The inputs are not changed.
     """
     _require_columns(loop_table, LOOP_TABLE_COLUMNS, "loop table")
-    _require_columns(df_trips, ("person_id", "trip_index", "mode", "following_purpose",
-                                SYNTHETIC_CLOSURE_COLUMN), "trips")
+    _require_columns(df_trips, ("person_id", "trip_index", "mode", SYNTHETIC_CLOSURE_COLUMN),
+                     "trips")
     frame = pd.DataFrame({
         "person_id": loop_table["person_id"].to_numpy(),
         "activity_index": loop_table["activity_index"].to_numpy(),
         LOOP_DIARY_DISTANCE_COLUMN: np.full(len(loop_table), np.nan),
-        LOOP_RETURN_DIARY_DISTANCE_COLUMN: np.full(len(loop_table), np.nan),
+        LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN: np.full(len(loop_table), np.nan),
     })
     stats = {"loops": len(loop_table), "into_with_diary_length": 0,
              "into_without_diary_length": 0, "into_diary_km": 0.0, "into_by_mode": {},
-             "returns_to_start_place": 0, "returns_invented_home_trip": 0,
-             "returns_with_diary_length": 0, "returns_without_diary_length": 0,
-             "return_diary_km": 0.0, "return_by_mode": {}}
+             "loops_without_next_trip": 0, "next_trips_invented_home_trip": 0,
+             "next_trips_with_diary_length": 0, "next_trips_without_diary_length": 0}
     if not len(loop_table):
         return frame, stats
     _require_columns(df_trips, (DIARY_LENGTH_COLUMN,), "trips")
     trips = _unique_lookup(
         df_trips, ("person_id", "trip_index"),
-        ("mode", "following_purpose", SYNTHETIC_CLOSURE_COLUMN, DIARY_LENGTH_COLUMN), "trips",
+        ("mode", SYNTHETIC_CLOSURE_COLUMN, DIARY_LENGTH_COLUMN), "trips",
         caller="loop_diary_distances")
     person = loop_table["person_id"].to_numpy()
     activity = loop_table["activity_index"].to_numpy()
@@ -1129,51 +1126,42 @@ def loop_diary_distances(df_trips: pd.DataFrame, loop_table: pd.DataFrame
     frame[LOOP_DIARY_DISTANCE_COLUMN] = into_km
 
     out = trips.reindex(pd.MultiIndex.from_arrays([person, activity]))
-    origin = loop_table["origin_purpose"].to_numpy(dtype=object)
-    returns = ((out["following_purpose"].to_numpy(dtype=object) == origin)
-               & np.isin(origin, PRIMARY_LOOP_ORIGINS))
+    has_next = out["mode"].notna().to_numpy()
     # A loop without a trip out has NaN here after the reindex; eq(True) reads that as False.
-    invented = returns & out[SYNTHETIC_CLOSURE_COLUMN].eq(True).to_numpy(dtype=bool)
-    diary_return = returns & ~invented
-    return_km = np.full(len(loop_table), np.nan)
-    if diary_return.any():
-        return_km[diary_return] = validate_trip_length_km(
-            out[DIARY_LENGTH_COLUMN][diary_return].reset_index(drop=True),
-            log_tag="[secondary_loops] diary length of the trips back to a loop's start place"
+    invented = has_next & out[SYNTHETIC_CLOSURE_COLUMN].eq(True).to_numpy(dtype=bool)
+    diary_next = has_next & ~invented
+    next_km = np.full(len(loop_table), np.nan)
+    if diary_next.any():
+        next_km[diary_next] = validate_trip_length_km(
+            out[DIARY_LENGTH_COLUMN][diary_next].reset_index(drop=True),
+            log_tag="[secondary_loops] diary length of the trips out of a loop"
         ).to_numpy(dtype=float)
-    frame[LOOP_RETURN_DIARY_DISTANCE_COLUMN] = return_km
-
-    def by_mode(modes, km):
-        with_length = np.isfinite(km)
-        sums = pd.DataFrame({"mode": modes[with_length], "km": km[with_length]}).groupby(
-            "mode")["km"].agg(["size", "sum"])
-        return {str(mode): {"trips": int(row["size"]), "diary_km": float(row["sum"])}
-                for mode, row in sums.iterrows()}
+    frame[LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN] = next_km
 
     into_finite = np.isfinite(into_km)
-    return_finite = np.isfinite(return_km)
+    with_length = pd.DataFrame({"mode": into["mode"].to_numpy(dtype=object)[into_finite],
+                                "km": into_km[into_finite]}).groupby("mode")["km"].agg(
+        ["size", "sum"])
     stats.update({
         "into_with_diary_length": int(into_finite.sum()),
         "into_without_diary_length": int((~into_finite).sum()),
         "into_diary_km": float(into_km[into_finite].sum()),
-        "into_by_mode": by_mode(into["mode"].to_numpy(dtype=object), into_km),
-        "returns_to_start_place": int(returns.sum()),
-        "returns_invented_home_trip": int(invented.sum()),
-        "returns_with_diary_length": int(return_finite.sum()),
-        "returns_without_diary_length": int((diary_return & ~return_finite).sum()),
-        "return_diary_km": float(return_km[return_finite].sum()),
-        "return_by_mode": by_mode(out["mode"].to_numpy(dtype=object), return_km),
+        "into_by_mode": {str(mode): {"trips": int(row["size"]), "diary_km": float(row["sum"])}
+                         for mode, row in with_length.iterrows()},
+        "loops_without_next_trip": int((~has_next).sum()),
+        "next_trips_invented_home_trip": int(invented.sum()),
+        "next_trips_with_diary_length": int(np.isfinite(next_km).sum()),
+        "next_trips_without_diary_length": int((diary_next & ~np.isfinite(next_km)).sum()),
     })
     rate = stats["into_without_diary_length"] / stats["loops"]
     above = rate > FALLBACK_WARN_RATE
     (logger.warning if above else logger.info)(
         "[secondary_loops] loop diary lengths: %d loops, %d with the diary length of the trip into "
-        "them (%.1f km), %d (%.1f%%) without%s; %d trips go back to the loop's start place: %d "
-        "are the plan repair's invented home trip, %d have a diary length (%.1f km), %d have none",
+        "them (%.1f km), %d (%.1f%%) without%s; trips out of them: %d with a diary length, %d the "
+        "plan repair's invented home trip, %d without a length; %d loops end the day",
         stats["loops"], stats["into_with_diary_length"], stats["into_diary_km"],
         stats["into_without_diary_length"], 100.0 * rate,
         " -- above the fallback warning rate, their length cannot be counted" if above else "",
-        stats["returns_to_start_place"], stats["returns_invented_home_trip"],
-        stats["returns_with_diary_length"], stats["return_diary_km"],
-        stats["returns_without_diary_length"])
+        stats["next_trips_with_diary_length"], stats["next_trips_invented_home_trip"],
+        stats["next_trips_without_diary_length"], stats["loops_without_next_trip"])
     return frame, stats

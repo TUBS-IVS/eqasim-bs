@@ -13,8 +13,8 @@ description: 'Upstream join of persons to their chosen activity locations. In th
   as out-and-back strolls, False on every other located activity); it raises when the secondary stage returns no such
   column or a marked row matches no located activity. With the switch on it also adds is_loop_stroll and
   loop_trip_diary_distance_km (the diary length of the trip into the activity when the loop placement makes that
-  trip zero-length; _with_loop_lengths, which raises when a loop row matches no located activity or the trip back
-  to a loop''s start place does not end at the loop''s place). With the switch off the output has none of these
+  trip zero-length, the trip into a loop or the trip out of it when the next activity lies at the loop''s place;
+  _with_loop_lengths, which raises when a loop row matches no located activity). With the switch off the output has none of these
   columns. The vendored join of the popsim_open and simple_ipf_open pipelines never carries them. Definition and
   path to the plans: docs/codebase/notes/leisure-loops.md.'
 lineage:

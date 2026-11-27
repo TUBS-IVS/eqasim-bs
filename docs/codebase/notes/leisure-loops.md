@@ -230,23 +230,24 @@ ADR-0207, decision 6). The loop marker `loopStroll` of the next section is for a
 ## Loop lengths for analyses
 
 A loop placed at its start makes two kinds of trips zero-length in the model: the trip INTO the loop, and the trip
-OUT of it when that trip goes back to the loop's start place (after a loop from work, the diary's way back to work;
-after a loop from home only the plan repair's invented home trip can do so, section "Definitions"). The survey diary
+OUT of it when that trip ends at the loop's place: back at its start (after a loop from work, the diary's way back to
+work; after a loop from home only the plan repair's invented home trip can do so, section "Definitions"), or at an
+activity anchored there (after a stroll from an escort drop-off, the pick-up at the same school). The survey diary
 still records how far the person walked or rode on them (MiD `wegkm_imp`, a path length in km). With
 `secondary_loop_zero_displacement` on, that length travels with the loop to every file an analysis reads trips from:
 
 1. **Secondary location stage** (`loops.loop_diary_distances`, `_attach_loop_diary_distances`): every loop row gets
-   `loop_diary_distance_km` (the trip in) and `loop_return_diary_distance_km` (the trip out, when it goes back to the
-   start place: the loop starts at home, work or education and that trip ends at an activity of the same purpose,
-   since a person has one place of each; NaN otherwise, and for the invented home trip, which has no diary length).
-   The lengths are read through `diary_facts.validate_trip_length_km`; a trips table without `wegkm_imp`, a loop
-   without its trip in or a MiD design code raises. The block `loops` of `secondary_locations_report.json` counts them
-   under `diary_lengths` (with and without a length, km, by synthesis mode).
+   `loop_diary_distance_km` (the trip in) and `loop_next_trip_diary_distance_km` (the trip out; NaN when the loop ends
+   the day, and for the invented home trip, which has no diary length). The lengths are read through
+   `diary_facts.validate_trip_length_km`; a trips table without `wegkm_imp`, a loop without its trip in or a MiD
+   design code raises. The block `loops` of `secondary_locations_report.json` counts them under `diary_lengths`
+   (with and without a length, km by synthesis mode for the trips in, the trips out by kind).
 2. **Day-view location join** (`spatial_locations_day._with_loop_lengths`): every located activity gets
    `is_loop_stroll` (True on a loop) and `loop_trip_diary_distance_km`, the diary length of the trip INTO the activity
-   when the loop placement makes that trip zero-length (NaN elsewhere). The trip-out length therefore lands on the
-   activity after the loop, which must lie at the loop's place (`ValueError` otherwise, which also guards the
-   one-place-per-purpose reading of step 1).
+   when the loop placement makes that trip zero-length (NaN elsewhere). Whether the trip out of a loop is zero-length
+   is decided here, by place: when the next activity has the loop's geometry (and is no loop itself, whose own trip-in
+   length then applies), it gets the trip-out length. One log line counts the trips out of loops by kind (at the
+   loop's place with and without a diary length, elsewhere, into another loop) and the loops that end the day.
 3. **Plans** (`matsim/scenario/population.py`, `add_person`): the activity attributes `loopStroll`
    (`java.lang.Boolean`, written only as `true`) and `loopTripDiaryDistanceKm` (`java.lang.Double`, written only where
    set). The writer wrapper (`braunschweig/matsim/scenario/population.py`) raises like for the stroll marker when the

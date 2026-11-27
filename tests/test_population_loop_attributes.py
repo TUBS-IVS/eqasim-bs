@@ -47,8 +47,8 @@ FLAG, LENGTH = "is_loop_stroll", "loop_trip_diary_distance_km"
 
 def test_the_loop_columns_have_one_name_from_the_stage_to_the_analyses():
     assert (LOCATIONS.LOOP_ORIGIN_COLUMN, LOCATIONS.LOOP_DIARY_DISTANCE_COLUMN,
-            LOCATIONS.LOOP_RETURN_DIARY_DISTANCE_COLUMN) == (
-        "loop_origin", loops.LOOP_DIARY_DISTANCE_COLUMN, loops.LOOP_RETURN_DIARY_DISTANCE_COLUMN)
+            LOCATIONS.LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN) == (
+        "loop_origin", loops.LOOP_DIARY_DISTANCE_COLUMN, loops.LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN)
     assert (LOCATIONS.LOOP_STROLL_COLUMN, LOCATIONS.LOOP_TRIP_DIARY_DISTANCE_COLUMN) == (FLAG, LENGTH)
     assert (pop.LOOP_STROLL_COLUMN, pop.LOOP_TRIP_DIARY_DISTANCE_COLUMN) == (FLAG, LENGTH)
     assert output.TRIP_LOOP_OUTPUT_COLUMNS == (FLAG, LENGTH)
@@ -83,7 +83,7 @@ def _secondary(back_km=6.6):
         "person_id": [1, 2], "activity_index": [2, 1], "location_id": ["w1", "home_20"],
         "is_out_and_back_stroll": [False, False], "loop_origin": ["work", "home"],
         loops.LOOP_DIARY_DISTANCE_COLUMN: [6.1, 4.7],
-        loops.LOOP_RETURN_DIARY_DISTANCE_COLUMN: [back_km, np.nan],
+        loops.LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN: [back_km, np.nan],
         "geometry": [WORK, Point(9.0, 9.0)]})
 
 
@@ -98,18 +98,45 @@ def test_the_join_marks_the_loops_and_puts_each_length_on_the_activity_its_trip_
     np.testing.assert_allclose(joined[LENGTH].to_numpy(dtype=float), expected)
 
 
-def test_a_trip_back_that_does_not_end_at_the_loops_place_stops_the_join(monkeypatch):
+def test_a_trip_out_that_ends_elsewhere_keeps_no_diary_length(monkeypatch):
+    """Whether the trip out of a loop is zero-length is decided by place: person 1's next activity
+    is 1 m away from the loop, so that trip has a model length and gets no diary length."""
     located = gpd.GeoDataFrame({
         "person_id": [1, 1, 1, 1, 1, 2, 2, 2], "activity_index": [0, 1, 2, 3, 4, 0, 1, 2],
         "location_id": [-1, "w1", "w1", "w2", -1, -1, "home_20", -1],
         "geometry": [Point(0.0, 0.0), WORK, WORK, Point(301.0, 0.0), Point(0.0, 0.0),
                      Point(9.0, 9.0), Point(9.0, 9.0), Point(9.0, 9.0)]})
-    with pytest.raises(ValueError, match=r"1 trips back .*\(1, 2\)"):
-        _join(monkeypatch, _secondary(), located=located)
+    joined = _join(monkeypatch, _secondary(), located=located)
+    np.testing.assert_allclose(joined[LENGTH].to_numpy(dtype=float),
+                               [np.nan, np.nan, 6.1, np.nan, np.nan, np.nan, 4.7, np.nan])
+
+
+def test_a_trip_out_to_an_activity_anchored_at_the_loops_place_gets_its_diary_length(monkeypatch):
+    """A loop that starts at a secondary activity: an escort drop-off at a school, a stroll from
+    there, the pick-up at the same school (anchored at the same place), then home; and two loops in
+    a row from home, where the trip between them is the second loop's trip in."""
+    school, home = Point(50.0, 50.0), Point(0.0, 0.0)
+    located = gpd.GeoDataFrame({
+        "person_id": [1, 1, 1, 1, 1, 2, 2, 2, 2], "activity_index": [0, 1, 2, 3, 4, 0, 1, 2, 3],
+        "location_id": [-1, "school", "school", "school", -1, -1, "home_20", "home_20", -1],
+        "geometry": [home, school, school, school, home, home, home, home, home]})
+    secondary = gpd.GeoDataFrame({
+        "person_id": [1, 1, 1, 2, 2], "activity_index": [1, 2, 3, 1, 2],
+        "location_id": ["school", "school", "school", "home_20", "home_20"],
+        "is_out_and_back_stroll": [False] * 5,
+        "loop_origin": [None, "secondary", None, "home", "home"],
+        loops.LOOP_DIARY_DISTANCE_COLUMN: [np.nan, 2.0, np.nan, 1.0, 1.5],
+        loops.LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN: [np.nan, 0.4, np.nan, 1.5, np.nan],
+        "geometry": [school, school, school, home, home]})
+    joined = _join(monkeypatch, secondary, located=located)
+
+    assert joined[FLAG].tolist() == [False, False, True, False, False, False, True, True, False]
+    np.testing.assert_allclose(joined[LENGTH].to_numpy(dtype=float),
+                               [np.nan, np.nan, 2.0, 0.4, np.nan, np.nan, 1.0, 1.5, np.nan])
 
 
 @pytest.mark.parametrize("damage, message", [
-    (lambda frame: frame.drop(columns=loops.LOOP_RETURN_DIARY_DISTANCE_COLUMN), "no .*loop_return"),
+    (lambda frame: frame.drop(columns=loops.LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN), "no .*loop_next_trip"),
     (lambda frame: frame.assign(activity_index=[2, 7]), r"1 loop rows .*\(2, 7\)"),
 ])
 def test_the_join_refuses_loop_rows_it_cannot_place(monkeypatch, damage, message):

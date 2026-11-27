@@ -209,7 +209,7 @@ def _secondary(rows):
     loop columns are covered in tests/test_population_loop_attributes.py)."""
     frame = pd.DataFrame(rows, columns=["person_id", "activity_index", COLUMN])
     return frame.assign(loop_origin=None, loop_diary_distance_km=np.nan,
-                        loop_return_diary_distance_km=np.nan)
+                        loop_next_trip_diary_distance_km=np.nan)
 
 
 def test_the_location_join_carries_the_stroll_flag_and_false_elsewhere(monkeypatch):

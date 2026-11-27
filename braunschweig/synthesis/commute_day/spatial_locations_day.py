@@ -51,15 +51,16 @@ DEFAULT_SECONDARY_LOOP_ZERO_DISPLACEMENT = False
 
 #: The loop columns of the secondary stage (issue #679): ``loop_origin`` marks a loop placed at its
 #: start, and the two diary lengths on its row (``loops.LOOP_DIARY_DISTANCE_COLUMN``,
-#: ``loops.LOOP_RETURN_DIARY_DISTANCE_COLUMN``). Literals for the same reason as above;
+#: ``loops.LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN``). Literals for the same reason as above;
 #: tests/test_population_loop_attributes.py pins them to their homes.
 LOOP_ORIGIN_COLUMN = "loop_origin"
 LOOP_DIARY_DISTANCE_COLUMN = "loop_diary_distance_km"
-LOOP_RETURN_DIARY_DISTANCE_COLUMN = "loop_return_diary_distance_km"
+LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN = "loop_next_trip_diary_distance_km"
 #: The two columns this stage writes on every located activity from them (switch on): whether the
 #: activity is a loop stroll, and the diary length of the trip INTO the activity when the loop
-#: placement makes that trip zero-length (the trip into a loop, or the trip back to its start
-#: place); NaN everywhere else. matsim.scenario.population writes them as activity attributes.
+#: placement makes that trip zero-length (the trip into a loop, or the trip out of a loop that ends
+#: at the loop's place); NaN everywhere else. matsim.scenario.population writes them as activity
+#: attributes.
 LOOP_STROLL_COLUMN = "is_loop_stroll"
 LOOP_TRIP_DIARY_DISTANCE_COLUMN = "loop_trip_diary_distance_km"
 
@@ -132,15 +133,19 @@ def _with_out_and_back_strolls(locations, secondary):
 def _with_loop_lengths(locations, secondary):
     """``locations`` with :data:`LOOP_STROLL_COLUMN` and :data:`LOOP_TRIP_DIARY_DISTANCE_COLUMN` (#679).
 
-    A loop row of the secondary stage (``loop_origin`` set) marks its activity as a loop stroll
-    and gives the diary length of the trip into it. Its trip-back length, where the stage found
-    one, belongs to the NEXT activity of the person (the trip into that activity is the trip back
-    to the loop's start place). That next activity must lie at the loop's place, since this is
-    what makes the trip zero-length; a different place raises ``ValueError``, as does a loop row
-    without its located activity or a secondary result without the loop columns. Every other
-    activity gets False and NaN.
+    A loop row of the secondary stage (``loop_origin`` set) marks its activity as a loop stroll and
+    gives the diary length of the trip into it. The trip OUT of a loop (into the person's next
+    activity) is zero-length too when that next activity lies at the loop's place: back at the
+    loop's start, or at an activity anchored there (an escort pick-up at the school of the
+    drop-off). This is decided here by place (equal geometry), since only this stage sees every
+    located activity; the next activity then gets the loop row's next-trip length. A next activity
+    that is itself a loop keeps its own trip-in length (the same trip). Every other activity gets
+    False and NaN. A loop row without its located activity, a next-trip length without a located
+    next activity, or a secondary result without the loop columns raises ``ValueError``. The trips
+    out of loops are counted in one log line: at the loop's place with a diary length, at the
+    loop's place without one (the plan repair's invented home trip), and elsewhere.
     """
-    required = (LOOP_ORIGIN_COLUMN, LOOP_DIARY_DISTANCE_COLUMN, LOOP_RETURN_DIARY_DISTANCE_COLUMN)
+    required = (LOOP_ORIGIN_COLUMN, LOOP_DIARY_DISTANCE_COLUMN, LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN)
     missing = [column for column in required if column not in secondary.columns]
     if missing:
         raise ValueError(
@@ -159,36 +164,43 @@ def _with_loop_lengths(locations, secondary):
                 [tuple(int(v) for v in key) for key in loop_keys[unmatched][:5]]))
     result = locations.copy()
     result[LOOP_STROLL_COLUMN] = located_keys.isin(loop_keys)
-    lengths = pd.Series(loop_rows[LOOP_DIARY_DISTANCE_COLUMN].to_numpy(dtype=float),
-                        index=loop_keys)
-    back = loop_rows[LOOP_RETURN_DIARY_DISTANCE_COLUMN].notna().to_numpy()
-    if back.any():
-        back_rows = loop_rows[back]
-        next_keys = pd.MultiIndex.from_arrays([back_rows["person_id"],
-                                               back_rows["activity_index"] + 1])
-        next_places = result.set_index(["person_id", "activity_index"])["geometry"].reindex(
-            next_keys)
-        # A next activity that is not located comes back as NaN (a float), never as a geometry.
-        elsewhere = np.array([not hasattr(place, "equals") or not place.equals(loop_place)
-                              for place, loop_place in zip(next_places, back_rows["geometry"])],
-                             dtype=bool)
-        if elsewhere.any():
-            raise ValueError(
-                "%s %d trips back to a loop's start place do not end at the loop's place (or their "
-                "activity is not located); first (person_id, activity_index of the loop): %s" % (
-                    _LOG_TAG, int(elsewhere.sum()),
-                    [(int(p), int(a)) for p, a in zip(back_rows["person_id"][elsewhere],
-                                                      back_rows["activity_index"][elsewhere])][:5]))
-        lengths = pd.concat([lengths, pd.Series(
-            back_rows[LOOP_RETURN_DIARY_DISTANCE_COLUMN].to_numpy(dtype=float), index=next_keys)])
+    lengths = pd.Series(loop_rows[LOOP_DIARY_DISTANCE_COLUMN].to_numpy(dtype=float), index=loop_keys)
+
+    # The trip out of each loop, into the person's next activity.
+    next_keys = pd.MultiIndex.from_arrays([loop_rows["person_id"], loop_rows["activity_index"] + 1])
+    next_km = loop_rows[LOOP_NEXT_TRIP_DIARY_DISTANCE_COLUMN].to_numpy(dtype=float)
+    next_located = next_keys.isin(located_keys)
+    orphan = np.isfinite(next_km) & ~next_located
+    if orphan.any():
+        raise ValueError(
+            "%s %d loops have a diary length for their trip out but no located next activity; first "
+            "(person_id, activity_index of the loop): %s" % (
+                _LOG_TAG, int(orphan.sum()),
+                [tuple(int(v) for v in key) for key in loop_keys[orphan][:5]]))
+    if len(loop_rows):
+        next_places = result.set_index(["person_id", "activity_index"])["geometry"].reindex(next_keys)
+        # A loop that ends the day has no next activity: NaN (a float) here, never a geometry.
+        same_place = np.array([hasattr(place, "equals") and place.equals(loop_place)
+                               for place, loop_place in zip(next_places, loop_rows["geometry"])],
+                              dtype=bool)
+    else:
+        same_place = np.zeros(0, dtype=bool)
+    at_loop_place = same_place & next_located & ~next_keys.isin(loop_keys)
+    assigned = at_loop_place & np.isfinite(next_km)
+    if assigned.any():
+        lengths = pd.concat([lengths, pd.Series(next_km[assigned], index=next_keys[assigned])])
     result[LOOP_TRIP_DIARY_DISTANCE_COLUMN] = lengths.reindex(located_keys).to_numpy(dtype=float)
-    n_loops, n_back = len(loop_keys), int(back.sum())
+
+    n_loops = len(loop_keys)
     log = logger.info if n_loops > 0 else logger.warning
-    log("%s %s on %d/%d located activities; %s on %d of them (%d trips into a loop, %d trips back "
-        "to a loop's start place)%s", _LOG_TAG, LOOP_STROLL_COLUMN, n_loops, len(result),
-        LOOP_TRIP_DIARY_DISTANCE_COLUMN,
-        int(np.isfinite(result[LOOP_TRIP_DIARY_DISTANCE_COLUMN]).sum()),
-        int(np.isfinite(loop_rows[LOOP_DIARY_DISTANCE_COLUMN].to_numpy(dtype=float)).sum()), n_back,
+    log("%s %s on %d/%d located activities (%d with the diary length of the trip into them); trips "
+        "out of a loop: %d end at the loop's place with a diary length, %d end there without one (the "
+        "plan repair's invented home trip, or a diary trip without a length), %d go elsewhere, %d lead into another loop; %d loops end "
+        "the day%s", _LOG_TAG, LOOP_STROLL_COLUMN, n_loops, len(result),
+        int(np.isfinite(loop_rows[LOOP_DIARY_DISTANCE_COLUMN].to_numpy(dtype=float)).sum()),
+        int(assigned.sum()), int((at_loop_place & ~np.isfinite(next_km)).sum()),
+        int((next_located & ~at_loop_place & ~next_keys.isin(loop_keys)).sum()),
+        int(next_keys.isin(loop_keys).sum()), int((~next_located).sum()),
         "" if n_loops > 0 else " -- no loop at all: check the secondary stage's loop rows")
     return result
 

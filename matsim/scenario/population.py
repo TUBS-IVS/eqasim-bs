@@ -50,7 +50,7 @@ OUT_AND_BACK_STROLL_ATTRIBUTE = "outAndBackStroll"
 
 # eqasim-bs#679 (loop lengths for analyses): a stroll placed at the place it starts from (a loop) gets the
 # Boolean activity attribute LOOP_STROLL_ATTRIBUTE=true, and an activity whose INCOMING trip that placement
-# makes zero-length (the trip into a loop, or the trip back to the loop's start place) gets that trip's survey
+# makes zero-length (the trip into a loop, or the trip out of it when it ends at the loop's place) gets that trip's survey
 # diary length in km as LOOP_TRIP_DIARY_DISTANCE_ATTRIBUTE (java.lang.Double). No Java code reads them; they
 # let analyses of the plans count the walked and cycled kilometres (docs/codebase/notes/leisure-loops.md).
 # Literals for the same reason as above; tests/test_population_loop_attributes.py pins the columns to
