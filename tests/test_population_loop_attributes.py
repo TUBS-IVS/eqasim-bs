@@ -1,13 +1,13 @@
 """The loop marker and the diary length of a zero-length loop trip reach the plans and the trips output.
 
 A stroll placed at the place it starts from (a loop, issue #679) makes the trip into it a zero-length
-trip, and the trip back to the loop's start place too. The secondary location stage puts both diary
-lengths on the loop row (tests/test_secondary_loops_stage.py); from there:
+trip, and the trip out of it too when the next activity lies at the loop's place. The secondary location
+stage puts both diary lengths on the loop row (tests/test_secondary_loops_stage.py); from there:
 
 * **The day-view location join** (``braunschweig.synthesis.commute_day.spatial_locations_day``) writes
   ``is_loop_stroll`` and ``loop_trip_diary_distance_km`` on every located activity: the length of the
-  trip INTO the activity, so the trip-back length lands on the activity after the loop, which must lie
-  at the loop's place.
+  trip INTO the activity. It decides by place whether the trip out of a loop is zero-length; then the
+  trip-out length lands on the activity after the loop.
 * **The vendored writer** (``matsim.scenario.population``) writes them as the activity attributes
   ``loopStroll`` and ``loopTripDiaryDistanceKm``; frames without the columns are written byte-identically.
 * **The regional wrapper** gives the injected in-commuters neither attribute.

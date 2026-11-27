@@ -238,7 +238,7 @@ still records how far the person walked or rode on them (MiD `wegkm_imp`, a path
 
 1. **Secondary location stage** (`loops.loop_diary_distances`, `_attach_loop_diary_distances`): every loop row gets
    `loop_diary_distance_km` (the trip in) and `loop_next_trip_diary_distance_km` (the trip out; NaN when the loop ends
-   the day, and for the invented home trip, which has no diary length). The lengths are read through
+   the day, for the invented home trip, which has no diary length, and for a diary trip without a length). The lengths are read through
    `diary_facts.validate_trip_length_km`; a trips table without `wegkm_imp`, a loop without its trip in or a MiD
    design code raises. The block `loops` of `secondary_locations_report.json` counts them under `diary_lengths`
    (with and without a length, km by synthesis mode for the trips in, the trips out by kind).

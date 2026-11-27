@@ -221,7 +221,7 @@ def apply_loop_trip_distances(
         "available": True,
         "metric_kind": metric_kind,
         "into_loop": _group_counts(into_loop, has_diary),
-        "back_to_loop_start": _group_counts(~into_loop, has_diary),
+        "out_of_loop_at_its_place": _group_counts(~into_loop, has_diary),
         "unmatched": n_unmatched,
         "unmatched_share": float(n_unmatched / len(loop_trips)) if len(loop_trips) else 0.0,
         "km_before_by_mode": _sum_by_mode(corrected_modes, before_km),
@@ -229,13 +229,13 @@ def apply_loop_trip_distances(
     }
 
     logger.info(
-        "[loop-trips] %s distances: into a loop matched %d / corrected %d / without diary length %d; back to the "
-        "loop start matched %d / corrected %d / without diary length %d; unmatched %d of %d loop-table trips "
+        "[loop-trips] %s distances: into a loop matched %d / corrected %d / without diary length %d; out of a "
+        "loop to its place matched %d / corrected %d / without diary length %d; unmatched %d of %d loop-table trips "
         "(%.1f%%); corrected trips %.1f km before, %.1f km after",
         metric_kind,
         report["into_loop"]["matched"], report["into_loop"]["corrected"], report["into_loop"]["without_diary_length"],
-        report["back_to_loop_start"]["matched"], report["back_to_loop_start"]["corrected"],
-        report["back_to_loop_start"]["without_diary_length"],
+        report["out_of_loop_at_its_place"]["matched"], report["out_of_loop_at_its_place"]["corrected"],
+        report["out_of_loop_at_its_place"]["without_diary_length"],
         n_unmatched, len(loop_trips), 100.0 * report["unmatched_share"], float(before_km.sum()), float(after_km.sum()))
     if report["unmatched_share"] > UNMATCHED_SHARE_WARNING_THRESHOLD:
         logger.warning(

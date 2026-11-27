@@ -33,7 +33,7 @@ def test_mean_km_by_mode_and_loop_block_reflect_the_diary_length(tmp_path, monke
     assert corrected["mean_km_by_mode"]["walk"] == pytest.approx(1.6)
     assert corrected["mean_km_by_mode"]["car"] == pytest.approx(10.0)
     assert corrected["loop_trips"]["into_loop"]["corrected"] == 1
-    assert corrected["loop_trips"]["back_to_loop_start"]["corrected"] == 1
+    assert corrected["loop_trips"]["out_of_loop_at_its_place"]["corrected"] == 1
     assert corrected["loop_trips"]["km_after_by_mode"] == {"walk": pytest.approx(3.8)}
 
     uncorrected = run_metrics.metrics_matsim(tmp_path)

@@ -54,7 +54,7 @@ def test_diary_length_replaces_zero_for_both_metric_kinds(metric_kind, loop_km, 
     assert corrected["mode"].tolist() == original["mode"].tolist()
     assert original["distance_km"].tolist() == [0.0, 0.0, 12.0, 0.0, 0.0]  # the input frame is not modified
     assert report["into_loop"] == {"matched": 2, "corrected": 1, "without_diary_length": 1}
-    assert report["back_to_loop_start"] == {"matched": 1, "corrected": 1, "without_diary_length": 0}
+    assert report["out_of_loop_at_its_place"] == {"matched": 1, "corrected": 1, "without_diary_length": 0}
     assert (report["unmatched"], report["unmatched_share"]) == (1, 0.25)
     assert report["km_before_by_mode"] == {"walk": 0.0}
     assert report["km_after_by_mode"] == {"walk": pytest.approx(loop_km + back_km, abs=1e-3)}
