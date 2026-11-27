@@ -794,6 +794,10 @@ def run(context, config_name: str, lift_report: dict | None = None) -> dict:
     config_path = os.path.join(directory, config_name)
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"{_LOG_TAG} written config not found: {config_path}")
+    # A lift report without "all_modes" would silently turn the invariant's raise into an ERROR line: refuse it.
+    if lift_report is not None and "all_modes" not in lift_report:
+        raise ValueError(f"{_LOG_TAG} the lift report has no 'all_modes' key (keys: {sorted(lift_report)}); "
+                         "pass the report frozen_pt_walk_lift.run returns")
     assert_qsim_end_time(config_path, MAX_PLAN_TIME_SECONDS)
     # Resolved exactly as matsim.simulation.run and matsim.runtime.eqasim.run do.
     jar_path = "%s/%s" % (context.path("matsim.runtime.eqasim"), context.stage("matsim.runtime.eqasim"))
@@ -822,7 +826,7 @@ def run(context, config_name: str, lift_report: dict | None = None) -> dict:
         if "share_lifted_other_modes" in lift_report:
             summary["threshold"][KEY_SHARE_LIFTED_OTHER_MODES] = lift_report["share_lifted_other_modes"]
     # The lift's own report says whether it covered all modes (None report: the lift is off or ran nothing).
-    lift_all_modes = bool(lift_report is not None and lift_report.get("all_modes", False))
+    lift_all_modes = bool(lift_report is not None and lift_report["all_modes"])
     summary["reach"] = {"isolate_outside_trips": reach.isolate_outside_trips, "max_tour_length": reach.max_tour_length,
                         "lift_all_modes": lift_all_modes}
     with open(os.path.join(directory, PLAN_CHECK_FILE_NAME), "w", encoding="utf-8") as handle:

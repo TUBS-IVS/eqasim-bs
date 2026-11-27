@@ -445,3 +445,28 @@ def test_a_person_without_legs_is_skipped(tmp_path):
     source, target, report = _lift(tmp_path, stay_home, reach=REACH, all_modes=True)
     assert _plan_signature(target) == _plan_signature(source)
     assert (report["n_persons"], report["n_persons_without_legs"], report["n_resident_trips"]) == (1, 1, 0)
+
+
+def test_after_the_lift_the_plan_check_finds_no_unreached_unfit_trip(tmp_path):
+    """End to end under the finer rule (#678 final review, finding 13): the lift and the plan check classify trips with
+    the same ``leg_reach``, so after the lift no resident trip is both unreached and unfit, the bicycle trip taken
+    along included; a drift between the two would leave one and make ``check_unreached_invariant`` raise."""
+    finer = ReachSettings(True, 11)
+    settings = dict(simulation_end_s=30 * 3600.0, walk_max_distance_m=L.plan_check.DEFAULT_WALK_MAX_DISTANCE_M,
+                    bicycle_max_distance_m=L.plan_check.DEFAULT_BICYCLE_MAX_DISTANCE_M,
+                    leg_max_duration_s=L.plan_check.DEFAULT_LEG_MAX_DURATION_S,
+                    pt_as_walk_bound_min_distance_m=MIN_DISTANCE_M,
+                    non_monotonic_bound_min_lateness_s=L.plan_check.DEFAULT_NON_MONOTONIC_BOUND_MIN_LATENESS_S,
+                    reach=finer)
+    source, target, report = _lift(tmp_path, _bicycle_border_tour("bicycle"), _long_tour("walk", 12, "walk", 8000.0),
+                                   _long_tour("pt", 12, "stamp", 9000.0), reach=finer, all_modes=True,
+                                   walk_max_distance_m=settings["walk_max_distance_m"],
+                                   bicycle_max_distance_m=settings["bicycle_max_distance_m"])
+
+    def unfit(path):
+        summary = L.plan_check.summarise(L.plan_check.iter_person_plans(str(path)), **settings)
+        return summary["subpopulations"][L.plan_check.RESIDENTS][L.plan_check.FROZEN]["n_unreached_unfit"]
+
+    assert unfit(source) > 0   # the primary path: the input has unfit trips and the lift changed them
+    assert report["n_lifted_by_mode"] == {"pt": 1, "walk": 1, "bicycle": 2} and report["n_lifted_with_tour"] == 1
+    assert unfit(target) == 0

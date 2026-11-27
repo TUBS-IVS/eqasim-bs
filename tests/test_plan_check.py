@@ -445,7 +445,7 @@ def test_run_does_not_raise_when_the_frozen_defect_is_inside_the_share(tmp_path)
     assert (tmp_path / C.PLAN_CHECK_FILE_NAME).exists()
 
 
-_LIFT_ABOVE_BOUND = {"share_lifted": 0.5, "n_pt_trips_frozen": 10}
+_LIFT_ABOVE_BOUND = {"share_lifted": 0.5, "n_pt_trips_frozen": 10, "all_modes": False}
 
 
 def test_run_records_a_lift_share_above_the_bound_and_raises_after_writing_the_json_naming_it(tmp_path):
@@ -955,6 +955,14 @@ def test_the_share_of_the_other_modes_is_a_threshold_violation():
     assert "share_lifted_other_modes" in C.find_threshold_violations(summary, 0.005, 0.02, lift_report)
     lift_report["bound_exceeded_other_modes"] = False
     assert C.find_threshold_violations(summary, 0.005, 0.02, lift_report) == []
+
+
+def test_run_refuses_a_lift_report_without_all_modes(tmp_path):
+    """Without the key the invariant's raise would silently become an ERROR line (#678 final review, finding 13)."""
+    _write_run_inputs(tmp_path)
+    with pytest.raises(ValueError, match="all_modes"):
+        C.run(_RunContext(tmp_path, fail_on_threshold=False, max_share=1.0), "bs_config.xml",
+              lift_report={"share_lifted": 0.0, "bound_exceeded_other_modes": False})
 
 
 def test_run_writes_the_json_before_the_invariant_stops_the_run(tmp_path):
