@@ -131,15 +131,17 @@ def _srv_copy(tmp_path, edit=None):
 
 
 def _all_band_population(n_households=4000):
-    """Households of sizes 1 to 5 with ages over all seven bands and NO adult student: readable
-    non-student codes, the no-answer code, missing codes, and pupils under 18 with the student
-    code (who stay in their band)."""
+    """Households of sizes 1 to 5 with ages over all seven bands and NO adult student: every adult
+    has a readable non-student code (an adult of unknown status may be a student and is drawn in a
+    cell of its own); persons under 18 carry any code -- non-student, no answer, missing, or the
+    student code of pupils aged 14 to 17 -- and stay in their band."""
     rng = np.random.RandomState(31)
     household_id, position, size_of = _household_frame(rng.randint(1, 6, size=n_households))
     n = len(household_id)
     age = np.where(position < 2, rng.randint(18, 95, n), rng.randint(0, 18, n))
-    p_taet = rng.choice([NON_STUDENT, 2, 7, P_TAET_NO_ANSWER], size=n).astype(float)
-    p_taet[rng.random_sample(n) < 0.01] = np.nan
+    p_taet = np.where(age >= 18, rng.choice([NON_STUDENT, 2, 7], size=n),
+                      rng.choice([NON_STUDENT, P_TAET_NO_ANSWER], size=n)).astype(float)
+    p_taet[(age < 18) & (rng.random_sample(n) < 0.05)] = np.nan
     p_taet[(age < 18) & (age >= 14)] = STUDENT
     persons = pd.DataFrame({"person_id": np.arange(n), "household_id": household_id, "age": age,
                             "P_TAET": p_taet, "kreis": rng.choice(list(AREA_OF_KREIS), size=n)})
@@ -170,7 +172,7 @@ def test_load_cell_reference_reads_each_cell_from_its_owner():
     rates = C.load_cell_reference(str(SRV_DIR), AREA_OF_KREIS)
     by_age = pd.read_csv(SRV_DIR / D.ABSENCE_BY_AGE_TABLE, comment="#", encoding="utf-8").set_index("band")
     away = SFI.away_share_by_area(SRV_DIR)
-    expected = {"0-5": by_age.loc["0-5", "p_absent"], "6-17": by_age.loc["6-17", "p_absent"],
+    expected = {**{band: by_age.loc[band, "p_absent"] for band in D.AGE_BAND_LABELS},
                 **{f"adult:{band}": by_age.loc[band, "p_absent_non_student"]
                    for band in ("18-29", "30-44", "45-64", "65-74", "75+")},
                 **{f"student:{area}": away[area] for area in ("braunschweig", "surrounding", "wolfsburg")}}
@@ -184,7 +186,7 @@ def _nan_rate(table):
 
 
 @pytest.mark.parametrize("edit, area_of_kreis, match", [
-    (_nan_rate, AREA_OF_KREIS, "adult:45-64"),
+    (_nan_rate, AREA_OF_KREIS, "45-64.*p_absent_non_student"),
     (lambda t: t.drop(columns="p_absent_non_student"), AREA_OF_KREIS, "p_absent_non_student"),
     (None, {**AREA_OF_KREIS, "03101": "elsewhere"}, "elsewhere"),
 ], ids=["nan_rate", "missing_column", "area_without_share"])
@@ -196,19 +198,37 @@ def test_load_cell_reference_raises_on_a_missing_rate(tmp_path, edit, area_of_kr
 
 def test_assign_cells_puts_each_person_in_its_cell(caplog):
     persons = pd.DataFrame({
-        "person_id": [10, 11, 12, 13, 14, 15, 16, 17],
-        "age": [22, 31, 24, 45, 16, 3, 50, 19],
-        "P_TAET": [STUDENT, STUDENT, STUDENT, NON_STUDENT, STUDENT, np.nan, P_TAET_NO_ANSWER, NON_STUDENT],
-        "kreis": ["03101", "03103", "03151", "03101", "03101", "03102", "03157", "03158"]})
+        "person_id": [10, 11, 12, 13, 14, 15, 16, 17, 18],
+        "age": [22, 31, 24, 45, 16, 3, 50, 19, 70],
+        "P_TAET": [STUDENT, STUDENT, STUDENT, NON_STUDENT, STUDENT, np.nan, P_TAET_NO_ANSWER, NON_STUDENT, np.nan],
+        "kreis": ["03101", "03103", "03151", "03101", "03101", "03102", "03157", "03158", "03154"]})
     with caplog.at_level("INFO", logger=C.logger.name):
         result = C.assign_cells(persons, AREA_OF_KREIS)
+    # Persons 16 and 18 are adults of unknown status: their own band, never the non-student cell.
     expected = pd.Series(["student:braunschweig", "student:wolfsburg", "student:surrounding", "adult:45-64",
-                          "6-17", "0-5", "adult:45-64", "adult:18-29"],
-                         index=pd.Index([10, 11, 12, 13, 14, 15, 16, 17], name="person_id"),
+                          "6-17", "0-5", "45-64", "adult:18-29", "65-74"],
+                         index=pd.Index([10, 11, 12, 13, 14, 15, 16, 17, 18], name="person_id"),
                          name=D.CELL_COLUMN, dtype=object)
     pd.testing.assert_series_equal(result, expected)
-    # Fallback transparency: 1 of the 6 adults has no readable P_TAET (the missing code is a minor's).
-    assert any("primary 5/6" in message and "fallback 1" in message for message in caplog.messages)
+    assert C.count_adults(result) == (7, 2)
+    # Fallback transparency: 2 of the 7 adults have no readable P_TAET (person 15 is a minor).
+    assert any("primary 5/7" in message and "fallback 2" in message for message in caplog.messages)
+
+
+def test_an_adult_of_unknown_status_is_drawn_at_the_band_rate_of_all_persons():
+    """The cell <band> of an adult carries the band's p_absent (not p_absent_non_student), and the
+    draw routes the adults of unknown status there: with that cell at rate 1 and the non-student cell
+    at 0 (household stage off) exactly the adults of unknown status are absent."""
+    rates = C.load_cell_reference(str(SRV_DIR), AREA_OF_KREIS)
+    by_age = pd.read_csv(SRV_DIR / D.ABSENCE_BY_AGE_TABLE, comment="#", encoding="utf-8").set_index("band")
+    assert rates["45-64"] == float(by_age.loc["45-64", "p_absent"]) != rates["adult:45-64"]
+    persons = pd.DataFrame({"person_id": range(6), "household_id": range(6), "age": 50, "kreis": "03101",
+                            "P_TAET": [NON_STUDENT, P_TAET_NO_ANSWER, NON_STUDENT, np.nan, NON_STUDENT, 2]})
+    out, _ = D.draw_absence(persons, TOY_REFERENCE, np.random.RandomState(2), household_stage=False,
+                            cell_rates={**rates, "45-64": 1.0, "adult:45-64": 0.0},
+                            cells=C.assign_cells(persons, AREA_OF_KREIS))
+    absent = out.set_index("person_id")["day_absence_state"] != D.STATE_PRESENT
+    assert absent[absent].index.tolist() == [1, 3]
 
 
 def test_assign_cells_warns_above_the_unreadable_share_and_raises_when_no_adult_code_is_readable(caplog):

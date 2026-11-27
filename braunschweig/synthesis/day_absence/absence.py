@@ -28,7 +28,8 @@ Every person gets ``day_absence_state`` in {present, absent_household, absent_in
 
 With ``cell_rates`` and ``cells`` (issue #140, ADR-0212 amending ADR-0110) the individual stage runs
 per CELL instead of per age band -- adult students by home area, the other adults by age band at the
-non-student rate, the persons under 18 by their band (:mod:`braunschweig.synthesis.day_absence.cells`);
+non-student rate, the adults of unknown status and the persons under 18 by their band
+(:mod:`braunschweig.synthesis.day_absence.cells`);
 the household stage, the random stream and the gates are unchanged (see :func:`draw_absence`).
 """
 from __future__ import annotations
@@ -130,15 +131,37 @@ class AbsenceReference:
                                   set(range(1, HOUSEHOLD_SIZE_CLASS_TOP + 1)), allow_nan=True)
 
 
+def read_band_rates(srv_dir: str, columns=("p_absent",)) -> dict[str, dict[str, float]]:
+    """``{column: {band: rate}}`` of ``srv2023_absence_by_age_band.csv``, read BY COLUMN NAME.
+
+    The one reader of that table for the draw: :func:`load_absence_reference` takes ``p_absent`` and
+    the cells path (:func:`braunschweig.synthesis.day_absence.cells.load_cell_reference`) also
+    ``p_absent_non_student``. Raises ``ValueError`` on a missing column, a missing or repeated band
+    of ``AGE_BAND_LABELS`` or a NaN rate; the ``all`` row is ignored.
+    """
+    by_age = pd.read_csv(os.path.join(srv_dir, ABSENCE_BY_AGE_TABLE), comment="#", encoding="utf-8")
+    absent_columns = [column for column in ("band", *columns) if column not in by_age.columns]
+    if absent_columns:
+        raise ValueError(f"{_LOG_TAG} {ABSENCE_BY_AGE_TABLE} lacks the column(s) {absent_columns}")
+    bands = by_age[by_age["band"] != ALL_BAND].set_index("band")
+    repeated = sorted(set(bands.index[bands.index.duplicated()]))
+    if repeated:
+        raise ValueError(f"{_LOG_TAG} {ABSENCE_BY_AGE_TABLE} repeats band(s) {repeated}")
+    rates = {}
+    for column in columns:
+        values = bands[column]
+        missing = sorted(set(AGE_BAND_LABELS) - set(values.index))
+        if missing or values.isna().any():
+            raise ValueError(f"{_LOG_TAG} {ABSENCE_BY_AGE_TABLE} lacks a rate for band(s) "
+                             f"{missing or values[values.isna()].index.tolist()} in column {column}")
+        rates[column] = {band: float(values[band]) for band in AGE_BAND_LABELS}
+    return rates
+
+
 def load_absence_reference(srv_dir: str) -> AbsenceReference:
     """Read the two committed tables BY COLUMN NAME; raise on a missing band / size class."""
-    by_age = pd.read_csv(os.path.join(srv_dir, ABSENCE_BY_AGE_TABLE), comment="#")
+    p_absent_by_band = read_band_rates(srv_dir, ("p_absent",))["p_absent"]
     by_size = pd.read_csv(os.path.join(srv_dir, ABSENCE_HOUSEHOLD_TABLE), comment="#")
-    bands = by_age[by_age["band"] != ALL_BAND].set_index("band")["p_absent"]
-    missing = sorted(set(AGE_BAND_LABELS) - set(bands.index))
-    if missing or bands.isna().any():
-        raise ValueError(f"{_LOG_TAG} {ABSENCE_BY_AGE_TABLE} lacks a rate for band(s) "
-                         f"{missing or bands[bands.isna()].index.tolist()}")
     sizes = by_size.set_index("size_class")["p_all_absent"]
     expected = list(range(1, HOUSEHOLD_SIZE_CLASS_TOP + 1))
     if sorted(sizes.index.tolist()) != expected or sizes.isna().any():
@@ -156,7 +179,7 @@ def load_absence_reference(srv_dir: str) -> AbsenceReference:
     if sorted(persons_by_size.index.tolist()) != expected:
         raise ValueError(f"{_LOG_TAG} {ABSENCE_HOUSEHOLD_TABLE} must carry a p_absent_person entry "
                          f"for size classes {expected}")
-    return AbsenceReference(p_absent_by_band={b: float(bands[b]) for b in AGE_BAND_LABELS},
+    return AbsenceReference(p_absent_by_band=p_absent_by_band,
                             p_all_absent_by_size={int(k): float(v) for k, v in sizes.items()},
                             p_absent_person_by_size={int(k): float(v) for k, v in persons_by_size.items()})
 
@@ -278,7 +301,7 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
     and count ``n_cells_overshoot`` / ``n_cells_unreachable`` in place of the band counts.
     ``by_band`` stays as a REPORT: its ``reference_rate`` is the band's SrV rate of all persons, which
     the cells path does not target, and its ``residual_p`` is the residual of the cell named like the
-    band (the bands under 18), NaN for a band drawn in several cells.
+    band when it holds the whole band (the bands under 18), NaN for a band drawn in several cells.
     """
     if (cell_rates is None) != (cells is None):
         raise ValueError(f"{_LOG_TAG} cell_rates and cells must be given together (both or neither)")
@@ -477,18 +500,20 @@ def _band_report(out: pd.DataFrame, reference: AbsenceReference, absent: pd.Seri
     """``by_band`` of the cells path: the entries of the band path, as a report (issue #140).
 
     ``reference_rate`` is the band's SrV rate of all persons (``reference.p_absent_by_band``), which
-    the cells path does not target; ``residual_p`` is the residual of the cell named like the band
-    (the bands under 18 are their own cells) and NaN for a band whose persons were drawn in several
-    cells.
+    the cells path does not target; ``residual_p`` is the residual of the cell named like the band when
+    that cell holds every person of the band (the bands under 18 are their own cells), NaN for a band
+    whose persons were drawn in several cells (an adult band: students, non-students and adults of
+    unknown status).
     """
     by_band = {}
     for label in AGE_BAND_LABELS:
         in_band = (out["age_band"] == label).to_numpy()
         n_band = int(in_band.sum())
         absent_hh_n = int(is_hh_absent[in_band].sum())
+        one_cell = label in residual_by_cell and bool((out[CELL_COLUMN].to_numpy()[in_band] == label).all())
         by_band[label] = {"n": n_band, "reference_rate": reference.p_absent_by_band[label],
                           "realised_household_rate": float(absent_hh_n / n_band) if n_band else 0.0,
-                          "residual_p": float(residual_by_cell.get(label, float("nan"))),
+                          "residual_p": float(residual_by_cell[label]) if one_cell else float("nan"),
                           "n_eligible_present": int(is_eligible[in_band].sum()),
                           "n_escort_protected": int(is_escort_removed[in_band].sum()),
                           "realised_rate": float(absent[in_band].mean()) if n_band else float("nan")}

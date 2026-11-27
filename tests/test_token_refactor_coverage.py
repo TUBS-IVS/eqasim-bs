@@ -69,6 +69,9 @@ _COMPOSITE_STAGES = {
     # Holds the VG250 / RegioStaR digests and the digests of the committed SrV student tables and
     # the Zensus employed-by-age file next to the module digests (#140).
     "braunschweig.analysis.synthesis.students_vs_srv",
+    # Holds the digests of the SrV tables the student cells read next to the module digests while
+    # day_absence_student_cells_enabled is ON (#140, ADR-0212).
+    "braunschweig.synthesis.day_absence.absence_stage",
 }
 
 

@@ -7,10 +7,13 @@ The individual stage of :func:`braunschweig.synthesis.day_absence.absence.draw_a
   area of the household's Kreis (Braunschweig; the surrounding surveyed Kreise; Wolfsburg, which SrV
   does not survey, on the value of the region). Rate: the SrV share of the students of that area
   away from home all day (:func:`braunschweig.data.education.student_flows_inputs.away_share_by_area`).
-* ``adult:<band>`` -- every other person aged 18 or older, by age band. Rate: the SrV rate measured
-  among the NON-STUDENTS of the band (column ``p_absent_non_student`` of
+* ``adult:<band>`` -- every other person aged 18 or older with a readable ``P_TAET``, by age band.
+  Rate: the SrV rate measured among the NON-STUDENTS of the band (column ``p_absent_non_student`` of
   ``srv2023_absence_by_age_band.csv``), raw SrV weights (A24).
-* ``<band>`` -- a person under 18, in the band and at the rate of the band draw (``p_absent``).
+* ``<band>`` -- a person under 18, in the band and at the rate of the band draw (``p_absent``); and
+  an adult whose ``P_TAET`` is missing or the no-answer code: an unknown status is never "not a
+  student" (the rule of ``braunschweig.calibration.mid_student_reference``), so such an adult is drawn
+  at the band's rate of ALL persons, the expected rate of an adult of unknown status.
 
 The rate of an adult band as a whole is no longer a target: it follows from the students and the
 others the population holds. The household stage is unchanged (by household size).
@@ -23,16 +26,14 @@ loaders come from the leaf :mod:`braunschweig.data.education.student_flows_input
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Mapping
 
 import numpy as np
 import pandas as pd
 
-from braunschweig.calibration.srv_absence import (ABSENCE_BY_AGE_TABLE, AGE_BAND_BOUNDS, AGE_BAND_LABELS,
-                                                  ALL_BAND, age_band)
+from braunschweig.calibration.srv_absence import AGE_BAND_BOUNDS, AGE_BAND_LABELS, age_band
 from braunschweig.data.education import student_flows_inputs as flows_inputs
-from braunschweig.synthesis.day_absence.absence import CELL_COLUMN, _check_reference_coverage
+from braunschweig.synthesis.day_absence.absence import CELL_COLUMN, _check_reference_coverage, read_band_rates
 
 logger = logging.getLogger(__name__)
 _LOG_TAG = "[day absence cells]"
@@ -54,7 +55,7 @@ NON_STUDENT_RATE_COLUMN = "p_absent_non_student"
 ALL_PERSONS_RATE_COLUMN = "p_absent"
 #: Default of the stage key ``day_absence_cells_max_unreadable_p_taet_share``. ASSUMPTION: an adult
 #: share above 5 % without a readable activity code is taken to signal a broken column (a guard, not
-#: a target); such adults are drawn in the non-student cell of their band.
+#: a target); such adults are drawn in the cell ``<band>`` at the band's rate of all persons.
 DEFAULT_MAX_UNREADABLE_P_TAET_SHARE = 0.05
 
 
@@ -67,27 +68,20 @@ def adult_cell(band: str) -> str:
 
 
 def load_cell_reference(srv_dir: str, area_of_kreis: Mapping[str, str]) -> dict[str, float]:
-    """``{cell: rate}`` for the bands under 18, the adult non-student bands and the student areas.
+    """``{cell: rate}`` for every band, the adult non-student bands and the student areas.
 
-    The bands under 18 take ``p_absent`` and the adult bands ``p_absent_non_student`` of
-    ``srv2023_absence_by_age_band.csv``; the students take
+    Every band ``<band>`` takes ``p_absent`` (the bands under 18, and the adults of unknown status)
+    and every ``adult:<band>`` takes ``p_absent_non_student`` of ``srv2023_absence_by_age_band.csv``,
+    both through the one reader of that table,
+    :func:`braunschweig.synthesis.day_absence.absence.read_band_rates`; the students take
     :func:`~braunschweig.data.education.student_flows_inputs.away_share_by_area` for every area of
     ``area_of_kreis`` (the map of :func:`~braunschweig.data.education.student_flows_inputs.area_by_kreis`,
     Wolfsburg on the region's value). No fallback: a missing column, a missing, repeated or NaN band
-    rate, an area without a share or a rate outside [0, 1] raises ``ValueError`` naming the cell.
+    rate, an area without a share or a rate outside [0, 1] raises ``ValueError``.
     """
-    path = os.path.join(srv_dir, ABSENCE_BY_AGE_TABLE)
-    by_age = pd.read_csv(path, comment="#", encoding="utf-8")
-    missing_columns = [c for c in ("band", ALL_PERSONS_RATE_COLUMN, NON_STUDENT_RATE_COLUMN) if c not in by_age.columns]
-    if missing_columns:
-        raise ValueError(f"{_LOG_TAG} {ABSENCE_BY_AGE_TABLE} lacks the column(s) {missing_columns}")
-    bands = by_age[by_age["band"] != ALL_BAND].set_index("band")
-    repeated = sorted(set(bands.index[bands.index.duplicated()]))
-    absent_bands = sorted(set(AGE_BAND_LABELS) - set(bands.index))
-    if repeated or absent_bands:
-        raise ValueError(f"{_LOG_TAG} {ABSENCE_BY_AGE_TABLE}: band(s) {absent_bands} missing, {repeated} repeated")
-    rates = {band: float(bands.loc[band, ALL_PERSONS_RATE_COLUMN]) for band in MINOR_BANDS}
-    rates.update({adult_cell(band): float(bands.loc[band, NON_STUDENT_RATE_COLUMN]) for band in ADULT_BANDS})
+    band_rates = read_band_rates(srv_dir, (ALL_PERSONS_RATE_COLUMN, NON_STUDENT_RATE_COLUMN))
+    rates = dict(band_rates[ALL_PERSONS_RATE_COLUMN])
+    rates.update({adult_cell(band): band_rates[NON_STUDENT_RATE_COLUMN][band] for band in ADULT_BANDS})
     away = flows_inputs.away_share_by_area(srv_dir)
     for area in dict.fromkeys(area_of_kreis.values()):
         if area not in away:
@@ -105,13 +99,15 @@ def assign_cells(persons: pd.DataFrame, area_of_kreis: Mapping[str, str], *,
 
     ``persons`` needs ``person_id``, ``age``, ``P_TAET`` and ``kreis`` (the 5-digit home Kreis). A
     person aged 18 or older with ``P_TAET == STUDENT_P_TAET`` is ``student:<area of kreis>``, any other
-    adult ``adult:<band>``, a person under 18 ``<band>`` whatever the code.
+    adult with a readable code ``adult:<band>``, a person under 18 ``<band>`` whatever the code.
 
     Fallback, counted and logged as a rate: an adult whose ``P_TAET`` is missing or the no-answer code
-    cannot be told apart and is drawn in the non-student cell of the band; above
-    ``max_unreadable_share`` of the adults it WARNS, and when no adult has a readable code it raises
-    (the column is broken, the student cells would be empty). Raises as well on a missing column, a
-    missing age, a code that is not a number, or a Kreis outside ``area_of_kreis`` (the region).
+    has an unknown status, which is never "not a student" (the rule of
+    ``braunschweig.calibration.mid_student_reference``); it is drawn in the cell ``<band>`` at the
+    band's rate of all persons (count: :func:`count_adults`). Above ``max_unreadable_share`` of the
+    adults it WARNS, and when no adult has a readable code it raises (the column is broken, the
+    student cells would be empty). Raises as well on a missing column, a missing age, a code that is
+    not a number, or a Kreis outside ``area_of_kreis`` (the region).
     """
     missing = [c for c in ("person_id", "age", "P_TAET", "kreis") if c not in persons.columns]
     if missing:
@@ -137,7 +133,7 @@ def assign_cells(persons: pd.DataFrame, area_of_kreis: Mapping[str, str], *,
     n_adults, n_unreadable = int(adult.sum()), int((adult & unreadable).sum())
     share = n_unreadable / n_adults if n_adults else 0.0
     logger.info("%s P_TAET of the adults: primary %d/%d (%.2f%%), fallback %d (%.2f%%) without a readable "
-                "code, drawn in the non-student cell of their band", _LOG_TAG, n_adults - n_unreadable,
+                "code, drawn in their band at the rate of all persons", _LOG_TAG, n_adults - n_unreadable,
                 n_adults, 100.0 * (1.0 - share) if n_adults else 0.0, n_unreadable, 100.0 * share)
     if n_adults and n_unreadable == n_adults:
         raise ValueError(f"{_LOG_TAG} not one of the {n_adults} adults has a readable P_TAET; the column is "
@@ -147,7 +143,8 @@ def assign_cells(persons: pd.DataFrame, area_of_kreis: Mapping[str, str], *,
                        "P_TAET column of the enriched persons", _LOG_TAG, 100.0 * share, 100.0 * max_unreadable_share)
 
     cell = band.copy()
-    cell[adult] = [adult_cell(b) for b in band[adult]]
+    readable_adult = adult & ~unreadable
+    cell[readable_adult] = [adult_cell(b) for b in band[readable_adult]]
     cell[student] = [student_cell(area_of_kreis[k]) for k in kreis.to_numpy()[student]]
     result = pd.Series(cell, index=pd.Index(persons["person_id"].to_numpy(), name="person_id"),
                        name=CELL_COLUMN, dtype=object)
@@ -158,3 +155,13 @@ def assign_cells(persons: pd.DataFrame, area_of_kreis: Mapping[str, str], *,
         logger.warning("%s no adult student (P_TAET == %d) among %d adults: the student cells are empty",
                        _LOG_TAG, flows_inputs.STUDENT_P_TAET, n_adults)
     return result
+
+
+def count_adults(person_cells: pd.Series) -> tuple[int, int]:
+    """``(n_adults, n_unknown_status)`` of the cells of :func:`assign_cells`.
+
+    An adult of unknown status is the one adult whose cell is a plain band of ``ADULT_BANDS``.
+    """
+    unknown = person_cells.isin(ADULT_BANDS)
+    known = person_cells.str.startswith(ADULT_CELL_PREFIX) | person_cells.str.startswith(STUDENT_CELL_PREFIX)
+    return int((unknown | known).sum()), int(unknown.sum())

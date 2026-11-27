@@ -138,13 +138,14 @@ def test_configure_declares_the_individual_stage_min_household_size_default():
 def _cells_population():
     """Six households in three home areas (Braunschweig, surrounding, Wolfsburg): students, other
     adults and a child, with the activity code of the popsim_mid pipeline."""
-    persons = pd.DataFrame({"person_id": range(9), "household_id": [1, 1, 2, 3, 3, 3, 4, 5, 6],
-                            "age": [21, 23, 45, 40, 24, 8, 26, 70, 19],
-                            "P_TAET": [10, 1, 1, 1, 10, 7, 10, 1, 10]})
-    home_zones = pd.DataFrame({"household_id": [1, 2, 3, 4, 5, 6],
-                               "departement_id": ["03101", "03101", "03151", "03103", "03103", "03103"]})
+    persons = pd.DataFrame({"person_id": range(10), "household_id": [1, 1, 2, 3, 3, 3, 4, 5, 6, 7],
+                            "age": [21, 23, 45, 40, 24, 8, 26, 70, 19, 52],
+                            "P_TAET": [10, 1, 1, 1, 10, 7, 10, 1, 10, 99]})
+    home_zones = pd.DataFrame({"household_id": [1, 2, 3, 4, 5, 6, 7],
+                               "departement_id": ["03101", "03101", "03151", "03103", "03103", "03103", "03102"]})
+    # Person 9 answered no activity (99): an adult of unknown status, in its band at the all-person rate.
     expected_cells = ["student:braunschweig", "adult:18-29", "adult:45-64", "adult:30-44", "student:surrounding",
-                      "6-17", "student:wolfsburg", "adult:65-74", "student:wolfsburg"]
+                      "6-17", "student:wolfsburg", "adult:65-74", "student:wolfsburg", "45-64"]
     return persons, home_zones, expected_cells
 
 
@@ -157,7 +158,7 @@ def test_cells_path_draws_each_person_in_its_cell_and_reports_every_cell(caplog)
     with caplog.at_level("INFO", logger=S.logger.name):
         out = S.execute(_context(_cells_stages(persons, home_zones), _cells_config()))
     absence, diagnostics = out["absence"], out["diagnostics"]
-    assert list(absence.columns) == list(D.CELL_ABSENCE_COLUMNS) and len(absence) == 9
+    assert list(absence.columns) == list(D.CELL_ABSENCE_COLUMNS) and len(absence) == 10
     assert absence.set_index("person_id")[D.CELL_COLUMN].sort_index().tolist() == expected_cells
     off = S.execute(_context({"synthesis.population.enriched": persons}, _config(**{S.KEY_ENABLED: False})))
     assert absence[list(D.ABSENCE_COLUMNS)].dtypes.equals(off["absence"].dtypes)
@@ -165,6 +166,8 @@ def test_cells_path_draws_each_person_in_its_cell_and_reports_every_cell(caplog)
                                   SFI.area_by_kreis(SFI.default_home_area_kreise(), SFI.ZGB_KREISE))
     assert {cell: entry["reference_rate"] for cell, entry in diagnostics["by_cell"].items()} == rates
     assert diagnostics["student_cells"] is True and diagnostics["enabled"] is True
+    assert (diagnostics["n_adults"], diagnostics["n_adults_unreadable_p_taet"]) == (9, 1)
+    assert diagnostics["share_adults_unreadable_p_taet"] == pytest.approx(1 / 9)
     assert set(diagnostics["by_band"]) == set(D.AGE_BAND_LABELS)
     for cell in rates:   # one line per cell: the rate reached against the SrV rate
         assert any(cell in message and "reference" in message for message in caplog.messages), cell
@@ -468,15 +471,21 @@ def test_cells_path_refuses_a_population_it_cannot_put_in_cells(case, match):
         S.execute(_context(_cells_stages(persons, home_zones), _cells_config()))
 
 
-def test_the_readers_of_the_absence_frame_accept_the_cells_output():
+def test_the_readers_of_the_absence_frame_accept_the_cells_output(monkeypatch):
     """The persons export, the MATSim population and the reporting-day trips read the state by
-    person_id; the extra column of the cells path must not disturb them."""
+    person_id; the extra column of the cells path must not disturb them. Every one-person household
+    is absent with certainty (household stage at 1.0 for size 1), so the readers see both states."""
     from braunschweig.analysis.synthesis import absence_composition
     from braunschweig.matsim.scenario import population as matsim_population
     from braunschweig.synthesis.commute_day import output_day
 
+    monkeypatch.setattr(S, "load_absence_reference", lambda _srv_dir: D.AbsenceReference(
+        p_absent_by_band={band: 0.05 for band in D.AGE_BAND_LABELS},
+        p_all_absent_by_size={1: 1.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0},
+        p_absent_person_by_size={k: float("nan") for k in range(1, 6)}))
     persons, home_zones, _ = _cells_population()
     absence = S.execute(_context(_cells_stages(persons, home_zones), _cells_config()))["absence"]
+    assert set(absence["day_absence_state"]) >= {D.STATE_PRESENT, D.STATE_ABSENT_HOUSEHOLD}
     expected = absence.set_index("person_id")["day_absence_state"].sort_index()
     for attach in (output_day.attach_day_absence_state, matsim_population.attach_day_absence_state):
         merged = attach(persons, absence)

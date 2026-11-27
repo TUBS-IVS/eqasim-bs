@@ -16,9 +16,10 @@ OFF path has exactly the inputs it had before and no new DAG edge.
 
 Student cells (issue #140, ADR-0212 amending ADR-0110): with ``day_absence_student_cells_enabled``
 (default ON) the individual stage runs per cell of :mod:`braunschweig.synthesis.day_absence.cells`
--- adult students by home area, the other adults by age band at the non-student rate, the persons
-under 18 by band. The stage then ALSO declares ``synthesis.population.spatial.home.zones`` (the home
-Kreis of each household) and the home-area key of Phase 3, and requires ``P_TAET`` in the enriched
+-- adult students by home area, the other adults by age band at the non-student rate, the adults of
+unknown status (no readable P_TAET) and the persons under 18 by band. The stage then ALSO declares
+``synthesis.population.spatial.home.zones`` (the home Kreis of each household) and the home-area key
+of Phase 3, and requires ``P_TAET`` in the enriched
 persons. The deviation guard and the log line run per cell. OFF: the band draw, byte-identical to
 the code before the switch, with the inputs it had before.
 """
@@ -106,7 +107,8 @@ DEFAULT_MAX_BAND_DEVIATION_PP = 1.0
 KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE = "day_absence_individual_stage_min_household_size"
 DEFAULT_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE = 2
 #: Issue #140 / ADR-0212: the individual stage per cell (students by home area, other adults by age
-#: band at the non-student rate, persons under 18 by band) instead of per age band. Default ON.
+#: band at the non-student rate, adults of unknown status and persons under 18 by band) instead of per
+#: age band. Default ON.
 KEY_STUDENT_CELLS = "day_absence_student_cells_enabled"
 DEFAULT_STUDENT_CELLS = True
 #: Share of the adults without a readable P_TAET above which the cells path WARNS (the fallback of
@@ -264,9 +266,11 @@ def execute(context):
     ``absence_cell``; the diagnostics carry ``by_cell`` and ``n_cells_overshoot`` /
     ``n_cells_unreachable`` in place of the two band counts (``by_band`` stays as a report, see
     :func:`~braunschweig.synthesis.day_absence.absence.draw_absence`), ``n_cell_guard_hits`` in place
-    of ``n_band_guard_hits``, ``student_cells`` (True) and ``area_of_kreis`` (the home area of each
-    Kreis). A population without ``P_TAET`` is refused naming the key, and a household without a home
-    zone raises (a broken join, no fallback).
+    of ``n_band_guard_hits``, ``student_cells`` (True), ``area_of_kreis`` (the home area of each
+    Kreis) and the fallback count ``n_adults`` / ``n_adults_unreadable_p_taet`` /
+    ``share_adults_unreadable_p_taet`` (adults of unknown status, drawn in ``<band>`` at the band's
+    rate of all persons). A population without ``P_TAET`` is refused naming the key, and a household
+    without a home zone raises (a broken join, no fallback).
     """
     persons = context.stage("synthesis.population.enriched")
     for column in ("person_id", "household_id", "age"):
@@ -364,9 +368,14 @@ def execute(context):
     diagnostics["enabled"] = True
     diagnostics["escort_protection"] = escort_protection
     if student_cells:
+        n_adults, n_unknown_status = cells.count_adults(person_cells)
         diagnostics["student_cells"] = True
         diagnostics["area_of_kreis"] = dict(area_of_kreis)
         diagnostics["n_cell_guard_hits"] = n_guard_hits
+        # The fallback of assign_cells (adults without a readable P_TAET, drawn at their band's rate).
+        diagnostics["n_adults"] = n_adults
+        diagnostics["n_adults_unreadable_p_taet"] = n_unknown_status
+        diagnostics["share_adults_unreadable_p_taet"] = n_unknown_status / n_adults if n_adults else float("nan")
     else:
         diagnostics["n_band_guard_hits"] = n_guard_hits
     return {"absence": absence, "diagnostics": diagnostics}
