@@ -963,6 +963,7 @@ def test_run_refuses_a_lift_report_without_all_modes(tmp_path):
     with pytest.raises(ValueError, match="all_modes"):
         C.run(_RunContext(tmp_path, fail_on_threshold=False, max_share=1.0), "bs_config.xml",
               lift_report={"share_lifted": 0.0, "bound_exceeded_other_modes": False})
+    assert not (tmp_path / C.PLAN_CHECK_FILE_NAME).exists()   # refused before anything is written
 
 
 def test_run_writes_the_json_before_the_invariant_stops_the_run(tmp_path):

@@ -935,6 +935,10 @@ def _inject_freight(context, config_name):
           % (selected, total, fallback, 100.0 * fallback / total if total else 0.0))
 
     # The number of trips the injector actually wrote (its own summary, not the Python sample): the initial mode
-    # choice names the freight subpopulation only when it has members.
+    # choice names the freight subpopulation only when it has members. RunInjectFreight writes one row per trip type
+    # and no total row (eqasim-java-bs, RunInjectFreight summary writer), so the column sum is the total.
     injected = pd.read_csv("%s/%s" % (context.path(), summary_name), sep=";")
+    if "injected_trips" not in injected.columns:
+        raise ValueError("[freight.injection] %s has no injected_trips column (columns: %s); the injector's summary "
+                         "format changed" % (summary_name, list(injected.columns)))
     return int(injected["injected_trips"].sum())

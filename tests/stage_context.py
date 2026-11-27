@@ -58,6 +58,10 @@ def prepare_reach_defaults() -> dict:
             R.KEY_INITIAL_MAX_TOUR_LENGTH: R.DEFAULT_INITIAL_MAX_TOUR_LENGTH}
 
 
+from braunschweig.matsim.simulation.mode_choice_reach import (  # noqa: E402  (after the helpers above)
+    DEFAULT_LOOP_MAX_TOUR_LENGTH as _DEFAULT_LOOP_MAX_TOUR_LENGTH,
+)
+
 #: The mode choice module of a prepared MATSim config, holding the defaults of ``prepare_reach_defaults``: the reach
 #: edit of ``prepare.execute`` (``mode_choice_reach.apply``) needs ``tourConstraints`` and leaves this module
 #: byte-identical, so a test of another prepare step sees only its own change. Kept realistic (the stock eqasim
@@ -66,9 +70,9 @@ PREPARED_DMC_MODULE = ('\t<module name="DiscreteModeChoice">\n'
                        '\t\t<param name="tourFinder" value="ActivityBased" />\n'
                        '\t\t<param name="tourConstraints" value="FromTripBased, VehicleContinuity" />\n'
                        '\t\t<parameterset type="tourFilter:TourLength">\n'
-                       '\t\t\t<param name="maximumLength" value="11" />\n'
+                       '\t\t\t<param name="maximumLength" value="%d" />\n'
                        '\t\t</parameterset>\n'
-                       '\t</module>\n')
+                       '\t</module>\n') % _DEFAULT_LOOP_MAX_TOUR_LENGTH
 
 #: The smallest prepared config ``prepare.execute`` accepts: only the mode choice module above.
 PREPARED_MINIMAL_CONFIG = '<?xml version="1.0" encoding="utf-8"?>\n<config>\n' + PREPARED_DMC_MODULE + '</config>\n'

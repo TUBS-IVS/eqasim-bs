@@ -145,8 +145,9 @@ validation:
     reached 3,160,049, fixed_border 486,324, fixed_length 51,521. The branch's loop rule (coarse, 11), which also holds
     after the initial choice and after the lift (the classes depend only on the activities, which neither step
     changes): reached 3,207,293, fixed_border 486,324, fixed_length 4,277. The branch's initial rule (finer, 11):
-    reached 3,223,256, fixed_border 444,614, fixed_vehicle 25,747, fixed_length 4,277. The lift report (residents and
-    in-commuters, 3,919,594 trips) counts under the loop rule fixed_border 698,210 and fixed_length 4,277.
+    reached 3,223,256, fixed_border 444,614, fixed_vehicle 25,747, fixed_length 4,277. The lift report (all persons
+    the lift treats as residents, 3,919,594 trips; the lift acts on residents only, but in this pre-#566 population
+    the in-commuters carry no subpopulation attribute and count as residents, see configuration notes) counts under the loop rule fixed_border 698,210 and fixed_length 4,277.
   artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/analysis_replay3.json
 - metric: trips the initial choice newly reached (not reached under today's rule, reached under the initial rule) that changed their mode, by from-mode and to-mode
   reference: 'none: model output under free-flow travel times'
@@ -177,12 +178,14 @@ validation:
 - metric: lifted trips by mode and reason, the taken-along bicycle trips, and the share of the other modes against max_share_other_modes
   reference: 'the bounds of the branch: max_share_other_modes 0.002 (an ASSUMPTION, ADR-0206) and max_frozen_pt_as_walk_share 0.02 (an ASSUMPTION, ADR-0188 and ADR-0189)'
   result: >-
-    Third attempt, lift report (residents and in-commuters): pt 1,212, walk 258, bicycle 5, all fixed_border
+    Third attempt, lift report (all persons the lift treats as residents, which in this pre-#566 population includes
+    the in-commuters, see configuration notes): pt 1,212, walk 258, bicycle 5, all fixed_border
     (fixed_vehicle 0, fixed_length 0); 2 bicycle trips taken along with their tour; share_lifted_other_modes 0.0000671
     (263 of 3,919,594 trips) against 0.002, not exceeded; share_lifted (pt) 0.0268 (1,212 of 45,216 frozen pt-intended
     trips, all detected by the walkFallbackFrom stamp; 5-10 km 578, 10 km and more 634) against 0.02, EXCEEDED
     (pre-existing, plan check row). Residents only: pt 760, walk 227, bicycle 5 (3 unfit, 2 taken along);
-    in-commuters the other 483 (pt 452, walk 31). The 760 resident pt lifts are the border pt-as-walk trips the
+    in-commuters the other 483 (pt 452, walk 31); this split by person group comes from the analysis
+    (analysis_replay3.json), not from the lift report. The 760 resident pt lifts are the border pt-as-walk trips the
     initial choice does not reach, kept with their stamp: of the 1,298 resident pt-as-walk trips over 5 km that the
     loop does not reach on the input, 538 were repaired by the initial choice (row above) and 760 = 1,298 - 538 keep
     their class. The 227 resident walks are 123 inside trips the initial choice reached but left unfit, 99 border trips
