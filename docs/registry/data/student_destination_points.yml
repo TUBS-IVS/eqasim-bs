@@ -1,7 +1,10 @@
 dataset: student_destination_points
 title: Destination points of the student origin-destination table
 provider: derived in-repo from the student balance builder (student_od_balance), VG250 commune centroids and the curated institution list of scripts/seed_nds_hochschulen.py
-vintage: same run as student_od_table.csv; points are independent of the enrollment semester
+vintage: |
+  A separate run of the points sub-command on the same inputs and the same preparation as the balance run of
+  student_od_table.csv; the points do not depend on the enrollment semester. The consistency with T is evidenced
+  by the distance-reproduction check of tests/test_student_destination_points.py, not by a shared run.
 geography: |
   One point per destination_id of student_od_table.csv: a local site or an LSN-listed site at the
   population-weighted centroid of its commune, an institution outside the LSN statistics at its
@@ -34,7 +37,7 @@ requirements:
   matsim: not_needed
   production: not_needed
 licensing:
-  license: derived from LSN (dl-de/by-2-0) and VG250 commune geometry; coordinates of the curated institutions are public locations
+  license: derived from LSN (dl-de/by-2-0) and VG250 commune geometry; ASSUMPTION - the coordinates of the three curated institutions are public locations (their source is scripts/seed_nds_hochschulen.py; no licence text was checked)
   restricted: false
   redistribution: allowed
   notes: |
