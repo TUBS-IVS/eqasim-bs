@@ -20,7 +20,12 @@ from data.hts import hts  # noqa: E402
 
 from braunschweig.popsim.closure_dwell import CLOSURE_GLOBAL_FALLBACK_WARN_RATE
 from braunschweig.popsim.fallback_rates import log_fallback_rate
-from braunschweig.popsim.overnight_open_end import KEEPS_OPEN_END_COLUMN
+
+#: Column carrying the per-donor overnight open-day-end decision (issue #694). Defined HERE, the
+#: low-level module every trip stage already hashes, and imported by
+#: ``braunschweig.popsim.overnight_open_end``, so no stage reaches that module just by importing
+#: this one.
+KEEPS_OPEN_END_COLUMN = "keeps_open_end"
 
 logger = logging.getLogger(__name__)
 
@@ -455,7 +460,7 @@ class PlanValidator:
     - (optional) ``home_closure``: the day starts and ends at home (Task 4).
 
     With ``keep_open_ends=True`` (issue #694) a person whose LAST trip carries
-    ``True`` in :data:`~braunschweig.popsim.overnight_open_end.KEEPS_OPEN_END_COLUMN`
+    ``True`` in :data:`KEEPS_OPEN_END_COLUMN`
     keeps an open day end: ``no_home_end`` is not raised for that person and
     ``repair_trips`` appends no return-home trip. Every other check, ``no_home_start``
     included, is unchanged. The column must then exist, hold only booleans without

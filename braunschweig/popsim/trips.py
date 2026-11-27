@@ -939,9 +939,9 @@ def _attach_open_end_decision(
     bool index, or a chain donor missing from it, raises, because a defaulted value
     would silently close (or open) a day against the donor's own MiD answer.
     """
-    # Local import: overnight_open_end imports braunschweig.popsim.mid, whose package
-    # init imports this module (a module-level import here is circular).
-    from braunschweig.popsim.overnight_open_end import KEEPS_OPEN_END_COLUMN
+    # Local import, like the other plan_validation imports in this module. The column name lives
+    # in plan_validation so this module never reaches overnight_open_end.
+    from braunschweig.popsim.plan_validation import KEEPS_OPEN_END_COLUMN
 
     if not isinstance(open_end_donors.index, pd.MultiIndex) or open_end_donors.index.nlevels != 2:
         raise ValueError(
@@ -1747,7 +1747,7 @@ def _own_open_end_decisions(table: pd.DataFrame, unfixable_persons) -> pd.Series
     decision is one value per chain (the PlanValidator enforces it), so the first
     row per person is the person's decision.
     """
-    from braunschweig.popsim.overnight_open_end import KEEPS_OPEN_END_COLUMN
+    from braunschweig.popsim.plan_validation import KEEPS_OPEN_END_COLUMN
 
     if KEEPS_OPEN_END_COLUMN not in table.columns:
         return None
@@ -1762,7 +1762,7 @@ def _log_open_end_decision_changes(own_decisions: pd.Series | None, table: pd.Da
     replacing chain's decision; this makes the size and direction of that switch
     observable. Persons without a replacement chain (home-only) are not counted.
     """
-    from braunschweig.popsim.overnight_open_end import KEEPS_OPEN_END_COLUMN
+    from braunschweig.popsim.plan_validation import KEEPS_OPEN_END_COLUMN
 
     if own_decisions is None:
         return
@@ -2071,7 +2071,7 @@ def _resample_unfixable(
     # inside resample_chains turned the bool column into object; with them dropped,
     # restore bool. Only when no null is left: astype(bool) would turn a null into
     # True, and a null is a defect the PlanValidator must still see and reject.
-    from braunschweig.popsim.overnight_open_end import KEEPS_OPEN_END_COLUMN
+    from braunschweig.popsim.plan_validation import KEEPS_OPEN_END_COLUMN
     if KEEPS_OPEN_END_COLUMN in table.columns and table[KEEPS_OPEN_END_COLUMN].notna().all():
         table = table.assign(**{KEEPS_OPEN_END_COLUMN: table[KEEPS_OPEN_END_COLUMN].astype(bool)})
     _log_open_end_decision_changes(own_open_end_decisions, table)

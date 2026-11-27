@@ -25,7 +25,7 @@ from typing import Union
 
 import pandas as pd
 
-from braunschweig.popsim.mid.csv_format import detect_csv_separator
+from braunschweig.popsim.plan_validation import KEEPS_OPEN_END_COLUMN
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,6 @@ OVERNIGHT_TRIP_CODES = frozenset({2, 3})
 CHILD_NOT_ASKED_CODE = 402
 NOT_OVERNIGHT_CODES = frozenset({1, 609})
 NO_USABLE_ANSWER_CODES = frozenset({9, 610})
-KEEPS_OPEN_END_COLUMN = "keeps_open_end"
 OVERNIGHT_TRIP_COLUMN = "overnight_trip"
 
 _KNOWN_CODES = (
@@ -49,6 +48,9 @@ _FIRST_SO1_AWAY_START_CODE = 2  # MiD start-of-day code: diary starts away from 
 
 def load_overnight_answers(mid_dir: Union[str, Path]) -> pd.DataFrame:
     """Read ``H_ID``, ``P_ID`` and ``P_STREISE`` (int) from ``MiD2023_Personen.csv``."""
+    # Imported here, not at module level: the mid package is not part of the decision itself,
+    # and a module-level import would pull it into every stage closure that reaches this module.
+    from braunschweig.popsim.mid.csv_format import detect_csv_separator
     persons_path = Path(mid_dir) / "MiD2023_Personen.csv"
     if not persons_path.is_file():
         raise FileNotFoundError(f"[popsim.overnight_open_end] MiD persons file not found: {persons_path}")
