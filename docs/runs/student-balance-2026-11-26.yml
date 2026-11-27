@@ -102,18 +102,19 @@ pipeline:
     docs/runs/artifacts/student-balance-2026-11-26/weights_decision/analyse_weight_candidates.py: bb022b94d39a3cca8b5c4704fa9ebd17d0822425a6e95dc4051b09c3cf8cb5ae
     docs/runs/artifacts/student-balance-2026-11-26/weights_decision/decision_logs.txt: 8bd65412c82c43769bb44f8a7570027413035d8b6e0509390664a60c50c245b6
     docs/runs/artifacts/student-balance-2026-11-26/weights_decision/weight_candidates.csv: ae87fbf583a6ae1d34d935807091acccb46445191f7520d86685ac039fb512df
-    sha256 of the committed blobs of the level decision aid at commit a7ea008f:
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/analyse_student_level.py: 070093b88d3caf11fd9097f3b74a35ad31a8826ff288562f7d9ab33783be7880
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/census_pattern_check_nrw.csv: cb882391b88300aadbad208e057b1fc2f96782464ce5f8e8e92e636efff7e5df
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/entrance_qualifications_by_school_district.csv: 95f45924744717b3645f1ad052b480b34b362537afb21e047270c7393dcc2164
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/level_decision_logs.txt: 3f992bae1b50758152d497dd7d4a1e028f09062eb52fdd404743e590ca9e4b62
+    sha256 of the committed blobs of the level decision aid at commit aedfb3e5:
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/analyse_student_level.py: cde89abd886c90d5a2a6bc33750d34c4f2e001e8c23e8b5770b3ac273c6df8de
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/census_pattern_check_nrw.csv: 41ae4752496fceb2affb6b3b35c9db944a608beb8a9667839db643650e2a6e8f
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/entrance_qualifications_by_school_district.csv: 47df5901b5ba87b63c3d93c906a5626503a8cb35817b60cdd59a51935ff440f4
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/level_decision_logs.txt: f6036f3c957118f67886523c04ae592d7e6459cb4a2a64672e28eb5583832254
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/lsn_enrollment_by_site_and_semester.csv: c463d81cc98eb25d4c010ff93cb3928a9c8f03ed9b1ef2b052e509616bb0214e
     docs/runs/artifacts/student-balance-2026-11-26/level_decision/lsn_entrance_qualifications_by_school_district_2021_22.csv: bb0517354041eef931144249274bbb6d2a5d3abae04642773aae3d024121d3bf
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/mid_school_degree_check_20_29.csv: 2705123241f049e59617d4341bbb559189f61c094ee605756b733a1064b200d9
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/mid_school_degree_check_20_29.csv: 6c2c6e4d306d0e825ca120af560058b101c6c679856146916e05ab769db2a182
     docs/runs/artifacts/student-balance-2026-11-26/level_decision/national_enrollment_20_29.csv: f95315c52a7306a505d948de347dd1bdc331fd27a4c9bd56199908c608f357a7
     docs/runs/artifacts/student-balance-2026-11-26/level_decision/nrw_census_students_18_26.csv: 4101243e322e772d85c82b18ac9b7f7437da5e4e9a0950f59f5db273db7766ac
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/srv_school_degree_20_29.csv: 251085eda751e71540873a4ee8e5fa7d28f54c8d9f2573784b62ef741f162ac8
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_education_leg_day_20_29.csv: a43ee1367b97b577dee9c050bf5ef921ed84d6014e728878282a296c8d95b60d
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_level_estimates_20_29.csv: 9ffa9bd984a916f3be467ad2ddadfa858f84ea2aa2bc08cf91155fbf23b83836
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/srv_school_degree_20_29.csv: eb82ed907aeb5c75a5b5c26066653d63b711fa9452c2c930d93a191552f01449
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_education_leg_day_20_29.csv: e7dc01e76aa1a91dafcacfcb18fa54d1d9957ed15fc34cf6b84a350fa5a373a5
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_level_estimates_20_29.csv: e01a515e33c517ccec3bc85b7fb13fc9cc108e9783ffc868d7bac5409fdc8f6e
 classification:
 - calibration
 status:
@@ -305,6 +306,17 @@ validation:
     entrance_qualifications_per_resident_cohort 03101: 0.813253012; 03102: 0.415896488; 03103: 0.8665413534;
     03151: 0.3390677026; 03153: 0.359962406; 03154: 0.2653061224; 03157: 0.4522727273; 03158: 0.4292543021;
     region_eight: 0.5208333333. The origin table of the balance counts a student in the Kreis of the school.
+    Newest enrollment (lsn_enrollment_by_site_and_semester.csv, LSN-Online table K3100101, read 2026-11-27; winter
+    semester 2025/26 is the newest semester it holds): students of the six local sites ws2021_22 32532, ss2022
+    30129, ws2022_23 30453, ws2023_24 28828, ws2024_25 28417 (the semester of the committed tables), ss2025 26952,
+    ws2025_26 27952 (header of student_level_estimates_20_29.csv). The flows rescaled to winter semester 2025/26,
+    every destination site by its own ratio (the three curated institutions outside Niedersachsen keep their
+    value), column balance_ws2025_26_students_20_29_persons: 03101 13592.09621; surrounding_six 9897.971408;
+    03ZGB 23490.06762; the census pattern at that total, census_pattern_ws2025_26_students_20_29_persons: 03101
+    11235.18061; surrounding_six 12434.66608; 03ZGB 23669.84669. These are levels of today and are not compared
+    with SrV (2023). omega = 1 - Z / S with Z of the census of 2022 (same header): 0.5349547395 with the students
+    of the committed level table (2024/25), 0.5651242305205824 with the students of 2022/23, 0.5269896862419988
+    with those of 2025/26; only 2022/23 puts Z and S into one year.
 - metric: >-
     decision aid: where option C is further from SrV than option A or option B, and the basis of the distance
     yardsticks
