@@ -1,0 +1,433 @@
+"""The student targets of the PopulationSim stage (design A3 of the student layer), as pure functions.
+
+The four student entries of the Kreis attribute control (education leg by student status for the ages
+18 to 29 and for 30 or older, student work leg, student season ticket) are NOT read from a share
+table: their per-Kreis targets are counts built here from the student level table (A2, ADR-0211)
+and a few committed SrV shares. This module reads those shares and builds the integer tables; the
+stage only calls it. It imports no calibration module (the stage's cache token must not cover them);
+the committed tables and their definitions are owned by ``braunschweig.calibration.srv_student_reference``
+and the headers of the tables.
+
+Rules implemented (the design owns them; numbers live in the CSV headers, not here):
+
+* **One student count** (A3 "One student count"). The students of a Kreis are rounded ONCE: the level of
+  the Kreis is rounded to a whole number and split over the two age ranges (18 to 29, 30 or older) by
+  largest remainder (:func:`student_counts`). Every student label of every entry is a part of that one
+  count, so the entries never disagree.
+* **The other adults** (A3 "The other adults", A24). A Kreis keeps its own SrV share ``s_k`` of non-student
+  adults with an education leg. ``s_k`` times the Kreis's non-student adults (adults minus the students of
+  the level) is its number of other adults with an education leg ``O_k``. ``O_k`` is split over the two age
+  ranges in proportion to ``N_r * p_r`` (the non-student persons of the range times the REGIONAL share of
+  non-student persons of that range with an education leg) and rounded by largest remainder to
+  ``round(O_k)``.
+* **A9** (ASSUMPTION): the SrV shares of the education leg ``e`` and of the work leg ``w`` within students
+  hold for every Kreis of the region; the season-ticket share holds within each home area.
+* **A21** (owner decision 2026-11-27, one Wolfsburg rule of ADR-0205): Wolfsburg (03103) is not surveyed;
+  its season-ticket share and its other-adult education-leg share are the SrV value of the region.
+  Such a use of a regional value is counted and logged as a rate, not applied silently.
+* **A22** (ASSUMPTION): the education leg of the students aged 30 or older is not steered; the entry
+  holds them as one label.
+* **A23** (ASSUMPTION): the SrV work-leg share of all adult students holds for the students aged 18 to 29.
+
+No fallback value exists: a missing file, row or column, a share outside (0, 1), or any negative
+remainder raises ``ValueError`` naming the file and column. Rounding is half up (``floor(x + 0.5)``).
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from braunschweig.data.csv_header import read_header_value
+from braunschweig.popsim.student_level import AGE_LABELS, YOUNG_AGE_LABELS, StudentLevel
+
+logger = logging.getLogger(__name__)
+
+_LOG_TAG = "[student targets]"
+
+#: Committed SrV tables, relative to ``data_path`` (the same ``eqasim-data/data`` root as the level table).
+REGIONAL_RELPATH = "braunschweig/srv/srv2023_student_parameters.csv"
+AREA_RELPATH = "braunschweig/srv/srv2023_student_parameters_by_area.csv"
+OTHER_ADULTS_RELPATH = "braunschweig/srv/srv2023_education_leg_by_student_status.csv"
+
+#: Header keys of the control definitions of the regional parameter table (section 5a, A23).
+EDUCATION_SHARE_HEADER_KEY = "education_leg_share_control_definition"
+WORK_SHARE_HEADER_KEY = "work_leg_share_control_definition"
+
+#: The two age ranges of the entries (spec A3 "Age"): the three young level groups, and 30 or older.
+AGE_RANGE_YOUNG = "18_29"
+AGE_RANGE_OLD = "30plus"
+AGE_RANGES = (AGE_RANGE_YOUNG, AGE_RANGE_OLD)
+#: Level age group -> age range of the entries.
+_RANGE_OF_LEVEL_GROUP = {label: (AGE_RANGE_YOUNG if label in YOUNG_AGE_LABELS else AGE_RANGE_OLD)
+                         for label in AGE_LABELS}
+
+#: Codes of the SrV tables (owner of the values: ``srv_participation_universe.REGION_CODE`` and the
+#: Wolfsburg rule of ADR-0205; typed here only because the calibration modules stay out of the stage).
+REGION_CODE = "03ZGB"
+WOLFSBURG_CODE = "03103"
+
+# Entry names, category labels and universe of the four student entries. Task 7 registers the entries
+# in ``kreis_attribute_control``; these mappings are replaced by the kreis_attribute_control constants
+# in Task 7. Both can be overridden through the ``categories`` argument of the builders.
+ENTRY_EDUCATION_YOUNG = "student_education_18_29"
+ENTRY_EDUCATION_OLD = "student_education_30plus"
+ENTRY_WORK_LEG = "student_work_leg"
+ENTRY_SEASON_TICKET = "student_season_ticket"
+STUDENT_ENTRY_CATEGORIES: dict[str, tuple[str, ...]] = {
+    ENTRY_EDUCATION_YOUNG: ("student_edu", "student_noedu", "other_edu", "other_noedu"),
+    ENTRY_EDUCATION_OLD: ("student", "other_edu", "other_noedu"),
+    ENTRY_WORK_LEG: ("student_work", "student_nowork", "not_student"),
+    ENTRY_SEASON_TICKET: ("student_flatrate", "student_noflatrate", "not_student"),
+}
+#: Age range of the universe of each entry (the persons its categories partition).
+STUDENT_ENTRY_AGE_RANGE: dict[str, str] = {
+    ENTRY_EDUCATION_YOUNG: AGE_RANGE_YOUNG,
+    ENTRY_EDUCATION_OLD: AGE_RANGE_OLD,
+    ENTRY_WORK_LEG: AGE_RANGE_YOUNG,
+    ENTRY_SEASON_TICKET: AGE_RANGE_YOUNG,
+}
+
+_KREIS_COLUMN = "ARS_kreis"
+_ROUNDING_EPSILON = 1e-9
+
+
+@dataclass(frozen=True)
+class StudentShares:
+    """The SrV shares the target builder needs (all in (0, 1)).
+
+    ``education_leg`` is ``e`` and ``work_leg`` ``w`` (regional, A9, A23); ``season_ticket_by_area`` the
+    flat-rate share per home area and ``season_ticket_region`` the regional value Wolfsburg takes (A21);
+    ``other_education_by_kreis`` the share of non-student adults with an education leg per Kreis
+    (Wolfsburg = the regional value, A21) and ``other_education_by_age_range`` the regional share per
+    age range of the entries.
+    """
+    education_leg: float
+    work_leg: float
+    season_ticket_by_area: Mapping[str, float]
+    season_ticket_region: float
+    other_education_by_kreis: Mapping[str, float]
+    other_education_by_age_range: Mapping[str, float]
+
+
+# ----------------------------------------------------------------------------- reading
+
+
+def _read_table(data_path, relpath: str, required: Sequence[str]) -> tuple[Path, pd.DataFrame]:
+    path = Path(data_path) / relpath
+    if not path.is_file():
+        raise ValueError(f"{_LOG_TAG} the committed SrV table {path} does not exist; restore it "
+                         "(scripts/extract_srv_student_reference.py writes it)")
+    table = pd.read_csv(path, comment="#", dtype=str)
+    missing = [column for column in required if column not in table.columns]
+    if missing:
+        raise ValueError(f"{_LOG_TAG} {path.name}: missing column(s) {missing}; found {list(table.columns)}")
+    return path, table
+
+
+def _share_value(raw, path: Path, what: str) -> float:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{_LOG_TAG} {path.name}: {what} is not a number ({raw!r})") from error
+    if not (math.isfinite(value) and 0.0 < value < 1.0):
+        raise ValueError(f"{_LOG_TAG} {path.name}: {what} = {value!r} lies outside (0, 1)")
+    return value
+
+
+def _header_share(path: Path, key: str) -> float:
+    try:
+        raw = read_header_value(path, key)
+    except ValueError as error:
+        raise ValueError(f"{_LOG_TAG} {path.name}: no usable header key {key!r} ({error})") from error
+    return _share_value(raw, path, f"header key {key!r}")
+
+
+def _single_share(table: pd.DataFrame, path: Path, column: str, **keys: str) -> float:
+    selected = table
+    for name, value in keys.items():
+        selected = selected[selected[name] == value]
+    description = ", ".join(f"{name}={value}" for name, value in keys.items())
+    if len(selected) != 1:
+        raise ValueError(f"{_LOG_TAG} {path.name}: expected exactly one row with {description}, "
+                         f"found {len(selected)}")
+    return _share_value(selected[column].iloc[0], path, f"column {column!r} of the row {description}")
+
+
+def read_student_shares(data_path, expected_kreise: Sequence[str],
+                        areas: Sequence[str] | None = None) -> StudentShares:
+    """Read the committed SrV tables under ``data_path``; no fallback.
+
+    ``education_leg`` and ``work_leg`` come from the headers of :data:`REGIONAL_RELPATH` (the control
+    definitions, A9 and A23); the regional flat-rate share of students from its row ``season_ticket`` /
+    ``students_present`` / ``flatrate``. :data:`AREA_RELPATH` gives the same row per ``area`` (every area of
+    ``areas`` must be present; with ``areas=None`` every area found is read, at least one is required).
+    :data:`OTHER_ADULTS_RELPATH` gives, for ``group == other_adult``, the ``18plus`` share per Kreis of
+    ``expected_kreise`` (Wolfsburg takes the ``03ZGB`` value, A21; every other Kreis needs a finite share)
+    and the regional shares of the two age ranges. A missing file, row or column, or a share outside
+    (0, 1), raises ``ValueError`` naming the file and the column.
+    """
+    regional_path, regional = _read_table(
+        data_path, REGIONAL_RELPATH, ("parameter", "base", "label", "share"))
+    education = _header_share(regional_path, EDUCATION_SHARE_HEADER_KEY)
+    work = _header_share(regional_path, WORK_SHARE_HEADER_KEY)
+    ticket_region = _single_share(regional, regional_path, "share", parameter="season_ticket",
+                                  base="students_present", label="flatrate")
+
+    area_path, by_area = _read_table(
+        data_path, AREA_RELPATH, ("area", "parameter", "base", "label", "share"))
+    flatrate_rows = by_area[(by_area["parameter"] == "season_ticket")
+                            & (by_area["base"] == "students_present") & (by_area["label"] == "flatrate")]
+    found_areas = sorted(set(flatrate_rows["area"]))
+    wanted_areas = list(areas) if areas is not None else found_areas
+    if not wanted_areas:
+        raise ValueError(f"{_LOG_TAG} {area_path.name}: no season_ticket/students_present/flatrate row "
+                         "(column 'area')")
+    ticket_by_area = {area: _single_share(by_area, area_path, "share", area=area,
+                                          parameter="season_ticket", base="students_present",
+                                          label="flatrate") for area in wanted_areas}
+
+    other_path, other = _read_table(
+        data_path, OTHER_ADULTS_RELPATH, ("code", "level", "group", "age_range", "share"))
+    other = other[other["group"] == "other_adult"]
+    if other.empty:
+        raise ValueError(f"{_LOG_TAG} {other_path.name}: no row with group == 'other_adult' (column 'group')")
+    region_18plus = _single_share(other, other_path, "share", code=REGION_CODE, age_range="18plus")
+    by_range = {age_range: _single_share(other, other_path, "share", code=REGION_CODE, age_range=age_range)
+                for age_range in AGE_RANGES}
+    by_kreis: dict[str, float] = {}
+    for kreis in expected_kreise:
+        kreis = str(kreis)
+        if kreis == WOLFSBURG_CODE:
+            by_kreis[kreis] = region_18plus
+        else:
+            by_kreis[kreis] = _single_share(other, other_path, "share", code=kreis, age_range="18plus")
+    logger.info("%s %s: other-adult education-leg share of %d Kreise (Wolfsburg rule A21: %d on the "
+                "regional value); %s: flat-rate share of %d area(s)", _LOG_TAG, other_path.name,
+                len(by_kreis), sum(kreis == WOLFSBURG_CODE for kreis in by_kreis), area_path.name,
+                len(ticket_by_area))
+    return StudentShares(education_leg=education, work_leg=work, season_ticket_by_area=ticket_by_area,
+                         season_ticket_region=ticket_region, other_education_by_kreis=by_kreis,
+                         other_education_by_age_range=by_range)
+
+
+# ----------------------------------------------------------------------------- rounding
+
+
+def _round_half_up(value: float) -> int:
+    return int(math.floor(value + 0.5 + _ROUNDING_EPSILON))
+
+
+def _largest_remainder(values: Sequence[float], total: int) -> list[int]:
+    """Integers summing to ``total`` that follow ``values``: floors, then +1 for the largest remainders.
+
+    Ties go to the lower index (deterministic). ``total`` must lie within the sum of the floors and that
+    sum plus ``len(values)``; ``ValueError`` otherwise.
+    """
+    floors = [int(math.floor(value + _ROUNDING_EPSILON)) for value in values]
+    need = total - sum(floors)
+    if need < 0 or need > len(values):
+        raise ValueError(f"cannot round {list(values)} to the total {total} by largest remainder")
+    order = sorted(range(len(values)), key=lambda index: (-(values[index] - floors[index]), index))
+    for index in order[:need]:
+        floors[index] += 1
+    return floors
+
+
+# ----------------------------------------------------------------------------- the one student count
+
+
+def student_counts(level: StudentLevel) -> pd.DataFrame:
+    """Students per Kreis and age range, rounded once (A3 "One student count").
+
+    Columns ``ars5, age_range, students_persons, students_count``. ``students_persons`` is the level
+    summed over both sexes (``18_29`` = ``18_19`` + ``20_24`` + ``25_29``; ``30plus``). ``students_count``
+    is the largest-remainder rounding over the two ranges of a Kreis, so
+    ``students_count`` summed over the ranges equals ``round(level of the Kreis)``.
+    """
+    table = level.table.assign(age_range=level.table["age_group"].map(_RANGE_OF_LEVEL_GROUP))
+    sums = table.groupby(["code", "age_range"])["students_persons"].sum()
+    rows = []
+    for kreis in sorted(set(table["code"])):
+        persons = [float(sums.get((kreis, age_range), 0.0)) for age_range in AGE_RANGES]
+        counts = _largest_remainder(persons, _round_half_up(sum(persons)))
+        rows.extend({"ars5": str(kreis), "age_range": age_range, "students_persons": person,
+                     "students_count": count}
+                    for age_range, person, count in zip(AGE_RANGES, persons, counts))
+    return pd.DataFrame(rows, columns=["ars5", "age_range", "students_persons", "students_count"])
+
+
+# ----------------------------------------------------------------------------- the entry tables
+
+
+def _persons(persons_by_range: Mapping[tuple[str, str], float], kreis: str, age_range: str) -> float:
+    try:
+        value = float(persons_by_range[(kreis, age_range)])
+    except KeyError as error:
+        raise ValueError(f"{_LOG_TAG} persons_by_range has no value for (Kreis {kreis}, age range "
+                         f"{age_range})") from error
+    if not (math.isfinite(value) and value >= 0):
+        raise ValueError(f"{_LOG_TAG} persons of (Kreis {kreis}, {age_range}) is {value!r}")
+    return value
+
+
+def _non_negative(value: int, kreis: str, entry: str, label: str) -> int:
+    if value < 0:
+        raise ValueError(f"{_LOG_TAG} Kreis {kreis}, entry {entry}: negative remainder {value} for "
+                         f"'{label}' (more students or other adults than persons of the range)")
+    return value
+
+
+def _entry_categories(categories: Mapping[str, Sequence[str]] | None) -> Mapping[str, Sequence[str]]:
+    return STUDENT_ENTRY_CATEGORIES if categories is None else categories
+
+
+def student_kreis_targets(counts: pd.DataFrame, persons_by_range: Mapping[tuple[str, str], float],
+                          shares: StudentShares, area_of_kreis: Mapping[str, str | None],
+                          entry_names: Collection[str],
+                          categories: Mapping[str, Sequence[str]] | None = None) -> dict[str, pd.DataFrame]:
+    """One integer target table per requested entry: ``ARS_kreis`` plus one column per category.
+
+    ``counts`` is :func:`student_counts`; ``persons_by_range`` maps ``(Kreis, age range)`` to the persons
+    of the census of that universe (``18_29``, ``30plus``); ``area_of_kreis`` maps every Kreis to its home
+    area, ``None`` for Wolfsburg (A21: the regional ticket value). ``categories`` gives the category
+    labels per entry (default :data:`STUDENT_ENTRY_CATEGORIES`, to be replaced by the
+    ``kreis_attribute_control`` constants in Task 7); columns are ``<entry>_<category>``.
+
+    With ``S_r`` the students of range ``r`` and ``N_r = persons_r - S_r``: ``student_edu =
+    round(S_18_29 * e)``; ``O_k = s_k * (N_18_29 + N_30plus)`` is split over the ranges by
+    ``N_r * p_r`` and rounded to ``round(O_k)`` by largest remainder; ``other_noedu_r = round(persons_r) -
+    S_r - other_edu_r``; the work and ticket entries are ``round(S_18_29 * w)`` and
+    ``round(S_18_29 * t(area))``, the rest of the range being ``not_student``. Every row sums to
+    ``round(persons of the entry's universe)``. A negative remainder, an unknown entry name, a Kreis
+    without area or a missing area share raises ``ValueError``.
+    """
+    names = list(entry_names)
+    labels = _entry_categories(categories)
+    unknown = [name for name in names if name not in labels or name not in STUDENT_ENTRY_AGE_RANGE]
+    if unknown:
+        raise ValueError(f"{_LOG_TAG} unknown student entr(y/ies) {unknown}; known: "
+                         f"{sorted(STUDENT_ENTRY_AGE_RANGE)}")
+    students = {(str(row.ars5), row.age_range): int(row.students_count)
+                for row in counts.itertuples(index=False)}
+    kreise = list(dict.fromkeys(str(kreis) for kreis in counts["ars5"]))
+    rows: dict[str, list[dict]] = {name: [] for name in names}
+    region_values_used = {"ticket": 0, "other_adults": 0}
+    for kreis in kreise:
+        if kreis not in area_of_kreis:
+            raise ValueError(f"{_LOG_TAG} Kreis {kreis} has no entry in area_of_kreis")
+        persons = {r: _persons(persons_by_range, kreis, r) for r in AGE_RANGES}
+        s_young = students[(kreis, AGE_RANGE_YOUNG)]
+        s_old = students[(kreis, AGE_RANGE_OLD)]
+        universe = {r: _round_half_up(persons[r]) for r in AGE_RANGES}
+        s_of = {AGE_RANGE_YOUNG: s_young, AGE_RANGE_OLD: s_old}
+        others = {r: persons[r] - s_of[r] for r in AGE_RANGES}
+        for r in AGE_RANGES:
+            if others[r] < 0:
+                raise ValueError(f"{_LOG_TAG} Kreis {kreis}: {s_of[r]} students exceed the "
+                                 f"{persons[r]:.1f} persons of age range {r} (negative remainder)")
+
+        values: dict[str, dict[str, int]] = {}
+        if ENTRY_EDUCATION_YOUNG in names or ENTRY_EDUCATION_OLD in names:
+            share_k = shares.other_education_by_kreis.get(kreis)
+            if share_k is None:
+                raise ValueError(f"{_LOG_TAG} {OTHER_ADULTS_RELPATH}: no other-adult share for Kreis {kreis}")
+            if kreis == WOLFSBURG_CODE:
+                region_values_used["other_adults"] += 1
+            total_other = share_k * (others[AGE_RANGE_YOUNG] + others[AGE_RANGE_OLD])
+            weights = [others[r] * shares.other_education_by_age_range[r] for r in AGE_RANGES]
+            if sum(weights) <= 0:
+                if total_other > 0:
+                    raise ValueError(f"{_LOG_TAG} Kreis {kreis}: no non-student persons to carry "
+                                     f"{total_other:.3f} other adults with an education leg")
+                parts = [0.0, 0.0]
+            else:
+                parts = [total_other * weight / sum(weights) for weight in weights]
+            other_edu = dict(zip(AGE_RANGES, _largest_remainder(parts, _round_half_up(total_other))))
+            student_edu = _round_half_up(s_young * shares.education_leg)
+            values[ENTRY_EDUCATION_YOUNG] = {
+                "student_edu": student_edu,
+                "student_noedu": s_young - student_edu,
+                "other_edu": other_edu[AGE_RANGE_YOUNG],
+                "other_noedu": universe[AGE_RANGE_YOUNG] - s_young - other_edu[AGE_RANGE_YOUNG]}
+            values[ENTRY_EDUCATION_OLD] = {
+                "student": s_old,
+                "other_edu": other_edu[AGE_RANGE_OLD],
+                "other_noedu": universe[AGE_RANGE_OLD] - s_old - other_edu[AGE_RANGE_OLD]}
+        if ENTRY_WORK_LEG in names:
+            student_work = _round_half_up(s_young * shares.work_leg)
+            values[ENTRY_WORK_LEG] = {
+                "student_work": student_work, "student_nowork": s_young - student_work,
+                "not_student": universe[AGE_RANGE_YOUNG] - s_young}
+        if ENTRY_SEASON_TICKET in names:
+            area = area_of_kreis[kreis]
+            if area is None:
+                share_t = shares.season_ticket_region
+                region_values_used["ticket"] += 1
+            elif area in shares.season_ticket_by_area:
+                share_t = shares.season_ticket_by_area[area]
+            else:
+                raise ValueError(f"{_LOG_TAG} {AREA_RELPATH}: no season_ticket/students_present/flatrate "
+                                 f"row for area {area!r} (Kreis {kreis}); found "
+                                 f"{sorted(shares.season_ticket_by_area)}")
+            student_flatrate = _round_half_up(s_young * share_t)
+            values[ENTRY_SEASON_TICKET] = {
+                "student_flatrate": student_flatrate, "student_noflatrate": s_young - student_flatrate,
+                "not_student": universe[AGE_RANGE_YOUNG] - s_young}
+
+        for name in names:
+            cell = values[name]
+            ordered = list(labels[name])
+            if set(cell) != set(ordered):
+                raise ValueError(f"{_LOG_TAG} entry {name}: categories {ordered} differ from the "
+                                 f"built labels {sorted(cell)}")
+            row = {_KREIS_COLUMN: kreis}
+            for label in ordered:
+                row[f"{name}_{label}"] = _non_negative(int(cell[label]), kreis, name, label)
+            rows[name].append(row)
+
+    logger.info("%s %d Kreise, entries %s; regional value used for %d of %d Kreise (ticket, Wolfsburg "
+                "rule A21) and %d of %d Kreise (other-adult share, A21)", _LOG_TAG, len(kreise),
+                names, region_values_used["ticket"], len(kreise), region_values_used["other_adults"],
+                len(kreise))
+    tables = {}
+    for name in names:
+        columns = [_KREIS_COLUMN] + [f"{name}_{label}" for label in labels[name]]
+        frame = pd.DataFrame(rows[name], columns=columns)
+        frame[columns[1:]] = frame[columns[1:]].astype(np.int64)
+        tables[name] = frame
+    return tables
+
+
+def student_targets_long(tables: Mapping[str, pd.DataFrame],
+                         persons_by_range: Mapping[tuple[str, str], float],
+                         categories: Mapping[str, Sequence[str]] | None = None) -> pd.DataFrame:
+    """The entry tables in long form for the fit report.
+
+    Columns ``ars5, control, category, target_persons, universe_persons, target_share``; ``control`` is
+    the entry name, ``universe_persons`` is ``round(persons of the entry's age range)`` (what the row of
+    the entry sums to) and ``target_share = target_persons / universe_persons`` (NaN for an empty
+    universe).
+    """
+    labels = _entry_categories(categories)
+    rows = []
+    for name, table in tables.items():
+        if name not in STUDENT_ENTRY_AGE_RANGE:
+            raise ValueError(f"{_LOG_TAG} unknown student entry {name!r}")
+        age_range = STUDENT_ENTRY_AGE_RANGE[name]
+        for record in table.to_dict("records"):
+            kreis = str(record[_KREIS_COLUMN])
+            universe = _round_half_up(_persons(persons_by_range, kreis, age_range))
+            for label in labels[name]:
+                target = int(record[f"{name}_{label}"])
+                rows.append({"ars5": kreis, "control": name, "category": label,
+                             "target_persons": target, "universe_persons": universe,
+                             "target_share": target / universe if universe > 0 else float("nan")})
+    return pd.DataFrame(rows, columns=["ars5", "control", "category", "target_persons",
+                                       "universe_persons", "target_share"])
