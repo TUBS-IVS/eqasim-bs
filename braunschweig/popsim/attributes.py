@@ -53,6 +53,11 @@ logger = logging.getLogger(__name__)
 # (5 Elternzeit and 7 FSJ/Wehrdienst are NOT erwerbstätig per the MiD `erwerb` variable.)
 EMPLOYED_TAET = frozenset({1, 2, 3, 4, 6, 8})
 
+# MiD P_TAET 10 = Student/in (see the code list above): the status class the donor matches key on for
+# student targets (A1 of the student design, ADR-0211). Owned here, next to EMPLOYED_TAET, so the
+# hashed donor build and the calibration reference read ONE value.
+STUDENT_TAET = 10
+
 # MiD P_BKAT (Umfang der Erwerbstaetigkeit; MiD 2023 Codeplan B1, Personen col
 # 121; VERIFIED against the raw MiD2023_Personen.csv cross-tab with `erwerb`:
 # codes 1-6 all erwerb=1, code 7 erwerb=0). P9's seven reference columns are the

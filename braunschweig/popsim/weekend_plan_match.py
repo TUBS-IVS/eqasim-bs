@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from braunschweig.popsim.attributes import EMPLOYED_TAET, PT_SUBSCRIPTION_FKARTE
+from braunschweig.popsim.attributes import EMPLOYED_TAET, PT_SUBSCRIPTION_FKARTE, STUDENT_TAET
 from braunschweig.popsim.fallback_rates import log_fallback_rate
 from braunschweig.popsim.sampling import draw_prepared_choice, prepare_weighted_choice, weighted_choice
 
@@ -23,6 +23,13 @@ logger = logging.getLogger(__name__)
 # strongly on urbanity) -- user decision 2026-06-18.
 SOFT_KEYS_BY_PRIORITY = ("car_class", "any_license", "any_pt", "hh_type5", "oek_status")
 HARD_KEYS = ("size", "regiostar7")
+#: Student status keys (A1 of the student design, ADR-0211). The household feature ``has_student`` is a soft key
+#: that binds only a target household with a student aged :data:`HH_STUDENT_MIN_AGE_YEARS` or older and is
+#: relaxed LAST (it sits in front of :data:`SOFT_KEYS_BY_PRIORITY`). The person key ``student``
+#: (``P_TAET == STUDENT_TAET``, no age bound) binds a student target only and is likewise relaxed last.
+STUDENT_KEY = "student"
+HH_STUDENT_KEY = "has_student"
+HH_STUDENT_MIN_AGE_YEARS = 18
 
 
 def _car_class(n_cars: pd.Series) -> np.ndarray:
@@ -30,7 +37,11 @@ def _car_class(n_cars: pd.Series) -> np.ndarray:
     return np.where(n <= 0, "0", np.where(n == 1, "1", "2plus"))
 
 
-def build_hh_features(households: pd.DataFrame, persons: pd.DataFrame) -> pd.DataFrame:
+def build_hh_features(households: pd.DataFrame, persons: pd.DataFrame, *,
+                      student_key: bool = False) -> pd.DataFrame:
+    """Household match features. With ``student_key`` the column :data:`HH_STUDENT_KEY` is added: True when a
+    member has ``P_TAET == STUDENT_TAET`` and is at least :data:`HH_STUDENT_MIN_AGE_YEARS` old. Without it the
+    frame is exactly today's (``persons`` then needs no ``P_TAET`` here)."""
     has_lic = persons.assign(_lic=persons["P_FSCHEIN"].eq(1)).groupby("H_ID")["_lic"].any()
     has_pt = persons.assign(
         _pt=persons["P_FKARTE"].isin(PT_SUBSCRIPTION_FKARTE)
@@ -46,10 +57,16 @@ def build_hh_features(households: pd.DataFrame, persons: pd.DataFrame) -> pd.Dat
     feats["any_license"] = has_lic.reindex(feats.index).fillna(False).to_numpy()
     feats["any_pt"] = has_pt.reindex(feats.index).fillna(False).to_numpy()
     feats["H_GEW"] = households.set_index("H_ID")["H_GEW"].reindex(feats.index).to_numpy()
+    if student_key:
+        is_student_adult = (persons["P_TAET"].eq(STUDENT_TAET)
+                            & (pd.to_numeric(persons["HP_ALTER"], errors="coerce") >= HH_STUDENT_MIN_AGE_YEARS))
+        has_student = persons.assign(_student=is_student_adult).groupby("H_ID")["_student"].any()
+        feats[HH_STUDENT_KEY] = has_student.reindex(feats.index).fillna(False).to_numpy(dtype=bool)
     return feats
 
 
-def match_household(target_id, target_feats, weekday_feats, *, rng, weekday_by_key=None):
+def match_household(target_id, target_feats, weekday_feats, *, rng, weekday_by_key=None,
+                    student_key: bool = False):
     """Find a weekday household of EQUAL size AND EQUAL RegioStaR (the hard keys),
     matching as many soft keys as possible (drop the lowest-priority soft key
     first). Returns ``(matched_H_ID, relaxation_level)`` or ``(None, None)`` if no
@@ -62,7 +79,23 @@ def match_household(target_id, target_feats, weekday_feats, *, rng, weekday_by_k
     (the dominant cost over tens of thousands of weekend households). The grouped
     subframe preserves ``weekday_feats``'s row order and ``weighted_choice`` draws
     over ``sorted(ids)``, so the result is BYTE-IDENTICAL to the boolean-mask path.
+
+    ``student_key`` (A1, ADR-0211; needs :data:`HH_STUDENT_KEY` in both feature frames, see
+    :func:`build_hh_features`): a target household WITH a student (``target_feats[HH_STUDENT_KEY]``) uses the
+    ladder ``(HH_STUDENT_KEY, *SOFT_KEYS_BY_PRIORITY)``, so a donor household with a student is given up
+    last; its ``level`` then counts up to ``len(SOFT_KEYS_BY_PRIORITY) + 1``. Every other target keeps today's
+    ladder and today's level. Exactly one ``weighted_choice`` per call in every case, so the shared rng stream
+    does not move. With ``student_key=False`` nothing differs from the pre-A1 function.
     """
+    ladder = SOFT_KEYS_BY_PRIORITY
+    if student_key:
+        for frame_name, frame in (("target_feats", target_feats), ("weekday_feats", weekday_feats)):
+            names = frame.index if isinstance(frame, pd.Series) else frame.columns
+            if HH_STUDENT_KEY not in names:
+                raise KeyError(f"match_household: student_key needs the feature {HH_STUDENT_KEY!r} in "
+                               f"{frame_name} (build_hh_features(..., student_key=True))")
+        if bool(target_feats[HH_STUDENT_KEY]):
+            ladder = (HH_STUDENT_KEY,) + SOFT_KEYS_BY_PRIORITY
     if weekday_by_key is not None:
         pool = weekday_by_key.get(
             (target_feats["size"], target_feats["regiostar7"])
@@ -76,19 +109,19 @@ def match_household(target_id, target_feats, weekday_feats, *, rng, weekday_by_k
         ]
         if len(pool) == 0:
             return None, None
-    active = list(SOFT_KEYS_BY_PRIORITY)
+    active = list(ladder)
     while True:
         narrowed = pool
         for key in active:
             narrowed = narrowed[narrowed[key] == target_feats[key]]
         if len(narrowed) > 0:
             ids = sorted(narrowed.index.tolist())
-            level = len(SOFT_KEYS_BY_PRIORITY) - len(active)
+            level = len(ladder) - len(active)
             return weighted_choice(ids, narrowed.loc[ids, "H_GEW"].to_numpy(), rng=rng), level
         if not active:
             ids = sorted(pool.index.tolist())  # size + RegioStaR only
             return (weighted_choice(ids, pool.loc[ids, "H_GEW"].to_numpy(), rng=rng),
-                    len(SOFT_KEYS_BY_PRIORITY))
+                    len(ladder))
         active.pop()  # drop the lowest-priority remaining soft key
 
 
@@ -149,7 +182,8 @@ def age_band_index(ages: pd.Series, edges=AGE_BAND_EDGES) -> np.ndarray:
 
 
 def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
-                  age_band_edges=AGE_BAND_EDGES, passenger_key: bool = False, lift_free_never: bool = False):
+                  age_band_edges=AGE_BAND_EDGES, passenger_key: bool = False, lift_free_never: bool = False,
+                  student_key: bool = False):
     """Greedily pair each target member to a distinct donor member by
     (age band, sex), falling back to age band only, then any free donor.
 
@@ -180,6 +214,14 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
     band at all. The age band stays the stronger key: no lift-free donor of another band is
     preferred. Targets of the other class keep the ``passenger_key`` tiers unchanged. Again a
     reordering only: pair count and rng are untouched.
+
+    ``student_key`` (A1, ADR-0211; needs ``P_TAET`` in both member frames): a target member with
+    ``P_TAET == STUDENT_TAET`` is first paired with a free STUDENT donor member of the same age band and sex.
+    These pairs are made before the main loop, so an earlier non-student member cannot take the student
+    donor first; a student target without such a donor, and every non-student member, then goes through the
+    tiers above in the target order as before. A household without a student target is therefore paired
+    exactly as without the flag. Pair count and rng are untouched here too (the pairs are returned in target
+    order).
     """
     _require_lift_free_refines_class_key(passenger_key, lift_free_never, what="align_members")
     d_band = age_band_index(donor_members["HP_ALTER"], edges=age_band_edges)
@@ -193,7 +235,19 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
     if lift_free_never:
         d_lift_free = ~_require_donor_lift(donor_members, what="align_members donor members")
     pairs = []
+    student_pairs = {}
+    if student_key:
+        d_student = donor_members["P_TAET"].eq(STUDENT_TAET).to_numpy()
+        t_student = target_members["P_TAET"].eq(STUDENT_TAET).to_numpy()
+        for tpos in np.flatnonzero(t_student):
+            cand = np.flatnonzero(~used & d_student & (d_band == t_band[tpos]) & (d_sex == t_sex[tpos]))
+            if len(cand) > 0:
+                student_pairs[int(tpos)] = int(cand[0])
+                used[cand[0]] = True
     for tpos in range(len(target_members)):
+        if tpos in student_pairs:
+            pairs.append((tpos, student_pairs[tpos]))
+            continue
         exact = np.flatnonzero(~used & (d_band == t_band[tpos]) & (d_sex == t_sex[tpos]))
         band_only = np.flatnonzero(~used & (d_band == t_band[tpos]))
         any_free = np.flatnonzero(~used)
@@ -316,15 +370,19 @@ def _require_lift_free_refines_class_key(passenger_key: bool, lift_free_never: b
 
 
 def _person_keys(persons: pd.DataFrame, *, age_band_edges=AGE_BAND_EDGES,
-                 passenger_key: bool = False, lift_free_donors: bool = False) -> pd.DataFrame:
+                 passenger_key: bool = False, lift_free_donors: bool = False,
+                 student_key: bool = False) -> pd.DataFrame:
     """Match keys of ``persons``. With ``lift_free_donors`` (donor side of ADR-0166) a donor counts as "never"
     only when its handed-over diary is also lift-free, so a "never" target's exact cell holds only consistent
-    donors; a "never" donor with a lift joins the other class. Targets are always keyed without it."""
+    donors; a "never" donor with a lift joins the other class. Targets are always keyed without it.
+    With ``student_key`` (A1, ADR-0211) the column :data:`STUDENT_KEY` (``P_TAET == STUDENT_TAET``) is added."""
     keys = _base_person_keys(persons, age_band_edges=age_band_edges)
     if passenger_key:
         keys[PASSENGER_KEY] = _require_passenger_class(persons, what="match_person")
         if lift_free_donors:
             keys[PASSENGER_KEY] &= ~_require_donor_lift(persons, what="match_person")
+    if student_key:
+        keys[STUDENT_KEY] = persons["P_TAET"].eq(STUDENT_TAET).to_numpy()
     return keys
 
 
@@ -360,7 +418,14 @@ def _scalar_age_band(age, edges):
     return position - 1
 
 
-def _target_person_keys(target_row: pd.Series, *, age_band_edges, passenger_key: bool) -> dict:
+def _is_student_row(target_row: pd.Series) -> bool:
+    """True when the row's ``P_TAET`` is :data:`STUDENT_TAET` (a missing code is not a student)."""
+    code = target_row["P_TAET"]
+    return False if pd.isna(code) else bool(code == STUDENT_TAET)
+
+
+def _target_person_keys(target_row: pd.Series, *, age_band_edges, passenger_key: bool,
+                        student_key: bool = False) -> dict:
     """Match keys of ONE target row, value-equal to ``_person_keys(pd.DataFrame([target_row])).iloc[0]``.
 
     The prepared path of :func:`match_person` reads the keys only for the candidate-cell
@@ -386,6 +451,8 @@ def _target_person_keys(target_row: pd.Series, *, age_band_edges, passenger_key:
             raise KeyError(f"match_person: {_P_VAUTO_MISSING}")
         p_vauto = pd.to_numeric(target_row["P_VAUTO"], errors="coerce")
         keys[PASSENGER_KEY] = False if pd.isna(p_vauto) else bool(p_vauto == P_VAUTO_NEVER)
+    if student_key:
+        keys[STUDENT_KEY] = _is_student_row(target_row)
     return keys
 
 
@@ -408,12 +475,15 @@ class PreparedPersonPool:
     _snapshot_columns: dict = field(repr=False)
     passenger_key: bool = False
     lift_free_never: bool = False
+    student_key: bool = False
+    #: ``(H_ID, P_ID) -> donor has P_TAET == STUDENT_TAET``; filled only with ``student_key``.
+    _student_by_item: dict = field(default_factory=dict, repr=False)
     _candidate_indexes: dict = field(default_factory=dict, repr=False)
     #: ``(match_keys, target_values) -> PreparedWeightedChoice | None`` per candidate key cell.
     _cell_choices: dict = field(default_factory=dict, repr=False)
 
     def validate(self, weekday_persons: pd.DataFrame, age_band_edges, passenger_key: bool = False,
-                 lift_free_never: bool = False) -> None:
+                 lift_free_never: bool = False, student_key: bool = False) -> None:
         """Reject a prepared pool whose source, content, age bands or passenger key setting changed.
 
         The content check compares every snapshot column and is O(pool size), so
@@ -422,7 +492,7 @@ class PreparedPersonPool:
         pool runs this full check before and after its loop (the rule and its reason:
         ``docs/codebase/notes/performance-equivalence.md``).
         """
-        self.check_binding(weekday_persons, age_band_edges, passenger_key, lift_free_never)
+        self.check_binding(weekday_persons, age_band_edges, passenger_key, lift_free_never, student_key)
         current_columns = tuple(c for c in _PERSON_POOL_COLUMNS if c in weekday_persons.columns)
         if current_columns != tuple(self._snapshot_columns):
             raise ValueError(
@@ -436,7 +506,7 @@ class PreparedPersonPool:
                 "match_person: weekday person pool changed since preparation")
 
     def check_binding(self, weekday_persons: pd.DataFrame, age_band_edges, passenger_key: bool = False,
-                      lift_free_never: bool = False) -> None:
+                      lift_free_never: bool = False, student_key: bool = False) -> None:
         """O(1) per-call check: same source object, age bands and passenger key settings."""
         if weekday_persons is not self._source:
             raise ValueError(
@@ -453,6 +523,10 @@ class PreparedPersonPool:
             raise ValueError(
                 f"match_person: prepared_pool was prepared with lift_free_never={self.lift_free_never}, "
                 f"the call requests lift_free_never={bool(lift_free_never)}")
+        if bool(student_key) != self.student_key:
+            raise ValueError(
+                f"match_person: prepared_pool was prepared with student_key={self.student_key}, "
+                f"the call requests student_key={bool(student_key)}")
 
     def candidate_positions(self, target_keys: pd.Series, match_keys: tuple) -> tuple:
         """Return original row positions matching one relaxation-level key set."""
@@ -499,13 +573,13 @@ class PreparedPersonPool:
 
 
 def prepare_person_pool(weekday_persons, *, age_band_edges=AGE_BAND_EDGES, passenger_key: bool = False,
-                        lift_free_never: bool = False):
+                        lift_free_never: bool = False, student_key: bool = False):
     """Prepare invariant donor features for repeated :func:`match_person` calls."""
     _require_lift_free_refines_class_key(passenger_key, lift_free_never, what="prepare_person_pool")
     edges = tuple(_validate_age_band_edges(
         age_band_edges, what="prepare_person_pool"))
     keys = _person_keys(weekday_persons, age_band_edges=edges, passenger_key=passenger_key,
-                        lift_free_donors=lift_free_never)
+                        lift_free_donors=lift_free_never, student_key=student_key)
     if len(weekday_persons):
         items = tuple(zip(weekday_persons["H_ID"], weekday_persons["P_ID"]))
         weights = weekday_persons["P_GEW"].to_numpy(copy=True)
@@ -528,17 +602,27 @@ def prepare_person_pool(weekday_persons, *, age_band_edges=AGE_BAND_EDGES, passe
         _snapshot_columns=snapshot_columns,
         passenger_key=bool(passenger_key),
         lift_free_never=bool(lift_free_never),
+        student_key=bool(student_key),
+        _student_by_item=(dict(zip(items, keys[STUDENT_KEY].tolist())) if student_key else {}),
     )
+
+
+def _with_student_flag(h, p, level, student_key: bool, student_target: bool, student_by_item: dict):
+    """The return value of :func:`match_person`: three values with the student key off (today's), four
+    with it on (``donor_is_student`` is None unless the target is a student)."""
+    if not student_key:
+        return h, p, level
+    return h, p, level, (bool(student_by_item[(h, p)]) if student_target else None)
 
 
 def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
                  age_band_edges=AGE_BAND_EDGES, prepared_pool=None, passenger_key: bool = False,
-                 lift_free_never: bool = False):
+                 lift_free_never: bool = False, student_key: bool = False):
     """Draw ONE weekday donor person for ``target_row``, P_GEW-weighted.
 
     Matches on as many of ``PERSON_KEYS_BY_PRIORITY`` as possible, dropping the
     lowest-priority remaining SOFT key when no donor qualifies. Returns
-    ``(H_ID, P_ID, relaxation_level)``.
+    ``(H_ID, P_ID, relaxation_level)`` -- with ``student_key`` a fourth value, see below.
 
     ``hard_keys`` names keys that are NEVER relaxed (default: none). They are
     required on every candidate pool, and the ladder pops only the soft keys, in
@@ -581,8 +665,19 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
     without a car-passenger option; a "never" donor with a lift moves to the other class. Same key
     position and the same one draw per call.
 
+    ``student_key`` (A1, ADR-0211): for a STUDENT target (``P_TAET == STUDENT_TAET``, no age bound) the ladder
+    gets the key :data:`STUDENT_KEY` (``P_TAET == STUDENT_TAET`` on the donor) IN FRONT, so a student donor is
+    given up last; its ``level`` then counts up to one more relaxation. A target that is not a student keeps
+    today's ladder, and exactly one draw is made per call for every target, so the shared rng stream does not
+    move and the key only changes WHICH donor a student target gets. The hard employment key is untouched
+    (a student is never employed, so the two never conflict). With the key on the return value is
+    ``(H_ID, P_ID, level, donor_is_student)``: ``donor_is_student`` is True/False for a student target
+    (primary path = a student donor, fallback = a non-student donor, counted by the callers) and ``None`` for
+    any other target. With the key off the return value is the three-value tuple of today, so every existing
+    caller and test is unchanged.
+
     BYTE-IDENTITY (mandatory): with the defaults ``hard_keys=frozenset()``,
-    ``passenger_key=False`` and
+    ``passenger_key=False``, ``student_key=False`` and
     ``age_band_edges=AGE_BAND_EDGES`` this function takes the same branches, builds
     the same pools in the same order and
     makes the same number of ``weighted_choice`` calls (exactly one, whichever
@@ -598,6 +693,9 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
         raise ValueError("empty weekday person pool; cannot match weekend person")
     _require_lift_free_refines_class_key(passenger_key, lift_free_never, what="match_person")
     keys_by_priority = PERSON_KEYS_WITH_PASSENGER if passenger_key else PERSON_KEYS_BY_PRIORITY
+    student_target = bool(student_key) and _is_student_row(target_row)
+    if student_target:
+        keys_by_priority = (STUDENT_KEY,) + keys_by_priority
     if hard_keys:
         # A misspelled key would otherwise be silently dropped by the comprehensions
         # below, leaving the caller believing a boundary is guarded when it is not.
@@ -614,8 +712,9 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
             raise TypeError("match_person: prepared_pool must be a PreparedPersonPool")
         # O(1) binding check only; the O(pool) content check is the caller's, once before and
         # once after its loop (PreparedPersonPool.validate).
-        prepared_pool.check_binding(weekday_persons, edges, passenger_key, lift_free_never)
-        tkeys = _target_person_keys(target_row, age_band_edges=edges, passenger_key=passenger_key)
+        prepared_pool.check_binding(weekday_persons, edges, passenger_key, lift_free_never, student_key)
+        tkeys = _target_person_keys(target_row, age_band_edges=edges, passenger_key=passenger_key,
+                                    student_key=student_key)
         active = list(soft)
         while True:
             match_keys = tuple(
@@ -623,7 +722,8 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
             choice = prepared_pool.cell_choice(tkeys, match_keys)
             if choice is not None:
                 h, p = draw_prepared_choice(choice, rng=rng)
-                return h, p, len(soft) - len(active)
+                return _with_student_flag(h, p, len(soft) - len(active), student_key, student_target,
+                                          prepared_pool._student_by_item)
             if not active:
                 h, p = draw_prepared_choice(prepared_pool.cell_choice(tkeys, ()), rng=rng)
                 hard_note = f" and no donor shares the hard key(s) {hard}" if hard else ""
@@ -631,13 +731,16 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
                     "[weekend_plan_match] match_person hit the whole-pool size-only "
                     "fallback (all soft person keys dropped%s); drew weekday (%s, %s).",
                     hard_note, h, p)
-                return h, p, len(soft)
+                return _with_student_flag(h, p, len(soft), student_key, student_target,
+                                          prepared_pool._student_by_item)
             active.pop()
 
     keys = _person_keys(weekday_persons, age_band_edges=edges, passenger_key=passenger_key,
-                        lift_free_donors=lift_free_never)
+                        lift_free_donors=lift_free_never, student_key=student_key)
     tkeys = _person_keys(pd.DataFrame([target_row]), age_band_edges=edges,
-                         passenger_key=passenger_key).iloc[0]
+                         passenger_key=passenger_key, student_key=student_key).iloc[0]
+    student_by_item = (dict(zip(zip(weekday_persons["H_ID"], weekday_persons["P_ID"]),
+                                keys[STUDENT_KEY].tolist())) if student_target else {})
     hard_mask = pd.Series(True, index=weekday_persons.index)
     for key in hard:
         hard_mask &= keys[key] == tkeys[key]
@@ -651,7 +754,7 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
             level = len(soft) - len(active)
             h, p = weighted_choice(list(zip(pool["H_ID"], pool["P_ID"])),
                                    pool["P_GEW"].to_numpy(), rng=rng)
-            return h, p, level
+            return _with_student_flag(h, p, level, student_key, student_target, student_by_item)
         if not active:
             # Reached only when hard_mask excludes EVERY donor: with no hard keys an empty
             # `active` leaves the mask unrestricted, so the branch above returns first.
@@ -666,7 +769,7 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
                 "[weekend_plan_match] match_person hit the whole-pool size-only "
                 "fallback (all soft person keys dropped%s); drew weekday (%s, %s).",
                 hard_note, h, p)
-            return h, p, len(soft)
+            return _with_student_flag(h, p, len(soft), student_key, student_target, student_by_item)
         active.pop()
 
 

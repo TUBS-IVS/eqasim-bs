@@ -136,7 +136,7 @@ from braunschweig.calibration.student_behaviour_labels import (
     UNIVERSE_ADULTS, UNIVERSE_STUDENTS, behaviour_rows, effective_sample_size,
     share_standard_error)
 from braunschweig.popsim.attributes import (FKARTE_TO_CATEGORY, PT_TICKET_DEUTSCHLANDTICKET,
-                                            PT_TICKET_OTHER_FLATRATE)
+                                            PT_TICKET_OTHER_FLATRATE, STUDENT_TAET)
 from braunschweig.popsim.diary_facts import compute_diary_facts
 from braunschweig.popsim.diary_plan_match import MID_HOLIDAY, NO_DIARY_CODES, _own_diary_reason
 from braunschweig.popsim.mid.participation import PARTICIPATION_W_ZWECK
@@ -154,7 +154,7 @@ AGE_SEX_TABLE = "mid2023_student_age_sex.csv"
 # MiD P_TAET ("Taetigkeit der Person"), MiD 2023 codebook B1 as quoted in popsim/attributes.py:
 # 8 in Ausbildung, 9 Schueler/in, 10 Student/in; 1-17 are the documented substantive codes and
 # 99 is "keine Angabe".
-STUDENT_P_TAET = 10
+STUDENT_P_TAET = STUDENT_TAET  # owned by popsim.attributes (ADR-0211)
 PUPIL_P_TAET = 9
 APPRENTICE_P_TAET = 8
 P_TAET_CODES = frozenset(range(1, 18))

@@ -1108,3 +1108,187 @@ def test_count_pair_band_crossings_tolerates_a_missing_age():
     donor = pd.DataFrame({"HP_ALTER": pd.array([7, 30], dtype="Int64")})
     counts = wpm.count_pair_band_crossings(target, donor, [(0, 0), (1, 1)])
     assert counts[:3] == (2, 1, 1)
+
+
+# --- A1: the student status key (ADR-0211) ---------------------------------------------------------
+
+def _donor_pool_rows(rows):
+    """Weekday donor persons from ``(H_ID, P_ID, age, sex, P_TAET)`` tuples (licensed, no pass)."""
+    return pd.DataFrame({
+        "H_ID": [r[0] for r in rows], "P_ID": [r[1] for r in rows],
+        "HP_ALTER": [r[2] for r in rows], "HP_SEX": [r[3] for r in rows],
+        "P_FSCHEIN": 1, "P_TAET": [r[4] for r in rows], "P_FKARTE": 1, "P_GEW": 1.0,
+    })
+
+
+def _person_target(age, sex, taet):
+    return pd.Series({"HP_ALTER": age, "HP_SEX": sex, "P_FSCHEIN": 1, "P_TAET": taet, "P_FKARTE": 1})
+
+
+def _next_uniform(rng):
+    return rng.uniform()
+
+
+def test_student_taet_is_owned_by_attributes_and_shared_with_calibration():
+    from braunschweig.calibration import mid_student_reference
+    from braunschweig.popsim import attributes
+    assert attributes.STUDENT_TAET == 10
+    assert mid_student_reference.STUDENT_P_TAET == attributes.STUDENT_TAET
+    assert wpm.STUDENT_KEY == "student" and wpm.HH_STUDENT_KEY == "has_student"
+    assert wpm.HH_STUDENT_MIN_AGE_YEARS == 18
+
+
+@pytest.mark.parametrize("prepared", [False, True], ids=["unprepared", "prepared"])
+def test_student_key_leaves_non_student_targets_on_todays_donor(prepared):
+    pool = _donor_pool_rows([(1, 1, 22, 2, 10), (2, 1, 70, 2, 11), (3, 1, 30, 1, 1), (4, 1, 30, 2, 1),
+                             (5, 1, 9, 2, 9), (6, 1, 22, 2, 10), (7, 1, 24, 2, 11)])
+    targets = [_person_target(23, 2, 11), _person_target(30, 2, 1), _person_target(10, 2, 9),
+               _person_target(26, 1, 12)]
+    for target in targets:
+        for seed in range(12):
+            off_rng, on_rng = np.random.RandomState(seed), np.random.RandomState(seed)
+            off = wpm.match_person(target, pool, rng=off_rng,
+                                   prepared_pool=wpm.prepare_person_pool(pool) if prepared else None)
+            on = wpm.match_person(target, pool, rng=on_rng, student_key=True,
+                                  prepared_pool=wpm.prepare_person_pool(pool, student_key=True) if prepared else None)
+            assert on[:3] == off[:3]
+            assert on[3] is None            # a non-student target has no student-donor statistic
+            assert _next_uniform(on_rng) == _next_uniform(off_rng)   # one draw each, same stream position
+
+
+def test_student_key_off_keeps_the_three_value_return():
+    pool = _donor_pool_rows([(1, 1, 22, 2, 10), (2, 1, 70, 2, 11)])
+    assert len(wpm.match_person(_person_target(22, 2, 10), pool, rng=np.random.RandomState(0))) == 3
+
+
+@pytest.mark.parametrize("prepared", [False, True], ids=["unprepared", "prepared"])
+def test_student_target_gets_a_student_donor_when_one_exists_and_counts_the_relaxation(prepared):
+    # The non-student donor 70/F pensioner shares licence, sex, age band, employment and ticket
+    # with the target, so without the key it is as good a draw as the student donors.
+    pool = _donor_pool_rows([(1, 1, 22, 2, 10), (2, 1, 70, 2, 11), (3, 1, 70, 2, 11), (4, 1, 70, 2, 11)])
+    target = _person_target(22, 2, 10)
+    drawn_without_key = set()
+    for seed in range(40):
+        kwargs = dict(rng=np.random.RandomState(seed))
+        h, p, level, donor_is_student = wpm.match_person(
+            target, pool, student_key=True,
+            prepared_pool=wpm.prepare_person_pool(pool, student_key=True) if prepared else None, **kwargs)
+        assert (h, donor_is_student, level) == (1, True, 0)
+        drawn_without_key.add(wpm.match_person(target, pool, rng=np.random.RandomState(seed))[0])
+    assert drawn_without_key - {1}   # the key changes the draw: without it a pensioner donor is drawn too
+
+    # no student donor in the pool: still a donor, the relaxation is reported, one draw is consumed
+    no_students = _donor_pool_rows([(2, 1, 70, 2, 11), (3, 1, 40, 1, 1)])
+    off_rng, on_rng = np.random.RandomState(1), np.random.RandomState(1)
+    wpm.match_person(target, no_students, rng=off_rng)
+    h, p, level, donor_is_student = wpm.match_person(
+        target, no_students, rng=on_rng, student_key=True,
+        prepared_pool=wpm.prepare_person_pool(no_students, student_key=True) if prepared else None)
+    assert donor_is_student is False and (h, p) in {(2, 1), (3, 1)}
+    assert level == len(wpm.PERSON_KEYS_BY_PRIORITY) + 1      # every key down to the student key relaxed
+    assert _next_uniform(on_rng) == _next_uniform(off_rng)
+
+
+def test_student_key_keeps_the_hard_employment_key_and_a_student_is_never_employed():
+    pool = _donor_pool_rows([(1, 1, 22, 2, 10), (2, 1, 22, 2, 1)])   # a student and an employed donor
+    target = _person_target(22, 2, 10)
+    for seed in range(20):
+        h, _p, _level, donor_is_student = wpm.match_person(
+            target, pool, rng=np.random.RandomState(seed), student_key=True, hard_keys=frozenset({"employed"}))
+        assert (h, donor_is_student) == (1, True)
+
+
+def test_prepared_pool_binds_the_student_key():
+    pool = _donor_pool_rows([(1, 1, 22, 2, 10), (2, 1, 70, 2, 11)])
+    prepared = wpm.prepare_person_pool(pool, student_key=False)
+    with pytest.raises(ValueError, match="student_key"):
+        wpm.match_person(_person_target(22, 2, 10), pool, rng=np.random.RandomState(0), student_key=True,
+                         prepared_pool=prepared)
+
+
+def _hh_feats(rows):
+    """Weekday household features; rows are ``(H_ID, has_student, car_class)`` (other keys equal)."""
+    return pd.DataFrame({
+        "size": 2, "hh_type5": "couple", "oek_status": 3, "regiostar7": 71,
+        "car_class": [r[2] for r in rows], "any_license": True, "any_pt": False,
+        "H_GEW": 1.0, "has_student": [r[1] for r in rows],
+    }, index=pd.Index([r[0] for r in rows], name="H_ID"))
+
+
+def _hh_target(has_student, car_class="2plus"):
+    return pd.Series({"size": 2, "hh_type5": "couple", "oek_status": 3, "regiostar7": 71,
+                      "car_class": car_class, "any_license": True, "any_pt": False,
+                      "has_student": has_student})
+
+
+def test_build_hh_features_has_student_needs_age_18_and_the_flag():
+    households = pd.DataFrame({"H_ID": [1, 2, 3], "H_GR": [2, 1, 1], "hh_type5": ["couple"] * 3,
+                               "oek_status": [3, 3, 3], "RegioStaR7": [71] * 3, "H_ANZAUTO": [1] * 3,
+                               "H_GEW": [1.0] * 3})
+    persons = pd.DataFrame({"H_ID": [1, 1, 2, 3], "P_ID": [1, 2, 1, 1], "HP_ALTER": [22, 40, 17, 30],
+                            "HP_SEX": [1, 2, 1, 2], "P_FSCHEIN": [1] * 4, "P_FKARTE": [1] * 4,
+                            "P_TAET": [10, 1, 10, 1]})
+    on = wpm.build_hh_features(households, persons, student_key=True)
+    assert on["has_student"].tolist() == [True, False, False]   # a student under 18 does not count
+    assert "has_student" not in wpm.build_hh_features(households, persons).columns
+
+
+def test_household_student_key_is_relaxed_last_and_binds_student_households_only():
+    weekday = _hh_feats([(100, True, "0"), (101, False, "2plus")])
+    # a student household takes the donor household with a student although every soft key but
+    # the student key differs; without the key the all-matching household wins
+    off = wpm.match_household(7, _hh_target(True), weekday.drop(columns="has_student"),
+                              rng=np.random.RandomState(0))
+    assert off == (101, 0)
+    on = wpm.match_household(7, _hh_target(True), weekday, rng=np.random.RandomState(0), student_key=True)
+    assert on == (100, len(wpm.SOFT_KEYS_BY_PRIORITY))
+    # a household without a student keeps today's ladder, donor and level
+    for seed in range(10):
+        plain_off = wpm.match_household(7, _hh_target(False), weekday, rng=np.random.RandomState(seed))
+        plain_on = wpm.match_household(7, _hh_target(False), weekday, rng=np.random.RandomState(seed),
+                                       student_key=True)
+        assert plain_on == plain_off
+    # precomputed lookup path agrees with the mask path
+    by_key = {key: g for key, g in weekday.groupby(["size", "regiostar7"], sort=False)}
+    assert wpm.match_household(7, _hh_target(True), weekday, rng=np.random.RandomState(0),
+                               weekday_by_key=by_key, student_key=True) == on
+
+
+def test_household_student_key_without_the_feature_column_raises():
+    weekday = _hh_feats([(100, True, "0")]).drop(columns="has_student")
+    with pytest.raises(KeyError, match="has_student"):
+        wpm.match_household(7, _hh_target(True), weekday, rng=np.random.RandomState(0), student_key=True)
+
+
+def _members(rows):
+    return pd.DataFrame({"HP_ALTER": [r[0] for r in rows], "HP_SEX": [r[1] for r in rows],
+                         "P_TAET": [r[2] for r in rows]})
+
+
+def test_align_members_pairs_student_with_student_before_the_present_ladder():
+    target = _members([(22, 2, 10), (24, 2, 1)])
+    donor = _members([(23, 2, 1), (21, 2, 10)])
+    assert sorted(wpm.align_members(target, donor, student_key=True)) == [(0, 1), (1, 0)]
+    # flag off: today's first free donor in the (age band, sex) cell
+    assert sorted(wpm.align_members(target, donor)) == [(0, 0), (1, 1)]
+
+
+def test_align_members_student_is_not_robbed_of_its_student_donor_by_an_earlier_member():
+    # the worker comes first and would take the first free donor (the student) under today's order
+    target = _members([(24, 2, 1), (22, 2, 10)])
+    donor = _members([(21, 2, 10), (23, 2, 1)])
+    assert sorted(wpm.align_members(target, donor, student_key=True)) == [(0, 1), (1, 0)]
+
+
+def test_align_members_student_without_a_student_donor_keeps_the_present_ladder_and_the_pair_count():
+    target = _members([(22, 2, 10), (24, 2, 1), (9, 1, 9)])
+    donor = _members([(23, 2, 1), (40, 1, 1), (10, 1, 9)])
+    on = wpm.align_members(target, donor, student_key=True)
+    assert on == wpm.align_members(target, donor)
+    assert len(on) == 3
+
+
+def test_align_members_student_key_is_a_no_op_without_student_targets():
+    target = _members([(30, 1, 1), (28, 2, 1), (8, 2, 9)])
+    donor = _members([(21, 2, 10), (31, 1, 1), (9, 1, 9)])
+    assert wpm.align_members(target, donor, student_key=True) == wpm.align_members(target, donor)
