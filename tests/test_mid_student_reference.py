@@ -400,11 +400,13 @@ def _age_sex_persons():
     Students of the universe: (2, 19, 2, 10, 72), (1, 22, 2, 10, 72), (1, 27, 2, 10, 73),
     (3, 23, 1, 10, 73), (1, 35, 1, 10, 72), (1, 26, 1, 10, missing). Outside it: a non-student
     (5, 22, 1, 1, 72), a student under 18 (4, 17, 2, 10, 72) and a student with sex code 3
-    (2, 24, 3, 10, 72).
+    (2, 24, 3, 10, 72). Also outside it, students without a valid age: a missing age
+    (6, nan, 1, 10, 72) and an age above 120 (7, 130, 2, 10, 72).
     """
     rows = [(2, 19, 2, 10, 72), (1, 22, 2, 10, 72), (1, 27, 2, 10, 73), (3, 23, 1, 10, 73),
             (1, 35, 1, 10, 72), (1, 26, 1, 10, np.nan), (5, 22, 1, 1, 72),
-            (4, 17, 2, 10, 72), (2, 24, 3, 10, 72)]
+            (4, 17, 2, 10, 72), (2, 24, 3, 10, 72),
+            (6, np.nan, 1, 10, 72), (7, 130, 2, 10, 72)]
     frame = pd.DataFrame(rows, columns=["P_GEW", "HP_ALTER", "HP_SEX", "P_TAET", "RegioStaR7"])
     frame.insert(0, "P_ID", 1)
     frame.insert(0, "H_ID", range(1, len(frame) + 1))
@@ -429,6 +431,7 @@ def test_age_sex_table_by_hand():
     empty = table[table["area"] == "regiostar7_71"]
     assert (empty["n_unweighted"] == 0).all() and empty["share_within_sex"].isna().all()
     assert diagnostics["n_students_under_18"] == 1
+    assert diagnostics["n_students_without_valid_age"] == 2
     assert diagnostics["n_students_excluded_sex"] == 1
     assert diagnostics["n_students_without_regiostar7"] == 1
 
@@ -492,9 +495,13 @@ def test_cli_writes_all_tables_with_headers(mid_frames, tmp_path):
         header = [line for line in text.splitlines() if line.startswith("#")]
         assert sum(line.startswith("# Exclusions:") for line in header) == 1
         assert any("abc1234" in line for line in header)
-        assert any("exclude_rbw_legs" in line for line in header)
         assert any("P_GEW" in line for line in header)
-        assert any("ST_WOTAG" in line for line in header)
+        if name == M.AGE_SEX_TABLE:
+            assert not any("MiD2023_Wege.csv" in line or "exclude_rbw_legs" in line
+                           for line in header)
+        else:
+            assert any("exclude_rbw_legs" in line for line in header)
+            assert any("ST_WOTAG" in line for line in header)
         # every table restricted to the reporting day names its holiday filter
         assert any("feiertag" in line for line in header) == (
             name not in (M.SHARE_20_29_TABLE, M.AGE_SEX_TABLE))
@@ -542,3 +549,19 @@ def test_cli_rejects_an_unknown_table_name(tmp_path):
     with pytest.raises(SystemExit):
         module.main(["--raw", str(tmp_path), "--out-dir", str(tmp_path),
                      "--source-commit", "abc1234", "--tables", "age_sex,nonsense"])
+
+
+def test_cli_age_sex_needs_no_trips_file(mid_frames, tmp_path):
+    persons, _ = mid_frames
+    raw = tmp_path / "mid_raw"
+    raw.mkdir()
+    persons = persons.assign(HP_SEX=[1, 2] * 8, RegioStaR7=[71 + i % 7 for i in range(16)])
+    persons.to_csv(raw / "MiD2023_Personen.csv", index=False)
+    out = tmp_path / "out"
+    module = _load_script()
+
+    assert module.main(["--raw", str(raw), "--out-dir", str(out),
+                        "--source-commit", "abc1234", "--tables", "age_sex"]) == 0
+
+    assert not (raw / "MiD2023_Wege.csv").exists()
+    assert sorted(path.name for path in out.iterdir()) == [M.AGE_SEX_TABLE]
