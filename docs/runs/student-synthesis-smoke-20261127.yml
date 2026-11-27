@@ -23,7 +23,7 @@ configuration:
     stage writes all 60 batch folders, the consistency table and the report, then stops before PopulationSim); max_cells
     750. The PopulationSim settings of the batch carry max_expansion_factor 100 (settings of the batch folder). In this
     run the A1 fallback warn bound (donor_match_student_fallback_warn_share) was unset (report only), as the log lines show;
-    this commit sets it in configs/base_bs.yml to 0.4 (see validation, A1), effective with the next full run.
+    configs/base_bs.yml sets it from the entry 'A1 at one code state' of validation.
 sampling:
   rate: 1.0
   scope: >-
@@ -194,10 +194,10 @@ validation:
     (29.8%) (fallback share 1327/4455 = 0.2978675645342312); diary_plan_match.student_donor: primary 2334/2334 (100.0%),
     fallback 0; weekend_plan_match.student_donor.person_fallback and .mixed_person_sweep: 0 targets each. Student household
     match levels of the weekend pass {0: 3610, 1: 181, 4: 6, 2: 37, 3: 20, 5: 2}. All paths logged 'warn bound not set'.
-    BOUND SET HERE (ASSUMPTION, the owner may tighten it): braunschweig.population.popsim.donor_match_student_fallback_warn_share
-    = 0.4 = the largest observed fallback share of any path (0.298 of the household-pair path, 1327/4455) plus a margin
-    of 0.1; it enters the completed_donor hash and takes effect with the next full run. It is a warning bound set from one
-    seed in one smoke, not a validated limit.
+    The member pairing then demanded the same sex and age band for a student pair; the final branch review found that every
+    student household had a donor household with a student (no household reached the level where the student key is given
+    up), so this fallback was a pairing limit, not a pool limit. Fixed in 2b1c9047 (student tiers relaxed to the age band,
+    then to any free student); re-measured in the entry 'A1 at one code state' below, where the bound is set.
 - metric: >-
     plan sources of the completed-donor step against production (share of seed persons whose source differs)
   reference: completed_donor of popsim100_20261120 (693b5a0a...) against the ON stage of this run
@@ -207,6 +207,23 @@ validation:
     NOT attributed to the student key: the two results also differ by the code changes of main since 2026-11-20, and the
     draws on the shared stream shift (open point 1 of the plan); the figure bounds the change, it is not an OFF/ON comparison
     of one code state.
+- metric: >-
+    A1 at one code state: completed_donor with the student donor key OFF and ON (branch 2b1c9047), primary against fallback
+    per path, and the share of seed persons whose plan source differs between OFF and ON
+  reference: the same stage at the same code state with the key off (run_overlay_a1_off.yml against run_overlay_a1_on.yml)
+  result: >-
+    Read from a1_on.log, a1_off.log and a1_plan_source_change_on_vs_off.json (scripts/run_stages_readonly.py, then
+    scripts/compare_plan_sources.py OFF -> ON; upstream pickles of popsim100_20261120 read-only, as above). ON:
+    weekend_plan_match.student_donor.household_pairs primary 4015/4455 (90.1%), fallback 440 (9.9%);
+    diary_plan_match.student_donor primary 2340/2340 (100.0%); person_fallback and mixed_person_sweep 0 targets. Student
+    household match levels {0: 3610, 1: 181, 4: 6, 2: 37, 3: 20, 5: 2}. OFF against ON: persons compared 485709; students
+    (P_TAET 10, every age) 15607, changed 5818 (share 0.37278144422374576); other persons 470102, changed 77104 (share
+    0.16401546898332703). Every changed non-student is a person with a re-drawn plan whose draw on the shared random stream
+    moved (open point 1 of the plan, ADR-0211 Decision 4): a different draw from the same candidate set, not a different
+    rule. BOUND SET HERE (ASSUMPTION, the owner may tighten it):
+    braunschweig.population.popsim.donor_match_student_fallback_warn_share = 0.2 = the largest observed fallback share of
+    any path at this code state (440/4455 of the household-pair path) plus a margin of 0.1; volatile, so it rebuilds
+    nothing. A warning bound from one seed, not a validated limit.
 - metric: >-
     donors, weight dispersion and the maximum expansion factor of households with a student, ON against PROD (batch_030)
   reference: production run popsim100_20261120, same batch (a comparison run)

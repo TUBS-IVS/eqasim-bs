@@ -440,7 +440,7 @@ config:
   # docs/runs/student-synthesis-smoke-20261127.yml. Volatile (a log threshold only): changing it
   # rebuilds neither completed_donor nor PopulationSim.
   braunschweig.population.popsim.donor_match_student_status: true
-  braunschweig.population.popsim.donor_match_student_fallback_warn_share: 0.4
+  braunschweig.population.popsim.donor_match_student_fallback_warn_share: 0.2
   # Exclude MiD reporting days that fell on a public holiday at the residence
   # (feiertag == 1, 5.2 % of weekday diary persons) from plan sources AND from the
   # remap donor pool: every SrV target is a normal-WEEKDAY level (ADR-0106).
