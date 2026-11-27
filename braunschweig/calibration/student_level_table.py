@@ -207,7 +207,7 @@ def _checked_zensus_students(zensus_students: pd.DataFrame, name: str) -> pd.Ser
     counts = pd.to_numeric(used["students_nonemployed_persons"], errors="coerce").astype(float)
     if not (np.isfinite(counts) & (counts >= 0)).all():
         raise ValueError("%s: non-finite or negative students_nonemployed_persons %s"
-                         % (name, counts[~(counts >= 0)].to_dict()))
+                         % (name, counts[~(np.isfinite(counts) & (counts >= 0))].to_dict()))
     return counts
 
 
@@ -468,8 +468,9 @@ def employed_target_precheck(level: pd.DataFrame, zensus_employed: pd.DataFrame)
     ``level``: :func:`level_table` output. ``zensus_employed``: the Regionaltabelle frame of
     :func:`braunschweig.popsim.zensus_employment_age.read_kreis_employed_by_age` (``region``,
     ``age_class``, ``sex`` M/F, ``employed_persons``). A level cell goes to the grid group that
-    holds age 20 for ``18_19``, ``20_24`` and ``25_29`` and to ``30_39`` for ``30plus`` (A13); the Zensus employed count of a
-    grid group is the sum of the classes that group takes in the employment grid. Columns
+    holds age 20 for ``18_19``, ``20_24`` and ``25_29`` and to ``30_39`` for ``30plus`` (A13); the
+    Zensus employed count of a grid group is the sum of the classes that group takes in the
+    employment grid. Columns
     :data:`PRECHECK_COLUMNS`; ``remainder_persons`` = Zensus employed - students counted as
     employed, the room left for the employed persons that are not students. A negative remainder
     raises (design A2: the employment target cannot hold the students). Raises ``ValueError`` too
@@ -656,6 +657,7 @@ def gate_table(level_gate: pd.DataFrame, srv_shares: pd.DataFrame, away_share: f
                        _LOG_TAG, int(zero_se.sum()), list(frame.loc[zero_se, "code"]),
                        MIN_DIFFERENCE_STANDARD_ERRORS)
     in_se = difference / se.where(se > 0)
+    level_row = level_per_row(level_kreise)
     # The area-consistent comparison of the students aged 20 to 29 (whole Kreis on the SrV side).
     balance_20_29 = balance * share_20_29
     estimate_20_29 = frame["srv_estimate_students_20_29_persons"].astype(float).where(surveyed)
@@ -686,8 +688,8 @@ def gate_table(level_gate: pd.DataFrame, srv_shares: pd.DataFrame, away_share: f
         "beyond_two_se_20_29": in_se_20_29.abs() > MIN_DIFFERENCE_STANDARD_ERRORS,
         "census_estimate_students_20_29_persons": frame["census_estimate_students_20_29_persons"],
         "model_today_students_persons": frame["code"].map(model).astype(float),
-        "level_students_persons": level_per_row(level_kreise),
-        "level_students_20_29_persons": level_per_row(level_kreise) * share_20_29,
+        "level_students_persons": level_row,
+        "level_students_20_29_persons": level_row * share_20_29,
         "level_census_year_students_20_29_persons": (level_per_row(census_year_kreise)
                                                      * share_20_29)},
         columns=GATE_COLUMNS)

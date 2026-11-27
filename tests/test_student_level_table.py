@@ -112,7 +112,8 @@ def test_census_pattern_logs_both_share_vectors_and_the_largest_shift(caplog):
         L.census_pattern_level(LIVING, _zensus_students(CENSUS))
     text = " ".join(record.getMessage() for record in caplog.records)
     # Braunschweig moves from 0.30 to 0.4167 of the level: the largest shift
-    assert "03101" in text and "balance share" in text and "level share" in text
+    assert "balance share" in text and "level share" in text
+    assert "largest shift 03101: 0.3000 -> 0.4167" in text
 
 
 @pytest.mark.parametrize("problem", ["zero_pattern", "missing_kreis_change", "zero_change",
@@ -132,6 +133,12 @@ def test_census_pattern_refuses_unusable_inputs(problem):
         zensus = _zensus_students(CENSUS).assign(age_group="30-39")
     with pytest.raises(ValueError):
         L.census_pattern_level(living, _zensus_students(census) if zensus is None else zensus, change)
+
+
+def test_census_pattern_error_names_an_infinite_zensus_count():
+    census = {**CENSUS, "03154": float("inf")}
+    with pytest.raises(ValueError, match="03154.*inf"):
+        L.census_pattern_level(LIVING, _zensus_students(census))
 
 
 def test_population_change_by_hand_and_refuses_gaps():
