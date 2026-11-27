@@ -73,6 +73,13 @@ distance and travel time of the adult students, standard errors from the person 
 trips, see :data:`DAILY_TOTAL_SUB_UNIVERSE`) and :func:`build_destination_reference` (the Kreis group
 of the first education leg's destination per home group, no distances).
 
+Phase 3 (the student synthesis) adds the home-area view: :data:`HOME_AREAS` and
+:func:`area_of_kreis` own the Kreis -> area mapping, :func:`build_parameter_table_by_area` repeats
+the parameter table per surveyed area (the two areas add up to the region), and
+:func:`build_education_leg_by_student_status` gives the education-leg share of the students and of
+the other adults (who those others are: :func:`build_education_status_table`). The area rule that
+reads the by-area table is :func:`student_control_evidence.area_rule_table`.
+
 Two definitions of an education leg coexist on purpose: the parameter table's ``education_leg``
 uses the harmonised purpose of the plan-structure comparison (so survey and model pass through one
 function), the control definition (``E_ZWECK_9`` in :data:`EDUCATION_E_ZWECK_9`, as the behaviour

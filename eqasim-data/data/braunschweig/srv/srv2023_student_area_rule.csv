@@ -1,0 +1,19 @@
+# Source: computed by scripts/extract_srv_student_reference.py on 2026-11-27 from the by-area
+#   parameter table srv2023_student_parameters_by_area.csv of the same run and code state; no raw data enters this table.
+# Code state: eqasim-bs 85b9d725, braunschweig/calibration/student_control_evidence.py
+#   (area_rule_table). A measurement, not a validation (issue #140, design A3 rule 2).
+# Rule: a parameter gets a value of its own for each home area (braunschweig, surrounding) only when the two
+#   areas differ by more than 2.0 standard errors of the difference (z = (share_braunschweig -
+#   share_surrounding) / sqrt(se_braunschweig^2 + se_surrounding^2)) AND enough_respondents holds: both bases have at
+#   least 100 respondents and the label and the rest at least 10 respondents on each side.
+# ASSUMPTIONS (designer's judgements, design A14 and A20, not sourced thresholds): the 2.0
+#   standard errors, the 100 and the 10 respondents.
+# Bases: n_base_<area> = respondents of the cell's base in that area (students present at
+#   home on the reporting day; for away_all_day all students), n_label_<area> with the
+#   label, n_other_<area> = n_base - n_label. Cells: ['education_leg/yes', 'work_leg/yes', 'season_ticket/flatrate', 'away_all_day/yes'].
+# Columns: parameter, base, label, n_base_braunschweig, n_label_braunschweig, n_other_braunschweig, share_braunschweig, se_braunschweig, n_base_surrounding, n_label_surrounding, n_other_surrounding, share_surrounding, se_surrounding, difference_in_se, enough_respondents, area_value.
+parameter,base,label,n_base_braunschweig,n_label_braunschweig,n_other_braunschweig,share_braunschweig,se_braunschweig,n_base_surrounding,n_label_surrounding,n_other_surrounding,share_surrounding,se_surrounding,difference_in_se,enough_respondents,area_value
+education_leg,students_present,yes,222,88,134,0.403320269,0.0506241833,216,68,148,0.3226027933,0.04101485472,1.238874695,True,False
+work_leg,students_present,yes,222,52,170,0.194638224,0.04085751384,216,33,183,0.1532654836,0.03160685084,0.800930003,True,False
+season_ticket,students_present,flatrate,222,203,19,0.9330748615,0.02578785663,216,161,55,0.7698927212,0.03692884291,3.622914114,True,True
+away_all_day,students_all,yes,248,26,222,0.0869729022,0.02723570885,263,47,216,0.1729445122,0.02993615289,-2.124241066,True,True

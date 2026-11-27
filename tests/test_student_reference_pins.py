@@ -22,11 +22,13 @@ import pytest
 
 from braunschweig.calibration.srv_distance_targets import WOLFSBURG_KREIS
 from braunschweig.calibration.srv_student_reference import (
-    DESTINATION_TABLE, HOME_GROUP_BRAUNSCHWEIG, HOME_GROUP_NO_SITE, HOME_GROUP_SITE,
+    AREA_BRAUNSCHWEIG, AREA_SURROUNDING, DESTINATION_TABLE, EDUCATION_LEG_BY_STATUS_TABLE,
+    HOME_AREAS, PARAMETER_BY_AREA_TABLE, HOME_GROUP_BRAUNSCHWEIG, HOME_GROUP_NO_SITE, HOME_GROUP_SITE,
     MEAN_LABEL, MODE_BY_E_HVM_5, PARAMETER_TABLE, POST_MATSIM_TABLE, QUANTITY_DAILY_DISTANCE,
     QUANTITY_DAILY_TRAVEL_TIME, QUANTITY_MODE_ALL_LEGS, QUANTITY_MODE_EDUCATION_LEGS,
     YOUNG_ADULT_STATUS_TABLE, YOUNG_ADULT_STATUSES, destination_vocabulary)
-from braunschweig.calibration.student_control_evidence import MIN_RESPONDENTS_PER_CELL
+from braunschweig.calibration.student_control_evidence import (
+    AREA_RULE_CELLS, AREA_RULE_TABLE, MIN_RESPONDENTS_PER_CELL, area_rule_table)
 from braunschweig.calibration.student_parameters import EXTRA_BASES, PARAMETERS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -403,7 +405,10 @@ def test_education_destination_value_pins_20261126():
         "weight_sum"] == pytest.approx(428.7944169, rel=1e-9)
 
 
-@pytest.mark.parametrize("name", PHASE1_TABLES)
+PHASE3_TABLES = (PARAMETER_BY_AREA_TABLE, EDUCATION_LEG_BY_STATUS_TABLE)
+
+
+@pytest.mark.parametrize("name", PHASE1_TABLES + PHASE3_TABLES)
 def test_phase1_table_headers_are_traceable_and_carry_no_local_paths(name):
     lines = _header_lines(name)
     header = " ".join(lines)
@@ -415,3 +420,110 @@ def test_phase1_table_headers_are_traceable_and_carry_no_local_paths(name):
     if name == PARAMETER_TABLE:
         assert "education_leg_share_harmonised_purpose" in header
         assert "education_leg_share_control_definition" in header
+
+
+# ------------------------------------------------------------- Phase 3 tables (issue #140), 2026-11-27
+def test_student_parameters_by_area_add_up_to_the_regional_table_and_partition():
+    by_area = _read_with_nan_label(PARAMETER_BY_AREA_TABLE)
+    regional = _read_with_nan_label(PARAMETER_TABLE)
+    assert list(by_area.columns) == ["area", *regional.columns]
+    assert set(by_area["area"]) == set(HOME_AREAS)
+    assert len(by_area) == len(HOME_AREAS) * len(regional)
+    key = ["parameter", "base", "label"]
+    summed = by_area.groupby(key, sort=False)[["n_unweighted", "weight_sum"]].sum()
+    expected = regional.set_index(key)[["n_unweighted", "weight_sum"]]
+    pd.testing.assert_frame_equal(summed.loc[expected.index], expected, check_dtype=False,
+                                  rtol=1e-8)
+    for (area, parameter, base), cell in by_area.groupby(["area", "parameter", "base"]):
+        assert list(cell["label"]) == list(PARAMETERS[parameter].labels), (area, parameter, base)
+        assert _in_unit_interval(cell["share"]), (area, parameter, base)
+        if cell["n_unweighted"].sum() > 0:
+            assert cell["share"].sum() == pytest.approx(1.0, abs=1e-8), (area, parameter, base)
+        _assert_statistics(cell, int(cell["n_unweighted"].sum()))
+
+
+def test_student_parameters_by_area_value_pins_20261127():
+    frame = _read_with_nan_label(PARAMETER_BY_AREA_TABLE)
+    row = _row(frame, area=AREA_BRAUNSCHWEIG, parameter="season_ticket",
+               base="students_present", label="flatrate")
+    assert row["n_unweighted"] == 203
+    assert row["share"] == pytest.approx(0.9330748615, rel=1e-9)
+    assert row["se_share"] == pytest.approx(0.02578785663, rel=1e-9)
+    row = _row(frame, area=AREA_SURROUNDING, parameter="season_ticket",
+               base="students_present", label="flatrate")
+    assert row["n_unweighted"] == 161
+    assert row["share"] == pytest.approx(0.7698927212, rel=1e-9)
+    row = _row(frame, area=AREA_BRAUNSCHWEIG, parameter="away_all_day", base="students_all",
+               label="yes")
+    assert row["n_unweighted"] == 26
+    assert row["share"] == pytest.approx(0.0869729022, rel=1e-9)
+    row = _row(frame, area=AREA_SURROUNDING, parameter="away_all_day", base="students_all",
+               label="yes")
+    assert row["n_unweighted"] == 47
+    assert row["se_share"] == pytest.approx(0.02993615289, rel=1e-9)
+    for area, n_education, n_work in ((AREA_BRAUNSCHWEIG, 88, 52), (AREA_SURROUNDING, 68, 33)):
+        assert _row(frame, area=area, parameter="education_leg", base="students_present",
+                    label="yes")["n_unweighted"] == n_education
+        assert _row(frame, area=area, parameter="work_leg", base="students_present",
+                    label="yes")["n_unweighted"] == n_work
+
+
+def test_education_leg_by_student_status_rows_and_partitions():
+    frame = _read(SRV, EDUCATION_LEG_BY_STATUS_TABLE)
+    groups = ("student", "other_adult")
+    assert len(frame) == len(ZGB_KREISE) * 2 + 3 * 2
+    kreise = frame[frame["level"] == "kreis"]
+    assert list(kreise["code"].unique()) == ZGB_KREISE and set(kreise["age_range"]) == {"18plus"}
+    for group in groups:
+        in_kreise = kreise[kreise["group"] == group]["n_unweighted"].sum()
+        assert in_kreise == _row(frame, code=REGION_ROW, group=group, age_range="18plus")[
+            "n_unweighted"]
+        # the two age ranges partition the 18plus row of the region
+        parts = [_row(frame, code=REGION_ROW, group=group, age_range=age_range)
+                 for age_range in ("18_29", "30plus")]
+        assert sum(part["n_unweighted"] for part in parts) == in_kreise
+        assert sum(part["n_with_leg_unweighted"] for part in parts) == _row(
+            frame, code=REGION_ROW, group=group, age_range="18plus")["n_with_leg_unweighted"]
+        wolfsburg = _row(frame, code=WOLFSBURG_KREIS, group=group)
+        assert wolfsburg["n_unweighted"] == 0 and np.isnan(wolfsburg["share"])
+    assert _in_unit_interval(frame["share"])
+    assert (frame["n_with_leg_unweighted"] <= frame["n_unweighted"]).all()
+    for _, row in frame[frame["n_unweighted"] > 0].iterrows():
+        assert row["n_effective"] <= row["n_unweighted"] * (1 + 1e-9)
+        assert row["se_share"] == pytest.approx(
+            np.sqrt(row["share"] * (1 - row["share"]) / row["n_effective"]), rel=1e-6, abs=1e-12)
+
+
+def test_education_leg_by_student_status_value_pins_20261127():
+    frame = _read(SRV, EDUCATION_LEG_BY_STATUS_TABLE)
+    row = _row(frame, code=REGION_ROW, group="other_adult", age_range="18plus")
+    assert (row["n_unweighted"], row["n_with_leg_unweighted"]) == (13750, 396)
+    assert row["share"] == pytest.approx(0.03331247078, rel=1e-9)
+    assert row["se_share"] == pytest.approx(0.002278215564, rel=1e-9)
+    assert row["weight_sum"] == pytest.approx(19703.37007, rel=1e-9)
+    row = _row(frame, code=REGION_ROW, group="student", age_range="18plus")
+    assert (row["n_unweighted"], row["n_with_leg_unweighted"]) == (438, 156)
+    assert row["share"] == pytest.approx(0.3705664224, rel=1e-9)
+    # the student row of Braunschweig is the education_leg share of the by-area table
+    by_area = _read_with_nan_label(PARAMETER_BY_AREA_TABLE)
+    bs_leg = _row(by_area, area=AREA_BRAUNSCHWEIG, parameter="education_leg",
+                  base="students_present", label="yes")
+    bs_status = _row(frame, code="03101", group="student", age_range="18plus")
+    assert bs_status["n_with_leg_unweighted"] == bs_leg["n_unweighted"]
+    assert bs_status["share"] == pytest.approx(bs_leg["share"], rel=1e-9)
+
+
+def test_student_area_rule_is_the_rule_applied_to_the_by_area_table():
+    committed = pd.read_csv(SRV / AREA_RULE_TABLE, comment="#")
+    recomputed = area_rule_table(_read_with_nan_label(PARAMETER_BY_AREA_TABLE))
+    assert list(committed["parameter"]) == [cell[0] for cell in AREA_RULE_CELLS]
+    pd.testing.assert_frame_equal(committed, recomputed, check_dtype=False, rtol=1e-8)
+    verdict = committed.set_index("parameter")
+    assert verdict["area_value"].to_dict() == {
+        "education_leg": False, "work_leg": False, "season_ticket": True, "away_all_day": True}
+    assert verdict["difference_in_se"]["season_ticket"] == pytest.approx(3.622914114, rel=1e-8)
+    assert verdict["difference_in_se"]["away_all_day"] == pytest.approx(-2.124241066, rel=1e-8)
+    header = " ".join(_header_lines(AREA_RULE_TABLE))
+    assert "ASSUMPTION" in header
+    for label, pattern in FORBIDDEN_HEADER_PATTERNS.items():
+        assert not re.search(pattern, header), label
