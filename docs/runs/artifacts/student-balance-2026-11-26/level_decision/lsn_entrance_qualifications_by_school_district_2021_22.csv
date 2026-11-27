@@ -1,0 +1,21 @@
+# Table: lsn_entrance_qualifications_by_school_district_2021_22.csv (issue #140, Phase 2, decision aid for the student level).
+# School leavers with a university entrance qualification by the district of the SCHOOL, school year 2021/22
+#   (territory of 2021-11-01), Niedersachsen and the eight Kreise of the region.
+# Source: Landesamt fuer Statistik Niedersachsen, LSN-Online (https://www1.nls.niedersachsen.de/statistik/), read by
+#   hand on 2026-11-27. Reproduction with the source named is permitted (note on the tables).
+#   general schools: table M3002513, 'Absolventinnen/Absolventen und Abgaengerinnen/Abgaenger an allgemeinbildenden
+#     Schulen (ohne Abendgymnasien und Kollegs)', all school authorities, column 'insgesamt', rows 'Sekundarbereich I
+#     und II insgesamt', 'Hochschulreife' and 'Fachhochschulreife (schulischer Teil)';
+#   vocational schools: table K3050611, 'Schulabgaengerinnen und -abgaenger an berufsbildenden Schulen', all school
+#     authorities, block 'Alle Schulformen insgesamt', column 'insgesamt', rows 'Alle Schulformen insgesamt',
+#     'Allgemeine Hochschulreife', 'Fachgebundene Hochschulreife' and 'Fachhochschulreife'; a cell printed '-' is 0.
+district_ars5,district_name,general_leavers_persons,general_hochschulreife_persons,general_fachhochschulreife_school_part_persons,vocational_leavers_persons,vocational_allgemeine_hochschulreife_persons,vocational_fachgebundene_hochschulreife_persons,vocational_fachhochschulreife_persons
+03,Niedersachsen,75998,24662,2194,94184,4138,10,11274
+03101,"Braunschweig, Stadt",2278,1116,113,4020,113,0,526
+03102,"Salzgitter, Stadt",987,237,6,1114,53,0,160
+03103,"Wolfsburg, Stadt",1455,635,57,1796,48,0,239
+03151,Gifhorn,1544,466,50,1573,22,0,123
+03153,Goslar,1100,263,23,584,33,0,87
+03154,Helmstedt,668,197,17,441,0,0,11
+03157,Peine,1344,465,45,831,32,0,100
+03158,Wolfenbüttel,924,325,41,607,0,0,124

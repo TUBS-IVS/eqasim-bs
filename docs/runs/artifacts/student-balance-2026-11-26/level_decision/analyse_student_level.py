@@ -47,6 +47,21 @@ gives the share of the students away from home all day per group (all students w
 Optional fourth table (``--mid-persons``): the same school-degree check on the national MiD sample,
 which DOES carry the school degree in its person weight, and the share of students with a second home.
 
+Two more tables with ``--zensus-status-dir`` (the folder of census table 2000S-2001):
+
+* ``census_pattern_check_nrw.csv`` -- an out-of-region test of ASSUMPTION L2. For the districts of
+  Nordrhein-Westfalen the statistical office published the census count of students by district of
+  residence (``nrw_census_students_18_26.csv``). The table sets it against the public census count of
+  the pupils and students outside the labour force times ONE ratio pooled over the Land. The two age
+  windows differ (18 to 26 against 20 to 29), so it tests the pattern over districts, not a level.
+* ``entrance_qualifications_by_school_district.csv`` -- why the balance may book students of the
+  surrounding Kreise as residents of the cities: its origin is the Kreis of the SCHOOL of the entrance
+  qualification (CHE), not the home. The table gives the entrance qualifications awarded by the schools
+  of each Kreis in one school year (``lsn_entrance_qualifications_by_school_district_2021_22.csv``) per
+  resident age cohort (census persons aged 15 to 19 divided by five). ASSUMPTION L5: a qualification is
+  the Hochschulreife of the general schools plus the general, subject-bound and Fachhochschulreife of
+  the vocational schools; the school part of the Fachhochschulreife of the general schools is left out.
+
 Standard errors (approximate, for reading the tables, not a test): ``sqrt(p (1 - p) / n_effective)``
 with the Kish ``n_effective`` of the base; 0 where a share is 0 or 1. The census counts and the
 national ratio are treated as exact.
@@ -56,7 +71,8 @@ Usage (local-only inputs as arguments)::
     python analyse_student_level.py --srv-dir <folder with the three SrV CSV files>
         --zensus-students <zensus2022_students_20_29_kreis.csv>
         --zensus-school-dir <folder with the 2000S-2038 JSON files>
-        [--mid-persons <MiD2023_Personen.csv>] --source-commit <sha> --out-dir <this folder>
+        [--mid-persons <MiD2023_Personen.csv>] [--zensus-status-dir <folder with the 2000S-2001 JSON files>]
+        --source-commit <sha> --out-dir <this folder>
 """
 from __future__ import annotations
 
@@ -89,6 +105,8 @@ OD_TABLE = REPO / "eqasim-data/data/braunschweig/schools/student_od_table.csv"
 CHE = REPO / "eqasim-data/data/braunschweig/schools/che_student_origins_ws2022_23.csv"
 SRV_PARAMETERS = REPO / "eqasim-data/data/braunschweig/srv/srv2023_student_parameters.csv"
 NATIONAL = HERE / "national_enrollment_20_29.csv"
+NRW = HERE / "nrw_census_students_18_26.csv"
+LSN_SCHOOLS = HERE / "lsn_entrance_qualifications_by_school_district_2021_22.csv"
 
 CSV_READ_KWARGS = dict(sep=";", decimal=",", encoding="cp1252", low_memory=False)
 PERSONS_FILE, LEGS_FILE, HOUSEHOLDS_FILE = "SrV2023_Personen.csv", "SrV2023_Wege.csv", "SrV2023_Haushalte.csv"
@@ -109,6 +127,16 @@ CENSUS_TOTAL = "%TOTAL%"
 CENSUS_PUBLISHED = "e"
 CENSUS_GERMANY = "DG"
 CENSUS_COUNT_TOLERANCE_PERSONS = 10.0   # the publisher rounds the counts to 10
+
+CENSUS_STATUS_TABLE = "2000S-2001"
+CENSUS_STATUS_STUDENTS = "ERW-AKTIV-X"   # pupils and students outside the labour force
+CENSUS_AGE_15_19 = "ALT015B019"
+YEARS_15_19 = 5
+# NRW check: a district whose students aged 18 to 26 exceed this share of its persons aged 20 to 29
+# counts as a district with many students (a reading aid for the mean error by group, an ASSUMPTION).
+MANY_STUDENTS_SHARE = 0.25
+LAND_NIEDERSACHSEN = "03"
+GROUP_REGION = "region_eight"
 
 SEMESTER_CENSUS_DAY, SEMESTER_SENSITIVITY = "SS 2022", "WS 2022/23"
 GROUP_SURROUNDING = "surrounding_six"   # the surveyed Kreise without Braunschweig
@@ -415,6 +443,97 @@ def balance_by_home(od: pd.DataFrame, che_totals: pd.Series, gate: pd.DataFrame)
     return out, {"semester_factors": factors, "institutions_not_rescaled": kept}
 
 
+# --------------------------------------------------------------------------- census status, NRW check, schools
+def read_census_status(path: Path, age_variable: str, age_code: str, regions, with_students: bool) -> pd.DataFrame:
+    """Persons of one age group per district from census table 2000S-2001, and (``with_students``) the
+    pupils and students outside the labour force among them. Raises for a withheld cell."""
+    if not path.is_file():
+        raise FileNotFoundError("census file %s is missing; fetch table %s from the census database first"
+                                % (path, CENSUS_STATUS_TABLE))
+    with open(path, encoding="utf-8") as handle:
+        document = json.load(handle)
+    found = {variable: [ds for ds in document["data"] if variable in ds["id"]] for variable in ("ERWST4", "ERWST3")}
+    for variable, datasets in found.items():
+        if len(datasets) != 1:
+            raise ValueError("%s has %d datasets with variable %s, expected one"
+                             % (path.name, len(datasets), variable))
+    rows = []
+    for region in regions:
+        row = {"code": region,
+               "persons": _census_cell(found["ERWST3"][0],
+                                       {"ERWST3": CENSUS_TOTAL, age_variable: age_code, "GEOLK4": region}, path)}
+        if with_students:
+            row["students_outside_labour_force"] = _census_cell(
+                found["ERWST4"][0], {"ERWST4": CENSUS_STATUS_STUDENTS, age_variable: age_code, "GEOLK4": region}, path)
+        rows.append(row)
+    return pd.DataFrame(rows).set_index("code")
+
+
+def nrw_check(nrw: pd.DataFrame, census: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """The published census count of students by district of residence (NRW) against the public census
+    count of the pupils and students outside the labour force times one pooled ratio."""
+    frame = nrw.join(census, on="district_ars5")
+    if frame[["persons", "students_outside_labour_force"]].isna().any().any():
+        raise ValueError("NRW check: a district of the pinned table has no census row")
+    students = frame["students_18_26_persons"].astype(float)
+    group = frame["students_outside_labour_force"].astype(float)
+    pooled = float(students.sum() / group.sum())
+    out = pd.DataFrame({
+        "district_ars5": frame["district_ars5"], "district_name": frame["district_name"],
+        "students_18_26_persons": students,
+        "employed_share_of_students": frame["employed_students_18_26_persons"].astype(float) / students,
+        "zensus_population_20_29_persons": frame["persons"].astype(float),
+        "zensus_pupils_students_outside_labour_force_20_29_persons": group,
+        "students_per_census_group": students / group,
+        "census_group_times_pooled_ratio_persons": group * pooled,
+    })
+    out["relative_error"] = out["census_group_times_pooled_ratio_persons"] / students - 1.0
+    out["students_18_26_per_person_20_29"] = students / out["zensus_population_20_29_persons"]
+    many = out["students_18_26_per_person_20_29"] > MANY_STUDENTS_SHARE
+    error = out["relative_error"]
+    summary = {
+        "n_districts": int(len(out)), "pooled_students_per_census_group": pooled,
+        "mean_absolute_relative_error": float(error.abs().mean()),
+        "root_mean_square_relative_error": float(np.sqrt((error ** 2).mean())),
+        "relative_error_quantiles_10_50_90": [float(v) for v in error.quantile([0.1, 0.5, 0.9])],
+        "largest_absolute_relative_error": float(error.abs().max()),
+        "correlation_of_logs": float(np.corrcoef(np.log(students), np.log(group))[0, 1]),
+        "n_districts_many_students": int(many.sum()),
+        "mean_relative_error_many_students": float(error[many].mean()),
+        "mean_relative_error_other_districts": float(error[~many].mean()),
+    }
+    logger.info("%s NRW check: %s", _TAG, json.dumps(summary))
+    return out.sort_values("district_ars5"), summary
+
+
+def school_district_rows(schools: pd.DataFrame, cohort: pd.DataFrame, che: pd.DataFrame) -> pd.DataFrame:
+    """Entrance qualifications awarded by the schools of each Kreis per resident age cohort, and the CHE
+    count of students whose qualification comes from the Kreis (ASSUMPTION L5 in the module docstring)."""
+    totals = che[(che["view"] == T.VIEW_KREIS) & (che["row_kind"] == "total")].set_index("origin_ars5")
+    table = schools.set_index("district_ars5")
+    rows = []
+    for code in [*ZGB_KREISE, GROUP_REGION]:
+        codes = list(ZGB_KREISE) if code == GROUP_REGION else [code]
+        part = table.loc[codes]
+        general = float(part["general_hochschulreife_persons"].sum())
+        vocational = float(part[["vocational_allgemeine_hochschulreife_persons",
+                                 "vocational_fachgebundene_hochschulreife_persons",
+                                 "vocational_fachhochschulreife_persons"]].sum().sum())
+        resident_cohort = float(cohort.loc[codes, "persons"].sum()) / YEARS_15_19
+        origin = float(totals.loc[codes, "students_persons"].sum())
+        rows.append({
+            "code": code,
+            "entrance_qualifications_general_schools_persons": general,
+            "entrance_qualifications_vocational_schools_persons": vocational,
+            "entrance_qualifications_persons": general + vocational,
+            "zensus_resident_cohort_persons": resident_cohort,
+            "entrance_qualifications_per_resident_cohort": (general + vocational) / resident_cohort,
+            "che_students_with_qualification_from_kreis_persons": origin,
+            "che_students_per_entrance_qualification": origin / (general + vocational),
+        })
+    return pd.DataFrame(rows)
+
+
 # --------------------------------------------------------------------------- MiD (optional)
 def mid_check(path: Path, census_germany: pd.Series) -> pd.DataFrame:
     """National MiD sample, persons aged 20 to 29: the school degree before and after the person weight
@@ -454,6 +573,7 @@ def main(argv=None) -> int:
     parser.add_argument("--zensus-students", required=True)
     parser.add_argument("--zensus-school-dir", required=True)
     parser.add_argument("--mid-persons", default=None)
+    parser.add_argument("--zensus-status-dir", default=None)
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--out-dir", required=True)
     args = parser.parse_args(argv)
@@ -563,6 +683,12 @@ def main(argv=None) -> int:
               ("srv_households", srv_dir / HOUSEHOLDS_FILE, True)]
     if args.mid_persons:
         inputs.append(("mid_persons", Path(args.mid_persons), True))
+    if args.zensus_status_dir:
+        status_dir = Path(args.zensus_status_dir)
+        status_kreis = status_dir / ("%s_ALTGR2_GEOLK4.json" % CENSUS_STATUS_TABLE)
+        status_age5 = status_dir / ("%s_ALTGR1_GEOLK4.json" % CENSUS_STATUS_TABLE)
+        inputs.extend([("nrw_census_students", NRW, False), ("lsn_school_leavers", LSN_SCHOOLS, False),
+                       ("zensus_status_kreis", status_kreis, True), ("zensus_status_age5_kreis", status_age5, True)])
     common = [
         "# Generated by docs/runs/artifacts/student-balance-2026-11-26/level_decision/analyse_student_level.py on "
         "%s; code state eqasim-bs %s." % (today, args.source_commit),
@@ -634,6 +760,39 @@ def main(argv=None) -> int:
         ])
     else:
         logger.info("%s --mid-persons not given: the national MiD table is not written", _TAG)
+    if args.zensus_status_dir:
+        nrw = pd.read_csv(NRW, comment="#", dtype={"district_ars5": str})
+        schools = pd.read_csv(LSN_SCHOOLS, comment="#", dtype={"district_ars5": str})
+        status_nrw = read_census_status(status_kreis, "ALTGR2", CENSUS_AGE, list(nrw["district_ars5"]), True)
+        check, summary = nrw_check(nrw, status_nrw)
+        cli._write(check, out_dir / "census_pattern_check_nrw.csv", [
+            "# Table: census_pattern_check_nrw.csv (issue #140, Phase 2). Test of assumption L2 outside the region: "
+            "the published census count of students by district of residence in Nordrhein-Westfalen against the "
+            "public census group times one pooled ratio.", *common,
+            "# students_18_26_persons: nrw_census_students_18_26.csv (students by their own statement, aged 18 to "
+            "26); zensus_pupils_students_outside_labour_force_20_29_persons: census table %s, aged 20 to 29. The "
+            "age windows differ, so the table tests the pattern over the districts, not a level." % CENSUS_STATUS_TABLE,
+            "# relative_error = census group x pooled ratio / students - 1. students_18_26_per_person_20_29 mixes "
+            "the two age windows and only sorts the districts; above %.2f a district counts as one with many "
+            "students." % MANY_STUDENTS_SHARE,
+            "# Summary: %s" % json.dumps(summary, sort_keys=True),
+        ])
+        cohort = read_census_status(status_age5, "ALTGR1", CENSUS_AGE_15_19, list(ZGB_KREISE), False)
+        school_rows = school_district_rows(schools, cohort, che)
+        cli._write(school_rows, out_dir / "entrance_qualifications_by_school_district.csv", [
+            "# Table: entrance_qualifications_by_school_district.csv (issue #140, Phase 2). University entrance "
+            "qualifications awarded by the schools of each Kreis in school year 2021/22 per resident age cohort.",
+            *common,
+            "# entrance_qualifications_persons: lsn_entrance_qualifications_by_school_district_2021_22.csv, by the "
+            "Kreis of the SCHOOL (assumption L5); zensus_resident_cohort_persons: census persons aged 15 to 19 of "
+            "the Kreis divided by %d (table %s, five-year age groups)." % (YEARS_15_19, CENSUS_STATUS_TABLE),
+            "# che_students_with_qualification_from_kreis_persons: row_kind total of the Kreis view of the CHE "
+            "table (students of all ages at all German institutions whose qualification was obtained in the "
+            "Kreis, winter semester 2022/23). Row %s = the eight Kreise." % GROUP_REGION,
+        ])
+    else:
+        logger.info("%s --zensus-status-dir not given: the NRW check and the school-district table are not written",
+                    _TAG)
     return 0
 
 
