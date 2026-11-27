@@ -270,7 +270,26 @@ def test_closure_metrics_reports_zero_and_flags_an_absent_column(caplog):
     assert any("is_synthetic_closure" in record.getMessage() for record in caplog.records)
 
 
+def test_closure_metrics_report_open_end_persons():
+    trips = _model_trips()
+    # Person 3 now keeps the day open: the last trip ends at "shop", not at home.
+    trips.loc[trips["person_id"] == 3, "following_purpose"] = ["work", "shop"]
+    metrics = P.closure_metrics(trips)
+
+    # Mobile persons = persons with at least one trip (person 4 is immobile).
+    assert metrics["n_persons_open_end"] == 1
+    assert metrics["share_persons_open_end"] == pytest.approx(1.0 / 3.0)
+
+
 # --------------------------------------------------------------------------- accepted deviations
+
+
+def test_accepted_deviation_note_names_overnight_open_ends():
+    note = P.ACCEPTED_DEVIATION_NOTE
+    assert "issue #694" in note
+    assert "ADR-0183" in note
+    assert "open" in note.lower()
+
 
 def test_accepted_deviations_reports_the_three_closed_plan_consequences():
     comparison = pd.DataFrame({
@@ -298,9 +317,8 @@ def test_accepted_deviation_note_names_the_issue_not_a_placeholder_adr_id():
 
     An inlined placeholder such as "ADR E" would be a second, always-wrong home for it.
     """
-    assert P.ACCEPTED_DEVIATION_NOTE == (
-        "closed plans by decision (issue #367; ADR in the stage record's decisions)")
     assert "ADR E" not in P.ACCEPTED_DEVIATION_NOTE
+    assert "ADR-0" in P.ACCEPTED_DEVIATION_NOTE
 
 
 # --------------------------------------------------------------------------- stage

@@ -94,8 +94,9 @@ ACCEPTED_DEVIATION_COLUMNS = ["deviation", "metric", "model", "srv", "delta_pp",
 #: it is allocated with the ADRs themselves and lives in ONE place, the ``decisions:`` list of
 #: the stage record ``docs/registry/stages/
 #: braunschweig.analysis.synthesis.plan_structure_vs_srv.yml`` (one fact, one file).
-ACCEPTED_DEVIATION_NOTE = ("closed plans by decision (issue #367; ADR in the stage record's "
-                           "decisions)")
+ACCEPTED_DEVIATION_NOTE = ("open day ends are kept for overnight travellers (issue #694); "
+                           "far stays that end outside the study area (ADR-0183) are not "
+                           "visible in this pre-portal view")
 #: The three consequences of the "every plan starts and ends at home" decision, each derived
 #: from one comparison metric. ``complement`` says whether the reported value is
 #: ``1 - metric`` (an OPEN day is the complement of a closed one).
@@ -375,9 +376,10 @@ def accepted_deviations(comparison: pd.DataFrame,
                         segment: str = "all") -> pd.DataFrame:
     """The three deviations that follow from the "plans start and end at home" decision.
 
-    Every synthetic day is a closed home-based chain by construction (issue #367), so the
-    model cannot reproduce the SrV shares of days that end away from home, start away from
-    home, or consist of a single trip. These are ACCEPTED deviations, not defects, and this
+    Most synthetic days are closed home-based chains (issue #367). Overnight travellers keep
+    their day open (issue #694), and far stays that end outside the study area (ADR-0183) are
+    not visible in this pre-portal view, so the model cannot reproduce the SrV shares of days
+    that end away from home, start away from home, or consist of a single trip. These are ACCEPTED deviations, not defects, and this
     table states them explicitly with both sides' values so a reader of the comparison does
     not read them as a model failure.
 
@@ -419,6 +421,8 @@ def closure_metrics(trips: pd.DataFrame) -> dict:
     * ``share_persons_closed`` -- persons with a synthesised leg / persons WITH a trip
       (an immobile person has no chain that could be closed)
     * ``share_home_trips_synthetic`` -- synthesised legs / all trips to home
+    * ``share_persons_open_end`` -- mobile persons whose last trip does not end at home
+      (an overnight open day end, issue #694) / mobile persons (persons WITH a trip)
 
     When the column is absent the three shares are 0.0 and ``closure_column_present`` is
     False, with a warning: ``PlanValidator.repair_trips`` always adds the column, so a
@@ -444,7 +448,13 @@ def closure_metrics(trips: pd.DataFrame) -> dict:
     n_closure = int(closure.sum())
     n_persons_closed = int(trips.loc[closure, "person_id"].nunique())
     n_home_closure = int((closure & is_home).sum())
+    # The last trip of each person decides whether the day ends at home; computed from the
+    # trips alone so it does not depend on the keeps_open_end flag.
+    last_following = trips.groupby("person_id", sort=False)["following_purpose"].last()
+    n_persons_open_end = int((last_following.astype(str) != HOME_PURPOSE).sum())
     metrics = {
+        "n_persons_open_end": n_persons_open_end,
+        "share_persons_open_end": (n_persons_open_end / n_persons) if n_persons else 0.0,
         "closure_column_present": present,
         "n_trips": n_trips,
         "n_trips_synthetic_closure": n_closure,

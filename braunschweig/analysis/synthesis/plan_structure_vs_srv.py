@@ -403,10 +403,12 @@ def summary_markdown(comparison, by_kreis, closure, deviations, provenance) -> s
         if any(len(frame) for frame in ordered) else headline.iloc[0:0]
     lines += _metric_table(ordered)
 
-    lines += ["", "## Accepted deviations (closed plans by decision)", "",
-              "Every synthetic day is a closed home-based chain by construction (issue "
-              "#367), so the model cannot reproduce the SrV shares below. They are accepted "
-              "deviations, not defects.", "",
+    lines += ["", "## Accepted deviations (closed plans and open day ends)", "",
+              "Most synthetic days are closed home-based chains (issue #367). Overnight "
+              "travellers keep their day open (issue #694), and far stays that end outside "
+              "the study area (ADR-0183) are not visible in this pre-portal view, so the "
+              "model cannot reproduce the SrV shares below. They are accepted deviations, "
+              "not defects.", "",
               "| deviation | model | srv | delta_pp | note |",
               "| --- | ---: | ---: | ---: | --- |"]
     for _, row in deviations.iterrows():
