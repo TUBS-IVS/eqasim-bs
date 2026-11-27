@@ -120,6 +120,12 @@ config:
   # path points at a settings file that does not declare every control geography.
   braunschweig.population.popsim.settings_path: C:/Users/bienzeisler/Documents/GitHub/popsimprep/popsim/configs/settings_tier3.yaml  # local-only, set to your path
   braunschweig.population.popsim.logging_path: C:/Users/bienzeisler/Documents/GitHub/popsimprep/popsim/configs/logging.yaml  # local-only, set to your path
+  # Student entries (ADR-0211) OFF: this FIXTURE keeps its pre-ADR-0211 entry set; the production base_bs.yml
+  # has them on together with kreis_batch_apportionment 'universe', which the student entries require.
+  braunschweig.population.popsim.student_education_kreis_control: "off"
+  braunschweig.population.popsim.student_work_leg_kreis_control: "off"
+  braunschweig.population.popsim.student_season_ticket_kreis_control: "off"
+  braunschweig.population.popsim.student_employment_concept: false
 
   # Tracked project that pins the PopulationSim fork (environments/populationsim/README.md), relative to the repository root.
   braunschweig.population.popsim.popsimprep_dir: environments/populationsim

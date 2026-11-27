@@ -43,9 +43,13 @@ sampling:
 pipeline:
   targets:
   - braunschweig.popsim.stage (up to the written batch folders)
-  - PopulationSim 0.10.0+bs.3 on batch_030 (ON and PROD)
+  - PopulationSim 0.10.0+bs.3 on batch_030 for ON; PROD = the production output of popsim100_20261120, built with 0.10.0+bs.2 (docs/runs/popsim-full-rerun-20261120.yml); identity evidence that bs.3 reproduces the bs.2 population is in docs/runs/popsim-bs3-release-2026-11-25.yml
   - braunschweig.analysis.popsim_batch_diagnostics (ON with --misfit, PROD without)
   notes: >-
+    Upstream caches reused unchanged: the two HIT stages (regiostar, inkar household_income) came from the source cache of
+    popsim100_20261120 (run commit 1041849c); `git log 1041849c..HEAD -- braunschweig/data/bbsr braunschweig/data/inkar` is empty,
+    so their code did not change between that run commit and the code state of this smoke. The smoke ran on the
+    PopulationSim environment as it was before PR #697 (the uv lock change on main).
     How it ran. scripts/isolated_run.py setup WITHOUT a cache copy (55 GB free on the run server, less than the 64 GB cache):
     worktrees, symlink farm, run.json (the 51 unrelated server entries excluded from the farm are a count only, symlink_farm.excluded_count).
     The overlay is run.yml. explain on the source cache (explain_readonly.log): 4 stages, 2 HIT (braunschweig.data.bbsr.regiostar,
@@ -92,9 +96,13 @@ status:
 validation:
 - metric: >-
     fit of every hard control (importance >= 2000) in the Braunschweig part 03101 of batch_030, ON against PROD
-  reference: production run popsim100_20261120, same batch (a comparison run, not ground truth)
+  reference: >-
+    production run popsim100_20261120, same batch (a comparison run, not ground truth). Caveat: ON and PROD differ in the
+    bundle AND in everything main changed since the run commit 1041849c (the branch head contains main's later changes), and in
+    the PopulationSim release (bs.3 against bs.2; identity evidence in docs/runs/popsim-bs3-release-2026-11-25.yml), so a
+    difference of the fit is not attributable to the bundle alone.
   result: >-
-    RULE fixed before the numbers were read (ASSUMPTION of the designer, the owner may tighten it): a hard control loses
+    RULE (the author's statement that it was fixed before the numbers were read; no commit evidence exists; ASSUMPTION of the designer, the owner may tighten it): a hard control loses
     its fit when its WAPE in the 03101 part is more than 2.0 percentage points above PROD AND above 5.0 %. Hard tiers =
     importance >= 2000 (control_spec IMPORTANCE_PROFILES: anchor 1e9, son 20000, six / employed / kreis_hard 2000). WAPE
     of a KREIS control = |synthetic - target| / target on the 03101 row of the batch's (apportioned) KREIS totals; of a
@@ -254,7 +262,7 @@ validation:
     n 178, share 0.8281307501, standard error 0.03893237605. The with_children SrV cell has n 6, below the 30 respondents
     of rule 1 in docs/runs/student-measurement-by-area-popsim100-20261120-20261127.yml. That manifest's whole-Braunschweig
     production figures (lives_with_person_18_years_older yes 0.262542517, household_type alone 0.3238732993, present students
-    of 03101 and 03102) are a different universe and not comparable with this batch part.
+    of 03101 only, the home area braunschweig) are a different universe and not comparable with this batch part.
 issues:
 - '#140'
 decisions:

@@ -82,9 +82,8 @@ notes: >-
     targets). The employed target of the grid groups 16_29 and 30_39 is lowered, per Kreis and sex, by
     the students the Zensus counts as employed; the counts are READ by the PopulationSim stage from the
     committed data record student_level_table (braunschweig.popsim.student_level). The KREIS control
-    employed and the employment families follow the lowered grid. With the concept on the stage refuses
-    to run without kreis_controls_follow_grids or without the level table; with the employment grid off
-    the concept has no entry point (a WARNING and a stage report entry, not a refusal). The stage report
+    employed and the employment families follow the lowered grid. The refusals and warnings are listed in
+    the docstring of _read_student_employment_config (braunschweig/popsim/stage/__init__.py). The stage report
     always carries a student_employment entry and the stage cache token changes once, also for OFF runs
     (new module, level table among the committed files): ADR-0211 says so.
 assessment:
