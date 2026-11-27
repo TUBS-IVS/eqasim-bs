@@ -907,3 +907,19 @@ def test_restore_accepts_places_without_a_crs_and_says_so(caplog):
     assert len(crs_records) == 1
     assert "work" in crs_records[0] and "education" in crs_records[0]
     assert "home" not in crs_records[0]
+
+
+@pytest.mark.parametrize("damage, message", [
+    (lambda trips: trips.drop(columns="wegkm_imp"), "wegkm_imp"),
+    (lambda trips: trips[trips["trip_index"] != 0], "no trip into them"),
+    (lambda trips: trips.assign(wegkm_imp=9994.0), "design codes"),
+])
+def test_the_diary_lengths_of_loops_refuse_trips_they_cannot_read(damage, message):
+    """A loop's diary length must come from its own trip in, read through the shared MiD
+    length guard; a missing column, a missing trip or a MiD design code stops the stage."""
+    df_trips, is_loop = _chains((1, "home S home"))
+    df_trips = df_trips.assign(is_synthetic_closure=False, wegkm_imp=1.5)
+    _, _, loop_table = loops.collapse_loops(df_trips, is_loop, {1})
+
+    with pytest.raises(ValueError, match=message):
+        loops.loop_diary_distances(damage(df_trips), loop_table)

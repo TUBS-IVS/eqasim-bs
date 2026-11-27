@@ -2338,12 +2338,43 @@ def _mark_out_and_back_strolls(df_locations, df_trips, out_and_back):
     return result
 
 
+def _attach_loop_diary_distances(df_locations, df_trips, loop_table):
+    """``df_locations`` with the two diary-length columns of ``loops.loop_diary_distances`` (#679).
+
+    The values sit on the loop rows (``loop_origin`` set, one per row of ``loop_table``); every
+    other row gets NaN. A loop of ``loop_table`` without its row, or a loop row the table does not
+    list, raises ``ValueError``: the lengths would land on the wrong activity. Returns
+    ``(locations, stats)`` with the stats of ``loops.loop_diary_distances``.
+    """
+    lengths, stats = loops.loop_diary_distances(df_trips, loop_table)
+    columns = [loops.LOOP_DIARY_DISTANCE_COLUMN, loops.LOOP_RETURN_DIARY_DISTANCE_COLUMN]
+    is_loop_row = df_locations["loop_origin"].notna().to_numpy()
+    rows = pd.MultiIndex.from_arrays([df_locations["person_id"], df_locations["activity_index"]])
+    keys = pd.MultiIndex.from_arrays([lengths["person_id"], lengths["activity_index"]])
+    if int(is_loop_row.sum()) != len(keys) or not bool(keys.isin(rows[is_loop_row]).all()):
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {len(keys)} loops in the loop table, "
+            f"{int(is_loop_row.sum())} loop rows in the result, "
+            f"{int((~keys.isin(rows[is_loop_row])).sum())} loops without a loop row; the diary "
+            "lengths cannot be put on the loop activities.")
+    result = df_locations.copy()
+    looked_up = lengths.set_index(["person_id", "activity_index"])[columns].reindex(rows)
+    for column in columns:
+        result[column] = np.where(is_loop_row, looked_up[column].to_numpy(dtype=float), np.nan)
+    return result, stats
+
+
 def _rate(count, total):
     return float(count) / total if total else 0.0
 
 
-def _report_loops(context, flag_stats, counts, loop_table, subtype_estimate_legs_left_out=None):
+def _report_loops(context, flag_stats, counts, loop_table, subtype_estimate_legs_left_out=None,
+                  diary_lengths=None):
     """Log the loop counts with rates and write them as the ``loops`` block of the stage report.
+
+    ``diary_lengths``: the stats of ``loops.loop_diary_distances`` (the diary lengths of the
+    trips into the loops and back to their start place), written as the block's key of that name
+    (logged by that function); None adds no key.
 
     ``subtype_estimate_legs_left_out`` (issue #679): the leisure decider's
     ``loop_legs_left_out``, per loop mode the MiD leisure legs before the filter, left out and
@@ -2379,6 +2410,8 @@ def _report_loops(context, flag_stats, counts, loop_table, subtype_estimate_legs
     }
     if subtype_estimate_legs_left_out is not None:
         block["subtype_estimate_legs_left_out"] = subtype_estimate_legs_left_out
+    if diary_lengths is not None:
+        block["diary_lengths"] = diary_lengths
     kept_rate = block["kept_total_rate"]
     message = (
         "[braunschweig.secondary_chainsolvers] loops: %d out-and-back strolls placed by the "
@@ -2588,9 +2621,14 @@ def execute(context):
             df_work=df_work_raw, df_education=df_education_raw)
         df_locations = _mark_out_and_back_strolls(
             df_locations, df_trips_original, is_stroll & ~is_loop)
+        # The diary lengths of the trips the loop placement makes zero-length, for the analyses
+        # (docs/codebase/notes/leisure-loops.md, section "Loop lengths for analyses").
+        df_locations, diary_length_stats = _attach_loop_diary_distances(
+            df_locations, df_trips_original, loop_collapse.loop_table)
         _report_loops(context, loop_flag_stats, loop_collapse.counts, loop_collapse.loop_table,
                       subtype_estimate_legs_left_out=getattr(
-                          shared["leisure_subtype_decider"], "loop_legs_left_out", None))
+                          shared["leisure_subtype_decider"], "loop_legs_left_out", None),
+                      diary_lengths=diary_length_stats)
 
     if len(df_convergence):
         print(

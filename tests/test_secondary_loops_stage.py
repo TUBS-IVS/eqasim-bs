@@ -59,9 +59,12 @@ def _trips(rows, *, closing_persons=()):
     ``trip_index``, ``is_first_trip`` and ``is_last_trip`` follow the row order of each person;
     every trip lasts ``TRAVEL_TIME_S``. The last trip of each person in ``closing_persons`` is the
     plan repair's invented home trip (``is_synthetic_closure``); every other trip is from the diary.
+    The diary length ``wegkm_imp`` is ``0.5 * departure_hour + 0.1 * person_id`` km: unique per
+    trip, and the same for a trip in a diary with loops and in the hand-made one without them.
     """
     frame = pd.DataFrame(rows, columns=["person_id", "preceding_purpose", "following_purpose",
                                         "mode", "W_ZWECK", "W_ZWD", "departure_hour"])
+    frame["wegkm_imp"] = 0.5 * frame["departure_hour"] + 0.1 * frame["person_id"]
     frame["trip_index"] = frame.groupby("person_id").cumcount()
     count = frame.groupby("person_id")["trip_index"].transform("size")
     frame["is_first_trip"] = frame["trip_index"] == 0
@@ -520,6 +523,51 @@ def test_out_and_back_stroll_is_solved_and_marked(tmp_path, stage_doubles):
     report = json.loads((tmp_path / REPORT_FILENAME).read_text(encoding="utf-8"))["loops"]
     assert (report["loops"], report["strolls_out_and_back"],
             report["loops_followed_by_synthetic_closure"]) == (1, 1, 1)
+
+
+def test_loop_rows_carry_the_diary_length_of_the_trip_in_and_of_the_trip_back_to_the_start(
+        tmp_path, stage_doubles):
+    """The loop placement makes the trip into a loop zero-length, and the trip out of it when it
+    goes back to the loop's start place; the loop row carries both diary lengths for the analyses.
+    Diary lengths by ``_trips``: 0.5 * departure hour + 0.1 * person id (km)."""
+    rows = [
+        # 1: home, work, stroll from work, back to work, home: a diary trip back to the start.
+        (1, "home", "work", "car", 1, 2202, 7),
+        (1, "work", "leisure", "walk", 7, 710, 12),       # into the loop: 6.1 km
+        (1, "leisure", "work", "walk", 1, 2202, 13),      # back to work: 6.6 km
+        (1, "work", "home", "car", 8, 2202, 17),
+        # 2: home, dog walk, home by the plan repair's invented trip: no diary length back.
+        (2, "home", "leisure", "walk", 7, 711, 9),        # into the loop: 4.7 km
+        (2, "leisure", "home", "walk", 8, 2202, 10),      # invented
+        # 3: home, shop, stroll from the shop, home: the trip out goes elsewhere, a real length.
+        (3, "home", "shop", "car", 4, 2202, 8),
+        (3, "shop", "leisure", "bicycle", 7, 710, 9),     # into the loop: 4.8 km
+        (3, "leisure", "home", "bicycle", 8, 2202, 10),
+    ]
+    df_locations, _df_convergence = sc.execute(_LoopExecuteCtx(
+        tmp_path, [1, 2, 3], _trips(rows, closing_persons=[2]), **_loop_config(True)))
+
+    into, back = loops.LOOP_DIARY_DISTANCE_COLUMN, loops.LOOP_RETURN_DIARY_DISTANCE_COLUMN
+    loop_rows = df_locations[df_locations["loop_origin"].notna()].set_index(
+        ["person_id", "activity_index"]).sort_index()
+    assert list(loop_rows.index) == [(1, 2), (2, 1), (3, 2)]
+    assert loop_rows[into].tolist() == pytest.approx([6.1, 4.7, 4.8])
+    assert loop_rows.loc[(1, 2), back] == pytest.approx(6.6)
+    assert np.isnan(loop_rows.loc[(2, 1), back]) and np.isnan(loop_rows.loc[(3, 2), back])
+    other_rows = df_locations[df_locations["loop_origin"].isna()]
+    assert len(other_rows) == 1 and other_rows[[into, back]].isna().all().all()  # person 3's shop
+
+    report = json.loads((tmp_path / REPORT_FILENAME).read_text(encoding="utf-8"))["loops"]
+    lengths = report["diary_lengths"]
+    assert (lengths["loops"], lengths["into_with_diary_length"],
+            lengths["into_without_diary_length"]) == (3, 3, 0)
+    assert lengths["into_diary_km"] == pytest.approx(15.6)
+    assert lengths["into_by_mode"]["walk"]["trips"] == 2
+    assert lengths["into_by_mode"]["bicycle"]["diary_km"] == pytest.approx(4.8)
+    assert (lengths["returns_to_start_place"], lengths["returns_invented_home_trip"],
+            lengths["returns_with_diary_length"], lengths["returns_without_diary_length"]) == (
+        2, 1, 1, 0)
+    assert lengths["return_diary_km"] == pytest.approx(6.6)
 
 
 def test_a_linked_out_and_back_stroll_is_solved_and_the_link_survives_the_collapse(
