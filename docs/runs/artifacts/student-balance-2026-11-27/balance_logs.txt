@@ -1,0 +1,48 @@
+WARNING build_student_balance: [build_student_balance] enrollment outside LSN, --sites (WS 2025/26): primary 1/3 of 3 (own semester), fallback 2/3 (last published winter semester) {'Hochschule Magdeburg-Stendal': 'WS 2024/25', 'Hochschule Harz': 'WS 2024/25'}
+INFO build_student_balance: [build_student_balance] enrollment outside LSN, --sites-census-year (WS 2022/23): primary 3/3 of 3 (own semester), fallback 0/3 (last published winter semester) {}
+<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_23c7f1c4d35242e7abd8b570851409cf has GPKG application_id, but non conformant file extension
+  return ogr_read(
+INFO braunschweig.data.education.student_geometry: [student_geometry] vg250_gem: 10956 land communes (GF == 4), 83577140 inhabitants; dropped 154 non-land rows (GF != 4) of 11110, from <main checkout>\eqasim-data\data\germany\vg250-ew_12-31.utm32s.gpkg.ebenen.zip
+INFO braunschweig.data.education.student_geometry: [student_geometry] site points: commune centroid 18/21 (85.7%), curated coordinates 3 (0 of them overriding a site row)
+<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_0b94998bdc5d42568bc4b0dc59bff700 has GPKG application_id, but non conformant file extension
+  return ogr_read(
+INFO build_student_balance: [build_student_balance] site Kreis: LSN table (primary) 18/21 (85.7%), VG250 polygon lookup (curated institutions) 3 (14.3%)
+INFO braunschweig.data.education.student_geometry: [student_geometry] reach 100 km of 6 destination(s): 51 Kreise, 859 communes in reach; 202 unpopulated communes (ewz == 0) skipped
+INFO braunschweig.data.education.student_od_table: [student_od_table] CHE origin cells: primary (listed) 209/816 (25.6%) (institution view 25, Kreis view 95, both views 89), censored 607/816 (74.4%), upper bound 32855 persons, 0 censored without bound
+INFO braunschweig.data.education.student_od_table: [student_od_table] distance-learning cells dropped: 88 cells, 12271 persons
+INFO braunschweig.data.education.student_od_table: [student_od_table] listed choice-set cells from Kreise outside the origin Kreise (not in the table): 42 cells, 7428 persons
+WARNING braunschweig.data.education.student_od_table: [student_od_table] 4 institution(s) listed for a region Kreis are outside the choice set and not distance learning (302 persons): {'Universität Leipzig': 150, 'Martin-Luther-Universität Halle-Wittenberg': 86, 'Universität Hamburg': 37, 'Universität Kassel': 29}
+INFO braunschweig.data.education.student_geometry: [student_geometry] pair coefficients: 202 of 10956 communes with ewz == 0 carry no weight (1.8%)
+INFO braunschweig.data.education.student_geometry: [student_geometry] pair coefficients (rule commune_curve, max_commute_km 100): 400 Kreise x 21 destinations, 777 pairs with a non-zero coefficient (9.2%)
+INFO braunschweig.data.education.student_od_table: [student_od_table] T with weights (1.0, 1.0, 0.3): 426 rows {'commuter': 300, 'local': 6, 'mover_to_braunschweig': 0, 'out_commuter': 120}; institutions scaled (primary) 15/16 (93.8%), unscaled 1/16 (6.2%) (no CHE total ['Hochschule für Bildende Künste Braunschweig'], no enrollment []); multi-site splits by weight 81/102 (79.4%), by enrollment only 21/102 (20.6%); local sites with a censored own-Kreis cell 0/6 (0.0%) []
+INFO braunschweig.data.education.student_od_table: [student_od_table] movers: share 0.4 of 1879.2 movers at 1 local site(s) in ['03158'] moved to 03101 (751.7 persons)
+WARNING braunschweig.data.education.student_od_table: [student_od_table] balance: censored commuter bound capped at enrollment minus the own-Kreis origin at 1/6 (16.7%) local site(s) ['Hochsch. f. Bildende Künste Braunschweig | 03101000']
+INFO braunschweig.data.education.student_od_table: [student_od_table] balance: 6 local site(s), enrollment 27952.0 = residents 25467.8 + in-commuters 2484.2; out-commuters 3294.0 to 15 surrounding site(s); censored bound 8771.0 persons, of which 1117.0 commuting; 0 censored cell(s) without a bound (0 at local sites, 0 at surrounding sites)
+INFO braunschweig.data.education.student_od_table: [student_od_table] T with weights (1.0, 1.0, 0.3): 426 rows {'commuter': 300, 'local': 6, 'mover_to_braunschweig': 0, 'out_commuter': 120}; institutions scaled (primary) 15/16 (93.8%), unscaled 1/16 (6.2%) (no CHE total ['Hochschule für Bildende Künste Braunschweig'], no enrollment []); multi-site splits by weight 81/102 (79.4%), by enrollment only 21/102 (20.6%); local sites with a censored own-Kreis cell 0/6 (0.0%) []
+INFO braunschweig.data.education.student_od_table: [student_od_table] movers: share 0.4 of 1930.9 movers at 1 local site(s) in ['03158'] moved to 03101 (772.4 persons)
+WARNING braunschweig.data.education.student_od_table: [student_od_table] balance: censored commuter bound capped at enrollment minus the own-Kreis origin at 1/6 (16.7%) local site(s) ['Hochsch. f. Bildende Künste Braunschweig | 03101000']
+INFO braunschweig.data.education.student_od_table: [student_od_table] balance: 6 local site(s), enrollment 30453.0 = residents 27741.5 + in-commuters 2711.5; out-commuters 3520.1 to 15 surrounding site(s); censored bound 9143.0 persons, of which 1212.6 commuting; 0 censored cell(s) without a bound (0 at local sites, 0 at surrounding sites)
+INFO braunschweig.calibration.student_level_table: [student level table] population change of the persons aged 20 to 29, 2022-12-31 to 2025-12-31: smallest 0.9534 (03153), largest 1.0361 (03103)
+INFO braunschweig.calibration.student_level_table: [student level table] census pattern (carried with the population change): total 28761.8 students living in the 8 Kreise; balance share {'03101': 0.5261, '03102': 0.063, '03103': 0.0912, '03151': 0.0414, '03153': 0.1289, '03154': 0.0198, '03157': 0.0522, '03158': 0.0774}; level share {'03101': 0.43, '03102': 0.0723, '03103': 0.0893, '03151': 0.0719, '03153': 0.1161, '03154': 0.0553, '03157': 0.0786, '03158': 0.0866}; largest shift 03101: 0.5261 -> 0.4300
+INFO braunschweig.calibration.student_level_table: [student level table] census pattern (no population change): total 31261.6 students living in the 8 Kreise; balance share {'03101': 0.532, '03102': 0.0625, '03103': 0.0897, '03151': 0.0414, '03153': 0.1277, '03154': 0.0195, '03157': 0.0522, '03158': 0.075}; level share {'03101': 0.4346, '03102': 0.0704, '03103': 0.0843, '03151': 0.0727, '03153': 0.1191, '03154': 0.0557, '03157': 0.0773, '03158': 0.0858}; largest shift 03101: 0.5320 -> 0.4346
+INFO braunschweig.calibration.student_level_table: [student level table] omega = 0.5349 = 1 - Z / S, Z = 12226.8 (Zensus 12930.0 x MiD ratio 0.9456), S = 26287.4 (students living 31261.6 x MiD share 20-29 0.8409), over the 8 Kreise ['03101', '03102', '03103', '03151', '03153', '03154', '03157', '03158']
+INFO braunschweig.calibration.student_level_table: [student level table] level table: 8 Kreise, 64 cells, 28761.8 students, 15384.1 counted as employed (omega 0.5349; the same joint MiD mix in every Kreis, A9)
+INFO braunschweig.calibration.student_level_table: [student level table] employed pre-check: 32 cells, smallest remainder 2782.8 persons, all >= 0
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] level gate: enrollment from local sites in 5/8 Kreise, 3 without a local site set to 0 persons ['03151', '03154', '03157']
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] level gate: SrV estimate in 7/8 Kreise, NaN for the unsurveyed ['03103']; pooled row 03ZGB over ['03101', '03102', '03151', '03153', '03154', '03157', '03158']; MiD-to-census ratio Germany 1.7108, Land 03 1.6395
+INFO braunschweig.calibration.student_level_table: [student level table] gate: SrV difference evaluable in 8/9 rows (1 without SrV or a positive standard error), beyond 2.0 SrV standard errors in 4 ['03102', '03153', '03157', '03ZGB']
+INFO braunschweig.calibration.student_level_table: [student level table] gate triggered on beyond_two_se: True (rows ['03101', '03ZGB'])
+INFO braunschweig.calibration.student_level_table: [student level table] gate triggered on beyond_two_se_20_29: True (rows ['03101', '03ZGB'])
+WARNING build_student_balance: overwriting eqasim-data\data\braunschweig\schools\student_od_table.csv
+INFO build_student_balance: wrote eqasim-data\data\braunschweig\schools\student_od_table.csv (427 rows)
+WARNING build_student_balance: overwriting eqasim-data\data\braunschweig\schools\student_balance_by_site.csv
+INFO build_student_balance: wrote eqasim-data\data\braunschweig\schools\student_balance_by_site.csv (6 rows)
+WARNING build_student_balance: overwriting eqasim-data\data\braunschweig\schools\student_balance_out_commuters.csv
+INFO build_student_balance: wrote eqasim-data\data\braunschweig\schools\student_balance_out_commuters.csv (15 rows)
+WARNING build_student_balance: overwriting eqasim-data\data\braunschweig\schools\student_balance_in_commuters_by_origin.csv
+INFO build_student_balance: wrote eqasim-data\data\braunschweig\schools\student_balance_in_commuters_by_origin.csv (43 rows)
+WARNING build_student_balance: overwriting eqasim-data\data\braunschweig\popsim\student_level_table.csv
+INFO build_student_balance: wrote eqasim-data\data\braunschweig\popsim\student_level_table.csv (64 rows)
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-27\student_level_gate.csv (9 rows)
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-27\student_employed_target_precheck.csv (32 rows)
+INFO build_student_balance: [build_student_balance] balance done: omega 0.5349, gate_triggered True, gate_triggered_area_consistent True (exit code 0 either way)
