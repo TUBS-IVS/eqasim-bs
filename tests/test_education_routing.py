@@ -201,8 +201,18 @@ def _persons(ages, p_taet=None, studies=None, employed=None):
 
 
 def _on(persons, seed=3, **cfg_kwargs):
-    return assign_education_locations(persons, _nds(), _universities(), _kita(), _cfg(flows=True, **cfg_kwargs),
-                                      np.random.RandomState(seed))
+    """The ON path with every person in one home Kreis whose row of T splits the students evenly over the two
+    universities; no observed education leg (every student on the counted fallback, never warned here)."""
+    from braunschweig.synthesis.locations.education_gravity import UniversityFlowInputs
+    universities = _universities().assign(destination_id=["uni_a", "uni_b"], scope="local")
+    flows = UniversityFlowInputs(
+        seed=pd.DataFrame({"home_ars5": ["03101", "03101"], "destination_id": ["uni_a", "uni_b"], "seed": [1.0, 1.0]}),
+        shares=pd.Series({"uni_a": 0.5, "uni_b": 0.5}), dropped_destinations=[],
+        home_kreis=pd.Series("03101", index=persons["person_id"].to_numpy()), leg_km=pd.Series(dtype=float),
+        day_state=None, rule="plan_length", fit_tolerance=1e-6, fit_max_iterations=100, fallback_warn_share=1.0,
+        rng=np.random.default_rng(seed))
+    return assign_education_locations(persons, _nds(), universities, _kita(), _cfg(flows=True, **cfg_kwargs),
+                                      np.random.RandomState(seed), university_flows=flows)
 
 
 def test_on_path_places_every_status_group_on_its_level_candidates():
