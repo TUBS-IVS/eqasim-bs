@@ -46,6 +46,9 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.analysis.dashboard.spatial_metrics",
     "braunschweig.analysis.fleet_filter",
     "braunschweig.analysis.freight_filter",
+    # The loop-length rule of the dashboard metrics (issue #679) and the detour factor it reads.
+    "braunschweig.analysis.loop_trip_distances",
+    "braunschweig.constants",
     "braunschweig.analysis.pipeline_trips_file",
     "braunschweig.analysis.population_validation.population_source",
     "braunschweig.analysis.simwrapper.behaviour",
