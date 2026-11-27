@@ -37,6 +37,7 @@ import pandas as pd
 
 from braunschweig.popsim import attributes
 from braunschweig.popsim import member_completion as completion
+from braunschweig.popsim import overnight_open_end
 from braunschweig.popsim import seed as seedmod
 # The passive-escort pairing window default lives with the trip build (the seed must use
 # the same window the plan is built with); imported, never re-typed.
@@ -51,7 +52,6 @@ from .donor import load_mid_wege
 from .participation import PARTICIPATION_W_ZWECK
 from .participation import derive_education_flag_seed
 from .participation import derive_participation_seed
-from braunschweig.popsim import overnight_open_end
 from .participation import derive_trip_class_seed
 from .participation import derive_work_by_employment_seed
 

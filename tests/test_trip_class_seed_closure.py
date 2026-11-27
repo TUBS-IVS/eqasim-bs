@@ -196,3 +196,30 @@ def test_keep_open_requires_src_column():
         P.derive_trip_class_seed(_kept_open_persons().drop(columns=["src_keeps_open_end"]),
                                  rng=np.random.RandomState(0), counts_closure=True,
                                  keep_overnight_open_ends=True)
+
+
+def test_null_keeps_open_flag_raises_with_column_and_count():
+    persons = _kept_open_persons()
+    persons["src_keeps_open_end"] = [True, None, False]
+    with pytest.raises(ValueError, match=r"src_keeps_open_end.*1 null"):
+        P.derive_trip_class_seed(persons, rng=np.random.RandomState(0), counts_closure=True,
+                                 keep_overnight_open_ends=True)
+
+
+def test_seed_column_derivation_counts_kept_open_day_as_plus_zero():
+    """Through the loader entry point: P_STREISE answers decide, the helper column is not leaked."""
+    from braunschweig.popsim import overnight_open_end as ooe
+    from braunschweig.popsim import sources
+    from braunschweig.popsim.mid import seed_loading
+
+    persons = _kept_open_persons(keeps=(False, False, False)).drop(columns=["src_keeps_open_end"])
+    persons["src_first_so1"] = [1, 1, 1]
+    # Person 0 reports an overnight trip (code 2) and ends away -> kept open; person 1 none (code 1).
+    answers = pd.DataFrame({"H_ID": [1, 2, 3], "P_ID": [1, 1, 1], "P_STREISE": [2, 1, 1]})
+    out = seed_loading._derive_trip_class_seed_column(
+        persons, sources.get_source("mid").seed_columns(),
+        active_kreis_entry_names={"trip_class"}, kreis_seed_rng=np.random.RandomState(0),
+        trip_class_counts_closure=True, overnight_flags=ooe.overnight_trip_flags(answers))
+    assert out.loc[0, "trip_class"] == 1      # kept open: 2 trips -> class 1
+    assert out.loc[1, "trip_class"] == 2      # closed: 3 + 1 trips -> class 2
+    assert "src_keeps_open_end" not in out.columns

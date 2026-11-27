@@ -1446,3 +1446,68 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
     assert isinstance(captured["seed_fill_rng"], np.random.RandomState)
     # The contract mode reaches the check (the call site after the seed build is live).
     assert contract_kwargs["mode"] == "warn"
+
+
+def _capture_seed_build(monkeypatch, popsim_stage, *, keep_overnight_open_ends, complete_members=True,
+                        trip_class_counts_closure=True):
+    """Run _build_populationsim_seed with doubles; return project_completed_seed's kwargs."""
+    captured = {}
+
+    class _Report:
+        completeness_rate = 1.0
+
+    def capture_project_completed_seed(households, persons, columns, **kwargs):
+        captured.update(kwargs)
+        return pd.DataFrame(), pd.DataFrame()
+
+    monkeypatch.setattr(popsim_stage.mid, "project_completed_seed", capture_project_completed_seed)
+    monkeypatch.setattr(popsim_stage.mid, "load_mid_seed",
+                        lambda mid_dir, **kwargs: (pd.DataFrame(), pd.DataFrame(), _Report()))
+    answers = pd.DataFrame({"H_ID": [1], "P_ID": [1], "P_STREISE": [2]})
+    monkeypatch.setattr(popsim_stage.overnight_open_end, "load_overnight_answers",
+                        lambda mid_dir: answers)
+
+    class _Source:
+        def seed_columns(self):
+            from braunschweig.popsim import sources
+            return sources.get_source("mid").seed_columns()
+
+    class _Donor:
+        households = pd.DataFrame(columns=["H_ANZAUTO", "anzpedrad", "H_ANZPED"], dtype=int)
+        persons = pd.DataFrame(columns=["P_BKAT", "P_FKARTE"], dtype=int)
+        completeness_report = _Report()
+
+        class completion_report:
+            n_households_filled = 0
+            n_persons_added = 0
+
+    popsim_stage._build_populationsim_seed(
+        _SeedInfoContext({"completed_donor": _Donor()}), _Source(), "mid", "unused",
+        complete_members, (), set(), np.random.RandomState(0), None,
+        trip_class_counts_closure=trip_class_counts_closure,
+        keep_overnight_open_ends=keep_overnight_open_ends)
+    return captured
+
+
+def test_build_populationsim_seed_passes_overnight_flags_only_when_the_key_is_on(monkeypatch):
+    from braunschweig.popsim import stage as popsim_stage
+
+    on = _capture_seed_build(monkeypatch, popsim_stage, keep_overnight_open_ends=True)
+    assert isinstance(on["overnight_flags"], pd.Series) and bool(on["overnight_flags"].iloc[0])
+    off = _capture_seed_build(monkeypatch, popsim_stage, keep_overnight_open_ends=False)
+    assert off["overnight_flags"] is None
+
+
+@pytest.mark.parametrize("complete_members, closure", [(False, True), (True, False)])
+def test_build_populationsim_seed_warns_when_the_seed_ignores_the_overnight_flag(
+        monkeypatch, caplog, complete_members, closure):
+    from braunschweig.popsim import stage as popsim_stage
+
+    with caplog.at_level("WARNING"):
+        _capture_seed_build(monkeypatch, popsim_stage, keep_overnight_open_ends=True,
+                            complete_members=complete_members, trip_class_counts_closure=closure)
+    assert sum("keep_overnight_open_ends is ON" in r.getMessage() for r in caplog.records) == 1
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        _capture_seed_build(monkeypatch, popsim_stage, keep_overnight_open_ends=True)
+    assert not any("keep_overnight_open_ends is ON" in r.getMessage() for r in caplog.records)

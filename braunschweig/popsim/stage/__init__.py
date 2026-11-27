@@ -2735,6 +2735,15 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     Also reports the seed completeness rate plus the member-completion counts via
     ``context.set_info``.
     """
+    if keep_overnight_open_ends and not (
+            complete_members and source_name != "entd" and trip_class_counts_closure):
+        # No silent no-op: the flag only acts on the closure-counting completed-donor seed.
+        logger.warning(
+            "[popsim.stage] keep_overnight_open_ends is ON but the trip_class seed ignores it "
+            "(source=%s, complete_members=%s, trip_class_seed_counts_closure=%s): only the "
+            "mid completed-donor seed that counts the closed day carries the src_* diary "
+            "facts, so kept-open days still count +1 here while the plan keeps them open.",
+            source_name, complete_members, trip_class_counts_closure)
     completed_donor_households = None
     completed_donor_persons = None
     if source_name == "entd":

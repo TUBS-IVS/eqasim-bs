@@ -256,6 +256,12 @@ def derive_trip_class_seed(persons, *, rng, household_id="H_ID", person_id="P_ID
                     "derive_trip_class_seed(counts_closure=True, keep_overnight_open_ends=True) "
                     "requires 'src_keeps_open_end' from overnight_open_end.attach_src_keeps_open_end; "
                     f"absent from the person frame (has {list(persons.columns)}).")
+            n_null_keep = int(persons["src_keeps_open_end"].isna().sum())
+            if n_null_keep:
+                raise ValueError(
+                    f"derive_trip_class_seed(keep_overnight_open_ends=True): column "
+                    f"'src_keeps_open_end' has {n_null_keep} null value(s) in {len(persons)} rows; "
+                    "a null would silently count as kept open or closed.")
             open_end = open_end & ~persons["src_keeps_open_end"].astype(bool)
             n_closed = int(open_end.sum())
             logger.info(
