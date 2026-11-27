@@ -51,13 +51,24 @@ def test_sites_frame_rejects_bad_rows(rows, message):
 
 
 def test_sites_main_refuses_while_the_site_list_is_empty(monkeypatch, tmp_path):
-    out = tmp_path / "sites.csv"
+    out, out_census = tmp_path / "sites.csv", tmp_path / "sites_census_year.csv"
     monkeypatch.setattr(sl, "SITE_ROWS", [])
     monkeypatch.setattr(sl, "OUTPUT_PATH", out)
-    monkeypatch.setattr(sl, "CENSUS_YEAR_OUTPUT_PATH", tmp_path / "sites_census_year.csv")
+    monkeypatch.setattr(sl, "CENSUS_YEAR_OUTPUT_PATH", out_census)
     with pytest.raises(ValueError, match="empty"):
         sl.main([])
-    assert not out.exists()
+    assert not out.exists() and not out_census.exists()
+
+
+@pytest.mark.parametrize("name, empty", [("CENSUS_YEAR_SITE_ROWS", []), ("CENSUS_YEAR_SEMESTER", "")])
+def test_sites_main_refuses_while_a_census_year_constant_is_empty(monkeypatch, tmp_path, name, empty):
+    out, out_census = tmp_path / "sites.csv", tmp_path / "sites_census_year.csv"
+    monkeypatch.setattr(sl, "OUTPUT_PATH", out)
+    monkeypatch.setattr(sl, "CENSUS_YEAR_OUTPUT_PATH", out_census)
+    monkeypatch.setattr(sl, name, empty)
+    with pytest.raises(ValueError, match="empty"):
+        sl.main([])
+    assert not out.exists() and not out_census.exists()
 
 
 def test_sites_main_writes_comment_header_and_rows(monkeypatch, tmp_path):

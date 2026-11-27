@@ -32,8 +32,9 @@ SOURCE_TABLE = "K3100101"
 OUTPUT_PATH = REPO_ROOT / "eqasim-data/data/braunschweig/schools/lsn_university_sites.csv"
 CENSUS_YEAR_OUTPUT_PATH = REPO_ROOT / "eqasim-data/data/braunschweig/schools/lsn_university_sites_ws2022_23.csv"
 
-# Filled together with SITE_ROWS (hand-read from LSN-Online); main() refuses to run
-# while any of the three is empty.
+# Filled together with SITE_ROWS and CENSUS_YEAR_SITE_ROWS (hand-read from LSN-Online); main()
+# refuses to run while any of SITE_ROWS, CENSUS_YEAR_SITE_ROWS, SEMESTER, CENSUS_YEAR_SEMESTER and
+# ACCESS_DATE is empty.
 SEMESTER = "WS 2025/26"
 ACCESS_DATE = "2026-11-27"
 # Winter semester 2022/23 stands for the census day (2022-05-15); the level is a winter-semester stock
@@ -175,8 +176,10 @@ def _write_sites(rows, semester: str, output_path: Path) -> None:
 
 def main(argv=None) -> int:
     argparse.ArgumentParser(description=__doc__.splitlines()[0]).parse_args(argv)
-    if not SITE_ROWS or not SEMESTER or not ACCESS_DATE:
-        raise ValueError("SITE_ROWS, SEMESTER and ACCESS_DATE are empty: fill them from the "
+    if (not SITE_ROWS or not CENSUS_YEAR_SITE_ROWS or not SEMESTER or not CENSUS_YEAR_SEMESTER
+            or not ACCESS_DATE):
+        raise ValueError("SITE_ROWS, CENSUS_YEAR_SITE_ROWS, SEMESTER, CENSUS_YEAR_SEMESTER and "
+                         "ACCESS_DATE must all be filled; one is empty: fill them from the "
                          f"LSN-Online table {SOURCE_TABLE} before running this script")
     for rows, semester, output_path in ((SITE_ROWS, SEMESTER, OUTPUT_PATH),
                                         (CENSUS_YEAR_SITE_ROWS, CENSUS_YEAR_SEMESTER,
