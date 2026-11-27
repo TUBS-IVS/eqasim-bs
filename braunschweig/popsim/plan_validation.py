@@ -458,8 +458,11 @@ class PlanValidator:
     ``True`` in :data:`~braunschweig.popsim.overnight_open_end.KEEPS_OPEN_END_COLUMN`
     keeps an open day end: ``no_home_end`` is not raised for that person and
     ``repair_trips`` appends no return-home trip. Every other check, ``no_home_start``
-    included, is unchanged. The column must then exist without nulls (ValueError
-    otherwise, never a silent default). With ``keep_open_ends=False`` (default) the
+    included, is unchanged. The column must then exist, hold only booleans without
+    nulls, and carry one value per person (ValueError otherwise, never a silent
+    default). These column checks run whenever ``keep_open_ends=True``, also with
+    ``require_home_closure=False``, where the exemption itself has no effect
+    because no home-end check or closure runs. With ``keep_open_ends=False`` (default) the
     column is ignored and the behaviour is exactly the pre-#694 one.
     """
 
@@ -491,6 +494,27 @@ class PlanValidator:
                 f"[popsim.plan_validation] keep_open_ends=True but '{KEEPS_OPEN_END_COLUMN}' "
                 f"holds a non-boolean value on {n_not_boolean} of {len(df_trips)} trip rows")
 
+    @staticmethod
+    def _require_consistent_open_end(sorted_trips: pd.DataFrame) -> None:
+        """Fail fast when the decision differs between rows of one person.
+
+        The decision is per chain; both validation paths and the closure append read it
+        from the person's last row, so a chain whose rows disagree would be decided by
+        whichever row sorts last. One vectorised pass over adjacent rows of the
+        ``(person_id, departure_time)``-sorted frame finds every such person.
+        """
+        flags = sorted_trips[KEEPS_OPEN_END_COLUMN].to_numpy(dtype=bool)
+        person_ids = sorted_trips["person_id"].to_numpy()
+        if len(flags) < 2:
+            return
+        changes_within_person = (person_ids[1:] == person_ids[:-1]) & (flags[1:] != flags[:-1])
+        if changes_within_person.any():
+            n_persons = len(pd.unique(person_ids[1:][changes_within_person]))
+            raise ValueError(
+                f"[popsim.plan_validation] keep_open_ends=True but '{KEEPS_OPEN_END_COLUMN}' "
+                f"differs between the trip rows of {n_persons} persons; the decision must be "
+                f"one value per chain")
+
     def _keeps_open_end(self) -> bool:
         """Whether the open-end exemption applies (it only matters with home closure)."""
         return self.keep_open_ends and self.require_home_closure
@@ -500,6 +524,9 @@ class PlanValidator:
             self._require_open_end_column(df_trips)
         persons = df_trips["person_id"].nunique()
         sorted_trips = df_trips.sort_values(["person_id", "departure_time"])
+        if self.keep_open_ends:
+            # Shared by both paths below, so they cannot disagree on a mixed chain.
+            self._require_consistent_open_end(sorted_trips)
         if self.vectorized:
             issues = self._check_person_arrays(sorted_trips)
         else:

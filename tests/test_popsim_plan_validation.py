@@ -1062,3 +1062,47 @@ def test_second_repair_pass_keeps_the_decision(vectorized):
     assert twice[KEEPS_OPEN_END_COLUMN].tolist() == [True, False, False]
     assert twice["is_synthetic_closure"].tolist() == [False, False, True]
     assert report.n_unfixable == 0
+
+
+@pytest.mark.parametrize("vectorized", [True, False])
+def test_kept_open_and_closed_persons_side_by_side(vectorized):
+    # A: three trips, flag True, ends away -> kept open; B: one trip, flag False, ends away -> closed.
+    df = pd.DataFrame({
+        "person_id": ["a", "a", "a", "b"],
+        "departure_time": [7 * 3600.0, 12 * 3600.0, 18 * 3600.0, 9 * 3600.0],
+        "arrival_time": [7.5 * 3600, 12.5 * 3600, 19 * 3600.0, 9.5 * 3600],
+        "preceding_purpose": ["home", "work", "shop", "home"],
+        "following_purpose": ["work", "shop", "leisure", "work"],
+        "is_first_trip": [True, False, False, True], "is_last_trip": [False, False, True, True],
+        "mode": ["car"] * 4,
+        KEEPS_OPEN_END_COLUMN: [True, True, True, False],
+    })
+    validator = pv.PlanValidator(keep_open_ends=True, vectorized=vectorized)
+    issues = validator.validate_trips(df).issues
+    assert [(i.person_id, i.code) for i in issues] == [("b", "no_home_end")]
+    fixed, report = validator.repair_trips(df)
+    assert fixed.loc[fixed["person_id"] == "a", "following_purpose"].tolist() == ["work", "shop", "leisure"]
+    assert fixed.loc[fixed["person_id"] == "b", "following_purpose"].tolist() == ["work", "home"]
+    assert fixed["is_synthetic_closure"].tolist() == [False, False, False, False, True]
+    assert report.n_unfixable == 0 and report.repaired_persons == {"b"}
+
+
+@pytest.mark.parametrize("vectorized", [True, False])
+def test_keep_open_ends_rejects_a_decision_that_differs_within_a_chain(vectorized):
+    # Persons p0 and p2 carry a middle row that differs from their first and last row.
+    df = pd.concat([_flagged_open_trips((True, False, False))] * 3, ignore_index=True)
+    df["departure_time"] += df.index * 60.0
+    df["arrival_time"] += df.index * 60.0
+    df.loc[df["person_id"].isin(["p0", "p2"]) & (df.index >= 3) & (df.index < 6),
+           KEEPS_OPEN_END_COLUMN] = [False, True]
+    validator = pv.PlanValidator(keep_open_ends=True, vectorized=vectorized)
+    with pytest.raises(ValueError, match=rf"{KEEPS_OPEN_END_COLUMN}.*\b2 persons\b"):
+        validator.validate_trips(df)
+
+
+@pytest.mark.parametrize("vectorized", [True, False])
+def test_keep_open_ends_rejects_a_non_boolean_decision(vectorized):
+    df = _flagged_open_trips((True, False))
+    df[KEEPS_OPEN_END_COLUMN] = pd.Series([True, "False"], dtype=object)
+    with pytest.raises(ValueError, match=rf"{KEEPS_OPEN_END_COLUMN}.*non-boolean.*\b1\b"):
+        pv.PlanValidator(keep_open_ends=True, vectorized=vectorized).validate_trips(df)
