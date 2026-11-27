@@ -37,7 +37,7 @@ pipeline:
     comparison_centroid_bands: --weight-rule centroid_bands with 1,1,0.5 and 0.2, calibrated; A, B and the comparison use the default mover site Kreise).
     The decision aid is weights_decision/analyse_weight_candidates.py in the artifact directory (arguments in its docstring).
     The level decision aid is level_decision/analyse_student_level.py in the artifact directory (arguments in its docstring;
-    its inputs and their sha256 are in the headers of its four tables).
+    its inputs and their sha256 are in the headers of its tables).
     Inputs as written in the table headers (committed text files are hashed LF-normalised, as git stores them; local-only files by raw bytes):
     che_origins: eqasim-data/data/braunschweig/schools/che_student_origins_ws2022_23.csv sha256 a283078c026e9ef348c24d70e9ebe18593297ed95786b272553a0ba249dea38d;
     lsn_site_table: lsn_university_sites.csv (local-only) sha256 f32859264909aa7a94fd5b5fd537f9cf5aab532630a796f20ca9c8893b9b4946;
@@ -102,14 +102,18 @@ pipeline:
     docs/runs/artifacts/student-balance-2026-11-26/weights_decision/analyse_weight_candidates.py: bb022b94d39a3cca8b5c4704fa9ebd17d0822425a6e95dc4051b09c3cf8cb5ae
     docs/runs/artifacts/student-balance-2026-11-26/weights_decision/decision_logs.txt: 8bd65412c82c43769bb44f8a7570027413035d8b6e0509390664a60c50c245b6
     docs/runs/artifacts/student-balance-2026-11-26/weights_decision/weight_candidates.csv: ae87fbf583a6ae1d34d935807091acccb46445191f7520d86685ac039fb512df
-    sha256 of the committed blobs of the level decision aid at commit a74196e6:
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/analyse_student_level.py: 428e95a01bf2ff39f7063749004aaff735f5f233be429f324f3606deb4ecad2a
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/level_decision_logs.txt: bb30f52466d5b8338ccd3b5db189ea6bff1e961db4d6876c5c7803019e1e68de
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/mid_school_degree_check_20_29.csv: 8b7dc7c1bcab1de0ada85397b14c4aacb48ee76a272bd126440f49e2d76af800
+    sha256 of the committed blobs of the level decision aid at commit a7ea008f:
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/analyse_student_level.py: 070093b88d3caf11fd9097f3b74a35ad31a8826ff288562f7d9ab33783be7880
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/census_pattern_check_nrw.csv: cb882391b88300aadbad208e057b1fc2f96782464ce5f8e8e92e636efff7e5df
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/entrance_qualifications_by_school_district.csv: 95f45924744717b3645f1ad052b480b34b362537afb21e047270c7393dcc2164
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/level_decision_logs.txt: 3f992bae1b50758152d497dd7d4a1e028f09062eb52fdd404743e590ca9e4b62
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/lsn_entrance_qualifications_by_school_district_2021_22.csv: bb0517354041eef931144249274bbb6d2a5d3abae04642773aae3d024121d3bf
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/mid_school_degree_check_20_29.csv: 2705123241f049e59617d4341bbb559189f61c094ee605756b733a1064b200d9
     docs/runs/artifacts/student-balance-2026-11-26/level_decision/national_enrollment_20_29.csv: f95315c52a7306a505d948de347dd1bdc331fd27a4c9bd56199908c608f357a7
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/srv_school_degree_20_29.csv: 452fa78cd83941979122acf544c1fa5fc6a57fdc6294d23ec0ea717b12aab712
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_education_leg_day_20_29.csv: 8346f5d44e7f791729fcbcab56c7ba8dc1f18776051d0c030bcc2e7c16002b29
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_level_estimates_20_29.csv: 455a1f76a86aa64c0721dbae64d33e70aadc6c85bce6a01a3617248b8edc40c0
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/nrw_census_students_18_26.csv: 4101243e322e772d85c82b18ac9b7f7437da5e4e9a0950f59f5db273db7766ac
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/srv_school_degree_20_29.csv: 251085eda751e71540873a4ee8e5fa7d28f54c8d9f2573784b62ef741f162ac8
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_education_leg_day_20_29.csv: a43ee1367b97b577dee9c050bf5ef921ed84d6014e728878282a296c8d95b60d
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_level_estimates_20_29.csv: 9ffa9bd984a916f3be467ad2ddadfa858f84ea2aa2bc08cf91155fbf23b83836
 classification:
 - calibration
 status:
@@ -260,8 +264,9 @@ validation:
     sample
   reference: >-
     docs/runs/artifacts/student-balance-2026-11-26/level_decision/ (student_level_estimates_20_29.csv,
-    srv_school_degree_20_29.csv, student_education_leg_day_20_29.csv, mid_school_degree_check_20_29.csv; assumptions
-    L1 to L4 in the docstring of analyse_student_level.py; the standard errors are approximate, the differences in
+    srv_school_degree_20_29.csv, student_education_leg_day_20_29.csv, mid_school_degree_check_20_29.csv,
+    census_pattern_check_nrw.csv, entrance_qualifications_by_school_district.csv; assumptions L1 to L5 in the docstring
+    of analyse_student_level.py; the standard errors are approximate, the differences in
     standard errors are a reading aid and no test statistic)
   result: >-
     A decision aid, not a validation. Columns of student_level_estimates_20_29.csv in the order
@@ -288,6 +293,18 @@ validation:
     4658.591898 against balance_times_day_factor_persons 4540.855266; row surrounding_six 3977.200479 against
     3224.75175. srv_school_corrected_away_all_day_share: 03101 0.08053148652 (standard error 0.0279242237),
     surrounding_six 0.1727428577 (0.03362802608).
+    Test of the census extrapolation outside the region (census_pattern_check_nrw.csv, Summary line of its header):
+    for the 53 districts of Nordrhein-Westfalen the published census count of students by district of residence
+    (aged 18 to 26) against the public census count of the pupils and students outside the labour force (aged 20
+    to 29) times one pooled ratio: mean_absolute_relative_error 0.09692896219630165,
+    root_mean_square_relative_error 0.12463137358844101, largest_absolute_relative_error 0.28498010221109427,
+    correlation_of_logs 0.9839721983528746; mean_relative_error_many_students -0.006174228727942444 (10 districts),
+    mean_relative_error_other_districts 0.022952384460825637. The age windows differ, so it tests the pattern over
+    districts, not a level.
+    Origin by the district of the school (entrance_qualifications_by_school_district.csv, school year 2021/22):
+    entrance_qualifications_per_resident_cohort 03101: 0.813253012; 03102: 0.415896488; 03103: 0.8665413534;
+    03151: 0.3390677026; 03153: 0.359962406; 03154: 0.2653061224; 03157: 0.4522727273; 03158: 0.4292543021;
+    region_eight: 0.5208333333. The origin table of the balance counts a student in the Kreis of the school.
 - metric: >-
     decision aid: where option C is further from SrV than option A or option B, and the basis of the distance
     yardsticks
@@ -351,7 +368,7 @@ notes: >-
   lower count. Not measured: distance-learning students and institutions outside the choice set are not in the balance
   (counts in the Diagnostics line); the balance counts enrolled students while SrV counts students by main activity
   (assumption A16, two errors in opposite directions). In the surveyed Kreise without Braunschweig the balance stays
-  below both other head counts of the decision aid; its enrollment is that of winter semester 2024/25 while the census
+  below both other head counts of the decision aid (a candidate cause, shown but not quantified as a count of students: the origin table counts a student in the Kreis of the school of the entrance qualification, and the schools of Braunschweig and Wolfsburg award far more qualifications per resident cohort than those of the other Kreise); its enrollment is that of winter semester 2024/25 while the census
   (2022), SrV (2023) and the origin table (2022/23) are older. (c)
   Goslar (03153) lies far above the SrV estimate in comparison 1; SrV covers selected municipalities of that Kreis
   only. (d) The weights are not identified by SrV: the calibration ranges within the noise floor (validation entries)
