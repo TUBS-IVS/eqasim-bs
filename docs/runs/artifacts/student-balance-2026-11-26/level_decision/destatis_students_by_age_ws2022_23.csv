@@ -1,0 +1,13 @@
+# Table: destatis_students_by_age_ws2022_23.csv (issue #140, Phase 2, decision aid for the student level).
+# Enrolled students in Germany by age band, winter semester 2022/23, for all universities and for the two largest
+#   types; sums of the single years of table 21311-15 'Studierende und Studienanfaenger/-innen nach Hochschularten und
+#   Alter', column 'Studierende insgesamt' (the bands of each row sum to the printed total of the type).
+# Source: Statistisches Bundesamt, Statistischer Bericht 'Statistik der Studierenden', Wintersemester 2022/2023
+#   (endgueltige Ergebnisse), read on 2026-11-27,
+#   https://www.destatis.de/DE/Themen/Gesellschaft-Umwelt/Bildung-Forschung-Kultur/Hochschulen/Publikationen/Downloads-Hochschulen/statistischer-bericht-studierende-hochschulen-endg-2110410237005.xlsx?__blob=publicationFile
+# Licence: Datenlizenz Deutschland - Namensnennung - Version 2.0. Enrolled = every person enrolled for a course of
+#   study, whatever the main activity; distance-learning institutions are included.
+university_type,under_18,age_18_19,age_20_24,age_25_29,age_30_34,age_35plus,total
+Hochschulen insgesamt,3833,248023,1324208,800789,293046,250364,2920263
+Universitaeten,2690,154395,751244,472143,172156,147310,1699938
+Fachhochschulen (ohne Verwaltungsfachhochschulen),839,80694,509986,298657,109591,95658,1095425

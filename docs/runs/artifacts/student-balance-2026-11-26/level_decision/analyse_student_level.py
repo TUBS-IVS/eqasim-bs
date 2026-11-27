@@ -65,6 +65,15 @@ gives the share of the students away from home all day per group (all students w
 Optional fourth table (``--mid-persons``): the same school-degree check on the national MiD sample,
 which DOES carry the school degree in its person weight, and the share of students with a second home.
 
+Table ``student_age_distribution.csv``: the age bands of the students by three sources that count
+different things. The enrolled students of the official statistics (``destatis_students_by_age_ws2022_23.csv``,
+Germany) include every enrolled person whatever the main activity; SrV (region) and MiD (Germany, only
+with ``--mid-persons``) count the persons whose MAIN activity is studying, the definition of a student
+in the model (assumption A1 of the design). The level table splits the balance, a count of ENROLLED
+persons, with the SrV shares. The gate and the columns ``*_20_29_*`` of this aid turn the balance into
+the ages 20 to 29 with the SrV share too; the header of the first table gives that figure for the seven
+surveyed Kreise under the share of each source, so the reader sees how far it depends on the choice.
+
 Two more tables with ``--zensus-status-dir`` (the folder of census table 2000S-2001):
 
 * ``census_pattern_check_nrw.csv`` -- an out-of-region test of ASSUMPTION L2. For the districts of
@@ -127,6 +136,16 @@ NATIONAL = HERE / "national_enrollment_20_29.csv"
 NRW = HERE / "nrw_census_students_18_26.csv"
 LSN_SERIES = HERE / "lsn_enrollment_by_site_and_semester.csv"
 POPULATION = HERE / "lsn_population_20_29_by_kreis.csv"
+ENROLLED_BY_AGE = HERE / "destatis_students_by_age_ws2022_23.csv"
+# age bands of the age table: (label, minimum age years, maximum age years), bounds inclusive; 200 is a
+# sentinel far above any age
+AGE_BANDS = (("under_18", 0, 17), ("age_18_19", 18, 19), ("age_20_24", 20, 24), ("age_25_29", 25, 29),
+             ("age_30_34", 30, 34), ("age_35plus", 35, 200))
+ADULT_BANDS = [label for label, minimum, _ in AGE_BANDS if minimum >= 18]
+BANDS_20_29 = ["age_20_24", "age_25_29"]
+BANDS_30PLUS = ["age_30_34", "age_35plus"]
+AGE_COLUMNS = ["source", "counts", "n_persons", *["share_%s" % label for label, _, _ in AGE_BANDS],
+               "share_20_29_among_adults", "share_30plus_among_adults"]
 POPULATION_BASE_DATE, POPULATION_NEWEST_DATE = "2022-12-31", "2025-12-31"
 SERIES_ORIGIN_TABLE = "ws2022_23"     # the semester of the CHE totals (the curated institutions' rows)
 SERIES_WINTERS = ["ws2021_22", "ws2022_23", "ws2023_24", "ws2024_25", "ws2025_26"]
@@ -518,6 +537,45 @@ def balance_by_home(od: pd.DataFrame, che_totals: pd.Series, gate: pd.DataFrame,
                  "local_sites_enrollment": local_by_semester}
 
 
+# --------------------------------------------------------------------------- age of the students
+def _age_row(source: str, counts: str, n_persons: int, weight_by_band: dict) -> dict:
+    total = float(sum(weight_by_band.values()))
+    adults = float(sum(weight_by_band[label] for label in ADULT_BANDS))
+    row = {"source": source, "counts": counts, "n_persons": int(n_persons)}
+    for label, _, _ in AGE_BANDS:
+        row["share_%s" % label] = weight_by_band[label] / total
+    row["share_20_29_among_adults"] = sum(weight_by_band[label] for label in BANDS_20_29) / adults
+    row["share_30plus_among_adults"] = sum(weight_by_band[label] for label in BANDS_30PLUS) / adults
+    return row
+
+
+def _weights_by_band(age: pd.Series, weight: pd.Series) -> dict:
+    return {label: float(weight[(age >= minimum) & (age <= maximum)].sum()) for label, minimum, maximum in AGE_BANDS}
+
+
+def age_distribution_rows(srv: pd.DataFrame, enrolled: pd.DataFrame, mid_path) -> pd.DataFrame:
+    """Age bands of the students: enrolled persons (official statistics), persons whose main activity is
+    studying in SrV (region, every person with a valid weight) and, with ``mid_path``, in MiD (Germany)."""
+    rows = []
+    for record in enrolled.itertuples():
+        bands = {label: float(getattr(record, label)) for label, _, _ in AGE_BANDS}
+        if abs(sum(bands.values()) - float(record.total)) > 0:
+            raise ValueError("enrolled by age: the bands of %r do not sum to its total" % record.university_type)
+        rows.append(_age_row("destatis_ws2022_23: %s" % record.university_type,
+                             "enrolled persons, Germany", int(record.total), bands))
+    students = srv[srv["student"] & srv["age"].notna()]
+    rows.append(_age_row("srv_2023_region", "main activity student, eight Kreise", len(students),
+                         _weights_by_band(students["age"], students["weight"])))
+    if mid_path:
+        persons = pd.read_csv(mid_path, usecols=["HP_ALTER", "P_TAET", "P_GEW"], low_memory=False)
+        mid = persons[(persons["P_GEW"] > 0) & (persons["P_TAET"] == MID_STUDENT)]
+        rows.append(_age_row("mid_2023_germany", "main activity student, Germany", len(mid),
+                             _weights_by_band(mid["HP_ALTER"], mid["P_GEW"])))
+    else:
+        logger.info("%s --mid-persons not given: the age table has no MiD row", _TAG)
+    return pd.DataFrame(rows, columns=AGE_COLUMNS)
+
+
 # --------------------------------------------------------------------------- census status, NRW check, schools
 def read_census_status(path: Path, age_variable: str, age_code: str, regions, with_students: bool) -> pd.DataFrame:
     """Persons of one age group per district from census table 2000S-2001, and (``with_students``) the
@@ -665,6 +723,7 @@ def main(argv=None) -> int:
     national = pd.read_csv(NATIONAL, comment="#").set_index("semester")
     series = pd.read_csv(LSN_SERIES, comment="#", dtype={"lsn_code": str})
     population = pd.read_csv(POPULATION, comment="#", dtype={"district_ars5": str})
+    enrolled_by_age = pd.read_csv(ENROLLED_BY_AGE, comment="#")
     zensus = pd.read_csv(args.zensus_students, comment="#", dtype={"region": str}).set_index("region")
     parameters = cli._read_csv(SRV_PARAMETERS, cli.PARAMETER_COLUMNS, "SrV student parameters")
     away_share = float(cli._parameter_shares(parameters, "day", "away_all_day", "students_all")["yes"])
@@ -703,6 +762,17 @@ def main(argv=None) -> int:
     weighted, weight_counts = corrected_weights(young, census)
     counts.update(weight_counts)
     legs = education_leg_rows(weighted, groups, balance, day_factor)
+    ages = age_distribution_rows(srv, enrolled_by_age, args.mid_persons)
+    # the balance of the seven surveyed Kreise (all ages) under the 20-to-29 share of each source
+    balance_all_ages = float(gate.loc[GROUP_SURVEYED, "balance_students_persons"])
+    share_of_gate = float(gate.loc[GROUP_SURVEYED, "balance_students_20_29_persons"]) / balance_all_ages
+    by_share = {"share of the gate table (SrV, adult students at home on the day)": [share_of_gate, share_of_gate * balance_all_ages]}
+    for record in ages.itertuples():
+        by_share[record.source] = [float(record.share_20_29_among_adults),
+                                   float(record.share_20_29_among_adults) * balance_all_ages]
+    logger.info("%s balance of the seven surveyed Kreise, %.10g students of all ages; aged 20 to 29 under the share "
+                "of each source [share, persons]: %s", _TAG, balance_all_ages,
+                {name: [round(v[0], 4), round(v[1], 1)] for name, v in by_share.items()})
 
     corrected = school.set_index("code")
     rows = []
@@ -790,6 +860,7 @@ def main(argv=None) -> int:
     today = dt.date.today().isoformat()
     inputs = [("level_gate", GATE, False), ("flow_table", OD_TABLE, False), ("che_origins", CHE, False),
               ("lsn_site_series", LSN_SERIES, False), ("lsn_population", POPULATION, False),
+              ("destatis_students_by_age", ENROLLED_BY_AGE, False),
               ("level_table", LEVEL_TABLE, False),
               ("srv_student_parameters", SRV_PARAMETERS, False), ("national_enrollment", NATIONAL, False),
               ("zensus_students", Path(args.zensus_students), True), ("zensus_school_kreis", school_kreis, True),
@@ -837,6 +908,10 @@ def main(argv=None) -> int:
                                    json.dumps({k: round(float(v), 6) for k, v in change.items()})),
         "# omega = 1 - Z / S with Z = %.10g, the census count of 2022, and S = the eight Kreise of a balance column: "
         "%s. Only the enrollment of 2022/23 puts Z and S into one year." % (z_students, json.dumps(omega)),
+        "# Every column '..._20_29_...' of the balance rests on ONE share of the ages 20 to 29 among the students. "
+        "Row %s, %.10g students of all ages, aged 20 to 29 under the share of each source of "
+        "student_age_distribution.csv [share, persons]: %s. The balance counts enrolled persons; SrV and MiD "
+        "count persons whose main activity is studying." % (GROUP_SURVEYED, balance_all_ages, json.dumps(by_share)),
         "# census_extrapolation_...: zensus_pupils_students_outside_labour_force_20_29_persons times enrolled "
         "students aged 20 to 29 in Germany / the same census count for Germany (L2): %s ratio %.10g, %s ratio "
         "%.10g." % (SEMESTER_CENSUS_DAY, ratio[SEMESTER_CENSUS_DAY], SEMESTER_SENSITIVITY,
@@ -873,6 +948,17 @@ def main(argv=None) -> int:
         "students of all ages). The SrV side and the day factor share the SrV education-leg share: the table shows "
         "the split between Braunschweig and the surrounding Kreise, not a second test of the level." % (
             cli.EDUCATION_LEG_KEY, education_leg_share, away_share),
+    ])
+    cli._write(ages, out_dir / "student_age_distribution.csv", [
+        "# Table: student_age_distribution.csv (issue #140, Phase 2). Age bands of the students by three sources "
+        "that count different things.", *common,
+        "# counts: 'enrolled persons' = every person enrolled for a course of study, whatever the main activity "
+        "(official statistics, distance-learning institutions included); 'main activity student' = SrV V_ERW %d "
+        "with GEWICHT_P_ZENSUS, every person with a valid weight, and MiD P_TAET %d with P_GEW." % (
+            SRV_STUDENT, MID_STUDENT),
+        "# n_persons: enrolled persons, or the unweighted respondents of the survey. share_20_29_among_adults and "
+        "share_30plus_among_adults: among the students aged 18 or older. The level table uses the SrV shares of "
+        "srv2023_student_parameters.csv (adult students at home on the day).",
     ])
     if args.mid_persons:
         mid = mid_check(Path(args.mid_persons), census_germany)
