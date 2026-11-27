@@ -1,0 +1,32 @@
+# Table: lsn_enrollment_by_site_and_semester.csv (issue #140, Phase 2, decision aid for the student level).
+# Students (Haupt- und Nebenhoerer, all subject groups, all sexes) per institution and site, seven semesters, for the
+#   18 sites of the flow table, Niedersachsen in total and two private institutions that the flow table does not hold.
+# Source: Landesamt fuer Statistik Niedersachsen, LSN-Online table K3100101 'Studierende und Studienanfaenger/-innen
+#   nach Hochschulen ab 2015 (Hochschulstandort)', column 'Studierende insgesamt', read by hand on 2026-11-27
+#   (https://www1.nls.niedersachsen.de/statistik/). Reproduction with the source named is permitted (note on the table).
+#   Winter semester 2025/26 is the newest semester the table holds on that day.
+# destination_id: the key of student_od_table.csv (institution | site commune); empty for a row outside the flow table.
+# Rows with a three-digit lsn_code are the institution's total (its one site); six-digit codes are sites. A cell the
+#   table prints as '-' is left empty. The sites of an institution sum to its total in every semester (checked).
+lsn_code,destination_id,name,ws2021_22,ss2022,ws2022_23,ws2023_24,ws2024_25,ss2025,ws2025_26
+108,TU Braunschweig | 03101000,TU Braunschweig,17794,16544,16809,16077,15632,14776,15051
+515,Hochsch. f. Bildende Künste Braunschweig | 03101000,Hochsch. f. Bildende Künste Braunschweig,962,936,937,930,902,851,873
+109,TU Clausthal | 03153018,TU Clausthal,3446,3245,3024,2753,2759,2811,2802
+619102,HS Braunschweig/Wolfenbüttel | 03102000,HS Braunschweig/Wolfenbüttel Standort Salzgitter,2114,1781,1877,1713,1669,1501,1737
+619103,HS Braunschweig/Wolfenbüttel | 03103000,HS Braunschweig/Wolfenbüttel Standort Wolfsburg,2695,2501,2516,2260,2363,2234,2366
+619158,HS Braunschweig/Wolfenbüttel | 03158037,HS Braunschweig/Wolfenbüttel Standort Wolfenbüttel,5521,5122,5290,5095,5092,4779,5123
+619360,HS Braunschweig/Wolfenbüttel | 03360023,HS Braunschweig/Wolfenbüttel Standort Suderburg,1229,1114,1084,967,926,859,983
+110,Uni Hannover | 03241001,Uni Hannover,28817,26687,28022,27234,26074,24057,25377
+620,HS Hannover | 03241001,HS Hannover,9217,8624,8911,8632,8441,7966,8461
+111,MHH Hannover | 03241001,MHH Hannover,3843,3532,3916,3974,4030,3654,4085
+113,TiHo Hannover | 03241001,TiHo Hannover,2274,2091,2345,2338,2331,2074,2306
+514,"Hochsch. f. Musik, Theater und Medien Hannover | 03241001","Hochsch. f. Musik, Theater und Medien Hannover",1422,1337,1435,1390,1365,1270,1345
+106,Uni Göttingen | 03159016,Uni Göttingen,27902,26186,27356,27026,26824,25513,26855
+104,Uni Hildesheim | 03254021,Uni Hildesheim,8307,7735,8060,7938,7784,7292,7342
+622159,HS Hildesheim/Holzminden/Göttingen | 03159016,HS Hildesheim/Holzminden/Göttingen Standort Göttingen,1899,1737,1926,2029,2123,1945,2249
+622254,HS Hildesheim/Holzminden/Göttingen | 03254021,HS Hildesheim/Holzminden/Göttingen Standort Hildesheim,3254,3023,3147,3006,2956,2780,2767
+622255,HS Hildesheim/Holzminden/Göttingen | 03255023,HS Hildesheim/Holzminden/Göttingen Standort Holzminden,1287,1201,1175,1095,1048,992,990
+105,Uni Lüneburg | 03355022,Uni Lüneburg,9620,8881,9490,9070,9127,8461,9267
+0,,Niedersachsen,197246,187217,196665,190674,187749,175007,185796
+639,,Priv. FH für Ökonomie und Management (FOM) in Niedersachsen,1435,1289,1191,1013,832,696,618
+640,,Internationale Hochschule Erfurt in Hannover (Priv. FH),,,988,1079,1020,926,863

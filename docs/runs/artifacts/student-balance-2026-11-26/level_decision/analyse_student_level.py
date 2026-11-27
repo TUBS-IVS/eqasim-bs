@@ -10,7 +10,11 @@ a combination of 1 and 2) and measures why the plain SrV count is high.
    the origin table, half a year after the census day and inside the SrV year. Every row of the flow
    table is divided by ``LSN enrollment of the institution / CHE total of the institution``.
    ASSUMPTION L1: the site split and the home pattern of 2024/25 hold for 2022/23. Institutions without
-   a CHE total or without LSN enrollment are not rescaled (counted and logged).
+   a CHE total or without LSN enrollment are not rescaled (counted and logged). A third column rescales
+   the flows to the NEWEST semester of the official site statistics (winter semester 2025/26,
+   ``lsn_enrollment_by_site_and_semester.csv``), every destination site by its own ratio to 2024/25; the
+   curated institutions outside Niedersachsen keep their value. It is the level of a model of today;
+   the comparisons with the census (2022) and SrV (2023) belong to the columns of 2022/23.
 2. **Census extrapolation.** The census count of the pupils and students outside the labour force,
    aged 20 to 29, of the Kreis, times ``enrolled students aged 20 to 29 in Germany / the same census
    count for Germany`` (``national_enrollment_20_29.csv``; summer semester 2022 holds the census day,
@@ -29,6 +33,10 @@ a combination of 1 and 2) and measures why the plain SrV count is high.
    the census count of item 2. It keeps the regional level of the balance and replaces only its split
    over the Kreise; with one regional employed share of the students it also returns the census count of
    the students outside the labour force in every Kreis. Uses ASSUMPTION L2 for the split only.
+
+The header of the first table also gives ``omega`` (the share of the students the census counts as
+employed, ``1 - Z / S`` of the level table) with ``S`` taken from the enrollment of 2022/23: ``Z`` is a
+census count of 2022, so only that semester puts both sides of the ratio into one year.
 
 Columns ``*_minus_srv_in_se``: a head count minus the school-corrected SrV count, in standard errors of
 the latter; the header gives the sum of their squares over the seven surveyed Kreise per candidate (a
@@ -81,6 +89,7 @@ import datetime as dt
 import importlib.util
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -106,6 +115,10 @@ CHE = REPO / "eqasim-data/data/braunschweig/schools/che_student_origins_ws2022_2
 SRV_PARAMETERS = REPO / "eqasim-data/data/braunschweig/srv/srv2023_student_parameters.csv"
 NATIONAL = HERE / "national_enrollment_20_29.csv"
 NRW = HERE / "nrw_census_students_18_26.csv"
+LSN_SERIES = HERE / "lsn_enrollment_by_site_and_semester.csv"
+LEVEL_TABLE = REPO / "eqasim-data/data/braunschweig/popsim/student_level_table.csv"
+SERIES_FLOW_TABLE, SERIES_NEWEST = "ws2024_25", "ws2025_26"   # columns of LSN_SERIES
+SERIES_SEMESTERS = ["ws2021_22", "ss2022", "ws2022_23", "ws2023_24", "ws2024_25", "ss2025", "ws2025_26"]
 LSN_SCHOOLS = HERE / "lsn_entrance_qualifications_by_school_district_2021_22.csv"
 
 CSV_READ_KWARGS = dict(sep=";", decimal=",", encoding="cp1252", low_memory=False)
@@ -146,10 +159,13 @@ GROUP_SURVEYED = U.REGION_CODE          # the seven surveyed Kreise, the pooled 
 CANDIDATES_PATTERN = {
     "balance_students_20_29_persons": "census_pattern_students_20_29_persons",
     "balance_ws2022_23_students_20_29_persons": "census_pattern_ws2022_23_students_20_29_persons",
+    "balance_ws2025_26_students_20_29_persons": "census_pattern_ws2025_26_students_20_29_persons",
 }
-# the head counts compared with the school-corrected SrV count
-CANDIDATES = [*CANDIDATES_PATTERN, *CANDIDATES_PATTERN.values(), "census_extrapolation_students_20_29_persons",
-              "srv_gate_estimate_students_20_29_persons"]
+# the head counts compared with the school-corrected SrV count (SrV is of 2023: the columns of the newest
+# semester are a level of today and are not compared)
+CANDIDATES = ["balance_students_20_29_persons", "balance_ws2022_23_students_20_29_persons",
+              "census_pattern_students_20_29_persons", "census_pattern_ws2022_23_students_20_29_persons",
+              "census_extrapolation_students_20_29_persons", "srv_gate_estimate_students_20_29_persons"]
 
 MID_STUDENT, MID_UNKNOWN_ACTIVITY = 10, 99        # P_TAET
 MID_WITH_QUALIFICATION = (8, 9)                    # P_BIL1 Fachhochschulreife, Abitur
@@ -408,7 +424,8 @@ def education_leg_rows(weighted: pd.DataFrame, groups: dict, balance: pd.DataFra
 
 
 # --------------------------------------------------------------------------- balance
-def balance_by_home(od: pd.DataFrame, che_totals: pd.Series, gate: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+def balance_by_home(od: pd.DataFrame, che_totals: pd.Series, gate: pd.DataFrame,
+                    series: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """Students aged 20 to 29 living in each ZGB Kreis: the gate value and the flows rescaled to the
     CHE totals of winter semester 2022/23 (ASSUMPTION L1)."""
     sites = od.drop_duplicates("destination_id")
@@ -436,11 +453,34 @@ def balance_by_home(od: pd.DataFrame, che_totals: pd.Series, gate: pd.DataFrame)
         raise ValueError("the flow table and the gate table disagree on the students living per Kreis "
                          "(largest difference %.6g persons); they do not come from one run" % worst)
     age_share = gate_kreise["balance_students_20_29_persons"] / gate_kreise["balance_students_persons"]
+    # the newest semester: every destination site by its own ratio of the official site statistics
+    by_destination = series.dropna(subset=["destination_id"]).set_index("destination_id")
+    known = sites.set_index("destination_id")["enrollment_persons"].dropna()
+    missing = sorted(set(known.index) - set(by_destination.index))
+    if missing:
+        raise ValueError("the site series has no row for destination(s) %s of the flow table" % missing)
+    drift = float((by_destination.loc[known.index, SERIES_FLOW_TABLE].astype(float) - known).abs().max())
+    if drift > 0:
+        raise ValueError("column %s of the site series differs from the enrollment of the flow table by up to "
+                         "%.6g persons; the series and the flow table are not of one semester" % (SERIES_FLOW_TABLE, drift))
+    ratio = (by_destination[SERIES_NEWEST].astype(float) / by_destination[SERIES_FLOW_TABLE].astype(float))
+    row_ratio = od["destination_id"].map(ratio)
+    unscaled = sorted(set(od.loc[row_ratio.isna(), "destination_id"]))
+    logger.info("%s newest semester (%s): primary %d/%d destinations rescaled with their own site ratio, fallback "
+                "%d kept (no row in the site series): %s", _TAG, SERIES_NEWEST, od["destination_id"].nunique()
+                - len(unscaled), od["destination_id"].nunique(), len(unscaled), unscaled)
+    newest = (od["students_persons"].astype(float) * row_ratio.fillna(1.0))[region].groupby(
+        od.loc[region, "home_ars5"]).sum()
     out = pd.DataFrame({
         "balance_students_20_29_persons": gate_kreise["balance_students_20_29_persons"].astype(float),
         "balance_ws2022_23_students_20_29_persons": then.reindex(ZGB_KREISE) * age_share,
+        "balance_ws2025_26_students_20_29_persons": newest.reindex(ZGB_KREISE) * age_share,
     })
-    return out, {"semester_factors": factors, "institutions_not_rescaled": kept}
+    local = sites.loc[sites["scope"] == T.SCOPE_LOCAL, "destination_id"]
+    local_by_semester = {semester: float(by_destination.loc[local, semester].astype(float).sum())
+                         for semester in SERIES_SEMESTERS}
+    return out, {"semester_factors": factors, "institutions_not_rescaled": kept,
+                 "destinations_not_rescaled_newest": unscaled, "local_sites_enrollment": local_by_semester}
 
 
 # --------------------------------------------------------------------------- census status, NRW check, schools
@@ -588,6 +628,7 @@ def main(argv=None) -> int:
     od = pd.read_csv(OD_TABLE, comment="#", dtype={"home_ars5": str, "site_kreis_ars5": str})
     che = pd.read_csv(CHE, comment="#", dtype={"origin_ars5": str})
     national = pd.read_csv(NATIONAL, comment="#").set_index("semester")
+    series = pd.read_csv(LSN_SERIES, comment="#", dtype={"lsn_code": str})
     zensus = pd.read_csv(args.zensus_students, comment="#", dtype={"region": str}).set_index("region")
     parameters = cli._read_csv(SRV_PARAMETERS, cli.PARAMETER_COLUMNS, "SrV student parameters")
     away_share = float(cli._parameter_shares(parameters, "day", "away_all_day", "students_all")["yes"])
@@ -608,7 +649,7 @@ def main(argv=None) -> int:
                          % (CENSUS_SCHOOL_TABLE, difference))
 
     # 1. balance, 2. census extrapolation
-    balance, balance_info = balance_by_home(od, T.che_totals(che), gate)
+    balance, balance_info = balance_by_home(od, T.che_totals(che), gate, series)
     group_z = zensus["students_nonemployed_persons"].astype(float)
     ratio = {semester: float(national.loc[semester, "students_20_29_persons"]) / float(group_z[CENSUS_GERMANY])
              for semester in (SEMESTER_CENSUS_DAY, SEMESTER_SENSITIVITY)}
@@ -640,6 +681,8 @@ def main(argv=None) -> int:
             "balance_students_20_29_persons": float(balance.loc[codes, "balance_students_20_29_persons"].sum()),
             "balance_ws2022_23_students_20_29_persons":
                 float(balance.loc[codes, "balance_ws2022_23_students_20_29_persons"].sum()),
+            "balance_ws2025_26_students_20_29_persons":
+                float(balance.loc[codes, "balance_ws2025_26_students_20_29_persons"].sum()),
             "census_extrapolation_students_20_29_persons": z * ratio[SEMESTER_CENSUS_DAY],
             "census_extrapolation_ws2022_23_students_20_29_persons": z * ratio[SEMESTER_SENSITIVITY],
             "srv_school_corrected_students_20_29_persons":
@@ -673,9 +716,27 @@ def main(argv=None) -> int:
                 "in SrV standard errors: %s", _TAG, len(surveyed),
                 {name: round(value, 2) for name, value in squares.items()})
     estimates = estimates.reset_index()
+    # omega of the level table and the same ratio with the students of the census year
+    with open(LEVEL_TABLE, encoding="utf-8") as handle:
+        omega_lines = [line for line in handle if line.startswith("# omega=")]
+    found = re.match(r"# omega=([0-9.]+) = 1 - Z / S; Z=([0-9.]+), S=([0-9.]+)", omega_lines[0]) if omega_lines else None
+    if not found:
+        raise ValueError("%s: no header line '# omega=... = 1 - Z / S; Z=..., S=...'" % LEVEL_TABLE.name)
+    omega_table, z_students, s_table = (float(found.group(i)) for i in (1, 2, 3))
+    by_code = estimates.set_index("code")
+    if abs(float(by_code.loc[kreise, "balance_students_20_29_persons"].sum()) - s_table) > 1e-3:
+        raise ValueError("S of the level table header differs from the balance column of this aid")
+    omega = {"level_table_ws2024_25": omega_table}
+    for label, column in (("ws2022_23", "balance_ws2022_23_students_20_29_persons"),
+                          ("ws2025_26", "balance_ws2025_26_students_20_29_persons")):
+        omega[label] = 1.0 - z_students / float(by_code.loc[kreise, column].sum())
+    logger.info("%s omega = 1 - Z / S with Z = %.10g (census 2022) and S of each enrollment semester: %s; "
+                "enrollment of the local sites by semester: %s", _TAG, z_students,
+                {name: round(value, 6) for name, value in omega.items()}, balance_info["local_sites_enrollment"])
 
     today = dt.date.today().isoformat()
     inputs = [("level_gate", GATE, False), ("flow_table", OD_TABLE, False), ("che_origins", CHE, False),
+              ("lsn_site_series", LSN_SERIES, False), ("level_table", LEVEL_TABLE, False),
               ("srv_student_parameters", SRV_PARAMETERS, False), ("national_enrollment", NATIONAL, False),
               ("zensus_students", Path(args.zensus_students), True), ("zensus_school_kreis", school_kreis, True),
               ("zensus_school_germany", school_germany, True),
@@ -711,6 +772,12 @@ def main(argv=None) -> int:
         "# balance_students_20_29_persons: the gate column (enrollment of winter semester 2024/25); "
         "balance_ws2022_23_...: the same flows divided by LSN enrollment / CHE total of the institution (L1); "
         "not rescaled: %s." % balance_info["institutions_not_rescaled"],
+        "# balance_ws2025_26_...: the flows rescaled to the newest semester of the official site statistics, every "
+        "destination site by its own ratio to 2024/25 (L1); not rescaled: %s. Enrollment of the local sites by "
+        "semester: %s." % (balance_info["destinations_not_rescaled_newest"],
+                           json.dumps(balance_info["local_sites_enrollment"])),
+        "# omega = 1 - Z / S with Z = %.10g, the census count of 2022, and S = the eight Kreise of a balance column: "
+        "%s. Only the enrollment of 2022/23 puts Z and S into one year." % (z_students, json.dumps(omega)),
         "# census_extrapolation_...: zensus_pupils_students_outside_labour_force_20_29_persons times enrolled "
         "students aged 20 to 29 in Germany / the same census count for Germany (L2): %s ratio %.10g, %s ratio "
         "%.10g." % (SEMESTER_CENSUS_DAY, ratio[SEMESTER_CENSUS_DAY], SEMESTER_SENSITIVITY,
