@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 114 | stages: 133 | datasets: 107 | ADRs: 201 | run manifests: 113
+- Features: 115 | stages: 137 | datasets: 108 | ADRs: 202 | run manifests: 115
 
 ## Population synthesis
 
@@ -186,12 +186,13 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Analysis
 
-4 stage(s), 4 in the production DAG. Datasets: `regiostar`, `srv2023_activity_duration_reference`, `srv2023_departure_time_reference`, `srv2023_plan_structure_reference`, `vg250_ew`
+8 stage(s), 4 in the production DAG. Datasets: `hbefa_emission_factors`, `regiostar`, `srv2023_activity_duration_reference`, `srv2023_departure_time_reference`, `srv2023_plan_structure_reference`, `vg250_ew`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Full analysis (dashboard+MiD)](../registry/features/full_analysis.yml) | active | ON | A/s/s | unvalidated |  |
 | [Integerizer quality (per-cell error map)](../registry/features/integerizer_quality.yml) | active | ON | A/s/- | unvalidated |  |
+| [Post-run road-traffic emissions (HBEFA)](../registry/features/post_run_emissions.yml) | EXPERIMENTAL | off | s/-/- | unvalidated (`emissions-wiring-1pct-2026-11-26`, `emissions-road-type-parity-2026-11-26`) | [#688](https://github.com/TUBS-IVS/eqasim-bs/issues/688) |
 | [SimWrapper export (8 chart + 4 map + commuter tabs)](../registry/features/simwrapper_export.yml) | active | ON | A/-/- | unvalidated |  |
 | [SimWrapper Layer-1 (MATSim Java contrib)](../registry/features/simwrapper_layer1.yml) | supported | ON | A/A/A | unvalidated |  |
 

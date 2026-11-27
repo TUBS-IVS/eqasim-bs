@@ -40,6 +40,7 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [braunschweig.data.external_secondary_points](../registry/stages/braunschweig.data.external_secondary_points.yml) | secondary | braunschweig_new | x | A/-/- | -- | secondary_srv_location_types |
 | [braunschweig.data.external_workplaces](../registry/stages/braunschweig.data.external_workplaces.yml) | work | braunschweig_new | x | A/A/A | -- | -- |
 | [braunschweig.data.freight.german_wide](../registry/stages/braunschweig.data.freight.german_wide.yml) | freight | braunschweig_new | x | A/-/- | -- | freight_longhaul_v3 |
+| [braunschweig.data.hbefa](../registry/stages/braunschweig.data.hbefa.yml) | analysis | braunschweig_new | -- | -/-/- | -- | post_run_emissions |
 | [braunschweig.data.hts.mid_donor](../registry/stages/braunschweig.data.hts.mid_donor.yml) | population | braunschweig_new | x | A/A/- | -- | incommuter_donor_demographics, popsim_method |
 | [braunschweig.data.inkar.household_income](../registry/stages/braunschweig.data.inkar.household_income.yml) | attributes | braunschweig_new | x | A/A/A | -- | -- |
 | [braunschweig.data.landuse](../registry/stages/braunschweig.data.landuse.yml) | spatial | braunschweig_new | x | A/A/A | -- | -- |
@@ -59,6 +60,9 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [braunschweig.data.vrb.zone_polygons](../registry/stages/braunschweig.data.vrb.zone_polygons.yml) | matsim | braunschweig_new | x | A/-/- | -- | vrb_zone_fare_model |
 | [braunschweig.data.vrb.zones](../registry/stages/braunschweig.data.vrb.zones.yml) | matsim | braunschweig_new | -- | -/A/A | -- | -- |
 | [braunschweig.data.zensus_grid.population](../registry/stages/braunschweig.data.zensus_grid.population.yml) | home | braunschweig_new | -- | -/-/A | -- | -- |
+| [braunschweig.emissions.events](../registry/stages/braunschweig.emissions.events.yml) | analysis | braunschweig_new | -- | -/-/- | -- | post_run_emissions |
+| [braunschweig.emissions.inputs](../registry/stages/braunschweig.emissions.inputs.yml) | analysis | braunschweig_new | -- | -/-/- | -- | post_run_emissions |
+| [braunschweig.emissions.summary](../registry/stages/braunschweig.emissions.summary.yml) | analysis | braunschweig_new | -- | -/-/- | -- | post_run_emissions |
 | [braunschweig.freight.extraction](../registry/stages/braunschweig.freight.extraction.yml) | freight | braunschweig_new | x | A/-/- | -- | freight_longhaul_v3 |
 | [braunschweig.freight.extraction_tool](../registry/stages/braunschweig.freight.extraction_tool.yml) | freight | braunschweig_new | x | A/-/- | -- | freight_longhaul_v3 |
 | [braunschweig.freight.trips](../registry/stages/braunschweig.freight.trips.yml) | freight | braunschweig_new | x | A/-/- | -- | freight_longhaul_v3 |
