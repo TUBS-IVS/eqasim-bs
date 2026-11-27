@@ -1451,9 +1451,16 @@ def test_open_day_tail_is_placed_by_fallback():
         "travel_times": np.array([600.0, 600.0]),
         "origin": np.array([[500.0, 500.0]]), "destination": None,
     }
+    # Routing: the destination-less problem is unbounded; the same chain with a fixed destination is not.
+    closed = dict(problem, person_id=701, destination=np.array([[1000.0, 1000.0]]),
+                  modes=["car", "car", "car"], travel_times=np.array([600.0, 600.0, 600.0]))
+    _, _, unbounded, _, _ = sc._build_plans_df(
+        [problem, closed], _flat_distribution(), 2.0, np.random.RandomState(3))
+    assert unbounded == [0]
+
     index = sc._build_rda_candidate_index(_df_secondary_fallback())
     rows, conv = sc._rda_fallback_place(
-        [problem], [0], index, _flat_distribution(), 2.0, np.random.RandomState(3), "EPSG:25832")
+        [problem], unbounded, index, _flat_distribution(), 2.0, np.random.RandomState(3), "EPSG:25832")
 
     assert [(pid, aidx) for pid, aidx, _, _ in rows] == [(700, 1), (700, 2)]
     for _, _, location_id, point in rows:
@@ -1462,5 +1469,5 @@ def test_open_day_tail_is_placed_by_fallback():
     # The solver ran (valid is a tolerance flag, None would mean it raised); both activities are reported.
     assert len(conv) == 1 and conv[0][0] is not None and conv[0][1] == 2
 
-    line = sc._fallback_accounting_summary(n_total_problems=1, n_unbounded=1, n_failed_bounded=0)
+    line = sc._fallback_accounting_summary(n_total_problems=2, n_unbounded=len(unbounded), n_failed_bounded=0)
     assert "unbounded=1" in line
