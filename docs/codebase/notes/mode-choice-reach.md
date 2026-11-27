@@ -27,8 +27,9 @@ mirrors the Java mode choice of the fork eqasim-java-bs:
    - `fixed_length`: its run has more than `max_tour_length` trips (`TourLengthFilter`).
    - `reached`: everything else.
 
-A trip's mode is the routing mode of its first leg, else that leg's mode. Scope: residents only
-(`plan_check.RESIDENTS`); in-commuters and freight are not classified. Running without reach settings is a configuration choice, not a per-item fallback. Only the lift can do it (`braunschweig.frozen_pt_walk_lift.all_modes` false): it then uses the older rule `plan_check.leg_tour_frozen` (border only, no length filter) for every trip. The plan check stage always passes the loop settings. The settings are recorded in the lift log line (scope: reach settings of the loop, or frozen tours without reach settings) and in the `reach` key of the lift report and of `plan_check.json`. A plan whose leg count differs from its
+A trip's mode is the routing mode of its first leg, else that leg's mode. Scope: `plan_check.summarise`
+classifies the trips of every subpopulation (its reason counters are per subpopulation block); the lift and the
+invariant act on residents only (`plan_check.RESIDENTS`). Running without reach settings is a configuration choice, not a per-item fallback. Only the lift can do it (`braunschweig.frozen_pt_walk_lift.all_modes` false): it then uses the older rule `plan_check.leg_tour_frozen` (border only, no length filter) for every trip. The plan check stage always passes the loop settings. The settings are recorded in the lift log line (scope: reach settings of the loop, or frozen tours without reach settings) and in the `reach` key of the lift report and of `plan_check.json`. A plan whose leg count differs from its
 activity count minus one raises.
 
 ## Which settings a caller passes
@@ -59,8 +60,8 @@ shipped classes first; if a shipped class differs, the Java behaviour is the tru
 
 ## What uses it
 
-- `plan_check.summarise`: the counters per reason and `n_unreached_unfit`; the invariant is
-  `plan_check.check_unreached_invariant` (see `plan-check.md`).
+- `plan_check.summarise`: the counters per reason and `n_unreached_unfit`; the invariant on them is
+  `plan_check.check_unreached_invariant`, described in [`plan-check.md`](plan-check.md) step 5.
 - `frozen_pt_walk_lift`: scope of the repair; the lift conditions and the report are in its module docstring and
   ADR-0206.
 - A change of the rule is a change of both sides: the Java classes above and `leg_reach`, with the named cases

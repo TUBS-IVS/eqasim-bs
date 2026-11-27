@@ -189,7 +189,8 @@ validation:
     that were long walks already, and 5 freed vehicle legs that became walks. Second attempt (before the Java fix): pt
     95, walk 1,470, bicycle 5, share_lifted_other_modes 0.000376, share_lifted 0.00231; residents walk 987 (the 227
     plus the 760 trips whose stamp the runner had dropped, so they were lifted as walks) and pt 67 (border pt trips
-    the runner had re-routed to walk-only). Total lifted trips 1,475 in both attempts.
+    the runner had re-routed to walk-only). Total lifted trips: 1,570 in the second attempt
+    (replay2_frozen_pt_walk_lift.json) and 1,475 in the third.
   artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/replay3_frozen_pt_walk_lift.json
 - metric: n_unreached_unfit and the plan check's threshold result
   reference: 'the plan check invariant of the branch (n_unreached_unfit must be 0 with all_modes) and its thresholds (max_frozen_defect_share 0.005, max_frozen_pt_as_walk_share 0.02; both ASSUMPTIONS of ADR-0188 and ADR-0189, fail_on_threshold false)'
