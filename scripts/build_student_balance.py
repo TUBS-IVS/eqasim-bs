@@ -119,6 +119,10 @@ IN_COMMUTERS_FILE = "student_balance_in_commuters_by_origin.csv"
 LEVEL_FILE = "student_level_table.csv"
 GATE_FILE = "student_level_gate.csv"
 PRECHECK_FILE = "student_employed_target_precheck.csv"
+POINTS_FILE = "student_destination_points.csv"
+POINT_COLUMNS = ["destination_id", "institution", "scope", "site_ags8", "x", "y", "point_source"]
+POINT_SOURCE_CURATED = "curated"
+POINT_SOURCE_COMMUNE_CENTRE = "commune_centre"
 CONTEXT_COLUMNS = ["source", "code", "band", "share", "n_unweighted"]
 
 # ASSUMPTION (design B3 step 7): the site Kreise whose movers may live in Braunschweig: Salzgitter,
@@ -918,6 +922,45 @@ def _run_balance(args) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------------------- points
+def destination_points(prepared: dict) -> pd.DataFrame:
+    """One row per destination of T: the point its distances are measured to (EPSG:25832, metres).
+
+    Reuses the points of :func:`prepare` (``student_geometry.site_points``) unchanged. A local site or an
+    LSN-listed surrounding site sits at the population-weighted centre of its commune (``commune_centre``);
+    an institution outside the LSN statistics sits at its curated coordinate (``curated``, no commune).
+    """
+    sites = prepared["sites"][["destination_id", "institution", "scope"]]
+    commune_by_destination = dict(zip(prepared["lsn_sites"]["institution"] + " | " + prepared["lsn_sites"]["site_ags8"],
+                                      prepared["lsn_sites"]["site_ags8"]))
+    frame = sites.merge(prepared["points"][["destination_id", "x", "y"]], on="destination_id", how="left", validate="1:1")
+    if frame[["x", "y"]].isna().any().any():
+        raise ValueError("destination(s) without a point: %s" % frame.loc[frame[["x", "y"]].isna().any(axis=1),
+                                                                         "destination_id"].tolist()[:5])
+    frame["site_ags8"] = frame["destination_id"].map(commune_by_destination)
+    frame["point_source"] = np.where(frame["site_ags8"].isna(), POINT_SOURCE_CURATED, POINT_SOURCE_COMMUNE_CENTRE)
+    n = len(frame)
+    primary = int((frame["point_source"] == POINT_SOURCE_COMMUNE_CENTRE).sum())
+    logger.info("[build_student_balance] destination points: commune centre (primary) %d/%d (%.1f%%), curated "
+                "coordinate (institutions outside the LSN table) %d (%.1f%%)", primary, n, 100.0 * primary / n,
+                n - primary, 100.0 * (n - primary) / n)
+    return frame[POINT_COLUMNS]
+
+
+def _run_points(args) -> int:
+    """Write ONLY ``student_destination_points.csv`` (the other tables stay untouched)."""
+    if not args.final or not args.out_dir:
+        raise ValueError("points needs --final and --out-dir (the eqasim-data root)")
+    prepared = prepare(args)
+    points = destination_points(prepared)
+    extra = ["# Points: x, y in EPSG:25832 (metres), one row per destination_id of student_od_table.csv, the points "
+             "the distances of T are measured to (commune_centre = population-weighted commune centroid of "
+             "site_ags8, curated = WGS84 coordinate of scripts/seed_nds_hochschulen.py projected to EPSG:25832)."]
+    header = _common_header(POINTS_FILE, args, prepared, prepared["inputs"], prepared["diagnostics"], extra)
+    _write(points, Path(args.out_dir) / SCHOOLS_SUBDIR / POINTS_FILE, header)
+    return 0
+
+
 # -------------------------------------------------------------------------------------------- CLI
 def _common_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=False)
@@ -981,6 +1024,11 @@ def build_parser() -> argparse.ArgumentParser:
                          help="write the five committed tables under --out-dir, gate and pre-check to --artifact-dir")
     balance.add_argument("--out-dir", default=None, help="eqasim-data root (with --final)")
     balance.set_defaults(run=_run_balance)
+    points = commands.add_parser("points", parents=[common],
+                                 help="write the destination points of T (student_destination_points.csv only)")
+    points.add_argument("--final", action="store_true", help="write the committed table under --out-dir")
+    points.add_argument("--out-dir", default=None, help="eqasim-data root (with --final)")
+    points.set_defaults(run=_run_points)
     return parser
 
 
