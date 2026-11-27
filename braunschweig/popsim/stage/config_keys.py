@@ -546,6 +546,21 @@ DEFAULT_DONOR_MATCH_STUDENT_STATUS = True
 # got a student donor always logs a WARNING.
 KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE = "braunschweig.population.popsim.donor_match_student_fallback_warn_share"
 DEFAULT_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE = None
+# A2 of the student design (ADR-0211): the employed target of the employment-grid groups 16_29 and
+# 30_39 is lowered, per Kreis and sex, by the students the Zensus counts as employed, read from the
+# committed student level table (braunschweig.popsim.student_level; its rules: ADR-0210, Decision 5).
+# The KREIS control "employed" and the KREIS employment families follow the lowered grid through
+# kreis_controls_follow_grids and the employment-level bridge. true/false, default true (on); false is
+# byte-identical to the stage before A2. With it on: the stage refuses to run when
+# kreis_controls_follow_grids is false or the level table is missing; with the employment grid off the
+# concept has no entry point, which is logged as a WARNING and recorded in the stage report.
+KEY_STUDENT_EMPLOYMENT_CONCEPT = "braunschweig.population.popsim.student_employment_concept"
+DEFAULT_STUDENT_EMPLOYMENT_CONCEPT = True
+# The switch of the two student education KREIS entries of A3 (ADR-0211), "on" / "off", default "on".
+# Defined here once; the entries themselves are wired by the A3 registry work. A2 reads it only to warn
+# when A2 is on and the entries are off (the places A2 frees then go to whoever fits).
+KEY_STUDENT_EDUCATION_CONTROL = "braunschweig.population.popsim.student_education_kreis_control"
+DEFAULT_STUDENT_EDUCATION_CONTROL = "on"
 # Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
 # consists ONLY of regelmaessige berufliche Wege summary legs, no individually
 # reported trip) from the realisable plan-source pool and remap persons

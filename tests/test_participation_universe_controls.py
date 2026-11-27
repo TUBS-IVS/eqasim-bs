@@ -1336,6 +1336,8 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         popsim_stage.KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS: False,
         popsim_stage.KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS: 20.0,
         popsim_stage.KEY_FAMILY_CONTROLS: "zensus_family5",
+        # A2 of the student design (ADR-0211); off, so the stubbed grid step needs no level table.
+        popsim_stage.KEY_STUDENT_EMPLOYMENT_CONCEPT: False,
     }
     context = _StrictExecuteContext(values)
 

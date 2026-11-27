@@ -135,6 +135,9 @@ def _balance_arguments(world, artifact_dir, *extra):
 
 
 def test_read_header_value(script, tmp_path):
+    # One owner: the PopulationSim stage reads omega with the same function (ADR-0211, A2).
+    from braunschweig.data import csv_header
+    assert script.read_header_value is csv_header.read_header_value
     path = tmp_path / "table.csv"
     path.write_text("# Source: a\n# Exclusions: n=1, education_leg_share_control_definition=0.37 other=2, z=3\n"
                     "# prose: education_leg_share_control_definition = share of the students\n"

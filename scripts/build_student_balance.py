@@ -59,6 +59,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from braunschweig import synpp_tokens  # noqa: E402
+from braunschweig.data.csv_header import read_header_value  # noqa: E402,F401  (one owner)
 from braunschweig.calibration import srv_student_reference as SR  # noqa: E402
 from braunschweig.calibration import student_commuter_weights as W  # noqa: E402
 from braunschweig.calibration import student_control_evidence as E  # noqa: E402
@@ -205,27 +206,6 @@ def _read_csv(path, required: list, what: str, text_columns=(), **kwargs) -> pd.
         raise ValueError("%s (%s): missing required column(s) %s; found %s"
                          % (what, path.name, missing, list(header.columns)))
     return pd.read_csv(path, comment="#", dtype=dtype, **kwargs)
-
-
-def read_header_value(path, key: str) -> str:
-    """The value of ``key=value`` anywhere in the leading ``#`` lines of ``path``.
-
-    A value ends at a comma, a semicolon, a closing bracket or a space. List-valued keys such as
-    ``mover_site_kreise`` are written for the reader and are not read back by this function. Raises ``ValueError`` when
-    the key is absent or found more than once (the value would be ambiguous).
-    """
-    pattern = re.compile(r"(?:^|[\s,;(:])" + re.escape(key) + r"=([^\s,;)\]]+)")
-    values = []
-    with open(path, encoding="utf-8") as handle:
-        for line in handle:
-            if not line.startswith("#"):
-                break
-            values.extend(pattern.findall(line))
-    if not values:
-        raise ValueError("%s: header key %r is absent" % (Path(path).name, key))
-    if len(values) > 1:
-        raise ValueError("%s: header key %r found more than once (%s)" % (Path(path).name, key, values))
-    return values[0]
 
 
 def _json_default(value):

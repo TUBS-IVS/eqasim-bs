@@ -71,7 +71,13 @@ from braunschweig.calibration.student_control_evidence import (
 # stay the single owner of "which Regionaltabelle class is in which grid group"; the module is part
 # of the cache token of that stage and is never edited from here. The CLI reads the Regionaltabelle
 # file with ``read_kreis_employed_by_age`` of the same module and passes the frame in.
-from braunschweig.popsim.zensus_employment_age import AGE_GROUPS, _KREIS_CLASS_TO_GROUP
+from braunschweig.popsim.zensus_employment_age import _KREIS_CLASS_TO_GROUP
+# The schema of the level table and the mapping of its age groups onto the employment grid (A13) are
+# owned by the PopulationSim side, which reads the table (ADR-0211); this module writes the table and
+# re-exports them under their old names.
+from braunschweig.popsim.student_level import (  # noqa: F401  (re-exported)
+    AGE_LABELS, GRID_AGE_OF_YOUNG_STUDENTS, GRID_GROUP_OLD_STUDENTS, LEVEL_COLUMNS, SEXES,
+    grid_group_by_level_age)
 
 logger = logging.getLogger(__name__)
 
@@ -80,18 +86,11 @@ _LOG_TAG = "[student level table]"
 # The two gate rows that decide whether the owner has to rule on the level (design A2).
 _TRIGGER_CODES = (BRAUNSCHWEIG_KREIS, REGION_CODE)
 
-# The four age groups of the level (A13) and the two of them that make up the ages 20 to 29.
-AGE_LABELS = ("18_19", "20_24", "25_29", "30plus")
+# The two age groups of the level (owned by braunschweig.popsim.student_level) that make up the
+# ages 20 to 29.
 AGE_LABELS_20_29 = ("20_24", "25_29")
-# The age groups of the level that go to the grid group holding GRID_AGE_OF_YOUNG_STUDENTS.
-_YOUNG_AGE_LABELS = ("18_19", "20_24", "25_29")
-SEXES = ("female", "male")
 # Level sex label -> sex code of the Zensus Regionaltabelle frame (M / F).
 _SEX_TO_ZENSUS = {"female": "F", "male": "M"}
-# A13: the age used to pick the grid group of the students aged 18 to 29 and the group of those
-# aged 30 or older.
-GRID_AGE_OF_YOUNG_STUDENTS = 20
-GRID_GROUP_OLD_STUDENTS = "30_39"
 # Columns of the population table that :func:`population_change` reads (``district_ars5`` and
 # ``date`` are text, as in ``lsn_population_20_29_by_kreis.csv``).
 POPULATION_COLUMNS = ["district_ars5", "date", "persons_20_29"]
@@ -102,8 +101,6 @@ LEVEL_DECISION_NOTE = (
 # A share vector must sum to 1 within this absolute tolerance.
 SHARE_SUM_TOLERANCE = 1e-6
 
-LEVEL_COLUMNS = ["code", "sex", "age_group", "students_persons",
-                 "students_counted_employed_persons"]
 PRECHECK_COLUMNS = ["code", "sex", "grid_age_group", "zensus_employed_persons",
                     "students_counted_employed_persons", "remainder_persons"]
 GATE_COLUMNS = [
@@ -462,14 +459,6 @@ def level_table(level_by_kreis: pd.Series, joint_shares: pd.Series,
 
 
 # --------------------------------------------------------------------------- employed pre-check
-def _grid_group_of_age(age: int) -> str:
-    for group, low, high in AGE_GROUPS:
-        if low <= age <= high:
-            return group
-    raise ValueError("no employment-grid age group contains age %d (groups %s)"
-                     % (age, [group for group, _, _ in AGE_GROUPS]))
-
-
 def employed_target_precheck(level: pd.DataFrame, zensus_employed: pd.DataFrame) -> pd.DataFrame:
     """Zensus employed persons against the students counted as employed, per Kreis, sex, grid group.
 
@@ -505,9 +494,7 @@ def employed_target_precheck(level: pd.DataFrame, zensus_employed: pd.DataFrame)
         raise ValueError("employed pre-check level: age_group %s / sex %s outside %s / %s"
                          % (unknown_age_groups, unknown_level_sexes, list(AGE_LABELS),
                             list(SEXES)))
-    young_group = _grid_group_of_age(GRID_AGE_OF_YOUNG_STUDENTS)
-    grid_of = {**{label: young_group for label in _YOUNG_AGE_LABELS},
-               "30plus": GRID_GROUP_OLD_STUDENTS}
+    grid_of = grid_group_by_level_age()
     zensus = zensus_employed.assign(
         employed_persons=counts, grid_age_group=zensus_employed["age_class"].map(
             _KREIS_CLASS_TO_GROUP))

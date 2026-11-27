@@ -298,6 +298,10 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_EDUCATION_BY_AGE_CONTROL,
     KEY_EDUCATION_PARTICIPATION_CONTROL,
     KEY_EMPLOYMENT_GRID,
+    KEY_STUDENT_EMPLOYMENT_CONCEPT,
+    DEFAULT_STUDENT_EMPLOYMENT_CONCEPT,
+    KEY_STUDENT_EDUCATION_CONTROL,
+    DEFAULT_STUDENT_EDUCATION_CONTROL,
     KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE,
     EMPLOYMENT_GRID_AGE_SHAPE_KREIS_BY_SEX,
     EMPLOYMENT_GRID_AGE_SHAPE_SOURCES,
@@ -535,6 +539,8 @@ _HELPER_MODULES = (
 #                                               _inject_ownership_grid_columns
 #   braunschweig.popsim.placement_income        _resolve_placement_income_flag,
 #                                               the placement_income block
+#   braunschweig.popsim.student_level           _read_student_employment_config,
+#                                               StudentEmploymentSettings
 #   braunschweig.popsim.zensus_employment_age   _inject_employment_grid_columns
 #   braunschweig.synthesis.population.enriched.housing_tenure
 #                                               _apply_housing_tenure_parity
@@ -590,12 +596,16 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.minor_child_targets",
     "braunschweig.popsim.ownership_grid",
     "braunschweig.popsim.placement_income",
+    # The student level table of A2 (ADR-0211): reader, schema and grid-group mapping.
+    "braunschweig.popsim.student_level",
     "braunschweig.popsim.trips",
     "braunschweig.popsim.zensus_employment_age",
     "braunschweig.synthesis.population.enriched.housing_tenure",
     # The rest of this stage's import closure: modules its helpers import, whose code
     # this stage runs without importing it itself (ADR-0136).
     "braunschweig.constants",
+    # Reached through student_level (the omega header of the student level table, A2).
+    "braunschweig.data.csv_header",
     # A declared stage that this stage's helpers run as a library: the DAG edge covers its
     # output, not this code (ADR-0194).
     "braunschweig.data.bbsr.regiostar",
@@ -658,7 +668,8 @@ _TOKEN_CLOSURE_BOUNDARIES = {
 #: * ``tenure_by_income`` loaders (``_apply_housing_tenure`` fallback, a donor without a tenure
 #:   column),
 #: * ``zensus_employment_age.load_age_shares`` (employment grid, age-shape source
-#:   ``zensus2022_2000S_2001``; the production source reads a local-only file, see ``validate``).
+#:   ``zensus2022_2000S_2001``; the production source reads a local-only file, see ``validate``),
+#: * ``student_level.read_student_level_table`` (students counted as employed, A2, ADR-0211).
 _COMMITTED_DATA_FILES = (
     "braunschweig/mid/mid2023_cars_by_rs7_haustyp.csv",
     "braunschweig/mid/mid2023_bikes_by_rs7_haustyp.csv",
@@ -669,6 +680,7 @@ _COMMITTED_DATA_FILES = (
     "braunschweig/mid/mid2023_income_by_tenure_bundesland.csv",
     "braunschweig/mid/mid2023_income_by_tenure_raumtyp.csv",
     "braunschweig/popsim/zensus2022_employment_by_age_ref.csv",
+    "braunschweig/popsim/student_level_table.csv",
 )
 
 
@@ -977,6 +989,17 @@ def configure(context):
     # Its age shape (ADR-0137). Default: the Zensus 2022 Regionaltabelle's exact shape per Kreis
     # and sex; the previous 2000S-2001 source stays selectable and byte-identical.
     context.config(KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE, EMPLOYMENT_GRID_AGE_SHAPE_KREIS_BY_SEX)
+    # Students counted as employed lower the young employed-grid targets (A2, ADR-0211). Default on;
+    # its inputs (data_path for the level table, the student education switch for the warning) are
+    # declared only when it is on, so the OFF path declares nothing new besides the switch.
+    _student_employment_on = context.config(
+        KEY_STUDENT_EMPLOYMENT_CONCEPT, DEFAULT_STUDENT_EMPLOYMENT_CONCEPT)
+    if not isinstance(_student_employment_on, bool):
+        raise ValueError(f"{KEY_STUDENT_EMPLOYMENT_CONCEPT} must be true or false, "
+                         f"got {_student_employment_on!r}")
+    if _student_employment_on:
+        context.config("data_path")
+        context.config(KEY_STUDENT_EDUCATION_CONTROL, DEFAULT_STUDENT_EDUCATION_CONTROL)
     # Ownership grid control (issue #240). Default "on" (project rule: new features
     # default on); "off" is byte-identical to the pre-#240 control set. Effective only
     # for source="mid" -- an ENTD run logs and skips it (see _read_control_config).
@@ -1657,6 +1680,107 @@ def _read_kreis_consistency_config(context) -> KreisConsistencySettings:
     )
     validate_kreis_consistency_keys(*values, _mid_batch_folders.EMPLOYMENT_LEVEL_SOURCES)
     return KreisConsistencySettings(*values)
+
+
+#: Top-level key of the A2 entry (students counted as employed, ADR-0211) in the stage report file
+#: ``CENSUS_FILTERED_REPORT_FILE``.
+STUDENT_EMPLOYMENT_REPORT_KEY = "student_employment"
+
+
+class StudentEmploymentSettings:
+    """The A2 switch of a run (design A2 of the student layer, ADR-0211) and what it produced.
+
+    ``level`` is the checked level table (``student_level.StudentLevel``) and
+    ``students_employed_by_group`` the persons subtracted per ``(Kreis, "M"|"F", grid group)``;
+    both ``None`` when the concept is not active (switched off, or no entry point because the
+    employment grid is off: ``reason``). :meth:`record_lowered_levels` stores the lowered Kreis
+    levels of the grid (``employment_grid.students_lowered_kreis_levels``) for :meth:`report`.
+    """
+
+    def __init__(self, *, enabled: bool, level=None, students_employed_by_group=None,
+                 reason: str | None = None):
+        self.enabled = enabled
+        self.level = level
+        self.students_employed_by_group = students_employed_by_group
+        self.reason = reason
+        self.lowered = None
+
+    @property
+    def active(self) -> bool:
+        return self.students_employed_by_group is not None
+
+    def record_lowered_levels(self, lowered: pd.DataFrame) -> None:
+        self.lowered = lowered
+
+    def report(self) -> dict:
+        """The ``student_employment`` entry of the stage report.
+
+        Inactive: ``enabled``, ``active`` False and the ``reason``. Active: ``omega``, the level
+        table, one row per Kreis, sex and grid group (Zensus employed, students counted as employed,
+        the remaining employed target), the total subtracted and the smallest remaining target.
+        """
+        if not self.active:
+            return {"enabled": self.enabled, "active": False, "reason": self.reason}
+        from braunschweig.popsim import student_level as _sl
+        out = {"enabled": True, "active": True, "omega": self.level.omega,
+               "level_table": _sl.STUDENT_LEVEL_TABLE_RELPATH, "rows": None,
+               "subtracted_persons_total": None, "smallest_employed_target": None}
+        if self.lowered is not None and len(self.lowered):
+            out["rows"] = self.lowered.to_dict(orient="records")
+            out["subtracted_persons_total"] = float(
+                self.lowered["students_counted_employed_persons"].sum())
+            smallest = self.lowered.loc[self.lowered["employed_target_persons"].idxmin()]
+            out["smallest_employed_target"] = {
+                key: smallest[key] for key in ("KREIS", "sex", "grid_age_group",
+                                               "employed_target_persons")}
+        return out
+
+
+def _read_student_employment_config(context, *, employment_grid_on: bool, follow_grids: bool,
+                                    kreise) -> StudentEmploymentSettings:
+    """Read the A2 switch in ``execute()`` (one-argument ``context.config``; declared in configure).
+
+    Off: nothing else is read. On with the employment grid off: the concept has no entry point (the
+    subtraction happens where the grid columns are built), so the run continues on today's path with
+    a WARNING and the reason in the stage report. On with the grid on: refuses with
+    ``kreis_controls_follow_grids`` false (the KREIS control ``employed`` would keep the Zensus level
+    against the lowered grid) and when the level table is missing or malformed
+    (``student_level.read_student_level_table``); warns when the student education KREIS entries are
+    off (the places A2 frees then go to whoever fits).
+
+    Raises:
+        ValueError: naming ``KEY_STUDENT_EMPLOYMENT_CONCEPT`` and the key or file in conflict.
+    """
+    if not bool(context.config(KEY_STUDENT_EMPLOYMENT_CONCEPT)):
+        logger.info("[popsim.stage] %s off: the employed grid targets keep the Zensus level",
+                    KEY_STUDENT_EMPLOYMENT_CONCEPT)
+        return StudentEmploymentSettings(enabled=False, reason="switched off")
+    if not employment_grid_on:
+        reason = (f"{KEY_STUDENT_EMPLOYMENT_CONCEPT} is on but inactive because {KEY_EMPLOYMENT_GRID} "
+                  "is off: the students counted as employed are subtracted where the employed grid "
+                  "targets are built, and this run builds none")
+        logger.warning("[popsim.stage] %s", reason)
+        return StudentEmploymentSettings(enabled=True, reason=reason)
+    if not follow_grids:
+        raise ValueError(
+            f"{KEY_STUDENT_EMPLOYMENT_CONCEPT} is on but {KEY_KREIS_CONTROLS_FOLLOW_GRIDS} is false: the "
+            "KREIS control 'employed' would keep the Zensus level against the lowered employed grid "
+            f"(ADR-0211). Set {KEY_KREIS_CONTROLS_FOLLOW_GRIDS} true or {KEY_STUDENT_EMPLOYMENT_CONCEPT} "
+            "false.")
+    from braunschweig.popsim import student_level as _sl
+    level = _sl.read_student_level_table(context.config("data_path"), kreise)
+    education = str(context.config(KEY_STUDENT_EDUCATION_CONTROL)).strip().lower()
+    if education != "on":
+        logger.warning(
+            "[popsim.stage] %s is on but %s is %r: the employed places freed for the students are "
+            "not steered to students and go to whoever fits (allowed for diagnostics, ADR-0211)",
+            KEY_STUDENT_EMPLOYMENT_CONCEPT, KEY_STUDENT_EDUCATION_CONTROL, education)
+    students = _sl.employed_students_by_grid_group(level)
+    logger.info("[popsim.stage] %s on: %.1f students counted as employed (omega %.6g) are "
+                "subtracted from the employed grid groups %s",
+                KEY_STUDENT_EMPLOYMENT_CONCEPT, sum(students.values()), level.omega,
+                sorted({group for _, _, group in students}))
+    return StudentEmploymentSettings(enabled=True, level=level, students_employed_by_group=students)
 
 
 #: Top-level keys of the #659 (Part B) entries in the stage report file ``CENSUS_FILTERED_REPORT_FILE``.
@@ -2438,7 +2562,9 @@ def _read_total_hh_control(settings_path) -> str:
     return str(settings["total_hh_control"])
 
 
-def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_grid_on: bool) -> pd.DataFrame:
+def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_grid_on: bool,
+                                    student_employment: StudentEmploymentSettings | None = None,
+                                    ) -> pd.DataFrame:
     """Inject the ten per-cell employment-grid target columns (Task 5).
 
     Employment grid control (Task 5): inject the ten per-cell
@@ -2450,6 +2576,11 @@ def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_gri
     the Landkreise, one shape for both sexes). It is rescaled per Kreis x sex x group to the census
     Erwerbstaetige Kreis level (kreis_erwerbsstatus.parquet). The former GENESIS SvB synpp stage
     dependency is no longer used. When OFF, none of this runs -> byte-identical.
+
+    ``student_employment`` (design A2, ADR-0211): when active, the students counted as employed are
+    subtracted from the Kreis level of the grid groups 16_29 and 30_39 before the spread over the
+    cells, and the lowered levels are recorded on it for the stage report. ``None`` or inactive ->
+    today's targets.
 
     Returns: the cells frame with the ten ``EMPLOYED_*_agg`` columns (MUST be
     reassigned); returned unchanged when the control is off.
@@ -2571,8 +2702,14 @@ def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_gri
                     len(_eg_exact), len(_eg_kreise), len(_eg_fallback), _eg_fallback,
                 )
 
+        _eg_students = None
+        if student_employment is not None and student_employment.active:
+            _eg_students = student_employment.students_employed_by_group
+            student_employment.record_lowered_levels(_eg.students_lowered_kreis_levels(
+                _eg_census_levels, _eg_age_shares, _eg_students, _eg_kreise))
         cells = _eg.add_employment_grid_columns(
             cells, _eg_census_levels, _eg_age_shares, kreis_col=_folders.GEO_KREIS,
+            students_employed_by_group=_eg_students,
         )
         logger.info(
             "[popsim.stage] employment grid control ON: injected 10 "
@@ -3780,6 +3917,11 @@ def execute(context) -> pd.DataFrame:
     consistency.require_run_support(
         has_kreis_table=(kreis_table is not None and bool(kreis_controls_map)) or bool(active_entries),
         employment_grid_on=employment_grid_on)
+    # Students counted as employed (A2, ADR-0211): refuse an inconsistent switch state and read the
+    # level table now, before the cell load and the seed build.
+    student_employment = _read_student_employment_config(
+        context, employment_grid_on=employment_grid_on, follow_grids=consistency.follow_grids,
+        kreise=kreise)
     # The Tier-3 control names BEFORE the attribute controls are merged in: the universe of the
     # Tier-3 person controls (age 15+) is part of the apportionment universes.
     tier3_control_names = list(kreis_controls_map or ())
@@ -3825,7 +3967,9 @@ def execute(context) -> pd.DataFrame:
         no_tenure_control_reason=(
             _tenure_control_inactive_reason(controls_source, source_name, control_tiers)
             if tenure_owner_limited else None))
-    cells = _inject_employment_grid_columns(context, cells, employment_grid_on)
+    cells = _inject_employment_grid_columns(
+        context, cells, employment_grid_on, student_employment=student_employment)
+    _update_stage_report(context, STUDENT_EMPLOYMENT_REPORT_KEY, student_employment.report())
     cells = _inject_ownership_grid_columns(
         context, cells, ownership_grid_on, active_entry_names, kreise)
 

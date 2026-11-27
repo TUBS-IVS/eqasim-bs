@@ -277,3 +277,69 @@ def test_per_cell_targets_raises_when_all_cells_unmatched():
     shares = {"03102": {"16_29": 0.0, "30_39": 0.0, "40_49": 1.0, "50_59": 0.0, "60plus": 0.0}}
     with pytest.raises(ValueError, match="99999"):
         eg.per_cell_employment_targets(cells, census, shares)
+
+
+# --------------------------------------------------------------------------- #
+# Students counted as employed (design A2, issue #140, ADR-0211)
+# --------------------------------------------------------------------------- #
+
+_STUDENT_SHAPE = {"16_29": 0.30, "30_39": 0.20, "40_49": 0.20, "50_59": 0.20, "60plus": 0.10}
+
+
+def _student_inputs():
+    """Kreis 03101, two cells; male and female level 1000 each; one young and one older person per
+    group and cell, so every Kreis level is split 1:3 over c1:c2."""
+    ages = {"16_29": 20, "30_39": 35, "40_49": 45, "50_59": 55, "60plus": 62}
+    cells = pd.DataFrame({"ZENSUS100m": ["c1", "c2"], "KREIS": ["03101", "03101"]})
+    for prefix in "MF":
+        for age in ages.values():
+            cells[f"{prefix}_AGE_{age}"] = [1, 3]
+    census = pd.DataFrame({"ARS_kreis": ["03101"], "ERWERBSTAT_KURZ_STP__11_M": [1000.0],
+                           "ERWERBSTAT_KURZ_STP__11_W": [1000.0]})
+    return cells, census, {"03101": _STUDENT_SHAPE}
+
+
+def test_students_counted_employed_lower_the_two_young_grid_groups_only():
+    cells, census, shapes = _student_inputs()
+    today = eg.per_cell_employment_targets(cells, census, shapes)
+    students = {("03101", "M", "16_29"): 50.0, ("03101", "M", "30_39"): 10.0,
+                ("03101", "F", "16_29"): 0.0, ("03101", "F", "30_39"): 0.0}
+    t = eg.per_cell_employment_targets(cells, census, shapes, students_employed_by_group=students)
+    assert t["EMPLOYED_M_16_29_agg"].sum() == pytest.approx(250.0)  # 1000 x .30 - 50
+    assert t["EMPLOYED_M_30_39_agg"].sum() == pytest.approx(190.0)  # 1000 x .20 - 10
+    # The lowered level is spread by the cell's persons of the group (1:3), like today's.
+    assert t["EMPLOYED_M_16_29_agg"].tolist() == pytest.approx([62.5, 187.5])
+    untouched = [c for c in t.columns if c not in ("EMPLOYED_M_16_29_agg", "EMPLOYED_M_30_39_agg")]
+    pd.testing.assert_frame_equal(t[untouched], today[untouched])
+    # add_employment_grid_columns passes the mapping through.
+    added = eg.add_employment_grid_columns(cells, census, shapes, students_employed_by_group=students)
+    assert added["EMPLOYED_M_16_29_agg"].sum() == pytest.approx(250.0)
+
+
+def test_no_student_mapping_is_byte_identical():
+    cells, census, shapes = _student_inputs()
+    today = eg.per_cell_employment_targets(cells, census, shapes)
+    pd.testing.assert_frame_equal(
+        eg.per_cell_employment_targets(cells, census, shapes, students_employed_by_group=None), today)
+    zeros = {("03101", s, g): 0.0 for s in "MF" for g in ("16_29", "30_39")}
+    pd.testing.assert_frame_equal(
+        eg.per_cell_employment_targets(cells, census, shapes, students_employed_by_group=zeros), today,
+        check_exact=True)
+
+
+def test_negative_employed_target_raises():
+    cells, census, shapes = _student_inputs()
+    with pytest.raises(ValueError, match=r"03101.*M.*16_29.*300.*400"):
+        eg.per_cell_employment_targets(cells, census, shapes,
+                                       students_employed_by_group={("03101", "M", "16_29"): 400.0})
+
+
+@pytest.mark.parametrize("students, needle", [
+    ({("03102", "M", "16_29"): 1.0}, "03101"),           # a cell Kreis missing from the mapping
+    ({("03101", "M", "40_49"): 1.0}, "40_49"),           # a group the students never enter (A13)
+    ({("03101", "X", "16_29"): 1.0}, "'X'"),             # an unknown sex
+])
+def test_a_student_mapping_that_does_not_fit_the_grid_raises(students, needle):
+    cells, census, shapes = _student_inputs()
+    with pytest.raises(ValueError, match=needle):
+        eg.per_cell_employment_targets(cells, census, shapes, students_employed_by_group=students)

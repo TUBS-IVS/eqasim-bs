@@ -296,6 +296,10 @@ config:
   # previous shape: exact for the 3 kreisfreie Staedte only, the national shape for the 5
   # Landkreise, one shape for both sexes.
   braunschweig.population.popsim.employment_grid_age_shape_source: zensus2022_kreis_by_sex
+  # ADR-0211 (#140, A2): the employed targets of the grid groups 16_29 and 30_39 are lowered by the
+  # students the Zensus counts as employed (committed student_level_table.csv); KREIS "employed" and
+  # the employment families follow the grid (meaning and refusals: popsim/stage/config_keys.py).
+  braunschweig.population.popsim.student_employment_concept: true
   # Ownership grid (issue #240): 9 per-1km-cell car/bike ownership shape controls
   # (OWN_CARS_{0,1,2,3plus}_agg + OWN_BIKES_{0,1,2,3,4plus}_agg). Shape from the
   # committed MiD B1 RS7 x haustyp conditionals; level raked per Kreis to the SAME

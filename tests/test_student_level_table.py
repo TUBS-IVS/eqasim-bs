@@ -455,3 +455,10 @@ def test_gate_triggered_only_by_braunschweig_or_the_pooled_row():
     assert L.gate_triggered(_flags(**{E.REGION_CODE: True}))
     with pytest.raises(ValueError, match="03101"):
         L.gate_triggered(_flags().query("code != '03101'"))
+
+
+def test_the_grid_group_mapping_is_the_one_of_the_stage():
+    """The pre-check and the PopulationSim stage map the level's age groups with ONE function (A13)."""
+    from braunschweig.popsim import student_level
+    assert L.grid_group_by_level_age is student_level.grid_group_by_level_age
+    assert L.LEVEL_COLUMNS is student_level.LEVEL_COLUMNS
