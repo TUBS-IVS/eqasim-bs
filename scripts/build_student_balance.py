@@ -472,10 +472,11 @@ def prepare(args) -> dict:
     pairs = G.pair_coefficients(gemeinden, points, args.weight_rule, args.max_commute_km)
     # The proxy cells scale with the institution's enrollment: one set of cells per site table.
     proxy = parse_origin_pattern_proxy(args.origin_pattern_proxy)
-    cells_model, proxy_diagnostics = T.apply_origin_pattern_proxy(cells, totals, sites, proxy)
+    cells_model, proxy_diagnostics = T.apply_origin_pattern_proxy(cells, totals, sites, pairs, proxy)
 
     def build(weights):
-        return T.build_od_table(cells_model, totals, sites_builder, pairs, region_kreise, T.CommuterWeights(*weights))
+        return T.build_od_table(cells_model, totals, sites_builder, pairs, region_kreise,
+                                T.CommuterWeights(*weights))
 
     build_census_year = None
     if census_path:
@@ -491,14 +492,17 @@ def prepare(args) -> dict:
             raise ValueError("census-year site table: no enrollment for site(s) %s"
                              % sites_census_builder.loc[sites_census_builder["students_persons"].isna(),
                                                         "destination_id"].tolist()[:5])
-        cells_census, proxy_diagnostics_census = T.apply_origin_pattern_proxy(cells, totals, sites_census, proxy)
+        cells_census, proxy_diagnostics_census = T.apply_origin_pattern_proxy(cells, totals, sites_census, pairs,
+                                                                              proxy)
 
         def build_census_year(weights):
             return T.build_od_table(cells_census, totals, sites_census_builder, pairs, region_kreise,
                                     T.CommuterWeights(*weights))
 
+    # With the proxy on, the cell counts of the header follow the cells the builder reads (the proxy cells under
+    # their own source, no longer as censored); the census-year cells differ only in the proxy cells' values.
     diagnostics = {
-        "origin_cells": cell_diagnostics,
+        "origin_cells": T.recount_cell_sources(cells_model, cell_diagnostics) if proxy else cell_diagnostics,
         "origin_pattern_proxy": {"setting": proxy, "model_semester": _proxy_summary(proxy_diagnostics)},
         "sites": {"n_sites": n_sites, "site_kreis_from_lsn_table": "primary %d/%d" % (len(lsn_rows), n_sites),
                   "site_kreis_from_polygon_lookup": "fallback %d/%d" % (len(curated_rows), n_sites),

@@ -355,7 +355,7 @@ def origin_cells(che: pd.DataFrame, institutions: list[str], origin_kreise: list
     return cells, diagnostics
 
 
-def apply_origin_pattern_proxy(cells: pd.DataFrame, che_totals: pd.Series, sites: pd.DataFrame,
+def apply_origin_pattern_proxy(cells: pd.DataFrame, che_totals: pd.Series, sites: pd.DataFrame, pairs: pd.DataFrame,
                                proxy: dict[str, str]) -> tuple[pd.DataFrame, list[dict]]:
     """Give an institution without an own CHE list the origin pattern of a proxy in the same commune.
 
@@ -371,7 +371,9 @@ def apply_origin_pattern_proxy(cells: pd.DataFrame, che_totals: pd.Series, sites
     the proxy's scaled origin, i.e. ``che_persons(k, proxy) * E_institution / CHE total of the proxy`` (the
     institution has no CHE total, so :func:`build_od_table` leaves it unscaled); the upper bound passes
     through the same factor, and ``source`` becomes :data:`SOURCE_PROXY_PATTERN`. The commuter weight is
-    applied later by the builder, so the proxy's weights and censoring bounds apply unchanged. A cell that a
+    applied later by the builder; the two sites must carry identical pair geometry (distance and coefficients
+    from every origin Kreis, which holds when they share the commune point), so the proxy's weights and
+    censoring bounds apply unchanged. A cell that a
     CHE view shows for the institution keeps its observed value; the own-Kreis row stays the remainder
     (A6), and :func:`build_od_table` raises on a negative remainder. The enrollment is that of ``sites``:
     call once per site table (model semester, census-year semester).
@@ -380,6 +382,7 @@ def apply_origin_pattern_proxy(cells: pd.DataFrame, che_totals: pd.Series, sites
         cells: :func:`origin_cells` output (:data:`CELL_COLUMNS`), rectangular.
         che_totals: :func:`che_totals` output.
         sites: :data:`SITE_COLUMNS` plus ``site_ags8`` (the site commune).
+        pairs: :func:`braunschweig.data.education.student_geometry.pair_coefficients` output (:data:`PAIR_COLUMNS`).
         proxy: institution -> proxy institution; empty: the cells are returned unchanged.
 
     Returns:
@@ -390,8 +393,9 @@ def apply_origin_pattern_proxy(cells: pd.DataFrame, che_totals: pd.Series, sites
 
     Raises:
         ValueError: an unknown institution, an institution or proxy without exactly one local site, an
-            institution with an own CHE list, a proxy without one, sites in different communes, a missing
-            cell, or a non-positive enrollment or CHE total.
+            institution with an own CHE list, a proxy without one, sites in different communes, sites whose
+            pair geometry differs for any origin Kreis, a missing cell or pair, or a non-positive enrollment or
+            CHE total.
     """
     if not proxy:
         return cells, []
@@ -426,6 +430,8 @@ def apply_origin_pattern_proxy(cells: pd.DataFrame, che_totals: pd.Series, sites
             raise ValueError(f"origin-pattern proxy: needs a positive enrollment of {institution!r} and CHE total "
                              f"of {proxy_institution!r}, got {enrollment!r} and {proxy_total!r}")
         factor = enrollment / proxy_total
+        _require_identical_pair_geometry(pairs, cells["origin_ars5"].unique(), site["destination_id"],
+                                         proxy_site["destination_id"])
 
         own = result[result["institution"] == che_name].set_index("origin_ars5")
         donor = result[result["institution"] == proxy_che_name].set_index("origin_ars5")
@@ -464,6 +470,45 @@ def apply_origin_pattern_proxy(cells: pd.DataFrame, che_totals: pd.Series, sites
                            "institution's own CHE lists (kept under the origin-pattern proxy ASSUMPTION): %s",
                            institution, len(above), above)
     return result, diagnostics
+
+
+def _require_identical_pair_geometry(pairs: pd.DataFrame, origin_kreise, destination: str, proxy_destination: str) -> None:
+    """Raise unless both sites have a pair from every origin Kreis with the same distance and coefficients."""
+    _require_frame_columns(pairs, PAIR_COLUMNS, "apply_origin_pattern_proxy pairs")
+    columns = ["distance_km", *_COEFFICIENTS]
+    frames = []
+    for name in (destination, proxy_destination):
+        frame = pairs[pairs["destination_id"] == name].set_index("ars5")
+        missing = sorted(set(origin_kreise) - set(frame.index))
+        if missing or frame.index.duplicated().any():
+            raise ValueError(f"origin-pattern proxy: site {name!r} needs exactly one pair per origin Kreis in the "
+                             f"pair coefficients, missing {missing[:5]}")
+        frames.append(frame.loc[list(origin_kreise), columns].to_numpy(dtype=float))
+    differing = ~(frames[0] == frames[1]).all(axis=1)
+    if differing.any():
+        kreise = [code for code, flag in zip(origin_kreise, differing) if flag]
+        raise ValueError(f"origin-pattern proxy: sites {destination!r} and {proxy_destination!r} have different pair "
+                         f"geometry (columns {columns}) for origin Kreis(e) {kreise[:5]}; the proxy's weights would not "
+                         f"apply unchanged")
+
+
+def recount_cell_sources(cells: pd.DataFrame, cell_diagnostics: dict) -> dict:
+    """The ``origin_cells`` diagnostics recounted on cells that :func:`apply_origin_pattern_proxy` changed.
+
+    ``cells_per_source`` gains :data:`SOURCE_PROXY_PATTERN`; ``censored_upper_bound_persons`` and
+    ``censored_cells_without_bound`` count the cells still censored; ``proxy_pattern_upper_bound_persons`` is the
+    summed bound of the proxy cells (in the institution's enrollment scale). Every other key is copied.
+    """
+    result = dict(cell_diagnostics)
+    sources = cells["source"]
+    result["cells_per_source"] = {source: int((sources == source).sum())
+                                  for source in (*SOURCES, SOURCE_PROXY_PATTERN)}
+    censored = cells.loc[sources == SOURCE_CENSORED, "upper_bound_persons"].astype(float)
+    result["censored_upper_bound_persons"] = int(round(censored.sum(skipna=True)))
+    result["censored_cells_without_bound"] = int(censored.isna().sum())
+    result["proxy_pattern_upper_bound_persons"] = float(
+        cells.loc[sources == SOURCE_PROXY_PATTERN, "upper_bound_persons"].astype(float).sum(skipna=True))
+    return result
 
 
 def che_totals(che: pd.DataFrame) -> pd.Series:

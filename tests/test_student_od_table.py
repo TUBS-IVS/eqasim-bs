@@ -478,7 +478,7 @@ PROXY = {"LSN Art K": "LSN Uni S"}
 
 def test_origin_pattern_proxy_replaces_the_censored_cells_by_the_proxy_pattern():
     toy = _toy_proxy()
-    cells, diagnostics = T.apply_origin_pattern_proxy(toy["cells"], toy["che_totals"], toy["sites"], PROXY)
+    cells, diagnostics = T.apply_origin_pattern_proxy(toy["cells"], toy["che_totals"], toy["sites"], toy["pairs"], PROXY)
     art = cells[cells["institution"] == "Art K"].set_index("origin_ars5")
     # B: Uni S cell 50 * E_art 200 / CHE total 500 = 20, bound 50 * 0.4 = 20; A (own Kreis) and C (shown) kept.
     assert art.loc["B", "source"] == T.SOURCE_PROXY_PATTERN
@@ -490,6 +490,13 @@ def test_origin_pattern_proxy_replaces_the_censored_cells_by_the_proxy_pattern()
                                   toy["cells"][toy["cells"]["institution"] == "Uni S"], check_dtype=False)
     (entry,) = diagnostics
     assert (entry["proxy_pattern_cells"], entry["proxy_pattern_origin_persons"]) == (1, pytest.approx(20.0))
+    # The header counts follow the changed cells: B leaves the censored cells with its bound 25.
+    counts = T.recount_cell_sources(cells, {"cells_per_source": {}, "censored_upper_bound_persons": 65,
+                                            "censored_cells_without_bound": 0, "kept": 1})
+    assert counts["cells_per_source"] == {"institution_view": 0, "kreis_view": 2, "both_views": 2, "censored": 1,
+                                          T.SOURCE_PROXY_PATTERN: 1}
+    assert (counts["censored_upper_bound_persons"], counts["proxy_pattern_upper_bound_persons"], counts["kept"]) == (
+        40, pytest.approx(20.0), 1)
 
     od, _ = T.build_od_table(**{**toy, "cells": cells}, weights=WEIGHTS)
     t = od.set_index(["home_ars5", "destination_id"])["students_persons"]
@@ -509,7 +516,7 @@ def test_origin_pattern_proxy_bound_follows_a_censored_proxy_cell():
     cells = toy["cells"].copy()
     art_c = (cells["institution"] == "Art K") & (cells["origin_ars5"] == "C")
     cells.loc[art_c, ["che_persons", "source", "upper_bound_persons"]] = [0, "censored", 9.0]
-    proxied, _ = T.apply_origin_pattern_proxy(cells, toy["che_totals"], toy["sites"], PROXY)
+    proxied, _ = T.apply_origin_pattern_proxy(cells, toy["che_totals"], toy["sites"], toy["pairs"], PROXY)
     row = proxied[(proxied["institution"] == "Art K") & (proxied["origin_ars5"] == "C")].iloc[0]
     # Uni S's C cell is censored at 40: the art academy's cell is 0 with the bound 40 * 200 / 500 = 16.
     assert (row["source"], row["che_persons"], row["upper_bound_persons"]) == (T.SOURCE_PROXY_PATTERN, 0.0, 16.0)
@@ -517,20 +524,29 @@ def test_origin_pattern_proxy_bound_follows_a_censored_proxy_cell():
 
 def test_origin_pattern_proxy_off_returns_the_cells_unchanged():
     toy = _toy_proxy()
-    cells, diagnostics = T.apply_origin_pattern_proxy(toy["cells"], toy["che_totals"], toy["sites"], {})
+    cells, diagnostics = T.apply_origin_pattern_proxy(toy["cells"], toy["che_totals"], toy["sites"], toy["pairs"], {})
     pd.testing.assert_frame_equal(cells, toy["cells"])
     assert diagnostics == []
 
 
-@pytest.mark.parametrize("art_site_ags8, proxy, match", [
-    ("A002", PROXY, "commune"),                                   # the proxy sits in another commune
-    ("A001", {"LSN Uni S": "LSN Art K"}, "own CHE list"),         # an institution with its own list
-    ("A001", {"LSN Art K": "LSN Nowhere"}, "LSN Nowhere"),        # an unknown proxy
+def _other_coefficients(pairs):
+    # The same commune, but the (B, S6) pair carries other coefficients than (B, S1): the weights would differ.
+    changed = pairs.copy()
+    changed.loc[(changed["ars5"] == "B") & (changed["destination_id"] == "S6"), "coeff_short"] = 0.5
+    return changed
+
+
+@pytest.mark.parametrize("art_site_ags8, proxy, change_pairs, match", [
+    ("A002", PROXY, None, "commune"),                                   # the proxy sits in another commune
+    ("A001", {"LSN Uni S": "LSN Art K"}, None, "own CHE list"),         # an institution with its own list
+    ("A001", {"LSN Art K": "LSN Nowhere"}, None, "LSN Nowhere"),        # an unknown proxy
+    ("A001", PROXY, _other_coefficients, "different pair geometry"),    # the proxy's weights would not apply
 ])
-def test_origin_pattern_proxy_invalid_configuration_raises(art_site_ags8, proxy, match):
+def test_origin_pattern_proxy_invalid_configuration_raises(art_site_ags8, proxy, change_pairs, match):
     toy = _toy_proxy(art_site_ags8)
+    pairs = change_pairs(toy["pairs"]) if change_pairs else toy["pairs"]
     with pytest.raises(ValueError, match=match):
-        T.apply_origin_pattern_proxy(toy["cells"], toy["che_totals"], toy["sites"], proxy)
+        T.apply_origin_pattern_proxy(toy["cells"], toy["che_totals"], toy["sites"], pairs, proxy)
 
 
 def test_duplicate_row_key_raises(toy):
