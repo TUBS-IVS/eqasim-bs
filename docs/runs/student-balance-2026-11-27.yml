@@ -142,7 +142,7 @@ validation:
     row give the same ratio to each census extrapolation by construction (level and extrapolation are both proportional to the
     census count of the Kreis), so they are one ratio, not two independent checks; only the comparison with the school-corrected
     SrV count differs between the rows. These differences are the stated uncertainty of the level.
-- metric: the level between the independent estimates of the students aged 20 to 29 (census year)
+- metric: the level between the other estimates of the students aged 20 to 29 (census year)
   reference: census group times the MiD ratio (gate of this run), school-corrected SrV count, census extrapolation of WS 2022/23 (none is an observed count by residence)
   result: >-
     Read from the columns census_estimate_students_20_29_persons and level_census_year_students_20_29_persons of
