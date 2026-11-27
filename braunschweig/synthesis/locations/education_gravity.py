@@ -362,11 +362,29 @@ def merge_person_attributes(df_persons, df_enriched, flows_enabled):
     pipeline, whose persons keep the donor's survey columns), ``studies`` and ``employed`` (derived in
     ``braunschweig.popsim.assembly`` and by the legacy enriched stage; only the counted status fallback reads them),
     each only when the enriched frame has it; ``education_routing.student_status`` raises when none can give a status.
+
+    The merge is on ``person_id`` alone. Raises ``ValueError`` when ``person_id`` is not unique in either frame or
+    when ``df_persons`` already carries one of the columns to be merged (the enriched frame owns them; a silent
+    overwrite or a suffixed duplicate would hide which one is read), and ``AssertionError`` when the row count
+    changes (a person absent from the enriched frame would be dropped silently).
     """
     columns = ["person_id", "age"]
     if flows_enabled:
         columns += [c for c in ("P_TAET", "studies", "employed") if c in df_enriched.columns]
-    return pd.merge(df_persons, df_enriched[columns])
+    for name, frame in (("persons", df_persons), ("enriched", df_enriched)):
+        if frame["person_id"].duplicated().any():
+            raise ValueError("[education_gravity] person_id is not unique in the %s frame (%d duplicates)" % (
+                name, int(frame["person_id"].duplicated().sum())))
+    clash = [c for c in columns if c != "person_id" and c in df_persons.columns]
+    if clash:
+        raise ValueError("[education_gravity] the persons already carry column(s) %s that the enriched frame "
+                         "provides" % clash)
+    n_before = len(df_persons)
+    merged = pd.merge(df_persons, df_enriched[columns], on="person_id", validate="one_to_one")
+    assert len(merged) == n_before, (
+        "[education_gravity] merging the enriched person attributes changed the row count from %d to %d "
+        "(persons missing from the enriched frame)" % (n_before, len(merged)))
+    return merged
 
 
 def configure(context):

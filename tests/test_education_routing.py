@@ -81,11 +81,27 @@ def test_student_status_primary_path_reads_p_taet_and_counts_no_fallback(caplog)
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
-def test_student_status_missing_p_taet_counts_as_no_student():
-    persons = pd.DataFrame({"age": [22, 25], "P_TAET": [10, NAN]})
-    is_student, counts = student_status(persons)
-    assert is_student.tolist() == [True, False]
-    assert counts["taet_missing"] == 1 and counts["fallback"] == 0
+def test_student_status_missing_p_taet_values_are_counted_as_fallback_and_warn(caplog):
+    # P_TAET exists but is mostly missing: no healthy primary rate may be reported, and the warning fires
+    persons = pd.DataFrame({"age": [22] * 10, "P_TAET": [10] + [NAN] * 9})
+    with caplog.at_level(logging.INFO):
+        is_student, counts = student_status(persons)
+    assert is_student.tolist() == [True] + [False] * 9
+    assert (counts["primary"], counts["fallback"], counts["taet_missing"]) == (1, 9, 9)
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings and "primary 1/10" in warnings[0] and "fallback 9" in warnings[0]
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        student_status(persons, warn_share=0.95)         # 90 % missing is not above 95 %
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_student_status_fallback_reads_a_missing_flag_as_false_and_counts_it():
+    # astype(bool) would read NaN as True and make persons 2 and 3 students
+    persons = pd.DataFrame({"age": [22, 25, 30], "studies": [True, NAN, True], "employed": [False, False, NAN]})
+    is_student, counts = student_status(persons, warn_share=1.0)
+    assert is_student.tolist() == [True, False, True]       # the missing employed flag reads as not employed
+    assert counts["flag_missing"] == 2 and counts["fallback"] == 3
 
 
 def test_student_status_fallback_is_counted_and_warns_above_the_share(caplog):
@@ -231,6 +247,22 @@ def test_merge_adds_the_student_columns_only_on_the_on_path():
     # a legacy enriched frame without P_TAET merges what it has
     legacy = merge_person_attributes(persons, enriched.drop(columns="P_TAET"), flows_enabled=True)
     assert list(legacy.columns) == ["person_id", "household_id", "age", "studies", "employed"]
+
+
+def test_merge_refuses_ambiguous_or_lossy_inputs_and_keeps_the_row_count():
+    persons = pd.DataFrame({"person_id": [1, 2, 3], "household_id": [1, 1, 2]})
+    enriched = pd.DataFrame({"person_id": [3, 1, 2], "age": [30, 40, 50], "P_TAET": [10, 4, 8]})
+    merged = merge_person_attributes(persons, enriched, flows_enabled=True)
+    assert merged["person_id"].tolist() == [1, 2, 3] and merged["age"].tolist() == [40, 50, 30]   # by id, not row
+    assert len(merged) == len(persons)
+    with pytest.raises(ValueError, match="already carry"):            # the persons carry one of the columns
+        merge_person_attributes(persons.assign(P_TAET=1), enriched, flows_enabled=True)
+    with pytest.raises(ValueError, match="not unique in the enriched"):
+        merge_person_attributes(persons, pd.concat([enriched, enriched.iloc[:1]]), flows_enabled=True)
+    with pytest.raises(ValueError, match="not unique in the persons"):
+        merge_person_attributes(pd.concat([persons, persons.iloc[:1]]), enriched, flows_enabled=False)
+    with pytest.raises(AssertionError, match="row count"):            # a person absent from the enriched frame
+        merge_person_attributes(persons, enriched.iloc[:2], flows_enabled=True)
 
 
 # ------------------------------------------------------------------------------------------------ the OFF path
