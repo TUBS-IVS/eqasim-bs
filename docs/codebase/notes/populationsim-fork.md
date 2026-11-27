@@ -15,7 +15,11 @@ The fork is the public repository `TUBS-IVS/populationsim`. `master` is an untou
 
 ## The tracked environment
 
-`environments/populationsim/` is a uv project; the stage runs `uv run --no-sync populationsim -w <batch folder>` with `popsimprep_dir` (the project directory) as cwd. Its constraints are the production freeze: the fork changes PopulationSim only, so every other package keeps the version of the environment the baseline runs used. Install once per checkout on the server: `uv sync --frozen --python /usr/bin/python3.12` (see its README). The stage checks the installed version against `populationsim_version` and the installed git commit against the one `uv.lock` pins at start, and refuses to start when the installed environment differs from `uv.lock` in any package (`uv sync --frozen --check`) (a relative `popsimprep_dir` is resolved against the repository root), and fails with a message naming the asked environment (`braunschweig/popsim/tool_version.py`).
+`environments/populationsim/` is a uv project; the stage runs `uv run --no-sync populationsim -w <batch folder>` with `popsimprep_dir` (the project directory) as cwd. Its constraints are the production freeze: the fork changes PopulationSim only, so every other package keeps the version of the environment the baseline runs used, except packages raised for a security advisory (next section). Install once per checkout on the server, and again after every change of `uv.lock`: `uv sync --frozen --python /usr/bin/python3.12` (see its README). At start the stage checks the installed version against `populationsim_version`, the installed git commit against the one `uv.lock` pins, and the whole installed environment against `uv.lock` (`uv sync --frozen --check --offline`, so a server not re-synced after a lock change refuses to run); it fails with a message naming the asked environment (`braunschweig/popsim/tool_version.py`). A relative `popsimprep_dir` is resolved against the repository root.
+
+## Security updates of the frozen environment
+
+A package of the freeze may be raised to the version that fixes a security advisory, if the result stays the same. Rule: raise only the affected constraints in `pyproject.toml` to the patched version, relock (`uv lock`) and check that no other package moves; then run the batch folders of the last release evidence with the old and the new environment and require byte-identical output, equal to the release hashes; pass the fork's balancer test file in the new environment (rule of the section on run-time options); record it as a pre-registered run manifest, and merge only then. A package whose patched version is excluded by a pin of the fork (for example by ortools) needs a new fork release with its own evidence instead. First application, and why protobuf stayed: [`popsim-env-security-update-2026-11-27`](../../runs/popsim-env-security-update-2026-11-27.yml).
 
 ## Fork CI: red on Python 3.9 and 3.10
 
@@ -43,4 +47,5 @@ Rule: before a run with `fast_paths` on in a changed environment (another numba 
 | Production value of draw and fractional weights | outcome of the arm-1 manifest |
 | Production value of the rounding | decision 5 of ADR-0201, on the outcome of the arm-3 manifest |
 | Production value of the run-time options, worker memory | outcome of the manifest `popsim-run-performance-2026-11-18` (memory of release `bs.3` checked in `popsim-bs3-release-2026-11-25`); values in `configs/base_bs.yml` and `configs/overlays/test_100pct.yml` |
+| Versions of the environment; evidence of a security update | `environments/populationsim/pyproject.toml` and `uv.lock`; manifest `popsim-env-security-update-2026-11-27` |
 | Why | ADR-0197, ADR-0199, ADR-0200, ADR-0201 |

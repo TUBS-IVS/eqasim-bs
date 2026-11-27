@@ -9,5 +9,6 @@ cd environments/populationsim
 uv sync --frozen --python /usr/bin/python3.12
 ```
 
-The stage checks the installed version at start (`braunschweig/popsim/tool_version.py`). Branch
-model, releases and why the versions are pinned: `docs/codebase/notes/populationsim-fork.md`.
+The stage checks at start that the installed environment equals `uv.lock` (`braunschweig/popsim/tool_version.py`);
+after a pull that changes `uv.lock`, run the command above again. Branch model, releases, why the versions are pinned
+and the rule for security updates: `docs/codebase/notes/populationsim-fork.md`.

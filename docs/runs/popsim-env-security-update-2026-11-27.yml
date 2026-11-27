@@ -33,11 +33,15 @@ pipeline:
 classification:
 - ab_test
 status:
-  execution: running
+  execution: completed
   notes: >-
     Pre-registered 2026-11-27 (commit before any run). Each arm is installed into its own copy of the uv project
     under ~/seclock-2026-11-27/<arm> on the run server with `uv sync --frozen --python /usr/bin/python3.12`; no
     PYTHONPATH, so each run imports PopulationSim from its own environment. All six runs start together.
+    Executed 2026-11-27 on the run server: setup, the fork's balancer tests and the start check first, then all
+    six runs started together at 14:32:44 (uptime load average 0.84, no foreign java or populationsim process,
+    92 GB available; runs.csv rows load). Result: checks 1 to 7 MET. Limits: three of the 60 batches, the run
+    server only (Windows not run), one run per arm and batch.
 source: >-
   run server, ~/seclock-2026-11-27 (environments, run copies, logs); removed after the artifacts are committed.
 environment: >-
@@ -47,40 +51,40 @@ validation:
     Check 1, identity: per batch, the sha256 of final_expanded_household_ids.csv, synthetic_households.csv and
     synthetic_persons.csv of arm new equal those of arm old; bound: all nine pairs equal
   reference: arm old on the same batch (model output)
-  result: PENDING
+  result: 'MET. All nine pairs equal: per batch (batch_000, batch_032, batch_028) the three files of arm new have the sha256 of arm old.'
   artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
 - metric: >-
     Check 2, reference to the released tool: the hashes of arm old (and so of arm new) equal the rows of arm
     rc2_on (release 0.10.0+bs.3) in docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv; bound: equal. If
     arm old fails this bound, check 1 is not interpreted before the cause is known.
   reference: popsim-bs3-release-2026-11-25 (model output of the released tool)
-  result: PENDING
+  result: 'MET. Arm old, and so arm new, equals the rc2_on hashes of release 0.10.0+bs.3 in all nine files.'
   artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
 - metric: >-
     Check 3: every run exits 0; bound: 6 of 6
   reference: none
-  result: PENDING
+  result: 'MET. 6 of 6 runs exited with code 0.'
   artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
 - metric: >-
     Check 4, no silent fallback: every run logs exactly one balancer summary line "balancer fast path: fast N of
     N calls" with every fallback and re-run count 0, and exactly one line "households drawn in one batch"; bound:
     6 of 6
   reference: none
-  result: PENDING
+  result: 'MET. Every run of both arms logs exactly one balancer line, "fast N of N calls (100.0 %)" with every fallback and re-run count 0 (43, 32 and 31 calls on batch_000, batch_032 and batch_028), and exactly one batch-draw line (6690, 13464 and 26906 households).'
   artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
 - metric: >-
     Check 5, each arm ran its own environment: the imported populationsim file lies in the .venv of the arm, the
     installed PopulationSim commit equals the commit the arm's uv.lock pins, and `uv pip freeze` of the arm lists
     the uv.lock version of every package of that lock; bound: all three for both arms
   reference: the uv.lock of each arm
-  result: PENDING
+  result: 'MET. Both arms import populationsim from their own .venv and have the commit their lock pins (a5de8c0a75465ca66df8cabe73f5d8f99a7d5ace, tag v0.10.0+bs.3); `uv pip freeze` equals the lock in all 45 installed packages of each arm, and no package is installed beyond the lock (environment_packages_old.txt, environment_packages_new.txt).'
   artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
 - metric: >-
     Check 6, ADR-0200 decision 5: the fork's tests/test_bs_balancer_fast_path.py at tag v0.10.0+bs.3 passes in
     the environment of arm new on the run server (arm old is run as a control); bound: 0 failed and at least 1
     passed in arm new
   reference: none
-  result: PENDING
+  result: 'MET. 205 passed and 0 failed in arm new; the control arm old also 205 passed, 0 failed (fork commit a5de8c0a).'
   artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
 - metric: >-
     Check 7, the start check of the stage (`uv sync --frozen --check --offline`,
@@ -88,13 +92,13 @@ validation:
     new, and non-zero for the files of arm new over the installed environment of arm old (a stale server after
     the merge); bound: all three. The same three calls without --offline are reported.
   reference: none
-  result: PENDING
+  result: 'MET. Offline and online alike: exit 0 for old and new, exit 1 for stale; the stale output lists exactly the seven raised packages (start_check.txt).'
   artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
 - metric: >-
     Reported, not a pass/fail bound: wall time and peak RSS per run, uptime load average, foreign java and
     populationsim processes and available memory at the start. No statement of faster or slower is made.
   reference: none
-  result: PENDING
+  result: '(reported) Wall time old / new: batch_000 292.3 / 287.8 s, batch_032 348.8 / 353.1 s, batch_028 498.6 / 497.5 s; peak RSS old / new 2847092 / 2830580, 2809700 / 2808580, 2805564 / 2809352 kB. No statement of faster or slower.'
   artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
 features:
   note: >-
@@ -107,7 +111,17 @@ artifacts:
 - docs/runs/artifacts/popsim-env-security-update-2026-11-27/scripts/sync_check.sh
 - docs/runs/artifacts/popsim-env-security-update-2026-11-27/scripts/collect_runs.py
 - docs/runs/artifacts/popsim-env-security-update-2026-11-27/scripts/evaluate.py
+- docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
+- docs/runs/artifacts/popsim-env-security-update-2026-11-27/environment_packages_old.txt
+- docs/runs/artifacts/popsim-env-security-update-2026-11-27/environment_packages_new.txt
+- docs/runs/artifacts/popsim-env-security-update-2026-11-27/balancer_fast_path_test_old.txt
+- docs/runs/artifacts/popsim-env-security-update-2026-11-27/balancer_fast_path_test_new.txt
+- docs/runs/artifacts/popsim-env-security-update-2026-11-27/start_check.txt
 issues: []
 notes: >-
   Identity of two runs of the same model is not validation against observed behaviour. Related records:
   popsim-bs3-release-2026-11-25 (reference hashes and batch folders), popsim-run-performance-2026-11-18.
+  The one high-severity alert of protobuf stays open, because fork release 0.10.0+bs.3 pins ortools 9.14.6206,
+  which requires protobuf >=6.31.1,<6.32 while the fix is 6.33.5; the next ortools (9.15.6755) requires NumPy 2,
+  so the fix needs a new fork release with its own evidence. The advisory (GHSA-7gcm-g887-7qv7) concerns
+  `google.protobuf.json_format.ParseDict()` on input from an attacker.
