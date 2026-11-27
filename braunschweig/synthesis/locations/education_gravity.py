@@ -24,25 +24,41 @@ from braunschweig.synthesis.locations.education_gravity_model import (
 )
 from braunschweig.data.bbsr import regiostar as _regiostar
 from braunschweig.data.bbsr.regiostar import ars_to_ags8
+from braunschweig.data.education import student_flows_inputs as _student_flows_inputs
+from braunschweig.data.education.student_flows_inputs import KEY_FLOWS_ENABLED
+from braunschweig.synthesis.locations import education_routing as _education_routing
+from braunschweig.synthesis.locations.education_routing import (
+    ADULT_EDUCATION, BBS_ADULT, SCHOOL_BANDS as _SCHOOL_BANDS, age_to_level, route_education_level,
+    routing_summary, student_status,
+)
 
 # Helpers whose code this stage runs: synpp hashes only this module's source, so their
 # source goes into the stage token (audit C2, ADR-0136). ``bbs_share`` is imported inside
 # ``_resolve_bbs_share_by_age``, so it is hashed by name. ``_regiostar`` is the declared stage
 # ``braunschweig.data.bbsr.regiostar`` imported as a library (``ars_to_ags8``): the DAG edge covers
 # its output, not this code (ADR-0194).
-_HELPER_MODULES = (_education_gravity_model, _regiostar)
-_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.schools.bbs_share",)
+# ``_education_routing`` holds the age bands (every path) and the student routing (ON path);
+# ``_student_flows_inputs`` is its only project import (the student status code).
+_HELPER_MODULES = (
+    _education_gravity_model,
+    _regiostar,
+    _education_routing,
+    _student_flows_inputs,
+)
+# The import closure of ``student_flows_inputs``: a leaf that imports only ``braunschweig.data.csv_header``
+# (scripts/audit_synpp_helper_hash.py, ADR-0136). One name per line.
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.data.schools.bbs_share",
+    "braunschweig.data.csv_header",
+)
 
-_SCHOOL_BANDS = [
-    ("kindergarten", 0, 5),
-    ("grundschule", 6, 9),
-    ("sekundar_1", 10, 15),
-    ("upper_secondary", 16, 19),
-    ("university", 20, 200),
-]
+#: Share of persons on the student-status fallback above which a WARNING is logged (``education_routing``).
+KEY_STATUS_FALLBACK_WARN_SHARE = "braunschweig.students.status_fallback_warn_share"
+DEFAULT_STATUS_FALLBACK_WARN_SHARE = 0.0
 _NDS_LEVELS = ("grundschule", "sekundar_1", "oberstufe", "bbs")
-#: Level of the persons aged ``education_adult_min_age`` and older (#465); they choose among all education facilities.
-ADULT_EDUCATION = "adult_education"
+# ``ADULT_EDUCATION`` (the level of the persons aged ``education_adult_min_age`` and older, #465, and of the
+# non-student adults on the ON path), ``BBS_ADULT``, ``age_to_level`` and the age bands live in
+# ``education_routing`` and are imported above.
 
 
 def slope_vector_for_level(level, home_rs7, by_level_rs7, scalar_by_level):
@@ -105,13 +121,6 @@ def bbs_share_vector(ages, by_age, scalar_share):
     return ages.map(lambda a: overrides.get(int(a), scalar)).to_numpy(dtype=float)
 
 
-def age_to_level(age):
-    for level, lo, hi in _SCHOOL_BANDS:
-        if lo <= age <= hi:
-            return level
-    return "university"
-
-
 def _xy(gdf):
     return np.column_stack([gdf.geometry.x.values, gdf.geometry.y.values])
 
@@ -145,10 +154,34 @@ def assign_education_locations(df_persons, df_nds, df_universities, df_kita, cfg
                     bbs_share, and optional bbs_share_by_age (None or a
                     mapping age -> bbs_share for the 16-19 cohort; None
                     reproduces the scalar bbs_share path byte-for-byte).
-    Returns DataFrame[person_id, commune_id, location_id, geometry].
+                    With ``cfg["student_flows_enabled"]`` true (issue #140, Phase 4, design B1) the persons are
+                    routed by student status (``braunschweig.synthesis.locations.education_routing``): students
+                    aged 18+ to the university level, apprentices and pupils aged 20+ (``P_TAET`` 8 or 9) to
+                    ``bbs_adult`` (singly-constrained decay over the ``bbs`` schools, the schools' capacities as
+                    weights, slope and radius of the ``bbs`` level), every other adult to ``adult_education``
+                    among the ``df_nds`` schools only (no university building; ``adult_education_min_age`` is not
+                    read); ``df_persons`` then carries ``P_TAET`` (or ``studies`` and ``employed`` for the
+                    counted fallback). ``cfg["student_status_fallback_warn_share"]`` (default 0.0) is the share of
+                    persons on the status fallback above which a WARNING is logged. The default (key absent or
+                    false) is the code before the switch.
+    Returns DataFrame[person_id, commune_id, location_id, geometry]; with the switch ON also ``routed_level``
+    (the level every person was placed on).
     """
+    flows = bool(cfg.get("student_flows_enabled", False))
     df = df_persons.copy()
-    df["level"] = df["age"].apply(age_to_level)
+    if flows:
+        is_student, _ = student_status(
+            df, warn_share=cfg.get("student_status_fallback_warn_share", 0.0))
+        df["level"] = route_education_level(
+            df["age"], is_student, df["P_TAET"] if "P_TAET" in df.columns else None)
+        summary = routing_summary(df["age"], is_student, df["level"])
+        print("[education:routing] persons per routed level %s; students under 18 kept on their age band: %d; "
+              "non-student adults (aged 20+) whom the switch-OFF rule would send to the university level or to "
+              "the adult rule with university buildings: %d (to bbs_adult %d, to adult_education %d)" % (
+                  summary["per_level"], summary["students_under_18"], summary["non_student_adults"],
+                  summary["to_bbs_adult"], summary["to_adult_education"]))
+    else:
+        df["level"] = df["age"].apply(age_to_level)
 
     # Resolve the synthetic "upper_secondary" band into oberstufe (academic)
     # or bbs (vocational) per pupil, drawn from the configured enrollment share.
@@ -160,7 +193,7 @@ def assign_education_locations(df_persons, df_nds, df_universities, df_kita, cfg
     # compared against its age-resolved share instead (real BBS enrollment rises
     # steeply with age 16->19), with the scalar as the per-age fallback.
     # Adult education (#465): from the configured minimum age on, an education activity is no longer a university one.
-    adult_min_age = cfg.get("adult_education_min_age")
+    adult_min_age = None if flows else cfg.get("adult_education_min_age")
     if adult_min_age is not None:
         df.loc[(df["level"] == "university") & (df["age"] >= adult_min_age), "level"] = ADULT_EDUCATION
 
@@ -254,14 +287,19 @@ def assign_education_locations(df_persons, df_nds, df_universities, df_kita, cfg
     # education facility (NDS schools of all levels and the universities) is a candidate with the SAME weight, so
     # neither pupil capacities nor university enrolments decide; the distance decay alone does. Adult courses
     # (Volkshochschule, further education) are not in the facility data and often take place in school buildings.
+    # With the student flows ON (B1) the university buildings are NOT candidates: the students of those buildings
+    # are placed by the university level, the other adults go to school buildings.
     sel = df[df["level"] == ADULT_EDUCATION]
     if not sel.empty:
-        facilities = pd.concat([
+        candidate_frames = [
             pd.DataFrame({"location_id": df_nds["school_id"].values, "commune_id": df_nds["commune_id"].values,
                           "geometry": df_nds["geometry"].values, "kind": "school"}),
-            pd.DataFrame({"location_id": df_universities["location_id"].values, "commune_id": "",
-                          "geometry": df_universities["geometry"].values, "kind": "university"}),
-        ], ignore_index=True)
+        ]
+        if not flows:
+            candidate_frames.append(
+                pd.DataFrame({"location_id": df_universities["location_id"].values, "commune_id": "",
+                              "geometry": df_universities["geometry"].values, "kind": "university"}))
+        facilities = pd.concat(candidate_frames, ignore_index=True)
         facilities = gpd.GeoDataFrame(facilities, geometry="geometry", crs=df_nds.crs)
         choice = assign_by_decay(
             _xy(sel), _xy(facilities), np.ones(len(facilities)),
@@ -275,7 +313,7 @@ def assign_education_locations(df_persons, df_nds, df_universities, df_kita, cfg
         print("[education:adult_education] %d persons aged %d+ placed among %d education facilities (schools and "
               "universities, uniform weights, slope %g per km, radius %g km): straight-line distance median %.1f km, "
               "mean %.1f km, p90 %.1f km; at a university %d (%.1f%%)" % (
-                  len(sel), cfg["adult_education_min_age"], len(facilities), cfg["adult_education_slope"],
+                  len(sel), _education_routing.ADULT_MIN_AGE if flows else cfg["adult_education_min_age"], len(facilities), cfg["adult_education_slope"],
                   cfg["adult_education_max_radius_km"], np.median(distance_km), distance_km.mean(),
                   np.percentile(distance_km, 90), n_university, 100.0 * n_university / len(sel)))
         parts.append(pd.DataFrame({
@@ -285,8 +323,50 @@ def assign_education_locations(df_persons, df_nds, df_universities, df_kita, cfg
             "geometry": picked["geometry"].values,
         }))
 
+    # Adults on a vocational track (ON path only, drawn LAST so that every earlier draw keeps its place in the
+    # random stream): singly-constrained decay over the bbs schools with the schools' capacities as weights and the
+    # slope and radius of the bbs level, separate from the capacity-balanced placement of the pupils under 20.
+    # The scalar slope of the level is used: ``assign_by_decay`` takes one slope for all persons.
+    sel = df[df["level"] == BBS_ADULT]
+    if not sel.empty:
+        schools = df_nds[df_nds["level"] == "bbs"]
+        if schools.empty:
+            raise RuntimeError(
+                "[education_gravity] no NDS schools for level 'bbs' (adult apprentices and pupils)")
+        choice = assign_by_decay(
+            _xy(sel), _xy(schools), schools["capacity"].values,
+            slope=cfg["slope_by_level"]["bbs"], max_radius_km=cfg["max_radius_km_by_level"]["bbs"], rng=rng,
+            label="education:bbs_adult",
+        )
+        picked = schools.iloc[choice]
+        parts.append(pd.DataFrame({
+            "person_id": sel["person_id"].values,
+            "location_id": picked["school_id"].values,
+            "commune_id": picked["commune_id"].values,
+            "geometry": picked["geometry"].values,
+        }))
+
     out = pd.concat(parts, ignore_index=True)
-    return out[["person_id", "commune_id", "location_id", "geometry"]]
+    columns = ["person_id", "commune_id", "location_id", "geometry"]
+    if flows:
+        # The analysis stage counts from this column; it exists on the ON path only.
+        out["routed_level"] = out["person_id"].map(df.set_index("person_id")["level"]).values
+        columns.append("routed_level")
+    return out[columns]
+
+
+def merge_person_attributes(df_persons, df_enriched, flows_enabled):
+    """Merge the person attributes the stage needs from ``synthesis.population.enriched`` into ``df_persons``.
+
+    OFF: ``age`` only (the code before the switch). ON: also ``P_TAET`` (student status; present in the popsim_mid
+    pipeline, whose persons keep the donor's survey columns), ``studies`` and ``employed`` (derived in
+    ``braunschweig.popsim.assembly`` and by the legacy enriched stage; only the counted status fallback reads them),
+    each only when the enriched frame has it; ``education_routing.student_status`` raises when none can give a status.
+    """
+    columns = ["person_id", "age"]
+    if flows_enabled:
+        columns += [c for c in ("P_TAET", "studies", "employed") if c in df_enriched.columns]
+    return pd.merge(df_persons, df_enriched[columns])
 
 
 def configure(context):
@@ -349,6 +429,11 @@ def configure(context):
     # None (not {}) so synpp flatten() does not drop this key; per-RS7 dict is
     # set by the calibration script and mirrors gravity_slope_by_regiostar7.
     context.config("education_gravity_slope_by_level_rs7", None)
+    # Student status routing (issue #140, Phase 4, design B1); ON by default. The warn share is read on the ON path
+    # only and declared only then. ASSUMPTION: any use of the student-status fallback (no P_TAET) in the popsim_mid
+    # pipeline is a defect, so every fallback share above 0.0 logs a WARNING.
+    if context.config(KEY_FLOWS_ENABLED, True):
+        context.config(KEY_STATUS_FALLBACK_WARN_SHARE, DEFAULT_STATUS_FALLBACK_WARN_SHARE)
 
 
 def check_adult_education_settings(min_age, slope, max_radius_km) -> None:
@@ -397,8 +482,9 @@ def execute(context):
     df_persons = df_persons[df_persons["has_education_trip"]].copy()
     households = set(df_persons["household_id"].unique())
 
-    df_age = context.stage("synthesis.population.enriched")[["person_id", "age"]]
-    df_persons = pd.merge(df_persons, df_age)
+    flows_enabled = bool(context.config(KEY_FLOWS_ENABLED))
+    df_persons = merge_person_attributes(
+        df_persons, context.stage("synthesis.population.enriched"), flows_enabled)
 
     df_homes = context.stage("synthesis.population.spatial.home.locations")
     df_homes = df_homes[df_homes["household_id"].isin(households)][
@@ -446,6 +532,9 @@ def execute(context):
         "adult_education_slope": context.config("education_adult_slope"),
         "adult_education_max_radius_km": context.config("education_adult_max_radius_km"),
     }
+    if flows_enabled:
+        cfg["student_flows_enabled"] = True
+        cfg["student_status_fallback_warn_share"] = context.config(KEY_STATUS_FALLBACK_WARN_SHARE)
     out = assign_education_locations(
         df_persons, df_nds, df_universities, df_kita, cfg, rng)
     out = gpd.GeoDataFrame(out, geometry="geometry", crs=df_nds.crs)
@@ -453,4 +542,6 @@ def execute(context):
     assert len(out) == len(df_persons), (
         f"education_gravity placed {len(out)} of {len(df_persons)} pupils")
     assert set(out["person_id"]) == set(df_persons["person_id"])
+    if flows_enabled:
+        return out[["person_id", "commune_id", "location_id", "geometry", "routed_level"]]
     return out[["person_id", "commune_id", "location_id", "geometry"]]
