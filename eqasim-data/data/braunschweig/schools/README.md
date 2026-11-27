@@ -120,3 +120,13 @@ Statistische Berichte B I detail tables. The loader
 `bbs_share(age) = bbs / (bbs + oberstufe)` per age; file absent -> the scalar
 share applies (logged). An inline `education_bbs_share_by_age` config dict
 takes precedence over the CSV.
+
+## Student destination points (`student_destination_points.csv`)
+
+One row per `destination_id` of `student_od_table.csv` (local sites and surrounding institutions):
+`destination_id, institution, scope, site_ags8, x, y, point_source`; `x, y` in EPSG:25832 (metres).
+`point_source` is `commune_centre` (population-weighted centroid of the commune `site_ags8`) or `curated`
+(WGS84 coordinate of `scripts/seed_nds_hochschulen.py`, institutions outside the LSN site table). These are
+the points the distances of the student table are measured to. Written by
+`scripts/build_student_balance.py points --final` (same `prepare` as `balance`, no other table is touched);
+the header carries the inputs with sha256 and the code state. Record: `docs/registry/data/student_destination_points.yml`.
