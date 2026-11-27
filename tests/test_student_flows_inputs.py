@@ -15,9 +15,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braunschweig.calibration.srv_distance_targets import WOLFSBURG_KREIS, ZGB_KREISE
-from braunschweig.calibration.srv_student_reference import AREA_WOLFSBURG
 from braunschweig.data.education import student_flows_inputs as SFI
+
+ZGB_KREISE = SFI.ZGB_KREISE
+WOLFSBURG_KREIS = SFI.WOLFSBURG_KREIS
+AREA_WOLFSBURG = SFI.AREA_WOLFSBURG
 
 REPO = Path(__file__).resolve().parents[1]
 DATA = REPO / "eqasim-data" / "data" / "braunschweig"
@@ -33,16 +35,13 @@ def od() -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- the import boundary
-def test_module_does_not_load_the_stage_package_or_the_phase3_modules():
-    # The run ref holds a code state without the Phase 3 bundle (global constraints, "Import
-    # boundary"): the module must load neither the PopulationSim stage package nor the two Phase 3
-    # modules that import it. braunschweig.popsim.attributes and .missing ARE loaded, transitively
-    # by srv_student_reference -> student_parameters; both files are identical on the run ref and at
-    # the run commit, so that import works there (see the report of Task 3).
+def test_module_is_a_leaf_that_loads_no_popsim_calibration_or_analysis_module():
+    # A stage that imports the module must not inherit the closure of braunschweig.popsim,
+    # braunschweig.calibration or braunschweig.analysis (the closure names the VG250 archive, and the
+    # run ref holds a code state without the Phase 3 bundle): global constraints, "Import boundary".
     code = ("import sys; sys.path.insert(0, %r); "
             "import braunschweig.data.education.student_flows_inputs; "
-            "forbidden = ('braunschweig.popsim.stage', 'braunschweig.popsim.student_targets', "
-            "'braunschweig.popsim.student_level'); "
+            "forbidden = ('braunschweig.popsim', 'braunschweig.calibration', 'braunschweig.analysis'); "
             "bad = sorted(m for m in sys.modules if m.startswith(forbidden)); "
             "print(bad); sys.exit(1 if bad else 0)" % str(REPO))
     done = subprocess.run([sys.executable, "-c", code], cwd=str(REPO), capture_output=True, text=True)
@@ -87,6 +86,16 @@ def test_outside_seed_exists_for_local_sites_only_and_the_art_academy_has_rows(o
     assert outside.loc[outside["destination_id"] == ART_ACADEMY, "seed"].sum() > 0
 
 
+@pytest.mark.parametrize("column", ["scope", "site_kreis_ars5"])
+def test_load_od_table_raises_on_a_null_scope_or_site_kreis(tmp_path, column):
+    table = pd.read_csv(OD_PATH, comment="#", encoding="utf-8", dtype=str)
+    table.loc[table.index[0], column] = None
+    path = tmp_path / "t.csv"
+    table.to_csv(path, index=False, encoding="utf-8")
+    with pytest.raises(ValueError, match=column):
+        SFI.load_od_table(path)
+
+
 def test_od_weights_are_read_from_the_header_of_the_committed_table():
     weights = SFI.od_weights(OD_PATH)
     assert set(weights) == {"short", "middle", "long", "max_commute_km"}
@@ -108,7 +117,7 @@ def test_od_weights_parse_exact_values_and_raise_when_a_line_is_absent(tmp_path)
 
 
 # --------------------------------------------------------------------------- the level table
-def test_level_sums_the_young_age_groups_and_keeps_every_cell(tmp_path):
+def test_level_sums_the_young_age_groups_and_keeps_every_cell():
     level = SFI.load_level(LEVEL_PATH, ZGB_KREISE)
     assert list(level.columns) == ["code", "age_range", "students_persons"]
     assert set(level["age_range"]) == {"18_29", "30plus"}
@@ -179,29 +188,36 @@ def test_education_leg_share_is_a_share():
 
 
 def test_day_factor_follows_the_area_and_the_absence_mode():
-    e = SFI.education_leg_share(SRV_DIR)
-    away = SFI.away_share_by_area(SRV_DIR)
+    # Hand-computed: e = 0.4; away 0.1 (Braunschweig), 0.2 (surrounding), 0.5 (Wolfsburg).
+    away = {"braunschweig": 0.1, "surrounding": 0.2, AREA_WOLFSBURG: 0.5}
     by_kreis = SFI.area_by_kreis(SFI.default_home_area_kreise(), ZGB_KREISE)
-    cells = SFI.day_factor_by_kreis(e, away, by_kreis, "cells")
-    assert cells.to_dict() == pytest.approx({kreis: e * (1.0 - away[area]) for kreis, area in by_kreis.items()})
-    off = SFI.day_factor_by_kreis(e, away, by_kreis, "off")
-    assert (off == e).all()
+    cells = SFI.day_factor_by_kreis(0.4, away, by_kreis, "cells")
+    assert cells.to_dict() == pytest.approx({"03101": 0.36, "03102": 0.32, "03103": 0.2, "03151": 0.32,
+                                             "03153": 0.32, "03154": 0.32, "03157": 0.32, "03158": 0.32})
+    off = SFI.day_factor_by_kreis(0.4, away, by_kreis, "off")
+    assert off.to_dict() == pytest.approx({kreis: 0.4 for kreis in ZGB_KREISE})
     with pytest.raises(ValueError, match="absence_mode"):
-        SFI.day_factor_by_kreis(e, away, by_kreis, "on")
+        SFI.day_factor_by_kreis(0.4, away, by_kreis, "on")
     with pytest.raises(ValueError, match="away"):
-        SFI.day_factor_by_kreis(e, {"braunschweig": 0.1}, by_kreis, "cells")
+        SFI.day_factor_by_kreis(0.4, {"braunschweig": 0.1}, by_kreis, "cells")
 
 
 def test_effective_day_factor_is_the_level_weighted_mean():
-    e = SFI.education_leg_share(SRV_DIR)
-    by_kreis = SFI.area_by_kreis(SFI.default_home_area_kreise(), ZGB_KREISE)
-    f = SFI.day_factor_by_kreis(e, SFI.away_share_by_area(SRV_DIR), by_kreis, "cells")
-    level = SFI.load_level(LEVEL_PATH, ZGB_KREISE).groupby("code")["students_persons"].sum()
-    effective = SFI.effective_day_factor(level, f)
-    assert f.min() <= effective <= f.max()
-    assert effective == pytest.approx(float((level * f.loc[level.index]).sum() / level.sum()))
+    # Hand-computed: (100 * 0.36 + 300 * 0.2) / 400 = 0.24.
+    f = pd.Series({"03101": 0.36, "03103": 0.2})
+    assert SFI.effective_day_factor(pd.Series({"03101": 100.0, "03103": 300.0}), f) == pytest.approx(0.24)
     with pytest.raises(ValueError, match="03999"):
         SFI.effective_day_factor(pd.Series({"03999": 1.0}), f)
+
+
+def test_effective_day_factor_of_the_committed_tables_lies_between_the_kreis_factors_and_off_gives_e():
+    e = SFI.education_leg_share(SRV_DIR)
+    by_kreis = SFI.area_by_kreis(SFI.default_home_area_kreise(), ZGB_KREISE)
+    level = SFI.load_level(LEVEL_PATH, ZGB_KREISE).groupby("code")["students_persons"].sum()
+    f = SFI.day_factor_by_kreis(e, SFI.away_share_by_area(SRV_DIR), by_kreis, "cells")
+    assert f.min() <= SFI.effective_day_factor(level, f) <= f.max()
+    off = SFI.day_factor_by_kreis(e, SFI.away_share_by_area(SRV_DIR), by_kreis, "off")
+    assert SFI.effective_day_factor(level, off) == pytest.approx(e)
 
 
 # --------------------------------------------------------------------------- the home Kreis

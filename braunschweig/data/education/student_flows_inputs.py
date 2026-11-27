@@ -14,13 +14,13 @@ once:
 * the home areas (:func:`area_by_kreis`) and the home Kreis of a household
   (:func:`home_kreis_by_household`).
 
-Import boundary (Phase 4 global constraints): the module imports only leaf modules that exist in the
-code state of the wiring run (``braunschweig.calibration.srv_student_reference``,
-``braunschweig.calibration.srv_distance_targets``, ``braunschweig.data.csv_header``,
-``braunschweig.data.education.student_od_table``), never ``braunschweig.popsim``. The name and
-default of the home-area key, the header key of the education-leg share and the age groups and
-sexes of the level are therefore repeated here ONCE; ``tests/test_student_flows_phase3_pins.py``
-pins every repeated value against the Phase 3 module that owns it.
+Import boundary (Phase 4 global constraints): the module is a TRUE LEAF. It imports only
+``braunschweig.data.csv_header`` and loads no ``braunschweig.popsim``, ``braunschweig.calibration`` or
+``braunschweig.analysis`` module (a stage that imports it must not inherit their closure, which names
+the VG250 archive). The name and default of the home-area key, the header key of the education-leg
+share, the student status code, the region and Wolfsburg codes, the columns of T and the age groups
+and sexes of the level are therefore repeated here ONCE; ``tests/test_student_flows_phase3_pins.py``
+pins every repeated value against the module that owns it.
 
 Every table is read with ``encoding="utf-8"``, ``comment="#"`` and Kreis codes as ``str``. Nothing
 here has a fallback: an absent header line, a missing cell or an invalid area map raises.
@@ -36,11 +36,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from braunschweig.calibration.srv_distance_targets import WOLFSBURG_KREIS
-from braunschweig.calibration.srv_distance_targets import ZGB_KREISE
-from braunschweig.calibration.srv_student_reference import AREA_WOLFSBURG, HOME_AREAS
 from braunschweig.data.csv_header import read_header_value
-from braunschweig.data.education.student_od_table import T_COLUMNS
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +59,32 @@ YOUNG_AGE_GROUPS = ("18_19", "20_24", "25_29")
 AGE_RANGE_YOUNG = "18_29"
 AGE_RANGE_OLD = "30plus"
 
+# Literals repeated from their owners so that this module stays a TRUE LEAF (importing the owners
+# would load braunschweig.calibration and, through it, the popsim and analysis packages, whose
+# closure names the VG250 archive). Each is pinned against its owner by
+# tests/test_student_flows_phase3_pins.py.
+#: Owner ``braunschweig.popsim.attributes.STUDENT_TAET``: the P_TAET code of a student.
+STUDENT_P_TAET = 10
+#: Owner ``braunschweig.calibration.srv_student_reference.AREA_WOLFSBURG``.
+AREA_WOLFSBURG = "wolfsburg"
+#: Owner ``braunschweig.calibration.srv_distance_targets.ZGB_KREISE``: the study region.
+ZGB_KREISE = ("03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158")
+#: Owner ``braunschweig.calibration.srv_distance_targets.WOLFSBURG_KREIS``.
+WOLFSBURG_KREIS = "03103"
+#: Owners ``srv_student_reference.HOME_AREAS`` and ``config_keys.DEFAULT_STUDENT_HOME_AREA_KREISE``.
+_DEFAULT_HOME_AREA_KREISE = {
+    "braunschweig": ["03101"],
+    "surrounding": ["03102", "03151", "03153", "03154", "03157", "03158"],
+}
+
+#: Owner ``braunschweig.data.education.student_od_table.T_COLUMNS``: the columns of the table T
+#: (importing it would load student_geometry, whose lazy import of braunschweig.analysis.spatial names
+#: the VG250 archive).
+T_COLUMNS = ["home_ars5", "home_in_region", "destination_id", "institution", "site_kreis_ars5", "scope",
+             "enrollment_persons", "distance_km", "coeff_short", "coeff_middle", "coeff_long",
+             "origin_persons_scaled", "upper_bound_persons_scaled", "weight", "students_persons", "movers_persons",
+             "cell_kind"]
+
 ABSENCE_MODE_CELLS = "cells"
 ABSENCE_MODE_OFF = "off"
 ABSENCE_MODES = (ABSENCE_MODE_CELLS, ABSENCE_MODE_OFF)
@@ -78,15 +100,19 @@ _NUMBER = r"[0-9]+(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?"
 
 # --------------------------------------------------------------------------- home areas
 def default_home_area_kreise() -> dict[str, list[str]]:
-    """The default home areas ``{area: [Kreis codes]}``, built from ``srv_student_reference.HOME_AREAS``.
+    """The default home areas ``{area: [Kreis codes]}`` (a fresh copy).
 
-    Equals ``config_keys.DEFAULT_STUDENT_HOME_AREA_KREISE`` (pinned by the Phase 3 pin test).
+    Equals ``srv_student_reference.HOME_AREAS`` and ``config_keys.DEFAULT_STUDENT_HOME_AREA_KREISE``
+    (both pinned by the Phase 3 pin test).
     """
-    return {area: list(kreise) for area, kreise in HOME_AREAS.items()}
+    return {area: list(kreise) for area, kreise in _DEFAULT_HOME_AREA_KREISE.items()}
 
 
 def area_by_kreis(home_areas: Mapping[str, Sequence[str]], region_kreise: Sequence[str]) -> dict[str, str]:
     """``{Kreis: home area}`` for every Kreis of ``region_kreise``; Wolfsburg maps to ``AREA_WOLFSBURG``.
+
+    Pass the STUDY region (all Kreise of the level table), not the Kreise of the run: the areas are
+    checked against the region, so a run over fewer Kreise keeps the default areas.
 
     The rule of Phase 3's validator (``student_targets.area_of_kreis_from_home_areas``): ``home_areas``
     (the value of :data:`KEY_HOME_AREA_KREISE`) must partition the region WITHOUT Wolfsburg, which SrV
@@ -134,7 +160,7 @@ def home_kreis_by_household(home_zones: pd.DataFrame) -> pd.Series:
     (the rule of ``braunschweig.ipf.prepare``). ``commune_id`` itself is the 12-digit ARS and no Kreis.
 
     Raises ``ValueError`` (no fallback) when a household id is duplicated, when a ``departement_id`` is
-    missing or not 5 digits, when it is no Kreis of the region ``srv_distance_targets.ZGB_KREISE``
+    missing or not 5 digits, when it is no Kreis of the region ``ZGB_KREISE``
     ("a household without a Kreis of the region") or when a present ``commune_id`` does not start
     with it.
     """
@@ -170,11 +196,11 @@ def home_kreis_by_household(home_zones: pd.DataFrame) -> pd.Series:
 
 # --------------------------------------------------------------------------- the table T
 def load_od_table(path) -> pd.DataFrame:
-    """The origin-destination table T with the columns of ``student_od_table.T_COLUMNS``.
+    """The origin-destination table T with the columns of ``T_COLUMNS``.
 
     ``home_ars5`` and ``site_kreis_ars5`` are ``str``; ``home_in_region`` is ``bool``. Raises
-    ``ValueError`` on a missing column, a missing key value or a negative or non-finite
-    ``students_persons``.
+    ``ValueError`` on a missing column, a null key column, ``scope`` or ``site_kreis_ars5``, or a
+    negative or non-finite ``students_persons``.
     """
     path = Path(path)
     table = pd.read_csv(path, comment="#", encoding="utf-8", dtype={"home_ars5": str, "site_kreis_ars5": str})
@@ -185,9 +211,10 @@ def load_od_table(path) -> pd.DataFrame:
     if table["home_in_region"].dtype != bool:
         raise ValueError(f"{_LOG_TAG} {path.name}: home_in_region must be True/False, got dtype "
                          f"{table['home_in_region'].dtype}")
-    keys = table[["home_ars5", "destination_id", "cell_kind"]]
+    keys = table[["home_ars5", "destination_id", "cell_kind", "scope", "site_kreis_ars5"]]
     if keys.isna().any().any():
-        raise ValueError(f"{_LOG_TAG} {path.name}: a row without home_ars5, destination_id or cell_kind")
+        raise ValueError(f"{_LOG_TAG} {path.name}: a row without home_ars5, destination_id, cell_kind, scope or "
+                         f"site_kreis_ars5")
     students = table["students_persons"]
     if not (np.isfinite(students) & (students >= 0)).all():
         raise ValueError(f"{_LOG_TAG} {path.name}: non-finite or negative students_persons")
@@ -350,14 +377,14 @@ def _single_away_share(table: pd.DataFrame, path: Path, **keys: str) -> float:
 def away_share_by_area(srv_dir) -> dict[str, float]:
     """``{area: share of the students away from home all day}``.
 
-    The surveyed areas (``HOME_AREAS``) come from the row ``(day, away_all_day, students_all, yes)`` of
+    The surveyed areas (the keys of :func:`default_home_area_kreise`) come from the row ``(day, away_all_day, students_all, yes)`` of
     ``srv2023_student_parameters_by_area.csv``; ``AREA_WOLFSBURG`` takes the same row of
     ``srv2023_student_parameters.csv`` (the region; ADR-0205).
     """
     by_area_path = Path(srv_dir) / PARAMETERS_BY_AREA_TABLE
     by_area = pd.read_csv(by_area_path, comment="#", encoding="utf-8")
     by_area = by_area[by_area["group"] == "day"]
-    result = {area: _single_away_share(by_area, by_area_path, area=area) for area in HOME_AREAS}
+    result = {area: _single_away_share(by_area, by_area_path, area=area) for area in _DEFAULT_HOME_AREA_KREISE}
     region_path = Path(srv_dir) / PARAMETERS_TABLE
     region = pd.read_csv(region_path, comment="#", encoding="utf-8")
     region = region[region["group"] == "day"]

@@ -62,26 +62,10 @@ _HELPER_MODULES = (
     _student_flows_inputs,
 )
 # The import closure of ``student_flows_inputs`` (the code the ON path runs through its loaders):
-# the modules it imports and what those import in turn (scripts/audit_synpp_helper_hash.py,
-# ADR-0136). One name per line.
+# the module is a leaf and imports only ``braunschweig.data.csv_header``
+# (scripts/audit_synpp_helper_hash.py, ADR-0136). One name per line.
 _DEFERRED_HELPER_MODULE_NAMES = (
-    "braunschweig.analysis.spatial",
-    "braunschweig.calibration.srv_distance_targets",
-    "braunschweig.calibration.srv_participation_universe",
-    "braunschweig.calibration.srv_plan_structure",
-    "braunschweig.calibration.srv_student_reference",
-    "braunschweig.calibration.student_behaviour_labels",
-    "braunschweig.calibration.student_parameters",
     "braunschweig.data.csv_header",
-    "braunschweig.data.education.student_geometry",
-    "braunschweig.data.education.student_od_table",
-    "braunschweig.data.mid.reference_tables",
-    "braunschweig.data.mid.status_by_hhtype",
-    "braunschweig.gravity.friction",
-    "braunschweig.popsim.attributes",
-    "braunschweig.popsim.missing",
-    "braunschweig.popsim.seed",
-    "braunschweig.population.socioprofessional_class",
 )
 
 CRS_METRIC = "EPSG:25832"
