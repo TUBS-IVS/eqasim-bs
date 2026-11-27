@@ -231,6 +231,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.mid.csv_format",
     "braunschweig.popsim.mid.donor",
     "braunschweig.popsim.missing",
+    "braunschweig.popsim.overnight_open_end",
     "braunschweig.popsim.passenger_availability",
     "braunschweig.popsim.placement_income",
     "braunschweig.popsim.sampling",

@@ -44,6 +44,8 @@ from braunschweig import constants as _constants
 from braunschweig import synpp_tokens
 from braunschweig.calibration import commute_day_state_reference as _state_reference
 from braunschweig.popsim import chain_matching as _chain_matching
+from braunschweig.popsim import overnight_open_end as _overnight_open_end
+from braunschweig.popsim.mid import csv_format as _mid_csv_format
 from braunschweig.synthesis import escort_duty as _escort_duty
 from braunschweig.calibration.commute_day_state_reference import MID_CHILD_MAX_AGE
 from braunschweig.calibration.commute_day_state_reference import load_workday_location_table
@@ -71,7 +73,10 @@ _LOG_TAG = "[commute day state]"
 # distances; _chain_matching owns derive_age_class, the binning the donor match relies on.
 # All three were module-level imports outside the token (#327 helper-hash re-audit).
 # _escort_duty owns the escort-leg definition this stage's escort protection reads (#425).
-_HELPER_MODULES = (_state, _matching, _state_reference, _constants, _chain_matching, _escort_duty)
+# _overnight_open_end / _mid_csv_format: reached through trips_stage's open-day-end decision
+# (issue #694); this stage runs that code, so an edit to either must rebuild its cache.
+_HELPER_MODULES = (_state, _matching, _state_reference, _constants, _chain_matching, _escort_duty,
+                   _overnight_open_end, _mid_csv_format)
 
 #: Hashed by dotted NAME: the rest of this stage's import closure, i.e. the modules its helpers
 #: import, whose code this stage runs without importing it itself. The gate in

@@ -67,6 +67,8 @@ from braunschweig.calibration import metrics as _metrics
 from braunschweig.calibration import srv_departure_times as SRVDT
 from braunschweig.calibration import srv_plan_structure as _srv_plan_structure
 from braunschweig.popsim import departure_time_model as _departure_time_model
+from braunschweig.popsim import overnight_open_end as _overnight_open_end
+from braunschweig.popsim.mid import csv_format as _mid_csv_format
 from braunschweig.popsim import trips as _popsim_trips
 from braunschweig.popsim.departure_time_model import (
     OFFSET_COLUMN, person_groups, persons_from_synthetic_schema)
@@ -142,8 +144,11 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 #: ``main`` that had meanwhile given this stage a ``validate()``.
 #: ``_portal_config_keys`` owns the portal flag key, its default and the pre-portal stage name that
 #: decide which trips the "final" view reads (eqasim-bs#442, ADR-0141).
+# _overnight_open_end / _mid_csv_format: reached through trips_stage's open-day-end decision
+# (issue #694); this stage runs that code, so an edit to either must rebuild its cache.
 _HELPER_MODULES = (D, _plan_structure, SRVDT, _srv_plan_structure, _departure_time_model,
-                   _metrics, _popsim_trips, _config_keys, run_provenance, _portal_config_keys)
+                   _metrics, _popsim_trips, _config_keys, run_provenance, _portal_config_keys,
+                   _overnight_open_end, _mid_csv_format)
 
 #: Hashed by dotted NAME: the rest of this stage's import closure, i.e. the modules its helpers
 #: import, whose code this stage runs without importing it itself. The gate in
