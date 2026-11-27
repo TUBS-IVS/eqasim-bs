@@ -26,6 +26,7 @@ from braunschweig.calibration.srv_student_reference import (
     MEAN_LABEL, MODE_BY_E_HVM_5, PARAMETER_TABLE, POST_MATSIM_TABLE, QUANTITY_DAILY_DISTANCE,
     QUANTITY_DAILY_TRAVEL_TIME, QUANTITY_MODE_ALL_LEGS, QUANTITY_MODE_EDUCATION_LEGS,
     YOUNG_ADULT_STATUS_TABLE, YOUNG_ADULT_STATUSES, destination_vocabulary)
+from braunschweig.calibration.student_control_evidence import MIN_RESPONDENTS_PER_CELL
 from braunschweig.calibration.student_parameters import EXTRA_BASES, PARAMETERS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -168,6 +169,28 @@ def test_mid_share_20_29_by_land_rows_and_pins_2026_11_25():
     assert germany["n_unweighted"] == 34158
     assert germany["share_students"] == pytest.approx(0.1677322173, rel=1e-9)
     assert _row(frame, region="01")["share_pupils_and_students"] == pytest.approx(0.1254952029, rel=1e-9)
+
+
+def test_mid_age_sex_partitions_and_pins_2026_11_27():
+    frame = _read(MID, "mid2023_student_age_sex.csv")
+    assert len(frame) == 96
+    de = frame[frame["area"] == "DE"]
+    joint = de[de["sex"].isin(["female", "male"])]
+    assert len(joint) == 8
+    assert joint["share_of_adult_students"].sum() == pytest.approx(1.0, abs=1e-8)
+    with_respondents = frame[frame["n_effective"].notna()]
+    per_base = with_respondents.groupby(["area", "sex"])["share_within_sex"].sum()
+    assert per_base.to_numpy() == pytest.approx(np.ones(len(per_base)), abs=1e-8)
+    by_sex = de.pivot(index="age_group", columns="sex", values="n_unweighted")
+    assert (by_sex["all"] == by_sex["female"] + by_sex["male"]).all()
+    assert joint["n_unweighted"].min() >= MIN_RESPONDENTS_PER_CELL
+    row = _row(frame, area="DE", sex="female", age_group="20_24")
+    assert row["n_unweighted"] == 3869
+    assert row["share_within_sex"] == pytest.approx(0.6499259037, rel=1e-9)
+    assert _row(frame, area="DE", sex="male", age_group="25_29")[
+        "share_of_adult_students"] == pytest.approx(0.1159770254, rel=1e-9)
+    assert _row(frame, area="DE", sex="all", age_group="30plus")[
+        "n_effective"] == pytest.approx(3624.775464, rel=1e-9)
 
 
 # ------------------------------------------------------------ behaviour tables (both surveys)

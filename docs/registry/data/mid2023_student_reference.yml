@@ -1,12 +1,13 @@
 dataset: mid2023_student_reference
 title: MiD 2023 university-student aggregates (education-trip status by age, distance band x
   main mode, pupil and student share of the 20-29 year olds per Land, seed-side behaviour
-  cells; four committed tables)
+  cells, sex x age group of the adult students; five committed tables)
 provider: derived in-repo from MiD 2023 scientific-use microdata (SUF B1, infas/DLR/IVT/infas 360)
 vintage: 2023 survey year
 geography: |
   Germany (national MiD sample). The share of the 20-29 year olds has one row for Germany and
-  one per Land (BLAND 1-16); the other three tables are national only. There is no Braunschweig
+  one per Land (BLAND 1-16); the age-by-sex table has rows for Germany and per RegioStaR 7
+  type; the other three tables are national only. There is no Braunschweig
   or ZGB sample: transfer to the study area is an assumption of the consumer.
 crs: null
 roles:
@@ -17,25 +18,27 @@ acquisition:
   method: committed
   source: |
     Regenerate with: python scripts/extract_mid_student_reference.py --raw <MiD CSV directory>
-    --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha>, which writes all four
-    tables in one run. Reads MiD2023_Personen.csv and MiD2023_Wege.csv (required columns:
+    --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha>, which writes all five
+    tables in one run; --tables <comma-separated subset of status, distance_mode, share_20_29,
+    behaviour, age_sex> writes only those and leaves the other files untouched. Reads MiD2023_Personen.csv and MiD2023_Wege.csv (required columns:
     mid_student_reference.BEHAVIOUR_PERSON_COLUMNS for persons, the script's TRIP_READ_COLUMNS
     for trips); when the persons file has no BLAND column the households file
-    MiD2023_Haushalte.csv (H_ID, BLAND) is read as well. The raw microdata is restricted and
+    MiD2023_Haushalte.csv (H_ID, BLAND) is read as well; the age-by-sex table also needs the
+    persons columns HP_SEX and RegioStaR7. The raw microdata is restricted and
     never committed. The script requires --source-commit, recorded in every header.
   script: scripts/extract_mid_student_reference.py
 storage:
-  expected_path: eqasim-data/data/braunschweig/mid/{mid2023_student_status_by_age,mid2023_student_education_distance_mode,mid2023_student_share_20_29_by_land,mid2023_student_behaviour_seed}.csv
+  expected_path: eqasim-data/data/braunschweig/mid/{mid2023_student_status_by_age,mid2023_student_education_distance_mode,mid2023_student_share_20_29_by_land,mid2023_student_behaviour_seed,mid2023_student_age_sex}.csv
   committed: true
   local_only: false
 verification:
   verifier_entry: null
   notes: |
-    Not listed in scripts/verify_braunschweig_inputs.py: the four files are committed (by the
+    Not listed in scripts/verify_braunschweig_inputs.py: the five files are committed (by the
     Phase 0 extraction run) and no stage reads them - they are build-time references of the
     student-commuting feature (issue #140). Unit tests on synthetic MiD-shaped frames
     (hand-computed shares, the universe restriction to core weekdays and adults, the
-    public-holiday exclusion, the rbW rule, the unknown day for no diary and for a diary the
+    public-holiday exclusion, the rbW rule, the age-by-sex cells and their exclusions, the unknown day for no diary and for a diary the
     popsim seed replaces, the exclusion of unreadable codes, the Land join and the CLI end to end):
     tests/test_mid_student_reference.py.
 requirements:
@@ -76,7 +79,7 @@ limitations: |
 
   Mode is the imputed main mode hvm_imp (the variable the handbook mandates and the popsim seed
   maps), not the raw hvm. The pupil and student share of the 20-29 year olds is a status share
-  over all reporting days; every other table is restricted to Tuesday to Thursday without
+  over all reporting days, as is the age-by-sex table; every other table is restricted to Tuesday to Thursday without
   public-holiday reporting days.
 
   Measured values: see the committed headers and the Phase 0 run manifest of issue #140. A
