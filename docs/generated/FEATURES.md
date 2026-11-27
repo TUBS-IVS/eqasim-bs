@@ -74,6 +74,7 @@ may only name run manifests (no run, no claim).
 | [large_facility_access_links](../registry/features/large_facility_access_links.yml) | matsim | active | ON | A/A/A | 3 | not claimed | marker | none | unvalidated (`i465-large-facility-access-1pct-2026-10-23`) | pending |
 | [leisure_unspecified_subtype](../registry/features/leisure_unspecified_subtype.yml) | secondary | active | ON | A/-/- | 6 | not claimed | marker | committed | unvalidated | pending |
 | [lod2_height_volume_typing](../registry/features/lod2_height_volume_typing.yml) | home | active | ON | A/A/A | 3 | -- | marker | none | unvalidated | pending |
+| [loop_trips_non_motorised](../registry/features/loop_trips_non_motorised.yml) | matsim | active | ON | A/A/A | 2 | proven | none | none | unvalidated (`i679-stroll-loops-ab-1pct-2026-11-25`) | pending |
 | [matsim_output_archive](../registry/features/matsim_output_archive.yml) | infrastructure | active | ON | A/A/A | 1 | -- | marker | none | unvalidated | pending |
 | [mid_passenger_availability](../registry/features/mid_passenger_availability.yml) | attributes | active | ON | A/-/- | 7 | proven | marker | assumption | unvalidated (`smoke-mid-passenger-availability-2026-09-15`) | Independent Sol implementation and integration reviews, 2026-09-15 |
 | [mid_validation_report](../registry/features/mid_validation_report.yml) | validation | active | ON | A/s/s | 1 | -- | none | committed | unvalidated | pending |
@@ -105,6 +106,7 @@ may only name run manifests (no run, no claim).
 | [run_config_composition](../registry/features/run_config_composition.yml) | infrastructure | active | ON | A/s/s | 2 | -- | none | none | unvalidated | pending |
 | [run_resource_recorder](../registry/features/run_resource_recorder.yml) | infrastructure | active | ON | A/A/A | 7 | proven | marker | none | unvalidated | pending |
 | [secondary_distance_by_purpose](../registry/features/secondary_distance_by_purpose.yml) | secondary | active | ON | A/i/i | 4 | -- | none | committed | unvalidated | pending |
+| [secondary_loop_zero_displacement](../registry/features/secondary_loop_zero_displacement.yml) | secondary | active | ON | A/-/- | 12 | proven | marker | committed | unvalidated (`i679-stroll-loops-ab-1pct-2026-11-25`) | pending |
 | [secondary_mid_weekday_universe](../registry/features/secondary_mid_weekday_universe.yml) | secondary | active | ON | A/-/- | 7 | proven | marker | committed | unvalidated | pending |
 | [secondary_srv_location_types](../registry/features/secondary_srv_location_types.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | measured_vs_reference (`srv262-AB-5pct-2026-08-12`) | pending |
 | [sector_aware_attraction_tilt](../registry/features/sector_aware_attraction_tilt.yml) | work | parked | off | i/i/i | 1 | -- | none | none | measured_vs_reference (`sector-aware-ab-2026-07-15`) | pending |

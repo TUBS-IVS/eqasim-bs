@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 115 | stages: 137 | datasets: 108 | ADRs: 203 | run manifests: 119
+- Features: 117 | stages: 137 | datasets: 109 | ADRs: 204 | run manifests: 121
 
 ## Population synthesis
 
@@ -135,6 +135,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [leisure_unspecified: MiD W_ZWECK 10 leisure legs are the fifth leisure subtype](../registry/features/leisure_unspecified_subtype.yml) | active | ON | A/-/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
 | [exclude_no_answer_purpose_legs: a survey non-answer is never a modelled purpose, and a design code can never become a distance](../registry/features/no_answer_codes_excluded.yml) | active | ON | A/-/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
 | [Calibration: purpose-resolved secondary](../registry/features/secondary_distance_by_purpose.yml) | active | ON | A/i/i | unvalidated |  |
+| [Strolls and dog walks are loops: a loop activity is placed at the place of the activity before it (#679)](../registry/features/secondary_loop_zero_displacement.yml) | active | ON | A/-/- | unvalidated (`i679-stroll-loops-ab-1pct-2026-11-25`) | [#679](https://github.com/TUBS-IVS/eqasim-bs/issues/679) |
 | [secondary_mid_weekday_legs_only: the secondary layers and the MiD subtype deciders estimate on the weekday diary universe](../registry/features/secondary_mid_weekday_universe.yml) | active | ON | A/-/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
 | [SrV-grounded secondary location types for leisure/other (#262)](../registry/features/secondary_srv_location_types.yml) | active | ON | A/-/- | measured_vs_reference (`srv262-AB-5pct-2026-08-12`) | [#262](https://github.com/TUBS-IVS/eqasim-bs/issues/262) |
 | [W_ZWD no-detail codes (799, 699) are subtype sentinels, labels verified against the codeplan](../registry/features/w_zwd_codeplan_sentinels.yml) | active | ON | A/-/- | unvalidated | [#242](https://github.com/TUBS-IVS/eqasim-bs/issues/242) |
@@ -176,6 +177,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Carless routing re-mode](../registry/features/carless_routing_remode.yml) | active | ON | A/A/s | unvalidated |  |
 | [Initial mode choice before iteration 0 with free-flow travel times](../registry/features/initial_mode_choice.yml) | active | ON | A/A/A | unvalidated | [#542](https://github.com/TUBS-IVS/eqasim-bs/issues/542) |
 | [Large sites spread their car access over their parking lots or get one high-capacity link](../registry/features/large_facility_access_links.yml) | active | ON | A/A/A | unvalidated (`i465-large-facility-access-1pct-2026-10-23`) | [#465](https://github.com/TUBS-IVS/eqasim-bs/issues/465) |
+| [Same-facility leisure trips and trips into an out-and-back stroll may only be walk or bicycle in the mode choice (#679)](../registry/features/loop_trips_non_motorised.yml) | active | ON | A/A/A | unvalidated (`i679-stroll-loops-ab-1pct-2026-11-25`) | [#679](https://github.com/TUBS-IVS/eqasim-bs/issues/679) |
 | [Mode choice](../registry/features/mode_choice.yml) | supported | off | i/i/i | unvalidated |  |
 | [Zone-based parking costs (sourced tariffs, SrV free-parking shares)](../registry/features/parking_cost_zones.yml) | EXPERIMENTAL | ON | A/A/- | unvalidated (`parking-zones-smoke-zgb-1pct-2026-09-30`, `parking-v3-arms-2026-10-15`) | [#436](https://github.com/TUBS-IVS/eqasim-bs/issues/436) |
 | [Plan feasibility check on the written population and the 30 h plan-time bound](../registry/features/plan_feasibility_check.yml) | active | ON | A/A/A | unvalidated (`i453-i443-ab-1pct-2026-10-16`, `i465-wpe-smoke-1pct-2026-10-23`, `i576-plan-check-split-prod100-2026-11-06`) | [#443](https://github.com/TUBS-IVS/eqasim-bs/issues/443) |
