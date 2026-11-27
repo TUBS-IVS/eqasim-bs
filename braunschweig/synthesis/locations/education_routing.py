@@ -74,37 +74,46 @@ def age_to_level(age):
 def student_status(persons: pd.DataFrame, *, warn_share: float = 0.0) -> tuple[pd.Series, dict]:
     """``(Series[bool] is_student, counts)`` of ``persons`` (same index).
 
-    PRIMARY: ``P_TAET == STUDENT_P_TAET`` for every person with a numeric ``P_TAET``. A person whose ``P_TAET`` is
-    missing or not a number has no usable status: it counts as no student and is counted as FALLBACK (``taet_missing``,
-    the same as ``fallback``). FALLBACK for the whole population (column absent, e.g. the legacy IPF population):
-    ``studies & ~employed & age >= 20``; a missing ``studies`` or ``employed`` value reads as False and is counted as
-    ``flag_missing`` (persons with a missing flag). Logged as ``"[education routing] student status: primary n/N
-    (x%), fallback m (y%)"``; a WARNING is logged when the fallback share or the ``flag_missing`` share exceeds
-    ``warn_share`` (``braunschweig.students.status_fallback_warn_share``, default 0.0). ASSUMPTION: any fallback or
-    missing status in the popsim_mid pipeline, whose persons carry ``P_TAET`` for every person, is a defect. Raises
-    ``ValueError`` when ``P_TAET`` and one of ``studies``, ``employed``, ``age`` are absent: no status can be derived.
+    PRIMARY: ``P_TAET == STUDENT_P_TAET`` for every person with a numeric ``P_TAET``. An unknown status is never read
+    as "not a student" (the rule of ``mid_student_reference._drop_unreadable_activity``): a person whose ``P_TAET`` is
+    missing or not a number takes the design B1 fallback rule, per person, and is counted as FALLBACK
+    (``taet_missing``, the same as ``fallback``). FALLBACK rule: ``studies & ~employed & age >= 20``; it applies to
+    the whole population when the column is absent (e.g. the legacy IPF population) and to exactly the persons
+    without a readable ``P_TAET`` otherwise. A missing ``studies`` or ``employed`` value reads as False and is counted
+    as ``flag_missing`` (persons on the fallback rule with a missing flag). Logged as ``"[education routing] student
+    status: primary n/N (x%), fallback m (y%)"``; a WARNING is logged when the fallback share or the ``flag_missing``
+    share exceeds ``warn_share`` (``braunschweig.students.status_fallback_warn_share``, default 0.0). ASSUMPTION: any
+    fallback or missing status in the popsim_mid pipeline, whose persons carry ``P_TAET`` for every person, is a
+    defect. Raises ``ValueError`` when a person needs the fallback rule and one of ``studies``, ``employed``, ``age``
+    is absent: no status can be derived.
 
     ``counts`` holds ``n``, ``primary``, ``fallback``, ``taet_missing``, ``flag_missing``, ``students``.
     """
     n = len(persons)
-    taet_missing = 0
-    flag_missing = 0
     if TAET_COLUMN in persons.columns:
         taet = pd.to_numeric(persons[TAET_COLUMN], errors="coerce")
-        taet_missing = int(taet.isna().sum())
+        on_fallback = taet.isna()
         is_student = (taet == STUDENT_P_TAET)
-        primary, fallback = n - taet_missing, taet_missing
     else:
+        taet = None
+        on_fallback = pd.Series(True, index=persons.index)
+        is_student = pd.Series(False, index=persons.index)
+    taet_missing = int(on_fallback.sum()) if taet is not None else 0
+    fallback = int(on_fallback.sum())
+    primary = n - fallback
+    flag_missing = 0
+    if fallback:
         missing = [c for c in ("studies", "employed", "age") if c not in persons.columns]
         if missing:
-            raise ValueError(f"{_LOG_TAG} no {TAET_COLUMN} and no column(s) {missing} to derive the student "
-                             f"status from; found {list(persons.columns)}")
-        flag_missing = int((persons["studies"].isna() | persons["employed"].isna()).sum())
+            raise ValueError(f"{_LOG_TAG} {fallback} person(s) without a usable {TAET_COLUMN} and no column(s) "
+                             f"{missing} to derive their student status from; found {list(persons.columns)}")
+        rows = persons[on_fallback]
+        flag_missing = int((rows["studies"].isna() | rows["employed"].isna()).sum())
         # fillna(False) first: astype(bool) would turn a missing value into True.
-        studies = persons["studies"].fillna(False).astype(bool)
-        employed = persons["employed"].fillna(False).astype(bool)
-        is_student = studies & ~employed & (persons["age"] >= ADULT_MIN_AGE)
-        primary, fallback = 0, n
+        studies = rows["studies"].fillna(False).astype(bool)
+        employed = rows["employed"].fillna(False).astype(bool)
+        is_student = is_student.copy()
+        is_student[on_fallback] = studies & ~employed & (rows["age"] >= ADULT_MIN_AGE)
     is_student = is_student.astype(bool)
     fallback_share = (fallback / n) if n else 0.0
     flag_missing_share = (flag_missing / n) if n else 0.0

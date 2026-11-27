@@ -83,7 +83,8 @@ def test_student_status_primary_path_reads_p_taet_and_counts_no_fallback(caplog)
 
 def test_student_status_missing_p_taet_values_are_counted_as_fallback_and_warn(caplog):
     # P_TAET exists but is mostly missing: no healthy primary rate may be reported, and the warning fires
-    persons = pd.DataFrame({"age": [22] * 10, "P_TAET": [10] + [NAN] * 9})
+    persons = pd.DataFrame({"age": [22] * 10, "P_TAET": [10] + [NAN] * 9, "studies": [False] * 10,
+                            "employed": [False] * 10})
     with caplog.at_level(logging.INFO):
         is_student, counts = student_status(persons)
     assert is_student.tolist() == [True] + [False] * 9
@@ -94,6 +95,30 @@ def test_student_status_missing_p_taet_values_are_counted_as_fallback_and_warn(c
     with caplog.at_level(logging.INFO):
         student_status(persons, warn_share=0.95)         # 90 % missing is not above 95 %
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_unknown_status_in_a_population_with_p_taet_takes_the_fallback_rule_end_to_end():
+    # Ruling: an unknown status is never read as "not a student". The persons with a missing P_TAET take
+    # studies & ~employed & age >= 20 per person; the persons with a readable P_TAET stay on the primary rule.
+    persons = pd.DataFrame({
+        "age": [25, 25, 17, 25, 25, 25],
+        "P_TAET": [NAN, NAN, NAN, 10, 4, 8],
+        "studies": [True, False, True, False, True, False],      # persons 4 and 5: ignored (readable P_TAET)
+        "employed": [False, False, False, False, False, True],
+    })
+    is_student, counts = student_status(persons, warn_share=1.0)
+    assert is_student.tolist() == [True, False, False, True, False, False]
+    assert (counts["primary"], counts["fallback"]) == (3, 3)
+    routed = route_education_level(persons["age"], is_student, persons["P_TAET"])
+    assert routed.tolist() == ["university",          # unknown status, studies, not employed -> university
+                               ADULT_EDUCATION,       # unknown status, not studying -> adult education
+                               "upper_secondary",     # under 20, unknown status -> its age band
+                               "university", ADULT_EDUCATION, BBS_ADULT]
+
+
+def test_unknown_status_without_the_fallback_columns_raises():
+    with pytest.raises(ValueError, match="studies"):
+        student_status(pd.DataFrame({"age": [22], "P_TAET": [NAN]}))
 
 
 def test_student_status_fallback_reads_a_missing_flag_as_false_and_counts_it():
