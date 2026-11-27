@@ -50,7 +50,8 @@ _LOCKED_STACK = ("ortools", "numpy", "pandas")
 SYNC_CHECK_ARGS = ("sync", "--frozen", "--check", "--offline")
 
 #: Exit code of ``uv sync --frozen --check`` when the environment differs from the lock
-#: (measured 2026-11-27: "The environment is outdated", exit 1). Any OTHER non-zero exit means
+#: (measured 2026-11-27 with uv 0.11.21 on the run server: "The environment is outdated", exit 1;
+#: run manifest ``popsim-env-security-update-2026-11-27``). Any OTHER non-zero exit means
 #: the check itself could not run (unreadable lock, unknown option of an old uv, ...).
 SYNC_CHECK_OUTDATED_EXIT = 1
 
@@ -259,8 +260,8 @@ def require_environment_in_sync(uv_path: str, project_dir, *,
             raise RuntimeError(
                 f"environment check (uv sync --frozen --check) could not run "
                 f"(exit {completed.returncode}) in {str(project_dir)!r}: {output}. Check the "
-                f"uv version (the check needs `uv sync --check`, tested with uv 0.11.19 and "
-                f"0.11.21) and the lock file. {_sync_hint(project_dir)}")
+                f"uv version (the check needs `uv sync --check`; see environments/populationsim/README.md) "
+                f"and the lock file. {_sync_hint(project_dir)}")
         raise RuntimeError(
             f"the installed popsimprep environment differs from {LOCK_FILE_NAME} "
             f"(uv sync --frozen --check, exit {completed.returncode}) in "
