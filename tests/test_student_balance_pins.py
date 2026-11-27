@@ -1,5 +1,6 @@
 """Pins on the committed final student balance of 2026-11-27 (owner weights 1 / 1 / 0.3, mover share 0.4;
-enrollment WS 2025/26, level split by the census pattern).
+enrollment WS 2025/26, level split by the census pattern), rebuilt the same day with the art academy taking the
+origin pattern of TU Braunschweig (run student-balance-2026-11-27-art-academy-proxy, ADR-0210 amendment).
 
 The files are committed, so these tests are not data-gated. They check the internal identities of the
 tables and pin a few values copied unrounded from the files written by
@@ -24,7 +25,7 @@ BY_SITE = SCHOOLS / "student_balance_by_site.csv"
 OUT = SCHOOLS / "student_balance_out_commuters.csv"
 IN = SCHOOLS / "student_balance_in_commuters_by_origin.csv"
 LEVEL = ROOT / "eqasim-data" / "data" / "braunschweig" / "popsim" / "student_level_table.csv"
-GATE = ROOT / "docs" / "runs" / "artifacts" / "student-balance-2026-11-27" / "student_level_gate.csv"
+GATE = ROOT / "docs" / "runs" / "artifacts" / "student-balance-2026-11-27-art-academy-proxy" / "student_level_gate.csv"
 ALL_FILES = [OD, BY_SITE, OUT, IN, LEVEL, GATE]
 # The commit that holds the five tables of run student-balance-2026-11-27 (before the origin-pattern proxy).
 OFF_REFERENCE_COMMIT = "a5e99557"
@@ -137,15 +138,22 @@ def test_gate_area_consistent_trigger_2026_11_27(script):
     assert script.read_header_value(GATE, "gate_triggered_area_consistent") == "True"
 
 
-def test_art_academy_censored_bound_is_capped_at_enrollment_minus_own_kreis_2026_11_27():
-    site = pd.read_csv(BY_SITE, comment="#", dtype={"site_kreis_ars5": str})
-    art = site[site.destination_id == "Hochsch. f. Bildende Künste Braunschweig | 03101000"].iloc[0]
-    assert art.censored_upper_bound_commuters_persons == 657
+def test_art_academy_takes_the_origin_pattern_of_tu_braunschweig_2026_11_27():
     od = _od()
-    own = od[(od.destination_id == art.destination_id) & (od.home_ars5 == art.site_kreis_ars5)]
-    assert len(own) == 1
-    assert art.enrollment_persons == 873 and own.origin_persons_scaled.iloc[0] == 216
-    assert art.censored_upper_bound_commuters_persons == art.enrollment_persons - own.origin_persons_scaled.iloc[0]
+    art = od[od.destination_id == "Hochsch. f. Bildende Künste Braunschweig | 03101000"].set_index("home_ars5")
+    tu = od[od.destination_id == "TU Braunschweig | 03101000"].set_index("home_ars5")
+    assert art.students_persons.sum() == pytest.approx(873.0, abs=1e-6)
+    # Every Kreis other than Braunschweig: the same share of the enrollment as TU Braunschweig (same commune).
+    others = art.index[art.index != "03101"]
+    assert len(others) == 50
+    share_art = art.loc[others, "students_persons"] / art.enrollment_persons.iloc[0]
+    share_tu = tu.loc[others, "students_persons"] / tu.enrollment_persons.iloc[0]
+    assert (share_art - share_tu).abs().max() < 1e-9
+    # The Braunschweig row stays the remainder, not below the Kreis-view cell CHE shows (216 persons).
+    own = art.loc["03101"]
+    assert own.origin_persons_scaled == 216 and own.students_persons >= own.origin_persons_scaled
+    site = pd.read_csv(BY_SITE, comment="#", dtype={"site_kreis_ars5": str}).set_index("destination_id")
+    assert site.loc[art.destination_id.iloc[0], "in_commuters_persons"] == pytest.approx(83.2856169, rel=1e-9)
 
 
 def test_od_table_values_2026_11_27():
@@ -174,23 +182,23 @@ def test_out_commuter_values_2026_11_27():
 
 def test_in_commuter_by_origin_values_2026_11_27():
     inc = pd.read_csv(IN, comment="#", dtype={"home_ars5": str}).set_index("home_ars5").in_commuters_persons
-    assert inc["03155"] == pytest.approx(91.84579471, rel=1e-9)
-    assert inc["03159"] == pytest.approx(131.0246037, rel=1e-9)
-    assert inc["03241"] == pytest.approx(962.4689369, rel=1e-9)
+    assert inc["03155"] == pytest.approx(93.95070534, rel=1e-9)
+    assert inc["03159"] == pytest.approx(132.9851238, rel=1e-9)
+    assert inc["03241"] == pytest.approx(997.508347, rel=1e-9)
 
 
 def test_level_table_values_2026_11_27(script):
-    assert float(script.read_header_value(LEVEL, "omega")) == pytest.approx(0.5348793385, rel=1e-12)
+    assert float(script.read_header_value(LEVEL, "omega")) == pytest.approx(0.5335455303, rel=1e-12)
     level = pd.read_csv(LEVEL, comment="#", dtype={"code": str})
     cell = level[level.code == "03101"].set_index(["sex", "age_group"]).students_persons
-    assert cell[("female", "18_19")] == pytest.approx(610.4646126, rel=1e-9)
-    assert cell[("female", "20_24")] == pytest.approx(4209.73584, rel=1e-9)
-    assert cell[("female", "25_29")] == pytest.approx(1244.619786, rel=1e-9)
-    assert cell[("female", "30plus")] == pytest.approx(412.4348083, rel=1e-9)
-    assert cell[("male", "18_19")] == pytest.approx(505.3404386, rel=1e-9)
-    assert cell[("male", "20_24")] == pytest.approx(3510.626081, rel=1e-9)
-    assert cell[("male", "25_29")] == pytest.approx(1434.297268, rel=1e-9)
-    assert cell[("male", "30plus")] == pytest.approx(439.5621738, rel=1e-9)
+    assert cell[("female", "18_19")] == pytest.approx(608.6968873, rel=1e-9)
+    assert cell[("female", "20_24")] == pytest.approx(4197.545687, rel=1e-9)
+    assert cell[("female", "25_29")] == pytest.approx(1241.015735, rel=1e-9)
+    assert cell[("female", "30plus")] == pytest.approx(411.2405188, rel=1e-9)
+    assert cell[("male", "18_19")] == pytest.approx(503.8771218, rel=1e-9)
+    assert cell[("male", "20_24")] == pytest.approx(3500.460344, rel=1e-9)
+    assert cell[("male", "25_29")] == pytest.approx(1430.143967, rel=1e-9)
+    assert cell[("male", "30plus")] == pytest.approx(438.2893315, rel=1e-9)
 
 
 def _first_existing(relative):
@@ -234,6 +242,6 @@ def test_without_origin_pattern_proxy_the_balance_equals_the_tables_of_2026_11_2
 
 def test_level_gate_values_2026_11_27():
     gate = pd.read_csv(GATE, comment="#", dtype={"code": str}).set_index("code")
-    assert gate.loc["03101", "balance_students_persons"] == pytest.approx(15132.48495, rel=1e-9)
-    assert gate.loc["03102", "difference_in_srv_se"] == pytest.approx(-2.086131443, rel=1e-9)
-    assert gate.loc["03103", "balance_students_persons"] == pytest.approx(2624.440449, rel=1e-9)
+    assert gate.loc["03101", "balance_students_persons"] == pytest.approx(14882.42124, rel=1e-9)
+    assert gate.loc["03102", "difference_in_srv_se"] == pytest.approx(-2.046911663, rel=1e-9)
+    assert gate.loc["03103", "balance_students_persons"] == pytest.approx(2656.848802, rel=1e-9)

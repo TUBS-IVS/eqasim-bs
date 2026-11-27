@@ -1,0 +1,126 @@
+id: student-balance-2026-11-27-art-academy-proxy
+date: '2026-11-27'
+repository:
+  commit: '352850b4'
+  branch: claude/i140-student-flows-fde844
+  notes: >-
+    Code state of every table of this run: 352850b4 (written in the header of each committed table and artifact). The five
+    rewritten tables, the run artifacts and this manifest are committed together in the commit that adds this file; the sha256
+    values under pipeline.notes are those of the committed blobs (LF). This run supersedes the five tables of run
+    student-balance-2026-11-27 (record docs/runs/student-balance-2026-11-27.yml), whose weights, mover share, inputs and level
+    rule it keeps. The run directory, host and user are not recorded in tracked files.
+configuration:
+  base: configs/base_bs.yml
+  notes: >-
+    No model configuration. The settings of the build are CLI arguments; the one new argument is --origin-pattern-proxy
+    (the art academy takes the origin pattern of TU Braunschweig, owner decision of 2026-11-27, ADR-0210 Decision 1 as
+    amended). Its value and counts are in the Diagnostics line (object origin_pattern_proxy) of every table header.
+sampling:
+  rate: not applicable (head-count tables from published aggregates)
+  scope: >-
+    As in run student-balance-2026-11-27: study region ZGB (eight Kreise as homes), the 21 sites of 16 institutions of the
+    choice set, CHE origins WS 2022/23 scaled to LSN enrollment WS 2025/26 (model semester) and, for omega, to WS 2022/23
+    (census-year semester).
+  notes: The table rules are in ADR-0210; the art academy rule is Decision 1, third bullet (amended 2026-11-27).
+pipeline:
+  targets:
+  - scripts/build_student_balance.py
+  notes: |-
+    Command (local-only inputs are named by file name and sha256, never by path; the command of run student-balance-2026-11-27
+    plus --origin-pattern-proxy, written to a scratch directory and copied back):
+    python -X utf8 scripts/build_student_balance.py balance --sites lsn_university_sites.csv --sites-census-year lsn_university_sites_ws2022_23.csv --vg250 vg250-ew_12-31.utm32s.gpkg.ebenen.zip --zensus-students zensus2022_students_20_29_kreis.csv --zensus-employed zensus2022_employed_by_age_kreis.csv --weights 1,1,0.3 --mover-share 0.4 --mover-site-kreise 03158 --weights-source owner --origin-pattern-proxy "Hochsch. f. Bildende Künste Braunschweig=TU Braunschweig" --source-commit 352850b4 --final --out-dir <scratch>/eqasim-data --artifact-dir <scratch>/artifacts
+    The local-only inputs were checked against the sha256 values of run student-balance-2026-11-27 before the run (all five equal).
+    Every input is listed with its sha256 in the Inputs lines of the table headers. One committed input differs from run
+    student-balance-2026-11-27: eqasim-data/data/braunschweig/srv/srv2023_student_parameters.csv, sha256
+    865f5d697a98e89951608b18203f7c3e57fd9d190a513765458343249919e459 (rewritten by commit 74ce7d46 of Phase 3). The build reads
+    from it only the education-leg share and the away share of the day-factor line; both are unchanged
+    (education_leg_share_control_definition=0.3705664224, away_all_day_share=0.1239264157 in the Day factor line of both runs).
+    OFF check: the same command with --origin-pattern-proxy none reproduces the data rows of the five tables of run
+    student-balance-2026-11-27 (test test_without_origin_pattern_proxy_the_balance_equals_the_tables_of_2026_11_27 in
+    tests/test_student_balance_pins.py, data-gated, passed locally on 2026-11-27).
+    Log in the artifact directory: balance_logs.txt (local paths scrubbed to placeholders).
+    sha256 of the committed blobs:
+    eqasim-data/data/braunschweig/popsim/student_level_table.csv: 030aca45c36be32e08e3e7f64b79a6e723f0367cac5e1ac81085ae07787c860c
+    eqasim-data/data/braunschweig/schools/student_balance_by_site.csv: 500c21e072ca052eaa8b94312ca5032a226fff970d6e1d09e07c04d5cc31ccba
+    eqasim-data/data/braunschweig/schools/student_balance_in_commuters_by_origin.csv: 5d69137febd60134946add9c0ae6a2c333a0518a6e0fac3e1fa0447cc46a5b38
+    eqasim-data/data/braunschweig/schools/student_balance_out_commuters.csv: b78eb2e5e2d7ea757e203750e0cd1e3e8008cea2a682cd7f93e02b0f63891afe
+    eqasim-data/data/braunschweig/schools/student_od_table.csv: cf65df53ebf53e9a95f3fe1d97e852adf3b99738fec6852d7b4515658a57fbd6
+    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/balance_logs.txt: ef7720bd8d986e2b6e718d16d4fe4b1caab89e8b97ce6e088e45a036a0279b7c
+    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/student_employed_target_precheck.csv: fc5d40e9424d2623a28a13355e125f325f1d450cc27583c4e3f0cc289980c2e5
+    docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/student_level_gate.csv: b945e077ffd78c9490478b5a72a38f755984d670aea9e556b25f88038803e571
+    student_destination_points.csv was not rebuilt: the rule changes no site, point or distance.
+classification:
+- calibration
+status:
+  execution: completed
+  notes: >-
+    A table build on published aggregates, not a validation. The weights and the mover share are the owner's of 2026-11-26;
+    the origin pattern of the art academy is an ASSUMPTION of the owner of 2026-11-27 (ADR-0210).
+validation:
+- metric: the art academy in T (student_od_table.csv, destination 'Hochsch. f. Bildende Künste Braunschweig | 03101000')
+  reference: TU Braunschweig in the same table (the proxy); the art academy's rows of run student-balance-2026-11-27
+  result: >-
+    Before (blob of student_od_table.csv at a5e99557): 51 rows, Braunschweig row 03101 (local) 873 persons with origin 216
+    (the CHE Kreis-view cell) and 657 movers; every other row 0 (7 region Kreise, 43 Kreise outside the region). After (this
+    run, column students_persons): Braunschweig row 03101 622.93629 (origin 216, movers 406.93629); the seven other region
+    Kreise 03102 22.12493307, 03103 32.40835267, 03151 29.20124612, 03153 16.77263499, 03154 14.38640014, 03157 27.68213457,
+    03158 24.20239158 (sum 166.778093, rounded); the 43 Kreise outside the region 83.2856169 together (column
+    in_commuters_persons of student_balance_by_site.csv; largest rows 03241 35.03941012, 03254 20.26401636, 03351 8.208256153,
+    15085 5.349784406, 15083 2.211897851). Column sum 873 before and after. Share of the enrollment from outside the
+    region: TU Braunschweig 0.095402, art academy 0.095402 after (0 before); the share per origin Kreis equals TU Braunschweig's
+    within 1e-9 (pin test test_art_academy_takes_the_origin_pattern_of_tu_braunschweig_2026_11_27). The Diagnostics line
+    (object origin_pattern_proxy) counts 50 proxy cells in both builds, origin persons 341.74192396930215 (model semester,
+    enrollment 873) and 366.7951692545661 (census-year semester, enrollment 937), CHE total of TU Braunschweig 16809, and no
+    proxy cell above the art academy's own CHE censoring bound; 250.06371003635516 students on the proxy rows of T, of which
+    166.7780931389599 with home in the region.
+- metric: art academy in the balance by site (student_balance_by_site.csv)
+  reference: the same row of run student-balance-2026-11-27
+  result: >-
+    residents_region_persons 873 -> 789.7143831; in_commuters_persons 0 -> 83.2856169; censored_upper_bound_persons 4129 ->
+    96.34213814 (the bounds are now TU Braunschweig's scaled bounds); censored_upper_bound_commuters_persons 657 (capped at
+    enrollment minus the own-Kreis origin) -> 1.080472569 (no site capped; key censored_upper_bound_commuters_capped_sites of the
+    Diagnostics line is empty). Every other site row and every row of student_balance_out_commuters.csv is unchanged; every row of
+    student_od_table.csv outside the art academy is unchanged (frame-equal to the blob at a5e99557).
+- metric: region total and in-commuters
+  reference: run student-balance-2026-11-27
+  result: >-
+    Students living in the region (key students_living_persons of the Diagnostics line, the sum of column students_persons over
+    rows with home_in_region of T) 28761.7772 -> 28678.49158 (header key level_total_persons of student_level_table.csv); the
+    difference is the art academy's 83.2856169 in-commuters. In-commuters of all local sites (column in_commuters_persons of
+    student_balance_by_site.csv, summed) 2484.240118 -> 2567.525735; residents 25467.75988 -> 25384.474263. Rows of
+    student_balance_in_commuters_by_origin.csv pinned: 03155 91.84579471 -> 93.95070534, 03159 131.0246037 -> 132.9851238,
+    03241 962.4689369 -> 997.508347.
+- metric: level per Kreis (student_level_table.csv, column students_persons summed per code)
+  reference: the same table of run student-balance-2026-11-27
+  result: >-
+    The level keeps the region total of T and splits it by the census pattern, so every Kreis moves by the same factor
+    (28678.49158 / 28761.7772): 03101 12367.081008 -> 12331.269592; 03102 2079.147212 -> 2073.126616; 03103 2567.690089 ->
+    2560.254817; 03151 2066.753304 -> 2060.768596; 03153 3338.301276 -> 3328.634541; 03154 1590.522448 -> 1585.916765; 03157
+    2261.533638 -> 2254.984904; 03158 2490.748226 -> 2483.535754.
+- metric: omega = 1 - Z / S in one year (census year)
+  reference: Zensus 2022 pupils and students without paid work aged 20 to 29 (Z), balance of the census-year semester (S)
+  result: >-
+    Header line '# omega=' of student_level_table.csv: omega 0.5348793385 -> 0.5335455303; Z=12226.80196 unchanged;
+    S 26287.37653 -> 26212.20881 (students_living_census_year_persons 31261.60148 -> 31172.21016 times the unchanged
+    age_share_20_29_among_adult_students).
+- metric: gate rows (student_level_gate.csv of the artifact directory)
+  reference: SrV 2023 student share by Kreis (as in run student-balance-2026-11-27)
+  result: >-
+    gate_triggered=True and gate_triggered_area_consistent=True in both runs (header lines). Column balance_students_persons:
+    03101 15132.48495 -> 14882.42124; 03ZGB 26137.33675 -> 26021.64278 (the art academy's region students move from Braunschweig
+    to the other Kreise and its in-commuters leave the balance). Column difference_in_srv_se: 03101 -1.675192 -> -1.833368;
+    03ZGB -2.126828 -> -2.191823. Column difference_20_29_in_srv_se: 03101 -3.268816 -> -3.438471; 03ZGB -5.997433 -> -6.047934.
+    The flags of column beyond_two_se are unchanged in every row.
+issues:
+- '#140'
+decisions:
+- ADR-0210
+notes: >-
+  Limitations. (a) The art academy's origin pattern is assumed, not observed: CHE publishes no list for it, and the only
+  observed cell is its Braunschweig cell. (b) All limitations of run student-balance-2026-11-27 (record
+  docs/runs/student-balance-2026-11-27.yml, notes) hold unchanged. (c) A table build, not a validation; the tables count
+  heads, no day factor is applied. Decisions: ADR-0210.
+source: >-
+  scripts/build_student_balance.py over the inputs named in the table headers; outputs committed under
+  eqasim-data/data/braunschweig/schools, eqasim-data/data/braunschweig/popsim and
+  docs/runs/artifacts/student-balance-2026-11-27-art-academy-proxy/.
