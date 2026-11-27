@@ -63,7 +63,7 @@ def test_student_targets_by_hand():
     w = _row(t, "student_work_leg", "03101")
     assert [w["student_work_leg_" + c] for c in ("student_work", "student_nowork", "not_student")] == [40, 160, 800]
     k = _row(t, "student_season_ticket", "03101")
-    assert [k["student_season_ticket_" + c] for c in ("student_flatrate", "student_noflatrate",
+    assert [k["student_season_ticket_" + c] for c in ("student_flatrate", "student_no_flatrate",
                                                        "not_student")] == [180, 20, 800]
     universe = {"student_education_18_29": 1000, "student_education_30plus": 4000,
                 "student_work_leg": 1000, "student_season_ticket": 1000}
@@ -87,7 +87,7 @@ def test_student_labels_of_every_entry_add_up_to_one_count():
         assert edu[p + "student_edu"] + edu[p + "student_noedu"] == students
         assert work["student_work_leg_student_work"] + work["student_work_leg_student_nowork"] == students
         assert (ticket["student_season_ticket_student_flatrate"]
-                + ticket["student_season_ticket_student_noflatrate"]) == students
+                + ticket["student_season_ticket_student_no_flatrate"]) == students
     r = _row(t, "student_education_18_29", "03102")
     assert (r[p + "student_edu"], r[p + "student_noedu"]) == (13, 20)
     # other adults of 03102: O = .04 x (467 + 1993) = 98.4 -> 68.97 / 29.43 -> 69 / 29 (round(O) = 98)
@@ -151,10 +151,17 @@ def test_wolfsburg_takes_the_region_values(tmp_path):
     assert shares.other_education_by_age_range == {"18_29": 0.10, "30plus": 0.02}
     # 03103: students 10 / 2, persons 100 / 400, area None -> ticket round(10 x .5) = 5 + 5;
     # O = .05 x (90 + 398) = 24.4 -> 12.95 / 11.45 -> round(O) 24 -> 13 / 11
-    persons = {("03103", "18_29"): 100, ("03103", "30plus"): 400}
-    t = ST.student_kreis_targets(_counts([("03103", 10, 2)]), persons, shares, {"03103": None}, ALL_FOUR)
+    persons = {("03103", "18_29"): 100, ("03103", "30plus"): 400,
+               ("03101", "18_29"): 1000, ("03101", "30plus"): 4000}
+    t, diagnostics = ST.student_kreis_targets_with_diagnostics(
+        _counts([("03101", 200, 15), ("03103", 10, 2)]), persons, shares,
+        {"03101": "braunschweig", "03103": None}, ALL_FOUR)
+    # one counter for both substitutions: 03103 other-adult share + 03103 ticket = 2 of the 4 cells
+    # (other-adult share and ticket of two Kreise)
+    assert diagnostics == {"kreise": 2, "region_value_substitutions": 2, "region_value_cells": 4,
+                           "region_value_rate": 0.5}
     ticket = _row(t, "student_season_ticket", "03103")
-    assert (ticket["student_season_ticket_student_flatrate"], ticket["student_season_ticket_student_noflatrate"],
+    assert (ticket["student_season_ticket_student_flatrate"], ticket["student_season_ticket_student_no_flatrate"],
             ticket["student_season_ticket_not_student"]) == (5, 5, 90)
     assert _row(t, "student_education_18_29", "03103")["student_education_18_29_other_edu"] == 13
     assert _row(t, "student_education_30plus", "03103")["student_education_30plus_other_edu"] == 11
@@ -171,6 +178,24 @@ def test_negative_remainder_raises(students_young, persons_young, other_share):
     with pytest.raises(ValueError, match="negative remainder"):
         ST.student_kreis_targets(_counts([("03101", students_young, 15)]), persons, shares,
                                  {"03101": "braunschweig"}, ALL_FOUR)
+
+
+def test_kreis_without_non_students_gets_no_other_adults_and_an_empty_universe_has_no_share():
+    # Kreis A: only students (persons == students in both ranges) -> O = 0, no division by zero, the
+    # rest of every row is 0. Kreis B: nobody aged 18-29 (0 persons, 0 students) -> the work entry rows
+    # are 0 and the long form has a NaN share for that universe, not a ZeroDivisionError.
+    persons = {("A", "18_29"): 200, ("A", "30plus"): 15, ("B", "18_29"): 0, ("B", "30plus"): 400}
+    shares = _shares(other_education_by_kreis={"A": 0.03, "B": 0.03})
+    t = ST.student_kreis_targets(_counts([("A", 200, 15), ("B", 0, 2)]), persons, shares,
+                                 {"A": "braunschweig", "B": "braunschweig"}, ALL_FOUR)
+    a = _row(t, "student_education_18_29", "A")
+    assert (a["student_education_18_29_other_edu"], a["student_education_18_29_other_noedu"]) == (0, 0)
+    a30 = _row(t, "student_education_30plus", "A")
+    assert (a30["student_education_30plus_other_edu"], a30["student_education_30plus_other_noedu"]) == (0, 0)
+    assert list(_row(t, "student_work_leg", "B")) == [0, 0, 0]
+    long = ST.student_targets_long(t, persons).set_index(["ars5", "control"])
+    assert long.loc[("B", "student_work_leg"), "target_share"].isna().all()
+    assert long.loc[("A", "student_work_leg"), "target_share"].sum() == 1.0
 
 
 def test_missing_area_share_or_persons_raises():

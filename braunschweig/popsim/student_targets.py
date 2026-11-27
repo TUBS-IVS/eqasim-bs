@@ -84,7 +84,7 @@ STUDENT_ENTRY_CATEGORIES: dict[str, tuple[str, ...]] = {
     ENTRY_EDUCATION_YOUNG: ("student_edu", "student_noedu", "other_edu", "other_noedu"),
     ENTRY_EDUCATION_OLD: ("student", "other_edu", "other_noedu"),
     ENTRY_WORK_LEG: ("student_work", "student_nowork", "not_student"),
-    ENTRY_SEASON_TICKET: ("student_flatrate", "student_noflatrate", "not_student"),
+    ENTRY_SEASON_TICKET: ("student_flatrate", "student_no_flatrate", "not_student"),
 }
 #: Age range of the universe of each entry (the persons its categories partition).
 STUDENT_ENTRY_AGE_RANGE: dict[str, str] = {
@@ -288,10 +288,10 @@ def _entry_categories(categories: Mapping[str, Sequence[str]] | None) -> Mapping
     return STUDENT_ENTRY_CATEGORIES if categories is None else categories
 
 
-def student_kreis_targets(counts: pd.DataFrame, persons_by_range: Mapping[tuple[str, str], float],
-                          shares: StudentShares, area_of_kreis: Mapping[str, str | None],
-                          entry_names: Collection[str],
-                          categories: Mapping[str, Sequence[str]] | None = None) -> dict[str, pd.DataFrame]:
+def student_kreis_targets_with_diagnostics(
+        counts: pd.DataFrame, persons_by_range: Mapping[tuple[str, str], float],
+        shares: StudentShares, area_of_kreis: Mapping[str, str | None], entry_names: Collection[str],
+        categories: Mapping[str, Sequence[str]] | None = None) -> tuple[dict[str, pd.DataFrame], dict]:
     """One integer target table per requested entry: ``ARS_kreis`` plus one column per category.
 
     ``counts`` is :func:`student_counts`; ``persons_by_range`` maps ``(Kreis, age range)`` to the persons
@@ -307,6 +307,13 @@ def student_kreis_targets(counts: pd.DataFrame, persons_by_range: Mapping[tuple[
     ``round(S_18_29 * t(area))``, the rest of the range being ``not_student``. Every row sums to
     ``round(persons of the entry's universe)``. A negative remainder, an unknown entry name, a Kreis
     without area or a missing area share raises ``ValueError``.
+
+    Returns ``(tables, diagnostics)``. ``diagnostics`` counts the Wolfsburg substitutions of A21, one
+    counter for both quantities: ``region_value_substitutions`` is the number of (Kreis, quantity)
+    cells that took the regional SrV value (the other-adult share of ``03103``, the season ticket of a
+    Kreis whose area is ``None``), ``region_value_cells`` the number of cells that quantity exists for
+    (one per Kreis and requested quantity), ``region_value_rate`` their ratio, and ``kreise`` the number
+    of Kreise. The stage writes it into its report.
     """
     names = list(entry_names)
     labels = _entry_categories(categories)
@@ -318,7 +325,8 @@ def student_kreis_targets(counts: pd.DataFrame, persons_by_range: Mapping[tuple[
                 for row in counts.itertuples(index=False)}
     kreise = list(dict.fromkeys(str(kreis) for kreis in counts["ars5"]))
     rows: dict[str, list[dict]] = {name: [] for name in names}
-    region_values_used = {"ticket": 0, "other_adults": 0}
+    substitutions = 0
+    cells = 0
     for kreis in kreise:
         if kreis not in area_of_kreis:
             raise ValueError(f"{_LOG_TAG} Kreis {kreis} has no entry in area_of_kreis")
@@ -338,14 +346,14 @@ def student_kreis_targets(counts: pd.DataFrame, persons_by_range: Mapping[tuple[
             share_k = shares.other_education_by_kreis.get(kreis)
             if share_k is None:
                 raise ValueError(f"{_LOG_TAG} {OTHER_ADULTS_RELPATH}: no other-adult share for Kreis {kreis}")
+            cells += 1
             if kreis == WOLFSBURG_CODE:
-                region_values_used["other_adults"] += 1
+                substitutions += 1
             total_other = share_k * (others[AGE_RANGE_YOUNG] + others[AGE_RANGE_OLD])
             weights = [others[r] * shares.other_education_by_age_range[r] for r in AGE_RANGES]
             if sum(weights) <= 0:
-                if total_other > 0:
-                    raise ValueError(f"{_LOG_TAG} Kreis {kreis}: no non-student persons to carry "
-                                     f"{total_other:.3f} other adults with an education leg")
+                # Both ranges consist of students only (shares are in (0, 1), so a zero weight means
+                # zero non-student persons), hence O_k = 0: a defined result, no other adults.
                 parts = [0.0, 0.0]
             else:
                 parts = [total_other * weight / sum(weights) for weight in weights]
@@ -367,9 +375,10 @@ def student_kreis_targets(counts: pd.DataFrame, persons_by_range: Mapping[tuple[
                 "not_student": universe[AGE_RANGE_YOUNG] - s_young}
         if ENTRY_SEASON_TICKET in names:
             area = area_of_kreis[kreis]
+            cells += 1
             if area is None:
                 share_t = shares.season_ticket_region
-                region_values_used["ticket"] += 1
+                substitutions += 1
             elif area in shares.season_ticket_by_area:
                 share_t = shares.season_ticket_by_area[area]
             else:
@@ -378,7 +387,7 @@ def student_kreis_targets(counts: pd.DataFrame, persons_by_range: Mapping[tuple[
                                  f"{sorted(shares.season_ticket_by_area)}")
             student_flatrate = _round_half_up(s_young * share_t)
             values[ENTRY_SEASON_TICKET] = {
-                "student_flatrate": student_flatrate, "student_noflatrate": s_young - student_flatrate,
+                "student_flatrate": student_flatrate, "student_no_flatrate": s_young - student_flatrate,
                 "not_student": universe[AGE_RANGE_YOUNG] - s_young}
 
         for name in names:
@@ -392,17 +401,28 @@ def student_kreis_targets(counts: pd.DataFrame, persons_by_range: Mapping[tuple[
                 row[f"{name}_{label}"] = _non_negative(int(cell[label]), kreis, name, label)
             rows[name].append(row)
 
-    logger.info("%s %d Kreise, entries %s; regional value used for %d of %d Kreise (ticket, Wolfsburg "
-                "rule A21) and %d of %d Kreise (other-adult share, A21)", _LOG_TAG, len(kreise),
-                names, region_values_used["ticket"], len(kreise), region_values_used["other_adults"],
-                len(kreise))
+    rate = substitutions / cells if cells else 0.0
+    diagnostics = {"kreise": len(kreise), "region_value_substitutions": substitutions,
+                   "region_value_cells": cells, "region_value_rate": rate}
+    logger.info("%s %d Kreise, entries %s; regional SrV value (Wolfsburg rule A21) for %d of %d "
+                "(Kreis, quantity) cells = %.1f%% (other-adult share and season ticket)", _LOG_TAG,
+                len(kreise), names, substitutions, cells, 100.0 * rate)
     tables = {}
     for name in names:
         columns = [_KREIS_COLUMN] + [f"{name}_{label}" for label in labels[name]]
         frame = pd.DataFrame(rows[name], columns=columns)
         frame[columns[1:]] = frame[columns[1:]].astype(np.int64)
         tables[name] = frame
-    return tables
+    return tables, diagnostics
+
+
+def student_kreis_targets(counts: pd.DataFrame, persons_by_range: Mapping[tuple[str, str], float],
+                          shares: StudentShares, area_of_kreis: Mapping[str, str | None],
+                          entry_names: Collection[str],
+                          categories: Mapping[str, Sequence[str]] | None = None) -> dict[str, pd.DataFrame]:
+    """The tables of :func:`student_kreis_targets_with_diagnostics` without its diagnostics."""
+    return student_kreis_targets_with_diagnostics(counts, persons_by_range, shares, area_of_kreis,
+                                                  entry_names, categories)[0]
 
 
 def student_targets_long(tables: Mapping[str, pd.DataFrame],
