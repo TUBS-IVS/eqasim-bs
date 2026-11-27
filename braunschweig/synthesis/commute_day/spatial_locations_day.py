@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
 import pandas as pd
 import synthesis.population.spatial.locations as base
 
@@ -47,6 +48,20 @@ SECONDARY_STAGE = "synthesis.population.spatial.secondary.locations"
 OUT_AND_BACK_STROLL_COLUMN = "is_out_and_back_stroll"
 KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT = "secondary_loop_zero_displacement"
 DEFAULT_SECONDARY_LOOP_ZERO_DISPLACEMENT = False
+
+#: The loop columns of the secondary stage (issue #679): ``loop_origin`` marks a loop placed at its
+#: start, and the two diary lengths on its row (``loops.LOOP_DIARY_DISTANCE_COLUMN``,
+#: ``loops.LOOP_RETURN_DIARY_DISTANCE_COLUMN``). Literals for the same reason as above;
+#: tests/test_population_loop_attributes.py pins them to their homes.
+LOOP_ORIGIN_COLUMN = "loop_origin"
+LOOP_DIARY_DISTANCE_COLUMN = "loop_diary_distance_km"
+LOOP_RETURN_DIARY_DISTANCE_COLUMN = "loop_return_diary_distance_km"
+#: The two columns this stage writes on every located activity from them (switch on): whether the
+#: activity is a loop stroll, and the diary length of the trip INTO the activity when the loop
+#: placement makes that trip zero-length (the trip into a loop, or the trip back to its start
+#: place); NaN everywhere else. matsim.scenario.population writes them as activity attributes.
+LOOP_STROLL_COLUMN = "is_loop_stroll"
+LOOP_TRIP_DIARY_DISTANCE_COLUMN = "loop_trip_diary_distance_km"
 
 #: Modules whose sources this stage's cache token must cover (see :func:`validate`): the shim
 #: decides WHICH frame the vendored stage sees, and the VENDORED join itself is what produces
@@ -114,6 +129,70 @@ def _with_out_and_back_strolls(locations, secondary):
     return result
 
 
+def _with_loop_lengths(locations, secondary):
+    """``locations`` with :data:`LOOP_STROLL_COLUMN` and :data:`LOOP_TRIP_DIARY_DISTANCE_COLUMN` (#679).
+
+    A loop row of the secondary stage (``loop_origin`` set) marks its activity as a loop stroll
+    and gives the diary length of the trip into it. Its trip-back length, where the stage found
+    one, belongs to the NEXT activity of the person (the trip into that activity is the trip back
+    to the loop's start place). That next activity must lie at the loop's place, since this is
+    what makes the trip zero-length; a different place raises ``ValueError``, as does a loop row
+    without its located activity or a secondary result without the loop columns. Every other
+    activity gets False and NaN.
+    """
+    required = (LOOP_ORIGIN_COLUMN, LOOP_DIARY_DISTANCE_COLUMN, LOOP_RETURN_DIARY_DISTANCE_COLUMN)
+    missing = [column for column in required if column not in secondary.columns]
+    if missing:
+        raise ValueError(
+            "%s %s is on, but the secondary location stage returned no %s column(s); the loop "
+            "lengths cannot reach the population." % (
+                _LOG_TAG, KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT, missing))
+    loop_rows = secondary[secondary[LOOP_ORIGIN_COLUMN].notna()]
+    located_keys = pd.MultiIndex.from_frame(locations[["person_id", "activity_index"]])
+    loop_keys = pd.MultiIndex.from_arrays([loop_rows["person_id"], loop_rows["activity_index"]])
+    unmatched = ~loop_keys.isin(located_keys)
+    if unmatched.any():
+        raise ValueError(
+            "%s %d loop rows of the secondary stage match no located activity; first (person_id, "
+            "activity_index): %s" % (
+                _LOG_TAG, int(unmatched.sum()),
+                [tuple(int(v) for v in key) for key in loop_keys[unmatched][:5]]))
+    result = locations.copy()
+    result[LOOP_STROLL_COLUMN] = located_keys.isin(loop_keys)
+    lengths = pd.Series(loop_rows[LOOP_DIARY_DISTANCE_COLUMN].to_numpy(dtype=float),
+                        index=loop_keys)
+    back = loop_rows[LOOP_RETURN_DIARY_DISTANCE_COLUMN].notna().to_numpy()
+    if back.any():
+        back_rows = loop_rows[back]
+        next_keys = pd.MultiIndex.from_arrays([back_rows["person_id"],
+                                               back_rows["activity_index"] + 1])
+        next_places = result.set_index(["person_id", "activity_index"])["geometry"].reindex(
+            next_keys)
+        # A next activity that is not located comes back as NaN (a float), never as a geometry.
+        elsewhere = np.array([not hasattr(place, "equals") or not place.equals(loop_place)
+                              for place, loop_place in zip(next_places, back_rows["geometry"])],
+                             dtype=bool)
+        if elsewhere.any():
+            raise ValueError(
+                "%s %d trips back to a loop's start place do not end at the loop's place (or their "
+                "activity is not located); first (person_id, activity_index of the loop): %s" % (
+                    _LOG_TAG, int(elsewhere.sum()),
+                    [(int(p), int(a)) for p, a in zip(back_rows["person_id"][elsewhere],
+                                                      back_rows["activity_index"][elsewhere])][:5]))
+        lengths = pd.concat([lengths, pd.Series(
+            back_rows[LOOP_RETURN_DIARY_DISTANCE_COLUMN].to_numpy(dtype=float), index=next_keys)])
+    result[LOOP_TRIP_DIARY_DISTANCE_COLUMN] = lengths.reindex(located_keys).to_numpy(dtype=float)
+    n_loops, n_back = len(loop_keys), int(back.sum())
+    log = logger.info if n_loops > 0 else logger.warning
+    log("%s %s on %d/%d located activities; %s on %d of them (%d trips into a loop, %d trips back "
+        "to a loop's start place)%s", _LOG_TAG, LOOP_STROLL_COLUMN, n_loops, len(result),
+        LOOP_TRIP_DIARY_DISTANCE_COLUMN,
+        int(np.isfinite(result[LOOP_TRIP_DIARY_DISTANCE_COLUMN]).sum()),
+        int(np.isfinite(loop_rows[LOOP_DIARY_DISTANCE_COLUMN].to_numpy(dtype=float)).sum()), n_back,
+        "" if n_loops > 0 else " -- no loop at all: check the secondary stage's loop rows")
+    return result
+
+
 def execute(context):
     day_activities = context.stage(DAY_ACTIVITIES_STAGE)
     locations = base.execute(
@@ -122,5 +201,7 @@ def execute(context):
                 "(%d rows)", _LOG_TAG, len(locations), locations["person_id"].nunique(),
                 len(day_activities))
     if context.config(KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT):
-        locations = _with_out_and_back_strolls(locations, context.stage(SECONDARY_STAGE)[0])
+        secondary = context.stage(SECONDARY_STAGE)[0]
+        locations = _with_out_and_back_strolls(locations, secondary)
+        locations = _with_loop_lengths(locations, secondary)
     return locations

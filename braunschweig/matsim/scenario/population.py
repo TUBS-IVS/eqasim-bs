@@ -505,54 +505,71 @@ def _require_incommuter_subpopulations(merged_persons, incommuter_persons):
                 dict(sorted(labels.value_counts().items())))
 
 
+#: The location columns of the loop switch (issue #679) and the attributes the writer makes of them.
+_LOOP_SWITCH_COLUMNS = (
+    (base.OUT_AND_BACK_STROLL_COLUMN, base.OUT_AND_BACK_STROLL_ATTRIBUTE),
+    (base.LOOP_STROLL_COLUMN, base.LOOP_STROLL_ATTRIBUTE),
+    (base.LOOP_TRIP_DIARY_DISTANCE_COLUMN, base.LOOP_TRIP_DIARY_DISTANCE_ATTRIBUTE),
+)
+
+
 def _require_stroll_marker(locations, loop_switch):
-    """Raise ValueError when the loop switch is on but the location frame lacks the stroll marker.
+    """Raise ValueError when the loop switch is on but the location frame lacks a column of it.
 
     Only the day-view location join (braunschweig.synthesis.commute_day.spatial_locations_day) carries
-    ``is_out_and_back_stroll``; a pipeline whose ``synthesis.population.spatial.locations`` is the plain
-    vendored join drops it, and the plans would then carry no ``outAndBackStroll`` at all, so the Java
-    stroll rule would silently never fire.
+    ``is_out_and_back_stroll``, ``is_loop_stroll`` and ``loop_trip_diary_distance_km``; a pipeline whose
+    ``synthesis.population.spatial.locations`` is the plain vendored join drops them, and the plans would
+    then carry no ``outAndBackStroll`` at all, so the Java stroll rule would silently never fire, and no
+    loop marker or length for the analyses.
     """
-    if loop_switch and base.OUT_AND_BACK_STROLL_COLUMN not in locations.columns:
+    missing = [column for column, _attribute in _LOOP_SWITCH_COLUMNS if column not in locations.columns]
+    if loop_switch and missing:
         raise ValueError(
             "%s %s is true, but the location frame (synthesis.population.spatial.locations) has no %s "
-            "column, so no %s attribute could be written. Likely cause: the location stage of this "
-            "pipeline does not carry the marker (the plain vendored join instead of "
+            "column(s), so the attribute(s) %s could not be written. Likely cause: the location stage of "
+            "this pipeline does not carry them (the plain vendored join instead of "
             "braunschweig.synthesis.commute_day.spatial_locations_day). Alias that stage, or set %s: false."
-            % (_LOG_TAG, KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT, base.OUT_AND_BACK_STROLL_COLUMN,
-               base.OUT_AND_BACK_STROLL_ATTRIBUTE, KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT))
+            % (_LOG_TAG, KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT, missing,
+               [attribute for column, attribute in _LOOP_SWITCH_COLUMNS if column in missing],
+               KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT))
 
 
 def _with_bool_stroll_column(locations):
-    """``locations`` with the stroll marker as a bool column, False where the frame carries none."""
+    """``locations`` with the loop switch's columns: both markers as bool columns (False) and the loop
+    trip diary length as a float column (NaN), where the frame carries none."""
     if locations is None or len(locations) == 0:
         return locations
-    column = base.OUT_AND_BACK_STROLL_COLUMN
     locations = locations.copy()
-    if column not in locations.columns:
-        locations[column] = False
+    for column in (base.OUT_AND_BACK_STROLL_COLUMN, base.LOOP_STROLL_COLUMN):
+        if column not in locations.columns:
+            locations[column] = False
+    if base.LOOP_TRIP_DIARY_DISTANCE_COLUMN not in locations.columns:
+        locations[base.LOOP_TRIP_DIARY_DISTANCE_COLUMN] = np.nan
     return locations
 
 
 def _injected_rows_without_stroll(locations, injected_person_ids):
-    """``locations`` with the injected agents' out-and-back stroll flag set to False (issue #679).
+    """``locations`` with the injected agents' stroll flags set to False (issue #679).
 
-    The stroll marker ``is_out_and_back_stroll`` comes from the secondary location stage of the
-    RESIDENTS; the in-commuter frames never carry it, so ``concat_frame`` leaves it missing on
-    their rows. An injected agent's plan is not solved by that stage and has no out-and-back
-    stroll, so those rows become False (counted in the log). A missing value on a resident row is
-    left alone: the writer raises on it. Called only when the column is present (switch on).
+    The stroll markers ``is_out_and_back_stroll`` and ``is_loop_stroll`` come from the secondary
+    location stage of the RESIDENTS; the in-commuter frames never carry them, so ``concat_frame``
+    leaves them missing on their rows. An injected agent's plan is not solved by that stage and has
+    no stroll, so those rows become False (counted in the log). A missing value on a resident row is
+    left alone: the writer raises on it. Called only when the columns are present (switch on).
     """
-    column = base.OUT_AND_BACK_STROLL_COLUMN
     injected = locations["person_id"].isin(injected_person_ids).to_numpy()
     locations = locations.copy()
-    filled = locations[column].where(~injected, False)
     n_injected = int(injected.sum())
-    if not filled.isna().any():
-        filled = filled.astype(bool)
-    locations[column] = filled
-    logger.info("%s %s set to False on %d/%d location rows of injected agents (in-commuters carry no "
-                "out-and-back stroll)", _LOG_TAG, column, n_injected, len(locations))
+    # The loop marker of the same stage (is_loop_stroll) is treated alike: an injected plan has no loop.
+    # Its diary length stays NaN on those rows (no attribute).
+    for column in (base.OUT_AND_BACK_STROLL_COLUMN, base.LOOP_STROLL_COLUMN):
+        filled = locations[column].where(~injected, False)
+        if not filled.isna().any():
+            filled = filled.astype(bool)
+        locations[column] = filled
+    logger.info("%s %s and %s set to False on %d/%d location rows of injected agents (in-commuters carry "
+                "no stroll)", _LOG_TAG, base.OUT_AND_BACK_STROLL_COLUMN, base.LOOP_STROLL_COLUMN, n_injected,
+                len(locations))
     return locations
 
 

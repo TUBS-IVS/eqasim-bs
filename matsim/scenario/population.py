@@ -48,6 +48,18 @@ PORTAL_GATE_ATTRIBUTE = "portalGate"
 OUT_AND_BACK_STROLL_COLUMN = "is_out_and_back_stroll"
 OUT_AND_BACK_STROLL_ATTRIBUTE = "outAndBackStroll"
 
+# eqasim-bs#679 (loop lengths for analyses): a stroll placed at the place it starts from (a loop) gets the
+# Boolean activity attribute LOOP_STROLL_ATTRIBUTE=true, and an activity whose INCOMING trip that placement
+# makes zero-length (the trip into a loop, or the trip back to the loop's start place) gets that trip's survey
+# diary length in km as LOOP_TRIP_DIARY_DISTANCE_ATTRIBUTE (java.lang.Double). No Java code reads them; they
+# let analyses of the plans count the walked and cycled kilometres (docs/codebase/notes/leisure-loops.md).
+# Literals for the same reason as above; tests/test_population_loop_attributes.py pins the columns to
+# braunschweig.synthesis.commute_day.spatial_locations_day, which writes them.
+LOOP_STROLL_COLUMN = "is_loop_stroll"
+LOOP_STROLL_ATTRIBUTE = "loopStroll"
+LOOP_TRIP_DIARY_DISTANCE_COLUMN = "loop_trip_diary_distance_km"
+LOOP_TRIP_DIARY_DISTANCE_ATTRIBUTE = "loopTripDiaryDistanceKm"
+
 
 def configure(context):
     """synpp configure of this stage: the writer's own declarations plus the parking-zone guard.
@@ -206,6 +218,10 @@ ACTIVITY_FIELDS = [
 # prepare_frames when the day-view location join produced it (secondary_loop_zero_displacement on):
 #   is_out_and_back_stroll -> "outAndBackStroll" (java.lang.Boolean): written only where True; a boolean
 #                   for EVERY activity, anything else raises.
+#   is_loop_stroll -> "loopStroll" (java.lang.Boolean): written only where True; a boolean for EVERY
+#                   activity, anything else raises.
+#   loop_trip_diary_distance_km -> "loopTripDiaryDistanceKm" (java.lang.Double): written only where set;
+#                   NaN means none, a value that is no positive finite number raises.
 # Appended to the projected fields ONLY when present, exactly like OPTIONAL_PERSON_FIELDS, so the
 # positional ACTIVITY_FIELDS.index(...) lookups are unaffected and frames without the columns are
 # written byte-identically.
@@ -214,6 +230,8 @@ OPTIONAL_ACTIVITY_FIELDS = [
     "parking_free",
     "parking_district",
     OUT_AND_BACK_STROLL_COLUMN,
+    LOOP_STROLL_COLUMN,
+    LOOP_TRIP_DIARY_DISTANCE_COLUMN,
 ]
 
 
@@ -332,6 +350,37 @@ def _is_out_and_back_stroll(value):
         % (OUT_AND_BACK_STROLL_COLUMN, value))
 
 
+def _is_loop_stroll(value):
+    """Whether an activity's ``is_loop_stroll`` value is True; raises ValueError unless boolean.
+
+    The day-view location join assigns a boolean to EVERY resident activity and the regional writer
+    wrapper sets False on the injected agents' rows, so a missing or non-boolean value means a row
+    bypassed both.
+    """
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    raise ValueError(
+        "Invalid %s %r; expected a boolean from the day-view location join "
+        "(braunschweig.synthesis.commute_day.spatial_locations_day) for every activity."
+        % (LOOP_STROLL_COLUMN, value))
+
+
+def _loop_trip_diary_distance_km(value):
+    """The diary length (km) to write for an activity, or None where there is none (NaN).
+
+    A value that is neither missing nor a positive finite number cannot be a survey trip length
+    (the secondary location stage reads them through the MiD length guard), so it raises.
+    """
+    if _is_missing_value(value):
+        return None
+    if (isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(value, bool)
+            and np.isfinite(value) and value > 0):
+        return float(value)
+    raise ValueError(
+        "Invalid %s %r; expected a positive diary length in km or NaN."
+        % (LOOP_TRIP_DIARY_DISTANCE_COLUMN, value))
+
+
 TRIP_FIELDS = [
     "person_id", "mode", "departure_time", "travel_time"
 ]
@@ -368,6 +417,10 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
                               if "parking_district" in activity_fields else None)
     stroll_index = (activity_fields.index(OUT_AND_BACK_STROLL_COLUMN)
                     if OUT_AND_BACK_STROLL_COLUMN in activity_fields else None)
+    loop_stroll_index = (activity_fields.index(LOOP_STROLL_COLUMN)
+                         if LOOP_STROLL_COLUMN in activity_fields else None)
+    loop_length_index = (activity_fields.index(LOOP_TRIP_DIARY_DISTANCE_COLUMN)
+                         if LOOP_TRIP_DIARY_DISTANCE_COLUMN in activity_fields else None)
     # ``rbw_omission_counter`` is an optional collections.Counter owned by the caller
     # (write_population); it accumulates the persons whose rbW attributes had to be
     # omitted so the rate can be logged ONCE for the whole population.
@@ -656,6 +709,19 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
             if stroll_counter is not None:
                 stroll_counter["out_and_back_strolls"] += 1
 
+        # eqasim-bs#679: the loop marker and the diary length of a trip the loop placement makes zero-length
+        # (see LOOP_STROLL_ATTRIBUTE). Without the columns (the loop switch off) nothing is read.
+        if loop_stroll_index is not None and _is_loop_stroll(activity[loop_stroll_index]):
+            activity_attributes[LOOP_STROLL_ATTRIBUTE] = ("java.lang.Boolean", "true")
+            if stroll_counter is not None:
+                stroll_counter["loop_strolls"] += 1
+        if loop_length_index is not None:
+            diary_km = _loop_trip_diary_distance_km(activity[loop_length_index])
+            if diary_km is not None:
+                activity_attributes[LOOP_TRIP_DIARY_DISTANCE_ATTRIBUTE] = ("java.lang.Double", repr(diary_km))
+                if stroll_counter is not None:
+                    stroll_counter["loop_trip_diary_lengths"] += 1
+
         writer.add_activity(
             type = activity[ACTIVITY_FIELDS.index("purpose")],
             location = location,
@@ -707,8 +773,9 @@ def prepare_frames(df_persons, df_activities, df_locations, df_trips, df_vehicle
     # The stroll marker (eqasim-bs#679) is carried only when the location frame has it, so a
     # frame without it merges exactly the columns it did before.
     location_columns = ["person_id", "activity_index", "geometry", "location_id"]
-    if OUT_AND_BACK_STROLL_COLUMN in df_locations.columns:
-        location_columns.append(OUT_AND_BACK_STROLL_COLUMN)
+    for column in (OUT_AND_BACK_STROLL_COLUMN, LOOP_STROLL_COLUMN, LOOP_TRIP_DIARY_DISTANCE_COLUMN):
+        if column in df_locations.columns:
+            location_columns.append(column)
     df_locations = df_locations[location_columns].sort_values(
             by = ["person_id", "activity_index"])
     df_activities = pd.merge(df_activities, df_locations, how = "left",
@@ -880,6 +947,17 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
             OUT_AND_BACK_STROLL_ATTRIBUTE, n_strolls, n_activities,
             100.0 * n_strolls / max(n_activities, 1),
             "" if n_strolls > 0 else " -- none at all: check that the stroll marker reaches the writer")
+
+    if LOOP_STROLL_COLUMN in df_activities.columns:
+        n_activities = len(df_activities)
+        n_loops = stroll_counter["loop_strolls"]
+        n_lengths = stroll_counter["loop_trip_diary_lengths"]
+        # Zero loop strolls with the column present (the loop switch on) almost certainly means the loop rows
+        # were lost upstream, hence a warning.
+        log = logger.info if n_loops > 0 else logger.warning
+        log("[population] %s written on %d/%d activities, %s on %d%s", LOOP_STROLL_ATTRIBUTE, n_loops,
+            n_activities, LOOP_TRIP_DIARY_DISTANCE_ATTRIBUTE, n_lengths,
+            "" if n_loops > 0 else " -- no loop stroll at all: check that the loop rows reach the writer")
 
     if remode_carless_car_legs:
         # CLAUDE.md fallback transparency (eqasim-bs#442): the re-mode shim substitutes the

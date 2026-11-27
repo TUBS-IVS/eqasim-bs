@@ -136,6 +136,9 @@ def _run_population_wrapper(tmp_path, stroll_flags, loop_switch=True):
     if stroll_flags is not None:
         locations = stages["synthesis.population.spatial.locations"].copy()
         locations[COLUMN] = stroll_flags
+        # The day-view join writes the loop columns with the stroll marker (no loop here).
+        locations[pop.LOOP_STROLL_COLUMN] = False
+        locations[pop.LOOP_TRIP_DIARY_DISTANCE_COLUMN] = np.nan
         stages["synthesis.population.spatial.locations"] = locations
     config = {"cordon_enabled": True, "commute_day_state_enabled": False, "day_absence_enabled": False,
               "enable_urban_parking": False, "write_income_eur": False, "parking_zones_enabled": False,
@@ -202,7 +205,11 @@ def _join(monkeypatch, loop_switch, secondary):
 
 
 def _secondary(rows):
-    return pd.DataFrame(rows, columns=["person_id", "activity_index", COLUMN])
+    """Secondary rows ``(person_id, activity_index, stroll flag)``; none of them is a loop (the
+    loop columns are covered in tests/test_population_loop_attributes.py)."""
+    frame = pd.DataFrame(rows, columns=["person_id", "activity_index", COLUMN])
+    return frame.assign(loop_origin=None, loop_diary_distance_km=np.nan,
+                        loop_return_diary_distance_km=np.nan)
 
 
 def test_the_location_join_carries_the_stroll_flag_and_false_elsewhere(monkeypatch):
