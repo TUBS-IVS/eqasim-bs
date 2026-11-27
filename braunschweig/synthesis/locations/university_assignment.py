@@ -955,7 +955,7 @@ def draw_buildings(destination_ids: pd.Series, facilities: pd.DataFrame, rng: np
 
 # ------------------------------------------------------------------------------------------------ diagnostics
 def allotment_diagnostics(assigned: pd.DataFrame, persons: pd.DataFrame, centres: pd.DataFrame,
-                          radius_km: float = 2.0, *, kreis_column: str | None = None) -> dict:
+                          radius_km: float = 2.0, *, kreis_column: str) -> dict:
     """The figures of design B5 for the comparison of the two rules, from the frames of one allotment.
 
     Args:
@@ -965,8 +965,9 @@ def allotment_diagnostics(assigned: pd.DataFrame, persons: pd.DataFrame, centres
         centres: ``[destination_id, x, y, scope]`` (:func:`destination_centres`).
         radius_km: a person living within this straight-line distance of a local site's centre lives "next to" the
             site. The default 2 km is the design's reporting radius (B5); it enters no allotment.
-        kreis_column: the column of ``assigned`` naming each person's home Kreis when ``assigned`` holds several
-            allotments; None: ``assigned`` is the allotment of one Kreis.
+        kreis_column: the column of ``assigned`` naming each person's home Kreis (required, also for a frame of
+            one Kreis: without it the places of several Kreise would be pooled and the "with place" counts would
+            come out too high).
 
     Returns:
         A dict: ``n_persons``; ``n_by_path`` (path -> persons, sorted); ``n_with_observed_leg``;
@@ -992,19 +993,16 @@ def allotment_diagnostics(assigned: pd.DataFrame, persons: pd.DataFrame, centres
     """
     if not (math.isfinite(radius_km) and radius_km > 0):
         raise ValueError(f"{_LOG_TAG} the radius must be finite and > 0 km, got {radius_km!r}")
-    assigned_columns = _ASSIGNED_COLUMNS + ([kreis_column] if kreis_column is not None else [])
+    assigned_columns = _ASSIGNED_COLUMNS + [kreis_column]
     _require_columns(assigned, assigned_columns, "assigned persons")
     _require_columns(centres, _CENTRE_COLUMNS + ["scope"], "centres (destination_centres)")
     frame = _checked_persons(persons)
     if assigned["person_id"].duplicated().any() or set(assigned["person_id"]) != set(frame["person_id"]):
         raise ValueError(f"{_LOG_TAG} the assigned persons and the persons are not the same persons")
     merged = frame.merge(assigned[assigned_columns], on="person_id", how="left", validate="one_to_one")
-    if kreis_column is None:
-        kreis = np.zeros(len(merged), dtype=np.int64)
-    elif merged[kreis_column].isna().any():
+    if merged[kreis_column].isna().any():
         raise ValueError(f"{_LOG_TAG} an assigned person has no home Kreis in {kreis_column!r}")
-    else:
-        kreis = pd.factorize(merged[kreis_column])[0]
+    kreis = pd.factorize(merged[kreis_column])[0]
     destinations = pd.Index(sorted(set(merged["destination_id"])))
     centre_xy = _centre_xy(centres, destinations)
     column = destinations.get_indexer(merged["destination_id"])

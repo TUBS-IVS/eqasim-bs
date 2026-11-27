@@ -305,23 +305,23 @@ def test_the_diagnostics_count_the_neighbours_of_a_site_sent_elsewhere():
                                       "fallback_decay", "fallback_decay"],
                              "home_ars5": ["K1", "K1", "K1", "K1", "K2", "K2"]})
 
-    diagnostics = allotment_diagnostics(assigned.iloc[::-1], persons, centres)
+    diagnostics = allotment_diagnostics(assigned.iloc[::-1], persons, centres, kreis_column="home_ars5")
 
     assert diagnostics["n_persons"] == 6
     assert diagnostics["n_by_path"] == {"fallback_decay": 3, "plan_length": 3}
     assert diagnostics["n_with_observed_leg"] == 3
     assert diagnostics["n_near_local_site"] == 5  # persons 1, 2, 3 (S1/S2), 5 (S4) and 6 (S5), within 2 km
     assert diagnostics["n_near_local_site_sent_elsewhere"] == 3  # 3 (to S3), 5 (to S1, not S4), 6 (to S3, not S5)
-    assert diagnostics["n_near_local_site_with_place"] == 4  # as above without person 6: S5 has no place
-    assert diagnostics["n_near_local_site_with_place_sent_elsewhere"] == 2  # persons 3 and 5
+    # Persons 5 and 6 form a second Kreis whose places are S1 and S3 only: S4 has no place for person 5, S5 none
+    # for person 6.
+    assert diagnostics["n_near_local_site_with_place"] == 3  # persons 1, 2, 3
+    assert diagnostics["n_near_local_site_with_place_sent_elsewhere"] == 1  # person 3
     assert diagnostics["mean_abs_leg_gap_km"] == pytest.approx((0.0 + 8.5 + 2.0) / 3)
     assert diagnostics["mean_distance_km"] == pytest.approx((1.0 + 0.5 + 48.5 + 5.0 + 9.0 + 19.5) / 6)
 
-    # Persons 5 and 6 form a second Kreis whose places are S1 and S3 only: S4 has no place for person 5 any more.
-    per_kreis = allotment_diagnostics(assigned, persons, centres, kreis_column="home_ars5")
-    assert (per_kreis["n_near_local_site"], per_kreis["n_near_local_site_sent_elsewhere"]) == (5, 3)
-    assert per_kreis["n_near_local_site_with_place"] == 3  # persons 1, 2, 3
-    assert per_kreis["n_near_local_site_with_place_sent_elsewhere"] == 1  # person 3
+    # The Kreis column is required: pooling the places of two Kreise would overcount the "with place" persons.
+    with pytest.raises(TypeError):
+        allotment_diagnostics(assigned, persons, centres)
 
     # One home, places at 3 km (one) and 6 km (three): every random allotment has the mean (3 + 18) / 4.
     one_home = _persons([(0, 0)] * 4, [np.nan] * 4)
