@@ -46,8 +46,8 @@ Inputs and refusals (no silent fallback)
 Outputs, under ``<output_path>/<students_vs_srv_output_subdir>/``: ``student_level_by_kreis.csv``,
 ``young_adult_status_by_kreis.csv``, ``student_work_class.csv``, ``student_behaviour_vs_srv.csv``,
 ``student_plan_source.csv``, ``student_behaviour_by_area.csv``,
-``education_leg_by_student_status.csv`` (plain CSVs, LF, ``%.10g``, as the sibling stages write them; the
-provenance lives in ``provenance.json`` and at the top of ``summary.md``), ``summary.md`` and
+``education_leg_by_student_status.csv`` (plain CSVs, LF, ``%.10g``, as the sibling stages write
+them; the provenance lives in ``provenance.json`` and at the top of ``summary.md``), ``summary.md`` and
 ``provenance.json`` (git commit, parameters, SrV table and Zensus paths relative to
 ``data_path`` with their sha256, the trace file names, every diagnostics dict,
 ``sampling_rate``). No output carries an absolute path. The stage's own cache directory gets
