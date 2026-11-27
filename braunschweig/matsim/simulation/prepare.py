@@ -36,7 +36,8 @@ from braunschweig import synpp_tokens
 from braunschweig.data.transit import cut_schedule, schedule as transit_schedule
 from braunschweig.data.vrb import fare_config_xml, fare_model_export, line_scopes
 from braunschweig.matsim import config_modules, initial_mode_choice
-from braunschweig.matsim.simulation import cordon_subpopulation, frozen_pt_walk_lift, loop_mode_rule, plan_check
+from braunschweig.matsim.simulation import (cordon_subpopulation, frozen_pt_walk_lift, loop_mode_rule,
+                                           mode_choice_reach, plan_check)
 from braunschweig.parking import tariff_export
 
 log = logging.getLogger(__name__)
@@ -191,6 +192,8 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "matsim.runtime.process_watchdog",
     # plan_check reads MAX_PLAN_TIME_SECONDS from braunschweig.popsim.plan_validation, whose own
     # imports (closure_dwell, data.hts.hts) are part of the check's import closure (#443).
+    # plan_check and frozen_pt_walk_lift read the reach settings of the mode choice (#678).
+    "braunschweig.matsim.simulation.mode_choice_reach",
     "braunschweig.popsim.closure_dwell",
     "braunschweig.popsim.plan_validation",
     "data.hts.hts",
@@ -313,6 +316,11 @@ def configure(context):
                    plan_check.DEFAULT_NON_MONOTONIC_BOUND_MIN_LATENESS_S)
     context.config(plan_check.KEY_FAIL_ON_THRESHOLD, plan_check.DEFAULT_FAIL_ON_THRESHOLD)
     context.config(frozen_pt_walk_lift.KEY_ENABLED, frozen_pt_walk_lift.DEFAULT_ENABLED)
+    # Which trips the mode choice can change, and how the lift repairs the rest (#678): declared unconditionally,
+    # because execute reads them whichever step is on.
+    mode_choice_reach.configure(context)
+    context.config(frozen_pt_walk_lift.KEY_ALL_MODES, frozen_pt_walk_lift.DEFAULT_ALL_MODES)
+    context.config(frozen_pt_walk_lift.KEY_MAX_SHARE_OTHER_MODES, frozen_pt_walk_lift.DEFAULT_MAX_SHARE_OTHER_MODES)
 
     # Every agent chooses its modes once before iteration 0 (#542, ADR-0178): the helper declares its switch and
     # the Java options, and refuses the retired ADR-0155 weight key unconditionally, so a stale overlay fails even
@@ -426,8 +434,9 @@ def execute(context):
     # Inject sampled freight agents LAST: after the cordon cut, so the eqasim
     # cutter never rewrites freight agents (they have no households/facilities and
     # their boundary trimming was already done by the extraction).
+    injected_freight_trips = 0
     if context.config("freight_enabled"):
-        _inject_freight(context, result)
+        injected_freight_trips = _inject_freight(context, result)
 
     # The in-commuters' fixed-mode strategy blocks (eqasim-bs#566) go into the FINAL config, after the cut and the
     # freight injection rewrote it and before the standalone mode choice and the plan check read it.
@@ -447,15 +456,29 @@ def execute(context):
     if context.config(PARKING_KEY):
         _write_parking_inputs(context, result)
 
-    # The same-facility leisure trip constraint is selected in the FINAL config (#679, ADR-0207), so the standalone mode
-    # choice below and the MATSim loop both read it; off: the jar is not opened and the config keeps its bytes.
+    # The reach settings of the mode choice loop go into the FINAL config (#678); the initial mode choice gets its
+    # own copy of the config with its settings. A jar without the border tour vehicle constraint fails here, not
+    # in the Java run: the initial setting counts only while the initial mode choice runs.
+    loop_reach = mode_choice_reach.loop_settings(context)
+    initial_reach = mode_choice_reach.initial_settings(context)
+    initial_enabled = context.config(initial_mode_choice.KEY_ENABLED)
+    if loop_reach.isolate_outside_trips or (initial_enabled and initial_reach.isolate_outside_trips):
+        mode_choice_reach.require_border_vehicle_constraint(
+            "%s/%s" % (context.path("matsim.runtime.eqasim"), context.stage("matsim.runtime.eqasim")))
+    # The same-facility leisure trip constraint is selected in the FINAL config (#679, ADR-0207), so the standalone
+    # mode choice below (its own config is a copy of the final one) and the MATSim loop both read it; off: the jar
+    # is not opened and the config keeps its bytes. It edits tripConstraints, the reach settings edit the tour
+    # settings, so the order between the two only keeps every jar check before every edit.
     if loop_mode_rule.enabled(context):
         _select_loop_mode_rule(context, result)
+    mode_choice_reach.apply(Path(context.path()) / result, loop_reach)  # after the jar check: a refusal edits nothing
 
     # The standalone mode choice runs on the FINAL population (after the cut, the freight injection and the
     # fare/parking inputs), free flow, before the plan check reads the result.
-    if context.config(initial_mode_choice.KEY_ENABLED):
-        initial_mode_choice.run(context, result, _initial_mode_choice_excluded_subpopulations(context))
+    if initial_enabled:
+        initial_mode_choice.run(context, result,
+                                _initial_mode_choice_excluded_subpopulations(context, injected_freight_trips),
+                                reach=initial_reach)
 
     # Long pt-as-walk trips of frozen resident tours become car_passenger legs (eqasim-bs#575, ADR-0189): on the
     # FINAL population, before the check measures it.
@@ -474,17 +497,23 @@ def execute(context):
     return result
 
 
-def _initial_mode_choice_excluded_subpopulations(context) -> tuple[str, ...]:
+def _initial_mode_choice_excluded_subpopulations(context, injected_freight_trips: int) -> tuple[str, ...]:
     """The subpopulations the standalone mode choice leaves unchanged: in-commuters and injected freight.
 
     The in-commuters have the fixed-mode strategies in the MATSim loop (ADR-0182), so they keep their synthesised mode
     before iteration 0 as well (eqasim-bs#566); without the cordon there are none. The freight agents keep their truck
     mode for the whole run (own strategies, ADR-0182) and their legs are a bare truck leg without a routing mode, which
-    fails the outside constraint of the mode choice; without the injection there are none.
+    fails the outside constraint of the mode choice.
+
+    Freight is excluded only when the injection actually wrote freight trips (``injected_freight_trips`` from its
+    summary): the Java StandaloneModeChoicePerformer fails on an excluded subpopulation that matches nobody, so an
+    enabled injection that sampled zero trips (a small sample) must not name it.
     """
     excluded = cordon_subpopulation.INCOMMUTER_SUBPOPULATIONS if context.config("cordon_enabled") else ()
-    if context.config("freight_enabled"):
+    if injected_freight_trips > 0:
         excluded = excluded + (FREIGHT_SUBPOPULATION,)
+    print("[initial_mode_choice] excluded subpopulations: %s (freight: %d injected trips)"
+          % (", ".join(excluded) if excluded else "none", injected_freight_trips))
     return excluded
 
 
@@ -864,7 +893,7 @@ def _inject_freight(context, config_name):
     write a flat ``freight_trips_sampled.csv``, and delegate the MATSim scenario
     surgery to org.eqasim.braunschweig.scenario.RunInjectFreight (rewrites
     population/vehicles/network/config in place). Per-category total vs sampled
-    counts are logged (no-silent-fallback).
+    counts are logged (no-silent-fallback). Returns the number of injected trips from the injector's summary.
     """
     import numpy as np
 
@@ -930,3 +959,12 @@ def _inject_freight(context, config_name):
     total = selected + fallback
     print("[freight.injection] boundary links: selected %d / %d, nearest-node fallback %d (%.2f %%)"
           % (selected, total, fallback, 100.0 * fallback / total if total else 0.0))
+
+    # The number of trips the injector actually wrote (its own summary, not the Python sample): the initial mode
+    # choice names the freight subpopulation only when it has members. RunInjectFreight writes one row per trip type
+    # and no total row (eqasim-java-bs, RunInjectFreight summary writer), so the column sum is the total.
+    injected = pd.read_csv("%s/%s" % (context.path(), summary_name), sep=";")
+    if "injected_trips" not in injected.columns:
+        raise ValueError("[freight.injection] %s has no injected_trips column (columns: %s); the injector's summary "
+                         "format changed" % (summary_name, list(injected.columns)))
+    return int(injected["injected_trips"].sum())

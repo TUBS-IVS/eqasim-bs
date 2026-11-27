@@ -1,0 +1,8 @@
+23c23
+< 		<param name="tourConstraints" value="FromTripBased, VehicleContinuity" />
+---
+> 		<param name="tourConstraints" value="FromTripBased, BorderTourVehicleContinuity" />
+29c29
+< 		<param name="tourFinder" value="ActivityBased" />
+---
+> 		<param name="tourFinder" value="IsolatedOutsideTrips" />

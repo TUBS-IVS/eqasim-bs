@@ -1,0 +1,12 @@
+resident home-based tours without an outside activity (uncut): 1392414
+tours with more than 6 trips: 7355
+    7 trips:   4137 tours, cumulative  56.2 %
+    8 trips:   1660 tours, cumulative  78.8 %
+    9 trips:    378 tours, cumulative  84.0 %
+   10 trips:    783 tours, cumulative  94.6 %
+   11 trips:     32 tours, cumulative  95.0 %
+   13 trips:    365 tours, cumulative 100.0 %
+
+real	2m32,192s
+user	2m31,452s
+sys	0m0,679s

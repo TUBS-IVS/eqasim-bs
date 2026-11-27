@@ -1,0 +1,15 @@
+car_availability {'all': 1661362, 'some': 1228504, 'none': 313860, 'nan': 225030}
+bicycle_availability {'all': 2199903, 'some': 544521, 'none': 459302, 'nan': 225030}
+car_passenger_availability {'all': 2200908, 'some': 727378, 'none': 275440, 'nan': 225030}
+has_license {'True': 2431656, 'False': 772070, 'nan': 225030}
+tours without outside: 1392414 ; modes per person of all tours: {2: 41288, 3: 113863, 4: 442543, 5: 794720}
+    tours  mean_modes       chains_total       chains_max         cum_chains
+n                                                                           
+7    4137        4.72     256,838,257.00        78,125.00     256,838,257.00
+8    1660        4.51     421,760,819.00       390,625.00     678,599,076.00
+9     378        3.99     308,398,449.00     1,953,125.00     986,997,525.00
+10    783        5.00   7,637,767,326.00     9,765,625.00   8,624,764,851.00
+11     32        5.00   1,562,500,000.00    48,828,125.00  10,187,264,851.00
+13    365        5.00 445,556,640,625.00 1,220,703,125.00 455,743,905,476.00
+modes of the tours with the most trips: {5: 365}
+for comparison, all tours of up to 6 trips: 1385059 tours, 315,176,835 chains

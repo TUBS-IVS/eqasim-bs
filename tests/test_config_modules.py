@@ -235,3 +235,56 @@ def test_a_commented_out_module_is_not_a_second_module_for_set_param(tmp_path):
     path = _config(tmp_path, text)
     assert cm.set_param(path, "m", "x", "edited") == "direct"
     assert path.read_bytes().decode("utf-8") == text.replace('value="direct"', 'value="edited"')
+
+
+DMC_CONFIG = ('<?xml version="1.0" encoding="utf-8"?>\n'
+              '<!DOCTYPE config SYSTEM "http://www.matsim.org/files/dtd/config_v2.dtd">\n'
+              '<config>\n\t<module name="DiscreteModeChoice">\n'
+              '\t\t<param name="tourFinder" value="ActivityBased" />\n'
+              '\t\t<param name="tourConstraints" value="FromTripBased, VehicleContinuity" />\n'
+              '\t\t<parameterset type="tourFilter:TourLength">\n'
+              '\t\t\t<param name="maximumLength" value="6" />\n'
+              '\t\t</parameterset>\n'
+              '\t\t<parameterset type="tourFilter:Other">\n'
+              '\t\t\t<param name="maximumLength" value="99" />\n'
+              '\t\t</parameterset>\n'
+              '\t</module>\n</config>\n')
+
+
+def test_set_parameterset_param_changes_one_value_and_returns_the_old_one(tmp_path):
+    path = _config(tmp_path, DMC_CONFIG)
+    assert cm.set_parameterset_param(path, "DiscreteModeChoice", "tourFilter:TourLength", "maximumLength", "11") == "6"
+    new, old = path.read_bytes().decode("utf-8").split("\n"), DMC_CONFIG.split("\n")
+    assert [(a, b) for a, b in zip(old, new) if a != b] == [
+        ('\t\t\t<param name="maximumLength" value="6" />', '\t\t\t<param name="maximumLength" value="11" />')]
+    assert len(old) == len(new)
+
+
+def test_set_parameterset_param_is_a_no_op_for_the_same_value(tmp_path):
+    path = _config(tmp_path, DMC_CONFIG)
+    assert cm.set_parameterset_param(path, "DiscreteModeChoice", "tourFilter:TourLength", "maximumLength", "6") == "6"
+    assert path.read_bytes() == DMC_CONFIG.encode("utf-8")
+
+
+def test_set_parameterset_param_names_a_missing_set(tmp_path):
+    path = _config(tmp_path, DMC_CONFIG)
+    with pytest.raises(ValueError, match="tourFilter:Missing"):
+        cm.set_parameterset_param(path, "DiscreteModeChoice", "tourFilter:Missing", "maximumLength", "11")
+    assert path.read_bytes() == DMC_CONFIG.encode("utf-8")
+
+
+def test_set_parameterset_param_rejects_two_sets_of_the_same_type(tmp_path):
+    twice = DMC_CONFIG.replace("tourFilter:Other", "tourFilter:TourLength")
+    path = _config(tmp_path, twice)
+    with pytest.raises(ValueError, match="tourFilter:TourLength"):
+        cm.set_parameterset_param(path, "DiscreteModeChoice", "tourFilter:TourLength", "maximumLength", "11")
+
+
+def test_set_parameterset_param_rejects_a_nested_parameter_set(tmp_path):
+    nested = DMC_CONFIG.replace('\t\t\t<param name="maximumLength" value="6" />\n',
+                                '\t\t\t<parameterset type="inner">\n\t\t\t</parameterset>\n'
+                                '\t\t\t<param name="maximumLength" value="6" />\n', 1)
+    path = _config(tmp_path, nested)
+    with pytest.raises(ValueError, match="nested"):
+        cm.set_parameterset_param(path, "DiscreteModeChoice", "tourFilter:TourLength", "maximumLength", "11")
+    assert path.read_bytes() == nested.encode("utf-8")
