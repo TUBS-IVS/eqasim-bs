@@ -314,4 +314,7 @@ notes: >-
   the note. A stroll that starts at home and whose person's next diary trip goes home (out-and-back) is no loop: it
   stays on the solver, and with the switch on the result carries the Boolean column is_out_and_back_stroll
   (loops.out_and_back_strolls, _mark_out_and_back_strolls; the trips must carry is_synthetic_closure or the stage
-  raises); definitions, report keys and the path of the marker to the plans: the note.
+  raises); definitions, report keys and the path of the marker to the plans: the note. The loop rows also carry
+  loop_diary_distance_km and loop_return_diary_distance_km, the diary lengths (trips.final wegkm_imp) of the trip
+  into the loop and of the trip back to its start place (loops.loop_diary_distances, _attach_loop_diary_distances;
+  report key diary_lengths of the loops block); what they are for: the note, section "Loop lengths for analyses".

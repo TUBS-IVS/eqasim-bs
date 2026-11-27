@@ -12,13 +12,17 @@ description: 'With the switch on, the secondary location stage takes the leisure
   secondary_leisure_estimates_without_loops, leaves the loop legs as defined in the detail_doc note
   (purpose_subtype.drop_loop_legs) out of the leisure subtype distance layers and of the leisure subtype
   decider''s estimate, so the legs that remain are not assigned a subtype or a distance from estimates that
-  still count the loops.'
+  still count the loops. The trips the loop placement makes zero-length keep their survey diary length, which
+  reaches the plans (activity attributes loopStroll, loopTripDiaryDistanceKm) and the trips output, and the
+  analyses of trip distances count it (owner decision of 2026-11-27; rule and users: detail_doc note, section
+  "Loop lengths for analyses").'
 stages:
 - synthesis.population.spatial.secondary.locations
 - synthesis.population.spatial.locations
 - matsim.scenario.facilities
 - matsim.scenario.population
 - synthesis.population.spatial.secondary.distance_distributions
+- synthesis.output
 pipelines:
   popsim_mid: active
   popsim_open: not_used
@@ -45,6 +49,11 @@ code_paths:
 - braunschweig/synthesis/commute_day/spatial_locations_day.py
 - braunschweig/matsim/scenario/population.py
 - matsim/scenario/population.py
+- synthesis/output.py
+- braunschweig/analysis/loop_trip_distances.py
+- braunschweig/analysis/dashboard/run_metrics.py
+- braunschweig/analysis/dashboard/run_records.py
+- scripts/validate_bs_10pct/io.py
 - braunschweig/calibration/secondary_measurement.py
 - scripts/validate_secondary_distances.py
 - scripts/calibrate_detour_circuity.py
@@ -55,6 +64,10 @@ evidence:
   - tests/test_secondary_loops_stage.py
   - tests/test_extract_mid_w_zwd_groups.py
   - tests/test_population_stroll_attribute.py
+  - tests/test_population_loop_attributes.py
+  - tests/test_loop_trip_distances.py
+  - tests/test_dashboard_loop_trips.py
+  - tests/test_validate_bs_10pct_loop_distances.py
   - tests/test_calibrate_detour_circuity_loops.py
   - tests/test_purpose_subtype.py
   - tests/test_distance_distributions_subtypes.py

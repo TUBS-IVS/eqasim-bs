@@ -1,8 +1,9 @@
 # Strolls and dog walks: the loop flag, the out-and-back split, the placement rule and the mode rules
 
 This note is the ONE home of the definitions of a stroll, a loop and an out-and-back stroll (section "Definitions"),
-of the rule that places a loop activity, of the marker that carries an out-and-back stroll into the plans, and of the two
-Java mode rules with what each does not reach. The reasons, the rejected approaches and the assumptions are in
+of the rule that places a loop activity, of the marker that carries an out-and-back stroll into the plans, of the two
+Java mode rules with what each does not reach, and of the rule by which analyses count the length of a loop (section
+"Loop lengths for analyses"). The reasons, the rejected approaches and the assumptions are in
 [ADR-0207](../../decisions/ADR-0207-strolls-and-dog-walks-stay-where-they-start.md); the switch and its production
 state are in the feature record
 [`secondary_loop_zero_displacement`](../../registry/features/secondary_loop_zero_displacement.yml); numbers are in the
@@ -13,11 +14,14 @@ Code: `braunschweig/synthesis/locations/secondary_chainsolvers/loops.py` (pure
 functions: `estimate_loop_probabilities`, `flag_loops`, `out_and_back_strolls`, `diary_way_home_follows`,
 `select_collapsible_loops`, `collapse_loops`, the `to_collapsed_*` translators, `restore_loops`),
 `secondary_chainsolvers/__init__.py` (`execute`, `_flag_loop_trips`, `_linked_activity_keys`,
-`_collapse_loops_and_move_anchors`, `_require_no_loop_origin_outside`, `_mark_out_and_back_strolls`, `_report_loops`),
+`_collapse_loops_and_move_anchors`, `_require_no_loop_origin_outside`, `_mark_out_and_back_strolls`,
+`_attach_loop_diary_distances`, `_report_loops`),
 `braunschweig/matsim/scenario/facilities.py` (`_loop_origin_facility_ids`, `validate_secondary_coverage`),
-`braunschweig/synthesis/commute_day/spatial_locations_day.py` (`_with_out_and_back_strolls`),
+`braunschweig/synthesis/commute_day/spatial_locations_day.py` (`_with_out_and_back_strolls`, `_with_loop_lengths`),
 `braunschweig/matsim/scenario/population.py` (`_require_stroll_marker`, `_injected_rows_without_stroll`),
-`matsim/scenario/population.py` (`add_person`, `write_population`) and, for the loop-free estimates below,
+`matsim/scenario/population.py` (`add_person`, `write_population`), `synthesis/output.py` (`attach_trip_loop_columns`),
+`braunschweig/analysis/loop_trip_distances.py` (`read_loop_trips`, `apply_loop_trip_distances`) and, for the loop-free
+estimates below,
 `braunschweig/popsim/purpose_subtype.py` (`LOOP_CODES`, `LOOP_MODES`, `mark_diary_returns`, `is_out_and_back_stroll`,
 `drop_loop_legs`), `braunschweig/popsim/distance_distributions.py` (`run`, Step 2 and Step 8) and
 `secondary_chainsolvers/deciders.py` (`_build_leisure_subtype_decider`).
@@ -219,8 +223,58 @@ activity has its own destination. The marker travels in four hops, all behind `s
    (`java.lang.Boolean`, written only as `true`; a value that is no boolean raises). It logs the count and warns when it
    is zero with the column present.
 
-With the switch off no column and no attribute exist. Loops carry no marker: a collapsed loop is covered by the
-same-facility rule below, and a loop kept on the solver keeps the free mode choice (the reason: ADR-0207, decision 6).
+With the switch off no column and no attribute exist. The mode choice reads no marker of a loop: a collapsed loop is
+covered by the same-facility rule below, and a loop kept on the solver keeps the free mode choice (the reason:
+ADR-0207, decision 6). The loop marker `loopStroll` of the next section is for analyses; no Java code reads it.
+
+## Loop lengths for analyses
+
+A loop placed at its start makes two kinds of trips zero-length in the model: the trip INTO the loop, and the trip
+OUT of it when that trip goes back to the loop's start place (after a loop from work, the diary's way back to work;
+after a loop from home only the plan repair's invented home trip can do so, section "Definitions"). The survey diary
+still records how far the person walked or rode on them (MiD `wegkm_imp`, a path length in km). With
+`secondary_loop_zero_displacement` on, that length travels with the loop to every file an analysis reads trips from:
+
+1. **Secondary location stage** (`loops.loop_diary_distances`, `_attach_loop_diary_distances`): every loop row gets
+   `loop_diary_distance_km` (the trip in) and `loop_return_diary_distance_km` (the trip out, when it goes back to the
+   start place: the loop starts at home, work or education and that trip ends at an activity of the same purpose,
+   since a person has one place of each; NaN otherwise, and for the invented home trip, which has no diary length).
+   The lengths are read through `diary_facts.validate_trip_length_km`; a trips table without `wegkm_imp`, a loop
+   without its trip in or a MiD design code raises. The block `loops` of `secondary_locations_report.json` counts them
+   under `diary_lengths` (with and without a length, km, by synthesis mode).
+2. **Day-view location join** (`spatial_locations_day._with_loop_lengths`): every located activity gets
+   `is_loop_stroll` (True on a loop) and `loop_trip_diary_distance_km`, the diary length of the trip INTO the activity
+   when the loop placement makes that trip zero-length (NaN elsewhere). The trip-out length therefore lands on the
+   activity after the loop, which must lie at the loop's place (`ValueError` otherwise, which also guards the
+   one-place-per-purpose reading of step 1).
+3. **Plans** (`matsim/scenario/population.py`, `add_person`): the activity attributes `loopStroll`
+   (`java.lang.Boolean`, written only as `true`) and `loopTripDiaryDistanceKm` (`java.lang.Double`, written only where
+   set). The writer wrapper (`braunschweig/matsim/scenario/population.py`) raises like for the stroll marker when the
+   switch is on and a column is missing (`_require_stroll_marker`), and the injected in-commuters get neither attribute
+   (`_injected_rows_without_stroll`). No Java code reads them.
+4. **Trips output** (`synthesis/output.py::attach_trip_loop_columns`): `<prefix>trips.csv` gets both columns, per trip
+   the values of its destination activity.
+
+**The rule for analyses** (`braunschweig/analysis/loop_trip_distances.py`, the one implementation,
+`apply_loop_trip_distances`): every such trip with a diary length gets that length instead of its zero, as it is in
+a path-length metric (routed or network distance) and divided by `braunschweig.constants.ROUTED_DETOUR_FACTOR` in a
+crow-fly metric (the conversion the trip build applies to every diary length). The trip keeps its simulated mode. A
+marked trip whose model crow-fly distance is above `ZERO_LENGTH_TOLERANCE_METERS` raises: the trip indices of the two
+files do not line up. Without the columns (switch off, or an output written before the change) nothing is corrected,
+and a WARNING counts the zero-length leisure trips on foot or by bicycle that keep 0 m. Its users:
+
+- the run dashboard: `dashboard/run_records.assemble_run_record` reads the table from `<prefix>trips.csv`, and
+  `dashboard/run_metrics.metrics_matsim` corrects the km of `eqasim_trips.csv` (`routed_distance`, a path length)
+  before every km metric; the run record has the block `loop_trips`;
+- the 10 % validation package: `scripts/validate_bs_10pct/io.py::trips_full` corrects the crow-fly length of
+  `<prefix>trips.gpkg`, which every distance metric of the package reads.
+
+Not corrected: MATSim's own `traveldistancestats.csv` (per-iteration averages, in which loops count 0 m). The other
+distance analyses of the repository do not reach these trips: commute and education distances (home to work or
+education), the public-transport-only poster figures, and the survey-side tools.
+`scripts/validate_secondary_distances.py` and `scripts/calibrate_detour_circuity.py` leave the loop legs out on
+purpose (section "Comparisons"), and `scripts/calibrate_secondary_scorer.py` re-solves the chains without the loop
+placement, so loops are ordinary legs there. The reasons and the assumptions are in ADR-0207, decision 7.
 
 ## Mode choice (two Java trip rules)
 
