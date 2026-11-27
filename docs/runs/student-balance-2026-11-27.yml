@@ -1,12 +1,12 @@
 id: student-balance-2026-11-27
 date: '2026-11-27'
 repository:
-  commit: '5731b2bc'
+  commit: 'a5e99557'
   branch: claude/i140-student-balance-3b6cbe
   notes: >-
-    Code state of every table of this run: c78c7f61 (written in the header of each committed table and calibration
-    artifact). Commit 5731b2bc holds the five rewritten tables and every run artifact; the sha256 values under pipeline.notes
-    are those of the blobs at 5731b2bc. This run supersedes the final tables of run student-balance-2026-11-26. The run
+    Code state of every table of this run: 6192ffbf (written in the header of each committed table and calibration
+    artifact). Commit a5e99557 holds the five rewritten tables and every run artifact; the sha256 values under pipeline.notes
+    are those of the blobs at a5e99557. This run supersedes the final tables of run student-balance-2026-11-26. The run
     directory, host and user are not recorded in tracked files.
 configuration:
   base: configs/base_bs.yml
@@ -29,8 +29,8 @@ pipeline:
   notes: |-
     Commands (local-only inputs are named by file name and sha256, never by path):
     python -X utf8 scripts/seed_lsn_university_sites.py
-    python -X utf8 scripts/build_student_balance.py calibrate --sites lsn_university_sites.csv --vg250 vg250-ew_12-31.utm32s.gpkg.ebenen.zip --source-commit c78c7f61 --out-dir docs/runs/artifacts/student-balance-2026-11-27/calibration_check
-    python -X utf8 scripts/build_student_balance.py balance --sites lsn_university_sites.csv --sites-census-year lsn_university_sites_ws2022_23.csv --vg250 vg250-ew_12-31.utm32s.gpkg.ebenen.zip --zensus-students zensus2022_students_20_29_kreis.csv --zensus-employed zensus2022_employed_by_age_kreis.csv --weights 1,1,0.3 --mover-share 0.4 --mover-site-kreise 03158 --weights-source owner --source-commit c78c7f61 --final --out-dir eqasim-data --artifact-dir docs/runs/artifacts/student-balance-2026-11-27
+    python -X utf8 scripts/build_student_balance.py calibrate --sites lsn_university_sites.csv --vg250 vg250-ew_12-31.utm32s.gpkg.ebenen.zip --source-commit 6192ffbf --out-dir docs/runs/artifacts/student-balance-2026-11-27/calibration_check
+    python -X utf8 scripts/build_student_balance.py balance --sites lsn_university_sites.csv --sites-census-year lsn_university_sites_ws2022_23.csv --vg250 vg250-ew_12-31.utm32s.gpkg.ebenen.zip --zensus-students zensus2022_students_20_29_kreis.csv --zensus-employed zensus2022_employed_by_age_kreis.csv --weights 1,1,0.3 --mover-share 0.4 --mover-site-kreise 03158 --weights-source owner --source-commit 6192ffbf --final --out-dir eqasim-data --artifact-dir docs/runs/artifacts/student-balance-2026-11-27
     (--mover-site-kreise has a default, 03102,03103,03158, that the final run does NOT use.) The run logs had local paths scrubbed to placeholders.
     Inputs as written in the table headers (committed text files are hashed LF-normalised, as git stores them; local-only files by raw bytes):
     che_origins: eqasim-data/data/braunschweig/schools/che_student_origins_ws2022_23.csv sha256 a283078c026e9ef348c24d70e9ebe18593297ed95786b272553a0ba249dea38d;
@@ -38,28 +38,32 @@ pipeline:
     lsn_site_table_census_year: lsn_university_sites_ws2022_23.csv (local-only) sha256 d3f25bc3df0a19e9a74622fad462f737a5e9a3798c2def41e748e4c172f4500e;
     vg250_archive: vg250-ew_12-31.utm32s.gpkg.ebenen.zip (local-only) sha256 51a31279653edc1488c98484ddbc346dcd9f77cf0b1d6a75cd2179da57ed962f;
     curated_sites_script: scripts/seed_nds_hochschulen.py sha256 700ec813e27eba1548be6129386d7d440d3e077e70a1efc4a2de6c81fca2d467;
-    enrollment_outside_lsn_script: scripts/seed_lsn_university_sites.py sha256 8db406807c894b770ead547dac642367851bb99600806df723a5b34c6eee6885;
+    enrollment_outside_lsn_script: scripts/seed_lsn_university_sites.py sha256 edf56a87b6e3ce06f40221253b3828f08e2328dac9cf8f5049af83c12885e136;
+    srv_destination_reference: eqasim-data/data/braunschweig/srv/srv2023_student_education_destination.csv sha256 5602294f4b5c4f5907a59a5cdf3e1ec546e57f244bced8efcbcbaa9cc756af56;
+    srv_education_distance: eqasim-data/data/braunschweig/srv/srv2023_student_education_distance_by_kreis.csv sha256 ae1cace657c90ca2c0b113e02edd73debc50efc29060ee09fca97347aba75e23;
+    mid_education_distance: eqasim-data/data/braunschweig/mid/mid2023_student_education_distance_mode.csv sha256 73e8a2efc0d9b8725f10a789f500394e0ef5bb4b2b4cffb29c08150dfc6b958d;
     srv_student_parameters: eqasim-data/data/braunschweig/srv/srv2023_student_parameters.csv sha256 3fe372df63f25b22047a404db048282602af06ee9765f7fe86fce8f11acdb685;
     srv_student_share: eqasim-data/data/braunschweig/srv/srv2023_student_share_by_kreis.csv sha256 addfa1a3e70ca2d42021f410c2775b21955759fd5863141884534bf09fb32934;
     mid_student_share: eqasim-data/data/braunschweig/mid/mid2023_student_share_20_29_by_land.csv sha256 491150d7dda6fabf872c1d1a7472c98602a7a1a4dd65bc25c92b0c801e54a8c2;
     mid_student_age_sex: eqasim-data/data/braunschweig/mid/mid2023_student_age_sex.csv sha256 d4c199f03b7d95711927c1b01e98fe6d2452dcb9035fee56012c079d8cb10a49;
     lsn_population_20_29: eqasim-data/data/braunschweig/popsim/lsn_population_20_29_by_kreis.csv sha256 1ef089c5436a3f677b9b24447cd8430d7449a9cdf25d3fb876ea8c3759e48c89;
     zensus_students: zensus2022_students_20_29_kreis.csv (local-only) sha256 fb14b58cd731b56c13873b66046c8150ddaa18e65e719f36cc2b22ee4061dcb7;
+    zensus_employed: zensus2022_employed_by_age_kreis.csv (local-only) sha256 43d64e5d0f8bfb417385290dcb96ed94b1b1992dcd550afd82235b2c70ebb586;
     model_level: docs/runs/artifacts/student-measurement-popsim100-20261120-20261126/student_level_by_kreis.csv sha256 5ffb3390ff45758f7d9e4d2d85a95668ac9b07274da663bfa90f668d952b4bd2.
     Logs in the artifact directory: balance_logs.txt, calibration_check/calibration_logs.txt.
-    sha256 of the committed blobs at commit 5731b2bc:
-    eqasim-data/data/braunschweig/popsim/student_level_table.csv: 703962aaf5e42698f55b4395c880d3dfd8a9ad8e0ebca55b1a2972bd12bd4de6
-    eqasim-data/data/braunschweig/schools/student_balance_by_site.csv: d3dc1dfbd14258eb0592d38ecf34d113cde7357135932d5c9b7650fbae112a73
-    eqasim-data/data/braunschweig/schools/student_balance_in_commuters_by_origin.csv: 61d3e3b9b8a860733920a2697ec8c0e05a733321024931661ef245207eff4cb6
-    eqasim-data/data/braunschweig/schools/student_balance_out_commuters.csv: 316d97755d12bf4637134dbcd5598e618175dc8efd805193b242c87d46b4e802
-    eqasim-data/data/braunschweig/schools/student_od_table.csv: 455b703e0a10b8fb82926620e01ff6b66cb215215ea36d262f0a92c07426101e
-    docs/runs/artifacts/student-balance-2026-11-27/balance_logs.txt: a94c4d77cb5f0365bf61bed8edb119086a3488fe23363f4278858834d8f9fc00
-    docs/runs/artifacts/student-balance-2026-11-27/calibration_check/calibration_logs.txt: 38bcaa211c8434f09498ceb548f2b03c77ee793fe3d4b6d3ec1fa9675200cd63
-    docs/runs/artifacts/student-balance-2026-11-27/calibration_check/student_commuter_weight_calibration.csv: d09bdf15d6c788701f5e79adabcd1eefa2a63cb13b23c4cf3d7f5b15e8ffe75d
-    docs/runs/artifacts/student-balance-2026-11-27/calibration_check/student_commuter_weight_context.csv: 44abee144112ef8dd16a89c90d9bf83ec593e4e9cca6f1cc3406da6ab7f80351
-    docs/runs/artifacts/student-balance-2026-11-27/calibration_check/student_commuter_weight_fit.csv: 039043c213bab1d0dedc5c0d7a87f82b6909f054c1fe1670a192c1f58ed2dee2
-    docs/runs/artifacts/student-balance-2026-11-27/student_employed_target_precheck.csv: dff9630ad94e4cb33bfeb19dafc1e40b9459723a3b4fc442008e794d8afb0c2a
-    docs/runs/artifacts/student-balance-2026-11-27/student_level_gate.csv: 69c9be3d6ab0db0112548da21bd7bdda24a714fabf00cbbda43e3001cb34d924
+    sha256 of the committed blobs at commit a5e99557:
+    eqasim-data/data/braunschweig/popsim/student_level_table.csv: 2d6999d3c1c30926243f21af963a5b106aef484854e7d400b32f6250b77c502f
+    eqasim-data/data/braunschweig/schools/student_balance_by_site.csv: 269e6f45a59c4525e36236ad4035e05baf91bc90e5bede130e46a5ee0eaac171
+    eqasim-data/data/braunschweig/schools/student_balance_in_commuters_by_origin.csv: 9b1ac5eb9a316ea1a488b03dc970e7631d147512b2b834f481e2c3b313b56acd
+    eqasim-data/data/braunschweig/schools/student_balance_out_commuters.csv: c357fae27ba42f5a627040f516c92eca28517361ab6dd771c57e0948a4a6af57
+    eqasim-data/data/braunschweig/schools/student_od_table.csv: b96594081e30e5de755af2874edaf0e225cf19317704cc32327f1d2fe55e46db
+    docs/runs/artifacts/student-balance-2026-11-27/balance_logs.txt: d70e6f9989457269c85666d8300b63ef88e46892b78a3b1810024c10dc064740
+    docs/runs/artifacts/student-balance-2026-11-27/calibration_check/calibration_logs.txt: 83692b82e84379eba6745694eabb87cb8ebc411f09435b5c969b6ea2f35f62ab
+    docs/runs/artifacts/student-balance-2026-11-27/calibration_check/student_commuter_weight_calibration.csv: a97c883eb163fbdbd7bd9d7439364dbe97fecc7b0e10a1fa4eb790e36fa983a8
+    docs/runs/artifacts/student-balance-2026-11-27/calibration_check/student_commuter_weight_context.csv: cc442adbdbde77a567ba284cff57369aab7451ba6f859af2671018f40297187f
+    docs/runs/artifacts/student-balance-2026-11-27/calibration_check/student_commuter_weight_fit.csv: 3d4695241990bbf75189bac0063218306be9dbc3397e5dd38103f4d95ea75eca
+    docs/runs/artifacts/student-balance-2026-11-27/student_employed_target_precheck.csv: 247c582c89a11fe551071115156098ad4aaf78c2c2416e167c213f9eb1173411
+    docs/runs/artifacts/student-balance-2026-11-27/student_level_gate.csv: 9fee437c02d83248476af04c19c333d0abc1a326160bd8e216d2c14936c449f6
 classification:
 - calibration
 status:
@@ -74,7 +78,7 @@ validation:
   result: >-
     Read from docs/runs/artifacts/student-balance-2026-11-27/balance_logs.txt (the two lines '[build_student_balance]
     enrollment outside LSN') and from the Diagnostics line of eqasim-data/data/braunschweig/schools/student_balance_by_site.csv
-    (keys enrollment_semester, outside_lsn_enrollment, enrollment_census_year). Model semester WS 2025/26 (--sites, column
+    (keys of the object 'sites': enrollment_semester, outside_lsn_enrollment, census_year_semester, outside_lsn_enrollment_census_year). Model semester WS 2025/26 (--sites, column
     semester of the table): primary 1/3 of the three institutions outside LSN (own semester), fallback 2/3 (last published
     winter semester, WS 2024/25: Hochschule Magdeburg-Stendal, Hochschule Harz). Census-year semester WS 2022/23
     (--sites-census-year): primary 3/3, fallback 0/3. The sum of column enrollment_persons of student_balance_by_site.csv
@@ -87,10 +91,19 @@ validation:
     total of the eight Kreise (header key level_total_persons of student_level_table.csv) and splits it by the census
     pattern (the shares are in the header key shares_json). Gate flags (header lines of student_level_gate.csv):
     gate_triggered=True (the pooled row 03ZGB is beyond 2.0 SrV standard errors in column beyond_two_se, value of
-    difference_in_srv_se -2.126828; the Braunschweig row 03101 is not) and gate_triggered_area_consistent=True (rows 03101 and
-    03ZGB, column beyond_two_se_20_29). The owner decided on 2026-11-27 not
-    to scale the level to SrV; the decision covers the trigger (ADR-0210, Decision 5). The gate still compares the balance row
-    sums with SrV.
+    difference_in_srv_se -2.126828; the Braunschweig row 03101 is not, -1.675192) and gate_triggered_area_consistent=True (rows
+    03101 and 03ZGB, column beyond_two_se_20_29). The trigger flipped between the two final runs: gate_triggered was False in the
+    header of docs/runs/artifacts/student-balance-2026-11-26/student_level_gate.csv (pooled row 03ZGB difference_in_srv_se
+    -1.851002, Braunschweig row 03101 -1.398051) and is True in this run. The owner decided on 2026-11-27 not to scale the level
+    to SrV, a decision that predates this run; that it covers the trigger of this run is a call of the designer, pending the
+    owner's confirmation (ADR-0210, Decision 5; by design a trigger means the owner decides). The gate still compares the
+    balance row sums with SrV. The second comparison (columns difference_20_29_in_srv_se, beyond_two_se_20_29) moved on its balance
+    side: balance_students_20_29_persons now uses the MiD share of the ages 20 to 29 (age_share_20_29_among_adult_students
+    0.8408838729) instead of the SrV share (0.898307, the ratio of balance_students_20_29_persons to balance_students_persons in
+    the 2026-11-26 file). Pooled row 03ZGB difference_20_29_in_srv_se -4.989373 (2026-11-26) to -5.997433 (this run); row 03101
+    -2.250166 to -3.268816. The balance row sum falls by 1.84 % (26628.31803 to 26137.33675), the age share by 6.39 %, together
+    balance_students_20_29_persons falls by 8.12 % at the pooled row (23920.41769 to 21978.46496), so the share accounts for most
+    of the shift.
 - metric: omega = 1 - Z / S in one year (census year)
   reference: Zensus 2022 pupils and students without paid work aged 20 to 29 (Z), balance of the census-year semester (S)
   result: >-
@@ -113,12 +126,22 @@ validation:
     Level value: docs/runs/artifacts/student-balance-2026-11-27/student_level_gate.csv, column
     level_census_year_students_20_29_persons (the level of the census year under the enrollment of WS 2022/23 and the MiD share
     of the ages 20 to 29). Row 03101: level 11425.7584; srv_school_corrected_students_20_29_persons 12767.34043;
-    census_extrapolation_students_20_29_persons 13312.15528. Row 03ZGB (seven surveyed Kreise): level 24071.34865;
-    srv_school_corrected_students_20_29_persons 26766.98267; census_extrapolation_students_20_29_persons 28045.53711. Difference of
-    the level to each count in percent, computed as (level - count) / count * 100: row 03101 against the school-corrected SrV
-    count -10.507920873227624, against the census extrapolation -14.1704843454921; row 03ZGB against the school-corrected SrV count
-    -10.070742949377047, against the census extrapolation -14.170484396189199. These differences are the stated uncertainty of the level. The
-    census extrapolation is the column census_extrapolation_students_20_29_persons of the 2026-11-26 file (census-day ratio, SS 2022).
+    census_extrapolation_students_20_29_persons 13312.15528; census_extrapolation_ws2022_23_students_20_29_persons
+    13682.01446. Row 03ZGB (seven surveyed Kreise): level 24071.34865; srv_school_corrected_students_20_29_persons 26766.98267;
+    census_extrapolation_students_20_29_persons 28045.53711; census_extrapolation_ws2022_23_students_20_29_persons 28824.7422.
+    Difference of the level to each count in percent, computed as (level - count) / count * 100: row 03101 against the
+    school-corrected SrV count -10.507920873227624, against census_extrapolation_students_20_29_persons -14.1704843454921,
+    against census_extrapolation_ws2022_23_students_20_29_persons -16.490671505985237; row 03ZGB against the school-corrected SrV
+    count -10.070742949377047, against census_extrapolation_students_20_29_persons -14.170484396189199, against
+    census_extrapolation_ws2022_23_students_20_29_persons -16.49067151067183. The two census-extrapolation columns of the
+    2026-11-26 file differ in the national ratio (enrolled students aged 20 to 29 in Germany over the census count for Germany)
+    that scales the Kreis census count: census_extrapolation_students_20_29_persons uses the ratio of the census-day semester
+    (SS 2022), census_extrapolation_ws2022_23_students_20_29_persons that of WS 2022/23 (header of the 2026-11-26 file). The
+    level of the census year is built under the enrollment of WS 2022/23 (census_year_semester), so the WS 2022/23 column is the
+    like-for-like comparison (-16.49 %); the SS 2022 column (-14.17 %) is reported next to it. The Braunschweig row and the pooled
+    row give the same ratio to each census extrapolation by construction (level and extrapolation are both proportional to the
+    census count of the Kreis), so they are one ratio, not two independent checks; only the comparison with the school-corrected
+    SrV count differs between the rows. These differences are the stated uncertainty of the level.
 - metric: 'calibration check (stage weights, stage weights and movers): total variation distance to the SrV destination reference'
   reference: SrV 2023 destination reference (survey aggregate; sampling noise is the noise floor)
   result: >-
@@ -142,7 +165,9 @@ notes: >-
   the balance row sums with SrV, not the level; the level is not scaled to SrV (owner decision of 2026-11-27). (e) The level
   counts students by the Kreis they live in under the census split (assumptions A18 and A19); its uncertainty is the difference
   in the validation entry above. (f) A table build and a calibration check on survey aggregates, not a validation; the tables
-  count heads, no day factor is applied. Decisions: ADR-0210.
+  count heads, no day factor is applied. (g) The yardstick scores of the weights decision (weight_candidates.csv under
+  docs/runs/artifacts/student-balance-2026-11-26/weights_decision) are of the run of 2026-11-26 (enrollment WS 2024/25, record student-balance-2026-11-26) and were not re-scored under the enrollment
+  of WS 2025/26. Decisions: ADR-0210.
 source: >-
   scripts/build_student_balance.py over the inputs under pipeline.notes; outputs committed under eqasim-data/data/braunschweig/schools,
   eqasim-data/data/braunschweig/popsim and docs/runs/artifacts/student-balance-2026-11-27/.
