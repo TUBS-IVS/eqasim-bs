@@ -6,8 +6,9 @@ with the popsimprep directory as working directory
 (same uv executable, same working directory) which ``populationsim`` it has installed, so
 a run on an environment that lacks the configured fork fails before any seed is built.
 Meaning and format of the configured version: ``KEY_POPSIM_VERSION`` in
-``braunschweig.popsim.stage.config_keys``. The whole installed environment, not only the
-PopulationSim stack, is checked against ``uv.lock`` (:func:`require_environment_in_sync`).
+``braunschweig.popsim.stage.config_keys``. Every package installed in the project
+environment (.venv), not only the PopulationSim stack, is checked against ``uv.lock``
+(:func:`require_environment_in_sync`); modules added through PYTHONPATH are not covered.
 """
 from __future__ import annotations
 
@@ -47,6 +48,11 @@ _LOCKED_STACK = ("ortools", "numpy", "pandas")
 #: ``--check``: change nothing in the environment, only report whether a sync would.
 #: ``--offline``: no network at stage start (a check must not need an index to answer).
 SYNC_CHECK_ARGS = ("sync", "--frozen", "--check", "--offline")
+
+#: Exit code of ``uv sync --frozen --check`` when the environment differs from the lock
+#: (measured 2026-11-27: "The environment is outdated", exit 1). Any OTHER non-zero exit means
+#: the check itself could not run (unreadable lock, unknown option of an old uv, ...).
+SYNC_CHECK_OUTDATED_EXIT = 1
 
 #: Keys of the report, in the order they are logged.
 REPORT_KEYS = ("populationsim", "commit", "ortools", "numpy", "pandas", "python")
@@ -222,15 +228,17 @@ def installed_tool_report(uv_path: str, project_dir: str, *,
 
 def require_environment_in_sync(uv_path: str, project_dir, *,
                                 subprocess_run=subprocess.run) -> None:
-    """Raise unless the installed popsimprep environment equals ``uv.lock`` in every package.
+    """Raise unless every package installed in the project environment (.venv) equals ``uv.lock``.
 
     One read-only subprocess, ``[uv, *SYNC_CHECK_ARGS]`` with ``cwd=project_dir``. It catches
     what the report of :func:`installed_tool_report` cannot: a differing version of any
-    package outside the PopulationSim stack (for example one raised for a security fix).
+    package outside the PopulationSim stack (for example one raised for a security fix). It does
+    not cover modules added through PYTHONPATH.
 
     Raises:
-        RuntimeError: non-zero exit (the message carries the tail of uv's output, which lists
-            the would-be changes), timeout, or uv could not be started; each with the sync hint.
+        RuntimeError: exit ``SYNC_CHECK_OUTDATED_EXIT`` (the environment differs; the message
+            carries the tail of uv's output, which lists the would-be changes), any other
+            non-zero exit (the check could not run), timeout, or uv could not be started; each with the sync hint.
     """
     command = [str(uv_path), *SYNC_CHECK_ARGS]
     try:
@@ -247,6 +255,12 @@ def require_environment_in_sync(uv_path: str, project_dir, *,
             f"Check the uv_path config key. {_sync_hint(project_dir)}") from exc
     if completed.returncode != 0:
         output = ((completed.stdout or "") + (completed.stderr or "")).strip()[-1000:]
+        if completed.returncode != SYNC_CHECK_OUTDATED_EXIT:
+            raise RuntimeError(
+                f"environment check (uv sync --frozen --check) could not run "
+                f"(exit {completed.returncode}) in {str(project_dir)!r}: {output}. Check the "
+                f"uv version (the check needs `uv sync --check`, tested with uv 0.11.19 and "
+                f"0.11.21) and the lock file. {_sync_hint(project_dir)}")
         raise RuntimeError(
             f"the installed popsimprep environment differs from {LOCK_FILE_NAME} "
             f"(uv sync --frozen --check, exit {completed.returncode}) in "
@@ -280,8 +294,9 @@ def check_populationsim_environment(context, uv_path: str, project_dir: str, exp
     Always runs (no switch to bypass it). Two checks: the installed version equals the
     configured one, and the installed git commit equals the commit ``<project_dir>/uv.lock``
     pins (:func:`expected_populationsim_commit`): the version string alone cannot tell two
-    builds of the fork apart. Then the whole environment must equal the lock
-    (:func:`require_environment_in_sync`). Logs the report at INFO and stores it as
+    builds of the fork apart. Then every package installed in the project environment (.venv)
+    must equal the lock (:func:`require_environment_in_sync`; modules added through PYTHONPATH
+    are not covered). Logs the report at INFO and stores it as
     ``context.set_info("populationsim_tool_report", report)``.
 
     Returns: the report; after this returns, ``report["commit"]`` is the locked commit.

@@ -338,6 +338,19 @@ def test_sync_check_refuses_a_differing_environment_with_uvs_output(tmp_path):
     assert "exit 1" in message and "uv sync --frozen" in message
 
 
+def test_sync_check_other_exit_means_the_check_could_not_run(tmp_path):
+    def fake_run(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command, 2, stdout="", stderr="error: unexpected argument '--check'")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        tool_version.require_environment_in_sync("/opt/uv", tmp_path, subprocess_run=fake_run)
+    message = str(excinfo.value)
+    assert "could not run (exit 2)" in message and "unexpected argument" in message
+    assert "differs" not in message
+    assert "uv version" in message and "uv sync --frozen" in message
+
+
 def test_sync_check_keeps_only_the_tail_of_a_long_output(tmp_path):
     def fake_run(command, **kwargs):
         return subprocess.CompletedProcess(

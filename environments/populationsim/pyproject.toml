@@ -1,8 +1,8 @@
 # The PopulationSim environment the popsim stage launches (`uv run --no-sync populationsim`).
 # It pins the group's PopulationSim fork and, as constraints, the versions of the environment that
 # ran production run prod100_20261031, except packages raised to a security-patched version after
-# an identity run; a run with this environment differs from that run by the fork only. Why, how to
-# sync it and the rule for security updates: docs/codebase/notes/populationsim-fork.md (issue #645).
+# an identity run; a run with this environment differs from that run by the fork and those packages
+# only. Why, how to sync it and the rule for security updates: docs/codebase/notes/populationsim-fork.md (issue #645).
 [project]
 name = "eqasim-bs-populationsim"
 version = "0.1.0"
