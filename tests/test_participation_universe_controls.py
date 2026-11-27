@@ -1447,3 +1447,142 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
     assert isinstance(captured["seed_fill_rng"], np.random.RandomState)
     # The contract mode reaches the check (the call site after the seed build is live).
     assert contract_kwargs["mode"] == "warn"
+
+
+# --------------------------------------------------------------------------- #
+# A3a of the student design: the student status seed columns on BOTH seed paths
+# --------------------------------------------------------------------------- #
+
+# (person id, age, P_TAET, P_BKAT, P_FKARTE, W_ZWECK of the one leg or None). P_TAET 10 =
+# student. P_FKARTE 3 = Deutschlandticket, 1 = single ticket, 6 = job/semester ticket, 8 =
+# never. W_ZWECK 3 = education, 1 = a DIRECT work leg.
+_STUDENT_FIXTURE = (
+    (21, 22, 10, 7, 3, 3),     # student, education leg, flat rate, no work leg
+    (22, 24, 10, 7, 1, 1),     # student, work leg, no flat rate
+    (23, 40, 1, 1, 6, 1),      # employed, work leg
+    (24, 35, 10, 7, 3, 3),     # older student with an education leg
+    (25, 50, 2, 1, 6, 3),      # other adult with an education leg
+    (26, 27, 1, 1, 8, None),   # employed, no leg at all
+)
+_STUDENT_ENTRY_NAMES = (
+    "student_education_18_29", "student_education_30plus", "student_work_leg",
+    "student_season_ticket")
+
+
+def _student_entries(*, names=_STUDENT_ENTRY_NAMES):
+    """The prerequisite entries plus the ad hoc student entries (not registered yet)."""
+    from braunschweig.popsim import attributes
+    from braunschweig.popsim import kreis_attribute_control as kac
+    categories = {
+        kac.STUDENT_EDUCATION_18_29: kac.STUDENT_EDUCATION_18_29_CATEGORIES,
+        kac.STUDENT_EDUCATION_30PLUS: kac.STUDENT_EDUCATION_30PLUS_CATEGORIES,
+        kac.STUDENT_WORK_LEG: kac.STUDENT_WORK_LEG_CATEGORIES,
+        kac.STUDENT_SEASON_TICKET: kac.STUDENT_SEASON_TICKET_CATEGORIES,
+    }
+    entries = _universe_entries() + [
+        _universe_entry("pt_ticket_group4", "pt_ticket_group4", attributes.PT_TICKET_GROUPS4)]
+    for name in names:
+        lo, hi = kac.STUDENT_AGE_BOUNDS[name]
+        entries.append(_universe_entry(name, name, categories[name], min_age=lo, max_age=hi))
+    return entries
+
+
+def _write_student_mid(directory: Path, fixture=_STUDENT_FIXTURE, *, string_ids: bool) -> None:
+    """The fixture as a raw MiD delivery (numeric ids) or as completed-donor Wege (string ids)."""
+    hh_id = (lambda p: f"h{p}") if string_ids else str
+    per_id = (lambda p: f"p{p}") if string_ids else str
+    directory.mkdir(parents=True, exist_ok=True)
+    if not string_ids:
+        (directory / "MiD2023_Haushalte.csv").write_text(
+            "H_ID;H_GEW;RegioStaR7;H_GR;H_MIETE;haustyp\n"
+            + "".join(f"{p[0]};1.0;71;1;1;1\n" for p in fixture), encoding="utf-8")
+        (directory / "MiD2023_Personen.csv").write_text(
+            "P_ID;H_ID;P_GEW;HP_ALTER;HP_SEX;kernwo;anzwege1;alter_gr1;P_BKAT;P_TAET;P_FKARTE\n"
+            + "".join(f"{p[0]};{p[0]};1.0;{p[1]};1;1;1;5;{p[3]};{p[2]};{p[4]}\n" for p in fixture),
+            encoding="utf-8")
+    (directory / "MiD2023_Wege.csv").write_text(
+        "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1;HP_ALTER\n"
+        + "".join(f"{hh_id(p[0])};{per_id(p[0])};{p[0]}01;{p[5]};4;8;0;8;30;5.0;30;0;1;{p[1]}\n"
+                  for p in fixture if p[5] is not None), encoding="utf-8")
+
+
+def _student_seed_both_paths(tmp_path, fixture=_STUDENT_FIXTURE, entries=None):
+    """(load_mid_seed persons, project_completed_seed persons) for the same fixture."""
+    from braunschweig.popsim.mid import load_mid_seed
+    entries = _student_entries() if entries is None else entries
+    mid_dir = tmp_path / "raw"
+    _write_student_mid(mid_dir, fixture, string_ids=False)
+    _hh, via_load, _rep = load_mid_seed(
+        mid_dir, day_filter_values=(), kreis_control_entries=entries,
+        kreis_seed_rng=np.random.RandomState(0),
+        escort_passive_education=False, exclude_rbw_legs=True)
+    donor_dir = tmp_path / "donor"
+    _write_student_mid(donor_dir, fixture, string_ids=True)
+    cols, households, persons = _completed_donor_frames()
+    households = pd.DataFrame({
+        cols.household_id: [f"h{p[0]}" for p in fixture], cols.household_weight: 1.0,
+        "H_GR": 1, "H_MIETE": 1, "haustyp": 1, "RegioStaR7": 71})
+    persons = pd.DataFrame({
+        cols.person_household_id: [f"h{p[0]}" for p in fixture],
+        cols.person_id: [f"p{p[0]}" for p in fixture], cols.person_weight: 1.0,
+        cols.age: [p[1] for p in fixture], cols.sex: 1, "anzwege1": 1, "alter_gr1": 5,
+        "P_BKAT": [p[3] for p in fixture], "P_TAET": [p[2] for p in fixture],
+        "P_FKARTE": [p[4] for p in fixture]})
+    _hh, via_project = mid.project_completed_seed(
+        households, persons, cols, kreis_control_entries=entries,
+        kreis_seed_rng=np.random.RandomState(0), mid_dir=donor_dir,
+        escort_passive_education=False, exclude_rbw_legs=True)
+    return via_load, via_project
+
+
+def test_student_seed_labels_follow_status_flags_and_agree_on_both_seed_paths(tmp_path):
+    """Each label set is one seed column; the two seed paths derive it identically."""
+    via_load, via_project = _student_seed_both_paths(tmp_path)
+    expected = {
+        "student_education_18_29": ["student_edu", "student_noedu", "other_noedu",
+                                    "student_edu", "other_edu", "other_noedu"],
+        "student_education_30plus": ["student", "student", "other_noedu",
+                                     "student", "other_edu", "other_noedu"],
+        # The labels follow the student status alone; the entry's age universe (18 to 29)
+        # decides later whom they constrain, so the 35-year-old student is labelled too.
+        "student_work_leg": ["student_nowork", "student_work", "not_student",
+                             "student_nowork", "not_student", "not_student"],
+        "student_season_ticket": ["student_flatrate", "student_no_flatrate", "not_student",
+                                  "student_flatrate", "not_student", "not_student"],
+    }
+    for persons in (via_load, via_project):
+        for column, labels in expected.items():
+            assert persons[column].tolist() == labels, column
+    # The student columns are one block of the seed, and nothing else differs between paths.
+    pd.testing.assert_frame_equal(
+        via_load[list(expected)].reset_index(drop=True),
+        via_project[list(expected)].reset_index(drop=True))
+
+
+def test_a_student_in_an_employed_work_class_is_an_error(tmp_path):
+    """A student with employment status vollzeit (P_BKAT 1) and a work leg is `employed_work`."""
+    fixture = ((21, 22, 10, 1, 3, 1), (23, 40, 1, 1, 6, 1))
+    with pytest.raises(ValueError, match=r"1 student.*employed_work.*p?21") as excinfo:
+        _student_seed_both_paths(tmp_path, fixture)
+    assert "work_by_employment" in str(excinfo.value)
+
+
+def test_student_seed_columns_are_absent_when_no_student_entry_is_active(tmp_path):
+    """OFF path: no student entry -> no student column, every other column as before."""
+    plain = [e for e in _student_entries() if not e.name.startswith("student_")]
+    with_students = _student_seed_both_paths(tmp_path / "on")
+    without = _student_seed_both_paths(tmp_path / "off", entries=plain)
+    for persons_off, persons_on in zip(without, with_students):
+        assert not [c for c in persons_off.columns if c.startswith("student_")]
+        pd.testing.assert_frame_equal(
+            persons_off.reset_index(drop=True),
+            persons_on.drop(columns=list(_STUDENT_ENTRY_NAMES)).reset_index(drop=True))
+
+
+def test_student_seed_without_its_source_column_names_it():
+    from braunschweig.popsim.mid.participation import derive_student_status_seed_columns
+    persons = pd.DataFrame({"P_TAET": [10, 1], "HP_ALTER": [22, 40],
+                            "education_flag": ["edu", "noedu"]})
+    with pytest.raises(KeyError, match="work_by_employment"):
+        derive_student_status_seed_columns(
+            persons, active_entry_names={"student_work_leg"})

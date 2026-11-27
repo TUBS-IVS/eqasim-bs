@@ -52,6 +52,7 @@ from .participation import PARTICIPATION_W_ZWECK
 from .participation import derive_education_flag_seed
 from .participation import derive_participation_seed
 from .participation import derive_trip_class_seed
+from .participation import derive_student_status_seed_columns
 from .participation import derive_work_by_employment_seed
 
 # The participation-UNIVERSE control entry names (Plan B, issue #368) whose seed columns
@@ -672,6 +673,10 @@ def _derive_participation_seed_columns(
                 passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
                 drop_leading_arrive_home_leg=education_flag_drop_leading_arrive_home_leg,
                 household_id=columns.person_household_id, person_id=columns.person_id)
+    # The student status columns (A3 of the student design, issue #140) cross the student
+    # status with the seed columns derived above; a no-op without an active student entry.
+    persons = derive_student_status_seed_columns(
+        persons, active_entry_names=active_kreis_entry_names)
     return persons
 
 
@@ -856,6 +861,9 @@ def _derive_projected_participation_seed_columns(
                 passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
                 drop_leading_arrive_home_leg=education_flag_drop_leading_arrive_home_leg,
                 household_id=columns.person_household_id, person_id=columns.person_id)
+    # Twin of the load_mid_seed step: the student status columns (A3, issue #140).
+    persons = derive_student_status_seed_columns(
+        persons, active_entry_names=active_kreis_entry_names)
     return persons
 
 

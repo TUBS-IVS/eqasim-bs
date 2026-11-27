@@ -192,6 +192,55 @@ EDUCATION_AGE_BOUNDS: dict[str, tuple[int, int | None]] = {
 # universe cannot drift apart (controller ruling R1).
 EDUCATION_BY_AGE_ENTRY_NAMES = tuple(EDUCATION_AGE_BOUNDS)
 
+# --------------------------------------------------------------------------- #
+# Student status entries (A3 of the student design, issue #140): the entry names and the
+# ORDERED label sets of their seed columns. The seed derivation
+# (braunschweig.popsim.mid.participation.derive_student_status_seed_columns) and the
+# registry entries read the labels from here, so a seed value and a control category cannot
+# drift apart. Every name begins with ``student_`` and no other entry's name starts that
+# way, so the importance-group prefix rule of control_spec holds.
+# --------------------------------------------------------------------------- #
+STUDENT_EDUCATION_18_29 = "student_education_18_29"
+STUDENT_EDUCATION_30PLUS = "student_education_30plus"
+STUDENT_WORK_LEG = "student_work_leg"
+STUDENT_SEASON_TICKET = "student_season_ticket"
+
+# The labels are named, like EDUCATION_FLAG_EDU, so the seed derivation never relies on the
+# POSITION of a label in a category tuple: a display reorder of a tuple must not be able to
+# swap two labels in the seed.
+STUDENT_LABEL_STUDENT_EDU = "student_edu"
+STUDENT_LABEL_STUDENT_NOEDU = "student_noedu"
+STUDENT_LABEL_OTHER_EDU = "other_edu"
+STUDENT_LABEL_OTHER_NOEDU = "other_noedu"
+STUDENT_LABEL_STUDENT = "student"
+STUDENT_LABEL_STUDENT_WORK = "student_work"
+STUDENT_LABEL_STUDENT_NOWORK = "student_nowork"
+STUDENT_LABEL_NOT_STUDENT = "not_student"
+STUDENT_LABEL_STUDENT_FLATRATE = "student_flatrate"
+STUDENT_LABEL_STUDENT_NO_FLATRATE = "student_no_flatrate"
+
+STUDENT_EDUCATION_18_29_CATEGORIES = (
+    STUDENT_LABEL_STUDENT_EDU, STUDENT_LABEL_STUDENT_NOEDU,
+    STUDENT_LABEL_OTHER_EDU, STUDENT_LABEL_OTHER_NOEDU)
+STUDENT_EDUCATION_30PLUS_CATEGORIES = (
+    STUDENT_LABEL_STUDENT, STUDENT_LABEL_OTHER_EDU, STUDENT_LABEL_OTHER_NOEDU)
+STUDENT_WORK_LEG_CATEGORIES = (
+    STUDENT_LABEL_STUDENT_WORK, STUDENT_LABEL_STUDENT_NOWORK, STUDENT_LABEL_NOT_STUDENT)
+STUDENT_SEASON_TICKET_CATEGORIES = (
+    STUDENT_LABEL_STUDENT_FLATRATE, STUDENT_LABEL_STUDENT_NO_FLATRATE, STUDENT_LABEL_NOT_STUDENT)
+
+# Inclusive age universe (min_age, max_age) per entry; ``None`` = no upper bound. The three
+# 18-to-29 entries share one universe, so a Kreis target is split over the batches by the
+# persons aged 18 to 29 (design A3 "Age-range universes").
+STUDENT_AGE_BOUNDS: dict[str, tuple[int, int | None]] = {
+    STUDENT_EDUCATION_18_29: (18, 29),
+    STUDENT_EDUCATION_30PLUS: (30, None),
+    STUDENT_WORK_LEG: (18, 29),
+    STUDENT_SEASON_TICKET: (18, 29),
+}
+# DERIVED from the bounds (never re-listed), like EDUCATION_BY_AGE_ENTRY_NAMES.
+STUDENT_ENTRY_NAMES = frozenset(STUDENT_AGE_BOUNDS)
+
 
 # Path constants for the committed blended targets (FINAL; consume with prior_n = 0).
 _TARGET_DIR = "braunschweig/targets"

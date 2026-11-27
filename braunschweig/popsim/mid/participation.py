@@ -12,6 +12,8 @@ Participation-UNIVERSE seeds (Plan B, issue #368) -- the replacement family:
 - ``map_flag_from_plan_source``       -- map a donor flag onto every person via its plan source
 - ``derive_work_by_employment_seed``  -- ``work_by_employment`` seed (4 MECE labels)
 - ``derive_education_flag_seed``      -- ``education_flag`` seed ('edu'/'noedu')
+- ``derive_student_status_seed_columns`` -- the student status columns (A3 of the student
+  design, issue #140), crossed from the three seeds above and ``pt_ticket_group4``
 
 Extracted verbatim from the stage module (``__init__``); see the package
 docstring for the stage-level context.
@@ -39,10 +41,12 @@ from braunschweig.popsim import trips
 # CONTROL (kreis_attribute_control), because the seed column's value set, the registry
 # entry's categories and the target CSV's share columns must be one ordered list. That
 # module imports only ``attributes`` + numpy/pandas, so this import creates no cycle.
+from braunschweig.popsim import kreis_attribute_control as kac
 from braunschweig.popsim.kreis_attribute_control import (
     EDUCATION_AGE_BOUNDS, EDUCATION_FLAG_CATEGORIES, EDUCATION_FLAG_EDU,
     EDUCATION_FLAG_NOEDU, WORK_BY_EMPLOYMENT_CATEGORIES,
     WORK_BY_EMPLOYMENT_MIN_AGE_YEARS)
+from braunschweig.data.mid.reference_tables import PT_TICKET_FLATRATE
 # The 803/804 diary non-response codes are DECLARED by the diary plan match (the module
 # that decides which of them are remapped and which are kept); the seed guard below must
 # use that single declaration rather than repeating the literals here.
@@ -913,4 +917,167 @@ def derive_education_flag_seed(persons, wege, *, escort_passive_education,
             "per-age-band rates): %d (%.1f%%) %s (%s, W_ZWECK %s)",
             len(out), n_edu, 100.0 * n_edu / max(len(out), 1), edu_label,
             "direct legs only" if exclude_rbw_legs else "all legs incl. rbW", sorted(codes))
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Student status seed columns (A3 of the student design, issue #140)
+# --------------------------------------------------------------------------- #
+
+#: The seed column each ACTIVE student entry needs besides the student status: the entry
+#: reads it, so a missing column is named instead of guessed.
+_STUDENT_ENTRY_SOURCE_COLUMN = {
+    kac.STUDENT_EDUCATION_18_29: "education_flag",
+    kac.STUDENT_EDUCATION_30PLUS: "education_flag",
+    kac.STUDENT_WORK_LEG: "work_by_employment",
+    kac.STUDENT_SEASON_TICKET: "pt_ticket_group4",
+}
+
+#: The ordered label set of each student entry's seed column (for the distribution log).
+_STUDENT_CATEGORIES_BY_ENTRY = {
+    kac.STUDENT_EDUCATION_18_29: kac.STUDENT_EDUCATION_18_29_CATEGORIES,
+    kac.STUDENT_EDUCATION_30PLUS: kac.STUDENT_EDUCATION_30PLUS_CATEGORIES,
+    kac.STUDENT_WORK_LEG: kac.STUDENT_WORK_LEG_CATEGORIES,
+    kac.STUDENT_SEASON_TICKET: kac.STUDENT_SEASON_TICKET_CATEGORIES,
+}
+
+#: ``work_by_employment`` labels of a direct work leg (``<employment>_work``); the "nowork"
+#: labels do not end in ``_work``. Taken from the control's own category tuple.
+_WORK_LEG_LABELS = frozenset(c for c in WORK_BY_EMPLOYMENT_CATEGORIES if c.endswith("_work"))
+#: ``work_by_employment`` labels of an EMPLOYED person (``employed_*``; ``nonemployed_*``
+#: does not start with it).
+_EMPLOYED_CLASS_LABELS = frozenset(
+    c for c in WORK_BY_EMPLOYMENT_CATEGORIES if c.startswith("employed_"))
+
+#: Number of example persons named in the employed-class error message.
+_EMPLOYED_STUDENT_EXAMPLES = 5
+
+
+def _flatrate_ticket_group4_labels() -> frozenset:
+    """The ``pt_ticket_group4`` labels of a flat-rate ticket, DERIVED from the existing mapping.
+
+    ``attributes.PT_TICKET_FLATRATE`` owns which ticket types grant unlimited rides, and
+    ``attributes.map_pt_ticket_group`` owns what group each type lands in; running that mapping
+    over the flat-rate types gives the labels (``deutschlandticket`` and ``other_flatrate``)
+    without typing either again. The mapping's own distribution log line is muted for this
+    probe frame, because it would describe a frame that is not the population.
+    """
+    probe = pd.DataFrame({"pt_subscription_type": sorted(PT_TICKET_FLATRATE)})
+    was_disabled = attributes.logger.disabled
+    attributes.logger.disabled = True
+    try:
+        mapped = attributes.map_pt_ticket_group(probe)
+    finally:
+        attributes.logger.disabled = was_disabled
+    return frozenset(mapped["pt_ticket_group4"])
+
+
+def derive_student_status_seed_columns(persons: pd.DataFrame, *,
+                                       active_entry_names: set) -> pd.DataFrame:
+    """Add one string seed column per ACTIVE student entry (design A3, issue #140).
+
+    A student is a person with ``P_TAET == attributes.STUDENT_TAET``. The label sets are
+    those of ``kreis_attribute_control`` (``STUDENT_*_CATEGORIES``); every person gets a
+    label, the entry's age universe (``STUDENT_AGE_BOUNDS``) restricts who it constrains:
+
+    - ``student_education_18_29`` / ``student_education_30plus``: the student status crossed
+      with ``education_flag`` (the realised plan source has an education leg);
+    - ``student_work_leg``: a student with / without a direct work leg (the work flag of
+      ``work_by_employment``, labels ending in ``_work``), every other person ``not_student``;
+    - ``student_season_ticket``: a student with / without a flat-rate ticket
+      (``pt_ticket_group4`` in the flat-rate labels derived from ``attributes.PT_TICKET_FLATRATE``),
+      every other person ``not_student``.
+
+    The columns read the seed columns ``education_flag``, ``work_by_employment`` and
+    ``pt_ticket_group4``, which must exist already; there is no second derivation of any of
+    them. A missing source column raises ``KeyError`` naming it. A student whose
+    ``work_by_employment`` label is an employed class raises ``ValueError`` (count and
+    examples): the work leg of the students is defined next to employed persons only, and the
+    two would double-count a person (design A3; Phase 1 found none). The check covers every
+    student in the frame, and runs only with the work entry active.
+
+    With no student entry in ``active_entry_names`` the frame is returned unchanged, so the
+    OFF path adds no column and reads nothing. Logs the label distribution of each column over
+    its own age universe (counts and rates). Returns the persons frame with the added columns
+    (MUST be reassigned). Mutates: nothing in place.
+    """
+    active = [name for name in kac.STUDENT_AGE_BOUNDS if name in active_entry_names]
+    if not active:
+        return persons
+    needed = {"P_TAET"} | {_STUDENT_ENTRY_SOURCE_COLUMN[name] for name in active}
+    missing = sorted(c for c in needed if c not in persons.columns)
+    if missing:
+        raise KeyError(
+            f"derive_student_status_seed_columns: column(s) {missing} absent from the persons "
+            f"frame (has {list(persons.columns)}); the student entries {active} read them and "
+            "their derivations must run first (seed_loading order).")
+    taet = pd.to_numeric(persons["P_TAET"], errors="coerce")
+    student = (taet == attributes.STUDENT_TAET).to_numpy()
+    out = persons.copy()
+
+    if kac.STUDENT_WORK_LEG in active:
+        label = persons["work_by_employment"]
+        in_employed_class = student & label.isin(_EMPLOYED_CLASS_LABELS).to_numpy()
+        if in_employed_class.any():
+            id_column = "P_ID" if "P_ID" in persons.columns else None
+            examples = [
+                f"{persons.index[i] if id_column is None else persons[id_column].iloc[i]}:"
+                f"{label.iloc[i]}"
+                for i in np.flatnonzero(in_employed_class)[:_EMPLOYED_STUDENT_EXAMPLES]]
+            raise ValueError(
+                f"derive_student_status_seed_columns: {int(in_employed_class.sum())} student(s) "
+                f"(P_TAET == {attributes.STUDENT_TAET}) fall into an employed class of "
+                f"work_by_employment {sorted(_EMPLOYED_CLASS_LABELS)}; examples "
+                f"(person:label) {examples}. The student work leg is defined for persons outside "
+                "the employed classes; check employment_status and P_TAET (design A3).")
+
+    for name in active:
+        source = persons[_STUDENT_ENTRY_SOURCE_COLUMN[name]]
+        if name in (kac.STUDENT_EDUCATION_18_29, kac.STUDENT_EDUCATION_30PLUS):
+            edu = (source == EDUCATION_FLAG_EDU).to_numpy()
+            if name == kac.STUDENT_EDUCATION_18_29:
+                out[name] = np.select(
+                    [student & edu, student, edu],
+                    [kac.STUDENT_LABEL_STUDENT_EDU, kac.STUDENT_LABEL_STUDENT_NOEDU,
+                     kac.STUDENT_LABEL_OTHER_EDU],
+                    default=kac.STUDENT_LABEL_OTHER_NOEDU)
+            else:
+                out[name] = np.select(
+                    [student, edu], [kac.STUDENT_LABEL_STUDENT, kac.STUDENT_LABEL_OTHER_EDU],
+                    default=kac.STUDENT_LABEL_OTHER_NOEDU)
+        elif name == kac.STUDENT_WORK_LEG:
+            work = source.isin(_WORK_LEG_LABELS).to_numpy()
+            out[name] = np.select(
+                [student & work, student],
+                [kac.STUDENT_LABEL_STUDENT_WORK, kac.STUDENT_LABEL_STUDENT_NOWORK],
+                default=kac.STUDENT_LABEL_NOT_STUDENT)
+        else:
+            flatrate = source.isin(_flatrate_ticket_group4_labels()).to_numpy()
+            out[name] = np.select(
+                [student & flatrate, student],
+                [kac.STUDENT_LABEL_STUDENT_FLATRATE, kac.STUDENT_LABEL_STUDENT_NO_FLATRATE],
+                default=kac.STUDENT_LABEL_NOT_STUDENT)
+
+    # Report each column over its OWN age universe, so a seed that cannot reach its target
+    # margin is visible in the run log before PopulationSim sees it.
+    age = pd.to_numeric(out["HP_ALTER"], errors="coerce") if "HP_ALTER" in out.columns else None
+    n_unreadable_taet = int(taet.isna().sum())
+    for name in active:
+        min_age, max_age = kac.STUDENT_AGE_BOUNDS[name]
+        if age is None:
+            universe = pd.Series(True, index=out.index)
+        else:
+            universe = age >= min_age
+            if max_age is not None:
+                universe = universe & (age <= max_age)
+        n = int(universe.sum())
+        counts = out.loc[universe, name].value_counts()
+        logger.info(
+            "[popsim.mid] %s seed over %d persons %s (students = P_TAET %d; %d persons with no "
+            "readable P_TAET count as no student): %s", name, n,
+            "of every age (no HP_ALTER column)" if age is None else
+            (f"aged {min_age}-{max_age}" if max_age is not None else f"aged {min_age}+"),
+            attributes.STUDENT_TAET, n_unreadable_taet,
+            {k: f"{int(counts.get(k, 0))} ({counts.get(k, 0) / max(n, 1):.1%})"
+             for k in _STUDENT_CATEGORIES_BY_ENTRY[name]})
     return out
