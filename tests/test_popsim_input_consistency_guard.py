@@ -261,9 +261,12 @@ def test_guard_rules_per_pair_group_and_size():
 
 
 def test_the_pair_groups_are_the_listed_pairs_of_the_measurement():
-    relation = {pair.label: pair.relation for pair in ic.KREIS_FINE_PAIRS}
+    relation = {pair.label: pair.relation
+                for pair in (*ic.KREIS_FINE_PAIRS, *ic.STUDENT_PAIRS.values())}
     for label in guard.GRID_EQUAL_PAIRS + guard.AGE_UNIVERSE_PAIRS:
         assert relation[label] == "equal", label
+    for label in guard.STUDENT_BOUND_PAIRS:
+        assert relation[label] == "at_most", label
     # the grid pairs are exactly the pairs of Task A4's mapping: its cars, bicycles and employed
     from braunschweig.popsim import control_spec
     assert len(guard.GRID_EQUAL_PAIRS) == len(control_spec.kreis_grid_pairs())
@@ -477,3 +480,124 @@ def test_run_popsim_mid_puts_the_bridge_of_the_seed_into_the_recorder(tmp_path, 
     level = settings.report()["employment_level"]
     assert level["bridge"] == pytest.approx(0.75)  # the value test_popsim_employment_level pins
     assert {"bridge_family_universe", "below_grid_share", "bridge_source"} <= set(level)
+
+
+# ---------------------------------------------------------------------------------------------
+# student entries (A3): the two age-range pairs and the two at-most pairs
+# ---------------------------------------------------------------------------------------------
+_WORK_PAIR = "students_work_within_nonemployed_work"
+_TICKET_PAIR = "students_flatrate_within_flatrate"
+_ALL_STUDENT_ENTRIES = ("student_education_18_29", "student_education_30plus",
+                        "student_work_leg", "student_season_ticket")
+
+
+_BOUND_CROSSWALK = pd.DataFrame({"ZENSUS100m": ["c1"], "ZENSUS1km": ["k1"], "KREIS": ["03101"]})
+
+
+def _bound_batch(recorder, batch, parts):
+    """Record one batch whose KREIS table holds only the two bounds of every Kreis part:
+    ``parts`` = {Kreis: (students with a work leg, non-employed with a work leg,
+    students with a flat-rate ticket, flat-rate holders)}."""
+    kreis = pd.DataFrame({
+        "KREIS": list(parts),
+        "student_work_leg_student_work_KREIS": [p[0] for p in parts.values()],
+        "work_by_employment_nonemployed_work_KREIS": [p[1] for p in parts.values()],
+        "student_season_ticket_student_flatrate_KREIS": [p[2] for p in parts.values()],
+        "pt_ticket_group4_deutschlandticket_KREIS": [p[3] for p in parts.values()],
+        "pt_ticket_group4_other_flatrate_KREIS": 0.0,
+    })
+    return recorder.record_batch(batch, {"KREIS": kreis}, _BOUND_CROSSWALK)
+
+
+def _bound_recorder(path, check_age_pairs=True):
+    names = {"work_by_employment", "pt_ticket_group4", "student_work_leg", "student_season_ticket"}
+    return guard.ConsistencyRecorder(
+        path, check_grid_pairs=False, check_age_pairs=check_age_pairs, age_tolerance=0.05,
+        min_persons=1000, pairs=ic.kreis_pairs(names))
+
+
+def test_work_pair_is_guarded_and_ticket_pair_only_reported(tmp_path):
+    """Kreis 03101 is split over two batches, 03158 lies in batch_000 only.
+
+    The ticket bound is broken in two parts (excess 10 each): written, counted and reported, never
+    raised; summed over its parts 03101 keeps it (40 <= 80), 03158 does not. The work bound is
+    strict: an excess of 0.5 in a part of 100,000 raises, with no relative tolerance and no
+    minimum part size, whatever the key groups say. A young-heavy part (many persons aged 18 to 29,
+    by whose share the student targets are split) breaks the work bound although the Kreis totals
+    keep it (35 <= 60): the guard judges the part and raises."""
+    recorder = _bound_recorder(tmp_path / "reported.csv")
+    _bound_batch(recorder, "batch_000", {"03101": (5.0, 40.0, 30.0, 20.0),
+                                         "03158": (1.0, 10.0, 40.0, 30.0)})
+    _bound_batch(recorder, "batch_001", {"03101": (5.0, 40.0, 10.0, 60.0)})
+    assert recorder.n_violations == 0 and recorder.n_reported_above_bound == 2
+    assert recorder.report()["student_bounds"] == {
+        "guarded": [_WORK_PAIR], "reported": [_TICKET_PAIR], "rows_above_bound_reported": 2,
+        "kreis_totals_above_bound": {_WORK_PAIR: [], _TICKET_PAIR: ["03158"]}}
+    table = pd.read_csv(recorder.csv_path, dtype={"key": str})
+    ticket = table[table["check"] == _TICKET_PAIR].set_index(["batch", "key"])["amount"]
+    assert ticket.to_dict() == {("batch_000", "03101"): 10.0, ("batch_000", "03158"): 10.0,
+                                ("batch_001", "03101"): 0.0}
+
+    for check_age_pairs, parts in ((False, {"03101": (100000.5, 100000.0, 0.0, 1.0)}),
+                                   (True, {"03101": (30.0, 20.0, 0.0, 1.0)})):
+        strict = _bound_recorder(tmp_path / f"work_{check_age_pairs}.csv", check_age_pairs)
+        with pytest.raises(ValueError, match=r"batch batch_000.*Kreis 03101, pair " + _WORK_PAIR):
+            _bound_batch(strict, "batch_000", parts)
+    _bound_batch(strict, "batch_001", {"03101": (5.0, 40.0, 0.0, 1.0)})  # the other part holds
+    assert strict.kreis_totals_above_bound()[_WORK_PAIR] == []          # and so does the Kreis
+
+
+def _student_build(tmp_path, employed_bridge):
+    settings = stage.KreisConsistencySettings(*NEW)
+    recorder = settings.open_recorder(tmp_path / "work", fixture.entry_names(_ALL_STUDENT_ENTRIES))
+    fixture.build_batch_folders(tmp_path / "batches", settings=settings, recorder=recorder,
+                                employed_bridge=employed_bridge, student_entries=_ALL_STUDENT_ENTRIES)
+    return recorder
+
+
+def test_bound_pair_is_judged_after_the_bridge(tmp_path):
+    """The student pairs on the two-batch fixture with all four student entries (synthetic shares).
+
+    Without the bridge every pair holds: the two age-range pairs replace persons_18plus and meet
+    their 100 m bands, and both at-most pairs are written for every Kreis part. A bridge far above
+    the grid gives the employed classes every person of each part (capped at the row total), so no
+    non-employed person with a work leg is left: the students with a work leg now exceed them, and
+    only a check AFTER the bridge sees it."""
+    recorder = _student_build(tmp_path / "plain", None)
+
+    table = pd.read_csv(recorder.csv_path, dtype={"key": str})
+    kreis = table[table["scope"] == "kreis"]
+    parts = {("batch_000", "03101"), ("batch_000", "03158"), ("batch_001", "03101")}
+    for label in ("persons_18_29", "persons_30plus", _WORK_PAIR, _TICKET_PAIR):
+        rows = kreis[kreis["check"] == label]
+        assert set(zip(rows["batch"], rows["key"])) == parts, label
+    assert "persons_18plus" not in set(table["check"]) | set(table["key"])
+    age_rows = kreis[kreis["check"].isin(["persons_18_29", "persons_30plus"])]
+    assert (age_rows["share"] < 0.01).all()
+    assert (kreis.loc[kreis["check"] == _WORK_PAIR, "amount"] == 0).all()
+    assert recorder.n_violations == 0
+    assert recorder.report()["student_bounds"] == {
+        "guarded": [_WORK_PAIR], "reported": [_TICKET_PAIR], "rows_above_bound_reported": 0,
+        "kreis_totals_above_bound": {_WORK_PAIR: [], _TICKET_PAIR: []}}
+
+    with pytest.raises(ValueError, match=r"batch batch_000.*pair " + _WORK_PAIR):
+        _student_build(tmp_path / "bridged", 1000.0)
+
+
+def test_off_path_writes_todays_consistency_table(tmp_path):
+    """No student entry: the recorder the stage opens with the active entry names writes the same
+    table and report as the recorder without them (no new pair, no new skipped row)."""
+    tables, reports = [], []
+    for name, names in (("today", None), ("off", fixture.entry_names())):
+        settings = stage.KreisConsistencySettings(*NEW)
+        recorder = (settings.open_recorder(tmp_path / name / "work") if names is None
+                    else settings.open_recorder(tmp_path / name / "work", names))
+        fixture.build_batch_folders(tmp_path / name / "batches", settings=settings,
+                                    recorder=recorder, employed_bridge=0.95)
+        tables.append(recorder.csv_path.read_bytes())
+        report = settings.report()
+        report["table"] = report["guard"]["table"] = None
+        reports.append(report)
+    assert tables[0] == tables[1]
+    assert reports[0] == reports[1]
+    assert "student_bounds" not in reports[1]

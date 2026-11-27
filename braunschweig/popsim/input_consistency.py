@@ -12,7 +12,8 @@ Everything here is pure (no I/O).  The tables are as PopulationSim reads them: o
 control field (control name plus geography suffix ``_KREIS``, ``_ZENSUS1km``, ``_ZENSUS100m``),
 indexed by the zone id.  The ``cells`` frame may hold 100 m rows and 1 km rows together (each
 column is filled only for the rows of its own geography); every column is mapped to its Kreis
-through the geography crosswalk (columns ``ZENSUS100m``, ``ZENSUS1km``, ``KREIS``).
+through the geography crosswalk (columns ``ZENSUS100m``, ``ZENSUS1km``, ``KREIS``). The bounds of
+the student entries compare two KREIS quantities of the same table instead (:func:`kreis_pairs`).
 
 Pairs and checks whose columns are absent are left out and named in ``DataFrame.attrs["skipped"]``
 and in a WARNING, never silently dropped.
@@ -26,6 +27,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim import kreis_attribute_control as kac
+from braunschweig.popsim.attributes import PT_TICKET_FLATRATE, pt_ticket_group4_of
 from braunschweig.popsim.control_spec import (
     HH_TOTAL_CENSUS_COLUMN,
     _TIER1_HH_SIZE_ENTRIES, _TIER2_BUILDING_TYPE_ENTRIES, _TIER2_TENURE_ENTRIES,
@@ -57,6 +59,11 @@ def _band_columns(minimum_lower: int | None = None, below: int | None = None) ->
 ALL_BAND_COLUMNS = _band_columns()
 UNDER_18_COLUMNS = _band_columns(below=18)
 FROM_18_COLUMNS = _band_columns(minimum_lower=18)
+# The age ranges of the two student education entries (kac.STUDENT_AGE_BOUNDS): bands 18_19 and
+# 20_29, and 30 upwards. Only the fine teen bands separate 18-19 from 10-17; without them the
+# 18-29 pair is skipped (absent columns), never compared against the wrong bands.
+FROM_18_TO_29_COLUMNS = _band_columns(minimum_lower=18, below=30)
+FROM_30_COLUMNS = _band_columns(minimum_lower=30)
 FROM_15_COLUMNS = _band_columns(minimum_lower=15)
 FROM_10_COLUMNS = _band_columns(minimum_lower=10)
 EMPLOYED_COLUMNS = tuple(c.name + SUFFIX_100M for c in employment_grid_controls())
@@ -117,6 +124,77 @@ def _build_pairs() -> tuple:
 
 
 KREIS_FINE_PAIRS: tuple = _build_pairs()
+
+# --- the student entries (A3 of the student design, ADR-0211) ----------------------------------
+# The band columns above encode the age ranges of the two student education entries; a change of
+# their bounds must change the bands too, so a drift fails at import, not as a wrong comparison.
+if (kac.STUDENT_AGE_BOUNDS[kac.STUDENT_EDUCATION_18_29] != (18, 29)
+        or kac.STUDENT_AGE_BOUNDS[kac.STUDENT_EDUCATION_30PLUS] != (30, None)):
+    raise RuntimeError(
+        f"input_consistency: the student education age ranges {kac.STUDENT_AGE_BOUNDS} no longer "
+        "match FROM_18_TO_29_COLUMNS / FROM_30_COLUMNS; update the band columns of their pairs")
+
+#: ``pt_ticket_group4`` labels of a flat-rate ticket, from the two owners (``attributes``:
+#: which ticket types are flat-rate, and the four-group collapse), never typed again here.
+FLATRATE_TICKET_GROUP4_LABELS = tuple(sorted({
+    str(label) for label in pt_ticket_group4_of(pd.Series(sorted(PT_TICKET_FLATRATE)))}))
+_STUDENT_EDUCATION_ENTRIES = (kac.STUDENT_EDUCATION_18_29, kac.STUDENT_EDUCATION_30PLUS)
+
+
+def _build_student_pairs() -> dict:
+    """``{entry name: pair}`` of the four student entries.
+
+    The two education entries each partition the persons of their age range (``equal`` against
+    the 100 m bands of that range). The two soft entries are bounds between two KREIS columns of
+    the same table: the students with a work leg are among the non-employed persons with a work
+    leg of ``work_by_employment`` (an adult student is never in an employed class: the seed
+    derivation asserts it), and the students with a flat-rate ticket are among the flat-rate
+    holders of ``pt_ticket_group4``.
+    """
+    return {
+        kac.STUDENT_EDUCATION_18_29: KreisFinePair(
+            "persons_18_29", _kreis_columns(kac.STUDENT_EDUCATION_18_29), FROM_18_TO_29_COLUMNS,
+            "equal"),
+        kac.STUDENT_EDUCATION_30PLUS: KreisFinePair(
+            "persons_30plus", _kreis_columns(kac.STUDENT_EDUCATION_30PLUS), FROM_30_COLUMNS, "equal"),
+        kac.STUDENT_WORK_LEG: KreisFinePair(
+            "students_work_within_nonemployed_work",
+            (f"{kac.STUDENT_WORK_LEG}_{kac.STUDENT_LABEL_STUDENT_WORK}{SUFFIX_KREIS}",),
+            (f"work_by_employment_nonemployed_work{SUFFIX_KREIS}",), "at_most"),
+        kac.STUDENT_SEASON_TICKET: KreisFinePair(
+            "students_flatrate_within_flatrate",
+            (f"{kac.STUDENT_SEASON_TICKET}_{kac.STUDENT_LABEL_STUDENT_FLATRATE}{SUFFIX_KREIS}",),
+            tuple(f"pt_ticket_group4_{label}{SUFFIX_KREIS}" for label in FLATRATE_TICKET_GROUP4_LABELS),
+            "at_most"),
+    }
+
+
+STUDENT_PAIRS: dict = _build_student_pairs()
+
+
+def kreis_pairs(active_entry_names) -> tuple:
+    """The pairs to measure for a run whose active KREIS entries are ``active_entry_names``.
+
+    Exactly :data:`KREIS_FINE_PAIRS` when no student entry is active, so the table of such a run
+    gains no row (not even a ``skipped`` one). With a student education entry the 18-plus pair
+    (``education_18plus``, which that entry replaces) gives way to the age-range pair of each
+    active education entry, in its place; the pair of each active soft student entry is appended.
+    """
+    names = set(active_entry_names)
+    if not names & kac.STUDENT_ENTRY_NAMES:
+        return KREIS_FINE_PAIRS
+    education = [STUDENT_PAIRS[name] for name in _STUDENT_EDUCATION_ENTRIES if name in names]
+    pairs = []
+    for pair in KREIS_FINE_PAIRS:
+        if pair.label == "persons_18plus" and education:
+            pairs.extend(education)
+        else:
+            pairs.append(pair)
+    pairs.extend(STUDENT_PAIRS[name] for name in (kac.STUDENT_WORK_LEG, kac.STUDENT_SEASON_TICKET)
+                 if name in names)
+    return tuple(pairs)
+
+
 PAIR_COLUMNS = ["KREIS", "pair", "relation", "kreis_sum", "fine_sum", "diff", "rel_diff"]
 CELL_CHECK_COLUMNS = ["check", "cells", "amount", "base"]
 SUMMARY_COLUMNS = ["scope", "key", "check", "cells", "amount", "base", "share"]
@@ -149,12 +227,17 @@ def _crosswalk_maps(crosswalk: pd.DataFrame) -> dict:
 
 
 def _pair_suffix(pair: KreisFinePair) -> str:
-    """The one geography suffix of the fine controls of a pair (a pair never mixes geographies)."""
-    suffixes = {SUFFIX_1KM if c.endswith(SUFFIX_1KM) else SUFFIX_100M
+    """The one geography suffix of the fine controls of a pair (a pair never mixes geographies).
+
+    ``_KREIS``: the "fine" side is another KREIS quantity of the same table (the bounds of the
+    student entries); it is read from the KREIS table, per Kreis part, without the crosswalk.
+    """
+    suffixes = {SUFFIX_1KM if c.endswith(SUFFIX_1KM)
+                else SUFFIX_KREIS if c.endswith(SUFFIX_KREIS) else SUFFIX_100M
                 for c in pair.fine_controls}
     if len(suffixes) != 1:
         raise ValueError(f"pair {pair.label}: its fine controls mix the geographies "
-                         f"{sorted(suffixes)}; one pair compares one grid geography")
+                         f"{sorted(suffixes)}; one pair compares one geography")
     return suffixes.pop()
 
 
@@ -207,7 +290,7 @@ def kreis_vs_fine(kreis: pd.DataFrame, cells: pd.DataFrame, crosswalk: pd.DataFr
     no_kreis = {SUFFIX_1KM: set(), SUFFIX_100M: set()}
     for pair in pairs:
         suffix = _pair_suffix(pair)
-        fine_frame = cells_1km if suffix == SUFFIX_1KM else cells
+        fine_frame = {SUFFIX_1KM: cells_1km, SUFFIX_KREIS: kreis}.get(suffix, cells)
         missing = ([c for c in pair.kreis_controls if c not in kreis.columns]
                    + [c for c in pair.fine_controls if c not in fine_frame.columns])
         if missing:
@@ -215,10 +298,14 @@ def kreis_vs_fine(kreis: pd.DataFrame, cells: pd.DataFrame, crosswalk: pd.DataFr
             logger.debug("%s pair %s skipped, absent column(s): %s", _TAG, pair.label, missing)
             continue
         kreis_sum = kreis[list(pair.kreis_controls)].sum(axis=1)
-        fine_by_kreis = _fine_sum_by_kreis(fine_frame, pair.fine_controls, maps[suffix])
-        no_grid[suffix] |= set(kreis_sum.index) - set(fine_by_kreis.index)
-        no_kreis[suffix] |= set(fine_by_kreis.index) - set(kreis_sum.index)
-        fine_sum = fine_by_kreis.reindex(kreis_sum.index).fillna(0.0)
+        if suffix == SUFFIX_KREIS:
+            # Both sides are rows of the same KREIS table: no zone to map, no unmatched Kreis.
+            fine_sum = kreis[list(pair.fine_controls)].sum(axis=1)
+        else:
+            fine_by_kreis = _fine_sum_by_kreis(fine_frame, pair.fine_controls, maps[suffix])
+            no_grid[suffix] |= set(kreis_sum.index) - set(fine_by_kreis.index)
+            no_kreis[suffix] |= set(fine_by_kreis.index) - set(kreis_sum.index)
+            fine_sum = fine_by_kreis.reindex(kreis_sum.index).fillna(0.0)
         diff = kreis_sum - fine_sum
         denominator = fine_sum.where(fine_sum != 0)
         rel = kreis_sum / denominator if pair.relation == "ratio" else diff / denominator
@@ -336,8 +423,11 @@ def cell_contradictions(cells: pd.DataFrame, skip_log_level: int = logging.WARNI
 
 def summarize(kreis: pd.DataFrame, cells: pd.DataFrame, crosswalk: pd.DataFrame,
               cells_1km: pd.DataFrame | None = None,
-              skip_log_level: int = logging.WARNING) -> pd.DataFrame:
+              skip_log_level: int = logging.WARNING,
+              pairs=KREIS_FINE_PAIRS) -> pd.DataFrame:
     """Both measurements in one long frame ``scope, key, check, cells, amount, base, share``.
+
+    ``pairs``: the KREIS pairs to measure (:func:`kreis_pairs` of the run's active entries).
 
     ``scope="kreis"``: one row per Kreis (``key``) and pair (``check``); ``amount`` is the
     size of the contradiction (``violation``), ``cells`` is 1 if it exceeds the tolerance,
@@ -351,7 +441,7 @@ def summarize(kreis: pd.DataFrame, cells: pd.DataFrame, crosswalk: pd.DataFrame,
     with check ``skipped``, ``key`` = its name and NaN amount, base and share; the names are
     also in ``.attrs["skipped"]``.
     """
-    pairs = kreis_vs_fine(kreis, cells, crosswalk, cells_1km=cells_1km,
+    pairs = kreis_vs_fine(kreis, cells, crosswalk, pairs=pairs, cells_1km=cells_1km,
                           skip_log_level=skip_log_level)
     cell_rows = cell_contradictions(cells, skip_log_level=skip_log_level)
     ratio = (pairs["relation"] == "ratio").to_numpy()

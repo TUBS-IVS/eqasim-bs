@@ -47,7 +47,9 @@ from braunschweig.analysis.population_validation.participation_fit import (  # n
     load_universe_targets,
     participation_fit,
     realised_participation,
+    realised_student_participation,
     realised_universe_participation,
+    student_participation_fit,
     universe_participation_fit,
 )
 from braunschweig.popsim import kreis_attribute_control as kac  # noqa: E402
@@ -838,3 +840,74 @@ def test_universe_participation_fit_drops_realised_cells_without_target(tmp_path
     assert "03999" not in set(result["ars5"])
     assert any("03999" in record.message or "no matching" in record.message
                for record in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Student entries (A3 of the student design, ADR-0211)
+# ---------------------------------------------------------------------------
+# Kreis 03101. Student = P_TAET 10.
+#   1: student, 20, education + work legs, flat-rate ticket
+#   2: student, 25, no leg, no flat-rate ticket
+#   3: other,   22, education leg, flat-rate ticket
+#   4: other,   40, no leg
+#   5: student, 35, education leg
+#   6: student, 17: outside every student universe
+def _student_persons():
+    return pd.DataFrame({
+        "person_id": [1, 2, 3, 4, 5, 6], "ars5": ["03101"] * 6,
+        "age": [20, 25, 22, 40, 35, 17], "P_TAET": [10, 10, 2, 2, 10, 10],
+        "has_pt_subscription": [True, False, True, False, False, True]})
+
+
+def _student_trips():
+    return pd.DataFrame({
+        "person_id": [1, 1, 1, 3, 3, 5, 5, 6, 6],
+        "preceding_purpose": ["home", "education", "work", "home", "education", "home", "education",
+                              "home", "education"],
+        "following_purpose": ["education", "work", "home", "education", "home", "education", "home",
+                              "education", "home"]})
+
+
+def _student_targets(controls):
+    rows = [{"ars5": "03101", "control": control, "category": label, "target_persons": 1,
+             "universe_persons": 4, "target_share": 0.25}
+            for control in controls
+            for label, _ in {e.name: e for e in kac.REGISTRY}[control].categories]
+    return pd.DataFrame(rows)
+
+
+def test_student_fit_lists_the_new_entries_in_place_of_education_18plus():
+    """Each active student entry is scored over its own age range, from the realised trips and
+    the flat-rate attribute; the inactive one (season ticket) and education_18plus are absent."""
+    active = ["student_education_18_29", "student_education_30plus", "student_work_leg"]
+
+    fit = student_participation_fit(_student_trips(), _student_persons(), _student_targets(active))
+
+    assert list(fit.columns) == ["ars5", "control", "category", "realised_share", "n_persons",
+                                 "target_share", "abs_error"]
+    assert set(fit["control"]) == set(active)
+    got = {(r.control, r.category): (r.realised_share, r.n_persons) for r in fit.itertuples()}
+    third = pytest.approx(1 / 3)
+    assert got == {
+        ("student_education_18_29", "student_edu"): (third, 3),
+        ("student_education_18_29", "student_noedu"): (third, 3),
+        ("student_education_18_29", "other_edu"): (third, 3),
+        ("student_education_18_29", "other_noedu"): (0.0, 3),
+        ("student_education_30plus", "student"): (0.5, 2),
+        ("student_education_30plus", "other_edu"): (0.0, 2),
+        ("student_education_30plus", "other_noedu"): (0.5, 2),
+        ("student_work_leg", "student_work"): (third, 3),
+        ("student_work_leg", "student_nowork"): (third, 3),
+        ("student_work_leg", "not_student"): (third, 3),
+    }
+    assert fit["abs_error"].tolist() == pytest.approx((fit["realised_share"] - 0.25).abs().tolist())
+
+    # The ticket entry reads the flat-rate attribute: student 1 only.
+    ticket = realised_student_participation(
+        _student_trips(), _student_persons(), ["student_season_ticket"]).set_index("category")
+    assert ticket["realised_share"].to_dict() == pytest.approx(
+        {"student_flatrate": 1 / 3, "student_no_flatrate": 1 / 3, "not_student": 1 / 3})
+
+    with pytest.raises(ValueError, match="education_18plus"):
+        student_participation_fit(_student_trips(), _student_persons(),
+                                  _student_targets(["education_18plus"]))

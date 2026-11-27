@@ -1660,12 +1660,17 @@ class KreisConsistencySettings:
                     len(self.apportion_map), len(set(self.apportion_map.values())))
         return batch_cells
 
-    def open_recorder(self, work_dir):
-        """Create the per-run recorder writing ``<work_dir>/popsim_input_consistency.csv``."""
+    def open_recorder(self, work_dir, active_entry_names=()):
+        """Create the per-run recorder writing ``<work_dir>/popsim_input_consistency.csv``.
+
+        ``active_entry_names``: the run's active KREIS entries; they choose the measured pairs
+        (``input_consistency.kreis_pairs``: today's pairs unless a student entry is active).
+        """
         self.recorder = _icg.ConsistencyRecorder(
             Path(work_dir) / _icg.TABLE_FILE_NAME,
             check_grid_pairs=self.follow_grids, check_age_pairs=self.apportionment == "universe",
-            age_tolerance=self.fine_tolerance, min_persons=self.fine_min_persons)
+            age_tolerance=self.fine_tolerance, min_persons=self.fine_min_persons,
+            pairs=_icg.ic.kreis_pairs(active_entry_names))
         return self.recorder
 
     def run_popsim_mid_kwargs(self) -> dict:
@@ -4224,7 +4229,7 @@ def execute(context) -> pd.DataFrame:
     # attributes joined onto the output and must not gain them.
     batch_cells = consistency.prepare_cells(cells, active_entries, tier3_control_names)
     if kreis_table is not None:
-        consistency.open_recorder(work_dir)
+        consistency.open_recorder(work_dir, [entry.name for entry in active_entries])
     else:
         logger.info("[popsim.stage] no KREIS table in this run: the KREIS input consistency is "
                     "not measured")

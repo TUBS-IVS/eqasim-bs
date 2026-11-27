@@ -27,6 +27,22 @@ ASSUMPTIONS
   production tables is in ``docs/runs/popsim-input-consistency-2026-11-18.yml``. It stays guarded.
 * The pairs ``households``, ``persons_14plus_low`` / ``persons_14plus_high`` (bounds, not
   equalities) and the ``ratio`` pair ``employed_survey`` are measured and written, never guarded.
+* The student entries (A3 of the student design, ADR-0211; ``input_consistency.kreis_pairs``): the
+  age-range pairs ``persons_18_29`` / ``persons_30plus`` replace ``persons_18plus`` and are judged
+  like it (``AGE_UNIVERSE_PAIRS``). Of the two at-most pairs, ``STUDENT_BOUND_PAIRS_GUARDED`` (the
+  students with a work leg within the non-employed persons with a work leg) is a violation whenever
+  a Kreis part exceeds its bound by more than ``input_consistency.TOLERANCE``: no relative tolerance
+  and no ``min_persons`` (the default minimum would exempt every part, its students being far
+  fewer), enforced whenever the pair is measured. ``STUDENT_BOUND_PAIRS_REPORTED`` (the students
+  with a flat-rate ticket within the flat-rate holders) is written and counted, never raised. Both
+  are judged after the employment bridge has set the employed levels (``record_batch`` runs after
+  it in ``mid.batch_folders.assemble_batch_folder``), because the bridge moves persons between the
+  employed and the non-employed classes of ``work_by_employment``. ASSUMPTION: the two sides of a
+  bound are split over the batches by DIFFERENT universes (the student entries by the persons aged
+  18 to 29, ``work_by_employment`` and ``pt_ticket_group4`` by those aged 14 or older), so a Kreis
+  part with many young persons can break a bound that the Kreis totals keep. The recorder
+  therefore also sums both sides over the batch parts of each Kreis and reports the Kreis totals
+  above the bound (``report()["student_bounds"]``); only the part-level work bound raises.
 """
 from __future__ import annotations
 
@@ -54,7 +70,13 @@ GRID_EQUAL_PAIRS = (
     "employed",
 )
 #: Pair labels of the age-universe pairs (KREIS family vs Zensus age x sex bands). Listed, not derived.
-AGE_UNIVERSE_PAIRS = ("persons_0_17", "persons_18plus", "persons_all")
+AGE_UNIVERSE_PAIRS = ("persons_0_17", "persons_18plus", "persons_18_29", "persons_30plus",
+                      "persons_all")
+#: Pair labels of the at-most pairs of the student entries that raise (see ASSUMPTIONS).
+STUDENT_BOUND_PAIRS_GUARDED = ("students_work_within_nonemployed_work",)
+#: Pair labels of the at-most pairs of the student entries that are written and counted only.
+STUDENT_BOUND_PAIRS_REPORTED = ("students_flatrate_within_flatrate",)
+STUDENT_BOUND_PAIRS = STUDENT_BOUND_PAIRS_GUARDED + STUDENT_BOUND_PAIRS_REPORTED
 #: Relative difference above which a grid-following pair is a violation (float noise).
 GRID_EQUAL_TOLERANCE = 1e-6
 
@@ -66,7 +88,9 @@ def guard_violations(summary: pd.DataFrame, *, check_grid_pairs: bool, check_age
     ``grid pair``: relative difference (``share``) above :data:`GRID_EQUAL_TOLERANCE`, or any
     difference above ``input_consistency.TOLERANCE`` against a grid sum of 0.
     ``age pair``: ``share`` above ``age_tolerance`` in a Kreis part whose grid sum (``base``) is at
-    least ``min_persons``. ``ratio_reported`` and ``skipped`` rows are never in the result.
+    least ``min_persons``. ``student bound`` (:data:`STUDENT_BOUND_PAIRS_GUARDED`): an excess
+    (``amount``) above ``input_consistency.TOLERANCE`` in any Kreis part, whatever the two flags.
+    ``ratio_reported`` and ``skipped`` rows are never in the result.
     Columns of the result: those of ``summary``.
     """
     kreis = summary[summary["scope"] == "kreis"]
@@ -77,7 +101,8 @@ def guard_violations(summary: pd.DataFrame, *, check_grid_pairs: bool, check_age
         (share > GRID_EQUAL_TOLERANCE) | broken_against_zero)
     age = kreis["check"].isin(AGE_UNIVERSE_PAIRS) & check_age_pairs & (base >= min_persons) & (
         (share > age_tolerance) | broken_against_zero)
-    return kreis[grid | age]
+    bound = kreis["check"].isin(STUDENT_BOUND_PAIRS_GUARDED) & (amount > ic.TOLERANCE)
+    return kreis[grid | age | bound]
 
 
 def max_relative_differences(summary: pd.DataFrame, *, check_grid_pairs: bool, check_age_pairs: bool,
@@ -107,16 +132,22 @@ class ConsistencyRecorder:
     earlier run is removed on construction (the table always describes this run's batches).
 
     ``check_grid_pairs`` / ``check_age_pairs`` switch the two guard groups
-    (``kreis_controls_follow_grids`` / ``kreis_batch_apportionment == "universe"``).
+    (``kreis_controls_follow_grids`` / ``kreis_batch_apportionment == "universe"``). ``pairs``: the
+    KREIS pairs measured per batch (``input_consistency.kreis_pairs`` of the run's active entries).
     """
 
     def __init__(self, csv_path, *, check_grid_pairs: bool, check_age_pairs: bool,
-                 age_tolerance: float, min_persons: float):
+                 age_tolerance: float, min_persons: float, pairs=ic.KREIS_FINE_PAIRS):
         self.csv_path = Path(csv_path)
         self.check_grid_pairs = bool(check_grid_pairs)
         self.check_age_pairs = bool(check_age_pairs)
         self.age_tolerance = float(age_tolerance)
         self.min_persons = float(min_persons)
+        self.pairs = tuple(pairs)
+        self._bound_pairs = [p for p in self.pairs if p.label in STUDENT_BOUND_PAIRS]
+        # Per student bound pair: Kreis -> [students, bound], summed over the batch parts.
+        self._bound_totals: dict[str, dict[str, list]] = {p.label: {} for p in self._bound_pairs}
+        self.n_reported_above_bound = 0
         self.max_rel_measured = 0.0
         self.max_rel_guarded = 0.0
         self.n_rows = 0
@@ -159,9 +190,21 @@ class ConsistencyRecorder:
             table = control_totals.get(geo)
             return pd.DataFrame() if table is None else table.set_index(geo)
 
+        kreis_table = zone_table(folders.GEO_KREIS)
         summary = ic.summarize(
-            zone_table(folders.GEO_KREIS), zone_table(folders.GEO_100M), geo_crosswalk,
-            cells_1km=zone_table(folders.GEO_1KM), skip_log_level=logging.DEBUG)
+            kreis_table, zone_table(folders.GEO_100M), geo_crosswalk,
+            cells_1km=zone_table(folders.GEO_1KM), skip_log_level=logging.DEBUG, pairs=self.pairs)
+        self._add_bound_totals(kreis_table)
+        reported = summary[(summary["scope"] == "kreis")
+                           & summary["check"].isin(STUDENT_BOUND_PAIRS_REPORTED)
+                           & (summary["amount"] > ic.TOLERANCE)]
+        if len(reported):
+            self.n_reported_above_bound += len(reported)
+            logger.warning(
+                "%s batch %s: %d Kreis part(s) above a reported student bound (not a guard error): %s",
+                _TAG, batch, len(reported),
+                "; ".join(f"Kreis {row.key}, pair {row.check}: excess {row.amount:.6g} on a bound of "
+                          f"{row.base:.6g}" for row in reported.head(10).itertuples()))
         self._skipped.update(summary.attrs["skipped"])
         out = summary.copy()
         out.insert(0, "batch", batch)
@@ -189,8 +232,31 @@ class ConsistencyRecorder:
                 f"(now {self.check_grid_pairs}) and for age-universe pairs only with "
                 f"kreis_batch_apportionment 'universe' (now {self.check_age_pairs}); age-universe "
                 f"pairs are judged above a relative tolerance of {self.age_tolerance} in Kreis parts "
-                f"of at least {self.min_persons:g} persons.")
+                f"of at least {self.min_persons:g} persons; the student bound "
+                f"{list(STUDENT_BOUND_PAIRS_GUARDED)} is judged in every Kreis part with no tolerance "
+                f"(ADR-0211).")
         return summary
+
+    def _add_bound_totals(self, kreis_table: pd.DataFrame) -> None:
+        """Add both sides of every measured student bound pair of one batch to the Kreis totals."""
+        for pair in self._bound_pairs:
+            columns = (*pair.kreis_controls, *pair.fine_controls)
+            if any(c not in kreis_table.columns for c in columns):
+                continue    # the pair is skipped in this batch and named in the table
+            students = kreis_table[list(pair.kreis_controls)].sum(axis=1)
+            bound = kreis_table[list(pair.fine_controls)].sum(axis=1)
+            totals = self._bound_totals[pair.label]
+            for kreis, a, b in zip(students.index.astype(str), students, bound):
+                entry = totals.setdefault(kreis, [0.0, 0.0])
+                entry[0] += float(a)
+                entry[1] += float(b)
+
+    def kreis_totals_above_bound(self) -> dict:
+        """``{pair label: [Kreis ids]}``: Kreise whose students, summed over their batch parts,
+        exceed the bound summed the same way by more than ``input_consistency.TOLERANCE``."""
+        return {label: sorted(kreis for kreis, (students, bound) in totals.items()
+                              if students - bound > ic.TOLERANCE)
+                for label, totals in self._bound_totals.items()}
 
     def log_run_summary(self) -> None:
         """One INFO line over the run: batches, rows, both largest differences, skipped pairs."""
@@ -199,6 +265,12 @@ class ConsistencyRecorder:
                     "their bound; pairs skipped for absent columns: %s", _TAG, self.n_batches,
                     self.n_rows, self.csv_path, self.max_rel_measured, self.max_rel_guarded,
                     self.n_violations, sorted(self._skipped) or "none")
+        if self._bound_pairs:
+            above = {label: ids for label, ids in self.kreis_totals_above_bound().items() if ids}
+            (logger.warning if above or self.n_reported_above_bound else logger.info)(
+                "%s student bounds: %d Kreis part(s) above a reported bound %s; Kreis totals (summed "
+                "over the batch parts) above their bound: %s", _TAG, self.n_reported_above_bound,
+                list(STUDENT_BOUND_PAIRS_REPORTED), above or "none")
 
     def report(self) -> dict:
         """The counts for the stage report file (JSON-ready)."""
@@ -217,4 +289,14 @@ class ConsistencyRecorder:
                 "skipped": sorted(self._skipped),
             },
             **{name: dict(values) for name, values in self.sections.items()},
+            # Only when a student bound pair is measured: the report of a run without student
+            # entries keeps today's keys.
+            **({"student_bounds": {
+                "guarded": [p.label for p in self._bound_pairs
+                            if p.label in STUDENT_BOUND_PAIRS_GUARDED],
+                "reported": [p.label for p in self._bound_pairs
+                             if p.label in STUDENT_BOUND_PAIRS_REPORTED],
+                "rows_above_bound_reported": self.n_reported_above_bound,
+                "kreis_totals_above_bound": self.kreis_totals_above_bound(),
+            }} if self._bound_pairs else {}),
         }
