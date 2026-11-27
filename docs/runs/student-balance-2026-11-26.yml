@@ -102,20 +102,22 @@ pipeline:
     docs/runs/artifacts/student-balance-2026-11-26/weights_decision/analyse_weight_candidates.py: bb022b94d39a3cca8b5c4704fa9ebd17d0822425a6e95dc4051b09c3cf8cb5ae
     docs/runs/artifacts/student-balance-2026-11-26/weights_decision/decision_logs.txt: 8bd65412c82c43769bb44f8a7570027413035d8b6e0509390664a60c50c245b6
     docs/runs/artifacts/student-balance-2026-11-26/weights_decision/weight_candidates.csv: ae87fbf583a6ae1d34d935807091acccb46445191f7520d86685ac039fb512df
-    sha256 of the committed blobs of the level decision aid at commit 99646911:
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/analyse_student_level.py: 35da1b4e29c03d57b5fa64663fcbd291fe1bd6753bef3cf2e9a3f93dfa85c81c
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/census_pattern_check_nrw.csv: b8795502753711e131aed3a2e531bce6ebfdbf483b91ffa83cbe5d0c6a39c075
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/entrance_qualifications_by_school_district.csv: 2eff460bd68dd88a6852b06810eda49cc61d0a896b3eca0e0599c48eaf0e2b94
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/level_decision_logs.txt: f4a2b169a9d0cec1405989c85f742313f6b19a85fb63210525193cefaf240da3
+    sha256 of the committed blobs of the level decision aid at commit 48c3ab83:
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/analyse_student_level.py: c54de7df5fc3d260a2ff050a3e817178985aaf7302dc3dba4c25c17d7b3c4f31
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/census_pattern_check_nrw.csv: 78ea2dcc65e200ea3a5d0799e37aa343cd2a153e1d3fd7e6fffd29415c8e3ff2
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/destatis_students_by_age_ws2022_23.csv: 55ade64e1285d2c7153b62217f19e8cd41d7d2710177f7b86f9297e34edbb788
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/entrance_qualifications_by_school_district.csv: db24b14d486a5d1243e1c42e6528e54bf9c8ddd1d3656b2a0db2dce290c4fb19
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/level_decision_logs.txt: 2859a7a5e78d97d6a39582110229f92a1c877d0f14abeb829ec4bd6cf015d491
     docs/runs/artifacts/student-balance-2026-11-26/level_decision/lsn_enrollment_by_site_and_semester.csv: 265b98ce7543b728b051dd6e5390e032c5e1f6d3436652630142b57da88aca28
     docs/runs/artifacts/student-balance-2026-11-26/level_decision/lsn_entrance_qualifications_by_school_district_2021_22.csv: bb0517354041eef931144249274bbb6d2a5d3abae04642773aae3d024121d3bf
     docs/runs/artifacts/student-balance-2026-11-26/level_decision/lsn_population_20_29_by_kreis.csv: ac642c8dce40c0b4c20136642eaba52d121e6c51de8d4e75321572240c91e77e
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/mid_school_degree_check_20_29.csv: 346cb90a039a01747b17cf09b4b0ecd9b69566b30769814347c185032c1f8742
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/mid_school_degree_check_20_29.csv: 5deb5a04f94d8af002382b6562e3620235c084c59a75e96de3c54e0297cee108
     docs/runs/artifacts/student-balance-2026-11-26/level_decision/national_enrollment_20_29.csv: f95315c52a7306a505d948de347dd1bdc331fd27a4c9bd56199908c608f357a7
     docs/runs/artifacts/student-balance-2026-11-26/level_decision/nrw_census_students_18_26.csv: 4101243e322e772d85c82b18ac9b7f7437da5e4e9a0950f59f5db273db7766ac
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/srv_school_degree_20_29.csv: d9bc5f6fbd76b21d2eb9518683827b51032b0cfff4ad0b7d0edaf1fcb1cf5beb
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_education_leg_day_20_29.csv: 9ca3a5fcbb04cbd420872b7e43fbfd2ed759e978254ea0a3562bd3a94bf85b8d
-    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_level_estimates_20_29.csv: 26e2acb4706aedb651bdc8288fb84c36bfcc3e1c82d696aa0b47e8a72f2a9046
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/srv_school_degree_20_29.csv: 2bdca88e7c9bdae91df5b76ed2140d95c4e2a9529f6c9d431b54cdf6874446c1
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_age_distribution.csv: 478eb95e36f98f559cae7f8b36abeac0a052174a3535c413e680f39dead43fda
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_education_leg_day_20_29.csv: d2e66db926b4225852d2e1a6adde15607f3d92282a4e07a99724e5e661dd44cd
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_level_estimates_20_29.csv: 107c070bcd59560fd82c0c168a5576a55de6641838ae834144fc9fddfa0daa6e
 classification:
 - calibration
 status:
@@ -325,6 +327,16 @@ validation:
     omega = 1 - Z / S with Z of the census of 2022 (same header): 0.5349547395 with the students of the committed
     level table (2024/25), 0.5651242305205824 with the students of 2022/23, 0.5266555497878669 with those of
     2025/26; only 2022/23 puts Z and S into one year.
+    Age of the students (student_age_distribution.csv; the level table splits the balance, a count of enrolled
+    persons, with the SrV shares of the persons whose main activity is studying): share_20_29_among_adults /
+    share_30plus_among_adults / share_age_18_19 are 0.7286295231 / 0.1863271191 / 0.08493173389 for the enrolled
+    students of Germany (official statistics, winter semester 2022/23), 0.8954830604 / 0.05596747151 /
+    0.04830561256 for the students by main activity of SrV (512 respondents, eight Kreise) and 0.8416619017 /
+    0.06853994413 / 0.08861077196 for those of MiD (13634 respondents, Germany). Every '..._20_29_...' figure of
+    the balance in this manifest rests on the share of the gate table, 0.8983074959 (SrV, adult students at home
+    on the day): row 03ZGB 23920.41769. Under the share of the enrolled students it is 19402.17867, under the
+    MiD share 22412.04079 (header of student_level_estimates_20_29.csv). The comparison of the balance with the
+    census extrapolation and with SrV in the ages 20 to 29 is therefore only as firm as that share.
 - metric: >-
     decision aid: where option C is further from SrV than option A or option B, and the basis of the distance
     yardsticks
