@@ -436,10 +436,9 @@ config:
   # ADR-0211 (#140, A1): a re-drawn plan of a student (a household with a student aged 18 or older, a
   # student member, a student person target) comes from a student donor, a key relaxed last; every
   # other target keeps its candidate set. Primary (student donor) vs fallback (non-student donor) is
-  # counted per match path. The warn bound below is an ASSUMPTION: the largest fallback share the
-  # one-batch smoke observed (0.298, weekend household pairs) plus a margin of 0.1; measurement and
-  # rule in docs/runs/student-synthesis-smoke-20261127.yml. It enters the completed_donor hash and
-  # takes effect with the next full run.
+  # counted per match path. The warn bound below is an ASSUMPTION; its measurement and rule live in
+  # docs/runs/student-synthesis-smoke-20261127.yml. Volatile (a log threshold only): changing it
+  # rebuilds neither completed_donor nor PopulationSim.
   braunschweig.population.popsim.donor_match_student_status: true
   braunschweig.population.popsim.donor_match_student_fallback_warn_share: 0.4
   # Exclude MiD reporting days that fell on a public holiday at the residence

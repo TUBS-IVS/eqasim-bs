@@ -548,10 +548,11 @@ KEY_DONOR_MATCH_STUDENT_STATUS = "braunschweig.population.popsim.donor_match_stu
 DEFAULT_DONOR_MATCH_STUDENT_STATUS = True
 # Share of student targets relaxed to a non-student donor, per match path, above which the build logs a
 # WARNING. None = report only (no bound is set and the log says so): the bound comes from the one-batch smoke
-# of ADR-0211, never from a guess. Read ONLY by braunschweig.popsim.completed_donor. It is declared by that stage
-# (synpp needs every key an execute reads), so it enters the stage hash: set it together with another planned
-# rebuild of completed_donor, never on its own (ADR-0211). Whatever the bound, a path where no student target
-# got a student donor always logs a WARNING.
+# of ADR-0211, never from a guess. Valid range: null or a share in [0, 1] (checked at DAG build by
+# completed_donor.validate_student_fallback_warn_share). Read ONLY by braunschweig.popsim.completed_donor, which
+# declares it volatile: it only sets a log level, so a changed bound rebuilds neither the donor nor
+# PopulationSim and takes effect the next time the stage executes. Whatever the bound, a path where no student
+# target got a student donor always logs a WARNING.
 KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE = "braunschweig.population.popsim.donor_match_student_fallback_warn_share"
 DEFAULT_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE = None
 # A2 of the student design (ADR-0211): the employed target of the employment-grid groups 16_29 and
@@ -559,23 +560,20 @@ DEFAULT_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE = None
 # committed student level table (braunschweig.popsim.student_level; its rules: ADR-0210, Decision 5).
 # The KREIS control "employed" and the KREIS employment families follow the lowered grid through
 # kreis_controls_follow_grids and the employment-level bridge. true/false, default true (on); false is
-# byte-identical to the stage before A2. With it on: the stage refuses to run when
-# kreis_controls_follow_grids is false or the level table is missing; with the employment grid off the
-# concept has no entry point, which is logged as a WARNING and recorded in the stage report.
+# byte-identical to the stage before A2. With it on, the refusals and warnings are listed in the
+# docstring of braunschweig.popsim.stage._read_student_employment_config.
 KEY_STUDENT_EMPLOYMENT_CONCEPT = "braunschweig.population.popsim.student_employment_concept"
 DEFAULT_STUDENT_EMPLOYMENT_CONCEPT = True
 # The student KREIS entries of A3 (ADR-0211; kreis_attribute_control.STUDENT_ENTRY_NAMES), "on" / "off",
 # each default "on"; all "off" is byte-identical in the entry set and the stage tables to the stage
 # before A3. Their targets are counts built once per run from the student level table
-# (braunschweig.popsim.student_targets); refusals: source_resolution.active_kreis_entries and
-# KreisConsistencySettings.require_run_support (the split by the population share is refused).
+# (braunschweig.popsim.student_targets). The refusals are listed in the docstring of
+# braunschweig.popsim.stage.source_resolution._apply_student_entry_rules.
 #   student_education_kreis_control: the two hard entries (education leg by student status, ages 18 to
-#       29 and 30 or older). With it on they REPLACE education_18plus (dropped by name); refused when the
-#       education-by-age family is off or education_participation is on. A2 also reads it, to warn when
-#       A2 is on and the entries are off (the places A2 frees then go to whoever fits).
-#   student_work_leg_kreis_control: the soft work-leg entry; refused without work_by_employment.
-#   student_season_ticket_kreis_control: the soft season-ticket entry; refused without pt_ticket_group4.
-# Every student entry is refused without employment_status (its seed derivation checks it).
+#       29 and 30 or older). With it on they REPLACE education_18plus (dropped by name). A2 also reads it
+#       (see KEY_STUDENT_EMPLOYMENT_CONCEPT).
+#   student_work_leg_kreis_control: the soft work-leg entry.
+#   student_season_ticket_kreis_control: the soft season-ticket entry.
 KEY_STUDENT_EDUCATION_CONTROL = "braunschweig.population.popsim.student_education_kreis_control"
 DEFAULT_STUDENT_EDUCATION_CONTROL = "on"
 KEY_STUDENT_WORK_LEG_CONTROL = "braunschweig.population.popsim.student_work_leg_kreis_control"

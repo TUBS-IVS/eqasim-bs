@@ -379,7 +379,7 @@ def test_completed_donor_declares_default_on_matching_performance_flag():
         def __init__(self):
             self.calls = {}
 
-        def config(self, key, default=None):
+        def config(self, key, default=None, volatile=False):  # synpp ConfigurationContext signature
             self.calls[key] = default
 
     context = Recorder()

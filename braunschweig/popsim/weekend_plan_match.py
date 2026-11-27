@@ -216,10 +216,12 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
     reordering only: pair count and rng are untouched.
 
     ``student_key`` (A1, ADR-0211; needs ``P_TAET`` in both member frames): a target member with
-    ``P_TAET == STUDENT_TAET`` is first paired with a free STUDENT donor member of the same age band and sex.
-    These pairs are made before the main loop, so an earlier non-student member cannot take the student
-    donor first; a student target without such a donor, and every non-student member, then goes through the
-    tiers above in the target order as before. A household without a student target is therefore paired
+    ``P_TAET == STUDENT_TAET`` is first paired with a free STUDENT donor member: of the same age band and sex,
+    else of the same age band, else any student donor member (the student status outranks sex and age band;
+    each tier runs over all student targets before the next, so a looser pair never takes the donor of an
+    exact one). These pairs are made before the main loop, so an earlier non-student member cannot take the
+    student donor first; a student target without any free student donor, and every non-student member, then
+    goes through the tiers above in the target order as before. A household without a student target is therefore paired
     exactly as without the flag. Pair count and rng are untouched here too (the pairs are returned in target
     order).
     """
@@ -239,11 +241,19 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
     if student_key:
         d_student = donor_members["P_TAET"].eq(STUDENT_TAET).to_numpy()
         t_student = target_members["P_TAET"].eq(STUDENT_TAET).to_numpy()
-        for tpos in np.flatnonzero(t_student):
-            cand = np.flatnonzero(~used & d_student & (d_band == t_band[tpos]) & (d_sex == t_sex[tpos]))
-            if len(cand) > 0:
-                student_pairs[int(tpos)] = int(cand[0])
-                used[cand[0]] = True
+        # Tier by tier over ALL student targets, so a looser student pair never takes the student donor
+        # an exact one would have used: (age band, sex), then age band, then student status alone.
+        student_tiers = (lambda tpos: (d_band == t_band[tpos]) & (d_sex == t_sex[tpos]),
+                         lambda tpos: d_band == t_band[tpos],
+                         lambda tpos: np.ones(len(donor_members), dtype=bool))
+        for tier in student_tiers:
+            for tpos in np.flatnonzero(t_student):
+                if int(tpos) in student_pairs:
+                    continue
+                cand = np.flatnonzero(~used & d_student & tier(tpos))
+                if len(cand) > 0:
+                    student_pairs[int(tpos)] = int(cand[0])
+                    used[cand[0]] = True
     for tpos in range(len(target_members)):
         if tpos in student_pairs:
             pairs.append((tpos, student_pairs[tpos]))
