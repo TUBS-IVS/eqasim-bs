@@ -95,7 +95,7 @@ def read_student_level_table(data_path, expected_kreise: Sequence[str]) -> Stude
     Raises ``ValueError`` on a missing file (naming the path and the switch
     ``KEY_STUDENT_EMPLOYMENT_CONCEPT``), a missing column, an unknown sex or age group, a cell of
     ``expected_kreise`` x :data:`SEXES` x :data:`AGE_LABELS` that is missing or present more than
-    once, a non-finite or negative count, ``omega`` absent or outside (0, 1), or
+    once, a missing or non-5-digit Kreis ``code``, a non-finite or negative count, ``omega`` absent or outside (0, 1), or
     ``students_counted_employed_persons`` differing from ``students_persons * omega`` by more than
     :data:`COUNTED_EMPLOYED_RELATIVE_TOLERANCE` (relative). Rows of further Kreise are kept.
     """
@@ -121,6 +121,10 @@ def read_student_level_table(data_path, expected_kreise: Sequence[str]) -> Stude
         raise ValueError(f"{_LOG_TAG} {path.name}: missing column(s) {missing}; found "
                          f"{list(table.columns)}")
     table = table[LEVEL_COLUMNS].copy()
+    bad_codes = table["code"].isna() | ~table["code"].astype(str).str.fullmatch(r"\d{5}")
+    if bad_codes.any():
+        raise ValueError(f"{_LOG_TAG} {path.name}: {int(bad_codes.sum())} row(s) without a 5-digit "
+                         f"Kreis code: {sorted(map(str, table.loc[bad_codes, 'code'].unique()))[:12]}")
     unknown_sexes = sorted(set(table["sex"]) - set(SEXES))
     unknown_ages = sorted(set(table["age_group"]) - set(AGE_LABELS))
     if unknown_sexes or unknown_ages:

@@ -200,6 +200,7 @@ def per_cell_employment_targets(
     min_age: int = 16,
     single_year_max: int = 100,
     students_employed_by_group: Mapping[tuple[str, str, str], float] | None = None,
+    lowered_kreis_levels: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Per-cell EMPLOYED_{M,F}_{16_29,...,60plus}_agg, rescaled per Kreis×sex×group.
 
@@ -229,6 +230,11 @@ def per_cell_employment_targets(
         group becomes ``census x age_share - students`` before it is spread over the cells
         (:func:`students_lowered_kreis_levels`, which raises on a negative target or a cell Kreis
         missing from the mapping). ``None`` (default) runs the code path without students unchanged.
+    lowered_kreis_levels:
+        The same lowering, already computed by :func:`students_lowered_kreis_levels` (the stage
+        computes it once and reports exactly the levels applied here). Must hold a row for every
+        Kreis of the cells that has a census level, both sexes and both student groups
+        (``ValueError`` otherwise). Mutually exclusive with ``students_employed_by_group``.
 
     Returns
     -------
@@ -269,12 +275,22 @@ def per_cell_employment_targets(
             unmatched_kreis,
         )
 
+    if students_employed_by_group is not None and lowered_kreis_levels is not None:
+        raise ValueError("per_cell_employment_targets: pass students_employed_by_group OR "
+                         "lowered_kreis_levels, not both")
     lowered = None
     if students_employed_by_group is not None:
-        lowered_frame = students_lowered_kreis_levels(
+        lowered_kreis_levels = students_lowered_kreis_levels(
             census_levels, age_shares_by_kreis, students_employed_by_group, cell_kreis.unique())
-        lowered = {(row.KREIS, row.sex, row.grid_age_group): row.employed_target_persons
-                   for row in lowered_frame.itertuples(index=False)}
+    if lowered_kreis_levels is not None:
+        lowered = {(str(row.KREIS), row.sex, row.grid_age_group): float(row.employed_target_persons)
+                   for row in lowered_kreis_levels.itertuples(index=False)}
+        needed = [(k, prefix, group) for k in sorted(set(cell_kreis[matched_mask]))
+                  for prefix, _ in _SEX for group in STUDENT_GRID_GROUPS]
+        absent = [key for key in needed if key not in lowered]
+        if absent:
+            raise ValueError(f"per_cell_employment_targets: lowered_kreis_levels has no row for "
+                             f"{absent[:12]} (a Kreis of the cells must carry both sexes and groups)")
 
     for prefix, level_col in _SEX:
         for gname, glo, ghi in AGE_GROUPS:
@@ -309,6 +325,7 @@ def add_employment_grid_columns(
     min_age: int = 16,
     single_year_max: int = 100,
     students_employed_by_group: Mapping[tuple[str, str, str], float] | None = None,
+    lowered_kreis_levels: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Return a copy of ``cells`` with the 10 employment-grid columns added.
 
@@ -332,7 +349,7 @@ def add_employment_grid_columns(
         Name of the Kreis column on ``cells`` (5-digit ARS).
     min_age, single_year_max:
         Age bounds for single-year column summation.
-    students_employed_by_group:
+    students_employed_by_group, lowered_kreis_levels:
         Passed through to :func:`per_cell_employment_targets` (design A2); ``None`` = unchanged.
 
     Returns
@@ -344,5 +361,6 @@ def add_employment_grid_columns(
         cells, census_levels, age_shares_by_kreis,
         kreis_col=kreis_col, min_age=min_age, single_year_max=single_year_max,
         students_employed_by_group=students_employed_by_group,
+        lowered_kreis_levels=lowered_kreis_levels,
     )
     return cells.merge(t, on="ZENSUS100m", how="left")

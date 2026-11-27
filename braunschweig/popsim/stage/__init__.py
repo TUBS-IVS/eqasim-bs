@@ -1737,14 +1737,16 @@ class StudentEmploymentSettings:
 
 
 def _read_student_employment_config(context, *, employment_grid_on: bool, follow_grids: bool,
-                                    kreise) -> StudentEmploymentSettings:
+                                    employment_level_source: str, kreise) -> StudentEmploymentSettings:
     """Read the A2 switch in ``execute()`` (one-argument ``context.config``; declared in configure).
 
     Off: nothing else is read. On with the employment grid off: the concept has no entry point (the
     subtraction happens where the grid columns are built), so the run continues on today's path with
     a WARNING and the reason in the stage report. On with the grid on: refuses with
     ``kreis_controls_follow_grids`` false (the KREIS control ``employed`` would keep the Zensus level
-    against the lowered grid) and when the level table is missing or malformed
+    against the lowered grid), with ``employment_level_source`` other than "zensus" (the employed
+    classes of the KREIS families would keep their survey level instead of following the lowered
+    grid through the bridge) and when the level table is missing or malformed
     (``student_level.read_student_level_table``); warns when the student education KREIS entries are
     off (the places A2 frees then go to whoever fits).
 
@@ -1767,6 +1769,12 @@ def _read_student_employment_config(context, *, employment_grid_on: bool, follow
             "KREIS control 'employed' would keep the Zensus level against the lowered employed grid "
             f"(ADR-0211). Set {KEY_KREIS_CONTROLS_FOLLOW_GRIDS} true or {KEY_STUDENT_EMPLOYMENT_CONCEPT} "
             "false.")
+    if employment_level_source != "zensus":
+        raise ValueError(
+            f"{KEY_STUDENT_EMPLOYMENT_CONCEPT} is on but {KEY_EMPLOYMENT_LEVEL_SOURCE} is "
+            f"{employment_level_source!r}: the employed classes of the KREIS employment families would "
+            "keep their survey level instead of following the lowered employed grid (ADR-0211). Set "
+            f"{KEY_EMPLOYMENT_LEVEL_SOURCE} to 'zensus' or {KEY_STUDENT_EMPLOYMENT_CONCEPT} false.")
     from braunschweig.popsim import student_level as _sl
     level = _sl.read_student_level_table(context.config("data_path"), kreise)
     education = str(context.config(KEY_STUDENT_EDUCATION_CONTROL)).strip().lower()
@@ -2702,14 +2710,17 @@ def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_gri
                     len(_eg_exact), len(_eg_kreise), len(_eg_fallback), _eg_fallback,
                 )
 
-        _eg_students = None
+        # A2: the lowered Kreis levels are computed ONCE; the same frame is applied to the cells and
+        # recorded for the stage report, so the report shows the applied targets by construction.
+        _eg_lowered = None
         if student_employment is not None and student_employment.active:
-            _eg_students = student_employment.students_employed_by_group
-            student_employment.record_lowered_levels(_eg.students_lowered_kreis_levels(
-                _eg_census_levels, _eg_age_shares, _eg_students, _eg_kreise))
+            _eg_lowered = _eg.students_lowered_kreis_levels(
+                _eg_census_levels, _eg_age_shares, student_employment.students_employed_by_group,
+                _eg_kreise)
+            student_employment.record_lowered_levels(_eg_lowered)
         cells = _eg.add_employment_grid_columns(
             cells, _eg_census_levels, _eg_age_shares, kreis_col=_folders.GEO_KREIS,
-            students_employed_by_group=_eg_students,
+            lowered_kreis_levels=_eg_lowered,
         )
         logger.info(
             "[popsim.stage] employment grid control ON: injected 10 "
@@ -3921,7 +3932,7 @@ def execute(context) -> pd.DataFrame:
     # level table now, before the cell load and the seed build.
     student_employment = _read_student_employment_config(
         context, employment_grid_on=employment_grid_on, follow_grids=consistency.follow_grids,
-        kreise=kreise)
+        employment_level_source=consistency.employment_level_source, kreise=kreise)
     # The Tier-3 control names BEFORE the attribute controls are merged in: the universe of the
     # Tier-3 person controls (age 15+) is part of the apportionment universes.
     tier3_control_names = list(kreis_controls_map or ())

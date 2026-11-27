@@ -98,6 +98,15 @@ def test_a_missing_cell_or_kreis_raises_naming_it(tmp_path):
         SL.read_student_level_table(tmp_path, KREISE + ("03103",))
 
 
+@pytest.mark.parametrize("code", ["3101", "", "031010"])
+def test_a_missing_or_malformed_kreis_code_raises(tmp_path, code):
+    rows = _rows()
+    rows[0]["code"] = code
+    _write(tmp_path, rows=rows)
+    with pytest.raises(ValueError, match="5-digit"):
+        SL.read_student_level_table(tmp_path, KREISE)
+
+
 def test_a_duplicate_or_unknown_cell_raises(tmp_path):
     rows = _rows()
     _write(tmp_path, rows=rows + rows[:1])
@@ -148,9 +157,10 @@ def _values(data_path, **overrides):
     return values
 
 
-def _read(context, *, grid_on=True, follow=True):
+def _read(context, *, grid_on=True, follow=True, level_source="zensus"):
     return stage._read_student_employment_config(
-        context, employment_grid_on=grid_on, follow_grids=follow, kreise=list(KREISE))
+        context, employment_grid_on=grid_on, follow_grids=follow,
+        employment_level_source=level_source, kreise=list(KREISE))
 
 
 def test_the_switch_off_reads_nothing_else():
@@ -180,15 +190,16 @@ def test_the_switch_on_with_the_grid_off_warns_and_keeps_todays_path(caplog):
     assert config_keys.KEY_EMPLOYMENT_GRID in report["reason"]
 
 
-@pytest.mark.parametrize("follow, write_table, other_key", [
-    (False, True, config_keys.KEY_KREIS_CONTROLS_FOLLOW_GRIDS),
-    (True, False, "student_level_table.csv"),
-], ids=["follow_grids_false", "no_table"])
-def test_student_employment_concept_refusals(tmp_path, follow, write_table, other_key):
+@pytest.mark.parametrize("follow, level_source, write_table, other_key", [
+    (False, "zensus", True, config_keys.KEY_KREIS_CONTROLS_FOLLOW_GRIDS),
+    (True, "survey", True, config_keys.KEY_EMPLOYMENT_LEVEL_SOURCE),
+    (True, "zensus", False, "student_level_table.csv"),
+], ids=["follow_grids_false", "survey_level_source", "no_table"])
+def test_student_employment_concept_refusals(tmp_path, follow, level_source, write_table, other_key):
     if write_table:
         _write(tmp_path)
     with pytest.raises(ValueError, match=KEY_RE) as error:
-        _read(_ExecuteContext(_values(tmp_path)), follow=follow)
+        _read(_ExecuteContext(_values(tmp_path)), follow=follow, level_source=level_source)
     assert other_key in str(error.value)
 
 
