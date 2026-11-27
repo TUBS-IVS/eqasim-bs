@@ -95,8 +95,8 @@ validation:
     03101 and 03ZGB, column beyond_two_se_20_29). The trigger flipped between the two final runs: gate_triggered was False in the
     header of docs/runs/artifacts/student-balance-2026-11-26/student_level_gate.csv (pooled row 03ZGB difference_in_srv_se
     -1.851002, Braunschweig row 03101 -1.398051) and is True in this run. The owner decided on 2026-11-27 not to scale the level
-    to SrV, a decision that predates this run; that it covers the trigger of this run is a call of the designer, pending the
-    owner's confirmation (ADR-0210, Decision 5; by design a trigger means the owner decides). The gate still compares the
+    to SrV; that decision predates this run, and the owner confirmed on 2026-11-27, after the flip was reported, that the
+    level is not scaled (ADR-0210, Decision 5; by design a trigger means the owner decides). The gate still compares the
     balance row sums with SrV. The second comparison (columns difference_20_29_in_srv_se, beyond_two_se_20_29) moved on its balance
     side: balance_students_20_29_persons now uses the MiD share of the ages 20 to 29 (age_share_20_29_among_adult_students
     0.8408838729) instead of the SrV share (0.898307, the ratio of balance_students_20_29_persons to balance_students_persons in
@@ -142,6 +142,58 @@ validation:
     row give the same ratio to each census extrapolation by construction (level and extrapolation are both proportional to the
     census count of the Kreis), so they are one ratio, not two independent checks; only the comparison with the school-corrected
     SrV count differs between the rows. These differences are the stated uncertainty of the level.
+- metric: the level between the independent estimates of the students aged 20 to 29 (census year)
+  reference: census group times the MiD ratio (gate of this run), school-corrected SrV count, census extrapolation of WS 2022/23 (none is an observed count by residence)
+  result: >-
+    Read from the columns census_estimate_students_20_29_persons and level_census_year_students_20_29_persons of
+    docs/runs/artifacts/student-balance-2026-11-27/student_level_gate.csv (the census group times the national MiD ratio,
+    and the level of the census year; the row surrounding_six is the sum of the Kreis rows 03102 03151 03153 03154 03157
+    03158) and from rows 03101, surrounding_six and 03ZGB of
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_level_estimates_20_29.csv (columns
+    srv_school_corrected_students_20_29_persons, se_srv_school_corrected_students_20_29_persons,
+    census_extrapolation_ws2022_23_students_20_29_persons). Differences computed as (level - other) / other * 100 and shown
+    as 'above' or 'below'. The rows 03101 and 03ZGB against the school-corrected SrV count and the extrapolation are also in
+    the entry 'students aged 20 to 29 of the census year' above (same values). Row 03101: level 11425.7584;
+    census_estimate_students_20_29_persons 9614.625881, level above it by 18.83726462 %;
+    srv_school_corrected_students_20_29_persons 12767.34043 with standard error 853.2005633, level below it by 10.50792087 %
+    (1.572411093 SrV standard errors below); census_extrapolation_ws2022_23_students_20_29_persons 13682.01446, level below
+    it by 16.49067151 %. Row surrounding_six: level 12645.59025; census_estimate_students_20_29_persons 10641.09839, level
+    above it by 18.83726459 %; srv_school_corrected_students_20_29_persons 13999.64223 with standard error 1063.940248,
+    level below it by 9.672046991 % (1.272676711 SrV standard errors below);
+    census_extrapolation_ws2022_23_students_20_29_persons 15142.72775, level below it by 16.49067154 %. Row 03ZGB: level
+    24071.34865; census_estimate_students_20_29_persons 20255.72428, level above it by 18.83726455 %;
+    srv_school_corrected_students_20_29_persons 26766.98267 with standard error 1363.788859, level below it by 10.07074295 %
+    (1.976577241 SrV standard errors below); census_extrapolation_ws2022_23_students_20_29_persons 28824.7422, level below
+    it by 16.49067151 %. The level lies above the MiD-based estimate and below the SrV-based count and the census
+    extrapolation, by nearly the same percentage in Braunschweig and in the surrounding six (identical for the MiD-based
+    estimate and the extrapolation by construction, as the level of the census year and both are proportional to the census
+    count of the Kreis). These are comparisons of estimates, not a validation: none of them is an observed count of students
+    by residence.
+- metric: students aged 20 to 29 with an education leg on the reporting day
+  reference: SrV school-corrected count of students with an education leg (decision-aid file of 2026-11-26)
+  result: >-
+    Read from rows 03101, surrounding_six and 03ZGB of
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_education_leg_day_20_29.csv (SrV, school-corrected
+    weights) and from column level_census_year_students_20_29_persons of
+    docs/runs/artifacts/student-balance-2026-11-27/student_level_gate.csv (level of the census year; the surrounding six
+    summed, as in the entry above). Percent differences computed as (level times factor - SrV count) / SrV count * 100. Row
+    03101: srv_school_corrected_students_with_education_leg_persons 4658.591898; level times day_factor 0.3246434539 =
+    3709.29767 (-20.37727812 % against the SrV count); level times the row's own factor
+    srv_school_corrected_education_leg_share x (1 - srv_school_corrected_away_all_day_share) 0.3643785617 = 4163.301412
+    (-10.63176378 % against the SrV count). Row surrounding_six: srv_school_corrected_students_with_education_leg_persons
+    3977.200479; level times day_factor 0.3246434539 = 4105.308097 (3.221050049 % against the SrV count); level times the
+    row's own factor srv_school_corrected_education_leg_share x (1 - srv_school_corrected_away_all_day_share) 0.2901574904 =
+    3669.212733 (-7.743832559 % against the SrV count). Row 03ZGB: srv_school_corrected_students_with_education_leg_persons
+    8635.792377; level times day_factor 0.3246434539 = 7814.605766 (-9.509105539 % against the SrV count); level times the
+    row's own factor srv_school_corrected_education_leg_share x (1 - srv_school_corrected_away_all_day_share) 0.3259764625 =
+    7846.693081 (-9.137543624 % against the SrV count). Area differences from the same file (difference over the root of the
+    summed squared standard errors): away-all-day share Braunschweig 0.08053148652, surrounding six 0.1727428577, difference
+    -0.09221137118 over 0.04371048395 = -2.10959392 standard errors; education-leg share Braunschweig 0.3962925933,
+    surrounding six 0.3507464313, difference 0.045546162 over 0.071396496 = 0.6379327356 standard errors. Limitation: the
+    design applies ONE regional day factor to every Kreis; whether the day behaviour of the students differs by area is a
+    point to measure on the model population in Phase 3; nothing is changed here. The SrV side and the day factor share the
+    SrV education-leg share (header of the file), so the comparison shows the split between Braunschweig and the surrounding
+    Kreise, not a second test of the level.
 - metric: 'calibration check (stage weights, stage weights and movers): total variation distance to the SrV destination reference'
   reference: SrV 2023 destination reference (survey aggregate; sampling noise is the noise floor)
   result: >-
