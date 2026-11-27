@@ -3,7 +3,11 @@ INFO analyse_student_level: [student level aid] enrolled students aged 20 to 29 
 INFO braunschweig.calibration.srv_participation_universe: [srv participation universe] legs with E_ZWECK_9 in [3, 4]: 3405/58148, held by 3130 persons (27 legs carry a missing purpose code and can match nothing)
 INFO analyse_student_level: [student level aid] school-degree weight: primary 1329/1353 (98.2%), Kreis-factor fallback for an unreadable school degree 24 (1.8%)
 INFO analyse_student_level: [student level aid] sum of squared differences to the school-corrected SrV count over the 7 surveyed Kreise, in SrV standard errors: {'balance_students_20_29_persons': 30.68, 'balance_ws2022_23_students_20_29_persons': 32.25, 'census_pattern_students_20_29_persons': 12.13, 'census_pattern_ws2022_23_students_20_29_persons': 9.31, 'census_extrapolation_students_20_29_persons': 10.58, 'srv_gate_estimate_students_20_29_persons': 29.42}
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\level_decision\student_level_estimates_20_29.csv
 INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\level_decision\student_level_estimates_20_29.csv (10 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\level_decision\srv_school_degree_20_29.csv
 INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\level_decision\srv_school_degree_20_29.csv (9 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\level_decision\student_education_leg_day_20_29.csv
 INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\level_decision\student_education_leg_day_20_29.csv (3 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\level_decision\mid_school_degree_check_20_29.csv
 INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\level_decision\mid_school_degree_check_20_29.csv (1 rows)
