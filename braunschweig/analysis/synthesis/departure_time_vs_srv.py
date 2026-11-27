@@ -68,10 +68,10 @@ from braunschweig.calibration import srv_departure_times as SRVDT
 from braunschweig.calibration import srv_plan_structure as _srv_plan_structure
 from braunschweig.popsim import departure_time_model as _departure_time_model
 from braunschweig.popsim import overnight_open_end as _overnight_open_end
-from braunschweig.popsim.mid import csv_format as _mid_csv_format
 from braunschweig.popsim import trips as _popsim_trips
 from braunschweig.popsim.departure_time_model import (
     OFFSET_COLUMN, person_groups, persons_from_synthetic_schema)
+from braunschweig.popsim.mid import csv_format as _mid_csv_format
 from braunschweig.popsim.stage import config_keys as _config_keys
 from braunschweig.synthesis.portal_trips import config_keys as _portal_config_keys
 

@@ -46,8 +46,8 @@ from braunschweig.calibration import srv_plan_structure as _srv_plan_structure
 from braunschweig.popsim import departure_time_model as _departure_time_model
 from braunschweig.popsim import overnight_open_end as _overnight_open_end
 from braunschweig.popsim import plan_validation as _plan_validation
-from braunschweig.popsim.mid import csv_format as _mid_csv_format
 from braunschweig.popsim import trips_stage as _trips_stage
+from braunschweig.popsim.mid import csv_format as _mid_csv_format
 from braunschweig.synthesis import escort_duty as _escort_duty
 from braunschweig.popsim.trips_stage import CONTRACT
 from braunschweig.synthesis.commute_day import plan_replacement as _plan_replacement

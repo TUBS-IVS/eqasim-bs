@@ -1356,8 +1356,11 @@ def test_donor_stage_keeps_an_overnight_day_open_only_when_the_flag_is_on(tmp_pa
 
     def closures(flag):
         config = _donor_stage_config(tmp_path, **{KEY_KEEP_OVERNIGHT_OPEN_ENDS: flag})
-        _, trips, _ = DONORS.execute(_context(DONORS, config=config))
+        _, trips, diagnostics = DONORS.execute(_context(DONORS, config=config))
+        closures.diagnostics = diagnostics
         return trips[trips["donor_id"] == "2_2"]["is_synthetic_closure"].tolist()
 
     assert closures(False) == [False, False, True]
+    assert "n_donors_kept_open" not in closures.diagnostics
     assert closures(True) == [False, False]
+    assert closures.diagnostics["n_donors_kept_open"] == 1

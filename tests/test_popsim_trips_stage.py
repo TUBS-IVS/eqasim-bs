@@ -1219,3 +1219,25 @@ def test_execute_reads_the_answers_only_when_the_flag_is_on(tmp_path, monkeypatc
     assert execute_with(True) == "built"
     assert loaded == [str(tmp_path)] and handed["keep_overnight_open_ends"] is True
     assert handed["overnight_answers"] is answers
+
+
+def test_open_end_decision_does_not_depend_on_the_dropped_wege_columns():
+    """Pins the column contract: execute() drops the unused MiD Wege columns before the trip build,
+    the commute-day stage keeps the full frame; both must reach the SAME per-donor decision.
+    load_mid_wege itself adds no filter or normalisation (it reads every column as delivered)."""
+    from braunschweig.popsim.unused_mid_wege_columns import (
+        UNUSED_MID_WEGE_COLUMNS, drop_unused_mid_wege_columns)
+    wege = pd.DataFrame({
+        "H_ID": [10, 10, 20, 20, 30], "P_ID": [1, 1, 1, 1, 1], "W_ID": [1, 2, 1, 2, 1],
+        "W_ZWECK": [1, 7, 1, 8, 7], "W_RBW": [0, 0, 0, 0, 0], "W_SO1": [1, 1, 1, 1, 1],
+        "wegkm_imp": [5.0] * 5,
+    })
+    wege = pd.concat([wege, pd.DataFrame(
+        {column: range(5) for column in UNUSED_MID_WEGE_COLUMNS[:5]})], axis=1)
+    answers = pd.DataFrame({"H_ID": [10, 20, 30], "P_ID": [1, 1, 1], "P_STREISE": [2, 2, 1]})
+    narrowed = drop_unused_mid_wege_columns(wege, log_tag="[test]")
+    assert set(UNUSED_MID_WEGE_COLUMNS[:5]).isdisjoint(narrowed.columns)
+    from_raw = trips_stage.build_open_end_donors(wege, answers)
+    from_narrowed = trips_stage.build_open_end_donors(narrowed, answers)
+    assert from_raw.tolist() == [True, False, False]  # only the overnight donor ending away
+    pd.testing.assert_series_equal(from_raw, from_narrowed)

@@ -467,6 +467,14 @@ def execute(context):
 
     diagnostics = dict(diagnostics)
     diagnostics["enabled"] = True
+    if open_end_donors is not None:
+        # Share of the pool's donors whose day stays open (issue #694), reported like
+        # trips_stage._log_closure_share does for the synthetic persons.
+        donor_keys = pd.MultiIndex.from_arrays([attributes["H_ID"], attributes["P_ID"]])
+        n_kept_open = int(open_end_donors.reindex(donor_keys).fillna(False).astype(bool).sum())
+        diagnostics["n_donors_kept_open"] = n_kept_open
+        logger.info("%s overnight open day end: %d/%d pool donors kept open (%.1f%%)", _LOG_TAG,
+                    n_kept_open, len(attributes), 100.0 * n_kept_open / max(len(attributes), 1))
     diagnostics["n_mid_persons"] = len(persons)
     diagnostics["n_mid_trips"] = len(wege)
     diagnostics["n_mid_households"] = len(households)
