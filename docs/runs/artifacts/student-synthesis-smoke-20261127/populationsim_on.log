@@ -1,0 +1,1148 @@
+INFO - populationsim - Read logging configuration from: configs/logging.yaml
+INFO - populationsim.run - SETTING configs_dir: configs
+INFO - populationsim.run - SETTING settings_file_name: settings.yaml
+INFO - populationsim.run - SETTING data_dir: data
+INFO - populationsim.run - SETTING output_dir: output
+INFO - populationsim.run - ENV MKL_NUM_THREADS: 1
+INFO - populationsim.run - ENV OMP_NUM_THREADS: 1
+INFO - populationsim.run - ENV OPENBLAS_NUM_THREADS: 1
+INFO - populationsim.run - ENV NUMBA_NUM_THREADS: None
+INFO - populationsim.run - NumPy build info:
+Build Dependencies:
+  blas:
+    detection method: pkgconfig
+    found: true
+    include directory: /usr/local/include
+    lib directory: /usr/local/lib
+    name: openblas64
+    openblas configuration: USE_64BITINT=1 DYNAMIC_ARCH=1 DYNAMIC_OLDER= NO_CBLAS=
+      NO_LAPACK= NO_LAPACKE= NO_AFFINITY=1 USE_OPENMP= HASWELL MAX_THREADS=2
+    pc file directory: /usr/local/lib/pkgconfig
+    version: 0.3.23.dev
+  lapack:
+    detection method: internal
+    found: true
+    include directory: unknown
+    lib directory: unknown
+    name: dep140551260102944
+    openblas configuration: unknown
+    pc file directory: unknown
+    version: 1.26.4
+Compilers:
+  c:
+    args: -fno-strict-aliasing
+    commands: cc
+    linker: ld.bfd
+    linker args: -Wl,--strip-debug, -fno-strict-aliasing
+    name: gcc
+    version: 10.2.1
+  c++:
+    commands: c++
+    linker: ld.bfd
+    linker args: -Wl,--strip-debug
+    name: gcc
+    version: 10.2.1
+  cython:
+    commands: cython
+    linker: cython
+    name: cython
+    version: 3.0.8
+Machine Information:
+  build:
+    cpu: x86_64
+    endian: little
+    family: x86_64
+    system: linux
+  host:
+    cpu: x86_64
+    endian: little
+    family: x86_64
+    system: linux
+Python Information:
+  path: /opt/python/cp312-cp312/bin/python
+  version: '3.12'
+SIMD Extensions:
+  baseline:
+  - SSE
+  - SSE2
+  - SSE3
+  not found:
+  - SSSE3
+  - SSE41
+  - POPCNT
+  - SSE42
+  - AVX
+  - F16C
+  - FMA3
+  - AVX2
+  - AVX512F
+  - AVX512CD
+  - AVX512_KNL
+  - AVX512_KNM
+  - AVX512_SKX
+  - AVX512_CLX
+  - AVX512_CNL
+  - AVX512_ICL
+
+
+INFO - populationsim.run - run single process simulation
+DEBUG - populationsim.core.random - Set random seed base to 0
+DEBUG - populationsim.core.pipeline - open_pipeline - new, empty pipeline
+DEBUG - populationsim.core.pipeline - opened pipeline_store output/pipeline.h5
+DEBUG - populationsim.core.pipeline - add_checkpoint init timestamp 2026-11-27 20:22:15.712100
+DEBUG - populationsim.core.pipeline - open_pipeline complete
+INFO - populationsim.core.tracing - Time to execute open_pipeline : 0.023 seconds (0.0 minutes)
+DEBUG - populationsim.core.inject - inject step write_synthetic_population
+DEBUG - populationsim.core.inject - inject step summarize
+DEBUG - populationsim.core.inject - inject step expand_households
+DEBUG - populationsim.core.inject - inject step sub_balancing
+DEBUG - populationsim.core.inject - inject step integerize_final_seed_weights
+DEBUG - populationsim.core.inject - inject step setup_data_structures
+DEBUG - populationsim.core.inject - inject step repop_setup_data_structures
+DEBUG - populationsim.core.inject - inject step input_pre_processor
+DEBUG - populationsim.core.inject - inject step final_seed_balancing
+DEBUG - populationsim.core.inject - inject step meta_control_factoring
+DEBUG - populationsim.core.inject - inject step write_data_dictionary
+DEBUG - populationsim.core.inject - inject step write_tables
+DEBUG - populationsim.core.inject - inject step initial_seed_balancing
+DEBUG - populationsim.core.inject - inject step repop_balancing
+DEBUG - populationsim.core.inject - inject injectable preload_injectables
+INFO - populationsim.core.pipeline - #run_model running step input_pre_processor
+INFO - orca.orca - start: run step 'input_pre_processor'
+INFO - populationsim.steps.input_pre_processor - Using table list: [{'filename': 'seed_households.csv', 'index_col': 'H_ID', 'tablename': 'households'}, {'filename': 'seed_persons.csv', 'tablename': 'persons'}, {'filename': 'geo_cross_walk.csv', 'tablename': 'geo_cross_walk'}, {'filename': 'control_totals_ZENSUS100m.csv', 'tablename': 'ZENSUS100m_control_data'}, {'filename': 'control_totals_ZENSUS1km.csv', 'tablename': 'ZENSUS1km_control_data'}, {'filename': 'control_totals_KREIS.csv', 'tablename': 'KREIS_control_data'}, {'filename': 'control_totals_STAAT.csv', 'tablename': 'STAAT_control_data'}, {'filename': 'control_totals_WELT.csv', 'tablename': 'WELT_control_data'}]
+INFO - populationsim.core.input - Reading CSV file data/seed_households.csv
+DEBUG - populationsim.core.input - raw households table size: (218097, 15) 26.2 MB
+DEBUG - populationsim.core.input - households table columns: ['H_GEW' 'RegioStaR7' 'H_GR' 'hh_type5' 'hh_minor_class' 'H_MIETE'
+ 'haustyp' 'oek_status' 'number_of_cars' 'number_of_bicycles' 'has_ebike'
+ 'H_MIETE_raw' 'haustyp_raw' 'STAAT']
+DEBUG - populationsim.core.input - households table size: (218097, 14) 26.2 MB
+DEBUG - populationsim.core.input - households index name: H_ID
+INFO - populationsim.steps.input_pre_processor - registering table households
+INFO - populationsim.core.input - Reading CSV file data/seed_persons.csv
+DEBUG - populationsim.core.input - raw persons table size: (485709, 21) 81.6 MB
+DEBUG - populationsim.core.input - persons table columns: ['H_ID' 'P_ID' 'P_GEW' 'HP_ALTER' 'HP_SEX' 'P_TAET' 'bildung1' 'bildung2'
+ 'HP_SEX_raw' 'trip_class' 'employment_status' 'pt_ticket_group4'
+ 'leisure_participation' 'escort_participation' 'work_by_employment'
+ 'education_flag' 'student_education_18_29' 'student_education_30plus'
+ 'student_work_leg' 'student_season_ticket' 'STAAT']
+DEBUG - populationsim.core.input - persons table size: (485709, 21) 81.6 MB
+DEBUG - populationsim.core.input - persons index name: None
+INFO - populationsim.steps.input_pre_processor - registering table persons
+INFO - populationsim.core.input - Reading CSV file data/geo_cross_walk.csv
+DEBUG - populationsim.core.input - raw geo_cross_walk table size: (723, 5) 29.1 KB
+DEBUG - populationsim.core.input - geo_cross_walk table columns: ['ZENSUS100m' 'ZENSUS1km' 'STAAT' 'WELT' 'KREIS']
+DEBUG - populationsim.core.input - geo_cross_walk table size: (723, 5) 29.1 KB
+DEBUG - populationsim.core.input - geo_cross_walk index name: None
+INFO - populationsim.steps.input_pre_processor - registering table geo_cross_walk
+INFO - populationsim.core.input - Reading CSV file data/control_totals_ZENSUS100m.csv
+DEBUG - populationsim.core.input - raw ZENSUS100m_control_data table size: (723, 56) 324.0 KB
+DEBUG - populationsim.core.input - ZENSUS100m_control_data table columns: ['ZENSUS100m'
+ 'Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj_ZENSUS100m'
+ 'M_AGE_0_9_agg_ZENSUS100m' 'M_AGE_10_14_agg_ZENSUS100m'
+ 'M_AGE_15_17_agg_ZENSUS100m' 'M_AGE_18_19_agg_ZENSUS100m'
+ 'M_AGE_20_29_agg_ZENSUS100m' 'M_AGE_30_39_agg_ZENSUS100m'
+ 'M_AGE_40_49_agg_ZENSUS100m' 'M_AGE_50_59_agg_ZENSUS100m'
+ 'M_AGE_60_69_agg_ZENSUS100m' 'M_AGE_70_79_agg_ZENSUS100m'
+ 'M_AGE_80_plus_agg_ZENSUS100m' 'F_AGE_0_9_agg_ZENSUS100m'
+ 'F_AGE_10_14_agg_ZENSUS100m' 'F_AGE_15_17_agg_ZENSUS100m'
+ 'F_AGE_18_19_agg_ZENSUS100m' 'F_AGE_20_29_agg_ZENSUS100m'
+ 'F_AGE_30_39_agg_ZENSUS100m' 'F_AGE_40_49_agg_ZENSUS100m'
+ 'F_AGE_50_59_agg_ZENSUS100m' 'F_AGE_60_69_agg_ZENSUS100m'
+ 'F_AGE_70_79_agg_ZENSUS100m' 'F_AGE_80_plus_agg_ZENSUS100m'
+ '1_Person_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m'
+ '2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m'
+ '3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m'
+ '4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m'
+ '5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m'
+ '6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m'
+ 'EigentuemerHH_Tenure_100m_Gitter_ZENSUS100m'
+ 'MieterHH_Tenure_100m_Gitter_ZENSUS100m'
+ 'building_type_ein_zweifamilienhaus_ZENSUS100m'
+ 'building_type_mehrfamilienhaus_ZENSUS100m'
+ 'building_type_sonstiges_ZENSUS100m' 'EMPLOYED_M_16_29_agg_ZENSUS100m'
+ 'EMPLOYED_M_30_39_agg_ZENSUS100m' 'EMPLOYED_M_40_49_agg_ZENSUS100m'
+ 'EMPLOYED_M_50_59_agg_ZENSUS100m' 'EMPLOYED_M_60plus_agg_ZENSUS100m'
+ 'EMPLOYED_F_16_29_agg_ZENSUS100m' 'EMPLOYED_F_30_39_agg_ZENSUS100m'
+ 'EMPLOYED_F_40_49_agg_ZENSUS100m' 'EMPLOYED_F_50_59_agg_ZENSUS100m'
+ 'EMPLOYED_F_60plus_agg_ZENSUS100m' 'HH_MINOR_ONE_ADULT_agg_ZENSUS100m'
+ 'HH_MINOR_MULTI_ADULT_agg_ZENSUS100m' 'OWN_CARS_0_agg_ZENSUS100m'
+ 'OWN_CARS_1_agg_ZENSUS100m' 'OWN_CARS_2_agg_ZENSUS100m'
+ 'OWN_CARS_3plus_agg_ZENSUS100m' 'OWN_BIKES_0_agg_ZENSUS100m'
+ 'OWN_BIKES_1_agg_ZENSUS100m' 'OWN_BIKES_2_agg_ZENSUS100m'
+ 'OWN_BIKES_3_agg_ZENSUS100m' 'OWN_BIKES_4plus_agg_ZENSUS100m']
+DEBUG - populationsim.core.input - ZENSUS100m_control_data table size: (723, 56) 324.0 KB
+DEBUG - populationsim.core.input - ZENSUS100m_control_data index name: None
+INFO - populationsim.steps.input_pre_processor - registering table ZENSUS100m_control_data
+INFO - populationsim.core.input - Reading CSV file data/control_totals_ZENSUS1km.csv
+DEBUG - populationsim.core.input - raw ZENSUS1km_control_data table size: (25, 56) 11.3 KB
+DEBUG - populationsim.core.input - ZENSUS1km_control_data table columns: ['ZENSUS1km'
+ 'Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj_ZENSUS1km'
+ 'M_AGE_0_9_agg_ZENSUS1km' 'M_AGE_10_14_agg_ZENSUS1km'
+ 'M_AGE_15_17_agg_ZENSUS1km' 'M_AGE_18_19_agg_ZENSUS1km'
+ 'M_AGE_20_29_agg_ZENSUS1km' 'M_AGE_30_39_agg_ZENSUS1km'
+ 'M_AGE_40_49_agg_ZENSUS1km' 'M_AGE_50_59_agg_ZENSUS1km'
+ 'M_AGE_60_69_agg_ZENSUS1km' 'M_AGE_70_79_agg_ZENSUS1km'
+ 'M_AGE_80_plus_agg_ZENSUS1km' 'F_AGE_0_9_agg_ZENSUS1km'
+ 'F_AGE_10_14_agg_ZENSUS1km' 'F_AGE_15_17_agg_ZENSUS1km'
+ 'F_AGE_18_19_agg_ZENSUS1km' 'F_AGE_20_29_agg_ZENSUS1km'
+ 'F_AGE_30_39_agg_ZENSUS1km' 'F_AGE_40_49_agg_ZENSUS1km'
+ 'F_AGE_50_59_agg_ZENSUS1km' 'F_AGE_60_69_agg_ZENSUS1km'
+ 'F_AGE_70_79_agg_ZENSUS1km' 'F_AGE_80_plus_agg_ZENSUS1km'
+ '1_Person_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km'
+ '2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km'
+ '3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km'
+ '4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km'
+ '5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km'
+ '6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS1km'
+ 'EigentuemerHH_Tenure_100m_Gitter_ZENSUS1km'
+ 'MieterHH_Tenure_100m_Gitter_ZENSUS1km'
+ 'building_type_ein_zweifamilienhaus_ZENSUS1km'
+ 'building_type_mehrfamilienhaus_ZENSUS1km'
+ 'building_type_sonstiges_ZENSUS1km' 'EMPLOYED_M_16_29_agg_ZENSUS1km'
+ 'EMPLOYED_M_30_39_agg_ZENSUS1km' 'EMPLOYED_M_40_49_agg_ZENSUS1km'
+ 'EMPLOYED_M_50_59_agg_ZENSUS1km' 'EMPLOYED_M_60plus_agg_ZENSUS1km'
+ 'EMPLOYED_F_16_29_agg_ZENSUS1km' 'EMPLOYED_F_30_39_agg_ZENSUS1km'
+ 'EMPLOYED_F_40_49_agg_ZENSUS1km' 'EMPLOYED_F_50_59_agg_ZENSUS1km'
+ 'EMPLOYED_F_60plus_agg_ZENSUS1km' 'HH_MINOR_ONE_ADULT_agg_ZENSUS1km'
+ 'HH_MINOR_MULTI_ADULT_agg_ZENSUS1km' 'OWN_CARS_0_agg_ZENSUS1km'
+ 'OWN_CARS_1_agg_ZENSUS1km' 'OWN_CARS_2_agg_ZENSUS1km'
+ 'OWN_CARS_3plus_agg_ZENSUS1km' 'OWN_BIKES_0_agg_ZENSUS1km'
+ 'OWN_BIKES_1_agg_ZENSUS1km' 'OWN_BIKES_2_agg_ZENSUS1km'
+ 'OWN_BIKES_3_agg_ZENSUS1km' 'OWN_BIKES_4plus_agg_ZENSUS1km']
+DEBUG - populationsim.core.input - ZENSUS1km_control_data table size: (25, 56) 11.3 KB
+DEBUG - populationsim.core.input - ZENSUS1km_control_data index name: None
+INFO - populationsim.steps.input_pre_processor - registering table ZENSUS1km_control_data
+INFO - populationsim.core.input - Reading CSV file data/control_totals_KREIS.csv
+DEBUG - populationsim.core.input - raw KREIS_control_data table size: (4, 64) 2.2 KB
+DEBUG - populationsim.core.input - KREIS_control_data table columns: ['KREIS' 'employed_KREIS' 'schulabschluss_low_KREIS'
+ 'schulabschluss_mid_KREIS' 'schulabschluss_high_KREIS'
+ 'beruflabschluss_none_KREIS' 'beruflabschluss_vocational_KREIS'
+ 'beruflabschluss_tertiary_KREIS' 'economic_status_very_low_KREIS'
+ 'economic_status_low_KREIS' 'economic_status_medium_KREIS'
+ 'economic_status_high_KREIS' 'economic_status_very_high_KREIS'
+ 'number_of_cars_0_KREIS' 'number_of_cars_1_KREIS'
+ 'number_of_cars_2_KREIS' 'number_of_cars_3plus_KREIS'
+ 'number_of_bicycles_0_KREIS' 'number_of_bicycles_1_KREIS'
+ 'number_of_bicycles_2_KREIS' 'number_of_bicycles_3_KREIS'
+ 'number_of_bicycles_4plus_KREIS' 'has_ebike_yes_KREIS'
+ 'has_ebike_no_KREIS' 'trip_class_0_KREIS' 'trip_class_1_2_KREIS'
+ 'trip_class_3_4_KREIS' 'trip_class_5plus_KREIS'
+ 'employment_status_vollzeit_KREIS' 'employment_status_teilzeit_KREIS'
+ 'employment_status_geringfuegig_KREIS'
+ 'employment_status_sonstiges_KREIS'
+ 'employment_status_erwerbstaetig_unspec_KREIS'
+ 'employment_status_in_ausbildung_KREIS'
+ 'employment_status_nicht_erwerbstaetig_KREIS'
+ 'pt_ticket_group4_deutschlandticket_KREIS'
+ 'pt_ticket_group4_other_flatrate_KREIS' 'pt_ticket_group4_never_pt_KREIS'
+ 'pt_ticket_group4_occasional_ticket_KREIS'
+ 'leisure_participation_yes_KREIS' 'leisure_participation_no_KREIS'
+ 'escort_participation_yes_KREIS' 'escort_participation_no_KREIS'
+ 'work_by_employment_employed_work_KREIS'
+ 'work_by_employment_employed_nowork_KREIS'
+ 'work_by_employment_nonemployed_work_KREIS'
+ 'work_by_employment_nonemployed_nowork_KREIS' 'education_0_5_edu_KREIS'
+ 'education_0_5_noedu_KREIS' 'education_6_17_edu_KREIS'
+ 'education_6_17_noedu_KREIS' 'student_education_18_29_student_edu_KREIS'
+ 'student_education_18_29_student_noedu_KREIS'
+ 'student_education_18_29_other_edu_KREIS'
+ 'student_education_18_29_other_noedu_KREIS'
+ 'student_education_30plus_student_KREIS'
+ 'student_education_30plus_other_edu_KREIS'
+ 'student_education_30plus_other_noedu_KREIS'
+ 'student_work_leg_student_work_KREIS'
+ 'student_work_leg_student_nowork_KREIS'
+ 'student_work_leg_not_student_KREIS'
+ 'student_season_ticket_student_flatrate_KREIS'
+ 'student_season_ticket_student_no_flatrate_KREIS'
+ 'student_season_ticket_not_student_KREIS']
+DEBUG - populationsim.core.input - KREIS_control_data table size: (4, 64) 2.2 KB
+DEBUG - populationsim.core.input - KREIS_control_data index name: None
+INFO - populationsim.steps.input_pre_processor - registering table KREIS_control_data
+INFO - populationsim.core.input - Reading CSV file data/control_totals_STAAT.csv
+DEBUG - populationsim.core.input - raw STAAT_control_data table size: (1, 2) 148 B
+DEBUG - populationsim.core.input - STAAT_control_data table columns: ['STAAT' 'WELT']
+DEBUG - populationsim.core.input - STAAT_control_data table size: (1, 2) 148 B
+DEBUG - populationsim.core.input - STAAT_control_data index name: None
+INFO - populationsim.steps.input_pre_processor - registering table STAAT_control_data
+INFO - populationsim.core.input - Reading CSV file data/control_totals_WELT.csv
+DEBUG - populationsim.core.input - raw WELT_control_data table size: (1, 1) 140 B
+DEBUG - populationsim.core.input - WELT_control_data table columns: ['WELT']
+DEBUG - populationsim.core.input - WELT_control_data table size: (1, 1) 140 B
+DEBUG - populationsim.core.input - WELT_control_data index name: None
+INFO - populationsim.steps.input_pre_processor - registering table WELT_control_data
+INFO - orca.orca - finish: run step 'input_pre_processor'
+DEBUG - populationsim.core.tracing - Time to execute #run_model completed step 'input_pre_processor' : 2.374 seconds (0.0 minutes)
+DEBUG - populationsim.core.pipeline - add_checkpoint input_pre_processor timestamp 2026-11-27 20:22:19.740549
+DEBUG - populationsim.core.pipeline - add_checkpoint 'input_pre_processor' table 'households' (218097, 14) 26.2 MB
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/core/pipeline.py:207: PerformanceWarning: 
+your performance may suffer as PyTables will pickle object types that it cannot
+map directly to c-types [inferred_type->mixed,key->block2_values] [items->Index(['hh_type5', 'hh_minor_class'], dtype='object')]
+
+  store[pipeline_table_key(table_name, checkpoint_name)] = df
+
+DEBUG - populationsim.core.pipeline - add_checkpoint 'input_pre_processor' table 'persons' (485709, 21) 81.6 MB
+DEBUG - populationsim.core.pipeline - add_checkpoint 'input_pre_processor' table 'geo_cross_walk' (723, 5) 29.1 KB
+DEBUG - populationsim.core.pipeline - add_checkpoint 'input_pre_processor' table 'ZENSUS100m_control_data' (723, 56) 324.0 KB
+DEBUG - populationsim.core.pipeline - add_checkpoint 'input_pre_processor' table 'ZENSUS1km_control_data' (25, 56) 11.3 KB
+DEBUG - populationsim.core.pipeline - add_checkpoint 'input_pre_processor' table 'KREIS_control_data' (4, 64) 2.2 KB
+DEBUG - populationsim.core.pipeline - add_checkpoint 'input_pre_processor' table 'STAAT_control_data' (1, 2) 148 B
+DEBUG - populationsim.core.pipeline - add_checkpoint 'input_pre_processor' table 'WELT_control_data' (1, 1) 140 B
+INFO - populationsim.core.pipeline - #run_model running step setup_data_structures
+INFO - orca.orca - start: run step 'setup_data_structures'
+INFO - populationsim.steps.setup_data_structures - Reading control file configs/controls.csv
+INFO - populationsim.steps.setup_data_structures - dropping 2 ZENSUS1km control rows with empty total_hh_control
+INFO - populationsim.steps.setup_data_structures - dropping 49 ZENSUS100m control rows with empty total_hh_control
+DEBUG - populationsim.core.pipeline - rewrap table crosswalk inplace=False
+INFO - populationsim.steps.setup_data_structures - dropped 0 households not in seed zones
+INFO - populationsim.steps.setup_data_structures - kept 218097 households in seed zones
+DEBUG - populationsim.core.pipeline - rewrap table households inplace=False
+DEBUG - populationsim.core.pipeline - rewrap table persons inplace=False
+INFO - populationsim.steps.setup_data_structures - control target Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.H_GEW > 0) & (households.H_GEW < np.inf)
+INFO - populationsim.steps.setup_data_structures - control target M_AGE_0_9_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER < 10)&(persons.HP_SEX==1)
+INFO - populationsim.steps.setup_data_structures - control target M_AGE_10_14_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 9)&(persons.HP_ALTER < 15)&(persons.HP_SEX==1)
+INFO - populationsim.steps.setup_data_structures - control target M_AGE_15_17_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 14)&(persons.HP_ALTER < 18)&(persons.HP_SEX==1)
+INFO - populationsim.steps.setup_data_structures - control target M_AGE_18_19_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 17)&(persons.HP_ALTER < 20)&(persons.HP_SEX==1)
+INFO - populationsim.steps.setup_data_structures - control target M_AGE_20_29_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER >19)&(persons.HP_ALTER < 30)&(persons.HP_SEX==1)
+INFO - populationsim.steps.setup_data_structures - control target M_AGE_30_39_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 29)&(persons.HP_ALTER < 40)&(persons.HP_SEX==1)
+INFO - populationsim.steps.setup_data_structures - control target M_AGE_40_49_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 39)&(persons.HP_ALTER < 50)&(persons.HP_SEX==1)
+INFO - populationsim.steps.setup_data_structures - control target M_AGE_50_59_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 49)&(persons.HP_ALTER < 60)&(persons.HP_SEX==1)
+INFO - populationsim.steps.setup_data_structures - control target M_AGE_60_69_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 59)&(persons.HP_ALTER < 70)&(persons.HP_SEX==1)
+INFO - populationsim.steps.setup_data_structures - control target M_AGE_70_79_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 69)&(persons.HP_ALTER < 80)&(persons.HP_SEX==1)
+INFO - populationsim.steps.setup_data_structures - control target M_AGE_80_plus_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 79)&(persons.HP_SEX==1)
+INFO - populationsim.steps.setup_data_structures - control target F_AGE_0_9_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER < 10)&(persons.HP_SEX==2)
+INFO - populationsim.steps.setup_data_structures - control target F_AGE_10_14_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 9)&(persons.HP_ALTER < 15)&(persons.HP_SEX==2)
+INFO - populationsim.steps.setup_data_structures - control target F_AGE_15_17_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 14)&(persons.HP_ALTER < 18)&(persons.HP_SEX==2)
+INFO - populationsim.steps.setup_data_structures - control target F_AGE_18_19_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 17)&(persons.HP_ALTER < 20)&(persons.HP_SEX==2)
+INFO - populationsim.steps.setup_data_structures - control target F_AGE_20_29_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 19)&(persons.HP_ALTER < 30)&(persons.HP_SEX==2)
+INFO - populationsim.steps.setup_data_structures - control target F_AGE_30_39_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 29)&(persons.HP_ALTER < 40)&(persons.HP_SEX==2)
+INFO - populationsim.steps.setup_data_structures - control target F_AGE_40_49_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 39)&(persons.HP_ALTER < 50)&(persons.HP_SEX==2)
+INFO - populationsim.steps.setup_data_structures - control target F_AGE_50_59_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 49)&(persons.HP_ALTER < 60)&(persons.HP_SEX==2)
+INFO - populationsim.steps.setup_data_structures - control target F_AGE_60_69_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 59)&(persons.HP_ALTER < 70)&(persons.HP_SEX==2)
+INFO - populationsim.steps.setup_data_structures - control target F_AGE_70_79_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 69)&(persons.HP_ALTER < 80)&(persons.HP_SEX==2)
+INFO - populationsim.steps.setup_data_structures - control target F_AGE_80_plus_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.HP_ALTER > 79)&(persons.HP_SEX==2)
+INFO - populationsim.steps.setup_data_structures - control target Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj_ZENSUS1km_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.H_GEW > 0) & (households.H_GEW < np.inf)
+INFO - populationsim.steps.setup_data_structures - control target 1_Person_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.H_GR == 1)
+INFO - populationsim.steps.setup_data_structures - control target 2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.H_GR == 2)
+INFO - populationsim.steps.setup_data_structures - control target 3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.H_GR == 3)
+INFO - populationsim.steps.setup_data_structures - control target 4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.H_GR == 4)
+INFO - populationsim.steps.setup_data_structures - control target 5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.H_GR == 5)
+INFO - populationsim.steps.setup_data_structures - control target 6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.H_GR >= 6)
+INFO - populationsim.steps.setup_data_structures - control target EigentuemerHH_Tenure_100m_Gitter_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.H_MIETE == 2)
+INFO - populationsim.steps.setup_data_structures - control target MieterHH_Tenure_100m_Gitter_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.H_MIETE == 1)
+INFO - populationsim.steps.setup_data_structures - control target building_type_ein_zweifamilienhaus_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.haustyp == 1)
+INFO - populationsim.steps.setup_data_structures - control target building_type_mehrfamilienhaus_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.haustyp.isin([2, 3]))
+INFO - populationsim.steps.setup_data_structures - control target building_type_sonstiges_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.haustyp == 4)
+INFO - populationsim.steps.setup_data_structures - control target employed_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.P_TAET.isin([1, 2, 3, 4, 6, 8]))
+INFO - populationsim.steps.setup_data_structures - control target schulabschluss_low_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.bildung1 == 2)
+INFO - populationsim.steps.setup_data_structures - control target schulabschluss_mid_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.bildung1 == 3)
+INFO - populationsim.steps.setup_data_structures - control target schulabschluss_high_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.bildung1 == 4)
+INFO - populationsim.steps.setup_data_structures - control target beruflabschluss_none_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.bildung2 == 5)
+INFO - populationsim.steps.setup_data_structures - control target beruflabschluss_vocational_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.bildung2 == 1)
+INFO - populationsim.steps.setup_data_structures - control target beruflabschluss_tertiary_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.bildung2.isin([2, 3]))
+INFO - populationsim.steps.setup_data_structures - control target HH_MINOR_ONE_ADULT_agg_ZENSUS1km_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.hh_minor_class == 'one_adult')
+INFO - populationsim.steps.setup_data_structures - control target HH_MINOR_MULTI_ADULT_agg_ZENSUS1km_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.hh_minor_class == 'multi_adult')
+INFO - populationsim.steps.setup_data_structures - control target EMPLOYED_M_16_29_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.P_TAET.isin([1, 2, 3, 4, 6, 8]))&(persons.HP_SEX==1)&(persons.HP_ALTER>15)&(persons.HP_ALTER<30)
+INFO - populationsim.steps.setup_data_structures - control target EMPLOYED_M_30_39_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.P_TAET.isin([1, 2, 3, 4, 6, 8]))&(persons.HP_SEX==1)&(persons.HP_ALTER>29)&(persons.HP_ALTER<40)
+INFO - populationsim.steps.setup_data_structures - control target EMPLOYED_M_40_49_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.P_TAET.isin([1, 2, 3, 4, 6, 8]))&(persons.HP_SEX==1)&(persons.HP_ALTER>39)&(persons.HP_ALTER<50)
+INFO - populationsim.steps.setup_data_structures - control target EMPLOYED_M_50_59_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.P_TAET.isin([1, 2, 3, 4, 6, 8]))&(persons.HP_SEX==1)&(persons.HP_ALTER>49)&(persons.HP_ALTER<60)
+INFO - populationsim.steps.setup_data_structures - control target EMPLOYED_M_60plus_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.P_TAET.isin([1, 2, 3, 4, 6, 8]))&(persons.HP_SEX==1)&(persons.HP_ALTER>59)
+INFO - populationsim.steps.setup_data_structures - control target EMPLOYED_F_16_29_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.P_TAET.isin([1, 2, 3, 4, 6, 8]))&(persons.HP_SEX==2)&(persons.HP_ALTER>15)&(persons.HP_ALTER<30)
+INFO - populationsim.steps.setup_data_structures - control target EMPLOYED_F_30_39_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.P_TAET.isin([1, 2, 3, 4, 6, 8]))&(persons.HP_SEX==2)&(persons.HP_ALTER>29)&(persons.HP_ALTER<40)
+INFO - populationsim.steps.setup_data_structures - control target EMPLOYED_F_40_49_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.P_TAET.isin([1, 2, 3, 4, 6, 8]))&(persons.HP_SEX==2)&(persons.HP_ALTER>39)&(persons.HP_ALTER<50)
+INFO - populationsim.steps.setup_data_structures - control target EMPLOYED_F_50_59_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.P_TAET.isin([1, 2, 3, 4, 6, 8]))&(persons.HP_SEX==2)&(persons.HP_ALTER>49)&(persons.HP_ALTER<60)
+INFO - populationsim.steps.setup_data_structures - control target EMPLOYED_F_60plus_agg_ZENSUS100m_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.P_TAET.isin([1, 2, 3, 4, 6, 8]))&(persons.HP_SEX==2)&(persons.HP_ALTER>59)
+INFO - populationsim.steps.setup_data_structures - control target OWN_CARS_0_agg_ZENSUS1km_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_cars == 0)
+INFO - populationsim.steps.setup_data_structures - control target OWN_CARS_1_agg_ZENSUS1km_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_cars == 1)
+INFO - populationsim.steps.setup_data_structures - control target OWN_CARS_2_agg_ZENSUS1km_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_cars == 2)
+INFO - populationsim.steps.setup_data_structures - control target OWN_CARS_3plus_agg_ZENSUS1km_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_cars >= 3)
+INFO - populationsim.steps.setup_data_structures - control target OWN_BIKES_0_agg_ZENSUS1km_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_bicycles == 0)
+INFO - populationsim.steps.setup_data_structures - control target OWN_BIKES_1_agg_ZENSUS1km_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_bicycles == 1)
+INFO - populationsim.steps.setup_data_structures - control target OWN_BIKES_2_agg_ZENSUS1km_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_bicycles == 2)
+INFO - populationsim.steps.setup_data_structures - control target OWN_BIKES_3_agg_ZENSUS1km_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_bicycles == 3)
+INFO - populationsim.steps.setup_data_structures - control target OWN_BIKES_4plus_agg_ZENSUS1km_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_bicycles >= 4)
+INFO - populationsim.steps.setup_data_structures - control target economic_status_very_low_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.oek_status == 1)
+INFO - populationsim.steps.setup_data_structures - control target economic_status_low_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.oek_status == 2)
+INFO - populationsim.steps.setup_data_structures - control target economic_status_medium_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.oek_status == 3)
+INFO - populationsim.steps.setup_data_structures - control target economic_status_high_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.oek_status == 4)
+INFO - populationsim.steps.setup_data_structures - control target economic_status_very_high_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.oek_status == 5)
+INFO - populationsim.steps.setup_data_structures - control target number_of_cars_0_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_cars == 0)
+INFO - populationsim.steps.setup_data_structures - control target number_of_cars_1_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_cars == 1)
+INFO - populationsim.steps.setup_data_structures - control target number_of_cars_2_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_cars == 2)
+INFO - populationsim.steps.setup_data_structures - control target number_of_cars_3plus_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_cars >= 3)
+INFO - populationsim.steps.setup_data_structures - control target number_of_bicycles_0_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_bicycles == 0)
+INFO - populationsim.steps.setup_data_structures - control target number_of_bicycles_1_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_bicycles == 1)
+INFO - populationsim.steps.setup_data_structures - control target number_of_bicycles_2_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_bicycles == 2)
+INFO - populationsim.steps.setup_data_structures - control target number_of_bicycles_3_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_bicycles == 3)
+INFO - populationsim.steps.setup_data_structures - control target number_of_bicycles_4plus_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.number_of_bicycles >= 4)
+INFO - populationsim.steps.setup_data_structures - control target has_ebike_yes_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.has_ebike == 1)
+INFO - populationsim.steps.setup_data_structures - control target has_ebike_no_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table households
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (households.has_ebike == 0)
+INFO - populationsim.steps.setup_data_structures - control target trip_class_0_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.trip_class == 0)
+INFO - populationsim.steps.setup_data_structures - control target trip_class_1_2_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.trip_class == 1)
+INFO - populationsim.steps.setup_data_structures - control target trip_class_3_4_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.trip_class == 2)
+INFO - populationsim.steps.setup_data_structures - control target trip_class_5plus_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.trip_class == 3)
+INFO - populationsim.steps.setup_data_structures - control target employment_status_vollzeit_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.employment_status == 'vollzeit') & (persons.HP_ALTER >= 14)
+INFO - populationsim.steps.setup_data_structures - control target employment_status_teilzeit_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.employment_status == 'teilzeit') & (persons.HP_ALTER >= 14)
+INFO - populationsim.steps.setup_data_structures - control target employment_status_geringfuegig_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.employment_status == 'geringfuegig') & (persons.HP_ALTER >= 14)
+INFO - populationsim.steps.setup_data_structures - control target employment_status_sonstiges_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.employment_status == 'sonstiges') & (persons.HP_ALTER >= 14)
+INFO - populationsim.steps.setup_data_structures - control target employment_status_erwerbstaetig_unspec_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.employment_status == 'erwerbstaetig_unspec') & (persons.HP_ALTER >= 14)
+INFO - populationsim.steps.setup_data_structures - control target employment_status_in_ausbildung_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.employment_status == 'in_ausbildung') & (persons.HP_ALTER >= 14)
+INFO - populationsim.steps.setup_data_structures - control target employment_status_nicht_erwerbstaetig_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.employment_status == 'nicht_erwerbstaetig') & (persons.HP_ALTER >= 14)
+INFO - populationsim.steps.setup_data_structures - control target pt_ticket_group4_deutschlandticket_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.pt_ticket_group4 == 'deutschlandticket') & (persons.HP_ALTER >= 14)
+INFO - populationsim.steps.setup_data_structures - control target pt_ticket_group4_other_flatrate_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.pt_ticket_group4 == 'other_flatrate') & (persons.HP_ALTER >= 14)
+INFO - populationsim.steps.setup_data_structures - control target pt_ticket_group4_never_pt_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.pt_ticket_group4 == 'never_pt') & (persons.HP_ALTER >= 14)
+INFO - populationsim.steps.setup_data_structures - control target pt_ticket_group4_occasional_ticket_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.pt_ticket_group4 == 'occasional_ticket') & (persons.HP_ALTER >= 14)
+INFO - populationsim.steps.setup_data_structures - control target leisure_participation_yes_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.leisure_participation == 1)
+INFO - populationsim.steps.setup_data_structures - control target leisure_participation_no_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.leisure_participation == 0)
+INFO - populationsim.steps.setup_data_structures - control target escort_participation_yes_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.escort_participation == 1)
+INFO - populationsim.steps.setup_data_structures - control target escort_participation_no_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.escort_participation == 0)
+INFO - populationsim.steps.setup_data_structures - control target work_by_employment_employed_work_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.work_by_employment == 'employed_work') & (persons.HP_ALTER >= 14)
+INFO - populationsim.steps.setup_data_structures - control target work_by_employment_employed_nowork_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.work_by_employment == 'employed_nowork') & (persons.HP_ALTER >= 14)
+INFO - populationsim.steps.setup_data_structures - control target work_by_employment_nonemployed_work_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.work_by_employment == 'nonemployed_work') & (persons.HP_ALTER >= 14)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target work_by_employment_nonemployed_nowork_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.work_by_employment == 'nonemployed_nowork') & (persons.HP_ALTER >= 14)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target education_0_5_edu_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.education_flag == 'edu') & (persons.HP_ALTER >= 0) & (persons.HP_ALTER <= 5)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target education_0_5_noedu_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.education_flag == 'noedu') & (persons.HP_ALTER >= 0) & (persons.HP_ALTER <= 5)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target education_6_17_edu_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.education_flag == 'edu') & (persons.HP_ALTER >= 6) & (persons.HP_ALTER <= 17)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target education_6_17_noedu_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.education_flag == 'noedu') & (persons.HP_ALTER >= 6) & (persons.HP_ALTER <= 17)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target student_education_18_29_student_edu_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.student_education_18_29 == 'student_edu') & (persons.HP_ALTER >= 18) & (persons.HP_ALTER <= 29)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target student_education_18_29_student_noedu_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.student_education_18_29 == 'student_noedu') & (persons.HP_ALTER >= 18) & (persons.HP_ALTER <= 29)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target student_education_18_29_other_edu_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.student_education_18_29 == 'other_edu') & (persons.HP_ALTER >= 18) & (persons.HP_ALTER <= 29)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target student_education_18_29_other_noedu_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.student_education_18_29 == 'other_noedu') & (persons.HP_ALTER >= 18) & (persons.HP_ALTER <= 29)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target student_education_30plus_student_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.student_education_30plus == 'student') & (persons.HP_ALTER >= 30)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target student_education_30plus_other_edu_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.student_education_30plus == 'other_edu') & (persons.HP_ALTER >= 30)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target student_education_30plus_other_noedu_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.student_education_30plus == 'other_noedu') & (persons.HP_ALTER >= 30)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target student_work_leg_student_work_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.student_work_leg == 'student_work') & (persons.HP_ALTER >= 18) & (persons.HP_ALTER <= 29)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target student_work_leg_student_nowork_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.student_work_leg == 'student_nowork') & (persons.HP_ALTER >= 18) & (persons.HP_ALTER <= 29)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target student_work_leg_not_student_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.student_work_leg == 'not_student') & (persons.HP_ALTER >= 18) & (persons.HP_ALTER <= 29)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target student_season_ticket_student_flatrate_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.student_season_ticket == 'student_flatrate') & (persons.HP_ALTER >= 18) & (persons.HP_ALTER <= 29)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target student_season_ticket_student_no_flatrate_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.student_season_ticket == 'student_no_flatrate') & (persons.HP_ALTER >= 18) & (persons.HP_ALTER <= 29)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+INFO - populationsim.steps.setup_data_structures - control target student_season_ticket_not_student_KREIS_target
+DEBUG - populationsim.steps.setup_data_structures - control_row.seed_table persons
+DEBUG - populationsim.steps.setup_data_structures - control_row.expression (persons.student_season_ticket == 'not_student') & (persons.HP_ALTER >= 18) & (persons.HP_ALTER <= 29)
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[control_row.target] = incidence
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:119: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[seed_geography] = households_df[seed_geography]
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:125: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table[meta_geography] = incidence_table[seed_geography].map(
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:435: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  incidence_table["sample_weight"] = households_df[hh_weight_col]
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:268: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table = group_incidence_table.reset_index()
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:279: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table["sample_weight"] = fractional_weights
+
+INFO - populationsim.steps.setup_data_structures - fractional sample weights kept: 207801 groups, 149563 with 0 < weight < 1 (the int64 cast would set them to 0)
+INFO - populationsim.steps.setup_data_structures - grouped incidence table has 207801 entries, ungrouped has 218097
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:298: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  group_incidence_table["group_id"] = group_incidence_table.index.astype(np.int64)
+
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/steps/setup_data_structures.py:299: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  hh_incidence_table["group_id"] = pd.merge(
+
+INFO - orca.orca - finish: run step 'setup_data_structures'
+DEBUG - populationsim.core.tracing - Time to execute #run_model completed step 'setup_data_structures' : 9.952 seconds (0.2 minutes)
+DEBUG - populationsim.core.pipeline - add_checkpoint setup_data_structures timestamp 2026-11-27 20:22:30.444532
+DEBUG - populationsim.core.pipeline - add_checkpoint 'setup_data_structures' table 'control_spec' (119, 6) 5.8 KB
+DEBUG - populationsim.core.pipeline - add_checkpoint 'setup_data_structures' table 'WELT_controls' (1, 119) 960 B
+DEBUG - populationsim.core.pipeline - add_checkpoint 'setup_data_structures' table 'STAAT_controls' (1, 119) 960 B
+DEBUG - populationsim.core.pipeline - add_checkpoint 'setup_data_structures' table 'KREIS_controls' (4, 119) 3.8 KB
+DEBUG - populationsim.core.pipeline - add_checkpoint 'setup_data_structures' table 'ZENSUS1km_controls' (23, 56) 10.5 KB
+DEBUG - populationsim.core.pipeline - add_checkpoint 'setup_data_structures' table 'ZENSUS100m_controls' (674, 44) 242.6 KB
+DEBUG - populationsim.core.pipeline - add_checkpoint 'setup_data_structures' table 'crosswalk' (674, 5) 32.4 KB
+DEBUG - populationsim.core.pipeline - add_checkpoint 'setup_data_structures' table 'households' (218097, 14) 26.2 MB
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/core/pipeline.py:207: PerformanceWarning: 
+your performance may suffer as PyTables will pickle object types that it cannot
+map directly to c-types [inferred_type->mixed,key->block2_values] [items->Index(['hh_type5', 'hh_minor_class'], dtype='object')]
+
+  store[pipeline_table_key(table_name, checkpoint_name)] = df
+
+DEBUG - populationsim.core.pipeline - add_checkpoint 'setup_data_structures' table 'persons' (485709, 21) 81.6 MB
+DEBUG - populationsim.core.pipeline - add_checkpoint 'setup_data_structures' table 'household_groups' (218097, 3) 7.0 MB
+DEBUG - populationsim.core.pipeline - add_checkpoint 'setup_data_structures' table 'incidence_table' (207801, 124) 206.1 MB
+INFO - populationsim.core.pipeline - #run_model running step initial_seed_balancing
+INFO - orca.orca - start: run step 'initial_seed_balancing'
+INFO - populationsim.steps.initial_seed_balancing - initial_seed_balancing seed id 1
+INFO - populationsim.balancing.balancers_numba - FAST_PATHS: the numba balancers use np_balancer_numba_fast and np_simul_balancer_numba_fast (exp(log_gamma * incidence) from a per-control lookup table; weights identical bit for bit, with counted fallbacks to the original kernels)
+INFO - populationsim.balancing.single_balancer - Balancing with Numba=True, precision=float64
+INFO - populationsim.balancing.balancers_numba - FAST_PATHS: single balancer: kernel np_balancer_numba_fast (lookup table, at most 256 distinct incidence values per control, delta band 1.0e-06)
+INFO - populationsim.steps.initial_seed_balancing - seed_balancer status: {'converged': True, 'iter': 974, 'delta': 5.755074394594223e-06, 'max_gamma_dif': 9.982832711363798e-06}
+INFO - populationsim.steps.initial_seed_balancing - Total balanced weights for seed 1 = 25649.00002718836
+INFO - orca.orca - finish: run step 'initial_seed_balancing'
+DEBUG - populationsim.core.tracing - Time to execute #run_model completed step 'initial_seed_balancing' : 94.172 seconds (1.6 minutes)
+DEBUG - populationsim.core.pipeline - add_checkpoint initial_seed_balancing timestamp 2026-11-27 20:24:06.012525
+DEBUG - populationsim.core.pipeline - add_checkpoint 'initial_seed_balancing' table 'STAAT_weights' (207801, 4) 6.6 MB
+INFO - populationsim.core.pipeline - #run_model running step meta_control_factoring
+INFO - orca.orca - start: run step 'meta_control_factoring'
+WARNING - populationsim.steps.meta_control_factoring - meta_control_factoring: no meta targets so nothing to do
+INFO - orca.orca - finish: run step 'meta_control_factoring'
+DEBUG - populationsim.core.tracing - Time to execute #run_model completed step 'meta_control_factoring' : 0.366 seconds (0.0 minutes)
+DEBUG - populationsim.core.pipeline - add_checkpoint meta_control_factoring timestamp 2026-11-27 20:24:06.567144
+INFO - populationsim.core.pipeline - #run_model running step final_seed_balancing
+INFO - orca.orca - start: run step 'final_seed_balancing'
+WARNING - populationsim.steps.final_seed_balancing - no need for final_seed_balancing because no meta controls
+INFO - orca.orca - finish: run step 'final_seed_balancing'
+DEBUG - populationsim.core.tracing - Time to execute #run_model completed step 'final_seed_balancing' : 0.197 seconds (0.0 minutes)
+DEBUG - populationsim.core.pipeline - add_checkpoint final_seed_balancing timestamp 2026-11-27 20:24:06.913188
+DEBUG - populationsim.core.pipeline - rewrap table STAAT_weights inplace=True
+DEBUG - populationsim.core.pipeline - add_checkpoint 'final_seed_balancing' table 'STAAT_weights' (207801, 5) 8.3 MB
+INFO - populationsim.core.pipeline - #run_model running step integerize_final_seed_weights
+INFO - orca.orca - start: run step 'integerize_final_seed_weights'
+INFO - populationsim.steps.integerize_final_seed_weights - integerize_final_seed_weights seed id 1
+INFO - populationsim.integerizing.bs_options - integerizer options: timeout=7200s draw=gumbel seed=4260350242 keep_fractional_sample_weights=True path_record=True rounding=controlled penalty_floor=100.0 penalty_cap=100000.0 parent_total_factor=10.0 conserve_penalty=100000.0 controlled_method=search search_max_sweeps=200 search_shortlist=24 controlled_solver=highs-ipm controlled_retry_solver=clp-dual controlled_repair=True
+INFO - populationsim.integerizing.path_record - integerizer path record: appending to output/integerizer_paths.csv
+DEBUG - populationsim.integerizing.single_integerizer - Integerizer: 11685 out of 207801 different from round
+DEBUG - populationsim.integerizing.wrappers - Integerizer status for unbackstopped STAAT_1: OPTIMAL
+INFO - orca.orca - finish: run step 'integerize_final_seed_weights'
+DEBUG - populationsim.core.tracing - Time to execute #run_model completed step 'integerize_final_seed_weights' : 31.985 seconds (0.5 minutes)
+DEBUG - populationsim.core.pipeline - add_checkpoint integerize_final_seed_weights timestamp 2026-11-27 20:24:39.085431
+DEBUG - populationsim.core.pipeline - rewrap table STAAT_weights inplace=True
+DEBUG - populationsim.core.pipeline - add_checkpoint 'integerize_final_seed_weights' table 'STAAT_weights' (207801, 6) 10.0 MB
+INFO - populationsim.core.pipeline - #run_model running step sub_balancing
+INFO - orca.orca - start: run step 'sub_balancing'
+INFO - populationsim.steps.sub_balancing - balancing 1/1 seed 1 in 0/1, STAAT 1
+DEBUG - populationsim.balancing.simul_balancer - 16354 positive weight rows out of 207801
+INFO - populationsim.balancing.balancers_numba - FAST_PATHS: simul balancer: kernel np_simul_balancer_numba_fast (lookup table, at most 256 distinct incidence values per control, delta band 1.0e-06)
+DEBUG - populationsim.steps.sub_balancing - STAAT 1 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 191447 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] STAAT_1: method search, status FEASIBLE, x 63508, swaps 125, sweeps 4, converged 1, distance 3191126.1 -> 495874.604, flow 14425 of 14425, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 191447 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for STAAT_1 status FEASIBLE. 
+INFO - populationsim.core.positive_weight_rows - [positive weight rows] KREIS_weights: kept 65416 of 831204 rows (7.9 %)
+INFO - populationsim.steps.sub_balancing - adding table KREIS_weights
+INFO - orca.orca - finish: run step 'sub_balancing'
+DEBUG - populationsim.core.tracing - Time to execute #run_model completed step 'sub_balancing.geography=KREIS' : 30.119 seconds (0.5 minutes)
+DEBUG - populationsim.core.pipeline - add_checkpoint sub_balancing.geography=KREIS timestamp 2026-11-27 20:25:09.391997
+DEBUG - populationsim.core.pipeline - add_checkpoint 'sub_balancing.geography=KREIS' table 'KREIS_weights' (65416, 6) 3.7 MB
+DEBUG - populationsim.core.pipeline - add_checkpoint 'sub_balancing.geography=KREIS' table 'KREIS_weights_sparse' (16426, 6) 919.9 KB
+INFO - populationsim.core.pipeline - #run_model running step sub_balancing
+INFO - orca.orca - start: run step 'sub_balancing'
+INFO - populationsim.steps.sub_balancing - balancing 1/4 seed 1 in 0/1, KREIS 3101
+DEBUG - populationsim.balancing.simul_balancer - 13455 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - KREIS 3101 converged True iter 875
+INFO - populationsim.integerizing.wrappers - omitting 194346 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] KREIS_3101: method search, status FEASIBLE, x 107640, swaps 524, sweeps 7, converged 1, distance 3510861 -> 91499.2732, flow 17137 of 17137, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 194346 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for KREIS_3101 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 2/4 seed 1 in 0/1, KREIS 3154
+DEBUG - populationsim.balancing.simul_balancer - 713 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - KREIS 3154 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 207088 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] KREIS_3154: method search, status FEASIBLE, x 5704, swaps 108, sweeps 5, converged 1, distance 518746.674 -> 95533.8041, flow 714 of 714, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207088 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for KREIS_3154 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 3/4 seed 1 in 0/1, KREIS 3157
+DEBUG - populationsim.balancing.simul_balancer - 5 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - KREIS 3157 converged False iter 0
+INFO - populationsim.integerizing.wrappers - omitting 207796 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] KREIS_3157: method search, status OPTIMAL, x 0, swaps 0, sweeps 0, converged 1, distance 0 -> 0, flow 0 of 0, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207796 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status OPTIMAL
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for KREIS_3157 status OPTIMAL. 
+INFO - populationsim.steps.sub_balancing - balancing 4/4 seed 1 in 0/1, KREIS 3158
+DEBUG - populationsim.balancing.simul_balancer - 2253 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - KREIS 3158 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 205548 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] KREIS_3158: method search, status FEASIBLE, x 13518, swaps 186, sweeps 5, converged 1, distance 1091146.62 -> 68085.8767, flow 2303 of 2303, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 205548 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for KREIS_3158 status FEASIBLE. 
+INFO - populationsim.core.positive_weight_rows - [positive weight rows] ZENSUS1km_weights: kept 126867 of 4779423 rows (2.7 %)
+INFO - populationsim.steps.sub_balancing - adding table ZENSUS1km_weights
+INFO - orca.orca - finish: run step 'sub_balancing'
+DEBUG - populationsim.core.tracing - Time to execute #run_model completed step 'sub_balancing.geography=ZENSUS1km' : 18.693 seconds (0.3 minutes)
+DEBUG - populationsim.core.pipeline - add_checkpoint sub_balancing.geography=ZENSUS1km timestamp 2026-11-27 20:25:28.269423
+DEBUG - populationsim.core.pipeline - add_checkpoint 'sub_balancing.geography=ZENSUS1km' table 'ZENSUS1km_weights' (126867, 7) 8.1 MB
+DEBUG - populationsim.core.pipeline - add_checkpoint 'sub_balancing.geography=ZENSUS1km' table 'ZENSUS1km_weights_sparse' (22065, 7) 1.4 MB
+INFO - populationsim.core.pipeline - #run_model running step sub_balancing
+INFO - orca.orca - start: run step 'sub_balancing'
+INFO - populationsim.steps.sub_balancing - balancing 1/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4354000
+DEBUG - populationsim.balancing.simul_balancer - 1802 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4354000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 205999 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4354000: method search, status FEASIBLE, x 120683, swaps 2256, sweeps 10, converged 1, distance 3393956.09 -> 444993.611, flow 1859 of 1859, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 205999 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4354000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 2/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4355000
+DEBUG - populationsim.balancing.simul_balancer - 4965 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4355000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 202836 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4355000: method search, status FEASIBLE, x 421852, swaps 3838, sweeps 9, converged 1, distance 4902056.51 -> 794645.931, flow 6288 of 6288, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 202836 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4355000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 3/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4356000
+DEBUG - populationsim.balancing.simul_balancer - 4099 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4356000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 203702 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4356000: method search, status FEASIBLE, x 294900, swaps 2838, sweeps 9, converged 1, distance 4164188.45 -> 940341.515, flow 4815 of 4815, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 203702 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4356000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 4/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4357000
+DEBUG - populationsim.balancing.simul_balancer - 4594 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4357000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 203207 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4357000: method search, status FEASIBLE, x 390487, swaps 4223, sweeps 8, converged 1, distance 5081349.52 -> 562885.566, flow 5571 of 5571, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 203207 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4357000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 5/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4358000
+DEBUG - populationsim.balancing.simul_balancer - 3062 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4358000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 204739 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4358000: method search, status FEASIBLE, x 146976, swaps 2161, sweeps 7, converged 1, distance 2930847.39 -> 363659.269, flow 3308 of 3308, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 204739 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4358000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 6/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4359000
+DEBUG - populationsim.balancing.simul_balancer - 290 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4359000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 207511 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4359000: method search, status FEASIBLE, x 9243, swaps 443, sweeps 8, converged 1, distance 684009.342 -> 286757.362, flow 297 of 297, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207511 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4359000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 7/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4360000
+DEBUG - populationsim.balancing.simul_balancer - 165 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4360000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 207636 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4360000: method search, status FEASIBLE, x 2286, swaps 134, sweeps 5, converged 1, distance 292103.987 -> 86054.884, flow 166 of 166, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207636 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4360000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 8/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4367000
+DEBUG - populationsim.balancing.simul_balancer - 669 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4367000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 207132 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4367000: method search, status FEASIBLE, x 34074, swaps 992, sweeps 6, converged 1, distance 1428163.38 -> 448752.219, flow 675 of 675, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207132 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4367000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 9/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4368000
+DEBUG - populationsim.balancing.simul_balancer - 283 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4368000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 207518 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4368000: method search, status FEASIBLE, x 7574, swaps 365, sweeps 8, converged 1, distance 708994.921 -> 234569.331, flow 281 of 281, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207518 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4368000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 10/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4374000
+DEBUG - populationsim.balancing.simul_balancer - 271 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4374000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 207530 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4374000: method search, status FEASIBLE, x 8301, swaps 428, sweeps 8, converged 1, distance 769093.496 -> 254899.662, flow 272 of 272, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207530 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4374000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 11/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4375000
+DEBUG - populationsim.balancing.simul_balancer - 4 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4375000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 207797 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4375000: method search, status FEASIBLE, x 8, swaps 1, sweeps 2, converged 1, distance 6224.24617 -> 5169.22384, flow 4 of 4, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207797 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4375000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 12/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4376000
+DEBUG - populationsim.balancing.simul_balancer - 14 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4376000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 207787 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4376000: method search, status FEASIBLE, x 22, swaps 1, sweeps 2, converged 1, distance 25210.3328 -> 24948.8275, flow 9 of 9, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207787 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4376000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 13/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4378000
+DEBUG - populationsim.balancing.simul_balancer - 8 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4378000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 207793 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4378000: method search, status FEASIBLE, x 14, swaps 2, sweeps 2, converged 1, distance 30141.6599 -> 26641.3741, flow 7 of 7, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207793 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4378000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 14/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4380000
+DEBUG - populationsim.balancing.simul_balancer - 87 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4380000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 207714 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4380000: method search, status FEASIBLE, x 1026, swaps 98, sweeps 5, converged 1, distance 164834.053 -> 82747.2861, flow 86 of 86, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207714 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4380000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 15/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4363000
+DEBUG - populationsim.balancing.simul_balancer - 989 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4363000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 206812 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4363000: method search, status FEASIBLE, x 70063, swaps 1498, sweeps 8, converged 1, distance 2038548.5 -> 577451.162, flow 1010 of 1010, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 206812 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4363000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 16/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4385000
+DEBUG - populationsim.balancing.simul_balancer - 318 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4385000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 207483 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4385000: method search, status FEASIBLE, x 12985, swaps 449, sweeps 6, converged 1, distance 928288.74 -> 402921.865, flow 320 of 320, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207483 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4385000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 17/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4362000
+DEBUG - populationsim.balancing.simul_balancer - 40 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4362000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 207761 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4362000: method search, status FEASIBLE, x 196, swaps 27, sweeps 5, converged 1, distance 59768.6598 -> 34934.2652, flow 40 of 40, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207761 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4362000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 18/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4369000
+DEBUG - populationsim.balancing.simul_balancer - 6 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4369000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 207795 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4369000: method search, status FEASIBLE, x 11, swaps 0, sweeps 1, converged 1, distance 16078.7741 -> 16078.7741, flow 5 of 5, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207795 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4369000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 19/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4364000
+DEBUG - populationsim.balancing.simul_balancer - 379 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4364000 converged False iter 1000
+INFO - populationsim.integerizing.wrappers - omitting 207422 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4364000: method search, status FEASIBLE, x 7362, swaps 334, sweeps 8, converged 1, distance 600365.145 -> 204325.113, flow 370 of 370, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207422 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4364000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 20/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4366000
+DEBUG - populationsim.balancing.simul_balancer - 3 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4366000 converged False iter 0
+INFO - populationsim.integerizing.wrappers - omitting 207798 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4366000: method search, status FEASIBLE, x 1, swaps 0, sweeps 1, converged 1, distance 0 -> 0, flow 1 of 1, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207798 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4366000 status FEASIBLE. 
+INFO - populationsim.steps.sub_balancing - balancing 21/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4384000
+DEBUG - populationsim.balancing.simul_balancer - 9 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4384000 converged False iter 0
+INFO - populationsim.integerizing.wrappers - omitting 207792 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4384000: method search, status OPTIMAL, x 0, swaps 0, sweeps 0, converged 1, distance 0 -> 0, flow 0 of 0, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207792 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status OPTIMAL
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4384000 status OPTIMAL. 
+INFO - populationsim.steps.sub_balancing - balancing 22/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3240000E4388000
+DEBUG - populationsim.balancing.simul_balancer - 3 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3240000E4388000 converged False iter 0
+INFO - populationsim.integerizing.wrappers - omitting 207798 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3240000E4388000: method search, status OPTIMAL, x 0, swaps 0, sweeps 0, converged 1, distance 0 -> 0, flow 0 of 0, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207798 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status OPTIMAL
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3240000E4388000 status OPTIMAL. 
+INFO - populationsim.steps.sub_balancing - balancing 23/23 seed 1 in 0/1, ZENSUS1km CRS3035RES1000mN3241000E4329000
+DEBUG - populationsim.balancing.simul_balancer - 5 positive weight rows out of 207801
+DEBUG - populationsim.steps.sub_balancing - ZENSUS1km CRS3035RES1000mN3241000E4329000 converged False iter 0
+INFO - populationsim.integerizing.wrappers - omitting 207796 zero weight rows out of 207801
+INFO - populationsim.integerizing.simul_integerizer - [simul controlled] ZENSUS1km_CRS3035RES1000mN3241000E4329000: method search, status FEASIBLE, x 1, swaps 0, sweeps 1, converged 1, distance 0 -> 0, flow 1 of 1, zone shortfall 0, row shortfall 0, hh_outside_lp 0, hh_excess 0
+INFO - populationsim.integerizing.wrappers - restoring 207796 zero weight rows
+DEBUG - populationsim.integerizing.wrappers - SimulIntegerizer status FEASIBLE
+INFO - populationsim.integerizing.wrappers - do_simul_integerizing succeeded for ZENSUS1km_CRS3035RES1000mN3241000E4329000 status FEASIBLE. 
+INFO - populationsim.core.positive_weight_rows - [positive weight rows] ZENSUS100m_weights: kept 1528105 of 140057874 rows (1.1 %)
+INFO - populationsim.steps.sub_balancing - adding table ZENSUS100m_weights
+INFO - orca.orca - finish: run step 'sub_balancing'
+DEBUG - populationsim.core.tracing - Time to execute #run_model completed step 'sub_balancing.geography=ZENSUS100m' : 215.622 seconds (3.6 minutes)
+DEBUG - populationsim.core.pipeline - add_checkpoint sub_balancing.geography=ZENSUS100m timestamp 2026-11-27 20:29:04.094075
+DEBUG - populationsim.core.pipeline - add_checkpoint 'sub_balancing.geography=ZENSUS100m' table 'ZENSUS100m_weights' (1528105, 8) 110.0 MB
+DEBUG - populationsim.core.pipeline - add_checkpoint 'sub_balancing.geography=ZENSUS100m' table 'ZENSUS100m_weights_sparse' (25517, 8) 1.8 MB
+INFO - populationsim.core.pipeline - #run_model running step expand_households
+INFO - orca.orca - start: run step 'expand_households'
+INFO - populationsim.steps.expand_households - expand_households: 25649 households drawn in one batch from 16354 of 207801 incidence groups (FAST_PATHS; the others are not drawn from; id dtype int64 from one range check)
+INFO - orca.orca - finish: run step 'expand_households'
+DEBUG - populationsim.core.tracing - Time to execute #run_model completed step 'expand_households' : 0.354 seconds (0.0 minutes)
+DEBUG - populationsim.core.pipeline - add_checkpoint expand_households timestamp 2026-11-27 20:29:05.252566
+DEBUG - populationsim.core.pipeline - add_checkpoint 'expand_households' table 'expanded_household_ids' (25649, 5) 1.2 MB
+WARNING - py.warnings - RUN_DIR/eqasim-bs/environments/populationsim/.venv/lib/python3.12/site-packages/populationsim/core/pipeline.py:207: PerformanceWarning: 
+your performance may suffer as PyTables will pickle object types that it cannot
+map directly to c-types [inferred_type->mixed-integer,key->block1_values] [items->Index(['STAAT', 'KREIS', 'ZENSUS1km', 'ZENSUS100m'], dtype='object')]
+
+  store[pipeline_table_key(table_name, checkpoint_name)] = df
+
+INFO - populationsim.core.pipeline - #run_model running step write_tables
+INFO - orca.orca - start: run step 'write_tables'
+WARNING - populationsim.steps.output - Skipping 'summary_ZENSUS100m': Table not found.
+WARNING - populationsim.steps.output - Skipping 'summary_ZENSUS1km': Table not found.
+WARNING - populationsim.steps.output - Skipping 'summary_KREIS': Table not found.
+WARNING - populationsim.steps.output - Skipping 'summary_STAAT': Table not found.
+WARNING - populationsim.steps.output - Skipping 'summary_WELT': Table not found.
+WARNING - populationsim.steps.output - Skipping 'summary_ZENSUS100m_STAAT': Table not found.
+INFO - orca.orca - finish: run step 'write_tables'
+DEBUG - populationsim.core.tracing - Time to execute #run_model completed step 'write_tables' : 0.095 seconds (0.0 minutes)
+DEBUG - populationsim.core.pipeline - add_checkpoint write_tables timestamp 2026-11-27 20:29:05.509492
+INFO - populationsim.core.pipeline - #run_model running step write_synthetic_population
+INFO - orca.orca - start: run step 'write_synthetic_population'
+WARNING - populationsim.steps.write_synthetic_population - column 'HP_ID' not in persons
+INFO - orca.orca - finish: run step 'write_synthetic_population'
+DEBUG - populationsim.core.tracing - Time to execute #run_model completed step 'write_synthetic_population' : 0.499 seconds (0.0 minutes)
+DEBUG - populationsim.core.pipeline - add_checkpoint write_synthetic_population timestamp 2026-11-27 20:29:06.153459
+INFO - populationsim.core.tracing - Time to execute run_model (12 models) : 410.439 seconds (6.8 minutes)
+DEBUG - populationsim.core.pipeline - close_pipeline
+INFO - populationsim.core.mem - MainProcess high water mark rss: 2_033_246_208 (2.0 GB) timestamp: 27/11/2026 20:29:04 label:pipeline.run_model sub_balancing.geography=ZENSUS100m finished
+INFO - populationsim.core.mem - MainProcess high water mark uss: 2_028_109_824 (2.0 GB) timestamp: 27/11/2026 20:29:04 label:pipeline.run_model sub_balancing.geography=ZENSUS100m finished
+INFO - populationsim.run - Aggregate Flow Timing Summary
+
+INFO - populationsim.core.tracing - Time to execute all models : 410.555 seconds (6.8 minutes)
+INFO - populationsim.balancing.balancers_numba - balancer fast path: fast 29 of 29 calls (100.0 %), fallback value cap 0, fallback SVML 0, fallback non-finite 0, re-run after the delta guard 0

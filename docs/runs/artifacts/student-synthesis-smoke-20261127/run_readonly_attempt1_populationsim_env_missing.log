@@ -1,0 +1,100 @@
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] working_directory: (added) ../cache
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] run: (added) ['braunschweig.popsim.stage']
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] config.sampling_rate: (added) 1.0
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] config.output_path: (added) ../output
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] config.analysis_working_directory: (added) ../cache
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] config.output_prefix: (added) braunschweig_100pct_popsim20261120_
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] config.matsim_last_iteration: (added) 0
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] config.braunschweig.population.popsim.work_dir: (added) ../popsim_work
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] config.braunschweig.population.popsim.max_cells: (added) 750
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] config.braunschweig.population.popsim.num_workers: (added) auto
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] config.braunschweig.population.popsim.assemble_batches_only: (added) True
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] config.cache_share_enabled: True -> False
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] config.cache_share_export: (added) False
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] config.cache_share_recompute: (added) []
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] config.braunschweig.chainsolvers.processes: 0 -> 16
+2026-11-27 18:57:46,381 INFO braunschweig: [config-merge] composed configs/base_bs.yml + ../run.yml: 2 overridden, 13 added
+2026-11-27 18:57:46,384 INFO braunschweig.synpp_deterministic: [synpp deterministic] patched synpp 1.6.2 process_stages: implicit config propagation now topological and order-independent (stage hashes stable across processes)
+2026-11-27 18:57:46,735 INFO numexpr.utils: Note: NumExpr detected 64 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+2026-11-27 18:57:46,735 INFO numexpr.utils: NumExpr defaulting to 16 threads.
+2026-11-27 18:57:48,318 INFO run_stages_readonly: stages ['braunschweig.popsim.completed_donor__9a4484652c142a313497bc34052fa36c', 'braunschweig.popsim.stage__52833eaa4f0c501ed4579bf7cbf1e197']; dependencies linked read-only from the source cache: ['braunschweig.data.inkar.household_income__92804bcec93411709a8fb763f0a58488', 'braunschweig.data.bbsr.regiostar__6fdfd12307fe21a713de1a709c54e930']
+2026-11-27 18:57:53,948 INFO braunschweig.popsim.mid.donor: [mid.load_completed_donor] dropped 0 invalid-household row(s) (H_ID=0 or null) and 312 associated person(s) from the donor data: the invalid-household bucket of the MiD 2023 delivery, as expected; these are not real households and must not be population donors.
+2026-11-27 18:57:54,279 INFO braunschweig.popsim.seed: Seed completeness filter (day_filter=on): kept 218097/218101 households (100.0%), dropped 4 (0.0%); persons 420667/420667 kept.
+2026-11-27 18:58:21,617 INFO braunschweig.popsim.member_completion: [popsim.member_completion] kernwo-aware mode active: mirror selection is constrained to the same day type (weekday/weekend) as each incomplete host household.
+2026-11-27 18:59:05,465 INFO braunschweig.popsim.member_completion: [popsim.member_completion] progress 3625/36253 incomplete households (10%)
+2026-11-27 18:59:38,893 INFO braunschweig.popsim.member_completion: [popsim.member_completion] progress 7250/36253 incomplete households (20%)
+2026-11-27 19:00:12,839 INFO braunschweig.popsim.member_completion: [popsim.member_completion] progress 10875/36253 incomplete households (30%)
+2026-11-27 19:00:44,912 INFO braunschweig.popsim.member_completion: [popsim.member_completion] progress 14500/36253 incomplete households (40%)
+2026-11-27 19:01:17,538 INFO braunschweig.popsim.member_completion: [popsim.member_completion] progress 18125/36253 incomplete households (50%)
+2026-11-27 19:01:46,814 INFO braunschweig.popsim.member_completion: [popsim.member_completion] progress 21750/36253 incomplete households (60%)
+2026-11-27 19:02:17,248 INFO braunschweig.popsim.member_completion: [popsim.member_completion] progress 25375/36253 incomplete households (70%)
+2026-11-27 19:02:47,623 INFO braunschweig.popsim.member_completion: [popsim.member_completion] progress 29000/36253 incomplete households (80%)
+2026-11-27 19:03:18,336 INFO braunschweig.popsim.member_completion: [popsim.member_completion] progress 32625/36253 incomplete households (90%)
+2026-11-27 19:03:49,880 INFO braunschweig.popsim.member_completion: [popsim.member_completion] progress 36250/36253 incomplete households (100%)
+2026-11-27 19:04:01,245 INFO braunschweig.popsim.member_completion: [popsim.member_completion] 36253/218097 households incomplete (16.6%); filled 36253 (100.0% of incomplete) by mirror sampling, adding 65042 persons.
+2026-11-27 19:04:01,245 INFO braunschweig.popsim.member_completion: [popsim.member_completion.day_type_mirror] primary 36253/36253 (100.0%), fallback 0 (0.0%): incomplete hosts without a household day type, matched on a day-type-free mirror pool
+2026-11-27 19:05:03,528 INFO braunschweig.popsim.completed_donor: [completed_donor] donor_match_student_status on: student targets prefer a student donor in the weekend and the diary match; fallback warn bound not set (report only)
+2026-11-27 19:06:53,858 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match] progress 6257/62572 weekend households (10%)
+2026-11-27 19:08:08,959 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match] progress 12514/62572 weekend households (20%)
+2026-11-27 19:09:24,241 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match] progress 18771/62572 weekend households (30%)
+2026-11-27 19:10:41,945 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match] progress 25028/62572 weekend households (40%)
+2026-11-27 19:11:56,851 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match] progress 31285/62572 weekend households (50%)
+2026-11-27 19:13:16,090 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match] progress 37542/62572 weekend households (60%)
+2026-11-27 19:14:40,516 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match] progress 43799/62572 weekend households (70%)
+2026-11-27 19:16:01,786 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match] progress 50056/62572 weekend households (80%)
+2026-11-27 19:17:16,142 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match] progress 56313/62572 weekend households (90%)
+2026-11-27 19:18:30,063 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match] progress 62570/62572 weekend households (100%)
+2026-11-27 19:18:30,522 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match.plan_source_resolution] primary 485709/485709 (100.0%), fallback 0 (0.0%): persons whose plan source does not resolve to a real donor person
+2026-11-27 19:18:30,753 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match.student_donor.household_pairs] primary 3128/4455 (70.2%), fallback 1327 (29.8%): student targets relaxed to a non-student donor; warn bound not set (donor_match_student_fallback_warn_share is None): report only
+2026-11-27 19:18:30,753 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match.student_donor.person_fallback] primary 0/0 (0.0%), fallback 0 (0.0%): student targets relaxed to a non-student donor; warn bound not set (donor_match_student_fallback_warn_share is None): report only
+2026-11-27 19:18:30,753 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match.student_donor.mixed_person_sweep] primary 0/0 (0.0%), fallback 0 (0.0%): student targets relaxed to a non-student donor; warn bound not set (donor_match_student_fallback_warn_share is None): report only
+2026-11-27 19:18:30,753 WARNING braunschweig.popsim.weekend_plan_match: [weekend_plan_match.align_members_any_free] primary 122595/138777 (88.3%), fallback 16182 (11.7%): household-aligned member pairs took the any-age third tier (donor in another band of the active age_band_edges; person-level remaps are not counted) -- above the 5% review threshold
+2026-11-27 19:18:30,753 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match] 62572 weekend households: 62572 HH-matched, 0 via person-fallback; 138777 persons remapped, 0 swept by per-person safety net. HH match-level counts: {0: 58431, 1: 250, 2: 29, 3: 6}
+2026-11-27 19:18:30,753 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match] HH match-level counts of the student households (student ladder, one key longer, levels not comparable with the line above): {0: 3610, 1: 181, 4: 6, 2: 37, 3: 20, 5: 2}
+2026-11-27 19:18:30,753 INFO braunschweig.popsim.weekend_plan_match: [weekend_plan_match] coarse age band crossed by 14424/138777 household-aligned member pairs (10.39%); fine child age band crossed by 6978/10313 pairs of 6-13-year-olds (67.66%); fine_child_age_bands=True (both measured in BOTH arms, so the OFF arm reports today's rate)
+2026-11-27 19:18:31,488 INFO braunschweig.popsim.completed_donor: [completed_donor] weekend_plan_match: WeekendMatchReport(n_weekend_households=62572, n_hh_matched=62572, n_person_fallback_households=0, n_persons_remapped=138777, hh_match_level_counts={0: 58431, 1: 250, 2: 29, 3: 6}, n_swept=0, n_paired_members=138777, n_crossed_coarse_age_band=14424, n_paired_in_split_child_band=10313, n_crossed_fine_child_age_band=6978, n_any_free_pairs=16182, student_counts={'household_pairs': StudentMatchCounts(n_student_targets=4455, n_student_donor=3128, n_non_student_donor=1327), 'person_fallback': StudentMatchCounts(n_student_targets=0, n_student_donor=0, n_non_student_donor=0), 'mixed_person_sweep': StudentMatchCounts(n_student_targets=0, n_student_donor=0, n_non_student_donor=0)}, student_hh_match_level_counts={0: 3610, 1: 181, 4: 6, 2: 37, 3: 20, 5: 2})
+2026-11-27 19:18:31,489 INFO braunschweig.popsim.completed_donor: [completed_donor] built 218097 households / 485709 persons (member completion: 36253 households filled, 65042 persons added; completeness 1.000).
+2026-11-27 19:18:32,527 INFO braunschweig.popsim.diary_facts: [diary_facts] 305206 donor persons with Wege: 22933/305206 (7.5%) carry rbW legs (107368 legs, 0/107368 (0.0%) coded km set to 0), 86445/305206 (28.3%) do not end at home, 3198/305206 (1.0%) start by arriving home, 5144/305206 (1.7%) have only rbW legs
+2026-11-27 19:19:08,773 INFO braunschweig.popsim.diary_plan_match: [diary_plan_match.holiday_source_anzwege1] primary 22861/22861 (100.0%), fallback 0 (0.0%): holiday sources whose donor anzwege1 is unknown (NaN or not numeric) go to pool "any"
+2026-11-27 19:19:09,077 INFO braunschweig.popsim.diary_plan_match: [diary_plan_match.student_donor] primary 2334/2334 (100.0%), fallback 0 (0.0%): student targets relaxed to a non-student donor; warn bound not set (donor_match_student_fallback_warn_share is None): report only
+2026-11-27 19:19:09,084 INFO braunschweig.popsim.diary_plan_match: [diary_plan_match] 74662/485709 persons (15.37%) remapped to a realisable weekday diary; reasons {'realisable': 407776, 'nodiary_mobile': 40523, 'holiday': 22861, 'only_rbw': 6954, 'nodiary_unknown': 4047, 'nodiary_immobile_keep': 3271, 'emptied_by_arrive_home_drop': 277}; match levels {0: 74655, 1: 4, 2: 2, 3: 1} (levels count SOFT-key relaxations; hard_employment=True)
+2026-11-27 19:19:09,084 INFO braunschweig.popsim.diary_plan_match: [diary_plan_match] employment boundary crossed by 0/74662 remaps (0.00%); hard_employment=True (with it on the count must be 0 -- a non-zero count means the donor pool held no realisable diary of the person's employment class)
+2026-11-27 19:19:09,084 INFO braunschweig.popsim.diary_plan_match: [diary_plan_match] fine child age band crossed by 0/4673 remapped 6-13-year-olds (0.00%); fine_child_age_bands=True (measured against the FINE edges in BOTH arms, so the OFF arm reports today's rate)
+2026-11-27 19:19:09,084 INFO braunschweig.popsim.diary_plan_match: [diary_plan_match] passenger access class crossed by 402/74662 remaps (0.54%); passenger_key=True (a soft key: a residual with it on is a ladder relaxation)
+2026-11-27 19:19:09,572 INFO braunschweig.popsim.completed_donor: [completed_donor] diary_plan_match: DiaryMatchReport(n_persons=485709, n_remapped=74662, counts_by_reason={'realisable': 407776, 'nodiary_mobile': 40523, 'holiday': 22861, 'only_rbw': 6954, 'nodiary_unknown': 4047, 'nodiary_immobile_keep': 3271, 'emptied_by_arrive_home_drop': 277}, match_level_counts={0: 74655, 1: 4, 2: 2, 3: 1}, share_remapped=0.1537175551616297, n_crossed_employment_boundary=0, n_remapped_in_split_child_band=4673, n_crossed_fine_child_age_band=0, n_crossed_passenger_class=402, student_counts=StudentMatchCounts(n_student_targets=2334, n_student_donor=2334, n_non_student_donor=0))
+2026-11-27 19:19:09,760 INFO braunschweig.popsim.completed_donor: [completed_donor] passenger access class (P_VAUTO never vs not) differs between person and plan source for 11159 of 235158 persons with another respondent's diary (4.75%); passenger key on
+2026-11-27 19:19:10,057 INFO braunschweig.popsim.diary_facts: [diary_facts] attached plan-source facts to 485709 persons; 68407 (14.08%) sources have no Wege row
+2026-11-27 19:19:12,921 INFO braunschweig.popsim.passenger_availability: [passenger_availability] passenger diary evidence: 81336/485709 persons (16.75%) have at least one non-rbW hvm_imp=3 trip in their selected plan source
+2026-11-27 19:19:12,951 INFO braunschweig.popsim.completed_donor: [completed_donor] 1204 of 14548 'never' car passengers (8.28%) carry a lift in a plan source of another respondent; lift-free preference on
+2026-11-27 19:19:13,328 INFO run_stages_readonly: executed braunschweig.popsim.completed_donor__9a4484652c142a313497bc34052fa36c; result pickled into the view
+Traceback (most recent call last):
+  File "<run server home>/i140_byarea/run_stages_readonly.py", line 120, in <module>
+    sys.exit(main())
+  File "<run server home>/i140_byarea/run_stages_readonly.py", line 105, in main
+    result = stage["wrapper"].execute(context)
+  File "<run server home>/miniforge3/envs/eqasim/lib/python3.10/site-packages/synpp/pipeline.py", line 88, in execute
+    return self.instance.execute(context)
+  File "RUN_DIR/eqasim-bs/braunschweig/popsim/stage/__init__.py", line 4032, in execute
+    tool_report = tool_version.check_populationsim_environment(
+  File "RUN_DIR/eqasim-bs/braunschweig/popsim/tool_version.py", line 251, in check_populationsim_environment
+    report = installed_tool_report(uv_path, project_dir, subprocess_run=subprocess_run)
+  File "RUN_DIR/eqasim-bs/braunschweig/popsim/tool_version.py", line 199, in installed_tool_report
+    raise RuntimeError(
+RuntimeError: PopulationSim version check failed (exit 1) in 'RUN_DIR/eqasim-bs/environments/populationsim': Using CPython 3.12.4 interpreter at: /usr/bin/python3.12
+Creating virtual environment at: .venv
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/importlib/metadata/__init__.py", line 397, in from_name
+    return next(cls.discover(name=name))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+StopIteration
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 5, in <module>
+  File "/usr/lib/python3.12/importlib/metadata/__init__.py", line 862, in distribution
+    return Distribution.from_name(distribution_name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/importlib/metadata/__init__.py", line 399, in from_name
+    raise PackageNotFoundError(name)
+importlib.metadata.PackageNotFoundError: No package metadata was found for populationsim. Run `uv sync --frozen` in 'RUN_DIR/eqasim-bs/environments/populationsim' (the popsimprep environment the stage launches; the tracked project is environments/populationsim).
