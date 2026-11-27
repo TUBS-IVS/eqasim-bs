@@ -12,14 +12,21 @@ Two sub-commands share the preparation (:func:`prepare`):
 ``calibrate``  searches the weight triple (and, when stage one ends at the short bound, the mover
                share) against the SrV destination reference and writes the calibration, fit and
                context tables, plus a configuration snippet for a decided stage only.
-``balance``    builds T for ONE triple and mover share, balances it, builds the level table, the
-               employed pre-check and the level gate against SrV. Exit code 0 whatever the gate
-               says: the gate is a reported result, the owner decides on it.
+``balance``    builds T for ONE triple and mover share under the enrollment of the model semester
+               (``--sites``) and once more under that of the census-year semester
+               (``--sites-census-year``, same sites, same weights and movers), balances it, builds
+               the level table (total of the balance, split over the Kreise by the census, ages and
+               sexes by the MiD joint shares), the employed pre-check and the level gate against
+               SrV. Exit code 0 whatever the gate says: the gate is a reported result, the owner
+               decides on it.
 
 Committed inputs default to their repository paths. Local-only inputs are required arguments
-(``--sites``, ``--vg250``, ``--zensus-students``, ``--zensus-employed``; optional
-``--mikrozensus-school-distance``): never a default, and only their file name and sha256 enter a
-header (no absolute path).
+(``--sites``, ``--sites-census-year``, ``--vg250``, ``--zensus-students``, ``--zensus-employed``;
+optional ``--mikrozensus-school-distance``): never a default, and only their file name and sha256
+enter a header (no absolute path). Each site table carries ONE semester in its column ``semester``;
+the three institutions outside the LSN statistics get their enrollment of that semester from
+``OUTSIDE_LSN_STUDENTS`` of ``scripts/seed_lsn_university_sites.py`` (a semester without an entry
+raises; a figure of an earlier semester is a counted fallback).
 
 The tables count HEADS, never days: no day factor is applied anywhere. The level table and the
 balance header only carry the day factor (and its two SrV shares) for Phases 3 and 4.
@@ -27,8 +34,8 @@ balance header only carry the day factor (and its two SrV shares) for Phases 3 a
 Usage (eqasim env, from a worktree):
     python scripts/build_student_balance.py calibrate --sites <lsn_university_sites.csv> \
         --vg250 <vg250 zip> --source-commit <sha> --out-dir <run artifact dir>
-    python scripts/build_student_balance.py balance --sites ... --vg250 ... --source-commit <sha> \
-        --weights s,m,l --mover-share x --weights-source {calibrated,owner} \
+    python scripts/build_student_balance.py balance --sites ... --sites-census-year <csv> --vg250 ... \
+        --source-commit <sha> --weights s,m,l --mover-share x --weights-source {calibrated,owner} \
         --zensus-students <csv> --zensus-employed <csv> \
         (--label <name> --artifact-dir <dir> | --final --out-dir <eqasim-data root> --artifact-dir <dir>)
 """
@@ -57,7 +64,7 @@ from braunschweig.calibration import student_commuter_weights as W  # noqa: E402
 from braunschweig.calibration import student_control_evidence as E  # noqa: E402
 from braunschweig.calibration import student_level_table as LV  # noqa: E402
 from braunschweig.calibration.mid_student_reference import (  # noqa: E402
-    DISTANCE_MODE_TABLE, SHARE_20_29_TABLE)
+    AGE_SEX_TABLE, DISTANCE_MODE_TABLE, REGION_GERMANY, SHARE_20_29_TABLE)
 from braunschweig.calibration.srv_distance_targets import ZGB_KREISE  # noqa: E402
 from braunschweig.calibration.srv_participation_universe import (  # noqa: E402
     REGION_CODE, UNSURVEYED_KREISE)
@@ -79,6 +86,7 @@ def _load_script(name: str):
 
 _CHE_SEED = _load_script("seed_che_student_origins")
 _NDS_SEED = _load_script("seed_nds_hochschulen")
+_LSN_SEED = _load_script("seed_lsn_university_sites")
 
 DATA = REPO / "eqasim-data" / "data" / "braunschweig"
 CHE_DEFAULT = _CHE_SEED.OUTPUT_PATH
@@ -86,7 +94,11 @@ SRV_DEFAULTS = {"destination": DATA / "srv" / SR.DESTINATION_TABLE,
                 "srv_share": DATA / "srv" / SR.STUDENT_SHARE_TABLE,
                 "srv_parameters": DATA / "srv" / SR.PARAMETER_TABLE,
                 "srv_distance": DATA / "srv" / SR.EDUCATION_DISTANCE_TABLE}
-MID_DEFAULTS = {"mid_share": DATA / "mid" / SHARE_20_29_TABLE, "mid_distance": DATA / "mid" / DISTANCE_MODE_TABLE}
+MID_DEFAULTS = {"mid_share": DATA / "mid" / SHARE_20_29_TABLE, "mid_distance": DATA / "mid" / DISTANCE_MODE_TABLE,
+                "mid_age_sex": DATA / "mid" / AGE_SEX_TABLE}
+POPULATION_DEFAULT = DATA / "popsim" / "lsn_population_20_29_by_kreis.csv"
+POPULATION_BASE_DATE_DEFAULT = "2022-12-31"
+POPULATION_MODEL_DATE_DEFAULT = "2025-12-31"
 # The Phase 1 measurement of the model today (``model_students_expanded_persons`` per Kreis).
 MODEL_LEVEL_DEFAULT = (REPO / "docs" / "runs" / "artifacts" / "student-measurement-popsim100-20261120-20261126"
                        / "student_level_by_kreis.csv")
@@ -119,7 +131,7 @@ LAND_GF = G.LAND_GF
 EDUCATION_LEG_KEY = "education_leg_share_control_definition"
 
 # Required columns of every input, checked before any computation.
-SITE_COLUMNS = ["institution", "site_ags8", "site_kreis_ars5", "scope", "students_persons"]
+SITE_COLUMNS = ["institution", "site_ags8", "site_kreis_ars5", "scope", "students_persons", "semester"]
 DESTINATION_COLUMNS = ["home_group", "destination_group", "share", "n_effective", "noise_floor_tvd_95",
                        "n_unweighted", "se_share"]
 SRV_SHARE_COLUMNS = [*E.SRV_SHARE_COLUMNS, "level", "se_student_share_adults"]
@@ -128,6 +140,7 @@ SRV_BANDS = ["0_5", "5_10", "10_25", "25_50", "50_100", "100_plus"]
 SRV_DISTANCE_COLUMNS = ["code", "level", "n_persons", *("share_" + band for band in SRV_BANDS)]
 MID_SHARE_COLUMNS = ["region", "share_students", "share_pupils_and_students"]
 MID_DISTANCE_COLUMNS = ["distance_band", "mode", "n_unweighted", "share_of_all"]
+MID_AGE_SEX_COLUMNS = ["area", "sex", "age_group", "share_of_adult_students"]
 MODEL_LEVEL_COLUMNS = ["code", "level", "model_students_expanded_persons"]
 EMPLOYED_COLUMNS = ["region", "age_class", "sex", "employed_persons"]
 # Mikrozensus row ``hochschule`` (percent) and the band labels of the context table.
@@ -296,9 +309,11 @@ def _csv_list(text: str, separator: str = ",") -> list:
     return [item.strip() for item in text.split(separator) if item.strip()]
 
 
-def _read_sites(path) -> pd.DataFrame:
-    """The LSN site table, validated: unique rows, consistent Kreis codes, known scope, numeric counts."""
-    sites = _read_csv(path, SITE_COLUMNS, "LSN site table", text_columns=SITE_COLUMNS[:-1])
+def _read_sites(path) -> tuple:
+    """``(sites, semester)``: the LSN site table, validated (unique rows, consistent Kreis codes, known
+    scope, numeric counts) and the ONE semester of its column ``semester``."""
+    text_columns = [column for column in SITE_COLUMNS if column != "students_persons"]
+    sites = _read_csv(path, SITE_COLUMNS, "LSN site table", text_columns=text_columns)
     ags8 = sites["site_ags8"]
     if sites[SITE_COLUMNS].isna().any().any():
         raise ValueError("LSN site table (%s): missing value(s) in %s" % (Path(path).name, SITE_COLUMNS))
@@ -319,7 +334,11 @@ def _read_sites(path) -> pd.DataFrame:
     if duplicated.any():
         raise ValueError("LSN site table: duplicated (institution, site_ags8) %s"
                          % sites.loc[duplicated, ["institution", "site_ags8"]].drop_duplicates().values.tolist()[:5])
-    return sites.assign(students_persons=persons.astype(float))
+    semesters = sorted(set(sites["semester"]))
+    if len(semesters) != 1 or not semesters[0].strip():
+        raise ValueError("LSN site table (%s): column 'semester' needs exactly one non-empty value, found %s"
+                         % (Path(path).name, semesters))
+    return sites.assign(students_persons=persons.astype(float)), semesters[0]
 
 
 def _che_name_of_lsn_institution(institutions) -> dict:
@@ -333,6 +352,41 @@ def _che_name_of_lsn_institution(institutions) -> dict:
         raise ValueError("LSN site table: institution(s) %s have no entry in "
                          "student_od_table.INSTITUTION_CROSSWALK (column 'institution')" % unknown)
     return inverse
+
+
+def _outside_lsn_enrollment(semester: str, what: str) -> tuple:
+    """``(students per institution name, summary)`` of the institutions outside the LSN statistics for the
+    site table's ``semester``, from ``OUTSIDE_LSN_STUDENTS`` of ``scripts/seed_lsn_university_sites.py``.
+
+    PRIMARY is a figure of ``semester`` itself, FALLBACK a figure of the institution's last published
+    winter semester (the seed script names the semester of each figure). Raises ``ValueError`` naming
+    ``semester`` when the seed script has no entry for it or the entry misses an institution.
+    """
+    table = _LSN_SEED.OUTSIDE_LSN_STUDENTS
+    if semester not in table:
+        raise ValueError("%s: semester %r of the site table has no entry in OUTSIDE_LSN_STUDENTS of "
+                         "scripts/seed_lsn_university_sites.py (entries: %s)" % (what, semester, sorted(table)))
+    entry = table[semester]
+    names = list(T.OUTSIDE_LSN_CROSSWALK.values())
+    absent = [name for name in names if name not in entry]
+    if absent:
+        raise ValueError("%s: OUTSIDE_LSN_STUDENTS[%r] of scripts/seed_lsn_university_sites.py misses "
+                         "institution(s) %s" % (what, semester, absent))
+    for name in names:
+        students = entry[name][0]
+        if not (np.isfinite(students) and students > 0):
+            raise ValueError("%s: OUTSIDE_LSN_STUDENTS[%r][%r] needs a positive student count, got %r"
+                             % (what, semester, name, students))
+    primary = sum(1 for name in names if entry[name][1] == semester)
+    fallback = len(names) - primary
+    summary = {"primary": "primary %d/%d" % (primary, len(names)),
+               "fallback": "fallback %d/%d" % (fallback, len(names)),
+               "institutions": {name: [int(entry[name][0]), entry[name][1]] for name in names}}
+    (logger.warning if fallback else logger.info)(
+        "[build_student_balance] enrollment outside LSN, %s (%s): %s of %s (own semester), %s (last published "
+        "winter semester) %s", what, semester, summary["primary"], len(names), summary["fallback"],
+        {name: entry[name][1] for name in names if entry[name][1] != semester})
+    return {name: float(entry[name][0]) for name in names}, summary
 
 
 def _curated_sites() -> pd.DataFrame:
@@ -353,11 +407,27 @@ def prepare(args) -> dict:
 
     Returns a dict with the site frame for the builder (``sites``), the raw LSN rows (``lsn_sites``),
     the points, the communes, ``cells``, ``che_totals``, ``pairs``, the Kreis lists, the counted
-    ``diagnostics`` and ``build(weights) -> (od, diagnostics)``. Every input is validated before the
-    geometry is loaded.
+    ``diagnostics``, ``build(weights) -> (od, diagnostics)`` and, when ``--sites-census-year`` is given
+    (``balance`` only), ``build_census_year`` with the same signature: the same sites, only
+    ``students_persons`` (the LSN rows and the enrollment outside LSN) differs. ``semester`` and
+    ``census_year_semester`` name the two enrollment semesters; ``enrollment_lines`` is the header text.
+    Every input is validated before the geometry is loaded.
     """
     sites_path = Path(args.sites)
-    lsn = _read_sites(sites_path)
+    lsn, semester = _read_sites(sites_path)
+    outside, outside_summary = _outside_lsn_enrollment(semester, "--sites")
+    census_path = getattr(args, "sites_census_year", None)
+    lsn_census = census_semester = outside_census = outside_census_summary = None
+    if census_path:
+        census_path = Path(census_path)
+        lsn_census, census_semester = _read_sites(census_path)
+        keys, keys_census = (set(zip(frame["institution"], frame["site_ags8"])) for frame in (lsn, lsn_census))
+        if keys != keys_census:
+            raise ValueError("the census-year site table (%s) must hold the same (institution, site_ags8) as "
+                             "--sites (%s): only in --sites %s, only in the census-year table %s"
+                             % (census_path.name, sites_path.name, sorted(keys - keys_census)[:5],
+                                sorted(keys_census - keys)[:5]))
+        outside_census, outside_census_summary = _outside_lsn_enrollment(census_semester, "--sites-census-year")
     che = _read_csv(args.che, T.CHE_COLUMNS, "CHE origin table", text_columns=["institution", "origin_ars5", "row_kind", "view"])
     inverse = _che_name_of_lsn_institution(set(lsn["institution"]))
     curated = _curated_sites()
@@ -371,7 +441,7 @@ def prepare(args) -> dict:
     curated_rows = pd.DataFrame({
         "destination_id": curated["destination_id"], "che_institution": curated["che_institution"],
         "institution": curated["institution"], "site_ags8": np.nan, "site_kreis_ars5": np.nan,
-        "scope": T.SCOPE_SURROUNDING, "students_persons": np.nan})
+        "scope": T.SCOPE_SURROUNDING, "students_persons": curated["institution"].map(outside).astype(float)})
 
     gemeinden = G.load_gemeinden(Path(args.vg250))
     gemeinden_kreise = set(gemeinden["ags8"].astype(str).str[:5])
@@ -418,20 +488,51 @@ def prepare(args) -> dict:
     def build(weights):
         return T.build_od_table(cells, totals, sites_builder, pairs, region_kreise, T.CommuterWeights(*weights))
 
+    build_census_year = None
+    if census_path:
+        census_by_site = dict(zip(lsn_census["institution"] + " | " + lsn_census["site_ags8"],
+                                  lsn_census["students_persons"]))
+        census_students = sites["destination_id"].map(census_by_site)
+        outside_mask = sites["scope"] == T.SCOPE_SURROUNDING
+        outside_mask &= sites["destination_id"].isin(curated["destination_id"])
+        census_students[outside_mask] = sites.loc[outside_mask, "institution"].map(outside_census)
+        sites_census_builder = sites.assign(students_persons=census_students.astype(float))[T.SITE_COLUMNS]
+        if sites_census_builder["students_persons"].isna().any():
+            raise ValueError("census-year site table: no enrollment for site(s) %s"
+                             % sites_census_builder.loc[sites_census_builder["students_persons"].isna(),
+                                                        "destination_id"].tolist()[:5])
+
+        def build_census_year(weights):
+            return T.build_od_table(cells, totals, sites_census_builder, pairs, region_kreise,
+                                    T.CommuterWeights(*weights))
+
     diagnostics = {
         "origin_cells": cell_diagnostics,
         "sites": {"n_sites": n_sites, "site_kreis_from_lsn_table": "primary %d/%d" % (len(lsn_rows), n_sites),
                   "site_kreis_from_polygon_lookup": "fallback %d/%d" % (len(curated_rows), n_sites),
-                  "local_site_kreise": site_kreise, "distance_learning": list(distance_learning)},
+                  "local_site_kreise": site_kreise, "distance_learning": list(distance_learning),
+                  "enrollment_semester": semester, "outside_lsn_enrollment": outside_summary},
         "geometry": {"n_communes": len(gemeinden), "origin_kreise": len(origin_kreise),
                      "origin_kreise_beyond_region": len(origin_kreise) - len(region_kreise)},
     }
-    return {"sites": sites_builder, "lsn_sites": lsn, "points": points, "gemeinden": gemeinden, "cells": cells,
+    if census_path:
+        diagnostics["sites"]["census_year_semester"] = census_semester
+        diagnostics["sites"]["outside_lsn_enrollment_census_year"] = outside_census_summary
+    enrollment_lines = [
+        "# Enrollment: enrollment_semester=%s (column semester of the --sites table, LSN-Online K3100101); the three "
+        "institutions outside the LSN statistics carry the figures of OUTSIDE_LSN_STUDENTS in "
+        "scripts/seed_lsn_university_sites.py (%s, %s of their own semester or the last published winter "
+        "semester; the rate is in the Diagnostics line)." % (
+            semester.replace(" ", "_"), outside_summary["primary"], outside_summary["fallback"])]
+    return {"sites": sites_builder, "lsn_sites": lsn, "semester": semester, "census_year_semester": census_semester,
+            "build_census_year": build_census_year, "enrollment_lines": enrollment_lines, "points": points, "gemeinden": gemeinden, "cells": cells,
             "che_totals": totals, "pairs": pairs, "region_kreise": region_kreise, "site_kreise": site_kreise,
             "origin_kreise": origin_kreise, "diagnostics": diagnostics, "build": build,
             "inputs": [("che_origins", Path(args.che), False), ("lsn_site_table", sites_path, True),
+                       *([("lsn_site_table_census_year", census_path, True)] if census_path else []),
                        ("vg250_archive", Path(args.vg250), True),
-                       ("curated_sites_script", REPO / "scripts" / "seed_nds_hochschulen.py", False)]}
+                       ("curated_sites_script", REPO / "scripts" / "seed_nds_hochschulen.py", False),
+                       ("enrollment_outside_lsn_script", REPO / "scripts" / "seed_lsn_university_sites.py", False)]}
 
 
 # ---------------------------------------------------------------------------------------- headers
@@ -458,8 +559,9 @@ def _common_header(table_name: str, args, prepared: dict, inputs: list, diagnost
         "# Generated by scripts/build_student_balance.py %s on %s; code state eqasim-bs %s."
         % (args.command, dt.date.today().isoformat(), args.source_commit),
         "# The tables count HEADS (students by the Kreis they live in); no day factor is applied. Assumptions",
-        "#   A2 to A7 are described in braunschweig/data/education/student_od_table.py, A9, A11, A12, A13 and A16",
-        "#   in braunschweig/calibration/student_level_table.py, A10 in braunschweig/data/education/student_geometry.py.",
+        "#   A2 to A7 are described in braunschweig/data/education/student_od_table.py, A9, A11, A12, A13, A16, A18",
+        "#   and A19 in braunschweig/calibration/student_level_table.py, A10 in "
+        "braunschweig/data/education/student_geometry.py.",
         "# Inputs:", *_input_lines(inputs),
         *_weight_rule_lines(args),
         "# Region Kreise: %s; local site Kreise: %s; origin Kreise: %d."
@@ -524,7 +626,8 @@ def _calibrate_header(table_name: str, args, prepared: dict, inputs: list, resul
     lines.append("# Calibration grid: grid_step=%.10g, mover_step=%.10g, max_flat_range=%.10g (ASSUMPTIONS of the "
                  "lead, CLI arguments); mover_site_kreise=%s." % (
                      args.grid_step, args.mover_step, args.max_flat_range, _csv_list(args.mover_site_kreise)))
-    return _common_header(table_name, args, prepared, inputs, diagnostics, [*lines, *extra])
+    return _common_header(table_name, args, prepared, inputs, diagnostics,
+                          [*prepared["enrollment_lines"], *lines, *extra])
 
 
 def _run_calibrate(args) -> int:
@@ -638,6 +741,25 @@ def _model_today(model_level: pd.DataFrame) -> pd.Series:
     return values
 
 
+def _joint_shares(age_sex: pd.DataFrame) -> pd.Series:
+    """The MiD joint share of (sex, age group) among the adult students of Germany (``area`` DE, sexes
+    female and male, column ``share_of_adult_students``), indexed by (sex, age group). The rows ``all`` and
+    the RegioStaR rows of the table are not read. A missing or duplicated cell raises; the level module
+    checks that the shares sum to 1."""
+    rows = age_sex[(age_sex["area"] == REGION_GERMANY) & age_sex["sex"].isin(LV.SEXES)]
+    duplicated = rows.duplicated(["sex", "age_group"], keep=False)
+    if duplicated.any():
+        raise ValueError("MiD age-sex table: duplicated (sex, age_group) for area %s: %s"
+                         % (REGION_GERMANY, rows.loc[duplicated, ["sex", "age_group"]].drop_duplicates().values.tolist()))
+    shares = pd.Series(pd.to_numeric(rows["share_of_adult_students"], errors="coerce").values,
+                       index=pd.MultiIndex.from_frame(rows[["sex", "age_group"]]))
+    missing = [(sex, age) for sex in LV.SEXES for age in LV.AGE_LABELS if (sex, age) not in shares.index]
+    if missing:
+        raise ValueError("MiD age-sex table: area %s lacks cell(s) %s in columns sex, age_group, "
+                         "share_of_adult_students" % (REGION_GERMANY, missing))
+    return shares.loc[[(sex, age) for sex in LV.SEXES for age in LV.AGE_LABELS]]
+
+
 def _parse_weights(text: str) -> T.CommuterWeights:
     try:
         values = [float(item) for item in _csv_list(text)]
@@ -698,14 +820,16 @@ def _run_balance(args) -> int:
     mid_share = _read_csv(args.mid_share, MID_SHARE_COLUMNS, "MiD student share", text_columns=["region"])
     model_level = _read_csv(args.model_level, MODEL_LEVEL_COLUMNS, "model level table", text_columns=["code"])
     zensus_students = _read_csv(args.zensus_students, E.CENSUS_COLUMNS, "Zensus students", text_columns=["region"])
+    mid_age_sex = _read_csv(args.mid_age_sex, MID_AGE_SEX_COLUMNS, "MiD age-sex table",
+                            text_columns=["area", "sex", "age_group"])
+    population = _read_csv(args.population, LV.POPULATION_COLUMNS, "LSN population table",
+                           text_columns=["district_ars5", "date"])
     _read_csv(args.zensus_employed, EMPLOYED_COLUMNS, "Zensus employed persons", text_columns=["region"])
     zensus_employed = read_kreis_employed_by_age(str(args.zensus_employed))
     education_leg_share = float(read_header_value(args.srv_parameters, EDUCATION_LEG_KEY))
     if not 0.0 <= education_leg_share <= 1.0:
         raise ValueError("%s header key %s = %r is outside [0, 1]" % (Path(args.srv_parameters).name, EDUCATION_LEG_KEY,
                                                                       education_leg_share))
-    age_shares = _parameter_shares(parameters, "who", "age_group", "students_present")
-    sex_shares = _parameter_shares(parameters, "who", "sex", "students_present")
     away = _parameter_shares(parameters, "day", "away_all_day", "students_all")
     if "yes" not in away.index:
         raise ValueError("SrV parameter table: no label 'yes' for away_all_day / students_all")
@@ -717,19 +841,31 @@ def _run_balance(args) -> int:
     od = T.apply_movers(od, mover_share, mover_kreise, SR.BRAUNSCHWEIG_KREIS)
     tables = T.balance_tables(od, prepared["region_kreise"])
     students_living = tables["by_home_kreis"].set_index("home_ars5")["students_living_persons"].astype(float)
+    # The same sites, weights and movers under the enrollment of the census-year semester (A12).
+    od_census_year, t_diagnostics_census_year = prepared["build_census_year"](weights)
+    od_census_year = T.apply_movers(od_census_year, mover_share, mover_kreise, SR.BRAUNSCHWEIG_KREIS)
+    tables_census_year = T.balance_tables(od_census_year, prepared["region_kreise"])
+    students_living_census_year = tables_census_year["by_home_kreis"].set_index(
+        "home_ars5")["students_living_persons"].astype(float)
 
-    omega_value, parts = LV.omega(students_living, zensus_students, mid_share, age_shares)
-    level = LV.level_table(students_living, age_shares, sex_shares, omega_value)
+    joint = _joint_shares(mid_age_sex)
+    ages = LV.age_margin(joint)
+    change = LV.population_change(population, args.population_base_date, args.population_model_date)
+    level_by_kreis, level_parts = LV.census_pattern_level(students_living, zensus_students, change)
+    level_census_year, _ = LV.census_pattern_level(students_living_census_year, zensus_students)
+    omega_value, parts = LV.omega(students_living_census_year, zensus_students, mid_share, ages)
+    level = LV.level_table(level_by_kreis, joint, omega_value)
     precheck = LV.employed_target_precheck(level, zensus_employed)
     lsn_gate_sites = prepared["lsn_sites"][E.SITE_COLUMNS]
     level_gate = E.build_level_gate(srv_share, zensus_students, mid_share, lsn_gate_sites,
                                     residents_implied=students_living.to_dict())
-    gate = LV.gate_table(level_gate, srv_share, away_share, age_shares, model_today)
+    gate = LV.gate_table(level_gate, srv_share, away_share, ages, model_today, level_by_kreis, level_census_year)
     triggered = LV.gate_triggered(gate)
     triggered_area_consistent = LV.gate_triggered_area_consistent(gate)
 
     diagnostics = dict(prepared["diagnostics"])
     diagnostics["build_od_table"] = t_diagnostics
+    diagnostics["build_od_table_census_year"] = t_diagnostics_census_year
     diagnostics["balance"] = _balance_summary(tables, od)
     day_factor = education_leg_share * (1.0 - away_share)
     weights_lines = _weights_lines(weights, mover_share, args.weights_source, mover_kreise)
@@ -737,12 +873,15 @@ def _run_balance(args) -> int:
     balance_inputs = t_inputs + [("srv_student_parameters", Path(args.srv_parameters), False)]
     level_inputs = [*balance_inputs, ("srv_student_share", Path(args.srv_share), False),
                     ("mid_student_share", Path(args.mid_share), False),
+                    ("mid_student_age_sex", Path(args.mid_age_sex), False),
+                    ("lsn_population_20_29", Path(args.population), False),
                     ("zensus_students", Path(args.zensus_students), True)]
     precheck_inputs = [*level_inputs, ("zensus_employed", Path(args.zensus_employed), True)]
     gate_inputs = [*level_inputs, ("model_level", Path(args.model_level), False)]
 
     def head(name, inputs, extra=()):
-        return _common_header(name, args, prepared, inputs, diagnostics, [*weights_lines, *extra])
+        return _common_header(name, args, prepared, inputs, diagnostics,
+                              [*prepared["enrollment_lines"], *weights_lines, *extra])
 
     day_line = ["# Day factor (for Phases 3 and 4; the tables count heads, no day factor applied): "
                 "%s=%.10g * (1 - away_all_day_share=%.10g) = %.10g, both shares from %s."
@@ -751,14 +890,35 @@ def _run_balance(args) -> int:
     _write(tables["by_site"], table_dir / BY_SITE_FILE, head(BY_SITE_FILE, balance_inputs, day_line))
     _write(tables["out_commuters"], table_dir / OUT_COMMUTERS_FILE, head(OUT_COMMUTERS_FILE, balance_inputs))
     _write(tables["in_commuters_by_origin"], table_dir / IN_COMMUTERS_FILE, head(IN_COMMUTERS_FILE, balance_inputs))
+    # Values with a space are written with an underscore so that ``read_header_value`` reads them back.
+    semesters_line = ["# Enrollment semesters of the two builds of T: enrollment_semester=%s (the balance, the level "
+                      "total), census_year_semester=%s (omega, A12)." % (
+                          prepared["semester"].replace(" ", "_"), prepared["census_year_semester"].replace(" ", "_"))]
     omega_line = [
         "# omega=%.10g = 1 - Z / S; Z=%.10g, S=%.10g, mid_students_to_pupils_and_students_ratio=%.10g, "
-        "srv_age_share_20_29_among_adult_students=%.10g, zensus_students_nonemployed_persons=%.10g, "
-        "students_living_persons=%.10g (all eight Kreise, A12)." % (
+        "age_share_20_29_among_adult_students=%.10g, zensus_students_nonemployed_persons=%.10g, "
+        "students_living_census_year_persons=%.10g (all eight Kreise under the census-year enrollment, A12); "
+        "level_total_persons=%.10g (the same eight Kreise under the enrollment of the balance)." % (
             omega_value, parts["Z"], parts["S"], parts["mid_students_to_pupils_and_students_ratio"],
-            parts["srv_age_share_20_29_among_adult_students"], parts["zensus_students_nonemployed_persons"],
-            parts["students_living_persons"])]
-    _write(level, level_dir / LEVEL_FILE, head(LEVEL_FILE, level_inputs, [*omega_line, *day_line]))
+            parts["age_share_20_29_among_adult_students"], parts["zensus_students_nonemployed_persons"],
+            parts["students_living_persons"], level_parts["level_total_persons"])]
+    shares_json = json.dumps({"balance": level_parts["balance_share"], "level": level_parts["level_share"]},
+                             separators=(",", ":"), sort_keys=False)
+    level_rule_lines = [
+        "# Level rule (A18, A19): level_k = level_total_persons * Z_k * c_k / sum_j(Z_j * c_j), Z_k = Zensus 2022 "
+        "pupils and students without paid work aged 20 to 29 of Kreis k, c_k = population change below; the share "
+        "of each Kreis in the balance and in the level follows, shares_json=" + shares_json,
+        "# Population change (A19): population_base_date=%s, population_model_date=%s, persons aged 20 to 29 on "
+        "the model date over the base date per Kreis: %s (%s)." % (
+            args.population_base_date, args.population_model_date,
+            json.dumps(level_parts["population_change"], separators=(",", ":")), POPULATION_DEFAULT.name),
+        "# Age and sex (A9): the cell is the Kreis level times the joint share of (sex, age group) among the adult "
+        "students of Germany, %s (area %s), the same mix in every Kreis; the age shares are %s." % (
+            Path(args.mid_age_sex).name, REGION_GERMANY,
+            ", ".join("age_share_%s=%.10g" % (age, share) for age, share in ages.items())),
+        "# " + LV.LEVEL_DECISION_NOTE]
+    level_lines = [*semesters_line, *omega_line, *level_rule_lines]
+    _write(level, level_dir / LEVEL_FILE, head(LEVEL_FILE, level_inputs, [*level_lines, *day_line]))
     gate_line = ["# gate_triggered=%s (Braunschweig row or pooled row beyond %.1f SrV standard errors: the owner decides "
                  "on the level then)." % (triggered, E.MIN_DIFFERENCE_STANDARD_ERRORS),
                  "# gate_triggered_area_consistent=%s (the same rule on the comparison of the students aged 20 to 29, "
@@ -768,8 +928,8 @@ def _run_balance(args) -> int:
                  "# The SrV standard error is that of the student share; the away share's own sampling error is ignored.",
                  "# model_today_students_persons: model_students_expanded_persons of the Phase 1 measurement; the "
                  "pooled row is the sum over the surveyed Kreise."]
-    _write(gate, gate_dir / GATE_FILE, head(GATE_FILE, gate_inputs, gate_line))
-    _write(precheck, gate_dir / PRECHECK_FILE, head(PRECHECK_FILE, precheck_inputs, omega_line))
+    _write(gate, gate_dir / GATE_FILE, head(GATE_FILE, gate_inputs, [*level_lines, *gate_line]))
+    _write(precheck, gate_dir / PRECHECK_FILE, head(PRECHECK_FILE, precheck_inputs, level_lines))
     logger.info("[build_student_balance] balance done: omega %.4f, gate_triggered %s, gate_triggered_area_consistent "
                 "%s (exit code 0 either way)", omega_value, triggered, triggered_area_consistent)
     return 0
@@ -820,6 +980,16 @@ def build_parser() -> argparse.ArgumentParser:
     balance.add_argument("--mover-share", required=True, type=float, help="share of the movers moved to Braunschweig, in [0, 1]")
     balance.add_argument("--weights-source", required=True, choices=WEIGHTS_SOURCES,
                          help="where the triple and the mover share come from (written to every header)")
+    balance.add_argument("--sites-census-year", required=True,
+                         help="local-only LSN site table of the census-year semester (same sites as --sites); never a default")
+    balance.add_argument("--mid-age-sex", default=str(MID_DEFAULTS["mid_age_sex"]),
+                        help="MiD adult-student shares by sex and age group (committed)")
+    balance.add_argument("--population", default=str(POPULATION_DEFAULT),
+                        help="LSN persons aged 20 to 29 by Kreis and date (committed)")
+    balance.add_argument("--population-base-date", default=POPULATION_BASE_DATE_DEFAULT,
+                        help="date of the census pattern (A19), default %s" % POPULATION_BASE_DATE_DEFAULT)
+    balance.add_argument("--population-model-date", default=POPULATION_MODEL_DATE_DEFAULT,
+                        help="date the pattern is carried to (A19), default %s" % POPULATION_MODEL_DATE_DEFAULT)
     balance.add_argument("--zensus-students", required=True, help="local-only Zensus student table; never a default")
     balance.add_argument("--zensus-employed", required=True, help="local-only Zensus employed-by-age table; never a default")
     balance.add_argument("--artifact-dir", required=True, help="run artifact directory")

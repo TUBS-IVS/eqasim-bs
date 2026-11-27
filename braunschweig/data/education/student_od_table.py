@@ -69,7 +69,9 @@ INSTITUTION_CROSSWALK: dict[str, str] = {
 }
 
 # CHE institution name -> name in ``_SURROUNDING`` of scripts/seed_nds_hochschulen.py (the source of
-# their coordinates). No LSN enrollment exists for them: they stay unscaled (design B3 step 5a).
+# their coordinates). No LSN enrollment exists for them: the caller (scripts/build_student_balance.py) gives
+# each an enrollment of the site table's semester, so rule 1 of ``build_od_table`` scales them like every
+# other institution; without an enrollment they stay unscaled (counted).
 OUTSIDE_LSN_CROSSWALK: dict[str, str] = {
     "Otto-von-Guericke-Universität Magdeburg": "OVGU Magdeburg",
     "Hochschule Magdeburg-Stendal": "Hochschule Magdeburg-Stendal",
@@ -680,7 +682,7 @@ def build_od_table(cells: pd.DataFrame, che_totals: pd.Series, sites: pd.DataFra
 
     Rules, in this order:
         1. scale factor per institution = its sites' summed enrollment / its CHE total (A4); without a
-           CHE total (the art academy) or without an enrollment (outside LSN) the factor is 1, counted;
+           CHE total (the art academy) or without an enrollment (an institution outside LSN whose caller gave none) the factor is 1, counted;
         2. an institution with several sites (any scope) splits each origin count over all its sites,
            ``O(k, s) = O(k, i) E_s v(k, s) / sum_s' E_s' v(k, s')`` with ``v = 1`` for a site in Kreis
            ``k`` and ``w(k, s)`` otherwise (A5); where every ``v`` is 0 (an origin beyond reach of all
