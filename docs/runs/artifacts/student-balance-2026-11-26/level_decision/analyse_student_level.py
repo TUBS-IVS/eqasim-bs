@@ -12,9 +12,12 @@ a combination of 1 and 2) and measures why the plain SrV count is high.
    ASSUMPTION L1: the site split and the home pattern of 2024/25 hold for 2022/23. Institutions without
    a CHE total or without LSN enrollment are not rescaled (counted and logged). A third column rescales
    the flows to the NEWEST semester of the official site statistics (winter semester 2025/26,
-   ``lsn_enrollment_by_site_and_semester.csv``), every destination site by its own ratio to 2024/25; the
-   curated institutions outside Niedersachsen keep their value. It is the level of a model of today;
-   the comparisons with the census (2022) and SrV (2023) belong to the columns of 2022/23.
+   ``lsn_enrollment_by_site_and_semester.csv``), every destination site by its own ratio to 2024/25. The
+   three institutions in Sachsen-Anhalt, which the flow table holds at their CHE total of 2022/23, are
+   rescaled from that semester with the statistics of their Land; where 2025/26 is not published for
+   one of them its last published winter semester is used (counted and logged). It is the level of a
+   model of today; the comparisons with the census (2022) and SrV (2023) belong to the columns of
+   2022/23.
 2. **Census extrapolation.** The census count of the pupils and students outside the labour force,
    aged 20 to 29, of the Kreis, times ``enrolled students aged 20 to 29 in Germany / the same census
    count for Germany`` (``national_enrollment_20_29.csv``; summer semester 2022 holds the census day,
@@ -37,6 +40,13 @@ a combination of 1 and 2) and measures why the plain SrV count is high.
 The header of the first table also gives ``omega`` (the share of the students the census counts as
 employed, ``1 - Z / S`` of the level table) with ``S`` taken from the enrollment of 2022/23: ``Z`` is a
 census count of 2022, so only that semester puts both sides of the ratio into one year.
+
+Column ``census_pattern_2025_population_students_20_29_persons`` carries the census pattern of item 4 to
+2025: the census count of a Kreis is multiplied by the change of its population aged 20 to 29 between
+31 December 2022 and 31 December 2025 (``lsn_population_20_29_by_kreis.csv``) before the total of the
+newest semester is distributed. ASSUMPTION L6: the share of students among the young adults changes by
+the same factor in every Kreis. The header also sets the persons aged 20 to 29 of the census day next
+to those of the two dates.
 
 Columns ``*_minus_srv_in_se``: a head count minus the school-corrected SrV count, in standard errors of
 the latter; the header gives the sum of their squares over the seven surveyed Kreise per candidate (a
@@ -116,6 +126,11 @@ SRV_PARAMETERS = REPO / "eqasim-data/data/braunschweig/srv/srv2023_student_param
 NATIONAL = HERE / "national_enrollment_20_29.csv"
 NRW = HERE / "nrw_census_students_18_26.csv"
 LSN_SERIES = HERE / "lsn_enrollment_by_site_and_semester.csv"
+POPULATION = HERE / "lsn_population_20_29_by_kreis.csv"
+POPULATION_BASE_DATE, POPULATION_NEWEST_DATE = "2022-12-31", "2025-12-31"
+SERIES_ORIGIN_TABLE = "ws2022_23"     # the semester of the CHE totals (the curated institutions' rows)
+SERIES_WINTERS = ["ws2021_22", "ws2022_23", "ws2023_24", "ws2024_25", "ws2025_26"]
+PATTERN_2025 = "census_pattern_2025_population_students_20_29_persons"
 LEVEL_TABLE = REPO / "eqasim-data/data/braunschweig/popsim/student_level_table.csv"
 SERIES_FLOW_TABLE, SERIES_NEWEST = "ws2024_25", "ws2025_26"   # columns of LSN_SERIES
 SERIES_SEMESTERS = ["ws2021_22", "ss2022", "ws2022_23", "ws2023_24", "ws2024_25", "ss2025", "ws2025_26"]
@@ -464,11 +479,30 @@ def balance_by_home(od: pd.DataFrame, che_totals: pd.Series, gate: pd.DataFrame,
         raise ValueError("column %s of the site series differs from the enrollment of the flow table by up to "
                          "%.6g persons; the series and the flow table are not of one semester" % (SERIES_FLOW_TABLE, drift))
     ratio = (by_destination[SERIES_NEWEST].astype(float) / by_destination[SERIES_FLOW_TABLE].astype(float))
+    # institutions without enrollment in the flow table stand at their CHE total: rescale from that semester
+    che_by_curated = {T.OUTSIDE_LSN_CROSSWALK[name]: float(total) for name, total in che_totals.items()
+                      if name in T.OUTSIDE_LSN_CROSSWALK}
+    curated = sites.loc[sites["enrollment_persons"].isna()].set_index("destination_id")["institution"]
+    last_published = {}
+    for destination, institution in curated.items():
+        if destination not in by_destination.index:
+            continue
+        row = by_destination.loc[destination]
+        base = float(row[SERIES_ORIGIN_TABLE])
+        if institution not in che_by_curated or abs(base - che_by_curated[institution]) > 0:
+            raise ValueError("site series: %s of %s is %r, the CHE total is %r; the two are not of one semester"
+                             % (SERIES_ORIGIN_TABLE, destination, base, che_by_curated.get(institution)))
+        published = [semester for semester in SERIES_WINTERS if pd.notna(row[semester])]
+        ratio.loc[destination] = float(row[published[-1]]) / base
+        last_published[destination] = published[-1]
     row_ratio = od["destination_id"].map(ratio)
     unscaled = sorted(set(od.loc[row_ratio.isna(), "destination_id"]))
-    logger.info("%s newest semester (%s): primary %d/%d destinations rescaled with their own site ratio, fallback "
-                "%d kept (no row in the site series): %s", _TAG, SERIES_NEWEST, od["destination_id"].nunique()
-                - len(unscaled), od["destination_id"].nunique(), len(unscaled), unscaled)
+    behind = {destination: semester for destination, semester in last_published.items() if semester != SERIES_NEWEST}
+    n_destinations = od["destination_id"].nunique()
+    logger.info("%s newest semester (%s): primary %d/%d destinations rescaled to that semester, fallback %d "
+                "rescaled to their last published winter semester %s, %d kept without a row in the series %s",
+                _TAG, SERIES_NEWEST, n_destinations - len(unscaled) - len(behind), n_destinations, len(behind),
+                behind, len(unscaled), unscaled)
     newest = (od["students_persons"].astype(float) * row_ratio.fillna(1.0))[region].groupby(
         od.loc[region, "home_ars5"]).sum()
     out = pd.DataFrame({
@@ -480,7 +514,8 @@ def balance_by_home(od: pd.DataFrame, che_totals: pd.Series, gate: pd.DataFrame,
     local_by_semester = {semester: float(by_destination.loc[local, semester].astype(float).sum())
                          for semester in SERIES_SEMESTERS}
     return out, {"semester_factors": factors, "institutions_not_rescaled": kept,
-                 "destinations_not_rescaled_newest": unscaled, "local_sites_enrollment": local_by_semester}
+                 "destinations_not_rescaled_newest": unscaled, "destinations_behind_newest": behind,
+                 "local_sites_enrollment": local_by_semester}
 
 
 # --------------------------------------------------------------------------- census status, NRW check, schools
@@ -629,6 +664,7 @@ def main(argv=None) -> int:
     che = pd.read_csv(CHE, comment="#", dtype={"origin_ars5": str})
     national = pd.read_csv(NATIONAL, comment="#").set_index("semester")
     series = pd.read_csv(LSN_SERIES, comment="#", dtype={"lsn_code": str})
+    population = pd.read_csv(POPULATION, comment="#", dtype={"district_ars5": str})
     zensus = pd.read_csv(args.zensus_students, comment="#", dtype={"region": str}).set_index("region")
     parameters = cli._read_csv(SRV_PARAMETERS, cli.PARAMETER_COLUMNS, "SrV student parameters")
     away_share = float(cli._parameter_shares(parameters, "day", "away_all_day", "students_all")["yes"])
@@ -706,6 +742,23 @@ def main(argv=None) -> int:
         estimates.loc[kreise, target] = pattern * float(estimates.loc[kreise, source].sum())
         for group in (GROUP_SURROUNDING, GROUP_SURVEYED):
             estimates.loc[group, target] = float(estimates.loc[groups[group], target].sum())
+    # the census pattern carried to 2025 with the change of the population aged 20 to 29 (assumption L6)
+    by_date = population.pivot(index="district_ars5", columns="date", values="persons_20_29").astype(float)
+    if by_date.loc[kreise, [POPULATION_BASE_DATE, POPULATION_NEWEST_DATE]].isna().any().any():
+        raise ValueError("population series: a Kreis has no value on %s or %s"
+                         % (POPULATION_BASE_DATE, POPULATION_NEWEST_DATE))
+    change = by_date.loc[kreise, POPULATION_NEWEST_DATE] / by_date.loc[kreise, POPULATION_BASE_DATE]
+    moved = estimates.loc[kreise, "zensus_pupils_students_outside_labour_force_20_29_persons"] * change
+    estimates[PATTERN_2025] = np.nan
+    estimates.loc[kreise, PATTERN_2025] = (
+        moved / float(moved.sum()) * float(estimates.loc[kreise, "balance_ws2025_26_students_20_29_persons"].sum()))
+    for group in (GROUP_SURROUNDING, GROUP_SURVEYED):
+        estimates.loc[group, PATTERN_2025] = float(estimates.loc[groups[group], PATTERN_2025].sum())
+    persons = {"census_day_2022-05-15": float(estimates.loc[kreise, "zensus_population_20_29_persons"].sum()),
+               POPULATION_BASE_DATE: float(by_date.loc[kreise, POPULATION_BASE_DATE].sum()),
+               POPULATION_NEWEST_DATE: float(by_date.loc[kreise, POPULATION_NEWEST_DATE].sum())}
+    logger.info("%s persons aged 20 to 29 in the eight Kreise: %s; change %s to %s per Kreis: %s", _TAG, persons,
+                POPULATION_BASE_DATE, POPULATION_NEWEST_DATE, {k: round(float(v), 4) for k, v in change.items()})
     squares = {}
     for candidate in CANDIDATES:
         column = candidate.replace("_students_20_29_persons", "") + "_minus_srv_in_se"
@@ -736,7 +789,8 @@ def main(argv=None) -> int:
 
     today = dt.date.today().isoformat()
     inputs = [("level_gate", GATE, False), ("flow_table", OD_TABLE, False), ("che_origins", CHE, False),
-              ("lsn_site_series", LSN_SERIES, False), ("level_table", LEVEL_TABLE, False),
+              ("lsn_site_series", LSN_SERIES, False), ("lsn_population", POPULATION, False),
+              ("level_table", LEVEL_TABLE, False),
               ("srv_student_parameters", SRV_PARAMETERS, False), ("national_enrollment", NATIONAL, False),
               ("zensus_students", Path(args.zensus_students), True), ("zensus_school_kreis", school_kreis, True),
               ("zensus_school_germany", school_germany, True),
@@ -773,9 +827,14 @@ def main(argv=None) -> int:
         "balance_ws2022_23_...: the same flows divided by LSN enrollment / CHE total of the institution (L1); "
         "not rescaled: %s." % balance_info["institutions_not_rescaled"],
         "# balance_ws2025_26_...: the flows rescaled to the newest semester of the official site statistics, every "
-        "destination site by its own ratio to 2024/25 (L1); not rescaled: %s. Enrollment of the local sites by "
-        "semester: %s." % (balance_info["destinations_not_rescaled_newest"],
-                           json.dumps(balance_info["local_sites_enrollment"])),
+        "destination site by its own ratio to 2024/25 (L1); not rescaled: %s; rescaled to their last published "
+        "winter semester instead: %s. Enrollment of the local sites by semester: %s." % (
+            balance_info["destinations_not_rescaled_newest"], json.dumps(balance_info["destinations_behind_newest"]),
+            json.dumps(balance_info["local_sites_enrollment"])),
+        "# %s: the total of balance_ws2025_26_... over the eight Kreise, distributed by the census count times the "
+        "change of the persons aged 20 to 29 from %s to %s (L6). Persons aged 20 to 29 in the eight Kreise: %s; "
+        "change per Kreis: %s." % (PATTERN_2025, POPULATION_BASE_DATE, POPULATION_NEWEST_DATE, json.dumps(persons),
+                                   json.dumps({k: round(float(v), 6) for k, v in change.items()})),
         "# omega = 1 - Z / S with Z = %.10g, the census count of 2022, and S = the eight Kreise of a balance column: "
         "%s. Only the enrollment of 2022/23 puts Z and S into one year." % (z_students, json.dumps(omega)),
         "# census_extrapolation_...: zensus_pupils_students_outside_labour_force_20_29_persons times enrolled "
