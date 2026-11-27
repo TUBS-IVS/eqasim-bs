@@ -1469,8 +1469,14 @@ _STUDENT_ENTRY_NAMES = (
     "student_season_ticket")
 
 
-def _student_entries(*, names=_STUDENT_ENTRY_NAMES):
-    """The prerequisite entries plus the ad hoc student entries (not registered yet)."""
+def _student_entries(*, names=_STUDENT_ENTRY_NAMES, only_what_students_need=False):
+    """The prerequisite entries plus the ad hoc student entries (not registered yet).
+
+    ``only_what_students_need`` keeps just ``employment_status`` and ``pt_ticket_group4``
+    (which have their own triggers) and drops ``work_by_employment`` and the education-by-age
+    entries, so the student entries alone must trigger the Wege load and both flag derivations
+    (``education_18plus`` is absent either way: the student entries replace it).
+    """
     from braunschweig.popsim import attributes
     from braunschweig.popsim import kreis_attribute_control as kac
     categories = {
@@ -1479,7 +1485,8 @@ def _student_entries(*, names=_STUDENT_ENTRY_NAMES):
         kac.STUDENT_WORK_LEG: kac.STUDENT_WORK_LEG_CATEGORIES,
         kac.STUDENT_SEASON_TICKET: kac.STUDENT_SEASON_TICKET_CATEGORIES,
     }
-    entries = _universe_entries() + [
+    base = _universe_entries()[:1] if only_what_students_need else _universe_entries()
+    entries = base + [
         _universe_entry("pt_ticket_group4", "pt_ticket_group4", attributes.PT_TICKET_GROUPS4)]
     for name in names:
         lo, hi = kac.STUDENT_AGE_BOUNDS[name]
@@ -1535,36 +1542,63 @@ def _student_seed_both_paths(tmp_path, fixture=_STUDENT_FIXTURE, entries=None):
     return via_load, via_project
 
 
-def test_student_seed_labels_follow_status_flags_and_agree_on_both_seed_paths(tmp_path):
-    """Each label set is one seed column; the two seed paths derive it identically."""
-    via_load, via_project = _student_seed_both_paths(tmp_path)
-    expected = {
-        "student_education_18_29": ["student_edu", "student_noedu", "other_noedu",
-                                    "student_edu", "other_edu", "other_noedu"],
-        "student_education_30plus": ["student", "student", "other_noedu",
-                                     "student", "other_edu", "other_noedu"],
-        # The labels follow the student status alone; the entry's age universe (18 to 29)
-        # decides later whom they constrain, so the 35-year-old student is labelled too.
-        "student_work_leg": ["student_nowork", "student_work", "not_student",
-                             "student_nowork", "not_student", "not_student"],
-        "student_season_ticket": ["student_flatrate", "student_no_flatrate", "not_student",
-                                  "student_flatrate", "not_student", "not_student"],
-    }
+_EXPECTED_STUDENT_LABELS = {
+    "student_education_18_29": ["student_edu", "student_noedu", "other_noedu",
+                                "student_edu", "other_edu", "other_noedu"],
+    "student_education_30plus": ["student", "student", "other_noedu",
+                                 "student", "other_edu", "other_noedu"],
+    # The labels follow the student status alone; the entry's age universe (18 to 29)
+    # decides later whom they constrain, so the 35-year-old student is labelled too.
+    "student_work_leg": ["student_nowork", "student_work", "not_student",
+                         "student_nowork", "not_student", "not_student"],
+    "student_season_ticket": ["student_flatrate", "student_no_flatrate", "not_student",
+                              "student_flatrate", "not_student", "not_student"],
+}
+
+
+@pytest.mark.parametrize("only_what_students_need", [False, True])
+def test_student_seed_labels_follow_status_flags_and_agree_on_both_seed_paths(
+        tmp_path, only_what_students_need):
+    """Each label set is one seed column; the two seed paths derive it identically.
+
+    With ``only_what_students_need`` the configuration holds no ``work_by_employment`` and no
+    education-by-age entry (``education_18plus`` is replaced): the student entries themselves
+    must trigger the Wege load and the ``education_flag`` / ``work_by_employment`` derivations.
+    """
+    via_load, via_project = _student_seed_both_paths(
+        tmp_path, entries=_student_entries(only_what_students_need=only_what_students_need))
     for persons in (via_load, via_project):
-        for column, labels in expected.items():
+        for column, labels in _EXPECTED_STUDENT_LABELS.items():
             assert persons[column].tolist() == labels, column
     # The student columns are one block of the seed, and nothing else differs between paths.
     pd.testing.assert_frame_equal(
-        via_load[list(expected)].reset_index(drop=True),
-        via_project[list(expected)].reset_index(drop=True))
+        via_load[list(_EXPECTED_STUDENT_LABELS)].reset_index(drop=True),
+        via_project[list(_EXPECTED_STUDENT_LABELS)].reset_index(drop=True))
 
 
-def test_a_student_in_an_employed_work_class_is_an_error(tmp_path):
-    """A student with employment status vollzeit (P_BKAT 1) and a work leg is `employed_work`."""
-    fixture = ((21, 22, 10, 1, 3, 1), (23, 40, 1, 1, 6, 1))
-    with pytest.raises(ValueError, match=r"1 student.*employed_work.*p?21") as excinfo:
-        _student_seed_both_paths(tmp_path, fixture)
-    assert "work_by_employment" in str(excinfo.value)
+@pytest.mark.parametrize("names", [
+    _STUDENT_ENTRY_NAMES,
+    ("student_education_18_29", "student_education_30plus"),   # education entries only
+])
+def test_an_adult_student_with_an_employed_status_is_an_error(tmp_path, names):
+    """A student aged 18 or older with employment status vollzeit (P_BKAT 1) is employed, for
+    ANY active student entry (A2 relies on it too), not only the work entry."""
+    fixture = ((21, 22, 10, 1, 3, 3), (23, 40, 1, 1, 6, 1))
+    with pytest.raises(ValueError, match=r"1 student.*employment_status.*vollzeit.*p?21"):
+        _student_seed_both_paths(tmp_path, fixture, entries=_student_entries(names=names))
+
+
+def test_a_student_under_18_with_an_employed_status_is_no_error(caplog):
+    """The check covers the universes of the entries (18 or older); a minor is only logged."""
+    from braunschweig.popsim.mid.participation import derive_student_status_seed_columns
+    persons = pd.DataFrame({
+        "P_TAET": [10, 1], "HP_ALTER": [17, 40], "employment_status": ["teilzeit", "vollzeit"],
+        "education_flag": ["noedu", "noedu"]})
+    with caplog.at_level(logging.INFO):
+        out = derive_student_status_seed_columns(
+            persons, active_entry_names={"student_education_18_29"})
+    assert out["student_education_18_29"].tolist() == ["student_noedu", "other_noedu"]
+    assert "1 student(s) under 18" in caplog.text
 
 
 def test_student_seed_columns_are_absent_when_no_student_entry_is_active(tmp_path):

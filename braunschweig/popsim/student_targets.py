@@ -45,6 +45,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.data.csv_header import read_header_value
+from braunschweig.popsim import kreis_attribute_control as kac
 from braunschweig.popsim.student_level import AGE_LABELS, YOUNG_AGE_LABELS, StudentLevel
 
 logger = logging.getLogger(__name__)
@@ -73,26 +74,25 @@ _RANGE_OF_LEVEL_GROUP = {label: (AGE_RANGE_YOUNG if label in YOUNG_AGE_LABELS el
 REGION_CODE = "03ZGB"
 WOLFSBURG_CODE = "03103"
 
-# Entry names, category labels and universe of the four student entries. Task 7 registers the entries
-# in ``kreis_attribute_control``; these mappings are replaced by the kreis_attribute_control constants
-# in Task 7. Both can be overridden through the ``categories`` argument of the builders.
-ENTRY_EDUCATION_YOUNG = "student_education_18_29"
-ENTRY_EDUCATION_OLD = "student_education_30plus"
-ENTRY_WORK_LEG = "student_work_leg"
-ENTRY_SEASON_TICKET = "student_season_ticket"
+# Entry names, category labels and universes of the four student entries: owned by
+# ``kreis_attribute_control`` (which imports no calibration module either), so the seed column's
+# labels, the registry entry and these target tables cannot drift apart. Overridable through the
+# ``categories`` argument of the builders.
+ENTRY_EDUCATION_YOUNG = kac.STUDENT_EDUCATION_18_29
+ENTRY_EDUCATION_OLD = kac.STUDENT_EDUCATION_30PLUS
+ENTRY_WORK_LEG = kac.STUDENT_WORK_LEG
+ENTRY_SEASON_TICKET = kac.STUDENT_SEASON_TICKET
 STUDENT_ENTRY_CATEGORIES: dict[str, tuple[str, ...]] = {
-    ENTRY_EDUCATION_YOUNG: ("student_edu", "student_noedu", "other_edu", "other_noedu"),
-    ENTRY_EDUCATION_OLD: ("student", "other_edu", "other_noedu"),
-    ENTRY_WORK_LEG: ("student_work", "student_nowork", "not_student"),
-    ENTRY_SEASON_TICKET: ("student_flatrate", "student_no_flatrate", "not_student"),
+    ENTRY_EDUCATION_YOUNG: kac.STUDENT_EDUCATION_18_29_CATEGORIES,
+    ENTRY_EDUCATION_OLD: kac.STUDENT_EDUCATION_30PLUS_CATEGORIES,
+    ENTRY_WORK_LEG: kac.STUDENT_WORK_LEG_CATEGORIES,
+    ENTRY_SEASON_TICKET: kac.STUDENT_SEASON_TICKET_CATEGORIES,
 }
-#: Age range of the universe of each entry (the persons its categories partition).
+#: Age range of the universe of each entry (the persons its categories partition), read off
+#: ``kac.STUDENT_AGE_BOUNDS`` (18 to 29 -> the young range, 30 or older -> the old range).
+_RANGE_OF_BOUNDS = {(18, 29): AGE_RANGE_YOUNG, (30, None): AGE_RANGE_OLD}
 STUDENT_ENTRY_AGE_RANGE: dict[str, str] = {
-    ENTRY_EDUCATION_YOUNG: AGE_RANGE_YOUNG,
-    ENTRY_EDUCATION_OLD: AGE_RANGE_OLD,
-    ENTRY_WORK_LEG: AGE_RANGE_YOUNG,
-    ENTRY_SEASON_TICKET: AGE_RANGE_YOUNG,
-}
+    name: _RANGE_OF_BOUNDS[bounds] for name, bounds in kac.STUDENT_AGE_BOUNDS.items()}
 
 _KREIS_COLUMN = "ARS_kreis"
 _ROUNDING_EPSILON = 1e-9
@@ -297,8 +297,8 @@ def student_kreis_targets_with_diagnostics(
     ``counts`` is :func:`student_counts`; ``persons_by_range`` maps ``(Kreis, age range)`` to the persons
     of the census of that universe (``18_29``, ``30plus``); ``area_of_kreis`` maps every Kreis to its home
     area, ``None`` for Wolfsburg (A21: the regional ticket value). ``categories`` gives the category
-    labels per entry (default :data:`STUDENT_ENTRY_CATEGORIES`, to be replaced by the
-    ``kreis_attribute_control`` constants in Task 7); columns are ``<entry>_<category>``.
+    labels per entry (default :data:`STUDENT_ENTRY_CATEGORIES`, the ``kreis_attribute_control``
+    constants); columns are ``<entry>_<category>``.
 
     With ``S_r`` the students of range ``r`` and ``N_r = persons_r - S_r``: ``student_edu =
     round(S_18_29 * e)``; ``O_k = s_k * (N_18_29 + N_30plus)`` is split over the ranges by

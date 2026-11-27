@@ -35,18 +35,25 @@ import logging
 import numpy as np
 import pandas as pd
 
+from braunschweig.data.mid.reference_tables import PT_TICKET_FLATRATE
 from braunschweig.popsim import attributes
 from braunschweig.popsim import trips
-# The participation-universe control vocabularies (Plan B, issue #368) live with the
-# CONTROL (kreis_attribute_control), because the seed column's value set, the registry
-# entry's categories and the target CSV's share columns must be one ordered list. That
-# module imports only ``attributes`` + numpy/pandas, so this import creates no cycle.
-from braunschweig.popsim import kreis_attribute_control as kac
+# The participation-universe control vocabularies (Plan B, issue #368) and the student entry
+# vocabularies (design A3, issue #140) live with the CONTROL (kreis_attribute_control),
+# because the seed column's value set, the registry entry's categories and the target CSV's
+# share columns must be one ordered list. That module imports only ``attributes`` +
+# numpy/pandas, so this import creates no cycle.
 from braunschweig.popsim.kreis_attribute_control import (
     EDUCATION_AGE_BOUNDS, EDUCATION_FLAG_CATEGORIES, EDUCATION_FLAG_EDU,
-    EDUCATION_FLAG_NOEDU, WORK_BY_EMPLOYMENT_CATEGORIES,
-    WORK_BY_EMPLOYMENT_MIN_AGE_YEARS)
-from braunschweig.data.mid.reference_tables import PT_TICKET_FLATRATE
+    EDUCATION_FLAG_NOEDU, STUDENT_AGE_BOUNDS, STUDENT_EDUCATION_18_29,
+    STUDENT_EDUCATION_18_29_CATEGORIES, STUDENT_EDUCATION_30PLUS,
+    STUDENT_EDUCATION_30PLUS_CATEGORIES, STUDENT_LABEL_NOT_STUDENT,
+    STUDENT_LABEL_OTHER_EDU, STUDENT_LABEL_OTHER_NOEDU, STUDENT_LABEL_STUDENT,
+    STUDENT_LABEL_STUDENT_EDU, STUDENT_LABEL_STUDENT_FLATRATE,
+    STUDENT_LABEL_STUDENT_NO_FLATRATE, STUDENT_LABEL_STUDENT_NOEDU,
+    STUDENT_LABEL_STUDENT_NOWORK, STUDENT_LABEL_STUDENT_WORK, STUDENT_SEASON_TICKET,
+    STUDENT_SEASON_TICKET_CATEGORIES, STUDENT_WORK_LEG, STUDENT_WORK_LEG_CATEGORIES,
+    WORK_BY_EMPLOYMENT_CATEGORIES, WORK_BY_EMPLOYMENT_MIN_AGE_YEARS)
 # The 803/804 diary non-response codes are DECLARED by the diary plan match (the module
 # that decides which of them are remapped and which are kept); the seed guard below must
 # use that single declaration rather than repeating the literals here.
@@ -924,52 +931,41 @@ def derive_education_flag_seed(persons, wege, *, escort_passive_education,
 # Student status seed columns (A3 of the student design, issue #140)
 # --------------------------------------------------------------------------- #
 
-#: The seed column each ACTIVE student entry needs besides the student status: the entry
+#: The seed column each ACTIVE student entry reads besides the student status: the entry
 #: reads it, so a missing column is named instead of guessed.
 _STUDENT_ENTRY_SOURCE_COLUMN = {
-    kac.STUDENT_EDUCATION_18_29: "education_flag",
-    kac.STUDENT_EDUCATION_30PLUS: "education_flag",
-    kac.STUDENT_WORK_LEG: "work_by_employment",
-    kac.STUDENT_SEASON_TICKET: "pt_ticket_group4",
+    STUDENT_EDUCATION_18_29: "education_flag",
+    STUDENT_EDUCATION_30PLUS: "education_flag",
+    STUDENT_WORK_LEG: "work_by_employment",
+    STUDENT_SEASON_TICKET: "pt_ticket_group4",
 }
 
 #: The ordered label set of each student entry's seed column (for the distribution log).
 _STUDENT_CATEGORIES_BY_ENTRY = {
-    kac.STUDENT_EDUCATION_18_29: kac.STUDENT_EDUCATION_18_29_CATEGORIES,
-    kac.STUDENT_EDUCATION_30PLUS: kac.STUDENT_EDUCATION_30PLUS_CATEGORIES,
-    kac.STUDENT_WORK_LEG: kac.STUDENT_WORK_LEG_CATEGORIES,
-    kac.STUDENT_SEASON_TICKET: kac.STUDENT_SEASON_TICKET_CATEGORIES,
+    STUDENT_EDUCATION_18_29: STUDENT_EDUCATION_18_29_CATEGORIES,
+    STUDENT_EDUCATION_30PLUS: STUDENT_EDUCATION_30PLUS_CATEGORIES,
+    STUDENT_WORK_LEG: STUDENT_WORK_LEG_CATEGORIES,
+    STUDENT_SEASON_TICKET: STUDENT_SEASON_TICKET_CATEGORIES,
 }
 
 #: ``work_by_employment`` labels of a direct work leg (``<employment>_work``); the "nowork"
 #: labels do not end in ``_work``. Taken from the control's own category tuple.
 _WORK_LEG_LABELS = frozenset(c for c in WORK_BY_EMPLOYMENT_CATEGORIES if c.endswith("_work"))
-#: ``work_by_employment`` labels of an EMPLOYED person (``employed_*``; ``nonemployed_*``
-#: does not start with it).
-_EMPLOYED_CLASS_LABELS = frozenset(
-    c for c in WORK_BY_EMPLOYMENT_CATEGORIES if c.startswith("employed_"))
+
+#: The ``pt_ticket_group4`` labels of a flat-rate ticket, computed ONCE from the two owners:
+#: ``attributes.PT_TICKET_FLATRATE`` says which ticket types grant unlimited rides and
+#: ``attributes.pt_ticket_group4_of`` says which group each type lands in (the
+#: ``deutschlandticket`` and ``other_flatrate`` groups), so neither is typed again here.
+_FLATRATE_TICKET_GROUP4_LABELS = frozenset(
+    str(label) for label in attributes.pt_ticket_group4_of(pd.Series(sorted(PT_TICKET_FLATRATE))))
+
+#: A student counts for the employed-class check from this age on: the lowest age of the
+#: universes of the four student entries (18), which is also the age range of the employed
+#: grid the student employment subtraction (A2) acts on.
+_ADULT_STUDENT_MIN_AGE_YEARS = min(low for low, _ in STUDENT_AGE_BOUNDS.values())
 
 #: Number of example persons named in the employed-class error message.
 _EMPLOYED_STUDENT_EXAMPLES = 5
-
-
-def _flatrate_ticket_group4_labels() -> frozenset:
-    """The ``pt_ticket_group4`` labels of a flat-rate ticket, DERIVED from the existing mapping.
-
-    ``attributes.PT_TICKET_FLATRATE`` owns which ticket types grant unlimited rides, and
-    ``attributes.map_pt_ticket_group`` owns what group each type lands in; running that mapping
-    over the flat-rate types gives the labels (``deutschlandticket`` and ``other_flatrate``)
-    without typing either again. The mapping's own distribution log line is muted for this
-    probe frame, because it would describe a frame that is not the population.
-    """
-    probe = pd.DataFrame({"pt_subscription_type": sorted(PT_TICKET_FLATRATE)})
-    was_disabled = attributes.logger.disabled
-    attributes.logger.disabled = True
-    try:
-        mapped = attributes.map_pt_ticket_group(probe)
-    finally:
-        attributes.logger.disabled = was_disabled
-    return frozenset(mapped["pt_ticket_group4"])
 
 
 def derive_student_status_seed_columns(persons: pd.DataFrame, *,
@@ -989,22 +985,31 @@ def derive_student_status_seed_columns(persons: pd.DataFrame, *,
       every other person ``not_student``.
 
     The columns read the seed columns ``education_flag``, ``work_by_employment`` and
-    ``pt_ticket_group4``, which must exist already; there is no second derivation of any of
-    them. A missing source column raises ``KeyError`` naming it. A student whose
-    ``work_by_employment`` label is an employed class raises ``ValueError`` (count and
-    examples): the work leg of the students is defined next to employed persons only, and the
-    two would double-count a person (design A3; Phase 1 found none). The check covers every
-    student in the frame, and runs only with the work entry active.
+    ``pt_ticket_group4``, which must exist already (``seed_loading`` derives them when a student
+    entry needs them); there is no second derivation of any of them. A missing source column
+    raises ``KeyError`` naming it. A value that is missing in a source column reads as "no" /
+    "other"; the number per column is logged (a warning when above zero), never silent.
+
+    **Employed-class assertion** (design A3, A2): with ANY student entry active, an ADULT student
+    (``HP_ALTER >= 18``, the universes of all four entries and of the employed grid of A2) whose
+    ``employment_status`` is one of ``attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES`` raises
+    ``ValueError`` (count and examples). Students would otherwise be counted twice, as employed
+    by A2's lowering of the employed targets and as a student of the entries here (Phase 1
+    found none). Students under 18 in an employed class are not an error: they are outside every
+    universe; their number is logged at info level. A person without a readable ``HP_ALTER`` is
+    not checked. This reads ``employment_status`` (and ``HP_ALTER``), so the ``employment_status``
+    entry must be active, as the ``work_by_employment`` control requires anyway.
 
     With no student entry in ``active_entry_names`` the frame is returned unchanged, so the
     OFF path adds no column and reads nothing. Logs the label distribution of each column over
     its own age universe (counts and rates). Returns the persons frame with the added columns
     (MUST be reassigned). Mutates: nothing in place.
     """
-    active = [name for name in kac.STUDENT_AGE_BOUNDS if name in active_entry_names]
+    active = [name for name in STUDENT_AGE_BOUNDS if name in active_entry_names]
     if not active:
         return persons
-    needed = {"P_TAET"} | {_STUDENT_ENTRY_SOURCE_COLUMN[name] for name in active}
+    sources = sorted({_STUDENT_ENTRY_SOURCE_COLUMN[name] for name in active})
+    needed = {"P_TAET", "HP_ALTER", "employment_status"} | set(sources)
     missing = sorted(c for c in needed if c not in persons.columns)
     if missing:
         raise KeyError(
@@ -1012,71 +1017,80 @@ def derive_student_status_seed_columns(persons: pd.DataFrame, *,
             f"frame (has {list(persons.columns)}); the student entries {active} read them and "
             "their derivations must run first (seed_loading order).")
     taet = pd.to_numeric(persons["P_TAET"], errors="coerce")
+    age = pd.to_numeric(persons["HP_ALTER"], errors="coerce")
     student = (taet == attributes.STUDENT_TAET).to_numpy()
     out = persons.copy()
 
-    if kac.STUDENT_WORK_LEG in active:
-        label = persons["work_by_employment"]
-        in_employed_class = student & label.isin(_EMPLOYED_CLASS_LABELS).to_numpy()
-        if in_employed_class.any():
-            id_column = "P_ID" if "P_ID" in persons.columns else None
-            examples = [
-                f"{persons.index[i] if id_column is None else persons[id_column].iloc[i]}:"
-                f"{label.iloc[i]}"
-                for i in np.flatnonzero(in_employed_class)[:_EMPLOYED_STUDENT_EXAMPLES]]
-            raise ValueError(
-                f"derive_student_status_seed_columns: {int(in_employed_class.sum())} student(s) "
-                f"(P_TAET == {attributes.STUDENT_TAET}) fall into an employed class of "
-                f"work_by_employment {sorted(_EMPLOYED_CLASS_LABELS)}; examples "
-                f"(person:label) {examples}. The student work leg is defined for persons outside "
-                "the employed classes; check employment_status and P_TAET (design A3).")
+    employed_student = student & persons["employment_status"].isin(
+        attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES).to_numpy()
+    adult = (age >= _ADULT_STUDENT_MIN_AGE_YEARS).to_numpy()
+    if (employed_student & ~adult).any():
+        logger.info(
+            "[popsim.mid] student seed: %d student(s) under %d have an employed employment_status "
+            "(outside every student entry's universe, not an error).",
+            int((employed_student & ~adult).sum()), _ADULT_STUDENT_MIN_AGE_YEARS)
+    if (employed_student & adult).any():
+        flagged = np.flatnonzero(employed_student & adult)
+        id_column = "P_ID" if "P_ID" in persons.columns else None
+        examples = [
+            f"{persons.index[i] if id_column is None else persons[id_column].iloc[i]}:"
+            f"{persons['employment_status'].iloc[i]}"
+            for i in flagged[:_EMPLOYED_STUDENT_EXAMPLES]]
+        raise ValueError(
+            f"derive_student_status_seed_columns: {len(flagged)} student(s) aged "
+            f">= {_ADULT_STUDENT_MIN_AGE_YEARS} (P_TAET == {attributes.STUDENT_TAET}) have an employed "
+            f"employment_status {list(attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES)}; examples "
+            f"(person:status) {examples}. A student must not also be counted as employed "
+            "(design A3 and A2); check P_BKAT and P_TAET.")
+
+    for column in sources:
+        n_missing = int(persons[column].isna().sum())
+        (logger.warning if n_missing else logger.info)(
+            "[popsim.mid] student seed: %s has %d/%d (%.2f%%) missing value(s), read as 'no' / "
+            "'other' in the student columns.",
+            column, n_missing, len(persons), 100.0 * n_missing / max(len(persons), 1))
 
     for name in active:
         source = persons[_STUDENT_ENTRY_SOURCE_COLUMN[name]]
-        if name in (kac.STUDENT_EDUCATION_18_29, kac.STUDENT_EDUCATION_30PLUS):
+        if name in (STUDENT_EDUCATION_18_29, STUDENT_EDUCATION_30PLUS):
             edu = (source == EDUCATION_FLAG_EDU).to_numpy()
-            if name == kac.STUDENT_EDUCATION_18_29:
+            if name == STUDENT_EDUCATION_18_29:
                 out[name] = np.select(
                     [student & edu, student, edu],
-                    [kac.STUDENT_LABEL_STUDENT_EDU, kac.STUDENT_LABEL_STUDENT_NOEDU,
-                     kac.STUDENT_LABEL_OTHER_EDU],
-                    default=kac.STUDENT_LABEL_OTHER_NOEDU)
+                    [STUDENT_LABEL_STUDENT_EDU, STUDENT_LABEL_STUDENT_NOEDU,
+                     STUDENT_LABEL_OTHER_EDU],
+                    default=STUDENT_LABEL_OTHER_NOEDU)
             else:
                 out[name] = np.select(
-                    [student, edu], [kac.STUDENT_LABEL_STUDENT, kac.STUDENT_LABEL_OTHER_EDU],
-                    default=kac.STUDENT_LABEL_OTHER_NOEDU)
-        elif name == kac.STUDENT_WORK_LEG:
+                    [student, edu], [STUDENT_LABEL_STUDENT, STUDENT_LABEL_OTHER_EDU],
+                    default=STUDENT_LABEL_OTHER_NOEDU)
+        elif name == STUDENT_WORK_LEG:
             work = source.isin(_WORK_LEG_LABELS).to_numpy()
             out[name] = np.select(
                 [student & work, student],
-                [kac.STUDENT_LABEL_STUDENT_WORK, kac.STUDENT_LABEL_STUDENT_NOWORK],
-                default=kac.STUDENT_LABEL_NOT_STUDENT)
+                [STUDENT_LABEL_STUDENT_WORK, STUDENT_LABEL_STUDENT_NOWORK],
+                default=STUDENT_LABEL_NOT_STUDENT)
         else:
-            flatrate = source.isin(_flatrate_ticket_group4_labels()).to_numpy()
+            flatrate = source.isin(_FLATRATE_TICKET_GROUP4_LABELS).to_numpy()
             out[name] = np.select(
                 [student & flatrate, student],
-                [kac.STUDENT_LABEL_STUDENT_FLATRATE, kac.STUDENT_LABEL_STUDENT_NO_FLATRATE],
-                default=kac.STUDENT_LABEL_NOT_STUDENT)
+                [STUDENT_LABEL_STUDENT_FLATRATE, STUDENT_LABEL_STUDENT_NO_FLATRATE],
+                default=STUDENT_LABEL_NOT_STUDENT)
 
     # Report each column over its OWN age universe, so a seed that cannot reach its target
     # margin is visible in the run log before PopulationSim sees it.
-    age = pd.to_numeric(out["HP_ALTER"], errors="coerce") if "HP_ALTER" in out.columns else None
     n_unreadable_taet = int(taet.isna().sum())
     for name in active:
-        min_age, max_age = kac.STUDENT_AGE_BOUNDS[name]
-        if age is None:
-            universe = pd.Series(True, index=out.index)
-        else:
-            universe = age >= min_age
-            if max_age is not None:
-                universe = universe & (age <= max_age)
+        min_age, max_age = STUDENT_AGE_BOUNDS[name]
+        universe = age >= min_age
+        if max_age is not None:
+            universe = universe & (age <= max_age)
         n = int(universe.sum())
         counts = out.loc[universe, name].value_counts()
         logger.info(
-            "[popsim.mid] %s seed over %d persons %s (students = P_TAET %d; %d persons with no "
+            "[popsim.mid] %s seed over %d persons aged %s (students = P_TAET %d; %d persons with no "
             "readable P_TAET count as no student): %s", name, n,
-            "of every age (no HP_ALTER column)" if age is None else
-            (f"aged {min_age}-{max_age}" if max_age is not None else f"aged {min_age}+"),
+            f"{min_age}-{max_age}" if max_age is not None else f"{min_age}+",
             attributes.STUDENT_TAET, n_unreadable_taet,
             {k: f"{int(counts.get(k, 0))} ({counts.get(k, 0) / max(n, 1):.1%})"
              for k in _STUDENT_CATEGORIES_BY_ENTRY[name]})

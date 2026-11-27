@@ -738,6 +738,21 @@ def map_pt_subscription_type(
     return out
 
 
+def pt_ticket_group4_of(category: pd.Series) -> np.ndarray:
+    """The :data:`PT_TICKET_GROUPS4` label of each resolved ticket category (pure, no logging).
+
+    The one place the four-group collapse is written: :func:`map_pt_ticket_group` uses it for
+    the ``pt_ticket_group4`` column, and a caller that needs the group labels of a set of
+    categories (e.g. the flat-rate groups of ``PT_TICKET_FLATRATE``) calls it on that set
+    instead of re-deriving them. ``category`` holds ``PT_TICKET_CATEGORIES`` strings.
+    """
+    return np.where(
+        category == PT_TICKET_DEUTSCHLANDTICKET, PT_TICKET_DEUTSCHLANDTICKET,
+        np.where(category.isin(PT_TICKET_OTHER_FLATRATE), "other_flatrate",
+                 np.where(category == PT_TICKET_NEVER, PT_TICKET_NEVER,
+                          "occasional_ticket")))
+
+
 def map_pt_ticket_group(
     persons: pd.DataFrame, *, type_col: str = "pt_subscription_type",
 ) -> pd.DataFrame:
@@ -781,11 +796,7 @@ def map_pt_ticket_group(
     # Four-group variant (issue #329): the not_flatrate mass split into never_pt and
     # occasional_ticket. Derived from the SAME resolved category, so it collapses onto
     # pt_ticket_group exactly (ADR-0087's rule: never re-resolve the raw P_FKARTE).
-    out["pt_ticket_group4"] = np.where(
-        category == PT_TICKET_DEUTSCHLANDTICKET, PT_TICKET_DEUTSCHLANDTICKET,
-        np.where(category.isin(PT_TICKET_OTHER_FLATRATE), "other_flatrate",
-                 np.where(category == PT_TICKET_NEVER, PT_TICKET_NEVER,
-                          "occasional_ticket")))
+    out["pt_ticket_group4"] = pt_ticket_group4_of(category)
     n = len(out)
     if n:
         counts = out["pt_ticket_group"].value_counts()

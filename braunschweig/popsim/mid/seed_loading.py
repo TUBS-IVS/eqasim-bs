@@ -42,7 +42,9 @@ from braunschweig.popsim import seed as seedmod
 # the same window the plan is built with); imported, never re-typed.
 from braunschweig.popsim.trips import (
     DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
-from braunschweig.popsim.kreis_attribute_control import EDUCATION_BY_AGE_ENTRY_NAMES
+from braunschweig.popsim.kreis_attribute_control import (
+    EDUCATION_BY_AGE_ENTRY_NAMES, STUDENT_EDUCATION_18_29, STUDENT_EDUCATION_30PLUS,
+    STUDENT_WORK_LEG)
 from braunschweig.popsim.kreis_attribute_control import KreisAttributeControl
 from braunschweig.popsim.kreis_attribute_control import REGISTRY as KREIS_CONTROL_REGISTRY
 
@@ -61,7 +63,15 @@ from .participation import derive_work_by_employment_seed
 # the SAME education_flag column, differing only in their age universe). Derived from
 # EDUCATION_BY_AGE_ENTRY_NAMES rather than re-listed, so registering a further age band
 # needs no edit here.
-_UNIVERSE_ENTRY_NAMES = frozenset({"work_by_employment"}) | frozenset(EDUCATION_BY_AGE_ENTRY_NAMES)
+#
+# The student entries (design A3, issue #140) read the same two columns, so the entries that
+# cross the student status with ``education_flag`` (two) or with the ``work_by_employment``
+# work flag (one) trigger those derivations and the Wege load themselves; the season-ticket
+# entry reads ``pt_ticket_group4``, which has its own trigger and needs no Wege.
+_STUDENT_EDUCATION_ENTRY_NAMES = frozenset({STUDENT_EDUCATION_18_29, STUDENT_EDUCATION_30PLUS})
+_EDUCATION_FLAG_ENTRY_NAMES = frozenset(EDUCATION_BY_AGE_ENTRY_NAMES) | _STUDENT_EDUCATION_ENTRY_NAMES
+_WORK_BY_EMPLOYMENT_ENTRY_NAMES = frozenset({"work_by_employment", STUDENT_WORK_LEG})
+_UNIVERSE_ENTRY_NAMES = _WORK_BY_EMPLOYMENT_ENTRY_NAMES | _EDUCATION_FLAG_ENTRY_NAMES
 
 
 # --------------------------------------------------------------------------- #
@@ -657,13 +667,13 @@ def _derive_participation_seed_columns(
                 persons, wege, purpose, rng=kreis_seed_rng,
                 household_id=columns.person_household_id, person_id=columns.person_id,
                 w_zweck_10_as_leisure=w_zweck_10_as_leisure)
-        if "work_by_employment" in active_kreis_entry_names:
+        if active_kreis_entry_names & _WORK_BY_EMPLOYMENT_ENTRY_NAMES:
             persons = derive_work_by_employment_seed(
                 persons, wege, exclude_rbw_legs=exclude_rbw_legs,
                 household_id=columns.person_household_id, person_id=columns.person_id)
         # Every education-by-age-range entry reads the SAME education_flag column (they
         # differ only in their age universe), so it is derived ONCE if any is active.
-        if active_kreis_entry_names & set(EDUCATION_BY_AGE_ENTRY_NAMES):
+        if active_kreis_entry_names & _EDUCATION_FLAG_ENTRY_NAMES:
             persons = derive_education_flag_seed(
                 persons, wege, escort_passive_education=escort_passive_education,
                 exclude_rbw_legs=exclude_rbw_legs,
@@ -845,13 +855,13 @@ def _derive_projected_participation_seed_columns(
                 persons, wege, purpose, rng=kreis_seed_rng,
                 household_id=columns.person_household_id, person_id=columns.person_id,
                 w_zweck_10_as_leisure=w_zweck_10_as_leisure)
-        if "work_by_employment" in active_kreis_entry_names:
+        if active_kreis_entry_names & _WORK_BY_EMPLOYMENT_ENTRY_NAMES:
             persons = derive_work_by_employment_seed(
                 persons, wege, exclude_rbw_legs=exclude_rbw_legs,
                 household_id=columns.person_household_id, person_id=columns.person_id)
         # Every education-by-age-range entry reads the SAME education_flag column (they
         # differ only in their age universe), so it is derived ONCE if any is active.
-        if active_kreis_entry_names & set(EDUCATION_BY_AGE_ENTRY_NAMES):
+        if active_kreis_entry_names & _EDUCATION_FLAG_ENTRY_NAMES:
             persons = derive_education_flag_seed(
                 persons, wege, escort_passive_education=escort_passive_education,
                 exclude_rbw_legs=exclude_rbw_legs,
