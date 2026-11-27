@@ -519,13 +519,14 @@ def prepare(args) -> dict:
         diagnostics["sites"]["census_year_semester"] = census_semester
         diagnostics["sites"]["outside_lsn_enrollment_census_year"] = outside_census_summary
     enrollment_lines = [
-        "# Enrollment: enrollment_semester=%s (column semester of the --sites table, LSN-Online K3100101); the three "
-        "institutions outside the LSN statistics carry the figures of OUTSIDE_LSN_STUDENTS in "
+        "# Enrollment: enrollment_semester=%s (column semester of the --sites table, LSN-Online K3100101); "
+        "the three institutions outside the LSN statistics carry the figures of OUTSIDE_LSN_STUDENTS in "
         "scripts/seed_lsn_university_sites.py (%s, %s of their own semester or the last published winter "
         "semester; the rate is in the Diagnostics line)." % (
             semester.replace(" ", "_"), outside_summary["primary"], outside_summary["fallback"])]
-    return {"sites": sites_builder, "lsn_sites": lsn, "semester": semester, "census_year_semester": census_semester,
-            "build_census_year": build_census_year, "enrollment_lines": enrollment_lines, "points": points, "gemeinden": gemeinden, "cells": cells,
+    return {"sites": sites_builder, "lsn_sites": lsn, "semester": semester,
+            "census_year_semester": census_semester, "build_census_year": build_census_year,
+            "enrollment_lines": enrollment_lines, "points": points, "gemeinden": gemeinden, "cells": cells,
             "che_totals": totals, "pairs": pairs, "region_kreise": region_kreise, "site_kreise": site_kreise,
             "origin_kreise": origin_kreise, "diagnostics": diagnostics, "build": build,
             "inputs": [("che_origins", Path(args.che), False), ("lsn_site_table", sites_path, True),
@@ -891,9 +892,10 @@ def _run_balance(args) -> int:
     _write(tables["out_commuters"], table_dir / OUT_COMMUTERS_FILE, head(OUT_COMMUTERS_FILE, balance_inputs))
     _write(tables["in_commuters_by_origin"], table_dir / IN_COMMUTERS_FILE, head(IN_COMMUTERS_FILE, balance_inputs))
     # Values with a space are written with an underscore so that ``read_header_value`` reads them back.
-    semesters_line = ["# Enrollment semesters of the two builds of T: enrollment_semester=%s (the balance, the level "
-                      "total), census_year_semester=%s (omega, A12)." % (
-                          prepared["semester"].replace(" ", "_"), prepared["census_year_semester"].replace(" ", "_"))]
+    # ``enrollment_semester=`` is written once per file, by the enrollment line of ``prepare`` (``head``).
+    semesters_line = ["# Census-year enrollment of the second build of T (omega, A12): "
+                      "census_year_semester=%s (the semester of --sites-census-year)."
+                      % prepared["census_year_semester"].replace(" ", "_")]
     omega_line = [
         "# omega=%.10g = 1 - Z / S; Z=%.10g, S=%.10g, mid_students_to_pupils_and_students_ratio=%.10g, "
         "age_share_20_29_among_adult_students=%.10g, zensus_students_nonemployed_persons=%.10g, "

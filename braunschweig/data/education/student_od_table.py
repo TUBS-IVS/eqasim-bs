@@ -682,7 +682,8 @@ def build_od_table(cells: pd.DataFrame, che_totals: pd.Series, sites: pd.DataFra
 
     Rules, in this order:
         1. scale factor per institution = its sites' summed enrollment / its CHE total (A4); without a
-           CHE total (the art academy) or without an enrollment (an institution outside LSN whose caller gave none) the factor is 1, counted;
+           CHE total (the art academy) or without an enrollment (an institution outside LSN to which the
+           caller gave none) the factor is 1, counted;
         2. an institution with several sites (any scope) splits each origin count over all its sites,
            ``O(k, s) = O(k, i) E_s v(k, s) / sum_s' E_s' v(k, s')`` with ``v = 1`` for a site in Kreis
            ``k`` and ``w(k, s)`` otherwise (A5); where every ``v`` is 0 (an origin beyond reach of all

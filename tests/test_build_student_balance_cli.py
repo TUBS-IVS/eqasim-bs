@@ -114,8 +114,8 @@ def world(tmp_path_factory, script):
     patcher.setattr(script, "locate_site_kreise",
                     lambda path, points: {destination: CURATED_KREIS for destination in points["destination_id"]})
     yield {"sites": str(sites_path), "sites_census_year": str(census_sites_path),
-           "population": str(population_path), "mid_age_sex": str(age_sex_path), "vg250": str(vg250_path), "zensus_students": str(students_path),
-           "zensus_employed": str(employed_path), "sites_frame": sites}
+           "population": str(population_path), "mid_age_sex": str(age_sex_path), "vg250": str(vg250_path),
+           "zensus_students": str(students_path), "zensus_employed": str(employed_path), "sites_frame": sites}
     patcher.undo()
 
 
@@ -249,6 +249,16 @@ def test_cli_writes_all_tables_with_headers(script, world, tmp_path, caplog):
     assert shares["level"]["03101"] == pytest.approx(900 / (900 + 7 * 1100), rel=1e-8)
     for name in ("student_od_table.csv", "student_balance_by_site.csv"):
         assert "enrollment_semester=WS_2025/26" in "\n".join(_header(schools / name)), name
+    # Every key is read back from the level table, the gate and the pre-check: it occurs exactly once per file.
+    for path in (popsim / "student_level_table.csv", artifact_dir / "student_level_gate.csv",
+                 artifact_dir / "student_employed_target_precheck.csv"):
+        assert script.read_header_value(path, "enrollment_semester") == "WS_2025/26", path.name
+        assert script.read_header_value(path, "census_year_semester") == "WS_2022/23", path.name
+        for key in ("omega", "Z", "S", "mid_students_to_pupils_and_students_ratio",
+                    "age_share_20_29_among_adult_students", "zensus_students_nonemployed_persons",
+                    "students_living_census_year_persons", "level_total_persons", "population_base_date",
+                    "population_model_date"):
+            script.read_header_value(path, key)  # raises when the key is absent or occurs twice
     gate_header = "\n".join(_header(artifact_dir / "student_level_gate.csv"))
     assert re.search(r"gate_triggered=(True|False)", gate_header)
     assert re.search(r"gate_triggered_area_consistent=(True|False)", gate_header)
