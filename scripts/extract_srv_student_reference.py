@@ -105,6 +105,9 @@ def _require_columns(path: Path, required: list) -> None:
         raise ValueError("%s: missing required column(s) %s" % (path, missing))
 
 
+PHASE3_TABLE_LABEL = "Phase 3 reference table"
+
+
 def _exclusions(*dicts) -> str:
     merged = {}
     for diagnostics in dicts:
@@ -262,9 +265,13 @@ def _sites_line(site_kreise: frozenset, sites_sha256: str) -> list:
             % (SITE_SCOPE_LOCAL, sorted(site_kreise), sites_sha256)]
 
 
-def _phase1_header(table_name: str, source_commit: str, sites: list) -> list:
-    """The shared provenance block of the four Phase 1 tables plus the site line."""
-    return _common_header(table_name, source_commit, "Phase 1 reference table") + sites
+def _phase1_header(table_name: str, source_commit: str, sites: list,
+                   table_label: str = "Phase 1 reference table") -> list:
+    """The shared provenance block of the Phase 1 / Phase 3 tables plus the site line.
+
+    ``table_label`` is the phase in the ``# Table:`` line; the Phase 3 tables pass their own.
+    """
+    return _common_header(table_name, source_commit, table_label) + sites
 
 
 def _parameter_header(diagnostics: dict, universe_diagnostics: dict, source_commit: str,
@@ -286,6 +293,13 @@ def _parameter_header(diagnostics: dict, universe_diagnostics: dict, source_comm
         "#   with E_ZWECK_9 in %s (the definition of the behaviour table, the day factor and"
         % sorted(R.EDUCATION_E_ZWECK_9),
         "#   the control targets).",
+        "# The work leg has the same two definitions: the work_leg rows use the harmonised purpose,",
+        "#   work_leg_share_control_definition = share with E_ZWECK_9 in %s (the definition of the"
+        % sorted(R.WORK_E_ZWECK_9),
+        "#   work_by_employment target). For both control-definition shares the exclusion keys",
+        "#   carry <leg>_n_with_control_definition, <leg>_n_without_control_definition (respondents,",
+        "#   adult students of the universe above), <leg>_n_effective_control_definition (Kish size)",
+        "#   and <leg>_se_share_control_definition = sqrt(p (1 - p) / n_effective).",
         _exclusions(universe_diagnostics, diagnostics) + " " + _UNIVERSE_UNITS_NOTE,
     ]
 
@@ -341,7 +355,8 @@ def _destination_header(diagnostics: dict, universe_diagnostics: dict, n_bootstr
 
 def _by_area_header(diagnostics: dict, universe_diagnostics: dict, source_commit: str,
                     sites: list) -> list:
-    return _phase1_header(R.PARAMETER_BY_AREA_TABLE, source_commit, sites) + [
+    return _phase1_header(R.PARAMETER_BY_AREA_TABLE, source_commit, sites,
+                          PHASE3_TABLE_LABEL) + [
         "# The rows of %s once per surveyed home area (column area): the households are filtered"
         % R.PARAMETER_TABLE,
         "#   by their Kreis, the persons by their household, the universe by its Kreis; every",
@@ -354,9 +369,11 @@ def _by_area_header(diagnostics: dict, universe_diagnostics: dict, source_commit
         "#   the two areas add up to the row of %s. No cell is pooled (design A15);"
         % R.PARAMETER_TABLE,
         "#   every row carries its n_unweighted.",
-        "# Two education-leg definitions as in the parameter table: the education_leg rows use the",
-        "#   harmonised purpose, education_leg_share_control_definition (per area, in the",
-        "#   exclusion keys below) uses E_ZWECK_9 in %s." % sorted(R.EDUCATION_E_ZWECK_9),
+        "# Two leg definitions as in the parameter table: the education_leg and work_leg rows use",
+        "#   the harmonised purpose; <leg>_share_control_definition (per area, in the exclusion",
+        "#   keys below, with its n_with / n_without / n_effective / se_share keys) uses E_ZWECK_9",
+        "#   in %s (education) and %s (work, the work_by_employment definition)."
+        % (sorted(R.EDUCATION_E_ZWECK_9), sorted(R.WORK_E_ZWECK_9)),
         "# Columns: area, %s." % ", ".join(SP.PARAMETER_COLUMNS),
         _exclusions(universe_diagnostics, diagnostics) + " " + _UNIVERSE_UNITS_NOTE
         + " (keys of the builder are prefixed with the area; the universe keys are the region's)",
@@ -365,7 +382,8 @@ def _by_area_header(diagnostics: dict, universe_diagnostics: dict, source_commit
 
 def _education_leg_by_status_header(diagnostics: dict, universe_diagnostics: dict,
                                     source_commit: str, sites: list) -> list:
-    return _phase1_header(R.EDUCATION_LEG_BY_STATUS_TABLE, source_commit, sites) + [
+    return _phase1_header(R.EDUCATION_LEG_BY_STATUS_TABLE, source_commit, sites,
+                          PHASE3_TABLE_LABEL) + [
         "# Base of THIS table: adults (V_ALTER >= %d) of the universe above with a readable V_ERW"
         " and a valid age,"
         % L.MIN_ADULT_AGE,
@@ -389,11 +407,15 @@ def _education_leg_by_status_header(diagnostics: dict, universe_diagnostics: dic
 
 
 def _area_rule_header(source_commit: str) -> list:
+    control_parameters = [parameter for parameter, _ in CE.AREA_RULE_CONTROL_DEFINITION_CELLS]
     return [
         "# Source: computed by scripts/extract_srv_student_reference.py on %s from the by-area"
         % dt.date.today().isoformat(),
-        "#   parameter table %s of the same run and code state; no raw data enters this table."
+        "#   parameter table %s and its exclusion keys of the same run and code state; no raw data"
         % R.PARAMETER_BY_AREA_TABLE,
+        "#   enters this table.",
+        "# Table: %s (issue #140, %s). A measurement, not a validation."
+        % (CE.AREA_RULE_TABLE, PHASE3_TABLE_LABEL),
         "# Code state: eqasim-bs %s, braunschweig/calibration/student_control_evidence.py"
         % source_commit,
         "#   (area_rule_table). A measurement, not a validation (issue #140, design A3 rule 2).",
@@ -413,6 +435,16 @@ def _area_rule_header(source_commit: str) -> list:
         "#   home on the reporting day; for away_all_day all students), n_label_<area> with the",
         "#   label, n_other_<area> = n_base - n_label. Cells: %s."
         % ["%s/%s" % (parameter, label) for parameter, _, label in CE.AREA_RULE_CELLS],
+        "# Two definitions of the education and the work leg, each in its own row: education_leg and",
+        "#   work_leg use the HARMONISED purpose (rows of the by-area table); %s use E_ZWECK_9 in"
+        % " and ".join(control_parameters),
+        "#   %s (education) / %s (work, the work_by_employment target definition), from the"
+        % (sorted(R.EDUCATION_E_ZWECK_9), sorted(R.WORK_E_ZWECK_9)),
+        "#   <leg>_*_control_definition exclusion keys of %s (base students_present, label yes,"
+        % R.PARAMETER_BY_AREA_TABLE,
+        "#   n_label / n_other = respondents with / without the leg). The two definitions agree on",
+        "#   the SrV data of this run; the rule is applied to each separately and nothing relies on",
+        "#   that agreement. The soft work-leg entry of the synthesis reads the control row.",
         "# Columns: %s." % ", ".join(CE.AREA_RULE_COLUMNS),
     ]
 
@@ -521,7 +553,7 @@ def main(argv=None) -> int:
         universe, persons, households, harmonised_persons, harmonised_trips, legs)
     education_by_status, education_by_status_diagnostics = \
         R.build_education_leg_by_student_status(universe, legs)
-    area_rule = CE.area_rule_table(by_area)
+    area_rule = CE.area_rule_table(by_area, control_diagnostics=by_area_diagnostics)
 
     out = Path(args.out_dir)
     commit = args.source_commit

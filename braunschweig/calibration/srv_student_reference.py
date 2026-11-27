@@ -827,6 +827,28 @@ def _unique_keyed(key: pd.Series, name: str) -> None:
         raise ValueError("%s: duplicated key %s" % (name, duplicated[:10]))
 
 
+def control_definition_leg_diagnostics(name: str, weights: pd.Series, has_leg) -> dict:
+    """Share of adult students with a leg under the CONTROL definition, with counts and error.
+
+    ``name`` is ``education_leg`` or ``work_leg``; ``has_leg`` marks the students with a leg of
+    ``E_ZWECK_9`` in :data:`EDUCATION_E_ZWECK_9` / :data:`WORK_E_ZWECK_9` (the definition of the
+    behaviour table and of the control targets, not the harmonised purpose of the ``education_leg``
+    / ``work_leg`` rows). Keys: ``<name>_share_control_definition`` (weighted),
+    ``<name>_n_with_control_definition`` / ``<name>_n_without_control_definition`` (respondents),
+    ``<name>_n_effective_control_definition`` (Kish size of all adult students) and
+    ``<name>_se_share_control_definition`` (``sqrt(p (1 - p) / n_effective)``), so the area rule
+    (:func:`student_control_evidence.area_rule_table`) can be applied to it. NaN share and error
+    for an empty base.
+    """
+    mask = np.asarray(has_leg, dtype=bool)
+    share, n_effective, se = _share_with_error(weights, mask)
+    return {"%s_share_control_definition" % name: share,
+            "%s_n_with_control_definition" % name: int(mask.sum()),
+            "%s_n_without_control_definition" % name: int((~mask).sum()),
+            "%s_n_effective_control_definition" % name: n_effective,
+            "%s_se_share_control_definition" % name: se}
+
+
 def build_parameter_table(universe: pd.DataFrame, persons: pd.DataFrame,
                           households: pd.DataFrame, harmonised_persons: pd.DataFrame,
                           harmonised_trips: pd.DataFrame,
@@ -864,6 +886,10 @@ def build_parameter_table(universe: pd.DataFrame, persons: pd.DataFrame,
     with harmonised purpose education) and ``education_leg_share_control_definition``
     (``E_ZWECK_9`` in :data:`srv_participation_universe.EDUCATION_E_ZWECK_9`, the definition of
     the behaviour table and of the day factor), each over all adult students of the universe.
+    The same is reported for the work leg (``work_leg_share_control_definition``, ``E_ZWECK_9`` in
+    :data:`srv_participation_universe.WORK_E_ZWECK_9`, the definition of the ``work_by_employment``
+    target), and both control-definition shares carry their respondent counts with and without
+    the leg and their Kish standard error (:func:`control_definition_leg_diagnostics`).
     """
     _require_columns(universe, ["pid", "weight", "age", "is_student", "V_FUEHR_PKW", "E_OEV_FK"],
                      "universe")
@@ -960,13 +986,21 @@ def build_parameter_table(universe: pd.DataFrame, persons: pd.DataFrame,
     diagnostics.update(leg_diagnostics)
     diagnostics["education_leg_share_harmonised_purpose"] = _weighted_share(
         weights, (day["education_leg"] == "yes").to_numpy())
-    diagnostics["education_leg_share_control_definition"] = _weighted_share(
-        weights, students["pid"].isin(education_pids).to_numpy())
+    # the leg counts of this call equal the education call above (same legs frame): not repeated
+    work_pids, _ = persons_with_purpose(legs, WORK_E_ZWECK_9)
+    diagnostics.update(control_definition_leg_diagnostics(
+        "education_leg", weights, students["pid"].isin(education_pids).to_numpy()))
+    diagnostics.update(control_definition_leg_diagnostics(
+        "work_leg", weights, students["pid"].isin(work_pids).to_numpy()))
     logger.info("%s parameter table: %d rows, %d adult students; education leg share of adult "
-                "students: harmonised purpose %.4f, control definition (E_ZWECK_9 in %s) %.4f",
+                "students: harmonised purpose %.4f, control definition (E_ZWECK_9 in %s) %.4f; "
+                "work leg share, control definition (E_ZWECK_9 in %s) %.4f (%d with, %d without)",
                 _LOG_TAG, len(table), n_students,
                 diagnostics["education_leg_share_harmonised_purpose"],
-                sorted(EDUCATION_E_ZWECK_9), diagnostics["education_leg_share_control_definition"])
+                sorted(EDUCATION_E_ZWECK_9), diagnostics["education_leg_share_control_definition"],
+                sorted(WORK_E_ZWECK_9), diagnostics["work_leg_share_control_definition"],
+                diagnostics["work_leg_n_with_control_definition"],
+                diagnostics["work_leg_n_without_control_definition"])
     return table, diagnostics
 
 

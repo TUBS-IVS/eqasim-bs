@@ -424,7 +424,20 @@ def test_cli_writes_all_tables_with_headers(srv_frames, tmp_path):
     assert len(status) == 8 * 2 + 3 * 2
     rule_text = (out / "srv2023_student_area_rule.csv").read_text(encoding="utf-8")
     assert "ASSUMPTION" in rule_text and R.PARAMETER_BY_AREA_TABLE in rule_text
-    assert len(pd.read_csv(out / "srv2023_student_area_rule.csv", comment="#")) == 4
+    rule = pd.read_csv(out / "srv2023_student_area_rule.csv", comment="#")
+    assert list(rule["parameter"]) == ["education_leg", "work_leg", "season_ticket",
+                                       "away_all_day", "education_leg_control_definition",
+                                       "work_leg_control_definition"]
+    # the three Phase 3 tables carry the Phase 3 label, the older ones keep theirs
+    for name in (R.PARAMETER_BY_AREA_TABLE, R.EDUCATION_LEG_BY_STATUS_TABLE,
+                 "srv2023_student_area_rule.csv"):
+        assert "Phase 3 reference table" in (out / name).read_text(encoding="utf-8")
+    assert "Phase 1 reference table" in (out / R.PARAMETER_TABLE).read_text(encoding="utf-8")
+    # both control-definition shares reach the regional and the by-area headers
+    for name in (R.PARAMETER_TABLE, R.PARAMETER_BY_AREA_TABLE):
+        text = (out / name).read_text(encoding="utf-8")
+        assert "work_leg_share_control_definition=" in text
+        assert "work_leg_se_share_control_definition=" in text
 
 
 def _load_extraction_script():
@@ -832,6 +845,32 @@ def test_both_education_leg_definitions_are_reported_and_differ(srv_frames):
     _, plain = _build(frames)
     assert plain["education_leg_share_harmonised_purpose"] == pytest.approx(3 / 5)
     assert plain["education_leg_share_control_definition"] == pytest.approx(3 / 5)
+
+
+def test_control_definition_leg_shares_carry_counts_and_standard_error(srv_frames):
+    """Adult students 1_1 [2], 1_2 [1], 3_1 [1], 3_2 [1] (weights sum 5, Kish n 25/7). Control
+    definition work leg (E_ZWECK_9 in 1, 2, the work_by_employment definition): only 1_2 -> 1 with,
+    3 without, share 1/5. Education leg (E_ZWECK_9 in 3, 4): 1_1 and 3_1 -> 2 with, 2 without,
+    share 3/5. The standard error is sqrt(p (1 - p) / Kish n) over all adult students."""
+    _, diagnostics = _build(_parameter_frames(srv_frames))
+    n_effective = 25 / 7
+    for name, share, n_with in (("work_leg", 1 / 5, 1), ("education_leg", 3 / 5, 2)):
+        assert diagnostics["%s_share_control_definition" % name] == pytest.approx(share)
+        assert diagnostics["%s_n_with_control_definition" % name] == n_with
+        assert diagnostics["%s_n_without_control_definition" % name] == 4 - n_with
+        assert diagnostics["%s_n_effective_control_definition" % name] == pytest.approx(
+            n_effective)
+        assert diagnostics["%s_se_share_control_definition" % name] == pytest.approx(
+            math.sqrt(share * (1 - share) / n_effective))
+
+
+def test_work_leg_control_definition_differs_from_the_harmonised_purpose(srv_frames):
+    """Overriding 1_2's work trip to harmonised V_ZWECK 5 (education) removes the harmonised
+    work leg of every student, but the control definition (E_ZWECK_9 still 1) keeps it."""
+    table, diagnostics = _build(_parameter_frames(srv_frames),
+                                purpose_overrides={(1, 2, 1): 5})
+    assert _parameter_cell(table, "work_leg", "yes")["share"] == pytest.approx(0.0)
+    assert diagnostics["work_leg_share_control_definition"] == pytest.approx(1 / 5)
 
 
 @pytest.mark.parametrize("where, column, value", [

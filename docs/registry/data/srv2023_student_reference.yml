@@ -91,9 +91,11 @@ limitations: |
   documented sub-universe (named in its header).
 
   Phase 3 (home areas): the by-area parameter table repeats the parameter table per surveyed
-  area (HOME_AREAS of srv_student_reference.py: Braunschweig and the six surrounding Kreise;
-  Wolfsburg is not surveyed and has no row); its counts add up to the regional table. The area
-  rule table applies design A3 rule 2 to it (thresholds are ASSUMPTIONS, in its header). The
+  area (the areas and their Kreise are srv_student_reference.HOME_AREAS; Wolfsburg is not
+  surveyed and has no row); its counts add up to the regional table. The area rule table
+  applies design A3 rule 2 to it (thresholds are ASSUMPTIONS, in its header), for the education
+  and the work leg under both definitions (harmonised purpose, and E_ZWECK_9 as the control
+  targets define them, the latter from the by-area exclusion keys). The
   education-leg table gives the share with an education leg for students and other adults;
   who those other adults are is srv2023_education_status_by_age.csv.
 

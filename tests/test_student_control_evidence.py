@@ -423,6 +423,64 @@ def test_area_rule_cells_use_the_real_parameter_bases():
     assert not table["area_value"].any() and table["enough_respondents"].all()
 
 
+def _control_diagnostics(work, education):
+    """By-area diagnostics keys of the control-definition legs: per area (n_with, n_without,
+    share, se) for the work leg and the education leg."""
+    diagnostics = {}
+    for name, values in (("work_leg", work), ("education_leg", education)):
+        for area, (n_with, n_without, share, se) in values.items():
+            diagnostics.update({
+                "%s_%s_share_control_definition" % (area, name): share,
+                "%s_%s_n_with_control_definition" % (area, name): n_with,
+                "%s_%s_n_without_control_definition" % (area, name): n_without,
+                "%s_%s_se_share_control_definition" % (area, name): se})
+    return diagnostics
+
+
+def test_area_rule_evaluates_the_control_definition_legs_from_the_diagnostics():
+    """The control-definition work leg is its own row: Braunschweig 0.05 (3 of 100), surrounding
+    0.20 (20 of 100), both se 0.03 -> z = -0.15 / (0.03 sqrt 2) = -3.54 with 100 / 3 / 20 counts:
+    only 3 respondents with the leg, so no area value although z is large. The education leg
+    (0.4 vs 0.4) has z 0. The harmonised rows stay as given."""
+    diagnostics = _control_diagnostics(
+        work={"braunschweig": (3, 97, 0.05, 0.03), "surrounding": (20, 80, 0.20, 0.03)},
+        education={"braunschweig": (40, 60, 0.4, 0.05), "surrounding": (40, 60, 0.4, 0.05)})
+    table = E.area_rule_table(_two_areas((50, 50), (50, 50), 0.0), cells=_ONE_CELL,
+                              control_diagnostics=diagnostics)
+    assert list(table["parameter"]) == ["season_ticket", "education_leg_control_definition",
+                                        "work_leg_control_definition"]
+    assert list(table.columns) == E.AREA_RULE_COLUMNS
+    work = table.set_index("parameter").loc["work_leg_control_definition"]
+    assert (work["n_base_braunschweig"], work["n_label_braunschweig"],
+            work["n_other_braunschweig"]) == (100, 3, 97)
+    assert (work["n_label_surrounding"], work["n_other_surrounding"]) == (20, 80)
+    assert work["difference_in_se"] == pytest.approx(-0.15 / (0.03 * math.sqrt(2)))
+    assert work["base"] == "students_present" and not bool(work["enough_respondents"])
+    assert not bool(work["area_value"])
+    education = table.set_index("parameter").loc["education_leg_control_definition"]
+    assert bool(education["enough_respondents"]) and not bool(education["area_value"])
+
+
+def test_area_rule_control_definition_gives_an_area_value_when_all_counts_suffice():
+    diagnostics = _control_diagnostics(
+        work={"braunschweig": (12, 98, 0.10, 0.03), "surrounding": (30, 80, 0.28, 0.03)},
+        education={"braunschweig": (40, 60, 0.4, 0.05), "surrounding": (40, 60, 0.4, 0.05)})
+    table = E.area_rule_table(_two_areas((50, 50), (50, 50), 0.0), cells=_ONE_CELL,
+                              control_diagnostics=diagnostics)
+    work = table.set_index("parameter").loc["work_leg_control_definition"]
+    assert bool(work["enough_respondents"]) and bool(work["area_value"])
+
+
+def test_area_rule_control_definition_refuses_a_missing_diagnostic():
+    diagnostics = _control_diagnostics(
+        work={"braunschweig": (3, 97, 0.05, 0.03), "surrounding": (20, 80, 0.20, 0.03)},
+        education={"braunschweig": (40, 60, 0.4, 0.05), "surrounding": (40, 60, 0.4, 0.05)})
+    del diagnostics["surrounding_work_leg_n_with_control_definition"]
+    with pytest.raises(ValueError, match="work_leg_n_with_control_definition"):
+        E.area_rule_table(_two_areas((50, 50), (50, 50), 0.0), cells=_ONE_CELL,
+                          control_diagnostics=diagnostics)
+
+
 def test_area_rule_refuses_a_missing_cell():
     with pytest.raises(ValueError, match="season_ticket"):
         E.area_rule_table(_by_area({"braunschweig": (50, 50, 0.3)}), cells=_ONE_CELL)

@@ -101,6 +101,12 @@ MIN_RESPONDENTS_EACH_SIDE = 10
 AREA_RULE_CELLS = (("education_leg", BASE_PRESENT, "yes"), ("work_leg", BASE_PRESENT, "yes"),
                    ("season_ticket", BASE_PRESENT, "flatrate"),
                    ("away_all_day", BASE_STUDENTS_ALL, "yes"))
+# The same two legs under the CONTROL definition (E_ZWECK_9, the definition of the control targets
+# and of work_by_employment), read from the by-area diagnostics, not from the by-area rows: the
+# parameter rows above use the harmonised purpose. (rule-table parameter name, diagnostics name).
+AREA_RULE_CONTROL_DEFINITION_CELLS = (
+    ("education_leg_control_definition", "education_leg"),
+    ("work_leg_control_definition", "work_leg"))
 AREA_RULE_TABLE = "srv2023_student_area_rule.csv"
 _AREAS = (AREA_BRAUNSCHWEIG, AREA_SURROUNDING)
 AREA_RULE_COLUMNS = (["parameter", "base", "label"]
@@ -473,7 +479,8 @@ def build_level_gate(srv_shares: pd.DataFrame, census_students: pd.DataFrame,
     return gate
 
 
-def area_rule_table(by_area: pd.DataFrame, cells=AREA_RULE_CELLS) -> pd.DataFrame:
+def area_rule_table(by_area: pd.DataFrame, cells=AREA_RULE_CELLS,
+                    control_diagnostics: Mapping | None = None) -> pd.DataFrame:
     """Design A3 rule 2: which parameters get a value of their own per home area.
 
     ``by_area`` is the table of :func:`srv_student_reference.build_parameter_table_by_area`
@@ -487,7 +494,17 @@ def area_rule_table(by_area: pd.DataFrame, cells=AREA_RULE_CELLS) -> pd.DataFram
     ``enough_respondents``: both bases hold at least :data:`MIN_RESPONDENTS_PER_AREA` and the four
     label / other counts at least :data:`MIN_RESPONDENTS_EACH_SIDE`. ``area_value`` =
     ``enough_respondents`` and ``abs(difference_in_se) > MIN_DIFFERENCE_STANDARD_ERRORS``.
-    Raises ``ValueError`` when a cell is missing in an area or an area is unexpected.
+    ``control_diagnostics`` (the diagnostics of
+    :func:`srv_student_reference.build_parameter_table_by_area`, keys prefixed with the area)
+    appends one row per :data:`AREA_RULE_CONTROL_DEFINITION_CELLS`: the share of the adult
+    students with an education / work leg under the CONTROL definition (``E_ZWECK_9``; see
+    :func:`srv_student_reference.control_definition_leg_diagnostics`), base
+    :data:`student_parameters.BASE_PRESENT`, label ``yes``, respondents with / without the leg as
+    ``n_label`` / ``n_other``, the same rule. The ``education_leg`` / ``work_leg`` rows of ``cells``
+    use the harmonised purpose: both definitions are kept apart, neither is assumed to equal the
+    other. Without ``control_diagnostics`` no control-definition row is written.
+    Raises ``ValueError`` when a cell or a needed diagnostic is missing in an area or an area is
+    unexpected.
     """
     needed = ["area", "parameter", "base", "label", "n_unweighted", "share", "se_share"]
     _require_columns(by_area, needed, "by-area parameter table")
@@ -513,17 +530,34 @@ def area_rule_table(by_area: pd.DataFrame, cells=AREA_RULE_CELLS) -> pd.DataFram
                         "share_%s" % area: float(chosen["share"].iloc[0]),
                         "se_%s" % area: float(chosen["se_share"].iloc[0])})
         rows.append(row)
+    if control_diagnostics is not None:
+        for parameter, name in AREA_RULE_CONTROL_DEFINITION_CELLS:
+            row = {"parameter": parameter, "base": BASE_PRESENT, "label": "yes"}
+            for area in _AREAS:
+                values = {}
+                for key in ("share", "n_with", "n_without", "se_share"):
+                    full = "%s_%s_%s_control_definition" % (area, name, key)
+                    if full not in control_diagnostics:
+                        raise ValueError("by-area diagnostics: key %s is missing (needed for the "
+                                         "control-definition row %s)" % (full, parameter))
+                    values[key] = control_diagnostics[full]
+                n_with, n_without = int(values["n_with"]), int(values["n_without"])
+                row.update({"n_base_%s" % area: n_with + n_without,
+                            "n_label_%s" % area: n_with, "n_other_%s" % area: n_without,
+                            "share_%s" % area: float(values["share"]),
+                            "se_%s" % area: float(values["se_share"])})
+            rows.append(row)
     table = pd.DataFrame(rows)
     first, second = _AREAS
     denominator = np.hypot(table["se_%s" % first], table["se_%s" % second])
     table["difference_in_se"] = np.where(
         denominator > 0, (table["share_%s" % first] - table["share_%s" % second]) / denominator,
         np.nan)
-    thin_bases = ((table["n_base_%s" % first] >= MIN_RESPONDENTS_PER_AREA)
-                  & (table["n_base_%s" % second] >= MIN_RESPONDENTS_PER_AREA))
+    bases_ok = ((table["n_base_%s" % first] >= MIN_RESPONDENTS_PER_AREA)
+                & (table["n_base_%s" % second] >= MIN_RESPONDENTS_PER_AREA))
     sides = [table["%s_%s" % (key, area)] >= MIN_RESPONDENTS_EACH_SIDE
              for area in _AREAS for key in ("n_label", "n_other")]
-    table["enough_respondents"] = thin_bases & sides[0] & sides[1] & sides[2] & sides[3]
+    table["enough_respondents"] = bases_ok & sides[0] & sides[1] & sides[2] & sides[3]
     table["area_value"] = (table["enough_respondents"]
                            & (table["difference_in_se"].abs() > MIN_DIFFERENCE_STANDARD_ERRORS))
     table = table[AREA_RULE_COLUMNS]
