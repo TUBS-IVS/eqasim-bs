@@ -15,6 +15,10 @@ Two committed tables for the general-day-absence state draw
   ``p_partial_absent`` (household-weighted share of the class's households with SOME but not ALL
   members away) so that none / partial / all partition each size class.
 
+Issue #140 adds three trailing columns to the by-age table, the away share of the NON-STUDENT
+persons (``V_ERW`` readable and not the student code the caller passes in); the first six
+columns are unchanged.
+
 Universe: every delivered person with a valid positive person weight (the SrV ``at_home_zero``
 universe of :mod:`braunschweig.calibration.srv_plan_structure` -- absence IS the state being
 measured, so away persons are kept). Guards raise rather than adapt: ``MITTL_WERKTAG`` must be 1
@@ -51,11 +55,18 @@ AVERAGE_WEEKDAY = 1  # MITTL_WERKTAG
 CHILD_MAX_AGE = 17
 ADULT_MIN_AGE = 18
 
-PERSON_COLUMNS = ["HHNR", "PNR", "V_ALTER", "E_ANZ_WEGE", "GEWICHT_P_ZENSUS", "MITTL_WERKTAG"]
+#: V_ERW (employment / education status) is read only for the non-student columns of the by-age
+#: table (issue #140); the student code itself is passed in by the caller, never defined here.
+PERSON_COLUMNS = ["HHNR", "PNR", "V_ALTER", "E_ANZ_WEGE", "GEWICHT_P_ZENSUS", "MITTL_WERKTAG", "V_ERW"]
 #: V_ANZ_PERS is read ONLY to verify the roster assumption (check_household_roster), never as
 #: the household size itself.
 HOUSEHOLD_COLUMNS = ["HHNR", "GEWICHT_HH_ZENSUS", "V_ANZ_PERS"]
-BY_AGE_COLUMNS = ["band", "age_min", "age_max", "n_unweighted", "n_absent_unweighted", "p_absent"]
+#: The three trailing columns (issue #140) hold the same quantities as ``n_unweighted`` /
+#: ``n_absent_unweighted`` / ``p_absent`` for the persons with a readable V_ERW that is not the
+#: student code; the first six columns are unchanged by them.
+NON_STUDENT_COLUMNS = ["n_unweighted_non_student", "n_absent_unweighted_non_student", "p_absent_non_student"]
+BY_AGE_COLUMNS = ["band", "age_min", "age_max", "n_unweighted", "n_absent_unweighted", "p_absent",
+                  *NON_STUDENT_COLUMNS]
 BY_SIZE_COLUMNS = ["size_class", "n_households_unweighted", "n_all_absent_unweighted", "p_all_absent",
                   "n_persons_unweighted", "n_absent_persons_unweighted", "p_absent_person",
                   "n_partial_absent_unweighted", "p_partial_absent"]
@@ -181,6 +192,8 @@ def prepare_absence_persons(persons: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         "age": pd.to_numeric(p["V_ALTER"], errors="coerce").values,
         "weight": weight[valid].astype(float).values,
         "absent": (trips[valid] == AWAY_FROM_HOME_CODE).values,
+        # NaN where V_ERW is blank or non-numeric; a negative code (-8, -10) is a non-answer.
+        "erw": pd.to_numeric(p["V_ERW"], errors="coerce").values,
     })
     out["band"] = age_band(out["age"]).values
     n_missing_age = int(out["band"].isna().sum())
@@ -203,17 +216,42 @@ def _weighted_share(weight, mask) -> float:
     return float(weight[mask].sum() / total) if total > 0 else float("nan")
 
 
-def build_absence_by_age_band(prepared: pd.DataFrame) -> pd.DataFrame:
+def _readable_employment_code(prepared: pd.DataFrame) -> pd.Series:
+    """True where V_ERW holds a substantive code (present and non-negative)."""
+    return prepared["erw"].notna() & (prepared["erw"] >= 0)
+
+
+def count_unreadable_employment_code(prepared: pd.DataFrame) -> int:
+    """Number of persons whose V_ERW is missing or negative; they are in no non-student column."""
+    return int((~_readable_employment_code(prepared)).sum())
+
+
+def _by_age_row(label: str, age_min: int, age_max: int, group: pd.DataFrame, student_code: int) -> dict:
+    non_student = group[_readable_employment_code(group) & (group["erw"] != student_code)]
+    return {"band": label, "age_min": age_min, "age_max": age_max, "n_unweighted": int(len(group)),
+            "n_absent_unweighted": int(group["absent"].sum()),
+            "p_absent": _weighted_share(group["weight"], group["absent"]),
+            "n_unweighted_non_student": int(len(non_student)),
+            "n_absent_unweighted_non_student": int(non_student["absent"].sum()),
+            "p_absent_non_student": _weighted_share(non_student["weight"], non_student["absent"])}
+
+
+def build_absence_by_age_band(prepared: pd.DataFrame, student_code: int) -> pd.DataFrame:
+    """Away-all-day share per age band for every person and, in three trailing columns, for the
+    NON-STUDENT persons (``V_ERW`` readable and != ``student_code``; the code is the caller's, the
+    definition of the SrV student tables). A person with a missing or negative ``V_ERW`` is in no
+    non-student column (never classed non-student); the exclusion is logged as a rate."""
     rows = []
     for band in AGE_BAND_LABELS:
-        g = prepared[prepared["band"] == band]
         lo, hi = AGE_BAND_BOUNDS[band]
-        rows.append({"band": band, "age_min": lo, "age_max": hi, "n_unweighted": int(len(g)),
-                     "n_absent_unweighted": int(g["absent"].sum()),
-                     "p_absent": _weighted_share(g["weight"], g["absent"])})
-    rows.append({"band": ALL_BAND, "age_min": 0, "age_max": 200, "n_unweighted": int(len(prepared)),
-                 "n_absent_unweighted": int(prepared["absent"].sum()),
-                 "p_absent": _weighted_share(prepared["weight"], prepared["absent"])})
+        rows.append(_by_age_row(band, lo, hi, prepared[prepared["band"] == band], student_code))
+    rows.append(_by_age_row(ALL_BAND, 0, 200, prepared, student_code))
+    n_unreadable = count_unreadable_employment_code(prepared)
+    n_total = len(prepared)
+    logger.info("%s non-student columns: V_ERW readable for %d/%d persons (%.2f%%), %d excluded as unreadable "
+                "(%.2f%%)", _LOG_TAG, n_total - n_unreadable, n_total,
+                100.0 * (n_total - n_unreadable) / n_total if n_total else float("nan"), n_unreadable,
+                100.0 * n_unreadable / n_total if n_total else float("nan"))
     return pd.DataFrame(rows, columns=BY_AGE_COLUMNS)
 
 
