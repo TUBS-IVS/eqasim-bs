@@ -6,11 +6,10 @@ from braunschweig.matsim.simulation import frozen_pt_walk_lift as L
 from braunschweig.matsim.simulation import mode_choice_reach as R
 from braunschweig.matsim.simulation import plan_check as C
 from braunschweig.matsim.simulation import prepare
+from tests.stage_context import prepare_reach_defaults
 
 #: The values of the keys ``execute`` reads for the reach settings (#678), for the contexts that do not test them.
-_REACH_VALUES = {R.KEY_LOOP_ISOLATE: R.DEFAULT_LOOP_ISOLATE, R.KEY_LOOP_MAX_TOUR_LENGTH: R.DEFAULT_LOOP_MAX_TOUR_LENGTH,
-                 R.KEY_INITIAL_ISOLATE: R.DEFAULT_INITIAL_ISOLATE,
-                 R.KEY_INITIAL_MAX_TOUR_LENGTH: R.DEFAULT_INITIAL_MAX_TOUR_LENGTH}
+_REACH_VALUES = prepare_reach_defaults()
 
 
 _REAL_APPLY = R.apply

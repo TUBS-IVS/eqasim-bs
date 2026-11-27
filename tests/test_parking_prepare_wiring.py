@@ -32,6 +32,7 @@ from braunschweig.matsim.simulation import plan_check, prepare
 from braunschweig.parking import garages as parking_garages
 from braunschweig.parking import zones as parking_zones
 from matsim import output
+from tests.stage_context import PREPARED_DMC_MODULE
 
 REPO = Path(__file__).resolve().parents[1]
 FIXTURE_DIRECTORY = REPO / "tests" / "fixtures" / "parking"
@@ -54,13 +55,15 @@ SCENARIO_FILES = tuple(f"{PREFIX}{name}" for name in (
     "households.xml.gz", "population.xml.gz", "vehicles.xml.gz", "facilities.xml.gz", "network.xml.gz",
     "transit_schedule.xml.gz", "transit_vehicles.xml.gz"))
 
-#: A prepared MATSim config as the Java preparation writes it: XML declaration, DOCTYPE and flat modules.
+#: A prepared MATSim config as the Java preparation writes it: XML declaration, DOCTYPE and flat modules; its mode
+#: choice module keeps the reach edit of execute() a no-op (#678, ``tests.stage_context.PREPARED_DMC_MODULE``).
 PREPARED_CONFIG = ('<?xml version="1.0" encoding="utf-8"?>\n'
                    '<!DOCTYPE config SYSTEM "http://www.matsim.org/files/dtd/config_v2.dtd">\n'
                    '<config>\n'
                    '\t<module name="global">\n\t\t<param name="randomSeed" value="1234" />\n\t</module>\n'
                    '\t<module name="plans">\n\t\t<param name="inputPlansFile" value="bs_population.xml.gz" />\n'
                    '\t</module>\n'
+                   + PREPARED_DMC_MODULE +
                    '</config>\n')
 
 
@@ -554,7 +557,7 @@ def test_parking_inputs_are_written_last_into_the_final_config(tmp_path, monkeyp
     monkeypatch.setattr(prepare, "_verify_gate_facility_links", lambda ctx: events.append("gate_links"))
     monkeypatch.setattr(prepare, "_attach_vrb_tariff_zones", lambda ctx: events.append("vrb_zones"))
     monkeypatch.setattr(prepare, "_cut_to_cordon", cut_to_cordon)
-    monkeypatch.setattr(prepare, "_inject_freight", lambda ctx, name: events.append(("freight", name)))
+    monkeypatch.setattr(prepare, "_inject_freight", lambda ctx, name: events.append(("freight", name)) or 1)
     # The in-commuter strategy blocks (eqasim-bs#566) are tested in tests/test_incommuter_subpopulation.py.
     monkeypatch.setattr(prepare, "_add_incommuter_strategies",
                         lambda ctx, name: events.append(("incommuter_strategies", name)))
