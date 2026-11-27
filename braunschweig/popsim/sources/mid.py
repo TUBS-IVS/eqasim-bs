@@ -201,6 +201,8 @@ class MidSource:
         departure_time_min_model_n: int = 50,
         departure_time_max_median_shift_hours: float = 2.0,
         vectorized_validation: bool = True,
+        keep_overnight_open_ends: bool = False,
+        overnight_answers: pd.DataFrame | None = None,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -262,6 +264,9 @@ class MidSource:
             thresholds of the ``"srv_mapped"`` coarsening ladder.
         departure_time_max_median_shift_hours:
             median-|shift| warning threshold per mapping cell, in HOURS.
+        keep_overnight_open_ends / overnight_answers:
+            keep the day open for donors with an overnight trip (issue #694); see
+            :func:`braunschweig.popsim.trips_stage.run`.
 
         Returns
         -------
@@ -288,4 +293,6 @@ class MidSource:
             departure_time_min_model_n=departure_time_min_model_n,
             departure_time_max_median_shift_hours=departure_time_max_median_shift_hours,
             vectorized_validation=vectorized_validation,
+            keep_overnight_open_ends=keep_overnight_open_ends,
+            overnight_answers=overnight_answers,
         )

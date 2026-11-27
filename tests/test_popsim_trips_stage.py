@@ -958,7 +958,9 @@ def test_execute_hands_the_mid_trip_build_the_wege_without_the_unused_columns(tm
     trips_stage.configure(configure_context)
     values = dict(configure_context.calls)
     values.update({"random_seed": 1, "data_path": str(tmp_path),
-                   "braunschweig.population.popsim.mid_dir": str(tmp_path)})
+                   "braunschweig.population.popsim.mid_dir": str(tmp_path),
+                   # The column drop is independent of the overnight open-day-end flag.
+                   "braunschweig.population.popsim.keep_overnight_open_ends": False})
 
     class _ExecuteContext:
         def config(self, key):
@@ -1108,3 +1110,112 @@ def test_trips_stage_configure_refuses_the_incomplete_round_trip_off_arm():
     ctx = _RecordingConfigureContext(values={"explicit_round_trip_purposes": False})
     with pytest.raises(ValueError, match="explicit_round_trip_purposes"):
         trips_stage.configure(ctx)
+
+
+# ---------------------------------------------------------------------------
+# Overnight open day end (issue #694): keep_overnight_open_ends / overnight_answers.
+# ---------------------------------------------------------------------------
+
+def _overnight_fixture(p_streise):
+    """One donor whose diary ends at leisure (a closure is needed when the day is closed),
+    with the diary columns the open-end decision reads, plus its MiD overnight answer."""
+    persons, wege = _persons_and_wege_not_ending_home()
+    wege = wege.assign(W_RBW=[0, 0], W_SO1=[1, 1])
+    answers = pd.DataFrame({"H_ID": [10], "P_ID": [1], "P_STREISE": [p_streise]})
+    return persons, wege, answers
+
+
+def test_keep_overnight_open_ends_off_is_byte_identical():
+    """OFF ignores the answers entirely: the donor reports an overnight trip (code 2) and its
+    diary ends away, so a closure is appended exactly as under the previous signature."""
+    persons, wege, answers = _overnight_fixture(2)
+    before = trips_stage.run(persons, wege, random_seed=1)
+    off = trips_stage.run(persons, wege, random_seed=1,
+                          keep_overnight_open_ends=False, overnight_answers=answers)
+    assert before["is_synthetic_closure"].any(), "fixture must need a closure, else OFF is vacuous"
+    pd.testing.assert_frame_equal(before, off)
+
+
+def test_on_leaves_the_overnight_day_open(caplog):
+    persons, wege, answers = _overnight_fixture(2)
+    with caplog.at_level(logging.INFO):
+        on = trips_stage.run(persons, wege, random_seed=1,
+                             keep_overnight_open_ends=True, overnight_answers=answers)
+    assert not on["is_synthetic_closure"].any()
+    assert len(on) == 2 and on["following_purpose"].iloc[-1] != "home"
+    assert any("kept open" in r.getMessage() and "1/1" in r.getMessage() for r in caplog.records)
+    # The same donor without an overnight trip is closed as before.
+    persons, wege, answers = _overnight_fixture(1)
+    closed = trips_stage.run(persons, wege, random_seed=1,
+                             keep_overnight_open_ends=True, overnight_answers=answers)
+    assert closed["is_synthetic_closure"].any()
+
+
+def test_on_without_answers_raises():
+    persons, wege, _ = _overnight_fixture(2)
+    with pytest.raises(ValueError, match="overnight_answers"):
+        trips_stage.run(persons, wege, random_seed=1, keep_overnight_open_ends=True)
+
+
+def test_trips_stage_configure_registers_the_overnight_open_end_key():
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS, KEY_KEEP_OVERNIGHT_OPEN_ENDS)
+    ctx = _RecordingConfigureContext()
+    trips_stage.configure(ctx)
+    assert ctx.calls[KEY_KEEP_OVERNIGHT_OPEN_ENDS] is DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS
+
+
+def test_entd_source_rejects_keep_overnight_open_ends():
+    from braunschweig.popsim.sources.entd import EntdSource
+    with pytest.raises(NotImplementedError, match="keep_overnight_open_ends"):
+        EntdSource().build_trips(
+            pd.DataFrame({"person_id": []}), pd.DataFrame(), random_seed=1,
+            keep_overnight_open_ends=True,
+        )
+
+
+def test_execute_reads_the_answers_only_when_the_flag_is_on(tmp_path, monkeypatch):
+    """ON: execute() loads the MiD overnight answers and hands them to the build; OFF reads nothing."""
+    from braunschweig.popsim import overnight_open_end
+    from braunschweig.popsim.sources.mid import MidSource
+    from braunschweig.popsim.stage.config_keys import KEY_KEEP_OVERNIGHT_OPEN_ENDS
+    persons, wege, answers = _overnight_fixture(2)
+    loaded = []
+    handed = {}
+
+    def load_answers(mid_dir):
+        loaded.append(mid_dir)
+        return answers
+
+    def build_trips(self, persons_frame, donor_trips, **kwargs):
+        handed.update(kwargs)
+        return "built"
+
+    monkeypatch.setattr(overnight_open_end, "load_overnight_answers", load_answers)
+    monkeypatch.setattr(MidSource, "load_donor",
+                        lambda self, d, **k: (pd.DataFrame(), pd.DataFrame(), wege))
+    monkeypatch.setattr(MidSource, "build_trips", build_trips)
+    configure_context = _RecordingConfigureContext()
+    trips_stage.configure(configure_context)
+
+    def execute_with(flag):
+        values = dict(configure_context.calls)
+        values.update({"random_seed": 1, "data_path": str(tmp_path),
+                       "braunschweig.population.popsim.mid_dir": str(tmp_path),
+                       KEY_KEEP_OVERNIGHT_OPEN_ENDS: flag})
+
+        class _Ctx:
+            def config(self, key):
+                return values[key]
+
+            def stage(self, name):
+                return persons
+        return trips_stage.execute(_Ctx())
+
+    loaded.clear()
+    assert execute_with(False) == "built"
+    assert loaded == [] and handed["keep_overnight_open_ends"] is False
+    assert handed["overnight_answers"] is None
+    assert execute_with(True) == "built"
+    assert loaded == [str(tmp_path)] and handed["keep_overnight_open_ends"] is True
+    assert handed["overnight_answers"] is answers

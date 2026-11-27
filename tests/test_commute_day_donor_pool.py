@@ -1178,3 +1178,38 @@ def test_the_no_diary_divergence_line_is_not_logged_when_nothing_was_dropped(cap
     # the rate itself.
     assert [record for record in caplog.records
             if "donor filter no_diary: dropped 0/1" in record.getMessage()]
+
+
+def _donor_wege_ending_at_a_shop() -> tuple:
+    """Donors of ``_persons_fixture`` where donor ``2_2`` ends its diary at a shop."""
+    persons = _persons_fixture()
+    donors = donor_pool.select_home_office_day_donors(persons)
+    wege = _wege_fixture()
+    wege.loc[5, "W_ZWECK"] = 4
+    attributes = donor_pool.donor_attributes(donors, persons, _households_fixture(), wege)
+    return donors, attributes, wege
+
+
+def _open_end_decisions(keep_2_2: bool) -> pd.Series:
+    index = pd.MultiIndex.from_tuples([(1, 1), (2, 1), (2, 2)], names=["H_ID", "P_ID"])
+    return pd.Series([False, False, keep_2_2], index=index, name="keeps_open_end")
+
+
+def test_donor_trips_keep_open_end():
+    """A donor the decision keeps open gets no invented closing home trip; the others do not change."""
+    donors, attributes, wege = _donor_wege_ending_at_a_shop()
+    common = dict(random_seed=0, escort_purpose=False, escort_passive_education=False,
+                  explicit_round_trip_purposes=True)
+    closed = donor_pool.donor_trips(donors, attributes, wege, **common)
+    open_ = donor_pool.donor_trips(donors, attributes, wege,
+                                   open_end_donors=_open_end_decisions(True), **common)
+    own = open_[open_["donor_id"] == "2_2"].sort_values("trip_index")
+    assert own["is_synthetic_closure"].tolist() == [False, False]
+    assert own["following_purpose"].iloc[-1] != "home"
+    pd.testing.assert_frame_equal(
+        open_[open_["donor_id"] != "2_2"].reset_index(drop=True),
+        closed[closed["donor_id"] != "2_2"].reset_index(drop=True))
+    # A donor decided "closed" still gets its closure, and the contract columns are unchanged.
+    kept_closed = donor_pool.donor_trips(donors, attributes, wege,
+                                         open_end_donors=_open_end_decisions(False), **common)
+    pd.testing.assert_frame_equal(kept_closed, closed)

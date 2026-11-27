@@ -302,6 +302,9 @@ def _write_raw_mid(directory):
         "anzwege1": [2, 0, 2, 2, 0],
         "mobil": [1, 0, 1, 1, 0],
         "feiertag": [0, 0, 0, 0, 0],
+        # Overnight-trip answer (issue #694): code 1 = no overnight trip for everybody, so the
+        # default-ON open-day-end rule keeps every fixture day closed.
+        "P_STREISE": [1, 1, 1, 1, 1],
     })
     wege = pd.DataFrame({
         "H_ID": [1, 1, 2, 2, 2, 2],
@@ -373,7 +376,8 @@ def test_configure_declares_the_documented_stages_and_defaults():
     from braunschweig.popsim.stage.config_keys import (
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL, KEY_DIARY_PLAN_MATCH,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
-        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        KEY_KEEP_OVERNIGHT_OPEN_ENDS, KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
     )
     for key in (DONORS.KEY_ESCORT_PURPOSE, DONORS.KEY_ESCORT_PASSIVE_EDUCATION,
                 DONORS.KEY_EXPLICIT_ROUND_TRIP_PURPOSES,
@@ -381,6 +385,9 @@ def test_configure_declares_the_documented_stages_and_defaults():
                 # defaults too, or the donor day would be built by different rules again.
                 KEY_EXCLUDE_RBW_LEGS, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
                 KEY_CLOSURE_DWELL_MODEL, KEY_CLOSURE_DWELL_MIN_OBS,
+                # Issue #694: the overnight open-day-end flag, which the donor day and the day
+                # it replaces must read identically.
+                KEY_KEEP_OVERNIGHT_OPEN_ENDS,
                 # Both passive-escort PAIRING parameters, for the same reason (the gap in
                 # MINUTES since issue #372, the candidate-adult age floor in YEARS since
                 # the issue #409 follow-up): a donor day paired by a different rule than
@@ -1331,3 +1338,26 @@ def test_state_stage_diagnostics_carry_the_pool_size_per_cell():
     assert matching_diagnostics["donor_pool_size_by_hard_cell"]
     assert "matched_cell_size_by_level" in matching_diagnostics
     assert "n_persons_matched_from_single_donor_cell" in matching_diagnostics
+
+
+def test_donor_stage_keeps_an_overnight_day_open_only_when_the_flag_is_on(tmp_path):
+    """Issue #694: donor ``2_2`` reports an overnight trip (P_STREISE 2) and its diary ends at a
+    shop. ON leaves that day open; OFF closes it with an invented home trip, as before."""
+    from braunschweig.popsim.stage.config_keys import KEY_KEEP_OVERNIGHT_OPEN_ENDS
+    _write_raw_mid(str(tmp_path))
+    persons_path = os.path.join(str(tmp_path), DONORS.PERSONS_FILE)
+    persons = pd.read_csv(persons_path)
+    persons.loc[persons["HP_ID"] == "2_2", "P_STREISE"] = 2
+    persons.to_csv(persons_path, index=False)
+    wege_path = os.path.join(str(tmp_path), DONORS.WEGE_FILE)
+    wege = pd.read_csv(wege_path)
+    wege.loc[5, "W_ZWECK"] = 4
+    wege.to_csv(wege_path, index=False)
+
+    def closures(flag):
+        config = _donor_stage_config(tmp_path, **{KEY_KEEP_OVERNIGHT_OPEN_ENDS: flag})
+        _, trips, _ = DONORS.execute(_context(DONORS, config=config))
+        return trips[trips["donor_id"] == "2_2"]["is_synthetic_closure"].tolist()
+
+    assert closures(False) == [False, False, True]
+    assert closures(True) == [False, False]

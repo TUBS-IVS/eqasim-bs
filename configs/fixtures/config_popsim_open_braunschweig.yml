@@ -331,6 +331,7 @@ config:
   braunschweig.population.popsim.exclude_rbw_legs: false
   braunschweig.population.popsim.drop_leading_arrive_home_leg: false
   braunschweig.population.popsim.closure_dwell_model: fixed_1h
+  braunschweig.population.popsim.keep_overnight_open_ends: false
   w_zweck_10_as_leisure: false
   # Passive escort leg -> the accompanying adult's purpose (issue #372, ADR-0112),
   # also FLAT keys. The pairing needs MiD W_ZWECK 13 plus a household diary with

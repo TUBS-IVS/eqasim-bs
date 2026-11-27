@@ -453,6 +453,7 @@ ADR-0106 / ADR-0107 / ADR-0108 and the feature records `diary_plan_match`,
 | `closure_dwell_model` | Draws the dwell before the synthesised return-home trip from observed durations (purpose × arrival band); `fixed_1h` restores the previous 3600 s constant byte-identically, including no plan-time cap |
 | `closure_dwell_min_obs` | Minimum observations a (purpose × arrival band) cell of that empirical model needs before it is drawn from directly; thinner cells fall back to the purpose marginal (integer, not a flag) |
 | `trip_class_seed_counts_closure` | Counts the closed day in the `trip_class` PopulationSim seed (`anzwege1 + 1` for an open-ended source), so seed, plan and SrV target count the same day |
+| `keep_overnight_open_ends` | Leaves the day open (no invented return-home trip) for MiD donors who report an overnight trip (`P_STREISE`); `false` restores the closed day byte-identically; MiD source only (issue #694) |
 
 See `configs/base_bs.yml` for each key's current default value.
 

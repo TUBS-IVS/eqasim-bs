@@ -50,6 +50,7 @@ from braunschweig.popsim import closure_dwell as _closure_dwell
 from braunschweig.popsim import departure_time_model as _departure_time_model
 from braunschweig.popsim import diary_facts as _diary_facts
 from braunschweig.popsim import escort_pairing as _escort_pairing
+from braunschweig.popsim import overnight_open_end as _overnight_open_end
 from braunschweig.popsim import plan_validation as _plan_validation
 from braunschweig.popsim import unused_mid_wege_columns as _unused_mid_wege_columns
 from braunschweig import constants as _constants
@@ -139,6 +140,9 @@ _HELPER_MODULES = (
     # build (ADR-0138), i.e. which extras this stage's output carries; a change to the list must
     # rebuild the cached trip table.
     _unused_mid_wege_columns,
+    # overnight_open_end decides, per MiD donor, whether the day stays open (no invented
+    # return-home trip) when keep_overnight_open_ends is ON (issue #694); run() calls it.
+    _overnight_open_end,
 )
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.sources",
@@ -458,6 +462,20 @@ def build_closure_dwell_model(
     )
 
 
+def build_open_end_donors(mid_wege: pd.DataFrame, overnight_answers: pd.DataFrame) -> pd.Series:
+    """Per MiD donor ``(H_ID, P_ID)``: does the overnight-trip rule keep the day open (issue #694)?
+
+    ``mid_wege`` must carry the columns :func:`braunschweig.popsim.diary_facts.compute_diary_facts`
+    requires (``W_ZWECK``, ``W_RBW``, ``W_SO1``, ``wegkm_imp``, ``W_ID``); the ADR-0138 column
+    drop keeps them. ``overnight_answers`` is the output of
+    :func:`braunschweig.popsim.overnight_open_end.load_overnight_answers`. Shared by this stage
+    and the commute-day donor stage so both decide with the same rule.
+    """
+    facts = _diary_facts.compute_diary_facts(mid_wege)
+    overnight = _overnight_open_end.overnight_trip_flags(overnight_answers)
+    return _overnight_open_end.keeps_open_end(facts, overnight)
+
+
 def _log_closure_share(table: pd.DataFrame) -> None:
     """Log how many trips / persons carry a SYNTHESISED chain closure.
 
@@ -482,6 +500,16 @@ def _log_closure_share(table: pd.DataFrame) -> None:
         n_closure, n_trips, 100.0 * n_closure / max(n_trips, 1),
         n_persons_closed, n_persons, 100.0 * n_persons_closed / max(n_persons, 1),
     )
+    keeps_open_column = _overnight_open_end.KEEPS_OPEN_END_COLUMN
+    if keeps_open_column in table.columns:
+        # Feature ON (issue #694): report the share of persons whose day was KEPT open, so the
+        # decision is visible next to the invented closures it replaces.
+        per_person = table.groupby("person_id")[keeps_open_column].first().astype(bool)
+        logger.info(
+            "[trips_stage] overnight open day end: %d/%d persons kept open (%.1f%%), no closure "
+            "appended", int(per_person.sum()), len(per_person),
+            100.0 * float(per_person.sum()) / max(len(per_person), 1),
+        )
 
 
 def _log_departure_time_model(diagnostics: dict) -> None:
@@ -612,6 +640,8 @@ def run(
     departure_time_min_model_n: int = DEFAULT_DEPARTURE_TIME_MIN_MODEL_N,
     departure_time_max_median_shift_hours: float = DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS,
     vectorized_validation: bool = True,
+    keep_overnight_open_ends: bool = False,
+    overnight_answers: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build popsim_mid trips in the synthesis.population.trips 11-column contract.
 
@@ -717,6 +747,16 @@ def run(
         ``departure_time_mapping_max_median_shift_hours``). Unit: hours. The
         offsets are never clipped to it.
 
+    keep_overnight_open_ends:
+        keep the day OPEN (no invented return-home trip) for donors who report an overnight
+        trip on the reporting day (issue #694; config key
+        ``braunschweig.population.popsim.keep_overnight_open_ends``). Needs
+        ``overnight_answers`` and the Wege columns of ``compute_diary_facts``. Default False
+        keeps the OFF path byte-identical: nothing extra is computed and no column is added.
+    overnight_answers:
+        ``overnight_open_end.load_overnight_answers`` output (``H_ID``, ``P_ID``,
+        ``P_STREISE``); required when ``keep_overnight_open_ends`` is True, ignored otherwise.
+
     Returns
     -------
     pd.DataFrame
@@ -751,6 +791,15 @@ def run(
     model_persons = None
     if departure_time_model == MODEL_SRV_MAPPED:
         model_persons = persons_from_synthetic_schema(persons)
+    # Overnight open day end (issue #694): decided per MiD donor BEFORE the trip build, from the
+    # donor Wege as delivered. Nothing is read or computed when the flag is OFF.
+    open_end_donors = None
+    if keep_overnight_open_ends:
+        if overnight_answers is None:
+            raise ValueError(
+                "[trips_stage] keep_overnight_open_ends=True requires overnight_answers "
+                "(overnight_open_end.load_overnight_answers output); none was given.")
+        open_end_donors = build_open_end_donors(mid_wege, overnight_answers)
     # Built BEFORE the trip table: the empirical model must see the donor diaries
     # as reported, i.e. before any synthetic closure has been appended to them.
     dwell_model = build_closure_dwell_model(
@@ -784,6 +833,7 @@ def run(
         passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
         dwell_model=dwell_model,
         vectorized_validation=vectorized_validation,
+        open_end_donors=open_end_donors,
     )
 
     if "is_synthetic_closure" in table.columns:
@@ -893,14 +943,16 @@ def configure(context):
         DEFAULT_DEPARTURE_TIME_MIN_MODEL_N, DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N,
         DEFAULT_DEPARTURE_TIME_MODEL, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG,
         DEFAULT_ESCORT_PASSIVE_EDUCATION, DEFAULT_ESCORT_PASSIVE_FROM_ADULT,
-        DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS,
+        DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
         DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
         DEFAULT_W_ZWECK_10_AS_LEISURE, KEY_CLOSURE_DWELL_MIN_OBS,
         KEY_CLOSURE_DWELL_MODEL, KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS,
         KEY_DEPARTURE_TIME_MIN_MODEL_N, KEY_DEPARTURE_TIME_MIN_REFERENCE_N,
         KEY_DEPARTURE_TIME_MODEL, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
         KEY_ESCORT_PASSIVE_EDUCATION, KEY_ESCORT_PASSIVE_FROM_ADULT,
-        KEY_EXCLUDE_RBW_LEGS, KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        KEY_EXCLUDE_RBW_LEGS, KEY_KEEP_OVERNIGHT_OPEN_ENDS,
+        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
         KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
         KEY_W_ZWECK_10_AS_LEISURE, require_positive,
     )
@@ -947,6 +999,10 @@ def configure(context):
     context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG)
     context.config(KEY_CLOSURE_DWELL_MODEL, DEFAULT_CLOSURE_DWELL_MODEL)
     context.config(KEY_CLOSURE_DWELL_MIN_OBS, DEFAULT_CLOSURE_DWELL_MIN_OBS)
+    # Overnight open day end (issue #694): declared with the SHARED key/default constants; the
+    # popsim stage's trip_class seed and the commute-day donor stage read the same key and
+    # must agree (see config_keys.KEY_KEEP_OVERNIGHT_OPEN_ENDS).
+    context.config(KEY_KEEP_OVERNIGHT_OPEN_ENDS, DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS)
     # W_ZWECK 10 "anderer Zweck" -> leisure (issue #373, ADR-0111): a TRIP-BUILD flag
     # declared with the SHARED key/default constants, like escort_passive_education
     # above -- the popsim stage's leisure_participation KREIS-control seed and the
@@ -1089,10 +1145,14 @@ def execute(context):
     from braunschweig.popsim.stage.config_keys import (
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_EDUCATION,
-        KEY_ESCORT_PASSIVE_FROM_ADULT, KEY_EXCLUDE_RBW_LEGS,
+        KEY_ESCORT_PASSIVE_FROM_ADULT, KEY_EXCLUDE_RBW_LEGS, KEY_KEEP_OVERNIGHT_OPEN_ENDS,
         KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
         KEY_W_ZWECK_10_AS_LEISURE,
     )
+    keep_overnight_open_ends = bool(context.config(KEY_KEEP_OVERNIGHT_OPEN_ENDS))
+    # Read only when the feature is ON; OFF touches no extra file.
+    overnight_answers = (_overnight_open_end.load_overnight_answers(mid_dir)
+                         if keep_overnight_open_ends else None)
     escort_purpose = bool(context.config("escort_purpose"))
     escort_passive_education = bool(context.config(KEY_ESCORT_PASSIVE_EDUCATION))
     explicit_round_trip_purposes = bool(context.config("explicit_round_trip_purposes"))
@@ -1127,4 +1187,6 @@ def execute(context):
         departure_time_min_model_n=departure_time_min_model_n,
         departure_time_max_median_shift_hours=departure_time_max_median_shift_hours,
         vectorized_validation=vectorized_validation,
+        keep_overnight_open_ends=keep_overnight_open_ends,
+        overnight_answers=overnight_answers,
     )

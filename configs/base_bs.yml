@@ -444,6 +444,9 @@ config:
   # exactly 1.0 h), including the absence of the plan-time cap -- capping a drawn dwell
   # at MAX_PLAN_TIME_SECONDS is an EMPIRICAL-path behaviour only. ADR-0108.
   braunschweig.population.popsim.closure_dwell_model: empirical
+  # Keep the day open (no invented return-home trip) for MiD donors who report an overnight
+  # trip on the reporting day (P_STREISE). Issue #694.
+  braunschweig.population.popsim.keep_overnight_open_ends: true
   # Minimum observations a (purpose x arrival band) cell of the empirical dwell model
   # must hold to be drawn from directly; thinner cells fall back to the purpose
   # marginal (fallback rate logged). Positive integer; inert for "fixed_1h". The

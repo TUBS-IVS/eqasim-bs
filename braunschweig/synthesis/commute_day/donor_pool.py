@@ -625,7 +625,8 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
                 passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
                 passive_pair_adult_min_age_years: int =
                 DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
-                dwell_model=None, vectorized_validation: bool = True) -> pd.DataFrame:
+                dwell_model=None, vectorized_validation: bool = True,
+                open_end_donors: pd.Series | None = None) -> pd.DataFrame:
     """The donors' own trip chains in the ``synthesis.population.trips`` CONTRACT, ``donor_id``-keyed.
 
     Built with :func:`braunschweig.popsim.trips.build_validated_trip_table` using the keyword
@@ -663,6 +664,13 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
     same attributes ``trips_stage.run`` carries for the SYNTHETIC persons lets an unfixable donor
     (e.g. one with MiD coded times) be replaced by a behaviourally similar donor from the same
     pool instead, exactly as the real pipeline does for synthetic workers.
+
+    ``open_end_donors`` (issue #694): the overnight open-day-end decision per MiD donor, a bool
+    Series indexed ``(H_ID, P_ID)`` as built by
+    :func:`braunschweig.popsim.trips_stage.build_open_end_donors`, forwarded to
+    ``build_validated_trip_table``: a donor kept open gets no invented closing home trip, so the
+    spliced home-office day ends away too. ``None`` (default) is the byte-identical pre-#694
+    path. The decision column itself is not part of the narrowed output.
 
     ``donors`` needs ``HP_ID`` (must be unique -- raises otherwise), ``H_ID``, ``P_ID``.
     ``attributes`` needs ``donor_id``, ``sex``, ``age``, ``employed`` (one row per donor,
@@ -729,6 +737,7 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
         passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
         dwell_model=dwell_model,
         vectorized_validation=vectorized_validation,
+        open_end_donors=open_end_donors,
     )
     n_donors_with_trips = table["person_id"].nunique() if len(table) else 0
     logger.info("%s donor trip table built: %d trips for %d/%d donors (valid=%s)",
@@ -848,6 +857,7 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
                                  exclude_holidays: bool = False,
                                  exclude_only_rbw: bool = False,
                                  vectorized_validation: bool = True,
+                                 open_end_donors: pd.Series | None = None,
                                  ) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """Build the MiD home-office-day donor pool: attributes + trip chains + diagnostics.
 
@@ -885,6 +895,8 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
       False keeps the pre-#372 output byte-identical.
     * ``exclude_no_diary`` / ``exclude_holidays`` / ``exclude_only_rbw`` -- forwarded to
       :func:`filter_donor_diaries`.
+    * ``open_end_donors`` -- the overnight open-day-end decision per MiD donor (issue #694),
+      forwarded to :func:`donor_trips`; ``None`` keeps the pre-#694 output byte-identical.
 
     Returns ``(attributes, trips, diagnostics)``. ``attributes`` carries
     :func:`donor_attributes`' columns PLUS the four :func:`attach_trip_derived_attributes` adds
@@ -960,6 +972,7 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
         passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
         dwell_model=dwell_model,
         vectorized_validation=vectorized_validation,
+        open_end_donors=open_end_donors,
     )
     if dwell_model is not None:
         # AFTER the trip build, exactly where trips_stage.run logs the identical report: the
