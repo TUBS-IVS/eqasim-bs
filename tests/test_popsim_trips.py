@@ -6,6 +6,8 @@ Codes grounded in the MiD 2023 codebook (Wege sheet): W_ZWECK (purpose), hvm_imp
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -889,14 +891,17 @@ def test_kept_open_chain_survives_every_repair_pass():
 
 
 @pytest.mark.parametrize("with_sex", [True, False], ids=["matched", "legacy_same_cell"])
-def test_resampled_chain_carries_its_own_donor_decision(with_sex):
+def test_resampled_chain_carries_its_own_donor_decision(with_sex, caplog):
     """pC (decision False) inherits pB's open chain (decision True): every replaced row
-    carries pB's True, so pC keeps pB's open end and never mixes two values."""
+    carries pB's True, so pC keeps pB's open end and never mixes two values; the switch
+    is logged with its direction."""
     persons, wege = _open_end_fixture(with_sex=with_sex)
     donors = _open_end_donors({(1, 1): True, (2, 1): True, (3, 1): False})
-    table, report = trips.build_validated_trip_table(
-        persons, wege, resample=True, resample_cell_col="ZENSUS100m", random_seed=0,
-        open_end_donors=donors)
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips"):
+        table, report = trips.build_validated_trip_table(
+            persons, wege, resample=True, resample_cell_col="ZENSUS100m", random_seed=0,
+            open_end_donors=donors)
+    assert "decision changed: 1/1 (100.0%), open->closed 0, closed->open 1" in caplog.text
     replaced = table[table["person_id"] == "pC"].sort_values("trip_index")
     assert replaced["following_purpose"].tolist() == ["work", "shop"]
     assert replaced["keeps_open_end"].tolist() == [True, True]
@@ -923,3 +928,40 @@ def test_donor_missing_from_open_end_donors_raises():
     with pytest.raises(ValueError, match=r"1 chain donor"):
         trips.build_validated_trip_table(
             persons, wege, resample=True, random_seed=0, open_end_donors=donors)
+
+
+def test_unmatched_legacy_person_is_dropped_and_the_decision_column_stays_bool():
+    """Legacy same-cell path: pC's cell has no donor, so resample_chains gives it a
+    home-only placeholder row without a decision; the placeholder is dropped and the
+    column must come back as a clean bool (not object), with a valid report."""
+    persons, wege = _open_end_fixture(with_sex=False)
+    persons.loc[persons["person_id"] == "pC", "ZENSUS100m"] = "c9"
+    donors = _open_end_donors({(1, 1): True, (2, 1): True, (3, 1): False})
+    table, report = trips.build_validated_trip_table(
+        persons, wege, resample=True, resample_cell_col="ZENSUS100m", random_seed=0,
+        open_end_donors=donors)
+    assert sorted(table["person_id"].unique()) == ["pA", "pB"]
+    assert table["keeps_open_end"].dtype == bool and report.is_valid
+
+
+@pytest.mark.parametrize("bad_donors, message", [
+    (pd.Series([True], index=pd.Index([1], name="H_ID")), "two-level MultiIndex"),
+    (pd.Series([1], index=pd.MultiIndex.from_tuples([(2, 1)], names=["H_ID", "P_ID"])), "dtype bool"),
+    (pd.Series([True, False], index=pd.MultiIndex.from_tuples([(2, 1), (2, 1)], names=["H_ID", "P_ID"])),
+     "1 duplicated donor keys"),
+], ids=["one_level_index", "not_bool", "duplicated_key"])
+def test_open_end_donors_with_an_unusable_shape_raises(bad_donors, message):
+    persons, wege = _open_end_fixture(with_sex=False)
+    with pytest.raises(ValueError, match=message):
+        trips.build_trip_table(persons[persons["person_id"] == "pB"], wege, open_end_donors=bad_donors)
+
+
+def test_member_completion_filler_takes_its_mirror_donors_decision():
+    """A filler's own (H_ID, P_ID) is synthetic; its chain comes from the mirror donor
+    (source_H_ID, source_P_ID), so the decision must too, not the one keyed by its own ids."""
+    _, wege = _open_end_fixture(with_sex=False)
+    filler = pd.DataFrame({"person_id": ["f1"], "H_ID": [9], "P_ID": [9],
+                           "source_H_ID": [2], "source_P_ID": [1]})
+    donors = _open_end_donors({(2, 1): True, (9, 9): False})
+    table = trips.build_trip_table(filler, wege, open_end_donors=donors)
+    assert len(table) == 2 and table["keeps_open_end"].tolist() == [True, True]

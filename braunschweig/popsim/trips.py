@@ -1740,6 +1740,51 @@ MATCHED_REPLACEMENT_SEED_OFFSET = 7211
 MIN_EXPECTED_TRIP_MATCH_RATE = 0.5
 
 
+def _own_open_end_decisions(table: pd.DataFrame, unfixable_persons) -> pd.Series | None:
+    """Each unfixable person's own open-day-end decision, read before their rows are replaced.
+
+    ``None`` when the trip table carries no decision column (feature off). The
+    decision is one value per chain (the PlanValidator enforces it), so the first
+    row per person is the person's decision.
+    """
+    from braunschweig.popsim.overnight_open_end import KEEPS_OPEN_END_COLUMN
+
+    if KEEPS_OPEN_END_COLUMN not in table.columns:
+        return None
+    rows = table.loc[table["person_id"].isin(set(unfixable_persons)), ["person_id", KEEPS_OPEN_END_COLUMN]]
+    return rows.drop_duplicates(subset="person_id").set_index("person_id")[KEEPS_OPEN_END_COLUMN]
+
+
+def _log_open_end_decision_changes(own_decisions: pd.Series | None, table: pd.DataFrame) -> None:
+    """Log how many replaced persons got a chain whose open-day-end decision differs from their own.
+
+    The decision follows the chain source (issue #694), so a replaced person takes the
+    replacing chain's decision; this makes the size and direction of that switch
+    observable. Persons without a replacement chain (home-only) are not counted.
+    """
+    from braunschweig.popsim.overnight_open_end import KEEPS_OPEN_END_COLUMN
+
+    if own_decisions is None:
+        return
+    replaced = (
+        table.loc[table["person_id"].isin(own_decisions.index), ["person_id", KEEPS_OPEN_END_COLUMN]]
+        .drop_duplicates(subset="person_id").set_index("person_id")[KEEPS_OPEN_END_COLUMN]
+    )
+    own = own_decisions.reindex(replaced.index)
+    # Compared with == so a (defective) null counts as neither direction instead of
+    # being cast to True; the PlanValidator rejects nulls afterwards.
+    n_open_to_closed = int(((own == True) & (replaced == False)).sum())  # noqa: E712
+    n_closed_to_open = int(((own == False) & (replaced == True)).sum())  # noqa: E712
+    n_changed = n_open_to_closed + n_closed_to_open
+    n_replaced = len(replaced)
+    logger.info(
+        "[popsim.trips] stage B: replaced persons whose open-end decision changed: %d/%d (%.1f%%), "
+        "open->closed %d, closed->open %d",
+        n_changed, n_replaced, 100.0 * n_changed / max(n_replaced, 1),
+        n_open_to_closed, n_closed_to_open,
+    )
+
+
 def _recompute_chain_ids(table: pd.DataFrame) -> pd.DataFrame:
     """Re-derive trip_id / first-last / durations / trip_index on the final frame.
 
@@ -1823,6 +1868,10 @@ def _match_unfixable(
             random_seed=random_seed,
             resample_chains=resample_chains,
         )
+
+    # Read before the unfixable rows are dropped (after the legacy delegation above,
+    # which logs the same rate itself).
+    own_open_end_decisions = _own_open_end_decisions(table, unfixable)
 
     # Matching keys actually available on the persons frame; missing keys are
     # dropped with a logged warning (never silently).
@@ -1938,6 +1987,7 @@ def _match_unfixable(
         # persons are trip-less by the eqasim stay-home convention).
         table = valid_table
 
+    _log_open_end_decision_changes(own_open_end_decisions, table)
     return _recompute_chain_ids(table)
 
 
@@ -1994,6 +2044,7 @@ def _resample_unfixable(
         if cell in donor_chains:
             donor_chains[cell].append(chain.drop(columns=["person_id"]))
 
+    own_open_end_decisions = _own_open_end_decisions(table, unfixable_persons)
     table = resample_chains(
         table,
         unfixable_persons,
@@ -2023,6 +2074,7 @@ def _resample_unfixable(
     from braunschweig.popsim.overnight_open_end import KEEPS_OPEN_END_COLUMN
     if KEEPS_OPEN_END_COLUMN in table.columns and table[KEEPS_OPEN_END_COLUMN].notna().all():
         table = table.assign(**{KEEPS_OPEN_END_COLUMN: table[KEEPS_OPEN_END_COLUMN].astype(bool)})
+    _log_open_end_decision_changes(own_open_end_decisions, table)
 
     # Re-derive ids and derived columns on the final frame: donor chains carry
     # the donor's trip_id / trip_index, which are stale for the recipient.
