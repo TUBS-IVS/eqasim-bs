@@ -20,7 +20,8 @@ acquisition:
     Regenerate with: python scripts/extract_mid_student_reference.py --raw <MiD CSV directory>
     --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha>, which writes all five
     tables in one run; --tables <comma-separated subset of status, distance_mode, share_20_29,
-    behaviour, age_sex> writes only those and leaves the other files untouched. Reads MiD2023_Personen.csv and MiD2023_Wege.csv (required columns:
+    behaviour, age_sex> writes only those and leaves the other files untouched. Reads
+    MiD2023_Personen.csv and MiD2023_Wege.csv (required columns:
     mid_student_reference.BEHAVIOUR_PERSON_COLUMNS for persons, the script's TRIP_READ_COLUMNS
     for trips); when the persons file has no BLAND column the households file
     MiD2023_Haushalte.csv (H_ID, BLAND) is read as well; the age-by-sex table also needs the
@@ -38,8 +39,8 @@ verification:
     Phase 0 extraction run) and no stage reads them - they are build-time references of the
     student-commuting feature (issue #140). Unit tests on synthetic MiD-shaped frames
     (hand-computed shares, the universe restriction to core weekdays and adults, the
-    public-holiday exclusion, the rbW rule, the age-by-sex cells and their exclusions, the unknown day for no diary and for a diary the
-    popsim seed replaces, the exclusion of unreadable codes, the Land join and the CLI end to end):
+    public-holiday exclusion, the rbW rule, the age-by-sex cells and their exclusions, the
+    unknown day for no diary and for a diary the popsim seed replaces, the exclusion of unreadable codes, the Land join and the CLI end to end):
     tests/test_mid_student_reference.py.
 requirements:
   synthesis: not_needed
