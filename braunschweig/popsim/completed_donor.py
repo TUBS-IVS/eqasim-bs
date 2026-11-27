@@ -265,8 +265,9 @@ def build_completed_donor(
         (``student_counts``), logged, and published as run info by :func:`student_run_info`.
     student_fallback_warn_share:
         Share of student targets relaxed to a non-student donor, per path, above which the build
-        logs a WARNING. ``None`` (default) = report only; the log says so. Ignored without
-        ``donor_match_student_status``.
+        logs a WARNING. ``None`` (default) = no bound set; the log says so. A path on which no student target
+        got a student donor is a WARNING whatever the bound (the primary method is then broken). Ignored
+        without ``donor_match_student_status``.
 
     Notes
     -----

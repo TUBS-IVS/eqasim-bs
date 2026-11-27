@@ -202,7 +202,12 @@ def test_weekend_student_fallback_is_logged_per_path_and_warns_above_the_bound(c
     paths = {r.getMessage().split("]")[0].lstrip("[") for r in caplog.records
              if "weekend_plan_match.student_donor." in r.getMessage()}
     assert paths == {f"weekend_plan_match.student_donor.{p}" for p in wpm.STUDENT_PATHS_WEEKEND}
-    assert not [r for r in caplog.records if "student_donor" in r.getMessage() and r.levelno >= logging.WARNING]
+    # no bound set: the two paths on which NO student target got a student donor still warn (the primary
+    # method is broken there); the sweep had no student target and stays at INFO
+    unbounded = {r.getMessage().split("]")[0].lstrip("[") for r in caplog.records
+                 if "student_donor" in r.getMessage() and r.levelno == logging.WARNING}
+    assert unbounded == {"weekend_plan_match.student_donor.household_pairs",
+                         "weekend_plan_match.student_donor.person_fallback"}
 
     caplog.clear()
     with caplog.at_level(logging.INFO, logger="braunschweig.popsim.weekend_plan_match"):
@@ -212,3 +217,41 @@ def test_weekend_student_fallback_is_logged_per_path_and_warns_above_the_bound(c
               if "student_donor" in r.getMessage() and r.levelno == logging.WARNING}
     assert warned == {"weekend_plan_match.student_donor.household_pairs",
                       "weekend_plan_match.student_donor.person_fallback"}
+
+
+def test_partial_student_fallback_without_a_bound_stays_info_and_a_primary_path_does_not_warn(caplog):
+    logger_name = "braunschweig.popsim.weekend_plan_match"
+    with caplog.at_level(logging.INFO, logger=logger_name):
+        wpm.log_student_match_counts(logging.getLogger(logger_name), "p.partial", wpm.StudentMatchCounts(4, 3, 1))
+        wpm.log_student_match_counts(logging.getLogger(logger_name), "p.primary", wpm.StudentMatchCounts(4, 4, 0))
+        wpm.log_student_match_counts(logging.getLogger(logger_name), "p.empty", wpm.StudentMatchCounts(0, 0, 0))
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+    assert "warn bound not set" in next(r.getMessage() for r in caplog.records if "p.partial" in r.getMessage())
+
+
+def test_student_household_levels_are_reported_apart_from_the_other_households_levels():
+    """A student household matches on a ladder one key longer, so its level means something else: the
+    report counts it in ``student_hh_match_level_counts``, the trace marks its rows, and
+    ``hh_match_level_counts`` keeps the meaning of the shorter ladder (as with the key off)."""
+    households, persons = _student_pass_frames()
+    # a weekend household WITHOUT a student, size 2: it matches on the short ladder
+    households = pd.concat([households, households.iloc[[1]].assign(H_ID=6)], ignore_index=True)
+    extra = pd.DataFrame({
+        "H_ID": [6, 6], "P_ID": [1, 2], "HP_ALTER": [40, 38], "HP_SEX": [1, 2], "P_FSCHEIN": 1, "P_TAET": 1,
+        "P_FKARTE": 1, "kernwo": 6, "source_H_ID": 6, "source_P_ID": [1, 2], "member_imputed": False, "P_GEW": 1.0})
+    persons = pd.concat([persons, extra], ignore_index=True)
+    _p, trace, report = wpm.reassign_weekend_plan_sources(
+        households, persons, rng=np.random.RandomState(2), student_key=True)
+    assert sum(report.student_hh_match_level_counts.values()) == 1      # HH3, the student household
+    assert sum(report.hh_match_level_counts.values()) == 1              # HH6 only
+    assert max(report.hh_match_level_counts) <= len(wpm.SOFT_KEYS_BY_PRIORITY)
+    on_student_ladder = trace.loc[trace["hh_student_ladder"], "H_ID"].unique().tolist()
+    assert on_student_ladder == [3]
+    assert not trace.loc[trace["resolution"] != "hh_match", "hh_student_ladder"].any()
+
+    # key off: no separate count, no extra column, one dict as before
+    _p, off_trace, off_report = wpm.reassign_weekend_plan_sources(
+        households, persons, rng=np.random.RandomState(2))
+    assert off_report.student_hh_match_level_counts is None
+    assert "hh_student_ladder" not in off_trace.columns
+    assert sum(off_report.hh_match_level_counts.values()) == 2

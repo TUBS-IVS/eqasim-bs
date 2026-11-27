@@ -806,9 +806,18 @@ def log_student_match_counts(logger_, path: str, counts: StudentMatchCounts, *, 
     """Log the primary-versus-fallback rate of one student match path as ``[<path>] primary P/N, fallback F``.
 
     ``warn_share`` is the share of non-student donors above which the line is a WARNING. ``None`` (the
-    default until the one-batch smoke has measured a defensible value) means report only: no warning can
-    fire, and the line says so. The bound is never invented here (CLAUDE.md "Fallback transparency")."""
-    if warn_share is None:
+    default until the one-batch smoke has measured a defensible value) means no bound is set, and the line
+    says so; the bound is never invented here. Whatever the bound, a path on which students were re-drawn
+    and NONE got a student donor is always a WARNING: a 100 % fallback means the primary method is broken
+    (an empty student pool, a wrong key), not that the ladder had to relax (CLAUDE.md "Fallback
+    transparency", item 2)."""
+    if counts.n_student_targets > 0 and counts.n_student_donor == 0:
+        bound = "not set" if warn_share is None else f"{float(warn_share):.3f}"
+        logger_.warning(
+            "[%s] primary 0/%d (0.0%%), fallback %d (100.0%%): no student target got a student donor, so "
+            "the primary method is not working on this path (empty student donor pool?); always a warning, "
+            "whatever the bound (warn bound %s)", path, counts.n_student_targets, counts.n_student_targets, bound)
+    elif warn_share is None:
         log_fallback_rate(logger_, path, counts.n_non_student_donor, counts.n_student_targets,
                           threshold=1.0,
                           what="student targets relaxed to a non-student donor; warn bound not set "
@@ -853,6 +862,12 @@ class WeekendMatchReport:
     #: ``household_pairs`` (student members of a household-aligned pair), ``person_fallback`` (surplus members
     #: and unmatched households) and ``mixed_person_sweep``. ``None`` with the key off.
     student_counts: "dict | None" = None
+    #: A1 (ADR-0211), only with ``student_key``: the relaxation levels of the households that matched on the
+    #: STUDENT ladder, i.e. a household with a student aged 18 or older (``(has_student, *SOFT_KEYS_BY_PRIORITY)``,
+    #: so the level runs up to ``len(SOFT_KEYS_BY_PRIORITY) + 1``). :attr:`hh_match_level_counts` then holds only the
+    #: other households, whose ladder and level meaning are those of the key-off build, so the two never mix. ``None``
+    #: with the key off (every household is in ``hh_match_level_counts``).
+    student_hh_match_level_counts: "dict | None" = None
 
 
 #: The match paths of :attr:`WeekendMatchReport.student_counts`.
@@ -967,6 +982,9 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     target_is_student = (persons["P_TAET"].eq(STUDENT_TAET).to_numpy() if student_key
                          else np.zeros(len(persons), dtype=bool))
     donor_is_student = pd.Series(pd.NA, index=persons.index, dtype="boolean")
+    # A1: rows of a household matched on the student ladder (its levels have another meaning, see the report).
+    student_ladder = pd.Series(False, index=persons.index)
+    student_level_counts: dict = {}
 
     def count_student(path, ridx, donor_student):
         """Record one re-drawn student target on ``path`` (``donor_student`` is the donor's student status)."""
@@ -996,6 +1014,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         matched_id, level = match_household(
             hid, feats.loc[hid], weekday_feats, rng=rng, weekday_by_key=weekday_by_key,
             student_key=student_key)
+        uses_student_ladder = bool(student_key and feats.loc[hid, HH_STUDENT_KEY])
         if matched_id is not None:
             donor_members = persons_by_hh[matched_id].reset_index(drop=True)
             paired = align_members(target_members, donor_members,
@@ -1009,11 +1028,13 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
                 persons.loc[ridx, "source_P_ID"] = donor_members.loc[dpos, "source_P_ID"]
                 resolution[ridx] = "hh_match"
                 match_level[ridx] = level
+                student_ladder[ridx] = uses_student_ladder
                 n_remapped += 1
                 if student_key and target_members.loc[tpos, "P_TAET"] == STUDENT_TAET:
                     count_student("household_pairs", ridx, donor_members.loc[dpos, "P_TAET"] == STUDENT_TAET)
             n_hh_matched += 1
-            level_counts[level] = level_counts.get(level, 0) + 1
+            target_counts = student_level_counts if uses_student_ladder else level_counts
+            target_counts[level] = target_counts.get(level, 0) + 1
             # An UNFILLABLE donor keeps H_GR larger than its real person count, so
             # align_members can run out of donor members and leave surplus weekend
             # persons unpaired. They would otherwise silently keep their WEEKEND
@@ -1116,6 +1137,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     if student_key:
         trace["target_is_student"] = target_is_student
         trace["donor_is_student"] = donor_is_student.to_numpy()
+        trace["hh_student_ladder"] = student_ladder.to_numpy()
         student_counts = {path: StudentMatchCounts(n_student_targets=t, n_student_donor=d,
                                                    n_non_student_donor=t - d)
                           for path, (t, d) in student_totals.items()}
@@ -1132,6 +1154,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         n_crossed_fine_child_age_band=int(band_totals[3]),
         n_any_free_pairs=int(band_totals[4]),
         student_counts=student_counts,
+        student_hh_match_level_counts=student_level_counts if student_key else None,
     )
     for path, counts in (student_counts or {}).items():
         log_student_match_counts(logger, f"weekend_plan_match.student_donor.{path}", counts,
@@ -1149,6 +1172,10 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         report.n_person_fallback_households, report.n_persons_remapped,
         report.n_swept, report.hh_match_level_counts,
     )
+    if student_key:
+        logger.info("[weekend_plan_match] HH match-level counts of the student households (student ladder, one "
+                    "key longer, levels not comparable with the line above): %s",
+                    report.student_hh_match_level_counts)
     # No silent fallback (audit package D): align_members' third tier pairs a member with a donor of
     # ANY age once no same-age-band donor is free. Reported as rates, mirroring DiaryMatchReport; no
     # threshold is asserted because the age band is a preference, not a hard key.

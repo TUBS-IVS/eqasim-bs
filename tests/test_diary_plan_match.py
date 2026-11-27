@@ -400,7 +400,9 @@ def test_student_fallback_is_counted_and_logged_per_path_and_warns_only_above_a_
     assert report.student_counts == dpm.StudentMatchCounts(1, 0, 1)
     assert report.student_counts.fallback_share == 1.0
     reported = [r for r in caplog.records if "diary_plan_match.student_donor" in r.getMessage()]
-    assert len(reported) == 1 and reported[0].levelno == logging.INFO          # no bound: report only
+    # no bound set, but a student target that got no student donor at all means the primary method is
+    # broken (CLAUDE.md "Fallback transparency"): a WARNING whatever the bound
+    assert len(reported) == 1 and reported[0].levelno == logging.WARNING
     assert "primary 0/1" in reported[0].getMessage() and "fallback 1 (100.0%)" in reported[0].getMessage()
     assert "warn bound not set" in reported[0].getMessage()
 
