@@ -1,8 +1,15 @@
 {
- "error_lines": [],
- "exception_lines": [],
- "initial_runner_lines": [],
- "kept_trip_lines": [],
+ "empty_log_files": [
+  "~/i678_ab_today/cache/braunschweig.matsim.simulation.prepare__ac1f19899017d4dcc2d263d5d6397342.cache/mode_choice/logfile.log",
+  "~/i678_ab_today/cache/braunschweig.matsim.simulation.prepare__ac1f19899017d4dcc2d263d5d6397342.cache/mode_choice/logfileWarningsErrors.log",
+  "~/i678_ab_today/cache/matsim.simulation.run__93cc42b186a460f45bf199539d391b7b.cache/simulation_output/logfile.log",
+  "~/i678_ab_today/cache/matsim.simulation.run__93cc42b186a460f45bf199539d391b7b.cache/simulation_output/logfile.log",
+  "~/i678_ab_today/cache/matsim.simulation.run__93cc42b186a460f45bf199539d391b7b.cache/simulation_output/logfileWarningsErrors.log"
+ ],
+ "error_lines": null,
+ "exception_lines": null,
+ "initial_runner_lines": null,
+ "kept_trip_lines": null,
  "modestats": [
   {
    "bicycle": "0.08394904458598726",
@@ -142,5 +149,5 @@
   },
   "total": 22
  },
- "warn_error_count": 0
+ "warn_error_count": null
 }

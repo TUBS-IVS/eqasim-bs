@@ -61,7 +61,16 @@ pipeline:
     five pip packages of the snapshot (py-spy, pdfplumber, pdfminer.six, pypdfium2, cryptography) are not installed in
     the server env; the source run i679_d recorded the same five. Numbers collected with i678_ab_collect.py
     (summary_*.json, read only from the prepare and run stage directories) and i678_ab_log_lines.py (lines_*_output.txt,
-    line numbers of the launcher log).
+    line numbers of the launcher log). The runs log to the launcher log only: MATSim's logfile.log and
+    logfileWarningsErrors.log in the stage directories are 0 bytes. The first collector read them as "no lines" and
+    wrote false zeros (kept_trip_lines, initial_runner_lines, exception_lines, error_lines [], warn_error_count 0);
+    on 2026-11-27 the fixed collector (it raises on a missing log and writes null for an empty one, listed under
+    empty_log_files; sha256 75059699009794450133d137c8e86485f6eb3f7fb486b7f02a6f01365218c81b, the committed file) was
+    re-run read only on the same stage directories, and summary_defaults.json (sha256
+    8e44cfccae05a47054d4dff4809f7ed94e40e9a976d2eab0c046c5321069c2ce) and summary_today.json (sha256
+    794e178998424e43ac50c4bc7a02521164070dc667c10a60fcc7cdd022d6a12f) were replaced; only those log fields changed.
+    sha256_output.txt records the first collector (f4d115d6...). Every log line quoted here comes from
+    lines_*_output.txt.
 classification:
 - smoke
 - ab_test
@@ -95,8 +104,10 @@ validation:
     Yes in both arms. 12,667 persons in the prepared population, persons_before = persons_after = 12,667 in
     initial_mode_choice.json, and 12,667 persons in output_plans.xml.gz of the MATSim run. The standalone runner, both
     arms: "Excluded subpopulations: 1201 of 12667 persons (9.48 %) keep their plan unchanged: {freight=521,
-    incommuter=599, student_incommuter=81}". Initial mode choice Java wall time 103 s (defaults) and 66 s (today);
-    prepare stage 14 min 13 s in both arms; MATSim stage 10 min 18 s (defaults) and 10 min 8 s (today).
+    incommuter=599, student_incommuter=81}" (lines_defaults_output.txt and lines_today_output.txt). Initial mode
+    choice Java wall time 103 s (defaults) and 66 s (today); prepare stage 14 min 13 s in both arms; MATSim stage 10 min
+    18 s (defaults) and 10 min 8 s (today) (stage start lines in lines_*_output.txt). The person counts are in
+    summary_*.json and *_initial_mode_choice.json, the Java wall time (java_wall_time_s) in *_initial_mode_choice.json.
   artifact: docs/runs/artifacts/i678-reach-ab-1pct-2026-11-26/summary_defaults.json
 - metric: trips the standalone runner and the MATSim loop do not re-choose (the kept-trip lines of PR #66)
   reference: 'none: a count of model output'

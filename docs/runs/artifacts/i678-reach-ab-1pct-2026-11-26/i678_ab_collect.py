@@ -7,6 +7,10 @@ PREFIX + "config.xml" (its initial_mode_choice.json, plan_check.json, frozen_pt_
 population and the standalone runner log), and the newest matsim.simulation.run stage directory (modestats.csv,
 stopwatch.csv, output_plans.xml.gz, output_events.xml.gz, logfile.log). Prints one JSON document to stdout.
 Standard library only.
+
+A log file that is missing raises. A log file that exists but is EMPTY (the isolated runs log to the console, so
+MATSim's logfile.log and logfileWarningsErrors.log stay 0 bytes) gives null, never an empty list or a zero count, and
+its path is listed under "empty_log_files": the lines then come from the launcher log (i678_ab_log_lines.py).
 """
 import csv
 import glob
@@ -51,10 +55,17 @@ def count_stuck(path):
     return total, modes
 
 
+EMPTY_LOG_FILES = []
+
+
 def grep(path, patterns, limit=40):
+    """The matching lines of ``path``; None when the file is empty (recorded in EMPTY_LOG_FILES); raises if missing."""
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"log file not found: {path}")
+    if os.path.getsize(path) == 0:
+        EMPTY_LOG_FILES.append(path.replace(os.path.expanduser("~"), "~"))
+        return None
     out = []
-    if not path or not os.path.exists(path):
-        return out
     opener = gzip.open if path.endswith(".gz") else open
     with opener(path, "rt", encoding="utf-8", errors="replace") as handle:
         for line in handle:
@@ -88,8 +99,12 @@ def main():
         if os.path.exists(population):
             result["prepare_population_persons"] = count_persons(population)
         logs = sorted(glob.glob(os.path.join(prep, "mode_choice", "*.log")))
-        result["initial_runner_lines"] = [l for log in logs for l in grep(log, (
-            "rejected by the model's filter", "Excluded subpopulations", "Exception", "ERROR"))]
+        if not logs:
+            raise FileNotFoundError(f"no standalone runner log in {os.path.join(prep, 'mode_choice')}")
+        found = [grep(log, ("rejected by the model's filter", "Excluded subpopulations", "Exception", "ERROR"))
+                 for log in logs]
+        result["initial_runner_lines"] = (None if all(lines is None for lines in found)
+                                          else [l for lines in found if lines for l in lines])
 
     run = newest(os.path.join(cache, "matsim.simulation.run__*.cache"), os.path.join("simulation_output", "modestats.csv"))
     result["run_dir_stage"] = os.path.basename(run) if run else None
@@ -115,9 +130,11 @@ def main():
         log = os.path.join(out, "logfile.log")
         result["kept_trip_lines"] = grep(log, ("rejected by the model's filter",), limit=100)
         result["exception_lines"] = grep(log, ("Exception", "\tat org.", "SEVERE"), limit=20)
-        result["warn_error_count"] = sum(1 for _ in open(os.path.join(out, "logfileWarningsErrors.log"),
-                                                         encoding="utf-8", errors="replace"))
-        result["error_lines"] = grep(os.path.join(out, "logfileWarningsErrors.log"), (" ERROR ",), limit=20)
+        warnings_log = os.path.join(out, "logfileWarningsErrors.log")
+        result["error_lines"] = grep(warnings_log, (" ERROR ",), limit=20)
+        result["warn_error_count"] = (None if result["error_lines"] is None else
+                                      sum(1 for _ in open(warnings_log, encoding="utf-8", errors="replace")))
+    result["empty_log_files"] = EMPTY_LOG_FILES
     json.dump(result, sys.stdout, indent=1, sort_keys=True)
 
 
