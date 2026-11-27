@@ -876,7 +876,7 @@ def _student_targets(controls):
     return pd.DataFrame(rows)
 
 
-def test_student_fit_lists_the_new_entries_in_place_of_education_18plus():
+def test_student_fit_lists_the_new_entries_in_place_of_education_18plus(caplog):
     """Each active student entry is scored over its own age range, from the realised trips and
     the flat-rate attribute; the inactive one (season ticket) and education_18plus are absent."""
     active = ["student_education_18_29", "student_education_30plus", "student_work_leg"]
@@ -902,11 +902,17 @@ def test_student_fit_lists_the_new_entries_in_place_of_education_18plus():
     }
     assert fit["abs_error"].tolist() == pytest.approx((fit["realised_share"] - 0.25).abs().tolist())
 
-    # The ticket entry reads the flat-rate attribute: student 1 only.
-    ticket = realised_student_participation(
-        _student_trips(), _student_persons(), ["student_season_ticket"]).set_index("category")
+    # The ticket entry reads the flat-rate attribute: student 1 only. Student 2's value is missing
+    # and person 3's is the text "False": neither is a flat-rate ticket (a bool cast would read both
+    # as True), and the missing one is counted in a WARNING.
+    persons = _student_persons().astype({"has_pt_subscription": object})
+    persons.loc[[1, 2], "has_pt_subscription"] = [float("nan"), "False"]
+    with caplog.at_level(logging.WARNING):
+        ticket = realised_student_participation(
+            _student_trips(), persons, ["student_season_ticket"]).set_index("category")
     assert ticket["realised_share"].to_dict() == pytest.approx(
         {"student_flatrate": 1 / 3, "student_no_flatrate": 1 / 3, "not_student": 1 / 3})
+    assert any("has_pt_subscription missing for 1/6" in r.message for r in caplog.records)
 
     with pytest.raises(ValueError, match="education_18plus"):
         student_participation_fit(_student_trips(), _student_persons(),

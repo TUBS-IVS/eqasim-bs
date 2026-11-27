@@ -584,20 +584,26 @@ def test_bound_pair_is_judged_after_the_bridge(tmp_path):
         _student_build(tmp_path / "bridged", 1000.0)
 
 
+# SHA-256 of the table and of the report (paths nulled, json.dumps(sort_keys=True)) that the code
+# BEFORE the student pairs (commit 10c581a7, the parent of the commit that added them) wrote for
+# the fixture below; line endings normalised to LF, since pandas writes the platform's.
+_OFF_TABLE_SHA256 = "e5cfdb478bc50258e436b1535069742f23ce7d119f33c1f2f3b717f9c8de45d2"
+_OFF_REPORT_SHA256 = "824999b94602ffab8a98a8d68b1eaa47e5a2cf77b50a18e59b1114f483fee45e"
+
+
 def test_off_path_writes_todays_consistency_table(tmp_path):
-    """No student entry: the recorder the stage opens with the active entry names writes the same
-    table and report as the recorder without them (no new pair, no new skipped row)."""
-    tables, reports = [], []
-    for name, names in (("today", None), ("off", fixture.entry_names())):
-        settings = stage.KreisConsistencySettings(*NEW)
-        recorder = (settings.open_recorder(tmp_path / name / "work") if names is None
-                    else settings.open_recorder(tmp_path / name / "work", names))
-        fixture.build_batch_folders(tmp_path / name / "batches", settings=settings,
-                                    recorder=recorder, employed_bridge=0.95)
-        tables.append(recorder.csv_path.read_bytes())
-        report = settings.report()
-        report["table"] = report["guard"]["table"] = None
-        reports.append(report)
-    assert tables[0] == tables[1]
-    assert reports[0] == reports[1]
-    assert "student_bounds" not in reports[1]
+    """No student entry: the recorder the stage opens with the run's active entry names writes the
+    table and report of the code before the student pairs, byte for byte (no new pair, no new
+    skipped row, no new report key)."""
+    import hashlib
+
+    settings = stage.KreisConsistencySettings(*NEW)
+    recorder = settings.open_recorder(tmp_path / "work", fixture.entry_names())
+    fixture.build_batch_folders(tmp_path / "batches", settings=settings, recorder=recorder,
+                                employed_bridge=0.95)
+    table = recorder.csv_path.read_bytes().replace(b"\r\n", b"\n")
+    report = settings.report()
+    report["table"] = report["guard"]["table"] = None
+    assert hashlib.sha256(table).hexdigest() == _OFF_TABLE_SHA256
+    assert hashlib.sha256(json.dumps(report, sort_keys=True).encode("utf-8")).hexdigest() == (
+        _OFF_REPORT_SHA256)

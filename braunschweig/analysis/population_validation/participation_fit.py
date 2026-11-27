@@ -765,6 +765,31 @@ def _student_entry(name: str):
     return next(ctl for ctl in kac.REGISTRY if ctl.name == name)
 
 
+#: Readings of ``has_pt_subscription``: the boolean itself, or its text when a CSV column with a
+#: missing value was read as strings. Anything else is not read as a flat-rate ticket.
+_FLATRATE_VALUES = {True: True, False: False, "True": True, "False": False, "true": True,
+                    "false": False}
+
+
+def _flatrate_flag(values: pd.Series) -> np.ndarray:
+    """``has_pt_subscription`` as a strict boolean array (True only for a True reading).
+
+    A missing value or one outside :data:`_FLATRATE_VALUES` reads as no flat-rate ticket; both
+    counts are logged (a WARNING when above zero), never cast silently (``astype(bool)`` would read
+    NaN and the string "False" as True).
+    """
+    mapped = values.map(_FLATRATE_VALUES)
+    missing = values.isna()
+    unrecognised = mapped.isna() & ~missing
+    n = len(values)
+    (LOGGER.warning if missing.any() or unrecognised.any() else LOGGER.info)(
+        "realised_student_participation: has_pt_subscription missing for %d/%d (%.2f%%) and "
+        "unrecognised for %d/%d (%.2f%%; examples %s) persons; both read as no flat-rate ticket.",
+        int(missing.sum()), n, 100.0 * missing.sum() / max(n, 1), int(unrecognised.sum()), n,
+        100.0 * unrecognised.sum() / max(n, 1), sorted({str(v) for v in values[unrecognised]})[:5])
+    return mapped.eq(True).to_numpy(dtype=bool)
+
+
 def realised_student_participation(trips: pd.DataFrame, persons_kreis: pd.DataFrame,
                                    controls=None) -> pd.DataFrame:
     """Per-Kreis realised share of each student entry (A3 of the student design, ADR-0211).
@@ -780,7 +805,8 @@ def realised_student_participation(trips: pd.DataFrame, persons_kreis: pd.DataFr
     flat-rate ticket types as the seed's ``pt_ticket_group4`` groups, ADR-0087).
 
     ``persons_kreis`` must carry ``person_id``, ``ars5``, ``age`` and ``P_TAET``, plus
-    ``has_pt_subscription`` when the ticket entry is measured (``KeyError`` naming what is absent).
+    ``has_pt_subscription`` when the ticket entry is measured (``KeyError`` naming what is absent;
+    a missing or unrecognised value of it reads as no ticket and is counted, :func:`_flatrate_flag`).
     ``controls``: the entry names to measure (default: all four). Returns ``ars5, control,
     category, realised_share, n_persons`` (``n_persons`` = the entry's universe in that Kreis); a
     Kreis without a member of an entry's universe has no row for it. An empty universe is logged
@@ -825,7 +851,7 @@ def realised_student_participation(trips: pd.DataFrame, persons_kreis: pd.DataFr
             flag = work
             yes, no = kac.STUDENT_LABEL_STUDENT_WORK, kac.STUDENT_LABEL_STUDENT_NOWORK
         else:
-            flag = persons_kreis["has_pt_subscription"].astype(bool).to_numpy()
+            flag = _flatrate_flag(persons_kreis["has_pt_subscription"])
             yes, no = kac.STUDENT_LABEL_STUDENT_FLATRATE, kac.STUDENT_LABEL_STUDENT_NO_FLATRATE
         return np.select([student & flag, student], [yes, no], default=kac.STUDENT_LABEL_NOT_STUDENT)
 

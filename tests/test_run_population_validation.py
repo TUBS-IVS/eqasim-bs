@@ -461,6 +461,18 @@ def test_run_lists_the_student_entries_in_place_of_education_18plus(tmp_path, mo
         {"student": 0.5, "other_edu": 0.0, "other_noedu": 0.5})
     assert report["student_participation_fit"] == student.to_dict(orient="records")
 
+    # Work-leg entry only: no student education entry replaced education_18plus, so it stays.
+    work_targets = tmp_path / "work_only.csv"
+    pd.DataFrame({"ars5": ["03101"] * 3, "control": ["student_work_leg"] * 3,
+                  "category": ["student_work", "student_nowork", "not_student"],
+                  "target_persons": [1, 0, 1], "universe_persons": [2, 2, 2],
+                  "target_share": [0.5, 0.0, 0.5]}).to_csv(work_targets, index=False)
+    out, report = _student_run(tmp_path, monkeypatch, "work", ["--student-targets", str(work_targets)])
+    assert "education_18plus" in set(pd.read_csv(out / "participation_universe_fit.csv")["control"])
+    student = pd.read_csv(out / "student_participation_fit.csv", dtype={"ars5": str})
+    assert student.set_index("category")["realised_share"].to_dict() == pytest.approx(
+        {"student_work": 0.5, "student_nowork": 0.0, "not_student": 0.5})
+
     # Without the file (a run-output source has no stage file to default to): skipped with a
     # WARNING, and education_18plus stays in the universe fit.
     with caplog.at_level(logging.WARNING):
@@ -471,16 +483,29 @@ def test_run_lists_the_student_entries_in_place_of_education_18plus(tmp_path, mo
     assert any("student" in r.message and r.levelno == logging.WARNING for r in caplog.records)
 
 
-def test_student_targets_default_is_the_stage_file_under_the_sim_cache(tmp_path):
+def test_student_targets_default_is_the_stage_file_under_the_sim_cache(tmp_path, caplog):
+    """The default is the file of the ONE popsim stage directory of the cache. A stale file of an
+    earlier popsim configuration next to the stage directory of the validated persons (which holds
+    none: its run had no student entry) is never picked; the user is asked for --student-targets."""
     from braunschweig.popsim import stage
 
     assert R.STUDENT_TARGETS_FILE == stage.STUDENT_TARGETS_FILE    # restated, pinned to the owner
-    stage_dir = tmp_path / "cache" / "braunschweig.popsim.stage__abc"
-    stage_dir.mkdir(parents=True)
-    ns = R._parse_args(["--sim-cache", str(tmp_path / "cache")])
-    assert R._student_targets_path(ns) is None
-    (stage_dir / stage.STUDENT_TARGETS_FILE).write_text("ars5\n", encoding="utf-8")
-    assert R._student_targets_path(ns) == stage_dir / stage.STUDENT_TARGETS_FILE
-    explicit = R._parse_args(["--sim-cache", str(tmp_path / "cache"),
-                              "--student-targets", str(tmp_path / "x.csv")])
+    assert stage.__name__ == R.POPSIM_STAGE_CACHE_GLOB.split("__")[0]
+    cache = tmp_path / "cache"
+    old = cache / "braunschweig.popsim.stage__old.cache"
+    old.mkdir(parents=True)
+    ns = R._parse_args(["--sim-cache", str(cache)])
+    assert R._student_targets_path(ns) == old / stage.STUDENT_TARGETS_FILE
+    (old / stage.STUDENT_TARGETS_FILE).write_text("ars5\n", encoding="utf-8")
+
+    new = cache / "braunschweig.popsim.stage__new.cache"
+    new.mkdir()
+    output = cache / "output.cache"
+    output.mkdir()
+    (output / "bs_persons.csv").write_text("person_id\n", encoding="utf-8")    # newer persons
+    with caplog.at_level(logging.WARNING):
+        assert R._student_targets_path(ns) is None
+    assert any("--student-targets" in r.message for r in caplog.records)
+
+    explicit = R._parse_args(["--sim-cache", str(cache), "--student-targets", str(tmp_path / "x.csv")])
     assert R._student_targets_path(explicit) == tmp_path / "x.csv"

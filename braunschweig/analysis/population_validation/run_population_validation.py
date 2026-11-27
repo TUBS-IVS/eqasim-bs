@@ -28,6 +28,7 @@ import geopandas as gpd
 import pandas as pd
 
 from braunschweig.analysis import spatial
+from braunschweig.popsim import kreis_attribute_control as kac
 from braunschweig.analysis.population_validation import (
     control_validation as CV,
     controls as C,
@@ -48,6 +49,12 @@ DATA_PATH = str(REPO_ROOT / "eqasim-data" / "data")
 #: imported, so the stage package does not enter the import closure (and the source hash) of the
 #: analysis stages that run this module; tests/test_run_population_validation.py pins it to the owner.
 STUDENT_TARGETS_FILE = "student_kreis_targets.csv"
+#: synpp cache directory of the popsim stage (``<stage module>__<hash>.cache``; the module is
+#: ``braunschweig.popsim.stage``, pinned by the same test).
+POPSIM_STAGE_CACHE_GLOB = "braunschweig.popsim.stage__*.cache"
+#: The student entries that replace ``education_18plus`` (as in
+#: ``popsim.input_consistency.kreis_pairs``); only their presence removes its universe-fit rows.
+_STUDENT_EDUCATION_ENTRIES = frozenset({kac.STUDENT_EDUCATION_18_29, kac.STUDENT_EDUCATION_30PLUS})
 
 
 def _attach_home_geometry_to_vehicles(vehicles, persons, home_geom):
@@ -114,7 +121,8 @@ def _parse_args(argv):
     ap.add_argument("--escort-passive-from-adult", dest="escort_passive_from_adult",
                     action="store_true", default=False)
     # Student entries (A3 of the student design, ADR-0211): the long target table of the popsim
-    # stage. Default: the stage file under --sim-cache (_student_targets_path). Without it the
+    # stage. Default: the file of the one popsim stage directory under --sim-cache
+    # (_student_targets_path). Without it the
     # student fit is skipped with a WARNING and education_18plus stays in the universe fit.
     ap.add_argument("--student-targets", dest="student_targets", default=None)
     ns = ap.parse_args(argv)
@@ -125,17 +133,31 @@ def _parse_args(argv):
 
 def _student_targets_path(ns) -> Path | None:
     """The student targets file of the run: ``--student-targets`` when given, else the
-    :data:`STUDENT_TARGETS_FILE` of the popsim stage under ``--sim-cache`` (the newest by mtime when
-    several stage directories hold one, logged as a WARNING), else ``None``."""
+    :data:`STUDENT_TARGETS_FILE` of the ONE popsim stage directory under ``--sim-cache``, else
+    ``None``.
+
+    The default must belong to the run whose persons are validated. The cache holds one directory
+    per popsim configuration (:data:`POPSIM_STAGE_CACHE_GLOB`), so with exactly one of them the
+    persons can only come from that stage. With several, the file of any of them may be stale (an
+    earlier configuration with student entries next to a newer one without): the default is
+    refused with a WARNING asking for ``--student-targets``. A modification-time rule is not used:
+    the stage writes the file BEFORE the later stages write the persons, and copying a cache
+    without preserving times reorders the files.
+    """
     if ns.student_targets is not None:
         return Path(ns.student_targets)
     if ns.sim_cache is None:
         return None
-    matches = sorted(Path(ns.sim_cache).rglob(STUDENT_TARGETS_FILE), key=lambda p: p.stat().st_mtime)
-    if len(matches) > 1:
-        LOGGER.warning("%d %s files under %s; picking the newest by mtime: %s", len(matches),
-                       STUDENT_TARGETS_FILE, ns.sim_cache, matches[-1])
-    return matches[-1] if matches else None
+    stage_dirs = sorted(p for p in Path(ns.sim_cache).rglob(POPSIM_STAGE_CACHE_GLOB) if p.is_dir())
+    if len(stage_dirs) > 1:
+        LOGGER.warning(
+            "%d popsim stage directories under %s (%s): their %s cannot be matched to the validated "
+            "persons, so none is used; pass --student-targets <the stage file of this run>.",
+            len(stage_dirs), ns.sim_cache, [p.name for p in stage_dirs], STUDENT_TARGETS_FILE)
+        return None
+    if not stage_dirs:
+        return None
+    return stage_dirs[0] / STUDENT_TARGETS_FILE
 
 
 def _load_student_targets(ns) -> pd.DataFrame | None:
@@ -487,8 +509,9 @@ def run(ns) -> dict:
     # 'employment_status' or 'age' (both required for these controls' universes
     # but not for the purpose-only participation_fit) fails only this block and
     # never discards the participation_fit evidence already produced.
-    # Student entries (A3, ADR-0211): with the stage's student targets the student entries replace
-    # education_18plus, so its rows leave the universe fit and the student fit below lists them.
+    # Student entries (A3, ADR-0211): the student fit below lists the entries of the stage's student
+    # targets; when they include a student education entry, that entry replaced education_18plus in
+    # the run, so its rows leave the universe fit.
     student_targets = None
     try:
         student_targets = _load_student_targets(ns)
@@ -499,7 +522,7 @@ def run(ns) -> dict:
         try:
             participation_universe = _participation_universe_fit_report(
                 frames.persons, geo, frames.trips, DATA_PATH)
-            if student_targets is not None:
+            if student_targets is not None and set(student_targets["control"]) & _STUDENT_EDUCATION_ENTRIES:
                 replaced = participation_universe["control"] == "education_18plus"
                 LOGGER.info("Universe participation fit: %d education_18plus row(s) left out, the "
                             "student entries replace it (student_participation_fit.csv).",
