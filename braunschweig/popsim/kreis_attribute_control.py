@@ -93,6 +93,12 @@ def load_kreis_target(
     fallback: fails fast if the file, a target category column, the region-aggregate
     row, an ``expected_ars5`` Kreis, or the per-row share normalisation is missing/invalid.
     """
+    if ctl.name in STUDENT_ENTRY_NAMES:
+        # Their target_csv_relpath is the student level table, the one input of their counts
+        # (braunschweig.popsim.student_targets); it is no share table.
+        raise ValueError(
+            f"load_kreis_target[{ctl.name}]: a student entry has no share table; its counts are "
+            "built by braunschweig.popsim.student_targets (ADR-0211).")
     path = Path(data_path) / ctl.target_csv_relpath
     if not path.exists():
         raise FileNotFoundError(f"load_kreis_target[{ctl.name}]: target CSV not found at {path}.")
@@ -240,6 +246,25 @@ STUDENT_AGE_BOUNDS: dict[str, tuple[int, int | None]] = {
 }
 # DERIVED from the bounds (never re-listed), like EDUCATION_BY_AGE_ENTRY_NAMES.
 STUDENT_ENTRY_NAMES = frozenset(STUDENT_AGE_BOUNDS)
+# Category order and tier per student entry (design A3): the two education entries carry the
+# quantities of the student balance and are hard; the work leg and the season ticket are soft.
+_STUDENT_ENTRY_CATEGORIES = {
+    STUDENT_EDUCATION_18_29: STUDENT_EDUCATION_18_29_CATEGORIES,
+    STUDENT_EDUCATION_30PLUS: STUDENT_EDUCATION_30PLUS_CATEGORIES,
+    STUDENT_WORK_LEG: STUDENT_WORK_LEG_CATEGORIES,
+    STUDENT_SEASON_TICKET: STUDENT_SEASON_TICKET_CATEGORIES,
+}
+_STUDENT_ENTRY_TIERS = {
+    STUDENT_EDUCATION_18_29: "hard",
+    STUDENT_EDUCATION_30PLUS: "hard",
+    STUDENT_WORK_LEG: "soft",
+    STUDENT_SEASON_TICKET: "soft",
+}
+# The one input of the student entries' counts: the student level table. Its owner is
+# braunschweig.popsim.student_level.STUDENT_LEVEL_TABLE_RELPATH (a test compares the two); typed
+# here because importing the level-table reader would put it into the cache token of every stage
+# that imports this module (the analysis stages among them).
+_STUDENT_TARGET_INPUT_RELPATH = "braunschweig/popsim/student_level_table.csv"
 
 
 # Path constants for the committed blended targets (FINAL; consume with prior_n = 0).
@@ -540,6 +565,25 @@ REGISTRY: tuple = (
         min_age=lo,
         max_age=hi,
       ) for name, (lo, hi) in EDUCATION_AGE_BOUNDS.items()),
+    # The four student entries (design A3 of the student layer, issue #140, ADR-0211). Person
+    # level over their own age universe (STUDENT_AGE_BOUNDS), each with its own seed column
+    # (mid.participation.derive_student_status_seed_columns). Their per-Kreis targets are COUNTS
+    # built once per run by braunschweig.popsim.student_targets from the student level table and
+    # committed SrV shares, never read through load_kreis_target: target_csv_relpath names the
+    # level table, the one input, so the stage's validate token covers it, and target_columns
+    # are the categories. Which of them are active, what the two education entries replace and
+    # the refusals: source_resolution.active_kreis_entries.
+    *(KreisAttributeControl(
+        name=name,
+        seed_column=name,
+        level="person",
+        categories=tuple((k, f"== '{k}'") for k in _STUDENT_ENTRY_CATEGORIES[name]),
+        target_csv_relpath=_STUDENT_TARGET_INPUT_RELPATH,
+        target_columns=_STUDENT_ENTRY_CATEGORIES[name],
+        tier=_STUDENT_ENTRY_TIERS[name],
+        min_age=lo,
+        max_age=hi,
+      ) for name, (lo, hi) in STUDENT_AGE_BOUNDS.items()),
 )
 
 

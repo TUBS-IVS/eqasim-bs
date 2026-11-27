@@ -217,6 +217,45 @@ def read_student_shares(data_path, expected_kreise: Sequence[str],
                          other_education_by_age_range=by_range)
 
 
+def area_of_kreis_from_home_areas(home_areas: Mapping[str, Sequence[str]],
+                                  region_kreise: Sequence[str]) -> dict[str, str | None]:
+    """``{Kreis: home area}`` for every Kreis of ``region_kreise``; Wolfsburg maps to ``None`` (A21).
+
+    ``home_areas`` is the value of ``config_keys.KEY_STUDENT_HOME_AREA_KREISE`` (``{area: [Kreis
+    codes]}``). It must partition the region without Wolfsburg: ``ValueError`` naming the key when a
+    value is no list of Kreis codes, a Kreis lies in more than one area, Wolfsburg lies in an area,
+    an area holds a Kreis outside ``region_kreise``, or a Kreis of the region other than Wolfsburg
+    lies in no area (A20, A21).
+    """
+    # Deferred: importing the stage package's config module from here at module level would be
+    # circular (the stage package imports this module).
+    from braunschweig.popsim.stage.config_keys import KEY_STUDENT_HOME_AREA_KREISE as key
+
+    if not isinstance(home_areas, Mapping) or not home_areas:
+        raise ValueError(f"{key} must be a non-empty mapping {{area: [Kreis codes]}}, got {home_areas!r}")
+    area_of: dict[str, str] = {}
+    for area, kreise in home_areas.items():
+        if isinstance(kreise, str) or not isinstance(kreise, Sequence) or not all(
+                isinstance(kreis, str) for kreis in kreise):
+            raise ValueError(f"{key}: area {area!r} must be a list of Kreis codes, got {kreise!r}")
+        for kreis in kreise:
+            if kreis in area_of:
+                raise ValueError(f"{key}: Kreis {kreis} lies in more than one area "
+                                 f"({area_of[kreis]!r} and {area!r})")
+            area_of[kreis] = str(area)
+    if WOLFSBURG_CODE in area_of:
+        raise ValueError(f"{key}: Wolfsburg ({WOLFSBURG_CODE}) is not surveyed by SrV and takes the value "
+                         f"of the region (A21); remove it from area {area_of[WOLFSBURG_CODE]!r}")
+    region = [str(kreis) for kreis in region_kreise]
+    outside = sorted(set(area_of) - set(region))
+    if outside:
+        raise ValueError(f"{key}: Kreis(e) {outside} lie outside the region {region}")
+    uncovered = [kreis for kreis in region if kreis != WOLFSBURG_CODE and kreis not in area_of]
+    if uncovered:
+        raise ValueError(f"{key}: Kreis(e) {uncovered} of the region lie in no home area")
+    return {kreis: area_of.get(kreis) for kreis in region}
+
+
 # ----------------------------------------------------------------------------- rounding
 
 

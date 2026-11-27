@@ -233,6 +233,17 @@ def test_hand_copied_universes_agree_with_their_owners():
         for target in group_targets(groups[name], spec, total):
             expression = spec.loc[spec["target"] == target, "expression"].iloc[0]
             assert expression.endswith(f"& (persons.HP_ALTER >= {min_age})"), target
+    # Owner 1b: the age ranges of the student entries (A3), rendered as the min_age and max_age clauses.
+    for name in kreis_attribute_control.STUDENT_ENTRY_NAMES:
+        lower, upper = kreis_attribute_control.STUDENT_AGE_BOUNDS[name]
+        clause = f"(persons.HP_ALTER >= {lower})" + (
+            "" if upper is None else f" & (persons.HP_ALTER <= {upper})")
+        assert groups[name].universe == clause
+        targets = group_targets(groups[name], spec, total)
+        assert len(targets) == len(registry[name].categories)
+        for target in targets:
+            expression = spec.loc[spec["target"] == target, "expression"].iloc[0]
+            assert expression.endswith(f"& {clause}"), target
     # Owner 2: the catalog's employment grid; its universe is the common employed clause plus the
     # lower age bound of the youngest band (the other bands start above it).
     universe_clauses = groups["employed_grid"].universe.split("&")

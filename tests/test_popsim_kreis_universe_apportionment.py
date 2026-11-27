@@ -7,6 +7,7 @@ a household share and a universe share all give different numbers.
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -31,6 +32,7 @@ _PARENTS = (("P1", "03101", "A", 30.0, 70.0, 10.0),
             ("P2", "03101", "B", 10.0, 90.0, 30.0),
             ("P3", "03158", "B", 20.0, 80.0, 40.0))
 _INFANTS = {"P1": 2.0, "P2": 4.0, "P3": 6.0}
+_YOUNG_ADULTS = 10.0
 
 
 def _cells(young=None) -> pd.DataFrame:
@@ -43,7 +45,10 @@ def _cells(young=None) -> pd.DataFrame:
         row["M_AGE_10"] = (young or {}).get(parent, edu)
         infants = _INFANTS[parent]  # aged 3, so the 0-5 universe is not empty
         row["F_AGE_3"] = infants
-        row["M_AGE_30"] = adult - infants
+        # Ten adults aged 25, so the 18-29 universe of the student entries is not empty either;
+        # every universe from 14 or 18 upwards keeps the same persons.
+        row["F_AGE_25"] = _YOUNG_ADULTS
+        row["M_AGE_30"] = adult - infants - _YOUNG_ADULTS
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -81,9 +86,13 @@ def _full_target(control: str) -> float:
                for c in controls_map[control])
 
 
-def _assemble(tmp_path, cells, mapping, **kwargs) -> dict[str, pd.DataFrame]:
-    """Assemble batch A and B; return each batch's KREIS control table indexed by Kreis."""
-    table, controls_map, household_names = _kreis_inputs()
+def _assemble(tmp_path, cells, mapping, inputs=None, **kwargs) -> dict[str, pd.DataFrame]:
+    """Assemble batch A and B; return each batch's KREIS control table indexed by Kreis.
+
+    ``inputs`` is ``(kreis table, controls map, household control names)``; default
+    :func:`_kreis_inputs`.
+    """
+    table, controls_map, household_names = _kreis_inputs() if inputs is None else inputs
     full_xwalk = folders.build_geo_crosswalk(
         cells, id_col_100m="ZENSUS100m", parent_col="ZENSUS1km", ars_col=ARS,
         resolve_parent_kreis=True, kreis_weight_col="POP_TOTAL_100m_adj")
@@ -129,7 +138,7 @@ def test_person_control_follows_its_own_universe(tmp_path):
     # trip_class has no age universe: it keeps the population share (100 of 200 persons each).
     assert tables["A"].loc["03101", "trip_class_0_KREIS"] == pytest.approx(50.0)
     assert tables["B"].loc["03101", "trip_class_0_KREIS"] == pytest.approx(50.0)
-    # a Tier-3 control follows the 15+ universe (aged 30: 68 persons in A, 86 in B of Kreis 03101)
+    # a Tier-3 control follows the 15+ universe (aged 25 or 30: 68 persons in A, 86 in B of Kreis 03101)
     assert tables["A"].loc["03101", "employed_KREIS"] == pytest.approx(100.0 * 68 / 154)
 
 
@@ -312,3 +321,126 @@ def test_run_popsim_mid_reports_the_empty_region_counts_and_the_dropped_target(t
     # one Kreis with an empty universe, seen in both batches; its whole target is dropped once
     assert section["empty_regions"] == 2
     assert section["dropped_target_mass_by_universe_column"]["W"]["by_kreis"] == {"03101": 1000.0}
+
+
+# ---------------------------------------------------------------------------
+# The student entries of design A3 (ADR-0211), end to end through the stage's KREIS derivation
+# ---------------------------------------------------------------------------
+
+_DATA_ROOT = Path(__file__).resolve().parents[1] / "eqasim-data" / "data"
+_REGION = ("03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158")
+# Persons per 1 km parent (one 100 m cell each) at the ages 3, 10, 20 and 40, and households.
+# Sized so the committed student level (about 12,400 students in 03101, 2,500 in 03158) fits:
+# batch A holds 3/4 of the persons aged 18 to 29 of Kreis 03101 but only 1/3 of those aged 30
+# or older, and a population share of 74/171, so the three splits give three different numbers.
+_STUDENT_PARENTS = {"P1": (1000.0, 3000.0, 30000.0, 40000.0, 30000.0),
+                    "P2": (2000.0, 5000.0, 10000.0, 80000.0, 40000.0),
+                    "P3": (1500.0, 6000.0, 8000.0, 60000.0, 30000.0)}
+_PRE_STUDENT_ENTRIES = [
+    "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
+    "employment_status", "pt_ticket_group4", "leisure_participation", "escort_participation",
+    "work_by_employment", "education_0_5", "education_6_17", "education_18plus"]
+
+
+def _student_cells() -> pd.DataFrame:
+    bands = controls_builder.person_band_census_columns(fine_teen_age_bands=False)
+    rows = []
+    for parent, kreis, _batch, *_ in _PARENTS:
+        age3, age10, age20, age40, households = _STUDENT_PARENTS[parent]
+        row = {"ZENSUS100m": f"c_{parent}", "ZENSUS1km": parent, ARS: kreis + "0000000",
+               "POP_TOTAL_100m_adj": age3 + age10 + age20 + age40, HH: households, "B_agg": 1.0}
+        row.update({f"{sex}_AGE_{y}": 0.0 for sex in "MF" for y in range(0, 101)})
+        row.update({"F_AGE_3": age3, "M_AGE_10": age10, "M_AGE_20": age20, "F_AGE_40": age40})
+        row.update({band: 0.0 for band in bands})
+        row[bands[0]] = row["POP_TOTAL_100m_adj"]
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _derive(tmp_path, overrides=None):
+    """Run the stage's KREIS target derivation on the default switches (plus ``overrides``)."""
+    from types import SimpleNamespace
+
+    from braunschweig.popsim import stage
+    from tests.stage_context import KreisToggleContext
+
+    active = stage.active_kreis_entries(KreisToggleContext(overrides), "mid")
+    values = {"data_path": str(_DATA_ROOT), stage.KEY_KREISE: list(_REGION),
+              stage.KEY_STUDENT_HOME_AREA_KREISE: stage.DEFAULT_STUDENT_HOME_AREA_KREISE}
+    context = SimpleNamespace(config=lambda key: values[key], path=lambda: str(tmp_path))
+    household_names: set[str] = set()
+    table, controls_map = stage._derive_kreis_attribute_control_targets(
+        context, _student_cells(), active, 0.0, None, None, household_names, False)
+    return active, table, controls_map, household_names
+
+
+def test_student_entries_are_split_by_their_own_age_universe(tmp_path):
+    """Production-like entry set: the student counts are built once from the level table, the
+    stage writes them in long form, and each entry's Kreis target is split over the batch parts
+    by the persons of ITS age universe (ADR-0203), never by the population or the 18+ share."""
+    from braunschweig.popsim import stage
+
+    active, table, controls_map, household_names = _derive(tmp_path)
+    names = [entry.name for entry in active]
+    assert "education_18plus" not in names
+    assert set(kac.STUDENT_ENTRY_NAMES) <= set(names)
+    table = table.set_index("ARS_kreis")
+
+    # The stage's own output: one row per Kreis, entry and category, equal to the Kreis table,
+    # each entry's row summing to its universe; the Wolfsburg substitutions are reported.
+    written = pd.read_csv(tmp_path / stage.STUDENT_TARGETS_FILE, dtype={"ars5": str})
+    student_columns = [f"{e}_{c}" for e in sorted(kac.STUDENT_ENTRY_NAMES)
+                       for c in (label for label, _ in ENTRY[e].categories)]
+    assert len(written) == 2 * len(student_columns)
+    for row in written.itertuples(index=False):
+        assert table.loc[row.ars5, f"{row.control}_{row.category}"] == row.target_persons
+    universe = written.groupby(["ars5", "control"]).agg(
+        target=("target_persons", "sum"), universe=("universe_persons", "first"))
+    assert (universe["target"] == universe["universe"]).all()
+    assert universe.loc[("03101", kac.STUDENT_EDUCATION_18_29), "universe"] == 40000
+    assert universe.loc[("03101", kac.STUDENT_EDUCATION_30PLUS), "universe"] == 120000
+    report = json.loads(
+        (tmp_path / stage.CENSUS_FILTERED_REPORT_FILE).read_text(encoding="utf-8"))
+    section = report[stage.STUDENT_TARGETS_REPORT_KEY]
+    assert (section["region_value_substitutions"], section["kreise"]) == (0, 2)
+
+    # The batch split, through the stage's own universe map.
+    settings = stage.KreisConsistencySettings("universe", True, "zensus", 0.05, 1000)
+    cells = settings.prepare_cells(_student_cells(), active, [])
+    mapping = settings.apportion_map
+    young = mapping["student_education_18_29_student_edu_KREIS"]
+    old = mapping["student_education_30plus_student_KREIS"]
+    assert young != old
+    for entry in kac.STUDENT_ENTRY_NAMES:
+        for label, _ in ENTRY[entry].categories:
+            assert mapping[f"{entry}_{label}_KREIS"] == (old if entry == kac.STUDENT_EDUCATION_30PLUS
+                                                         else young)
+    parts = _assemble(tmp_path / "batches", cells, mapping,
+                      inputs=(table.reset_index(), controls_map, household_names))
+    for column, share_a in (("student_education_18_29_student_edu", 30000 / 40000),
+                            ("student_work_leg_student_work", 30000 / 40000),
+                            ("student_season_ticket_student_flatrate", 30000 / 40000),
+                            ("student_education_30plus_student", 40000 / 120000)):
+        target = float(table.loc["03101", column])
+        assert target > 0, column
+        assert parts["A"].loc["03101", f"{column}_KREIS"] == pytest.approx(target * share_a), column
+        assert parts["B"].loc["03101", f"{column}_KREIS"] == pytest.approx(
+            target * (1 - share_a)), column
+        assert parts["B"].loc["03158", f"{column}_KREIS"] == pytest.approx(
+            float(table.loc["03158", column])), column
+
+
+def test_student_switches_off_reproduce_todays_stage_tables(tmp_path):
+    """All three student switches off: today's entry set (education_18plus included), a Kreis
+    table without a student column and no student output or report entry."""
+    from braunschweig.popsim import stage
+
+    off = {stage.KEY_STUDENT_EDUCATION_CONTROL: "off", stage.KEY_STUDENT_WORK_LEG_CONTROL: "off",
+           stage.KEY_STUDENT_SEASON_TICKET_CONTROL: "off"}
+    active, table, controls_map, _household = _derive(tmp_path, off)
+    assert [entry.name for entry in active] == _PRE_STUDENT_ENTRIES
+    expected = ["ARS_kreis"] + [column for entry in active for column in kac.control_columns(entry)]
+    assert list(table.columns) == expected
+    assert not [name for name in controls_map if name.startswith("student_")]
+    assert not (tmp_path / stage.STUDENT_TARGETS_FILE).exists()
+    assert not (tmp_path / stage.CENSUS_FILTERED_REPORT_FILE).exists()

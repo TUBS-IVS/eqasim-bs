@@ -229,6 +229,11 @@ def check_kreis_targets(
     """
     report = CheckReport(check="kreis_targets")
     for ctl in registry:
+        if ctl.name in kac.STUDENT_ENTRY_NAMES:
+            # No share table to load: the popsim stage builds their counts from the student
+            # level table (braunschweig.popsim.student_targets, ADR-0211), whose own reader checks it.
+            report.skipped.append(f"{ctl.name}: counts built by the popsim stage, no share table")
+            continue
         try:
             kac.load_kreis_target(str(data_path), ctl, expected_ars5=expected_ars5,
                                   share_tolerance=share_tolerance)

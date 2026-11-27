@@ -333,6 +333,10 @@ def test_classify_rng_style_covers_every_drawing_default_active_entry():
     assert rng_style == active_names - {
         "economic_status", "work_by_employment",
         "education_0_5", "education_6_17", "education_18plus",
+        # The four student entries (A3, ADR-0211) derive deterministically from P_TAET and the
+        # flags above (participation.derive_student_status_seed_columns): no draw either.
+        "student_education_18_29", "student_education_30plus", "student_work_leg",
+        "student_season_ticket",
     }
     assert {"pt_ticket_group4"} <= rng_style
     # The three-group resolution draws identically, even though the default activates the

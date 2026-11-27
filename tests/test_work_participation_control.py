@@ -104,7 +104,9 @@ def test_legacy_on_path_activates_work_participation():
     from braunschweig.popsim import stage
     active = stage.active_kreis_entries(
         _FakeContext({stage.KEY_WORK_PARTICIPATION_CONTROL: "on",
-                      stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off"}), "mid"
+                      stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off",
+                      # the student work-leg entry reads its work flag (A3, ADR-0211)
+                      stage.KEY_STUDENT_WORK_LEG_CONTROL: "off"}), "mid"
     )
     names = {c.name for c in active}
     assert "work_participation" in names

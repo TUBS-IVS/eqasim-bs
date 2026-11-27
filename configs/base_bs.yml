@@ -379,6 +379,11 @@ config:
   # 0-5 was 73.4 % against 65.6 % (same arm-3 run manifest).
   braunschweig.population.popsim.education_by_age_kreis_control: "on"
   braunschweig.population.popsim.education_participation_kreis_control: "off"
+  # ADR-0211 (#140, A3): the student KREIS entries, counts built from student_level_table.csv; the two
+  # education entries replace education_18plus (meaning, refusals and the home areas: config_keys.py).
+  braunschweig.population.popsim.student_education_kreis_control: "on"
+  braunschweig.population.popsim.student_work_leg_kreis_control: "on"
+  braunschweig.population.popsim.student_season_ticket_kreis_control: "on"
 
   # --- Plan structure: realisable plan sources, rbW legs, home closure -------
   # Six MiD-ONLY keys (issues #365 / #366 / #367; ADR-0106 / ADR-0107 / ADR-0108).

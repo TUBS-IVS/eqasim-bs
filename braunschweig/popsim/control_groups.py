@@ -58,6 +58,10 @@ _AGE14 = "(persons.HP_ALTER >= 14)"
 # person under 15 is not expected to fall in a certificate category.  Only the group's
 # non-exhaustive coverage numbers depend on it; it changes no control and no target.
 _AGE15 = "(persons.HP_ALTER >= 15)"
+# Owner: ``kreis_attribute_control.STUDENT_AGE_BOUNDS`` (the student entries of A3, ADR-0211),
+# rendered by ``control_spec`` as the min_age and max_age clauses; the same test ties these copies.
+_AGE18_29 = "(persons.HP_ALTER >= 18) & (persons.HP_ALTER <= 29)"
+_AGE30 = "(persons.HP_ALTER >= 30)"
 
 CONTROL_GROUPS: tuple = (
     ControlGroup("age_sex", "persons", r"^[MF]_AGE_", None, True),
@@ -76,6 +80,11 @@ CONTROL_GROUPS: tuple = (
     # expression, so together they cover every person once (universe None).
     ControlGroup("education_participation", "persons", r"^education_participation_", None, True),
     ControlGroup("education_band", "persons", r"^education_\d", None, True),
+    # The four student entries (A3, ADR-0211): each partitions the persons of its age range.
+    ControlGroup("student_education_18_29", "persons", r"^student_education_18_29_", _AGE18_29, True),
+    ControlGroup("student_education_30plus", "persons", r"^student_education_30plus_", _AGE30, True),
+    ControlGroup("student_work_leg", "persons", r"^student_work_leg_", _AGE18_29, True),
+    ControlGroup("student_season_ticket", "persons", r"^student_season_ticket_", _AGE18_29, True),
     ControlGroup("schulabschluss", "persons", r"^schulabschluss_", _AGE15, False),
     ControlGroup("beruflabschluss", "persons", r"^beruflabschluss_", _AGE15, False),
     ControlGroup("employed", "persons", r"^employed_", None, False),

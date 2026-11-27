@@ -556,11 +556,34 @@ DEFAULT_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE = None
 # concept has no entry point, which is logged as a WARNING and recorded in the stage report.
 KEY_STUDENT_EMPLOYMENT_CONCEPT = "braunschweig.population.popsim.student_employment_concept"
 DEFAULT_STUDENT_EMPLOYMENT_CONCEPT = True
-# The switch of the two student education KREIS entries of A3 (ADR-0211), "on" / "off", default "on".
-# Defined here once; the entries themselves are wired by the A3 registry work. A2 reads it only to warn
-# when A2 is on and the entries are off (the places A2 frees then go to whoever fits).
+# The student KREIS entries of A3 (ADR-0211; kreis_attribute_control.STUDENT_ENTRY_NAMES), "on" / "off",
+# each default "on"; all "off" is byte-identical in the entry set and the stage tables to the stage
+# before A3. Their targets are counts built once per run from the student level table
+# (braunschweig.popsim.student_targets); refusals: source_resolution.active_kreis_entries and
+# KreisConsistencySettings.require_run_support (the split by the population share is refused).
+#   student_education_kreis_control: the two hard entries (education leg by student status, ages 18 to
+#       29 and 30 or older). With it on they REPLACE education_18plus (dropped by name); refused when the
+#       education-by-age family is off or education_participation is on. A2 also reads it, to warn when
+#       A2 is on and the entries are off (the places A2 frees then go to whoever fits).
+#   student_work_leg_kreis_control: the soft work-leg entry; refused without work_by_employment.
+#   student_season_ticket_kreis_control: the soft season-ticket entry; refused without pt_ticket_group4.
+# Every student entry is refused without employment_status (its seed derivation checks it).
 KEY_STUDENT_EDUCATION_CONTROL = "braunschweig.population.popsim.student_education_kreis_control"
 DEFAULT_STUDENT_EDUCATION_CONTROL = "on"
+KEY_STUDENT_WORK_LEG_CONTROL = "braunschweig.population.popsim.student_work_leg_kreis_control"
+KEY_STUDENT_SEASON_TICKET_CONTROL = "braunschweig.population.popsim.student_season_ticket_kreis_control"
+# The home areas of the student entries (ADR-0211; the season-ticket share differs by area, A20), as
+# {area: [Kreis codes]}. Every Kreis of the run except Wolfsburg (03103, not surveyed by SrV) lies in
+# exactly one area; Wolfsburg lies in none and takes the SrV value of the region (A21). Checked by
+# student_targets.area_of_kreis_from_home_areas, and the area names must match the areas of the
+# committed SrV table by area. Read only while a student entry is on; Phase 4 reads the same key. The
+# default equals braunschweig.calibration.srv_student_reference.HOME_AREAS, which writes the SrV tables
+# by area (a test compares them; the stage does not import the calibration module).
+KEY_STUDENT_HOME_AREA_KREISE = "braunschweig.population.popsim.student_home_area_kreise"
+DEFAULT_STUDENT_HOME_AREA_KREISE = {
+    "braunschweig": ["03101"],
+    "surrounding": ["03102", "03151", "03153", "03154", "03157", "03158"],
+}
 # Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
 # consists ONLY of regelmaessige berufliche Wege summary legs, no individually
 # reported trip) from the realisable plan-source pool and remap persons
@@ -885,6 +908,11 @@ _KREIS_CONTROL_TOGGLE_KEY = {
     "education_0_5": KEY_EDUCATION_BY_AGE_CONTROL,
     "education_6_17": KEY_EDUCATION_BY_AGE_CONTROL,
     "education_18plus": KEY_EDUCATION_BY_AGE_CONTROL,
+    # The two hard student entries share ONE toggle key (A3, ADR-0211).
+    "student_education_18_29": KEY_STUDENT_EDUCATION_CONTROL,
+    "student_education_30plus": KEY_STUDENT_EDUCATION_CONTROL,
+    "student_work_leg": KEY_STUDENT_WORK_LEG_CONTROL,
+    "student_season_ticket": KEY_STUDENT_SEASON_TICKET_CONTROL,
 }
 
 # Shared default for the three education_by_age entries (Plan B, issue #368, ADR-0109):
@@ -924,6 +952,12 @@ _KREIS_CONTROL_DEFAULT = {
     "education_0_5": _EDUCATION_BY_AGE_DEFAULT,
     "education_6_17": _EDUCATION_BY_AGE_DEFAULT,
     "education_18plus": _EDUCATION_BY_AGE_DEFAULT,
+    # A3 of the student design (ADR-0211): the two hard entries read the shared default of their
+    # one toggle, like the education-by-age family above.
+    "student_education_18_29": DEFAULT_STUDENT_EDUCATION_CONTROL,
+    "student_education_30plus": DEFAULT_STUDENT_EDUCATION_CONTROL,
+    "student_work_leg": "on",
+    "student_season_ticket": "on",
 }
 
 

@@ -47,10 +47,14 @@ def _default_active_kreis_entry_names() -> set:
     "off" by DEFAULT (Plan B, issue #368, ADR-0109): ``work_by_employment`` /
     ``education_by_age`` (education_0_5 / education_6_17 / education_18plus) replace them
     and are themselves included (their own toggles default "on").
+
+    ``education_18plus`` is excluded because the two student education entries replace it
+    under the default switches (A3 of the student design, ADR-0211); the four student entries
+    are included.
     """
     from braunschweig.popsim import kreis_attribute_control as kac
     return {c.name for c in kac.REGISTRY} - {
-        "pt_ticket_group", "work_participation", "education_participation",
+        "pt_ticket_group", "work_participation", "education_participation", "education_18plus",
     }
 
 
@@ -204,7 +208,7 @@ def test_active_kreis_entries_all_default_on_for_mid():
     from braunschweig.popsim import stage
 
     # Empty config -> every REGISTERED entry resolves its declared default (project rule:
-    # new features default on), leaving thirteen ACTIVE in REGISTRY order after the
+    # new features default on), leaving sixteen ACTIVE in REGISTRY order after the
     # pt_ticket substitution and the two Plan B replacements below. has_ebike's source
     # column (H_ANZPED) was server-verified 2026-07-08; trip_class (first person-level
     # entry) is the 2026-07-08 follow-on; employment_status (second person-level entry,
@@ -215,12 +219,15 @@ def test_active_kreis_entries_all_default_on_for_mid():
     # and education_participation are registered but default OFF (Plan B, issue #368,
     # ADR-0109): work_by_employment and the three education_by_age entries (education_0_5 /
     # education_6_17 / education_18plus) REPLACE them and default ON instead -- see
-    # tests/test_participation_universe_controls.py for the contradiction guards.
+    # tests/test_participation_universe_controls.py for the contradiction guards. The four
+    # student entries (A3 of the student design, ADR-0211) default ON, and the two education
+    # ones replace education_18plus.
     active = stage.active_kreis_entries(_FakeContext({}), "mid")
     assert [c.name for c in active] == [
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
         "employment_status", "pt_ticket_group4", "leisure_participation", "escort_participation",
-        "work_by_employment", "education_0_5", "education_6_17", "education_18plus",
+        "work_by_employment", "education_0_5", "education_6_17", "student_education_18_29",
+        "student_education_30plus", "student_work_leg", "student_season_ticket",
     ]
 
 
@@ -255,6 +262,10 @@ def test_active_kreis_entries_all_off_is_empty():
         # this test reaching an empty set.
         stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off",
         stage.KEY_EDUCATION_BY_AGE_CONTROL: "off",
+        # The student entries (A3, ADR-0211) default "on" and need the entries above.
+        stage.KEY_STUDENT_EDUCATION_CONTROL: "off",
+        stage.KEY_STUDENT_WORK_LEG_CONTROL: "off",
+        stage.KEY_STUDENT_SEASON_TICKET_CONTROL: "off",
     }
     assert stage.active_kreis_entries(_FakeContext(off), "mid") == []
 
@@ -302,14 +313,21 @@ def test_active_kreis_entries_employment_status_can_be_turned_off():
     # #172 task 4) drops only that entry. work_by_employment must be turned off here too:
     # it defaults "on" (Plan B, issue #368, ADR-0109) and REQUIRES employment_status
     # active (its seed derivation reads the employment_status column) -- otherwise
-    # active_kreis_entries raises instead of reaching this test's assertions.
+    # active_kreis_entries raises instead of reaching this test's assertions. The student
+    # entries need employment_status as well (A3, ADR-0211); with them off, education_18plus
+    # is no longer replaced.
     active = stage.active_kreis_entries(
         _FakeContext({stage.KEY_EMPLOYMENT_STATUS_KREIS_CONTROL: "off",
-                      stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off"}), "mid"
+                      stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off",
+                      stage.KEY_STUDENT_EDUCATION_CONTROL: "off",
+                      stage.KEY_STUDENT_WORK_LEG_CONTROL: "off",
+                      stage.KEY_STUDENT_SEASON_TICKET_CONTROL: "off"}), "mid"
     )
     names = {c.name for c in active}
     assert "employment_status" not in names
-    assert names == _default_active_kreis_entry_names() - {"employment_status", "work_by_employment"}
+    assert names == (_default_active_kreis_entry_names() - {
+        "employment_status", "work_by_employment", "student_education_18_29",
+        "student_education_30plus", "student_work_leg", "student_season_ticket"}) | {"education_18plus"}
 
 
 def test_active_kreis_entries_work_by_employment_can_be_turned_off():
@@ -318,12 +336,14 @@ def test_active_kreis_entries_work_by_employment_can_be_turned_off():
     # An explicit "off" for the work_by_employment replacement (Plan B, issue #368,
     # ADR-0109) drops only that entry; its dependency employment_status and every other
     # default-active entry are unaffected.
+    # The student work-leg entry reads its work flag, so it goes off with it (A3, ADR-0211).
     active = stage.active_kreis_entries(
-        _FakeContext({stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off"}), "mid"
+        _FakeContext({stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off",
+                      stage.KEY_STUDENT_WORK_LEG_CONTROL: "off"}), "mid"
     )
     names = {c.name for c in active}
     assert "work_by_employment" not in names
-    assert names == _default_active_kreis_entry_names() - {"work_by_employment"}
+    assert names == _default_active_kreis_entry_names() - {"work_by_employment", "student_work_leg"}
 
 
 def test_active_kreis_entries_work_participation_can_be_turned_on():
@@ -337,11 +357,13 @@ def test_active_kreis_entries_work_participation_can_be_turned_on():
     # activates it and nothing else changes.
     active = stage.active_kreis_entries(
         _FakeContext({stage.KEY_WORK_PARTICIPATION_CONTROL: "on",
-                      stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off"}), "mid"
+                      stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off",
+                      stage.KEY_STUDENT_WORK_LEG_CONTROL: "off"}), "mid"
     )
     names = {c.name for c in active}
     assert "work_participation" in names
-    assert names == (_default_active_kreis_entry_names() - {"work_by_employment"}) | {"work_participation"}
+    assert names == (_default_active_kreis_entry_names() - {
+        "work_by_employment", "student_work_leg"}) | {"work_participation"}
 
 
 def test_active_kreis_entries_leisure_participation_can_be_turned_off():
@@ -365,13 +387,16 @@ def test_active_kreis_entries_education_by_age_can_be_turned_off():
     # An explicit "off" for the shared education_by_age toggle (Plan B, issue #368,
     # ADR-0109) drops all three age-range entries at once -- they share ONE toggle; every
     # other default-active entry is unaffected.
+    # The student education entries replace only the 18-plus band of that family, so they go
+    # off with it (A3, ADR-0211).
     active = stage.active_kreis_entries(
-        _FakeContext({stage.KEY_EDUCATION_BY_AGE_CONTROL: "off"}), "mid"
+        _FakeContext({stage.KEY_EDUCATION_BY_AGE_CONTROL: "off",
+                      stage.KEY_STUDENT_EDUCATION_CONTROL: "off"}), "mid"
     )
     names = {c.name for c in active}
     assert not ({"education_0_5", "education_6_17", "education_18plus"} & names)
     assert names == _default_active_kreis_entry_names() - {
-        "education_0_5", "education_6_17", "education_18plus"}
+        "education_0_5", "education_6_17", "student_education_18_29", "student_education_30plus"}
 
 
 def test_active_kreis_entries_education_participation_can_be_turned_on():
@@ -384,12 +409,14 @@ def test_active_kreis_entries_education_participation_can_be_turned_on():
     # activates it and drops all three age-range entries.
     active = stage.active_kreis_entries(
         _FakeContext({stage.KEY_EDUCATION_PARTICIPATION_CONTROL: "on",
-                      stage.KEY_EDUCATION_BY_AGE_CONTROL: "off"}), "mid"
+                      stage.KEY_EDUCATION_BY_AGE_CONTROL: "off",
+                      stage.KEY_STUDENT_EDUCATION_CONTROL: "off"}), "mid"
     )
     names = {c.name for c in active}
     assert "education_participation" in names
     assert names == (_default_active_kreis_entry_names() - {
-        "education_0_5", "education_6_17", "education_18plus"}) | {"education_participation"}
+        "education_0_5", "education_6_17", "student_education_18_29",
+        "student_education_30plus"}) | {"education_participation"}
 
 
 # --- issue #329: the four-group PT control REPLACES the three-group one ---
@@ -421,7 +448,9 @@ def test_pt_ticket_never_group_off_restores_three_groups():
     from braunschweig.popsim import stage
 
     # "off" restores exactly the pre-#329 behaviour: the three-group entry, no group4.
-    ctx = _FakeContext({stage.KEY_PT_TICKET_NEVER_GROUP: "off"})
+    # The student season-ticket entry reads the four groups, so it goes off with them (A3).
+    ctx = _FakeContext({stage.KEY_PT_TICKET_NEVER_GROUP: "off",
+                        stage.KEY_STUDENT_SEASON_TICKET_CONTROL: "off"})
     names = [e.name for e in stage.active_kreis_entries(ctx, "mid")]
     assert "pt_ticket_group" in names
     assert "pt_ticket_group4" not in names

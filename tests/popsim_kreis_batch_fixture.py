@@ -94,13 +94,20 @@ def make_cells() -> pd.DataFrame:
 
 
 def _controls_and_base_columns() -> tuple[pd.DataFrame, list[str], list]:
-    """The controls frame and base columns with every KREIS attribute control, grids on."""
-    names = [ctl.name for ctl in kac.REGISTRY]
+    """The controls frame and base columns with every KREIS attribute control, grids on.
+
+    Except the student entries (A3, ADR-0211): the frozen golden holds the tables before them, and
+    their targets are counts from the student level table, not a share table this fixture can
+    synthesise. Their batch split is pinned by
+    tests/test_popsim_kreis_universe_apportionment.py::test_student_entries_are_split_by_their_own_age_universe.
+    """
+    entries = [ctl for ctl in kac.REGISTRY if ctl.name not in kac.STUDENT_ENTRY_NAMES]
+    names = [ctl.name for ctl in entries]
     controls_df, base_cols = stage._build_control_frame(
         base_fixture.CONTROL_SOURCE, None, base_fixture.SEED_NAME, CONTROL_TIERS, True, names,
         base_fixture.IMPORTANCE_PROFILE, fine_teen_age_bands=base_fixture.FINE_TEEN_AGE_BANDS,
         ownership_grid_on=True)
-    return controls_df, base_cols, list(kac.REGISTRY)
+    return controls_df, base_cols, entries
 
 
 def _kreis_tables(cells: pd.DataFrame, active_entries: list) -> tuple[pd.DataFrame, dict, set]:

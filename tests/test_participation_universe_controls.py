@@ -602,7 +602,9 @@ class _Ctx:
 def test_default_configuration_activates_the_new_and_drops_the_replaced_controls():
     from braunschweig.popsim.stage.source_resolution import active_kreis_entries
     names = {e.name for e in active_kreis_entries(_Ctx({}), "mid")}
-    assert {"work_by_employment", "education_0_5", "education_6_17", "education_18plus",
+    # education_18plus is itself replaced by the student education entries under the default
+    # switches (A3, ADR-0211; pinned by test_student_education_entries_replace_education_18plus).
+    assert {"work_by_employment", "education_0_5", "education_6_17",
             "employment_status"} <= names
     assert not ({"work_participation", "education_participation"} & names)
 
@@ -631,9 +633,13 @@ def test_contradictory_toggles_raise_naming_both_keys(overrides, keys):
 
 
 def test_legacy_configuration_is_unchanged(tmp_path):
-    """New toggles off + old ones on = exactly today's active set (OFF path)."""
+    """New toggles off + old ones on = exactly today's active set (OFF path). The student
+    entries (A3, ADR-0211) need the Plan B entries, so the legacy configuration has them off."""
     from braunschweig.popsim.stage.source_resolution import active_kreis_entries
     ctx = _Ctx({"braunschweig.population.popsim.work_by_employment_kreis_control": "off",
+                "braunschweig.population.popsim.student_education_kreis_control": "off",
+                "braunschweig.population.popsim.student_work_leg_kreis_control": "off",
+                "braunschweig.population.popsim.student_season_ticket_kreis_control": "off",
                 "braunschweig.population.popsim.education_by_age_kreis_control": "off",
                 "braunschweig.population.popsim.work_participation_kreis_control": "on",
                 "braunschweig.population.popsim.education_participation_kreis_control": "on"})
@@ -725,8 +731,8 @@ def test_production_load_columns_cover_every_active_universe_denominator(tmp_pat
     # Guard the guard: if the REGISTRY ever stops declaring age universes, an empty loop
     # below would pass while asserting nothing.
     assert {entry.name for entry, _, _ in universe_entries} >= {
-        "employment_status", "work_by_employment",
-        "education_0_5", "education_6_17", "education_18plus"}
+        "employment_status", "work_by_employment", "education_0_5", "education_6_17",
+        *_STUDENT_ENTRY_NAMES}
 
     cells = pd.DataFrame({name: [1.0, 2.0] for name in load_cols})
     kreis = pd.Series(["03101", "03102"])
@@ -880,7 +886,7 @@ def test_the_band_map_reproduces_the_previous_inline_formula_for_every_productio
     # Guard the guard: the production registry really does declare age universes, so the
     # comparison above is not two empty dicts.
     assert set(bands) >= {"employment_status", "work_by_employment",
-                          "education_0_5", "education_6_17", "education_18plus"}
+                          "education_0_5", "education_6_17", *_STUDENT_ENTRY_NAMES}
 
 
 def test_the_cells_parquet_footer_is_read_once_when_both_grids_are_on(tmp_path, monkeypatch):
@@ -1620,3 +1626,93 @@ def test_student_seed_without_its_source_column_names_it():
     with pytest.raises(KeyError, match="work_by_employment"):
         derive_student_status_seed_columns(
             persons, active_entry_names={"student_work_leg"})
+
+
+# --------------------------------------------------------------------------- #
+# A3c of the student design (ADR-0211): the four student entries in the active set
+# --------------------------------------------------------------------------- #
+
+_P = "braunschweig.population.popsim."
+
+
+def test_student_education_entries_replace_education_18plus():
+    """Default switches: the two hard student entries replace education_18plus by name; the
+    other two bands of the education-by-age family and the two soft entries stay."""
+    from braunschweig.popsim.stage.source_resolution import active_kreis_entries
+    names = {e.name for e in active_kreis_entries(_Ctx({}), "mid")}
+    assert "education_18plus" not in names
+    assert {"education_0_5", "education_6_17", *_STUDENT_ENTRY_NAMES} <= names
+
+
+@pytest.mark.parametrize("overrides, keys", [
+    # the education-by-age family off: the hard entries would leave the ages 0 to 17 unsteered
+    ({_P + "education_by_age_kreis_control": "off"},
+     (_P + "student_education_kreis_control", _P + "education_by_age_kreis_control")),
+    # the legacy all-ages education entry on (family off, so the Plan B guard does not fire first)
+    ({_P + "education_participation_kreis_control": "on", _P + "education_by_age_kreis_control": "off"},
+     (_P + "student_education_kreis_control", _P + "education_participation_kreis_control")),
+    # the work entry reads the work flag of work_by_employment
+    ({_P + "work_by_employment_kreis_control": "off"},
+     (_P + "student_work_leg_kreis_control", _P + "work_by_employment_kreis_control")),
+    # the ticket entry reads the flat-rate groups of pt_ticket_group4
+    ({_P + "pt_ticket_never_group": "off"},
+     (_P + "student_season_ticket_kreis_control", _P + "pt_ticket_never_group")),
+    # every student seed derivation checks the student against the employment_status column
+    ({_P + "employment_status_kreis_control": "off", _P + "work_by_employment_kreis_control": "off"},
+     (_P + "student_education_kreis_control", _P + "employment_status_kreis_control")),
+])
+def test_student_entry_refusals(overrides, keys):
+    from braunschweig.popsim.stage.source_resolution import active_kreis_entries
+    with pytest.raises(ValueError) as excinfo:
+        active_kreis_entries(_Ctx(overrides), "mid")
+    for key in keys:
+        assert key in str(excinfo.value), (key, str(excinfo.value))
+
+
+@pytest.mark.parametrize("apportionment, refused", [("population", True), ("universe", False)])
+def test_student_entries_refuse_the_population_split(apportionment, refused):
+    """Under the population split a batch part would get the Kreis-average share of the
+    students (the fault of spec section 2): refused before the cell load, naming both keys."""
+    from braunschweig.popsim import stage
+    settings = stage.KreisConsistencySettings(apportionment, True, "zensus", 0.05, 1000)
+    call = lambda: settings.require_run_support(  # noqa: E731
+        has_kreis_table=True, employment_grid_on=True,
+        student_entry_names=("student_work_leg",))
+    if not refused:
+        call()
+        return
+    with pytest.raises(ValueError) as excinfo:
+        call()
+    for key in (stage.KEY_KREIS_BATCH_APPORTIONMENT, stage.KEY_STUDENT_WORK_LEG_CONTROL):
+        assert key in str(excinfo.value)
+
+
+_REGION = ("03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158")
+
+
+def test_student_home_area_default_is_the_srv_home_areas():
+    """The config default is typed once in config_keys; the SrV tables are built by area from
+    srv_student_reference.HOME_AREAS. Both must be the same partition, or the stage would give
+    a Kreis the season-ticket share of the other area."""
+    from braunschweig.calibration.srv_student_reference import HOME_AREAS
+    from braunschweig.popsim import student_targets as ST
+    from braunschweig.popsim.stage import config_keys as ck
+    default = ck.DEFAULT_STUDENT_HOME_AREA_KREISE
+    assert {area: tuple(kreise) for area, kreise in default.items()} == HOME_AREAS
+    area_of = ST.area_of_kreis_from_home_areas(default, _REGION)
+    assert area_of == {**{k: "surrounding" for k in _REGION}, "03101": "braunschweig", "03103": None}
+
+
+@pytest.mark.parametrize("home_areas, message", [
+    ({"braunschweig": ["03101"], "surrounding": ["03101", "03102"]}, "more than one"),
+    ({"braunschweig": ["03101", "03103"], "surrounding": ["03102"]}, "03103"),
+    ({"braunschweig": ["03101"], "surrounding": ["03102", "09162"]}, "09162"),
+    ({"braunschweig": ["03101"], "surrounding": ["03102"]}, "no home area"),
+    ({"braunschweig": "03101"}, "list"),
+])
+def test_student_home_areas_are_refused_when_not_a_partition_of_the_surveyed_region(home_areas, message):
+    from braunschweig.popsim import student_targets as ST
+    from braunschweig.popsim.stage import config_keys as ck
+    with pytest.raises(ValueError, match=message) as excinfo:
+        ST.area_of_kreis_from_home_areas(home_areas, ("03101", "03102", "03103", "03151"))
+    assert ck.KEY_STUDENT_HOME_AREA_KREISE in str(excinfo.value)
