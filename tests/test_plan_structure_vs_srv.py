@@ -281,6 +281,33 @@ def test_closure_metrics_report_open_end_persons():
     assert metrics["share_persons_open_end"] == pytest.approx(1.0 / 3.0)
 
 
+def test_closure_metrics_open_end_uses_the_last_trip_by_trip_index_not_row_order():
+    # Person 3: trip 0 ends at home, trip 1 ends at shop. The rows are shuffled so the
+    # file-order last row is trip 0 (home); only a sort by trip_index finds the open end.
+    trips = _model_trips()
+    person3 = trips[trips["person_id"] == 3].copy()
+    person3.loc[person3["trip_index"] == 0, "following_purpose"] = "home"
+    person3.loc[person3["trip_index"] == 1, "following_purpose"] = "shop"
+    shuffled = pd.concat([trips[trips["person_id"] != 3], person3.iloc[::-1]])
+    metrics = P.closure_metrics(shuffled)
+
+    assert metrics["n_persons_open_end"] == 1
+
+
+def test_closure_metrics_open_end_requires_trip_index():
+    trips = _model_trips().drop(columns=["trip_index"])
+    with pytest.raises(KeyError, match="trip_index"):
+        P.closure_metrics(trips)
+
+
+def test_closure_metrics_open_end_raises_on_a_missing_last_following_purpose():
+    trips = _model_trips()
+    trips.loc[(trips["person_id"] == 3) & (trips["trip_index"] == 1),
+              "following_purpose"] = None
+    with pytest.raises(ValueError, match="1 person"):
+        P.closure_metrics(trips)
+
+
 # --------------------------------------------------------------------------- accepted deviations
 
 

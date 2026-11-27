@@ -379,8 +379,9 @@ def accepted_deviations(comparison: pd.DataFrame,
     Most synthetic days are closed home-based chains (issue #367). Overnight travellers keep
     their day open (issue #694), and far stays that end outside the study area (ADR-0183) are
     not visible in this pre-portal view, so the model cannot reproduce the SrV shares of days
-    that end away from home, start away from home, or consist of a single trip. These are ACCEPTED deviations, not defects, and this
-    table states them explicitly with both sides' values so a reader of the comparison does
+    that end away from home, start away from home, or consist of a single trip. These are
+    ACCEPTED deviations, not defects, and this table states them explicitly with both
+    sides' values so a reader of the comparison does
     not read them as a model failure.
 
     ``open_end_days`` and ``open_start_days`` are complements (``1 - metric``) of the
@@ -407,6 +408,26 @@ def accepted_deviations(comparison: pd.DataFrame,
 
 # --------------------------------------------------------------------------- closure
 
+def _count_open_end_persons(trips: pd.DataFrame) -> int:
+    """Persons whose chronologically last trip does not end at home (issue #694).
+
+    The last trip is taken after a stable sort by ``person_id`` and ``trip_index``, so the
+    row order of the input does not matter. A missing ``following_purpose`` on a last trip is
+    a data error and raises instead of being counted as an open end.
+    """
+    if "trip_index" not in trips.columns:
+        raise KeyError("trips frame has no 'trip_index' column; the open-end count needs the "
+                       "trip order")
+    _require_columns(trips, ("person_id", "following_purpose"), "trips")
+    ordered = trips.sort_values(["person_id", "trip_index"], kind="mergesort")
+    last_trips = ordered.drop_duplicates(subset="person_id", keep="last")
+    n_missing = int(last_trips["following_purpose"].isna().sum())
+    if n_missing:
+        raise ValueError("%d person(s) have a missing following_purpose on their last trip; "
+                         "the open-end count cannot classify them" % n_missing)
+    return int((last_trips["following_purpose"].astype(str) != HOME_PURPOSE).sum())
+
+
 def closure_metrics(trips: pd.DataFrame) -> dict:
     """Rates of the SYNTHESISED home-closure legs in the model trip table.
 
@@ -422,7 +443,8 @@ def closure_metrics(trips: pd.DataFrame) -> dict:
       (an immobile person has no chain that could be closed)
     * ``share_home_trips_synthetic`` -- synthesised legs / all trips to home
     * ``share_persons_open_end`` -- mobile persons whose last trip does not end at home
-      (an overnight open day end, issue #694) / mobile persons (persons WITH a trip)
+      (an overnight open day end, issue #694) / mobile persons (persons WITH a trip). It is
+      computed from the trips alone and does NOT depend on the ``is_synthetic_closure`` column.
 
     When the column is absent the three shares are 0.0 and ``closure_column_present`` is
     False, with a warning: ``PlanValidator.repair_trips`` always adds the column, so a
@@ -448,10 +470,7 @@ def closure_metrics(trips: pd.DataFrame) -> dict:
     n_closure = int(closure.sum())
     n_persons_closed = int(trips.loc[closure, "person_id"].nunique())
     n_home_closure = int((closure & is_home).sum())
-    # The last trip of each person decides whether the day ends at home; computed from the
-    # trips alone so it does not depend on the keeps_open_end flag.
-    last_following = trips.groupby("person_id", sort=False)["following_purpose"].last()
-    n_persons_open_end = int((last_following.astype(str) != HOME_PURPOSE).sum())
+    n_persons_open_end = _count_open_end_persons(trips)
     metrics = {
         "n_persons_open_end": n_persons_open_end,
         "share_persons_open_end": (n_persons_open_end / n_persons) if n_persons else 0.0,
