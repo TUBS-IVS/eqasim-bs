@@ -22,6 +22,7 @@ production:
   flags:
   - braunschweig.population.popsim.employment_grid
   - braunschweig.population.popsim.employment_grid_age_shape_source
+  - braunschweig.population.popsim.student_employment_concept
 introduced:
   issue: null
   pr: '#9'
@@ -30,6 +31,7 @@ detail_doc: null
 code_paths:
 - braunschweig/popsim/employment_grid.py
 - braunschweig/popsim/zensus_employment_age.py
+- braunschweig/popsim/student_level.py
 - braunschweig/popsim/stage/__init__.py
 - braunschweig/popsim/stage/config_keys.py
 - scripts/extract_zensus2022_employed_by_age.py
@@ -39,6 +41,8 @@ evidence:
   - tests/test_popsim_employment_grid_age_shape_source.py
   - tests/test_zensus_employment_age.py
   - tests/test_extract_zensus2022_employed_by_age.py
+  - tests/test_popsim_student_level.py
+  - tests/test_popsim_employment_level.py
   off_path_byte_identical:
     claimed: true
     test: tests/test_popsim_employment_grid_age_shape_source.py::test_the_previous_source_keeps_its_results_exactly
@@ -72,6 +76,17 @@ validation:
   metric: null
   note: No run has yet compared the synthetic population's employed persons by Kreis, sex and age
     group with the census after ADR-0137; the next PopulationSim run is the first with the new shape. Since ADR-0203 the KREIS employed target of a batch is the sum of these ten controls (key braunschweig.population.popsim.kreis_controls_follow_grids) and the Zensus count is the level of the employment families of the KREIS table too (key braunschweig.population.popsim.employment_level_source); the run records above check the table consistency on four batches of one draw, one pre-registered check missed and accepted (ADR-0203). Table consistency, not a comparison with the census result of a synthetic population.
+notes: >-
+    Student employment concept (A2 of ADR-0211, issue #140), switched by
+    braunschweig.population.popsim.student_employment_concept (default on; off is byte-identical in the
+    targets). The employed target of the grid groups 16_29 and 30_39 is lowered, per Kreis and sex, by
+    the students the Zensus counts as employed; the counts are READ by the PopulationSim stage from the
+    committed data record student_level_table (braunschweig.popsim.student_level). The KREIS control
+    employed and the employment families follow the lowered grid. With the concept on the stage refuses
+    to run without kreis_controls_follow_grids or without the level table; with the employment grid off
+    the concept has no entry point (a WARNING and a stage report entry, not a refusal). The stage report
+    always carries a student_employment entry and the stage cache token changes once, also for OFF runs
+    (new module, level table among the committed files): ADR-0211 says so.
 assessment:
   status: pending
   by: null

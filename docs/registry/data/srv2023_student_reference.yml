@@ -17,6 +17,7 @@ roles:
 - reference_table
 used_by:
 - braunschweig.analysis.synthesis.students_vs_srv
+- data.census.filtered
 acquisition:
   method: committed
   source: |
@@ -42,13 +43,15 @@ verification:
     is listed in the verifier. Only the analysis stage
     braunschweig.analysis.synthesis.students_vs_srv reads three of them (parameters, student
     share by Kreis, young-adult status) and raises if one is missing, so requirements.production
-    is "required" since that stage entered the production run lists; no synthesis stage reads
-    any (issue #140). Unit tests
+    is "required" since that stage entered the production run lists. The PopulationSim stage
+    (data.census.filtered) reads three others (parameters, parameters by area, education leg by
+    student status) through braunschweig.popsim.student_targets while a student entry is on
+    (default on, ADR-0211), and raises if one is missing, so requirements.synthesis is "required". Unit tests
     on synthetic SrV-shaped frames (hand-computed shares, the label partition of both
     universes, the exclusion of unreadable codes, the seeded noise floor and the CLI end to
     end): tests/test_srv_student_reference.py.
 requirements:
-  synthesis: not_needed
+  synthesis: required
   matsim: not_needed
   production: required
 licensing:
