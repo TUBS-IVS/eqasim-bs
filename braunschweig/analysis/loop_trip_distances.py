@@ -29,7 +29,9 @@ The mode of the analysed frame is never changed. A trip that the table marks mus
 most :data:`ZERO_LENGTH_TOLERANCE_METERS`; anything else means the trip indices of the two files do not line up and the
 correction would overwrite a real distance, so it raises instead of correcting.
 
-``traveldistancestats.csv`` of MATSim (per-iteration average distances) cannot be corrected: loops count 0 m there.
+``traveldistancestats.csv`` and ``pkm_modestats.csv`` of MATSim (per-iteration averages and person kilometres) count
+loops with 0 m; eqasim-java-bs writes both with the diary lengths next to them (``*_loops_counted.csv``), and the
+dashboard reads that companion of the first when the run has it.
 """
 from __future__ import annotations
 

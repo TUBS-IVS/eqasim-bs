@@ -46,6 +46,11 @@ from braunschweig.analysis.loop_trip_distances import apply_loop_trip_distances
 
 logger = logging.getLogger(__name__)
 
+#: The companion of MATSim's traveldistancestats.csv that eqasim-java-bs writes (#679,
+#: org.eqasim.braunschweig.analysis.LoopTripDistanceStatsListener): the same columns, with the zero-length loop trips
+#: at their survey diary length.
+LOOP_COUNTED_TRAVEL_DISTANCE_FILE = "traveldistancestats_loops_counted.csv"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -197,13 +202,19 @@ def metrics_matsim(sim_output: Path, stuck_summary_path: Path | None = None,
         }
         out["score_final"] = float(round(ss.iloc[-1]["avg_executed"], 3))
 
-    # avg leg/trip distance evolution
-    tds = _safe_read_csv(sim_output / "traveldistancestats.csv", sep=";")
+    # avg leg/trip distance evolution. MATSim's own traveldistancestats.csv counts the zero-length loop trips (#679)
+    # with 0 m; eqasim-java-bs writes the same columns with their survey diary length next to it
+    # (LOOP_COUNTED_TRAVEL_DISTANCE_FILE), which is used when the run has it; distance_evolution_source names the file.
+    tds = _safe_read_csv(sim_output / LOOP_COUNTED_TRAVEL_DISTANCE_FILE, sep=";")
+    source = LOOP_COUNTED_TRAVEL_DISTANCE_FILE
+    if tds is None or not len(tds):
+        tds = _safe_read_csv(sim_output / "traveldistancestats.csv", sep=";")
+        source = "traveldistancestats.csv"
     if tds is not None and len(tds):
         cols = {c.strip().lower(): c for c in tds.columns}
         leg_col = cols.get("avg. average leg distance") or list(tds.columns)[1]
         trip_col = cols.get("avg. average trip distance") or list(tds.columns)[2]
-        # MATSim's own per-iteration average: it cannot be corrected, loop trips count 0 m in it (#679).
+        out["distance_evolution_source"] = source
         out["distance_evolution"] = {
             "iterations": [int(x) for x in tds["ITERATION"].tolist()],
             "avg_leg_km": [float(round(v / 1000, 3)) for v in tds[leg_col].tolist()],

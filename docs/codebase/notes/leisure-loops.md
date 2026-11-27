@@ -255,8 +255,8 @@ still records how far the person walked or rode on them (MiD `wegkm_imp`, a path
 4. **Trips output** (`synthesis/output.py::attach_trip_loop_columns`): `<prefix>trips.csv` gets both columns, per trip
    the values of its destination activity.
 
-**The rule for analyses** (`braunschweig/analysis/loop_trip_distances.py`, the one implementation,
-`apply_loop_trip_distances`): every such trip with a diary length gets that length instead of its zero, as it is in
+**The rule for analyses** (in Python `braunschweig/analysis/loop_trip_distances.py`, `apply_loop_trip_distances`; for
+MATSim's own statistics in eqasim-java-bs, see below): every such trip with a diary length gets that length instead of its zero, as it is in
 a path-length metric (routed or network distance) and divided by `braunschweig.constants.ROUTED_DETOUR_FACTOR` in a
 crow-fly metric (the conversion the trip build applies to every diary length). The trip keeps its simulated mode. A
 marked trip whose model crow-fly distance is above `ZERO_LENGTH_TOLERANCE_METERS` raises: the trip indices of the two
@@ -269,7 +269,19 @@ and a WARNING counts the zero-length leisure trips on foot or by bicycle that ke
 - the 10 % validation package: `scripts/validate_bs_10pct/io.py::trips_full` corrects the crow-fly length of
   `<prefix>trips.gpkg`, which every distance metric of the package reads.
 
-Not corrected: MATSim's own `traveldistancestats.csv` (per-iteration averages, in which loops count 0 m). The other
+**MATSim's own statistics.** `traveldistancestats.csv` (average leg and trip distance per iteration) and
+`pkm_modestats.csv` (person kilometres by leg mode) are written by MATSim itself and count the loop trips with their
+route length of (almost) 0 m. eqasim-java-bs (TUBS-IVS/eqasim-java-bs#67, `org.eqasim.braunschweig.analysis`:
+`LoopTripDistances`, `LoopTripDistanceStatsListener`, installed in every run) computes both after every iteration with
+MATSim's definitions from the same executed plans, with the path-length rule above (the diary length of a trip whose
+destination activity carries `loopTripDiaryDistanceKm`, read from the selected plan trip by trip), and writes
+`traveldistancestats_loops_counted.csv` and `pkm_modestats_loops_counted.csv` next to MATSim's files, which stay as
+they are. The dashboard takes the first for its distance evolution when the run has it (`distance_evolution_source`
+in the run record). Trips that do not match the selected plan keep their route length and make the iteration's log
+line a WARNING; a malformed attribute throws.
+
+Not corrected: MATSim's `ph_modestats.csv` (person hours: a loop trip has (almost) no travel time in the simulation,
+and the plans carry no diary time for it) and MATSim's `output_trips.csv` / `output_legs.csv`. The other
 distance analyses of the repository do not reach these trips: commute and education distances (home to work or
 education), the public-transport-only poster figures, and the survey-side tools.
 `scripts/validate_secondary_distances.py` and `scripts/calibrate_detour_circuity.py` leave the loop legs out on

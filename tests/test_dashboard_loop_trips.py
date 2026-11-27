@@ -39,3 +39,24 @@ def test_mean_km_by_mode_and_loop_block_reflect_the_diary_length(tmp_path, monke
     uncorrected = run_metrics.metrics_matsim(tmp_path)
     assert uncorrected["mean_km_by_mode"]["walk"] == pytest.approx(1.0 / 3.0, abs=0.01)
     assert uncorrected["loop_trips"]["available"] is False
+
+
+@pytest.mark.parametrize("with_companion, expected_trip_km, expected_source", [
+    (True, [2.0, 2.5], run_metrics.LOOP_COUNTED_TRAVEL_DISTANCE_FILE),
+    (False, [1.0, 1.5], "traveldistancestats.csv"),
+])
+def test_the_distance_evolution_reads_the_loop_counted_companion_when_the_run_has_it(
+        tmp_path, with_companion, expected_trip_km, expected_source):
+    """eqasim-java-bs writes MATSim's traveldistancestats.csv columns with the loop diary lengths next to MATSim's
+    file; the dashboard prefers it and names the file it read."""
+    header = "ITERATION;avg. Average Leg distance;avg. Average Trip distance\n"
+    (tmp_path / "traveldistancestats.csv").write_text(header + "0;900.0;1000.0\n1;1400.0;1500.0\n")
+    if with_companion:
+        (tmp_path / run_metrics.LOOP_COUNTED_TRAVEL_DISTANCE_FILE).write_text(
+            header + "0;1900.0;2000.0\n1;2400.0;2500.0\n")
+
+    out = run_metrics.metrics_matsim(tmp_path)
+
+    assert out["distance_evolution_source"] == expected_source
+    assert out["distance_evolution"]["avg_trip_km"] == expected_trip_km
+    assert out["avg_trip_km_final"] == expected_trip_km[-1]
