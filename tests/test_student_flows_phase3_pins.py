@@ -1,0 +1,76 @@
+"""Pins of the constants that ``student_flows_inputs`` repeats from Phase 3 (issue #140, Phase 4).
+
+The flows module may not import the PopulationSim stage package (global constraints, "Import
+boundary"), so the name and default of the home-area key, the header key of the education-leg
+share, the age groups of the level and the student status code are repeated or re-derived there.
+This file is the only place that imports both sides: it fails when Phase 3 changes one of them and
+the flows module does not follow.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from braunschweig.calibration.mid_student_reference import STUDENT_P_TAET
+from braunschweig.calibration.srv_distance_targets import ZGB_KREISE
+from braunschweig.calibration.srv_student_reference import AREA_WOLFSBURG
+from braunschweig.data.education import student_flows_inputs as SFI
+from braunschweig.popsim import student_level, student_targets
+from braunschweig.popsim.attributes import STUDENT_TAET
+from braunschweig.popsim.stage import config_keys
+
+DATA = Path(__file__).resolve().parents[1] / "eqasim-data" / "data"
+
+
+def test_home_area_key_and_default_equal_the_stage_constants():
+    assert SFI.KEY_HOME_AREA_KREISE == config_keys.KEY_STUDENT_HOME_AREA_KREISE
+    assert SFI.default_home_area_kreise() == config_keys.DEFAULT_STUDENT_HOME_AREA_KREISE
+
+
+def test_area_by_kreis_agrees_with_the_validator_of_the_stage_on_the_default():
+    areas = config_keys.DEFAULT_STUDENT_HOME_AREA_KREISE
+    phase3 = student_targets.area_of_kreis_from_home_areas(areas, ZGB_KREISE)
+    ours = SFI.area_by_kreis(areas, ZGB_KREISE)
+    assert set(ours) == set(phase3)
+    for kreis, area in phase3.items():
+        # Phase 3 maps Wolfsburg to None (the value of the region); the flows name it.
+        assert ours[kreis] == (AREA_WOLFSBURG if area is None else area)
+
+
+@pytest.mark.parametrize("areas", [
+    {"braunschweig": ["03101"], "surrounding": ["03102", "03103", "03151", "03153", "03154", "03157", "03158"]},
+    {"braunschweig": ["03101"], "surrounding": ["03102", "03151", "03153", "03154", "03157"]},
+    {"braunschweig": ["03101"], "surrounding": ["03101", "03102", "03151", "03153", "03154", "03157", "03158"]},
+])
+def test_both_validators_reject_the_same_area_maps(areas):
+    with pytest.raises(ValueError):
+        student_targets.area_of_kreis_from_home_areas(areas, ZGB_KREISE)
+    with pytest.raises(ValueError):
+        SFI.area_by_kreis(areas, ZGB_KREISE)
+
+
+def test_student_status_code_of_the_leaf_module_equals_the_popsim_constant():
+    assert STUDENT_P_TAET == STUDENT_TAET
+
+
+def test_education_leg_share_header_key_equals_the_one_of_the_stage():
+    assert SFI.EDUCATION_LEG_SHARE_HEADER_KEY == student_targets.EDUCATION_SHARE_HEADER_KEY
+
+
+def test_age_groups_and_sexes_of_the_level_equal_the_stage_ones():
+    assert SFI.LEVEL_AGE_GROUPS == student_level.AGE_LABELS
+    assert SFI.LEVEL_SEXES == student_level.SEXES
+    assert set(SFI.YOUNG_AGE_GROUPS) == set(student_level.YOUNG_AGE_LABELS)
+
+
+def test_the_summed_level_equals_the_level_the_stage_reads():
+    ours = SFI.load_level(DATA / student_level.STUDENT_LEVEL_TABLE_RELPATH, ZGB_KREISE)
+    table = student_level.read_student_level_table(DATA, ZGB_KREISE).table
+    table = table[table["code"].isin(ZGB_KREISE)].copy()
+    table["age_range"] = table["age_group"].map(
+        lambda age: "18_29" if age in student_level.YOUNG_AGE_LABELS else age)
+    theirs = table.groupby(["code", "age_range"])["students_persons"].sum()
+    merged = ours.set_index(["code", "age_range"])["students_persons"]
+    assert set(merged.index) == set(theirs.index)
+    assert merged.loc[theirs.index].to_numpy() == pytest.approx(theirs.to_numpy())
