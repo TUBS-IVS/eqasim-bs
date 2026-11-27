@@ -258,3 +258,26 @@ def test_committed_tables_are_readable_and_wolfsburg_follows_the_region():
     assert set(shares.season_ticket_by_area) == {"braunschweig", "surrounding"}
     assert shares.season_ticket_by_area["braunschweig"] > shares.season_ticket_region > \
         shares.season_ticket_by_area["surrounding"]
+
+
+def test_student_rows_round_their_universe_like_every_other_kreis_entry():
+    """One rounding convention (kreis_attribute_control.round_count, Python round): a student
+    row partitions the same whole number of persons as any other KREIS entry over a census total
+    ending in .5, so the age-range pairs of the input-consistency guard compare like with like.
+    By hand: 100.5 and 200.5 round to the even 100 and 200 (half up would give 101 and 201)."""
+    from braunschweig.popsim import kreis_attribute_control as kac
+    persons = {("03101", "18_29"): 100.5, ("03101", "30plus"): 200.5}
+    tables = ST.student_kreis_targets(_counts([("03101", 20, 3)]), persons, _shares(),
+                                      {"03101": "braunschweig"}, ALL_FOUR)
+    sums = {name: int(table.drop(columns="ARS_kreis").sum(axis=1).iloc[0])
+            for name, table in tables.items()}
+    assert sums == {"student_education_18_29": 100, "student_education_30plus": 200,
+                    "student_work_leg": 100, "student_season_ticket": 100}
+    trip_class = next(c for c in kac.REGISTRY if c.name == "trip_class")
+    target = pd.DataFrame({"ars5": ["Gesamt", "03101"], "trips_0": [0.25, 0.25],
+                           "trips_1_2": [0.25, 0.25], "trips_3_4": [0.25, 0.25],
+                           "trips_5plus": [0.25, 0.25]})
+    other = kac.attribute_kreis_count_table(trip_class, target, {"03101": 100.5})
+    assert int(other.drop(columns="ARS_kreis").sum(axis=1).iloc[0]) == sums["student_work_leg"]
+    long = ST.student_targets_long(tables, persons)
+    assert set(long.groupby("control")["universe_persons"].first()) == {100, 200}

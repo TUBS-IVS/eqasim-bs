@@ -1701,18 +1701,23 @@ def test_student_home_area_default_is_the_srv_home_areas():
     assert {area: tuple(kreise) for area, kreise in default.items()} == HOME_AREAS
     area_of = ST.area_of_kreis_from_home_areas(default, _REGION)
     assert area_of == {**{k: "surrounding" for k in _REGION}, "03101": "braunschweig", "03103": None}
+    # A one-Kreis run (configs/overlays/test.yml) keeps the default areas of the study region.
+    assert ST.area_of_kreis_from_home_areas(default, _REGION, ["03101"]) == {"03101": "braunschweig"}
 
 
-@pytest.mark.parametrize("home_areas, message", [
-    ({"braunschweig": ["03101"], "surrounding": ["03101", "03102"]}, "more than one"),
-    ({"braunschweig": ["03101", "03103"], "surrounding": ["03102"]}, "03103"),
-    ({"braunschweig": ["03101"], "surrounding": ["03102", "09162"]}, "09162"),
-    ({"braunschweig": ["03101"], "surrounding": ["03102"]}, "no home area"),
-    ({"braunschweig": "03101"}, "list"),
+@pytest.mark.parametrize("home_areas, run, message", [
+    ({"braunschweig": ["03101"], "surrounding": ["03101", "03102"]}, None, "more than one"),
+    ({"braunschweig": ["03101", "03103"], "surrounding": ["03102"]}, None, "03103"),
+    ({"braunschweig": ["03101"], "surrounding": ["03102", "09162"]}, None, "09162"),
+    ({"braunschweig": ["03101"], "surrounding": ["03102"]}, None, "no home area"),
+    ({"braunschweig": "03101"}, None, "list"),
+    # a run Kreis outside the study region has no student level and no area
+    ({"braunschweig": ["03101"], "surrounding": ["03102", "03151"]}, ["03101", "09162"], "09162"),
 ])
-def test_student_home_areas_are_refused_when_not_a_partition_of_the_surveyed_region(home_areas, message):
+def test_student_home_areas_are_refused_when_not_a_partition_of_the_surveyed_region(
+        home_areas, run, message):
     from braunschweig.popsim import student_targets as ST
     from braunschweig.popsim.stage import config_keys as ck
     with pytest.raises(ValueError, match=message) as excinfo:
-        ST.area_of_kreis_from_home_areas(home_areas, ("03101", "03102", "03103", "03151"))
+        ST.area_of_kreis_from_home_areas(home_areas, ("03101", "03102", "03103", "03151"), run)
     assert ck.KEY_STUDENT_HOME_AREA_KREISE in str(excinfo.value)

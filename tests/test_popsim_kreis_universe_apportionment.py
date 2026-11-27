@@ -330,23 +330,29 @@ def test_run_popsim_mid_reports_the_empty_region_counts_and_the_dropped_target(t
 _DATA_ROOT = Path(__file__).resolve().parents[1] / "eqasim-data" / "data"
 _REGION = ("03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158")
 # Persons per 1 km parent (one 100 m cell each) at the ages 3, 10, 20 and 40, and households.
-# Sized so the committed student level (about 12,400 students in 03101, 2,500 in 03158) fits:
+# Sized so the committed student level (about 12,400 students in 03101, 2,600 in 03103) fits:
 # batch A holds 3/4 of the persons aged 18 to 29 of Kreis 03101 but only 1/3 of those aged 30
 # or older, and a population share of 74/171, so the three splits give three different numbers.
-_STUDENT_PARENTS = {"P1": (1000.0, 3000.0, 30000.0, 40000.0, 30000.0),
-                    "P2": (2000.0, 5000.0, 10000.0, 80000.0, 40000.0),
-                    "P3": (1500.0, 6000.0, 8000.0, 60000.0, 30000.0)}
+# P3 lies in Wolfsburg (03103), which SrV does not survey: its other-adult share and its season
+# ticket take the SrV value of the region (A21), which the stage report counts.
+_STUDENT_PARENTS = {"P1": ("03101", 1000.0, 3000.0, 30000.0, 40000.0, 30000.0),
+                    "P2": ("03101", 2000.0, 5000.0, 10000.0, 80000.0, 40000.0),
+                    "P3": ("03103", 1500.0, 6000.0, 8000.0, 60000.0, 30000.0)}
 _PRE_STUDENT_ENTRIES = [
     "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
     "employment_status", "pt_ticket_group4", "leisure_participation", "escort_participation",
     "work_by_employment", "education_0_5", "education_6_17", "education_18plus"]
+_STUDENT_SWITCHES_OFF = {
+    "braunschweig.population.popsim.student_education_kreis_control": "off",
+    "braunschweig.population.popsim.student_work_leg_kreis_control": "off",
+    "braunschweig.population.popsim.student_season_ticket_kreis_control": "off"}
 
 
-def _student_cells() -> pd.DataFrame:
+def _student_cells(parents=tuple(_STUDENT_PARENTS)) -> pd.DataFrame:
     bands = controls_builder.person_band_census_columns(fine_teen_age_bands=False)
     rows = []
-    for parent, kreis, _batch, *_ in _PARENTS:
-        age3, age10, age20, age40, households = _STUDENT_PARENTS[parent]
+    for parent in parents:
+        kreis, age3, age10, age20, age40, households = _STUDENT_PARENTS[parent]
         row = {"ZENSUS100m": f"c_{parent}", "ZENSUS1km": parent, ARS: kreis + "0000000",
                "POP_TOTAL_100m_adj": age3 + age10 + age20 + age40, HH: households, "B_agg": 1.0}
         row.update({f"{sex}_AGE_{y}": 0.0 for sex in "MF" for y in range(0, 101)})
@@ -357,21 +363,31 @@ def _student_cells() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _derive(tmp_path, overrides=None):
-    """Run the stage's KREIS target derivation on the default switches (plus ``overrides``)."""
+def _derive(tmp_path, overrides=None, *, run_kreise=_REGION, parents=tuple(_STUDENT_PARENTS),
+            entries=None):
+    """Run the stage's KREIS target derivation on the default switches (plus ``overrides``), or on
+    the given ``entries``, for a run over ``run_kreise`` whose cells are those of ``parents``."""
     from types import SimpleNamespace
 
     from braunschweig.popsim import stage
     from tests.stage_context import KreisToggleContext
 
-    active = stage.active_kreis_entries(KreisToggleContext(overrides), "mid")
-    values = {"data_path": str(_DATA_ROOT), stage.KEY_KREISE: list(_REGION),
+    active = (stage.active_kreis_entries(KreisToggleContext(overrides), "mid")
+              if entries is None else entries)
+    values = {"data_path": str(_DATA_ROOT), stage.KEY_KREISE: list(run_kreise),
               stage.KEY_STUDENT_HOME_AREA_KREISE: stage.DEFAULT_STUDENT_HOME_AREA_KREISE}
+    tmp_path.mkdir(parents=True, exist_ok=True)
     context = SimpleNamespace(config=lambda key: values[key], path=lambda: str(tmp_path))
     household_names: set[str] = set()
     table, controls_map = stage._derive_kreis_attribute_control_targets(
-        context, _student_cells(), active, 0.0, None, None, household_names, False)
+        context, _student_cells(parents), active, 0.0, None, None, household_names, False)
     return active, table, controls_map, household_names
+
+
+def _student_report(tmp_path):
+    from braunschweig.popsim import stage
+    report = json.loads((tmp_path / stage.CENSUS_FILTERED_REPORT_FILE).read_text(encoding="utf-8"))
+    return report[stage.STUDENT_TARGETS_REPORT_KEY]
 
 
 def test_student_entries_are_split_by_their_own_age_universe(tmp_path):
@@ -399,10 +415,11 @@ def test_student_entries_are_split_by_their_own_age_universe(tmp_path):
     assert (universe["target"] == universe["universe"]).all()
     assert universe.loc[("03101", kac.STUDENT_EDUCATION_18_29), "universe"] == 40000
     assert universe.loc[("03101", kac.STUDENT_EDUCATION_30PLUS), "universe"] == 120000
-    report = json.loads(
-        (tmp_path / stage.CENSUS_FILTERED_REPORT_FILE).read_text(encoding="utf-8"))
-    section = report[stage.STUDENT_TARGETS_REPORT_KEY]
-    assert (section["region_value_substitutions"], section["kreise"]) == (0, 2)
+    # Wolfsburg: its other-adult share and its season ticket are the region value (2 of the 4
+    # (Kreis, quantity) cells of the two Kreise).
+    section = _student_report(tmp_path)
+    assert (section["region_value_substitutions"], section["region_value_cells"],
+            section["kreise"]) == (2, 4, 2)
 
     # The batch split, through the stage's own universe map.
     settings = stage.KreisConsistencySettings("universe", True, "zensus", 0.05, 1000)
@@ -426,21 +443,51 @@ def test_student_entries_are_split_by_their_own_age_universe(tmp_path):
         assert parts["A"].loc["03101", f"{column}_KREIS"] == pytest.approx(target * share_a), column
         assert parts["B"].loc["03101", f"{column}_KREIS"] == pytest.approx(
             target * (1 - share_a)), column
-        assert parts["B"].loc["03158", f"{column}_KREIS"] == pytest.approx(
-            float(table.loc["03158", column])), column
+        assert parts["B"].loc["03103", f"{column}_KREIS"] == pytest.approx(
+            float(table.loc["03103", column])), column
+
+
+@pytest.mark.parametrize("run_kreise, parents, substitutions", [
+    (("03101",), ("P1", "P2"), 0),   # the one-Kreis overlays (configs/overlays/test.yml and others)
+    (("03103",), ("P3",), 2),        # a Wolfsburg-only run: no home area at all
+])
+def test_a_run_over_fewer_kreise_keeps_the_default_home_areas(tmp_path, run_kreise, parents,
+                                                               substitutions):
+    """The home areas are checked against the study region (the Kreise of the level table), so a
+    run over one Kreis builds the student targets of that Kreis only, with the default areas."""
+    from braunschweig.popsim import stage
+
+    _active, table, _map, _names = _derive(tmp_path, run_kreise=run_kreise, parents=parents)
+    assert list(table["ARS_kreis"]) == list(run_kreise)
+    written = pd.read_csv(tmp_path / stage.STUDENT_TARGETS_FILE, dtype={"ars5": str})
+    assert set(written["ars5"]) == set(run_kreise)
+    section = _student_report(tmp_path)
+    assert (section["kreise"], section["region_value_substitutions"]) == (1, substitutions)
 
 
 def test_student_switches_off_reproduce_todays_stage_tables(tmp_path):
-    """All three student switches off: today's entry set (education_18plus included), a Kreis
-    table without a student column and no student output or report entry."""
+    """All three student switches off: today's entry set (education_18plus included), the same
+    Kreis table VALUES and the same controls as the derivation on the pre-A3 entry list, and no
+    student output or report entry. (The seed columns of the OFF path: Task 5's
+    test_student_seed_columns_are_absent_when_no_student_entry_is_active.)"""
     from braunschweig.popsim import stage
 
-    off = {stage.KEY_STUDENT_EDUCATION_CONTROL: "off", stage.KEY_STUDENT_WORK_LEG_CONTROL: "off",
-           stage.KEY_STUDENT_SEASON_TICKET_CONTROL: "off"}
-    active, table, controls_map, _household = _derive(tmp_path, off)
+    active, table, controls_map, household = _derive(tmp_path / "off", _STUDENT_SWITCHES_OFF)
     assert [entry.name for entry in active] == _PRE_STUDENT_ENTRIES
-    expected = ["ARS_kreis"] + [column for entry in active for column in kac.control_columns(entry)]
-    assert list(table.columns) == expected
-    assert not [name for name in controls_map if name.startswith("student_")]
-    assert not (tmp_path / stage.STUDENT_TARGETS_FILE).exists()
-    assert not (tmp_path / stage.CENSUS_FILTERED_REPORT_FILE).exists()
+    assert not (tmp_path / "off" / stage.STUDENT_TARGETS_FILE).exists()
+    assert not (tmp_path / "off" / stage.CENSUS_FILTERED_REPORT_FILE).exists()
+
+    pre_a3 = [ENTRY[name] for name in _PRE_STUDENT_ENTRIES]
+    _entries, today, today_map, today_household = _derive(tmp_path / "today", entries=pre_a3)
+    pd.testing.assert_frame_equal(table, today)
+    assert (controls_map, household) == (today_map, today_household)
+    assert not [column for column in table.columns if column.startswith("student_")]
+
+    def controls(names):
+        return stage._build_control_frame(
+            "catalog", None, "mid", ("tier0", "tier1", "tier2", "tier3"), True, names, "uniform",
+            fine_teen_age_bands=True, ownership_grid_on=True)
+    off_controls, off_base = controls(tuple(entry.name for entry in active))
+    today_controls, today_base = controls(tuple(_PRE_STUDENT_ENTRIES))
+    pd.testing.assert_frame_equal(off_controls, today_controls)
+    assert off_base == today_base

@@ -607,6 +607,17 @@ def _shrunk_shares(ctl: KreisAttributeControl, target_df: pd.DataFrame, prior_n:
     return pd.DataFrame(rows)
 
 
+def round_count(value: float) -> int:
+    """The whole number of persons or households a KREIS target row partitions.
+
+    Python's ``round`` (halves to the even neighbour), the one rounding convention of every KREIS
+    entry: :func:`attribute_kreis_count_table` rounds each per-Kreis total with it, and the count
+    tables of the student entries (``braunschweig.popsim.student_targets``) round their student
+    counts and row totals with it, so entries over the same universe partition the same number.
+    """
+    return int(round(float(value)))
+
+
 def _largest_remainder(shares: np.ndarray, total: int) -> np.ndarray:
     if total <= 0:
         return np.zeros(len(shares), dtype=int)
@@ -635,6 +646,6 @@ def attribute_kreis_count_table(
         key = str(ars5)
         if key not in shares.index:
             raise ValueError(f"attribute_kreis_count_table[{ctl.name}]: Kreis {key} absent from the target frame.")
-        counts = _largest_remainder(shares.loc[key, cols].to_numpy(dtype=float), int(round(float(hh_total))))
+        counts = _largest_remainder(shares.loc[key, cols].to_numpy(dtype=float), round_count(hh_total))
         out.append({"ARS_kreis": key, **dict(zip(out_cols, counts))})
     return pd.DataFrame(out)

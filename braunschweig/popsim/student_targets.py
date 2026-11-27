@@ -30,7 +30,9 @@ Rules implemented (the design owns them; numbers live in the CSV headers, not he
 * **A23** (ASSUMPTION): the SrV work-leg share of all adult students holds for the students aged 18 to 29.
 
 No fallback value exists: a missing file, row or column, a share outside (0, 1), or any negative
-remainder raises ``ValueError`` naming the file and column. Rounding is half up (``floor(x + 0.5)``).
+remainder raises ``ValueError`` naming the file and column. Every count is rounded with
+``kreis_attribute_control.round_count`` (Python ``round``), the convention of every KREIS entry, and
+split by largest remainder with ``braunschweig.popsim.controls.largest_remainder_round``.
 """
 
 from __future__ import annotations
@@ -46,6 +48,7 @@ import pandas as pd
 
 from braunschweig.data.csv_header import read_header_value
 from braunschweig.popsim import kreis_attribute_control as kac
+from braunschweig.popsim.controls import largest_remainder_round
 from braunschweig.popsim.student_level import AGE_LABELS, YOUNG_AGE_LABELS, StudentLevel
 
 logger = logging.getLogger(__name__)
@@ -95,7 +98,6 @@ STUDENT_ENTRY_AGE_RANGE: dict[str, str] = {
     name: _RANGE_OF_BOUNDS[bounds] for name, bounds in kac.STUDENT_AGE_BOUNDS.items()}
 
 _KREIS_COLUMN = "ARS_kreis"
-_ROUNDING_EPSILON = 1e-9
 
 
 @dataclass(frozen=True)
@@ -218,14 +220,17 @@ def read_student_shares(data_path, expected_kreise: Sequence[str],
 
 
 def area_of_kreis_from_home_areas(home_areas: Mapping[str, Sequence[str]],
-                                  region_kreise: Sequence[str]) -> dict[str, str | None]:
-    """``{Kreis: home area}`` for every Kreis of ``region_kreise``; Wolfsburg maps to ``None`` (A21).
+                                  region_kreise: Sequence[str],
+                                  run_kreise: Sequence[str] | None = None) -> dict[str, str | None]:
+    """``{Kreis: home area}`` for every Kreis of the run; Wolfsburg maps to ``None`` (A21).
 
     ``home_areas`` is the value of ``config_keys.KEY_STUDENT_HOME_AREA_KREISE`` (``{area: [Kreis
-    codes]}``). It must partition the region without Wolfsburg: ``ValueError`` naming the key when a
-    value is no list of Kreis codes, a Kreis lies in more than one area, Wolfsburg lies in an area,
-    an area holds a Kreis outside ``region_kreise``, or a Kreis of the region other than Wolfsburg
-    lies in no area (A20, A21).
+    codes]}``). It is checked against the STUDY region ``region_kreise`` (the stage passes the Kreise of
+    the student level table), not against the run, so a run over fewer Kreise keeps the default areas.
+    It must partition the region without Wolfsburg: ``ValueError`` naming the key when a value is no
+    list of Kreis codes, a Kreis lies in more than one area, Wolfsburg lies in an area, an area holds a
+    Kreis outside the region, or a Kreis of the region other than Wolfsburg lies in no area (A20, A21).
+    ``run_kreise`` (default: the region) must lie in the region; the result maps exactly those Kreise.
     """
     # Deferred: importing the stage package's config module from here at module level would be
     # circular (the stage package imports this module).
@@ -253,30 +258,12 @@ def area_of_kreis_from_home_areas(home_areas: Mapping[str, Sequence[str]],
     uncovered = [kreis for kreis in region if kreis != WOLFSBURG_CODE and kreis not in area_of]
     if uncovered:
         raise ValueError(f"{key}: Kreis(e) {uncovered} of the region lie in no home area")
-    return {kreis: area_of.get(kreis) for kreis in region}
-
-
-# ----------------------------------------------------------------------------- rounding
-
-
-def _round_half_up(value: float) -> int:
-    return int(math.floor(value + 0.5 + _ROUNDING_EPSILON))
-
-
-def _largest_remainder(values: Sequence[float], total: int) -> list[int]:
-    """Integers summing to ``total`` that follow ``values``: floors, then +1 for the largest remainders.
-
-    Ties go to the lower index (deterministic). ``total`` must lie within the sum of the floors and that
-    sum plus ``len(values)``; ``ValueError`` otherwise.
-    """
-    floors = [int(math.floor(value + _ROUNDING_EPSILON)) for value in values]
-    need = total - sum(floors)
-    if need < 0 or need > len(values):
-        raise ValueError(f"cannot round {list(values)} to the total {total} by largest remainder")
-    order = sorted(range(len(values)), key=lambda index: (-(values[index] - floors[index]), index))
-    for index in order[:need]:
-        floors[index] += 1
-    return floors
+    run = region if run_kreise is None else [str(kreis) for kreis in run_kreise]
+    foreign = [kreis for kreis in run if kreis not in region]
+    if foreign:
+        raise ValueError(f"{key}: Kreis(e) {foreign} of the run lie outside the study region {region}, "
+                         "so they have no student level and no home area")
+    return {kreis: area_of.get(kreis) for kreis in run}
 
 
 # ----------------------------------------------------------------------------- the one student count
@@ -295,7 +282,7 @@ def student_counts(level: StudentLevel) -> pd.DataFrame:
     rows = []
     for kreis in sorted(set(table["code"])):
         persons = [float(sums.get((kreis, age_range), 0.0)) for age_range in AGE_RANGES]
-        counts = _largest_remainder(persons, _round_half_up(sum(persons)))
+        counts = largest_remainder_round(persons, kac.round_count(sum(persons)))
         rows.extend({"ars5": str(kreis), "age_range": age_range, "students_persons": person,
                      "students_count": count}
                     for age_range, person, count in zip(AGE_RANGES, persons, counts))
@@ -372,7 +359,7 @@ def student_kreis_targets_with_diagnostics(
         persons = {r: _persons(persons_by_range, kreis, r) for r in AGE_RANGES}
         s_young = students[(kreis, AGE_RANGE_YOUNG)]
         s_old = students[(kreis, AGE_RANGE_OLD)]
-        universe = {r: _round_half_up(persons[r]) for r in AGE_RANGES}
+        universe = {r: kac.round_count(persons[r]) for r in AGE_RANGES}
         s_of = {AGE_RANGE_YOUNG: s_young, AGE_RANGE_OLD: s_old}
         others = {r: persons[r] - s_of[r] for r in AGE_RANGES}
         for r in AGE_RANGES:
@@ -396,8 +383,8 @@ def student_kreis_targets_with_diagnostics(
                 parts = [0.0, 0.0]
             else:
                 parts = [total_other * weight / sum(weights) for weight in weights]
-            other_edu = dict(zip(AGE_RANGES, _largest_remainder(parts, _round_half_up(total_other))))
-            student_edu = _round_half_up(s_young * shares.education_leg)
+            other_edu = dict(zip(AGE_RANGES, largest_remainder_round(parts, kac.round_count(total_other))))
+            student_edu = kac.round_count(s_young * shares.education_leg)
             values[ENTRY_EDUCATION_YOUNG] = {
                 "student_edu": student_edu,
                 "student_noedu": s_young - student_edu,
@@ -408,7 +395,7 @@ def student_kreis_targets_with_diagnostics(
                 "other_edu": other_edu[AGE_RANGE_OLD],
                 "other_noedu": universe[AGE_RANGE_OLD] - s_old - other_edu[AGE_RANGE_OLD]}
         if ENTRY_WORK_LEG in names:
-            student_work = _round_half_up(s_young * shares.work_leg)
+            student_work = kac.round_count(s_young * shares.work_leg)
             values[ENTRY_WORK_LEG] = {
                 "student_work": student_work, "student_nowork": s_young - student_work,
                 "not_student": universe[AGE_RANGE_YOUNG] - s_young}
@@ -424,7 +411,7 @@ def student_kreis_targets_with_diagnostics(
                 raise ValueError(f"{_LOG_TAG} {AREA_RELPATH}: no season_ticket/students_present/flatrate "
                                  f"row for area {area!r} (Kreis {kreis}); found "
                                  f"{sorted(shares.season_ticket_by_area)}")
-            student_flatrate = _round_half_up(s_young * share_t)
+            student_flatrate = kac.round_count(s_young * share_t)
             values[ENTRY_SEASON_TICKET] = {
                 "student_flatrate": student_flatrate, "student_no_flatrate": s_young - student_flatrate,
                 "not_student": universe[AGE_RANGE_YOUNG] - s_young}
@@ -482,7 +469,7 @@ def student_targets_long(tables: Mapping[str, pd.DataFrame],
         age_range = STUDENT_ENTRY_AGE_RANGE[name]
         for record in table.to_dict("records"):
             kreis = str(record[_KREIS_COLUMN])
-            universe = _round_half_up(_persons(persons_by_range, kreis, age_range))
+            universe = kac.round_count(_persons(persons_by_range, kreis, age_range))
             for label in labels[name]:
                 target = int(record[f"{name}_{label}"])
                 rows.append({"ars5": kreis, "control": name, "category": label,

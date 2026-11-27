@@ -3066,6 +3066,35 @@ STUDENT_TARGETS_FILE = "student_kreis_targets.csv"
 STUDENT_TARGETS_REPORT_KEY = "student_kreis_targets"
 
 
+def _student_level_and_home_areas(context, names, run_kreise):
+    """``(level table, {run Kreis: home area})`` of the student entries ``names`` (A3, ADR-0211).
+
+    Reads the level table (``student_level.read_student_level_table``, every cell of ``run_kreise``
+    required) and checks the home areas (``KEY_STUDENT_HOME_AREA_KREISE``) against the STUDY region,
+    the Kreise of the level table, so a run over fewer Kreise keeps the default areas; every Kreis of
+    the run must lie in that region (``student_targets.area_of_kreis_from_home_areas``).
+
+    Raises:
+        ValueError: the level table is missing (naming the student switches) or a check fails.
+    """
+    from braunschweig.popsim import student_level as _sl
+    from braunschweig.popsim import student_targets as _st
+    data_path = context.config("data_path")
+    level_path = Path(data_path) / _sl.STUDENT_LEVEL_TABLE_RELPATH
+    if not level_path.is_file():
+        # Checked here: the reader's own message names the A2 switch, which may be off.
+        switches = sorted({_KREIS_CONTROL_TOGGLE_KEY[name] for name in names})
+        raise ValueError(
+            f"{', '.join(switches)} 'on' but the student level table {level_path} does not exist. It "
+            "is the input of the student entries' counts (ADR-0211); restore the committed file "
+            "(scripts/build_student_balance.py writes it) or switch the student entries off.")
+    level = _sl.read_student_level_table(data_path, run_kreise)
+    region = sorted(set(level.table["code"].astype(str)))
+    area_of_kreis = _st.area_of_kreis_from_home_areas(
+        context.config(KEY_STUDENT_HOME_AREA_KREISE), region, run_kreise)
+    return level, area_of_kreis
+
+
 def _build_student_kreis_targets(context, student_entries, kreise, *, young_persons, old_persons) -> dict:
     """Build the count tables of the active student entries once per run (A3 of the student design).
 
@@ -3086,26 +3115,18 @@ def _build_student_kreis_targets(context, student_entries, kreise, *, young_pers
     from braunschweig.popsim import student_level as _sl
     from braunschweig.popsim import student_targets as _st
     names = [entry.name for entry in student_entries]
-    switches = sorted({_KREIS_CONTROL_TOGGLE_KEY[name] for name in names})
     data_path = context.config("data_path")
-    level_path = Path(data_path) / _sl.STUDENT_LEVEL_TABLE_RELPATH
-    if not level_path.is_file():
-        # Checked here: the reader's own message names the A2 switch, which may be off.
-        raise ValueError(
-            f"{', '.join(switches)} 'on' but the student level table {level_path} does not exist. It "
-            "is the input of the student entries' counts (ADR-0211); restore the committed file "
-            "(scripts/build_student_balance.py writes it) or switch the student entries off.")
-    home_areas = context.config(KEY_STUDENT_HOME_AREA_KREISE)
-    area_of_kreis = _st.area_of_kreis_from_home_areas(
-        home_areas, [str(kreis) for kreis in context.config(KEY_KREISE)])
+    level, area_of_kreis = _student_level_and_home_areas(
+        context, names, [str(kreis) for kreis in context.config(KEY_KREISE)])
     outside = [kreis for kreis in kreise if kreis not in area_of_kreis]
     if outside:
         raise ValueError(f"[popsim.stage] cells of Kreis(e) {outside} lie outside the run's Kreise "
                          f"({KEY_KREISE}); the student entries have no home area for them")
-    level = _sl.read_student_level_table(data_path, kreise)
+    # The level table covers the study region; only the Kreise of the cells get targets.
     counts = _st.student_counts(level)
     counts = counts[counts["ars5"].isin(kreise)].reset_index(drop=True)
-    shares = _st.read_student_shares(data_path, kreise, areas=sorted(home_areas))
+    shares = _st.read_student_shares(
+        data_path, kreise, areas=sorted(context.config(KEY_STUDENT_HOME_AREA_KREISE)))
     persons_by_range = {}
     for kreis in kreise:
         persons_by_range[(kreis, _st.AGE_RANGE_YOUNG)] = float(young_persons[kreis])
@@ -4055,11 +4076,10 @@ def execute(context) -> pd.DataFrame:
         has_kreis_table=(kreis_table is not None and bool(kreis_controls_map)) or bool(active_entries),
         employment_grid_on=employment_grid_on, student_entry_names=_active_student_names)
     if _active_student_names:
-        # The home areas of the student entries (A3, ADR-0211): a bad value costs seconds here,
-        # not the cell load and the seed build before the student targets are built.
-        from braunschweig.popsim import student_targets as _student_targets
-        _student_targets.area_of_kreis_from_home_areas(
-            context.config(KEY_STUDENT_HOME_AREA_KREISE), [str(kreis) for kreis in kreise])
+        # The level table and the home areas of the student entries (A3, ADR-0211): a bad value
+        # costs seconds here, not the cell load and the seed build before the targets are built.
+        _student_level_and_home_areas(
+            context, _active_student_names, [str(kreis) for kreis in kreise])
     # Students counted as employed (A2, ADR-0211): refuse an inconsistent switch state and read the
     # level table now, before the cell load and the seed build.
     student_employment = _read_student_employment_config(

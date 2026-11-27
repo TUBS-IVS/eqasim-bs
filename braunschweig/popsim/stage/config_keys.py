@@ -573,10 +573,11 @@ DEFAULT_STUDENT_EDUCATION_CONTROL = "on"
 KEY_STUDENT_WORK_LEG_CONTROL = "braunschweig.population.popsim.student_work_leg_kreis_control"
 KEY_STUDENT_SEASON_TICKET_CONTROL = "braunschweig.population.popsim.student_season_ticket_kreis_control"
 # The home areas of the student entries (ADR-0211; the season-ticket share differs by area, A20), as
-# {area: [Kreis codes]}. Every Kreis of the run except Wolfsburg (03103, not surveyed by SrV) lies in
-# exactly one area; Wolfsburg lies in none and takes the SrV value of the region (A21). Checked by
-# student_targets.area_of_kreis_from_home_areas, and the area names must match the areas of the
-# committed SrV table by area. Read only while a student entry is on; Phase 4 reads the same key. The
+# {area: [Kreis codes]}. Every Kreis of the study region (the Kreise of the student level table) except
+# Wolfsburg (03103, not surveyed by SrV) lies in exactly one area; Wolfsburg lies in none and takes the
+# SrV value of the region (A21). A run over fewer Kreise keeps these areas; its Kreise must lie in the
+# region. Checked by student_targets.area_of_kreis_from_home_areas, and the area names must match the
+# areas of the committed SrV table by area. Read only while a student entry is on; Phase 4 reads the same key. The
 # default equals braunschweig.calibration.srv_student_reference.HOME_AREAS, which writes the SrV tables
 # by area (a test compares them; the stage does not import the calibration module).
 KEY_STUDENT_HOME_AREA_KREISE = "braunschweig.population.popsim.student_home_area_kreise"
