@@ -478,11 +478,13 @@ PROXY = {"LSN Art K": "LSN Uni S"}
 
 def test_origin_pattern_proxy_replaces_the_censored_cells_by_the_proxy_pattern():
     toy = _toy_proxy()
-    cells, diagnostics = T.apply_origin_pattern_proxy(toy["cells"], toy["che_totals"], toy["sites"], toy["pairs"], PROXY)
+    cells, diagnostics = T.apply_origin_pattern_proxy(toy["cells"], toy["che_totals"], toy["sites"], toy["pairs"],
+                                                      PROXY)
     art = cells[cells["institution"] == "Art K"].set_index("origin_ars5")
     # B: Uni S cell 50 * E_art 200 / CHE total 500 = 20, bound 50 * 0.4 = 20; A (own Kreis) and C (shown) kept.
     assert art.loc["B", "source"] == T.SOURCE_PROXY_PATTERN
-    assert (art.loc["B", "che_persons"], art.loc["B", "upper_bound_persons"]) == (pytest.approx(20.0), pytest.approx(20.0))
+    assert (art.loc["B", "che_persons"], art.loc["B", "upper_bound_persons"]) == (pytest.approx(20.0),
+                                                                                  pytest.approx(20.0))
     assert (art.loc["A", "source"], art.loc["A", "che_persons"]) == ("kreis_view", 30)
     assert (art.loc["C", "source"], art.loc["C", "che_persons"]) == ("kreis_view", 3)
     # The proxy's own cells are unchanged (che_persons turns float once a cell is replaced).
@@ -529,6 +531,11 @@ def test_origin_pattern_proxy_off_returns_the_cells_unchanged():
     assert diagnostics == []
 
 
+def _missing_pair(pairs):
+    # The art academy's site has no pair from Kreis C: the geometry cannot be compared there.
+    return pairs[~((pairs["ars5"] == "C") & (pairs["destination_id"] == "S6"))]
+
+
 def _other_coefficients(pairs):
     # The same commune, but the (B, S6) pair carries other coefficients than (B, S1): the weights would differ.
     changed = pairs.copy()
@@ -541,6 +548,7 @@ def _other_coefficients(pairs):
     ("A001", {"LSN Uni S": "LSN Art K"}, None, "own CHE list"),         # an institution with its own list
     ("A001", {"LSN Art K": "LSN Nowhere"}, None, "LSN Nowhere"),        # an unknown proxy
     ("A001", PROXY, _other_coefficients, "different pair geometry"),    # the proxy's weights would not apply
+    ("A001", PROXY, _missing_pair, "one pair per origin Kreis"),        # a pair of the institution's site missing
 ])
 def test_origin_pattern_proxy_invalid_configuration_raises(art_site_ags8, proxy, change_pairs, match):
     toy = _toy_proxy(art_site_ags8)

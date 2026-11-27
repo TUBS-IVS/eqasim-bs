@@ -472,8 +472,15 @@ def apply_origin_pattern_proxy(cells: pd.DataFrame, che_totals: pd.Series, sites
     return result, diagnostics
 
 
-def _require_identical_pair_geometry(pairs: pd.DataFrame, origin_kreise, destination: str, proxy_destination: str) -> None:
-    """Raise unless both sites have a pair from every origin Kreis with the same distance and coefficients."""
+def _require_identical_pair_geometry(pairs: pd.DataFrame, origin_kreise, destination: str,
+                                     proxy_destination: str) -> None:
+    """Raise unless both sites have a pair from every origin Kreis with the same distance and coefficients.
+
+    The comparison is exact (no tolerance) on purpose: two sites in one commune sit at the same commune point,
+    so :func:`braunschweig.data.education.student_geometry.pair_coefficients` computes their geometry from
+    identical inputs and it is bit-identical; any difference means another point, which a tolerance would
+    hide. NaN counts as equal to NaN (the same missing value on both sites differs in nothing).
+    """
     _require_frame_columns(pairs, PAIR_COLUMNS, "apply_origin_pattern_proxy pairs")
     columns = ["distance_km", *_COEFFICIENTS]
     frames = []
@@ -484,12 +491,13 @@ def _require_identical_pair_geometry(pairs: pd.DataFrame, origin_kreise, destina
             raise ValueError(f"origin-pattern proxy: site {name!r} needs exactly one pair per origin Kreis in the "
                              f"pair coefficients, missing {missing[:5]}")
         frames.append(frame.loc[list(origin_kreise), columns].to_numpy(dtype=float))
-    differing = ~(frames[0] == frames[1]).all(axis=1)
+    same = (frames[0] == frames[1]) | (np.isnan(frames[0]) & np.isnan(frames[1]))
+    differing = ~same.all(axis=1)
     if differing.any():
         kreise = [code for code, flag in zip(origin_kreise, differing) if flag]
-        raise ValueError(f"origin-pattern proxy: sites {destination!r} and {proxy_destination!r} have different pair "
-                         f"geometry (columns {columns}) for origin Kreis(e) {kreise[:5]}; the proxy's weights would not "
-                         f"apply unchanged")
+        raise ValueError(f"origin-pattern proxy: sites {destination!r} and {proxy_destination!r} have different "
+                         f"pair geometry (columns {columns}) for origin Kreis(e) {kreise[:5]}; the proxy's weights "
+                         f"would not apply unchanged")
 
 
 def recount_cell_sources(cells: pd.DataFrame, cell_diagnostics: dict) -> dict:
@@ -504,7 +512,8 @@ def recount_cell_sources(cells: pd.DataFrame, cell_diagnostics: dict) -> dict:
     result["cells_per_source"] = {source: int((sources == source).sum())
                                   for source in (*SOURCES, SOURCE_PROXY_PATTERN)}
     censored = cells.loc[sources == SOURCE_CENSORED, "upper_bound_persons"].astype(float)
-    result["censored_upper_bound_persons"] = int(round(censored.sum(skipna=True)))
+    # int() as in origin_cells, so that both write the header key with the same rule.
+    result["censored_upper_bound_persons"] = int(censored.sum(skipna=True))
     result["censored_cells_without_bound"] = int(censored.isna().sum())
     result["proxy_pattern_upper_bound_persons"] = float(
         cells.loc[sources == SOURCE_PROXY_PATTERN, "upper_bound_persons"].astype(float).sum(skipna=True))
