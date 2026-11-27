@@ -134,20 +134,47 @@ def test_fit_leaves_out_and_counts_the_rows_without_persons():
     np.testing.assert_allclose(fitted.sum(axis=0)[_TWO_KREISE_SHARES.index], 160 * _TWO_KREISE_SHARES, atol=1e-6)
 
 
-@pytest.mark.parametrize("present, max_iterations, message", [
-    # Only 03153, which has no person, reaches the Salzgitter site: its share would be lost.
-    (pd.Series({"03101": 100, "03153": 0}), 1000, "Ostfalia Salzgitter"),
-    # 03157 has persons but no seed on any destination with a share.
-    (pd.Series({"03101": 100, "03157": 10}), 1000, "03157"),
-    # 03101 reaches only the TU; with 90 of 100 persons there the TU's target of 36.4 cannot be met.
-    (pd.Series({"03101": 90, "03153": 10}), 50, "did not converge"),
-], ids=["unreachable_destination", "row_without_seed", "infeasible_margins"])
-def test_fit_refuses_a_table_it_cannot_balance(present, max_iterations, message):
-    seed = _TWO_KREISE_SEED
-    if message == "Ostfalia Salzgitter":
-        seed = seed[~((seed["home_ars5"] == "03101") & (seed["destination_id"] == "Ostfalia Salzgitter"))]
-    if message == "did not converge":
-        seed = seed[(seed["home_ars5"] == "03153") | (seed["destination_id"] == "TU Braunschweig")]
+def test_fit_without_any_person_returns_an_empty_matrix_and_lists_every_row():
+    fitted, diagnostics = fit_flow_matrix(_TWO_KREISE_SEED, pd.Series({"03101": 0, "03153": 0}), _TWO_KREISE_SHARES,
+                                          tolerance=1e-6, max_iterations=1000)
 
+    assert fitted.empty and list(fitted.columns) == sorted(_TWO_KREISE_SHARES.index)
+    assert diagnostics == {"iterations": 0, "max_deviation_persons": 0.0, "rows_left_out": ["03101", "03153"]}
+
+
+_SEED = _TWO_KREISE_SEED
+_PRESENT = pd.Series({"03101": 100, "03153": 60})
+_REFUSALS = {
+    # Only 03153, which has no person, reaches the Salzgitter site: its share would be lost.
+    "unreachable_destination": (
+        _SEED[~((_SEED["home_ars5"] == "03101") & (_SEED["destination_id"] == "Ostfalia Salzgitter"))],
+        pd.Series({"03101": 100, "03153": 0}), _TWO_KREISE_SHARES, "Ostfalia Salzgitter"),
+    # 03157 has persons but no seed on any destination with a share.
+    "row_without_seed": (_SEED, pd.Series({"03101": 100, "03157": 10}), _TWO_KREISE_SHARES, "03157"),
+    # 03101 reaches only the TU; with 90 of 100 persons there the TU's target of 36.4 cannot be met.
+    "infeasible_margins": (
+        _SEED[(_SEED["home_ars5"] == "03153") | (_SEED["destination_id"] == "TU Braunschweig")],
+        pd.Series({"03101": 90, "03153": 10}), _TWO_KREISE_SHARES, "did not converge"),
+    # A pair given twice would be counted twice.
+    "duplicate_pair": (pd.concat([_SEED, _SEED.head(1)]), _PRESENT, _TWO_KREISE_SHARES, "more than once"),
+    # Heads for a destination that has no share: the seed and the shares come from different tables.
+    "seed_without_share": (_seed(list(_SEED.itertuples(index=False)) + [("03101", "HBK Braunschweig", 5.0)]),
+                           _PRESENT, _TWO_KREISE_SHARES, "HBK Braunschweig"),
+    # Shares adding up to 0.9: a destination is missing and its students would be spread over the others.
+    "shares_not_summing_to_one": (_SEED, _PRESENT, 0.9 * _TWO_KREISE_SHARES, "add up to"),
+    # Integer home codes against the 5-digit strings of T: every row would look unmatched.
+    "home_code_types_differ": (_SEED, pd.Series({3101: 100, 3153: 60}), _TWO_KREISE_SHARES, "int64"),
+}
+
+
+@pytest.mark.parametrize("seed, present, shares, message", list(_REFUSALS.values()), ids=list(_REFUSALS))
+def test_fit_refuses_a_table_it_cannot_balance(seed, present, shares, message):
     with pytest.raises(ValueError, match=message):
-        fit_flow_matrix(seed, present, _TWO_KREISE_SHARES, tolerance=1e-6, max_iterations=max_iterations)
+        fit_flow_matrix(seed, present, shares, tolerance=1e-6, max_iterations=50)
+
+
+@pytest.mark.parametrize("value, message", [(-0.5, "negative"), (float("nan"), "missing or infinite")],
+                         ids=["negative", "nan"])
+def test_controlled_round_refuses_a_value_that_is_not_a_count_of_persons(value, message):
+    with pytest.raises(ValueError, match=message):
+        controlled_round(pd.DataFrame([[0.4, value], [1.2, 0.7]]), np.random.default_rng(0))

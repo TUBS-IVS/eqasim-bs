@@ -75,7 +75,8 @@ def fit_flow_matrix(seed: pd.DataFrame, row_totals: pd.Series, dest_shares: pd.S
         homes without persons; they are not in ``fitted``).
 
     Raises:
-        ValueError: on invalid input; when a destination has a positive target but no home with persons has a
+        ValueError: on invalid input (home codes of different types in the seed and the row totals included);
+            when a destination has a positive target but no home with persons has a
             seed for it (its share would be lost); when a home with persons has no seed on any destination with a
             share (the caller routes such homes to the fallback before the fit, design B5); when the seed holds
             heads for a destination without a share; when the fit does not converge within ``max_iterations`` (the message
@@ -86,6 +87,7 @@ def fit_flow_matrix(seed: pd.DataFrame, row_totals: pd.Series, dest_shares: pd.S
     if isinstance(max_iterations, bool) or not isinstance(max_iterations, (int, np.integer)) or max_iterations < 1:
         raise ValueError(f"{_LOG_TAG} max_iterations must be an integer >= 1, got {max_iterations!r}")
     seed_matrix = _seed_matrix(seed)
+    _check_home_code_types(seed["home_ars5"], row_totals.index)
     shares = _checked_shares(dest_shares)
     totals = _checked_row_totals(row_totals)
 
@@ -131,9 +133,10 @@ def fit_flow_matrix(seed: pd.DataFrame, row_totals: pd.Series, dest_shares: pd.S
             if deviation <= tolerance:
                 break
     if not deviation <= tolerance:
-        raise ValueError(f"{_LOG_TAG} the fit did not converge within {max_iterations} iterations: last maximum "
-                         f"column deviation {deviation:.6g} persons (tolerance {tolerance:g}); the zeros of the "
-                         f"seed may make the row and column totals infeasible")
+        raise ValueError(f"{_LOG_TAG} the fit did not converge within {max_iterations} iterations: after "
+                         f"iteration {iteration} the largest column deviation is still {deviation:.6g} persons "
+                         f"(tolerance {tolerance:g}); the zeros of the seed make the row and column totals "
+                         f"infeasible or only just feasible")
 
     logger.info("%s fit converged after %d iterations: %d home Kreise x %d destinations, %.6g persons, maximum "
                 "column deviation %.3g persons; %d home Kreise without persons left out: %s", _LOG_TAG, iteration,
@@ -155,6 +158,22 @@ def _seed_matrix(seed: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"{_LOG_TAG} the seed holds a pair more than once (first: {pairs}); sum the rows of a "
                          f"pair first (student_flows_inputs.region_seed)")
     return seed.assign(seed=values).pivot(index="home_ars5", columns="destination_id", values="seed").fillna(0.0)
+
+
+def _check_home_code_types(seed_homes: pd.Series, total_homes: pd.Index) -> None:
+    """Refuse home codes of different or mixed types (integer 3101 against the string '03101' of T).
+
+    Such codes would never match: every home of the seed would count as a row without persons and every home of
+    the row totals as a row without seed.
+    """
+    if len(seed_homes) == 0 or len(total_homes) == 0:
+        return
+    seed_kind = pd.api.types.infer_dtype(seed_homes, skipna=False)
+    totals_kind = pd.api.types.infer_dtype(total_homes, skipna=False)
+    if seed_kind != totals_kind or seed_kind.startswith("mixed"):
+        raise ValueError(f"{_LOG_TAG} the home Kreis codes of the seed (dtype {seed_homes.dtype}, values "
+                         f"{seed_kind}) and of the row totals (dtype {total_homes.dtype}, values {totals_kind}) "
+                         f"differ in type or are mixed; pass both as the 5-digit strings of T, such as '03101'")
 
 
 def _checked_shares(dest_shares: pd.Series) -> pd.Series:
@@ -192,6 +211,12 @@ def controlled_round(matrix: pd.DataFrame, rng: np.random.Generator) -> pd.DataF
       integral margin is kept exactly;
     - the expectation of every cell is its value (unbiased);
     - the same matrix (same order of rows and columns) and the same generator state give the same result.
+
+    The guarantees hold for the real values passed in, not for targets the caller had in mind. The location stage
+    passes the fitted matrix of :func:`fit_flow_matrix`: its row sums are the whole persons present (the fit ends
+    on the rows), so they are kept exactly; its column sums meet their targets only within the fit tolerance, so a
+    column whose target is a whole number but whose fitted sum lies just above (below) it can end at the target
+    plus (minus) one. Within one person of the target always holds; exactly the target does not.
 
     Method (Cox 1987): the integer parts are set aside and only the fractional parts in ``[0, 1)`` are rounded.
     The table of fractional parts is completed with one slack column (each row's distance to its ceiling), one
