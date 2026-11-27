@@ -1,6 +1,7 @@
 # ADR-0210 · 2026-11-26 · The student origin-destination table uses a commune-level weight curve; the commuter weights are an owner assumption because the calibration could not decide
 
 - **Status:** active (branch `claude/i140-student-balance-3b6cbe`, Phase 2 of the student layer). Decision 5 (the level of the students) was decided by the owner on 2026-11-27.
+- **Amended by [ADR-0211](ADR-0211-students-lower-the-employed-target-and-get-their-own-education-entries.md) (2026-11-27), Consequences:** the day factor is `e` regional with the away share by home area (Phase 4 builds the absence cells), and the student control keeps two age groups while the four level-table groups feed the employed target only.
 - **Numbering:** ADR-0210 is the next free id; checked on 2026-11-26 across all branches, the open pull requests and the open issues (ADR-0209 was already taken elsewhere).
 - **Issue:** #140 (student layer), #279. Owner decisions of 2026-11-26.
 - **Numbers:** every figure of this build is in the run manifests [`docs/runs/student-balance-2026-11-26.yml`](../runs/student-balance-2026-11-26.yml) (calibration, weights decision, level decision aid) and [`docs/runs/student-balance-2026-11-27.yml`](../runs/student-balance-2026-11-27.yml) (the final tables, the gate and the level) and in the headers of the committed tables; this record copies none of them.
