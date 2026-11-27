@@ -1,0 +1,120 @@
+{
+  "ok": false,
+  "output_files": {
+    "braunschweig_1pct_i679_activities.csv": {
+      "identical": true,
+      "new": "a0d45cf4c48cc1b854778f49630ff7de421117bba68710cfcceae6534f919eb7",
+      "old": "a0d45cf4c48cc1b854778f49630ff7de421117bba68710cfcceae6534f919eb7"
+    },
+    "braunschweig_1pct_i679_activities.gpkg": {
+      "identical": true,
+      "new": "af4fb94e419664943aa6ce1b34ef3a4877af6aeabb32e30a5d5a3c54e4c8f41b",
+      "old": "af4fb94e419664943aa6ce1b34ef3a4877af6aeabb32e30a5d5a3c54e4c8f41b"
+    },
+    "braunschweig_1pct_i679_commutes.gpkg": {
+      "identical": true,
+      "new": "c39d3e9e0763e1204d0ad9b5037b205cb3dbf2261409beefb07e8c1a3ade04ca",
+      "old": "c39d3e9e0763e1204d0ad9b5037b205cb3dbf2261409beefb07e8c1a3ade04ca"
+    },
+    "braunschweig_1pct_i679_commutes_pre_portal.gpkg": {
+      "identical": false,
+      "new": "22a327ef257623a3c1d7876d3faa36fea99a476d7f4d5056062a0638ae277a5d",
+      "old": "7b1ff5dbd52222f31f77e4a7cf754ae7a844ff1522fdf908258fe20737d0487c"
+    },
+    "braunschweig_1pct_i679_homes.gpkg": {
+      "identical": true,
+      "new": "b9bcfd0952b0b5283e3d5c6e5d041c218b06a3dbd52f24eb5c20c4de9daeb211",
+      "old": "b9bcfd0952b0b5283e3d5c6e5d041c218b06a3dbd52f24eb5c20c4de9daeb211"
+    },
+    "braunschweig_1pct_i679_households.csv": {
+      "identical": true,
+      "new": "436193b129cfac60339e0b0b21fa012f1ec68c252d38557465298ca6b4570801",
+      "old": "436193b129cfac60339e0b0b21fa012f1ec68c252d38557465298ca6b4570801"
+    },
+    "braunschweig_1pct_i679_meta.json": {
+      "identical": false,
+      "new": null,
+      "old": "0c4a81e66291ed088aae39333c94153c4c825aadb6390694155e3b670f074ec5"
+    },
+    "braunschweig_1pct_i679_persons.csv": {
+      "identical": true,
+      "new": "7d43688f29ed0b365f9a4c9c4ac26312590320efa286b22888077181173882d3",
+      "old": "7d43688f29ed0b365f9a4c9c4ac26312590320efa286b22888077181173882d3"
+    },
+    "braunschweig_1pct_i679_trips.csv": {
+      "identical": true,
+      "new": "e83f9d87902b72033cc3f512efdfe1612d74d46663e02f9ace6fd38f1caee256",
+      "old": "e83f9d87902b72033cc3f512efdfe1612d74d46663e02f9ace6fd38f1caee256"
+    },
+    "braunschweig_1pct_i679_trips.gpkg": {
+      "identical": true,
+      "new": "5f001b13679eba8ac8f4348814f922c0a89f4f5794f92193b2f99348e5b4be3e",
+      "old": "5f001b13679eba8ac8f4348814f922c0a89f4f5794f92193b2f99348e5b4be3e"
+    },
+    "braunschweig_1pct_i679_trips_pre_portal.csv": {
+      "identical": true,
+      "new": "9d163f271565d9fa957cc7f327925956ff7343d182e2544785a6ca27dd93fd9c",
+      "old": "9d163f271565d9fa957cc7f327925956ff7343d182e2544785a6ca27dd93fd9c"
+    },
+    "braunschweig_1pct_i679_vehicle_types.csv": {
+      "identical": true,
+      "new": "e81f02d1df83130ec9a7658480ec937caec900d5e261e7ce462684c98f1f7ad3",
+      "old": "e81f02d1df83130ec9a7658480ec937caec900d5e261e7ce462684c98f1f7ad3"
+    },
+    "braunschweig_1pct_i679_vehicles.csv": {
+      "identical": true,
+      "new": "aa42361071fc5f9e0bff8e58f0a4f7706bd177bd902571b2186b5f261ec8f42b",
+      "old": "aa42361071fc5f9e0bff8e58f0a4f7706bd177bd902571b2186b5f261ec8f42b"
+    }
+  },
+  "output_identical": false,
+  "stages": {
+    "braunschweig.synthesis.commute_day.spatial_locations_day": {
+      "new_key": "braunschweig.synthesis.commute_day.spatial_locations_day__7199b1fae732599d87f31e12157d1544",
+      "old_key": "braunschweig.synthesis.commute_day.spatial_locations_day__7199b1fae732599d87f31e12157d1544",
+      "parts": [
+        {
+          "identical": true,
+          "part": 0,
+          "reason": "identical",
+          "rows": [
+            45932,
+            45932
+          ]
+        }
+      ],
+      "same_hash": true,
+      "stage_folder_files": [],
+      "stage_folder_identical": true
+    },
+    "braunschweig.synthesis.locations.secondary_chainsolvers": {
+      "new_key": "braunschweig.synthesis.locations.secondary_chainsolvers__7199b1fae732599d87f31e12157d1544",
+      "old_key": "braunschweig.synthesis.locations.secondary_chainsolvers__7199b1fae732599d87f31e12157d1544",
+      "parts": [
+        {
+          "identical": true,
+          "part": 0,
+          "reason": "identical",
+          "rows": [
+            13637,
+            13637
+          ]
+        },
+        {
+          "identical": true,
+          "part": 1,
+          "reason": "identical",
+          "rows": [
+            8815,
+            8815
+          ]
+        }
+      ],
+      "same_hash": true,
+      "stage_folder_files": [
+        "srv_location_draw_summary.csv"
+      ],
+      "stage_folder_identical": true
+    }
+  }
+}

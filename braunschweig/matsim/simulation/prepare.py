@@ -36,7 +36,8 @@ from braunschweig import synpp_tokens
 from braunschweig.data.transit import cut_schedule, schedule as transit_schedule
 from braunschweig.data.vrb import fare_config_xml, fare_model_export, line_scopes
 from braunschweig.matsim import config_modules, initial_mode_choice
-from braunschweig.matsim.simulation import cordon_subpopulation, frozen_pt_walk_lift, mode_choice_reach, plan_check
+from braunschweig.matsim.simulation import (cordon_subpopulation, frozen_pt_walk_lift, loop_mode_rule,
+                                           mode_choice_reach, plan_check)
 from braunschweig.parking import tariff_export
 
 log = logging.getLogger(__name__)
@@ -55,9 +56,11 @@ GTFS_STAGE = "matsim.scenario.supply.gtfs"
 #: fixed-mode strategy blocks into the final config (eqasim-bs#566). ``cut_schedule`` owns the cut mode and hub keys
 #: and the hub-name file that prepare passes to the cutter (#574). ``transit_schedule`` parses both cut timetables in
 #: ``_verify_cut_timetable_matches_stage``, so its reader decides whether the two cuts count as equal.
+#: ``loop_mode_rule`` selects the same-facility leisure trip constraint in the final config before the mode choice
+#: (#679).
 _HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes, tariff_export,
                    config_modules, plan_check, frozen_pt_walk_lift, initial_mode_choice, cordon_subpopulation,
-                   cut_schedule, transit_schedule)
+                   cut_schedule, transit_schedule, loop_mode_rule)
 
 #: A collapsed pt trip (its pt leg shortened by the cut) is walked when the kept stop sequence cannot serve it (eqasim
 #: cutter, #574, ADR-0186). ASSUMPTION: a walked share above 5 % of one collapsed case is worth a warning; it is a
@@ -323,6 +326,8 @@ def configure(context):
     # the Java options, and refuses the retired ADR-0155 weight key unconditionally, so a stale overlay fails even
     # with the feature off.
     initial_mode_choice.configure(context)
+    # Same-facility leisure trips only walk or bicycle in the mode choice (#679, ADR-0207); off declares only the key.
+    loop_mode_rule.configure(context)
 
     # Zone-based parking costs (issue #249): the tariff model JSON and the braunschweigParking module the Java
     # car cost model reads. OFF declares nothing else and writes nothing.
@@ -460,6 +465,12 @@ def execute(context):
     if loop_reach.isolate_outside_trips or (initial_enabled and initial_reach.isolate_outside_trips):
         mode_choice_reach.require_border_vehicle_constraint(
             "%s/%s" % (context.path("matsim.runtime.eqasim"), context.stage("matsim.runtime.eqasim")))
+    # The same-facility leisure trip constraint is selected in the FINAL config (#679, ADR-0207), so the standalone
+    # mode choice below (its own config is a copy of the final one) and the MATSim loop both read it; off: the jar
+    # is not opened and the config keeps its bytes. It edits tripConstraints, the reach settings edit the tour
+    # settings, so the order between the two only keeps every jar check before every edit.
+    if loop_mode_rule.enabled(context):
+        _select_loop_mode_rule(context, result)
     mode_choice_reach.apply(Path(context.path()) / result, loop_reach)  # after the jar check: a refusal edits nothing
 
     # The standalone mode choice runs on the FINAL population (after the cut, the freight injection and the
@@ -504,6 +515,21 @@ def _initial_mode_choice_excluded_subpopulations(context, injected_freight_trips
     print("[initial_mode_choice] excluded subpopulations: %s (freight: %d injected trips)"
           % (", ".join(excluded) if excluded else "none", injected_freight_trips))
     return excluded
+
+
+def _select_loop_mode_rule(context, config_name):
+    """Refuse a jar without the same-facility leisure and stroll trip constraints, then select both in the prepared config (#679)."""
+    # Resolved exactly as plan_check.run and matsim.runtime.eqasim.run do.
+    jar_path = "%s/%s" % (context.path("matsim.runtime.eqasim"), context.stage("matsim.runtime.eqasim"))
+    loop_mode_rule.require_constraint_in_jar(jar_path)
+    config_path = Path(context.path()) / config_name
+    changed = loop_mode_rule.apply(config_path)
+    loop_mode_rule.write_report(Path(context.path()) / loop_mode_rule.REPORT_FILE_NAME, config_path, jar_path, changed)
+    if changed is None:
+        log.info("[loop mode rule] %s already selected in %s of %s: unchanged", ", ".join(loop_mode_rule.CONSTRAINT_NAMES),
+                 loop_mode_rule.TRIP_CONSTRAINTS_PARAM, config_name)
+    else:
+        log.info("[loop mode rule] %s of %s: %r -> %r", loop_mode_rule.TRIP_CONSTRAINTS_PARAM, config_name, *changed)
 
 
 def _add_incommuter_strategies(context, config_name):

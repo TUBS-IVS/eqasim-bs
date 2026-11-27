@@ -1,0 +1,335 @@
+{
+  "differences": {
+    "A_vs_B": {
+      "mode_changed": {
+        "persons": 115,
+        "tour_flagged_in_both": 102,
+        "tour_flagged_in_neither": 0,
+        "tour_flagged_only_in_first": 124,
+        "tour_flagged_only_in_second": 102,
+        "trips": 328
+      },
+      "time_changed": {
+        "persons": 11,
+        "tour_flagged_in_both": 24,
+        "tour_flagged_in_neither": 0,
+        "tour_flagged_only_in_first": 10,
+        "tour_flagged_only_in_second": 4,
+        "trips": 38
+      }
+    },
+    "A_vs_C": {
+      "mode_changed": {
+        "persons": 112,
+        "tour_flagged_in_both": 98,
+        "tour_flagged_in_neither": 0,
+        "tour_flagged_only_in_first": 123,
+        "tour_flagged_only_in_second": 93,
+        "trips": 314
+      },
+      "time_changed": {
+        "persons": 11,
+        "tour_flagged_in_both": 24,
+        "tour_flagged_in_neither": 0,
+        "tour_flagged_only_in_first": 10,
+        "tour_flagged_only_in_second": 4,
+        "trips": 38
+      }
+    },
+    "B_vs_C": {
+      "mode_changed": {
+        "persons": 11,
+        "tour_flagged_in_both": 35,
+        "tour_flagged_in_neither": 0,
+        "tour_flagged_only_in_first": 2,
+        "tour_flagged_only_in_second": 1,
+        "trips": 38
+      },
+      "time_changed": {
+        "persons": 0,
+        "tour_flagged_in_both": 0,
+        "tour_flagged_in_neither": 0,
+        "tour_flagged_only_in_first": 0,
+        "tour_flagged_only_in_second": 0,
+        "trips": 0
+      }
+    }
+  },
+  "flagged_tour_legs": {
+    "A": 2378,
+    "B": 2310,
+    "C": 2311
+  },
+  "inputs": {
+    "cordon_network_buffer_fraction": 0.1,
+    "municipalities_key": "data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421",
+    "trips_simulated_keys": {
+      "A": "braunschweig.synthesis.outside_tour_modes.stage__a2c85e24ef604c0ee12b32830b81c2b6",
+      "B": "braunschweig.synthesis.outside_tour_modes.stage__934d4f34975daa3578534ebe350e09db",
+      "C": "braunschweig.synthesis.outside_tour_modes.stage__17d1ef6e1f022b22d87a20f066d818ce"
+    }
+  },
+  "outside_tour_reports": {
+    "A": {
+      "enabled": true,
+      "last_resort": "car_passenger",
+      "min_share": 0.01,
+      "n_draws_relaxed_to_longest_leg": 0,
+      "n_draws_restricted_by_availability": 37,
+      "n_legs": 34466,
+      "n_legs_remoded": 253,
+      "n_legs_swept": 213,
+      "n_outside_legs": 2378,
+      "n_outside_legs_implausible_after": 2,
+      "n_outside_tours": 949,
+      "n_outside_tours_remoded": 106,
+      "n_persons": 9571,
+      "n_portal_legs_as_all_group": 988,
+      "n_portal_tours_class_restricted": 38,
+      "n_portal_tours_left_unchanged": 1,
+      "n_portal_tours_lifted": 0,
+      "n_portal_tours_remoded": 39,
+      "n_tours": 14614,
+      "n_unknown_donor_mode": 0,
+      "portal_leg_column_present": true,
+      "share_draws_relaxed_to_longest_leg": 0.0,
+      "share_outside_tours_remoded": 0.11169652265542676,
+      "share_portal_tours_left_unchanged": 0.025,
+      "warn_share": 0.5
+    },
+    "B": {
+      "enabled": true,
+      "last_resort": "car_passenger",
+      "min_share": 0.01,
+      "n_draws_relaxed_to_longest_leg": 0,
+      "n_draws_restricted_by_availability": 28,
+      "n_legs": 34466,
+      "n_legs_remoded": 228,
+      "n_legs_swept": 178,
+      "n_outside_legs": 2310,
+      "n_outside_legs_implausible_after": 2,
+      "n_outside_tours": 932,
+      "n_outside_tours_remoded": 84,
+      "n_persons": 9571,
+      "n_portal_legs_as_all_group": 988,
+      "n_portal_tours_class_restricted": 32,
+      "n_portal_tours_left_unchanged": 1,
+      "n_portal_tours_lifted": 0,
+      "n_portal_tours_remoded": 32,
+      "n_tours": 14614,
+      "n_unknown_donor_mode": 0,
+      "portal_leg_column_present": true,
+      "share_draws_relaxed_to_longest_leg": 0.0,
+      "share_outside_tours_remoded": 0.09012875536480687,
+      "share_portal_tours_left_unchanged": 0.030303030303030304,
+      "warn_share": 0.5
+    },
+    "C": {
+      "enabled": true,
+      "last_resort": "car_passenger",
+      "min_share": 0.01,
+      "n_draws_relaxed_to_longest_leg": 0,
+      "n_draws_restricted_by_availability": 28,
+      "n_legs": 34466,
+      "n_legs_remoded": 221,
+      "n_legs_swept": 183,
+      "n_outside_legs": 2311,
+      "n_outside_legs_implausible_after": 2,
+      "n_outside_tours": 932,
+      "n_outside_tours_remoded": 84,
+      "n_persons": 9571,
+      "n_portal_legs_as_all_group": 988,
+      "n_portal_tours_class_restricted": 32,
+      "n_portal_tours_left_unchanged": 1,
+      "n_portal_tours_lifted": 0,
+      "n_portal_tours_remoded": 32,
+      "n_tours": 14614,
+      "n_unknown_donor_mode": 0,
+      "portal_leg_column_present": true,
+      "share_draws_relaxed_to_longest_leg": 0.0,
+      "share_outside_tours_remoded": 0.09012875536480687,
+      "share_portal_tours_left_unchanged": 0.030303030303030304,
+      "warn_share": 0.5
+    }
+  },
+  "same_trips": {
+    "A_vs_C_time_changed == A_vs_B_time_changed": true,
+    "A_vs_C_time_changed == B_vs_C_mode_changed": false,
+    "B_vs_C_mode_changed_within_A_vs_C_mode_changed": 19,
+    "overlap_A_vs_C_time_and_B_vs_C_mode": 4
+  },
+  "zero_length_non_loop_legs": {
+    "B": {
+      "bicycle": {
+        "leaving_a_loop": {
+          "by_destination_purpose": {
+            "home": 19
+          },
+          "by_diary_mode": {
+            "bicycle": 19
+          },
+          "by_loop_origin": {
+            "home": 19
+          },
+          "diary_travel_time_s_median": 3600.0,
+          "diary_travel_time_s_p25": 1800.0,
+          "diary_travel_time_s_p75": 3900.0,
+          "km_in_arm_a": 135.22805005627407,
+          "legs": 19,
+          "zero_length_in_arm_a_too": 0
+        },
+        "not_leaving_a_loop": {
+          "by_destination_purpose": {
+            "education": 35,
+            "escort": 3,
+            "home": 130,
+            "leisure": 3,
+            "other": 3,
+            "shop": 11,
+            "work": 43
+          },
+          "by_diary_mode": {
+            "bicycle": 227,
+            "walk": 1
+          },
+          "diary_travel_time_s_median": 900.0,
+          "diary_travel_time_s_p25": 300.0,
+          "diary_travel_time_s_p75": 1200.0,
+          "km_in_arm_a": 62.56811705440973,
+          "legs": 228,
+          "zero_length_in_arm_a_too": 221
+        },
+        "zero_length_non_loop_legs": 247
+      },
+      "walk": {
+        "leaving_a_loop": {
+          "by_destination_purpose": {
+            "home": 338,
+            "leisure": 1,
+            "shop": 1
+          },
+          "by_diary_mode": {
+            "walk": 340
+          },
+          "by_loop_origin": {
+            "home": 338,
+            "secondary": 2
+          },
+          "diary_travel_time_s_median": 2700.0,
+          "diary_travel_time_s_p25": 1500.0,
+          "diary_travel_time_s_p75": 3600.0,
+          "km_in_arm_a": 721.8439659519686,
+          "legs": 340,
+          "zero_length_in_arm_a_too": 1
+        },
+        "not_leaving_a_loop": {
+          "by_destination_purpose": {
+            "education": 50,
+            "escort": 5,
+            "home": 242,
+            "leisure": 18,
+            "other": 17,
+            "shop": 45,
+            "work": 87
+          },
+          "by_diary_mode": {
+            "walk": 464
+          },
+          "diary_travel_time_s_median": 900.0,
+          "diary_travel_time_s_p25": 300.0,
+          "diary_travel_time_s_p75": 1800.0,
+          "km_in_arm_a": 114.24108874789324,
+          "legs": 464,
+          "zero_length_in_arm_a_too": 421
+        },
+        "zero_length_non_loop_legs": 804
+      }
+    },
+    "C": {
+      "bicycle": {
+        "leaving_a_loop": {
+          "by_destination_purpose": {
+            "home": 19
+          },
+          "by_diary_mode": {
+            "bicycle": 19
+          },
+          "by_loop_origin": {
+            "home": 19
+          },
+          "diary_travel_time_s_median": 3600.0,
+          "diary_travel_time_s_p25": 1800.0,
+          "diary_travel_time_s_p75": 3900.0,
+          "km_in_arm_a": 135.22805005627407,
+          "legs": 19,
+          "zero_length_in_arm_a_too": 0
+        },
+        "not_leaving_a_loop": {
+          "by_destination_purpose": {
+            "education": 35,
+            "escort": 3,
+            "home": 130,
+            "leisure": 3,
+            "other": 3,
+            "shop": 11,
+            "work": 43
+          },
+          "by_diary_mode": {
+            "bicycle": 227,
+            "walk": 1
+          },
+          "diary_travel_time_s_median": 900.0,
+          "diary_travel_time_s_p25": 300.0,
+          "diary_travel_time_s_p75": 1200.0,
+          "km_in_arm_a": 62.56811705440973,
+          "legs": 228,
+          "zero_length_in_arm_a_too": 221
+        },
+        "zero_length_non_loop_legs": 247
+      },
+      "walk": {
+        "leaving_a_loop": {
+          "by_destination_purpose": {
+            "home": 338,
+            "leisure": 1,
+            "shop": 1
+          },
+          "by_diary_mode": {
+            "walk": 340
+          },
+          "by_loop_origin": {
+            "home": 338,
+            "secondary": 2
+          },
+          "diary_travel_time_s_median": 2700.0,
+          "diary_travel_time_s_p25": 1500.0,
+          "diary_travel_time_s_p75": 3600.0,
+          "km_in_arm_a": 721.8439659519686,
+          "legs": 340,
+          "zero_length_in_arm_a_too": 1
+        },
+        "not_leaving_a_loop": {
+          "by_destination_purpose": {
+            "education": 50,
+            "escort": 5,
+            "home": 242,
+            "leisure": 17,
+            "other": 16,
+            "shop": 45,
+            "work": 87
+          },
+          "by_diary_mode": {
+            "walk": 462
+          },
+          "diary_travel_time_s_median": 900.0,
+          "diary_travel_time_s_p25": 300.0,
+          "diary_travel_time_s_p75": 1800.0,
+          "km_in_arm_a": 110.03119599904642,
+          "legs": 462,
+          "zero_length_in_arm_a_too": 421
+        },
+        "zero_length_non_loop_legs": 802
+      }
+    }
+  }
+}

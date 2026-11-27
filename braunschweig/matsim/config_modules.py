@@ -71,6 +71,31 @@ def read_module(config_path, name: str) -> dict[str, str] | None:
     return None
 
 
+def read_param(config_path, module: str, name: str) -> str | None:
+    """Value of the DIRECT-child parameter ``name`` of module ``module``, also for a module with parameter sets.
+
+    ``read_module`` supports only flat modules; the eqasim-generated ``DiscreteModeChoice`` module has flat
+    parameters followed by ``<parameterset>`` blocks (eqasim-bs#679), so this reader looks at the module's own
+    ``<param>`` children only: a parameter of the same name inside a parameter set never matches. Returns None when
+    the module exists but has no such direct parameter. Raises ``ValueError`` when the module is absent or appears more
+    than once, when the direct parameter appears more than once or when the file is not a MATSim config, and
+    ``xml.etree.ElementTree.ParseError`` for a file that is not well-formed XML. Reads the file; no side effects.
+    """
+    _check_module_name(module)
+    root = ET.parse(str(config_path)).getroot()
+    if root.tag != "config":
+        raise ValueError(f"{config_path}: expected a MATSim config root element, found <{root.tag}>")
+    modules = [element for element in root.findall("module") if element.get("name") == module]
+    if not modules:
+        raise ValueError(f"{config_path}: no module {module!r}")
+    if len(modules) > 1:
+        raise ValueError(f"{config_path}: module {module!r} appears {len(modules)} times")
+    values = [child.get("value") for child in modules[0].findall("param") if child.get("name") == name]
+    if len(values) > 1:
+        raise ValueError(f"{config_path}: parameter {name!r} appears {len(values)} times in module {module!r}")
+    return values[0] if values else None
+
+
 def write_module(config_path, name: str, params: Mapping[str, str]) -> Path:
     """Insert the module ``name`` with ``params`` (text values) before ``</config>``; return the path.
 
@@ -100,34 +125,65 @@ def write_module(config_path, name: str, params: Mapping[str, str]) -> Path:
     return path
 
 
+def _blank_comments(text: str) -> str:
+    """``text`` with every ``<!-- ... -->`` comment replaced by spaces of the same length (offsets stay valid)."""
+    return re.sub(r"<!--.*?-->", lambda comment: " " * len(comment.group()), text, flags=re.DOTALL)
+
+
+def _direct_param_value_spans(body: str, name: str) -> list[tuple[int, int]]:
+    """Spans of the ``value`` text of every ``<param name=...>`` that is a DIRECT child of the module body.
+
+    A parameter inside a ``<parameterset>`` (nested sets included, self-closing sets too) is skipped: the scan tracks
+    the parameter set depth and keeps only the matches at depth 0. Comments are blanked first, so a commented-out
+    parameter or a tag inside a comment (the MATSim writer puts the parameter descriptions there) neither matches nor
+    shifts the depth; the returned spans refer to the unchanged ``body``.
+    """
+    body = _blank_comments(body)
+    tokens = re.compile(r"<parameterset\b[^>]*?(?P<self_closing>/?)>|(?P<close></parameterset\s*>)|"
+                        r"<param\s+name=\"%s\"\s+value=\"(?P<value>[^\"]*)\"" % re.escape(name))
+    depth, spans = 0, []
+    for token in tokens.finditer(body):
+        if token.group("close"):
+            depth -= 1
+        elif token.group("value") is not None:
+            if depth == 0:
+                spans.append(token.span("value"))
+        elif not token.group("self_closing"):
+            depth += 1
+    return spans
+
+
 def set_param(config_path, module: str, name: str, value: str) -> str:
     """Set the existing parameter ``name`` of module ``module`` to ``value`` (text); return the old value.
 
     Edits only the ``value`` attribute of that one ``<param>`` element as text, so the XML declaration, the
     DOCTYPE, comments, line endings and every other byte are kept. A parameter of the same name in another
-    module is not touched. Side effect: rewrites ``config_path``. Raises ``ValueError`` when the module or the
-    parameter is absent or appears more than once (nothing is written: a missing parameter means the config
-    was not generated the way the caller expects, and adding one silently would hide that), ``TypeError``
-    for a non-text value, and ``xml.etree.ElementTree.ParseError`` for a file that is not well-formed XML.
+    module is not touched, nor is one of the same name inside a ``<parameterset>`` of the module: only a DIRECT
+    ``<param>`` child of the module counts, the one ``read_param`` reads. Modules and parameters inside XML comments
+    are ignored. Side effect: rewrites ``config_path``. Raises ``ValueError`` when the module or that parameter is
+    absent or appears more than once (nothing is written: a missing parameter means the config was not generated
+    the way the caller expects, and adding one silently would hide that), ``TypeError`` for a non-text value, and
+    ``xml.etree.ElementTree.ParseError`` for a file that is not well-formed XML.
     """
     _check_module_name(module)
     _check_params({name: value})
     path = Path(config_path)
     ET.parse(str(path))  # fail early on a malformed file, before any text edit
     text = path.read_bytes().decode("utf-8")
-    modules = list(re.finditer(r"<module\s+name=\"%s\"\s*>(.*?)</module>" % re.escape(module), text, re.DOTALL))
+    # Scanned with the comments blanked (same offsets), edited in the original text.
+    modules = list(re.finditer(r"<module\s+name=\"%s\"\s*>(.*?)</module>" % re.escape(module),
+                               _blank_comments(text), re.DOTALL))
     if not modules:
         raise ValueError(f"{path}: no module {module!r}")
     if len(modules) > 1:
         raise ValueError(f"{path}: module {module!r} appears {len(modules)} times")
     body_start, body_end = modules[0].span(1)
-    params = list(re.finditer(r"<param\s+name=\"%s\"\s+value=\"([^\"]*)\"" % re.escape(name),
-                              text[body_start:body_end]))
+    params = _direct_param_value_spans(text[body_start:body_end], name)
     if not params:
         raise ValueError(f"{path}: no parameter {name!r} in module {module!r}")
     if len(params) > 1:
         raise ValueError(f"{path}: parameter {name!r} appears {len(params)} times in module {module!r}")
-    value_start, value_end = (body_start + offset for offset in params[0].span(1))
+    value_start, value_end = (body_start + offset for offset in params[0])
     old_value = unescape(text[value_start:value_end], {"&quot;": '"'})
     path.write_bytes((text[:value_start] + escape(value, {'"': "&quot;"}) + text[value_end:]).encode("utf-8"))
     return old_value

@@ -1,0 +1,90 @@
+{
+  "loop_keys": 746,
+  "loop_trips_by_destination_type": {
+    "home": 2,
+    "leisure": 735,
+    "outside": 8,
+    "work": 1
+  },
+  "loop_trips_by_main_mode": {
+    "bicycle": 33,
+    "car": 114,
+    "car_passenger": 8,
+    "outside": 3,
+    "walk": 588
+  },
+  "loop_trips_by_origin_diary_mode_main_mode_length_alignment": {
+    "education|bicycle|walk|zero|aligned": 2,
+    "education|walk|walk|zero|aligned": 5,
+    "home|bicycle|bicycle|zero|aligned": 1,
+    "home|bicycle|car|zero|aligned": 4,
+    "home|bicycle|walk|zero|aligned": 12,
+    "home|walk|bicycle|zero|aligned": 30,
+    "home|walk|car_passenger|zero|aligned": 6,
+    "home|walk|car|nonzero|misaligned": 2,
+    "home|walk|car|zero|aligned": 84,
+    "home|walk|outside|nonzero|misaligned": 1,
+    "home|walk|walk|nonzero|misaligned": 4,
+    "home|walk|walk|zero|aligned": 449,
+    "secondary|bicycle|car|nonzero|aligned": 1,
+    "secondary|bicycle|walk|zero|aligned": 4,
+    "secondary|walk|bicycle|zero|aligned": 2,
+    "secondary|walk|car_passenger|zero|aligned": 2,
+    "secondary|walk|car|zero|aligned": 20,
+    "secondary|walk|outside|nonzero|misaligned": 2,
+    "secondary|walk|walk|nonzero|misaligned": 2,
+    "secondary|walk|walk|zero|aligned": 93,
+    "work|bicycle|walk|zero|aligned": 1,
+    "work|walk|car|zero|aligned": 3,
+    "work|walk|walk|zero|aligned": 16
+  },
+  "loop_trips_found_in_plans": 746,
+  "loop_trips_zero_length_by_main_mode": {
+    "bicycle": 33,
+    "car": 111,
+    "car_passenger": 8,
+    "walk": 582
+  },
+  "persons_with_selected_plan": 12667,
+  "stuck": {
+    "at_simulation_end": 17,
+    "by_leg_mode": {
+      "car": 10,
+      "pt": 2,
+      "truck": 2,
+      "walk": 5
+    },
+    "by_subpopulation": {
+      "freight": 2,
+      "incommuter": 4,
+      "residents": 13
+    },
+    "events": 19,
+    "persons": 19
+  },
+  "trips": 39187,
+  "zero_length_trips_by_destination_type": {
+    "education": 164,
+    "escort": 22,
+    "freight_end": 1,
+    "home": 1300,
+    "leisure": 777,
+    "other": 41,
+    "outside": 579,
+    "shop": 111,
+    "work": 640
+  },
+  "zero_length_trips_by_main_mode": {
+    "bicycle": 135,
+    "car": 486,
+    "car_passenger": 69,
+    "outside": 571,
+    "truck": 1,
+    "walk": 2373
+  },
+  "zero_length_trips_with_positive_route_distance_by_mode": {
+    "car": 484,
+    "car_passenger": 67,
+    "truck": 1
+  }
+}

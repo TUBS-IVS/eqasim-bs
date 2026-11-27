@@ -76,6 +76,7 @@ code:
 - braunschweig/matsim/simulation/plan_check.py
 - braunschweig/matsim/simulation/frozen_pt_walk_lift.py
 - braunschweig/matsim/initial_mode_choice.py
+- braunschweig/matsim/simulation/loop_mode_rule.py
 - braunschweig/matsim/scenario/day_end_margin.py
 - braunschweig/matsim/simulation/cordon_subpopulation.py
 pipelines:
@@ -96,6 +97,7 @@ features:
 - qsim_departures_yield
 - mode_choice
 - initial_mode_choice
+- loop_trips_non_motorised
 - vrb_zone_fare_model
 - parking_cost_zones
 - plan_feasibility_check
@@ -120,6 +122,7 @@ decisions:
 - ADR-0182
 - ADR-0189
 - ADR-0206
+- ADR-0207
 notes: >-
   Frozen pt walk lift (ADR-0189, issue #575). After the cut, the freight injection and the initial mode choice and
   before the plan check, braunschweig.matsim.simulation.frozen_pt_walk_lift lifts the long pt-as-walk trips of frozen
@@ -191,3 +194,8 @@ notes: >-
   (observations, not reference values). braunschweig.initial_mode_choice.weight is retired: a config that still
   sets it is refused in configure() with a pointer to ADR-0178.
   Reach of the mode choice (ADR-0206, issue #678): before the initial mode choice prepare edits the final config and writes a second config for it (braunschweig.matsim.simulation.mode_choice_reach), checks the jar for the border vehicle constraint, passes the loop settings to frozen_pt_walk_lift and the plan check; rule: docs/codebase/notes/mode-choice-reach.md.
+  Leisure trip mode rules (ADR-0207 decision 6, #679, feature record loop_trips_non_motorised): configure() declares
+  braunschweig.mode_choice.loop_trips_non_motorised (loop_mode_rule is in _HELPER_MODULES); with it on, execute selects
+  the two eqasim-java-bs trip constraints before the initial mode choice and writes loop_mode_rule_report.json.
+  Rule, jar check, report fields, switch-off behaviour and where the counts live: docs/codebase/notes/leisure-loops.md
+  ("Mode choice").

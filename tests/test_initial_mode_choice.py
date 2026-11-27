@@ -15,6 +15,7 @@ from braunschweig.matsim import initial_mode_choice as I
 from braunschweig.matsim.simulation import mode_choice_reach as R
 from braunschweig.matsim.simulation import plan_check as C
 from braunschweig.matsim.simulation import prepare
+from braunschweig.matsim.simulation.loop_mode_rule import KEY_ENABLED as LOOP_KEY
 from braunschweig.matsim.simulation.mode_choice_reach import ReachSettings
 
 
@@ -327,7 +328,7 @@ def test_execute_runs_the_mode_choice_after_the_parking_inputs_and_before_the_pl
                    prepare.PARKING_KEY: True, C.KEY_ENABLED: True, I.KEY_ENABLED: enabled,
                    "braunschweig.frozen_pt_walk_lift.enabled": False,
                    R.KEY_LOOP_ISOLATE: False, R.KEY_LOOP_MAX_TOUR_LENGTH: 11,
-                   R.KEY_INITIAL_ISOLATE: True, R.KEY_INITIAL_MAX_TOUR_LENGTH: 13}
+                   R.KEY_INITIAL_ISOLATE: True, R.KEY_INITIAL_MAX_TOUR_LENGTH: 13, LOOP_KEY: False}
 
         def config(self, key):
             return self._values[key]

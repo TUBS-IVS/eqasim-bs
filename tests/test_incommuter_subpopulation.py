@@ -41,6 +41,7 @@ from braunschweig.matsim.simulation import cordon_subpopulation as CS  # noqa: E
 from braunschweig.matsim.simulation import mode_choice_reach as R  # noqa: E402
 from braunschweig.matsim.simulation import plan_check as C  # noqa: E402
 from braunschweig.matsim.simulation import prepare  # noqa: E402
+from braunschweig.matsim.simulation.loop_mode_rule import KEY_ENABLED as LOOP_KEY  # noqa: E402
 
 CRS = "EPSG:25832"
 SVB_ID = 900001
@@ -356,7 +357,7 @@ def test_prepare_writes_the_incommuter_strategies_into_the_final_config(tmp_path
                    prepare.PARKING_KEY: False, C.KEY_ENABLED: False, I.KEY_ENABLED: True,
                    CS.KEY_REROUTE_WEIGHT: 0.1, "braunschweig.frozen_pt_walk_lift.enabled": False,
                    R.KEY_LOOP_ISOLATE: False, R.KEY_LOOP_MAX_TOUR_LENGTH: 11,
-                   R.KEY_INITIAL_ISOLATE: True, R.KEY_INITIAL_MAX_TOUR_LENGTH: 13}
+                   R.KEY_INITIAL_ISOLATE: True, R.KEY_INITIAL_MAX_TOUR_LENGTH: 13, LOOP_KEY: False}
 
         def config(self, key):
             return self._values[key]
@@ -390,7 +391,7 @@ def test_prepare_leaves_the_config_alone_without_the_cordon(monkeypatch):
                    prepare.PARKING_KEY: False, C.KEY_ENABLED: False, I.KEY_ENABLED: False,
                    "braunschweig.frozen_pt_walk_lift.enabled": False,
                    R.KEY_LOOP_ISOLATE: False, R.KEY_LOOP_MAX_TOUR_LENGTH: 11,
-                   R.KEY_INITIAL_ISOLATE: True, R.KEY_INITIAL_MAX_TOUR_LENGTH: 13}
+                   R.KEY_INITIAL_ISOLATE: True, R.KEY_INITIAL_MAX_TOUR_LENGTH: 13, LOOP_KEY: False}
 
         def config(self, key):
             return self._values[key]

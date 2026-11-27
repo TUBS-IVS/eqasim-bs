@@ -1,0 +1,33 @@
+## Run overlay of i679_b, written by scripts/isolated_run.py overlay on 2026-11-26T02:13:02+01:00.
+## Source: ~/i679_c7/i679_b_ff83decf_source.yml (sha256 5fe658516872f5448f19927007e6851c58e4bb8b219ae051d2de5c6ee77c2cde).
+## Paths are relative to RUN_DIR/eqasim-bs, the launch directory, so every isolated run carries the
+## same strings: output_path enters synthesis stage hashes, analysis_working_directory the analysis suite's.
+## `launch` compares this file with its gate record: edit it only before `gate --write`.
+## Launcher gate list (7 stages) written by `gate --write` on 2026-11-26T02:21:05+01:00 from logs/explain_20261126T022047.log.
+working_directory: ../cache
+run:
+- synthesis.output
+- braunschweig.matsim.scenario.facilities
+config:
+  sampling_rate: 0.01
+  output_path: ../output
+  analysis_working_directory: ../cache
+  output_prefix: braunschweig_1pct_i679_
+  matsim_last_iteration: 5
+  braunschweig.population.popsim.work_dir: ../popsim_work
+  braunschweig.population.popsim.max_cells: 750
+  braunschweig.population.popsim.num_workers: 4
+  braunschweig.chainsolvers.processes: 8
+  cache_share_enabled: false
+  cache_share_export: false
+  cache_share_recompute: []
+  secondary_loop_zero_displacement: true
+  secondary_leisure_estimates_without_loops: false
+  synpp_expected_stale_stages:
+  - braunschweig.matsim.scenario.facilities
+  - braunschweig.popsim.distance_distributions
+  - braunschweig.synthesis.commute_day.output_day
+  - braunschweig.synthesis.commute_day.spatial_locations_day
+  - braunschweig.synthesis.locations.secondary_chainsolvers
+  - braunschweig.synthesis.outside_tour_modes.activities_stage
+  - braunschweig.synthesis.outside_tour_modes.stage

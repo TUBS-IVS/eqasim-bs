@@ -1,0 +1,107 @@
+{
+  "leisure_subtype_layer_legs": {
+    "leisure_activity": {
+      "bicycle": {
+        "legs_with_loops": 5336,
+        "legs_without_loops": 5336
+      },
+      "car": {
+        "legs_with_loops": 9130,
+        "legs_without_loops": 9130
+      },
+      "car_passenger": {
+        "legs_with_loops": 2309,
+        "legs_without_loops": 2309
+      },
+      "pt": {
+        "legs_with_loops": 2266,
+        "legs_without_loops": 2266
+      },
+      "walk": {
+        "legs_with_loops": 6060,
+        "legs_without_loops": 6060
+      }
+    },
+    "leisure_excursion": {
+      "bicycle": {
+        "legs_with_loops": 391,
+        "legs_without_loops": 391
+      },
+      "car": {
+        "legs_with_loops": 506,
+        "legs_without_loops": 506
+      },
+      "car_passenger": {
+        "legs_with_loops": 375,
+        "legs_without_loops": 375
+      },
+      "pt": {
+        "legs_with_loops": 440,
+        "legs_without_loops": 440
+      },
+      "walk": {
+        "legs_with_loops": 588,
+        "legs_without_loops": 588
+      }
+    },
+    "leisure_local": {
+      "bicycle": {
+        "legs_with_loops": 1807,
+        "legs_without_loops": 1172
+      },
+      "car": {
+        "legs_with_loops": 2761,
+        "legs_without_loops": 2761
+      },
+      "car_passenger": {
+        "legs_with_loops": 1225,
+        "legs_without_loops": 1225
+      },
+      "pt": {
+        "legs_with_loops": 871,
+        "legs_without_loops": 871
+      },
+      "walk": {
+        "legs_with_loops": 14762,
+        "legs_without_loops": 4214
+      }
+    },
+    "leisure_visit": {
+      "bicycle": {
+        "legs_with_loops": 1263,
+        "legs_without_loops": 1263
+      },
+      "car": {
+        "legs_with_loops": 2637,
+        "legs_without_loops": 2637
+      },
+      "car_passenger": {
+        "legs_with_loops": 896,
+        "legs_without_loops": 896
+      },
+      "pt": {
+        "legs_with_loops": 1039,
+        "legs_without_loops": 1039
+      },
+      "walk": {
+        "legs_with_loops": 1618,
+        "legs_without_loops": 1618
+      }
+    }
+  },
+  "leisure_subtype_legs_left_out": {
+    "bicycle": {
+      "kept": 18924,
+      "left_out": 635,
+      "legs": 19559,
+      "out_and_back_kept": 180
+    },
+    "walk": {
+      "kept": 46001,
+      "left_out": 10548,
+      "legs": 56549,
+      "out_and_back_kept": 1516
+    }
+  },
+  "secondary_leisure_estimates_without_loops": true
+}

@@ -1,0 +1,18 @@
+--- walk, 710 stroll: 6419 trips; starts at home 67.7 %; last trip of the day 44.9 %; followed by a way home or back 27.3 %; followed by another purpose 27.8 %
+    stay after the trip (min): share 0 = 17.7 %, median 32
+    way home after it: same mode 59.3 %; length ratio home/out p25 0.80, p50 1.00, p75 2.19; share with ratio 0.8-1.25 41.2 %
+--- walk, 711 dog: 6828 trips; starts at home 69.8 %; last trip of the day 31.4 %; followed by a way home or back 16.4 %; followed by another purpose 52.2 %
+    stay after the trip (min): share 0 = 15.2 %, median 70
+    way home after it: same mode 73.4 %; length ratio home/out p25 0.78, p50 1.00, p75 1.00; share with ratio 0.8-1.25 55.9 %
+--- walk, 704 active sport: 3647 trips; starts at home 75.6 %; last trip of the day 25.7 %; followed by a way home or back 42.3 %; followed by another purpose 32.0 %
+    stay after the trip (min): share 0 = 10.4 %, median 80
+    way home after it: same mode 80.6 %; length ratio home/out p25 1.00, p50 1.00, p75 1.00; share with ratio 0.8-1.25 76.0 %
+--- bicycle, 710 stroll: 698 trips; starts at home 70.8 %; last trip of the day 42.6 %; followed by a way home or back 30.9 %; followed by another purpose 26.5 %
+    stay after the trip (min): share 0 = 12.8 %, median 45
+    way home after it: same mode 93.1 %; length ratio home/out p25 0.67, p50 1.00, p75 1.00; share with ratio 0.8-1.25 58.3 %
+--- bicycle, 711 dog: 173 trips; starts at home 68.2 %; last trip of the day 28.9 %; followed by a way home or back 28.3 %; followed by another purpose 42.8 %
+    stay after the trip (min): share 0 = 17.3 %, median 50
+    way home after it: same mode 93.9 %; length ratio home/out p25 1.00, p50 1.00, p75 1.00; share with ratio 0.8-1.25 73.5 %
+--- bicycle, 704 active sport: 3521 trips; starts at home 78.2 %; last trip of the day 14.7 %; followed by a way home or back 64.3 %; followed by another purpose 21.0 %
+    stay after the trip (min): share 0 = 3.5 %, median 92
+    way home after it: same mode 97.7 %; length ratio home/out p25 1.00, p50 1.00, p75 1.00; share with ratio 0.8-1.25 85.3 %

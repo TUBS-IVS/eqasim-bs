@@ -1,0 +1,58 @@
+Stage-name mapping for scripts/validate_secondary_distances.py in the production workflow (issue #679, task C7)
+==============================================================================================================
+
+Observed on 2026-11-25 with the isolated 1 % run i679_on2 (eqasim-bs 0611505f, configs/base_bs.yml + the run
+overlay i679_on2_run.yml; aliases from configs/base_bs.yml `aliases:`).
+
+Failure on the real cache (i679_on2_validate_secondary_distances_log.txt):
+  RuntimeError: No cached pickle found for stage 'synthesis.population.spatial.locations'
+  (names tried: synthesis.population.spatial.locations)
+The script globs `<name>__*.p`; synpp caches a stage under the RESOLVED alias target, so the logical names it
+asks for do not exist (or exist with a different meaning) in this workflow.
+
+Logical name the script reads          -> cached stage that stands in for it (production aliases)
+------------------------------------------------------------------------------------------------------------
+synthesis.population.spatial.locations -> braunschweig.synthesis.commute_day.spatial_locations_day
+                                          (alias in base_bs.yml; the eqasim location join run on the
+                                          reporting-day activities)
+synthesis.population.activities        -> braunschweig.synthesis.commute_day.activities_day_stage
+                                          (alias synthesis.population.activities.final)
+synthesis.population.trips             -> braunschweig.synthesis.portal_trips.trips_final
+                                          (alias synthesis.population.trips.final, what the chain solver
+                                          places) or braunschweig.synthesis.outside_tour_modes.stage
+                                          (alias synthesis.population.trips.simulated, the modes as written
+                                          to the population); the shim run used trips.simulated.
+                                          NOT braunschweig.popsim.trips_stage (the script's current alias):
+                                          that is the pre-assignment trip table.
+synthesis.population.spatial.secondary.locations
+                                       -> braunschweig.synthesis.locations.secondary_chainsolvers
+                                          (already handled by the script's alias list)
+
+Why the activities must be the ones AFTER the day rewrite
+  The locations frame (spatial_locations_day) is built on the reporting-day activities (activities.final:
+  day absence, commute-day state, portal rewrite). The pre-assignment table that is cached under the plain
+  name `synthesis.population.activities` describes another day. Measured on the i679_on2 cache (newest
+  pickle of each stage):
+    synthesis.population.activities (pre-assignment)          48,174 rows, 11,466 persons
+    braunschweig.synthesis.commute_day.activities_day_stage   45,932 rows, 11,466 persons
+    braunschweig.synthesis.commute_day.spatial_locations_day  45,932 rows, 11,466 persons
+    braunschweig.popsim.trips_stage (pre-assignment trips)    36,708 rows, 10,129 persons
+    braunschweig.synthesis.portal_trips.trips_final           34,466 rows,  9,571 persons
+    braunschweig.synthesis.outside_tour_modes.stage           34,466 rows,  9,571 persons
+  Outer join of the pre-assignment and the day activities on (person_id, activity_index): 45,898 rows in
+  both, 2,276 only in the pre-assignment table, 34 only in the day table, and on 750 of the joined rows
+  the purpose differs. Joining the day locations with the pre-assignment activities would therefore give
+  wrong purposes (and wrong legs) for those rows; with the day activities the join is 45,932 = 45,932.
+
+Shim used for the successful run (read-only symlinks in a scratch directory, one pickle per name):
+  synthesis.population.spatial.locations__shim.p  -> spatial_locations_day pickle
+  synthesis.population.activities__shim.p         -> activities_day_stage pickle
+  synthesis.population.trips__shim.p              -> outside_tour_modes.stage pickle
+  braunschweig.synthesis.locations.secondary_chainsolvers__shim.p -> secondary_chainsolvers pickle
+Result (i679_on2_validate_secondary_distances_shim_log.txt): loop_origin join matched 11,203/11,203 secondary
+activities; leisure loops left out 746/5,491 (13.59 %).
+
+Note: the script's `_load_stage` picks the most recently MODIFIED pickle per name, independent of the run's
+configuration hash; in a cache with several hashed variants (copied caches do have them) it can pick a
+variant of another configuration. The newest `updated` entry of pipeline.json per stage (as
+i679_ab_metrics.py::resolve_stage does) or the hash of the run's own config is safer.

@@ -32,7 +32,8 @@ def test_final_schedule_departures_are_logged_with_vrb_fares_off(tmp_path, monke
             return {"output_prefix": "bs_", prepare.VRB_FARES_KEY: False, "cordon_enabled": False,
                     "freight_enabled": False, prepare.PARKING_KEY: False,
                     prepare.plan_check.KEY_ENABLED: False, prepare.initial_mode_choice.KEY_ENABLED: False,
-                    prepare.frozen_pt_walk_lift.KEY_ENABLED: False, **prepare_reach_defaults()}[key]
+                    prepare.frozen_pt_walk_lift.KEY_ENABLED: False,
+                    prepare.loop_mode_rule.KEY_ENABLED: False, **prepare_reach_defaults()}[key]
 
     monkeypatch.setattr(prepare.delegate, "execute", lambda context: "config.xml")
     monkeypatch.setattr(prepare.eqasim, "run", lambda *args, **kwargs: None)

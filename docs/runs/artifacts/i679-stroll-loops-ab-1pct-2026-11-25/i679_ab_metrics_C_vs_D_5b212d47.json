@@ -1,0 +1,853 @@
+{
+  "differences_downstream_of_locations": {
+    "activities_simulated_by_column": {
+      "end_time": {
+        "persons": 0,
+        "rows": 0
+      },
+      "purpose": {
+        "persons": 0,
+        "rows": 0
+      },
+      "start_time": {
+        "persons": 0,
+        "rows": 0
+      }
+    },
+    "changed_trips_of_persons_with_outside_activity": {
+      "changed_trips": 0,
+      "of_persons_with_outside": 0
+    },
+    "trips_simulated_by_column": {
+      "arrival_time": {
+        "persons": 0,
+        "rows": 0
+      },
+      "departure_time": {
+        "persons": 0,
+        "rows": 0
+      },
+      "following_purpose": {
+        "persons": 0,
+        "rows": 0
+      },
+      "mode": {
+        "persons": 0,
+        "rows": 0
+      },
+      "preceding_purpose": {
+        "persons": 0,
+        "rows": 0
+      }
+    },
+    "trips_simulated_mode_transitions": {}
+  },
+  "equality": {
+    "activities_final_by_purpose_equal": true,
+    "activities_simulated_by_purpose_equal": true,
+    "activities_simulated_identical": true,
+    "leisure_participation_equal": true,
+    "trips_final_by_purpose_equal": true,
+    "trips_final_identical": true,
+    "trips_simulated_by_purpose_equal": true,
+    "trips_simulated_identical": true
+  },
+  "legs": {
+    "definition": "straight line between consecutive activity geometries of synthesis.population.spatial.locations; mode of trips.simulated; loop legs = trips into an ON-arm loop_origin activity",
+    "off": {
+      "bicycle": {
+        "all": {
+          "max_m": 36906.617907938315,
+          "mean_m": 4177.245068466246,
+          "min_m": 0.0,
+          "n": 4496,
+          "n_missing_geometry": 0,
+          "n_over_30km": 24,
+          "n_over_5km": 1110,
+          "n_zero": 272,
+          "p10_m": 462.365692649699,
+          "p25_m": 1070.9724121748761,
+          "p50_m": 2225.4598363955556,
+          "p75_m": 4909.109713938244,
+          "p90_m": 10625.54158448826,
+          "p99_m": 27204.50120655698,
+          "sum_km": 18780.893827824242
+        },
+        "legs_leaving_a_loop": {
+          "max_m": 29291.813184629504,
+          "mean_m": 3740.9872012783753,
+          "min_m": 0.0,
+          "n": 51,
+          "n_missing_geometry": 0,
+          "n_over_30km": 0,
+          "n_over_5km": 11,
+          "n_zero": 20,
+          "p10_m": 0.0,
+          "p25_m": 0.0,
+          "p50_m": 1132.5906590370787,
+          "p75_m": 4118.983402806978,
+          "p90_m": 12188.041461061246,
+          "p99_m": 25726.55699150562,
+          "sum_km": 190.79034726519714
+        },
+        "leisure_without_loop_legs": {
+          "max_m": 32624.569304072476,
+          "mean_m": 3751.494701418742,
+          "min_m": 0.0,
+          "n": 709,
+          "n_missing_geometry": 0,
+          "n_over_30km": 2,
+          "n_over_5km": 153,
+          "n_zero": 3,
+          "p10_m": 704.9635831354882,
+          "p25_m": 1140.132599602168,
+          "p50_m": 2055.668024449405,
+          "p75_m": 4304.891245429314,
+          "p90_m": 8527.902164940044,
+          "p99_m": 23628.918448458015,
+          "sum_km": 2659.809743305888
+        },
+        "loop_legs": {
+          "max_m": 0.0,
+          "mean_m": 0.0,
+          "min_m": 0.0,
+          "n": 25,
+          "n_missing_geometry": 0,
+          "n_over_30km": 0,
+          "n_over_5km": 0,
+          "n_zero": 25,
+          "p10_m": 0.0,
+          "p25_m": 0.0,
+          "p50_m": 0.0,
+          "p75_m": 0.0,
+          "p90_m": 0.0,
+          "p99_m": 0.0,
+          "sum_km": 0.0
+        },
+        "without_loop_legs": {
+          "max_m": 36906.617907938315,
+          "mean_m": 4200.602511255702,
+          "min_m": 0.0,
+          "n": 4471,
+          "n_missing_geometry": 0,
+          "n_over_30km": 24,
+          "n_over_5km": 1110,
+          "n_zero": 247,
+          "p10_m": 499.54818456950534,
+          "p25_m": 1090.081589668868,
+          "p50_m": 2244.627686441412,
+          "p75_m": 4919.958494647432,
+          "p90_m": 10641.099604904488,
+          "p99_m": 27257.21557021295,
+          "sum_km": 18780.893827824242
+        }
+      },
+      "loop_legs_by_mode": {
+        "bicycle": 25,
+        "car": 6,
+        "car_passenger": 2,
+        "walk": 713
+      },
+      "n_legs": 34466,
+      "n_loop_legs": 746,
+      "n_missing_geometry": 0,
+      "walk": {
+        "all": {
+          "max_m": 38243.93054247748,
+          "mean_m": 2269.644649097071,
+          "min_m": 0.0,
+          "n": 8654,
+          "n_missing_geometry": 0,
+          "n_over_30km": 8,
+          "n_over_5km": 987,
+          "n_zero": 1515,
+          "p10_m": 0.0,
+          "p25_m": 350.3672720734024,
+          "p50_m": 1000.4081069381231,
+          "p75_m": 2351.0006728296976,
+          "p90_m": 5599.455529387904,
+          "p99_m": 22192.557519461796,
+          "sum_km": 19641.50479328605
+        },
+        "legs_leaving_a_loop": {
+          "max_m": 24347.32445884773,
+          "mean_m": 700.3114261751276,
+          "min_m": 0.0,
+          "n": 516,
+          "n_missing_geometry": 0,
+          "n_over_30km": 0,
+          "n_over_5km": 19,
+          "n_zero": 400,
+          "p10_m": 0.0,
+          "p25_m": 0.0,
+          "p50_m": 0.0,
+          "p75_m": 0.0,
+          "p90_m": 1842.7994964241705,
+          "p99_m": 12407.630300661276,
+          "sum_km": 361.3606959063659
+        },
+        "leisure_without_loop_legs": {
+          "max_m": 24347.32445884773,
+          "mean_m": 2291.659268153901,
+          "min_m": 0.0,
+          "n": 1383,
+          "n_missing_geometry": 0,
+          "n_over_30km": 0,
+          "n_over_5km": 148,
+          "n_zero": 18,
+          "p10_m": 321.48482468790945,
+          "p25_m": 654.6896576198887,
+          "p50_m": 1425.6252395783083,
+          "p75_m": 2626.240241945774,
+          "p90_m": 5372.060238536983,
+          "p99_m": 15058.134147323792,
+          "sum_km": 3169.364767856845
+        },
+        "loop_legs": {
+          "max_m": 0.0,
+          "mean_m": 0.0,
+          "min_m": 0.0,
+          "n": 713,
+          "n_missing_geometry": 0,
+          "n_over_30km": 0,
+          "n_over_5km": 0,
+          "n_zero": 713,
+          "p10_m": 0.0,
+          "p25_m": 0.0,
+          "p50_m": 0.0,
+          "p75_m": 0.0,
+          "p90_m": 0.0,
+          "p99_m": 0.0,
+          "sum_km": 0.0
+        },
+        "without_loop_legs": {
+          "max_m": 38243.93054247748,
+          "mean_m": 2473.4296427762315,
+          "min_m": 0.0,
+          "n": 7941,
+          "n_missing_geometry": 0,
+          "n_over_30km": 8,
+          "n_over_5km": 987,
+          "n_zero": 802,
+          "p10_m": 0.0,
+          "p25_m": 493.91807906715405,
+          "p50_m": 1144.5939952498902,
+          "p75_m": 2549.7968041343756,
+          "p90_m": 5960.627333059041,
+          "p99_m": 22428.39731783735,
+          "sum_km": 19641.504793286054
+        }
+      }
+    },
+    "on": {
+      "bicycle": {
+        "all": {
+          "max_m": 36906.617907938315,
+          "mean_m": 4177.245068466246,
+          "min_m": 0.0,
+          "n": 4496,
+          "n_missing_geometry": 0,
+          "n_over_30km": 24,
+          "n_over_5km": 1110,
+          "n_zero": 272,
+          "p10_m": 462.365692649699,
+          "p25_m": 1070.9724121748761,
+          "p50_m": 2225.4598363955556,
+          "p75_m": 4909.109713938244,
+          "p90_m": 10625.54158448826,
+          "p99_m": 27204.50120655698,
+          "sum_km": 18780.893827824242
+        },
+        "legs_leaving_a_loop": {
+          "max_m": 29291.813184629504,
+          "mean_m": 3740.9872012783753,
+          "min_m": 0.0,
+          "n": 51,
+          "n_missing_geometry": 0,
+          "n_over_30km": 0,
+          "n_over_5km": 11,
+          "n_zero": 20,
+          "p10_m": 0.0,
+          "p25_m": 0.0,
+          "p50_m": 1132.5906590370787,
+          "p75_m": 4118.983402806978,
+          "p90_m": 12188.041461061246,
+          "p99_m": 25726.55699150562,
+          "sum_km": 190.79034726519714
+        },
+        "leisure_without_loop_legs": {
+          "max_m": 32624.569304072476,
+          "mean_m": 3751.494701418742,
+          "min_m": 0.0,
+          "n": 709,
+          "n_missing_geometry": 0,
+          "n_over_30km": 2,
+          "n_over_5km": 153,
+          "n_zero": 3,
+          "p10_m": 704.9635831354882,
+          "p25_m": 1140.132599602168,
+          "p50_m": 2055.668024449405,
+          "p75_m": 4304.891245429314,
+          "p90_m": 8527.902164940044,
+          "p99_m": 23628.918448458015,
+          "sum_km": 2659.809743305888
+        },
+        "loop_legs": {
+          "max_m": 0.0,
+          "mean_m": 0.0,
+          "min_m": 0.0,
+          "n": 25,
+          "n_missing_geometry": 0,
+          "n_over_30km": 0,
+          "n_over_5km": 0,
+          "n_zero": 25,
+          "p10_m": 0.0,
+          "p25_m": 0.0,
+          "p50_m": 0.0,
+          "p75_m": 0.0,
+          "p90_m": 0.0,
+          "p99_m": 0.0,
+          "sum_km": 0.0
+        },
+        "without_loop_legs": {
+          "max_m": 36906.617907938315,
+          "mean_m": 4200.602511255702,
+          "min_m": 0.0,
+          "n": 4471,
+          "n_missing_geometry": 0,
+          "n_over_30km": 24,
+          "n_over_5km": 1110,
+          "n_zero": 247,
+          "p10_m": 499.54818456950534,
+          "p25_m": 1090.081589668868,
+          "p50_m": 2244.627686441412,
+          "p75_m": 4919.958494647432,
+          "p90_m": 10641.099604904488,
+          "p99_m": 27257.21557021295,
+          "sum_km": 18780.893827824242
+        }
+      },
+      "loop_legs_by_mode": {
+        "bicycle": 25,
+        "car": 6,
+        "car_passenger": 2,
+        "walk": 713
+      },
+      "n_legs": 34466,
+      "n_loop_legs": 746,
+      "n_missing_geometry": 0,
+      "walk": {
+        "all": {
+          "max_m": 38243.93054247748,
+          "mean_m": 2269.644649097071,
+          "min_m": 0.0,
+          "n": 8654,
+          "n_missing_geometry": 0,
+          "n_over_30km": 8,
+          "n_over_5km": 987,
+          "n_zero": 1515,
+          "p10_m": 0.0,
+          "p25_m": 350.3672720734024,
+          "p50_m": 1000.4081069381231,
+          "p75_m": 2351.0006728296976,
+          "p90_m": 5599.455529387904,
+          "p99_m": 22192.557519461796,
+          "sum_km": 19641.50479328605
+        },
+        "legs_leaving_a_loop": {
+          "max_m": 24347.32445884773,
+          "mean_m": 700.3114261751276,
+          "min_m": 0.0,
+          "n": 516,
+          "n_missing_geometry": 0,
+          "n_over_30km": 0,
+          "n_over_5km": 19,
+          "n_zero": 400,
+          "p10_m": 0.0,
+          "p25_m": 0.0,
+          "p50_m": 0.0,
+          "p75_m": 0.0,
+          "p90_m": 1842.7994964241705,
+          "p99_m": 12407.630300661276,
+          "sum_km": 361.3606959063659
+        },
+        "leisure_without_loop_legs": {
+          "max_m": 24347.32445884773,
+          "mean_m": 2291.659268153901,
+          "min_m": 0.0,
+          "n": 1383,
+          "n_missing_geometry": 0,
+          "n_over_30km": 0,
+          "n_over_5km": 148,
+          "n_zero": 18,
+          "p10_m": 321.48482468790945,
+          "p25_m": 654.6896576198887,
+          "p50_m": 1425.6252395783083,
+          "p75_m": 2626.240241945774,
+          "p90_m": 5372.060238536983,
+          "p99_m": 15058.134147323792,
+          "sum_km": 3169.364767856845
+        },
+        "loop_legs": {
+          "max_m": 0.0,
+          "mean_m": 0.0,
+          "min_m": 0.0,
+          "n": 713,
+          "n_missing_geometry": 0,
+          "n_over_30km": 0,
+          "n_over_5km": 0,
+          "n_zero": 713,
+          "p10_m": 0.0,
+          "p25_m": 0.0,
+          "p50_m": 0.0,
+          "p75_m": 0.0,
+          "p90_m": 0.0,
+          "p99_m": 0.0,
+          "sum_km": 0.0
+        },
+        "without_loop_legs": {
+          "max_m": 38243.93054247748,
+          "mean_m": 2473.4296427762315,
+          "min_m": 0.0,
+          "n": 7941,
+          "n_missing_geometry": 0,
+          "n_over_30km": 8,
+          "n_over_5km": 987,
+          "n_zero": 802,
+          "p10_m": 0.0,
+          "p25_m": 493.91807906715405,
+          "p50_m": 1144.5939952498902,
+          "p75_m": 2549.7968041343756,
+          "p90_m": 5960.627333059041,
+          "p99_m": 22428.39731783735,
+          "sum_km": 19641.504793286054
+        }
+      }
+    }
+  },
+  "loop_activities_placed_by_rule": {
+    "by_activity_purpose": {
+      "leisure": 746
+    },
+    "by_origin": {
+      "education": 7,
+      "home": 593,
+      "secondary": 126,
+      "work": 20
+    },
+    "n": 746,
+    "persons": 625
+  },
+  "off": {
+    "activities_final_by_purpose": {
+      "education": 2181,
+      "escort": 1867,
+      "home": 25934,
+      "leisure": 5491,
+      "other": 2709,
+      "outside": 567,
+      "shop": 3003,
+      "work": 4180
+    },
+    "activities_final_n": 45932,
+    "activities_simulated_by_purpose": {
+      "education": 2181,
+      "escort": 1867,
+      "home": 25934,
+      "leisure": 5491,
+      "other": 2709,
+      "outside": 567,
+      "shop": 3003,
+      "work": 4180
+    },
+    "activities_simulated_n": 45932,
+    "convergence": {
+      "problems": 8381,
+      "problems_by_size": {
+        "1": 6383,
+        "2": 1407,
+        "3": 391,
+        "4": 137,
+        "5": 39,
+        "6": 16,
+        "7": 8
+      },
+      "success_rate": 1.0,
+      "valid": 8381,
+      "valid_by_size": {
+        "1": 6383,
+        "2": 1407,
+        "3": 391,
+        "4": 137,
+        "5": 39,
+        "6": 16,
+        "7": 8
+      }
+    },
+    "locations_crs": "{\"$schema\": \"https://proj.org/schemas/v0.7/projjson.schema.json\", \"type\": \"ProjectedCRS\", \"name\": \"ETRS89 / UTM zone 32N\", \"base_crs\": {\"name\": \"ETRS89\", \"datum_ensemble\": {\"name\": \"European Terrestrial Reference System 1989 ensemble\", \"members\": [{\"name\": \"European Terrestrial Reference Frame 1989\"}, {\"name\": \"European Terrestrial Reference Frame 1990\"}, {\"name\": \"European Terrestrial Reference Frame 1991\"}, {\"name\": \"European Terrestrial Reference Frame 1992\"}, {\"name\": \"European Terrestrial Reference Frame 1993\"}, {\"name\": \"European Terrestrial Reference Frame 1994\"}, {\"name\": \"European Terrestrial Reference Frame 1996\"}, {\"name\": \"European Terrestrial Reference Frame 1997\"}, {\"name\": \"European Terrestrial Reference Frame 2000\"}, {\"name\": \"European Terrestrial Reference Frame 2005\"}, {\"name\": \"European Terrestrial Reference Frame 2014\"}, {\"name\": \"European Terrestrial Reference Frame 2020\"}], \"ellipsoid\": {\"name\": \"GRS 1980\", \"semi_major_axis\": 6378137, \"inverse_flattening\": 298.257222101}, \"accuracy\": \"0.1\", \"id\": {\"authority\": \"EPSG\", \"code\": 6258}}, \"coordinate_system\": {\"subtype\": \"ellipsoidal\", \"axis\": [{\"name\": \"Geodetic latitude\", \"abbreviation\": \"Lat\", \"direction\": \"north\", \"unit\": \"degree\"}, {\"name\": \"Geodetic longitude\", \"abbreviation\": \"Lon\", \"direction\": \"east\", \"unit\": \"degree\"}]}, \"id\": {\"authority\": \"EPSG\", \"code\": 4258}}, \"conversion\": {\"name\": \"UTM zone 32N\", \"method\": {\"name\": \"Transverse Mercator\", \"id\": {\"authority\": \"EPSG\", \"code\": 9807}}, \"parameters\": [{\"name\": \"Latitude of natural origin\", \"value\": 0, \"unit\": \"degree\", \"id\": {\"authority\": \"EPSG\", \"code\": 8801}}, {\"name\": \"Longitude of natural origin\", \"value\": 9, \"unit\": \"degree\", \"id\": {\"authority\": \"EPSG\", \"code\": 8802}}, {\"name\": \"Scale factor at natural origin\", \"value\": 0.9996, \"unit\": \"unity\", \"id\": {\"authority\": \"EPSG\", \"code\": 8805}}, {\"name\": \"False easting\", \"value\": 500000, \"unit\": \"metre\", \"id\": {\"authority\": \"EPSG\", \"code\": 8806}}, {\"name\": \"False northing\", \"value\": 0, \"unit\": \"metre\", \"id\": {\"authority\": \"EPSG\", \"code\": 8807}}]}, \"coordinate_system\": {\"subtype\": \"Cartesian\", \"axis\": [{\"name\": \"Easting\", \"abbreviation\": \"E\", \"direction\": \"east\", \"unit\": \"metre\"}, {\"name\": \"Northing\", \"abbreviation\": \"N\", \"direction\": \"north\", \"unit\": \"metre\"}]}, \"usages\": [{\"scope\": \"Engineering survey, topographic mapping.\", \"area\": \"Europe between 6\\u00b0E and 12\\u00b0E: Austria; Denmark - onshore and offshore; Germany - onshore and offshore; Italy - onshore and offshore; Norway including Svalbard - onshore and offshore; Spain - offshore.\", \"bbox\": {\"south_latitude\": 36.53, \"west_longitude\": 6, \"north_latitude\": 84.01, \"east_longitude\": 12.01}}, {\"scope\": \"Pan-European conformal mapping at scales larger than 1:500,000.\", \"area\": \"Europe between 6\\u00b0E and 12\\u00b0E and approximately 36\\u00b030'N to 84\\u00b0N.\", \"bbox\": {\"south_latitude\": 36.53, \"west_longitude\": 6, \"north_latitude\": 84.01, \"east_longitude\": 12.01}}], \"id\": {\"authority\": \"EPSG\", \"code\": 25832}}",
+    "locations_n": 45932,
+    "log_lines": [
+      "[braunschweig.secondary_chainsolvers] fallback candidate frame: REPLACE candidate set (secondary_building_potentials ON), 349,246 candidates",
+      "[braunschweig.secondary_chainsolvers] [pass 1/2: adults + unlinked] bounded problems: 8,352; unbounded (fallback): 0",
+      "[braunschweig.secondary_chainsolvers] [pass 1/2: adults + unlinked] fallback strategy: rda",
+      "[braunschweig.secondary_chainsolvers] [pass 2/2: linked children] bounded problems: 29; unbounded (fallback): 0",
+      "[braunschweig.secondary_chainsolvers] [pass 2/2: linked children] fallback strategy: rda",
+      "[braunschweig.secondary_chainsolvers] shop subtype labelling (bounded shop legs only; unbounded go to fallback untagged): 2,972 bounded shop legs -> daily 2,378 (80.0%), non_daily 594 (20.0%); distance-layer fallback to aggregate 'shop' 0/2,972 (0.0%)",
+      "[braunschweig.secondary_chainsolvers] leisure subtype labelling (bounded leisure legs only; unbounded go to fallback untagged): 4,704 bounded leisure legs -> leisure_local 395 (8.4%), leisure_visit 479 (10.2%), leisure_activity 1,324 (28.1%), leisure_excursion 143 (3.0%), leisure_unspecified 2,363 (50.2%); distance-layer fallback to aggregate 'leisure' 0/4,704 (0.0%)",
+      "[braunschweig.secondary_chainsolvers] other subtype labelling (bounded other legs only; unbounded go to fallback untagged): 2,683 bounded other legs -> other_errand_short 820 (30.6%), other_errand_long 752 (28.0%), other_escort 0 (0.0%), other_rest 1,111 (41.4%); distance-layer fallback to aggregate 'other' 0/2,683 (0.0%)",
+      "[braunschweig.secondary_chainsolvers] shop subtype marginal fallback (no (mode, tt_band) cell estimated) 1/2,972 (0.0%)",
+      "[braunschweig.secondary_chainsolvers] leisure subtype marginal fallback (no (mode, tt_band) cell estimated) 3/4,704 (0.1%)",
+      "[braunschweig.secondary_chainsolvers] other subtype marginal fallback (no (mode, tt_band) cell estimated) 16/2,683 (0.6%)",
+      "[braunschweig.secondary_chainsolvers] escort location draw (bounded escort legs only; unbounded go to fallback untyped): 906 bounded escort legs -> escort_edu_kindergarten 377 (41.6%), escort_edu_school 202 (22.3%), escort_edu_university 3 (0.3%), escort_leisure 86 (9.5%), escort_other 132 (14.6%), escort_residential 102 (11.3%), escort_shop 4 (0.4%); distance-layer fallback to aggregate 'other' 0/906 (0.0%)",
+      "[braunschweig.secondary_chainsolvers] escort distance-by-type: per-type layer used 906/906 escort legs (100.0%), fallback to aggregate 'escort' 0 (0.0%)",
+      "[braunschweig.secondary_chainsolvers] srv location draw (leisure): 4,704 bounded leisure legs -> leisure_culture 164 (3.5%), leisure_gastronomy 497 (10.6%), leisure_misc 877 (18.6%), leisure_outdoor 1,110 (23.6%), leisure_sports 1,004 (21.3%), leisure_visit 1,052 (22.4%); marginal fallback (no (mode, band) cell in the pinned table) 79/4,704 (1.7%)",
+      "[braunschweig.secondary_chainsolvers] srv location draw (other): 2,683 bounded other legs -> errand_authority_medical 1,224 (45.6%), errand_service 1,014 (37.8%), other_misc 445 (16.6%); marginal fallback (no (mode, band) cell in the pinned table) 389/2,683 (14.5%)",
+      "[braunschweig.secondary_chainsolvers] srv location draw: marginal fallback total 468/7,387 (6.3%) -- see the per-purpose lines above for the rates the warning threshold is applied to",
+      "[braunschweig.secondary_chainsolvers] primary/fallback split: primary (carla) placed 8,381/8,381 problems (100.0%); fallback placed 0/8,381 (0.0%) [unbounded=0, carla-failed-bounded=0]",
+      "01:39:00 \u2502 INFO    \u2502 synthesis.locations.secondary_chainsolvers \u2502 [braunschweig.secondary_chainsolvers] loops: 747 flagged; 746 (99.9%) placed at the activity they start from (by origin: home 593, work 20, education 7, secondary 126); 1 (0.1%) kept on the solver: 1 (0.1%) because the loop activity itself is anchored or linked, 0 (0.0%) because the loop starts at an outside stay; collapsed loops of persons with an escort link 39, a portal stay 15, a passive joint link 5; 232 of 625 collapsed persons (37.1%) have no secondary activity left to solve; share of loop draws from the mode marginal: bicycle 1.0%, walk 0.0%",
+      "[braunschweig.secondary_chainsolvers] success rate: 1.0000 (8381/8381 problems fully placed)"
+    ],
+    "persons_in_trips_final": 9571,
+    "persons_simulated": 11466,
+    "persons_with_leisure_activity_simulated": 4038,
+    "secondary_has_loop_origin_column": true,
+    "secondary_rows": 13637,
+    "stage_report": {
+      "loops": {
+        "by_origin": {
+          "education": 7,
+          "home": 593,
+          "secondary": 126,
+          "work": 20
+        },
+        "collapsed": 746,
+        "collapsed_loops_of_persons_with_escort_link": 39,
+        "collapsed_loops_of_persons_with_passive_joint_link": 5,
+        "collapsed_loops_of_persons_with_portal_stay": 15,
+        "draws_from_marginal_share": {
+          "bicycle": 0.010309278350515464,
+          "walk": 0.0
+        },
+        "enabled": true,
+        "flags": {
+          "by_draw": {
+            "bicycle": 9,
+            "walk": 302
+          },
+          "by_label": {
+            "bicycle": 16,
+            "walk": 420
+          },
+          "draws": {
+            "bicycle": 194,
+            "walk": 629
+          },
+          "draws_from_marginal": {
+            "bicycle": 2,
+            "walk": 0
+          },
+          "in_scope": {
+            "bicycle": 475,
+            "walk": 1432
+          },
+          "missing_detail_code": {
+            "bicycle": 0,
+            "walk": 0
+          }
+        },
+        "kept_after_outside": 0,
+        "kept_after_outside_rate": 0.0,
+        "kept_loop_is_linked_activity": 1,
+        "kept_loop_is_linked_activity_rate": 0.0013386880856760374,
+        "kept_total": 1,
+        "kept_total_rate": 0.0013386880856760374,
+        "loops": 747,
+        "persons_collapsed": 625,
+        "persons_without_secondary_activity": 232,
+        "subtype_estimate_legs_left_out": {
+          "bicycle": {
+            "kept": 17307,
+            "left_out": 824,
+            "legs": 18131
+          },
+          "walk": {
+            "kept": 42180,
+            "left_out": 12064,
+            "legs": 54244
+          }
+        }
+      }
+    },
+    "trips_final_by_following_purpose": {
+      "education": 2181,
+      "escort": 1867,
+      "home": 14468,
+      "leisure": 5491,
+      "other": 2709,
+      "outside": 567,
+      "shop": 3003,
+      "work": 4180
+    },
+    "trips_final_by_mode": {
+      "bicycle": 4530,
+      "car": 13644,
+      "car_passenger": 4126,
+      "pt": 3374,
+      "walk": 8792
+    },
+    "trips_final_n": 34466,
+    "trips_simulated_by_following_purpose": {
+      "education": 2181,
+      "escort": 1867,
+      "home": 14468,
+      "leisure": 5491,
+      "other": 2709,
+      "outside": 567,
+      "shop": 3003,
+      "work": 4180
+    },
+    "trips_simulated_by_mode": {
+      "bicycle": 4496,
+      "car": 13753,
+      "car_passenger": 4219,
+      "pt": 3344,
+      "walk": 8654
+    },
+    "trips_simulated_n": 34466
+  },
+  "on": {
+    "activities_final_by_purpose": {
+      "education": 2181,
+      "escort": 1867,
+      "home": 25934,
+      "leisure": 5491,
+      "other": 2709,
+      "outside": 567,
+      "shop": 3003,
+      "work": 4180
+    },
+    "activities_final_n": 45932,
+    "activities_simulated_by_purpose": {
+      "education": 2181,
+      "escort": 1867,
+      "home": 25934,
+      "leisure": 5491,
+      "other": 2709,
+      "outside": 567,
+      "shop": 3003,
+      "work": 4180
+    },
+    "activities_simulated_n": 45932,
+    "convergence": {
+      "problems": 8381,
+      "problems_by_size": {
+        "1": 6383,
+        "2": 1407,
+        "3": 391,
+        "4": 137,
+        "5": 39,
+        "6": 16,
+        "7": 8
+      },
+      "success_rate": 1.0,
+      "valid": 8381,
+      "valid_by_size": {
+        "1": 6383,
+        "2": 1407,
+        "3": 391,
+        "4": 137,
+        "5": 39,
+        "6": 16,
+        "7": 8
+      }
+    },
+    "locations_crs": "{\"$schema\": \"https://proj.org/schemas/v0.7/projjson.schema.json\", \"type\": \"ProjectedCRS\", \"name\": \"ETRS89 / UTM zone 32N\", \"base_crs\": {\"name\": \"ETRS89\", \"datum_ensemble\": {\"name\": \"European Terrestrial Reference System 1989 ensemble\", \"members\": [{\"name\": \"European Terrestrial Reference Frame 1989\"}, {\"name\": \"European Terrestrial Reference Frame 1990\"}, {\"name\": \"European Terrestrial Reference Frame 1991\"}, {\"name\": \"European Terrestrial Reference Frame 1992\"}, {\"name\": \"European Terrestrial Reference Frame 1993\"}, {\"name\": \"European Terrestrial Reference Frame 1994\"}, {\"name\": \"European Terrestrial Reference Frame 1996\"}, {\"name\": \"European Terrestrial Reference Frame 1997\"}, {\"name\": \"European Terrestrial Reference Frame 2000\"}, {\"name\": \"European Terrestrial Reference Frame 2005\"}, {\"name\": \"European Terrestrial Reference Frame 2014\"}, {\"name\": \"European Terrestrial Reference Frame 2020\"}], \"ellipsoid\": {\"name\": \"GRS 1980\", \"semi_major_axis\": 6378137, \"inverse_flattening\": 298.257222101}, \"accuracy\": \"0.1\", \"id\": {\"authority\": \"EPSG\", \"code\": 6258}}, \"coordinate_system\": {\"subtype\": \"ellipsoidal\", \"axis\": [{\"name\": \"Geodetic latitude\", \"abbreviation\": \"Lat\", \"direction\": \"north\", \"unit\": \"degree\"}, {\"name\": \"Geodetic longitude\", \"abbreviation\": \"Lon\", \"direction\": \"east\", \"unit\": \"degree\"}]}, \"id\": {\"authority\": \"EPSG\", \"code\": 4258}}, \"conversion\": {\"name\": \"UTM zone 32N\", \"method\": {\"name\": \"Transverse Mercator\", \"id\": {\"authority\": \"EPSG\", \"code\": 9807}}, \"parameters\": [{\"name\": \"Latitude of natural origin\", \"value\": 0, \"unit\": \"degree\", \"id\": {\"authority\": \"EPSG\", \"code\": 8801}}, {\"name\": \"Longitude of natural origin\", \"value\": 9, \"unit\": \"degree\", \"id\": {\"authority\": \"EPSG\", \"code\": 8802}}, {\"name\": \"Scale factor at natural origin\", \"value\": 0.9996, \"unit\": \"unity\", \"id\": {\"authority\": \"EPSG\", \"code\": 8805}}, {\"name\": \"False easting\", \"value\": 500000, \"unit\": \"metre\", \"id\": {\"authority\": \"EPSG\", \"code\": 8806}}, {\"name\": \"False northing\", \"value\": 0, \"unit\": \"metre\", \"id\": {\"authority\": \"EPSG\", \"code\": 8807}}]}, \"coordinate_system\": {\"subtype\": \"Cartesian\", \"axis\": [{\"name\": \"Easting\", \"abbreviation\": \"E\", \"direction\": \"east\", \"unit\": \"metre\"}, {\"name\": \"Northing\", \"abbreviation\": \"N\", \"direction\": \"north\", \"unit\": \"metre\"}]}, \"usages\": [{\"scope\": \"Engineering survey, topographic mapping.\", \"area\": \"Europe between 6\\u00b0E and 12\\u00b0E: Austria; Denmark - onshore and offshore; Germany - onshore and offshore; Italy - onshore and offshore; Norway including Svalbard - onshore and offshore; Spain - offshore.\", \"bbox\": {\"south_latitude\": 36.53, \"west_longitude\": 6, \"north_latitude\": 84.01, \"east_longitude\": 12.01}}, {\"scope\": \"Pan-European conformal mapping at scales larger than 1:500,000.\", \"area\": \"Europe between 6\\u00b0E and 12\\u00b0E and approximately 36\\u00b030'N to 84\\u00b0N.\", \"bbox\": {\"south_latitude\": 36.53, \"west_longitude\": 6, \"north_latitude\": 84.01, \"east_longitude\": 12.01}}], \"id\": {\"authority\": \"EPSG\", \"code\": 25832}}",
+    "locations_n": 45932,
+    "log_lines": [],
+    "persons_in_trips_final": 9571,
+    "persons_simulated": 11466,
+    "persons_with_leisure_activity_simulated": 4038,
+    "secondary_has_loop_origin_column": true,
+    "secondary_rows": 13637,
+    "stage_report": {
+      "loops": {
+        "by_origin": {
+          "education": 7,
+          "home": 593,
+          "secondary": 126,
+          "work": 20
+        },
+        "collapsed": 746,
+        "collapsed_loops_of_persons_with_escort_link": 39,
+        "collapsed_loops_of_persons_with_passive_joint_link": 5,
+        "collapsed_loops_of_persons_with_portal_stay": 15,
+        "draws_from_marginal_share": {
+          "bicycle": 0.010309278350515464,
+          "walk": 0.0
+        },
+        "enabled": true,
+        "flags": {
+          "by_draw": {
+            "bicycle": 9,
+            "walk": 302
+          },
+          "by_label": {
+            "bicycle": 16,
+            "walk": 420
+          },
+          "draws": {
+            "bicycle": 194,
+            "walk": 629
+          },
+          "draws_from_marginal": {
+            "bicycle": 2,
+            "walk": 0
+          },
+          "in_scope": {
+            "bicycle": 475,
+            "walk": 1432
+          },
+          "missing_detail_code": {
+            "bicycle": 0,
+            "walk": 0
+          }
+        },
+        "kept_after_outside": 0,
+        "kept_after_outside_rate": 0.0,
+        "kept_loop_is_linked_activity": 1,
+        "kept_loop_is_linked_activity_rate": 0.0013386880856760374,
+        "kept_total": 1,
+        "kept_total_rate": 0.0013386880856760374,
+        "loops": 747,
+        "persons_collapsed": 625,
+        "persons_without_secondary_activity": 232,
+        "subtype_estimate_legs_left_out": {
+          "bicycle": {
+            "kept": 17307,
+            "left_out": 824,
+            "legs": 18131
+          },
+          "walk": {
+            "kept": 42180,
+            "left_out": 12064,
+            "legs": 54244
+          }
+        }
+      }
+    },
+    "trips_final_by_following_purpose": {
+      "education": 2181,
+      "escort": 1867,
+      "home": 14468,
+      "leisure": 5491,
+      "other": 2709,
+      "outside": 567,
+      "shop": 3003,
+      "work": 4180
+    },
+    "trips_final_by_mode": {
+      "bicycle": 4530,
+      "car": 13644,
+      "car_passenger": 4126,
+      "pt": 3374,
+      "walk": 8792
+    },
+    "trips_final_n": 34466,
+    "trips_simulated_by_following_purpose": {
+      "education": 2181,
+      "escort": 1867,
+      "home": 14468,
+      "leisure": 5491,
+      "other": 2709,
+      "outside": 567,
+      "shop": 3003,
+      "work": 4180
+    },
+    "trips_simulated_by_mode": {
+      "bicycle": 4496,
+      "car": 13753,
+      "car_passenger": 4219,
+      "pt": 3344,
+      "walk": 8654
+    },
+    "trips_simulated_n": 34466
+  },
+  "provenance": {
+    "off": {
+      "braunschweig.synthesis.commute_day.activities_day_stage": {
+        "key": "braunschweig.synthesis.commute_day.activities_day_stage__885e84966dcc325f1d5b03d7632b8a0c",
+        "sampling_rate": 0.01,
+        "secondary_loop_zero_displacement": null,
+        "updated_unix": 1795653213.791435
+      },
+      "braunschweig.synthesis.commute_day.spatial_locations_day": {
+        "key": "braunschweig.synthesis.commute_day.spatial_locations_day__0ad01031a33e03f0beba6433e1698376",
+        "sampling_rate": 0.01,
+        "secondary_loop_zero_displacement": true,
+        "updated_unix": 1795653582.410782
+      },
+      "braunschweig.synthesis.locations.secondary_chainsolvers": {
+        "key": "braunschweig.synthesis.locations.secondary_chainsolvers__0ad01031a33e03f0beba6433e1698376",
+        "sampling_rate": 0.01,
+        "secondary_loop_zero_displacement": true,
+        "updated_unix": 1795653541.016456
+      },
+      "braunschweig.synthesis.outside_tour_modes.activities_stage": {
+        "key": "braunschweig.synthesis.outside_tour_modes.activities_stage__17d1ef6e1f022b22d87a20f066d818ce",
+        "sampling_rate": 0.01,
+        "secondary_loop_zero_displacement": true,
+        "updated_unix": 1795653666.578641
+      },
+      "braunschweig.synthesis.outside_tour_modes.stage": {
+        "key": "braunschweig.synthesis.outside_tour_modes.stage__17d1ef6e1f022b22d87a20f066d818ce",
+        "sampling_rate": 0.01,
+        "secondary_loop_zero_displacement": true,
+        "updated_unix": 1795653665.984867
+      },
+      "braunschweig.synthesis.portal_trips.trips_final": {
+        "key": "braunschweig.synthesis.portal_trips.trips_final__885e84966dcc325f1d5b03d7632b8a0c",
+        "sampling_rate": 0.01,
+        "secondary_loop_zero_displacement": null,
+        "updated_unix": 1795653212.848872
+      }
+    },
+    "on": {
+      "braunschweig.synthesis.commute_day.activities_day_stage": {
+        "key": "braunschweig.synthesis.commute_day.activities_day_stage__885e84966dcc325f1d5b03d7632b8a0c",
+        "sampling_rate": 0.01,
+        "secondary_loop_zero_displacement": null,
+        "updated_unix": 1795653213.791435
+      },
+      "braunschweig.synthesis.commute_day.spatial_locations_day": {
+        "key": "braunschweig.synthesis.commute_day.spatial_locations_day__0ad01031a33e03f0beba6433e1698376",
+        "sampling_rate": 0.01,
+        "secondary_loop_zero_displacement": true,
+        "updated_unix": 1795653582.410782
+      },
+      "braunschweig.synthesis.locations.secondary_chainsolvers": {
+        "key": "braunschweig.synthesis.locations.secondary_chainsolvers__0ad01031a33e03f0beba6433e1698376",
+        "sampling_rate": 0.01,
+        "secondary_loop_zero_displacement": true,
+        "updated_unix": 1795653541.016456
+      },
+      "braunschweig.synthesis.outside_tour_modes.activities_stage": {
+        "key": "braunschweig.synthesis.outside_tour_modes.activities_stage__17d1ef6e1f022b22d87a20f066d818ce",
+        "sampling_rate": 0.01,
+        "secondary_loop_zero_displacement": true,
+        "updated_unix": 1795680004.32265
+      },
+      "braunschweig.synthesis.outside_tour_modes.stage": {
+        "key": "braunschweig.synthesis.outside_tour_modes.stage__17d1ef6e1f022b22d87a20f066d818ce",
+        "sampling_rate": 0.01,
+        "secondary_loop_zero_displacement": true,
+        "updated_unix": 1795680003.717507
+      },
+      "braunschweig.synthesis.portal_trips.trips_final": {
+        "key": "braunschweig.synthesis.portal_trips.trips_final__885e84966dcc325f1d5b03d7632b8a0c",
+        "sampling_rate": 0.01,
+        "secondary_loop_zero_displacement": null,
+        "updated_unix": 1795679872.000555
+      }
+    }
+  }
+}

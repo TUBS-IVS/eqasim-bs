@@ -89,6 +89,19 @@ config:
   # subtype split (issue #127). Defaults False elsewhere -> byte-identical.
   secondary_leisure_subtype_split: true
   secondary_other_subtype_split: true
+  # Strolls and dog walks (issue #679): a leisure walk or ride that is a loop (MiD W_ZWD
+  # 710/711, or drawn where the detail was not asked) is placed at the place of the
+  # activity it starts from (zero displacement, eqasim-france Paris model); the trip after
+  # it starts there. ADR-0207; rule: docs/codebase/notes/leisure-loops.md. Defaults False in code;
+  # false -> byte-identical to the behaviour before #679.
+  secondary_loop_zero_displacement: true
+  # Leaves those loop legs (710/711 on foot or by bicycle) out of the leisure subtype draw
+  # P(subtype | mode, travel time) and of the leisure subtype distance layers, so both describe
+  # the leisure legs the model still places (issue #679). Requires
+  # secondary_leisure_subtype_split and secondary_loop_zero_displacement. ADR-0207;
+  # rule: docs/codebase/notes/leisure-loops.md. Defaults False in code; false -> today's
+  # estimates (with the loops).
+  secondary_leisure_estimates_without_loops: true
   # Places leisure_visit legs on residential building potential (pot_visit)
   # instead of the generic leisure potential; requires the leisure split above.
   leisure_visit_building_potential: true
@@ -1082,6 +1095,15 @@ config:
   # travel times, before iteration 0 (ADR-0178, #542). It replaces the first-replanning strategy of ADR-0155.
   # The key braunschweig.initial_mode_choice.weight is retired and refused.
   braunschweig.initial_mode_choice.enabled: true
+  # Same-facility leisure trips (strolls placed at their start and the way home after them, #679) and the trip into
+  # an out-and-back stroll (a stroll from home whose next diary trip goes home) may only be walk or bicycle in the
+  # mode choice: the prepare stage adds the trip constraints SameFacilityLeisureNonMotorised and StrollNonMotorised
+  # to the DiscreteModeChoice tripConstraints of the final config before the standalone mode choice. Needs an
+  # eqasim-java-bs jar with both constraints (jar check and report: docs/codebase/notes/leisure-loops.md,
+  # "Mode choice"). The stroll rule reads the activity attribute outAndBackStroll, which exists only while
+  # secondary_loop_zero_displacement is on. Code default false (loop_mode_rule.DEFAULT_ENABLED); false -> the
+  # config as before (ADR-0207, #679).
+  braunschweig.mode_choice.loop_trips_non_motorised: true
   # WARN when more than this share of the external points miss the distance band, or of the
   # work/education legs fall back to the donor's reported distance (the primary method is then suspect).
   braunschweig.portal.fallback_warn_share: 0.1

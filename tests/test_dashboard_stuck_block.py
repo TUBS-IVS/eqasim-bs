@@ -129,7 +129,7 @@ def test_assemble_run_record_hands_the_suite_summary_path_to_the_matsim_metrics(
 
     seen = {}
 
-    def _fake_metrics_matsim(sim_output, stuck_summary_path=None):
+    def _fake_metrics_matsim(sim_output, stuck_summary_path=None, loop_trips=None):
         seen["sim_output"], seen["stuck_summary_path"] = sim_output, stuck_summary_path
         return {"available": False}
 

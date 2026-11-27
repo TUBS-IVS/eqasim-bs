@@ -218,3 +218,62 @@ def boundary_clip_share(desired_distances_m, ceiling_m):
     clipped_mask = desired > ceiling
     n_clipped = int(np.count_nonzero(clipped_mask))
     return n_clipped / n_total, n_clipped, n_total
+
+
+# ---------------------------------------------------------------------------
+# Loop legs (issue #679)
+#
+# With ``secondary_loop_zero_displacement`` ON the secondary location stage places a stroll or
+# dog walk at the place of the activity before it, so the leg into it has no length. A
+# comparison of secondary leg distances with the survey must not mix those zero-length legs
+# with destination trips. The stage marks them with the column ``loop_origin`` on its location
+# result (None on every other row; the column is absent with the switch off); the helper below
+# leaves them out of the per-purpose comparison and reports them separately.
+# ---------------------------------------------------------------------------
+
+#: Column of the secondary locations result that is not null exactly on loop rows
+#: (``secondary_chainsolvers.loops.restore_loops``).
+LOOP_ORIGIN_COLUMN = "loop_origin"
+
+
+def leave_out_loop_legs(distances_by_purpose: dict):
+    """Split the loop legs off a per-purpose legs dict and summarise them.
+
+    Parameters
+    ----------
+    distances_by_purpose : dict[str, pd.DataFrame]
+        Per purpose, one row per leg. A leg is a loop leg when its :data:`LOOP_ORIGIN_COLUMN`
+        value is not null (the leg INTO the loop activity). Either every frame carries the
+        column or none does; a mix raises (a half-marked input would silently count the
+        unmarked purposes' loops as destination trips).
+
+    Returns
+    -------
+    tuple[dict[str, pd.DataFrame], pd.DataFrame | None]
+        ``(kept, summary)``. Without the column on any frame (switch off, or no secondary
+        locations result in the cache) ``kept`` IS the input dict and ``summary`` is None:
+        nothing changes. Otherwise ``kept`` holds the non-loop legs per purpose (without the
+        marker column, re-indexed) and ``summary`` has one row per purpose with ``purpose``,
+        ``n_legs`` (before leaving out), ``n_loops`` and ``loop_share`` (NaN for a purpose
+        without legs).
+    """
+    with_column = [purpose for purpose, frame in distances_by_purpose.items()
+                   if LOOP_ORIGIN_COLUMN in frame.columns]
+    if not with_column:
+        return distances_by_purpose, None
+    without_column = sorted(set(distances_by_purpose) - set(with_column))
+    if without_column:
+        raise ValueError(
+            f"[leave_out_loop_legs] '{LOOP_ORIGIN_COLUMN}' is present for {sorted(with_column)} "
+            f"but missing for {without_column}; refusing to count the loops of the unmarked "
+            "purposes as destination trips."
+        )
+    kept, rows = {}, []
+    for purpose, frame in distances_by_purpose.items():
+        is_loop = frame[LOOP_ORIGIN_COLUMN].notna().to_numpy()
+        n_legs, n_loops = len(frame), int(is_loop.sum())
+        kept[purpose] = (frame.loc[~is_loop].drop(columns=LOOP_ORIGIN_COLUMN)
+                         .reset_index(drop=True))
+        rows.append({"purpose": purpose, "n_legs": n_legs, "n_loops": n_loops,
+                     "loop_share": n_loops / n_legs if n_legs else float("nan")})
+    return kept, pd.DataFrame(rows)
